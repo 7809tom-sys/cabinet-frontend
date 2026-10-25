@@ -15037,14 +15037,20 @@ export function flooringMaterial(id: string | null | undefined): FlooringMateria
 // ─── LVP Flooring Layout Patterns ─────────────────────────────────────────────
 // When the user selects a plank/hardwood-type flooring, they can also choose
 // how the planks are laid out. This affects the plan-view SVG tile rendering.
-export type FlooringLayoutPattern = "random-stagger" | "third-offset" | "diagonal" | "herringbone";
+export type FlooringLayoutPattern = "random-stagger" | "straight-lay" | "third-offset" | "brick-lay" | "diagonal" | "herringbone";
 
 export const FLOORING_LAYOUT_PATTERNS: { id: FlooringLayoutPattern; name: string; description: string }[] = [
-  { id: "random-stagger", name: "Random Stagger", description: "Natural look, minimal waste" },
-  { id: "third-offset", name: "1/3 Offset", description: "Clean geometric flow" },
-  { id: "diagonal", name: "Diagonal", description: "45° angle, makes rooms feel larger" },
-  { id: "herringbone", name: "Herringbone", description: "Classic V-shape zigzag" },
+  { id: "random-stagger", name: "Random stagger", description: "Natural mixed joints, least waste" },
+  { id: "straight-lay", name: "Straight", description: "Joints line up in a grid" },
+  { id: "third-offset", name: "Stepped · 1/3 offset", description: "Each row steps by one third" },
+  { id: "brick-lay", name: "Brick", description: "Each row steps by half a plank" },
+  { id: "diagonal", name: "Diagonal", description: "Planks run at 45 degrees" },
+  { id: "herringbone", name: "Herringbone", description: "V-shaped zigzag, more waste" },
 ];
+
+export function isFlooringLayoutPattern(value: unknown): value is FlooringLayoutPattern {
+  return FLOORING_LAYOUT_PATTERNS.some((pattern) => pattern.id === value);
+}
 
 // ─── Pony Wall ────────────────────────────────────────────────────────────────
 // A half-wall / peninsula divider placed freely on the floor plan.

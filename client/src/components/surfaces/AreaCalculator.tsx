@@ -14,7 +14,7 @@ export function AreaCalculator({
 }: {
   label: string;
   areaSqft: number | null;
-  sqftPerBox: number;
+  sqftPerBox: number | null;
   wastePct: number;
   pricePerBox: number | null;
   onChange: (next: { areaSqft: number | null; sqftPerBox: number; wastePct: number }) => void;
@@ -52,14 +52,17 @@ export function AreaCalculator({
             min={0.1}
             step={0.1}
             inputMode="decimal"
-            value={sqftPerBox}
-            onChange={(e) =>
+            value={sqftPerBox ?? ""}
+            placeholder="—"
+            onChange={(e) => {
+              const raw = e.target.value.trim();
+              const next = raw === "" ? null : Number(raw);
               onChange({
                 areaSqft,
-                sqftPerBox: Math.max(0.1, Number(e.target.value) || 0.1),
+                sqftPerBox: next != null && Number.isFinite(next) && next > 0 ? next : null,
                 wastePct,
-              })
-            }
+              });
+            }}
           />
         </div>
         <div className="space-y-1">

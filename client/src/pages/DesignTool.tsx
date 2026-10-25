@@ -149,7 +149,7 @@ import {
   isApplianceCode, isBaseHeightAppliance, convertLegacyCooktopPlacements, bearsCountertop, bearsIslandCountertop,
   type PonyWall, type DrywallPonyWallTexture, DEFAULT_DRYWALL_PONY_WALL_COLOR, DRYWALL_PONY_WALL_TEXTURE_OPTIONS, drywallPonyWallPreviewBackground, makePonyWall, makePeninsulaPonyWall, makePeninsulaDrywallBackPonyWall, ponyWallFitsRoom, clampPonyWall,
 	  type IslandZone, type IslandFace,
-		  flooringMaterial, backsplashMaterial, FLOORING_LAYOUT_PATTERNS, refreshPlacedCabinetsFromMasterConfig, refreshPlacedCabinetsFromMasterRules, restoredSavedDesignStyle, roomWithPersistedEntities, MIN_WALL_HEIGHT, wallTopLimit, reseatOnWallRun } from "@/lib/design";
+		  flooringMaterial, backsplashMaterial, isFlooringLayoutPattern, refreshPlacedCabinetsFromMasterConfig, refreshPlacedCabinetsFromMasterRules, restoredSavedDesignStyle, roomWithPersistedEntities, MIN_WALL_HEIGHT, wallTopLimit, reseatOnWallRun } from "@/lib/design";
 import { applyCabinetFinishScope, autoAdjustIslandDepthForBackFace, inferredIslandFace, isIslandAssemblyMember, islandAssemblyClearance, islandCountertopOverhangIn, islandCountertopRect, islandCountertopVisibleRects, islandRaisedBarRects, islandFaceCapacity, islandFaceFitMeasure, islandFaceLength, islandFacePlacement, islandFaceTransferOption, islandWithFaceSeatingOverhang, moveIslandScene, nextIslandFacePlacement, normalizeIslandRangeRearPlanes, resizeIslandScene, resolvedIslandCabinetStyleId, rotateIslandScene, synchronizeIslandCountertopFootprint, type CabinetFinishScope } from "@/lib/islandScene";
 import { buildTrimCartLines,
   trimPriceForKind,
@@ -242,6 +242,8 @@ import { DoorAttributesDialog } from "@/components/design/DoorAttributesDialog";
 import { DesignHelp } from "@/components/design/DesignHelp";
 import { CountertopQuoteDialog } from "@/components/design/CountertopQuoteDialog";
 import { SurfacesPickerDialog, type SelectedSurface } from "@/components/design/SurfacesPickerDialog";
+import { FlooringCartonFacts } from "@/components/design/FlooringCartonFacts";
+import { FlooringLayoutPicker } from "@/components/design/FlooringLayoutPicker";
 import { FlooringAccessorySuggestionsDialog } from "@/components/design/FlooringAccessorySuggestionsDialog";
 import { RecommendedSurfaces, type RecommendedRole } from "@/components/design/RecommendedSurfaces";
 
@@ -288,6 +290,7 @@ const noSelectedPelicanIds: ReadonlySet<number> = new Set<number>();
 
 
 import { buildSurfaceCartLines } from "@/lib/surfaceCartLines";
+import { flooringLayoutName } from "@/lib/flooringLayout";
 import { surfaceRole, formatPrice } from "@/lib/pelican";
 import { buildRollOutLines, normalizedRollOutTrayQty, rollOutTrayCartItems, type TrayOptionForStyle, type TrayPlaced } from "@/lib/rollOutTrayMatch";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -1360,7 +1363,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const removeFlooring = useCallback(() => {
     setSelectedSurfaces((prev) => prev.filter((surface) => surfaceRole(surface) !== "flooring"));
     setFlooringMaterialId(null);
-    setFlooringPattern("random-stagger");
+    setFlooringPattern(null);
     toast.success("Flooring removed from this design");
   }, []);
   // Re-derive the built-in 2D-render material ids (flooring / backsplash /
@@ -2118,7 +2121,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // Flooring material: shown as a pattern in the bird's-eye plan view.
   const [flooringMaterialId, setFlooringMaterialId] = useState<string | null>(null);
   // Flooring layout pattern: how planks are arranged (random stagger, 1/3 offset, diagonal, herringbone).
-  const [flooringPattern, setFlooringPattern] = useState<import("@/lib/design").FlooringLayoutPattern>("random-stagger");
+  const [flooringPattern, setFlooringPattern] = useState<import("@/lib/design").FlooringLayoutPattern | null>(null);
   // Cabinet lock: when true, placed cabinets cannot be moved, deleted, or have
   // new ones dropped. The room/walls/openings/island are still editable.
   // Explicit temporary override for intentional custom overlaps. Normal
@@ -4922,9 +4925,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       countertopSqFt: countertopMeasurement?.squareFeet ?? 0,
       perimeterCountertopSqFt: countertopMeasurement?.perimeterSquareFeet ?? 0,
       islandCountertopSqFt: countertopMeasurement?.islandSquareFeet ?? 0,
+      flooringPattern,
     };
     return buildSurfaceCartLines(selectedPlanSurfaces, DESIGN_TIER_TO_SHARED[tier], areas, placedFixtureQuantityByProduct) as CartItem[];
-  }, [selectedPlanSurfaces, tier, placed, openings, room, island, countertop, backsplashHeightMode, countertopBacksplashHeightIn, placedFixtureQuantityByProduct]);
+  }, [selectedPlanSurfaces, tier, placed, openings, room, island, countertop, backsplashHeightMode, countertopBacksplashHeightIn, placedFixtureQuantityByProduct, flooringPattern]);
 
   // Final cart lines = cabinets + required source panels + roll-out shelves + priced trim + surfaces &
   // fixtures. Trim/surfaces are folded in here (aggregated by masterCode+styleId)
@@ -12033,7 +12037,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           if (d.backsplashHeightMode === "standard" || d.backsplashHeightMode === "full-height") setBacksplashHeightMode(d.backsplashHeightMode);
           if (d.countertopBacksplashHeightIn === 2.5 || d.countertopBacksplashHeightIn === 3) setCountertopBacksplashHeightIn(d.countertopBacksplashHeightIn);
           if (typeof d.flooringMaterialId === "string") setFlooringMaterialId(d.flooringMaterialId);
-          if (typeof d.flooringPattern === "string") setFlooringPattern(d.flooringPattern as import("@/lib/design").FlooringLayoutPattern);
+          if (isFlooringLayoutPattern(d.flooringPattern)) setFlooringPattern(d.flooringPattern);
           if (typeof d.cabinetsLocked === "boolean") setCabinetsLocked(d.cabinetsLocked);
           // Restore the exact final Pelican surface & fixture picks so the cart,
           // 3D View gate and plan/elevation fill cannot retain replaced materials.
@@ -12337,7 +12341,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     setCrown(false); setToeKick(false); setBatten(false); setLightRail(false); setCountertop(false); setValance(false);
     setBacksplashMaterialId(null);
     setFlooringMaterialId(null);
-    setFlooringPattern("random-stagger");
+    setFlooringPattern(null);
     setSelectedSurfaces([]);
     setCabinetsLocked(false);
     setConsultMessages([]);
@@ -12726,7 +12730,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     setCatalogHardwareSelection(null);
     setBacksplashMaterialId(null);
     setFlooringMaterialId(null);
-    setFlooringPattern("random-stagger");
+    setFlooringPattern(null);
     setSelectedSurfaces([]);
     setCabinetsLocked(false);
     setLayoutLocked(false);
@@ -15962,7 +15966,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                <div data-testid="remove-flooring-control" className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-[#d8c7a1] bg-[#fffaf0] px-3 py-2">
 	                  <div className="min-w-0">
 	                    <p className="truncate text-xs font-semibold text-[#1a2744]">{activeFlooringSurface?.name ?? flooringMaterial(flooringMaterialId!).name}</p>
-	                    <p className="text-[10px] text-muted-foreground">Applied flooring</p>
+	                    <p className="text-[10px] text-muted-foreground">Applied flooring{flooringLayoutName(flooringPattern) ? ` · ${flooringLayoutName(flooringPattern)}` : " · layout not chosen"}</p>
+	                    {activeFlooringSurface && <FlooringCartonFacts product={activeFlooringSurface} testId="applied-flooring-carton-facts" className="mt-1" />}
 	                  </div>
 	                  <Button type="button" variant="outline" size="sm" onClick={removeFlooring} className="h-7 shrink-0 border-rose-300 px-2 text-[10px] font-semibold text-rose-700 hover:bg-rose-50 hover:text-rose-800">
 	                    <X className="mr-1 h-3.5 w-3.5" /> Remove flooring
@@ -15977,36 +15982,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                bathroomPaletteMode="surfaces"
 	                onPlaceBathroomFixture={placePelicanBathroomFixture}
 	              />
-	              {/* Flooring Layout Pattern Picker */}
-              {flooringMaterialId && (() => {
-                const fm = flooringMaterial(flooringMaterialId);
-                if (fm.pattern !== "hardwood" && fm.pattern !== "plank") return null;
-                return (
-                  <div className="mt-4 space-y-1.5">
-                    <div className="sticky top-0 z-10 -mx-1 flex w-[calc(100%+0.5rem)] items-center gap-1.5 border-b border-border bg-background/95 px-2 py-1.5 backdrop-blur">
-                      <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Plank Layout</span>
-                      <span className="text-[10px] font-normal normal-case text-muted-foreground/70">· How planks are arranged</span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      {FLOORING_LAYOUT_PATTERNS.map((p) => (
-                        <button
-                          key={p.id}
-                          type="button"
-                          onClick={() => setFlooringPattern(p.id)}
-                          className={`rounded-lg border px-3 py-2 text-left transition-colors ${
-                            flooringPattern === p.id
-                              ? "border-[#a87f33] ring-1 ring-[#a87f33]/40 bg-[#a87f33]/5"
-                              : "border-border hover:border-[#a87f33]/50 hover:bg-muted/40"
-                          }`}
-                        >
-                          <div className="text-[11px] font-semibold text-foreground">{p.name}</div>
-                          <div className="text-[9px] text-muted-foreground">{p.description}</div>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })()}
+	              <FlooringLayoutPicker value={flooringPattern} onChange={setFlooringPattern} />
               </>
 	            ) : usesBathroomFixturePalette ? (
 	              <RecommendedSurfaces

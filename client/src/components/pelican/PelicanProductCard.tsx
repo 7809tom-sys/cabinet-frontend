@@ -7,6 +7,7 @@ import { useCart } from "@/contexts/CartContext";
 import { ShoppingCart, Star } from "lucide-react";
 import { toast } from "sonner";
 import { usePreferredProducts } from "@/contexts/PreferredProductsContext";
+import { FlooringCartonFacts } from "@/components/design/FlooringCartonFacts";
 
 export type PelicanCardProduct = {
   id: number;
@@ -21,6 +22,9 @@ export type PelicanCardProduct = {
   pelicanCode?: string;
   msrp?: string | null;
   listPrice?: string | null;
+  description?: string | null;
+  coverageSqFt?: number | string | null;
+  piecesPerBox?: number | string | null;
 };
 
 export function PelicanProductCard({ product, affiliateSlug }: { product: PelicanCardProduct; affiliateSlug?: string }) {
@@ -122,6 +126,7 @@ export function PelicanProductCard({ product, affiliateSlug }: { product: Pelica
           {product.size && (
             <div className="text-xs text-muted-foreground">{product.size}</div>
           )}
+          <FlooringCartonFacts product={product} testId={`catalog-flooring-carton-facts-${product.id}`} />
           {product.pelicanCode && (
             <div className="text-[11px] font-medium text-muted-foreground">Item code: {product.pelicanCode}</div>
           )}

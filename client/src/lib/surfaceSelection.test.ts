@@ -150,6 +150,19 @@ describe("verified saved surface refresh", () => {
     coverageSqFt: 12,
   };
 
+  it("fills empty flooring coverage from the product description and does not invent 20 sq ft", () => {
+    const refreshed = refreshVerifiedSurfaceSelections([savedFloor], [{
+      id: 82,
+      name: "Aviles 20mil Dryback",
+      category: "Flooring",
+      subCategory: "Planks & Flooring",
+      description: "Aviles 20mil Dryback - 17pc/box 41.99sqft/box",
+      coverageSqFt: null,
+      sellPrice: 95.7,
+    }]);
+    expect(refreshed[0]).toMatchObject({ coverageSqFt: 41.99, piecesPerBox: 17 });
+  });
+
   it("replaces stale saved surface price and material data with the verified live record", () => {
     const refreshed = refreshVerifiedSurfaceSelections([savedFloor], [{
       id: 82,
@@ -312,9 +325,10 @@ describe("computeBoxes", () => {
     expect(computeBoxes(201, 20, 0)).toBe(11);
   });
 
-  it("guards against a zero/invalid per-box coverage", () => {
-    expect(computeBoxes(50, 0, 0)).toBe(50); // falls back to 1 sqft/box
-    expect(computeBoxes(50, undefined, undefined)).toBe(50);
+  it("does not invent a box count when sq ft per box is missing", () => {
+    expect(computeBoxes(50, 0, 0)).toBeNull();
+    expect(computeBoxes(50, undefined, undefined)).toBeNull();
+    expect(computeBoxes(50, null, 0.1)).toBeNull();
   });
 });
 

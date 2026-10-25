@@ -1,3 +1,4 @@
+import { flooringCartonFacts } from "@/lib/flooringCartonFacts";
 import { surfaceRole } from "@/lib/pelican";
 
 // Shared contract for the Surfaces & Fixtures wizard -> Design Tool hand-off.
@@ -27,7 +28,9 @@ export interface SurfacePick {
   unsupportedOverhangLimitIn?: number | null;
   /** Area entered by the user (sq ft) for area-priced roles. */
   areaSqft?: number | null;
-  /** Editable coverage assumption (sq ft per box/package). */
+  /** Supplier description. Flooring carton counts are often written here, not in coverageSqFt. */
+  description?: string | null;
+  /** Editable coverage assumption (sq ft per box/package). Null means the product did not supply one. */
   sqftPerBox?: number | null;
   /** Waste factor applied on top of area (e.g. 0.1 = 10%). */
   wastePct?: number | null;
@@ -109,6 +112,7 @@ export type VerifiedSurfaceSelectionRecord = {
   size?: string | null;
   materialImageUrl?: string | null;
   coverageSqFt?: string | number | null;
+  description?: string | null;
   sellPrice: number | null;
 };
 
@@ -121,6 +125,8 @@ type RefreshableSurfaceSelection = {
   size?: string | null;
   materialImageUrl?: string | null;
   coverageSqFt?: number | null;
+  description?: string | null;
+  piecesPerBox?: number | null;
   sellPrice: number | null;
 };
 
@@ -138,7 +144,16 @@ export function refreshVerifiedSurfaceSelections<T extends RefreshableSurfaceSel
       if (selection.sellPrice == null && (selection.materialImageUrl ?? null) == null) return selection;
       return { ...selection, sellPrice: null, materialImageUrl: null } as T;
     }
-    const coverage = Number(record.coverageSqFt);
+    const description = record.description ?? selection.description ?? null;
+    const fieldCoverage = Number(record.coverageSqFt);
+    const structuredCoverage = Number.isFinite(fieldCoverage) && fieldCoverage > 0 ? fieldCoverage : null;
+    const facts = flooringCartonFacts({
+      category: record.category,
+      subCategory: record.subCategory,
+      name: record.name,
+      description,
+      coverageSqFt: record.coverageSqFt,
+    });
     const next = {
       ...selection,
       pelicanCode: record.pelicanCode ?? null,
@@ -147,7 +162,9 @@ export function refreshVerifiedSurfaceSelections<T extends RefreshableSurfaceSel
       subCategory: record.subCategory ?? null,
       size: record.size ?? null,
       materialImageUrl: record.materialImageUrl?.trim() || null,
-      coverageSqFt: Number.isFinite(coverage) && coverage > 0 ? coverage : null,
+      description,
+      coverageSqFt: facts ? facts.sqFtPerBox : structuredCoverage,
+      piecesPerBox: facts ? facts.piecesPerBox : selection.piecesPerBox ?? null,
       sellPrice: record.sellPrice,
     } as T;
     if (
@@ -157,7 +174,9 @@ export function refreshVerifiedSurfaceSelections<T extends RefreshableSurfaceSel
       next.subCategory === (selection.subCategory ?? null) &&
       next.size === (selection.size ?? null) &&
       next.materialImageUrl === (selection.materialImageUrl ?? null) &&
+      next.description === (selection.description ?? null) &&
       next.coverageSqFt === (selection.coverageSqFt ?? null) &&
+      next.piecesPerBox === (selection.piecesPerBox ?? null) &&
       next.sellPrice === selection.sellPrice
     ) return selection;
     return next;
@@ -277,9 +296,10 @@ export function computeBoxes(
   wastePct: number | null | undefined
 ): number | null {
   if (!areaSqft || areaSqft <= 0) return null;
-  const per = sqftPerBox && sqftPerBox > 0 ? sqftPerBox : 1;
+  // A missing carton size is not 1 sq ft and not the old 20 sq ft flooring default.
+  if (!sqftPerBox || sqftPerBox <= 0) return null;
   const waste = wastePct != null && wastePct >= 0 ? wastePct : 0;
-  return Math.ceil((areaSqft * (1 + waste)) / per);
+  return Math.ceil((areaSqft * (1 + waste)) / sqftPerBox);
 }
 
 export function saveSurfaceSelection(sel: SurfaceSelection): void {

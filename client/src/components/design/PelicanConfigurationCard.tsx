@@ -7,6 +7,7 @@ import {
   type PelicanConfiguration,
   type PelicanGroupable,
 } from "@shared/pelicanConfigurationGrouping";
+import { FlooringCartonFacts } from "./FlooringCartonFacts";
 import { PelicanFinishDot, PelicanVariantSelect } from "./PelicanVariantSelect";
 
 /**
@@ -82,6 +83,7 @@ export function PelicanConfigurationCard<T extends PelicanGroupable>({
         <p className="truncate text-[9px] text-muted-foreground">
           {item.pelicanCode}{item.size && multiple ? ` · ${item.size}` : ""}
         </p>
+        <FlooringCartonFacts product={item} testId={`flooring-carton-facts-${item.id}`} />
         {selectedElsewhere && (
           <p className="text-[10px] font-medium leading-snug text-[#8a6828]">In your design: {selectedElsewhere.label}</p>
         )}

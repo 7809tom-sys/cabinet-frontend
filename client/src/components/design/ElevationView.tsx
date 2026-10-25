@@ -106,7 +106,7 @@ interface Props {
   // (staggered planks for hardwood/LVP, tile grid, etc.). null/undefined = default wood.
   flooringMaterialId?: string | null;
   // Flooring layout pattern: how planks are arranged.
-  flooringPattern?: import("@/lib/design").FlooringLayoutPattern;
+  flooringPattern?: import("@/lib/design").FlooringLayoutPattern | null;
   /** Hide cabinet and appliance master codes in customer-facing protected documents. */
   showProductCodes?: boolean;
 }
@@ -261,7 +261,7 @@ export function ElevationView({
   frameInsetFor, frameMetricsFor,
   onMove, onMoveVertical, moveLocked = false,
   flooringMaterialId = null,
-  flooringPattern = "random-stagger",
+  flooringPattern = null,
   showProductCodes = true,
 }: Props) {
   const { t } = useLanguage();

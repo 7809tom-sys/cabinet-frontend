@@ -12,6 +12,8 @@ import {
 } from "@/lib/pelican";
 import { Search, Check, Plus, Star } from "lucide-react";
 import type { SurfacePick, SurfaceRole } from "@/lib/surfaceSelection";
+import { flooringCartonFacts } from "@/lib/flooringCartonFacts";
+import { FlooringCartonFacts } from "@/components/design/FlooringCartonFacts";
 
 const PAGE_LIMIT = 48;
 
@@ -87,6 +89,8 @@ export function StepProductGrid({
                     size: p.size,
                     imageUrl: p.imageUrl,
                     sellPrice: p.sellPrice,
+                    description: p.description ?? null,
+                    sqftPerBox: flooringCartonFacts(p)?.sqFtPerBox ?? null,
                   })
                 }
                 className={`group overflow-hidden rounded-lg border text-left transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md ${
@@ -136,6 +140,9 @@ export function StepProductGrid({
                     {displayName}
                   </div>
                   {p.size && <div className="text-[11px] text-muted-foreground">{p.size}</div>}
+                  {role === "flooring" && (
+                    <FlooringCartonFacts product={p} testId={`wizard-flooring-carton-facts-${p.id}`} />
+                  )}
                   {p.pelicanCode && (
                     <div className="text-[10px] font-medium text-muted-foreground">Item code: {p.pelicanCode}</div>
                   )}

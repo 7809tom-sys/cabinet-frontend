@@ -48,7 +48,9 @@ import {
   pelicanUseLabel,
   type PelicanConfiguration,
 } from "@shared/pelicanConfigurationGrouping";
+import { FlooringCartonFacts } from "./FlooringCartonFacts";
 import { PelicanVariantSelect } from "./PelicanVariantSelect";
+import { flooringCartonFacts } from "@/lib/flooringCartonFacts";
 import type { CountertopScope } from "@/lib/surfaceSelection";
 
 export type SelectedSurface = {
@@ -68,8 +70,12 @@ export type SelectedSurface = {
   sellPrice: number | null;
   /** Wall-run versus island countertop assignment. Undefined is the legacy whole-design behavior. */
   countertopScope?: CountertopScope;
-  /** Sq ft per box/carton — when set, BOM auto-calculates box qty from area + overage. */
+  /** Supplier description. Flooring carton counts are parsed from here when coverageSqFt is empty. */
+  description?: string | null;
+  /** Sq ft per box/carton — structured field, or the value parsed from the description. */
   coverageSqFt?: number | null;
+  /** Pieces per box, from a structured field or the description. Null when the product does not say. */
+  piecesPerBox?: number | null;
   /** Supplier/fabricator-verified maximum unsupported overhang for this exact material. */
   unsupportedOverhangLimitIn?: number | null;
 };
@@ -304,8 +310,10 @@ export function SurfacesPickerDialog({
       size: product.size,
       imageUrl: product.imageUrl,
       materialImageUrl: product.materialImageUrl,
+      description: product.description ?? null,
       sellPrice: product.sellPrice,
-      coverageSqFt: product.coverageSqFt ?? null,
+      coverageSqFt: flooringCartonFacts(product)?.sqFtPerBox ?? null,
+      piecesPerBox: flooringCartonFacts(product)?.piecesPerBox ?? null,
       unsupportedOverhangLimitIn: product.unsupportedOverhangLimitIn ?? null,
     })), [verifiedPreferredProducts]);
   const items: SelectedSurface[] = (isBathroom
@@ -635,8 +643,10 @@ export function SurfacesPickerDialog({
                     size: p.size,
                     imageUrl: p.imageUrl,
                     materialImageUrl: p.materialImageUrl,
+                    description: p.description ?? null,
                     sellPrice: p.sellPrice,
-                    coverageSqFt: p.coverageSqFt ?? null,
+                    coverageSqFt: flooringCartonFacts(p)?.sqFtPerBox ?? null,
+                    piecesPerBox: flooringCartonFacts(p)?.piecesPerBox ?? null,
                     unsupportedOverhangLimitIn: p.unsupportedOverhangLimitIn == null ? null : Number(p.unsupportedOverhangLimitIn),
                   };
                   const bathroomFixtureProfile = isBathroom
@@ -703,6 +713,7 @@ export function SurfacesPickerDialog({
                         {(p.size || p.pelicanCode) && (
                           <div className="truncate text-[11px] text-muted-foreground">{[p.size, p.pelicanCode].filter(Boolean).join(" · ")}</div>
                         )}
+                        <FlooringCartonFacts product={p} testId={`flooring-carton-facts-${p.id}`} />
                         {siblingSelected && (
                           <p data-testid={`surface-sibling-selected-${p.id}`} className="text-[10px] font-medium leading-snug text-[#8a6828]">In your design: {siblingSelected.label}</p>
                         )}

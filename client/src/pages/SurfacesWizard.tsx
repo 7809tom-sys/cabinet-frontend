@@ -9,6 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useSeo } from "@/hooks/useSeo";
 import { toast } from "sonner";
 import { formatPrice, type PelicanCategory } from "@/lib/pelican";
+import { flooringCartonFacts } from "@/lib/flooringCartonFacts";
 import { StepProductGrid } from "@/components/surfaces/StepProductGrid";
 import { AreaCalculator } from "@/components/surfaces/AreaCalculator";
 import {
@@ -86,7 +87,7 @@ const STEPS: StepDef[] = [
   },
 ];
 
-type AreaState = { areaSqft: number | null; sqftPerBox: number; wastePct: number };
+type AreaState = { areaSqft: number | null; sqftPerBox: number | null; wastePct: number };
 
 const PREVIEW_EXAMPLE = "/manus-storage/wizard_preview_example_f9579597.png";
 
@@ -105,7 +106,7 @@ export default function SurfacesWizard() {
   const [picks, setPicks] = useState<Partial<Record<SurfaceRole, SurfacePick>>>({});
   // Area inputs keyed by role (only used for flooring/tile).
   const [areas, setAreas] = useState<Partial<Record<SurfaceRole, AreaState>>>({
-    flooring: { areaSqft: null, sqftPerBox: DEFAULT_SQFT_PER_BOX.flooring, wastePct: DEFAULT_WASTE_PCT },
+    flooring: { areaSqft: null, sqftPerBox: null, wastePct: DEFAULT_WASTE_PCT },
     tile: { areaSqft: null, sqftPerBox: DEFAULT_SQFT_PER_BOX.tile, wastePct: DEFAULT_WASTE_PCT },
   });
   const [layout] = useState<SurfaceSelection["layout"]>("l-shape");
@@ -122,6 +123,18 @@ export default function SurfacesWizard() {
 
   const pickFor = (role: SurfaceRole, product: SurfacePick) => {
     setPicks((prev) => ({ ...prev, [role]: { ...product, role } as SurfacePick }));
+    if (role !== "flooring" && role !== "tile") return;
+    const facts = role === "flooring" ? flooringCartonFacts(product) : null;
+    setAreas((prev) => ({
+      ...prev,
+      [role]: {
+        areaSqft: prev[role]?.areaSqft ?? null,
+        wastePct: prev[role]?.wastePct ?? DEFAULT_WASTE_PCT,
+        sqftPerBox: role === "flooring"
+          ? facts?.sqFtPerBox ?? null
+          : prev[role]?.sqftPerBox ?? DEFAULT_SQFT_PER_BOX.tile,
+      },
+    }));
   };
 
   // ─── Running total ──────────────────────────────────────────────────────────
@@ -283,7 +296,7 @@ export default function SurfacesWizard() {
     setPreviewUrl(null);
     setStepIdx(0);
     setAreas({
-      flooring: { areaSqft: null, sqftPerBox: DEFAULT_SQFT_PER_BOX.flooring, wastePct: DEFAULT_WASTE_PCT },
+      flooring: { areaSqft: null, sqftPerBox: null, wastePct: DEFAULT_WASTE_PCT },
       tile: { areaSqft: null, sqftPerBox: DEFAULT_SQFT_PER_BOX.tile, wastePct: DEFAULT_WASTE_PCT },
     });
   };
@@ -315,9 +328,14 @@ export default function SurfacesWizard() {
       if (!p) return;
       restoredPicks[role] = { ...p, role } as SurfacePick;
       if (role === "flooring" || role === "tile") {
+        const facts = role === "flooring" ? flooringCartonFacts(p) : null;
+        const savedCoverage = p.sqftPerBox;
+        const legacyFlooringDefault = savedCoverage === DEFAULT_SQFT_PER_BOX.flooring;
         restoredAreas[role] = {
           areaSqft: p.areaSqft ?? null,
-          sqftPerBox: p.sqftPerBox ?? DEFAULT_SQFT_PER_BOX[role],
+          sqftPerBox: role === "flooring"
+            ? (savedCoverage != null && !legacyFlooringDefault ? savedCoverage : facts?.sqFtPerBox ?? null)
+            : savedCoverage ?? DEFAULT_SQFT_PER_BOX.tile,
           wastePct: p.wastePct ?? DEFAULT_WASTE_PCT,
         };
       }
@@ -420,7 +438,7 @@ export default function SurfacesWizard() {
                   <AreaCalculator
                     label={step.title}
                     areaSqft={areas[step.role]?.areaSqft ?? null}
-                    sqftPerBox={areas[step.role]?.sqftPerBox ?? DEFAULT_SQFT_PER_BOX[step.role]}
+                    sqftPerBox={step.role === "flooring" ? areas.flooring?.sqftPerBox ?? null : areas[step.role]?.sqftPerBox ?? DEFAULT_SQFT_PER_BOX[step.role]}
                     wastePct={areas[step.role]?.wastePct ?? DEFAULT_WASTE_PCT}
                     pricePerBox={picks[step.role]?.sellPrice ?? null}
                     onChange={(next) => setArea(step.role, next)}
