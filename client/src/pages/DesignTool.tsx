@@ -55,6 +55,16 @@ import {
   resolveStoreScope,
 } from "@/lib/affiliateContext";
 import { isPelicanSinkCompatibleWithBase, isVerifiedPelicanVanityFaucet, isVerifiedPelicanVanitySink, pelicanSinkBaseKind, sinkBaseOpeningWidthIn, verifiedPelicanFaucetProfile, verifiedPelicanPotFillerProfile, verifiedPelicanSinkFitsCabinet, verifiedPelicanSinkProfile } from "@/lib/pelicanFixtureProfiles";
+import {
+  buildPelicanSinkOnCabinet,
+  chooseSmallestPelicanSinkBase,
+  findOpenSinkBasePlacement,
+  openPelicanSinkHost,
+  planPelicanFaucetAttachment,
+  type OpenSinkBasePlacement,
+  type PelicanPlacedProduct,
+} from "@/lib/pelicanAutoPlace";
+import { TabletPreviewOverlay, type TabletPreviewMode } from "@/components/design/TabletPreviewOverlay";
 import { isPelicanBathroomFixtureProfileVerified, verifiedPelicanBathroomFixtureProfile } from "@/lib/pelicanBathroomFixtureProfiles";
 import { BATHROOM_STARTER_TEMPLATE, bathroomFixtureChecklist, bathroomFixtureStarterZonePlacement, bathroomTubFillerPlacement, bathroomPlanningGuidance, bathroomZoneOverlapWarnings, makeBathroomStarterTemplate } from "@/lib/bathroomPlanning";
 import { bathroomTubWallParallelPlacement, rotateBathroomFurniture } from "@/lib/bathroomPlanning";
@@ -664,6 +674,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // layout with the always-open catalog column — owner preference.
   const isTabletWorkspace = !isMobile && isCompactWorkspace && tabletTier.tablet;
   const isTabletPortrait = isTabletWorkspace && tabletTier.portrait;
+  const insideTabletPreview = (() => {
+    const flag = new URLSearchParams(search).get("tabletPreview");
+    return flag === "1" || flag === "portrait" || flag === "landscape";
+  })();
+  const showTabletPreviewToggle = (isAdmin || import.meta.env.DEV) && !insideTabletPreview && !isMobile && !isTabletWorkspace;
   const [designerImmersive] = useDesignerImmersive();
   const tabletImmersiveHeader = isTabletWorkspace && designerImmersive;
   const [, navigate] = useLocation();
@@ -1142,6 +1157,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const [quoteOpen, setQuoteOpen] = useState(false);
   const [proDesignerOpen, setProDesignerOpen] = useState(false);
   const [surfacesOpen, setSurfacesOpen] = useState(false);
+  const forcedOpenSinkRef = useRef<OpenSinkBasePlacement | null>(null);
+  const pelicanSinkDraftRef = useRef<PelicanPlacedProduct | null>(null);
+  const [tabletPreviewMode, setTabletPreviewMode] = useState<TabletPreviewMode | null>(null);
   // Optional exact-source flooring trim suggestions are ephemeral: only an
   // explicit Add action persists a selected trim line in the saved design.
   const [flooringAccessoryPromptFloor, setFlooringAccessoryPromptFloor] = useState<SelectedSurface | null>(null);
@@ -1274,6 +1292,118 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       | "bathroom-sink" | "bathroom-faucet" | "toilet-bidet" | "bathtub"
       | "shower-door" | "shower-surround" | "shower-system" | "bathroom-accessory"
   ) => {
+    if (role === "sink" || role === "faucet" || role === "bathroom-sink" || role === "bathroom-faucet") {
+      const product: PelicanPlacedProduct = {
+        id: item.id,
+        pelicanCode: item.pelicanCode,
+        name: item.name,
+        imageUrl: item.imageUrl,
+        size: item.size,
+        description: null,
+      };
+      const already = selectedSurfaces.some((surface) => surface.id === item.id);
+      if (already) {
+        if (role === "sink" || role === "bathroom-sink") {
+          setSinks((current) => current.filter((sink) => sink.pelicanProductId !== item.id));
+        } else {
+          setSinks((current) => current.map((sink) => sink.pelicanFaucetProductId === item.id
+            ? {
+              ...sink,
+              faucet: false,
+              pelicanFaucetProductId: undefined,
+              pelicanFaucetProductName: undefined,
+              pelicanFaucetProductImage: undefined,
+              pelicanFaucetProfileId: undefined,
+              faucetOverallHeight: undefined,
+              faucetSpoutLength: undefined,
+              faucetSpoutHeight: undefined,
+              faucetFinish: undefined,
+              faucetForm: undefined,
+              faucetCenterSpread: undefined,
+              faucetWallMountHeightAboveCountertopIn: undefined,
+              requiresProjectSpecificMountHeight: undefined,
+            }
+            : sink));
+        }
+        toggleSurface(item);
+        toast.success(`${item.name} removed`);
+        return;
+      }
+      const sinkRole = role === "sink" || role === "bathroom-sink";
+      if (sinkRole) {
+        if (isVerifiedPelicanVanitySink(item.pelicanCode)) {
+          const vanityHost = placedRef.current.find((cabinet) => {
+            const label = `${cabinet.masterCode} ${cabinet.category ?? ""} ${cabinet.subCategory ?? ""} ${cabinet.description ?? ""}`;
+            return cabinet.placement === "base" && /\bvanity\b/i.test(label) && !/\bvalance\b/i.test(label);
+          });
+          if (!vanityHost || !isSinkBaseCabinet(vanityHost)) {
+            toast.error(`${item.name} is a vanity basin. Add a vanity base first — it is not dropped in as a kitchen sink.`);
+            return;
+          }
+        }
+        const host = openPelicanSinkHost(product, placedRef.current, sinks);
+        if (host) {
+          const fixture = buildPelicanSinkOnCabinet(product, host, room);
+          setSinks((current) => [...current.filter((sink) => !fixtureBelongsToCabinet(sink, host)), fixture]);
+          setSelectedSinkUid(fixture.uid);
+          setCountertop(true);
+          toggleSurface(item);
+          toast.success(`${item.name} placed in ${host.masterCode}, centered in the base. Add a faucet to mount it on the counter behind the basin.`);
+          return;
+        }
+        if (isVerifiedPelicanVanitySink(item.pelicanCode)) {
+          toast.error(`${item.name} needs a vanity sink base that does not already have a Pelican basin.`);
+          return;
+        }
+        const profile = verifiedPelicanSinkProfile(item.pelicanCode);
+        const catalogBase = chooseSmallestPelicanSinkBase(
+          (liveMasterCabinets ?? []) as DesignCabinet[],
+          product,
+          profile?.minimumCabinetWidthIn ?? 30,
+        );
+        if (!catalogBase) {
+          toast.error(`${item.name} needs a straight sink base, and the catalog has no matching base. Add a sink base, then choose this sink again.`);
+          return;
+        }
+        const widthIn = Number(catalogBase.width) || profile?.minimumCabinetWidthIn || 30;
+        const depthIn = Number(catalogBase.depth) || STD.BASE_DEPTH;
+        const placement = findOpenSinkBasePlacement({
+          width: widthIn,
+          depth: depthIn,
+          height: Number(catalogBase.height) || STD.BASE_HEIGHT,
+          room,
+          placed: placedRef.current,
+          openings,
+          island,
+          activeWall,
+          preferIsland: placedRef.current.some((cabinet) => isSinkBaseCabinet(cabinet)),
+        });
+        if (!placement) {
+          toast.error(`No open spot for ${item.name}. Clear a span on the island or the next wall. It was not stacked on the first sink.`);
+          return;
+        }
+        forcedOpenSinkRef.current = placement;
+        pelicanSinkDraftRef.current = product;
+        addCabinet(catalogBase as DesignCabinet);
+        return;
+      }
+      const faucetPlan = planPelicanFaucetAttachment({
+        item: product,
+        sinks,
+        placed: placedRef.current,
+        room,
+        selectedCabinetUid: selectedUid,
+      });
+      if (!faucetPlan.ok) {
+        toast.error(faucetPlan.message);
+        return;
+      }
+      setSinks((current) => current.map((sink) => sink.uid === faucetPlan.sinkUid ? { ...sink, ...faucetPlan.patch } : sink));
+      setCountertop(true);
+      toggleSurface(item);
+      toast.success(faucetPlan.message);
+      return;
+    }
     if (role === "countertop") {
       const already = activeCountertopForScope(selectedSurfaces, "perimeter")?.id === item.id;
       setSelectedSurfaces((prev) => already
@@ -6007,7 +6137,15 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       }
       // Debounce guard: block re-entry within 500 ms to prevent double-placement
       // caused by mobile touch events firing both touchend and click.
-	      if (isAddingRef.current) return;
+	      if (isAddingRef.current) {
+	        forcedOpenSinkRef.current = null;
+	        pelicanSinkDraftRef.current = null;
+	        return;
+	      }
+	      const forcedOpenSink = forcedOpenSinkRef.current;
+	      const pelicanSinkDraft = pelicanSinkDraftRef.current;
+	      forcedOpenSinkRef.current = null;
+	      pelicanSinkDraftRef.current = null;
 	      isAddingRef.current = true;
 	      setTimeout(() => { isAddingRef.current = false; }, 500);
 	      if (!(strictDropTarget && x != null && y != null)) {
@@ -6146,6 +6284,37 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	        ? sinkBaseWindowPlacement(activeWall, room, width, depth, height, prev, openings)
 	        : null;
 	      const sinkWindowSpot = sinkWindowPlacement?.spot ?? null;
+      const additionalSinkSearch = !forcedOpenSink
+        && accPlacement === "base"
+        && isSinkBaseCabinet(c)
+        && !targetCabinetUid
+        && x == null
+        && y == null
+        && !requestedIslandFace
+        && !requiresRoomCornerPlacement({ masterCode: c.masterCode, description: c.description, placement: accPlacement })
+        && !isCornerCabinet(c.masterCode, c.description ?? undefined)
+        && prev.some((item) => isSinkBaseCabinet(item));
+      let additionalSinkPlan: OpenSinkBasePlacement | null = null;
+      if (additionalSinkSearch) {
+        additionalSinkPlan = findOpenSinkBasePlacement({
+          width,
+          depth,
+          height,
+          room,
+          placed: prev,
+          openings,
+          island,
+          activeWall,
+          preferIsland: true,
+        });
+        if (!additionalSinkPlan) {
+          const message = `${c.masterCode} was not added. The island and the other walls have no open span for another sink, so it was not stacked on the first one. Clear a run, then try again.`;
+          setPlacementWarning(message);
+          toast.error(message);
+          return;
+        }
+      }
+      const openSinkSpot = forcedOpenSink ?? additionalSinkPlan;
       const hasActiveWallWindow = wantsWindowCenteredSinkBase
         && openings.some((opening) => opening.kind === "window" && opening.side === activeWall);
       const sinkWindowFallbackSpot = hasActiveWallWindow && !sinkWindowSpot
@@ -6219,6 +6388,15 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           : Math.max(targetSegment.start, Math.min(targetSegment.start + targetSegment.length - width, requestedAlong));
         spot = wallPlacementAt(start, width, depth, activeWall, room);
         floatingShelfMountBottom = Math.round(mountBottom * 8) / 8;
+        preserveResolvedPlacement = true;
+      } else if (openSinkSpot) {
+        spot = {
+          x: openSinkSpot.x,
+          y: openSinkSpot.y,
+          rotation: openSinkSpot.rotation,
+          ...(openSinkSpot.wallId ? { wallId: openSinkSpot.wallId, wallOffset: openSinkSpot.wallOffset ?? 0 } : {}),
+          ...(openSinkSpot.peninsulaSide ? { peninsulaSide: openSinkSpot.peninsulaSide } : {}),
+        };
         preserveResolvedPlacement = true;
       } else if (accPlacement === "baseTop" && isKneeDrawerItem(c)) {
         const kneeSpaceSpot = kneeDrawerWallPlacement(activeWall, room, prev, openings, width, depth);
@@ -6663,6 +6841,16 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 
       // Filler auto-snap: find nearest gap and resize/reposition
       let finalCab = newCab;
+      if (openSinkSpot?.islandFace) {
+        finalCab = {
+          ...finalCab,
+          x: openSinkSpot.x,
+          y: openSinkSpot.y,
+          rotation: openSinkSpot.rotation,
+          islandFace: openSinkSpot.islandFace,
+          islandOffset: openSinkSpot.islandOffset,
+        };
+      }
       let sinkBaseAdvisory: string | null = hasActiveWallWindow && !sinkWindowSpot
         ? `${finalCab.masterCode} was placed beneath the window, but the centered ${formatInches(width)} span overlaps an existing item. Clearance is advisory for sink bases; review the overlap before installation.`
         : null;
@@ -6776,7 +6964,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	      // A 2D or 3D resolver may already have seated this cabinet in a verified
 	      // full wall opening. Do not run the generic seam snap again: it can pull
 	      // the cabinet from that opening into a neighboring narrow sub-gap.
-	      if (automaticSnapping && !requestedIslandFace && !strictDropTarget && !peninsulaRunById(room, finalCab.wallId)) finalCab = snapCabinetSeamOverlap(finalCab, normalizedPrevious, undefined, room);
+	      if (automaticSnapping && !requestedIslandFace && !strictDropTarget && !openSinkSpot && !peninsulaRunById(room, finalCab.wallId)) finalCab = snapCabinetSeamOverlap(finalCab, normalizedPrevious, undefined, room);
 	      normalizedRun = requestedIslandFace ? [...islandPlacementPrevious, finalCab] : normalizeRefrigeratorBayUppers([...prev, finalCab], room);
 	      const validMountedMicrowavePair = mountedRange ? isMicrowaveOverRangePair(finalCab, mountedRange) : false;
 	      const rangeHoodConflict = rangeHoodPlacement?.ok && isRangeHoodPlacement(finalCab)
@@ -7175,20 +7363,39 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	        // A sink base is not visually complete without a sink and faucet. Seed
 	        // a centered, editable default immediately; the existing chooser can
 	        // replace it with a verified Pelican fixture without leaving duplicates.
-	        const existingFixture = sinks.find((sink) => fixtureBelongsToCabinet(sink, finalCab));
-	        if (!existingFixture) {
-	          const defaultSinkType: SinkType = isFarmSinkBasePaletteItem(finalCab)
-	            ? "farmhouse"
-	            : finalCab.width >= 33 ? "double" : "single";
+        const existingFixture = sinks.find((sink) => fixtureBelongsToCabinet(sink, finalCab));
+        if (pelicanSinkDraft) {
+          const pelicanSink = buildPelicanSinkOnCabinet(pelicanSinkDraft, finalCab, room);
+          setSinks((current) => [...current.filter((sink) => !fixtureBelongsToCabinet(sink, finalCab)), pelicanSink]);
+          setSelectedSinkUid(pelicanSink.uid);
+          setSelectedSurfaces((previous) => previous.some((surface) => surface.id === pelicanSinkDraft.id) ? previous : [...previous, {
+            id: pelicanSinkDraft.id,
+            pelicanCode: pelicanSinkDraft.pelicanCode ?? null,
+            slug: pelicanSinkDraft.name,
+            name: pelicanSinkDraft.name,
+            category: "Sinks & Faucets",
+            subCategory: "Sinks",
+            size: pelicanSinkDraft.size ?? null,
+            imageUrl: pelicanSinkDraft.imageUrl ?? null,
+            sellPrice: null,
+          }]);
+          toast.success(`${pelicanSinkDraft.name} placed with a sink base. The faucet stays off until you add one behind the basin.`);
+        } else if (!existingFixture) {
+          const defaultSinkType: SinkType = isFarmSinkBasePaletteItem(finalCab)
+            ? "farmhouse"
+            : finalCab.width >= 33 ? "double" : "single";
           const defaultSink = makeDefaultSinkForCabinet(finalCab, room, defaultSinkType);
 	          setSinks((current) => current.some((sink) => fixtureBelongsToCabinet(sink, finalCab))
 	            ? current
 	            : [...current, defaultSink]);
 	          setSelectedSinkUid(defaultSink.uid);
-	        } else {
+        } else {
 	          setSelectedSinkUid(existingFixture.uid);
 	        }
-	        if (isFarmSinkBasePaletteItem(finalCab)) {
+        if (pelicanSinkDraft) {
+          setSinkBaseDialog(null);
+          setMobilePanel(null);
+        } else if (isFarmSinkBasePaletteItem(finalCab)) {
 	          setSinkBaseDialog(null);
 	          setRangeTopStep("choose");
 	          toast.info("Farm Sink Base added. Choose a verified apron-front sink from the Sink Selection Guide in the side panel.");
@@ -13165,7 +13372,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   }
 
   return (
-    <div className="flex flex-col h-full min-h-0">
+      <div className="flex flex-col h-full min-h-0">
+      {tabletPreviewMode && (
+        <TabletPreviewOverlay
+          mode={tabletPreviewMode}
+          onMode={setTabletPreviewMode}
+          onClose={() => setTabletPreviewMode(null)}
+        />
+      )}
       {towerDialog && <MasterTracTowerPlanner
         key={towerDialog.editGroupId ?? "new"}
         initialConfig={towerDialog.config}
@@ -13352,6 +13566,19 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         >
           <Wand2 className="h-3.5 w-3.5" /> <span className="designer-toolbar-full-label">{isTabletWorkspace ? "Peninsula" : "Peninsula Wizard"}</span><span aria-hidden="true" className="designer-toolbar-short-label">Peninsula</span>
         </Button>
+        {showTabletPreviewToggle && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            data-testid="designer-tablet-preview-toggle"
+            className="shrink-0 border-[#1a2744]/30"
+            onClick={() => setTabletPreviewMode("portrait")}
+            title="Preview the Designer at iPad portrait and landscape size"
+          >
+            Tablet preview
+          </Button>
+        )}
         {isAdmin && (
           <Button
             variant="outline"
@@ -18676,6 +18903,16 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
             data-testid="mobile-designer-action-strip"
             className="flex h-16 flex-nowrap items-stretch overflow-x-auto overscroll-x-contain px-1 pb-[env(safe-area-inset-bottom,0px)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           >
+            {roomType !== "closet" && (
+              <MobileBarButton
+                icon={<Waves className="h-5 w-5" />}
+                label="Pelican"
+                testId="mobile-pelican-trigger"
+                ariaLabel="Open Pelican Surfaces and Fixtures"
+                active={surfacesOpen}
+                onClick={openPelicanCatalog}
+              />
+            )}
             <MobileBarButton
               icon={<Wand2 className="h-5 w-5" />}
               label="Peninsula Wizard"
@@ -18890,7 +19127,25 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	            addRecommendedSurface(item, role);
 	            return;
 	          }
+	          const bathroomProfile = verifiedPelicanBathroomFixtureProfile(item.pelicanCode);
+	          const already = selectedSurfaces.some((surface) => surface.id === item.id);
+	          if (bathroomProfile) {
+	            if (already) {
+	              setFurniture((previous) => previous.filter((fixture) => fixture.pelicanProductId !== item.id));
+	              toggleSurface(item);
+	              toast.success(`${item.name} removed`);
+	              return;
+	            }
+	            if (bathroomProfile.planningOnly) {
+	              toggleSurface(item);
+	              toast.info(`${item.name} is on the materials list. Pelican's sheet for this model is planning-only, so it is not dropped into the floor plan.`);
+	              return;
+	            }
+	            placePelicanBathroomFixture(item);
+	            return;
+	          }
 	          toggleSurface(item);
+	          if (!already) toast.info(`${item.name} is on the materials list. This Pelican item has no separate 3D body to place in the room.`);
 	        }}
 	        backsplashHeightMode={backsplashHeightMode}
         onBacksplashHeightModeChange={setBacksplashHeightMode}

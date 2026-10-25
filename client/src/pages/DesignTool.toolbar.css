@@ -126,3 +126,50 @@
     flex-shrink: 0;
   }
 }
+
+/* Phone widths (under 1024) and the tablet workspace both have to keep the
+   Pelican entry on the first row. A full-width hardware control and the
+   right-aligned phone icon cluster were wrapping it out of sight, and the
+   phone bottom bar only opened the cabinet Surfaces tab — not this dialog. */
+@media (max-width: 1279px) {
+  .designer-top-toolbar {
+    flex-wrap: wrap;
+    overflow: visible;
+    max-height: none;
+  }
+
+  .designer-top-toolbar [data-testid="designer-pelican-trigger"] {
+    order: -1;
+    flex: 0 0 auto;
+    /* The compact rail sets a 30px height. A finger still has to hit this control. */
+    min-height: 44px !important;
+    min-width: 44px;
+  }
+}
+
+.designer-top-toolbar[data-tablet-workspace="true"] [data-testid="designer-pelican-trigger"] {
+  order: -1;
+  flex: 0 0 auto;
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* Beat the shared dialog's grid + sm:max-w-lg so a tablet can see the tabs
+   and scroll the product cards instead of clipping them off the screen. */
+[data-testid="surfaces-fixtures-dialog"] {
+  display: flex !important;
+  flex-direction: column !important;
+  width: min(1100px, calc(100vw - 0.75rem)) !important;
+  max-width: min(1100px, calc(100vw - 0.75rem)) !important;
+  height: min(92dvh, 860px) !important;
+  max-height: calc(100dvh - 0.75rem) !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+  padding: 0 !important;
+}
+
+[data-testid="surfaces-fixtures-dialog"] [data-slot="scroll-area"] {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}

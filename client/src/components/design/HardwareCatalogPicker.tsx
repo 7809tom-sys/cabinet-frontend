@@ -78,7 +78,7 @@ export function HardwareCatalogPicker({ value, onSelect, onClear, affiliateSlug,
         aria-label="Select real cabinet hardware"
         title={value ? `Real hardware: ${value.collection} ${value.sku} in ${value.finish}` : "Choose a Hardware Resources cabinet hardware item for the design preview"}
         onClick={() => setOpen(true)}
-        className={`min-h-8 gap-1.5 ${compact ? "h-9 w-full justify-start" : "max-w-52"}`}
+        className={`min-h-8 shrink-0 gap-1.5 ${compact ? "h-10 max-w-full justify-start" : "max-w-52"}`}
       >
         <span className="h-3 w-3 shrink-0 rounded-full border border-black/15" style={{ backgroundColor: value ? catalogHardwareFinishAccent(value.finish) : "#b8bbc0" }} />
         <Wrench className="h-3.5 w-3.5 shrink-0" />

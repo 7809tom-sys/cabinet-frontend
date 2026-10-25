@@ -7761,12 +7761,10 @@ export function sinkFixtureTransform(sink: SinkFixture) {
 export function sinkFaucetTransform(sink: SinkFixture) {
   const sinkTransform = sinkFixtureTransform(sink);
   const sinkDepth = sink.sourceDepth ?? sink.depth;
-  // New non-apron fixtures carry an explicit rear-deck datum. Preserve the
-  // pre-Part-1 offset for legacy unowned/free fixtures until a linked restore
-  // can safely derive their countertop relationship.
-  const offset = sink.faucetRearDeckOffsetIn == null
-    ? sinkDepth * 0.31
-    : sinkDepth / 2 + sink.faucetRearDeckOffsetIn;
+  // Deck-mounted faucets sit on the counter behind the basin's rear rim.
+  // Fixtures saved before the rear-deck datum existed use the same 1.25 inch
+  // setback so a legacy faucet is not drawn down inside the bowl.
+  const offset = sinkDepth / 2 + (sink.faucetRearDeckOffsetIn ?? 1.25);
   const back = sink.wallSide === "bottom"
     ? { x: 0, z: offset * INCH }
     : sink.wallSide === "left"

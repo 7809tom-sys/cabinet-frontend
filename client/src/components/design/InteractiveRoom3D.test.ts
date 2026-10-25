@@ -5416,7 +5416,7 @@ describe("interactive 3D room scene helpers", () => {
     expect(transform.z).toBeCloseTo(4.916666666666667, 12);
     expect(transform.countertopTop).toBeCloseTo(3, 12);
     expect(faucet.z).toBeLessThan(transform.z);
-    expect(faucet.z).toBeCloseTo(4.348333333333334, 12);
+    expect(faucet.z).toBeCloseTo(3.895833333333334, 12);
   });
 
   it("places an island faucet behind the sink toward the island interior instead of the user-facing cabinet front", () => {
