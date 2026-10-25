@@ -90,6 +90,7 @@ import GeminiImageProviderAdmin from "@/components/admin/GeminiImageProviderAdmi
 import ElevenLabsOperationsAdmin from "@/components/admin/ElevenLabsOperationsAdmin";
 import { ManualAiRenderQueueAdmin } from "@/components/admin/ManualAiRenderQueueAdmin";
 import StripePaymentSettingsAdmin from "@/components/admin/StripePaymentSettingsAdmin";
+import StripeInvoicesAdmin from "@/components/admin/StripeInvoicesAdmin";
 import AffiliateLiteratureAdmin from "@/components/admin/AffiliateLiteratureAdmin";
 
 // ─── Group definitions ────────────────────────────────────────────────────────
@@ -105,6 +106,7 @@ const GROUPS = [
       { value: "design-leads", label: "Design Leads" },
       { value: "quotes", label: "Countertop Quotes" },
       { value: "payments", label: "Payments" },
+      { value: "stripe-invoices", label: "Stripe Invoices" },
     ],
   },
   {
@@ -498,6 +500,7 @@ export default function AdminGroupedTabs() {
         <TabsContent value="design-leads" className="mt-6"><AdminTabHelp tab="design-leads" /><DesignLeadsAdmin /></TabsContent>
         <TabsContent value="quotes" className="mt-6"><AdminTabHelp tab="quotes" /><CountertopQuotes /></TabsContent>
         <TabsContent value="payments" className="mt-6"><AdminTabHelp tab="payments" /><PaymentsAdmin /></TabsContent>
+        <TabsContent value="stripe-invoices" className="mt-6"><AdminTabHelp tab="stripe-invoices" /><StripeInvoicesAdmin /></TabsContent>
 
         {/* People */}
         <TabsContent value="customers" className="mt-6"><AdminTabHelp tab="customers" /><CustomersAdmin /></TabsContent>

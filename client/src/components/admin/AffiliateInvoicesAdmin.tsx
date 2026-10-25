@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import { FileText, Check, Plus } from "lucide-react";
+import StripeInvoicesAdmin from "@/components/admin/StripeInvoicesAdmin";
 
 function money(cents: number) {
   return (cents / 100).toLocaleString(undefined, { style: "currency", currency: "USD" });
@@ -42,6 +43,7 @@ export default function AffiliateInvoicesAdmin() {
   const { data: invoices, isLoading } = trpc.affiliateMembership.adminListInvoices.useQuery({ status: "all" });
   const { data: affiliateList } = trpc.affiliates.adminList.useQuery();
 
+  const [affiliateFilter, setAffiliateFilter] = useState<string>("all");
   const [createForId, setCreateForId] = useState<string>("");
   const [payFor, setPayFor] = useState<{ id: number; number: string; amountCents: number } | null>(null);
   const [payMethod, setPayMethod] = useState<"stripe" | "external_card" | "manual">("external_card");
@@ -73,8 +75,14 @@ export default function AffiliateInvoicesAdmin() {
     onError: (e) => toast.error(e.message),
   });
 
-  const totals = useMemo(() => {
+  const visibleInvoices = useMemo(() => {
     const list = invoices ?? [];
+    if (affiliateFilter === "all") return list;
+    return list.filter((invoice) => String(invoice.affiliateId) === affiliateFilter);
+  }, [affiliateFilter, invoices]);
+
+  const totals = useMemo(() => {
+    const list = visibleInvoices;
     const open = list.filter((i) => i.status === "open");
     const paid = list.filter((i) => i.status === "paid");
     return {
@@ -82,7 +90,7 @@ export default function AffiliateInvoicesAdmin() {
       openCents: open.reduce((s, i) => s + i.amountCents, 0),
       paidCents: paid.reduce((s, i) => s + i.amountCents, 0),
     };
-  }, [invoices]);
+  }, [visibleInvoices]);
 
   if (isLoading) {
     return (
@@ -118,6 +126,31 @@ export default function AffiliateInvoicesAdmin() {
       </div>
 
       <Card>
+        <CardContent className="pt-6 space-y-3">
+          <div>
+            <label className="text-sm font-medium mb-1.5 block">Affiliate billing history</label>
+            <Select value={affiliateFilter} onValueChange={setAffiliateFilter}>
+              <SelectTrigger aria-label="Filter affiliate billing">
+                <SelectValue placeholder="All affiliates" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All affiliates</SelectItem>
+                {(affiliateList ?? []).map((affiliate) => (
+                  <SelectItem key={affiliate.id} value={String(affiliate.id)}>
+                    {affiliate.storeName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="mt-2 text-xs text-muted-foreground">
+              The table below is the internal $1,195 membership ledger. Stripe charges for that affiliate, including
+              customer orders and any membership payment recorded with a Stripe id, are in the payment history under it.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
         <CardContent className="pt-6 flex flex-col sm:flex-row gap-3 sm:items-end">
           <div className="flex-1">
             <label className="text-sm font-medium mb-1.5 block">Generate annual invoice for affiliate</label>
@@ -144,7 +177,7 @@ export default function AffiliateInvoicesAdmin() {
         </CardContent>
       </Card>
 
-      {!invoices || invoices.length === 0 ? (
+      {visibleInvoices.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground text-sm">
           <FileText className="h-8 w-8 mx-auto mb-2 opacity-40" />
           No membership invoices yet. Generate one above, or an affiliate can request theirs from their
@@ -166,7 +199,7 @@ export default function AffiliateInvoicesAdmin() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {invoices.map((inv) => (
+                {visibleInvoices.map((inv) => (
                   <TableRow key={inv.id}>
                     <TableCell className="font-mono text-xs">{inv.invoiceNumber}</TableCell>
                     <TableCell>{affiliateName.get(inv.affiliateId) ?? `#${inv.affiliateId}`}</TableCell>
@@ -264,6 +297,12 @@ export default function AffiliateInvoicesAdmin() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <StripeInvoicesAdmin
+        embedded
+        lockAffiliate
+        affiliateId={affiliateFilter === "all" ? undefined : Number(affiliateFilter)}
+      />
     </div>
   );
 }
