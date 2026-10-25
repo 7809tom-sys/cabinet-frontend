@@ -804,7 +804,7 @@ export function OrderReview({ lines, source, onLinesChange, onReset, initialStyl
               <FileText className="mt-0.5 h-5 w-5 shrink-0" />
               <div>
                 <p className="font-semibold">Separate installation estimate available</p>
-                <p className="mt-1">Your affiliate’s installation document is separate from the Cabinet Dealz material invoice and payment.</p>
+                <p className="mt-1">Your affiliate’s installation document is separate from the CabinetDealz material invoice and payment.</p>
                 <a className="mt-3 inline-flex font-semibold underline underline-offset-4" href={installationEstimateDocumentPath(installationDocument.data.shareToken)} target="_blank" rel="noreferrer">View installation estimate</a>
               </div>
             </div>

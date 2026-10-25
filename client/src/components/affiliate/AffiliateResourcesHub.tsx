@@ -1,5 +1,5 @@
 // AffiliateResourcesHub.tsx
-// Curated training and reference library for Cabinet Dealz affiliates.
+// Curated training and reference library for CabinetDealz affiliates.
 // Sections: Platform Guides, Sales Training, Design Training, YouTube Channels, Quick-Start Checklist.
 
 import { useState } from "react";
@@ -17,7 +17,7 @@ import {
 
 const PLATFORM_GUIDES = [
   {
-    title: "Getting Started with Cabinet Dealz",
+    title: "Getting Started with CabinetDealz",
     description: "A complete walkthrough of the affiliate dashboard — from setting up your storefront to sharing your referral link.",
     icon: Sparkles,
     badge: "Start Here",
@@ -27,7 +27,7 @@ const PLATFORM_GUIDES = [
   },
   {
     title: "How to Use the 3D Kitchen Designer",
-    description: "Step-by-step guide to using the Cabinet Dealz 3D Designer: placing cabinets, selecting door styles, generating quotes, and sharing designs with customers.",
+    description: "Step-by-step guide to using the CabinetDealz 3D Designer: placing cabinets, selecting door styles, generating quotes, and sharing designs with customers.",
     icon: Ruler,
     badge: "Design Tool",
     badgeColor: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
@@ -65,7 +65,7 @@ const PLATFORM_GUIDES = [
 
 const SALES_TRAINING = [
   {
-    title: "The Cabinet Dealz Sales Playbook",
+    title: "The CabinetDealz Sales Playbook",
     description: "A comprehensive guide to selling kitchen cabinets: understanding customer needs, presenting options, handling price objections, and closing the sale.",
     icon: TrendingUp,
     badge: "Core Guide",
@@ -150,7 +150,7 @@ const DESIGN_TRAINING = [
   },
   {
     title: "Presenting Your Design to Customers",
-    description: "How to use the Cabinet Dealz design tool to walk customers through their kitchen plan, explain pricing, and turn a design session into a sale.",
+    description: "How to use the CabinetDealz design tool to walk customers through their kitchen plan, explain pricing, and turn a design session into a sale.",
     icon: TrendingUp,
     badge: "Presentation",
     badgeColor: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
@@ -376,7 +376,7 @@ export default function AffiliateResourcesHub() {
         {/* YouTube Channels */}
         <TabsContent value="youtube" className="mt-4">
           <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm text-muted-foreground mb-3">
-            These are independently produced YouTube channels that we recommend for ongoing education. Cabinet Dealz is not affiliated with any of these creators.
+            These are independently produced YouTube channels that we recommend for ongoing education. CabinetDealz is not affiliated with any of these creators.
           </div>
           <div className="grid gap-3">
             {YOUTUBE_CHANNELS.map(c => <YoutubeCard key={c.name} {...c} />)}

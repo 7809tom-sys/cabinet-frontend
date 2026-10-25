@@ -1,4 +1,4 @@
-// Cabinet Dealz — Service Worker
+// CabinetDealz — Service Worker
 // Provides offline shell caching so the app loads even without a network.
 
 // Do not cache application HTML or navigation responses. The Designer changes

@@ -1025,7 +1025,7 @@ function AffiliateLoginFooterLink({ affiliateId }: { affiliateId: number }) {
 // ─── Admin footer link ────────────────────────────────────────────────────────
 // Only visible to logged-in admins. It opens THIS store's affiliate portal (the
 // same page the affiliate sees). A storefront link never goes to the main
-// Cabinet Dealz admin page, and nothing renders without a store id.
+// platform admin page, and nothing renders without a store id.
 function AdminFooterLink({ affiliateId, storeName }: { affiliateId?: number; storeName?: string }) {
   const { user } = useAuth();
   if (!user || user.role !== "admin" || !affiliateId) return null;

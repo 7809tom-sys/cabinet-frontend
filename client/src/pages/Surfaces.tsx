@@ -23,7 +23,7 @@ const DEPARTMENT_ICON = {
 
 export default function Surfaces({ affiliateSlug }: { affiliateSlug?: string }) {
   useSeo({
-    title: "Surfaces & Fixtures — Quartz, Flooring, Tile, Sinks & Baths | Cabinet Dealz",
+    title: "Surfaces & Fixtures — Quartz, Flooring, Tile, Sinks & Baths | CabinetDealz",
     description:
       "Shop Pelican surfaces and fixtures: quartz countertops, waterproof flooring, tile & mosaic, sinks, faucets, showers, tubs, toilets and bidets — with trade pricing.",
   });

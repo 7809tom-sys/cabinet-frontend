@@ -34,8 +34,8 @@ export default function SurfacesProduct({ slug, affiliateSlug }: { slug: string;
 
   useSeo({
     title: data
-      ? `${displayName} — Surfaces & Fixtures | Cabinet Dealz`
-      : "Product — Surfaces & Fixtures | Cabinet Dealz",
+      ? `${displayName} — Surfaces & Fixtures | CabinetDealz`
+      : "Product — Surfaces & Fixtures | CabinetDealz",
     description: data?.description?.slice(0, 160),
     type: "product",
     image: data?.imageUrl ?? undefined,

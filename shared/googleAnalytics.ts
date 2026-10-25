@@ -39,7 +39,7 @@ function normalizeHostname(hostname: string | null | undefined): string {
 /**
  * GA4 is deliberately absent from local development and temporary Manus hosts
  * so test/preview visits never enter the production shared property. Real
- * Cabinet Dealz hosts and real affiliate custom domains are included.
+ * CabinetDealz hosts and real affiliate custom domains are included.
  */
 export function shouldTrackGoogleAnalytics(input: {
   measurementId: string | null | undefined;
@@ -51,7 +51,7 @@ export function shouldTrackGoogleAnalytics(input: {
     return false;
   }
   if (hostname.endsWith(".manus.computer")) return false;
-  // This is Cabinet Dealz's configured public deployment hostname. Other
+  // This is CabinetDealz's configured public deployment hostname. Other
   // Manus-space hosts are temporary previews and must not pollute GA4.
   if (hostname === "cabinetz-dq7pucbp.manus.space") return true;
   if (hostname.endsWith(".manus.space")) return false;

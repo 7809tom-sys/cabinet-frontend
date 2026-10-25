@@ -17,7 +17,7 @@ describe("buildProductJsonLd (cabinet)", () => {
     expect(ld.name).toContain("Base Cabinet");
     expect(ld.sku).toBe("B12");
     expect(ld.mpn).toBe("B12");
-    expect(ld.brand).toEqual({ "@type": "Brand", name: "Cabinet Dealz" });
+    expect(ld.brand).toEqual({ "@type": "Brand", name: "CabinetDealz" });
     // Cabinets must NOT publish tier-gated pricing
     expect(ld.offers).toBeUndefined();
     expect(ld.url).toBe("https://cabinet-dealz.com/catalog/B12");

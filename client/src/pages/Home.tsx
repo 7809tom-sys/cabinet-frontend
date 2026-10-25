@@ -20,6 +20,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useSeo } from "@/hooks/useSeo";
 import { buildMainSiteJsonLd } from "@/lib/seo/jsonLd";
+import { formatMembershipPrice } from "@shared/affiliate";
 import { EditableText } from "@/components/admin/EditableText";
 import { HomepageWelcomeBanner } from "@/components/home/HomepageWelcomeBanner";
 
@@ -115,8 +116,14 @@ function Hero() {
 
             {/* CTAs */}
             <div className="flex flex-col sm:flex-row flex-wrap gap-3">
-              <Link href="/kitchens">
+              <Link href="/styles">
                 <Button size="lg" className="bg-[var(--color-gold)] text-[var(--color-navy)] hover:bg-[var(--color-gold)]/90 font-semibold gap-2">
+                  Shop by Style
+                  <ArrowRight className="h-4 w-4" />
+                </Button>
+              </Link>
+              <Link href="/kitchens">
+                <Button size="lg" variant="outline" className="border-white/80 text-white bg-white/5 hover:bg-white/15 hover:border-white gap-2">
                   Plan a Complete Kitchen
                   <ArrowRight className="h-4 w-4" />
                 </Button>
@@ -125,12 +132,6 @@ function Hero() {
                 <Button size="lg" variant="outline" className="border-white/80 text-white bg-white/5 hover:bg-white/15 hover:border-white gap-2">
                   <PackageOpen className="h-4 w-4" />
                   Kitchen Packages
-                  <ArrowRight className="h-4 w-4" />
-                </Button>
-              </Link>
-              <Link href="/styles">
-                <Button size="lg" variant="outline" className="border-white/80 text-white bg-white/5 hover:bg-white/15 hover:border-white gap-2">
-                  Shop by Style
                   <ArrowRight className="h-4 w-4" />
                 </Button>
               </Link>
@@ -236,6 +237,18 @@ function AboutYourKitchen() {
       </div>
     </section>
   );
+}
+
+/** Finish name for customers. Raw hex stays on the swatch, not in the caption. */
+function visibleStyleDetail(style: { color?: string | null; finish?: string | null; doorStyle?: string | null }): string {
+  for (const value of [style.color, style.finish, style.doorStyle]) {
+    const text = value
+      ?.replace(/#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})\b/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (text) return text;
+  }
+  return "Door sample";
 }
 
 // ─── Featured Door Style Color Line (from DB) ─────────────────────────────────
@@ -430,7 +443,7 @@ function FeaturedStyles() {
               >
                 {visibleStyles.map((style) => {
                   const displayName = style.featuredLabel ?? style.aliasName ?? style.ourName ?? style.styleCode ?? "Cabinet line";
-                  const detail = style.color ?? style.finish ?? style.doorStyle ?? "Door sample";
+                  const detail = visibleStyleDetail(style);
                   return (
                     <Link
                       key={style.id}
@@ -449,7 +462,7 @@ function FeaturedStyles() {
                       <h3 className="mt-3 truncate text-sm font-semibold text-foreground" title={displayName}>{displayName}</h3>
                       <p className="mt-0.5 truncate text-xs text-muted-foreground" title={detail}>{detail}</p>
                       <span className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-[var(--color-wood)] transition-all group-hover:gap-1.5">
-                        View cabinets <ArrowRight className="h-3.5 w-3.5" />
+                        View Cabinets <ArrowRight className="h-3.5 w-3.5" />
                       </span>
                     </Link>
                   );
@@ -502,7 +515,7 @@ function FeaturedStyles() {
                       <h4 className={`mt-2 font-serif font-bold text-white ${isLead ? "text-xl md:text-2xl" : "text-lg"}`}>{displayName}</h4>
                       <p className="mt-0.5 text-sm text-white/75">{[style.doorStyle, style.woodSpecies].filter(Boolean).join(" · ") || "Featured cabinet display"}</p>
                       <span className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-[var(--color-gold)] transition-all group-hover:gap-2.5">
-                        View these cabinets <ArrowRight className="h-4 w-4" />
+                        View These Cabinets <ArrowRight className="h-4 w-4" />
                       </span>
                     </div>
                   </Link>
@@ -743,16 +756,18 @@ function StyleShowcase() {
 // ─── Become an Affiliate ──────────────────────────────────────────────────────
 
 function AffiliatePromo() {
+  const { t } = useLanguage();
+  const membershipPrice = formatMembershipPrice();
   const advantages = [
     {
       icon: Star,
       title: "Your Own Branded Storefront",
-      description: "Get a custom-branded storefront powered by the full Cabinet Dealz catalog. Your name, your brand, our backend.",
+      description: "Get a custom-branded storefront powered by the full CabinetDealz catalog. Your name, your brand, our backend.",
     },
     {
       icon: Sparkles,
       title: "Earn on Every Order",
-      description: "Every kitchen or bath project that comes through your storefront earns you a commission. No inventory, no risk.",
+      description: t("home_aff_earn"),
     },
     {
       icon: Grid3X3,
@@ -784,17 +799,13 @@ function AffiliatePromo() {
         <div className="text-center mb-14">
           <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 px-4 py-1.5 text-sm font-semibold text-emerald-700 dark:text-emerald-400 mb-5">
             <Sparkles className="h-4 w-4" />
-            Affiliate Program
+            {t("home_aud_affiliates_cta")}
           </div>
           <h2 className="font-serif text-3xl md:text-5xl font-bold text-foreground mb-4">
-            <EditableText pageKey="home" field="affiliate_title" defaultValue="Become a Cabinet Dealz Affiliate">
-              {(v) => <>{v}</>}
-            </EditableText>
+            {t("home_aff_title")}
           </h2>
           <p className="text-muted-foreground text-lg md:text-xl max-w-3xl mx-auto leading-relaxed">
-            <EditableText pageKey="home" field="affiliate_subtitle" defaultValue="Launch your own branded kitchen & bath storefront — backed by the full Cabinet Dealz product catalog, trade pricing, and fulfillment network. Zero inventory. Zero risk. Maximum earning potential." multiline>
-              {(v) => <>{v}</>}
-            </EditableText>
+            {t("home_aff_sub")}
           </p>
         </div>
 
@@ -818,9 +829,7 @@ function AffiliatePromo() {
             </Button>
           </Link>
           <p className="text-sm text-muted-foreground mt-3">
-            <EditableText pageKey="home" field="affiliate_note" defaultValue="Free to join. No upfront costs. Start earning from day one.">
-              {(v) => <>{v}</>}
-            </EditableText>
+            {t("home_aff_note").split("{price}").join(membershipPrice)}
           </p>
         </div>
       </div>
@@ -960,7 +969,7 @@ function Footer() {
             <ul className="space-y-2 text-sm">
               {[
                 { label: t("nav_supplier_portal"), href: "/distributor" },
-                { label: "Become a Vendor / Supplier", href: "/become-a-vendor" },
+                { label: t("nav_become_vendor"), href: "/become-a-vendor" },
                 { label: t("home_aud_affiliates_cta"), href: "/affiliate" },
                 { label: t("nav_admin"), href: "/admin" },
               ].map((item) => (
@@ -975,7 +984,7 @@ function Footer() {
         </div>
 
         <div className="border-t border-white/10 pt-6 flex flex-col md:flex-row items-center justify-between gap-3 text-xs text-white/40">
-          <span>&copy; {new Date().getFullYear()} Cabinet Dealz. {t("footer_rights")}</span>
+          <span>&copy; {new Date().getFullYear()} CabinetDealz. {t("footer_rights")}</span>
           <span>{t("home_footer_members_only")}</span>
         </div>
       </div>

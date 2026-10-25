@@ -77,9 +77,9 @@ export default function RoomLayouts() {
     <div className="min-h-[calc(100vh-8rem)] bg-[radial-gradient(circle_at_10%_5%,hsl(var(--primary)/0.14),transparent_28%),linear-gradient(180deg,hsl(var(--muted)/0.4),transparent_48%)]">
       <section className="container py-10 sm:py-16">
         <div className="mx-auto max-w-4xl text-center">
-          <Badge className="mb-4 gap-1.5 px-3 py-1"><Sparkles className="h-3.5 w-3.5" /> Cabinet Dealz Room Planner</Badge>
+          <Badge className="mb-4 gap-1.5 px-3 py-1"><Sparkles className="h-3.5 w-3.5" /> CabinetDealz Room Planner</Badge>
           <h1 className="font-serif text-4xl font-bold tracking-tight sm:text-6xl">Start with your room.<br /><span className="text-primary">Finish with real cabinets.</span></h1>
-          <p className="mx-auto mt-5 max-w-2xl text-base leading-relaxed text-muted-foreground sm:text-lg">Choose a room shape and starter layout, then continue into the Cabinet Dealz designer. We only suggest cabinets that are active, published, available, and orderable for the distributor and door style you choose.</p>
+          <p className="mx-auto mt-5 max-w-2xl text-base leading-relaxed text-muted-foreground sm:text-lg">Choose a room shape and starter layout, then continue into the CabinetDealz designer. We only suggest cabinets that are active, published, available, and orderable for the distributor and door style you choose.</p>
           <div className="mx-auto mt-8 grid max-w-3xl grid-cols-4 gap-1 rounded-xl border bg-background/80 p-1 shadow-sm" aria-label="Guided room design progress">
             {GUIDED_ROOM_WORKFLOW_STEPS.map(({ step, label }) => {
               const { active, complete } = guidedRoomWorkflowStepState(workflowStage, step);
@@ -137,7 +137,7 @@ export default function RoomLayouts() {
                   <div className="mt-5 grid grid-cols-2 gap-3">
                     {(["width", "depth", "ceilingHeight"] as const).map((field) => <label key={field} className={field === "ceilingHeight" ? "col-span-2" : ""}><span className="mb-1.5 block text-xs font-medium capitalize text-muted-foreground">{field === "ceilingHeight" ? "Ceiling height" : `${field} (inches)`}</span><Input type="number" min={48} max={360} value={measurements[field]} onChange={(event) => setMeasurements((current) => ({ ...current, [field]: numberFrom(event.target.value, current[field]) }))} /></label>)}
                   </div>
-                  <Button className="mt-6 w-full gap-2" size="lg" disabled={!selectedShape || !selectedLayout} onClick={continueToDesigner}>Continue to designer <ArrowRight className="h-4 w-4" /></Button>
+                  <Button className="mt-6 w-full gap-2" size="lg" disabled={!selectedShape || !selectedLayout} onClick={continueToDesigner}>Continue to Designer <ArrowRight className="h-4 w-4" /></Button>
                 </CardContent>
               </Card>
               <Card className="border-emerald-200 bg-emerald-50/70"><CardContent className="flex gap-3 p-5"><ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-700" /><div><p className="text-sm font-semibold text-emerald-950">Real catalog protection</p><p className="mt-1 text-xs leading-relaxed text-emerald-800">The designer resolves suggestions against the selected distributor and door style. When an item is not orderable, the zone stays available for you to choose an eligible cabinet.</p></div></CardContent></Card>

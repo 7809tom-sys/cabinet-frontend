@@ -16,7 +16,7 @@ export type DesignerFrameCompliance = {
   reason: string | null;
 };
 
-/** All Cabinet Dealz Slim Shaker styles use a one-inch rail and stile. */
+/** All CabinetDealz Slim Shaker styles use a one-inch rail and stile. */
 export const SLIM_SHAKER_FRAME_INCHES = 1;
 
 export function isSlimShakerFrame(input: DoorFrameMetricInput | null | undefined): boolean {

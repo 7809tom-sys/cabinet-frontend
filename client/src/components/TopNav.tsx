@@ -278,7 +278,7 @@ export function TopNav() {
                 ))}
                 <div className="my-1 border-t border-border" />
                 <div className="px-4 py-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  {t("nav_more")}
+                  {t("home_footer_col_portals")}
                 </div>
                 {visiblePortalLinks.map((link) => (
                   <Link

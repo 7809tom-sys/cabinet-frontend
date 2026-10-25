@@ -1,4 +1,4 @@
-// ─── Cabinet Dealz affiliate earnings + payout math ─────────────────────────
+// ─── CabinetDealz affiliate earnings + payout math ─────────────────────────
 // Pure, deterministic helpers for computing what an affiliate earns on a
 // confirmed order and for grouping those earnings into weekly payout buckets.
 // No I/O — fully unit-testable. Money is whole CENTS; rates are fractions

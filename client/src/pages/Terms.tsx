@@ -11,18 +11,18 @@ export default function Terms() {
         <section>
           <h2 className="text-xl font-semibold mb-3">1. Acceptance of Terms</h2>
           <p className="text-muted-foreground leading-relaxed">
-            By accessing or using the Cabinet Dealz website (cabinetdealz.com) or placing an order, you agree to be
+            By accessing or using the CabinetDealz website (cabinetdealz.com) or placing an order, you agree to be
             bound by these Terms &amp; Conditions. If you do not agree, please do not use our services. These terms apply
             to all users including customers, affiliates, contractors, and vendors.
           </p>
         </section>
 
         <section>
-          <h2 className="text-xl font-semibold mb-3">2. About Cabinet Dealz</h2>
+          <h2 className="text-xl font-semibold mb-3">2. About CabinetDealz</h2>
           <p className="text-muted-foreground leading-relaxed">
-            Cabinet Dealz is operated by First Class Flooring &amp; Cabinet Design, 470 N Tamiami Trail, Osprey, FL 34229.
+            CabinetDealz is operated by First Class Flooring &amp; Cabinet Design, 470 N Tamiami Trail, Osprey, FL 34229.
             We are a marketplace platform that connects buyers with authorized cabinet distributors and manufacturers.
-            Cabinet Dealz acts as the seller of record for all transactions processed through our platform.
+            CabinetDealz acts as the seller of record for all transactions processed through our platform.
           </p>
         </section>
 
@@ -70,10 +70,10 @@ export default function Terms() {
         <section>
           <h2 className="text-xl font-semibold mb-3">7. Affiliate Program</h2>
           <ul className="list-disc pl-5 space-y-2 text-muted-foreground">
-            <li>Affiliates are independent contractors, not employees of Cabinet Dealz.</li>
+            <li>Affiliates are independent contractors, not employees of CabinetDealz.</li>
             <li>Affiliates earning $600 or more in a calendar year will receive a 1099-NEC tax form.</li>
             <li>Affiliates must provide accurate W-9 information and a valid government-issued ID before receiving payouts.</li>
-            <li>Cabinet Dealz reserves the right to terminate any affiliate account for violation of these terms or misrepresentation.</li>
+            <li>CabinetDealz reserves the right to terminate any affiliate account for violation of these terms or misrepresentation.</li>
             <li>Affiliates may not make false or misleading claims about products or pricing.</li>
           </ul>
         </section>
@@ -86,10 +86,10 @@ export default function Terms() {
           </div>
           <div className="mt-3 space-y-3 text-muted-foreground leading-relaxed">
             <p>
-              To the fullest extent permitted by applicable law, during an Affiliate’s relationship with Cabinet Dealz and for {AFFILIATE_NON_COMPETE_TERM_MONTHS} months after its termination for any reason, the Affiliate shall not use Cabinet Dealz confidential information, pricing, customer relationships, platform materials, white-label storefront technology, or design-system data to operate, assist, or promote a competing cabinet marketplace or white-label cabinet-affiliate program in the territory where the Affiliate used the Cabinet Dealz Platform.
+              To the fullest extent permitted by applicable law, during an Affiliate’s relationship with CabinetDealz and for {AFFILIATE_NON_COMPETE_TERM_MONTHS} months after its termination for any reason, the Affiliate shall not use CabinetDealz confidential information, pricing, customer relationships, platform materials, white-label storefront technology, or design-system data to operate, assist, or promote a competing cabinet marketplace or white-label cabinet-affiliate program in the territory where the Affiliate used the CabinetDealz Platform.
             </p>
             <p>
-              Upon Cabinet Dealz’s documented good-faith determination of a violation, Cabinet Dealz may immediately suspend the Affiliate’s platform access and disable its affiliate storefront. Suspension of the storefront is a platform-protection measure and does not replace any notice, dispute-resolution, or other process required by applicable law or the signed Affiliate Agreement.
+              Upon CabinetDealz’s documented good-faith determination of a violation, CabinetDealz may immediately suspend the Affiliate’s platform access and disable its affiliate storefront. Suspension of the storefront is a platform-protection measure and does not replace any notice, dispute-resolution, or other process required by applicable law or the signed Affiliate Agreement.
             </p>
             <p>
               The Affiliate agrees that a material violation may cause damages that are difficult to measure. Subject to applicable law and a signed Affiliate Agreement, the parties propose liquidated damages of ${AFFILIATE_LIQUIDATED_DAMAGES_USD.toLocaleString("en-US")} per violation as a reasonable pre-estimate of loss and not as a penalty, in addition to any other relief available at law or in equity.
@@ -101,7 +101,7 @@ export default function Terms() {
           <h2 className="text-xl font-semibold mb-3">8. Intellectual Property</h2>
           <p className="text-muted-foreground leading-relaxed">
             All content on this website — including text, images, logos, design tool software, and product data — is
-            the property of Cabinet Dealz or its licensors and is protected by copyright and trademark law. You may
+            the property of CabinetDealz or its licensors and is protected by copyright and trademark law. You may
             not reproduce, distribute, or create derivative works without our express written permission.
           </p>
         </section>
@@ -109,7 +109,7 @@ export default function Terms() {
         <section>
           <h2 className="text-xl font-semibold mb-3">9. Limitation of Liability</h2>
           <p className="text-muted-foreground leading-relaxed">
-            To the maximum extent permitted by law, Cabinet Dealz shall not be liable for any indirect, incidental,
+            To the maximum extent permitted by law, CabinetDealz shall not be liable for any indirect, incidental,
             special, or consequential damages arising from your use of our services or products. Our total liability
             for any claim shall not exceed the amount you paid for the order giving rise to the claim.
           </p>
@@ -135,7 +135,7 @@ export default function Terms() {
           <h2 className="text-xl font-semibold mb-3">12. Contact</h2>
           <p className="text-muted-foreground leading-relaxed">
             For questions about these Terms, contact us at:<br />
-            Cabinet Dealz / First Class Flooring &amp; Cabinet Design<br />
+            CabinetDealz / First Class Flooring &amp; Cabinet Design<br />
             470 N Tamiami Trail, Osprey, FL 34229<br />
             <a href="mailto:sales@cabinetdealz.com" className="text-[var(--color-gold)] hover:underline">sales@cabinetdealz.com</a><br />
             <a href="tel:+19418993288" className="text-[var(--color-gold)] hover:underline">(941) 899-3288</a>

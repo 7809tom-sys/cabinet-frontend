@@ -5,7 +5,7 @@
 // GoHighLevel / HubSpot / any inbound webhook) is normalized into this shape,
 // persisted in the `crm_events` table, and POSTed to CRM_WEBHOOK_URL.
 
-/** The kinds of events Cabinet Dealz emits to a CRM. */
+/** The kinds of events CabinetDealz emits to a CRM. */
 export const CRM_EVENT_TYPES = ["lead", "design_saved", "order_submitted"] as const;
 export type CrmEventType = (typeof CRM_EVENT_TYPES)[number];
 
@@ -18,11 +18,11 @@ export const CRM_EVENT_LABELS: Record<CrmEventType, string> = {
 
 /** White-label attribution attached to every event. */
 export interface CrmDealerRef {
-  /** Affiliate/dealer id, or null for the house / Cabinet Dealz pipeline. */
+  /** Affiliate/dealer id, or null for the house / CabinetDealz pipeline. */
   affiliateId: number | null;
   /** The affiliate's referral code, when known. */
   referralCode: string | null;
-  /** Display name resolved at send time (store name, or "Cabinet Dealz"). */
+  /** Display name resolved at send time (store name, or "CabinetDealz"). */
   dealerName: string;
 }
 
@@ -91,5 +91,5 @@ export function buildCrmWebhookPayload(args: {
 export const HOUSE_DEALER: CrmDealerRef = {
   affiliateId: null,
   referralCode: null,
-  dealerName: "Cabinet Dealz",
+  dealerName: "CabinetDealz",
 };

@@ -47,7 +47,7 @@ describe("no platform branding leaks on the affiliate storefront", () => {
     expect(src).toMatch(/if \(isAffiliateStore \|\|/);
   });
 
-  it('the storefront footer no longer renders "Powered by Cabinet Dealz"', () => {
+  it('the storefront footer no longer renders "Powered by CabinetDealz"', () => {
     const src = read("client/src/pages/Storefront.tsx");
     expect(src).not.toMatch(/footer_powered/);
   });
@@ -101,17 +101,17 @@ describe("build sheet export is white-labeled", () => {
   it("uses the affiliate's store name in the header when provided", () => {
     const csv = buildSheetCsv({ ...base, brandName: "Reaves Way Cabinet Shop" })!;
     expect(csv.split("\n")[0]).toBe("Reaves Way Cabinet Shop Build Sheet");
-    expect(csv).not.toMatch(/Cabinet Dealz/);
+    expect(csv).not.toMatch(/CabinetDealz/);
   });
 
   it("falls back to the platform name only when no brand is supplied", () => {
     const csv = buildSheetCsv(base)!;
-    expect(csv.split("\n")[0]).toBe("Cabinet Dealz Build Sheet");
+    expect(csv.split("\n")[0]).toBe("CabinetDealz Build Sheet");
   });
 
   it("ignores a blank brand name", () => {
     const csv = buildSheetCsv({ ...base, brandName: "   " })!;
-    expect(csv.split("\n")[0]).toBe("Cabinet Dealz Build Sheet");
+    expect(csv.split("\n")[0]).toBe("CabinetDealz Build Sheet");
   });
 });
 

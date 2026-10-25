@@ -16,7 +16,7 @@ const PLATFORM_AREAS = [
   {
     icon: Handshake,
     title: "Work through a local network",
-    description: "Cabinet Dealz supports the affiliate and dealer relationships that help move a project from planning toward an order.",
+    description: "CabinetDealz supports the affiliate and dealer relationships that help move a project from planning toward an order.",
   },
 ];
 
@@ -25,12 +25,12 @@ export default function About() {
     <div className="bg-background">
       <section className="border-b border-border bg-[var(--color-navy)] text-white">
         <div className="container py-16 sm:py-20">
-          <p className="mb-4 text-sm font-semibold uppercase tracking-[0.18em] text-[var(--color-gold)]">About Cabinet Dealz</p>
+          <p className="mb-4 text-sm font-semibold uppercase tracking-[0.18em] text-[var(--color-gold)]">About CabinetDealz</p>
           <h1 className="max-w-3xl font-serif text-4xl font-bold leading-tight sm:text-5xl">
             A practical place to plan a cabinet project.
           </h1>
           <p className="mt-6 max-w-2xl text-base leading-relaxed text-white/75 sm:text-lg">
-            Cabinet Dealz brings a cabinet catalog, kitchen design tools, and an affiliate and dealer network together so homeowners and trade professionals can take a project from selection to a supported next step.
+            CabinetDealz brings a cabinet catalog, kitchen design tools, and an affiliate and dealer network together so homeowners and trade professionals can take a project from selection to a supported next step.
           </p>
         </div>
       </section>
@@ -40,7 +40,7 @@ export default function About() {
           <p className="text-sm font-semibold uppercase tracking-[0.16em] text-primary">What the platform is for</p>
           <h2 className="mt-3 text-3xl font-bold text-foreground">Clearer choices, connected workflows.</h2>
           <p className="mt-4 text-base leading-relaxed text-muted-foreground">
-            A kitchen project involves many decisions. Cabinet Dealz is designed to make those decisions easier to organize by keeping product exploration, design activity, and follow-up pathways connected without requiring visitors to start from a blank page.
+            A kitchen project involves many decisions. CabinetDealz is designed to make those decisions easier to organize by keeping product exploration, design activity, and follow-up pathways connected without requiring visitors to start from a blank page.
           </p>
         </div>
 
@@ -60,7 +60,7 @@ export default function About() {
           <div className="max-w-2xl">
             <h2 className="text-3xl font-bold text-foreground">Start with your project, not a complicated process.</h2>
             <p className="mt-3 text-base leading-relaxed text-muted-foreground">
-              Browse cabinet options, begin a room layout, or contact Cabinet Dealz when you are ready to discuss a project. The platform is built to help visitors and members work from the same organized information.
+              Browse cabinet options, begin a room layout, or contact CabinetDealz when you are ready to discuss a project. The platform is built to help visitors and members work from the same organized information.
             </p>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row md:flex-col">

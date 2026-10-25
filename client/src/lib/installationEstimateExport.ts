@@ -99,6 +99,6 @@ export async function downloadInstallationEstimatePdf(data: InstallationEstimate
   addLine(`Installation subtotal: ${money(data.subtotal)}`, left, 11, true);
   if (Number(data.markupPercent ?? 0) > 0) addLine(`Markup (${money(data.markupPercent)}%): ${money(data.markupAmount)}`, left, 10);
   addLine(`Installation total: ${money(data.totalAmount)}`, left, 13, true);
-  addLine("Cabinet Dealz material pricing and invoices are separate from this installation document.", left, 8);
+  addLine("CabinetDealz material pricing and invoices are separate from this installation document.", left, 8);
   pdf.save(`installation-estimate-${safeFilePart(data.customerName ?? data.roomType)}.pdf`);
 }

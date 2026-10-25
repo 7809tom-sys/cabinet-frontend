@@ -116,11 +116,11 @@ const UPCOMING_LABELS: Record<string, string> = {
 /**
  * Plain-words reason an order cannot ship yet. An order with no affiliate has
  * nobody to give "affiliate approval", so saying that would send the vendor
- * chasing the wrong person; it is waiting on Cabinet Dealz to release it.
+ * chasing the wrong person; it is waiting on CabinetDealz to release it.
  */
 export function upcomingStageLabel(orderRailStatus: string, opts?: { hasAffiliate?: boolean }): string {
   if (orderRailStatus === "affiliate_review" && opts?.hasAffiliate === false) {
-    return "Waiting for Cabinet Dealz to release this order";
+    return "Waiting for CabinetDealz to release this order";
   }
   return UPCOMING_LABELS[orderRailStatus] ?? "Waiting for release";
 }

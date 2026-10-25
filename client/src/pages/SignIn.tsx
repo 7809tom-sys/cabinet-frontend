@@ -202,7 +202,7 @@ export default function SignIn() {
     <div className="container max-w-md py-12">
       <Card>
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl">Welcome to Cabinet Dealz</CardTitle>
+          <CardTitle className="text-2xl">Welcome to CabinetDealz</CardTitle>
           <CardDescription>
             Sign in to manage orders, pricing, and designs.
           </CardDescription>

@@ -61,7 +61,7 @@ export default function QuickBooksAdmin() {
           QuickBooks Online Integration
         </h2>
         <p className="text-sm text-muted-foreground mt-1">
-          Connect your QuickBooks Online account to automatically sync Cabinet Dealz orders as invoices.
+          Connect your QuickBooks Online account to automatically sync CabinetDealz orders as invoices.
         </p>
       </div>
 
@@ -123,7 +123,7 @@ export default function QuickBooksAdmin() {
           ) : (
             <div className="space-y-3">
               <p className="text-sm text-muted-foreground">
-                Not connected. Click below to authorize Cabinet Dealz to access your QuickBooks Online company.
+                Not connected. Click below to authorize CabinetDealz to access your QuickBooks Online company.
               </p>
               <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg p-3 text-xs text-amber-800 dark:text-amber-300 space-y-1">
                 <p className="font-semibold">Before connecting:</p>

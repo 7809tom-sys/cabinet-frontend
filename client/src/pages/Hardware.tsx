@@ -46,7 +46,7 @@ export default function Hardware() {
   const [selectedVariantIds, setSelectedVariantIds] = useState<Record<string, number>>({});
 
   useSeo({
-    title: "Cabinet Hardware Styles & Finishes | Cabinet Dealz",
+    title: "Cabinet Hardware Styles & Finishes | CabinetDealz",
     description: "Explore decorative cabinet hardware styles and select an available finish for each exact product configuration.",
   });
 

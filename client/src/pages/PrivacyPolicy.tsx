@@ -9,7 +9,7 @@ export default function PrivacyPolicy() {
         <section>
           <h2 className="text-xl font-semibold mb-3">1. Who We Are</h2>
           <p className="text-muted-foreground leading-relaxed">
-            Cabinet Dealz ("we," "us," or "our") is located at 470 N Tamiami Trail, Osprey, FL 34229. We operate the website cabinetdealz.com and related services.
+            CabinetDealz ("we," "us," or "our") is located at 470 N Tamiami Trail, Osprey, FL 34229. We operate the website cabinetdealz.com and related services.
             This Privacy Policy explains how we collect, use, and protect your personal information.
           </p>
         </section>
@@ -105,7 +105,7 @@ export default function PrivacyPolicy() {
           <h2 className="text-xl font-semibold mb-3">10. Contact</h2>
           <p className="text-muted-foreground leading-relaxed">
             For privacy-related questions, contact us at:<br />
-            Cabinet Dealz / First Class Flooring &amp; Cabinet Design<br />
+            CabinetDealz / First Class Flooring &amp; Cabinet Design<br />
             470 N Tamiami Trail, Osprey, FL 34229<br />
             <a href="mailto:sales@cabinetdealz.com" className="text-[var(--color-gold)] hover:underline">sales@cabinetdealz.com</a><br />
             <a href="tel:+19418993288" className="text-[var(--color-gold)] hover:underline">(941) 899-3288</a>

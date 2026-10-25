@@ -39,7 +39,7 @@ export default function BecomeVendor() {
   useSeo({
     title: "Become a Vendor Partner",
     description:
-      "Partner with Cabinet Dealz to put your products in front of trade buyers inside our online design and ordering platform — cabinets, hardware, countertops, appliances, flooring, lighting, and everything for the kitchen and home remodel. Apply to become a founding vendor.",
+      "Partner with CabinetDealz to put your products in front of trade buyers inside our online design and ordering platform — cabinets, hardware, countertops, appliances, flooring, lighting, and everything for the kitchen and home remodel. Apply to become a founding vendor.",
   });
 
   const [submitted, setSubmitted] = useState(false);
@@ -107,7 +107,7 @@ export default function BecomeVendor() {
         <CheckCircle2 className="mx-auto h-16 w-16 text-[var(--color-gold)]" />
         <h1 className="font-serif text-3xl font-bold mt-6 mb-3">Application Received</h1>
         <p className="text-muted-foreground mb-8">
-          Thanks for your interest in partnering with Cabinet Dealz. Our team will review your
+          Thanks for your interest in partnering with CabinetDealz. Our team will review your
           company and product categories and reach out to discuss onboarding and next steps.
         </p>
         <Button asChild variant="outline">
@@ -131,7 +131,7 @@ export default function BecomeVendor() {
               Become a <span className="text-[var(--color-gold)]">Vendor Partner</span>
             </h1>
             <p className="text-white/80 text-lg mt-4">
-              Cabinet Dealz isn't just cabinets — we're building the place where trade buyers design
+              CabinetDealz isn't just cabinets — we're building the place where trade buyers design
               and order the whole kitchen and home remodel: cabinets, hardware, countertops,
               appliances, flooring, lighting and more. We're inviting a select group of founding
               vendors to grow with us.
@@ -177,7 +177,7 @@ export default function BecomeVendor() {
       {/* Why partner */}
       <section className="container max-w-5xl py-14">
         <div className="text-center max-w-2xl mx-auto">
-          <h2 className="font-serif text-3xl font-bold">Why partner with Cabinet Dealz</h2>
+          <h2 className="font-serif text-3xl font-bold">Why partner with CabinetDealz</h2>
           <p className="text-muted-foreground mt-3">
             We handle the platform, the design experience, and buyer acquisition. You bring great
             products. Here's what partnering looks like.
@@ -220,7 +220,7 @@ export default function BecomeVendor() {
           ))}
         </div>
         <p className="text-xs text-muted-foreground text-center mt-8 max-w-2xl mx-auto">
-          Cabinet Dealz is a growth-stage platform. We don't claim specific sales or membership
+          CabinetDealz is a growth-stage platform. We don't claim specific sales or membership
           numbers yet — the opportunity here is getting in early as a founding vendor.
         </p>
       </section>

@@ -1,4 +1,4 @@
-// ─── Cabinet Dealz tiered pricing + fee engine ──────────────────────────────
+// ─── CabinetDealz tiered pricing + fee engine ──────────────────────────────
 // Pure, deterministic money math for the platform's price ladder and order fee
 // stack. No I/O, no dates — fully unit-testable. All money is whole CENTS to
 // avoid float drift; all percentages are stored as BASIS POINTS (bps) so 5% =

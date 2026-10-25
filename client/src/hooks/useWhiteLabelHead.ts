@@ -3,7 +3,7 @@ import { useEffect } from "react";
 /**
  * White-label the browser tab for an affiliate storefront.
  *
- * The base index.html ships the platform title ("Cabinet Dealz — Professional
+ * The base index.html ships the platform title ("CabinetDealz — Professional
  * Cabinet Platform") and the platform favicon. On an affiliate storefront that
  * is a branding leak: the affiliate's customers see the platform name in the
  * tab, in bookmarks, and in shared links. This hook swaps the document title,

@@ -132,7 +132,7 @@ export default function MobileApp() {
               {/* Install card */}
               <div className="bg-[#1e2e4a] border border-[#2a3a5c] rounded-2xl p-6 text-center max-w-xs w-full">
                 <p className="text-sm font-semibold text-[#d4a75a] mb-4">
-                  Cabinet Dealz App
+                  CabinetDealz App
                 </p>
                 <div className="space-y-2 text-left mb-5">
                   {["Free to install", "Works offline", "No App Store required", "iOS, Android & Desktop"].map((item) => (

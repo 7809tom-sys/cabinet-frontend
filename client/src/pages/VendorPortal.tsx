@@ -829,7 +829,7 @@ function SupplierProfilePage() {
 	            <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
 	              <div>
 	                <CardTitle>{approvedVendor.name}</CardTitle>
-	                <CardDescription className="mt-1">Keep your supplier profile current for Cabinet Dealz.</CardDescription>
+	                <CardDescription className="mt-1">Keep your supplier profile current for CabinetDealz.</CardDescription>
 	              </div>
 	              <SupplierProfileEditor vendor={approvedVendor} adminDistributorId={adminDistId} adminApprovedVendorLineId={adminApprovedVendorLineId} />
 	            </CardHeader>
@@ -4142,7 +4142,7 @@ function IntegrationsPage() {
       <CardContent className="space-y-4">
         {selected.fields.map((field) => { const label = selected.id === "netsuite" ? ({ accountNumber: "NetSuite account ID", clientId: "Consumer key", apiKey: "API key (optional)", clientSecret: "Consumer secret", username: "Token ID", password: "Token secret" } as Record<string, string>)[field] : INTEGRATION_LABELS[field] ?? field; return <div key={field} className="space-y-1"><Label>{label}</Label><Input type={["apiKey", "clientSecret", "password"].includes(field) ? "password" : "text"} placeholder={existing && ["apiKey", "clientSecret", "password"].includes(field) ? "Leave blank to keep the saved value" : `Enter ${label}`} value={values[field] ?? ""} onChange={(event) => setValues((current) => ({ ...current, [field]: event.target.value }))} /></div>; })}
         <div className="grid gap-4 sm:grid-cols-2"><div className="space-y-1"><Label>Environment</Label><Select value={values.environment ?? "production"} onValueChange={(value) => setValues((current) => ({ ...current, environment: value }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="sandbox">Sandbox / test</SelectItem><SelectItem value="production">Production</SelectItem></SelectContent></Select></div><div className="flex items-end gap-2 pb-1"><Switch checked={values.isEnabled === "true"} onCheckedChange={(checked) => setValues((current) => ({ ...current, isEnabled: String(checked) }))} /><Label>Enable connection</Label></div></div>
-        <div className="rounded-md border border-amber-200 bg-amber-50/60 p-3 text-xs text-amber-950">Credentials are encrypted before storage. Cabinet Dealz will not display or export secret values.</div>
+        <div className="rounded-md border border-amber-200 bg-amber-50/60 p-3 text-xs text-amber-950">Credentials are encrypted before storage. CabinetDealz will not display or export secret values.</div>
         {existing?.lastError && <div className="rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-800"><span className="font-semibold">Last test error:</span> {existing.lastError}</div>}
         <div className="flex flex-col gap-2 sm:flex-row"><Button className="flex-1" onClick={saveSelected} disabled={save.isPending}>{save.isPending ? "Saving…" : "Save integration settings"}</Button><Button variant="outline" className="flex-1" onClick={() => testConnection.mutate({ ...(adminDistId ? { distributorId: adminDistId } : {}), integrationId: existing?.id ?? 0 })} disabled={!existing?.id || testConnection.isPending}>{testConnection.isPending ? "Testing…" : "Test connection"}</Button></div>
         {existing?.id && <div className="rounded-md border bg-muted/30 p-3"><div className="flex items-center justify-between gap-2"><p className="text-sm font-semibold">Recent connection attempts</p>{existing.lastVerifiedAt && <span className="text-xs text-muted-foreground">Last passed {new Date(existing.lastVerifiedAt).toLocaleString()}</span>}</div>{history.isLoading ? <p className="mt-2 text-xs text-muted-foreground">Loading history…</p> : history.data?.length ? <div className="mt-2 space-y-2">{history.data.map((attempt) => <div key={attempt.id} className="flex items-start justify-between gap-3 text-xs"><div><Badge variant={attempt.status === "success" ? "default" : "destructive"}>{attempt.status}</Badge><span className="ml-2 text-muted-foreground">{attempt.message}</span></div><span className="shrink-0 text-muted-foreground">{new Date(attempt.createdAt).toLocaleString()} · {attempt.responseMs ?? "—"} ms</span></div>)}</div> : <p className="mt-2 text-xs text-muted-foreground">No connection tests recorded yet.</p>}</div>}
@@ -4187,7 +4187,7 @@ function PaymentsPage() {
                 <h4 className="text-sm font-medium">How split payments work:</h4>
                 <ol className="text-sm text-muted-foreground space-y-1 list-decimal list-inside">
                   <li>Customer places an order through an affiliate storefront</li>
-                  <li>Payment is collected by Cabinet Dealz via Stripe</li>
+                  <li>Payment is collected by CabinetDealz via Stripe</li>
                   <li>Your fulfillment cost is automatically transferred to your Stripe account</li>
                   <li>Affiliate commission and broker fee are deducted</li>
                 </ol>
@@ -4195,7 +4195,7 @@ function PaymentsPage() {
               <Button
                 className="w-full"
                 onClick={() => {
-                  toast.info("Stripe Connect onboarding will be available once Cabinet Dealz activates Stripe integration.");
+                  toast.info("Stripe Connect onboarding will be available once CabinetDealz activates Stripe integration.");
                 }}
               >
                 <CreditCard className="h-4 w-4 mr-2" />
@@ -4306,11 +4306,11 @@ function VendorLoginForm() {
           <CardTitle className="text-2xl font-bold">Vendor Portal</CardTitle>
           {inviteVendor && mode === "register" ? (
             <p className="text-muted-foreground text-sm mt-1">
-              You have a private setup link for <strong>{inviteVendor}</strong>. Choose the supplier login email and password below; the link works even if no email has been preloaded by Cabinet Dealz.
+              You have a private setup link for <strong>{inviteVendor}</strong>. Choose the supplier login email and password below; the link works even if no email has been preloaded by CabinetDealz.
             </p>
           ) : mode === "register" ? (
             <p className="text-muted-foreground text-sm mt-1">
-              Use the contact email saved on your approved vendor record, or ask Cabinet Dealz for a private supplier setup link.
+              Use the contact email saved on your approved vendor record, or ask CabinetDealz for a private supplier setup link.
             </p>
           ) : (
             <p className="text-muted-foreground text-sm mt-1">
@@ -4394,7 +4394,7 @@ function VendorLoginForm() {
                   New approved vendor? Create your password
                 </button>
                 <p className="text-xs text-muted-foreground">
-                  If your contact email is not on the Approved Vendor record, ask Cabinet Dealz for the private one-time setup link for your company.
+                  If your contact email is not on the Approved Vendor record, ask CabinetDealz for the private one-time setup link for your company.
                 </p>
               </div>
             ) : (
@@ -4411,7 +4411,7 @@ function VendorLoginForm() {
                 </button>
                 {!inviteVendor && (
                   <p className="text-xs text-muted-foreground">
-                    Use the approved contact email, or use the private one-time setup link provided by Cabinet Dealz. Either route opens only your supplier portal.
+                    Use the approved contact email, or use the private one-time setup link provided by CabinetDealz. Either route opens only your supplier portal.
                   </p>
                 )}
               </div>

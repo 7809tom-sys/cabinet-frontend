@@ -244,7 +244,7 @@ function SalesDemoInviteDialog() {
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Invite to Cabinet Dealz Sales Demo</DialogTitle>
+          <DialogTitle>Invite to CabinetDealz Sales Demo</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground">Send a guided training invitation for the Sales Demo storefront, designer, order walkthrough, and CRM. The recipient cannot access First Class or other live affiliate records.</p>

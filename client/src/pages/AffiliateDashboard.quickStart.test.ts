@@ -26,7 +26,7 @@ describe("affiliate quick storefront setup", () => {
     expect(source).toContain("Copy link");
     expect(source).toContain("Share storefront on Facebook");
     expect(source).toContain("Share storefront on LinkedIn");
-    expect(source).toContain("Your Cabinet Dealz storefront is available immediately");
+    expect(source).toContain("Your CabinetDealz storefront is available immediately");
     expect(source).toContain("custom domain can be connected separately later");
     expect(source).toContain("Open storefront");
     expect(source).toContain("Open Designer as a customer");

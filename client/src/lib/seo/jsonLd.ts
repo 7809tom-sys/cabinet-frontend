@@ -14,7 +14,7 @@
  *   in markup).
  */
 
-const SITE_NAME = "Cabinet Dealz";
+const SITE_NAME = "CabinetDealz";
 const BRAND = { "@type": "Brand", name: SITE_NAME } as const;
 
 /** Drop keys whose value is undefined, null, or an empty string. */

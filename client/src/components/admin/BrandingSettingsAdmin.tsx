@@ -20,7 +20,7 @@ interface Form {
 }
 
 const DEFAULT: Form = {
-  siteName: "Cabinet Dealz",
+  siteName: "CabinetDealz",
   logoUrl: "",
   faviconUrl: "",
   primaryColor: "#1a2b4a",
@@ -38,7 +38,7 @@ export default function BrandingSettingsAdmin() {
   useEffect(() => {
     if (data) {
       setForm({
-        siteName: data.siteName ?? "Cabinet Dealz",
+        siteName: data.siteName ?? "CabinetDealz",
         logoUrl: data.logoUrl ?? "",
         faviconUrl: data.faviconUrl ?? "",
         primaryColor: data.primaryColor ?? "#1a2b4a",
@@ -84,7 +84,7 @@ export default function BrandingSettingsAdmin() {
               <Input
                 value={form.siteName}
                 onChange={(e) => set({ siteName: e.target.value })}
-                placeholder="Cabinet Dealz"
+                placeholder="CabinetDealz"
               />
             </div>
             <div className="space-y-1.5">
@@ -229,7 +229,7 @@ export default function BrandingSettingsAdmin() {
             className="rounded-lg p-4 flex items-center justify-between"
             style={{ backgroundColor: form.primaryColor }}
           >
-            <span className="text-white font-semibold text-sm">{form.siteName || "Cabinet Dealz"}</span>
+            <span className="text-white font-semibold text-sm">{form.siteName || "CabinetDealz"}</span>
             <button
               className="px-4 py-1.5 rounded text-sm font-medium"
               style={{ backgroundColor: form.accentColor, color: form.primaryColor }}

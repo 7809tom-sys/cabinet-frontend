@@ -22,7 +22,7 @@ type DisplayMode = "neutral" | "branded" | "series";
 const MODE_HELP: Record<DisplayMode, string> = {
   neutral: "Hide the supplier. Members see a plain neutral label (e.g. \"Line A\").",
   branded: "Show the supplier's real brand name and initials to members.",
-  series: "Present this line as a Cabinet Dealz series (e.g. \"Madison Series\"); supplier stays hidden.",
+  series: "Present this line as a CabinetDealz series (e.g. \"Madison Series\"); supplier stays hidden.",
 };
 
 const MODE_LABEL_FIELD: Record<DisplayMode, string> = {
@@ -185,7 +185,7 @@ export default function LineBrandingEditor() {
                   <SelectContent>
                     <SelectItem value="neutral">Neutral label</SelectItem>
                     <SelectItem value="branded">Real brand</SelectItem>
-                    <SelectItem value="series">Cabinet Dealz series</SelectItem>
+                    <SelectItem value="series">CabinetDealz series</SelectItem>
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">{MODE_HELP[mode]}</p>

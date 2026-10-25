@@ -25,10 +25,10 @@ describe("buildSheetCsv", () => {
     expect(csv).toContain("Room:,120in x 96in");
   });
 
-  it("uses the affiliate brand rather than Cabinet Dealz on an affiliate plan", () => {
+  it("uses the affiliate brand rather than CabinetDealz on an affiliate plan", () => {
     const csv = buildSheetCsv({ ...base, brandName: "Reaves Way Cabinet Shop." })!;
     expect(csv).toContain("Reaves Way Cabinet Shop. Build Sheet");
-    expect(csv).not.toContain("Cabinet Dealz");
+    expect(csv).not.toContain("CabinetDealz");
   });
 
   it("computes line totals as unitPrice * qty", () => {

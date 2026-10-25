@@ -15,11 +15,11 @@ describe("public navigation and update notification", () => {
   it("registers the About page and exposes a working navigation route", () => {
     expect(appSource).toContain('const About = lazy(() => import("@/pages/About"))');
     expect(appSource).toContain('<Route path="/about">');
-    expect(footerSource).toContain('{ label: "About Cabinet Dealz", href: "/about" }');
+    expect(footerSource).toContain('{ label: "About CabinetDealz", href: "/about" }');
   });
 
   it("exposes a public vendor and supplier application route in the footer", () => {
-    expect(footerSource).toContain('{ label: "Become a Vendor / Supplier", href: "/become-a-vendor" }');
+    expect(footerSource).toContain('{ label: t("nav_become_vendor"), href: "/become-a-vendor" }');
     expect(appSource).toContain('<Route path="/become-a-vendor">');
   });
 

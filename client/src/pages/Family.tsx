@@ -242,7 +242,7 @@ function FamilyCabinetCard({
                   {lang === "es" ? "Cotización requerida" : "Quote required"}
                 </span>
                 <span className="block">
-                  {lang === "es" ? "Pida a su equipo la disponibilidad y el precio." : "Ask your Cabinet Dealz team for current availability and pricing."}
+                  {lang === "es" ? "Pida a su equipo la disponibilidad y el precio." : "Ask your CabinetDealz team for current availability and pricing."}
                 </span>
               </div>
             )}

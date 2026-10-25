@@ -62,7 +62,7 @@ export default function ResetPassword() {
             <LockKeyhole className="h-5 w-5" aria-hidden="true" />
           </div>
           <CardTitle className="text-2xl">Set a new password</CardTitle>
-          <CardDescription>Choose a new password for your Cabinet Dealz account.</CardDescription>
+          <CardDescription>Choose a new password for your CabinetDealz account.</CardDescription>
         </CardHeader>
         <CardContent>
           <form className="space-y-4" onSubmit={submit}>

@@ -233,7 +233,7 @@ export default function EmailSettingsAdmin() {
             <div className="space-y-1.5 sm:col-span-2">
               <Label>From address (optional)</Label>
               <Input
-                placeholder="Cabinet Dealz &lt;sales@cabinetdealz.com&gt;"
+                placeholder="CabinetDealz &lt;sales@cabinetdealz.com&gt;"
                 value={form.smtpFrom}
                 onChange={(e) => set({ smtpFrom: e.target.value })}
               />

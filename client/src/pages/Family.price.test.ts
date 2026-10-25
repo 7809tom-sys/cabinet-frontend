@@ -6,7 +6,7 @@ const source = readFileSync(new URL("./Family.tsx", import.meta.url), "utf8");
 describe("Family catalog customer pricing", () => {
   it("marks products without an approved price as quote-only rather than suggesting a price is available", () => {
     expect(source).toContain('lang === "es" ? "Cotización requerida" : "Quote required"');
-    expect(source).toContain("Ask your Cabinet Dealz team for current availability and pricing.");
+    expect(source).toContain("Ask your CabinetDealz team for current availability and pricing.");
     expect(source).not.toContain('lang === "es" ? "Ver precio" : "View pricing"');
   });
 

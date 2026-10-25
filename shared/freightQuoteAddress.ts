@@ -19,7 +19,7 @@ function normalizeText(value: string | null | undefined): string {
 }
 
 /**
- * Normalize the minimum complete delivery address required before Cabinet Dealz
+ * Normalize the minimum complete delivery address required before CabinetDealz
  * requests or authorizes freight. This is intentionally a syntax check only;
  * provider-specific address verification remains a separate workflow.
  */

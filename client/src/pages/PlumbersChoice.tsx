@@ -42,7 +42,7 @@ const TABS: { id: TabId; label: string; icon: React.ReactNode; category?: string
 
 export default function PlumbersChoice() {
   useSeo({
-    title: "StoneCreek Plumber's Choice Collection | Cabinet Dealz",
+    title: "StoneCreek Plumber's Choice Collection | CabinetDealz",
     description:
       "Everything a plumber needs for a complete bathroom install — showers, toilets, bidets, and bath fixtures. Trade pricing, one order, one shipment.",
   });

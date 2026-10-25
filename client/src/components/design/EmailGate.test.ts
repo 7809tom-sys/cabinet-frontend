@@ -18,6 +18,6 @@ describe("Design Tool email gate", () => {
     expect(source).toContain("They are not required to open the Designer.");
     expect(source).toContain("We’ll use this to save your design and materials list.");
     expect(translations).toContain('dt_gate_sub: "We’ll use your email to save your design and materials list."');
-    expect(translations).not.toContain("so a Cabinet Dealz rep can help if you'd like");
+    expect(translations).not.toContain("so a CabinetDealz rep can help if you'd like");
   });
 });

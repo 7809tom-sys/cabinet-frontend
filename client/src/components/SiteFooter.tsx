@@ -46,7 +46,7 @@ export function SiteFooter() {
             <div className="text-xs font-semibold uppercase tracking-wider text-white/40 mb-3">{t("home_footer_col_tools")}</div>
             <ul className="space-y-2 text-sm">
               {[
-                { label: "Shop Cabinets", href: "/catalog" },
+                { label: t("nav_all_cabinets"), href: "/catalog" },
                 { label: t("nav_shop_by_style"), href: "/styles" },
                 { label: "Cabinet Education", href: "/styles#profile-guide" },
                 { label: "Kitchen Planning Guide", href: "/kitchen-planning" },
@@ -73,10 +73,10 @@ export function SiteFooter() {
             <ul className="space-y-2 text-sm">
               {[
                 { label: t("nav_supplier_portal"), href: "/distributor" },
-                { label: "Become a Vendor / Supplier", href: "/become-a-vendor" },
+                { label: t("nav_become_vendor"), href: "/become-a-vendor" },
                 { label: t("home_aud_affiliates_cta"), href: "/affiliate" },
                 { label: t("nav_admin"), href: "/admin" },
-                { label: "About Cabinet Dealz", href: "/about" },
+                { label: "About CabinetDealz", href: "/about" },
                 { label: "Contact Us", href: "/contact" },
               ].map((item) => (
                 <li key={item.label}>
@@ -109,7 +109,7 @@ export function SiteFooter() {
         </div>
 
         <div className="border-t border-white/10 pt-6 flex flex-col md:flex-row items-center justify-between gap-3 text-xs text-white/40">
-          <span>&copy; {new Date().getFullYear()} Cabinet Dealz. {t("footer_rights")}</span>
+          <span>&copy; {new Date().getFullYear()} CabinetDealz. {t("footer_rights")}</span>
           <span>{t("home_footer_members_only")}</span>
         </div>
       </div>

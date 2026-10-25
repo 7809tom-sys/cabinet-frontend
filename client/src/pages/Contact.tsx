@@ -134,12 +134,12 @@ export default function Contact() {
 
       <div className="bg-muted/40 rounded-xl p-6 text-sm text-muted-foreground">
         <p className="font-semibold text-foreground mb-2">
-          <EditableText pageKey="contact" field="about_title" defaultValue="About Cabinet Dealz">
+          <EditableText pageKey="contact" field="about_title" defaultValue="About CabinetDealz">
             {(v) => <>{v}</>}
           </EditableText>
         </p>
         <p>
-          <EditableText pageKey="contact" field="about_body" defaultValue="Cabinet Dealz is the trade platform connecting cabinet professionals, contractors, interior designers, and homeowners with wholesale cabinet pricing and a full suite of design tools. We are based in Osprey, Florida and serve customers nationwide through our network of affiliate partners and distributor relationships." multiline>
+          <EditableText pageKey="contact" field="about_body" defaultValue="CabinetDealz is the trade platform connecting cabinet professionals, contractors, interior designers, and homeowners with wholesale cabinet pricing and a full suite of design tools. We are based in Osprey, Florida and serve customers nationwide through our network of affiliate partners and distributor relationships." multiline>
             {(v) => <>{v}</>}
           </EditableText>
         </p>

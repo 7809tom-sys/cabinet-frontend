@@ -154,7 +154,7 @@ export default function KitchenDiscovery({ affiliateSlug }: KitchenDiscoveryProp
                   <h3 className="font-serif text-xl font-bold">{path.name}</h3>
                   <p className="mt-2 min-h-[48px] text-sm leading-relaxed text-muted-foreground">{path.detail}</p>
                   <Link href={styleHref} className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-primary hover:underline">
-                    Explore cabinet styles <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                    Explore Cabinet Styles <ArrowRight className="h-4 w-4" aria-hidden="true" />
                   </Link>
                 </div>
               </article>
@@ -170,19 +170,19 @@ export default function KitchenDiscovery({ affiliateSlug }: KitchenDiscoveryProp
               <Palette className="h-5 w-5 text-primary" aria-hidden="true" />
               <h2 className="mt-3 font-serif text-2xl font-bold">1. Choose your look</h2>
               <p className="mt-2 text-sm leading-relaxed text-muted-foreground">Browse door styles and finishes through real room scenes before building a cabinet list.</p>
-              <Link href={styleHref} className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-primary hover:underline">Browse styles <ArrowRight className="h-4 w-4" /></Link>
+              <Link href={styleHref} className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-primary hover:underline">Browse Styles <ArrowRight className="h-4 w-4" /></Link>
             </article>
             <article className="border-t-2 border-primary pt-5">
               <PackageOpen className="h-5 w-5 text-primary" aria-hidden="true" />
               <h2 className="mt-3 font-serif text-2xl font-bold">2. Start with a package or layout</h2>
               <p className="mt-2 text-sm leading-relaxed text-muted-foreground">Use a ready-to-customize kitchen package, or begin your own layout in the 3D Designer.</p>
-              <Link href={bundleHref} className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-primary hover:underline">View packages <ArrowRight className="h-4 w-4" /></Link>
+              <Link href={bundleHref} className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-primary hover:underline">View Packages <ArrowRight className="h-4 w-4" /></Link>
             </article>
             <article className="border-t-2 border-primary pt-5">
               <Send className="h-5 w-5 text-primary" aria-hidden="true" />
               <h2 className="mt-3 font-serif text-2xl font-bold">3. Build the complete quote</h2>
               <p className="mt-2 text-sm leading-relaxed text-muted-foreground">Bring cabinets, surfaces, fixtures, and delivery information into one complete kitchen request.</p>
-              <Link href={quoteHref} className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-primary hover:underline">Request a kitchen quote <ArrowRight className="h-4 w-4" /></Link>
+              <Link href={quoteHref} className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-primary hover:underline">Request a Kitchen Quote <ArrowRight className="h-4 w-4" /></Link>
             </article>
           </div>
         </div>

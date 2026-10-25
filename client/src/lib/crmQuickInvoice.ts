@@ -39,7 +39,7 @@ export function crmQuickInvoiceTotal(lines: CrmQuickInvoiceLine[]): number {
 
 export function buildCrmQuickInvoiceHtml(invoice: CrmQuickInvoice): string {
   const total = crmQuickInvoiceTotal(invoice.lines);
-  const brand = invoice.brand ?? { storeName: "Cabinet Dealz", logoUrl: null, primaryColor: "#172033", accentColor: "#B5893D" };
+  const brand = invoice.brand ?? { storeName: "CabinetDealz", logoUrl: null, primaryColor: "#172033", accentColor: "#B5893D" };
   const primary = safeHex(brand.primaryColor, "#172033");
   const accent = safeHex(brand.accentColor, "#B5893D");
   const brandLogo = brand.logoUrl ? `<img class="logo" src="${escapeHtml(brand.logoUrl)}" alt="${escapeHtml(brand.storeName)}">` : "";

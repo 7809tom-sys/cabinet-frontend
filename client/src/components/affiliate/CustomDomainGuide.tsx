@@ -30,7 +30,7 @@ export function CustomDomainGuide({
               Point Your Custom Domain
             </CardTitle>
             <CardDescription>
-              Use your own domain instead of the default Cabinet Dealz subdomain
+              Use your own domain instead of the default CabinetDealz subdomain
             </CardDescription>
           </div>
         </div>
@@ -218,7 +218,7 @@ export function CustomDomainGuide({
               <p>Once DNS has propagated, test your custom domain:</p>
               <ul className="space-y-1 ml-4 list-disc">
                 <li>Visit your custom domain in a browser</li>
-                <li>You should see your storefront (not the main Cabinet Dealz site)</li>
+                <li>You should see your storefront (not the main CabinetDealz site)</li>
                 <li>Check that your logo, colors, and branding appear correctly</li>
               </ul>
             </div>
@@ -239,7 +239,7 @@ export function CustomDomainGuide({
           </h3>
           <div className="space-y-2 text-sm">
             <div>
-              <strong>Domain shows main Cabinet Dealz site:</strong>
+              <strong>Domain shows main CabinetDealz site:</strong>
               <ul className="ml-4 mt-1 list-disc text-gray-600 space-y-1">
                 <li>Wait 24–48 hours for full DNS propagation</li>
                 <li>Verify your DNS records are correct</li>
@@ -257,7 +257,7 @@ export function CustomDomainGuide({
             <div className="mt-2">
               <strong>SSL certificate warning:</strong>
               <ul className="ml-4 mt-1 list-disc text-gray-600 space-y-1">
-                <li>Cabinet Dealz handles SSL automatically</li>
+                <li>CabinetDealz handles SSL automatically</li>
                 <li>If you see a warning, wait a few hours and refresh</li>
               </ul>
             </div>

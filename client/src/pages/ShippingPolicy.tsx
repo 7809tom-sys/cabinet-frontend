@@ -3,7 +3,7 @@ export default function ShippingPolicy() {
     <div className="max-w-3xl mx-auto px-4 py-16">
       <h1 className="text-3xl font-bold text-foreground mb-2">Shipping Policy</h1>
       <p className="text-sm text-muted-foreground mb-10">
-        Cabinet Dealz ships orders fulfilled by our authorized vendor network. The following policies reflect
+        CabinetDealz ships orders fulfilled by our authorized vendor network. The following policies reflect
         the official terms of <strong className="text-foreground">U.S. Cabinet Depot</strong>, our primary
         vendor for framed cabinetry. Additional vendor-specific terms may apply for orders fulfilled by
         Clark &amp; Son Cabinets or Forevermark Cabinetry.
@@ -85,9 +85,9 @@ export default function ShippingPolicy() {
           </section>
         </section>
 
-        {/* ── General Cabinet Dealz Notes ── */}
+        {/* ── General CabinetDealz Notes ── */}
         <section>
-          <h2 className="text-2xl font-bold mb-4 border-b border-border pb-2">Cabinet Dealz — General Shipping Notes</h2>
+          <h2 className="text-2xl font-bold mb-4 border-b border-border pb-2">CabinetDealz — General Shipping Notes</h2>
           <ul className="list-disc pl-5 space-y-2 text-muted-foreground">
             <li>We ship to the <strong className="text-foreground">48 contiguous United States</strong> only. We do not ship to Alaska, Hawaii, Puerto Rico, or international destinations.</li>
             <li>Shipping costs are calculated based on order size, weight, delivery zip code, and the fulfilling distributor's warehouse location.</li>

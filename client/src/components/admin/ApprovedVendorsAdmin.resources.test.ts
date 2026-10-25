@@ -38,7 +38,7 @@ describe("Approved vendor PDF resources", () => {
     expect(source).toContain("Select active supplier line");
   });
 
-  it("lets administrators preview every approved vendor and send a setup invitation through Cabinet Dealz email settings", () => {
+  it("lets administrators preview every approved vendor and send a setup invitation through CabinetDealz email settings", () => {
     expect(source).toContain("Email Supplier Portal invitation");
     expect(source).toContain("trpc.vendors.emailPortalInvite.useMutation");
     expect(source).toContain("Email invite");

@@ -174,7 +174,7 @@ export function buildSheetCsv(args: BuildSheetArgs): string | null {
   if (buildRows.length === 0) return null;
   const header = ["Item Code", "Description", "Color / Finish", "Size (W x H x D)", "W (in)", "H (in)", "D (in)", "Type", "Swing", "Qty", "Unit Price", "Adj %", "Line Total"];
   const lines: string[] = [];
-  lines.push(`${brandName?.trim() || "Cabinet Dealz"} Build Sheet`);
+  lines.push(`${brandName?.trim() || "CabinetDealz"} Build Sheet`);
   lines.push(`Door Style:,${csvEscape(styleName ?? "(not selected)")}`);
   lines.push(`Pricing Tier:,${csvEscape(tier)}`);
   lines.push(`Room:,${csvEscape(`${room.width}in x ${room.depth}in`)}`);
@@ -260,7 +260,7 @@ function downloadProjectCsv(
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   const lines: string[] = [];
-  const brand = brandName?.trim() || "Cabinet Dealz";
+  const brand = brandName?.trim() || "CabinetDealz";
   const slugBrand = brand.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "project";
   lines.push(`${brand} Project Plan`);
   lines.push(`Project:,${esc(projectName)}`);
