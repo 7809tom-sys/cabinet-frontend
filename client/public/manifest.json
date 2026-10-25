@@ -1,0 +1,22 @@
+{
+  "name": "Cabinet Dealz",
+  "short_name": "CabinetDealz",
+  "description": "The trade platform for kitchen cabinets. Browse door styles, get member pricing, and design your kitchen.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f1f3d",
+  "theme_color": "#0f1f3d",
+  "orientation": "portrait-primary",
+  "scope": "/",
+  "lang": "en",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["shopping", "business", "productivity"],
+  "screenshots": []
+}

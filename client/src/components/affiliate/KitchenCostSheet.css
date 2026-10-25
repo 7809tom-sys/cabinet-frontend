@@ -1,0 +1,52 @@
+.kitchen-cost-sheet {
+  container-type: inline-size;
+  container-name: kitchen-cost-sheet;
+  width: 100%;
+  min-width: 0;
+}
+
+.kitchen-cost-sheet-heading,
+.kitchen-cost-sheet-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 2fr) minmax(0, 2fr);
+  gap: 8px;
+  padding: 10px;
+}
+
+.kitchen-cost-sheet-heading {
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.kitchen-cost-sheet-heading > span:not(:first-child) { text-align: center; }
+.kitchen-cost-sheet-row { border-bottom: 1px solid var(--border); align-items: center; }
+.kitchen-cost-sheet-row:last-child { border-bottom: 0; }
+.kitchen-cost-sheet-description { min-width: 0; overflow-wrap: anywhere; font-size: 12px; font-weight: 600; }
+
+.kitchen-cost-sheet-costs {
+  display: grid;
+  grid-template-columns: minmax(0, .7fr) minmax(0, 1fr) minmax(0, 1.1fr);
+  gap: 5px;
+  min-width: 0;
+}
+
+.kitchen-cost-sheet-cost-label { display: none; }
+.kitchen-cost-sheet-field { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
+.kitchen-cost-sheet-field > span { font-size: 10px; }
+.kitchen-cost-sheet-field input { width: 100%; min-width: 0; height: 40px; padding-inline: 5px; font-size: 12px; }
+.kitchen-cost-sheet-total { text-align: right; }
+.kitchen-cost-sheet-total output { display: flex; align-items: center; justify-content: flex-end; min-height: 40px; font-size: 12px; overflow-wrap: anywhere; }
+
+@container kitchen-cost-sheet (max-width: 639px) {
+  .kitchen-cost-sheet-heading { display: none; }
+  .kitchen-cost-sheet-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px 12px; }
+  .kitchen-cost-sheet-description { grid-column: 1 / -1; font-size: 13px; }
+  .kitchen-cost-sheet-cost-label { display: block; grid-column: 1 / -1; font-size: 11px; font-weight: 600; }
+}
+
+@container kitchen-cost-sheet (max-width: 379px) {
+  .kitchen-cost-sheet-row { grid-template-columns: minmax(0, 1fr); }
+  .kitchen-cost-sheet-costs { grid-template-columns: minmax(0, .7fr) minmax(0, 1fr) minmax(0, 1.1fr); }
+  .kitchen-cost-sheet-field input { font-size: 14px; }
+}

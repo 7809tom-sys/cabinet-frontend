@@ -1,0 +1,40 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "installCommand": "pnpm install --frozen-lockfile",
+  "buildCommand": "pnpm exec vite build",
+  "outputDirectory": "dist/public",
+  "redirects": [
+    {
+      "source": "/",
+      "has": [{ "type": "host", "value": "(?<slug>(?!(?:www|api)\\.)[a-z0-9-]+)\\.cabinetdealz\\.com" }],
+      "destination": "/store/:slug",
+      "permanent": false
+    },
+    {
+      "source": "/:path((?!api/|store/|_shell/|affiliate$|affiliate/|admin$|admin/|manus-storage/|assets/|health$|robots\\.txt$|sitemap\\.xml$|version\\.json$|og-image\\.jpg$|.*\\.(?:css|js|mjs|map|ico|png|jpe?g|gif|webp|svg|woff2?|ttf|json|txt|xml)$).+)",
+      "has": [{ "type": "host", "value": "(?<slug>(?!(?:www|api)\\.)[a-z0-9-]+)\\.cabinetdealz\\.com" }],
+      "destination": "/store/:slug/:path",
+      "permanent": false
+    }
+  ],
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "https://api.cabinetdealz.com/api/:path*" },
+    { "source": "/manus-storage/:path*", "destination": "https://api.cabinetdealz.com/manus-storage/:path*" },
+    { "source": "/robots.txt", "destination": "https://api.cabinetdealz.com/robots.txt" },
+    { "source": "/sitemap.xml", "destination": "https://api.cabinetdealz.com/sitemap.xml" },
+    { "source": "/store/:path*", "destination": "https://api.cabinetdealz.com/_shell/store/:path*" },
+    { "source": "/3d/:token", "destination": "https://api.cabinetdealz.com/_shell/3d/:token" },
+    { "source": "/:path((?!assets/|api/|manus-storage/).*)", "destination": "/index.html" }
+  ],
+  "headers": [
+    {
+      "source": "/assets/(.*)",
+      "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
+    },
+    {
+      "source": "/(index\\.html|version\\.json)",
+      "headers": [{ "key": "Cache-Control", "value": "no-store, no-cache, must-revalidate" }]
+    }
+  ]
+}
