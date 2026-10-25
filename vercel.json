@@ -19,12 +19,12 @@
     }
   ],
   "rewrites": [
-    { "source": "/api/:path*", "destination": "https://api.cabinetdealz.com/api/:path*" },
-    { "source": "/manus-storage/:path*", "destination": "https://api.cabinetdealz.com/manus-storage/:path*" },
-    { "source": "/robots.txt", "destination": "https://api.cabinetdealz.com/robots.txt" },
-    { "source": "/sitemap.xml", "destination": "https://api.cabinetdealz.com/sitemap.xml" },
-    { "source": "/store/:path*", "destination": "https://api.cabinetdealz.com/_shell/store/:path*" },
-    { "source": "/3d/:token", "destination": "https://api.cabinetdealz.com/_shell/3d/:token" },
+    { "source": "/api/:path*", "destination": "https://cabinet-backend-production-2670.up.railway.app/api/:path*" },
+    { "source": "/manus-storage/:path*", "destination": "https://cabinet-backend-production-2670.up.railway.app/manus-storage/:path*" },
+    { "source": "/robots.txt", "destination": "https://cabinet-backend-production-2670.up.railway.app/robots.txt" },
+    { "source": "/sitemap.xml", "destination": "https://cabinet-backend-production-2670.up.railway.app/sitemap.xml" },
+    { "source": "/store/:path*", "destination": "https://cabinet-backend-production-2670.up.railway.app/_shell/store/:path*" },
+    { "source": "/3d/:token", "destination": "https://cabinet-backend-production-2670.up.railway.app/_shell/3d/:token" },
     { "source": "/:path((?!assets/|api/|manus-storage/).*)", "destination": "/index.html" }
   ],
   "headers": [
