@@ -8,6 +8,7 @@ import {
 import { Link } from "wouter";
 import { getLoginUrl } from "@/const";
 import { trpc } from "@/lib/trpc";
+import { applyVendorDiscount, selectVendorPromotion, toPromotionRule } from "@shared/vendorPromotions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
@@ -817,30 +818,23 @@ type ActivePromo = {
 
 /** Find the best matching promo for a catalog item (most specific wins). */
 function findPromo(
-  item: { id: number; category: string | null },
+  item: { id: number; skuId?: number | null; category: string | null },
   styleId: number,
   distributorId: number,
   promos: ActivePromo[]
 ): ActivePromo | null {
-  const mine = promos.filter((p) => p.distributorId === distributorId);
-  // Priority: SKU-level > style-level > category-level
-  const bySkuId = mine.find((p) => Array.isArray(p.skuIds) && (p.skuIds as number[]).includes(item.id));
-  if (bySkuId) return bySkuId;
-  const byStyle = mine.find((p) => !p.skuIds && p.styleId === styleId && !p.category);
-  if (byStyle) return byStyle;
-  const byCat = mine.find((p) => !p.skuIds && !p.styleId && p.category === item.category);
-  return byCat ?? null;
+  const match = selectVendorPromotion(promos.map(toPromotionRule), {
+    distributorId,
+    skuId: item.skuId ?? null,
+    styleId,
+    category: item.category,
+  });
+  return match ? promos.find((promo) => promo.id === match.id) ?? null : null;
 }
 
-/** Apply a promo to a base price, returning the sale price. */
+/** Apply a promo on top of the normal price. */
 function applyPromoPrice(basePrice: number, promo: ActivePromo): number {
-  const val = Number(promo.discountValue);
-  if (!isFinite(val) || val <= 0) return basePrice;
-  if (promo.discountType === "percent") {
-    return Math.max(0, basePrice * (1 - val / 100));
-  }
-  // fixed_price: discountValue is the final price
-  return Math.max(0, val);
+  return applyVendorDiscount(basePrice, toPromotionRule(promo));
 }
 
 /** Compute the save % badge label for a promo. */
@@ -853,6 +847,7 @@ function promoSavePct(basePrice: number, promo: ActivePromo): number | null {
 // ─── Catalog card (with glass-door upsell on solid wall cabinets) ──────────────
 type CatalogItem = {
   id: number;
+  skuId?: number | null;
   masterCode: string;
   description: string | null;
   category: string | null;
@@ -975,6 +970,9 @@ function CatalogCard({
                 <>
                   <span className="font-serif text-lg font-bold text-emerald-600">{money(salePrice)}</span>
                   <span className="text-sm text-muted-foreground line-through">{money(basePrice)}</span>
+                  {promo && (
+                    <Badge className="text-[10px] bg-red-600 text-white hover:bg-red-600 px-1.5 py-0">{promo.name}</Badge>
+                  )}
                   {savePct != null && savePct > 0 && (
                     <Badge className="text-[10px] bg-emerald-600 text-white hover:bg-emerald-600 px-1.5 py-0">
                       Save {savePct}%

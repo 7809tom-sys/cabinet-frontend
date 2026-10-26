@@ -20,6 +20,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
+import { applyVendorDiscount, selectVendorPromotion, toPromotionRule } from "@shared/vendorPromotions";
 import { toast } from "sonner";
 import { useAuth } from "@/_core/hooks/useAuth";
 import {
@@ -152,6 +153,7 @@ function formatCatalogInches(value: string | null | undefined): string | null {
 
 interface StyleRow {
   styleId: number;
+  skuId?: number | null;
   styleCode: string;
   name: string;
   doorStyle: string | null;
@@ -207,7 +209,7 @@ type ActivePromo = {
   skuIds: unknown;
   styleId: number | null;
   category: string | null;
-  discountType: "percent" | "fixed_price";
+  discountType: "percent" | "fixed_amount" | "fixed_price";
   discountValue: string;
 };
 
@@ -216,26 +218,18 @@ function findMatchingPromo(
   row: StyleRow,
   cabinetCategory?: string | null
 ): ActivePromo | null {
-  if (!promos.length) return null;
-  for (const p of promos) {
-    if (row.distributorId != null && p.distributorId !== row.distributorId) continue;
-    // Check targeting: skuIds, styleId, or category
-    const matchesSku = p.skuIds && Array.isArray(p.skuIds) && (p.skuIds as number[]).includes(row.styleId);
-    const matchesStyle = p.styleId != null && p.styleId === row.styleId;
-    const matchesCategory = p.category != null && cabinetCategory != null && p.category === cabinetCategory;
-    const isUntargeted = !p.skuIds && p.styleId == null && !p.category;
-    if (matchesSku || matchesStyle || matchesCategory || isUntargeted) return p;
-  }
-  return null;
+  if (!promos.length || row.distributorId == null) return null;
+  const match = selectVendorPromotion(promos.map(toPromotionRule), {
+    distributorId: row.distributorId,
+    skuId: row.skuId ?? null,
+    styleId: row.styleId,
+    category: cabinetCategory ?? null,
+  });
+  return match ? promos.find((promo) => promo.id === match.id) ?? null : null;
 }
 
 function applyPromoToPrice(promo: ActivePromo, originalPrice: number): number {
-  const val = Number(promo.discountValue);
-  if (promo.discountType === "percent") {
-    return originalPrice * (1 - val / 100);
-  }
-  // fixed_price = the promo IS the new price
-  return val;
+  return applyVendorDiscount(originalPrice, toPromotionRule(promo));
 }
 
 // ─── Price card (tier price + homeowner "Compare at" strike-through) ─────────

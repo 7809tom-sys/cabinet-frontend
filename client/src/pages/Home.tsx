@@ -23,6 +23,8 @@ import { buildMainSiteJsonLd } from "@/lib/seo/jsonLd";
 import { formatMembershipPrice } from "@shared/affiliate";
 import { EditableText } from "@/components/admin/EditableText";
 import { HomepageWelcomeBanner } from "@/components/home/HomepageWelcomeBanner";
+import { PublicRoomSceneLightbox, type PublicSceneGroup } from "@/components/PublicRoomScenes";
+import { groupRoomScenes } from "@shared/vendorRoomScenes";
 
 const CDN = "/manus-storage/legacy-cdn";
 
@@ -267,8 +269,34 @@ type FeaturedDoorStyle = {
   thumbnailImageUrl?: string | null;
   doorSampleImageUrl?: string | null;
   cornerSwatchImageUrl?: string | null;
-  roomScenes?: Array<{ id: number; imageUrl: string; sortOrder: number }>;
+  roomScenes?: Array<{ id: number; imageUrl: string; sortOrder: number; sceneName?: string | null; sceneDescription?: string | null; sceneSortOrder?: number | null; isCover?: boolean | null }>;
 };
+
+function publicScenesForStyle(style: FeaturedDoorStyle): PublicSceneGroup[] {
+  return groupRoomScenes((style.roomScenes ?? []).map((photo) => ({ ...photo, styleId: style.id }))).map((scene) => ({
+    name: scene.name,
+    description: scene.description,
+    photos: scene.photos.map((photo) => ({ id: photo.id, imageUrl: photo.imageUrl, isCover: Boolean(photo.isCover) })),
+  }));
+}
+
+function FeaturedCabinetPhotos({ style, displayName }: { style: FeaturedDoorStyle; displayName: string }) {
+  const [open, setOpen] = useState(false);
+  const scenes = publicScenesForStyle(style);
+  if (scenes.length === 0) return null;
+  return (
+    <>
+      <button
+        type="button"
+        className="mt-2 inline-flex rounded-full border border-white/40 bg-black/30 px-2.5 py-1 text-xs font-semibold text-white hover:bg-black/50"
+        onClick={(event) => { event.preventDefault(); event.stopPropagation(); setOpen(true); }}
+      >
+        Photos
+      </button>
+      <PublicRoomSceneLightbox open={open} onOpenChange={setOpen} title={`${displayName} room scenes`} scenes={scenes} />
+    </>
+  );
+}
 
 function FeaturedStyles() {
   const { data: featured, isLoading } = trpc.doorStyles.featured.useQuery();
@@ -517,6 +545,7 @@ function FeaturedStyles() {
                       <span className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-[var(--color-gold)] transition-all group-hover:gap-2.5">
                         View These Cabinets <ArrowRight className="h-4 w-4" />
                       </span>
+                      <FeaturedCabinetPhotos style={style} displayName={displayName} />
                     </div>
                   </Link>
                 );
