@@ -19,8 +19,8 @@ import { useSeo } from "@/hooks/useSeo";
 import { translateSpec } from "@/lib/i18n/specPhrases";
 import { useCart } from "@/contexts/CartContext";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { normalizeCode } from "@shared/cabinetCodeMatch";
 import { familyTypeMatches } from "@/lib/familyCategoryFilters";
+import { searchCatalogItems } from "@shared/catalogCodeSearch";
 import {
   resolveStorefrontTier,
   resolveTierPrice,
@@ -54,6 +54,13 @@ interface FamilyStyle {
 interface FamilyItem extends CabinetLike {
   cabinetId: number;
   masterCode: string;
+  replacementMasterCode?: string | null;
+  aliases?: readonly string[] | string | null;
+  sku?: string | null;
+  vendorSku?: string | null;
+  altSku1?: string | null;
+  altSku2?: string | null;
+  altSku3?: string | null;
   description: string | null;
   category: string | null;
   subCategory: string | null;
@@ -390,16 +397,12 @@ export default function Family({ styleCode }: { styleCode: string }) {
 
   const visible = useMemo(() => {
     const f = TYPE_FILTERS.find((t) => t.key === activeType) ?? TYPE_FILTERS[0];
-    return items.filter((i) => {
-      if (!familyTypeMatches(f.key, i.category)) return false;
-      if (debounced) {
-        const hay = `${i.masterCode} ${i.description ?? ""} ${i.subCategory ?? ""}`.toLowerCase();
-        const normalizedCodeQuery = normalizeCode(debounced);
-        const matchesNormalizedCode = normalizedCodeQuery.length > 0 && normalizeCode(i.masterCode).includes(normalizedCodeQuery);
-        if (!hay.includes(debounced) && !matchesNormalizedCode) return false;
-      }
-      return true;
-    });
+    const typed = items.filter((i) => familyTypeMatches(f.key, i.category));
+    if (!debounced) return typed;
+    return searchCatalogItems(typed, debounced, (item, query) => {
+      const hay = `${item.masterCode} ${item.description ?? ""} ${item.subCategory ?? ""}`.toLowerCase();
+      return hay.includes(query.toLowerCase());
+    }).map((hit) => hit.item);
   }, [items, activeType, debounced]);
 
   const s = style as FamilyStyle | null;

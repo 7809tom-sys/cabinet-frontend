@@ -189,7 +189,8 @@ import {
 import { CabinetHandlesControl, DEFAULT_DESIGNER_HARDWARE_STYLE_ID } from "@/components/design/CabinetHandlesControl";
 import { HardwareCatalogPicker } from "@/components/design/HardwareCatalogPicker";
 import { isPanelPaletteItem } from "./designToolPanels";
-import { normalizePaletteSearch, matchesPaletteSearch } from "@/lib/paletteSearch";
+import { normalizePaletteSearch, matchesPaletteSearch, matchesPaletteTextOrSize } from "@/lib/paletteSearch";
+import { searchCatalogItems } from "@shared/catalogCodeSearch";
 import { adjacentDishwasherCenterIn, anchorAlongStartIn, autoBuildStraightBaseCatalog, buildFourAnchorWallGuides, canRunFourAnchorAutoBuild, isAutoBuildStraightSinkBaseCandidate, makeFourAnchorSixWallTrainingRoom, pickFourAnchorSinkBase, planFourAnchorAutoBuild, subtractAnchorRunReservations, wallLabelToEngineWallId, type FourAnchorInputs, type FourAnchorOriginCorner, type FourAnchorRunDirection } from "@/lib/fourAnchorAutoBuild";
 import { fourAnchorSinkWindow, windowOverlapsReservation } from "@/lib/fourAnchorSinkWindow";
 import { fourAnchorRangeHood, fourAnchorRangeNeedsVentilation } from "@/lib/fourAnchorRangeHood";
@@ -3669,7 +3670,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const closetGroups = useMemo(() => closetPaletteByCategory(), []);
 
   // Filtered palette
-  const filteredPalette = useMemo(() => {
+  const { items: filteredPalette, ranks: paletteMatchRanks } = useMemo(() => {
     // The "Closet parts" tab shows the modular closet system parts (panels,
     // shelves, hanging, drawers, accessories). Every other tab shows real
     // cabinets/appliances/openings exactly as in kitchen mode, so a closet can
@@ -3677,11 +3678,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     if (paletteType === "closetparts") {
       const s0 = normalizePaletteSearch(paletteSearch);
       const all = closetGroups.flatMap((g) => g.items);
-      return all.filter((c) => {
+      const items = all.filter((c) => {
         const product = masterTracProduct(c.masterCode);
         return (masterTracFinish === "all" || product?.finish === masterTracFinish)
           && matchesPaletteSearch(c, s0);
       });
+      return { items, ranks: new Map<DesignCabinet, number>() };
     }
     // The unified "Corner" tab merges corner BASE cabinets (from the base-
     // placement query) with corner WALL cabinets (from the dedicated wall query),
@@ -3708,7 +3710,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           })()
         : ((paletteCabinets as DesignCabinet[]) ?? []);
     const s = normalizePaletteSearch(paletteSearch);
-    return source
+    const typeFiltered = source
       .filter((c) => glassCabinetPlacementAllowed(c))
       .filter((c) => {
         // The unified Corner tab already merged the right items above; let them
@@ -3727,8 +3729,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         // tab in bathroom mode) so they don't duplicate across tabs.
         if (paletteType === "base") return !isCornerBase(c) && !isVanity(c);
         return true;
-      })
-      .filter((c) => matchesPaletteSearch(c, s));
+      });
+    const hits = searchCatalogItems(typeFiltered, s, (cabinet, query) => matchesPaletteTextOrSize(cabinet, query));
+    return {
+      items: hits.map((hit) => hit.item),
+      ranks: new Map(hits.map((hit) => [hit.item, hit.rank])),
+    };
 	  }, [paletteCabinets, cornerWallCabinets, cornerWallGlassVariants, paletteSearch, paletteType, styleId, appliancePalette, isCornerWall, isCornerBase, isVanity, closetGroups, masterTracFinish]);
   const usesBathroomFixturePalette = roomType === "bathroom" && paletteType === "appliance";
   const paletteHeightOptions = useMemo(
@@ -3788,7 +3794,15 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       const n = parseFloat(String(w ?? ""));
       return Number.isFinite(n) ? n : Number.POSITIVE_INFINITY;
     };
+    const searching = normalizePaletteSearch(paletteSearch).length > 0;
     const byWidth = (a: DesignCabinet, b: DesignCabinet) => {
+      if (searching) {
+        const rankA = paletteMatchRanks.get(a) ?? 9;
+        const rankB = paletteMatchRanks.get(b) ?? 9;
+        // Exact item and exact alias leads stay in that order. Partial code and
+        // size/description matches keep the printed narrow-to-wide order.
+        if (rankA !== rankB && (rankA <= 1 || rankB <= 1)) return rankA - rankB;
+      }
       const dw = wnum(a.width) - wnum(b.width);
       if (dw !== 0) return dw;
       return (a.masterCode || "").localeCompare(b.masterCode || "", undefined, { numeric: true });
@@ -3914,7 +3928,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           : t("dt_pl_grp_other"),
         items,
       })));
-  }, [heightFilteredPalette, paletteType, paletteSearch, closetGroups, masterTracFinish, isCornerBase, t]);
+  }, [heightFilteredPalette, paletteMatchRanks, paletteType, paletteSearch, closetGroups, masterTracFinish, isCornerBase, t]);
 
   useEffect(() => {
     if (catalogCollapseRequest !== paletteType || !COLLAPSIBLE_CATALOG_TABS.has(paletteType)) return;
