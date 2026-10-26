@@ -3740,11 +3740,38 @@ describe("blindCornerAutoFiller — auto 3in filler opposite the pull", () => {
 });
 
 
+describe("diagonal corner sink base (DCSB)", () => {
+  it.each([
+    '36" Diagonal Corner Base Cabinet',
+    '36" Corner Drawer Base Cabinet',
+    "",
+  ])("locks DCSB36 (%j) into a room corner as a non-blind diagonal cabinet", (description) => {
+    expect(isCornerCabinet("DCSB36", description)).toBe(true);
+    expect(isDiagonalCorner("DCSB36", description)).toBe(true);
+    expect(isBlindCorner("DCSB36", description)).toBe(false);
+    expect(requiresRoomCornerPlacement({
+      masterCode: "DCSB36",
+      description,
+      placement: "base",
+    })).toBe(true);
+  });
+
+  it("treats a diagonal corner sink description as diagonal without promoting sink fronts to cabinets", () => {
+    expect(isDiagonalCorner("X-99", "36 inch Diagonal Corner Sink Base")).toBe(true);
+    // DCFF is already a diagonal sink front; DCSF stays unclassified by code.
+    expect(isCornerCabinet("DCFF36")).toBe(false);
+    expect(isCornerCabinet("DCSF36")).toBe(false);
+    expect(isDiagonalCorner("DCFF36")).toBe(true);
+    expect(isDiagonalCorner("DCSF36")).toBe(false);
+  });
+});
+
 describe("diagonal corner footprint", () => {
   it("detects diagonal corner cabinets by code and description", () => {
     expect(isDiagonalCorner("DCW-2424")).toBe(true); // diagonal corner wall
     expect(isDiagonalCorner("WDC-24")).toBe(true);
     expect(isDiagonalCorner("DCB-36")).toBe(true); // diagonal corner base
+    expect(isDiagonalCorner("DCSB36")).toBe(true); // diagonal corner sink base
     expect(isDiagonalCorner("AW-12")).toBe(false); // angled wall END, not a room corner
     expect(isDiagonalCorner("X-99", "Diagonal Corner Wall Cabinet")).toBe(true);
     expect(isDiagonalCorner("B-24", "Base 24 inch")).toBe(false); // ordinary base
