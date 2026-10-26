@@ -20,6 +20,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
+import { applyVendorDiscount, promotionSpecificity, selectVendorPromotion, toPromotionRule, type VendorPromotionRule } from "@shared/vendorPromotions";
 import { toast } from "sonner";
 import { useAuth } from "@/_core/hooks/useAuth";
 import {
@@ -160,6 +161,7 @@ function formatCatalogInches(value: string | null | undefined): string | null {
 
 interface StyleRow {
   styleId: number;
+  skuId?: number | null;
   styleCode: string;
   name: string;
   doorStyle: string | null;
@@ -215,35 +217,63 @@ type ActivePromo = {
   skuIds: unknown;
   styleId: number | null;
   category: string | null;
-  discountType: "percent" | "fixed_price";
+  discountType: "percent" | "fixed_amount" | "fixed_price";
   discountValue: string;
 };
 
+/** Most specific applicable promotion wins. Equal scope keeps the lower price. */
+function promotionOutranks(next: VendorPromotionRule, current: VendorPromotionRule): boolean {
+  const specificity = promotionSpecificity(next) - promotionSpecificity(current);
+  if (specificity !== 0) return specificity > 0;
+  const price = applyVendorDiscount(100, next) - applyVendorDiscount(100, current);
+  if (price !== 0) return price < 0;
+  return next.id < current.id;
+}
+
+/**
+ * Every applicable promotion is considered. The discount stacks on the normal
+ * sell price using backend promotion rules (percent, fixed amount, or a legacy
+ * fixed price). Molding and Moulding are the same category. A row only uses
+ * another line's promotion when it has no distributor of its own.
+ */
 function findMatchingPromo(
   promos: ActivePromo[],
   row: StyleRow,
   cabinetCategory?: string | null
 ): ActivePromo | null {
   if (!promos.length) return null;
-  for (const p of promos) {
-    if (row.distributorId != null && p.distributorId !== row.distributorId) continue;
-    // Check targeting: skuIds, styleId, or category
-    const matchesSku = p.skuIds && Array.isArray(p.skuIds) && (p.skuIds as number[]).includes(row.styleId);
-    const matchesStyle = p.styleId != null && p.styleId === row.styleId;
-    const matchesCategory = p.category != null && cabinetCategory != null && catalogCategoryValuesEqual(p.category, cabinetCategory);
-    const isUntargeted = !p.skuIds && p.styleId == null && !p.category;
-    if (matchesSku || matchesStyle || matchesCategory || isUntargeted) return p;
+  const category = cabinetCategory ?? null;
+  const groups = new Map<number, ActivePromo[]>();
+  for (const promo of promos) {
+    if (row.distributorId != null && promo.distributorId !== row.distributorId) continue;
+    const group = groups.get(promo.distributorId) ?? [];
+    group.push(promo);
+    groups.set(promo.distributorId, group);
   }
-  return null;
+
+  let winner: { promo: ActivePromo; rule: VendorPromotionRule } | null = null;
+  for (const [distributorId, group] of groups) {
+    const rules = group.flatMap((promo) => {
+      const rule = toPromotionRule(promo);
+      if (rule.category && !catalogCategoryValuesEqual(rule.category, category)) return [];
+      return [{ ...rule, category: rule.category ? category : null, distributorId }];
+    });
+    const match = selectVendorPromotion(rules, {
+      distributorId,
+      skuId: row.skuId ?? null,
+      styleId: row.styleId,
+      category,
+    });
+    if (!match) continue;
+    const promo = group.find((item) => item.id === match.id);
+    if (!promo) continue;
+    if (!winner || promotionOutranks(match, winner.rule)) winner = { promo, rule: match };
+  }
+  return winner?.promo ?? null;
 }
 
 function applyPromoToPrice(promo: ActivePromo, originalPrice: number): number {
-  const val = Number(promo.discountValue);
-  if (promo.discountType === "percent") {
-    return originalPrice * (1 - val / 100);
-  }
-  // fixed_price = the promo IS the new price
-  return val;
+  return applyVendorDiscount(originalPrice, toPromotionRule(promo));
 }
 
 // ─── Price card (tier price + homeowner "Compare at" strike-through) ─────────
