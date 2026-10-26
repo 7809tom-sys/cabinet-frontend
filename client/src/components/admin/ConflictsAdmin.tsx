@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { canonicalMouldingLabel, selectedCatalogOption } from "@shared/catalogCategorySpelling";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -99,7 +100,8 @@ function EditConflictDialog({
   // free-text entry so the dropdown still works.
   const knownCats = categoryOptions ?? [];
   const [customCat, setCustomCat] = useState(false);
-  const categoryIsKnown = form.category === "" || knownCats.includes(form.category);
+  const matchedCategory = selectedCatalogOption(knownCats, form.category);
+  const categoryIsKnown = form.category === "" || matchedCategory != null;
   const showCustomCat = customCat || (!categoryIsKnown && form.category !== "");
 
   const update = trpc.cabinets.updateConflictCabinet.useMutation({
@@ -167,7 +169,7 @@ function EditConflictDialog({
                     size="sm"
                     onClick={() => {
                       setCustomCat(false);
-                      if (!knownCats.includes(form.category)) set("category", knownCats[0] ?? "");
+                      if (!selectedCatalogOption(knownCats, form.category)) set("category", knownCats[0] ?? "");
                     }}
                   >
                     List
@@ -175,7 +177,7 @@ function EditConflictDialog({
                 </div>
               ) : (
                 <Select
-                  value={knownCats.includes(form.category) ? form.category : ""}
+                  value={matchedCategory ?? ""}
                   onValueChange={(v) => {
                     if (v === CUSTOM_CATEGORY) {
                       setCustomCat(true);
@@ -191,7 +193,7 @@ function EditConflictDialog({
                   <SelectContent>
                     {knownCats.map((cat) => (
                       <SelectItem key={cat} value={cat}>
-                        {cat}
+                        {canonicalMouldingLabel(cat)}
                       </SelectItem>
                     ))}
                     <SelectItem value={CUSTOM_CATEGORY}>+ New category…</SelectItem>
@@ -345,8 +347,8 @@ export default function ConflictsAdmin() {
                 <p className="text-foreground">{c.description}</p>
                 <div className="flex flex-wrap gap-x-6 gap-y-1 text-muted-foreground">
                   <span>
-                    <span className="font-medium text-foreground">Category:</span> {c.category}
-                    {c.subCategory ? ` / ${c.subCategory}` : ""}
+                    <span className="font-medium text-foreground">Category:</span> {canonicalMouldingLabel(c.category)}
+                    {c.subCategory ? ` / ${canonicalMouldingLabel(c.subCategory)}` : ""}
                   </span>
                   <span>
                     <span className="font-medium text-foreground">Size:</span> {fmtDim(c.width)}W ×{" "}

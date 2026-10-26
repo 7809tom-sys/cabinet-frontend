@@ -12,4 +12,15 @@ describe("nonEmptyStyleCategories", () => {
   it("keeps category labels hidden until style availability has loaded", () => {
     expect(nonEmptyStyleCategories(["Base", "Wall"], undefined)).toEqual([]);
   });
+
+  it("treats Molding and Moulding as one populated category", () => {
+    expect(nonEmptyStyleCategories(
+      ["Base", "Moulding", "Molding"],
+      { Molding: 6 },
+    )).toEqual(["Moulding"]);
+    expect(nonEmptyStyleCategories(
+      ["Base", "Molding"],
+      { Moulding: 2 },
+    )).toEqual(["Molding"]);
+  });
 });

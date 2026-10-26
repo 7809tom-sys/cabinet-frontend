@@ -417,7 +417,7 @@ export function cabinetDrawingType(cab: CabinetLike): CabinetDrawingType {
   if (
     cat === "accessory" ||
     (!isRealCabinetFamily &&
-      /molding|filler|shelf|light rail|base rail|toe kick|scribe|valance/.test(
+      /moulding|molding|filler|shelf|light rail|base rail|toe kick|scribe|valance/.test(
         hay,
       ))
   ) {

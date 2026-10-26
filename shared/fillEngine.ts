@@ -60,7 +60,7 @@ function isStraightRunCabinet(c: FillCabinet): boolean {
   if (c.placement === "appliance") return false;
   if (c.isCornerCabinet) return false;
   const hay = `${c.subCategory ?? ""} ${c.description ?? ""} ${c.masterCode ?? ""}`.toLowerCase();
-  if (/\bfiller\b|\bscribe\b|\bpanel\b|\bskin\b|\bmolding\b|toe kick|crown/.test(hay)) return false;
+  if (/\bfiller\b|\bscribe\b|\bpanel\b|\bskin\b|\bmoulding\b|\bmolding\b|toe kick|crown/.test(hay)) return false;
   if (/blind corner|easy reach|lazy susan|corner/.test(hay)) return false;
   // Exclude accessory "fronts"/display items that are not real storage boxes
   // (e.g. "Hanging Display Door & Drawer Front", end panels, false fronts).
