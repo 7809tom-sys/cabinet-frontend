@@ -5,7 +5,7 @@ import { sendGoogleAnalyticsPageView } from "@/lib/googleAnalytics";
 
 /**
  * Shared application-root GA4 tracker. Rendering it outside route layouts makes
- * the configured tag apply equally to Cabinet Dealz and affiliate storefronts.
+ * the configured tag apply equally to CabinetDealz and affiliate storefronts.
  */
 export function GoogleAnalyticsTracker() {
   const [location] = useLocation();

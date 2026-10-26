@@ -51,8 +51,8 @@ export default function SurfacesCategory({ slug, affiliateSlug }: { slug: string
 
   useSeo({
     title: category
-      ? `${pelicanCategoryLabel(category)} — Surfaces & Fixtures | Cabinet Dealz`
-      : "Surfaces & Fixtures | Cabinet Dealz",
+      ? `${pelicanCategoryLabel(category)} — Surfaces & Fixtures | CabinetDealz`
+      : "Surfaces & Fixtures | CabinetDealz",
     description: category ? CATEGORY_BLURB[category] : undefined,
   });
 

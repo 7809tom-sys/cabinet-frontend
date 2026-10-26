@@ -66,7 +66,7 @@ function AffiliateLanding() {
           <div className="max-w-3xl">
             <span className="inline-flex items-center gap-2 rounded-full border border-white/20 px-4 py-1.5 text-sm font-medium">
               <Sparkles className="h-4 w-4 text-[var(--color-gold)]" />
-              Cabinet Dealz Affiliate Program
+              CabinetDealz Affiliate Program
             </span>
             <h1 className="font-serif text-4xl md:text-5xl lg:text-6xl font-bold mt-6 leading-tight">
               Launch Your Own{" "}
@@ -105,7 +105,7 @@ function AffiliateLanding() {
           </h2>
           <p className="text-muted-foreground text-lg mt-4">
             Built independently, this is a multi-thousand-dollar project plus a developer on retainer.
-            With Cabinet Dealz, you get it all for one annual fee.
+            With CabinetDealz, you get it all for one annual fee.
           </p>
         </div>
 
@@ -823,7 +823,7 @@ function CredentialsPanel({ affiliate, storeUrl, refLink, onCopy }: CredentialsP
                 <Copy className="h-4 w-4" />
               </Button>
             </div>
-            <p className="text-xs text-muted-foreground">Sign in with your Cabinet Dealz account to access this dashboard.</p>
+            <p className="text-xs text-muted-foreground">Sign in with your CabinetDealz account to access this dashboard.</p>
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs text-muted-foreground">Referral Code</Label>
@@ -1456,7 +1456,7 @@ function CustomizeTab({
               {websiteImport.isPending ? "Reading website…" : "Create draft"}
             </Button>
           </div>
-          <p className="mt-2 text-xs leading-relaxed text-muted-foreground">Paste a public website or subdomain. Cabinet Dealz creates a private draft of visible business details and source-attributed testimonials; nothing changes on your storefront until you apply it.</p>
+          <p className="mt-2 text-xs leading-relaxed text-muted-foreground">Paste a public website or subdomain. CabinetDealz creates a private draft of visible business details and source-attributed testimonials; nothing changes on your storefront until you apply it.</p>
 
           {websiteImportDraft && (
             <div className="mt-4 space-y-3 rounded-md border border-border bg-card p-3" data-testid="affiliate-website-import-draft">
@@ -1472,7 +1472,7 @@ function CustomizeTab({
               {websiteImportDraft.testimonials.length > 0 && (
                 <fieldset className="space-y-2 border-t border-border pt-3">
                   <legend className="px-1 text-sm font-medium">Testimonials to publish</legend>
-                  <p className="text-xs text-muted-foreground">Only selected quotes will be published. These remain attributed to the imported website; Cabinet Dealz does not generate reviews.</p>
+                  <p className="text-xs text-muted-foreground">Only selected quotes will be published. These remain attributed to the imported website; CabinetDealz does not generate reviews.</p>
                   {websiteImportDraft.testimonials.map((item, index) => {
                     const checked = selectedImportedTestimonialQuotes.includes(item.quote);
                     return <label key={`${item.sourceUrl}-${index}`} className="flex cursor-pointer items-start gap-2 rounded border border-border p-2 text-sm"><input type="checkbox" className="mt-1" checked={checked} onChange={(event) => setSelectedImportedTestimonialQuotes((current) => event.target.checked ? [...current, item.quote] : current.filter((quote) => quote !== item.quote))} /><span><span className="block">“{item.quote}”</span>{item.author && <span className="mt-1 block text-xs text-muted-foreground">— {item.author}</span>}</span></label>;
@@ -1537,7 +1537,7 @@ function CustomizeTab({
 
         {showLaunchSuccess && (
           <div data-testid="affiliate-publish-success" className="rounded-lg border border-emerald-300 bg-emerald-50 p-4 text-emerald-950 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-50">
-            <div className="flex gap-2"><CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" /><div><p className="font-semibold">Your site is live now</p><p className="mt-0.5 text-sm">Your Cabinet Dealz storefront is available immediately at <a href={storefrontUrl} target="_blank" rel="noreferrer" className="font-medium underline underline-offset-2">{storefrontUrl}</a>.</p><p className="mt-1 text-xs text-emerald-900/80 dark:text-emerald-100/80">A custom domain can be connected separately later, without delaying this launch.</p></div></div>
+            <div className="flex gap-2"><CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" /><div><p className="font-semibold">Your site is live now</p><p className="mt-0.5 text-sm">Your CabinetDealz storefront is available immediately at <a href={storefrontUrl} target="_blank" rel="noreferrer" className="font-medium underline underline-offset-2">{storefrontUrl}</a>.</p><p className="mt-1 text-xs text-emerald-900/80 dark:text-emerald-100/80">A custom domain can be connected separately later, without delaying this launch.</p></div></div>
             <div className="mt-3 flex flex-wrap gap-2">
               <Button type="button" variant="outline" size="sm" onClick={copyStorefrontLink} className="gap-1.5"><Copy className="h-3.5 w-3.5" /> Copy link</Button>
               <Button type="button" variant="outline" size="sm" onClick={shareStorefrontLink} className="gap-1.5"><Share2 className="h-3.5 w-3.5" /> Share</Button>

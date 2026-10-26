@@ -43,7 +43,7 @@ export default function AffiliateSetup() {
     <main className="min-h-screen bg-muted/30 flex items-center justify-center p-6">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle>Set up your Cabinet Dealz login</CardTitle>
+          <CardTitle>Set up your CabinetDealz login</CardTitle>
           <CardDescription>{details.data?.storeName ?? "Your affiliate store"} · {details.data?.email ?? ""}</CardDescription>
         </CardHeader>
         <CardContent>

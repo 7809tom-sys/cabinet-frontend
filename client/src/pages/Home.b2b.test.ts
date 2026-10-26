@@ -6,10 +6,18 @@ const homeSource = readFileSync(resolve(process.cwd(), "client/src/pages/Home.ts
 const welcomeSource = readFileSync(resolve(process.cwd(), "client/src/components/home/HomepageWelcomeBanner.tsx"), "utf8");
 
 describe("B2B homepage hierarchy", () => {
-  it("keeps complete-kitchen planning primary and uses Kitchen Packages as the single offering label", () => {
-    expect(homeSource).toContain('Plan a Complete Kitchen');
-    expect(homeSource).toContain('bg-[var(--color-gold)] text-[var(--color-navy)]');
-    expect(homeSource).toContain('Kitchen Packages');
+  it("leads the hero with Shop by Style and uses Kitchen Packages as the single offering label", () => {
+    const heroButtons = homeSource.slice(homeSource.indexOf("{/* CTAs */}"), homeSource.indexOf("kitchen lifestyle collage"));
+    expect(heroButtons.indexOf('href="/styles"')).toBeGreaterThan(-1);
+    expect(heroButtons.indexOf('href="/styles"')).toBeLessThan(heroButtons.indexOf('href="/kitchens"'));
+    expect(heroButtons.indexOf('href="/kitchens"')).toBeLessThan(heroButtons.indexOf('href="/bundles"'));
+    expect(heroButtons.indexOf('href="/bundles"')).toBeLessThan(heroButtons.indexOf('href="/design"'));
+    expect(heroButtons.indexOf('href="/design"')).toBeLessThan(heroButtons.indexOf('href="/closet"'));
+    const shopByStyle = heroButtons.slice(heroButtons.indexOf('href="/styles"'), heroButtons.indexOf('href="/kitchens"'));
+    expect(shopByStyle).toContain("Shop by Style");
+    expect(shopByStyle).toContain('bg-[var(--color-gold)] text-[var(--color-navy)]');
+    expect(heroButtons).toContain('Plan a Complete Kitchen');
+    expect(heroButtons).toContain('Kitchen Packages');
     expect(homeSource).not.toContain('Bundle Deals');
     expect(homeSource).toContain('variant="outline" className="border-white/80 text-white');
     expect(welcomeSource).toContain('variant="ghost"');

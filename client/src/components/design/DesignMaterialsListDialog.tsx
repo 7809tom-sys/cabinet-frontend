@@ -59,7 +59,7 @@ export function DesignMaterialsListDialog({
   const rowMissingPrice = (row: MaterialsListRow) => (row.sourceUids ?? []).some((uid) => missingPriceUids?.has(uid));
   const rowHasConflict = (row: MaterialsListRow) => (row.sourceUids ?? []).some((uid) => conflictUids?.has(uid));
   const visibleRows = showConflictsOnly ? rows.filter(rowHasConflict) : rows;
-  const title = `${brandName?.trim() || "Cabinet Dealz"} Materials & Parts List`;
+  const title = `${brandName?.trim() || "CabinetDealz"} Materials & Parts List`;
   const cabinetRows = visibleRows.filter((row) => row.section === "cabinet");
   const otherRows = visibleRows.filter((row) => row.section === "other");
   const unavailableCabinetCount = visibleRows.filter((row) => row.priceStatus === "unavailable").length;

@@ -13,7 +13,7 @@ import { useEffect } from "react";
  * pulling in react-helmet.
  */
 
-const SITE_NAME = "Cabinet Dealz";
+const SITE_NAME = "CabinetDealz";
 const DEFAULT_IMAGE =
   "https://www.cabinetdealz.com/og-image.jpg";
 

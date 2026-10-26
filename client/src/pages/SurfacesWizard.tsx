@@ -92,7 +92,7 @@ const PREVIEW_EXAMPLE = "/manus-storage/wizard_preview_example_f9579597.png";
 
 export default function SurfacesWizard() {
   useSeo({
-    title: "Build Your Kitchen — Surfaces & Fixtures Wizard | Cabinet Dealz",
+    title: "Build Your Kitchen — Surfaces & Fixtures Wizard | CabinetDealz",
     description:
       "A guided flow to choose flooring, backsplash tile, quartz countertops, sinks and faucets — with square-footage box math and an AI photoreal preview of your kitchen.",
   });

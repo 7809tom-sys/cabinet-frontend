@@ -2,7 +2,7 @@
  * AdminEditField — inline editable text for admin users.
  *
  * Usage:
- *   <AdminEditField pageKey="home" field="hero_title" defaultValue="Welcome to Cabinet Dealz">
+ *   <AdminEditField pageKey="home" field="hero_title" defaultValue="Welcome to CabinetDealz">
  *     {(value) => <h1>{value}</h1>}
  *   </AdminEditField>
  *

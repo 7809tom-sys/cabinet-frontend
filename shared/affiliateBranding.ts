@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Affiliate white-label branding + markup resolution (pure, unit-tested)
 //
-// An affiliate sells the central Cabinet Dealz catalog under their OWN brand:
+// An affiliate sells the central CabinetDealz catalog under their OWN brand:
 //   • Brand NAME override — they can rename a door style (e.g. central "Aspen
 //     White" → their "Coastal White") without touching the shared catalog.
 //   • MARKUP — they set a default markup % applied on top of their affiliate

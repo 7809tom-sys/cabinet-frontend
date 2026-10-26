@@ -114,7 +114,7 @@ export function sellPriceForTier(
   tier: PricingTier,
 ): number | null {
   // Some suppliers publish a verified customer-facing list and explicitly do
-  // not use Cabinet Dealz tier markup (for example the staged AltaEuro line).
+  // not use CabinetDealz tier markup (for example the staged AltaEuro line).
   // Keep that printed value exact. Cost-plus-tier suppliers such as USCD still
   // follow the normal landed-cost × tier multiplier path below.
   if (row.retailPriceBasis === "source_list") {

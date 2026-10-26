@@ -73,7 +73,7 @@ export function AnalyticsAdmin() {
             <BarChart3 className="h-5 w-5" /> Google Analytics 4
           </CardTitle>
           <CardDescription>
-            Save one shared GA4 Measurement ID to track Cabinet Dealz and every live affiliate storefront.
+            Save one shared GA4 Measurement ID to track CabinetDealz and every live affiliate storefront.
             The tag is not loaded on local development or temporary Manus preview hosts.
           </CardDescription>
         </CardHeader>

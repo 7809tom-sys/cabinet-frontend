@@ -104,7 +104,7 @@ function fallbackBanner(onReload: () => void) {
   ].join(";");
 
   const text = document.createElement("span");
-  text.textContent = "A Cabinet Dealz update is ready.";
+  text.textContent = "A CabinetDealz update is ready.";
 
   const btn = document.createElement("button");
   btn.textContent = "Refresh";

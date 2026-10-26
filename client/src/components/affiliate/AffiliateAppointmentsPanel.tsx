@@ -175,7 +175,7 @@ export function AffiliateAppointmentsPanel() {
       <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800">
         <p className="font-medium mb-1">How it works</p>
         <p>
-          Customers visiting your storefront can book a free design consultation. The session is handled by a Cabinet Dealz designer
+          Customers visiting your storefront can book a free design consultation. The session is handled by a CabinetDealz designer
           who will help them plan their kitchen and guide them to the right cabinets for their project.
           You'll see all bookings here in real time.
         </p>

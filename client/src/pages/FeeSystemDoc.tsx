@@ -14,7 +14,7 @@ import {
 } from "@shared/pricing";
 
 /**
- * Cabinet Dealz — Fee System reference sheet (admin/owner).
+ * CabinetDealz — Fee System reference sheet (admin/owner).
  *
  * A self-contained, print-optimized document that lays out the complete price
  * ladder and order fee stack with a worked example, using the LIVE platform

@@ -137,7 +137,7 @@ describe("Vendor Portal Featured Styles and Shipping", () => {
     expect(profile).toContain("Supply-line identity, approval, and pricing stay protected.");
     expect(profile).toContain("disabled={save.isPending || upload.isPending}");
     expect(source).toContain("Edit Supplier Profile");
-    expect(source).toContain("Keep your supplier profile current for Cabinet Dealz.");
+    expect(source).toContain("Keep your supplier profile current for CabinetDealz.");
     expect(profile).toContain('accept="application/pdf"');
     expect(profile).toContain("PDF files must be between 1 byte and 12 MB.");
   });
@@ -159,7 +159,7 @@ describe("Vendor Portal Featured Styles and Shipping", () => {
     const login = source.slice(source.indexOf("function VendorLoginForm"), source.indexOf("// ─── Main Vendor Portal Component"));
     expect(login).toContain("New approved vendor? Create your password");
     expect(login).toContain("private setup link for");
-    expect(login).toContain("works even if no email has been preloaded by Cabinet Dealz");
+    expect(login).toContain("works even if no email has been preloaded by CabinetDealz");
     expect(login).toContain("private one-time setup link");
     expect(login).toContain("Either route opens only your supplier portal.");
   });

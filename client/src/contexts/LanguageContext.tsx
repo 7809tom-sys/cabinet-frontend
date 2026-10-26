@@ -1,4 +1,4 @@
-// Global language context (EN / ES / ZH) for the entire Cabinet Dealz site.
+// Global language context (EN / ES / ZH) for the entire CabinetDealz site.
 //
 // This is the single source of truth for the visitor's language choice. It
 // reuses the SAME localStorage key, `?lang=` deep-link rule, and browser-

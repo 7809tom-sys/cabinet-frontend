@@ -41,14 +41,14 @@ export default function SharedRoom3D({ token }: { token: string }) {
     return <div className="flex min-h-[60vh] items-center justify-center"><Spinner className="h-8 w-8 text-primary" /></div>;
   }
   if (!configuration || !shared) {
-    return <div className="mx-auto max-w-lg px-4 py-20 text-center"><Link2 className="mx-auto mb-4 h-10 w-10 text-muted-foreground" /><h1 className="text-2xl font-semibold">This 3D room link is unavailable</h1><p className="mt-2 text-sm text-muted-foreground">The share link may be incomplete or no longer available.</p><Button asChild className="mt-6"><Link href="/design">Start a design</Link></Button></div>;
+    return <div className="mx-auto max-w-lg px-4 py-20 text-center"><Link2 className="mx-auto mb-4 h-10 w-10 text-muted-foreground" /><h1 className="text-2xl font-semibold">This 3D room link is unavailable</h1><p className="mt-2 text-sm text-muted-foreground">The share link may be incomplete or no longer available.</p><Button asChild className="mt-6"><Link href="/design">Start a Design</Link></Button></div>;
   }
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 sm:py-12">
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#a87f33]">Shared Cabinet Dealz design</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#a87f33]">Shared CabinetDealz design</p>
           <h1 className="mt-1 text-3xl font-semibold tracking-tight">Interactive 3D Room</h1>
           <p className="mt-2 max-w-2xl text-sm text-muted-foreground">Explore the design in 3D. This view is read-only and its presentation material choices do not change the original catalog order.</p>
         </div>

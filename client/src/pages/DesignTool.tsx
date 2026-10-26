@@ -18334,7 +18334,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
               </div>
 		            </section>}
             {/* Range/oven corner clearance is now a WARNING ONLY. Per product
-                decision, Cabinet Dealz does not auto-insert or auto-shift
+                decision, CabinetDealz does not auto-insert or auto-shift
                 cabinets — the designer places the clearance filler manually
                 with the Filler tool wherever they want it. */}
             {(() => {

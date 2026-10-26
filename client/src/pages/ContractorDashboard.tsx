@@ -48,7 +48,7 @@ const BENEFITS = [
   {
     icon: Layers,
     title: "Shared with your distributor",
-    desc: "Your saved plans also reach the Cabinet Dealz team, so pricing and follow-up move fast.",
+    desc: "Your saved plans also reach the CabinetDealz team, so pricing and follow-up move fast.",
   },
 ];
 

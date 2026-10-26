@@ -10,9 +10,9 @@ export default function ReturnPolicy() {
         <section>
           <h2 className="text-xl font-semibold mb-3">Overview</h2>
           <p className="text-muted-foreground leading-relaxed">
-            Cabinet Dealz acts as an authorized dealer for the cabinet manufacturers listed below.
+            CabinetDealz acts as an authorized dealer for the cabinet manufacturers listed below.
             All returns, exchanges, and warranty claims are governed directly by the policies of the
-            manufacturer who fulfilled your order, reproduced in full below. Cabinet Dealz facilitates
+            manufacturer who fulfilled your order, reproduced in full below. CabinetDealz facilitates
             the claims process on your behalf and will work with you and the vendor to resolve any issues.
           </p>
         </section>
@@ -247,7 +247,7 @@ export default function ReturnPolicy() {
 
         {/* ── How to File a Claim ───────────────────────────────────────────── */}
         <section>
-          <h2 className="text-xl font-semibold mb-3">How to File a Claim Through Cabinet Dealz</h2>
+          <h2 className="text-xl font-semibold mb-3">How to File a Claim Through CabinetDealz</h2>
           <ol className="list-decimal pl-5 space-y-2 text-muted-foreground">
             <li>
               Email{" "}

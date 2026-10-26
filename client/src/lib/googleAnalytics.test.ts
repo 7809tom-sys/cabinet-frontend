@@ -40,7 +40,7 @@ describe("Google Analytics browser loader", () => {
   it("sends the route, page title, and storefront hostname on SPA navigation", () => {
     const gtag = vi.fn();
     (window as Window & { gtag?: typeof gtag }).gtag = gtag;
-    document.title = "Cabinet Dealz | Demo Store";
+    document.title = "CabinetDealz | Demo Store";
 
     expect(sendGoogleAnalyticsPageView({
       measurementId: "G-PSW1MY7HB4",
@@ -54,7 +54,7 @@ describe("Google Analytics browser loader", () => {
     expect(gtag).toHaveBeenCalledWith("event", "page_view", {
       page_location: "https://sales-demo.cabinetdealz.com/store/demo/catalog?finish=white",
       page_path: "/store/demo/catalog?finish=white",
-      page_title: "Cabinet Dealz | Demo Store",
+      page_title: "CabinetDealz | Demo Store",
       site_hostname: "sales-demo.cabinetdealz.com",
     });
   });

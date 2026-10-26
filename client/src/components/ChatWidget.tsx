@@ -11,7 +11,7 @@ import { toast } from "sonner";
 import { isAffiliateStorefrontPath } from "@/lib/affiliateContext";
 
 const WELCOME =
-  "Hi! I'm the Cabinet Dealz assistant. Ask me about cabinet styles, sizes, ordering, or your kitchen project. Want a human? Tap \u201cTalk to a live person\u201d below.";
+  "Hi! I'm the CabinetDealz assistant. Ask me about cabinet styles, sizes, ordering, or your kitchen project. Want a human? Tap \u201cTalk to a live person\u201d below.";
 
 const SUGGESTED = [
   "What door styles do you offer?",
@@ -119,7 +119,7 @@ export function ChatWidget() {
           <div className="flex items-center justify-between gap-2 border-b border-border bg-[var(--color-navy,#1a2740)] px-4 py-3 text-white">
             <div className="flex items-center gap-2">
               <MessageCircle className="h-4 w-4" />
-              <span className="font-medium">Cabinet Dealz Assistant</span>
+              <span className="font-medium">CabinetDealz Assistant</span>
             </div>
             <button aria-label="Close chat" onClick={() => setOpen(false)} className="opacity-80 hover:opacity-100">
               <X className="h-4 w-4" />

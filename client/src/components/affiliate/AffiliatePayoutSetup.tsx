@@ -73,7 +73,7 @@ function BankInfoForm({ onSaved }: { onSaved: () => void }) {
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="rounded-lg border border-amber-300/50 bg-amber-50 dark:bg-amber-950/20 p-3 flex gap-2 text-sm text-amber-800 dark:text-amber-300">
         <ShieldCheck className="h-4 w-4 flex-shrink-0 mt-0.5" />
-        <span>Your banking information is stored securely and used only for ACH direct deposit of your commissions. This information is visible only to Cabinet Dealz administrators.</span>
+        <span>Your banking information is stored securely and used only for ACH direct deposit of your commissions. This information is visible only to CabinetDealz administrators.</span>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
@@ -220,9 +220,9 @@ function ConsentForm({ onSigned }: { onSigned: () => void }) {
         <p className="font-semibold">Independent Contractor Acknowledgment & 1099-NEC Consent</p>
         <p>By signing below, I acknowledge and agree that:</p>
         <ul className="list-disc list-inside space-y-1 text-muted-foreground">
-          <li>I am an independent contractor, not an employee of Cabinet Dealz.</li>
+          <li>I am an independent contractor, not an employee of CabinetDealz.</li>
           <li>I am responsible for paying all applicable federal, state, and local taxes on my commission income.</li>
-          <li>Cabinet Dealz will issue a Form 1099-NEC for any calendar year in which my total commissions equal or exceed $600.</li>
+          <li>CabinetDealz will issue a Form 1099-NEC for any calendar year in which my total commissions equal or exceed $600.</li>
           <li>The banking and identity information I have provided is accurate and belongs to me.</li>
           <li>I consent to receiving my 1099-NEC electronically via my affiliate dashboard.</li>
         </ul>
@@ -349,7 +349,7 @@ export default function AffiliatePayoutSetup({ storeName }: Props) {
             {s?.bankDone ? (
               <div className="space-y-3">
                 <div className="rounded-lg border border-green-500/30 bg-green-50 dark:bg-green-950/20 p-3 text-sm text-green-700 dark:text-green-400 flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4" /> Bank account verified by Cabinet Dealz.
+                  <CheckCircle2 className="h-4 w-4" /> Bank account verified by CabinetDealz.
                 </div>
                 <p className="text-xs text-muted-foreground">To update your bank info, submit new information below. This will reset verification and require admin re-approval.</p>
                 <BankInfoForm onSaved={refetch} />
@@ -378,11 +378,11 @@ export default function AffiliatePayoutSetup({ storeName }: Props) {
           <AccordionContent className="px-4 pb-4 space-y-3">
             <div className="rounded-lg border border-blue-300/50 bg-blue-50 dark:bg-blue-950/20 p-3 flex gap-2 text-sm text-blue-800 dark:text-blue-300">
               <Info className="h-4 w-4 flex-shrink-0 mt-0.5" />
-              <span>Upload your Social Security card and both sides of your driver's license. Documents are stored securely and are only accessible to Cabinet Dealz administrators for verification. <strong>Documents can be replaced but not deleted.</strong></span>
+              <span>Upload your Social Security card and both sides of your driver's license. Documents are stored securely and are only accessible to CabinetDealz administrators for verification. <strong>Documents can be replaced but not deleted.</strong></span>
             </div>
             {s?.idDone && (
               <div className="rounded-lg border border-green-500/30 bg-green-50 dark:bg-green-950/20 p-3 text-sm text-green-700 dark:text-green-400 flex items-center gap-2">
-                <CheckCircle2 className="h-4 w-4" /> Identity verified by Cabinet Dealz.
+                <CheckCircle2 className="h-4 w-4" /> Identity verified by CabinetDealz.
               </div>
             )}
             <div className="grid gap-3 sm:grid-cols-1">

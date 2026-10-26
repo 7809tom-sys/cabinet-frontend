@@ -53,7 +53,7 @@ export function affiliateSlugFromHostname(hostname: string | null | undefined): 
 
 /**
  * Canonical scope precedence: /store/:slug, then ?affiliate=, then a branded
- * hostname during proxy canonicalization, otherwise the Cabinet Dealz owner.
+ * hostname during proxy canonicalization, otherwise the CabinetDealz owner.
  */
 export function resolveStoreScope(input?: {
   pathname?: string | null;

@@ -19,8 +19,8 @@ export default function SurfacesDepartment({ departmentSlug, affiliateSlug }: { 
 
   useSeo({
     title: department
-      ? `${department.title} — Surfaces & Fixtures | Cabinet Dealz`
-      : "Surfaces & Fixtures | Cabinet Dealz",
+      ? `${department.title} — Surfaces & Fixtures | CabinetDealz`
+      : "Surfaces & Fixtures | CabinetDealz",
     description: department?.description,
   });
 

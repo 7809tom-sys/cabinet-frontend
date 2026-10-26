@@ -843,14 +843,14 @@ const PROFILE_GUIDE: {
     frameRange: '2" - 3"',
     description:
       "Shaker cabinet doors feature a classic five-piece design with a recessed, flat center panel and a surrounding frame. Their simple, clean lines and durable construction make them a versatile choice that complements both traditional and modern kitchen styles.",
-    bestFor: "Any kitchen style -- especially transitional and contemporary designs.",
+    bestFor: "Any kitchen style — especially transitional and contemporary designs.",
   },
   {
     name: "Slim Shaker",
     tag: "Modern Favorite",
     frameRange: '1/2" - 1"',
     description:
-      "The Slim Shaker (also called Skinny Shaker) is a refined take on the classic Shaker profile with dramatically narrower rails and stiles -- typically 1/2\" to 1\". The thinner frame exposes more of the center panel, creating a sleek, minimal look that is ideal for modern and contemporary kitchens.",
+      "The Slim Shaker (also called Skinny Shaker) is a refined take on the classic Shaker profile with dramatically narrower rails and stiles — typically 1/2\" to 1\". The thinner frame exposes more of the center panel, creating a sleek, minimal look that is ideal for modern and contemporary kitchens.",
     bestFor: "Modern, minimalist, and European-inspired kitchen designs.",
   },
   {
@@ -858,7 +858,7 @@ const PROFILE_GUIDE: {
     tag: "Transitional",
     frameRange: '2" - 3"',
     description:
-      "The Double Shaker profile adds a second inner rail to the classic Shaker door, creating a step or dual-panel effect. This extra detail adds depth, striking shadow lines, and a sophisticated architectural feel -- making it a popular choice for transitional and upscale kitchen designs.",
+      "The Double Shaker profile adds a second inner rail to the classic Shaker door, creating a step or dual-panel effect. This extra detail adds depth, striking shadow lines, and a sophisticated architectural feel — making it a popular choice for transitional and upscale kitchen designs.",
     bestFor: "Transitional kitchens, custom built-ins, and high-end bathroom vanities.",
   },
   {

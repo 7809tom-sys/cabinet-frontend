@@ -1,7 +1,7 @@
 /**
  * US state-level sales tax reference rates (combined state + average local).
  * These are representative combined rates used for estimation purposes.
- * Actual rates may vary by county/city; Cabinet Dealz uses these for quote estimates.
+ * Actual rates may vary by county/city; CabinetDealz uses these for quote estimates.
  *
  * Sources: Tax Foundation 2024 state/local combined averages.
  * Rate is expressed as a decimal fraction (e.g. 0.0725 = 7.25%).

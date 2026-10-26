@@ -174,7 +174,7 @@ export default function DesignPresentation() {
     );
   }
 
-  const siteName = branding?.siteName || "Cabinet Dealz";
+  const siteName = branding?.siteName || "CabinetDealz";
   const logoUrl = branding?.logoUrl || "";
   const primaryColor = branding?.primaryColor || "#1a2b4a";
 

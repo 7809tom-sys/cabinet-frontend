@@ -129,7 +129,7 @@ export default function KitchenPlanningGuide() {
             <h1 className="mt-4 font-serif text-4xl font-bold leading-[1.08] tracking-tight sm:text-5xl">Plan your kitchen with confidence.</h1>
             <p className="mt-5 max-w-xl text-base leading-relaxed text-slate-200 sm:text-lg">Start with your room and the way you live in it. These practical answers make it easier to measure, compare layouts, and build a kitchen plan that works before you choose the finish.</p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <Link href="/design"><Button size="lg" className="w-full gap-2 bg-[var(--color-gold)] font-semibold text-[var(--color-navy)] hover:bg-[#e3b45f] sm:w-auto">Start designing <ArrowRight className="h-4 w-4" /></Button></Link>
+              <Link href="/design"><Button size="lg" className="w-full gap-2 bg-[var(--color-gold)] font-semibold text-[var(--color-navy)] hover:bg-[#e3b45f] sm:w-auto">Start Designing <ArrowRight className="h-4 w-4" /></Button></Link>
               <Link href="/bundles"><Button size="lg" variant="outline" className="w-full gap-2 border-white/60 bg-transparent text-white hover:bg-white/10 hover:text-white sm:w-auto">Browse Kitchen Packages</Button></Link>
             </div>
             <p className="mt-4 inline-flex items-center gap-2 text-sm text-slate-300"><Clock3 className="h-4 w-4 text-[var(--color-gold)]" /> First layouts commonly take about 10–15 minutes.</p>
@@ -183,7 +183,7 @@ export default function KitchenPlanningGuide() {
       <section className="border-t border-border bg-[#12305a] py-12 text-white sm:py-16">
         <div className="container flex flex-col items-start justify-between gap-6 rounded-2xl border border-white/10 bg-white/5 px-6 py-8 sm:px-9 lg:flex-row lg:items-center">
           <div className="max-w-2xl"><CheckCircle2 className="h-6 w-6 text-[var(--color-gold)]" aria-hidden="true" /><h2 className="mt-3 font-serif text-3xl font-bold">Ready to put the plan on your walls?</h2><p className="mt-2 text-sm leading-relaxed text-white/80">Start with the rough measurements you have. You can revise the layout, style, and cabinet selections as the project develops.</p></div>
-          <Link href="/design"><Button size="lg" className="gap-2 bg-[var(--color-gold)] font-semibold text-[var(--color-navy)] hover:bg-[#e3b45f]">Start designing <ArrowRight className="h-4 w-4" /></Button></Link>
+          <Link href="/design"><Button size="lg" className="gap-2 bg-[var(--color-gold)] font-semibold text-[var(--color-navy)] hover:bg-[#e3b45f]">Start Designing <ArrowRight className="h-4 w-4" /></Button></Link>
         </div>
       </section>
     </div>

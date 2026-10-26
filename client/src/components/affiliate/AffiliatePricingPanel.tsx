@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { DollarSign, Calculator, Save, Info, PackageCheck, ExternalLink } from "lucide-react";
 
 // ─── Fee constants ────────────────────────────────────────────────────────────
-const BASELINE_PCT = 0.05;   // 5% Cabinet Dealz margin on affiliate
+const BASELINE_PCT = 0.05;   // 5% CabinetDealz margin on affiliate
 const DAMAGE_PCT   = 0.01;   // 1% damage fee
 const CC_PCT       = 0.04;   // 4% credit card processing
 const IT_PCT       = 0.10;   // 10% IT/platform fee
@@ -180,13 +180,13 @@ export default function AffiliatePricingPanel({ affiliateId, isAdminView = false
         <p className="text-sm text-muted-foreground mt-1">
           {isAdminView
             ? "Set the selected affiliate’s customer-facing overlay. The platform baseline is managed separately and is not overwritten here."
-            : "Set your markup over your cost floor. Your customers see your prices — Cabinet Dealz is never shown."}
+            : "Set your markup over your cost floor. Your customers see your prices — CabinetDealz is never shown."}
         </p>
       </div>
 
       <Card className="border-blue-200 bg-blue-50/60">
         <CardContent className="p-4 text-sm text-blue-950">
-          <strong>Two pricing layers:</strong> Cabinet Dealz maintains the platform/category baseline. Each affiliate can add its own markup on cabinets, door styles, and Pelican non-cabinet categories. Blank category fields inherit the affiliate default; a saved 0% means no additional affiliate markup.
+          <strong>Two pricing layers:</strong> CabinetDealz maintains the platform/category baseline. Each affiliate can add its own markup on cabinets, door styles, and Pelican non-cabinet categories. Blank category fields inherit the affiliate default; a saved 0% means no additional affiliate markup.
         </CardContent>
       </Card>
 
@@ -237,7 +237,7 @@ export default function AffiliatePricingPanel({ affiliateId, isAdminView = false
         <CardContent className="space-y-4">
           <div className="flex items-end gap-3">
             <div className="space-y-1.5 flex-1 max-w-xs">
-              <Label>Cabinet Dealz retail price ($)</Label>
+              <Label>CabinetDealz retail price ($)</Label>
               <Input
                 type="number"
                 value={calcRetail}
@@ -253,7 +253,7 @@ export default function AffiliatePricingPanel({ affiliateId, isAdminView = false
             </div>
             <div className="divide-y divide-border">
               <div className="flex justify-between px-4 py-2">
-                <span className="text-muted-foreground">Cabinet Dealz retail</span>
+                <span className="text-muted-foreground">CabinetDealz retail</span>
                 <span className="tabular-nums">${retail.toFixed(2)}</span>
               </div>
               <div className="flex justify-between px-4 py-2">

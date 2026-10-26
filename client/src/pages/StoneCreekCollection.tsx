@@ -65,7 +65,7 @@ export default function StoneCreekCollection() {
   };
 
   useSeo({
-    title: "StoneCreek Collection — Premium Sinks & Faucets | Cabinet Dealz",
+    title: "StoneCreek Collection — Premium Sinks & Faucets | CabinetDealz",
     description:
       "Discover the StoneCreek collection of premium kitchen and bathroom faucets. Solid brass construction, ceramic cartridges, lifetime warranty. Available in 5 finishes.",
   });

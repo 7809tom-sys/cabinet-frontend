@@ -9,7 +9,7 @@ describe("customer saved kitchen-image sharing", () => {
     expect(source).toContain("if (!photoRenderUrl) return;");
     expect(source).toContain("await shareUrl(");
     expect(source).toContain("photoRenderUrl,");
-    expect(source).toContain("View my Cabinet Dealz kitchen image, prepared from my saved kitchen plan.");
+    expect(source).toContain("View my CabinetDealz kitchen image, prepared from my saved kitchen plan.");
     expect(source).toContain("Share image");
   });
 
