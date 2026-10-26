@@ -694,6 +694,15 @@ export interface DesignCabinet {
   masterCode: string;
   /** Palette-only label for a composed catalog choice; never persisted or priced as a SKU. */
   displayMasterCode?: string | null;
+  /** Spreadsheet ReplacementMasterCode. Search resolves this row to that master. */
+  replacementMasterCode?: string | null;
+  /** Semicolon-separated Aliases cell, or the alias list already stored for this cabinet. */
+  aliases?: readonly string[] | string | null;
+  sku?: string | null;
+  vendorSku?: string | null;
+  altSku1?: string | null;
+  altSku2?: string | null;
+  altSku3?: string | null;
   description: string;
   category: string | null;
   subCategory: string | null;
