@@ -782,13 +782,14 @@ function SupplierProfilePage() {
   const approvedVendor = profile.data.vendor;
   const line = myLine.data?.line ?? null;
   const linkedLines = profile.data.linkedDistributors ?? [];
-  const canSwitchLinkedLine = Boolean(user?.role === "admin" && adminApprovedVendorLineId && linkedLines.length > 1);
+  const canSwitchLinkedLine = linkedLines.length > 1 && (
+    user?.role === "distributor" || Boolean(user?.role === "admin" && adminApprovedVendorLineId)
+  );
   const switchLinkedLine = (distributorId: string) => {
-    if (!adminApprovedVendorLineId) return;
     const id = Number(distributorId);
     if (!Number.isSafeInteger(id) || !linkedLines.some((candidate) => candidate.id === id)) return;
     const url = new URL(window.location.href);
-    url.searchParams.set("vendor", String(adminApprovedVendorLineId));
+    if (adminApprovedVendorLineId) url.searchParams.set("vendor", String(adminApprovedVendorLineId));
     url.searchParams.set("as", String(id));
     url.searchParams.set("section", "supplier-profile");
     window.location.assign(url.toString());
@@ -809,7 +810,7 @@ function SupplierProfilePage() {
         <CardContent className="grid gap-3 text-sm md:grid-cols-2">
           <div><p className="text-muted-foreground">Signed-in account</p><p className="font-medium break-all">{user?.email || "—"}</p></div>
           <div>
-            <p className="text-muted-foreground">Catalog / supply line</p>
+            <p className="text-muted-foreground">Catalog / supply lines</p>
             {canSwitchLinkedLine ? (
               <Select value={String(line?.id ?? "")} onValueChange={switchLinkedLine}>
                 <SelectTrigger aria-label="Switch supplier catalog line" className="mt-1 h-9"><SelectValue /></SelectTrigger>
@@ -818,6 +819,18 @@ function SupplierProfilePage() {
                 </SelectContent>
               </Select>
             ) : <p className="font-medium">{line?.name ?? "Pending source-line link"}</p>}
+            {linkedLines.length > 0 && (
+              <ul className="mt-2 flex flex-wrap gap-1" aria-label="Your product lines">
+                {linkedLines.map((candidate) => (
+                  <li key={candidate.id}>
+                    <Badge variant="secondary" className="gap-1 text-[10px] font-normal">
+                      <span className="font-mono font-semibold">{candidate.code}</span>
+                      <span>{supplierCatalogLineLabel(candidate)}</span>
+                    </Badge>
+                  </li>
+                ))}
+              </ul>
+            )}
             {linkedLines.length > 1 && <p className="mt-1 text-xs text-muted-foreground">Framed and Frameless stay separate catalog, pricing, and order lines.</p>}
           </div>
           <p className="text-xs text-muted-foreground md:col-span-2">For security, passwords are never displayed or stored in readable form.</p>
@@ -4466,6 +4479,12 @@ export default function VendorPortal() {
   );
   const distList = trpc.distributors.list.useQuery(undefined, { enabled: isAdmin === true || user?.role === "distributor" });
   const approvedVendors = trpc.vendors.list.useQuery(undefined, { enabled: isAdmin === true });
+  const ownProfile = trpc.distributorPortal.supplierProfile.useQuery(undefined, { enabled: user?.role === "distributor" });
+  const ownLinkedLines = ownProfile.data?.linkedDistributors ?? [];
+  const requestedLineId = asParam && Number.isSafeInteger(Number(asParam)) ? Number(asParam) : null;
+  const vendorDistributorId = user?.role === "distributor"
+    ? (ownLinkedLines.some((line) => line.id === requestedLineId) ? requestedLineId : user.distributorId ?? null)
+    : null;
 
   useEffect(() => {
     if (!isAdmin || !adminApprovedVendorLineId) return;
@@ -4565,6 +4584,8 @@ export default function VendorPortal() {
       setPage={navigateToPage}
       isAdmin={isAdmin}
       adminDistributorId={adminDistributorId}
+      vendorDistributorId={vendorDistributorId}
+      linkedLines={ownLinkedLines}
       adminApprovedVendorLineId={adminApprovedVendorLineId}
       onSwitchVendor={switchAdminVendor}
       distList={distList.data ?? []}
@@ -4644,6 +4665,8 @@ function VendorPortalDashboard({
   setPage,
   isAdmin,
   adminDistributorId,
+  vendorDistributorId = null,
+  linkedLines = [],
   adminApprovedVendorLineId,
   onSwitchVendor,
   distList,
@@ -4657,13 +4680,16 @@ function VendorPortalDashboard({
   setPage: (p: VendorPage) => void;
   isAdmin: boolean;
   adminDistributorId: number | null;
+  vendorDistributorId?: number | null;
+  linkedLines?: Array<{ id: number; code: string; name: string }>;
   adminApprovedVendorLineId: number | null;
   onSwitchVendor: (vendor: PortalApprovedVendorOption) => void;
   distList: PortalDistributorOption[];
   approvedVendorList: PortalApprovedVendorOption[];
   supplierProfileOnly?: boolean;
 }) {
-  const activeDistributorId = isAdmin ? adminDistributorId : user.distributorId;
+  const actingDistributorId = isAdmin ? adminDistributorId : vendorDistributorId;
+  const activeDistributorId = actingDistributorId;
   const activeDistCode = activeDistributorId
     ? (distList.find((d: any) => d.id === activeDistributorId)?.code ?? undefined)
     : undefined;
@@ -4681,7 +4707,7 @@ function VendorPortalDashboard({
   }, [setPage]);
 
   return (
-    <AdminDistributorContext.Provider value={isAdmin && adminDistributorId ? adminDistributorId : undefined}>
+    <AdminDistributorContext.Provider value={actingDistributorId ?? undefined}>
     <AdminApprovedVendorContext.Provider value={isAdmin && adminApprovedVendorLineId ? adminApprovedVendorLineId : undefined}>
     <AdminDistributorCodeContext.Provider value={activeDistCode}>
     <div className="flex min-h-[calc(100vh-64px)]">
@@ -4690,6 +4716,15 @@ function VendorPortalDashboard({
         <div className="p-4 border-b">
           <h1 className="font-bold text-lg">Vendor Portal</h1>
           <p className="text-xs text-muted-foreground mt-1">{user.name}</p>
+          {!isAdmin && linkedLines.length > 0 && (
+            <ul className="mt-3 space-y-1" aria-label="Signed-in catalog lines">
+              {linkedLines.map((line) => (
+                <li key={line.id} className={`rounded px-2 py-1 text-xs ${line.id === actingDistributorId ? "bg-primary/10 font-medium text-primary" : "text-muted-foreground"}`}>
+                  <span className="font-mono font-semibold">{line.code}</span> {supplierCatalogLineLabel(line)}
+                </li>
+              ))}
+            </ul>
+          )}
           {isAdmin && adminApprovedVendorLineId && (
             <AdminVendorQuickSwitch
               adminApprovedVendorLineId={adminApprovedVendorLineId}
@@ -4743,6 +4778,18 @@ function VendorPortalDashboard({
 
       {/* Main content */}
 	      <main className="flex-1 p-6 pb-20 md:pb-6 overflow-y-auto">
+        {!isAdmin && linkedLines.length > 0 && (
+          <ul className="mb-4 flex flex-wrap gap-1 md:hidden" aria-label="Signed-in catalog lines">
+            {linkedLines.map((line) => (
+              <li key={line.id}>
+                <Badge variant={line.id === actingDistributorId ? "default" : "secondary"} className="gap-1 text-[10px] font-normal">
+                  <span className="font-mono font-semibold">{line.code}</span>
+                  <span>{supplierCatalogLineLabel(line)}</span>
+                </Badge>
+              </li>
+            ))}
+          </ul>
+        )}
         {isAdmin && adminApprovedVendorLineId && (
           <AdminVendorQuickSwitch
             adminApprovedVendorLineId={adminApprovedVendorLineId}
@@ -4755,7 +4802,7 @@ function VendorPortalDashboard({
 	        {page === "overview" && (isPelican ? <PelicanVendorOverviewPage onNavigateToCatalog={handleNavigateToCatalog} /> : <OverviewPage onNavigate={setPage} />)}
 	        {page === "supplier-profile" && <SupplierProfilePage />}
 	        {page === "catalog" && (isPelican ? <PelicanVendorCatalogPage initialCategory={pelicanCategoryFilter} /> : <CatalogPage />)}
-	        {page === "other-products" && <VendorOtherProducts distributorId={adminDistributorId ?? undefined} />}
+	        {page === "other-products" && <VendorOtherProducts distributorId={actingDistributorId ?? undefined} />}
 	        {page === "styles" && <DoorStylesPage />}
 	        {page === "featured-styles" && <VendorFeaturedStylesPage />}
         {page === "shipping" && (isPelican ? <PelicanShippingProfilesPanel isAdmin={isAdmin} /> : <VendorShippingPage />)}
