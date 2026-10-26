@@ -45,6 +45,14 @@ import { useSeo } from "@/hooks/useSeo";
 import { buildProductJsonLd } from "@/lib/seo/jsonLd";
 import { translateSpec } from "@/lib/i18n/specPhrases";
 import { nonEmptyStyleCategories } from "@/lib/catalogCategories";
+import {
+  canonicalMouldingLabel,
+  catalogCategoryCount,
+  catalogCategoryQueryValue,
+  catalogCategoryRecordValue,
+  catalogCategoryValuesEqual,
+  selectedCatalogOption,
+} from "@shared/catalogCategorySpelling";
 import { DoorDrawerDiagram } from "@/components/design/DoorDrawerDiagram";
 import { affiliateCabinetHref, affiliateCatalogRootHref, affiliateDesignerHref } from "@/lib/affiliateStorefrontRoute";
 import { affiliateSlugForStoreScope, resolveStoreScope } from "@/lib/affiliateContext";
@@ -63,7 +71,7 @@ import {
 // ─── Cabinet categories (loaded from DB, with hardcoded fallback) ────────────
 const FALLBACK_CATEGORIES = [
   "Base", "Wall", "Tall", "Corner", "Drawer", "Specialty",
-  "Vanity", "Pantry", "Island", "Filler", "Molding", "Accessory",
+  "Vanity", "Pantry", "Island", "Filler", "Moulding", "Accessory",
 ] as const;
 
 const FALLBACK_SUB_CATEGORIES: Record<string, string[]> = {
@@ -77,7 +85,7 @@ const FALLBACK_SUB_CATEGORIES: Record<string, string[]> = {
   Pantry:    ["Pantry Cabinet","Pantry Pull-Out"],
   Island:    ["Island Base","Island Drawer"],
   Filler:    ["Filler Panel","Side Panel","Scribe Moulding"],
-  Molding:   ["Crown Moulding","Light Rail","Base Moulding","Valance"],
+  Moulding:  ["Crown Moulding","Light Rail","Base Moulding","Valance"],
   Accessory: ["Hardware","Organizer","Shelf","Lazy Susan Insert","Drawer Insert"],
 };
 
@@ -222,7 +230,7 @@ function findMatchingPromo(
     // Check targeting: skuIds, styleId, or category
     const matchesSku = p.skuIds && Array.isArray(p.skuIds) && (p.skuIds as number[]).includes(row.styleId);
     const matchesStyle = p.styleId != null && p.styleId === row.styleId;
-    const matchesCategory = p.category != null && cabinetCategory != null && p.category === cabinetCategory;
+    const matchesCategory = p.category != null && cabinetCategory != null && catalogCategoryValuesEqual(p.category, cabinetCategory);
     const isUntargeted = !p.skuIds && p.styleId == null && !p.category;
     if (matchesSku || matchesStyle || matchesCategory || isUntargeted) return p;
   }
@@ -1098,7 +1106,7 @@ export default function CabinetDetail({ masterCode }: Props) {
             <>
               <span>/</span>
               <Link href={affiliateCatalogRootHref()} className="hover:text-foreground">
-                {cabinet.category}
+                {canonicalMouldingLabel(cabinet.category)}
               </Link>
             </>
           )}
@@ -1650,7 +1658,7 @@ export default function CabinetDetail({ masterCode }: Props) {
                 <div className="space-y-1.5">
                   <Label htmlFor="edit-cat">Category</Label>
                   <Select
-                    value={editCategory || "__none__"}
+                    value={selectedCatalogOption(categoryNames, editCategory) || editCategory || "__none__"}
                     onValueChange={(v) => {
                       const cat = v === "__none__" ? "" : v;
                       setEditCategory(cat);
@@ -1663,7 +1671,7 @@ export default function CabinetDetail({ masterCode }: Props) {
                     <SelectContent>
                       <SelectItem value="__none__">— not set —</SelectItem>
                       {categoryNames.map((c) => (
-                        <SelectItem key={c} value={c}>{c}</SelectItem>
+                        <SelectItem key={c} value={c}>{canonicalMouldingLabel(c)}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -1676,7 +1684,7 @@ export default function CabinetDetail({ masterCode }: Props) {
                     <span className="text-muted-foreground font-normal text-xs">(optional)</span>
                   </Label>
                   <Select
-                    value={editSubCategory || "__none__"}
+                    value={selectedCatalogOption(catalogCategoryRecordValue(subCategoriesMap, editCategory) ?? [], editSubCategory) || editSubCategory || "__none__"}
                     onValueChange={(v) => setEditSubCategory(v === "__none__" ? "" : v)}
                     disabled={!editCategory}
                   >
@@ -1685,9 +1693,12 @@ export default function CabinetDetail({ masterCode }: Props) {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="__none__">— not set —</SelectItem>
-                      {(editCategory && subCategoriesMap[editCategory] ? subCategoriesMap[editCategory] : []).map((s) => (
-                        <SelectItem key={s} value={s}>{s}</SelectItem>
+                      {(catalogCategoryRecordValue(subCategoriesMap, editCategory) ?? []).map((s) => (
+                        <SelectItem key={s} value={s}>{canonicalMouldingLabel(s)}</SelectItem>
                       ))}
+                      {editSubCategory && !selectedCatalogOption(catalogCategoryRecordValue(subCategoriesMap, editCategory) ?? [], editSubCategory) && (
+                        <SelectItem value={editSubCategory}>{canonicalMouldingLabel(editSubCategory)}</SelectItem>
+                      )}
                     </SelectContent>
                   </Select>
                 </div>
@@ -2672,7 +2683,7 @@ function StyleCategoryNav({
   // the visitor in an empty category result.
   useEffect(() => {
     if (!data || activeCategory === null) return;
-    if ((data.categoryCounts?.[activeCategory] ?? 0) === 0) {
+    if (catalogCategoryCount(data.categoryCounts, activeCategory) === 0) {
       setActiveCategory(null);
       setPage(0);
     }
@@ -2696,25 +2707,28 @@ function StyleCategoryNav({
         >
           All
         </button>
-        {categories.map((cat) => (
+        {categories.map((cat) => {
+          const filterValue = catalogCategoryQueryValue(data?.categoryCounts, cat);
+          return (
           <button
             key={cat}
             onClick={() => {
-              setActiveCategory(cat);
+              setActiveCategory(filterValue);
               setShowResults(true);
               setPage(0);
             }}
             className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
-              activeCategory === cat && showResults
+              catalogCategoryValuesEqual(activeCategory, cat) && showResults
                 ? "bg-primary text-primary-foreground border-primary"
-                : cat === currentCategory
+                : catalogCategoryValuesEqual(cat, currentCategory)
                   ? "bg-accent text-accent-foreground border-accent"
                   : "bg-muted/50 text-muted-foreground border-border hover:bg-muted hover:text-foreground"
             }`}
           >
-            {cat}
+            {canonicalMouldingLabel(cat)}
           </button>
-        ))}
+          );
+        })}
         {/* Search input */}
         <div className="relative shrink-0 ml-auto">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
@@ -2771,11 +2785,11 @@ function StyleCategoryNav({
                   {item.masterCode}
                 </div>
                 <div className="text-xs text-muted-foreground truncate">
-                  {item.description || item.category}
+                  {item.description || canonicalMouldingLabel(item.category)}
                 </div>
               </div>
               <Badge variant="outline" className="shrink-0 text-[10px]">
-                {item.category}
+                {canonicalMouldingLabel(item.category)}
               </Badge>
             </Link>
           ))}

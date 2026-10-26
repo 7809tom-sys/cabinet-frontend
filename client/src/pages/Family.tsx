@@ -19,6 +19,7 @@ import { useSeo } from "@/hooks/useSeo";
 import { translateSpec } from "@/lib/i18n/specPhrases";
 import { useCart } from "@/contexts/CartContext";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { familyTypeMatches } from "@/lib/familyCategoryFilters";
 import { searchCatalogItems } from "@shared/catalogCodeSearch";
 import {
   resolveStorefrontTier,
@@ -86,28 +87,16 @@ function fmtPrice(n: number | null): string {
 }
 
 // Group the DB categories into the buyer-facing room-section filters.
-// The DB stores categories in Title Case (e.g. "Base", "Wall", "Trim and Molding");
-// we always lowercase before matching so casing differences don't break filters.
-const TYPE_FILTERS: { key: string; labelKey: string; match: (cat: string) => boolean }[] = [
-  { key: "all", labelKey: "fam_f_all", match: () => true },
-  { key: "base", labelKey: "fam_f_base", match: (c) => c === "base" || c === "corner" },
-  { key: "wall", labelKey: "fam_f_wall", match: (c) => c === "wall" },
-  { key: "tall", labelKey: "fam_f_tall", match: (c) => c === "tall" },
-  { key: "vanity", labelKey: "fam_f_vanity", match: (c) => c === "vanity" },
-  { key: "ada", labelKey: "fam_f_ada", match: (c) => c === "ada" },
-  {
-    key: "accessory",
-    labelKey: "fam_f_accessory",
-    match: (c) =>
-      c === "accessory" ||
-      c === "accessories" ||
-      c === "trim and molding" ||
-      c === "molding" ||
-      c === "filler's and panels" ||
-      c === "fillers and panels" ||
-      c === "specialty",
-  },
-];
+// Matching is case-insensitive and accepts both Molding and Moulding.
+const TYPE_FILTERS = [
+  { key: "all", labelKey: "fam_f_all" },
+  { key: "base", labelKey: "fam_f_base" },
+  { key: "wall", labelKey: "fam_f_wall" },
+  { key: "tall", labelKey: "fam_f_tall" },
+  { key: "vanity", labelKey: "fam_f_vanity" },
+  { key: "ada", labelKey: "fam_f_ada" },
+  { key: "accessory", labelKey: "fam_f_accessory" },
+] as const;
 
 function FamilyCabinetCard({
   item,
@@ -408,10 +397,10 @@ export default function Family({ styleCode }: { styleCode: string }) {
 
   const visible = useMemo(() => {
     const f = TYPE_FILTERS.find((t) => t.key === activeType) ?? TYPE_FILTERS[0];
-    const typed = items.filter((i) => f.match((i.category ?? "").toLowerCase()));
+    const typed = items.filter((i) => familyTypeMatches(f.key, i.category));
     if (!debounced) return typed;
     return searchCatalogItems(typed, debounced, (item, query) => {
-      const hay = `${item.description ?? ""} ${item.subCategory ?? ""}`.toLowerCase();
+      const hay = `${item.masterCode} ${item.description ?? ""} ${item.subCategory ?? ""}`.toLowerCase();
       return hay.includes(query.toLowerCase());
     }).map((hit) => hit.item);
   }, [items, activeType, debounced]);

@@ -187,6 +187,9 @@ describe("Vendor Portal Featured Styles and Shipping", () => {
   it("lets an administrator switch only between a supplier profile's explicitly linked catalog lines", () => {
     const profile = source.slice(source.indexOf("function SupplierProfilePage"), source.indexOf("function VendorProfileCatalogPanel"));
     expect(profile).toContain("const linkedLines = profile.data.linkedDistributors ?? []");
+    expect(profile).toContain('user?.role === "distributor"');
+    expect(profile).toContain('aria-label="Your product lines"');
+    expect(source).toContain('aria-label="Signed-in catalog lines"');
     expect(profile).toContain("Switch supplier catalog line");
     expect(profile).toContain("Framed and Frameless stay separate catalog, pricing, and order lines.");
     expect(profile).toContain("linkedLines.some((candidate) => candidate.id === id)");

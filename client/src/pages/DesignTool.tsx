@@ -216,6 +216,12 @@ import { canCommitPlanStyleSwitchWithoutReview, planStyleReviewCandidates } from
 import { autoFillSpan, makeFiller, type FillMode } from "@/lib/autofill";
 import { fillFourAnchorLowerSeams, planFourAnchorBaseSegment } from "@/lib/fourAnchorSeamFillers";
 import { resolveTierPrice } from "@shared/pricingTier";
+import {
+  CATALOG_SUBCATEGORY_TRIM_AND_MOULDING,
+  canonicalMouldingLabel,
+  isFlooringMouldingsAndTrim,
+  normalizeCatalogCategoryValue,
+} from "@shared/catalogCategorySpelling";
 import { normalizeDesignPricingTier, type DesignPricingTier } from "@/lib/designPricingTier";
 import { AIChatBox, type Message as AIMessage } from "@/components/AIChatBox";
 import { PlanCanvas } from "@/components/design/PlanCanvas";
@@ -1234,7 +1240,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   }, []);
   const selectedFlooringAccessoryIds = useMemo(
     () => new Set(selectedSurfaces
-      .filter((surface) => surface.category === "Flooring" && surface.subCategory === "Moldings & Trim")
+      .filter((surface) => surface.category === "Flooring" && isFlooringMouldingsAndTrim(surface.subCategory))
       .map((surface) => surface.id)),
     [selectedSurfaces],
   );
@@ -2624,6 +2630,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         // When the design is locked to a supply line, every added cabinet must
         // come from that distributor (member can still change color within it).
         distributorId: catalogDistributorScopeId ?? undefined,
+        affiliateSlug: affiliateSlug ?? undefined,
       },
       { enabled: paletteType !== "appliance" && paletteType !== "opening" && paletteType !== "closetparts" && paletteType !== "furniture" && paletteType !== "surfaces" && (paletteType !== "vanity" || styleId != null) }
     );
@@ -2636,6 +2643,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     {
       styleId: styleId ?? undefined,
       distributorId: catalogDistributorScopeId ?? undefined,
+      affiliateSlug: affiliateSlug ?? undefined,
     },
     { enabled: styleId != null },
   );
@@ -2695,6 +2703,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     placement: "base",
     styleId: styleId ?? undefined,
     distributorId: lockedDistributorId ?? undefined,
+    affiliateSlug: affiliateSlug ?? undefined,
   });
   const { data: threeDAccessoryCatalog, isLoading: catalogFillersLoading } = trpc.design.placeableCabinets.useQuery({
     placement: "accessory",
@@ -2703,6 +2712,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     // distributor selection must not make its own active 3-inch filler vanish
     // from a measured seam simply because the plan lock has not been written.
     distributorId: catalogDistributorScopeId ?? undefined,
+    affiliateSlug: affiliateSlug ?? undefined,
   }, { enabled: styleId != null });
   const catalogFillers = useMemo(
     () => (threeDAccessoryCatalog as DesignCabinet[] | undefined) ?? [],
@@ -3075,6 +3085,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     placement: "wall",
     styleId: styleId ?? undefined,
     distributorId: lockedDistributorId ?? undefined,
+    affiliateSlug: affiliateSlug ?? undefined,
   });
   const wallCabPoolRef = useRef<DesignCabinet[]>([]);
   useEffect(() => { wallCabPoolRef.current = (wallCabPool as DesignCabinet[] | undefined) ?? []; }, [wallCabPool]);
@@ -3133,6 +3144,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     placement: "tall",
     styleId: styleId ?? undefined,
     distributorId: lockedDistributorId ?? undefined,
+    affiliateSlug: affiliateSlug ?? undefined,
   });
 
   // The unified "Corner" tab shows BOTH corner base AND corner wall cabinets in
@@ -3145,6 +3157,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       placement: "wall",
       styleId: styleId ?? undefined,
       distributorId: lockedDistributorId ?? undefined,
+      affiliateSlug: affiliateSlug ?? undefined,
     },
     { enabled: paletteType === "corner" }
   );
@@ -3199,7 +3212,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     // classified as corner bases — they belong in the Corner Wall section.
     if (placement === "wall") return false;
     if (placement.includes("accessory") || placement.includes("trim")) return false;
-    if (/trim|molding|end panel|hardware|filler|tray|floor/.test(sub)) return false;
+    if (/trim|moulding|molding|end panel|hardware|filler|tray|floor/.test(sub)) return false;
     if (code.startsWith("BA-")) return false; // end-of-run angled base, not a corner
     if (/TRAY|FILLER|-FILL|CBT|DCFF|^CM-|^BCM|^OCM|^ACM|^RCM|^COV/.test(code)) return false; // inserts/fillers/molding
     // A real corner base cabinet has meaningful size (not a 3\"-4\" sliver).
@@ -3812,19 +3825,21 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     // Decorative End Panels, Roll-Out Trays, Skin Panels, …) rather than by
     // height, which is meaningless for loose trim/hardware.
     if (paletteType === "accessory" || paletteType === "panel") {
-      const bySub = new Map<string, DesignCabinet[]>();
+      const bySub = new Map<string, { label: string; items: DesignCabinet[] }>();
       // Build accordion sections only from items that can be put on the 2D plan.
       // Previously headings used all catalog add-ons while their bodies silently
       // filtered non-placeable lines, producing rows that opened to a blank area.
+      // Molding and Moulding subcategories share one section and show Moulding.
       for (const c of heightFilteredPalette.filter(isPlaceableAccessory)) {
-        const label = (c.subCategory || "Other").trim() || "Other";
-        const arr = bySub.get(label);
-        if (arr) arr.push(c);
-        else bySub.set(label, [c]);
+        const raw = (c.subCategory || "Other").trim() || "Other";
+        const key = normalizeCatalogCategoryValue(raw) || "other";
+        const label = canonicalMouldingLabel(raw);
+        const existing = bySub.get(key);
+        if (existing) existing.items.push(c);
+        else bySub.set(key, { label, items: [c] });
       }
-      return sortGroups(Array.from(bySub.entries())
-        .sort((a, b) => a[0].localeCompare(b[0]))
-        .map(([label, items]) => ({ label, items })));
+      return sortGroups(Array.from(bySub.values())
+        .sort((a, b) => a.label.localeCompare(b.label)));
     }
     // The unified Corner tab splits into two fixed sections — Corner Base
     // Cabinets and Corner Wall Cabinets — so every corner type lives under one
@@ -5088,7 +5103,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           tier: DESIGN_TIER_TO_SHARED[tier],
           unitPrice: t.unitPrice,
           qty: t.qty,
-          category: "Trim & molding",
+          category: CATALOG_SUBCATEGORY_TRIM_AND_MOULDING,
         }));
     const hardwareLines: CartItem[] = hasSelectedPricedHardware && selectedPricedHardware && hwSchedule.total > 0
       ? [{
@@ -5994,13 +6009,13 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     const out: { label: string; detail: string }[] = [];
     // Note: blind corner fillers are placed manually by the user, not auto-listed here.
     if (crown && crownOrder && crownOrder.pieces > 0)
-      out.push({ label: "CROWN MOLDING", detail: `${crownOrder.pieces} pc @ ${crownOrder.stickFeet}ft` });
+      out.push({ label: "CROWN MOULDING", detail: `${crownOrder.pieces} pc @ ${crownOrder.stickFeet}ft` });
     if (toeKick && toeKickOrder && toeKickOrder.pieces > 0)
       out.push({ label: "TOE KICK", detail: `${toeKickOrder.pieces} pc @ ${toeKickOrder.stickFeet}ft` });
     if (batten && battenOrder && battenOrder.pieces > 0)
-      out.push({ label: "BATTEN MOLDING (BAM)", detail: `${battenOrder.pieces} pc @ ${battenOrder.stickFeet}ft` });
+      out.push({ label: "BATTEN MOULDING (BAM)", detail: `${battenOrder.pieces} pc @ ${battenOrder.stickFeet}ft` });
     if (lightRail && lightRailOrder && lightRailOrder.pieces > 0)
-      out.push({ label: "LIGHT RAIL MOLDING", detail: `${lightRailOrder.pieces} pc @ ${lightRailOrder.stickFeet}ft` });
+      out.push({ label: "LIGHT RAIL MOULDING", detail: `${lightRailOrder.pieces} pc @ ${lightRailOrder.stickFeet}ft` });
     if (valance && valanceOrder.length > 0) {
       for (const vp of valanceOrder) {
         out.push({ label: "ARCHED VALANCE", detail: `${vp.code} (${vp.width}"W) — ${vp.wall} wall` });
@@ -6054,10 +6069,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     const surfaceRoles = new Set(selectedSurfaces.map((surface) => surfaceRole(surface)));
     const styleColor = activeStyleName ?? null;
     const trimLabels: Record<TrimKind, string> = {
-      crown: "Crown molding",
+      crown: "Crown moulding",
       toeKick: "Toe kick",
-      batten: "Batten molding",
-      lightRail: "Light rail molding",
+      batten: "Batten moulding",
+      lightRail: "Light rail moulding",
       valance: "Arched valance",
     };
     for (const trim of activeTrims) {
@@ -6066,7 +6081,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       out.push({
         code: priced.masterCode,
         description: trimLabels[trim.kind],
-        category: "Trim & molding",
+        category: CATALOG_SUBCATEGORY_TRIM_AND_MOULDING,
         qty: trim.pieces,
         supplier: lockedDistributorId != null ? distributorNameById.get(lockedDistributorId) ?? "Cabinet supplier" : "Cabinet supplier",
         styleColor,
@@ -14760,7 +14775,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                 <Square className="h-3.5 w-3.5 mr-2" /> {t("dt_sh_island")}
               </DropdownMenuCheckboxItem>
               <DropdownMenuSeparator />
-              <DropdownMenuLabel className="text-xs text-muted-foreground">Trim & Molding</DropdownMenuLabel>
+              <DropdownMenuLabel className="text-xs text-muted-foreground">Trim & Moulding</DropdownMenuLabel>
               <DropdownMenuCheckboxItem
                 checked={crown}
                 onCheckedChange={() => { trimOverride.current.crown = true; setCrown((c) => !c); }}
@@ -19099,6 +19114,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	        backsplashEnabled={backsplashEnabled}
 	        onBacksplashEnabledChange={setBacksplashEnabled}
 	        roomType={roomType}
+	        affiliateSlug={affiliateSlug}
 	        bathroomPaletteMode={bathroomCatalogMode}
 	        initialBathroomRole={bathroomBrowseRole}
 	        onPlaceBathroomFixture={placePelicanBathroomFixture}

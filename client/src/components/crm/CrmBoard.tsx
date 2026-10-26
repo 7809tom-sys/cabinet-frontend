@@ -19,7 +19,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  CRM_STAGES, CRM_PIPELINE_STAGES, CRM_CLOSED_STAGES, CRM_STAGE_LABELS,
+  CRM_STAGES, CRM_STAGE_LABELS, CRM_PRIORITIES,
   CRM_PRIORITY_LABELS, isClosedStage,
   crmEmailBlockedReason, CRM_EMAIL_BLOCK_MESSAGES,
   type CrmStage, type CrmPriority, type CrmLanguage,
@@ -33,6 +33,12 @@ import { affiliateCardColor, type CrmAffiliateBrand } from "@/lib/crmAffiliateBr
 import { MASTER_AFFILIATE_FILTER_ALL, masterAffiliateFilterId } from "@/lib/crmMasterFilter";
 import { filterDealsByHelpType, type CrmHelpFilter } from "@/lib/crmHelpFilter";
 import { crmQuickInvoiceTotal, openCrmQuickInvoicePdf, type CrmQuickInvoiceBrand, type CrmQuickInvoiceLine } from "@/lib/crmQuickInvoice";
+import { CRM_SAVED_VIEW_STORAGE_PREFIX, crmDueState, filterMondayDeals, summarizeAffiliatePipelines, type MondayFilters } from "@shared/crmMailbox";
+import { CrmStageBoard } from "@/components/crm/monday/CrmStageBoard";
+import { CrmTableView, type TableDeal } from "@/components/crm/monday/CrmTableView";
+import { CrmPipelineTotals } from "@/components/crm/monday/CrmPipelineTotals";
+import { CrmEmailWorkspace, type EmailPrefill } from "@/components/crm/monday/CrmEmailWorkspace";
+import { CrmDealFiles, CrmDueBanner } from "@/components/crm/monday/CrmDealExtras";
 
 type Lang = CrmLanguage;
 const L = (lang: Lang) => ({
@@ -78,6 +84,7 @@ interface DealRow {
   notes: string | null;
   updatedAt: string | Date;
   affiliateId?: number | null;
+  ownerUserId?: number | null;
   needsHelpClosing?: boolean;
   needsHelpDesigning?: boolean;
   needsHelpShipping?: boolean;
@@ -148,10 +155,32 @@ export function CrmBoard({ lang = "en", affiliateId }: { lang?: Lang; affiliateI
     const requested = Number(new URLSearchParams(window.location.search).get("deal"));
     return Number.isInteger(requested) && requested > 0 ? requested : null;
   });
-  const [mobileStage, setMobileStage] = useState<CrmStage>("new");
+  const [crmView, setCrmView] = useState<"board" | "table" | "email">("board");
+  const [search, setSearch] = useState("");
+  const [stageFilter, setStageFilter] = useState<"all" | CrmStage>("all");
+  const [priorityFilter, setPriorityFilter] = useState<"all" | CrmPriority>("all");
+  const [dueFilter, setDueFilter] = useState<"all" | "today" | "overdue">("all");
+  const [savedViewName, setSavedViewName] = useState("");
+  const [savedViews, setSavedViews] = useState<{ name: string; filters: MondayFilters }[]>([]);
+  const [emailPrefill, setEmailPrefill] = useState<EmailPrefill | null>(null);
+  const savedViewKey = `${CRM_SAVED_VIEW_STORAGE_PREFIX}${affiliateId ?? "house"}`;
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(savedViewKey);
+      if (raw) setSavedViews(JSON.parse(raw) as { name: string; filters: MondayFilters }[]);
+    } catch { /* saved views stay empty if storage is blocked */ }
+  }, [savedViewKey]);
 
   const deals = (data?.deals ?? []) as DealRow[];
   const filteredDeals = useMemo(() => filterDealsByHelpType(deals, helpFilter), [deals, helpFilter]);
+  const mondayFilters = useMemo<MondayFilters>(() => ({
+    search,
+    stage: stageFilter,
+    priority: priorityFilter,
+    due: dueFilter,
+    affiliate: masterAffiliateFilter === "house" ? "house" : "all",
+  }), [search, stageFilter, priorityFilter, dueFilter, masterAffiliateFilter]);
+  const viewDeals = useMemo(() => filterMondayDeals(filteredDeals, mondayFilters), [filteredDeals, mondayFilters]);
   const affiliateNames = (data as any)?.affiliateNames as Record<number, string> | undefined;
   const affiliateBranding = (data as any)?.affiliateBranding as Record<number, CrmAffiliateBrand> | undefined;
   const isMasterView = (data as any)?.isMasterView === true;
@@ -164,16 +193,28 @@ export function CrmBoard({ lang = "en", affiliateId }: { lang?: Lang; affiliateI
     const map: Record<CrmStage, DealRow[]> = {
       new: [], contacted: [], qualified: [], image_review: [], quoted: [], won: [], lost: [],
     };
-    for (const d of filteredDeals) map[d.stage]?.push(d);
+    for (const d of filteredDeals) {
+      if (viewDeals.some((row) => row.id === d.id)) map[d.stage]?.push(d);
+    }
     return map;
-  }, [filteredDeals]);
+  }, [filteredDeals, viewDeals]);
 
   const openValue = useMemo(
-    () => filteredDeals.filter((d) => !isClosedStage(d.stage)).reduce((s, d) => s + Number(d.estimatedValue ?? 0), 0),
-    [filteredDeals],
+    () => viewDeals.filter((d) => !isClosedStage(d.stage)).reduce((s, d) => s + Number(d.estimatedValue ?? 0), 0),
+    [viewDeals],
   );
   const wonCount = byStage.won.length;
-  const openCount = filteredDeals.filter((d) => !isClosedStage(d.stage)).length;
+  const openCount = viewDeals.filter((d) => !isClosedStage(d.stage)).length;
+  const decorations = trpc.crm.boardDecorations.useQuery();
+  const quickAdd = trpc.crm.create.useMutation({
+    onSuccess: () => { toast.success(lang === "es" ? "Trato agregado" : "Deal added"); utils.crm.board.invalidate(); },
+    onError: () => toast.error(lang === "es" ? "No se pudo agregar" : "Couldn't add deal"),
+  });
+  const inlineUpdate = trpc.crm.update.useMutation({
+    onSuccess: () => utils.crm.board.invalidate(),
+    onError: () => toast.error(lang === "es" ? "No se pudo actualizar" : "Couldn't update the cell"),
+  });
+  const boardScope = (data as { scope?: string } | undefined)?.scope;
 
   const move = trpc.crm.moveStage.useMutation({
     onMutate: async (vars) => {
@@ -187,12 +228,6 @@ export function CrmBoard({ lang = "en", affiliateId }: { lang?: Lang; affiliateI
     onError: (_e, _v, c) => { if (c?.prev) utils.crm.board.setData(undefined, c.prev); toast.error("Couldn't move deal"); },
     onSettled: () => utils.crm.board.invalidate(),
   });
-
-  function onDropTo(stage: CrmStage, e: React.DragEvent) {
-    e.preventDefault();
-    const id = Number(e.dataTransfer.getData("text/deal-id"));
-    if (id) move.mutate({ id, stage });
-  }
 
   if (error) {
     return (
@@ -222,6 +257,7 @@ export function CrmBoard({ lang = "en", affiliateId }: { lang?: Lang; affiliateI
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={MASTER_AFFILIATE_FILTER_ALL}>All affiliates</SelectItem>
+                <SelectItem value="house">Cabinet Dealz (house)</SelectItem>
                 {affiliateOptions.map(([id, affiliate]) => (
                   <SelectItem key={id} value={id}>{affiliate.storeName}</SelectItem>
                 ))}
@@ -244,113 +280,118 @@ export function CrmBoard({ lang = "en", affiliateId }: { lang?: Lang; affiliateI
         </div>
       </div>
 
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        {(["board", "table", "email"] as const).map((view) => (
+          <button
+            key={view}
+            type="button"
+            onClick={() => setCrmView(view)}
+            className={`rounded-full px-3 py-1 text-sm font-medium ${crmView === view ? "bg-[#1a2b4a] text-white" : "bg-white text-[#1a2b4a] border border-slate-200"}`}
+          >
+            {view === "board" ? "Board" : view === "table" ? "Table" : "Email"}
+          </button>
+        ))}
+        <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={lang === "es" ? "Buscar" : "Search deals"} aria-label="Search deals" className="h-9 max-w-xs bg-white" />
+        <Select value={stageFilter} onValueChange={(value) => setStageFilter(value as typeof stageFilter)}>
+          <SelectTrigger className="h-9 w-[140px] bg-white" aria-label="Filter by stage"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All stages</SelectItem>
+            {CRM_STAGES.map((stage) => <SelectItem key={stage} value={stage}>{CRM_STAGE_LABELS[stage][lang]}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={priorityFilter} onValueChange={(value) => setPriorityFilter(value as typeof priorityFilter)}>
+          <SelectTrigger className="h-9 w-[130px] bg-white" aria-label="Filter by priority"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All priorities</SelectItem>
+            {CRM_PRIORITIES.map((priority) => <SelectItem key={priority} value={priority}>{CRM_PRIORITY_LABELS[priority][lang]}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={dueFilter} onValueChange={(value) => setDueFilter(value as typeof dueFilter)}>
+          <SelectTrigger className="h-9 w-[130px] bg-white" aria-label="Filter by due date"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Any due date</SelectItem>
+            <SelectItem value="today">Due today</SelectItem>
+            <SelectItem value="overdue">Overdue</SelectItem>
+          </SelectContent>
+        </Select>
+        <Input value={savedViewName} onChange={(event) => setSavedViewName(event.target.value)} placeholder="Save view as" aria-label="Saved view name" className="h-9 w-36 bg-white" />
+        <Button type="button" variant="outline" className="h-9" onClick={() => {
+          const name = savedViewName.trim();
+          if (!name) return;
+          const next = [...savedViews.filter((view) => view.name !== name), { name, filters: mondayFilters }];
+          setSavedViews(next);
+          localStorage.setItem(savedViewKey, JSON.stringify(next));
+          setSavedViewName("");
+        }}>Save view</Button>
+        {savedViews.length > 0 && (
+          <Select onValueChange={(name) => {
+            const saved = savedViews.find((view) => view.name === name);
+            if (!saved) return;
+            setSearch(saved.filters.search);
+            setStageFilter(saved.filters.stage);
+            setPriorityFilter(saved.filters.priority);
+            setDueFilter(saved.filters.due);
+            if (saved.filters.affiliate === "house") setMasterAffiliateFilter("house");
+          }}>
+            <SelectTrigger className="h-9 w-[150px] bg-white" aria-label="Saved views"><SelectValue placeholder="Saved views" /></SelectTrigger>
+            <SelectContent>
+              {savedViews.map((view) => <SelectItem key={view.name} value={view.name}>{view.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        )}
+      </div>
+
+      {isMasterView && <CrmPipelineTotals totals={summarizeAffiliatePipelines(deals, affiliateNames ?? {})} />}
+
       <div className="grid grid-cols-3 gap-3 mb-6 max-w-lg">
         <StatChip icon={<CircleDollarSign className="h-4 w-4" />} label={t.pipelineValue} value={money(String(openValue))} />
         <StatChip icon={<Inbox className="h-4 w-4" />} label={t.openDeals} value={String(openCount)} />
         <StatChip icon={<CircleDollarSign className="h-4 w-4" />} label={t.won} value={String(wonCount)} />
       </div>
 
-      {/* Mobile stage selector */}
-      <div className="md:hidden mb-4">
-        <Select value={mobileStage} onValueChange={(v) => setMobileStage(v as CrmStage)}>
-          <SelectTrigger className="w-full">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {CRM_PIPELINE_STAGES.map((s) => (
-              <SelectItem key={s} value={s}>
-                {CRM_STAGE_LABELS[s][lang]} ({byStage[s].length})
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
       {isLoading ? (
         <div className="grid md:grid-cols-2 xl:grid-cols-5 gap-4">
           {[0, 1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-64 rounded-lg" />)}
         </div>
+      ) : crmView === "table" ? (
+        <CrmTableView
+          deals={viewDeals.map((deal): TableDeal => ({
+            ...deal,
+            ownerName: deal.ownerUserId != null ? decorations.data?.owners?.[deal.ownerUserId]?.name ?? decorations.data?.owners?.[deal.ownerUserId]?.email : null,
+            lastActivityAt: decorations.data?.lastActivity?.[deal.id]?.at ?? deal.updatedAt,
+          }))}
+          lang={lang}
+          showAffiliate={isMasterView}
+          affiliateNames={affiliateNames}
+          onOpen={setOpenDealId}
+          onPatch={(id, patch) => inlineUpdate.mutate({ id, ...patch })}
+        />
+      ) : crmView === "email" ? (
+        <CrmEmailWorkspace audience={boardScope === "affiliate" ? "affiliate" : "admin"} showConnections={isMasterView} prefill={emailPrefill} />
       ) : (
-        <>
-          {/* Mobile: single active stage */}
-          <div className="md:hidden">
-            <div
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => onDropTo(mobileStage, e)}
-              className="rounded-lg border border-border bg-muted/20 p-3 min-h-[16rem]"
-            >
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-sm font-semibold text-foreground">{CRM_STAGE_LABELS[mobileStage][lang]}</span>
-                <Badge variant="secondary">{byStage[mobileStage].length}</Badge>
-              </div>
-              <div className="space-y-2">
-                {byStage[mobileStage].length === 0 ? (
-                  <p className="text-xs text-muted-foreground py-6 text-center">{t.empty}</p>
-                ) : (
-                  byStage[mobileStage].map((d) => (
-                    <DealCard key={d.id} deal={d} lang={lang} onOpen={() => setOpenDealId(d.id)} affiliateName={isMasterView && d.affiliateId ? affiliateNames?.[d.affiliateId] : undefined} affiliateBrand={isMasterView && d.affiliateId ? affiliateBranding?.[d.affiliateId] : undefined} />
-                  ))
-                )}
-              </div>
-            </div>
-          </div>
-          {/* Desktop: all columns */}
-          <div className="hidden md:grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-            {CRM_PIPELINE_STAGES.map((stage) => (
-              <div
-                key={stage}
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => onDropTo(stage, e)}
-                className="rounded-lg border border-border bg-muted/20 p-3 min-h-[16rem]"
-              >
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-sm font-semibold text-foreground">{CRM_STAGE_LABELS[stage][lang]}</span>
-                  <Badge variant="secondary">{byStage[stage].length}</Badge>
-                </div>
-                <div className="space-y-2">
-                  {byStage[stage].length === 0 ? (
-                    <p className="text-xs text-muted-foreground py-6 text-center">{t.empty}</p>
-                  ) : (
-                    byStage[stage].map((d) => (
-                      <DealCard key={d.id} deal={d} lang={lang} onOpen={() => setOpenDealId(d.id)} affiliateName={isMasterView && d.affiliateId ? affiliateNames?.[d.affiliateId] : undefined} affiliateBrand={isMasterView && d.affiliateId ? affiliateBranding?.[d.affiliateId] : undefined} />
-                    ))
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </>
+        <CrmStageBoard
+          deals={viewDeals}
+          lang={lang}
+          onMove={(id, stage) => move.mutate({ id, stage })}
+          onQuickAdd={(stage, title) => quickAdd.mutate({ title, stage, affiliateId: affiliateId ?? masterAffiliateId })}
+          renderCard={(deal) => (
+            <DealCard
+              deal={deal}
+              lang={lang}
+              onOpen={() => setOpenDealId(deal.id)}
+              affiliateName={isMasterView ? (deal.affiliateId ? affiliateNames?.[deal.affiliateId] : "Cabinet Dealz") : undefined}
+              affiliateBrand={isMasterView && deal.affiliateId ? affiliateBranding?.[deal.affiliateId] : undefined}
+            />
+          )}
+        />
       )}
 
-      {/* Closed lane */}
-      <div className="grid gap-4 md:grid-cols-2 mt-4">
-        {CRM_CLOSED_STAGES.map((stage) => (
-          <div
-            key={stage}
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={(e) => onDropTo(stage, e)}
-            className="rounded-lg border border-dashed border-border p-3"
-          >
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-semibold text-muted-foreground">{CRM_STAGE_LABELS[stage][lang]}</span>
-              <Badge variant="outline">{byStage[stage].length}</Badge>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {byStage[stage].map((d) => (
-                <button
-                  key={d.id}
-                  onClick={() => setOpenDealId(d.id)}
-                  className="text-xs rounded border border-border bg-card px-2 py-1 hover:bg-accent"
-                >
-                  {d.title}
-                </button>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <DealDrawer dealId={openDealId} lang={lang} onClose={() => setOpenDealId(null)} />
+      <DealDrawer
+        dealId={openDealId}
+        lang={lang}
+        onClose={() => setOpenDealId(null)}
+        onCompose={(prefill) => { setEmailPrefill(prefill); setCrmView("email"); setOpenDealId(null); }}
+      />
     </div>
   );
 }
@@ -384,6 +425,11 @@ function DealCard({ deal, lang, onOpen, affiliateName, affiliateBrand }: { deal:
           {CRM_PRIORITY_LABELS[deal.priority][lang]}
         </span>
       </div>
+      {crmDueState(deal.nextFollowUpAt) !== "none" && (
+        <div className={`mb-1 inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold ${crmDueState(deal.nextFollowUpAt) === "overdue" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-800"}`}>
+          {crmDueState(deal.nextFollowUpAt) === "overdue" ? "Overdue" : "Due today"}
+        </div>
+      )}
       {affiliateName && (
         <div className="text-[10px] font-medium text-foreground bg-muted rounded px-1.5 py-0.5 inline-flex items-center gap-1.5 mb-1">
           <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: brandColor }} />
@@ -662,7 +708,7 @@ function ImportLeadsDialog({ lang }: { lang: Lang }) {
 }
 
 // ─── Deal detail drawer ───────────────────────────────────────────────────────
-function DealDrawer({ dealId, lang, onClose }: { dealId: number | null; lang: Lang; onClose: () => void }) {
+function DealDrawer({ dealId, lang, onClose, onCompose }: { dealId: number | null; lang: Lang; onClose: () => void; onCompose?: (prefill: EmailPrefill) => void }) {
   const utils = trpc.useUtils();
   const { data } = trpc.crm.deal.useQuery({ id: dealId! }, { enabled: dealId != null });
   const [note, setNote] = useState("");
@@ -723,11 +769,22 @@ function DealDrawer({ dealId, lang, onClose }: { dealId: number | null; lang: La
       <SheetContent className="w-full sm:max-w-md overflow-y-auto">
         {deal ? (
           <>
-            <SheetHeader>
+              <SheetHeader>
               <SheetTitle className="pr-6">{deal.contactName || deal.company || deal.title}</SheetTitle>
               <p className="text-xs text-muted-foreground">{deal.title}</p>
             </SheetHeader>
             <div className="space-y-4 mt-4">
+              <CrmDueBanner nextFollowUpAt={deal.nextFollowUpAt} />
+              <Button type="button" variant="outline" onClick={() => onCompose?.({
+                dealId: deal.id,
+                to: deal.contactEmail ?? "",
+                contactName: deal.contactName ?? "",
+                dealTitle: deal.title,
+                estimatedValue: deal.estimatedValue ?? "",
+                stage: deal.stage,
+                designLink: linkedDesigns[0]?.designUrl ?? "",
+                quoteLink: linkedDesigns[0]?.designUrl ?? "",
+              })}>Compose email</Button>
               <div className="flex items-center gap-2">
                 <Select value={deal.stage} onValueChange={(v) => updateStage.mutate({ id: deal.id, stage: v as CrmStage })}>
                   <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
@@ -805,6 +862,7 @@ function DealDrawer({ dealId, lang, onClose }: { dealId: number | null; lang: La
 
               {/* Email the contact */}
               <EmailSection deal={deal} lang={lang} emails={emails} dealId={deal.id} linkedDesigns={linkedDesigns} />
+              <CrmDealFiles dealId={deal.id} />
 
               {/* Linked designs */}
               <div>
