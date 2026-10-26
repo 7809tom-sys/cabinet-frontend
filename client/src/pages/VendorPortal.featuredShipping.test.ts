@@ -170,7 +170,9 @@ describe("Vendor Portal Featured Styles and Shipping", () => {
     // A profile-only vendor stays on Supplier Profile. The one deliberate exception
     // is an approved Pelican vendor, which has no cabinet line but owns its catalog,
     // shipping and fulfillment pages.
-    expect(source).toContain('page={supplierProfileOnly ? "supplier-profile" : isPelicanVendor && !PELICAN_NAV_IDS.has(page) ? "overview" : page}');
+    expect(source).toContain('page={catalogIdentityPending ? page : supplierProfileOnly ? "supplier-profile" : isPelicanVendor && !PELICAN_NAV_IDS.has(page) ? "overview" : page}');
+    expect(source).toContain("portalSectionAfterVendorSwitch");
+    expect(source).toContain("catalogIdentityPending");
     expect(source).toContain("const supplierProfileOnly = Boolean(\n    !isPelicanVendor");
     expect(source).toContain('item.id === "supplier-profile"');
     expect(source).toContain("Pending source-line link");
