@@ -38,6 +38,7 @@ import {
   ShoppingBag, BarChart2, BookOpen, Tag, Megaphone, Wrench, Share2, Facebook, Linkedin, Info,
 } from "lucide-react";
 import { CrmBoard } from "@/components/crm/CrmBoard";
+import { MyCustomersPanel } from "@/components/affiliate/MyCustomersPanel";
 import {
   AFFILIATE_MEMBERSHIP,
   formatMembershipPrice,
@@ -323,6 +324,7 @@ export default function AffiliateDashboard() {
   const VALID_SECTIONS = [
     "overview",
     "crm",
+    "customers",
     "design",
     "products",
     "orders",
@@ -397,7 +399,7 @@ export default function AffiliateDashboard() {
     : (myAccess.data ?? { isOwner: true, accessCrm: true, accessDesigner: true });
 
   useEffect(() => {
-    if ((section === "crm" && !access.accessCrm) || (section === "design" && !access.accessDesigner) || (section === "team" && !access.isOwner)) {
+    if (((section === "crm" || section === "customers") && !access.accessCrm) || (section === "design" && !access.accessDesigner) || (section === "team" && !access.isOwner)) {
       setSection("overview");
     }
   }, [access.accessCrm, access.accessDesigner, access.isOwner, section]);
@@ -412,6 +414,14 @@ export default function AffiliateDashboard() {
 
   if (!isAuthenticated) {
     return <AffiliateLanding />;
+  }
+
+  if (isAdmin && params.get("scope") === "house" && section === "customers") {
+    return (
+      <AffiliateDashboardLayout section="customers" onSection={setSection} storeName="House customers" storeSlug="" isAffiliateOwner canAccessCrm canAccessDesigner>
+        <MyCustomersPanel affiliateId={null} initialCustomerKey={params.get("customer")} canAssist />
+      </AffiliateDashboardLayout>
+    );
   }
 
   if (dashboardSelection.kind === "admin-picker") {
@@ -628,6 +638,10 @@ export default function AffiliateDashboard() {
             <h2 className="text-xl font-bold mb-4">My CRM</h2>
             <CrmBoard lang="en" affiliateId={affiliate.id} />
           </div>
+        );
+      case "customers":
+        return (
+          <MyCustomersPanel affiliateId={affiliate.id} initialCustomerKey={params.get("customer")} canAssist={access.accessDesigner} />
         );
       case "orders":
         return (

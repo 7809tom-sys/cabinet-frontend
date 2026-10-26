@@ -65,6 +65,8 @@ const SignIn = lazy(() => import("@/pages/SignIn"));
 const ResetPassword = lazy(() => import("@/pages/ResetPassword"));
 const AffiliateSetup = lazy(() => import("@/pages/AffiliateSetup"));
 const Account = lazy(() => import("@/pages/Account"));
+const StoreAccount = lazy(() => import("@/pages/StoreAccount"));
+const CustomerFeaturePreview = lazy(() => import("@/pages/CustomerFeaturePreview"));
 const PlanSheet = lazy(() => import("@/pages/PlanSheet"));
 const FeeSystemDoc = lazy(() => import("@/pages/FeeSystemDoc"));
 const Surfaces = lazy(() => import("@/pages/Surfaces"));
@@ -356,6 +358,22 @@ export default function App() {
             </Suspense>
           )}
         </Route>
+        <Route path="/store/:slug/account">
+          {(params) => (
+            <Suspense fallback={<PageLoader />}>
+              <AffiliateShell slug={params.slug}>
+                <StoreAccount slug={params.slug} />
+              </AffiliateShell>
+            </Suspense>
+          )}
+        </Route>
+        {import.meta.env.DEV && (
+          <Route path="/dev/customer-preview">
+            <Suspense fallback={<PageLoader />}>
+              <CustomerFeaturePreview />
+            </Suspense>
+          </Route>
+        )}
         <Route path="/store/:slug/design">
           {(params) => (
             <Suspense fallback={<PageLoader />}>

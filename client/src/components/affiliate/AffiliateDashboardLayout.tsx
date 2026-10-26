@@ -37,6 +37,7 @@ import { AffiliateStoreSwitcher } from "./AffiliateStoreSwitcher";
 export type AffiliateSection =
   | "overview"
   | "crm"
+  | "customers"
   | "design"
   | "products"
   | "orders"
@@ -59,6 +60,7 @@ export type AffiliateSection =
 const NAV_ITEMS: { icon: React.ElementType; label: string; section: AffiliateSection }[] = [
   { icon: LayoutDashboard, label: "Overview", section: "overview" },
   { icon: ShoppingBag, label: "My CRM", section: "crm" },
+  { icon: Users, label: "My Customers", section: "customers" },
   { icon: Palette, label: "Design Workspace", section: "design" },
   { icon: PackageOpen, label: "Products: Pelican & Closets", section: "products" },
   { icon: ShoppingBag, label: "Orders", section: "orders" },
@@ -161,7 +163,7 @@ function SidebarInner({
   const designerUrl = affiliateDesignerPath(storeSlug);
   const quoteUrl = affiliateOrderPath(storeSlug);
   const visibleNavItems = NAV_ITEMS.filter((item) =>
-    isAffiliateOwner || user?.role === "admin" || item.section === "overview" || (item.section === "crm" && canAccessCrm) || (item.section === "design" && canAccessDesigner),
+    isAffiliateOwner || user?.role === "admin" || item.section === "overview" || ((item.section === "crm" || item.section === "customers") && canAccessCrm) || (item.section === "design" && canAccessDesigner),
   );
 
   useEffect(() => {

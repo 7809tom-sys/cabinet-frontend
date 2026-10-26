@@ -336,6 +336,7 @@ export default function Storefront({ slug, previewData, focusShop = false }: { s
                     <PackageOpen className="h-4 w-4" /> View Kitchen Packages <ArrowRight className="h-4 w-4" />
                   </Button>
                 </Link>
+                <FeaturedKitchenPackages affiliateId={data.id} slug={data.slug} withRef={withRef} />
               </div>
               <div className="flex-1 grid grid-cols-2 gap-3">
                 {[
@@ -535,6 +536,23 @@ type HeaderProps = {
   Logo: (props: { light?: boolean }) => React.ReactElement;
 };
 
+function FeaturedKitchenPackages({ affiliateId, slug, withRef }: { affiliateId: number; slug: string; withRef: (path: string) => string }) {
+  const bundles = trpc.priceShop.listPublishedBundles.useQuery({ affiliateId }, { retry: false });
+  const featured = (bundles.data ?? []).filter((bundle) => bundle.featuredOnHome);
+  if (featured.length === 0) return null;
+  return (
+    <div className="mt-6 grid gap-3 sm:grid-cols-2">
+      {featured.slice(0, 2).map((bundle) => (
+        <Link key={bundle.id} href={withRef(`/store/${slug}/bundles`)} className="rounded-xl border border-border bg-card p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Featured kitchen</p>
+          <p className="mt-1 font-semibold">{bundle.name}</p>
+          {bundle.displayPrice && <p className="text-sm mt-1">${Number(bundle.displayPrice).toLocaleString()}</p>}
+        </Link>
+      ))}
+    </div>
+  );
+}
+
 function NavLinks({
   t,
   withRef,
@@ -558,6 +576,9 @@ function NavLinks({
       </Link>
       <Link href={withRef(`/design?affiliate=${slug}`)} className="hidden sm:block">
         <Button variant="ghost" size="sm" className={cls}>{t("nav_design")}</Button>
+      </Link>
+      <Link href={withRef(`/store/${slug}/account`)}>
+        <Button variant="ghost" size="sm" className={cls}>Account</Button>
       </Link>
       <Link href={withRef(`/store/${slug}/cart`)} aria-label="Cart">
         <Button variant="ghost" size="sm" className={`relative ${cls}`}>
