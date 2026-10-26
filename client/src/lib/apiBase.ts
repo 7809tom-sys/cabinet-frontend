@@ -12,3 +12,16 @@ export const API_BASE_URL = raw.replace(/\/+$/, "");
 
 export const apiUrl = (path: string): string =>
   `${API_BASE_URL}${path.startsWith("/") ? path : `/${path}`}`;
+
+/**
+ * QuickBooks OAuth sets a host-scoped cookie and Intuit returns to this site's
+ * `/api/qbo/callback`. Call the page origin (Vercel proxies `/api`) so that
+ * cookie is present on the callback. Local Vite has no proxy, so it uses the
+ * configured API host instead.
+ */
+export function sameSiteApiUrl(path: string, hostname?: string): string {
+  const normalized = path.startsWith("/") ? path : `/${path}`;
+  const host = hostname ?? (typeof window !== "undefined" ? window.location.hostname : "");
+  if (host === "localhost" || host === "127.0.0.1" || host === "[::1]" || host === "") return apiUrl(normalized);
+  return normalized;
+}

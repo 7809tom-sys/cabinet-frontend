@@ -178,10 +178,10 @@ export default function Storefront({ slug, previewData, focusShop = false }: { s
   const ref = data.referralCode;
   const withRef = (path: string) => `${path}${path.includes("?") ? "&" : "?"}ref=${encodeURIComponent(ref)}`;
   const heroImg = data.heroImageUrl || KITCHEN_SCENES["shaker-white"];
-  // New storefront-specific fields take precedence, while existing affiliates
-  // retain their already-published contact information without a forced update.
-  const storefrontPhone = data.publicPhone || data.phone;
-  const storefrontEmail = data.publicEmail || data.email;
+  // Only opt-in public contact fields. Login email and private phone are never
+  // part of the storefront payload.
+  const storefrontPhone = data.publicPhone;
+  const storefrontEmail = data.publicEmail;
   const storefrontLocation = data.publicAddress || data.serviceArea || data.location;
 
   const valueProps = [

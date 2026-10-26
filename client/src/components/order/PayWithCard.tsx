@@ -8,6 +8,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { toast } from "sonner";
 import { CreditCard, Lock, CheckCircle2, Truck, Loader2 } from "lucide-react";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { orderAccessTokenInput } from "@/lib/orderCheckoutAuth";
 
 // Minimal typing for the Accept.js global injected by the gateway script.
 type AcceptResponse = {
@@ -38,6 +39,8 @@ export interface PayWithCardProps {
   payerEmail?: string;
   /** Server-verified freight snapshot persisted on the order; zero is valid for pickup/free freight. */
   presetFreightCents?: number;
+  /** Present when the order was issued an access token. The signed-in owner must send it once that column is stored. */
+  accessToken?: string | null;
   onPaid?: (info: { transactionId: string | null; amountCents: number }) => void;
 }
 
@@ -52,6 +55,7 @@ export default function PayWithCard({
   payerName,
   payerEmail,
   presetFreightCents,
+  accessToken,
   onPaid,
 }: PayWithCardProps) {
   const { t } = useLanguage();
@@ -133,6 +137,7 @@ export default function PayWithCard({
               dataValue: res.opaqueData.dataValue,
             },
             payer: { name: payerName, email: payerEmail },
+            ...orderAccessTokenInput(accessToken),
           },
           {
             onSuccess: (r) => {
@@ -149,7 +154,7 @@ export default function PayWithCard({
         );
       },
     );
-  }, [config, freightOk, cardNumber, expMonth, expYear, cvc, zip, charge, orderRequestId, payerName, payerEmail, onPaid, t]);
+  }, [config, freightOk, cardNumber, expMonth, expYear, cvc, zip, charge, orderRequestId, payerName, payerEmail, accessToken, onPaid, t]);
 
   if (isLoading) {
     return <div className="flex justify-center py-6"><Spinner /></div>;

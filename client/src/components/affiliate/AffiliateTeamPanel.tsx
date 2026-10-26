@@ -15,16 +15,17 @@ import {
 } from "@/components/ui/dialog";
 import { Plus, Trash2, Users, UserCheck } from "lucide-react";
 
-export function AffiliateTeamPanel() {
+export function AffiliateTeamPanel({ affiliateId }: { affiliateId?: number }) {
   const utils = trpc.useUtils();
-  const { data: team, isLoading } = trpc.affiliates.myTeam.useQuery();
+  const teamInput = affiliateId ? { affiliateId } : undefined;
+  const { data: team, isLoading } = trpc.affiliates.myTeam.useQuery(teamInput);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ email: "", name: "", role: "salesperson" as "salesperson" | "designer", accessCrm: true, accessDesigner: true });
 
   const addMember = trpc.affiliates.addTeamMember.useMutation({
     onSuccess: () => {
       toast.success("Team member added");
-      utils.affiliates.myTeam.invalidate();
+      utils.affiliates.myTeam.invalidate(teamInput);
       setOpen(false);
       setForm({ email: "", name: "", role: "salesperson", accessCrm: true, accessDesigner: true });
     },
@@ -34,7 +35,7 @@ export function AffiliateTeamPanel() {
   const removeMember = trpc.affiliates.removeTeamMember.useMutation({
     onSuccess: () => {
       toast.success("Team member removed");
-      utils.affiliates.myTeam.invalidate();
+      utils.affiliates.myTeam.invalidate(teamInput);
     },
     onError: (e) => toast.error(e.message),
   });
@@ -98,7 +99,7 @@ export function AffiliateTeamPanel() {
             </div>
             <DialogFooter>
               <Button
-                onClick={() => addMember.mutate(form)}
+                onClick={() => addMember.mutate({ ...form, ...(affiliateId ? { affiliateId } : {}) })}
                 disabled={!form.email.trim() || addMember.isPending}
               >
                 {addMember.isPending ? "Adding…" : "Add Member"}
@@ -133,7 +134,7 @@ export function AffiliateTeamPanel() {
                 variant="ghost"
                 size="icon"
                 className="text-destructive hover:text-destructive"
-                onClick={() => removeMember.mutate({ id: m.id })}
+                onClick={() => removeMember.mutate({ id: m.id, ...(affiliateId ? { affiliateId } : {}) })}
                 disabled={removeMember.isPending}
               >
                 <Trash2 className="h-4 w-4" />
