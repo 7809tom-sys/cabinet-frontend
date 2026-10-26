@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { canonicalMouldingLabel, selectedCatalogOption } from "@shared/catalogCategorySpelling";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -52,7 +53,10 @@ type ConflictItem = {
   width: string | null;
   height: string | null;
   depth: string | null;
+  numberOfDrawers: number | null;
   conflictReason: string | null;
+  conflictStatus: string;
+  staysPublic: boolean;
   skuCount: number;
   distributorNames: string[];
   doorStyleNames: string[];
@@ -66,6 +70,7 @@ type EditForm = {
   width: string;
   height: string;
   depth: string;
+  numberOfDrawers: string;
   conflictReason: string;
   styleId: string; // "" = leave unchanged
 };
@@ -92,6 +97,7 @@ function EditConflictDialog({
     width: cabinet.width ?? "",
     height: cabinet.height ?? "",
     depth: cabinet.depth ?? "",
+    numberOfDrawers: cabinet.numberOfDrawers == null ? "" : String(cabinet.numberOfDrawers),
     conflictReason: cabinet.conflictReason ?? "",
     styleId: currentStyleId,
   });
@@ -99,7 +105,8 @@ function EditConflictDialog({
   // free-text entry so the dropdown still works.
   const knownCats = categoryOptions ?? [];
   const [customCat, setCustomCat] = useState(false);
-  const categoryIsKnown = form.category === "" || knownCats.includes(form.category);
+  const matchedCategory = selectedCatalogOption(knownCats, form.category);
+  const categoryIsKnown = form.category === "" || matchedCategory != null;
   const showCustomCat = customCat || (!categoryIsKnown && form.category !== "");
 
   const update = trpc.cabinets.updateConflictCabinet.useMutation({
@@ -108,7 +115,9 @@ function EditConflictDialog({
       onOpenChange(false);
       toast.success(
         vars.clearAfter
-          ? "Saved — conflict cleared and product is live again."
+          ? cabinet.staysPublic
+            ? "Saved. This value stays public and later spreadsheet imports will not overwrite the resolved fields."
+            : "Saved — conflict cleared and product is live again."
           : "Conflict product updated.",
       );
     },
@@ -125,6 +134,13 @@ function EditConflictDialog({
     width: form.width.trim() === "" ? null : form.width.trim(),
     height: form.height.trim() === "" ? null : form.height.trim(),
     depth: form.depth.trim() === "" ? null : form.depth.trim(),
+    numberOfDrawers: (() => {
+      const raw = form.numberOfDrawers.trim();
+      if (raw === "") return undefined;
+      const count = Number(raw);
+      if (!Number.isInteger(count) || count === cabinet.numberOfDrawers) return undefined;
+      return count;
+    })(),
     conflictReason: form.conflictReason.trim() === "" ? null : form.conflictReason.trim(),
     // Only send styleId when the admin actually picked a (different) one.
     styleId:
@@ -167,7 +183,7 @@ function EditConflictDialog({
                     size="sm"
                     onClick={() => {
                       setCustomCat(false);
-                      if (!knownCats.includes(form.category)) set("category", knownCats[0] ?? "");
+                      if (!selectedCatalogOption(knownCats, form.category)) set("category", knownCats[0] ?? "");
                     }}
                   >
                     List
@@ -175,7 +191,7 @@ function EditConflictDialog({
                 </div>
               ) : (
                 <Select
-                  value={knownCats.includes(form.category) ? form.category : ""}
+                  value={matchedCategory ?? ""}
                   onValueChange={(v) => {
                     if (v === CUSTOM_CATEGORY) {
                       setCustomCat(true);
@@ -191,7 +207,7 @@ function EditConflictDialog({
                   <SelectContent>
                     {knownCats.map((cat) => (
                       <SelectItem key={cat} value={cat}>
-                        {cat}
+                        {canonicalMouldingLabel(cat)}
                       </SelectItem>
                     ))}
                     <SelectItem value={CUSTOM_CATEGORY}>+ New category…</SelectItem>
@@ -245,6 +261,16 @@ function EditConflictDialog({
             </div>
           </div>
           <div className="grid gap-1.5">
+            <Label htmlFor="ec-drawers">Drawers</Label>
+            <Input
+              id="ec-drawers"
+              inputMode="numeric"
+              value={form.numberOfDrawers}
+              onChange={(e) => set("numberOfDrawers", e.target.value)}
+              placeholder="—"
+            />
+          </div>
+          <div className="grid gap-1.5">
             <Label htmlFor="ec-reason">Review note</Label>
             <Textarea
               id="ec-reason"
@@ -285,9 +311,14 @@ export default function ConflictsAdmin() {
   const { data, isLoading, error, refetch } = trpc.cabinets.conflicts.useQuery();
   const [editing, setEditing] = useState<ConflictItem | null>(null);
   const clear = trpc.cabinets.clearConflict.useMutation({
-    onSuccess: () => {
+    onSuccess: (_result, vars) => {
+      const item = (data ?? []).find((row) => row.id === vars.id);
       utils.cabinets.conflicts.invalidate();
-      toast.success("Conflict cleared — product is live again.");
+      toast.success(
+        item?.staysPublic
+          ? "Review cleared. The resolved value stays public and later spreadsheet imports will not overwrite it."
+          : "Conflict cleared — product is live again.",
+      );
     },
     onError: (e) => toast.error(e.message),
   });
@@ -320,9 +351,9 @@ export default function ConflictsAdmin() {
         <div className="text-sm">
           <p className="font-medium">Conflicts / Needs Review</p>
           <p className="text-amber-800">
-            Products held here are hidden from the public catalog, storefront and the 3D Designer
-            until reviewed. Prices are preserved. Edit a product to fix what caused the conflict, or
-            clear it to put the product back live.
+            Conflict items are hidden from the public catalog until cleared. Needs review items stay
+            public. Edit the flagged value here, then save and clear it. That resolved value becomes
+            the source of truth: later spreadsheet imports will not overwrite it.
           </p>
         </div>
       </div>
@@ -338,19 +369,22 @@ export default function ConflictsAdmin() {
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between gap-3">
                   <CardTitle className="text-base font-mono">{c.masterCode}</CardTitle>
-                  <Badge variant="destructive">Conflict</Badge>
+                  <Badge variant={c.staysPublic ? "outline" : "destructive"}>
+                    {c.staysPublic ? "Needs review" : "Conflict"}
+                  </Badge>
                 </div>
               </CardHeader>
               <CardContent className="space-y-2 text-sm">
                 <p className="text-foreground">{c.description}</p>
                 <div className="flex flex-wrap gap-x-6 gap-y-1 text-muted-foreground">
                   <span>
-                    <span className="font-medium text-foreground">Category:</span> {c.category}
-                    {c.subCategory ? ` / ${c.subCategory}` : ""}
+                    <span className="font-medium text-foreground">Category:</span> {canonicalMouldingLabel(c.category)}
+                    {c.subCategory ? ` / ${canonicalMouldingLabel(c.subCategory)}` : ""}
                   </span>
                   <span>
                     <span className="font-medium text-foreground">Size:</span> {fmtDim(c.width)}W ×{" "}
                     {fmtDim(c.height)}H × {fmtDim(c.depth)}D
+                    {c.numberOfDrawers != null ? ` · ${c.numberOfDrawers} drawer${c.numberOfDrawers === 1 ? "" : "s"}` : ""}
                   </span>
                   <span>
                     <span className="font-medium text-foreground">SKUs:</span> {c.skuCount}
@@ -392,9 +426,9 @@ export default function ConflictsAdmin() {
                       <AlertDialogHeader>
                         <AlertDialogTitle>Clear conflict for {c.masterCode}?</AlertDialogTitle>
                         <AlertDialogDescription>
-                          This returns the product to live status — it will appear in the public
-                          catalog, storefront and Design Tool again. Only do this after you've
-                          verified the product against the catalog book.
+                          {c.staysPublic
+                            ? "This keeps the product public and locks the flagged fields. Later spreadsheet imports will not overwrite the resolved value."
+                            : "This returns the product to live status — it will appear in the public catalog, storefront and Design Tool again. Only do this after you've verified the product against the catalog book."}
                         </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>

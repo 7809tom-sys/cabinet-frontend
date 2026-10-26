@@ -33,6 +33,7 @@ import { useCart } from "@/contexts/CartContext";
 import { toast } from "sonner";
 import { affiliateCabinetDetailHref } from "@/lib/affiliateCabinetDetailRoute";
 import { sortStorefrontCategoryTabs, storefrontCategoryTabLabel } from "@/lib/storefrontCategoryTabs";
+import { canonicalMouldingLabel } from "@shared/catalogCategorySpelling";
 import { affiliateDesignerPath } from "@/lib/affiliateStorefrontUrl";
 import { useSearch } from "wouter";
 import { doorStyleColorHex, doorStyleSwatchImageUrl } from "@/lib/doorColorSpectrum";
@@ -759,7 +760,7 @@ function LockedCatalog({
                     : { borderColor: "var(--border)" }
                 }
               >
-                {g}
+                {canonicalMouldingLabel(g)}
               </button>
             ))}
           </div>
@@ -923,7 +924,7 @@ function CatalogCard({
             {code}
           </span>
           {item.category && (
-            <Badge variant="secondary" className="text-[10px]">{item.category}</Badge>
+            <Badge variant="secondary" className="text-[10px]">{canonicalMouldingLabel(item.category)}</Badge>
           )}
         </div>
         <GlassPolicyBadge masterCode={code} glassIncluded={showing.glassIncluded} className="mb-1" />

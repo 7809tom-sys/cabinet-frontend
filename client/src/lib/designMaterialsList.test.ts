@@ -56,6 +56,9 @@ describe("complete Designer materials list", () => {
 	    for (const description of ["Base filler", "Crown molding", "Light rail molding", "Toe kick", "Scribe molding", "Arched valance", "Finished end panel"]) {
 	      expect(materialsListSectionFor({ code: description.toUpperCase().replaceAll(" ", "-"), description, category: "Trim & molding" })).toBe("cabinet");
 	    }
+	    for (const description of ["Crown Moulding", "Light Rail Moulding", "Scribe Moulding", "Batten Moulding"]) {
+	      expect(materialsListSectionFor({ code: description.toUpperCase().replaceAll(" ", "-"), description, category: "Trim & Moulding" })).toBe("cabinet");
+	    }
 	  });
 
   it("preserves supplier, style, dimensions, quantities, and exact authoritative prices", () => {

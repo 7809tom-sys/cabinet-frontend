@@ -14,10 +14,11 @@ export function useWhiteLabelHead(opts: {
   storeName?: string | null;
   tagline?: string | null;
   logoUrl?: string | null;
+  faviconUrl?: string | null;
   /** Preserve route-specific metadata owned by useSeo while retaining affiliate icon branding. */
   preserveRouteMetadata?: boolean;
 }) {
-  const { storeName, tagline, logoUrl, preserveRouteMetadata = false } = opts;
+  const { storeName, tagline, logoUrl, faviconUrl, preserveRouteMetadata = false } = opts;
 
   useEffect(() => {
     if (!storeName) return;
@@ -55,20 +56,21 @@ export function useWhiteLabelHead(opts: {
     }
 
     // Swap the favicon + social image to the affiliate's logo when they have one.
-    if (logoUrl) {
+    const iconUrl = faviconUrl || logoUrl;
+    if (iconUrl) {
       document
         .querySelectorAll<HTMLLinkElement>('link[rel="icon"], link[rel="apple-touch-icon"]')
         .forEach((link) => {
           const prevHref = link.href;
           const prevType = link.type;
-          link.href = logoUrl;
+          link.href = iconUrl;
           link.type = "";
           restores.push(() => {
             link.href = prevHref;
             link.type = prevType;
           });
         });
-      if (!preserveRouteMetadata) {
+      if (logoUrl && !preserveRouteMetadata) {
         setMeta('meta[property="og:image"]', logoUrl);
         setMeta('meta[name="twitter:image"]', logoUrl);
       }
@@ -78,5 +80,5 @@ export function useWhiteLabelHead(opts: {
       // Run in reverse so nested changes unwind cleanly.
       for (let i = restores.length - 1; i >= 0; i--) restores[i]();
     };
-  }, [storeName, tagline, logoUrl, preserveRouteMetadata]);
+  }, [storeName, tagline, logoUrl, faviconUrl, preserveRouteMetadata]);
 }

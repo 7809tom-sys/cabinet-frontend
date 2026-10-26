@@ -12,6 +12,7 @@
  */
 import { useState, useRef, useEffect, useCallback } from "react";
 import { trpc } from "@/lib/trpc";
+import { canonicalMouldingLabel } from "@shared/catalogCategorySpelling";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -346,7 +347,7 @@ function EditDialog({
           <DialogHeader className="flex flex-row items-center justify-between px-6 py-4 border-b shrink-0">
             <div className="min-w-0">
               <DialogTitle className="font-mono font-bold text-lg leading-tight">{cabinet.masterCode}</DialogTitle>
-              <p className="text-xs text-muted-foreground mt-0.5">{cabinet.category}{cabinet.subCategory ? ` › ${cabinet.subCategory}` : ""}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">{canonicalMouldingLabel(cabinet.category)}{cabinet.subCategory ? ` › ${canonicalMouldingLabel(cabinet.subCategory)}` : ""}</p>
             </div>
             {dirty && (
               <span className="flex items-center gap-1 text-xs text-amber-600 font-medium mr-2">
@@ -640,8 +641,8 @@ function CabinetTableRow({
       </td>
       <td className="px-3 py-2.5">
         <div className="flex flex-col gap-0.5">
-          <Badge variant="outline" className="text-xs w-fit">{cabinet.category}</Badge>
-          {cabinet.subCategory && <span className="text-xs text-muted-foreground">{cabinet.subCategory}</span>}
+          <Badge variant="outline" className="text-xs w-fit">{canonicalMouldingLabel(cabinet.category)}</Badge>
+          {cabinet.subCategory && <span className="text-xs text-muted-foreground">{canonicalMouldingLabel(cabinet.subCategory)}</span>}
         </div>
       </td>
       <td className="px-3 py-2.5 text-xs font-mono text-muted-foreground whitespace-nowrap">
@@ -839,7 +840,7 @@ export default function GenericCabinetsAdmin() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All categories</SelectItem>
-              {data?.categories.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+              {data?.categories.map(c => <SelectItem key={c} value={c}>{canonicalMouldingLabel(c)}</SelectItem>)}
             </SelectContent>
           </Select>
           <Select value={subCategory} onValueChange={v => { setSubCategory(v); setPage(1); }}>
@@ -848,7 +849,7 @@ export default function GenericCabinetsAdmin() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All sub-categories</SelectItem>
-              {data?.subCategories.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+              {data?.subCategories.map(s => <SelectItem key={s} value={s}>{canonicalMouldingLabel(s)}</SelectItem>)}
             </SelectContent>
           </Select>
           {data && <span className="text-sm text-muted-foreground ml-auto">{data.total.toLocaleString()} cabinets</span>}
@@ -953,7 +954,7 @@ export default function GenericCabinetsAdmin() {
 	                  )}
 	                  <div className="text-xs text-muted-foreground truncate mt-0.5">{cab.description || "—"}</div>
                   <div className="flex gap-1 mt-2 flex-wrap">
-                    <Badge variant="outline" className="text-xs">{cab.category}</Badge>
+                    <Badge variant="outline" className="text-xs">{canonicalMouldingLabel(cab.category)}</Badge>
                     <span className={cn("h-2 w-2 rounded-full mt-1", cab.isActive ? "bg-green-500" : "bg-muted-foreground/30")} />
                   </div>
                 </div>
@@ -990,7 +991,7 @@ export default function GenericCabinetsAdmin() {
                   <SelectValue placeholder="Select existing category…" />
                 </SelectTrigger>
                 <SelectContent>
-                  {data?.categories.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                  {data?.categories.map(c => <SelectItem key={c} value={c}>{canonicalMouldingLabel(c)}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
