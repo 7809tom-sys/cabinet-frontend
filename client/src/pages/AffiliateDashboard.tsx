@@ -14,6 +14,7 @@ import AffiliatePromotionsPanel from "@/components/affiliate/AffiliatePromotions
 import { AffiliatePluginsPanel } from "@/components/affiliate/AffiliatePluginsPanel";
 import { AffiliateAppointmentsPanel } from "@/components/affiliate/AffiliateAppointmentsPanel";
 import { InstallationEstimatesPanel } from "@/components/affiliate/InstallationEstimatesPanel";
+import { SampleOrderDesk } from "@/components/samples/SampleOrderDesk";
 import { getLoginUrl } from "@/const";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -326,6 +327,7 @@ export default function AffiliateDashboard() {
     "design",
     "products",
     "orders",
+    "samples",
     "earnings",
     "analytics",
     "catalog",
@@ -629,6 +631,8 @@ export default function AffiliateDashboard() {
             <CrmBoard lang="en" affiliateId={affiliate.id} />
           </div>
         );
+      case "samples":
+        return <SampleOrderDesk mode="affiliate" />;
       case "orders":
         return (
           <div className="max-w-4xl">

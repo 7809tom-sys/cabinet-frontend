@@ -67,6 +67,8 @@ type OrderRow = {
   sentToDistributorEmail?: string | null;
   qboInvoiceId?: string | null;
   qboSyncedAt?: Date | null;
+  orderKind?: string | null;
+  projectLabel?: string | null;
 };
 
 const STATUS_COLORS: Record<Status, string> = {
@@ -316,6 +318,7 @@ function OrderDetailDialog({
 
 export default function IncomingOrdersAdmin() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [kindFilter, setKindFilter] = useState<string>("all");
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [detailOrder, setDetailOrder] = useState<OrderRow | null>(null);
   const [qboOpen, setQboOpen] = useState(false);
@@ -394,6 +397,7 @@ export default function IncomingOrdersAdmin() {
   }
 
   const rows = (orders ?? []) as OrderRow[];
+  const visibleRows = rows.filter((order) => kindFilter === "all" || (order.orderKind ?? "standard") === kindFilter);
 
   return (
     <div className="space-y-4">
@@ -470,6 +474,16 @@ export default function IncomingOrdersAdmin() {
             </PopoverContent>
           </Popover>
 
+          <Select value={kindFilter} onValueChange={setKindFilter}>
+            <SelectTrigger className="w-40">
+              <SelectValue placeholder="All kinds" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All kinds</SelectItem>
+              <SelectItem value="sample">Sample orders</SelectItem>
+              <SelectItem value="standard">Standard orders</SelectItem>
+            </SelectContent>
+          </Select>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="w-40">
               <SelectValue placeholder="All statuses" />
@@ -519,7 +533,7 @@ export default function IncomingOrdersAdmin() {
         </div>
       </div>
 
-      {rows.length === 0 ? (
+      {visibleRows.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center text-muted-foreground">
             <Package className="h-10 w-10 mx-auto mb-3 opacity-30" />
@@ -528,7 +542,7 @@ export default function IncomingOrdersAdmin() {
         </Card>
       ) : (
         <div className="space-y-2">
-          {rows.map((order) => {
+          {visibleRows.map((order) => {
             const isExpanded = expandedId === order.id;
             return (
               <Card key={order.id} className="overflow-hidden">
@@ -545,6 +559,7 @@ export default function IncomingOrdersAdmin() {
                     )}
                     <CardTitle className="text-sm font-mono font-semibold flex-1">
                       {order.requestNumber}
+                      {order.orderKind === "sample" && <Badge variant="secondary" className="ml-2">Sample</Badge>}
                     </CardTitle>
                     <Badge className={`text-xs ${STATUS_COLORS[order.status]}`}>
                       {order.status}

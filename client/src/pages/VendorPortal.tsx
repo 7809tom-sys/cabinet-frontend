@@ -30,6 +30,10 @@ import { toast } from "sonner";
 import { Label } from "@/components/ui/label";
 import { csvEscape } from "@shared/inventoryForecast";
 import { VendorOtherProducts } from "@/components/vendor/VendorOtherProducts";
+import { VendorSalesForecast } from "@/components/vendor/VendorSalesForecast";
+import { VendorInventory } from "@/components/vendor/VendorInventory";
+import { VendorPricing } from "@/components/vendor/VendorPricing";
+import { VendorSamples } from "@/components/vendor/VendorSamples";
 import { VendorFulfillmentQueue } from "@/components/vendor/VendorFulfillmentQueue";
 import { VendorCodeUpload } from "@/components/vendor/VendorCodeUpload";
 import { PelicanShippingProfilesPanel } from "@/components/admin/ShippingAdmin";
@@ -79,12 +83,16 @@ async function readSupplierPdfAsBase64(file: File): Promise<string> {
 }
 
 // ─── Sub-pages ────────────────────────────────────────────────────────────────
-type VendorPage = "overview" | "supplier-profile" | "catalog" | "other-products" | "styles" | "featured-styles" | "shipping" | "picks" | "orders" | "fulfillment" | "promotions" | "gallery" | "analytics" | "ai-services" | "integrations" | "payments";
+type VendorPage = "overview" | "supplier-profile" | "catalog" | "inventory" | "forecast" | "pricing" | "samples" | "other-products" | "styles" | "featured-styles" | "shipping" | "picks" | "orders" | "fulfillment" | "promotions" | "gallery" | "analytics" | "ai-services" | "integrations" | "payments";
 
 const NAV_ITEMS: { id: VendorPage; label: string; icon: typeof LayoutDashboard }[] = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
-  { id: "supplier-profile", label: "Supplier Profile", icon: FileText },
-  { id: "catalog", label: "My Catalog", icon: Package },
+  { id: "catalog", label: "Products", icon: Package },
+  { id: "inventory", label: "Inventory", icon: PackageCheck },
+  { id: "forecast", label: "Sales Forecast", icon: BarChart3 },
+  { id: "pricing", label: "Pricing", icon: DollarSign },
+  { id: "samples", label: "Samples", icon: Palette },
+  { id: "supplier-profile", label: "Storefront", icon: FileText },
   { id: "other-products", label: "Other Products", icon: Package },
   { id: "styles", label: "Door Styles", icon: Palette },
   { id: "featured-styles", label: "Featured Styles", icon: Star },
@@ -102,7 +110,7 @@ const NAV_ITEMS: { id: VendorPage; label: string; icon: typeof LayoutDashboard }
 
 // Pelican has no cabinet supply line, so its portal is limited to the pages that
 // apply to surfaces and fixtures.
-const PELICAN_NAV_IDS: ReadonlySet<VendorPage> = new Set<VendorPage>(["overview", "supplier-profile", "catalog", "shipping", "fulfillment"]);
+const PELICAN_NAV_IDS: ReadonlySet<VendorPage> = new Set<VendorPage>(["overview", "supplier-profile", "catalog", "inventory", "forecast", "pricing", "shipping", "fulfillment"]);
 // ─── Pelican Vendor Catalog Page ─────────────────────────────────────────────
 function PelicanVendorCatalogPage({ initialCategory }: { initialCategory?: string } = {}) {
   const utils = trpc.useUtils();
@@ -486,6 +494,11 @@ function OverviewPage({ onNavigate }: { onNavigate: (page: VendorPage) => void }
         </Card>
 	      </div>
 
+      <div className="flex flex-wrap gap-2">
+        <Button variant="outline" onClick={() => onNavigate("forecast")}>Sales Forecast</Button>
+        <Button variant="outline" onClick={() => onNavigate("inventory")}>Inventory</Button>
+        <Button variant="outline" onClick={() => onNavigate("pricing")}>Pricing</Button>
+      </div>
 	      <div data-testid="vendor-editing-shortcuts" className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
 	        <Card className="border-amber-200 bg-amber-50/40">
 	          <CardHeader className="pb-2">
@@ -4668,11 +4681,16 @@ function VendorPortalDashboard({
     ? (distList.find((d: any) => d.id === activeDistributorId)?.code ?? undefined)
     : undefined;
   const isPelican = activeDistCode === PEL_DIST_CODE || isPelicanVendor;
-  const portalItems = supplierProfileOnly
+  const sampleAccess = trpc.vendorSamples.access.useQuery({
+    distributorId: isAdmin ? adminDistributorId ?? undefined : undefined,
+    approvedVendorLineId: isAdmin ? adminApprovedVendorLineId ?? undefined : undefined,
+  }, { enabled: !supplierProfileOnly && !isPelicanVendor });
+  const portalItems = (supplierProfileOnly
     ? NAV_ITEMS.filter((item) => item.id === "supplier-profile")
     : isPelicanVendor
       ? NAV_ITEMS.filter((item) => PELICAN_NAV_IDS.has(item.id))
-      : NAV_ITEMS;
+      : NAV_ITEMS
+  ).filter((item) => item.id !== "samples" || sampleAccess.data?.enabled);
   const [pelicanCategoryFilter, setPelicanCategoryFilter] = useState<string | undefined>(undefined);
 
   const handleNavigateToCatalog = useCallback((category?: string) => {
@@ -4755,6 +4773,10 @@ function VendorPortalDashboard({
 	        {page === "overview" && (isPelican ? <PelicanVendorOverviewPage onNavigateToCatalog={handleNavigateToCatalog} /> : <OverviewPage onNavigate={setPage} />)}
 	        {page === "supplier-profile" && <SupplierProfilePage />}
 	        {page === "catalog" && (isPelican ? <PelicanVendorCatalogPage initialCategory={pelicanCategoryFilter} /> : <CatalogPage />)}
+        {page === "inventory" && <VendorInventory distributorId={isAdmin ? adminDistributorId ?? undefined : undefined} approvedVendorLineId={isAdmin ? adminApprovedVendorLineId ?? undefined : undefined} />}
+        {page === "forecast" && <VendorSalesForecast distributorId={isAdmin ? adminDistributorId ?? undefined : undefined} approvedVendorLineId={isAdmin ? adminApprovedVendorLineId ?? undefined : undefined} />}
+        {page === "pricing" && <VendorPricing distributorId={isAdmin ? adminDistributorId ?? undefined : undefined} approvedVendorLineId={isAdmin ? adminApprovedVendorLineId ?? undefined : undefined} />}
+        {page === "samples" && <VendorSamples distributorId={isAdmin ? adminDistributorId ?? undefined : undefined} approvedVendorLineId={isAdmin ? adminApprovedVendorLineId ?? undefined : undefined} />}
 	        {page === "other-products" && <VendorOtherProducts distributorId={adminDistributorId ?? undefined} />}
 	        {page === "styles" && <DoorStylesPage />}
 	        {page === "featured-styles" && <VendorFeaturedStylesPage />}
