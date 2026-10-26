@@ -20,6 +20,7 @@ import { translateSpec } from "@/lib/i18n/specPhrases";
 import { useCart } from "@/contexts/CartContext";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { normalizeCode } from "@shared/cabinetCodeMatch";
+import { familyTypeMatches } from "@/lib/familyCategoryFilters";
 import {
   resolveStorefrontTier,
   resolveTierPrice,
@@ -79,28 +80,16 @@ function fmtPrice(n: number | null): string {
 }
 
 // Group the DB categories into the buyer-facing room-section filters.
-// The DB stores categories in Title Case (e.g. "Base", "Wall", "Trim and Molding");
-// we always lowercase before matching so casing differences don't break filters.
-const TYPE_FILTERS: { key: string; labelKey: string; match: (cat: string) => boolean }[] = [
-  { key: "all", labelKey: "fam_f_all", match: () => true },
-  { key: "base", labelKey: "fam_f_base", match: (c) => c === "base" || c === "corner" },
-  { key: "wall", labelKey: "fam_f_wall", match: (c) => c === "wall" },
-  { key: "tall", labelKey: "fam_f_tall", match: (c) => c === "tall" },
-  { key: "vanity", labelKey: "fam_f_vanity", match: (c) => c === "vanity" },
-  { key: "ada", labelKey: "fam_f_ada", match: (c) => c === "ada" },
-  {
-    key: "accessory",
-    labelKey: "fam_f_accessory",
-    match: (c) =>
-      c === "accessory" ||
-      c === "accessories" ||
-      c === "trim and molding" ||
-      c === "molding" ||
-      c === "filler's and panels" ||
-      c === "fillers and panels" ||
-      c === "specialty",
-  },
-];
+// Matching is case-insensitive and accepts both Molding and Moulding.
+const TYPE_FILTERS = [
+  { key: "all", labelKey: "fam_f_all" },
+  { key: "base", labelKey: "fam_f_base" },
+  { key: "wall", labelKey: "fam_f_wall" },
+  { key: "tall", labelKey: "fam_f_tall" },
+  { key: "vanity", labelKey: "fam_f_vanity" },
+  { key: "ada", labelKey: "fam_f_ada" },
+  { key: "accessory", labelKey: "fam_f_accessory" },
+] as const;
 
 function FamilyCabinetCard({
   item,
@@ -402,7 +391,7 @@ export default function Family({ styleCode }: { styleCode: string }) {
   const visible = useMemo(() => {
     const f = TYPE_FILTERS.find((t) => t.key === activeType) ?? TYPE_FILTERS[0];
     return items.filter((i) => {
-      if (!f.match((i.category ?? "").toLowerCase())) return false;
+      if (!familyTypeMatches(f.key, i.category)) return false;
       if (debounced) {
         const hay = `${i.masterCode} ${i.description ?? ""} ${i.subCategory ?? ""}`.toLowerCase();
         const normalizedCodeQuery = normalizeCode(debounced);

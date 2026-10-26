@@ -442,6 +442,16 @@ describe("cabinetDrawingType", () => {
     expect(cabinetDrawingType(cab)).toBe("accessory-strip");
   });
 
+  it("classifies crown moulding as accessory-strip", () => {
+    const cab: CabinetLike = {
+      masterCode: "CM-96",
+      description: "96in Crown Moulding",
+      category: "Moulding",
+      subCategory: "Crown Moulding",
+    };
+    expect(cabinetDrawingType(cab)).toBe("accessory-strip");
+  });
+
   it("classifies an ADA unit as ada", () => {
     const cab: CabinetLike = {
       masterCode: "ADA-B-30",

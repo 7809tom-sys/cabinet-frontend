@@ -4690,7 +4690,9 @@ describe("accessory placement (item 5: accessories into the drawing)", () => {
 
   it("keeps loose by-the-foot trim and hardware as BOM-only (not placeable)", () => {
     expect(isPlaceableAccessory({ masterCode: "CM-8", description: "Crown Molding 8ft", subCategory: "Trim & Molding" })).toBe(false);
+    expect(isPlaceableAccessory({ masterCode: "CM-8", description: "Crown Moulding 8ft", subCategory: "Trim & Moulding" })).toBe(false);
     expect(isPlaceableAccessory({ masterCode: "LR-8", description: "Light Rail Molding" })).toBe(false);
+    expect(isPlaceableAccessory({ masterCode: "LRM-8", description: "Light Rail Moulding", subCategory: "Light Rail Moulding" })).toBe(false);
     expect(isPlaceableAccessory({ masterCode: "ROT-21", description: "Roll-Out Tray 21", subCategory: "Roll-Out Trays" })).toBe(false);
     expect(isPlaceableAccessory({ masterCode: "PULL-5", description: "Bar Pull Hardware" })).toBe(false);
     expect(isPlaceableAccessory({ masterCode: "TEP3096", description: "Tall End Panel for Refrigerator Bridge Cabinet", subCategory: "Refrigerator End Panel" })).toBe(false);
@@ -4698,6 +4700,7 @@ describe("accessory placement (item 5: accessories into the drawing)", () => {
 
   it("isLooseTrimItem flags molding/hardware/trays", () => {
     expect(isLooseTrimItem({ description: "Crown Molding" })).toBe(true);
+    expect(isLooseTrimItem({ description: "Crown Moulding", subCategory: "Crown Moulding" })).toBe(true);
     expect(isLooseTrimItem({ description: "Toe Kick" })).toBe(true);
     expect(isLooseTrimItem({ description: "Base Decorative End Panel" })).toBe(false);
   });
