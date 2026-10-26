@@ -1,3 +1,5 @@
+import { canonicalMouldingLabel, normalizeCatalogCategoryValue } from "@shared/catalogCategorySpelling";
+
 export const STOREFRONT_CATEGORY_TAB_ORDER = [
   "Base",
   "Wall",
@@ -6,7 +8,7 @@ export const STOREFRONT_CATEGORY_TAB_ORDER = [
   "Filler",
   "Panels",
   "Wall Skin / Scribe Veneer",
-  "Molding",
+  "Moulding",
   "Accessory",
   "Vanity",
 ] as const;
@@ -17,7 +19,7 @@ const DISPLAY_LABELS: Readonly<Record<string, string>> = {
 };
 
 function normalizedCategory(value: string): string {
-  return value.trim().replace(/\s+/g, " ").toLowerCase();
+  return normalizeCatalogCategoryValue(value);
 }
 
 const TAB_RANK = new Map(
@@ -40,5 +42,5 @@ export function sortStorefrontCategoryTabs(categories: readonly string[]): strin
 
 /** Public button wording can be concise without changing the exact DB filter. */
 export function storefrontCategoryTabLabel(category: string): string {
-  return DISPLAY_LABELS[category] ?? category;
+  return canonicalMouldingLabel(DISPLAY_LABELS[category] ?? category);
 }

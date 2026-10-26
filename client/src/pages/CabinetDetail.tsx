@@ -20,6 +20,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
+import { applyVendorDiscount, promotionSpecificity, selectVendorPromotion, toPromotionRule, type VendorPromotionRule } from "@shared/vendorPromotions";
 import { toast } from "sonner";
 import { useAuth } from "@/_core/hooks/useAuth";
 import {
@@ -45,6 +46,14 @@ import { useSeo } from "@/hooks/useSeo";
 import { buildProductJsonLd } from "@/lib/seo/jsonLd";
 import { translateSpec } from "@/lib/i18n/specPhrases";
 import { nonEmptyStyleCategories } from "@/lib/catalogCategories";
+import {
+  canonicalMouldingLabel,
+  catalogCategoryCount,
+  catalogCategoryQueryValue,
+  catalogCategoryRecordValue,
+  catalogCategoryValuesEqual,
+  selectedCatalogOption,
+} from "@shared/catalogCategorySpelling";
 import { DoorDrawerDiagram } from "@/components/design/DoorDrawerDiagram";
 import { affiliateCabinetHref, affiliateCatalogRootHref, affiliateDesignerHref } from "@/lib/affiliateStorefrontRoute";
 import { affiliateSlugForStoreScope, resolveStoreScope } from "@/lib/affiliateContext";
@@ -63,7 +72,7 @@ import {
 // ─── Cabinet categories (loaded from DB, with hardcoded fallback) ────────────
 const FALLBACK_CATEGORIES = [
   "Base", "Wall", "Tall", "Corner", "Drawer", "Specialty",
-  "Vanity", "Pantry", "Island", "Filler", "Molding", "Accessory",
+  "Vanity", "Pantry", "Island", "Filler", "Moulding", "Accessory",
 ] as const;
 
 const FALLBACK_SUB_CATEGORIES: Record<string, string[]> = {
@@ -77,7 +86,7 @@ const FALLBACK_SUB_CATEGORIES: Record<string, string[]> = {
   Pantry:    ["Pantry Cabinet","Pantry Pull-Out"],
   Island:    ["Island Base","Island Drawer"],
   Filler:    ["Filler Panel","Side Panel","Scribe Moulding"],
-  Molding:   ["Crown Moulding","Light Rail","Base Moulding","Valance"],
+  Moulding:  ["Crown Moulding","Light Rail","Base Moulding","Valance"],
   Accessory: ["Hardware","Organizer","Shelf","Lazy Susan Insert","Drawer Insert"],
 };
 
@@ -152,6 +161,7 @@ function formatCatalogInches(value: string | null | undefined): string | null {
 
 interface StyleRow {
   styleId: number;
+  skuId?: number | null;
   styleCode: string;
   name: string;
   doorStyle: string | null;
@@ -207,35 +217,63 @@ type ActivePromo = {
   skuIds: unknown;
   styleId: number | null;
   category: string | null;
-  discountType: "percent" | "fixed_price";
+  discountType: "percent" | "fixed_amount" | "fixed_price";
   discountValue: string;
 };
 
+/** Most specific applicable promotion wins. Equal scope keeps the lower price. */
+function promotionOutranks(next: VendorPromotionRule, current: VendorPromotionRule): boolean {
+  const specificity = promotionSpecificity(next) - promotionSpecificity(current);
+  if (specificity !== 0) return specificity > 0;
+  const price = applyVendorDiscount(100, next) - applyVendorDiscount(100, current);
+  if (price !== 0) return price < 0;
+  return next.id < current.id;
+}
+
+/**
+ * Every applicable promotion is considered. The discount stacks on the normal
+ * sell price using backend promotion rules (percent, fixed amount, or a legacy
+ * fixed price). Molding and Moulding are the same category. A row only uses
+ * another line's promotion when it has no distributor of its own.
+ */
 function findMatchingPromo(
   promos: ActivePromo[],
   row: StyleRow,
   cabinetCategory?: string | null
 ): ActivePromo | null {
   if (!promos.length) return null;
-  for (const p of promos) {
-    if (row.distributorId != null && p.distributorId !== row.distributorId) continue;
-    // Check targeting: skuIds, styleId, or category
-    const matchesSku = p.skuIds && Array.isArray(p.skuIds) && (p.skuIds as number[]).includes(row.styleId);
-    const matchesStyle = p.styleId != null && p.styleId === row.styleId;
-    const matchesCategory = p.category != null && cabinetCategory != null && p.category === cabinetCategory;
-    const isUntargeted = !p.skuIds && p.styleId == null && !p.category;
-    if (matchesSku || matchesStyle || matchesCategory || isUntargeted) return p;
+  const category = cabinetCategory ?? null;
+  const groups = new Map<number, ActivePromo[]>();
+  for (const promo of promos) {
+    if (row.distributorId != null && promo.distributorId !== row.distributorId) continue;
+    const group = groups.get(promo.distributorId) ?? [];
+    group.push(promo);
+    groups.set(promo.distributorId, group);
   }
-  return null;
+
+  let winner: { promo: ActivePromo; rule: VendorPromotionRule } | null = null;
+  for (const [distributorId, group] of groups) {
+    const rules = group.flatMap((promo) => {
+      const rule = toPromotionRule(promo);
+      if (rule.category && !catalogCategoryValuesEqual(rule.category, category)) return [];
+      return [{ ...rule, category: rule.category ? category : null, distributorId }];
+    });
+    const match = selectVendorPromotion(rules, {
+      distributorId,
+      skuId: row.skuId ?? null,
+      styleId: row.styleId,
+      category,
+    });
+    if (!match) continue;
+    const promo = group.find((item) => item.id === match.id);
+    if (!promo) continue;
+    if (!winner || promotionOutranks(match, winner.rule)) winner = { promo, rule: match };
+  }
+  return winner?.promo ?? null;
 }
 
 function applyPromoToPrice(promo: ActivePromo, originalPrice: number): number {
-  const val = Number(promo.discountValue);
-  if (promo.discountType === "percent") {
-    return originalPrice * (1 - val / 100);
-  }
-  // fixed_price = the promo IS the new price
-  return val;
+  return applyVendorDiscount(originalPrice, toPromotionRule(promo));
 }
 
 // ─── Price card (tier price + homeowner "Compare at" strike-through) ─────────
@@ -1098,7 +1136,7 @@ export default function CabinetDetail({ masterCode }: Props) {
             <>
               <span>/</span>
               <Link href={affiliateCatalogRootHref()} className="hover:text-foreground">
-                {cabinet.category}
+                {canonicalMouldingLabel(cabinet.category)}
               </Link>
             </>
           )}
@@ -1650,7 +1688,7 @@ export default function CabinetDetail({ masterCode }: Props) {
                 <div className="space-y-1.5">
                   <Label htmlFor="edit-cat">Category</Label>
                   <Select
-                    value={editCategory || "__none__"}
+                    value={selectedCatalogOption(categoryNames, editCategory) || editCategory || "__none__"}
                     onValueChange={(v) => {
                       const cat = v === "__none__" ? "" : v;
                       setEditCategory(cat);
@@ -1663,7 +1701,7 @@ export default function CabinetDetail({ masterCode }: Props) {
                     <SelectContent>
                       <SelectItem value="__none__">— not set —</SelectItem>
                       {categoryNames.map((c) => (
-                        <SelectItem key={c} value={c}>{c}</SelectItem>
+                        <SelectItem key={c} value={c}>{canonicalMouldingLabel(c)}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -1676,7 +1714,7 @@ export default function CabinetDetail({ masterCode }: Props) {
                     <span className="text-muted-foreground font-normal text-xs">(optional)</span>
                   </Label>
                   <Select
-                    value={editSubCategory || "__none__"}
+                    value={selectedCatalogOption(catalogCategoryRecordValue(subCategoriesMap, editCategory) ?? [], editSubCategory) || editSubCategory || "__none__"}
                     onValueChange={(v) => setEditSubCategory(v === "__none__" ? "" : v)}
                     disabled={!editCategory}
                   >
@@ -1685,9 +1723,12 @@ export default function CabinetDetail({ masterCode }: Props) {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="__none__">— not set —</SelectItem>
-                      {(editCategory && subCategoriesMap[editCategory] ? subCategoriesMap[editCategory] : []).map((s) => (
-                        <SelectItem key={s} value={s}>{s}</SelectItem>
+                      {(catalogCategoryRecordValue(subCategoriesMap, editCategory) ?? []).map((s) => (
+                        <SelectItem key={s} value={s}>{canonicalMouldingLabel(s)}</SelectItem>
                       ))}
+                      {editSubCategory && !selectedCatalogOption(catalogCategoryRecordValue(subCategoriesMap, editCategory) ?? [], editSubCategory) && (
+                        <SelectItem value={editSubCategory}>{canonicalMouldingLabel(editSubCategory)}</SelectItem>
+                      )}
                     </SelectContent>
                   </Select>
                 </div>
@@ -2672,7 +2713,7 @@ function StyleCategoryNav({
   // the visitor in an empty category result.
   useEffect(() => {
     if (!data || activeCategory === null) return;
-    if ((data.categoryCounts?.[activeCategory] ?? 0) === 0) {
+    if (catalogCategoryCount(data.categoryCounts, activeCategory) === 0) {
       setActiveCategory(null);
       setPage(0);
     }
@@ -2696,25 +2737,28 @@ function StyleCategoryNav({
         >
           All
         </button>
-        {categories.map((cat) => (
+        {categories.map((cat) => {
+          const filterValue = catalogCategoryQueryValue(data?.categoryCounts, cat);
+          return (
           <button
             key={cat}
             onClick={() => {
-              setActiveCategory(cat);
+              setActiveCategory(filterValue);
               setShowResults(true);
               setPage(0);
             }}
             className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
-              activeCategory === cat && showResults
+              catalogCategoryValuesEqual(activeCategory, cat) && showResults
                 ? "bg-primary text-primary-foreground border-primary"
-                : cat === currentCategory
+                : catalogCategoryValuesEqual(cat, currentCategory)
                   ? "bg-accent text-accent-foreground border-accent"
                   : "bg-muted/50 text-muted-foreground border-border hover:bg-muted hover:text-foreground"
             }`}
           >
-            {cat}
+            {canonicalMouldingLabel(cat)}
           </button>
-        ))}
+          );
+        })}
         {/* Search input */}
         <div className="relative shrink-0 ml-auto">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
@@ -2771,11 +2815,11 @@ function StyleCategoryNav({
                   {item.masterCode}
                 </div>
                 <div className="text-xs text-muted-foreground truncate">
-                  {item.description || item.category}
+                  {item.description || canonicalMouldingLabel(item.category)}
                 </div>
               </div>
               <Badge variant="outline" className="shrink-0 text-[10px]">
-                {item.category}
+                {canonicalMouldingLabel(item.category)}
               </Badge>
             </Link>
           ))}

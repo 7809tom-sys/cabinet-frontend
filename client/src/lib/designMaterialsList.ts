@@ -5,6 +5,7 @@ import { isApplianceCode } from "@/lib/design";
 import { isCatalogFiller } from "@/lib/catalogFiller";
 import { normalizeFinalMaterialSelections } from "@/lib/surfaceSelection";
 import { equivalentTrimMasterCodes } from "@/lib/trimCart";
+import { canonicalMouldingLabel } from "@shared/catalogCategorySpelling";
 
 export type MaterialsListSection = "cabinet" | "other";
 export type MaterialsListPriceStatus = "priced" | "quote_required" | "unavailable";
@@ -293,7 +294,7 @@ export function materialsListCsv(rows: readonly MaterialsListRow[]): string {
   const lines = [header.map(csvEscape).join(",")];
   for (const row of rows) {
     lines.push([
-      row.label, row.section === "cabinet" ? "Cabinets & cabinet parts" : "Other materials", row.code, row.description, row.category,
+      row.label, row.section === "cabinet" ? "Cabinets & cabinet parts" : "Other materials", row.code, row.description, canonicalMouldingLabel(row.category),
       row.supplier, row.styleColor, row.dimensions, row.qty,
       row.unitPrice == null ? "" : row.unitPrice.toFixed(2), row.lineTotal == null ? "" : row.lineTotal.toFixed(2), row.notes,
     ].map(csvEscape).join(","));
@@ -330,7 +331,7 @@ export function materialsListPrintHtml(args: {
     const priceLabel = (row: MaterialsListRow, value: number | null) => value == null
       ? (row.priceStatus === "unavailable" ? "Unavailable" : "Quote required")
       : `$${value.toFixed(2)}`;
-    return `<h2>${htmlEscape(heading)}</h2><table><thead><tr><th>No.</th><th>Item code</th><th>Description</th><th>Category</th><th>Distributor</th><th>Color / style</th><th>Dimensions</th><th>Qty</th><th>Unit price</th><th>Line total</th><th>Notes</th></tr></thead><tbody>${rows.map((row) => `<tr><td>${htmlEscape(row.label)}</td><td>${htmlEscape(row.code)}</td><td>${htmlEscape(row.description)}</td><td>${htmlEscape(row.category)}</td><td>${htmlEscape(row.supplier)}</td><td>${htmlEscape(row.styleColor)}</td><td>${htmlEscape(row.dimensions)}</td><td class="number">${row.qty}</td><td class="number">${priceLabel(row, row.unitPrice)}</td><td class="number">${priceLabel(row, row.lineTotal)}</td><td>${htmlEscape(row.notes)}</td></tr>`).join("")}</tbody></table>`;
+    return `<h2>${htmlEscape(heading)}</h2><table><thead><tr><th>No.</th><th>Item code</th><th>Description</th><th>Category</th><th>Distributor</th><th>Color / style</th><th>Dimensions</th><th>Qty</th><th>Unit price</th><th>Line total</th><th>Notes</th></tr></thead><tbody>${rows.map((row) => `<tr><td>${htmlEscape(row.label)}</td><td>${htmlEscape(row.code)}</td><td>${htmlEscape(row.description)}</td><td>${htmlEscape(canonicalMouldingLabel(row.category))}</td><td>${htmlEscape(row.supplier)}</td><td>${htmlEscape(row.styleColor)}</td><td>${htmlEscape(row.dimensions)}</td><td class="number">${row.qty}</td><td class="number">${priceLabel(row, row.unitPrice)}</td><td class="number">${priceLabel(row, row.lineTotal)}</td><td>${htmlEscape(row.notes)}</td></tr>`).join("")}</tbody></table>`;
   };
   const unavailable = args.rows.filter((row) => row.priceStatus === "unavailable").length;
   const quoteRequired = args.rows.filter((row) => row.priceStatus === "quote_required").length;

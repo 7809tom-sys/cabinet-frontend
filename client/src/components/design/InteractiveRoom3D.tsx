@@ -29,7 +29,7 @@ import { doorHardwareOffsetFromFaceCenterIn, hardwareStyle, normalizeDoorHardwar
 import { ovenOpeningGeometry } from "@/lib/ovenOpening";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { normalizeCode } from "@shared/cabinetCodeMatch";
+import { searchCatalogItems } from "@shared/catalogCodeSearch";
 import { AEF_PRINTED_GEOMETRY_MARKER } from "@shared/aefFramelessGeometry";
 import { toast } from "sonner";
 import { pantryDrawerFrontLayout } from "@/lib/pantryDrawerLayout";
@@ -354,6 +354,13 @@ export type InteractiveRoomCatalogItem = {
 	  depth?: number | null;
 	  glassDoor?: boolean;
 	  glassDoorAddonCode?: string | null;
+  replacementMasterCode?: string | null;
+  aliases?: readonly string[] | string | null;
+  sku?: string | null;
+  vendorSku?: string | null;
+  altSku1?: string | null;
+  altSku2?: string | null;
+  altSku3?: string | null;
 };
 
 export function threeDCatalogDragFitText(item: Pick<InteractiveRoomCatalogItem, "masterCode">, fit: WallGapFitPreview): string {
@@ -368,16 +375,14 @@ export const THREE_D_CATALOG_GROUPS = ["All", "Base", "Corner", "Wall", "Tall", 
 export type ThreeDCatalogGroup = (typeof THREE_D_CATALOG_GROUPS)[number];
 
 export function filteredThreeDCatalogItems(items: InteractiveRoomCatalogItem[], group: ThreeDCatalogGroup, search: string): InteractiveRoomCatalogItem[] {
-  const query = search.trim().toLowerCase();
-  const normalizedCodeQuery = normalizeCode(query);
-  return items.filter((item) => {
+  const query = search.trim();
+  const grouped = items.filter((item) => {
     const itemGroup = item.catalogGroup ?? (item.category === "Appliance" ? "Appliances" : item.category === "Accessory" ? "Accessories" : "Base");
-    const groupMatches = group === "All" || itemGroup === group;
-    const searchMatches = !query
-      || `${item.masterCode} ${item.description ?? ""} ${item.category}`.toLowerCase().includes(query)
-      || (normalizedCodeQuery.length > 0 && normalizeCode(item.masterCode).includes(normalizedCodeQuery));
-    return groupMatches && searchMatches;
+    return group === "All" || itemGroup === group;
   });
+  if (!query) return grouped;
+  return searchCatalogItems(grouped, query, (item, raw) => `${item.description ?? ""} ${item.category}`.toLowerCase().includes(raw.toLowerCase()))
+    .map((hit) => hit.item);
 }
 
 /** Core 2D-style capabilities preserved in the compact, canvas-first 3D toolbar. */

@@ -7,6 +7,10 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { AffiliateDashboardLayout, type AffiliateSection } from "@/components/affiliate/AffiliateDashboardLayout";
 import AffiliatePricingPanel from "@/components/affiliate/AffiliatePricingPanel";
 import AffiliateCatalogPanel from "@/components/affiliate/AffiliateCatalogPanel";
+import AffiliateVendorCatalog from "@/components/affiliate/AffiliateVendorCatalog";
+import AffiliateWhiteLabelFields from "@/components/affiliate/AffiliateWhiteLabelFields";
+import StorefrontDraftPreview from "@/components/affiliate/StorefrontDraftPreview";
+import { buildAffiliateCatalogVendors, parseSectionLabels, WHITE_LABEL_RESET } from "@shared/affiliateStorefrontControls";
 import AffiliateAnalyticsPanel from "@/components/affiliate/AffiliateAnalyticsPanel";
 import { AffiliateImageCabinet } from "@/components/affiliate/AffiliateImageCabinet";
 import AffiliateMarketingHub from "@/components/affiliate/AffiliateMarketingHub";
@@ -348,6 +352,7 @@ export default function AffiliateDashboard() {
       : "overview"
   ) as AffiliateSection;
   const [section, setSection] = useState<AffiliateSection>(initialSection);
+  const [catalogVendor, setCatalogVendor] = useState<string | null>(null);
 
   const isAdmin = user?.role === "admin";
   // Incrementing this key causes StorefrontPreviewPanel to reload its iframe.
@@ -697,8 +702,21 @@ export default function AffiliateDashboard() {
         return <EarningsPanel />;
       case "analytics":
         return <AffiliateAnalyticsPanel />;
-      case "catalog":
-        return <AffiliateCatalogPanel affiliateId={affiliate.id} isAdminView={isAdminViewAs} />;
+      case "catalog": {
+        if (!catalogVendor) return <AffiliateCatalogPanel affiliateId={affiliate.id} isAdminView={isAdminViewAs} />;
+        const vendors = buildAffiliateCatalogVendors(null);
+        const label = vendors.vendors.find((vendor) => vendor.key === catalogVendor)?.label
+          ?? (catalogVendor.startsWith("distributor:") ? "Cabinet line" : catalogVendor);
+        return (
+          <AffiliateVendorCatalog
+            vendorKey={catalogVendor}
+            vendorLabel={label}
+            affiliateId={affiliate.id}
+            isAdmin={isAdmin || isAdminViewAs}
+            onShowAllVendors={() => setCatalogVendor(null)}
+          />
+        );
+      }
       case "pricing":
         return <AffiliatePricingPanel affiliateId={affiliate.id} isAdminView={isAdminViewAs} hardwareCatalogHref={hardwareUrl} />;
       case "customize":
@@ -780,6 +798,8 @@ export default function AffiliateDashboard() {
       isAffiliateOwner={access.isOwner}
       canAccessCrm={access.accessCrm}
       canAccessDesigner={access.accessDesigner}
+      catalogVendor={catalogVendor}
+      onOpenCatalog={setCatalogVendor}
     >
       {renderSection()}
     </AffiliateDashboardLayout>
@@ -976,6 +996,16 @@ type AffiliateRow = {
   buttonRadius: string | null;
   embedCodeDraft?: string | null;
   embedEnabled?: boolean | null;
+  logoDarkUrl?: string | null;
+  faviconUrl?: string | null;
+  backgroundColor?: string | null;
+  textColor?: string | null;
+  footerText?: string | null;
+  showPublicEmail?: boolean | null;
+  showPublicPhone?: boolean | null;
+  showPublicAddress?: boolean | null;
+  hidePlatformBranding?: boolean | null;
+  sectionLabelsJson?: string | null;
 };
 
 // ── Typography options ──────────────────────────────────────────────────────
@@ -1042,6 +1072,27 @@ const SCENE_LABELS: Record<KitchenSceneKey, { name: string; desc: string }> = {
   "slab-natural": { name: "Natural Wood Slab", desc: "Sleek European-modern with warmth." },
 };
 
+function whiteLabelFields(a: AffiliateRow) {
+  const labels = parseSectionLabels(a.sectionLabelsJson);
+  return {
+    logoDarkUrl: a.logoDarkUrl ?? "",
+    faviconUrl: a.faviconUrl ?? "",
+    backgroundColor: a.backgroundColor ?? "",
+    textColor: a.textColor ?? "",
+    footerText: a.footerText ?? "",
+    showPublicEmail: Boolean(a.showPublicEmail),
+    showPublicPhone: Boolean(a.showPublicPhone),
+    showPublicAddress: Boolean(a.showPublicAddress),
+    hidePlatformBranding: Boolean(a.hidePlatformBranding),
+    labelCatalog: labels.catalog,
+    labelSurfaces: labels.surfaces,
+    labelCloset: labels.closet,
+    labelDesigner: labels.designer,
+    labelQuote: labels.quote,
+    labelCart: labels.cart,
+  };
+}
+
 function CustomizeTab({
   affiliate,
   onSaved,
@@ -1062,9 +1113,9 @@ function CustomizeTab({
     aboutTextEs: a.aboutTextEs ?? "",
     primaryColor: a.primaryColor ?? "",
     accentColor: a.accentColor ?? "",
-    publicEmail: a.publicEmail ?? a.email ?? "",
-    publicPhone: a.publicPhone ?? a.phone ?? "",
-    publicAddress: a.publicAddress ?? a.location ?? "",
+    publicEmail: a.publicEmail ?? "",
+    publicPhone: a.publicPhone ?? "",
+    publicAddress: a.publicAddress ?? "",
     logoUrl: a.logoUrl ?? "",
     watermarkEnabled: a.watermarkEnabled ?? false,
     watermarkPosition: "bottom-right" as const,
@@ -1078,6 +1129,7 @@ function CustomizeTab({
     fontFamily: a.fontFamily ?? "",
     headingFont: a.headingFont ?? "",
     buttonRadius: a.buttonRadius ?? "0.375rem",
+    ...whiteLabelFields(a),
   });
   const [form, setForm] = useState({
     storeName: affiliate.storeName ?? "",
@@ -1087,9 +1139,9 @@ function CustomizeTab({
     aboutTextEs: affiliate.aboutTextEs ?? "",
     primaryColor: affiliate.primaryColor ?? "",
     accentColor: affiliate.accentColor ?? "",
-    publicEmail: affiliate.publicEmail ?? affiliate.email ?? "",
-    publicPhone: affiliate.publicPhone ?? affiliate.phone ?? "",
-    publicAddress: affiliate.publicAddress ?? affiliate.location ?? "",
+    publicEmail: affiliate.publicEmail ?? "",
+    publicPhone: affiliate.publicPhone ?? "",
+    publicAddress: affiliate.publicAddress ?? "",
     logoUrl: affiliate.logoUrl ?? "",
     watermarkEnabled: affiliate.watermarkEnabled ?? false,
     watermarkPosition: "bottom-right" as const,
@@ -1103,6 +1155,7 @@ function CustomizeTab({
     fontFamily: affiliate.fontFamily ?? "",
     headingFont: affiliate.headingFont ?? "",
     buttonRadius: affiliate.buttonRadius ?? "0.375rem",
+    ...whiteLabelFields(affiliate),
   });
   const [showLaunchSuccess, setShowLaunchSuccess] = useState(false);
   const [websiteImportUrl, setWebsiteImportUrl] = useState(affiliate.website ?? "");
@@ -1212,28 +1265,28 @@ function CustomizeTab({
   }
 
   const uploadLogo = trpc.affiliates.uploadLogo.useMutation({
-    onSuccess: ({ url }) => {
-      // The server already persisted logoUrl; mirror it into the form so the
-      // preview updates immediately and a later Save won't blank it out.
-      set("logoUrl", url);
+    onSuccess: ({ url, kind }) => {
+      // The server already persisted the image; mirror it into the form so a
+      // later Save won't blank it out.
+      if (kind === "logoDark") set("logoDarkUrl", url);
+      else if (kind === "favicon") set("faviconUrl", url);
+      else if (kind === "hero") set("heroImageUrl", url);
+      else set("logoUrl", url);
       toast.success("Logo uploaded", { description: "It is already saved to your store." });
       onSaved();
     },
     onError: (e) => toast.error("Logo upload failed", { description: e.message }),
   });
 
-  function onLogoFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  function uploadBrandFile(file: File, kind: "logo" | "logoDark" | "favicon" | "hero" = "logo") {
     const allowed = ["image/png", "image/jpeg", "image/webp", "image/gif", "image/svg+xml"];
     if (!allowed.includes(file.type)) {
       toast.error("Unsupported file type", { description: "Use PNG, JPG, WebP, GIF, or SVG." });
-      e.target.value = "";
       return;
     }
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error("Logo must be 5MB or smaller");
-      e.target.value = "";
+    const maxBytes = kind === "favicon" ? 512 * 1024 : 5 * 1024 * 1024;
+    if (file.size > maxBytes) {
+      toast.error(kind === "favicon" ? "Favicon must be 512KB or smaller" : "Image must be 5MB or smaller");
       return;
     }
     setLogoUploading(true);
@@ -1255,13 +1308,42 @@ function CustomizeTab({
           imageBase64: match[2],
           contentType: match[1],
           fileName: file.name,
+          kind,
           ...(isAdmin ? { affiliateId: affiliate.id } : {}),
         },
         { onSettled: () => setLogoUploading(false) }
       );
     };
     reader.readAsDataURL(file);
+  }
+
+  function onLogoFile(e: React.ChangeEvent<HTMLInputElement>, kind: "logo" | "logoDark" | "favicon" | "hero" = "logo") {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    uploadBrandFile(file, kind);
     e.target.value = "";
+  }
+
+  function whiteLabelPayload() {
+    return {
+      logoDarkUrl: form.logoDarkUrl || null,
+      faviconUrl: form.faviconUrl || null,
+      backgroundColor: form.backgroundColor || null,
+      textColor: form.textColor || null,
+      footerText: form.footerText || null,
+      showPublicEmail: form.showPublicEmail,
+      showPublicPhone: form.showPublicPhone,
+      showPublicAddress: form.showPublicAddress,
+      hidePlatformBranding: form.hidePlatformBranding,
+      sectionLabels: {
+        catalog: form.labelCatalog,
+        surfaces: form.labelSurfaces,
+        closet: form.labelCloset,
+        designer: form.labelDesigner,
+        quote: form.labelQuote,
+        cart: form.labelCart,
+      },
+    };
   }
 
   function storefrontPayload(storefrontEnabled = form.storefrontEnabled) {
@@ -1293,6 +1375,7 @@ function CustomizeTab({
       fontFamily: form.fontFamily || null,
       headingFont: form.headingFont || null,
       buttonRadius: form.buttonRadius || null,
+      ...whiteLabelPayload(),
     };
   }
 
@@ -1387,6 +1470,76 @@ function CustomizeTab({
 
   return (
     <div className="space-y-6">
+      <StorefrontDraftPreview draft={{
+        storeName: form.storeName,
+        tagline: form.tagline,
+        logoUrl: form.logoUrl,
+        logoDarkUrl: form.logoDarkUrl,
+        faviconUrl: form.faviconUrl,
+        heroImageUrl: form.heroImageUrl,
+        primaryColor: form.primaryColor,
+        accentColor: form.accentColor,
+        backgroundColor: form.backgroundColor,
+        textColor: form.textColor,
+        fontFamily: form.fontFamily,
+        headingFont: form.headingFont,
+        buttonRadius: form.buttonRadius,
+        footerText: form.footerText,
+        publicEmail: form.publicEmail,
+        publicPhone: form.publicPhone,
+        publicAddress: form.publicAddress,
+        serviceArea: form.serviceArea,
+        showPublicEmail: form.showPublicEmail,
+        showPublicPhone: form.showPublicPhone,
+        showPublicAddress: form.showPublicAddress,
+        hidePlatformBranding: form.hidePlatformBranding,
+        sectionLabels: {
+          catalog: form.labelCatalog,
+          surfaces: form.labelSurfaces,
+          closet: form.labelCloset,
+          designer: form.labelDesigner,
+          quote: form.labelQuote,
+          cart: form.labelCart,
+        },
+      }} />
+      <AffiliateWhiteLabelFields
+        form={form}
+        set={(key, value) => set(key, value as never)}
+        primaryColor={form.primaryColor}
+        uploading={logoUploading}
+        onUpload={(kind, file) => uploadBrandFile(file, kind)}
+        onReset={() => {
+          const labels = WHITE_LABEL_RESET.sectionLabels;
+          setForm((current) => ({
+            ...current,
+            primaryColor: "",
+            accentColor: "",
+            backgroundColor: "",
+            textColor: "",
+            fontFamily: "",
+            headingFont: "",
+            buttonRadius: WHITE_LABEL_RESET.buttonRadius,
+            logoUrl: "",
+            logoDarkUrl: "",
+            faviconUrl: "",
+            heroImageUrl: "",
+            footerText: "",
+            hidePlatformBranding: false,
+            showPublicEmail: false,
+            showPublicPhone: false,
+            showPublicAddress: false,
+            publicEmail: "",
+            publicPhone: "",
+            publicAddress: "",
+            labelCatalog: labels.catalog,
+            labelSurfaces: labels.surfaces,
+            labelCloset: labels.closet,
+            labelDesigner: labels.designer,
+            labelQuote: labels.quote,
+            labelCart: labels.cart,
+          }));
+        }}
+      />
       <section data-testid="affiliate-launch-setup" className="rounded-xl border border-primary/30 bg-primary/[0.04] p-5 sm:p-6 space-y-5">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div>
