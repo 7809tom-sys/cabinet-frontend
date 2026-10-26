@@ -97,9 +97,15 @@ describe("four-anchor wall-label mapping", () => {
   it("uses SB36 as the straight sink anchor and never substitutes a corner sink base on a wall run", () => {
     const sb36 = { id: 1, masterCode: "SB36", description: '36" Sink Base Cabinet', placement: "base" as const, width: "36" };
     const cornerSink = { id: 2, masterCode: "CSB36", description: '36" Corner Sink Base Cabinet', placement: "base" as const, width: "36" };
+    const diagonalCornerSink = { id: 3, masterCode: "DCSB36", description: '36" Diagonal Corner Sink Base', placement: "base" as const, width: "36" };
+    const diagonalDrawer = { id: 4, masterCode: "DCSB36", description: '36" Corner Drawer Base Cabinet', placement: "base" as const, width: "36" };
+    const diagonalBare = { id: 5, masterCode: "DCSB36", description: "", placement: "base" as const, width: "36" };
 
     expect(isAutoBuildStraightSinkBaseCandidate(sb36)).toBe(true);
     expect(isAutoBuildStraightSinkBaseCandidate(cornerSink)).toBe(false);
+    expect(isAutoBuildStraightSinkBaseCandidate(diagonalCornerSink)).toBe(false);
+    expect(isAutoBuildStraightSinkBaseCandidate(diagonalDrawer)).toBe(false);
+    expect(isAutoBuildStraightSinkBaseCandidate(diagonalBare)).toBe(false);
   });
 
   it("never auto-fills a straight selected wall with a corner cabinet", () => {
