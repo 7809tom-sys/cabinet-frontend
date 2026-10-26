@@ -1,3 +1,5 @@
+import { catalogCategoryValuesEqual } from "./catalogCategorySpelling";
+
 export type PelicanPackagingEvidenceType = "supplier_verified" | "comparable_estimate";
 
 export type PelicanComparablePackagingProduct = {
@@ -177,7 +179,7 @@ export const PELICAN_COMPARABLE_PACKAGING_RULES: readonly PelicanComparablePacka
   {
     id: "flooring-trim-v1",
     category: "Flooring",
-    subCategory: "Moldings & Trim",
+    subCategory: "Mouldings & Trim",
     transportMode: "parcel",
     lengthIn: 96,
     widthIn: 4,
@@ -309,7 +311,7 @@ export function comparablePackagingRuleForPelicanProduct(
 ): PelicanComparablePackagingRule | null {
   const matched = PELICAN_COMPARABLE_PACKAGING_RULES.find((rule) => (
     rule.category === product.category
-    && (rule.subCategory == null || rule.subCategory === product.subCategory)
+    && (rule.subCategory == null || catalogCategoryValuesEqual(rule.subCategory, product.subCategory))
     && (rule.namePattern == null || rule.namePattern.test(product.name))
   ));
   return matched ?? null;

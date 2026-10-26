@@ -18,6 +18,10 @@ const TAB_HELP: Record<string, { en: string; zh: string; link?: { label: string;
     en: "Browse all registered customers. View their order history, membership tier, and account details.",
     zh: "瀏覽所有已註冊的客戶。查看其訂單歷史、會員等級及帳戶詳情。",
   },
+  "crm-cleanup": {
+    en: "Preview test and fake CRM records, edit the keep list, download a CSV, then confirm deletion of that exact snapshot. Preview does not delete anything.",
+    zh: "預覽測試與假的 CRM 紀錄，編輯保留清單，下載 CSV，然後確認刪除該快照。預覽不會刪除任何資料。",
+  },
   roles: {
     en: "Manage user roles and permissions. Promote users to admin, sales rep, or other roles to control access.",
     zh: "管理使用者角色與權限。將使用者提升為管理員、銷售代表或其他角色以控制存取權限。",

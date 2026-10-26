@@ -26,6 +26,7 @@ import {
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useSeo } from "@/hooks/useSeo";
 import { translateSpec } from "@/lib/i18n/specPhrases";
+import { canonicalMouldingLabel, isCatalogMouldingCategory } from "@shared/catalogCategorySpelling";
 
 // ─── Category presentation config ──────────────────────────────────────────────
 // Maps DB category values to a room-scene image + short description. Categories
@@ -67,7 +68,7 @@ const CATEGORY_TILES: Record<string, CategoryTile> = {
     blurb: "Bathroom vanity bases with sink and storage options.",
   },
   Accessory: {
-    match: (c) => c === "accessory",
+    match: (c) => c === "accessory" || isCatalogMouldingCategory(c),
     image: "/manus-storage/cat-accessory_c93204c0.jpg",
     blurb: "Crown molding, fillers, end panels, shelves and trim.",
   },
@@ -575,7 +576,7 @@ function CategoryView({
           />
           <div className="absolute inset-0 bg-gradient-to-r from-[var(--color-navy)]/90 to-transparent" />
           <div className="relative px-6 py-5">
-            <h1 className="font-serif text-2xl font-bold text-white">{category}</h1>
+            <h1 className="font-serif text-2xl font-bold text-white">{canonicalMouldingLabel(category)}</h1>
             <p className="text-white/80 text-xs mt-0.5">{tileFor(category).blurb}</p>
           </div>
         </div>

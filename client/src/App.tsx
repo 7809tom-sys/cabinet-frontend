@@ -27,6 +27,7 @@ import {
 import { ShoppingCart } from "lucide-react";
 import { PreferredProductsProvider } from "@/contexts/PreferredProductsContext";
 import { affiliateCatalogPath, affiliateDesignerPath, affiliateOrderPath, affiliateOwnerScopeDestination } from "@/lib/affiliateStorefrontUrl";
+import { DEFAULT_SECTION_LABELS, storefrontCssVars } from "@shared/affiliateStorefrontControls";
 
 // Lazy-loaded pages
 const Catalog = lazy(() => import("@/pages/Catalog"));
@@ -90,6 +91,7 @@ const ShippingPolicy = lazy(() => import("@/pages/ShippingPolicy"));
 const ReturnPolicy = lazy(() => import("@/pages/ReturnPolicy"));
 const PrivacyPolicy = lazy(() => import("@/pages/PrivacyPolicy"));
 const Terms = lazy(() => import("@/pages/Terms"));
+const CrmMondayPreview = lazy(() => import("@/pages/CrmMondayPreview"));
 const InstallationEstimateDocument = lazy(() => import("@/pages/InstallationEstimateDocument"));
 const Hardware = lazy(() => import("@/pages/Hardware"));
 
@@ -152,10 +154,21 @@ function AffiliateShell({ slug, children, fullHeight = false, hideAdminEditModeB
     storeName: data?.storeName,
     tagline: data?.tagline,
     logoUrl,
+    faviconUrl: data?.faviconUrl,
     preserveRouteMetadata,
   });
+  const labels = { ...DEFAULT_SECTION_LABELS, ...(data?.sectionLabels ?? {}) };
+  const brandStyle = storefrontCssVars({
+    primaryColor,
+    accentColor,
+    backgroundColor: data?.backgroundColor,
+    textColor: data?.textColor,
+    fontFamily: data?.fontFamily,
+    headingFont: data?.headingFont,
+    buttonRadius: data?.buttonRadius,
+  });
   return (
-    <div className={`flex flex-col ${fullHeight ? "h-[100dvh] overflow-hidden" : "min-h-screen"}`}>
+    <div className={`flex flex-col ${fullHeight ? "h-[100dvh] overflow-hidden" : "min-h-screen"}`} style={{ ...brandStyle, background: "var(--sf-bg, transparent)", color: "var(--sf-text, inherit)", fontFamily: "var(--sf-font-body, inherit)" }}>
       {!hideAdminEditModeBar && <AdminEditModeBar />}
       <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur px-4 py-3 flex items-center justify-between" style={{ borderBottomColor: accentColor, borderBottomWidth: 2 }}>
         <a href={`/store/${slug}`} className="flex items-center gap-2">
@@ -166,11 +179,12 @@ function AffiliateShell({ slug, children, fullHeight = false, hideAdminEditModeB
           )}
         </a>
         <nav className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-xs sm:text-sm font-medium text-muted-foreground" aria-label="Store navigation">
-          <a href={affiliateCatalogPath(slug)} className="hover:text-foreground">Catalog</a>
-          <a href={`/store/${slug}/surfaces`} className="hover:text-foreground">Surfaces &amp; Fixtures</a>
-          <a href={`/store/${slug}/closet`} className="hover:text-foreground">Closet Studio</a>
-          <a href={affiliateDesignerPath(slug)} className="hover:text-foreground">3D Designer</a>
-          <a href={affiliateOrderPath(slug)} className="hover:text-foreground">Get a Quote</a>
+          <a href={affiliateCatalogPath(slug)} className="hover:text-foreground">{labels.catalog}</a>
+          <a href={`/store/${slug}/surfaces`} className="hover:text-foreground">{labels.surfaces}</a>
+          <a href={`/store/${slug}/closet`} className="hover:text-foreground">{labels.closet}</a>
+          <a href={affiliateDesignerPath(slug)} className="hover:text-foreground">{labels.designer}</a>
+          <a href={affiliateOrderPath(slug)} className="hover:text-foreground">{labels.quote}</a>
+          <span data-testid="social-links-slot" className="sr-only">Social links</span>
           <a href={`/store/${slug}/cart`} aria-label="Shopping cart" className="hover:text-foreground">
             <ShoppingCart className="h-5 w-5" />
           </a>
@@ -913,6 +927,14 @@ export default function App() {
             </Suspense>
           </AppLayout>
         </Route>
+
+        {import.meta.env.DEV && (
+          <Route path="/dev/crm-preview">
+            <Suspense fallback={<PageLoader />}>
+              <CrmMondayPreview />
+            </Suspense>
+          </Route>
+        )}
 
         <Route path="/terms">
           <AppLayout>

@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertTriangle, CheckCircle2, History, Undo2, XCircle, Pencil } from "lucide-react";
 
+import { catalogItemMatchesCode } from "@shared/catalogCodeSearch";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../../server/routers";
 
@@ -325,6 +326,7 @@ export default function MasterChangesAdmin() {
     const q = filter.trim().toLowerCase();
     if (!q) return true;
     return (
+      catalogItemMatchesCode(r, filter) ||
       r.masterCode.toLowerCase().includes(q) ||
       (r.cabinetDescription ?? "").toLowerCase().includes(q) ||
       (r.submittedByName ?? "").toLowerCase().includes(q) ||

@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { ImageIcon, RotateCw, RotateCcw, Upload, Search, X } from "lucide-react";
+import { canonicalMouldingLabel } from "@shared/catalogCategorySpelling";
 
 // ─── In-browser image editor ────────────────────────────────────────────────
 // Crop (drag a square within the image), rotate, zoom. Outputs a square JPEG
@@ -339,7 +340,7 @@ function EditDialog({
                     onChange={(e) => setCat(e.target.value)}
                   >
                     <option value="">— none —</option>
-                    {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+                    {categories.map((c) => <option key={c} value={c}>{canonicalMouldingLabel(c)}</option>)}
                   </select>
                 </div>
                 <div>
@@ -350,7 +351,7 @@ function EditDialog({
                     onChange={(e) => setSubCat(e.target.value)}
                   >
                     <option value="">— none —</option>
-                    {subCategories.map((s) => <option key={s} value={s}>{s}</option>)}
+                    {subCategories.map((s) => <option key={s} value={s}>{canonicalMouldingLabel(s)}</option>)}
                   </select>
                 </div>
               </div>
@@ -595,7 +596,7 @@ function MasterEditDialog({ row, onClose }: { row: MasterRow; onClose: () => voi
                     onChange={(e) => setCat(e.target.value)}
                   >
                     <option value="">— none —</option>
-                    {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+                    {categories.map((c) => <option key={c} value={c}>{canonicalMouldingLabel(c)}</option>)}
                   </select>
                 </div>
                 <div>
@@ -606,7 +607,7 @@ function MasterEditDialog({ row, onClose }: { row: MasterRow; onClose: () => voi
                     onChange={(e) => setSubCat(e.target.value)}
                   >
                     <option value="">— none —</option>
-                    {subCategories.map((s) => <option key={s} value={s}>{s}</option>)}
+                    {subCategories.map((s) => <option key={s} value={s}>{canonicalMouldingLabel(s)}</option>)}
                   </select>
                 </div>
               </div>
@@ -734,9 +735,9 @@ export default function SkuImageManager() {
           {grouped.map(({ cat, sub, rows }) => (
             <div key={`${cat}-${sub}`}>
               <div className="mb-3 border-b pb-1">
-                <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">{cat}</span>
+                <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">{canonicalMouldingLabel(cat)}</span>
                 <h3 className="text-sm font-semibold text-foreground">
-                  {sub} <span className="font-normal text-xs text-muted-foreground">· {rows.length}</span>
+                  {canonicalMouldingLabel(sub)} <span className="font-normal text-xs text-muted-foreground">· {rows.length}</span>
                 </h3>
               </div>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">

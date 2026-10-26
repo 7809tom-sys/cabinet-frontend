@@ -12,6 +12,7 @@ import {
 import { CabinetImage } from "@/components/CabinetImage";
 import { GlassPolicyBadge } from "@/components/GlassPolicyBadge";
 import { cabinetTypeLabel, type CabinetLike } from "@/lib/cabinetGraphics";
+import { canonicalMouldingLabel } from "@shared/catalogCategorySpelling";
 import {
   cabinetConfigurationSummary,
   cabinetDimensionSummary,
@@ -105,8 +106,8 @@ export function CabinetQuickViewDialog({
             </div>
 
             <dl className="mt-4 grid grid-cols-2 gap-2">
-              <Fact label="Category" value={cabinet.category} />
-              <Fact label="Cabinet type" value={cabinet.subCategory ?? cabinet.placementType ?? null} />
+              <Fact label="Category" value={cabinet.category ? canonicalMouldingLabel(cabinet.category) : cabinet.category} />
+              <Fact label="Cabinet type" value={cabinet.subCategory ? canonicalMouldingLabel(cabinet.subCategory) : (cabinet.placementType ?? null)} />
               <Fact label="Configuration" value={configuration.length ? configuration.join(" · ") : "See product detail"} />
               <Fact label="Placement" value={cabinet.placementType ? `${cabinet.placementType} placement` : null} />
             </dl>

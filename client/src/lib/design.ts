@@ -694,6 +694,15 @@ export interface DesignCabinet {
   masterCode: string;
   /** Palette-only label for a composed catalog choice; never persisted or priced as a SKU. */
   displayMasterCode?: string | null;
+  /** Spreadsheet ReplacementMasterCode. Search resolves this row to that master. */
+  replacementMasterCode?: string | null;
+  /** Semicolon-separated Aliases cell, or the alias list already stored for this cabinet. */
+  aliases?: readonly string[] | string | null;
+  sku?: string | null;
+  vendorSku?: string | null;
+  altSku1?: string | null;
+  altSku2?: string | null;
+  altSku3?: string | null;
   description: string;
   category: string | null;
   subCategory: string | null;
@@ -5670,7 +5679,8 @@ export function isCornerCabinet(masterCode: string, description?: string): boole
   // ERB is how the catalog stores the same cabinet). WER is the wall easy-reach.
   // LS## = Lazy Susan (e.g. LS3612, LS3312); LSB## = Lazy Susan Base (older naming)
   // BER## = Easy-Reach corner base (Skyline naming, e.g. BER33, BER36)
-  if (/^(BBC|WBC|BLB|LSB?|CSB|WLS|DCW|DCB|ER|ERB|BER|WER|WDC|KWD|AG-|AG\d|CAG)/.test(code)) return true;
+  // DCSB## = Diagonal Corner Sink Base (e.g. DCSB36). Sink fronts DCFF/DCSF stay out.
+  if (/^(BBC|WBC|BLB|LSB?|CSB|WLS|DCW|DCB|DCSB|ER|ERB|BER|WER|WDC|KWD|AG-|AG\d|CAG)/.test(code)) return true;
   if (/-CNR|CORNER/.test(code)) return true;
   return /corner|lazy susan|easy reach|blind|diagonal|angled (wall|corner)/.test(desc);
 }
@@ -5706,7 +5716,8 @@ export function requiresRoomCornerPlacement(cabinet: Pick<PlacedCabinet, "master
 
 // A diagonal corner cabinet has a single 45-degree angled front face spanning
 // the corner (NOT an L-shaped notch like a blind/lazy-susan corner). Codes like
-// DCW (Diagonal Corner Wall), WDC, KWD and descriptions containing "diagonal".
+// DCW (Diagonal Corner Wall), DCB, DCSB (Diagonal Corner Sink Base), WDC, KWD
+// and descriptions containing "diagonal" or "diagonal corner sink".
 export function isDiagonalCorner(masterCode: string, description?: string): boolean {
   const code = (masterCode || "").toUpperCase();
   const normalizedCode = code.replace(/[^A-Z0-9]/g, "");
@@ -5715,9 +5726,11 @@ export function isDiagonalCorner(masterCode: string, description?: string): bool
   // non-corner profile and placement rule.
   // BEC = Base End Cabinet: an end-of-run angle cabinet, never a room-corner
   // cabinet. It is handled by the independent end-angle drawing profile.
-  if (/^(DCW|WDC|KWD|DCB|DCFF|AG-|AG\d|CAG)/.test(code) || normalizedCode.includes("DCW") || normalizedCode.includes("WDC")) return true;
+  // DCSB is the diagonal corner sink base. DCFF (already listed) is a sink
+  // front, not a cabinet; DCSF is left out of this prefix list.
+  if (/^(DCW|WDC|KWD|DCB|DCSB|DCFF|AG-|AG\d|CAG)/.test(code) || normalizedCode.includes("DCW") || normalizedCode.includes("WDC")) return true;
   const desc = (description || "").toLowerCase();
-  if (/diagonal|angled corner|appliance garage/.test(desc)) return true;
+  if (/diagonal corner sink|diagonal|angled corner|appliance garage/.test(desc)) return true;
   return false;
 }
 
