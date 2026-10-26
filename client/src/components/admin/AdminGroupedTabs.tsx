@@ -92,6 +92,7 @@ import { ManualAiRenderQueueAdmin } from "@/components/admin/ManualAiRenderQueue
 import StripePaymentSettingsAdmin from "@/components/admin/StripePaymentSettingsAdmin";
 import StripeInvoicesAdmin from "@/components/admin/StripeInvoicesAdmin";
 import AffiliateLiteratureAdmin from "@/components/admin/AffiliateLiteratureAdmin";
+import AffiliateResourcesAdmin from "@/components/admin/AffiliateResourcesAdmin";
 
 // ─── Group definitions ────────────────────────────────────────────────────────
 const GROUPS = [
@@ -197,6 +198,7 @@ const GROUPS = [
       { value: "analytics", label: "Analytics" },
       { value: "export", label: "Full Export" },
       { value: "affiliate-literature", label: "Affiliate Literature" },
+      { value: "affiliate-resources", label: "Affiliate Resources" },
     ],
   },
 ] as const;
@@ -566,6 +568,7 @@ export default function AdminGroupedTabs() {
         <TabsContent value="analytics" className="mt-6"><AnalyticsAdmin /></TabsContent>
         <TabsContent value="export" className="mt-6"><FullDatabaseExport /></TabsContent>
         <TabsContent value="affiliate-literature" className="mt-6"><AdminTabHelp tab="affiliate-literature" /><AffiliateLiteratureAdmin /></TabsContent>
+        <TabsContent value="affiliate-resources" className="mt-6"><AdminTabHelp tab="affiliate-resources" /><AffiliateResourcesAdmin /></TabsContent>
         </div>
       </Tabs>
     </div>

@@ -111,6 +111,10 @@ const TAB_HELP: Record<string, { en: string; zh: string; link?: { label: string;
     en: "Control which users can view trade pricing. Grant or revoke pricing access for specific accounts.",
     zh: "控制哪些使用者可以查看貿易定價。為特定帳戶授予或撤銷定價存取權限。",
   },
+  "affiliate-resources": {
+    en: "Manage the affiliate Marketing Hub: scripts, guides, videos, private PDFs, and social posts. Unpublished drafts stay hidden from affiliates.",
+    zh: "管理联盟行销中心：脚本、指南、视频、私密 PDF 和社交贴文。未发布的草稿对联盟隐藏。",
+  },
   "affiliate-literature": {
     en: "Store affiliate-ready sales brochures, pricing guides, training documents, and other literature here. Keep drafts private until reviewed, then publish approved documents for future affiliate access.",
     zh: "在此儲存聯盟準備好的銷售手冊、定價指南、培訓文件及其他資料。審核前保持草稿私密，批准後再發布供聯盟存取。",
