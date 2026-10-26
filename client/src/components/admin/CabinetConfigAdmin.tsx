@@ -95,6 +95,7 @@ type CabinetRow = {
   altSku3: string | null;
   showInCatalog: boolean | null;
   showInDesigner: boolean | null;
+  designerEligible: boolean | null;
   showIn2020: boolean | null;
   isActive: boolean | null;
   isNotCabinet: boolean | null;
@@ -1040,6 +1041,7 @@ function EditModal({
       altSku3: merged.altSku3 ?? null,
       showInCatalog: merged.showInCatalog ?? undefined,
       showInDesigner: merged.showInDesigner ?? undefined,
+      designerEligible: merged.designerEligible ?? undefined,
       showIn2020: merged.showIn2020 ?? undefined,
       isActive: merged.isActive ?? undefined,
       isNotCabinet: merged.isNotCabinet ?? undefined,
@@ -1092,7 +1094,7 @@ function EditModal({
   };
   const configTouched = Object.keys(buildConfigRule()).length > 0;
   const nonConfigTouched = Object.keys(draft).some((k) =>
-    ["masterCode","altSku1","altSku2","altSku3","showInCatalog","showInDesigner","showIn2020","isActive","isNotCabinet","catalogImageUrl","configVerified"].includes(k),
+    ["masterCode","altSku1","altSku2","altSku3","showInCatalog","showInDesigner","designerEligible","showIn2020","isActive","isNotCabinet","catalogImageUrl","configVerified"].includes(k),
   );
   const handleSave = () => {
     if (Object.keys(draft).length === 0) { onClose(); return; }
@@ -1119,7 +1121,7 @@ function EditModal({
       // Non-rule housekeeping still goes to the master row (it has no per-distributor form).
       const full = buildMasterPayload() as Record<string, unknown>;
       const housekeeping: Record<string, unknown> = { id: row.id };
-      for (const k of ["masterCode","altSku1","altSku2","altSku3","showInCatalog","showInDesigner","showIn2020","isActive","isNotCabinet","catalogImageUrl","configVerified"]) {
+      for (const k of ["masterCode","altSku1","altSku2","altSku3","showInCatalog","showInDesigner","designerEligible","showIn2020","isActive","isNotCabinet","catalogImageUrl","configVerified"]) {
         if (k in draft) housekeeping[k] = full[k];
       }
       updateMutation.mutate(housekeeping as never);
@@ -1664,6 +1666,7 @@ function EditModal({
                 {([
                   { field: "showInCatalog" as const, label: "Show in Catalog", desc: "Visible on the public storefront" },
                   { field: "showInDesigner" as const, label: "Show in Designer", desc: "Available in the 3D Designer" },
+                  { field: "designerEligible" as const, label: "Eligible for 3D Designer", desc: "Yes — included in the 3D Designer product list" },
                   { field: "showIn2020" as const, label: "Show in 2020", desc: "Exported to 2020 Design catalog" },
                   { field: "isActive" as const, label: "Active", desc: "Cabinet is active in the system" },
                 ] as const).map(({ field, label, desc }) => (

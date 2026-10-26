@@ -93,6 +93,7 @@ type CabinetRow = {
   constructionMethod: string | null;
   conflictStatus: string;
 	showInDesigner: boolean;
+	designerEligible: boolean;
 	showInCatalog: boolean;
 	isActive: boolean;
 	/** Exact alias from the current search that resolved to this master code. */
@@ -124,6 +125,7 @@ function toDraft(cab: CabinetRow): DraftState {
     stainColor: cab.stainColor,
     constructionMethod: cab.constructionMethod,
     showInDesigner: cab.showInDesigner,
+    designerEligible: cab.designerEligible,
     showInCatalog: cab.showInCatalog,
     isActive: cab.isActive,
   };
@@ -317,7 +319,7 @@ function EditDialog({
     }
   };
 
-  const saveToggle = (key: "isActive" | "showInDesigner" | "showInCatalog", value: boolean) => {
+  const saveToggle = (key: "isActive" | "showInDesigner" | "designerEligible" | "showInCatalog", value: boolean) => {
     set(key, value);
     updateMut.mutate({ id: cabinet.id, [key]: value });
   };
@@ -401,6 +403,7 @@ function EditDialog({
                     {([
                       ["isActive", "Active", "Available for use"],
                       ["showInDesigner", "Show in Designer", "Appears in the 3D Designer"],
+                      ["designerEligible", "Eligible for 3D Designer", "Yes — included in the 3D Designer product list"],
                       ["showInCatalog", "Show in Catalog", "Appears in public catalog"],
                     ] as [keyof DraftState, string, string][]).map(([key, label, desc]) => (
                       <div key={key} className="flex items-center justify-between gap-3">
@@ -410,7 +413,7 @@ function EditDialog({
                         </div>
                         <Switch
                           checked={draft[key] as boolean}
-                          onCheckedChange={(v) => saveToggle(key as "isActive" | "showInDesigner" | "showInCatalog", v)}
+                          onCheckedChange={(v) => saveToggle(key as "isActive" | "showInDesigner" | "designerEligible" | "showInCatalog", v)}
                         />
                       </div>
                     ))}
@@ -577,12 +580,14 @@ function CabinetTableRow({
   active,
   onSelect,
   onClick,
+  onEligibleChange,
 }: {
   cabinet: CabinetRow;
   selected: boolean;
   active: boolean;
   onSelect: (id: number, checked: boolean) => void;
   onClick: (cab: CabinetRow) => void;
+  onEligibleChange: (id: number, eligible: boolean) => void;
 }) {
   const aliases = [cabinet.sku, cabinet.vendorSku, cabinet.altSku1, cabinet.altSku2, cabinet.altSku3]
     .filter(Boolean) as string[];
@@ -655,6 +660,21 @@ function CabinetTableRow({
           {aliases.length > 2 && <span className="text-xs text-muted-foreground">+{aliases.length - 2}</span>}
           {aliases.length === 0 && <span className="text-xs text-muted-foreground italic">—</span>}
         </div>
+      </td>
+      <td className="px-3 py-2.5" onClick={(event) => event.stopPropagation()}>
+        <Label className="sr-only" htmlFor={`designer-eligible-${cabinet.id}`}>Eligible for 3D Designer</Label>
+        <Select
+          value={cabinet.designerEligible ? "yes" : "no"}
+          onValueChange={(value) => onEligibleChange(cabinet.id, value === "yes")}
+        >
+          <SelectTrigger id={`designer-eligible-${cabinet.id}`} className="h-8 w-[88px]" aria-label={`Eligible for 3D Designer for ${cabinet.masterCode}`}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="yes">Yes</SelectItem>
+            <SelectItem value="no">No</SelectItem>
+          </SelectContent>
+        </Select>
       </td>
       <td className="px-3 py-2.5">
         <div className="flex items-center gap-1.5">
@@ -731,7 +751,7 @@ export default function GenericCabinetsAdmin() {
 
   const updateMut = trpc.genericCabinets.update.useMutation({
     onSuccess: () => utils.genericCabinets.list.invalidate(),
-    onError: () => toast.error("Bulk action failed"),
+    onError: (error) => toast.error(error.message || "Could not update the catalog item"),
   });
 
   const totalPages = Math.ceil((data?.total ?? 0) / PAGE_SIZE);
@@ -754,13 +774,19 @@ export default function GenericCabinetsAdmin() {
     });
   };
 
-  const bulkAction = async (action: "activate" | "deactivate" | "showDesigner" | "hideDesigner") => {
+  const setDesignerEligible = (id: number, designerEligible: boolean) => {
+    updateMut.mutate({ id, designerEligible });
+  };
+
+  const bulkAction = async (action: "activate" | "deactivate" | "showDesigner" | "hideDesigner" | "eligibleDesigner" | "ineligibleDesigner") => {
     const ids = Array.from(selectedIds);
     const updates: Record<string, boolean> = {
       activate: { isActive: true },
       deactivate: { isActive: false },
       showDesigner: { showInDesigner: true },
       hideDesigner: { showInDesigner: false },
+      eligibleDesigner: { designerEligible: true },
+      ineligibleDesigner: { designerEligible: false },
     }[action] as Record<string, boolean>;
 
     await Promise.all(ids.map(id => updateMut.mutateAsync({ id, ...updates })));
@@ -871,6 +897,12 @@ export default function GenericCabinetsAdmin() {
             <Button variant="outline" size="sm" onClick={() => bulkAction("hideDesigner")} disabled={updateMut.isPending}>
               <Wrench className="h-3.5 w-3.5 mr-1 opacity-40" />Hide from Designer
             </Button>
+            <Button variant="outline" size="sm" onClick={() => bulkAction("eligibleDesigner")} disabled={updateMut.isPending}>
+              Eligible for 3D Designer: Yes
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => bulkAction("ineligibleDesigner")} disabled={updateMut.isPending}>
+              Eligible for 3D Designer: No
+            </Button>
             <Button variant="outline" size="sm" onClick={() => setMoveCatOpen(true)}>
               <FolderInput className="h-3.5 w-3.5 mr-1" />Move to Category
             </Button>
@@ -903,6 +935,7 @@ export default function GenericCabinetsAdmin() {
                   <th className="px-3 py-2.5 text-left font-medium text-xs uppercase tracking-wide text-muted-foreground">Category</th>
                   <th className="px-3 py-2.5 text-left font-medium text-xs uppercase tracking-wide text-muted-foreground">Dims</th>
                   <th className="px-3 py-2.5 text-left font-medium text-xs uppercase tracking-wide text-muted-foreground">Aliases</th>
+                  <th className="px-3 py-2.5 text-left font-medium text-xs uppercase tracking-wide text-muted-foreground">Eligible for 3D Designer</th>
                   <th className="px-3 py-2.5 text-left font-medium text-xs uppercase tracking-wide text-muted-foreground">Status</th>
                   <th className="w-8" />
                 </tr>
@@ -915,6 +948,7 @@ export default function GenericCabinetsAdmin() {
                     selected={selectedIds.has(cab.id)}
                     active={selectedCabinet?.id === cab.id}
                     onSelect={toggleSelect}
+                    onEligibleChange={setDesignerEligible}
                     onClick={(cabinet) => { setSelectedCabinet(cabinet); setItemEditor({ mode: "edit", id: cabinet.id }); }}
                   />
                 ))}

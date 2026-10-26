@@ -55,7 +55,6 @@ const PEL_DIST_CODE = "PEL";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const ALL = "__all__";
-const MAX_PICKS = 8;
 const CATALOG_PAGE_SIZE = 100;
 function money(v: string | null | undefined): string {
   if (v == null) return "—";
@@ -79,7 +78,7 @@ async function readSupplierPdfAsBase64(file: File): Promise<string> {
 }
 
 // ─── Sub-pages ────────────────────────────────────────────────────────────────
-type VendorPage = "overview" | "supplier-profile" | "catalog" | "other-products" | "styles" | "featured-styles" | "shipping" | "picks" | "orders" | "fulfillment" | "promotions" | "gallery" | "analytics" | "ai-services" | "integrations" | "payments";
+type VendorPage = "overview" | "supplier-profile" | "catalog" | "other-products" | "styles" | "featured-styles" | "shipping" | "orders" | "fulfillment" | "promotions" | "gallery" | "analytics" | "ai-services" | "integrations" | "payments";
 
 const NAV_ITEMS: { id: VendorPage; label: string; icon: typeof LayoutDashboard }[] = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
@@ -89,7 +88,6 @@ const NAV_ITEMS: { id: VendorPage; label: string; icon: typeof LayoutDashboard }
   { id: "styles", label: "Door Styles", icon: Palette },
   { id: "featured-styles", label: "Featured Styles", icon: Star },
   { id: "shipping", label: "Shipping", icon: Truck },
-  { id: "picks", label: "3D Designer Picks", icon: Star },
   { id: "promotions", label: "Promotions", icon: DollarSign },
   { id: "gallery", label: "Gallery", icon: ImageIcon },
   { id: "analytics", label: "Analytics", icon: BarChart3 },
@@ -545,10 +543,6 @@ function OverviewPage({ onNavigate }: { onNavigate: (page: VendorPage) => void }
           <div className="flex justify-between">
             <span className="text-muted-foreground">Warehouse Zips</span>
             <span>{(line.warehouseZips as string[] | null)?.join(", ") || "—"}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">3D Designer Picks</span>
-            <span>{(line.designToolPicks as number[] | null)?.length ?? 0} / {MAX_PICKS}</span>
           </div>
         </CardContent>
       </Card>
@@ -1666,155 +1660,6 @@ function NewProductForm({ onClose }: { onClose: () => void }) {
         </Button>
         <Button variant="outline" onClick={onClose}>Cancel</Button>
       </div>
-    </div>
-  );
-}
-
-// ─── Design Tool Picks Page ───────────────────────────────────────────────────
-function DesignToolPicksPage() {
-  const utils = trpc.useUtils();
-  const adminDistId = useAdminDistributorId();
-  const picks = trpc.distributorPortal.getDesignToolPicks.useQuery(adminDistId ? { distributorId: adminDistId } : undefined);
-  const catalog = trpc.distributorPortal.catalog.useQuery({ ...(adminDistId ? { distributorId: adminDistId } : {}), limit: 500, offset: 0 });
-  const setPicks = trpc.distributorPortal.setDesignToolPicks.useMutation({
-    onSuccess: () => {
-      utils.distributorPortal.getDesignToolPicks.invalidate();
-      utils.distributorPortal.myLine.invalidate();
-      toast.success("Design tool picks updated");
-    },
-    onError: (err) => toast.error(err.message),
-  });
-
-  const currentPicks = picks.data?.picks ?? [];
-  const pickSet = useMemo(() => new Set(currentPicks), [currentPicks]);
-
-  const togglePick = useCallback((skuId: number) => {
-    const newPicks = pickSet.has(skuId)
-      ? currentPicks.filter((id) => id !== skuId)
-      : [...currentPicks, skuId];
-    if (newPicks.length > MAX_PICKS) {
-      toast.error(`Maximum ${MAX_PICKS} picks allowed`);
-      return;
-    }
-    setPicks.mutate({ skuIds: newPicks, ...(adminDistId ? { distributorId: adminDistId } : {}) });
-  }, [currentPicks, pickSet, setPicks]);
-
-  if (picks.isLoading || catalog.isLoading) {
-    return (
-      <div className="space-y-4">
-        <Skeleton className="h-8 w-48" />
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-32 w-full" />)}
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-xl font-bold">3D Designer Picks</h2>
-        <p className="text-muted-foreground text-sm mt-1">
-          Select up to {MAX_PICKS} products to feature in the 3D Designer.
-          These are your best items that customers will see when designing their kitchen.
-        </p>
-      </div>
-
-      <div className="flex items-center gap-3">
-        <Badge variant={currentPicks.length >= MAX_PICKS ? "destructive" : "secondary"}>
-          {currentPicks.length} / {MAX_PICKS} selected
-        </Badge>
-        {currentPicks.length > 0 && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setPicks.mutate({ skuIds: [], ...(adminDistId ? { distributorId: adminDistId } : {}) })}
-            disabled={setPicks.isPending}
-          >
-            Clear All
-          </Button>
-        )}
-      </div>
-
-      {/* Current picks */}
-      {picks.data?.items && picks.data.items.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Current Picks</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              {picks.data.items.map((item) => (
-                <div
-                  key={item.skuId}
-                  className="relative border rounded-lg p-3 bg-primary/5 border-primary/30"
-                >
-                  <button
-                    className="absolute top-1 right-1 h-6 w-6 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center hover:bg-destructive/80 transition-colors"
-                    onClick={() => togglePick(item.skuId)}
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                  {item.imageUrl ? (
-                    <img src={item.imageUrl} alt="" className="h-16 w-full object-cover rounded mb-2" />
-                  ) : (
-                    <div className="h-16 w-full bg-muted rounded mb-2 flex items-center justify-center">
-                      <ImageIcon className="h-6 w-6 text-muted-foreground" />
-                    </div>
-                  )}
-                  <p className="text-xs font-medium truncate">{item.masterCode}</p>
-                  <p className="text-xs text-muted-foreground truncate">{item.description}</p>
-                  <p className="text-xs text-muted-foreground">{item.styleName}</p>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Available products to pick from */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Available Products</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {catalog.data?.items
-              .filter((item) => item.isPublished && item.status === "approved")
-              .map((item) => {
-                const isPicked = pickSet.has(item.skuId);
-                return (
-                  <div
-                    key={item.skuId}
-                    className={`relative border rounded-lg p-3 cursor-pointer transition-all hover:shadow-md ${
-                      isPicked ? "bg-primary/5 border-primary/30" : "hover:border-primary/20"
-                    }`}
-                    onClick={() => togglePick(item.skuId)}
-                  >
-                    {isPicked && (
-                      <div className="absolute top-1 right-1 h-5 w-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center">
-                        <Check className="h-3 w-3" />
-                      </div>
-                    )}
-                    {item.imageUrl ? (
-                      <img src={item.imageUrl} alt="" className="h-14 w-full object-cover rounded mb-2" />
-                    ) : (
-                      <div className="h-14 w-full bg-muted rounded mb-2 flex items-center justify-center">
-                        <ImageIcon className="h-5 w-5 text-muted-foreground" />
-                      </div>
-                    )}
-                    <p className="text-xs font-medium truncate">{item.masterCode}</p>
-                    <p className="text-xs text-muted-foreground truncate">{item.description}</p>
-                    <div className="flex justify-between items-center mt-1">
-                      <Badge variant="secondary" className="text-[10px]">{item.category}</Badge>
-                      <span className="text-xs font-medium">{money(item.contractorPrice)}</span>
-                    </div>
-                  </div>
-                );
-              })}
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 }
@@ -4427,11 +4272,17 @@ function VendorLoginForm() {
 export default function VendorPortal() {
   const { user, loading } = useAuth();
   const params = new URLSearchParams(window.location.search);
-  const requestedPage = params.get("section");
+  const requestedPage = params.get("section") === "picks" ? null : params.get("section");
   const initialPage: VendorPage = NAV_ITEMS.some((item) => item.id === requestedPage)
     ? requestedPage as VendorPage
     : "overview";
   const [page, setPage] = useState<VendorPage>(initialPage);
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("section") !== "picks") return;
+    const url = new URL(window.location.href);
+    url.searchParams.delete("section");
+    window.history.replaceState({}, "", url.toString());
+  }, []);
 
   // Admin bypass: detect ?as=<distributorId> in URL
   const asParam = params.get("as");
@@ -4758,8 +4609,7 @@ function VendorPortalDashboard({
 	        {page === "other-products" && <VendorOtherProducts distributorId={adminDistributorId ?? undefined} />}
 	        {page === "styles" && <DoorStylesPage />}
 	        {page === "featured-styles" && <VendorFeaturedStylesPage />}
-        {page === "shipping" && (isPelican ? <PelicanShippingProfilesPanel isAdmin={isAdmin} /> : <VendorShippingPage />)}
-	        {page === "picks" && <DesignToolPicksPage />}
+	        {page === "shipping" && (isPelican ? <PelicanShippingProfilesPanel isAdmin={isAdmin} /> : <VendorShippingPage />)}
         {page === "promotions" && <PromotionsPage />}
         {page === "gallery" && <GalleryPage />}
         {page === "analytics" && <VendorAnalyticsPage />}

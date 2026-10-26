@@ -45,6 +45,7 @@ type FormDraft = {
   hingeSide: string;
   toeKickHeight: string;
   graphicType: string;
+  designerEligible: boolean;
   isCornerCabinet: boolean;
   cornerSide: string;
   cornerType: string;
@@ -89,6 +90,7 @@ const EMPTY_DRAFT: FormDraft = {
   hingeSide: "none",
   toeKickHeight: "",
   graphicType: "",
+  designerEligible: true,
   isCornerCabinet: false,
   cornerSide: "",
   cornerType: "",
@@ -131,6 +133,7 @@ function draftFromDetail(detail: { item: Record<string, any>; sources: Array<Rec
     hingeSide: item.hingeSide ?? "none",
     toeKickHeight: decimalString(item.toeKickHeight),
     graphicType: item.graphicType ?? "",
+    designerEligible: Boolean(item.designerEligible),
     isCornerCabinet: item.isCornerCabinet,
     cornerSide: item.cornerSide ?? "",
     cornerType: item.cornerType ?? "",
@@ -305,6 +308,7 @@ export function CatalogItemFormDialog({ cabinetId, open, onOpenChange }: Catalog
       hingeSide: optionalText(draft.hingeSide),
       toeKickHeight: optionalNumber(draft.toeKickHeight),
       graphicType: optionalText(draft.graphicType),
+      designerEligible: draft.designerEligible,
       isCornerCabinet: draft.isCornerCabinet,
       cornerSide: optionalText(draft.cornerSide),
       cornerType: optionalText(draft.cornerType),
@@ -374,6 +378,21 @@ export function CatalogItemFormDialog({ cabinetId, open, onOpenChange }: Catalog
                 {([
                   ["numberOfDoors", "Doors"], ["numberOfDrawers", "Drawers"], ["numberOfFixedShelves", "Fixed shelves"], ["numberOfAdjShelves", "Adjustable shelves"],
                 ] as const).map(([key, label]) => <div key={key} className="space-y-1.5"><Label>{label}</Label><Input inputMode="numeric" className={fieldClass(key)} value={draft[key]} onChange={(event) => set(key, event.target.value)} placeholder="0" />{error(key)}</div>)}
+              </div>
+              <div className="mt-4 flex items-center justify-between gap-4 rounded-md border px-3 py-2">
+                <div>
+                  <Label htmlFor="catalog-item-designer-eligible">Eligible for 3D Designer</Label>
+                  <p className="text-xs text-muted-foreground">Yes includes this item in the 3D Designer product list. No keeps it in the public catalog only.</p>
+                </div>
+                <Select value={draft.designerEligible ? "yes" : "no"} onValueChange={(value) => set("designerEligible", value === "yes")}>
+                  <SelectTrigger id="catalog-item-designer-eligible" className="w-[96px]" aria-label="Eligible for 3D Designer">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="yes">Yes</SelectItem>
+                    <SelectItem value="no">No</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div className="mt-4 rounded-md border bg-muted/30 p-3">
                 <div className="flex items-center justify-between gap-4"><div><Label htmlFor="catalog-item-corner">Corner cabinet</Label><p className="text-xs text-muted-foreground">Enable only for a true corner unit so Designer collision and filler rules remain accurate.</p></div><Switch id="catalog-item-corner" checked={draft.isCornerCabinet} onCheckedChange={(value) => set("isCornerCabinet", value)} /></div>
