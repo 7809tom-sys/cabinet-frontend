@@ -27,9 +27,9 @@ describe("CRM cleanup admin", () => {
     expect(customers).toContain("purgeMembers.mutate()");
 
     expect(screen).toContain("trpc.crmCleanup.preview.useMutation");
-    expect(screen).toContain("trpc.crmCleanup.csv.fetch");
+    expect(screen).toContain("utils.crmCleanup.csv.fetch");
     expect(screen).toContain("trpc.crmCleanup.audits.useQuery");
-    expect(screen).toContain("trpc.crmCleanup.backup.fetch");
+    expect(screen).toContain("utils.crmCleanup.backup.fetch");
     expect(screen.match(/confirm\.mutate\(/g)).toHaveLength(1);
 
     const confirmCall = screen.slice(screen.indexOf("confirm.mutate("), screen.indexOf("confirm.mutate(") + 220);
