@@ -375,7 +375,7 @@ export function SurfacesPickerDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex h-[min(88vh,860px)] max-h-[calc(100vh-1rem)] w-[calc(100%-1rem)] max-w-[calc(100%-1rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(1100px,calc(100%-2rem))]">
+      <DialogContent data-testid="surfaces-fixtures-dialog" className="!flex h-[min(92dvh,860px)] max-h-[calc(100dvh-0.75rem)] w-[min(1100px,calc(100vw-0.75rem))] max-w-[calc(100vw-0.75rem)] min-h-0 flex-col gap-0 overflow-hidden p-0">
         <DialogHeader className="shrink-0 border-b border-border px-4 py-3 sm:px-6 sm:py-4">
           <DialogTitle className="flex items-center gap-2 text-base sm:text-lg">
             <Waves className="h-5 w-5 text-[var(--color-gold)]" /> {isBathroom ? bathroomPaletteMode === "fixtures" ? "Bathroom Fixtures" : "Bathroom Surfaces" : "Surfaces & Fixtures"}
@@ -391,14 +391,12 @@ export function SurfacesPickerDialog({
 
         {/* Category tabs + search */}
         <div className="shrink-0 flex flex-col gap-2 sm:gap-3 border-b border-border px-4 py-2 sm:px-6 sm:py-3">
-          <div className={isBathroom
-            ? "flex flex-wrap gap-2 pb-1"
-            : "flex gap-2 overflow-x-auto pb-1 -mb-1 scrollbar-none"}>
+          <div className="flex flex-wrap gap-2 pb-1">
             {!isBathroom && preferredItems.length > 0 && (
               <Button
                 size="sm"
                 variant={category === "Preferred" ? "default" : "outline"}
-                className="h-7 text-xs whitespace-nowrap shrink-0"
+                className="h-10 min-h-10 shrink-0 whitespace-nowrap px-3 text-xs sm:h-8"
                 onClick={() => setCategory("Preferred")}
               >
                 Preferred ({preferredItems.length})
@@ -409,7 +407,7 @@ export function SurfacesPickerDialog({
                 key={section.role}
                 size="sm"
                 variant={section.role === activeBathroomRole ? "default" : "outline"}
-                className="h-7 text-xs whitespace-nowrap shrink-0"
+                className="h-10 min-h-10 shrink-0 whitespace-nowrap px-3 text-xs sm:h-8"
                 onClick={() => setBathroomRole(section.role)}
               >
                 {section.label}
@@ -419,7 +417,7 @@ export function SurfacesPickerDialog({
                 key={c}
                 size="sm"
                 variant={c === category ? "default" : "outline"}
-                className="h-7 text-xs whitespace-nowrap shrink-0"
+                className="h-10 min-h-10 shrink-0 whitespace-nowrap px-3 text-xs sm:h-8"
                 onClick={() => setCategory(c)}
               >
                 {c}
