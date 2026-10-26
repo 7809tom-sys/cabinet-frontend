@@ -418,6 +418,21 @@ function ProMatcher({ zip, onZipChange }: { zip: string; onZipChange: (z: string
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
+function PendingVendorCount({ compact = false }: { compact?: boolean }) {
+  const review = trpc.vendors.pendingReview.useQuery(undefined, { refetchOnWindowFocus: false });
+  const count = review.data?.count;
+  if (count == null) return null;
+  return (
+    <Badge
+      variant={count > 0 ? "default" : "secondary"}
+      className={compact ? "ml-1 h-5 min-w-5 px-1.5" : "h-5 min-w-5 px-1.5"}
+      data-testid="admin-pending-vendor-count"
+    >
+      {count}
+    </Badge>
+  );
+}
+
 export default function AdminGroupedTabs() {
   const initialTab = useMemo(() => {
     const params = new URLSearchParams(window.location.search);
@@ -468,6 +483,7 @@ export default function AdminGroupedTabs() {
             >
               <Icon className="h-4 w-4" />
               {g.label}
+              {g.id === "people" && <PendingVendorCount />}
             </Button>
           );
         })}
@@ -488,6 +504,7 @@ export default function AdminGroupedTabs() {
           {currentGroup.tabs.map((t) => (
             <TabsTrigger key={t.value} value={t.value} className={currentGroup.id === "settings" ? "justify-start px-3" : undefined}>
               {t.label}
+              {t.value === "approved-vendors" && <PendingVendorCount compact />}
             </TabsTrigger>
           ))}
         </TabsList>

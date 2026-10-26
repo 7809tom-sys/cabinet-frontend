@@ -164,23 +164,21 @@ describe("Vendor Portal Featured Styles and Shipping", () => {
     expect(login).toContain("Either route opens only your supplier portal.");
   });
 
-  it("keeps every approved vendor logged into its own editable profile before a catalog line is linked", () => {
-    expect(source).toContain("const supplierProfileOnly = Boolean(");
-    expect(source).toContain("user.approvedVendorLineId != null");
-    // A profile-only vendor stays on Supplier Profile. The one deliberate exception
-    // is an approved Pelican vendor, which has no cabinet line but owns its catalog,
-    // shipping and fulfillment pages.
-    expect(source).toContain('page={supplierProfileOnly ? "supplier-profile" : isPelicanVendor && !PELICAN_NAV_IDS.has(page) ? "overview" : page}');
-    expect(source).toContain("const supplierProfileOnly = Boolean(\n    !isPelicanVendor");
-    expect(source).toContain('item.id === "supplier-profile"');
+  it("keeps an unset cabinet choice on the supplier profile and uses the shared feature map for everyone else", () => {
+    expect(source).toContain("vendorCanOpenPortalPage");
+    expect(source).toContain("vendorKind(vendor) == null");
+    expect(source).toContain('? "supplier-profile"');
+    expect(source).toContain("trpc.vendors.portalFeatures.useQuery");
     expect(source).toContain("Pending source-line link");
+    expect(source).not.toContain("PELICAN_NAV_IDS");
+    expect(source).not.toContain("Profile only");
   });
 
-  it("lets administrators switch across every approved vendor record, including profile-only suppliers", () => {
+  it("lets administrators switch across every approved vendor record", () => {
     expect(source).toContain("const approvedVendors = trpc.vendors.list.useQuery");
     expect(source).toContain("adminApprovedVendorLineId");
     expect(source).toContain('url.searchParams.set("vendor", String(vendor.id))');
-    expect(source).toContain("Profile only");
+    expect(source).toContain("vendorKindLabel(vendor)");
     expect(source).toContain("approvedVendorList.filter((vendor) => vendor.isApproved)");
   });
 

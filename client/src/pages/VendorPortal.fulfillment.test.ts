@@ -14,14 +14,15 @@ describe("Vendor portal Fulfillment wiring", () => {
     expect(portal).toContain("<VendorFulfillmentQueue");
   });
 
-  it("limits a Pelican vendor to the five pages that apply to surfaces and fixtures", () => {
-    expect(portal).toContain('new Set<VendorPage>(["overview", "supplier-profile", "catalog", "shipping", "fulfillment"])');
-    expect(portal).toContain("NAV_ITEMS.filter((item) => PELICAN_NAV_IDS.has(item.id))");
+  it("limits portal pages with the shared vendor feature map", () => {
+    expect(portal).toContain("NAV_ITEMS.filter((item) => vendorCanOpenPortalPage(portalVendor, item.id))");
+    expect(portal).toContain('from "@shared/vendorFeatures"');
   });
 
-  it("does not trap a Pelican vendor on the profile-only page, and sends cabinet-only deep links home", () => {
-    expect(portal).toContain("!isPelicanVendor");
-    expect(portal).toContain('isPelicanVendor && !PELICAN_NAV_IDS.has(page) ? "overview" : page');
+  it("does not trap a chosen non-cabinet vendor on the supplier profile, and sends a disallowed section home", () => {
+    expect(portal).toContain("vendorCanOpenPortalPage(featureVendor, page)");
+    expect(portal).toContain(': "overview"');
+    expect(portal).not.toContain("PELICAN_NAV_IDS");
   });
 
   it("decides Pelican identity on the server, never from a display name", () => {
