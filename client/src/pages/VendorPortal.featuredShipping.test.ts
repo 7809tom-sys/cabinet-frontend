@@ -4,6 +4,13 @@ import { readFileSync } from "node:fs";
 const source = readFileSync(new URL("./VendorPortal.tsx", import.meta.url), "utf8");
 
 describe("Vendor Portal Featured Styles and Shipping", () => {
+  it("removes the 3D Designer Picks tab, nav entry, and route", () => {
+    expect(source).not.toContain("3D Designer Picks");
+    expect(source).not.toContain('id: "picks"');
+    expect(source).not.toContain("DesignToolPicksPage");
+    expect(source).toContain('get("section") === "picks"');
+  });
+
   it("adds separately reachable Featured Styles and Shipping portal pages", () => {
     expect(source).toContain('id: "featured-styles", label: "Featured Styles"');
     expect(source).toContain('id: "shipping", label: "Shipping"');
