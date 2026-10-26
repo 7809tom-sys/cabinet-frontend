@@ -17,17 +17,23 @@ describe("Cart address-first checkout", () => {
     expect(reviewSource).toContain("distributorId: optionalPositiveFreightId(line.cartDistributorId)");
   });
 
-  it("shows the address-first shipping notice instead of a ZIP, UPS, or live-rate control", () => {
+  it("shows the address-first shipping notice and an informational per-vendor quote", () => {
+    const quoteBoxSource = readFileSync(resolve(process.cwd(), "client/src/components/shipping/ShippingQuoteBox.tsx"), "utf8");
+    const liveSubtotalBlock = cartSource.slice(cartSource.indexOf("const liveSubtotal"), cartSource.indexOf("const separateGlassItems"));
     expect(cartSource).toContain('data-testid="checkout-address-shipping-notice"');
     expect(cartSource).toContain("Shipping is calculated after your delivery address is complete");
     expect(cartSource).toContain("street address, city, state, and ZIP");
+    expect(cartSource).toContain("ShippingQuoteBox");
     expect(cartSource).not.toContain("trpc.freight.estimate.useQuery");
     expect(cartSource).not.toContain("trpc.location.availability.useQuery");
     expect(cartSource).not.toContain("Prefer a UPS package quote");
-    expect(cartSource).not.toContain("Get shipping quote");
     expect(cartSource).not.toContain("Check UPS / freight");
     expect(cartSource).not.toContain('id="ups-parcel-quote"');
     expect(cartSource).not.toContain("Delivery ZIP code");
+    expect(quoteBoxSource).toContain("Get shipping quote");
+    expect(quoteBoxSource).toContain("not added to the Stripe total");
+    expect(liveSubtotalBlock).not.toContain("shippingQuote");
+    expect(liveSubtotalBlock).toContain("(liveUnitPrice(i) ?? 0) * i.qty");
   });
 
   it("never disables Cart-to-address navigation for supplier, hardware, or freight state", () => {

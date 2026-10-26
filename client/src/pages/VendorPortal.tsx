@@ -33,6 +33,7 @@ import { VendorOtherProducts } from "@/components/vendor/VendorOtherProducts";
 import { VendorFulfillmentQueue } from "@/components/vendor/VendorFulfillmentQueue";
 import { VendorCodeUpload } from "@/components/vendor/VendorCodeUpload";
 import { PelicanShippingProfilesPanel } from "@/components/admin/ShippingAdmin";
+import { VendorShippingQuoteCard } from "@/components/shipping/ShippingQuoteBox";
 import { designerFrameCompliance } from "@/lib/doorFrameMetrics";
 import { US_CABINET_DEPOT_AVAILABILITY_SOURCES, US_CABINET_DEPOT_WAREHOUSES } from "@/lib/vendorWarehouseNetwork";
 
@@ -4104,6 +4105,7 @@ const INTEGRATION_LABELS: Record<string, string> = { baseUrl: "API base URL", ac
 
 function IntegrationsPage() {
   const adminDistId = useAdminDistributorId();
+  const { user } = useAuth();
   const utils = trpc.useUtils();
   const integrations = trpc.distributorPortal.listIntegrations.useQuery(adminDistId ? { distributorId: adminDistId } : undefined);
   const [selected, setSelected] = useState<typeof INTEGRATIONS[number] | null>(null);
@@ -4115,6 +4117,13 @@ function IntegrationsPage() {
   );
   const save = trpc.distributorPortal.saveIntegration.useMutation({
     onSuccess: () => { toast.success("Integration settings saved"); void integrations.refetch(); setSelected(null); },
+    onError: (error) => toast.error(error.message),
+  });
+  const setShippingAdminGate = trpc.shippingQuotes.setIntegrationAdminEnabled.useMutation({
+    onSuccess: (result) => {
+      toast.success(result.adminEnabled ? "Custom Shipping API can be used for customer quotes." : "Custom Shipping API is hidden from customer quotes.");
+      void integrations.refetch();
+    },
     onError: (error) => toast.error(error.message),
   });
   const testConnection = trpc.distributorPortal.testIntegrationConnection.useMutation({
@@ -4142,6 +4151,16 @@ function IntegrationsPage() {
       <CardContent className="space-y-4">
         {selected.fields.map((field) => { const label = selected.id === "netsuite" ? ({ accountNumber: "NetSuite account ID", clientId: "Consumer key", apiKey: "API key (optional)", clientSecret: "Consumer secret", username: "Token ID", password: "Token secret" } as Record<string, string>)[field] : INTEGRATION_LABELS[field] ?? field; return <div key={field} className="space-y-1"><Label>{label}</Label><Input type={["apiKey", "clientSecret", "password"].includes(field) ? "password" : "text"} placeholder={existing && ["apiKey", "clientSecret", "password"].includes(field) ? "Leave blank to keep the saved value" : `Enter ${label}`} value={values[field] ?? ""} onChange={(event) => setValues((current) => ({ ...current, [field]: event.target.value }))} /></div>; })}
         <div className="grid gap-4 sm:grid-cols-2"><div className="space-y-1"><Label>Environment</Label><Select value={values.environment ?? "production"} onValueChange={(value) => setValues((current) => ({ ...current, environment: value }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="sandbox">Sandbox / test</SelectItem><SelectItem value="production">Production</SelectItem></SelectContent></Select></div><div className="flex items-end gap-2 pb-1"><Switch checked={values.isEnabled === "true"} onCheckedChange={(checked) => setValues((current) => ({ ...current, isEnabled: String(checked) }))} /><Label>Enable connection</Label></div></div>
+        {user?.role === "admin" && selected.id === "generic-shipping" && adminDistId && (
+          <div className="flex items-center gap-2 rounded-md border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950">
+            <Switch
+              checked={Boolean(existing?.adminEnabled)}
+              disabled={setShippingAdminGate.isPending || !existing?.id}
+              onCheckedChange={(checked) => setShippingAdminGate.mutate({ distributorId: adminDistId, enabled: checked })}
+            />
+            <Label>Allow this Custom Shipping API on customer quotes</Label>
+          </div>
+        )}
         <div className="rounded-md border border-amber-200 bg-amber-50/60 p-3 text-xs text-amber-950">Credentials are encrypted before storage. CabinetDealz will not display or export secret values.</div>
         {existing?.lastError && <div className="rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-800"><span className="font-semibold">Last test error:</span> {existing.lastError}</div>}
         <div className="flex flex-col gap-2 sm:flex-row"><Button className="flex-1" onClick={saveSelected} disabled={save.isPending}>{save.isPending ? "Saving…" : "Save integration settings"}</Button><Button variant="outline" className="flex-1" onClick={() => testConnection.mutate({ ...(adminDistId ? { distributorId: adminDistId } : {}), integrationId: existing?.id ?? 0 })} disabled={!existing?.id || testConnection.isPending}>{testConnection.isPending ? "Testing…" : "Test connection"}</Button></div>
@@ -4754,11 +4773,29 @@ function VendorPortalDashboard({
 	        )}
 	        {page === "overview" && (isPelican ? <PelicanVendorOverviewPage onNavigateToCatalog={handleNavigateToCatalog} /> : <OverviewPage onNavigate={setPage} />)}
 	        {page === "supplier-profile" && <SupplierProfilePage />}
+	        {page === "supplier-profile" && supplierProfileOnly && (
+          <div className="mt-7">
+            <VendorShippingQuoteCard
+              isAdmin={isAdmin}
+              vendorLineId={isAdmin ? adminApprovedVendorLineId : null}
+              distributorId={isAdmin ? adminDistributorId : null}
+            />
+          </div>
+        )}
 	        {page === "catalog" && (isPelican ? <PelicanVendorCatalogPage initialCategory={pelicanCategoryFilter} /> : <CatalogPage />)}
 	        {page === "other-products" && <VendorOtherProducts distributorId={adminDistributorId ?? undefined} />}
 	        {page === "styles" && <DoorStylesPage />}
 	        {page === "featured-styles" && <VendorFeaturedStylesPage />}
         {page === "shipping" && (isPelican ? <PelicanShippingProfilesPanel isAdmin={isAdmin} /> : <VendorShippingPage />)}
+        {page === "shipping" && (
+          <div className="mt-7">
+            <VendorShippingQuoteCard
+              isAdmin={isAdmin}
+              vendorLineId={isAdmin ? adminApprovedVendorLineId : null}
+              distributorId={isAdmin ? adminDistributorId : null}
+            />
+          </div>
+        )}
 	        {page === "picks" && <DesignToolPicksPage />}
         {page === "promotions" && <PromotionsPage />}
         {page === "gallery" && <GalleryPage />}

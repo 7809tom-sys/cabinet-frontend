@@ -20,6 +20,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
+import { ShippingQuoteBox } from "@/components/shipping/ShippingQuoteBox";
 import { toast } from "sonner";
 import { useAuth } from "@/_core/hooks/useAuth";
 import {
@@ -1554,6 +1555,24 @@ export default function CabinetDetail({ masterCode }: Props) {
                     </>
                   )}
                 </div>
+              )}
+
+              {selectedRow.distributorId != null && masterCabinet && (
+                <ShippingQuoteBox
+                  className="mt-4"
+                  items={[{
+                    kind: "cabinet",
+                    qty,
+                    cabinetId: masterCabinet.id,
+                    masterCode: masterCabinet.masterCode,
+                    styleId: selectedRow.styleId,
+                    distributorId: selectedRow.distributorId,
+                    merchandiseCents: (() => {
+                      const unit = priceNumberForTier(selectedRow, tier);
+                      return unit == null ? undefined : Math.round(unit * qty * 100);
+                    })(),
+                  }]}
+                />
               )}
 
               {/* Qty + Add to Cart */}
