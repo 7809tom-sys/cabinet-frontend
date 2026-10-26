@@ -161,7 +161,7 @@ function SidebarInner({
   const designerUrl = affiliateDesignerPath(storeSlug);
   const quoteUrl = affiliateOrderPath(storeSlug);
   const visibleNavItems = NAV_ITEMS.filter((item) =>
-    isAffiliateOwner || user?.role === "admin" || item.section === "overview" || (item.section === "crm" && canAccessCrm) || (item.section === "design" && canAccessDesigner),
+    isAffiliateOwner || user?.role === "admin" || item.section === "overview" || (item.section === "crm" && canAccessCrm) || (item.section === "design" && canAccessDesigner) || (item.section === "appointments" && (canAccessCrm || canAccessDesigner)),
   );
 
   useEffect(() => {
