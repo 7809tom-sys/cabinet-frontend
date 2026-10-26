@@ -1,4 +1,7 @@
 import type { PricingTier } from "@shared/pricingTier";
+import { flooringCartonFacts } from "@/lib/flooringCartonFacts";
+import { flooringLayoutName, flooringOverageLabel, flooringOverageRate } from "@/lib/flooringLayout";
+import type { FlooringLayoutPattern } from "@/lib/design";
 import { normalizeFinalMaterialSelections } from "@/lib/surfaceSelection";
 import { surfaceRole } from "@/lib/pelican";
 
@@ -14,6 +17,8 @@ export type SurfacePick = {
   threeDActive?: boolean;
   /** Sq ft per box/carton for tile, backsplash, and flooring products. */
   coverageSqFt?: number | null;
+  /** Supplier description. Flooring carton size is parsed from here when coverageSqFt is empty. */
+  description?: string | null;
   /** Countertop assignment; legacy undefined applies the product to the combined design area. */
   countertopScope?: "perimeter" | "island" | "all";
 };
@@ -88,6 +93,8 @@ export type RoomAreas = {
   perimeterCountertopSqFt?: number;
   /** Exact rendered island countertop area when materials are split by scope. */
   islandCountertopSqFt?: number;
+  /** Customer-chosen plank layout. Herringbone uses a higher waste factor. */
+  flooringPattern?: FlooringLayoutPattern | null;
 };
 
 /**
@@ -147,14 +154,34 @@ export function buildSurfaceCartLines(
         const scopeNote = s.countertopScope === "perimeter" ? " wall-run" : s.countertopScope === "island" ? " island" : "";
         qtyNote = `${rawArea.toFixed(1)} sq ft${scopeNote} ÷ ${slabSqFt.toFixed(1)} sq ft/slab = ${qty} ${qty === 1 ? "slab" : "slabs"}`;
       }
-    } else if (!fixtureQuantities?.has(s.id) && areas && s.coverageSqFt && s.coverageSqFt > 0) {
+    } else if (!fixtureQuantities?.has(s.id) && areas && (isBacksplash || isFlooring)) {
+      const carton = isFlooring
+        ? flooringCartonFacts(s)
+        : null;
+      const coverageSqFt = isFlooring
+        ? carton?.sqFtPerBox ?? null
+        : (s.coverageSqFt && s.coverageSqFt > 0 ? s.coverageSqFt : null);
       const rawArea = isBacksplash ? areas.backsplashSqFt : isFlooring ? areas.flooringSqFt : 0;
-      if (rawArea > 0 && (isBacksplash || isFlooring)) {
-        const factor = overageFor(s.category);
+      if (rawArea > 0 && coverageSqFt) {
+        const factor = isFlooring ? 1 + flooringOverageRate(areas.flooringPattern) : overageFor(s.category);
         const pct = Math.round((factor - 1) * 100);
-        qty = Math.ceil((rawArea * factor) / s.coverageSqFt);
+        qty = Math.ceil((rawArea * factor) / coverageSqFt);
         const overageNote = pct > 0 ? ` × ${pct}% overage` : "";
-        qtyNote = `${rawArea.toFixed(1)} sq ft${overageNote} ÷ ${s.coverageSqFt} sq ft/box = ${qty} boxes`;
+        const layoutNote = isFlooring
+          ? flooringLayoutName(areas.flooringPattern)
+            ? `Layout: ${flooringLayoutName(areas.flooringPattern)}. `
+            : "Layout not chosen. "
+          : "";
+        const piecesNote = carton?.piecesPerBox ? `${carton.piecesPerBox} pieces/box · ` : "";
+        qtyNote = `${layoutNote}${piecesNote}${rawArea.toFixed(1)} sq ft${overageNote} ÷ ${coverageSqFt} sq ft/box = ${qty} boxes`;
+        if (isFlooring && areas.flooringPattern === "herringbone") {
+          qtyNote += ` (herringbone waste ${flooringOverageLabel(areas.flooringPattern)}, other layouts ${flooringOverageLabel(null)})`;
+        }
+      } else if (isFlooring && rawArea > 0) {
+        const layout = flooringLayoutName(areas.flooringPattern);
+        qtyNote = layout
+          ? `Layout: ${layout}. Sq ft per box was not on this product, so box count was not calculated.`
+          : "Layout not chosen. Sq ft per box was not on this product, so box count was not calculated.";
       }
     }
 

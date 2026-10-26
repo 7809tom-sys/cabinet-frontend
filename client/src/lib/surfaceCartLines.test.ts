@@ -147,6 +147,44 @@ describe("buildSurfaceCartLines — box quantity with overage", () => {
     expect(line.qty).toBe(9);
     expect(line.qtyNote).toContain("10%");
     expect(line.qtyNote).toContain("9 boxes");
+    expect(line.qtyNote).toContain("Layout not chosen");
+  });
+
+  it("uses the description carton size instead of a 20 sq ft default, and 20% waste for herringbone", () => {
+    const described: SurfacePick = {
+      id: 407,
+      name: "Aviles 20mil Dryback",
+      category: "Flooring",
+      subCategory: "Planks & Flooring",
+      sellPrice: 95.7,
+      coverageSqFt: null,
+      description: "Aviles 20mil Dryback - 17pc/box 41.99sqft/box",
+    };
+    const standard = buildSurfaceCartLines([described], "homeowner", { ...areas, flooringSqFt: 300 })[0];
+    const herringbone = buildSurfaceCartLines([described], "homeowner", { ...areas, flooringSqFt: 300, flooringPattern: "herringbone" })[0];
+    expect(standard.qty).toBe(Math.ceil((300 * 1.1) / 41.99));
+    expect(standard.qtyNote).toContain("17 pieces/box");
+    expect(standard.qtyNote).toContain("41.99 sq ft/box");
+    expect(herringbone.qty).toBe(Math.ceil((300 * 1.2) / 41.99));
+    expect(herringbone.qty).toBeGreaterThan(standard.qty);
+    expect(herringbone.qtyNote).toContain("20%");
+    expect(herringbone.qtyNote).toContain("Herringbone");
+  });
+
+  it("does not invent a flooring box count when neither coverageSqFt nor the description has one", () => {
+    const bare: SurfacePick = {
+      id: 408,
+      name: "Unspecified plank",
+      category: "Flooring",
+      subCategory: "Planks & Flooring",
+      sellPrice: 50,
+      coverageSqFt: null,
+      description: "Color sample only",
+    };
+    const [line] = buildSurfaceCartLines([bare], "homeowner", areas);
+    expect(line.qty).toBe(1);
+    expect(line.qtyNote).toContain("Sq ft per box was not on this product");
+    expect(line.qtyNote).not.toContain("20 sq ft");
   });
 
   it("keeps an explicitly selected flooring trim as one priced product instead of applying room-area box math", () => {

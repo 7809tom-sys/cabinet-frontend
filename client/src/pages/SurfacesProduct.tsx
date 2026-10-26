@@ -21,6 +21,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { usePreferredProducts } from "@/contexts/PreferredProductsContext";
 import { ArrowLeft, DollarSign, Minus, PencilRuler, Plus, ShoppingCart, Star, Waves } from "lucide-react";
 import { toast } from "sonner";
+import { FlooringCartonFacts } from "@/components/design/FlooringCartonFacts";
 
 export default function SurfacesProduct({ slug, affiliateSlug }: { slug: string; affiliateSlug?: string }) {
   const [, navigate] = useLocation();
@@ -227,6 +228,7 @@ export default function SurfacesProduct({ slug, affiliateSlug }: { slug: string;
           {data.size && (
             <div className="mt-3 text-sm text-muted-foreground">Size: {data.size}</div>
           )}
+          <FlooringCartonFacts product={data} testId="product-flooring-carton-facts" className="mt-3 text-sm" />
 
           {data.description && (
             <p className="mt-5 whitespace-pre-line leading-relaxed text-foreground/80">

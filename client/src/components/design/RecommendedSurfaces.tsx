@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { groupPelicanConfigurations } from "@shared/pelicanConfigurationGrouping";
+import { flooringCartonFacts } from "@/lib/flooringCartonFacts";
 import { PelicanConfigurationCard } from "./PelicanConfigurationCard";
 import { verifiedPelicanBathroomFixtureProfile, pelicanBathroomFixturePlacementText } from "@/lib/pelicanBathroomFixtureProfiles";
 import { trpc } from "@/lib/trpc";
@@ -90,9 +91,12 @@ type RecItem = {
   imageUrl: string | null;
   materialImageUrl: string | null;
   sellPrice: number | null;
+  coverageSqFt?: number | string | null;
+  piecesPerBox?: number | string | null;
 };
 
 function toSurface(p: RecItem): SelectedSurface {
+  const facts = flooringCartonFacts(p);
   return {
     id: p.id,
     pelicanCode: p.pelicanCode ?? null,
@@ -103,7 +107,10 @@ function toSurface(p: RecItem): SelectedSurface {
     size: p.size,
     imageUrl: p.imageUrl,
     materialImageUrl: p.materialImageUrl,
+    description: p.description ?? null,
     sellPrice: p.sellPrice,
+    coverageSqFt: facts?.sqFtPerBox ?? null,
+    piecesPerBox: facts?.piecesPerBox ?? null,
   };
 }
 
