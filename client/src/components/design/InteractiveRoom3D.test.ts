@@ -25,7 +25,8 @@ import { COUNTERTOP_DEPTH_IN, DEFAULT_ROOM, STD, cornerLegRatioForPlaced, counte
 import { AEF_PRINTED_GEOMETRY_MARKER } from "@shared/aefFramelessGeometry";
 import { ovenOpeningGeometry } from "@/lib/ovenOpening";
 import { addThreeDCrownMolding, applyThreeDStructuralFinishMaterials, threeDStructuralSampleTexture } from "./InteractiveRoom3D";
-import { addThreeDProductionLightRig, normalizeThreeDPlanarUv, THREE_D_BACKSPLASH_TILE_SIZE_IN, threeDBacksplashSegments, threeDBacksplashSupportSpans, threeDBacksplashTileTextureTransform, threeDBacksplashTransform, threeDCabinetGrainTransform, threeDCountertopUpstandSegments, threeDCountertopSlabTextureTransform, threeDDoorFinishSurfaceProfile, threeDFlooringPatternProfile, threeDPhysicalSurfaceProfile, threeDPlankAtlasProfile, threeDProductMaterialSource, threeDProductSurfaceTextureTransform, threeDRenderQualityProfile, threeDSupportsBacksplash, threeDSurfaceImageCrop, threeDSurfaceTextureTransform } from "./InteractiveRoom3D";
+import { addThreeDProductionLightRig, normalizeThreeDPlanarUv, THREE_D_BACKSPLASH_FACE_INSET_IN, THREE_D_BACKSPLASH_TILE_SIZE_IN, threeDBacksplashPlaneUv, threeDBacksplashRenderInterval, threeDBacksplashSegments, threeDBacksplashSupportSpans, threeDBacksplashTileTextureTransform, threeDBacksplashTransform, threeDCabinetGrainTransform, threeDCountertopUpstandSegments, threeDCountertopSlabTextureTransform, threeDDoorFinishSurfaceProfile, threeDFlooringPatternProfile, threeDPhysicalSurfaceProfile, threeDPlankAtlasProfile, threeDProductMaterialSource, threeDProductSurfaceTextureTransform, threeDRenderQualityProfile, threeDSupportsBacksplash, threeDSurfaceImageCrop, threeDSurfaceTextureTransform } from "./InteractiveRoom3D";
+import kitchenFixture from "../../lib/__fixtures__/fourAnchorGapKitchen.json";
 import type { PlacedCabinet, RoomData, WallOpening } from "@/lib/design";
 
 // The production default is intentionally push-to-open/no decorative hardware.
@@ -1647,7 +1648,7 @@ describe("interactive 3D room scene helpers", () => {
 		    expect(threeDBacksplashTransform(segments.find((segment) => segment.side === "left")!, room)).toMatchObject({ x: 0.07, z: 36, rotation: Math.PI / 2 });
 		  });
 
-		  it("keeps a legacy-width BBC36 backsplash on its real supported wall leg rather than painting open walls", () => {
+		  it("tiles a legacy-width BBC36 through the inside corner without painting the open wall", () => {
 		    const room = { width: 120, depth: 96, ceilingHeight: 96 } as RoomData;
 		    const legacyBlind = {
 		      uid: "legacy-bbc-36", masterCode: "BBC36", description: "Blind Corner Base",
@@ -1655,13 +1656,20 @@ describe("interactive 3D room scene helpers", () => {
 		      height: 34.5, rotation: 0, wallId: "top", wallOffset: 0, islandFace: null,
 		    } as PlacedCabinet;
 
-		    // The normalized 36-inch BBC body owns its actual top-wall support.
+		    // The normalized 36-inch body stays on the back wall. The return is only
+		    // the 24-inch depth against the left wall, not the rest of that wall.
 		    expect(threeDBacksplashSupportSpans(legacyBlind, "top", room)).toEqual([{ start: 0, end: 36 }]);
+		    expect(threeDBacksplashSupportSpans(legacyBlind, "left", room)).toEqual([{ start: 0, end: 24 }]);
+		    expect(threeDBacksplashSupportSpans(legacyBlind, "right", room)).toEqual([]);
 		    const segments = threeDBacksplashSegments([legacyBlind], [], room);
 		    expect(segments).toContainEqual({ side: "top", start: 0, end: 36, bottom: 36, top: 54 });
+		    expect(segments).toContainEqual({ side: "left", start: 0, end: 24, bottom: 36, top: 54 });
 		    expect(segments.some((segment) => segment.side === "top" && segment.end > 36)).toBe(false);
-		    expect(segments.some((segment) => segment.side === "left")).toBe(false);
-		    expect(threeDCountertopUpstandSegments([legacyBlind], [], room, 3)).toContainEqual({ side: "top", start: 0, end: 36, bottom: 36, top: 39 });
+		    expect(segments.some((segment) => segment.side === "left" && segment.end > 24)).toBe(false);
+		    expect(threeDCountertopUpstandSegments([legacyBlind], [], room, 3)).toEqual(expect.arrayContaining([
+		      { side: "top", start: 0, end: 36, bottom: 36, top: 39 },
+		      { side: "left", start: 0, end: 24, bottom: 36, top: 39 },
+		    ]));
 		  });
 
 		  it("does not tile beyond separated countertop supports on the same wall", () => {
@@ -1709,6 +1717,94 @@ describe("interactive 3D room scene helpers", () => {
 	      { side: "top", start: 0, end: 36, bottom: 36, top: 54 },
 	      { side: "left", start: 0, end: 36, bottom: 36, top: 54 },
 	    ]));
+	  });
+
+	  it("wraps a diagonal corner and a right-hand lazy susan the same way, with or without an upper", () => {
+	    const room = { width: 144, depth: 120, ceilingHeight: 96 } as RoomData;
+	    const diagonal = { uid: "diag", masterCode: "DC36", description: "Diagonal Corner Base", placement: "base", x: 0, y: 0, width: 36, depth: 36, height: 34.5, rotation: 0, cornerType: "diagonal", islandFace: null } as PlacedCabinet;
+	    expect(threeDBacksplashSegments([diagonal], [], room)).toEqual(expect.arrayContaining([
+	      { side: "top", start: 0, end: 36, bottom: 36, top: 54 },
+	      { side: "left", start: 0, end: 36, bottom: 36, top: 54 },
+	    ]));
+	    const lazySusan = { uid: "ls-right", masterCode: "LS36", description: "Lazy Susan Base", placement: "base", x: 108, y: 0, width: 36, depth: 36, height: 34.5, rotation: 0, cornerType: "lazy-susan", islandFace: null } as PlacedCabinet;
+	    const upper = { uid: "wls", masterCode: "WLS24", description: "Wall Lazy Susan", placement: "wall", x: 120, y: 0, width: 24, depth: 12, height: 30, rotation: 0, mountBottom: 54, cornerType: "lazy-susan", islandFace: null } as PlacedCabinet;
+	    for (const placed of [[lazySusan], [lazySusan, upper]]) {
+	      const segments = threeDBacksplashSegments(placed, [], room);
+	      expect(segments).toContainEqual({ side: "top", start: 108, end: 144, bottom: 36, top: 54 });
+	      expect(segments).toContainEqual({ side: "right", start: 0, end: 36, bottom: 36, top: 54 });
+	      expect(segments.some((segment) => segment.bottom < 54 && segment.top > 36 && segment.start < 144 && segment.end > 108 && segment.top < 54 && segment.side === "top")).toBe(false);
+	    }
+	  });
+
+	  it("carries a pulled blind corner into the inside corner on either wall, with or without the upper", () => {
+	    const room = { width: 144, depth: 120, ceilingHeight: 96 } as RoomData;
+	    const rightBlind = {
+	      uid: "bbc-right", masterCode: "BBC36", description: "36\" Blind Corner Base Cabinet",
+	      placement: "base", x: 120, y: 6, width: 36, depth: 24, height: 34.5, rotation: 90,
+	      wallId: "right", wallOffset: 6, blindPull: 6, cornerType: "blind-corner", islandFace: null,
+	    } as PlacedCabinet;
+	    const filler = {
+	      uid: "filler", masterCode: "WFF342", description: "3\" Filler", placement: "base",
+	      x: 117, y: 0, width: 3, depth: 24, height: 34.5, rotation: 0, islandFace: null,
+	    } as PlacedCabinet;
+	    const upper = {
+	      uid: "upper", masterCode: "W1230", description: "Wall Cabinet", placement: "wall",
+	      x: 132, y: 0, width: 12, depth: 12, height: 30, rotation: 90, mountBottom: 54,
+	      wallId: "right", wallOffset: 0, islandFace: null,
+	    } as PlacedCabinet;
+	    for (const placed of [[rightBlind, filler], [rightBlind, filler, upper]]) {
+	      const segments = threeDBacksplashSegments(placed, [], room);
+	      const top = segments.filter((segment) => segment.side === "top" && segment.bottom === 36);
+	      const right = segments.filter((segment) => segment.side === "right" && segment.bottom === 36);
+	      expect(top.some((segment) => segment.start <= 117 && segment.end === 144)).toBe(true);
+	      expect(right.some((segment) => segment.start === 0 && segment.end >= 42)).toBe(true);
+	      expect(top.some((segment) => segment.end < 144 && segment.end > 120)).toBe(false);
+	    }
+	    const leftBlind = {
+	      uid: "bbc-left", masterCode: "BBC36", description: "36\" Blind Corner Base Cabinet",
+	      placement: "base", x: 6, y: 0, width: 36, depth: 24, height: 34.5, rotation: 0,
+	      wallId: "top", wallOffset: 6, blindPull: 6, cornerType: "blind-corner", islandFace: null,
+	    } as PlacedCabinet;
+	    expect(threeDBacksplashSupportSpans(leftBlind, "top", room)).toEqual([{ start: 0, end: 42 }]);
+	    expect(threeDBacksplashSupportSpans(leftBlind, "left", room)).toEqual([{ start: 0, end: 24 }]);
+	    expect(threeDBacksplashSupportSpans(leftBlind, "right", room)).toEqual([]);
+	    const farBlind = {
+	      uid: "bbc-far", masterCode: "BBC36", description: "36\" Blind Corner Base Cabinet",
+	      placement: "base", x: 102, y: 0, width: 36, depth: 24, height: 34.5, rotation: 0,
+	      wallId: "top", wallOffset: 102, blindPull: 6, cornerType: "blind-corner", islandFace: null,
+	    } as PlacedCabinet;
+	    expect(threeDBacksplashSupportSpans(farBlind, "top", room)).toEqual([{ start: 102, end: 144 }]);
+	    expect(threeDBacksplashSupportSpans(farBlind, "right", room)).toEqual([{ start: 0, end: 24 }]);
+	    const fixtureRoom = kitchenFixture.room as RoomData;
+	    const fixturePlaced = kitchenFixture.placed as PlacedCabinet[];
+	    const withUppers = threeDBacksplashSegments(fixturePlaced, kitchenFixture.openings as WallOpening[], fixtureRoom);
+	    const withoutUppers = threeDBacksplashSegments(fixturePlaced.filter((cabinet) => cabinet.placement !== "wall"), kitchenFixture.openings as WallOpening[], fixtureRoom);
+	    for (const segments of [withUppers, withoutUppers]) {
+	      expect(segments.some((segment) => segment.side === "top" && segment.start <= 120 && segment.end === 144 && segment.bottom === 36 && segment.top === 54)).toBe(true);
+	      expect(segments.some((segment) => segment.side === "right" && segment.start === 0 && segment.end > 6 && segment.bottom === 36 && segment.top === 54)).toBe(true);
+	    }
+	  });
+
+	  it("butts an inside corner and keeps one world-inch tile module on every wall", () => {
+	    expect(THREE_D_BACKSPLASH_FACE_INSET_IN).toBe(0.07);
+	    const room = { width: 144, depth: 120 };
+	    const top = { side: "top" as const, start: 90, end: 144, bottom: 36, top: 54 };
+	    const right = { side: "right" as const, start: 0, end: 42, bottom: 36, top: 54 };
+	    expect(threeDBacksplashRenderInterval(top, room, [top, right])).toEqual({ start: 90, end: 144 - 0.07 });
+	    expect(threeDBacksplashRenderInterval(right, room, [top, right])).toEqual({ start: 0.07, end: 42 });
+	    expect(threeDBacksplashRenderInterval(top, room, [top])).toEqual({ start: 90, end: 144 });
+	    const stopped = { ...top, end: 120 };
+	    expect(threeDBacksplashRenderInterval(stopped, room, [stopped, right])).toEqual({ start: 90, end: 120 });
+	    expect(threeDBacksplashPlaneUv(top, 0, 0, 120, 143.93)).toEqual({ u: 10, v: 3 });
+	    expect(threeDBacksplashPlaneUv(top, 1, 1, 120, 143.93).v).toBe(4.5);
+	    expect(threeDBacksplashPlaneUv(right, 0, 0, 0.07, 42)).toMatchObject({ v: 3 });
+	    expect(threeDBacksplashPlaneUv({ side: "left", bottom: 36, top: 54 }, 0, 0, 0.07, 24).u).toBe(2);
+	    expect(threeDBacksplashPlaneUv({ side: "left", bottom: 36, top: 54 }, 1, 0, 0.07, 24).u).toBeCloseTo(0.07 / 12);
+	    expect(threeDBacksplashPlaneUv({ side: "bottom", bottom: 36, top: 54 }, 1, 0, 0, 36).u).toBe(0);
+	    const source = readFileSync(new URL("./InteractiveRoom3D.tsx", import.meta.url), "utf8");
+	    expect(source).toContain("texture.center.set(0, 0)");
+	    expect(source).toContain("side: THREE.FrontSide");
+	    expect(source).toContain("worldInchUv: true");
 	  });
 
 	  it("clips the selected supported-run backsplash around a saved window without changing the opening or wall", () => {

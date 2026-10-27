@@ -31,7 +31,8 @@ import { miteredWallOutlinesFromInteriorFaces, ROOM_WALL_THICKNESS_IN } from "@/
 import { crownTopRuns, formatCrownTop } from "@/lib/crownTopRuns";
 import { verifiedPelicanBathroomFixtureProfile } from "@/lib/pelicanBathroomFixtureProfiles";
 import type { BathroomZoneOverlapWarning } from "@/lib/bathroomPlanning";
-import type { FourAnchorWallGuide } from "@/lib/fourAnchorAutoBuild";
+import type { AutoDesignWallGuide } from "@/lib/autoDesignAutoBuild";
+import { clampSinkDragForFaucet, resolveDeckFaucetPlacement } from "@/lib/faucetPlacement";
 
 export type PlanCabinetRenderFrame = {
   lockedAngledRun: boolean;
@@ -329,8 +330,8 @@ export function planLazySusanTwoFrontPath(cabinet: PlacedCabinet): string | unde
 
 interface Props {
   room: RoomData;
-  /** Visual-only numbered wall aid, present only during Four-Anchor setup. */
-  fourAnchorWallGuides?: readonly FourAnchorWallGuide[];
+  /** Visual-only numbered wall aid, present only during Auto-Design setup. */
+  autoDesignWallGuides?: readonly AutoDesignWallGuide[];
   /** Catalog item currently being dragged over the 2D plan. */
   catalogDragCabinet?: DesignCabinet | null;
   cabinets: PlacedCabinet[];
@@ -431,6 +432,8 @@ interface Props {
   potFillers?: PotFillerFixture[];
   selectedSinkUid?: string | null;
   onSelectSink?: (uid: string | null) => void;
+  /** Reopens the Auto-Design faucet picker for a faucet that mode attached. */
+  onAutoDesignFaucetClick?: (uid: string) => void;
   onMoveSink?: (uid: string, x: number, y: number) => void;
   // Right-click a WALL cabinet to drop it to the floor as an island/peninsula
   // base (top lands at 34.5 in). Provided by DesignTool.
@@ -504,7 +507,7 @@ function readableLabel(fillHex: string): { color: string; shadow: string; isDark
 }
 
 export function PlanCanvas({
-  room, fourAnchorWallGuides = [], catalogDragCabinet = null, cabinets, countertopGeometry, selectedUid, attributesTargetUid = null, onSelect, onMove, onDelete, onRotate, onUnlockCorner, onOpenAttributes, onDropNew, onDropToFloor,
+  room, autoDesignWallGuides = [], catalogDragCabinet = null, cabinets, countertopGeometry, selectedUid, attributesTargetUid = null, onSelect, onMove, onDelete, onRotate, onUnlockCorner, onOpenAttributes, onDropNew, onDropToFloor,
   showWallLayer, showCrownTopBadges = false, onToggleWallLayer, measureMode = false, autoDimensions = false, onDimensionAdjustmentChange, showPeninsulaCornerSnapFeedback = true, island = null, onIslandChange, onIslandMove,
   islandDepthTransition = null,
   activeIslandFace = "front", onSelectIslandFace, onOpenIslandAttributes,
@@ -513,7 +516,7 @@ export function PlanCanvas({
 	  drawMode = false, onDrawRoom,
 	  activeWall, onSelectWall, wallCompassStartIn = null, wallCompassVisible = false, onWallCompassDrop, onRotateDrawing, drawingRotationDisabled = false, peninsulaDraft = null, onPeninsulaDraftLengthChange, onPeninsulaAttachmentChange, onOpenWallSettings, conflictUids, missingPriceUids,
   layoutLocked = false, lockedWalls,
-  countertopMaterialId = null, islandCountertopMaterialId = null, sinks = [], potFillers = [], selectedSinkUid = null, onSelectSink, onMoveSink,
+  countertopMaterialId = null, islandCountertopMaterialId = null, sinks = [], potFillers = [], selectedSinkUid = null, onSelectSink, onAutoDesignFaucetClick, onMoveSink,
   finishFor,
   furniture = [], selectedFurnUid = null, onSelectFurn, onMoveFurn, onDeleteFurn, onRotateFurn, onOpenFurnitureAttributes, bathroomZoneWarningsByFixture,
   flooringMaterialId = null,
@@ -536,6 +539,11 @@ export function PlanCanvas({
   const snapshotRoom = countertopGeometry?.room ?? room;
   const snapshotCabinets = countertopGeometry?.cabinets ?? cabinets;
   const snapshotIsland = countertopGeometry ? countertopGeometry.island : island;
+  const faucetCountertops = useMemo(
+    () => countertopSurfaces(snapshotCabinets, snapshotRoom, snapshotIsland, ponyWalls),
+    [snapshotCabinets, snapshotRoom, snapshotIsland, ponyWalls],
+  );
+  const [faucetDragWarning, setFaucetDragWarning] = useState<{ uid: string; message: string } | null>(null);
   const countertopShapes = useMemo(() => {
     if (!countertopMaterialId) return [] as CountertopSurface[];
     const geometryIsland = snapshotIsland;
@@ -698,9 +706,21 @@ export function PlanCanvas({
     if (!dgr || !onMoveSink) return;
     const dx = (e.clientX - dgr.startX) / ppiRef.current;
     const dy = (e.clientY - dgr.startY) / ppiRef.current;
-    const x = Math.max(0, Math.min(dgr.origX + dx, room.width - dgr.w));
-    const y = Math.max(0, Math.min(dgr.origY + dy, room.depth - dgr.d));
-    onMoveSink(dgr.uid, x, y);
+    const sink = sinks.find((item) => item.uid === dgr.uid);
+    if (!sink) return;
+    const clamped = clampSinkDragForFaucet(
+      { ...sink, x: dgr.origX, y: dgr.origY },
+      { x: dgr.origX + dx, y: dgr.origY + dy },
+      snapshotRoom,
+      openings,
+      faucetCountertops,
+    );
+    if (clamped.blocked) {
+      setFaucetDragWarning(clamped.warning ? { uid: sink.uid, message: clamped.warning } : null);
+      return;
+    }
+    setFaucetDragWarning(null);
+    onMoveSink(dgr.uid, clamped.x, clamped.y);
   };
   const onSinkPointerUp = (e: React.PointerEvent) => {
     if (sinkDrag.current) {
@@ -882,10 +902,10 @@ export function PlanCanvas({
   const roomPxW = room.width * ppi;
   const roomPxH = room.depth * ppi;
   const hasCustomWallShell = Boolean(room.vertices?.length && room.customWalls?.length);
-  // Four-Anchor labels are projected from the same physical wall frames used by
+  // Auto-Design labels are projected from the same physical wall frames used by
   // anchor placement. They sit just inside the room, are not clickable, and are
   // discarded as soon as setup closes; they never affect a room or wall record.
-  const positionedFourAnchorWallGuides = useMemo(() => fourAnchorWallGuides.flatMap((guide) => {
+  const positionedAutoDesignWallGuides = useMemo(() => autoDesignWallGuides.flatMap((guide) => {
     const frame = wallRunFrame(guide.engineWallId, room);
     if (!frame || frame.kind === "peninsula") return [];
     const middleAlong = (frame.runStart + frame.runEnd) / 2;
@@ -898,7 +918,7 @@ export function PlanCanvas({
       x: frame.start.x + frame.tangent.x * middleAlong,
       y: frame.start.y + frame.tangent.y * middleAlong,
     }, 8), startPosition: pointAt(start, 3) }];
-  }), [fourAnchorWallGuides, ppi, room]);
+  }), [autoDesignWallGuides, ppi, room]);
   // The measured segment is the finished room-facing wall surface shared by
   // cabinet placement, openings, dimensions and 3D. Build the wall thickness
   // outward from that face, so the plan cannot depict a cabinet buried halfway
@@ -919,11 +939,11 @@ export function PlanCanvas({
         !room.openWallPath,
       )
 	    : [];
-	  // The Four-Anchor form docks at the right on wide screens. Move only this
+	  // The Auto-Design form docks at the right on wide screens. Move only this
 	  // rendered room viewport left while its numbered guide is active so its
 	  // right-side Wall 4–6 labels remain readable. Saved coordinates, panning,
 	  // cabinet transforms and all placement math remain inch-based and unchanged.
-	  const fourAnchorGuideDockOffsetPx = positionedFourAnchorWallGuides.length > 0
+	  const autoDesignGuideDockOffsetPx = positionedAutoDesignWallGuides.length > 0
 	    ? Math.min(120, Math.max(48, roomPxW * 0.15))
 	    : 0;
   // The position editor stores every distance against a wall endpoint. Resolve
@@ -1463,13 +1483,13 @@ export function PlanCanvas({
       )}
       <div
 	        data-room
-	        data-four-anchor-guide-active={positionedFourAnchorWallGuides.length > 0 ? "true" : undefined}
+	        data-auto-design-guide-active={positionedAutoDesignWallGuides.length > 0 ? "true" : undefined}
 	        className="absolute shadow-inner"
         onPointerDownCapture={onRoomMeasurePointerDown}
         style={{
           width: roomPxW,
           height: roomPxH,
-	          left: `calc(50% + ${floorPlanPan.x - fourAnchorGuideDockOffsetPx}px)`,
+	          left: `calc(50% + ${floorPlanPan.x - autoDesignGuideDockOffsetPx}px)`,
           top: `calc(50% + ${floorPlanPan.y}px)`,
           transform: "translate(-50%, -50%)",
           border: "none",
@@ -1527,12 +1547,12 @@ export function PlanCanvas({
           })(),
         }}
       >
-	        {positionedFourAnchorWallGuides.length > 0 && (
-	          <div data-testid="four-anchor-wall-guide" className="pointer-events-none absolute inset-0 z-[28]" aria-label="Four-anchor wall guide">
-	            {positionedFourAnchorWallGuides.map(({ guide, labelPosition, startPosition }) => (
+	        {positionedAutoDesignWallGuides.length > 0 && (
+	          <div data-testid="auto-design-wall-guide" className="pointer-events-none absolute inset-0 z-[28]" aria-label="Auto-Design wall guide">
+	            {positionedAutoDesignWallGuides.map(({ guide, labelPosition, startPosition }) => (
 	              <Fragment key={guide.label}>
 	                <span
-	                  data-testid="four-anchor-wall-guide-label"
+	                  data-testid="auto-design-wall-guide-label"
 	                  data-wall-label={guide.label}
 	                  data-wall-color={guide.color}
 	                  aria-label={`${guide.label}. Measure from the matching colored dot.`}
@@ -1542,12 +1562,12 @@ export function PlanCanvas({
 	                  style={{ ...labelPosition, backgroundColor: guide.color }}
 	                >
 	                  {guide.label.replace("Wall ", "")}
-	                  <span data-testid="four-anchor-wall-guide-tooltip" role="tooltip" className="pointer-events-none absolute left-1/2 top-full z-50 mt-1 w-44 -translate-x-1/2 rounded bg-slate-950 px-2 py-1 text-center text-[10px] font-semibold leading-snug text-white opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100 group-focus:opacity-100">
+	                  <span data-testid="auto-design-wall-guide-tooltip" role="tooltip" className="pointer-events-none absolute left-1/2 top-full z-50 mt-1 w-44 -translate-x-1/2 rounded bg-slate-950 px-2 py-1 text-center text-[10px] font-semibold leading-snug text-white opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100 group-focus:opacity-100">
 	                    {guide.label} — measure from the matching colored dot.
 	                  </span>
 	                </span>
 	                <span
-	                  data-testid="four-anchor-wall-guide-start"
+	                  data-testid="auto-design-wall-guide-start"
 	                  data-wall-label={guide.label}
 	                  aria-label={`${guide.label} measurement start`}
 	                  className="absolute h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-[0_1px_3px_rgba(15,23,42,0.55)]"
@@ -2035,6 +2055,8 @@ export function PlanCanvas({
           const isSel = s.uid === selectedSinkUid;
           const verticalWall = s.wallSide === "left" || s.wallSide === "right";
           const isAttachedStandardSink = Boolean(s.cabinetUid && s.frontSetbackIn != null && !s.apronFront);
+          const faucetPlacement = s.faucet ? resolveDeckFaucetPlacement(s, snapshotRoom, openings, faucetCountertops) : null;
+          const faucetWarning = faucetPlacement?.warning ?? (faucetDragWarning?.uid === s.uid ? faucetDragWarning.message : null);
           return (
             <div
               key={s.uid}
@@ -2070,14 +2092,31 @@ export function PlanCanvas({
               )}
               {/* faucet — a small fixture centered behind the basin */}
               {s.faucet && (
-                s.wallSide === "bottom" ? <div className="absolute bottom-[-5px] left-1/2 -translate-x-1/2" style={{ width: Math.max(4, 3 * ppi), height: Math.max(4, 4 * ppi), background: "#5b636b", borderRadius: 2 }} />
-                  : s.wallSide === "left" ? <div className="absolute left-[-5px] top-1/2 -translate-y-1/2" style={{ width: Math.max(4, 4 * ppi), height: Math.max(4, 3 * ppi), background: "#5b636b", borderRadius: 2 }} />
-                    : s.wallSide === "right" ? <div className="absolute right-[-5px] top-1/2 -translate-y-1/2" style={{ width: Math.max(4, 4 * ppi), height: Math.max(4, 3 * ppi), background: "#5b636b", borderRadius: 2 }} />
-                      : <div className="absolute left-1/2 -translate-x-1/2" style={{ top: -5, width: Math.max(4, 3 * ppi), height: Math.max(4, 4 * ppi), background: "#5b636b", borderRadius: 2 }} />
+                <div
+                  data-testid={`plan-faucet-${s.uid}`}
+                  data-auto-design-faucet={s.autoDesignFaucet ? "true" : undefined}
+                  title={s.autoDesignFaucet ? "Choose a faucet" : undefined}
+                  onPointerDown={(event) => {
+                    if (!s.autoDesignFaucet || !onAutoDesignFaucetClick) return;
+                    event.stopPropagation();
+                    onAutoDesignFaucetClick(s.uid);
+                  }}
+                  className={s.autoDesignFaucet ? "cursor-pointer" : undefined}
+                >
+                  {s.wallSide === "bottom" ? <div className="absolute bottom-[-5px] left-1/2 -translate-x-1/2" style={{ width: Math.max(4, 3 * ppi), height: Math.max(4, 4 * ppi), background: "#5b636b", borderRadius: 2 }} />
+                    : s.wallSide === "left" ? <div className="absolute left-[-5px] top-1/2 -translate-y-1/2" style={{ width: Math.max(4, 4 * ppi), height: Math.max(4, 3 * ppi), background: "#5b636b", borderRadius: 2 }} />
+                      : s.wallSide === "right" ? <div className="absolute right-[-5px] top-1/2 -translate-y-1/2" style={{ width: Math.max(4, 4 * ppi), height: Math.max(4, 3 * ppi), background: "#5b636b", borderRadius: 2 }} />
+                        : <div className="absolute left-1/2 -translate-x-1/2" style={{ top: -5, width: Math.max(4, 3 * ppi), height: Math.max(4, 4 * ppi), background: "#5b636b", borderRadius: 2 }} />}
+                </div>
               )}
               {s.faucetDeckConflict === "shallow-countertop-deck" && (
                 <span data-testid={`sink-faucet-deck-conflict-${s.uid}`} role="alert" className="absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2 whitespace-nowrap rounded bg-rose-700 px-1 py-0.5 text-[8px] font-bold text-white shadow">
                   REAR DECK TOO SHALLOW
+                </span>
+              )}
+              {faucetWarning && (
+                <span data-testid={`faucet-window-conflict-${s.uid}`} role="alert" className="absolute left-1/2 top-full z-20 mt-1 w-44 -translate-x-1/2 rounded bg-amber-800 px-1.5 py-1 text-center text-[8px] font-bold leading-tight text-white shadow">
+                  {faucetWarning}
                 </span>
               )}
             </div>

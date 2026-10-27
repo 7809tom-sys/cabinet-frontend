@@ -169,6 +169,18 @@
     min-height: 0;
   }
 
+  /* Sidebar groups are themselves `.flex`, so the rule above lets them shrink
+     below their labels and paint on top of the next group. Keep each group at
+     its content height. The sidebar body scrolls instead, including on a short
+     or zoomed window. Header and footer stay pinned. */
+  [data-sidebar="content"] > * {
+    flex-shrink: 0;
+  }
+  [data-sidebar="header"],
+  [data-sidebar="footer"] {
+    flex-shrink: 0;
+  }
+
   /* Button active press effect */
   button:not(:disabled):active,
   [role="button"]:not([aria-disabled="true"]):active {

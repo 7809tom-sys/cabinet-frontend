@@ -51,6 +51,11 @@ import {
 import { FlooringCartonFacts } from "./FlooringCartonFacts";
 import { PelicanVariantSelect } from "./PelicanVariantSelect";
 import { flooringCartonFacts } from "@/lib/flooringCartonFacts";
+import {
+  isDesignerPaletteItemVisible,
+  mergePreferredPaletteProducts,
+  type DesignerPaletteRow,
+} from "@/lib/designerTileMosaicCatalog";
 import type { CountertopScope } from "@/lib/surfaceSelection";
 
 export type SelectedSurface = {
@@ -267,6 +272,10 @@ export function SurfacesPickerDialog({
   );
   const availableCats = useMemo(() => {
     const have = new Set((cats ?? []).map((c) => c.category));
+    // Designer category counts omit tile and mosaic that lack a swatch. Once
+    // those counts have loaded, keep the tab anyway — its products come from
+    // the storefront catalog, not from that gated count.
+    if (cats) have.add("Tile & Mosaic");
     const list = PELICAN_STOREFRONT_CATEGORIES.filter((c) => have.has(c));
     return list.length ? list : PELICAN_STOREFRONT_CATEGORIES;
   }, [cats]);
@@ -278,20 +287,26 @@ export function SurfacesPickerDialog({
     }
   }, [availableCats, category]);
 
+  // Designer scope currently returns only Tile & Mosaic rows that already have
+  // an approved swatch (7 of 51 on the live catalog). The storefront catalog
+  // scope returns the full active priced category; visibility below keeps
+  // Designer-enabled, priced products and leaves catalog photos off the 3D mesh.
+  const browsingTileMosaic = (!isBathroom && category === "Tile & Mosaic")
+    || (isBathroom && activeBathroomRole === "backsplash");
   const { data, isLoading } = trpc.pelican.byCategory.useQuery(
     {
-      category: category as PelicanCategory,
-      scope: "designer",
-      search: debounced || undefined,
+      category: (browsingTileMosaic ? "Tile & Mosaic" : category) as PelicanCategory,
+      scope: browsingTileMosaic ? "catalog" : "designer",
+      search: isBathroom ? undefined : (debounced || undefined),
       affiliateSlug: affiliateSlug ?? undefined,
       limit: PAGE_LIMIT,
       offset: 0,
     },
-    { enabled: open && !isBathroom && category !== "Preferred" }
+    { enabled: open && (browsingTileMosaic || (!isBathroom && category !== "Preferred")) }
   );
   const { data: bathroomData, isLoading: bathroomLoading } = trpc.surfaces.recommended.useQuery(
     { role: activeBathroomRole, limit: PAGE_LIMIT },
-    { enabled: open && isBathroom },
+    { enabled: open && isBathroom && activeBathroomRole !== "backsplash" },
   );
 
   const selectedIds = useMemo(() => new Set(selected.map((s) => s.id)), [selected]);
@@ -299,11 +314,22 @@ export function SurfacesPickerDialog({
     () => preferredProducts.map((product) => product.id).filter(Number.isInteger),
     [preferredProducts],
   );
+  const preferredQueryEnabled = open && category === "Preferred" && preferredIds.length > 0;
   const { data: verifiedPreferredProducts, isLoading: preferredProductsLoading } = trpc.surfaces.designerByIds.useQuery(
     { ids: preferredIds },
-    { enabled: open && category === "Preferred" && preferredIds.length > 0 },
+    { enabled: preferredQueryEnabled },
   );
-  const preferredItems = useMemo(() => (verifiedPreferredProducts ?? []).map((product) => ({
+  // designerByIds applies the swatch gate, so a saved mosaic without
+  // materialImageUrl never comes back. byIds is the same priced catalog row
+  // without that gate; only Tile & Mosaic gaps are merged in.
+  const { data: catalogPreferredProducts, isLoading: catalogPreferredLoading } = trpc.surfaces.byIds.useQuery(
+    { ids: preferredIds },
+    { enabled: preferredQueryEnabled },
+  );
+  const preferredItems = useMemo(() => mergePreferredPaletteProducts(
+    verifiedPreferredProducts ?? [],
+    catalogPreferredProducts ?? [],
+  ).map((product) => ({
       id: product.id,
       pelicanCode: product.pelicanCode,
       slug: product.slug,
@@ -315,16 +341,22 @@ export function SurfacesPickerDialog({
       materialImageUrl: product.materialImageUrl,
       description: product.description ?? null,
       sellPrice: product.sellPrice,
+      showInDesigner: product.showInDesigner,
+      isActive: product.isActive,
       coverageSqFt: flooringCartonFacts(product)?.sqFtPerBox ?? null,
       piecesPerBox: flooringCartonFacts(product)?.piecesPerBox ?? null,
       unsupportedOverhangLimitIn: product.unsupportedOverhangLimitIn ?? null,
-    })), [verifiedPreferredProducts]);
+    })), [catalogPreferredProducts, verifiedPreferredProducts]);
   const items: SelectedSurface[] = (isBathroom
-    ? bathroomData ?? []
+    ? (activeBathroomRole === "backsplash" ? data?.items ?? [] : bathroomData ?? [])
     : category === "Preferred"
       ? preferredItems
       : data?.items ?? []) as SelectedSurface[];
-  const paletteLoading = isBathroom ? bathroomLoading : category === "Preferred" ? preferredProductsLoading : isLoading;
+  const paletteLoading = isBathroom
+    ? (activeBathroomRole === "backsplash" ? isLoading : bathroomLoading)
+    : category === "Preferred"
+      ? preferredProductsLoading || catalogPreferredLoading
+      : isLoading;
   const selectedBathroomFixture = useMemo(() => {
     if (!isBathroom || bathroomPaletteMode !== "fixtures") return null;
     return selected.find((item) => Boolean(
@@ -346,21 +378,13 @@ export function SurfacesPickerDialog({
       : category !== "Preferred" || !debounced
         ? items
         : items.filter((item) => `${item.name} ${item.subCategory ?? ""} ${item.size ?? ""}`.toLowerCase().includes(debounced.toLowerCase()));
-    const compatible = searched.filter((item) => {
-      if (isBathroom) return true;
-      if (item.category === "Sinks & Faucets") return hasVerifiedPelicanFixtureProfile(item.pelicanCode);
-      const isMaterialRole = item.category === "Flooring"
-        || item.category === "Tile & Mosaic"
-        || item.category === "Quartz Slabs (Countertops)";
-      // Active, priced Designer countertops remain selectable even when the
-      // supplier has not yet supplied a repeatable material-only swatch. Their
-      // card names the neutral 3D preview explicitly; catalog photography never
-      // becomes a texture. Flooring and tile keep the stricter swatch rule.
-      if (item.category === "Quartz Slabs (Countertops)") {
-        return matchesCountertopSwatchFilter(item, countertopSwatchFilter);
-      }
-      return isMaterialRole && Boolean(item.materialImageUrl?.trim());
-    });
+    const compatible = searched.filter((item) => isDesignerPaletteItemVisible(item as DesignerPaletteRow, {
+      isBathroom,
+      hasVerifiedFixtureProfile: hasVerifiedPelicanFixtureProfile,
+      // Countertops stay selectable without a swatch. The swatch chips only
+      // narrow that full set. Catalog photography never becomes a texture.
+      matchesCountertopSwatch: (candidate) => matchesCountertopSwatchFilter(candidate, countertopSwatchFilter),
+    }));
     return isBathroom && bathroomPaletteMode === "fixtures"
       ? filterBathroomFixtureItems(compatible, bathroomFinish, bathroomSize)
       : compatible;

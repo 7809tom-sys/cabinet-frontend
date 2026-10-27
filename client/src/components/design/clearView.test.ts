@@ -5,6 +5,10 @@ import {
   THREE_D_WALL_OPACITY,
   THREE_D_DESIGNER_WALL_OPACITY,
   THREE_D_DESIGNER_FOREGROUND_WALL_OPACITY,
+  THREE_D_DOLLHOUSE_MOUNT_DEPTH_IN,
+  threeDDollhouseMountWalls,
+  threeDDollhouseWallFrames,
+  threeDDollhouseWallHidesFromCamera,
   threeDWallObscuresOrbitTarget,
 } from "./InteractiveRoom3D";
 
@@ -12,15 +16,24 @@ const front = [{ x: 0, y: 0 }, { x: 120, y: 0 }] as const;
 const back = [{ x: 0, y: 120 }, { x: 120, y: 120 }] as const;
 const right = [{ x: 120, y: 0 }, { x: 120, y: 120 }] as const;
 
+const rectangle = [
+  { side: "top", start: { x: 0, y: 0 }, end: { x: 12, y: 0 } },
+  { side: "right", start: { x: 12, y: 0 }, end: { x: 12, y: -10 } },
+  { side: "bottom", start: { x: 12, y: -10 }, end: { x: 0, y: -10 } },
+  { side: "left", start: { x: 0, y: -10 }, end: { x: 0, y: 0 } },
+];
+
 describe("regular Designer clear 3D view", () => {
-  it("keeps regular Designer walls visibly translucent rather than solid or invisible", () => {
+  it("keeps walls that stay in view translucent, and hides the walls between the camera and the interior", () => {
     expect(THREE_D_DESIGNER_WALL_OPACITY).toBe(0.28);
     expect(THREE_D_DESIGNER_FOREGROUND_WALL_OPACITY).toBe(0.14);
     expect(THREE_D_DESIGNER_FOREGROUND_WALL_OPACITY).toBeGreaterThan(0.05);
     expect(THREE_D_DESIGNER_WALL_OPACITY).toBeLessThan(THREE_D_WALL_OPACITY);
     const renderer = readFileSync(new URL("./InteractiveRoom3D.tsx", import.meta.url), "utf8");
     expect(renderer).toContain("cutawayRoomWalls && !showSolidFrontWalls ? THREE_D_DESIGNER_WALL_OPACITY : THREE_D_WALL_OPACITY");
-    expect(renderer).toContain("? THREE_D_DESIGNER_FOREGROUND_WALL_OPACITY : THREE_D_DESIGNER_WALL_OPACITY");
+    expect(renderer).toContain("threeDDollhouseWallHidesFromCamera");
+    expect(renderer).toContain("setThreeDDollhouseHidden");
+    expect(renderer).not.toContain("? THREE_D_DESIGNER_FOREGROUND_WALL_OPACITY : THREE_D_DESIGNER_WALL_OPACITY");
   });
   it("ghosts only the foreground wall between the camera and the design", () => {
     const camera = { x: 60, z: 10 };
@@ -44,12 +57,38 @@ describe("regular Designer clear 3D view", () => {
     expect(threeDWallObscuresOrbitTarget(...front, { x: 60, z: -60 }, { x: 60, z: -80 })).toBe(false);
   });
 
-  it("opts in only the regular Designer, retaining a solid-walls control", () => {
+  it("defaults the dollhouse cutaway on for every Designer mount, and keeps a solid-walls control", () => {
     const host = readFileSync(new URL("../../pages/DesignTool.tsx", import.meta.url), "utf8");
     const renderer = readFileSync(new URL("./InteractiveRoom3D.tsx", import.meta.url), "utf8");
     expect(host).toContain("cutawayRoomWalls");
-    expect(renderer).toContain('cutawayRoomWalls = false');
+    expect(renderer).toContain("cutawayRoomWalls = true");
     expect(renderer).toContain("Show solid front walls");
     expect(renderer).toContain("setShowSolidFrontWalls");
+    expect(renderer).toContain("dollhouseHidden");
+  });
+
+  it("hides only the walls whose inward side faces away from the camera, including a corner orbit", () => {
+    const walls = threeDDollhouseWallFrames(rectangle);
+    const bySide = Object.fromEntries(walls.map((wall) => [wall.side, wall]));
+    const inside = { x: 6, z: 5 };
+    expect(walls.map((wall) => threeDDollhouseWallHidesFromCamera(wall, inside))).toEqual([false, false, false, false]);
+    expect(threeDDollhouseWallHidesFromCamera(bySide.top, { x: 6, z: -2 })).toBe(true);
+    expect(threeDDollhouseWallHidesFromCamera(bySide.right, { x: 6, z: -2 })).toBe(false);
+    expect(threeDDollhouseWallHidesFromCamera(bySide.right, { x: 16, z: 5 })).toBe(true);
+    expect(threeDDollhouseWallHidesFromCamera(bySide.bottom, { x: 16, z: 5 })).toBe(false);
+    const outsideCorner = { x: 16, z: -2 };
+    expect(threeDDollhouseWallHidesFromCamera(bySide.top, outsideCorner)).toBe(true);
+    expect(threeDDollhouseWallHidesFromCamera(bySide.right, outsideCorner)).toBe(true);
+    expect(threeDDollhouseWallHidesFromCamera(bySide.left, outsideCorner)).toBe(false);
+    expect(threeDDollhouseWallHidesFromCamera(bySide.bottom, outsideCorner)).toBe(false);
+  });
+
+  it("hides a mounted cabinet with its nearest wall, and a true corner cabinet with either wall", () => {
+    const walls = threeDDollhouseWallFrames(rectangle);
+    expect(THREE_D_DOLLHOUSE_MOUNT_DEPTH_IN).toBe(32);
+    expect(threeDDollhouseMountWalls({ x: 6, z: 0.2 }, walls, 3)).toEqual(["top"]);
+    expect(threeDDollhouseMountWalls({ x: 11.2, z: 4 }, walls, 3)).toEqual(["right"]);
+    expect(threeDDollhouseMountWalls({ x: 0.7, z: 0.7 }, walls, 3).sort()).toEqual(["left", "top"]);
+    expect(threeDDollhouseMountWalls({ x: 6, z: 5 }, walls, 3)).toEqual([]);
   });
 });

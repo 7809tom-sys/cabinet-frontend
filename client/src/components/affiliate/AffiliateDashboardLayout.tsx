@@ -253,7 +253,7 @@ function SidebarInner({
     <>
       <div className="relative" ref={sidebarRef}>
         <Sidebar collapsible="icon" className="border-r-0" disableTransition={isResizing}>
-          <SidebarHeader className="h-16 justify-center">
+          <SidebarHeader className="h-16 shrink-0 justify-center">
             <div className="flex items-center gap-3 px-2 w-full">
               <button
                 onClick={toggleSidebar}
@@ -278,8 +278,8 @@ function SidebarInner({
             </div>
           </SidebarHeader>
 
-          <SidebarContent className="gap-0 overflow-x-hidden overflow-y-auto">
-            <SidebarMenu className="px-2 py-1">
+          <SidebarContent className="min-h-0 gap-0 overflow-x-hidden overflow-y-auto overscroll-y-contain [&>*]:shrink-0">
+            <SidebarMenu className="shrink-0 px-2 py-1">
               {headItems.map((item) => {
                 const isActive = item.section === section;
                 return (
@@ -300,7 +300,7 @@ function SidebarInner({
             </SidebarMenu>
 
             {linkAccess.showSection && (
-              <SidebarGroup className="px-2 py-1" data-testid="customer-links">
+              <SidebarGroup className="shrink-0 px-2 py-1" data-testid="customer-links">
                 <Collapsible open={customerLinksOpen || isCollapsed} onOpenChange={setCustomerLinksOpen}>
                   <CollapsibleTrigger asChild>
                     <button type="button" className="flex h-8 w-full items-center rounded-md px-2 text-xs font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent group-data-[collapsible=icon]:hidden">
@@ -333,7 +333,7 @@ function SidebarInner({
               </SidebarGroup>
             )}
 
-            <SidebarGroup className="px-2 py-1" data-testid="sidebar-tail">
+            <SidebarGroup className="shrink-0 px-2 py-1" data-testid="sidebar-tail">
               <SidebarGroupContent>
                 <SidebarMenu>
                   {tailItems.map((item) => {
@@ -398,7 +398,7 @@ function SidebarInner({
             </SidebarGroup>
           </SidebarContent>
 
-          <SidebarFooter className="relative z-10 bg-sidebar p-3">
+          <SidebarFooter className="relative z-10 shrink-0 bg-sidebar p-3">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className="flex items-center gap-3 rounded-lg px-1 py-1 hover:bg-accent/50 transition-colors w-full text-left group-data-[collapsible=icon]:justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">

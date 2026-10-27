@@ -24,7 +24,12 @@ describe("SignIn password access", () => {
   it("reloads the server-chosen destination after sign-in so the mounted Designer header reads the new session", () => {
     expect(source).toContain("await utils.auth.me.fetch()");
     expect(source).toContain("utils.auth.signInDestination.fetch({ returnPath: requestedReturn() })");
-    expect(source).toContain("window.location.assign(destination)");
+    expect(source).toContain("window.location.assign(decision.destination)");
+    expect(source).toContain('decideSignInNavigation({');
+    expect(source).toContain('role: me.role');
+    expect(source).toContain('automatic: mode === "automatic"');
+    expect(source).toContain('void afterAuth("automatic")');
+    expect(source).toContain('await afterAuth("submit")');
   });
 
   it("refuses to enter a requested Designer route as anonymous", () => {

@@ -79,6 +79,10 @@ const TAB_HELP: Record<string, { en: string; zh: string; link?: { label: string;
     en: "Fix door style data issues — correct mismatched style codes, update distributor assignments, and resolve conflicts.",
     zh: "修正門板樣式資料問題——糾正不匹配的樣式代碼、更新經銷商指派並解決衝突。",
   },
+  "door-rendering-audit": {
+    en: "Compare each door style's sample photo with its accepted render and the latest Designer render. Run every style, only styles that changed, or the ones you select. Accept or reject a flagged render, revert to the previous version, or restore any version from that style's history.",
+    zh: "比較每個門板樣式的樣品照片、已接受的渲染圖與最新的設計工具渲染圖。可執行全部樣式、僅變更的樣式，或您選取的樣式。接受或拒絕標記的渲染圖，還原到上一版，或從該樣式的歷史紀錄恢復任一版本。",
+  },
   distributors: {
     en: "Manage distributor records. Add new distributors, update contact details, and configure their product line settings.",
     zh: "管理經銷商記錄。新增經銷商、更新聯絡詳情並設定其產品線設定。",

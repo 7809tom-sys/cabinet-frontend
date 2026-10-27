@@ -2416,9 +2416,9 @@ describe("freeSegmentsOnWall (break the run around openings)", () => {
     expect(nextAvailableRoomCornerPlacement(wdc, "top", ROOM_12x10, occupied)).toBeNull();
   });
 
-  it("seats ERB33 beside a Four-anchor appliance exactly 33 inches from the shared corner, while ERB36 remains blocked", () => {
+  it("seats ERB33 beside an Auto-Design appliance exactly 33 inches from the shared corner, while ERB36 remains blocked", () => {
     const rightRunAnchor = cab({
-      uid: "four-anchor-right-run-range",
+      uid: "auto-design-right-run-range",
       masterCode: "RANGE-30",
       description: "30 inch Range",
       placement: "appliance",
@@ -2434,7 +2434,7 @@ describe("freeSegmentsOnWall (break the run around openings)", () => {
       wallOffset: 33,
     });
     const erb33 = cab({
-      uid: "four-anchor-erb33",
+      uid: "auto-design-erb33",
       masterCode: "ERB33",
       description: '33" Easy Reach Base Cabinet with Lazy Susan',
       placement: "base",
@@ -2442,7 +2442,7 @@ describe("freeSegmentsOnWall (break the run around openings)", () => {
       depth: 24,
       height: 34.5,
     });
-    const erb36 = { ...erb33, uid: "four-anchor-erb36", masterCode: "ERB36", width: 36, description: '36" Easy Reach Base Cabinet with Lazy Susan' };
+    const erb36 = { ...erb33, uid: "auto-design-erb36", masterCode: "ERB36", width: 36, description: '36" Easy Reach Base Cabinet with Lazy Susan' };
 
     expect(placedFootprint(erb33)).toEqual({ w: 33, d: 33 });
     expect(nextAvailableRoomCornerPlacement(erb33, "top", ROOM_12x10, [rightRunAnchor], { x: ROOM_12x10.width, y: 0 }))
