@@ -239,6 +239,7 @@ import { EmailGate, type LeadContact } from "@/components/design/EmailGate";
 import { OptionalContactNudge } from "@/components/design/OptionalContactNudge";
 import { DesignDeliveryDialog } from "@/components/design/DesignDeliveryDialog";
 import { DesignActions, type BuildSheetRow } from "@/components/design/DesignActions";
+import { KitchenPackageForm, type KitchenPackageDraft } from "@/components/affiliate/KitchenPackageForm";
 import { DesignMaterialsListDialog } from "@/components/design/DesignMaterialsListDialog";
 import { DraggableOverlayDialog } from "@/components/ui/DraggableOverlayDialog";
 import { PopupDragGrip } from "@/components/ui/PopupDragGrip";
@@ -476,7 +477,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   });
   const canAffiliatePriceShop = !!affiliateSlug && affiliatePriceAccess.data?.isOwner === true;
   const canAffiliateGeminiImageTest = !!affiliateSlug && affiliatePriceAccess.data?.accessDesigner === true;
-  const canPublishKitchenPackage = isAdmin || canAffiliatePriceShop;
+  const canPublishKitchenPackage = isAdmin || (!!affiliateSlug && (affiliatePriceAccess.data?.isOwner === true || affiliatePriceAccess.data?.accessDesigner === true));
   const affiliatePrimary = affiliateBrand?.primaryColor || "#1a2b4a";
   const affiliateAccent = affiliateBrand?.accentColor || "#c9a227";
   const affiliateStyleName = useCallback(
@@ -592,6 +593,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	  const value = Number(new URLSearchParams(search).get("crmDeal"));
 	  return Number.isInteger(value) && value > 0 ? value : null;
 	}, [search]);
+  const assistMode = useMemo(() => new URLSearchParams(search).get("assist") === "1", [search]);
   const [activeSavedDesignId, setActiveSavedDesignId] = useState<number | null>(() => loadDesignId);
   const [automaticSaveAt, setAutomaticSaveAt] = useState<number | null>(null);
   useEffect(() => {
@@ -645,8 +647,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const surfaceSelectionAppliedRef = useRef(false);
   const currentSavedDesignId = activeSavedDesignId ?? loadDesignId;
   const { data: savedDesign } = trpc.design.byId.useQuery(
-	{ id: currentSavedDesignId ?? 0, affiliateSlug: storeScope, crmDealId: crmDealId ?? undefined },
-	{ enabled: currentSavedDesignId != null && isAuthenticated && (verified || crmDealId != null), retry: 1 }
+	{ id: currentSavedDesignId ?? 0, affiliateSlug: storeScope, crmDealId: crmDealId ?? undefined, assist: assistMode || undefined },
+	{ enabled: currentSavedDesignId != null && isAuthenticated && (verified || crmDealId != null || assistMode), retry: 1 }
   );
 	useEffect(() => {
 	  if (verified || crmDealId == null || !savedDesign || !isAuthenticated) return;
@@ -654,6 +656,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	  setVerifiedName((user as { name?: string | null } | null)?.name ?? "CRM user");
 	  setVerified(true);
 	}, [crmDealId, isAuthenticated, savedDesign, user, verified]);
+  useEffect(() => {
+    if (verified || !assistMode || !savedDesign || !isAuthenticated) return;
+    setVerifiedEmail((user as { email?: string | null } | null)?.email ?? "designer@cabinetdealz.local");
+    setVerifiedName((user as { name?: string | null } | null)?.name ?? "Designer");
+    setVerified(true);
+  }, [assistMode, isAuthenticated, savedDesign, user, verified]);
 
   // Mobile layout: which slide-up panel is open (catalog picker or cart/BOM).
   // Designer is touch-first: treat anything narrower than a small laptop (1024px)
@@ -12744,8 +12752,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // Kitchen Package save dialog. The server scopes non-admin creators to their
   // own affiliate storefront, so an affiliate can publish without an admin relay.
   const [bundleDialogOpen, setBundleDialogOpen] = useState(false);
-  const [bundleName, setBundleName] = useState("");
-  const [bundleDesc, setBundleDesc] = useState("");
+  const [bundleDraft, setBundleDraft] = useState<KitchenPackageDraft>({ name: "", description: "", layoutLabel: "", doorColor: "", priceOverride: "", discountAmount: "" });
   const saveBundleMut = trpc.priceShop.saveBundleDeal.useMutation({
     onSuccess: async (res) => {
       // Capture the 2D floor plan as an image and upload it
@@ -12755,10 +12762,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           await uploadBundleFloorPlanMut.mutateAsync({ bundleId: res.id, imageBase64: floorPlanDataUrl });
         }
       } catch { /* floor plan upload is best-effort */ }
-      toast.success("Kitchen Package saved!", { description: `"${bundleName}" — ID #${res.id}. Open Kitchen Packages in your dashboard to publish it.` });
+      toast.success("Kitchen Package saved!", { description: `"${bundleDraft.name}" — ID #${res.id}. Open Kitchen Packages in your dashboard to publish it.` });
       setBundleDialogOpen(false);
-      setBundleName("");
-      setBundleDesc("");
+      setBundleDraft({ name: "", description: "", layoutLabel: "", doorColor: "", priceOverride: "", discountAmount: "" });
     },
     onError: (e) => toast.error("Failed to save bundle", { description: e.message }),
   });
@@ -12826,12 +12832,32 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     ctx.fillText(`${room.width}" × ${room.depth}" · ${placed.length} cabinet${placed.length === 1 ? "" : "s"}${sinks.length > 0 ? ` · ${sinks.length} sink${sinks.length === 1 ? "" : "s"}` : ""}`, 12, canvas.height - 10);
     return canvas.toDataURL("image/png");
   };
+  const packageLineItems = materialsListRows.map((row) => ({
+    label: row.label || row.description,
+    code: row.code,
+    category: row.category,
+    supplier: row.supplier,
+    qty: row.qty,
+    unitPrice: row.unitPrice,
+    lineTotal: row.lineTotal,
+    section: row.section,
+  }));
+  const packageAutoPrice = Math.round(packageLineItems.reduce((sum, item) => sum + (item.lineTotal ?? 0), 0) * 100) / 100;
   const handleSaveBundle = () => {
     if (placed.length === 0) { toast.error("Add cabinets before saving a bundle."); return; }
-    if (!bundleName.trim()) { toast.error("Please enter a bundle name."); return; }
+    if (!bundleDraft.name.trim()) { toast.error("Please enter a bundle name."); return; }
+    const override = bundleDraft.priceOverride.trim() === "" ? undefined : Number(bundleDraft.priceOverride);
+    const discount = bundleDraft.discountAmount.trim() === "" ? undefined : Number(bundleDraft.discountAmount);
     saveBundleMut.mutate({
-      name: bundleName.trim(),
-      description: bundleDesc.trim() || undefined,
+      name: bundleDraft.name.trim(),
+      description: bundleDraft.description.trim() || undefined,
+      sourceDesignId: activeSavedDesignId ?? loadDesignId ?? undefined,
+      lineItems: packageLineItems,
+      priceOverride: override != null && Number.isFinite(override) ? override : undefined,
+      discountAmount: discount != null && Number.isFinite(discount) ? discount : undefined,
+      layoutLabel: bundleDraft.layoutLabel.trim() || `${room.width}" × ${room.depth}"`,
+      doorColor: bundleDraft.doorColor.trim() || activeStyleName || undefined,
+      homeownerPrice: packageAutoPrice > 0 ? packageAutoPrice : (total > 0 ? total : undefined),
       designSnapshot: {
         room: roomWithPersistedEntities(room, { openings, sinks, potFillers, island, furniture, ponyWalls }),
         placed,
@@ -12850,7 +12876,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       },
       styleId: styleId ?? undefined,
       styleName: activeStyleName ?? undefined,
-      homeownerPrice: total > 0 ? total : undefined,
       roomWidthInches: room.width,
       roomDepthInches: room.depth,
       cabinetCount: placed.length,
@@ -14348,7 +14373,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                       className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-purple-700 hover:bg-purple-50 transition-colors disabled:opacity-50"
                     >
                       <PackageOpen className="h-4 w-4 shrink-0" />
-                      <span className="flex-1 text-left">Publish as Kitchen Package</span>
+                      <span className="flex-1 text-left">Save as Kitchen Package</span>
                     </button>
                   )}
                   {canAffiliatePriceShop && (
@@ -14883,7 +14908,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                     onSelect={() => setBundleDialogOpen(true)}
                     className="text-purple-600 font-medium"
                   >
-	                    <PackageOpen className="h-3.5 w-3.5 mr-2" /> Publish as Kitchen Package
+	                    <PackageOpen className="h-3.5 w-3.5 mr-2" /> Save as Kitchen Package
                   </DropdownMenuItem>
 	                </>
 	              )}
@@ -14937,6 +14962,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	            currentPlanFingerprint={currentSavedPlanPayload}
 	            isCurrentPlanSaved={isCurrentPlanSaved}
 	            brandName={affiliateBrand?.storeName}
+            assistMode={assistMode}
             openSaveSignal={saveSignal}
             openLoadSignal={loadSignal}
 	            preSavePlanReview={preSavePlanReview}
@@ -21254,56 +21280,29 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       {/* Kitchen Package publication is limited to its originating affiliate or admin. */}
       {canPublishKitchenPackage && (
         <Dialog open={bundleDialogOpen} onOpenChange={setBundleDialogOpen}>
-          <DialogContent className="max-w-md">
+          <DialogContent className="max-w-lg max-h-[85svh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
-                <PackageOpen className="h-5 w-5 text-purple-600" /> Publish as Kitchen Package
+                <PackageOpen className="h-5 w-5 text-purple-600" /> Save as Kitchen Package
               </DialogTitle>
               <DialogDescription>
-                Create a private Kitchen Package snapshot from this completed design. Publish it from Kitchen Packages when its customer price and BOM are ready.
+                Copy this design into a private Kitchen Package. The customer's design is not moved. Publish it from Kitchen Packages when the price is ready.
               </DialogDescription>
             </DialogHeader>
-            <div className="space-y-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="bundle-name">Kitchen Package Name <span className="text-destructive">*</span></Label>
-                <Input
-                  id="bundle-name"
-                  value={bundleName}
-                  onChange={(e) => setBundleName(e.target.value)}
-                  placeholder="e.g. Classic White Shaker 10×10 Kitchen"
-                  onKeyDown={(e) => { if (e.key === "Enter") handleSaveBundle(); }}
-                  autoFocus
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="bundle-desc">Description <span className="text-xs text-muted-foreground">(optional)</span></Label>
-                <textarea
-                  id="bundle-desc"
-                  value={bundleDesc}
-                  onChange={(e) => setBundleDesc(e.target.value)}
-                  placeholder="Describe this kitchen package for customers…"
-                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring min-h-[80px] resize-none"
-                />
-              </div>
-              <div className="rounded-lg bg-muted/40 border border-border p-3 text-xs text-muted-foreground space-y-1">
-                <div className="flex justify-between"><span>Cabinets:</span><span className="font-medium text-foreground">{placed.length}</span></div>
-                <div className="flex justify-between"><span>Room size:</span><span className="font-medium text-foreground">{room.width}" × {room.depth}"</span></div>
-                {total > 0 && <div className="flex justify-between"><span>Homeowner price:</span><span className="font-medium text-foreground">${total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>}
-                {activeStyleName && <div className="flex justify-between"><span>Style:</span><span className="font-medium text-foreground">{activeStyleName}</span></div>}
-              </div>
-              <p className="text-xs text-muted-foreground">The package will be saved as <strong>unpublished</strong>. Review and publish it from <strong>Kitchen Packages</strong> in your affiliate dashboard.</p>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setBundleDialogOpen(false)}>Cancel</Button>
-              <Button
-                onClick={handleSaveBundle}
-                disabled={saveBundleMut.isPending || !bundleName.trim()}
-                className="gap-1.5 bg-purple-600 hover:bg-purple-700 text-white"
-              >
-                <PackageOpen className={`h-4 w-4${saveBundleMut.isPending ? " animate-spin" : ""}`} />
-                Create Kitchen Package
-              </Button>
-            </DialogFooter>
+            <KitchenPackageForm
+              draft={bundleDraft}
+              onChange={setBundleDraft}
+              placedCount={placed.length}
+              roomWidth={room.width}
+              roomDepth={room.depth}
+              autoPrice={packageAutoPrice > 0 ? packageAutoPrice : total}
+              styleName={activeStyleName}
+              lineItems={packageLineItems}
+              pending={saveBundleMut.isPending}
+              onSubmit={handleSaveBundle}
+              onCancel={() => setBundleDialogOpen(false)}
+              submitLabel="Create Kitchen Package"
+            />
           </DialogContent>
         </Dialog>
       )}

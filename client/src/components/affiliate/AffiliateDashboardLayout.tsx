@@ -44,6 +44,7 @@ import { buildAffiliateCatalogVendors, customerLinkVisibility } from "@shared/af
 export type AffiliateSection =
   | "overview"
   | "crm"
+  | "customers"
   | "design"
   | "products"
   | "orders"
@@ -67,6 +68,7 @@ export type AffiliateSection =
 const NAV_ITEMS: { icon: React.ElementType; label: string; section: AffiliateSection }[] = [
   { icon: LayoutDashboard, label: "Overview", section: "overview" },
   { icon: ShoppingBag, label: "My CRM", section: "crm" },
+  { icon: Users, label: "My Customers", section: "customers" },
   { icon: Palette, label: "Design Workspace", section: "design" },
   { icon: PackageOpen, label: "Products: Pelican & Closets", section: "products" },
   { icon: ShoppingBag, label: "Orders", section: "orders" },
@@ -191,7 +193,7 @@ function SidebarInner({
   const quoteUrl = affiliateOrderPath(storeSlug);
   const isAdmin = user?.role === "admin";
   const visibleNavItems = NAV_ITEMS.filter((item) =>
-    isAffiliateOwner || isAdmin || item.section === "overview" || (item.section === "crm" && canAccessCrm) || (item.section === "design" && canAccessDesigner) || (item.section === "appointments" && (canAccessCrm || canAccessDesigner)),
+    isAffiliateOwner || isAdmin || item.section === "overview" || ((item.section === "crm" || item.section === "customers") && canAccessCrm) || (item.section === "design" && canAccessDesigner) || (item.section === "appointments" && (canAccessCrm || canAccessDesigner)),
   );
   const ordersRank = NAV_ITEMS.findIndex((item) => item.section === "orders");
   const rankOf = (item: { section: AffiliateSection }) => NAV_ITEMS.findIndex((entry) => entry.section === item.section);

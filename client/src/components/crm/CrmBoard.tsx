@@ -40,6 +40,21 @@ import { CrmPipelineTotals } from "@/components/crm/monday/CrmPipelineTotals";
 import { CrmEmailWorkspace, type EmailPrefill } from "@/components/crm/monday/CrmEmailWorkspace";
 import { CrmDealFiles, CrmDueBanner } from "@/components/crm/monday/CrmDealExtras";
 
+type CustomerSummary = { text: string; href: string; customerKey: string };
+
+export function CustomerActivityLine({ text, href, nested = false }: { text: string; href: string; nested?: boolean }) {
+  return (
+    <div className="mt-2 text-[11px] leading-snug text-muted-foreground" data-testid="customer-activity-summary">
+      <p>{text}</p>
+      {nested ? (
+        <span role="link" className="text-primary underline" onClick={(event) => { event.stopPropagation(); window.location.assign(href); }}>Open customer page</span>
+      ) : (
+        <a className="text-primary underline" href={href}>Open customer page</a>
+      )}
+    </div>
+  );
+}
+
 type Lang = CrmLanguage;
 const L = (lang: Lang) => ({
   title: lang === "es" ? "CRM de ventas" : "Sales CRM",
@@ -172,6 +187,15 @@ export function CrmBoard({ lang = "en", affiliateId }: { lang?: Lang; affiliateI
   }, [savedViewKey]);
 
   const deals = (data?.deals ?? []) as DealRow[];
+  const summaryDeals = useMemo(
+    () => ((data?.deals ?? []) as DealRow[]).slice(0, 300).map((deal) => ({ id: deal.id, contactEmail: deal.contactEmail, contactPhone: deal.contactPhone, affiliateId: deal.affiliateId ?? null })),
+    [data?.deals],
+  );
+  const summaries = trpc.affiliateCustomers.summaries.useQuery(
+    { deals: summaryDeals },
+    { enabled: summaryDeals.length > 0, retry: false },
+  );
+  const summaryByDeal = (summaries.data?.byDealId ?? {}) as Record<number, CustomerSummary>;
   const filteredDeals = useMemo(() => filterDealsByHelpType(deals, helpFilter), [deals, helpFilter]);
   const mondayFilters = useMemo<MondayFilters>(() => ({
     search,
@@ -381,6 +405,7 @@ export function CrmBoard({ lang = "en", affiliateId }: { lang?: Lang; affiliateI
               onOpen={() => setOpenDealId(deal.id)}
               affiliateName={isMasterView ? (deal.affiliateId ? affiliateNames?.[deal.affiliateId] : "Cabinet Dealz") : undefined}
               affiliateBrand={isMasterView && deal.affiliateId ? affiliateBranding?.[deal.affiliateId] : undefined}
+              summary={summaryByDeal[deal.id]}
             />
           )}
         />
@@ -389,6 +414,7 @@ export function CrmBoard({ lang = "en", affiliateId }: { lang?: Lang; affiliateI
       <DealDrawer
         dealId={openDealId}
         lang={lang}
+        summary={openDealId != null ? summaryByDeal[openDealId] : undefined}
         onClose={() => setOpenDealId(null)}
         onCompose={(prefill) => { setEmailPrefill(prefill); setCrmView("email"); setOpenDealId(null); }}
       />
@@ -405,7 +431,7 @@ function StatChip({ icon, label, value }: { icon: React.ReactNode; label: string
   );
 }
 
-function DealCard({ deal, lang, onOpen, affiliateName, affiliateBrand }: { deal: DealRow; lang: Lang; onOpen: () => void; affiliateName?: string; affiliateBrand?: CrmAffiliateBrand }) {
+function DealCard({ deal, lang, onOpen, affiliateName, affiliateBrand, summary }: { deal: DealRow; lang: Lang; onOpen: () => void; affiliateName?: string; affiliateBrand?: CrmAffiliateBrand; summary?: CustomerSummary }) {
   const brandColor = affiliateCardColor(affiliateBrand);
   return (
     <button
@@ -453,6 +479,7 @@ function DealCard({ deal, lang, onOpen, affiliateName, affiliateBrand }: { deal:
       )}
       {deal.contactEmail && <div className="text-[11px] text-muted-foreground truncate">{deal.contactEmail}</div>}
       {deal.contactPhone && <div className="text-[11px] text-muted-foreground">{deal.contactPhone}</div>}
+      {summary && <CustomerActivityLine text={summary.text} href={summary.href} nested />}
       <div className="flex items-center justify-between mt-2">
         <span className="text-xs font-semibold text-foreground">{money(deal.estimatedValue)}</span>
         <span className="flex items-center gap-1">
@@ -708,7 +735,7 @@ function ImportLeadsDialog({ lang }: { lang: Lang }) {
 }
 
 // ─── Deal detail drawer ───────────────────────────────────────────────────────
-function DealDrawer({ dealId, lang, onClose, onCompose }: { dealId: number | null; lang: Lang; onClose: () => void; onCompose?: (prefill: EmailPrefill) => void }) {
+function DealDrawer({ dealId, lang, summary, onClose, onCompose }: { dealId: number | null; lang: Lang; summary?: CustomerSummary; onClose: () => void; onCompose?: (prefill: EmailPrefill) => void }) {
   const utils = trpc.useUtils();
   const { data } = trpc.crm.deal.useQuery({ id: dealId! }, { enabled: dealId != null });
   const [note, setNote] = useState("");
@@ -751,6 +778,14 @@ function DealDrawer({ dealId, lang, onClose, onCompose }: { dealId: number | nul
   });
 
   const deal = data?.deal as DealRow | undefined;
+  const customerDetail = trpc.affiliateCustomers.get.useQuery(
+    { affiliateId: deal?.affiliateId ?? null, customerKey: summary?.customerKey ?? "" },
+    { enabled: dealId != null && Boolean(summary?.customerKey), retry: false },
+  );
+  const savePackage = trpc.priceShop.saveDesignAsPackage.useMutation({
+    onSuccess: () => toast.success("Kitchen package saved as a copy."),
+    onError: (error) => toast.error(error.message),
+  });
   const activities = (data?.activities ?? []) as { id: number; kind: string; body: string; createdAt: string | Date }[];
   const linkedDesigns = (data?.linkedDesigns ?? []) as LinkedInvoiceDesign[];
   const invoiceBrand = (data as { invoiceBrand?: CrmQuickInvoiceBrand } | undefined)?.invoiceBrand;
@@ -822,7 +857,30 @@ function DealDrawer({ dealId, lang, onClose, onCompose }: { dealId: number | nul
                   </div>
                 )}
                 {deal.notes && <p className="text-xs text-muted-foreground pt-1 whitespace-pre-wrap">{deal.notes}</p>}
+                {summary && <CustomerActivityLine text={summary.text} href={summary.href} />}
               </div>
+              {customerDetail.data && (
+                <div className="rounded-lg border border-border p-3 space-y-2">
+                  <p className="text-xs font-semibold text-muted-foreground">Saved designs, quotes, and projects</p>
+                  {(customerDetail.data.designs ?? []).map((design) => (
+                    <div key={design.id} className="flex gap-2 text-sm">
+                      {design.thumbnailUrl ? <img src={design.thumbnailUrl} alt="" className="h-10 w-10 rounded object-cover" /> : <div className="h-10 w-10 rounded bg-muted" />}
+                      <div>
+                        <p className="font-medium">{design.name}</p>
+                        {design.assistLabel && <p className="text-[11px] text-muted-foreground">{design.assistLabel}</p>}
+                        <a className="text-xs text-primary underline mr-2" href={customerDetail.data.storeSlug ? `/store/${customerDetail.data.storeSlug}/design?load=${design.id}&assist=1` : `/design?load=${design.id}&assist=1`}>Open in Designer</a>
+                        <button type="button" className="text-xs text-primary underline" onClick={() => savePackage.mutate({ designId: design.id, name: design.name })}>Save as Kitchen Package</button>
+                      </div>
+                    </div>
+                  ))}
+                  {(customerDetail.data.customer.quotes ?? []).map((quote) => (
+                    <p key={quote.id} className="text-xs">{quote.number ?? `Quote ${quote.id}`} · {quote.status}{quote.total != null ? ` · $${quote.total}` : ""}</p>
+                  ))}
+                  {(customerDetail.data.projects ?? []).map((project) => (
+                    <p key={project.id} className="text-xs">{project.name} · {project.status}</p>
+                  ))}
+                </div>
+              )}
 
               {linkedDesigns[0] && (
                 <div className="rounded-lg border border-primary/30 bg-primary/5 p-3">
