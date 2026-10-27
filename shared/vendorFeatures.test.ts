@@ -88,6 +88,7 @@ describe("vendor feature map", () => {
       "overview",
       "supplier-profile",
       "catalog",
+      "onboarding",
       "inventory",
       "forecast",
       "pricing",
@@ -111,6 +112,9 @@ describe("vendor feature map", () => {
       "promotions",
       "fulfillment",
     ]);
+    expect(nonCabinetPages).not.toContain("onboarding");
+    expect(vendorCanOpenPortalPage(cabinet, "onboarding")).toBe(true);
+    expect(vendorCanOpenPortalPage(nonCabinet, "onboarding")).toBe(false);
     expect(nonCabinetPages).not.toContain("styles");
     expect(nonCabinetPages).not.toContain("samples");
     expect(nonCabinetPages).not.toContain("featured-styles");

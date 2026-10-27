@@ -22,6 +22,7 @@ import ConflictsAdmin from "./ConflictsAdmin";
 afterEach(() => {
   cleanup();
   conflictsQuery.mockReset();
+  window.history.replaceState({}, "", "/");
 });
 
 function item(overrides: Record<string, unknown> = {}) {
@@ -88,5 +89,20 @@ describe("ConflictsAdmin public review flags", () => {
     expect(screen.getByLabelText("Drawers")).toBeTruthy();
     expect((screen.getByLabelText("Drawers") as HTMLInputElement).value).toBe("2");
     expect(screen.getByRole("button", { name: /Save & clear/ })).toBeTruthy();
+  });
+
+  it("opens the existing editor when a review cabinet id is in the address", () => {
+    window.history.replaceState({}, "", "/admin?tab=conflicts&cabinetId=1");
+    conflictsQuery.mockReturnValue({
+      data: [item()],
+      isLoading: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    render(<ConflictsAdmin />);
+
+    expect(screen.getByText("Edit B30")).toBeTruthy();
+    expect(document.getElementById("conflict-cabinet-1")).toBeTruthy();
   });
 });

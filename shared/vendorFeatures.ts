@@ -124,6 +124,7 @@ export const VENDOR_PORTAL_PAGE_FEATURES = {
   overview: "always",
   "supplier-profile": "storefront",
   catalog: ["cabinet_catalog", "category_catalog"],
+  onboarding: "cabinet_catalog",
   inventory: "inventory",
   forecast: "sales_forecast",
   pricing: "pricing",
