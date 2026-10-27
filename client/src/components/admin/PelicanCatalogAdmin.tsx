@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,24 +30,17 @@ import {
 import { toast } from "sonner";
 import { AlertTriangle, CheckCircle2, Search, ShieldCheck, Star, Waves } from "lucide-react";
 import { authorizedSurfacePriceBasis } from "../../../../shared/surfacePricing";
+import { ALL_CATEGORIES, catalogCategoryOptions, selectedCatalogCategory } from "@/lib/vendorCatalogFilter";
 
-const CATEGORIES = [
-  "Sinks & Faucets",
-  "Flooring",
-  "Shower & Bath",
-  "Toilets & Bidets",
-  "Tile & Mosaic",
-  "Quartz Slabs (Countertops)",
-  "Samples",
-  "Marketing & Merchandise",
-] as const;
+const ADMIN_PAGE_SIZE = 100;
 
 const money = (n: number | null | undefined) =>
   n == null ? "—" : `$${Number(n).toFixed(2)}`;
 
 export default function PelicanCatalogAdmin() {
   const utils = trpc.useUtils();
-  const [category, setCategory] = useState<string>("all");
+  const [category, setCategory] = useState<string>(ALL_CATEGORIES);
+  const [catalogPage, setCatalogPage] = useState(0);
   const [search, setSearch] = useState("");
   const [debounced, setDebounced] = useState("");
   const [unpricedOnly, setUnpricedOnly] = useState(false);
@@ -58,12 +51,16 @@ export default function PelicanCatalogAdmin() {
     return () => clearTimeout(t);
   }, [search]);
 
+  const categoryOptions = trpc.pelican.categories.useQuery({ scope: "admin" });
+  const categories = catalogCategoryOptions(categoryOptions.data);
+  const categoryFilter = selectedCatalogCategory(category);
+  useEffect(() => { setCatalogPage(0); }, [categoryFilter, debounced, unpricedOnly]);
   const { data, isLoading, error } = trpc.pelican.adminList.useQuery({
-    category: category === "all" ? undefined : (category as any),
+    ...(categoryFilter ? { category: categoryFilter } : {}),
     search: debounced || undefined,
     unpricedOnly,
-    limit: 200,
-    offset: 0,
+    limit: ADMIN_PAGE_SIZE,
+    offset: catalogPage * ADMIN_PAGE_SIZE,
   });
   const { data: readinessAudit, isLoading: readinessAuditLoading } = trpc.pelican.designerReadinessAudit.useQuery();
   const readinessById = useMemo(
@@ -74,6 +71,7 @@ export default function PelicanCatalogAdmin() {
   const setVisibility = trpc.pelican.setVisibility.useMutation({
     onSuccess: () => {
       void utils.pelican.adminList.invalidate();
+      void utils.pelican.categories.invalidate();
       void utils.pelican.designerReadinessAudit.invalidate();
     },
     onError: (e) => toast.error(e.message || "Failed to update"),
@@ -81,6 +79,7 @@ export default function PelicanCatalogAdmin() {
   const setPricing = trpc.pelican.setPricing.useMutation({
     onSuccess: (result) => {
       void utils.pelican.adminList.invalidate();
+      void utils.pelican.categories.invalidate();
       void utils.pelican.designerReadinessAudit.invalidate();
       if (result.unpublished) {
         toast.warning("No positive verified source price remains. This item is now unavailable and unpublished.");
@@ -91,12 +90,13 @@ export default function PelicanCatalogAdmin() {
     onError: (e) => toast.error(e.message || "The source price could not be saved."),
   });
   const setPopular = trpc.pelican.setPopular.useMutation({
-    onSuccess: () => utils.pelican.adminList.invalidate(),
+    onSuccess: () => { void utils.pelican.adminList.invalidate(); void utils.pelican.categories.invalidate(); },
     onError: (e) => toast.error(e.message || "Failed to update"),
   });
   const setCoverage = trpc.pelican.setCoverage.useMutation({
     onSuccess: () => {
       void utils.pelican.adminList.invalidate();
+      void utils.pelican.categories.invalidate();
       void utils.pelican.designerReadinessAudit.invalidate();
     },
     onError: (e) => toast.error(e.message || "Failed to update"),
@@ -104,6 +104,7 @@ export default function PelicanCatalogAdmin() {
   const setUnsupportedOverhangLimit = trpc.pelican.setUnsupportedOverhangLimit.useMutation({
     onSuccess: () => {
       void utils.pelican.adminList.invalidate();
+      void utils.pelican.categories.invalidate();
       void utils.pelican.designerReadinessAudit.invalidate();
       toast.success("Verified structural overhang limit saved.");
     },
@@ -112,6 +113,7 @@ export default function PelicanCatalogAdmin() {
   const setMaterialImage = trpc.pelican.setMaterialImage.useMutation({
     onSuccess: () => {
       void utils.pelican.adminList.invalidate();
+      void utils.pelican.categories.invalidate();
       void utils.pelican.designerReadinessAudit.invalidate();
       toast.success("3D material swatch updated.");
     },
@@ -186,15 +188,15 @@ export default function PelicanCatalogAdmin() {
           </section>
         )}
         <div className="flex flex-wrap items-center gap-3">
-          <Select value={category} onValueChange={setCategory}>
-            <SelectTrigger className="w-[240px]">
+          <Select value={categoryFilter ?? ALL_CATEGORIES} onValueChange={setCategory}>
+            <SelectTrigger className="w-[240px]" aria-label="Pelican category">
               <SelectValue placeholder="All categories" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All categories</SelectItem>
-              {CATEGORIES.map((c) => (
-                <SelectItem key={c} value={c}>
-                  {c}
+              <SelectItem value={ALL_CATEGORIES}>All categories</SelectItem>
+              {categories.map((c) => (
+                <SelectItem key={c.category} value={c.category}>
+                  {c.category} ({c.count})
                 </SelectItem>
               ))}
             </SelectContent>
@@ -472,6 +474,15 @@ export default function PelicanCatalogAdmin() {
                 })}
               </TableBody>
             </Table>
+          </div>
+        )}
+        {data && data.total > ADMIN_PAGE_SIZE && (
+          <div className="flex items-center justify-between gap-3 text-sm">
+            <span className="text-muted-foreground">Page {catalogPage + 1} of {Math.max(1, Math.ceil(data.total / ADMIN_PAGE_SIZE))}</span>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" aria-label="Previous page" disabled={catalogPage === 0 || isLoading} onClick={() => setCatalogPage((current) => Math.max(0, current - 1))}>Previous page</Button>
+              <Button variant="outline" size="sm" aria-label="Next page" disabled={(catalogPage + 1) * ADMIN_PAGE_SIZE >= data.total || isLoading} onClick={() => setCatalogPage((current) => current + 1)}>Next page</Button>
+            </div>
           </div>
         )}
       </CardContent>

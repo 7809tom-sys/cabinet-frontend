@@ -10,15 +10,21 @@ import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
   SidebarHeader,
   SidebarInset,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
   SidebarProvider,
   SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import { DashboardLayoutSkeleton } from "@/components/DashboardLayoutSkeleton";
@@ -26,13 +32,14 @@ import { Button } from "@/components/ui/button";
 import {
   LayoutDashboard, LogOut, PanelLeft, ShoppingBag, DollarSign,
   Palette, FileText, BarChart2, Megaphone, Tag, BookOpen, ExternalLink,
-  Calendar, Gift, Users, Puzzle, Wrench, PackageOpen, ImageIcon,
+  Calendar, Gift, Users, Puzzle, Wrench, PackageOpen, ImageIcon, Boxes,
+  Settings, ChevronDown, Layers, Store,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { affiliateCatalogPath, affiliateDesignerPath, affiliateOrderPath, affiliateStorefrontUrl } from "@/lib/affiliateStorefrontUrl";
-import { Link } from "wouter";
 import { AffiliateStoreSwitcher } from "./AffiliateStoreSwitcher";
+import { buildAffiliateCatalogVendors, customerLinkVisibility } from "@shared/affiliateStorefrontControls";
 
 export type AffiliateSection =
   | "overview"
@@ -40,6 +47,7 @@ export type AffiliateSection =
   | "design"
   | "products"
   | "orders"
+  | "samples"
   | "earnings"
   | "analytics"
   | "catalog"
@@ -62,6 +70,7 @@ const NAV_ITEMS: { icon: React.ElementType; label: string; section: AffiliateSec
   { icon: Palette, label: "Design Workspace", section: "design" },
   { icon: PackageOpen, label: "Products: Pelican & Closets", section: "products" },
   { icon: ShoppingBag, label: "Orders", section: "orders" },
+  { icon: Boxes, label: "Samples", section: "samples" },
   { icon: DollarSign, label: "Earnings", section: "earnings" },
   { icon: BarChart2, label: "Analytics", section: "analytics" },
   { icon: BookOpen, label: "My Catalog", section: "catalog" },
@@ -95,9 +104,11 @@ type Props = {
   isAffiliateOwner?: boolean;
   canAccessCrm?: boolean;
   canAccessDesigner?: boolean;
+  catalogVendor?: string | null;
+  onOpenCatalog?: (vendorKey: string | null) => void;
   children: React.ReactNode;
 };
-export function AffiliateDashboardLayout({ section, onSection, storeName, storeSlug, affiliateId, isAffiliateOwner = true, canAccessCrm = true, canAccessDesigner = true, children }: Props) {
+export function AffiliateDashboardLayout({ section, onSection, storeName, storeSlug, affiliateId, isAffiliateOwner = true, canAccessCrm = true, canAccessDesigner = true, catalogVendor = null, onOpenCatalog, children }: Props) {
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY);
     return saved ? parseInt(saved, 10) : DEFAULT_WIDTH;
@@ -137,6 +148,8 @@ export function AffiliateDashboardLayout({ section, onSection, storeName, storeS
         isAffiliateOwner={isAffiliateOwner}
         canAccessCrm={canAccessCrm}
         canAccessDesigner={canAccessDesigner}
+        catalogVendor={catalogVendor}
+        onOpenCatalog={onOpenCatalog}
         setSidebarWidth={setSidebarWidth}
         user={user}
         logout={logout}
@@ -148,11 +161,27 @@ export function AffiliateDashboardLayout({ section, onSection, storeName, storeS
   );
 }
 
+function CustomerLink({ label, href, icon: Icon, tooltip }: { label: string; href: string; icon: React.ElementType; tooltip: string }) {
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton asChild tooltip={tooltip} className="h-10 font-normal">
+        <a href={href} target="_blank" rel="noopener noreferrer">
+          <Icon className="h-4 w-4" />
+          <span className="truncate">{label}</span>
+          <ExternalLink className="ml-auto h-3.5 w-3.5 opacity-60" aria-hidden />
+        </a>
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  );
+}
+
 function SidebarInner({
-  section, onSection, storeName, storeSlug, affiliateId, isAffiliateOwner, canAccessCrm, canAccessDesigner, setSidebarWidth, user, logout, isMobile, children,
+  section, onSection, storeName, storeSlug, affiliateId, isAffiliateOwner, canAccessCrm, canAccessDesigner, catalogVendor, onOpenCatalog, setSidebarWidth, user, logout, isMobile, children,
 }: Props & { setSidebarWidth: (w: number) => void; user: { name?: string | null; email?: string | null; role?: string | null } | null; logout: () => void; isMobile: boolean }) {
   const { state, toggleSidebar } = useSidebar();
   const isCollapsed = state === "collapsed";
+  const [customerLinksOpen, setCustomerLinksOpen] = useState(true);
+  const [catalogOpen, setCatalogOpen] = useState(true);
   const [isResizing, setIsResizing] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const activeItem = NAV_ITEMS.find((i) => i.section === section);
@@ -160,9 +189,37 @@ function SidebarInner({
   const catalogUrl = affiliateCatalogPath(storeSlug);
   const designerUrl = affiliateDesignerPath(storeSlug);
   const quoteUrl = affiliateOrderPath(storeSlug);
+  const isAdmin = user?.role === "admin";
   const visibleNavItems = NAV_ITEMS.filter((item) =>
-    isAffiliateOwner || user?.role === "admin" || item.section === "overview" || (item.section === "crm" && canAccessCrm) || (item.section === "design" && canAccessDesigner),
+    isAffiliateOwner || isAdmin || item.section === "overview" || (item.section === "crm" && canAccessCrm) || (item.section === "design" && canAccessDesigner) || (item.section === "appointments" && (canAccessCrm || canAccessDesigner)),
   );
+  const ordersRank = NAV_ITEMS.findIndex((item) => item.section === "orders");
+  const rankOf = (item: { section: AffiliateSection }) => NAV_ITEMS.findIndex((entry) => entry.section === item.section);
+  const headItems = visibleNavItems.filter((item) => rankOf(item) <= ordersRank);
+  const tailItems = visibleNavItems.filter((item) => rankOf(item) > ordersRank);
+  const linkAccess = customerLinkVisibility({
+    isAffiliateOwner: Boolean(isAffiliateOwner),
+    isAdmin: Boolean(isAdmin),
+    canAccessCrm: Boolean(canAccessCrm),
+    canAccessDesigner: Boolean(canAccessDesigner),
+  });
+  const ownBranding = trpc.affiliates.myBranding.useQuery(undefined, {
+    enabled: Boolean(isAffiliateOwner && !isAdmin),
+  });
+  const adminBranding = trpc.affiliates.adminBranding.useQuery(
+    { affiliateId: affiliateId ?? 0 },
+    { enabled: Boolean(isAdmin && affiliateId) },
+  );
+  const distributorSelections = (isAdmin ? adminBranding.data : ownBranding.data)?.distributorSelections;
+  const vendorNav = buildAffiliateCatalogVendors(
+    distributorSelections
+      ? distributorSelections.map((row) => ({ id: row.id, name: row.name, publicName: row.publicName, selected: row.selected }))
+      : null,
+  );
+  const openCatalog = (vendorKey: string | null) => {
+    onOpenCatalog?.(vendorKey);
+    onSection("catalog");
+  };
 
   useEffect(() => {
     if (isCollapsed) setIsResizing(false);
@@ -219,9 +276,9 @@ function SidebarInner({
             </div>
           </SidebarHeader>
 
-          <SidebarContent className="gap-0">
+          <SidebarContent className="gap-0 overflow-x-hidden overflow-y-auto">
             <SidebarMenu className="px-2 py-1">
-              {visibleNavItems.map((item) => {
+              {headItems.map((item) => {
                 const isActive = item.section === section;
                 return (
                   <SidebarMenuItem key={item.section}>
@@ -233,55 +290,113 @@ function SidebarInner({
                       data-tab={item.section}
                     >
                       <item.icon className={`h-4 w-4 ${isActive ? "text-primary" : ""}`} />
-                      <span>{item.label}</span>
+                      <span className="truncate">{item.label}</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 );
               })}
             </SidebarMenu>
 
-            {/* View Store link */}
-            {!isCollapsed && (
-              <div className="px-3 pb-2 mt-2 space-y-1">
-                <p className="px-2 pt-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Customer links</p>
-                <a href={catalogUrl} className="flex items-center gap-2 text-xs text-muted-foreground hover:text-primary transition-colors px-2 py-1.5 rounded-lg hover:bg-accent">
-                  <BookOpen className="h-3.5 w-3.5 shrink-0" />
-                  <span className="truncate">Browse my catalog</span>
-                </a>
-                <a href={designerUrl} className="flex items-center gap-2 text-xs text-muted-foreground hover:text-primary transition-colors px-2 py-1.5 rounded-lg hover:bg-accent">
-                  <Palette className="h-3.5 w-3.5 shrink-0" />
-                  <span className="truncate">Open my Designer</span>
-                </a>
-                <a href={`/store/${storeSlug}/surfaces`} className="flex items-center gap-2 text-xs text-muted-foreground hover:text-primary transition-colors px-2 py-1.5 rounded-lg hover:bg-accent">
-                  <PackageOpen className="h-3.5 w-3.5 shrink-0" />
-                  <span className="truncate">Browse Pelican products</span>
-                </a>
-                <a href={`/store/${storeSlug}/closet`} className="flex items-center gap-2 text-xs text-muted-foreground hover:text-primary transition-colors px-2 py-1.5 rounded-lg hover:bg-accent">
-                  <Palette className="h-3.5 w-3.5 shrink-0" />
-                  <span className="truncate">Open Closet Studio</span>
-                </a>
-                <a href={`/store/${storeSlug}/hardware`} className="flex items-center gap-2 text-xs text-muted-foreground hover:text-primary transition-colors px-2 py-1.5 rounded-lg hover:bg-accent">
-                  <PackageOpen className="h-3.5 w-3.5 shrink-0" />
-                  <span className="truncate">Browse Hardware Resources</span>
-                </a>
-                <a href={quoteUrl} className="flex items-center gap-2 text-xs text-muted-foreground hover:text-primary transition-colors px-2 py-1.5 rounded-lg hover:bg-accent">
-                  <FileText className="h-3.5 w-3.5 shrink-0" />
-                  <span className="truncate">Get a quote</span>
-                </a>
-                <a
-                  href={storeUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-2 text-xs text-muted-foreground hover:text-primary transition-colors px-2 py-1.5 rounded-lg hover:bg-accent"
-                >
-                  <ExternalLink className="h-3.5 w-3.5 shrink-0" />
-                  <span className="truncate">View my storefront</span>
-                </a>
-              </div>
+            {linkAccess.showSection && (
+              <SidebarGroup className="px-2 py-1" data-testid="customer-links">
+                <Collapsible open={customerLinksOpen || isCollapsed} onOpenChange={setCustomerLinksOpen}>
+                  <CollapsibleTrigger asChild>
+                    <button type="button" className="flex h-8 w-full items-center rounded-md px-2 text-xs font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent group-data-[collapsible=icon]:hidden">
+                      Customer links
+                      <ChevronDown className={`ml-auto size-4 transition-transform ${customerLinksOpen ? "" : "-rotate-90"}`} />
+                    </button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <SidebarGroupContent>
+                      <SidebarMenu>
+                        {linkAccess.catalog && (
+                          <CustomerLink label="Browse my catalog" href={catalogUrl} icon={BookOpen} tooltip="Browse my catalog" />
+                        )}
+                        {linkAccess.designer && (
+                          <CustomerLink label="Preview Storefront Designer" href={designerUrl} icon={Palette} tooltip="See the 3D designer the way your customers see it. To design for a customer, use Design Workspace." />
+                        )}
+                        {linkAccess.closet && (
+                          <CustomerLink label="Open Closet Studio" href={`/store/${storeSlug}/closet`} icon={Layers} tooltip="Open Closet Studio" />
+                        )}
+                        {linkAccess.quote && (
+                          <CustomerLink label="Preview Quote Page" href={quoteUrl} icon={FileText} tooltip="The quote request page your customers see" />
+                        )}
+                        {linkAccess.storefront && (
+                          <CustomerLink label="View my storefront" href={storeUrl} icon={Store} tooltip="View my storefront" />
+                        )}
+                      </SidebarMenu>
+                    </SidebarGroupContent>
+                  </CollapsibleContent>
+                </Collapsible>
+              </SidebarGroup>
             )}
+
+            <SidebarGroup className="px-2 py-1" data-testid="sidebar-tail">
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {tailItems.map((item) => {
+                    if (item.section === "catalog") {
+                      return (
+                        <Collapsible key={item.section} open={catalogOpen || isCollapsed} onOpenChange={setCatalogOpen}>
+                          <SidebarMenuItem>
+                            <div className="flex items-center">
+                              <SidebarMenuButton
+                                isActive={section === "catalog" && !catalogVendor}
+                                tooltip="My Catalog"
+                                className="h-10 min-w-0 flex-1 font-normal"
+                                onClick={() => openCatalog(null)}
+                                data-tab="catalog"
+                              >
+                                <BookOpen className="h-4 w-4" />
+                                <span className="truncate">My Catalog</span>
+                              </SidebarMenuButton>
+                              <CollapsibleTrigger asChild>
+                                <button type="button" className="mr-1 inline-flex size-7 items-center justify-center rounded-md hover:bg-sidebar-accent group-data-[collapsible=icon]:hidden" aria-label="Show vendor catalogs">
+                                  <ChevronDown className={`size-4 transition-transform ${catalogOpen ? "" : "-rotate-90"}`} />
+                                </button>
+                              </CollapsibleTrigger>
+                            </div>
+                            <CollapsibleContent>
+                              <SidebarMenuSub>
+                                {vendorNav.vendors.map((vendor) => (
+                                  <SidebarMenuSubItem key={vendor.key}>
+                                    <SidebarMenuSubButton
+                                      isActive={section === "catalog" && catalogVendor === vendor.key}
+                                      className="h-10"
+                                      onClick={() => openCatalog(vendor.key)}
+                                    >
+                                      <span className="truncate">{vendor.label}</span>
+                                    </SidebarMenuSubButton>
+                                  </SidebarMenuSubItem>
+                                ))}
+                              </SidebarMenuSub>
+                            </CollapsibleContent>
+                          </SidebarMenuItem>
+                        </Collapsible>
+                      );
+                    }
+                    const isActive = item.section === section;
+                    return (
+                      <SidebarMenuItem key={item.section}>
+                        <SidebarMenuButton
+                          isActive={isActive}
+                          onClick={() => onSection(item.section)}
+                          tooltip={item.label}
+                          className="h-10 transition-all font-normal"
+                          data-tab={item.section}
+                        >
+                          <item.icon className={`h-4 w-4 ${isActive ? "text-primary" : ""}`} />
+                          <span className="truncate">{item.label}</span>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    );
+                  })}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
           </SidebarContent>
 
-          <SidebarFooter className="p-3">
+          <SidebarFooter className="relative z-10 bg-sidebar p-3">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className="flex items-center gap-3 rounded-lg px-1 py-1 hover:bg-accent/50 transition-colors w-full text-left group-data-[collapsible=icon]:justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
@@ -327,4 +442,3 @@ function SidebarInner({
     </>
   );
 }
-import { Settings } from "lucide-react";

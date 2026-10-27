@@ -75,6 +75,14 @@ export function applyTierMarkup(
 //   yourCost → wholesalePrice → adjustedListPrice → listPrice
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * The one site-wide retail multiplier. 10000 basis points = ×1.0.
+ * This reuses pricing_settings.homeownerMarkupBps. It is not a new constant.
+ * Per-vendor distributors.markupPercent and per-category pelican markupBps
+ * stay on top of this key when a row carries them.
+ */
+export const SITE_RETAIL_MULTIPLIER_KEY = "pricing_settings.homeownerMarkupBps" as const;
+
 export interface CostBaseRow {
   yourCost?: number | string | null;
   wholesalePrice?: number | string | null;
@@ -82,6 +90,16 @@ export interface CostBaseRow {
   listPrice?: number | string | null;
   /** A supplier can explicitly designate its verified list as customer retail. */
   retailPriceBasis?: "cost_plus_tier" | "source_list" | null;
+  /**
+   * Vendor-entered wholesale. Distinct from wholesalePrice, which is a stored
+   * cost-base fallback and a tier column. When set, homeowner retail is
+   * wholesale × the site-wide key at read time.
+   */
+  vendorWholesale?: number | string | null;
+  /** distributors.markupPercent, e.g. 0.15 = +15% on top of the site-wide key. */
+  vendorMarkupPercent?: number | string | null;
+  /** pelican_category_markups.markupBps, applied on top of the site-wide key. */
+  categoryMarkupBps?: number | null;
 }
 
 function toNum(v: number | string | null | undefined): number | null {
@@ -104,9 +122,32 @@ export function resolveCostBase(row: CostBaseRow): number | null {
 }
 
 /**
+ * Retail = vendor wholesale × the site-wide homeowner multiplier, then any
+ * existing per-vendor or per-category uplift. Computed at read time.
+ * Returns a 2-dp number, or null when wholesale is missing.
+ */
+export function retailFromWholesale(
+  wholesale: string | number | null | undefined,
+  homeownerMarkupBps: number,
+  overrides?: { vendorMarkupPercent?: number | string | null; categoryMarkupBps?: number | null },
+): number | null {
+  const base = toNum(wholesale);
+  if (base === null || base < 0) return null;
+  const bps = clampBps(homeownerMarkupBps);
+  const vendor = toNum(overrides?.vendorMarkupPercent) ?? 0;
+  const category = overrides?.categoryMarkupBps;
+  const categoryFactor = 1 + (category != null && Number.isFinite(category) ? category : 0) / NEUTRAL_BPS;
+  return Math.round(base * (bps / NEUTRAL_BPS) * (1 + vendor) * categoryFactor * 100) / 100;
+}
+
+/**
  * Compute the customer-facing sell price for a tier from the cost base and the
  * per-tier markup. Returns a 2-dp number, or null when no cost base exists.
  * The global default markup is intentionally ignored.
+ *
+ * Homeowner retail uses vendor wholesale × pricing_settings.homeownerMarkupBps
+ * when that wholesale has been entered. Contractor and wholesale tiers stay on
+ * the existing cost ladder. Rows without vendor wholesale are unchanged.
  */
 export function sellPriceForTier(
   row: CostBaseRow,
@@ -119,6 +160,13 @@ export function sellPriceForTier(
   // follow the normal landed-cost × tier multiplier path below.
   if (row.retailPriceBasis === "source_list") {
     return toNum(row.listPrice);
+  }
+  const vendorWholesale = toNum(row.vendorWholesale);
+  if (tier === "homeowner" && vendorWholesale != null && vendorWholesale > 0) {
+    return retailFromWholesale(vendorWholesale, s.homeownerMarkupBps, {
+      vendorMarkupPercent: row.vendorMarkupPercent,
+      categoryMarkupBps: row.categoryMarkupBps,
+    });
   }
   const base = resolveCostBase(row);
   if (base === null) return null;

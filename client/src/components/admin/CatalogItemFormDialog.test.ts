@@ -22,6 +22,7 @@ describe("Catalog Add Item and Edit Item form", () => {
       "Master SKU", "Product name / description", "Category", "Sub-category",
       "Dimensions and placement", "Placement type", "Corner cabinet",
       "Supplier price and availability", "Supplier line", "Door style", "Supplier SKU",
+      "Eligible for 3D Designer",
       "List Price", "Your Cost", "Shipping, aliases, and notes", "Package L (in)",
     ]) {
       expect(source).toContain(field);
@@ -50,6 +51,9 @@ describe("Catalog administration wiring", () => {
 
   it("makes Add Item and the same edit form available under Products and Catalog", () => {
     expect(adminSource).toContain('Add Item');
+    expect(adminSource).toContain('Eligible for 3D Designer');
+    expect(adminSource).toContain('Eligible for 3D Designer: Yes');
+    expect(adminSource).toContain('Eligible for 3D Designer: No');
     expect(adminSource).toContain('CatalogItemFormDialog');
     expect(adminSource).toContain('setItemEditor({ mode: "edit", id: cabinet.id })');
     expect(tabsSource).toContain('{ value: "cabinets", label: "Catalog" }');

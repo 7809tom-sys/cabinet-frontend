@@ -19,7 +19,8 @@ import { useSeo } from "@/hooks/useSeo";
 import { translateSpec } from "@/lib/i18n/specPhrases";
 import { useCart } from "@/contexts/CartContext";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { normalizeCode } from "@shared/cabinetCodeMatch";
+import { familyTypeMatches } from "@/lib/familyCategoryFilters";
+import { searchCatalogItems } from "@shared/catalogCodeSearch";
 import {
   resolveStorefrontTier,
   resolveTierPrice,
@@ -53,6 +54,13 @@ interface FamilyStyle {
 interface FamilyItem extends CabinetLike {
   cabinetId: number;
   masterCode: string;
+  replacementMasterCode?: string | null;
+  aliases?: readonly string[] | string | null;
+  sku?: string | null;
+  vendorSku?: string | null;
+  altSku1?: string | null;
+  altSku2?: string | null;
+  altSku3?: string | null;
   description: string | null;
   category: string | null;
   subCategory: string | null;
@@ -79,28 +87,16 @@ function fmtPrice(n: number | null): string {
 }
 
 // Group the DB categories into the buyer-facing room-section filters.
-// The DB stores categories in Title Case (e.g. "Base", "Wall", "Trim and Molding");
-// we always lowercase before matching so casing differences don't break filters.
-const TYPE_FILTERS: { key: string; labelKey: string; match: (cat: string) => boolean }[] = [
-  { key: "all", labelKey: "fam_f_all", match: () => true },
-  { key: "base", labelKey: "fam_f_base", match: (c) => c === "base" || c === "corner" },
-  { key: "wall", labelKey: "fam_f_wall", match: (c) => c === "wall" },
-  { key: "tall", labelKey: "fam_f_tall", match: (c) => c === "tall" },
-  { key: "vanity", labelKey: "fam_f_vanity", match: (c) => c === "vanity" },
-  { key: "ada", labelKey: "fam_f_ada", match: (c) => c === "ada" },
-  {
-    key: "accessory",
-    labelKey: "fam_f_accessory",
-    match: (c) =>
-      c === "accessory" ||
-      c === "accessories" ||
-      c === "trim and molding" ||
-      c === "molding" ||
-      c === "filler's and panels" ||
-      c === "fillers and panels" ||
-      c === "specialty",
-  },
-];
+// Matching is case-insensitive and accepts both Molding and Moulding.
+const TYPE_FILTERS = [
+  { key: "all", labelKey: "fam_f_all" },
+  { key: "base", labelKey: "fam_f_base" },
+  { key: "wall", labelKey: "fam_f_wall" },
+  { key: "tall", labelKey: "fam_f_tall" },
+  { key: "vanity", labelKey: "fam_f_vanity" },
+  { key: "ada", labelKey: "fam_f_ada" },
+  { key: "accessory", labelKey: "fam_f_accessory" },
+] as const;
 
 function FamilyCabinetCard({
   item,
@@ -401,16 +397,12 @@ export default function Family({ styleCode }: { styleCode: string }) {
 
   const visible = useMemo(() => {
     const f = TYPE_FILTERS.find((t) => t.key === activeType) ?? TYPE_FILTERS[0];
-    return items.filter((i) => {
-      if (!f.match((i.category ?? "").toLowerCase())) return false;
-      if (debounced) {
-        const hay = `${i.masterCode} ${i.description ?? ""} ${i.subCategory ?? ""}`.toLowerCase();
-        const normalizedCodeQuery = normalizeCode(debounced);
-        const matchesNormalizedCode = normalizedCodeQuery.length > 0 && normalizeCode(i.masterCode).includes(normalizedCodeQuery);
-        if (!hay.includes(debounced) && !matchesNormalizedCode) return false;
-      }
-      return true;
-    });
+    const typed = items.filter((i) => familyTypeMatches(f.key, i.category));
+    if (!debounced) return typed;
+    return searchCatalogItems(typed, debounced, (item, query) => {
+      const hay = `${item.masterCode} ${item.description ?? ""} ${item.subCategory ?? ""}`.toLowerCase();
+      return hay.includes(query.toLowerCase());
+    }).map((hit) => hit.item);
   }, [items, activeType, debounced]);
 
   const s = style as FamilyStyle | null;

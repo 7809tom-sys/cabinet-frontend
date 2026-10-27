@@ -157,7 +157,7 @@ export function VendorShippingQuoteCard({
       <CardHeader>
         <CardTitle>Shipping codes and live quote</CardTitle>
         <CardDescription>
-          Service codes, freight class, and ship-from ZIP travel with a live quote request. A saved HTTPS endpoint is used first when an administrator has enabled it. Posted zip, flat, and free-freight rules stay authoritative when the live call is off or fails. The secret is stored encrypted and is never shown again.
+          Service codes, freight class, and ship-from ZIP travel with the quote. The vendor's live shipping API is used first when the supplier and an administrator have enabled it. Otherwise the vendor's posted rates, zones, and ZIP codes apply. A site rate is only a last resort and is labeled an estimate. The secret is stored encrypted and is never shown again.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">

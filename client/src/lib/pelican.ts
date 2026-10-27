@@ -1,3 +1,5 @@
+import { isFlooringMouldingsAndTrim } from "@shared/catalogCategorySpelling";
+
 // Shared helpers for the customer-facing Pelican "Surfaces & Fixtures" storefront.
 // Keep category <-> slug mapping and presentation in one place so the landing
 // page, category page, and design-tool panel stay consistent.
@@ -138,7 +140,7 @@ export const PELICAN_DEPARTMENTS: PelicanDepartment[] = [
         title: "Flooring Trim & Transitions",
         description: "Find matching trim pieces and transitions for a finished floor edge.",
         category: "Flooring",
-        subCategory: "Moldings & Trim",
+        subCategory: "Mouldings & Trim",
       },
     ],
   },
@@ -251,7 +253,7 @@ export function pelicanProductType(input: PelicanProductPresentationInput): stri
     case "Quartz Slabs (Countertops)":
       return "Quartz Countertop Slab";
     case "Flooring":
-      if (subCategory === "Moldings & Trim") return "Flooring Trim";
+      if (isFlooringMouldingsAndTrim(subCategory)) return "Flooring Trim";
       if (subCategory === "Underlayment") return "Flooring Underlayment";
       return "Flooring";
     case "Tile & Mosaic":

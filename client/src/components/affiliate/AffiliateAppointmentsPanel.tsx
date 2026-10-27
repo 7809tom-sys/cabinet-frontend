@@ -33,11 +33,11 @@ function formatDateTime(ts: number | Date | null) {
   });
 }
 
-export function AffiliateAppointmentsPanel() {
+export function AffiliateAppointmentsPanel({ affiliateId }: { affiliateId?: number }) {
   const [statusFilter, setStatusFilter] = useState<"all" | "requested" | "confirmed" | "completed" | "cancelled">("all");
 
   const { data: consultations = [], isLoading } = trpc.affiliates.myConsultations.useQuery(
-    { status: statusFilter },
+    { status: statusFilter, ...(affiliateId ? { affiliateId } : {}) },
     { refetchInterval: 30_000 }
   );
 

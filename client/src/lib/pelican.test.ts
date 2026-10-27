@@ -51,6 +51,8 @@ describe("pelican storefront helpers", () => {
     const flooring = kitchenSurfaces?.families.find((family) => family.title === "Flooring");
     expect(flooring).toBeDefined();
     expect(pelicanFamilyHref(flooring!)).toBe("/surfaces/flooring?family=Planks%20%26%20Flooring");
+    const flooringTrim = kitchenSurfaces?.families.find((family) => family.title === "Flooring Trim & Transitions");
+    expect(pelicanFamilyHref(flooringTrim!)).toBe("/surfaces/flooring?family=Mouldings%20%26%20Trim");
     expect(pelicanDepartmentFromSlug("cabinets")).toBeNull();
   });
 
@@ -68,6 +70,9 @@ describe("pelican storefront helpers", () => {
 
     const descriptiveFixture = { name: "Farmhouse Reserve 33", category: "Sinks & Faucets", subCategory: "Sinks" };
     expect(pelicanDisplayName(descriptiveFixture)).toBe("Farmhouse Reserve 33");
+
+    expect(pelicanProductType({ name: "Aveline T-Molding", category: "Flooring", subCategory: "Moldings & Trim" })).toBe("Flooring Trim");
+    expect(pelicanProductType({ name: "Aveline T-Moulding", category: "Flooring", subCategory: "Mouldings & Trim" })).toBe("Flooring Trim");
   });
 
   it("keeps Pelican cost-reference pricing out of public product presentation", () => {
@@ -115,6 +120,7 @@ describe("surfaceRole (real Pelican storefront categories)", () => {
   it("does not treat flooring trim as an installed floor", () => {
     expect(surfaceRole({ category: "Flooring", subCategory: "Moldings & Trim", name: "Aveline T-Molding" })).toBe("other");
     expect(surfaceRole({ category: "Flooring", subCategory: "Moldings & Trim", name: "Astoria Stair Nose" })).toBe("other");
+    expect(surfaceRole({ category: "Flooring", subCategory: "Mouldings & Trim", name: "Astoria Stair Nose" })).toBe("other");
   });
 
   it("maps the parenthesized quartz category to countertop", () => {

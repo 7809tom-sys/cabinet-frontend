@@ -16,6 +16,7 @@ import { Plus, Trash2, Truck, Plug, ShieldCheck, Activity, X, ChevronDown, Chevr
 import FreightTestLab from "./FreightTestLab";
 import { PelicanCatalogWeightCompare } from "@/components/shipping/ShippingQuoteBox";
 import { isValidZipPrefix, normalizeZipPrefix, parseZipPrefixes, serializeZipPrefixes } from "@/lib/shippingZipPrefixes";
+import { pagedRows } from "@/lib/vendorCatalogFilter";
 
 // Dollars <-> cents helpers (we edit dollars, store cents).
 const toDollars = (cents: number) => (cents / 100).toFixed(2);
@@ -958,13 +959,18 @@ function shippingProfileDraft(row: PelicanShippingProfileRow): PelicanShippingPr
  * can distinguish supplier carton evidence from an owner-authorized comparable
  * package estimate and reconcile every live shipment rate.
  */
+const PELICAN_SHIPPING_PAGE_SIZE = 100;
+
 export function PelicanShippingProfilesPanel({ isAdmin = true }: { isAdmin?: boolean } = {}) {
   const utils = trpc.useUtils();
   const [search, setSearch] = useState("");
+  const [offset, setOffset] = useState(0);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [draft, setDraft] = useState<PelicanShippingProfileDraft | null>(null);
-  const profilesQuery = trpc.pelican.adminShippingProfiles.useQuery({ search: search.trim() || undefined, limit: 200 });
-  const profiles = (profilesQuery.data ?? []) as PelicanShippingProfileRow[];
+  const profilesQuery = trpc.pelican.adminShippingProfiles.useQuery({ search: search.trim() || undefined, limit: PELICAN_SHIPPING_PAGE_SIZE, offset });
+  const page = pagedRows<PelicanShippingProfileRow>(profilesQuery.data);
+  const profiles = page.items;
+  const total = page.total;
   const selected = profiles.find((row) => row.productId === selectedId) ?? null;
   const saveProfile = trpc.pelican.saveShippingProfile.useMutation({
     onSuccess: () => {
@@ -994,6 +1000,10 @@ export function PelicanShippingProfilesPanel({ isAdmin = true }: { isAdmin?: boo
     const packageWeightLbs = Number(draft.packageWeightLbs);
     if (![packageLengthIn, packageWidthIn, packageHeightIn, packageWeightLbs].every((value) => Number.isFinite(value) && value > 0)) {
       toast.error("Enter packaged length, width, height, and weight before saving.");
+      return;
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(draft.verifiedAt)) {
+      toast.error("Enter the evidence date before saving.");
       return;
     }
     saveProfile.mutate({
@@ -1039,9 +1049,10 @@ export function PelicanShippingProfilesPanel({ isAdmin = true }: { isAdmin?: boo
         {isAdmin && <PelicanCatalogWeightCompare />}
         <div className="relative max-w-xl">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input value={search} onChange={(event) => setSearch(event.target.value)} className="pl-9" placeholder="Find Pelican SKU, product name, or category" aria-label="Find Pelican product shipping profile" />
+          <Input value={search} onChange={(event) => { setSearch(event.target.value); setOffset(0); }} className="pl-9" placeholder="Find Pelican SKU, product name, or category" aria-label="Find Pelican product shipping profile" />
         </div>
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(420px,0.9fr)]">
+          <div className="space-y-2">
           <div className="max-h-[32rem] overflow-auto rounded-lg border">
             {profilesQuery.isLoading ? (
               <div className="flex items-center justify-center gap-2 p-8 text-sm text-muted-foreground"><Spinner className="h-4 w-4" /> Loading Pelican products…</div>
@@ -1062,6 +1073,14 @@ export function PelicanShippingProfilesPanel({ isAdmin = true }: { isAdmin?: boo
                 </TableBody>
               </Table>
             )}
+          </div>
+          {(total != null ? total > 0 : profiles.length > 0) && <div className="flex items-center justify-between gap-3 text-sm">
+            <span className="text-muted-foreground">{total == null ? `Showing ${offset + 1}–${offset + profiles.length}` : `Showing ${profiles.length === 0 ? 0 : offset + 1}–${offset + profiles.length} of ${total}`}</span>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" aria-label="Previous shipping page" disabled={offset === 0 || profilesQuery.isFetching} onClick={() => setOffset((current) => Math.max(0, current - PELICAN_SHIPPING_PAGE_SIZE))}>Previous page</Button>
+              <Button variant="outline" size="sm" aria-label="Next shipping page" disabled={profilesQuery.isFetching || (total == null ? profiles.length < PELICAN_SHIPPING_PAGE_SIZE : offset + PELICAN_SHIPPING_PAGE_SIZE >= total)} onClick={() => setOffset((current) => current + PELICAN_SHIPPING_PAGE_SIZE)}>Next page</Button>
+            </div>
+          </div>}
           </div>
           <div className="rounded-lg border bg-muted/20 p-4">
             {!selected || !draft ? <p className="py-12 text-center text-sm text-muted-foreground">Select a Pelican SKU to add or review its shipping evidence.</p> : <div className="space-y-3">
