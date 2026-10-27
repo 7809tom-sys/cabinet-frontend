@@ -150,17 +150,25 @@ function faceMaterial(
 }
 
 export function buildAuditDoor(
-  input: Pick<DoorAuditRenderInput, "doorProfile" | "color" | "samplePhotoUrl">,
+  input: (Pick<DoorAuditRenderInput, "color" | "samplePhotoUrl"> & {
+    doorProfile?: DoorAuditDoorProfile | null;
+    name?: string | null;
+  }) | null | undefined,
   texture: THREE.Texture | null,
 ): THREE.Group {
-  const plan = auditDoorConstruction(input.doorProfile);
-  const color = finishColor(input.color);
+  const profile = input?.doorProfile;
+  if (!profile) {
+    const label = input?.name?.trim() || "This door";
+    throw new Error(`${label} is missing its door profile, so it cannot be rendered.`);
+  }
+  const plan = auditDoorConstruction(profile);
+  const color = finishColor(input?.color);
   const width = plan.widthIn * INCH;
   const height = plan.heightIn * INCH;
   const thickness = plan.thicknessIn * INCH;
   const group = new THREE.Group();
   group.userData = { auditDoor: true, auditDoorKind: plan.kind };
-  const slabMaterial = faceMaterial(color, texture, input.doorProfile.finishSheen, "slab", input.doorProfile.grainDirection);
+  const slabMaterial = faceMaterial(color, texture, profile.finishSheen, "slab", profile.grainDirection);
 
   if (plan.kind === "glass" && plan.framed && plan.railIn != null && plan.stileIn != null) {
     const rail = plan.railIn * INCH;
@@ -199,7 +207,7 @@ export function buildAuditDoor(
   frame.userData = {
     selectedStyleFace: plan.kind === "glass" ? "glass-door-frame" : plan.kind === "raised" ? "raised-panel" : "shaker",
     physicalRails: true,
-    panelConstruction: plan.kind === "raised" ? "raised" : input.doorProfile.panelConstruction ?? "flat",
+    panelConstruction: plan.kind === "raised" ? "raised" : profile.panelConstruction ?? "flat",
   };
   const pieces = [
     [width, rail, 0, height / 2 - rail / 2, "rail"],
@@ -210,7 +218,7 @@ export function buildAuditDoor(
   for (const [pieceWidth, pieceHeight, x, y, piece] of pieces) {
     const mesh = new THREE.Mesh(
       new THREE.BoxGeometry(pieceWidth, pieceHeight, railDepth),
-      faceMaterial(color, texture, input.doorProfile.finishSheen, piece, input.doorProfile.grainDirection),
+      faceMaterial(color, texture, profile.finishSheen, piece, profile.grainDirection),
     );
     mesh.position.set(x, y, 0);
     mesh.castShadow = true;
@@ -233,14 +241,14 @@ export function buildAuditDoor(
     frame.add(recessed);
     const bevel = new THREE.Mesh(
       new THREE.BoxGeometry(bevelOuterWidth - 0.006, bevelOuterHeight - 0.006, Math.max(0.018, bevelDepth * 0.62)),
-      faceMaterial(color, texture, input.doorProfile.finishSheen, "panel", input.doorProfile.grainDirection),
+      faceMaterial(color, texture, profile.finishSheen, "panel", profile.grainDirection),
     );
     bevel.position.z = bevelDepth * 0.31;
     bevel.userData = { raisedPanelBevel: true };
     frame.add(bevel);
     const center = new THREE.Mesh(
       new THREE.BoxGeometry(panelWidth, panelHeight, Math.max(0.02, bevelDepth)),
-      faceMaterial(color, texture, input.doorProfile.finishSheen, "panel", input.doorProfile.grainDirection),
+      faceMaterial(color, texture, profile.finishSheen, "panel", profile.grainDirection),
     );
     center.position.z = bevelDepth;
     center.castShadow = true;

@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { DoorRenderingAuditView, type DoorRenderingAuditViewProps } from "./DoorRenderingAuditAdmin";
-import type { DoorAuditStyleRow, DoorAuditVersion } from "@/lib/doorRenderingAudit";
+import { doorAuditStyleLabel, normalizeDoorAuditList, type DoorAuditStyleRow, type DoorAuditVersion } from "@/lib/doorRenderingAudit";
 
 function version(overrides: Partial<DoorAuditVersion> & Pick<DoorAuditVersion, "versionId" | "imageUrl">): DoorAuditVersion {
   return {
@@ -133,18 +133,90 @@ describe("Door Rendering Audit admin", () => {
       "listStyles",
       "startRun",
       "submitRender",
-      "reportRenderFailure",
       "runStatus",
-      "reviewRender",
-      "listRuns",
-      "listVersions",
-      "setCurrentVersion",
+      "decideRender",
+      "revertToVersion",
+      "runHistory",
+      "styleVersions",
+      "abandonRun",
+      "doorAuditStartRunInput",
+      "normalizeDoorAuditStartRun",
+      "doorAuditSubmitRenderInput",
+      "normalizeDoorAuditList",
     ]) {
       expect(api).toContain(name);
     }
     expect(api).toContain("adminProcedure");
+    expect(api).toContain("scope");
+    expect(api).toContain("imageBase64");
     const screen = readFileSync(new URL("./DoorRenderingAuditAdmin.tsx", import.meta.url), "utf8");
     expect(screen).toContain("doorRenderingAuditAllowed");
+    expect(screen).toContain("doorAuditStyleLabel");
     expect(screen).toContain('import("@/lib/doorAuditDoorRender")');
+    expect(screen).not.toContain("reportRenderFailure");
+  });
+
+  it("shows the catalog door name, code, and supplier from the backend style shape", () => {
+    const list = normalizeDoorAuditList({
+      counts: { total: 1, returned: 1, flagged: 1, noBaseline: 0, missingSample: 0 },
+      styles: [{
+        styleId: 41,
+        styleCode: "SW-41",
+        ourName: "Summit White Shaker",
+        aliasName: "Summit White",
+        distributorName: "Summit Cabinets",
+        brandName: "Summit",
+        samplePhotoUrl: "https://cdn.example/summit.jpg",
+        color: "#f4f1ea",
+        profile: {
+          doorStyle: "Shaker",
+          doorPanelType: null,
+          railWidth: "3",
+          stileWidth: "3",
+          panelConstruction: "flat",
+          bevelWidth: null,
+          bevelDepth: null,
+          insideEdgeProfile: null,
+          drawerFrontType: null,
+          grainDirection: "vertical",
+          finishSheen: "satin",
+        },
+        latestRender: {
+          versionId: 9,
+          renderImageUrl: "https://cdn.example/latest.png",
+          createdAt: "2026-10-20T15:04:00.000Z",
+          scores: { woodGrain: 8, color: 7, textureSheen: 7, profileEdges: 9, overall: 8.4 },
+          isCurrentAccepted: false,
+          verdict: "flagged",
+        },
+        acceptedRender: {
+          versionId: 2,
+          renderImageUrl: "https://cdn.example/accepted.png",
+          createdAt: "2026-09-02T12:00:00.000Z",
+          scores: { woodGrain: 6, color: 6, textureSheen: 6, profileEdges: 6, overall: 6.4 },
+          isCurrentAccepted: true,
+        },
+        flagStatus: "flagged",
+      }],
+    });
+    const identity = doorAuditStyleLabel(list.styles[0]);
+    const markup = renderToStaticMarkup(<DoorRenderingAuditView {...props({
+      styles: list.styles,
+      counts: list.counts,
+      historyStyleId: 41,
+      progress: { phase: "rendering", completed: 0, total: 1, detail: identity, error: null },
+    })} />);
+    expect(list.styles[0]?.name).toBe("Summit White Shaker");
+    expect(list.styles[0]?.code).toBe("SW-41");
+    expect(list.styles[0]?.distributorName).toBe("Summit Cabinets");
+    expect(list.styles[0]?.doorProfile.doorStyle).toBe("Shaker");
+    expect(markup).toContain("Summit White Shaker");
+    expect(markup).toContain("SW-41");
+    expect(markup).toContain("Summit Cabinets");
+    expect(markup).toContain("data-testid=\"door-audit-style-name\"");
+    expect(markup).toContain("data-testid=\"door-audit-style-label\"");
+    expect(markup).toContain("data-testid=\"door-audit-version-history-label\"");
+    expect(markup).toContain(`Rendering ${identity} · 0 of 1`);
+    expect(markup).toContain("https://cdn.example/summit.jpg");
   });
 });
