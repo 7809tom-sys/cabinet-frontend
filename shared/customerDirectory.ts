@@ -109,6 +109,7 @@ const STAGE_TO_STATUS: Record<string, CustomerStatus> = {
   qualified: "contacted",
   image_review: "contacted",
   quoted: "quoted",
+  new_sale: "won",
   won: "won",
   lost: "lost",
 };

@@ -12,6 +12,12 @@ vi.mock("@/lib/trpc", () => ({
     orders: {
       confirm: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
       sendToDistributor: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
+      resendDistributorEmail: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
+      markVerified: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
+      markShipped: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
+      markSigned: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
+      adminMarkPaid: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
+      backfillCrmSales: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
       exportQBO: { useQuery: () => ({ data: null, isFetching: false }) },
       adminListWithPoSkus: { useQuery: () => adminList() },
       adminDelete: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },

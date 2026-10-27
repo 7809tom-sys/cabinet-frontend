@@ -24,6 +24,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { ChevronDown, ChevronRight, Copy, Package, Trash2, Send, Building2, Palette, CheckCircle2, Truck, MapPin, Download, BookOpen } from "lucide-react";
 import AdminOrderStripeBreakdown, { AdminOrderListIdentity, AdminOrderListTotal } from "@/components/admin/AdminOrderStripeBreakdown";
+import OrderFulfillmentTrail from "@/components/admin/OrderFulfillmentTrail";
 import { describeAdminOrderList, type AdminOrderLineInput, type AdminOrderMoneyInput } from "@/lib/adminOrderReconciliation";
 
 type Status = "draft" | "submitted" | "confirmed" | "cancelled";
@@ -65,6 +66,25 @@ type OrderRow = Omit<AdminOrderMoneyInput, "lineItems" | "originatorName" | "ori
   deliveryMethod?: "ship" | "pickup";
   sentToDistributorAt?: Date | null;
   sentToDistributorEmail?: string | null;
+  distributorEmailStatus?: string | null;
+  distributorEmailSentAt?: string | Date | null;
+  distributorEmailTo?: string | null;
+  distributorEmailError?: string | null;
+  orderVerifiedAt?: string | Date | null;
+  orderVerifiedBy?: string | null;
+  orderShippedAt?: string | Date | null;
+  orderShippedBy?: string | null;
+  shipmentCarrier?: string | null;
+  shipmentTracking?: string | null;
+  orderSignedAt?: string | Date | null;
+  orderSignedBy?: string | null;
+  signerName?: string | null;
+  crmSyncStatus?: string | null;
+  crmSyncError?: string | null;
+  paidAt?: string | Date | null;
+  imageGeneratedCount?: number | null;
+  lastImageGeneratedAt?: string | Date | null;
+  shipments?: Array<{ status?: string | null; shippedAt?: string | Date | null; carrier?: string | null; trackingNumber?: string | null }>;
   qboInvoiceId?: string | null;
   qboSyncedAt?: Date | null;
   orderKind?: string | null;
@@ -110,12 +130,29 @@ function OrderDetailDialog({
     },
     onError: (e) => toast.error(e.message),
   });
-  const sendToDistributor = trpc.orders.sendToDistributor.useMutation({
+  const sendToDistributor = trpc.orders.resendDistributorEmail.useMutation({
     onSuccess: (res) => {
-      toast.success(`Order sent to ${res.distributorName} (${res.sentTo})`);
+      if (res.status === "sent") toast.success(`Email sent to ${res.sentTo}`);
+      else if (res.status === "no_email") toast.error(res.error || "No order email set");
+      else toast.error(res.error || "Distributor email was not sent");
       utils.orders.adminListWithPoSkus.invalidate();
-      onClose();
     },
+    onError: (e) => toast.error(e.message),
+  });
+  const markVerified = trpc.orders.markVerified.useMutation({
+    onSuccess: () => { toast.success("Order verified"); utils.orders.adminListWithPoSkus.invalidate(); },
+    onError: (e) => toast.error(e.message),
+  });
+  const markShipped = trpc.orders.markShipped.useMutation({
+    onSuccess: () => { toast.success("Order marked shipped"); utils.orders.adminListWithPoSkus.invalidate(); },
+    onError: (e) => toast.error(e.message),
+  });
+  const markSigned = trpc.orders.markSigned.useMutation({
+    onSuccess: () => { toast.success("Order marked signed"); utils.orders.adminListWithPoSkus.invalidate(); },
+    onError: (e) => toast.error(e.message),
+  });
+  const markPaid = trpc.orders.adminMarkPaid.useMutation({
+    onSuccess: () => { toast.success("Order marked paid. The CRM deal moves to New Sale."); utils.orders.adminListWithPoSkus.invalidate(); },
     onError: (e) => toast.error(e.message),
   });
 
@@ -181,13 +218,15 @@ function OrderDetailDialog({
               <p className="text-muted-foreground">—</p>
             )}
           </div>
-          {order.sentToDistributorAt && (
+          {order.sentToDistributorAt && !order.distributorEmailSentAt && (
             <div className="col-span-2 text-xs text-green-700 dark:text-green-400 flex items-center gap-1.5">
               <CheckCircle2 className="h-3.5 w-3.5" />
               Sent {new Date(order.sentToDistributorAt).toLocaleString()} to {order.sentToDistributorEmail}
             </div>
           )}
         </div>
+
+        <OrderFulfillmentTrail order={order} />
 
         {order.notes && (
           <div className="text-sm border rounded-lg p-3 bg-amber-500/5 border-amber-500/20">
@@ -294,6 +333,20 @@ function OrderDetailDialog({
               Confirm Order
             </Button>
           )}
+          {!order.paidAt && (
+            <Button variant="outline" onClick={() => markPaid.mutate({ id: order.id })} disabled={markPaid.isPending}>
+              Mark paid
+            </Button>
+          )}
+          <Button variant="outline" onClick={() => markVerified.mutate({ id: order.id })} disabled={markVerified.isPending}>
+            Mark verified
+          </Button>
+          <Button variant="outline" onClick={() => markShipped.mutate({ id: order.id, carrier: order.shipmentCarrier ?? undefined, tracking: order.shipmentTracking ?? undefined })} disabled={markShipped.isPending}>
+            Mark shipped
+          </Button>
+          <Button variant="outline" onClick={() => markSigned.mutate({ id: order.id, signerName: order.signerName ?? undefined })} disabled={markSigned.isPending}>
+            Mark signed
+          </Button>
           {(order.status === "submitted" || order.status === "confirmed") && (
             <Button
               onClick={() => sendToDistributor.mutate({ id: order.id })}
@@ -301,7 +354,7 @@ function OrderDetailDialog({
               className="gap-2"
             >
               {sendToDistributor.isPending ? <Spinner className="h-4 w-4" /> : <Send className="h-4 w-4" />}
-              {order.sentToDistributorAt ? "Re-send to Distributor" : "Send to Distributor"}
+              {order.distributorEmailStatus === "sent" || order.sentToDistributorAt ? "Resend" : "Send to Distributor"}
             </Button>
           )}
         </div>
@@ -352,10 +405,23 @@ export default function IncomingOrdersAdmin() {
   const handleQboExport = () => setQboFetch(true);
 
   const { data: orders, isLoading, error, refetch } = trpc.orders.adminListWithPoSkus.useQuery(
-    statusFilter !== "all" ? { status: statusFilter as Status } : undefined
+    statusFilter !== "all" ? { status: statusFilter as Status } : undefined,
+    { refetchInterval: 20000, refetchOnWindowFocus: true },
   );
-
   const utils = trpc.useUtils();
+  const backfill = trpc.orders.backfillCrmSales.useMutation({
+    onSuccess: (result) => {
+      const preview = result.preview;
+      const summary = `${preview.moveToNewSale} to move to New Sale, ${preview.createNewSale} New Sale to create, ${preview.createQualified} qualified to create`;
+      if (result.dryRun) toast.message(`CRM backfill preview: ${summary}. Nothing was changed.`);
+      else {
+        toast.success(`CRM backfill applied: ${summary}.`);
+        utils.orders.adminListWithPoSkus.invalidate();
+      }
+    },
+    onError: (e) => toast.error(e.message || "CRM backfill failed"),
+  });
+
   const deleteOrder = trpc.orders.adminDelete.useMutation({
     onSuccess: (res) => {
       toast.success(`Deleted ${res.deleted} order${res.deleted === 1 ? "" : "s"}`);
@@ -468,6 +534,22 @@ export default function IncomingOrdersAdmin() {
             </PopoverContent>
           </Popover>
 
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={backfill.isPending}
+            onClick={() => backfill.mutate({ apply: false })}
+          >
+            Preview CRM backfill
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={backfill.isPending}
+            onClick={() => backfill.mutate({ apply: true })}
+          >
+            Apply CRM backfill
+          </Button>
           <Select value={kindFilter} onValueChange={setKindFilter}>
             <SelectTrigger className="w-40">
               <SelectValue placeholder="All kinds" />
@@ -559,6 +641,12 @@ export default function IncomingOrdersAdmin() {
                     <Badge className={`text-xs ${STATUS_COLORS[order.status]}`}>
                       {order.status}
                     </Badge>
+                    {(order.imageGeneratedCount ?? 0) > 0 && (
+                      <Badge variant="outline" className="text-xs" data-testid="order-list-image-generated">
+                        Image generated · {order.imageGeneratedCount}
+                        {order.lastImageGeneratedAt ? ` · ${new Date(order.lastImageGeneratedAt).toLocaleString()}` : ""}
+                      </Badge>
+                    )}
                     <AdminOrderListTotal order={order} />
                     <span className="text-xs text-muted-foreground">
                       {new Date(order.createdAt).toLocaleDateString()}
@@ -609,7 +697,8 @@ export default function IncomingOrdersAdmin() {
 
                 {/* Expanded line items */}
                 {isExpanded && (
-                  <CardContent className="pt-0 pb-3 px-4">
+                  <CardContent className="pt-0 pb-3 px-4 space-y-3">
+                    <OrderFulfillmentTrail order={order} />
                     <div className="flex items-center justify-between mb-2">
                       <p className="text-xs text-muted-foreground">
                         {order.itemCount} item{order.itemCount !== 1 ? "s" : ""} ·{" "}

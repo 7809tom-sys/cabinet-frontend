@@ -2,16 +2,17 @@
 // the client board (columns, labels). Keep enum values in sync with the
 // `crm_deals` table in drizzle/schema.ts.
 
-export const CRM_STAGES = ["new", "contacted", "qualified", "image_review", "quoted", "won", "lost"] as const;
+export const CRM_STAGES = ["new", "new_sale", "contacted", "qualified", "image_review", "quoted", "won", "lost"] as const;
 export type CrmStage = (typeof CRM_STAGES)[number];
 
-// Stages shown as draggable pipeline columns (won/lost are terminal outcomes
-// rendered separately as collapsed/closed columns but still valid stages).
-export const CRM_PIPELINE_STAGES: CrmStage[] = ["new", "contacted", "qualified", "image_review", "quoted"];
-export const CRM_CLOSED_STAGES: CrmStage[] = ["won", "lost"];
+// Board order. New Sale sits beside New. Won stays so older closed deals
+// still have a column; it is not an open lead stage.
+export const CRM_PIPELINE_STAGES: CrmStage[] = ["new", "new_sale", "contacted", "qualified", "image_review", "quoted"];
+export const CRM_CLOSED_STAGES: CrmStage[] = ["new_sale", "won", "lost"];
 
 export const CRM_STAGE_LABELS: Record<CrmStage, { en: string; es: string }> = {
   new: { en: "New", es: "Nuevo" },
+  new_sale: { en: "New Sale", es: "Nueva venta" },
   contacted: { en: "Contacted", es: "Contactado" },
   qualified: { en: "Qualified", es: "Calificado" },
   image_review: { en: "Image Review", es: "Revisión de imagen" },
@@ -38,8 +39,12 @@ export type CrmSource = (typeof CRM_SOURCES)[number];
 export const CRM_LANGUAGES = ["en", "es"] as const;
 export type CrmLanguage = (typeof CRM_LANGUAGES)[number];
 
-export function isClosedStage(stage: CrmStage): boolean {
-  return stage === "won" || stage === "lost";
+export function isWonRevenueStage(stage: string | null | undefined): boolean {
+  return stage === "won" || stage === "new_sale";
+}
+
+export function isClosedStage(stage: CrmStage | string | null | undefined): boolean {
+  return stage === "won" || stage === "lost" || stage === "new_sale";
 }
 
 // ─── CRM email (send-from-card) ─────────────────────────────────────────────────
