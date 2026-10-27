@@ -5,6 +5,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   isAutoDesignBlindCornerOption,
+  preferredAutoDesignCorner,
   type AutoBuildCornerCandidate,
   type AutoDesignCornerChoice,
   type AutoDesignCornerSlot,
@@ -23,7 +24,7 @@ type Props = {
 };
 
 function initialChoices(slots: readonly AutoDesignCornerSlot[], options: readonly AutoBuildCornerCandidate[]): Record<string, AutoDesignCornerChoice> {
-  const defaultCorner = options[0] ?? null;
+  const defaultCorner = preferredAutoDesignCorner(options);
   return Object.fromEntries(slots.map((slot) => [slot.id, {
     cabinetId: defaultCorner?.id ?? null,
     ...(defaultCorner && isAutoDesignBlindCornerOption(defaultCorner) ? { blindPullIn: defaultCorner.pullMax ?? 6 } : {}),
@@ -66,7 +67,7 @@ export function AutoDesignCornerDialog({ open, slots, options, initialChoices: s
         <DialogHeader>
           <DialogTitle>Appliances are seated — choose corner cabinets</DialogTitle>
           <DialogDescription>
-            A source-priced base-corner cabinet is required at every real Auto-Design corner. The largest eligible corner is selected first; change it to another source-priced corner when needed. A corner is never substituted into a straight run.
+            A source-priced base-corner cabinet is required at every real Auto-Design corner. A diagonal corner is selected when this line sells one; otherwise the largest lazy Susan, then a blind corner. Change the corner here if you want a different type. A standard straight cabinet is never placed in the corner.
           </DialogDescription>
           <p className="text-sm text-muted-foreground" data-testid="auto-design-corner-build-order">After your corners are placed, the builder fills the remaining runs with larger regular base cabinets, then adds aligned wall cabinets at your selected height.</p>
         </DialogHeader>

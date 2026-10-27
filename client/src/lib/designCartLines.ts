@@ -1,5 +1,5 @@
 import type { CartItem } from "@/contexts/CartContext";
-import { customSizeFee, effectiveStyleId, isFillerItem, isGlassPolicyNomenclature, type PlacedCabinet } from "@/lib/design";
+import { blindCornerInstallerNote, customSizeFee, effectiveStyleId, isBlindCorner, isFillerItem, isGlassPolicyNomenclature, type PlacedCabinet } from "@/lib/design";
 import { isClosetPart } from "@/lib/closet";
 import { calculateCartSubtotal } from "@/lib/cartTotals";
 import { combinedFillerNote, fillerCutSourceFor, isCombinedSmallFiller } from "@/lib/fillerBilling";
@@ -118,12 +118,13 @@ export function buildDesignCabinetCartLines({
       : baseCode;
     // Different discounts or custom-size fees must remain separate locked
     // lines; combining them would assign one cabinet's adjusted price to both.
-    const key = `${masterCode}::${resolvedStyleId}::${unitPrice == null ? "pending" : unitPrice.toFixed(4)}::${fillerCartIdentity(cabinet)}`;
+    const key = `${masterCode}::${resolvedStyleId}::${unitPrice == null ? "pending" : unitPrice.toFixed(4)}::${fillerCartIdentity(cabinet)}::${cabinet.swing ?? ""}`;
     const cutNotes = placed
       .filter((candidate) => fillerCutSourceFor(candidate, placed)?.uid === cabinet.uid)
       .map((candidate) => combinedFillerNote(candidate, placed))
       .filter((note): note is string => Boolean(note));
-    const cutNote = cutNotes.join("; ");
+    const doorNote = isBlindCorner(cabinet.masterCode, cabinet.description) ? blindCornerInstallerNote(cabinet.swing) : null;
+    const cutNote = [cutNotes.join("; "), doorNote].filter(Boolean).join("; ");
     const existing = lines.get(key);
     if (existing) {
       existing.qty += 1;
@@ -263,12 +264,13 @@ export function buildDesignPreviewPricingLines({
       ? `${cabinet.masterCode}GD`
       : cabinet.masterCode;
     // Different discounts or custom fees must remain distinct priced lines.
-    const key = `${masterCode}::${resolvedStyleId}::${adjustedUnitPrice == null ? "pending" : adjustedUnitPrice.toFixed(4)}::${fillerCartIdentity(cabinet)}`;
+    const key = `${masterCode}::${resolvedStyleId}::${adjustedUnitPrice == null ? "pending" : adjustedUnitPrice.toFixed(4)}::${fillerCartIdentity(cabinet)}::${cabinet.swing ?? ""}`;
     const cutNotes = placed
       .filter((candidate) => fillerCutSourceFor(candidate, placed)?.uid === cabinet.uid)
       .map((candidate) => combinedFillerNote(candidate, placed))
       .filter((note): note is string => Boolean(note));
-    const cutNote = cutNotes.join("; ");
+    const doorNote = isBlindCorner(cabinet.masterCode, cabinet.description) ? blindCornerInstallerNote(cabinet.swing) : null;
+    const cutNote = [cutNotes.join("; "), doorNote].filter(Boolean).join("; ");
     const existing = lines.get(key);
     if (existing) {
       existing.qty += 1;

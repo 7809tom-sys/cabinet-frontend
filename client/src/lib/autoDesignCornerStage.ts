@@ -103,3 +103,72 @@ export function isAutoDesignBlindCornerOption(candidate: Pick<AutoBuildCornerCan
   return candidate.placement === "base"
     && (candidate.cornerType === "blind-corner" || isBlindCorner(candidate.masterCode, candidate.description ?? undefined));
 }
+
+export type AutoDesignCornerFamily = "diagonal" | "lazy-susan" | "blind" | "other";
+
+export function autoDesignCornerFamily(candidate: Pick<AutoBuildCornerCandidate, "masterCode" | "description" | "cornerType">): AutoDesignCornerFamily {
+  const code = (candidate.masterCode ?? "").toUpperCase();
+  const hay = `${candidate.cornerType ?? ""} ${candidate.description ?? ""} ${code}`.toLowerCase();
+  if (candidate.cornerType === "diagonal" || candidate.cornerType === "pie-cut" || /diagonal|pie[-\s]?cut/.test(hay) || /^(?:DCB|DCW|WDC)/.test(code)) return "diagonal";
+  if (candidate.cornerType === "lazy-susan" || /lazy\s*susan|easy\s*reach/.test(hay) || /^(?:LSB|LS|ERB|BER)/.test(code)) return "lazy-susan";
+  if (candidate.cornerType === "blind-corner" || /blind/.test(hay) || /^(?:BBC|WBC|BBL|BBR)/.test(code)) return "blind";
+  return "other";
+}
+
+/** Diagonal when the line sells one. Otherwise the largest lazy Susan, then a blind corner. */
+export function preferredAutoDesignCorner<T extends AutoBuildCornerCandidate>(options: readonly T[]): T | null {
+  const diagonal = options.find((option) => autoDesignCornerFamily(option) === "diagonal");
+  if (diagonal) return diagonal;
+  const lazy = options
+    .filter((option) => autoDesignCornerFamily(option) === "lazy-susan")
+    .sort((left, right) => (Number.parseFloat(right.width ?? "0") || 0) - (Number.parseFloat(left.width ?? "0") || 0));
+  if (lazy[0]) return lazy[0];
+  return options.find((option) => autoDesignCornerFamily(option) === "blind") ?? options[0] ?? null;
+}
+
+export type LazySusanFit = {
+  size: number | null;
+  reducedFrom: number | null;
+  usedShiftIn: number;
+  fallback: boolean;
+  note: string | null;
+};
+
+/**
+ * Try the largest lazy Susan with no shift, then the same size with the
+ * allowed appliance shifts, then the next smaller size. `fits(size, limit)`
+ * is true when that size seats if appliances may move up to `limit` inches.
+ */
+/** Lazy Susan sizes descend from the chosen one, then diagonal, then blind, then any other true corner. */
+export function autoDesignCornerAttempts<T extends AutoBuildCornerCandidate>(selected: T | undefined, options: readonly T[]): T[] {
+  if (!selected) return [];
+  const rest = options.filter((option) => option.id !== selected.id);
+  const byFamily = (family: AutoDesignCornerFamily) => rest.filter((option) => autoDesignCornerFamily(option) === family);
+  if (autoDesignCornerFamily(selected) !== "lazy-susan") {
+    return [selected, ...byFamily("diagonal"), ...byFamily("lazy-susan"), ...byFamily("blind"), ...byFamily("other")];
+  }
+  const lazy = [selected, ...byFamily("lazy-susan")]
+    .sort((left, right) => (Number.parseFloat(right.width ?? "0") || 0) - (Number.parseFloat(left.width ?? "0") || 0));
+  const selectedWidth = Number.parseFloat(selected.width ?? "0") || 0;
+  const descending = lazy.filter((option) => (Number.parseFloat(option.width ?? "0") || 0) <= selectedWidth + 1e-6);
+  return [...descending, ...byFamily("diagonal"), ...byFamily("blind"), ...byFamily("other")];
+}
+
+export function chooseLazySusanSize(
+  sizes: readonly number[],
+  fits: (size: number, shiftLimitIn: number) => boolean,
+  shiftLimitIn = 6,
+): LazySusanFit {
+  const available = Array.from(new Set(sizes.map((size) => Math.round(size * 8) / 8).filter((size) => size > 0)))
+    .sort((left, right) => right - left);
+  const largest = available[0] ?? null;
+  for (const size of available) {
+    const reducedFrom = largest != null && size < largest - 1e-6 ? largest : null;
+    const note = reducedFrom != null ? `Lazy Susan reduced to ${size}" to fit` : null;
+    if (fits(size, 0)) return { size, reducedFrom, usedShiftIn: 0, fallback: false, note };
+    if (shiftLimitIn > 0 && fits(size, shiftLimitIn)) {
+      return { size, reducedFrom, usedShiftIn: shiftLimitIn, fallback: false, note };
+    }
+  }
+  return { size: null, reducedFrom: largest, usedShiftIn: 0, fallback: true, note: null };
+}

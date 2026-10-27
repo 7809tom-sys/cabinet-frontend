@@ -163,7 +163,7 @@ describe("Auto-Design wall stage end to end on the real frameless catalog", () =
     expect(total).toBeCloseTo(24 + 30 + 36, 3);
   });
 
-  it("puts a 12-inch wall cabinet in the room corner above a base blind corner", () => {
+  it("puts a true wall blind corner above a base blind corner, not a plain 12-inch upper", () => {
     const frameless = rows("540005", "base");
     const bbc = byCode(frameless, "BBC43/46FH");
     const base = seatAutoDesignCorner({
@@ -174,8 +174,8 @@ describe("Auto-Design wall stage end to end on the real frameless catalog", () =
     expect(base.ok).toBe(true);
     if (!base.ok) return;
     const result = build(base.placed, [{ base: base.corner, point: TOP_RIGHT }]);
-    const twelve = result.additions.find((item) => item.width === 12 && /^W12/.test(item.masterCode));
-    expect(twelve, `skipped: ${result.skipped.join(" | ")}`).toBeDefined();
-    expect(result.additions.some((item) => isWallBlindCornerCabinet(item))).toBe(false);
+    const corner = result.additions.find((item) => isWallBlindCornerCabinet(item));
+    expect(corner, `skipped: ${result.skipped.join(" | ")}`).toBeDefined();
+    expect(result.additions.some((item) => item.width === 12 && /^W12/.test(item.masterCode))).toBe(false);
   });
 });

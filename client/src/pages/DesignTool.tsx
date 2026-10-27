@@ -191,13 +191,13 @@ import { HardwareCatalogPicker } from "@/components/design/HardwareCatalogPicker
 import { isPanelPaletteItem } from "./designToolPanels";
 import { normalizePaletteSearch, matchesPaletteSearch, matchesPaletteTextOrSize } from "@/lib/paletteSearch";
 import { searchCatalogItems } from "@shared/catalogCodeSearch";
-import { adjacentDishwasherCenterIn, anchorAlongStartIn, autoBuildStraightBaseCatalog, buildAutoDesignWallGuides, canRunAutoDesign, isAutoBuildStraightSinkBaseCandidate, makeAutoDesignSixWallTrainingRoom, pickAutoDesignSinkBase, planAutoDesignAutoBuild, subtractAnchorRunReservations, wallLabelToEngineWallId, type AutoDesignInputs, type AutoDesignOriginCorner, type AutoDesignRunDirection } from "@/lib/autoDesignAutoBuild";
+import { adjacentDishwasherCenterIn, anchorAlongStartIn, autoBuildStraightBaseCatalog, buildAutoDesignWallGuides, canRunAutoDesign, closestDishwasherStart, isAutoBuildStraightSinkBaseCandidate, makeAutoDesignSixWallTrainingRoom, pickAutoDesignSinkBase, planAutoDesignAutoBuild, resolveDishwasherSide, subtractAnchorRunReservations, wallLabelToEngineWallId, type AutoDesignInputs, type AutoDesignOriginCorner, type AutoDesignRunDirection, type DishwasherSide } from "@/lib/autoDesignAutoBuild";
 import { AUTO_DESIGN_REFRIGERATOR_NOTE, autoDesignControlState, autoDesignShouldTurnOffForRefrigerator, isRefrigeratorAppliance, refrigeratorBlocksAutoDesign } from "@/lib/autoDesignAvailability";
 import { applyChosenAutoDesignFaucet, catalogFaucetSurface, defaultAutoDesignFaucet, ensureAutoDesignFaucet, isCatalogFaucet, type AutoDesignFaucetProduct } from "@/lib/autoDesignFaucet";
 import { clampSinkDragForFaucet } from "@/lib/faucetPlacement";
 import { autoDesignSinkWindow, windowOverlapsReservation } from "@/lib/autoDesignSinkWindow";
 import { autoDesignRangeHood, autoDesignRangeNeedsVentilation } from "@/lib/autoDesignRangeHood";
-import { autoBuildCornerCatalog, autoDesignCornerSlotPoint, autoDesignCornerSlots, isAutoDesignBlindCornerOption, type AutoBuildCornerCandidate, type AutoDesignCornerChoice, type AutoDesignCornerSlot } from "@/lib/autoDesignCornerStage";
+import { autoBuildCornerCatalog, autoDesignCornerAttempts, autoDesignCornerFamily, autoDesignCornerSlotPoint, autoDesignCornerSlots, isAutoDesignBlindCornerOption, type AutoBuildCornerCandidate, type AutoDesignCornerChoice, type AutoDesignCornerSlot } from "@/lib/autoDesignCornerStage";
 import { buildMandatoryAutoDesignRefrigeratorBay } from "@/lib/autoDesignRefrigeratorBay";
 import { buildAutoDesignWallCabinets, type AutoDesignUpperCorner } from "@/lib/autoDesignWallCabinets";
 import { seatAutoDesignCorner, type AutoDesignApplianceMove } from "@/lib/autoDesignCornerSeating";
@@ -218,7 +218,8 @@ import { defaultTowerConfig, isMasterTracCornerBoard, planMasterTracTower, tower
 import { canCommitPlanStyleSwitchWithoutReview, planStyleReviewCandidates } from "@/lib/planStyleSwitch";
 import { autoFillSpan, makeFiller, type FillMode } from "@/lib/autofill";
 import { fillAutoDesignLowerSeams, planAutoDesignBaseSegment } from "@/lib/autoDesignSeamFillers";
-import { applyDesignerLayoutRules, applyAutoDesignWiggleRoom, type AutoDesignAnchorOrigin } from "@/lib/designerLayoutRules";
+import { SINK_SHIFT_LIMIT_IN, activeAutoDesignWiggleMoves, applyDesignerLayoutRules, applyAutoDesignWiggleRoom, formatAutoDesignWiggleMessage, type AutoDesignAnchorOrigin, type AutoDesignWiggleMove } from "@/lib/designerLayoutRules";
+import { AutoDesignWiggleNotice } from "@/components/design/AutoDesignWiggleNotice";
 import { resolveTierPrice } from "@shared/pricingTier";
 import {
   CATALOG_SUBCATEGORY_TRIM_AND_MOULDING,
@@ -1079,6 +1080,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   }, []);
   // After a measured build, a range with nothing above it asks what goes there.
   const [autoDesignRangeVentPrompt, setAutoDesignRangeVentPrompt] = useState<{ rangeUid: string } | null>(null);
+  const [autoDesignWiggleMoves, setAutoDesignWiggleMoves] = useState<AutoDesignWiggleMove[]>([]);
+  useEffect(() => {
+    setAutoDesignWiggleMoves((current) => {
+      if (current.length === 0) return current;
+      const next = activeAutoDesignWiggleMoves(current, placed, room);
+      return next.length === current.length ? current : next;
+    });
+  }, [placed, room]);
   const [islandSeatingOverhangPrompt, setIslandSeatingOverhangPrompt] = useState<{
     cabinetCode: string;
     face: IslandFace;
@@ -1641,6 +1650,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // plan can't be nudged while placing cabinets. lockedWalls freezes individual
   // walls. Cabinets can always still be added/moved.
   const [layoutLocked, setLayoutLocked] = useState(false);
+  const [dishwasherSidePreference, setDishwasherSidePreference] = useState<DishwasherSide | null>(null);
+  const [autoDesignLayoutNotes, setAutoDesignLayoutNotes] = useState<string[]>([]);
   layoutLockedRef.current = layoutLocked;
   const layoutHasRefrigerator = useMemo(() => placed.some(isRefrigeratorAppliance), [placed]);
   const autoDesignControl = useMemo(() => autoDesignControlState({
@@ -2467,8 +2478,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     selectedStyleId: styleId ?? null,
     selectedDistributorId: lockedDistributorId ?? null,
     roomType: roomType ?? null,
-    trimSettings: { crown, toeKick, batten, lightRail, valance, qty: trimQtyOverride },
-  }), [room, openings, sinks, potFillers, island, furniture, ponyWalls, placed, selectedSurfaces, threeDPresentationForSave, styleId, lockedDistributorId, roomType, crown, toeKick, batten, lightRail, valance, trimQtyOverride]);
+    trimSettings: { crown, toeKick, batten, lightRail, valance, qty: trimQtyOverride, dishwasherSide: dishwasherSidePreference },
+  }), [room, openings, sinks, potFillers, island, furniture, ponyWalls, placed, selectedSurfaces, threeDPresentationForSave, styleId, lockedDistributorId, roomType, crown, toeKick, batten, lightRail, valance, trimQtyOverride, dishwasherSidePreference]);
   const isCurrentPlanSaved = useMemo(() => {
     if (!savedDesign || currentSavedDesignId == null) return false;
     return currentSavedPlanPayload === JSON.stringify({
@@ -3460,7 +3471,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
             input.sink.centerOffsetIn,
             sinkBaseWidth,
             width,
-            input.dishwasherSide ?? "right",
+            resolveDishwasherSide({
+              preference: dishwasherSidePreference ?? input.dishwasherSide ?? null,
+              originCorner: input.originCorner,
+            }),
           ),
         }
         : anchor;
@@ -3593,7 +3607,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       ? "Measured appliances are seated. Choose each real corner cabinet before the remaining wall runs are filled."
       : "Measured appliances are seated. Confirm the next step to fill the remaining wall runs.");
     return { ok: true as const };
-  }, [appliancePalette, autoFillCabinets, autoFillCabinetsLoading, autoDesignAvailable, isCornerCabinet, openings, placedRef, refrigeratorSurroundCatalog, room, setCountertop, setPlaced, wallCabPool, wallCabPoolLoading]);
+  }, [appliancePalette, autoFillCabinets, autoFillCabinetsLoading, autoDesignAvailable, dishwasherSidePreference, isCornerCabinet, openings, placedRef, refrigeratorSurroundCatalog, room, setCountertop, setPlaced, wallCabPool, wallCabPoolLoading]);
 
   /**
    * The second half of an Auto-Design build. Nothing is guessed: appliances are
@@ -3632,22 +3646,31 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       }
       const source = stage.cornerOptions.find((candidate) => candidate.id === choice.cabinetId);
       if (!source) return fail(`${slot.label} must use a current source-priced corner cabinet. The selected catalog item is unavailable.`);
-      const sourceCatalog = stage.pool.find((candidate) => candidate.id === source.id);
-      if (!sourceCatalog) return fail(`${source.masterCode} is no longer present in the selected source-priced catalog.`);
       const target = autoDesignCornerSlotPoint(slot, room, stage.input.originCorner, stage.input.runDirection);
       if (!target) return fail(`${slot.label} does not resolve to a real shared wall vertex. No remaining cabinets were added.`);
-      // The corner is seated at its exact vertex. If a measured range or refrigerator
-      // sits in the way it slides away from the corner (never more than 3 inches);
-      // sink and dishwasher keep their measured positions.
-      const seated = seatAutoDesignCorner({
-        source: sourceCatalog, slotLabel: slot.label, target,
-        cornerWallIds: [firstWall.engineWallId, secondWall.engineWallId],
-        working, room, openings: stageOpenings,
-        blindPullIn: choice.blindPullIn ?? source.pullMax ?? 6,
-        isBlindOption: isAutoDesignBlindCornerOption(source),
-        catalogFillers, makeUid, styleId: styleIdRef.current ?? null,
-      });
-      if (!seated.ok) return fail(seated.message);
+      const attempts = autoDesignCornerAttempts(source, stage.cornerOptions);
+      let seated: ReturnType<typeof seatAutoDesignCorner> | null = null;
+      let seatedSource: AutoBuildCornerCandidate | null = null;
+      let seatMessage = `${source.masterCode} cannot fit at ${slot.label}.`;
+      for (const attempt of attempts) {
+        const sourceCatalog = stage.pool.find((candidate) => candidate.id === attempt.id);
+        if (!sourceCatalog) continue;
+        const trial = seatAutoDesignCorner({
+          source: sourceCatalog, slotLabel: slot.label, target,
+          cornerWallIds: [firstWall.engineWallId, secondWall.engineWallId],
+          working, room, openings: stageOpenings,
+          blindPullIn: choice.blindPullIn ?? attempt.pullMax ?? 6,
+          isBlindOption: isAutoDesignBlindCornerOption(attempt),
+          catalogFillers, makeUid, styleId: styleIdRef.current ?? null,
+        });
+        if (trial.ok) { seated = trial; seatedSource = attempt; break; }
+        seatMessage = trial.message;
+      }
+      if (!seated || !seated.ok || !seatedSource) return fail(seatMessage);
+      if (autoDesignCornerFamily(source) === "lazy-susan" && autoDesignCornerFamily(seatedSource) === "lazy-susan" && seatedSource.id !== source.id) {
+        const note = `Lazy Susan reduced to ${seatedSource.width ?? seatedSource.masterCode}" to fit`;
+        setAutoDesignLayoutNotes((current) => current.includes(note) ? current : [...current, note]);
+      }
       const corner = seated.corner;
       working = seated.placed;
       applianceMoves.push(...seated.moves);
@@ -3746,6 +3769,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     });
     working = finishedRules.placed;
     placedRef.current = working;
+    const reportedWiggleMoves = activeAutoDesignWiggleMoves(wiggle.moves, working, room);
+    setAutoDesignWiggleMoves(reportedWiggleMoves);
     setPlaced(working);
     if (stage.sinkWindow) {
       const windowToCommit = stage.sinkWindow;
@@ -3758,8 +3783,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     for (const move of applianceMoves) {
       toast.info(`Moved the ${move.label} ${formatInches(move.shiftIn)} away from the corner to fit the required corner cabinet. Its measured center is now ${formatInches(move.centerAlongIn)} along the wall.`, { duration: 12000 });
     }
-    for (const move of wiggle.moves) {
-      toast.info(`Wiggle room shifted the ${move.label} ${formatInches(Math.abs(move.deltaAlongIn))} along its wall to fit standard cabinet widths. It stays within 3 inches of where it was placed.`, { duration: 12000 });
+    for (const move of reportedWiggleMoves) {
+      toast.info(formatAutoDesignWiggleMessage(move), { duration: 12000 });
     }
     const requestedUpperIn = stage.input.wallCabinetHeightIn ?? 30;
     if (upperResult.heightUsedIn != null && Math.abs(upperResult.heightUsedIn - requestedUpperIn) > 0.005) {
@@ -4589,6 +4614,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         lightRail?: boolean;
         valance?: boolean;
         qty?: Partial<Record<"crown" | "toeKick" | "batten" | "lightRail" | "valance", number>>;
+        dishwasherSide?: DishwasherSide | null;
       } | null;
     }) => {
 	    historyRebaseRequestedRef.current = true;
@@ -4680,7 +4706,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           if (typeof value === "number" && Number.isFinite(value)) clean[kind] = Math.max(0, Math.min(99, value));
         }
         setTrimQtyOverride(clean);
+        setDishwasherSidePreference(savedTrim.dishwasherSide === "left" || savedTrim.dishwasherSide === "right" ? savedTrim.dishwasherSide : null);
       } else {
+        setDishwasherSidePreference(null);
         trimOverride.current = { crown: false, toeKick: false, batten: false, lightRail: false, valance: false };
         setCrown(false);
         setToeKick(true);
@@ -12348,6 +12376,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         lightRail?: boolean;
         valance?: boolean;
         qty?: Partial<Record<"crown" | "toeKick" | "batten" | "lightRail" | "valance", number>>;
+        dishwasherSide?: "left" | "right" | null;
       } | null }).trimSettings ?? null,
     });
     if (savedPresentation && typeof savedPresentation.cabinetFinish === "string" && typeof savedPresentation.countertopFinish === "string") {
@@ -13594,6 +13623,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       : <div className="flex h-full min-h-[360px] items-center justify-center rounded-xl border border-dashed px-6 text-center text-sm text-muted-foreground">Choose an active door style and add a cabinet, or choose a starter room layout, to load the synchronized 3D canvas.</div>;
 	    return <InteractiveRoom3D
 		      key={`active-surfaces-${threeDSurfaceProductIds.flooring ?? "none"}-${threeDSurfaceTextureUrls.flooring ?? "pending"}-${backsplashEnabled ? threeDSurfaceProductIds.backsplash ?? "none" : "off"}-${backsplashEnabled ? threeDSurfaceTextureUrls.backsplash ?? "pending" : "off"}`}
+		      autoDesignWiggleMoves={autoDesignWiggleMoves}
 		      embedded
 		      cutawayRoomWalls
 		      hybridPlanUnderlay={hybridPlanUnderlay}
@@ -13983,6 +14013,18 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
             >
               <Ruler className="mr-1.5 h-3.5 w-3.5" /> Auto-Design
             </Button>
+            <label className="hidden items-center gap-1 text-[11px] text-[#765416] lg:inline-flex" data-testid="dishwasher-side-control">
+              Dishwasher side
+              <select
+                aria-label="Dishwasher side"
+                className="h-8 rounded-md border border-[#d4a75a] bg-white px-1 text-[11px] text-[#1a2744]"
+                value={dishwasherSidePreference ?? resolveDishwasherSide({ preference: null, originCorner: "left" })}
+                onChange={(event) => setDishwasherSidePreference(event.target.value === "left" ? "left" : "right")}
+              >
+                <option value="left">Left of sink</option>
+                <option value="right">Right of sink</option>
+              </select>
+            </label>
             {autoDesignControl.refrigeratorNote && (
               <span data-testid="auto-design-refrigerator-note" className="hidden max-w-[14rem] text-[11px] leading-snug text-muted-foreground lg:inline">
                 {autoDesignControl.refrigeratorNote}
@@ -15257,7 +15299,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
             extraLines={extraLines}
             buildRows={buildRows}
             roomType={roomType}
-            trimSettings={{ crown, toeKick, batten, lightRail, valance, qty: trimQtyOverride }}
+            trimSettings={{ crown, toeKick, batten, lightRail, valance, qty: trimQtyOverride, dishwasherSide: dishwasherSidePreference }}
             contactEmail={verifiedEmail}
             contactName={verifiedName}
             contactPhone={verifiedPhone}
@@ -17061,6 +17103,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	              </button>
 	            </div>
 	          )}
+	          {(autoDesignWiggleMoves.length > 0 || autoDesignLayoutNotes.length > 0) && (
+	            <div className="absolute bottom-3 left-3 z-40 max-w-md">
+	              <AutoDesignWiggleNotice moves={autoDesignWiggleMoves} notes={autoDesignLayoutNotes} />
+	            </div>
+	          )}
 	          {placementWarning && (
 	            <div role="alert" className="absolute left-3 right-3 top-3 z-40 max-h-[70%] overflow-y-auto rounded-lg border border-amber-400 bg-amber-50 px-3 py-2 text-sm text-amber-950 shadow-md sm:right-auto sm:max-w-lg">
 	              {/\bCorner protected:\s*ERB36\b/i.test(placementWarning) && (
@@ -17257,6 +17304,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	            <PlanCanvas onPreviewGap={previewSmartGap}
 	              room={room}
 	              autoDesignWallGuides={autoDesignWallGuides}
+	              autoDesignWiggleMoves={autoDesignWiggleMoves}
 	              catalogDragCabinet={catalogDragPreview}
 	              fillerGapPreview={smallGapFillerPlanPreview}
 	              automaticSnapping={automaticSnapping}
@@ -17548,6 +17596,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                <PlanCanvas onPreviewGap={previewSmartGap}
 	                  room={room}
 	                  autoDesignWallGuides={autoDesignWallGuides}
+	                  autoDesignWiggleMoves={autoDesignWiggleMoves}
 	                  catalogDragCabinet={catalogDragPreview}
 	                  fillerGapPreview={smallGapFillerPlanPreview}
 	                  automaticSnapping={automaticSnapping}
@@ -19470,6 +19519,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	          onOpenChange={setAutoDesignOpen}
 	          onWallGuideChange={setAutoDesignWallGuideSelection}
 	          onLoadSixWallTrainingRoom={isAdmin ? loadAutoDesignSixWallTrainingRoom : undefined}
+	          dishwasherSide={dishwasherSidePreference}
+	          onDishwasherSideChange={setDishwasherSidePreference}
 	          onBuild={buildAutoDesignLayout}
 	          catalogLoading={autoFillCabinetsLoading || wallCabPoolLoading}
 	          wallCount={Math.min(6, Math.max(1, room.customWalls?.length ?? 4))}
@@ -21350,6 +21401,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
             ) : resolvedInteractive3dScene ? (
               <InteractiveRoom3D
 			      key={`active-surfaces-full-${threeDSurfaceProductIds.flooring ?? "none"}-${threeDSurfaceTextureUrls.flooring ?? "pending"}-${backsplashEnabled ? threeDSurfaceProductIds.backsplash ?? "none" : "off"}-${backsplashEnabled ? threeDSurfaceTextureUrls.backsplash ?? "pending" : "off"}`}
+                autoDesignWiggleMoves={autoDesignWiggleMoves}
                 scene={resolvedInteractive3dScene}
                 placed={threeDPlaced}
                 crown={crown}

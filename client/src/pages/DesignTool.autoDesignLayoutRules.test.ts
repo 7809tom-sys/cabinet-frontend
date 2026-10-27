@@ -14,6 +14,10 @@ describe("auto-design applies the shared designer rules", () => {
     expect(completion.indexOf("planAutoDesignBaseSegment({")).toBeGreaterThan(completion.indexOf("applyAutoDesignWiggleRoom({"));
     expect(completion.indexOf("applyDesignerLayoutRules({")).toBeGreaterThan(completion.indexOf("planAutoDesignBaseSegment({"));
     expect(completion.indexOf("fillAutoDesignLowerSeams({")).toBeGreaterThan(completion.indexOf("applyDesignerLayoutRules({"));
-    expect(pageSource).toContain("Wiggle room shifted the");
+    expect(pageSource).toContain("formatAutoDesignWiggleMessage(move)");
+    expect(pageSource).toContain("const reportedWiggleMoves = activeAutoDesignWiggleMoves(wiggle.moves, working, room)");
+    expect(pageSource).toContain("setAutoDesignWiggleMoves(reportedWiggleMoves)");
+    expect(pageSource).toContain("<AutoDesignWiggleNotice");
+    expect(pageSource).toContain("autoDesignWiggleMoves={autoDesignWiggleMoves}");
   });
 });

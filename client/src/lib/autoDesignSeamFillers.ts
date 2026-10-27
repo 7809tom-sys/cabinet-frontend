@@ -1,11 +1,12 @@
-import { autoFillSpan, type FillItem } from "./autofill";
+import { autoFillSpan, makeFiller, type FillItem } from "./autofill";
+import { searchFewestFillerOpening } from "./autoDesignGapSolver";
 import {
   catalogFillerForGap,
   fittedCatalogFillerDescription,
   type CatalogFillerCandidate,
 } from "./catalogFiller";
 import {
-  COLLISION_EPSILON_IN, STD, WALL_OPENING_CLEARANCE_IN, appendCollisionFreePlacements,
+  COLLISION_EPSILON_IN, MAX_FILLER_RUN_WIDTH_IN, STD, WALL_OPENING_CLEARANCE_IN, appendCollisionFreePlacements,
   cabinetPlacementCollisionDetail, cabinetWall, dim, freeSegmentsOnWall, isRangeOrOven, isRefrigerator,
   isSinkBaseCabinet, matchInstalledFillerToCabinet, wallPlacementAt, wallRunFrame, wallRunOffset, wallRunSpan,
   type DesignCabinet, type PlacedCabinet, type RoomData, type WallOpening,
@@ -14,8 +15,8 @@ import { installedFillerVerticalSpec } from "./smallGapFiller";
 
 /** A seam narrower than this is tape-measure noise, not a gap. */
 export const SEAM_MIN_IN = 0.125;
-/** One catalog filler is cut at most this wide; wider openings are split in two (up to 12 inches) or tiled with cabinets. */
-export const SEAM_MAX_FILLER_IN = 6;
+/** One filler board closes a seam. A second board is never placed beside it. */
+export const SEAM_MAX_FILLER_IN = MAX_FILLER_RUN_WIDTH_IN;
 /** A range always has a real cabinet at least this wide on each side. */
 export const RANGE_NEIGHBOR_MIN_WIDTH_IN = 15;
 
@@ -227,17 +228,13 @@ function isFillerLike(item: Pick<PlacedCabinet, "masterCode" | "description" | "
 }
 
 /**
- * The filler boards that close an opening: one board up to 6 inches, two equal
- * boards (a split) up to 12, nothing for tape-measure noise, null when wider.
+ * One filler board, up to 24 inches. Wider openings stay open for a cabinet
+ * or an appliance shift. A 3 inch wall filler is refused by the wall caller.
  */
 export function seamFillerWidths(width: number): number[] | null {
   const w = exactWidth(width);
   if (w < SEAM_MIN_IN) return [];
   if (w <= SEAM_MAX_FILLER_IN + COLLISION_EPSILON_IN) return [w];
-  if (w <= SEAM_MAX_FILLER_IN * 2 + COLLISION_EPSILON_IN) {
-    const half = exactWidth(w / 2);
-    return [half, exactWidth(w - half)];
-  }
   return null;
 }
 
@@ -255,6 +252,9 @@ export function fillersForSeam(input: {
   if (!picked) return { error: `${width}″ opening on the ${seam.wall} wall has no neighboring cabinet to match.` };
   const { owner, ownerIsLeft } = picked;
   const side = ownerIsLeft ? "right" : "left";
+  if (layer === "wall" && Math.abs(width - 3) <= 0.05) {
+    return { pieces: [] };
+  }
   const widths = seamFillerWidths(width);
   if (widths == null) return { error: `A ${width}″ opening on the ${seam.wall} wall is wider than a filler and needs a cabinet.` };
   if (!widths.length) return { pieces: [] };
@@ -363,9 +363,32 @@ export function upperReservedZones(placed: readonly PlacedCabinet[], room: RoomD
  * reported only when the segment itself is too short to do better. Filler goes
  * at the end away from the range.
  */
+function catalogCabinetForWidth(catalog: DesignCabinet[], width: number): DesignCabinet | null {
+  return catalog.find((candidate) => Math.abs(dim(candidate.width, 0) - width) <= COLLISION_EPSILON_IN) ?? null;
+}
+
 export function planAutoDesignBaseSegment(input: {
   length: number; catalog: DesignCabinet[]; rangeAtStart: boolean; rangeAtEnd: boolean;
 }): { items: FillItem[]; note: string | null } {
+  const widths = input.catalog.map((candidate) => dim(candidate.width, 0)).filter((width) => width > 0);
+  const solved = searchFewestFillerOpening({ lengthIn: input.length, widthsIn: widths, layer: "base", movementLimitIn: 0 });
+  if (solved && solved.covered) {
+    const items: FillItem[] = [];
+    let missing = false;
+    for (const width of solved.cabinetWidths) {
+      const cabinet = catalogCabinetForWidth(input.catalog, width);
+      if (!cabinet) { missing = true; break; }
+      items.push({ cabinet, width, isFiller: false });
+    }
+    if (!missing && solved.fillerWidth && solved.fillerWidth > 0) {
+      items.push({ cabinet: makeFiller(solved.fillerWidth, "base"), width: solved.fillerWidth, isFiller: true });
+    }
+    const besideOk = !input.rangeAtStart && !input.rangeAtEnd || (
+      (!input.rangeAtStart || (items[0] && !items[0].isFiller && items[0].width >= RANGE_NEIGHBOR_MIN_WIDTH_IN - COLLISION_EPSILON_IN))
+      && (!input.rangeAtEnd || (items[items.length - 1] && !items[items.length - 1]!.isFiller && items[items.length - 1]!.width >= RANGE_NEIGHBOR_MIN_WIDTH_IN - COLLISION_EPSILON_IN))
+    );
+    if (!missing && items.length && besideOk) return { items, note: null };
+  }
   const free = autoFillSpan(input.length, "kitchen", input.catalog, { strategy: "largest-first" });
   const arrange = (items: FillItem[]): FillItem[] => {
     const cabinets = items.filter((item) => !item.isFiller).sort((a, b) => b.width - a.width);

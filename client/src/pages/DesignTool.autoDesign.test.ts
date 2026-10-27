@@ -67,10 +67,14 @@ describe("admin auto-design Designer wiring", () => {
   });
 
   it("offers a left or right sink-adjacent dishwasher choice when no exact center is entered", () => {
-    expect(dialogSource).toContain("Dishwasher position");
+    expect(dialogSource).toContain("Dishwasher side");
+    expect(dialogSource).toContain("Left of sink");
+    expect(dialogSource).toContain("Right of sink");
     expect(dialogSource).toContain("Left of sink");
     expect(dialogSource).toContain("Right of sink");
     expect(dialogSource).toContain("dishwasherSide");
+    expect(pageSource).toContain("data-testid=\"dishwasher-side-control\"");
+    expect(pageSource).toContain("dishwasherSide: dishwasherSidePreference");
     expect(dialogSource).toContain("Optional exact dishwasher center");
   });
 

@@ -112,6 +112,7 @@ interface Props {
     lightRail?: boolean;
     valance?: boolean;
     qty?: Partial<Record<string, number>>;
+    dishwasherSide?: "left" | "right" | null;
   } | null;
   // Contact email for the designer (from the email gate / signed-in user). Used
   // to associate the saved plan with the correct CRM contact.
@@ -168,6 +169,7 @@ interface Props {
       batten?: boolean;
       lightRail?: boolean;
       valance?: boolean;
+      dishwasherSide?: "left" | "right" | null;
     } | null;
   }) => void;
 }
@@ -996,6 +998,7 @@ export function DesignActions({
                                 batten?: boolean;
                                 lightRail?: boolean;
                                 valance?: boolean;
+                                dishwasherSide?: "left" | "right" | null;
                               } | null }).trimSettings ?? null,
                               threeDPresentation: (d as { threeDPresentation?: {
                                 cabinetFinish?: string;
