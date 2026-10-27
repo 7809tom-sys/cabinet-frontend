@@ -63,6 +63,7 @@ import IncomingOrdersAdmin from "@/components/admin/IncomingOrdersAdmin";
 import { DesignerCoverageAdmin } from "@/components/admin/DesignerCoverageAdmin";
 import { AdminTabHelp } from "@/components/admin/AdminTabHelp";
 import ApprovedVendorsAdmin from "@/components/admin/ApprovedVendorsAdmin";
+import VendorReferralsAdmin from "@/components/admin/VendorReferralsAdmin";
 import PelicanCatalogAdmin from "@/components/admin/PelicanCatalogAdmin";
 import { AnalyticsAdmin } from "@/components/admin/AnalyticsAdmin";
 import FullDatabaseExport from "@/components/admin/FullDatabaseExport";
@@ -133,6 +134,7 @@ const GROUPS = [
       { value: "pros", label: "Pro Applications" },
       { value: "vendors", label: "Vendors" },
       { value: "approved-vendors", label: "Approved Vendors" },
+      { value: "vendor-referrals", label: "Vendor Referrals" },
     ],
   },
   {
@@ -548,6 +550,7 @@ export default function AdminGroupedTabs() {
         <TabsContent value="pros" className="mt-6"><AdminTabHelp tab="pros" /><ProApplications /></TabsContent>
         <TabsContent value="vendors" className="mt-6"><AdminTabHelp tab="vendors" /><VendorApplications /></TabsContent>
         <TabsContent value="approved-vendors" className="mt-6"><ApprovedVendorsAdmin /></TabsContent>
+        <TabsContent value="vendor-referrals" className="mt-6"><VendorReferralsAdmin /></TabsContent>
 
         {/* Products & Catalog */}
         <TabsContent value="cabinets" className="mt-6 space-y-8"><AdminTabHelp tab="cabinets" /><GenericCabinetsAdmin /><CabinetSpreadsheetAdmin /><CabinetLineDownload /></TabsContent>
