@@ -1,3 +1,5 @@
+import { catalogCodeLookup, CATALOG_SEARCH_RANK } from "./catalogCodeSearch";
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Cabinet code matching (OCR photo-to-cart)
 //
@@ -17,6 +19,14 @@ export interface CatalogEntry {
   masterCode: string;
   description: string;
   category: string;
+  replacementMasterCode?: string | null;
+  aliases?: readonly string[] | string | null;
+  aliasCodes?: readonly string[] | string | null;
+  sku?: string | null;
+  vendorSku?: string | null;
+  altSku1?: string | null;
+  altSku2?: string | null;
+  altSku3?: string | null;
 }
 
 export interface ExtractedCode {
@@ -56,6 +66,7 @@ export function matchCabinetCodes(
     if (!byNorm.has(n)) byNorm.set(n, c);
   }
   const normKeys = Array.from(byNorm.keys());
+  const aliasLookup = catalogCodeLookup(catalog);
 
   const out: MatchResult[] = [];
   for (const item of extracted) {
@@ -69,19 +80,38 @@ export function matchCabinetCodes(
     const norm = normalizeCode(raw);
 
     // 1 & 2: exact / normalized are the same after normalization.
+    // A current item code still wins. Alias codes, and a row whose
+    // ReplacementMasterCode points at a different master, resolve below.
     const direct = byNorm.get(norm);
-    if (direct) {
+    const replacement = normalizeCode(direct?.replacementMasterCode ?? "");
+    const directIsCurrent = direct != null && (!replacement || replacement === normalizeCode(direct.masterCode));
+    const aliasHit = aliasLookup.get(norm);
+    const pushMatch = (hit: CatalogEntry, confidence: MatchConfidence) => {
       out.push({
         rawCode: raw,
         quantity: qty,
         matched: true,
-        confidence: normalizeCode(direct.masterCode) === norm ? "exact" : "normalized",
-        cabinetId: direct.id,
-        masterCode: direct.masterCode,
-        description: direct.description,
-        category: direct.category,
+        confidence,
+        cabinetId: hit.id,
+        masterCode: hit.masterCode,
+        description: hit.description,
+        category: hit.category,
         candidates: [],
       });
+    };
+    if (direct && directIsCurrent) {
+      pushMatch(direct, normalizeCode(direct.masterCode) === norm ? "exact" : "normalized");
+      continue;
+    }
+    if (aliasHit) {
+      const hit = catalog[aliasHit.recordIndex];
+      if (hit) {
+        pushMatch(hit, aliasHit.rank === CATALOG_SEARCH_RANK.exactItem ? "exact" : "normalized");
+        continue;
+      }
+    }
+    if (direct) {
+      pushMatch(direct, normalizeCode(direct.masterCode) === norm ? "exact" : "normalized");
       continue;
     }
 

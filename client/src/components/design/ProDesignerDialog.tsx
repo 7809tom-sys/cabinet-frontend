@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { CalendarCheck, Video, Phone, MapPin, Loader2, CheckCircle2, UserRound } from "lucide-react";
+import { readReferralCode } from "@/hooks/useReferral";
 
 type Props = {
   open: boolean;
@@ -23,6 +24,8 @@ type Props = {
   defaultPhone?: string;
   designId?: number | null;
   designName?: string | null;
+  /** /store/:slug scope. The server resolves this slug; it is not an affiliate id. */
+  affiliateSlug?: string | null;
 };
 
 const MODE_ICON: Record<string, React.ReactNode> = {
@@ -44,6 +47,7 @@ export function ProDesignerDialog({
   defaultPhone,
   designId,
   designName,
+  affiliateSlug,
 }: Props) {
   const { t } = useLanguage();
   const [selectedSlotId, setSelectedSlotId] = useState<number | null>(null);
@@ -229,6 +233,8 @@ export function ProDesignerDialog({
                     topic: topic.trim() || undefined,
                     designId: designId ?? undefined,
                     designName: designName ?? undefined,
+                    affiliateSlug: affiliateSlug ?? undefined,
+                    referralCode: readReferralCode() ?? undefined,
                   })
                 }
               >

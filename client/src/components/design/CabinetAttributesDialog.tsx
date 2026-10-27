@@ -33,6 +33,10 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import {
+  CATALOG_SUBCATEGORY_TRIM_AND_MOULDING,
+  isTrimAndMouldingSubcategory,
+} from "@shared/catalogCategorySpelling";
+import {
   PlacedCabinet,
   type CabinetHardwarePosition,
   hasDoorSwing,
@@ -1128,7 +1132,7 @@ export function CabinetAttributesDialog({
               <div className="space-y-1">
                 <Label className="text-[11px] text-muted-foreground">Sub-Category</Label>
                 <Select
-                  value={cabinet.subCategory ?? "__none__"}
+                  value={isTrimAndMouldingSubcategory(cabinet.subCategory) ? CATALOG_SUBCATEGORY_TRIM_AND_MOULDING : (cabinet.subCategory ?? "__none__")}
                   onValueChange={(val) => onSetCategory(uid, cabinet.category ?? "Base", val === "__none__" ? null : val)}
                 >
                   <SelectTrigger className="h-8 text-sm">
@@ -1151,7 +1155,7 @@ export function CabinetAttributesDialog({
                     <SelectItem value="Glass Door">Glass Door</SelectItem>
                     <SelectItem value="Decorative End Panel">Decorative End Panel</SelectItem>
                     <SelectItem value="Roll-Out Tray">Roll-Out Tray</SelectItem>
-                    <SelectItem value="Trim & Molding">Trim &amp; Molding</SelectItem>
+                    <SelectItem value={CATALOG_SUBCATEGORY_TRIM_AND_MOULDING}>Trim &amp; Moulding</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

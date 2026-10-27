@@ -158,7 +158,9 @@ export default function CustomersAdmin() {
                 <AlertDialogDescription>
                   This permanently deletes all {total} member account{total === 1 ? "" : "s"} that are not admins,
                   along with their carts, saved designs, and order history. Admin accounts are kept.
-                  Use this to clear out test sign-ups. This cannot be undone.
+                  This button has no keep list and can remove real customers, affiliates, and orders.
+                  It does not use CRM Cleanup. Prefer People → CRM Cleanup, which previews an editable keep list and deletes only a confirmed snapshot.
+                  Use this only to clear out test sign-ups. This cannot be undone.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>

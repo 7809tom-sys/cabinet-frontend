@@ -15,6 +15,11 @@ import {
   PELICAN_STOREFRONT_CATEGORIES,
   pelicanCategoryLabel,
 } from "@/lib/pelican";
+import {
+  alternateCatalogMouldingSpelling,
+  canonicalMouldingLabel,
+  catalogCategoryValuesEqual,
+} from "@shared/catalogCategorySpelling";
 import { ArrowLeft, Search, Star, ChevronLeft, ChevronRight, Waves } from "lucide-react";
 
 const PAGE_SIZE = 24;
@@ -69,9 +74,24 @@ export default function SurfacesCategory({ slug, affiliateSlug }: { slug: string
     [category, debounced, subCategory, page, affiliateSlug]
   );
 
-  const { data, isLoading, error } = trpc.pelican.byCategory.useQuery(input, {
+  const alternateSubCategory = alternateCatalogMouldingSpelling(subCategory);
+  const primaryQuery = trpc.pelican.byCategory.useQuery(input, {
     enabled: !!category,
   });
+  const alternateQuery = trpc.pelican.byCategory.useQuery(
+    { ...input, subCategory: alternateSubCategory ?? undefined },
+    {
+      enabled: !!category
+        && !!alternateSubCategory
+        && primaryQuery.isSuccess
+        && (primaryQuery.data?.total ?? 0) === 0,
+    },
+  );
+  const data = (primaryQuery.data?.total ?? 0) > 0 || !(alternateQuery.data?.total)
+    ? primaryQuery.data
+    : alternateQuery.data;
+  const isLoading = primaryQuery.isLoading || ((primaryQuery.data?.total ?? 0) === 0 && alternateQuery.isFetching);
+  const error = primaryQuery.error ?? alternateQuery.error;
 
   if (!category) {
     return (
@@ -155,15 +175,15 @@ export default function SurfacesCategory({ slug, affiliateSlug }: { slug: string
                 <Button
                   key={sc}
                   size="sm"
-                  variant={subCategory === sc ? "default" : "outline"}
-                  className="h-7"
-                  onClick={() => {
-                    setSubCategory(sc);
-                    setPage(0);
-                  }}
-                >
-                  {sc}
-                </Button>
+                variant={catalogCategoryValuesEqual(subCategory, sc) ? "default" : "outline"}
+                className="h-7"
+                onClick={() => {
+                  setSubCategory(sc);
+                  setPage(0);
+                }}
+              >
+                {canonicalMouldingLabel(sc)}
+              </Button>
               ))}
             </div>
           )}

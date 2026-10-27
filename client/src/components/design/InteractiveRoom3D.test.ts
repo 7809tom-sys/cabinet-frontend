@@ -2311,6 +2311,12 @@ describe("interactive 3D room scene helpers", () => {
     expect(filteredThreeDCatalogItems(catalog, "Base", "")).toHaveLength(13);
     expect(filteredThreeDCatalogItems(catalog, "Tall", "pantry").map((item) => item.masterCode)).toEqual(["P-24"]);
     expect(filteredThreeDCatalogItems(catalog, "Base", "b2").map((item) => item.masterCode)).toContain("B-24");
+    const withAlias = [
+      ...catalog,
+      { id: 99, masterCode: "BT9", description: "Tray base", category: "Cabinet" as const, catalogGroup: "Base" as const, aliases: "B9; BFH9; BT-09; BT09; BSR9; FHB09; FHBO9; TBO9; FH9" },
+    ];
+    expect(filteredThreeDCatalogItems(withAlias, "Base", "FH9").map((item) => item.masterCode)).toEqual(["BT9"]);
+    expect(filteredThreeDCatalogItems(withAlias, "All", "BT-09").map((item) => item.masterCode)).toEqual(["BT9"]);
   });
 
   it("keeps the Add from catalog category choices at a fixed visible touch height", () => {

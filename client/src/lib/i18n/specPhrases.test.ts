@@ -86,6 +86,13 @@ describe("translateSpec", () => {
     expect(out).toContain("Spline");
   });
 
+  it("translates both crown moulding spellings", () => {
+    expect(translateSpec("Crown Moulding", "es")).toBe("Moldura de Corona");
+    expect(translateSpec("Crown Molding", "es")).toBe("Moldura de Corona");
+    expect(translateSpec("Angle Crown Moulding", "es")).toBe("Moldura de Corona Angular");
+    expect(translateSpec("Angle Crown Molding", "es")).toBe("Moldura de Corona Angular");
+  });
+
   it("translates single door / left-right hand designations", () => {
     const out = translateSpec('33" Single Tall Door Vanity Cabinet Left', "es");
     expect(out).toContain("Izquierda");

@@ -491,6 +491,13 @@ export function OrderReview({ lines, source, onLinesChange, onReset, initialStyl
     (priceQuery.data?.prices ?? []).forEach((p) => m.set(p.cabinetId, p.unitPrice));
     return m;
   }, [priceQuery.data]);
+  const promoMap = useMemo(() => {
+    const m = new Map<number, { promoName: string; originalUnitPrice: number }>();
+    (priceQuery.data?.prices ?? []).forEach((p) => {
+      if (p.promoName && p.originalUnitPrice != null) m.set(p.cabinetId, { promoName: p.promoName, originalUnitPrice: p.originalUnitPrice });
+    });
+    return m;
+  }, [priceQuery.data]);
   // Owner-only wholesale-floor cost per cabinet (server returns null for non-admins).
   const costMap = useMemo(() => {
     const m = new Map<number, number | null>();
@@ -508,9 +515,10 @@ export function OrderReview({ lines, source, onLinesChange, onReset, initialStyl
       const unitCost =
         l.matched && l.cabinetId != null ? costMap.get(l.cabinetId) ?? null : null;
       const lineCost = unitCost != null ? Number((unitCost * l.qty).toFixed(2)) : null;
-      return { ...l, unitPrice: unit, linePrice, unitCost, lineCost };
+      const promo = l.cabinetId != null ? promoMap.get(l.cabinetId) : undefined;
+      return { ...l, unitPrice: unit, linePrice, unitCost, lineCost, promoName: promo?.promoName ?? null, originalUnitPrice: promo?.originalUnitPrice ?? null };
     });
-  }, [lines, priceMap, costMap]);
+  }, [lines, priceMap, costMap, promoMap]);
 
   const total = pricedLines.reduce((sum, l) => sum + (l.linePrice ?? 0), 0);
   const hasOnlyTemporaryFreeShippingItems = useMemo(
@@ -1020,7 +1028,11 @@ export function OrderReview({ lines, source, onLinesChange, onReset, initialStyl
                   </div>
                 </TableCell>
                 <TableCell className="text-right text-sm tabular-nums">
+                  {l.originalUnitPrice != null && l.promoName && (
+                    <div className="text-[11px] text-muted-foreground line-through">${l.originalUnitPrice.toFixed(2)}</div>
+                  )}
                   {l.unitPrice != null ? `$${l.unitPrice.toFixed(2)}` : <span className="text-muted-foreground">—</span>}
+                  {l.promoName && <div className="text-[11px] font-medium text-red-700">{l.promoName}</div>}
                 </TableCell>
                 <TableCell className="text-right text-sm font-medium tabular-nums">
                   {l.linePrice != null ? `$${l.linePrice.toFixed(2)}` : <span className="text-muted-foreground">—</span>}
