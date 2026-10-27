@@ -31,6 +31,8 @@ type CabinetQuickViewDialogProps = {
   styleId?: number | null;
   open: boolean;
   accessoryLoading?: boolean;
+  /** Affiliate (or other scoped) product URL. Falls back to the platform catalog. */
+  detailHref?: string;
   onOpenChange: (open: boolean) => void;
   onSelectCabinet: (cabinet: QuickViewCabinet) => void;
 };
@@ -51,6 +53,7 @@ export function CabinetQuickViewDialog({
   styleId,
   open,
   accessoryLoading = false,
+  detailHref,
   onOpenChange,
   onSelectCabinet,
 }: CabinetQuickViewDialogProps) {
@@ -58,9 +61,9 @@ export function CabinetQuickViewDialog({
 
   const configuration = cabinetConfigurationSummary(cabinet);
   const accessoryOptions = suggestedAccessoryOptions(cabinet, catalogItems);
-  const productHref = styleId
+  const productHref = detailHref ?? (styleId
     ? `/catalog/${cabinet.masterCode}?style=${styleId}`
-    : `/catalog/${cabinet.masterCode}`;
+    : `/catalog/${cabinet.masterCode}`);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

@@ -27,6 +27,17 @@ import { useLanguage } from "@/contexts/LanguageContext";
 import { useSeo } from "@/hooks/useSeo";
 import { translateSpec } from "@/lib/i18n/specPhrases";
 import { canonicalMouldingLabel, isCatalogMouldingCategory } from "@shared/catalogCategorySpelling";
+import { affiliateCabinetDetailHref } from "@/lib/affiliateCabinetDetailRoute";
+import {
+  affiliateCatalogIndexPath,
+  affiliateFamilyPath,
+  affiliateStylesPath,
+  catalogSearchWithStyle,
+  catalogSearchWithoutBrowse,
+  overlayAffiliateStyle,
+  styleIdFromSearch,
+  type AffiliateFamilyOverlay,
+} from "@/lib/affiliateBrowse";
 
 // ─── Category presentation config ──────────────────────────────────────────────
 // Maps DB category values to a room-scene image + short description. Categories
@@ -104,11 +115,13 @@ interface CabinetItem extends CabinetLike {
   glassIncluded?: boolean | null;
 }
 
-function CabinetCard({ cabinet, styleId, distributorLabel, onQuickView }: { cabinet: CabinetItem; styleId?: number | null; distributorLabel?: string | null; onQuickView: (cabinet: CabinetItem) => void }) {
+function CabinetCard({ cabinet, styleId, distributorLabel, affiliateSlug, onQuickView }: { cabinet: CabinetItem; styleId?: number | null; distributorLabel?: string | null; affiliateSlug?: string; onQuickView: (cabinet: CabinetItem) => void }) {
   const { t, lang } = useLanguage();
   const href = styleId
-    ? `/catalog/${cabinet.masterCode}?style=${styleId}`
-    : `/catalog/${cabinet.masterCode}`;
+    ? affiliateCabinetDetailHref({ slug: affiliateSlug, masterCode: cabinet.masterCode, styleId, cabinetId: cabinet.id })
+    : affiliateSlug
+      ? `/store/${affiliateSlug}/catalog/${encodeURIComponent(cabinet.masterCode)}`
+      : `/catalog/${cabinet.masterCode}`;
   return (
     <article className="cabinet-card group overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-primary/30" data-testid="catalog-cabinet-card">
       <Link href={href} className="block cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
@@ -188,8 +201,14 @@ function CabinetCard({ cabinet, styleId, distributorLabel, onQuickView }: { cabi
 
 function CategoryLanding({
   onSearch,
+  affiliateSlug,
+  familiesById,
+  familiesReady,
 }: {
   onSearch: (term: string) => void;
+  affiliateSlug?: string;
+  familiesById?: Map<number, AffiliateFamilyOverlay>;
+  familiesReady?: boolean;
 }) {
   const { t } = useLanguage();
   const [term, setTerm] = useState("");
@@ -212,13 +231,16 @@ function CategoryLanding({
     const map = new Map<string, FeaturedStyle>();
     // Only feature styles that have a REAL verified room-scene photo, so every
     // tile shows the style's own name-matched scene (never a guessed bucket).
-    for (const s of (styles ?? []) as FeaturedStyle[]) {
+    if (affiliateSlug && !familiesReady) return [];
+    for (const raw of (styles ?? []) as FeaturedStyle[]) {
+      if (affiliateSlug && familiesById && !familiesById.has(raw.id)) continue;
+      const s = overlayAffiliateStyle(raw, familiesById?.get(raw.id));
       if (!s.roomSceneImageUrl) continue;
       const key = (s.ourName || s.styleCode || String(s.id)).toLowerCase();
       if (!map.has(key)) map.set(key, s);
     }
     return Array.from(map.values()).slice(0, 6);
-  }, [styles]);
+  }, [affiliateSlug, familiesById, familiesReady, styles]);
 
   return (
     <div>
@@ -261,7 +283,7 @@ function CategoryLanding({
           {t("cat_shop_by_style")}
         </h2>
         <Link
-          href="/styles"
+          href={affiliateStylesPath(affiliateSlug)}
           className="text-sm font-medium text-primary hover:underline inline-flex items-center gap-1"
         >
           {t("cat_view_all_styles")} <ChevronRight className="h-4 w-4" />
@@ -277,7 +299,7 @@ function CategoryLanding({
             // Prefer aliasName (CD_STANDARDS white-label), then the authored
             // feature label and code. No generic family or finish name is added.
             label: styleDisplayName(s) || s.featuredLabel || s.styleCode,
-            href: `/family/${encodeURIComponent(s.styleCode)}`,
+            href: affiliateFamilyPath(affiliateSlug, s.styleCode),
             // A tile is allowed only when the supplied record includes this
             // style's actual room scene—never a stock substitute.
             image: s.roomSceneImageUrl as string,
@@ -421,27 +443,29 @@ function CatalogBrowseSidebar({
 function CategoryView({
   category,
   search,
+  styleId,
+  onStyleChange,
   onBack,
   onSearchChange,
+  affiliateSlug,
+  familiesById,
+  familiesReady,
 }: {
   category: string | null;
   search: string;
+  styleId: number | null;
+  onStyleChange: (styleId: number | null) => void;
   onBack: () => void;
   onSearchChange: (term: string) => void;
+  affiliateSlug?: string;
+  familiesById?: Map<number, AffiliateFamilyOverlay>;
+  familiesReady?: boolean;
 }) {
   const { t } = useLanguage();
   const [debouncedSearch, setDebouncedSearch] = useState(search);
   const [offset, setOffset] = useState(0);
-  // Cabinet availability is per door style: the shopper must pick a style
-  // before any cabinets are shown, so the catalog matches the Design Tool.
-  // A ?style=<id> URL param preselects it (deep-linking from a style page).
-  const initialStyle = (() => {
-    if (typeof window === "undefined") return null;
-    const v = new URLSearchParams(window.location.search).get("style");
-    const n = v ? Number(v) : NaN;
-    return Number.isFinite(n) ? n : null;
-  })();
-  const [styleId, setStyleId] = useState<number | null>(initialStyle);
+  // Cabinet availability is per door style. The selected line lives in the
+  // URL (?style=) so changing it cannot be pinned by state that was read once.
   const [browseFilters, setBrowseFilters] = useState<BrowseFilters>({
     color: null,
     construction: "all",
@@ -477,9 +501,11 @@ function CategoryView({
   const allStyleOptions = useMemo(() => {
     type S = CatalogStyleFacet;
     return ((styles ?? []) as S[])
+      .filter((style) => !affiliateSlug || (familiesReady && familiesById?.has(style.id)))
+      .map((style) => overlayAffiliateStyle(style, familiesById?.get(style.id)))
       .map((s) => ({ ...s, label: styleDisplayName(s) || s.styleCode }))
       .sort((a, b) => a.label.localeCompare(b.label));
-  }, [styles]);
+  }, [affiliateSlug, familiesById, familiesReady, styles]);
   const styleOptions = useMemo(
     () => filterCatalogStyles(allStyleOptions, browseFilters) as Array<CatalogStyleFacet & { label: string }>,
     [allStyleOptions, browseFilters],
@@ -488,11 +514,13 @@ function CategoryView({
   const selectedStyleLabel =
     styleOptions.find((s) => s.id === styleId)?.label ?? null;
 
+  const stylesReady = styles != null && (!affiliateSlug || familiesReady);
   useEffect(() => {
+    if (!stylesReady) return;
     if (styleId != null && !styleOptions.some((style) => style.id === styleId)) {
-      setStyleId(null);
+      onStyleChange(null);
     }
-  }, [styleId, styleOptions]);
+  }, [onStyleChange, styleId, styleOptions, stylesReady]);
 
   // Resolve the distributor label for the currently selected style (admin only)
   const selectedDistributorLabel = useMemo(() => {
@@ -523,6 +551,7 @@ function CategoryView({
       sort: browseFilters.sort,
       limit: LIMIT,
       offset,
+      affiliateSlug,
     },
     { enabled: styleId != null }
   );
@@ -535,6 +564,7 @@ function CategoryView({
       limit: 1000,
       offset: 0,
       sort: "sku-asc",
+      affiliateSlug,
     },
     { enabled: styleId != null && quickViewCabinet != null },
   );
@@ -631,10 +661,11 @@ function CategoryView({
         <p className="text-xs text-muted-foreground mb-3">
           {t("cat_door_style_help")}
         </p>
-        <select
+          <select
           id="catalog-door-style"
+          aria-label={styleId ? "Change line" : t("cat_door_style_label")}
           value={styleId ?? ""}
-          onChange={(e) => setStyleId(e.target.value ? Number(e.target.value) : null)}
+          onChange={(e) => onStyleChange(e.target.value ? Number(e.target.value) : null)}
           className="w-full max-w-md rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
         >
           <option value="">{t("cat_select_style_option")}</option>
@@ -718,6 +749,7 @@ function CategoryView({
               cabinet={cabinet as CabinetItem}
               styleId={styleId}
               distributorLabel={selectedDistributorLabel}
+              affiliateSlug={affiliateSlug}
               onQuickView={setQuickViewCabinet}
             />
           ))}
@@ -756,6 +788,14 @@ function CategoryView({
         cabinet={quickViewCabinet}
         catalogItems={(quickViewCatalogItems.length > 0 ? quickViewCatalogItems : items) as CabinetItem[]}
         styleId={styleId}
+        detailHref={styleId && quickViewCabinet
+          ? affiliateCabinetDetailHref({
+              slug: affiliateSlug,
+              masterCode: quickViewCabinet.masterCode,
+              styleId,
+              cabinetId: quickViewCabinet.id,
+            })
+          : undefined}
         open={quickViewCabinet != null}
         accessoryLoading={isQuickViewCatalogLoading}
         onOpenChange={(open) => {
@@ -771,53 +811,94 @@ function CategoryView({
 
 // ─── Main Catalog page ────────────────────────────────────────────────────────
 
-export default function Catalog() {
+export default function Catalog({ affiliateSlug, embedded = false }: { affiliateSlug?: string; embedded?: boolean } = {}) {
   const { t, lang } = useLanguage();
-  useSeo({ title: t("seo_catalog_t"), description: t("seo_catalog_d"), lang });
+  const affiliate = trpc.affiliates.bySlug.useQuery(
+    { slug: affiliateSlug ?? "" },
+    { enabled: Boolean(affiliateSlug), staleTime: 60_000 },
+  );
+  const families = trpc.storefront.families.useQuery(
+    { slug: affiliateSlug },
+    { enabled: Boolean(affiliateSlug), staleTime: 60_000 },
+  );
+  const familiesById = useMemo(() => {
+    const map = new Map<number, AffiliateFamilyOverlay>();
+    for (const row of families.data ?? []) {
+      map.set(row.styleId, {
+        styleId: row.styleId,
+        name: row.name,
+        styleCode: row.styleCode,
+        roomSceneImageUrl: row.roomSceneImageUrl,
+        doorSampleImageUrl: row.doorSampleImageUrl,
+      });
+    }
+    return map;
+  }, [families.data]);
+  const familiesReady = !affiliateSlug || families.data != null;
+  useSeo({
+    title: t("seo_catalog_t"),
+    description: t("seo_catalog_d"),
+    lang,
+    siteName: affiliate.data?.storeName || undefined,
+    appendSiteName: !affiliateSlug,
+    skip: embedded,
+  });
   const searchStr = useSearch();
   const [, navigate] = useLocation();
+  const base = affiliateCatalogIndexPath(affiliateSlug);
   const params = new URLSearchParams(searchStr);
-  const initialCategory = params.get("category");
+  const category = params.get("category");
+  const styleId = styleIdFromSearch(searchStr);
+  const urlQuery = params.get("q") ?? "";
+  const [search, setSearch] = useState(urlQuery);
+  const showResults = Boolean(category || urlQuery || styleId);
 
-  // null = show landing tiles; string = show that category; "" sentinel handled via state
-  const [category, setCategory] = useState<string | null>(initialCategory);
-  const [showResults, setShowResults] = useState<boolean>(!!initialCategory);
-  const [search, setSearch] = useState("");
-
-  // Keep state in sync if the URL ?category= changes (e.g. from a breadcrumb link).
   useEffect(() => {
-    const cat = new URLSearchParams(searchStr).get("category");
-    if (cat) {
-      setCategory(cat);
-      setShowResults(true);
-    }
-  }, [searchStr]);
+    setSearch(urlQuery);
+  }, [urlQuery]);
 
   const goToSearch = (term: string) => {
-    setCategory(null);
-    setSearch(term);
-    setShowResults(true);
-    navigate(`/catalog`);
+    const next = new URLSearchParams(searchStr);
+    next.delete("category");
+    next.delete("style");
+    if (term.trim()) next.set("q", term.trim());
+    else next.delete("q");
+    const qs = next.toString();
+    setSearch(term.trim());
+    navigate(`${base}${qs ? `?${qs}` : ""}`);
   };
 
   const backToLanding = () => {
-    setCategory(null);
     setSearch("");
-    setShowResults(false);
-    navigate(`/catalog`);
+    navigate(`${base}${catalogSearchWithoutBrowse(searchStr)}`);
+  };
+
+  const onStyleChange = (nextStyleId: number | null) => {
+    const next = catalogSearchWithStyle(searchStr, nextStyleId);
+    navigate(`${base}${next}`);
   };
 
   return (
-    <div className="container py-8">
+    <div className="container py-8" data-testid={affiliateSlug ? "affiliate-catalog" : "platform-catalog"}>
       {showResults ? (
         <CategoryView
           category={category}
           search={search}
+          styleId={styleId}
+          onStyleChange={onStyleChange}
           onBack={backToLanding}
           onSearchChange={setSearch}
+          affiliateSlug={affiliateSlug}
+          familiesById={familiesById}
+          familiesReady={familiesReady}
         />
       ) : (
-        <CategoryLanding onSearch={goToSearch} />
+        <CategoryLanding
+          onSearch={goToSearch}
+          affiliateSlug={affiliateSlug}
+          familiesById={familiesById}
+          familiesReady={familiesReady}
+        />
       )}
     </div>
   );
