@@ -20,7 +20,7 @@ import {
   type DoorPanelKind,
   countertopMaterial,
   isOnIsland, placedFootprint, bearsIslandCountertop,
-  isSinkBaseCabinet, isFarmerSinkBase, isBlindCorner, resolveSwing, resolveCabinetHardwarePosition,
+  isSinkBaseCabinet, isFarmerSinkBase, isBlindCorner, blindCornerSwingForView, resolveSwing, resolveCabinetHardwarePosition,
   isRangeOrOven, isStacker, wallCabinetTopLine, isCounterHeightIslandWallCabinet, islandWallCabinetBaseTreatment, isLightRailEligibleCabinet, usesRaisedFloorWallDoorPull,
 	  DEFAULT_CEILING_HEIGHT,
 	  type IslandZone, type IslandFace,
@@ -484,7 +484,10 @@ export function IslandElevationView({
       ? { doors: farmhouseFace.doorCount, drawers: 0 }
       : configuredDisplayCounts;
     const isBlind = isBlindCorner(p.masterCode, p.description);
-    const blindLeft = isBlind ? (isWallBlindCornerCabinet(p) || cabPosAlong <= 2) : true;
+    const islandDoorSide = isBlind ? blindCornerSwingForView(p, room, cabinets) : null;
+    const blindLeft = isBlind
+      ? (islandDoorSide ? islandDoorSide === "right" : (isWallBlindCornerCabinet(p) || cabPosAlong <= 2))
+      : true;
 
     return (
       <div

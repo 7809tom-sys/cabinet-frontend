@@ -1,7 +1,7 @@
 import { buildRequiredBlindCornerFiller, requiresConfiguredBlindCornerFiller } from "./blindCornerRequiredFiller";
 import type { CatalogFillerCandidate } from "./catalogFiller";
 import {
-  BLIND_CORNER_FILLER_WIDTH_IN, COLLISION_EPSILON_IN, appendCollisionFreePlacements, blindCornerPullPlacement,
+  BLIND_CORNER_FILLER_WIDTH_IN, COLLISION_EPSILON_IN, appendCollisionFreePlacements, blindCornerDoorSide, blindCornerPullPlacement, isBlindCorner,
   cabinetCollisionDetail, cabinetPlacementCollisionDetail, cabinetWall, dim, footprintDepth, formatInches, freeSegmentsOnWall, hasCollision,
   isRangeOrOven, isRefrigerator, isRefrigeratorEndPanel, refrigeratorEndPanelConflictDetail, standardHeight,
   wallLength, wallPlacementAtUnbounded, wallRunAlongAtPoint, wallRunCornerPlacement, wallRunFrame, wallRunOffset,
@@ -164,6 +164,10 @@ export function seatFourAnchorCorner(input: {
       const pulled = blindCornerPullPlacement(corner, room, input.blindPullIn ?? 6);
       if (!pulled) return { ok: false, message: `${code} must use its Cabinet Config pull range at ${slotLabel}.` };
       corner = { ...corner, ...pulled };
+    }
+    if (isBlindCorner(code, source.description ?? undefined)) {
+      const swing = blindCornerDoorSide(corner, room, working);
+      if (swing) corner = { ...corner, swing };
     }
     const cornerHit = cabinetPlacementCollisionDetail(corner, working, room);
     if (cornerHit) return { ok: false, message: "blocked", blocker: cornerHit.cabinet };

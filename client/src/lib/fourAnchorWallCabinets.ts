@@ -9,7 +9,7 @@ import type { CatalogFillerCandidate } from "./catalogFiller";
 import {
   COLLISION_EPSILON_IN, WALL_OPENING_CLEARANCE_IN, appendCollisionFreePlacements,
   cabinetPlacementCollisionDetail, cabinetWall, dim, footprintDepth, formatInches, freeSegmentsOnWall,
-  isBaseBlindCorner, isCornerCabinet, isPanelItem, isRangeOrOven, isRefrigerator, isSinkBaseCabinet, normalizeBlindCornerDoorSides,
+  isBaseBlindCorner, isCornerCabinet, isPanelItem, isRangeOrOven, isRefrigerator, isSinkBaseCabinet, assignBlindCornerDoorSides,
   ordinaryWallMountBottom, wallCeilingMin, wallPlacementAt, wallRunCornerPlacement, wallRunFrame, wallRunJoinAt, wallRunOffset,
   wallRunSpan, type DesignCabinet, type PlacedCabinet, type RoomData, type WallOpening, type WallRunFrame,
 } from "./design";
@@ -409,7 +409,7 @@ export function buildFourAnchorWallCabinets(input: {
     }
   }
   // A wall blind corner exposes the door away from its blind side.
-  working = normalizeBlindCornerDoorSides(working, room);
+  working = assignBlindCornerDoorSides(working, room);
   const uids = new Set(additions.map((item) => item.uid));
   return { placed: working, additions: working.filter((item) => uids.has(item.uid)), skipped, heightUsedIn };
 }
