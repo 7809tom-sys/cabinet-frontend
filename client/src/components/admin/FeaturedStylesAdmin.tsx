@@ -353,6 +353,7 @@ function EditDialog({ style, open, onClose, onSaved }: EditDialogProps) {
   const [cornerSwatchImageUrl, setCornerSwatchImageUrl] = useState(style.cornerSwatchImageUrl ?? "");
   const [styleVerified, setStyleVerified] = useState(style.styleVerified !== false && style.styleVerified !== 0);
   const [styleSourceNote, setStyleSourceNote] = useState(style.styleSourceNote ?? "");
+  const frameSourceRef = useRef<HTMLInputElement>(null);
   const [newSceneUrl, setNewSceneUrl] = useState("");
   const [newSceneSourceNote, setNewSceneSourceNote] = useState("");
 
@@ -423,7 +424,8 @@ function EditDialog({ style, open, onClose, onSaved }: EditDialogProps) {
     : hasRailText || hasStileText
       ? "partial"
       : "blank";
-  const hasFrameCitation = sourceSpecification.trim().length > 0;
+  const effectiveFrameCitation = sourceSpecification.trim() || styleSourceNote.trim();
+  const hasFrameCitation = effectiveFrameCitation.length > 0;
   const designerFrameReady = frameEntryStatus === "complete" && hasFrameCitation;
 
   function handleSave() {
@@ -435,8 +437,11 @@ function EditDialog({ style, open, onClose, onSaved }: EditDialogProps) {
       toast.error("Rail and stile measurements must be positive values in inches");
       return;
     }
-    if (frameEntryStatus === "complete" && !sourceSpecification.trim()) {
-      toast.error("A source citation is required before a frame can render in Designer");
+    if (frameEntryStatus === "complete" && !effectiveFrameCitation) {
+      toast.error("Enter an Official frame source citation (in the profile section) before saving rail and stile widths");
+      const frameSourceInput = frameSourceRef.current ?? document.getElementById("ed-frame-source");
+      frameSourceInput?.scrollIntoView({ block: "center" });
+      frameSourceInput?.focus();
       return;
     }
     const flatFreightValue = flatFreightDollars.trim();
@@ -482,7 +487,7 @@ function EditDialog({ style, open, onClose, onSaved }: EditDialogProps) {
       finishSheen,
       profileNotes: profileNotes.trim() || null,
       profileDescription: profileDescription.trim() || null,
-      sourceSpecification: sourceSpecification.trim() || null,
+      sourceSpecification: effectiveFrameCitation || null,
       styleVerified,
       styleSourceNote: styleSourceNote.trim() || null,
     } as Parameters<typeof update.mutate>[0]);
@@ -789,6 +794,7 @@ function EditDialog({ style, open, onClose, onSaved }: EditDialogProps) {
               <Label htmlFor="ed-frame-source">Official frame source citation</Label>
               <Input
                 id="ed-frame-source"
+                ref={frameSourceRef}
                 value={sourceSpecification}
                 onChange={(event) => setSourceSpecification(event.target.value)}
                 placeholder="e.g. Skyline 2026 Slim Shaker catalog — exact style code SS-DW"

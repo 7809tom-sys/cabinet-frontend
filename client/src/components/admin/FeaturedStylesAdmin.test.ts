@@ -50,9 +50,20 @@ describe("FeaturedStylesAdmin room-scene libraries", () => {
 		it("requires an exact official citation before a complete frame can render", () => {
 		  expect(adminSource).toContain("Official frame source citation");
 		  expect(adminSource).toContain("Source citation needed");
-		  expect(adminSource).toContain("A source citation is required before a frame can render in Designer");
+		  expect(adminSource).toContain("Enter an Official frame source citation (in the profile section) before saving rail and stile widths");
 		  expect(adminSource).toContain("exact supplier style code");
-		  expect(adminSource).toContain("sourceSpecification: sourceSpecification.trim() || null");
+		  expect(adminSource).toContain("sourceSpecification: effectiveFrameCitation || null");
+		  expect(adminSource).toContain('document.getElementById("ed-frame-source")');
+		  expect(adminSource).toContain('scrollIntoView({ block: "center" })');
+		  expect(adminSource).toContain("frameSourceInput?.focus()");
+		});
+
+		it("uses the image source note as the frame citation when the official citation is empty", () => {
+		  expect(adminSource).toContain("const effectiveFrameCitation = sourceSpecification.trim() || styleSourceNote.trim()");
+		  expect(adminSource).toContain("const hasFrameCitation = effectiveFrameCitation.length > 0");
+		  expect(adminSource).toContain('frameEntryStatus === "complete" && !effectiveFrameCitation');
+		  expect(adminSource).toContain("styleSourceNote: styleSourceNote.trim() || null");
+		  expect(adminSource).not.toContain("A source citation is required before a frame can render in Designer");
 		});
 
 	it("keeps the Door Style editor within the viewport while its contents scroll internally", () => {
