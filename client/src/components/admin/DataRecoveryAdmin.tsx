@@ -17,6 +17,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CabinetConfigHistoryPanel } from "@/components/admin/CabinetConfigHistoryPanel";
 import { DatabaseBackup, ImageIcon, RotateCcw, Save, ShieldCheck, History, AlertTriangle } from "lucide-react";
+import { catalogItemMatchesCode } from "@shared/catalogCodeSearch";
 
 const fmt = (v: unknown): string => {
   if (v === null || v === undefined || v === "") return "—";
@@ -61,7 +62,7 @@ export function DataRecoveryAdmin() {
     const list = scan.data?.cabinets ?? [];
     const q = filter.trim().toUpperCase();
     return list.filter((c) => {
-      if (q && !c.masterCode.toUpperCase().includes(q) && !(c.description ?? "").toUpperCase().includes(q)) return false;
+      if (q && !catalogItemMatchesCode(c, filter) && !c.masterCode.toUpperCase().includes(q) && !(c.description ?? "").toUpperCase().includes(q)) return false;
       if (onlyProblems && !c.detailsLost && !c.imageCandidates.some((i) => !i.isCurrent)) return false;
       return true;
     });

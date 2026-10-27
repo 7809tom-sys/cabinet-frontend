@@ -20,6 +20,7 @@ import { useWhiteLabelHead } from "@/hooks/useWhiteLabelHead";
 import { StorefrontEmbed } from "@/components/storefront/StorefrontEmbed";
 import type { AffiliateStorefrontTemplate } from "@shared/affiliateStorefrontTemplates";
 import { affiliateDashboardPath } from "@/lib/affiliateStorefrontUrl";
+import { storefrontCssVars } from "@shared/affiliateStorefrontControls";
 
 const PLATFORM_NAVY = "#1a2b4a";
 const PLATFORM_GOLD = "#c9a227";
@@ -180,9 +181,9 @@ export default function Storefront({ slug, previewData, focusShop = false }: { s
   const heroImg = data.heroImageUrl || KITCHEN_SCENES["shaker-white"];
   // New storefront-specific fields take precedence, while existing affiliates
   // retain their already-published contact information without a forced update.
-  const storefrontPhone = data.publicPhone || data.phone;
-  const storefrontEmail = data.publicEmail || data.email;
-  const storefrontLocation = data.publicAddress || data.serviceArea || data.location;
+  const storefrontPhone = data.showPublicPhone ? data.publicPhone : null;
+  const storefrontEmail = data.showPublicEmail ? data.publicEmail : null;
+  const storefrontLocation = data.showPublicAddress ? data.publicAddress : data.serviceArea;
 
   const valueProps = [
     { icon: Ruler, title: t("value_free_design"), sub: t("value_free_design_sub") },
@@ -241,7 +242,7 @@ export default function Storefront({ slug, previewData, focusShop = false }: { s
   );
 
   return (
-    <div className="min-h-screen flex flex-col bg-background">
+    <div className="min-h-screen flex flex-col bg-background" style={{ ...storefrontCssVars(data), background: "var(--sf-bg, transparent)", color: "var(--sf-text, inherit)", fontFamily: "var(--sf-font-body, inherit)" }}>
       {/* ─── Header + Hero (varies by template) ──────────────────────────── */}
       {template === "classic" && (
         <ClassicHeader {...{ data: localizedData, brand, t, withRef, headlineFont, LangToggle, Logo }} />
@@ -454,6 +455,9 @@ export default function Storefront({ slug, previewData, focusShop = false }: { s
             <div>
               <div className={`${headlineFont} text-xl font-bold text-white mb-3`}>{data.storeName}</div>
               {localizedData.aboutText && <p className="text-sm leading-relaxed mb-4">{localizedData.aboutText}</p>}
+              {data.footerText && <p className="text-sm leading-relaxed mb-4">{data.footerText}</p>}
+              {/* Placeholder only. After frontend #22 merges, render StorefrontSocialIcons here and do not keep a second icon row. */}
+              <div data-testid="social-links-slot" />
               <div className="flex gap-3">
                 {data.facebookUrl && (
                   <a href={data.facebookUrl} target="_blank" rel="noreferrer" className="hover:text-white">

@@ -1,3 +1,4 @@
+import { catalogCodeLookup, CATALOG_SEARCH_RANK, normalizeCatalogCode } from "./catalogCodeSearch";
 // ─── Cabinet code matching ─────────────────────────────────────────────────────
 // Trade buyers reference cabinets by shorthand that varies wildly across quotes,
 // spreadsheets, and handwritten lists (e.g. "B24", "b-24", "DB24-3", "W 30 30",
@@ -10,6 +11,16 @@ export type CabinetCodeRecord = {
   masterCode: string;
   description?: string | null;
   category?: string | null;
+  /** Spreadsheet ReplacementMasterCode. A filled value means this row resolves to that master. */
+  replacementMasterCode?: string | null;
+  /** Semicolon-separated Aliases cell or a list of alternate codes. */
+  aliases?: readonly string[] | string | null;
+  aliasCodes?: readonly string[] | string | null;
+  sku?: string | null;
+  vendorSku?: string | null;
+  altSku1?: string | null;
+  altSku2?: string | null;
+  altSku3?: string | null;
 };
 
 export type CodeMatch = {
@@ -148,7 +159,8 @@ export function buildCodeIndex(records: CabinetCodeRecord[]) {
     list.push(r);
     byCanon.set(key, list);
   }
-  return { byExact, byCanon };
+  const catalogLookup = catalogCodeLookup(records);
+  return { byExact, byCanon, catalogLookup, records };
 }
 
 // Match a single raw code against the index.
@@ -172,7 +184,36 @@ export function matchCode(
   // master spelling before any normalized alias: records such as W2430 and
   // W-2430 can legitimately coexist on source-specific lines, and reducing
   // both to W2430 makes a valid Cart line look ambiguous at Order Review.
+  // A row that names a ReplacementMasterCode is no longer the current item.
   const exactRaw = index.byExact.get(raw.toUpperCase());
+  const catalogHit = index.catalogLookup.get(canonicalize(raw));
+  const exactRawIsCurrent = exactRaw != null && (
+    !normalizeCatalogCode(exactRaw.replacementMasterCode)
+    || normalizeCatalogCode(exactRaw.replacementMasterCode) === normalizeCatalogCode(exactRaw.masterCode)
+  );
+  if (exactRaw && exactRawIsCurrent) {
+    return {
+      ...base,
+      cabinetId: exactRaw.id,
+      masterCode: exactRaw.masterCode,
+      description: exactRaw.description ?? null,
+      matched: true,
+      confidence: "exact",
+    };
+  }
+  if (catalogHit) {
+    const record = index.records[catalogHit.recordIndex];
+    if (record) {
+      return {
+        ...base,
+        cabinetId: record.id,
+        masterCode: record.masterCode,
+        description: record.description ?? null,
+        matched: true,
+        confidence: catalogHit.rank === CATALOG_SEARCH_RANK.exactItem ? "exact" : "normalized",
+      };
+    }
+  }
   if (exactRaw) {
     return {
       ...base,

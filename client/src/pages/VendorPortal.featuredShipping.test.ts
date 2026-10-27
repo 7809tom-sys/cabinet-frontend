@@ -4,6 +4,13 @@ import { readFileSync } from "node:fs";
 const source = readFileSync(new URL("./VendorPortal.tsx", import.meta.url), "utf8");
 
 describe("Vendor Portal Featured Styles and Shipping", () => {
+  it("removes the 3D Designer Picks tab, nav entry, and route", () => {
+    expect(source).not.toContain("3D Designer Picks");
+    expect(source).not.toContain('id: "picks"');
+    expect(source).not.toContain("DesignToolPicksPage");
+    expect(source).toContain('get("section") === "picks"');
+  });
+
   it("adds separately reachable Featured Styles and Shipping portal pages", () => {
     expect(source).toContain('id: "featured-styles", label: "Featured Styles"');
     expect(source).toContain('id: "shipping", label: "Shipping"');
@@ -170,7 +177,9 @@ describe("Vendor Portal Featured Styles and Shipping", () => {
     // A profile-only vendor stays on Supplier Profile. The one deliberate exception
     // is an approved Pelican vendor, which has no cabinet line but owns its catalog,
     // shipping and fulfillment pages.
-    expect(source).toContain('page={supplierProfileOnly ? "supplier-profile" : isPelicanVendor && !PELICAN_NAV_IDS.has(page) ? "overview" : page}');
+    expect(source).toContain('page={catalogIdentityPending ? page : supplierProfileOnly ? "supplier-profile" : isPelicanVendor && !PELICAN_NAV_IDS.has(page) ? "overview" : page}');
+    expect(source).toContain("portalSectionAfterVendorSwitch");
+    expect(source).toContain("catalogIdentityPending");
     expect(source).toContain("const supplierProfileOnly = Boolean(\n    !isPelicanVendor");
     expect(source).toContain('item.id === "supplier-profile"');
     expect(source).toContain("Pending source-line link");
@@ -187,6 +196,9 @@ describe("Vendor Portal Featured Styles and Shipping", () => {
   it("lets an administrator switch only between a supplier profile's explicitly linked catalog lines", () => {
     const profile = source.slice(source.indexOf("function SupplierProfilePage"), source.indexOf("function VendorProfileCatalogPanel"));
     expect(profile).toContain("const linkedLines = profile.data.linkedDistributors ?? []");
+    expect(profile).toContain('user?.role === "distributor"');
+    expect(profile).toContain('aria-label="Your product lines"');
+    expect(source).toContain('aria-label="Signed-in catalog lines"');
     expect(profile).toContain("Switch supplier catalog line");
     expect(profile).toContain("Framed and Frameless stay separate catalog, pricing, and order lines.");
     expect(profile).toContain("linkedLines.some((candidate) => candidate.id === id)");
