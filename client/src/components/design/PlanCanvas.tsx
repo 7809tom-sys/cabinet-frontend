@@ -32,6 +32,7 @@ import { crownTopRuns, formatCrownTop } from "@/lib/crownTopRuns";
 import { verifiedPelicanBathroomFixtureProfile } from "@/lib/pelicanBathroomFixtureProfiles";
 import type { BathroomZoneOverlapWarning } from "@/lib/bathroomPlanning";
 import type { AutoDesignWallGuide } from "@/lib/autoDesignAutoBuild";
+import { clampSinkDragForFaucet, resolveDeckFaucetPlacement } from "@/lib/faucetPlacement";
 
 export type PlanCabinetRenderFrame = {
   lockedAngledRun: boolean;
@@ -538,6 +539,11 @@ export function PlanCanvas({
   const snapshotRoom = countertopGeometry?.room ?? room;
   const snapshotCabinets = countertopGeometry?.cabinets ?? cabinets;
   const snapshotIsland = countertopGeometry ? countertopGeometry.island : island;
+  const faucetCountertops = useMemo(
+    () => countertopSurfaces(snapshotCabinets, snapshotRoom, snapshotIsland, ponyWalls),
+    [snapshotCabinets, snapshotRoom, snapshotIsland, ponyWalls],
+  );
+  const [faucetDragWarning, setFaucetDragWarning] = useState<{ uid: string; message: string } | null>(null);
   const countertopShapes = useMemo(() => {
     if (!countertopMaterialId) return [] as CountertopSurface[];
     const geometryIsland = snapshotIsland;
@@ -700,9 +706,21 @@ export function PlanCanvas({
     if (!dgr || !onMoveSink) return;
     const dx = (e.clientX - dgr.startX) / ppiRef.current;
     const dy = (e.clientY - dgr.startY) / ppiRef.current;
-    const x = Math.max(0, Math.min(dgr.origX + dx, room.width - dgr.w));
-    const y = Math.max(0, Math.min(dgr.origY + dy, room.depth - dgr.d));
-    onMoveSink(dgr.uid, x, y);
+    const sink = sinks.find((item) => item.uid === dgr.uid);
+    if (!sink) return;
+    const clamped = clampSinkDragForFaucet(
+      { ...sink, x: dgr.origX, y: dgr.origY },
+      { x: dgr.origX + dx, y: dgr.origY + dy },
+      snapshotRoom,
+      openings,
+      faucetCountertops,
+    );
+    if (clamped.blocked) {
+      setFaucetDragWarning(clamped.warning ? { uid: sink.uid, message: clamped.warning } : null);
+      return;
+    }
+    setFaucetDragWarning(null);
+    onMoveSink(dgr.uid, clamped.x, clamped.y);
   };
   const onSinkPointerUp = (e: React.PointerEvent) => {
     if (sinkDrag.current) {
@@ -2037,6 +2055,8 @@ export function PlanCanvas({
           const isSel = s.uid === selectedSinkUid;
           const verticalWall = s.wallSide === "left" || s.wallSide === "right";
           const isAttachedStandardSink = Boolean(s.cabinetUid && s.frontSetbackIn != null && !s.apronFront);
+          const faucetPlacement = s.faucet ? resolveDeckFaucetPlacement(s, snapshotRoom, openings, faucetCountertops) : null;
+          const faucetWarning = faucetPlacement?.warning ?? (faucetDragWarning?.uid === s.uid ? faucetDragWarning.message : null);
           return (
             <div
               key={s.uid}
@@ -2092,6 +2112,11 @@ export function PlanCanvas({
               {s.faucetDeckConflict === "shallow-countertop-deck" && (
                 <span data-testid={`sink-faucet-deck-conflict-${s.uid}`} role="alert" className="absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2 whitespace-nowrap rounded bg-rose-700 px-1 py-0.5 text-[8px] font-bold text-white shadow">
                   REAR DECK TOO SHALLOW
+                </span>
+              )}
+              {faucetWarning && (
+                <span data-testid={`faucet-window-conflict-${s.uid}`} role="alert" className="absolute left-1/2 top-full z-20 mt-1 w-44 -translate-x-1/2 rounded bg-amber-800 px-1.5 py-1 text-center text-[8px] font-bold leading-tight text-white shadow">
+                  {faucetWarning}
                 </span>
               )}
             </div>

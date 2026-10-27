@@ -111,6 +111,8 @@ export type VerifiedSurfaceSelectionRecord = {
   subCategory?: string | null;
   size?: string | null;
   materialImageUrl?: string | null;
+  /** Catalog picture. Kept when a tile or mosaic has no approved swatch. */
+  imageUrl?: string | null;
   coverageSqFt?: string | number | null;
   description?: string | null;
   sellPrice: number | null;
@@ -124,6 +126,7 @@ type RefreshableSurfaceSelection = {
   subCategory?: string | null;
   size?: string | null;
   materialImageUrl?: string | null;
+  imageUrl?: string | null;
   coverageSqFt?: number | null;
   description?: string | null;
   piecesPerBox?: number | null;
@@ -145,6 +148,7 @@ export function refreshVerifiedSurfaceSelections<T extends RefreshableSurfaceSel
       return { ...selection, sellPrice: null, materialImageUrl: null } as T;
     }
     const description = record.description ?? selection.description ?? null;
+    const imageUrl = record.imageUrl?.trim() || selection.imageUrl || null;
     const fieldCoverage = Number(record.coverageSqFt);
     const structuredCoverage = Number.isFinite(fieldCoverage) && fieldCoverage > 0 ? fieldCoverage : null;
     const facts = flooringCartonFacts({
@@ -162,6 +166,7 @@ export function refreshVerifiedSurfaceSelections<T extends RefreshableSurfaceSel
       subCategory: record.subCategory ?? null,
       size: record.size ?? null,
       materialImageUrl: record.materialImageUrl?.trim() || null,
+      imageUrl,
       description,
       coverageSqFt: facts ? facts.sqFtPerBox : structuredCoverage,
       piecesPerBox: facts ? facts.piecesPerBox : selection.piecesPerBox ?? null,
@@ -174,6 +179,7 @@ export function refreshVerifiedSurfaceSelections<T extends RefreshableSurfaceSel
       next.subCategory === (selection.subCategory ?? null) &&
       next.size === (selection.size ?? null) &&
       next.materialImageUrl === (selection.materialImageUrl ?? null) &&
+      next.imageUrl === (selection.imageUrl ?? null) &&
       next.description === (selection.description ?? null) &&
       next.coverageSqFt === (selection.coverageSqFt ?? null) &&
       next.piecesPerBox === (selection.piecesPerBox ?? null) &&

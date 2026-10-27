@@ -5,7 +5,7 @@ import {
   buildAuditDoor,
   configureDoorAuditSampleTexture,
 } from "./doorAuditDoorRender";
-import type { DoorAuditRenderInput } from "./doorRenderingAudit";
+import { normalizeDoorAuditStartRun, type DoorAuditRenderInput } from "./doorRenderingAudit";
 
 function input(profile: DoorAuditRenderInput["doorProfile"]): Pick<DoorAuditRenderInput, "doorProfile" | "color" | "samplePhotoUrl"> {
   return { doorProfile: profile, color: "#f7f4ee", samplePhotoUrl: null };
@@ -69,6 +69,43 @@ describe("audit door construction", () => {
     expect(glass.userData.auditDoorKind).toBe("glass");
     expect(glass.children.some((child) => child.userData.glassCenter)).toBe(true);
     expect(glass.children.some((child) => child.userData.auditDoorSlab)).toBe(false);
+  });
+
+  it("renders a selected-run style from the backend profile field", () => {
+    const run = normalizeDoorAuditStartRun({
+      runId: 15,
+      status: "awaiting_renders",
+      scope: "selected",
+      styles: [{
+        styleId: 41,
+        styleCode: "SW-41",
+        ourName: "Summit White Shaker",
+        distributorName: "Summit Cabinets",
+        samplePhotoUrl: null,
+        color: "#f4f1ea",
+        profile: {
+          doorStyle: "Shaker",
+          doorPanelType: null,
+          railWidth: "3",
+          stileWidth: "3",
+          panelConstruction: "flat",
+          bevelWidth: null,
+          bevelDepth: null,
+          insideEdgeProfile: null,
+          drawerFrontType: null,
+          grainDirection: "vertical",
+          finishSheen: "satin",
+        },
+      }],
+    });
+    const door = buildAuditDoor(run.styles[0], null);
+    expect(door.userData.auditDoorKind).toBe("shaker");
+    expect(run.styles[0]?.doorProfile.finishSheen).toBe("satin");
+  });
+
+  it("reports a missing profile instead of reading a property of undefined", () => {
+    expect(() => buildAuditDoor({ color: "#fff", samplePhotoUrl: null, name: "Summit White Shaker" }, null))
+      .toThrow(/Summit White Shaker is missing its door profile/);
   });
 
   it("crops a sample photo to the designer center grain", () => {

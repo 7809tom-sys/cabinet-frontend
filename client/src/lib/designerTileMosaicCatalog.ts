@@ -9,9 +9,9 @@
  * selectable without a swatch and render a labeled neutral preview; tile and
  * mosaic follow that same commercial rule here.
  *
- * Catalog photography stays on the product card. It is never promoted to a 3D
- * texture. `isPelicanDesignerReady` on the server should remain the gate for an
- * exact material render.
+ * Catalog photography stays on the product card and is also the 3D backsplash
+ * texture when the row has no approved repeatable swatch. The Designer tiles
+ * that picture at the product's sheet size instead of substituting a generic tile.
  */
 
 export const TILE_MOSAIC_CATEGORY = "Tile & Mosaic";

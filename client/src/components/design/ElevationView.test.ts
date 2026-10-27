@@ -93,6 +93,51 @@ import { CustomProfileFace, DoorFront, ElevationView, isBaseEndAngleCabinet, isR
 		    expect(markup).toMatch(/data-testid="elevation-backsplash-segment"[^>]*data-backsplash-field-coverage="supported"[^>]*left:0;width:96px/);
 		  });
 
+		  it("tiles a selected catalog mosaic picture at its sheet size instead of the preset subway pattern", () => {
+		    const image = "/manus-storage/pelican/364_moonstone.png";
+		    const markup = renderToStaticMarkup(
+		      createElement(LanguageProvider, null, createElement(ElevationView, {
+		        room: { width: 120, depth: 96, ceilingHeight: 96 },
+		        cabinets: [{
+		          uid: "bbc-adjacent-base", cabinetId: 86, masterCode: "B24", description: '24" Base Cabinet',
+		          placement: "base", x: 0, y: 0, width: 24, height: 34.5, depth: 24, rotation: 0,
+		          numberOfDoors: 1, numberOfDrawers: 1,
+		        }],
+		        selectedUid: null, onSelect: () => undefined, wall: "back",
+		        backsplashMaterialId: "white-subway",
+		        backsplashImageUrl: image,
+		        backsplashProductName: "Moonstone Hex",
+		        backsplashProductSize: '11.81" x 11.81"',
+		      })),
+		    );
+		    expect(markup).toContain(`data-backsplash-image="${image}"`);
+		    expect(markup).toContain('data-backsplash-module-in="11.81"');
+		    expect(markup).toContain(`background-image:url(&quot;${image}&quot;)`);
+		    expect(markup).toContain("background-size:47.24px 47.24px");
+		    expect(markup).not.toContain("data:image/svg+xml");
+		    expect(markup).not.toContain('data-testid="elevation-backsplash-image-warning"');
+		  });
+
+		  it("warns instead of drawing a substitute tile when the selected backsplash has no picture", () => {
+		    const markup = renderToStaticMarkup(
+		      createElement(LanguageProvider, null, createElement(ElevationView, {
+		        room: { width: 120, depth: 96, ceilingHeight: 96 },
+		        cabinets: [{
+		          uid: "bbc-adjacent-base", cabinetId: 86, masterCode: "B24", description: '24" Base Cabinet',
+		          placement: "base", x: 0, y: 0, width: 24, height: 34.5, depth: 24, rotation: 0,
+		          numberOfDoors: 1, numberOfDrawers: 1,
+		        }],
+		        selectedUid: null, onSelect: () => undefined, wall: "back",
+		        backsplashMaterialId: "white-subway",
+		        backsplashProductName: "PL-O2519WBS",
+		      })),
+		    );
+		    expect(markup).toContain('data-testid="elevation-backsplash-image-warning"');
+		    expect(markup).toContain("No product image is available for PL-O2519WBS");
+		    expect(markup).toContain("background:#f6e7c1");
+		    expect(markup).not.toContain("data:image/svg+xml");
+		  });
+
 		  it("repairs a legacy bridge-linked refrigerator cap filler before rendering its exact over-fridge envelope", () => {
 		    const markup = renderToStaticMarkup(
 		      createElement(LanguageProvider, null, createElement(ElevationView, {

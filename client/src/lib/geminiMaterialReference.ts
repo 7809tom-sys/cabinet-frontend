@@ -9,16 +9,21 @@ export function geminiMaterialReference(entry: {
   label: string;
   itemIds: string[];
   referenceUrl: string | null | undefined;
+  /** Extra instruction kept in the audit details. Not a separate wire field. */
+  fidelityNote?: string;
 }): GeminiMaterialManifestEntry {
   const referenceUrl = entry.referenceUrl?.trim() || null;
   const referenceSource = referenceUrl ? "catalog-image" : "locked-designer-jpeg";
+  const fidelityNote = entry.fidelityNote?.trim();
+  const manifestEntry = { ...entry };
+  delete manifestEntry.fidelityNote;
   return serializeGeminiMaterialManifestForWire([{
-    ...entry,
+    ...manifestEntry,
     referenceUrl,
     referenceSource,
     provenance: `${entry.role}: ${entry.label}`,
     provenanceDetails: referenceUrl
-      ? `${entry.role}: ${entry.label} [${entry.itemIds.join(", ")}] — supplied swatch`
+      ? `${entry.role}: ${entry.label} [${entry.itemIds.join(", ")}] — supplied swatch${fidelityNote ? `. ${fidelityNote}` : ""}`
       : `${entry.role}: ${entry.label} [${entry.itemIds.join(", ")}] — no swatch. Automatically render from the locked Designer image and saved description. Inferred appearance, not a verified product match.`,
   }])[0]!;
 }

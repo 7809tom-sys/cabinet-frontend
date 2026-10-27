@@ -1,77 +1,30 @@
 import { trpc } from "@/lib/trpc";
-import type {
-  DoorAuditFilter,
-  DoorAuditListResult,
-  DoorAuditRenderInput,
-  DoorAuditRunMode,
-  DoorAuditRunStatus,
-  DoorAuditRunSummary,
-  DoorAuditVersion,
+import {
+  doorAuditDecisionInput,
+  doorAuditRevertInput,
+  doorAuditStartRunInput,
+  doorAuditSubmitRenderInput,
+  normalizeDoorAuditList,
+  normalizeDoorAuditRunStatus,
+  normalizeDoorAuditRuns,
+  normalizeDoorAuditStartRun,
+  normalizeDoorAuditVersions,
+  type DoorAuditFilter,
+  type DoorAuditListResult,
+  type DoorAuditRunMode,
+  type DoorAuditRunStatus,
+  type DoorAuditRunSummary,
+  type DoorAuditStartRunResult,
+  type DoorAuditVersion,
 } from "@/lib/doorRenderingAudit";
 
 /**
- * `doorRenderingAudit` ships in the paired cabinet-backend PR. Cast until
- * AppRouter includes it. Every procedure is admin-only (`adminProcedure`).
- *
- * listStyles
- *   input: { filter: "all" | "flagged" | "furthest" | "unaudited"; search?: string }
- *   output: {
- *     styles: DoorAuditStyleRow[]
- *     counts: { all, flagged, furthest, unaudited }
- *     activeRun: DoorAuditRunStatus | null   // in-progress only
- *   }
- *   "flagged" = flag improved or needs-review.
- *   "furthest" = scored styles, lowest overall first (furthest from the photo).
- *   "unaudited" = no current render.
- *   Flag rule: improved when latest overall >= accepted overall + 1 and the
- *   latest version is not accepted or rejected. Otherwise a scored, unaccepted
- *   render needs review.
- *
- * startRun
- *   input: { mode: "all" | "changed-only" | "selected"; styleIds?: number[] }
- *   output: { runId: number; mode; status: "awaiting-renders"; styles: DoorAuditRenderInput[] }
- *   Re-run of one style is startRun { mode: "selected", styleIds: [styleId] }.
- *   changed-only is decided on the server (sample, color, or profile changed
- *   since the current render's sourceFingerprint).
- *
- * submitRender
- *   input: { runId, styleId, sourceFingerprint, pngBase64, width, height }
- *   pngBase64 is raw base64 (no data: prefix), image/png, max 8_000_000 chars.
- *   width/height are the locked capture size (720×1080).
- *   output: { versionId: number; status: "uploaded" }
- *
- * reportRenderFailure
- *   input: { runId, styleId, message: string }
- *   output: { ok: true }
- *   Called when this browser cannot capture that style, so the run can finish.
- *
- * runStatus
- *   input: { runId: number }
- *   output: DoorAuditRunStatus
- *   status: "awaiting-renders" | "scoring" | "complete" | "failed"
- *   pendingStyles lists renders still owed by the browser.
- *   Move to scoring when uploaded + failed === total. Gemini scores grain,
- *   color, texture/sheen, profile/edges, and overall.
- *
- * reviewRender
- *   input: { styleId, versionId, decision: "accept" | "reject" }
- *   output: { styleId, versionId, decision }
- *   accept makes that version the accepted baseline and the current render.
- *   reject marks the version rejected and leaves the accepted baseline in place.
- *
- * listRuns
- *   input: { limit?: number }  // default 20, max 50
- *   output: { runs: DoorAuditRunSummary[] }  // newest first
- *
- * listVersions
- *   input: { styleId: number }
- *   output: { versions: DoorAuditVersion[] }  // newest first
- *
- * setCurrentVersion
- *   input: { styleId: number; versionId: number }
- *   output: { styleId: number; currentVersionId: number }
- *   Makes a stored render current again ("Revert to previous" / "Use this version").
- *   Does not by itself change which version is the accepted baseline.
+ * Adapts cabinet-backend `doorRenderingAudit` (adminProcedure) to the screen.
+ * The router key is `doorRenderingAudit`. Wire names that differ from the screen:
+ *   listStyles, startRun({ scope }), submitRender({ imageBase64 }), runStatus,
+ *   decideRender, revertToVersion, runHistory, styleVersions, abandonRun.
+ * There is no reportRenderFailure procedure. A capture the browser cannot upload
+ * stops the open run with abandonRun so another run can start.
  */
 
 type QueryOpts<T> = {
@@ -88,90 +41,203 @@ type QueryResult<T> = {
   refetch: () => Promise<unknown>;
 };
 
-export function useDoorRenderingAuditApi() {
+type MutationResult<TInput, TOutput> = {
+  mutateAsync: (input: TInput) => Promise<TOutput>;
+  isPending: boolean;
+};
+
+type RawQuery = {
+  data?: unknown;
+  isLoading: boolean;
+  isFetching: boolean;
+  isError: boolean;
+  error: { message: string } | null;
+  refetch: () => Promise<unknown>;
+};
+
+type RawMutation = {
+  mutateAsync: (input: never) => Promise<unknown>;
+  isPending: boolean;
+};
+
+function rawApi() {
   return trpc as unknown as {
+    doorRenderingAudit: {
+      listStyles: {
+        useQuery: (input: { search?: string }, options?: object) => RawQuery;
+      };
+      startRun: { useMutation: () => RawMutation };
+      submitRender: { useMutation: () => RawMutation };
+      runStatus: {
+        useQuery: (input: { runId: number }, options?: object) => RawQuery;
+      };
+      decideRender: { useMutation: () => RawMutation };
+      revertToVersion: { useMutation: () => RawMutation };
+      runHistory: {
+        useQuery: (input: { limit?: number }, options?: object) => RawQuery;
+      };
+      styleVersions: {
+        useQuery: (input: { styleId: number }, options?: object) => RawQuery;
+      };
+      abandonRun: { useMutation: () => RawMutation };
+    };
+    useUtils: () => {
+      doorRenderingAudit: {
+        listStyles: { invalidate: () => Promise<void> };
+        runHistory: { invalidate: () => Promise<void> };
+        styleVersions: { invalidate: () => Promise<void> };
+        runStatus: { invalidate: () => Promise<void> };
+      };
+    };
+  };
+}
+
+function presentRunStatusQuery(options?: QueryOpts<DoorAuditRunStatus>): object | undefined {
+  if (!options?.refetchInterval || typeof options.refetchInterval !== "function") return options;
+  const refetchInterval = options.refetchInterval;
+  return {
+    ...options,
+    refetchInterval: (query: { state: { data?: unknown } }) => refetchInterval({
+      state: { data: normalizeDoorAuditRunStatus(query.state.data) ?? undefined },
+    }),
+  };
+}
+
+export function useDoorRenderingAuditApi() {
+  const api = rawApi();
+  return {
     doorRenderingAudit: {
       listStyles: {
         useQuery: (
           input: { filter: DoorAuditFilter; search?: string },
           options?: QueryOpts<DoorAuditListResult>,
-        ) => QueryResult<DoorAuditListResult>;
-      };
+        ): QueryResult<DoorAuditListResult> => {
+          const search = input.search?.trim();
+          const query = api.doorRenderingAudit.listStyles.useQuery(search ? { search } : {}, options);
+          return {
+            ...query,
+            data: query.data ? normalizeDoorAuditList(query.data) : undefined,
+          };
+        },
+      },
       startRun: {
-        useMutation: () => {
-          mutateAsync: (input: { mode: DoorAuditRunMode; styleIds?: number[] }) => Promise<{
-            runId: number;
-            mode: DoorAuditRunMode;
-            status: "awaiting-renders";
-            styles: DoorAuditRenderInput[];
-          }>;
-          isPending: boolean;
-        };
-      };
+        useMutation: (): MutationResult<{ mode: DoorAuditRunMode; styleIds?: number[] }, DoorAuditStartRunResult> => {
+          const mutation = api.doorRenderingAudit.startRun.useMutation();
+          return {
+            isPending: mutation.isPending,
+            mutateAsync: async (input) => normalizeDoorAuditStartRun(
+              await mutation.mutateAsync(doorAuditStartRunInput(input.mode, input.styleIds) as never),
+            ),
+          };
+        },
+      },
       submitRender: {
-        useMutation: () => {
-          mutateAsync: (input: {
-            runId: number;
-            styleId: number;
-            sourceFingerprint: string;
-            pngBase64: string;
-            width: number;
-            height: number;
-          }) => Promise<{ versionId: number; status: "uploaded" }>;
-          isPending: boolean;
-        };
-      };
-      reportRenderFailure: {
-        useMutation: () => {
-          mutateAsync: (input: { runId: number; styleId: number; message: string }) => Promise<{ ok: true }>;
-          isPending: boolean;
-        };
-      };
+        useMutation: (): MutationResult<{
+          runId: number;
+          styleId: number;
+          sourceFingerprint: string;
+          pngBase64: string;
+          width: number;
+          height: number;
+        }, { versionId?: number; status?: string }> => {
+          const mutation = api.doorRenderingAudit.submitRender.useMutation();
+          return {
+            isPending: mutation.isPending,
+            mutateAsync: async (input) => {
+              const result = await mutation.mutateAsync(doorAuditSubmitRenderInput(input) as never);
+              const record = result && typeof result === "object" ? result as { versionId?: number; status?: string } : {};
+              return { versionId: record.versionId, status: record.status };
+            },
+          };
+        },
+      },
       runStatus: {
         useQuery: (
           input: { runId: number },
           options?: QueryOpts<DoorAuditRunStatus>,
-        ) => QueryResult<DoorAuditRunStatus>;
-      };
+        ): QueryResult<DoorAuditRunStatus> => {
+          const query = api.doorRenderingAudit.runStatus.useQuery(input, presentRunStatusQuery(options));
+          return {
+            ...query,
+            data: query.data ? normalizeDoorAuditRunStatus(query.data) ?? undefined : undefined,
+          };
+        },
+      },
       reviewRender: {
-        useMutation: () => {
-          mutateAsync: (input: { styleId: number; versionId: number; decision: "accept" | "reject" }) => Promise<{
-            styleId: number;
-            versionId: number;
-            decision: "accept" | "reject";
-          }>;
-          isPending: boolean;
-        };
-      };
+        useMutation: (): MutationResult<{ styleId: number; versionId: number; decision: "accept" | "reject" }, {
+          styleId: number;
+          versionId: number;
+          decision: "accept" | "reject";
+        }> => {
+          const mutation = api.doorRenderingAudit.decideRender.useMutation();
+          return {
+            isPending: mutation.isPending,
+            mutateAsync: async (input) => {
+              await mutation.mutateAsync(doorAuditDecisionInput(input) as never);
+              return input;
+            },
+          };
+        },
+      },
       listRuns: {
         useQuery: (
           input: { limit?: number },
           options?: QueryOpts<{ runs: DoorAuditRunSummary[] }>,
-        ) => QueryResult<{ runs: DoorAuditRunSummary[] }>;
-      };
+        ): QueryResult<{ runs: DoorAuditRunSummary[] }> => {
+          const query = api.doorRenderingAudit.runHistory.useQuery(input, options);
+          return {
+            ...query,
+            data: query.data ? { runs: normalizeDoorAuditRuns(query.data) } : undefined,
+          };
+        },
+      },
       listVersions: {
         useQuery: (
           input: { styleId: number },
           options?: QueryOpts<{ versions: DoorAuditVersion[] }>,
-        ) => QueryResult<{ versions: DoorAuditVersion[] }>;
-      };
+        ): QueryResult<{ versions: DoorAuditVersion[] }> => {
+          const query = api.doorRenderingAudit.styleVersions.useQuery(input, options);
+          return {
+            ...query,
+            data: query.data ? { versions: normalizeDoorAuditVersions(query.data) } : undefined,
+          };
+        },
+      },
       setCurrentVersion: {
-        useMutation: () => {
-          mutateAsync: (input: { styleId: number; versionId: number }) => Promise<{
-            styleId: number;
-            currentVersionId: number;
-          }>;
-          isPending: boolean;
-        };
-      };
-    };
+        useMutation: (): MutationResult<{ styleId: number; versionId: number }, { styleId: number; currentVersionId: number }> => {
+          const mutation = api.doorRenderingAudit.revertToVersion.useMutation();
+          return {
+            isPending: mutation.isPending,
+            mutateAsync: async (input) => {
+              await mutation.mutateAsync(doorAuditRevertInput(input) as never);
+              return { styleId: input.styleId, currentVersionId: input.versionId };
+            },
+          };
+        },
+      },
+      abandonRun: {
+        useMutation: (): MutationResult<{ runId: number }, { runId: number }> => {
+          const mutation = api.doorRenderingAudit.abandonRun.useMutation();
+          return {
+            isPending: mutation.isPending,
+            mutateAsync: async (input) => {
+              await mutation.mutateAsync(input as never);
+              return { runId: input.runId };
+            },
+          };
+        },
+      },
+    },
     useUtils: () => {
-      doorRenderingAudit: {
-        listStyles: { invalidate: () => Promise<void> };
-        listRuns: { invalidate: () => Promise<void> };
-        listVersions: { invalidate: () => Promise<void> };
-        runStatus: { invalidate: () => Promise<void> };
+      const utils = api.useUtils();
+      return {
+        doorRenderingAudit: {
+          listStyles: { invalidate: () => utils.doorRenderingAudit.listStyles.invalidate() },
+          listRuns: { invalidate: () => utils.doorRenderingAudit.runHistory.invalidate() },
+          listVersions: { invalidate: () => utils.doorRenderingAudit.styleVersions.invalidate() },
+          runStatus: { invalidate: () => utils.doorRenderingAudit.runStatus.invalidate() },
+        },
       };
-    };
+    },
   };
 }
