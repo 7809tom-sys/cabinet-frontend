@@ -1,3 +1,5 @@
+import { hasAefPrintedGeometry } from "@shared/aefFramelessGeometry";
+import { AEF_SLAB_DOOR_THICKNESS_IN } from "./aefEndPanelStock";
 import { autoFillSpan } from "./autofill";
 import {
   SEAM_MIN_IN, findAutoDesignSeams, fillersForSeam, intersectWithCoverage, lowerCoverageOnWall, upperReservedZones,
@@ -60,8 +62,15 @@ export const AUTO_DESIGN_CORNER_UPPER_WIDTH_IN = 12;
  * and the neighbours stop 3 inches short of it. A window only counts as a sink
  * window when a sink base sits on the same wall under it.
  */
-function sinkWindowZones(placed: readonly PlacedCabinet[], openings: readonly WallOpening[], room: RoomData, wall: string): { s: number; e: number }[] {
+function sinkWindowZones(
+  placed: readonly PlacedCabinet[],
+  openings: readonly WallOpening[],
+  room: RoomData,
+  wall: string,
+  panelClearance = 0,
+): { s: number; e: number }[] {
   const sinks = placed.filter((item) => item.placement === "base" && isSinkBaseCabinet(item) && cabinetWall(item, room) === wall);
+  const clearance = WALL_OPENING_CLEARANCE_IN + panelClearance;
   return openings
     .filter((opening) => opening.kind === "window" && opening.side === wall
       && sinks.some((sink) => {
@@ -69,7 +78,7 @@ function sinkWindowZones(placed: readonly PlacedCabinet[], openings: readonly Wa
         const end = start + wallRunSpan(sink, wall, room);
         return start < opening.offset + opening.width - COLLISION_EPSILON_IN && end > opening.offset + COLLISION_EPSILON_IN;
       }))
-    .map((opening) => ({ s: opening.offset - WALL_OPENING_CLEARANCE_IN, e: opening.offset + opening.width + WALL_OPENING_CLEARANCE_IN }));
+    .map((opening) => ({ s: opening.offset - clearance, e: opening.offset + opening.width + clearance }));
 }
 
 /** The pieces of [start, end] left once the given zones are removed (pieces narrower than the smallest upper are dropped). */
@@ -146,6 +155,7 @@ export function buildAutoDesignWallCabinets(input: {
     cornerType: source.cornerType ?? null, fillerRequired: source.fillerRequired ?? false,
     pullMin: source.pullMin ?? null, pullMax: source.pullMax ?? null,
     catalogImageUrl: source.catalogImageUrl ?? null,
+    constructionMethod: source.constructionMethod ?? null,
     styleId: input.styleId,
   });
   const commit = (candidate: PlacedCabinet): boolean => {
@@ -314,7 +324,10 @@ export function buildAutoDesignWallCabinets(input: {
     // Beside a sink window the upper stops 3 inches short of the window, so only
     // the clear remainder of this lower's run is covered. Everywhere else the
     // whole run is one atomic projection, exactly as before.
-    const zones = sinkWindowZones(input.placed, openings, room, wall);
+    const windowPanelClearance = input.catalog.some((source) => hasAefPrintedGeometry(source))
+      ? AEF_SLAB_DOOR_THICKNESS_IN
+      : 0;
+    const zones = sinkWindowZones(input.placed, openings, room, wall, windowPanelClearance);
     const pieces = zones.length
       ? subtractZones(lowerStart, lowerStart + lowerSpan, zones).map((piece) => ({ start: piece.start, span: piece.end - piece.start }))
       : [{ start: lowerStart, span: lowerSpan }];

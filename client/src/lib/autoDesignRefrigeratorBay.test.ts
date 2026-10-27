@@ -132,6 +132,46 @@ describe("Auto-Design refrigerator cabinet above: always the 24-inch-deep refrig
     expect(result.additions[0].masterCode).toBe("W361224");
     expect(result.additions[0].mountBottom! + result.additions[0].height).toBeCloseTo(84, 1);
   });
+  it("pairs a frameless 40.25-inch wall with W362324 and does not take a shallower or shorter box", () => {
+    const caps = [
+      source({ id: 11, masterCode: "W3623", width: "36", height: "22.625", depth: "13.5" }),
+      source({ id: 12, masterCode: "W361824", width: "36", height: "17.625", depth: "24" }),
+      source({ id: 13, masterCode: "W362324", width: "36", height: "22.63", depth: "24" }),
+      source({ id: 14, masterCode: "W362424", width: "36", height: "24", depth: "24" }),
+    ];
+    const result = buildMandatoryAutoDesignRefrigeratorBay({
+      refrigerator: refrigerator(), room, caps, endPanels: [panel()], styleId: 9,
+      makeUid: () => "forty", wallCabinetHeightIn: 40.25,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.additions[0].masterCode).toBe("W362324");
+    expect(result.additions[0].depth).toBe(24);
+  });
+
+  it("does not substitute another height when the frameless 22.625 by 24-inch cap is missing", () => {
+    const result = buildMandatoryAutoDesignRefrigeratorBay({
+      refrigerator: refrigerator(), room,
+      caps: [source({ id: 15, masterCode: "W361824", width: "36", height: "18", depth: "24" })],
+      endPanels: [panel()], styleId: 9, makeUid: () => "missing", wallCabinetHeightIn: 40,
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  it("keeps a framed 42-inch wall on the 24-inch cap", () => {
+    const caps = [
+      source({ id: 16, masterCode: "W362324", width: "36", height: "22.625", depth: "24" }),
+      source({ id: 17, masterCode: "W362424", width: "36", height: "24", depth: "24" }),
+    ];
+    const result = buildMandatoryAutoDesignRefrigeratorBay({
+      refrigerator: refrigerator(), room, caps, endPanels: [panel()], styleId: 9,
+      makeUid: () => "framed", wallCabinetHeightIn: 42,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.additions[0].masterCode).toBe("W362424");
+  });
+
   it("on the real framed and frameless catalogs the cap is the 24-inch-deep refrigerator cabinet", () => {
     for (const style of ["330011", "540005"] as const) {
       const wall = (catalogFixture as unknown as Record<string, { wall: DesignCabinet[] }>)[style]!.wall;

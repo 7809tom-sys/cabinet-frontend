@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { AEF_PRINTED_GEOMETRY_MARKER } from "@shared/aefFramelessGeometry";
 import type { DesignCabinet } from "@/lib/design";
 import { catalogHeightOptions, filterCatalogByHeight, formatCatalogHeight, formatCatalogInchValue } from "./designToolCatalogHeights";
 
@@ -58,6 +59,17 @@ describe("compact designer catalog height selector", () => {
     expect(catalogHeightOptions([base, wall], "corner", (item) => item === base)).toEqual([
       { height: 42, count: 1, label: '42"' },
       { height: 34.5, count: 1, label: '34½"' },
+    ]);
+  });
+
+  it("lists a marked frameless W3623 at its printed 22.625-inch height", () => {
+    const frameless = {
+      ...cabinet("W3623", 22.63),
+      constructionMethod: AEF_PRINTED_GEOMETRY_MARKER,
+      depth: 13.5,
+    } as DesignCabinet;
+    expect(catalogHeightOptions([frameless], "wall")).toEqual([
+      { height: 22.625, count: 1, label: '22.63"' },
     ]);
   });
 

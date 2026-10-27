@@ -8130,8 +8130,12 @@ export function wallOpeningClearanceViolations(
       const oEnd = o.offset + o.width;
       // Gap between the cabinet span and the opening span along the run axis.
       // Negative gap means they overlap; positive means a clear distance.
+      // A frameless wall cabinet also keeps its 3/4" window end panel out of
+      // the opening. The extra is horizontal only; vertical window clearance
+      // stays the caller's value.
+      const panelClearance = o.kind === "window" && hasAefPrintedGeometry(p) ? STD.PANEL_THICKNESS : 0;
       const gap = Math.max(oStart - cEnd, cStart - oEnd);
-      if (gap < clearance - 0.01) {
+      if (gap < clearance + panelClearance - 0.01) {
         bad.add(p.uid);
         break;
       }
@@ -8428,9 +8432,18 @@ export function freeSegmentsOnWall(
   for (const o of openings) {
     if (o.side !== side) continue;
     if (!openingBlocksLayer(o)) continue;
+    // Frameless wall cabinets reserve the 3/4" end panel on a window side, on
+    // top of the caller's casing clearance. Framed cabinets and calls with no
+    // candidate keep the clearance they already passed.
+    const panelClearance = candidate
+      && candidate.placement === "wall"
+      && o.kind === "window"
+      && hasAefPrintedGeometry(candidate)
+      ? STD.PANEL_THICKNESS
+      : 0;
     blocked.push({
-      s: Math.max(wallStart, o.offset - openingClearance),
-      e: Math.min(wallEnd, o.offset + o.width + openingClearance),
+      s: Math.max(wallStart, o.offset - openingClearance - panelClearance),
+      e: Math.min(wallEnd, o.offset + o.width + openingClearance + panelClearance),
     });
   }
 
@@ -8480,6 +8493,9 @@ export function paletteActiveWallPlacement(
   depth: number,
   placement: Placement,
   reserveFullHeightAppliances = false,
+  // When this is a frameless wall cabinet, window segments also reserve the
+  // 3/4" end panel. Omitted for framed lines and for every floor placement.
+  candidate?: PlacedCabinet,
 ): { x: number; y: number; rotation: number; wallId?: string; wallOffset?: number } | null {
   // A selected peninsula is a compact work run, not a wall users should have
   // to manually nudge around. Find the first genuinely clear physical location
@@ -8496,7 +8512,7 @@ export function paletteActiveWallPlacement(
     placement === "wall" ? WALL_OPENING_CLEARANCE_IN : 0,
     placement,
     reserveFullHeightAppliances,
-    undefined,
+    candidate,
     depth,
   );
   // Work from the selected wall's visible left edge toward its right edge. A
@@ -8871,6 +8887,7 @@ export function alternateWallPlacementRecommendation(
   depth: number,
   placement: Placement,
   reserveFullHeightAppliances = false,
+  candidate?: PlacedCabinet,
 ): AlternateWallPlacementRecommendation | null {
   // A Continuous Wall Builder room uses its explicit connected segments as the
   // only real room walls. The rectangular width/depth bounds exist only to size
@@ -8888,6 +8905,7 @@ export function alternateWallPlacementRecommendation(
       depth,
       placement,
       reserveFullHeightAppliances,
+      candidate,
     );
     if (!spot) return [];
     const availableLength = freeSegmentsOnWall(
@@ -8899,7 +8917,7 @@ export function alternateWallPlacementRecommendation(
       placement === "wall" ? WALL_OPENING_CLEARANCE_IN : 0,
       placement,
       reserveFullHeightAppliances,
-      undefined,
+      candidate,
       depth,
     ).find((segment) => segment.length + 0.001 >= width)?.length;
     if (availableLength == null) return [];
@@ -14797,7 +14815,7 @@ function cabinetFamilyPrefix(masterCode: string): string {
  * from being replaced with an unrelated standard-depth W cabinet. Every result
  * either fills the opening exactly or leaves at most one catalog-filler span.
  */
-export function compatibleWallCabinetAlternatives<T extends Pick<DesignCabinet, "masterCode" | "width" | "height" | "depth" | "placement">>(
+export function compatibleWallCabinetAlternatives<T extends Pick<DesignCabinet, "masterCode" | "width" | "height" | "depth" | "placement"> & { constructionMethod?: string | null }>(
   requested: Pick<PlacedCabinet, "masterCode" | "width" | "height" | "depth" | "placement">,
   availableSpan: number,
   candidates: readonly T[],
@@ -14808,7 +14826,12 @@ export function compatibleWallCabinetAlternatives<T extends Pick<DesignCabinet, 
   const requestedDepth = Number(requested.depth) || 0;
   const matching: T[] = candidates.flatMap<T>((candidate) => {
     if (candidate.placement !== "wall" || cabinetFamilyPrefix(candidate.masterCode) !== family) return [];
-    const skuDimensions = wallCabinetSkuDimensions(candidate.masterCode);
+    const printed = hasAefPrintedGeometry(candidate)
+      ? aefPrintedGeometryForSku(candidate.masterCode)
+      : null;
+    const skuDimensions = printed
+      ? { width: printed.width, height: printed.height, depth: printed.depth }
+      : wallCabinetSkuDimensions(candidate.masterCode);
     const width = skuDimensions?.width ?? (Number(candidate.width) || 0);
     const height = skuDimensions?.height ?? (Number(candidate.height) || 0);
     const depth = skuDimensions?.depth ?? (Number(candidate.depth) || 0);

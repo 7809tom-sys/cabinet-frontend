@@ -239,6 +239,38 @@ describe("RefrigeratorOptionsDialog end-panel defaults", () => {
     expect(onApply).toHaveBeenCalledWith(expect.objectContaining({ endPanelId: 9903096, panelDepth: 29.875, panels: "both" }));
   });
 
+  it("offers the frameless 22 5/8 inch cabinet above a 40 1/4 inch wall and prefers 24 inches deep", () => {
+    const onApply = vi.fn();
+    render(
+      <RefrigeratorOptionsDialog
+        open
+        onOpenChange={vi.fn()}
+        fridgeWidthInches={36}
+        matchWallHeightIn={40.25}
+        endPanels={[endPanel]}
+        deepAbove={[
+          { id: 1, masterCode: "W3623", description: "36 x 22 5/8 Wall", width: "36", height: "22.625", depth: "13.5" },
+          { id: 2, masterCode: "W362324", description: "36 x 22 5/8 x 24 Refrigerator Wall", width: "36", height: "22.63", depth: "24" },
+        ]}
+        onApply={onApply}
+        onSkip={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Add Cabinet" }));
+    expect(screen.getByRole("button", { name: '22⅝"' }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "24″ Deep" }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "dt_fridge_apply" }));
+    expect(onApply).toHaveBeenCalledWith(expect.objectContaining({ bridgeCabinetId: 2, bridgeHeight: 22.625, bridgeDepth: 24 }));
+  });
+
+  it("does not add the frameless 22 5/8 inch button when the wall is not the 40 inch class", () => {
+    renderDialog();
+    fireEvent.click(screen.getByText("More enclosure options"));
+    fireEvent.click(screen.getByRole("button", { name: "Add Cabinet" }));
+    expect(screen.queryByRole("button", { name: '22⅝"' })).toBeNull();
+    expect(screen.queryByRole("button", { name: "13½″ Deep" })).toBeNull();
+  });
+
 	it("never offers a generic refrigerator bay when the selected line has no source-priced cap or panels", () => {
 	  const onApply = renderUnpricedDialog();
 	  const apply = screen.getByRole("button", { name: "dt_fridge_apply" });
