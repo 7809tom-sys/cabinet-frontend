@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { TRPCClientError } from "@trpc/client";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
@@ -19,6 +19,11 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Spinner } from "@/components/ui/spinner";
 import { Eye, EyeOff } from "lucide-react";
+
+// signInWithOAuth does not report a failure when the person backs out, cancels,
+// or the browser restores this page from bfcache. Release the spinner if this
+// document is still here.
+const GOOGLE_OAUTH_PENDING_TIMEOUT_MS = 15_000;
 
 function errMessage(error: unknown, fallback: string): string {
   if (error instanceof TRPCClientError) return error.message || fallback;
@@ -61,6 +66,21 @@ export default function SignIn() {
 
   const [pending, setPending] = useState<"login" | "signup" | "reset" | "google" | null>(null);
   const finishing = useRef(false);
+  const googleRedirectStarted = useRef(false);
+  const googleLeftPage = useRef(false);
+  const googlePendingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const releaseGooglePending = useCallback(() => {
+    googleRedirectStarted.current = false;
+    googleLeftPage.current = false;
+    if (googlePendingTimer.current !== null) {
+      clearTimeout(googlePendingTimer.current);
+      googlePendingTimer.current = null;
+    }
+    // Only a Google attempt is abandoned here. Email sign-in, signup, and
+    // reset keep their own pending state.
+    setPending((current) => (current === "google" ? null : current));
+  }, []);
 
   const requestedReturn = () => {
     const value = new URLSearchParams(window.location.search).get("returnTo");
@@ -99,6 +119,38 @@ export default function SignIn() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    const onPageShow = (event: Event) => {
+      // Chrome restores the clicked page from bfcache with React state intact,
+      // including pending === "google". `persisted` is that restore.
+      if ("persisted" in event && (event as PageTransitionEvent).persisted) {
+        releaseGooglePending();
+      }
+    };
+    const onVisibilityChange = () => {
+      if (!googleRedirectStarted.current) return;
+      if (document.visibilityState === "hidden") {
+        googleLeftPage.current = true;
+        return;
+      }
+      // Visible again after the OAuth redirect hid this page: the person came
+      // back without a completed navigation (Back, cancel, or a closed tab).
+      if (document.visibilityState === "visible" && googleLeftPage.current) {
+        releaseGooglePending();
+      }
+    };
+    window.addEventListener("pageshow", onPageShow);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.removeEventListener("pageshow", onPageShow);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      if (googlePendingTimer.current !== null) {
+        clearTimeout(googlePendingTimer.current);
+        googlePendingTimer.current = null;
+      }
+    };
+  }, [releaseGooglePending]);
+
   // Supabase emails and OAuth come back to this same page (and same origin,
   // so affiliate subdomains keep their own session), preserving returnTo.
   const authRedirectUrl = () => {
@@ -110,12 +162,18 @@ export default function SignIn() {
 
   const handleGoogle = async () => {
     setPending("google");
+    googleRedirectStarted.current = true;
+    googleLeftPage.current = false;
+    if (googlePendingTimer.current !== null) clearTimeout(googlePendingTimer.current);
+    googlePendingTimer.current = setTimeout(() => {
+      releaseGooglePending();
+    }, GOOGLE_OAUTH_PENDING_TIMEOUT_MS);
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: { redirectTo: authRedirectUrl() },
     });
     if (error) {
-      setPending(null);
+      releaseGooglePending();
       toast.error(errMessage(error, "Unable to start Google sign-in."));
     }
   };

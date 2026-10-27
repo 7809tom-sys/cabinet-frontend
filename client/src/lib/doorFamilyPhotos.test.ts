@@ -117,6 +117,8 @@ describe("cabinetProductPhoto", () => {
     // Trim/molding, fronts, panels, shelves, inserts are too varied for one render.
     expect(cabinetProductPhoto({ category: "Accessory", doorStyle: "White" })).toBeNull();
     expect(cabinetProductPhoto({ category: "Crown Molding", doorStyle: "Espresso" })).toBeNull();
+    expect(cabinetProductPhoto({ category: "Moulding", doorStyle: "Espresso" })).toBeNull();
+    expect(cabinetProductPhoto({ category: "Crown Moulding", doorStyle: "White" })).toBeNull();
     expect(cabinetProductPhoto({ category: "Filler", doorStyle: "Cherry" })).toBeNull();
     expect(cabinetProductPhoto({ category: "Decorative End Panel", doorStyle: "Gray" })).toBeNull();
   });

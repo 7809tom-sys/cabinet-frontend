@@ -22,6 +22,11 @@ import MediaLibraryAdmin from "@/components/admin/MediaLibraryAdmin";
 import { MediaPicker } from "@/components/admin/MediaPicker";
 import { CabinetVerificationControl } from "@/components/admin/CabinetVerificationControl";
 import { requiresImageReplacementScope } from "@/lib/cabinetImageReplacement";
+import {
+  canonicalMouldingLabel,
+  catalogCategoryRecordValue,
+  selectedCatalogOption,
+} from "@shared/catalogCategorySpelling";
 
 // ─── Spec Drawing Picker ─────────────────────────────────────────────────────
 function SpecDrawingPicker({
@@ -95,6 +100,7 @@ type CabinetRow = {
   altSku3: string | null;
   showInCatalog: boolean | null;
   showInDesigner: boolean | null;
+  designerEligible: boolean | null;
   showIn2020: boolean | null;
   isActive: boolean | null;
   isNotCabinet: boolean | null;
@@ -864,9 +870,9 @@ function EditModal({
         Wall: ["Microwave","Open Shelf","Glass Door"],
         Tall: ["Pantry","Utility","Refrigerator"],
         Filler: ["Filler Panel","Decorative End Panel","Scribe Moulding"],
-        Accessory: ["Roll-Out Tray","Trim & Molding"],
+        Accessory: ["Roll-Out Tray","Trim & Moulding"],
       };
-      return currentCategory ? (fallback[currentCategory] ?? []) : [];
+      return catalogCategoryRecordValue(fallback, currentCategory) ?? [];
     }
     const cat = dbCategories.find((c) => c.name === currentCategory);
     return cat ? cat.subCategories.map((s) => s.name) : [];
@@ -1040,6 +1046,7 @@ function EditModal({
       altSku3: merged.altSku3 ?? null,
       showInCatalog: merged.showInCatalog ?? undefined,
       showInDesigner: merged.showInDesigner ?? undefined,
+      designerEligible: merged.designerEligible ?? undefined,
       showIn2020: merged.showIn2020 ?? undefined,
       isActive: merged.isActive ?? undefined,
       isNotCabinet: merged.isNotCabinet ?? undefined,
@@ -1092,7 +1099,7 @@ function EditModal({
   };
   const configTouched = Object.keys(buildConfigRule()).length > 0;
   const nonConfigTouched = Object.keys(draft).some((k) =>
-    ["masterCode","altSku1","altSku2","altSku3","showInCatalog","showInDesigner","showIn2020","isActive","isNotCabinet","catalogImageUrl","configVerified"].includes(k),
+    ["masterCode","altSku1","altSku2","altSku3","showInCatalog","showInDesigner","designerEligible","showIn2020","isActive","isNotCabinet","catalogImageUrl","configVerified"].includes(k),
   );
   const handleSave = () => {
     if (Object.keys(draft).length === 0) { onClose(); return; }
@@ -1119,7 +1126,7 @@ function EditModal({
       // Non-rule housekeeping still goes to the master row (it has no per-distributor form).
       const full = buildMasterPayload() as Record<string, unknown>;
       const housekeeping: Record<string, unknown> = { id: row.id };
-      for (const k of ["masterCode","altSku1","altSku2","altSku3","showInCatalog","showInDesigner","showIn2020","isActive","isNotCabinet","catalogImageUrl","configVerified"]) {
+      for (const k of ["masterCode","altSku1","altSku2","altSku3","showInCatalog","showInDesigner","designerEligible","showIn2020","isActive","isNotCabinet","catalogImageUrl","configVerified"]) {
         if (k in draft) housekeeping[k] = full[k];
       }
       updateMutation.mutate(housekeeping as never);
@@ -1145,7 +1152,7 @@ function EditModal({
           </DialogTitle>
           {row.category && (
             <p className="text-xs text-muted-foreground mt-0.5">
-              {row.category}{row.subCategory ? ` › ${row.subCategory}` : ""}
+              {canonicalMouldingLabel(row.category)}{row.subCategory ? ` › ${canonicalMouldingLabel(row.subCategory)}` : ""}
             </p>
           )}
         </DialogHeader>
@@ -1190,7 +1197,7 @@ function EditModal({
               <div className="space-y-1.5">
                 <Label className="text-sm font-medium">Category</Label>
                 <Select
-                  value={merged.category ?? "__none__"}
+                  value={selectedCatalogOption(categoryOptions, merged.category) ?? merged.category ?? "__none__"}
                   onValueChange={(v) => set("category", v === "__none__" ? null : v)}
                   disabled={busy}
                 >
@@ -1200,7 +1207,7 @@ function EditModal({
                   <SelectContent>
                     <SelectItem value="__none__">— not set —</SelectItem>
                     {categoryOptions.map((cat) => (
-                      <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                      <SelectItem key={cat} value={cat}>{canonicalMouldingLabel(cat)}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -1208,7 +1215,7 @@ function EditModal({
               <div className="space-y-1.5">
                 <Label className="text-sm font-medium">Sub-Category</Label>
                 <Select
-                  value={merged.subCategory ?? "__none__"}
+                  value={selectedCatalogOption(subCategoryOptions, merged.subCategory) ?? merged.subCategory ?? "__none__"}
                   onValueChange={(v) => set("subCategory", v === "__none__" ? null : v)}
                   disabled={busy}
                 >
@@ -1218,10 +1225,10 @@ function EditModal({
                   <SelectContent>
                     <SelectItem value="__none__">— none —</SelectItem>
                     {subCategoryOptions.map((sub) => (
-                      <SelectItem key={sub} value={sub}>{sub}</SelectItem>
+                      <SelectItem key={sub} value={sub}>{canonicalMouldingLabel(sub)}</SelectItem>
                     ))}
-                    {subCategoryOptions.length === 0 && merged.subCategory && (
-                      <SelectItem value={merged.subCategory}>{merged.subCategory}</SelectItem>
+                    {merged.subCategory && !selectedCatalogOption(subCategoryOptions, merged.subCategory) && (
+                      <SelectItem value={merged.subCategory}>{canonicalMouldingLabel(merged.subCategory)}</SelectItem>
                     )}
                   </SelectContent>
                 </Select>
@@ -1664,6 +1671,7 @@ function EditModal({
                 {([
                   { field: "showInCatalog" as const, label: "Show in Catalog", desc: "Visible on the public storefront" },
                   { field: "showInDesigner" as const, label: "Show in Designer", desc: "Available in the 3D Designer" },
+                  { field: "designerEligible" as const, label: "Eligible for 3D Designer", desc: "Yes — included in the 3D Designer product list" },
                   { field: "showIn2020" as const, label: "Show in 2020", desc: "Exported to 2020 Design catalog" },
                   { field: "isActive" as const, label: "Active", desc: "Cabinet is active in the system" },
                 ] as const).map(({ field, label, desc }) => (
@@ -2365,7 +2373,7 @@ export function CabinetConfigAdmin() {
   const { data: dbCatsList } = trpc.cabinetCategories.list.useQuery();
   const categories = dbCatsList && dbCatsList.length > 0
     ? dbCatsList.map((c) => c.name)
-    : ["Base","Wall","Tall","Corner","Drawer","Specialty","Vanity","Pantry","Island","Filler","Molding","Accessory"];
+    : ["Base","Wall","Tall","Corner","Drawer","Specialty","Vanity","Pantry","Island","Filler","Moulding","Accessory"];
 
   const rows = data?.rows ?? [];
   const total = data?.total ?? 0;
@@ -2464,7 +2472,7 @@ export function CabinetConfigAdmin() {
           <SelectTrigger className="h-8 text-sm w-44"><SelectValue placeholder="All categories" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="__all__">All categories</SelectItem>
-            {categories.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+            {categories.map((c) => <SelectItem key={c} value={c}>{canonicalMouldingLabel(c)}</SelectItem>)}
           </SelectContent>
         </Select>
         <Select value={distributorFilter ? String(distributorFilter) : "__all__"} onValueChange={(v) => { setDistributorFilter(v === "__all__" ? undefined : Number(v)); setPage(0); }}>
@@ -2506,7 +2514,7 @@ export function CabinetConfigAdmin() {
           Search
         </Button>
       </div>
-      <p className="-mt-1 text-[11px] text-muted-foreground" data-testid="cabinet-config-count">{isLoading ? "Loading cabinets…" : `${total.toLocaleString()} cabinets match${distributorFilter ? " this distributor" : ""}${category ? ` in ${category}` : ""}${search ? ` for “${search}”` : ""}.`} Search supports master codes, saved aliases, alternative and vendor SKUs, and any partial words from the cabinet description.</p>
+      <p className="-mt-1 text-[11px] text-muted-foreground" data-testid="cabinet-config-count">{isLoading ? "Loading cabinets…" : `${total.toLocaleString()} cabinets match${distributorFilter ? " this distributor" : ""}${category ? ` in ${canonicalMouldingLabel(category)}` : ""}${search ? ` for “${search}”` : ""}.`} Search supports master codes, saved aliases, alternative and vendor SKUs, and any partial words from the cabinet description.</p>
 
       {/* Merge button */}
       {canMerge && (
@@ -2633,7 +2641,7 @@ export function CabinetConfigAdmin() {
                     <td className="px-3 py-2.5">
                       <span className="text-xs text-foreground line-clamp-1">{row.description}</span>
                       {row.category && (
-                        <span className="text-[10px] text-muted-foreground block">{row.category}{row.subCategory ? ` › ${row.subCategory}` : ""}</span>
+                        <span className="text-[10px] text-muted-foreground block">{canonicalMouldingLabel(row.category)}{row.subCategory ? ` › ${canonicalMouldingLabel(row.subCategory)}` : ""}</span>
                       )}
                     </td>
                     <td className="px-3 py-2.5 text-xs text-muted-foreground whitespace-nowrap hidden sm:table-cell">

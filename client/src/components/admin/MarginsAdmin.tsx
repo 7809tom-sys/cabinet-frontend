@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Spinner } from "@/components/ui/spinner";
 import { toast } from "sonner";
 import { Percent, Save, TrendingUp } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 
 // UI edits whole percents; DB stores basis points where 10000 = no change (0%).
 // A displayed "+15%" => bps 11500. "0%" => 10000.
@@ -20,6 +21,7 @@ interface MarginForm {
   homeownerPct: string;
   contractorPct: string;
   wholesalePct: string;
+  wholesaleIncreaseRequiresApproval: boolean;
 }
 
 interface EnforcementResult {
@@ -46,6 +48,7 @@ export default function MarginsAdmin() {
       homeownerPct: String(bpsToPct(s.homeownerMarkupBps)),
       contractorPct: String(bpsToPct(s.contractorMarkupBps)),
       wholesalePct: String(bpsToPct(s.wholesaleMarkupBps)),
+      wholesaleIncreaseRequiresApproval: s.wholesaleIncreaseRequiresApproval,
     });
   }, [data]);
 
@@ -123,7 +126,7 @@ export default function MarginsAdmin() {
 
           <div className="grid gap-4 sm:grid-cols-3">
             {([
-              ["Homeowner (retail)", "homeownerPct"],
+              ["Homeowner retail multiplier", "homeownerPct"],
               ["Contractor", "contractorPct"],
               ["Wholesale", "wholesalePct"],
             ] as const).map(([label, key]) => (
@@ -143,6 +146,17 @@ export default function MarginsAdmin() {
               </div>
             ))}
           </div>
+
+          <p className="text-sm text-muted-foreground">
+            The homeowner percent is the site-wide retail multiplier for vendor wholesale. Retail is computed when a price is read: wholesale × this multiplier, then any existing per-vendor or category markup. It took effect {data?.settings.updatedAt ? new Date(data.settings.updatedAt).toLocaleString() : "when these settings were last saved"}.
+          </p>
+          <label className="flex items-center gap-2 text-sm">
+            <Checkbox
+              checked={form.wholesaleIncreaseRequiresApproval}
+              onCheckedChange={(checked) => setForm({ ...form, wholesaleIncreaseRequiresApproval: checked === true })}
+            />
+            Wholesale increases require admin approval before they change the live price
+          </label>
 
           {preview && (
             <div className="rounded-lg border border-border bg-muted/30 p-4">
@@ -202,6 +216,7 @@ export default function MarginsAdmin() {
                 homeownerMarkupBps: pctToBps(form.homeownerPct),
                 contractorMarkupBps: pctToBps(form.contractorPct),
                 wholesaleMarkupBps: pctToBps(form.wholesalePct),
+                wholesaleIncreaseRequiresApproval: form.wholesaleIncreaseRequiresApproval,
               })
             }
             disabled={saveMargins.isPending}

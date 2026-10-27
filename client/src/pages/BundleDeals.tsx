@@ -188,6 +188,16 @@ export default function BundleDeals({ affiliateSlug }: { affiliateSlug?: string 
                       <p className="text-xs text-muted-foreground line-clamp-2 mb-3">{bundle.description}</p>
                     )}
 
+                    {bundle.displayPrice && (
+                      <p className="text-lg font-semibold mb-2">${Number(bundle.displayPrice).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                    )}
+                    {Array.isArray(bundle.lineItemsJson) && bundle.lineItemsJson.length > 0 && (
+                      <ul className="text-xs text-muted-foreground mb-3 list-disc pl-4">
+                        {bundle.lineItemsJson.slice(0, 4).map((item) => (
+                          <li key={`${item.supplier}-${item.code}`}>{item.label}</li>
+                        ))}
+                      </ul>
+                    )}
                     <div className="flex items-center gap-3 text-xs text-muted-foreground mb-4 flex-wrap">
                       {bundle.cabinetCount > 0 && (
                         <span className="flex items-center gap-1">
@@ -206,15 +216,18 @@ export default function BundleDeals({ affiliateSlug }: { affiliateSlug?: string 
                       )}
                     </div>
 
-                    <Button
-                      className="w-full gap-2 bg-[#d4a75a] hover:bg-[#c49648] text-white"
-                      onClick={() => handleLoadBundle(bundle.id)}
-                      disabled={loadingId === bundle.id || bundle.currentPriceStatus !== "current"}
-                    >
-                      <Wand2 className="h-4 w-4" />
-                      {loadingId === bundle.id ? "Loading…" : bundle.currentPriceStatus !== "current" ? "Temporarily unavailable" : "Customize & Order"}
-                      <ChevronRight className="h-3.5 w-3.5 ml-auto" />
-                    </Button>
+                    <div className="flex flex-col gap-2">
+                      <Button
+                        className="w-full gap-2 bg-[#d4a75a] hover:bg-[#c49648] text-white"
+                        onClick={() => handleLoadBundle(bundle.id)}
+                        disabled={loadingId === bundle.id || bundle.currentPriceStatus !== "current"}
+                      >
+                        <Wand2 className="h-4 w-4" />
+                        {loadingId === bundle.id ? "Loading…" : bundle.currentPriceStatus !== "current" ? "Temporarily unavailable" : "Customize this kitchen"}
+                        <ChevronRight className="h-3.5 w-3.5 ml-auto" />
+                      </Button>
+                      <Button variant="outline" className="w-full" onClick={() => navigate(affiliateSlug ? `/store/${affiliateSlug}/order` : "/order")}>Request quote</Button>
+                    </div>
                   </div>
                 </div>
               ))}

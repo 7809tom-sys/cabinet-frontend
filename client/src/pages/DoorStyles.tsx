@@ -24,6 +24,7 @@ import { useIsMobile } from "@/hooks/useMobile";
 import {
   Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
+import { PublicRoomSceneLightbox } from "@/components/PublicRoomScenes";
 
 type SimpleDoorStyle = "shaker" | "slab" | "slim" | "raised";
 
@@ -333,8 +334,14 @@ export default function DoorStyles() {
   const [colorRailDirection, setColorRailDirection] = useState<1 | -1>(1);
   const [isColorRailSliding, setIsColorRailSliding] = useState(false);
   const [selectedPreviewId, setSelectedPreviewId] = useState<number | null>(null);
+  const [previewPhotosOpen, setPreviewPhotosOpen] = useState(false);
+  const previewRoomScenes = trpc.doorStyles.publicRoomScenes.useQuery(
+    { styleId: selectedPreviewId ?? 0 },
+    { enabled: selectedPreviewId != null },
+  );
   const reduceMotion = useReducedMotion();
   useEffect(() => { setPage(0); }, [selectedType, searchQuery]);
+  useEffect(() => { setPreviewPhotosOpen(false); }, [selectedPreviewId]);
   useEffect(() => { setColorRailPage(0); }, [selectedType]);
 
   // Fetch distributors to map series names
@@ -676,12 +683,23 @@ export default function DoorStyles() {
                       <h3 className="mt-1 text-lg font-bold text-foreground">{previewName}</h3>
                       <p className="mt-1 text-sm text-muted-foreground">{previewDetail}</p>
                       <p className="mt-2 text-xs leading-relaxed text-muted-foreground">This cabinet scene updates when a new style or color is selected.</p>
-                      <Link href={`/family/${encodeURIComponent(selectedPreview.styleCode)}`} className="mt-3 inline-flex">
-                        <Button size="sm" className="bg-[#0f1f3d] text-white hover:bg-[#19305a]">
-                          View {previewName} cabinets
-                          <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
-                        </Button>
-                      </Link>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Link href={`/family/${encodeURIComponent(selectedPreview.styleCode)}`} className="inline-flex">
+                          <Button size="sm" className="bg-[#0f1f3d] text-white hover:bg-[#19305a]">
+                            View {previewName} cabinets
+                            <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
+                          </Button>
+                        </Link>
+                        {(previewRoomScenes.data?.[0]?.scenes.length ?? 0) > 0 && (
+                          <Button type="button" size="sm" variant="outline" onClick={() => setPreviewPhotosOpen(true)}>View room photos</Button>
+                        )}
+                      </div>
+                      <PublicRoomSceneLightbox
+                        open={previewPhotosOpen}
+                        onOpenChange={setPreviewPhotosOpen}
+                        title={`${previewName} room scenes`}
+                        scenes={previewRoomScenes.data?.[0]?.scenes ?? []}
+                      />
                     </div>
                     <div className="order-1 aspect-[4/3] overflow-hidden rounded-lg border border-[#d4a75a]/40 bg-muted sm:order-2">
                       {previewImage ? (

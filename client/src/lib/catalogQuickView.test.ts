@@ -70,6 +70,8 @@ describe("catalog quick view helpers", () => {
 
   it("recognizes trim across accessory, panel, filler, and molding categories", () => {
     expect(isCatalogAccessory(crown)).toBe(true);
+    expect(isCatalogAccessory({ ...crown, category: "Moulding", subCategory: "Crown Moulding", description: "8-foot Crown Moulding" })).toBe(true);
+    expect(isCatalogAccessory({ ...crown, id: 31, category: "MOULDING", subCategory: "Crown & Moulding" })).toBe(true);
     expect(isCatalogAccessory(basePanel)).toBe(true);
     expect(isCatalogAccessory(filler)).toBe(true);
     expect(isCatalogAccessory(wall)).toBe(false);

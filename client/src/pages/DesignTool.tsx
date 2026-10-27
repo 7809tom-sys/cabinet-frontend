@@ -189,7 +189,8 @@ import {
 import { CabinetHandlesControl, DEFAULT_DESIGNER_HARDWARE_STYLE_ID } from "@/components/design/CabinetHandlesControl";
 import { HardwareCatalogPicker } from "@/components/design/HardwareCatalogPicker";
 import { isPanelPaletteItem } from "./designToolPanels";
-import { normalizePaletteSearch, matchesPaletteSearch } from "@/lib/paletteSearch";
+import { normalizePaletteSearch, matchesPaletteSearch, matchesPaletteTextOrSize } from "@/lib/paletteSearch";
+import { searchCatalogItems } from "@shared/catalogCodeSearch";
 import { adjacentDishwasherCenterIn, anchorAlongStartIn, autoBuildStraightBaseCatalog, buildFourAnchorWallGuides, canRunFourAnchorAutoBuild, isAutoBuildStraightSinkBaseCandidate, makeFourAnchorSixWallTrainingRoom, pickFourAnchorSinkBase, planFourAnchorAutoBuild, subtractAnchorRunReservations, wallLabelToEngineWallId, type FourAnchorInputs, type FourAnchorOriginCorner, type FourAnchorRunDirection } from "@/lib/fourAnchorAutoBuild";
 import { fourAnchorSinkWindow, windowOverlapsReservation } from "@/lib/fourAnchorSinkWindow";
 import { fourAnchorRangeHood, fourAnchorRangeNeedsVentilation } from "@/lib/fourAnchorRangeHood";
@@ -215,6 +216,12 @@ import { canCommitPlanStyleSwitchWithoutReview, planStyleReviewCandidates } from
 import { autoFillSpan, makeFiller, type FillMode } from "@/lib/autofill";
 import { fillFourAnchorLowerSeams, planFourAnchorBaseSegment } from "@/lib/fourAnchorSeamFillers";
 import { resolveTierPrice } from "@shared/pricingTier";
+import {
+  CATALOG_SUBCATEGORY_TRIM_AND_MOULDING,
+  canonicalMouldingLabel,
+  isFlooringMouldingsAndTrim,
+  normalizeCatalogCategoryValue,
+} from "@shared/catalogCategorySpelling";
 import { normalizeDesignPricingTier, type DesignPricingTier } from "@/lib/designPricingTier";
 import { AIChatBox, type Message as AIMessage } from "@/components/AIChatBox";
 import { PlanCanvas } from "@/components/design/PlanCanvas";
@@ -232,6 +239,7 @@ import { EmailGate, type LeadContact } from "@/components/design/EmailGate";
 import { OptionalContactNudge } from "@/components/design/OptionalContactNudge";
 import { DesignDeliveryDialog } from "@/components/design/DesignDeliveryDialog";
 import { DesignActions, type BuildSheetRow } from "@/components/design/DesignActions";
+import { KitchenPackageForm, type KitchenPackageDraft } from "@/components/affiliate/KitchenPackageForm";
 import { DesignMaterialsListDialog } from "@/components/design/DesignMaterialsListDialog";
 import { DraggableOverlayDialog } from "@/components/ui/DraggableOverlayDialog";
 import { PopupDragGrip } from "@/components/ui/PopupDragGrip";
@@ -469,7 +477,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   });
   const canAffiliatePriceShop = !!affiliateSlug && affiliatePriceAccess.data?.isOwner === true;
   const canAffiliateGeminiImageTest = !!affiliateSlug && affiliatePriceAccess.data?.accessDesigner === true;
-  const canPublishKitchenPackage = isAdmin || canAffiliatePriceShop;
+  const canPublishKitchenPackage = isAdmin || (!!affiliateSlug && (affiliatePriceAccess.data?.isOwner === true || affiliatePriceAccess.data?.accessDesigner === true));
   const affiliatePrimary = affiliateBrand?.primaryColor || "#1a2b4a";
   const affiliateAccent = affiliateBrand?.accentColor || "#c9a227";
   const affiliateStyleName = useCallback(
@@ -585,6 +593,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	  const value = Number(new URLSearchParams(search).get("crmDeal"));
 	  return Number.isInteger(value) && value > 0 ? value : null;
 	}, [search]);
+  const assistMode = useMemo(() => new URLSearchParams(search).get("assist") === "1", [search]);
   const [activeSavedDesignId, setActiveSavedDesignId] = useState<number | null>(() => loadDesignId);
   const [automaticSaveAt, setAutomaticSaveAt] = useState<number | null>(null);
   useEffect(() => {
@@ -638,8 +647,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const surfaceSelectionAppliedRef = useRef(false);
   const currentSavedDesignId = activeSavedDesignId ?? loadDesignId;
   const { data: savedDesign } = trpc.design.byId.useQuery(
-	{ id: currentSavedDesignId ?? 0, affiliateSlug: storeScope, crmDealId: crmDealId ?? undefined },
-	{ enabled: currentSavedDesignId != null && isAuthenticated && (verified || crmDealId != null), retry: 1 }
+	{ id: currentSavedDesignId ?? 0, affiliateSlug: storeScope, crmDealId: crmDealId ?? undefined, assist: assistMode || undefined },
+	{ enabled: currentSavedDesignId != null && isAuthenticated && (verified || crmDealId != null || assistMode), retry: 1 }
   );
 	useEffect(() => {
 	  if (verified || crmDealId == null || !savedDesign || !isAuthenticated) return;
@@ -647,6 +656,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	  setVerifiedName((user as { name?: string | null } | null)?.name ?? "CRM user");
 	  setVerified(true);
 	}, [crmDealId, isAuthenticated, savedDesign, user, verified]);
+  useEffect(() => {
+    if (verified || !assistMode || !savedDesign || !isAuthenticated) return;
+    setVerifiedEmail((user as { email?: string | null } | null)?.email ?? "designer@cabinetdealz.local");
+    setVerifiedName((user as { name?: string | null } | null)?.name ?? "Designer");
+    setVerified(true);
+  }, [assistMode, isAuthenticated, savedDesign, user, verified]);
 
   // Mobile layout: which slide-up panel is open (catalog picker or cart/BOM).
   // Designer is touch-first: treat anything narrower than a small laptop (1024px)
@@ -1233,7 +1248,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   }, []);
   const selectedFlooringAccessoryIds = useMemo(
     () => new Set(selectedSurfaces
-      .filter((surface) => surface.category === "Flooring" && surface.subCategory === "Moldings & Trim")
+      .filter((surface) => surface.category === "Flooring" && isFlooringMouldingsAndTrim(surface.subCategory))
       .map((surface) => surface.id)),
     [selectedSurfaces],
   );
@@ -2368,7 +2383,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     selectedStyleId: styleId ?? null,
     selectedDistributorId: lockedDistributorId ?? null,
     roomType: roomType ?? null,
-  }), [room, openings, sinks, potFillers, island, furniture, ponyWalls, placed, selectedSurfaces, threeDPresentationForSave, styleId, lockedDistributorId, roomType]);
+    trimSettings: { crown, toeKick, batten, lightRail, valance, qty: trimQtyOverride },
+  }), [room, openings, sinks, potFillers, island, furniture, ponyWalls, placed, selectedSurfaces, threeDPresentationForSave, styleId, lockedDistributorId, roomType, crown, toeKick, batten, lightRail, valance, trimQtyOverride]);
   const isCurrentPlanSaved = useMemo(() => {
     if (!savedDesign || currentSavedDesignId == null) return false;
     return currentSavedPlanPayload === JSON.stringify({
@@ -2379,6 +2395,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       selectedStyleId: savedDesign.selectedStyleId ?? null,
       selectedDistributorId: (savedDesign as { selectedDistributorId?: number | null }).selectedDistributorId ?? null,
       roomType: savedDesign.roomType ?? null,
+      trimSettings: (savedDesign as { trimSettings?: unknown }).trimSettings ?? null,
     });
   }, [savedDesign, currentSavedDesignId, currentSavedPlanPayload]);
   // When the user explicitly overrides the distributor lock (acknowledging extra
@@ -2623,6 +2640,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         // When the design is locked to a supply line, every added cabinet must
         // come from that distributor (member can still change color within it).
         distributorId: catalogDistributorScopeId ?? undefined,
+        affiliateSlug: affiliateSlug ?? undefined,
       },
       { enabled: paletteType !== "appliance" && paletteType !== "opening" && paletteType !== "closetparts" && paletteType !== "furniture" && paletteType !== "surfaces" && (paletteType !== "vanity" || styleId != null) }
     );
@@ -2635,6 +2653,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     {
       styleId: styleId ?? undefined,
       distributorId: catalogDistributorScopeId ?? undefined,
+      affiliateSlug: affiliateSlug ?? undefined,
     },
     { enabled: styleId != null },
   );
@@ -2694,6 +2713,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     placement: "base",
     styleId: styleId ?? undefined,
     distributorId: lockedDistributorId ?? undefined,
+    affiliateSlug: affiliateSlug ?? undefined,
   });
   const { data: threeDAccessoryCatalog, isLoading: catalogFillersLoading } = trpc.design.placeableCabinets.useQuery({
     placement: "accessory",
@@ -2702,6 +2722,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     // distributor selection must not make its own active 3-inch filler vanish
     // from a measured seam simply because the plan lock has not been written.
     distributorId: catalogDistributorScopeId ?? undefined,
+    affiliateSlug: affiliateSlug ?? undefined,
   }, { enabled: styleId != null });
   const catalogFillers = useMemo(
     () => (threeDAccessoryCatalog as DesignCabinet[] | undefined) ?? [],
@@ -3074,6 +3095,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     placement: "wall",
     styleId: styleId ?? undefined,
     distributorId: lockedDistributorId ?? undefined,
+    affiliateSlug: affiliateSlug ?? undefined,
   });
   const wallCabPoolRef = useRef<DesignCabinet[]>([]);
   useEffect(() => { wallCabPoolRef.current = (wallCabPool as DesignCabinet[] | undefined) ?? []; }, [wallCabPool]);
@@ -3132,6 +3154,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     placement: "tall",
     styleId: styleId ?? undefined,
     distributorId: lockedDistributorId ?? undefined,
+    affiliateSlug: affiliateSlug ?? undefined,
   });
 
   // The unified "Corner" tab shows BOTH corner base AND corner wall cabinets in
@@ -3144,6 +3167,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       placement: "wall",
       styleId: styleId ?? undefined,
       distributorId: lockedDistributorId ?? undefined,
+      affiliateSlug: affiliateSlug ?? undefined,
     },
     { enabled: paletteType === "corner" }
   );
@@ -3198,7 +3222,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     // classified as corner bases — they belong in the Corner Wall section.
     if (placement === "wall") return false;
     if (placement.includes("accessory") || placement.includes("trim")) return false;
-    if (/trim|molding|end panel|hardware|filler|tray|floor/.test(sub)) return false;
+    if (/trim|moulding|molding|end panel|hardware|filler|tray|floor/.test(sub)) return false;
     if (code.startsWith("BA-")) return false; // end-of-run angled base, not a corner
     if (/TRAY|FILLER|-FILL|CBT|DCFF|^CM-|^BCM|^OCM|^ACM|^RCM|^COV/.test(code)) return false; // inserts/fillers/molding
     // A real corner base cabinet has meaningful size (not a 3\"-4\" sliver).
@@ -3656,7 +3680,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const closetGroups = useMemo(() => closetPaletteByCategory(), []);
 
   // Filtered palette
-  const filteredPalette = useMemo(() => {
+  const { items: filteredPalette, ranks: paletteMatchRanks } = useMemo(() => {
     // The "Closet parts" tab shows the modular closet system parts (panels,
     // shelves, hanging, drawers, accessories). Every other tab shows real
     // cabinets/appliances/openings exactly as in kitchen mode, so a closet can
@@ -3664,11 +3688,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     if (paletteType === "closetparts") {
       const s0 = normalizePaletteSearch(paletteSearch);
       const all = closetGroups.flatMap((g) => g.items);
-      return all.filter((c) => {
+      const items = all.filter((c) => {
         const product = masterTracProduct(c.masterCode);
         return (masterTracFinish === "all" || product?.finish === masterTracFinish)
           && matchesPaletteSearch(c, s0);
       });
+      return { items, ranks: new Map<DesignCabinet, number>() };
     }
     // The unified "Corner" tab merges corner BASE cabinets (from the base-
     // placement query) with corner WALL cabinets (from the dedicated wall query),
@@ -3695,7 +3720,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           })()
         : ((paletteCabinets as DesignCabinet[]) ?? []);
     const s = normalizePaletteSearch(paletteSearch);
-    return source
+    const typeFiltered = source
       .filter((c) => glassCabinetPlacementAllowed(c))
       .filter((c) => {
         // The unified Corner tab already merged the right items above; let them
@@ -3714,8 +3739,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         // tab in bathroom mode) so they don't duplicate across tabs.
         if (paletteType === "base") return !isCornerBase(c) && !isVanity(c);
         return true;
-      })
-      .filter((c) => matchesPaletteSearch(c, s));
+      });
+    const hits = searchCatalogItems(typeFiltered, s, (cabinet, query) => matchesPaletteTextOrSize(cabinet, query));
+    return {
+      items: hits.map((hit) => hit.item),
+      ranks: new Map(hits.map((hit) => [hit.item, hit.rank])),
+    };
 	  }, [paletteCabinets, cornerWallCabinets, cornerWallGlassVariants, paletteSearch, paletteType, styleId, appliancePalette, isCornerWall, isCornerBase, isVanity, closetGroups, masterTracFinish]);
   const usesBathroomFixturePalette = roomType === "bathroom" && paletteType === "appliance";
   const paletteHeightOptions = useMemo(
@@ -3775,7 +3804,15 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       const n = parseFloat(String(w ?? ""));
       return Number.isFinite(n) ? n : Number.POSITIVE_INFINITY;
     };
+    const searching = normalizePaletteSearch(paletteSearch).length > 0;
     const byWidth = (a: DesignCabinet, b: DesignCabinet) => {
+      if (searching) {
+        const rankA = paletteMatchRanks.get(a) ?? 9;
+        const rankB = paletteMatchRanks.get(b) ?? 9;
+        // Exact item and exact alias leads stay in that order. Partial code and
+        // size/description matches keep the printed narrow-to-wide order.
+        if (rankA !== rankB && (rankA <= 1 || rankB <= 1)) return rankA - rankB;
+      }
       const dw = wnum(a.width) - wnum(b.width);
       if (dw !== 0) return dw;
       return (a.masterCode || "").localeCompare(b.masterCode || "", undefined, { numeric: true });
@@ -3798,19 +3835,21 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     // Decorative End Panels, Roll-Out Trays, Skin Panels, …) rather than by
     // height, which is meaningless for loose trim/hardware.
     if (paletteType === "accessory" || paletteType === "panel") {
-      const bySub = new Map<string, DesignCabinet[]>();
+      const bySub = new Map<string, { label: string; items: DesignCabinet[] }>();
       // Build accordion sections only from items that can be put on the 2D plan.
       // Previously headings used all catalog add-ons while their bodies silently
       // filtered non-placeable lines, producing rows that opened to a blank area.
+      // Molding and Moulding subcategories share one section and show Moulding.
       for (const c of heightFilteredPalette.filter(isPlaceableAccessory)) {
-        const label = (c.subCategory || "Other").trim() || "Other";
-        const arr = bySub.get(label);
-        if (arr) arr.push(c);
-        else bySub.set(label, [c]);
+        const raw = (c.subCategory || "Other").trim() || "Other";
+        const key = normalizeCatalogCategoryValue(raw) || "other";
+        const label = canonicalMouldingLabel(raw);
+        const existing = bySub.get(key);
+        if (existing) existing.items.push(c);
+        else bySub.set(key, { label, items: [c] });
       }
-      return sortGroups(Array.from(bySub.entries())
-        .sort((a, b) => a[0].localeCompare(b[0]))
-        .map(([label, items]) => ({ label, items })));
+      return sortGroups(Array.from(bySub.values())
+        .sort((a, b) => a.label.localeCompare(b.label)));
     }
     // The unified Corner tab splits into two fixed sections — Corner Base
     // Cabinets and Corner Wall Cabinets — so every corner type lives under one
@@ -3899,7 +3938,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           : t("dt_pl_grp_other"),
         items,
       })));
-  }, [heightFilteredPalette, paletteType, paletteSearch, closetGroups, masterTracFinish, isCornerBase, t]);
+  }, [heightFilteredPalette, paletteMatchRanks, paletteType, paletteSearch, closetGroups, masterTracFinish, isCornerBase, t]);
 
   useEffect(() => {
     if (catalogCollapseRequest !== paletteType || !COLLAPSIBLE_CATALOG_TABS.has(paletteType)) return;
@@ -4415,6 +4454,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       distributorId?: number | null;
       selectedDistributorId?: number | null;
       selectedSurfaces?: SelectedSurface[] | null;
+      trimSettings?: {
+        crown?: boolean;
+        toeKick?: boolean;
+        batten?: boolean;
+        lightRail?: boolean;
+        valance?: boolean;
+        qty?: Partial<Record<"crown" | "toeKick" | "batten" | "lightRail" | "valance", number>>;
+      } | null;
     }) => {
 	    historyRebaseRequestedRef.current = true;
 	    lastPushedRef.current = null;
@@ -4490,6 +4537,30 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       const surfaces = normalizeInstalledMaterialSelections(Array.isArray(d.selectedSurfaces) ? d.selectedSurfaces : []);
       setSelectedSurfaces(surfaces);
       applySurfaceRenderMaterials(surfaces);
+      const savedTrim = d.trimSettings;
+      if (savedTrim) {
+        trimOverride.current = { crown: true, toeKick: true, batten: true, lightRail: true, valance: true };
+        setCrown(savedTrim.crown === true);
+        setToeKick(savedTrim.toeKick !== false);
+        setBatten(savedTrim.batten === true);
+        setLightRail(savedTrim.lightRail === true);
+        setValance(savedTrim.valance === true);
+        const qty = savedTrim.qty ?? {};
+        const clean: Partial<Record<TrimKind, number>> = {};
+        for (const kind of ["crown", "toeKick", "batten", "lightRail", "valance"] as const) {
+          const value = qty[kind];
+          if (typeof value === "number" && Number.isFinite(value)) clean[kind] = Math.max(0, Math.min(99, value));
+        }
+        setTrimQtyOverride(clean);
+      } else {
+        trimOverride.current = { crown: false, toeKick: false, batten: false, lightRail: false, valance: false };
+        setCrown(false);
+        setToeKick(true);
+        setBatten(false);
+        setLightRail(false);
+        setValance(false);
+        setTrimQtyOverride({});
+      }
       setSelectedUid(null);
     },
     [styleDistributorIdById]
@@ -5074,7 +5145,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           tier: DESIGN_TIER_TO_SHARED[tier],
           unitPrice: t.unitPrice,
           qty: t.qty,
-          category: "Trim & molding",
+          category: CATALOG_SUBCATEGORY_TRIM_AND_MOULDING,
         }));
     const hardwareLines: CartItem[] = hasSelectedPricedHardware && selectedPricedHardware && hwSchedule.total > 0
       ? [{
@@ -5255,23 +5326,19 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   }, [cartableLines, replaceWithDesignItems, currentSavedDesignId]);
 
   // ─── Trim auto-apply ────────────────────────────────────────────────────────
-  // Only physical construction trim may auto-apply when the layout needs it:
-  // toe kick on base runs and light rail on wall runs. Batten molding is always
-  // opt-in; cabinet seams alone must never add a cart or materials-list line.
-  // Crown, batten, and valances remain opt-in so no decorative trim appears
-  // without the customer selecting it.
+  // Only toe kick auto-applies on a base run. Crown, batten, and valances remain opt-in.
+  // Batten molding is always opt-in; cabinet seams alone must never add a cart or materials-list line.
+  // Light rail is opt-in too and is never inferred from a wall run.
   const hasBaseCab = useMemo(() => placed.some((p) => p.placement === "base"), [placed]);
-  const hasWallCab = useMemo(() => placed.some((p) => p.placement === "wall"), [placed]);
   useEffect(() => {
     const o = trimOverride.current;
     // Toe kick: any base cabinet run needs a toe kick.
     if (!o.toeKick && hasBaseCab && !toeKick) setToeKick(true);
-    // Light rail: valance under the wall cabinets.
-    if (!o.lightRail && hasWallCab && !lightRail) setLightRail(true);
+    // Light rail, crown, batten, and valance stay opt-in. A wall run must not infer them.
     // An arched valance is a deliberate decorative plan item. It is never
     // inferred from a window + wall cabinet pairing, so the invoice cannot gain
     // a VA-48 that the customer did not add to the plan.
-  }, [hasBaseCab, hasWallCab, toeKick, lightRail]);
+  }, [hasBaseCab, toeKick]);
   // Countertop is a POST-LAYOUT step: it can only be applied once the kitchen
   // has base cabinets (or an island) to sit on. A base run, a vanity, or an
   // island all count as a surface that takes a top.
@@ -5980,13 +6047,13 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     const out: { label: string; detail: string }[] = [];
     // Note: blind corner fillers are placed manually by the user, not auto-listed here.
     if (crown && crownOrder && crownOrder.pieces > 0)
-      out.push({ label: "CROWN MOLDING", detail: `${crownOrder.pieces} pc @ ${crownOrder.stickFeet}ft` });
+      out.push({ label: "CROWN MOULDING", detail: `${crownOrder.pieces} pc @ ${crownOrder.stickFeet}ft` });
     if (toeKick && toeKickOrder && toeKickOrder.pieces > 0)
       out.push({ label: "TOE KICK", detail: `${toeKickOrder.pieces} pc @ ${toeKickOrder.stickFeet}ft` });
     if (batten && battenOrder && battenOrder.pieces > 0)
-      out.push({ label: "BATTEN MOLDING (BAM)", detail: `${battenOrder.pieces} pc @ ${battenOrder.stickFeet}ft` });
+      out.push({ label: "BATTEN MOULDING (BAM)", detail: `${battenOrder.pieces} pc @ ${battenOrder.stickFeet}ft` });
     if (lightRail && lightRailOrder && lightRailOrder.pieces > 0)
-      out.push({ label: "LIGHT RAIL MOLDING", detail: `${lightRailOrder.pieces} pc @ ${lightRailOrder.stickFeet}ft` });
+      out.push({ label: "LIGHT RAIL MOULDING", detail: `${lightRailOrder.pieces} pc @ ${lightRailOrder.stickFeet}ft` });
     if (valance && valanceOrder.length > 0) {
       for (const vp of valanceOrder) {
         out.push({ label: "ARCHED VALANCE", detail: `${vp.code} (${vp.width}"W) — ${vp.wall} wall` });
@@ -6040,10 +6107,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     const surfaceRoles = new Set(selectedSurfaces.map((surface) => surfaceRole(surface)));
     const styleColor = activeStyleName ?? null;
     const trimLabels: Record<TrimKind, string> = {
-      crown: "Crown molding",
+      crown: "Crown moulding",
       toeKick: "Toe kick",
-      batten: "Batten molding",
-      lightRail: "Light rail molding",
+      batten: "Batten moulding",
+      lightRail: "Light rail moulding",
       valance: "Arched valance",
     };
     for (const trim of activeTrims) {
@@ -6052,7 +6119,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       out.push({
         code: priced.masterCode,
         description: trimLabels[trim.kind],
-        category: "Trim & molding",
+        category: CATALOG_SUBCATEGORY_TRIM_AND_MOULDING,
         qty: trim.pieces,
         supplier: lockedDistributorId != null ? distributorNameById.get(lockedDistributorId) ?? "Cabinet supplier" : "Cabinet supplier",
         styleColor,
@@ -11980,6 +12047,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       distributorId: (savedDesign as { selectedDistributorId?: number | null }).selectedDistributorId ?? null,
       roomType: (savedDesign as { roomType?: string | null }).roomType ?? null,
       selectedSurfaces: Array.isArray(savedSurfaces) ? savedSurfaces : null,
+      trimSettings: (savedDesign as { trimSettings?: {
+        crown?: boolean;
+        toeKick?: boolean;
+        batten?: boolean;
+        lightRail?: boolean;
+        valance?: boolean;
+        qty?: Partial<Record<"crown" | "toeKick" | "batten" | "lightRail" | "valance", number>>;
+      } | null }).trimSettings ?? null,
     });
     if (savedPresentation && typeof savedPresentation.cabinetFinish === "string" && typeof savedPresentation.countertopFinish === "string") {
       setInteractive3dPresentation({ cabinetFinish: savedPresentation.cabinetFinish, countertopFinish: savedPresentation.countertopFinish });
@@ -12677,8 +12752,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // Kitchen Package save dialog. The server scopes non-admin creators to their
   // own affiliate storefront, so an affiliate can publish without an admin relay.
   const [bundleDialogOpen, setBundleDialogOpen] = useState(false);
-  const [bundleName, setBundleName] = useState("");
-  const [bundleDesc, setBundleDesc] = useState("");
+  const [bundleDraft, setBundleDraft] = useState<KitchenPackageDraft>({ name: "", description: "", layoutLabel: "", doorColor: "", priceOverride: "", discountAmount: "" });
   const saveBundleMut = trpc.priceShop.saveBundleDeal.useMutation({
     onSuccess: async (res) => {
       // Capture the 2D floor plan as an image and upload it
@@ -12688,10 +12762,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           await uploadBundleFloorPlanMut.mutateAsync({ bundleId: res.id, imageBase64: floorPlanDataUrl });
         }
       } catch { /* floor plan upload is best-effort */ }
-      toast.success("Kitchen Package saved!", { description: `"${bundleName}" — ID #${res.id}. Open Kitchen Packages in your dashboard to publish it.` });
+      toast.success("Kitchen Package saved!", { description: `"${bundleDraft.name}" — ID #${res.id}. Open Kitchen Packages in your dashboard to publish it.` });
       setBundleDialogOpen(false);
-      setBundleName("");
-      setBundleDesc("");
+      setBundleDraft({ name: "", description: "", layoutLabel: "", doorColor: "", priceOverride: "", discountAmount: "" });
     },
     onError: (e) => toast.error("Failed to save bundle", { description: e.message }),
   });
@@ -12759,12 +12832,32 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     ctx.fillText(`${room.width}" × ${room.depth}" · ${placed.length} cabinet${placed.length === 1 ? "" : "s"}${sinks.length > 0 ? ` · ${sinks.length} sink${sinks.length === 1 ? "" : "s"}` : ""}`, 12, canvas.height - 10);
     return canvas.toDataURL("image/png");
   };
+  const packageLineItems = materialsListRows.map((row) => ({
+    label: row.label || row.description,
+    code: row.code,
+    category: row.category,
+    supplier: row.supplier,
+    qty: row.qty,
+    unitPrice: row.unitPrice,
+    lineTotal: row.lineTotal,
+    section: row.section,
+  }));
+  const packageAutoPrice = Math.round(packageLineItems.reduce((sum, item) => sum + (item.lineTotal ?? 0), 0) * 100) / 100;
   const handleSaveBundle = () => {
     if (placed.length === 0) { toast.error("Add cabinets before saving a bundle."); return; }
-    if (!bundleName.trim()) { toast.error("Please enter a bundle name."); return; }
+    if (!bundleDraft.name.trim()) { toast.error("Please enter a bundle name."); return; }
+    const override = bundleDraft.priceOverride.trim() === "" ? undefined : Number(bundleDraft.priceOverride);
+    const discount = bundleDraft.discountAmount.trim() === "" ? undefined : Number(bundleDraft.discountAmount);
     saveBundleMut.mutate({
-      name: bundleName.trim(),
-      description: bundleDesc.trim() || undefined,
+      name: bundleDraft.name.trim(),
+      description: bundleDraft.description.trim() || undefined,
+      sourceDesignId: activeSavedDesignId ?? loadDesignId ?? undefined,
+      lineItems: packageLineItems,
+      priceOverride: override != null && Number.isFinite(override) ? override : undefined,
+      discountAmount: discount != null && Number.isFinite(discount) ? discount : undefined,
+      layoutLabel: bundleDraft.layoutLabel.trim() || `${room.width}" × ${room.depth}"`,
+      doorColor: bundleDraft.doorColor.trim() || activeStyleName || undefined,
+      homeownerPrice: packageAutoPrice > 0 ? packageAutoPrice : (total > 0 ? total : undefined),
       designSnapshot: {
         room: roomWithPersistedEntities(room, { openings, sinks, potFillers, island, furniture, ponyWalls }),
         placed,
@@ -12783,7 +12876,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       },
       styleId: styleId ?? undefined,
       styleName: activeStyleName ?? undefined,
-      homeownerPrice: total > 0 ? total : undefined,
       roomWidthInches: room.width,
       roomDepthInches: room.depth,
       cabinetCount: placed.length,
@@ -14281,7 +14373,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                       className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-purple-700 hover:bg-purple-50 transition-colors disabled:opacity-50"
                     >
                       <PackageOpen className="h-4 w-4 shrink-0" />
-                      <span className="flex-1 text-left">Publish as Kitchen Package</span>
+                      <span className="flex-1 text-left">Save as Kitchen Package</span>
                     </button>
                   )}
                   {canAffiliatePriceShop && (
@@ -14746,7 +14838,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                 <Square className="h-3.5 w-3.5 mr-2" /> {t("dt_sh_island")}
               </DropdownMenuCheckboxItem>
               <DropdownMenuSeparator />
-              <DropdownMenuLabel className="text-xs text-muted-foreground">Trim & Molding</DropdownMenuLabel>
+              <DropdownMenuLabel className="text-xs text-muted-foreground">Trim & Moulding</DropdownMenuLabel>
               <DropdownMenuCheckboxItem
                 checked={crown}
                 onCheckedChange={() => { trimOverride.current.crown = true; setCrown((c) => !c); }}
@@ -14816,7 +14908,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                     onSelect={() => setBundleDialogOpen(true)}
                     className="text-purple-600 font-medium"
                   >
-	                    <PackageOpen className="h-3.5 w-3.5 mr-2" /> Publish as Kitchen Package
+	                    <PackageOpen className="h-3.5 w-3.5 mr-2" /> Save as Kitchen Package
                   </DropdownMenuItem>
 	                </>
 	              )}
@@ -14860,6 +14952,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
             extraLines={extraLines}
             buildRows={buildRows}
             roomType={roomType}
+            trimSettings={{ crown, toeKick, batten, lightRail, valance, qty: trimQtyOverride }}
             contactEmail={verifiedEmail}
             contactName={verifiedName}
             contactPhone={verifiedPhone}
@@ -14869,6 +14962,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	            currentPlanFingerprint={currentSavedPlanPayload}
 	            isCurrentPlanSaved={isCurrentPlanSaved}
 	            brandName={affiliateBrand?.storeName}
+            assistMode={assistMode}
             openSaveSignal={saveSignal}
             openLoadSignal={loadSignal}
 	            preSavePlanReview={preSavePlanReview}
@@ -19085,6 +19179,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	        backsplashEnabled={backsplashEnabled}
 	        onBacksplashEnabledChange={setBacksplashEnabled}
 	        roomType={roomType}
+	        affiliateSlug={affiliateSlug}
 	        bathroomPaletteMode={bathroomCatalogMode}
 	        initialBathroomRole={bathroomBrowseRole}
 	        onPlaceBathroomFixture={placePelicanBathroomFixture}
@@ -19144,6 +19239,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	        defaultPhone={verifiedPhone}
 	        designId={loadDesignId ?? undefined}
 	        designName={savedDesign?.name ?? null}
+	        affiliateSlug={affiliateSlug}
 	      />
 		      <AlertDialog open={!!islandSeatingOverhangPrompt} onOpenChange={(open) => { if (!open) setIslandSeatingOverhangPrompt(null); }}>
 	        <AlertDialogContent className="w-[min(94vw,540px)]">
@@ -21184,56 +21280,29 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       {/* Kitchen Package publication is limited to its originating affiliate or admin. */}
       {canPublishKitchenPackage && (
         <Dialog open={bundleDialogOpen} onOpenChange={setBundleDialogOpen}>
-          <DialogContent className="max-w-md">
+          <DialogContent className="max-w-lg max-h-[85svh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
-                <PackageOpen className="h-5 w-5 text-purple-600" /> Publish as Kitchen Package
+                <PackageOpen className="h-5 w-5 text-purple-600" /> Save as Kitchen Package
               </DialogTitle>
               <DialogDescription>
-                Create a private Kitchen Package snapshot from this completed design. Publish it from Kitchen Packages when its customer price and BOM are ready.
+                Copy this design into a private Kitchen Package. The customer's design is not moved. Publish it from Kitchen Packages when the price is ready.
               </DialogDescription>
             </DialogHeader>
-            <div className="space-y-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="bundle-name">Kitchen Package Name <span className="text-destructive">*</span></Label>
-                <Input
-                  id="bundle-name"
-                  value={bundleName}
-                  onChange={(e) => setBundleName(e.target.value)}
-                  placeholder="e.g. Classic White Shaker 10×10 Kitchen"
-                  onKeyDown={(e) => { if (e.key === "Enter") handleSaveBundle(); }}
-                  autoFocus
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="bundle-desc">Description <span className="text-xs text-muted-foreground">(optional)</span></Label>
-                <textarea
-                  id="bundle-desc"
-                  value={bundleDesc}
-                  onChange={(e) => setBundleDesc(e.target.value)}
-                  placeholder="Describe this kitchen package for customers…"
-                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring min-h-[80px] resize-none"
-                />
-              </div>
-              <div className="rounded-lg bg-muted/40 border border-border p-3 text-xs text-muted-foreground space-y-1">
-                <div className="flex justify-between"><span>Cabinets:</span><span className="font-medium text-foreground">{placed.length}</span></div>
-                <div className="flex justify-between"><span>Room size:</span><span className="font-medium text-foreground">{room.width}" × {room.depth}"</span></div>
-                {total > 0 && <div className="flex justify-between"><span>Homeowner price:</span><span className="font-medium text-foreground">${total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>}
-                {activeStyleName && <div className="flex justify-between"><span>Style:</span><span className="font-medium text-foreground">{activeStyleName}</span></div>}
-              </div>
-              <p className="text-xs text-muted-foreground">The package will be saved as <strong>unpublished</strong>. Review and publish it from <strong>Kitchen Packages</strong> in your affiliate dashboard.</p>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setBundleDialogOpen(false)}>Cancel</Button>
-              <Button
-                onClick={handleSaveBundle}
-                disabled={saveBundleMut.isPending || !bundleName.trim()}
-                className="gap-1.5 bg-purple-600 hover:bg-purple-700 text-white"
-              >
-                <PackageOpen className={`h-4 w-4${saveBundleMut.isPending ? " animate-spin" : ""}`} />
-                Create Kitchen Package
-              </Button>
-            </DialogFooter>
+            <KitchenPackageForm
+              draft={bundleDraft}
+              onChange={setBundleDraft}
+              placedCount={placed.length}
+              roomWidth={room.width}
+              roomDepth={room.depth}
+              autoPrice={packageAutoPrice > 0 ? packageAutoPrice : total}
+              styleName={activeStyleName}
+              lineItems={packageLineItems}
+              pending={saveBundleMut.isPending}
+              onSubmit={handleSaveBundle}
+              onCancel={() => setBundleDialogOpen(false)}
+              submitLabel="Create Kitchen Package"
+            />
           </DialogContent>
         </Dialog>
       )}
