@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { Link } from "wouter";
 import {
@@ -25,6 +25,8 @@ import { cartItemToCheckoutPrefill } from "@/lib/cartCheckoutPrefill";
 import { separateGlassPurchaseItems } from "@/lib/cartGlassPolicy";
 import { formatEighthInches } from "@/lib/design";
 import { isTemporaryOneDollarFreeShippingOrder } from "@shared/temporaryCheckoutTest";
+import { ShippingQuoteBox, ShippingQuoteResults } from "@/components/shipping/ShippingQuoteBox";
+import { cartItemsToShippingQuote, quotesForCartIndexes, type PublicVendorQuote } from "@/components/shipping/cartShippingQuote";
 
 // Key the OrderBuilder reads on mount to prefill the review step from the cart.
 export const CART_PREFILL_KEY = "cd_cart_prefill_v1";
@@ -115,6 +117,22 @@ export default function Cart() {
   const hasOnlyTemporaryFreeShippingItems = useMemo(
     () => isTemporaryOneDollarFreeShippingOrder(items),
     [items],
+  );
+  const [sectionQuotes, setSectionQuotes] = useState<PublicVendorQuote[] | null>(null);
+  const shippingQuoteRequest = useMemo(
+    () => cartItemsToShippingQuote(items.map((item) => ({
+      productKind: item.productKind ?? null,
+      pelicanProductId: item.pelicanProductId,
+      vendorProductId: item.vendorProductId,
+      distributorId: item.distributorId,
+      masterCode: item.masterCode,
+      styleId: item.styleId,
+      qty: item.qty,
+      unitPrice: liveUnitPrice(item),
+    }))),
+    // liveUnitPrice closes over the latest price map; the merchandise subtotal stays separate.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [items, livePriceMap, isAffiliateCart],
   );
   const hardwareItems = useMemo(
     () => items
@@ -343,6 +361,13 @@ export default function Cart() {
                   <h2 className="text-base font-semibold text-foreground">{section.label}</h2>
                   <span className="text-xs text-muted-foreground">{section.groups.length} line{section.groups.length === 1 ? "" : "s"}</span>
                 </div>
+                {sectionQuotes && (
+                  <ShippingQuoteResults quotes={quotesForCartIndexes(
+                    sectionQuotes,
+                    shippingQuoteRequest.cartIndexes,
+                    section.groups.flatMap((group) => (group.kind === "single" ? [group.item] : group.parts)).map((item) => items.indexOf(item)),
+                  )} />
+                )}
                 {section.groups.map((g) => {
               if (g.kind === "single") return renderRow(g.item, false);
               const groupTotal = g.parts.reduce(
@@ -434,6 +459,11 @@ export default function Cart() {
               {hardwareItems.length > 0 && (
                 <p className="mt-1">Hardware ships free when it is ordered with qualifying kitchen cabinets.</p>
               )}
+            </div>
+          )}
+          {shippingQuoteRequest.requests.length > 0 && (
+            <div className="mb-4">
+              <ShippingQuoteBox items={shippingQuoteRequest.requests} onQuoted={setSectionQuotes} />
             </div>
           )}
           <p className="mb-2 text-center text-xs text-muted-foreground">
