@@ -215,6 +215,7 @@ import { defaultTowerConfig, isMasterTracCornerBoard, planMasterTracTower, tower
 import { canCommitPlanStyleSwitchWithoutReview, planStyleReviewCandidates } from "@/lib/planStyleSwitch";
 import { autoFillSpan, makeFiller, type FillMode } from "@/lib/autofill";
 import { fillFourAnchorLowerSeams, planFourAnchorBaseSegment } from "@/lib/fourAnchorSeamFillers";
+import { applyDesignerLayoutRules, applyFourAnchorWiggleRoom, type FourAnchorAnchorOrigin } from "@/lib/designerLayoutRules";
 import { resolveTierPrice } from "@shared/pricingTier";
 import {
   CATALOG_SUBCATEGORY_TRIM_AND_MOULDING,
@@ -1047,6 +1048,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     cornerOptions: AutoBuildCornerCandidate[];
     /** The over-sink window the measured build creates when a window center was entered. */
     sinkWindow: WallOpening | null;
+    /** Along-wall starts from the user's measurements, before any corner nudge. */
+    anchorOrigins: FourAnchorAnchorOrigin[];
   } | null>(null);
   // After a measured build, a range with nothing above it asks what goes there.
   const [fourAnchorRangeVentPrompt, setFourAnchorRangeVentPrompt] = useState<{ rangeUid: string } | null>(null);
@@ -3351,6 +3354,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 
     let working: PlacedCabinet[] = [];
     const anchorsByKind = new Map<string, PlacedCabinet>();
+    const anchorOrigins: FourAnchorAnchorOrigin[] = [];
     const selectedWalls: WallSide[] = [];
     for (const anchor of result.plan.anchors) {
       const source = anchor.kind === "sink" ? sinkBaseSource : applianceByKind[anchor.kind]!;
@@ -3417,6 +3421,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       }
       working = preflight.placed;
       anchorsByKind.set(anchor.kind, candidate);
+      anchorOrigins.push({ uid: candidate.uid, kind: anchor.kind, wallId: wall.engineWallId, originalStart: along });
       if (!selectedWalls.includes(wall.engineWallId as WallSide)) selectedWalls.push(wall.engineWallId as WallSide);
     }
     const refrigerator = anchorsByKind.get("refrigerator");
@@ -3493,6 +3498,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       slots,
       cornerOptions,
       sinkWindow,
+      anchorOrigins,
     });
     setViewMode("plan");
     setSelectedUid(null);
@@ -3562,12 +3568,32 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       upperCorners.push({ base: corner, point: target });
     }
 
+    const sinkAnchor = stage.anchors.sink;
+    const wiggle = applyFourAnchorWiggleRoom({
+      placed: working,
+      room,
+      openings: stageOpenings,
+      catalog: stage.straightBaseCatalog,
+      origins: stage.anchorOrigins,
+      lockedUids: stage.sinkWindow && sinkAnchor ? [sinkAnchor.uid] : [],
+    });
+    working = wiggle.placed;
+    let refrigeratorReservation = stage.refrigeratorReservation;
+    const refrigeratorShift = wiggle.moves.find((move) => move.kind === "refrigerator");
+    if (refrigeratorReservation && refrigeratorShift) {
+      refrigeratorReservation = {
+        ...refrigeratorReservation,
+        start: refrigeratorReservation.start + refrigeratorShift.deltaAlongIn,
+        end: refrigeratorReservation.end + refrigeratorShift.deltaAlongIn,
+      };
+    }
+
     const surrounding: PlacedCabinet[] = [];
     const rangeNeighborNotes: string[] = [];
     for (const wallId of selectedWalls) {
       const rawSegments = freeSegmentsOnWall(wallId, room, working, stageOpenings, 9, 0, "base", false, undefined, footprintDepth(stage.baseSource));
       const reservations = [
-        ...(stage.refrigeratorReservation?.wall === wallId ? [{ start: stage.refrigeratorReservation.start, end: stage.refrigeratorReservation.end }] : []),
+        ...(refrigeratorReservation?.wall === wallId ? [{ start: refrigeratorReservation.start, end: refrigeratorReservation.end }] : []),
       ];
       for (const segment of subtractAnchorRunReservations(rawSegments, reservations)) {
         // A range always has a real cabinet at least 15 inches wide beside it: the widest box
@@ -3604,6 +3630,13 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       }
     }
 
+    // Standard designer rules, including the small-gap filler, run on the seated
+    // lowers before the wider seam helper closes anything they left behind.
+    const baseRules = applyDesignerLayoutRules({
+      placed: working, room, openings: stageOpenings, fillers: catalogFillers,
+      makeUid, styleId: styleIdRef.current ?? null,
+    });
+    working = baseRules.placed;
     // No gap is left anywhere: every opening between the measured anchors, panels, corner
     // cabinets and runs (and the 3-inch seam a range leaves beside its corner) takes real
     // catalog filler before the wall boxes are matched to the finished lower runs.
@@ -3620,6 +3653,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       styleId: styleIdRef.current ?? null, makeUid, corners: upperCorners, catalogFillers, closeSeams: true,
     });
     working = upperResult.placed;
+    const finishedRules = applyDesignerLayoutRules({
+      placed: working, room, openings: stageOpenings, fillers: catalogFillers,
+      makeUid, styleId: styleIdRef.current ?? null,
+    });
+    working = finishedRules.placed;
     placedRef.current = working;
     setPlaced(working);
     if (stage.sinkWindow) {
@@ -3632,6 +3670,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     for (const note of [...seamResult.notes, ...rangeNeighborNotes]) toast.info(note, { duration: 15000 });
     for (const move of applianceMoves) {
       toast.info(`Moved the ${move.label} ${formatInches(move.shiftIn)} away from the corner to fit the required corner cabinet. Its measured center is now ${formatInches(move.centerAlongIn)} along the wall.`, { duration: 12000 });
+    }
+    for (const move of wiggle.moves) {
+      toast.info(`Wiggle room shifted the ${move.label} ${formatInches(Math.abs(move.deltaAlongIn))} along its wall to fit standard cabinet widths. It stays within 3 inches of where it was placed.`, { duration: 12000 });
     }
     const requestedUpperIn = stage.input.wallCabinetHeightIn ?? 30;
     if (upperResult.heightUsedIn != null && Math.abs(upperResult.heightUsedIn - requestedUpperIn) > 0.005) {

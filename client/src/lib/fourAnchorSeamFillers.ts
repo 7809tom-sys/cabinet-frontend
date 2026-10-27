@@ -205,7 +205,8 @@ export function makeSeamFiller(input: {
     category: def.category ?? "Filler", subCategory: def.subCategory ?? "Filler",
     placement: layer, x: 0, y: 0, width: input.width, nominalWidth: dim(def.width, input.width),
     depth, nominalDepth: depth, height, nominalHeight: Number(def.height) || height, rotation: 0,
-    numberOfDoors: 0, numberOfDrawers: 0, catalogImageUrl: def.catalogImageUrl ?? null, styleId: input.styleId,
+    numberOfDoors: 0, numberOfDrawers: 0, catalogImageUrl: def.catalogImageUrl ?? null,
+    styleId: owner.styleId ?? input.styleId,
     fillerPieceGroupId: input.groupId, fillerBillingRole: input.role, fillerTotalWidth: input.totalWidth,
     fillerPlacementMode: input.mode, fillerForCabinetUid: owner.uid,
   };
