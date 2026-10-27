@@ -47,6 +47,7 @@ import CostLookupAdmin from "@/components/admin/CostLookupAdmin";
 import PaymentsAdmin from "@/components/admin/PaymentsAdmin";
 import DesignLeadsAdmin from "@/components/admin/DesignLeadsAdmin";
 import DoorCorrectionsAdmin from "@/components/admin/DoorCorrectionsAdmin";
+import DoorRenderingAuditAdmin from "@/components/admin/DoorRenderingAuditAdmin";
 import ConsultationsAdmin from "@/components/admin/ConsultationsAdmin";
 import SalesCommissionsAdmin from "@/components/admin/SalesCommissionsAdmin";
 import AffiliateInvoicesAdmin from "@/components/admin/AffiliateInvoicesAdmin";
@@ -150,6 +151,7 @@ const GROUPS = [
       { value: "catalog-importer", label: "📥 Catalog Importer" },
       { value: "featured", label: "Featured Styles" },
       { value: "door-corrections", label: "Door Corrections" },
+      { value: "door-rendering-audit", label: "Door Rendering Audit" },
       { value: "images", label: "Product Images" },
       { value: "pelican-catalog", label: "Pelican Catalog" },
       { value: "conflicts", label: "Conflicts" },
@@ -563,6 +565,7 @@ export default function AdminGroupedTabs() {
         <TabsContent value="catalog-importer" className="mt-6"><CatalogImporterTab /></TabsContent>
         <TabsContent value="featured" className="mt-6"><AdminTabHelp tab="featured" /><FeaturedStylesAdmin /></TabsContent>
         <TabsContent value="door-corrections" className="mt-6"><AdminTabHelp tab="door-corrections" /><DoorCorrectionsAdmin /></TabsContent>
+        <TabsContent value="door-rendering-audit" className="mt-6"><AdminTabHelp tab="door-rendering-audit" /><DoorRenderingAuditAdmin /></TabsContent>
         <TabsContent value="images" className="mt-6"><AdminTabHelp tab="images" /><SkuImageManager /></TabsContent>
         <TabsContent value="pelican-catalog" className="mt-6"><PelicanCatalogAdmin /></TabsContent>
         <TabsContent value="conflicts" className="mt-6"><AdminTabHelp tab="conflicts" /><ConflictsAdmin /></TabsContent>
