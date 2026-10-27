@@ -1,4 +1,5 @@
 import {
+  clampFillerExtensionIn,
   dim,
   refrigeratorBayRunMetrics,
   refrigeratorEndPanelThickness,
@@ -81,13 +82,13 @@ function refrigeratorPanelDimensions(candidate: DesignCabinet): { thickness: num
   if (widthIsThinFace && sourceDepth > 3) {
     return {
       thickness: refrigeratorEndPanelThickness(candidate.width, 0.75),
-      installedDepth: sourceDepth,
+      installedDepth: clampFillerExtensionIn(sourceDepth, "tall"),
     };
   }
   if (depthIsThinFace && sourceWidth > 3) {
     return {
       thickness: refrigeratorEndPanelThickness(candidate.depth, 0.75),
-      installedDepth: sourceWidth,
+      installedDepth: clampFillerExtensionIn(sourceWidth, "tall"),
     };
   }
   return null;

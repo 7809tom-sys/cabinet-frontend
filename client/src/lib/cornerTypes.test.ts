@@ -108,11 +108,16 @@ describe("configured corner cabinet types", () => {
     expect(blindCornerDoorSide(rightCorner, room)).toBe("left");
     expect(blindCornerDoorSide(lowerLeftCorner, room)).toBe("right");
     expect(blindCornerDoorSide(lowerRightCorner, room)).toBe("left");
+    // A saved left or right swing is a manual flip and stays. A corner that was never handed gets the side away from the corner.
     expect(normalizeBlindCornerDoorSides([leftCorner, rightCorner, lowerLeftCorner, lowerRightCorner], room)).toMatchObject([
-      { uid: "top-left", swing: "right" },
-      { uid: "top-right", swing: "left" },
-      { uid: "left-top", swing: "right" },
-      { uid: "right-bottom", swing: "left" },
+      { uid: "top-left", swing: "left" },
+      { uid: "top-right", swing: "right" },
+      { uid: "left-top", swing: "left" },
+      { uid: "right-bottom", swing: "right" },
+    ]);
+    const unhanded = { ...leftCorner, uid: "unhanded", swing: undefined };
+    expect(normalizeBlindCornerDoorSides([unhanded], room)).toMatchObject([
+      { uid: "unhanded", swing: "right" },
     ]);
   });
 

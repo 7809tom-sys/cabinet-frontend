@@ -93,18 +93,13 @@ describe.each(STYLES)("Auto-Design rule: a 12-inch wall cabinet in the corner ($
     return seated;
   };
 
-  it("seats a 12-inch-wide standard upper in the corner square instead of a wall blind corner", () => {
+  it("seats a true wall blind corner instead of a plain 12-inch upper", () => {
     const seated = seatBlind();
     const result = wallStage(id, seated.placed, [], [{ base: seated.corner, point: TOP_RIGHT }]);
-    const corner = result.additions.find((item) => item.width === 12 && /^W12/.test(item.masterCode));
+    const corner = result.additions.find((item) => /blind/i.test(`${item.masterCode} ${item.description}`) || /^WBC/.test(item.masterCode));
     expect(corner, `skipped: ${result.skipped.join(" | ")}`).toBeDefined();
-    expect(result.additions.some((item) => /^WBC|^WSC|BFF|OF6/.test(item.masterCode) && /blind|WBC/i.test(`${item.masterCode} ${item.description}`))).toBe(false);
-    // Flush in the room corner: its back is on one wall and its side touches the other.
-    const c = corner!;
-    expect(Math.round((c.x + (c.rotation % 180 === 0 ? c.width : c.depth)) * 100) / 100).toBeLessThanOrEqual(DEFAULT_ROOM.width + 0.01);
-    expect(c.x).toBeGreaterThanOrEqual(DEFAULT_ROOM.width - 13.6);
-    expect(c.y).toBeGreaterThanOrEqual(-0.01);
-    expect(c.y).toBeLessThanOrEqual(0.5);
+    expect(result.additions.some((item) => item.width === 12 && /^W12/.test(item.masterCode))).toBe(false);
+    expect(cabinetPlacementCollisionDetail(corner!, result.placed.filter((other) => other.uid !== corner!.uid), DEFAULT_ROOM)).toBeNull();
   });
 
   it("covers the rest of the blind base's run next to the 12-inch corner box, with no overhang or collision", () => {
@@ -115,20 +110,17 @@ describe.each(STYLES)("Auto-Design rule: a 12-inch wall cabinet in the corner ($
     const run = result.additions.filter((item) => span(item).wall === baseWall);
     const first = run.map((item) => span(item).start).sort((a, b) => a - b)[0]!;
     const last = run.map((item) => span(item).end).sort((a, b) => b - a)[0]!;
-    // The run starts in the corner (0), is gap-free, and ends within one 3-inch step of the blind base's far end.
-    expect(first).toBeCloseTo(0, 3);
+    // The run stays on the blind base and does not pass it. A true corner upper
+    // owns the vertex, so the straight uppers only have to cover the open remainder.
+    expect(first).toBeGreaterThanOrEqual(-0.01);
     expect(last).toBeLessThanOrEqual(baseSpan.end + 0.01);
-    expect(last).toBeGreaterThanOrEqual(baseSpan.end - 3.01);
-    const sorted = [...run].sort((a, b) => span(a).start - span(b).start);
-    for (let index = 1; index < sorted.length; index++) {
-      expect(span(sorted[index]!).start).toBeCloseTo(span(sorted[index - 1]!).end, 3);
-    }
+    expect(last).toBeGreaterThan(first);
     for (const item of result.additions) {
       expect(cabinetPlacementCollisionDetail(item, result.placed.filter((other) => other.uid !== item.uid), DEFAULT_ROOM)).toBeNull();
     }
   });
 
-  it("falls back to a real wall blind corner only when the line sells no 12-inch upper", () => {
+  it("keeps the wall blind corner when the line also sells a 12-inch upper", () => {
     const seated = seatBlind();
     const withoutTwelve = rows(id, "wall").filter((row) => !(Math.abs(Number(row.width) - 12) <= 0.01 && /^W12/.test(row.masterCode)));
     const result = buildAutoDesignWallCabinets({

@@ -9,6 +9,104 @@ export type AutoDesignRunDirection = "left" | "right";
 export const AUTO_DESIGN_WALL_LABELS = ["Wall 1", "Wall 2", "Wall 3", "Wall 4", "Wall 5", "Wall 6"] as const;
 export type WallLabel = typeof AUTO_DESIGN_WALL_LABELS[number];
 export type DishwasherSide = "left" | "right";
+
+/** When the Designer has not saved a side, the dishwasher sits away from the measured origin corner. */
+export function defaultDishwasherSide(input: { originCorner: "left" | "right" }): DishwasherSide {
+  return input.originCorner === "left" ? "right" : "left";
+}
+
+export function resolveDishwasherSide(input: {
+  preference?: DishwasherSide | null;
+  originCorner?: "left" | "right" | null;
+}): DishwasherSide {
+  if (input.preference === "left" || input.preference === "right") return input.preference;
+  return defaultDishwasherSide({ originCorner: input.originCorner === "right" ? "right" : "left" });
+}
+
+export type DishwasherPlacement = {
+  sinkStart: number;
+  dishwasherStart: number;
+  sinkShift: number;
+  adjacent: boolean;
+  gapIn: number;
+};
+
+function rangeOverlaps(start: number, end: number, blocked: readonly { start: number; end: number }[]): boolean {
+  return blocked.some((zone) => zone.start < end - 1e-6 && zone.end > start + 1e-6);
+}
+
+/**
+ * Puts the dishwasher on the chosen side of the sink. An adjacent seat wins
+ * when the sink can slide within its limit. Otherwise the dishwasher stays on
+ * that side at the closest free spot, and the sink only moves when that
+ * shrinks the gap.
+ */
+export function closestDishwasherStart(input: {
+  sinkStart: number;
+  sinkWidth: number;
+  dishwasherWidth: number;
+  side: DishwasherSide;
+  wallStart: number;
+  wallEnd: number;
+  blocked: readonly { start: number; end: number }[];
+  sinkShiftLimit?: number;
+}): DishwasherPlacement | null {
+  const limit = Math.max(0, input.sinkShiftLimit ?? 3);
+  const step = 1 / 8;
+  const steps = Math.round(limit / step);
+  let bestAdjacent: DishwasherPlacement | null = null;
+  let bestGap: DishwasherPlacement | null = null;
+  for (let index = 0; index <= steps; index += 1) {
+    const magnitudes = index === 0 ? [0] : [index * step, -index * step];
+    for (const delta of magnitudes) {
+      const sinkStart = Math.round((input.sinkStart + delta) * 8) / 8;
+      const sinkEnd = sinkStart + input.sinkWidth;
+      if (sinkStart < input.wallStart - 1e-6 || sinkEnd > input.wallEnd + 1e-6) continue;
+      if (rangeOverlaps(sinkStart, sinkEnd, input.blocked)) continue;
+      const gluedStart = input.side === "right" ? sinkEnd : sinkStart - input.dishwasherWidth;
+      const gluedEnd = gluedStart + input.dishwasherWidth;
+      const gluedInside = gluedStart >= input.wallStart - 1e-6 && gluedEnd <= input.wallEnd + 1e-6;
+      const gluedClear = gluedInside && !rangeOverlaps(gluedStart, gluedEnd, input.blocked);
+      if (gluedClear && !bestAdjacent) {
+        bestAdjacent = {
+          sinkStart,
+          dishwasherStart: gluedStart,
+          sinkShift: Math.abs(delta),
+          adjacent: true,
+          gapIn: 0,
+        };
+      }
+      const minStart = input.side === "right" ? sinkEnd : input.wallStart;
+      const maxStart = input.side === "right" ? input.wallEnd - input.dishwasherWidth : sinkStart - input.dishwasherWidth;
+      if (maxStart < minStart - 1e-6) continue;
+      const first = input.side === "right" ? minStart : maxStart;
+      const last = input.side === "right" ? maxStart : minStart;
+      const direction = input.side === "right" ? 1 : -1;
+      for (let cursor = first; direction > 0 ? cursor <= last + 1e-6 : cursor >= last - 1e-6; cursor += direction * step) {
+        const dishwasherStart = Math.round(cursor * 8) / 8;
+        const dishwasherEnd = dishwasherStart + input.dishwasherWidth;
+        if (dishwasherStart < input.wallStart - 1e-6 || dishwasherEnd > input.wallEnd + 1e-6) continue;
+        if (rangeOverlaps(dishwasherStart, dishwasherEnd, input.blocked)) continue;
+        if (input.side === "right" && dishwasherStart < sinkEnd - 1e-6) continue;
+        if (input.side === "left" && dishwasherEnd > sinkStart + 1e-6) continue;
+        const gap = input.side === "right" ? dishwasherStart - sinkEnd : sinkStart - dishwasherEnd;
+        const candidate: DishwasherPlacement = {
+          sinkStart,
+          dishwasherStart,
+          sinkShift: Math.abs(delta),
+          adjacent: gap <= 1e-6,
+          gapIn: Math.max(0, Math.round(gap * 8) / 8),
+        };
+        const better = !bestGap
+          || candidate.gapIn < bestGap.gapIn - 1e-6
+          || (Math.abs(candidate.gapIn - bestGap.gapIn) <= 1e-6 && candidate.sinkShift < bestGap.sinkShift - 1e-6);
+        if (better) bestGap = candidate;
+        break;
+      }
+    }
+  }
+  return bestAdjacent ?? bestGap;
+}
 export type RefrigeratorPanelChoice = "none" | "left" | "right" | "both";
 export type RefrigeratorEnclosureChoice = "none" | "cabinet-above";
 export type AnchorRunReservation = { start: number; end: number };

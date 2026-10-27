@@ -1,4 +1,5 @@
 import { autoFillSpan } from "./autofill";
+import { planWallWidthsOverBase, solveCabinetSpan } from "./autoDesignGapSolver";
 import {
   SEAM_MIN_IN, findAutoDesignSeams, fillersForSeam, intersectWithCoverage, lowerCoverageOnWall, upperReservedZones,
   type AutoDesignSeam,
@@ -9,7 +10,7 @@ import type { CatalogFillerCandidate } from "./catalogFiller";
 import {
   COLLISION_EPSILON_IN, WALL_OPENING_CLEARANCE_IN, appendCollisionFreePlacements,
   cabinetPlacementCollisionDetail, cabinetWall, dim, footprintDepth, formatInches, freeSegmentsOnWall,
-  isBaseBlindCorner, isCornerCabinet, isPanelItem, isRangeOrOven, isRefrigerator, isSinkBaseCabinet, normalizeBlindCornerDoorSides,
+  isBaseBlindCorner, isCornerCabinet, isPanelItem, isRangeOrOven, isRefrigerator, isSinkBaseCabinet, assignBlindCornerDoorSides,
   ordinaryWallMountBottom, wallCeilingMin, wallPlacementAt, wallRunCornerPlacement, wallRunFrame, wallRunJoinAt, wallRunOffset,
   wallRunSpan, type DesignCabinet, type PlacedCabinet, type RoomData, type WallOpening, type WallRunFrame,
 } from "./design";
@@ -52,6 +53,30 @@ export function resolveWallHeightClass(catalog: readonly DesignCabinet[], nomina
 /** Standard wall cabinets are sold in 3-inch width steps; a gap smaller than one step cannot be tiled. */
 const WALL_WIDTH_STEP_IN = 3;
 const MIN_UPPER_WIDTH_IN = 9;
+
+/** Catalog widths first, equal halves before a lopsided pair, and never a 3" wall filler. */
+function wallRunCabinets(length: number, standard: readonly DesignCabinet[]): { cabinets: DesignCabinet[]; remainder: number } {
+  const widths = standard.map((row) => dim(row.width, 0)).filter((width) => width > 0);
+  const solved = solveCabinetSpan({ lengthIn: length, widthsIn: widths, layer: "wall", preferEqualHalves: true });
+  if (solved.covered && solved.cabinetWidths.length) {
+    const cabinets: DesignCabinet[] = [];
+    for (const width of solved.cabinetWidths) {
+      const row = standard.find((candidate) => Math.abs(dim(candidate.width, 0) - width) <= COLLISION_EPSILON_IN);
+      if (!row) return { cabinets: [], remainder: length };
+      cabinets.push(row);
+    }
+    const used = cabinets.reduce((sum, row) => sum + dim(row.width, 0), 0);
+    return { cabinets, remainder: Math.max(0, Math.round((length - used) * 8) / 8) };
+  }
+  const tiled = autoFillSpan(length, "kitchen", standard.map((row) => ({ ...row, placement: "base" as const })), { strategy: "largest-first" });
+  const cabinets = tiled.items.filter((item) => !item.isFiller)
+    .map((item) => standard.find((row) => row.id === item.cabinet.id))
+    .filter((row): row is DesignCabinet => row != null);
+  const used = cabinets.reduce((sum, row) => sum + dim(row.width, 0), 0);
+  const remainder = Math.max(0, Math.round((length - used) * 8) / 8);
+  if (Math.abs(remainder - 3) <= 0.05) return { cabinets: [], remainder: length };
+  return { cabinets, remainder };
+}
 /** The corner cabinet an Auto-Design blind corner gets: a plain 12-inch-wide upper in the corner square. */
 export const AUTO_DESIGN_CORNER_UPPER_WIDTH_IN = 12;
 
@@ -172,52 +197,8 @@ export function buildAutoDesignWallCabinets(input: {
     if (frame) {
       const at = Math.hypot(frame.start.x - point.x, frame.start.y - point.y) <= 0.01 ? "start" : "end";
       if (isBaseBlindCorner(base)) {
-        // The room corner gets a plain 12-inch-wide upper (the 12-inch-deep uppers
-        // from both walls leave a 12 x 12 square there), then real uppers tile the
-        // rest of the blind base's run. A line without a 12-inch upper falls back
-        // to a wall blind corner at the same vertex.
-        const twelve = standard.find((row) => Math.abs(dim(row.width, 0) - AUTO_DESIGN_CORNER_UPPER_WIDTH_IN) <= COLLISION_EPSILON_IN);
-        if (twelve) {
-          const candidate = makeCandidate(twelve);
-          const spot = wallRunCornerPlacement(candidate, frame, at, room);
-          const snapshot = working;
-          const addedBefore = additions.length;
-          if (spot && commit({ ...candidate, ...spot })) {
-            const seatedTwelve = additions[additions.length - 1]!;
-            const wall = cabinetWall(seatedTwelve, room);
-            const baseWall = cabinetWall(base, room);
-            const from = wallRunOffset(seatedTwelve, wall, room) + wallRunSpan(seatedTwelve, wall, room);
-            const to = baseWall === wall ? wallRunOffset(base, wall, room) + wallRunSpan(base, wall, room) : from;
-            const length = to - from;
-            let ok = true;
-            if (length >= MIN_UPPER_WIDTH_IN - COLLISION_EPSILON_IN) {
-              const tiled = autoFillSpan(length, "kitchen", standard.map((row) => ({ ...row, placement: "base" as const })), { strategy: "largest-first" });
-              const sources = (Array.isArray(tiled) ? tiled : tiled.items.filter((item) => !item.isFiller)
-                .map((item) => standard.find((row) => row.id === item.cabinet.id)!))
-                .filter((row): row is DesignCabinet => row != null);
-              const covered = sources.reduce((sum, row) => sum + dim(row.width, 0), 0);
-              if (!sources.length || length - covered > WALL_WIDTH_STEP_IN + COLLISION_EPSILON_IN || covered > length + COLLISION_EPSILON_IN) {
-                ok = false;
-              } else {
-                let along = from;
-                for (const row of sources) {
-                  const next = makeCandidate(row);
-                  const nextSpot = wallPlacementAt(along, next.width, next.depth, wall, room);
-                  if (!commit({ ...next, ...nextSpot })) { ok = false; break; }
-                  along += next.width;
-                }
-              }
-            }
-            if (!ok) {
-              // Keep the 12-inch corner box; the rest of the blind base's run needs a manual look.
-              working = snapshot; additions.splice(addedBefore);
-              if (spot && commit({ ...candidate, ...spot })) {
-                skipped.push(`${base.masterCode} corner: the 12″ corner upper was placed, but the rest of the blind base's run could not be matched exactly with real uppers.`);
-              }
-            }
-            placed = additions.length > addedBefore;
-          }
-        }
+        // The corner itself is a wall blind corner (or another true corner upper).
+        // A plain 12" wall cabinet is not a corner and is never seated in the vertex.
         // A base blind corner gets a wall blind corner at the same vertex, the
         // widest one that does not overhang its base, with its integrated 3″ filler.
         for (const source of placed ? [] : wallBlinds.filter((row) => dim(row.width, 0) <= base.width + COLLISION_EPSILON_IN)) {
@@ -237,6 +218,30 @@ export function buildAutoDesignWallCabinets(input: {
             }
             working = [...working, required.filler];
             additions.push(required.filler);
+          }
+          const baseWall = cabinetWall(base, room);
+          const baseStart = wallRunOffset(base, baseWall, room);
+          const baseEnd = baseStart + wallRunSpan(base, baseWall, room);
+          const cornerOnBase = cabinetWall(seated, room) === baseWall;
+          const cornerStart = cornerOnBase ? wallRunOffset(seated, baseWall, room) : baseEnd;
+          const cornerEnd = cornerOnBase ? cornerStart + wallRunSpan(seated, baseWall, room) : baseEnd;
+          const openSegments = [
+            { start: baseStart, end: Math.min(baseEnd, cornerStart) },
+            { start: Math.max(baseStart, cornerEnd), end: baseEnd },
+          ].filter((segment) => segment.end - segment.start >= MIN_UPPER_WIDTH_IN - COLLISION_EPSILON_IN);
+          for (const segment of openSegments) {
+            const length = segment.end - segment.start;
+            const widths = planWallWidthsOverBase(length, standard.map((row) => dim(row.width, 0)))
+              ?? [];
+            let along = segment.start;
+            for (const width of widths) {
+              const row = standard.find((candidate) => Math.abs(dim(candidate.width, 0) - width) <= COLLISION_EPSILON_IN);
+              if (!row) break;
+              const next = makeCandidate(row);
+              const nextSpot = wallPlacementAt(along, next.width, next.depth, baseWall, room);
+              if (!nextSpot || !commit({ ...next, ...nextSpot })) break;
+              along += next.width;
+            }
           }
           placed = true;
           break;
@@ -271,10 +276,7 @@ export function buildAutoDesignWallCabinets(input: {
                 remaining -= AUTO_DESIGN_CORNER_UPPER_WIDTH_IN;
               }
               if (remaining >= MIN_UPPER_WIDTH_IN - COLLISION_EPSILON_IN) {
-                const tiled = autoFillSpan(remaining, "kitchen", standard.map((row) => ({ ...row, placement: "base" as const })), { strategy: "largest-first" });
-                const more = (Array.isArray(tiled) ? tiled : tiled.items.filter((item) => !item.isFiller)
-                  .map((item) => standard.find((row) => row.id === item.cabinet.id)!))
-                  .filter((row): row is DesignCabinet => row != null);
+                const more = wallRunCabinets(remaining, standard).cabinets;
                 const covered = more.reduce((sum, row) => sum + dim(row.width, 0), 0);
                 if (covered <= remaining + COLLISION_EPSILON_IN) pieces.push(...more);
               }
@@ -326,10 +328,11 @@ export function buildAutoDesignWallCabinets(input: {
     let complete = true;
     for (const piece of pieces) {
       const exact = standard.find((source) => Math.abs(dim(source.width, 0) - piece.span) <= COLLISION_EPSILON_IN);
-      // When a single same-width SKU is unavailable, use real smaller upper boxes
-      // only if together they span the piece exactly. Never stretch a box or invent a SKU.
-      const tiled = exact ? [exact] : autoFillSpan(piece.span, "kitchen",
-        standard.map((row) => ({ ...row, placement: "base" as const })), { strategy: "largest-first" });
+      const equalWidths = exact ? null : planWallWidthsOverBase(piece.span, standard.map((row) => dim(row.width, 0)));
+      const tiled = exact ? [exact] : equalWidths
+        ? equalWidths.map((width) => standard.find((row) => Math.abs(dim(row.width, 0) - width) <= COLLISION_EPSILON_IN)!)
+        : autoFillSpan(piece.span, "kitchen",
+          standard.map((row) => ({ ...row, placement: "base" as const })), { strategy: "largest-first" });
       const sources = Array.isArray(tiled) ? tiled : tiled.items.filter((item) => !item.isFiller)
         .map((item) => standard.find((row) => row.id === item.cabinet.id)!);
       if (!sources.length || Math.abs(sources.reduce((sum, source) => sum + dim(source.width, 0), 0) - piece.span) > COLLISION_EPSILON_IN) {
@@ -371,8 +374,7 @@ export function buildAutoDesignWallCabinets(input: {
         let remainder = length;
         const placedHere: PlacedCabinet[] = [];
         if (length >= MIN_UPPER_WIDTH_IN - COLLISION_EPSILON_IN && standard.length) {
-          const tiled = autoFillSpan(length, "kitchen", standard.map((row) => ({ ...row, placement: "base" as const })), { strategy: "largest-first" });
-          const sources = tiled.items.filter((item) => !item.isFiller).map((item) => standard.find((row) => row.id === item.cabinet.id)).filter((row): row is DesignCabinet => row != null);
+          const sources = wallRunCabinets(length, standard).cabinets;
           const fromRight = leftNeighbor == null && rightNeighbor != null;
           const ordered = fromRight ? [...sources].reverse() : sources;
           const total = ordered.reduce((sum, row) => sum + dim(row.width, 0), 0);
@@ -409,7 +411,7 @@ export function buildAutoDesignWallCabinets(input: {
     }
   }
   // A wall blind corner exposes the door away from its blind side.
-  working = normalizeBlindCornerDoorSides(working, room);
+  working = assignBlindCornerDoorSides(working, room);
   const uids = new Set(additions.map((item) => item.uid));
   return { placed: working, additions: working.filter((item) => uids.has(item.uid)), skipped, heightUsedIn };
 }

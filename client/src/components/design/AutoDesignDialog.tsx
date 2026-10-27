@@ -21,6 +21,8 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onBuild: (input: AutoDesignInputs) => AutoDesignSubmitResult;
+  dishwasherSide?: DishwasherSide | null;
+  onDishwasherSideChange?: (side: DishwasherSide) => void;
   /** The selected line's source-priced base catalog is still arriving. */
   catalogLoading?: boolean;
   /** Actual room-wall count, capped by the shared six-wall input contract. */
@@ -57,7 +59,7 @@ const omissionLabels: Record<(typeof applianceFields)[number], string> = {
 };
 type FieldValue = { wallLabel: WallLabel; centerOffsetIn: string };
 
-export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading = false, wallCount = 4, room, onWallGuideChange, onLoadSixWallTrainingRoom }: Props) {
+export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading = false, wallCount = 4, room, onWallGuideChange, onLoadSixWallTrainingRoom, dishwasherSide: dishwasherSidePreference = null, onDishwasherSideChange }: Props) {
   const [layoutType, setLayoutType] = useState<AutoDesignLayoutType>("single-wall");
   const [originCorner, setOriginCorner] = useState<AutoDesignOriginCorner>("left");
   const [runDirection, setRunDirection] = useState<AutoDesignRunDirection>("right");
@@ -83,6 +85,9 @@ export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading =
   useEffect(() => {
     if (open) onWallGuideChange?.({ originCorner, runDirection });
   }, [open, onWallGuideChange, originCorner, runDirection]);
+  useEffect(() => {
+    if (dishwasherSidePreference === "left" || dishwasherSidePreference === "right") setDishwasherSide(dishwasherSidePreference);
+  }, [dishwasherSidePreference]);
 
   const setValue = (field: PointField, patch: Partial<FieldValue>) => setValues((current) => ({
     ...current,
@@ -276,12 +281,12 @@ export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading =
               <p className="text-xs text-muted-foreground">A regular sink base is used unless you choose farmhouse here.</p>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="auto-design-dishwasher-side">Dishwasher position</Label>
-              <Select value={dishwasherSide} onValueChange={(value) => setDishwasherSide(value as DishwasherSide)} disabled={omitted.dishwasher}>
-                <SelectTrigger id="auto-design-dishwasher-side" aria-label="Dishwasher position"><SelectValue /></SelectTrigger>
+              <Label htmlFor="auto-design-dishwasher-side">Dishwasher side</Label>
+              <Select value={dishwasherSide} onValueChange={(value) => { const side = value as DishwasherSide; setDishwasherSide(side); onDishwasherSideChange?.(side); }} disabled={omitted.dishwasher}>
+                <SelectTrigger id="auto-design-dishwasher-side" aria-label="Dishwasher side"><SelectValue /></SelectTrigger>
                 <SelectContent><SelectItem value="left">Left of sink</SelectItem><SelectItem value="right">Right of sink</SelectItem></SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground">{omitted.dishwasher ? "No dishwasher will be added." : "Used when the optional exact dishwasher center is blank. An exact center takes precedence."}</p>
+              <p className="text-xs text-muted-foreground">{omitted.dishwasher ? "No dishwasher will be added." : "Left of sink or right of sink. Auto-Design keeps the dishwasher against the sink when it can, and otherwise on this side as close as possible."}</p>
             </div>
           </div>
 

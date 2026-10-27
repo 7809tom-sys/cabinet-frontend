@@ -36,6 +36,23 @@ export const STD = {
   PANEL_THICKNESS: 0.75,
 };
 
+/**
+ * How far a filler or end panel may project from the wall. Base and tall
+ * pieces match a 24" base; wall pieces match a 12" upper. The number is the
+ * installed depth, not the along-wall width.
+ */
+export const MAX_BASE_FILLER_EXTENSION_IN = 24;
+export const MAX_WALL_FILLER_EXTENSION_IN = 12;
+/** An along-wall filler wider than this is refused so a cabinet or wiggle-room pass can close the opening. */
+export const MAX_FILLER_RUN_WIDTH_IN = 24;
+
+/** Cap an installed filler/panel depth by layer. Tall and base share the 24" cap. */
+export function clampFillerExtensionIn(depth: number, placement: string | null | undefined): number {
+  const cap = placement === "wall" ? MAX_WALL_FILLER_EXTENSION_IN : MAX_BASE_FILLER_EXTENSION_IN;
+  if (!Number.isFinite(depth)) return depth;
+  return Math.min(Math.max(0, depth), cap);
+}
+
 // True for finished end panels, decorative panels, refrigerator/dishwasher
 // skins, and door panels — all of which are 3/4" thick flat stock.
 export function isPanelItem(c: { description?: string | null; masterCode?: string | null; subCategory?: string | null }): boolean {
@@ -388,12 +405,13 @@ export function matchInstalledFillerToCabinet(
     ? "wall"
     : owner.placement === "tall" ? "tall" : "base";
   const ownerDepth = Number(owner.depth);
+  const matchedDepth = Number.isFinite(ownerDepth) && ownerDepth > 0
+    ? ownerDepth
+    : placement === "wall" ? STD.WALL_DEPTH : STD.BASE_DEPTH;
   return {
     ...filler,
     placement,
-    depth: Number.isFinite(ownerDepth) && ownerDepth > 0
-      ? ownerDepth
-      : placement === "wall" ? STD.WALL_DEPTH : STD.BASE_DEPTH,
+    depth: clampFillerExtensionIn(matchedDepth, placement),
     height: ownerElevation.height,
     mountBottom: ownerElevation.bottom,
     fillerForCabinetUid: owner.uid,
@@ -9279,13 +9297,6 @@ export function blindCornerSnapInfo(
   return { angle: 90, placement: "flush", clearanceIn: 0 };
 }
 
-/**
- * Resolve the exposed BBC/WBC door side from its physical corner. Blind bases
- * may be stored flush to the wall endpoint or pulled 3–6 inches off it, so a
- * saved `swing` alone is not authoritative. The door must always face away from
- * the blind side: a start-side/left corner exposes the right door and an
- * end-side/right corner exposes the left door.
- */
 /** Resolve a 3–6 inch blind-corner pull while keeping the cabinet back seated on its wall. */
 export function blindCornerPullPlacement(
   cabinet: PlacedCabinet,
@@ -9309,9 +9320,20 @@ export function blindCornerPullPlacement(
   return { ...spot, blindPull: pull };
 }
 
+const BLIND_CORNER_NEIGHBOR_TOUCH_IN = 0.5;
+
+/**
+ * The open side of a blind corner. Without neighbors this is the corner rule:
+ * a cabinet pulled off the wall start exposes the right door, and one pulled
+ * off the wall end exposes the left door. When the surrounding run is passed,
+ * a side blocked by a cabinet, appliance, filler, or the corner itself loses,
+ * and a tie faces the longer open run (away from the corner when the runs match).
+ * Elevation "left" is toward wall-offset 0.
+ */
 export function blindCornerDoorSide(
   cabinet: PlacedCabinet,
   room: RoomData,
+  placed?: readonly PlacedCabinet[],
 ): "left" | "right" | null {
   if (!isBlindCorner(cabinet.masterCode, cabinet.description)) return null;
   const side = (cabinet.wallId ?? cabinetWall(cabinet, room)) as WallSide;
@@ -9324,19 +9346,121 @@ export function blindCornerDoorSide(
   const pullAllowance = blindPullRange(cabinet)?.max ?? 6;
   const atStart = offset <= pullAllowance + COLLISION_EPSILON_IN;
   const atEnd = offset + span >= length - pullAllowance - COLLISION_EPSILON_IN;
-  if (atStart === atEnd) return null;
-  return atStart ? "right" : "left";
+  const cornerSide: "left" | "right" | null = atStart === atEnd ? null : atStart ? "right" : "left";
+  if (!placed) return cornerSide;
+
+  const layer = fillerLayer(cabinet.placement);
+  const frame = wallRunFrame(side, room);
+  const startJoin = frame ? wallRunJoinAt(frame, "start", room) : null;
+  const endJoin = frame ? wallRunJoinAt(frame, "end", room) : null;
+  const neighbors = placed.filter((item) => {
+    if (item.uid === cabinet.uid || item.integratedWallBlindFiller) return false;
+    if (fillerLayer(item.placement) !== layer) return false;
+    return cabinetWall(item, room) === side;
+  });
+  const clearance = (direction: "left" | "right"): number => {
+    const edge = direction === "left" ? offset : offset + span;
+    let nearest = direction === "left" ? edge : Math.max(0, length - edge);
+    for (const item of neighbors) {
+      const start = item.wallId === side && item.wallOffset != null
+        ? Math.max(0, Number(item.wallOffset) || 0)
+        : wallRunOffset(item, side, room);
+      const end = start + wallRunSpan(item, side, room);
+      if (direction === "left" && end <= edge + BLIND_CORNER_NEIGHBOR_TOUCH_IN) {
+        nearest = Math.min(nearest, edge - end);
+      } else if (direction === "right" && start >= edge - BLIND_CORNER_NEIGHBOR_TOUCH_IN) {
+        nearest = Math.min(nearest, start - edge);
+      }
+    }
+    return nearest;
+  };
+  const blocked = (direction: "left" | "right"): boolean => {
+    if (clearance(direction) <= BLIND_CORNER_NEIGHBOR_TOUCH_IN) return true;
+    const endGap = direction === "left" ? offset : Math.max(0, length - (offset + span));
+    if (endGap <= COLLISION_EPSILON_IN) return true;
+    const join = direction === "left" ? startJoin : endJoin;
+    return Boolean(join) && endGap <= pullAllowance + COLLISION_EPSILON_IN;
+  };
+  const leftBlocked = blocked("left");
+  const rightBlocked = blocked("right");
+  if (leftBlocked !== rightBlocked) return leftBlocked ? "right" : "left";
+  const leftClear = clearance("left");
+  const rightClear = clearance("right");
+  if (Math.abs(leftClear - rightClear) > BLIND_CORNER_NEIGHBOR_TOUCH_IN) {
+    return leftClear > rightClear ? "left" : "right";
+  }
+  return cornerSide ?? (leftClear >= rightClear ? "left" : "right");
 }
 
-/** Apply the physical BBC/WBC door side to restored placements. */
+/**
+ * Door side a view should draw. An explicit left/right swing is the user's
+ * flip and wins. Auto-Design writes that swing; restore only fills it in
+ * when it was never chosen.
+ */
+export function blindCornerSwingForView(
+  cabinet: PlacedCabinet,
+  room?: RoomData | null,
+  placed?: readonly PlacedCabinet[],
+): "left" | "right" | null {
+  if (!isBlindCorner(cabinet.masterCode, cabinet.description)) return null;
+  if (cabinet.swing === "left" || cabinet.swing === "right") return cabinet.swing;
+  if (!room) return null;
+  return blindCornerDoorSide(cabinet, room, placed);
+}
+
+/** Installer note for the quote. The SKU stays the same either way. */
+export function blindCornerInstallerNote(swing: string | null | undefined): string | null {
+  if (swing === "left") return "Door: Left";
+  if (swing === "right") return "Door: Right";
+  return null;
+}
+
+/**
+ * Where the plan paints the door on an unrotated footprint.
+ * "right" is toward the higher wall offset. The front edge faces the room.
+ */
+export function planBlindCornerDoorBox(
+  door: "left" | "right",
+  wall: "top" | "bottom" | "left" | "right",
+): { along: "left" | "right" | "top" | "bottom"; front: "top" | "bottom" | "left" | "right" } {
+  const towardEnd = door === "right";
+  if (wall === "top" || wall === "bottom") {
+    return { along: towardEnd ? "right" : "left", front: wall === "top" ? "bottom" : "top" };
+  }
+  return { along: towardEnd ? "bottom" : "top", front: wall === "left" ? "right" : "left" };
+}
+
+/**
+ * Auto-Design writes the layout door side onto every blind corner. A later
+ * user flip is stored in the same `swing` field and is not rewritten here.
+ */
+export function assignBlindCornerDoorSides(
+  placed: PlacedCabinet[],
+  room: RoomData,
+): PlacedCabinet[] {
+  let changed = false;
+  const next = placed.map((cabinet) => {
+    const swing = blindCornerDoorSide(cabinet, room, placed);
+    if (!swing || cabinet.swing === swing) return cabinet;
+    changed = true;
+    return { ...cabinet, swing };
+  });
+  return changed ? next : placed;
+}
+
+/**
+ * Restore path. An explicit left or right swing is the user's handing and
+ * stays. A blind corner that was never handed gets the layout default.
+ */
 export function normalizeBlindCornerDoorSides(
   placed: PlacedCabinet[],
   room: RoomData,
 ): PlacedCabinet[] {
   let changed = false;
   const next = placed.map((cabinet) => {
-    const swing = blindCornerDoorSide(cabinet, room);
-    if (!swing || cabinet.swing === swing) return cabinet;
+    if (cabinet.swing === "left" || cabinet.swing === "right") return cabinet;
+    const swing = blindCornerDoorSide(cabinet, room, placed);
+    if (!swing) return cabinet;
     changed = true;
     return { ...cabinet, swing };
   });

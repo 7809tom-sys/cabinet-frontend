@@ -10,12 +10,15 @@ import {
   cabinetPlacementCollisionDetail,
   cabinetWall,
   dim,
+  formatEighthInches,
   freeSegmentsOnWall,
   isFillerItem,
   isRangeOrOven,
   isRefrigerator,
   isRefrigeratorEndPanel,
   isSinkBaseCabinet,
+  placedCornerGeometryKind,
+  placedFootprint,
   matchInstalledFillerToCabinet,
   normalizeGlassStackersToParentFronts,
   normalizeInstalledFillersToAdjacentCabinets,
@@ -27,6 +30,7 @@ import {
   wallLength,
   wallPlacementAt,
   wallPlacementAtUnbounded,
+  wallRunFrame,
   wallRunOffset,
   wallRunSpan,
   type DesignCabinet,
@@ -44,11 +48,24 @@ import {
 } from "./smallGapFiller";
 
 /**
- * The most a user-placed auto-design appliance may slide along its own wall
+ * The most a user-placed Auto-Design appliance may slide along its own wall
  * while the run is fitted. The cap is measured from the original placement,
- * not from a later corner nudge.
+ * not from a later corner nudge. Movement is horizontal only: left or right
+ * along the wall, never in or out. Sinks and refrigerators use their own caps.
  */
 export const AUTO_DESIGN_WIGGLE_ROOM_IN = 3;
+/** A sink base may slide at most this far from the measured center. The faucet stays on that base. */
+export const SINK_SHIFT_LIMIT_IN = 3;
+/** A refrigerator bay may slide at most this far from the measured center to close a gap. */
+export const REFRIGERATOR_SHIFT_LIMIT_IN = 6;
+
+/** Per-appliance cap measured from the original placement. */
+export function autoDesignShiftLimitIn(kind: string): number {
+  if (kind === "refrigerator") return REFRIGERATOR_SHIFT_LIMIT_IN;
+  if (kind === "sink") return SINK_SHIFT_LIMIT_IN;
+  return AUTO_DESIGN_WIGGLE_ROOM_IN;
+}
+
 const WIGGLE_STEP_IN = 1 / 8;
 const UNDERSIZED_CABINET_IN = 12;
 
@@ -74,7 +91,7 @@ export const DESIGNER_LAYOUT_RULES: readonly DesignerLayoutRule[] = [
     id: "wiggle-room",
     name: "wiggle room",
     phase: "wiggle",
-    summary: "During Auto-Design, slide a user-placed appliance at most 3 inches along its own wall when that yields a better cabinet fit.",
+    summary: "During Auto-Design, slide a user-placed appliance left or right along its own wall when that yields a better cabinet fit. Ranges and dishwashers move at most 3 inches, sinks at most 3 inches, and refrigerators at most 6 inches. The smallest shift that works is used.",
   },
   {
     id: "straight-base-largest-first",
@@ -170,7 +187,7 @@ export const DESIGNER_LAYOUT_RULES: readonly DesignerLayoutRule[] = [
     id: "refrigerator-bay",
     name: "refrigerator bay",
     phase: "auto-design-stage",
-    summary: "The refrigerator keeps its panels and the cabinet above. That bay is not shifted to force a fit.",
+    summary: "The refrigerator keeps its panels and the cabinet above. The whole bay may slide at most 6 inches along its wall to close a gap.",
   },
   {
     id: "corner-appliance-nudge",
@@ -217,17 +234,44 @@ export type AutoDesignAnchorOrigin = {
   originalStart: number;
 };
 
+export type AutoDesignWiggleDirection = "left" | "right";
+
+/** A cabinet the shift made room for, when Auto-Design can name it. */
+export type AutoDesignWiggleReason = {
+  uid?: string;
+  masterCode?: string;
+  /** Plain label such as `36" lazy Susan`. */
+  label: string;
+  widthIn?: number;
+};
+
 export type AutoDesignWiggleMove = {
   uid: string;
+  /** Anchor kind from the measured build: sink, stove, dishwasher, or refrigerator. */
   kind: string;
+  /** Same token as `kind`. Kept beside the display name so callers can tell type from label. */
+  applianceType: string;
+  /** Display name: Range, Dishwasher, Sink base, or Refrigerator. */
   label: string;
   wallId: string;
+  /** Wall name shown to the user, such as "bottom wall" or a drawn-wall label. */
+  wallLabel: string;
+  /** Plan direction of the shift. Positive screen-X is right; vertical walls use the installer's right while facing the cabinet. */
+  direction: AutoDesignWiggleDirection;
   /** Signed along-wall change from the position at the start of wiggle. */
   deltaAlongIn: number;
-  /** Absolute distance from the user's original placement. Never above 3 inches. */
+  /** Absolute inches moved along the wall. Never above that appliance's shift cap. */
+  inchesMoved: number;
+  /** Absolute distance from the user's original placement. Never above that appliance's shift cap. */
   distanceFromOriginalIn: number;
   fromStart: number;
   toStart: number;
+  /** Along-wall position when wiggle started. */
+  originalPositionIn: number;
+  /** Along-wall position after the shift. */
+  newPositionIn: number;
+  /** Cabinet the shift made room for. Null when the fit is only standard cabinet widths. */
+  reason: AutoDesignWiggleReason | null;
 };
 
 export type TrimRunKind = "moulding" | "light-rail" | "shoe" | "crown" | "toe-kick" | "batten";
@@ -387,11 +431,155 @@ function sinkLockedByModeledWindow(
     && opening.offset + opening.width > start + COLLISION_EPSILON_IN);
 }
 
-function applianceLabel(kind: string): string {
-  if (kind === "sink") return "sink";
-  if (kind === "dishwasher") return "dishwasher";
-  if (kind === "refrigerator") return "refrigerator";
-  return "range";
+function applianceDisplayName(kind: string): string {
+  if (kind === "sink") return "Sink base";
+  if (kind === "dishwasher") return "Dishwasher";
+  if (kind === "refrigerator") return "Refrigerator";
+  return "Range";
+}
+
+function wiggleWallLabel(wallId: string, room: RoomData): string {
+  const custom = room.customWalls?.find((wall) => wall.id === wallId);
+  if (custom?.label?.trim()) return custom.label.trim();
+  if (wallId === "top" || wallId === "bottom" || wallId === "left" || wallId === "right") return `${wallId} wall`;
+  return wallId;
+}
+
+/**
+ * Plan left/right for a signed along-wall shift. Horizontal walls follow screen
+ * X. A vertical wall uses the installer's right while standing inside the room
+ * and facing the cabinet.
+ */
+export function autoDesignWiggleDirection(deltaAlongIn: number, wallId: string, room: RoomData): AutoDesignWiggleDirection {
+  if (Math.abs(deltaAlongIn) <= COLLISION_EPSILON_IN) return deltaAlongIn >= 0 ? "right" : "left";
+  const frame = wallRunFrame(wallId, room);
+  if (!frame) return deltaAlongIn > 0 ? "right" : "left";
+  const dx = frame.tangent.x * deltaAlongIn;
+  const dy = frame.tangent.y * deltaAlongIn;
+  if (Math.abs(dx) >= Math.abs(dy) - 1e-9) return dx >= 0 ? "right" : "left";
+  const facingX = -frame.inward.x;
+  const facingY = -frame.inward.y;
+  const viewerRightX = -facingY;
+  const viewerRightY = facingX;
+  const dot = dx * viewerRightX + dy * viewerRightY;
+  return dot >= 0 ? "right" : "left";
+}
+
+function reservedSpanOnWall(item: PlacedCabinet, wallId: string, room: RoomData): { start: number; end: number } | null {
+  if (item.islandFace) return null;
+  const frame = wallRunFrame(wallId, room);
+  if (!frame) return null;
+  if (cabinetWall(item, room) === wallId) {
+    const side = wallId as WallSide;
+    const start = alongStart(item, side, room);
+    return { start, end: start + wallRunSpan(item, wallId, room) };
+  }
+  const kind = placedCornerGeometryKind(item);
+  if (kind !== "l-shape" && kind !== "diagonal" && kind !== "corner-drawer" && kind !== "blind-corner") return null;
+  const envelope = placedFootprint(item);
+  const corners = [
+    { x: item.x, y: item.y },
+    { x: item.x + envelope.w, y: item.y },
+    { x: item.x, y: item.y + envelope.d },
+    { x: item.x + envelope.w, y: item.y + envelope.d },
+  ];
+  const samples = corners.map((point) => {
+    const relX = point.x - frame.start.x;
+    const relY = point.y - frame.start.y;
+    return {
+      along: relX * frame.tangent.x + relY * frame.tangent.y,
+      across: Math.abs(relX * -frame.tangent.y + relY * frame.tangent.x),
+    };
+  });
+  if (Math.min(...samples.map((sample) => sample.across)) > 1.5) return null;
+  const start = Math.max(0, Math.min(...samples.map((sample) => sample.along)));
+  const end = Math.min(frame.length, Math.max(...samples.map((sample) => sample.along)));
+  if (end - start < 1) return null;
+  return { start, end };
+}
+
+function signedSeparation(appliance: { start: number; end: number }, other: { start: number; end: number }): number {
+  if (other.end <= appliance.start + COLLISION_EPSILON_IN) return appliance.start - other.end;
+  if (other.start >= appliance.end - COLLISION_EPSILON_IN) return other.start - appliance.end;
+  return -(Math.min(appliance.end, other.end) - Math.max(appliance.start, other.start));
+}
+
+function describeWiggleReason(item: PlacedCabinet, wallId: string, room: RoomData): AutoDesignWiggleReason {
+  const span = reservedSpanOnWall(item, wallId, room);
+  const widthIn = span
+    ? Math.round((span.end - span.start) * 8) / 8
+    : Math.round((Number(item.width) || 0) * 8) / 8;
+  const hay = `${item.masterCode ?? ""} ${item.description ?? ""} ${item.cornerType ?? ""}`.toLowerCase();
+  const widthText = widthIn > 0 ? formatEighthInches(widthIn) : "";
+  const lazySusan = item.cornerType === "lazy-susan" || /lazy\s*susan/.test(hay) || /^ls(?:b)?\d/.test((item.masterCode ?? "").toLowerCase().replace(/[^a-z0-9]/g, ""));
+  const label = lazySusan
+    ? `${widthText} lazy Susan`.trim()
+    : widthText
+      ? `${widthText} ${item.masterCode || item.description || "cabinet"}`
+      : (item.description?.trim() || item.masterCode || "cabinet");
+  return { uid: item.uid, masterCode: item.masterCode, label, widthIn };
+}
+
+function wiggleReasonCabinet(input: {
+  before: readonly PlacedCabinet[];
+  after: readonly PlacedCabinet[];
+  group: WiggleGroup;
+  room: RoomData;
+  catalog: DesignCabinet[];
+}): AutoDesignWiggleReason | null {
+  const beforeMain = input.before.find((item) => item.uid === input.group.main.uid);
+  const afterMain = input.after.find((item) => item.uid === input.group.main.uid);
+  if (!beforeMain || !afterMain) return null;
+  const wallId = input.group.wallId;
+  const beforeSpan = reservedSpanOnWall(beforeMain, wallId, input.room);
+  const afterSpan = reservedSpanOnWall(afterMain, wallId, input.room);
+  if (!beforeSpan || !afterSpan) return null;
+  const cache = new Map<string, number>();
+  const penaltyFor = (gap: number) => {
+    if (gap < -COLLISION_EPSILON_IN) return 1000 + Math.abs(gap) * 100;
+    if (gap <= COLLISION_EPSILON_IN) return 0;
+    return segmentPenalty(gap, input.catalog, false, false, cache);
+  };
+  let best: { item: PlacedCabinet; score: number } | null = null;
+  for (const other of input.before) {
+    if (input.group.uids.has(other.uid) || isFillerItem(other)) continue;
+    const otherSpan = reservedSpanOnWall(other, wallId, input.room);
+    if (!otherSpan) continue;
+    const beforeGap = signedSeparation(beforeSpan, otherSpan);
+    const afterGap = signedSeparation(afterSpan, otherSpan);
+    let score = penaltyFor(beforeGap) - penaltyFor(afterGap);
+    if (beforeGap < -COLLISION_EPSILON_IN && afterGap >= -COLLISION_EPSILON_IN) score += 10000;
+    if (beforeGap > COLLISION_EPSILON_IN && Math.abs(afterGap) <= COLLISION_EPSILON_IN) score += 500;
+    if (score <= 1e-6) continue;
+    if (!best || score > best.score + 1e-6) best = { item: other, score };
+  }
+  return best ? describeWiggleReason(best.item, wallId, input.room) : null;
+}
+
+export function formatAutoDesignWiggleMessage(move: AutoDesignWiggleMove): string {
+  const reason = move.reason ? `to fit the ${move.reason.label}` : "to fit standard cabinet widths";
+  return `Wiggle room applied: ${move.label} moved ${formatEighthInches(move.inchesMoved)} ${move.direction} ${reason}`;
+}
+
+export function formatAutoDesignWiggleBadge(move: AutoDesignWiggleMove): string {
+  return `Moved ${formatEighthInches(move.inchesMoved)} ${move.direction === "left" ? "←" : "→"}`;
+}
+
+/**
+ * Drops a reported shift once that appliance is gone or no longer sits at the
+ * shifted position. A manual move, or a later Auto-Design run that does not
+ * shift it, clears the notice and the plan badge.
+ */
+export function activeAutoDesignWiggleMoves(
+  moves: readonly AutoDesignWiggleMove[],
+  placed: readonly PlacedCabinet[],
+  room: RoomData,
+): AutoDesignWiggleMove[] {
+  return moves.filter((move) => {
+    const item = placed.find((candidate) => candidate.uid === move.uid);
+    if (!item || item.wallId !== move.wallId) return false;
+    return Math.abs(wallRunOffset(item, move.wallId, room) - move.newPositionIn) <= 0.05;
+  });
 }
 
 function wiggleGroup(item: PlacedCabinet, origin: AutoDesignAnchorOrigin, placed: readonly PlacedCabinet[], room: RoomData): WiggleGroup | null {
@@ -407,11 +595,14 @@ function wiggleGroup(item: PlacedCabinet, origin: AutoDesignAnchorOrigin, placed
 }
 
 /**
- * Slides each user-placed auto-design appliance along its own wall by the
- * smallest distance that produces the best cabinet fit, and never more than
- * 3 inches from the original placement. A shift that collides, leaves the
- * wall, or pulls a sink off a modeled window is rejected. Equal fits keep the
- * smaller move, and a tie breaks toward the wall start.
+ * Slides each user-placed Auto-Design appliance along its own wall by the
+ * smallest distance that produces the best cabinet fit. Ranges and dishwashers
+ * stay within 3 inches, sinks within 3 inches, and refrigerators within 6
+ * inches of the original placement. A shift that collides, leaves the wall, or
+ * pulls a sink off a modeled window is rejected. Equal fits keep the smaller
+ * move, and a tie breaks toward the wall start. Each applied shift is returned
+ * with the appliance, wall, direction, inches, positions, and the cabinet it
+ * made room for when that cabinet is already on the plan.
  */
 export function applyAutoDesignWiggleRoom(input: {
   placed: PlacedCabinet[];
@@ -442,16 +633,17 @@ export function applyAutoDesignWiggleRoom(input: {
       if (!group) continue;
       const initialStart = alongStart(item, group.wallId, input.room);
       const entryStart = entryStarts.get(origin.uid) ?? initialStart;
+      const shiftLimit = autoDesignShiftLimitIn(origin.kind);
       const currentScore = layoutPenalty(placed, input.room, input.openings, input.catalog, cache);
       let bestScore = Number.POSITIVE_INFINITY;
       let bestDeltaFromOriginal = 0;
       let found = false;
-      for (let step = 0; step <= Math.round(AUTO_DESIGN_WIGGLE_ROOM_IN / WIGGLE_STEP_IN); step += 1) {
+      for (let step = 0; step <= Math.round(shiftLimit / WIGGLE_STEP_IN); step += 1) {
         const magnitudes = step === 0 ? [0] : [step * WIGGLE_STEP_IN, -step * WIGGLE_STEP_IN];
         for (const deltaFromOriginal of magnitudes) {
-          if (Math.abs(deltaFromOriginal) > AUTO_DESIGN_WIGGLE_ROOM_IN + COLLISION_EPSILON_IN) continue;
+          if (Math.abs(deltaFromOriginal) > shiftLimit + COLLISION_EPSILON_IN) continue;
           const target = Math.round((origin.originalStart + deltaFromOriginal) * 8) / 8;
-          if (Math.abs(target - origin.originalStart) > AUTO_DESIGN_WIGGLE_ROOM_IN + COLLISION_EPSILON_IN) continue;
+          if (Math.abs(target - origin.originalStart) > shiftLimit + COLLISION_EPSILON_IN) continue;
           const shifted = shiftGroup(placed, group, target - initialStart, input.room);
           if (!groupStillValid(shifted, group, input.openings, input.room)) continue;
           const score = layoutPenalty(shifted, input.room, input.openings, input.catalog, cache);
@@ -469,6 +661,7 @@ export function applyAutoDesignWiggleRoom(input: {
       if (!found || !(bestScore < currentScore - 1e-6)) continue;
       const target = Math.round((origin.originalStart + bestDeltaFromOriginal) * 8) / 8;
       if (near(target, initialStart)) continue;
+      const beforePlaced = placed;
       placed = shiftGroup(placed, group, target - initialStart, input.room);
       const moved = placed.find((candidate) => candidate.uid === origin.uid);
       const toStart = moved ? alongStart(moved, group.wallId, input.room) : target;
@@ -476,15 +669,29 @@ export function applyAutoDesignWiggleRoom(input: {
         moves.delete(origin.uid);
         continue;
       }
+      const deltaAlongIn = toStart - entryStart;
       moves.set(origin.uid, {
         uid: origin.uid,
         kind: origin.kind,
-        label: applianceLabel(origin.kind),
+        applianceType: origin.kind,
+        label: applianceDisplayName(origin.kind),
         wallId: group.wallId,
-        deltaAlongIn: toStart - entryStart,
+        wallLabel: wiggleWallLabel(group.wallId, input.room),
+        direction: autoDesignWiggleDirection(deltaAlongIn, group.wallId, input.room),
+        deltaAlongIn,
+        inchesMoved: Math.round(Math.abs(deltaAlongIn) * 8) / 8,
         distanceFromOriginalIn: Math.abs(toStart - origin.originalStart),
         fromStart: entryStart,
         toStart,
+        originalPositionIn: entryStart,
+        newPositionIn: toStart,
+        reason: wiggleReasonCabinet({
+          before: beforePlaced,
+          after: placed,
+          group,
+          room: input.room,
+          catalog: input.catalog,
+        }),
       });
     }
   }

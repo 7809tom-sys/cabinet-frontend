@@ -139,7 +139,7 @@ export function isEqualHeightTwoDrawerBase(
   return /^2DB\d/.test(code) && drawerCount === 2;
 }
 
-/** WBC is the fixed-hand wall blind-corner family: blind panel left, door right. */
+/** WBC is a wall blind corner. Door side is the placement's swing, not a second SKU. */
 export function isWallBlindCornerCabinet(
   cabinet: Pick<CabinetLike, "masterCode" | "description">,
 ): boolean {

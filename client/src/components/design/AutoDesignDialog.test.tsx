@@ -58,7 +58,7 @@ describe("AutoDesignDialog", () => {
       fireEvent.click(screen.getByRole("option", { name: omission }));
     }
     expect(screen.queryByTestId("auto-design-refrigerator-options")).toBeNull();
-    expect((screen.getByLabelText("Dishwasher position") as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByLabelText("Dishwasher side") as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByTestId("auto-design-build-submit"));
 
     expect(onBuild).toHaveBeenCalledWith(expect.objectContaining({

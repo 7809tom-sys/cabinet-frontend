@@ -1,7 +1,8 @@
 import { buildRequiredBlindCornerFiller, requiresConfiguredBlindCornerFiller } from "./blindCornerRequiredFiller";
+import { REFRIGERATOR_SHIFT_LIMIT_IN, SINK_SHIFT_LIMIT_IN } from "./designerLayoutRules";
 import type { CatalogFillerCandidate } from "./catalogFiller";
 import {
-  BLIND_CORNER_FILLER_WIDTH_IN, COLLISION_EPSILON_IN, appendCollisionFreePlacements, blindCornerPullPlacement,
+  BLIND_CORNER_FILLER_WIDTH_IN, COLLISION_EPSILON_IN, appendCollisionFreePlacements, blindCornerDoorSide, blindCornerPullPlacement, isBlindCorner,
   cabinetCollisionDetail, cabinetPlacementCollisionDetail, cabinetWall, dim, footprintDepth, formatInches, freeSegmentsOnWall, hasCollision,
   isRangeOrOven, isRefrigerator, isRefrigeratorEndPanel, refrigeratorEndPanelConflictDetail, standardHeight,
   wallLength, wallPlacementAtUnbounded, wallRunAlongAtPoint, wallRunCornerPlacement, wallRunFrame, wallRunOffset,
@@ -165,6 +166,10 @@ export function seatAutoDesignCorner(input: {
       if (!pulled) return { ok: false, message: `${code} must use its Cabinet Config pull range at ${slotLabel}.` };
       corner = { ...corner, ...pulled };
     }
+    if (isBlindCorner(code, source.description ?? undefined)) {
+      const swing = blindCornerDoorSide(corner, room, working);
+      if (swing) corner = { ...corner, swing };
+    }
     const cornerHit = cabinetPlacementCollisionDetail(corner, working, room);
     if (cornerHit) return { ok: false, message: "blocked", blocker: cornerHit.cabinet };
     const committed = appendCollisionFreePlacements(working, [corner], room);
@@ -198,13 +203,24 @@ export function seatAutoDesignCorner(input: {
   if (!isBlocked(first.message)) return { ok: false, message: first.message };
 
   // Something real occupies the corner footprint: slide only a blocking range/refrigerator away from it.
-  const limit = Math.max(0, input.maxNudgeIn ?? AUTO_DESIGN_MAX_APPLIANCE_NUDGE_IN);
+  const applianceCap = (kind: string) => {
+    const kindCap = kind === "refrigerator"
+      ? REFRIGERATOR_SHIFT_LIMIT_IN
+      : kind === "sink"
+        ? SINK_SHIFT_LIMIT_IN
+        : AUTO_DESIGN_MAX_APPLIANCE_NUDGE_IN;
+    return Math.max(0, Math.min(input.maxNudgeIn ?? kindCap, kindCap));
+  };
   const groups = movableGroups(input.working, room, target, input.cornerWallIds).slice(0, 2);
-  const steps: number[] = [];
-  for (let step = 0; step * NUDGE_STEP_IN <= limit + COLLISION_EPSILON_IN; step++) steps.push(step * NUDGE_STEP_IN);
-  const combos: number[][] = groups.length === 0 ? [] : groups.length === 1
-    ? steps.map((a) => [a])
-    : steps.flatMap((a) => steps.map((b) => [a, b]));
+  const stepsFor = (limit: number) => {
+    const steps: number[] = [];
+    for (let step = 0; step * NUDGE_STEP_IN <= limit + COLLISION_EPSILON_IN; step++) steps.push(step * NUDGE_STEP_IN);
+    return steps;
+  };
+  const groupSteps = groups.map((group) => stepsFor(applianceCap(group.kind)));
+  const combos: number[][] = groupSteps.length === 0 ? [] : groupSteps.length === 1
+    ? groupSteps[0]!.map((a) => [a])
+    : groupSteps[0]!.flatMap((a) => groupSteps[1]!.map((b) => [a, b]));
   combos.sort((left, right) => left.reduce((s, v) => s + v, 0) - right.reduce((s, v) => s + v, 0));
   for (const combo of combos) {
     if (combo.every((value) => value === 0)) continue;
@@ -251,7 +267,7 @@ export function seatAutoDesignCorner(input: {
       return {
         ok: false,
         message: `${code} cannot fit at ${slotLabel}: the ${name} is too close to the corner. It would have to slide ${shortBy} away, `
-          + `but a measured appliance may only move ${formatInches(limit)}. Choose a smaller corner cabinet or change that appliance's center measurement.`,
+          + `but a measured ${group.kind} may only move ${formatInches(group.kind === "refrigerator" ? REFRIGERATOR_SHIFT_LIMIT_IN : AUTO_DESIGN_MAX_APPLIANCE_NUDGE_IN)}. Choose a smaller corner cabinet or change that appliance's center measurement.`,
       };
     }
     return {
