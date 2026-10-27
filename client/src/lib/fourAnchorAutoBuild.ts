@@ -389,8 +389,13 @@ export function planFourAnchorAutoBuild(input: FourAnchorInputs): FourAnchorBuil
   };
 }
 
-export function canRunFourAnchorAutoBuild(isAdmin: boolean, hasHandPlacedItems: boolean): boolean {
-  return isAdmin && !hasHandPlacedItems;
+/**
+ * Four-anchor layout is an empty-plan build. `audienceAllowed` is true for a
+ * CabinetDealz admin and for every affiliate Designer, including storefront
+ * customers. A hand-placed plan is never overwritten.
+ */
+export function canRunFourAnchorAutoBuild(audienceAllowed: boolean, hasHandPlacedItems: boolean): boolean {
+  return audienceAllowed && !hasHandPlacedItems;
 }
 
 function validMeasurement(measurement: FourAnchorMeasurement | null | undefined): measurement is FourAnchorMeasurement {

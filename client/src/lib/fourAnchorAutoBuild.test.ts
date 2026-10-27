@@ -196,7 +196,7 @@ describe("four-anchor auto-build", () => {
     expect(result).toEqual({ ok: false, missing: ["sink"] });
   });
 
-  it("is admin-only and refuses to overwrite hand-placed contents", () => {
+  it("runs for the allowed Designer audience and refuses to overwrite hand-placed contents", () => {
     expect(canRunFourAnchorAutoBuild(true, false)).toBe(true);
     expect(canRunFourAnchorAutoBuild(false, false)).toBe(false);
     expect(canRunFourAnchorAutoBuild(true, true)).toBe(false);

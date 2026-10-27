@@ -129,7 +129,7 @@ export function FourAnchorAutoBuildDialog({ open, onOpenChange, onBuild, catalog
     <Dialog open={open} onOpenChange={onOpenChange} modal={false}>
       <DialogContent hideOverlay className="max-h-[90vh] w-[calc(100vw-2rem)] sm:max-w-2xl 2xl:!left-auto 2xl:!right-4 2xl:!w-[28rem] 2xl:!translate-x-0 overflow-y-auto overflow-x-hidden" data-testid="four-anchor-auto-build-dialog">
 	        <DialogHeader>
-	          <DialogTitle>Admin · Four-anchor auto-build</DialogTitle>
+	          <DialogTitle>Four-anchor auto-build</DialogTitle>
 	          <DialogDescription>
 	            Choose the layout and datum first. Every measured anchor uses its own selector from up to six actual room walls and a center measurement from that wall’s starting corner.
 	          </DialogDescription>

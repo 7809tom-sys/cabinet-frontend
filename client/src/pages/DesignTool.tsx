@@ -458,12 +458,16 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   );
   const affiliateSlug = affiliateSlugForStoreScope(storeScope);
   const cartDestination = cartPathForStoreScope(storeScope);
-  // Continuous walls are an internal CabinetDealz testing tool for now. Affiliate
-  // stores retain the standard room-shape Designer and see the release notice.
-  const continuousWallsEnabled = !affiliateSlug;
-  const continuousWallsComingSoonMessage = affiliateSlug
-    ? "Our advanced continuous-wall builder is being prepared for partner storefronts. Easy room shapes are ready for your kitchen today."
-    : null;
+  // Four-anchor layout is available to CabinetDealz admins and to every affiliate
+  // Designer, including storefront customers on /store/:slug/design and the
+  // affiliate dashboard Designer. The main public Designer stays admin-only.
+  // There is no per-affiliate off switch for this feature.
+  const fourAnchorAvailable = isAdmin || Boolean(affiliateSlug);
+  // The continuous wall builder is the finished WallBuilder the main Designer
+  // already ships. Affiliate storefronts and the affiliate dashboard Designer
+  // get the same builder. There is no per-affiliate off switch for this feature.
+  const continuousWallsEnabled = true;
+  const continuousWallsComingSoonMessage = null;
   const { data: affiliateBrand } = trpc.affiliates.bySlug.useQuery(
     { slug: affiliateSlug ?? "" },
     { enabled: !!affiliateSlug, retry: false },
@@ -1027,7 +1031,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	}, [fourAnchorAutoBuildOpen, fourAnchorWallGuideSelection, room]);
 	const openFourAnchorAutoBuild = useCallback(() => {
 	  // The colored numbered wall guide is meaningful only in the 2D Floor Plan.
-	  // This does not modify the plan; it simply opens the guided admin workflow.
+	  // This does not modify the plan; it simply opens the measured-kitchen workflow.
 	  setViewMode("plan");
 	  setFourAnchorAutoBuildOpen(true);
 	}, []);
@@ -3303,8 +3307,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       toast.error(message);
       return { ok: false as const, message };
     };
-    if (!canRunFourAnchorAutoBuild(isAdmin, placedRef.current.length > 0)) {
-      return fail("The four-anchor build is admin-only and only runs on an empty Designer.");
+    if (!fourAnchorAvailable) {
+      return fail("Four-anchor layout is available in affiliate Designers and for CabinetDealz admins.");
+    }
+    if (!canRunFourAnchorAutoBuild(fourAnchorAvailable, placedRef.current.length > 0)) {
+      return fail("The four-anchor build only runs on an empty Designer.");
     }
     const result = planFourAnchorAutoBuild(input);
     if (!result.ok) {
@@ -3506,7 +3513,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       ? "Measured appliances are seated. Choose each real corner cabinet before the remaining wall runs are filled."
       : "Measured appliances are seated. Confirm the next step to fill the remaining wall runs.");
     return { ok: true as const };
-  }, [appliancePalette, autoFillCabinets, autoFillCabinetsLoading, isAdmin, isCornerCabinet, openings, placedRef, refrigeratorSurroundCatalog, room, setCountertop, setPlaced, wallCabPool, wallCabPoolLoading]);
+  }, [appliancePalette, autoFillCabinets, autoFillCabinetsLoading, fourAnchorAvailable, isCornerCabinet, openings, placedRef, refrigeratorSurroundCatalog, room, setCountertop, setPlaced, wallCabPool, wallCabPoolLoading]);
 
   /**
    * The second half of a Four-anchor build. Nothing is guessed: appliances are
@@ -13716,7 +13723,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
             Tablet preview
           </Button>
         )}
-        {isAdmin && (
+        {fourAnchorAvailable && (
           <Button
             variant="outline"
             size="sm"
@@ -13724,8 +13731,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	            onClick={openFourAnchorAutoBuild}
             disabled={placed.length > 0 || layoutLocked}
             data-testid="admin-four-anchor-auto-build"
-            title={placed.length > 0 ? "Start this admin build from an empty Designer" : "Build a measured kitchen from four fixed fixture anchors"}
-            aria-label="Admin four-anchor auto-build"
+            title={placed.length > 0 ? "Start this measured build from an empty Designer" : "Build a measured kitchen from four fixed fixture anchors"}
+            aria-label="Four-anchor auto-build"
           >
             <Ruler className="mr-1.5 h-3.5 w-3.5" /> Four anchors
           </Button>
@@ -14272,12 +14279,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                    <span className="flex-1 text-left">Peninsula Wizard</span>
 	                    <Badge variant="secondary" className="text-[10px]">fast layout</Badge>
 	                  </button>
-                  {isAdmin && (
+                  {fourAnchorAvailable && (
                     <button
                       data-testid="more-sheet-four-anchors"
                       disabled={placed.length > 0 || layoutLocked}
 	                      onClick={() => { setMoreSheetOpen(false); setTimeout(openFourAnchorAutoBuild, 120); }}
-                      title={placed.length > 0 ? "Start this admin build from an empty Designer" : "Build a measured kitchen from four fixed fixture anchors"}
+                      title={placed.length > 0 ? "Start this measured build from an empty Designer" : "Build a measured kitchen from four fixed fixture anchors"}
                       className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm hover:bg-muted disabled:opacity-50 transition-colors"
                     >
                       <Ruler className="h-4 w-4 text-muted-foreground shrink-0" />
@@ -14285,7 +14292,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                         Four anchors
                         {placed.length > 0 && <span className="block text-[11px] font-normal text-muted-foreground">Needs an empty plan</span>}
                       </span>
-                      <Badge variant="secondary" className="text-[10px]">admin</Badge>
+                      <Badge variant="secondary" className="text-[10px]">measured</Badge>
                     </button>
                   )}
 	                  <button disabled={layoutLocked} onClick={autoFillActiveWall} className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm hover:bg-muted disabled:opacity-50 transition-colors">
@@ -19191,18 +19198,18 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         setFurniture((previous) => previous.map((current) => current.uid === item.uid ? item : current));
         toast.success("Planning zone updated. Pelican fixture dimensions are unchanged.");
       }} />
-	      {isAdmin && (
+	      {fourAnchorAvailable && (
 	        <FourAnchorAutoBuildDialog
 	          open={fourAnchorAutoBuildOpen}
 	          onOpenChange={setFourAnchorAutoBuildOpen}
 	          onWallGuideChange={setFourAnchorWallGuideSelection}
-	          onLoadSixWallTrainingRoom={loadFourAnchorSixWallTrainingRoom}
+	          onLoadSixWallTrainingRoom={isAdmin ? loadFourAnchorSixWallTrainingRoom : undefined}
 	          onBuild={buildFourAnchorAutoLayout}
 	          catalogLoading={autoFillCabinetsLoading || wallCabPoolLoading}
 	          wallCount={Math.min(6, Math.max(1, room.customWalls?.length ?? 4))}
 	        />
 	      )}
-	      {isAdmin && fourAnchorCornerStage && (
+	      {fourAnchorAvailable && fourAnchorCornerStage && (
 	        <FourAnchorCornerSelectionDialog
 	          open
 	          slots={fourAnchorCornerStage.slots}
@@ -20776,9 +20783,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	            <DialogTitle className="font-serif text-xl">Start with a room layout</DialogTitle>
 	            <DialogDescription>{roomType === "closet"
 	              ? "Start with an editable reach-in bedroom closet and a generic bi-fold room opening, or use the room shapes below. Measure your actual finished opening before ordering doors."
-	              : continuousWallsEnabled
-	              ? "Choose an existing room shape or build every connected wall continuously from exact measurements. Your advanced wall draft stays here until you explicitly clear it or apply it."
-	              : "Choose an existing room shape to begin your kitchen. Continuous walls are coming soon to partner storefronts."}
+	              : "Choose an existing room shape or build every connected wall continuously from exact measurements. Your advanced wall draft stays here until you explicitly clear it or apply it."}
 	            </DialogDescription>
 	          </DialogHeader>
 	          <div className="space-y-5 p-5">
