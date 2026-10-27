@@ -1,0 +1,1546 @@
+From bcc9c9eb273b0f1c4f9c3e9069f105b5d7665bc0 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Tue, 27 Oct 2026 17:46:16 +0000
+Subject: [PATCH] Accept forecast filters and store each vendor's close
+ percentage.
+
+Optional forecast filters stay backward compatible. Weighted totals use a vendor-entered percentage stored in vendor_forecast_rates, which the owner applies with the hand-run SQL.
+---
+ docs/sql/0225_vendor_forecast_rates.tidb.sql |  17 +
+ drizzle/schema.ts                            |  14 +
+ server/lib/pelicanCatalogAccess.test.ts      |  12 +
+ server/lib/pelicanCatalogAccess.ts           |  18 +
+ server/pelican.vendorAccess.test.ts          |   6 +-
+ server/routers/pelican.ts                    |  30 +-
+ server/routers/salesForecast.ts              | 109 ++++-
+ server/salesForecast/extract.test.ts         |  33 +-
+ server/salesForecast/extract.ts              |  40 +-
+ server/salesForecast/load.ts                 |  18 +-
+ server/salesForecast/rates.ts                |  60 +++
+ shared/salesForecast.test.ts                 | 194 +++++++-
+ shared/salesForecast.ts                      | 442 ++++++++++++++++---
+ 13 files changed, 918 insertions(+), 75 deletions(-)
+ create mode 100644 docs/sql/0225_vendor_forecast_rates.tidb.sql
+ create mode 100644 server/lib/pelicanCatalogAccess.test.ts
+ create mode 100644 server/lib/pelicanCatalogAccess.ts
+ create mode 100644 server/salesForecast/rates.ts
+
+diff --git a/docs/sql/0225_vendor_forecast_rates.tidb.sql b/docs/sql/0225_vendor_forecast_rates.tidb.sql
+new file mode 100644
+index 0000000..4ca8b57
+--- /dev/null
++++ b/docs/sql/0225_vendor_forecast_rates.tidb.sql
+@@ -0,0 +1,17 @@
++-- TiDB SQL editor version of the vendor-entered sales forecast percentage.
++-- Paste each numbered block on its own.
++-- One statement per block. Do not paste drizzle breakpoint markers into these blocks.
++-- Safe to re-run: IF NOT EXISTS, tables qualified as cabinet_dealz.<table>.
++-- The owner runs this SQL. The application does not apply it.
++
++-- 1
++CREATE TABLE IF NOT EXISTS cabinet_dealz.vendor_forecast_rates (
++  id INT NOT NULL AUTO_INCREMENT,
++  vendorScope VARCHAR(32) NOT NULL,
++  closePercent DECIMAL(5, 2) NULL,
++  setByUserId INT NULL,
++  setByName VARCHAR(255) NULL,
++  setAt TIMESTAMP NULL,
++  PRIMARY KEY (id),
++  UNIQUE KEY vendor_forecast_rates_scope_uq (vendorScope)
++);
+diff --git a/drizzle/schema.ts b/drizzle/schema.ts
+index 2faceb2..5ad65be 100644
+--- a/drizzle/schema.ts
++++ b/drizzle/schema.ts
+@@ -4006,6 +4006,20 @@ export const salesForecastCloseBrackets = mysqlTable("sales_forecast_close_brack
+   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+ });
+ 
++// One forecast percentage per vendor scope, entered by that vendor.
++// Company close-rate brackets are not applied to weighted quantities.
++// closePercent null means the vendor has not entered a percentage.
++export const vendorForecastRates = mysqlTable("vendor_forecast_rates", {
++  id: int("id").autoincrement().primaryKey(),
++  vendorScope: varchar("vendorScope", { length: 32 }).notNull(),
++  closePercent: decimal("closePercent", { precision: 5, scale: 2 }),
++  setByUserId: int("setByUserId"),
++  setByName: varchar("setByName", { length: 255 }),
++  setAt: timestamp("setAt"),
++}, (t) => ({
++  scopeUnique: uniqueIndex("vendor_forecast_rates_scope_uq").on(t.vendorScope),
++}));
++
+ export const pricingSettingAudit = mysqlTable("pricing_setting_audit", {
+   id: int("id").autoincrement().primaryKey(),
+   field: varchar("field", { length: 64 }).notNull(),
+diff --git a/server/lib/pelicanCatalogAccess.test.ts b/server/lib/pelicanCatalogAccess.test.ts
+new file mode 100644
+index 0000000..9d41b1b
+--- /dev/null
++++ b/server/lib/pelicanCatalogAccess.test.ts
+@@ -0,0 +1,12 @@
++import { describe, expect, it } from "vitest";
++import { pelicanCatalogAccess } from "./pelicanCatalogAccess";
++
++describe("pelican catalog ownership", () => {
++  it("allows the Pelican vendor and admin, and denies another vendor", () => {
++    expect(pelicanCatalogAccess({ role: "distributor", isApproved: true, approvedSourceKey: "pelican" })).toBe("allow");
++    expect(pelicanCatalogAccess({ role: "admin" })).toBe("allow");
++    expect(pelicanCatalogAccess({ role: "distributor", isApproved: true, approvedSourceKey: "skyline" })).toBe("deny");
++    expect(pelicanCatalogAccess({ role: "distributor", isApproved: false, approvedSourceKey: "pelican", distributorActive: true, distributorCode: "SKY" })).toBe("deny");
++    expect(pelicanCatalogAccess({ role: "sales_rep", isApproved: true, approvedSourceKey: "pelican" })).toBe("deny");
++  });
++});
+diff --git a/server/lib/pelicanCatalogAccess.ts b/server/lib/pelicanCatalogAccess.ts
+new file mode 100644
+index 0000000..56c68df
+--- /dev/null
++++ b/server/lib/pelicanCatalogAccess.ts
+@@ -0,0 +1,18 @@
++/**
++ * Pelican catalog identity. Admin may open any Pelican product. A vendor may
++ * open Pelican products only when their approved vendor record is the Pelican
++ * line (or the legacy PEL supply line). Every other vendor is denied.
++ */
++export function pelicanCatalogAccess(input: {
++  role: string;
++  approvedSourceKey?: string | null;
++  isApproved?: boolean;
++  distributorCode?: string | null;
++  distributorActive?: boolean;
++}): "allow" | "deny" {
++  if (input.role === "admin") return "allow";
++  if (input.role !== "distributor") return "deny";
++  if (input.isApproved && input.approvedSourceKey?.trim().toLowerCase() === "pelican") return "allow";
++  if (input.distributorActive && input.distributorCode === "PEL") return "allow";
++  return "deny";
++}
+diff --git a/server/pelican.vendorAccess.test.ts b/server/pelican.vendorAccess.test.ts
+index 960263f..206fb98 100644
+--- a/server/pelican.vendorAccess.test.ts
++++ b/server/pelican.vendorAccess.test.ts
+@@ -6,15 +6,17 @@ describe("Pelican vendor access", () => {
+   const source = readFileSync(resolve(process.cwd(), "server/routers/pelican.ts"), "utf8");
+ 
+   it("uses the supplier-profile procedure for vendor catalog and selling controls", () => {
+-    for (const procedure of ["adminList", "setPopular", "setVisibility", "setPricing", "updateProduct", "setCoverage", "setUnsupportedOverhangLimit", "setMaterialImage"]) {
++    for (const procedure of ["adminList", "productForVendorEdit", "setPopular", "setVisibility", "setPricing", "updateProduct", "setCoverage", "setUnsupportedOverhangLimit", "setMaterialImage"]) {
+       expect(source).toContain(`${procedure}: supplierProfileProcedure`);
+     }
+   });
+ 
+   it("resolves Pelican identity from the approved vendor record, not a supply line", () => {
++    const access = readFileSync(resolve(process.cwd(), "server/lib/pelicanCatalogAccess.ts"), "utf8");
+     expect(source).toContain("requirePelicanVendor(db, ctx)");
+     expect(source).toContain("ctx.approvedVendorLineId");
+-    expect(source).toContain('sourceKey?.trim().toLowerCase() === "pelican"');
++    expect(source).toContain("pelicanCatalogAccess");
++    expect(access).toContain('approvedSourceKey?.trim().toLowerCase() === "pelican"');
+     expect(source).toContain("vendor?.isApproved");
+   });
+ 
+diff --git a/server/routers/pelican.ts b/server/routers/pelican.ts
+index c2db458..b554939 100644
+--- a/server/routers/pelican.ts
++++ b/server/routers/pelican.ts
+@@ -11,6 +11,7 @@ import { normalizeCode } from "../../shared/cabinetCodeMatch";
+ import { positiveAuthorizedSurfaceBase } from "../../shared/surfacePricing";
+ import { auditPelicanDesignerReadiness, isPelicanDesignerSelectable, pelicanDesignerRenderFlags } from "../lib/pelicanDesignerReadiness";
+ import { comparisonProfileForPelicanProduct } from "../../shared/pelicanComparablePackaging";
++import { pelicanCatalogAccess } from "../lib/pelicanCatalogAccess";
+ import { loadAffiliateStorefrontPricing } from "../lib/affiliateStorefrontPricing";
+ import { resolveMarkupBps } from "../../shared/affiliateBranding";
+ 
+@@ -45,23 +46,35 @@ async function requirePelicanVendor(
+   db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+   ctx: { user: { role: string }; distributorId: number | null; approvedVendorLineId?: number | null },
+ ) {
+-  if (ctx.user.role === "admin") return;
++  let approvedSourceKey: string | null = null;
++  let isApproved = false;
+   if (ctx.approvedVendorLineId != null) {
+     const [vendor] = await db
+       .select({ sourceKey: vendorLines.sourceKey, isApproved: vendorLines.isApproved })
+       .from(vendorLines)
+       .where(eq(vendorLines.id, ctx.approvedVendorLineId))
+       .limit(1);
+-    if (vendor?.isApproved && vendor.sourceKey?.trim().toLowerCase() === "pelican") return;
++    approvedSourceKey = vendor?.sourceKey ?? null;
++    isApproved = Boolean(vendor?.isApproved);
+   }
++  let distributorCode: string | null = null;
++  let distributorActive = false;
+   if (ctx.distributorId != null) {
+     const [line] = await db
+       .select({ code: distributors.code, isActive: distributors.isActive })
+       .from(distributors)
+       .where(eq(distributors.id, ctx.distributorId))
+       .limit(1);
+-    if (line?.isActive && line.code === "PEL") return;
++    distributorCode = line?.code ?? null;
++    distributorActive = Boolean(line?.isActive);
+   }
++  if (pelicanCatalogAccess({
++    role: ctx.user.role,
++    approvedSourceKey,
++    isApproved,
++    distributorCode,
++    distributorActive,
++  }) === "allow") return;
+   throw new TRPCError({ code: "FORBIDDEN", message: "This catalog is only available to the Pelican vendor." });
+ }
+ async function loadMarkupMap(db: NonNullable<Awaited<ReturnType<typeof getDb>>>): Promise<MarkupMap> {
+@@ -723,6 +736,17 @@ export const pelicanRouter = router({
+       }
+       return { success: true, unpublished: resultingBase == null } as const;
+     }),
++  /** One Pelican product for the existing catalog editor. Pelican vendor or admin only. */
++  productForVendorEdit: supplierProfileProcedure
++    .input(z.object({ id: z.number().int().positive() }))
++    .query(async ({ input, ctx }) => {
++      const db = await getDb();
++      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Pelican catalog is unavailable." });
++      await requirePelicanVendor(db, ctx);
++      const [row] = await db.select().from(pelicanProducts).where(eq(pelicanProducts.id, input.id)).limit(1);
++      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Pelican product not found." });
++      return row;
++    }),
+   updateProduct: supplierProfileProcedure
+     .input(z.object({
+       id: z.number().int().positive(),
+diff --git a/server/routers/salesForecast.ts b/server/routers/salesForecast.ts
+index cdb80c0..9a58196 100644
+--- a/server/routers/salesForecast.ts
++++ b/server/routers/salesForecast.ts
+@@ -3,14 +3,17 @@ import { TRPCError } from "@trpc/server";
+ import { adminProcedure, router, supplierProfileProcedure } from "../_core/trpc";
+ import { getDb, getPricingSettings } from "../db";
+ import { validateCloseRateBrackets } from "../../shared/closeRateBrackets";
+-import { projectForecastForScopes, type ForecastFilters } from "../../shared/salesForecast";
+-import { listVendorScopes } from "../lib/vendorFulfillmentStore";
++import { projectForecastForScopes, validateVendorForecastPercent, vendorMaySetForecastRate, type ForecastFilters, type ForecastResult, type MaterialTotal } from "../../shared/salesForecast";
++import { allowedVendorScopes, assertVendorScope, listVendorScopes } from "../lib/vendorFulfillmentStore";
+ import { loadCloseBrackets, replaceCloseBrackets, runSalesForecast } from "../salesForecast/load";
++import { loadVendorForecastRates, ratesForForecast, saveVendorForecastRate, type StoredVendorForecastRate } from "../salesForecast/rates";
+ 
+ const filtersInput = z.object({
+   doorStyles: z.array(z.string()).optional(),
+   colors: z.array(z.string()).optional(),
+   series: z.array(z.string()).optional(),
++  categories: z.array(z.string()).optional(),
++  query: z.string().nullable().optional(),
+   supplierScopes: z.array(z.string()).optional(),
+   savedFrom: z.string().nullable().optional(),
+   savedTo: z.string().nullable().optional(),
+@@ -25,6 +28,8 @@ function toFilters(input: z.infer<typeof filtersInput>): ForecastFilters {
+     doorStyles: input?.doorStyles,
+     colors: input?.colors,
+     series: input?.series,
++    categories: input?.categories,
++    query: input?.query,
+     supplierScopes: input?.supplierScopes,
+     savedFrom: input?.savedFrom,
+     savedTo: input?.savedTo,
+@@ -33,10 +38,37 @@ function toFilters(input: z.infer<typeof filtersInput>): ForecastFilters {
+   };
+ }
+ 
++function hideRetail(row: MaterialTotal): MaterialTotal {
++  return { ...row, listValue: null, retailValue: null, weightedRetailValue: null };
++}
++
++function withoutRetail(result: ForecastResult): ForecastResult {
++  return {
++    ...result,
++    materials: result.materials.map(hideRetail),
++    unassigned: result.unassigned.map(hideRetail),
++  };
++}
++
++async function forecastWithRates(input: {
++  filters?: ForecastFilters;
++  page?: number;
++  pageSize?: number;
++  homeownerMarkupBps: number;
++}) {
++  const db = await getDb();
++  const stored: StoredVendorForecastRate[] = db ? await loadVendorForecastRates(db) : [];
++  const result = await runSalesForecast({
++    ...input,
++    vendorRates: ratesForForecast(stored),
++  });
++  return { ...withoutRetail(result), vendorRates: stored };
++}
++
+ export const salesForecastRouter = router({
+   adminQuery: adminProcedure.input(filtersInput).query(async ({ input }) => {
+     const settings = await getPricingSettings();
+-    return runSalesForecast({
++    return forecastWithRates({
+       filters: toFilters(input),
+       page: input?.page ?? 0,
+       pageSize: input?.pageSize ?? 25,
+@@ -65,13 +97,60 @@ export const salesForecastRouter = router({
+     return { ok: true as const };
+   }),
+ 
++  /**
++   * The signed-in vendor sets the percentage used to weight their own forecast.
++   * Sales and admin accounts can read it on the forecast query and cannot write it.
++   */
++  setVendorRate: supplierProfileProcedure.input(z.object({
++    scope: z.string().trim().min(1).max(32),
++    percent: z.number().min(0).max(100).nullable(),
++  })).mutation(async ({ ctx, input }) => {
++    const db = await getDb();
++    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
++    const allowed = await allowedVendorScopes(db, ctx.user);
++    const problem = vendorMaySetForecastRate({
++      role: ctx.user.role,
++      scope: input.scope,
++      allowedScopes: allowed.all ? [input.scope] : Array.from(allowed.scopes),
++    });
++    if (problem) throw new TRPCError({ code: problem.startsWith("Unknown") ? "BAD_REQUEST" : "FORBIDDEN", message: problem });
++    const percentProblem = validateVendorForecastPercent(input.percent);
++    if (percentProblem) throw new TRPCError({ code: "BAD_REQUEST", message: percentProblem });
++    const scope = await assertVendorScope(db, ctx.user, input.scope);
++    try {
++      await saveVendorForecastRate(db, {
++        scope,
++        percent: input.percent,
++        userId: ctx.user.id,
++        userName: ctx.user.name,
++      });
++    } catch (error) {
++      const message = error instanceof Error ? error.message : String(error);
++      if (/vendor_forecast_rates|doesn't exist|does not exist|unknown table/i.test(message)) {
++        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Forecast percentages are not available until cabinet_dealz.vendor_forecast_rates is created." });
++      }
++      throw error instanceof TRPCError ? error : new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: message });
++    }
++    return { ok: true as const, scope, percent: input.percent };
++  }),
++
+   /**
+    * Vendor forecast. The signed-in vendor, or an admin viewing as that vendor,
+-   * sees only their scopes. Customer names are removed.
++   * sees only their scopes. Customer names are removed. Supplier scope cannot
++   * be widened by the client.
+    */
+   vendorQuery: supplierProfileProcedure.input(z.object({
+     distributorId: z.number().int().positive().optional(),
+     approvedVendorLineId: z.number().int().positive().optional(),
++    doorStyles: z.array(z.string()).optional(),
++    colors: z.array(z.string()).optional(),
++    series: z.array(z.string()).optional(),
++    categories: z.array(z.string()).optional(),
++    query: z.string().nullable().optional(),
++    savedFrom: z.string().nullable().optional(),
++    savedTo: z.string().nullable().optional(),
++    statuses: z.array(z.string()).optional(),
++    customerTypes: z.array(z.string()).optional(),
+     page: z.number().int().min(0).default(0),
+     pageSize: z.number().int().min(1).max(100).default(25),
+   }).optional()).query(async ({ ctx, input }) => {
+@@ -81,13 +160,29 @@ export const salesForecastRouter = router({
+       distributorId: ctx.isAdmin ? input?.distributorId ?? null : ctx.distributorId,
+       approvedVendorLineId: ctx.isAdmin ? input?.approvedVendorLineId ?? null : ctx.approvedVendorLineId,
+     });
++    const scopeIds = scopes.map((scope) => scope.scope);
+     const settings = await getPricingSettings();
+-    const full = await runSalesForecast({
+-      filters: { supplierScopes: scopes.map((scope) => scope.scope) },
++    const forecast = await forecastWithRates({
++      filters: {
++        doorStyles: input?.doorStyles,
++        colors: input?.colors,
++        series: input?.series,
++        categories: input?.categories,
++        query: input?.query,
++        savedFrom: input?.savedFrom,
++        savedTo: input?.savedTo,
++        statuses: input?.statuses,
++        customerTypes: input?.customerTypes,
++        supplierScopes: scopeIds,
++      },
+       page: input?.page ?? 0,
+       pageSize: input?.pageSize ?? 25,
+       homeownerMarkupBps: settings.homeownerMarkupBps,
+     });
+-    return projectForecastForScopes(full, scopes.map((scope) => scope.scope));
++    const projected = projectForecastForScopes(forecast, scopeIds);
++    return {
++      ...projected,
++      vendorRates: forecast.vendorRates.filter((rate) => scopeIds.includes(rate.vendorScope)),
++    };
+   }),
+ });
+diff --git a/server/salesForecast/extract.test.ts b/server/salesForecast/extract.test.ts
+index 0088d51..a382820 100644
+--- a/server/salesForecast/extract.test.ts
++++ b/server/salesForecast/extract.test.ts
+@@ -3,7 +3,7 @@ import { countertopArea, toeKickLinearInches, trimPiecesNeeded, type PlacedCabin
+ import { crownTakeoffFromExposedSegments } from "../../client/src/lib/crownTakeoff";
+ import { countertopSlabSquareFeet } from "../../client/src/lib/surfaceCartLines";
+ import { distributorScope, PELICAN_SCOPE } from "../../shared/vendorFulfillment";
+-import { extractDesignLines, type StyleFact } from "./extract";
++import { extractDesignLines, resolvedProductCategory, type StyleFact } from "./extract";
+ 
+ function base(uid: string, x: number, extra: Partial<PlacedCabinet> = {}): PlacedCabinet {
+   return {
+@@ -110,5 +110,36 @@ describe("forecast takeoff", () => {
+     }, { styles, distributors, skus: new Map(), pelican: new Map() });
+     expect(lines[0]?.scope).toBeNull();
+     expect(lines[0]?.color).toBe("unspecified");
++    expect(lines[0]?.categoryMissing).toBe(true);
++    expect(lines[0]?.category).toBe("");
++  });
++
++  it("derives a missing cabinet category from the linked product and does not invent one", () => {
++    expect(resolvedProductCategory(" Flooring ", null)).toEqual({ category: "Flooring", categoryMissing: false });
++    expect(resolvedProductCategory("", "Faucets")).toEqual({ category: "Faucets", categoryMissing: false });
++    expect(resolvedProductCategory("  ", "  ")).toEqual({ category: "", categoryMissing: true });
++    const linked = extractDesignLines({
++      id: 10,
++      selectedStyleId: 1,
++      selectedDistributorId: 11,
++      placedCabinets: [{ ...base("a", 0), cabinetId: 7, category: "" }],
++    }, {
++      styles,
++      distributors,
++      skus: new Map([["7:1:11", { id: 44, cabinetId: 7, styleId: 1, distributorId: 11, sku: "B24-S", description: "Base", listPrice: 10, vendorWholesale: 8, vendorMarkupPercent: null }]]),
++      pelican: new Map(),
++      cabinets: new Map([[7, { category: "Base" }]]),
++    });
++    expect(linked[0]).toMatchObject({ category: "Base", categoryMissing: false, catalogProductKind: "cabinet_sku", catalogProductId: 44 });
++    const missing = extractDesignLines({
++      id: 11,
++      selectedDistributorId: 11,
++      placedCabinets: [],
++      roomData: { persistedEntities: { sinks: [{ pelicanFaucetProductId: 55 }] } },
++    }, { styles, distributors, skus: new Map(), pelican: new Map() });
++    const faucet = missing.find((line) => line.sku === "PEL-55");
++    expect(faucet?.categoryMissing).toBe(true);
++    expect(faucet?.category).toBe("");
++    expect(faucet?.catalogProductId).toBeNull();
+   });
+ });
+diff --git a/server/salesForecast/extract.ts b/server/salesForecast/extract.ts
+index 363e7f5..dfff896 100644
+--- a/server/salesForecast/extract.ts
++++ b/server/salesForecast/extract.ts
+@@ -98,6 +98,7 @@ export type PelicanFact = {
+ };
+ 
+ export type SkuFact = {
++  id: number;
+   cabinetId: number;
+   styleId: number;
+   distributorId: number;
+@@ -108,6 +109,20 @@ export type SkuFact = {
+   vendorMarkupPercent: number | null;
+ };
+ 
++export type CabinetCategoryFact = { category: string };
++
++/** Use the line's own category, then the linked product. Never invent a type when neither exists. */
++export function resolvedProductCategory(
++  explicit: string | null | undefined,
++  linked: string | null | undefined,
++): { category: string; categoryMissing: boolean } {
++  const fromLine = (explicit ?? "").trim();
++  if (fromLine) return { category: fromLine, categoryMissing: false };
++  const fromProduct = (linked ?? "").trim();
++  if (fromProduct) return { category: fromProduct, categoryMissing: false };
++  return { category: "", categoryMissing: true };
++}
++
+ const UNSPECIFIED = "unspecified";
+ 
+ function textOrUnspecified(value: string | null | undefined): string {
+@@ -150,6 +165,7 @@ export function extractDesignLines(
+     distributors: ReadonlyMap<number, DistributorFact>;
+     skus: ReadonlyMap<string, SkuFact>;
+     pelican: ReadonlyMap<number, PelicanFact>;
++    cabinets?: ReadonlyMap<number, CabinetCategoryFact>;
+   },
+ ): ForecastLine[] {
+   const lines: ForecastLine[] = [];
+@@ -170,13 +186,16 @@ export function extractDesignLines(
+       ? catalog.skus.get(`${cabinet.cabinetId}:${styleId}:${distributorId ?? ""}`)
+         ?? catalog.skus.get(`${cabinet.cabinetId}:${styleId}`)
+       : undefined;
++    const linkedCategory = cabinet.cabinetId != null ? catalog.cabinets?.get(cabinet.cabinetId)?.category : undefined;
++    const category = resolvedProductCategory(cabinet.category, linkedCategory);
+     lines.push({
+       designId: design.id,
+       scope,
+       sku: skuFact?.sku || cabinet.masterCode || "unspecified",
+       description: skuFact?.description || cabinet.description || cabinet.masterCode || "Cabinet",
+       supplierName: distributor?.name ?? null,
+-      category: textOrUnspecified(cabinet.category ?? "cabinet"),
++      category: category.category,
++      categoryMissing: category.categoryMissing,
+       color: textOrUnspecified(style?.color),
+       styleName: textOrUnspecified(style?.doorStyle ?? style?.name ?? selectedStyle?.doorStyle),
+       seriesName: textOrUnspecified(distributor?.seriesName),
+@@ -185,6 +204,8 @@ export function extractDesignLines(
+       listPrice: skuFact?.listPrice ?? null,
+       vendorWholesale: skuFact?.vendorWholesale ?? null,
+       vendorMarkupPercent: skuFact?.vendorMarkupPercent ?? null,
++      catalogProductKind: skuFact ? "cabinet_sku" : null,
++      catalogProductId: skuFact?.id ?? null,
+     });
+   };
+ 
+@@ -246,13 +267,15 @@ export function extractDesignLines(
+       }
+     }
+     if (quantity <= 0 && !note) continue;
++    const productCategory = resolvedProductCategory(surface.category, product?.category);
+     lines.push({
+       designId: design.id,
+       scope: PELICAN_SCOPE,
+       sku: product ? `PEL-${product.id}` : `PEL-${surface.id}`,
+       description: product?.name || surface.name,
+       supplierName: "Pelican",
+-      category: textOrUnspecified(surface.category || product?.category),
++      category: productCategory.category,
++      categoryMissing: productCategory.categoryMissing,
+       color: textOrUnspecified(surface.name),
+       styleName: textOrUnspecified(surface.category),
+       seriesName: UNSPECIFIED,
+@@ -262,6 +285,8 @@ export function extractDesignLines(
+       listPrice: product?.listPrice ?? null,
+       vendorWholesale: product?.vendorWholesale ?? null,
+       categoryMarkupBps: product?.categoryMarkupBps ?? null,
++      catalogProductKind: product ? "pelican" : null,
++      catalogProductId: product?.id ?? null,
+     });
+   }
+ 
+@@ -280,13 +305,15 @@ export function extractDesignLines(
+   for (const id of Array.from(fixtureIds)) {
+     if ((design.selectedSurfaces ?? []).some((surface) => surface.id === id)) continue;
+     const product = catalog.pelican.get(id);
++    const category = resolvedProductCategory(null, product?.category);
+     lines.push({
+       designId: design.id,
+       scope: PELICAN_SCOPE,
+       sku: `PEL-${id}`,
+       description: product?.name || `Fixture ${id}`,
+       supplierName: "Pelican",
+-      category: textOrUnspecified(product?.category ?? "fixture"),
++      category: category.category,
++      categoryMissing: category.categoryMissing,
+       color: UNSPECIFIED,
+       styleName: UNSPECIFIED,
+       seriesName: UNSPECIFIED,
+@@ -295,6 +322,8 @@ export function extractDesignLines(
+       listPrice: product?.listPrice ?? null,
+       vendorWholesale: product?.vendorWholesale ?? null,
+       categoryMarkupBps: product?.categoryMarkupBps ?? null,
++      catalogProductKind: product ? "pelican" : null,
++      catalogProductId: product?.id ?? null,
+     });
+   }
+ 
+@@ -329,7 +358,10 @@ function trimLine(
+     sku,
+     description,
+     supplierName: distributor?.name ?? null,
+-    category: "trim",
++    category: "",
++    categoryMissing: true,
++    catalogProductKind: null,
++    catalogProductId: null,
+     color: UNSPECIFIED,
+     styleName: UNSPECIFIED,
+     seriesName: textOrUnspecified(distributor?.seriesName),
+diff --git a/server/salesForecast/load.ts b/server/salesForecast/load.ts
+index 18c0f18..758dde5 100644
+--- a/server/salesForecast/load.ts
++++ b/server/salesForecast/load.ts
+@@ -3,6 +3,7 @@ import {
+   crmDealDesigns,
+   crmDeals,
+   distributorSkus,
++  cabinets,
+   distributors,
+   doorStyles,
+   kitchenDesigns,
+@@ -14,7 +15,7 @@ import {
+ import { pelicanProducts } from "../../drizzle/pelicanSchema";
+ import { getDb } from "../db";
+ import { PLACEHOLDER_CLOSE_BRACKETS, type CloseRateBracket } from "../../shared/closeRateBrackets";
+-import { aggregateForecast, type ForecastDesignMeta, type ForecastFilters, type ForecastLine } from "../../shared/salesForecast";
++import { aggregateForecast, type ForecastDesignMeta, type ForecastFilters, type ForecastLine, type VendorForecastRateInput } from "../../shared/salesForecast";
+ import { extractDesignLines, type ExtractDesign, type PelicanFact, type SkuFact, type StyleFact } from "./extract";
+ 
+ type Database = NonNullable<Awaited<ReturnType<typeof getDb>>>;
+@@ -41,6 +42,7 @@ export async function loadCloseBrackets(db: Database): Promise<CloseRateBracket[
+ 
+ export async function runSalesForecast(input: {
+   filters?: ForecastFilters;
++  vendorRates?: readonly VendorForecastRateInput[];
+   page?: number;
+   pageSize?: number;
+   homeownerMarkupBps: number;
+@@ -52,6 +54,7 @@ export async function runSalesForecast(input: {
+       lines: [],
+       brackets: PLACEHOLDER_CLOSE_BRACKETS,
+       filters: input.filters,
++      vendorRates: input.vendorRates,
+       homeownerMarkupBps: input.homeownerMarkupBps,
+       page: input.page,
+       pageSize: input.pageSize,
+@@ -145,6 +148,7 @@ export async function runSalesForecast(input: {
+     for (const idChunk of chunk(Array.from(cabinetIds), 400)) {
+       if (idChunk.length === 0) continue;
+       const skuRows = await db.select({
++        id: distributorSkus.id,
+         cabinetId: distributorSkus.cabinetId,
+         styleId: distributorSkus.styleId,
+         distributorId: distributorSkus.distributorId,
+@@ -156,6 +160,7 @@ export async function runSalesForecast(input: {
+       for (const sku of skuRows) {
+         if (sku.cabinetId == null) continue;
+         const fact: SkuFact = {
++          id: sku.id,
+           cabinetId: sku.cabinetId,
+           styleId: sku.styleId,
+           distributorId: sku.distributorId,
+@@ -169,6 +174,12 @@ export async function runSalesForecast(input: {
+         if (!skus.has(`${sku.cabinetId}:${sku.styleId}`)) skus.set(`${sku.cabinetId}:${sku.styleId}`, fact);
+       }
+     }
++    const cabinetFacts = new Map<number, { category: string }>();
++    for (const idChunk of chunk(Array.from(cabinetIds), 400)) {
++      if (idChunk.length === 0) continue;
++      const cabinetRows = await db.select({ id: cabinets.id, category: cabinets.category }).from(cabinets).where(inArray(cabinets.id, idChunk));
++      for (const cabinet of cabinetRows) cabinetFacts.set(cabinet.id, { category: cabinet.category });
++    }
+     const pelican = new Map<number, PelicanFact>();
+     for (const idChunk of chunk(Array.from(pelicanIds), 400)) {
+       if (idChunk.length === 0) continue;
+@@ -232,6 +243,7 @@ export async function runSalesForecast(input: {
+           distributors: new Map(Array.from(distributorsById.entries()).map(([id, value]) => [id, { id, name: value.name, seriesName: value.seriesName }])),
+           skus,
+           pelican,
++          cabinets: cabinetFacts,
+         }));
+       } catch {
+         lines.push({
+@@ -240,7 +252,8 @@ export async function runSalesForecast(input: {
+           sku: "unspecified",
+           description: "Layout could not be measured",
+           supplierName: null,
+-          category: "unspecified",
++          category: "",
++          categoryMissing: true,
+           color: "unspecified",
+           styleName: "unspecified",
+           seriesName: "unspecified",
+@@ -258,6 +271,7 @@ export async function runSalesForecast(input: {
+     lines: lines.filter((line) => line.quantity > 0),
+     brackets,
+     filters: input.filters,
++    vendorRates: input.vendorRates,
+     homeownerMarkupBps: input.homeownerMarkupBps,
+     page: input.page,
+     pageSize: input.pageSize,
+diff --git a/server/salesForecast/rates.ts b/server/salesForecast/rates.ts
+new file mode 100644
+index 0000000..29aa32a
+--- /dev/null
++++ b/server/salesForecast/rates.ts
+@@ -0,0 +1,60 @@
++import { eq } from "drizzle-orm";
++import { vendorForecastRates } from "../../drizzle/schema";
++import { validateVendorForecastPercent, type VendorForecastRateInput } from "../../shared/salesForecast";
++import { getDb } from "../db";
++
++type Database = NonNullable<Awaited<ReturnType<typeof getDb>>>;
++
++export type StoredVendorForecastRate = {
++  vendorScope: string;
++  closePercent: string | null;
++  setByUserId: number | null;
++  setByName: string | null;
++  setAt: Date | null;
++};
++
++export async function loadVendorForecastRates(db: Database): Promise<StoredVendorForecastRate[]> {
++  try {
++    return await db.select({
++      vendorScope: vendorForecastRates.vendorScope,
++      closePercent: vendorForecastRates.closePercent,
++      setByUserId: vendorForecastRates.setByUserId,
++      setByName: vendorForecastRates.setByName,
++      setAt: vendorForecastRates.setAt,
++    }).from(vendorForecastRates);
++  } catch (error) {
++    const message = error instanceof Error ? error.message : String(error);
++    if (/vendor_forecast_rates|doesn't exist|does not exist|unknown table/i.test(message)) return [];
++    throw error;
++  }
++}
++
++export function ratesForForecast(rows: readonly StoredVendorForecastRate[]): VendorForecastRateInput[] {
++  return rows.map((row) => {
++    const percent = row.closePercent == null || row.closePercent === "" ? null : Number(row.closePercent);
++    return {
++      scope: row.vendorScope,
++      percent: percent != null && Number.isFinite(percent) ? percent : null,
++    };
++  });
++}
++
++export async function saveVendorForecastRate(
++  db: Database,
++  input: { scope: string; percent: number | null; userId: number | null; userName: string | null },
++) {
++  const problem = validateVendorForecastPercent(input.percent);
++  if (problem) throw new Error(problem);
++  const values = {
++    closePercent: input.percent == null ? null : input.percent.toFixed(2),
++    setByUserId: input.userId,
++    setByName: input.userName,
++    setAt: new Date(),
++  };
++  const existing = await db.select({ id: vendorForecastRates.id }).from(vendorForecastRates).where(eq(vendorForecastRates.vendorScope, input.scope)).limit(1);
++  if (existing[0]) {
++    await db.update(vendorForecastRates).set(values).where(eq(vendorForecastRates.id, existing[0].id));
++    return;
++  }
++  await db.insert(vendorForecastRates).values({ vendorScope: input.scope, ...values });
++}
+diff --git a/shared/salesForecast.test.ts b/shared/salesForecast.test.ts
+index 9df60e0..bb8de20 100644
+--- a/shared/salesForecast.test.ts
++++ b/shared/salesForecast.test.ts
+@@ -1,6 +1,20 @@
+ import { describe, expect, it } from "vitest";
+ import { PLACEHOLDER_CLOSE_BRACKETS } from "./closeRateBrackets";
+-import { aggregateForecast, projectForecastForScopes, type ForecastDesignMeta, type ForecastLine } from "./salesForecast";
++import {
++  aggregateForecast,
++  designUpdatedOnOrAfter,
++  filterForecastMaterials,
++  forecastProductEditTarget,
++  MISSING_CATEGORY_FILTER,
++  monthsBefore,
++  projectForecastForScopes,
++  savedRangeForPreset,
++  sumForecastMaterials,
++  validateVendorForecastPercent,
++  vendorMaySetForecastRate,
++  type ForecastDesignMeta,
++  type ForecastLine,
++} from "./salesForecast";
+ import { distributorScope, PELICAN_SCOPE } from "./vendorFulfillment";
+ 
+ const NOW = new Date("2026-04-01T00:00:00Z");
+@@ -41,7 +55,7 @@ describe("sales forecast weighting and isolation", () => {
+   const cabinet = distributorScope(11);
+   const other = distributorScope(22);
+ 
+-  it("weights by age, forces won to 100%, and drops ordered and lost", () => {
++  it("drops ordered and lost and leaves weighted blank until the vendor enters a percent", () => {
+     const result = aggregateForecast({
+       now: NOW,
+       homeownerMarkupBps: 20000,
+@@ -63,11 +77,50 @@ describe("sales forecast weighting and isolation", () => {
+     expect(result.excluded.lost).toBe(1);
+     const material = result.materials.find((row) => row.sku === "B24");
+     expect(material?.quantity).toBe(14);
+-    // Design 1 is 12 days old → 70%. Design 4 is won → 100% of 4.
+-    expect(material?.weightedQuantity).toBe(10 * 0.7 + 4);
++    // Company close-rate brackets are not applied. Weighted stays blank until a vendor percent is entered.
++    expect(material?.weightedQuantity).toBeNull();
++    expect(material?.vendorRatePercent).toBeNull();
++    expect(material?.vendorCost).toBe(14 * 80);
+     expect(material?.retailValue).toBe(14 * 160);
+   });
+ 
++  it("weights quantity and vendor cost by the vendor-entered percent only", () => {
++    const aged = aggregateForecast({
++      now: NOW,
++      homeownerMarkupBps: 20000,
++      brackets: PLACEHOLDER_CLOSE_BRACKETS,
++      vendorRates: [{ scope: cabinet, percent: 75 }],
++      designs: [design({ id: 1, updatedAt: "2025-01-01T00:00:00Z" })],
++      lines: [line({ designId: 1, scope: cabinet, sku: "B24", quantity: 10, vendorWholesale: 80 })],
++    });
++    const fresh = aggregateForecast({
++      now: NOW,
++      homeownerMarkupBps: 20000,
++      brackets: [{ minDays: 0, maxDays: null, closePercent: 10 }],
++      vendorRates: [{ scope: cabinet, percent: 75 }],
++      designs: [design({ id: 1, updatedAt: "2026-03-31T00:00:00Z" })],
++      lines: [line({ designId: 1, scope: cabinet, sku: "B24", quantity: 10, vendorWholesale: 80 })],
++    });
++    expect(aged.materials[0]?.weightedQuantity).toBe(7.5);
++    expect(fresh.materials[0]?.weightedQuantity).toBe(7.5);
++    expect(aged.materials[0]?.weightedVendorCost).toBe(600);
++    expect(aged.materials[0]?.vendorRatePercent).toBe(75);
++  });
++
++  it("does not fall back to retail when vendor cost is missing", () => {
++    const result = aggregateForecast({
++      now: NOW,
++      homeownerMarkupBps: 20000,
++      brackets: PLACEHOLDER_CLOSE_BRACKETS,
++      vendorRates: [{ scope: cabinet, percent: 50 }],
++      designs: [design({ id: 1 })],
++      lines: [line({ designId: 1, scope: cabinet, sku: "B24", quantity: 2, vendorWholesale: null, listPrice: 500 })],
++    });
++    expect(result.materials[0]?.vendorCost).toBeNull();
++    expect(result.materials[0]?.weightedVendorCost).toBeNull();
++    expect(result.materials[0]?.retailValue).toBe(1000);
++  });
++
+   it("keeps missing style and color in the unspecified bucket", () => {
+     const result = aggregateForecast({
+       now: NOW,
+@@ -114,4 +167,137 @@ describe("sales forecast weighting and isolation", () => {
+     expect(result.matched).toBe(0);
+     expect(result.materials).toEqual([]);
+   });
++
++  it("uses calendar cutoffs for the last 2 and last 3 months", () => {
++    const now = new Date("2026-04-15T00:00:00.000Z");
++    expect(monthsBefore(now, 2).toISOString()).toBe("2026-02-15T00:00:00.000Z");
++    expect(monthsBefore(now, 3).toISOString()).toBe("2026-01-15T00:00:00.000Z");
++    expect(monthsBefore(new Date("2026-03-31T00:00:00.000Z"), 1).toISOString()).toBe("2026-02-28T00:00:00.000Z");
++
++    const two = savedRangeForPreset("2m", now);
++    const three = savedRangeForPreset("3m", now);
++    const justInsideTwo = "2026-02-15T00:00:00.000Z";
++    const betweenTwoAndThree = "2026-01-20T00:00:00.000Z";
++    const olderThanThree = "2026-01-14T23:59:59.000Z";
++    expect(designUpdatedOnOrAfter(justInsideTwo, new Date(two.savedFrom!))).toBe(true);
++    expect(designUpdatedOnOrAfter(betweenTwoAndThree, new Date(two.savedFrom!))).toBe(false);
++    expect(designUpdatedOnOrAfter(betweenTwoAndThree, new Date(three.savedFrom!))).toBe(true);
++    expect(designUpdatedOnOrAfter(olderThanThree, new Date(three.savedFrom!))).toBe(false);
++
++    const designs = [
++      design({ id: 1, updatedAt: justInsideTwo, styleName: "Shaker" }),
++      design({ id: 2, updatedAt: betweenTwoAndThree, styleName: "Shaker" }),
++      design({ id: 3, updatedAt: olderThanThree, styleName: "Slab" }),
++    ];
++    const lines = designs.map((item) => line({ designId: item.id, scope: cabinet, sku: `SKU-${item.id}`, quantity: 1 }));
++    const lastTwo = aggregateForecast({
++      now,
++      homeownerMarkupBps: 10000,
++      brackets: PLACEHOLDER_CLOSE_BRACKETS,
++      filters: { savedFrom: two.savedFrom, savedTo: two.savedTo },
++      designs,
++      lines,
++    });
++    const lastThree = aggregateForecast({
++      now,
++      homeownerMarkupBps: 10000,
++      brackets: PLACEHOLDER_CLOSE_BRACKETS,
++      filters: { savedFrom: three.savedFrom, savedTo: three.savedTo },
++      designs,
++      lines,
++    });
++    expect(lastTwo.materials.map((row) => row.sku)).toEqual(["SKU-1"]);
++    expect(lastThree.materials.map((row) => row.sku)).toEqual(["SKU-1", "SKU-2"]);
++    expect(savedRangeForPreset("all", now)).toEqual({ savedFrom: null, savedTo: null });
++  });
++
++  it("filters by door style and by the categories present on the lines", () => {
++    const result = aggregateForecast({
++      now: NOW,
++      homeownerMarkupBps: 10000,
++      brackets: PLACEHOLDER_CLOSE_BRACKETS,
++      vendorRates: [{ scope: PELICAN_SCOPE, percent: 50 }],
++      filters: { doorStyles: ["Shaker"], categories: ["Flooring"] },
++      designs: [
++        design({ id: 1, styleName: "Shaker" }),
++        design({ id: 2, styleName: "Slab" }),
++      ],
++      lines: [
++        line({ designId: 1, scope: PELICAN_SCOPE, sku: "PEL-1", category: "Flooring", quantity: 4, vendorWholesale: 10, supplierName: "Pelican" }),
++        line({ designId: 1, scope: PELICAN_SCOPE, sku: "PEL-2", category: "Faucets", quantity: 9, vendorWholesale: 10, supplierName: "Pelican" }),
++        line({ designId: 2, scope: PELICAN_SCOPE, sku: "PEL-3", category: "Flooring", quantity: 8, vendorWholesale: 10, supplierName: "Pelican" }),
++      ],
++    });
++    expect(result.facets.categories).toEqual(["Faucets", "Flooring"]);
++    expect(result.facets.doorStyles).toEqual(["Shaker", "Slab"]);
++    expect(result.materials.map((row) => row.sku)).toEqual(["PEL-1"]);
++    expect(result.materials[0]?.quantity).toBe(4);
++    expect(result.materials[0]?.weightedQuantity).toBe(2);
++    expect(sumForecastMaterials(result.materials).vendorCost).toBe(40);
++    expect(sumForecastMaterials(result.materials).weightedVendorCost).toBe(20);
++  });
++
++  it("reports a missing product category instead of inventing one", () => {
++    const result = aggregateForecast({
++      now: NOW,
++      homeownerMarkupBps: 10000,
++      brackets: PLACEHOLDER_CLOSE_BRACKETS,
++      designs: [design({ id: 1 })],
++      lines: [line({ designId: 1, scope: cabinet, sku: "B24", category: "", categoryMissing: true })],
++    });
++    expect(result.materials[0]?.category).toBe("");
++    expect(result.materials[0]?.categoryMissing).toBe(true);
++    expect(result.facets.categories).toEqual([]);
++    expect(result.facets.missingCategory).toBe(true);
++    const onlyMissing = aggregateForecast({
++      now: NOW,
++      homeownerMarkupBps: 10000,
++      brackets: PLACEHOLDER_CLOSE_BRACKETS,
++      filters: { categories: [MISSING_CATEGORY_FILTER] },
++      designs: [design({ id: 1 })],
++      lines: [
++        line({ designId: 1, scope: cabinet, sku: "B24", category: "", categoryMissing: true, quantity: 2 }),
++        line({ designId: 1, scope: cabinet, sku: "PEL-9", category: "Flooring", quantity: 5 }),
++      ],
++    });
++    expect(onlyMissing.materials.map((row) => row.sku)).toEqual(["B24"]);
++  });
++
++  it("searches sku, description, and supplier and applies a quantity range to the visible totals", () => {
++    const result = aggregateForecast({
++      now: NOW,
++      homeownerMarkupBps: 10000,
++      brackets: PLACEHOLDER_CLOSE_BRACKETS,
++      filters: { query: "oak" },
++      designs: [design({ id: 1 })],
++      lines: [
++        line({ designId: 1, scope: cabinet, sku: "B24", description: "Oak base", quantity: 2, vendorWholesale: 10 }),
++        line({ designId: 1, scope: cabinet, sku: "W30", description: "Maple wall", quantity: 8, vendorWholesale: 10 }),
++      ],
++    });
++    expect(result.materials.map((row) => row.sku)).toEqual(["B24"]);
++    const ranged = filterForecastMaterials(
++      [
++        { ...result.materials[0]!, quantity: 2 },
++        { ...result.materials[0]!, sku: "W30", quantity: 8 },
++      ],
++      { qtyMin: 3, qtyMax: 10 },
++    );
++    expect(ranged.map((row) => row.sku)).toEqual(["W30"]);
++    expect(sumForecastMaterials(ranged).quantity).toBe(8);
++  });
++
++  it("rejects a forecast percent outside 0 to 100 and links a row to its catalog product", () => {
++    expect(validateVendorForecastPercent(-1)).toMatch(/0 and 100/);
++    expect(validateVendorForecastPercent(101)).toMatch(/0 and 100/);
++    expect(validateVendorForecastPercent(null)).toBeNull();
++    expect(validateVendorForecastPercent(75)).toBeNull();
++    expect(vendorMaySetForecastRate({ role: "distributor", scope: cabinet, allowedScopes: [cabinet] })).toBeNull();
++    expect(vendorMaySetForecastRate({ role: "distributor", scope: other, allowedScopes: [cabinet] })).toMatch(/not linked/);
++    expect(vendorMaySetForecastRate({ role: "admin", scope: cabinet, allowedScopes: [cabinet] })).toMatch(/Only the vendor/);
++    expect(vendorMaySetForecastRate({ role: "sales_rep", scope: cabinet, allowedScopes: [cabinet] })).toMatch(/Only the vendor/);
++    expect(forecastProductEditTarget({ catalogProductKind: "pelican", catalogProductId: 9, sku: "PEL-9" })).toEqual({ section: "catalog", edit: 9 });
++    expect(forecastProductEditTarget({ catalogProductKind: "cabinet_sku", catalogProductId: 4, sku: "B24" })).toEqual({ section: "catalog", sku: "B24" });
++    expect(forecastProductEditTarget({ catalogProductKind: null, catalogProductId: null, sku: "TK-8" })).toBeNull();
++  });
+ });
+diff --git a/shared/salesForecast.ts b/shared/salesForecast.ts
+index f47fdc7..bac8eb8 100644
+--- a/shared/salesForecast.ts
++++ b/shared/salesForecast.ts
+@@ -12,7 +12,7 @@
+ 
+ import { ageDaysFromUpdatedAt, closeRateFraction, type CloseRateBracket } from "./closeRateBrackets";
+ import { retailFromWholesale } from "./margins";
+-import type { VendorScope } from "./vendorFulfillment";
++import { parseVendorScope, type VendorScope } from "./vendorFulfillment";
+ 
+ export type ForecastLine = {
+   designId: number;
+@@ -28,9 +28,14 @@ export type ForecastLine = {
+   estimated: boolean;
+   note?: string;
+   listPrice: number | null;
++  /** Vendor cost. distributor_skus.vendorWholesale or pelican_products.vendorWholesale. */
+   vendorWholesale: number | null;
+   vendorMarkupPercent?: number | null;
+   categoryMarkupBps?: number | null;
++  /** True when neither the design line nor a linked product has a category. */
++  categoryMissing?: boolean;
++  catalogProductKind?: "pelican" | "cabinet_sku" | null;
++  catalogProductId?: number | null;
+ };
+ 
+ export type ForecastDesignMeta = {
+@@ -53,6 +58,10 @@ export type ForecastFilters = {
+   doorStyles?: string[];
+   colors?: string[];
+   series?: string[];
++  /** Product type / category. Use MISSING_CATEGORY_FILTER for rows with no linked category. */
++  categories?: string[];
++  /** Case-insensitive match on SKU, description, supplier name, or category. */
++  query?: string | null;
+   supplierScopes?: string[];
+   savedFrom?: string | null;
+   savedTo?: string | null;
+@@ -60,6 +69,79 @@ export type ForecastFilters = {
+   customerTypes?: string[];
+ };
+ 
++/** Sentinel stored in the category filter, never written onto a product. */
++export const MISSING_CATEGORY_FILTER = "__missing_category__";
++export const MISSING_CATEGORY_LABEL = "No product category on file";
++
++export type ForecastTimePreset = "all" | "2m" | "3m" | "custom";
++
++export type VendorForecastRateInput = {
++  scope: string;
++  /** Null means the vendor has not entered a percentage. */
++  percent: number | null;
++};
++
++export function isMissingProductCategory(category: string | null | undefined, categoryMissing = false): boolean {
++  if (categoryMissing) return true;
++  const text = (category ?? "").trim();
++  return text.length === 0 || text.toLowerCase() === "unspecified";
++}
++
++export function categoryFilterValue(category: string | null | undefined, categoryMissing = false): string {
++  return isMissingProductCategory(category, categoryMissing) ? MISSING_CATEGORY_FILTER : (category ?? "").trim();
++}
++
++/**
++ * Calendar months before `now`, clamped to the last valid day of the target
++ * month. Last 2 months from 2026-04-15 is 2026-02-15. Last 1 month from
++ * 2026-03-31 is 2026-02-28, not March.
++ */
++export function monthsBefore(now: Date, months: number): Date {
++  const from = new Date(now.getTime());
++  const day = from.getUTCDate();
++  from.setUTCDate(1);
++  from.setUTCMonth(from.getUTCMonth() - months);
++  const lastDay = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth() + 1, 0)).getUTCDate();
++  from.setUTCDate(Math.min(day, lastDay));
++  return from;
++}
++
++/** Relative presets stay relative. Custom uses the caller's from/to dates. */
++export function savedRangeForPreset(
++  preset: ForecastTimePreset,
++  now: Date,
++  custom?: { from?: string | null; to?: string | null },
++): { savedFrom: string | null; savedTo: string | null } {
++  if (preset === "2m" || preset === "3m") {
++    return { savedFrom: monthsBefore(now, preset === "2m" ? 2 : 3).toISOString(), savedTo: null };
++  }
++  if (preset === "custom") {
++    return { savedFrom: custom?.from?.trim() || null, savedTo: custom?.to?.trim() || null };
++  }
++  return { savedFrom: null, savedTo: null };
++}
++
++export function designUpdatedOnOrAfter(updatedAt: Date | string | number, cutoff: Date): boolean {
++  const saved = new Date(updatedAt).getTime();
++  return Number.isFinite(saved) && saved >= cutoff.getTime();
++}
++
++/** Null when the value is outside 0–100. Null input means "not entered" and is valid. */
++export function validateVendorForecastPercent(value: number | null): string | null {
++  if (value == null) return null;
++  if (!Number.isFinite(value) || value < 0 || value > 100) return "Forecast percentage must be between 0 and 100.";
++  return null;
++}
++
++/** Vendors may set a percentage only for a scope linked to their account. Sales and admin can view, not edit. */
++export function vendorMaySetForecastRate(input: { role: string; scope: string; allowedScopes: readonly string[] }): string | null {
++  if (input.role !== "distributor") return "Only the vendor can set this forecast percentage.";
++  const scope = parseVendorScope(input.scope);
++  if (!scope) return "Unknown vendor.";
++  if (!input.allowedScopes.includes(scope)) return "That vendor is not linked to your account.";
++  return null;
++}
++
+ export type ForecastExclusion = {
+   ordered: number;
+   lost: number;
+@@ -125,12 +207,21 @@ export type MaterialTotal = {
+   styleName: string;
+   seriesName: string;
+   quantity: number;
+-  weightedQuantity: number;
++  /** Null until the owning vendor enters a forecast percentage. */
++  weightedQuantity: number | null;
+   designCount: number;
+-  weightedDesignCount: number;
++  weightedDesignCount: number | null;
+   listValue: number | null;
+   retailValue: number | null;
+   weightedRetailValue: number | null;
++  /** Sum of vendorWholesale × quantity. Null when any contributing line has no vendor cost. */
++  vendorCost: number | null;
++  weightedVendorCost: number | null;
++  /** The vendor-entered percent applied to this row, or null when not entered. */
++  vendorRatePercent: number | null;
++  categoryMissing: boolean;
++  catalogProductKind: "pelican" | "cabinet_sku" | null;
++  catalogProductId: number | null;
+   estimated: boolean;
+ };
+ 
+@@ -144,7 +235,26 @@ export type ForecastDesignRow = {
+   seriesName: string;
+   customerType: string;
+   status: string;
+-  weight: number;
++  /** Vendor forecast fraction for this design, or null when the vendor has not entered one. */
++  weight: number | null;
++};
++
++export type ForecastFacets = {
++  categories: string[];
++  doorStyles: string[];
++  statuses: string[];
++  suppliers: Array<{ scope: string; name: string }>;
++  missingCategory: boolean;
++};
++
++export type ForecastMaterialTotals = {
++  rowCount: number;
++  quantity: number;
++  weightedQuantity: number | null;
++  vendorCost: number | null;
++  weightedVendorCost: number | null;
++  missingCostRows: number;
++  missingRateRows: number;
+ };
+ 
+ export type ForecastResult = {
+@@ -154,6 +264,8 @@ export type ForecastResult = {
+   designs: ForecastDesignRow[];
+   materials: MaterialTotal[];
+   unassigned: MaterialTotal[];
++  /** Options from the vendor-scoped data before the user's other filters. */
++  facets: ForecastFacets;
+ };
+ 
+ function retailForLine(line: ForecastLine, homeownerMarkupBps: number): number | null {
+@@ -166,11 +278,73 @@ function retailForLine(line: ForecastLine, homeownerMarkupBps: number): number |
+   return line.listPrice;
+ }
+ 
++function hasVendorCost(line: ForecastLine): boolean {
++  return line.vendorWholesale != null && line.vendorWholesale > 0;
++}
++
++function lineMatchesCategory(line: ForecastLine, categories: string[] | undefined): boolean {
++  if (!categories || categories.length === 0) return true;
++  const value = categoryFilterValue(line.category, line.categoryMissing);
++  return categories.some((item) => item.toLowerCase() === value.toLowerCase());
++}
++
++function lineMatchesQuery(line: ForecastLine, query: string | null | undefined): boolean {
++  const needle = (query ?? "").trim().toLowerCase();
++  if (!needle) return true;
++  return [line.sku, line.description, line.supplierName, line.category]
++    .some((value) => (value ?? "").toLowerCase().includes(needle));
++}
++
++function lineInScope(line: ForecastLine, supplierFilter: string[]): boolean {
++  if (supplierFilter.length === 0) return true;
++  return line.scope != null && supplierFilter.includes(line.scope);
++}
++
++function ratePercentFor(scope: string | null, rates: readonly VendorForecastRateInput[]): number | null {
++  if (!scope) return null;
++  const found = rates.find((rate) => rate.scope === scope);
++  if (!found || found.percent == null) return null;
++  return validateVendorForecastPercent(found.percent) == null ? found.percent : null;
++}
++
++type MaterialBucket = {
++  sku: string;
++  description: string;
++  supplierName: string | null;
++  scope: string | null;
++  category: string;
++  color: string;
++  styleName: string;
++  seriesName: string;
++  quantity: number;
++  weightedQuantity: number;
++  listValue: number;
++  retailValue: number;
++  weightedRetailValue: number;
++  vendorCost: number;
++  weightedVendorCost: number;
++  estimated: boolean;
++  categoryMissing: boolean;
++  rateMissing: boolean;
++  costMissing: boolean;
++  vendorRatePercent: number | null;
++  catalogProductKind: "pelican" | "cabinet_sku" | null;
++  catalogProductId: number | null;
++  productConflict: boolean;
++  designIds: Set<number>;
++};
++
++function emptyFacets(): ForecastFacets {
++  return { categories: [], doorStyles: [], statuses: [], suppliers: [], missingCategory: false };
++}
++
+ export function aggregateForecast(input: {
+   designs: ForecastDesignMeta[];
+   lines: ForecastLine[];
+   brackets: readonly CloseRateBracket[];
+   filters?: ForecastFilters;
++  /** Vendor-entered percentages. Company close-rate brackets are not applied to weighted quantities. */
++  vendorRates?: readonly VendorForecastRateInput[];
+   homeownerMarkupBps: number;
+   now?: Date | number;
+   page?: number;
+@@ -178,8 +352,16 @@ export function aggregateForecast(input: {
+ }): ForecastResult {
+   const filters = input.filters ?? {};
+   const now = input.now ?? Date.now();
++  const rates = input.vendorRates ?? [];
+   const supplierFilter = (filters.supplierScopes ?? []).filter(Boolean);
+-  const attributeFilters: ForecastFilters = { ...filters, supplierScopes: undefined, statuses: undefined };
++  const attributeFilters: ForecastFilters = {
++    doorStyles: filters.doorStyles,
++    colors: filters.colors,
++    series: filters.series,
++    customerTypes: filters.customerTypes,
++    savedFrom: filters.savedFrom,
++    savedTo: filters.savedTo,
++  };
+   const attributeMatched = input.designs.filter((design) => designMatchesFilters(design, attributeFilters));
+   const statusFiltered = attributeMatched.filter((design) => designMatchesFilters(design, { statuses: filters.statuses }));
+ 
+@@ -200,97 +382,232 @@ export function aggregateForecast(input: {
+     linesByDesign.set(line.designId, list);
+   }
+ 
++  const facetLines = input.lines.filter((line) => lineInScope(line, supplierFilter));
++  const facetDesignIds = new Set(facetLines.map((line) => line.designId));
++  const facetDesigns = input.designs.filter((design) => supplierFilter.length === 0 || facetDesignIds.has(design.id));
++  const categorySet = new Set<string>();
++  let missingCategory = false;
++  for (const line of facetLines) {
++    if (isMissingProductCategory(line.category, line.categoryMissing)) missingCategory = true;
++    else categorySet.add(line.category.trim());
++  }
++  const supplierNames = new Map<string, string>();
++  for (const line of facetLines) {
++    if (!line.scope || supplierNames.has(line.scope)) continue;
++    supplierNames.set(line.scope, line.supplierName?.trim() || line.scope);
++  }
++  const facets: ForecastFacets = {
++    categories: Array.from(categorySet).sort((a, b) => a.localeCompare(b)),
++    doorStyles: uniquePresent(facetDesigns.map((design) => design.styleName)),
++    statuses: uniquePresent(facetDesigns.map((design) => design.status)),
++    suppliers: Array.from(supplierNames.entries())
++      .map(([scope, name]) => ({ scope, name }))
++      .sort((a, b) => a.name.localeCompare(b.name)),
++    missingCategory,
++  };
++
++  const lineFiltersActive = supplierFilter.length > 0
++    || (filters.categories?.length ?? 0) > 0
++    || Boolean((filters.query ?? "").trim());
++  const lineIncluded = (line: ForecastLine) => lineInScope(line, supplierFilter)
++    && lineMatchesCategory(line, filters.categories)
++    && lineMatchesQuery(line, filters.query);
++
+   const includedDesigns = statusFiltered.filter((design) => {
+     const weight = weightById.get(design.id);
+     if (!weight?.include) return false;
+-    if (supplierFilter.length === 0) return true;
+-    const lines = linesByDesign.get(design.id) ?? [];
+-    return lines.some((line) => line.scope != null && supplierFilter.includes(line.scope));
++    if (!lineFiltersActive) return true;
++    return (linesByDesign.get(design.id) ?? []).some(lineIncluded);
+   });
+ 
+-  const buckets = new Map<string, MaterialTotal & { designIds: Set<number>; weightedDesignIds: Map<number, number> }>();
+-  const addLine = (line: ForecastLine, weight: number, intoUnassigned: boolean) => {
+-    if (supplierFilter.length > 0 && !intoUnassigned && (line.scope == null || !supplierFilter.includes(line.scope))) return;
+-    const key = [line.scope ?? "unassigned", line.sku, norm(line.color), norm(line.styleName), line.category].join("|");
++  const buckets = new Map<string, MaterialBucket>();
++  const addLine = (line: ForecastLine) => {
++    if (!lineIncluded(line)) return;
++    const categoryMissing = isMissingProductCategory(line.category, line.categoryMissing);
++    const key = [line.scope ?? "unassigned", line.sku, norm(line.color), norm(line.styleName), categoryFilterValue(line.category, line.categoryMissing)].join("|");
++    const percent = ratePercentFor(line.scope, rates);
+     const current = buckets.get(key) ?? {
+       sku: line.sku,
+       description: line.description,
+       supplierName: line.supplierName,
+       scope: line.scope,
+-      category: line.category || UNSPECIFIED,
++      category: categoryMissing ? "" : line.category.trim(),
+       color: norm(line.color),
+       styleName: norm(line.styleName),
+       seriesName: norm(line.seriesName),
+       quantity: 0,
+       weightedQuantity: 0,
+-      designCount: 0,
+-      weightedDesignCount: 0,
+       listValue: 0,
+       retailValue: 0,
+       weightedRetailValue: 0,
++      vendorCost: 0,
++      weightedVendorCost: 0,
+       estimated: false,
++      categoryMissing,
++      rateMissing: false,
++      costMissing: false,
++      vendorRatePercent: percent,
++      catalogProductKind: line.catalogProductKind ?? null,
++      catalogProductId: line.catalogProductId ?? null,
++      productConflict: false,
+       designIds: new Set<number>(),
+-      weightedDesignIds: new Map<number, number>(),
+     };
+     current.quantity += line.quantity;
+-    current.weightedQuantity += line.quantity * weight;
+     current.estimated = current.estimated || line.estimated;
+     current.designIds.add(line.designId);
+-    current.weightedDesignIds.set(line.designId, weight);
++    current.categoryMissing = current.categoryMissing || categoryMissing;
++    if (percent == null) current.rateMissing = true;
++    else current.weightedQuantity += line.quantity * (percent / 100);
++    if (!hasVendorCost(line)) current.costMissing = true;
++    else {
++      const cost = line.vendorWholesale! * line.quantity;
++      current.vendorCost += cost;
++      if (percent != null) current.weightedVendorCost += cost * (percent / 100);
++    }
+     const retail = retailForLine(line, input.homeownerMarkupBps);
+-    if (line.listPrice != null) current.listValue = (current.listValue ?? 0) + line.listPrice * line.quantity;
++    if (line.listPrice != null) current.listValue += line.listPrice * line.quantity;
+     if (retail != null) {
+-      current.retailValue = (current.retailValue ?? 0) + retail * line.quantity;
+-      current.weightedRetailValue = (current.weightedRetailValue ?? 0) + retail * line.quantity * weight;
++      current.retailValue += retail * line.quantity;
++      if (percent != null) current.weightedRetailValue += retail * line.quantity * (percent / 100);
++    }
++    const kind = line.catalogProductKind ?? null;
++    const productId = line.catalogProductId ?? null;
++    if (current.catalogProductId == null && productId != null && !current.productConflict) {
++      current.catalogProductKind = kind;
++      current.catalogProductId = productId;
++    } else if (productId !== current.catalogProductId || kind !== current.catalogProductKind) {
++      current.productConflict = true;
++      current.catalogProductKind = null;
++      current.catalogProductId = null;
+     }
+     buckets.set(key, current);
+   };
+ 
+   for (const design of includedDesigns) {
+-    const weight = weightById.get(design.id)?.rate ?? 0;
+-    for (const line of linesByDesign.get(design.id) ?? []) addLine(line, weight, line.scope == null);
++    for (const line of linesByDesign.get(design.id) ?? []) addLine(line);
+   }
+ 
+   const materialsAll = Array.from(buckets.values()).map((row) => {
+-    const { designIds, weightedDesignIds, ...rest } = row;
+-    const weightedDesignCount = Array.from(weightedDesignIds.values()).reduce((sum, rate) => sum + rate, 0);
++    const fraction = row.vendorRatePercent == null ? null : row.vendorRatePercent / 100;
+     return {
+-      ...rest,
+-      quantity: round3(rest.quantity),
+-      weightedQuantity: round3(rest.weightedQuantity),
+-      designCount: designIds.size,
+-      weightedDesignCount: round3(weightedDesignCount),
+-      listValue: rest.listValue == null ? null : round2(rest.listValue),
+-      retailValue: rest.retailValue == null ? null : round2(rest.retailValue),
+-      weightedRetailValue: rest.weightedRetailValue == null ? null : round2(rest.weightedRetailValue),
++      sku: row.sku,
++      description: row.description,
++      supplierName: row.supplierName,
++      scope: row.scope,
++      category: row.categoryMissing ? "" : row.category,
++      color: row.color,
++      styleName: row.styleName,
++      seriesName: row.seriesName,
++      quantity: round3(row.quantity),
++      weightedQuantity: row.rateMissing ? null : round3(row.weightedQuantity),
++      designCount: row.designIds.size,
++      weightedDesignCount: row.rateMissing || fraction == null ? null : round3(row.designIds.size * fraction),
++      listValue: round2(row.listValue),
++      retailValue: round2(row.retailValue),
++      weightedRetailValue: row.rateMissing ? null : round2(row.weightedRetailValue),
++      vendorCost: row.costMissing ? null : round2(row.vendorCost),
++      weightedVendorCost: row.costMissing || row.rateMissing ? null : round2(row.weightedVendorCost),
++      vendorRatePercent: row.rateMissing ? null : row.vendorRatePercent,
++      categoryMissing: row.categoryMissing,
++      catalogProductKind: row.productConflict ? null : row.catalogProductKind,
++      catalogProductId: row.productConflict ? null : row.catalogProductId,
++      estimated: row.estimated,
+     };
+   });
+ 
+   const pageSize = Math.max(1, input.pageSize ?? 25);
+   const page = Math.max(0, input.page ?? 0);
+-  const designs = includedDesigns.slice(page * pageSize, page * pageSize + pageSize).map((design) => ({
+-    id: design.id,
+-    name: design.name,
+-    customerName: design.customerName,
+-    updatedAt: new Date(design.updatedAt).toISOString(),
+-    styleName: norm(design.styleName),
+-    color: norm(design.color),
+-    seriesName: norm(design.seriesName),
+-    customerType: norm(design.customerType),
+-    status: design.status,
+-    weight: weightById.get(design.id)?.rate ?? 0,
+-  }));
++  const designs = includedDesigns.slice(page * pageSize, page * pageSize + pageSize).map((design) => {
++    const includedLines = (linesByDesign.get(design.id) ?? []).filter(lineIncluded);
++    const percents = new Set(includedLines.map((line) => ratePercentFor(line.scope, rates)));
++    const only = percents.size === 1 ? Array.from(percents)[0] : null;
++    return {
++      id: design.id,
++      name: design.name,
++      customerName: design.customerName,
++      updatedAt: new Date(design.updatedAt).toISOString(),
++      styleName: norm(design.styleName),
++      color: norm(design.color),
++      seriesName: norm(design.seriesName),
++      customerType: norm(design.customerType),
++      status: design.status,
++      weight: only == null ? null : only / 100,
++    };
++  });
+ 
+   return {
+     scanned: input.designs.length,
+     matched: includedDesigns.length,
+     excluded,
+     designs,
++    facets,
+     materials: materialsAll.filter((row) => row.scope != null).sort((a, b) => a.sku.localeCompare(b.sku)),
+     unassigned: materialsAll.filter((row) => row.scope == null).sort((a, b) => a.sku.localeCompare(b.sku)),
+   };
+ }
+ 
++function uniquePresent(values: string[]): string[] {
++  const found = new Set<string>();
++  for (const value of values) {
++    const text = value.trim();
++    if (!text || text.toLowerCase() === "unspecified") continue;
++    found.add(text);
++  }
++  return Array.from(found).sort((a, b) => a.localeCompare(b));
++}
++
++export function filterForecastMaterials(
++  rows: readonly MaterialTotal[],
++  range: { qtyMin?: number | null; qtyMax?: number | null },
++): MaterialTotal[] {
++  return rows.filter((row) => {
++    if (range.qtyMin != null && Number.isFinite(range.qtyMin) && row.quantity < range.qtyMin) return false;
++    if (range.qtyMax != null && Number.isFinite(range.qtyMax) && row.quantity > range.qtyMax) return false;
++    return true;
++  });
++}
++
++export function sumForecastMaterials(rows: readonly MaterialTotal[]): ForecastMaterialTotals {
++  let quantity = 0;
++  let weightedQuantity = 0;
++  let weightedMissing = false;
++  let vendorCost = 0;
++  let weightedVendorCost = 0;
++  let weightedCostMissing = false;
++  let missingCostRows = 0;
++  let missingRateRows = 0;
++  for (const row of rows) {
++    quantity += row.quantity;
++    if (row.weightedQuantity == null) {
++      weightedMissing = true;
++      missingRateRows += 1;
++    } else weightedQuantity += row.weightedQuantity;
++    if (row.vendorCost == null) missingCostRows += 1;
++    else vendorCost += row.vendorCost;
++    if (row.weightedVendorCost == null) weightedCostMissing = true;
++    else weightedVendorCost += row.weightedVendorCost;
++  }
++  return {
++    rowCount: rows.length,
++    quantity: round3(quantity),
++    weightedQuantity: weightedMissing ? null : round3(weightedQuantity),
++    vendorCost: round2(vendorCost),
++    weightedVendorCost: weightedCostMissing ? null : round2(weightedVendorCost),
++    missingCostRows,
++    missingRateRows,
++  };
++}
++
++export function forecastProductEditTarget(row: Pick<MaterialTotal, "catalogProductKind" | "catalogProductId" | "sku">): { section: "catalog"; edit?: number; sku?: string } | null {
++  if (row.catalogProductKind === "pelican" && row.catalogProductId != null) {
++    return { section: "catalog", edit: row.catalogProductId };
++  }
++  if (row.catalogProductKind === "cabinet_sku" && row.sku.trim()) {
++    return { section: "catalog", sku: row.sku };
++  }
++  return null;
++}
++
+ function round2(n: number): number {
+   return Math.round(n * 100) / 100;
+ }
+@@ -312,26 +629,47 @@ export function projectForecastForScopes(result: ForecastResult, scopes: readonl
+       }
+       return copy;
+     }),
+-    materials: result.materials.filter((row) => row.scope != null && allowed.has(row.scope)),
++    materials: result.materials
++      .filter((row) => row.scope != null && allowed.has(row.scope))
++      .map(hideRetailFromVendor),
+     unassigned: [],
++    facets: {
++      ...result.facets,
++      suppliers: result.facets.suppliers.filter((supplier) => allowed.has(supplier.scope)),
++      categories: result.facets.categories,
++    },
+   };
+ }
+ 
++function hideRetailFromVendor(row: MaterialTotal): MaterialTotal {
++  return { ...row, listValue: null, retailValue: null, weightedRetailValue: null };
++}
++
++export function formatVendorCost(value: number | null): string {
++  if (value == null) return "No cost on file";
++  return `$${value.toFixed(2)}`;
++}
++
++export function formatWeightedQuantity(value: number | null): string {
++  if (value == null) return "Not entered";
++  return String(value);
++}
++
+ export function materialsToCsv(rows: readonly MaterialTotal[]): string {
+-  const header = ["SKU", "Description", "Supplier", "Category", "Color", "Style", "Quantity", "Weighted quantity", "Designs", "Weighted designs", "Retail value", "Weighted retail value", "Estimated"];
++  const header = ["SKU", "Description", "Supplier", "Category", "Color", "Style", "Quantity", "Weighted quantity", "Forecast percent", "Designs", "Vendor cost", "Weighted vendor cost", "Estimated"];
+   const body = rows.map((row) => [
+     row.sku,
+     row.description,
+     row.supplierName ?? "",
+-    row.category,
++    row.categoryMissing ? MISSING_CATEGORY_LABEL : row.category,
+     row.color,
+     row.styleName,
+     String(row.quantity),
+-    String(row.weightedQuantity),
++    row.weightedQuantity == null ? "Not entered" : String(row.weightedQuantity),
++    row.vendorRatePercent == null ? "Not entered" : String(row.vendorRatePercent),
+     String(row.designCount),
+-    String(row.weightedDesignCount),
+-    row.retailValue == null ? "" : row.retailValue.toFixed(2),
+-    row.weightedRetailValue == null ? "" : row.weightedRetailValue.toFixed(2),
++    row.vendorCost == null ? "No cost on file" : row.vendorCost.toFixed(2),
++    row.weightedVendorCost == null ? "Not entered" : row.weightedVendorCost.toFixed(2),
+     row.estimated ? "yes" : "",
+   ].map(csvCell).join(","));
+   return [header.join(","), ...body].join("\n");
+-- 
+2.43.0
+
