@@ -98,6 +98,7 @@ export function buildPhotorealScene(args: {
   hardware?: string | null;
   flooring?: string | null;
   backsplash?: string | null;
+  backsplashImageUrl?: string | null;
   sink?: string | null;
   faucet?: string | null;
 }): PhotorealSceneInput | null {
@@ -154,6 +155,7 @@ export function buildPhotorealScene(args: {
     hardware: args.hardware?.trim() || undefined,
     flooring: args.flooring?.trim() || undefined,
     backsplash: args.backsplash?.trim() || undefined,
+    backsplashImageUrl: args.backsplashImageUrl?.trim() || undefined,
     sink: args.sink?.trim() || undefined,
     faucet: args.faucet?.trim() || undefined,
     wallSummaries: wallSummaries.length > 0 ? wallSummaries.slice(0, 8) : undefined,

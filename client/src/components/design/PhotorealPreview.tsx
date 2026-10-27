@@ -25,6 +25,8 @@ export type PhotorealSceneInput = {
   hardware?: string;
   flooring?: string;
   backsplash?: string;
+  /** Selected backsplash product image sent with the room-scene request. */
+  backsplashImageUrl?: string;
   sink?: string;
   faucet?: string;
   wallSummaries?: string[];
