@@ -38,6 +38,7 @@ import { VendorPricing } from "@/components/vendor/VendorPricing";
 import { VendorSamples } from "@/components/vendor/VendorSamples";
 import { VendorFulfillmentQueue } from "@/components/vendor/VendorFulfillmentQueue";
 import { VendorCodeUpload } from "@/components/vendor/VendorCodeUpload";
+import { VendorOnboarding } from "@/components/vendor/VendorOnboarding";
 import { PelicanShippingProfilesPanel } from "@/components/admin/ShippingAdmin";
 import { VendorShippingQuoteCard } from "@/components/shipping/ShippingQuoteBox";
 import { designerFrameCompliance } from "@/lib/doorFrameMetrics";
@@ -95,11 +96,12 @@ async function readSupplierPdfAsBase64(file: File): Promise<string> {
 }
 
 // ─── Sub-pages ────────────────────────────────────────────────────────────────
-type VendorPage = "overview" | "supplier-profile" | "catalog" | "inventory" | "forecast" | "pricing" | "samples" | "other-products" | "styles" | "featured-styles" | "shipping" | "orders" | "fulfillment" | "promotions" | "gallery" | "analytics" | "ai-services" | "integrations" | "payments";
+type VendorPage = "overview" | "supplier-profile" | "catalog" | "onboarding" | "inventory" | "forecast" | "pricing" | "samples" | "other-products" | "styles" | "featured-styles" | "shipping" | "orders" | "fulfillment" | "promotions" | "gallery" | "analytics" | "ai-services" | "integrations" | "payments";
 
 const NAV_ITEMS: { id: VendorPage; label: string; icon: typeof LayoutDashboard }[] = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
   { id: "catalog", label: "Products", icon: Package },
+  { id: "onboarding", label: "Onboarding", icon: FileSpreadsheet },
   { id: "inventory", label: "Inventory", icon: PackageCheck },
   { id: "forecast", label: "Sales Forecast", icon: BarChart3 },
   { id: "pricing", label: "Pricing", icon: DollarSign },
@@ -4890,6 +4892,7 @@ function VendorPortalDashboard({
           </div>
         )}
 	        {page === "catalog" && (isPelican ? <PelicanVendorCatalogPage category={pelicanCategoryFilter} onCategoryChange={setPelicanCategoryFilter} /> : hasVendorFeature(portalVendor, "cabinet_catalog") ? <CatalogPage /> : <p className="text-sm text-muted-foreground">This non-cabinet supplier uses a category catalog. Pelican is the category catalog available in the portal today.</p>)}
+        {page === "onboarding" && <VendorOnboarding distributorId={actingDistributorId ?? undefined} />}
         {page === "inventory" && <VendorInventory distributorId={actingDistributorId ?? undefined} approvedVendorLineId={isAdmin ? adminApprovedVendorLineId ?? undefined : undefined} />}
         {page === "forecast" && <VendorSalesForecast distributorId={actingDistributorId ?? undefined} approvedVendorLineId={isAdmin ? adminApprovedVendorLineId ?? undefined : undefined} />}
         {page === "pricing" && <VendorPricing distributorId={actingDistributorId ?? undefined} approvedVendorLineId={isAdmin ? adminApprovedVendorLineId ?? undefined : undefined} />}

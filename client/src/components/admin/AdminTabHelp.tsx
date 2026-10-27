@@ -111,6 +111,10 @@ const TAB_HELP: Record<string, { en: string; zh: string; link?: { label: string;
     en: "Review cabinets or SKUs flagged as conflicting — duplicate entries, mismatched data, or items needing manual resolution.",
     zh: "審查被標記為衝突的櫥櫃或SKU——重複條目、不匹配的資料或需要手動解決的項目。",
   },
+  "vendor-onboarding": {
+    en: "Exception-only vendor spreadsheet imports. Completed rows are public cabinet conflict reviews, not verified masters. Open a completed row in Cabinet Conflicts to approve or clear it.",
+    zh: "僅例外的供應商試算表匯入。已完成的列是公開的櫥櫃衝突審查，不是已驗證的主檔。在櫥櫃衝突中開啟已完成的列以核准或清除。",
+  },
   cabinets: {
     en: "Manage the cabinet catalog. Download/upload cabinet data via spreadsheet, manage product images, and download line sheets by door style.",
     zh: "管理櫥櫃目錄。透過試算表下載/上傳櫥櫃資料、管理產品圖片，並按門板樣式下載產品清單。",

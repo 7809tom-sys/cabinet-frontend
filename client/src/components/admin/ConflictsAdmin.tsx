@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { conflictCabinetIdFromSearch } from "@/lib/vendorOnboarding";
 import { canonicalMouldingLabel, selectedCatalogOption } from "@shared/catalogCategorySpelling";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -310,6 +311,17 @@ export default function ConflictsAdmin() {
   const utils = trpc.useUtils();
   const { data, isLoading, error, refetch } = trpc.cabinets.conflicts.useQuery();
   const [editing, setEditing] = useState<ConflictItem | null>(null);
+  const requestedId = useMemo(() => conflictCabinetIdFromSearch(window.location.search), []);
+  const openedFor = useRef<number | null>(null);
+  const items = (data ?? []) as ConflictItem[];
+  useEffect(() => {
+    if (requestedId == null || openedFor.current === requestedId || !data) return;
+    const match = (data as ConflictItem[]).find((row) => row.id === requestedId);
+    if (!match) return;
+    openedFor.current = requestedId;
+    setEditing(match);
+    document.getElementById(`conflict-cabinet-${requestedId}`)?.scrollIntoView?.();
+  }, [requestedId, data]);
   const clear = trpc.cabinets.clearConflict.useMutation({
     onSuccess: (_result, vars) => {
       const item = (data ?? []).find((row) => row.id === vars.id);
@@ -342,8 +354,6 @@ export default function ConflictsAdmin() {
     );
   }
 
-  const items = (data ?? []) as ConflictItem[];
-
   return (
     <div className="space-y-4">
       <div className="flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 p-4 text-amber-900">
@@ -358,6 +368,12 @@ export default function ConflictsAdmin() {
         </div>
       </div>
 
+      {requestedId != null && !items.some((row) => row.id === requestedId) && (
+        <p className="text-sm text-muted-foreground">
+          Cabinet {requestedId} is not in the current conflict list.
+        </p>
+      )}
+
       {items.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground">
           No products in conflict. Everything is live.
@@ -365,7 +381,7 @@ export default function ConflictsAdmin() {
       ) : (
         <div className="grid gap-3">
           {items.map((c) => (
-            <Card key={c.id}>
+            <Card key={c.id} id={`conflict-cabinet-${c.id}`} className={c.id === requestedId ? "ring-2 ring-primary" : undefined}>
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between gap-3">
                   <CardTitle className="text-base font-mono">{c.masterCode}</CardTitle>
