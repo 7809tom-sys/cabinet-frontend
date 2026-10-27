@@ -1,4 +1,6 @@
+import { StorefrontSocialIcons } from "@/components/storefront/StorefrontSocialIcons";
 import { storefrontCssVars, DEFAULT_SECTION_LABELS, type SectionLabelKey } from "@shared/affiliateStorefrontControls";
+import type { PublicAffiliateSocialLink } from "@shared/affiliateSocialLinks";
 
 export type StorefrontDraft = {
   storeName?: string | null;
@@ -27,7 +29,7 @@ export type StorefrontDraft = {
 };
 
 /** Live portal preview of the customer-facing storefront. Social icons render in the reserved slot from the Marketing Hub. */
-export default function StorefrontDraftPreview({ draft }: { draft: StorefrontDraft }) {
+export default function StorefrontDraftPreview({ draft, socialLinks = [] }: { draft: StorefrontDraft; socialLinks?: PublicAffiliateSocialLink[] }) {
   const vars = storefrontCssVars(draft);
   const labels = { ...DEFAULT_SECTION_LABELS, ...draft.sectionLabels };
   const logo = draft.logoUrl || draft.logoDarkUrl;
@@ -48,7 +50,9 @@ export default function StorefrontDraftPreview({ draft }: { draft: StorefrontDra
           <span>{labels.designer}</span>
           <span>{labels.quote}</span>
         </div>
-        <span data-testid="social-links-slot" className="text-[0px]">Social links</span>
+        <span data-testid="social-links-slot" className="inline-flex items-center">
+          <StorefrontSocialIcons links={socialLinks} />
+        </span>
       </div>
       <div className="relative min-h-36 px-4 py-8" style={{ background: draft.heroImageUrl ? `center/cover url(${draft.heroImageUrl})` : "var(--sf-primary)" }}>
         <div className="max-w-md rounded-md bg-white/90 p-4 text-neutral-900">
@@ -61,7 +65,9 @@ export default function StorefrontDraftPreview({ draft }: { draft: StorefrontDra
         {draft.footerText && <p>{draft.footerText}</p>}
         {contact.length > 0 && <p>{contact.join(" · ")}</p>}
         <div className="flex items-center justify-between gap-3">
-          <span data-testid="social-links-slot-footer" />
+          <span data-testid="social-links-slot-footer" className="inline-flex items-center">
+            <StorefrontSocialIcons links={socialLinks} />
+          </span>
           {!draft.hidePlatformBranding && <span className="text-muted-foreground">Powered by CabinetDealz</span>}
         </div>
       </footer>

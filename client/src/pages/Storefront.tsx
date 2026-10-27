@@ -10,7 +10,7 @@ import { useStorefrontLangGlobal as useStorefrontLang } from "@/contexts/Languag
 import { StorefrontShop } from "@/components/storefront/StorefrontShop";
 import { KITCHEN_SCENES } from "@/lib/doorFamilyPhotos";
 import {
-  ArrowRight, Phone, Mail, MapPin, Globe, Facebook, Instagram, Award,
+  ArrowRight, Phone, Mail, MapPin, Globe, Award, Menu,
   Ruler, ShieldCheck, Zap, Heart, Languages, Waves, LogIn, ShoppingCart, X, PackageOpen,
 } from "lucide-react";
 import { useState } from "react";
@@ -18,6 +18,8 @@ import { useCart } from "@/contexts/CartContext";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useWhiteLabelHead } from "@/hooks/useWhiteLabelHead";
 import { StorefrontEmbed } from "@/components/storefront/StorefrontEmbed";
+import { StorefrontSocialIcons } from "@/components/storefront/StorefrontSocialIcons";
+import type { PublicAffiliateSocialLink } from "@shared/affiliateSocialLinks";
 import type { AffiliateStorefrontTemplate } from "@shared/affiliateStorefrontTemplates";
 import { affiliateDashboardPath } from "@/lib/affiliateStorefrontUrl";
 import { storefrontCssVars } from "@shared/affiliateStorefrontControls";
@@ -29,8 +31,13 @@ type TemplateId = AffiliateStorefrontTemplate;
 
 type Brand = { primary: string; accent: string };
 
-// Defined early so the Storefront function can reference it in its props
+// Defined early so the Storefront function can reference it in its props.
+// Template preview returns the same public storefront shape. socialLinks is
+// optional there until the preview payload includes the Marketing Hub list.
 type StorefrontData = NonNullable<inferRouterOutputs<AppRouter>["affiliates"]["bySlug"]>;
+type StorefrontPreviewData = Omit<StorefrontData, "socialLinks"> & {
+  socialLinks?: StorefrontData["socialLinks"];
+};
 
 function storefrontNameFromSlug(slug: string): string {
   return slug
@@ -64,7 +71,7 @@ function color(val: string | null | undefined, fallback: string): string {
   return /^#?[0-9a-fA-F]{3,8}$/.test(v) ? (v.startsWith("#") ? v : `#${v}`) : fallback;
 }
 
-export default function Storefront({ slug, previewData, focusShop = false }: { slug: string; previewData?: StorefrontData; focusShop?: boolean }) {
+export default function Storefront({ slug, previewData, focusShop = false }: { slug: string; previewData?: StorefrontPreviewData; focusShop?: boolean }) {
   const { data: fetchedData, isLoading, isError, isFetching, refetch } = trpc.affiliates.bySlug.useQuery(
     { slug },
     {
@@ -457,19 +464,8 @@ export default function Storefront({ slug, previewData, focusShop = false }: { s
               <div className={`${headlineFont} text-xl font-bold text-white mb-3`}>{data.storeName}</div>
               {localizedData.aboutText && <p className="text-sm leading-relaxed mb-4">{localizedData.aboutText}</p>}
               {data.footerText && <p className="text-sm leading-relaxed mb-4">{data.footerText}</p>}
-              {/* Placeholder only. After frontend #22 merges, render StorefrontSocialIcons here and do not keep a second icon row. */}
-              <div data-testid="social-links-slot" />
-              <div className="flex gap-3">
-                {data.facebookUrl && (
-                  <a href={data.facebookUrl} target="_blank" rel="noreferrer" className="hover:text-white">
-                    <Facebook className="h-5 w-5" />
-                  </a>
-                )}
-                {data.instagramUrl && (
-                  <a href={data.instagramUrl} target="_blank" rel="noreferrer" className="hover:text-white">
-                    <Instagram className="h-5 w-5" />
-                  </a>
-                )}
+              <div className="flex gap-3" data-testid="social-links-slot">
+                <StorefrontSocialIcons links={data.socialLinks ?? []} iconClassName="text-white/80 hover:text-white" />
               </div>
             </div>
             <div>
@@ -530,7 +526,7 @@ export default function Storefront({ slug, previewData, focusShop = false }: { s
 type TFn = ReturnType<typeof useStorefrontLang>["t"];
 
 type HeaderProps = {
-  data: StorefrontData;
+  data: StorefrontPreviewData;
   brand: Brand;
   t: TFn;
   withRef: (path: string) => string;
@@ -562,16 +558,21 @@ function NavLinks({
   withRef,
   variant,
   slug,
+  socialLinks,
 }: {
   t: TFn;
   withRef: HeaderProps["withRef"];
   variant: "light" | "dark";
   slug: string;
+  socialLinks: PublicAffiliateSocialLink[];
 }) {
+  const [menuOpen, setMenuOpen] = useState(false);
   const cls = variant === "light" ? "text-white hover:bg-white/15" : "";
+  const iconClass = variant === "light" ? "text-white hover:text-white/80" : "text-foreground hover:text-primary";
   const { count: cartCount } = useCart();
   return (
     <>
+      <StorefrontSocialIcons links={socialLinks} className="hidden md:flex" iconClassName={iconClass} />
       <a href="#shop" className="hidden sm:block">
         <Button variant="ghost" size="sm" className={cls}>{t("cat_shop")}</Button>
       </a>
@@ -599,6 +600,27 @@ function NavLinks({
           )}
         </Button>
       </Link>
+      <button
+        type="button"
+        className={`inline-flex md:hidden items-center justify-center rounded-md p-2 ${cls}`}
+        aria-label={menuOpen ? "Close menu" : "Open menu"}
+        aria-expanded={menuOpen}
+        data-testid="storefront-mobile-menu"
+        onClick={() => setMenuOpen((open) => !open)}
+      >
+        {menuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+      </button>
+      {menuOpen ? (
+        <div className="fixed inset-x-0 top-16 z-50 max-h-[calc(100vh-4rem)] overflow-y-auto border-b bg-card p-4 text-foreground shadow-lg md:hidden" data-testid="storefront-mobile-panel">
+          <div className="flex flex-col gap-3 text-sm">
+            <a href="#shop" onClick={() => setMenuOpen(false)}>{t("cat_shop")}</a>
+            <Link href={withRef(`/store/${slug}/kitchens`)} onClick={() => setMenuOpen(false)}>Plan Your Kitchen</Link>
+            <Link href={withRef(`/design?affiliate=${slug}`)} onClick={() => setMenuOpen(false)}>{t("nav_design")}</Link>
+            <Link href={withRef(`/store/${slug}/order`)} onClick={() => setMenuOpen(false)}>{t("nav_quote")}</Link>
+            <StorefrontSocialIcons links={socialLinks} className="pt-2" />
+          </div>
+        </div>
+      ) : null}
     </>
   );
 }
@@ -612,7 +634,7 @@ function ClassicHeader({ data, brand, t, withRef, headlineFont, LangToggle, Logo
         <div className="container flex items-center justify-between h-16">
           <Logo />
           <div className="flex items-center gap-2">
-            <NavLinks t={t} withRef={withRef} variant="dark" slug={data.slug} />
+            <NavLinks socialLinks={data.socialLinks ?? []} t={t} withRef={withRef} variant="dark" slug={data.slug} />
             {LangToggle}
             <Link href={withRef(`/store/${data.slug}/order`)}>
               <Button size="sm" className="font-semibold text-white" style={{ backgroundColor: brand.accent }}>
@@ -694,7 +716,7 @@ function ShowcaseHero({ data, brand, t, withRef, headlineFont, heroImg, LangTogg
         <div className="container flex items-center justify-between h-16">
           <Logo light />
           <div className="flex items-center gap-2 text-white">
-            <NavLinks t={t} withRef={withRef} variant="light" slug={data.slug} />
+            <NavLinks socialLinks={data.socialLinks ?? []} t={t} withRef={withRef} variant="light" slug={data.slug} />
             {LangToggle}
             <Link href={withRef(`/store/${data.slug}/order`)}>
               <Button size="sm" className="font-semibold text-white" style={{ backgroundColor: brand.accent }}>
@@ -745,7 +767,7 @@ function MinimalHero({ data, brand, t, withRef, headlineFont, heroImg, LangToggl
         <div className="container flex items-center justify-between h-16">
           <Logo />
           <div className="flex items-center gap-2">
-            <NavLinks t={t} withRef={withRef} variant="dark" slug={data.slug} />
+            <NavLinks socialLinks={data.socialLinks ?? []} t={t} withRef={withRef} variant="dark" slug={data.slug} />
             {LangToggle}
             <Link href={withRef(`/store/${data.slug}/order`)}>
               <Button size="sm" variant="outline" className="font-semibold" style={{ borderColor: brand.primary, color: brand.primary }}>
@@ -803,7 +825,7 @@ function CraftsmanHero({ data, brand, t, withRef, headlineFont, LangToggle, Logo
         <div className="container flex items-center justify-between h-16">
           <Logo />
           <div className="flex items-center gap-2">
-            <NavLinks t={t} withRef={withRef} variant="dark" slug={data.slug} />
+            <NavLinks socialLinks={data.socialLinks ?? []} t={t} withRef={withRef} variant="dark" slug={data.slug} />
             {LangToggle}
             <Link href={withRef(`/store/${data.slug}/order`)}>
               <Button size="sm" className="font-semibold text-white" style={{ backgroundColor: brand.primary }}>
@@ -874,7 +896,7 @@ function CoastalHero({ data, brand, t, withRef, headlineFont, heroImg, LangToggl
         <div className="container flex h-16 items-center justify-between">
           <Logo />
           <div className="flex items-center gap-2">
-            <NavLinks t={t} withRef={withRef} variant="dark" slug={data.slug} />
+            <NavLinks socialLinks={data.socialLinks ?? []} t={t} withRef={withRef} variant="dark" slug={data.slug} />
             {LangToggle}
             <Link href={withRef(`/store/${data.slug}/order`)}>
               <Button size="sm" className="font-semibold text-white" style={{ backgroundColor: brand.primary }}>{t("nav_quote")}</Button>
@@ -918,7 +940,7 @@ function GalleryHero({ data, brand, t, withRef, headlineFont, heroImg, LangToggl
       <div className="container flex h-16 items-center justify-between border-b border-white/15">
         <Logo light />
         <div className="flex items-center gap-2">
-          <NavLinks t={t} withRef={withRef} variant="light" slug={data.slug} />
+          <NavLinks socialLinks={data.socialLinks ?? []} t={t} withRef={withRef} variant="light" slug={data.slug} />
           {LangToggle}
           <Link href={withRef(`/store/${data.slug}/order`)}><Button size="sm" className="font-semibold text-white" style={{ backgroundColor: brand.accent }}>{t("nav_quote")}</Button></Link>
         </div>
@@ -957,7 +979,7 @@ function StudioHero({ data, brand, t, withRef, headlineFont, heroImg, LangToggle
         <div className="container flex h-16 items-center justify-between">
           <Logo />
           <div className="flex items-center gap-2">
-            <NavLinks t={t} withRef={withRef} variant="dark" slug={data.slug} />
+            <NavLinks socialLinks={data.socialLinks ?? []} t={t} withRef={withRef} variant="dark" slug={data.slug} />
             {LangToggle}
             <Link href={withRef(`/store/${data.slug}/order`)}><Button size="sm" className="font-semibold text-white" style={{ backgroundColor: brand.primary }}>{t("nav_quote")}</Button></Link>
           </div>
@@ -998,7 +1020,7 @@ function HeritageHero({ data, brand, t, withRef, headlineFont, heroImg, LangTogg
         <div className="container flex h-16 items-center justify-between">
           <Logo />
           <div className="flex items-center gap-2">
-            <NavLinks t={t} withRef={withRef} variant="dark" slug={data.slug} />
+            <NavLinks socialLinks={data.socialLinks ?? []} t={t} withRef={withRef} variant="dark" slug={data.slug} />
             {LangToggle}
             <Link href={withRef(`/store/${data.slug}/order`)}><Button size="sm" className="font-semibold text-white" style={{ backgroundColor: brand.primary }}>{t("nav_quote")}</Button></Link>
           </div>
