@@ -7,7 +7,7 @@ const source = readFileSync(new URL("./SurfacesPickerDialog.tsx", import.meta.ur
 describe("Surfaces picker 3D material readiness", () => {
   it("keeps shopper photos display-only and clearly reports whether a 3D surface has an approved material swatch", () => {
     expect(source).toContain("const hasThreeDMaterialRole");
-    expect(source).toContain("const hasApprovedMaterialSwatch = Boolean(p.materialImageUrl?.trim())");
+    expect(source).toContain("const hasApprovedMaterialSwatch = designerMaterialRenderReady(p)");
     expect(source).toContain('data-testid={`surface-material-readiness-${p.id}`}');
     expect(source).toContain('"3D material swatch ready"');
     expect(source).toContain('"3D material swatch pending — neutral preview"');
@@ -22,8 +22,13 @@ describe("Surfaces picker 3D material readiness", () => {
     expect(source).toContain("Catalog photography never becomes a texture.");
   });
 
-  it("loads the full Tile & Mosaic storefront catalog instead of the swatch-only Designer page", () => {
-    expect(source).toContain('scope: browsingTileMosaic ? "catalog" : "designer"');
+  it("loads the full Tile & Mosaic storefront catalog and the designer flooring page", () => {
+    expect(source).toContain('scope: browsingTileMosaic ? "catalog" as const : "designer" as const');
+    expect(source).toContain("limit: PAGE_LIMIT");
+    expect(source).toContain('limit: activeBathroomRole === "flooring" ? 500 : PAGE_LIMIT');
+    expect(source).not.toContain("browsingFlooring");
+    expect(source).toContain('data-testid="flooring-selection-availability"');
+    expect(source).toContain("Molding, trim, and underlayment stay in accessory suggestions.");
     expect(source).toContain("isDesignerPaletteItemVisible");
     expect(source).toContain("trpc.surfaces.byIds.useQuery");
     expect(source).not.toContain("return isMaterialRole && Boolean(item.materialImageUrl?.trim())");

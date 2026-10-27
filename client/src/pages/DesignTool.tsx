@@ -268,6 +268,7 @@ import { FlooringCartonFacts } from "@/components/design/FlooringCartonFacts";
 import { FlooringLayoutPicker } from "@/components/design/FlooringLayoutPicker";
 import { FlooringAccessorySuggestionsDialog } from "@/components/design/FlooringAccessorySuggestionsDialog";
 import { RecommendedSurfaces, type RecommendedRole } from "@/components/design/RecommendedSurfaces";
+import { flooringSceneTextureUrl } from "@/lib/designerTileMosaicCatalog";
 
 // These customer-facing catalog tabs open as concise category headings. Search
 // and a deliberate height filter still reveal their matching item cards.
@@ -13509,13 +13510,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       // Catalog product cards can be staged-room or retail photographs. The
       // final 3D scene accepts only an explicitly approved, repeatable swatch;
       // named curated assets are resolved separately by the 3D renderer.
-      if (role === "flooring" && selected?.id != null) {
-        // Never let a staged room/card image tile across a floor. Known
-        // product-specific maps and Admin-approved swatches are safe; any
-        // other selected floor receives the renderer's neutral PBR fallback.
-        return selected.materialImageUrl
-          ?? approvedFlooringSwatchByProductId[Number(selected.id)]
-          ?? null;
+      if (role === "flooring") {
+        // Never let a staged room/card image tile across a floor. An explicit
+        // designerRenderReady or hasSwatch flag wins; otherwise materialImageUrl
+        // is the approved swatch. Known product maps stay available. Any other
+        // selected floor receives the renderer's labeled neutral floor.
+        return flooringSceneTextureUrl(selected, approvedFlooringSwatchByProductId);
       }
       return selected?.materialImageUrl ?? null;
     };
@@ -13690,7 +13690,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	      catalogIslandCountertopReferenceUrl={islandCountertopSurface?.materialImageUrl ?? islandCountertopSurface?.imageUrl ?? null}
 	      catalogFlooringName={threeDSurfaceProductNames.flooring}
 	      catalogFlooringProductId={threeDSurfaceProductIds.flooring}
-	      catalogFlooringReferenceUrl={activeFlooringSurface?.materialImageUrl ?? activeFlooringSurface?.imageUrl ?? null}
+	      catalogFlooringReferenceUrl={threeDSurfaceTextureUrls.flooring}
 	      catalogFlooringCategory={threeDFlooringProductMetadata?.category}
 	      catalogFlooringSubCategory={threeDFlooringProductMetadata?.subCategory}
 	      catalogFlooringSize={threeDFlooringProductMetadata?.size}
@@ -21433,7 +21433,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                catalogIslandCountertopReferenceUrl={islandCountertopSurface?.materialImageUrl ?? islandCountertopSurface?.imageUrl ?? null}
 	                catalogFlooringName={threeDSurfaceProductNames.flooring}
 	                catalogFlooringProductId={threeDSurfaceProductIds.flooring}
-	                catalogFlooringReferenceUrl={activeFlooringSurface?.materialImageUrl ?? activeFlooringSurface?.imageUrl ?? null}
+	                catalogFlooringReferenceUrl={threeDSurfaceTextureUrls.flooring}
 	                catalogFlooringCategory={threeDFlooringProductMetadata?.category}
 	                catalogFlooringSubCategory={threeDFlooringProductMetadata?.subCategory}
 	                catalogFlooringSize={threeDFlooringProductMetadata?.size}

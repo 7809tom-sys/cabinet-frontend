@@ -41,6 +41,11 @@ vi.mock("@/lib/trpc", () => ({
         }),
       },
     },
+    pelican: {
+      byCategory: {
+        useQuery: () => ({ isLoading: false, data: { items: [], total: 0 } }),
+      },
+    },
   },
 }));
 
