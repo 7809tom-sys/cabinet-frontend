@@ -189,7 +189,7 @@ function SidebarInner({
   const quoteUrl = affiliateOrderPath(storeSlug);
   const isAdmin = user?.role === "admin";
   const visibleNavItems = NAV_ITEMS.filter((item) =>
-    isAffiliateOwner || isAdmin || item.section === "overview" || (item.section === "crm" && canAccessCrm) || (item.section === "design" && canAccessDesigner),
+    isAffiliateOwner || isAdmin || item.section === "overview" || (item.section === "crm" && canAccessCrm) || (item.section === "design" && canAccessDesigner) || (item.section === "appointments" && (canAccessCrm || canAccessDesigner)),
   );
   const ordersRank = NAV_ITEMS.findIndex((item) => item.section === "orders");
   const rankOf = (item: { section: AffiliateSection }) => NAV_ITEMS.findIndex((entry) => entry.section === item.section);

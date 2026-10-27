@@ -19174,6 +19174,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	        defaultPhone={verifiedPhone}
 	        designId={loadDesignId ?? undefined}
 	        designName={savedDesign?.name ?? null}
+	        affiliateSlug={affiliateSlug}
 	      />
 		      <AlertDialog open={!!islandSeatingOverhangPrompt} onOpenChange={(open) => { if (!open) setIslandSeatingOverhangPrompt(null); }}>
 	        <AlertDialogContent className="w-[min(94vw,540px)]">

@@ -402,7 +402,8 @@ export default function AffiliateDashboard() {
     : (myAccess.data ?? { isOwner: true, accessCrm: true, accessDesigner: true });
 
   useEffect(() => {
-    if ((section === "crm" && !access.accessCrm) || (section === "design" && !access.accessDesigner) || (section === "team" && !access.isOwner)) {
+    const canViewAppointments = access.isOwner || access.accessCrm || access.accessDesigner;
+    if ((section === "crm" && !access.accessCrm) || (section === "design" && !access.accessDesigner) || (section === "team" && !access.isOwner) || (section === "appointments" && !canViewAppointments)) {
       setSection("overview");
     }
   }, [access.accessCrm, access.accessDesigner, access.isOwner, section]);
@@ -755,7 +756,7 @@ export default function AffiliateDashboard() {
       case "appointments":
         return (
           <div className="max-w-4xl">
-            <AffiliateAppointmentsPanel />
+            <AffiliateAppointmentsPanel affiliateId={isAdmin ? affiliate.id : undefined} />
           </div>
         );
       case "installation":
