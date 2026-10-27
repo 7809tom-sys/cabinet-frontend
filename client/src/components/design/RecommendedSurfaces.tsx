@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { groupPelicanConfigurations } from "@shared/pelicanConfigurationGrouping";
 import { flooringCartonFacts } from "@/lib/flooringCartonFacts";
-import { isSelectableDesignerTileMosaic } from "@/lib/designerTileMosaicCatalog";
+import { concatCatalogPages, isSelectableDesignerFlooringPlank, isSelectableDesignerTileMosaic, readDesignerRenderFlags } from "@/lib/designerTileMosaicCatalog";
 import { PelicanConfigurationCard } from "./PelicanConfigurationCard";
 import { verifiedPelicanBathroomFixtureProfile, pelicanBathroomFixturePlacementText } from "@/lib/pelicanBathroomFixtureProfiles";
 import { trpc } from "@/lib/trpc";
@@ -94,6 +94,10 @@ type RecItem = {
   sellPrice: number | null;
   coverageSqFt?: number | string | null;
   piecesPerBox?: number | string | null;
+  showInDesigner?: boolean | null;
+  isActive?: boolean | null;
+  designerRenderReady?: boolean | null;
+  hasSwatch?: boolean | null;
 };
 
 function toSurface(p: RecItem): SelectedSurface {
@@ -112,6 +116,7 @@ function toSurface(p: RecItem): SelectedSurface {
     sellPrice: p.sellPrice,
     coverageSqFt: facts?.sqFtPerBox ?? null,
     piecesPerBox: facts?.piecesPerBox ?? null,
+    ...readDesignerRenderFlags(p),
   };
 }
 
@@ -142,18 +147,26 @@ function RecommendedRow({
   affiliateSlug?: string | null;
 }) {
   // Pelican sells every finish, gauge, slab size and drain side as its own SKU.
-  // Request the whole role (the server caps it at 200), fold the SKUs into one
-  // card per model, and show the first `limit` models: the same one-card,
-  // choose-a-finish pattern as the cabinet hardware picker.
-  // Backsplash is the exception: surfaces.recommended applies the swatch gate
-  // and currently returns 7 mosaics. The storefront catalog has the full
-  // Tile & Mosaic category, and this section lists every Designer-enabled one.
-  const tileCatalog = role === "backsplash";
+  // Request the whole role, fold the SKUs into one card per model, and show the
+  // first `limit` models: the same one-card, choose-a-finish pattern as the
+  // cabinet hardware picker.
+  // Backsplash still reads the storefront catalog. Designer scope requires a
+  // swatch for tile and mosaic. Flooring calls surfaces.recommended with
+  // { role: "flooring", limit: 500 } (paired cabinet-backend#27). That page is
+  // every designer-enabled, priced plank photo, with or without a swatch, and
+  // every returned card is shown. Moldings, trim, and underlayment stay
+  // accessory suggestions.
+  const storefrontCatalog = role === "backsplash";
+  const fullFlooringPalette = role === "flooring";
+  const flooringRecommended = trpc.surfaces.recommended.useQuery(
+    { role: "flooring", limit: 500 },
+    { enabled: fullFlooringPalette },
+  );
   const recommended = trpc.surfaces.recommended.useQuery(
     { role, limit: 200 },
-    { enabled: !tileCatalog },
+    { enabled: !storefrontCatalog && !fullFlooringPalette },
   );
-  const tile = trpc.pelican.byCategory.useQuery(
+  const catalog = trpc.pelican.byCategory.useQuery(
     {
       category: "Tile & Mosaic",
       scope: "catalog",
@@ -161,15 +174,38 @@ function RecommendedRow({
       limit: 200,
       offset: 0,
     },
-    { enabled: tileCatalog },
+    { enabled: storefrontCatalog },
   );
-  const isLoading = tileCatalog ? tile.isLoading : recommended.isLoading;
+  const catalogPage2Enabled = storefrontCatalog && (catalog.data?.total ?? 0) > (catalog.data?.items.length ?? 0);
+  const catalogPage2 = trpc.pelican.byCategory.useQuery(
+    {
+      category: "Tile & Mosaic",
+      scope: "catalog",
+      affiliateSlug: affiliateSlug ?? undefined,
+      limit: 200,
+      offset: 200,
+    },
+    { enabled: catalogPage2Enabled },
+  );
+  const isLoading = storefrontCatalog
+    ? catalog.isLoading || (catalogPage2Enabled && catalogPage2.isLoading)
+    : fullFlooringPalette
+      ? flooringRecommended.isLoading
+      : recommended.isLoading;
   const configurations = useMemo(() => {
-    const sourceRows = (tileCatalog ? tile.data?.items ?? [] : recommended.data ?? []) as RecItem[];
-    const rows = tileCatalog ? sourceRows.filter((item) => isSelectableDesignerTileMosaic(item)) : sourceRows;
+    const sourceRows = (storefrontCatalog
+      ? concatCatalogPages<RecItem>([catalog.data?.items as RecItem[] | undefined, catalogPage2.data?.items as RecItem[] | undefined])
+      : fullFlooringPalette
+        ? flooringRecommended.data ?? []
+        : recommended.data ?? []) as RecItem[];
+    const rows = role === "backsplash"
+      ? sourceRows.filter((item) => isSelectableDesignerTileMosaic(item))
+      : role === "flooring"
+        ? sourceRows.filter((item) => isSelectableDesignerFlooringPlank(item))
+        : sourceRows;
     return groupPelicanConfigurations(rows);
-  }, [recommended.data, tile.data, tileCatalog]);
-  const visible = tileCatalog ? configurations : configurations.slice(0, limit);
+  }, [catalog.data, catalogPage2.data, flooringRecommended.data, fullFlooringPalette, recommended.data, role, storefrontCatalog]);
+  const visible = storefrontCatalog || fullFlooringPalette ? configurations : configurations.slice(0, limit);
   const useVariant = (variantItem: RecItem, configuration: (typeof configurations)[number]) => {
     const item = toSurface(variantItem);
     const tubFiller = role === "bathroom-faucet" && verifiedPelicanBathroomFixtureProfile(item.pelicanCode)?.kind === "floor-tub-filler";
