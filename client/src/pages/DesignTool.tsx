@@ -169,7 +169,9 @@ import { buildTrimCartLines,
   type TrimPrice,
 } from "@/lib/trimCart";
 import { hickorySkinSuggestions, type HickorySkinSuggestion, exposedEnds, isHickoryStyle } from "@/lib/hickorySkins";
-import { aefWindowEndPanelRequirements } from "@/lib/aefWindowEndPanels";
+import { aefExposedEndRequirements } from "@/lib/aefExposedEnds";
+import { isFramelessFortyWallHeight } from "@/lib/aefAboveFridge";
+import { hasAefPrintedGeometry } from "@shared/aefFramelessGeometry";
 import { automaticAngledWallFiller, measuredAngledWallTransition, repairMissingAngledWallFillers } from "@/lib/angledWallFiller";
 import { resolveOverRangeMicrowavePlacement } from "./designToolMicrowavePlacement";
 import { resolveRangeHoodPlacement } from "./designToolRangeHoodPlacement";
@@ -199,7 +201,7 @@ import { autoDesignSinkWindow, windowOverlapsReservation } from "@/lib/autoDesig
 import { autoDesignRangeHood, autoDesignRangeNeedsVentilation } from "@/lib/autoDesignRangeHood";
 import { autoBuildCornerCatalog, autoDesignCornerAttempts, autoDesignCornerFamily, autoDesignCornerSlotPoint, autoDesignCornerSlots, isAutoDesignBlindCornerOption, type AutoBuildCornerCandidate, type AutoDesignCornerChoice, type AutoDesignCornerSlot } from "@/lib/autoDesignCornerStage";
 import { buildMandatoryAutoDesignRefrigeratorBay } from "@/lib/autoDesignRefrigeratorBay";
-import { buildAutoDesignWallCabinets, type AutoDesignUpperCorner } from "@/lib/autoDesignWallCabinets";
+import { buildAutoDesignWallCabinets, resolveWallHeightClass, type AutoDesignUpperCorner } from "@/lib/autoDesignWallCabinets";
 import { seatAutoDesignCorner, type AutoDesignApplianceMove } from "@/lib/autoDesignCornerSeating";
 import { validatePlacedCornerRefrigerator } from "@/lib/cornerRefrigeratorPlacement";
 import { validatePlacedCornerRange, CORNER_RANGE_HANDLE_FILLER_IN } from "@/lib/cornerRangePlacement";
@@ -2825,12 +2827,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     () => (threeDAccessoryCatalog as DesignCabinet[] | undefined) ?? [],
     [threeDAccessoryCatalog],
   );
-  // Frameless V8.2 rule: a window breaks an upper run, so each upper end facing
-  // the window receives one real 3/4-inch WEP panel on the build sheet. This is
-  // a materials requirement only: it never auto-places an object, and does not
-  // affect framed lines or any Continuous Wall Builder geometry.
+  // Frameless V8.2: every visible wall, base, and tall end gets one priced
+  // 3/4" panel, including a window side. One record per cabinet end, so the
+  // window rule is not added a second time. This never places an object and
+  // does not affect framed lines.
   const aefWindowEndPanels = useMemo(
-    () => aefWindowEndPanelRequirements(placed, openings, room, catalogFillers),
+    () => aefExposedEndRequirements(placed, openings, room, catalogFillers),
     [placed, openings, room, catalogFillers],
   );
   // The Wizard presents actual active base cabinets from the selected line.
@@ -3537,7 +3539,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         endPanels: fridgeParts?.endPanels ?? [],
         styleId: styleIdRef.current ?? null,
         makeUid,
-        wallCabinetHeightIn: input.wallCabinetHeightIn ?? 30,
+        wallCabinetHeightIn: (() => {
+          const nominal = input.wallCabinetHeightIn ?? 30;
+          const resolved = resolveWallHeightClass((wallCabPool as DesignCabinet[] | undefined) ?? [], nominal);
+          return resolved != null && isFramelessFortyWallHeight(resolved) ? resolved : nominal;
+        })(),
       });
       if (!refrigeratorBay.ok) return fail(refrigeratorBay.message);
       const fittedBay = fitExplicitRefrigeratorOptionPlacements(working, refrigeratorBay.additions, refrigerator.uid, room);
@@ -4579,20 +4585,21 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     [placed, room, activeStyle]
   );
 
-  // Regular finished ends remain optional. The only non-Hickory exception is
-  // the manufacturer-specific AEF window-break requirement above: the two
-  // facing upper ends need source-sized 3/4-inch panels.
+  // Regular finished ends remain optional on framed lines. Frameless cabinets
+  // add one source-priced 3/4" panel per visible wall, base, or tall end.
+  // The quoted height is the field cut, not the oversized stock sheet.
   const autoEndPanels = useMemo<
-    Array<{ code: string; cabinetId: number | null; description: string; stockWidth: number; stockHeight: number; stockThickness: number; styleId: number | null; pendingSku: boolean }>
+    Array<{ code: string; cabinetId: number | null; description: string; stockWidth: number; stockHeight: number; stockThickness: number; height: number; styleId: number | null; pendingSku: boolean }>
   >(() => aefWindowEndPanels.map((panel) => {
     const owner = placed.find((cabinet) => cabinet.uid === panel.cabinetUid);
     return {
-      code: panel.masterCode ?? "AEF-WEP-CUSTOM-COVERAGE",
+      code: panel.masterCode,
       cabinetId: panel.cabinetId,
       description: panel.description,
       stockWidth: panel.stockWidth,
       stockHeight: panel.stockHeight,
       stockThickness: panel.stockThickness,
+      height: panel.height,
       styleId: owner ? (pricingStyleIdFor(owner) ?? styleId) : styleId,
       pendingSku: panel.pendingSku,
     };
@@ -4833,7 +4840,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     // locked style; otherwise emitted as a pending placeholder.
     const panelMap = new Map<string, BuildSheetRow>();
     for (const ep of autoEndPanels) {
-	      const key = `${ep.code}|${ep.styleId ?? "_"}`;
+	      const key = `${ep.code}|${Math.round(ep.height * 8)}|${ep.styleId ?? "_"}`;
       const existing = panelMap.get(key);
       if (existing) existing.qty += 1;
       else
@@ -4841,7 +4848,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           code: ep.code,
           description: ep.description,
 	          widthIn: ep.stockWidth,
-	          heightIn: ep.stockHeight,
+	          heightIn: ep.height,
 	          depthIn: ep.stockThickness,
 	          placement: "accessory",
 	          qty: 1,
@@ -6585,6 +6592,24 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         return;
       }
       let floatingShelfMountBottom: number | undefined;
+      // Frameless wall placement keeps the existing 3" window casing and adds
+      // the 3/4" end panel. Framed placement does not receive this candidate.
+      const aefWindowClearanceCandidate = accPlacement === "wall" && hasAefPrintedGeometry(c)
+        ? {
+            uid: "aef-wall-clearance-preview",
+            cabinetId: c.id,
+            masterCode: c.masterCode,
+            description: c.description ?? "",
+            placement: "wall" as const,
+            x: 0,
+            y: 0,
+            width,
+            depth,
+            height,
+            rotation: 0,
+            constructionMethod: c.constructionMethod,
+          } as PlacedCabinet
+        : undefined;
       if (isFloatingShelf) {
         const sameWallShelfCount = prev.filter((item) => isFloatingShelfItem(item) && cabinetWall(item, room) === activeWall).length;
         const mountBottom = Math.min(Math.max(0, roomCeiling(room) - height), 54 + sameWallShelfCount * 12);
@@ -6718,6 +6743,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
               description: c.description,
               placement: accPlacement,
             }),
+            aefWindowClearanceCandidate,
 	          );
           if (!nextSpot && isSinkBasePlacement) {
             // Required sink bases remain placeable even when the ordinary run
@@ -6739,6 +6765,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                description: c.description,
 	                placement: accPlacement,
 	              }),
+	              aefWindowClearanceCandidate,
 	            );
 	            if (alternate) {
 	              setAlternateWallRecommendation({
@@ -6781,10 +6808,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
             prev,
             openings,
             Math.min(width, 9),
-            0,
+            aefWindowClearanceCandidate ? WALL_OPENING_CLEARANCE_IN : 0,
             accPlacement,
             isRefrigerator({ masterCode: c.masterCode, placement: accPlacement }),
-            undefined,
+            aefWindowClearanceCandidate,
             depth,
           );
           const fit = segs.find((segment) => segment.length >= width) ?? segs[0];
@@ -9075,6 +9102,19 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	    () => (fridgeDialog ? placed.find((p) => p.uid === fridgeDialog.fridgeUid) ?? null : null),
 	    [fridgeDialog, placed]
 	  );
+  const framelessFortyWallHeightIn = useMemo(() => {
+    if (!fridgeForDialog) return null;
+    const side = cabinetWall(fridgeForDialog, room);
+    const placedForty = placed.find((cabinet) => (
+      cabinet.placement === "wall"
+      && cabinetWall(cabinet, room) === side
+      && hasAefPrintedGeometry(cabinet)
+      && isFramelessFortyWallHeight(placedHeight(cabinet))
+    ));
+    if (placedForty) return placedHeight(placedForty);
+    const resolved = resolveWallHeightClass((wallCabPool as DesignCabinet[] | undefined) ?? [], wallCabHeight);
+    return resolved != null && isFramelessFortyWallHeight(resolved) ? resolved : null;
+  }, [fridgeForDialog, placed, room, wallCabHeight, wallCabPool]);
   const fridgeDialogInitialChoice = useMemo(() => {
     if (!fridgeForDialog) return null;
     if (fridgeDialog?.initialChoice) {
@@ -19943,6 +19983,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	        hasSmoothPanel={((fridgeSurround as { smoothPanels?: unknown[] } | undefined)?.smoothPanels?.length ?? 0) > 0}
 	        replacementCabinetCode={refrigeratorCabinetToReplace?.masterCode ?? null}
 	        initialChoice={fridgeDialogInitialChoice}
+	        matchWallHeightIn={framelessFortyWallHeightIn}
 		        errorMessage={placementWarning}
         onApply={applyFridgeSurround}
 	        onSkip={() => setFridgeDialog(null)}

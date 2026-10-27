@@ -1,3 +1,4 @@
+import { framelessAboveFridgeHeight } from "./aefAboveFridge";
 import {
   clampFillerExtensionIn,
   dim,
@@ -50,6 +51,21 @@ export function pickAutoDesignRefrigeratorCap(
 ): DesignCabinet | null {
   const target = UPPER_RUN_BOTTOM_IN + wallCabinetHeightIn;
   const mountBottom = refrigeratorSurroundElevation(null, refrigeratorTop, 0).mountBottom;
+  // A frameless 40 1/4" run pairs with the 22 5/8" × 24" refrigerator wall.
+  // Do not fall through to a shorter 24"-deep box, and do not treat a framed
+  // 42" request as this height.
+  const framelessCapHeight = framelessAboveFridgeHeight(wallCabinetHeightIn);
+  if (framelessCapHeight != null) {
+    const match = caps
+      .filter((candidate) => (
+        Math.abs(dim(candidate.width, 0) - 36) <= 0.01
+        && Math.abs(dim(candidate.depth, 0) - REFRIGERATOR_CAP_DEPTH_IN) <= 0.01
+        && Math.abs(dim(candidate.height, 0) - framelessCapHeight) <= 0.05
+        && mountBottom + dim(candidate.height, 0) <= ceilingIn + 0.01
+      ))
+      .sort((a, b) => a.masterCode.localeCompare(b.masterCode));
+    return match[0] ?? null;
+  }
   const eligible = caps
     .filter((candidate) => (
       Math.abs(dim(candidate.width, 0) - 36) <= 0.01
