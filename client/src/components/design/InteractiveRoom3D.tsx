@@ -14,7 +14,7 @@ import { ThreeDHandlesControl } from "./ThreeDHandlesControl";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { APPLIANCES, BLIND_CORNER_FILLER_WIDTH_IN, COUNTERTOP_DEPTH_IN, FURNITURE_CATALOG, STD, applianceAppearanceImage, bearsCountertop, isBaseHeightAppliance, blindCornerRearCountertopExtensionIn, cabinetWall, cabinetWallDragPreview, cornerLegRatioForPlaced, cornerRotationForPlaced, countertopRunFaceNormal, countertopSurfacePlanPolygon, countertopSurfaces, crownBlockingCabinets, crownEligibleCabinets, customWallCabinetSide, drywallPonyWallAppearance, elevationBox, formatEighthInches, formatInches, glassDoorShelfCount, isAgainstWall, isBaseEndCornerCabinet, isCustomRoomWall, isFillerItem, fillerWidthRange, isGlassDoorCabinet, isMicrowaveOverRangePair, isRangeHoodPlacement, isRangeOrOven, isRefrigerator, isStacker, isWallRunDraggable, isWd18CountertopDrawerCabinet, kitchenCrestGenericOpenEndShelfCount, normalizeInstalledFillersToAdjacentCabinets, peninsulaCountertopPonyWallBackExtensionIn, peninsulaCountertopPonyWallBarOverhang, peninsulaCountertopSeatingOverhang, peninsulaCountertopWaterfallEnd, peninsulaLowerWorktopOppositeSideExtensionIn, peninsulaRunEndpoints, placedCornerGeometryKind, placedFootprint, ponyWallMiteredFootprint, ponyWallPlanFrame, potFillerMountedRange, rangeVisualAppearance, refrigeratorBayVerificationMetrics, resolveCabinetHardwarePosition, resolveSwing, roomWallAppearance, seatedWallRunFrame, wallRunFrame, selectedLowerCabinetWallPlacement, sinkPlanDimensions, usesRaisedFloorWallDoorPull, wallCabinetFitMeasure, wallGapFitPreview, wallGapFreehandPreview, wallGaps, wallPlacementAt, wallRunOffset, wallRunSpan, wallSpanMeasure, wallLength, wd18CountertopFaceLayout, type CabinetWallDragPreview, type CountertopSurface, type IslandZone, type PlacedCabinet, type PlacedCornerGeometryKind, type PlacedFurniture, type PonyWall, type PotFillerFixture, rotatedSize, type RoomData, type SinkFixture, type WallCabinetFitMeasure, type WallGapFitPreview, type WallOpening, type WallSide, type WallSpanMeasure, wallTopLimit, } from "@/lib/design";
+import { APPLIANCES, BLIND_CORNER_FILLER_WIDTH_IN, COUNTERTOP_DEPTH_IN, FURNITURE_CATALOG, STD, applianceAppearanceImage, bearsCountertop, isBaseHeightAppliance, blindCornerRearCountertopExtensionIn, blindPullRange, cabinetWall, cabinetWallDragPreview, cornerLegRatioForPlaced, cornerRotationForPlaced, countertopRunFaceNormal, countertopSurfacePlanPolygon, countertopSurfaces, crownBlockingCabinets, crownEligibleCabinets, customWallCabinetSide, drywallPonyWallAppearance, elevationBox, formatEighthInches, formatInches, glassDoorShelfCount, isAgainstWall, isBaseEndCornerCabinet, isCustomRoomWall, isFillerItem, fillerWidthRange, isGlassDoorCabinet, isMicrowaveOverRangePair, isRangeHoodPlacement, isRangeOrOven, isRefrigerator, isStacker, isWallRunDraggable, isWd18CountertopDrawerCabinet, kitchenCrestGenericOpenEndShelfCount, normalizeInstalledFillersToAdjacentCabinets, peninsulaCountertopPonyWallBackExtensionIn, peninsulaCountertopPonyWallBarOverhang, peninsulaCountertopSeatingOverhang, peninsulaCountertopWaterfallEnd, peninsulaLowerWorktopOppositeSideExtensionIn, peninsulaRunEndpoints, placedCornerGeometryKind, placedFootprint, ponyWallMiteredFootprint, ponyWallPlanFrame, potFillerMountedRange, rangeVisualAppearance, refrigeratorBayVerificationMetrics, resolveCabinetHardwarePosition, resolveSwing, roomWallAppearance, seatedWallRunFrame, wallRunFrame, selectedLowerCabinetWallPlacement, sinkPlanDimensions, usesRaisedFloorWallDoorPull, wallCabinetFitMeasure, wallGapFitPreview, wallGapFreehandPreview, wallGaps, wallPlacementAt, wallRunOffset, wallRunSpan, wallSpanMeasure, wallLength, wd18CountertopFaceLayout, type CabinetWallDragPreview, type CountertopSurface, type IslandZone, type PlacedCabinet, type PlacedCornerGeometryKind, type PlacedFurniture, type PonyWall, type PotFillerFixture, rotatedSize, type RoomData, type SinkFixture, type WallCabinetFitMeasure, type WallGapFitPreview, type WallOpening, type WallSide, type WallSpanMeasure, wallTopLimit, } from "@/lib/design";
 import { islandCountertopRects, islandCountertopVisibleRects, islandRaisedBarRects, islandFaceFitMeasure } from "@/lib/islandScene";
 import { furniturePlanFrame, resolvedFurnitureDimensions } from "@/lib/design";
 import { farmhouseSinkBaseFaceLayout } from "@/lib/farmhouseSinkBaseFace";
@@ -101,17 +101,26 @@ export function photoReferenceRoomWallMeshes(scene: THREE.Scene): THREE.Mesh[] {
 }
 
 /** Temporarily remove all architectural room walls during a photo reference
- * capture. This restores each wall exactly as found, including hidden walls,
- * and deliberately does not touch cabinet, glass, countertop, or support mesh.
+ * capture. This restores each wall exactly as found, including hidden walls.
+ * Cabinets and surfaces the live dollhouse cutaway has hidden are shown for
+ * the capture, then returned to that cutaway state, so the locked cabinet
+ * crop stays complete instead of dropping the near wall's run.
  */
 export function captureWithRoomWallsHidden<T>(scene: THREE.Scene, capture: () => T): T {
   const walls = photoReferenceRoomWallMeshes(scene);
   const visibility = walls.map((wall) => wall.visible);
+  const cutawayHidden: Array<{ node: THREE.Object3D; visible: boolean }> = [];
+  scene.traverse((node) => {
+    if (node.userData?.dollhouseHidden !== true || node.userData?.roomWall === true) return;
+    cutawayHidden.push({ node, visible: node.visible });
+    node.visible = node.userData.dollhousePreviousVisible !== false;
+  });
   try {
     walls.forEach((wall) => { wall.visible = false; });
     return capture();
   } finally {
     walls.forEach((wall, index) => { wall.visible = visibility[index] ?? true; });
+    cutawayHidden.forEach(({ node, visible }) => { node.visible = visible; });
   }
 }
 
@@ -912,7 +921,7 @@ interface Props {
   fillerInsertionTransition?: { uids: string[]; key: number } | null;
   /** Renders directly inside the main designer canvas rather than a standalone preview shell. */
   embedded?: boolean;
-  /** Ghosts walls between the camera and its target so the regular Designer stays visible. */
+  /** Hides each room wall, and everything mounted on it, while the camera is outside that wall. */
   cutawayRoomWalls?: boolean;
   /** Draws the complete authoritative 2D plan as a subdued floor reference beneath full-opacity 3D geometry. */
   hybridPlanUnderlay?: boolean;
@@ -2065,6 +2074,138 @@ export const THREE_D_WALL_DEPTH_WRITE = false;
 // first load so the customer can immediately see cabinet-to-wall relationships.
 // The control still offers a deliberate clear-stage view for close inspection.
 export const THREE_D_ROOM_CONTEXT_DEFAULT = true;
+
+export type ThreeDDollhouseWall = {
+  side: string;
+  startX: number;
+  startZ: number;
+  endX: number;
+  endZ: number;
+  inwardX: number;
+  inwardZ: number;
+};
+
+/**
+ * Polygon wall vertices are stored with Y = −world Z. The inward normal points
+ * from the wall into the room so a camera outside that wall can be detected
+ * from any orbit angle, including corners where more than one wall is in front.
+ */
+export function threeDDollhouseWallFrames(
+  segments: Array<{ start: { x: number; y: number }; end: { x: number; y: number }; side?: string }>,
+): ThreeDDollhouseWall[] {
+  if (segments.length === 0) return [];
+  let sumX = 0;
+  let sumZ = 0;
+  for (const segment of segments) {
+    sumX += segment.start.x + segment.end.x;
+    sumZ += -segment.start.y - segment.end.y;
+  }
+  const interiorX = sumX / (segments.length * 2);
+  const interiorZ = sumZ / (segments.length * 2);
+  return segments.flatMap((segment) => {
+    const startX = segment.start.x;
+    const startZ = -segment.start.y;
+    const endX = segment.end.x;
+    const endZ = -segment.end.y;
+    const dx = endX - startX;
+    const dz = endZ - startZ;
+    const length = Math.hypot(dx, dz);
+    if (length < 1e-6) return [];
+    const leftX = -dz / length;
+    const leftZ = dx / length;
+    const midX = (startX + endX) / 2;
+    const midZ = (startZ + endZ) / 2;
+    const towardInterior = leftX * (interiorX - midX) + leftZ * (interiorZ - midZ) >= 0;
+    return [{
+      side: segment.side ?? "",
+      startX,
+      startZ,
+      endX,
+      endZ,
+      inwardX: towardInterior ? leftX : -leftX,
+      inwardZ: towardInterior ? leftZ : -leftZ,
+    }];
+  });
+}
+
+/** True when the camera is on the exterior side of the wall, looking at its back. */
+export function threeDDollhouseWallHidesFromCamera(
+  wall: ThreeDDollhouseWall,
+  camera: { x: number; z: number },
+): boolean {
+  const midX = (wall.startX + wall.endX) / 2;
+  const midZ = (wall.startZ + wall.endZ) / 2;
+  return (camera.x - midX) * wall.inwardX + (camera.z - midZ) * wall.inwardZ < -0.02;
+}
+
+/** Cabinets and surfaces within this depth of a wall are mounted on it and hide with it. */
+export const THREE_D_DOLLHOUSE_MOUNT_DEPTH_IN = 32;
+
+/**
+ * The nearest wall within mount depth owns the object. A corner cabinet whose
+ * center is essentially equidistant is mounted on both walls so it cannot
+ * float when either wall is cut away. A backsplash tight against one wall
+ * stays with that wall only.
+ */
+export function threeDDollhouseMountWalls(
+  point: { x: number; z: number },
+  walls: ThreeDDollhouseWall[],
+  maxDepth = THREE_D_DOLLHOUSE_MOUNT_DEPTH_IN * INCH,
+): string[] {
+  const hits: Array<{ side: string; distance: number }> = [];
+  for (const wall of walls) {
+    if (!wall.side) continue;
+    const dx = wall.endX - wall.startX;
+    const dz = wall.endZ - wall.startZ;
+    const lengthSq = dx * dx + dz * dz;
+    if (lengthSq < 1e-8) continue;
+    const px = point.x - wall.startX;
+    const pz = point.z - wall.startZ;
+    const along = (px * dx + pz * dz) / lengthSq;
+    const margin = (2 * INCH) / Math.sqrt(lengthSq);
+    if (along < -margin || along > 1 + margin) continue;
+    const distance = px * wall.inwardX + pz * wall.inwardZ;
+    if (distance < -0.5 * INCH || distance > maxDepth) continue;
+    hits.push({ side: wall.side, distance });
+  }
+  if (hits.length === 0) return [];
+  hits.sort((left, right) => left.distance - right.distance);
+  const nearest = hits[0]!.distance;
+  const tie = 1 * INCH;
+  return hits.filter((hit) => hit.distance <= nearest + tie).map((hit) => hit.side);
+}
+
+function threeDDollhouseObjectCenter(node: THREE.Object3D, box: THREE.Box3, target: THREE.Vector3): THREE.Vector3 | null {
+  const key = [
+    node.position.x, node.position.y, node.position.z,
+    node.rotation.x, node.rotation.y, node.rotation.z,
+    node.scale.x, node.scale.y, node.scale.z,
+    node.children.length,
+  ].join("|");
+  const cached = node.userData.dollhouseCenter as { key: string; x: number; y: number; z: number } | undefined;
+  if (cached?.key === key) return target.set(cached.x, cached.y, cached.z);
+  box.makeEmpty();
+  box.setFromObject(node);
+  if (box.isEmpty()) return null;
+  box.getCenter(target);
+  node.userData.dollhouseCenter = { key, x: target.x, y: target.y, z: target.z };
+  return target;
+}
+
+function setThreeDDollhouseHidden(node: THREE.Object3D, hide: boolean) {
+  if (hide) {
+    if (node.userData.dollhouseHidden !== true) {
+      node.userData.dollhousePreviousVisible = node.visible;
+      node.userData.dollhouseHidden = true;
+    }
+    node.visible = false;
+    return;
+  }
+  if (node.userData.dollhouseHidden === true) {
+    node.visible = node.userData.dollhousePreviousVisible !== false;
+    node.userData.dollhouseHidden = false;
+  }
+}
 
 /** A wall only becomes a visual cutaway if the sightline to the orbit target crosses its finite span. */
 export function threeDWallObscuresOrbitTarget(
@@ -8586,6 +8727,8 @@ export type ThreeDBacksplashSegment = {
 
 export type BacksplashHeightMode = "standard" | "full-height";
 export const THREE_D_BACKSPLASH_TILE_SIZE_IN = 12;
+/** Planes sit this far off the wall face. A shared corner insets each run by the same amount so the two tiles meet without overlap. */
+export const THREE_D_BACKSPLASH_FACE_INSET_IN = 0.07;
 
 /**
  * Backsplash follows the physical counter run, not a limited catalog subset.
@@ -8621,17 +8764,109 @@ function threeDWallRunSpan(cabinet: PlacedCabinet, side: WallSide, room: RoomDat
 }
 
 /**
+ * A blind corner is a rectangle on one wall, pulled 3–6 inches off the inside
+ * corner. Its body still occupies the return: the adjoining wall above the
+ * counter, from the blind face through the pull, has to be tiled or a bare
+ * strip shows under the corner. Coverage follows that footprint only — it does
+ * not paint the rest of an open wall, and it does not move the cabinet.
+ */
+export function threeDBlindCornerBacksplashSpans(
+  cabinet: PlacedCabinet,
+  side: WallSide,
+  room: RoomData,
+): Array<{ start: number; end: number }> {
+  const owning = cabinetWall(cabinet, room);
+  const footprint = placedFootprint(cabinet);
+  const x0 = cabinet.x;
+  const y0 = cabinet.y;
+  const x1 = cabinet.x + footprint.w;
+  const y1 = cabinet.y + footprint.d;
+  const pullTol = (blindPullRange(cabinet)?.max ?? 6) + 0.5;
+  const nearLeft = x0 <= pullTol;
+  const nearRight = room.width - x1 <= pullTol;
+  const nearTop = y0 <= pullTol;
+  const nearBottom = room.depth - y1 <= pullTol;
+  if (side === owning) {
+    const run = threeDWallRunSpan(cabinet, side, room);
+    const length = wallLength(side, room);
+    let start = run.start;
+    let end = run.end;
+    if (start > 0.001 && start <= pullTol) start = 0;
+    const endGap = length - end;
+    if (endGap > 0.001 && endGap <= pullTol) end = length;
+    return end - start > 0.001 ? [{ start, end }] : [];
+  }
+  const span = (start: number, end: number) => (end - start > 0.5 ? [{ start, end }] : []);
+  if (side === "top" && nearTop && nearRight && !nearLeft) return span(x0, room.width);
+  if (side === "top" && nearTop && nearLeft && !nearRight) return span(0, x1);
+  if (side === "bottom" && nearBottom && nearRight && !nearLeft) return span(x0, room.width);
+  if (side === "bottom" && nearBottom && nearLeft && !nearRight) return span(0, x1);
+  if (side === "left" && nearLeft && nearTop && !nearBottom) return span(0, y1);
+  if (side === "left" && nearLeft && nearBottom && !nearTop) return span(y0, room.depth);
+  if (side === "right" && nearRight && nearTop && !nearBottom) return span(0, y1);
+  if (side === "right" && nearRight && nearBottom && !nearTop) return span(y0, room.depth);
+  return [];
+}
+
+/**
+ * PlaneGeometry's local +X is the run start on the back and right walls, and
+ * the run end on the left and front walls. World-inch UVs undo that mirror so
+ * every wall repeats the same module from the same elevation.
+ */
+export function threeDBacksplashPlaneUv(
+  segment: Pick<ThreeDBacksplashSegment, "side" | "bottom" | "top">,
+  planeU: number,
+  planeV: number,
+  renderStart: number,
+  renderEnd: number,
+  moduleIn = THREE_D_BACKSPLASH_TILE_SIZE_IN,
+) {
+  const safeModuleIn = Math.max(0.125, moduleIn);
+  const span = renderEnd - renderStart;
+  const reversed = segment.side === "left" || segment.side === "bottom";
+  const along = reversed ? renderEnd - planeU * span : renderStart + planeU * span;
+  const elevation = segment.bottom + planeV * (segment.top - segment.bottom);
+  return { u: along / safeModuleIn, v: elevation / safeModuleIn };
+}
+
+/** Inset a run only where another backsplash plane meets it, so the inside corner butts instead of crossing. */
+export function threeDBacksplashRenderInterval(
+  segment: ThreeDBacksplashSegment,
+  room: Pick<RoomData, "width" | "depth">,
+  segments: ThreeDBacksplashSegment[],
+): { start: number; end: number } {
+  const inset = THREE_D_BACKSPLASH_FACE_INSET_IN;
+  const tolerance = 0.35;
+  let start = segment.start;
+  let end = segment.end;
+  const reaches = (other: ThreeDBacksplashSegment, at: number) => other.start <= at + tolerance && other.end >= at - tolerance;
+  const horizontal = segment.side === "top" || segment.side === "bottom";
+  if (horizontal) {
+    const cornerY = segment.side === "top" ? 0 : room.depth;
+    if (start <= tolerance && segments.some((other) => other.side === "left" && reaches(other, cornerY))) start += inset;
+    if (end >= room.width - tolerance && segments.some((other) => other.side === "right" && reaches(other, cornerY))) end -= inset;
+  } else {
+    const cornerX = segment.side === "left" ? 0 : room.width;
+    if (start <= tolerance && segments.some((other) => other.side === "top" && reaches(other, cornerX))) start += inset;
+    if (end >= room.depth - tolerance && segments.some((other) => other.side === "bottom" && reaches(other, cornerX))) end -= inset;
+  }
+  if (end - start < 0.05) return { start: segment.start, end: segment.end };
+  return { start, end };
+}
+
+/**
  * True folded/diagonal corner cabinets are ground-level countertop supports on
  * both wall-facing legs, so the backsplash must wrap around the corner instead
- * of leaving the adjoining wall blank. Blind corners remain rectangular and
- * continue to support only their owning room wall. This adds wall coverage
- * only—it never changes the saved corner footprint, cabinet placement,
- * countertop, or camera.
+ * of leaving the adjoining wall blank. A blind corner is rectangular, but the
+ * return wall beside that rectangle is still an inside corner and is tiled
+ * with it. This adds wall coverage only—it never changes the saved corner
+ * footprint, cabinet placement, countertop, or camera.
  */
 export function threeDBacksplashSupportSpans(cabinet: PlacedCabinet, side: WallSide, room: RoomData) {
   if (!threeDSupportsBacksplash(cabinet, room)) return [];
 	const cornerKind = placedCornerGeometryKind(cabinet);
 	const wrapsCornerLegs = cornerKind === "l-shape" || cornerKind === "diagonal" || cornerKind === "corner-drawer";
+	if (cornerKind === "blind-corner") return threeDBlindCornerBacksplashSpans(cabinet, side, room);
 	if (!wrapsCornerLegs) {
 		return cabinetWall(cabinet, room) === side ? [threeDWallRunSpan(cabinet, side, room)] : [];
   }
@@ -8784,27 +9019,39 @@ function addThreeDBacksplash(
   sourceTexture: THREE.Texture,
 ) {
   for (const segment of segments) {
-    const widthIn = segment.end - segment.start;
+    const render = threeDBacksplashRenderInterval(segment, room, segments);
+    const widthIn = render.end - render.start;
     const heightIn = segment.top - segment.bottom;
     const texture = sourceTexture.clone();
     texture.wrapS = THREE.RepeatWrapping;
     texture.wrapT = THREE.RepeatWrapping;
+    // The loaded swatch is centered for the room-wide preview. Segment repeats
+    // must be measured from the plane corner in real inches, or a longer wall
+    // samples a different part of a variegated sheet than the return.
+    texture.center.set(0, 0);
+    texture.rotation = 0;
+    texture.repeat.set(1, 1);
+    texture.offset.set(0, 0);
     const moduleIn = Number(sourceTexture.userData?.backsplashModuleIn) || THREE_D_BACKSPLASH_TILE_SIZE_IN;
     const groutJointIn = Number(sourceTexture.userData?.backsplashGroutJointIn) || null;
     const patternKind = sourceTexture.userData?.backsplashPatternKind ?? "field-tile";
-    const tileTransform = threeDBacksplashTileTextureTransform(segment, moduleIn);
-    texture.repeat.set(tileTransform.repeatX, tileTransform.repeatY);
-    texture.offset.set(tileTransform.offsetX, tileTransform.offsetY);
     texture.needsUpdate = true;
     const material = new THREE.MeshPhysicalMaterial({
       color: "#ffffff",
       map: texture,
-      side: THREE.DoubleSide,
+      side: THREE.FrontSide,
       ...threeDPhysicalSurfaceProfile("backsplash", true),
     });
-    material.userData = { selectedSurfaceRole: "backsplash", usesAuthoritativeProductImage: !sourceTexture.userData?.representativePreview, representativePreview: Boolean(sourceTexture.userData?.representativePreview), tileModuleIn: moduleIn, groutJointIn, backsplashPatternKind: patternKind, continuousTileField: true, materialOnlyNoGeometryChange: true };
-    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(widthIn * INCH, heightIn * INCH), material);
-    const transform = threeDBacksplashTransform(segment, room);
+    material.userData = { selectedSurfaceRole: "backsplash", usesAuthoritativeProductImage: !sourceTexture.userData?.representativePreview, representativePreview: Boolean(sourceTexture.userData?.representativePreview), tileModuleIn: moduleIn, groutJointIn, backsplashPatternKind: patternKind, continuousTileField: true, worldInchUv: true, materialOnlyNoGeometryChange: true };
+    const geometry = new THREE.PlaneGeometry(widthIn * INCH, heightIn * INCH);
+    const uv = geometry.getAttribute("uv");
+    for (let index = 0; index < uv.count; index += 1) {
+      const mapped = threeDBacksplashPlaneUv(segment, uv.getX(index), uv.getY(index), render.start, render.end, moduleIn);
+      uv.setXY(index, mapped.u, mapped.v);
+    }
+    uv.needsUpdate = true;
+    const mesh = new THREE.Mesh(geometry, material);
+    const transform = threeDBacksplashTransform({ ...segment, start: render.start, end: render.end }, room);
     mesh.position.set(transform.x * INCH, transform.y * INCH, transform.z * INCH);
     mesh.rotation.y = transform.rotation;
     mesh.receiveShadow = true;
@@ -9919,7 +10166,7 @@ export function MobileThreeDViewerNavigation(actions: ThreeDViewerNavigationActi
   );
 }
 
-export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick = false, roomOverride, openings = [], sinks = [], potFillers = [], island = null, islandFocusRequest = null, furniture = [], selectedFurnitureUid = null, onSelectFurniture, onRemoveFurniture, onRotateFurniture, onOpenFurnitureAttributes, ponyWalls = [], orderSummary, orderLines = [], initialPresentation, catalogFinishOverride, cabinetFinishPreviewOptions = [], cabinetFinishOverrides, cabinetDoorProfiles, cabinetDoorSampleUrls, cabinetFrontVisuals, catalogDoorSampleUrl, catalogRoomSceneUrl, catalogDoorProfile, windowSceneKind = DEFAULT_WINDOW_SCENE_KIND, windowFrameStyle = "white", hardwareStyleId = "none", hardwareAccent, onHardwareStyleChange, catalogFinishName, catalogFinishProductId, catalogIslandCabinetName, catalogIslandCabinetColor, catalogIslandCabinetProductId, catalogIslandDoorSampleUrl, catalogCountertopName, catalogCountertopProductId, catalogCountertopReferenceUrl, catalogIslandCountertopName, catalogIslandCountertopProductId, catalogIslandCountertopReferenceUrl, catalogFlooringName, catalogFlooringProductId, catalogFlooringReferenceUrl, catalogFlooringCategory, catalogFlooringSubCategory, catalogFlooringSize, catalogBacksplashName, catalogBacksplashProductId, catalogBacksplashReferenceUrl, catalogHardwareReferenceUrl, catalogHardwareName, savedDesignId, savedDesignRevision, canAffiliateGeminiImageTest = false, isCurrentPlanSaved = false, savedPlanFingerprintPayload = null, backsplashHeightMode = "standard", countertopBacksplashHeightIn = 0, catalogCountertopColor, catalogIslandCountertopColor, catalogCountertopImageUrl, catalogIslandCountertopImageUrl, catalogFlooringImageUrl, catalogBacksplashImageUrl, shareContext, catalogItems = [], catalogDragItem = null, catalogDropWall, onAddCatalogItem, onAddRangeHood, onSaveToAccount, onSyncCart, onPresentationChange, onRoomWallHeightChange, onRoomWallHeightsChange, onMoveCabinet, onMoveCabinetTo, selectedCabinetUid, attributesTargetUid = null, missingPriceUids, onSelectCabinet, onOpenCabinetEditor, onSelectOpening, onOpenWindowEditor, onOpenDoorEditor, onRequestFiller, onSnapGlassCabinetToFront, onRotateCabinet, onRemoveCabinet, showWallLayer, onToggleWallLayer, temporaryPreviewMessage, onClearTemporaryPreview, temporaryPreviewCounter, temporaryPreviewTransitionKey, fillerInsertionTransition, cabinetConfigHref, embedded = false, cutawayRoomWalls = false, hybridPlanUnderlay = false, className, onGeometryRendered }: Props) {
+export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick = false, roomOverride, openings = [], sinks = [], potFillers = [], island = null, islandFocusRequest = null, furniture = [], selectedFurnitureUid = null, onSelectFurniture, onRemoveFurniture, onRotateFurniture, onOpenFurnitureAttributes, ponyWalls = [], orderSummary, orderLines = [], initialPresentation, catalogFinishOverride, cabinetFinishPreviewOptions = [], cabinetFinishOverrides, cabinetDoorProfiles, cabinetDoorSampleUrls, cabinetFrontVisuals, catalogDoorSampleUrl, catalogRoomSceneUrl, catalogDoorProfile, windowSceneKind = DEFAULT_WINDOW_SCENE_KIND, windowFrameStyle = "white", hardwareStyleId = "none", hardwareAccent, onHardwareStyleChange, catalogFinishName, catalogFinishProductId, catalogIslandCabinetName, catalogIslandCabinetColor, catalogIslandCabinetProductId, catalogIslandDoorSampleUrl, catalogCountertopName, catalogCountertopProductId, catalogCountertopReferenceUrl, catalogIslandCountertopName, catalogIslandCountertopProductId, catalogIslandCountertopReferenceUrl, catalogFlooringName, catalogFlooringProductId, catalogFlooringReferenceUrl, catalogFlooringCategory, catalogFlooringSubCategory, catalogFlooringSize, catalogBacksplashName, catalogBacksplashProductId, catalogBacksplashReferenceUrl, catalogHardwareReferenceUrl, catalogHardwareName, savedDesignId, savedDesignRevision, canAffiliateGeminiImageTest = false, isCurrentPlanSaved = false, savedPlanFingerprintPayload = null, backsplashHeightMode = "standard", countertopBacksplashHeightIn = 0, catalogCountertopColor, catalogIslandCountertopColor, catalogCountertopImageUrl, catalogIslandCountertopImageUrl, catalogFlooringImageUrl, catalogBacksplashImageUrl, shareContext, catalogItems = [], catalogDragItem = null, catalogDropWall, onAddCatalogItem, onAddRangeHood, onSaveToAccount, onSyncCart, onPresentationChange, onRoomWallHeightChange, onRoomWallHeightsChange, onMoveCabinet, onMoveCabinetTo, selectedCabinetUid, attributesTargetUid = null, missingPriceUids, onSelectCabinet, onOpenCabinetEditor, onSelectOpening, onOpenWindowEditor, onOpenDoorEditor, onRequestFiller, onSnapGlassCabinetToFront, onRotateCabinet, onRemoveCabinet, showWallLayer, onToggleWallLayer, temporaryPreviewMessage, onClearTemporaryPreview, temporaryPreviewCounter, temporaryPreviewTransitionKey, fillerInsertionTransition, cabinetConfigHref, embedded = false, cutawayRoomWalls = true, hybridPlanUnderlay = false, className, onGeometryRendered }: Props) {
   const previewRootRef = useRef<HTMLElement>(null);
   const mountRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -10642,6 +10889,24 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 	      threeScene.add(wall);
 	      roomWallMeshes.push({ mesh: wall, start, end });
 	    });
+	    const dollhouseInputs = roomWallMeshes.map(({ mesh, start, end }) => ({
+	      side: String(mesh.userData.physicalWallSide ?? ""),
+	      start: { x: start.x, y: start.y },
+	      end: { x: end.x, y: end.y },
+	    }));
+	    const dollhouseComputed = threeDDollhouseWallFrames(dollhouseInputs);
+	    let dollhouseFrameIndex = 0;
+	    const dollhouseFrames = dollhouseInputs.flatMap((input, index) => {
+	      const length = Math.hypot(input.end.x - input.start.x, (-input.end.y) - (-input.start.y));
+	      if (length < 1e-6) return [];
+	      const frame = dollhouseComputed[dollhouseFrameIndex];
+	      dollhouseFrameIndex += 1;
+	      const mesh = roomWallMeshes[index]?.mesh;
+	      return frame && mesh ? [{ mesh, frame }] : [];
+	    });
+	    const dollhouseWallFrames = dollhouseFrames.map((entry) => entry.frame);
+	    const dollhouseBounds = new THREE.Box3();
+	    const dollhouseCenter = new THREE.Vector3();
     // Keep the floor visually warm and uncluttered; physical room edges and
     // cabinet shadows provide scale better than a generic editor grid.
     const floorContact = new THREE.Mesh(
@@ -10809,9 +11074,17 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 	      frame = requestAnimationFrame(render);
 	      controls.update();
 	      if (cutawayRoomWalls && showRoomContext && !showSolidFrontWalls) {
-	        for (const { mesh, start, end } of roomWallMeshes) {
-	          (mesh.material as THREE.MeshStandardMaterial).opacity = threeDWallObscuresOrbitTarget(start, end, camera.position, controls.target)
-	            ? THREE_D_DESIGNER_FOREGROUND_WALL_OPACITY : THREE_D_DESIGNER_WALL_OPACITY;
+	        const hiddenSides = new Set<string>();
+	        for (const { mesh, frame: wallFrame } of dollhouseFrames) {
+	          const hide = threeDDollhouseWallHidesFromCamera(wallFrame, camera.position);
+	          mesh.visible = !hide;
+	          if (hide && wallFrame.side) hiddenSides.add(wallFrame.side);
+	        }
+	        catalogRoot.updateMatrixWorld(true);
+	        for (const child of catalogRoot.children) {
+	          const center = threeDDollhouseObjectCenter(child, dollhouseBounds, dollhouseCenter);
+	          const mounted = center ? threeDDollhouseMountWalls(center, dollhouseWallFrames) : [];
+	          setThreeDDollhouseHidden(child, mounted.some((side) => hiddenSides.has(side)));
 	        }
 	      }
 	      renderer.render(threeScene, camera);
