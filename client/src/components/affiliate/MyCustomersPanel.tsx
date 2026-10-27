@@ -14,6 +14,7 @@ import {
   type UnifiedCustomer,
 } from "@shared/customerDirectory";
 import { toast } from "sonner";
+import { CustomerGeneratedImages } from "@/components/imageCustomer/CustomerGeneratedImages";
 import { Download, Mail, Phone, Search } from "lucide-react";
 
 type ListCustomer = Omit<UnifiedCustomer, "designs" | "quotes">;
@@ -249,6 +250,12 @@ function CustomerDetailSheet({ affiliateId, customerKey, previewDetail, canAssis
               <Textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder="Add a note" />
               <Button size="sm" disabled={!note.trim() || addNote.isPending} onClick={() => addNote.mutate({ affiliateId, customerKey: customer.key, body: note.trim() })}>Add note</Button>
             </div>
+            {(customer.userId || customer.dealId) && (
+              <section className="space-y-2">
+                {customer.userId ? <CustomerGeneratedImages customerId={customer.userId} customerKind="user" title="Account images" /> : null}
+                {customer.dealId ? <CustomerGeneratedImages customerId={customer.dealId} customerKind="crm" title="CRM images" /> : null}
+              </section>
+            )}
             <section>
               <h3 className="text-sm font-semibold mb-2">Designs, quotes, and projects</h3>
               <div className="space-y-2">

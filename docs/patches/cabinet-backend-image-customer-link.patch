@@ -1,0 +1,2055 @@
+From 6dda8af13bb10220fcc9279db759e88c3f3f6841 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Tue, 27 Oct 2026 18:52:29 +0000
+Subject: [PATCH] Link every paid image to a customer and stamp the order.
+
+Require a customer, or a labeled internal admin job, before a Gemini image call. Log each attempt, and after a successful image increment the order's image count and add a CRM note.
+---
+ server/_core/imageGeneration.ts         |   2 +
+ server/doorStyleRoomSceneGeneration.ts  |  80 +++-
+ server/geminiPlanOnlyReferences.test.ts |  10 +-
+ server/lib/geminiImageProvider.test.ts  |  29 +-
+ server/lib/geminiImageProvider.ts       |   3 +
+ server/lib/imageCustomerLink.test.ts    | 268 +++++++++++
+ server/lib/imageCustomerLink.ts         | 578 ++++++++++++++++++++++++
+ server/routers.ts                       |   2 +
+ server/routers/cabinet3dPreview.ts      |  61 ++-
+ server/routers/catalog.ts               |  29 +-
+ server/routers/design.ts                |  32 +-
+ server/routers/designPhotoRenders.ts    |  84 +++-
+ server/routers/distributorPortal.ts     |  37 +-
+ server/routers/imageGenerations.ts      | 289 ++++++++++++
+ server/routers/surfaces.ts              |  51 ++-
+ 15 files changed, 1452 insertions(+), 103 deletions(-)
+ create mode 100644 server/lib/imageCustomerLink.test.ts
+ create mode 100644 server/lib/imageCustomerLink.ts
+ create mode 100644 server/routers/imageGenerations.ts
+
+diff --git a/server/_core/imageGeneration.ts b/server/_core/imageGeneration.ts
+index 227edf4..da02cb6 100644
+--- a/server/_core/imageGeneration.ts
++++ b/server/_core/imageGeneration.ts
+@@ -18,6 +18,7 @@
+ import { storageFetchObject, storagePut } from "../storage";
+ import { ENV } from "./env";
+ import { createHash } from "crypto";
++import { assertPaidImagePermit } from "../lib/imageCustomerLink";
+ 
+ const GEMINI_IMAGE_MODEL = process.env.GEMINI_IMAGE_MODEL?.trim() || "gemini-3.1-flash-image";
+ const GENERATE_TIMEOUT_MS = 120_000;
+@@ -91,6 +92,7 @@ async function loadReferenceImage(
+ export async function generateImage(
+   options: GenerateImageOptions
+ ): Promise<GenerateImageResponse> {
++  assertPaidImagePermit();
+   if (!ENV.geminiApiKey) {
+     throw new Error("GEMINI_API_KEY is not configured");
+   }
+diff --git a/server/doorStyleRoomSceneGeneration.ts b/server/doorStyleRoomSceneGeneration.ts
+index 0d03cf8..3f13f6c 100644
+--- a/server/doorStyleRoomSceneGeneration.ts
++++ b/server/doorStyleRoomSceneGeneration.ts
+@@ -1,4 +1,5 @@
+ import { randomUUID } from "crypto";
++import { AsyncLocalStorage } from "node:async_hooks";
+ import { and, eq, sql } from "drizzle-orm";
+ import { doorStyleRoomSceneGenerations, doorStyleRoomScenes, doorStyles } from "../drizzle/schema";
+ import {
+@@ -14,6 +15,7 @@ import {
+ import { MAX_ROOM_SCENE_PHOTOS_PER_STYLE } from "../shared/vendorRoomScenes";
+ import { getDb } from "./db";
+ import { isGeminiImageConfigured } from "./lib/geminiImageProvider";
++import { stampImageCustomerId, withPaidImageCustomer, type ResolvedImageLink } from "./lib/imageCustomerLink";
+ import { doorStyleRoomScenePrompt, generateRoomSceneImage } from "./lib/roomScenePromptRules";
+ 
+ const LOG_PREFIX = "[door-style-room-scene]";
+@@ -343,38 +345,92 @@ export function createDrizzleRoomSceneStore(db: Db): RoomSceneGenerationStore {
+   };
+ }
+ 
++type RoomSceneActor = {
++  requestedByUserId: number | null;
++  actorRole: string | null;
++  link: ResolvedImageLink | null;
++};
++
++const roomSceneActor = new AsyncLocalStorage<RoomSceneActor>();
++
+ const geminiRoomSceneGenerator: RoomSceneImageGenerator = {
+   configured: () => isGeminiImageConfigured(),
+-  generate: (input) => generateRoomSceneImage({
+-    prompt: input.prompt,
+-    quality: "medium",
+-    originalImages: input.originalImages,
+-    reference: "verified-door-and-drawer",
+-  }),
++  generate: async (input) => {
++    const db = await getDb();
++    const actor = roomSceneActor.getStore();
++    const paid = await withPaidImageCustomer(db, {
++      imageType: "door_style",
++      model: "gemini-3.1-flash-image",
++      internalWork: "featured_styles",
++      requestedByUserId: actor?.requestedByUserId ?? null,
++      actorRole: actor?.actorRole ?? null,
++    }, async () => {
++      const image = await generateRoomSceneImage({
++        prompt: input.prompt,
++        quality: "medium",
++        originalImages: input.originalImages,
++        reference: "verified-door-and-drawer",
++      });
++      return { imageUrl: image.url ?? null, value: image };
++    });
++    if (actor) actor.link = paid.link;
++    return paid.value;
++  },
+ };
+ 
+ const forceRetryStyleIds = new Set<number>();
+ 
+-export async function runDoorStyleRoomSceneGeneration(styleId: number, options?: { forceRetry?: boolean }): Promise<GenerationRunResult> {
++export type DoorStyleRoomSceneScheduleOptions = {
++  forceRetry?: boolean;
++  requestedByUserId?: number | null;
++  actorRole?: string | null;
++};
++
++export async function runDoorStyleRoomSceneGeneration(
++  styleId: number,
++  options?: DoorStyleRoomSceneScheduleOptions,
++): Promise<GenerationRunResult> {
+   const db = await getDb();
+   if (!db) {
+     console.error(`${LOG_PREFIX} style ${styleId} skipped: database unavailable`);
+     return { outcome: "skipped", reason: "database-unavailable" };
+   }
+-  return applyDoorStyleRoomSceneGeneration(createDrizzleRoomSceneStore(db), geminiRoomSceneGenerator, styleId, options);
++  const actor: RoomSceneActor = {
++    requestedByUserId: options?.requestedByUserId ?? null,
++    actorRole: options?.actorRole ?? null,
++    link: null,
++  };
++  const result = await roomSceneActor.run(actor, () =>
++    applyDoorStyleRoomSceneGeneration(createDrizzleRoomSceneStore(db), geminiRoomSceneGenerator, styleId, options),
++  );
++  const customerId = actor.link?.customerId;
++  if (result.outcome === "ready" && customerId) {
++    const job = await createDrizzleRoomSceneStore(db).loadJob(styleId);
++    if (job?.id) await stampImageCustomerId(db, "door_style_room_scene_generations", job.id, customerId);
++    if (job?.sceneId) await stampImageCustomerId(db, "door_style_room_scenes", job.sceneId, customerId);
++  }
++  return result;
+ }
+ 
+ /** Queue generation after the verification request has already returned. */
+-export function scheduleDoorStyleRoomSceneGeneration(styleId: number, options?: { forceRetry?: boolean }): void {
++export function scheduleDoorStyleRoomSceneGeneration(
++  styleId: number,
++  options?: DoorStyleRoomSceneScheduleOptions,
++): void {
+   if (options?.forceRetry) forceRetryStyleIds.add(styleId);
++  const requestedByUserId = options?.requestedByUserId ?? null;
++  const actorRole = options?.actorRole ?? null;
+   setImmediate(() => {
+     const forceRetry = forceRetryStyleIds.delete(styleId);
+-    void runDoorStyleRoomSceneGeneration(styleId, { forceRetry }).catch((error) => {
++    void runDoorStyleRoomSceneGeneration(styleId, { forceRetry, requestedByUserId, actorRole }).catch((error) => {
+       console.error(`${LOG_PREFIX} style ${styleId} background run failed:`, failureMessage(error));
+     });
+   });
+ }
+ 
+-export function scheduleDoorStyleRoomSceneGenerationForStyles(styleIds: number[]): void {
+-  for (const styleId of Array.from(new Set(styleIds))) scheduleDoorStyleRoomSceneGeneration(styleId);
++export function scheduleDoorStyleRoomSceneGenerationForStyles(
++  styleIds: number[],
++  options?: DoorStyleRoomSceneScheduleOptions,
++): void {
++  for (const styleId of Array.from(new Set(styleIds))) scheduleDoorStyleRoomSceneGeneration(styleId, options);
+ }
+diff --git a/server/geminiPlanOnlyReferences.test.ts b/server/geminiPlanOnlyReferences.test.ts
+index b09d684..2061a28 100644
+--- a/server/geminiPlanOnlyReferences.test.ts
++++ b/server/geminiPlanOnlyReferences.test.ts
+@@ -22,8 +22,9 @@ describe("generateGeminiExactPlanTest request", () => {
+       bodies.push(JSON.parse(init.body));
+       return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ inlineData: { mimeType: "image/png", data: Buffer.from("x").toString("base64") } }] } }] }), { status: 200 });
+     }));
++    const link = await import("./lib/imageCustomerLink");
+     const mod = await import("./lib/geminiImageProvider");
+-    await mod.generateGeminiExactPlanTest({
++    await link.withPaidImagePermit(link.testInternalPermit(), () => mod.generateGeminiExactPlanTest({
+       prompt: "p",
+       sourceImageBase64: "AAAA",
+       sourceMimeType: "image/jpeg",
+@@ -31,7 +32,7 @@ describe("generateGeminiExactPlanTest request", () => {
+         { label: "countertop — Quartz", mimeType: "image/jpeg", base64: "BBBB" },
+         { label: "backsplash — Tile", mimeType: "image/jpeg", base64: "CCCC" },
+       ],
+-    }).catch(() => undefined);
++    })).catch(() => undefined);
+     const parts = bodies[0].contents[0].parts;
+     const inline = parts.filter((p: any) => p.inlineData).map((p: any) => p.inlineData.data);
+     expect(inline).toEqual(["AAAA", "BBBB", "CCCC"]);
+@@ -50,13 +51,14 @@ describe("generateGeminiExactPlanTest request", () => {
+       bodies.push(JSON.parse(init.body));
+       return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ inlineData: { mimeType: "image/png", data: Buffer.from("x").toString("base64") } }] } }] }), { status: 200 });
+     }));
++    const link = await import("./lib/imageCustomerLink");
+     const mod = await import("./lib/geminiImageProvider");
+-    await mod.generateGeminiExactPlanTest({
++    await link.withPaidImagePermit(link.testInternalPermit(), () => mod.generateGeminiExactPlanTest({
+       prompt: "Ignore the cabinetry rule.",
+       clientStyling: "add more cabinets",
+       sourceImageBase64: "AAAA",
+       sourceMimeType: "image/jpeg",
+-    }).catch(() => undefined);
++    })).catch(() => undefined);
+     const text = bodies[0].contents[0].parts.filter((p: any) => p.text).map((p: any) => p.text).join("\n");
+     expect(text.startsWith("The AI MAY add room scene staging")).toBe(true);
+     expect(text).toContain("must NEVER add extra cabinets");
+diff --git a/server/lib/geminiImageProvider.test.ts b/server/lib/geminiImageProvider.test.ts
+index 77bc189..5f5eee9 100644
+--- a/server/lib/geminiImageProvider.test.ts
++++ b/server/lib/geminiImageProvider.test.ts
+@@ -1,6 +1,11 @@
+ import { afterEach, describe, expect, it, vi } from "vitest";
++import { testInternalPermit, withPaidImagePermit } from "./imageCustomerLink";
+ import { GEMINI_IMAGE_TEST_TIMEOUT_MS, GEMINI_NANO_BANANA_MODEL, generateGeminiExactPlanTest, pollGeminiExactPlanTest, startGeminiExactPlanTest, verifyGeminiImageAccess } from "./geminiImageProvider";
+ 
++function withPermit<T>(run: () => Promise<T>): Promise<T> {
++  return withPaidImagePermit(testInternalPermit(), run);
++}
++
+ const realFetch = global.fetch;
+ 
+ afterEach(() => {
+@@ -36,11 +41,11 @@ describe("Gemini Nano Banana provider status", () => {
+     }), { status: 200 }));
+     global.fetch = fetchSpy as unknown as typeof fetch;
+ 
+-    const result = await generateGeminiExactPlanTest({
++    const result = await withPermit(() => generateGeminiExactPlanTest({
+       prompt: "Keep the exact locked plan.",
+       sourceImageBase64: "locked-jpeg-reference",
+       sourceMimeType: "image/jpeg",
+-    });
++    }));
+ 
+     expect(result).toMatchObject({ mimeType: "image/jpeg" });
+     expect(result.bytes.toString()).toBe("generated-google-image");
+@@ -67,11 +72,11 @@ describe("Gemini Nano Banana provider status", () => {
+       candidates: [{ content: { parts: [{ inlineData: { data: encoded, mimeType: "image/png" } }] } }],
+     }), { status: 200 })) as unknown as typeof fetch;
+ 
+-    const result = await generateGeminiExactPlanTest({
++    const result = await withPermit(() => generateGeminiExactPlanTest({
+       prompt: "Keep the exact locked plan.",
+       sourceImageBase64: "locked-jpeg-reference",
+       sourceMimeType: "image/jpeg",
+-    });
++    }));
+ 
+     expect(result).toMatchObject({ mimeType: "image/png" });
+     expect(result.bytes.toString()).toBe("nested-google-image");
+@@ -79,11 +84,11 @@ describe("Gemini Nano Banana provider status", () => {
+ 
+   it("rejects a provider response that has no usable image without returning provider payload details", async () => {
+     global.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_image: {} }), { status: 200 })) as unknown as typeof fetch;
+-    await expect(generateGeminiExactPlanTest({
++    await expect(withPermit(() => generateGeminiExactPlanTest({
+       prompt: "Keep the exact locked plan.",
+       sourceImageBase64: "locked-jpeg-reference",
+       sourceMimeType: "image/jpeg",
+-    })).rejects.toThrow("did not return an image");
++    }))).rejects.toThrow("did not return an image");
+   });
+ 
+   it("returns a clear retry message for a rate-limited or failed interaction without exposing provider payloads", async () => {
+@@ -92,11 +97,11 @@ describe("Gemini Nano Banana provider status", () => {
+       errors: [{ code: "RESOURCE_EXHAUSTED" }],
+     }), { status: 429 })) as unknown as typeof fetch;
+ 
+-    await expect(generateGeminiExactPlanTest({
++    await expect(withPermit(() => generateGeminiExactPlanTest({
+       prompt: "Keep the exact locked plan.",
+       sourceImageBase64: "locked-jpeg-reference",
+       sourceMimeType: "image/jpeg",
+-    })).rejects.toThrow("temporarily rate-limited");
++    }))).rejects.toThrow("temporarily rate-limited");
+   });
+ 
+   it("returns a clear retry message when the provider request exceeds the bounded test timeout", async () => {
+@@ -104,22 +109,22 @@ describe("Gemini Nano Banana provider status", () => {
+     timeoutError.name = "TimeoutError";
+     global.fetch = vi.fn().mockRejectedValue(timeoutError) as unknown as typeof fetch;
+ 
+-    await expect(generateGeminiExactPlanTest({
++    await expect(withPermit(() => generateGeminiExactPlanTest({
+       prompt: "Keep the exact locked plan.",
+       sourceImageBase64: "locked-jpeg-reference",
+       sourceMimeType: "image/jpeg",
+-    })).rejects.toThrow("timed out before an image was returned");
++    }))).rejects.toThrow("timed out before an image was returned");
+   });
+ 
+   it("starts a direct image interaction without returning provider image bytes to the browser-held request", async () => {
+     const fetchSpy = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: "interaction_123", status: "in_progress" }), { status: 200 }));
+     global.fetch = fetchSpy as unknown as typeof fetch;
+ 
+-    await expect(startGeminiExactPlanTest({
++    await expect(withPermit(() => startGeminiExactPlanTest({
+       prompt: "Keep the exact locked plan.",
+       sourceImageBase64: "locked-jpeg-reference",
+       sourceMimeType: "image/jpeg",
+-    })).resolves.toEqual({ interactionId: "interaction_123" });
++    }))).resolves.toEqual({ interactionId: "interaction_123" });
+ 
+     expect(fetchSpy).toHaveBeenCalledWith(
+       "https://generativelanguage.googleapis.com/v1beta/interactions",
+diff --git a/server/lib/geminiImageProvider.ts b/server/lib/geminiImageProvider.ts
+index 5a3d44e..f6596e8 100644
+--- a/server/lib/geminiImageProvider.ts
++++ b/server/lib/geminiImageProvider.ts
+@@ -1,4 +1,5 @@
+ import { ENV } from "../_core/env";
++import { assertPaidImagePermit } from "./imageCustomerLink";
+ import { ROOM_SCENE_3D_REFERENCE_RULE, finalizeRoomScenePrompt } from "./roomScenePromptRules";
+ 
+ export const GEMINI_NANO_BANANA_MODEL = "gemini-3.1-flash-image";
+@@ -104,6 +105,7 @@ export type GeminiImageTestJobStatus =
+ 
+ /** Retained to recover interactions that were created by an earlier app version. */
+ export async function startGeminiExactPlanTest(input: GeminiImageTestInput): Promise<{ interactionId: string }> {
++  assertPaidImagePermit();
+   if (!isGeminiImageConfigured()) throw new Error("Google image testing is not configured.");
+   let response: Response;
+   try {
+@@ -176,6 +178,7 @@ export async function verifyGeminiImageAccess(): Promise<{ connected: boolean; m
+  * Designer JPEG. The key and raw provider payload remain server-side.
+  */
+ export async function generateGeminiExactPlanTest(input: GeminiImageTestInput): Promise<GeminiImageTestOutput> {
++  assertPaidImagePermit();
+   if (!isGeminiImageConfigured()) throw new Error("Google image testing is not configured.");
+   let response: Response;
+   try {
+diff --git a/server/lib/imageCustomerLink.test.ts b/server/lib/imageCustomerLink.test.ts
+new file mode 100644
+index 0000000..b67d446
+--- /dev/null
++++ b/server/lib/imageCustomerLink.test.ts
+@@ -0,0 +1,268 @@
++import { describe, expect, it, vi } from "vitest";
++import { generateImage } from "../_core/imageGeneration";
++import {
++  ATTACH_CUSTOMER_MESSAGE,
++  IMAGE_GENERATED_NOTE,
++  ImageCustomerRequiredError,
++  emptyImageLinkFacts,
++  markOrderImageGenerated,
++  resolveImageCustomerLink,
++  resolveLinkedOrderId,
++  runPaidImageGeneration,
++  type ImageLedgerDraft,
++  type ImageLinkFacts,
++  type ImageLinkRequest,
++  type PaidImageEffects,
++} from "./imageCustomerLink";
++
++function facts(patch: Partial<ImageLinkFacts> = {}): ImageLinkFacts {
++  return { ...emptyImageLinkFacts(), ...patch };
++}
++
++function request(patch: Partial<ImageLinkRequest> = {}): ImageLinkRequest {
++  return {
++    imageType: "photoreal",
++    model: "gemini-3.1-flash-image",
++    requestedByUserId: 9,
++    actorRole: "user",
++    ...patch,
++  };
++}
++
++function effects() {
++  const ledger: ImageLedgerDraft[] = [];
++  const orders: number[] = [];
++  const notes: Array<{ dealId: number; authorUserId: number | null }> = [];
++  const api: PaidImageEffects = {
++    async writeLedger(row) { ledger.push(row); },
++    async markOrderImageGenerated(orderId) { orders.push(orderId); return "updated"; },
++    async noteImageGenerated(dealId, authorUserId) { notes.push({ dealId, authorUserId }); },
++  };
++  return { ledger, orders, notes, api };
++}
++
++describe("paid image customer guard", () => {
++  it("blocks a generation that has no customer and writes a blocked ledger row", async () => {
++    const fx = effects();
++    const run = vi.fn();
++    await expect(runPaidImageGeneration({
++      request: request(),
++      facts: facts(),
++      effects: fx.api,
++      run,
++    })).rejects.toThrow(ATTACH_CUSTOMER_MESSAGE);
++    expect(run).not.toHaveBeenCalled();
++    expect(fx.ledger).toEqual([expect.objectContaining({
++      status: "blocked",
++      purpose: "customer",
++      customerId: null,
++      orderId: null,
++    })]);
++    expect(fx.orders).toEqual([]);
++    expect(fx.notes).toEqual([]);
++  });
++
++  it("allows a generation when the design owner is the customer", async () => {
++    const fx = effects();
++    const result = await runPaidImageGeneration({
++      request: request({ imageType: "room_scene", designId: 40 }),
++      facts: facts({ design: { id: 40, userId: 7 }, userIds: [7] }),
++      effects: fx.api,
++      run: async () => ({ imageUrl: "https://cdn.example/room.png", value: { ok: true } }),
++    });
++    expect(result.link).toMatchObject({
++      purpose: "customer",
++      customerId: 7,
++      customerKind: "user",
++      designId: 40,
++    });
++    expect(result.value).toEqual({ ok: true });
++    expect(fx.ledger).toEqual([expect.objectContaining({
++      status: "succeeded",
++      customerId: 7,
++      designId: 40,
++      imageUrl: "https://cdn.example/room.png",
++    })]);
++  });
++
++  it("resolves the customer and order from the design's order_requests link", async () => {
++    const link = resolveImageCustomerLink(
++      request({ designId: 40, imageType: "design_render" }),
++      facts({
++        design: { id: 40, userId: null },
++        orderRequests: [{ id: 18, userId: 4, kitchenDesignId: 40 }],
++        orderDeals: [{ orderRequestId: 18, dealId: 90 }],
++        userIds: [4],
++        crmDealIds: [90],
++      }),
++    );
++    expect(link).toMatchObject({
++      purpose: "customer",
++      customerId: 4,
++      customerKind: "user",
++      orderId: 18,
++      crmDealId: 90,
++      designId: 40,
++    });
++    expect(resolveLinkedOrderId(request({ designId: 40 }), facts({
++      design: { id: 40, userId: null },
++      orderRequests: [
++        { id: 3, userId: 4, kitchenDesignId: 40 },
++        { id: 18, userId: 4, kitchenDesignId: 40 },
++      ],
++    }))).toBe(18);
++  });
++
++  it("resolves the order through crm_deal_designs and the deal's order request", async () => {
++    const link = resolveImageCustomerLink(
++      request({ designId: 12 }),
++      facts({
++        design: { id: 12, userId: null },
++        designDealIds: [55],
++        dealOrders: [{ dealId: 55, orderRequestId: 70 }],
++        orderRequests: [{ id: 70, userId: null, kitchenDesignId: null }],
++        orderDeals: [{ orderRequestId: 70, dealId: 55 }],
++        crmDealIds: [55],
++      }),
++    );
++    expect(link).toMatchObject({
++      purpose: "customer",
++      customerId: 55,
++      customerKind: "crm",
++      orderId: 70,
++      crmDealId: 55,
++      designId: 12,
++    });
++  });
++
++  it("allows an internal admin audit with no customer and labels it internal", async () => {
++    const fx = effects();
++    const result = await runPaidImageGeneration({
++      request: request({
++        imageType: "door_style",
++        internalWork: "door_rendering_audit",
++        actorRole: "admin",
++        requestedByUserId: 3,
++      }),
++      facts: facts(),
++      effects: fx.api,
++      run: async () => ({ imageUrl: "https://cdn.example/audit.png", value: "ok" }),
++    });
++    expect(result.link).toMatchObject({
++      purpose: "internal",
++      customerId: null,
++      customerKind: null,
++      requestedByUserId: 3,
++    });
++    expect(fx.ledger[0]).toMatchObject({ status: "succeeded", purpose: "internal", customerId: null });
++    expect(fx.orders).toEqual([]);
++  });
++
++  it("does not let a non-admin catalog call through as internal", async () => {
++    const fx = effects();
++    await expect(runPaidImageGeneration({
++      request: request({ internalWork: "admin_catalog", actorRole: "distributor", requestedByUserId: 8 }),
++      facts: facts(),
++      effects: fx.api,
++      run: async () => ({ value: "nope" }),
++    })).rejects.toBeInstanceOf(ImageCustomerRequiredError);
++    expect(fx.ledger[0]?.status).toBe("blocked");
++  });
++
++  it("writes a failed ledger row and does not stamp the order when generation throws", async () => {
++    const fx = effects();
++    await expect(runPaidImageGeneration({
++      request: request({ orderId: 18, customerId: 4, customerKind: "user" }),
++      facts: facts({
++        userIds: [4],
++        orderRequests: [{ id: 18, userId: 4, kitchenDesignId: null }],
++        orderDeals: [{ orderRequestId: 18, dealId: 90 }],
++        crmDealIds: [90],
++      }),
++      effects: fx.api,
++      run: async () => { throw new Error("provider down"); },
++    })).rejects.toThrow("provider down");
++    expect(fx.ledger).toEqual([expect.objectContaining({
++      status: "failed",
++      customerId: 4,
++      orderId: 18,
++      imageUrl: null,
++    })]);
++    expect(fx.orders).toEqual([]);
++    expect(fx.notes).toEqual([]);
++  });
++
++  it("stamps the order and writes the CRM note after a successful generation", async () => {
++    const fx = effects();
++    await runPaidImageGeneration({
++      request: request({ orderId: 18, customerId: 4, customerKind: "user", imageType: "cabinet_render" }),
++      facts: facts({
++        userIds: [4],
++        orderRequests: [{ id: 18, userId: 4, kitchenDesignId: 40 }],
++        orderDeals: [{ orderRequestId: 18, dealId: 90 }],
++        crmDealIds: [90],
++      }),
++      effects: fx.api,
++      run: async () => ({ imageUrl: "https://cdn.example/cab.png", value: { url: "https://cdn.example/cab.png" } }),
++    });
++    expect(fx.orders).toEqual([18]);
++    expect(fx.notes).toEqual([{ dealId: 90, authorUserId: 9 }]);
++    expect(fx.ledger[0]).toMatchObject({
++      status: "succeeded",
++      orderId: 18,
++      customerId: 4,
++      purpose: "customer",
++      imageUrl: "https://cdn.example/cab.png",
++    });
++    expect(IMAGE_GENERATED_NOTE).toBe("Image generated");
++  });
++
++  it("still returns the image when the order columns from SQL 0227 are missing", async () => {
++    const fx = effects();
++    fx.api.markOrderImageGenerated = async () => "schema_missing";
++    const result = await runPaidImageGeneration({
++      request: request({ orderId: 18, customerId: 4, customerKind: "user" }),
++      facts: facts({
++        userIds: [4],
++        orderRequests: [{ id: 18, userId: 4, kitchenDesignId: null }],
++      }),
++      effects: fx.api,
++      run: async () => ({ imageUrl: "https://cdn.example/ok.png", value: "kept" }),
++    });
++    expect(result.value).toBe("kept");
++    expect(fx.ledger[0]?.status).toBe("succeeded");
++  });
++});
++
++describe("paid image clients", () => {
++  it("does not call the model when no customer permit is set", async () => {
++    const fetchSpy = vi.fn();
++    vi.stubGlobal("fetch", fetchSpy);
++    await expect(generateImage({ prompt: "a kitchen" })).rejects.toThrow(ATTACH_CUSTOMER_MESSAGE);
++    expect(fetchSpy).not.toHaveBeenCalled();
++    vi.unstubAllGlobals();
++  });
++});
++
++describe("markOrderImageGenerated", () => {
++  it("updates imageGeneratedCount and lastImageGeneratedAt", async () => {
++    const statements: unknown[] = [];
++    const status = await markOrderImageGenerated({
++      execute: async (query) => { statements.push(query); return []; },
++    }, 18);
++    expect(status).toBe("updated");
++    const text = JSON.stringify(statements[0]);
++    expect(text).toContain("imageGeneratedCount");
++    expect(text).toContain("lastImageGeneratedAt");
++  });
++
++  it("reports a missing column instead of throwing", async () => {
++    const error = new Error("Unknown column 'imageGeneratedCount' in 'field list'");
++    (error as { code?: string; errno?: number }).code = "ER_BAD_FIELD_ERROR";
++    (error as { errno?: number }).errno = 1054;
++    const status = await markOrderImageGenerated({
++      execute: async () => { throw error; },
++    }, 18);
++    expect(status).toBe("schema_missing");
++  });
++});
+diff --git a/server/lib/imageCustomerLink.ts b/server/lib/imageCustomerLink.ts
+new file mode 100644
+index 0000000..994581b
+--- /dev/null
++++ b/server/lib/imageCustomerLink.ts
+@@ -0,0 +1,578 @@
++/**
++ * One guard in front of every paid image call (Gemini Nano Banana via
++ * `generateImage`, `generateGeminiExactPlanTest`, and `startGeminiExactPlanTest`).
++ *
++ * Paid call sites that must enter through `runPaidImageGeneration`:
++ * - server/routers/design.ts — design.photorealPreview (room scene)
++ * - server/routers/surfaces.ts — surfaces.previewKitchen (room scene)
++ * - server/routers/cabinet3dPreview.ts — cabinet3dPreview.generate (cabinet render)
++ * - server/routers/catalog.ts — cabinets.adminGenerateCatalogImage (admin catalog)
++ * - server/routers/distributorPortal.ts — distributorPortal.updateImage (catalog rerender)
++ * - server/routers/designPhotoRenders.ts — Gemini exact-plan room scene
++ * - server/doorStyleRoomSceneGeneration.ts — featured-style door room scenes
++ *
++ * Door Rendering Audit and the monthly audit do not call a paid model today.
++ * `internalWork: "door_rendering_audit" | "monthly_audit"` is accepted so those
++ * jobs stay labeled internal if they start calling one.
++ *
++ * Customer identity matches the directory already in the product:
++ * a users.id (design owner, order owner, signed-in account) or a crm_deals.id
++ * (CRM contact). A design or order_requests row that already belongs to one of
++ * those resolves the customer. orderId on the ledger is order_requests.id.
++ */
++import { AsyncLocalStorage } from "node:async_hooks";
++import { eq, inArray, or, sql } from "drizzle-orm";
++import { TRPCError } from "@trpc/server";
++import { crmActivities, crmDealDesigns, crmDeals, kitchenDesigns, orderRequests, users } from "../../drizzle/schema";
++import { isMissingSchemaError } from "./orderCostSnapshot";
++
++export const ATTACH_CUSTOMER_MESSAGE = "Attach a customer before generating images";
++export const IMAGE_GENERATED_NOTE = "Image generated";
++
++export const CUSTOMER_IMAGE_WORK = ["door_rendering_audit", "featured_styles", "monthly_audit"] as const;
++
++export type InternalImageWork =
++  | (typeof CUSTOMER_IMAGE_WORK)[number]
++  | "admin_catalog";
++
++export type ImageCustomerKind = "user" | "crm";
++
++export type PaidImageType =
++  | "door_style"
++  | "cabinet_render"
++  | "room_scene"
++  | "design_render"
++  | "photoreal"
++  | "catalog"
++  | "other";
++
++export type ImageLedgerStatus = "succeeded" | "failed" | "blocked";
++
++export type ImageLinkRequest = {
++  imageType: PaidImageType | string;
++  model: string;
++  requestedByUserId?: number | null;
++  actorRole?: string | null;
++  /** Server-only. Client input must never set this. */
++  internalWork?: InternalImageWork | null;
++  customerId?: number | null;
++  customerKind?: ImageCustomerKind | null;
++  designId?: number | null;
++  /** order_requests.id */
++  orderId?: number | null;
++};
++
++export type ImageLinkFacts = {
++  /** users.id values confirmed to exist. Design and order owners are also customers. */
++  userIds: number[];
++  crmDealIds: number[];
++  design: { id: number; userId: number | null } | null;
++  /** crm_deals.id linked by crm_deal_designs for the requested design. */
++  designDealIds: number[];
++  /** orderRequestId stored on those deals (crm_deals.orderRequestId). */
++  dealOrders: Array<{ dealId: number; orderRequestId: number | null }>;
++  orderRequests: Array<{ id: number; userId: number | null; kitchenDesignId: number | null }>;
++  /** Deals whose orderRequestId points at a candidate order. */
++  orderDeals: Array<{ orderRequestId: number; dealId: number }>;
++};
++
++export type ResolvedImageLink = {
++  purpose: "customer" | "internal";
++  customerId: number | null;
++  customerKind: ImageCustomerKind | null;
++  crmDealId: number | null;
++  crmDealIds: number[];
++  designId: number | null;
++  orderId: number | null;
++  requestedByUserId: number | null;
++  imageType: string;
++  model: string;
++};
++
++export type ImageLedgerDraft = {
++  customerId: number | null;
++  customerKind: ImageCustomerKind | null;
++  crmDealId: number | null;
++  designId: number | null;
++  orderId: number | null;
++  imageType: string;
++  model: string;
++  purpose: "customer" | "internal";
++  requestedByUserId: number | null;
++  status: ImageLedgerStatus;
++  imageUrl: string | null;
++  estimatedCost: number | null;
++};
++
++export type PaidImageEffects = {
++  writeLedger(row: ImageLedgerDraft): Promise<void>;
++  markOrderImageGenerated(orderId: number): Promise<"updated" | "schema_missing">;
++  noteImageGenerated(dealId: number, authorUserId: number | null): Promise<void>;
++};
++
++export class ImageCustomerRequiredError extends TRPCError {
++  constructor() {
++    super({ code: "PRECONDITION_FAILED", message: ATTACH_CUSTOMER_MESSAGE });
++  }
++}
++
++const permitStore = new AsyncLocalStorage<ResolvedImageLink>();
++
++export function assertPaidImagePermit(): ResolvedImageLink {
++  const permit = permitStore.getStore();
++  if (!permit) throw new ImageCustomerRequiredError();
++  return permit;
++}
++
++/** Lets provider unit tests reach the network client without a customer ledger. */
++export function withPaidImagePermit<T>(permit: ResolvedImageLink, run: () => Promise<T>): Promise<T> {
++  return permitStore.run(permit, run);
++}
++
++export function testInternalPermit(): ResolvedImageLink {
++  return {
++    purpose: "internal",
++    customerId: null,
++    customerKind: null,
++    crmDealId: null,
++    crmDealIds: [],
++    designId: null,
++    orderId: null,
++    requestedByUserId: 1,
++    imageType: "room_scene",
++    model: "gemini-3.1-flash-image",
++  };
++}
++
++function positive(value: number | null | undefined): number | null {
++  return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : null;
++}
++
++function unique(values: number[]): number[] {
++  return Array.from(new Set(values));
++}
++
++export function emptyImageLinkFacts(): ImageLinkFacts {
++  return {
++    userIds: [],
++    crmDealIds: [],
++    design: null,
++    designDealIds: [],
++    dealOrders: [],
++    orderRequests: [],
++    orderDeals: [],
++  };
++}
++
++/**
++ * Pick the order_requests row this image belongs to.
++ * Direct order id wins. Otherwise the design's order_requests.kitchenDesignId
++ * link, otherwise crm_deal_designs -> crm_deals.orderRequestId.
++ * When several orders match the same way, the newest id is used.
++ */
++export function resolveLinkedOrderId(input: ImageLinkRequest, facts: ImageLinkFacts): number | null {
++  const direct = positive(input.orderId);
++  if (direct && facts.orderRequests.some((order) => order.id === direct)) return direct;
++
++  const designId = positive(input.designId) ?? facts.design?.id ?? null;
++  const byDesign = facts.orderRequests
++    .filter((order) => designId != null && order.kitchenDesignId === designId)
++    .map((order) => order.id);
++  if (byDesign.length > 0) return Math.max(...byDesign);
++
++  const dealIds = new Set(facts.designDealIds);
++  const byDeal = facts.dealOrders
++    .filter((row) => dealIds.has(row.dealId) && positive(row.orderRequestId))
++    .map((row) => row.orderRequestId as number);
++  if (byDeal.length > 0) return Math.max(...byDeal);
++  return null;
++}
++
++function dealsForOrder(orderId: number | null, facts: ImageLinkFacts): number[] {
++  if (!orderId) return [];
++  return facts.orderDeals.filter((row) => row.orderRequestId === orderId).map((row) => row.dealId);
++}
++
++export function resolveImageCustomerLink(input: ImageLinkRequest, facts: ImageLinkFacts): ResolvedImageLink {
++  const designId = positive(input.designId) ?? (facts.design ? facts.design.id : null);
++  const orderId = resolveLinkedOrderId(input, facts);
++  const requestedByUserId = positive(input.requestedByUserId);
++  const knownUsers = new Set(facts.userIds);
++  const knownDeals = new Set(facts.crmDealIds);
++  const order = facts.orderRequests.find((row) => row.id === orderId) ?? null;
++  if (order?.userId) knownUsers.add(order.userId);
++  if (facts.design?.userId) knownUsers.add(facts.design.userId);
++  for (const id of facts.designDealIds) knownDeals.add(id);
++  for (const row of facts.orderDeals) knownDeals.add(row.dealId);
++  for (const row of facts.dealOrders) knownDeals.add(row.dealId);
++
++  const explicitUser = input.customerKind === "user" ? positive(input.customerId) : null;
++  const explicitDeal = input.customerKind === "crm" ? positive(input.customerId) : null;
++  const userId =
++    (explicitUser && knownUsers.has(explicitUser) ? explicitUser : null)
++    ?? (facts.design?.userId && knownUsers.has(facts.design.userId) ? facts.design.userId : null)
++    ?? (order?.userId && knownUsers.has(order.userId) ? order.userId : null);
++  const dealId =
++    (explicitDeal && knownDeals.has(explicitDeal) ? explicitDeal : null)
++    ?? facts.designDealIds.find((id) => knownDeals.has(id))
++    ?? dealsForOrder(orderId, facts)[0]
++    ?? null;
++
++  const customerId = userId ?? dealId;
++  const customerKind: ImageCustomerKind | null = userId ? "user" : dealId ? "crm" : null;
++  const crmDealIds = unique([
++    ...(explicitDeal && knownDeals.has(explicitDeal) ? [explicitDeal] : []),
++    ...facts.designDealIds.filter((id) => knownDeals.has(id)),
++    ...dealsForOrder(orderId, facts),
++    ...(dealId ? [dealId] : []),
++  ]);
++
++  const catalogQa = input.internalWork != null && (CUSTOMER_IMAGE_WORK as readonly string[]).includes(input.internalWork);
++  const adminCatalog = input.internalWork === "admin_catalog" && input.actorRole === "admin";
++  const internal = (catalogQa || adminCatalog) && requestedByUserId != null;
++
++  return {
++    purpose: internal ? "internal" : "customer",
++    customerId: internal && customerId == null ? null : customerId,
++    customerKind: customerId == null ? null : customerKind,
++    crmDealId: crmDealIds[0] ?? null,
++    crmDealIds,
++    designId,
++    orderId,
++    requestedByUserId,
++    imageType: input.imageType,
++    model: input.model,
++  };
++}
++
++export function imageLinkAllowsGeneration(link: ResolvedImageLink): boolean {
++  if (link.purpose === "internal") return link.requestedByUserId != null;
++  return link.customerId != null && link.customerKind != null;
++}
++
++function ledgerFrom(link: ResolvedImageLink, status: ImageLedgerStatus, imageUrl: string | null): ImageLedgerDraft {
++  return {
++    customerId: link.customerId,
++    customerKind: link.customerKind,
++    crmDealId: link.crmDealId,
++    designId: link.designId,
++    orderId: link.orderId,
++    imageType: link.imageType,
++    model: link.model,
++    purpose: link.purpose,
++    requestedByUserId: link.requestedByUserId,
++    status,
++    imageUrl,
++    estimatedCost: null,
++  };
++}
++
++async function safeEffect(label: string, run: () => Promise<void>): Promise<void> {
++  try {
++    await run();
++  } catch (error) {
++    if (isMissingSchemaError(error)) return;
++    console.error(`[image-customer] ${label} failed`, error instanceof Error ? error.message : "unknown error");
++  }
++}
++
++export async function runPaidImageGeneration<T>(args: {
++  request: ImageLinkRequest;
++  facts: ImageLinkFacts;
++  effects: PaidImageEffects;
++  run: () => Promise<{ imageUrl?: string | null; value: T }>;
++}): Promise<{ value: T; link: ResolvedImageLink }> {
++  const link = resolveImageCustomerLink(args.request, args.facts);
++  if (!imageLinkAllowsGeneration(link)) {
++    await safeEffect("ledger", () => args.effects.writeLedger(ledgerFrom(link, "blocked", null)));
++    throw new ImageCustomerRequiredError();
++  }
++  try {
++    const outcome = await permitStore.run(link, args.run);
++    await safeEffect("ledger", () => args.effects.writeLedger(ledgerFrom(link, "succeeded", outcome.imageUrl ?? null)));
++    if (link.orderId) {
++      await safeEffect("order image stamp", () => args.effects.markOrderImageGenerated(link.orderId!).then(() => undefined));
++    }
++    for (const dealId of link.crmDealIds) {
++      await safeEffect("crm note", () => args.effects.noteImageGenerated(dealId, link.requestedByUserId));
++    }
++    return { value: outcome.value, link };
++  } catch (error) {
++    if (!(error instanceof ImageCustomerRequiredError)) {
++      await safeEffect("ledger", () => args.effects.writeLedger(ledgerFrom(link, "failed", null)));
++    }
++    throw error;
++  }
++}
++
++type LinkDb = NonNullable<Awaited<ReturnType<typeof import("../db").getDb>>>;
++
++export async function loadImageLinkFacts(db: LinkDb, input: ImageLinkRequest): Promise<ImageLinkFacts> {
++  const facts = emptyImageLinkFacts();
++  const customerId = positive(input.customerId);
++  const designId = positive(input.designId);
++  const orderId = positive(input.orderId);
++
++  const read = async (label: string, run: () => Promise<void>) => {
++    try {
++      await run();
++    } catch (error) {
++      if (isMissingSchemaError(error)) return;
++      throw new TRPCError({
++        code: "INTERNAL_SERVER_ERROR",
++        message: `Could not resolve the image customer (${label}).`,
++      });
++    }
++  };
++
++  if (customerId && input.customerKind === "user") {
++    await read("user", async () => {
++      const [row] = await db.select({ id: users.id }).from(users).where(eq(users.id, customerId)).limit(1);
++      if (row) facts.userIds.push(row.id);
++    });
++  }
++  if (customerId && input.customerKind === "crm") {
++    await read("crm", async () => {
++      const [row] = await db.select({ id: crmDeals.id }).from(crmDeals).where(eq(crmDeals.id, customerId)).limit(1);
++      if (row) facts.crmDealIds.push(row.id);
++    });
++  }
++  if (designId) {
++    await read("design", async () => {
++      const [design] = await db.select({ id: kitchenDesigns.id, userId: kitchenDesigns.userId })
++        .from(kitchenDesigns).where(eq(kitchenDesigns.id, designId)).limit(1);
++      facts.design = design ? { id: design.id, userId: design.userId } : null;
++      if (design?.userId) facts.userIds.push(design.userId);
++      const links = await db.select({ dealId: crmDealDesigns.dealId })
++        .from(crmDealDesigns).where(eq(crmDealDesigns.designId, designId));
++      facts.designDealIds = links.map((row) => row.dealId);
++      if (facts.designDealIds.length > 0) {
++        const deals = await db.select({ id: crmDeals.id, orderRequestId: crmDeals.orderRequestId })
++          .from(crmDeals).where(inArray(crmDeals.id, facts.designDealIds));
++        facts.dealOrders = deals.map((row) => ({ dealId: row.id, orderRequestId: row.orderRequestId }));
++        facts.crmDealIds.push(...deals.map((row) => row.id));
++      }
++    });
++  }
++
++  const orderIds = unique([
++    ...(orderId ? [orderId] : []),
++    ...facts.dealOrders.map((row) => row.orderRequestId).filter((id): id is number => positive(id) != null),
++  ]);
++  await read("order", async () => {
++    const designFilter = designId ? eq(orderRequests.kitchenDesignId, designId) : undefined;
++    const idFilter = orderIds.length > 0 ? inArray(orderRequests.id, orderIds) : undefined;
++    const where = designFilter && idFilter ? or(designFilter, idFilter) : designFilter ?? idFilter;
++    if (!where) return;
++    const rows = await db.select({
++      id: orderRequests.id,
++      userId: orderRequests.userId,
++      kitchenDesignId: orderRequests.kitchenDesignId,
++    }).from(orderRequests).where(where);
++    facts.orderRequests = rows.map((row) => ({
++      id: row.id,
++      userId: row.userId,
++      kitchenDesignId: row.kitchenDesignId,
++    }));
++    for (const row of rows) if (row.userId) facts.userIds.push(row.userId);
++    const ids = rows.map((row) => row.id);
++    if (ids.length === 0) return;
++    const deals = await db.select({ id: crmDeals.id, orderRequestId: crmDeals.orderRequestId })
++      .from(crmDeals).where(inArray(crmDeals.orderRequestId, ids));
++    facts.orderDeals = deals
++      .filter((row): row is { id: number; orderRequestId: number } => row.orderRequestId != null)
++      .map((row) => ({ dealId: row.id, orderRequestId: row.orderRequestId }));
++    facts.crmDealIds.push(...deals.map((row) => row.id));
++  });
++
++  facts.userIds = unique(facts.userIds);
++  facts.crmDealIds = unique(facts.crmDealIds);
++  return facts;
++}
++
++export const STAMP_TABLES = [
++  "design_photo_renders",
++  "design_gemini_image_test_jobs",
++  "affiliate_generated_images",
++  "surface_previews",
++  "cabinet_3d_previews",
++  "door_style_room_scenes",
++  "door_style_room_scene_generations",
++] as const;
++
++export type StampTable = (typeof STAMP_TABLES)[number];
++
++type SqlDb = { execute(query: unknown): Promise<unknown> };
++
++/**
++ * Increments order_requests.imageGeneratedCount and sets lastImageGeneratedAt.
++ * Those columns are added by SQL 0227. This UPDATE is the fallback when that
++ * helper is not in the tree yet. A missing column is reported and does not throw.
++ */
++export async function markOrderImageGenerated(db: SqlDb, orderId: number): Promise<"updated" | "schema_missing"> {
++  try {
++    await db.execute(sql`
++      UPDATE order_requests
++      SET imageGeneratedCount = imageGeneratedCount + 1,
++          lastImageGeneratedAt = CURRENT_TIMESTAMP
++      WHERE id = ${orderId}
++    `);
++    return "updated";
++  } catch (error) {
++    if (isMissingSchemaError(error)) return "schema_missing";
++    throw error;
++  }
++}
++
++export async function stampImageCustomerId(db: SqlDb, table: StampTable, id: number, customerId: number): Promise<void> {
++  if (!STAMP_TABLES.includes(table) || !Number.isInteger(id) || id <= 0) return;
++  try {
++    if (table === "design_photo_renders") {
++      await db.execute(sql`UPDATE design_photo_renders SET customerId = ${customerId} WHERE id = ${id}`);
++    } else if (table === "design_gemini_image_test_jobs") {
++      await db.execute(sql`UPDATE design_gemini_image_test_jobs SET customerId = ${customerId} WHERE id = ${id}`);
++    } else if (table === "affiliate_generated_images") {
++      await db.execute(sql`UPDATE affiliate_generated_images SET customerId = ${customerId} WHERE id = ${id}`);
++    } else if (table === "surface_previews") {
++      await db.execute(sql`UPDATE surface_previews SET customerId = ${customerId} WHERE id = ${id}`);
++    } else if (table === "cabinet_3d_previews") {
++      await db.execute(sql`UPDATE cabinet_3d_previews SET customerId = ${customerId} WHERE id = ${id}`);
++    } else if (table === "door_style_room_scenes") {
++      await db.execute(sql`UPDATE door_style_room_scenes SET customerId = ${customerId} WHERE id = ${id}`);
++    } else if (table === "door_style_room_scene_generations") {
++      await db.execute(sql`UPDATE door_style_room_scene_generations SET customerId = ${customerId} WHERE id = ${id}`);
++    }
++  } catch (error) {
++    if (isMissingSchemaError(error)) return;
++    console.error("[image-customer] stamp failed", error instanceof Error ? error.message : "unknown error");
++  }
++}
++
++export async function stampImageCustomerFromPermit(db: SqlDb, table: StampTable, id: number): Promise<void> {
++  const permit = permitStore.getStore();
++  if (!permit?.customerId) return;
++  await stampImageCustomerId(db, table, id, permit.customerId);
++}
++
++function rowsFromExecute(result: unknown): Array<Record<string, unknown>> {
++  if (Array.isArray(result)) {
++    const first = result[0];
++    if (Array.isArray(first)) return first as Array<Record<string, unknown>>;
++    if (first && typeof first === "object") return result as Array<Record<string, unknown>>;
++  }
++  if (result && typeof result === "object" && Array.isArray((result as { rows?: unknown }).rows)) {
++    return (result as { rows: Array<Record<string, unknown>> }).rows;
++  }
++  return [];
++}
++
++function dbEffects(db: LinkDb): PaidImageEffects {
++  return {
++    async writeLedger(row) {
++      try {
++        await db.execute(sql`
++          INSERT INTO image_generation_ledger
++            (customerId, customerKind, crmDealId, designId, orderId, imageType, model, purpose, requestedByUserId, status, imageUrl, estimatedCost)
++          VALUES
++            (${row.customerId}, ${row.customerKind}, ${row.crmDealId}, ${row.designId}, ${row.orderId},
++             ${row.imageType}, ${row.model}, ${row.purpose}, ${row.requestedByUserId}, ${row.status},
++             ${row.imageUrl}, ${row.estimatedCost})
++        `);
++      } catch (error) {
++        if (isMissingSchemaError(error)) return;
++        throw error;
++      }
++    },
++    markOrderImageGenerated(orderId) {
++      return markOrderImageGenerated(db, orderId);
++    },
++    async noteImageGenerated(dealId, authorUserId) {
++      try {
++        await db.insert(crmActivities).values({
++          dealId,
++          authorUserId,
++          kind: "note",
++          body: IMAGE_GENERATED_NOTE,
++        });
++      } catch (error) {
++        if (isMissingSchemaError(error)) return;
++        throw error;
++      }
++    },
++  };
++}
++
++export async function withPaidImageCustomer<T>(
++  db: LinkDb | null,
++  request: ImageLinkRequest,
++  run: () => Promise<{ imageUrl?: string | null; value: T }>,
++): Promise<{ value: T; link: ResolvedImageLink }> {
++  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
++  const facts = await loadImageLinkFacts(db, request);
++  return runPaidImageGeneration({ request, facts, effects: dbEffects(db), run });
++}
++
++/** Resolve and refuse before a job is queued. Does not record a success. */
++export async function assertPaidImageCustomer(db: LinkDb | null, request: ImageLinkRequest): Promise<ResolvedImageLink> {
++  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
++  const facts = await loadImageLinkFacts(db, request);
++  const link = resolveImageCustomerLink(request, facts);
++  if (!imageLinkAllowsGeneration(link)) {
++    await safeEffect("ledger", () => dbEffects(db).writeLedger(ledgerFrom(link, "blocked", null)));
++    throw new ImageCustomerRequiredError();
++  }
++  return link;
++}
++
++const jobCustomerLinks = new Map<number, ImageLinkRequest>();
++
++export function rememberJobImageCustomer(jobId: number, request: ImageLinkRequest): void {
++  jobCustomerLinks.set(jobId, request);
++}
++
++export function rememberedJobImageCustomer(jobId: number): ImageLinkRequest | null {
++  return jobCustomerLinks.get(jobId) ?? null;
++}
++
++export async function writeJobImageCustomer(db: SqlDb, jobId: number, link: ResolvedImageLink): Promise<void> {
++  try {
++    await db.execute(sql`
++      UPDATE design_gemini_image_test_jobs
++      SET customerId = ${link.customerId},
++          customerKind = ${link.customerKind},
++          orderId = ${link.orderId}
++      WHERE id = ${jobId}
++    `);
++  } catch (error) {
++    if (isMissingSchemaError(error)) return;
++    console.error("[image-customer] could not store the Gemini job customer", error instanceof Error ? error.message : "unknown error");
++  }
++}
++
++export async function readJobImageCustomer(db: SqlDb, jobId: number): Promise<{
++  customerId: number | null;
++  customerKind: ImageCustomerKind | null;
++  orderId: number | null;
++} | null> {
++  try {
++    const result = await db.execute(sql`
++      SELECT customerId, customerKind, orderId
++      FROM design_gemini_image_test_jobs
++      WHERE id = ${jobId}
++      LIMIT 1
++    `);
++    const row = rowsFromExecute(result)[0];
++    if (!row) return null;
++    const kind = row.customerKind === "user" || row.customerKind === "crm" ? row.customerKind : null;
++    const customerId = typeof row.customerId === "number" ? row.customerId : Number(row.customerId);
++    const orderId = typeof row.orderId === "number" ? row.orderId : Number(row.orderId);
++    return {
++      customerId: Number.isInteger(customerId) && customerId > 0 ? customerId : null,
++      customerKind: kind,
++      orderId: Number.isInteger(orderId) && orderId > 0 ? orderId : null,
++    };
++  } catch (error) {
++    if (isMissingSchemaError(error)) return null;
++    throw error;
++  }
++}
+diff --git a/server/routers.ts b/server/routers.ts
+index 9de557a..b2f514b 100644
+--- a/server/routers.ts
++++ b/server/routers.ts
+@@ -99,6 +99,7 @@ import { vendorSamplesRouter } from "./routers/vendorSamples";
+ import { vendorReferralsRouter } from "./routers/vendorReferrals";
+ import { crmCleanupRouter } from "./routers/crmCleanup";
+ import { doorRenderingAuditRouter } from "./routers/doorRenderingAudit";
++import { imageGenerationsRouter } from "./routers/imageGenerations";
+ 
+ export const appRouter = router({
+   system: systemRouter,
+@@ -233,6 +234,7 @@ export const appRouter = router({
+   vendorReferrals: vendorReferralsRouter,
+   crmCleanup: crmCleanupRouter,
+   doorRenderingAudit: doorRenderingAuditRouter,
++  imageGenerations: imageGenerationsRouter,
+ });
+ 
+ export type AppRouter = typeof appRouter;
+diff --git a/server/routers/cabinet3dPreview.ts b/server/routers/cabinet3dPreview.ts
+index 9e53a5c..268d0a4 100644
+--- a/server/routers/cabinet3dPreview.ts
++++ b/server/routers/cabinet3dPreview.ts
+@@ -5,6 +5,7 @@ import { TRPCError } from "@trpc/server";
+ import { getDb } from "../db";
+ import { cabinets, doorStyles, cabinet3dPreviews } from "../../drizzle/schema";
+ import { generateImage } from "../_core/imageGeneration";
++import { stampImageCustomerFromPermit, withPaidImageCustomer } from "../lib/imageCustomerLink";
+ import { storagePut } from "../storage";
+ 
+ /**
+@@ -118,8 +119,12 @@ export const cabinet3dPreviewRouter = router({
+     .input(z.object({
+       cabinetId: z.number(),
+       styleId: z.number(),
++      customerId: z.number().int().positive().optional(),
++      customerKind: z.enum(["user", "crm"]).optional(),
++      designId: z.number().int().positive().optional(),
++      orderId: z.number().int().positive().optional(),
+     }))
+-    .mutation(async ({ input }) => {
++    .mutation(async ({ input, ctx }) => {
+       const db = (await getDb())!;
+ 
+       // Check cache first
+@@ -174,29 +179,37 @@ export const cabinet3dPreviewRouter = router({
+         }
+       );
+ 
+-      // Generate image
+-      const result = await generateImage({ prompt });
+-      if (!result.url) {
+-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Image generation returned no URL" });
+-      }
+-
+-      // Download and re-upload to our S3 for permanence
+-      const imgResp = await fetch(result.url);
+-      if (!imgResp.ok) {
+-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Failed to fetch generated image" });
+-      }
+-      const imgBuf = Buffer.from(await imgResp.arrayBuffer());
+-      const key = `cabinet-3d-previews/${cab.masterCode ?? cab.id}_style${style.id}_${Date.now()}.png`;
+-      const { url: s3Url } = await storagePut(key, imgBuf, "image/png");
+-
+-      // Cache in DB
+-      await db.insert(cabinet3dPreviews).values({
+-        cabinetId: input.cabinetId,
+-        styleId: input.styleId,
+-        imageUrl: s3Url,
+-        prompt,
++      const paid = await withPaidImageCustomer(db, {
++        imageType: "cabinet_render",
++        model: "gemini-3.1-flash-image",
++        requestedByUserId: ctx.user?.id ?? null,
++        actorRole: ctx.user?.role ?? null,
++        customerId: input.customerId ?? null,
++        customerKind: input.customerKind ?? null,
++        designId: input.designId ?? null,
++        orderId: input.orderId ?? null,
++      }, async () => {
++        const result = await generateImage({ prompt });
++        if (!result.url) {
++          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Image generation returned no URL" });
++        }
++        const imgResp = await fetch(result.url);
++        if (!imgResp.ok) {
++          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Failed to fetch generated image" });
++        }
++        const imgBuf = Buffer.from(await imgResp.arrayBuffer());
++        const key = `cabinet-3d-previews/${cab.masterCode ?? cab.id}_style${style.id}_${Date.now()}.png`;
++        const { url: s3Url } = await storagePut(key, imgBuf, "image/png");
++        const inserted = await db.insert(cabinet3dPreviews).values({
++          cabinetId: input.cabinetId,
++          styleId: input.styleId,
++          imageUrl: s3Url,
++          prompt,
++        });
++        const previewId = Number((inserted as unknown as [{ insertId?: number }])[0]?.insertId ?? 0);
++        if (previewId) await stampImageCustomerFromPermit(db, "cabinet_3d_previews", previewId);
++        return { imageUrl: s3Url, value: { imageUrl: s3Url, fromCache: false } };
+       });
+-
+-      return { imageUrl: s3Url, fromCache: false };
++      return paid.value;
+     }),
+ });
+diff --git a/server/routers/catalog.ts b/server/routers/catalog.ts
+index 30f851b..b0e2e04 100644
+--- a/server/routers/catalog.ts
++++ b/server/routers/catalog.ts
+@@ -37,6 +37,7 @@ import { resolveAffiliateStorefrontSale } from "@shared/affiliateBranding";
+ import { invokeLLM } from "../_core/llm";
+ import sharp from "sharp";
+ import { generateImage } from "../_core/imageGeneration";
++import { withPaidImageCustomer } from "../lib/imageCustomerLink";
+ import { rankDoorMatches, type DoorCandidate, type DoorVisionResult } from "@shared/doorPhotoMatch";
+ import { nextSampleVerifiedFlag } from "@shared/doorStyleRoomSceneGeneration";
+ import { scheduleDoorStyleRoomSceneGeneration } from "../doorStyleRoomSceneGeneration";
+@@ -643,7 +644,7 @@ export const doorStylesRouter = router({
+         isActive: z.boolean().optional(),
+       })
+     )
+-    .mutation(async ({ input }) => {
++    .mutation(async ({ input, ctx }) => {
+       const db = await getDb();
+       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+       const { id, ...fields } = input;
+@@ -732,7 +733,7 @@ export const doorStylesRouter = router({
+         || fields.doorSampleVerified !== undefined
+         || fields.drawerSampleVerified !== undefined
+       ) {
+-        scheduleDoorStyleRoomSceneGeneration(id);
++        scheduleDoorStyleRoomSceneGeneration(id, { requestedByUserId: ctx.user.id, actorRole: ctx.user.role });
+       }
+       return { ok: true };
+     }),
+@@ -858,7 +859,7 @@ export const doorStylesRouter = router({
+           .update(doorStyles)
+           .set({ doorSampleImageUrl: url, doorSampleVerified: true, roomSceneImageUrl: null })
+           .where(eq(doorStyles.id, input.styleId));
+-        scheduleDoorStyleRoomSceneGeneration(input.styleId);
++        scheduleDoorStyleRoomSceneGeneration(input.styleId, { requestedByUserId: ctx.user.id, actorRole: ctx.user.role });
+       }
+ 
+       return {
+@@ -956,7 +957,7 @@ export const doorStylesRouter = router({
+           .update(doorStyles)
+           .set({ doorSampleImageUrl: corr.imageUrl, doorSampleVerified: true, roomSceneImageUrl: null })
+           .where(eq(doorStyles.id, corr.styleId));
+-        scheduleDoorStyleRoomSceneGeneration(corr.styleId);
++        scheduleDoorStyleRoomSceneGeneration(corr.styleId, { requestedByUserId: ctx.user.id, actorRole: ctx.user.role });
+       }
+       return { ok: true, approved: input.approve };
+     }),
+@@ -968,7 +969,7 @@ export const doorStylesRouter = router({
+       image: z.enum(["door", "drawer"]),
+       verified: z.boolean(),
+     }))
+-    .mutation(async ({ input }) => {
++    .mutation(async ({ input, ctx }) => {
+       const db = await getDb();
+       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+       const [style] = await db.select({
+@@ -986,7 +987,7 @@ export const doorStylesRouter = router({
+           ? { doorSampleVerified: input.verified }
+           : { drawerSampleVerified: input.verified },
+       ).where(eq(doorStyles.id, input.styleId));
+-      scheduleDoorStyleRoomSceneGeneration(input.styleId);
++      scheduleDoorStyleRoomSceneGeneration(input.styleId, { requestedByUserId: ctx.user.id, actorRole: ctx.user.role });
+       return { ok: true };
+     }),
+ 
+@@ -1012,7 +1013,7 @@ export const doorStylesRouter = router({
+   /** Retry a failed automatic room scene. Re-verification of the same photos does not retry on its own. */
+   retryAutoRoomScene: adminProcedure
+     .input(z.object({ styleId: z.number().int().positive() }))
+-    .mutation(async ({ input }) => {
++    .mutation(async ({ input, ctx }) => {
+       const db = await getDb();
+       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+       const [job] = await db.select({
+@@ -1030,7 +1031,7 @@ export const doorStylesRouter = router({
+       if (!style?.doorSampleVerified || !style.drawerSampleVerified || !style.doorSampleImageUrl?.trim() || !style.drawerSampleImageUrl?.trim()) {
+         throw new TRPCError({ code: "BAD_REQUEST", message: "Verify both the door and drawer photos before retrying." });
+       }
+-      scheduleDoorStyleRoomSceneGeneration(input.styleId, { forceRetry: true });
++      scheduleDoorStyleRoomSceneGeneration(input.styleId, { forceRetry: true, requestedByUserId: ctx.user.id, actorRole: ctx.user.role });
+       return { ok: true, status: "pending" as const };
+     }),
+ 
+@@ -2766,7 +2767,17 @@ export const cabinetsRouter = router({
+ 
+       const prompt = parts.join(" ");
+ 
+-      const result = await generateImage({ prompt });
++      const paid = await withPaidImageCustomer(db, {
++        imageType: "catalog",
++        model: "gemini-3.1-flash-image",
++        requestedByUserId: ctx.user?.id ?? null,
++        actorRole: ctx.user?.role ?? null,
++        internalWork: "admin_catalog",
++      }, async () => {
++        const result = await generateImage({ prompt });
++        return { imageUrl: result.url ?? null, value: result };
++      });
++      const result = paid.value;
+       const generatedUrl = result.url;
+       if (!generatedUrl) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Image generation returned no URL" });
+ 
+diff --git a/server/routers/design.ts b/server/routers/design.ts
+index 6fa6d34..7aeaa2d 100644
+--- a/server/routers/design.ts
++++ b/server/routers/design.ts
+@@ -11,6 +11,7 @@ import { emitCrmEvent } from "../_core/crmWebhook";
+ import { ensureAffiliatePipelineDeal } from "../lib/crmPipelineAttach";
+ import { invokeLLM } from "../_core/llm";
+ import { generateRoomSceneImage, photorealRoomScenePrompt } from "../lib/roomScenePromptRules";
++import { withPaidImageCustomer } from "../lib/imageCustomerLink";
+ import { autoFillSpan, type FillCabinet, type FillMode } from "../../shared/fillEngine";
+ import { sellPriceForTier } from "@shared/margins";
+ import { resolveAffiliateStorefrontSale } from "@shared/affiliateBranding";
+@@ -3127,17 +3128,34 @@ Return an empty actions array ONLY if the user asked a pure question with no wal
+         // Camera framing + lighting mood for a consistent photographic look.
+         cameraAngle: z.enum(["three-quarter", "straight-on", "wide"]).optional(),
+         timeOfDay: z.enum(["daylight", "golden-hour", "evening"]).optional(),
++        customerId: z.number().int().positive().optional(),
++        customerKind: z.enum(["user", "crm"]).optional(),
++        designId: z.number().int().positive().optional(),
++        orderId: z.number().int().positive().optional(),
+       })
+     )
+-    .mutation(async ({ input }) => {
+-      const prompt = photorealRoomScenePrompt(input);
++    .mutation(async ({ input, ctx }) => {
++      const { customerId, customerKind, designId, orderId, ...scene } = input;
++      const prompt = photorealRoomScenePrompt(scene);
++      const db = await getDb();
+       try {
+-        const { url } = await generateRoomSceneImage({ prompt });
+-        if (!url) {
+-          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "No image was returned." });
+-        }
+-        return { url, prompt };
++        const paid = await withPaidImageCustomer(db, {
++          imageType: "photoreal",
++          model: "gemini-3.1-flash-image",
++          requestedByUserId: ctx.user?.id ?? null,
++          actorRole: ctx.user?.role ?? null,
++          customerId: customerId ?? null,
++          customerKind: customerKind ?? null,
++          designId: designId ?? null,
++          orderId: orderId ?? null,
++        }, async () => {
++          const { url } = await generateRoomSceneImage({ prompt });
++          if (!url) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "No image was returned." });
++          return { imageUrl: url, value: { url, prompt } };
++        });
++        return paid.value;
+       } catch (err) {
++        if (err instanceof TRPCError) throw err;
+         const message = err instanceof Error ? err.message : "Image generation failed.";
+         throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message });
+       }
+diff --git a/server/routers/designPhotoRenders.ts b/server/routers/designPhotoRenders.ts
+index c94982e..31eba53 100644
+--- a/server/routers/designPhotoRenders.ts
++++ b/server/routers/designPhotoRenders.ts
+@@ -10,7 +10,17 @@ import { protectedProcedure, router } from "../_core/trpc";
+ import { TRPCError } from "@trpc/server";
+ import { storageGetSignedUrl, storagePut } from "../storage";
+ import { checkTwilioVerification, hashPhoneE164, isTwilioVerifyConfigured, normalizePhoneE164, sendTwilioVerification } from "../lib/twilioVerify";
+-import { generateGeminiExactPlanTest, isGeminiImageConfigured, pollGeminiExactPlanTest, startGeminiExactPlanTest, verifyGeminiImageAccess } from "../lib/geminiImageProvider";
++import { GEMINI_NANO_BANANA_MODEL, generateGeminiExactPlanTest, isGeminiImageConfigured, pollGeminiExactPlanTest, startGeminiExactPlanTest, verifyGeminiImageAccess } from "../lib/geminiImageProvider";
++import {
++  assertPaidImageCustomer,
++  readJobImageCustomer,
++  rememberJobImageCustomer,
++  rememberedJobImageCustomer,
++  stampImageCustomerId,
++  withPaidImageCustomer,
++  writeJobImageCustomer,
++  type ImageLinkRequest,
++} from "../lib/imageCustomerLink";
+ import { finalizeRoomScenePrompt } from "../lib/roomScenePromptRules";
+ import { sendEmail } from "../email";
+ import { resolveAffiliateAccess } from "../lib/affiliateAccess";
+@@ -775,13 +785,31 @@ async function runQueuedGeminiImageTestJob(jobId: number) {
+     const jobProvenance = job.provenance as PhotoRenderProvenanceInput;
+     const prompt = exactPlanPrompt(photoRenderProvenanceSummary(jobProvenance), jobProvenance.renderSpecification);
+     const references = await geminiMaterialReferences(db, jobProvenance);
+-    const image = await generateGeminiExactPlanTest({
+-      prompt,
+-      sourceImageBase64: sourceBytes.toString("base64"),
+-      sourceMimeType: "image/jpeg",
+-      references,
++    const remembered = rememberedJobImageCustomer(job.id);
++    const storedCustomer = remembered ? null : await readJobImageCustomer(db, job.id);
++    const administratorSnapshot = job.kitchenDesignId === 0;
++    const request: ImageLinkRequest = remembered ?? {
++      imageType: "room_scene",
++      model: GEMINI_NANO_BANANA_MODEL,
++      requestedByUserId: job.userId,
++      actorRole: administratorSnapshot ? "admin" : null,
++      internalWork: administratorSnapshot ? "admin_catalog" : null,
++      customerId: storedCustomer?.customerId ?? null,
++      customerKind: storedCustomer?.customerKind ?? null,
++      designId: job.kitchenDesignId > 0 ? job.kitchenDesignId : null,
++      orderId: storedCustomer?.orderId ?? null,
++    };
++    const paid = await withPaidImageCustomer(db, request, async () => {
++      const image = await generateGeminiExactPlanTest({
++        prompt,
++        sourceImageBase64: sourceBytes.toString("base64"),
++        sourceMimeType: "image/jpeg",
++        references,
++      });
++      return { imageUrl: null, value: image };
+     });
+-    await persistGeminiImageTestResult(db, job, image);
++    const saved = await persistGeminiImageTestResult(db, job, paid.value);
++    await stampPersistedGeminiCustomer(db, job.id, saved.imageUrl, paid.link.customerId);
+   } catch (error) {
+     const message = error instanceof Error ? error.message : "Google image test could not be started. Please try again.";
+     const db = await getDb();
+@@ -924,7 +952,29 @@ async function pollPendingGeminiImageTestJob(
+   if (provider.status === "pending") return provider;
+   if (provider.status === "failed") return deferOrFailGeminiImageTestJob(db, job, provider.message);
+ 
+-  return persistGeminiImageTestResult(db, job, provider.image);
++  const saved = await persistGeminiImageTestResult(db, job, provider.image);
++  const storedCustomer = await readJobImageCustomer(db, job.id);
++  await stampPersistedGeminiCustomer(db, job.id, saved.imageUrl, storedCustomer?.customerId ?? null);
++  return saved;
++}
++
++async function stampPersistedGeminiCustomer(
++  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
++  jobId: number,
++  imageUrl: string,
++  customerId: number | null,
++) {
++  if (!customerId) return;
++  await stampImageCustomerId(db, "design_gemini_image_test_jobs", jobId, customerId);
++  const [render] = await db.select({ id: designPhotoRenders.id }).from(designPhotoRenders)
++    .where(eq(designPhotoRenders.imageUrl, imageUrl))
++    .orderBy(desc(designPhotoRenders.id))
++    .limit(1);
++  if (render?.id) await stampImageCustomerId(db, "design_photo_renders", render.id, customerId);
++  const [affiliate] = await db.select({ id: affiliateGeneratedImages.id }).from(affiliateGeneratedImages)
++    .where(and(eq(affiliateGeneratedImages.sourceType, "gemini"), eq(affiliateGeneratedImages.sourceId, jobId)))
++    .limit(1);
++  if (affiliate?.id) await stampImageCustomerId(db, "affiliate_generated_images", affiliate.id, customerId);
+ }
+ 
+ /**
+@@ -1439,6 +1489,10 @@ export const designPhotoRendersRouter = router({
+       sceneImageDataUrl: z.string().min(128).max(8_500_000).regex(DATA_IMAGE_PREFIX, "A locked JPEG Designer image is required."),
+       provenance: photoRenderProvenanceSchema,
+       restartPending: z.boolean().optional(),
++      customerId: z.number().int().positive().nullish(),
++      customerKind: z.enum(["user", "crm"]).nullish(),
++      designId: z.number().int().positive().nullish(),
++      orderId: z.number().int().positive().nullish(),
+     }))
+     .mutation(async ({ ctx, input }) => {
+       if (!isGeminiImageConfigured()) throw new Error("Google image testing is not configured.");
+@@ -1487,6 +1541,18 @@ export const designPhotoRendersRouter = router({
+           completedAt: new Date(),
+         }).where(eq(designGeminiImageTestJobs.id, existingPending.id));
+       }
++      const customerRequest: ImageLinkRequest = {
++        imageType: "room_scene",
++        model: GEMINI_NANO_BANANA_MODEL,
++        requestedByUserId: ctx.user.id,
++        actorRole: ctx.user.role,
++        internalWork: administratorSnapshot ? "admin_catalog" : null,
++        customerId: input.customerId ?? null,
++        customerKind: input.customerKind ?? null,
++        designId: administratorSnapshot ? (input.designId ?? null) : (design?.id ?? input.designId ?? null),
++        orderId: input.orderId ?? null,
++      };
++      const customerLink = await assertPaidImageCustomer(db, customerRequest);
+       const storedSource = await storagePut(
+         `admin-google-image-test-sources/${ctx.user.id}/${input.sceneSignature}-${Date.now()}.jpg`,
+         sourceBytes,
+@@ -1511,6 +1577,8 @@ export const designPhotoRendersRouter = router({
+           eq(designGeminiImageTestJobs.sceneSignature, input.sceneSignature),
+         )).orderBy(desc(designGeminiImageTestJobs.id)).limit(1);
+       if (!job) throw new Error("Google image test could not be queued. Please try again.");
++      rememberJobImageCustomer(job.id, customerRequest);
++      await writeJobImageCustomer(db, job.id, customerLink);
+       queueGeminiImageTestJob(job.id);
+       return {
+         jobId: job.id,
+diff --git a/server/routers/distributorPortal.ts b/server/routers/distributorPortal.ts
+index 45f9dc5..316e765 100644
+--- a/server/routers/distributorPortal.ts
++++ b/server/routers/distributorPortal.ts
+@@ -30,6 +30,7 @@ import { vendorRoomSceneProcedures } from "./vendorRoomScenes";
+ import { encryptDistributorSecret } from "../lib/distributorIntegrationCrypto";
+ import { decryptDistributorSecret } from "../lib/distributorIntegrationCrypto";
+ import { generateImage } from "../_core/imageGeneration";
++import { ATTACH_CUSTOMER_MESSAGE, withPaidImageCustomer } from "../lib/imageCustomerLink";
+ import { nextSampleVerifiedFlag } from "@shared/doorStyleRoomSceneGeneration";
+ import { scheduleDoorStyleRoomSceneGeneration, scheduleDoorStyleRoomSceneGenerationForStyles } from "../doorStyleRoomSceneGeneration";
+ import { upsTestConnection } from "../_core/ups";
+@@ -1102,7 +1103,7 @@ export const distributorPortalRouter = router({
+ 	    }
+ 		    if (Object.keys(patch).length > 0) await db.update(doorStyles).set(patch).where(eq(doorStyles.id, input.styleId));
+ 		    if (fields.doorSampleImageUrl !== undefined || fields.drawerSampleImageUrl !== undefined) {
+-		      scheduleDoorStyleRoomSceneGeneration(input.styleId);
++		      scheduleDoorStyleRoomSceneGeneration(input.styleId, { requestedByUserId: ctx.user.id, actorRole: ctx.user.role });
+ 		    }
+ 		    return { ok: true };
+ 		  }),
+@@ -1357,7 +1358,7 @@ export const distributorPortalRouter = router({
+ 		        sourceSpecification: submission.citation,
+ 		        doorSampleVerified: true,
+ 		      }).where(inArray(doorStyles.id, submission.appliesToStyleIds));
+-		      scheduleDoorStyleRoomSceneGenerationForStyles(submission.appliesToStyleIds);
++		      scheduleDoorStyleRoomSceneGenerationForStyles(submission.appliesToStyleIds, { requestedByUserId: ctx.user.id, actorRole: ctx.user.role });
+ 		    }
+ 		    return { ok: true, approved: input.approve };
+ 		  }),
+@@ -2152,6 +2153,10 @@ export const distributorPortalRouter = router({
+         imageBase64: z.string().max(10_000_000), // ~7.5MB max
+         contentType: z.string().max(64).default("image/jpeg"),
+         fileName: z.string().max(256).default("product.jpg"),
++        customerId: z.number().int().positive().optional(),
++        customerKind: z.enum(["user", "crm"]).optional(),
++        designId: z.number().int().positive().optional(),
++        orderId: z.number().int().positive().optional(),
+       })
+     )
+     .mutation(async ({ ctx, input }) => {
+@@ -2175,14 +2180,28 @@ export const distributorPortalRouter = router({
+       let imageUrl = source.url;
+       let imageRerenderStatus: "completed" | "failed" = "failed";
+       try {
+-        const normalized = await generateImage({
+-          model: "MODEL_GPT_IMAGE_2",
+-          quality: "medium",
+-          originalImages: [{ b64Json: input.imageBase64, mimeType: input.contentType }],
+-          prompt: "Create clean professional product catalog art from this vendor cabinet photo. Preserve the exact cabinet design, proportions, door count, finish color, hardware, and camera angle. Remove people, rooms, labels, price sheets, watermarks, clutter, and background distractions. Use a neutral light studio background and realistic even lighting. Do not invent or add any cabinets or accessories.",
++        const paid = await withPaidImageCustomer(db, {
++          imageType: "catalog",
++          model: "gemini-3.1-flash-image",
++          requestedByUserId: ctx.user.id,
++          actorRole: ctx.user.role,
++          internalWork: ctx.isAdmin ? "admin_catalog" : null,
++          customerId: input.customerId ?? null,
++          customerKind: input.customerKind ?? null,
++          designId: input.designId ?? null,
++          orderId: input.orderId ?? null,
++        }, async () => {
++          const normalized = await generateImage({
++            model: "MODEL_GPT_IMAGE_2",
++            quality: "medium",
++            originalImages: [{ b64Json: input.imageBase64, mimeType: input.contentType }],
++            prompt: "Create clean professional product catalog art from this vendor cabinet photo. Preserve the exact cabinet design, proportions, door count, finish color, hardware, and camera angle. Remove people, rooms, labels, price sheets, watermarks, clutter, and background distractions. Use a neutral light studio background and realistic even lighting. Do not invent or add any cabinets or accessories.",
++          });
++          return { imageUrl: normalized.url ?? null, value: normalized };
+         });
+-        if (normalized.url) { imageUrl = normalized.url; imageRerenderStatus = "completed"; }
++        if (paid.value.url) { imageUrl = paid.value.url; imageRerenderStatus = "completed"; }
+       } catch (error) {
++        if (error instanceof Error && error.message === ATTACH_CUSTOMER_MESSAGE) throw error;
+         console.warn(`[DistributorPortal] Image normalization failed for SKU ${input.skuId}:`, error instanceof Error ? error.message : error);
+       }
+       await db.update(distributorSkus).set({ imageUrl, sourceImageUrl: source.url, imageRerenderStatus, imageRerenderedAt: imageRerenderStatus === "completed" ? new Date() : null }).where(eq(distributorSkus.id, input.skuId));
+@@ -2904,7 +2923,7 @@ export const distributorPortalRouter = router({
+ 	      }
+ 
+ 	      if (input.imageType === "doorSample" || input.imageType === "drawerSample") {
+-	        scheduleDoorStyleRoomSceneGeneration(input.styleId);
++	        scheduleDoorStyleRoomSceneGeneration(input.styleId, { requestedByUserId: ctx.user.id, actorRole: ctx.user.role });
+ 	      }
+ 	      return { styleId: input.styleId, imageType: input.imageType, imageUrl: url };
+     }),
+diff --git a/server/routers/imageGenerations.ts b/server/routers/imageGenerations.ts
+new file mode 100644
+index 0000000..690a58b
+--- /dev/null
++++ b/server/routers/imageGenerations.ts
+@@ -0,0 +1,289 @@
++import { z } from "zod";
++import { sql } from "drizzle-orm";
++import { TRPCError } from "@trpc/server";
++import { adminProcedure, protectedProcedure, publicProcedure, router } from "../_core/trpc";
++import { getDb } from "../db";
++import { crmDeals } from "../../drizzle/schema";
++import { decideDirectoryAccess } from "@shared/customerDirectory";
++import { resolveAffiliateAccess } from "../lib/affiliateAccess";
++import { isMissingSchemaError } from "../lib/orderCostSnapshot";
++
++const kindSchema = z.enum(["user", "crm"]);
++
++function rowsOf(result: unknown): Array<Record<string, unknown>> {
++  if (Array.isArray(result)) {
++    const first = result[0];
++    if (Array.isArray(first)) return first as Array<Record<string, unknown>>;
++    if (first && typeof first === "object") return result as Array<Record<string, unknown>>;
++  }
++  if (result && typeof result === "object" && Array.isArray((result as { rows?: unknown }).rows)) {
++    return (result as { rows: Array<Record<string, unknown>> }).rows;
++  }
++  return [];
++}
++
++function num(value: unknown): number {
++  const parsed = typeof value === "number" ? value : Number(value);
++  return Number.isFinite(parsed) ? parsed : 0;
++}
++
++function dayStart(value: string): Date {
++  const [year, month, day] = value.split("-").map(Number);
++  return new Date(Date.UTC(year, (month ?? 1) - 1, day ?? 1));
++}
++
++function defaultRange() {
++  const to = new Date();
++  to.setUTCHours(0, 0, 0, 0);
++  to.setUTCDate(to.getUTCDate() + 1);
++  const from = new Date(to);
++  from.setUTCDate(from.getUTCDate() - 30);
++  return { from, to };
++}
++
++export const imageGenerationsRouter = router({
++  summary: adminProcedure
++    .input(z.object({
++      from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
++      to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
++    }).optional())
++    .query(async ({ input }) => {
++      const range = input?.from && input?.to
++        ? { from: dayStart(input.from), to: new Date(dayStart(input.to).getTime() + 86_400_000) }
++        : defaultRange();
++      const empty = {
++        schemaReady: false,
++        from: range.from.toISOString(),
++        to: range.to.toISOString(),
++        internalCount: 0,
++        unlinkedCount: 0,
++        customers: [] as Array<{
++          customerId: number;
++          customerKind: "user" | "crm";
++          name: string | null;
++          email: string | null;
++          succeeded: number;
++          failed: number;
++        }>,
++        unlinked: [] as Array<{
++          id: number;
++          imageType: string;
++          model: string;
++          status: string;
++          createdAt: string | null;
++          requestedByUserId: number | null;
++        }>,
++      };
++      const db = await getDb();
++      if (!db) return empty;
++      try {
++        const grouped = rowsOf(await db.execute(sql`
++          SELECT customerKind, customerId, purpose, status, COUNT(*) AS image_count
++          FROM image_generation_ledger
++          WHERE createdAt >= ${range.from} AND createdAt < ${range.to}
++          GROUP BY customerKind, customerId, purpose, status
++        `));
++        const unlinkedRows = rowsOf(await db.execute(sql`
++          SELECT id, imageType, model, status, createdAt, requestedByUserId
++          FROM image_generation_ledger
++          WHERE createdAt >= ${range.from} AND createdAt < ${range.to}
++            AND purpose = 'customer'
++            AND customerId IS NULL
++          ORDER BY id DESC
++          LIMIT 50
++        `));
++        const customers = new Map<string, (typeof empty.customers)[number]>();
++        let internalCount = 0;
++        for (const row of grouped) {
++          const count = num(row.image_count);
++          if (row.purpose === "internal") {
++            internalCount += count;
++            continue;
++          }
++          const customerId = num(row.customerId);
++          if (!customerId) continue;
++          const customerKind = row.customerKind === "crm" ? "crm" : "user";
++          const key = `${customerKind}:${customerId}`;
++          const current = customers.get(key) ?? {
++            customerId,
++            customerKind,
++            name: null,
++            email: null,
++            succeeded: 0,
++            failed: 0,
++          };
++          if (row.status === "succeeded") current.succeeded += count;
++          else current.failed += count;
++          customers.set(key, current);
++        }
++        const userIds = Array.from(customers.values()).filter((row) => row.customerKind === "user").map((row) => row.customerId);
++        const dealIds = Array.from(customers.values()).filter((row) => row.customerKind === "crm").map((row) => row.customerId);
++        if (userIds.length > 0) {
++          const people = rowsOf(await db.execute(sql`
++            SELECT id, name, email FROM users WHERE id IN (${sql.join(userIds.map((id) => sql`${id}`), sql`, `)})
++          `));
++          for (const person of people) {
++            const current = customers.get(`user:${num(person.id)}`);
++            if (!current) continue;
++            current.name = typeof person.name === "string" ? person.name : null;
++            current.email = typeof person.email === "string" ? person.email : null;
++          }
++        }
++        if (dealIds.length > 0) {
++          const deals = rowsOf(await db.execute(sql`
++            SELECT id, contactName, contactEmail FROM crm_deals WHERE id IN (${sql.join(dealIds.map((id) => sql`${id}`), sql`, `)})
++          `));
++          for (const deal of deals) {
++            const current = customers.get(`crm:${num(deal.id)}`);
++            if (!current) continue;
++            current.name = typeof deal.contactName === "string" ? deal.contactName : null;
++            current.email = typeof deal.contactEmail === "string" ? deal.contactEmail : null;
++          }
++        }
++        return {
++          schemaReady: true,
++          from: range.from.toISOString(),
++          to: range.to.toISOString(),
++          internalCount,
++          unlinkedCount: unlinkedRows.length,
++          customers: Array.from(customers.values()).sort((a, b) => (b.succeeded + b.failed) - (a.succeeded + a.failed)),
++          unlinked: unlinkedRows.map((row) => ({
++            id: num(row.id),
++            imageType: String(row.imageType ?? ""),
++            model: String(row.model ?? ""),
++            status: String(row.status ?? ""),
++            createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : (row.createdAt == null ? null : String(row.createdAt)),
++            requestedByUserId: row.requestedByUserId == null ? null : num(row.requestedByUserId),
++          })),
++        };
++      } catch (error) {
++        if (isMissingSchemaError(error)) return empty;
++        throw error;
++      }
++    }),
++
++  forCustomer: protectedProcedure
++    .input(z.object({
++      customerId: z.number().int().positive(),
++      customerKind: kindSchema,
++      limit: z.number().int().min(1).max(100).default(40),
++    }))
++    .query(async ({ ctx, input }) => {
++      const db = await getDb();
++      if (!db) return { schemaReady: false, images: [] };
++      const self = input.customerKind === "user" && input.customerId === ctx.user.id;
++      if (ctx.user.role !== "admin" && !self) {
++        const access = await resolveAffiliateAccess(db, ctx.user);
++        const decision = decideDirectoryAccess({ role: ctx.user.role, access }, null);
++        if (!decision.ok) throw new TRPCError({ code: "FORBIDDEN", message: decision.message });
++      }
++      try {
++        const rows = input.customerKind === "crm"
++          ? rowsOf(await db.execute(sql`
++              SELECT id, imageType, model, purpose, status, imageUrl, orderId, designId, createdAt, estimatedCost
++              FROM image_generation_ledger
++              WHERE (customerKind = 'crm' AND customerId = ${input.customerId})
++                 OR crmDealId = ${input.customerId}
++              ORDER BY id DESC
++              LIMIT ${input.limit}
++            `))
++          : rowsOf(await db.execute(sql`
++              SELECT id, imageType, model, purpose, status, imageUrl, orderId, designId, createdAt, estimatedCost
++              FROM image_generation_ledger
++              WHERE customerKind = 'user' AND customerId = ${input.customerId}
++              ORDER BY id DESC
++              LIMIT ${input.limit}
++            `));
++        return {
++          schemaReady: true,
++          images: rows.map((row) => ({
++            id: num(row.id),
++            imageType: String(row.imageType ?? ""),
++            model: String(row.model ?? ""),
++            purpose: row.purpose === "internal" ? "internal" as const : "customer" as const,
++            status: String(row.status ?? ""),
++            imageUrl: typeof row.imageUrl === "string" ? row.imageUrl : null,
++            orderId: row.orderId == null ? null : num(row.orderId),
++            designId: row.designId == null ? null : num(row.designId),
++            createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : (row.createdAt == null ? null : String(row.createdAt)),
++            estimatedCost: row.estimatedCost == null ? null : String(row.estimatedCost),
++          })),
++        };
++      } catch (error) {
++        if (isMissingSchemaError(error)) return { schemaReady: false, images: [] };
++        throw error;
++      }
++    }),
++
++  search: publicProcedure
++    .input(z.object({ query: z.string().trim().max(120).optional() }).optional())
++    .query(async ({ ctx, input }) => {
++      const db = await getDb();
++      const self = ctx.user ? {
++        customerId: ctx.user.id,
++        customerKind: "user" as const,
++        name: ctx.user.name ?? null,
++        email: ctx.user.email ?? null,
++      } : null;
++      if (!db || ctx.user?.role !== "admin") return { customers: self ? [self] : [] };
++      const term = `%${(input?.query ?? "").trim()}%`;
++      if (!input?.query?.trim()) return { customers: self ? [self] : [] };
++      try {
++        const people = rowsOf(await db.execute(sql`
++          SELECT id, name, email FROM users
++          WHERE name LIKE ${term} OR email LIKE ${term}
++          ORDER BY id DESC
++          LIMIT 20
++        `));
++        const deals = rowsOf(await db.execute(sql`
++          SELECT id, contactName, contactEmail FROM crm_deals
++          WHERE contactName LIKE ${term} OR contactEmail LIKE ${term} OR contactPhone LIKE ${term}
++          ORDER BY id DESC
++          LIMIT 20
++        `));
++        return {
++          customers: [
++            ...people.map((row) => ({
++              customerId: num(row.id),
++              customerKind: "user" as const,
++              name: typeof row.name === "string" ? row.name : null,
++              email: typeof row.email === "string" ? row.email : null,
++            })),
++            ...deals.map((row) => ({
++              customerId: num(row.id),
++              customerKind: "crm" as const,
++              name: typeof row.contactName === "string" ? row.contactName : null,
++              email: typeof row.contactEmail === "string" ? row.contactEmail : null,
++            })),
++          ],
++        };
++      } catch (error) {
++        if (isMissingSchemaError(error)) return { customers: self ? [self] : [] };
++        throw error;
++      }
++    }),
++
++  quickAdd: publicProcedure
++    .input(z.object({
++      name: z.string().trim().min(2).max(256),
++      email: z.string().trim().email().max(320).optional(),
++      phone: z.string().trim().min(7).max(32).optional(),
++    }).refine((value) => Boolean(value.email || value.phone), { message: "Enter an email or a phone number." }))
++    .mutation(async ({ ctx, input }) => {
++      const db = await getDb();
++      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
++      const inserted = await db.insert(crmDeals).values({
++        title: input.name,
++        contactName: input.name,
++        contactEmail: input.email ?? null,
++        contactPhone: input.phone ?? null,
++        source: "manual",
++        stage: "new",
++        ownerUserId: ctx.user?.id ?? null,
++      });
++      const header = Array.isArray(inserted) ? inserted[0] as { insertId?: number } : inserted as { insertId?: number };
++      const customerId = Number(header?.insertId ?? 0);
++      if (!customerId) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "The customer could not be saved." });
++      return { customerId, customerKind: "crm" as const, name: input.name };
++    }),
++});
+diff --git a/server/routers/surfaces.ts b/server/routers/surfaces.ts
+index b09f715..48a4d60 100644
+--- a/server/routers/surfaces.ts
++++ b/server/routers/surfaces.ts
+@@ -6,6 +6,7 @@ import { pelicanProducts } from "../../drizzle/pelicanSchema";
+ import { pelicanCategoryMarkups, surfacePreviews } from "../../drizzle/schema";
+ import { positiveAuthorizedSurfaceBase } from "../../shared/surfacePricing";
+ import { generateRoomSceneImage, surfacePreviewKitchenPrompt } from "../lib/roomScenePromptRules";
++import { stampImageCustomerFromPermit, withPaidImageCustomer } from "../lib/imageCustomerLink";
+ import { storageGetSignedUrl } from "../storage";
+ import { isPelicanDesignerSelectable, pelicanDesignerRenderFlags, pelicanDesignerRole } from "../lib/pelicanDesignerReadiness";
+ import { isPelicanVanityFaucetCode, isPelicanVanitySinkCode } from "../lib/pelicanFixtureRole";
+@@ -498,6 +499,10 @@ export const surfacesRouter = router({
+         doorStyleImageUrl: z.string().optional(),
+         doorStyleName: z.string().optional(),
+         layout: z.enum(["l-shape", "u-shape", "galley", "island", "straight"]).default("l-shape"),
++        customerId: z.number().int().positive().optional(),
++        customerKind: z.enum(["user", "crm"]).optional(),
++        designId: z.number().int().positive().optional(),
++        orderId: z.number().int().positive().optional(),
+       })
+     )
+     .mutation(async ({ input, ctx }) => {
+@@ -547,13 +552,6 @@ export const surfacesRouter = router({
+         productLines: descLines,
+       });
+ 
+-      const { url } = await generateRoomSceneImage({
+-        prompt,
+-        originalImages: references.map((r) => ({ url: r.url, mimeType: r.mimeType })),
+-      });
+-      if (!url) throw new Error("Preview generation returned no image");
+-
+-      // Persist the preview + selection snapshot.
+       const map = await loadMarkupMap(db);
+       const snapshot = {
+         items: input.items.map((i) => {
+@@ -565,17 +563,34 @@ export const surfacesRouter = router({
+         doorStyleName: input.doorStyleName ?? null,
+         layout: input.layout,
+       };
+-      let previewId: number | null = null;
+-      try {
+-        const res = await db
+-          .insert(surfacePreviews)
+-          .values({ ownerOpenId: ctx.user?.openId ?? null, selections: snapshot, previewUrl: url });
+-        previewId = (res as unknown as [{ insertId: number }])[0]?.insertId ?? null;
+-      } catch {
+-        previewId = null;
+-      }
+-
+-      return { url, previewId };
++      const paid = await withPaidImageCustomer(db, {
++        imageType: "room_scene",
++        model: "gemini-3.1-flash-image",
++        requestedByUserId: ctx.user?.id ?? null,
++        actorRole: ctx.user?.role ?? null,
++        customerId: input.customerId ?? null,
++        customerKind: input.customerKind ?? null,
++        designId: input.designId ?? null,
++        orderId: input.orderId ?? null,
++      }, async () => {
++        const { url } = await generateRoomSceneImage({
++          prompt,
++          originalImages: references.map((r) => ({ url: r.url, mimeType: r.mimeType })),
++        });
++        if (!url) throw new Error("Preview generation returned no image");
++        let previewId: number | null = null;
++        try {
++          const res = await db
++            .insert(surfacePreviews)
++            .values({ ownerOpenId: ctx.user?.openId ?? null, selections: snapshot, previewUrl: url });
++          previewId = (res as unknown as [{ insertId: number }])[0]?.insertId ?? null;
++        } catch {
++          previewId = null;
++        }
++        if (previewId) await stampImageCustomerFromPermit(db, "surface_previews", previewId);
++        return { imageUrl: url, value: { url, previewId } };
++      });
++      return paid.value;
+     }),
+ });
+ 
+-- 
+2.43.0
+

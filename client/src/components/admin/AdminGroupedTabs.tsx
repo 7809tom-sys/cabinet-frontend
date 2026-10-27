@@ -33,6 +33,7 @@ import DistributorImport from "@/components/admin/DistributorImport";
 import LineBrandingEditor from "@/components/admin/LineBrandingEditor";
 import DistributorFulfillmentEditor from "@/components/admin/DistributorFulfillmentEditor";
 import CustomersAdmin from "@/components/admin/CustomersAdmin";
+import ImageGenerationsAdmin from "@/components/admin/ImageGenerationsAdmin";
 import CrmCleanupAdmin from "@/components/admin/CrmCleanupAdmin";
 import RolesAdmin from "@/components/admin/RolesAdmin";
 import SkuImageManager from "@/components/admin/SkuImageManager";
@@ -128,6 +129,7 @@ const GROUPS = [
     icon: Users,
     tabs: [
       { value: "customers", label: "Customers" },
+      { value: "image-generations", label: "Image Generations" },
       { value: "crm-cleanup", label: "CRM Cleanup" },
       { value: "roles", label: "Roles" },
       { value: "affiliates", label: "Affiliates" },
@@ -547,6 +549,7 @@ export default function AdminGroupedTabs() {
 
         {/* People */}
         <TabsContent value="customers" className="mt-6"><AdminTabHelp tab="customers" /><CustomersAdmin /></TabsContent>
+        <TabsContent value="image-generations" className="mt-6"><ImageGenerationsAdmin /></TabsContent>
         <TabsContent value="crm-cleanup" className="mt-6"><AdminTabHelp tab="crm-cleanup" /><CrmCleanupAdmin /></TabsContent>
         <TabsContent value="roles" className="mt-6"><AdminTabHelp tab="roles" /><RolesAdmin /></TabsContent>
         <TabsContent value="affiliates" className="mt-6"><AdminTabHelp tab="affiliates" /><AffiliatesAdmin /></TabsContent>
