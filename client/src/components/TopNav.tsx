@@ -352,6 +352,11 @@ export function TopNav() {
                   </Button>
                 </Link>
               )}
+              {(user.role === "designer" || user.role === "sales_rep") && (
+                <Link href="/admin?tab=sales-forecast">
+                  <Button size="sm" variant="outline">Sales Forecast</Button>
+                </Link>
+              )}
               {isAffiliate && (
                 <Link href="/affiliate">
                   <Button
@@ -463,6 +468,11 @@ export function TopNav() {
                 <Button className="w-full bg-[var(--color-gold)] text-[var(--color-navy)] hover:bg-[var(--color-gold)]/90">
                   {user?.role === "designer" ? t("nav_crm") : t("nav_admin")}
                 </Button>
+              </Link>
+            )}
+            {(user?.role === "designer" || user?.role === "sales_rep") && (
+              <Link href="/admin?tab=sales-forecast" onClick={() => setMobileOpen(false)} className="px-3">
+                <Button variant="outline" className="w-full">Sales Forecast</Button>
               </Link>
             )}
             {isAffiliate && (

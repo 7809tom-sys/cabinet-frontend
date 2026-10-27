@@ -44,6 +44,7 @@ import DesignLeadsAdmin from "@/components/admin/DesignLeadsAdmin";
 import DoorCorrectionsAdmin from "@/components/admin/DoorCorrectionsAdmin";
 import ConsultationsAdmin from "@/components/admin/ConsultationsAdmin";
 import SalesCommissionsAdmin from "@/components/admin/SalesCommissionsAdmin";
+import SalesForecastAdmin from "@/components/admin/SalesForecastAdmin";
 import AffiliateInvoicesAdmin from "@/components/admin/AffiliateInvoicesAdmin";
 import CabinetSpreadsheetAdmin from "@/components/admin/CabinetSpreadsheetAdmin";
 import CabinetLineDownload from "@/components/admin/CabinetLineDownload";
@@ -535,10 +536,12 @@ export default function Admin() {
     );
   }
 
-  // Designers are internal sales staff: they may enter the admin backend but
-  // ONLY get the Sales CRM — every other admin surface is hidden + server-gated.
+  // Designers are internal sales staff. They get the Sales CRM, consultations,
+  // and the company Sales Forecast. Every other admin surface stays hidden.
   const isDesigner = user.role === "designer";
-  // Sales reps (1099 contractors) get an even narrower workspace: CRM + Design Tool only.
+  // Sales reps (1099) get CRM, commissions, the design tool, and the company
+  // Sales Forecast. There is no role named "sales"; these two roles are the
+  // internal sales team that already shares the CRM with admin.
   const isSalesRep = user.role === "sales_rep";
   if (user.role !== "admin" && !isDesigner && !isSalesRep) {
     return (
@@ -556,16 +559,20 @@ export default function Admin() {
       <div className="container py-10">
         <h1 className="font-serif text-3xl font-bold mb-1">Sales Rep Workspace</h1>
         <p className="text-muted-foreground mb-8">
-          Work your pipeline in the CRM and build customer kitchens in the 3D Designer. A flat $400
+          Work your pipeline in the CRM, review the company Sales Forecast, and build customer kitchens in the 3D Designer. A flat $400
           commission is recorded automatically each time a deal you own is marked Won.
         </p>
         <Tabs defaultValue={new URLSearchParams(window.location.search).get("tab") || "crm"}>
           <TabsList>
             <TabsTrigger value="crm">Sales CRM</TabsTrigger>
+            <TabsTrigger value="sales-forecast">Sales Forecast</TabsTrigger>
             <TabsTrigger value="commissions">My Commissions</TabsTrigger>
           </TabsList>
           <TabsContent value="crm" className="mt-6">
             <CrmBoard lang="en" />
+          </TabsContent>
+          <TabsContent value="sales-forecast" className="mt-6">
+            <SalesForecastAdmin />
           </TabsContent>
           <TabsContent value="commissions" className="mt-6">
             <SalesCommissionsAdmin />
@@ -589,7 +596,7 @@ export default function Admin() {
           <div>
             <h1 className="font-serif text-3xl font-bold mb-1">Designer Workspace</h1>
             <p className="text-muted-foreground">
-              Manage your consultation availability and track your leads and deals.
+              Manage your consultation availability, track your leads and deals, and review the company Sales Forecast.
             </p>
           </div>
           <a href={WEBMAIL_URL} target="_blank" rel="noopener noreferrer">
@@ -601,10 +608,14 @@ export default function Admin() {
         <Tabs defaultValue={new URLSearchParams(window.location.search).get("tab") || "crm"}>
           <TabsList>
             <TabsTrigger value="crm">Sales CRM</TabsTrigger>
+            <TabsTrigger value="sales-forecast">Sales Forecast</TabsTrigger>
             <TabsTrigger value="consultations">Consultations</TabsTrigger>
           </TabsList>
           <TabsContent value="crm" className="mt-6">
             <CrmBoard lang="en" />
+          </TabsContent>
+          <TabsContent value="sales-forecast" className="mt-6">
+            <SalesForecastAdmin />
           </TabsContent>
           <TabsContent value="consultations" className="mt-6">
             <ConsultationsAdmin />
