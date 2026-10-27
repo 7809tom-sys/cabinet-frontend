@@ -23,6 +23,7 @@ import {
   type DoorAuditDoorProfile,
   type DoorAuditRenderInput,
 } from "@/lib/doorRenderingAudit";
+import { applyThreeDCabinetPieceGrain } from "@/lib/woodGrainVariation";
 
 const INCH = 1 / 12;
 
@@ -150,7 +151,7 @@ function faceMaterial(
 }
 
 export function buildAuditDoor(
-  input: Pick<DoorAuditRenderInput, "doorProfile" | "color" | "samplePhotoUrl">,
+  input: Pick<DoorAuditRenderInput, "doorProfile" | "color" | "samplePhotoUrl"> & { styleId?: number | null },
   texture: THREE.Texture | null,
 ): THREE.Group {
   const plan = auditDoorConstruction(input.doorProfile);
@@ -189,7 +190,23 @@ export function buildAuditDoor(
     group.add(slab);
   }
 
-  if (!plan.framed || plan.railIn == null || plan.stileIn == null) return group;
+  const applyStyleGrain = () => {
+    // One style id always samples the same board. A different style does not
+    // reuse this crop. The sample image itself stays shared.
+    const styleKey = input.styleId != null && Number.isFinite(Number(input.styleId))
+      ? `style:${input.styleId}`
+      : `sample:${input.samplePhotoUrl ?? "audit-door"}`;
+    applyThreeDCabinetPieceGrain(group, {
+      placementUid: styleKey,
+      sampleUrl: input.samplePhotoUrl,
+      grainDirection: input.doorProfile.grainDirection,
+      curated: /rustic_hickory_vertical_grain/i.test(input.samplePhotoUrl ?? ""),
+      sourceTexture: texture,
+    });
+    return group;
+  };
+
+  if (!plan.framed || plan.railIn == null || plan.stileIn == null) return applyStyleGrain();
 
   const rail = plan.railIn * INCH;
   const stile = plan.stileIn * INCH;
@@ -250,7 +267,7 @@ export function buildAuditDoor(
   }
 
   group.add(frame);
-  return group;
+  return applyStyleGrain();
 }
 
 function disposeObject(object: THREE.Object3D) {
