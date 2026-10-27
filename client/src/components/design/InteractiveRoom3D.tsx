@@ -39,12 +39,15 @@ import { geminiHardwareReference, type GeminiMaterialManifestEntry } from "@/lib
 import { geminiMaterialReference, geminiInferredMaterialLabels } from "@/lib/geminiMaterialReference";
 import { GEMINI_MATERIAL_MANIFEST_WIRE_VERSION, geminiMaterialManifestWireValidationIssues, serializeGeminiImageTestProvenanceForWire, serializeGeminiMaterialManifestForWire } from "@shared/geminiMaterialManifest";
 import { pelicanQuartzMaterialMap } from "@/lib/pelicanQuartzMaterialMaps";
+import { applyThreeDCabinetPieceGrain, threeDPieceGrainTransform } from "@/lib/woodGrainVariation";
 import {
   BACKSPLASH_ROOM_SCENE_FIDELITY,
   backsplashTextureWarningMessage,
   parseBacksplashSheetInches,
   resolveDesignerMaterialUrl,
 } from "@/lib/backsplashProductMaterial";
+
+export { applyThreeDCabinetPieceGrain, threeDPieceGrainTransform };
 
 /**
  * The in-house browser path tracer is switched off: it opens a second WebGL
@@ -71,6 +74,10 @@ export const THREE_D_PRODUCTION_HDRI_URL = "/manus-storage/photo_studio_01_1k_5f
  * Returns a stable UV offset for the curated Hickory material assigned to one
  * saved cabinet placement. A placement UID is durable through save/load and
  * moves, so a cabinet keeps its own wood figure without render-time randomness.
+ *
+ * This shifts the shared repeating board for the whole cabinet. Each door,
+ * drawer, panel, and box face then takes its own window from that board via
+ * threeDPieceGrainTransform, so two doors on the cabinet do not share a knot.
  *
  * The curated asset remains vertical at a 1:1 repeat. Only the source crop is
  * shifted; cabinet geometry, door construction, and rail direction are not
@@ -4568,9 +4575,13 @@ export function addCabinet(
   };
 	  const useDoorTexture = threeDUsesDoorSampleTexture(doorSampleUrl);
 	  const usesCuratedCabinetGrain = /rustic_hickory_vertical_grain/i.test(doorSampleUrl ?? "");
+	  // Assigned once the texture exists. The loader callback runs after the
+	  // face meshes are built, which is when box skins receive the sample.
+	  let stampCabinetWoodGrain = () => {};
 	  const doorTexture = useDoorTexture && doorSampleUrl
     ? new THREE.TextureLoader().load(doorSampleUrl, (loadedTexture) => {
       applyPlainStructuralFinish?.(color, loadedTexture);
+      stampCabinetWoodGrain();
       onDoorTextureState?.("loaded");
     }, undefined, () => {
       applyDoorTextureFallback();
@@ -4598,6 +4609,15 @@ export function addCabinet(
 	      materialOnlyNoDoorGeometry: true,
 	    };
 	  }
+	  stampCabinetWoodGrain = () => {
+	    applyThreeDCabinetPieceGrain(cabinet, {
+	      placementUid: sku.placementUid,
+	      sampleUrl: doorSampleUrl,
+	      grainDirection: doorProfile?.grainDirection ?? null,
+	      curated: usesCuratedCabinetGrain,
+	      sourceTexture: doorTexture,
+	    });
+	  };
   // The active catalog sample is applied to actual door and drawer faces.
   // Shaker rails and stiles remain physical meshes over those faces, preserving
   // the selected Door Style's recessed-panel construction in the 3D Designer.
@@ -6267,6 +6287,9 @@ export function addCabinet(
   }
   }
   cabinet.add(frontGroup);
+  // Doors and drawers already reference the shared sample. Box skins receive it
+  // again when the image finishes loading, and that callback stamps them too.
+  stampCabinetWoodGrain();
   // Every appliance needs a click target that resolves through its placement
   // root. Standard RANGE records already add a dedicated range envelope below;
   // this additionally covers legacy stove-coded appliances that otherwise only
