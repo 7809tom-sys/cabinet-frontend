@@ -123,6 +123,9 @@ import {
 } from "@/lib/smallGapFiller";
 import { buildRemoteDesignSessionUrl } from "@/lib/designShare";
 import { availableLs3612ShelfReplacementChoices, isUnpricedLs3612 } from "@/lib/ls3612Replacement";
+import { applyInventorySuggestion, type InventorySuggestion } from "@/lib/inventoryAlternatives";
+import { useDesignerInventory } from "@/lib/useDesignerInventory";
+import { InventoryDesignStockControl, InventoryStockBadge } from "@/components/design/InventoryStockNotice";
 import { unavailableSavedStyleIds } from "@/lib/unavailableSavedStyles";
 import { applyGlassStackerBulkPlacement as applyBulkGlassStackerPlacements, glassStackerBulkCeilingBlocksAtHeight, glassStackerBulkHeightOptions, glassStackerBulkPlacementCandidates, glassStackerUidsForRemoval, type GlassStackerBulkPlacementCandidate } from "@/lib/glassStackerBulkPlacement";
 import { toast } from "sonner";
@@ -3258,6 +3261,57 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     distributorId: lockedDistributorId ?? undefined,
     affiliateSlug: affiliateSlug ?? undefined,
   });
+  const inventoryCatalog = useMemo(() => {
+    const map = new Map<number, DesignCabinet>();
+    for (const cabinet of [
+      ...((liveMasterCabinets as DesignCabinet[] | undefined) ?? []),
+      ...((autoFillCabinets as DesignCabinet[] | undefined) ?? []),
+      ...((wallCabPool as DesignCabinet[] | undefined) ?? []),
+      ...((tallCabPool as DesignCabinet[] | undefined) ?? []),
+      ...catalogFillers,
+    ]) {
+      map.set(cabinet.id, cabinet);
+    }
+    return [...map.values()];
+  }, [autoFillCabinets, catalogFillers, liveMasterCabinets, tallCabPool, wallCabPool]);
+  const inventoryDoorStyles = useMemo(
+    () => ((doorStyles ?? []) as Array<{ id: number; distributorId?: number | null; ourName?: string | null; aliasName?: string | null; styleCode?: string | null }>).map((style) => ({
+      id: style.id,
+      distributorId: style.distributorId,
+      ourName: style.ourName,
+      aliasName: style.aliasName,
+      styleCode: style.styleCode,
+    })),
+    [doorStyles],
+  );
+  const inventory = useDesignerInventory({
+    isAdmin,
+    search,
+    placed,
+    room,
+    designStyleId: styleId,
+    distributorId: catalogDistributorScopeId,
+    affiliateSlug,
+    doorStyles: inventoryDoorStyles,
+    sameStyleCabinets: inventoryCatalog,
+  });
+  const swapInventoryCabinet = useCallback((uid: string, suggestion: InventorySuggestion) => {
+    const result = applyInventorySuggestion({
+      placed: placedRef.current,
+      uid,
+      suggestion,
+      room: roomRef.current,
+      designStyleId: styleId,
+    });
+    if (result.unchanged) {
+      toast.error(result.message);
+      return;
+    }
+    placedRef.current = result.placed;
+    setPlaced(result.placed);
+    if (result.selectedUid) setSelectedUid(result.selectedUid);
+    toast.success(result.message);
+  }, [setPlaced, styleId]);
 
   // The unified "Corner" tab shows BOTH corner base AND corner wall cabinets in
   // one place (grouped into two sections). The base-placement corner cabinets
@@ -13920,6 +13974,15 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           )}
           <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{t("dt_sh_items", { n: placed.length })}</Badge>
         </div>
+        <InventoryDesignStockControl
+          simulationActive={inventory.simulationActive}
+          forcedOutOfStock={inventory.forcedOutOfStock}
+          notices={inventory.notices}
+          disabled={cabinetsLocked}
+          loading={inventory.loadingAlternatives}
+          onSwap={swapInventoryCabinet}
+          onSelect={setSelectedUid}
+        />
 
         <div className="hidden lg:block h-5 w-px bg-border" />
 
@@ -15608,6 +15671,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 		                {t("dt_cx_selected")} <span className="font-mono font-semibold text-foreground">{selectedCab.masterCode}</span>
 		                <span className="ml-1 hidden sm:inline text-foreground/70">— {selectedCabDisplayDescription}</span>
 		              </span>
+		              <InventoryStockBadge
+		                notice={inventory.noticeFor(selectedCab.uid)}
+		                disabled={cabinetsLocked}
+		                loading={inventory.loadingAlternatives}
+		                onSwap={(suggestion) => swapInventoryCabinet(selectedCab.uid, suggestion)}
+		              />
 		              {selectedCabinetWizard && (
 		                <div data-testid="selected-cabinet-wizard-status" className="flex shrink-0 items-center gap-1.5 rounded-md border border-emerald-300 bg-emerald-50 px-1.5 py-1">
 		                  <Badge className="bg-emerald-800 px-1.5 py-0.5 text-[9px] font-bold tracking-wide text-white hover:bg-emerald-800">WIZARD-BUILT · EDITABLE</Badge>
@@ -16028,6 +16097,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                       )}
                     </div>
 		                    <div className="text-xs text-muted-foreground">{selectedCabDisplayDescription}</div>
+                    <div className="mt-1">
+                      <InventoryStockBadge
+                        notice={inventory.noticeFor(selectedCab.uid)}
+                        disabled={cabinetsLocked}
+                        loading={inventory.loadingAlternatives}
+                        onSwap={(suggestion) => swapInventoryCabinet(selectedCab.uid, suggestion)}
+                      />
+                    </div>
                   </div>
                   {(paletteFinishSwatch || styleId) && (
                     <div
