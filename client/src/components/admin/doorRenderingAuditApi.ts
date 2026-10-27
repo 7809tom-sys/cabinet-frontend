@@ -1,7 +1,9 @@
 import { trpc } from "@/lib/trpc";
 import {
+  doorAuditApproveInput,
   doorAuditDecisionInput,
   doorAuditRevertInput,
+  doorAuditRevokeInput,
   doorAuditStartRunInput,
   doorAuditSubmitRenderInput,
   normalizeDoorAuditList,
@@ -22,7 +24,8 @@ import {
  * Adapts cabinet-backend `doorRenderingAudit` (adminProcedure) to the screen.
  * The router key is `doorRenderingAudit`. Wire names that differ from the screen:
  *   listStyles, startRun({ scope }), submitRender({ imageBase64 }), runStatus,
- *   decideRender, revertToVersion, runHistory, styleVersions, abandonRun.
+ *   decideRender, revertToVersion, runHistory, styleVersions, abandonRun,
+ *   approveRender, revokeApproval.
  * There is no reportRenderFailure procedure. A capture the browser cannot upload
  * stops the open run with abandonRun so another run can start.
  */
@@ -80,6 +83,8 @@ function rawApi() {
         useQuery: (input: { styleId: number }, options?: object) => RawQuery;
       };
       abandonRun: { useMutation: () => RawMutation };
+      approveRender: { useMutation: () => RawMutation };
+      revokeApproval: { useMutation: () => RawMutation };
     };
     useUtils: () => {
       doorRenderingAudit: {
@@ -223,6 +228,30 @@ export function useDoorRenderingAuditApi() {
             mutateAsync: async (input) => {
               await mutation.mutateAsync(input as never);
               return { runId: input.runId };
+            },
+          };
+        },
+      },
+      approveRender: {
+        useMutation: (): MutationResult<{ styleId: number; versionId: number; note?: string | null }, { styleId: number; versionId: number }> => {
+          const mutation = api.doorRenderingAudit.approveRender.useMutation();
+          return {
+            isPending: mutation.isPending,
+            mutateAsync: async (input) => {
+              await mutation.mutateAsync(doorAuditApproveInput(input) as never);
+              return { styleId: input.styleId, versionId: input.versionId };
+            },
+          };
+        },
+      },
+      revokeApproval: {
+        useMutation: (): MutationResult<{ styleId: number; note?: string | null }, { styleId: number }> => {
+          const mutation = api.doorRenderingAudit.revokeApproval.useMutation();
+          return {
+            isPending: mutation.isPending,
+            mutateAsync: async (input) => {
+              await mutation.mutateAsync(doorAuditRevokeInput(input) as never);
+              return { styleId: input.styleId };
             },
           };
         },

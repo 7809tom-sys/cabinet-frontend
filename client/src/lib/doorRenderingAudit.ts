@@ -8,7 +8,17 @@
  * with the functions at the bottom of this file before they reach the screen.
  */
 
+import {
+  APPROVED_REFERENCE_LABEL,
+  comparisonBaseline,
+  featuredImagesAudit,
+  NO_APPROVED_SOURCE_LABEL,
+  type FeaturedImageFailure,
+} from "@/lib/approvedDoorReference";
+
 export const DOOR_AUDIT_IMPROVEMENT_POINTS = 1;
+
+export { APPROVED_REFERENCE_LABEL, NO_APPROVED_SOURCE_LABEL, comparisonBaseline, featuredImagesAudit };
 
 /** Locked capture settings. Every style uses this camera, size, and lighting. */
 export const DOOR_AUDIT_CAPTURE = {
@@ -21,6 +31,9 @@ export const DOOR_AUDIT_CAPTURE = {
   /** Orthographic frame is this multiple of the door height, so every door fills the same share of the PNG. */
   margin: 1.08,
 } as const;
+
+/** Sent on every audit run so "changed only" can see a new designer capture. */
+export const DOOR_AUDIT_RENDERING_COMMIT = `door-audit-${DOOR_AUDIT_CAPTURE.widthPx}x${DOOR_AUDIT_CAPTURE.heightPx}`;
 
 /**
  * Designer scene lights (InteractiveRoom3D) use these colors and intensities.
@@ -73,7 +86,17 @@ export type DoorAuditVersion = {
   scoreStatus: "pending" | "scored" | "failed";
   isCurrent: boolean;
   isAcceptedBaseline: boolean;
+  isApprovedReference: boolean;
   review: DoorAuditReview | null;
+};
+
+export type DoorAuditApprovedReference = {
+  versionId: number;
+  imageUrl: string;
+  approvedAt: string | null;
+  approvedByUserId: number | null;
+  approvedByName: string | null;
+  note: string | null;
 };
 
 /** What the browser needs in order to capture one style. Echo `sourceFingerprint` as `renderingCommit` on upload. */
@@ -94,6 +117,7 @@ export type DoorAuditStyleRow = {
   code: string | null;
   distributorName: string | null;
   samplePhotoUrl: string | null;
+  drawerSampleImageUrl: string | null;
   color: string | null;
   sourceFingerprint: string;
   doorProfile: DoorAuditDoorProfile;
@@ -104,6 +128,10 @@ export type DoorAuditStyleRow = {
   accepted: DoorAuditVersion | null;
   /** Version immediately before `current`, when one exists. */
   previous: DoorAuditVersion | null;
+  /** Admin-approved source of truth. Null until a passing render is approved. */
+  approvedReference: DoorAuditApprovedReference | null;
+  featuredFailures: FeaturedImageFailure[];
+  sourceStatus: "no-approved-source" | "featured-mismatch" | "approved";
   flag: DoorAuditFlag;
 };
 
@@ -221,8 +249,11 @@ export function applyDoorAuditFilter(styles: DoorAuditStyleRow[], filter: DoorAu
 
 export function doorAuditCompareSlots(row: DoorAuditStyleRow): DoorAuditCompareSlot[] {
   const latest = row.current;
+  const approvedUrl = row.approvedReference?.imageUrl?.trim() || null;
   const slots: DoorAuditCompareSlot[] = [
-    { key: "sample", label: "Sample photo", imageUrl: row.samplePhotoUrl, version: null },
+    approvedUrl
+      ? { key: "sample", label: APPROVED_REFERENCE_LABEL, imageUrl: approvedUrl, version: null }
+      : { key: "sample", label: "Sample photo", imageUrl: row.samplePhotoUrl, version: null },
   ];
   const shown = new Set<number>();
   const pushVersion = (key: "accepted" | "previous", label: string, version: DoorAuditVersion | null | undefined) => {
@@ -344,6 +375,8 @@ export type DoorAuditStartRunResult = {
   runId: number;
   status: DoorAuditRunStatusName;
   styles: DoorAuditRenderInput[];
+  truncated: boolean;
+  totalEligible: number;
 };
 
 const PANEL_CONSTRUCTIONS = ["raised", "flat", "slab", "glass"] as const;
@@ -513,7 +546,7 @@ function normalizeReview(raw: Record<string, unknown>, isAccepted: boolean): Doo
   return null;
 }
 
-function normalizeVersion(raw: unknown, options?: { isCurrent?: boolean; isAcceptedBaseline?: boolean }): DoorAuditVersion | null {
+function normalizeVersion(raw: unknown, options?: { isCurrent?: boolean; isAcceptedBaseline?: boolean; isApprovedReference?: boolean }): DoorAuditVersion | null {
   const record = asRecord(raw);
   if (!record) return null;
   const versionId = positiveInt(record.versionId ?? record.id);
@@ -532,8 +565,32 @@ function normalizeVersion(raw: unknown, options?: { isCurrent?: boolean; isAccep
     scoreStatus,
     isCurrent,
     isAcceptedBaseline,
+    isApprovedReference: options?.isApprovedReference === true || record.isApprovedReference === true,
     review: normalizeReview(record, isAcceptedBaseline),
   };
+}
+
+function normalizeApprovedReference(raw: unknown, flat: Record<string, unknown>): DoorAuditApprovedReference | null {
+  const record = asRecord(raw) ?? flat;
+  const versionId = positiveInt(record.versionId ?? record.approvedRenderVersionId ?? flat.approvedRenderVersionId);
+  const imageUrl = text(record.imageUrl) ?? text(record.approvedReferenceImageUrl) ?? text(flat.approvedReferenceImageUrl);
+  if (versionId == null || !imageUrl) return null;
+  return {
+    versionId,
+    imageUrl,
+    approvedAt: toIso(record.approvedAt ?? flat.approvedAt),
+    approvedByUserId: positiveInt(record.approvedByUserId ?? flat.approvedByUserId),
+    approvedByName: text(record.approvedByName) ?? text(flat.approvedByName),
+    note: text(record.note) ?? text(record.approvalNote) ?? text(flat.approvalNote),
+  };
+}
+
+/** A scored render that was not rejected can become the approved reference. */
+export function doorAuditCanApprove(version: Pick<DoorAuditVersion, "review" | "scoreStatus" | "scores" | "isApprovedReference"> | null | undefined): boolean {
+  if (!version || version.isApprovedReference) return false;
+  if (version.review === "rejected") return false;
+  if (version.scoreStatus !== "scored") return false;
+  return version.scores.overall != null;
 }
 
 export function normalizeDoorAuditRenderInput(raw: unknown, renderingCommit?: unknown): DoorAuditRenderInput | null {
@@ -542,12 +599,17 @@ export function normalizeDoorAuditRenderInput(raw: unknown, renderingCommit?: un
   const styleId = positiveInt(record.styleId ?? record.id);
   if (styleId == null) return null;
   const profileSource = record.profile ?? record.doorProfile;
+  const featuredDoor = text(record.samplePhotoUrl) ?? text(record.doorSampleImageUrl);
+  const approved = text(asRecord(record.approvedReference)?.imageUrl) ?? text(record.approvedReferenceImageUrl);
   return {
     styleId,
     name: doorAuditCatalogName(record),
     code: styleCodeOf(record),
     distributorName: supplierName(record),
-    samplePhotoUrl: text(record.samplePhotoUrl) ?? text(record.doorSampleImageUrl),
+    samplePhotoUrl: comparisonBaseline({
+      approvedReferenceImageUrl: approved,
+      samplePhotoUrl: featuredDoor,
+    }).imageUrl,
     color: text(record.color),
     sourceFingerprint: text(record.sourceFingerprint) ?? text(record.renderingCommit) ?? text(renderingCommit) ?? "",
     doorProfile: normalizeProfile(profileSource),
@@ -559,21 +621,36 @@ export function normalizeDoorAuditStyle(raw: unknown): DoorAuditStyleRow | null 
   if (!record) return null;
   const styleId = positiveInt(record.styleId ?? record.id);
   if (styleId == null) return null;
-  const current = normalizeVersion(record.current ?? record.latestRender, { isCurrent: record.current != null || record.latestRender != null });
+  const approvedReference = normalizeApprovedReference(record.approvedReference, record);
+  const current = normalizeVersion(record.current ?? record.latestRender, {
+    isCurrent: record.current != null || record.latestRender != null,
+    isApprovedReference: approvedReference?.versionId != null && positiveInt(asRecord(record.current ?? record.latestRender)?.versionId ?? asRecord(record.current ?? record.latestRender)?.id) === approvedReference?.versionId,
+  });
   const accepted = normalizeVersion(record.accepted ?? record.acceptedRender, { isAcceptedBaseline: record.accepted != null || record.acceptedRender != null });
-  const previous = normalizeVersion(record.previous);
+  const previous = normalizeVersion(record.previous ?? record.previousRender);
+  if (current && approvedReference && current.versionId === approvedReference.versionId) current.isApprovedReference = true;
+  if (previous && approvedReference && previous.versionId === approvedReference.versionId) previous.isApprovedReference = true;
+  if (accepted && approvedReference && accepted.versionId === approvedReference.versionId) accepted.isApprovedReference = true;
   if (current && accepted && current.versionId === accepted.versionId) {
     current.isAcceptedBaseline = true;
     current.review = current.review ?? "accepted";
     accepted.isCurrent = true;
   }
+  const samplePhotoUrl = text(record.samplePhotoUrl) ?? text(record.doorSampleImageUrl);
+  const drawerSampleImageUrl = text(record.drawerSampleImageUrl);
+  const featured = featuredImagesAudit({
+    approvedReferenceImageUrl: approvedReference?.imageUrl,
+    doorSampleImageUrl: samplePhotoUrl,
+    drawerSampleImageUrl,
+  });
   const flag = mapFlagStatus(record.flag ?? record.flagStatus) ?? (current ? "needs-review" : "unaudited");
   return {
     styleId,
     name: doorAuditCatalogName(record),
     code: styleCodeOf(record),
     distributorName: supplierName(record),
-    samplePhotoUrl: text(record.samplePhotoUrl) ?? text(record.doorSampleImageUrl),
+    samplePhotoUrl,
+    drawerSampleImageUrl,
     color: text(record.color),
     sourceFingerprint: text(record.sourceFingerprint)
       ?? text(asRecord(record.latestRender)?.renderingCommit)
@@ -584,6 +661,9 @@ export function normalizeDoorAuditStyle(raw: unknown): DoorAuditStyleRow | null 
     current,
     accepted,
     previous,
+    approvedReference,
+    featuredFailures: featured.failures,
+    sourceStatus: featured.sourceStatus,
     flag,
   };
 }
@@ -621,14 +701,15 @@ function styleListFrom(record: Record<string, unknown>): unknown[] | null {
 export function doorAuditStartRunInput(
   mode: DoorAuditRunMode,
   styleIds?: number[],
-): { scope: DoorAuditBackendScope; styleIds?: number[] } {
+): { scope: DoorAuditBackendScope; styleIds?: number[]; renderingCommit: string } {
+  const renderingCommit = DOOR_AUDIT_RENDERING_COMMIT;
   if (mode === "selected") {
     const ids = Array.from(new Set((styleIds ?? []).filter((id) => Number.isInteger(id) && id > 0)));
     if (ids.length === 0) throw new DoorAuditClientError("Select at least one door style.");
-    return { scope: "selected", styleIds: ids };
+    return { scope: "selected", styleIds: ids, renderingCommit };
   }
-  if (mode === "changed-only") return { scope: "changed" };
-  return { scope: "all" };
+  if (mode === "changed-only") return { scope: "changed", renderingCommit };
+  return { scope: "all", renderingCommit };
 }
 
 export function normalizeDoorAuditStartRun(raw: unknown): DoorAuditStartRunResult {
@@ -652,7 +733,19 @@ export function normalizeDoorAuditStartRun(raw: unknown): DoorAuditStartRunResul
     throw new DoorAuditClientError("The server returned door styles the page could not read.");
   }
   const status = mapStatus(record.status ?? runRecord?.status);
-  return { runId, status, styles };
+  const totalEligible = finiteNumber(record.totalEligible) ?? styles.length;
+  const truncated = record.truncated === true;
+  return { runId, status, styles, truncated, totalEligible };
+}
+
+export function doorAuditApproveInput(input: { versionId: number; note?: string | null }): { versionId: number; note?: string } {
+  const note = input.note?.trim().slice(0, 512) ?? "";
+  return note ? { versionId: input.versionId, note } : { versionId: input.versionId };
+}
+
+export function doorAuditRevokeInput(input: { styleId: number; note?: string | null }): { styleId: number; note?: string } {
+  const note = input.note?.trim().slice(0, 512) ?? "";
+  return note ? { styleId: input.styleId, note } : { styleId: input.styleId };
 }
 
 export function doorAuditSubmitRenderInput(input: {
@@ -819,7 +912,10 @@ export function enrichDoorAuditQueue(
       name: style.name && style.name !== "Door style" ? style.name : known.name,
       code: style.code ?? known.code,
       distributorName: style.distributorName ?? known.distributorName,
-      samplePhotoUrl: style.samplePhotoUrl ?? known.samplePhotoUrl,
+      samplePhotoUrl: comparisonBaseline({
+        approvedReferenceImageUrl: known.approvedReference?.imageUrl,
+        samplePhotoUrl: style.samplePhotoUrl ?? known.samplePhotoUrl,
+      }).imageUrl,
       color: style.color ?? known.color,
       sourceFingerprint: style.sourceFingerprint || known.sourceFingerprint,
       doorProfile: profileIsBlank(style.doorProfile) ? known.doorProfile : style.doorProfile,

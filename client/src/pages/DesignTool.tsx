@@ -46,6 +46,7 @@ import { useIsMobile } from "@/hooks/useMobile";
 import { useDesignerImmersive, useTabletWorkspace } from "@/hooks/useTabletWorkspace";
 import { usePersistFn } from "@/hooks/usePersistFn";
 import { trpc } from "@/lib/trpc";
+import { preferredDoorReferenceUrl, preferredDrawerReferenceUrl } from "@/lib/approvedDoorReference";
 import {
   affiliateSlugForStoreScope,
   cartPathForStoreScope,
@@ -4547,11 +4548,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     return finishColors(s?.ourName, s?.color, s?.finish, s?.woodSpecies);
   }, [doorStyles, styleId]);
   const active3DDoorSampleUrl = useMemo(() => {
-	    const s = doorStyles?.find((d) => d.id === styleId) as { ourName?: string | null; aliasName?: string | null; doorSampleImageUrl?: string | null; thumbnailImageUrl?: string | null } | undefined;
-	    if (/rustic hickory|forest rust/i.test(`${s?.ourName ?? ""} ${s?.aliasName ?? ""}`)) {
+	    const s = doorStyles?.find((d) => d.id === styleId) as { ourName?: string | null; aliasName?: string | null; doorSampleImageUrl?: string | null; thumbnailImageUrl?: string | null; approvedReferenceImageUrl?: string | null } | undefined;
+	    if (!s?.approvedReferenceImageUrl && /rustic hickory|forest rust/i.test(`${s?.ourName ?? ""} ${s?.aliasName ?? ""}`)) {
 	      return "/manus-storage/rustic_hickory_vertical_grain_32d9e28a.webp";
 	    }
-	    return s?.doorSampleImageUrl ?? s?.thumbnailImageUrl ?? null;
+	    return preferredDoorReferenceUrl(s);
   }, [doorStyles, styleId]);
   const active3DRoomSceneReferenceUrl = useMemo(() => {
     const s = doorStyles?.find((d) => d.id === styleId) as { roomSceneImageUrl?: string | null } | undefined;
@@ -4568,7 +4569,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // Small finish swatch shown on each palette tile so the chosen finish is
   // visible while browsing cabinets. Empty until a door style is selected.
   const paletteFinishSwatch = useMemo<string | null>(
-    () => (activeStyle as { doorSampleImageUrl?: string | null } | null)?.doorSampleImageUrl ?? null,
+    () => preferredDoorReferenceUrl(activeStyle as { approvedReferenceImageUrl?: string | null; doorSampleImageUrl?: string | null; thumbnailImageUrl?: string | null } | null),
     [activeStyle]
   );
   // Auto-suggested Hickory finished-end skins, one per exposed cabinet end.
@@ -5071,8 +5072,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const doorSampleById = useMemo(() => {
     const m = new Map<number, string>();
     doorStyles?.forEach((d) => {
-      const s = d as { id: number; doorSampleImageUrl?: string | null; thumbnailImageUrl?: string | null };
-      const materialReference = s.doorSampleImageUrl ?? s.thumbnailImageUrl ?? null;
+      const s = d as { id: number; ourName?: string | null; aliasName?: string | null; doorSampleImageUrl?: string | null; thumbnailImageUrl?: string | null; approvedReferenceImageUrl?: string | null };
+      const materialReference = (!s.approvedReferenceImageUrl && /rustic hickory|forest rust/i.test(`${s.ourName ?? ""} ${s.aliasName ?? ""}`))
+        ? "/manus-storage/rustic_hickory_vertical_grain_32d9e28a.webp"
+        : preferredDoorReferenceUrl(s);
       if (materialReference) m.set(s.id, materialReference);
     });
     return m;
@@ -5081,8 +5084,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const drawerSampleById = useMemo(() => {
     const m = new Map<number, string>();
     doorStyles?.forEach((d) => {
-      const s = d as { id: number; drawerSampleImageUrl?: string | null };
-      if (s.drawerSampleImageUrl) m.set(s.id, s.drawerSampleImageUrl);
+      const s = d as { id: number; drawerSampleImageUrl?: string | null; approvedReferenceImageUrl?: string | null };
+      const drawerReference = preferredDrawerReferenceUrl(s);
+      if (drawerReference) m.set(s.id, drawerReference);
     });
     return m;
   }, [doorStyles]);
