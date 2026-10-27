@@ -471,6 +471,8 @@ type DesignerFaceStyle = DoorStyleFaceInput & { approvedReferenceImageUrl?: stri
  * The rustic hickory grain map is only used when that style has no approved reference.
  * Without an approved reference, door and drawer faces stay on the recognition rules.
  */
+function designerFacePlan(style: DesignerFaceStyle, placement: string | null | undefined): CabinetFacePlan;
+function designerFacePlan(style: DesignerFaceStyle | null | undefined, placement: string | null | undefined): CabinetFacePlan | null;
 function designerFacePlan(
   style: DesignerFaceStyle | null | undefined,
   placement: string | null | undefined,
