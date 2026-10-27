@@ -40,8 +40,10 @@ describe("sample ordering stays off public customer pages", () => {
 
   it("keeps the vendor samples tab off Pelican and behind the samples feature", () => {
     const portal = source("pages/VendorPortal.tsx");
-    expect(portal).toContain('new Set<VendorPage>(["overview", "supplier-profile", "catalog", "inventory", "forecast", "pricing", "shipping", "fulfillment"])');
+    expect(portal).toContain("NAV_ITEMS.filter((item) => vendorCanOpenPortalPage(portalVendor, item.id))");
+    expect(portal).toContain("hasVendorFeature(portalVendor, \"samples\")");
     expect(portal).toContain('item.id !== "samples" || sampleAccess.data?.enabled');
+    expect(portal).not.toContain("PELICAN_NAV_IDS");
     expect(portal).not.toContain('"samples", "shipping"');
   });
 });

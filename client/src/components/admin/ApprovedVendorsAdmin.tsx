@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/spinner";
 import {
@@ -50,6 +51,7 @@ type VendorLine = {
   contactEmail: string;
   contactPhone: string;
   isApproved: boolean;
+  isCabinetVendor: boolean | null;
   totalSalesCents: number;
   salesUpdatedAt: Date | string | null;
   notes: string | null;
@@ -291,28 +293,43 @@ function EmailPortalInviteButton({
   );
 }
 
+type VendorDraft = {
+  name: string;
+  sourceKey: string | null;
+  category: string;
+  contactName: string;
+  contactEmail: string;
+  contactPhone: string;
+  websiteUrl: string;
+  isApproved: false;
+  isCabinetVendor: null;
+};
+
 function VendorDialog({
   vendor,
+  seed,
   trigger,
   onSaved,
 }: {
   vendor?: VendorLine;
+  seed?: VendorDraft | null;
   trigger: React.ReactNode;
   onSaved: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const supplierLines = trpc.distributors.list.useQuery(undefined, { enabled: open });
   const [form, setForm] = useState({
-    name: vendor?.name ?? "",
-    sourceKey: vendor?.sourceKey ?? "",
+    name: vendor?.name ?? seed?.name ?? "",
+    sourceKey: vendor?.sourceKey ?? seed?.sourceKey ?? "",
     linkedDistributorIds: vendor?.linkedDistributorIds ?? [],
-    category: vendor?.category ?? "",
-    contactName: vendor?.contactName ?? "",
-    contactEmail: vendor?.contactEmail ?? "",
-    contactPhone: vendor?.contactPhone ?? "",
-    isApproved: vendor?.isApproved ?? true,
+    category: vendor?.category ?? seed?.category ?? "",
+    contactName: vendor?.contactName ?? seed?.contactName ?? "",
+    contactEmail: vendor?.contactEmail ?? seed?.contactEmail ?? "",
+    contactPhone: vendor?.contactPhone ?? seed?.contactPhone ?? "",
+    isApproved: vendor?.isApproved ?? seed?.isApproved ?? true,
+    isCabinetVendor: (vendor ? vendor.isCabinetVendor : seed?.isCabinetVendor) ?? null as boolean | null,
     notes: vendor?.notes ?? "",
-    websiteUrl: vendor?.websiteUrl ?? "",
+    websiteUrl: vendor?.websiteUrl ?? seed?.websiteUrl ?? "",
     catalogPdfUrl: vendor?.catalogPdfUrl ?? "",
     specBookPdfUrl: vendor?.specBookPdfUrl ?? "",
   });
@@ -465,6 +482,33 @@ function VendorDialog({
               rows={2}
             />
           </div>
+          <div className="rounded-lg border p-3 space-y-2" data-testid="is-cabinet-vendor-field">
+            <div className="flex items-start gap-2">
+              <Checkbox
+                id={`is-cabinet-vendor-${vendor?.id ?? "new"}`}
+                checked={form.isCabinetVendor === true}
+                onCheckedChange={(value) => setForm({ ...form, isCabinetVendor: value === true })}
+              />
+              <div>
+                <Label htmlFor={`is-cabinet-vendor-${vendor?.id ?? "new"}`} className="text-sm">Is cabinet vendor</Label>
+                <p className="text-xs text-muted-foreground">
+                  {form.isCabinetVendor === true && "Cabinet catalog, door styles, room scenes, samples, and the cabinet designer tools."}
+                  {form.isCabinetVendor === false && "Non-cabinet supplier. Category catalog and the shared tools only."}
+                  {form.isCabinetVendor == null && "Not chosen yet. Tick this for a cabinet supplier, or mark them non-cabinet before approving."}
+                </p>
+              </div>
+            </div>
+            {form.isCabinetVendor !== false && (
+              <Button
+                type="button"
+                variant="link"
+                className="h-auto px-0 text-xs"
+                onClick={() => setForm({ ...form, isCabinetVendor: false })}
+              >
+                Not a cabinet vendor
+              </Button>
+            )}
+          </div>
           <div className="flex items-center gap-2">
             <Switch
               checked={form.isApproved}
@@ -475,8 +519,12 @@ function VendorDialog({
         </div>
         <DialogFooter>
           <Button
-            disabled={upsert.isPending || !form.name.trim()}
-            onClick={() =>
+            disabled={upsert.isPending || !form.name.trim() || (form.isApproved && form.isCabinetVendor == null)}
+            onClick={() => {
+              if (form.isApproved && form.isCabinetVendor == null) {
+                toast.error("Choose whether this is a cabinet vendor before approving it.");
+                return;
+              }
               upsert.mutate({
                 id: vendor?.id,
                 name: form.name.trim(),
@@ -487,12 +535,13 @@ function VendorDialog({
                 contactEmail: form.contactEmail,
                 contactPhone: form.contactPhone,
                 isApproved: form.isApproved,
+                isCabinetVendor: form.isCabinetVendor,
                 notes: form.notes,
                 websiteUrl: form.websiteUrl.trim() || null,
                 catalogPdfUrl: form.catalogPdfUrl.trim() || null,
                 specBookPdfUrl: form.specBookPdfUrl.trim() || null,
-              })
-            }
+              });
+            }}
           >
             {upsert.isPending ? "Saving…" : "Save"}
           </Button>
@@ -662,6 +711,70 @@ function PendingProductsSection() {
   );
 }
 
+function cabinetChoiceBadge(value: boolean | null) {
+  if (value === true) return <Badge>Cabinet vendor</Badge>;
+  if (value === false) return <Badge variant="outline">Non-cabinet</Badge>;
+  return <Badge variant="secondary">Needs choice</Badge>;
+}
+
+function PendingVendorReview({
+  vendors,
+  onChanged,
+}: {
+  vendors: VendorLine[];
+  onChanged: () => void;
+}) {
+  const review = trpc.vendors.pendingReview.useQuery();
+  const items = review.data?.items ?? [];
+  return (
+    <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-4 space-y-3" data-testid="pending-vendor-review">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="font-semibold flex items-center gap-2">
+          <Clock className="h-4 w-4" /> Pending / Needs review
+        </h3>
+        <Badge variant="secondary" data-testid="pending-vendor-review-count">{review.data?.count ?? 0}</Badge>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Sign-ups, vendor records that are not approved or still need the cabinet checkbox, and catalog lines or products with no approved vendor. Nothing here is approved automatically.
+      </p>
+      {review.isLoading ? <Spinner /> : items.length === 0 ? (
+        <p className="text-sm text-muted-foreground">Nothing is waiting for review.</p>
+      ) : (
+        <div className="space-y-2">
+          {items.map((item) => {
+            const existing = item.vendorId != null ? vendors.find((vendor) => vendor.id === item.vendorId) : undefined;
+            return (
+              <div key={item.key} className="flex flex-col gap-2 rounded-md border bg-background p-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-medium">{item.title}</span>
+                    <Badge variant="outline" className="capitalize">{item.kind === "vendor-record" ? "Vendor record" : item.kind === "application" ? "Application" : "Catalog reference"}</Badge>
+                    {cabinetChoiceBadge(item.isCabinetVendor)}
+                  </div>
+                  <p className="text-xs text-muted-foreground">{item.detail}</p>
+                </div>
+                {existing ? (
+                  <VendorDialog
+                    vendor={existing}
+                    trigger={<Button size="sm" variant="outline">Review</Button>}
+                    onSaved={onChanged}
+                  />
+                ) : item.draft ? (
+                  <VendorDialog
+                    seed={item.draft}
+                    trigger={<Button size="sm" variant="outline">{item.kind === "application" ? "Add from application" : "Add vendor"}</Button>}
+                    onSaved={onChanged}
+                  />
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ApprovedVendorsAdmin() {
   const utils = trpc.useUtils();
   const { data, isLoading, error } = trpc.vendors.list.useQuery();
@@ -742,11 +855,18 @@ export default function ApprovedVendorsAdmin() {
                 <Plus className="h-4 w-4" /> Add vendor
               </Button>
             }
-            onSaved={() => utils.vendors.list.invalidate()}
+            onSaved={() => {
+              utils.vendors.list.invalidate();
+              utils.vendors.pendingReview.invalidate();
+            }}
           />
         </div>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-6">
+        <PendingVendorReview vendors={vendors} onChanged={() => {
+          utils.vendors.list.invalidate();
+          utils.vendors.pendingReview.invalidate();
+        }} />
         {isLoading ? (
           <div className="flex items-center justify-center py-10">
             <Spinner />
@@ -790,6 +910,7 @@ export default function ApprovedVendorsAdmin() {
                 <TableHead className="w-[60px] text-center">ID</TableHead>
                 <TableHead className="w-[140px]">Category</TableHead>
                 <TableHead className="w-[100px]">Status</TableHead>
+                <TableHead className="w-[140px]">Cabinet vendor</TableHead>
                 <TableHead className="w-[180px]">Portal login</TableHead>
                 <TableHead className="w-[110px] text-right">Total Sales</TableHead>
                 <TableHead className="w-[260px] text-right">Actions</TableHead>
@@ -798,7 +919,7 @@ export default function ApprovedVendorsAdmin() {
               <TableBody>
                 {filteredVendors.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="py-8 text-center text-sm text-muted-foreground">
+                    <TableCell colSpan={7} className="py-8 text-center text-sm text-muted-foreground">
                       No vendors match &ldquo;{search}&rdquo;
                     </TableCell>
                   </TableRow>
@@ -867,6 +988,11 @@ export default function ApprovedVendorsAdmin() {
 	                        </Badge>
 	                      )}
 	                    </TableCell>
+                    <TableCell>
+                      {v.isCabinetVendor === true && <Badge data-testid="cabinet-vendor-badge">Cabinet vendor</Badge>}
+                      {v.isCabinetVendor === false && <Badge variant="outline" data-testid="cabinet-vendor-badge">Non-cabinet</Badge>}
+                      {v.isCabinetVendor == null && <Badge variant="secondary" data-testid="cabinet-vendor-badge">Needs choice</Badge>}
+                    </TableCell>
 	                    <TableCell className="text-xs">
                       {v.isApproved ? (
                         <div className="space-y-0.5">
@@ -911,7 +1037,10 @@ export default function ApprovedVendorsAdmin() {
                               <Pencil className="h-3.5 w-3.5" />
                             </Button>
                           }
-                          onSaved={() => utils.vendors.list.invalidate()}
+                          onSaved={() => {
+                            utils.vendors.list.invalidate();
+                            utils.vendors.pendingReview.invalidate();
+                          }}
                         />
                         <InviteLinkButton vendorId={v.id} vendorName={v.name} />
                         {v.isApproved && (

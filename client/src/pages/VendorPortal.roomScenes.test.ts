@@ -11,7 +11,7 @@ describe("vendor room scenes stay inside existing sections", () => {
   it("uploads photos from Door Styles and Featured Styles instead of a new gallery section", () => {
     const doorStyles = source.slice(source.indexOf("function DoorStylesPage"), source.indexOf("type DoorMeasurementStyle"));
     const editor = source.slice(source.indexOf("function VendorFeaturedStyleEditor"), source.indexOf("function VendorFeaturedStylesPage"));
-    const nav = source.slice(source.indexOf("const NAV_ITEMS"), source.indexOf("const PELICAN_NAV_IDS"));
+    const nav = source.slice(source.indexOf("const NAV_ITEMS"), source.indexOf("function PelicanVendorCatalogPage"));
     expect(doorStyles).toContain("<VendorRoomSceneLibrary");
     expect(editor).toContain("<VendorRoomSceneLibrary");
     expect(librarySource).toContain("uploadFeaturedStyleScenePhoto");

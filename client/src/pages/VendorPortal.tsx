@@ -41,6 +41,7 @@ import { VendorCodeUpload } from "@/components/vendor/VendorCodeUpload";
 import { PelicanShippingProfilesPanel } from "@/components/admin/ShippingAdmin";
 import { designerFrameCompliance } from "@/lib/doorFrameMetrics";
 import { US_CABINET_DEPOT_AVAILABILITY_SOURCES, US_CABINET_DEPOT_WAREHOUSES } from "@/lib/vendorWarehouseNetwork";
+import { hasVendorFeature, vendorCanOpenPortalPage, vendorKind, vendorKindLabel } from "@shared/vendorFeatures";
 import {
   ALL_CATEGORIES as ALL,
   catalogCategoryKey,
@@ -117,9 +118,9 @@ const NAV_ITEMS: { id: VendorPage; label: string; icon: typeof LayoutDashboard }
   { id: "payments", label: "Payments", icon: CreditCard },
 ];
 
-// Pelican has no cabinet supply line, so its portal is limited to the pages that
-// apply to surfaces and fixtures.
-const PELICAN_NAV_IDS: ReadonlySet<VendorPage> = new Set<VendorPage>(["overview", "supplier-profile", "catalog", "inventory", "forecast", "pricing", "shipping", "fulfillment"]);
+// Which pages a vendor sees comes from shared/vendorFeatures.ts (the cabinet
+// checkbox), not from the absence of a distributor line. Pelican-specific
+// screens are still chosen from the server fulfillment scope below.
 // ─── Pelican Vendor Catalog Page ─────────────────────────────────────────────
 function PelicanVendorCatalogPage({
   category,
@@ -4497,15 +4498,9 @@ export default function VendorPortal() {
     && ((isAdmin && adminApprovedVendorLineId != null && actingDistributorId == null)
       || (!isAdmin && user?.role === "distributor" && user.distributorId == null && user.approvedVendorLineId != null))
   );
-  const supplierProfileOnly = Boolean(
-    !isPelicanVendor
-    && !catalogIdentityPending
-    && ((isAdmin && adminApprovedVendorLineId != null && adminDistributorId == null)
-    || (!isAdmin
-      && user?.role === "distributor"
-      && user.distributorId == null
-      && user.approvedVendorLineId != null))
-  );
+  const myFeatures = trpc.vendors.portalFeatures.useQuery(undefined, {
+    enabled: Boolean(user) && user?.role === "distributor",
+  });
 
   useEffect(() => {
     if (!isAdmin || !adminApprovedVendorLineId) return;
@@ -4522,7 +4517,14 @@ export default function VendorPortal() {
   const switchAdminVendor = useCallback((vendor: PortalApprovedVendorOption) => {
     if (!Number.isSafeInteger(vendor.id) || vendor.id <= 0) return;
     const distributorId = vendor.linkedDistributor?.id ?? null;
-    const nextPage = portalSectionAfterVendorSwitch(page, vendor) as VendorPage;
+    const switchedSection = portalSectionAfterVendorSwitch(page, vendor);
+    const nextPage: VendorPage = vendorKind(vendor) == null
+      ? "supplier-profile"
+      : vendorCanOpenPortalPage(vendor, page)
+        ? page
+        : vendorCanOpenPortalPage(vendor, switchedSection)
+          ? switchedSection as VendorPage
+          : "overview";
     setAdminApprovedVendorLineId(vendor.id);
     setAdminDistributorId(distributorId);
     setPage(nextPage);
@@ -4564,6 +4566,16 @@ export default function VendorPortal() {
     );
   }
 
+  const portalVendor = isAdmin
+    ? (approvedVendors.data ?? []).find((vendor) => vendor.id === adminApprovedVendorLineId) ?? null
+    : myFeatures.data ?? null;
+  const featureVendor = portalVendor ?? { isCabinetVendor: null as boolean | null };
+  const visiblePage: VendorPage = vendorCanOpenPortalPage(featureVendor, page)
+    ? page
+    : vendorKind(featureVendor) == null
+      ? "supplier-profile"
+      : "overview";
+
   // Admin must select a vendor to view as
   if (isAdmin && !adminDistributorId && !adminApprovedVendorLineId) {
     return (
@@ -4584,7 +4596,10 @@ export default function VendorPortal() {
               >
                 <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">{vendorAccountCode(vendor)}</span>
                 <span>{vendor.name}</span>
-                {vendorShowsProfileOnly(vendor) && <span className="ml-auto text-xs text-muted-foreground">Profile only</span>}
+                <span className="ml-auto text-xs text-muted-foreground">
+                  {vendorKindLabel(vendor)}
+                  {vendorShowsProfileOnly(vendor) ? " · Profile only" : ""}
+                </span>
               </Button>
             ))}
           </div>
@@ -4597,12 +4612,21 @@ export default function VendorPortal() {
     );
   }
 
+  if ((isAdmin && adminApprovedVendorLineId && approvedVendors.isLoading) || (!isAdmin && myFeatures.isLoading)) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
   return (
     <VendorPortalDashboard
       key={`${adminApprovedVendorLineId ?? "self"}-${actingDistributorId ?? "none"}`}
       user={user}
-      page={catalogIdentityPending ? page : supplierProfileOnly ? "supplier-profile" : isPelicanVendor && !PELICAN_NAV_IDS.has(page) ? "overview" : page}
+      page={catalogIdentityPending ? page : visiblePage}
       isPelicanVendor={isPelicanVendor}
+      portalVendor={featureVendor}
       catalogIdentityPending={catalogIdentityPending}
       setPage={navigateToPage}
       isAdmin={isAdmin}
@@ -4613,7 +4637,6 @@ export default function VendorPortal() {
       onSwitchVendor={switchAdminVendor}
       distList={distList.data ?? []}
       approvedVendorList={approvedVendors.data ?? []}
-      supplierProfileOnly={supplierProfileOnly}
     />
   );
 }
@@ -4624,6 +4647,7 @@ type PortalApprovedVendorOption = {
   name: string;
   sourceKey?: string | null;
   isApproved: boolean;
+  isCabinetVendor?: boolean | null;
   portalReadiness: "not-approved" | "email-required" | "profile-only" | "ready";
   linkedDistributor: PortalDistributorOption | null;
 };
@@ -4673,7 +4697,7 @@ function AdminVendorQuickSwitch({
         <SelectContent>
           {approvedVendorList.filter((vendor) => vendor.isApproved).map((vendor) => (
             <SelectItem key={vendor.id} value={String(vendor.id)}>
-              {vendorAccountCode(vendor)} — {vendor.name}{vendorShowsProfileOnly(vendor) ? " (profile only)" : ""}
+              {vendorAccountCode(vendor)} — {vendor.name} ({vendorKindLabel(vendor)}){vendorShowsProfileOnly(vendor) ? " (profile only)" : ""}
             </SelectItem>
           ))}
         </SelectContent>
@@ -4695,13 +4719,14 @@ function VendorPortalDashboard({
   onSwitchVendor,
   distList,
   approvedVendorList,
-  supplierProfileOnly = false,
+  portalVendor = null,
   isPelicanVendor = false,
   catalogIdentityPending = false,
 }: {
   user: any;
   page: VendorPage;
   isPelicanVendor?: boolean;
+  portalVendor?: { isCabinetVendor?: boolean | null; sourceKey?: string | null } | null;
   catalogIdentityPending?: boolean;
   setPage: (p: VendorPage) => void;
   isAdmin: boolean;
@@ -4712,25 +4737,20 @@ function VendorPortalDashboard({
   onSwitchVendor: (vendor: PortalApprovedVendorOption) => void;
   distList: PortalDistributorOption[];
   approvedVendorList: PortalApprovedVendorOption[];
-  supplierProfileOnly?: boolean;
 }) {
   const actingDistributorId = isAdmin ? adminDistributorId : vendorDistributorId;
   const activeDistributorId = actingDistributorId;
   const activeDistCode = activeDistributorId
     ? (distList.find((d: any) => d.id === activeDistributorId)?.code ?? undefined)
     : undefined;
-  const isPelican = activeDistCode === PEL_DIST_CODE || isPelicanVendor;
+  const isPelican = activeDistCode === PEL_DIST_CODE || isPelicanVendor || portalVendor?.sourceKey?.trim().toLowerCase() === "pelican";
   const sampleAccess = trpc.vendorSamples.access.useQuery({
     distributorId: actingDistributorId ?? undefined,
     approvedVendorLineId: isAdmin ? adminApprovedVendorLineId ?? undefined : undefined,
-  }, { enabled: !supplierProfileOnly && !isPelicanVendor && !catalogIdentityPending });
+  }, { enabled: !catalogIdentityPending && hasVendorFeature(portalVendor, "samples") });
   const portalItems = (catalogIdentityPending
     ? []
-    : supplierProfileOnly
-    ? NAV_ITEMS.filter((item) => item.id === "supplier-profile")
-    : isPelicanVendor
-      ? NAV_ITEMS.filter((item) => PELICAN_NAV_IDS.has(item.id))
-      : NAV_ITEMS
+    : NAV_ITEMS.filter((item) => vendorCanOpenPortalPage(portalVendor, item.id))
   ).filter((item) => item.id !== "samples" || sampleAccess.data?.enabled);
   const [pelicanCategoryFilter, setPelicanCategoryFilter] = useState<string>(ALL);
 
@@ -4841,7 +4861,7 @@ function VendorPortalDashboard({
 	        {catalogIdentityPending ? <Card><CardContent className="p-6"><Skeleton className="h-40 w-full" /></CardContent></Card> : <>
 	        {page === "overview" && (isPelican ? <PelicanVendorOverviewPage onNavigateToCatalog={handleNavigateToCatalog} /> : <OverviewPage onNavigate={setPage} />)}
 	        {page === "supplier-profile" && <SupplierProfilePage />}
-	        {page === "catalog" && (isPelican ? <PelicanVendorCatalogPage category={pelicanCategoryFilter} onCategoryChange={setPelicanCategoryFilter} /> : <CatalogPage />)}
+	        {page === "catalog" && (isPelican ? <PelicanVendorCatalogPage category={pelicanCategoryFilter} onCategoryChange={setPelicanCategoryFilter} /> : hasVendorFeature(portalVendor, "cabinet_catalog") ? <CatalogPage /> : <p className="text-sm text-muted-foreground">This non-cabinet supplier uses a category catalog. Pelican is the category catalog available in the portal today.</p>)}
         {page === "inventory" && <VendorInventory distributorId={actingDistributorId ?? undefined} approvedVendorLineId={isAdmin ? adminApprovedVendorLineId ?? undefined : undefined} />}
         {page === "forecast" && <VendorSalesForecast distributorId={actingDistributorId ?? undefined} approvedVendorLineId={isAdmin ? adminApprovedVendorLineId ?? undefined : undefined} />}
         {page === "pricing" && <VendorPricing distributorId={actingDistributorId ?? undefined} approvedVendorLineId={isAdmin ? adminApprovedVendorLineId ?? undefined : undefined} />}
