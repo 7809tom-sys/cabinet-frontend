@@ -18,6 +18,7 @@ import AffiliateMarketingHub from "@/components/affiliate/AffiliateMarketingHub"
 import AffiliatePromotionsPanel from "@/components/affiliate/AffiliatePromotionsPanel";
 import { AffiliatePluginsPanel } from "@/components/affiliate/AffiliatePluginsPanel";
 import { AffiliateAppointmentsPanel } from "@/components/affiliate/AffiliateAppointmentsPanel";
+import { ReferVendorForm } from "@/components/affiliate/ReferVendorForm";
 import { InstallationEstimatesPanel } from "@/components/affiliate/InstallationEstimatesPanel";
 import { SampleOrderDesk } from "@/components/samples/SampleOrderDesk";
 import { getLoginUrl } from "@/const";
@@ -616,6 +617,7 @@ export default function AffiliateDashboard() {
                 </div>
               </div>
             </div>
+            {!isAdmin && <ReferVendorForm />}
             {/* Quick nav shortcuts */}
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               {([
