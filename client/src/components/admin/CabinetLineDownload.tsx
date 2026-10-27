@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Download, Package, ChevronDown, ChevronRight } from "lucide-react";
+import { canonicalMouldingLabel } from "@shared/catalogCategorySpelling";
 
 export default function CabinetLineDownload() {
   const [styleId, setStyleId] = useState<number | null>(null);
@@ -29,7 +30,7 @@ export default function CabinetLineDownload() {
   const grouped = useMemo(() => {
     const map = new Map<string, typeof cabinets>();
     for (const c of cabinets) {
-      const key = c.category ?? "Other";
+      const key = canonicalMouldingLabel(c.category ?? "Other");
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(c);
     }

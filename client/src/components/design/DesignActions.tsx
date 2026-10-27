@@ -24,6 +24,14 @@ import { normalizeStoreScope } from "@/lib/affiliateContext";
 
 const DESIGN_AUTO_SAVE_INTERVAL_MS = 60_000;
 
+function trimSettingsForSave(value: Props["trimSettings"]) {
+  if (!value) return undefined;
+  const qty = value.qty
+    ? Object.fromEntries(Object.entries(value.qty).filter((entry): entry is [string, number] => typeof entry[1] === "number"))
+    : undefined;
+  return { ...value, qty };
+}
+
 export interface BuildSheetRow {
   /** Placed cabinet IDs represented by this bill-of-material line. */
   sourceUids?: string[];
@@ -96,6 +104,15 @@ interface Props {
   buildRows: BuildSheetRow[];
   // Current room context for Master Project grouping.
   roomType: string;
+  /** Saved with the plan. Crown stays off unless this says so. */
+  trimSettings?: {
+    crown?: boolean;
+    toeKick?: boolean;
+    batten?: boolean;
+    lightRail?: boolean;
+    valance?: boolean;
+    qty?: Partial<Record<string, number>>;
+  } | null;
   // Contact email for the designer (from the email gate / signed-in user). Used
   // to associate the saved plan with the correct CRM contact.
   contactEmail?: string | null;
@@ -144,6 +161,13 @@ interface Props {
       backsplashEnabled?: boolean;
       backsplashHeightMode?: "standard" | "full-height";
       countertopBacksplashHeightIn?: 0 | 2.5 | 3;
+    } | null;
+    trimSettings?: {
+      crown?: boolean;
+      toeKick?: boolean;
+      batten?: boolean;
+      lightRail?: boolean;
+      valance?: boolean;
     } | null;
   }) => void;
 }
@@ -389,7 +413,7 @@ export function AssistEditingBanner({ storeName }: { storeName: string }) {
 }
 
 export function DesignActions({
-  room, placed, openings, sinks, potFillers, island, furniture, ponyWalls, selectedSurfaces, threeDPresentation, styleId, lockedDistributorId, styleName, contactName, contactPhone, tier, total, extraLines, buildRows, roomType, contactEmail, affiliateSlug, currentDesignId, currentDesignName, currentPlanFingerprint, isCurrentPlanSaved = false, brandName, openSaveSignal, openLoadSignal, preSavePlanReview, onReviewPlanFinding, onSaveSuccess, onAutomaticSaveSuccess, onDeleteSuccess, onLoad, assistMode = false,
+  room, placed, openings, sinks, potFillers, island, furniture, ponyWalls, selectedSurfaces, threeDPresentation, styleId, lockedDistributorId, styleName, contactName, contactPhone, tier, total, extraLines, buildRows, roomType, trimSettings, contactEmail, affiliateSlug, currentDesignId, currentDesignName, currentPlanFingerprint, isCurrentPlanSaved = false, brandName, openSaveSignal, openLoadSignal, preSavePlanReview, onReviewPlanFinding, onSaveSuccess, onAutomaticSaveSuccess, onDeleteSuccess, onLoad, assistMode = false,
 }: Props) {
   const { user, isAuthenticated, loading: isAuthLoading, error: authError, refresh } = useAuth();
   const { t } = useLanguage();
@@ -579,6 +603,7 @@ export function DesignActions({
       threeDPresentation: threeDPresentation ?? undefined,
       selectedStyleId: styleId ?? undefined,
       selectedDistributorId: lockedDistributorId ?? undefined,
+      trimSettings: trimSettingsForSave(trimSettings),
       roomType: roomType || undefined,
     });
   };
@@ -659,6 +684,7 @@ export function DesignActions({
       threeDPresentation: threeDPresentation ?? undefined,
       selectedStyleId: styleId ?? undefined,
       selectedDistributorId: lockedDistributorId ?? undefined,
+      trimSettings: trimSettingsForSave(trimSettings),
       projectName: proj || undefined,
       roomLabel: rlabel || undefined,
       roomType: roomType || undefined,
@@ -964,6 +990,13 @@ export function DesignActions({
                               distributorId: (d as { selectedDistributorId?: number | null }).selectedDistributorId ?? null,
                               roomType: rType ?? null,
                               selectedSurfaces: Array.isArray(d.selectedSurfaces) ? d.selectedSurfaces : null,
+                              trimSettings: (d as { trimSettings?: {
+                                crown?: boolean;
+                                toeKick?: boolean;
+                                batten?: boolean;
+                                lightRail?: boolean;
+                                valance?: boolean;
+                              } | null }).trimSettings ?? null,
                               threeDPresentation: (d as { threeDPresentation?: {
                                 cabinetFinish?: string;
                                 countertopFinish?: string;

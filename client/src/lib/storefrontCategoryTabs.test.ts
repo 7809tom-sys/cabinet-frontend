@@ -35,9 +35,21 @@ describe("storefrontCategoryTabs", () => {
     ]);
   });
 
+  it("ranks Moulding with Molding and keeps the stored filter key", () => {
+    expect(sortStorefrontCategoryTabs(["Accessory", "moulding", "Base"])).toEqual([
+      "Base",
+      "moulding",
+      "Accessory",
+    ]);
+    expect(sortStorefrontCategoryTabs(["Moulding", "Molding"])).toEqual(["Molding", "Moulding"]);
+  });
+
   it("keeps the source category as the filter key while showing concise labels", () => {
     expect(storefrontCategoryTabLabel("Wall Skin / Scribe Veneer")).toBe("Wall Skins");
     expect(storefrontCategoryTabLabel("Accessory")).toBe("Accessories");
     expect(storefrontCategoryTabLabel("Filler")).toBe("Filler");
+    expect(storefrontCategoryTabLabel("Molding")).toBe("Moulding");
+    expect(storefrontCategoryTabLabel("Moulding")).toBe("Moulding");
+    expect(storefrontCategoryTabLabel("Trim & Molding")).toBe("Trim & Moulding");
   });
 });

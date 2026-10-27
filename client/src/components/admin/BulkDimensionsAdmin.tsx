@@ -17,6 +17,7 @@ import {
 import { toast } from "sonner";
 import { CheckCircle, AlertCircle, ImageIcon, Upload, ChevronLeft, ChevronRight } from "lucide-react";
 import { evaluateParcelEligibility } from "@shared/parcelEligibility";
+import { canonicalMouldingLabel } from "@shared/catalogCategorySpelling";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -59,7 +60,7 @@ const CATEGORIES = [
   "Pantry",
   "Island",
   "Filler",
-  "Molding",
+  "Moulding",
   "Accessory",
 ];
 
@@ -158,7 +159,7 @@ function DimRow({
 
       {/* Category */}
       <td className="px-2 py-2 align-middle">
-        <Badge variant="outline" className="text-xs whitespace-nowrap">{row.category}</Badge>
+        <Badge variant="outline" className="text-xs whitespace-nowrap">{canonicalMouldingLabel(row.category)}</Badge>
       </td>
 
       {/* Assembled dims (read-only display) */}
@@ -297,6 +298,10 @@ export function BulkDimensionsAdmin() {
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const [category, setCategory] = useState<string>("");
+  const { data: dbCategories } = trpc.cabinetCategories.list.useQuery();
+  const categories = dbCategories && dbCategories.length > 0
+    ? dbCategories.map((entry) => entry.name)
+    : CATEGORIES;
 
   const utils = trpc.useUtils();
 
@@ -373,8 +378,8 @@ export function BulkDimensionsAdmin() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All categories</SelectItem>
-            {CATEGORIES.map((c) => (
-              <SelectItem key={c} value={c}>{c}</SelectItem>
+            {categories.map((c) => (
+              <SelectItem key={c} value={c}>{canonicalMouldingLabel(c)}</SelectItem>
             ))}
           </SelectContent>
         </Select>
