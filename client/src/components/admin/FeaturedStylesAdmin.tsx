@@ -27,6 +27,14 @@ import { AdminStyleRoomSceneControls } from "@/components/doorStyles/AdminDoorSt
 import type { AutoRoomScene } from "@/lib/autoRoomScene";
 import { MediaPicker } from "./MediaPicker";
 import { FramelessFaceAdmin } from "./FramelessFaceAdmin";
+import { ApplySpecsToOtherStyles, type ApplySpecsHandle } from "./ApplySpecsToOtherStyles";
+import {
+  applySpecPatchToStyles,
+  buildSpecPatch,
+  frameCopyBlockReason,
+  specBatchToast,
+  specValuesFromEditor,
+} from "./applyDoorStyleSpecs";
 import { isDoorStyleVerified, resolveCabinetFaceImages } from "@shared/doorFaceRecognition";
 import { designerFrameCompliance } from "@/lib/doorFrameMetrics";
 import {
@@ -315,12 +323,13 @@ function ImageField({
 
 interface EditDialogProps {
   style: AdminStyle;
+  catalogStyles: AdminStyle[];
   open: boolean;
   onClose: () => void;
   onSaved: () => void;
 }
 
-function EditDialog({ style, open, onClose, onSaved }: EditDialogProps) {
+function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialogProps) {
   const [featuredLabel, setFeaturedLabel] = useState(style.featuredLabel ?? "");
   const [aliasName, setAliasName] = useState(style.aliasName ?? "");
   const [ourName, setOurName] = useState(style.ourName);
@@ -393,13 +402,12 @@ function EditDialog({ style, open, onClose, onSaved }: EditDialogProps) {
   };
 
   const update = trpc.doorStyles.adminUpdateDoorStyle.useMutation({
-    onSuccess: () => {
-      toast.success("Style updated");
-      onSaved();
-      onClose();
-    },
     onError: (e) => toast.error(e.message),
   });
+  const applySiblingSpecs = trpc.doorStyles.adminUpdateDoorStyle.useMutation();
+  const specBatchRef = useRef<ApplySpecsHandle>(null);
+  const saveLock = useRef(false);
+  const [savePhase, setSavePhase] = useState<"idle" | "confirming" | "saving">("idle");
 
   const addRoomScene = trpc.doorStyles.addRoomScene.useMutation({
     onSuccess: () => { toast.success("Room scene added to this Door Style library"); setNewSceneUrl(""); setNewSceneSourceNote(""); onSaved(); },
@@ -426,7 +434,29 @@ function EditDialog({ style, open, onClose, onSaved }: EditDialogProps) {
   const hasFrameCitation = sourceSpecification.trim().length > 0;
   const designerFrameReady = frameEntryStatus === "complete" && hasFrameCitation;
 
-  function handleSave() {
+  function editorSpecInput() {
+    return {
+      railWidth,
+      stileWidth,
+      centerRailWidth,
+      sourceSpecification,
+      panelConstruction,
+      doorPanelType: style.doorPanelType ?? null,
+      bevelWidth,
+      bevelDepth,
+      insideEdgeProfile,
+      drawerFrontType,
+      finish,
+      finishSheen,
+      woodSpecies,
+      grainDirection,
+      profileNotes,
+      profileDescription,
+    };
+  }
+
+  async function handleSave() {
+    if (saveLock.current) return;
     if (!ourName.trim()) {
       toast.error("Internal name is required");
       return;
@@ -454,7 +484,7 @@ function EditDialog({ style, open, onClose, onSaved }: EditDialogProps) {
       const was = original?.trim() || null;
       return cur !== was ? cur : undefined; // undefined = omit from patch (server won't touch it)
     };
-    update.mutate({
+    const payload = {
       id: style.id,
       featuredLabel: featuredLabel.trim() || null,
       aliasName: aliasName.trim() || null,
@@ -485,7 +515,55 @@ function EditDialog({ style, open, onClose, onSaved }: EditDialogProps) {
       sourceSpecification: sourceSpecification.trim() || null,
       styleVerified,
       styleSourceNote: styleSourceNote.trim() || null,
-    } as Parameters<typeof update.mutate>[0]);
+    } as Parameters<typeof update.mutate>[0];
+
+    const requested = specBatchRef.current?.selection() ?? null;
+    let accepted = requested;
+    if (requested && requested.styleIds.length > 0) {
+      if (requested.groups.length === 0) {
+        toast.error("Choose at least one spec group to copy, or clear the other styles.");
+        return;
+      }
+      const block = frameCopyBlockReason(specValuesFromEditor(editorSpecInput()), requested.groups);
+      if (block) {
+        toast.error(block);
+        return;
+      }
+      setSavePhase("confirming");
+      saveLock.current = true;
+      accepted = await specBatchRef.current!.confirm();
+      if (!accepted) {
+        saveLock.current = false;
+        setSavePhase("idle");
+        return;
+      }
+    }
+
+    saveLock.current = true;
+    setSavePhase("saving");
+    try {
+      await update.mutateAsync(payload);
+      if (accepted && accepted.styleIds.length > 0) {
+        const patch = buildSpecPatch(specValuesFromEditor(editorSpecInput()), accepted.groups);
+        const result = await applySpecPatchToStyles(
+          (input) => applySiblingSpecs.mutateAsync(input as Parameters<typeof applySiblingSpecs.mutateAsync>[0]),
+          accepted.styleIds,
+          patch,
+        );
+        const notice = specBatchToast(result.saved, result.failed);
+        if (notice.kind === "success") toast.success(notice.message);
+        else toast.error(notice.message);
+      } else {
+        toast.success("Style updated");
+      }
+      onSaved();
+      onClose();
+    } catch {
+      // The current-style mutation reports its own toast.
+    } finally {
+      saveLock.current = false;
+      setSavePhase("idle");
+    }
   }
 
   function addWarehouseZip() {
@@ -842,6 +920,13 @@ function EditDialog({ style, open, onClose, onSaved }: EditDialogProps) {
             </div>
           </div>
 
+          <ApplySpecsToOtherStyles
+            ref={specBatchRef}
+            current={style}
+            styles={catalogStyles}
+            locked={savePhase !== "idle"}
+          />
+
           {/* Images — upload from device or paste a URL; changes save site-wide */}
           <div className="space-y-4">
             <Label className="text-sm font-medium">Images</Label>
@@ -952,15 +1037,15 @@ function EditDialog({ style, open, onClose, onSaved }: EditDialogProps) {
         </div>
 
         <DialogFooter className="shrink-0 pt-2 border-t border-border">
-          <Button variant="outline" onClick={onClose} disabled={update.isPending}>
+          <Button variant="outline" onClick={onClose} disabled={savePhase === "saving"}>
             Cancel
           </Button>
           <Button
             onClick={handleSave}
-            disabled={update.isPending || !ourName.trim()}
+            disabled={savePhase !== "idle" || !ourName.trim()}
             className="bg-amber-600 hover:bg-amber-700 text-white"
           >
-            {update.isPending ? "Saving…" : "Save Changes"}
+            {savePhase === "saving" ? "Saving…" : "Save Changes"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1815,6 +1900,7 @@ export default function FeaturedStylesAdmin() {
         <EditDialog
           key={editingStyleLive.id}
           style={editingStyleLive}
+          catalogStyles={styles}
           open={!!editingStyleLive}
           onClose={() => setEditingStyle(null)}
           onSaved={invalidateAll}
