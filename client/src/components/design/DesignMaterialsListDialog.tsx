@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { materialsListCsv, materialsListPricedTotal, materialsListPrintHtml, type MaterialsListRow } from "@/lib/designMaterialsList";
+import { canonicalMouldingLabel } from "@shared/catalogCategorySpelling";
 
 function money(row: MaterialsListRow, value: number | null): string {
   if (value != null) return `$${value.toFixed(2)}`;
@@ -127,7 +128,7 @@ export function DesignMaterialsListDialog({
             )}
           </td>
           <td className="px-2 py-2 min-w-[190px]">{row.description}</td>
-          <td className="px-2 py-2">{row.category}</td>
+          <td className="px-2 py-2">{canonicalMouldingLabel(row.category)}</td>
           <td className="px-2 py-2">{row.supplier}</td>
           <td className="px-2 py-2 min-w-[130px]">{row.styleColor}</td>
           <td className="px-2 py-2 whitespace-nowrap">{row.dimensions}</td>

@@ -14,8 +14,13 @@ describe("Pelican vendor catalog editor", () => {
     expect(catalogSource).toContain("updateProduct");
   });
 
-  it("keeps the full Pelican catalog page available for editing", () => {
-    expect(catalogSource).toContain("limit: 200");
+  it("pages the Pelican catalog from the same category source as Overview", () => {
+    expect(catalogSource).toContain("limit: CATALOG_PAGE_SIZE");
+    expect(catalogSource).toContain('trpc.pelican.categories.useQuery({ scope: "admin" })');
+    expect(catalogSource).toContain("selectedCatalogCategory");
+    expect(catalogSource).toContain("Previous page");
+    expect(catalogSource).toContain("Next page");
+    expect(catalogSource).not.toContain("limit: 200");
     expect(catalogSource).toContain("Edit");
   });
 

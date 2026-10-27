@@ -20,15 +20,20 @@ export function AffiliateTeamPanel({ affiliateId }: { affiliateId?: number }) {
   const teamInput = affiliateId ? { affiliateId } : undefined;
   const { data: team, isLoading } = trpc.affiliates.myTeam.useQuery(teamInput);
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ email: "", name: "", role: "salesperson" as "salesperson" | "designer", accessCrm: true, accessDesigner: true });
+  const [form, setForm] = useState({ email: "", name: "", role: "salesperson" as "salesperson" | "designer", accessCrm: true, accessDesigner: true, accessMarketing: false });
 
   const addMember = trpc.affiliates.addTeamMember.useMutation({
     onSuccess: () => {
       toast.success("Team member added");
       utils.affiliates.myTeam.invalidate(teamInput);
       setOpen(false);
-      setForm({ email: "", name: "", role: "salesperson", accessCrm: true, accessDesigner: true });
+      setForm({ email: "", name: "", role: "salesperson", accessCrm: true, accessDesigner: true, accessMarketing: false });
     },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const updateAccess = trpc.affiliates.updateTeamMemberAccess.useMutation({
+    onSuccess: () => utils.affiliates.myTeam.invalidate(teamInput),
     onError: (e) => toast.error(e.message),
   });
 
@@ -96,6 +101,10 @@ export function AffiliateTeamPanel({ affiliateId }: { affiliateId?: number }) {
                 <Label>Access to Design Tool</Label>
                 <Switch checked={form.accessDesigner} onCheckedChange={(v) => setForm({ ...form, accessDesigner: v })} />
               </div>
+              <div className="flex items-center justify-between">
+                <Label>Can edit social links</Label>
+                <Switch checked={form.accessMarketing} onCheckedChange={(v) => setForm({ ...form, accessMarketing: v })} />
+              </div>
             </div>
             <DialogFooter>
               <Button
@@ -127,6 +136,10 @@ export function AffiliateTeamPanel({ affiliateId }: { affiliateId?: number }) {
                     <Badge variant="secondary" className="text-xs capitalize">{m.role}</Badge>
                     {m.accessCrm && <Badge variant="outline" className="text-xs">CRM</Badge>}
                     {m.accessDesigner && <Badge variant="outline" className="text-xs">Designer</Badge>}
+                    <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                      Social links
+                      <Switch checked={Boolean(m.accessMarketing)} onCheckedChange={(checked) => updateAccess.mutate({ id: m.id, accessMarketing: checked, ...(affiliateId ? { affiliateId } : {}) })} />
+                    </span>
                   </div>
                 </div>
               </div>

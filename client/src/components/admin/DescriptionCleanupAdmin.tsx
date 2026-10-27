@@ -17,6 +17,7 @@ import {
   XCircle,
   ShieldAlert,
 } from "lucide-react";
+import { catalogItemMatchesCode } from "@shared/catalogCodeSearch";
 
 type FlaggedRow = {
   id: number;
@@ -83,6 +84,7 @@ export default function DescriptionCleanupAdmin() {
     const q = search.toLowerCase();
     return rows.filter(
       (r) =>
+        catalogItemMatchesCode(r, search) ||
         r.masterCode.toLowerCase().includes(q) ||
         r.original.toLowerCase().includes(q) ||
         r.matchedBrands.some((b) => b.toLowerCase().includes(q))

@@ -24,6 +24,14 @@ import { normalizeStoreScope } from "@/lib/affiliateContext";
 
 const DESIGN_AUTO_SAVE_INTERVAL_MS = 60_000;
 
+function trimSettingsForSave(value: Props["trimSettings"]) {
+  if (!value) return undefined;
+  const qty = value.qty
+    ? Object.fromEntries(Object.entries(value.qty).filter((entry): entry is [string, number] => typeof entry[1] === "number"))
+    : undefined;
+  return { ...value, qty };
+}
+
 export interface BuildSheetRow {
   /** Placed cabinet IDs represented by this bill-of-material line. */
   sourceUids?: string[];
@@ -96,6 +104,15 @@ interface Props {
   buildRows: BuildSheetRow[];
   // Current room context for Master Project grouping.
   roomType: string;
+  /** Saved with the plan. Crown stays off unless this says so. */
+  trimSettings?: {
+    crown?: boolean;
+    toeKick?: boolean;
+    batten?: boolean;
+    lightRail?: boolean;
+    valance?: boolean;
+    qty?: Partial<Record<string, number>>;
+  } | null;
   // Contact email for the designer (from the email gate / signed-in user). Used
   // to associate the saved plan with the correct CRM contact.
   contactEmail?: string | null;
@@ -128,6 +145,8 @@ interface Props {
   onAutomaticSaveSuccess?: (savedAt: number) => void;
   /** Called after the server permanently deletes a saved design. */
   onDeleteSuccess?: (designId: number, designName: string) => void;
+  /** Affiliate or admin is editing a customer's saved design. Autosave stays off. */
+  assistMode?: boolean;
   onLoad: (d: {
     id?: number;
     room: RoomData;
@@ -142,6 +161,13 @@ interface Props {
       backsplashEnabled?: boolean;
       backsplashHeightMode?: "standard" | "full-height";
       countertopBacksplashHeightIn?: 0 | 2.5 | 3;
+    } | null;
+    trimSettings?: {
+      crown?: boolean;
+      toeKick?: boolean;
+      batten?: boolean;
+      lightRail?: boolean;
+      valance?: boolean;
     } | null;
   }) => void;
 }
@@ -378,8 +404,16 @@ export function groupByProject(rows: SavedDesignRow[]): ProjectGroup[] {
   return arr;
 }
 
+export function AssistEditingBanner({ storeName }: { storeName: string }) {
+  return (
+    <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs text-indigo-950" data-testid="assist-editing-banner">
+      Assisted editing for {storeName}. Saving creates a new revision labeled Edited by {storeName} and keeps the previous version for a one-click revert. Suggesting a copy leaves the customer's design unchanged. Nothing is emailed.
+    </div>
+  );
+}
+
 export function DesignActions({
-  room, placed, openings, sinks, potFillers, island, furniture, ponyWalls, selectedSurfaces, threeDPresentation, styleId, lockedDistributorId, styleName, contactName, contactPhone, tier, total, extraLines, buildRows, roomType, contactEmail, affiliateSlug, currentDesignId, currentDesignName, currentPlanFingerprint, isCurrentPlanSaved = false, brandName, openSaveSignal, openLoadSignal, preSavePlanReview, onReviewPlanFinding, onSaveSuccess, onAutomaticSaveSuccess, onDeleteSuccess, onLoad,
+  room, placed, openings, sinks, potFillers, island, furniture, ponyWalls, selectedSurfaces, threeDPresentation, styleId, lockedDistributorId, styleName, contactName, contactPhone, tier, total, extraLines, buildRows, roomType, trimSettings, contactEmail, affiliateSlug, currentDesignId, currentDesignName, currentPlanFingerprint, isCurrentPlanSaved = false, brandName, openSaveSignal, openLoadSignal, preSavePlanReview, onReviewPlanFinding, onSaveSuccess, onAutomaticSaveSuccess, onDeleteSuccess, onLoad, assistMode = false,
 }: Props) {
   const { user, isAuthenticated, loading: isAuthLoading, error: authError, refresh } = useAuth();
   const { t } = useLanguage();
@@ -523,7 +557,35 @@ export function DesignActions({
     automaticSaveFailureNotifiedRef.current = false;
   }, [currentDesignId, currentPlanFingerprint, isCurrentPlanSaved]);
 
+  const assistPayload = () => ({
+    designId: currentDesignId ?? 0,
+    name: name.trim() || currentDesignName?.trim() || "Kitchen design",
+    roomData: roomWithPersistedEntities(room, { openings, sinks, potFillers, island, furniture, ponyWalls }),
+    placedCabinets: placed,
+    selectedSurfaces,
+    threeDPresentation: threeDPresentation ?? undefined,
+    selectedStyleId: styleId ?? undefined,
+    selectedDistributorId: lockedDistributorId ?? undefined,
+    roomType: roomType || undefined,
+  });
+  const assistSave = trpc.designAssist.saveRevision.useMutation({
+    onSuccess: (result) => {
+      toast.success("Revision saved", { description: result.authorLabel });
+      setSaveOpen(false);
+      onSaveSuccess?.(name.trim() || currentDesignName || "Kitchen design", result.id);
+    },
+    onError: (error) => toast.error(error.message),
+  });
+  const suggestCopy = trpc.designAssist.suggestCopy.useMutation({
+    onSuccess: () => {
+      toast.success("Suggested copy saved on the customer's account");
+      setSaveOpen(false);
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
   automaticSaveRef.current = () => {
+    if (assistMode) return;
     if (!isAuthenticated || currentDesignId == null || placed.length === 0 || !currentPlanFingerprint) return;
     if (isCurrentPlanSaved || automaticSavePendingRef.current) return;
     if (lastAutomaticSaveRef.current?.id === currentDesignId && lastAutomaticSaveRef.current.fingerprint === currentPlanFingerprint) return;
@@ -541,6 +603,7 @@ export function DesignActions({
       threeDPresentation: threeDPresentation ?? undefined,
       selectedStyleId: styleId ?? undefined,
       selectedDistributorId: lockedDistributorId ?? undefined,
+      trimSettings: trimSettingsForSave(trimSettings),
       roomType: roomType || undefined,
     });
   };
@@ -580,6 +643,14 @@ export function DesignActions({
       toast.error(t("dt_act_err_save_empty"));
       return;
     }
+    if (assistMode) {
+      if (currentDesignId == null) {
+        toast.error("Open a saved customer design before saving a revision.");
+        return;
+      }
+      assistSave.mutate(assistPayload());
+      return;
+    }
     if (customerErrors.length > 0) {
       setShowCustomerErrors(true);
       toast.error("Customer details are required to save", { description: `Please complete: ${customerErrors.join(", ")}.` });
@@ -613,6 +684,7 @@ export function DesignActions({
       threeDPresentation: threeDPresentation ?? undefined,
       selectedStyleId: styleId ?? undefined,
       selectedDistributorId: lockedDistributorId ?? undefined,
+      trimSettings: trimSettingsForSave(trimSettings),
       projectName: proj || undefined,
       roomLabel: rlabel || undefined,
       roomType: roomType || undefined,
@@ -654,6 +726,7 @@ export function DesignActions({
 
   return (
     <>
+      {assistMode && <AssistEditingBanner storeName={brandName?.trim() || "your designer"} />}
       <Button variant="outline" size="icon" className="h-9 w-9" title={t("dt_act_my_designs_btn")} onClick={() => setLoadOpen(true)}>
         <FolderOpen className="h-4 w-4" />
       </Button>
@@ -825,10 +898,15 @@ export function DesignActions({
           <DialogFooter className="shrink-0 flex-wrap gap-2 border-t border-border pt-3 sm:gap-0">
             <Button variant="outline" onClick={() => setSaveOpen(false)}>{t("dt_act_cancel")}</Button>
             {isAuthenticated ? (
-              <Button onClick={handleSave} disabled={saveMutation.isPending} className="gap-1.5">
-                {saveMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                {isUpdatingExistingDesign ? "Update" : t("dt_act_save_design")}
-              </Button>
+              <>
+                {assistMode && (
+                  <Button variant="outline" onClick={() => { if (currentDesignId == null) { toast.error("Open a saved customer design first."); return; } suggestCopy.mutate(assistPayload()); }} disabled={suggestCopy.isPending}>Suggest a copy</Button>
+                )}
+                <Button onClick={handleSave} disabled={saveMutation.isPending || assistSave.isPending} className="gap-1.5">
+                  {(saveMutation.isPending || assistSave.isPending) ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                  {assistMode ? "Save revision" : isUpdatingExistingDesign ? "Update" : t("dt_act_save_design")}
+                </Button>
+              </>
             ) : (
               <Button asChild className="gap-1.5">
                 <a href={getLoginUrl()}>Sign in to save</a>
@@ -912,6 +990,13 @@ export function DesignActions({
                               distributorId: (d as { selectedDistributorId?: number | null }).selectedDistributorId ?? null,
                               roomType: rType ?? null,
                               selectedSurfaces: Array.isArray(d.selectedSurfaces) ? d.selectedSurfaces : null,
+                              trimSettings: (d as { trimSettings?: {
+                                crown?: boolean;
+                                toeKick?: boolean;
+                                batten?: boolean;
+                                lightRail?: boolean;
+                                valance?: boolean;
+                              } | null }).trimSettings ?? null,
                               threeDPresentation: (d as { threeDPresentation?: {
                                 cabinetFinish?: string;
                                 countertopFinish?: string;

@@ -30,10 +30,13 @@ describe("affiliate and QuickBooks security UI", () => {
 
   it("limits the public storefront to opt-in contact fields and scopes team edits to one affiliate", () => {
     const storefront = source("client/src/pages/Storefront.tsx");
-    expect(storefront).toContain("const storefrontPhone = data.publicPhone;");
-    expect(storefront).toContain("const storefrontEmail = data.publicEmail;");
+    expect(storefront).toContain("const storefrontPhone = data.showPublicPhone ? data.publicPhone : null;");
+    expect(storefront).toContain("const storefrontEmail = data.showPublicEmail ? data.publicEmail : null;");
+    expect(storefront).toContain("const storefrontLocation = data.showPublicAddress ? data.publicAddress : data.serviceArea;");
     expect(storefront).not.toContain("data.publicPhone || data.phone");
     expect(storefront).not.toContain("data.publicEmail || data.email");
+    expect(storefront).not.toContain("data.phone");
+    expect(storefront).not.toContain("data.email");
     const team = source("client/src/components/affiliate/AffiliateTeamPanel.tsx");
     const dashboard = source("client/src/pages/AffiliateDashboard.tsx");
     expect(team).toContain("affiliateId?: number");

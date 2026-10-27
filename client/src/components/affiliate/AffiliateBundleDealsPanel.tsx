@@ -19,6 +19,14 @@ export function AffiliateBundleDealsPanel({ affiliateId }: { affiliateId: number
     onSuccess: () => { utils.priceShop.listBundleDeals.invalidate(); },
     onError: (e: any) => toast.error(e.message),
   });
+  const refreshMut = trpc.priceShop.refreshBundlePrices.useMutation({
+    onSuccess: () => { utils.priceShop.listBundleDeals.invalidate(); toast.success("Package prices refreshed"); },
+    onError: (e: { message: string }) => toast.error(e.message),
+  });
+  const featureMut = trpc.priceShop.toggleBundleFeatured.useMutation({
+    onSuccess: () => utils.priceShop.listBundleDeals.invalidate(),
+    onError: (e: { message: string }) => toast.error(e.message),
+  });
   const deleteMut = trpc.priceShop.deleteBundleDeal.useMutation({
     onSuccess: () => {
       utils.priceShop.listBundleDeals.invalidate();
@@ -108,14 +116,14 @@ export function AffiliateBundleDealsPanel({ affiliateId }: { affiliateId: number
                       <LayoutGrid className="h-3 w-3" />{bundle.cabinetCount} cabinets
                     </span>
                   )}
-                  {bundle.homeownerPrice && (
+                  {(bundle.displayPrice ?? bundle.homeownerPrice) && (
                     <span className="flex items-center gap-1 text-[#d4a75a] font-semibold">
                       <DollarSign className="h-3 w-3" />
-                      {parseFloat(bundle.homeownerPrice).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      {parseFloat(String(bundle.displayPrice ?? bundle.homeownerPrice)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
                   )}
                   {bundle.currentPriceStatus === "needs_refresh" && bundle.currentHomeownerPrice && (
-                    <span className="text-amber-700">Current BOM: ${Number(bundle.currentHomeownerPrice).toFixed(2)}</span>
+                    <span className="text-amber-700">Underlying prices changed. Current BOM: ${Number(bundle.currentHomeownerPrice).toFixed(2)}</span>
                   )}
                   {bundle.roomWidthInches && bundle.roomDepthInches && (
                     <span className="text-muted-foreground/60">
@@ -128,6 +136,12 @@ export function AffiliateBundleDealsPanel({ affiliateId }: { affiliateId: number
               {/* Actions */}
               <div className="flex flex-col items-end gap-2 shrink-0">
                 <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] text-muted-foreground">Featured</span>
+                  <Switch
+                    checked={Boolean(bundle.featuredOnHome)}
+                    onCheckedChange={(checked) => featureMut.mutate({ id: bundle.id, featured: checked })}
+                    disabled={featureMut.isPending}
+                  />
                   <span className="text-[10px] text-muted-foreground">{bundle.isPublished ? "Live" : "Hidden"}</span>
                   <Switch
                     checked={bundle.isPublished}
@@ -138,6 +152,7 @@ export function AffiliateBundleDealsPanel({ affiliateId }: { affiliateId: number
                     disabled={toggleMut.isPending}
                   />
                 </div>
+                <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => refreshMut.mutate({ id: bundle.id, updatePackagePrice: false })} disabled={refreshMut.isPending}>Refresh prices</Button>
                 <Button
                   variant="ghost"
                   size="sm"

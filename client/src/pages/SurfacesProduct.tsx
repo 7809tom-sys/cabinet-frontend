@@ -21,6 +21,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { usePreferredProducts } from "@/contexts/PreferredProductsContext";
 import { ArrowLeft, DollarSign, Minus, PencilRuler, Plus, ShoppingCart, Star, Waves } from "lucide-react";
 import { toast } from "sonner";
+import { ShippingQuoteBox } from "@/components/shipping/ShippingQuoteBox";
 import { FlooringCartonFacts } from "@/components/design/FlooringCartonFacts";
 
 export default function SurfacesProduct({ slug, affiliateSlug }: { slug: string; affiliateSlug?: string }) {
@@ -235,6 +236,16 @@ export default function SurfacesProduct({ slug, affiliateSlug }: { slug: string;
               {data.description}
             </p>
           )}
+
+          <ShippingQuoteBox
+            className="mt-5"
+            items={[{
+              kind: "pelican",
+              qty,
+              pelicanProductId: data.id,
+              merchandiseCents: data.sellPrice != null ? Math.round(data.sellPrice * qty * 100) : undefined,
+            }]}
+          />
 
           {/* Quantity + Add to Cart */}
           <div className="mt-7 flex flex-wrap items-center gap-3">

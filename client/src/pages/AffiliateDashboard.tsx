@@ -7,6 +7,11 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { AffiliateDashboardLayout, type AffiliateSection } from "@/components/affiliate/AffiliateDashboardLayout";
 import AffiliatePricingPanel from "@/components/affiliate/AffiliatePricingPanel";
 import AffiliateCatalogPanel from "@/components/affiliate/AffiliateCatalogPanel";
+import AffiliateVendorCatalog from "@/components/affiliate/AffiliateVendorCatalog";
+import AffiliateWhiteLabelFields from "@/components/affiliate/AffiliateWhiteLabelFields";
+import StorefrontDraftPreview from "@/components/affiliate/StorefrontDraftPreview";
+import { buildAffiliateCatalogVendors, parseSectionLabels, WHITE_LABEL_RESET } from "@shared/affiliateStorefrontControls";
+import { publicSocialLinks } from "@shared/affiliateSocialLinks";
 import AffiliateAnalyticsPanel from "@/components/affiliate/AffiliateAnalyticsPanel";
 import { AffiliateImageCabinet } from "@/components/affiliate/AffiliateImageCabinet";
 import AffiliateMarketingHub from "@/components/affiliate/AffiliateMarketingHub";
@@ -14,6 +19,7 @@ import AffiliatePromotionsPanel from "@/components/affiliate/AffiliatePromotions
 import { AffiliatePluginsPanel } from "@/components/affiliate/AffiliatePluginsPanel";
 import { AffiliateAppointmentsPanel } from "@/components/affiliate/AffiliateAppointmentsPanel";
 import { InstallationEstimatesPanel } from "@/components/affiliate/InstallationEstimatesPanel";
+import { SampleOrderDesk } from "@/components/samples/SampleOrderDesk";
 import { getLoginUrl } from "@/const";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -38,6 +44,7 @@ import {
   ShoppingBag, BarChart2, BookOpen, Tag, Megaphone, Wrench, Share2, Facebook, Linkedin, Info,
 } from "lucide-react";
 import { CrmBoard } from "@/components/crm/CrmBoard";
+import { MyCustomersPanel } from "@/components/affiliate/MyCustomersPanel";
 import {
   AFFILIATE_MEMBERSHIP,
   formatMembershipPrice,
@@ -323,9 +330,11 @@ export default function AffiliateDashboard() {
   const VALID_SECTIONS = [
     "overview",
     "crm",
+    "customers",
     "design",
     "products",
     "orders",
+    "samples",
     "earnings",
     "analytics",
     "catalog",
@@ -348,6 +357,7 @@ export default function AffiliateDashboard() {
       : "overview"
   ) as AffiliateSection;
   const [section, setSection] = useState<AffiliateSection>(initialSection);
+  const [catalogVendor, setCatalogVendor] = useState<string | null>(null);
 
   const isAdmin = user?.role === "admin";
   // Incrementing this key causes StorefrontPreviewPanel to reload its iframe.
@@ -397,7 +407,8 @@ export default function AffiliateDashboard() {
     : (myAccess.data ?? { isOwner: true, accessCrm: true, accessDesigner: true });
 
   useEffect(() => {
-    if ((section === "crm" && !access.accessCrm) || (section === "design" && !access.accessDesigner) || (section === "team" && !access.isOwner)) {
+    const canViewAppointments = access.isOwner || access.accessCrm || access.accessDesigner;
+    if (((section === "crm" || section === "customers") && !access.accessCrm) || (section === "design" && !access.accessDesigner) || (section === "team" && !access.isOwner) || (section === "appointments" && !canViewAppointments)) {
       setSection("overview");
     }
   }, [access.accessCrm, access.accessDesigner, access.isOwner, section]);
@@ -412,6 +423,14 @@ export default function AffiliateDashboard() {
 
   if (!isAuthenticated) {
     return <AffiliateLanding />;
+  }
+
+  if (isAdmin && params.get("scope") === "house" && section === "customers") {
+    return (
+      <AffiliateDashboardLayout section="customers" onSection={setSection} storeName="House customers" storeSlug="" isAffiliateOwner canAccessCrm canAccessDesigner>
+        <MyCustomersPanel affiliateId={null} initialCustomerKey={params.get("customer")} canAssist />
+      </AffiliateDashboardLayout>
+    );
   }
 
   if (dashboardSelection.kind === "admin-picker") {
@@ -629,6 +648,12 @@ export default function AffiliateDashboard() {
             <CrmBoard lang="en" affiliateId={affiliate.id} />
           </div>
         );
+      case "customers":
+        return (
+          <MyCustomersPanel affiliateId={affiliate.id} initialCustomerKey={params.get("customer")} canAssist={access.accessDesigner} />
+        );
+      case "samples":
+        return <SampleOrderDesk mode="affiliate" />;
       case "orders":
         return (
           <div className="max-w-4xl">
@@ -696,8 +721,21 @@ export default function AffiliateDashboard() {
         return <EarningsPanel />;
       case "analytics":
         return <AffiliateAnalyticsPanel />;
-      case "catalog":
-        return <AffiliateCatalogPanel affiliateId={affiliate.id} isAdminView={isAdminViewAs} />;
+      case "catalog": {
+        if (!catalogVendor) return <AffiliateCatalogPanel affiliateId={affiliate.id} isAdminView={isAdminViewAs} />;
+        const vendors = buildAffiliateCatalogVendors(null);
+        const label = vendors.vendors.find((vendor) => vendor.key === catalogVendor)?.label
+          ?? (catalogVendor.startsWith("distributor:") ? "Cabinet line" : catalogVendor);
+        return (
+          <AffiliateVendorCatalog
+            vendorKey={catalogVendor}
+            vendorLabel={label}
+            affiliateId={affiliate.id}
+            isAdmin={isAdmin || isAdminViewAs}
+            onShowAllVendors={() => setCatalogVendor(null)}
+          />
+        );
+      }
       case "pricing":
         return <AffiliatePricingPanel affiliateId={affiliate.id} isAdminView={isAdminViewAs} hardwareCatalogHref={hardwareUrl} />;
       case "customize":
@@ -737,13 +775,13 @@ export default function AffiliateDashboard() {
       case "appointments":
         return (
           <div className="max-w-4xl">
-            <AffiliateAppointmentsPanel />
+            <AffiliateAppointmentsPanel affiliateId={isAdmin ? affiliate.id : undefined} />
           </div>
         );
       case "installation":
         return <InstallationEstimatesPanel affiliateId={affiliate.id} />;
       case "marketing":
-        return <AffiliateMarketingHub />;
+        return <AffiliateMarketingHub affiliate={affiliate} />;
       case "bundles":
         return <AffiliateBundleDealsPanel affiliateId={affiliate.id} />;
       case "tax":
@@ -779,161 +817,11 @@ export default function AffiliateDashboard() {
       isAffiliateOwner={access.isOwner}
       canAccessCrm={access.accessCrm}
       canAccessDesigner={access.accessDesigner}
+      catalogVendor={catalogVendor}
+      onOpenCatalog={setCatalogVendor}
     >
       {renderSection()}
     </AffiliateDashboardLayout>
-  );
-}
-
-// ─── Credentials Panel ─────────────────────────────────────────────────────────
-type CredentialsPanelProps = {
-  affiliate: {
-    storeName: string;
-    slug: string;
-    referralCode: string;
-    template: string | null;
-    email?: string | null;
-    contactName?: string | null;
-  };
-  storeUrl: string;
-  refLink: string;
-  onCopy: (text: string, label: string) => void;
-};
-
-function CredentialsPanel({ affiliate, storeUrl, refLink, onCopy }: CredentialsPanelProps) {
-  const loginUrl = typeof window !== "undefined" ? `${window.location.origin}/affiliate` : "/affiliate";
-  const templateName = affiliate.template
-    ? affiliate.template.charAt(0).toUpperCase() + affiliate.template.slice(1)
-    : "Classic";
-  const previewUrl = `/store-preview/${affiliate.template ?? "classic"}`;
-
-  return (
-    <div className="space-y-6">
-      {/* Access credentials */}
-      <div className="rounded-xl border border-border bg-card p-6 space-y-5">
-        <h2 className="font-semibold text-base flex items-center gap-2">
-          <Shield className="h-4 w-4 text-primary" /> Your Access Credentials
-        </h2>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Affiliate Portal Login</Label>
-            <div className="flex gap-2">
-              <Input readOnly value={loginUrl} className="font-mono text-sm" />
-              <Button variant="outline" size="icon" onClick={() => onCopy(loginUrl, "Login URL")}>
-                <Copy className="h-4 w-4" />
-              </Button>
-            </div>
-            <p className="text-xs text-muted-foreground">Sign in with your CabinetDealz account to access this dashboard.</p>
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Referral Code</Label>
-            <div className="flex gap-2">
-              <Input readOnly value={affiliate.referralCode} className="font-mono text-sm font-bold tracking-widest" />
-              <Button variant="outline" size="icon" onClick={() => onCopy(affiliate.referralCode, "Referral code")}>
-                <Copy className="h-4 w-4" />
-              </Button>
-            </div>
-            <p className="text-xs text-muted-foreground">Embed this code in any link to tag orders to your account.</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Storefront links */}
-      <div className="rounded-xl border border-border bg-card p-6 space-y-5">
-        <h2 className="font-semibold text-base flex items-center gap-2">
-          <Globe className="h-4 w-4 text-primary" /> Your Storefront Links
-        </h2>
-        <div className="space-y-4">
-          <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Branded Storefront URL</Label>
-            <div className="flex gap-2">
-              <Input readOnly value={storeUrl} className="font-mono text-sm" />
-              <Button variant="outline" size="icon" onClick={() => onCopy(storeUrl, "Storefront URL")}>
-                <Copy className="h-4 w-4" />
-              </Button>
-              <a href={storeUrl} target="_blank" rel="noreferrer">
-                <Button variant="outline" size="icon"><ExternalLink className="h-4 w-4" /></Button>
-              </a>
-            </div>
-            <p className="text-xs text-muted-foreground">Share this link with customers — it's your fully branded cabinet store.</p>
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Quick Referral Link (tags any order)</Label>
-            <div className="flex gap-2">
-              <Input readOnly value={refLink} className="font-mono text-sm" />
-              <Button variant="outline" size="icon" onClick={() => onCopy(refLink, "Referral link")}>
-                <Copy className="h-4 w-4" />
-              </Button>
-            </div>
-            <p className="text-xs text-muted-foreground">Use this on social media or email — any order placed through it earns you commission.</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Template */}
-      <div className="rounded-xl border border-border bg-card p-6 space-y-4">
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <h2 className="font-semibold text-base flex items-center gap-2">
-            <Palette className="h-4 w-4 text-primary" /> Storefront Template
-          </h2>
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">Current:</span>
-            <span className="font-semibold text-sm">{templateName}</span>
-            <a href={previewUrl} target="_blank" rel="noreferrer">
-              <Button variant="outline" size="sm" className="gap-1.5">
-                <ExternalLink className="h-3.5 w-3.5" /> Preview
-              </Button>
-            </a>
-          </div>
-        </div>
-        <p className="text-sm text-muted-foreground">
-          To change your template, go to the <strong>Customize</strong> tab. You can preview all eight templates before choosing.
-        </p>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {AFFILIATE_STOREFRONT_TEMPLATES.map(({ id: t, name }) => (
-            <a key={t} href={`/store-preview/${t}`} target="_blank" rel="noreferrer"
-              className={`rounded-lg border p-3 text-center text-sm hover:border-primary transition-colors cursor-pointer ${
-                (affiliate.template ?? "classic") === t ? "border-primary bg-primary/5 font-semibold" : "border-border"
-              }`}>
-              {name}
-              {(affiliate.template ?? "classic") === t && (
-                <span className="ml-1 text-xs text-primary">(active)</span>
-              )}
-            </a>
-          ))}
-        </div>
-      </div>
-
-      {/* Quick actions */}
-      <div className="rounded-xl border border-border bg-card p-6 space-y-4">
-        <h2 className="font-semibold text-base flex items-center gap-2">
-          <TrendingUp className="h-4 w-4 text-primary" /> Quick Actions
-        </h2>
-        <div className="flex flex-wrap gap-3">
-          <a href={storeUrl} target="_blank" rel="noreferrer">
-            <Button variant="outline" className="gap-2">
-              <Store className="h-4 w-4" /> View My Storefront
-            </Button>
-          </a>
-          <a href={affiliateDesignerPath(affiliate.slug)}>
-            <Button variant="outline" className="gap-2">
-              <PencilRuler className="h-4 w-4" /> Open 3D Designer
-            </Button>
-          </a>
-          <Button variant="outline" className="gap-2" onClick={() => {
-            const text = `Your affiliate credentials:\n\nStorefront: ${storeUrl}\nReferral link: ${refLink}\nReferral code: ${affiliate.referralCode}\nLogin: ${loginUrl}`;
-            onCopy(text, "All credentials");
-          }}>
-            <Copy className="h-4 w-4" /> Copy All Credentials
-          </Button>
-          <a href="/manus-storage/Cabinet-Dealz-Affiliate-Welcome-Guide_f17152cc.pdf" target="_blank" rel="noreferrer">
-            <Button variant="outline" className="gap-2 text-emerald-700 border-emerald-200 hover:bg-emerald-50">
-              <Send className="h-4 w-4" /> Download Welcome Guide
-            </Button>
-          </a>
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -975,6 +863,16 @@ type AffiliateRow = {
   buttonRadius: string | null;
   embedCodeDraft?: string | null;
   embedEnabled?: boolean | null;
+  logoDarkUrl?: string | null;
+  faviconUrl?: string | null;
+  backgroundColor?: string | null;
+  textColor?: string | null;
+  footerText?: string | null;
+  showPublicEmail?: boolean | null;
+  showPublicPhone?: boolean | null;
+  showPublicAddress?: boolean | null;
+  hidePlatformBranding?: boolean | null;
+  sectionLabelsJson?: string | null;
 };
 
 // ── Typography options ──────────────────────────────────────────────────────
@@ -1041,6 +939,27 @@ const SCENE_LABELS: Record<KitchenSceneKey, { name: string; desc: string }> = {
   "slab-natural": { name: "Natural Wood Slab", desc: "Sleek European-modern with warmth." },
 };
 
+function whiteLabelFields(a: AffiliateRow) {
+  const labels = parseSectionLabels(a.sectionLabelsJson);
+  return {
+    logoDarkUrl: a.logoDarkUrl ?? "",
+    faviconUrl: a.faviconUrl ?? "",
+    backgroundColor: a.backgroundColor ?? "",
+    textColor: a.textColor ?? "",
+    footerText: a.footerText ?? "",
+    showPublicEmail: Boolean(a.showPublicEmail),
+    showPublicPhone: Boolean(a.showPublicPhone),
+    showPublicAddress: Boolean(a.showPublicAddress),
+    hidePlatformBranding: Boolean(a.hidePlatformBranding),
+    labelCatalog: labels.catalog,
+    labelSurfaces: labels.surfaces,
+    labelCloset: labels.closet,
+    labelDesigner: labels.designer,
+    labelQuote: labels.quote,
+    labelCart: labels.cart,
+  };
+}
+
 function CustomizeTab({
   affiliate,
   onSaved,
@@ -1061,9 +980,9 @@ function CustomizeTab({
     aboutTextEs: a.aboutTextEs ?? "",
     primaryColor: a.primaryColor ?? "",
     accentColor: a.accentColor ?? "",
-    publicEmail: a.publicEmail ?? a.email ?? "",
-    publicPhone: a.publicPhone ?? a.phone ?? "",
-    publicAddress: a.publicAddress ?? a.location ?? "",
+    publicEmail: a.publicEmail ?? "",
+    publicPhone: a.publicPhone ?? "",
+    publicAddress: a.publicAddress ?? "",
     logoUrl: a.logoUrl ?? "",
     watermarkEnabled: a.watermarkEnabled ?? false,
     watermarkPosition: "bottom-right" as const,
@@ -1077,6 +996,7 @@ function CustomizeTab({
     fontFamily: a.fontFamily ?? "",
     headingFont: a.headingFont ?? "",
     buttonRadius: a.buttonRadius ?? "0.375rem",
+    ...whiteLabelFields(a),
   });
   const [form, setForm] = useState({
     storeName: affiliate.storeName ?? "",
@@ -1086,9 +1006,9 @@ function CustomizeTab({
     aboutTextEs: affiliate.aboutTextEs ?? "",
     primaryColor: affiliate.primaryColor ?? "",
     accentColor: affiliate.accentColor ?? "",
-    publicEmail: affiliate.publicEmail ?? affiliate.email ?? "",
-    publicPhone: affiliate.publicPhone ?? affiliate.phone ?? "",
-    publicAddress: affiliate.publicAddress ?? affiliate.location ?? "",
+    publicEmail: affiliate.publicEmail ?? "",
+    publicPhone: affiliate.publicPhone ?? "",
+    publicAddress: affiliate.publicAddress ?? "",
     logoUrl: affiliate.logoUrl ?? "",
     watermarkEnabled: affiliate.watermarkEnabled ?? false,
     watermarkPosition: "bottom-right" as const,
@@ -1102,6 +1022,7 @@ function CustomizeTab({
     fontFamily: affiliate.fontFamily ?? "",
     headingFont: affiliate.headingFont ?? "",
     buttonRadius: affiliate.buttonRadius ?? "0.375rem",
+    ...whiteLabelFields(affiliate),
   });
   const [showLaunchSuccess, setShowLaunchSuccess] = useState(false);
   const [websiteImportUrl, setWebsiteImportUrl] = useState(affiliate.website ?? "");
@@ -1126,6 +1047,11 @@ function CustomizeTab({
   }, [syncKey]);
 
   const utils = trpc.useUtils();
+  const socialLinksQuery = trpc.affiliateSocial.get.useQuery({ affiliateId: affiliate.id });
+  const previewSocialLinks = publicSocialLinks(socialLinksQuery.data?.links, {
+    facebookUrl: form.facebookUrl,
+    instagramUrl: form.instagramUrl,
+  });
   const save = trpc.affiliates.updateMyStorefront.useMutation({
     onSuccess: () => {
       toast.success("Storefront updated");
@@ -1211,28 +1137,28 @@ function CustomizeTab({
   }
 
   const uploadLogo = trpc.affiliates.uploadLogo.useMutation({
-    onSuccess: ({ url }) => {
-      // The server already persisted logoUrl; mirror it into the form so the
-      // preview updates immediately and a later Save won't blank it out.
-      set("logoUrl", url);
+    onSuccess: ({ url, kind }) => {
+      // The server already persisted the image; mirror it into the form so a
+      // later Save won't blank it out.
+      if (kind === "logoDark") set("logoDarkUrl", url);
+      else if (kind === "favicon") set("faviconUrl", url);
+      else if (kind === "hero") set("heroImageUrl", url);
+      else set("logoUrl", url);
       toast.success("Logo uploaded", { description: "It is already saved to your store." });
       onSaved();
     },
     onError: (e) => toast.error("Logo upload failed", { description: e.message }),
   });
 
-  function onLogoFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  function uploadBrandFile(file: File, kind: "logo" | "logoDark" | "favicon" | "hero" = "logo") {
     const allowed = ["image/png", "image/jpeg", "image/webp", "image/gif", "image/svg+xml"];
     if (!allowed.includes(file.type)) {
       toast.error("Unsupported file type", { description: "Use PNG, JPG, WebP, GIF, or SVG." });
-      e.target.value = "";
       return;
     }
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error("Logo must be 5MB or smaller");
-      e.target.value = "";
+    const maxBytes = kind === "favicon" ? 512 * 1024 : 5 * 1024 * 1024;
+    if (file.size > maxBytes) {
+      toast.error(kind === "favicon" ? "Favicon must be 512KB or smaller" : "Image must be 5MB or smaller");
       return;
     }
     setLogoUploading(true);
@@ -1254,13 +1180,42 @@ function CustomizeTab({
           imageBase64: match[2],
           contentType: match[1],
           fileName: file.name,
+          kind,
           ...(isAdmin ? { affiliateId: affiliate.id } : {}),
         },
         { onSettled: () => setLogoUploading(false) }
       );
     };
     reader.readAsDataURL(file);
+  }
+
+  function onLogoFile(e: React.ChangeEvent<HTMLInputElement>, kind: "logo" | "logoDark" | "favicon" | "hero" = "logo") {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    uploadBrandFile(file, kind);
     e.target.value = "";
+  }
+
+  function whiteLabelPayload() {
+    return {
+      logoDarkUrl: form.logoDarkUrl || null,
+      faviconUrl: form.faviconUrl || null,
+      backgroundColor: form.backgroundColor || null,
+      textColor: form.textColor || null,
+      footerText: form.footerText || null,
+      showPublicEmail: form.showPublicEmail,
+      showPublicPhone: form.showPublicPhone,
+      showPublicAddress: form.showPublicAddress,
+      hidePlatformBranding: form.hidePlatformBranding,
+      sectionLabels: {
+        catalog: form.labelCatalog,
+        surfaces: form.labelSurfaces,
+        closet: form.labelCloset,
+        designer: form.labelDesigner,
+        quote: form.labelQuote,
+        cart: form.labelCart,
+      },
+    };
   }
 
   function storefrontPayload(storefrontEnabled = form.storefrontEnabled) {
@@ -1292,6 +1247,7 @@ function CustomizeTab({
       fontFamily: form.fontFamily || null,
       headingFont: form.headingFont || null,
       buttonRadius: form.buttonRadius || null,
+      ...whiteLabelPayload(),
     };
   }
 
@@ -1386,6 +1342,76 @@ function CustomizeTab({
 
   return (
     <div className="space-y-6">
+      <StorefrontDraftPreview socialLinks={previewSocialLinks} draft={{
+        storeName: form.storeName,
+        tagline: form.tagline,
+        logoUrl: form.logoUrl,
+        logoDarkUrl: form.logoDarkUrl,
+        faviconUrl: form.faviconUrl,
+        heroImageUrl: form.heroImageUrl,
+        primaryColor: form.primaryColor,
+        accentColor: form.accentColor,
+        backgroundColor: form.backgroundColor,
+        textColor: form.textColor,
+        fontFamily: form.fontFamily,
+        headingFont: form.headingFont,
+        buttonRadius: form.buttonRadius,
+        footerText: form.footerText,
+        publicEmail: form.publicEmail,
+        publicPhone: form.publicPhone,
+        publicAddress: form.publicAddress,
+        serviceArea: form.serviceArea,
+        showPublicEmail: form.showPublicEmail,
+        showPublicPhone: form.showPublicPhone,
+        showPublicAddress: form.showPublicAddress,
+        hidePlatformBranding: form.hidePlatformBranding,
+        sectionLabels: {
+          catalog: form.labelCatalog,
+          surfaces: form.labelSurfaces,
+          closet: form.labelCloset,
+          designer: form.labelDesigner,
+          quote: form.labelQuote,
+          cart: form.labelCart,
+        },
+      }} />
+      <AffiliateWhiteLabelFields
+        form={form}
+        set={(key, value) => set(key, value as never)}
+        primaryColor={form.primaryColor}
+        uploading={logoUploading}
+        onUpload={(kind, file) => uploadBrandFile(file, kind)}
+        onReset={() => {
+          const labels = WHITE_LABEL_RESET.sectionLabels;
+          setForm((current) => ({
+            ...current,
+            primaryColor: "",
+            accentColor: "",
+            backgroundColor: "",
+            textColor: "",
+            fontFamily: "",
+            headingFont: "",
+            buttonRadius: WHITE_LABEL_RESET.buttonRadius,
+            logoUrl: "",
+            logoDarkUrl: "",
+            faviconUrl: "",
+            heroImageUrl: "",
+            footerText: "",
+            hidePlatformBranding: false,
+            showPublicEmail: false,
+            showPublicPhone: false,
+            showPublicAddress: false,
+            publicEmail: "",
+            publicPhone: "",
+            publicAddress: "",
+            labelCatalog: labels.catalog,
+            labelSurfaces: labels.surfaces,
+            labelCloset: labels.closet,
+            labelDesigner: labels.designer,
+            labelQuote: labels.quote,
+            labelCart: labels.cart,
+          }));
+        }}
+      />
       <section data-testid="affiliate-launch-setup" className="rounded-xl border border-primary/30 bg-primary/[0.04] p-5 sm:p-6 space-y-5">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div>

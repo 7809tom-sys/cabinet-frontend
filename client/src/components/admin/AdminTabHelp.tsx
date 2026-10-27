@@ -2,6 +2,18 @@ import { Info } from "lucide-react";
 import { useLanguage } from "@/contexts/LanguageContext";
 
 const TAB_HELP: Record<string, { en: string; zh: string; link?: { label: string; url: string } }> = {
+  "sales-forecast": {
+    en: "Projected materials from saved designs. Age is measured from the last save. Ordered and lost designs are counted and left out of the projection.",
+    zh: "根據已儲存設計估算材料。天數以最後一次儲存計算。已下單與流失的設計會被計入並排除在預測之外。",
+  },
+  "sample-orders": {
+    en: "Order door samples and sample kits for a customer or project. These orders are not on the public catalog.",
+    zh: "為客戶或專案訂購門板樣品與樣品組。這些訂單不在公開型錄上。",
+  },
+  "vendor-updates": {
+    en: "Review vendor inventory notices and upcoming wholesale increases. Applying an increase is what changes the live wholesale price.",
+    zh: "審查供應商庫存通知與即將到來的批發漲價。套用漲價才會改變現行批發價。",
+  },
   orders: {
     en: "View and manage all incoming cabinet orders. Update order status, review line items, and coordinate fulfillment.",
     zh: "查看並管理所有進來的櫥櫃訂單。更新訂單狀態、審查明細項目並協調履行事宜。",
@@ -17,6 +29,10 @@ const TAB_HELP: Record<string, { en: string; zh: string; link?: { label: string;
   customers: {
     en: "Browse all registered customers. View their order history, membership tier, and account details.",
     zh: "瀏覽所有已註冊的客戶。查看其訂單歷史、會員等級及帳戶詳情。",
+  },
+  "crm-cleanup": {
+    en: "Preview test and fake CRM records, edit the keep list, download a CSV, then confirm deletion of that exact snapshot. Preview does not delete anything.",
+    zh: "預覽測試與假的 CRM 紀錄，編輯保留清單，下載 CSV，然後確認刪除該快照。預覽不會刪除任何資料。",
   },
   roles: {
     en: "Manage user roles and permissions. Promote users to admin, sales rep, or other roles to control access.",
@@ -110,6 +126,10 @@ const TAB_HELP: Record<string, { en: string; zh: string; link?: { label: string;
   "pricing-access": {
     en: "Control which users can view trade pricing. Grant or revoke pricing access for specific accounts.",
     zh: "控制哪些使用者可以查看貿易定價。為特定帳戶授予或撤銷定價存取權限。",
+  },
+  "affiliate-resources": {
+    en: "Manage the affiliate Marketing Hub: scripts, guides, videos, private PDFs, and social posts. Unpublished drafts stay hidden from affiliates.",
+    zh: "管理联盟行销中心：脚本、指南、视频、私密 PDF 和社交贴文。未发布的草稿对联盟隐藏。",
   },
   "affiliate-literature": {
     en: "Store affiliate-ready sales brochures, pricing guides, training documents, and other literature here. Keep drafts private until reviewed, then publish approved documents for future affiliate access.",
