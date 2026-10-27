@@ -3666,10 +3666,10 @@ export function DoorFront({ kind, edge, face, doors, drawers, isWall, doorSample
 // the door edge to the panel (i.e. the rail width). `depth` tunes how deep the
 // panel reads. `raised` adds a central raised field (cathedral/raised-panel).
 function RecessedPanel({ inset, horizontalInset, verticalInset, face, edge, raised = false, doorSampleUrl, isWall }: { inset: number; horizontalInset?: string; verticalInset?: string; face: string; edge: string; raised?: boolean; doorSampleUrl?: string | null; isWall?: boolean; frameInsetPx?: number }) {
-  // For wall cabinets the door-sample photo often includes a drawer front at the
-  // top (it's a base-cabinet door+drawer combo shot). Anchor to the bottom of
-  // the image so only the door panel portion is visible.
-  const samplePos = isWall ? "center 80%" : "center";
+  // Wall faces receive a door clip, or no photo when the only source is a
+  // combined base swatch. Center the door image; do not shift it to hide a drawer band.
+  void isWall;
+  const samplePos = "center";
   const panelBg = doorSampleUrl
     ? { backgroundImage: `url(${doorSampleUrl})`, backgroundSize: "cover" as const, backgroundPosition: samplePos }
     : { background: `linear-gradient(180deg, color-mix(in srgb, ${face} 78%, #000) 0%, color-mix(in srgb, ${face} 88%, #000) 45%, color-mix(in srgb, ${face} 96%, #000) 100%)` };
@@ -3727,7 +3727,7 @@ export function SingleDoorPanel({ kind, edge, face, stroke, doorSampleUrl, isWal
       ? {
           backgroundImage: `linear-gradient(135deg, rgba(255,255,255,0.10), rgba(0,0,0,0.10)), url(${doorSampleUrl})`,
           backgroundSize: "cover",
-          backgroundPosition: isWall ? "center 80%" : "center",
+          backgroundPosition: "center",
           backgroundBlendMode: "soft-light, normal",
         }
       : {}),
@@ -3792,7 +3792,7 @@ export function SingleDoorPanel({ kind, edge, face, stroke, doorSampleUrl, isWal
         <div
           className="absolute inset-[1.5px] rounded-[2px]"
           style={{
-            ...(doorSampleUrl ? { backgroundImage: `url(${doorSampleUrl})`, backgroundSize: "cover", backgroundPosition: isWall ? "center 80%" : "center" } : {}),
+            ...(doorSampleUrl ? { backgroundImage: `url(${doorSampleUrl})`, backgroundSize: "cover", backgroundPosition: "center" } : {}),
             boxShadow: `inset 0 1px 0 rgba(255,255,255,0.28), inset 0 -2px 3px rgba(0,0,0,0.14), 0 0 0 1px ${edge}44`,
           }}
         />
@@ -3823,7 +3823,7 @@ export function SingleDoorPanel({ kind, edge, face, stroke, doorSampleUrl, isWal
               inset: resolvedInset(5),
               boxShadow: `inset 0 2px 4px rgba(0,0,0,0.24), 0 0 0 0.5px ${edge}66`,
               ...(doorSampleUrl
-                ? { backgroundImage: `url(${doorSampleUrl})`, backgroundSize: "cover", backgroundPosition: isWall ? "center 80%" : "center" }
+                ? { backgroundImage: `url(${doorSampleUrl})`, backgroundSize: "cover", backgroundPosition: "center" }
                 : { backgroundImage: `repeating-linear-gradient(90deg, color-mix(in srgb, ${face} 90%, #000) 0px, color-mix(in srgb, ${face} 90%, #000) 2px, color-mix(in srgb, ${face} 78%, #000) 2.5px, color-mix(in srgb, ${face} 90%, #000) 3px, color-mix(in srgb, ${face} 90%, #000) 4px)` }),
             }}
           />

@@ -347,6 +347,8 @@ export function DoorRenderingAuditView({
                       <h3 className="font-medium" data-testid="door-audit-style-name">{style.name || "Door style"}</h3>
                       {style.code ? <span className="text-sm text-muted-foreground">{style.code}</span> : null}
                       {flagBadge(style.flag)}
+                      {style.styleVerified === false ? <Badge variant="outline">Unverified</Badge> : null}
+                      {style.needsDoorOnlyPhoto ? <Badge variant="outline">Needs door-only photo</Badge> : null}
                       {style.changedSinceLastRender ? <Badge variant="outline">Changed</Badge> : null}
                       {delta ? <span className="text-xs text-muted-foreground">{delta}</span> : null}
                     </div>

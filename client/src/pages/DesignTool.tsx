@@ -1,4 +1,5 @@
 import { snapFreestandingFortyFive } from "@/lib/freestandingRun";
+import { isDoorStyleVerified, resolveCabinetFaceImages, type DoorStyleFaceInput, type FaceSourceKind } from "@shared/doorFaceRecognition";
 import "./DesignTool.toolbar.css";
 import { useState, useMemo, useCallback, useEffect, useRef, useDeferredValue, type SetStateAction } from "react";
 import { createPortal } from "react-dom";
@@ -2679,11 +2680,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     // supply lines that happen to share a style name (e.g. both have "Air White")
     // each keep their own entry instead of one silently shadowing the other.
     for (const s of scoped) {
+      if (!isDoorStyleVerified(s) && s.id !== styleId) continue;
       const key = `${s.distributorId ?? "_"}::${(affiliateStyleName(s) || String(s.id)).toLowerCase()}`;
       if (!map.has(key)) map.set(key, s);
     }
     return Array.from(map.values()).sort((a, b) => affiliateStyleName(a).localeCompare(affiliateStyleName(b)));
-  }, [affiliateStyleName, catalogDistributorScopeId, doorStyles]);
+  }, [affiliateStyleName, catalogDistributorScopeId, doorStyles, styleId]);
 
   // Color 2 (slot B) must come from the same distributor as Color 1 (slot A).
   // Build a filtered list scoped to that distributor so the picker only shows
@@ -2696,12 +2698,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     if (distA == null) return uniqueDoorStyles;
     // Filter to same distributor, then de-duplicate by name (same as uniqueDoorStyles).
     const map = new Map<string, { id: number; ourName: string | null; aliasName?: string | null; thumbnailImageUrl?: string | null; doorSampleImageUrl?: string | null; distributorId?: number; styleCode?: string | null }>();
-    for (const s of source.filter((s) => s.distributorId === distA)) {
+    for (const s of source.filter((s) => s.distributorId === distA && (isDoorStyleVerified(s) || s.id === styleB || s.id === styleId))) {
       const key = (affiliateStyleName(s) || String(s.id)).toLowerCase();
       if (!map.has(key)) map.set(key, s);
     }
     return Array.from(map.values()).sort((a, b) => affiliateStyleName(a).localeCompare(affiliateStyleName(b)));
-  }, [affiliateStyleName, doorStyles, styleA, uniqueDoorStyles]);
+  }, [affiliateStyleName, doorStyles, styleA, styleB, styleId, uniqueDoorStyles]);
   // ColorSlotButton owns several thumbnail image labels internally. Feed it a
   // display-only copy of each style with the scoped affiliate alias substituted
   // into aliasName, while retaining raw doorStyles for pricing and finish logic.
@@ -4552,13 +4554,24 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       | undefined;
     return finishColors(s?.ourName, s?.color, s?.finish, s?.woodSpecies);
   }, [doorStyles, styleId]);
-  const active3DDoorSampleUrl = useMemo(() => {
-	    const s = doorStyles?.find((d) => d.id === styleId) as { ourName?: string | null; aliasName?: string | null; doorSampleImageUrl?: string | null; thumbnailImageUrl?: string | null } | undefined;
-	    if (/rustic hickory|forest rust/i.test(`${s?.ourName ?? ""} ${s?.aliasName ?? ""}`)) {
-	      return "/manus-storage/rustic_hickory_vertical_grain_32d9e28a.webp";
-	    }
-	    return s?.doorSampleImageUrl ?? s?.thumbnailImageUrl ?? null;
+  const activeFacePlan = useMemo(() => {
+    const s = doorStyles?.find((d) => d.id === styleId) as (DoorStyleFaceInput & { id?: number }) | undefined;
+    if (!s) return null;
+    if (/rustic hickory|forest rust/i.test(`${s.ourName ?? ""} ${s.aliasName ?? ""}`)) {
+      return {
+        sourceKind: "legacy-door" as const,
+        doorUrl: "/manus-storage/rustic_hickory_vertical_grain_32d9e28a.webp",
+        drawerUrl: null,
+        sections: 1 as const,
+        drawerTextureApplied: false,
+        grainRotation: 0 as const,
+      };
+    }
+    return resolveCabinetFaceImages(s, "base");
   }, [doorStyles, styleId]);
+  const active3DDoorSampleUrl = activeFacePlan?.doorUrl ?? null;
+  const active3DDrawerSampleUrl = activeFacePlan?.sourceKind === "split" ? activeFacePlan.drawerUrl : null;
+  const activeFaceSourceKind: FaceSourceKind | undefined = activeFacePlan?.sourceKind;
   const active3DRoomSceneReferenceUrl = useMemo(() => {
     const s = doorStyles?.find((d) => d.id === styleId) as { roomSceneImageUrl?: string | null } | undefined;
     return s?.roomSceneImageUrl ?? null;
@@ -5073,26 +5086,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     },
     [displayStyleIdForCab, panelKindById, activePanelKind]
   );
-  // Per-style door sample image URL map (for rendering real door photos on
-  // cabinet faces in the elevation view).
-  const doorSampleById = useMemo(() => {
-    const m = new Map<number, string>();
-    doorStyles?.forEach((d) => {
-      const s = d as { id: number; doorSampleImageUrl?: string | null; thumbnailImageUrl?: string | null };
-      const materialReference = s.doorSampleImageUrl ?? s.thumbnailImageUrl ?? null;
-      if (materialReference) m.set(s.id, materialReference);
-    });
-    return m;
-  }, [doorStyles]);
-  // Per-style drawer sample image URL map (separate photo for drawer fronts).
-  const drawerSampleById = useMemo(() => {
-    const m = new Map<number, string>();
-    doorStyles?.forEach((d) => {
-      const s = d as { id: number; drawerSampleImageUrl?: string | null };
-      if (s.drawerSampleImageUrl) m.set(s.id, s.drawerSampleImageUrl);
-    });
-    return m;
-  }, [doorStyles]);
   // Per-style frame inset map. Source-bound measurements remain authoritative;
   // the catalog-wide Slim Shaker family rule is the sole exception and always
   // supplies its verified 1-inch rail and stile for every rendered face.
@@ -5134,21 +5127,46 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const DEFAULT_DOOR_SAMPLE_URL = "/manus-storage/default-door-sample_9a6c9607.png";
   const DEFAULT_DRAWER_SAMPLE_URL = "/manus-storage/default-drawer-sample_4fc4653e.jpg";
   const activeDoorSampleUrl = paletteFinishSwatch ?? DEFAULT_DOOR_SAMPLE_URL;
+  const facePlanForCab = useCallback(
+    (cab: PlacedCabinet) => {
+      const sid = displayStyleIdForCab(cab);
+      const style = sid != null ? doorStyles?.find((d) => d.id === sid) as DoorStyleFaceInput | undefined : undefined;
+      if (!style) return null;
+      if (/rustic hickory|forest rust/i.test(`${style.ourName ?? ""} ${style.aliasName ?? ""}`)) {
+        return resolveCabinetFaceImages({
+          ...style,
+          styleCode: "RUSTIC",
+          doorSampleImageUrl: "/manus-storage/rustic_hickory_vertical_grain_32d9e28a.webp",
+          drawerSampleImageUrl: null,
+          thumbnailImageUrl: null,
+        }, cab.placement);
+      }
+      return resolveCabinetFaceImages(style, cab.placement);
+    },
+    [displayStyleIdForCab, doorStyles],
+  );
   const doorSampleForCab = useCallback(
     (cab: PlacedCabinet): string | null => {
-      const sid = displayStyleIdForCab(cab);
-      return (sid != null && doorSampleById.get(sid)) || activeDoorSampleUrl;
+      const plan = facePlanForCab(cab);
+      if (!plan) return activeDoorSampleUrl;
+      if (plan.sourceKind === "combined") return null;
+      return plan.doorUrl || activeDoorSampleUrl;
     },
-    [displayStyleIdForCab, doorSampleById, activeDoorSampleUrl]
+    [facePlanForCab, activeDoorSampleUrl]
   );
-  // Returns the drawer sample URL for a cabinet (null = fall back to door sample).
+  // A selected style with a blank drawer uses the door sample (the admin hint).
+  // The stock drawer photo is only the preview before any style is chosen.
+  // A combined swatch is not reused as a drawer front.
   const drawerSampleForCab = useCallback(
     (cab: PlacedCabinet): string | null => {
       const sid = displayStyleIdForCab(cab);
-      // Use the style-specific drawer sample, else fall back to the default drawer image.
-      return (sid != null && drawerSampleById.get(sid)) || DEFAULT_DRAWER_SAMPLE_URL;
+      if (sid == null) return DEFAULT_DRAWER_SAMPLE_URL;
+      const plan = facePlanForCab(cab);
+      if (!plan || plan.sourceKind === "combined") return null;
+      if (plan.sourceKind === "split") return plan.drawerUrl;
+      return plan.doorUrl;
     },
-    [displayStyleIdForCab, drawerSampleById]
+    [displayStyleIdForCab, facePlanForCab]
   );
 
   // Distinct finishes actually used across the design (default + per-cabinet
@@ -13545,18 +13563,42 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     [placed, styleId, doorStyles],
   );
 
+  const threeDCabinetFaces = useMemo(
+    () => placed.flatMap((cabinet) => {
+      const assignedStyleId = effectiveStyleId(cabinet, styleId) ?? styleId;
+      const assignedStyle = assignedStyleId != null ? doorStyles?.find((style) => style.id === assignedStyleId) as DoorStyleFaceInput | undefined : undefined;
+      if (!assignedStyle) return [];
+      const styleLabel = `${assignedStyle.ourName ?? ""} ${assignedStyle.aliasName ?? ""}`;
+      const plan = /rustic hickory|forest rust/i.test(styleLabel)
+        ? resolveCabinetFaceImages({
+          ...assignedStyle,
+          styleCode: "RUSTIC",
+          doorSampleImageUrl: "/manus-storage/rustic_hickory_vertical_grain_32d9e28a.webp",
+          drawerSampleImageUrl: null,
+          thumbnailImageUrl: null,
+        }, cabinet.placement)
+        : resolveCabinetFaceImages(assignedStyle, cabinet.placement);
+      return [[cabinet.uid, plan] as const];
+    }),
+    [placed, styleId, doorStyles],
+  );
   const threeDCabinetDoorSamples = useMemo(
-	    () => Object.fromEntries(placed.flatMap((cabinet) => {
-	      const assignedStyleId = effectiveStyleId(cabinet, styleId) ?? styleId;
-	      const assignedStyle = assignedStyleId != null ? doorStyles?.find((style) => style.id === assignedStyleId) : null;
-	      const styleLabel = `${assignedStyle?.ourName ?? ""} ${assignedStyle?.aliasName ?? ""}`;
-	      const sampleUrl = /rustic hickory|forest rust/i.test(styleLabel)
-	        ? "/manus-storage/rustic_hickory_vertical_grain_32d9e28a.webp"
-	        : assignedStyleId != null ? doorSampleById.get(assignedStyleId) : null;
-	      return sampleUrl ? [[cabinet.uid, sampleUrl]] : [];
-	    })),
-	    [placed, styleId, doorSampleById, doorStyles],
-	  );
+    () => Object.fromEntries(threeDCabinetFaces.flatMap(([uid, plan]) => {
+      if (plan.sourceKind === "combined") return [[uid, ""]];
+      return plan.doorUrl ? [[uid, plan.doorUrl]] : [];
+    })),
+    [threeDCabinetFaces],
+  );
+  const threeDCabinetDrawerSamples = useMemo(
+    () => Object.fromEntries(threeDCabinetFaces.flatMap(([uid, plan]) => (
+      plan.sourceKind === "split" && plan.drawerUrl ? [[uid, plan.drawerUrl]] : []
+    ))),
+    [threeDCabinetFaces],
+  );
+  const threeDCabinetFaceKinds = useMemo(
+    () => Object.fromEntries(threeDCabinetFaces.map(([uid, plan]) => [uid, plan.sourceKind])),
+    [threeDCabinetFaces],
+  );
 
   const threeDCabinetFrontVisuals = useMemo(() => {
     const liveVisualByCabinetId = new Map<number, string>();
@@ -13639,9 +13681,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	    name: islandStyleId != null ? styleNameById.get(islandStyleId) ?? islandStyle?.ourName ?? islandStyle?.aliasName ?? `Style #${islandStyleId}` : null,
 	    color: islandStyleId != null ? (finishById.get(islandStyleId) ?? activeFinish).face : null,
 	    productId: islandStyleId ?? null,
-	    doorSampleUrl: islandStyleId != null ? (doorSampleById.get(islandStyleId) ?? null) : null,
+	    doorSampleUrl: islandStyle ? resolveCabinetFaceImages(islandStyle as DoorStyleFaceInput, "base").doorUrl : null,
 	  };
-	}, [activeFinish, doorSampleById, doorStyles, finishById, island, placed, styleId, styleNameById]);
+	}, [activeFinish, doorStyles, finishById, island, placed, styleId, styleNameById]);
 	const threeDIslandCountertop = {
 	  name: islandCountertopSurface?.name ?? (island ? countertopMaterial(island.countertopMaterialId ?? countertopMaterialId).name : null),
 	  productId: islandCountertopSurface?.id ?? null,
@@ -13732,8 +13774,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                   hardwareAccent={catalogHardwareSelection ? catalogHardwareFinishAccent(catalogHardwareSelection.finish) : undefined}
                   onHardwareStyleChange={setGenericHardwareStyle}
 	      cabinetDoorSampleUrls={threeDCabinetDoorSamples}
+	      cabinetDrawerSampleUrls={threeDCabinetDrawerSamples}
+	      cabinetFaceSourceKinds={threeDCabinetFaceKinds}
 	      cabinetFrontVisuals={threeDCabinetFrontVisuals}
 	      catalogDoorSampleUrl={active3DDoorSampleUrl}
+	      catalogDrawerSampleUrl={active3DDrawerSampleUrl}
+	      catalogFaceSourceKind={activeFaceSourceKind}
 	      catalogRoomSceneUrl={active3DRoomSceneReferenceUrl}
 	      windowSceneKind={windowSceneKind}
       windowFrameStyle={windowFrameStyle}
@@ -21507,8 +21553,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                   hardwareAccent={catalogHardwareSelection ? catalogHardwareFinishAccent(catalogHardwareSelection.finish) : undefined}
                   onHardwareStyleChange={setGenericHardwareStyle}
 	                cabinetDoorSampleUrls={threeDCabinetDoorSamples}
+	                cabinetDrawerSampleUrls={threeDCabinetDrawerSamples}
+	                cabinetFaceSourceKinds={threeDCabinetFaceKinds}
 		                cabinetFrontVisuals={threeDCabinetFrontVisuals}
 	                catalogDoorSampleUrl={active3DDoorSampleUrl}
+	                catalogDrawerSampleUrl={active3DDrawerSampleUrl}
+	                catalogFaceSourceKind={activeFaceSourceKind}
 	                catalogRoomSceneUrl={active3DRoomSceneReferenceUrl}
 	                windowSceneKind={windowSceneKind}
 	                windowFrameStyle={windowFrameStyle}

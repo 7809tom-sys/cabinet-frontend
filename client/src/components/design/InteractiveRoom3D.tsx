@@ -34,6 +34,7 @@ import { formatAutoDesignWiggleBadge, type AutoDesignWiggleMove } from "@/lib/de
 import { useAuth } from "@/_core/hooks/useAuth";
 import { searchCatalogItems } from "@shared/catalogCodeSearch";
 import { AEF_PRINTED_GEOMETRY_MARKER } from "@shared/aefFramelessGeometry";
+import type { FaceSourceKind } from "@shared/doorFaceRecognition";
 import { toast } from "sonner";
 import { pantryDrawerFrontLayout } from "@/lib/pantryDrawerLayout";
 import { masterTracProduct, masterTracFinishColor } from "@/lib/closet";
@@ -810,10 +811,18 @@ interface Props {
   cabinetDoorProfiles?: Record<string, ThreeDDoorProfile>;
   /** Exact admin door-sample URL for each placed cabinet's effective saved style. */
   cabinetDoorSampleUrls?: Record<string, string>;
+  /** Drawer-front sample for meshes marked cabinetDrawerFront. Wall cabinets ignore it. */
+  cabinetDrawerSampleUrls?: Record<string, string>;
+  /** Combined swatches are suppressed so a wall stays one solid face. */
+  cabinetFaceSourceKinds?: Record<string, FaceSourceKind>;
   /** Live Cabinet Config product visual for each placed cabinet, keyed by placement UID. */
   cabinetFrontVisuals?: Record<string, string>;
   /** Exact selected 2D door sample applied to 3D cabinet faces in catalog-finish mode. */
   catalogDoorSampleUrl?: string | null;
+  /** Drawer-front sample for the active style. Ignored on wall cabinets. */
+  catalogDrawerSampleUrl?: string | null;
+  /** Active style face class. Combined swatches are not mapped onto faces. */
+  catalogFaceSourceKind?: FaceSourceKind;
   /** Administration room scene is a visual target reference only; it never replaces saved plan geometry. */
   catalogRoomSceneUrl?: string | null;
   /** Visual-only scene shown through architectural windows in 3D. */
@@ -3904,10 +3913,11 @@ export function addCabinet(
   transform?: { x: number; z: number; rotation: number; bottom?: number },
   doorSampleUrl?: string | null,
   onDoorTextureState?: (state: "loading" | "loaded" | "failed") => void,
-  surfaceTextures?: { countertop?: THREE.Texture | null; suppressCountertop?: boolean; suppressFittedFillerToeKick?: boolean; suppressContinuousBaseToeKick?: boolean; suppressFarmhouseSinkPlaceholder?: boolean; selectedToeKick?: boolean; hardwareStyleId?: HardwareStyleId; hardwareAccent?: string },
+  surfaceTextures?: { countertop?: THREE.Texture | null; suppressCountertop?: boolean; suppressFittedFillerToeKick?: boolean; suppressContinuousBaseToeKick?: boolean; suppressFarmhouseSinkPlaceholder?: boolean; selectedToeKick?: boolean; hardwareStyleId?: HardwareStyleId; hardwareAccent?: string; drawerSampleUrl?: string | null; faceSourceKind?: FaceSourceKind },
 ) {
   const placement = (sku.placementType ?? "base").toLowerCase();
   const isWall = placement === "wall";
+  if (surfaceTextures?.faceSourceKind === "combined") doorSampleUrl = null;
   const isTall = placement === "tall";
   const isBaseCabinet = placement === "base";
   const isPlacedAppliance = placement === "appliance";
@@ -4622,7 +4632,39 @@ export function addCabinet(
 	      sourceTexture: doorTexture,
 	    });
 	  };
-  // The active catalog sample is applied to actual door and drawer faces.
+  // Door faces use the door sample. Drawer meshes (cabinetDrawerFront) get the
+  // drawer-front sample below. A wall cabinet never receives that drawer texture.
+  const drawerSampleUrl = !isWall ? surfaceTextures?.drawerSampleUrl?.trim() || null : null;
+  const useDrawerTexture = Boolean(drawerSampleUrl) && drawerSampleUrl !== doorSampleUrl && surfaceTextures?.faceSourceKind !== "combined";
+  const usesCuratedDrawerGrain = /rustic_hickory_vertical_grain/i.test(drawerSampleUrl ?? "");
+  const drawerTexture = useDrawerTexture && drawerSampleUrl
+    ? new THREE.TextureLoader().load(drawerSampleUrl)
+    : null;
+  if (drawerTexture) {
+    drawerTexture.colorSpace = THREE.SRGBColorSpace;
+    drawerTexture.wrapS = usesCuratedDrawerGrain ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
+    drawerTexture.wrapT = usesCuratedDrawerGrain ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
+    drawerTexture.repeat.set(usesCuratedDrawerGrain ? 1 : 0.42, usesCuratedDrawerGrain ? 1 : 0.42);
+    drawerTexture.offset.set(usesCuratedDrawerGrain ? 0 : 0.29, usesCuratedDrawerGrain ? 0 : 0.29);
+    drawerTexture.userData = { ...drawerTexture.userData, drawerFrontSample: true, grainRotation: 0 };
+  }
+  const applyDrawerFrontTextures = (root: THREE.Object3D) => {
+    if (!drawerTexture) return;
+    root.traverse((node) => {
+      const mesh = node as THREE.Mesh;
+      if (!mesh.isMesh || !mesh.userData?.cabinetDrawerFront || Array.isArray(mesh.material)) return;
+      const source = mesh.material as THREE.MeshPhysicalMaterial;
+      if (!source || typeof source.clone !== "function") return;
+      const material = source.clone();
+      material.map = drawerTexture;
+      material.color.set("#ffffff");
+      material.needsUpdate = true;
+      material.userData = { ...material.userData, drawerFrontSample: true };
+      mesh.material = material;
+      textureMaterials.push(material);
+    });
+  };
+  // The active catalog sample is applied to actual door faces.
   // Shaker rails and stiles remain physical meshes over those faces, preserving
   // the selected Door Style's recessed-panel construction in the 3D Designer.
   const faceColor = threeDFaceMaterialColor(color, Boolean(doorTexture));
@@ -6290,6 +6332,14 @@ export function addCabinet(
   }
   }
   }
+  applyDrawerFrontTextures(frontGroup);
+  cabinet.userData = {
+    ...cabinet.userData,
+    faceSections: isWall || !drawerTexture ? 1 : 2,
+    drawerTextureApplied: Boolean(drawerTexture),
+    wallSolidFace: isWall && !doorSampleUrl,
+    grainRotation: 0,
+  };
   cabinet.add(frontGroup);
   // Doors and drawers already reference the shared sample. Box skins receive it
   // again when the image finishes loading, and that callback stamps them too.
@@ -10292,7 +10342,7 @@ export function attachAutoDesignWiggleSprite(owner: THREE.Object3D, label: strin
   owner.add(sprite);
 }
 
-export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick = false, roomOverride, openings = [], sinks = [], potFillers = [], island = null, islandFocusRequest = null, furniture = [], selectedFurnitureUid = null, onSelectFurniture, onRemoveFurniture, onRotateFurniture, onOpenFurnitureAttributes, ponyWalls = [], orderSummary, orderLines = [], initialPresentation, catalogFinishOverride, cabinetFinishPreviewOptions = [], cabinetFinishOverrides, cabinetDoorProfiles, cabinetDoorSampleUrls, cabinetFrontVisuals, catalogDoorSampleUrl, catalogRoomSceneUrl, catalogDoorProfile, windowSceneKind = DEFAULT_WINDOW_SCENE_KIND, windowFrameStyle = "white", hardwareStyleId = "none", hardwareAccent, onHardwareStyleChange, catalogFinishName, catalogFinishProductId, catalogIslandCabinetName, catalogIslandCabinetColor, catalogIslandCabinetProductId, catalogIslandDoorSampleUrl, catalogCountertopName, catalogCountertopProductId, catalogCountertopReferenceUrl, catalogIslandCountertopName, catalogIslandCountertopProductId, catalogIslandCountertopReferenceUrl, catalogFlooringName, catalogFlooringProductId, catalogFlooringReferenceUrl, catalogFlooringCategory, catalogFlooringSubCategory, catalogFlooringSize, catalogBacksplashName, catalogBacksplashProductId, catalogBacksplashReferenceUrl, catalogHardwareReferenceUrl, catalogHardwareName, savedDesignId, savedDesignRevision, canAffiliateGeminiImageTest = false, isCurrentPlanSaved = false, savedPlanFingerprintPayload = null, backsplashHeightMode = "standard", countertopBacksplashHeightIn = 0, catalogCountertopColor, catalogIslandCountertopColor, catalogCountertopImageUrl, catalogIslandCountertopImageUrl, catalogFlooringImageUrl, catalogBacksplashImageUrl, catalogBacksplashSize = null, catalogBacksplashCategory = null, catalogBacksplashSubCategory = null, shareContext, catalogItems = [], catalogDragItem = null, catalogDropWall, onAddCatalogItem, onAddRangeHood, onSaveToAccount, onSyncCart, onPresentationChange, onRoomWallHeightChange, onRoomWallHeightsChange, onMoveCabinet, onMoveCabinetTo, selectedCabinetUid, attributesTargetUid = null, missingPriceUids, onSelectCabinet, onOpenCabinetEditor, onSelectOpening, onOpenWindowEditor, onOpenDoorEditor, onRequestFiller, onSnapGlassCabinetToFront, onRotateCabinet, onRemoveCabinet, showWallLayer, onToggleWallLayer, temporaryPreviewMessage, onClearTemporaryPreview, temporaryPreviewCounter, temporaryPreviewTransitionKey, fillerInsertionTransition, cabinetConfigHref, embedded = false, cutawayRoomWalls = true, hybridPlanUnderlay = false, className, onGeometryRendered, autoDesignWiggleMoves = NO_AUTO_DESIGN_WIGGLE_MOVES }: Props) {
+export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick = false, roomOverride, openings = [], sinks = [], potFillers = [], island = null, islandFocusRequest = null, furniture = [], selectedFurnitureUid = null, onSelectFurniture, onRemoveFurniture, onRotateFurniture, onOpenFurnitureAttributes, ponyWalls = [], orderSummary, orderLines = [], initialPresentation, catalogFinishOverride, cabinetFinishPreviewOptions = [], cabinetFinishOverrides, cabinetDoorProfiles, cabinetDoorSampleUrls, cabinetDrawerSampleUrls, cabinetFaceSourceKinds, cabinetFrontVisuals, catalogDoorSampleUrl, catalogDrawerSampleUrl, catalogFaceSourceKind, catalogRoomSceneUrl, catalogDoorProfile, windowSceneKind = DEFAULT_WINDOW_SCENE_KIND, windowFrameStyle = "white", hardwareStyleId = "none", hardwareAccent, onHardwareStyleChange, catalogFinishName, catalogFinishProductId, catalogIslandCabinetName, catalogIslandCabinetColor, catalogIslandCabinetProductId, catalogIslandDoorSampleUrl, catalogCountertopName, catalogCountertopProductId, catalogCountertopReferenceUrl, catalogIslandCountertopName, catalogIslandCountertopProductId, catalogIslandCountertopReferenceUrl, catalogFlooringName, catalogFlooringProductId, catalogFlooringReferenceUrl, catalogFlooringCategory, catalogFlooringSubCategory, catalogFlooringSize, catalogBacksplashName, catalogBacksplashProductId, catalogBacksplashReferenceUrl, catalogHardwareReferenceUrl, catalogHardwareName, savedDesignId, savedDesignRevision, canAffiliateGeminiImageTest = false, isCurrentPlanSaved = false, savedPlanFingerprintPayload = null, backsplashHeightMode = "standard", countertopBacksplashHeightIn = 0, catalogCountertopColor, catalogIslandCountertopColor, catalogCountertopImageUrl, catalogIslandCountertopImageUrl, catalogFlooringImageUrl, catalogBacksplashImageUrl, catalogBacksplashSize = null, catalogBacksplashCategory = null, catalogBacksplashSubCategory = null, shareContext, catalogItems = [], catalogDragItem = null, catalogDropWall, onAddCatalogItem, onAddRangeHood, onSaveToAccount, onSyncCart, onPresentationChange, onRoomWallHeightChange, onRoomWallHeightsChange, onMoveCabinet, onMoveCabinetTo, selectedCabinetUid, attributesTargetUid = null, missingPriceUids, onSelectCabinet, onOpenCabinetEditor, onSelectOpening, onOpenWindowEditor, onOpenDoorEditor, onRequestFiller, onSnapGlassCabinetToFront, onRotateCabinet, onRemoveCabinet, showWallLayer, onToggleWallLayer, temporaryPreviewMessage, onClearTemporaryPreview, temporaryPreviewCounter, temporaryPreviewTransitionKey, fillerInsertionTransition, cabinetConfigHref, embedded = false, cutawayRoomWalls = true, hybridPlanUnderlay = false, className, onGeometryRendered, autoDesignWiggleMoves = NO_AUTO_DESIGN_WIGGLE_MOVES }: Props) {
   const previewRootRef = useRef<HTMLElement>(null);
   const mountRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -10504,6 +10554,8 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
   // a style has no explicit color field. It is applied to actual face panels,
   // while physical rails, stiles, carcasses, and skins remain constructed meshes.
   const activeDoorTexture = resolvedThreeDDoorSampleUrl("catalog", catalogDoorSampleUrl, renderExistingDesign);
+  const activeDrawerTexture = catalogFaceSourceKind === "combined" ? null : catalogDrawerSampleUrl?.trim() || null;
+  const activeFaceSourceKind = catalogFaceSourceKind;
   const visibleMaterialMode = threeDVisibleMaterialMode(activeDoorTexture, doorTextureState);
   const photoRenderDoorReference = threeDPhotoRenderDoorReferenceStatus(activeDoorTexture, doorTextureState);
   const geminiCooldownSeconds = geminiRateLimitUntil
@@ -11159,6 +11211,8 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 		          suppressFarmhouseSinkPlaceholder: hasExactFarmhouseFixture,
 		          hardwareStyleId,
 		          hardwareAccent,
+		          drawerSampleUrl: cabinet.placement === "wall" ? null : cabinetDrawerSampleUrls?.[cabinet.uid] ?? null,
+		          faceSourceKind: cabinetFaceSourceKinds?.[cabinet.uid],
 	        });
 	        const wiggleMove = autoDesignWiggleMoves.find((move) => move.uid === cabinet.uid);
 	        if (wiggleMove) {
@@ -11184,7 +11238,7 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 	    } else {
       for (const suggestion of validSuggestions) {
         if (!suggestion.sku) continue;
-	        addCabinet(catalogRoot, suggestion.sku, suggestion.zone.wallKey, cursor, room.width, room.depth, finish, materialDefaults.countertop, resolvedDoorProfile ?? undefined, undefined, activeDoorTexture, updateDoorTextureState, { countertop: countertopTexture, selectedToeKick: toeKick, hardwareStyleId, hardwareAccent });
+	        addCabinet(catalogRoot, suggestion.sku, suggestion.zone.wallKey, cursor, room.width, room.depth, finish, materialDefaults.countertop, resolvedDoorProfile ?? undefined, undefined, activeDoorTexture, updateDoorTextureState, { countertop: countertopTexture, selectedToeKick: toeKick, hardwareStyleId, hardwareAccent, drawerSampleUrl: suggestion.sku.placementType === "wall" ? null : activeDrawerTexture, faceSourceKind: activeFaceSourceKind });
 	      }
 	    }
 	    if (countertopUpstandSegments.length > 0) {
@@ -11292,7 +11346,7 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
       if (controlsRef.current === controls) controlsRef.current = null;
       if (catalogRootRef.current === catalogRoot) catalogRootRef.current = null;
     };
-  }, [scene, validSuggestions, placed, crown, toeKick, roomOverride, openings, sinks, potFillers, island, furniture, selectedFurnitureUid, ponyWalls, renderExistingDesign, resetKey, cameraPreset, showRoomContext, showSolidFrontWalls, cutawayRoomWalls, hybridPlanUnderlay, wallHeightIn, wallHeights, resolvedCabinetFinish, cabinetPreviewFinishId, cabinetFinishOverrides, cabinetDoorProfiles, cabinetDoorSampleUrls, cabinetFrontVisuals, countertopFinish, cabinetFinish, catalogDoorSampleUrl, catalogRoomSceneUrl, hardwareStyleId, hardwareAccent, catalogCountertopName, catalogCountertopProductId, catalogIslandCountertopName, catalogIslandCountertopProductId, catalogIslandCountertopColor, catalogFlooringName, catalogFlooringProductId, catalogFlooringCategory, catalogFlooringSubCategory, catalogFlooringSize, catalogBacksplashName, catalogBacksplashProductId, catalogBacksplashSize, catalogBacksplashCategory, catalogBacksplashSubCategory, backsplashHeightMode, countertopBacksplashHeightIn, catalogCountertopImageUrl, catalogIslandCountertopImageUrl, catalogFlooringImageUrl, catalogBacksplashImageUrl, autoDesignWiggleMoves]);
+  }, [scene, validSuggestions, placed, crown, toeKick, roomOverride, openings, sinks, potFillers, island, furniture, selectedFurnitureUid, ponyWalls, renderExistingDesign, resetKey, cameraPreset, showRoomContext, showSolidFrontWalls, cutawayRoomWalls, hybridPlanUnderlay, wallHeightIn, wallHeights, resolvedCabinetFinish, cabinetPreviewFinishId, cabinetFinishOverrides, cabinetDoorProfiles, cabinetDoorSampleUrls, cabinetDrawerSampleUrls, cabinetFaceSourceKinds, cabinetFrontVisuals, catalogDrawerSampleUrl, catalogFaceSourceKind, countertopFinish, cabinetFinish, catalogDoorSampleUrl, catalogRoomSceneUrl, hardwareStyleId, hardwareAccent, catalogCountertopName, catalogCountertopProductId, catalogIslandCountertopName, catalogIslandCountertopProductId, catalogIslandCountertopColor, catalogFlooringName, catalogFlooringProductId, catalogFlooringCategory, catalogFlooringSubCategory, catalogFlooringSize, catalogBacksplashName, catalogBacksplashProductId, catalogBacksplashSize, catalogBacksplashCategory, catalogBacksplashSubCategory, backsplashHeightMode, countertopBacksplashHeightIn, catalogCountertopImageUrl, catalogIslandCountertopImageUrl, catalogFlooringImageUrl, catalogBacksplashImageUrl, autoDesignWiggleMoves]);
 	  // A catalog filler has already passed geometry/collision validation before this
 	  // cue runs. Animate only its visual group, so the final coordinates and the
 	  // saved plan remain authoritative while the user sees it settle into the seam.
@@ -12311,6 +12365,24 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
     // not in the schema-bounded reference ID.
     let cabinetManifestIndex = 0;
     cabinetManifestGroups.forEach((entry) => addManifestEntry({ id: `cabinet:${cabinetManifestIndex++}`, role: "cabinet door/finish", ...entry }));
+    const drawerManifestGroups = new Map<string, { label: string; referenceUrl: string | null; itemIds: string[] }>();
+    for (const cabinet of placed) {
+      if (cabinet.placement === "wall" || cabinet.placement === "appliance" || isRefrigerator(cabinet) || isRangeOrOven(cabinet.masterCode)) continue;
+      if (cabinetFaceSourceKinds?.[cabinet.uid] === "combined") continue;
+      const drawerReference = approvedMaterialUrl(cabinetDrawerSampleUrls?.[cabinet.uid]);
+      if (!drawerReference) continue;
+      const label = `${cabinet.masterCode} drawer front`;
+      const key = `${label}|${drawerReference}`;
+      const current = drawerManifestGroups.get(key) ?? { label, referenceUrl: drawerReference, itemIds: [] };
+      current.itemIds.push(cabinet.uid);
+      drawerManifestGroups.set(key, current);
+    }
+    drawerManifestGroups.forEach((entry) => addManifestEntry({
+      id: `drawer:${cabinetManifestIndex++}`,
+      role: "drawer front",
+      fidelityNote: "DRAWER_FRONT only. Do not merge this onto a door or a wall cabinet.",
+      ...entry,
+    }));
     addManifestEntry({ id: "surface:countertop", role: "countertop", label: catalogCountertopName ?? "Selected countertop", itemIds: ["surface:countertop"], referenceUrl: approvedMaterialUrl(catalogCountertopReferenceUrl ?? catalogCountertopImageUrl) });
     addManifestEntry({ id: "surface:flooring", role: "flooring", label: catalogFlooringName ?? "Selected flooring", itemIds: ["surface:flooring"], referenceUrl: approvedMaterialUrl(catalogFlooringReferenceUrl ?? catalogFlooringImageUrl) });
     addManifestEntry({
