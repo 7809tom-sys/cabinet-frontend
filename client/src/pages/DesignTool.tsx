@@ -194,6 +194,7 @@ import { searchCatalogItems } from "@shared/catalogCodeSearch";
 import { adjacentDishwasherCenterIn, anchorAlongStartIn, autoBuildStraightBaseCatalog, buildAutoDesignWallGuides, canRunAutoDesign, isAutoBuildStraightSinkBaseCandidate, makeAutoDesignSixWallTrainingRoom, pickAutoDesignSinkBase, planAutoDesignAutoBuild, subtractAnchorRunReservations, wallLabelToEngineWallId, type AutoDesignInputs, type AutoDesignOriginCorner, type AutoDesignRunDirection } from "@/lib/autoDesignAutoBuild";
 import { AUTO_DESIGN_REFRIGERATOR_NOTE, autoDesignControlState, autoDesignShouldTurnOffForRefrigerator, isRefrigeratorAppliance, refrigeratorBlocksAutoDesign } from "@/lib/autoDesignAvailability";
 import { applyChosenAutoDesignFaucet, catalogFaucetSurface, defaultAutoDesignFaucet, ensureAutoDesignFaucet, isCatalogFaucet, type AutoDesignFaucetProduct } from "@/lib/autoDesignFaucet";
+import { clampSinkDragForFaucet } from "@/lib/faucetPlacement";
 import { autoDesignSinkWindow, windowOverlapsReservation } from "@/lib/autoDesignSinkWindow";
 import { autoDesignRangeHood, autoDesignRangeNeedsVentilation } from "@/lib/autoDesignRangeHood";
 import { autoBuildCornerCatalog, autoDesignCornerSlotPoint, autoDesignCornerSlots, isAutoDesignBlindCornerOption, type AutoBuildCornerCandidate, type AutoDesignCornerChoice, type AutoDesignCornerSlot } from "@/lib/autoDesignCornerStage";
@@ -288,6 +289,7 @@ import {
   setCountertopSurfaceForScope,
   type SurfaceRole,
 } from "@/lib/surfaceSelection";
+import { selectedBacksplashTextureUrl } from "@/lib/backsplashProductMaterial";
 import { ProDesignerDialog } from "@/components/design/ProDesignerDialog";
 import { CabinetDrawing } from "@/components/CabinetDrawing";
 import { BEC24_DISPLAY_NAME, baseSubGroup, cabinetDrawingType, isSquareDoubleDoorBaseEnd, type BaseSubGroup } from "@/lib/cabinetGraphics";
@@ -1217,8 +1219,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // Older saved designs and the opt-in Surfaces hand-off persisted the product
   // identity before the approved material-only swatch field was available.
   // Resolve the current source record on load so a verified saved product
-  // reaches the actual 3D material props after refresh without ever using a
-  // catalog photo as a texture.
+  // reaches the 3D material props. Flooring still requires an approved swatch.
+  // A backsplash keeps the saved product picture when no swatch exists.
   const selectedSurfaceIdsForMaterialRefresh = useMemo(
     () => Array.from(new Set(selectedSurfaces.map((surface) => surface.id).filter(Number.isInteger))),
     [selectedSurfaces],
@@ -9751,7 +9753,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     if (island) layoutType = cabWalls.length <= 1 ? "peninsula" : layoutType;
     // Surfaces
     const flooringSurf = selectedSurfaces.find((s) => surfaceRole(s) === "flooring");
-    const backsplashSurf = selectedSurfaces.find((s) => surfaceRole(s) === "backsplash");
+    const backsplashSurf = activeThreeDSurface(selectedSurfaces.filter((s) => surfaceRole(s) === "backsplash"));
     const sinkSurf = selectedSurfaces.find((s) => surfaceRole(s) === "sink");
     const faucetSurf = selectedSurfaces.find((s) => surfaceRole(s) === "faucet");
 	    const perimeterCountertopSurf = activeCountertopForScope(selectedSurfaces, "perimeter");
@@ -9781,6 +9783,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         : hardwareStyleId !== "none" ? (HARDWARE_STYLES.find((h) => h.id === hardwareStyleId)?.label || undefined) : undefined,
       flooring: flooringSurf?.name || undefined,
       backsplash: backsplashSurf?.name || undefined,
+      backsplashImageUrl: selectedBacksplashTextureUrl(backsplashSurf).url || undefined,
       sink: sinkSurf?.name || undefined,
       faucet: faucetSurf?.name || undefined,
       wallSummaries: summaries.length > 0 ? summaries : undefined,
@@ -9892,8 +9895,19 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   }, [room, activeWall]);
 
   const moveSink = useCallback((uid: string, x: number, y: number) => {
-    setSinks((prev) => prev.map((s) => (s.uid === uid ? { ...s, x, y } : s)));
-  }, []);
+    setSinks((prev) => prev.map((s) => {
+      if (s.uid !== uid) return s;
+      const clamped = clampSinkDragForFaucet(
+        s,
+        { x, y },
+        room,
+        openings,
+        countertopSurfaces(placedRef.current, room, island, ponyWalls),
+      );
+      if (clamped.blocked) return s;
+      return { ...s, x: clamped.x, y: clamped.y };
+    }));
+  }, [island, openings, ponyWalls, room]);
 
   const swapSelectedSinkBaseToFarmSink = useCallback((cabinetUid: string) => {
     if (cabinetsLocked) { toast.info(t("dt_gap_locked")); return; }
@@ -13508,8 +13522,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	          ? activeFlooringSurface
 	          : activeBacksplashSurface;
       // Catalog product cards can be staged-room or retail photographs. The
-      // final 3D scene accepts only an explicitly approved, repeatable swatch;
-      // named curated assets are resolved separately by the 3D renderer.
+      // final 3D scene accepts only an explicitly approved, repeatable swatch
+      // for flooring and countertops; named curated assets are resolved
+      // separately by the 3D renderer. Flooring still refuses staged room photography.
       if (role === "flooring") {
         // Never let a staged room/card image tile across a floor. An explicit
         // designerRenderReady or hasSwatch flag wins; otherwise materialImageUrl
@@ -13517,6 +13532,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         // selected floor receives the renderer's labeled neutral floor.
         return flooringSceneTextureUrl(selected, approvedFlooringSwatchByProductId);
       }
+      if (role === "backsplash") return selectedBacksplashTextureUrl(selected).url;
       return selected?.materialImageUrl ?? null;
     };
     return {
@@ -13696,7 +13712,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	      catalogFlooringSize={threeDFlooringProductMetadata?.size}
 	      catalogBacksplashName={backsplashEnabled ? threeDSurfaceProductNames.backsplash : null}
 	      catalogBacksplashProductId={backsplashEnabled ? threeDSurfaceProductIds.backsplash : null}
-	      catalogBacksplashReferenceUrl={backsplashEnabled ? activeBacksplashSurface?.materialImageUrl ?? null : null}
+	      catalogBacksplashReferenceUrl={backsplashEnabled ? threeDSurfaceTextureUrls.backsplash : null}
+	      catalogBacksplashSize={backsplashEnabled ? activeBacksplashSurface?.size ?? null : null}
+	      catalogBacksplashCategory={backsplashEnabled ? activeBacksplashSurface?.category ?? null : null}
+	      catalogBacksplashSubCategory={backsplashEnabled ? activeBacksplashSurface?.subCategory ?? null : null}
 	      catalogHardwareReferenceUrl={catalogHardwareSelection?.imageUrl ?? HARDWARE_STYLES.find((style) => style.id === hardwareStyleId)?.referenceUrl ?? null}
 	      catalogHardwareName={catalogHardwareSelection ? `${catalogHardwareSelection.collection} ${catalogHardwareSelection.productType} · ${catalogHardwareSelection.finish} · ${catalogHardwareSelection.sku}` : null}
 	      savedDesignId={currentSavedDesignId ?? null}
@@ -17446,6 +17465,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	              onSelectWall={(wall) => { setActiveWall(wall as WallSide); setPlacementTarget("wall"); }}
               countertopMaterialId={countertop ? countertopMaterialId : null}
               backsplashMaterialId={backsplashEnabled ? backsplashMaterialId : null}
+              backsplashImageUrl={backsplashEnabled ? threeDSurfaceTextureUrls.backsplash : null}
+              backsplashProductName={backsplashEnabled ? threeDSurfaceProductNames.backsplash : null}
+              backsplashProductSize={backsplashEnabled ? activeBacksplashSurface?.size ?? null : null}
               flooringMaterialId={flooringMaterialId}
               flooringPattern={flooringPattern}
               openings={openings}
@@ -17645,6 +17667,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                   onSelectWall={(wall) => setActiveWall(wall as WallSide)}
                   countertopMaterialId={countertop ? countertopMaterialId : null}
                   backsplashMaterialId={backsplashEnabled ? backsplashMaterialId : null}
+              backsplashImageUrl={backsplashEnabled ? threeDSurfaceTextureUrls.backsplash : null}
+              backsplashProductName={backsplashEnabled ? threeDSurfaceProductNames.backsplash : null}
+              backsplashProductSize={backsplashEnabled ? activeBacksplashSurface?.size ?? null : null}
                   flooringMaterialId={flooringMaterialId}
                   flooringPattern={flooringPattern}
                   openings={openings}
@@ -21439,7 +21464,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                catalogFlooringSize={threeDFlooringProductMetadata?.size}
 	                catalogBacksplashName={backsplashEnabled ? threeDSurfaceProductNames.backsplash : null}
 	                catalogBacksplashProductId={backsplashEnabled ? threeDSurfaceProductIds.backsplash : null}
-	                catalogBacksplashReferenceUrl={backsplashEnabled ? activeBacksplashSurface?.materialImageUrl ?? null : null}
+	                catalogBacksplashReferenceUrl={backsplashEnabled ? threeDSurfaceTextureUrls.backsplash : null}
+	                catalogBacksplashSize={backsplashEnabled ? activeBacksplashSurface?.size ?? null : null}
+	                catalogBacksplashCategory={backsplashEnabled ? activeBacksplashSurface?.category ?? null : null}
+	                catalogBacksplashSubCategory={backsplashEnabled ? activeBacksplashSurface?.subCategory ?? null : null}
 	                catalogHardwareReferenceUrl={catalogHardwareSelection?.imageUrl ?? HARDWARE_STYLES.find((style) => style.id === hardwareStyleId)?.referenceUrl ?? null}
 	      catalogHardwareName={catalogHardwareSelection ? `${catalogHardwareSelection.collection} ${catalogHardwareSelection.productType} · ${catalogHardwareSelection.finish} · ${catalogHardwareSelection.sku}` : null}
 	                savedDesignId={currentSavedDesignId ?? null}

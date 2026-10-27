@@ -13,8 +13,11 @@
  * `materialImageUrl`.
  *
  * Tile & Mosaic still loads the storefront catalog. Designer scope continues
- * to require a swatch for backsplash. Moldings & Trim and Underlayment stay
- * out of this palette; they remain accessory suggestions.
+ * to require a swatch for backsplash. Catalog photography stays on the tile
+ * card and is also the 3D backsplash texture when the row has no approved
+ * repeatable swatch. The Designer tiles that picture at the product's sheet
+ * size instead of substituting a generic tile. Moldings & Trim and Underlayment
+ * stay out of the flooring palette; they remain accessory suggestions.
  */
 
 import { catalogCategoryValuesEqual } from "@shared/catalogCategorySpelling";

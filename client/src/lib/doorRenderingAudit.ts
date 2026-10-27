@@ -1,9 +1,11 @@
 /**
- * Door Rendering Audit — shared types and rules for the admin UI.
+ * Door Rendering Audit — shared types, view rules, and the wire adapter.
  *
- * The companion cabinet-backend router is `doorRenderingAudit` (adminProcedure
- * only). Shapes live in `client/src/components/admin/doorRenderingAuditApi.ts`.
- * Flag and filter rules below are the contract the backend should match.
+ * The admin screen speaks the types below. cabinet-backend's `doorRenderingAudit`
+ * router (adminProcedure) uses different field names: `scope` instead of `mode`,
+ * `ourName` / `styleCode` / `profile` instead of `name` / `code` / `doorProfile`,
+ * `woodGrain` instead of `grain`, and snake_case run statuses. Adapt responses
+ * with the functions at the bottom of this file before they reach the screen.
  */
 
 export const DOOR_AUDIT_IMPROVEMENT_POINTS = 1;
@@ -74,10 +76,12 @@ export type DoorAuditVersion = {
   review: DoorAuditReview | null;
 };
 
-/** What the browser needs in order to capture one style. Echo `sourceFingerprint` on upload. */
+/** What the browser needs in order to capture one style. Echo `sourceFingerprint` as `renderingCommit` on upload. */
 export type DoorAuditRenderInput = {
   styleId: number;
   name: string;
+  code: string | null;
+  distributorName: string | null;
   samplePhotoUrl: string | null;
   color: string | null;
   sourceFingerprint: string;
@@ -118,6 +122,9 @@ export type DoorAuditRunStatus = {
   error: string | null;
   /** Styles that still need a PNG. Empty once the run is scoring or finished. */
   pendingStyles: DoorAuditRenderInput[];
+  /** Style the progress line should name, when the server is waiting or scoring. */
+  focusStyleId: number | null;
+  focusLabel: string | null;
 };
 
 export type DoorAuditRunSummary = {
@@ -191,8 +198,8 @@ export function doorAuditMatchesSearch(row: Pick<DoorAuditStyleRow, "name" | "co
 export function orderDoorAuditStyles(styles: DoorAuditStyleRow[], filter: DoorAuditFilter): DoorAuditStyleRow[] {
   if (filter !== "furthest") return styles;
   return [...styles].sort((a, b) => {
-    const left = a.current?.scores.overall;
-    const right = b.current?.scores.overall;
+    const left = a.current?.scores?.overall;
+    const right = b.current?.scores?.overall;
     if (left == null && right == null) return a.name.localeCompare(b.name);
     if (left == null) return 1;
     if (right == null) return -1;
@@ -202,11 +209,11 @@ export function orderDoorAuditStyles(styles: DoorAuditStyleRow[], filter: DoorAu
 
 /** Same predicates the admin sends to `listStyles`. Applied again locally so the grid stays right if the payload is a full list. */
 export function applyDoorAuditFilter(styles: DoorAuditStyleRow[], filter: DoorAuditFilter, search: string): DoorAuditStyleRow[] {
-  const searched = styles.filter((row) => doorAuditMatchesSearch(row, search));
+  const searched = (styles ?? []).filter((row) => row != null && doorAuditMatchesSearch(row, search));
   const filtered = searched.filter((row) => {
     if (filter === "flagged") return row.flag === "improved" || row.flag === "needs-review";
     if (filter === "unaudited") return row.flag === "unaudited" || row.current == null;
-    if (filter === "furthest") return row.current?.scores.overall != null;
+    if (filter === "furthest") return row.current?.scores?.overall != null;
     return true;
   });
   return orderDoorAuditStyles(filtered, filter);
@@ -282,14 +289,17 @@ export function doorAuditProgressLabel(
   total: number,
   styleName: string | null,
 ): string {
-  const count = `${Math.min(completed, total)} of ${total}`;
+  const safeCompleted = Number.isFinite(completed) ? completed : 0;
+  const safeTotal = Number.isFinite(total) ? total : 0;
+  const count = `${Math.min(safeCompleted, safeTotal)} of ${safeTotal}`;
   if (phase === "rendering") {
     return styleName ? `Rendering ${styleName} · ${count}` : `Rendering doors · ${count}`;
   }
-  return `Scoring renders · ${count}`;
+  return styleName ? `Scoring ${styleName} · ${count}` : `Scoring renders · ${count}`;
 }
 
-export function formatDoorAuditWhen(iso: string): string {
+export function formatDoorAuditWhen(iso: string | null | undefined): string {
+  if (!iso) return "";
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
   return date.toLocaleString(undefined, {
@@ -319,4 +329,509 @@ export function auditDoorCameraBounds() {
     position: [0, 0, 2] as const,
     lookAt: [0, 0, 0] as const,
   };
+}
+
+export class DoorAuditClientError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "DoorAuditClientError";
+  }
+}
+
+export type DoorAuditBackendScope = "all" | "changed" | "selected";
+
+export type DoorAuditStartRunResult = {
+  runId: number;
+  status: DoorAuditRunStatusName;
+  styles: DoorAuditRenderInput[];
+};
+
+const PANEL_CONSTRUCTIONS = ["raised", "flat", "slab", "glass"] as const;
+const DRAWER_FRONTS = ["five-piece-raised", "five-piece-flat", "slab"] as const;
+const GRAIN_DIRECTIONS = ["vertical-stiles-horizontal-rails", "vertical", "horizontal", "none"] as const;
+const FINISH_SHEENS = ["satin", "matte", "gloss"] as const;
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function text(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
+function positiveInt(value: unknown): number | null {
+  const numeric = typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value) : Number.NaN;
+  if (!Number.isInteger(numeric) || numeric <= 0) return null;
+  return numeric;
+}
+
+function finiteNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() && Number.isFinite(Number(value))) return Number(value);
+  return null;
+}
+
+function dimension(value: unknown): string | number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  return text(value);
+}
+
+function oneOf<T extends string>(value: unknown, allowed: readonly T[]): T | null {
+  if (typeof value !== "string") return null;
+  const match = allowed.find((item) => item.toLowerCase() === value.trim().toLowerCase());
+  return match ?? null;
+}
+
+function toIso(value: unknown): string | null {
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value.toISOString();
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+  }
+  const raw = text(value);
+  if (!raw) return null;
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? raw : parsed.toISOString();
+}
+
+function scoreValue(value: unknown): number | null {
+  const numeric = finiteNumber(value);
+  return numeric == null ? null : numeric;
+}
+
+function normalizeProfile(raw: unknown): DoorAuditDoorProfile {
+  const record = asRecord(raw) ?? {};
+  return {
+    doorStyle: text(record.doorStyle),
+    doorPanelType: text(record.doorPanelType),
+    railWidth: dimension(record.railWidth),
+    stileWidth: dimension(record.stileWidth),
+    panelConstruction: oneOf(record.panelConstruction, PANEL_CONSTRUCTIONS),
+    bevelWidth: dimension(record.bevelWidth),
+    bevelDepth: dimension(record.bevelDepth),
+    insideEdgeProfile: text(record.insideEdgeProfile),
+    drawerFrontType: oneOf(record.drawerFrontType, DRAWER_FRONTS),
+    grainDirection: oneOf(record.grainDirection, GRAIN_DIRECTIONS),
+    finishSheen: oneOf(record.finishSheen, FINISH_SHEENS),
+  };
+}
+
+function profileIsBlank(profile: DoorAuditDoorProfile | null | undefined): boolean {
+  if (!profile) return true;
+  return !profile.doorStyle
+    && !profile.doorPanelType
+    && !profile.panelConstruction
+    && profile.railWidth == null
+    && profile.stileWidth == null
+    && !profile.finishSheen
+    && !profile.insideEdgeProfile;
+}
+
+/** Catalog name the owner sees: ourName, then aliasName, then styleCode. */
+export function doorAuditCatalogName(raw: Record<string, unknown>): string {
+  return text(raw.ourName) ?? text(raw.aliasName) ?? text(raw.styleCode) ?? text(raw.name) ?? text(raw.code) ?? "Door style";
+}
+
+export function doorAuditStyleLabel(style: {
+  name?: string | null;
+  code?: string | null;
+  distributorName?: string | null;
+} | null | undefined): string {
+  if (!style) return "Door style";
+  const parts = [style.name, style.code, style.distributorName]
+    .map((part) => part?.trim())
+    .filter((part): part is string => Boolean(part));
+  return parts.length > 0 ? parts.join(" · ") : "Door style";
+}
+
+export function doorAuditErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message.trim()) return error.message.trim();
+  if (typeof error === "string" && error.trim()) return error.trim();
+  if (error && typeof error === "object" && "message" in error && typeof (error as { message?: unknown }).message === "string") {
+    const message = (error as { message: string }).message.trim();
+    if (message) return message;
+  }
+  return fallback;
+}
+
+function supplierName(raw: Record<string, unknown>): string | null {
+  return text(raw.distributorName) ?? text(raw.brandName) ?? text(raw.supplier);
+}
+
+function styleCodeOf(raw: Record<string, unknown>): string | null {
+  return text(raw.styleCode) ?? text(raw.code);
+}
+
+function mapFlagStatus(value: unknown): DoorAuditFlag | null {
+  if (value === "flagged" || value === "improved") return "improved";
+  if (value === "rejected") return "rejected";
+  if (value === "accepted") return "accepted";
+  if (value === "no_baseline" || value === "within_baseline" || value === "needs-review") return "needs-review";
+  if (value === "none" || value === "unaudited") return "unaudited";
+  return null;
+}
+
+function mapMode(value: unknown): DoorAuditRunMode {
+  if (value === "all" || value === "selected") return value;
+  if (value === "changed" || value === "changed-only") return "changed-only";
+  return "all";
+}
+
+function mapStatus(value: unknown): DoorAuditRunStatusName {
+  if (value === "awaiting_renders" || value === "awaiting-renders") return "awaiting-renders";
+  if (value === "scoring") return "scoring";
+  if (value === "completed" || value === "complete") return "complete";
+  return "failed";
+}
+
+function isNormalizedStatusName(value: unknown): value is DoorAuditRunStatusName {
+  return value === "awaiting-renders" || value === "scoring" || value === "complete" || value === "failed";
+}
+
+function normalizeScores(raw: unknown, fallback: Record<string, unknown>): DoorAuditScores {
+  const scores = asRecord(raw) ?? {};
+  return {
+    grain: scoreValue(scores.grain ?? scores.woodGrain ?? fallback.woodGrainScore),
+    color: scoreValue(scores.color ?? fallback.colorScore),
+    textureSheen: scoreValue(scores.textureSheen ?? fallback.textureSheenScore),
+    profileEdges: scoreValue(scores.profileEdges ?? fallback.profileEdgesScore),
+    overall: scoreValue(scores.overall ?? fallback.overallScore),
+  };
+}
+
+function normalizeReview(raw: Record<string, unknown>, isAccepted: boolean): DoorAuditReview | null {
+  if (raw.review === "accepted" || raw.review === "rejected" || raw.review === "pending") return raw.review;
+  if (isAccepted) return "accepted";
+  const events = Array.isArray(raw.events) ? raw.events : [];
+  const latest = asRecord(events[0]);
+  if (latest?.action === "rejected") return "rejected";
+  if (latest?.action === "accepted" || latest?.action === "reverted") return "accepted";
+  if (raw.verdict === "flagged" || raw.verdict === "not_flagged" || raw.verdict === "no_baseline") return "pending";
+  return null;
+}
+
+function normalizeVersion(raw: unknown, options?: { isCurrent?: boolean; isAcceptedBaseline?: boolean }): DoorAuditVersion | null {
+  const record = asRecord(raw);
+  if (!record) return null;
+  const versionId = positiveInt(record.versionId ?? record.id);
+  if (versionId == null) return null;
+  const isAcceptedBaseline = options?.isAcceptedBaseline === true || record.isAcceptedBaseline === true || record.isCurrentAccepted === true;
+  const isCurrent = options?.isCurrent === true || record.isCurrent === true;
+  const scores = normalizeScores(record.scores, record);
+  const scoreStatus = record.scoreStatus === "pending" || record.scoreStatus === "scored" || record.scoreStatus === "failed"
+    ? record.scoreStatus
+    : scores.overall == null ? "pending" : "scored";
+  return {
+    versionId,
+    imageUrl: text(record.imageUrl) ?? text(record.renderImageUrl) ?? "",
+    createdAt: toIso(record.createdAt) ?? "",
+    scores,
+    scoreStatus,
+    isCurrent,
+    isAcceptedBaseline,
+    review: normalizeReview(record, isAcceptedBaseline),
+  };
+}
+
+export function normalizeDoorAuditRenderInput(raw: unknown, renderingCommit?: unknown): DoorAuditRenderInput | null {
+  const record = asRecord(raw);
+  if (!record) return null;
+  const styleId = positiveInt(record.styleId ?? record.id);
+  if (styleId == null) return null;
+  const profileSource = record.profile ?? record.doorProfile;
+  return {
+    styleId,
+    name: doorAuditCatalogName(record),
+    code: styleCodeOf(record),
+    distributorName: supplierName(record),
+    samplePhotoUrl: text(record.samplePhotoUrl) ?? text(record.doorSampleImageUrl),
+    color: text(record.color),
+    sourceFingerprint: text(record.sourceFingerprint) ?? text(record.renderingCommit) ?? text(renderingCommit) ?? "",
+    doorProfile: normalizeProfile(profileSource),
+  };
+}
+
+export function normalizeDoorAuditStyle(raw: unknown): DoorAuditStyleRow | null {
+  const record = asRecord(raw);
+  if (!record) return null;
+  const styleId = positiveInt(record.styleId ?? record.id);
+  if (styleId == null) return null;
+  const current = normalizeVersion(record.current ?? record.latestRender, { isCurrent: record.current != null || record.latestRender != null });
+  const accepted = normalizeVersion(record.accepted ?? record.acceptedRender, { isAcceptedBaseline: record.accepted != null || record.acceptedRender != null });
+  const previous = normalizeVersion(record.previous);
+  if (current && accepted && current.versionId === accepted.versionId) {
+    current.isAcceptedBaseline = true;
+    current.review = current.review ?? "accepted";
+    accepted.isCurrent = true;
+  }
+  const flag = mapFlagStatus(record.flag ?? record.flagStatus) ?? (current ? "needs-review" : "unaudited");
+  return {
+    styleId,
+    name: doorAuditCatalogName(record),
+    code: styleCodeOf(record),
+    distributorName: supplierName(record),
+    samplePhotoUrl: text(record.samplePhotoUrl) ?? text(record.doorSampleImageUrl),
+    color: text(record.color),
+    sourceFingerprint: text(record.sourceFingerprint)
+      ?? text(asRecord(record.latestRender)?.renderingCommit)
+      ?? text(asRecord(record.current)?.sourceFingerprint)
+      ?? "",
+    doorProfile: normalizeProfile(record.profile ?? record.doorProfile),
+    changedSinceLastRender: record.changedSinceLastRender === true,
+    current,
+    accepted,
+    previous,
+    flag,
+  };
+}
+
+export function doorAuditCounts(styles: readonly DoorAuditStyleRow[]): DoorAuditListResult["counts"] {
+  return {
+    all: styles.length,
+    flagged: styles.filter((style) => style.flag === "improved" || style.flag === "needs-review").length,
+    furthest: styles.filter((style) => style.current?.scores?.overall != null).length,
+    unaudited: styles.filter((style) => style.flag === "unaudited" || style.current == null).length,
+  };
+}
+
+export function normalizeDoorAuditList(raw: unknown): DoorAuditListResult {
+  const record = asRecord(raw) ?? {};
+  const list = Array.isArray(record.styles) ? record.styles : Array.isArray(record.items) ? record.items : [];
+  const styles = list.flatMap((item) => {
+    const style = normalizeDoorAuditStyle(item);
+    return style ? [style] : [];
+  });
+  return {
+    styles,
+    counts: doorAuditCounts(styles),
+    activeRun: normalizeDoorAuditRunStatus(record.activeRun),
+  };
+}
+
+function styleListFrom(record: Record<string, unknown>): unknown[] | null {
+  if (Array.isArray(record.styles)) return record.styles;
+  if (Array.isArray(record.items)) return record.items;
+  return null;
+}
+
+/** `mode: "changed-only"` is the screen's name. The server field is `scope: "changed"`. */
+export function doorAuditStartRunInput(
+  mode: DoorAuditRunMode,
+  styleIds?: number[],
+): { scope: DoorAuditBackendScope; styleIds?: number[] } {
+  if (mode === "selected") {
+    const ids = Array.from(new Set((styleIds ?? []).filter((id) => Number.isInteger(id) && id > 0)));
+    if (ids.length === 0) throw new DoorAuditClientError("Select at least one door style.");
+    return { scope: "selected", styleIds: ids };
+  }
+  if (mode === "changed-only") return { scope: "changed" };
+  return { scope: "all" };
+}
+
+export function normalizeDoorAuditStartRun(raw: unknown): DoorAuditStartRunResult {
+  const record = asRecord(raw);
+  if (!record) throw new DoorAuditClientError("The audit run did not return a response.");
+  const runRecord = asRecord(record.run);
+  const runId = positiveInt(record.runId ?? runRecord?.id ?? runRecord?.runId);
+  if (runId == null) {
+    throw new DoorAuditClientError("The audit run started, but the server did not return a run id.");
+  }
+  const list = styleListFrom(record);
+  if (!list) {
+    throw new DoorAuditClientError("The audit run started, but the server did not include the door styles to render.");
+  }
+  const renderingCommit = record.renderingCommit ?? runRecord?.renderingCommit;
+  const styles = list.flatMap((item) => {
+    const style = normalizeDoorAuditRenderInput(item, renderingCommit);
+    return style ? [style] : [];
+  });
+  if (list.length > 0 && styles.length === 0) {
+    throw new DoorAuditClientError("The server returned door styles the page could not read.");
+  }
+  const status = mapStatus(record.status ?? runRecord?.status);
+  return { runId, status, styles };
+}
+
+export function doorAuditSubmitRenderInput(input: {
+  runId: number;
+  styleId: number;
+  pngBase64: string;
+  sourceFingerprint?: string | null;
+}): {
+  runId: number;
+  styleId: number;
+  imageBase64: string;
+  contentType: "image/png";
+  renderingCommit?: string;
+} {
+  const renderingCommit = input.sourceFingerprint?.trim().slice(0, 128) ?? "";
+  return {
+    runId: input.runId,
+    styleId: input.styleId,
+    imageBase64: input.pngBase64,
+    contentType: "image/png",
+    ...(renderingCommit ? { renderingCommit } : {}),
+  };
+}
+
+export function doorAuditDecisionInput(input: { versionId: number; decision: "accept" | "reject" }) {
+  return { versionId: input.versionId, decision: input.decision };
+}
+
+export function doorAuditRevertInput(input: { versionId: number }) {
+  return { versionId: input.versionId };
+}
+
+function focusFromResults(results: unknown[]): { focusStyleId: number | null; focusLabel: string | null; pendingStyles: DoorAuditRenderInput[] } {
+  const records = results.flatMap((item) => {
+    const record = asRecord(item);
+    return record ? [record] : [];
+  });
+  const pendingStyles = records
+    .filter((row) => row.status === "pending_render" || row.status === "pending")
+    .flatMap((row) => {
+      const style = normalizeDoorAuditRenderInput(row);
+      return style ? [style] : [];
+    });
+  const scoring = records.find((row) => row.status === "scoring");
+  const focusRecord = scoring ?? records.find((row) => row.status === "pending_render" || row.status === "pending") ?? null;
+  const focus = focusRecord ? normalizeDoorAuditRenderInput(focusRecord) : pendingStyles[0] ?? null;
+  return {
+    focusStyleId: focus?.styleId ?? null,
+    focusLabel: focus ? doorAuditStyleLabel(focus) : null,
+    pendingStyles,
+  };
+}
+
+function isNormalizedRunStatus(record: Record<string, unknown>): record is Record<string, unknown> & {
+  runId: number;
+  status: DoorAuditRunStatusName;
+  pendingStyles: unknown[];
+} {
+  return typeof record.runId === "number"
+    && isNormalizedStatusName(record.status)
+    && Array.isArray(record.pendingStyles)
+    && !("results" in record)
+    && !asRecord(record.run);
+}
+
+export function normalizeDoorAuditRunStatus(raw: unknown): DoorAuditRunStatus | null {
+  if (raw == null) return null;
+  const record = asRecord(raw);
+  if (!record) return null;
+  if (isNormalizedRunStatus(record)) {
+    const pendingStyles = record.pendingStyles.flatMap((item: unknown) => {
+      const style = normalizeDoorAuditRenderInput(item);
+      return style ? [style] : [];
+    });
+    const status = record.status as DoorAuditRunStatusName;
+    const runId = positiveInt(record.runId);
+    if (runId == null) return null;
+    return {
+      runId,
+      mode: mapMode(record.mode ?? record.scope),
+      status,
+      total: finiteNumber(record.total) ?? 0,
+      uploaded: finiteNumber(record.uploaded) ?? 0,
+      scored: finiteNumber(record.scored) ?? 0,
+      failed: finiteNumber(record.failed) ?? 0,
+      startedAt: toIso(record.startedAt) ?? "",
+      finishedAt: toIso(record.finishedAt),
+      error: text(record.error) ?? (status === "failed" ? "Door rendering audit failed." : null),
+      pendingStyles,
+      focusStyleId: positiveInt(record.focusStyleId) ?? pendingStyles[0]?.styleId ?? null,
+      focusLabel: text(record.focusLabel) ?? (pendingStyles[0] ? doorAuditStyleLabel(pendingStyles[0]) : null),
+    };
+  }
+  const run = asRecord(record.run) ?? record;
+  const runId = positiveInt(run.runId ?? run.id);
+  if (runId == null) return null;
+  const progress = asRecord(record.progress) ?? {};
+  const results = Array.isArray(record.results) ? record.results : [];
+  const focus = focusFromResults(results);
+  const total = finiteNumber(progress.total) ?? finiteNumber(run.selectedCount) ?? finiteNumber(run.total) ?? results.length;
+  const pending = finiteNumber(progress.pending) ?? finiteNumber(run.pendingCount) ?? focus.pendingStyles.length;
+  const status = mapStatus(run.status ?? record.status);
+  const cancelled = run.status === "cancelled" || record.status === "cancelled";
+  return {
+    runId,
+    mode: mapMode(run.scope ?? run.mode ?? record.scope ?? record.mode),
+    status,
+    total,
+    uploaded: Math.max(0, total - pending),
+    scored: finiteNumber(progress.scored) ?? finiteNumber(run.scoredCount) ?? finiteNumber(run.scored) ?? 0,
+    failed: finiteNumber(progress.failed) ?? finiteNumber(run.failedCount) ?? finiteNumber(run.failed) ?? 0,
+    startedAt: toIso(run.startedAt ?? run.createdAt) ?? "",
+    finishedAt: toIso(run.finishedAt ?? run.completedAt),
+    error: text(run.errorMessage) ?? text(run.error) ?? (cancelled ? "This audit run was stopped." : null),
+    pendingStyles: focus.pendingStyles,
+    focusStyleId: focus.focusStyleId,
+    focusLabel: focus.focusLabel,
+  };
+}
+
+export function normalizeDoorAuditRuns(raw: unknown): DoorAuditRunSummary[] {
+  const record = asRecord(raw);
+  const list = Array.isArray(raw) ? raw : Array.isArray(record?.runs) ? record.runs : [];
+  return list.flatMap((item) => {
+    const row = asRecord(item);
+    if (!row) return [];
+    const runId = positiveInt(row.runId ?? row.id);
+    if (runId == null) return [];
+    return [{
+      runId,
+      mode: mapMode(row.scope ?? row.mode),
+      status: mapStatus(row.status),
+      total: finiteNumber(row.total) ?? finiteNumber(row.selectedCount) ?? 0,
+      scored: finiteNumber(row.scored) ?? finiteNumber(row.scoredCount) ?? 0,
+      failed: finiteNumber(row.failed) ?? finiteNumber(row.failedCount) ?? 0,
+      flagged: finiteNumber(row.flagged) ?? finiteNumber(row.flaggedCount) ?? 0,
+      startedAt: toIso(row.startedAt ?? row.createdAt) ?? "",
+      finishedAt: toIso(row.finishedAt ?? row.completedAt),
+      startedByName: text(row.startedByName) ?? text(row.requestedByName),
+    }];
+  });
+}
+
+export function normalizeDoorAuditVersions(raw: unknown): DoorAuditVersion[] {
+  const record = asRecord(raw);
+  const list = Array.isArray(raw) ? raw : Array.isArray(record?.versions) ? record.versions : [];
+  return list.flatMap((item) => {
+    const version = normalizeVersion(item);
+    return version ? [version] : [];
+  });
+}
+
+export function enrichDoorAuditQueue(
+  queue: readonly DoorAuditRenderInput[],
+  catalog: readonly DoorAuditStyleRow[],
+): DoorAuditRenderInput[] {
+  const byId = new Map(catalog.map((style) => [style.styleId, style]));
+  return queue.flatMap((style) => {
+    if (!style || !Number.isInteger(style.styleId)) return [];
+    const known = byId.get(style.styleId);
+    if (!known) return [style];
+    return [{
+      ...style,
+      name: style.name && style.name !== "Door style" ? style.name : known.name,
+      code: style.code ?? known.code,
+      distributorName: style.distributorName ?? known.distributorName,
+      samplePhotoUrl: style.samplePhotoUrl ?? known.samplePhotoUrl,
+      color: style.color ?? known.color,
+      sourceFingerprint: style.sourceFingerprint || known.sourceFingerprint,
+      doorProfile: profileIsBlank(style.doorProfile) ? known.doorProfile : style.doorProfile,
+    }];
+  });
+}
+
+export function assertDoorAuditRenderable(style: DoorAuditRenderInput | null | undefined): asserts style is DoorAuditRenderInput {
+  if (!style || !Number.isInteger(style.styleId) || style.styleId <= 0) {
+    throw new DoorAuditClientError("A selected door style was missing its id.");
+  }
+  if (!style.doorProfile) {
+    throw new DoorAuditClientError(`${doorAuditStyleLabel(style)} is missing its door profile, so it cannot be rendered.`);
+  }
 }

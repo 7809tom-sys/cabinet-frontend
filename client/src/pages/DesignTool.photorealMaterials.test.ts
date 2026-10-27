@@ -87,6 +87,19 @@ describe("Designer programmed photoreal material wiring", () => {
     expect(rendererSource).toContain('measuredBacksplash: true');
   });
 
+  it("tiles the selected backsplash product image and sends that image with the room scene", () => {
+    expect(designToolSource).toContain("selectedBacksplashTextureUrl");
+    expect(designToolSource).toContain('if (role === "backsplash") return selectedBacksplashTextureUrl(selected).url;');
+    expect(designToolSource).toContain("catalogBacksplashReferenceUrl={backsplashEnabled ? threeDSurfaceTextureUrls.backsplash : null}");
+    expect(designToolSource).toContain("catalogBacksplashSize={backsplashEnabled ? activeBacksplashSurface?.size ?? null : null}");
+    expect(designToolSource).toContain("backsplashImageUrl: selectedBacksplashTextureUrl(backsplashSurf).url || undefined");
+    expect(designToolSource).toContain("backsplashImageUrl={backsplashEnabled ? threeDSurfaceTextureUrls.backsplash : null}");
+    expect(rendererSource).toContain('data-testid="backsplash-texture-warning"');
+    expect(rendererSource).toContain("textureUnavailable");
+    expect(rendererSource).toContain("BACKSPLASH_ROOM_SCENE_FIDELITY");
+    expect(rendererSource).toContain("resolveDesignerMaterialUrl");
+  });
+
   it("keeps the corrected photographic exposure below neutral after the washed-out mobile regression", () => {
     expect(rendererSource).toContain("renderer.toneMappingExposure = 0.84");
     expect(rendererSource).toContain('new THREE.HemisphereLight("#fffaf2", "#718096", 0.92)');

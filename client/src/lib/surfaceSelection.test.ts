@@ -243,9 +243,40 @@ describe("verified saved surface refresh", () => {
         id: 183,
         threeDActive: true,
         materialImageUrl: "/manus-storage/desert_clay_11_81_interlocking_mosaic_0aa381c4.webp",
+        imageUrl: "/manus-storage/pelican/183_55da5bcf.png",
         coverageSqFt: 7.75,
       }),
     ]);
+  });
+
+  it("keeps a swatch-less mosaic product picture on the saved selection", () => {
+    const [refreshed] = refreshVerifiedSurfaceSelections([{
+      id: 364,
+      name: "Moonstone Hex",
+      category: "Tile & Mosaic",
+      subCategory: "Mosaic",
+      size: '11.81" x 11.81"',
+      imageUrl: "/manus-storage/pelican/364_moonstone.png",
+      materialImageUrl: null,
+      sellPrice: 34.38,
+      threeDActive: true,
+    }], [{
+      id: 364,
+      pelicanCode: "Moonstone Hex",
+      name: "Moonstone Hex",
+      category: "Tile & Mosaic",
+      subCategory: "Mosaic",
+      size: '11.81" x 11.81"',
+      imageUrl: "/manus-storage/pelican/364_moonstone.png",
+      materialImageUrl: null,
+      sellPrice: 34.38,
+    }]);
+    expect(refreshed).toEqual(expect.objectContaining({
+      id: 364,
+      imageUrl: "/manus-storage/pelican/364_moonstone.png",
+      materialImageUrl: null,
+      threeDActive: true,
+    }));
   });
 
   it("keeps an unavailable saved product visible as a selection but clears its stale purchase price and 3D swatch", () => {

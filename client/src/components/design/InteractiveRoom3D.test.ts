@@ -1612,7 +1612,8 @@ describe("interactive 3D room scene helpers", () => {
 			const counter = threeDProductMaterialSource("countertop", "Selected Quartz", null);
 			expect(counter).toMatchObject({ key: "representative-countertop", proceduralFallback: true, physicalWidthIn: 138, physicalDepthIn: 79 });
 			const backsplash = threeDProductMaterialSource("backsplash", "Selected Tile", null);
-			expect(backsplash).toMatchObject({ key: "representative-backsplash", proceduralFallback: true });
+			expect(backsplash).toMatchObject({ key: "backsplash-image-unavailable", proceduralFallback: false, textureUnavailable: true });
+			expect(backsplash?.url).toBe("");
 			expect(threeDProductMaterialSource("flooring", null, null)).toBeNull();
 		  });
 
