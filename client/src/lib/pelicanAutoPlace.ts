@@ -31,7 +31,7 @@ import {
   type WallSide,
 } from "./design";
 import { nextIslandFacePlacement } from "./islandScene";
-import { pickFourAnchorSinkBase, type AutoBuildCatalogCandidate } from "./fourAnchorAutoBuild";
+import { pickAutoDesignSinkBase, type AutoBuildCatalogCandidate } from "./autoDesignAutoBuild";
 import {
   isVerifiedPelicanVanityFaucet,
   isVerifiedPelicanVanitySink,
@@ -269,7 +269,7 @@ export function chooseSmallestPelicanSinkBase<T extends AutoBuildCatalogCandidat
   const kind = pelicanSinkBaseKind(item) === "farmhouse" ? "farmhouse" : "regular";
   for (const width of SINK_BASE_WIDTHS) {
     if (width + 0.1 < minimumWidthIn) continue;
-    const row = pickFourAnchorSinkBase(catalog, width, kind);
+    const row = pickAutoDesignSinkBase(catalog, width, kind);
     if (row) return row;
   }
   return null;

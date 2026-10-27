@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import catalogFixture from "./__fixtures__/fourAnchorRealCatalog.json";
+import catalogFixture from "./__fixtures__/autoDesignRealCatalog.json";
 import { isWallBlindCornerCabinet } from "./cabinetGraphics";
 import {
   DEFAULT_ROOM, cabinetPlacementCollisionDetail, wallPlacementAt, wallRunOffset, wallRunSpan,
   type DesignCabinet, type PlacedCabinet,
 } from "./design";
-import { FOUR_ANCHOR_MAX_APPLIANCE_NUDGE_IN, seatFourAnchorCorner } from "./fourAnchorCornerSeating";
-import { buildFourAnchorWallCabinets, resolveWallHeightClass } from "./fourAnchorWallCabinets";
+import { AUTO_DESIGN_MAX_APPLIANCE_NUDGE_IN, seatAutoDesignCorner } from "./autoDesignCornerSeating";
+import { buildAutoDesignWallCabinets, resolveWallHeightClass } from "./autoDesignWallCabinets";
 
 type Fixture = Record<string, { base: unknown[]; wall: unknown[]; accessory: unknown[] }>;
 const REAL = catalogFixture as unknown as Fixture;
@@ -37,10 +37,10 @@ function range(width: number, startAlong: number): PlacedCabinet {
 }
 const fillers = (style: "330011" | "540005") => rows(style, "accessory").filter((row) => /filler/i.test(`${row.masterCode} ${row.description}`)) as never[];
 
-describe("Four-anchor corner seating: real catalog, appliance first", () => {
+describe("Auto-Design corner seating: real catalog, appliance first", () => {
   const framedBase = rows("330011", "base");
   const bbc36 = byCode(framedBase, "BBC36");
-  const seat = (working: PlacedCabinet[], extra: Partial<Parameters<typeof seatFourAnchorCorner>[0]> = {}) => seatFourAnchorCorner({
+  const seat = (working: PlacedCabinet[], extra: Partial<Parameters<typeof seatAutoDesignCorner>[0]> = {}) => seatAutoDesignCorner({
     source: bbc36, slotLabel: "Corner between Wall 1 and Wall 2", target: TOP_RIGHT, cornerWallIds: ["top", "right"],
     working, room: DEFAULT_ROOM, openings: [], blindPullIn: 4, isBlindOption: true,
     catalogFillers: fillers("330011"), makeUid: uids(), styleId: 330011, ...extra,
@@ -65,7 +65,7 @@ describe("Four-anchor corner seating: real catalog, appliance first", () => {
     const move = result.moves[0]!;
     expect(move.kind).toBe("range");
     expect(move.shiftIn).toBe(2);
-    expect(move.shiftIn).toBeLessThanOrEqual(FOUR_ANCHOR_MAX_APPLIANCE_NUDGE_IN);
+    expect(move.shiftIn).toBeLessThanOrEqual(AUTO_DESIGN_MAX_APPLIANCE_NUDGE_IN);
     // Away from the corner: the range moved toward the start of the top wall.
     expect(move.deltaAlongIn).toBeLessThan(0);
     const moved = result.placed.find((item) => item.uid === "range-1")!;
@@ -118,7 +118,7 @@ describe("Four-anchor corner seating: real catalog, appliance first", () => {
   });
 });
 
-describe("Four-anchor wall stage: the line's real wall height class", () => {
+describe("Auto-Design wall stage: the line's real wall height class", () => {
   it("maps the requested 30/36/42 to the frameless 30.25/35.25/40.25 uppers", () => {
     const frameless = rows("540005", "wall");
     expect(resolveWallHeightClass(frameless, 30)).toBeCloseTo(30.25, 5);
@@ -136,11 +136,11 @@ describe("Four-anchor wall stage: the line's real wall height class", () => {
   });
 });
 
-describe("Four-anchor wall stage end to end on the real frameless catalog", () => {
+describe("Auto-Design wall stage end to end on the real frameless catalog", () => {
   const wall = rows("540005", "wall");
   const makeRun = () => [lower("B24", 24, 0), lower("B30", 30, 24), lower("B36", 36, 54)];
-  const build = (placed: PlacedCabinet[], corners?: Parameters<typeof buildFourAnchorWallCabinets>[0]["corners"]) =>
-    buildFourAnchorWallCabinets({
+  const build = (placed: PlacedCabinet[], corners?: Parameters<typeof buildAutoDesignWallCabinets>[0]["corners"]) =>
+    buildAutoDesignWallCabinets({
       placed, room: DEFAULT_ROOM, openings: [], catalog: wall, wallCabinetHeightIn: 30, styleId: 540005,
       makeUid: uids(), corners, catalogFillers: fillers("540005"),
     });
@@ -166,7 +166,7 @@ describe("Four-anchor wall stage end to end on the real frameless catalog", () =
   it("puts a 12-inch wall cabinet in the room corner above a base blind corner", () => {
     const frameless = rows("540005", "base");
     const bbc = byCode(frameless, "BBC43/46FH");
-    const base = seatFourAnchorCorner({
+    const base = seatAutoDesignCorner({
       source: bbc, slotLabel: "Corner between Wall 1 and Wall 2", target: TOP_RIGHT, cornerWallIds: ["top", "right"],
       working: [], room: DEFAULT_ROOM, openings: [], blindPullIn: 4, isBlindOption: true,
       catalogFillers: fillers("540005"), makeUid: uids(), styleId: 540005,

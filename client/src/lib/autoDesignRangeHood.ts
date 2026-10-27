@@ -6,12 +6,12 @@ import {
 /** The standard hood bottom datum when the catalog row carries none. */
 const DEFAULT_HOOD_MOUNT_BOTTOM_IN = 66;
 
-export type FourAnchorRangeHoodResult =
+export type AutoDesignRangeHoodResult =
   | { ok: true; hood: PlacedCabinet }
   | { ok: false; message: string };
 
 /** A range has nothing above it yet: no hood and no over-range microwave. */
-export function fourAnchorRangeNeedsVentilation(placed: readonly PlacedCabinet[], range: PlacedCabinet): boolean {
+export function autoDesignRangeNeedsVentilation(placed: readonly PlacedCabinet[], range: PlacedCabinet): boolean {
   return !placed.some((item) => item.uid !== range.uid
     && (isHoodOverRangePair(item, range) || isMicrowaveOverRangePair(item, range)));
 }
@@ -22,12 +22,12 @@ export function fourAnchorRangeNeedsVentilation(placed: readonly PlacedCabinet[]
  * datum. It uses the Designer's own over-range attachment rule, so it lands
  * exactly where a hood added by hand to this range would.
  */
-export function fourAnchorRangeHood(input: {
+export function autoDesignRangeHood(input: {
   range: PlacedCabinet;
   room: RoomData;
   palette: readonly DesignCabinet[];
   uid: string;
-}): FourAnchorRangeHoodResult {
+}): AutoDesignRangeHoodResult {
   const { range, room, palette, uid } = input;
   const hoods = palette.filter((item) => /^HOOD-/.test(item.masterCode) && Number(item.width) > 0);
   if (!hoods.length) return { ok: false, message: "No range hood is available for this room type." };

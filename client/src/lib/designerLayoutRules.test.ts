@@ -14,12 +14,12 @@ import {
 import { CROWN_MITER_CUT_ALLOWANCE_IN } from "./crownTakeoff";
 import {
   DESIGNER_LAYOUT_RULES,
-  FOUR_ANCHOR_WIGGLE_ROOM_IN,
+  AUTO_DESIGN_WIGGLE_ROOM_IN,
   applyDesignerLayoutRules,
-  applyFourAnchorWiggleRoom,
+  applyAutoDesignWiggleRoom,
   crownMiterCutAllowanceIn,
   enforceTrimSupplierContinuity,
-  type FourAnchorAnchorOrigin,
+  type AutoDesignAnchorOrigin,
 } from "./designerLayoutRules";
 
 const pageSource = readFileSync(resolve(process.cwd(), "client/src/pages/DesignTool.tsx"), "utf8");
@@ -66,7 +66,7 @@ function rangeOnBottom(roomWidth: number, start: number, width = 30): { room: ty
   return { room, item };
 }
 
-function originFor(item: PlacedCabinet, kind: string, start: number): FourAnchorAnchorOrigin {
+function originFor(item: PlacedCabinet, kind: string, start: number): AutoDesignAnchorOrigin {
   return { uid: item.uid, kind, wallId: "bottom", originalStart: start };
 }
 
@@ -87,7 +87,7 @@ describe("designer rule registry", () => {
       "crown-miter-allowance",
       "faucet-on-counter",
     ]));
-    expect(FOUR_ANCHOR_WIGGLE_ROOM_IN).toBe(3);
+    expect(AUTO_DESIGN_WIGGLE_ROOM_IN).toBe(3);
   });
 
   it("keeps the crown cut allowance at 4 inches", () => {
@@ -97,11 +97,11 @@ describe("designer rule registry", () => {
   });
 });
 
-describe("four-anchor wiggle room", () => {
+describe("auto-design wiggle room", () => {
   it("shifts an appliance to the smallest move that removes the filler", () => {
     const { room, item } = rangeOnBottom(120, 45);
     const beforeY = item.y;
-    const result = applyFourAnchorWiggleRoom({
+    const result = applyAutoDesignWiggleRoom({
       placed: [item],
       room,
       openings: [],
@@ -120,7 +120,7 @@ describe("four-anchor wiggle room", () => {
 
   it("stops at 3 inches when the exact cabinet fit is farther away", () => {
     const { room, item } = rangeOnBottom(77, 15);
-    const result = applyFourAnchorWiggleRoom({
+    const result = applyAutoDesignWiggleRoom({
       placed: [item],
       room,
       openings: [],
@@ -138,7 +138,7 @@ describe("four-anchor wiggle room", () => {
 
   it("leaves an appliance where it is when the run is already an exact fit", () => {
     const { room, item } = rangeOnBottom(120, 36);
-    const result = applyFourAnchorWiggleRoom({
+    const result = applyAutoDesignWiggleRoom({
       placed: [item],
       room,
       openings: [],
@@ -155,7 +155,7 @@ describe("four-anchor wiggle room", () => {
 
   it("measures the 3-inch cap from the original placement after a corner nudge", () => {
     const { room, item } = rangeOnBottom(120, 46);
-    const result = applyFourAnchorWiggleRoom({
+    const result = applyAutoDesignWiggleRoom({
       placed: [item],
       room,
       openings: [],
@@ -198,7 +198,7 @@ describe("four-anchor wiggle room", () => {
       height: 36,
       sill: 42,
     };
-    const result = applyFourAnchorWiggleRoom({
+    const result = applyAutoDesignWiggleRoom({
       placed: [sink],
       room,
       openings: [window],
@@ -371,15 +371,15 @@ describe("shared designer layout rules", () => {
   });
 });
 
-describe("four-anchor completion wiring", () => {
+describe("auto-design completion wiring", () => {
   it("runs wiggle room and the shared rules inside the measured build", () => {
-    const completion = pageSource.slice(pageSource.indexOf("const completeFourAnchorAutoLayout"), pageSource.indexOf("const cancelFourAnchorCornerStage"));
+    const completion = pageSource.slice(pageSource.indexOf("const completeAutoDesignLayout"), pageSource.indexOf("const cancelAutoDesignCornerStage"));
     const corners = completion.indexOf("for (const slot of stage.slots)");
-    const wiggle = completion.indexOf("applyFourAnchorWiggleRoom({");
-    const bases = completion.indexOf("planFourAnchorBaseSegment({");
+    const wiggle = completion.indexOf("applyAutoDesignWiggleRoom({");
+    const bases = completion.indexOf("planAutoDesignBaseSegment({");
     const rules = completion.indexOf("applyDesignerLayoutRules({");
-    const seams = completion.indexOf("fillFourAnchorLowerSeams({");
-    const walls = completion.indexOf("buildFourAnchorWallCabinets({");
+    const seams = completion.indexOf("fillAutoDesignLowerSeams({");
+    const walls = completion.indexOf("buildAutoDesignWallCabinets({");
     const secondRules = completion.indexOf("applyDesignerLayoutRules({", rules + 1);
     const commit = completion.indexOf("setPlaced(working)");
     expect(wiggle).toBeGreaterThan(corners);
@@ -390,7 +390,7 @@ describe("four-anchor completion wiring", () => {
     expect(secondRules).toBeGreaterThan(walls);
     expect(commit).toBeGreaterThan(secondRules);
     expect(pageSource).toContain("anchorOrigins");
-    expect(pageSource).toContain("Four-anchor will not move it.");
+    expect(pageSource).toContain("Auto-Design will not move it.");
     expect(completion).toContain("closeSeams: true");
   });
 });

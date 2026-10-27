@@ -13733,6 +13733,11 @@ export interface SinkFixture {
   apronFront?: boolean;
   /** Source-documented sink surface finish for deterministic physical fixture rendering. */
   surfaceFinish?: "stainless-steel" | "gunmetal-black" | "vitreous-china" | "vitreous-china-black" | "vitreous-china-bone" | "vitreous-china-grey";
+  /**
+   * Auto-Design attached this faucet. The faucet is part of the sink fixture, so
+   * it moves and deletes with the sink. Clicking it reopens the faucet picker.
+   */
+  autoDesignFaucet?: boolean;
   /** Selected Pelican faucet identity and source-verified parametric profile, when present. */
   pelicanFaucetProductId?: number;
   pelicanFaucetProductName?: string;
@@ -14157,6 +14162,7 @@ export function normalizeSinkFixturesToBases(
       exteriorHeight: sink.exteriorHeight,
       apronFront: sink.apronFront,
       surfaceFinish: sink.surfaceFinish,
+      autoDesignFaucet: sink.autoDesignFaucet,
       pelicanFaucetProductId: sink.pelicanFaucetProductId,
       pelicanFaucetProductName: sink.pelicanFaucetProductName,
       pelicanFaucetProductImage: sink.pelicanFaucetProductImage,

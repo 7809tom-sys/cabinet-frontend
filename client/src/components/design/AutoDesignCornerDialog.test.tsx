@@ -1,15 +1,15 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { FourAnchorCornerSelectionDialog } from "./FourAnchorCornerSelectionDialog";
+import { AutoDesignCornerDialog } from "./AutoDesignCornerDialog";
 
 afterEach(cleanup);
 
-describe("FourAnchorCornerSelectionDialog", () => {
+describe("AutoDesignCornerDialog", () => {
   it("preselects a real catalog corner after anchors are seated and never offers an open corner", () => {
     const onConfirm = vi.fn((): { ok: true } => ({ ok: true }));
     render(
-      <FourAnchorCornerSelectionDialog
+      <AutoDesignCornerDialog
         open
         slots={[{ id: "wall-1-wall-2", label: "Corner between Wall 1 and Wall 2", firstWall: "Wall 1", secondWall: "Wall 2" }]}
         options={[
@@ -24,7 +24,7 @@ describe("FourAnchorCornerSelectionDialog", () => {
     expect(screen.getByText("Appliances are seated — choose corner cabinets")).toBeTruthy();
     expect(screen.getByText("Corner between Wall 1 and Wall 2")).toBeTruthy();
     expect(screen.queryByText("Leave this corner open")).toBeNull();
-    fireEvent.click(screen.getByTestId("four-anchor-corner-confirm"));
+    fireEvent.click(screen.getByTestId("auto-design-corner-confirm"));
     expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({
       "wall-1-wall-2": expect.objectContaining({ cabinetId: 8 }),
     }));
@@ -33,7 +33,7 @@ describe("FourAnchorCornerSelectionDialog", () => {
   it("asks for an explicit 3–6 inch pull when the selected source option is a base blind corner", () => {
     const onConfirm = vi.fn((): { ok: true } => ({ ok: true }));
     render(
-      <FourAnchorCornerSelectionDialog
+      <AutoDesignCornerDialog
         open
         slots={[{ id: "wall-1-wall-2", label: "Corner between Wall 1 and Wall 2", firstWall: "Wall 1", secondWall: "Wall 2" }]}
         options={[{ id: 9, masterCode: "BBC39", description: "39 inch Blind Corner Base", placement: "base", cornerType: "blind-corner" }]}
@@ -44,7 +44,7 @@ describe("FourAnchorCornerSelectionDialog", () => {
     );
 
     expect(screen.getByText("Blind-corner pull from wall")).toBeTruthy();
-    fireEvent.click(screen.getByTestId("four-anchor-corner-confirm"));
+    fireEvent.click(screen.getByTestId("auto-design-corner-confirm"));
     expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({
       "wall-1-wall-2": expect.objectContaining({ cabinetId: 9, blindPullIn: 6 }),
     }));

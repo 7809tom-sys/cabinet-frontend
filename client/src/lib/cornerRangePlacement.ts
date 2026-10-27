@@ -8,10 +8,10 @@ import {
 import {
   anchorAlongStartIn,
   wallLabelToEngineWallId,
-  type FourAnchorOriginCorner,
-  type FourAnchorRunDirection,
+  type AutoDesignOriginCorner,
+  type AutoDesignRunDirection,
   type WallLabel,
-} from "./fourAnchorAutoBuild";
+} from "./autoDesignAutoBuild";
 
 export type CornerRangeEnd = "start" | "end";
 export const CORNER_RANGE_HANDLE_FILLER_IN = 3;
@@ -21,8 +21,8 @@ export type CornerRangeRequest = {
   room: RoomData;
   wallLabel: WallLabel;
   centerOffsetIn: number;
-  originCorner: FourAnchorOriginCorner;
-  runDirection: FourAnchorRunDirection;
+  originCorner: AutoDesignOriginCorner;
+  runDirection: AutoDesignRunDirection;
   cornerEnd: CornerRangeEnd;
   placed?: PlacedCabinet[];
 };

@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import catalogFixture from "./__fixtures__/fourAnchorRealCatalog.json";
-import kitchenFixture from "./__fixtures__/fourAnchorGapKitchen.json";
-import { autoBuildStraightBaseCatalog } from "./fourAnchorAutoBuild";
+import catalogFixture from "./__fixtures__/autoDesignRealCatalog.json";
+import kitchenFixture from "./__fixtures__/autoDesignGapKitchen.json";
+import { autoBuildStraightBaseCatalog } from "./autoDesignAutoBuild";
 import {
-  RANGE_NEIGHBOR_MIN_WIDTH_IN, SEAM_MIN_IN, findFourAnchorSeams, fillFourAnchorLowerSeams, planFourAnchorBaseSegment,
+  RANGE_NEIGHBOR_MIN_WIDTH_IN, SEAM_MIN_IN, findAutoDesignSeams, fillAutoDesignLowerSeams, planAutoDesignBaseSegment,
   seamFillerWidths, upperReservedZones,
-} from "./fourAnchorSeamFillers";
-import { buildFourAnchorWallCabinets } from "./fourAnchorWallCabinets";
+} from "./autoDesignSeamFillers";
+import { buildAutoDesignWallCabinets } from "./autoDesignWallCabinets";
 import {
   cabinetPlacementCollisionDetail, cabinetWall, freeSegmentsOnWall, isRangeOrOven, wallRunOffset, wallRunSpan,
   type DesignCabinet, type PlacedCabinet, type RoomData, type WallOpening,
@@ -23,7 +23,7 @@ const openings = kitchenFixture.openings as unknown as WallOpening[];
 const TOP_RIGHT = { x: room.width, y: 0 };
 let counter = 0;
 const uid = () => `seam-${++counter}`;
-/** The kitchen the Four-anchor builder produced for the user before this rule: bases and appliances only. */
+/** The kitchen the Auto-Design builder produced for the user before this rule: bases and appliances only. */
 const lowerOnly = () => (kitchenFixture.placed as unknown as PlacedCabinet[]).filter((item) => item.placement !== "wall" || /fridge|refrigerator/i.test(item.description ?? ""));
 const bridge = () => (kitchenFixture.placed as unknown as PlacedCabinet[]).find((item) => item.masterCode === "W361224")!;
 const lowerWithBridge = () => lowerOnly().filter((item) => item.placement !== "wall").concat(bridge());
@@ -37,11 +37,11 @@ const freeBase = (placed: PlacedCabinet[]) => ["top", "right", "bottom", "left"]
   freeSegmentsOnWall(wall as never, room, placed, openings, SEAM_MIN_IN, 0, "base", false, undefined, 24)
     .map((segment) => ({ wall, start: Math.round(segment.start * 1000) / 1000, end: Math.round((segment.start + segment.length) * 1000) / 1000 })));
 
-const lowerResult = () => fillFourAnchorLowerSeams({
+const lowerResult = () => fillAutoDesignLowerSeams({
   placed: lowerWithBridge(), room, openings, fillers: fillersOf(STYLE), makeUid: uid, styleId: Number(STYLE), corners: [TOP_RIGHT],
 });
 
-describe("Four-anchor: no gaps anywhere — the user's real built kitchen", () => {
+describe("Auto-Design: no gaps anywhere — the user's real built kitchen", () => {
   it("starts with the exact gaps the user reported (1.75-inch seams, a 3-inch seam beside the range)", () => {
     const gaps = freeBase(lowerWithBridge());
     expect(gaps).toContainEqual({ wall: "top", start: 52.25, end: 54 });
@@ -52,7 +52,7 @@ describe("Four-anchor: no gaps anywhere — the user's real built kitchen", () =
   it("closes every opening between anchors, panels, corner and runs with real catalog filler", () => {
     const result = lowerResult();
     expect(result.notes).toEqual([]);
-    expect(findFourAnchorSeams({ layer: "base", placed: result.placed, room, openings, corners: [TOP_RIGHT] })).toEqual([]);
+    expect(findAutoDesignSeams({ layer: "base", placed: result.placed, room, openings, corners: [TOP_RIGHT] })).toEqual([]);
     // What remains free is only deliberate: the refrigerator assembly's own 1/2-inch clearances and the blind corner's pocket.
     // Bottom and left are empty walls in this kitchen (no cabinets), so they are free by design.
     const left = freeBase(result.placed).filter((gap) => gap.wall === "top" || gap.wall === "right").map((gap) => `${gap.wall}:${gap.start}-${gap.end}`).sort();
@@ -98,10 +98,10 @@ describe("Four-anchor: no gaps anywhere — the user's real built kitchen", () =
   });
 });
 
-describe("Four-anchor: upper layer has no gaps either, and nothing over the sink, range or refrigerator", () => {
+describe("Auto-Design: upper layer has no gaps either, and nothing over the sink, range or refrigerator", () => {
   const upper = () => {
     const lower = lowerResult();
-    const result = buildFourAnchorWallCabinets({
+    const result = buildAutoDesignWallCabinets({
       placed: lower.placed, room, openings, catalog: rows(STYLE, "wall"), wallCabinetHeightIn: 30, styleId: Number(STYLE),
       makeUid: uid, catalogFillers: fillersOf(STYLE), closeSeams: true,
       corners: [{ base: lower.placed.find((item) => item.masterCode === "BBC36")!, point: { ...TOP_RIGHT, firstWallId: "top" } }],
@@ -112,7 +112,7 @@ describe("Four-anchor: upper layer has no gaps either, and nothing over the sink
   it("leaves no uncovered opening above any lower run outside the deliberate zones", () => {
     const { result } = upper();
     const zones = upperReservedZones(result.placed.filter((item) => item.placement !== "wall" || /fridge|refrigerator/i.test(item.description ?? "")), room);
-    const seams = findFourAnchorSeams({
+    const seams = findAutoDesignSeams({
       layer: "wall", placed: result.placed, room, openings,
       corners: [TOP_RIGHT], reservedZones: zones,
     });
@@ -145,7 +145,7 @@ describe("Four-anchor: upper layer has no gaps either, and nothing over the sink
 
   it("is off by default so every other caller keeps its exact behavior", () => {
     const lower = lowerResult();
-    const without = buildFourAnchorWallCabinets({
+    const without = buildAutoDesignWallCabinets({
       placed: lower.placed, room, openings, catalog: rows(STYLE, "wall"), wallCabinetHeightIn: 30, styleId: Number(STYLE),
       makeUid: uid, catalogFillers: fillersOf(STYLE),
     });
@@ -154,9 +154,9 @@ describe("Four-anchor: upper layer has no gaps either, and nothing over the sink
   });
 });
 
-describe("Four-anchor: a range always has a real cabinet at least 15 inches wide on each side", () => {
+describe("Auto-Design: a range always has a real cabinet at least 15 inches wide on each side", () => {
   const catalog = autoBuildStraightBaseCatalog(rows(STYLE, "base"));
-  const widthsBeside = (plan: ReturnType<typeof planFourAnchorBaseSegment>, edge: "first" | "last") => {
+  const widthsBeside = (plan: ReturnType<typeof planAutoDesignBaseSegment>, edge: "first" | "last") => {
     const real = plan.items.filter((item) => !item.isFiller);
     return real[edge === "first" ? 0 : real.length - 1]?.width;
   };
@@ -167,7 +167,7 @@ describe("Four-anchor: a range always has a real cabinet at least 15 inches wide
 
   it("never puts a stub beside the range when the run can be tiled with wider boxes (range at the start)", () => {
     for (const length of [21, 24, 27, 30, 33, 39, 45, 51, 54, 57, 63, 69, 75, 81, 93]) {
-      const plan = planFourAnchorBaseSegment({ length, catalog, rangeAtStart: true, rangeAtEnd: false });
+      const plan = planAutoDesignBaseSegment({ length, catalog, rangeAtStart: true, rangeAtEnd: false });
       expect(plan.items[0]!.isFiller, `length ${length}`).toBe(false);
       expect(plan.items[0]!.width, `length ${length}`).toBeGreaterThanOrEqual(15);
     }
@@ -175,14 +175,14 @@ describe("Four-anchor: a range always has a real cabinet at least 15 inches wide
 
   it("puts the widest box against a range at the END of the run, and filler away from it", () => {
     for (const length of [21, 30, 45, 54, 69]) {
-      const plan = planFourAnchorBaseSegment({ length, catalog, rangeAtStart: false, rangeAtEnd: true });
+      const plan = planAutoDesignBaseSegment({ length, catalog, rangeAtStart: false, rangeAtEnd: true });
       expect(plan.items[plan.items.length - 1]!.isFiller, `length ${length}`).toBe(false);
       expect(plan.items[plan.items.length - 1]!.width, `length ${length}`).toBeGreaterThanOrEqual(15);
     }
   });
 
   it("gives both neighbors 15 inches or more when a run sits between two ranges", () => {
-    const plan = planFourAnchorBaseSegment({ length: 54, catalog, rangeAtStart: true, rangeAtEnd: true });
+    const plan = planAutoDesignBaseSegment({ length: 54, catalog, rangeAtStart: true, rangeAtEnd: true });
     expect(widthsBeside(plan, "first")).toBeGreaterThanOrEqual(15);
     expect(widthsBeside(plan, "last")).toBeGreaterThanOrEqual(15);
     expect(plan.note).toBeNull();
@@ -190,19 +190,19 @@ describe("Four-anchor: a range always has a real cabinet at least 15 inches wide
   });
 
   it("covers the same span as the unconstrained plan (no extra gap) and keeps real boxes", () => {
-    const free = planFourAnchorBaseSegment({ length: 45, catalog, rangeAtStart: false, rangeAtEnd: false });
-    const constrained = planFourAnchorBaseSegment({ length: 45, catalog, rangeAtStart: true, rangeAtEnd: false });
+    const free = planAutoDesignBaseSegment({ length: 45, catalog, rangeAtStart: false, rangeAtEnd: false });
+    const constrained = planAutoDesignBaseSegment({ length: 45, catalog, rangeAtStart: true, rangeAtEnd: false });
     const total = (plan: typeof free) => plan.items.reduce((sum, item) => sum + item.width, 0);
     expect(total(constrained)).toBeCloseTo(total(free), 2);
   });
 
   it("says so (and does not hide it) when the segment itself is too short for a 15-inch neighbor", () => {
-    const plan = planFourAnchorBaseSegment({ length: 12, catalog, rangeAtStart: true, rangeAtEnd: false });
+    const plan = planAutoDesignBaseSegment({ length: 12, catalog, rangeAtStart: true, rangeAtEnd: false });
     expect(plan.note).toMatch(/narrower than 15/);
   });
 
   it("leaves a segment with no range exactly as the plain largest-first plan", () => {
-    const plan = planFourAnchorBaseSegment({ length: 45, catalog, rangeAtStart: false, rangeAtEnd: false });
+    const plan = planAutoDesignBaseSegment({ length: 45, catalog, rangeAtStart: false, rangeAtEnd: false });
     expect(plan.note).toBeNull();
     expect(plan.items.some((item) => !item.isFiller)).toBe(true);
   });

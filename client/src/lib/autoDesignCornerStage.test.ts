@@ -2,25 +2,25 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_ROOM } from "./design";
 import {
   autoBuildCornerCatalog,
-  fourAnchorCornerSlots,
-  fourAnchorCornerSlotPoint,
-} from "./fourAnchorCornerStage";
+  autoDesignCornerSlots,
+  autoDesignCornerSlotPoint,
+} from "./autoDesignCornerStage";
 
-describe("Four-anchor appliance-first corner stage", () => {
+describe("Auto-Design appliance-first corner stage", () => {
   it("asks for no corner on a single-wall or galley build, one real corner for L, and two for U", () => {
-    expect(fourAnchorCornerSlots("single-wall")).toEqual([]);
-    expect(fourAnchorCornerSlots("galley")).toEqual([]);
-    expect(fourAnchorCornerSlots("l-shape")).toEqual([
+    expect(autoDesignCornerSlots("single-wall")).toEqual([]);
+    expect(autoDesignCornerSlots("galley")).toEqual([]);
+    expect(autoDesignCornerSlots("l-shape")).toEqual([
       { id: "wall-1-wall-2", label: "Corner between Wall 1 and Wall 2", firstWall: "Wall 1", secondWall: "Wall 2" },
     ]);
-    expect(fourAnchorCornerSlots("u-shape")).toEqual([
+    expect(autoDesignCornerSlots("u-shape")).toEqual([
       { id: "wall-1-wall-2", label: "Corner between Wall 1 and Wall 2", firstWall: "Wall 1", secondWall: "Wall 2" },
       { id: "wall-2-wall-3", label: "Corner between Wall 2 and Wall 3", firstWall: "Wall 2", secondWall: "Wall 3" },
     ]);
   });
 
   it("maps the L-shape Wall 1/Wall 2 choice to their actual shared engine vertex", () => {
-    expect(fourAnchorCornerSlotPoint(
+    expect(autoDesignCornerSlotPoint(
       { id: "wall-1-wall-2", label: "Corner between Wall 1 and Wall 2", firstWall: "Wall 1", secondWall: "Wall 2" },
       DEFAULT_ROOM,
       "left",
@@ -29,7 +29,7 @@ describe("Four-anchor appliance-first corner stage", () => {
   });
 
   it("requires the real corner between measured back and right runs even if Single wall was left selected", () => {
-    expect(fourAnchorCornerSlots("single-wall", {
+    expect(autoDesignCornerSlots("single-wall", {
       wallIds: ["top", "right"], room: DEFAULT_ROOM, originCorner: "left", runDirection: "right",
     })).toEqual([
       { id: "wall-1-wall-2", label: "Corner between Wall 1 and Wall 2", firstWall: "Wall 1", secondWall: "Wall 2" },
@@ -37,7 +37,7 @@ describe("Four-anchor appliance-first corner stage", () => {
   });
 
   it("does not invent a corner between opposing galley runs", () => {
-    expect(fourAnchorCornerSlots("galley", {
+    expect(autoDesignCornerSlots("galley", {
       wallIds: ["top", "bottom"], room: DEFAULT_ROOM, originCorner: "left", runDirection: "right",
     })).toEqual([]);
   });
@@ -56,7 +56,7 @@ describe("Four-anchor appliance-first corner stage", () => {
         ["w4", "d", "e"], ["w5", "e", "f"], ["w6", "f", "a"],
       ].map(([id, startVertexId, endVertexId]) => ({ id, startVertexId, endVertexId })),
     } as typeof DEFAULT_ROOM;
-    const slots = fourAnchorCornerSlots("single-wall", {
+    const slots = autoDesignCornerSlots("single-wall", {
       wallIds: ["w5", "w6"], room, originCorner: "left", runDirection: "right",
     });
     expect(slots).toContainEqual({
@@ -69,15 +69,15 @@ describe("Four-anchor appliance-first corner stage", () => {
 
   it("deduplicates the declared L corner and retains both requested U corners", () => {
     const measured = { wallIds: ["top", "right"], room: DEFAULT_ROOM, originCorner: "left" as const, runDirection: "right" as const };
-    expect(fourAnchorCornerSlots("l-shape", measured)).toHaveLength(1);
-    expect(fourAnchorCornerSlots("u-shape", measured)).toHaveLength(2);
+    expect(autoDesignCornerSlots("l-shape", measured)).toHaveLength(1);
+    expect(autoDesignCornerSlots("u-shape", measured)).toHaveLength(2);
   });
 
   it("uses actual wall frames rather than a hard-coded top-right vertex on reversed traversal", () => {
     const measured = { wallIds: ["top", "left"], room: DEFAULT_ROOM, originCorner: "right" as const, runDirection: "left" as const };
-    const slots = fourAnchorCornerSlots("single-wall", measured);
+    const slots = autoDesignCornerSlots("single-wall", measured);
     expect(slots).toHaveLength(1);
-    expect(fourAnchorCornerSlotPoint(slots[0], measured.room, measured.originCorner, measured.runDirection))
+    expect(autoDesignCornerSlotPoint(slots[0], measured.room, measured.originCorner, measured.runDirection))
       .toEqual({ x: 0, y: 0, firstWallId: "top" });
   });
 

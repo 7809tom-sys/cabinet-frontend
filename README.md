@@ -27,3 +27,4 @@ See `DEPLOY.md` for the Vercel/Railway/DNS setup and the smoke-test checklist.
 - `pnpm check` (TypeScript) needs the backend's `server/routers` for the `AppRouter` type, so run it in the full project, not here.
 - About 50 tests currently fail (existing, unrelated to the split); the rest pass.
 - Never put server secrets in a `VITE_` variable: they are bundled into public JavaScript.
+- Auto-Design is the measured kitchen build in the admin and affiliate Designer. A refrigerator already in the layout turns it off and grays the control out. Wall widths (`Wall N: 144"`) appear only in the Auto-Design setup view. A sink placed during that build gets one deck-mounted faucet; the picker reads `pelican.byCategory` (`Sinks & Faucets` / `Faucets`) and `surfaces.recommended` (`role: "faucet"`).

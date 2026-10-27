@@ -1,8 +1,8 @@
-import { FOUR_ANCHOR_WALL_LABELS, wallLabelToEngineWallId, type AutoBuildCatalogCandidate, type FourAnchorLayoutType, type FourAnchorOriginCorner, type FourAnchorRunDirection, type WallLabel } from "./fourAnchorAutoBuild";
+import { AUTO_DESIGN_WALL_LABELS, wallLabelToEngineWallId, type AutoBuildCatalogCandidate, type AutoDesignLayoutType, type AutoDesignOriginCorner, type AutoDesignRunDirection, type WallLabel } from "./autoDesignAutoBuild";
 import { isBaseEndCornerCabinet, isBlindCorner, isCornerCabinet, type RoomData } from "./design";
 
 /** A real room vertex that the admin may explicitly populate after all anchors are seated. */
-export type FourAnchorCornerSlot = {
+export type AutoDesignCornerSlot = {
   id: string;
   label: string;
   firstWall: WallLabel;
@@ -10,7 +10,7 @@ export type FourAnchorCornerSlot = {
 };
 
 /** An explicit source-priced selection: null is incomplete and cannot confirm a required corner. */
-export type FourAnchorCornerChoice = {
+export type AutoDesignCornerChoice = {
   cabinetId: number | null;
   /** Required only when the chosen SKU is a configured base blind corner. */
   blindPullIn?: number;
@@ -33,13 +33,13 @@ export type AutoBuildCornerCandidate = AutoBuildCatalogCandidate & {
  * appliances on adjoining walls to create a cornerless L-shaped kitchen.
  * Opposing galley runs have no shared endpoint and remain corner-free.
  */
-export function fourAnchorCornerSlots(layoutType: FourAnchorLayoutType, measured?: {
+export function autoDesignCornerSlots(layoutType: AutoDesignLayoutType, measured?: {
   wallIds: readonly string[];
   room: RoomData;
-  originCorner: FourAnchorOriginCorner;
-  runDirection: FourAnchorRunDirection;
-}): FourAnchorCornerSlot[] {
-  const slots: FourAnchorCornerSlot[] = [];
+  originCorner: AutoDesignOriginCorner;
+  runDirection: AutoDesignRunDirection;
+}): AutoDesignCornerSlot[] {
+  const slots: AutoDesignCornerSlot[] = [];
   const add = (firstWall: WallLabel, secondWall: WallLabel) => {
     const id = `${firstWall}-${secondWall}`.toLowerCase().replaceAll(" ", "-");
     if (!slots.some((slot) => slot.id === id)) slots.push({ id, label: `Corner between ${firstWall} and ${secondWall}`, firstWall, secondWall });
@@ -47,14 +47,14 @@ export function fourAnchorCornerSlots(layoutType: FourAnchorLayoutType, measured
   if (layoutType === "l-shape" || layoutType === "u-shape") add("Wall 1", "Wall 2");
   if (layoutType === "u-shape") add("Wall 2", "Wall 3");
   if (!measured) return slots;
-  const occupied = FOUR_ANCHOR_WALL_LABELS.filter((label) => {
+  const occupied = AUTO_DESIGN_WALL_LABELS.filter((label) => {
     const ref = wallLabelToEngineWallId(label, measured.room, measured.originCorner, measured.runDirection);
     return ref != null && measured.wallIds.includes(ref.engineWallId);
   });
   for (let first = 0; first < occupied.length; first++) {
     for (let second = first + 1; second < occupied.length; second++) {
       const candidate = { id: "", label: "", firstWall: occupied[first], secondWall: occupied[second] };
-      if (fourAnchorCornerSlotPoint(candidate, measured.room, measured.originCorner, measured.runDirection)) {
+      if (autoDesignCornerSlotPoint(candidate, measured.room, measured.originCorner, measured.runDirection)) {
         add(candidate.firstWall, candidate.secondWall);
       }
     }
@@ -63,11 +63,11 @@ export function fourAnchorCornerSlots(layoutType: FourAnchorLayoutType, measured
 }
 
 /** Resolve the exact shared engine vertex for a selected wall-label pair. */
-export function fourAnchorCornerSlotPoint(
-  slot: FourAnchorCornerSlot,
+export function autoDesignCornerSlotPoint(
+  slot: AutoDesignCornerSlot,
   room: RoomData,
-  originCorner: FourAnchorOriginCorner,
-  runDirection: FourAnchorRunDirection,
+  originCorner: AutoDesignOriginCorner,
+  runDirection: AutoDesignRunDirection,
 ): { x: number; y: number; firstWallId: string } | null {
   const first = wallLabelToEngineWallId(slot.firstWall, room, originCorner, runDirection);
   const second = wallLabelToEngineWallId(slot.secondWall, room, originCorner, runDirection);
@@ -99,7 +99,7 @@ export function autoBuildCornerCatalog<T extends AutoBuildCornerCandidate>(catal
     .sort((left, right) => (Number.parseFloat(right.width ?? "0") || 0) - (Number.parseFloat(left.width ?? "0") || 0));
 }
 
-export function isFourAnchorBlindCornerOption(candidate: Pick<AutoBuildCornerCandidate, "masterCode" | "description" | "placement" | "cornerType">): boolean {
+export function isAutoDesignBlindCornerOption(candidate: Pick<AutoBuildCornerCandidate, "masterCode" | "description" | "placement" | "cornerType">): boolean {
   return candidate.placement === "base"
     && (candidate.cornerType === "blind-corner" || isBlindCorner(candidate.masterCode, candidate.description ?? undefined));
 }

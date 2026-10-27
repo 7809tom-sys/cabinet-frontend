@@ -4,13 +4,13 @@ import {
 } from "./design";
 
 /**
- * The measured window above the sink. Four-anchor already centers the sink on
+ * The measured window above the sink. Auto-Design already centers the sink on
  * the entered window center; this creates the actual opening so the room and
  * the upper-cabinet stage both know about it. It is the catalog's over-sink
  * window (48 inches tall, 42-inch sill), made as wide as the sink base it
  * sits over.
  */
-export function fourAnchorSinkWindow({ sink, room, uid }: { sink: PlacedCabinet; room: RoomData; uid: string }): WallOpening {
+export function autoDesignSinkWindow({ sink, room, uid }: { sink: PlacedCabinet; room: RoomData; uid: string }): WallOpening {
   const def = OPENINGS.find((item) => item.key === "window-over-sink");
   if (!def) throw new Error("The over-sink window definition is missing from the opening catalog.");
   const wall = cabinetWall(sink, room);
