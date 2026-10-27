@@ -14,14 +14,12 @@ function moreSheetSource(): string {
 }
 
 describe("Four anchors in the More sheet (tablet and phone)", () => {
-  it("adds an admin-only Four anchors row to the More sheet", () => {
+  it("adds a Four anchors row for admins and affiliate Designers", () => {
     const sheet = moreSheetSource();
     expect(sheet).toContain('data-testid="more-sheet-four-anchors"');
-    // The row must sit inside an isAdmin guard so non-admins never see it.
     const rowAt = sheet.indexOf('data-testid="more-sheet-four-anchors"');
-    const guardAt = sheet.lastIndexOf("{isAdmin && (", rowAt);
+    const guardAt = sheet.lastIndexOf("{fourAnchorAvailable && (", rowAt);
     expect(guardAt).toBeGreaterThan(-1);
-    // No other closing of a conditional between the guard and the row.
     expect(sheet.slice(guardAt, rowAt)).not.toContain(")}");
   });
 
@@ -35,13 +33,14 @@ describe("Four anchors in the More sheet (tablet and phone)", () => {
     expect(row).toContain("Four anchors");
   });
 
-  it("keeps the desktop toolbar button admin-only and the dialog admin-gated", () => {
+  it("keeps the desktop toolbar button and dialogs on the same affiliate audience gate", () => {
     expect(pageSource).toContain('data-testid="admin-four-anchor-auto-build"');
-    expect(pageSource).toMatch(/\{isAdmin && \(\s*<FourAnchorAutoBuildDialog/);
-    expect(pageSource).toMatch(/\{isAdmin && fourAnchorCornerStage && \(\s*<FourAnchorCornerSelectionDialog/);
+    expect(pageSource).toContain("const fourAnchorAvailable = isAdmin || Boolean(affiliateSlug);");
+    expect(pageSource).toMatch(/\{fourAnchorAvailable && \(\s*<FourAnchorAutoBuildDialog/);
+    expect(pageSource).toMatch(/\{fourAnchorAvailable && fourAnchorCornerStage && \(\s*<FourAnchorCornerSelectionDialog/);
   });
 
-  it("does not expose the row outside the admin guard anywhere else in the sheet", () => {
+  it("does not expose the row outside the audience guard anywhere else in the sheet", () => {
     const sheet = moreSheetSource();
     expect(sheet.split("openFourAnchorAutoBuild").length - 1).toBe(1);
   });

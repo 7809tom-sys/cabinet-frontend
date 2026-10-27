@@ -6,11 +6,17 @@ const pageSource = readFileSync(resolve(process.cwd(), "client/src/pages/DesignT
 const dialogSource = readFileSync(resolve(process.cwd(), "client/src/components/design/FourAnchorAutoBuildDialog.tsx"), "utf8");
 
 describe("admin four-anchor Designer wiring", () => {
-  it("exposes the action only for admins and disables it on a non-empty plan", () => {
-    expect(pageSource).toContain("{isAdmin && (");
+  it("exposes the action for admins and affiliate Designers and disables it on a non-empty plan", () => {
+    expect(pageSource).toContain("const fourAnchorAvailable = isAdmin || Boolean(affiliateSlug);");
     expect(pageSource).toContain('data-testid="admin-four-anchor-auto-build"');
+    const buttonAt = pageSource.indexOf('data-testid="admin-four-anchor-auto-build"');
+    const guardAt = pageSource.lastIndexOf("{fourAnchorAvailable && (", buttonAt);
+    expect(guardAt).toBeGreaterThan(-1);
+    expect(pageSource.slice(guardAt, buttonAt)).not.toContain(")}");
     expect(pageSource).toContain("disabled={placed.length > 0 || layoutLocked}");
     expect(pageSource).toContain("buildFourAnchorAutoLayout");
+    expect(pageSource).toContain("Four-anchor layout is available in affiliate Designers and for CabinetDealz admins.");
+    expect(pageSource).not.toContain("The four-anchor build is admin-only");
   });
 
   it("requires the four measured anchors and explicit layout controls in the popup", () => {
@@ -44,7 +50,8 @@ describe("admin four-anchor Designer wiring", () => {
   it("keeps the six-wall sample room inside the admin-only empty-plan Four-Anchor workflow", () => {
     expect(pageSource).toContain("makeFourAnchorSixWallTrainingRoom");
     expect(pageSource).toContain("loadFourAnchorSixWallTrainingRoom");
-    expect(pageSource).toContain("onLoadSixWallTrainingRoom={loadFourAnchorSixWallTrainingRoom}");
+    expect(pageSource).toContain("onLoadSixWallTrainingRoom={isAdmin ? loadFourAnchorSixWallTrainingRoom : undefined}");
+    expect(pageSource).toContain("The six-wall training room is available only to an unlocked admin kitchen Designer.");
     expect(pageSource).toContain("A training room can only be loaded into an empty Designer");
     expect(dialogSource).toContain("four-anchor-load-six-wall-training-room");
   });

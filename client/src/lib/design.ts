@@ -398,6 +398,9 @@ export function matchInstalledFillerToCabinet(
     mountBottom: ownerElevation.bottom,
     fillerForCabinetUid: owner.uid,
     fillerMatchesFullOwnerEnvelope: owner.placement === "appliance" && isRefrigerator(owner),
+    // A filler takes the finish of the cabinet it fills against, not another
+    // cabinet elsewhere in the room. A missing owner finish keeps the board's own.
+    ...(owner.styleId != null ? { styleId: owner.styleId } : {}),
   };
 }
 
@@ -446,7 +449,8 @@ export function normalizeInstalledFillersToAdjacentCabinets(
         || Math.abs(Number(item.height) - ownerElevation.height) > 0.001
         || Math.abs(Number(item.mountBottom ?? 0) - ownerElevation.bottom) > 0.001
         || item.fillerForCabinetUid !== owner.uid
-        || item.fillerMatchesFullOwnerEnvelope !== (owner.placement === "appliance" && isRefrigerator(owner));
+        || item.fillerMatchesFullOwnerEnvelope !== (owner.placement === "appliance" && isRefrigerator(owner))
+        || (owner.styleId != null && item.styleId !== owner.styleId);
       if (!differs) return item;
       changed = true;
       return {
@@ -456,6 +460,7 @@ export function normalizeInstalledFillersToAdjacentCabinets(
         mountBottom: ownerElevation.bottom,
         fillerForCabinetUid: owner.uid,
         fillerMatchesFullOwnerEnvelope: owner.placement === "appliance" && isRefrigerator(owner),
+        ...(owner.styleId != null ? { styleId: owner.styleId } : {}),
       };
     }
     const matched = matchInstalledFillerToCabinet(item, owner, room);
@@ -466,7 +471,8 @@ export function normalizeInstalledFillersToAdjacentCabinets(
       || Math.abs(Number(matched.height) - Number(item.height)) > 0.001
       || itemBottom !== matchedBottom
       || item.fillerForCabinetUid !== matched.fillerForCabinetUid
-      || item.fillerMatchesFullOwnerEnvelope !== matched.fillerMatchesFullOwnerEnvelope;
+      || item.fillerMatchesFullOwnerEnvelope !== matched.fillerMatchesFullOwnerEnvelope
+      || (owner.styleId != null && item.styleId !== owner.styleId);
     if (!differs) return item;
     changed = true;
     return matched;
