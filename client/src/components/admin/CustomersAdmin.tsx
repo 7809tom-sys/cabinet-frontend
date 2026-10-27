@@ -14,6 +14,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { CustomerGeneratedImages } from "@/components/imageCustomer/CustomerGeneratedImages";
 import { Users, Search, Building2, Mail, Clock, ShieldCheck, Trash2 } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 
@@ -281,6 +282,9 @@ export default function CustomersAdmin() {
                     )}
                   </div>
                 </CardContent>
+                <div className="px-6 pb-4">
+                  <CustomerGeneratedImages customerId={u.id} customerKind="user" />
+                </div>
               </Card>
             ))}
           </div>

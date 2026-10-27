@@ -33,6 +33,7 @@ import { affiliateCardColor, type CrmAffiliateBrand } from "@/lib/crmAffiliateBr
 import { MASTER_AFFILIATE_FILTER_ALL, masterAffiliateFilterId } from "@/lib/crmMasterFilter";
 import { filterDealsByHelpType, type CrmHelpFilter } from "@/lib/crmHelpFilter";
 import { crmQuickInvoiceTotal, openCrmQuickInvoicePdf, type CrmQuickInvoiceBrand, type CrmQuickInvoiceLine } from "@/lib/crmQuickInvoice";
+import { CustomerGeneratedImages } from "@/components/imageCustomer/CustomerGeneratedImages";
 import { CRM_SAVED_VIEW_STORAGE_PREFIX, crmDueState, filterMondayDeals, summarizeAffiliatePipelines, type MondayFilters } from "@shared/crmMailbox";
 import { CrmStageBoard } from "@/components/crm/monday/CrmStageBoard";
 import { CrmTableView, type TableDeal } from "@/components/crm/monday/CrmTableView";
@@ -810,6 +811,7 @@ function DealDrawer({ dealId, lang, summary, onClose, onCompose }: { dealId: num
             </SheetHeader>
             <div className="space-y-4 mt-4">
               <CrmDueBanner nextFollowUpAt={deal.nextFollowUpAt} />
+              <CustomerGeneratedImages customerId={deal.id} customerKind="crm" title="Generated images" />
               <Button type="button" variant="outline" onClick={() => onCompose?.({
                 dealId: deal.id,
                 to: deal.contactEmail ?? "",
