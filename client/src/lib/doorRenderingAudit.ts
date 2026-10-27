@@ -83,6 +83,9 @@ export type DoorAuditRenderInput = {
   code: string | null;
   distributorName: string | null;
   samplePhotoUrl: string | null;
+  drawerSamplePhotoUrl?: string | null;
+  needsDoorOnlyPhoto?: boolean;
+  styleVerified?: boolean;
   color: string | null;
   sourceFingerprint: string;
   doorProfile: DoorAuditDoorProfile;
@@ -94,6 +97,9 @@ export type DoorAuditStyleRow = {
   code: string | null;
   distributorName: string | null;
   samplePhotoUrl: string | null;
+  drawerSamplePhotoUrl?: string | null;
+  needsDoorOnlyPhoto?: boolean;
+  styleVerified?: boolean;
   color: string | null;
   sourceFingerprint: string;
   doorProfile: DoorAuditDoorProfile;
@@ -148,7 +154,7 @@ export type DoorAuditListResult = {
 };
 
 export type DoorAuditCompareSlot = {
-  key: "sample" | "accepted" | "previous" | "latest";
+  key: "sample" | "drawer-sample" | "accepted" | "previous" | "latest";
   label: string;
   imageUrl: string | null;
   version: DoorAuditVersion | null;
@@ -224,6 +230,9 @@ export function doorAuditCompareSlots(row: DoorAuditStyleRow): DoorAuditCompareS
   const slots: DoorAuditCompareSlot[] = [
     { key: "sample", label: "Sample photo", imageUrl: row.samplePhotoUrl, version: null },
   ];
+  if (row.drawerSamplePhotoUrl) {
+    slots.push({ key: "drawer-sample", label: "DRAWER_FRONT sample", imageUrl: row.drawerSamplePhotoUrl, version: null });
+  }
   const shown = new Set<number>();
   const pushVersion = (key: "accepted" | "previous", label: string, version: DoorAuditVersion | null | undefined) => {
     if (!version || version.versionId === latest?.versionId || shown.has(version.versionId)) return;
@@ -548,6 +557,9 @@ export function normalizeDoorAuditRenderInput(raw: unknown, renderingCommit?: un
     code: styleCodeOf(record),
     distributorName: supplierName(record),
     samplePhotoUrl: text(record.samplePhotoUrl) ?? text(record.doorSampleImageUrl),
+    drawerSamplePhotoUrl: text(record.drawerSamplePhotoUrl) ?? text(record.drawerSampleImageUrl),
+    needsDoorOnlyPhoto: record.needsDoorOnlyPhoto === true,
+    styleVerified: record.styleVerified === false || record.styleVerified === 0 ? false : true,
     color: text(record.color),
     sourceFingerprint: text(record.sourceFingerprint) ?? text(record.renderingCommit) ?? text(renderingCommit) ?? "",
     doorProfile: normalizeProfile(profileSource),
@@ -574,6 +586,9 @@ export function normalizeDoorAuditStyle(raw: unknown): DoorAuditStyleRow | null 
     code: styleCodeOf(record),
     distributorName: supplierName(record),
     samplePhotoUrl: text(record.samplePhotoUrl) ?? text(record.doorSampleImageUrl),
+    drawerSamplePhotoUrl: text(record.drawerSamplePhotoUrl) ?? text(record.drawerSampleImageUrl),
+    needsDoorOnlyPhoto: record.needsDoorOnlyPhoto === true,
+    styleVerified: record.styleVerified === false || record.styleVerified === 0 ? false : true,
     color: text(record.color),
     sourceFingerprint: text(record.sourceFingerprint)
       ?? text(asRecord(record.latestRender)?.renderingCommit)
