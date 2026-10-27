@@ -23,7 +23,7 @@ const EDGE_TOL_IN = 0.02;
 
 export type SeamLayer = "base" | "wall";
 export type SeamPiece = { start: number; end: number };
-export type FourAnchorSeam = {
+export type AutoDesignSeam = {
   wall: string;
   start: number;
   end: number;
@@ -77,7 +77,7 @@ function subtractPieces(pieces: SeamPiece[], zones: readonly SeamPiece[]): SeamP
  * assembly's own clearances, a chosen corner cabinet's pocket, and the zones the
  * caller reserves (above the range, above the sink).
  */
-export function findFourAnchorSeams(input: {
+export function findAutoDesignSeams(input: {
   layer: SeamLayer;
   placed: readonly PlacedCabinet[];
   room: RoomData;
@@ -85,12 +85,12 @@ export function findFourAnchorSeams(input: {
   corners?: readonly { x: number; y: number }[];
   /** Per-wall spans that must stay empty (wall layer: over the range and sink). */
   reservedZones?: (wall: string) => readonly SeamPiece[];
-}): FourAnchorSeam[] {
+}): AutoDesignSeam[] {
   const { layer, room } = input;
   const placed = [...input.placed];
   const corners = input.corners ?? [];
   const walls = Array.from(new Set(placed.filter((item) => isLayerItem(item, "base") || isLayerItem(item, "wall")).map((item) => wallOf(item, room))));
-  const seams: FourAnchorSeam[] = [];
+  const seams: AutoDesignSeam[] = [];
   const probeDepth = layer === "wall" ? STD.WALL_DEPTH : STD.BASE_DEPTH;
   for (const wall of walls) {
     const frame = wallRunFrame(wall, room);
@@ -160,7 +160,7 @@ export function findFourAnchorSeams(input: {
 }
 
 /** The neighbor whose elevation and depth an installed filler matches: a real cabinet first, then an appliance, a filler last. */
-export function seamOwner(seam: Pick<FourAnchorSeam, "left" | "right">, layer: SeamLayer): { owner: PlacedCabinet; ownerIsLeft: boolean } | null {
+export function seamOwner(seam: Pick<AutoDesignSeam, "left" | "right">, layer: SeamLayer): { owner: PlacedCabinet; ownerIsLeft: boolean } | null {
   const isFill = (item: PlacedCabinet) => isFillerLike(item);
   const cabinet = (item: PlacedCabinet | null) => item != null && !isFill(item)
     && (layer === "wall" ? item.placement === "wall" && !/hood/i.test(item.masterCode ?? "") : item.placement === "base" || item.placement === "tall");
@@ -246,7 +246,7 @@ export function seamFillerWidths(width: number): number[] | null {
  * 6 inches, or two equal boards (a split) up to 12. Returns the pieces without placing them.
  */
 export function fillersForSeam(input: {
-  seam: FourAnchorSeam; layer: SeamLayer; fillers: readonly CatalogFillerCandidate[];
+  seam: AutoDesignSeam; layer: SeamLayer; fillers: readonly CatalogFillerCandidate[];
   room: RoomData; makeUid: () => string; styleId: number | null;
 }): { pieces: PlacedCabinet[] } | { error: string } {
   const { seam, layer, room } = input;
@@ -317,7 +317,7 @@ export function intersectWithCoverage(piece: SeamPiece, cover: readonly SeamPiec
  * runs. Every opening up to 12 inches takes real catalog filler; the 3-inch seam a
  * range leaves beside its corner cabinet is one of them.
  */
-export function fillFourAnchorLowerSeams(input: {
+export function fillAutoDesignLowerSeams(input: {
   placed: PlacedCabinet[]; room: RoomData; openings: readonly WallOpening[];
   fillers: readonly CatalogFillerCandidate[]; makeUid: () => string; styleId: number | null;
   corners?: readonly { x: number; y: number }[];
@@ -325,7 +325,7 @@ export function fillFourAnchorLowerSeams(input: {
   let working = [...input.placed];
   const additions: PlacedCabinet[] = [];
   const notes: string[] = [];
-  const seams = findFourAnchorSeams({ layer: "base", placed: working, room: input.room, openings: input.openings, corners: input.corners });
+  const seams = findAutoDesignSeams({ layer: "base", placed: working, room: input.room, openings: input.openings, corners: input.corners });
   for (const seam of seams) {
     const result = fillersForSeam({ seam, layer: "base", fillers: input.fillers, room: input.room, makeUid: input.makeUid, styleId: input.styleId });
     if ("error" in result) { notes.push(result.error); continue; }
@@ -363,7 +363,7 @@ export function upperReservedZones(placed: readonly PlacedCabinet[], room: RoomD
  * reported only when the segment itself is too short to do better. Filler goes
  * at the end away from the range.
  */
-export function planFourAnchorBaseSegment(input: {
+export function planAutoDesignBaseSegment(input: {
   length: number; catalog: DesignCabinet[]; rangeAtStart: boolean; rangeAtEnd: boolean;
 }): { items: FillItem[]; note: string | null } {
   const free = autoFillSpan(input.length, "kitchen", input.catalog, { strategy: "largest-first" });

@@ -13,35 +13,36 @@ function moreSheetSource(): string {
   return pageSource.slice(start, end);
 }
 
-describe("Four anchors in the More sheet (tablet and phone)", () => {
-  it("adds a Four anchors row for admins and affiliate Designers", () => {
+describe("Auto-Design in the More sheet (tablet and phone)", () => {
+  it("adds an Auto-Design row for admins and affiliate Designers", () => {
     const sheet = moreSheetSource();
-    expect(sheet).toContain('data-testid="more-sheet-four-anchors"');
-    const rowAt = sheet.indexOf('data-testid="more-sheet-four-anchors"');
-    const guardAt = sheet.lastIndexOf("{fourAnchorAvailable && (", rowAt);
+    expect(sheet).toContain('data-testid="more-sheet-auto-design"');
+    const rowAt = sheet.indexOf('data-testid="more-sheet-auto-design"');
+    const guardAt = sheet.lastIndexOf("{autoDesignAvailable && (", rowAt);
     expect(guardAt).toBeGreaterThan(-1);
     expect(sheet.slice(guardAt, rowAt)).not.toContain(")}");
   });
 
   it("opens the same dialog, closing the sheet first, and keeps the empty-plan rule", () => {
     const sheet = moreSheetSource();
-    const rowAt = sheet.indexOf('data-testid="more-sheet-four-anchors"');
-    const row = sheet.slice(Math.max(0, rowAt - 600), rowAt + 900);
-    expect(row).toContain("setTimeout(openFourAnchorAutoBuild, 120)");
+    const rowAt = sheet.indexOf('data-testid="more-sheet-auto-design"');
+    const row = sheet.slice(Math.max(0, rowAt - 200), rowAt + 1600);
+    expect(row).toContain("setTimeout(openAutoDesign, 120)");
     expect(row).toContain("setMoreSheetOpen(false)");
-    expect(row).toContain("placed.length > 0 || layoutLocked");
-    expect(row).toContain("Four anchors");
+    expect(row).toContain("!autoDesignControl.enabled");
+    expect(row).toContain("Needs an empty plan");
+    expect(row).toContain("Auto-Design");
   });
 
   it("keeps the desktop toolbar button and dialogs on the same affiliate audience gate", () => {
-    expect(pageSource).toContain('data-testid="admin-four-anchor-auto-build"');
-    expect(pageSource).toContain("const fourAnchorAvailable = isAdmin || Boolean(affiliateSlug);");
-    expect(pageSource).toMatch(/\{fourAnchorAvailable && \(\s*<FourAnchorAutoBuildDialog/);
-    expect(pageSource).toMatch(/\{fourAnchorAvailable && fourAnchorCornerStage && \(\s*<FourAnchorCornerSelectionDialog/);
+    expect(pageSource).toContain('data-testid="admin-auto-design-auto-build"');
+    expect(pageSource).toContain("const autoDesignAvailable = isAdmin || Boolean(affiliateSlug);");
+    expect(pageSource).toMatch(/\{autoDesignAvailable && \(\s*<AutoDesignDialog/);
+    expect(pageSource).toMatch(/\{autoDesignAvailable && autoDesignCornerStage && \(\s*<AutoDesignCornerDialog/);
   });
 
   it("does not expose the row outside the audience guard anywhere else in the sheet", () => {
     const sheet = moreSheetSource();
-    expect(sheet.split("openFourAnchorAutoBuild").length - 1).toBe(1);
+    expect(sheet.split("openAutoDesign").length - 1).toBe(1);
   });
 });

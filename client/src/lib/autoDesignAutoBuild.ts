@@ -1,13 +1,13 @@
-import { STD, dim, isCornerCabinet, isFarmerSinkBase, isSinkBaseCabinet, wallRunFrame, type RoomData, type WallRunFrame } from "./design";
+import { STD, dim, formatEighthInches, isCornerCabinet, isFarmerSinkBase, isSinkBaseCabinet, wallRunFrame, type RoomData, type WallRunFrame } from "./design";
 import { baseSubGroup, cabinetDrawingType, type CabinetLike } from "./cabinetGraphics";
 
-export type FourAnchorSinkBaseKind = "regular" | "farmhouse";
-export type FourAnchorKind = "sink" | "stove" | "dishwasher" | "refrigerator";
-export type FourAnchorLayoutType = "galley" | "l-shape" | "u-shape" | "single-wall";
-export type FourAnchorOriginCorner = "left" | "right";
-export type FourAnchorRunDirection = "left" | "right";
-export const FOUR_ANCHOR_WALL_LABELS = ["Wall 1", "Wall 2", "Wall 3", "Wall 4", "Wall 5", "Wall 6"] as const;
-export type WallLabel = typeof FOUR_ANCHOR_WALL_LABELS[number];
+export type AutoDesignSinkBaseKind = "regular" | "farmhouse";
+export type AutoDesignKind = "sink" | "stove" | "dishwasher" | "refrigerator";
+export type AutoDesignLayoutType = "galley" | "l-shape" | "u-shape" | "single-wall";
+export type AutoDesignOriginCorner = "left" | "right";
+export type AutoDesignRunDirection = "left" | "right";
+export const AUTO_DESIGN_WALL_LABELS = ["Wall 1", "Wall 2", "Wall 3", "Wall 4", "Wall 5", "Wall 6"] as const;
+export type WallLabel = typeof AUTO_DESIGN_WALL_LABELS[number];
 export type DishwasherSide = "left" | "right";
 export type RefrigeratorPanelChoice = "none" | "left" | "right" | "both";
 export type RefrigeratorEnclosureChoice = "none" | "cabinet-above";
@@ -22,7 +22,7 @@ export type AutoBuildCatalogCandidate = CabinetLike & {
   isCornerCabinet?: boolean | null;
 };
 
-export type FourAnchorMeasurement = {
+export type AutoDesignMeasurement = {
   wallLabel: WallLabel;
   /** Distance in inches from the selected wall's labeled starting corner to the anchor center. */
   centerOffsetIn: number;
@@ -37,99 +37,104 @@ export type AutoBuildWallRef = {
 };
 
 /**
- * High-contrast, color-blind-considered markers used only while the Four-Anchor
+ * High-contrast, color-blind-considered markers used only while the Auto-Design
  * dialog is open. These are a reading aid for the Floor Plan; no color or label
  * is saved into room geometry or passed to the placement engine.
  */
-export const FOUR_ANCHOR_WALL_GUIDE_COLORS = ["#2563eb", "#c2410c", "#047857", "#7c3aed", "#b45309", "#be123c"] as const;
-export type FourAnchorWallGuide = Pick<AutoBuildWallRef, "label" | "engineWallId" | "startCorner"> & {
-  color: (typeof FOUR_ANCHOR_WALL_GUIDE_COLORS)[number];
+export const AUTO_DESIGN_WALL_GUIDE_COLORS = ["#2563eb", "#c2410c", "#047857", "#7c3aed", "#b45309", "#be123c"] as const;
+export type AutoDesignWallGuide = Pick<AutoBuildWallRef, "label" | "engineWallId" | "startCorner"> & {
+  color: (typeof AUTO_DESIGN_WALL_GUIDE_COLORS)[number];
 };
 
 /**
- * Blank, closed L-shaped room used only by the admin Four-Anchor training
+ * Blank, closed L-shaped room used only by the admin Auto-Design training
  * action. It deliberately contains no cabinet, appliance, opening, material,
  * or user-plan data: staff can identify six real wall segments before entering
  * their own fixture measurements.
+ *
+ * Vertex and wall ids are stored inside a saved room when someone saves a
+ * training session. Older saves may still contain `four-anchor-training-*`
+ * ids. Those designs keep the ids already written into the room JSON; nothing
+ * looks the prefix up on load. New training rooms write `auto-design-training-*`.
  */
-export const FOUR_ANCHOR_SIX_WALL_TRAINING_ROOM: RoomData = {
+export const AUTO_DESIGN_SIX_WALL_TRAINING_ROOM: RoomData = {
   width: 180,
   depth: 180,
   ceilingHeight: 96,
   openWallPath: false,
   vertices: [
-    { id: "four-anchor-training-a", x: 0, y: 0 },
-    { id: "four-anchor-training-b", x: 120, y: 0 },
-    { id: "four-anchor-training-c", x: 180, y: 60 },
-    { id: "four-anchor-training-d", x: 180, y: 180 },
-    { id: "four-anchor-training-e", x: 60, y: 180 },
-    { id: "four-anchor-training-f", x: 0, y: 120 },
+    { id: "auto-design-training-a", x: 0, y: 0 },
+    { id: "auto-design-training-b", x: 120, y: 0 },
+    { id: "auto-design-training-c", x: 180, y: 60 },
+    { id: "auto-design-training-d", x: 180, y: 180 },
+    { id: "auto-design-training-e", x: 60, y: 180 },
+    { id: "auto-design-training-f", x: 0, y: 120 },
   ],
   customWalls: [
-    { id: "four-anchor-training-wall-1", label: "Wall 1", startVertexId: "four-anchor-training-a", endVertexId: "four-anchor-training-b" },
-    { id: "four-anchor-training-wall-2", label: "Wall 2", startVertexId: "four-anchor-training-b", endVertexId: "four-anchor-training-c", lockedAngle: 45 },
-    { id: "four-anchor-training-wall-3", label: "Wall 3", startVertexId: "four-anchor-training-c", endVertexId: "four-anchor-training-d" },
-    { id: "four-anchor-training-wall-4", label: "Wall 4", startVertexId: "four-anchor-training-d", endVertexId: "four-anchor-training-e" },
-    { id: "four-anchor-training-wall-5", label: "Wall 5", startVertexId: "four-anchor-training-e", endVertexId: "four-anchor-training-f", lockedAngle: 45 },
-    { id: "four-anchor-training-wall-6", label: "Wall 6", startVertexId: "four-anchor-training-f", endVertexId: "four-anchor-training-a" },
+    { id: "auto-design-training-wall-1", label: "Wall 1", startVertexId: "auto-design-training-a", endVertexId: "auto-design-training-b" },
+    { id: "auto-design-training-wall-2", label: "Wall 2", startVertexId: "auto-design-training-b", endVertexId: "auto-design-training-c", lockedAngle: 45 },
+    { id: "auto-design-training-wall-3", label: "Wall 3", startVertexId: "auto-design-training-c", endVertexId: "auto-design-training-d" },
+    { id: "auto-design-training-wall-4", label: "Wall 4", startVertexId: "auto-design-training-d", endVertexId: "auto-design-training-e" },
+    { id: "auto-design-training-wall-5", label: "Wall 5", startVertexId: "auto-design-training-e", endVertexId: "auto-design-training-f", lockedAngle: 45 },
+    { id: "auto-design-training-wall-6", label: "Wall 6", startVertexId: "auto-design-training-f", endVertexId: "auto-design-training-a" },
   ],
 };
 
 /** Returns a fresh room object so a training session cannot mutate the preset. */
-export function makeFourAnchorSixWallTrainingRoom(): RoomData {
+export function makeAutoDesignSixWallTrainingRoom(): RoomData {
   return {
-    ...FOUR_ANCHOR_SIX_WALL_TRAINING_ROOM,
-    vertices: FOUR_ANCHOR_SIX_WALL_TRAINING_ROOM.vertices?.map((vertex) => ({ ...vertex })),
-    customWalls: FOUR_ANCHOR_SIX_WALL_TRAINING_ROOM.customWalls?.map((wall) => ({ ...wall })),
+    ...AUTO_DESIGN_SIX_WALL_TRAINING_ROOM,
+    vertices: AUTO_DESIGN_SIX_WALL_TRAINING_ROOM.vertices?.map((vertex) => ({ ...vertex })),
+    customWalls: AUTO_DESIGN_SIX_WALL_TRAINING_ROOM.customWalls?.map((wall) => ({ ...wall })),
   };
 }
 
-export type FourAnchorInputs = {
-  layoutType: FourAnchorLayoutType;
-  originCorner: FourAnchorOriginCorner;
-  runDirection: FourAnchorRunDirection;
+export type AutoDesignInputs = {
+  layoutType: AutoDesignLayoutType;
+  originCorner: AutoDesignOriginCorner;
+  runDirection: AutoDesignRunDirection;
   /** Height selected for source-priced wall cabinets in the generated kitchen. */
   wallCabinetHeightIn?: 30 | 36 | 42;
-  sink: FourAnchorMeasurement;
+  sink: AutoDesignMeasurement;
   /** Exact source-sized sink base requested by the admin (SB30/SB33/SB36/SB42). */
   sinkBaseWidthIn?: 30 | 33 | 36 | 42;
   /** Regular sink base unless the admin explicitly asks for a farmhouse (apron-front) base. */
-  sinkBaseKind?: FourAnchorSinkBaseKind;
+  sinkBaseKind?: AutoDesignSinkBaseKind;
   /** Null means the admin explicitly chose not to add a range/stove. */
-  stove: FourAnchorMeasurement | null;
+  stove: AutoDesignMeasurement | null;
   /** Optional exact dishwasher center. Null means seat it against the sink. */
-  dishwasher?: FourAnchorMeasurement | null;
+  dishwasher?: AutoDesignMeasurement | null;
   /** True means do not add any dishwasher; false/undefined retains the sink-adjacent default. */
   skipDishwasher?: boolean;
   /** Used only when no exact dishwasher center is entered. */
   dishwasherSide?: DishwasherSide;
   /** Null means the admin explicitly chose not to add a refrigerator/bay. */
-  refrigerator: FourAnchorMeasurement | null;
+  refrigerator: AutoDesignMeasurement | null;
   refrigeratorWidthIn?: 30 | 33 | 36 | 42;
   refrigeratorPanels?: RefrigeratorPanelChoice;
   refrigeratorEnclosure?: RefrigeratorEnclosureChoice;
-  sinkWindowCenter?: FourAnchorMeasurement | null;
+  sinkWindowCenter?: AutoDesignMeasurement | null;
 };
 
-export type FourAnchorPlacement = FourAnchorMeasurement & {
-  kind: FourAnchorKind;
+export type AutoDesignPlacement = AutoDesignMeasurement & {
+  kind: AutoDesignKind;
   source: "measured" | "adjacent-to-sink" | "sink-window-centered";
   dishwasherSide?: DishwasherSide;
 };
 
-export type FourAnchorBuildPlan = {
-  layoutType: FourAnchorLayoutType;
-  originCorner: FourAnchorOriginCorner;
-  runDirection: FourAnchorRunDirection;
-  anchors: FourAnchorPlacement[];
+export type AutoDesignBuildPlan = {
+  layoutType: AutoDesignLayoutType;
+  originCorner: AutoDesignOriginCorner;
+  runDirection: AutoDesignRunDirection;
+  anchors: AutoDesignPlacement[];
   surroundingRules: readonly ["fillers", "blind corners", "molding", "substitution"];
 };
 
-export type FourAnchorBuildResult =
-  | { ok: true; plan: FourAnchorBuildPlan }
-  | { ok: false; missing: FourAnchorKind[] };
+export type AutoDesignBuildResult =
+  | { ok: true; plan: AutoDesignBuildPlan }
+  | { ok: false; missing: AutoDesignKind[] };
 
-const STANDARD_WALL_ORDER: Record<FourAnchorOriginCorner, Record<FourAnchorRunDirection, string[]>> = {
+const STANDARD_WALL_ORDER: Record<AutoDesignOriginCorner, Record<AutoDesignRunDirection, string[]>> = {
   left: {
     right: ["top", "right", "bottom", "left"],
     left: ["top", "left", "bottom", "right"],
@@ -142,12 +147,12 @@ const STANDARD_WALL_ORDER: Record<FourAnchorOriginCorner, Record<FourAnchorRunDi
 
 function orderedEngineWallIds(
   room: RoomData,
-  originCorner: FourAnchorOriginCorner,
-  runDirection: FourAnchorRunDirection,
+  originCorner: AutoDesignOriginCorner,
+  runDirection: AutoDesignRunDirection,
 ): string[] {
   const customIds = room.customWalls?.map((wall) => wall.id) ?? [];
   if (customIds.length > 0) {
-    const ids = customIds.slice(0, FOUR_ANCHOR_WALL_LABELS.length);
+    const ids = customIds.slice(0, AUTO_DESIGN_WALL_LABELS.length);
     return runDirection === "left" ? [...ids].reverse() : ids;
   }
   return STANDARD_WALL_ORDER[originCorner][runDirection];
@@ -161,11 +166,11 @@ function orderedEngineWallIds(
 export function wallLabelToEngineWallId(
   label: WallLabel,
   room: RoomData,
-  originCorner: FourAnchorOriginCorner,
-  runDirection: FourAnchorRunDirection,
+  originCorner: AutoDesignOriginCorner,
+  runDirection: AutoDesignRunDirection,
 ): AutoBuildWallRef | null {
   const index = Number(label.replace("Wall ", "")) - 1;
-  if (index < 0 || index >= FOUR_ANCHOR_WALL_LABELS.length) return null;
+  if (index < 0 || index >= AUTO_DESIGN_WALL_LABELS.length) return null;
   const engineWallId = orderedEngineWallIds(room, originCorner, runDirection)[index];
   if (!engineWallId) return null;
   const frame = wallRunFrame(engineWallId, room);
@@ -179,8 +184,8 @@ export function wallLabelToEngineWallId(
 
 export function buildWallLabelMap(
   room: RoomData,
-  originCorner: FourAnchorOriginCorner,
-  runDirection: FourAnchorRunDirection,
+  originCorner: AutoDesignOriginCorner,
+  runDirection: AutoDesignRunDirection,
 ): Record<WallLabel, AutoBuildWallRef | null> {
   return {
     "Wall 1": wallLabelToEngineWallId("Wall 1", room, originCorner, runDirection),
@@ -192,30 +197,56 @@ export function buildWallLabelMap(
   };
 }
 
+export type AutoDesignWallWidth = {
+  label: WallLabel;
+  widthIn: number;
+  /** Setup-view label, for example `Wall 1: 144"`. */
+  text: string;
+};
+
+/**
+ * Width of each numbered Auto-Design wall, using the same label-to-wall map as
+ * the anchor measurements. The text is for the Auto-Design wall setup only.
+ * The floor plan and 3D view keep their existing dimensions and do not repeat it.
+ */
+export function autoDesignWallWidthRows(
+  room: RoomData,
+  originCorner: AutoDesignOriginCorner,
+  runDirection: AutoDesignRunDirection,
+): AutoDesignWallWidth[] {
+  return AUTO_DESIGN_WALL_LABELS.flatMap((label) => {
+    const wall = wallLabelToEngineWallId(label, room, originCorner, runDirection);
+    if (!wall) return [];
+    const widthIn = wall.frame.length;
+    return [{ label, widthIn, text: `${label}: ${formatEighthInches(widthIn)}` }];
+  });
+}
+
 /**
  * A visual-only projection of the exact label-to-engine-wall map. Keeping this
  * beside the map makes the visible Floor Plan markers follow the same selected
  * starting corner and traversal direction as every anchor measurement.
+ * Markers stay numbered only. Wall widths are not drawn on the floor plan.
  */
-export function buildFourAnchorWallGuides(
+export function buildAutoDesignWallGuides(
   room: RoomData,
-  originCorner: FourAnchorOriginCorner,
-  runDirection: FourAnchorRunDirection,
-): FourAnchorWallGuide[] {
-  return FOUR_ANCHOR_WALL_LABELS.flatMap((label, index) => {
+  originCorner: AutoDesignOriginCorner,
+  runDirection: AutoDesignRunDirection,
+): AutoDesignWallGuide[] {
+  return AUTO_DESIGN_WALL_LABELS.flatMap((label, index) => {
     const wall = wallLabelToEngineWallId(label, room, originCorner, runDirection);
     if (!wall) return [];
     return [{
       label: wall.label,
       engineWallId: wall.engineWallId,
       startCorner: wall.startCorner,
-      color: FOUR_ANCHOR_WALL_GUIDE_COLORS[index],
+      color: AUTO_DESIGN_WALL_GUIDE_COLORS[index],
     }];
   });
 }
 
 /** Convert a center measurement to the placement engine's along-wall start. */
-export function anchorAlongStartIn(measurement: FourAnchorMeasurement, cabinetWidthIn: number, wall: AutoBuildWallRef): number {
+export function anchorAlongStartIn(measurement: AutoDesignMeasurement, cabinetWidthIn: number, wall: AutoBuildWallRef): number {
   const fromPhysicalStart = wall.startCorner === "start"
     ? measurement.centerOffsetIn
     : wall.frame.length - measurement.centerOffsetIn;
@@ -249,7 +280,7 @@ export function isAutoBuildStraightSinkBaseCandidate(candidate: AutoBuildCatalog
 }
 
 /**
- * The sink base a Four-anchor build seats. A kitchen defaults to the REGULAR
+ * The sink base an Auto-Design build seats. A kitchen defaults to the REGULAR
  * sink base: a plain SB of the requested width (two doors, top drawer front)
  * wins over a full-height SBxxFH, and the farmhouse apron-front base, vanity
  * sink bases and corner sink bases are never substituted for it. The farmhouse
@@ -257,10 +288,10 @@ export function isAutoBuildStraightSinkBaseCandidate(candidate: AutoBuildCatalog
  * depend on the order the catalog lists its rows; null means the line sells no
  * such base at that width, so the caller reports it instead of substituting.
  */
-export function pickFourAnchorSinkBase<T extends AutoBuildCatalogCandidate & { width?: string | number | null }>(
+export function pickAutoDesignSinkBase<T extends AutoBuildCatalogCandidate & { width?: string | number | null }>(
   catalog: readonly T[],
   widthIn: number,
-  kind: FourAnchorSinkBaseKind = "regular",
+  kind: AutoDesignSinkBaseKind = "regular",
 ): T | null {
   const text = (row: T) => `${row.masterCode} ${row.description ?? ""} ${row.subCategory ?? ""}`;
   const fits = catalog.filter((row) => isAutoBuildStraightSinkBaseCandidate(row)
@@ -273,7 +304,7 @@ export function pickFourAnchorSinkBase<T extends AutoBuildCatalogCandidate & { w
 }
 
 /**
- * Four-anchor surrounding fill is deliberately straight-run only. Corner boxes
+ * Auto-Design surrounding fill is deliberately straight-run only. Corner boxes
  * belong to a physical room vertex and must be selected through the normal
  * corner workflow; an auto-build must never place or substitute one mid-run.
  */
@@ -347,8 +378,8 @@ export function autoBuildSelectedWallCornerReservations(
   return reserved;
 }
 
-export function planFourAnchorAutoBuild(input: FourAnchorInputs): FourAnchorBuildResult {
-  const missing: FourAnchorKind[] = [];
+export function planAutoDesignAutoBuild(input: AutoDesignInputs): AutoDesignBuildResult {
+  const missing: AutoDesignKind[] = [];
   if (!validMeasurement(input.sink)) missing.push("sink");
   const stove = validMeasurement(input.stove) ? input.stove : null;
   if (!stove && input.stove !== null && input.stove !== undefined) missing.push("stove");
@@ -390,17 +421,17 @@ export function planFourAnchorAutoBuild(input: FourAnchorInputs): FourAnchorBuil
 }
 
 /**
- * Four-anchor layout is an empty-plan build. `audienceAllowed` is true for a
+ * Auto-Design layout is an empty-plan build. `audienceAllowed` is true for a
  * CabinetDealz admin and for every affiliate Designer, including storefront
  * customers. A hand-placed plan is never overwritten.
  */
-export function canRunFourAnchorAutoBuild(audienceAllowed: boolean, hasHandPlacedItems: boolean): boolean {
+export function canRunAutoDesign(audienceAllowed: boolean, hasHandPlacedItems: boolean): boolean {
   return audienceAllowed && !hasHandPlacedItems;
 }
 
-function validMeasurement(measurement: FourAnchorMeasurement | null | undefined): measurement is FourAnchorMeasurement {
+function validMeasurement(measurement: AutoDesignMeasurement | null | undefined): measurement is AutoDesignMeasurement {
   if (!measurement) return false;
-  return FOUR_ANCHOR_WALL_LABELS.includes(measurement.wallLabel)
+  return AUTO_DESIGN_WALL_LABELS.includes(measurement.wallLabel)
     && Number.isFinite(measurement.centerOffsetIn)
     && measurement.centerOffsetIn >= 0;
 }

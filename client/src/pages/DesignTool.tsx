@@ -191,13 +191,15 @@ import { HardwareCatalogPicker } from "@/components/design/HardwareCatalogPicker
 import { isPanelPaletteItem } from "./designToolPanels";
 import { normalizePaletteSearch, matchesPaletteSearch, matchesPaletteTextOrSize } from "@/lib/paletteSearch";
 import { searchCatalogItems } from "@shared/catalogCodeSearch";
-import { adjacentDishwasherCenterIn, anchorAlongStartIn, autoBuildStraightBaseCatalog, buildFourAnchorWallGuides, canRunFourAnchorAutoBuild, isAutoBuildStraightSinkBaseCandidate, makeFourAnchorSixWallTrainingRoom, pickFourAnchorSinkBase, planFourAnchorAutoBuild, subtractAnchorRunReservations, wallLabelToEngineWallId, type FourAnchorInputs, type FourAnchorOriginCorner, type FourAnchorRunDirection } from "@/lib/fourAnchorAutoBuild";
-import { fourAnchorSinkWindow, windowOverlapsReservation } from "@/lib/fourAnchorSinkWindow";
-import { fourAnchorRangeHood, fourAnchorRangeNeedsVentilation } from "@/lib/fourAnchorRangeHood";
-import { autoBuildCornerCatalog, fourAnchorCornerSlotPoint, fourAnchorCornerSlots, isFourAnchorBlindCornerOption, type AutoBuildCornerCandidate, type FourAnchorCornerChoice, type FourAnchorCornerSlot } from "@/lib/fourAnchorCornerStage";
-import { buildMandatoryFourAnchorRefrigeratorBay } from "@/lib/fourAnchorRefrigeratorBay";
-import { buildFourAnchorWallCabinets, type FourAnchorUpperCorner } from "@/lib/fourAnchorWallCabinets";
-import { seatFourAnchorCorner, type FourAnchorApplianceMove } from "@/lib/fourAnchorCornerSeating";
+import { adjacentDishwasherCenterIn, anchorAlongStartIn, autoBuildStraightBaseCatalog, buildAutoDesignWallGuides, canRunAutoDesign, isAutoBuildStraightSinkBaseCandidate, makeAutoDesignSixWallTrainingRoom, pickAutoDesignSinkBase, planAutoDesignAutoBuild, subtractAnchorRunReservations, wallLabelToEngineWallId, type AutoDesignInputs, type AutoDesignOriginCorner, type AutoDesignRunDirection } from "@/lib/autoDesignAutoBuild";
+import { AUTO_DESIGN_REFRIGERATOR_NOTE, autoDesignControlState, autoDesignShouldTurnOffForRefrigerator, isRefrigeratorAppliance, refrigeratorBlocksAutoDesign } from "@/lib/autoDesignAvailability";
+import { applyChosenAutoDesignFaucet, catalogFaucetSurface, defaultAutoDesignFaucet, ensureAutoDesignFaucet, isCatalogFaucet, type AutoDesignFaucetProduct } from "@/lib/autoDesignFaucet";
+import { autoDesignSinkWindow, windowOverlapsReservation } from "@/lib/autoDesignSinkWindow";
+import { autoDesignRangeHood, autoDesignRangeNeedsVentilation } from "@/lib/autoDesignRangeHood";
+import { autoBuildCornerCatalog, autoDesignCornerSlotPoint, autoDesignCornerSlots, isAutoDesignBlindCornerOption, type AutoBuildCornerCandidate, type AutoDesignCornerChoice, type AutoDesignCornerSlot } from "@/lib/autoDesignCornerStage";
+import { buildMandatoryAutoDesignRefrigeratorBay } from "@/lib/autoDesignRefrigeratorBay";
+import { buildAutoDesignWallCabinets, type AutoDesignUpperCorner } from "@/lib/autoDesignWallCabinets";
+import { seatAutoDesignCorner, type AutoDesignApplianceMove } from "@/lib/autoDesignCornerSeating";
 import { validatePlacedCornerRefrigerator } from "@/lib/cornerRefrigeratorPlacement";
 import { validatePlacedCornerRange, CORNER_RANGE_HANDLE_FILLER_IN } from "@/lib/cornerRangePlacement";
 import { buildGlassCornerCatalogChoices } from "@/lib/glassCornerCatalog";
@@ -214,8 +216,8 @@ import { MasterTracRod3D, MasterTracRodElevation } from "@/components/design/Mas
 import { defaultTowerConfig, isMasterTracCornerBoard, planMasterTracTower, towerCleatReferenceItems, towerConceptReferenceSubtotal, towerConceptStorageReferenceItems, towerConfigFromPlacements, towerCornerReferenceItems, towerRodHardwareTakeoff, type MasterTracTowerConfig } from "@/lib/masterTracTower";
 import { canCommitPlanStyleSwitchWithoutReview, planStyleReviewCandidates } from "@/lib/planStyleSwitch";
 import { autoFillSpan, makeFiller, type FillMode } from "@/lib/autofill";
-import { fillFourAnchorLowerSeams, planFourAnchorBaseSegment } from "@/lib/fourAnchorSeamFillers";
-import { applyDesignerLayoutRules, applyFourAnchorWiggleRoom, type FourAnchorAnchorOrigin } from "@/lib/designerLayoutRules";
+import { fillAutoDesignLowerSeams, planAutoDesignBaseSegment } from "@/lib/autoDesignSeamFillers";
+import { applyDesignerLayoutRules, applyAutoDesignWiggleRoom, type AutoDesignAnchorOrigin } from "@/lib/designerLayoutRules";
 import { resolveTierPrice } from "@shared/pricingTier";
 import {
   CATALOG_SUBCATEGORY_TRIM_AND_MOULDING,
@@ -233,8 +235,9 @@ import { CornerView, type CornerId } from "@/components/design/CornerView";
 import { IslandElevationView } from "@/components/design/IslandElevationView";
 import { CsvImportDialog } from "@/components/design/CsvImportDialog";
 import { PlanImageImportDialog, type ReviewedPlan } from "@/components/design/PlanImageImportDialog";
-import { FourAnchorAutoBuildDialog, type FourAnchorSubmitResult } from "@/components/design/FourAnchorAutoBuildDialog";
-import { FourAnchorCornerSelectionDialog } from "@/components/design/FourAnchorCornerSelectionDialog";
+import { AutoDesignDialog, type AutoDesignSubmitResult } from "@/components/design/AutoDesignDialog";
+import { AutoDesignCornerDialog } from "@/components/design/AutoDesignCornerDialog";
+import { AutoDesignFaucetDialog } from "@/components/design/AutoDesignFaucetDialog";
 import { findClosestPlanCabinet } from "@/lib/planImportMapper";
 import { EmailGate, type LeadContact } from "@/components/design/EmailGate";
 import { OptionalContactNudge } from "@/components/design/OptionalContactNudge";
@@ -458,11 +461,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   );
   const affiliateSlug = affiliateSlugForStoreScope(storeScope);
   const cartDestination = cartPathForStoreScope(storeScope);
-  // Four-anchor layout is available to CabinetDealz admins and to every affiliate
+  // Auto-Design layout is available to CabinetDealz admins and to every affiliate
   // Designer, including storefront customers on /store/:slug/design and the
   // affiliate dashboard Designer. The main public Designer stays admin-only.
   // There is no per-affiliate off switch for this feature.
-  const fourAnchorAvailable = isAdmin || Boolean(affiliateSlug);
+  const autoDesignAvailable = isAdmin || Boolean(affiliateSlug);
   // The continuous wall builder is the finished WallBuilder the main Designer
   // already ships. Affiliate storefronts and the affiliate dashboard Designer
   // get the same builder. There is no per-affiliate off switch for this feature.
@@ -762,6 +765,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const isPolygonRoom = Boolean(room.vertices?.length && room.vertices.length >= 2 && room.customWalls?.length);
   const [placed, setPlacedState] = useState<PlacedCabinet[]>([]);
   const placedRef = useRef<PlacedCabinet[]>(placed);
+  const layoutLockedRef = useRef(false);
+  const autoDesignSessionRef = useRef(false);
+  const adoptAutoDesignSinkRef = useRef<(sink: SinkFixture) => SinkFixture>((sink) => sink);
+  const defaultAutoDesignFaucetRef = useRef<AutoDesignFaucetProduct | null>(null);
+  const autoDesignFaucetPromptedRef = useRef(new Set<string>());
+  const autoDesignOwnedFaucetIdsRef = useRef(new Set<number>());
   const roomRef = useRef<RoomData>(room);
   roomRef.current = room;
   // ONE commit boundary for cabinet state: every seated cabinet's run offset is
@@ -1023,23 +1032,26 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	    islandPlacementModeRef.current = islandPlacementMode;
 	  }, [islandFace, islandPlacementMode]);
   const [islandAttributesOpen, setIslandAttributesOpen] = useState(false);
-  const [fourAnchorAutoBuildOpen, setFourAnchorAutoBuildOpen] = useState(false);
-  const [fourAnchorWallGuideSelection, setFourAnchorWallGuideSelection] = useState<{ originCorner: FourAnchorOriginCorner; runDirection: FourAnchorRunDirection } | null>(null);
-	const fourAnchorWallGuides = useMemo(() => {
-	  if (!fourAnchorAutoBuildOpen || !fourAnchorWallGuideSelection) return [];
-	  return buildFourAnchorWallGuides(room, fourAnchorWallGuideSelection.originCorner, fourAnchorWallGuideSelection.runDirection);
-	}, [fourAnchorAutoBuildOpen, fourAnchorWallGuideSelection, room]);
-	const openFourAnchorAutoBuild = useCallback(() => {
+  const [autoDesignOpen, setAutoDesignOpen] = useState(false);
+  const [autoDesignWallGuideSelection, setAutoDesignWallGuideSelection] = useState<{ originCorner: AutoDesignOriginCorner; runDirection: AutoDesignRunDirection } | null>(null);
+	const autoDesignWallGuides = useMemo(() => {
+	  if (!autoDesignOpen || !autoDesignWallGuideSelection) return [];
+	  return buildAutoDesignWallGuides(room, autoDesignWallGuideSelection.originCorner, autoDesignWallGuideSelection.runDirection);
+	}, [autoDesignOpen, autoDesignWallGuideSelection, room]);
+	const openAutoDesign = useCallback(() => {
+	  // A refrigerator, a populated plan, or a locked layout keeps Auto-Design off.
+	  // Opening it does not move anything already on the plan.
+	  if (layoutLockedRef.current || placedRef.current.length > 0 || placedRef.current.some(isRefrigeratorAppliance)) return;
 	  // The colored numbered wall guide is meaningful only in the 2D Floor Plan.
 	  // This does not modify the plan; it simply opens the measured-kitchen workflow.
 	  setViewMode("plan");
-	  setFourAnchorAutoBuildOpen(true);
+	  setAutoDesignOpen(true);
 	}, []);
 	useEffect(() => {
-	  if (!fourAnchorAutoBuildOpen) setFourAnchorWallGuideSelection(null);
-	}, [fourAnchorAutoBuildOpen]);
-  const [fourAnchorCornerStage, setFourAnchorCornerStage] = useState<{
-    input: FourAnchorInputs;
+	  if (!autoDesignOpen) setAutoDesignWallGuideSelection(null);
+	}, [autoDesignOpen]);
+  const [autoDesignCornerStage, setAutoDesignCornerStage] = useState<{
+    input: AutoDesignInputs;
     anchors: Record<string, PlacedCabinet>;
     selectedWalls: WallSide[];
     anchorPlaced: PlacedCabinet[];
@@ -1048,15 +1060,24 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     straightBaseCatalog: DesignCabinet[];
     baseSource: DesignCabinet;
     refrigeratorReservation: { wall: string; start: number; end: number } | null;
-    slots: FourAnchorCornerSlot[];
+    slots: AutoDesignCornerSlot[];
     cornerOptions: AutoBuildCornerCandidate[];
     /** The over-sink window the measured build creates when a window center was entered. */
     sinkWindow: WallOpening | null;
     /** Along-wall starts from the user's measurements, before any corner nudge. */
-    anchorOrigins: FourAnchorAnchorOrigin[];
+    anchorOrigins: AutoDesignAnchorOrigin[];
   } | null>(null);
+  autoDesignSessionRef.current = autoDesignOpen || autoDesignCornerStage != null;
+  const [autoDesignFaucetPrompt, setAutoDesignFaucetPrompt] = useState<{ sinkUid: string; queue: string[] } | null>(null);
+  const queueAutoDesignFaucetPrompt = useCallback((sinkUid: string) => {
+    setAutoDesignFaucetPrompt((current) => {
+      if (!current) return { sinkUid, queue: [] };
+      if (current.sinkUid === sinkUid || current.queue.includes(sinkUid)) return current;
+      return { ...current, queue: [...current.queue, sinkUid] };
+    });
+  }, []);
   // After a measured build, a range with nothing above it asks what goes there.
-  const [fourAnchorRangeVentPrompt, setFourAnchorRangeVentPrompt] = useState<{ rangeUid: string } | null>(null);
+  const [autoDesignRangeVentPrompt, setAutoDesignRangeVentPrompt] = useState<{ rangeUid: string } | null>(null);
   const [islandSeatingOverhangPrompt, setIslandSeatingOverhangPrompt] = useState<{
     cabinetCode: string;
     face: IslandFace;
@@ -1368,7 +1389,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         }
         const host = openPelicanSinkHost(product, placedRef.current, sinks);
         if (host) {
-          const fixture = buildPelicanSinkOnCabinet(product, host, room);
+          const fixture = adoptAutoDesignSinkRef.current(buildPelicanSinkOnCabinet(product, host, room));
           setSinks((current) => [...current.filter((sink) => !fixtureBelongsToCabinet(sink, host)), fixture]);
           setSelectedSinkUid(fixture.uid);
           setCountertop(true);
@@ -1619,6 +1640,50 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // plan can't be nudged while placing cabinets. lockedWalls freezes individual
   // walls. Cabinets can always still be added/moved.
   const [layoutLocked, setLayoutLocked] = useState(false);
+  layoutLockedRef.current = layoutLocked;
+  const layoutHasRefrigerator = useMemo(() => placed.some(isRefrigeratorAppliance), [placed]);
+  const autoDesignControl = useMemo(() => autoDesignControlState({
+    audienceAllowed: autoDesignAvailable,
+    layoutLocked,
+    placedCount: placed.length,
+    hasRefrigerator: layoutHasRefrigerator,
+  }), [autoDesignAvailable, layoutHasRefrigerator, layoutLocked, placed.length]);
+  const autoDesignSessionAnchorUids = useMemo(() => {
+    const anchors = autoDesignCornerStage?.anchors;
+    if (!anchors) return new Set<string>();
+    return new Set(Object.values(anchors).map((item) => item.uid));
+  }, [autoDesignCornerStage]);
+  const refrigeratorBlocksAutoDesignSession = refrigeratorBlocksAutoDesign(placed, autoDesignSessionAnchorUids);
+  useEffect(() => {
+    if (!autoDesignShouldTurnOffForRefrigerator({
+      blockedByRefrigerator: refrigeratorBlocksAutoDesignSession,
+      dialogOpen: autoDesignOpen,
+      cornerStageActive: autoDesignCornerStage != null,
+    })) return;
+    // Close the mode only. Do not complete the layout and do not use the
+    // cancel path, which clears every placement.
+    setAutoDesignOpen(false);
+    setAutoDesignCornerStage(null);
+    toast.info(AUTO_DESIGN_REFRIGERATOR_NOTE);
+  }, [autoDesignCornerStage, autoDesignOpen, refrigeratorBlocksAutoDesignSession]);
+  const rememberAutoDesignSink = useCallback((sink: SinkFixture): SinkFixture => {
+    if (!autoDesignSessionRef.current) return sink;
+    const result = ensureAutoDesignFaucet(sink, defaultAutoDesignFaucetRef.current);
+    if (result.sink.pelicanFaucetProductId != null) {
+      autoDesignOwnedFaucetIdsRef.current.add(result.sink.pelicanFaucetProductId);
+      const product = defaultAutoDesignFaucetRef.current;
+      if (product && result.attached) {
+        const surface = catalogFaucetSurface(product);
+        setSelectedSurfaces((previous) => previous.some((item) => item.id === surface.id) ? previous : [...previous, surface]);
+      }
+    }
+    if (result.sink.autoDesignFaucet && !autoDesignFaucetPromptedRef.current.has(result.sink.uid)) {
+      autoDesignFaucetPromptedRef.current.add(result.sink.uid);
+      queueAutoDesignFaucetPrompt(result.sink.uid);
+    }
+    return result.sink;
+  }, [queueAutoDesignFaucetPrompt]);
+  adoptAutoDesignSinkRef.current = rememberAutoDesignSink;
   const [lockedWalls, setLockedWalls] = useState<Set<WallSide>>(() => new Set());
 	  const activateSelectedWallCompassDrag = useCallback(() => {
 	    if (layoutLocked) return;
@@ -2101,13 +2166,24 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     });
     return quantities;
   }, [furniture, selectedSurfaces]);
+  const autoDesignFaucetQuantityByProduct = useMemo(() => {
+    const quantities = new Map<number, number>();
+    for (const sink of sinks) {
+      if (sink.pelicanFaucetProductId == null) continue;
+      quantities.set(sink.pelicanFaucetProductId, (quantities.get(sink.pelicanFaucetProductId) ?? 0) + 1);
+    }
+    return quantities;
+  }, [sinks]);
   const placedFixtureQuantityByProduct = useMemo(() => {
     const quantities = new Map(potFillerQuantityByProduct);
     bathroomFixtureQuantityByProduct.forEach((quantity, productId) => {
       quantities.set(productId, (quantities.get(productId) ?? 0) + quantity);
     });
+    autoDesignFaucetQuantityByProduct.forEach((quantity, productId) => {
+      quantities.set(productId, (quantities.get(productId) ?? 0) + quantity);
+    });
     return quantities;
-  }, [bathroomFixtureQuantityByProduct, potFillerQuantityByProduct]);
+  }, [autoDesignFaucetQuantityByProduct, bathroomFixtureQuantityByProduct, potFillerQuantityByProduct]);
   // Text annotations placed on the floor plan.
   const [annotations, setAnnotations] = useState<PlanAnnotation[]>([]);
   const [selectedAnnotationUid, setSelectedAnnotationUid] = useState<string | null>(null);
@@ -3302,18 +3378,21 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     },
     [roomType]
   );
-  const buildFourAnchorAutoLayout = useCallback((input: FourAnchorInputs) => {
+  const buildAutoDesignLayout = useCallback((input: AutoDesignInputs) => {
     const fail = (message: string) => {
       toast.error(message);
       return { ok: false as const, message };
     };
-    if (!fourAnchorAvailable) {
-      return fail("Four-anchor layout is available in affiliate Designers and for CabinetDealz admins.");
+    if (!autoDesignAvailable) {
+      return fail("Auto-Design layout is available in affiliate Designers and for CabinetDealz admins.");
     }
-    if (!canRunFourAnchorAutoBuild(fourAnchorAvailable, placedRef.current.length > 0)) {
-      return fail("The four-anchor build only runs on an empty Designer.");
+    if (placedRef.current.some(isRefrigeratorAppliance)) {
+      return fail(AUTO_DESIGN_REFRIGERATOR_NOTE);
     }
-    const result = planFourAnchorAutoBuild(input);
+    if (!canRunAutoDesign(autoDesignAvailable, placedRef.current.length > 0)) {
+      return fail("The auto-design build only runs on an empty Designer.");
+    }
+    const result = planAutoDesignAutoBuild(input);
     if (!result.ok) {
       return fail(`Missing required measurement: ${result.missing.join(", ")}.`);
     }
@@ -3328,7 +3407,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     const straightBaseCatalog = autoBuildStraightBaseCatalog(pool);
     // A kitchen defaults to the REGULAR sink base; the farmhouse (apron-front) base is built only on request.
     const sinkBaseKind = input.sinkBaseKind ?? "regular";
-    const sinkBaseSource = pickFourAnchorSinkBase(pool, sinkBaseWidth, sinkBaseKind);
+    const sinkBaseSource = pickAutoDesignSinkBase(pool, sinkBaseWidth, sinkBaseKind);
     if (!sinkBaseSource) {
       return fail(sinkBaseKind === "farmhouse"
         ? `No source-priced ${sinkBaseWidth}″ farmhouse sink base is available for the selected line. Choose the regular sink base or another door style, then try again.`
@@ -3361,7 +3440,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 
     let working: PlacedCabinet[] = [];
     const anchorsByKind = new Map<string, PlacedCabinet>();
-    const anchorOrigins: FourAnchorAnchorOrigin[] = [];
+    const anchorOrigins: AutoDesignAnchorOrigin[] = [];
     const selectedWalls: WallSide[] = [];
     for (const anchor of result.plan.anchors) {
       const source = anchor.kind === "sink" ? sinkBaseSource : applianceByKind[anchor.kind]!;
@@ -3434,7 +3513,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     const refrigerator = anchorsByKind.get("refrigerator");
     let refrigeratorReservation: { wall: string; start: number; end: number } | null = null;
     if (refrigerator) {
-      const refrigeratorBay = buildMandatoryFourAnchorRefrigeratorBay({
+      const refrigeratorBay = buildMandatoryAutoDesignRefrigeratorBay({
         refrigerator,
         room,
         caps: fridgeParts?.deepAbove ?? [],
@@ -3446,11 +3525,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       if (!refrigeratorBay.ok) return fail(refrigeratorBay.message);
       const fittedBay = fitExplicitRefrigeratorOptionPlacements(working, refrigeratorBay.additions, refrigerator.uid, room);
       if (Math.abs(fittedBay.shiftIn) > COLLISION_EPSILON_IN) {
-        return fail("The measured refrigerator bay does not have room for its two panels and matching cabinet above. Adjust the refrigerator center measurement; Four-anchor will not move it.");
+        return fail("The measured refrigerator bay does not have room for its two panels and matching cabinet above. Adjust the refrigerator center measurement; Auto-Design will not move it.");
       }
       const committedBay = appendRefrigeratorEnclosurePlacements(fittedBay.existing, fittedBay.additions, refrigerator.uid, room);
       if (committedBay.rejected.length > 0) {
-        return fail("The measured refrigerator bay overlaps an anchor, opening, or wall end. Adjust the refrigerator center measurement; Four-anchor will not add a filler or move it.");
+        return fail("The measured refrigerator bay overlaps an anchor, opening, or wall end. Adjust the refrigerator center measurement; Auto-Design will not add a filler or move it.");
       }
       working = committedBay.placed;
       refrigeratorReservation = refrigeratorBay.reservation;
@@ -3460,7 +3539,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       const defaultSinkType: SinkType = isFarmSinkBasePaletteItem(sinkBase)
         ? "farmhouse"
         : sinkBase.width >= 33 ? "double" : "single";
-      const defaultSink = makeDefaultSinkForCabinet(sinkBase, room, defaultSinkType);
+      const defaultSink = rememberAutoDesignSink(makeDefaultSinkForCabinet(sinkBase, room, defaultSinkType));
       setSinks([defaultSink]);
       setSelectedSinkUid(defaultSink.uid);
     }
@@ -3468,7 +3547,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     // the sink base. Upper cabinets never go over it and stop 3 inches short of it.
     let sinkWindow: WallOpening | null = null;
     if (input.sinkWindowCenter && sinkBase) {
-      const proposedWindow = fourAnchorSinkWindow({ sink: sinkBase, room, uid: makeUid() });
+      const proposedWindow = autoDesignSinkWindow({ sink: sinkBase, room, uid: makeUid() });
       const touchesOpening = openings.some((opening) => opening.side === proposedWindow.side
         && opening.offset < proposedWindow.offset + proposedWindow.width - COLLISION_EPSILON_IN
         && opening.offset + opening.width > proposedWindow.offset + COLLISION_EPSILON_IN);
@@ -3487,12 +3566,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     wallCabHeightRef.current = selectedWallCabinetHeight;
     wallCabHeightPromptedRef.current = true;
     setCountertop(true);
-    const slots = fourAnchorCornerSlots(input.layoutType, {
+    const slots = autoDesignCornerSlots(input.layoutType, {
       wallIds: selectedWalls, room, originCorner: input.originCorner, runDirection: input.runDirection,
     });
     const cornerOptions = autoBuildCornerCatalog(pool) as AutoBuildCornerCandidate[];
-    setFourAnchorAutoBuildOpen(false);
-    setFourAnchorCornerStage({
+    setAutoDesignOpen(false);
+    setAutoDesignCornerStage({
       input,
       anchors: Object.fromEntries(anchorsByKind),
       selectedWalls,
@@ -3513,21 +3592,21 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       ? "Measured appliances are seated. Choose each real corner cabinet before the remaining wall runs are filled."
       : "Measured appliances are seated. Confirm the next step to fill the remaining wall runs.");
     return { ok: true as const };
-  }, [appliancePalette, autoFillCabinets, autoFillCabinetsLoading, fourAnchorAvailable, isCornerCabinet, openings, placedRef, refrigeratorSurroundCatalog, room, setCountertop, setPlaced, wallCabPool, wallCabPoolLoading]);
+  }, [appliancePalette, autoFillCabinets, autoFillCabinetsLoading, autoDesignAvailable, isCornerCabinet, openings, placedRef, refrigeratorSurroundCatalog, room, setCountertop, setPlaced, wallCabPool, wallCabPoolLoading]);
 
   /**
-   * The second half of a Four-anchor build. Nothing is guessed: appliances are
+   * The second half of an Auto-Design build. Nothing is guessed: appliances are
    * already committed with the refrigerator bay, every L/U corner must receive
    * a source-priced corner box, and only then do straight base boxes/fillers
    * tile the remaining run spans.
    */
-  const completeFourAnchorAutoLayout = useCallback((choices: Record<string, FourAnchorCornerChoice>) => {
-    const stage = fourAnchorCornerStage;
+  const completeAutoDesignLayout = useCallback((choices: Record<string, AutoDesignCornerChoice>) => {
+    const stage = autoDesignCornerStage;
     const fail = (message: string) => {
       toast.error(message);
       return { ok: false as const, message };
     };
-    if (!stage) return fail("The measured appliance stage is no longer active. Start the Four-anchor build again from an empty plan.");
+    if (!stage) return fail("The measured appliance stage is no longer active. Start the Auto-Design build again from an empty plan.");
 
     let working = [...stage.anchorPlaced];
     // The sink window is part of the room for every remaining stage.
@@ -3536,8 +3615,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       : openings;
     const selectedWalls = [...stage.selectedWalls];
     let selectedCornerCount = 0;
-    const upperCorners: FourAnchorUpperCorner[] = [];
-    const applianceMoves: FourAnchorApplianceMove[] = [];
+    const upperCorners: AutoDesignUpperCorner[] = [];
+    const applianceMoves: AutoDesignApplianceMove[] = [];
 
     for (const slot of stage.slots) {
       const choice = choices[slot.id] ?? { cabinetId: null };
@@ -3548,23 +3627,23 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         if (!selectedWalls.includes(wallId)) selectedWalls.push(wallId);
       }
       if (choice.cabinetId == null) {
-        return fail(`A corner cabinet is required at every Four-anchor L/U corner. Choose a source-priced corner for ${slot.label} before filling the remaining runs.`);
+        return fail(`A corner cabinet is required at every Auto-Design L/U corner. Choose a source-priced corner for ${slot.label} before filling the remaining runs.`);
       }
       const source = stage.cornerOptions.find((candidate) => candidate.id === choice.cabinetId);
       if (!source) return fail(`${slot.label} must use a current source-priced corner cabinet. The selected catalog item is unavailable.`);
       const sourceCatalog = stage.pool.find((candidate) => candidate.id === source.id);
       if (!sourceCatalog) return fail(`${source.masterCode} is no longer present in the selected source-priced catalog.`);
-      const target = fourAnchorCornerSlotPoint(slot, room, stage.input.originCorner, stage.input.runDirection);
+      const target = autoDesignCornerSlotPoint(slot, room, stage.input.originCorner, stage.input.runDirection);
       if (!target) return fail(`${slot.label} does not resolve to a real shared wall vertex. No remaining cabinets were added.`);
       // The corner is seated at its exact vertex. If a measured range or refrigerator
       // sits in the way it slides away from the corner (never more than 3 inches);
       // sink and dishwasher keep their measured positions.
-      const seated = seatFourAnchorCorner({
+      const seated = seatAutoDesignCorner({
         source: sourceCatalog, slotLabel: slot.label, target,
         cornerWallIds: [firstWall.engineWallId, secondWall.engineWallId],
         working, room, openings: stageOpenings,
         blindPullIn: choice.blindPullIn ?? source.pullMax ?? 6,
-        isBlindOption: isFourAnchorBlindCornerOption(source),
+        isBlindOption: isAutoDesignBlindCornerOption(source),
         catalogFillers, makeUid, styleId: styleIdRef.current ?? null,
       });
       if (!seated.ok) return fail(seated.message);
@@ -3576,7 +3655,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     }
 
     const sinkAnchor = stage.anchors.sink;
-    const wiggle = applyFourAnchorWiggleRoom({
+    const wiggle = applyAutoDesignWiggleRoom({
       placed: working,
       room,
       openings: stageOpenings,
@@ -3609,7 +3688,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           && isRangeOrOven(other.masterCode, other.description) && cabinetWall(other, room) === wallId
           && Math.abs((edge === "start" ? wallRunOffset(other, wallId, room) + wallRunSpan(other, wallId, room) - segment.start
             : segment.start + segment.length - wallRunOffset(other, wallId, room))) <= 0.05);
-        const fill = planFourAnchorBaseSegment({
+        const fill = planAutoDesignBaseSegment({
           length: segment.length, catalog: stage.straightBaseCatalog, rangeAtStart: beside("start"), rangeAtEnd: beside("end"),
         });
         if (fill.note) rangeNeighborNotes.push(fill.note);
@@ -3647,14 +3726,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     // No gap is left anywhere: every opening between the measured anchors, panels, corner
     // cabinets and runs (and the 3-inch seam a range leaves beside its corner) takes real
     // catalog filler before the wall boxes are matched to the finished lower runs.
-    const seamResult = fillFourAnchorLowerSeams({
+    const seamResult = fillAutoDesignLowerSeams({
       placed: working, room, openings: stageOpenings, fillers: catalogFillers, makeUid,
       styleId: styleIdRef.current ?? null, corners: upperCorners.map((entry) => entry.point),
     });
     working = seamResult.placed;
     // Wall boxes are last. Match the completed lower projections, retaining
     // selected-line SKUs, height and opening clearances without moving anchors.
-    const upperResult = buildFourAnchorWallCabinets({
+    const upperResult = buildAutoDesignWallCabinets({
       placed: working, room, openings: stageOpenings, catalog: stage.wallPool,
       wallCabinetHeightIn: stage.input.wallCabinetHeightIn ?? 30,
       styleId: styleIdRef.current ?? null, makeUid, corners: upperCorners, catalogFillers, closeSeams: true,
@@ -3671,7 +3750,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       const windowToCommit = stage.sinkWindow;
       setOpenings((previous) => (previous.some((opening) => opening.uid === windowToCommit.uid) ? previous : [...previous, windowToCommit]));
     }
-    setFourAnchorCornerStage(null);
+    setAutoDesignCornerStage(null);
     setViewMode("threeD");
     toast.success(`Placed ${selectedCornerCount} selected corners, ${surrounding.length} regular base-run pieces, ${seamResult.additions.length} filler pieces closing every gap, and ${upperResult.additions.length} aligned wall cabinets and fillers.`);
     for (const note of [...seamResult.notes, ...rangeNeighborNotes]) toast.info(note, { duration: 15000 });
@@ -3691,19 +3770,19 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     }
     // A range with nothing above it asks what belongs there: hood, bridge + microwave, or nothing.
     const bareRange = working.find((item) => item.placement === "appliance" && isRangeOrOven(item.masterCode, item.description)
-      && fourAnchorRangeNeedsVentilation(working, item));
-    if (bareRange) setFourAnchorRangeVentPrompt({ rangeUid: bareRange.uid });
+      && autoDesignRangeNeedsVentilation(working, item));
+    if (bareRange) setAutoDesignRangeVentPrompt({ rangeUid: bareRange.uid });
     return { ok: true as const };
-  }, [catalogFillers, fourAnchorCornerStage, openings, room, setPlaced, setOpenings]);
+  }, [catalogFillers, autoDesignCornerStage, openings, room, setPlaced, setOpenings]);
 
-  const cancelFourAnchorCornerStage = useCallback(() => {
+  const cancelAutoDesignCornerStage = useCallback(() => {
     // The staged build is transactional. Cancelling this required choice leaves
     // no auto-created appliance, sink, filler, or cabinet in the empty plan.
     placedRef.current = [];
     setPlaced([]);
     setSinks([]);
     setSelectedSinkUid(null);
-    setFourAnchorCornerStage(null);
+    setAutoDesignCornerStage(null);
     toast.info("Measured appliance anchors were cancelled; the Designer remains empty.");
   }, [setPlaced]);
   // A previous automatic microwave workflow could persist WSC30—the real
@@ -7484,7 +7563,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	        // replace it with a verified Pelican fixture without leaving duplicates.
         const existingFixture = sinks.find((sink) => fixtureBelongsToCabinet(sink, finalCab));
         if (pelicanSinkDraft) {
-          const pelicanSink = buildPelicanSinkOnCabinet(pelicanSinkDraft, finalCab, room);
+          const pelicanSink = adoptAutoDesignSinkRef.current(buildPelicanSinkOnCabinet(pelicanSinkDraft, finalCab, room));
           setSinks((current) => [...current.filter((sink) => !fixtureBelongsToCabinet(sink, finalCab)), pelicanSink]);
           setSelectedSinkUid(pelicanSink.uid);
           setSelectedSurfaces((previous) => previous.some((surface) => surface.id === pelicanSinkDraft.id) ? previous : [...previous, {
@@ -7503,7 +7582,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           const defaultSinkType: SinkType = isFarmSinkBasePaletteItem(finalCab)
             ? "farmhouse"
             : finalCab.width >= 33 ? "double" : "single";
-          const defaultSink = makeDefaultSinkForCabinet(finalCab, room, defaultSinkType);
+          const defaultSink = adoptAutoDesignSinkRef.current(makeDefaultSinkForCabinet(finalCab, room, defaultSinkType));
 	          setSinks((current) => current.some((sink) => fixtureBelongsToCabinet(sink, finalCab))
 	            ? current
 	            : [...current, defaultSink]);
@@ -7721,14 +7800,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	      ? `${bridge.masterCode} was added above the existing ${microwave.masterCode}.`
 	      : `${bridge.masterCode} and ${microwave.masterCode} were centered above ${range.masterCode}.`);
 	  }, [appliancePalette, rangeCompanionPrompt, room]);
-	  // Four-anchor leaves a range with nothing above it and asks what belongs there.
-  const addFourAnchorRangeHood = useCallback(() => {
-    const prompt = fourAnchorRangeVentPrompt;
-    setFourAnchorRangeVentPrompt(null);
+	  // Auto-Design leaves a range with nothing above it and asks what belongs there.
+  const addAutoDesignRangeHood = useCallback(() => {
+    const prompt = autoDesignRangeVentPrompt;
+    setAutoDesignRangeVentPrompt(null);
     if (!prompt) return;
     const range = placedRef.current.find((cabinet) => cabinet.uid === prompt.rangeUid);
     if (!range) { toast.error("The range changed before the hood was added. Nothing was added."); return; }
-    const built = fourAnchorRangeHood({ range, room, palette: appliancePalette, uid: makeUid() });
+    const built = autoDesignRangeHood({ range, room, palette: appliancePalette, uid: makeUid() });
     if (!built.ok) { toast.error(built.message); return; }
     const resolution = appendCollisionFreePlacements(placedRef.current, [built.hood], room);
     if (resolution.rejected.length > 0 || !resolution.placed.some((item) => item.uid === built.hood.uid)) {
@@ -7739,17 +7818,17 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     setPlaced(() => resolution.placed);
     setSelectedUid(built.hood.uid);
     toast.success(`${built.hood.masterCode} was centered above ${range.masterCode}.`);
-  }, [appliancePalette, fourAnchorRangeVentPrompt, room]);
-  const offerFourAnchorBridgeAndMicrowave = useCallback(() => {
-    const prompt = fourAnchorRangeVentPrompt;
-    setFourAnchorRangeVentPrompt(null);
+  }, [appliancePalette, autoDesignRangeVentPrompt, room]);
+  const offerAutoDesignBridgeAndMicrowave = useCallback(() => {
+    const prompt = autoDesignRangeVentPrompt;
+    setAutoDesignRangeVentPrompt(null);
     if (!prompt) return;
     const range = placedRef.current.find((cabinet) => cabinet.uid === prompt.rangeUid);
     if (!range) { toast.error("The range changed before the bridge cabinet was offered. Nothing was added."); return; }
     const proposal = rangeCompanionProposal(range, room, wallCabPoolRef.current, appliancePalette, wallCabHeightRef.current);
     if (!proposal) { toast.error("A matching selected-line bridge cabinet and microwave are not available for this range."); return; }
     setRangeCompanionPrompt({ rangeUid: range.uid, proposal, microwaveAlreadyPlaced: false });
-  }, [appliancePalette, fourAnchorRangeVentPrompt, room]);
+  }, [appliancePalette, autoDesignRangeVentPrompt, room]);
   const addWscSpiceStackUpper = useCallback((cabinetId: number) => {
 	    const prompt = spiceStackPrompt;
 	    if (!prompt) return;
@@ -8741,6 +8820,161 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const { data: faucetBaseProducts, isLoading: faucetProductsLoading } = trpc.surfaces.recommended.useQuery(
     { role: bathroomSinkDialog ? "vanity-faucet" : "faucet", limit: 200 },
     { enabled: !!sinkBaseDialog }
+  );
+  // Auto-Design faucet picker. Same catalog the Products page and the Designer
+  // surfaces picker already use: pelican.byCategory (Sinks & Faucets / Faucets)
+  // plus surfaces.recommended role "faucet". No local product list.
+  const autoDesignFaucetCatalogEnabled = autoDesignAvailable && (
+    autoDesignOpen
+    || autoDesignCornerStage != null
+    || autoDesignFaucetPrompt != null
+    || sinks.some((sink) => sink.autoDesignFaucet)
+  );
+  const {
+    data: pelicanFaucetCatalog,
+    isLoading: pelicanFaucetCatalogLoading,
+    isError: pelicanFaucetCatalogError,
+  } = trpc.pelican.byCategory.useQuery(
+    {
+      category: "Sinks & Faucets" as never,
+      scope: "designer",
+      subCategory: "Faucets",
+      limit: 200,
+      offset: 0,
+    },
+    { enabled: autoDesignFaucetCatalogEnabled, staleTime: 60_000 },
+  );
+  const {
+    data: recommendedFaucetCatalog,
+    isLoading: recommendedFaucetCatalogLoading,
+    isError: recommendedFaucetCatalogError,
+  } = trpc.surfaces.recommended.useQuery(
+    { role: "faucet", limit: 200 },
+    { enabled: autoDesignFaucetCatalogEnabled, staleTime: 60_000 },
+  );
+  const autoDesignFaucetProducts = useMemo(() => {
+    const merged = new Map<number, AutoDesignFaucetProduct>();
+    const add = (item: {
+      id?: number;
+      name?: string | null;
+      pelicanCode?: string | null;
+      category?: string | null;
+      subCategory?: string | null;
+      imageUrl?: string | null;
+      sellPrice?: number | null;
+      slug?: string | null;
+      size?: string | null;
+      brand?: string | null;
+      finish?: string | null;
+    } | null | undefined, trustFaucetRole: boolean) => {
+      if (!item?.id || !item.name) return;
+      const product: AutoDesignFaucetProduct = {
+        id: item.id,
+        pelicanCode: item.pelicanCode,
+        name: item.name,
+        category: item.category ?? (trustFaucetRole ? "Sinks & Faucets" : null),
+        subCategory: item.subCategory ?? (trustFaucetRole ? "Faucets" : null),
+        imageUrl: item.imageUrl,
+        sellPrice: item.sellPrice,
+        slug: item.slug,
+        size: item.size,
+        brand: item.brand,
+        finish: item.finish,
+      };
+      if (!isCatalogFaucet(product) || merged.has(product.id)) return;
+      merged.set(product.id, product);
+    };
+    for (const item of pelicanFaucetCatalog?.items ?? []) add(item, false);
+    for (const item of recommendedFaucetCatalog ?? []) add(item, true);
+    const products: AutoDesignFaucetProduct[] = [];
+    merged.forEach((product) => products.push(product));
+    return products;
+  }, [pelicanFaucetCatalog, recommendedFaucetCatalog]);
+  const autoDesignFaucetCatalogLoading = autoDesignFaucetCatalogEnabled && (pelicanFaucetCatalogLoading || recommendedFaucetCatalogLoading);
+  const autoDesignFaucetCatalogUnavailable = autoDesignFaucetCatalogEnabled
+    && !autoDesignFaucetCatalogLoading
+    && autoDesignFaucetProducts.length === 0
+    && (pelicanFaucetCatalogError || recommendedFaucetCatalogError || pelicanFaucetCatalog != null || recommendedFaucetCatalog != null);
+  useEffect(() => {
+    const product = defaultAutoDesignFaucet(autoDesignFaucetProducts);
+    defaultAutoDesignFaucetRef.current = product;
+    if (!product) return;
+    const waiting = sinks.some((sink) => sink.autoDesignFaucet && sink.pelicanFaucetProductId == null);
+    if (!waiting) return;
+    autoDesignOwnedFaucetIdsRef.current.add(product.id);
+    setSinks((current) => current.map((sink) => (
+      sink.autoDesignFaucet && sink.pelicanFaucetProductId == null
+        ? applyChosenAutoDesignFaucet(sink, product)
+        : sink
+    )));
+    const surface = catalogFaucetSurface(product);
+    setSelectedSurfaces((previous) => previous.some((item) => item.id === surface.id) ? previous : [...previous, surface]);
+  }, [autoDesignFaucetProducts, sinks]);
+  useEffect(() => {
+    if (sinks.some((sink) => sink.autoDesignFaucet && sink.pelicanFaucetProductId == null)) return;
+    const used = new Set<number>();
+    for (const sink of sinks) {
+      if (sink.pelicanFaucetProductId != null) used.add(sink.pelicanFaucetProductId);
+    }
+    const stale: number[] = [];
+    autoDesignOwnedFaucetIdsRef.current.forEach((id) => {
+      if (!used.has(id)) stale.push(id);
+    });
+    if (stale.length === 0) return;
+    for (const id of stale) autoDesignOwnedFaucetIdsRef.current.delete(id);
+    const staleIds = new Set(stale);
+    setSelectedSurfaces((previous) => {
+      const next = previous.filter((item) => !staleIds.has(item.id));
+      return next.length === previous.length ? previous : next;
+    });
+  }, [sinks]);
+  const openAutoDesignFaucetPicker = useCallback((sinkUid: string) => {
+    if (!sinks.some((sink) => sink.uid === sinkUid && sink.autoDesignFaucet)) return;
+    setSelectedSinkUid(sinkUid);
+    setAutoDesignFaucetPrompt((current) => {
+      if (!current || current.sinkUid === sinkUid) return { sinkUid, queue: current?.queue.filter((uid) => uid !== sinkUid) ?? [] };
+      return { sinkUid, queue: [current.sinkUid, ...current.queue.filter((uid) => uid !== sinkUid)] };
+    });
+  }, [sinks]);
+  const keepAutoDesignFaucetDefault = useCallback(() => {
+    setAutoDesignFaucetPrompt((current) => {
+      if (!current || current.queue.length === 0) return null;
+      const [next, ...rest] = current.queue;
+      return { sinkUid: next, queue: rest };
+    });
+  }, []);
+  const chooseAutoDesignFaucet = useCallback((product: AutoDesignFaucetProduct, applyToAll: boolean) => {
+    const prompt = autoDesignFaucetPrompt;
+    if (!prompt) return;
+    const targets = new Set<string>([prompt.sinkUid]);
+    if (applyToAll) {
+      for (const uid of prompt.queue) targets.add(uid);
+      for (const sink of sinks) {
+        if (sink.autoDesignFaucet) targets.add(sink.uid);
+      }
+    }
+    autoDesignOwnedFaucetIdsRef.current.add(product.id);
+    targets.forEach((uid) => autoDesignFaucetPromptedRef.current.add(uid));
+    setSinks((current) => current.map((sink) => (
+      targets.has(sink.uid) ? applyChosenAutoDesignFaucet(sink, product) : sink
+    )));
+    const surface = catalogFaucetSurface(product);
+    setSelectedSurfaces((previous) => previous.some((item) => item.id === surface.id) ? previous : [...previous, surface]);
+    setCountertop(true);
+    if (applyToAll) {
+      setAutoDesignFaucetPrompt(null);
+      return;
+    }
+    const [next, ...rest] = prompt.queue;
+    setAutoDesignFaucetPrompt(next ? { sinkUid: next, queue: rest } : null);
+  }, [autoDesignFaucetPrompt, sinks]);
+  const autoDesignFaucetPromptSink = sinks.find((sink) => sink.uid === autoDesignFaucetPrompt?.sinkUid) ?? null;
+  const autoDesignFaucetPromptCabinet = autoDesignFaucetPromptSink
+    ? placed.find((cabinet) => cabinet.uid === autoDesignFaucetPromptSink.cabinetUid)
+    : null;
+  const autoDesignFaucetSinkCount = Math.max(
+    sinks.filter((sink) => sink.autoDesignFaucet).length,
+    autoDesignFaucetPrompt ? autoDesignFaucetPrompt.queue.length + 1 : 0,
   );
   const { data: potFillerProducts } = trpc.surfaces.recommended.useQuery(
     { role: "pot-filler", limit: 8 },
@@ -9887,7 +10121,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
    * build. This intentionally refuses rather than clears any user-owned scene
    * state, so the training sample cannot overwrite a customer layout.
    */
-  const loadFourAnchorSixWallTrainingRoom = useCallback((): FourAnchorSubmitResult => {
+  const loadAutoDesignSixWallTrainingRoom = useCallback((): AutoDesignSubmitResult => {
     const populated = placed.length > 0
       || openings.length > 0
       || sinks.length > 0
@@ -9903,12 +10137,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     if (populated) {
       return { ok: false, message: "A training room can only be loaded into an empty Designer. Save or start a new design; no current items were changed." };
     }
-    const trainingRoom = makeFourAnchorSixWallTrainingRoom();
+    const trainingRoom = makeAutoDesignSixWallTrainingRoom();
     applyRoom(trainingRoom);
-    setActiveWall("four-anchor-training-wall-1" as WallSide);
+    setActiveWall("auto-design-training-wall-1" as WallSide);
     setPlacementTarget("wall");
     setViewMode("plan");
-    setFourAnchorWallGuideSelection({ originCorner: "left", runDirection: "right" });
+    setAutoDesignWallGuideSelection({ originCorner: "left", runDirection: "right" });
     toast.success("Six-wall training room loaded. Hover a colored wall number to see where its center measurement begins.");
     return { ok: true };
   }, [annotations.length, applyRoom, furniture.length, isAdmin, island, layoutLocked, openings.length, ponyWalls.length, potFillers.length, room.peninsulaRuns, roomType, setPlacementTarget, sinks.length, placed.length]);
@@ -13723,19 +13957,26 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
             Tablet preview
           </Button>
         )}
-        {fourAnchorAvailable && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="hidden lg:inline-flex shrink-0 border-[#d4a75a] text-[#765416] hover:bg-[#fff8e8]"
-	            onClick={openFourAnchorAutoBuild}
-            disabled={placed.length > 0 || layoutLocked}
-            data-testid="admin-four-anchor-auto-build"
-            title={placed.length > 0 ? "Start this measured build from an empty Designer" : "Build a measured kitchen from four fixed fixture anchors"}
-            aria-label="Four-anchor auto-build"
-          >
-            <Ruler className="mr-1.5 h-3.5 w-3.5" /> Four anchors
-          </Button>
+        {autoDesignAvailable && (
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              className="hidden lg:inline-flex shrink-0 border-[#d4a75a] text-[#765416] hover:bg-[#fff8e8] disabled:opacity-60"
+              onClick={openAutoDesign}
+              disabled={!autoDesignControl.enabled}
+              data-testid="admin-auto-design-auto-build"
+              title={autoDesignControl.title}
+              aria-label="Auto-Design"
+            >
+              <Ruler className="mr-1.5 h-3.5 w-3.5" /> Auto-Design
+            </Button>
+            {autoDesignControl.refrigeratorNote && (
+              <span data-testid="auto-design-refrigerator-note" className="hidden max-w-[14rem] text-[11px] leading-snug text-muted-foreground lg:inline">
+                {autoDesignControl.refrigeratorNote}
+              </span>
+            )}
+          </>
         )}
         <div className={`${isCompactWorkspace ? "hidden" : "hidden lg:flex"} shrink-0 items-center gap-1`}>
           <Button
@@ -14279,18 +14520,22 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                    <span className="flex-1 text-left">Peninsula Wizard</span>
 	                    <Badge variant="secondary" className="text-[10px]">fast layout</Badge>
 	                  </button>
-                  {fourAnchorAvailable && (
+                  {autoDesignAvailable && (
                     <button
-                      data-testid="more-sheet-four-anchors"
-                      disabled={placed.length > 0 || layoutLocked}
-	                      onClick={() => { setMoreSheetOpen(false); setTimeout(openFourAnchorAutoBuild, 120); }}
-                      title={placed.length > 0 ? "Start this measured build from an empty Designer" : "Build a measured kitchen from four fixed fixture anchors"}
+                      data-testid="more-sheet-auto-design"
+                      disabled={!autoDesignControl.enabled}
+                      onClick={() => { setMoreSheetOpen(false); setTimeout(openAutoDesign, 120); }}
+                      title={autoDesignControl.title}
                       className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm hover:bg-muted disabled:opacity-50 transition-colors"
                     >
                       <Ruler className="h-4 w-4 text-muted-foreground shrink-0" />
                       <span className="flex-1 text-left">
-                        Four anchors
-                        {placed.length > 0 && <span className="block text-[11px] font-normal text-muted-foreground">Needs an empty plan</span>}
+                        Auto-Design
+                        {autoDesignControl.refrigeratorNote ? (
+                          <span className="block text-[11px] font-normal text-muted-foreground">{autoDesignControl.refrigeratorNote}</span>
+                        ) : placed.length > 0 && (
+                          <span className="block text-[11px] font-normal text-muted-foreground">Needs an empty plan</span>
+                        )}
                       </span>
                       <Badge variant="secondary" className="text-[10px]">measured</Badge>
                     </button>
@@ -16997,7 +17242,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	          {viewMode === "plan" && (
 	            <PlanCanvas onPreviewGap={previewSmartGap}
 	              room={room}
-	              fourAnchorWallGuides={fourAnchorWallGuides}
+	              autoDesignWallGuides={autoDesignWallGuides}
 	              catalogDragCabinet={catalogDragPreview}
 	              fillerGapPreview={smallGapFillerPlanPreview}
 	              automaticSnapping={automaticSnapping}
@@ -17064,6 +17309,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	              potFillers={potFillers}
               selectedSinkUid={selectedSinkUid}
               onSelectSink={selectSink}
+              onAutoDesignFaucetClick={openAutoDesignFaucetPicker}
               onMoveSink={moveSink}
               onDropToFloor={dropToFloor}
               finishFor={finishForCab}
@@ -17287,7 +17533,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	              <div className="flex-1 min-h-0 border-b border-border">
 	                <PlanCanvas onPreviewGap={previewSmartGap}
 	                  room={room}
-	                  fourAnchorWallGuides={fourAnchorWallGuides}
+	                  autoDesignWallGuides={autoDesignWallGuides}
 	                  catalogDragCabinet={catalogDragPreview}
 	                  fillerGapPreview={smallGapFillerPlanPreview}
 	                  automaticSnapping={automaticSnapping}
@@ -17354,6 +17600,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	              potFillers={potFillers}
 	              selectedSinkUid={selectedSinkUid}
 	              onSelectSink={selectSink}
+              onAutoDesignFaucetClick={openAutoDesignFaucetPicker}
               onMoveSink={moveSink}
               onDropToFloor={dropToFloor}
               finishFor={finishForCab}
@@ -18996,6 +19243,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                           <input type="checkbox" checked={s.faucet} onChange={() => toggleSinkFaucet(s.uid)} className="h-3 w-3" />
                           {t("dt_bs_faucet")}
                         </label>
+                        {s.autoDesignFaucet && (
+                          <button type="button" className="text-[#1a2744] underline" data-testid={`auto-design-faucet-reopen-${s.uid}`} onClick={() => openAutoDesignFaucetPicker(s.uid)}>
+                            Choose
+                          </button>
+                        )}
                         <button className="text-destructive" title={t("dt_bs_remove")} onClick={() => deleteSink(s.uid)}>
                           <X className="h-3.5 w-3.5" />
                         </button>
@@ -19198,24 +19450,37 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         setFurniture((previous) => previous.map((current) => current.uid === item.uid ? item : current));
         toast.success("Planning zone updated. Pelican fixture dimensions are unchanged.");
       }} />
-	      {fourAnchorAvailable && (
-	        <FourAnchorAutoBuildDialog
-	          open={fourAnchorAutoBuildOpen}
-	          onOpenChange={setFourAnchorAutoBuildOpen}
-	          onWallGuideChange={setFourAnchorWallGuideSelection}
-	          onLoadSixWallTrainingRoom={isAdmin ? loadFourAnchorSixWallTrainingRoom : undefined}
-	          onBuild={buildFourAnchorAutoLayout}
+	      {autoDesignAvailable && (
+	        <AutoDesignDialog
+	          open={autoDesignOpen}
+	          onOpenChange={setAutoDesignOpen}
+	          onWallGuideChange={setAutoDesignWallGuideSelection}
+	          onLoadSixWallTrainingRoom={isAdmin ? loadAutoDesignSixWallTrainingRoom : undefined}
+	          onBuild={buildAutoDesignLayout}
 	          catalogLoading={autoFillCabinetsLoading || wallCabPoolLoading}
 	          wallCount={Math.min(6, Math.max(1, room.customWalls?.length ?? 4))}
+	          room={room}
 	        />
 	      )}
-	      {fourAnchorAvailable && fourAnchorCornerStage && (
-	        <FourAnchorCornerSelectionDialog
+	      {autoDesignAvailable && autoDesignCornerStage && (
+	        <AutoDesignCornerDialog
 	          open
-	          slots={fourAnchorCornerStage.slots}
-	          options={fourAnchorCornerStage.cornerOptions}
-	          onCancel={cancelFourAnchorCornerStage}
-	          onConfirm={completeFourAnchorAutoLayout}
+	          slots={autoDesignCornerStage.slots}
+	          options={autoDesignCornerStage.cornerOptions}
+	          onCancel={cancelAutoDesignCornerStage}
+	          onConfirm={completeAutoDesignLayout}
+	        />
+	      )}
+	      {autoDesignAvailable && (
+	        <AutoDesignFaucetDialog
+	          open={autoDesignFaucetPrompt != null}
+	          sinkLabel={autoDesignFaucetPromptCabinet?.masterCode ?? "this sink"}
+	          sinkCount={autoDesignFaucetSinkCount}
+	          products={autoDesignFaucetProducts}
+	          loading={autoDesignFaucetCatalogLoading}
+	          catalogUnavailable={autoDesignFaucetCatalogUnavailable}
+	          onKeepDefault={keepAutoDesignFaucetDefault}
+	          onChoose={chooseAutoDesignFaucet}
 	        />
 	      )}
       <SurfacesPickerDialog
@@ -20396,8 +20661,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	        </DialogContent>
 	      </Dialog>
 
-	      <AlertDialog open={fourAnchorRangeVentPrompt != null} onOpenChange={(open) => { if (!open) setFourAnchorRangeVentPrompt(null); }}>
-        <AlertDialogContent className="max-w-md" data-testid="four-anchor-range-ventilation-dialog">
+	      <AlertDialog open={autoDesignRangeVentPrompt != null} onOpenChange={(open) => { if (!open) setAutoDesignRangeVentPrompt(null); }}>
+        <AlertDialogContent className="max-w-md" data-testid="auto-design-range-ventilation-dialog">
           <AlertDialogHeader>
             <AlertDialogTitle>What goes above the range?</AlertDialogTitle>
             <AlertDialogDescription>
@@ -20405,9 +20670,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="sm:flex-col sm:space-x-0 gap-2">
-            <AlertDialogAction onClick={addFourAnchorRangeHood} data-testid="four-anchor-range-hood">Add a range hood</AlertDialogAction>
-            <AlertDialogAction onClick={offerFourAnchorBridgeAndMicrowave} data-testid="four-anchor-range-bridge">Add a bridge cabinet and microwave</AlertDialogAction>
-            <AlertDialogCancel data-testid="four-anchor-range-leave-open">Leave it open</AlertDialogCancel>
+            <AlertDialogAction onClick={addAutoDesignRangeHood} data-testid="auto-design-range-hood">Add a range hood</AlertDialogAction>
+            <AlertDialogAction onClick={offerAutoDesignBridgeAndMicrowave} data-testid="auto-design-range-bridge">Add a bridge cabinet and microwave</AlertDialogAction>
+            <AlertDialogCancel data-testid="auto-design-range-leave-open">Leave it open</AlertDialogCancel>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

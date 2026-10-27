@@ -14,10 +14,10 @@ import {
 import {
   anchorAlongStartIn,
   wallLabelToEngineWallId,
-  type FourAnchorOriginCorner,
-  type FourAnchorRunDirection,
+  type AutoDesignOriginCorner,
+  type AutoDesignRunDirection,
   type WallLabel,
-} from "./fourAnchorAutoBuild";
+} from "./autoDesignAutoBuild";
 
 export type CornerRefrigeratorEnd = "start" | "end";
 
@@ -26,8 +26,8 @@ export type CornerRefrigeratorRequest = {
   room: RoomData;
   wallLabel: WallLabel;
   centerOffsetIn: number;
-  originCorner: FourAnchorOriginCorner;
-  runDirection: FourAnchorRunDirection;
+  originCorner: AutoDesignOriginCorner;
+  runDirection: AutoDesignRunDirection;
   cornerEnd: CornerRefrigeratorEnd;
   placed?: PlacedCabinet[];
   openings?: WallOpening[];

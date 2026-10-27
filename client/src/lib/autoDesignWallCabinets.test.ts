@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildFourAnchorWallCabinets } from "./fourAnchorWallCabinets";
+import { buildAutoDesignWallCabinets } from "./autoDesignWallCabinets";
 import {
   wallPlacementAt,
   wallRunOffset,
@@ -114,7 +114,7 @@ function build(input: {
   styleId?: number | null;
   corners?: Array<{ base: PlacedCabinet; point: { x: number; y: number; firstWallId: string } }>;
 }) {
-  return buildFourAnchorWallCabinets({
+  return buildAutoDesignWallCabinets({
     placed: input.placed,
     room: input.room ?? ROOM,
     openings: input.openings ?? [],
@@ -126,7 +126,7 @@ function build(input: {
   });
 }
 
-describe("buildFourAnchorWallCabinets", () => {
+describe("buildAutoDesignWallCabinets", () => {
   it("aligns source-priced W3630 and W2430 cabinets with a B36 and DW-24 projection", () => {
     const base = onTopWall(ROOM, { uid: "base-36", masterCode: "B36", placement: "base", width: 36, depth: 24 }, 12);
     const dishwasher = onTopWall(ROOM, {

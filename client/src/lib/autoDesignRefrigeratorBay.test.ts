@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { wallPlacementAt, type DesignCabinet, type PlacedCabinet, type RoomData } from "./design";
-import { buildMandatoryFourAnchorRefrigeratorBay } from "./fourAnchorRefrigeratorBay";
-import catalogFixture from "./__fixtures__/fourAnchorRealCatalog.json";
+import { buildMandatoryAutoDesignRefrigeratorBay } from "./autoDesignRefrigeratorBay";
+import catalogFixture from "./__fixtures__/autoDesignRealCatalog.json";
 
 const room: RoomData = { width: 144, depth: 120, ceilingHeight: 96 };
 
@@ -42,9 +42,9 @@ function refrigerator(): PlacedCabinet {
   };
 }
 
-describe("mandatory Four-anchor refrigerator bay", () => {
+describe("mandatory Auto-Design refrigerator bay", () => {
   it("creates exactly two source-priced panels and a matching 36-inch cabinet above with no filler", () => {
-    const result = buildMandatoryFourAnchorRefrigeratorBay({
+    const result = buildMandatoryAutoDesignRefrigeratorBay({
       refrigerator: refrigerator(),
       room,
       caps: [source({ id: 200, masterCode: "W3624", width: "36", height: "24", depth: "24" })],
@@ -62,12 +62,12 @@ describe("mandatory Four-anchor refrigerator bay", () => {
   });
 
   it("uses a source-priced sheet panel when the catalog stores its thin face in depth", () => {
-    const result = buildMandatoryFourAnchorRefrigeratorBay({
+    const result = buildMandatoryAutoDesignRefrigeratorBay({
       refrigerator: refrigerator(),
       room,
       caps: [source({ id: 200, masterCode: "W3624", width: "36", height: "24", depth: "24" })],
       // This real S2496 sheet-panel representation stores its 24-inch installed
-      // depth in width and its 3/4-inch thickness in depth. The Four-anchor bay
+      // depth in width and its 3/4-inch thickness in depth. The Auto-Design bay
       // must not call the exact source-priced panel missing.
       endPanels: [source({ id: 201, masterCode: "S2496", description: "Tall Panel — 24 in. W × 96 in. H × 3/4 in. D", category: "Tall", subCategory: "Tall Panels", width: "24", height: "96", depth: "0.75", placement: "tall", numberOfDoors: 0 })],
       styleId: 9,
@@ -83,8 +83,8 @@ describe("mandatory Four-anchor refrigerator bay", () => {
     ]));
   });
 
-  it("rejects a Four-anchor refrigerator width other than the mandatory 36-inch bay", () => {
-    const result = buildMandatoryFourAnchorRefrigeratorBay({
+  it("rejects an Auto-Design refrigerator width other than the mandatory 36-inch bay", () => {
+    const result = buildMandatoryAutoDesignRefrigeratorBay({
       refrigerator: { ...refrigerator(), masterCode: "FRIDGE-33", width: 33 },
       room,
       caps: [source({ id: 200 })],
@@ -97,9 +97,9 @@ describe("mandatory Four-anchor refrigerator bay", () => {
   });
 });
 
-describe("Four-anchor refrigerator cabinet above: always the 24-inch-deep refrigerator box", () => {
+describe("Auto-Design refrigerator cabinet above: always the 24-inch-deep refrigerator box", () => {
   const panel = () => source({ id: 201, masterCode: "REP2496", category: "Panel", subCategory: "Refrigerator End Panel", width: "0.75", height: "96", depth: "24", placement: "tall", numberOfDoors: 0 });
-  const build = (caps: DesignCabinet[]) => buildMandatoryFourAnchorRefrigeratorBay({
+  const build = (caps: DesignCabinet[]) => buildMandatoryAutoDesignRefrigeratorBay({
     refrigerator: refrigerator(), room, caps, endPanels: [panel()], styleId: 9, makeUid: (() => { let index = 0; return () => `cap-${++index}`; })(),
   });
   it("never picks a 12-inch-deep 36-inch wall cabinet even when it is listed first", () => {

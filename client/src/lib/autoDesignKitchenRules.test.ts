@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import catalogFixture from "./__fixtures__/fourAnchorRealCatalog.json";
+import catalogFixture from "./__fixtures__/autoDesignRealCatalog.json";
 import {
   DEFAULT_ROOM, cabinetPlacementCollisionDetail, cabinetWall, wallPlacementAt, wallRunOffset, wallRunSpan,
   type DesignCabinet, type PlacedCabinet, type WallOpening,
 } from "./design";
-import { seatFourAnchorCorner } from "./fourAnchorCornerSeating";
-import { buildFourAnchorWallCabinets } from "./fourAnchorWallCabinets";
+import { seatAutoDesignCorner } from "./autoDesignCornerSeating";
+import { buildAutoDesignWallCabinets } from "./autoDesignWallCabinets";
 
 type Fixture = Record<string, { base: unknown[]; wall: unknown[]; accessory: unknown[] }>;
 const REAL = catalogFixture as unknown as Fixture;
@@ -25,8 +25,8 @@ function lower(masterCode: string, width: number, offset: number, kind: "base" |
     width, depth: 24, height: 34.5, numberOfDoors: 2, numberOfDrawers: 0,
   } as PlacedCabinet;
 }
-const wallStage = (style: string, placed: PlacedCabinet[], openings: WallOpening[] = [], corners?: Parameters<typeof buildFourAnchorWallCabinets>[0]["corners"]) =>
-  buildFourAnchorWallCabinets({
+const wallStage = (style: string, placed: PlacedCabinet[], openings: WallOpening[] = [], corners?: Parameters<typeof buildAutoDesignWallCabinets>[0]["corners"]) =>
+  buildAutoDesignWallCabinets({
     placed, room: DEFAULT_ROOM, openings, catalog: rows(style, "wall"), wallCabinetHeightIn: 30, styleId: Number(style),
     makeUid: uids(), corners, catalogFillers: fillers(style),
   });
@@ -36,7 +36,7 @@ const span = (item: PlacedCabinet) => {
   return { wall, start, end: start + wallRunSpan(item, wall, DEFAULT_ROOM) };
 };
 
-describe.each(STYLES)("Four-anchor rule: nothing above the sink ($name line)", ({ id }) => {
+describe.each(STYLES)("Auto-Design rule: nothing above the sink ($name line)", ({ id }) => {
   it("never puts an upper over a sink base, but still covers the neighboring dishwasher and base", () => {
     const sink = lower("SB36", 36, 42, "base", "Sink Base");
     const dw = lower("DW-24", 24, 78, "appliance");
@@ -55,7 +55,7 @@ describe.each(STYLES)("Four-anchor rule: nothing above the sink ($name line)", (
   });
 });
 
-describe.each(STYLES)("Four-anchor rule: a measured window over the sink ($name line)", ({ id }) => {
+describe.each(STYLES)("Auto-Design rule: a measured window over the sink ($name line)", ({ id }) => {
   const sink = lower("SB36", 36, 42, "base", "Sink Base");
   const dw = lower("DW-24", 24, 78, "appliance");
   const windowOverSink: WallOpening = { uid: "w1", kind: "window", label: "Over-Sink Window", side: "top", offset: 42, width: 36, height: 48, sill: 42 };
@@ -80,11 +80,11 @@ describe.each(STYLES)("Four-anchor rule: a measured window over the sink ($name 
   });
 });
 
-describe.each(STYLES)("Four-anchor rule: a 12-inch wall cabinet in the corner ($name line)", ({ id }) => {
+describe.each(STYLES)("Auto-Design rule: a 12-inch wall cabinet in the corner ($name line)", ({ id }) => {
   const baseSource = (code: RegExp) => rows(id, "base").find((row) => code.test(row.masterCode) && Number(row.width) === 36)
     ?? rows(id, "base").find((row) => code.test(row.masterCode))!;
   const seatBlind = () => {
-    const seated = seatFourAnchorCorner({
+    const seated = seatAutoDesignCorner({
       source: baseSource(/^BBC/), slotLabel: "Corner between Wall 1 and Wall 2", target: TOP_RIGHT, cornerWallIds: ["top", "right"],
       working: [], room: DEFAULT_ROOM, openings: [], blindPullIn: 4, isBlindOption: true, catalogFillers: fillers(id), makeUid: uids(), styleId: Number(id),
     });
@@ -131,7 +131,7 @@ describe.each(STYLES)("Four-anchor rule: a 12-inch wall cabinet in the corner ($
   it("falls back to a real wall blind corner only when the line sells no 12-inch upper", () => {
     const seated = seatBlind();
     const withoutTwelve = rows(id, "wall").filter((row) => !(Math.abs(Number(row.width) - 12) <= 0.01 && /^W12/.test(row.masterCode)));
-    const result = buildFourAnchorWallCabinets({
+    const result = buildAutoDesignWallCabinets({
       placed: seated.placed, room: DEFAULT_ROOM, openings: [], catalog: withoutTwelve, wallCabinetHeightIn: 30, styleId: Number(id),
       makeUid: uids(), corners: [{ base: seated.corner, point: TOP_RIGHT }], catalogFillers: fillers(id),
     });
@@ -141,10 +141,10 @@ describe.each(STYLES)("Four-anchor rule: a 12-inch wall cabinet in the corner ($
 });
 
 const TOP_LEFT = { x: 0, y: 0, firstWallId: "top" };
-describe.each(STYLES)("Four-anchor rule: a 12-inch wall cabinet on each side of the wall corner cabinet ($name line)", ({ id }) => {
+describe.each(STYLES)("Auto-Design rule: a 12-inch wall cabinet on each side of the wall corner cabinet ($name line)", ({ id }) => {
   const seatLazySusan = () => {
     const source = rows(id, "base").find((row) => /^LSB36$/.test(row.masterCode))!;
-    const seated = seatFourAnchorCorner({
+    const seated = seatAutoDesignCorner({
       source, slotLabel: "Corner between Wall 1 and Wall 4", target: TOP_LEFT, cornerWallIds: ["top", "left"],
       working: [], room: DEFAULT_ROOM, openings: [], isBlindOption: false, catalogFillers: fillers(id), makeUid: uids(), styleId: Number(id),
     });

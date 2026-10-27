@@ -36,7 +36,7 @@ import {
   type WallOpening,
   type WallSide,
 } from "./design";
-import { planFourAnchorBaseSegment } from "./fourAnchorSeamFillers";
+import { planAutoDesignBaseSegment } from "./autoDesignSeamFillers";
 import {
   SMALL_GAP_FILLER_MAX_IN,
   findPreferredSmallGapFillerOpportunity,
@@ -44,15 +44,15 @@ import {
 } from "./smallGapFiller";
 
 /**
- * The most a user-placed four-anchor appliance may slide along its own wall
+ * The most a user-placed auto-design appliance may slide along its own wall
  * while the run is fitted. The cap is measured from the original placement,
  * not from a later corner nudge.
  */
-export const FOUR_ANCHOR_WIGGLE_ROOM_IN = 3;
+export const AUTO_DESIGN_WIGGLE_ROOM_IN = 3;
 const WIGGLE_STEP_IN = 1 / 8;
 const UNDERSIZED_CABINET_IN = 12;
 
-export type DesignerRulePhase = "wiggle" | "shared-pipeline" | "four-anchor-stage" | "invariant";
+export type DesignerRulePhase = "wiggle" | "shared-pipeline" | "auto-design-stage" | "invariant";
 
 export type DesignerLayoutRule = {
   id: string;
@@ -63,10 +63,10 @@ export type DesignerLayoutRule = {
 };
 
 /**
- * The rules a four-anchor kitchen actually accounts for. There was no separate
+ * The rules a auto-design kitchen actually accounts for. There was no separate
  * 21-rule registry; `surroundingRules` on the build plan is only a four-word
  * label. This list is the executable set: wiggle and the shared pipeline run
- * from here, stage rules already run inside the four-anchor build, and the
+ * from here, stage rules already run inside the auto-design build, and the
  * invariant rules are checked rather than reimplemented.
  */
 export const DESIGNER_LAYOUT_RULES: readonly DesignerLayoutRule[] = [
@@ -74,18 +74,18 @@ export const DESIGNER_LAYOUT_RULES: readonly DesignerLayoutRule[] = [
     id: "wiggle-room",
     name: "wiggle room",
     phase: "wiggle",
-    summary: "During four-anchor auto-layout, slide a user-placed appliance at most 3 inches along its own wall when that yields a better cabinet fit.",
+    summary: "During Auto-Design, slide a user-placed appliance at most 3 inches along its own wall when that yields a better cabinet fit.",
   },
   {
     id: "straight-base-largest-first",
     name: "straight base largest-first",
-    phase: "four-anchor-stage",
+    phase: "auto-design-stage",
     summary: "Remaining base runs use the shared auto-fill engine, largest-first, on the straight base catalog.",
   },
   {
     id: "range-neighbor-minimum",
     name: "range neighbor minimum",
-    phase: "four-anchor-stage",
+    phase: "auto-design-stage",
     summary: "A range keeps a real cabinet at least 15 inches wide on each side.",
   },
   {
@@ -103,7 +103,7 @@ export const DESIGNER_LAYOUT_RULES: readonly DesignerLayoutRule[] = [
   {
     id: "lower-seam-filler",
     name: "lower seam filler",
-    phase: "four-anchor-stage",
+    phase: "auto-design-stage",
     summary: "Openings the standard filler does not close, up to 12 inches, still receive catalog seam filler.",
   },
   {
@@ -151,31 +151,31 @@ export const DESIGNER_LAYOUT_RULES: readonly DesignerLayoutRule[] = [
   {
     id: "nothing-above-sink",
     name: "nothing above the sink",
-    phase: "four-anchor-stage",
+    phase: "auto-design-stage",
     summary: "Upper cabinets are not placed over the sink.",
   },
   {
     id: "sink-window-clearance",
     name: "sink window clearance",
-    phase: "four-anchor-stage",
+    phase: "auto-design-stage",
     summary: "A measured sink window is as wide as the sink, and wall cabinets stop 3 inches short of it.",
   },
   {
     id: "corner-upper-twelve",
     name: "12-inch corner upper",
-    phase: "four-anchor-stage",
-    summary: "The corner upper used by four-anchor is the 12-inch corner wall cabinet.",
+    phase: "auto-design-stage",
+    summary: "The corner upper used by auto-design is the 12-inch corner wall cabinet.",
   },
   {
     id: "refrigerator-bay",
     name: "refrigerator bay",
-    phase: "four-anchor-stage",
+    phase: "auto-design-stage",
     summary: "The refrigerator keeps its panels and the cabinet above. That bay is not shifted to force a fit.",
   },
   {
     id: "corner-appliance-nudge",
     name: "corner appliance nudge",
-    phase: "four-anchor-stage",
+    phase: "auto-design-stage",
     summary: "A range or refrigerator may slide up to 3 inches away from a corner so the corner cabinet can sit on the vertex.",
   },
   {
@@ -208,7 +208,7 @@ export function designerLayoutRuleIds(): string[] {
   return DESIGNER_LAYOUT_RULES.map((rule) => rule.id);
 }
 
-export type FourAnchorAnchorOrigin = {
+export type AutoDesignAnchorOrigin = {
   uid: string;
   /** Anchor kind from the measured build: sink, stove, dishwasher, or refrigerator. */
   kind: string;
@@ -217,7 +217,7 @@ export type FourAnchorAnchorOrigin = {
   originalStart: number;
 };
 
-export type FourAnchorWiggleMove = {
+export type AutoDesignWiggleMove = {
   uid: string;
   kind: string;
   label: string;
@@ -329,7 +329,7 @@ function segmentPenalty(
   const key = `${Math.round(length * 1000)}|${rangeAtStart ? 1 : 0}|${rangeAtEnd ? 1 : 0}`;
   const cached = cache.get(key);
   if (cached != null) return cached;
-  const fill = planFourAnchorBaseSegment({ length, catalog, rangeAtStart, rangeAtEnd });
+  const fill = planAutoDesignBaseSegment({ length, catalog, rangeAtStart, rangeAtEnd });
   const filler = fill.items.filter((item) => item.isFiller).reduce((sum, item) => sum + item.width, 0);
   const used = fill.items.reduce((sum, item) => sum + item.width, 0);
   const uncovered = Math.max(0, Math.round((length - used) * 1000) / 1000);
@@ -394,7 +394,7 @@ function applianceLabel(kind: string): string {
   return "range";
 }
 
-function wiggleGroup(item: PlacedCabinet, origin: FourAnchorAnchorOrigin, placed: readonly PlacedCabinet[], room: RoomData): WiggleGroup | null {
+function wiggleGroup(item: PlacedCabinet, origin: AutoDesignAnchorOrigin, placed: readonly PlacedCabinet[], room: RoomData): WiggleGroup | null {
   const wallId = cabinetWall(item, room);
   if (wallId !== origin.wallId) return null;
   const uids = new Set<string>([item.uid]);
@@ -407,24 +407,24 @@ function wiggleGroup(item: PlacedCabinet, origin: FourAnchorAnchorOrigin, placed
 }
 
 /**
- * Slides each user-placed four-anchor appliance along its own wall by the
+ * Slides each user-placed auto-design appliance along its own wall by the
  * smallest distance that produces the best cabinet fit, and never more than
  * 3 inches from the original placement. A shift that collides, leaves the
  * wall, or pulls a sink off a modeled window is rejected. Equal fits keep the
  * smaller move, and a tie breaks toward the wall start.
  */
-export function applyFourAnchorWiggleRoom(input: {
+export function applyAutoDesignWiggleRoom(input: {
   placed: PlacedCabinet[];
   room: RoomData;
   openings: readonly WallOpening[];
   catalog: DesignCabinet[];
-  origins: readonly FourAnchorAnchorOrigin[];
+  origins: readonly AutoDesignAnchorOrigin[];
   lockedUids?: readonly string[];
-}): { placed: PlacedCabinet[]; moves: FourAnchorWiggleMove[] } {
+}): { placed: PlacedCabinet[]; moves: AutoDesignWiggleMove[] } {
   let placed = [...input.placed];
   const cache = new Map<string, number>();
   const locked = new Set(input.lockedUids ?? []);
-  const moves = new Map<string, FourAnchorWiggleMove>();
+  const moves = new Map<string, AutoDesignWiggleMove>();
   const origins = [...input.origins].sort((left, right) => left.wallId.localeCompare(right.wallId) || left.originalStart - right.originalStart);
   const entryStarts = new Map<string, number>();
   for (const origin of origins) {
@@ -446,12 +446,12 @@ export function applyFourAnchorWiggleRoom(input: {
       let bestScore = Number.POSITIVE_INFINITY;
       let bestDeltaFromOriginal = 0;
       let found = false;
-      for (let step = 0; step <= Math.round(FOUR_ANCHOR_WIGGLE_ROOM_IN / WIGGLE_STEP_IN); step += 1) {
+      for (let step = 0; step <= Math.round(AUTO_DESIGN_WIGGLE_ROOM_IN / WIGGLE_STEP_IN); step += 1) {
         const magnitudes = step === 0 ? [0] : [step * WIGGLE_STEP_IN, -step * WIGGLE_STEP_IN];
         for (const deltaFromOriginal of magnitudes) {
-          if (Math.abs(deltaFromOriginal) > FOUR_ANCHOR_WIGGLE_ROOM_IN + COLLISION_EPSILON_IN) continue;
+          if (Math.abs(deltaFromOriginal) > AUTO_DESIGN_WIGGLE_ROOM_IN + COLLISION_EPSILON_IN) continue;
           const target = Math.round((origin.originalStart + deltaFromOriginal) * 8) / 8;
-          if (Math.abs(target - origin.originalStart) > FOUR_ANCHOR_WIGGLE_ROOM_IN + COLLISION_EPSILON_IN) continue;
+          if (Math.abs(target - origin.originalStart) > AUTO_DESIGN_WIGGLE_ROOM_IN + COLLISION_EPSILON_IN) continue;
           const shifted = shiftGroup(placed, group, target - initialStart, input.room);
           if (!groupStillValid(shifted, group, input.openings, input.room)) continue;
           const score = layoutPenalty(shifted, input.room, input.openings, input.catalog, cache);
@@ -647,7 +647,7 @@ export type DesignerLayoutRuleResult = {
 
 /**
  * Shared automatic rules the normal Designer applies after a placement, run
- * here as a pure pass so four-anchor does not depend on a drag or a prompt.
+ * here as a pure pass so auto-design does not depend on a drag or a prompt.
  * Wiggle room is intentionally separate: it has to run before the runs are tiled.
  */
 export function applyDesignerLayoutRules(input: {

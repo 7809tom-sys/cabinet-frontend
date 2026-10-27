@@ -9,10 +9,10 @@ import {
 } from "./design";
 
 /** The most a measured appliance may slide to free a required corner, per the admin's direction. */
-export const FOUR_ANCHOR_MAX_APPLIANCE_NUDGE_IN = 3;
+export const AUTO_DESIGN_MAX_APPLIANCE_NUDGE_IN = 3;
 const NUDGE_STEP_IN = 1 / 8;
 
-export type FourAnchorApplianceMove = {
+export type AutoDesignApplianceMove = {
   kind: "range" | "refrigerator";
   /** Plain-language name such as “30″ range”. */
   label: string;
@@ -25,8 +25,8 @@ export type FourAnchorApplianceMove = {
   centerAlongIn: number;
 };
 
-export type FourAnchorCornerSeatResult =
-  | { ok: true; placed: PlacedCabinet[]; corner: PlacedCabinet; moves: FourAnchorApplianceMove[] }
+export type AutoDesignCornerSeatResult =
+  | { ok: true; placed: PlacedCabinet[]; corner: PlacedCabinet; moves: AutoDesignApplianceMove[] }
   | { ok: false; message: string };
 
 type Group = {
@@ -118,7 +118,7 @@ const applianceName = (item: PlacedCabinet) => (isRefrigerator(item) ? "refriger
  * amount that clears it, never more than three inches. Sink and dishwasher
  * stay where they were measured. Every move is returned for disclosure.
  */
-export function seatFourAnchorCorner(input: {
+export function seatAutoDesignCorner(input: {
   source: DesignCabinet;
   slotLabel: string;
   target: { x: number; y: number; firstWallId: string };
@@ -134,7 +134,7 @@ export function seatFourAnchorCorner(input: {
   makeUid: () => string;
   styleId: number | null;
   maxNudgeIn?: number;
-}): FourAnchorCornerSeatResult {
+}): AutoDesignCornerSeatResult {
   const { source, slotLabel, target, room, openings } = input;
   const code = source.masterCode;
   const width = dim(source.width, 0);
@@ -198,7 +198,7 @@ export function seatFourAnchorCorner(input: {
   if (!isBlocked(first.message)) return { ok: false, message: first.message };
 
   // Something real occupies the corner footprint: slide only a blocking range/refrigerator away from it.
-  const limit = Math.max(0, input.maxNudgeIn ?? FOUR_ANCHOR_MAX_APPLIANCE_NUDGE_IN);
+  const limit = Math.max(0, input.maxNudgeIn ?? AUTO_DESIGN_MAX_APPLIANCE_NUDGE_IN);
   const groups = movableGroups(input.working, room, target, input.cornerWallIds).slice(0, 2);
   const steps: number[] = [];
   for (let step = 0; step * NUDGE_STEP_IN <= limit + COLLISION_EPSILON_IN; step++) steps.push(step * NUDGE_STEP_IN);
@@ -218,7 +218,7 @@ export function seatFourAnchorCorner(input: {
     if (!valid) continue;
     const trial = trySeat(shifted);
     if (!trial.ok) continue;
-    const moves: FourAnchorApplianceMove[] = [];
+    const moves: AutoDesignApplianceMove[] = [];
     groups.forEach((group, index) => {
       if (combo[index] === 0) return;
       const moved = trial.placed.find((item) => item.uid === group.main.uid)!;

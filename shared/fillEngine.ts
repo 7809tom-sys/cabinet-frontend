@@ -195,7 +195,7 @@ function planVariedWidths(span: number, distinctWidths: number[]): number[] {
 }
 
 /**
- * Four-anchor uses this narrow strategy after it has already seated the
+ * Auto-Design uses this narrow strategy after it has already seated the
  * appliances and corner boxes. It first minimizes the uncovered remainder
  * (therefore minimizes filler), then cabinet count, and only then prefers a
  * lexicographically larger run. Ordinary Auto-Fill retains planVariedWidths.

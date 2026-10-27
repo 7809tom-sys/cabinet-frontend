@@ -10,7 +10,7 @@ import {
   type RoomData,
 } from "./design";
 
-export type FourAnchorRefrigeratorBayResult =
+export type AutoDesignRefrigeratorBayResult =
   | {
       ok: true;
       additions: [PlacedCabinet, PlacedCabinet, PlacedCabinet];
@@ -41,7 +41,7 @@ const UPPER_RUN_BOTTOM_IN = 54;
  * behind the panels' front edge. Among the true 24-inch boxes, take the height
  * whose top lands closest to the neighboring upper line (shorter wins a tie).
  */
-export function pickFourAnchorRefrigeratorCap(
+export function pickAutoDesignRefrigeratorCap(
   caps: readonly DesignCabinet[],
   refrigeratorTop: number,
   wallCabinetHeightIn: number,
@@ -69,7 +69,7 @@ export function pickFourAnchorRefrigeratorCap(
  * Source catalogs use both orientations for refrigerator-panel dimensions:
  * REPV rows keep the thin face in `width` and installed depth in `depth`, while
  * sheet-panel rows such as S2496 keep the 24-in installed depth in `width` and
- * the 3/4-in face in `depth`. Four-anchor must retain the real selected SKU in
+ * the 3/4-in face in `depth`. Auto-Design must retain the real selected SKU in
  * either representation rather than declaring its panel unavailable.
  */
 function refrigeratorPanelDimensions(candidate: DesignCabinet): { thickness: number; installedDepth: number } | null {
@@ -94,12 +94,12 @@ function refrigeratorPanelDimensions(candidate: DesignCabinet): { thickness: num
 }
 
 /**
- * Four-anchor always creates a complete refrigerator bay before surrounding
+ * Auto-Design always creates a complete refrigerator bay before surrounding
  * straight runs are tiled: a 36-in appliance, both source-priced end panels,
  * and one matching 36-in source-priced refrigerator cabinet above. A filler is
  * never a refrigerator-bay member.
  */
-export function buildMandatoryFourAnchorRefrigeratorBay({
+export function buildMandatoryAutoDesignRefrigeratorBay({
   refrigerator,
   room,
   caps,
@@ -107,15 +107,15 @@ export function buildMandatoryFourAnchorRefrigeratorBay({
   styleId,
   makeUid,
   wallCabinetHeightIn = 30,
-}: Input): FourAnchorRefrigeratorBayResult {
+}: Input): AutoDesignRefrigeratorBayResult {
   if (Math.abs(refrigerator.width - 36) > 0.01) {
-    return { ok: false, message: "Four-anchor refrigerator bays require the 36-inch refrigerator and matching 36-inch cabinet above." };
+    return { ok: false, message: "Auto-Design refrigerator bays require the 36-inch refrigerator and matching 36-inch cabinet above." };
   }
 
   const ceilingIn = Math.max(0, Number(room.ceilingHeight) || 96);
-  const cap = pickFourAnchorRefrigeratorCap(caps, refrigerator.height ?? 70, wallCabinetHeightIn, ceilingIn);
+  const cap = pickAutoDesignRefrigeratorCap(caps, refrigerator.height ?? 70, wallCabinetHeightIn, ceilingIn);
   if (!cap) {
-    return { ok: false, message: "No source-priced 36-inch-wide, 24-inch-deep refrigerator cabinet above is available for the selected cabinet line. A refrigerator with panels needs the 24-inch-deep box, so Four-anchor did not substitute a 12-inch-deep wall cabinet." };
+    return { ok: false, message: "No source-priced 36-inch-wide, 24-inch-deep refrigerator cabinet above is available for the selected cabinet line. A refrigerator with panels needs the 24-inch-deep box, so Auto-Design did not substitute a 12-inch-deep wall cabinet." };
   }
   const panelEntry = endPanels
     .map((candidate) => ({ candidate, dimensions: refrigeratorPanelDimensions(candidate) }))

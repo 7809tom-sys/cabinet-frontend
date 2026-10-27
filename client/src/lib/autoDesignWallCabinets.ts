@@ -1,8 +1,8 @@
 import { autoFillSpan } from "./autofill";
 import {
-  SEAM_MIN_IN, findFourAnchorSeams, fillersForSeam, intersectWithCoverage, lowerCoverageOnWall, upperReservedZones,
-  type FourAnchorSeam,
-} from "./fourAnchorSeamFillers";
+  SEAM_MIN_IN, findAutoDesignSeams, fillersForSeam, intersectWithCoverage, lowerCoverageOnWall, upperReservedZones,
+  type AutoDesignSeam,
+} from "./autoDesignSeamFillers";
 import { buildRequiredBlindCornerFiller, requiresConfiguredBlindCornerFiller } from "./blindCornerRequiredFiller";
 import { cabinetDrawingType, isWallBlindCornerCabinet } from "./cabinetGraphics";
 import type { CatalogFillerCandidate } from "./catalogFiller";
@@ -14,7 +14,7 @@ import {
   wallRunSpan, type DesignCabinet, type PlacedCabinet, type RoomData, type WallOpening, type WallRunFrame,
 } from "./design";
 
-export type FourAnchorUpperCorner = {
+export type AutoDesignUpperCorner = {
   base: PlacedCabinet;
   point: { x: number; y: number; firstWallId: string };
 };
@@ -52,8 +52,8 @@ export function resolveWallHeightClass(catalog: readonly DesignCabinet[], nomina
 /** Standard wall cabinets are sold in 3-inch width steps; a gap smaller than one step cannot be tiled. */
 const WALL_WIDTH_STEP_IN = 3;
 const MIN_UPPER_WIDTH_IN = 9;
-/** The corner cabinet a Four-anchor blind corner gets: a plain 12-inch-wide upper in the corner square. */
-export const FOUR_ANCHOR_CORNER_UPPER_WIDTH_IN = 12;
+/** The corner cabinet an Auto-Design blind corner gets: a plain 12-inch-wide upper in the corner square. */
+export const AUTO_DESIGN_CORNER_UPPER_WIDTH_IN = 12;
 
 /**
  * A window over the sink owns the wall above it: no upper is ever placed there,
@@ -88,7 +88,7 @@ function subtractZones(start: number, end: number, zones: readonly { s: number; 
 }
 
 /** Final stage only: the measured appliances, selected corners and base runs are immutable. */
-export function buildFourAnchorWallCabinets(input: {
+export function buildAutoDesignWallCabinets(input: {
   placed: PlacedCabinet[];
   room: RoomData;
   openings: WallOpening[];
@@ -96,7 +96,7 @@ export function buildFourAnchorWallCabinets(input: {
   wallCabinetHeightIn: 30 | 36 | 42;
   styleId: number | null;
   makeUid: () => string;
-  corners?: FourAnchorUpperCorner[];
+  corners?: AutoDesignUpperCorner[];
   /** Selected-line fillers; required for a wall blind corner's integrated 3″ face filler. */
   catalogFillers?: readonly CatalogFillerCandidate[];
   /**
@@ -176,7 +176,7 @@ export function buildFourAnchorWallCabinets(input: {
         // from both walls leave a 12 x 12 square there), then real uppers tile the
         // rest of the blind base's run. A line without a 12-inch upper falls back
         // to a wall blind corner at the same vertex.
-        const twelve = standard.find((row) => Math.abs(dim(row.width, 0) - FOUR_ANCHOR_CORNER_UPPER_WIDTH_IN) <= COLLISION_EPSILON_IN);
+        const twelve = standard.find((row) => Math.abs(dim(row.width, 0) - AUTO_DESIGN_CORNER_UPPER_WIDTH_IN) <= COLLISION_EPSILON_IN);
         if (twelve) {
           const candidate = makeCandidate(twelve);
           const spot = wallRunCornerPlacement(candidate, frame, at, room);
@@ -263,12 +263,12 @@ export function buildFourAnchorWallCabinets(input: {
               const room12 = to - from;
               if (room12 < MIN_UPPER_WIDTH_IN - COLLISION_EPSILON_IN) continue;
               const wallId = leg.frame.id;
-              const twelve = standard.find((row) => Math.abs(dim(row.width, 0) - FOUR_ANCHOR_CORNER_UPPER_WIDTH_IN) <= COLLISION_EPSILON_IN);
+              const twelve = standard.find((row) => Math.abs(dim(row.width, 0) - AUTO_DESIGN_CORNER_UPPER_WIDTH_IN) <= COLLISION_EPSILON_IN);
               const pieces: DesignCabinet[] = [];
               let remaining = room12;
-              if (twelve && remaining >= FOUR_ANCHOR_CORNER_UPPER_WIDTH_IN - COLLISION_EPSILON_IN) {
+              if (twelve && remaining >= AUTO_DESIGN_CORNER_UPPER_WIDTH_IN - COLLISION_EPSILON_IN) {
                 pieces.push(twelve);
-                remaining -= FOUR_ANCHOR_CORNER_UPPER_WIDTH_IN;
+                remaining -= AUTO_DESIGN_CORNER_UPPER_WIDTH_IN;
               }
               if (remaining >= MIN_UPPER_WIDTH_IN - COLLISION_EPSILON_IN) {
                 const tiled = autoFillSpan(remaining, "kitchen", standard.map((row) => ({ ...row, placement: "base" as const })), { strategy: "largest-first" });
@@ -356,7 +356,7 @@ export function buildFourAnchorWallCabinets(input: {
   }
   if (input.closeSeams) {
     const reserved = upperReservedZones(input.placed, room);
-    const seams = findFourAnchorSeams({
+    const seams = findAutoDesignSeams({
       layer: "wall", placed: working, room, openings, corners: (input.corners ?? []).map((entry) => entry.point), reservedZones: reserved,
     });
     const fillers = input.catalogFillers ?? [];
@@ -392,7 +392,7 @@ export function buildFourAnchorWallCabinets(input: {
           const start = placedHere.length ? (fromRight ? region.start : along) : region.start;
           const end = start + remainder;
           const lastPlaced = placedHere[placedHere.length - 1] ?? null;
-          const pseudo: FourAnchorSeam = {
+          const pseudo: AutoDesignSeam = {
             wall: seam.wall, start, end,
             left: fromRight ? leftNeighbor : (lastPlaced ?? leftNeighbor),
             right: fromRight ? (placedHere[0] ?? rightNeighbor) : rightNeighbor,

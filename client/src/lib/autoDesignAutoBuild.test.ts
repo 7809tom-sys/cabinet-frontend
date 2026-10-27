@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_ROOM } from "./design";
-import { adjacentDishwasherCenterIn, anchorAlongStartIn, autoBuildSelectedWallCornerReservations, autoBuildStraightBaseCatalog, buildWallLabelMap, canRunFourAnchorAutoBuild, isAutoBuildStraightSinkBaseCandidate, makeFourAnchorSixWallTrainingRoom, planFourAnchorAutoBuild, subtractAnchorRunReservations, wallLabelToEngineWallId } from "./fourAnchorAutoBuild";
+import { adjacentDishwasherCenterIn, anchorAlongStartIn, autoBuildSelectedWallCornerReservations, autoBuildStraightBaseCatalog, buildWallLabelMap, canRunAutoDesign, isAutoBuildStraightSinkBaseCandidate, makeAutoDesignSixWallTrainingRoom, planAutoDesignAutoBuild, subtractAnchorRunReservations, wallLabelToEngineWallId } from "./autoDesignAutoBuild";
 
-describe("four-anchor wall-label mapping", () => {
+describe("auto-design wall-label mapping", () => {
   it.each([
     ["left", "right", ["top", "right", "bottom", "left"]],
     ["left", "left", ["top", "left", "bottom", "right"]],
@@ -52,7 +52,7 @@ describe("four-anchor wall-label mapping", () => {
   });
 
   it("provides a blank, closed six-wall training room whose Wall 1–6 labels map to six real physical segments", () => {
-    const room = makeFourAnchorSixWallTrainingRoom();
+    const room = makeAutoDesignSixWallTrainingRoom();
     const map = buildWallLabelMap(room, "left", "right");
 
     expect(room.vertices).toHaveLength(6);
@@ -62,14 +62,14 @@ describe("four-anchor wall-label mapping", () => {
       "Wall 1", "Wall 2", "Wall 3", "Wall 4", "Wall 5", "Wall 6",
     ]);
     expect(Object.values(map).map((wall) => wall?.engineWallId)).toEqual([
-      "four-anchor-training-wall-1",
-      "four-anchor-training-wall-2",
-      "four-anchor-training-wall-3",
-      "four-anchor-training-wall-4",
-      "four-anchor-training-wall-5",
-      "four-anchor-training-wall-6",
+      "auto-design-training-wall-1",
+      "auto-design-training-wall-2",
+      "auto-design-training-wall-3",
+      "auto-design-training-wall-4",
+      "auto-design-training-wall-5",
+      "auto-design-training-wall-6",
     ]);
-    expect(makeFourAnchorSixWallTrainingRoom()).not.toBe(room);
+    expect(makeAutoDesignSixWallTrainingRoom()).not.toBe(room);
   });
 
   it("computes a flush left or right dishwasher center from the selected sink base width", () => {
@@ -136,7 +136,7 @@ describe("four-anchor wall-label mapping", () => {
   });
 });
 
-describe("four-anchor auto-build", () => {
+describe("auto-design auto-build", () => {
   const required = {
     sink: { wallLabel: "Wall 1" as const, centerOffsetIn: 60 },
     stove: { wallLabel: "Wall 2" as const, centerOffsetIn: 48 },
@@ -144,7 +144,7 @@ describe("four-anchor auto-build", () => {
   };
 
   it("places anchors in the required order and centers the sink on a measured window", () => {
-    const result = planFourAnchorAutoBuild({
+    const result = planAutoDesignAutoBuild({
       layoutType: "single-wall",
       originCorner: "left",
       runDirection: "right",
@@ -160,21 +160,21 @@ describe("four-anchor auto-build", () => {
   });
 
   it("places an unmeasured dishwasher to the requested right of the sink", () => {
-    const result = planFourAnchorAutoBuild({ ...required, layoutType: "galley", originCorner: "right", runDirection: "left", dishwasher: null, dishwasherSide: "right" });
+    const result = planAutoDesignAutoBuild({ ...required, layoutType: "galley", originCorner: "right", runDirection: "left", dishwasher: null, dishwasherSide: "right" });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.plan.anchors[2]).toMatchObject({ wallLabel: "Wall 1", centerOffsetIn: 60, source: "adjacent-to-sink", dishwasherSide: "right" });
   });
 
   it("preserves a left-of-sink choice for an unmeasured dishwasher", () => {
-    const result = planFourAnchorAutoBuild({ ...required, layoutType: "galley", originCorner: "right", runDirection: "left", dishwasher: null, dishwasherSide: "left" });
+    const result = planAutoDesignAutoBuild({ ...required, layoutType: "galley", originCorner: "right", runDirection: "left", dishwasher: null, dishwasherSide: "left" });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.plan.anchors[2]).toMatchObject({ wallLabel: "Wall 1", source: "adjacent-to-sink", dishwasherSide: "left" });
   });
 
   it("does not add appliances explicitly marked as omitted, while retaining the required sink base", () => {
-    const result = planFourAnchorAutoBuild({
+    const result = planAutoDesignAutoBuild({
       layoutType: "single-wall",
       originCorner: "left",
       runDirection: "right",
@@ -192,13 +192,13 @@ describe("four-anchor auto-build", () => {
   });
 
   it("asks for missing required measurements instead of guessing", () => {
-    const result = planFourAnchorAutoBuild({ ...required, layoutType: "single-wall", originCorner: "left", runDirection: "right", sink: undefined as never });
+    const result = planAutoDesignAutoBuild({ ...required, layoutType: "single-wall", originCorner: "left", runDirection: "right", sink: undefined as never });
     expect(result).toEqual({ ok: false, missing: ["sink"] });
   });
 
   it("runs for the allowed Designer audience and refuses to overwrite hand-placed contents", () => {
-    expect(canRunFourAnchorAutoBuild(true, false)).toBe(true);
-    expect(canRunFourAnchorAutoBuild(false, false)).toBe(false);
-    expect(canRunFourAnchorAutoBuild(true, true)).toBe(false);
+    expect(canRunAutoDesign(true, false)).toBe(true);
+    expect(canRunAutoDesign(false, false)).toBe(false);
+    expect(canRunAutoDesign(true, true)).toBe(false);
   });
 });
