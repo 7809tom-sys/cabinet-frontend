@@ -19,6 +19,16 @@ describe("Vendor portal Fulfillment wiring", () => {
     expect(portal).toContain('from "@shared/vendorFeatures"');
   });
 
+  it("gives a non-cabinet vendor forecast, inventory, and pricing, and keeps cabinet samples off that menu until access is granted", () => {
+    expect(portal).toContain('{page === "inventory" && <VendorInventory');
+    expect(portal).toContain('{page === "forecast" && <VendorSalesForecast');
+    expect(portal).toContain('{page === "pricing" && <VendorPricing');
+    expect(portal).toContain('{page === "samples" && <VendorSamples');
+    expect(portal).toContain('item.id !== "samples" || sampleAccess.data?.enabled');
+    expect(portal).toContain("hasVendorFeature(portalVendor, \"samples\")");
+    expect(portal).not.toContain('"samples", "shipping"');
+  });
+
   it("does not trap a chosen non-cabinet vendor on the supplier profile, and sends a disallowed section home", () => {
     expect(portal).toContain("vendorCanOpenPortalPage(featureVendor, page)");
     expect(portal).toContain(': "overview"');

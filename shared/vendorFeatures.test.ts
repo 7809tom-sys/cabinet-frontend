@@ -88,6 +88,10 @@ describe("vendor feature map", () => {
       "overview",
       "supplier-profile",
       "catalog",
+      "inventory",
+      "forecast",
+      "pricing",
+      "samples",
       "styles",
       "featured-styles",
       "picks",
@@ -100,11 +104,15 @@ describe("vendor feature map", () => {
       "overview",
       "supplier-profile",
       "catalog",
+      "inventory",
+      "forecast",
+      "pricing",
       "shipping",
       "promotions",
       "fulfillment",
     ]);
     expect(nonCabinetPages).not.toContain("styles");
+    expect(nonCabinetPages).not.toContain("samples");
     expect(nonCabinetPages).not.toContain("featured-styles");
     expect(nonCabinetPages).not.toContain("picks");
     expect(nonCabinetPages).not.toContain("gallery");

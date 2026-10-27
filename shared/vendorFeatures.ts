@@ -8,11 +8,10 @@
  *   false → non-cabinet
  *   null  → an administrator has not chosen yet (profile only)
  *
- * Some keys describe work that other pull requests are still building
- * (sales forecast, inventory, pricing pages, samples, sample kits, room-scene
- * gallery additions, cabinet conflict review, cabinet config). Those keys are
- * part of the map now. Callers should gate only the screens and endpoints
- * that already exist.
+ * Inventory, sales forecast, pricing, and cabinet sample management are wired
+ * to portal pages. Cabinet config, conflict review, and sample kits stay on
+ * the map for later screens. Callers should gate only the screens and
+ * endpoints that already exist.
  *
  * Sample and sample-kit *ordering* is not a vendor feature and is not a
  * public-storefront action. Affiliates and administrators order samples from
@@ -125,6 +124,10 @@ export const VENDOR_PORTAL_PAGE_FEATURES = {
   overview: "always",
   "supplier-profile": "storefront",
   catalog: ["cabinet_catalog", "category_catalog"],
+  inventory: "inventory",
+  forecast: "sales_forecast",
+  pricing: "pricing",
+  samples: "samples",
   "other-products": "cabinet_catalog",
   styles: "door_styles",
   "featured-styles": "featured_styles",
@@ -200,3 +203,27 @@ export function canManageSampleKits(actor: { role?: string | null } | null | und
 
 export const CABINET_VENDOR_FEATURES = CABINET_FEATURES;
 export const NON_CABINET_VENDOR_FEATURES = NON_CABINET_FEATURES;
+
+/** Same key the samples desk checks. Cabinet vendors only. */
+export const VENDOR_FEATURE_SAMPLES = "samples" as const;
+
+export function isCabinetVendorScope(scope: string | null | undefined): boolean {
+  return typeof scope === "string" && /^dist:[1-9]\d{0,9}$/.test(scope);
+}
+
+/**
+ * When `enabledFeatures` is omitted, a cabinet supply-line scope is treated as
+ * having samples so that desk works before a caller passes the feature map.
+ * When the map is present, membership of the same key is required.
+ * Pelican and any non-cabinet scope never receive samples.
+ */
+export function vendorFeatureEnabled(
+  feature: string,
+  input: { scope: string | null | undefined; enabledFeatures?: readonly string[] | null },
+): boolean {
+  if (feature === VENDOR_FEATURE_SAMPLES && !isCabinetVendorScope(input.scope)) return false;
+  if (input.enabledFeatures == null) {
+    return feature === VENDOR_FEATURE_SAMPLES && isCabinetVendorScope(input.scope);
+  }
+  return input.enabledFeatures.includes(feature);
+}
