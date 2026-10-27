@@ -2375,7 +2375,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     selectedStyleId: styleId ?? null,
     selectedDistributorId: lockedDistributorId ?? null,
     roomType: roomType ?? null,
-  }), [room, openings, sinks, potFillers, island, furniture, ponyWalls, placed, selectedSurfaces, threeDPresentationForSave, styleId, lockedDistributorId, roomType]);
+    trimSettings: { crown, toeKick, batten, lightRail, valance, qty: trimQtyOverride },
+  }), [room, openings, sinks, potFillers, island, furniture, ponyWalls, placed, selectedSurfaces, threeDPresentationForSave, styleId, lockedDistributorId, roomType, crown, toeKick, batten, lightRail, valance, trimQtyOverride]);
   const isCurrentPlanSaved = useMemo(() => {
     if (!savedDesign || currentSavedDesignId == null) return false;
     return currentSavedPlanPayload === JSON.stringify({
@@ -2386,6 +2387,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       selectedStyleId: savedDesign.selectedStyleId ?? null,
       selectedDistributorId: (savedDesign as { selectedDistributorId?: number | null }).selectedDistributorId ?? null,
       roomType: savedDesign.roomType ?? null,
+      trimSettings: (savedDesign as { trimSettings?: unknown }).trimSettings ?? null,
     });
   }, [savedDesign, currentSavedDesignId, currentSavedPlanPayload]);
   // When the user explicitly overrides the distributor lock (acknowledging extra
@@ -4444,6 +4446,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       distributorId?: number | null;
       selectedDistributorId?: number | null;
       selectedSurfaces?: SelectedSurface[] | null;
+      trimSettings?: {
+        crown?: boolean;
+        toeKick?: boolean;
+        batten?: boolean;
+        lightRail?: boolean;
+        valance?: boolean;
+        qty?: Partial<Record<"crown" | "toeKick" | "batten" | "lightRail" | "valance", number>>;
+      } | null;
     }) => {
 	    historyRebaseRequestedRef.current = true;
 	    lastPushedRef.current = null;
@@ -4519,6 +4529,30 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       const surfaces = normalizeInstalledMaterialSelections(Array.isArray(d.selectedSurfaces) ? d.selectedSurfaces : []);
       setSelectedSurfaces(surfaces);
       applySurfaceRenderMaterials(surfaces);
+      const savedTrim = d.trimSettings;
+      if (savedTrim) {
+        trimOverride.current = { crown: true, toeKick: true, batten: true, lightRail: true, valance: true };
+        setCrown(savedTrim.crown === true);
+        setToeKick(savedTrim.toeKick !== false);
+        setBatten(savedTrim.batten === true);
+        setLightRail(savedTrim.lightRail === true);
+        setValance(savedTrim.valance === true);
+        const qty = savedTrim.qty ?? {};
+        const clean: Partial<Record<TrimKind, number>> = {};
+        for (const kind of ["crown", "toeKick", "batten", "lightRail", "valance"] as const) {
+          const value = qty[kind];
+          if (typeof value === "number" && Number.isFinite(value)) clean[kind] = Math.max(0, Math.min(99, value));
+        }
+        setTrimQtyOverride(clean);
+      } else {
+        trimOverride.current = { crown: false, toeKick: false, batten: false, lightRail: false, valance: false };
+        setCrown(false);
+        setToeKick(true);
+        setBatten(false);
+        setLightRail(false);
+        setValance(false);
+        setTrimQtyOverride({});
+      }
       setSelectedUid(null);
     },
     [styleDistributorIdById]
@@ -5284,23 +5318,19 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   }, [cartableLines, replaceWithDesignItems, currentSavedDesignId]);
 
   // ─── Trim auto-apply ────────────────────────────────────────────────────────
-  // Only physical construction trim may auto-apply when the layout needs it:
-  // toe kick on base runs and light rail on wall runs. Batten molding is always
-  // opt-in; cabinet seams alone must never add a cart or materials-list line.
-  // Crown, batten, and valances remain opt-in so no decorative trim appears
-  // without the customer selecting it.
+  // Only toe kick auto-applies on a base run. Crown, batten, and valances remain opt-in.
+  // Batten molding is always opt-in; cabinet seams alone must never add a cart or materials-list line.
+  // Light rail is opt-in too and is never inferred from a wall run.
   const hasBaseCab = useMemo(() => placed.some((p) => p.placement === "base"), [placed]);
-  const hasWallCab = useMemo(() => placed.some((p) => p.placement === "wall"), [placed]);
   useEffect(() => {
     const o = trimOverride.current;
     // Toe kick: any base cabinet run needs a toe kick.
     if (!o.toeKick && hasBaseCab && !toeKick) setToeKick(true);
-    // Light rail: valance under the wall cabinets.
-    if (!o.lightRail && hasWallCab && !lightRail) setLightRail(true);
+    // Light rail, crown, batten, and valance stay opt-in. A wall run must not infer them.
     // An arched valance is a deliberate decorative plan item. It is never
     // inferred from a window + wall cabinet pairing, so the invoice cannot gain
     // a VA-48 that the customer did not add to the plan.
-  }, [hasBaseCab, hasWallCab, toeKick, lightRail]);
+  }, [hasBaseCab, toeKick]);
   // Countertop is a POST-LAYOUT step: it can only be applied once the kitchen
   // has base cabinets (or an island) to sit on. A base run, a vanity, or an
   // island all count as a surface that takes a top.
@@ -12009,6 +12039,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       distributorId: (savedDesign as { selectedDistributorId?: number | null }).selectedDistributorId ?? null,
       roomType: (savedDesign as { roomType?: string | null }).roomType ?? null,
       selectedSurfaces: Array.isArray(savedSurfaces) ? savedSurfaces : null,
+      trimSettings: (savedDesign as { trimSettings?: {
+        crown?: boolean;
+        toeKick?: boolean;
+        batten?: boolean;
+        lightRail?: boolean;
+        valance?: boolean;
+        qty?: Partial<Record<"crown" | "toeKick" | "batten" | "lightRail" | "valance", number>>;
+      } | null }).trimSettings ?? null,
     });
     if (savedPresentation && typeof savedPresentation.cabinetFinish === "string" && typeof savedPresentation.countertopFinish === "string") {
       setInteractive3dPresentation({ cabinetFinish: savedPresentation.cabinetFinish, countertopFinish: savedPresentation.countertopFinish });
@@ -14889,6 +14927,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
             extraLines={extraLines}
             buildRows={buildRows}
             roomType={roomType}
+            trimSettings={{ crown, toeKick, batten, lightRail, valance, qty: trimQtyOverride }}
             contactEmail={verifiedEmail}
             contactName={verifiedName}
             contactPhone={verifiedPhone}

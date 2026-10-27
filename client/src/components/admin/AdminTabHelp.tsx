@@ -2,6 +2,18 @@ import { Info } from "lucide-react";
 import { useLanguage } from "@/contexts/LanguageContext";
 
 const TAB_HELP: Record<string, { en: string; zh: string; link?: { label: string; url: string } }> = {
+  "sales-forecast": {
+    en: "Projected materials from saved designs. Age is measured from the last save. Ordered and lost designs are counted and left out of the projection.",
+    zh: "根據已儲存設計估算材料。天數以最後一次儲存計算。已下單與流失的設計會被計入並排除在預測之外。",
+  },
+  "sample-orders": {
+    en: "Order door samples and sample kits for a customer or project. These orders are not on the public catalog.",
+    zh: "為客戶或專案訂購門板樣品與樣品組。這些訂單不在公開型錄上。",
+  },
+  "vendor-updates": {
+    en: "Review vendor inventory notices and upcoming wholesale increases. Applying an increase is what changes the live wholesale price.",
+    zh: "審查供應商庫存通知與即將到來的批發漲價。套用漲價才會改變現行批發價。",
+  },
   orders: {
     en: "View and manage all incoming cabinet orders. Update order status, review line items, and coordinate fulfillment.",
     zh: "查看並管理所有進來的櫥櫃訂單。更新訂單狀態、審查明細項目並協調履行事宜。",

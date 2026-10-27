@@ -122,7 +122,7 @@ describe("Vendor Portal Featured Styles and Shipping", () => {
 	  });
 
   it("makes the approved vendor record, portal account, and PDF resources reachable in the supplier portal", () => {
-    expect(source).toContain('id: "supplier-profile", label: "Supplier Profile"');
+    expect(source).toContain('id: "supplier-profile", label: "Storefront"');
     expect(source).toContain('{page === "supplier-profile" && <SupplierProfilePage />}');
     const overview = source.slice(source.indexOf("function OverviewPage"), source.indexOf("// ─── Catalog Page"));
     expect(overview).toContain("Supplier account &amp; resources");

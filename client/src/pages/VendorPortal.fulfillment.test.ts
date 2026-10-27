@@ -14,9 +14,10 @@ describe("Vendor portal Fulfillment wiring", () => {
     expect(portal).toContain("<VendorFulfillmentQueue");
   });
 
-  it("limits a Pelican vendor to the five pages that apply to surfaces and fixtures", () => {
-    expect(portal).toContain('new Set<VendorPage>(["overview", "supplier-profile", "catalog", "shipping", "fulfillment"])');
+  it("gives a Pelican vendor forecast, inventory, and pricing, and keeps cabinet samples off that portal", () => {
+    expect(portal).toContain('new Set<VendorPage>(["overview", "supplier-profile", "catalog", "inventory", "forecast", "pricing", "shipping", "fulfillment"])');
     expect(portal).toContain("NAV_ITEMS.filter((item) => PELICAN_NAV_IDS.has(item.id))");
+    expect(portal).not.toContain('"samples", "shipping"');
   });
 
   it("does not trap a Pelican vendor on the profile-only page, and sends cabinet-only deep links home", () => {
