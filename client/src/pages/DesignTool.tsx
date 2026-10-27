@@ -215,7 +215,8 @@ import { defaultTowerConfig, isMasterTracCornerBoard, planMasterTracTower, tower
 import { canCommitPlanStyleSwitchWithoutReview, planStyleReviewCandidates } from "@/lib/planStyleSwitch";
 import { autoFillSpan, makeFiller, type FillMode } from "@/lib/autofill";
 import { fillFourAnchorLowerSeams, planFourAnchorBaseSegment } from "@/lib/fourAnchorSeamFillers";
-import { applyDesignerLayoutRules, applyFourAnchorWiggleRoom, type FourAnchorAnchorOrigin } from "@/lib/designerLayoutRules";
+import { activeAutoDesignWiggleMoves, applyDesignerLayoutRules, applyFourAnchorWiggleRoom, formatAutoDesignWiggleMessage, type FourAnchorAnchorOrigin, type FourAnchorWiggleMove } from "@/lib/designerLayoutRules";
+import { AutoDesignWiggleNotice } from "@/components/design/AutoDesignWiggleNotice";
 import { resolveTierPrice } from "@shared/pricingTier";
 import {
   CATALOG_SUBCATEGORY_TRIM_AND_MOULDING,
@@ -1057,6 +1058,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   } | null>(null);
   // After a measured build, a range with nothing above it asks what goes there.
   const [fourAnchorRangeVentPrompt, setFourAnchorRangeVentPrompt] = useState<{ rangeUid: string } | null>(null);
+  const [autoDesignWiggleMoves, setAutoDesignWiggleMoves] = useState<FourAnchorWiggleMove[]>([]);
+  useEffect(() => {
+    setAutoDesignWiggleMoves((current) => {
+      if (current.length === 0) return current;
+      const next = activeAutoDesignWiggleMoves(current, placed, room);
+      return next.length === current.length ? current : next;
+    });
+  }, [placed, room]);
   const [islandSeatingOverhangPrompt, setIslandSeatingOverhangPrompt] = useState<{
     cabinetCode: string;
     face: IslandFace;
@@ -3666,6 +3675,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     });
     working = finishedRules.placed;
     placedRef.current = working;
+    const reportedWiggleMoves = activeAutoDesignWiggleMoves(wiggle.moves, working, room);
+    setAutoDesignWiggleMoves(reportedWiggleMoves);
     setPlaced(working);
     if (stage.sinkWindow) {
       const windowToCommit = stage.sinkWindow;
@@ -3678,8 +3689,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     for (const move of applianceMoves) {
       toast.info(`Moved the ${move.label} ${formatInches(move.shiftIn)} away from the corner to fit the required corner cabinet. Its measured center is now ${formatInches(move.centerAlongIn)} along the wall.`, { duration: 12000 });
     }
-    for (const move of wiggle.moves) {
-      toast.info(`Wiggle room shifted the ${move.label} ${formatInches(Math.abs(move.deltaAlongIn))} along its wall to fit standard cabinet widths. It stays within 3 inches of where it was placed.`, { duration: 12000 });
+    for (const move of reportedWiggleMoves) {
+      toast.info(formatAutoDesignWiggleMessage(move), { duration: 12000 });
     }
     const requestedUpperIn = stage.input.wallCabinetHeightIn ?? 30;
     if (upperResult.heightUsedIn != null && Math.abs(upperResult.heightUsedIn - requestedUpperIn) > 0.005) {
@@ -13348,6 +13359,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       : <div className="flex h-full min-h-[360px] items-center justify-center rounded-xl border border-dashed px-6 text-center text-sm text-muted-foreground">Choose an active door style and add a cabinet, or choose a starter room layout, to load the synchronized 3D canvas.</div>;
 	    return <InteractiveRoom3D
 		      key={`active-surfaces-${threeDSurfaceProductIds.flooring ?? "none"}-${threeDSurfaceTextureUrls.flooring ?? "pending"}-${backsplashEnabled ? threeDSurfaceProductIds.backsplash ?? "none" : "off"}-${backsplashEnabled ? threeDSurfaceTextureUrls.backsplash ?? "pending" : "off"}`}
+		      autoDesignWiggleMoves={autoDesignWiggleMoves}
 		      embedded
 		      cutawayRoomWalls
 		      hybridPlanUnderlay={hybridPlanUnderlay}
@@ -16802,6 +16814,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	              </button>
 	            </div>
 	          )}
+	          {autoDesignWiggleMoves.length > 0 && (
+	            <div className="absolute bottom-3 left-3 z-40 max-w-md">
+	              <AutoDesignWiggleNotice moves={autoDesignWiggleMoves} />
+	            </div>
+	          )}
 	          {placementWarning && (
 	            <div role="alert" className="absolute left-3 right-3 top-3 z-40 max-h-[70%] overflow-y-auto rounded-lg border border-amber-400 bg-amber-50 px-3 py-2 text-sm text-amber-950 shadow-md sm:right-auto sm:max-w-lg">
 	              {/\bCorner protected:\s*ERB36\b/i.test(placementWarning) && (
@@ -16998,6 +17015,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	            <PlanCanvas onPreviewGap={previewSmartGap}
 	              room={room}
 	              fourAnchorWallGuides={fourAnchorWallGuides}
+	              autoDesignWiggleMoves={autoDesignWiggleMoves}
 	              catalogDragCabinet={catalogDragPreview}
 	              fillerGapPreview={smallGapFillerPlanPreview}
 	              automaticSnapping={automaticSnapping}
@@ -17288,6 +17306,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                <PlanCanvas onPreviewGap={previewSmartGap}
 	                  room={room}
 	                  fourAnchorWallGuides={fourAnchorWallGuides}
+	                  autoDesignWiggleMoves={autoDesignWiggleMoves}
 	                  catalogDragCabinet={catalogDragPreview}
 	                  fillerGapPreview={smallGapFillerPlanPreview}
 	                  automaticSnapping={automaticSnapping}
@@ -21071,6 +21090,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
             ) : resolvedInteractive3dScene ? (
               <InteractiveRoom3D
 			      key={`active-surfaces-full-${threeDSurfaceProductIds.flooring ?? "none"}-${threeDSurfaceTextureUrls.flooring ?? "pending"}-${backsplashEnabled ? threeDSurfaceProductIds.backsplash ?? "none" : "off"}-${backsplashEnabled ? threeDSurfaceTextureUrls.backsplash ?? "pending" : "off"}`}
+                autoDesignWiggleMoves={autoDesignWiggleMoves}
                 scene={resolvedInteractive3dScene}
                 placed={threeDPlaced}
                 crown={crown}

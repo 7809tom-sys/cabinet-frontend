@@ -6,6 +6,7 @@ import {
   DEFAULT_ROOM,
   makeDefaultSinkForCabinet,
   wallPlacementAt,
+  syncWallRunOffsets,
   wallRunOffset,
   type DesignCabinet,
   type PlacedCabinet,
@@ -15,10 +16,13 @@ import { CROWN_MITER_CUT_ALLOWANCE_IN } from "./crownTakeoff";
 import {
   DESIGNER_LAYOUT_RULES,
   FOUR_ANCHOR_WIGGLE_ROOM_IN,
+  activeAutoDesignWiggleMoves,
   applyDesignerLayoutRules,
   applyFourAnchorWiggleRoom,
   crownMiterCutAllowanceIn,
   enforceTrimSupplierContinuity,
+  formatAutoDesignWiggleBadge,
+  formatAutoDesignWiggleMessage,
   type FourAnchorAnchorOrigin,
 } from "./designerLayoutRules";
 
@@ -208,6 +212,106 @@ describe("four-anchor wiggle room", () => {
     expect(wallRunOffset(result.placed[0]!, "bottom", room)).toBeCloseTo(45, 5);
     expect(result.moves).toEqual([]);
     expect(result.placed[0]!.y).toBe(sink.y);
+  });
+
+  it("reports nothing when the range already fits and no shift is needed", () => {
+    const { room, item } = rangeOnBottom(120, 36);
+    const result = applyFourAnchorWiggleRoom({
+      placed: [item],
+      room,
+      openings: [],
+      catalog: catalog([36, 30, 24, 18, 12]),
+      origins: [originFor(item, "stove", 36)],
+    });
+    expect(result.moves).toEqual([]);
+    expect(wallRunOffset(result.placed[0]!, "bottom", room)).toBeCloseTo(36, 5);
+  });
+
+  it("reports a 2 inch right nudge when a 36 inch lazy Susan forces the range to move", () => {
+    const room = { ...DEFAULT_ROOM, width: 144 };
+    const susanSpot = wallPlacementAt(0, 36, 36, "bottom", room);
+    const susan: PlacedCabinet = {
+      uid: "ls-36",
+      cabinetId: 36,
+      masterCode: "LSB36",
+      description: '36" Lazy Susan Corner Base',
+      category: "Base",
+      subCategory: "Corner",
+      placement: "base",
+      cornerType: "lazy-susan",
+      x: susanSpot.x,
+      y: susanSpot.y,
+      width: 36,
+      depth: 36,
+      height: 34.5,
+      rotation: susanSpot.rotation,
+      wallId: susanSpot.wallId,
+      wallOffset: susanSpot.wallOffset,
+      numberOfDoors: 2,
+      numberOfDrawers: 0,
+    };
+    const rangeSpot = wallPlacementAt(34, 30, 26, "bottom", room);
+    const range: PlacedCabinet = {
+      uid: "range-1",
+      cabinetId: 0,
+      masterCode: "RANGE-30",
+      description: "30 inch range",
+      category: "Appliance",
+      subCategory: "Appliance",
+      placement: "appliance",
+      x: rangeSpot.x,
+      y: rangeSpot.y,
+      width: 30,
+      depth: 26,
+      height: 36,
+      rotation: rangeSpot.rotation,
+      wallId: rangeSpot.wallId,
+      wallOffset: rangeSpot.wallOffset,
+      mountBottom: 0,
+      numberOfDoors: 0,
+      numberOfDrawers: 0,
+    };
+    const result = applyFourAnchorWiggleRoom({
+      placed: [susan, range],
+      room,
+      openings: [],
+      catalog: catalog([36, 30, 24, 18, 15, 12]),
+      origins: [originFor(range, "stove", 34)],
+    });
+    expect(result.moves).toHaveLength(1);
+    const move = result.moves[0]!;
+    expect(move).toMatchObject({
+      uid: "range-1",
+      kind: "stove",
+      applianceType: "stove",
+      label: "Range",
+      wallId: "bottom",
+      wallLabel: "bottom wall",
+      direction: "right",
+      inchesMoved: 2,
+      deltaAlongIn: 2,
+      originalPositionIn: 34,
+      newPositionIn: 36,
+      fromStart: 34,
+      toStart: 36,
+      reason: {
+        uid: "ls-36",
+        masterCode: "LSB36",
+        label: '36" lazy Susan',
+        widthIn: 36,
+      },
+    });
+    expect(move.distanceFromOriginalIn).toBeLessThanOrEqual(3);
+    expect(wallRunOffset(result.placed.find((item) => item.uid === "range-1")!, "bottom", room)).toBeCloseTo(36, 5);
+    expect(result.placed.find((item) => item.uid === "ls-36")!.wallOffset).toBe(susan.wallOffset);
+    expect(formatAutoDesignWiggleMessage(move)).toBe('Wiggle room applied: Range moved 2" right to fit the 36" lazy Susan');
+    expect(formatAutoDesignWiggleBadge(move)).toBe('Moved 2" →');
+    expect(activeAutoDesignWiggleMoves(result.moves, result.placed, room)).toEqual(result.moves);
+    expect(activeAutoDesignWiggleMoves(result.moves, syncWallRunOffsets(result.placed, room), room)).toEqual(result.moves);
+    const nudged = result.placed.find((item) => item.uid === "range-1")!;
+    const manuallyMoved = { ...nudged, wallOffset: (nudged.wallOffset ?? 36) + 1, x: nudged.x + 1 };
+    expect(activeAutoDesignWiggleMoves(result.moves, [susan, manuallyMoved], room)).toEqual([]);
+    expect(activeAutoDesignWiggleMoves(result.moves, [susan], room)).toEqual([]);
   });
 });
 

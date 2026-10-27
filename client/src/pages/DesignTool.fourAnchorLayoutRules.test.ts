@@ -14,6 +14,10 @@ describe("four-anchor applies the shared designer rules", () => {
     expect(completion.indexOf("planFourAnchorBaseSegment({")).toBeGreaterThan(completion.indexOf("applyFourAnchorWiggleRoom({"));
     expect(completion.indexOf("applyDesignerLayoutRules({")).toBeGreaterThan(completion.indexOf("planFourAnchorBaseSegment({"));
     expect(completion.indexOf("fillFourAnchorLowerSeams({")).toBeGreaterThan(completion.indexOf("applyDesignerLayoutRules({"));
-    expect(pageSource).toContain("Wiggle room shifted the");
+    expect(pageSource).toContain("formatAutoDesignWiggleMessage(move)");
+    expect(pageSource).toContain("const reportedWiggleMoves = activeAutoDesignWiggleMoves(wiggle.moves, working, room)");
+    expect(pageSource).toContain("setAutoDesignWiggleMoves(reportedWiggleMoves)");
+    expect(pageSource).toContain("<AutoDesignWiggleNotice");
+    expect(pageSource).toContain("autoDesignWiggleMoves={autoDesignWiggleMoves}");
   });
 });

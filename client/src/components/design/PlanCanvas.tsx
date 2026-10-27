@@ -32,6 +32,10 @@ import { crownTopRuns, formatCrownTop } from "@/lib/crownTopRuns";
 import { verifiedPelicanBathroomFixtureProfile } from "@/lib/pelicanBathroomFixtureProfiles";
 import type { BathroomZoneOverlapWarning } from "@/lib/bathroomPlanning";
 import type { FourAnchorWallGuide } from "@/lib/fourAnchorAutoBuild";
+import { AutoDesignWiggleBadge } from "@/components/design/AutoDesignWiggleNotice";
+import type { FourAnchorWiggleMove } from "@/lib/designerLayoutRules";
+
+const NO_AUTO_DESIGN_WIGGLE_MOVES: readonly FourAnchorWiggleMove[] = [];
 
 export type PlanCabinetRenderFrame = {
   lockedAngledRun: boolean;
@@ -331,6 +335,8 @@ interface Props {
   room: RoomData;
   /** Visual-only numbered wall aid, present only during Four-Anchor setup. */
   fourAnchorWallGuides?: readonly FourAnchorWallGuide[];
+  /** Appliances Auto-Design shifted with wiggle room. Empty when nothing moved. */
+  autoDesignWiggleMoves?: readonly FourAnchorWiggleMove[];
   /** Catalog item currently being dragged over the 2D plan. */
   catalogDragCabinet?: DesignCabinet | null;
   cabinets: PlacedCabinet[];
@@ -504,7 +510,7 @@ function readableLabel(fillHex: string): { color: string; shadow: string; isDark
 }
 
 export function PlanCanvas({
-  room, fourAnchorWallGuides = [], catalogDragCabinet = null, cabinets, countertopGeometry, selectedUid, attributesTargetUid = null, onSelect, onMove, onDelete, onRotate, onUnlockCorner, onOpenAttributes, onDropNew, onDropToFloor,
+  room, fourAnchorWallGuides = [], autoDesignWiggleMoves = NO_AUTO_DESIGN_WIGGLE_MOVES, catalogDragCabinet = null, cabinets, countertopGeometry, selectedUid, attributesTargetUid = null, onSelect, onMove, onDelete, onRotate, onUnlockCorner, onOpenAttributes, onDropNew, onDropToFloor,
   showWallLayer, showCrownTopBadges = false, onToggleWallLayer, measureMode = false, autoDimensions = false, onDimensionAdjustmentChange, showPeninsulaCornerSnapFeedback = true, island = null, onIslandChange, onIslandMove,
   islandDepthTransition = null,
   activeIslandFace = "front", onSelectIslandFace, onOpenIslandAttributes,
@@ -881,6 +887,7 @@ export function PlanCanvas({
 
   const roomPxW = room.width * ppi;
   const roomPxH = room.depth * ppi;
+  const wiggleMoveByUid = useMemo(() => new Map(autoDesignWiggleMoves.map((move) => [move.uid, move])), [autoDesignWiggleMoves]);
   const hasCustomWallShell = Boolean(room.vertices?.length && room.customWalls?.length);
   // Four-Anchor labels are projected from the same physical wall frames used by
   // anchor placement. They sit just inside the room, are not clickable, and are
@@ -2492,6 +2499,7 @@ export function PlanCanvas({
             const isAttributesTarget = p.uid === attributesTargetUid;
 	            const showWallSnapSuccess = p.uid === wallSnapSuccessUid;
 	            const isWindowCenteredSink = sinkWindowSnap?.cabinetUid === p.uid;
+	            const wiggleMove = wiggleMoveByUid.get(p.uid);
             const { isCorner, isTriangle, isDiagonal, isBlind, isConfiguredL, isEndAngle, isEndReturn } = planCornerGeometry(p);
             const isAppliance = p.placement === "appliance";
             // Keep appliance confirmation tied to the same measured-wall spans
@@ -2765,6 +2773,12 @@ export function PlanCanvas({
 	                    <span data-testid="sink-window-snap-cabinet-indicator" className="pointer-events-none absolute left-1/2 bottom-0 z-30 -translate-x-1/2 translate-y-[calc(100%+5px)] whitespace-nowrap rounded bg-emerald-700 px-1.5 py-0.5 text-[8px] font-bold leading-none text-white shadow">
 	                      Centered to window
 	                    </span>
+	                  )}
+	                  {wiggleMove && (
+	                    <AutoDesignWiggleBadge
+	                      move={wiggleMove}
+	                      className="pointer-events-none absolute left-1/2 top-0 z-30 -translate-x-1/2 -translate-y-[calc(100%+4px)] whitespace-nowrap rounded bg-amber-700 px-1.5 py-0.5 text-[8px] font-bold leading-none text-white shadow"
+	                    />
 	                  )}
 	                  {cornerStatus && (!isSeatedPeninsulaCorner || showPeninsulaCornerSnapFeedback) && (
                     <span
