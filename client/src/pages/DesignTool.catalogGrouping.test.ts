@@ -62,9 +62,12 @@ describe("DesignTool cabinet catalog organization", () => {
     const itemStart = source.indexOf("const isBaseBox =");
     const itemEnd = source.indexOf("paletteFinishSwatch", itemStart);
     const itemBlock = source.slice(itemStart, itemEnd);
-    expect(itemBlock).toContain("const widthVal = formatCatalogInchValue(dimensions.width)");
-    expect(itemBlock).toContain("formatCatalogInchValue(dimensions.height)");
-    expect(itemBlock).toContain('{widthVal}"W × {hVal}');
+    expect(itemBlock).toContain("formatCatalogPaletteSize(c, { baseBox: isBaseBox })");
+    expect(itemBlock).toContain('paletteType === "base"');
+    const heights = readFileSync(new URL("./designToolCatalogHeights.ts", import.meta.url), "utf8");
+    expect(heights).toContain('parts.push(`${formatCatalogInchValue(dimensions.depth)}"D`)');
+    expect(heights).toContain("return parts.join(\" × \")");
+    expect(heights).toContain("formatCatalogInchValue(BASE_BOX_HEIGHT)");
   });
 
   it("lets a shopper choose a distributor in Catalog before choosing a door style", () => {

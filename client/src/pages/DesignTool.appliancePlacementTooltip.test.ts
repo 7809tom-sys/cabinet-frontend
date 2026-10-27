@@ -5,9 +5,12 @@ const source = readFileSync(new URL("./DesignTool.tsx", import.meta.url), "utf8"
 
 describe("Designer DB24 and dishwasher placement tooltips", () => {
   it("uses the shared physical placement detail on cabinet palette cards", () => {
+    const card = readFileSync(new URL("../components/design/CatalogPaletteCard.tsx", import.meta.url), "utf8");
     expect(source).toContain("cabinetPlacementHoverDetail");
-    expect(source).toContain("data-testid={placementDetail ? `cabinet-placement-detail-${c.masterCode}` : undefined}");
-    expect(source).toContain("Hover for dimensions &amp; flush-seam clearance");
+    expect(source).toContain("cardTestId={placementDetail ? `cabinet-placement-detail-${c.masterCode}` : undefined}");
+    expect(source).toContain("showPlacementHint={Boolean(placementDetail)}");
+    expect(card).toContain("data-testid={cardTestId}");
+    expect(card).toContain("Hover for dimensions &amp; flush-seam clearance");
     expect(source).toContain("formatEighthInches(placementDetail.dimensions.depth)");
   });
 
