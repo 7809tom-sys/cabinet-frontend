@@ -32,6 +32,7 @@ import { farmhouseSinkBaseFaceLayout } from "@/lib/farmhouseSinkBaseFace";
 import { createContext, useContext, useRef, useEffect, useState, useCallback } from "react";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { masterTracFinishColor, masterTracProduct } from "@/lib/closet";
+import { backsplashTextureWarningMessage, parseBacksplashSheetInches } from "@/lib/backsplashProductMaterial";
 
 interface Props {
   room: RoomData;
@@ -53,6 +54,10 @@ interface Props {
   // When set, draw a backsplash texture between the countertop (36") and wall
   // cabinet bottom (54"). null/undefined = no backsplash drawn.
   backsplashMaterialId?: string | null;
+  /** Selected catalog backsplash picture. Tiled at the product sheet size. */
+  backsplashImageUrl?: string | null;
+  backsplashProductName?: string | null;
+  backsplashProductSize?: string | null;
   openings?: WallOpening[];
   finish?: FinishColors;
   crown?: boolean;
@@ -253,7 +258,7 @@ export function farmhouseSinkElevationGeometry(cabinetWidthIn: number) {
 }
 
 export function ElevationView({
-  room, cabinets, selectedUid, attributesTargetUid = null, onSelect, wall, onSelectWall, countertopMaterialId = null, backsplashMaterialId = null, openings = [],
+  room, cabinets, selectedUid, attributesTargetUid = null, onSelect, wall, onSelectWall, countertopMaterialId = null, backsplashMaterialId = null, backsplashImageUrl = null, backsplashProductName = null, backsplashProductSize = null, openings = [],
   finish = DEFAULT_FINISH_COLORS, crown = false, toeKick = false, batten = false, lightRail = false,
   panelKind = "shaker", mirror = false, hideSwitcher = false,
   hardwareStyleId = null, hardwareAccent = "#1a2744",
@@ -266,6 +271,18 @@ export function ElevationView({
 }: Props) {
   const { t } = useLanguage();
   const hw = resolveHardwareStyle(hardwareStyleId);
+  const productBacksplashImage = backsplashImageUrl?.trim() || "";
+  const [backsplashImageFailed, setBacksplashImageFailed] = useState(false);
+  useEffect(() => {
+    setBacksplashImageFailed(false);
+    if (!productBacksplashImage || typeof Image === "undefined") return undefined;
+    let cancelled = false;
+    const probe = new Image();
+    probe.onload = () => { if (!cancelled) setBacksplashImageFailed(false); };
+    probe.onerror = () => { if (!cancelled) setBacksplashImageFailed(true); };
+    probe.src = productBacksplashImage;
+    return () => { cancelled = true; probe.onload = null; probe.onerror = null; };
+  }, [productBacksplashImage]);
   // Counter-flip transform for text so labels read correctly when this whole
   // elevation sits inside a scaleX(-1) container.
   const textFlip: React.CSSProperties | undefined = mirror ? { transform: "scaleX(-1)" } : undefined;
@@ -1344,6 +1361,10 @@ export function ElevationView({
             microwave/bridge render on top at higher z-index. */}
         {backsplashMaterialId && (() => {
           const bsMat = backsplashMaterial(backsplashMaterialId);
+          const productName = backsplashProductName?.trim() || "";
+          const sheet = parseBacksplashSheetInches({ name: productName || bsMat.name, size: backsplashProductSize, subCategory: productName });
+          const showProductImage = Boolean(productBacksplashImage) && !backsplashImageFailed;
+          const missingProductImage = Boolean(productName) && !showProductImage;
           const BACKSPLASH_BOTTOM = STD.COUNTERTOP_HEIGHT; // 36" — sits on top of the countertop surface
           const BACKSPLASH_STD_HEIGHT = 18; // standard backsplash is 18" tall
           const BACKSPLASH_DEFAULT_TOP = BACKSPLASH_BOTTOM + BACKSPLASH_STD_HEIGHT; // 55.5"
@@ -1382,7 +1403,9 @@ export function ElevationView({
           // half tile width) for realism instead of a simple grid.
           let bgImage: string | undefined;
           let bgSize: string | undefined;
-          if (bsMat.pattern === "subway") {
+          if (showProductImage || missingProductImage) {
+            bgImage = undefined;
+          } else if (bsMat.pattern === "subway") {
             const tw = tileWPx;
             const th = tileHPx;
             const offset = Math.round(tw / 2);
@@ -1513,26 +1536,34 @@ export function ElevationView({
           }
           return (
             <>
+              {missingProductImage && (
+                <div role="alert" data-testid="elevation-backsplash-image-warning" className="absolute left-2 top-2 z-20 max-w-sm rounded border border-amber-600 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-950">
+                  {backsplashTextureWarningMessage(productName, backsplashImageFailed ? "failed" : "missing")}
+                </div>
+              )}
 	              {segments.map((seg, i) => (
 	                <div
 	                  key={`bs${i}`}
 	                  data-testid="elevation-backsplash-segment"
 	                  data-backsplash-field-coverage="supported"
+	                  data-backsplash-image={showProductImage ? productBacksplashImage : undefined}
+	                  data-backsplash-module-in={showProductImage ? String(sheet.widthIn) : undefined}
 	                  className="absolute pointer-events-none"
                   style={{
                     left: seg.left,
                     width: seg.width,
                     bottom: seg.bottom,
                     height: seg.height,
-                    background: bsMat.fill,
-                    backgroundImage: realistic ? bgImage : undefined,
-                    backgroundSize: realistic ? (bgSize ?? (bsMat.pattern === "hexagon" ? `${tileWPx}px ${tileHPx}px` : undefined)) : undefined,
-                    borderTop: `1px solid ${bsMat.grout}`,
-                    borderBottom: `1px solid ${bsMat.grout}`,
+                    background: missingProductImage ? "#f6e7c1" : bsMat.fill,
+                    backgroundImage: showProductImage ? `url("${productBacksplashImage}")` : (realistic && !missingProductImage ? bgImage : undefined),
+                    backgroundSize: showProductImage ? `${sheet.widthIn * ppi}px ${sheet.heightIn * ppi}px` : (realistic ? (bgSize ?? (bsMat.pattern === "hexagon" ? `${tileWPx}px ${tileHPx}px` : undefined)) : undefined),
+                    backgroundRepeat: showProductImage ? "repeat" : undefined,
+                    borderTop: `1px solid ${missingProductImage ? "#b45309" : bsMat.grout}`,
+                    borderBottom: `1px solid ${missingProductImage ? "#b45309" : bsMat.grout}`,
                     opacity: 0.85,
                     zIndex: 1,
                   }}
-                  title={`Backsplash: ${bsMat.name}`}
+                  title={`Backsplash: ${productName || bsMat.name}`}
                 />
               ))}
             </>

@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -23,10 +23,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { ChevronDown, ChevronRight, Copy, Package, Trash2, Send, Building2, Palette, CheckCircle2, Truck, MapPin, Download, BookOpen } from "lucide-react";
+import AdminOrderStripeBreakdown, { AdminOrderListIdentity, AdminOrderListTotal } from "@/components/admin/AdminOrderStripeBreakdown";
+import { describeAdminOrderList, type AdminOrderLineInput, type AdminOrderMoneyInput } from "@/lib/adminOrderReconciliation";
 
 type Status = "draft" | "submitted" | "confirmed" | "cancelled";
 
-type EnrichedLine = {
+type EnrichedLine = AdminOrderLineInput & {
   cabinetId: number | null;
   masterCode: string;
   rawCode?: string;
@@ -43,7 +45,7 @@ type EnrichedLine = {
   colorFinish?: string | null;
 };
 
-type OrderRow = {
+type OrderRow = Omit<AdminOrderMoneyInput, "lineItems" | "originatorName" | "originatorEmail" | "deliveryMethod"> & {
   id: number;
   requestNumber: string;
   originatorName: string | null;
@@ -52,10 +54,8 @@ type OrderRow = {
   status: Status;
   tier: string;
   styleName: string | null;
-  totalAmount: string | null;
   taxState?: string | null;
   taxRate?: string | null;
-  taxAmount?: string | null;
   itemCount: number;
   notes: string | null;
   lineItems: EnrichedLine[];
@@ -123,23 +123,27 @@ function OrderDetailDialog({
   const colorFinishes = Array.from(
     new Set(order.lineItems.map((l) => l.colorFinish).filter((v): v is string => !!v))
   );
+  const customer = describeAdminOrderList(order);
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-3">
             <Package className="h-5 w-5 text-primary" />
             Order {order.requestNumber}
             <Badge className={STATUS_COLORS[order.status]}>{order.status}</Badge>
           </DialogTitle>
+          <DialogDescription>
+            Invoice breakdown for {customer.customerName || order.requestNumber}, including shipping and the Stripe charge.
+          </DialogDescription>
         </DialogHeader>
 
         {/* Customer info */}
         <div className="grid grid-cols-2 gap-4 text-sm border rounded-lg p-4 bg-muted/30">
           <div>
             <p className="text-muted-foreground text-xs uppercase tracking-wide mb-1">Customer</p>
-            <p className="font-medium">{order.originatorName || "—"}</p>
+            <p className="font-medium">{customer.customerName || order.originatorName || "—"}</p>
             <p className="text-muted-foreground">{order.originatorEmail || ""}</p>
             <p className="text-muted-foreground">{order.originatorPhone || ""}</p>
           </div>
@@ -147,19 +151,7 @@ function OrderDetailDialog({
             <p className="text-muted-foreground text-xs uppercase tracking-wide mb-1">Order Info</p>
             <p><span className="text-muted-foreground">Style:</span> {order.styleName || "—"}</p>
             <p><span className="text-muted-foreground">Tier:</span> {order.tier}</p>
-            <p><span className="text-muted-foreground">Subtotal:</span> {order.totalAmount ? `$${order.totalAmount}` : "—"}</p>
-            {order.taxState && order.taxAmount && (
-              <p>
-                <span className="text-muted-foreground">Tax ({order.taxState}{order.taxRate ? ` · ${(parseFloat(order.taxRate) * 100).toFixed(2).replace(/\.?0+$/, "")}%` : ""}):</span>{" "}
-                ${order.taxAmount}
-              </p>
-            )}
-            {order.taxState && order.taxAmount && (
-              <p className="font-semibold">
-                <span className="text-muted-foreground font-normal">Grand Total:</span>{" "}
-                ${(parseFloat(order.totalAmount ?? "0") + parseFloat(order.taxAmount)).toFixed(2)}
-              </p>
-            )}
+            <p><span className="text-muted-foreground">Ship to:</span> {customer.shippingLocation || "Shipping location not recorded"}</p>
             <p><span className="text-muted-foreground">Date:</span> {new Date(order.createdAt).toLocaleDateString()}</p>
           </div>
         </div>
@@ -203,6 +195,8 @@ function OrderDetailDialog({
             <p>{order.notes}</p>
           </div>
         )}
+
+        <AdminOrderStripeBreakdown order={order} />
 
         {/* PO SKU table */}
         <div>
@@ -551,25 +545,21 @@ export default function IncomingOrdersAdmin() {
                   className="py-3 px-4 cursor-pointer hover:bg-muted/40 transition-colors"
                   onClick={() => setExpandedId(isExpanded ? null : order.id)}
                 >
-                  <div className="flex items-center gap-3">
+                  <div className="flex w-full min-w-0 items-center gap-3">
                     {isExpanded ? (
                       <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
                     ) : (
                       <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
                     )}
-                    <CardTitle className="text-sm font-mono font-semibold flex-1">
+                    <CardTitle className="shrink-0 text-sm font-mono font-semibold">
                       {order.requestNumber}
                       {order.orderKind === "sample" && <Badge variant="secondary" className="ml-2">Sample</Badge>}
                     </CardTitle>
+                    <AdminOrderListIdentity order={order} />
                     <Badge className={`text-xs ${STATUS_COLORS[order.status]}`}>
                       {order.status}
                     </Badge>
-                    <span className="text-sm text-muted-foreground hidden sm:block">
-                      {order.originatorName || order.originatorEmail || "Guest"}
-                    </span>
-                    <span className="text-sm font-medium">
-                      {order.totalAmount ? `$${order.totalAmount}` : "—"}
-                    </span>
+                    <AdminOrderListTotal order={order} />
                     <span className="text-xs text-muted-foreground">
                       {new Date(order.createdAt).toLocaleDateString()}
                     </span>
@@ -670,6 +660,9 @@ export default function IncomingOrdersAdmin() {
                           ))}
                         </TableBody>
                       </Table>
+                    </div>
+                    <div className="mt-3">
+                      <AdminOrderStripeBreakdown order={order} />
                     </div>
                   </CardContent>
                 )}

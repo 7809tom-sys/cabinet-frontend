@@ -30,6 +30,7 @@ describe("SurfacesPickerDialog scrolling", () => {
       'data-testid="backsplash-enabled-control"',
       'data-testid="countertop-priced-coverage"',
       'data-testid="countertop-selection-availability"',
+      'data-testid="flooring-selection-availability"',
       'data-testid="selected-bathroom-fixture-preview"',
     ]) {
       expect(fixedControls, `${marker} must not sit in the fixed header`).not.toContain(marker);

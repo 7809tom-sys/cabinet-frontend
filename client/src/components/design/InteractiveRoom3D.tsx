@@ -41,6 +41,15 @@ import { geminiHardwareReference, type GeminiMaterialManifestEntry } from "@/lib
 import { geminiMaterialReference, geminiInferredMaterialLabels } from "@/lib/geminiMaterialReference";
 import { GEMINI_MATERIAL_MANIFEST_WIRE_VERSION, geminiMaterialManifestWireValidationIssues, serializeGeminiImageTestProvenanceForWire, serializeGeminiMaterialManifestForWire } from "@shared/geminiMaterialManifest";
 import { pelicanQuartzMaterialMap } from "@/lib/pelicanQuartzMaterialMaps";
+import { applyThreeDCabinetPieceGrain, threeDPieceGrainTransform } from "@/lib/woodGrainVariation";
+import {
+  BACKSPLASH_ROOM_SCENE_FIDELITY,
+  backsplashTextureWarningMessage,
+  parseBacksplashSheetInches,
+  resolveDesignerMaterialUrl,
+} from "@/lib/backsplashProductMaterial";
+
+export { applyThreeDCabinetPieceGrain, threeDPieceGrainTransform };
 
 /**
  * The in-house browser path tracer is switched off: it opens a second WebGL
@@ -67,6 +76,10 @@ export const THREE_D_PRODUCTION_HDRI_URL = "/manus-storage/photo_studio_01_1k_5f
  * Returns a stable UV offset for the curated Hickory material assigned to one
  * saved cabinet placement. A placement UID is durable through save/load and
  * moves, so a cabinet keeps its own wood figure without render-time randomness.
+ *
+ * This shifts the shared repeating board for the whole cabinet. Each door,
+ * drawer, panel, and box face then takes its own window from that board via
+ * threeDPieceGrainTransform, so two doors on the cabinet do not share a knot.
  *
  * The curated asset remains vertical at a 1:1 repeat. Only the source crop is
  * shifted; cabinet geometry, door construction, and rail direction are not
@@ -864,6 +877,10 @@ interface Props {
   catalogIslandCountertopImageUrl?: string | null;
   catalogFlooringImageUrl?: string | null;
   catalogBacksplashImageUrl?: string | null;
+  /** Catalog size string for the selected tile or mosaic sheet, when the product has one. */
+  catalogBacksplashSize?: string | null;
+  catalogBacksplashCategory?: string | null;
+  catalogBacksplashSubCategory?: string | null;
   shareContext?: { layoutPresetId: string; distributorId: number; styleId: number };
   catalogItems?: InteractiveRoomCatalogItem[];
   /** Reactive left-panel drag item used when browsers protect DataTransfer reads during dragover. */
@@ -1019,7 +1036,10 @@ export type ThreeDProductMaterialSource = {
   staggerOffsetsIn: number[] | null;
   backsplashPatternKind?: "field-tile" | "interlocking-mosaic" | "subway-mosaic" | null;
   backsplashModuleIn?: number | null;
+  backsplashModuleHeightIn?: number | null;
   backsplashGroutJointIn?: number | null;
+  /** Selected product has no usable image. Do not paint a generic tile. */
+  textureUnavailable?: boolean;
 };
 
 export type ThreeDFlooringPatternKind = "plank" | "tile" | "sheet" | "unknown";
@@ -1305,9 +1325,53 @@ export function threeDProductMaterialSource(
 			backsplashGroutJointIn: 1 / 16,
 		};
 	}
-	// Shopper-facing room and product-card imagery is never allowed into this
-	// texture path. A selected product without an approved swatch still receives
-	// a visible deterministic representative material, not a missing surface.
+	// Flooring and countertops still refuse an unapproved room photo and use a
+	// neutral preview. A selected backsplash uses its own picture; with no
+	// picture it stays unlabeled instead of becoming a generic tile.
+	if (role === "backsplash" && productName?.trim()) {
+		const sheet = parseBacksplashSheetInches({
+			name: productName,
+			size: surfaceMetadata?.size,
+			category: surfaceMetadata?.category,
+			subCategory: surfaceMetadata?.subCategory,
+		});
+		if (!originalUrl?.trim()) {
+			return {
+				url: "",
+				key: "backsplash-image-unavailable",
+				curated: false,
+				proceduralFallback: false,
+				textureUnavailable: true,
+				physicalWidthIn: sheet.widthIn,
+				physicalDepthIn: sheet.heightIn,
+				sourceProductName: productName,
+				flooringPatternKind: null,
+				plankWidthIn: null,
+				plankLengthIn: null,
+				staggerOffsetsIn: null,
+				backsplashPatternKind: sheet.patternKind,
+				backsplashModuleIn: sheet.widthIn,
+				backsplashModuleHeightIn: sheet.heightIn,
+			};
+		}
+		return {
+			url: originalUrl.trim(),
+			key: productId != null ? `catalog-backsplash:${productId}` : `catalog-backsplash:${normalizedName || "selected"}`,
+			curated: false,
+			proceduralFallback: false,
+			textureUnavailable: false,
+			physicalWidthIn: sheet.widthIn,
+			physicalDepthIn: sheet.heightIn,
+			sourceProductName: productName,
+			flooringPatternKind: null,
+			plankWidthIn: null,
+			plankLengthIn: null,
+			staggerOffsetsIn: null,
+			backsplashPatternKind: sheet.patternKind,
+			backsplashModuleIn: sheet.widthIn,
+			backsplashModuleHeightIn: sheet.heightIn,
+		};
+	}
 	if (!originalUrl) {
 		if (!productName?.trim()) return null;
 		return {
@@ -4515,9 +4579,13 @@ export function addCabinet(
   };
 	  const useDoorTexture = threeDUsesDoorSampleTexture(doorSampleUrl);
 	  const usesCuratedCabinetGrain = /rustic_hickory_vertical_grain/i.test(doorSampleUrl ?? "");
+	  // Assigned once the texture exists. The loader callback runs after the
+	  // face meshes are built, which is when box skins receive the sample.
+	  let stampCabinetWoodGrain = () => {};
 	  const doorTexture = useDoorTexture && doorSampleUrl
     ? new THREE.TextureLoader().load(doorSampleUrl, (loadedTexture) => {
       applyPlainStructuralFinish?.(color, loadedTexture);
+      stampCabinetWoodGrain();
       onDoorTextureState?.("loaded");
     }, undefined, () => {
       applyDoorTextureFallback();
@@ -4545,6 +4613,15 @@ export function addCabinet(
 	      materialOnlyNoDoorGeometry: true,
 	    };
 	  }
+	  stampCabinetWoodGrain = () => {
+	    applyThreeDCabinetPieceGrain(cabinet, {
+	      placementUid: sku.placementUid,
+	      sampleUrl: doorSampleUrl,
+	      grainDirection: doorProfile?.grainDirection ?? null,
+	      curated: usesCuratedCabinetGrain,
+	      sourceTexture: doorTexture,
+	    });
+	  };
   // The active catalog sample is applied to actual door and drawer faces.
   // Shaker rails and stiles remain physical meshes over those faces, preserving
   // the selected Door Style's recessed-panel construction in the 3D Designer.
@@ -6214,6 +6291,9 @@ export function addCabinet(
   }
   }
   cabinet.add(frontGroup);
+  // Doors and drawers already reference the shared sample. Box skins receive it
+  // again when the image finishes loading, and that callback stamps them too.
+  stampCabinetWoodGrain();
   // Every appliance needs a click target that resolves through its placement
   // root. Standard RANGE records already add a dedicated range envelope below;
   // this additionally covers legacy stove-coded appliances that otherwise only
@@ -8834,13 +8914,15 @@ export function threeDBacksplashPlaneUv(
   renderStart: number,
   renderEnd: number,
   moduleIn = THREE_D_BACKSPLASH_TILE_SIZE_IN,
+  moduleHeightIn = moduleIn,
 ) {
   const safeModuleIn = Math.max(0.125, moduleIn);
+  const safeModuleHeightIn = Math.max(0.125, moduleHeightIn);
   const span = renderEnd - renderStart;
   const reversed = segment.side === "left" || segment.side === "bottom";
   const along = reversed ? renderEnd - planeU * span : renderStart + planeU * span;
   const elevation = segment.bottom + planeV * (segment.top - segment.bottom);
-  return { u: along / safeModuleIn, v: elevation / safeModuleIn };
+  return { u: along / safeModuleIn, v: elevation / safeModuleHeightIn };
 }
 
 /** Inset a run only where another backsplash plane meets it, so the inside corner butts instead of crossing. */
@@ -9047,6 +9129,7 @@ function addThreeDBacksplash(
     texture.repeat.set(1, 1);
     texture.offset.set(0, 0);
     const moduleIn = Number(sourceTexture.userData?.backsplashModuleIn) || THREE_D_BACKSPLASH_TILE_SIZE_IN;
+    const moduleHeightIn = Number(sourceTexture.userData?.backsplashModuleHeightIn) || moduleIn;
     const groutJointIn = Number(sourceTexture.userData?.backsplashGroutJointIn) || null;
     const patternKind = sourceTexture.userData?.backsplashPatternKind ?? "field-tile";
     texture.needsUpdate = true;
@@ -9056,11 +9139,11 @@ function addThreeDBacksplash(
       side: THREE.FrontSide,
       ...threeDPhysicalSurfaceProfile("backsplash", true),
     });
-    material.userData = { selectedSurfaceRole: "backsplash", usesAuthoritativeProductImage: !sourceTexture.userData?.representativePreview, representativePreview: Boolean(sourceTexture.userData?.representativePreview), tileModuleIn: moduleIn, groutJointIn, backsplashPatternKind: patternKind, continuousTileField: true, worldInchUv: true, materialOnlyNoGeometryChange: true };
+    material.userData = { selectedSurfaceRole: "backsplash", usesAuthoritativeProductImage: !sourceTexture.userData?.representativePreview, representativePreview: Boolean(sourceTexture.userData?.representativePreview), tileModuleIn: moduleIn, tileModuleHeightIn: moduleHeightIn, groutJointIn, backsplashPatternKind: patternKind, continuousTileField: true, worldInchUv: true, materialOnlyNoGeometryChange: true };
     const geometry = new THREE.PlaneGeometry(widthIn * INCH, heightIn * INCH);
     const uv = geometry.getAttribute("uv");
     for (let index = 0; index < uv.count; index += 1) {
-      const mapped = threeDBacksplashPlaneUv(segment, uv.getX(index), uv.getY(index), render.start, render.end, moduleIn);
+      const mapped = threeDBacksplashPlaneUv(segment, uv.getX(index), uv.getY(index), render.start, render.end, moduleIn, moduleHeightIn);
       uv.setXY(index, mapped.u, mapped.v);
     }
     uv.needsUpdate = true;
@@ -10209,7 +10292,7 @@ export function attachAutoDesignWiggleSprite(owner: THREE.Object3D, label: strin
   owner.add(sprite);
 }
 
-export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick = false, roomOverride, openings = [], sinks = [], potFillers = [], island = null, islandFocusRequest = null, furniture = [], selectedFurnitureUid = null, onSelectFurniture, onRemoveFurniture, onRotateFurniture, onOpenFurnitureAttributes, ponyWalls = [], orderSummary, orderLines = [], initialPresentation, catalogFinishOverride, cabinetFinishPreviewOptions = [], cabinetFinishOverrides, cabinetDoorProfiles, cabinetDoorSampleUrls, cabinetFrontVisuals, catalogDoorSampleUrl, catalogRoomSceneUrl, catalogDoorProfile, windowSceneKind = DEFAULT_WINDOW_SCENE_KIND, windowFrameStyle = "white", hardwareStyleId = "none", hardwareAccent, onHardwareStyleChange, catalogFinishName, catalogFinishProductId, catalogIslandCabinetName, catalogIslandCabinetColor, catalogIslandCabinetProductId, catalogIslandDoorSampleUrl, catalogCountertopName, catalogCountertopProductId, catalogCountertopReferenceUrl, catalogIslandCountertopName, catalogIslandCountertopProductId, catalogIslandCountertopReferenceUrl, catalogFlooringName, catalogFlooringProductId, catalogFlooringReferenceUrl, catalogFlooringCategory, catalogFlooringSubCategory, catalogFlooringSize, catalogBacksplashName, catalogBacksplashProductId, catalogBacksplashReferenceUrl, catalogHardwareReferenceUrl, catalogHardwareName, savedDesignId, savedDesignRevision, canAffiliateGeminiImageTest = false, isCurrentPlanSaved = false, savedPlanFingerprintPayload = null, backsplashHeightMode = "standard", countertopBacksplashHeightIn = 0, catalogCountertopColor, catalogIslandCountertopColor, catalogCountertopImageUrl, catalogIslandCountertopImageUrl, catalogFlooringImageUrl, catalogBacksplashImageUrl, shareContext, catalogItems = [], catalogDragItem = null, catalogDropWall, onAddCatalogItem, onAddRangeHood, onSaveToAccount, onSyncCart, onPresentationChange, onRoomWallHeightChange, onRoomWallHeightsChange, onMoveCabinet, onMoveCabinetTo, selectedCabinetUid, attributesTargetUid = null, missingPriceUids, onSelectCabinet, onOpenCabinetEditor, onSelectOpening, onOpenWindowEditor, onOpenDoorEditor, onRequestFiller, onSnapGlassCabinetToFront, onRotateCabinet, onRemoveCabinet, showWallLayer, onToggleWallLayer, temporaryPreviewMessage, onClearTemporaryPreview, temporaryPreviewCounter, temporaryPreviewTransitionKey, fillerInsertionTransition, cabinetConfigHref, embedded = false, cutawayRoomWalls = true, hybridPlanUnderlay = false, className, onGeometryRendered, autoDesignWiggleMoves = NO_AUTO_DESIGN_WIGGLE_MOVES }: Props) {
+export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick = false, roomOverride, openings = [], sinks = [], potFillers = [], island = null, islandFocusRequest = null, furniture = [], selectedFurnitureUid = null, onSelectFurniture, onRemoveFurniture, onRotateFurniture, onOpenFurnitureAttributes, ponyWalls = [], orderSummary, orderLines = [], initialPresentation, catalogFinishOverride, cabinetFinishPreviewOptions = [], cabinetFinishOverrides, cabinetDoorProfiles, cabinetDoorSampleUrls, cabinetFrontVisuals, catalogDoorSampleUrl, catalogRoomSceneUrl, catalogDoorProfile, windowSceneKind = DEFAULT_WINDOW_SCENE_KIND, windowFrameStyle = "white", hardwareStyleId = "none", hardwareAccent, onHardwareStyleChange, catalogFinishName, catalogFinishProductId, catalogIslandCabinetName, catalogIslandCabinetColor, catalogIslandCabinetProductId, catalogIslandDoorSampleUrl, catalogCountertopName, catalogCountertopProductId, catalogCountertopReferenceUrl, catalogIslandCountertopName, catalogIslandCountertopProductId, catalogIslandCountertopReferenceUrl, catalogFlooringName, catalogFlooringProductId, catalogFlooringReferenceUrl, catalogFlooringCategory, catalogFlooringSubCategory, catalogFlooringSize, catalogBacksplashName, catalogBacksplashProductId, catalogBacksplashReferenceUrl, catalogHardwareReferenceUrl, catalogHardwareName, savedDesignId, savedDesignRevision, canAffiliateGeminiImageTest = false, isCurrentPlanSaved = false, savedPlanFingerprintPayload = null, backsplashHeightMode = "standard", countertopBacksplashHeightIn = 0, catalogCountertopColor, catalogIslandCountertopColor, catalogCountertopImageUrl, catalogIslandCountertopImageUrl, catalogFlooringImageUrl, catalogBacksplashImageUrl, catalogBacksplashSize = null, catalogBacksplashCategory = null, catalogBacksplashSubCategory = null, shareContext, catalogItems = [], catalogDragItem = null, catalogDropWall, onAddCatalogItem, onAddRangeHood, onSaveToAccount, onSyncCart, onPresentationChange, onRoomWallHeightChange, onRoomWallHeightsChange, onMoveCabinet, onMoveCabinetTo, selectedCabinetUid, attributesTargetUid = null, missingPriceUids, onSelectCabinet, onOpenCabinetEditor, onSelectOpening, onOpenWindowEditor, onOpenDoorEditor, onRequestFiller, onSnapGlassCabinetToFront, onRotateCabinet, onRemoveCabinet, showWallLayer, onToggleWallLayer, temporaryPreviewMessage, onClearTemporaryPreview, temporaryPreviewCounter, temporaryPreviewTransitionKey, fillerInsertionTransition, cabinetConfigHref, embedded = false, cutawayRoomWalls = true, hybridPlanUnderlay = false, className, onGeometryRendered, autoDesignWiggleMoves = NO_AUTO_DESIGN_WIGGLE_MOVES }: Props) {
   const previewRootRef = useRef<HTMLElement>(null);
   const mountRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -10400,6 +10483,7 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
   const [cabinetMoveResult, setCabinetMoveResult] = useState<ThreeDCabinetMoveResult | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [doorTextureState, setDoorTextureState] = useState<"not-requested" | "loading" | "loaded" | "failed">("not-requested");
+  const [backsplashTextureWarning, setBacksplashTextureWarning] = useState<string | null>(null);
   const validSuggestions = useMemo(() => scene.suggestions.filter((entry) => entry.sku), [scene.suggestions]);
   const renderExistingDesign = threeDUsesAuthoritativePlanScene(roomOverride, { placed, openings, sinks, potFillers, island, furniture, ponyWalls });
   const upperCabinetWallMinimums = useMemo(
@@ -10737,16 +10821,33 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 	    const resolvedRoomWallAppearance = roomWallAppearance(roomOverride);
 	    const hasRoomWallAppearance = Boolean(roomOverride?.wallAppearance);
 	    const textureLoader = new THREE.TextureLoader();
+	    let disposed = false;
+	    let backsplashRoot: THREE.Group | null = null;
+	    let backsplashImageFailed = false;
+	    const hideFailedBacksplash = () => {
+	      backsplashRoot?.traverse((node) => {
+	        if (node instanceof THREE.Mesh && node.userData?.measuredBacksplash) node.visible = false;
+	      });
+	    };
 	    const loadSurfaceTexture = (
 	      source: ThreeDProductMaterialSource | null,
 	      role: "countertop" | "flooring" | "backsplash",
 	      widthIn: number,
 	      depthIn: number,
 	    ) => {
-	      if (!source) return null;
+	      if (!source || source.textureUnavailable) return null;
+	      const resolvedAsset = source.proceduralFallback
+	        ? null
+	        : resolveDesignerMaterialUrl(source.url, typeof window !== "undefined" ? window.location.origin : null);
+	      if (!source.proceduralFallback && !resolvedAsset) return null;
+	      if (resolvedAsset?.crossOrigin) textureLoader.setCrossOrigin(resolvedAsset.crossOrigin);
 	      const texture = source.proceduralFallback
 	        ? threeDRepresentativeSurfaceTexture(role, source)
-	        : textureLoader.load(source.url, (loadedTexture) => {
+	        : textureLoader.load(resolvedAsset!.url, (loadedTexture) => {
+	        if (role === "backsplash" && !disposed) {
+	          backsplashImageFailed = false;
+	          setBacksplashTextureWarning(null);
+	        }
 	        if (!source.curated && role === "flooring" && source.flooringPatternKind === "plank" && source.plankWidthIn && source.plankLengthIn) {
 	          (loadedTexture as THREE.Texture<HTMLImageElement | HTMLCanvasElement>).image = normalizedThreeDPlankImage(
 	            loadedTexture.image,
@@ -10771,6 +10872,11 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 	          loadedTexture.offset.set(0, 0);
 	        }
 	        loadedTexture.needsUpdate = true;
+	      }, undefined, () => {
+	        if (role !== "backsplash" || disposed) return;
+	        backsplashImageFailed = true;
+	        setBacksplashTextureWarning(backsplashTextureWarningMessage(source.sourceProductName, "failed"));
+	        hideFailedBacksplash();
 	      });
 	      if (!texture) return null;
 	      texture.colorSpace = THREE.SRGBColorSpace;
@@ -10798,6 +10904,7 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 	        staggerOffsetsIn: source.staggerOffsetsIn,
 	        backsplashPatternKind: source.backsplashPatternKind ?? null,
 	        backsplashModuleIn: source.backsplashModuleIn ?? null,
+	        backsplashModuleHeightIn: source.backsplashModuleHeightIn ?? null,
 	        backsplashGroutJointIn: source.backsplashGroutJointIn ?? null,
 	        materialOnlyNoGeometryChange: true,
 	      };
@@ -10817,7 +10924,13 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 		    );
 	    const backsplashSource = threeDProductMaterialSource("backsplash", catalogBacksplashName, catalogBacksplashImageUrl, {
 	      productId: catalogBacksplashProductId,
+	      category: catalogBacksplashCategory,
+	      subCategory: catalogBacksplashSubCategory,
+	      size: catalogBacksplashSize,
 	    });
+	    setBacksplashTextureWarning(backsplashSource?.textureUnavailable
+	      ? backsplashTextureWarningMessage(backsplashSource.sourceProductName, "missing")
+	      : null);
 	    const floorTexture = loadSurfaceTexture(floorSource, "flooring", room.width, room.depth);
 		    const countertopTexture = loadSurfaceTexture(countertopSource, "countertop", room.width, room.depth);
 		    const islandCountertopTexture = loadSurfaceTexture(islandCountertopSource, "countertop", room.width, room.depth);
@@ -11003,7 +11116,7 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 	      materialOnlyNoGeometryChange: true,
 	    };
 	    catalogRoot.userData.renderQuality = { ...renderQuality, geometryOrCameraChanges: false };
-    let disposed = false;
+	    backsplashRoot = catalogRoot;
     const updateDoorTextureState = (state: "loading" | "loaded" | "failed") => {
       if (!disposed) setDoorTextureState(state);
 	    };
@@ -11077,7 +11190,7 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 	    if (countertopUpstandSegments.length > 0) {
 	      addThreeDCountertopUpstands(catalogRoot, countertopUpstandSegments, backsplashRoom, countertopTexture, materialDefaults.countertop);
 	    }
-	    if (backsplashTexture && backsplashSegments.length > 0) {
+	    if (backsplashTexture && backsplashSegments.length > 0 && !backsplashImageFailed) {
 	      addThreeDBacksplash(catalogRoot, backsplashSegments, backsplashRoom, backsplashTexture);
 	    }
 	    for (const opening of openings) {
@@ -11179,8 +11292,7 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
       if (controlsRef.current === controls) controlsRef.current = null;
       if (catalogRootRef.current === catalogRoot) catalogRootRef.current = null;
     };
-  }, [scene, validSuggestions, placed, crown, toeKick, roomOverride, openings, sinks, potFillers, island, furniture, selectedFurnitureUid, ponyWalls, renderExistingDesign, resetKey, cameraPreset, showRoomContext, showSolidFrontWalls, cutawayRoomWalls, hybridPlanUnderlay, wallHeightIn, wallHeights, resolvedCabinetFinish, cabinetPreviewFinishId, cabinetFinishOverrides, cabinetDoorProfiles, cabinetDoorSampleUrls, cabinetFrontVisuals, countertopFinish, cabinetFinish, catalogDoorSampleUrl, catalogRoomSceneUrl, hardwareStyleId, hardwareAccent, catalogCountertopName, catalogCountertopProductId, catalogIslandCountertopName, catalogIslandCountertopProductId, catalogIslandCountertopColor, catalogFlooringName, catalogFlooringProductId, catalogFlooringCategory, catalogFlooringSubCategory, catalogFlooringSize, catalogBacksplashName, catalogBacksplashProductId, backsplashHeightMode, countertopBacksplashHeightIn, catalogCountertopImageUrl, catalogIslandCountertopImageUrl, catalogFlooringImageUrl, catalogBacksplashImageUrl, autoDesignWiggleMoves]);
-
+  }, [scene, validSuggestions, placed, crown, toeKick, roomOverride, openings, sinks, potFillers, island, furniture, selectedFurnitureUid, ponyWalls, renderExistingDesign, resetKey, cameraPreset, showRoomContext, showSolidFrontWalls, cutawayRoomWalls, hybridPlanUnderlay, wallHeightIn, wallHeights, resolvedCabinetFinish, cabinetPreviewFinishId, cabinetFinishOverrides, cabinetDoorProfiles, cabinetDoorSampleUrls, cabinetFrontVisuals, countertopFinish, cabinetFinish, catalogDoorSampleUrl, catalogRoomSceneUrl, hardwareStyleId, hardwareAccent, catalogCountertopName, catalogCountertopProductId, catalogIslandCountertopName, catalogIslandCountertopProductId, catalogIslandCountertopColor, catalogFlooringName, catalogFlooringProductId, catalogFlooringCategory, catalogFlooringSubCategory, catalogFlooringSize, catalogBacksplashName, catalogBacksplashProductId, catalogBacksplashSize, catalogBacksplashCategory, catalogBacksplashSubCategory, backsplashHeightMode, countertopBacksplashHeightIn, catalogCountertopImageUrl, catalogIslandCountertopImageUrl, catalogFlooringImageUrl, catalogBacksplashImageUrl, autoDesignWiggleMoves]);
 	  // A catalog filler has already passed geometry/collision validation before this
 	  // cue runs. Animate only its visual group, so the final coordinates and the
 	  // saved plan remain authoritative while the user sees it settle into the seam.
@@ -12179,7 +12291,7 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
     const materialManifest: GeminiMaterialManifestEntry[] = [];
     // Missing swatches are resolved against the locked scene, not blockers.
     const missingMaterialInputs: string[] = [];
-    const addManifestEntry = (entry: { id: string; role: string; label: string; itemIds: string[]; referenceUrl: string | null | undefined }) => {
+    const addManifestEntry = (entry: { id: string; role: string; label: string; itemIds: string[]; referenceUrl: string | null | undefined; fidelityNote?: string }) => {
       materialManifest.push(geminiMaterialReference(entry));
     };
     const cabinetManifestGroups = new Map<string, { label: string; referenceUrl: string | null; itemIds: string[] }>();
@@ -12201,7 +12313,14 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
     cabinetManifestGroups.forEach((entry) => addManifestEntry({ id: `cabinet:${cabinetManifestIndex++}`, role: "cabinet door/finish", ...entry }));
     addManifestEntry({ id: "surface:countertop", role: "countertop", label: catalogCountertopName ?? "Selected countertop", itemIds: ["surface:countertop"], referenceUrl: approvedMaterialUrl(catalogCountertopReferenceUrl ?? catalogCountertopImageUrl) });
     addManifestEntry({ id: "surface:flooring", role: "flooring", label: catalogFlooringName ?? "Selected flooring", itemIds: ["surface:flooring"], referenceUrl: approvedMaterialUrl(catalogFlooringReferenceUrl ?? catalogFlooringImageUrl) });
-    addManifestEntry({ id: "surface:backsplash", role: "backsplash", label: catalogBacksplashName ?? "Selected backsplash", itemIds: ["surface:backsplash"], referenceUrl: approvedMaterialUrl(catalogBacksplashReferenceUrl ?? catalogBacksplashImageUrl) });
+    addManifestEntry({
+      id: "surface:backsplash",
+      role: "backsplash",
+      label: catalogBacksplashName ?? "Selected backsplash",
+      itemIds: ["surface:backsplash"],
+      referenceUrl: approvedMaterialUrl(catalogBacksplashReferenceUrl ?? catalogBacksplashImageUrl),
+      fidelityNote: catalogBacksplashName || catalogBacksplashImageUrl || catalogBacksplashReferenceUrl ? BACKSPLASH_ROOM_SCENE_FIDELITY : undefined,
+    });
     if (hardwareStyleId !== "none") {
       const selectedHardware = hardwareStyle(hardwareStyleId);
       const hardwareReference = geminiHardwareReference(hardwareStyleId, placed.map((cabinet) => cabinet.uid), approvedMaterialUrl(catalogHardwareReferenceUrl ?? selectedHardware.referenceUrl), catalogHardwareName);
@@ -12582,6 +12701,7 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 
   return (
     <section ref={previewRootRef} onDragOver={(event) => event.preventDefault()} className={`relative ${embedded ? "flex h-full min-h-0 flex-col" : ""} ${isFullscreen ? "h-screen w-screen overflow-y-auto bg-background p-3 sm:p-5" : ""} ${className ?? ""}`} aria-label="Interactive three-dimensional room preview">
+	  {backsplashTextureWarning && <div role="alert" data-testid="backsplash-texture-warning" className="absolute left-1/2 top-3 z-40 max-w-[min(36rem,calc(100%-1.5rem))] -translate-x-1/2 rounded-lg border border-amber-600 bg-amber-50 px-3 py-2 text-center text-xs font-semibold text-amber-950 shadow-lg">{backsplashTextureWarning}</div>}
 	  {!embedded && autoDesignWiggleMoves.length > 0 && (
 	    <div className="absolute bottom-3 left-3 z-30 max-w-md">
 	      <AutoDesignWiggleNotice moves={autoDesignWiggleMoves} />

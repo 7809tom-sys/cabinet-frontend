@@ -18,12 +18,16 @@ import {
 import { useDoorRenderingAuditApi } from "@/components/admin/doorRenderingAuditApi";
 import {
   applyDoorAuditFilter,
+  assertDoorAuditRenderable,
   doorAuditCompareSlots,
+  doorAuditErrorMessage,
   doorAuditFlagLabel,
   doorAuditModeLabel,
   doorAuditProgressLabel,
   doorAuditRevertVersionId,
+  doorAuditStyleLabel,
   doorRenderingAuditAllowed,
+  enrichDoorAuditQueue,
   formatDoorAuditDelta,
   formatDoorAuditScore,
   formatDoorAuditWhen,
@@ -33,6 +37,7 @@ import {
   type DoorAuditRunStatus,
   type DoorAuditRunSummary,
   type DoorAuditRenderInput,
+  type DoorAuditScores,
   type DoorAuditStyleRow,
   type DoorAuditVersion,
 } from "@/lib/doorRenderingAudit";
@@ -96,12 +101,27 @@ function flagBadge(flag: DoorAuditFlag) {
   return <Badge variant="outline">{doorAuditFlagLabel(flag)}</Badge>;
 }
 
-function AuditFigure({ label, imageUrl, version }: { label: string; imageUrl: string | null; version: DoorAuditVersion | null }) {
+function versionScores(version: DoorAuditVersion | null | undefined): DoorAuditScores | null {
+  return version?.scores ?? null;
+}
+
+function AuditFigure({
+  label,
+  imageUrl,
+  version,
+  identity,
+}: {
+  label: string;
+  imageUrl: string | null;
+  version: DoorAuditVersion | null;
+  identity: string;
+}) {
+  const scores = versionScores(version);
   return (
     <figure className="min-w-0 space-y-1.5">
       <div className="flex h-48 items-center justify-center overflow-hidden rounded-md bg-[#f6f3ed] ring-1 ring-border">
         {imageUrl ? (
-          <img src={imageUrl} alt={label} className="h-full w-full object-contain" />
+          <img src={imageUrl} alt={`${identity} ${label}`} className="h-full w-full object-contain" />
         ) : (
           <span className="flex flex-col items-center gap-1 px-3 text-center text-xs text-muted-foreground">
             <ImageOff className="h-4 w-4" />
@@ -109,10 +129,13 @@ function AuditFigure({ label, imageUrl, version }: { label: string; imageUrl: st
           </span>
         )}
       </div>
-      <figcaption className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</figcaption>
+      <figcaption className="text-[11px] font-medium text-muted-foreground">
+        <span className="block normal-case tracking-normal text-foreground" data-testid="door-audit-style-label">{identity}</span>
+        <span className="uppercase tracking-wide">{label}</span>
+      </figcaption>
       {version ? (
         <p className="text-xs text-muted-foreground">
-          {formatDoorAuditWhen(version.createdAt)} · Overall {formatDoorAuditScore(version.scores.overall)}
+          {formatDoorAuditWhen(version.createdAt)} · Overall {formatDoorAuditScore(scores?.overall)}
         </p>
       ) : null}
     </figure>
@@ -121,22 +144,26 @@ function AuditFigure({ label, imageUrl, version }: { label: string; imageUrl: st
 
 function VersionThumb({
   version,
+  identity,
   disabled,
   onUse,
 }: {
   version: DoorAuditVersion;
+  identity: string;
   disabled: boolean;
   onUse: () => void;
 }) {
+  const scores = versionScores(version);
   return (
     <div className="w-28 shrink-0 space-y-1">
       <div className="flex h-36 items-center justify-center overflow-hidden rounded-md bg-[#f6f3ed] ring-1 ring-border">
-        <img src={version.imageUrl} alt="" className="h-full w-full object-contain" />
+        <img src={version.imageUrl} alt={identity} className="h-full w-full object-contain" />
       </div>
+      <p className="text-[11px] font-medium leading-snug">{identity}</p>
       <p className="text-[11px] leading-snug text-muted-foreground">{formatDoorAuditWhen(version.createdAt)}</p>
-      <p className="text-xs font-medium">Overall {formatDoorAuditScore(version.scores.overall)}</p>
+      <p className="text-xs font-medium">Overall {formatDoorAuditScore(scores?.overall)}</p>
       <p className="text-[10px] leading-snug text-muted-foreground">
-        Grain {formatDoorAuditScore(version.scores.grain)} · Color {formatDoorAuditScore(version.scores.color)} · Texture {formatDoorAuditScore(version.scores.textureSheen)} · Profile {formatDoorAuditScore(version.scores.profileEdges)}
+        Grain {formatDoorAuditScore(scores?.grain)} · Color {formatDoorAuditScore(scores?.color)} · Texture {formatDoorAuditScore(scores?.textureSheen)} · Profile {formatDoorAuditScore(scores?.profileEdges)}
       </p>
       <div className="flex flex-wrap gap-1">
         {version.isCurrent ? <Badge variant="secondary">Current</Badge> : null}
@@ -177,9 +204,12 @@ export function DoorRenderingAuditView({
   busy,
 }: DoorRenderingAuditViewProps) {
   const selected = new Set(selectedIds);
-  const allVisibleSelected = styles.length > 0 && styles.every((style) => selected.has(style.styleId));
+  const visibleStyles = styles.filter((style) => style?.styleId != null);
+  const allVisibleSelected = visibleStyles.length > 0 && visibleStyles.every((style) => selected.has(style.styleId));
   const running = progress?.phase === "rendering" || progress?.phase === "scoring";
-  const progressValue = progress && progress.total > 0 ? Math.round((progress.completed / progress.total) * 100) : 0;
+  const completed = progress && Number.isFinite(progress.completed) ? progress.completed : 0;
+  const total = progress && Number.isFinite(progress.total) ? progress.total : 0;
+  const progressValue = total > 0 ? Math.round((completed / total) * 100) : 0;
 
   return (
     <div className="space-y-6" data-testid="door-rendering-audit">
@@ -238,8 +268,8 @@ export function DoorRenderingAuditView({
               {progress.phase === "failed"
                 ? "Audit failed"
                 : progress.phase === "awaiting-renders"
-                  ? `Waiting for door renders · ${progress.completed} of ${progress.total} uploaded`
-                  : doorAuditProgressLabel(progress.phase, progress.completed, progress.total, progress.detail)}
+                  ? `Waiting for door renders${progress.detail ? ` · ${progress.detail}` : ""} · ${completed} of ${total} uploaded`
+                  : doorAuditProgressLabel(progress.phase, completed, total, progress.detail)}
             </p>
             {onContinue ? (
               <Button type="button" size="sm" disabled={busy} onClick={onContinue}>Continue upload</Button>
@@ -270,7 +300,7 @@ export function DoorRenderingAuditView({
                   <TableRow key={run.runId}>
                     <TableCell>{formatDoorAuditWhen(run.startedAt)}</TableCell>
                     <TableCell>{doorAuditModeLabel(run.mode)}</TableCell>
-                    <TableCell className="capitalize">{run.status.replace("-", " ")}</TableCell>
+                    <TableCell className="capitalize">{String(run.status ?? "").replace(/[-_]/g, " ")}</TableCell>
                     <TableCell>{run.scored} / {run.total}{run.failed > 0 ? ` · ${run.failed} failed` : ""}</TableCell>
                     <TableCell>{run.flagged}</TableCell>
                   </TableRow>
@@ -295,11 +325,12 @@ export function DoorRenderingAuditView({
         </div>
       ) : (
         <ul className="space-y-4">
-          {styles.map((style) => {
+          {visibleStyles.map((style) => {
+            const identity = doorAuditStyleLabel(style);
             const slots = doorAuditCompareSlots(style);
             const revertId = doorAuditRevertVersionId(style);
             const flagged = style.flag === "improved" || style.flag === "needs-review";
-            const delta = formatDoorAuditDelta(style.current?.scores.overall, style.accepted?.scores.overall);
+            const delta = formatDoorAuditDelta(style.current?.scores?.overall, style.accepted?.scores?.overall);
             const historyOpen = historyStyleId === style.styleId;
             return (
               <li key={style.styleId} className="rounded-lg border border-border bg-card p-4" data-testid="door-audit-card">
@@ -308,12 +339,12 @@ export function DoorRenderingAuditView({
                     type="checkbox"
                     className="mt-1 size-4 accent-primary"
                     checked={selected.has(style.styleId)}
-                    aria-label={`Select ${style.name}`}
+                    aria-label={`Select ${identity}`}
                     onChange={(event) => onToggle(style.styleId, event.target.checked)}
                   />
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="font-medium">{style.name}</h3>
+                      <h3 className="font-medium" data-testid="door-audit-style-name">{style.name || "Door style"}</h3>
                       {style.code ? <span className="text-sm text-muted-foreground">{style.code}</span> : null}
                       {flagBadge(style.flag)}
                       {style.changedSinceLastRender ? <Badge variant="outline">Changed</Badge> : null}
@@ -327,7 +358,7 @@ export function DoorRenderingAuditView({
 
                 <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3" data-testid="door-audit-comparison">
                   {slots.map((slot) => (
-                    <AuditFigure key={slot.key} label={slot.label} imageUrl={slot.imageUrl} version={slot.version} />
+                    <AuditFigure key={slot.key} label={slot.label} imageUrl={slot.imageUrl} version={slot.version} identity={identity} />
                   ))}
                 </div>
 
@@ -336,7 +367,7 @@ export function DoorRenderingAuditView({
                     <div key={key} className="rounded-md bg-muted/50 px-3 py-2">
                       <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</dt>
                       <dd className={key === "overall" ? "text-lg font-semibold" : "text-sm font-medium"}>
-                        {formatDoorAuditScore(style.current?.scores[key])}
+                        {formatDoorAuditScore(style.current?.scores?.[key])}
                       </dd>
                     </div>
                   ))}
@@ -376,6 +407,7 @@ export function DoorRenderingAuditView({
 
                 {historyOpen ? (
                   <div className="mt-4" data-testid="door-audit-version-history">
+                    <p className="mb-2 text-sm font-medium" data-testid="door-audit-version-history-label">{identity}</p>
                     {historyLoading ? (
                       <Spinner className="h-4 w-4 text-primary" />
                     ) : !historyVersions || historyVersions.length === 0 ? (
@@ -386,6 +418,7 @@ export function DoorRenderingAuditView({
                           <VersionThumb
                             key={version.versionId}
                             version={version}
+                            identity={identity}
                             disabled={busy}
                             onUse={() => onUseVersion(style.styleId, version.versionId)}
                           />
@@ -403,28 +436,45 @@ export function DoorRenderingAuditView({
   );
 }
 
-function serverProgress(status: DoorAuditRunStatus | null | undefined, local: LocalProgress | null) {
+function progressDetail(status: DoorAuditRunStatus, catalog: readonly DoorAuditStyleRow[]): string | null {
+  const known = catalog.find((style) => style.styleId === status.focusStyleId);
+  if (known) return doorAuditStyleLabel(known);
+  if (status.focusLabel) return status.focusLabel;
+  const pending = status.pendingStyles?.[0];
+  return pending ? doorAuditStyleLabel(pending) : null;
+}
+
+function serverProgress(
+  status: DoorAuditRunStatus | null | undefined,
+  local: LocalProgress | null,
+  catalog: readonly DoorAuditStyleRow[],
+) {
   if (local) {
     return { phase: local.phase, completed: local.completed, total: local.total, detail: local.detail, error: null as string | null };
   }
   if (!status || status.status === "complete") return null;
+  const detail = progressDetail(status, catalog);
+  const total = Number.isFinite(status.total) ? status.total : 0;
+  const scored = Number.isFinite(status.scored) ? status.scored : 0;
+  const failed = Number.isFinite(status.failed) ? status.failed : 0;
+  const uploaded = Number.isFinite(status.uploaded) ? status.uploaded : 0;
   if (status.status === "failed") {
-    return { phase: "failed" as const, completed: status.scored, total: status.total, detail: null, error: status.error };
+    return { phase: "failed" as const, completed: scored, total, detail, error: status.error };
   }
   if (status.status === "scoring") {
     return {
       phase: "scoring" as const,
-      completed: status.scored + status.failed,
-      total: status.total,
-      detail: null,
+      completed: scored + failed,
+      total,
+      detail,
       error: null,
     };
   }
   return {
     phase: "awaiting-renders" as const,
-    completed: status.uploaded,
-    total: status.total,
-    detail: null,
+    completed: uploaded,
+    total,
+    detail,
     error: null,
   };
 }
@@ -490,7 +540,7 @@ function DoorRenderingAuditScreen() {
   );
   const startRun = api.doorRenderingAudit.startRun.useMutation();
   const submitRender = api.doorRenderingAudit.submitRender.useMutation();
-  const reportFailure = api.doorRenderingAudit.reportRenderFailure.useMutation();
+  const abandonRun = api.doorRenderingAudit.abandonRun.useMutation();
   const reviewRender = api.doorRenderingAudit.reviewRender.useMutation();
   const setCurrentVersion = api.doorRenderingAudit.setCurrentVersion.useMutation();
 
@@ -526,21 +576,26 @@ function DoorRenderingAuditScreen() {
     [list.data?.styles, filter, debouncedSearch],
   );
 
-  async function captureStyles(activeRunId: number, queue: DoorAuditRenderInput[]) {
-    if (queue.length === 0) {
-      toast.message("No door styles need a new render.");
-      return;
-    }
-    setLocalProgress({ phase: "rendering", completed: 0, total: queue.length, detail: queue[0]?.name ?? null });
+  async function captureStyles(activeRunId: number, queue: DoorAuditRenderInput[] | null | undefined) {
+    const styles = enrichDoorAuditQueue(Array.isArray(queue) ? queue : [], list.data?.styles ?? []);
+    if (styles.length === 0) return;
+    setLocalProgress({ phase: "rendering", completed: 0, total: styles.length, detail: doorAuditStyleLabel(styles[0]) });
     let session: DoorAuditCapture | null = null;
+    let failed = 0;
     try {
-      const module = await import("@/lib/doorAuditDoorRender");
-      session = module.createDoorAuditCapture();
-      for (let index = 0; index < queue.length; index += 1) {
-        const style = queue[index]!;
-        setLocalProgress({ phase: "rendering", completed: index, total: queue.length, detail: style.name });
+      const loaded = await import("@/lib/doorAuditDoorRender");
+      if (typeof loaded?.createDoorAuditCapture !== "function") {
+        throw new Error("The door renderer did not load. Reload the page and try again.");
+      }
+      session = loaded.createDoorAuditCapture();
+      for (let index = 0; index < styles.length; index += 1) {
+        const style = styles[index];
+        const label = doorAuditStyleLabel(style);
+        setLocalProgress({ phase: "rendering", completed: index, total: styles.length, detail: label });
         try {
+          assertDoorAuditRenderable(style);
           const png = await session.capture(style);
+          if (!png?.base64) throw new Error(`${label} produced an empty image.`);
           await submitRender.mutateAsync({
             runId: activeRunId,
             styleId: style.styleId,
@@ -550,19 +605,21 @@ function DoorRenderingAuditScreen() {
             height: png.height,
           });
         } catch (error) {
-          const message = error instanceof Error ? error.message : "Could not render this door.";
-          await reportFailure.mutateAsync({ runId: activeRunId, styleId: style.styleId, message }).catch(() => undefined);
-          toast.error(`${style.name}: ${message}`);
+          failed += 1;
+          toast.error(`${label}: ${doorAuditErrorMessage(error, "Could not render this door.")}`);
         }
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : "The door renderer could not start.";
-      toast.error(message);
-      await Promise.all(queue.map((style) => (
-        reportFailure.mutateAsync({ runId: activeRunId, styleId: style.styleId, message }).catch(() => undefined)
-      )));
+      failed = Math.max(failed, 1);
+      toast.error(doorAuditErrorMessage(error, "The door renderer could not start."));
     } finally {
       session?.dispose();
+      if (failed > 0) {
+        const stopped = await abandonRun.mutateAsync({ runId: activeRunId }).then(() => true, () => false);
+        if (stopped) {
+          toast.error("This audit run was stopped so you can start another. Renders that already scored are kept.");
+        }
+      }
       setLocalProgress(null);
       void utilsRef.current.doorRenderingAudit.listStyles.invalidate();
       void utilsRef.current.doorRenderingAudit.runStatus.invalidate();
@@ -585,10 +642,14 @@ function DoorRenderingAuditScreen() {
     await withCaptureLock(async () => {
       try {
         const result = await startRun.mutateAsync({ mode: "selected", styleIds: [styleId] });
+        if (result?.runId == null) {
+          toast.error("The audit run started, but the server did not return a run id.");
+          return;
+        }
         setRunId(result.runId);
         await captureStyles(result.runId, result.styles);
       } catch (error) {
-        toast.error(error instanceof Error ? error.message : "Could not re-run that style.");
+        toast.error(doorAuditErrorMessage(error, "Could not re-run that style."));
       }
     });
   }
@@ -599,14 +660,19 @@ function DoorRenderingAuditScreen() {
     await withCaptureLock(async () => {
       try {
         const result = await startRun.mutateAsync({ mode, styleIds });
+        if (result?.runId == null) {
+          toast.error("The audit run started, but the server did not return a run id.");
+          return;
+        }
         setRunId(result.runId);
-        if (result.styles.length === 0) {
+        const queue = Array.isArray(result.styles) ? result.styles : [];
+        if (queue.length === 0) {
           toast.message(mode === "changed-only" ? "No styles changed since the last render." : "No door styles need a new render.");
           return;
         }
-        await captureStyles(result.runId, result.styles);
+        await captureStyles(result.runId, queue);
       } catch (error) {
-        toast.error(error instanceof Error ? error.message : "Could not start the audit.");
+        toast.error(doorAuditErrorMessage(error, "Could not start the audit."));
       }
     });
   }
@@ -618,25 +684,28 @@ function DoorRenderingAuditScreen() {
       void utils.doorRenderingAudit.listStyles.invalidate();
       void utils.doorRenderingAudit.listVersions.invalidate();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not update that render.");
+      toast.error(doorAuditErrorMessage(error, "Could not update that render."));
     }
   }
 
   async function onUseVersion(styleId: number, versionId: number) {
     try {
       await setCurrentVersion.mutateAsync({ styleId, versionId });
-      toast.success("That render is current again.");
+      toast.success("That version is the accepted baseline again.");
       void utils.doorRenderingAudit.listStyles.invalidate();
       void utils.doorRenderingAudit.listVersions.invalidate();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not restore that version.");
+      toast.error(doorAuditErrorMessage(error, "Could not restore that version."));
     }
   }
 
+  const catalog = list.data?.styles ?? [];
   const status = runStatus.data ?? list.data?.activeRun ?? null;
-  const progress = serverProgress(status, localProgress);
-  const pending = status?.status === "awaiting-renders" ? status.pendingStyles : [];
-  const busy = capturing || startRun.isPending || reviewRender.isPending || setCurrentVersion.isPending;
+  const progress = serverProgress(status, localProgress, catalog);
+  const pending = status?.status === "awaiting-renders" && Array.isArray(status.pendingStyles)
+    ? enrichDoorAuditQueue(status.pendingStyles, catalog)
+    : [];
+  const busy = capturing || startRun.isPending || abandonRun.isPending || reviewRender.isPending || setCurrentVersion.isPending;
 
   return (
     <DoorRenderingAuditView

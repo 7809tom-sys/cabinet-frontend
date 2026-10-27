@@ -5,7 +5,7 @@ import {
   buildAuditDoor,
   configureDoorAuditSampleTexture,
 } from "./doorAuditDoorRender";
-import type { DoorAuditRenderInput } from "./doorRenderingAudit";
+import { normalizeDoorAuditStartRun, type DoorAuditRenderInput } from "./doorRenderingAudit";
 
 function input(profile: DoorAuditRenderInput["doorProfile"]): Pick<DoorAuditRenderInput, "doorProfile" | "color" | "samplePhotoUrl"> {
   return { doorProfile: profile, color: "#f7f4ee", samplePhotoUrl: null };
@@ -71,6 +71,43 @@ describe("audit door construction", () => {
     expect(glass.children.some((child) => child.userData.auditDoorSlab)).toBe(false);
   });
 
+  it("renders a selected-run style from the backend profile field", () => {
+    const run = normalizeDoorAuditStartRun({
+      runId: 15,
+      status: "awaiting_renders",
+      scope: "selected",
+      styles: [{
+        styleId: 41,
+        styleCode: "SW-41",
+        ourName: "Summit White Shaker",
+        distributorName: "Summit Cabinets",
+        samplePhotoUrl: null,
+        color: "#f4f1ea",
+        profile: {
+          doorStyle: "Shaker",
+          doorPanelType: null,
+          railWidth: "3",
+          stileWidth: "3",
+          panelConstruction: "flat",
+          bevelWidth: null,
+          bevelDepth: null,
+          insideEdgeProfile: null,
+          drawerFrontType: null,
+          grainDirection: "vertical",
+          finishSheen: "satin",
+        },
+      }],
+    });
+    const door = buildAuditDoor(run.styles[0], null);
+    expect(door.userData.auditDoorKind).toBe("shaker");
+    expect(run.styles[0]?.doorProfile.finishSheen).toBe("satin");
+  });
+
+  it("reports a missing profile instead of reading a property of undefined", () => {
+    expect(() => buildAuditDoor({ color: "#fff", samplePhotoUrl: null, name: "Summit White Shaker" }, null))
+      .toThrow(/Summit White Shaker is missing its door profile/);
+  });
+
   it("crops a sample photo to the designer center grain", () => {
     const texture = new THREE.Texture();
     configureDoorAuditSampleTexture(texture, "https://cdn.example/door.jpg");
@@ -79,5 +116,58 @@ describe("audit door construction", () => {
     expect(texture.offset.x).toBeCloseTo(0.29);
     expect(texture.offset.y).toBeCloseTo(0.29);
     expect(texture.colorSpace).toBe(THREE.SRGBColorSpace);
+  });
+
+  it("gives each door style its own repeatable grain crop without changing sheen or the shared sample", () => {
+    const texture = new THREE.Texture();
+    configureDoorAuditSampleTexture(texture, "https://cdn.example/door.jpg");
+    const uvOf = (styleId: number) => {
+      const door = buildAuditDoor({ ...input(shaker), styleId }, texture);
+      const slab = door.children.find((child) => child.userData.auditDoorSlab) as THREE.Mesh;
+      const uv = slab.geometry.getAttribute("uv");
+      const values: number[] = [];
+      for (let index = 0; index < uv.count; index += 1) values.push(uv.getX(index), uv.getY(index));
+      const material = slab.material as THREE.MeshPhysicalMaterial;
+      return { values, material, roughness: material.roughness, color: material.color.getHexString(), map: material.map };
+    };
+    const first = uvOf(10);
+    const firstAgain = uvOf(10);
+    const second = uvOf(11);
+    expect(firstAgain.values).toEqual(first.values);
+    expect(second.values).not.toEqual(first.values);
+    expect(first.map).toBe(texture);
+    expect(second.map).toBe(texture);
+    expect(texture.offset.x).toBeCloseTo(0.29);
+    expect(texture.offset.y).toBeCloseTo(0.29);
+    expect(texture.repeat.x).toBeCloseTo(0.42);
+    expect(first.roughness).toBeCloseTo(0.4);
+    expect(first.color).toBe("ffffff");
+    expect((first.material).clearcoat).toBeCloseTo(0.1);
+  });
+
+  it("keeps horizontal rail grain turned while the slab crop follows the style", () => {
+    const texture = new THREE.Texture();
+    const url = "https://cdn.example/rail-grain.jpg";
+    configureDoorAuditSampleTexture(texture, url);
+    const door = buildAuditDoor({
+      ...input({ ...shaker, grainDirection: "vertical-stiles-horizontal-rails" }),
+      styleId: 22,
+    }, texture);
+    const rails = door.children.flatMap((child) => child.children ?? []).filter((child) => child.userData.grainPiece === "rail") as THREE.Mesh[];
+    expect(rails.length).toBeGreaterThan(0);
+    const railMaterial = rails[0]!.material as THREE.MeshPhysicalMaterial;
+    expect(railMaterial.map).not.toBe(texture);
+    expect(railMaterial.map?.source).toBe(texture.source);
+    expect(railMaterial.map?.rotation).toBeCloseTo(Math.PI / 2);
+    expect(railMaterial.roughness).toBeCloseTo(0.4);
+    const slab = door.children.find((child) => child.userData.auditDoorSlab) as THREE.Mesh;
+    expect((slab.material as THREE.MeshPhysicalMaterial).map).toBe(texture);
+    expect(slab.userData.woodGrainTransform).not.toEqual(rails[0]!.userData.woodGrainTransform);
+    const replay = buildAuditDoor({
+      ...input({ ...shaker, grainDirection: "vertical-stiles-horizontal-rails" }),
+      styleId: 22,
+    }, texture);
+    const replaySlab = replay.children.find((child) => child.userData.auditDoorSlab) as THREE.Mesh;
+    expect(replaySlab.userData.woodGrainTransform).toEqual(slab.userData.woodGrainTransform);
   });
 });

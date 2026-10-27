@@ -15,6 +15,10 @@
  * add negative constraints against fabricated runs / islands / appliances.
  */
 
+/** Room-scene rule: props may be added; the designed kitchen, including the chosen backsplash, stays as designed. */
+export const BACKSPLASH_ROOM_SCENE_FIDELITY =
+  "Match this exact backsplash name and reference image. Staging may be added, but never change the designed kitchen.";
+
 export type CameraAngle = "three-quarter" | "straight-on" | "wide";
 export type TimeOfDay = "daylight" | "golden-hour" | "evening";
 
@@ -40,6 +44,8 @@ export interface PhotorealPromptInput {
   flooring?: string;
   /** Backsplash tile/mosaic, e.g. "white marble hexagon mosaic". */
   backsplash?: string;
+  /** Selected backsplash product image. The render must match this reference. */
+  backsplashImageUrl?: string;
   /** Sink, e.g. "undermount stainless farmhouse sink". */
   sink?: string;
   /** Faucet, e.g. "matte black pull-down faucet". */
@@ -176,7 +182,11 @@ export function buildPhotorealPrompt(input: PhotorealPromptInput): string {
     parts.push(`The floor is ${flooring}, laid realistically across the whole room with accurate plank/tile scale and natural texture.`);
   }
   if (backsplash) {
-    parts.push(`The backsplash is ${backsplash}, installed on the wall between the countertop and the wall cabinets with realistic grout lines and reflections.`);
+    const backsplashImage = (input.backsplashImageUrl || "").trim();
+    const imageClause = backsplashImage
+      ? ` Use the supplied backsplash reference image (${backsplashImage}) so the tile or mosaic matches that product.`
+      : "";
+    parts.push(`The backsplash is ${backsplash}, installed on the wall between the countertop and the wall cabinets with realistic grout lines and reflections.${imageClause} ${BACKSPLASH_ROOM_SCENE_FIDELITY}`);
   }
   if (sink || faucet) {
     const fixture = [sink, faucet && `paired with a ${faucet}`].filter(Boolean).join(" ");
@@ -214,7 +224,7 @@ export function buildPhotorealPrompt(input: PhotorealPromptInput): string {
 
   // 6. Staging discipline.
   parts.push(
-    "Tastefully but minimally staged: a few realistic props such as a bowl of fruit, a cutting board, or a plant, but uncluttered counters."
+    "Tastefully but minimally staged: a few realistic props such as a bowl of fruit, a cutting board, or a plant, but uncluttered counters. Staging may be added, but never change the designed kitchen."
   );
 
   // 7. Hard constraints (negative prompt) to keep renders clean and on-brief.
