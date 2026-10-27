@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { threeDProductMaterialSource } from "@/components/design/InteractiveRoom3D";
+import { threeDBacksplashPlaneUv, threeDProductMaterialSource } from "@/components/design/InteractiveRoom3D";
 import { buildPhotorealPrompt } from "@shared/photorealPrompt";
 import {
   BACKSPLASH_ROOM_SCENE_FIDELITY,
@@ -56,6 +56,16 @@ describe("backsplash selection to material", () => {
       sourceProductName: "Moonstone Hex",
     });
     expect(source?.key).not.toBe("representative-backsplash");
+    // Two 11.81-inch sheets across a run, and the same sheet height up the wall.
+    expect(threeDBacksplashPlaneUv(
+      { side: "top", bottom: 36, top: 54 },
+      1,
+      1,
+      0,
+      23.62,
+      source!.backsplashModuleIn!,
+      source!.backsplashModuleHeightIn!,
+    )).toEqual({ u: 2, v: 54 / 11.81 });
   });
 
   it("prefers an approved swatch over the retail picture and ignores a thickness number", () => {

@@ -84,7 +84,10 @@ export function selectedBacksplashTextureUrl(
  * repeat on a 12-inch module.
  */
 export function parseBacksplashSheetInches(selection: Pick<BacksplashSelection, "name" | "size" | "category" | "subCategory"> | null | undefined): BacksplashSheetSize {
-  const identity = `${selection?.name ?? ""} ${selection?.subCategory ?? ""} ${selection?.category ?? ""}`.toLowerCase();
+  // "Tile & Mosaic" is the catalog department, not the product pattern.
+  // A field tile in that department must stay a field tile.
+  const category = (selection?.category ?? "").replace(/tile\s*&\s*mosaic/gi, "");
+  const identity = `${selection?.name ?? ""} ${selection?.subCategory ?? ""} ${category}`.toLowerCase();
   const patternKind: BacksplashPatternKind = /subway/.test(identity)
     ? "subway-mosaic"
     : /mosaic|\bhex\b/.test(identity)

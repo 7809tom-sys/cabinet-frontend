@@ -62,7 +62,7 @@ describe("Designer programmed photoreal material wiring", () => {
 	    expect(surfacesPickerSource).toContain('"Use in 3D wall"');
 	    expect(designToolSource).toContain("savedDesignId={currentSavedDesignId ?? null}");
 	    expect(designToolSource).toContain("selectedSurfaceIdsForMaterialRefresh");
-	    expect(designToolSource).toContain("trpc.surfaces.designerByIds.useQuery");
+	    expect(designToolSource).toContain("trpc.surfaces.designSelectionByIds.useQuery");
 	    expect(designToolSource).toContain("refreshVerifiedSurfaceSelections(current, verifiedSelectedSurfaceRecords)");
 	    expect(designToolSource).toContain("isSuccess: verifiedSelectedSurfacesLoaded");
 	    expect(designToolSource).not.toContain("nextMaterialImageUrl = product.materialImageUrl?.trim() || surface.materialImageUrl || null");
@@ -80,7 +80,7 @@ describe("Designer programmed photoreal material wiring", () => {
     expect(rendererSource).toContain('worldSlabMapped: Boolean(mappedCountertopTexture?.userData?.worldSlabMapped)');
     expect(rendererSource).toContain('source.flooringPatternKind === "plank"');
     expect(rendererSource).toContain("normalizedThreeDPlankImage(");
-    expect(rendererSource).toContain("threeDBacksplashSegments(placed, openings, backsplashRoom, backsplashHeightMode, countertopBacksplashHeightIn)");
+    expect(rendererSource).toContain("threeDBacksplashSegments(renderedPlaced, openings, backsplashRoom, backsplashHeightMode, countertopBacksplashHeightIn)");
     expect(rendererSource).toContain("addThreeDBacksplash(catalogRoot, backsplashSegments, backsplashRoom, backsplashTexture)");
     expect(rendererSource).toContain('backsplashRenderedOnMeasuredSurfaces: backsplashSegments.length');
     expect(rendererSource).toContain('countertopUpstandRenderedOnSupportedSurfaces: countertopUpstandSegments.length');
