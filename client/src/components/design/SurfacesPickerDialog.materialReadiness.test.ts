@@ -16,10 +16,17 @@ describe("Surfaces picker 3D material readiness", () => {
   });
 
   it("keeps every active, priced countertop available for selection while reserving exact 3D rendering for approved swatches", () => {
-    expect(source).toContain("return matchesCountertopSwatchFilter(item, countertopSwatchFilter);");
+    expect(source).toContain("matchesCountertopSwatchFilter(candidate, countertopSwatchFilter)");
     expect(source).toContain('data-testid="countertop-selection-availability"');
     expect(source).toContain("All active, source-priced countertop products are available to select and quote.");
-    expect(source).toContain("becomes a texture. Flooring and tile keep the stricter swatch rule.");
+    expect(source).toContain("Catalog photography never becomes a texture.");
+  });
+
+  it("loads the full Tile & Mosaic storefront catalog instead of the swatch-only Designer page", () => {
+    expect(source).toContain('scope: browsingTileMosaic ? "catalog" : "designer"');
+    expect(source).toContain("isDesignerPaletteItemVisible");
+    expect(source).toContain("trpc.surfaces.byIds.useQuery");
+    expect(source).not.toContain("return isMaterialRole && Boolean(item.materialImageUrl?.trim())");
   });
 
   it("filters countertop selections by exact swatch readiness without hiding either set from the full palette", () => {

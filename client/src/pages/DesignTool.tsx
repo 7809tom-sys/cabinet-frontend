@@ -13462,7 +13462,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	      catalogFlooringSize={threeDFlooringProductMetadata?.size}
 	      catalogBacksplashName={backsplashEnabled ? threeDSurfaceProductNames.backsplash : null}
 	      catalogBacksplashProductId={backsplashEnabled ? threeDSurfaceProductIds.backsplash : null}
-	      catalogBacksplashReferenceUrl={backsplashEnabled ? activeBacksplashSurface?.materialImageUrl ?? activeBacksplashSurface?.imageUrl ?? null : null}
+	      catalogBacksplashReferenceUrl={backsplashEnabled ? activeBacksplashSurface?.materialImageUrl ?? null : null}
 	      catalogHardwareReferenceUrl={catalogHardwareSelection?.imageUrl ?? HARDWARE_STYLES.find((style) => style.id === hardwareStyleId)?.referenceUrl ?? null}
 	      catalogHardwareName={catalogHardwareSelection ? `${catalogHardwareSelection.collection} ${catalogHardwareSelection.productType} · ${catalogHardwareSelection.finish} · ${catalogHardwareSelection.sku}` : null}
 	      savedDesignId={currentSavedDesignId ?? null}
@@ -16350,6 +16350,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                roomType={roomType}
 	                bathroomPaletteMode="surfaces"
 	                onPlaceBathroomFixture={placePelicanBathroomFixture}
+	                affiliateSlug={affiliateSlug}
 	              />
 	              <FlooringLayoutPicker value={flooringPattern} onChange={setFlooringPattern} />
               </>
@@ -16361,6 +16362,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                roomType="bathroom"
 	                bathroomPaletteMode="fixtures"
 	                onPlaceBathroomFixture={placePelicanBathroomFixture}
+	                affiliateSlug={affiliateSlug}
 	              />
 	            ) : paletteType === "furniture" ? (
               (() => {
@@ -21172,7 +21174,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                catalogFlooringSize={threeDFlooringProductMetadata?.size}
 	                catalogBacksplashName={backsplashEnabled ? threeDSurfaceProductNames.backsplash : null}
 	                catalogBacksplashProductId={backsplashEnabled ? threeDSurfaceProductIds.backsplash : null}
-	                catalogBacksplashReferenceUrl={backsplashEnabled ? activeBacksplashSurface?.materialImageUrl ?? activeBacksplashSurface?.imageUrl ?? null : null}
+	                catalogBacksplashReferenceUrl={backsplashEnabled ? activeBacksplashSurface?.materialImageUrl ?? null : null}
 	                catalogHardwareReferenceUrl={catalogHardwareSelection?.imageUrl ?? HARDWARE_STYLES.find((style) => style.id === hardwareStyleId)?.referenceUrl ?? null}
 	      catalogHardwareName={catalogHardwareSelection ? `${catalogHardwareSelection.collection} ${catalogHardwareSelection.productType} · ${catalogHardwareSelection.finish} · ${catalogHardwareSelection.sku}` : null}
 	                savedDesignId={currentSavedDesignId ?? null}
