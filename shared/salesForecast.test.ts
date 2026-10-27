@@ -4,6 +4,7 @@ import {
   aggregateForecast,
   designUpdatedOnOrAfter,
   filterForecastMaterials,
+  companyForecastProductPath,
   forecastProductEditTarget,
   MISSING_CATEGORY_FILTER,
   monthsBefore,
@@ -294,10 +295,15 @@ describe("sales forecast weighting and isolation", () => {
     expect(validateVendorForecastPercent(75)).toBeNull();
     expect(vendorMaySetForecastRate({ role: "distributor", scope: cabinet, allowedScopes: [cabinet] })).toBeNull();
     expect(vendorMaySetForecastRate({ role: "distributor", scope: other, allowedScopes: [cabinet] })).toMatch(/not linked/);
-    expect(vendorMaySetForecastRate({ role: "admin", scope: cabinet, allowedScopes: [cabinet] })).toMatch(/Only the vendor/);
-    expect(vendorMaySetForecastRate({ role: "sales_rep", scope: cabinet, allowedScopes: [cabinet] })).toMatch(/Only the vendor/);
+    expect(vendorMaySetForecastRate({ role: "admin", scope: cabinet, allowedScopes: [] })).toBeNull();
+    expect(vendorMaySetForecastRate({ role: "designer", scope: cabinet, allowedScopes: [cabinet] })).toMatch(/Only the vendor or an admin/);
+    expect(vendorMaySetForecastRate({ role: "sales_rep", scope: cabinet, allowedScopes: [cabinet] })).toMatch(/Only the vendor or an admin/);
+    expect(vendorMaySetForecastRate({ role: "partner", scope: cabinet, allowedScopes: [cabinet] })).toMatch(/Only the vendor or an admin/);
     expect(forecastProductEditTarget({ catalogProductKind: "pelican", catalogProductId: 9, sku: "PEL-9" })).toEqual({ section: "catalog", edit: 9 });
     expect(forecastProductEditTarget({ catalogProductKind: "cabinet_sku", catalogProductId: 4, sku: "B24" })).toEqual({ section: "catalog", sku: "B24" });
     expect(forecastProductEditTarget({ catalogProductKind: null, catalogProductId: null, sku: "TK-8" })).toBeNull();
+    expect(companyForecastProductPath({ catalogProductKind: "pelican", catalogProductId: 9, sku: "PEL-9", scope: "pelican" })).toBe("/vendor?section=catalog&catalog=pelican&edit=9");
+    expect(companyForecastProductPath({ catalogProductKind: "cabinet_sku", catalogProductId: 4, sku: "B24", scope: cabinet })).toBe("/vendor?section=catalog&catalog=cabinet&sku=B24&as=11");
+    expect(companyForecastProductPath({ catalogProductKind: "cabinet_sku", catalogProductId: 4, sku: "B24", scope: "pelican" })).toBeNull();
   });
 });

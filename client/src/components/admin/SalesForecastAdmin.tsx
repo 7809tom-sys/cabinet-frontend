@@ -1,13 +1,16 @@
 import { useMemo, useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/_core/hooks/useAuth";
 import {
   MISSING_CATEGORY_LABEL,
+  companyForecastProductPath,
   filterForecastMaterials,
   formatVendorCost,
   formatWeightedQuantity,
   materialsToCsv,
   savedRangeForPreset,
   sumForecastMaterials,
+  validateVendorForecastPercent,
   type ForecastFacets,
   type MaterialTotal,
 } from "@shared/salesForecast";
@@ -49,11 +52,14 @@ function percentNumber(value: number | string | null | undefined): number | null
 }
 
 export default function SalesForecastAdmin() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
   const [draft, setDraft] = useState(readInitial);
   const [applied, setApplied] = useState(draft);
   const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({ key: "weightedQuantity", dir: "desc" });
   const [designsOpen, setDesignsOpen] = useState(false);
   const [bracketDraft, setBracketDraft] = useState<{ minDays: string; maxDays: string; closePercent: string }[] | null>(null);
+  const [rateDrafts, setRateDrafts] = useState<Record<string, string>>({});
   const range = savedRangeForPreset(applied.preset, new Date(), { from: applied.savedFrom, to: applied.savedTo });
 
   const query = trpc.salesForecast.adminQuery.useQuery({
@@ -70,7 +76,14 @@ export default function SalesForecastAdmin() {
     page: applied.page,
     pageSize: 25,
   });
-  const brackets = trpc.salesForecast.brackets.useQuery();
+  const brackets = trpc.salesForecast.brackets.useQuery(undefined, { enabled: isAdmin });
+  const saveRate = trpc.salesForecast.setVendorRate.useMutation({
+    onSuccess: () => {
+      toast.success("Forecast percentage saved");
+      void query.refetch();
+    },
+    onError: (error) => toast.error(error.message),
+  });
   const saveBrackets = trpc.salesForecast.saveBrackets.useMutation({
     onSuccess: () => {
       toast.success("Close-rate brackets saved");
@@ -112,6 +125,17 @@ export default function SalesForecastAdmin() {
     writeUrl(next);
   }
 
+  function savePercent(scope: string) {
+    const raw = (rateDrafts[scope] ?? "").trim();
+    const percent = raw === "" ? null : Number(raw);
+    const problem = validateVendorForecastPercent(percent);
+    if (problem) {
+      toast.error(problem);
+      return;
+    }
+    saveRate.mutate({ scope, percent });
+  }
+
   function downloadCsv() {
     if (!query.data) return;
     const csv = materialsToCsv([
@@ -135,8 +159,49 @@ export default function SalesForecastAdmin() {
       <div>
         <h2 className="text-lg font-semibold">Sales Forecast</h2>
         <p className="text-sm text-muted-foreground">
-          Live takeoff from saved designs. Plan dates use the design&apos;s last save (updatedAt). Weighted quantity uses the percentage entered by that vendor. An empty status filter leaves ordered and lost designs out of the projection and counts them below.
+          Live takeoff from saved designs for admin, designer, and sales rep. Plan dates use the design&apos;s last save (updatedAt). Weighted quantity uses the percentage that vendor entered. An empty status filter leaves ordered and lost designs out of the projection and counts them below.
         </p>
+      </div>
+
+      <div className="space-y-3 rounded-lg border p-3">
+        <div>
+          <h3 className="text-sm font-semibold">Vendor forecast percentages</h3>
+          <p className="text-xs text-muted-foreground">
+            Every vendor&apos;s saved percentage, with who entered it and when. Weighted stays blank until that vendor has one. {isAdmin ? "Admins can update any vendor." : "Sales can view these percentages and cannot change them."}
+          </p>
+        </div>
+        {rates.length === 0 && <p className="text-sm text-muted-foreground">Not entered</p>}
+        {rates.map((rate) => {
+          const savedPercent = percentNumber(rate.closePercent);
+          const draftValue = rateDrafts[rate.vendorScope] ?? (savedPercent == null ? "" : String(savedPercent));
+          return (
+            <div key={rate.vendorScope} className="flex flex-wrap items-end gap-3">
+              <div>
+                <Label htmlFor={`company-rate-${rate.vendorScope}`} className="text-xs">{rate.vendorScope}</Label>
+                {isAdmin ? (
+                  <Input
+                    id={`company-rate-${rate.vendorScope}`}
+                    inputMode="decimal"
+                    className="w-28"
+                    placeholder="Not entered"
+                    value={draftValue}
+                    onChange={(event) => setRateDrafts((current) => ({ ...current, [rate.vendorScope]: event.target.value }))}
+                  />
+                ) : (
+                  <p className="text-sm">{savedPercent == null ? "Not entered" : `${savedPercent}%`}</p>
+                )}
+              </div>
+              {isAdmin && (
+                <Button type="button" size="sm" disabled={saveRate.isPending} onClick={() => savePercent(rate.vendorScope)}>Save percentage</Button>
+              )}
+              <p className="text-xs text-muted-foreground">
+                {savedPercent == null
+                  ? "Not entered"
+                  : `Set${rate.setByName ? ` by ${rate.setByName}` : ""}${rate.setAt ? ` on ${new Date(rate.setAt).toLocaleString()}` : ""}`}
+              </p>
+            </div>
+          );
+        })}
       </div>
 
       <SalesForecastFilterBar
@@ -183,7 +248,7 @@ export default function SalesForecastAdmin() {
                   {([
                     ["sku", "SKU"],
                     ["quantity", "Qty"],
-                    ["weightedQuantity", "Weighted qty"],
+                    ["weightedQuantity", "Weighted"],
                     ["designCount", "Designs"],
                     ["vendorCost", "Vendor cost"],
                   ] as const).map(([key, label]) => (
@@ -191,15 +256,19 @@ export default function SalesForecastAdmin() {
                       <button type="button" className="font-medium" onClick={() => setSort({ key, dir: sort.key === key && sort.dir === "desc" ? "asc" : "desc" })}>{label}</button>
                     </th>
                   ))}
+                  <th className="px-3 py-2 text-left">Description</th>
                   <th className="px-3 py-2 text-left">Product type</th>
                   <th className="px-3 py-2 text-left">Supplier</th>
-                  <th className="px-3 py-2 text-left">Vendor %</th>
+                  <th className="px-3 py-2 text-left">Forecast %</th>
+                  <th className="px-3 py-2 text-left">Weighted vendor cost</th>
+                  <th className="px-3 py-2 text-left">Product</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((row) => {
                   const rate = rates.find((item) => item.vendorScope === row.scope);
                   const savedPercent = percentNumber(rate?.closePercent);
+                  const href = companyForecastProductPath(row);
                   return (
                     <tr key={`${row.scope}:${row.sku}:${row.color}:${row.styleName}:${row.category}`} className="border-t">
                       <td className="px-3 py-2 font-mono text-xs">{row.sku}{row.estimated ? " *" : ""}</td>
@@ -207,6 +276,7 @@ export default function SalesForecastAdmin() {
                       <td className="px-3 py-2">{formatWeightedQuantity(row.weightedQuantity)}</td>
                       <td className="px-3 py-2">{row.designCount}</td>
                       <td className="px-3 py-2">{formatVendorCost(row.vendorCost)}</td>
+                      <td className="px-3 py-2">{row.description}</td>
                       <td className="px-3 py-2">{row.categoryMissing ? MISSING_CATEGORY_LABEL : row.category}</td>
                       <td className="px-3 py-2">{row.supplierName ?? row.scope}</td>
                       <td className="px-3 py-2">
@@ -220,6 +290,10 @@ export default function SalesForecastAdmin() {
                           </span>
                         ) : null}
                       </td>
+                      <td className="px-3 py-2">{row.weightedVendorCost == null ? "Not entered" : formatVendorCost(row.weightedVendorCost)}</td>
+                      <td className="px-3 py-2">
+                        {href ? <a className="text-primary underline" href={href}>Edit product</a> : <span className="text-muted-foreground">No linked product</span>}
+                      </td>
                     </tr>
                   );
                 })}
@@ -231,7 +305,9 @@ export default function SalesForecastAdmin() {
                   <td className="px-3 py-2">{formatWeightedQuantity(totals.weightedQuantity)}</td>
                   <td className="px-3 py-2">{rows.length}</td>
                   <td className="px-3 py-2">{formatVendorCost(totals.missingCostRows === rows.length && rows.length > 0 ? null : totals.vendorCost)}</td>
-                  <td colSpan={3} />
+                  <td colSpan={4} />
+                  <td className="px-3 py-2">{totals.weightedVendorCost == null ? "Not entered" : formatVendorCost(totals.weightedVendorCost)}</td>
+                  <td />
                 </tr>
               </tfoot>
             </table>
@@ -267,7 +343,7 @@ export default function SalesForecastAdmin() {
         </>
       )}
 
-      <Card>
+      {isAdmin && <Card>
         <CardHeader>
           <CardTitle className="text-base">Close-rate brackets</CardTitle>
         </CardHeader>
@@ -304,7 +380,7 @@ export default function SalesForecastAdmin() {
             })}>Save brackets</Button>
           </div>
         </CardContent>
-      </Card>
+      </Card>}
     </div>
   );
 }

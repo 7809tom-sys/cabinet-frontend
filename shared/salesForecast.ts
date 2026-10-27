@@ -133,11 +133,16 @@ export function validateVendorForecastPercent(value: number | null): string | nu
   return null;
 }
 
-/** Vendors may set a percentage only for a scope linked to their account. Sales and admin can view, not edit. */
+/**
+ * Vendors may set a percentage only for a scope linked to their account.
+ * Admins may set any vendor's percentage. Designer and sales_rep can view it
+ * and cannot write it.
+ */
 export function vendorMaySetForecastRate(input: { role: string; scope: string; allowedScopes: readonly string[] }): string | null {
-  if (input.role !== "distributor") return "Only the vendor can set this forecast percentage.";
   const scope = parseVendorScope(input.scope);
   if (!scope) return "Unknown vendor.";
+  if (input.role === "admin") return null;
+  if (input.role !== "distributor") return "Only the vendor or an admin can set this forecast percentage.";
   if (!input.allowedScopes.includes(scope)) return "That vendor is not linked to your account.";
   return null;
 }
@@ -606,6 +611,25 @@ export function forecastProductEditTarget(row: Pick<MaterialTotal, "catalogProdu
     return { section: "catalog", sku: row.sku };
   }
   return null;
+}
+
+/** Company forecast link into the existing catalog editor for that vendor's product. */
+export function companyForecastProductPath(row: Pick<MaterialTotal, "catalogProductKind" | "catalogProductId" | "sku" | "scope">): string | null {
+  const target = forecastProductEditTarget(row);
+  if (!target) return null;
+  const params = new URLSearchParams();
+  params.set("section", "catalog");
+  if (target.edit != null) {
+    params.set("catalog", "pelican");
+    params.set("edit", String(target.edit));
+    return `/vendor?${params.toString()}`;
+  }
+  const distributorId = row.scope?.startsWith("dist:") ? Number(row.scope.slice("dist:".length)) : NaN;
+  if (!target.sku || !Number.isInteger(distributorId) || distributorId <= 0) return null;
+  params.set("catalog", "cabinet");
+  params.set("sku", target.sku);
+  params.set("as", String(distributorId));
+  return `/vendor?${params.toString()}`;
 }
 
 function round2(n: number): number {

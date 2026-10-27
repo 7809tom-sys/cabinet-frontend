@@ -1,30 +1,3 @@
-From bcc9c9eb273b0f1c4f9c3e9069f105b5d7665bc0 Mon Sep 17 00:00:00 2001
-From: Cursor Agent <cursoragent@cursor.com>
-Date: Tue, 27 Oct 2026 17:46:16 +0000
-Subject: [PATCH] Accept forecast filters and store each vendor's close
- percentage.
-
-Optional forecast filters stay backward compatible. Weighted totals use a vendor-entered percentage stored in vendor_forecast_rates, which the owner applies with the hand-run SQL.
----
- docs/sql/0225_vendor_forecast_rates.tidb.sql |  17 +
- drizzle/schema.ts                            |  14 +
- server/lib/pelicanCatalogAccess.test.ts      |  12 +
- server/lib/pelicanCatalogAccess.ts           |  18 +
- server/pelican.vendorAccess.test.ts          |   6 +-
- server/routers/pelican.ts                    |  30 +-
- server/routers/salesForecast.ts              | 109 ++++-
- server/salesForecast/extract.test.ts         |  33 +-
- server/salesForecast/extract.ts              |  40 +-
- server/salesForecast/load.ts                 |  18 +-
- server/salesForecast/rates.ts                |  60 +++
- shared/salesForecast.test.ts                 | 194 +++++++-
- shared/salesForecast.ts                      | 442 ++++++++++++++++---
- 13 files changed, 918 insertions(+), 75 deletions(-)
- create mode 100644 docs/sql/0225_vendor_forecast_rates.tidb.sql
- create mode 100644 server/lib/pelicanCatalogAccess.test.ts
- create mode 100644 server/lib/pelicanCatalogAccess.ts
- create mode 100644 server/salesForecast/rates.ts
-
 diff --git a/docs/sql/0225_vendor_forecast_rates.tidb.sql b/docs/sql/0225_vendor_forecast_rates.tidb.sql
 new file mode 100644
 index 0000000..4ca8b57
@@ -73,12 +46,78 @@ index 2faceb2..5ad65be 100644
  export const pricingSettingAudit = mysqlTable("pricing_setting_audit", {
    id: int("id").autoincrement().primaryKey(),
    field: varchar("field", { length: 64 }).notNull(),
+diff --git a/server/_core/trpc.ts b/server/_core/trpc.ts
+index f2e065f..1773981 100644
+--- a/server/_core/trpc.ts
++++ b/server/_core/trpc.ts
+@@ -1,4 +1,5 @@
+ import { NOT_ADMIN_ERR_MSG, UNAUTHED_ERR_MSG } from '@shared/const';
++import { isCompanySalesForecastRole } from '@shared/internalSales';
+ import { initTRPC, TRPCError } from "@trpc/server";
+ import superjson from "superjson";
+ import type { TrpcContext } from "./context";
+@@ -131,6 +132,55 @@ export const designerProcedure = t.procedure.use(
+   }),
+ );
+ 
++// Company Sales Forecast. There is no role named "sales". designer and sales_rep
++// are the internal sales roles that already share the CRM with admin.
++export const salesStaffProcedure = t.procedure.use(
++  t.middleware(async opts => {
++    const { ctx, next } = opts;
++    if (!ctx.user) {
++      throw new TRPCError({ code: "UNAUTHORIZED", message: UNAUTHED_ERR_MSG });
++    }
++    if (!isCompanySalesForecastRole(ctx.user.role)) {
++      throw new TRPCError({ code: "FORBIDDEN", message: "Sales forecast access required" });
++    }
++    return next({ ctx: { ...ctx, user: ctx.user } });
++  }),
++);
++
++// Product editor opened from Sales Forecast. Admin, designer, and sales_rep may
++// name any vendor. A distributor stays limited to their own line. isAdmin on
++// this context means "may pass a distributor id", not the rest of admin.
++export const catalogEditorProcedure = t.procedure.use(
++  t.middleware(async opts => {
++    const { ctx, next } = opts;
++    if (!ctx.user) {
++      throw new TRPCError({ code: "UNAUTHORIZED", message: UNAUTHED_ERR_MSG });
++    }
++    const isDistributor = ctx.user.role === "distributor";
++    const isCompany = isCompanySalesForecastRole(ctx.user.role);
++    if (!isDistributor && !isCompany) {
++      throw new TRPCError({ code: "FORBIDDEN", message: "Catalog editor access required" });
++    }
++    if (isDistributor && ctx.user.distributorId == null && ctx.user.approvedVendorLineId == null) {
++      throw new TRPCError({
++        code: "FORBIDDEN",
++        message: "Your account is not linked to an approved vendor record yet. Contact the platform admin.",
++      });
++    }
++    const linkedDistributorIds = isDistributor ? await loadLinkedCatalogLineIds(ctx.user) : [];
++    return next({
++      ctx: {
++        ...ctx,
++        user: ctx.user,
++        isAdmin: isCompany,
++        distributorId: isDistributor ? ctx.user.distributorId : null,
++        approvedVendorLineId: isDistributor ? ctx.user.approvedVendorLineId : null,
++        linkedDistributorIds,
++      },
++    });
++  }),
++);
++
+ // CRM staff access: admin, designer, or sales_rep. These are the internal roles
+ // allowed into the CRM pipeline. (Affiliates/partners are scoped separately in
+ // the crm router by their affiliate id.)
 diff --git a/server/lib/pelicanCatalogAccess.test.ts b/server/lib/pelicanCatalogAccess.test.ts
 new file mode 100644
-index 0000000..9d41b1b
+index 0000000..21759dc
 --- /dev/null
 +++ b/server/lib/pelicanCatalogAccess.test.ts
-@@ -0,0 +1,12 @@
+@@ -0,0 +1,16 @@
 +import { describe, expect, it } from "vitest";
 +import { pelicanCatalogAccess } from "./pelicanCatalogAccess";
 +
@@ -86,21 +125,26 @@ index 0000000..9d41b1b
 +  it("allows the Pelican vendor and admin, and denies another vendor", () => {
 +    expect(pelicanCatalogAccess({ role: "distributor", isApproved: true, approvedSourceKey: "pelican" })).toBe("allow");
 +    expect(pelicanCatalogAccess({ role: "admin" })).toBe("allow");
++    expect(pelicanCatalogAccess({ role: "designer" })).toBe("allow");
++    expect(pelicanCatalogAccess({ role: "sales_rep" })).toBe("allow");
 +    expect(pelicanCatalogAccess({ role: "distributor", isApproved: true, approvedSourceKey: "skyline" })).toBe("deny");
 +    expect(pelicanCatalogAccess({ role: "distributor", isApproved: false, approvedSourceKey: "pelican", distributorActive: true, distributorCode: "SKY" })).toBe("deny");
-+    expect(pelicanCatalogAccess({ role: "sales_rep", isApproved: true, approvedSourceKey: "pelican" })).toBe("deny");
++    expect(pelicanCatalogAccess({ role: "partner" })).toBe("deny");
++    expect(pelicanCatalogAccess({ role: "user" })).toBe("deny");
++    expect(pelicanCatalogAccess({ role: "contractor" })).toBe("deny");
 +  });
 +});
 diff --git a/server/lib/pelicanCatalogAccess.ts b/server/lib/pelicanCatalogAccess.ts
 new file mode 100644
-index 0000000..56c68df
+index 0000000..4157521
 --- /dev/null
 +++ b/server/lib/pelicanCatalogAccess.ts
-@@ -0,0 +1,18 @@
+@@ -0,0 +1,19 @@
 +/**
-+ * Pelican catalog identity. Admin may open any Pelican product. A vendor may
-+ * open Pelican products only when their approved vendor record is the Pelican
-+ * line (or the legacy PEL supply line). Every other vendor is denied.
++ * Pelican catalog identity. Admin, designer, and sales_rep may open any Pelican
++ * product from the company Sales Forecast. A vendor may open Pelican products
++ * only when their approved vendor record is the Pelican line (or the legacy PEL
++ * supply line). Every other role and vendor is denied.
 + */
 +export function pelicanCatalogAccess(input: {
 +  role: string;
@@ -109,23 +153,57 @@ index 0000000..56c68df
 +  distributorCode?: string | null;
 +  distributorActive?: boolean;
 +}): "allow" | "deny" {
-+  if (input.role === "admin") return "allow";
++  if (input.role === "admin" || input.role === "designer" || input.role === "sales_rep") return "allow";
 +  if (input.role !== "distributor") return "deny";
 +  if (input.isApproved && input.approvedSourceKey?.trim().toLowerCase() === "pelican") return "allow";
 +  if (input.distributorActive && input.distributorCode === "PEL") return "allow";
 +  return "deny";
 +}
+diff --git a/server/lib/vendorFeatureProcedure.ts b/server/lib/vendorFeatureProcedure.ts
+index 64ea736..b48660a 100644
+--- a/server/lib/vendorFeatureProcedure.ts
++++ b/server/lib/vendorFeatureProcedure.ts
+@@ -1,5 +1,5 @@
+ import { TRPCError } from "@trpc/server";
+-import { distributorProcedure } from "../_core/trpc";
++import { catalogEditorProcedure, distributorProcedure } from "../_core/trpc";
+ import { getDb } from "../db";
+ import type { VendorFeature } from "../../shared/vendorFeatures";
+ import { assertVendorFeature, loadCallerVendor } from "./vendorFeatureAccess";
+@@ -24,3 +24,19 @@ export function withVendorFeature(feature: VendorFeature) {
+     return next();
+   });
+ }
++
++/** Same feature gate as withVendorFeature, plus designer and sales_rep acting across vendors. */
++export function catalogEditorFeature(feature: VendorFeature) {
++  return catalogEditorProcedure.use(async ({ ctx, next }) => {
++    if (!ctx.isAdmin) {
++      const db = await getDb();
++      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
++      const vendor = await loadCallerVendor(db, {
++        approvedVendorLineId: ctx.user.approvedVendorLineId ?? null,
++        distributorId: ctx.distributorId,
++      });
++      assertVendorFeature(vendor, feature);
++    }
++    return next();
++  });
++}
 diff --git a/server/pelican.vendorAccess.test.ts b/server/pelican.vendorAccess.test.ts
-index 960263f..206fb98 100644
+index 960263f..29b92fe 100644
 --- a/server/pelican.vendorAccess.test.ts
 +++ b/server/pelican.vendorAccess.test.ts
-@@ -6,15 +6,17 @@ describe("Pelican vendor access", () => {
+@@ -5,16 +5,18 @@ import { resolve } from "node:path";
+ describe("Pelican vendor access", () => {
    const source = readFileSync(resolve(process.cwd(), "server/routers/pelican.ts"), "utf8");
  
-   it("uses the supplier-profile procedure for vendor catalog and selling controls", () => {
+-  it("uses the supplier-profile procedure for vendor catalog and selling controls", () => {
 -    for (const procedure of ["adminList", "setPopular", "setVisibility", "setPricing", "updateProduct", "setCoverage", "setUnsupportedOverhangLimit", "setMaterialImage"]) {
+-      expect(source).toContain(`${procedure}: supplierProfileProcedure`);
++  it("uses the catalog editor procedure for vendor catalog and selling controls", () => {
 +    for (const procedure of ["adminList", "productForVendorEdit", "setPopular", "setVisibility", "setPricing", "updateProduct", "setCoverage", "setUnsupportedOverhangLimit", "setMaterialImage"]) {
-       expect(source).toContain(`${procedure}: supplierProfileProcedure`);
++      expect(source).toContain(`${procedure}: catalogEditorProcedure`);
      }
    });
  
@@ -139,10 +217,96 @@ index 960263f..206fb98 100644
      expect(source).toContain("vendor?.isApproved");
    });
  
+diff --git a/server/routers/distributorPortal.ts b/server/routers/distributorPortal.ts
+index 45f9dc5..7b66c61 100644
+--- a/server/routers/distributorPortal.ts
++++ b/server/routers/distributorPortal.ts
+@@ -1,8 +1,8 @@
+ import { z } from "zod";
+ import { and, eq, inArray, desc, gte, lte, isNotNull, or, sql } from "drizzle-orm";
+ import { TRPCError } from "@trpc/server";
+-import { adminProcedure, distributorProcedure, router, supplierProfileProcedure } from "../_core/trpc";
+-import { withVendorFeature } from "../lib/vendorFeatureProcedure";
++import { adminProcedure, catalogEditorProcedure, distributorProcedure, router, supplierProfileProcedure } from "../_core/trpc";
++import { catalogEditorFeature, withVendorFeature } from "../lib/vendorFeatureProcedure";
+ import { getDb } from "../db";
+ import {
+ 	  distributors,
+@@ -184,7 +184,7 @@ function formatForecastRates(line: {
+ 
+ export const distributorPortalRouter = router({
+   /** The line this user manages: neutral label, counts, lead time. No real brand leaks. */
+-  myLine: distributorProcedure
++  myLine: catalogEditorProcedure
+     .input(z.object({ distributorId: z.number().optional() }).optional())
+     .query(async ({ ctx, input }) => {
+       const db = await getDb();
+@@ -1721,7 +1721,7 @@ export const distributorPortalRouter = router({
+     }),
+ 
+   /** This line's catalog: one row per SKU with cabinet info + visibility state. */
+-  catalog: withVendorFeature("cabinet_catalog")
++  catalog: catalogEditorFeature("cabinet_catalog")
+     .input(
+       z.object({
+         distributorId: z.number().optional(),
+@@ -1774,6 +1774,7 @@ export const distributorPortalRouter = router({
+           wholesalePrice: distributorSkus.wholesalePrice,
+           contractorPrice: distributorSkus.contractorPrice,
+           homeownerPrice: distributorSkus.homeownerPrice,
++          vendorWholesale: distributorSkus.vendorWholesale,
+           onHandQty: distributorSkus.onHandQty,
+           isPublished: distributorSkus.isPublished,
+           isAvailable: distributorSkus.isAvailable,
+@@ -1816,7 +1817,7 @@ export const distributorPortalRouter = router({
+     }),
+ 
+   /** Toggle a single SKU's published (visible) state. Scoped to this line. */
+-  setVisibility: withVendorFeature("cabinet_catalog")
++  setVisibility: catalogEditorFeature("cabinet_catalog")
+     .input(
+       z.object({
+         distributorId: z.number().optional(),
+@@ -2080,7 +2081,7 @@ export const distributorPortalRouter = router({
+   // ─── Price Update (instant, no approval) ─────────────────────────────────────
+ 
+   /** Vendor updates pricing on their own SKUs. Instant — no admin approval needed. */
+-  updatePrice: distributorProcedure
++  updatePrice: catalogEditorProcedure
+     .input(
+       z.object({
+         distributorId: z.number().optional(),
+@@ -2122,7 +2123,7 @@ export const distributorPortalRouter = router({
+     }),
+ 
+   /** Optional vendor-supplied stock feed for the inventory forecast. */
+-  updateOnHandInventory: distributorProcedure
++  updateOnHandInventory: catalogEditorProcedure
+     .input(z.object({
+       distributorId: z.number().optional(),
+       skuId: z.number().positive(),
+@@ -2144,7 +2145,7 @@ export const distributorPortalRouter = router({
+   // ─── Image Upload (instant) ───────────────────────────────────────────────────
+ 
+   /** Vendor uploads a product image (base64 encoded). Stored in S3, URL saved on SKU. */
+-  updateImage: withVendorFeature("cabinet_catalog")
++  updateImage: catalogEditorFeature("cabinet_catalog")
+     .input(
+       z.object({
+         distributorId: z.number().optional(),
 diff --git a/server/routers/pelican.ts b/server/routers/pelican.ts
-index c2db458..b554939 100644
+index c2db458..6024de1 100644
 --- a/server/routers/pelican.ts
 +++ b/server/routers/pelican.ts
+@@ -3,7 +3,7 @@ import { TRPCError } from "@trpc/server";
+ import { and, asc, desc, eq, gt, isNull, like, lte, not, notInArray, or, sql } from "drizzle-orm";
+ import { UNAUTHED_ERR_MSG } from "@shared/const";
+ import { hiddenNumericIds, loadAffiliateCatalogGate } from "../lib/affiliateCatalogGate";
+-import { router, publicProcedure, adminProcedure, supplierProfileProcedure } from "../_core/trpc";
++import { router, publicProcedure, adminProcedure, catalogEditorProcedure, supplierProfileProcedure } from "../_core/trpc";
+ import { getDb } from "../db";
+ import { pelicanProducts, pelicanShippingProfiles } from "../../drizzle/pelicanSchema";
+ import { distributors, pelicanCategoryMarkups, vendorLines } from "../../drizzle/schema";
 @@ -11,6 +11,7 @@ import { normalizeCode } from "../../shared/cabinetCodeMatch";
  import { positiveAuthorizedSurfaceBase } from "../../shared/surfacePricing";
  import { auditPelicanDesignerReadiness, isPelicanDesignerSelectable, pelicanDesignerRenderFlags } from "../lib/pelicanDesignerReadiness";
@@ -190,12 +354,49 @@ index c2db458..b554939 100644
    throw new TRPCError({ code: "FORBIDDEN", message: "This catalog is only available to the Pelican vendor." });
  }
  async function loadMarkupMap(db: NonNullable<Awaited<ReturnType<typeof getDb>>>): Promise<MarkupMap> {
-@@ -723,6 +736,17 @@ export const pelicanRouter = router({
+@@ -377,7 +390,7 @@ export const pelicanRouter = router({
+         .filter((r) => r.sellPrice && r.sellPrice > 0);
+     }),
+ 
+-  adminList: supplierProfileProcedure
++  adminList: catalogEditorProcedure
+     .input(
+       z.object({
+         category: StoredPelicanCategory.optional(),
+@@ -635,7 +648,7 @@ export const pelicanRouter = router({
+       return { success: true } as const;
+     }),
+ 
+-  setPopular: supplierProfileProcedure
++  setPopular: catalogEditorProcedure
+     .input(z.object({ id: z.number(), isPopular: z.boolean(), popularRank: z.number().min(0).default(0) }))
+     .mutation(async ({ input, ctx }) => {
+       const db = await getDb();
+@@ -647,7 +660,7 @@ export const pelicanRouter = router({
+         .where(eq(pelicanProducts.id, input.id));
+       return { success: true } as const;
+     }),
+-  setVisibility: supplierProfileProcedure
++  setVisibility: catalogEditorProcedure
+     .input(
+       z.object({
+         id: z.number(),
+@@ -683,7 +696,7 @@ export const pelicanRouter = router({
+       }
+       return { success: true } as const;
+     }),
+-  setPricing: supplierProfileProcedure
++  setPricing: catalogEditorProcedure
+     .input(
+       z.object({
+         id: z.number(),
+@@ -723,7 +736,18 @@ export const pelicanRouter = router({
        }
        return { success: true, unpublished: resultingBase == null } as const;
      }),
+-  updateProduct: supplierProfileProcedure
 +  /** One Pelican product for the existing catalog editor. Pelican vendor or admin only. */
-+  productForVendorEdit: supplierProfileProcedure
++  productForVendorEdit: catalogEditorProcedure
 +    .input(z.object({ id: z.number().int().positive() }))
 +    .query(async ({ input, ctx }) => {
 +      const db = await getDb();
@@ -205,15 +406,46 @@ index c2db458..b554939 100644
 +      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Pelican product not found." });
 +      return row;
 +    }),
-   updateProduct: supplierProfileProcedure
++  updateProduct: catalogEditorProcedure
      .input(z.object({
        id: z.number().int().positive(),
+       name: z.string().trim().min(1).max(255),
+@@ -774,7 +798,7 @@ export const pelicanRouter = router({
+       return { success: true } as const;
+     }),
+   /** Set the box coverage (sq ft per box) for tile/flooring products. */
+-  setCoverage: supplierProfileProcedure
++  setCoverage: catalogEditorProcedure
+     .input(
+       z.object({
+         id: z.number(),
+@@ -792,7 +816,7 @@ export const pelicanRouter = router({
+       return { success: true } as const;
+     }),
+   /** Store only a supplier/fabricator-verified unsupported overhang limit. */
+-  setUnsupportedOverhangLimit: supplierProfileProcedure
++  setUnsupportedOverhangLimit: catalogEditorProcedure
+     .input(
+       z.object({
+         id: z.number().int().positive(),
+@@ -819,7 +843,7 @@ export const pelicanRouter = router({
+    * Catalog images are displayed to shoppers. This separate URL is an
+    * administrator-approved, repeatable material swatch for the 3D Designer.
+    */
+-  setMaterialImage: supplierProfileProcedure
++  setMaterialImage: catalogEditorProcedure
+     .input(
+       z.object({
+         id: z.number().int().positive(),
 diff --git a/server/routers/salesForecast.ts b/server/routers/salesForecast.ts
-index cdb80c0..9a58196 100644
+index cdb80c0..04d3ab7 100644
 --- a/server/routers/salesForecast.ts
 +++ b/server/routers/salesForecast.ts
-@@ -3,14 +3,17 @@ import { TRPCError } from "@trpc/server";
- import { adminProcedure, router, supplierProfileProcedure } from "../_core/trpc";
+@@ -1,16 +1,19 @@
+ import { z } from "zod";
+ import { TRPCError } from "@trpc/server";
+-import { adminProcedure, router, supplierProfileProcedure } from "../_core/trpc";
++import { adminProcedure, router, salesStaffProcedure, supplierProfileProcedure } from "../_core/trpc";
  import { getDb, getPricingSettings } from "../db";
  import { validateCloseRateBrackets } from "../../shared/closeRateBrackets";
 -import { projectForecastForScopes, type ForecastFilters } from "../../shared/salesForecast";
@@ -273,20 +505,22 @@ index cdb80c0..9a58196 100644
 +}
 +
  export const salesForecastRouter = router({
-   adminQuery: adminProcedure.input(filtersInput).query(async ({ input }) => {
+-  adminQuery: adminProcedure.input(filtersInput).query(async ({ input }) => {
++  adminQuery: salesStaffProcedure.input(filtersInput).query(async ({ input }) => {
      const settings = await getPricingSettings();
 -    return runSalesForecast({
 +    return forecastWithRates({
        filters: toFilters(input),
        page: input?.page ?? 0,
        pageSize: input?.pageSize ?? 25,
-@@ -65,13 +97,60 @@ export const salesForecastRouter = router({
+@@ -65,13 +97,61 @@ export const salesForecastRouter = router({
      return { ok: true as const };
    }),
  
 +  /**
-+   * The signed-in vendor sets the percentage used to weight their own forecast.
-+   * Sales and admin accounts can read it on the forecast query and cannot write it.
++   * The signed-in vendor sets the percentage for their own scope. An admin may
++   * set any vendor's percentage. Designer and sales_rep can read every
++   * percentage on the company forecast and cannot write one.
 +   */
 +  setVendorRate: supplierProfileProcedure.input(z.object({
 +    scope: z.string().trim().min(1).max(32),
@@ -342,7 +576,7 @@ index cdb80c0..9a58196 100644
      page: z.number().int().min(0).default(0),
      pageSize: z.number().int().min(1).max(100).default(25),
    }).optional()).query(async ({ ctx, input }) => {
-@@ -81,13 +160,29 @@ export const salesForecastRouter = router({
+@@ -81,13 +161,29 @@ export const salesForecastRouter = router({
        distributorId: ctx.isAdmin ? input?.distributorId ?? null : ctx.distributorId,
        approvedVendorLineId: ctx.isAdmin ? input?.approvedVendorLineId ?? null : ctx.approvedVendorLineId,
      });
@@ -375,6 +609,40 @@ index cdb80c0..9a58196 100644
 +    };
    }),
  });
+diff --git a/server/salesForecast/companyAccess.test.ts b/server/salesForecast/companyAccess.test.ts
+new file mode 100644
+index 0000000..61f0bcf
+--- /dev/null
++++ b/server/salesForecast/companyAccess.test.ts
+@@ -0,0 +1,28 @@
++import { readFileSync } from "node:fs";
++import { resolve } from "node:path";
++import { describe, expect, it } from "vitest";
++
++describe("company sales forecast procedures", () => {
++  const forecast = readFileSync(resolve(process.cwd(), "server/routers/salesForecast.ts"), "utf8");
++  const portal = readFileSync(resolve(process.cwd(), "server/routers/distributorPortal.ts"), "utf8");
++  const trpc = readFileSync(resolve(process.cwd(), "server/_core/trpc.ts"), "utf8");
++
++  it("lets designer and sales_rep read the company forecast and keeps bracket edits on admin", () => {
++    expect(trpc).toContain("export const salesStaffProcedure");
++    expect(trpc).toContain("isCompanySalesForecastRole");
++    expect(forecast).toContain("adminQuery: salesStaffProcedure");
++    expect(forecast).toContain("brackets: adminProcedure");
++    expect(forecast).toContain("saveBrackets: adminProcedure");
++    expect(forecast).toContain("setVendorRate: supplierProfileProcedure");
++  });
++
++  it("opens catalog editor procedures to company sales without opening shipping", () => {
++    expect(trpc).toContain("export const catalogEditorProcedure");
++    expect(portal).toContain("myLine: catalogEditorProcedure");
++    expect(portal).toContain('catalog: catalogEditorFeature("cabinet_catalog")');
++    expect(portal).toContain('updateImage: catalogEditorFeature("cabinet_catalog")');
++    expect(portal).toContain("updatePrice: catalogEditorProcedure");
++    expect(portal).toContain("vendorWholesale: distributorSkus.vendorWholesale");
++    expect(portal).toContain("updateShippingSettings: distributorProcedure");
++  });
++});
 diff --git a/server/salesForecast/extract.test.ts b/server/salesForecast/extract.test.ts
 index 0088d51..a382820 100644
 --- a/server/salesForecast/extract.test.ts
@@ -715,11 +983,91 @@ index 0000000..29aa32a
 +  }
 +  await db.insert(vendorForecastRates).values({ vendorScope: input.scope, ...values });
 +}
+diff --git a/shared/internalSales.test.ts b/shared/internalSales.test.ts
+new file mode 100644
+index 0000000..2b46b7b
+--- /dev/null
++++ b/shared/internalSales.test.ts
+@@ -0,0 +1,27 @@
++import { describe, expect, it } from "vitest";
++import { catalogEditorEntry, isCompanySalesForecastRole, isInternalSalesRole } from "./internalSales";
++
++describe("company sales roles", () => {
++  it("treats admin, designer, and sales_rep as the company forecast audience", () => {
++    expect(isCompanySalesForecastRole("admin")).toBe(true);
++    expect(isCompanySalesForecastRole("designer")).toBe(true);
++    expect(isCompanySalesForecastRole("sales_rep")).toBe(true);
++    for (const role of ["user", "distributor", "dealer", "partner", "contractor", "sales", ""]) {
++      expect(isCompanySalesForecastRole(role)).toBe(false);
++    }
++    expect(isInternalSalesRole("designer")).toBe(true);
++    expect(isInternalSalesRole("sales_rep")).toBe(true);
++    expect(isInternalSalesRole("admin")).toBe(false);
++  });
++
++  it("opens the product editor only from an explicit catalog link", () => {
++    expect(catalogEditorEntry(new URLSearchParams("section=catalog&catalog=pelican&edit=9")).kind).toBe("pelican");
++    expect(catalogEditorEntry(new URLSearchParams("section=catalog&catalog=cabinet&sku=B24&as=12"))).toEqual({
++      kind: "cabinet",
++      distributorId: 12,
++    });
++    expect(catalogEditorEntry(new URLSearchParams("section=catalog&edit=9")).kind).toBe("unspecified");
++    expect(catalogEditorEntry(new URLSearchParams("section=catalog&catalog=cabinet&sku=B24")).kind).toBe("unspecified");
++    expect(catalogEditorEntry(new URLSearchParams("section=orders&catalog=pelican")).kind).toBe("unspecified");
++  });
++});
+diff --git a/shared/internalSales.ts b/shared/internalSales.ts
+new file mode 100644
+index 0000000..fd55646
+--- /dev/null
++++ b/shared/internalSales.ts
+@@ -0,0 +1,41 @@
++/**
++ * Company sales forecast access.
++ *
++ * There is no role named "sales". The user role enum is
++ * user, admin, distributor, dealer, partner, designer, sales_rep, contractor.
++ * Internal sales users are `designer` (sales staff) and `sales_rep` (1099).
++ * They already share the CRM with admin through crmStaffProcedure. This module
++ * uses that same trio and does not grant forecast or catalog-editor access to
++ * partners, dealers, contractors, members, or other vendors' accounts.
++ */
++
++export const COMPANY_SALES_FORECAST_ROLES = ["admin", "designer", "sales_rep"] as const;
++
++export function isCompanySalesForecastRole(role: string | null | undefined): boolean {
++  return role === "admin" || role === "designer" || role === "sales_rep";
++}
++
++/** Designer and sales rep. Admins keep the full admin workspace. */
++export function isInternalSalesRole(role: string | null | undefined): boolean {
++  return role === "designer" || role === "sales_rep";
++}
++
++export type CatalogEditorEntry =
++  | { kind: "pelican" }
++  | { kind: "cabinet"; distributorId: number }
++  | { kind: "unspecified" };
++
++/**
++ * A forecast "Edit product" link. `catalog=pelican` or `catalog=cabinet` is
++ * required so an ordinary vendor-portal visit is not treated as this editor.
++ */
++export function catalogEditorEntry(params: URLSearchParams): CatalogEditorEntry {
++  if (params.get("section") !== "catalog") return { kind: "unspecified" };
++  const catalog = params.get("catalog");
++  const distributorId = Number(params.get("as"));
++  if (catalog === "cabinet" && Number.isInteger(distributorId) && distributorId > 0) {
++    return { kind: "cabinet", distributorId };
++  }
++  if (catalog === "pelican") return { kind: "pelican" };
++  return { kind: "unspecified" };
++}
 diff --git a/shared/salesForecast.test.ts b/shared/salesForecast.test.ts
-index 9df60e0..bb8de20 100644
+index 9df60e0..028b587 100644
 --- a/shared/salesForecast.test.ts
 +++ b/shared/salesForecast.test.ts
-@@ -1,6 +1,20 @@
+@@ -1,6 +1,21 @@
  import { describe, expect, it } from "vitest";
  import { PLACEHOLDER_CLOSE_BRACKETS } from "./closeRateBrackets";
 -import { aggregateForecast, projectForecastForScopes, type ForecastDesignMeta, type ForecastLine } from "./salesForecast";
@@ -727,6 +1075,7 @@ index 9df60e0..bb8de20 100644
 +  aggregateForecast,
 +  designUpdatedOnOrAfter,
 +  filterForecastMaterials,
++  companyForecastProductPath,
 +  forecastProductEditTarget,
 +  MISSING_CATEGORY_FILTER,
 +  monthsBefore,
@@ -741,7 +1090,7 @@ index 9df60e0..bb8de20 100644
  import { distributorScope, PELICAN_SCOPE } from "./vendorFulfillment";
  
  const NOW = new Date("2026-04-01T00:00:00Z");
-@@ -41,7 +55,7 @@ describe("sales forecast weighting and isolation", () => {
+@@ -41,7 +56,7 @@ describe("sales forecast weighting and isolation", () => {
    const cabinet = distributorScope(11);
    const other = distributorScope(22);
  
@@ -750,7 +1099,7 @@ index 9df60e0..bb8de20 100644
      const result = aggregateForecast({
        now: NOW,
        homeownerMarkupBps: 20000,
-@@ -63,11 +77,50 @@ describe("sales forecast weighting and isolation", () => {
+@@ -63,11 +78,50 @@ describe("sales forecast weighting and isolation", () => {
      expect(result.excluded.lost).toBe(1);
      const material = result.materials.find((row) => row.sku === "B24");
      expect(material?.quantity).toBe(14);
@@ -803,7 +1152,7 @@ index 9df60e0..bb8de20 100644
    it("keeps missing style and color in the unspecified bucket", () => {
      const result = aggregateForecast({
        now: NOW,
-@@ -114,4 +167,137 @@ describe("sales forecast weighting and isolation", () => {
+@@ -114,4 +168,142 @@ describe("sales forecast weighting and isolation", () => {
      expect(result.matched).toBe(0);
      expect(result.materials).toEqual([]);
    });
@@ -934,15 +1283,20 @@ index 9df60e0..bb8de20 100644
 +    expect(validateVendorForecastPercent(75)).toBeNull();
 +    expect(vendorMaySetForecastRate({ role: "distributor", scope: cabinet, allowedScopes: [cabinet] })).toBeNull();
 +    expect(vendorMaySetForecastRate({ role: "distributor", scope: other, allowedScopes: [cabinet] })).toMatch(/not linked/);
-+    expect(vendorMaySetForecastRate({ role: "admin", scope: cabinet, allowedScopes: [cabinet] })).toMatch(/Only the vendor/);
-+    expect(vendorMaySetForecastRate({ role: "sales_rep", scope: cabinet, allowedScopes: [cabinet] })).toMatch(/Only the vendor/);
++    expect(vendorMaySetForecastRate({ role: "admin", scope: cabinet, allowedScopes: [] })).toBeNull();
++    expect(vendorMaySetForecastRate({ role: "designer", scope: cabinet, allowedScopes: [cabinet] })).toMatch(/Only the vendor or an admin/);
++    expect(vendorMaySetForecastRate({ role: "sales_rep", scope: cabinet, allowedScopes: [cabinet] })).toMatch(/Only the vendor or an admin/);
++    expect(vendorMaySetForecastRate({ role: "partner", scope: cabinet, allowedScopes: [cabinet] })).toMatch(/Only the vendor or an admin/);
 +    expect(forecastProductEditTarget({ catalogProductKind: "pelican", catalogProductId: 9, sku: "PEL-9" })).toEqual({ section: "catalog", edit: 9 });
 +    expect(forecastProductEditTarget({ catalogProductKind: "cabinet_sku", catalogProductId: 4, sku: "B24" })).toEqual({ section: "catalog", sku: "B24" });
 +    expect(forecastProductEditTarget({ catalogProductKind: null, catalogProductId: null, sku: "TK-8" })).toBeNull();
++    expect(companyForecastProductPath({ catalogProductKind: "pelican", catalogProductId: 9, sku: "PEL-9", scope: "pelican" })).toBe("/vendor?section=catalog&catalog=pelican&edit=9");
++    expect(companyForecastProductPath({ catalogProductKind: "cabinet_sku", catalogProductId: 4, sku: "B24", scope: cabinet })).toBe("/vendor?section=catalog&catalog=cabinet&sku=B24&as=11");
++    expect(companyForecastProductPath({ catalogProductKind: "cabinet_sku", catalogProductId: 4, sku: "B24", scope: "pelican" })).toBeNull();
 +  });
  });
 diff --git a/shared/salesForecast.ts b/shared/salesForecast.ts
-index f47fdc7..bac8eb8 100644
+index f47fdc7..5b97a44 100644
 --- a/shared/salesForecast.ts
 +++ b/shared/salesForecast.ts
 @@ -12,7 +12,7 @@
@@ -980,7 +1334,7 @@ index f47fdc7..bac8eb8 100644
    supplierScopes?: string[];
    savedFrom?: string | null;
    savedTo?: string | null;
-@@ -60,6 +69,79 @@ export type ForecastFilters = {
+@@ -60,6 +69,84 @@ export type ForecastFilters = {
    customerTypes?: string[];
  };
  
@@ -1048,11 +1402,16 @@ index f47fdc7..bac8eb8 100644
 +  return null;
 +}
 +
-+/** Vendors may set a percentage only for a scope linked to their account. Sales and admin can view, not edit. */
++/**
++ * Vendors may set a percentage only for a scope linked to their account.
++ * Admins may set any vendor's percentage. Designer and sales_rep can view it
++ * and cannot write it.
++ */
 +export function vendorMaySetForecastRate(input: { role: string; scope: string; allowedScopes: readonly string[] }): string | null {
-+  if (input.role !== "distributor") return "Only the vendor can set this forecast percentage.";
 +  const scope = parseVendorScope(input.scope);
 +  if (!scope) return "Unknown vendor.";
++  if (input.role === "admin") return null;
++  if (input.role !== "distributor") return "Only the vendor or an admin can set this forecast percentage.";
 +  if (!input.allowedScopes.includes(scope)) return "That vendor is not linked to your account.";
 +  return null;
 +}
@@ -1060,7 +1419,7 @@ index f47fdc7..bac8eb8 100644
  export type ForecastExclusion = {
    ordered: number;
    lost: number;
-@@ -125,12 +207,21 @@ export type MaterialTotal = {
+@@ -125,12 +212,21 @@ export type MaterialTotal = {
    styleName: string;
    seriesName: string;
    quantity: number;
@@ -1084,7 +1443,7 @@ index f47fdc7..bac8eb8 100644
    estimated: boolean;
  };
  
-@@ -144,7 +235,26 @@ export type ForecastDesignRow = {
+@@ -144,7 +240,26 @@ export type ForecastDesignRow = {
    seriesName: string;
    customerType: string;
    status: string;
@@ -1112,7 +1471,7 @@ index f47fdc7..bac8eb8 100644
  };
  
  export type ForecastResult = {
-@@ -154,6 +264,8 @@ export type ForecastResult = {
+@@ -154,6 +269,8 @@ export type ForecastResult = {
    designs: ForecastDesignRow[];
    materials: MaterialTotal[];
    unassigned: MaterialTotal[];
@@ -1121,7 +1480,7 @@ index f47fdc7..bac8eb8 100644
  };
  
  function retailForLine(line: ForecastLine, homeownerMarkupBps: number): number | null {
-@@ -166,11 +278,73 @@ function retailForLine(line: ForecastLine, homeownerMarkupBps: number): number |
+@@ -166,11 +283,73 @@ function retailForLine(line: ForecastLine, homeownerMarkupBps: number): number |
    return line.listPrice;
  }
  
@@ -1195,7 +1554,7 @@ index f47fdc7..bac8eb8 100644
    homeownerMarkupBps: number;
    now?: Date | number;
    page?: number;
-@@ -178,8 +352,16 @@ export function aggregateForecast(input: {
+@@ -178,8 +357,16 @@ export function aggregateForecast(input: {
  }): ForecastResult {
    const filters = input.filters ?? {};
    const now = input.now ?? Date.now();
@@ -1213,7 +1572,7 @@ index f47fdc7..bac8eb8 100644
    const attributeMatched = input.designs.filter((design) => designMatchesFilters(design, attributeFilters));
    const statusFiltered = attributeMatched.filter((design) => designMatchesFilters(design, { statuses: filters.statuses }));
  
-@@ -200,97 +382,232 @@ export function aggregateForecast(input: {
+@@ -200,97 +387,251 @@ export function aggregateForecast(input: {
      linesByDesign.set(line.designId, list);
    }
  
@@ -1483,10 +1842,29 @@ index f47fdc7..bac8eb8 100644
 +  return null;
 +}
 +
++/** Company forecast link into the existing catalog editor for that vendor's product. */
++export function companyForecastProductPath(row: Pick<MaterialTotal, "catalogProductKind" | "catalogProductId" | "sku" | "scope">): string | null {
++  const target = forecastProductEditTarget(row);
++  if (!target) return null;
++  const params = new URLSearchParams();
++  params.set("section", "catalog");
++  if (target.edit != null) {
++    params.set("catalog", "pelican");
++    params.set("edit", String(target.edit));
++    return `/vendor?${params.toString()}`;
++  }
++  const distributorId = row.scope?.startsWith("dist:") ? Number(row.scope.slice("dist:".length)) : NaN;
++  if (!target.sku || !Number.isInteger(distributorId) || distributorId <= 0) return null;
++  params.set("catalog", "cabinet");
++  params.set("sku", target.sku);
++  params.set("as", String(distributorId));
++  return `/vendor?${params.toString()}`;
++}
++
  function round2(n: number): number {
    return Math.round(n * 100) / 100;
  }
-@@ -312,26 +629,47 @@ export function projectForecastForScopes(result: ForecastResult, scopes: readonl
+@@ -312,26 +653,47 @@ export function projectForecastForScopes(result: ForecastResult, scopes: readonl
        }
        return copy;
      }),
@@ -1541,6 +1919,3 @@ index f47fdc7..bac8eb8 100644
      row.estimated ? "yes" : "",
    ].map(csvCell).join(","));
    return [header.join(","), ...body].join("\n");
--- 
-2.43.0
-
