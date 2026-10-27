@@ -356,7 +356,7 @@ function layoutPenalty(
     walls.add(cabinetWall(item, room));
   }
   let penalty = 0;
-  for (const wallId of walls) {
+  for (const wallId of Array.from(walls)) {
     const segments = freeSegmentsOnWall(wallId as WallSide, room, [...placed], [...openings], 0.125, 0, "base", false, undefined, STD.BASE_DEPTH);
     for (const segment of segments) {
       const end = segment.start + segment.length;
@@ -489,7 +489,7 @@ export function applyFourAnchorWiggleRoom(input: {
     }
   }
 
-  return { placed, moves: [...moves.values()] };
+  return { placed, moves: Array.from(moves.values()) };
 }
 
 function isNineInchBase(item: PlacedCabinet): boolean {
