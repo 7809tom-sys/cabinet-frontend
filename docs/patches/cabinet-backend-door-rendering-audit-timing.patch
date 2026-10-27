@@ -1,0 +1,493 @@
+From 09ec87175e3873ea4553a585cea76f825381c2a5 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Tue, 27 Oct 2026 23:14:05 +0000
+Subject: [PATCH] Add a one-style door rendering audit timing test.
+
+Aspen Charcoal runs through startRun, submitRender, and scoring against an in-memory database with Gemini and storage mocked. The run must finish within 30 seconds, leave no open audit, and allow the next start. A second case records that a hung score stays in scoring and blocks the next run.
+---
+ .../routers/doorRenderingAudit.timing.test.ts | 473 ++++++++++++++++++
+ 1 file changed, 473 insertions(+)
+ create mode 100644 server/routers/doorRenderingAudit.timing.test.ts
+
+diff --git a/server/routers/doorRenderingAudit.timing.test.ts b/server/routers/doorRenderingAudit.timing.test.ts
+new file mode 100644
+index 0000000..57e372f
+--- /dev/null
++++ b/server/routers/doorRenderingAudit.timing.test.ts
+@@ -0,0 +1,473 @@
++import { beforeEach, describe, expect, it, vi } from "vitest";
++import { Column, getTableName, is, Param, SQL, StringChunk } from "drizzle-orm";
++import type { InvokeResult } from "../_core/llm";
++
++/**
++ * In-memory stand-in for the drizzle calls the door rendering audit router makes.
++ * Same idea as the catalog memory db in pelican.catalogCategories.test.ts.
++ * Nothing here opens TiDB, Railway, Supabase, or Gemini.
++ */
++const harness = vi.hoisted(() => ({
++  getDb: vi.fn(),
++  storagePut: vi.fn(async (key: string, _data: Buffer, contentType: string) => ({
++    key: `${key}_test`,
++    url: `/manus-storage/${key}_test`,
++    contentType,
++  })),
++  invokeLLM: vi.fn(),
++}));
++
++vi.mock("../db", () => ({ getDb: harness.getDb }));
++vi.mock("../storage", () => ({
++  storagePut: harness.storagePut,
++  storageFetchObject: vi.fn(),
++}));
++vi.mock("../_core/llm", () => ({ invokeLLM: harness.invokeLLM }));
++
++import { doorRenderingAuditRouter } from "./doorRenderingAudit";
++
++type Row = Record<string, unknown>;
++type Joined = Record<string, Row | null>;
++
++/**
++ * One door, with storage and Gemini mocked, should finish inside the normal
++ * one-style budget from the pipeline trace: about 10–30 seconds for capture,
++ * upload, and a flash score. Thirty seconds is the top of that range and is
++ * well under the 120 second HTTP socket timeout. The mocks return immediately,
++ * so a healthy run is milliseconds; crossing 30 seconds means the pipeline
++ * waited on a real network call or a hang.
++ */
++const ONE_STYLE_AUDIT_BUDGET_MS = 30_000;
++
++const ASPEN_STYLE_ID = 41;
++const png = Buffer.concat([
++  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
++  Buffer.alloc(16, 1),
++]);
++const pngBase64 = png.toString("base64");
++const samplePhotoUrl = `data:image/png;base64,${pngBase64}`;
++
++const scorePayload = {
++  choices: [{
++    message: {
++      content: JSON.stringify({
++        woodGrain: 8,
++        color: 7,
++        textureSheen: 7,
++        profileEdges: 6,
++        overall: 8,
++        notes: "Charcoal grain is close to the sample.",
++      }),
++    },
++  }],
++} as InvokeResult;
++
++function caller() {
++  return doorRenderingAuditRouter.createCaller({
++    user: { id: 7, openId: "door-audit", name: "Tom", email: "tom@example.com", role: "admin" },
++    req: { headers: {} },
++    res: {},
++  } as never);
++}
++
++function classify(chunk: unknown):
++  | { kind: "text"; text: string }
++  | { kind: "sql"; node: SQL }
++  | { kind: "col"; column: Column }
++  | { kind: "param"; value: unknown }
++  | { kind: "list"; values: unknown[] } {
++  if (Array.isArray(chunk)) {
++    return {
++      kind: "list",
++      values: chunk.map((item) => (item && typeof item === "object" && "value" in item ? (item as { value: unknown }).value : item)),
++    };
++  }
++  if (is(chunk, StringChunk)) return { kind: "text", text: chunk.value.join("") };
++  if (is(chunk, SQL)) return { kind: "sql", node: chunk };
++  if (is(chunk, Column)) return { kind: "col", column: chunk };
++  if (is(chunk, Param)) return { kind: "param", value: chunk.value };
++  if (typeof chunk === "string" || typeof chunk === "number" || typeof chunk === "boolean" || chunk == null) {
++    return { kind: "param", value: chunk };
++  }
++  if (chunk && typeof chunk === "object" && "getSQL" in chunk && typeof chunk.getSQL === "function") {
++    return { kind: "sql", node: chunk.getSQL() };
++  }
++  throw new Error(`Unsupported SQL chunk: ${chunk && typeof chunk === "object" ? chunk.constructor.name : typeof chunk}`);
++}
++
++function valueOf(column: Column, joined: Joined): unknown {
++  return joined[getTableName(column.table)]?.[column.name] ?? null;
++}
++
++function compareValues(left: unknown, right: unknown): number {
++  if (left == null && right == null) return 0;
++  if (left == null) return 1;
++  if (right == null) return -1;
++  if (typeof left === "number" && typeof right === "number") return left - right;
++  return String(left).localeCompare(String(right));
++}
++
++function evalSql(node: SQL, joined: Joined): boolean {
++  const parts = node.queryChunks.map(classify);
++  const nested = parts.filter((part): part is { kind: "sql"; node: SQL } => part.kind === "sql");
++  if (parts.some((part) => part.kind === "text" && part.text === " and ")) return nested.every((part) => evalSql(part.node, joined));
++  if (parts.some((part) => part.kind === "text" && part.text === " or ")) return nested.some((part) => evalSql(part.node, joined));
++  if (nested.length === 1 && parts.every((part) => part.kind === "text" || part.kind === "sql")) return evalSql(nested[0].node, joined);
++
++  const columns = parts.filter((part): part is { kind: "col"; column: Column } => part.kind === "col").map((part) => part.column);
++  const params = parts.filter((part) => part.kind === "param").map((part) => part.value);
++  const op = parts.filter((part) => part.kind === "text").map((part) => part.text).join("");
++  if (op.trim() === "false") return false;
++  if (op.trim() === "true") return true;
++  if (op.includes(" in ")) {
++    const allowed = parts.flatMap((part) => part.kind === "list" ? part.values : []);
++    const left = columns[0] ? valueOf(columns[0], joined) : null;
++    return allowed.some((value) => value === left);
++  }
++  if (columns.length === 2 && params.length === 0) {
++    return valueOf(columns[0], joined) === valueOf(columns[1], joined);
++  }
++  const left = columns[0] ? valueOf(columns[0], joined) : null;
++  const right = params[0];
++  if (op.includes("=")) return left === right;
++  throw new Error(`Unsupported SQL predicate: ${JSON.stringify(op)}`);
++}
++
++function sqlText(value: unknown): string {
++  if (is(value, StringChunk)) return value.value.join("");
++  if (!is(value, SQL)) return "";
++  return value.queryChunks.map(sqlText).join("");
++}
++
++function isCountSql(value: unknown): boolean {
++  return sqlText(value).toLowerCase().includes("count(");
++}
++
++function findColumn(value: unknown): Column | null {
++  if (is(value, Column)) return value;
++  if (!is(value, SQL)) return null;
++  for (const chunk of value.queryChunks) {
++    const found = findColumn(chunk);
++    if (found) return found;
++  }
++  return null;
++}
++
++function parseOrder(entry: unknown): { column: Column | null; dir: "asc" | "desc" } {
++  if (is(entry, Column)) return { column: entry, dir: "asc" };
++  if (!is(entry, SQL)) throw new Error("Unsupported order expression");
++  return { column: findColumn(entry), dir: sqlText(entry).toLowerCase().includes("desc") ? "desc" : "asc" };
++}
++
++class MemoryQuery {
++  private filters: SQL[] = [];
++  private joins: { table: string; on: SQL; inner: boolean }[] = [];
++  private groups: Column[] = [];
++  private orders: unknown[] = [];
++  private limitN: number | undefined;
++  private fromTable = "";
++
++  constructor(private readonly tables: Record<string, Row[]>, private readonly shape: Record<string, unknown> | undefined) {}
++
++  from(table: unknown) {
++    this.fromTable = getTableName(table as Parameters<typeof getTableName>[0]);
++    return this;
++  }
++
++  innerJoin(table: unknown, on: SQL) {
++    this.joins.push({ table: getTableName(table as Parameters<typeof getTableName>[0]), on, inner: true });
++    return this;
++  }
++
++  leftJoin(table: unknown, on: SQL) {
++    this.joins.push({ table: getTableName(table as Parameters<typeof getTableName>[0]), on, inner: false });
++    return this;
++  }
++
++  where(condition?: SQL) {
++    if (condition) this.filters.push(condition);
++    return this;
++  }
++
++  groupBy(...columns: Column[]) {
++    this.groups.push(...columns);
++    return this;
++  }
++
++  orderBy(...entries: unknown[]) {
++    this.orders.push(...entries);
++    return this;
++  }
++
++  limit(count: number) {
++    this.limitN = count;
++    return this;
++  }
++
++  then<TResult1 = Row[], TResult2 = never>(
++    onFulfilled?: ((value: Row[]) => TResult1 | PromiseLike<TResult1>) | null,
++    onRejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
++  ) {
++    return Promise.resolve().then(() => this.execute()).then(onFulfilled, onRejected);
++  }
++
++  private project(rows: Joined[]): Row {
++    if (!this.shape) return { ...(rows[0]?.[this.fromTable] ?? {}) };
++    const projected: Row = {};
++    for (const [key, value] of Object.entries(this.shape)) {
++      if (is(value, Column)) projected[key] = valueOf(value, rows[0]);
++      else if (isCountSql(value)) projected[key] = rows.length;
++      else if (sqlText(value).toLowerCase().includes("max(")) {
++        const column = findColumn(value);
++        if (!column) throw new Error(`max() did not name a column for ${key}`);
++        projected[key] = rows.reduce((best, row) => {
++          const current = valueOf(column, row);
++          if (best == null) return current;
++          return Number(current) > Number(best) ? current : best;
++        }, null as unknown);
++      } else {
++        throw new Error(`Unsupported select expression for ${key}: ${sqlText(value)}`);
++      }
++    }
++    return projected;
++  }
++
++  private execute(): Row[] {
++    let joined: Joined[] = (this.tables[this.fromTable] ?? []).map((row) => ({ [this.fromTable]: row }));
++    for (const join of this.joins) {
++      const rightRows = this.tables[join.table] ?? [];
++      const next: Joined[] = [];
++      for (const left of joined) {
++        const matches = rightRows.filter((right) => evalSql(join.on, { ...left, [join.table]: right }));
++        if (matches.length === 0) {
++          if (!join.inner) next.push({ ...left, [join.table]: null });
++        } else {
++          for (const match of matches) next.push({ ...left, [join.table]: match });
++        }
++      }
++      joined = next;
++    }
++    joined = joined.filter((row) => this.filters.every((filter) => evalSql(filter, row)));
++
++    if (this.groups.length > 0) {
++      const groups = new Map<string, Joined[]>();
++      for (const row of joined) {
++        const key = JSON.stringify(this.groups.map((column) => valueOf(column, row)));
++        const list = groups.get(key) ?? [];
++        list.push(row);
++        groups.set(key, list);
++      }
++      return [...groups.values()].map((list) => this.project(list)).slice(0, this.limitN);
++    }
++
++    const orders = this.orders.map(parseOrder).filter((order) => order.column);
++    if (orders.length > 0) {
++      joined = [...joined].sort((left, right) => {
++        for (const order of orders) {
++          const delta = compareValues(valueOf(order.column as Column, left), valueOf(order.column as Column, right));
++          if (delta !== 0) return order.dir === "desc" ? -delta : delta;
++        }
++        return 0;
++      });
++    }
++    const sliced = this.limitN == null ? joined : joined.slice(0, this.limitN);
++    return sliced.map((row) => this.project([row]));
++  }
++}
++
++class MemoryWrite {
++  private filter: SQL | null = null;
++
++  constructor(
++    private readonly tables: Record<string, Row[]>,
++    private readonly table: string,
++    private readonly values: Row | null,
++  ) {}
++
++  where(condition?: SQL) {
++    if (condition) this.filter = condition;
++    return this;
++  }
++
++  then<TResult1 = [{ affectedRows: number }], TResult2 = never>(
++    onFulfilled?: ((value: [{ affectedRows: number }]) => TResult1 | PromiseLike<TResult1>) | null,
++    onRejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
++  ) {
++    return Promise.resolve().then(() => this.execute()).then(onFulfilled, onRejected);
++  }
++
++  private execute(): [{ affectedRows: number }] {
++    const rows = this.tables[this.table] ?? [];
++    let affected = 0;
++    for (const row of rows) {
++      if (this.filter && !evalSql(this.filter, { [this.table]: row })) continue;
++      Object.assign(row, this.values ?? {});
++      affected += 1;
++    }
++    return [{ affectedRows: affected }];
++  }
++}
++
++function memoryDb(tables: Record<string, Row[]>) {
++  const nextId: Record<string, number> = {};
++  return {
++    select: (shape?: Record<string, unknown>) => new MemoryQuery(tables, shape),
++    insert: (table: unknown) => ({
++      values: async (values: Row | Row[]) => {
++        const name = getTableName(table as Parameters<typeof getTableName>[0]);
++        const bucket = tables[name] ?? (tables[name] = []);
++        const rows = Array.isArray(values) ? values : [values];
++        let firstId = 0;
++        for (const value of rows) {
++          nextId[name] = (nextId[name] ?? 0) + 1;
++          const id = nextId[name];
++          if (firstId === 0) firstId = id;
++          bucket.push({ id, ...value });
++        }
++        return [{ insertId: firstId }];
++      },
++    }),
++    update: (table: unknown) => ({
++      set: (values: Row) => new MemoryWrite(
++        tables,
++        getTableName(table as Parameters<typeof getTableName>[0]),
++        values,
++      ),
++    }),
++  };
++}
++
++function aspenTables(): Record<string, Row[]> {
++  return {
++    distributors: [{ id: 3, name: "Aspen Cabinets", brandName: "Aspen", code: "ASP" }],
++    door_styles: [{
++      id: ASPEN_STYLE_ID,
++      distributorId: 3,
++      styleCode: "AC",
++      ourName: "Aspen Charcoal",
++      aliasName: null,
++      isActive: true,
++      doorStyle: "Shaker",
++      doorPanelType: null,
++      woodSpecies: "Maple",
++      finish: "Charcoal",
++      color: "#3a3a3a",
++      doorSampleImageUrl: samplePhotoUrl,
++      doorSampleVerified: true,
++      cornerSwatchImageUrl: null,
++      railWidth: "3",
++      stileWidth: "3",
++      centerRailWidth: null,
++      panelConstruction: "flat",
++      bevelWidth: null,
++      bevelDepth: null,
++      insideEdgeProfile: null,
++      drawerFrontType: null,
++      grainDirection: "vertical",
++      finishSheen: "satin",
++    }],
++    door_rendering_audit_runs: [],
++    door_rendering_audit_results: [],
++    door_rendering_versions: [],
++    door_rendering_version_events: [],
++  };
++}
++
++function openRuns(tables: Record<string, Row[]>) {
++  return (tables.door_rendering_audit_runs ?? []).filter((row) => row.status === "awaiting_renders" || row.status === "scoring");
++}
++
++describe("door rendering audit timing", () => {
++  let tables: Record<string, Row[]>;
++
++  beforeEach(() => {
++    tables = aspenTables();
++    harness.getDb.mockReset();
++    harness.getDb.mockResolvedValue(memoryDb(tables));
++    harness.storagePut.mockClear();
++    harness.invokeLLM.mockReset();
++    harness.invokeLLM.mockResolvedValue(scorePayload);
++  });
++
++  it("scores Aspen Charcoal within the one-style budget and lets the next run start", async () => {
++    const api = caller();
++    const startedAt = performance.now();
++    const run = await api.startRun({ scope: "selected", styleIds: [ASPEN_STYLE_ID] });
++    expect(run.styles.map((style) => style.ourName)).toEqual(["Aspen Charcoal"]);
++    expect(run.status).toBe("awaiting_renders");
++
++    // The browser captures this PNG offscreen. The test submits that same body.
++    const submitted = await api.submitRender({
++      runId: run.runId,
++      styleId: ASPEN_STYLE_ID,
++      imageBase64: pngBase64,
++      contentType: "image/png",
++    });
++    const status = await api.runStatus({ runId: run.runId });
++    const elapsedMs = performance.now() - startedAt;
++
++    expect(submitted).toMatchObject({
++      runId: run.runId,
++      styleId: ASPEN_STYLE_ID,
++      scores: { overall: 8 },
++      verdict: "no_baseline",
++    });
++    expect(status.run.status).toBe("completed");
++    expect(status.results).toEqual([
++      expect.objectContaining({
++        styleId: ASPEN_STYLE_ID,
++        ourName: "Aspen Charcoal",
++        status: "scored",
++        overallScore: 8,
++      }),
++    ]);
++    expect(tables.door_rendering_versions).toHaveLength(1);
++    expect(harness.storagePut).toHaveBeenCalledTimes(1);
++    expect(harness.invokeLLM).toHaveBeenCalledTimes(1);
++    expect(elapsedMs, `Aspen Charcoal audit took ${elapsedMs.toFixed(1)} ms`).toBeLessThan(ONE_STYLE_AUDIT_BUDGET_MS);
++    expect(openRuns(tables)).toEqual([]);
++
++    const second = await api.startRun({ scope: "selected", styleIds: [ASPEN_STYLE_ID] });
++    expect(second.runId).not.toBe(run.runId);
++    expect(second.status).toBe("awaiting_renders");
++  }, 35_000);
++
++  it("keeps the run scoring when Gemini does not return, so the next start conflicts", async () => {
++    // Current behavior, kept green on purpose. submitRender claims `scoring`
++    // before invokeLLM and has no AbortSignal, no 120s deadline, and no
++    // staleness check. The HTTP server drops a quiet socket at 120s, but that
++    // does not cancel this call, so the row stays scoring and the next
++    // startRun throws CONFLICT. When that is fixed, this test should flip:
++    // after the budget the run must not stay open, and the second startRun
++    // must succeed. The mock is released only after the assertions so Vitest
++    // does not hang; production has no such release.
++    let releaseScore: (value: InvokeResult) => void = () => {};
++    harness.invokeLLM.mockImplementation(() => new Promise<InvokeResult>((resolve) => {
++      releaseScore = resolve;
++    }));
++    const api = caller();
++    const run = await api.startRun({ scope: "selected", styleIds: [ASPEN_STYLE_ID] });
++    const pendingScore = api.submitRender({
++      runId: run.runId,
++      styleId: ASPEN_STYLE_ID,
++      imageBase64: pngBase64,
++      contentType: "image/png",
++    });
++
++    await vi.waitFor(() => {
++      expect(tables.door_rendering_audit_runs.find((row) => row.id === run.runId)?.status).toBe("scoring");
++    });
++    vi.useFakeTimers();
++    vi.setSystemTime(new Date("2026-10-27T23:02:00.000Z"));
++    vi.advanceTimersByTime(120_000);
++    expect(tables.door_rendering_audit_runs.find((row) => row.id === run.runId)?.status).toBe("scoring");
++    expect(tables.door_rendering_audit_results.find((row) => row.runId === run.runId)?.status).toBe("scoring");
++    await expect(api.startRun({ scope: "selected", styleIds: [ASPEN_STYLE_ID] })).rejects.toMatchObject({
++      code: "CONFLICT",
++      message: expect.stringContaining(`already in progress (run ${run.runId})`),
++    });
++    vi.useRealTimers();
++    releaseScore(scorePayload);
++    await pendingScore;
++  });
++});
+-- 
+2.43.0
+
