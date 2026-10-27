@@ -14,6 +14,14 @@ describe("Pelican vendor catalog editor", () => {
     expect(catalogSource).toContain("updateProduct");
   });
 
+  it("opens the existing editor for a forecast product and shows vendor cost read-only", () => {
+    expect(catalogSource).toContain("productForVendorEdit");
+    expect(catalogSource).toContain('data-testid="pelican-vendor-cost"');
+    expect(catalogSource).toContain("pelicanVendorCostLabel(editingProduct?.vendorWholesale)");
+    expect(catalogSource).toContain("Read-only");
+    expect(catalogSource).not.toContain('id="pelican-edit-vendor-wholesale"');
+  });
+
   it("pages the Pelican catalog from the same category source as Overview", () => {
     expect(catalogSource).toContain("limit: CATALOG_PAGE_SIZE");
     expect(catalogSource).toContain('trpc.pelican.categories.useQuery({ scope: "admin" })');

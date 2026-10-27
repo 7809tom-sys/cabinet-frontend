@@ -35,6 +35,7 @@ import { Label } from "@/components/ui/label";
 import { csvEscape } from "@shared/inventoryForecast";
 import { VendorOtherProducts } from "@/components/vendor/VendorOtherProducts";
 import { VendorSalesForecast } from "@/components/vendor/VendorSalesForecast";
+import { pelicanVendorCostLabel } from "@/lib/vendorCostLabel";
 import { VendorInventory } from "@/components/vendor/VendorInventory";
 import { VendorPricing } from "@/components/vendor/VendorPricing";
 import { VendorSamples } from "@/components/vendor/VendorSamples";
@@ -136,6 +137,12 @@ function PelicanVendorCatalogPage({
 }) {
   const utils = trpc.useUtils();
   const [search, setSearch] = useState("");
+  const openedEditId = useRef<number | null>(null);
+  const editId = Number(new URLSearchParams(window.location.search).get("edit"));
+  const productForEdit = trpc.pelican.productForVendorEdit.useQuery(
+    { id: editId },
+    { enabled: Number.isInteger(editId) && editId > 0 },
+  );
   const [catalogPage, setCatalogPage] = useState(0);
   const [editingProduct, setEditingProduct] = useState<any | null>(null);
   const [draft, setDraft] = useState({ name: "", description: "", imageUrl: "", yourCost: "", retailPrice: "" });
@@ -176,6 +183,12 @@ function PelicanVendorCatalogPage({
     setEditingProduct(item);
     setDraft({ name: item.name ?? "", description: item.description ?? "", imageUrl: item.imageUrl ?? "", yourCost: item.yourCost == null ? "" : String(item.yourCost), retailPrice: item.retailPrice == null ? "" : String(item.retailPrice) });
   };
+  useEffect(() => {
+    const product = productForEdit.data;
+    if (!product || openedEditId.current === product.id) return;
+    openedEditId.current = product.id;
+    openEditor(product);
+  }, [productForEdit.data]);
   const parseMoney = (value: string, label: string): number | null | undefined => {
     if (!value.trim()) return null;
     const parsed = Number(value);
@@ -356,6 +369,11 @@ function PelicanVendorCatalogPage({
             <div className="grid gap-2">
               <Label htmlFor="pelican-edit-description">Description</Label>
               <Textarea id="pelican-edit-description" rows={5} value={draft.description} onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))} />
+            </div>
+            <div className="grid gap-2">
+              <Label>Vendor cost</Label>
+              <p className="text-sm" data-testid="pelican-vendor-cost">{pelicanVendorCostLabel(editingProduct?.vendorWholesale)}</p>
+              <p className="text-xs text-muted-foreground">Read-only. This is the product&apos;s vendorWholesale, the same vendor cost shown on Sales Forecast. Editing vendor cost is not available on this screen.</p>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="grid gap-2">
@@ -1127,7 +1145,7 @@ function CatalogPage() {
   const myLine = trpc.distributorPortal.myLine.useQuery(adminDistId ? { distributorId: adminDistId } : undefined);
   const [styleId, setStyleId] = useState<string>(ALL);
   const [category, setCategory] = useState<string>(ALL);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get("sku") ?? "");
   const [onlyHidden, setOnlyHidden] = useState(false);
   const [catalogPage, setCatalogPage] = useState(0);
   const [editingPrice, setEditingPrice] = useState<{ skuId: number; field: string; value: string } | null>(null);
