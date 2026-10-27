@@ -258,7 +258,8 @@ import { InteractiveRoom3D, threeDCrownPerimeterSegments, threeDBacksplashSegmen
 import { crownTakeoffFromExposedSegments } from "@/lib/crownTakeoff";
 import { hasDesignedRoomGeometry, initialDesignWorkspaceView, threeDLeftCatalogDragPayload } from "./designTool3DWorkspace";
 import { nearestFreeWallDropStart, targetedLowerCabinetForThreeDDrop, targetedSinkBaseForThreeDDrop, type ThreeDWallDropTarget } from "./designTool3DDropPlacement";
-import { catalogHeightForCabinet, catalogHeightOptions, filterCatalogByHeight, formatCatalogInchValue, type HeightFilterPaletteType } from "./designToolCatalogHeights";
+import { catalogHeightForCabinet, catalogHeightOptions, filterCatalogByHeight, formatCatalogInchValue, formatCatalogPaletteSize, type HeightFilterPaletteType } from "./designToolCatalogHeights";
+import { CatalogPaletteCard } from "@/components/design/CatalogPaletteCard";
 import { WallPicker } from "@/components/design/WallPicker";
 import { OpeningSizeEditor } from "@/components/design/OpeningSizeEditor";
 import { DoorAttributesDialog } from "@/components/design/DoorAttributesDialog";
@@ -16490,7 +16491,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	            </div>}
 	          </div>
 
-		          <div className="flex-1 overflow-y-auto p-2 space-y-1">
+		          <div className="@container flex-1 overflow-y-auto p-2 space-y-1">
 		            {roomType === "bathroom" && paletteType === "vanity" && (
 		              <div data-testid="bathroom-vanity-lineup" className="mb-2 space-y-2 rounded-lg border border-[#a87f33]/40 bg-[#fffaf0] p-2">
 		                <p className="text-xs font-semibold text-[#1a2744]">Bath vanities · choose your line and door style</p>
@@ -16773,7 +16774,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                   {open && <div
                     id={groupId}
                     data-testid={`catalog-group-content-${groupId}`}
-                    className={isCompactWorkspace ? "grid grid-cols-2 gap-2" : undefined}
+                    className={isCompactWorkspace ? "grid grid-cols-1 gap-2 @min-[32rem]:grid-cols-2" : undefined}
                   >{group.items.length === 0 ? (
                     <div className="rounded-md border border-dashed border-border bg-muted/25 px-3 py-2 text-[10px] text-muted-foreground">
                       {t("dt_pl_no_category")}
@@ -16817,52 +16818,28 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                     // as an add-on sale in the design tool and is hidden here.
                     if (paletteType === "accessory" || paletteType === "panel") {
                       if (!isPlaceableAccessory(c)) return null;
+                      const panelDimensions = resolvedDesignCabinetDimensions(c);
+                      const panelSizeLabel = panelDimensions.width > 0 && panelDimensions.height > 0 && panelDimensions.depth > 0
+                        ? formatCatalogPaletteSize(c)
+                        : "";
                       return (
-                        <div
+                        <CatalogPaletteCard
                           key={c.masterCode}
-                          data-testid={paletteType === "panel" ? `panel-catalog-item-${c.masterCode}` : undefined}
+                          cabinet={c}
+                          description={c.description}
+                          sizeLabel={panelSizeLabel}
+                          sizeTestId={paletteType === "panel" ? `panel-catalog-dimensions-${c.masterCode}` : undefined}
+                          cardTestId={paletteType === "panel" ? `panel-catalog-item-${c.masterCode}` : undefined}
+                          placeHint={t("dt_pl_click_drag_place")}
                           draggable
                           onDragStart={(event) => { dragDataRef.current = c; setCatalogDragPreview(c); const item = interactive3dCatalogItems.find((candidate) => Number(candidate.id) === Number(c.id) && candidate.category === "Accessory"); if (item) { event.dataTransfer.effectAllowed = "copy"; event.dataTransfer.setData("text/plain", threeDLeftCatalogDragPayload(item.category, item.id)); } }}
                           onDragEnd={() => { dragDataRef.current = null; setCatalogDragPreview(null); }}
-                          className="group flex w-full items-center gap-1.5 rounded-lg border border-border p-2 transition-colors hover:border-primary/50 hover:bg-muted/50"
-                        >
-                          <button
-                            type="button"
-                            onClick={() => addCabinet(c)}
-                            className="flex min-w-0 flex-1 items-center gap-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                            aria-label={`Place ${c.displayMasterCode ?? c.masterCode}`}
-                          >
-                            <div className="h-9 w-9 flex items-center justify-center shrink-0">
-                              <CabinetImage cabinet={c} className="h-full w-auto max-w-full" />
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="font-mono text-xs font-semibold text-foreground truncate">{c.displayMasterCode ?? c.masterCode}</div>
-                              <div className="text-[10px] text-muted-foreground truncate">{c.description}</div>
-                              {(() => {
-                                const dimensions = resolvedDesignCabinetDimensions(c);
-                                return dimensions.width > 0 && dimensions.height > 0 && dimensions.depth > 0 ? (
-                                  <div data-testid={`panel-catalog-dimensions-${c.masterCode}`} className="text-[9px] text-muted-foreground">
-                                    {formatCatalogInchValue(dimensions.width)}″ W × {formatCatalogInchValue(dimensions.height)}″ H × {formatCatalogInchValue(dimensions.depth)}″ D
-                                  </div>
-                                ) : null;
-                              })()}
-                              <div className="text-[9px] font-medium text-primary/70">{t("dt_pl_click_drag_place")}</div>
-                            </div>
-                            <Plus className="h-3.5 w-3.5 text-muted-foreground group-hover:text-primary shrink-0" />
-                          </button>
-                          <Tooltip><TooltipTrigger asChild>
-                            <button
-                              type="button"
-                              data-testid={`catalog-noncabinet-card-specs-${c.masterCode}`}
-                              aria-label={`View specifications for ${c.displayMasterCode ?? c.masterCode}`}
-                              title="View this catalog item’s specifications"
-                              onClick={(event) => { event.stopPropagation(); openCatalogSpecificationsFor(c); }}
-                              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded border border-[#b98d3e]/60 bg-white text-[#634b20] transition hover:bg-[#fff4d8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1a2744] active:scale-95"
-                            >
-                              <FileText className="h-3.5 w-3.5" aria-hidden />
-                            </button>
-                          </TooltipTrigger><TooltipContent>View specifications</TooltipContent></Tooltip>
-                        </div>
+                          onPlace={() => addCabinet(c)}
+                          onOpenSpecs={() => openCatalogSpecificationsFor(c)}
+                          specsTestId={`catalog-noncabinet-card-specs-${c.masterCode}`}
+                          specsAriaLabel={`View specifications for ${c.displayMasterCode ?? c.masterCode}`}
+                          specsTitle="View this catalog item’s specifications"
+                        />
                       );
                     }
 	                    const placementDetail = cabinetPlacementHoverDetail(c);
@@ -16876,100 +16853,40 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                    const appliancePriceNotice = paletteType === "appliance" && Number(c.id) === 0
 	                      ? "Layout model — appliance price is not included in the design total."
 	                      : null;
+	                    // A base-family box (Base/Vanity tab, or a corner BASE
+	                    // cabinet inside the unified Corner tab) is always the
+	                    // standard 34.5" tall; wall/tall/corner-wall boxes use
+	                    // their real catalog height. Depth is always the resolved
+	                    // depth, including 24"-deep fridge walls.
+	                    const isBaseBox =
+	                      paletteType === "base" ||
+	                      (paletteType === "vanity" && !isKneeDrawerItem(c)) ||
+	                      (paletteType === "corner" && isCornerBase(c));
+	                    const sizeLabel = formatCatalogPaletteSize(c, { baseBox: isBaseBox });
+	                    const openSpecs = paletteType === "appliance" ? Boolean(c.specImageUrl) : true;
 	                    return (
-		                    <div
-		                      key={`${c.masterCode}:${c.catalogImageUrl ?? c.id}`}
-                      draggable
-                      onDragStart={(event) => { dragDataRef.current = c; setCatalogDragPreview(c); const item = interactive3dCatalogItems.find((candidate) => Number(candidate.id) === Number(c.id) && candidate.category === "Cabinet"); if (item) { event.dataTransfer.effectAllowed = "copy"; event.dataTransfer.setData("text/plain", threeDLeftCatalogDragPayload(item.category, item.id)); } }}
-                      onDragEnd={() => { dragDataRef.current = null; setCatalogDragPreview(null); }}
-	                      className="group flex w-full items-center gap-1.5 rounded-lg border border-border p-2 transition-colors hover:border-primary/50 hover:bg-muted/50"
-	                      title={placementDetailText}
-	                      data-testid={placementDetail ? `cabinet-placement-detail-${c.masterCode}` : undefined}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => addCabinet(c)}
-                        className="flex min-w-0 flex-1 items-center gap-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                        aria-label={placementDetailText ?? `Place ${c.displayMasterCode ?? c.masterCode}`}
-                      >
-                        <div className="h-9 w-9 shrink-0 flex items-center justify-center">
-                          <CabinetImage cabinet={c} className="h-full w-auto max-w-full" />
-                        </div>
-	                        <div className="min-w-0 flex-1">
-	                          <div className="font-mono text-xs font-semibold text-foreground truncate">{c.displayMasterCode ?? c.masterCode}</div>
-	                          <div className="text-[10px] text-muted-foreground truncate">{isSquareDoubleDoorBaseEnd(c) ? BEC24_DISPLAY_NAME : c.description}</div>
-                          <GlassPolicyBadge masterCode={c.masterCode} glassIncluded={c.glassIncluded} className="mt-0.5" />
-                          {(() => {
-                          // A base-family box (Base/Vanity tab, or a corner BASE
-                          // cabinet inside the unified Corner tab) is always the
-                          // standard 34.5" tall; wall/tall/corner-wall boxes use
-                          // their real catalog height.
-		                          const isBaseBox =
-		                            paletteType === "base" ||
-		                            (paletteType === "vanity" && !isKneeDrawerItem(c)) ||
-                            (paletteType === "corner" && isCornerBase(c));
-                          const dimensions = resolvedDesignCabinetDimensions(c);
-	                          const widthVal = formatCatalogInchValue(dimensions.width);
-	                          const hVal = isBaseBox ? formatCatalogInchValue(34.5) : dimensions.height > 0 ? formatCatalogInchValue(dimensions.height) : "—";
-	                          const showH = isBaseBox || dimensions.height > 0;
-	                          return (
-	                            <div className="text-[10px] text-muted-foreground">{widthVal}"W × {hVal}{showH ? "\"H" : ""}</div>
-	                          );
-	                          })()}
-	                          {placementDetail && (
-	                            <div className="mt-0.5 text-[9px] font-medium leading-snug text-emerald-700">
-	                              Hover for dimensions &amp; flush-seam clearance
-	                            </div>
-	                          )}
-	                          {appliancePriceNotice && (
-	                            <div
-	                              data-testid={`appliance-price-pending-${c.masterCode}`}
-	                              className="mt-0.5 text-[9px] font-medium leading-snug text-amber-700"
-	                            >
-	                              {appliancePriceNotice}
-	                            </div>
-	                          )}
-	                        </div>
-                        {paletteFinishSwatch && (
-                          <img
-                            src={paletteFinishSwatch}
-                            alt={activeStyleName ? `${activeStyleName} finish` : "selected finish"}
-                            title={activeStyleName ?? undefined}
-                            loading="lazy"
-                            className="h-7 w-7 rounded-sm object-cover border border-[#a07d4a]/40 shrink-0"
-                          />
-                        )}
-                        <Plus className="h-3.5 w-3.5 shrink-0 text-muted-foreground group-hover:text-primary" />
-                      </button>
-                      {paletteType === "appliance" && c.specImageUrl ? (
-                        <Tooltip><TooltipTrigger asChild>
-                          <button
-                            type="button"
-                            data-testid={`catalog-appliance-card-specs-${c.masterCode}`}
-                            aria-label={`View specifications for ${c.displayMasterCode ?? c.masterCode}`}
-                            title="View manufacturer specification sheet"
-                            onClick={(event) => { event.stopPropagation(); openCatalogSpecificationsFor(c); }}
-                            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded border border-[#b98d3e]/60 bg-white text-[#634b20] transition hover:bg-[#fff4d8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1a2744] active:scale-95"
-                          >
-                            <FileText className="h-3.5 w-3.5" aria-hidden />
-                          </button>
-                        </TooltipTrigger><TooltipContent>View manufacturer specification sheet</TooltipContent></Tooltip>
-                      ) : paletteType !== "appliance" ? (
-                        <Tooltip><TooltipTrigger asChild>
-                          <button
-                            type="button"
-                            data-testid={`catalog-card-specs-${c.masterCode}`}
-                            aria-label={`View specifications for ${c.displayMasterCode ?? c.masterCode}`}
-                            title="View this catalog item’s specifications"
-                            onClick={(event) => { event.stopPropagation(); openCatalogSpecificationsFor(c); }}
-                            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded border border-[#b98d3e]/60 bg-white text-[#634b20] transition hover:bg-[#fff4d8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1a2744] active:scale-95"
-                          >
-                            <FileText className="h-3.5 w-3.5" aria-hidden />
-                          </button>
-                        </TooltipTrigger><TooltipContent>View specifications</TooltipContent></Tooltip>
-                      ) : null}
-                    </div>
-                    );
+	                    <CatalogPaletteCard
+	                      key={`${c.masterCode}:${c.catalogImageUrl ?? c.id}`}
+	                      cabinet={c}
+	                      description={isSquareDoubleDoorBaseEnd(c) ? BEC24_DISPLAY_NAME : c.description}
+	                      sizeLabel={sizeLabel}
+	                      finishSwatchUrl={paletteFinishSwatch}
+	                      finishName={activeStyleName}
+	                      showGlass
+	                      placementDetailText={placementDetailText}
+	                      showPlacementHint={Boolean(placementDetail)}
+	                      priceNotice={appliancePriceNotice}
+	                      cardTestId={placementDetail ? `cabinet-placement-detail-${c.masterCode}` : undefined}
+	                      draggable
+	                      onDragStart={(event) => { dragDataRef.current = c; setCatalogDragPreview(c); const item = interactive3dCatalogItems.find((candidate) => Number(candidate.id) === Number(c.id) && candidate.category === "Cabinet"); if (item) { event.dataTransfer.effectAllowed = "copy"; event.dataTransfer.setData("text/plain", threeDLeftCatalogDragPayload(item.category, item.id)); } }}
+	                      onDragEnd={() => { dragDataRef.current = null; setCatalogDragPreview(null); }}
+	                      onPlace={() => addCabinet(c)}
+	                      onOpenSpecs={openSpecs ? () => openCatalogSpecificationsFor(c) : undefined}
+	                      specsTestId={paletteType === "appliance" && c.specImageUrl ? `catalog-appliance-card-specs-${c.masterCode}` : paletteType !== "appliance" ? `catalog-card-specs-${c.masterCode}` : undefined}
+	                      specsAriaLabel={`View specifications for ${c.displayMasterCode ?? c.masterCode}`}
+	                      specsTitle={paletteType === "appliance" ? "View manufacturer specification sheet" : "View this catalog item’s specifications"}
+	                    />
+	                    );
                   })}</div>}
                 </div>
                 );
@@ -21772,7 +21689,7 @@ function PaletteShell({
   if (isMobile) {
     return (
       <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent side="left" className={compact ? "w-[min(840px,96vw)] p-0 gap-0 flex flex-col" : "w-[88vw] max-w-sm p-0 gap-0 flex flex-col"}>
+        <SheetContent side="left" className={compact ? "w-[min(840px,96vw)] max-w-none sm:max-w-[min(840px,96vw)] p-0 gap-0 flex flex-col" : "w-[88vw] max-w-sm p-0 gap-0 flex flex-col"}>
           <SheetHeader className="px-3 py-2 border-b border-border text-left">
             <SheetTitle className="text-sm">{compact ? "Cabinet catalog — tablet view" : t("dt_pl_catalog")}</SheetTitle>
           </SheetHeader>

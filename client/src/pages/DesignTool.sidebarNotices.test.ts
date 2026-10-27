@@ -37,10 +37,14 @@ describe("Designer sidebar reference information and conflict notices", () => {
   });
 
   it("puts a compact non-placement Specs action beside each regular catalog card", () => {
-    expect(source).toContain('data-testid={`catalog-card-specs-${c.masterCode}`}');
-    expect(source).toContain('aria-label={`View specifications for ${c.displayMasterCode ?? c.masterCode}`}');
-    expect(source).toContain('onClick={(event) => { event.stopPropagation(); openCatalogSpecificationsFor(c); }}');
-    expect(source).toContain('title="View this catalog item’s specifications"');
+    const card = readFileSync(new URL("../components/design/CatalogPaletteCard.tsx", import.meta.url), "utf8");
+    expect(source).toContain('specsTestId={paletteType === "appliance" && c.specImageUrl ? `catalog-appliance-card-specs-${c.masterCode}` : paletteType !== "appliance" ? `catalog-card-specs-${c.masterCode}` : undefined}');
+    expect(source).toContain('specsAriaLabel={`View specifications for ${c.displayMasterCode ?? c.masterCode}`}');
+    expect(source).toContain('onOpenSpecs={openSpecs ? () => openCatalogSpecificationsFor(c) : undefined}');
+    expect(source).toContain('specsTitle={paletteType === "appliance" ? "View manufacturer specification sheet" : "View this catalog item’s specifications"}');
+    expect(card).toContain("event.stopPropagation()");
+    expect(card).toContain("onOpenSpecs()");
+    expect(card).toContain("data-testid={specsTestId}");
   });
 
   it("also gives source-backed physical panel and accessory cards a separate Specs action without turning it into placement", () => {
@@ -50,17 +54,17 @@ describe("Designer sidebar reference information and conflict notices", () => {
 
     expect(accessoryStart).toBeGreaterThan(-1);
     expect(accessoryEnd).toBeGreaterThan(accessoryStart);
-    expect(accessoryCard).toContain('data-testid={`catalog-noncabinet-card-specs-${c.masterCode}`}');
-    expect(accessoryCard).toContain('aria-label={`View specifications for ${c.displayMasterCode ?? c.masterCode}`}');
-    expect(accessoryCard).toContain('onClick={(event) => { event.stopPropagation(); openCatalogSpecificationsFor(c); }}');
-    expect(accessoryCard).toContain('title="View this catalog item’s specifications"');
-    expect(accessoryCard).toContain('onClick={() => addCabinet(c)}');
+    expect(accessoryCard).toContain('specsTestId={`catalog-noncabinet-card-specs-${c.masterCode}`}');
+    expect(accessoryCard).toContain('specsAriaLabel={`View specifications for ${c.displayMasterCode ?? c.masterCode}`}');
+    expect(accessoryCard).toContain('onOpenSpecs={() => openCatalogSpecificationsFor(c)}');
+    expect(accessoryCard).toContain('specsTitle="View this catalog item’s specifications"');
+    expect(accessoryCard).toContain('onPlace={() => addCabinet(c)}');
   });
 
   it("keeps appliance and surface Specs actions limited to cards with a real manufacturer specification sheet", () => {
-    expect(source).toContain('data-testid={`catalog-appliance-card-specs-${c.masterCode}`}');
+    expect(source).toContain('`catalog-appliance-card-specs-${c.masterCode}`');
     expect(source).toContain('paletteType === "appliance" && c.specImageUrl');
-    expect(source).toContain('aria-label={`View specifications for ${c.displayMasterCode ?? c.masterCode}`}');
+    expect(source).toContain('specsAriaLabel={`View specifications for ${c.displayMasterCode ?? c.masterCode}`}');
 
     const surfacePicker = readFileSync(new URL("../components/design/SurfacesPickerDialog.tsx", import.meta.url), "utf8");
     expect(surfacePicker).toContain('export function verifiedSurfaceSpecificationUrl');
