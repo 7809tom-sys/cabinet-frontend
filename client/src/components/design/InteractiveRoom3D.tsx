@@ -20,6 +20,7 @@ import { furniturePlanFrame, resolvedFurnitureDimensions } from "@/lib/design";
 import { farmhouseSinkBaseFaceLayout } from "@/lib/farmhouseSinkBaseFace";
 import { angledWallTransitionFootprint } from "@/lib/angledWallFiller";
 import { miteredWallOutlinesFromInteriorFaces, ROOM_WALL_THICKNESS_IN, wallAngle as polygonWallAngle } from "@/lib/polygonRoom";
+import { deckFaucetWindowWarning, resolveDeckFaucetPlacement, type DeckFaucetPlacement } from "@/lib/faucetPlacement";
 import { cabinetDrawingType, isEqualHeightTwoDrawerBase as isEqualHeightTwoDrawerBaseFamily, isSquareDoubleDoorBaseEnd, isWallBlindCornerCabinet, resolveDoorDrawerCounts, resolvedVanityComboFaceLayout, standardDoorCountForFaceWidth, threeDrawerBaseRowHeights } from "@/lib/cabinetGraphics";
 import { verifiedPelicanBathroomFixtureProfile, type VerifiedPelicanBathroomFixtureProfile } from "@/lib/pelicanBathroomFixtureProfiles";
 import { makePelicanTubFillerGroup } from "@/lib/pelicanTubFillerMesh";
@@ -7904,13 +7905,15 @@ export function sinkFixtureTransform(sink: SinkFixture) {
   };
 }
 
-export function sinkFaucetTransform(sink: SinkFixture) {
+export function sinkFaucetTransform(sink: SinkFixture, rearDeckOffsetIn?: number) {
   const sinkTransform = sinkFixtureTransform(sink);
   const sinkDepth = sink.sourceDepth ?? sink.depth;
   // Deck-mounted faucets sit on the counter behind the basin's rear rim.
   // Fixtures saved before the rear-deck datum existed use the same 1.25 inch
-  // setback so a legacy faucet is not drawn down inside the bowl.
-  const offset = sinkDepth / 2 + (sink.faucetRearDeckOffsetIn ?? 1.25);
+  // setback so a legacy faucet is not drawn down inside the bowl. A resolved
+  // offset (from window/backsplash clearance) replaces that datum without
+  // moving the faucet off the rear deck.
+  const offset = sinkDepth / 2 + (rearDeckOffsetIn ?? sink.faucetRearDeckOffsetIn ?? 1.25);
   const back = sink.wallSide === "bottom"
     ? { x: 0, z: offset * INCH }
     : sink.wallSide === "left"
@@ -7986,7 +7989,7 @@ function sinkInteriorStencilMaterial<T extends THREE.Material>(material: T, sten
   return material;
 }
 
-export function addSinkFixture(root: THREE.Group, sink: SinkFixture) {
+export function addSinkFixture(root: THREE.Group, sink: SinkFixture, faucetPlacement?: DeckFaucetPlacement) {
   const width = sink.width * INCH;
   const depth = sink.depth * INCH;
   const { x: centerX, z: centerZ, countertopTop, rotation } = sinkFixtureTransform(sink);
@@ -8254,7 +8257,14 @@ export function addSinkFixture(root: THREE.Group, sink: SinkFixture) {
     addFixtureNode(divider);
   }
   if (!sink.faucet || !sink.pelicanFaucetProfileId || sink.faucetOverallHeight == null || sink.faucetSpoutLength == null || sink.faucetSpoutHeight == null || !sink.faucetForm) return;
-  const faucet = sinkFaucetTransform(sink);
+  // A deck faucet that still intersects a window frame stays off the mesh.
+  // Drawing it would put the spout through the sill, casing, or wall opening.
+  if (faucetPlacement && !faucetPlacement.renderFaucet) return;
+  const faucet = sinkFaucetTransform(sink, faucetPlacement?.offsetIn);
+  if (faucetPlacement?.anchored) {
+    faucet.x = faucetPlacement.mountX * INCH;
+    faucet.z = faucetPlacement.mountY * INCH;
+  }
   const faucetMaterial = new THREE.MeshStandardMaterial({
     color: sink.faucetFinish === "matte-black"
       ? "#24272a"
@@ -11038,7 +11048,8 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 	      if (!showRoomContext && opening.kind === "door" && opening.doorStyle === "bifold") continue;
       addWallOpening(catalogRoot, opening, room, undefined, windowSceneKind, windowFrameStyle);
 	    }
-    for (const sink of sinks) addSinkFixture(catalogRoot, sink);
+    const faucetCountertops = countertopSurfaces(renderedPlaced, room, island, ponyWalls);
+    for (const sink of sinks) addSinkFixture(catalogRoot, sink, resolveDeckFaucetPlacement(sink, room, openings, faucetCountertops));
     for (const potFiller of potFillers) {
       const mountedRange = potFillerMountedRange(potFiller, placed, room, island);
       if (mountedRange) addPotFillerFixture(catalogRoot, potFiller, mountedRange, room);
@@ -12525,6 +12536,11 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
   const frontDatumSnaps = threeDFrontDatumSnapIndicators(placed);
 
   const temporaryPreviewCounterText = threeDTemporaryPreviewCounterText(temporaryPreviewCounter);
+  const faucetWindowWarning = deckFaucetWindowWarning(
+    sinks,
+    roomOverride ?? ({ width: 144, depth: 120, ceilingHeight: 96 } as RoomData),
+    openings,
+  );
 
   return (
     <section ref={previewRootRef} onDragOver={(event) => event.preventDefault()} className={`relative ${embedded ? "flex h-full min-h-0 flex-col" : ""} ${isFullscreen ? "h-screen w-screen overflow-y-auto bg-background p-3 sm:p-5" : ""} ${className ?? ""}`} aria-label="Interactive three-dimensional room preview">
@@ -12562,6 +12578,11 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 	        setCatalogDragMeasurement(fit ? { item, fit, wall, freehand: event.shiftKey } : null);
 	      }} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setCatalogDragMeasurement(null); }} onDrop={(event) => { event.preventDefault(); const key = event.dataTransfer.getData("text/plain"); const item = catalogItems.find((candidate) => `${candidate.category}:${candidate.id}` === key) ?? catalogDragItem; if (item) onAddCatalogItem?.(item, catalogDropTargetAtPoint(event.clientX, event.clientY), event.shiftKey); setDraggedCatalogId(null); setCatalogDragMeasurement(null); }}>
 			        <div ref={mountRef} className="h-full w-full" />
+			        {faucetWindowWarning && (
+			          <div data-testid="faucet-window-conflict" role="alert" className="pointer-events-none absolute bottom-16 left-3 z-30 max-w-sm rounded-lg border border-amber-500 bg-amber-50/95 px-3 py-2 text-xs font-semibold leading-snug text-amber-950 shadow-lg">
+			            {faucetWindowWarning}
+			          </div>
+			        )}
 			        {selectedFurnitureUid && (() => {
 		          const item = furniture.find((candidate) => candidate.uid === selectedFurnitureUid);
 		          const definition = FURNITURE_CATALOG.find((candidate) => candidate.id === item?.defId);
