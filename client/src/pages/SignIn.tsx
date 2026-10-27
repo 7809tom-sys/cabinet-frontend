@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { supabase } from "@/lib/supabase";
 import { isSafeSiteReturnPath } from "@/const";
+import { decideSignInNavigation, loadSignInRedirectHistory, saveSignInRedirectHistory } from "@/lib/signInRedirect";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -65,6 +66,7 @@ export default function SignIn() {
   const [showConfirmPw, setShowConfirmPw] = useState(false);
 
   const [pending, setPending] = useState<"login" | "signup" | "reset" | "google" | null>(null);
+  const [redirectStopped, setRedirectStopped] = useState(false);
   const finishing = useRef(false);
   const googleRedirectStarted = useRef(false);
   const googleLeftPage = useRef(false);
@@ -87,7 +89,7 @@ export default function SignIn() {
     return isSafeSiteReturnPath(value) ? value : null;
   };
 
-  const afterAuth = async () => {
+  const afterAuth = async (mode: "automatic" | "submit") => {
     if (finishing.current) return;
     finishing.current = true;
     try {
@@ -100,9 +102,29 @@ export default function SignIn() {
         toast.error("Your sign-in could not be confirmed. Please try again.");
         return;
       }
-      const { destination } = await utils.auth.signInDestination.fetch({ returnPath: requestedReturn() });
+      const { destination: serverDestination } = await utils.auth.signInDestination.fetch({ returnPath: requestedReturn() });
+      const now = Date.now();
+      const decision = decideSignInNavigation({
+        role: me.role,
+        requestedReturn: requestedReturn(),
+        serverDestination,
+        automatic: mode === "automatic",
+        history: loadSignInRedirectHistory(window.sessionStorage, now),
+        now,
+      });
+      try {
+        saveSignInRedirectHistory(window.sessionStorage, decision.history);
+      } catch {
+        // Private browsing can reject sessionStorage. The in-memory decision
+        // still stops this hop; the next page load just won't remember it.
+      }
+      if (!decision.destination) {
+        setRedirectStopped(true);
+        toast.error("You're already signed in. We stopped a redirect back to the same page.");
+        return;
+      }
       toast.success("Signed in successfully.");
-      window.location.assign(destination);
+      window.location.assign(decision.destination);
     } catch (e) {
       toast.error(errMessage(e, "Your sign-in could not be confirmed. Please try again."));
     } finally {
@@ -114,7 +136,7 @@ export default function SignIn() {
   // Supabase session already established from the URL.
   useEffect(() => {
     void supabase.auth.getSession().then(({ data }) => {
-      if (data.session) void afterAuth();
+      if (data.session) void afterAuth("automatic");
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -194,7 +216,7 @@ export default function SignIn() {
       toast.error(errMessage(error, "Unable to sign in."));
       return;
     }
-    await afterAuth();
+    await afterAuth("submit");
     setPending(null);
   };
 
@@ -233,7 +255,7 @@ export default function SignIn() {
       toast.success("Check your email to confirm your account, then sign in.");
       return;
     }
-    await afterAuth();
+    await afterAuth("submit");
     setPending(null);
   };
 
@@ -266,6 +288,19 @@ export default function SignIn() {
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {redirectStopped && (
+            <div className="mb-4 rounded-md border border-amber-300 bg-amber-50 px-3 py-3 text-sm text-amber-950">
+              <p>You're already signed in. We stopped a redirect back to the same page.</p>
+              <Button
+                type="button"
+                variant="outline"
+                className="mt-3 w-full bg-background"
+                onClick={() => { void supabase.auth.signOut(); }}
+              >
+                Sign out
+              </Button>
+            </div>
+          )}
           <Tabs defaultValue="login" className="w-full">
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="login">Sign In</TabsTrigger>
