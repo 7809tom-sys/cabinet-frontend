@@ -21,6 +21,6 @@ describe("affiliate storefront template coverage", () => {
     expect(source).toContain("GalleryHero");
     expect(source).toContain("StudioHero");
     expect(source).toContain("HeritageHero");
-    expect(source).toContain("StorefrontShop slug={data.slug}");
+    expect(source).toContain("<Catalog affiliateSlug={data.slug} embedded />");
   });
 });

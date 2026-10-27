@@ -49,6 +49,8 @@ export interface SeoOptions {
    * on unmount. Stringify-stable inputs only (memoize before passing).
    */
   jsonLd?: Record<string, unknown> | Record<string, unknown>[];
+  /** Leave the current document head alone. Used when a branded shell already owns the title. */
+  skip?: boolean;
 }
 
 /** Find or create a <meta> by attribute (name or property) and set its content. */
@@ -92,6 +94,7 @@ export function useSeo(
     lang,
     canonical,
     jsonLd,
+    skip = false,
   } = opts;
 
   // Serialize once so the effect dependency is a stable primitive string
@@ -99,6 +102,7 @@ export function useSeo(
   const jsonLdKey = jsonLd ? JSON.stringify(jsonLd) : "";
 
   useEffect(() => {
+    if (skip) return;
     const created: HTMLElement[] = [];
     const prev = new Map<string, string | null>();
 
@@ -203,5 +207,5 @@ export function useSeo(
       }
       for (const s of ldScripts) s.remove();
     };
-  }, [title, desc, type, image, lang, canonical, jsonLdKey]);
+  }, [title, desc, siteName, appendSiteName, type, image, lang, canonical, jsonLdKey, skip]);
 }

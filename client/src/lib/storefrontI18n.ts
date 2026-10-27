@@ -12,7 +12,7 @@ export const STOREFRONT_STRINGS = {
   en: {
     // header / nav
     nav_catalog: "Catalog",
-    nav_styles: "Door Styles",
+    nav_styles: "Shop by Style",
     nav_packages: "Packages",
     nav_design: "3D Designer",
     nav_quote: "Get a Quote",
@@ -100,7 +100,7 @@ export const STOREFRONT_STRINGS = {
   },
   es: {
     nav_catalog: "Catálogo",
-    nav_styles: "Estilos de Puerta",
+    nav_styles: "Comprar por estilo",
     nav_packages: "Paquetes",
     nav_design: "Diseñador 3D",
     nav_quote: "Pedir Cotización",
@@ -175,7 +175,7 @@ export const STOREFRONT_STRINGS = {
   },
   zh: {
     nav_catalog: "目录",
-    nav_styles: "门板样式",
+    nav_styles: "按风格选购",
     nav_packages: "套餐",
     nav_design: "3D设计器",
     nav_quote: "获取报价",

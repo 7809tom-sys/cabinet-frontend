@@ -1,5 +1,5 @@
 import { Link } from "wouter";
-import { useEffect, useMemo } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../server/routers";
 import { trpc } from "@/lib/trpc";
@@ -7,13 +7,11 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { useReferral, setReferralCode } from "@/hooks/useReferral";
 import { useStorefrontLangGlobal as useStorefrontLang } from "@/contexts/LanguageContext";
-import { StorefrontShop } from "@/components/storefront/StorefrontShop";
 import { KITCHEN_SCENES } from "@/lib/doorFamilyPhotos";
 import {
   ArrowRight, Phone, Mail, MapPin, Globe, Award, Menu,
   Ruler, ShieldCheck, Zap, Heart, Languages, Waves, LogIn, ShoppingCart, X, PackageOpen,
 } from "lucide-react";
-import { useState } from "react";
 import { useCart } from "@/contexts/CartContext";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useWhiteLabelHead } from "@/hooks/useWhiteLabelHead";
@@ -23,6 +21,8 @@ import type { PublicAffiliateSocialLink } from "@shared/affiliateSocialLinks";
 import type { AffiliateStorefrontTemplate } from "@shared/affiliateStorefrontTemplates";
 import { affiliateDashboardPath } from "@/lib/affiliateStorefrontUrl";
 import { storefrontCssVars } from "@shared/affiliateStorefrontControls";
+
+const Catalog = lazy(() => import("@/pages/Catalog"));
 
 const PLATFORM_NAVY = "#1a2b4a";
 const PLATFORM_GOLD = "#c9a227";
@@ -319,9 +319,11 @@ export default function Storefront({ slug, previewData, focusShop = false }: { s
           </section>
         )}
 
-        {/* ─── Family-locked shop (shared across templates) ─────────────── */}
+        {/* All Cabinets: the main catalog, with this store's lines, room scenes, and pagination. */}
         <div id="shop">
-          <StorefrontShop slug={data.slug} brand={brand} lang={lang} withRef={withRef} />
+          <Suspense fallback={<div className="container flex justify-center py-16"><Spinner className="h-8 w-8" /></div>}>
+            <Catalog affiliateSlug={data.slug} embedded />
+          </Suspense>
         </div>
 
         {/* ─── Kitchen Packages promo band ─────────────────────────────── */}
@@ -502,6 +504,7 @@ export default function Storefront({ slug, previewData, focusShop = false }: { s
             <div>
               <div className="font-semibold text-white mb-3">{t("cat_shop")}</div>
               <ul className="space-y-2 text-sm">
+                <li><Link href={withRef(`/store/${data.slug}/styles`)} className="hover:text-white">{t("nav_styles")}</Link></li>
                 <li><a href="#shop" className="hover:text-white">{t("hero_browse")}</a></li>
                 <li><Link href={withRef(`/design?affiliate=${data.slug}`)} className="hover:text-white">{t("nav_design")}</Link></li>
                 <li><Link href={withRef(`/store/${data.slug}/order`)} className="hover:text-white">{t("nav_quote")}</Link></li>
@@ -573,6 +576,9 @@ function NavLinks({
   return (
     <>
       <StorefrontSocialIcons links={socialLinks} className="hidden md:flex" iconClassName={iconClass} />
+      <Link href={withRef(`/store/${slug}/styles`)} className="hidden sm:block">
+        <Button variant="ghost" size="sm" className={cls}>{t("nav_styles")}</Button>
+      </Link>
       <a href="#shop" className="hidden sm:block">
         <Button variant="ghost" size="sm" className={cls}>{t("cat_shop")}</Button>
       </a>
@@ -613,6 +619,7 @@ function NavLinks({
       {menuOpen ? (
         <div className="fixed inset-x-0 top-16 z-50 max-h-[calc(100vh-4rem)] overflow-y-auto border-b bg-card p-4 text-foreground shadow-lg md:hidden" data-testid="storefront-mobile-panel">
           <div className="flex flex-col gap-3 text-sm">
+            <Link href={withRef(`/store/${slug}/styles`)} onClick={() => setMenuOpen(false)}>{t("nav_styles")}</Link>
             <a href="#shop" onClick={() => setMenuOpen(false)}>{t("cat_shop")}</a>
             <Link href={withRef(`/store/${slug}/kitchens`)} onClick={() => setMenuOpen(false)}>Plan Your Kitchen</Link>
             <Link href={withRef(`/design?affiliate=${slug}`)} onClick={() => setMenuOpen(false)}>{t("nav_design")}</Link>

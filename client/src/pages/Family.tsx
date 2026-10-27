@@ -27,6 +27,13 @@ import {
   tierLabel,
   type PricingTier,
 } from "@shared/pricingTier";
+import { affiliateCabinetDetailHref } from "@/lib/affiliateCabinetDetailRoute";
+import {
+  affiliateDesignPath,
+  affiliateFamilyPath,
+  affiliateQuotePath,
+  affiliateStylesPath,
+} from "@/lib/affiliateBrowse";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Family page — the DOOR-STYLE-FAMILY-first shopping experience.
@@ -104,12 +111,14 @@ function FamilyCabinetCard({
   styleId,
   styleLabel,
   tier,
+  detailHref,
 }: {
   item: FamilyItem;
   finish: string;
   styleId: number;
   styleLabel: string;
   tier: PricingTier;
+  detailHref: string;
 }) {
   const { lang } = useLanguage();
   const { addItem, lockedDistributorId, lockedStyleLabel } = useCart();
@@ -168,7 +177,7 @@ function FamilyCabinetCard({
   return (
     <div className="cabinet-card group rounded-xl border border-border bg-card hover:border-primary/40 overflow-hidden transition-colors flex flex-col">
       {/* Image + specs link through to the detail page */}
-      <Link href={`/catalog/${item.masterCode}?style=${styleId}`} className="block">
+      <Link href={detailHref} className="block">
         <div className="relative h-44 bg-gradient-to-b from-white to-muted/30 flex items-center justify-center border-b border-border p-3 cursor-pointer">
           {item.skuImageUrl ? (
             <CatalogSkuImage
@@ -311,7 +320,57 @@ function FamilyCabinetCard({
   );
 }
 
-export default function Family({ styleCode }: { styleCode: string }) {
+function useAffiliateSalePrices(slug: string | undefined, styleId: number) {
+  const utils = trpc.useUtils();
+  const utilsRef = useRef(utils);
+  utilsRef.current = utils;
+  const [byCode, setByCode] = useState<Map<string, string | null>>(new Map());
+  const [ready, setReady] = useState(!slug);
+  useEffect(() => {
+    if (!slug || !styleId) {
+      setByCode(new Map());
+      setReady(!slug);
+      return;
+    }
+    let cancelled = false;
+    setReady(false);
+    (async () => {
+      const map = new Map<string, string | null>();
+      let offset = 0;
+      let total = Number.POSITIVE_INFINITY;
+      while (offset < total) {
+        const page = await utilsRef.current.storefront.familyCatalog.fetch({
+          styleId,
+          slug,
+          limit: 200,
+          offset,
+        });
+        if (cancelled) return;
+        for (const item of page.items) {
+          if (item.masterCode) map.set(item.masterCode, item.homeownerPrice ?? null);
+        }
+        total = page.total;
+        if (page.items.length === 0) break;
+        offset += page.items.length;
+      }
+      if (!cancelled) {
+        setByCode(map);
+        setReady(true);
+      }
+    })().catch(() => {
+      if (!cancelled) {
+        setByCode(new Map());
+        setReady(true);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [slug, styleId]);
+  return { byCode, ready };
+}
+
+export default function Family({ styleCode, affiliateSlug }: { styleCode: string; affiliateSlug?: string }) {
   const { t, lang } = useLanguage();
   const [activeType, setActiveType] = useState("all");
   const [search, setSearch] = useState("");
@@ -355,32 +414,60 @@ export default function Family({ styleCode }: { styleCode: string }) {
     trackedRef.current = key;
     trackView.mutate({
       distributorId: s.distributorId,
-      pageSlug: `/family/${styleCode}`,
+      pageSlug: affiliateSlug ? `/store/${affiliateSlug}/family/${styleCode}` : `/family/${styleCode}`,
       referrer: document.referrer || undefined,
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [style, styleCode]);
 
-  const { data, isLoading: catalogLoading } = trpc.doorStyles.familyCatalog.useQuery(
+  const { data, isLoading: platformCatalogLoading } = trpc.doorStyles.familyCatalog.useQuery(
     { styleId },
     { enabled: !!styleId },
   );
+  const affiliateFamilies = trpc.storefront.families.useQuery(
+    { slug: affiliateSlug },
+    { enabled: Boolean(affiliateSlug), staleTime: 60_000 },
+  );
+  const affiliateStore = trpc.affiliates.bySlug.useQuery(
+    { slug: affiliateSlug ?? "" },
+    { enabled: Boolean(affiliateSlug), staleTime: 60_000 },
+  );
+  const salePrices = useAffiliateSalePrices(affiliateSlug, styleId);
 
-  const items = useMemo(() => (data?.items ?? []) as FamilyItem[], [data]);
+  const platformItems = useMemo(() => (data?.items ?? []) as FamilyItem[], [data]);
+  const items = useMemo(() => {
+    if (!affiliateSlug) return platformItems;
+    if (!salePrices.ready) return [];
+    return platformItems.flatMap((item) => {
+      if (!salePrices.byCode.has(item.masterCode)) return [];
+      return [{
+        ...item,
+        homeownerPrice: salePrices.byCode.get(item.masterCode) ?? null,
+        listPrice: null,
+        adjustedListPrice: null,
+        wholesalePrice: null,
+        contractorPrice: null,
+      }];
+    });
+  }, [affiliateSlug, platformItems, salePrices.byCode, salePrices.ready]);
+  const catalogLoading = platformCatalogLoading || Boolean(affiliateSlug && styleId && !salePrices.ready);
 
   // The viewer's storefront tier drives which price shows on each card.
+  // An affiliate family page always shows that store's sale price.
   const { user } = useAuth();
-  const viewerTier = resolveStorefrontTier(user);
+  const viewerTier: PricingTier = affiliateSlug ? "homeowner" : resolveStorefrontTier(user);
 
   // Color variations within the same door profile (in-place finish picker).
   const { data: siblingsData } = trpc.doorStyles.siblings.useQuery(
     { styleCode },
     { enabled: !!styleCode },
   );
-  const siblings = useMemo(
-    () => (siblingsData ?? []) as FamilyStyle[],
-    [siblingsData],
-  );
+  const siblings = useMemo(() => {
+    const rows = (siblingsData ?? []) as FamilyStyle[];
+    if (!affiliateSlug || !affiliateFamilies.data) return rows;
+    const allowed = new Set(affiliateFamilies.data.map((row) => row.styleId));
+    return rows.filter((sib) => allowed.has(sib.id));
+  }, [affiliateFamilies.data, affiliateSlug, siblingsData]);
 
   // Finish color for recoloring every drawing to this family's real finish.
   const finish = useMemo(() => {
@@ -406,24 +493,33 @@ export default function Family({ styleCode }: { styleCode: string }) {
   }, [items, activeType, debounced]);
 
   const s = style as FamilyStyle | null;
-  // Prefer white-label name (set by admin) over internal name for all public display.
-  const familyName = s?.featuredLabel || s?.ourName || s?.styleCode || "Door Style";
+  const affiliateFamily = useMemo(() => {
+    if (!affiliateSlug || !affiliateFamilies.data) return null;
+    return affiliateFamilies.data.find((row) => row.styleCode === styleCode || (styleId > 0 && row.styleId === styleId)) ?? null;
+  }, [affiliateFamilies.data, affiliateSlug, styleCode, styleId]);
+  // Prefer the affiliate line name, then the white-label name, over the internal name.
+  const familyName = affiliateFamily?.name || s?.featuredLabel || s?.ourName || s?.styleCode || "Door Style";
   useSeo({
     title: t("seo_family_t", { name: familyName }),
     description: t("seo_family_d", { name: familyName }),
-    image: (s as FamilyStyle | null)?.roomSceneImageUrl || undefined,
+    image: affiliateFamily?.roomSceneImageUrl || (s as FamilyStyle | null)?.roomSceneImageUrl || undefined,
     lang,
+    siteName: affiliateStore.data?.storeName || undefined,
+    appendSiteName: !affiliateSlug || Boolean(affiliateStore.data?.storeName),
+    skip: Boolean(affiliateSlug) && !affiliateStore.data?.storeName,
   });
   // STRICT ONE-FAMILY-ONE-COLOR: a family shows ONLY its own verified photo.
   // There is NO keyword/bucket fallback — we never borrow another family's
   // scene. When a family has no real photo yet, `realScene` stays null and the
   // header renders a clean color-accurate door panel (in this family's exact
   // finish) instead of a stock kitchen.
-  const realScene = realImageUrl(s?.roomSceneImageUrl);
+  const realScene = realImageUrl(affiliateFamily?.roomSceneImageUrl || s?.roomSceneImageUrl);
   const [lightboxOpen, setLightboxOpen] = useState(false);
-  const realDoor = realImageUrl(s?.doorSampleImageUrl);
+  const realDoor = realImageUrl(affiliateFamily?.doorSampleImageUrl || s?.doorSampleImageUrl);
+  const stylesHref = affiliateStylesPath(affiliateSlug);
+  const affiliateMissing = Boolean(affiliateSlug) && !affiliateFamilies.isLoading && !affiliateFamily;
 
-  if (styleLoading) {
+  if (styleLoading || (affiliateSlug && affiliateFamilies.isLoading)) {
     return (
       <div className="container py-8">
         <Skeleton className="h-4 w-32 mb-6" />
@@ -437,7 +533,7 @@ export default function Family({ styleCode }: { styleCode: string }) {
     );
   }
 
-  if (!s) {
+  if (!s || affiliateMissing) {
     return (
       <div className="container py-16 text-center">
         <Package className="h-12 w-12 mx-auto mb-3 text-muted-foreground/30" />
@@ -446,7 +542,7 @@ export default function Family({ styleCode }: { styleCode: string }) {
           {t("fam_not_found_body", { code: styleCode })}
         </p>
         <Link
-          href="/styles"
+          href={stylesHref}
           className="text-sm font-medium text-primary hover:underline"
         >
           {t("fam_browse_all")}
@@ -458,7 +554,7 @@ export default function Family({ styleCode }: { styleCode: string }) {
   return (
     <div className="container py-8">
       <Link
-        href="/styles"
+        href={stylesHref}
         className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-4"
       >
         <ChevronLeft className="h-4 w-4" />
@@ -520,7 +616,7 @@ export default function Family({ styleCode }: { styleCode: string }) {
             {/* ── Design with this style CTA ─────────────────────────────── */}
             <div className="mt-5 flex flex-wrap gap-3">
               <Link
-                href={`/design?style=${styleId}`}
+                href={affiliateDesignPath(affiliateSlug, styleId)}
                 title="Open the 3D Designer with this door style pre-selected — arrange cabinets, see prices, and export your layout."
                 className="inline-flex items-center gap-2 rounded-full bg-[var(--color-gold)] hover:bg-[var(--color-gold)]/90 text-[var(--color-navy)] font-semibold text-sm px-5 py-2.5 transition-all shadow-md hover:shadow-lg"
               >
@@ -528,7 +624,7 @@ export default function Family({ styleCode }: { styleCode: string }) {
                 Design with this style
               </Link>
               <Link
-                href={`/order/new?style=${styleId}`}
+                href={affiliateQuotePath(affiliateSlug, styleId)}
                 className="inline-flex items-center gap-2 rounded-full bg-white/10 hover:bg-white/20 text-white font-semibold text-sm px-5 py-2.5 transition-all"
               >
                 <ShoppingCart className="h-4 w-4" />
@@ -551,7 +647,7 @@ export default function Family({ styleCode }: { styleCode: string }) {
                     return (
                       <Link
                         key={sib.id}
-                        href={`/family/${sib.styleCode}`}
+                        href={affiliateFamilyPath(affiliateSlug, sib.styleCode)}
                         title={label}
                         aria-label={`View ${label} finish`}
                         className={`group/sw relative flex flex-col items-center gap-1 outline-none`}
@@ -713,11 +809,10 @@ export default function Family({ styleCode }: { styleCode: string }) {
         {/* Style pill — always visible so the shopper always knows which door
             style family they are browsing. Clicking scrolls back to the hero. */}
         <div className="flex items-center gap-2 mb-2">
-          <button
-            type="button"
-            onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+          <Link
+            href={stylesHref}
             className="inline-flex items-center gap-2 rounded-full border border-border bg-background/80 px-3 py-1.5 shadow-sm hover:bg-muted/60 transition-colors"
-            title="Scroll to top to change style"
+            title="Change line"
           >
             {realDoor && (
               <img
@@ -728,7 +823,7 @@ export default function Family({ styleCode }: { styleCode: string }) {
             )}
             <span className="text-sm font-semibold text-foreground truncate max-w-[200px]">{familyName}</span>
             <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-          </button>
+          </Link>
         </div>
         {/* Filter pills + inline search on one row */}
         <div className="flex flex-wrap items-center gap-2">
@@ -792,6 +887,12 @@ export default function Family({ styleCode }: { styleCode: string }) {
                 styleId={s.id}
                 styleLabel={familyName}
                 tier={viewerTier}
+                detailHref={affiliateCabinetDetailHref({
+                  slug: affiliateSlug,
+                  masterCode: item.masterCode,
+                  styleId: s.id,
+                  cabinetId: item.cabinetId,
+                })}
               />
             ))}
           </div>

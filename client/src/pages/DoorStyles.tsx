@@ -20,6 +20,7 @@ import {
 } from "@/lib/doorColorSpectrum";
 import DoorPhotoMatchWidget from "@/components/DoorPhotoMatchWidget";
 import { styleDisplayName } from "@/lib/styleDisplayName";
+import { affiliateFamilyPath, overlayAffiliateStyle, type AffiliateFamilyOverlay } from "@/lib/affiliateBrowse";
 import { useIsMobile } from "@/hooks/useMobile";
 import {
   Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
@@ -80,7 +81,7 @@ function displayName(style: DoorStyle): string {
   return styleDisplayName(style) || style.featuredLabel || style.styleCode;
 }
 
-function StyleCard({ style, seriesName }: { style: DoorStyle; seriesName?: string | null }) {
+function StyleCard({ style, seriesName, familyHref }: { style: DoorStyle; seriesName?: string | null; familyHref?: string }) {
   const { t } = useLanguage();
   const [showDoor, setShowDoor] = useState(false);
   const [sceneUnavailable, setSceneUnavailable] = useState(false);
@@ -299,7 +300,7 @@ function StyleCard({ style, seriesName }: { style: DoorStyle; seriesName?: strin
           {isSpecificationReference ? (
             <p className="text-center text-sm text-muted-foreground">Not available for catalog, cart, or Designer selection yet.</p>
           ) : (
-            <Link href={`/family/${encodeURIComponent(style.styleCode)}`}>
+            <Link href={familyHref ?? `/family/${encodeURIComponent(style.styleCode)}`}>
               <Button className="w-full" size="lg">
                 {t("ds_shop_collection", { name: displayName(style) })}
                 <ArrowRight className="h-4 w-4 ml-1" />
@@ -314,9 +315,20 @@ function StyleCard({ style, seriesName }: { style: DoorStyle; seriesName?: strin
 
 // ─── Main Door Styles page ────────────────────────────────────────────────────
 
-export default function DoorStyles() {
+export default function DoorStyles({ affiliateSlug }: { affiliateSlug?: string } = {}) {
   const { t, lang } = useLanguage();
-  useSeo({ title: t("seo_styles_t"), description: t("seo_styles_d"), lang });
+  const affiliateStore = trpc.affiliates.bySlug.useQuery(
+    { slug: affiliateSlug ?? "" },
+    { enabled: Boolean(affiliateSlug), staleTime: 60_000 },
+  );
+  useSeo({
+    title: t("seo_styles_t"),
+    description: t("seo_styles_d"),
+    lang,
+    siteName: affiliateStore.data?.storeName || undefined,
+    appendSiteName: !affiliateSlug || Boolean(affiliateStore.data?.storeName),
+    skip: Boolean(affiliateSlug) && !affiliateStore.data?.storeName,
+  });
   // Read an optional ?door=<DoorStyle> query param so links from the Home page
   // hero chips (e.g. /styles?door=Shaker) open the grid pre-filtered to one of
   // the four customer-facing groups. Falls back to All Styles when absent.
@@ -361,8 +373,29 @@ export default function DoorStyles() {
     window.history.replaceState({}, "", url.toString());
   }, [selectedType]);
 
-  const { data: styles, isLoading } = trpc.doorStyles.list.useQuery();
-  const { data: specificationReferences } = trpc.doorStyles.specificationReferences.useQuery();
+  const { data: styles, isLoading: stylesLoading } = trpc.doorStyles.list.useQuery();
+  const affiliateFamilies = trpc.storefront.families.useQuery(
+    { slug: affiliateSlug },
+    { enabled: Boolean(affiliateSlug), staleTime: 60_000 },
+  );
+  const familiesById = useMemo(() => {
+    const map = new Map<number, AffiliateFamilyOverlay>();
+    for (const row of affiliateFamilies.data ?? []) {
+      map.set(row.styleId, {
+        styleId: row.styleId,
+        name: row.name,
+        styleCode: row.styleCode,
+        roomSceneImageUrl: row.roomSceneImageUrl,
+        doorSampleImageUrl: row.doorSampleImageUrl,
+      });
+    }
+    return map;
+  }, [affiliateFamilies.data]);
+  const isLoading = stylesLoading || Boolean(affiliateSlug && affiliateFamilies.isLoading);
+  const { data: specificationReferences } = trpc.doorStyles.specificationReferences.useQuery(
+    undefined,
+    { enabled: !affiliateSlug },
+  );
   // Admin-curated featured set (80/20 merchandising), ordered by rank, max 30.
   const { data: featuredData } = trpc.doorStyles.featured.useQuery();
 
@@ -370,14 +403,16 @@ export default function DoorStyles() {
   // than one supply line internally; members should only ever see it once).
   const uniqueStyles = useMemo(() => {
     const map = new Map<string, DoorStyle>();
-    for (const s of (styles ?? []) as DoorStyle[]) {
+    for (const raw of (styles ?? []) as DoorStyle[]) {
+      if (affiliateSlug && !familiesById.has(raw.id)) continue;
+      const s = overlayAffiliateStyle(raw, familiesById.get(raw.id));
       const key = (s.ourName || s.styleCode || String(s.id)).toLowerCase();
       if (!map.has(key)) map.set(key, s);
     }
     return Array.from(map.values()).sort((a, b) =>
       (a.ourName || "").localeCompare(b.ourName || "")
     );
-  }, [styles]);
+  }, [affiliateSlug, familiesById, styles]);
 
   // Featured push styles come from the admin-curated list (Admin → Featured
   // Styles). The backend already orders by rank and caps at 30; we preserve
@@ -498,10 +533,12 @@ export default function DoorStyles() {
         </p>
       </div>
 
-      {/* Match a door from a photo */}
-      <div className="mb-8">
-        <DoorPhotoMatchWidget />
-      </div>
+      {/* Match a door from a photo. Affiliate stores stay inside their own family routes. */}
+      {!affiliateSlug && (
+        <div className="mb-8">
+          <DoorPhotoMatchWidget />
+        </div>
+      )}
 
       {/* Search + Filters */}
       <div className="mb-8 space-y-3">
@@ -684,7 +721,7 @@ export default function DoorStyles() {
                       <p className="mt-1 text-sm text-muted-foreground">{previewDetail}</p>
                       <p className="mt-2 text-xs leading-relaxed text-muted-foreground">This cabinet scene updates when a new style or color is selected.</p>
                       <div className="mt-3 flex flex-wrap gap-2">
-                        <Link href={`/family/${encodeURIComponent(selectedPreview.styleCode)}`} className="inline-flex">
+                        <Link href={affiliateFamilyPath(affiliateSlug, selectedPreview.styleCode)} className="inline-flex">
                           <Button size="sm" className="bg-[#0f1f3d] text-white hover:bg-[#19305a]">
                             View {previewName} cabinets
                             <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
@@ -725,7 +762,7 @@ export default function DoorStyles() {
           </div>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
             {featured.map((style) => (
-              <StyleCard key={style.id} style={style} seriesName={seriesById.get(style.distributorId ?? -1) ?? null} />
+              <StyleCard key={style.id} style={style} seriesName={seriesById.get(style.distributorId ?? -1) ?? null} familyHref={affiliateFamilyPath(affiliateSlug, style.styleCode)} />
             ))}
           </div>
         </div>
@@ -757,7 +794,7 @@ export default function DoorStyles() {
         <>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             {pagedStyles.map((style) => (
-              <StyleCard key={style.id} style={style} seriesName={seriesById.get(style.distributorId ?? -1) ?? null} />
+              <StyleCard key={style.id} style={style} seriesName={seriesById.get(style.distributorId ?? -1) ?? null} familyHref={affiliateFamilyPath(affiliateSlug, style.styleCode)} />
             ))}
           </div>
 
@@ -795,7 +832,7 @@ export default function DoorStyles() {
           )}
         </>
       )}
-      {!isLoading && (specificationReferences?.length ?? 0) > 0 && (
+      {!affiliateSlug && !isLoading && (specificationReferences?.length ?? 0) > 0 && (
         <section className="mt-12 rounded-2xl border border-sky-200 bg-sky-50/40 p-5 md:p-6">
           <div className="mb-5 max-w-3xl">
             <div className="flex flex-wrap items-center gap-2">

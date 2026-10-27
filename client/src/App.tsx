@@ -28,6 +28,7 @@ import {
 import { ShoppingCart } from "lucide-react";
 import { PreferredProductsProvider } from "@/contexts/PreferredProductsContext";
 import { affiliateCatalogPath, affiliateDesignerPath, affiliateOrderPath, affiliateOwnerScopeDestination } from "@/lib/affiliateStorefrontUrl";
+import { affiliateStylesPath } from "@/lib/affiliateBrowse";
 import { DEFAULT_SECTION_LABELS, storefrontCssVars } from "@shared/affiliateStorefrontControls";
 
 // Lazy-loaded pages
@@ -152,7 +153,11 @@ function AffiliateShell({ slug, children, fullHeight = false, hideAdminEditModeB
   // Keep the tab/favicon on the affiliate's brand for cart, order, and design
   // pages reached from their storefront.
   const preserveRouteMetadata = typeof window !== "undefined"
-    && window.location.pathname === `/store/${slug}/kitchens`;
+    && (
+      window.location.pathname === `/store/${slug}/kitchens`
+      || window.location.pathname === `/store/${slug}/styles`
+      || window.location.pathname.startsWith(`/store/${slug}/family/`)
+    );
   useWhiteLabelHead({
     storeName: data?.storeName,
     tagline: data?.tagline,
@@ -182,6 +187,7 @@ function AffiliateShell({ slug, children, fullHeight = false, hideAdminEditModeB
           )}
         </a>
         <nav className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-xs sm:text-sm font-medium text-muted-foreground" aria-label="Store navigation">
+          <a href={affiliateStylesPath(slug)} className="hover:text-foreground">Shop by Style</a>
           <a href={affiliateCatalogPath(slug)} className="hover:text-foreground">{labels.catalog}</a>
           <a href={`/store/${slug}/surfaces`} className="hover:text-foreground">{labels.surfaces}</a>
           <a href={`/store/${slug}/closet`} className="hover:text-foreground">{labels.closet}</a>
@@ -416,6 +422,24 @@ export default function App() {
         {/* The family-locked storefront owns the catalog at #shop. Preserve
             older catalog-root links inside the same affiliate scope rather
             than falling through to the platform 404. */}
+        <Route path="/store/:slug/styles">
+          {(params) => (
+            <Suspense fallback={<PageLoader />}>
+              <AffiliateShell slug={params.slug}>
+                <DoorStyles affiliateSlug={params.slug} />
+              </AffiliateShell>
+            </Suspense>
+          )}
+        </Route>
+        <Route path="/store/:slug/family/:styleCode">
+          {(params) => (
+            <Suspense fallback={<PageLoader />}>
+              <AffiliateShell slug={params.slug}>
+                <Family styleCode={decodeURIComponent(params.styleCode)} affiliateSlug={params.slug} />
+              </AffiliateShell>
+            </Suspense>
+          )}
+        </Route>
         <Route path="/store/:slug/catalog">
           {(params) => (
             <Suspense fallback={<PageLoader />}>

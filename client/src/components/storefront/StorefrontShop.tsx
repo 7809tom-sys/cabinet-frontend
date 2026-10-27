@@ -35,7 +35,7 @@ import { affiliateCabinetDetailHref } from "@/lib/affiliateCabinetDetailRoute";
 import { sortStorefrontCategoryTabs, storefrontCategoryTabLabel } from "@/lib/storefrontCategoryTabs";
 import { canonicalMouldingLabel } from "@shared/catalogCategorySpelling";
 import { affiliateDesignerPath } from "@/lib/affiliateStorefrontUrl";
-import { useSearch } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { doorStyleColorHex, doorStyleSwatchImageUrl } from "@/lib/doorColorSpectrum";
 import {
   familyFinishKey,
@@ -147,6 +147,18 @@ export function StorefrontShop({
 }) {
   const { family, lock, clear } = useFamilyLock(slug);
   const branding = useStorefrontBranding(slug);
+  const search = useSearch();
+  const [, navigate] = useLocation();
+  const [ignoreStyleQuery, setIgnoreStyleQuery] = useState(false);
+  function releaseLine() {
+    setIgnoreStyleQuery(true);
+    const params = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
+    params.delete("style");
+    const qs = params.toString();
+    const path = typeof window !== "undefined" ? window.location.pathname : "";
+    navigate(`${path}${qs ? `?${qs}` : ""}`, { replace: true });
+    clear();
+  }
   const availableFamilies = trpc.storefront.families.useQuery(
     { slug },
     { enabled: family !== null },
@@ -163,7 +175,7 @@ export function StorefrontShop({
   }, [availableFamilies.data, clear, family]);
 
   if (!family) {
-    return <FamilyPicker brand={brand} lang={lang} onPick={lock} branding={branding} slug={slug} withRef={withRef} />;
+    return <FamilyPicker brand={brand} lang={lang} onPick={lock} branding={branding} slug={slug} withRef={withRef} ignoreStyleQuery={ignoreStyleQuery} />;
   }
   return (
     <LockedCatalog
@@ -171,7 +183,7 @@ export function StorefrontShop({
       brand={brand}
       lang={lang}
       withRef={withRef}
-      onSwitch={clear}
+      onSwitch={releaseLine}
       branding={branding}
       slug={slug}
     />
@@ -186,6 +198,7 @@ function FamilyPicker({
   branding,
   slug,
   withRef,
+  ignoreStyleQuery = false,
 }: {
   brand: Brand;
   lang: Lang;
@@ -193,6 +206,7 @@ function FamilyPicker({
   branding: StorefrontBranding;
   slug?: string;
   withRef: (path: string) => string;
+  ignoreStyleQuery?: boolean;
 }) {
   const { user } = useAuth();
   const { data, isLoading } = trpc.storefront.families.useQuery({ slug: slug || undefined });
@@ -225,6 +239,7 @@ function FamilyPicker({
   // the exact style in the query string. Lock that family automatically so
   // the visitor lands in its catalog instead of having to choose again.
   useEffect(() => {
+    if (ignoreStyleQuery) return;
     const requestedStyleId = Number(new URLSearchParams(search).get("style"));
     if (!Number.isInteger(requestedStyleId) || requestedStyleId <= 0) return;
     if (autoLockedStyleRef.current === requestedStyleId || !data?.length) return;
@@ -232,7 +247,7 @@ function FamilyPicker({
     if (!requestedFamily) return;
     autoLockedStyleRef.current = requestedStyleId;
     onPick(requestedFamily);
-  }, [data, onPick, search]);
+  }, [data, ignoreStyleQuery, onPick, search]);
 
   useEffect(() => {
     try {
