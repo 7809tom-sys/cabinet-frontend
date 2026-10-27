@@ -24,6 +24,8 @@ import {
 } from "@/components/ui/table";
 import { trpc } from "@/lib/trpc";
 import { VendorRoomSceneLibrary } from "@/components/vendor/VendorRoomSceneLibrary";
+import { VendorAutoRoomSceneBadge } from "@/components/doorStyles/VendorAutoRoomSceneBadge";
+import { VENDOR_AUTO_ROOM_SCENE_COPY, type AutoRoomScene } from "@/lib/autoRoomScene";
 import { PublicRoomSceneStrip } from "@/components/PublicRoomScenes";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -1807,6 +1809,7 @@ function DoorStylesPage() {
 	        <p className="text-muted-foreground text-sm mt-1">
 	          Manage images for your door styles. Upload room scenes, door samples, and thumbnails.
 	        </p>
+	        <p className="mt-1 max-w-2xl text-sm text-muted-foreground">{VENDOR_AUTO_ROOM_SCENE_COPY}</p>
 	      </div>
 	      <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-3 text-sm text-amber-950">
 	        <p className="font-semibold">Sample-door measurements</p>
@@ -1871,6 +1874,7 @@ function DoorStylesPage() {
 	                  <span className="text-[10px] text-muted-foreground">No images yet — click a slot to upload</span>
 	                )}
 	              </div>
+	              <VendorAutoRoomSceneBadge styleId={style.id} distributorId={adminDistId} live />
 
 	              <Button
 	                type="button"
@@ -2307,6 +2311,8 @@ type VendorFeaturedStyle = {
   thumbnailImageUrl: string | null;
 	  cornerSwatchImageUrl: string | null;
   doorSampleVerified: boolean;
+  drawerSampleVerified?: boolean;
+  autoRoomScene?: AutoRoomScene | null;
   isFeatured: boolean;
   featuredRank: number;
 	  warehouseZips: string[] | null;
@@ -2389,12 +2395,18 @@ function VendorFeaturedStyleEditor({
   open,
   onClose,
   onSaved,
+  sampleVerification,
 }: {
   style: VendorFeaturedStyle;
   styles: Array<{ id: number; ourName: string }>;
   open: boolean;
   onClose: () => void;
   onSaved: () => void;
+  sampleVerification?: {
+    doorSampleVerified: boolean;
+    drawerSampleVerified?: boolean;
+    autoRoomScene?: AutoRoomScene | null;
+  };
 }) {
   const adminDistId = useAdminDistributorId();
   const [featuredLabel, setFeaturedLabel] = useState(style.featuredLabel ?? "");
@@ -2485,7 +2497,7 @@ function VendorFeaturedStyleEditor({
         <div className="grid gap-3 sm:grid-cols-2"><div className="space-y-1"><Label className="text-xs">Door style type</Label><Input value={doorStyle} onChange={(event) => setDoorStyle(event.target.value)} placeholder="e.g. Shaker" /></div><div className="space-y-1"><Label className="text-xs">Color</Label><Input value={color} onChange={(event) => setColor(event.target.value)} placeholder="e.g. White" /></div><div className="space-y-1"><Label className="text-xs">Finish</Label><Input value={finish} onChange={(event) => setFinish(event.target.value)} placeholder="e.g. Painted" /></div><div className="space-y-1"><Label className="text-xs">Wood species</Label><Input value={woodSpecies} onChange={(event) => setWoodSpecies(event.target.value)} placeholder="e.g. Maple" /></div></div>
         <div className="rounded-lg border border-sky-200 bg-sky-50/50 p-3 space-y-3"><div><Label className="flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5 text-sky-700" />Shipping Origin ZIPs</Label><p className="text-xs text-muted-foreground">Same per-style origin controls as Featured Styles. Saved ZIPs become the style’s private freight origins.</p></div><div className="flex gap-2"><Input value={newZip} onChange={(event) => setNewZip(event.target.value.replace(/\D/g, "").slice(0, 5))} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addZip(); } }} inputMode="numeric" placeholder="5-digit warehouse ZIP" maxLength={5} /><Button type="button" variant="outline" onClick={addZip}><Plus className="mr-1 h-4 w-4" />Add</Button></div><div className="flex flex-wrap gap-2">{warehouseZips.map((zip) => <Badge key={zip} variant="secondary" className="gap-1 py-1 pl-2.5 pr-1">{zip}<button type="button" onClick={() => setWarehouseZips((current) => current.filter((item) => item !== zip))} aria-label={`Remove warehouse ZIP ${zip}`}><X className="h-3.5 w-3.5" /></button></Badge>)}</div><div className="space-y-1"><Label className="text-xs">Plan B fallback freight fee (optional)</Label><div className="flex items-center gap-2"><span>$</span><Input value={flatFreight} onChange={(event) => setFlatFreight(event.target.value)} inputMode="decimal" placeholder="Used only if live freight is unavailable" /></div></div></div>
 	        <div className="rounded-lg border border-emerald-200 bg-emerald-50/40 p-3 space-y-3"><div><Label className="flex items-center gap-1.5"><Ruler className="h-3.5 w-3.5" />Verified frame profile</Label><p className="text-xs text-muted-foreground">Designer geometry is controlled by a submitted physical sample door and a CabinetDealz team measurement. Use <strong>Door Styles → Submit sample measurements</strong> to record the vendor source and select every style with the same profile.</p></div><div className="grid grid-cols-3 gap-3 text-sm"><div><p className="text-xs text-muted-foreground">Rail</p><p className="font-medium">{style.railWidth ?? "Pending"}</p></div><div><p className="text-xs text-muted-foreground">Stile</p><p className="font-medium">{style.stileWidth ?? "Pending"}</p></div><div><p className="text-xs text-muted-foreground">Center rail</p><p className="font-medium">{style.centerRailWidth ?? "—"}</p></div></div><p className="text-xs text-muted-foreground">{style.sourceSpecification ?? "No CabinetDealz-verified sample measurement yet — Designer uses a neutral face."}</p><div className="space-y-1"><Label className="text-xs">Profile notes</Label><Input value={profileNotes} onChange={(event) => setProfileNotes(event.target.value)} placeholder="e.g. Beaded inner edge" /></div><div className="space-y-1"><Label className="text-xs">Profile description</Label><textarea value={profileDescription} onChange={(event) => setProfileDescription(event.target.value)} rows={4} placeholder="Customer-facing educational description of this style" className="w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm" /></div></div>
-        <div className="space-y-3"><div><Label>Image materials</Label><p className="text-xs text-muted-foreground">Upload or paste the exact verified image for this vendor’s Door Style. Saving updates only this vendor’s line.</p></div><div className="grid gap-3 sm:grid-cols-2">{imageField("Room scene photo", "Primary Featured Styles and cabinet-line scene.", roomSceneImageUrl, setRoomSceneImageUrl, "roomScene")}{imageField("Door sample photo", "Door panel material for the Designer and catalog.", doorSampleImageUrl, setDoorSampleImageUrl, "doorSample")}{imageField("Drawer sample photo", "Drawer-front material; blank falls back to the door sample.", drawerSampleImageUrl, setDrawerSampleImageUrl, "drawerSample")}{imageField("Corner swatch", "Angled profile/grain close-up for Featured Styles.", cornerSwatchImageUrl, setCornerSwatchImageUrl, "cornerSwatch")}{imageField("Thumbnail override", "Optional small-card thumbnail override.", thumbnailImageUrl, setThumbnailImageUrl, "thumbnail")}</div></div>
+        <div className="space-y-3"><div><Label>Image materials</Label><p className="text-xs text-muted-foreground">Upload or paste the exact verified image for this vendor’s Door Style. Saving updates only this vendor’s line.</p></div><div className="grid gap-3 sm:grid-cols-2">{imageField("Room scene photo", "Primary Featured Styles and cabinet-line scene.", roomSceneImageUrl, setRoomSceneImageUrl, "roomScene")}{imageField("Door sample photo", "Door panel material for the Designer and catalog.", doorSampleImageUrl, setDoorSampleImageUrl, "doorSample")}{imageField("Drawer sample photo", "Drawer-front material; blank falls back to the door sample.", drawerSampleImageUrl, setDrawerSampleImageUrl, "drawerSample")}{imageField("Corner swatch", "Angled profile/grain close-up for Featured Styles.", cornerSwatchImageUrl, setCornerSwatchImageUrl, "cornerSwatch")}{imageField("Thumbnail override", "Optional small-card thumbnail override.", thumbnailImageUrl, setThumbnailImageUrl, "thumbnail")}</div><VendorAutoRoomSceneBadge styleId={style.id} distributorId={adminDistId} snapshot={sampleVerification?.autoRoomScene ?? style.autoRoomScene ?? null} doorSampleVerified={sampleVerification?.doorSampleVerified ?? style.doorSampleVerified} drawerSampleVerified={sampleVerification?.drawerSampleVerified ?? style.drawerSampleVerified} showCopy live /></div>
         <VendorRoomSceneLibrary
           styleId={style.id}
           styleName={style.ourName}
@@ -2581,6 +2593,7 @@ function VendorFeaturedStylesPage() {
 	          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
 	            Curate and edit the materials for cabinet lines featured from your vendor portal. This copy of Featured Styles only includes door styles that have cabinets in your catalog.
 	          </p>
+	          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">{VENDOR_AUTO_ROOM_SCENE_COPY}</p>
 	        </div>
 	        <Badge variant="secondary" className="self-start text-sm sm:self-auto">{featured.length} matching featured line{featured.length === 1 ? "" : "s"}</Badge>
 	      </div>
@@ -2658,6 +2671,7 @@ function VendorFeaturedStylesPage() {
 	                      <span className="text-xs text-muted-foreground">{[style.doorStyle, style.color, style.finish].filter(Boolean).join(" · ")}</span>
 	                    </div>
 	                    {!designerCompliance.isCompliant && <p className="mt-1 text-xs font-medium text-red-800">Designer requirement: {designerCompliance.reason}</p>}
+	                    <VendorAutoRoomSceneBadge styleId={style.id} distributorId={adminDistId} snapshot={style.autoRoomScene ?? null} doorSampleVerified={style.doorSampleVerified} drawerSampleVerified={style.drawerSampleVerified} />
 	                    <FeaturedCabinetDesignerReadiness style={style} />
 	                    {hasActiveFilters && style.matchingCabinets.length > 0 && <p className="mt-1 truncate text-[11px] text-primary">Matches: {style.matchingCabinets.map((cabinet) => cabinet.masterCode).join(", ")} {style.matchingCabinetCount > style.matchingCabinets.length ? `+${style.matchingCabinetCount - style.matchingCabinets.length} more` : ""}</p>}
 	                  </div>
@@ -2693,6 +2707,7 @@ function VendorFeaturedStylesPage() {
 	                    <p className="truncate text-xs text-muted-foreground">{style.skuCount} cabinet SKU{style.skuCount === 1 ? "" : "s"} {[style.doorStyle, style.color].filter(Boolean).length > 0 ? `· ${[style.doorStyle, style.color].filter(Boolean).join(" · ")}` : ""}</p>
 	                    {hasActiveFilters && style.matchingCabinets.length > 0 && <p className="truncate text-[11px] text-primary">Matches: {style.matchingCabinets.map((cabinet) => cabinet.masterCode).join(", ")}{style.matchingCabinetCount > style.matchingCabinets.length ? ` +${style.matchingCabinetCount - style.matchingCabinets.length}` : ""}</p>}
 	                    <p className={`mt-1 text-[10px] ${sceneReady ? "text-emerald-700" : "text-amber-700"}`}>{sceneReady ? "Verified room scene ready" : "Add a verified room scene in Door Styles first"}</p>
+	                    <VendorAutoRoomSceneBadge styleId={style.id} distributorId={adminDistId} snapshot={style.autoRoomScene ?? null} doorSampleVerified={style.doorSampleVerified} drawerSampleVerified={style.drawerSampleVerified} />
 	                  </div>
 		                  <div className="flex shrink-0 items-center gap-1"><Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => setEditingStyle(style)} aria-label={`Edit ${style.ourName} Featured Style materials`} title="Edit Featured Style materials"><Pencil className="h-3.5 w-3.5" />Edit materials</Button><Button size="icon" variant="ghost" className="h-8 w-8" disabled={setFeatured.isPending || !sceneReady} onClick={() => setFeatured.mutate(mutateInput({ styleId: style.id, featured: true }))} aria-label={`Feature ${style.ourName}`} title={sceneReady ? "Feature this cabinet line" : "Add a verified matching room scene in Door Styles first"}><Star className="h-4 w-4 text-muted-foreground/60" /></Button></div>
                 </div>
@@ -2701,7 +2716,7 @@ function VendorFeaturedStylesPage() {
           </div>
         )}
 	      </div>
-	      {editingStyle && <VendorFeaturedStyleEditor style={editingStyle} styles={styles.map((item) => ({ id: item.id, ourName: item.ourName }))} open={Boolean(editingStyle)} onClose={() => setEditingStyle(null)} onSaved={() => { utils.distributorPortal.featuredStyles.invalidate(); utils.distributorPortal.myLine.invalidate(); }} />}
+	      {editingStyle && <VendorFeaturedStyleEditor style={editingStyle} sampleVerification={styles.find((item) => item.id === editingStyle.id) ?? editingStyle} styles={styles.map((item) => ({ id: item.id, ourName: item.ourName }))} open={Boolean(editingStyle)} onClose={() => setEditingStyle(null)} onSaved={() => { utils.distributorPortal.featuredStyles.invalidate(); utils.distributorPortal.myLine.invalidate(); }} />}
 	    </div>
 	  );
 }

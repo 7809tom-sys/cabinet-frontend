@@ -22,6 +22,8 @@ import {
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import DoorPhotoCorrectButton from "./DoorPhotoCorrectButton";
+import { AdminStyleRoomSceneControls } from "@/components/doorStyles/AdminDoorStyleRoomScene";
+import type { AutoRoomScene } from "@/lib/autoRoomScene";
 import { MediaPicker } from "./MediaPicker";
 import { designerFrameCompliance } from "@/lib/doorFrameMetrics";
 import {
@@ -46,6 +48,8 @@ interface AdminStyle {
   roomSceneImageUrl: string | null;
   roomScenes?: Array<{ id: number; imageUrl: string; sortOrder: number; isVerified: boolean; sourceNote: string | null; sourceDistributorId: number | null; isActive: boolean }>;
   doorSampleVerified: boolean;
+  drawerSampleVerified?: boolean;
+  autoRoomScene?: AutoRoomScene | null;
   isFeatured: boolean;
   featuredRank: number;
   distributorId: number;
@@ -877,6 +881,7 @@ function EditDialog({ style, open, onClose, onSaved }: EditDialogProps) {
                 onChange={setDrawerSampleImageUrl}
                 slot="door-sample"
               />
+              <AdminStyleRoomSceneControls style={style} showIdleHint />
             </div>
             {/* Corner Swatch */}
             <div className="rounded-lg border border-amber-200 bg-amber-50/40 px-3 py-3 space-y-3">
@@ -1334,6 +1339,11 @@ export default function FeaturedStylesAdmin() {
     utils.doorStyles.skuCountsByStyle.invalidate();
   }
 
+  const editingStyleLive = useMemo(() => {
+    if (!editingStyle) return null;
+    return styles.find((style) => style.id === editingStyle.id) ?? editingStyle;
+  }, [editingStyle, styles]);
+
   // SKU count badge helper — clickable to open the catalog preview modal
 	  function SkuBadge({ style: s }: { style: AdminStyle }) {
 	    const counts = countMap.get(s.id);
@@ -1489,6 +1499,7 @@ export default function FeaturedStylesAdmin() {
 	                    <p className="mt-1 text-xs font-medium text-red-800">Designer cabinet requirement: {cabinetHoldCount} catalog cabinet{cabinetHoldCount === 1 ? " is" : "s are"} held. Open the red cabinet-hold badge to see every highlighted item and its exact reason.</p>
 	                  )}
 	                  <div className="mt-1 min-w-0"><SourceAttribution style={s} /></div>
+                  <AdminStyleRoomSceneControls style={s} />
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
                   {/* Quick-edit button */}
@@ -1583,8 +1594,9 @@ export default function FeaturedStylesAdmin() {
             {available.map((s) => (
               <div
                 key={s.id}
-                className="flex items-center gap-3 rounded-lg border border-border bg-card p-2.5"
+                className="flex flex-col gap-2 rounded-lg border border-border bg-card p-2.5"
               >
+                <div className="flex items-center gap-3">
                 <button
                   type="button"
                   onClick={() => setEditingStyle(s)}
@@ -1652,6 +1664,8 @@ export default function FeaturedStylesAdmin() {
                     <EyeOff className="h-4 w-4" />
                   </Button>
                 </div>
+                </div>
+                <AdminStyleRoomSceneControls style={s} />
               </div>
             ))}
           </div>
@@ -1695,6 +1709,7 @@ export default function FeaturedStylesAdmin() {
                     {[s.doorStyle, s.color].filter(Boolean).join(" · ")}
                     <SkuBadge style={s} />
                   </p>
+                  <AdminStyleRoomSceneControls style={s} />
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
                   <Button
@@ -1736,11 +1751,11 @@ export default function FeaturedStylesAdmin() {
       )}
 
       {/* Quick-edit dialog — key forces full remount when switching styles so local image state resets */}
-      {editingStyle && (
+      {editingStyleLive && (
         <EditDialog
-          key={editingStyle.id}
-          style={editingStyle}
-          open={!!editingStyle}
+          key={editingStyleLive.id}
+          style={editingStyleLive}
+          open={!!editingStyleLive}
           onClose={() => setEditingStyle(null)}
           onSaved={invalidateAll}
         />
