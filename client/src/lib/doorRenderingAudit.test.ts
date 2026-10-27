@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { STAINLESS_DOOR_STYLE_FIXTURE } from "./approvedDoorReference";
 import {
   DOOR_AUDIT_CAPTURE,
   applyDoorAuditFilter,
@@ -7,10 +8,15 @@ import {
   doorAuditFlag,
   doorAuditProgressLabel,
   doorAuditRevertVersionId,
+  DOOR_AUDIT_RENDERING_COMMIT,
+  doorAuditApproveInput,
+  doorAuditCanApprove,
   doorAuditStartRunInput,
   doorAuditStyleLabel,
   doorAuditSubmitRenderInput,
+  enrichDoorAuditQueue,
   doorRenderingAuditAllowed,
+  featuredImagesAudit,
   formatDoorAuditDelta,
   normalizeDoorAuditList,
   normalizeDoorAuditRunStatus,
@@ -28,6 +34,7 @@ function version(overrides: Partial<DoorAuditVersion> & Pick<DoorAuditVersion, "
     scoreStatus: "scored",
     isCurrent: false,
     isAcceptedBaseline: false,
+    isApprovedReference: false,
     review: "pending",
     ...overrides,
   };
@@ -42,6 +49,7 @@ function row(overrides: Partial<DoorAuditStyleRow> = {}): DoorAuditStyleRow {
     code: "SW",
     distributorName: "Line A",
     samplePhotoUrl: "/sample.png",
+    drawerSampleImageUrl: null,
     color: "#f4f1ea",
     sourceFingerprint: "abc",
     doorProfile: {
@@ -61,6 +69,9 @@ function row(overrides: Partial<DoorAuditStyleRow> = {}): DoorAuditStyleRow {
     current,
     accepted,
     previous: accepted,
+    approvedReference: null,
+    featuredFailures: [],
+    sourceStatus: "no-approved-source",
     flag: "improved",
     ...overrides,
   };
@@ -183,9 +194,17 @@ const backendBrief = {
 
 describe("door rendering audit backend adapter", () => {
   it("turns a selected run into a capture queue and submit body", () => {
-    expect(doorAuditStartRunInput("selected", [41])).toEqual({ scope: "selected", styleIds: [41] });
-    expect(doorAuditStartRunInput("changed-only")).toEqual({ scope: "changed" });
-    expect(doorAuditStartRunInput("all")).toEqual({ scope: "all" });
+    expect(doorAuditStartRunInput("selected", [41])).toEqual({
+      scope: "selected",
+      styleIds: [41],
+      renderingCommit: DOOR_AUDIT_RENDERING_COMMIT,
+    });
+    expect(doorAuditStartRunInput("changed-only")).toEqual({
+      scope: "changed",
+      renderingCommit: DOOR_AUDIT_RENDERING_COMMIT,
+    });
+    expect(doorAuditStartRunInput("all")).toEqual({ scope: "all", renderingCommit: DOOR_AUDIT_RENDERING_COMMIT });
+    expect(DOOR_AUDIT_RENDERING_COMMIT).toBe("door-audit-720x1080");
 
     const run = normalizeDoorAuditStartRun({
       runId: 15,
@@ -359,6 +378,179 @@ describe("door rendering audit backend adapter", () => {
       versionId: 9,
       imageUrl: "https://cdn.example/latest.png",
       scores: { grain: 8, overall: 8 },
+    });
+  });
+
+  it("fills the previous render from previousRender and keeps a run that is larger than 40 styles", () => {
+    const list = normalizeDoorAuditList({
+      styles: [{
+        ...backendBrief,
+        latestRender: {
+          versionId: 9,
+          renderImageUrl: "https://cdn.example/latest.png",
+          createdAt: "2026-10-20T15:04:00.000Z",
+          scores: { woodGrain: 8, color: 7, textureSheen: 7, profileEdges: 9, overall: 8.4 },
+          isCurrentAccepted: false,
+          verdict: "flagged",
+        },
+        previousRender: {
+          versionId: 4,
+          renderImageUrl: "https://cdn.example/previous.png",
+          createdAt: "2026-08-01T12:00:00.000Z",
+          scores: { woodGrain: 5, color: 5, textureSheen: 5, profileEdges: 5, overall: 5 },
+        },
+        acceptedRender: null,
+        flagStatus: "no_baseline",
+      }],
+    });
+    const slots = doorAuditCompareSlots(list.styles[0]!);
+    expect(slots.find((slot) => slot.key === "previous")?.imageUrl).toBe("https://cdn.example/previous.png");
+    expect(slots.find((slot) => slot.key === "previous")?.label).toBe("Previous render");
+
+    const run = normalizeDoorAuditStartRun({
+      runId: 20,
+      status: "awaiting_renders",
+      scope: "all",
+      renderingCommit: DOOR_AUDIT_RENDERING_COMMIT,
+      truncated: false,
+      totalEligible: 86,
+      styles: Array.from({ length: 86 }, (_, index) => ({ ...backendBrief, styleId: index + 1 })),
+    });
+    expect(run.truncated).toBe(false);
+    expect(run.totalEligible).toBe(86);
+    expect(run.styles).toHaveLength(86);
+    expect(run.styles[0]?.sourceFingerprint).toBe(DOOR_AUDIT_RENDERING_COMMIT);
+    expect(doorAuditSubmitRenderInput({
+      runId: run.runId,
+      styleId: 1,
+      pngBase64: "a".repeat(40),
+      sourceFingerprint: run.styles[0]?.sourceFingerprint,
+    }).renderingCommit).toBe(DOOR_AUDIT_RENDERING_COMMIT);
+  });
+
+  it("approves a passing render with an optional note and refuses a rejected one", () => {
+    const passing = version({ versionId: 9, imageUrl: "/latest.png", isCurrent: true });
+    expect(doorAuditCanApprove(passing)).toBe(true);
+    expect(doorAuditCanApprove({ ...passing, review: "rejected" })).toBe(false);
+    expect(doorAuditCanApprove({ ...passing, isApprovedReference: true })).toBe(false);
+    expect(doorAuditApproveInput({ versionId: 9, note: "  Matches the stainless sample.  " })).toEqual({
+      versionId: 9,
+      note: "Matches the stainless sample.",
+    });
+    expect(doorAuditApproveInput({ versionId: 9, note: "   " })).toEqual({ versionId: 9 });
+  });
+
+  it("does not pass a style that has no approved reference", () => {
+    const list = normalizeDoorAuditList({
+      styles: [{
+        ...backendBrief,
+        latestRender: {
+          versionId: 9,
+          renderImageUrl: "https://cdn.example/latest.png",
+          scores: { overall: 9 },
+          isCurrentAccepted: true,
+        },
+        flagStatus: "accepted",
+      }],
+    });
+    expect(list.styles[0]?.sourceStatus).toBe("no-approved-source");
+    expect(list.styles[0]?.approvedReference).toBeNull();
+    expect(featuredImagesAudit({
+      approvedReferenceImageUrl: null,
+      doorSampleImageUrl: list.styles[0]?.samplePhotoUrl,
+      drawerSampleImageUrl: null,
+    }).sourceStatus).toBe("no-approved-source");
+  });
+
+  it("compares the Stainless door style to its approved reference instead of the wrong featured photos", () => {
+    const stainless = STAINLESS_DOOR_STYLE_FIXTURE;
+    const list = normalizeDoorAuditList({
+      styles: [{
+        ...backendBrief,
+        styleId: 88,
+        ourName: stainless.styleName,
+        samplePhotoUrl: stainless.doorSampleImageUrl,
+        drawerSampleImageUrl: stainless.drawerSampleImageUrl,
+        approvedReference: {
+          versionId: 12,
+          imageUrl: stainless.approvedReferenceImageUrl,
+          approvedByName: "Tom",
+        },
+      }],
+    });
+    const style = list.styles[0]!;
+    expect(style.name).toBe("Stainless");
+    expect(style.samplePhotoUrl).toBe(stainless.doorSampleImageUrl);
+    expect(style.drawerSampleImageUrl).toBe(stainless.drawerSampleImageUrl);
+    expect(style.drawerSamplePhotoUrl).toBe(stainless.drawerSampleImageUrl);
+    expect(style.sourceStatus).toBe("featured-mismatch");
+    expect(style.featuredFailures).toEqual([
+      { image: "door", reason: "Featured image doesn't match approved source" },
+      { image: "drawer", reason: "Featured image doesn't match approved source" },
+    ]);
+    const slots = doorAuditCompareSlots(style);
+    expect(slots[0]).toMatchObject({
+      label: "Approved reference",
+      imageUrl: stainless.approvedReferenceImageUrl,
+    });
+    expect(slots[0]?.imageUrl).not.toBe(stainless.doorSampleImageUrl);
+
+    const run = normalizeDoorAuditStartRun({
+      runId: 30,
+      status: "awaiting_renders",
+      styles: [{
+        ...backendBrief,
+        styleId: 88,
+        ourName: stainless.styleName,
+        samplePhotoUrl: stainless.doorSampleImageUrl,
+        drawerSampleImageUrl: stainless.drawerSampleImageUrl,
+        approvedReference: { versionId: 12, imageUrl: stainless.approvedReferenceImageUrl },
+      }],
+    });
+    expect(run.styles[0]?.samplePhotoUrl).toBe(stainless.approvedReferenceImageUrl);
+    expect(enrichDoorAuditQueue(
+      [{ ...run.styles[0]!, samplePhotoUrl: stainless.doorSampleImageUrl, needsDoorOnlyPhoto: true }],
+      [style],
+    )[0]).toMatchObject({
+      samplePhotoUrl: stainless.approvedReferenceImageUrl,
+      needsDoorOnlyPhoto: false,
+    });
+  });
+
+  it("keeps door-face fields and uses an approved render even when the featured photo is combined", () => {
+    const list = normalizeDoorAuditList({
+      styles: [{
+        ...backendBrief,
+        drawerSamplePhotoUrl: "/drawer.png",
+        needsDoorOnlyPhoto: true,
+        styleVerified: 0,
+      }],
+    });
+    expect(list.styles[0]).toMatchObject({
+      samplePhotoUrl: "https://cdn.example/summit.jpg",
+      drawerSampleImageUrl: "/drawer.png",
+      drawerSamplePhotoUrl: "/drawer.png",
+      needsDoorOnlyPhoto: true,
+      styleVerified: false,
+      sourceStatus: "no-approved-source",
+    });
+
+    const run = normalizeDoorAuditStartRun({
+      runId: 31,
+      status: "awaiting_renders",
+      styles: [{
+        ...backendBrief,
+        needsDoorOnlyPhoto: true,
+        styleVerified: false,
+        drawerSampleImageUrl: "/drawer.png",
+        approvedReferenceImageUrl: "/approved.png",
+      }],
+    });
+    expect(run.styles[0]).toMatchObject({
+      samplePhotoUrl: "/approved.png",
+      drawerSamplePhotoUrl: "/drawer.png",
+      needsDoorOnlyPhoto: false,
+      styleVerified: false,
     });
   });
 });

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, History, ImageOff, RotateCcw, X } from "lucide-react";
+import { Check, History, ImageOff, RotateCcw, ShieldOff, X } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Badge } from "@/components/ui/badge";
@@ -15,10 +15,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ApprovedDoorReferenceNotice } from "@/components/admin/ApprovedDoorReferenceNotice";
 import { useDoorRenderingAuditApi } from "@/components/admin/doorRenderingAuditApi";
 import {
   applyDoorAuditFilter,
   assertDoorAuditRenderable,
+  doorAuditCanApprove,
   doorAuditCompareSlots,
   doorAuditErrorMessage,
   doorAuditFlagLabel,
@@ -82,6 +84,8 @@ export type DoorRenderingAuditViewProps = {
   onRun: (mode: DoorAuditRunMode) => void;
   onRerun: (styleId: number) => void;
   onReview: (styleId: number, versionId: number, decision: "accept" | "reject") => void;
+  onApprove: (styleId: number, versionId: number, note: string) => void;
+  onRevoke: (styleId: number, note: string) => void;
   onUseVersion: (styleId: number, versionId: number) => void;
   historyStyleId: number | null;
   historyLoading: boolean;
@@ -90,6 +94,8 @@ export type DoorRenderingAuditViewProps = {
   runs: DoorAuditRunSummary[];
   runsOpen: boolean;
   onToggleRuns: () => void;
+  onAbandon: (() => void) | null;
+  runLimitNotice: string | null;
   busy: boolean;
 };
 
@@ -168,6 +174,7 @@ function VersionThumb({
       <div className="flex flex-wrap gap-1">
         {version.isCurrent ? <Badge variant="secondary">Current</Badge> : null}
         {version.isAcceptedBaseline ? <Badge variant="outline">Accepted</Badge> : null}
+        {version.isApprovedReference ? <Badge className="bg-sky-700 text-white hover:bg-sky-700">Approved reference</Badge> : null}
       </div>
       <Button type="button" size="sm" variant="outline" className="w-full" disabled={disabled || version.isCurrent} onClick={onUse}>
         {version.isCurrent ? "Current" : "Use this version"}
@@ -193,6 +200,8 @@ export function DoorRenderingAuditView({
   onRun,
   onRerun,
   onReview,
+  onApprove,
+  onRevoke,
   onUseVersion,
   historyStyleId,
   historyLoading,
@@ -201,6 +210,8 @@ export function DoorRenderingAuditView({
   runs,
   runsOpen,
   onToggleRuns,
+  onAbandon,
+  runLimitNotice,
   busy,
 }: DoorRenderingAuditViewProps) {
   const selected = new Set(selectedIds);
@@ -216,9 +227,9 @@ export function DoorRenderingAuditView({
       <div>
         <h2 className="font-serif text-2xl font-bold">Door Rendering Audit</h2>
         <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-          Compare each style&apos;s sample photo with the accepted baseline and the latest front-on Designer render.
-          Running an audit captures every door in this browser at the same size, camera, and lighting, then uploads the PNG for Gemini scoring.
-          Accept a flagged render, revert to the previous one, or restore any version from the style&apos;s history.
+          An approved render is the source of truth for that door style. New audits compare against it, and fall back to the sample photo only when nothing is approved.
+          Featured Styles photos are checked against that approved image. A photo that does not match fails this audit and is left unchanged.
+          Running an audit captures every selected door in this browser, including runs larger than 40 styles.
         </p>
       </div>
 
@@ -271,14 +282,23 @@ export function DoorRenderingAuditView({
                   ? `Waiting for door renders${progress.detail ? ` · ${progress.detail}` : ""} · ${completed} of ${total} uploaded`
                   : doorAuditProgressLabel(progress.phase, completed, total, progress.detail)}
             </p>
-            {onContinue ? (
-              <Button type="button" size="sm" disabled={busy} onClick={onContinue}>Continue upload</Button>
-            ) : null}
+            <div className="flex flex-wrap gap-2">
+              {onContinue ? (
+                <Button type="button" size="sm" disabled={busy} onClick={onContinue}>Continue upload</Button>
+              ) : null}
+              {onAbandon ? (
+                <Button type="button" size="sm" variant="outline" data-testid="door-audit-abandon" disabled={busy} onClick={onAbandon}>
+                  Abandon run
+                </Button>
+              ) : null}
+            </div>
           </div>
           {progress.phase !== "failed" ? <Progress value={progressValue} /> : null}
           {progress.error ? <p className="text-sm text-destructive">{progress.error}</p> : null}
         </div>
       ) : null}
+
+      {runLimitNotice ? <p className="text-sm text-amber-800" data-testid="door-audit-run-limit">{runLimitNotice}</p> : null}
 
       {runsOpen ? (
         <div className="rounded-lg border border-border">
@@ -355,6 +375,14 @@ export function DoorRenderingAuditView({
                     {style.distributorName ? (
                       <p className="text-xs text-muted-foreground">{style.distributorName}</p>
                     ) : null}
+                    <div className="mt-2">
+                      <ApprovedDoorReferenceNotice
+                        approvedReferenceImageUrl={style.approvedReference?.imageUrl}
+                        doorSampleImageUrl={style.samplePhotoUrl}
+                        drawerSampleImageUrl={style.drawerSampleImageUrl}
+                        approvedByName={style.approvedReference?.approvedByName}
+                      />
+                    </div>
                   </div>
                 </div>
 
@@ -391,6 +419,15 @@ export function DoorRenderingAuditView({
                         Reject
                       </Button>
                     </>
+                  ) : null}
+                  {style.current && doorAuditCanApprove(style.current) ? (
+                    <ApproveReferenceControls busy={busy} versionId={style.current.versionId} onApprove={(versionId, note) => onApprove(style.styleId, versionId, note)} />
+                  ) : null}
+                  {style.approvedReference ? (
+                    <Button type="button" size="sm" variant="outline" data-testid="door-audit-revoke" disabled={busy} onClick={() => onRevoke(style.styleId, "")}>
+                      <ShieldOff className="mr-1.5 h-4 w-4" />
+                      Revoke approval
+                    </Button>
                   ) : null}
                   <Button
                     type="button"
@@ -435,6 +472,34 @@ export function DoorRenderingAuditView({
         </ul>
       )}
     </div>
+  );
+}
+
+function ApproveReferenceControls({
+  versionId,
+  busy,
+  onApprove,
+}: {
+  versionId: number;
+  busy: boolean;
+  onApprove: (versionId: number, note: string) => void;
+}) {
+  const [note, setNote] = useState("");
+  return (
+    <>
+      <Input
+        value={note}
+        onChange={(event) => setNote(event.target.value)}
+        placeholder="Optional note"
+        aria-label="Approval note"
+        maxLength={512}
+        className="h-8 w-full sm:w-56"
+      />
+      <Button type="button" size="sm" data-testid="door-audit-approve" disabled={busy} onClick={() => onApprove(versionId, note)}>
+        <Check className="mr-1.5 h-4 w-4" />
+        Approve reference
+      </Button>
+    </>
   );
 }
 
@@ -544,7 +609,11 @@ function DoorRenderingAuditScreen() {
   const submitRender = api.doorRenderingAudit.submitRender.useMutation();
   const abandonRun = api.doorRenderingAudit.abandonRun.useMutation();
   const reviewRender = api.doorRenderingAudit.reviewRender.useMutation();
+  const approveRender = api.doorRenderingAudit.approveRender.useMutation();
+  const revokeApproval = api.doorRenderingAudit.revokeApproval.useMutation();
   const setCurrentVersion = api.doorRenderingAudit.setCurrentVersion.useMutation();
+  const stopRequested = useRef(false);
+  const [runLimitNotice, setRunLimitNotice] = useState<string | null>(null);
 
   useEffect(() => {
     const status = runStatus.data;
@@ -591,6 +660,7 @@ function DoorRenderingAuditScreen() {
       }
       session = loaded.createDoorAuditCapture();
       for (let index = 0; index < styles.length; index += 1) {
+        if (stopRequested.current) break;
         const style = styles[index];
         const label = doorAuditStyleLabel(style);
         setLocalProgress({ phase: "rendering", completed: index, total: styles.length, detail: label });
@@ -640,8 +710,32 @@ function DoorRenderingAuditScreen() {
     }
   }
 
+  function limitNotice(result: { truncated?: boolean; totalEligible?: number; styles?: unknown[] } | null | undefined): string | null {
+    const shown = Array.isArray(result?.styles) ? result.styles.length : 0;
+    const total = result?.totalEligible ?? shown;
+    if (!result?.truncated || total <= shown) return null;
+    return `This run queued ${shown} of ${total} styles. Abandon it and start again if the server is still stopping early. Saved renders are kept.`;
+  }
+
+  async function abandon(activeRunId: number) {
+    stopRequested.current = true;
+    try {
+      await abandonRun.mutateAsync({ runId: activeRunId });
+      setLocalProgress(null);
+      setRunId(null);
+      setRunLimitNotice(null);
+      toast.message("Audit run abandoned. Saved renders were kept.");
+      void utils.doorRenderingAudit.listStyles.invalidate();
+      void utils.doorRenderingAudit.runStatus.invalidate();
+      void utils.doorRenderingAudit.listRuns.invalidate();
+    } catch (error) {
+      toast.error(doorAuditErrorMessage(error, "Could not abandon that audit run."));
+    }
+  }
+
   async function rerun(styleId: number) {
     await withCaptureLock(async () => {
+      stopRequested.current = false;
       try {
         const result = await startRun.mutateAsync({ mode: "selected", styleIds: [styleId] });
         if (result?.runId == null) {
@@ -649,6 +743,7 @@ function DoorRenderingAuditScreen() {
           return;
         }
         setRunId(result.runId);
+        setRunLimitNotice(limitNotice(result));
         await captureStyles(result.runId, result.styles);
       } catch (error) {
         toast.error(doorAuditErrorMessage(error, "Could not re-run that style."));
@@ -660,6 +755,7 @@ function DoorRenderingAuditScreen() {
     const styleIds = mode === "selected" ? selectedIds : undefined;
     if (mode === "selected" && (!styleIds || styleIds.length === 0)) return;
     await withCaptureLock(async () => {
+      stopRequested.current = false;
       try {
         const result = await startRun.mutateAsync({ mode, styleIds });
         if (result?.runId == null) {
@@ -667,6 +763,7 @@ function DoorRenderingAuditScreen() {
           return;
         }
         setRunId(result.runId);
+        setRunLimitNotice(limitNotice(result));
         const queue = Array.isArray(result.styles) ? result.styles : [];
         if (queue.length === 0) {
           toast.message(mode === "changed-only" ? "No styles changed since the last render." : "No door styles need a new render.");
@@ -690,6 +787,28 @@ function DoorRenderingAuditScreen() {
     }
   }
 
+  async function onApprove(styleId: number, versionId: number, note: string) {
+    try {
+      await approveRender.mutateAsync({ styleId, versionId, note });
+      toast.success("That render is the approved reference. Featured photos were not changed.");
+      void utils.doorRenderingAudit.listStyles.invalidate();
+      void utils.doorRenderingAudit.listVersions.invalidate();
+    } catch (error) {
+      toast.error(doorAuditErrorMessage(error, "Could not approve that render."));
+    }
+  }
+
+  async function onRevoke(styleId: number) {
+    try {
+      await revokeApproval.mutateAsync({ styleId });
+      toast.success("Approval revoked. Older renders are still saved.");
+      void utils.doorRenderingAudit.listStyles.invalidate();
+      void utils.doorRenderingAudit.listVersions.invalidate();
+    } catch (error) {
+      toast.error(doorAuditErrorMessage(error, "Could not revoke that approval."));
+    }
+  }
+
   async function onUseVersion(styleId: number, versionId: number) {
     try {
       await setCurrentVersion.mutateAsync({ styleId, versionId });
@@ -707,7 +826,8 @@ function DoorRenderingAuditScreen() {
   const pending = status?.status === "awaiting-renders" && Array.isArray(status.pendingStyles)
     ? enrichDoorAuditQueue(status.pendingStyles, catalog)
     : [];
-  const busy = capturing || startRun.isPending || abandonRun.isPending || reviewRender.isPending || setCurrentVersion.isPending;
+  const busy = capturing || startRun.isPending || abandonRun.isPending || reviewRender.isPending || approveRender.isPending || revokeApproval.isPending || setCurrentVersion.isPending;
+  const runIsOpen = capturing || status?.status === "awaiting-renders" || status?.status === "scoring";
 
   return (
     <DoorRenderingAuditView
@@ -741,6 +861,8 @@ function DoorRenderingAuditScreen() {
       onRun={(mode) => { void onRun(mode); }}
       onRerun={(styleId) => { void rerun(styleId); }}
       onReview={(styleId, versionId, decision) => { void onReview(styleId, versionId, decision); }}
+      onApprove={(styleId, versionId, note) => { void onApprove(styleId, versionId, note); }}
+      onRevoke={(styleId) => { void onRevoke(styleId); }}
       onUseVersion={(styleId, versionId) => { void onUseVersion(styleId, versionId); }}
       historyStyleId={historyStyleId}
       historyLoading={history.isLoading}
@@ -749,6 +871,8 @@ function DoorRenderingAuditScreen() {
       runs={runs.data?.runs ?? []}
       runsOpen={runsOpen}
       onToggleRuns={() => setRunsOpen((open) => !open)}
+      onAbandon={runIsOpen && effectiveRunId != null ? () => { void abandon(effectiveRunId); } : null}
+      runLimitNotice={runLimitNotice}
       busy={busy}
     />
   );

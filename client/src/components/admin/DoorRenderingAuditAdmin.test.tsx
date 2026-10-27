@@ -1,7 +1,9 @@
 import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { ApprovedDoorReferenceNotice } from "./ApprovedDoorReferenceNotice";
 import { DoorRenderingAuditView, type DoorRenderingAuditViewProps } from "./DoorRenderingAuditAdmin";
+import { STAINLESS_DOOR_STYLE_FIXTURE } from "@/lib/approvedDoorReference";
 import { doorAuditStyleLabel, normalizeDoorAuditList, type DoorAuditStyleRow, type DoorAuditVersion } from "@/lib/doorRenderingAudit";
 
 function version(overrides: Partial<DoorAuditVersion> & Pick<DoorAuditVersion, "versionId" | "imageUrl">): DoorAuditVersion {
@@ -11,6 +13,7 @@ function version(overrides: Partial<DoorAuditVersion> & Pick<DoorAuditVersion, "
     scoreStatus: "scored",
     isCurrent: false,
     isAcceptedBaseline: false,
+    isApprovedReference: false,
     review: "pending",
     ...overrides,
   };
@@ -30,6 +33,7 @@ function row(): DoorAuditStyleRow {
     code: "SW-41",
     distributorName: "Line A",
     samplePhotoUrl: "/sample.png",
+    drawerSampleImageUrl: null,
     color: "#f4f1ea",
     sourceFingerprint: "fp",
     doorProfile: {
@@ -49,6 +53,9 @@ function row(): DoorAuditStyleRow {
     current: version({ versionId: 9, imageUrl: "/latest.png", isCurrent: true }),
     accepted,
     previous: accepted,
+    approvedReference: null,
+    featuredFailures: [],
+    sourceStatus: "no-approved-source",
     flag: "improved",
   };
 }
@@ -71,6 +78,8 @@ function props(overrides: Partial<DoorRenderingAuditViewProps> = {}): DoorRender
     onRun: () => undefined,
     onRerun: () => undefined,
     onReview: () => undefined,
+    onApprove: () => undefined,
+    onRevoke: () => undefined,
     onUseVersion: () => undefined,
     historyStyleId: 41,
     historyLoading: false,
@@ -83,6 +92,8 @@ function props(overrides: Partial<DoorRenderingAuditViewProps> = {}): DoorRender
     runs: [],
     runsOpen: false,
     onToggleRuns: () => undefined,
+    onAbandon: null,
+    runLimitNotice: null,
     busy: false,
     ...overrides,
   };
@@ -139,6 +150,8 @@ describe("Door Rendering Audit admin", () => {
       "runHistory",
       "styleVersions",
       "abandonRun",
+      "approveRender",
+      "revokeApproval",
       "doorAuditStartRunInput",
       "normalizeDoorAuditStartRun",
       "doorAuditSubmitRenderInput",
@@ -218,5 +231,36 @@ describe("Door Rendering Audit admin", () => {
     expect(markup).toContain("data-testid=\"door-audit-version-history-label\"");
     expect(markup).toContain(`Rendering ${identity} · 0 of 1`);
     expect(markup).toContain("https://cdn.example/summit.jpg");
+    expect(markup).toContain("No approved source");
+  });
+
+  it("shows abandon, a run that continues past 40 styles, and the Stainless featured-image failure", () => {
+    const stainless = STAINLESS_DOOR_STYLE_FIXTURE;
+    const markup = renderToStaticMarkup(
+      <>
+        <DoorRenderingAuditView
+          {...props({
+            progress: { phase: "rendering", completed: 40, total: 86, detail: "Summit White", error: null },
+            onAbandon: () => undefined,
+            runLimitNotice: "This run queued 40 of 86 styles. Abandon it and start again if the server is still stopping early. Saved renders are kept.",
+          })}
+        />
+        <ApprovedDoorReferenceNotice
+          approvedReferenceImageUrl={stainless.approvedReferenceImageUrl}
+          doorSampleImageUrl={stainless.doorSampleImageUrl}
+          drawerSampleImageUrl={stainless.drawerSampleImageUrl}
+        />
+      </>,
+    );
+    expect(markup).toContain("data-testid=\"door-audit-abandon\"");
+    expect(markup).toContain("Abandon run");
+    expect(markup).toContain("Rendering Summit White · 40 of 86");
+    expect(markup).toContain("40 of 86");
+    expect(markup).toContain("Approved reference");
+    expect(markup).toContain("match approved source");
+    expect(markup).toContain("Door:");
+    expect(markup).toContain("Drawer:");
+    expect(markup).toContain("data-testid=\"featured-mismatch-door\"");
+    expect(markup).toContain("data-testid=\"featured-mismatch-drawer\"");
   });
 });

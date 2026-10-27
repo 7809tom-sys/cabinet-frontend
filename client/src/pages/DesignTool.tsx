@@ -1,5 +1,5 @@
 import { snapFreestandingFortyFive } from "@/lib/freestandingRun";
-import { isDoorStyleVerified, resolveCabinetFaceImages, type DoorStyleFaceInput, type FaceSourceKind } from "@shared/doorFaceRecognition";
+import { isDoorStyleVerified, resolveCabinetFaceImages, type CabinetFacePlan, type DoorStyleFaceInput, type FaceSourceKind } from "@shared/doorFaceRecognition";
 import "./DesignTool.toolbar.css";
 import { useState, useMemo, useCallback, useEffect, useRef, useDeferredValue, type SetStateAction } from "react";
 import { createPortal } from "react-dom";
@@ -47,6 +47,7 @@ import { useIsMobile } from "@/hooks/useMobile";
 import { useDesignerImmersive, useTabletWorkspace } from "@/hooks/useTabletWorkspace";
 import { usePersistFn } from "@/hooks/usePersistFn";
 import { trpc } from "@/lib/trpc";
+import { preferredDoorReferenceUrl, preferredDrawerReferenceUrl } from "@/lib/approvedDoorReference";
 import {
   affiliateSlugForStoreScope,
   cartPathForStoreScope,
@@ -459,6 +460,55 @@ export default function DesignTool(props: { affiliateSlug?: string }) {
   const search = useSearch();
   const scope = resolvedDesignToolStoreScope(props.affiliateSlug, search);
   return <ScopedDesignTool key={scope} {...props} />;
+}
+
+const RUSTIC_HICKORY_GRAIN_URL = "/manus-storage/rustic_hickory_vertical_grain_32d9e28a.webp";
+
+type DesignerFaceStyle = DoorStyleFaceInput & { approvedReferenceImageUrl?: string | null };
+
+/**
+ * Face plan for one cabinet. An approved render is the door texture.
+ * The rustic hickory grain map is only used when that style has no approved reference.
+ * Without an approved reference, door and drawer faces stay on the recognition rules.
+ */
+function designerFacePlan(
+  style: DesignerFaceStyle | null | undefined,
+  placement: string | null | undefined,
+): CabinetFacePlan | null {
+  if (!style) return null;
+  const approved = style.approvedReferenceImageUrl?.trim() ?? "";
+  if (!approved && /rustic hickory|forest rust/i.test(`${style.ourName ?? ""} ${style.aliasName ?? ""}`)) {
+    return resolveCabinetFaceImages({
+      ...style,
+      styleCode: "RUSTIC",
+      doorSampleImageUrl: RUSTIC_HICKORY_GRAIN_URL,
+      drawerSampleImageUrl: null,
+      thumbnailImageUrl: null,
+    }, placement);
+  }
+  if (!approved) return resolveCabinetFaceImages(style, placement);
+
+  const doorUrl = preferredDoorReferenceUrl(style);
+  const drawerReference = preferredDrawerReferenceUrl(style);
+  const wall = (placement ?? "").toLowerCase() === "wall";
+  if (drawerReference && doorUrl && drawerReference !== doorUrl) {
+    return {
+      sourceKind: "split",
+      doorUrl,
+      drawerUrl: wall ? null : drawerReference,
+      sections: wall ? 1 : 2,
+      drawerTextureApplied: !wall,
+      grainRotation: 0,
+    };
+  }
+  return {
+    sourceKind: "legacy-door",
+    doorUrl,
+    drawerUrl: wall ? null : doorUrl,
+    sections: 1,
+    drawerTextureApplied: !wall && Boolean(doorUrl),
+    grainRotation: 0,
+  };
 }
 
 function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?: string }) {
@@ -4610,19 +4660,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     return finishColors(s?.ourName, s?.color, s?.finish, s?.woodSpecies);
   }, [doorStyles, styleId]);
   const activeFacePlan = useMemo(() => {
-    const s = doorStyles?.find((d) => d.id === styleId) as (DoorStyleFaceInput & { id?: number }) | undefined;
-    if (!s) return null;
-    if (/rustic hickory|forest rust/i.test(`${s.ourName ?? ""} ${s.aliasName ?? ""}`)) {
-      return {
-        sourceKind: "legacy-door" as const,
-        doorUrl: "/manus-storage/rustic_hickory_vertical_grain_32d9e28a.webp",
-        drawerUrl: null,
-        sections: 1 as const,
-        drawerTextureApplied: false,
-        grainRotation: 0 as const,
-      };
-    }
-    return resolveCabinetFaceImages(s, "base");
+    const s = doorStyles?.find((d) => d.id === styleId) as DesignerFaceStyle | undefined;
+    return designerFacePlan(s, "base");
   }, [doorStyles, styleId]);
   const active3DDoorSampleUrl = activeFacePlan?.doorUrl ?? null;
   const active3DDrawerSampleUrl = activeFacePlan?.sourceKind === "split" ? activeFacePlan.drawerUrl : null;
@@ -4642,7 +4681,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // Small finish swatch shown on each palette tile so the chosen finish is
   // visible while browsing cabinets. Empty until a door style is selected.
   const paletteFinishSwatch = useMemo<string | null>(
-    () => (activeStyle as { doorSampleImageUrl?: string | null } | null)?.doorSampleImageUrl ?? null,
+    () => preferredDoorReferenceUrl(activeStyle as { approvedReferenceImageUrl?: string | null; doorSampleImageUrl?: string | null; thumbnailImageUrl?: string | null } | null),
     [activeStyle]
   );
   // Auto-suggested Hickory finished-end skins, one per exposed cabinet end.
@@ -5185,18 +5224,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const facePlanForCab = useCallback(
     (cab: PlacedCabinet) => {
       const sid = displayStyleIdForCab(cab);
-      const style = sid != null ? doorStyles?.find((d) => d.id === sid) as DoorStyleFaceInput | undefined : undefined;
-      if (!style) return null;
-      if (/rustic hickory|forest rust/i.test(`${style.ourName ?? ""} ${style.aliasName ?? ""}`)) {
-        return resolveCabinetFaceImages({
-          ...style,
-          styleCode: "RUSTIC",
-          doorSampleImageUrl: "/manus-storage/rustic_hickory_vertical_grain_32d9e28a.webp",
-          drawerSampleImageUrl: null,
-          thumbnailImageUrl: null,
-        }, cab.placement);
-      }
-      return resolveCabinetFaceImages(style, cab.placement);
+      const style = sid != null ? doorStyles?.find((d) => d.id === sid) as DesignerFaceStyle | undefined : undefined;
+      return designerFacePlan(style, cab.placement);
     },
     [displayStyleIdForCab, doorStyles],
   );
@@ -13621,18 +13650,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const threeDCabinetFaces = useMemo(
     () => placed.flatMap((cabinet) => {
       const assignedStyleId = effectiveStyleId(cabinet, styleId) ?? styleId;
-      const assignedStyle = assignedStyleId != null ? doorStyles?.find((style) => style.id === assignedStyleId) as DoorStyleFaceInput | undefined : undefined;
+      const assignedStyle = assignedStyleId != null ? doorStyles?.find((style) => style.id === assignedStyleId) as DesignerFaceStyle | undefined : undefined;
       if (!assignedStyle) return [];
-      const styleLabel = `${assignedStyle.ourName ?? ""} ${assignedStyle.aliasName ?? ""}`;
-      const plan = /rustic hickory|forest rust/i.test(styleLabel)
-        ? resolveCabinetFaceImages({
-          ...assignedStyle,
-          styleCode: "RUSTIC",
-          doorSampleImageUrl: "/manus-storage/rustic_hickory_vertical_grain_32d9e28a.webp",
-          drawerSampleImageUrl: null,
-          thumbnailImageUrl: null,
-        }, cabinet.placement)
-        : resolveCabinetFaceImages(assignedStyle, cabinet.placement);
+      const plan = designerFacePlan(assignedStyle, cabinet.placement);
       return [[cabinet.uid, plan] as const];
     }),
     [placed, styleId, doorStyles],
@@ -13736,7 +13756,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	    name: islandStyleId != null ? styleNameById.get(islandStyleId) ?? islandStyle?.ourName ?? islandStyle?.aliasName ?? `Style #${islandStyleId}` : null,
 	    color: islandStyleId != null ? (finishById.get(islandStyleId) ?? activeFinish).face : null,
 	    productId: islandStyleId ?? null,
-	    doorSampleUrl: islandStyle ? resolveCabinetFaceImages(islandStyle as DoorStyleFaceInput, "base").doorUrl : null,
+	    doorSampleUrl: islandStyle ? designerFacePlan(islandStyle as DesignerFaceStyle, "base")?.doorUrl ?? null : null,
 	  };
 	}, [activeFinish, doorStyles, finishById, island, placed, styleId, styleNameById]);
 	const threeDIslandCountertop = {

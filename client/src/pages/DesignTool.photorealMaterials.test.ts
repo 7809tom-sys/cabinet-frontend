@@ -7,9 +7,12 @@ const surfacesPickerSource = readFileSync(new URL("../components/design/Surfaces
 
 describe("Designer programmed photoreal material wiring", () => {
   it("uses Administration imagery as the cabinet source and the verified Rustic Hickory center grain as a material-only map", () => {
-    expect(designToolSource).toContain("return s?.doorSampleImageUrl ?? s?.thumbnailImageUrl ?? null;");
-    expect(designToolSource).toContain("const materialReference = s.doorSampleImageUrl ?? s.thumbnailImageUrl ?? null;");
-    expect(designToolSource).toContain('return "/manus-storage/rustic_hickory_vertical_grain_32d9e28a.webp";');
+    expect(designToolSource).toContain("function designerFacePlan(");
+    expect(designToolSource).toContain("const doorUrl = preferredDoorReferenceUrl(style);");
+    expect(designToolSource).toContain("const drawerReference = preferredDrawerReferenceUrl(style);");
+    expect(designToolSource).toContain("if (!approved && /rustic hickory|forest rust/i.test(`${style.ourName ?? \"\"} ${style.aliasName ?? \"\"}`))");
+    expect(designToolSource).toContain('const RUSTIC_HICKORY_GRAIN_URL = "/manus-storage/rustic_hickory_vertical_grain_32d9e28a.webp";');
+    expect(designToolSource).toContain("return designerFacePlan(s, \"base\");");
     expect(designToolSource).toContain("catalogDoorSampleUrl={active3DDoorSampleUrl}");
     expect(designToolSource).toContain("{paletteFinishSwatch ? (");
   });

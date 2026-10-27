@@ -21,6 +21,7 @@ import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from "@/components/ui/select";
 import { toast } from "sonner";
+import { ApprovedDoorReferenceNotice } from "./ApprovedDoorReferenceNotice";
 import DoorPhotoCorrectButton from "./DoorPhotoCorrectButton";
 import { AdminStyleRoomSceneControls } from "@/components/doorStyles/AdminDoorStyleRoomScene";
 import type { AutoRoomScene } from "@/lib/autoRoomScene";
@@ -51,6 +52,8 @@ interface AdminStyle {
   roomScenes?: Array<{ id: number; imageUrl: string; sortOrder: number; isVerified: boolean; sourceNote: string | null; sourceDistributorId: number | null; isActive: boolean }>;
   doorSampleVerified: boolean;
   drawerSampleVerified?: boolean;
+  approvedReferenceImageUrl?: string | null;
+  approvedByName?: string | null;
   autoRoomScene?: AutoRoomScene | null;
   isFeatured: boolean;
   featuredRank: number;
@@ -876,6 +879,15 @@ function EditDialog({ style, open, onClose, onSaved }: EditDialogProps) {
               </div>}
             </div>
             {/* Door Sample + Drawer Sample side-by-side */}
+            <ApprovedDoorReferenceNotice
+              approvedReferenceImageUrl={style.approvedReferenceImageUrl}
+              doorSampleImageUrl={doorSampleImageUrl}
+              drawerSampleImageUrl={drawerSampleImageUrl}
+              approvedByName={style.approvedByName}
+            />
+            <p className="text-xs text-muted-foreground">
+              The approved reference is not copied into these fields. If a featured photo does not match it, paste the approved image URL yourself. The Designer keeps using the approved reference until then.
+            </p>
             <div className="rounded-lg border border-blue-200 bg-blue-50/40 px-3 py-3 space-y-3">
               <div className="flex items-center gap-2">
                 <span className="text-xs font-semibold text-blue-800">Elevation Renderer Images</span>
@@ -1533,6 +1545,14 @@ export default function FeaturedStylesAdmin() {
 	                    <p className="mt-1 text-xs font-medium text-red-800">Designer cabinet requirement: {cabinetHoldCount} catalog cabinet{cabinetHoldCount === 1 ? " is" : "s are"} held. Open the red cabinet-hold badge to see every highlighted item and its exact reason.</p>
 	                  )}
 	                  <div className="mt-1 min-w-0"><SourceAttribution style={s} /></div>
+                  <div className="mt-1">
+                    <ApprovedDoorReferenceNotice
+                      approvedReferenceImageUrl={s.approvedReferenceImageUrl}
+                      doorSampleImageUrl={s.doorSampleImageUrl}
+                      drawerSampleImageUrl={s.drawerSampleImageUrl}
+                      approvedByName={s.approvedByName}
+                    />
+                  </div>
                   <AdminStyleRoomSceneControls style={s} />
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
@@ -1699,6 +1719,12 @@ export default function FeaturedStylesAdmin() {
                   </Button>
                 </div>
                 </div>
+                <ApprovedDoorReferenceNotice
+                  approvedReferenceImageUrl={s.approvedReferenceImageUrl}
+                  doorSampleImageUrl={s.doorSampleImageUrl}
+                  drawerSampleImageUrl={s.drawerSampleImageUrl}
+                  approvedByName={s.approvedByName}
+                />
                 <AdminStyleRoomSceneControls style={s} />
               </div>
             ))}

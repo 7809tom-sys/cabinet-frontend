@@ -1,0 +1,1098 @@
+diff --git a/drizzle/schema.ts b/drizzle/schema.ts
+index 2faceb2..f0b70b5 100644
+--- a/drizzle/schema.ts
++++ b/drizzle/schema.ts
+@@ -431,6 +431,14 @@ export const doorStyles = mysqlTable("door_styles", {
+   // Same rule as doorSampleVerified, for the separate drawer-front photo.
+   // A vendor upload does not set this; an admin verification does.
+   drawerSampleVerified: boolean("drawerSampleVerified").default(false).notNull(),
++  // Approved audit render. Source of truth for the Designer and later audits.
++  // Featured sample URLs are not overwritten when this is set.
++  approvedRenderVersionId: int("approvedRenderVersionId"),
++  approvedReferenceImageUrl: varchar("approvedReferenceImageUrl", { length: 512 }),
++  approvedAt: timestamp("approvedAt"),
++  approvedByUserId: int("approvedByUserId"),
++  approvedByName: varchar("approvedByName", { length: 255 }),
++  approvalNote: varchar("approvalNote", { length: 512 }),
+   roomSceneImageUrl: varchar("roomSceneImageUrl", { length: 512 }),
+   thumbnailImageUrl: varchar("thumbnailImageUrl", { length: 512 }),
+   // Admin merchandising (80/20): which styles get pushed in the Featured row.
+@@ -690,6 +698,26 @@ export const doorRenderingVersionEvents = mysqlTable("door_rendering_version_eve
+ export type DoorRenderingVersionEvent = typeof doorRenderingVersionEvents.$inferSelect;
+ export type InsertDoorRenderingVersionEvent = typeof doorRenderingVersionEvents.$inferInsert;
+ 
++// Append-only approval history. The current pointer lives on door_styles.
++// Revoke and replace insert another row. Render versions are never deleted.
++export const doorRenderingApprovals = mysqlTable("door_rendering_approvals", {
++  id: int("id").autoincrement().primaryKey(),
++  styleId: int("styleId").notNull(),
++  versionId: int("versionId").notNull(),
++  action: mysqlEnum("action", ["approved", "revoked"]).notNull(),
++  actorUserId: int("actorUserId").notNull(),
++  actorName: varchar("actorName", { length: 255 }),
++  note: varchar("note", { length: 512 }),
++  imageUrl: varchar("imageUrl", { length: 512 }).notNull(),
++  createdAt: timestamp("createdAt").defaultNow().notNull(),
++}, (table) => [
++  index("door_rendering_approvals_style_idx").on(table.styleId, table.id),
++  index("door_rendering_approvals_version_idx").on(table.versionId),
++]);
++
++export type DoorRenderingApproval = typeof doorRenderingApprovals.$inferSelect;
++export type InsertDoorRenderingApproval = typeof doorRenderingApprovals.$inferInsert;
++
+ // ─── Cabinet Items (GENERIC_INFO) ─────────────────────────────────────────────
+ 
+ export const cabinets = mysqlTable("cabinets", {
+diff --git a/server/doorStyleRoomSceneGeneration.test.ts b/server/doorStyleRoomSceneGeneration.test.ts
+index caf20da..067407a 100644
+--- a/server/doorStyleRoomSceneGeneration.test.ts
++++ b/server/doorStyleRoomSceneGeneration.test.ts
+@@ -113,6 +113,30 @@ describe("applyDoorStyleRoomSceneGeneration", () => {
+     expect(prompt).toContain("verified drawer front");
+   });
+ 
++  it("sends the approved Stainless reference instead of mismatched featured photos", async () => {
++    const store = memoryStore(style({
++      ourName: "Stainless",
++      doorSampleImageUrl: "https://cdn.example/stainless-wrong-door.jpg",
++      drawerSampleImageUrl: "https://cdn.example/stainless-wrong-drawer.jpg",
++      approvedReferenceImageUrl: "https://cdn.example/stainless-approved.png",
++    }));
++    let sent: string[] = [];
++    const images = generator({
++      generate: async (input) => {
++        sent = input.originalImages.map((image) => image.url);
++        return { url: "https://cdn.example/scene.jpg" };
++      },
++    });
++    const result = await applyDoorStyleRoomSceneGeneration(store, images, 7);
++    expect(result.outcome).toBe("ready");
++    expect(sent).toEqual([
++      "https://cdn.example/stainless-approved.png",
++      "https://cdn.example/stainless-approved.png",
++    ]);
++    expect(sent).not.toContain("https://cdn.example/stainless-wrong-door.jpg");
++    expect(sent).not.toContain("https://cdn.example/stainless-wrong-drawer.jpg");
++  });
++
+   it("does not generate until both photos are verified", async () => {
+     const store = memoryStore(style({ drawerSampleVerified: false }));
+     const images = generator();
+diff --git a/server/doorStyleRoomSceneGeneration.ts b/server/doorStyleRoomSceneGeneration.ts
+index 0d03cf8..8d9f793 100644
+--- a/server/doorStyleRoomSceneGeneration.ts
++++ b/server/doorStyleRoomSceneGeneration.ts
+@@ -7,7 +7,7 @@ import {
+   ROOM_SCENE_GENERATION_NOT_CONFIGURED,
+   bothSampleImagesVerified,
+   generationDecision,
+-  normalizedSampleUrl,
++  roomSceneReferenceUrls,
+   type RoomSceneGenerationSnapshot,
+   type RoomSceneGenerationStatus,
+ } from "../shared/doorStyleRoomSceneGeneration";
+@@ -37,6 +37,7 @@ export type DoorStyleSampleRow = {
+   doorSampleVerified: boolean;
+   drawerSampleVerified: boolean;
+   roomSceneImageUrl: string | null;
++  approvedReferenceImageUrl?: string | null;
+ };
+ 
+ export type GenerationJobRow = RoomSceneGenerationSnapshot & {
+@@ -89,8 +90,9 @@ async function claimJob(
+   existing: GenerationJobRow | null,
+   token: string,
+ ): Promise<boolean> {
+-  const doorImageUrl = normalizedSampleUrl(style.doorSampleImageUrl)!;
+-  const drawerImageUrl = normalizedSampleUrl(style.drawerSampleImageUrl)!;
++  const resolved = roomSceneReferenceUrls(style);
++  const doorImageUrl = resolved.doorImageUrl ?? "";
++  const drawerImageUrl = resolved.drawerImageUrl ?? "";
+   const patch = {
+     status: "generating" as const,
+     doorImageUrl,
+@@ -184,8 +186,8 @@ export async function applyDoorStyleRoomSceneGeneration(
+     return recordFailure(store, styleId, token, ROOM_SCENE_GENERATION_NOT_CONFIGURED, log);
+   }
+ 
+-  const doorImageUrl = normalizedSampleUrl(style.doorSampleImageUrl)!;
+-  const drawerImageUrl = normalizedSampleUrl(style.drawerSampleImageUrl)!;
++  const doorImageUrl = roomSceneReferenceUrls(style).doorImageUrl!;
++  const drawerImageUrl = roomSceneReferenceUrls(style).drawerImageUrl!;
+   let generatedUrl: string | undefined;
+   try {
+     const generated = await generator.generate({
+@@ -253,6 +255,7 @@ export function createDrizzleRoomSceneStore(db: Db): RoomSceneGenerationStore {
+         doorSampleVerified: doorStyles.doorSampleVerified,
+         drawerSampleVerified: doorStyles.drawerSampleVerified,
+         roomSceneImageUrl: doorStyles.roomSceneImageUrl,
++        approvedReferenceImageUrl: doorStyles.approvedReferenceImageUrl,
+       }).from(doorStyles).where(eq(doorStyles.id, styleId)).limit(1);
+       return style ?? null;
+     },
+diff --git a/server/lib/doorRenderingAuditScore.ts b/server/lib/doorRenderingAuditScore.ts
+index b21986b..d9e49fb 100644
+--- a/server/lib/doorRenderingAuditScore.ts
++++ b/server/lib/doorRenderingAuditScore.ts
+@@ -128,11 +128,14 @@ export async function imageUrlToDataUrl(url: string): Promise<string> {
+  * a designer render against the door style's sample photo.
+  */
+ export async function scoreDoorRenderPair(
+-  input: { sampleImage: string; renderImage: string },
++  input: { sampleImage: string; renderImage: string; baseline?: "approved-reference" | "sample-photo" },
+   invoke: ScoreInvoker = invokeLLM,
+ ): Promise<{ scores: DoorRenderScoreSet; notes: string; model: string }> {
+   const sampleImage = await imageUrlToDataUrl(input.sampleImage);
+   const renderImage = await imageUrlToDataUrl(input.renderImage);
++  const baselineText = input.baseline === "approved-reference"
++    ? "Image 1 is the approved reference render for this door style. It is the source of truth."
++    : "Image 1 is the real sample door photo.";
+   const result = await invoke({
+     model: DOOR_RENDER_AUDIT_MODEL,
+     maxTokens: 800,
+@@ -146,7 +149,7 @@ export async function scoreDoorRenderPair(
+         role: "user",
+         content: [
+           { type: "text", text: SCORE_INSTRUCTIONS },
+-          { type: "text", text: "Image 1 is the real sample door photo." },
++          { type: "text", text: baselineText },
+           { type: "image_url", image_url: { url: sampleImage, detail: "auto" } },
+           { type: "text", text: "Image 2 is the new 3D designer render." },
+           { type: "image_url", image_url: { url: renderImage, detail: "auto" } },
+diff --git a/server/routers/catalog.ts b/server/routers/catalog.ts
+index 30f851b..261c501 100644
+--- a/server/routers/catalog.ts
++++ b/server/routers/catalog.ts
+@@ -228,6 +228,10 @@ export const doorStylesRouter = router({
+         doorSampleImageUrl: doorStyles.doorSampleImageUrl,
+         drawerSampleImageUrl: doorStyles.drawerSampleImageUrl,
+         doorSampleVerified: doorStyles.doorSampleVerified,
++        approvedReferenceImageUrl: doorStyles.approvedReferenceImageUrl,
++        approvedRenderVersionId: doorStyles.approvedRenderVersionId,
++        approvedAt: doorStyles.approvedAt,
++        approvedByName: doorStyles.approvedByName,
+         roomSceneImageUrl: doorStyles.roomSceneImageUrl,
+         thumbnailImageUrl: doorStyles.thumbnailImageUrl,
+         isFeatured: doorStyles.isFeatured,
+@@ -498,6 +502,12 @@ export const doorStylesRouter = router({
+         drawerSampleImageUrl: doorStyles.drawerSampleImageUrl,
+         doorSampleVerified: doorStyles.doorSampleVerified,
+         drawerSampleVerified: doorStyles.drawerSampleVerified,
++        approvedReferenceImageUrl: doorStyles.approvedReferenceImageUrl,
++        approvedRenderVersionId: doorStyles.approvedRenderVersionId,
++        approvedAt: doorStyles.approvedAt,
++        approvedByUserId: doorStyles.approvedByUserId,
++        approvedByName: doorStyles.approvedByName,
++        approvalNote: doorStyles.approvalNote,
+         roomSceneImageUrl: doorStyles.roomSceneImageUrl,
+         thumbnailImageUrl: doorStyles.thumbnailImageUrl,
+         isFeatured: doorStyles.isFeatured,
+diff --git a/server/routers/doorRenderingAudit.test.ts b/server/routers/doorRenderingAudit.test.ts
+index 54904bc..fc3092e 100644
+--- a/server/routers/doorRenderingAudit.test.ts
++++ b/server/routers/doorRenderingAudit.test.ts
+@@ -31,6 +31,8 @@ const procedureCalls = {
+   runHistory: (api: ReturnType<typeof caller>) => api.doorRenderingAudit.runHistory(),
+   styleVersions: (api: ReturnType<typeof caller>) => api.doorRenderingAudit.styleVersions({ styleId: 1 }),
+   abandonRun: (api: ReturnType<typeof caller>) => api.doorRenderingAudit.abandonRun({ runId: 1 }),
++  approveRender: (api: ReturnType<typeof caller>) => api.doorRenderingAudit.approveRender({ versionId: 1 }),
++  revokeApproval: (api: ReturnType<typeof caller>) => api.doorRenderingAudit.revokeApproval({ styleId: 1 }),
+ };
+ 
+ describe("door rendering audit admin guard", () => {
+@@ -56,6 +58,10 @@ describe("door rendering audit admin guard", () => {
+     expect(source).toContain("runHistory: adminProcedure");
+     expect(source).toContain("styleVersions: adminProcedure");
+     expect(source).toContain("abandonRun: adminProcedure");
++    expect(source).toContain("approveRender: adminProcedure");
++    expect(source).toContain("revokeApproval: adminProcedure");
++    expect(source).not.toContain("doorSampleImageUrl: plan.imageUrl");
++    expect(source).not.toContain("drawerSampleImageUrl: plan.imageUrl");
+     expect(source).not.toMatch(/update\(doorRenderingVersions\)/);
+     expect(source).not.toMatch(/delete\(doorRenderingVersions\)/);
+     expect(source).not.toMatch(/delete\(doorRenderingVersionEvents\)/);
+diff --git a/server/routers/doorRenderingAudit.ts b/server/routers/doorRenderingAudit.ts
+index ba17635..e619ce6 100644
+--- a/server/routers/doorRenderingAudit.ts
++++ b/server/routers/doorRenderingAudit.ts
+@@ -9,13 +9,19 @@
+  *
+  * Procedures (all adminProcedure):
+  *   listStyles, startRun, runStatus, submitRender, rerunStyle,
+- *   decideRender, revertToVersion, runHistory, styleVersions, abandonRun
++ *   decideRender, revertToVersion, runHistory, styleVersions, abandonRun,
++ *   approveRender, revokeApproval
++ *
++ * approveRender stores the passing render as the style's source of truth.
++ * It does not write doorSampleImageUrl or drawerSampleImageUrl.
++ * Render version rows stay insert-only.
+  */
+ import { TRPCError } from "@trpc/server";
+ import { and, asc, count as countRows, desc, eq, inArray, max } from "drizzle-orm";
+ import { z } from "zod";
+ import {
+   distributors,
++  doorRenderingApprovals,
+   doorRenderingAuditResults,
+   doorRenderingAuditRuns,
+   doorRenderingVersionEvents,
+@@ -25,13 +31,17 @@ import {
+ } from "../../drizzle/schema";
+ import {
+   DOOR_RENDERING_AUDIT_FLAG_MARGIN,
+-  DOOR_RENDERING_AUDIT_STYLE_CAP,
+   DoorRenderingAuditError,
+   acceptedVersionIdForStyle,
++  comparisonBaseline,
++  featuredImagesAudit,
+   latestEventForVersion,
+   liveFlagStatus,
+   normalizeRenderingCommit,
++  planApprovalRevoke,
++  planRenderApproval,
+   planVersionDecision,
++  previousVersionId,
+   selectStylesForRun,
+   verdictForOverall,
+   type DoorRenderingAuditCandidate,
+@@ -109,7 +119,14 @@ const styleColumns = {
+   finish: doorStyles.finish,
+   color: doorStyles.color,
+   doorSampleImageUrl: doorStyles.doorSampleImageUrl,
++  drawerSampleImageUrl: doorStyles.drawerSampleImageUrl,
+   doorSampleVerified: doorStyles.doorSampleVerified,
++  approvedRenderVersionId: doorStyles.approvedRenderVersionId,
++  approvedReferenceImageUrl: doorStyles.approvedReferenceImageUrl,
++  approvedAt: doorStyles.approvedAt,
++  approvedByUserId: doorStyles.approvedByUserId,
++  approvedByName: doorStyles.approvedByName,
++  approvalNote: doorStyles.approvalNote,
+   cornerSwatchImageUrl: doorStyles.cornerSwatchImageUrl,
+   railWidth: doorStyles.railWidth,
+   stileWidth: doorStyles.stileWidth,
+@@ -138,7 +155,14 @@ type StyleRow = {
+   finish: string | null;
+   color: string | null;
+   doorSampleImageUrl: string | null;
++  drawerSampleImageUrl: string | null;
+   doorSampleVerified: boolean;
++  approvedRenderVersionId: number | null;
++  approvedReferenceImageUrl: string | null;
++  approvedAt: Date | null;
++  approvedByUserId: number | null;
++  approvedByName: string | null;
++  approvalNote: string | null;
+   cornerSwatchImageUrl: string | null;
+   railWidth: string | null;
+   stileWidth: string | null;
+@@ -163,7 +187,23 @@ function renderBrief(style: StyleRow) {
+     distributorName: style.distributorName,
+     brandName: style.brandName,
+     samplePhotoUrl: style.doorSampleImageUrl,
++    drawerSampleImageUrl: style.drawerSampleImageUrl,
+     doorSampleVerified: style.doorSampleVerified,
++    approvedReference: style.approvedRenderVersionId && style.approvedReferenceImageUrl
++      ? {
++          versionId: style.approvedRenderVersionId,
++          imageUrl: style.approvedReferenceImageUrl,
++          approvedAt: style.approvedAt,
++          approvedByUserId: style.approvedByUserId,
++          approvedByName: style.approvedByName,
++          note: style.approvalNote,
++        }
++      : null,
++    ...featuredImagesAudit({
++      approvedReferenceImageUrl: style.approvedReferenceImageUrl,
++      doorSampleImageUrl: style.doorSampleImageUrl,
++      drawerSampleImageUrl: style.drawerSampleImageUrl,
++    }),
+     color: style.color,
+     finish: style.finish,
+     woodSpecies: style.woodSpecies,
+@@ -188,6 +228,7 @@ function renderBrief(style: StyleRow) {
+ function versionSummary(
+   row: typeof doorRenderingVersions.$inferSelect,
+   isCurrentAccepted: boolean,
++  isApprovedReference = false,
+ ) {
+   return {
+     versionId: row.id,
+@@ -209,6 +250,7 @@ function versionSummary(
+     notes: row.notes,
+     createdAt: row.createdAt,
+     isCurrentAccepted,
++    isApprovedReference,
+   };
+ }
+ 
+@@ -259,9 +301,28 @@ async function loadVersionIndex(db: Database) {
+ 
+   const versionCountByStyle = new Map(aggregates.map((row) => [Number(row.styleId), Number(row.versionCount)]));
+   const latestIdByStyle = new Map(aggregates.map((row) => [Number(row.styleId), Number(row.versionId)]));
++  const idRows = await db
++    .select({ id: doorRenderingVersions.id, styleId: doorRenderingVersions.styleId })
++    .from(doorRenderingVersions)
++    .orderBy(desc(doorRenderingVersions.id));
++  const idsByStyle = new Map<number, number[]>();
++  for (const row of idRows) {
++    const styleId = Number(row.styleId);
++    const list = idsByStyle.get(styleId) ?? [];
++    if (list.length < 2) {
++      list.push(Number(row.id));
++      idsByStyle.set(styleId, list);
++    }
++  }
++  const previousIdByStyle = new Map<number, number>();
++  for (const [styleId, ids] of idsByStyle) {
++    const previous = previousVersionId(ids);
++    if (previous != null) previousIdByStyle.set(styleId, previous);
++  }
+   const neededIds = Array.from(new Set([
+     ...Array.from(latestIdByStyle.values()),
+     ...Array.from(acceptedVersionByStyle.values()),
++    ...Array.from(previousIdByStyle.values()),
+   ])).filter((id) => id > 0);
+   const versionRows = neededIds.length
+     ? await db.select().from(doorRenderingVersions).where(inArray(doorRenderingVersions.id, neededIds))
+@@ -287,18 +348,25 @@ async function loadVersionIndex(db: Database) {
+     action: row.action,
+   }));
+ 
+-  return { versionById, latestIdByStyle, acceptedVersionByStyle, versionCountByStyle, latestEvents };
++  return { versionById, latestIdByStyle, previousIdByStyle, acceptedVersionByStyle, versionCountByStyle, latestEvents };
+ }
+ 
+ function flagForStyle(
+   index: Awaited<ReturnType<typeof loadVersionIndex>>,
+   styleId: number,
+-): { flagStatus: DoorRenderingFlagStatus; latest: typeof doorRenderingVersions.$inferSelect | null; accepted: typeof doorRenderingVersions.$inferSelect | null } {
++): {
++  flagStatus: DoorRenderingFlagStatus;
++  latest: typeof doorRenderingVersions.$inferSelect | null;
++  previous: typeof doorRenderingVersions.$inferSelect | null;
++  accepted: typeof doorRenderingVersions.$inferSelect | null;
++} {
+   const latest = index.versionById.get(index.latestIdByStyle.get(styleId) ?? -1) ?? null;
++  const previous = index.versionById.get(index.previousIdByStyle.get(styleId) ?? -1) ?? null;
+   const accepted = index.versionById.get(index.acceptedVersionByStyle.get(styleId) ?? -1) ?? null;
+   const latestEvent = latest ? latestEventForVersion(index.latestEvents, latest.id) : null;
+   return {
+     latest,
++    previous,
+     accepted,
+     flagStatus: liveFlagStatus({
+       latest: latest ? { versionId: latest.id, overall: latest.overallScore } : null,
+@@ -374,6 +442,7 @@ async function createRun(
+     return {
+       styleId: style.id,
+       samplePhotoUrl: style.doorSampleImageUrl,
++      approvedReferenceImageUrl: style.approvedReferenceImageUrl,
+       latest: latest
+         ? { samplePhotoUrl: latest.samplePhotoUrl, renderingCommit: latest.renderingCommit }
+         : null,
+@@ -389,7 +458,7 @@ async function createRun(
+     throw new TRPCError({
+       code: "BAD_REQUEST",
+       message: selection.skippedMissingSample > 0
+-        ? "The selected door styles have no sample photo to compare against."
++        ? "The selected door styles have no approved reference or sample photo to compare against."
+         : "None of the selected door styles are active.",
+     });
+   }
+@@ -401,7 +470,7 @@ async function createRun(
+     requestedBy: actor.id,
+     requestedByName: actor.name?.slice(0, 255) ?? null,
+     renderingCommit,
+-    styleCap: DOOR_RENDERING_AUDIT_STYLE_CAP,
++    styleCap: selection.selected.length,
+     selectedCount: selection.selected.length,
+     pendingCount: selection.selected.length,
+     skippedUnchangedCount: selection.skippedUnchanged,
+@@ -413,7 +482,7 @@ async function createRun(
+     await db.insert(doorRenderingAuditResults).values(selection.selected.map((style) => ({
+       runId,
+       styleId: style.styleId,
+-      samplePhotoUrl: style.samplePhotoUrl ?? "",
++      samplePhotoUrl: comparisonBaseline(style).imageUrl ?? "",
+       renderingCommit,
+       status: "pending_render" as const,
+       verdict: "pending" as const,
+@@ -426,8 +495,9 @@ async function createRun(
+     status: selection.selected.length === 0 ? "completed" as const : "awaiting_renders" as const,
+     scope: input.scope,
+     renderingCommit,
+-    styleCap: DOOR_RENDERING_AUDIT_STYLE_CAP,
++    styleCap: selection.selected.length,
+     truncated: selection.truncated,
++    totalEligible: selection.totalEligible,
+     skippedUnchangedCount: selection.skippedUnchanged,
+     skippedMissingSampleCount: selection.skippedMissingSample,
+     missingStyleIds: selection.missingStyleIds,
+@@ -501,16 +571,32 @@ export const doorRenderingAuditRouter = router({
+     }).optional())
+     .query(async ({ input }) => {
+       const db = requireDb(await getDb());
+-      const [styles, index] = await Promise.all([loadActiveStyles(db), loadVersionIndex(db)]);
++      const [styles, index, openRuns] = await Promise.all([
++        loadActiveStyles(db),
++        loadVersionIndex(db),
++        db.select().from(doorRenderingAuditRuns)
++          .where(inArray(doorRenderingAuditRuns.status, ["awaiting_renders", "scoring"]))
++          .orderBy(desc(doorRenderingAuditRuns.id))
++          .limit(1),
++      ]);
++      const openRun = openRuns[0] ?? null;
+       const search = input?.search?.trim().toLowerCase() ?? "";
+       const catalog = styles.map((style) => {
+         const view = flagForStyle(index, style.id);
+         const acceptedId = view.accepted?.id ?? null;
++        const approvedId = style.approvedRenderVersionId;
++        const approved = (row: typeof doorRenderingVersions.$inferSelect) => row.id === approvedId;
+         return {
+           ...renderBrief(style),
+-          missingSample: !style.doorSampleImageUrl?.trim(),
+-          latestRender: view.latest ? versionSummary(view.latest, view.latest.id === acceptedId) : null,
+-          acceptedRender: view.accepted ? versionSummary(view.accepted, true) : null,
++          missingSample: !comparisonBaseline({
++            approvedReferenceImageUrl: style.approvedReferenceImageUrl,
++            samplePhotoUrl: style.doorSampleImageUrl,
++          }).imageUrl,
++          latestRender: view.latest ? versionSummary(view.latest, view.latest.id === acceptedId, approved(view.latest)) : null,
++          previousRender: view.previous && view.previous.id !== view.latest?.id
++            ? versionSummary(view.previous, view.previous.id === acceptedId, approved(view.previous))
++            : null,
++          acceptedRender: view.accepted ? versionSummary(view.accepted, true, view.accepted.id === approvedId) : null,
+           flagStatus: view.flagStatus,
+           versionCount: index.versionCountByStyle.get(style.id) ?? 0,
+         };
+@@ -525,7 +611,7 @@ export const doorRenderingAuditRouter = router({
+         return haystack.includes(search);
+       });
+       return {
+-        styleCap: DOOR_RENDERING_AUDIT_STYLE_CAP,
++        styleCap: null,
+         flagMargin: DOOR_RENDERING_AUDIT_FLAG_MARGIN,
+         counts: {
+           total: catalog.length,
+@@ -533,15 +619,39 @@ export const doorRenderingAuditRouter = router({
+           flagged: catalog.filter((row) => row.flagStatus === "flagged").length,
+           noBaseline: catalog.filter((row) => row.flagStatus === "no_baseline").length,
+           missingSample: catalog.filter((row) => row.missingSample).length,
++          noApprovedSource: catalog.filter((row) => row.sourceStatus === "no-approved-source").length,
++          featuredMismatch: catalog.filter((row) => row.sourceStatus === "featured-mismatch").length,
+         },
++        activeRun: openRun ? {
++          run: {
++            id: openRun.id,
++            scope: openRun.scope,
++            status: openRun.status,
++            selectedCount: openRun.selectedCount,
++            pendingCount: openRun.pendingCount,
++            scoredCount: openRun.scoredCount,
++            failedCount: openRun.failedCount,
++            createdAt: openRun.createdAt,
++            completedAt: openRun.completedAt,
++            errorMessage: openRun.errorMessage,
++          },
++          progress: {
++            total: openRun.selectedCount,
++            pending: openRun.pendingCount,
++            scored: openRun.scoredCount,
++            failed: openRun.failedCount,
++          },
++          results: [],
++        } : null,
+         styles: rows,
+       };
+     }),
+ 
+   /**
+-   * Open a run. The response lists the styles the browser must render.
+-   * scope "changed" (default) skips styles whose sample photo and rendering
+-   * commit already match the latest stored render. Every run stops at 40 styles.
++   * Open a run. The response lists every style the browser must render.
++   * scope "changed" skips styles whose comparison image and rendering commit
++   * already match the latest stored render. Send renderingCommit or changed
++   * runs cannot see a new designer capture. Runs are not capped at 40 styles.
+    */
+   startRun: adminProcedure.input(startRunInput).mutation(async ({ ctx, input }) => {
+     const db = requireDb(await getDb());
+@@ -658,9 +768,21 @@ export const doorRenderingAuditRouter = router({
+ 
+       try {
+         const stored = await storagePut(doorRenderStorageKey(input.styleId, run.id, image.extension), image.bytes, image.contentType);
++        const [styleRow] = await db.select({
++          doorSampleImageUrl: doorStyles.doorSampleImageUrl,
++          approvedReferenceImageUrl: doorStyles.approvedReferenceImageUrl,
++        }).from(doorStyles).where(eq(doorStyles.id, input.styleId)).limit(1);
++        const baseline = comparisonBaseline({
++          approvedReferenceImageUrl: styleRow?.approvedReferenceImageUrl,
++          samplePhotoUrl: styleRow?.doorSampleImageUrl ?? result.samplePhotoUrl,
++        });
++        if (!baseline.imageUrl) {
++          throw new DoorRenderingAuditError("This door style has no approved reference or sample photo to compare against.");
++        }
+         const scored = await scoreDoorRenderPair({
+-          sampleImage: result.samplePhotoUrl,
++          sampleImage: baseline.imageUrl,
+           renderImage: `data:${image.contentType};base64,${image.bytes.toString("base64")}`,
++          baseline: baseline.source === "approved-reference" ? "approved-reference" : "sample-photo",
+         });
+         const acceptedId = acceptedVersionIdForStyle(
+           await db
+@@ -686,7 +808,7 @@ export const doorRenderingAuditRouter = router({
+           styleId: input.styleId,
+           runId: run.id,
+           renderingCommit,
+-          samplePhotoUrl: result.samplePhotoUrl,
++          samplePhotoUrl: baseline.imageUrl,
+           renderImageUrl: stored.url,
+           renderImageKey: stored.key,
+           woodGrainScore: scored.scores.woodGrain,
+@@ -702,6 +824,7 @@ export const doorRenderingAuditRouter = router({
+         await db.update(doorRenderingAuditResults).set({
+           status: "scored",
+           renderingCommit,
++          samplePhotoUrl: baseline.imageUrl,
+           renderImageUrl: stored.url,
+           versionId,
+           woodGrainScore: scored.scores.woodGrain,
+@@ -819,7 +942,7 @@ export const doorRenderingAuditRouter = router({
+           latestEventAction: latestEvent?.action ?? null,
+         }),
+         versions: versions.map((row) => ({
+-          ...versionSummary(row, row.id === acceptedVersionId),
++          ...versionSummary(row, row.id === acceptedVersionId, row.id === anyStyle.approvedRenderVersionId),
+           events: events.filter((event) => event.versionId === row.id),
+         })),
+       };
+@@ -855,4 +978,120 @@ export const doorRenderingAuditRouter = router({
+       }).where(eq(doorRenderingAuditRuns.id, run.id));
+       return { runId: run.id, status: "cancelled" as const };
+     }),
++
++  /**
++   * Make a passing render the style's approved reference.
++   * History is an insert. Featured sample URLs are not changed.
++   */
++  approveRender: adminProcedure
++    .input(z.object({
++      versionId: z.number().int().positive(),
++      note: noteInput,
++    }))
++    .mutation(async ({ ctx, input }) => {
++      const db = requireDb(await getDb());
++      const [version] = await db.select().from(doorRenderingVersions).where(eq(doorRenderingVersions.id, input.versionId)).limit(1);
++      if (!version) throw new TRPCError({ code: "NOT_FOUND", message: "That render version was not found." });
++      const [style] = await db.select({
++        id: doorStyles.id,
++        approvedRenderVersionId: doorStyles.approvedRenderVersionId,
++      }).from(doorStyles).where(eq(doorStyles.id, version.styleId)).limit(1);
++      if (!style) throw new TRPCError({ code: "NOT_FOUND", message: "That door style was not found." });
++      const events = await db.select({
++        id: doorRenderingVersionEvents.id,
++        styleId: doorRenderingVersionEvents.styleId,
++        versionId: doorRenderingVersionEvents.versionId,
++        action: doorRenderingVersionEvents.action,
++      }).from(doorRenderingVersionEvents).where(eq(doorRenderingVersionEvents.versionId, version.id));
++      const latestEvent = latestEventForVersion(events, version.id);
++      let plan;
++      try {
++        plan = planRenderApproval({
++          version: {
++            id: version.id,
++            styleId: version.styleId,
++            renderImageUrl: version.renderImageUrl,
++            rejected: latestEvent?.action === "rejected",
++          },
++          currentApprovedVersionId: style.approvedRenderVersionId,
++        });
++      } catch (error) {
++        throw asAuditError(error);
++      }
++      const note = optionalNote(input.note);
++      const actorName = ctx.user.name?.slice(0, 255) ?? null;
++      const approvedAt = new Date();
++      await db.insert(doorRenderingApprovals).values({
++        styleId: plan.styleId,
++        versionId: plan.versionId,
++        action: "approved",
++        actorUserId: ctx.user.id,
++        actorName,
++        note,
++        imageUrl: plan.imageUrl,
++      });
++      await db.update(doorStyles).set({
++        approvedRenderVersionId: plan.versionId,
++        approvedReferenceImageUrl: plan.imageUrl,
++        approvedAt,
++        approvedByUserId: ctx.user.id,
++        approvedByName: actorName,
++        approvalNote: note,
++      }).where(eq(doorStyles.id, plan.styleId));
++      return {
++        styleId: plan.styleId,
++        versionId: plan.versionId,
++        imageUrl: plan.imageUrl,
++        replacesVersionId: plan.replacesVersionId,
++        approvedAt,
++        approvedByUserId: ctx.user.id,
++        approvedByName: actorName,
++        note,
++      };
++    }),
++
++  /** Clear the style's approved reference. The render version stays in history. */
++  revokeApproval: adminProcedure
++    .input(z.object({
++      styleId: z.number().int().positive(),
++      note: noteInput,
++    }))
++    .mutation(async ({ ctx, input }) => {
++      const db = requireDb(await getDb());
++      const [style] = await db.select({
++        id: doorStyles.id,
++        approvedRenderVersionId: doorStyles.approvedRenderVersionId,
++        approvedReferenceImageUrl: doorStyles.approvedReferenceImageUrl,
++      }).from(doorStyles).where(eq(doorStyles.id, input.styleId)).limit(1);
++      if (!style) throw new TRPCError({ code: "NOT_FOUND", message: "That door style was not found." });
++      let plan;
++      try {
++        plan = planApprovalRevoke({
++          styleId: style.id,
++          currentApprovedVersionId: style.approvedRenderVersionId,
++          imageUrl: style.approvedReferenceImageUrl,
++        });
++      } catch (error) {
++        throw asAuditError(error);
++      }
++      const note = optionalNote(input.note);
++      await db.insert(doorRenderingApprovals).values({
++        styleId: plan.styleId,
++        versionId: plan.versionId,
++        action: "revoked",
++        actorUserId: ctx.user.id,
++        actorName: ctx.user.name?.slice(0, 255) ?? null,
++        note,
++        imageUrl: plan.imageUrl || style.approvedReferenceImageUrl || "",
++      });
++      await db.update(doorStyles).set({
++        approvedRenderVersionId: null,
++        approvedReferenceImageUrl: null,
++        approvedAt: null,
++        approvedByUserId: null,
++        approvedByName: null,
++        approvalNote: null,
++      }).where(eq(doorStyles.id, plan.styleId));
++      return { styleId: plan.styleId, versionId: plan.versionId, status: "revoked" as const };
++    }),
+ });
+diff --git a/shared/doorRenderingAudit.test.ts b/shared/doorRenderingAudit.test.ts
+index af26480..171cbb3 100644
+--- a/shared/doorRenderingAudit.test.ts
++++ b/shared/doorRenderingAudit.test.ts
+@@ -2,13 +2,20 @@ import { describe, expect, it } from "vitest";
+ import {
+   DOOR_RENDERING_AUDIT_STYLE_CAP,
+   DoorRenderingAuditError,
++  FEATURED_IMAGE_MISMATCH_REASON,
++  comparisonBaseline,
++  featuredImagesAudit,
+   liveFlagStatus,
++  planApprovalRevoke,
++  planRenderApproval,
+   planVersionDecision,
++  previousVersionId,
+   selectStylesForRun,
+   styleChangedSinceLastRender,
+   verdictForOverall,
+   type DoorRenderingAuditCandidate,
+ } from "./doorRenderingAudit";
++import { STAINLESS_DOOR_STYLE_FIXTURE } from "./stainlessDoorStyleAudit.fixture";
+ 
+ function style(partial: Partial<DoorRenderingAuditCandidate> & { styleId: number }): DoorRenderingAuditCandidate {
+   return {
+@@ -117,7 +124,7 @@ describe("door rendering audit run selection", () => {
+     expect(styleChangedSinceLastRender(style({ styleId: 2 }), null)).toBe(true);
+   });
+ 
+-  it("skips unchanged styles by default and caps a run at 40", () => {
++  it("skips unchanged styles and processes every changed style instead of stopping at 40", () => {
+     const styles = [
+       style({
+         styleId: 1,
+@@ -127,9 +134,14 @@ describe("door rendering audit run selection", () => {
+     ];
+     const changed = selectStylesForRun({ styles, scope: "changed", renderingCommit: "aaa" });
+     expect(changed.skippedUnchanged).toBe(1);
+-    expect(changed.selected).toHaveLength(DOOR_RENDERING_AUDIT_STYLE_CAP);
+-    expect(changed.truncated).toBe(true);
+-    expect(changed.selected.map((row) => row.styleId)).toEqual(Array.from({ length: 40 }, (_, index) => index + 2));
++    expect(changed.selected).toHaveLength(45);
++    expect(changed.truncated).toBe(false);
++    expect(changed.totalEligible).toBe(45);
++    expect(changed.selected.map((row) => row.styleId)).toEqual(Array.from({ length: 45 }, (_, index) => index + 2));
++    const paged = selectStylesForRun({ styles, scope: "changed", renderingCommit: "aaa", cap: DOOR_RENDERING_AUDIT_STYLE_CAP });
++    expect(paged.selected).toHaveLength(DOOR_RENDERING_AUDIT_STYLE_CAP);
++    expect(paged.truncated).toBe(true);
++    expect(paged.totalEligible).toBe(45);
+   });
+ 
+   it("includes unchanged styles when the admin asks for every style, still capped", () => {
+@@ -174,4 +186,74 @@ describe("door rendering audit run selection", () => {
+     const selected = selectStylesForRun({ styles, scope: "changed", renderingCommit: "aaa" });
+     expect(selected.selected.map((row) => row.styleId)).toEqual([8, 3]);
+   });
++
++  it("compares a new render with the approved reference and falls back to the sample photo", () => {
++    expect(comparisonBaseline({
++      approvedReferenceImageUrl: "/approved.png",
++      samplePhotoUrl: "/sample.png",
++    })).toEqual({ imageUrl: "/approved.png", source: "approved-reference" });
++    expect(comparisonBaseline({ samplePhotoUrl: "/sample.png" })).toEqual({
++      imageUrl: "/sample.png",
++      source: "sample-photo",
++    });
++    const approved = style({
++      styleId: 4,
++      samplePhotoUrl: "/featured.png",
++      approvedReferenceImageUrl: "/approved.png",
++      latest: { samplePhotoUrl: "/approved.png", renderingCommit: "aaa" },
++    });
++    expect(styleChangedSinceLastRender(approved, "aaa")).toBe(false);
++    expect(styleChangedSinceLastRender(approved, "bbb")).toBe(true);
++  });
++
++  it("reads the version immediately before the latest one", () => {
++    expect(previousVersionId([9, 4, 1])).toBe(4);
++    expect(previousVersionId([9])).toBeNull();
++  });
++});
++
++describe("door rendering approval", () => {
++  const version = { id: 9, styleId: 5, renderImageUrl: "/approved.png", rejected: false };
++
++  it("approves a passing render and can replace the current reference without deleting versions", () => {
++    const plan = planRenderApproval({ version, currentApprovedVersionId: 2 });
++    expect(plan).toEqual({ styleId: 5, versionId: 9, imageUrl: "/approved.png", replacesVersionId: 2 });
++    expect(planRenderApproval({ version, currentApprovedVersionId: null }).replacesVersionId).toBeNull();
++  });
++
++  it("refuses a rejected render and a render that is already approved", () => {
++    expect(() => planRenderApproval({ version: { ...version, rejected: true }, currentApprovedVersionId: null })).toThrow(
++      /cannot be approved/,
++    );
++    expect(() => planRenderApproval({ version, currentApprovedVersionId: 9 })).toThrow(/already the approved reference/);
++  });
++
++  it("revokes the current approval and refuses to revoke when none exists", () => {
++    expect(planApprovalRevoke({ styleId: 5, currentApprovedVersionId: 9, imageUrl: "/approved.png" })).toEqual({
++      styleId: 5,
++      versionId: 9,
++      imageUrl: "/approved.png",
++    });
++    expect(() => planApprovalRevoke({ styleId: 5, currentApprovedVersionId: null, imageUrl: null })).toThrow(/no approved reference/);
++  });
++
++  it("does not pass a style that has no approved source", () => {
++    expect(featuredImagesAudit({
++      approvedReferenceImageUrl: null,
++      doorSampleImageUrl: "/sample.png",
++      drawerSampleImageUrl: "/drawer.png",
++    }).sourceStatus).toBe("no-approved-source");
++  });
++
++  it("fails the Stainless door style when its featured door and drawer photos are not the approved reference", () => {
++    const style = STAINLESS_DOOR_STYLE_FIXTURE;
++    expect(style.styleName).toBe("Stainless");
++    const audit = featuredImagesAudit(style);
++    expect(audit.sourceStatus).toBe("featured-mismatch");
++    expect(audit.failures).toEqual([
++      { image: "door", reason: FEATURED_IMAGE_MISMATCH_REASON },
++      { image: "drawer", reason: FEATURED_IMAGE_MISMATCH_REASON },
++    ]);
++    expect(comparisonBaseline(style).imageUrl).toBe(style.approvedReferenceImageUrl);
++  });
+ });
+diff --git a/shared/doorRenderingAudit.ts b/shared/doorRenderingAudit.ts
+index b9148dd..57682b9 100644
+--- a/shared/doorRenderingAudit.ts
++++ b/shared/doorRenderingAudit.ts
+@@ -34,15 +34,24 @@ export type DoorRenderScoreSet = {
+   overall: number;
+ };
+ 
++export const FEATURED_IMAGE_MISMATCH_REASON = "Featured image doesn't match approved source";
++export const NO_APPROVED_SOURCE_LABEL = "No approved source";
++
+ export type DoorRenderingAuditCandidate = {
+   styleId: number;
+   samplePhotoUrl: string | null;
++  approvedReferenceImageUrl?: string | null;
+   latest: {
+     samplePhotoUrl: string;
+     renderingCommit: string | null;
+   } | null;
+ };
+ 
++export type FeaturedImageFailure = {
++  image: "door" | "drawer";
++  reason: typeof FEATURED_IMAGE_MISMATCH_REASON;
++};
++
+ export type DoorRenderingVersionRef = {
+   id: number;
+   styleId: number;
+@@ -75,18 +84,53 @@ export function normalizeRenderingCommit(value: string | null | undefined): stri
+   return trimmed.length > 0 ? trimmed.slice(0, 128) : null;
+ }
+ 
+-/** A style is unchanged when the sample photo and known designer version match the latest render. */
++export function comparisonBaseline(input: {
++  approvedReferenceImageUrl?: string | null;
++  samplePhotoUrl?: string | null;
++}): { imageUrl: string | null; source: "approved-reference" | "sample-photo" | "none" } {
++  const approved = input.approvedReferenceImageUrl?.trim() ?? "";
++  if (approved) return { imageUrl: approved, source: "approved-reference" };
++  const sample = input.samplePhotoUrl?.trim() ?? "";
++  if (sample) return { imageUrl: sample, source: "sample-photo" };
++  return { imageUrl: null, source: "none" };
++}
++
++export function featuredImagesAudit(input: {
++  approvedReferenceImageUrl?: string | null;
++  doorSampleImageUrl?: string | null;
++  drawerSampleImageUrl?: string | null;
++}): { sourceStatus: "no-approved-source" | "featured-mismatch" | "approved"; failures: FeaturedImageFailure[] } {
++  const approved = normalizeAuditUrl(input.approvedReferenceImageUrl);
++  if (!approved) return { sourceStatus: "no-approved-source", failures: [] };
++  const failures: FeaturedImageFailure[] = [];
++  if (normalizeAuditUrl(input.doorSampleImageUrl) !== approved) {
++    failures.push({ image: "door", reason: FEATURED_IMAGE_MISMATCH_REASON });
++  }
++  const drawer = normalizeAuditUrl(input.drawerSampleImageUrl);
++  if (drawer && drawer !== approved) {
++    failures.push({ image: "drawer", reason: FEATURED_IMAGE_MISMATCH_REASON });
++  }
++  return { sourceStatus: failures.length > 0 ? "featured-mismatch" : "approved", failures };
++}
++
++/** A style is unchanged when the comparison image and known designer version match the latest render. */
+ export function styleChangedSinceLastRender(
+   style: DoorRenderingAuditCandidate,
+   renderingCommit: string | null,
+ ): boolean {
+-  if (!normalizeAuditUrl(style.samplePhotoUrl)) return false;
++  const baseline = comparisonBaseline(style);
++  if (!baseline.imageUrl) return false;
+   if (!style.latest) return true;
+-  if (normalizeAuditUrl(style.samplePhotoUrl) !== normalizeAuditUrl(style.latest.samplePhotoUrl)) return true;
++  if (normalizeAuditUrl(baseline.imageUrl) !== normalizeAuditUrl(style.latest.samplePhotoUrl)) return true;
+   if (renderingCommit && renderingCommit !== (style.latest.renderingCommit ?? "")) return true;
+   return false;
+ }
+ 
++export function previousVersionId(versionIdsNewestFirst: readonly number[]): number | null {
++  const ids = versionIdsNewestFirst.filter((id) => Number.isInteger(id) && id > 0);
++  return ids[1] ?? null;
++}
++
+ export function selectStylesForRun(input: {
+   styles: readonly DoorRenderingAuditCandidate[];
+   scope: DoorRenderingAuditScope;
+@@ -99,8 +143,9 @@ export function selectStylesForRun(input: {
+   skippedMissingSample: number;
+   missingStyleIds: number[];
+   truncated: boolean;
++  totalEligible: number;
+ } {
+-  const cap = input.cap ?? DOOR_RENDERING_AUDIT_STYLE_CAP;
++  const cap = input.cap == null ? null : input.cap;
+   const renderingCommit = normalizeRenderingCommit(input.renderingCommit);
+   const byId = new Map(input.styles.map((style) => [style.styleId, style]));
+   const missingStyleIds: number[] = [];
+@@ -120,7 +165,7 @@ export function selectStylesForRun(input: {
+         missingStyleIds.push(styleId);
+         continue;
+       }
+-      if (!normalizeAuditUrl(style.samplePhotoUrl)) {
++      if (!comparisonBaseline(style).imageUrl) {
+         skippedMissingSample += 1;
+         continue;
+       }
+@@ -130,7 +175,7 @@ export function selectStylesForRun(input: {
+     const changedOnly = input.scope === "changed";
+     eligible = [];
+     for (const style of input.styles) {
+-      if (!normalizeAuditUrl(style.samplePhotoUrl)) {
++      if (!comparisonBaseline(style).imageUrl) {
+         skippedMissingSample += 1;
+         continue;
+       }
+@@ -144,12 +189,14 @@ export function selectStylesForRun(input: {
+     eligible.sort((a, b) => Number(Boolean(a.latest)) - Number(Boolean(b.latest)) || a.styleId - b.styleId);
+   }
+ 
++  const selected = cap == null ? eligible : eligible.slice(0, Math.max(0, cap));
+   return {
+-    selected: eligible.slice(0, cap),
++    selected,
+     skippedUnchanged,
+     skippedMissingSample,
+     missingStyleIds,
+-    truncated: eligible.length > cap,
++    truncated: cap != null && eligible.length > cap,
++    totalEligible: eligible.length,
+   };
+ }
+ 
+@@ -273,3 +320,39 @@ export function planVersionDecision(input: {
+     nextAcceptedVersionId: version.id,
+   };
+ }
++
++/** Approve a scored render that was not rejected. Versions themselves are not deleted or rewritten. */
++export function planRenderApproval(input: {
++  version: { id: number; styleId: number; renderImageUrl: string; rejected: boolean };
++  currentApprovedVersionId: number | null;
++}): { styleId: number; versionId: number; imageUrl: string; replacesVersionId: number | null } {
++  const imageUrl = input.version.renderImageUrl.trim();
++  if (!imageUrl) throw new DoorRenderingAuditError("That render has no image to approve.");
++  if (input.version.rejected) {
++    throw new DoorRenderingAuditError("A rejected render cannot be approved. Approve a render that passed.");
++  }
++  if (input.currentApprovedVersionId === input.version.id) {
++    throw new DoorRenderingAuditError("That render is already the approved reference.");
++  }
++  return {
++    styleId: input.version.styleId,
++    versionId: input.version.id,
++    imageUrl,
++    replacesVersionId: input.currentApprovedVersionId,
++  };
++}
++
++export function planApprovalRevoke(input: {
++  styleId: number;
++  currentApprovedVersionId: number | null;
++  imageUrl: string | null;
++}): { styleId: number; versionId: number; imageUrl: string } {
++  if (input.currentApprovedVersionId == null) {
++    throw new DoorRenderingAuditError("This door style has no approved reference to revoke.");
++  }
++  return {
++    styleId: input.styleId,
++    versionId: input.currentApprovedVersionId,
++    imageUrl: input.imageUrl?.trim() || "",
++  };
++}
+diff --git a/shared/doorStyleRoomSceneGeneration.test.ts b/shared/doorStyleRoomSceneGeneration.test.ts
+index b918562..d484e6f 100644
+--- a/shared/doorStyleRoomSceneGeneration.test.ts
++++ b/shared/doorStyleRoomSceneGeneration.test.ts
+@@ -4,8 +4,10 @@ import {
+   buildDoorStyleRoomScenePrompt,
+   generationDecision,
+   nextSampleVerifiedFlag,
++  roomSceneReferenceUrls,
+   type SampleImageState,
+ } from "./doorStyleRoomSceneGeneration";
++import { STAINLESS_DOOR_STYLE_FIXTURE } from "./stainlessDoorStyleAudit.fixture";
+ 
+ const ready: SampleImageState = {
+   doorSampleImageUrl: " https://cdn.example/door.jpg ",
+@@ -71,6 +73,20 @@ describe("door style room scene trigger", () => {
+     })).toBe(false);
+   });
+ 
++  it("sends the approved Stainless reference instead of the mismatched featured photos", () => {
++    const urls = roomSceneReferenceUrls({
++      ...ready,
++      ourName: STAINLESS_DOOR_STYLE_FIXTURE.styleName,
++      doorSampleImageUrl: STAINLESS_DOOR_STYLE_FIXTURE.doorSampleImageUrl,
++      drawerSampleImageUrl: STAINLESS_DOOR_STYLE_FIXTURE.drawerSampleImageUrl,
++      approvedReferenceImageUrl: STAINLESS_DOOR_STYLE_FIXTURE.approvedReferenceImageUrl,
++    } as SampleImageState);
++    expect(STAINLESS_DOOR_STYLE_FIXTURE.styleName).toBe("Stainless");
++    expect(urls.doorImageUrl).toBe(STAINLESS_DOOR_STYLE_FIXTURE.approvedReferenceImageUrl);
++    expect(urls.drawerImageUrl).toBe(STAINLESS_DOOR_STYLE_FIXTURE.approvedReferenceImageUrl);
++    expect(urls.doorImageUrl).not.toBe(STAINLESS_DOOR_STYLE_FIXTURE.doorSampleImageUrl);
++  });
++
+   it("asks the room-scene model to follow the door and the drawer front", () => {
+     const prompt = buildDoorStyleRoomScenePrompt({ ourName: "Lumina Blanc", doorStyle: "Shaker", color: "White", finish: "Painted" });
+     expect(prompt).toContain("verified cabinet door");
+diff --git a/shared/doorStyleRoomSceneGeneration.ts b/shared/doorStyleRoomSceneGeneration.ts
+index 1ac41ed..ed31416 100644
+--- a/shared/doorStyleRoomSceneGeneration.ts
++++ b/shared/doorStyleRoomSceneGeneration.ts
+@@ -19,6 +19,7 @@ export type SampleImageState = {
+   drawerSampleImageUrl: string | null;
+   doorSampleVerified: boolean;
+   drawerSampleVerified: boolean;
++  approvedReferenceImageUrl?: string | null;
+ };
+ 
+ export type RoomSceneGenerationSnapshot = {
+@@ -32,6 +33,30 @@ export function normalizedSampleUrl(url: string | null | undefined): string | nu
+   return trimmed.length > 0 ? trimmed : null;
+ }
+ 
++function sameReferenceUrl(left: string | null | undefined, right: string | null | undefined): boolean {
++  const a = normalizedSampleUrl(left);
++  const b = normalizedSampleUrl(right);
++  if (!a || !b) return false;
++  return a.split("?")[0].replace(/\/+$/, "") === b.split("?")[0].replace(/\/+$/, "");
++}
++
++/**
++ * The approved render wins over a featured photo that is a different file.
++ * With no approval, the verified featured photos stay the references.
++ */
++export function roomSceneReferenceUrls(style: SampleImageState): {
++  doorImageUrl: string | null;
++  drawerImageUrl: string | null;
++} {
++  const approved = normalizedSampleUrl(style.approvedReferenceImageUrl);
++  const doorSample = normalizedSampleUrl(style.doorSampleImageUrl);
++  const drawerSample = normalizedSampleUrl(style.drawerSampleImageUrl);
++  return {
++    doorImageUrl: approved ?? doorSample,
++    drawerImageUrl: drawerSample && approved && !sameReferenceUrl(drawerSample, approved) ? approved : drawerSample,
++  };
++}
++
+ export function bothSampleImagesVerified(style: SampleImageState): boolean {
+   return Boolean(
+     normalizedSampleUrl(style.doorSampleImageUrl)
+@@ -56,8 +81,10 @@ export function generationDecision(
+   options?: { forceRetry?: boolean },
+ ): GenerationDecision {
+   if (!bothSampleImagesVerified(style)) return { action: "skip", reason: "not-ready" };
+-  const doorImageUrl = normalizedSampleUrl(style.doorSampleImageUrl)!;
+-  const drawerImageUrl = normalizedSampleUrl(style.drawerSampleImageUrl)!;
++  const resolved = roomSceneReferenceUrls(style);
++  const doorImageUrl = resolved.doorImageUrl;
++  const drawerImageUrl = resolved.drawerImageUrl;
++  if (!doorImageUrl || !drawerImageUrl) return { action: "skip", reason: "not-ready" };
+   if (!existing) return { action: "start", reason: "first-time" };
+   const sameImages = existing.doorImageUrl === doorImageUrl && existing.drawerImageUrl === drawerImageUrl;
+   if (!sameImages) return { action: "start", reason: "images-replaced" };
+diff --git a/shared/stainlessDoorStyleAudit.fixture.ts b/shared/stainlessDoorStyleAudit.fixture.ts
+new file mode 100644
+index 0000000..81b2457
+--- /dev/null
++++ b/shared/stainlessDoorStyleAudit.fixture.ts
+@@ -0,0 +1,11 @@
++/**
++ * The production Stainless door style is not in cabinet-backend or cabinet-frontend
++ * code, fixtures, or seed files. This stands in for the style whose Featured Styles
++ * photos were the wrong images. The production database was not queried.
++ */
++export const STAINLESS_DOOR_STYLE_FIXTURE = {
++  styleName: "Stainless",
++  doorSampleImageUrl: "/manus-storage/featured-styles/stainless-wrong-wood-door.jpg",
++  drawerSampleImageUrl: "/manus-storage/featured-styles/stainless-wrong-drawer.jpg",
++  approvedReferenceImageUrl: "/manus-storage/door-rendering-audit/stainless-approved-render.png",
++} as const;
