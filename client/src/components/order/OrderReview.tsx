@@ -39,6 +39,7 @@ import { getSiteSignInUrl } from "@/const";
 import { isTemporaryOneDollarFreeShippingOrder, isTemporaryOneDollarCheckoutTestItem } from "@shared/temporaryCheckoutTest";
 import { isStagingTestHost } from "@shared/stagingTestMode";
 import { optionalPositiveFreightId } from "@shared/freight";
+import { createdOrderAccessToken, installationEstimateQueryEnabled, orderAccessTokenInput } from "@/lib/orderCheckoutAuth";
 
 // A single working line in the review table. Derived from the matcher output
 // but locally editable (qty, swap an unmatched code, remove).
@@ -237,6 +238,7 @@ export function OrderReview({ lines, source, onLinesChange, onReset, initialStyl
   const [liftgateRequired, setLiftgateRequired] = useState(false);
   const [submittedId, setSubmittedId] = useState<number | null>(null);
   const [submittedRequestNumber, setSubmittedRequestNumber] = useState<string | null>(null);
+  const [orderAccessToken, setOrderAccessToken] = useState<string | null>(null);
   const stagingTestMode = typeof window !== "undefined" && isStagingTestHost(window.location.hostname);
 	const storeScope = resolveStoreScope({
 	  pathname: typeof window !== "undefined" ? window.location.pathname : "/order/new",
@@ -654,6 +656,7 @@ export function OrderReview({ lines, source, onLinesChange, onReset, initialStyl
     onSuccess: (res) => {
       setSubmittedId(res.id);
       setSubmittedRequestNumber(res.requestNumber);
+      setOrderAccessToken(createdOrderAccessToken(res) ?? null);
       if (isAuthenticated) utils.orders.myRequests.invalidate();
       toast.success(t("or_submitted_toast"), {
         description: t("or_submitted_desc"),
@@ -787,8 +790,12 @@ export function OrderReview({ lines, source, onLinesChange, onReset, initialStyl
 
   // ─── Ready for secure checkout ─────────────────────────────────────────────
   const installationDocument = trpc.installationEstimates.forOrderConfirmation.useQuery(
-    { orderRequestId: submittedId ?? 0, customerEmail: email },
-    { enabled: submittedId != null && emailValid, retry: false },
+    {
+      orderRequestId: submittedId ?? 0,
+      customerEmail: email,
+      ...orderAccessTokenInput(orderAccessToken),
+    },
+    { enabled: installationEstimateQueryEnabled({ submittedId, emailValid, isAuthenticated }), retry: false },
   );
   if (submittedId != null) {
     return (

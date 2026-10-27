@@ -4,6 +4,8 @@
  */
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { supabase } from "@/lib/supabase";
+import { sameSiteApiUrl } from "@/lib/apiBase";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -40,10 +42,50 @@ export default function QuickBooksAdmin() {
     onError: (err) => toast.error(err.message || "Batch sync failed"),
   });
 
+  async function adminAuthHeaders(): Promise<HeadersInit | null> {
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) {
+      toast.error("Sign in as an admin before changing the QuickBooks connection.");
+      return null;
+    }
+    return { Authorization: `Bearer ${token}` };
+  }
+
+  const startConnect = async () => {
+    const auth = await adminAuthHeaders();
+    if (!auth) return;
+    try {
+      const response = await fetch(sameSiteApiUrl("/api/qbo/connect"), {
+        headers: { ...auth, Accept: "application/json" },
+        credentials: "include",
+      });
+      if (!response.ok) {
+        toast.error("QuickBooks connection requires an admin session.");
+        return;
+      }
+      const body = await response.json() as { authorizeUrl?: string };
+      if (!body.authorizeUrl) {
+        toast.error("QuickBooks did not return an authorization link.");
+        return;
+      }
+      window.location.href = body.authorizeUrl;
+    } catch {
+      toast.error("Could not start the QuickBooks connection.");
+    }
+  };
+
   const handleDisconnect = async () => {
     if (!confirm("Disconnect QuickBooks? You will need to reconnect to sync orders.")) return;
+    const auth = await adminAuthHeaders();
+    if (!auth) return;
     try {
-      await fetch("/api/qbo/disconnect", { method: "POST" });
+      const response = await fetch(sameSiteApiUrl("/api/qbo/disconnect"), {
+        method: "POST",
+        headers: auth,
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("disconnect failed");
       toast.success("Disconnected from QuickBooks.");
       refetch();
     } catch {
@@ -104,7 +146,7 @@ export default function QuickBooksAdmin() {
                   variant="outline"
                   size="sm"
                   className="gap-2"
-                  onClick={() => { window.location.href = "/api/qbo/connect"; }}
+                  onClick={() => { void startConnect(); }}
                 >
                   <RefreshCw className="h-3.5 w-3.5" />
                   Reconnect
@@ -132,7 +174,7 @@ export default function QuickBooksAdmin() {
               </div>
               <Button
                 className="gap-2 bg-green-700 hover:bg-green-800 text-white"
-                onClick={() => { window.location.href = "/api/qbo/connect"; }}
+                onClick={() => { void startConnect(); }}
               >
                 <Link2 className="h-4 w-4" />
                 Connect to QuickBooks

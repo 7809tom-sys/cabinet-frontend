@@ -292,7 +292,8 @@ type AffiliateItem = {
   notes: string | null;
   w9Status: string;
   w9LegalName: string | null;
-  w9IdDocumentUrl: string | null;
+  w9TaxIdMasked: string | null;
+  hasW9IdDocument: boolean;
   w9SubmittedAt: Date | null;
   w9VerifiedAt: Date | null;
   w9AdminNotes: string | null;
@@ -1584,19 +1585,27 @@ function AffiliateW9Review({ affiliate: a }: { affiliate: AffiliateItem }) {
           <span className="text-muted-foreground w-32 shrink-0">Legal Name</span>
           <span className="font-medium">{a.w9LegalName ?? "—"}</span>
         </div>
+        <div className="flex gap-2">
+          <span className="text-muted-foreground w-32 shrink-0">Tax ID</span>
+          <span className="font-medium">{a.w9TaxIdMasked ?? "—"}</span>
+        </div>
       </div>
 
-      {a.w9IdDocumentUrl && (
+      {a.hasW9IdDocument && (
         <div className="space-y-1.5">
           <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Government ID</p>
-          <a
-            href={a.w9IdDocumentUrl}
-            target="_blank"
-            rel="noreferrer"
+          <button
+            type="button"
+            onClick={() => {
+              void utils.affiliates.adminW9IdDocumentLink.fetch({ affiliateId: a.id }).then((link) => {
+                if (link.url) window.open(link.url, "_blank", "noopener,noreferrer");
+                else toast.error("ID document is not available.");
+              }).catch((error: { message?: string }) => toast.error(error.message ?? "Could not open the ID document."));
+            }}
             className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
           >
             <ExternalLink className="h-3.5 w-3.5" /> View uploaded ID document
-          </a>
+          </button>
         </div>
       )}
 

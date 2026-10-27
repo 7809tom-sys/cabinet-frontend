@@ -792,7 +792,7 @@ export default function AffiliateDashboard() {
           </div>
         );
       case "team":
-        return <AffiliateTeamPanel />;
+        return <AffiliateTeamPanel affiliateId={affiliate.id} />;
       case "settings":
         return (
           <div className="space-y-6 max-w-4xl">
@@ -2509,15 +2509,16 @@ function W9Panel() {
   const saveInfo = trpc.affiliates.saveW9Info.useMutation({
     onSuccess: () => {
       toast.success("Tax information saved.");
+      setTaxId("");
+      setShowTaxId(false);
       utils.affiliates.getW9Status.invalidate();
     },
     onError: (e) => toast.error(e.message),
   });
 
   const uploadId = trpc.affiliates.uploadIdDocument.useMutation({
-    onSuccess: (data) => {
+    onSuccess: () => {
       toast.success("ID document uploaded.");
-      setIdPreview(data.url);
       utils.affiliates.getW9Status.invalidate();
     },
     onError: (e) => toast.error(e.message),
@@ -2567,7 +2568,21 @@ function W9Panel() {
 
   const isVerified = w9?.w9Status === "verified";
   const isSubmitted = w9?.w9Status === "submitted";
-  const hasId = !!(w9?.w9IdDocumentUrl || idPreview);
+  const hasId = !!(w9?.hasIdDocument || idPreview);
+
+  async function viewIdDocument() {
+    try {
+      const link = await utils.affiliates.w9IdDocumentLink.fetch();
+      if (!link.url) {
+        toast.error("ID document is not available.");
+        return;
+      }
+      window.open(link.url, "_blank", "noopener,noreferrer");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not open the ID document.";
+      toast.error(message);
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -2670,11 +2685,12 @@ function W9Panel() {
             <div className="relative">
               <Input
                 id="w9-tax-id"
-                type={showTaxId ? "text" : "password"}
+                type={showTaxId && !isVerified ? "text" : "password"}
                 value={isVerified ? (w9?.w9TaxIdMasked ?? "***-**-****") : taxId}
                 onChange={(e) => setTaxId(e.target.value)}
-                placeholder={taxIdType === "ssn" ? "XXX-XX-XXXX" : "XX-XXXXXXX"}
+                placeholder={w9?.w9TaxIdMasked ? `On file ${w9.w9TaxIdMasked}` : taxIdType === "ssn" ? "XXX-XX-XXXX" : "XX-XXXXXXX"}
                 disabled={isVerified}
+                autoComplete="off"
                 className="pr-10"
               />
               {!isVerified && (
@@ -2687,7 +2703,11 @@ function W9Panel() {
                 </button>
               )}
             </div>
-            <p className="text-xs text-muted-foreground">Your tax ID is encrypted and only used for 1099 reporting.</p>
+            <p className="text-xs text-muted-foreground">
+              {w9?.w9TaxIdMasked
+                ? `Only the last four digits are shown (${w9.w9TaxIdMasked}). Re-enter the full ID to replace it.`
+                : "Your tax ID is encrypted and only the last four digits are shown after it is saved."}
+            </p>
           </div>
         </div>
 
@@ -2737,15 +2757,15 @@ function W9Panel() {
           Upload a clear photo or scan of a valid government-issued ID (driver's license, state ID, or passport). This is required to verify your identity before payouts are released.
         </p>
 
-        {(w9?.w9IdDocumentUrl || idPreview) ? (
+        {(w9?.hasIdDocument || idPreview) ? (
           <div className="space-y-3">
             <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3">
               <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
               <span className="text-sm font-medium text-emerald-800">ID document uploaded</span>
-              {w9?.w9IdDocumentUrl && (
-                <a href={w9.w9IdDocumentUrl} target="_blank" rel="noreferrer" className="ml-auto text-xs text-primary hover:underline flex items-center gap-1">
+              {w9?.hasIdDocument && (
+                <button type="button" onClick={() => { void viewIdDocument(); }} className="ml-auto text-xs text-primary hover:underline flex items-center gap-1">
                   <ExternalLink className="h-3 w-3" /> View
-                </a>
+                </button>
               )}
             </div>
             {!isVerified && (
