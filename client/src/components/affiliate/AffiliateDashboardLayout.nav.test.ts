@@ -20,6 +20,9 @@ describe("affiliate portal sidebar", () => {
     expect(source).not.toContain("text-[10px]");
     expect(source).toContain('target="_blank"');
     expect(source).toContain('rel="noopener noreferrer"');
+    expect(source).toContain('className="min-h-0 gap-0 overflow-x-hidden overflow-y-auto overscroll-y-contain [&>*]:shrink-0"');
+    expect(source).toContain('className="shrink-0 px-2 py-1" data-testid="customer-links"');
+    expect(source).toContain('className="shrink-0 px-2 py-1" data-testid="sidebar-tail"');
   });
 
   it("makes My Catalog a parent of the vendor catalogs", () => {

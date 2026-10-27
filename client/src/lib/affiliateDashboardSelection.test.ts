@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveAffiliateDashboardSelection } from "./affiliateDashboardSelection";
+import { affiliatePortalFallback, resolveAffiliateDashboardSelection } from "./affiliateDashboardSelection";
 
 describe("affiliate dashboard explicit selection", () => {
   it("keeps an administrator on the affiliate explicitly requested by the view-as route", () => {
@@ -15,5 +15,15 @@ describe("affiliate dashboard explicit selection", () => {
 
   it("keeps non-admin users scoped to their own affiliate regardless of a view-as parameter", () => {
     expect(resolveAffiliateDashboardSelection("5730001", false)).toEqual({ kind: "my-affiliate" });
+  });
+});
+
+describe("signed-in affiliate store fallback", () => {
+  it("keeps a signed-in person with no store off the public sign-in landing", () => {
+    expect(affiliatePortalFallback(false)).toBe("signed-in-unlinked");
+  });
+
+  it("keeps administrators on the empty-admin state instead of the public landing", () => {
+    expect(affiliatePortalFallback(true)).toBe("admin-empty");
   });
 });

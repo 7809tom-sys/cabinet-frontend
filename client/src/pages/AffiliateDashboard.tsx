@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { Link } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { affiliateDashboardLinks, affiliateDashboardPath, affiliateDesignerPath, affiliateStorefrontUrl } from "@/lib/affiliateStorefrontUrl";
-import { resolveAffiliateDashboardSelection } from "@/lib/affiliateDashboardSelection";
+import { affiliatePortalFallback, resolveAffiliateDashboardSelection } from "@/lib/affiliateDashboardSelection";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { AffiliateDashboardLayout, type AffiliateSection } from "@/components/affiliate/AffiliateDashboardLayout";
 import AffiliatePricingPanel from "@/components/affiliate/AffiliatePricingPanel";
@@ -307,6 +307,37 @@ function AffiliateLanding() {
   );
 }
 
+function AffiliateStoreUnlinked({ onSignOut }: { onSignOut: () => void }) {
+  const [signingOut, setSigningOut] = useState(false);
+  return (
+    <div className="container max-w-md py-20 text-center">
+      <h1 className="font-serif text-2xl font-bold mb-3">No affiliate store is linked to this login</h1>
+      <p className="text-muted-foreground mb-6">
+        This account is signed in, but CabinetDealz can't open an affiliate store for it. Sign out to use a different login, or contact us and we'll connect the store.
+      </p>
+      <div className="flex flex-col items-center justify-center gap-3 sm:flex-row">
+        <Button
+          type="button"
+          variant="outline"
+          disabled={signingOut}
+          onClick={() => {
+            setSigningOut(true);
+            Promise.resolve(onSignOut()).catch(() => setSigningOut(false));
+          }}
+        >
+          {signingOut ? "Signing out…" : "Sign out"}
+        </Button>
+        <Button asChild className="bg-[var(--color-navy)] text-white">
+          <a href="/contact">Contact CabinetDealz</a>
+        </Button>
+      </div>
+      <p className="mt-4 text-sm text-muted-foreground">
+        <a href="mailto:support@cabinetdealz.com" className="underline underline-offset-4">support@cabinetdealz.com</a>
+      </p>
+    </div>
+  );
+}
+
 function statusBadge(status: string) {
   const map: Record<string, string> = {
     confirmed: "border-emerald-400/60 text-emerald-600 bg-emerald-50 dark:bg-emerald-950/30",
@@ -321,7 +352,7 @@ function statusBadge(status: string) {
 }
 
 export default function AffiliateDashboard() {
-  const { isAuthenticated, loading, user } = useAuth();
+  const { isAuthenticated, loading, user, logout } = useAuth();
   const utils = trpc.useUtils();
   // Admin "View as" support: ?viewAs=<affiliateId> lets admins see any affiliate's dashboard
   const params = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : new URLSearchParams();
@@ -464,7 +495,7 @@ export default function AffiliateDashboard() {
   // Determine which query to use based on role and context
   const activeQuery: typeof myRef = isAdminViewAs ? adminRef : myRef;
 
-  if (activeQuery.isLoading) {
+  if (!activeQuery.isFetched) {
     return (
       <div className="flex items-center justify-center min-h-[40vh]">
         <Spinner className="h-7 w-7" />
@@ -473,8 +504,10 @@ export default function AffiliateDashboard() {
   }
 
   if (!activeQuery.data) {
-    // Admin should never see the landing page - show a message instead
-    if (isAdmin) {
+    // A signed-in viewer with no store must not see the public landing. Its
+    // Sign in button would send them back to /signin and the existing session
+    // would bounce them here again.
+    if (affiliatePortalFallback(isAdmin) === "admin-empty") {
       return (
         <div className="container max-w-md py-20 text-center">
           <h1 className="font-serif text-2xl font-bold mb-3">No Affiliates Yet</h1>
@@ -485,7 +518,7 @@ export default function AffiliateDashboard() {
         </div>
       );
     }
-    return <AffiliateLanding />;
+    return <AffiliateStoreUnlinked onSignOut={() => { void logout(); }} />;
   }
 
   const { affiliate, orders, summary, commissionRate } = activeQuery.data;
