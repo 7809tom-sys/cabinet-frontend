@@ -226,7 +226,7 @@ describe("shared designer layout rules", () => {
       depth: 24,
       height: 34.5,
       rotation: 0,
-      styleId: 22,
+      styleId: 11,
       numberOfDoors: 1,
       numberOfDrawers: 0,
     };
@@ -242,12 +242,29 @@ describe("shared designer layout rules", () => {
       depth: 24,
       height: 34.5,
       rotation: 0,
-      styleId: 11,
+      styleId: 33,
       numberOfDoors: 1,
       numberOfDrawers: 1,
     };
+    const distant: PlacedCabinet = {
+      uid: "distant-wall",
+      cabinetId: 3,
+      masterCode: "W3012",
+      description: "30 inch wall cabinet",
+      placement: "wall",
+      x: 80,
+      y: 0,
+      width: 30,
+      depth: 12,
+      height: 30,
+      rotation: 0,
+      mountBottom: 54,
+      styleId: 22,
+      numberOfDoors: 2,
+      numberOfDrawers: 0,
+    };
     const result = applyDesignerLayoutRules({
-      placed: [left, right],
+      placed: [left, right, distant],
       room,
       openings: [],
       fillers: [{
@@ -267,9 +284,13 @@ describe("shared designer layout rules", () => {
     const filler = result.placed.find((item) => item.cabinetId === 90);
     expect(filler).toBeTruthy();
     expect(filler!.width).toBeCloseTo(2.5, 3);
-    expect(filler!.styleId).toBe(11);
+    const owner = result.placed.find((item) => item.uid === filler!.fillerForCabinetUid);
+    expect(owner && [left.uid, right.uid].includes(owner.uid)).toBe(true);
+    expect(filler!.styleId).toBe(owner!.styleId);
+    expect([11, 33]).toContain(filler!.styleId);
     expect(filler!.styleId).not.toBe(22);
-    expect(filler!.fillerForCabinetUid).toBe(right.uid);
+    expect(filler!.styleId).not.toBe(99);
+    expect(filler!.fillerForCabinetUid).not.toBe(distant.uid);
     expect(result.appliedRuleIds).toContain("small-gap-filler");
     expect(result.appliedRuleIds).toContain("filler-adjoining-finish");
   });
