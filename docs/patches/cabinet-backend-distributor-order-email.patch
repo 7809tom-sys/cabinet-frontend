@@ -1,0 +1,2842 @@
+From cfffdc81ccf74b2c7cab729177dd232e7830b13d Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Tue, 27 Oct 2026 19:00:35 +0000
+Subject: [PATCH] Record distributor emails, move paid orders to New Sale, and
+ count generated images.
+
+Automatic distributor mail uses Resend when configured and does not block order creation. Paid orders move the existing CRM deal to new_sale. markOrderImageGenerated is the hook the image ledger will call.
+---
+ .../components/admin/IncomingOrdersAdmin.tsx  |   4 +-
+ client/src/components/crm/CrmBoard.tsx        |  28 +-
+ drizzle/schema.ts                             |   1 +
+ server/email.resend.test.ts                   |  51 ++
+ server/email.ts                               |  70 ++
+ server/lib/crmPipelineAttach.ts               |   2 +-
+ server/lib/distributorOrderEmail.test.ts      | 114 +++
+ server/lib/distributorOrderEmail.ts           | 220 +++++
+ server/lib/orderCrmSale.test.ts               | 116 +++
+ server/lib/orderCrmSale.ts                    | 176 ++++
+ server/lib/orderImageGenerated.test.ts        |  33 +
+ server/lib/orderImageGenerated.ts             |  91 +++
+ server/lib/orderReceiptEmail.ts               |   2 +
+ server/lib/orderSchemaGuard.ts                |  11 +
+ server/lib/orderSideEffects.hooks.test.ts     |  35 +
+ server/lib/orderSideEffects.ts                | 764 ++++++++++++++++++
+ server/lib/vendorFulfillmentStore.ts          |  10 +-
+ server/routers/crm.board.test.ts              |   7 +-
+ server/routers/crm.ts                         |  14 +-
+ server/routers/distributorPortal.ts           |   2 +
+ server/routers/installationEstimates.ts       |   5 +-
+ server/routers/orders.ts                      | 237 ++----
+ server/routers/stripeInvoices.ts              |   7 +-
+ server/routers/vendorSamples.ts               |   2 +
+ server/salesForecast/load.ts                  |   2 +-
+ server/stripe.ts                              |   2 +
+ server/stripePaymentRecords.ts                |  13 +-
+ server/stripeWebhook.ts                       |  19 +
+ shared/crm.test.ts                            |   8 +-
+ shared/crm.ts                                 |  19 +-
+ shared/crmMailbox.ts                          |   7 +-
+ shared/customerDirectory.ts                   |   1 +
+ shared/orderStatusTrail.test.ts               |  52 ++
+ shared/orderStatusTrail.ts                    | 117 +++
+ shared/salesForecast.ts                       |   2 +-
+ 35 files changed, 2032 insertions(+), 212 deletions(-)
+ create mode 100644 server/email.resend.test.ts
+ create mode 100644 server/lib/distributorOrderEmail.test.ts
+ create mode 100644 server/lib/distributorOrderEmail.ts
+ create mode 100644 server/lib/orderCrmSale.test.ts
+ create mode 100644 server/lib/orderCrmSale.ts
+ create mode 100644 server/lib/orderImageGenerated.test.ts
+ create mode 100644 server/lib/orderImageGenerated.ts
+ create mode 100644 server/lib/orderSchemaGuard.ts
+ create mode 100644 server/lib/orderSideEffects.hooks.test.ts
+ create mode 100644 server/lib/orderSideEffects.ts
+ create mode 100644 shared/orderStatusTrail.test.ts
+ create mode 100644 shared/orderStatusTrail.ts
+
+diff --git a/client/src/components/admin/IncomingOrdersAdmin.tsx b/client/src/components/admin/IncomingOrdersAdmin.tsx
+index 7e39523..7a356e6 100644
+--- a/client/src/components/admin/IncomingOrdersAdmin.tsx
++++ b/client/src/components/admin/IncomingOrdersAdmin.tsx
+@@ -112,7 +112,9 @@ function OrderDetailDialog({
+   });
+   const sendToDistributor = trpc.orders.sendToDistributor.useMutation({
+     onSuccess: (res) => {
+-      toast.success(`Order sent to ${res.distributorName} (${res.sentTo})`);
++      if (res.status === "sent") toast.success(`Order sent to ${res.distributorName ?? "the distributor"} (${res.sentTo})`);
++      else if (res.status === "no_email") toast.error(res.error || "No order email set");
++      else toast.error(res.error || "Distributor email was not sent");
+       utils.orders.adminListWithPoSkus.invalidate();
+       onClose();
+     },
+diff --git a/client/src/components/crm/CrmBoard.tsx b/client/src/components/crm/CrmBoard.tsx
+index ea9f9f9..8f83d20 100644
+--- a/client/src/components/crm/CrmBoard.tsx
++++ b/client/src/components/crm/CrmBoard.tsx
+@@ -20,7 +20,7 @@ import {
+ } from "@/components/ui/select";
+ import {
+   CRM_STAGES, CRM_STAGE_LABELS, CRM_PRIORITIES,
+-  CRM_PRIORITY_LABELS, isClosedStage,
++  CRM_PRIORITY_LABELS, isClosedStage, isWonRevenueStage,
+   crmEmailBlockedReason, CRM_EMAIL_BLOCK_MESSAGES,
+   type CrmStage, type CrmPriority, type CrmLanguage,
+ } from "@shared/crm";
+@@ -104,6 +104,10 @@ interface DealRow {
+   needsHelpDesigning?: boolean;
+   needsHelpShipping?: boolean;
+   laborEstimateId?: number | null;
++  orderRequestId?: number | null;
++  imageGeneratedCount?: number | null;
++  lastImageGeneratedAt?: string | Date | null;
++  saleRefundedAt?: string | Date | null;
+ }
+ 
+ type CrmInvoicePrefill = {
+@@ -163,9 +167,10 @@ export function CrmBoard({ lang = "en", affiliateId }: { lang?: Lang; affiliateI
+     : masterAffiliateId != null
+       ? { affiliateId: masterAffiliateId }
+       : undefined;
+-  const { data, isLoading, error } = trpc.crm.board.useQuery(
+-    boardInput,
+-  );
++  const { data, isLoading, error } = trpc.crm.board.useQuery(boardInput, {
++    refetchInterval: 20000,
++    refetchOnWindowFocus: true,
++  });
+   const [openDealId, setOpenDealId] = useState<number | null>(() => {
+     const requested = Number(new URLSearchParams(window.location.search).get("deal"));
+     return Number.isInteger(requested) && requested > 0 ? requested : null;
+@@ -215,7 +220,7 @@ export function CrmBoard({ lang = "en", affiliateId }: { lang?: Lang; affiliateI
+ 
+   const byStage = useMemo(() => {
+     const map: Record<CrmStage, DealRow[]> = {
+-      new: [], contacted: [], qualified: [], image_review: [], quoted: [], won: [], lost: [],
++      new: [], new_sale: [], contacted: [], qualified: [], image_review: [], quoted: [], won: [], lost: [],
+     };
+     for (const d of filteredDeals) {
+       if (viewDeals.some((row) => row.id === d.id)) map[d.stage]?.push(d);
+@@ -227,7 +232,7 @@ export function CrmBoard({ lang = "en", affiliateId }: { lang?: Lang; affiliateI
+     () => viewDeals.filter((d) => !isClosedStage(d.stage)).reduce((s, d) => s + Number(d.estimatedValue ?? 0), 0),
+     [viewDeals],
+   );
+-  const wonCount = byStage.won.length;
++  const wonCount = viewDeals.filter((deal) => isWonRevenueStage(deal.stage)).length;
+   const openCount = viewDeals.filter((d) => !isClosedStage(d.stage)).length;
+   const decorations = trpc.crm.boardDecorations.useQuery();
+   const quickAdd = trpc.crm.create.useMutation({
+@@ -471,6 +476,17 @@ function DealCard({ deal, lang, onOpen, affiliateName, affiliateBrand, summary }
+       {deal.needsHelpShipping && (
+         <div className="text-[10px] font-medium text-amber-800 bg-amber-50 rounded px-1.5 py-0.5 inline-block mb-1">Needs Help Shipping Costs</div>
+       )}
++      {(deal.imageGeneratedCount ?? 0) > 0 && (
++        <div className="text-[10px] font-medium text-emerald-800 bg-emerald-50 rounded px-1.5 py-0.5 inline-block mb-1" data-testid="crm-image-generated">
++          Image generated · {deal.imageGeneratedCount}
++          {deal.lastImageGeneratedAt ? ` · ${new Date(deal.lastImageGeneratedAt).toLocaleString()}` : ""}
++        </div>
++      )}
++      {deal.saleRefundedAt && (
++        <div className="text-[10px] font-medium text-red-700 bg-red-50 rounded px-1.5 py-0.5 inline-block mb-1" data-testid="crm-sale-refunded">
++          Refunded · sale kept
++        </div>
++      )}
+       {deal.source === "verified_plan_image_request" && (
+         <div className="text-[10px] font-medium text-sky-800 bg-sky-50 rounded px-1.5 py-0.5 inline-flex items-center gap-1 mb-1"><Image className="h-3 w-3" />Manual AI image review</div>
+       )}
+diff --git a/drizzle/schema.ts b/drizzle/schema.ts
+index 2faceb2..a9ac46d 100644
+--- a/drizzle/schema.ts
++++ b/drizzle/schema.ts
+@@ -2126,6 +2126,7 @@ export const crmDeals = mysqlTable("crm_deals", {
+   title: varchar("title", { length: 256 }).notNull(), // e.g. "Kitchen remodel — J. Rivera"
+   stage: mysqlEnum("stage", [
+     "new",
++    "new_sale",
+     "contacted",
+     "qualified",
+     "image_review",
+diff --git a/server/email.resend.test.ts b/server/email.resend.test.ts
+new file mode 100644
+index 0000000..305d134
+--- /dev/null
++++ b/server/email.resend.test.ts
+@@ -0,0 +1,51 @@
++import { afterEach, describe, expect, it, vi } from "vitest";
++import { sendViaResend } from "./email";
++
++const env = { RESEND_API_KEY: "re_test_key", ORDER_EMAIL_FROM: "Cabinet Dealz <orders@cabinetdealz.com>" };
++
++afterEach(() => {
++  vi.unstubAllGlobals();
++});
++
++describe("Resend email transport", () => {
++  it("does nothing when the API key is unset so SMTP can run", async () => {
++    const fetchImpl = vi.fn();
++    await expect(sendViaResend({ to: "a@b.com", subject: "Hi" }, {}, fetchImpl as unknown as typeof fetch)).resolves.toBeNull();
++    expect(fetchImpl).not.toHaveBeenCalled();
++  });
++
++  it("falls back when the from address is missing", async () => {
++    const fetchImpl = vi.fn();
++    await expect(sendViaResend(
++      { to: "a@b.com", subject: "Hi" },
++      { RESEND_API_KEY: "re_test_key" },
++      fetchImpl as unknown as typeof fetch,
++    )).resolves.toBeNull();
++    expect(fetchImpl).not.toHaveBeenCalled();
++  });
++
++  it("posts to the Resend HTTPS API and records the id", async () => {
++    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ id: "email_123" }), { status: 200 }));
++    const result = await sendViaResend({
++      to: "orders@mill.com",
++      cc: ["sales@mill.com"],
++      subject: "Purchase Order CD-1",
++      text: "Order number: CD-1",
++      attachments: [{ filename: "PO-CD-1.csv", content: "a,b" }],
++    }, env, fetchImpl as unknown as typeof fetch);
++    expect(result).toEqual({ success: true, messageId: "email_123" });
++    const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
++    expect(url).toBe("https://api.resend.com/emails");
++    expect(init.headers).toMatchObject({ Authorization: "Bearer re_test_key" });
++    const body = JSON.parse(String(init.body));
++    expect(body.from).toBe(env.ORDER_EMAIL_FROM);
++    expect(body.to).toEqual(["orders@mill.com"]);
++    expect(body.attachments[0].content).toBe(Buffer.from("a,b").toString("base64"));
++  });
++
++  it("returns the API error instead of throwing", async () => {
++    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ message: "blocked" }), { status: 422 }));
++    await expect(sendViaResend({ to: "orders@mill.com", subject: "PO" }, env, fetchImpl as unknown as typeof fetch))
++      .resolves.toEqual({ success: false, error: "blocked" });
++  });
++});
+diff --git a/server/email.ts b/server/email.ts
+index 4fd20d5..607fedf 100644
+--- a/server/email.ts
++++ b/server/email.ts
+@@ -53,7 +53,75 @@ export interface SendEmailResult {
+   notConfigured?: boolean;
+ }
+ 
++const ORDER_EMAIL_LOG = "[OrderEmail]";
++
++export function resendConfigured(env: NodeJS.ProcessEnv = process.env): boolean {
++  return Boolean(env.RESEND_API_KEY?.trim());
++}
++
++function addressList(value: string | string[] | undefined): string[] | undefined {
++  if (!value) return undefined;
++  const list = (Array.isArray(value) ? value : value.split(/[,;]+/)).map((item) => item.trim()).filter(Boolean);
++  return list.length ? list : undefined;
++}
++
++/**
++ * HTTPS mail through Resend when RESEND_API_KEY is set. Returns null when the
++ * key is absent, or when ORDER_EMAIL_FROM is missing, so the caller can use SMTP.
++ */
++export async function sendViaResend(
++  opts: SendEmailOptions,
++  env: NodeJS.ProcessEnv = process.env,
++  fetchImpl: typeof fetch = fetch,
++): Promise<SendEmailResult | null> {
++  const key = env.RESEND_API_KEY?.trim() ?? "";
++  if (!key) return null;
++  const from = env.ORDER_EMAIL_FROM?.trim() ?? "";
++  if (!from) {
++    console.warn(`${ORDER_EMAIL_LOG} RESEND_API_KEY is set but ORDER_EMAIL_FROM is empty. Falling back to SMTP.`);
++    return null;
++  }
++  const attachments = opts.attachments?.map((attachment) => ({
++    filename: attachment.filename,
++    content: Buffer.isBuffer(attachment.content) ? attachment.content.toString("base64") : Buffer.from(attachment.content).toString("base64"),
++  }));
++  try {
++    const response = await fetchImpl("https://api.resend.com/emails", {
++      method: "POST",
++      headers: {
++        Authorization: `Bearer ${key}`,
++        "Content-Type": "application/json",
++      },
++      body: JSON.stringify({
++        from,
++        to: addressList(opts.to),
++        cc: addressList(opts.cc),
++        bcc: addressList(opts.bcc),
++        subject: opts.subject,
++        text: opts.text,
++        html: opts.html,
++        reply_to: opts.replyTo,
++        attachments,
++      }),
++    });
++    const body = await response.json().catch(() => ({})) as { id?: string; message?: string };
++    if (!response.ok) {
++      const message = body.message || `Resend returned ${response.status}`;
++      console.error(`${ORDER_EMAIL_LOG} Resend failed for ${opts.to}: ${message}`);
++      return { success: false, error: message };
++    }
++    console.log(`${ORDER_EMAIL_LOG} Resend sent to ${opts.to} — id: ${body.id ?? "unknown"}`);
++    return { success: true, messageId: body.id };
++  } catch (error) {
++    const message = error instanceof Error ? error.message : String(error);
++    console.error(`${ORDER_EMAIL_LOG} Resend failed for ${opts.to}: ${message}`);
++    return { success: false, error: message };
++  }
++}
++
+ export async function sendEmail(opts: SendEmailOptions): Promise<SendEmailResult> {
++  const resend = await sendViaResend(opts);
++  if (resend) return resend;
+   if (!isEmailConfigured()) {
+     console.warn("[Email] SMTP not configured — set SMTP_HOST, SMTP_USER, SMTP_PASS in Secrets.");
+     return { success: false, notConfigured: true, error: "SMTP not configured" };
+@@ -125,6 +193,8 @@ export async function sendEmailViaSettings(
+   s: EmailSettingsRow,
+   opts: SendEmailOptions
+ ): Promise<SendEmailResult> {
++  const resend = await sendViaResend(opts);
++  if (resend) return resend;
+   if (!emailSettingsReady(s)) {
+     return { success: false, notConfigured: true, error: "Email is not configured or is disabled" };
+   }
+diff --git a/server/lib/crmPipelineAttach.ts b/server/lib/crmPipelineAttach.ts
+index a16c3c7..b60630a 100644
+--- a/server/lib/crmPipelineAttach.ts
++++ b/server/lib/crmPipelineAttach.ts
+@@ -9,7 +9,7 @@ export type PipelineDealDraft = {
+   affiliateId: number | null;
+   ownerUserId: number | null;
+   title: string;
+-  stage?: "new" | "contacted" | "qualified" | "image_review" | "quoted" | "won" | "lost";
++  stage?: "new" | "new_sale" | "contacted" | "qualified" | "image_review" | "quoted" | "won" | "lost";
+   priority?: "low" | "medium" | "high";
+   contactName?: string | null;
+   contactEmail?: string | null;
+diff --git a/server/lib/distributorOrderEmail.test.ts b/server/lib/distributorOrderEmail.test.ts
+new file mode 100644
+index 0000000..d5fab64
+--- /dev/null
++++ b/server/lib/distributorOrderEmail.test.ts
+@@ -0,0 +1,114 @@
++import { describe, expect, it, vi } from "vitest";
++import {
++  assignLinesToDistributors,
++  composeDistributorOrderEmail,
++  deliverDistributorEmails,
++  parseCcEmails,
++  summarizeDistributorEmails,
++  type DistributorPortion,
++} from "./distributorOrderEmail";
++
++const portion: DistributorPortion = {
++  distributorId: 4,
++  distributorName: "Millwork Co",
++  orderEmail: "orders@mill.com",
++  ccEmails: ["sales@mill.com"],
++  lines: [{ sku: "usd-sw-3db24", description: "3 drawer base", doorStyle: "Shaker White", qty: 2 }],
++};
++
++describe("distributor order email", () => {
++  it("includes the order, ship-to, line, PO, and notes in the message", () => {
++    const message = composeDistributorOrderEmail({
++      orderNumber: "CD-100",
++      orderDate: "2026-10-27",
++      customerName: "Jamie Carter",
++      shipTo: ["123 Oak Street", "Austin, TX 78701"],
++      distributorName: "Millwork Co",
++      lines: portion.lines,
++      poNumber: "PO-55",
++      notes: "Call before delivery",
++    });
++    expect(message.subject).toContain("CD-100");
++    expect(message.text).toContain("Jamie Carter");
++    expect(message.text).toContain("123 Oak Street");
++    expect(message.text).toContain("usd-sw-3db24");
++    expect(message.text).toContain("Shaker White");
++    expect(message.text).toContain("PO-55");
++    expect(message.text).toContain("Call before delivery");
++  });
++
++  it("does not send a second time for the same distributor unless forced", async () => {
++    const send = vi.fn(async () => ({ ok: true }));
++    const prior = [{
++      distributorId: 4,
++      distributorName: "Millwork Co",
++      status: "sent" as const,
++      sentAt: "2026-10-27T15:00:00.000Z",
++      sentTo: "orders@mill.com",
++      error: null,
++    }];
++    const skipped = await deliverDistributorEmails({ portions: [portion], prior, force: false, send });
++    expect(send).not.toHaveBeenCalled();
++    expect(skipped[0].sentAt).toBe("2026-10-27T15:00:00.000Z");
++    const resent = await deliverDistributorEmails({ portions: [portion], prior, force: true, send, now: new Date("2026-10-27T16:00:00.000Z") });
++    expect(send).toHaveBeenCalledOnce();
++    expect(resent[0]).toMatchObject({ status: "sent", sentAt: "2026-10-27T16:00:00.000Z" });
++  });
++
++  it("records no_email without calling the mailer", async () => {
++    const send = vi.fn(async () => ({ ok: true }));
++    const rows = await deliverDistributorEmails({
++      portions: [{ ...portion, orderEmail: "  " }],
++      prior: [],
++      force: false,
++      send,
++    });
++    expect(send).not.toHaveBeenCalled();
++    expect(rows[0].status).toBe("no_email");
++    expect(summarizeDistributorEmails(rows).distributorEmailStatus).toBe("no_email");
++  });
++
++  it("marks sent with the address and time", async () => {
++    const rows = await deliverDistributorEmails({
++      portions: [portion],
++      prior: [],
++      force: false,
++      now: new Date("2026-10-27T15:04:00.000Z"),
++      send: async () => ({ ok: true }),
++    });
++    expect(rows[0]).toMatchObject({ status: "sent", sentTo: "orders@mill.com, sales@mill.com", sentAt: "2026-10-27T15:04:00.000Z" });
++    expect(summarizeDistributorEmails(rows).distributorEmailStatus).toBe("sent");
++  });
++
++  it("records a provider failure and a thrown failure without throwing", async () => {
++    const failed = await deliverDistributorEmails({
++      portions: [portion],
++      prior: [],
++      force: false,
++      send: async () => ({ ok: false, error: "timeout" }),
++    });
++    expect(failed[0]).toMatchObject({ status: "failed", error: "timeout" });
++    const thrown = await deliverDistributorEmails({
++      portions: [portion],
++      prior: [],
++      force: false,
++      send: async () => { throw new Error("socket hang up"); },
++    });
++    expect(thrown[0]).toMatchObject({ status: "failed", error: "socket hang up" });
++    expect(summarizeDistributorEmails(thrown).distributorEmailError).toContain("socket hang up");
++  });
++
++  it("keeps only usable CC addresses", () => {
++    expect(parseCcEmails("sales@mill.com, not-an-email, sales@mill.com")).toEqual(["sales@mill.com"]);
++  });
++
++  it("splits one order across the distributors that own each line", () => {
++    const groups = assignLinesToDistributors([
++      { sku: "a", description: "Base", doorStyle: "Shaker", qty: 1, distributorId: 4 },
++      { sku: "b", description: "Wall", doorStyle: "Shaker", qty: 2, cabinetId: 9, styleId: 3 },
++      { sku: "c", description: "Filler", doorStyle: null, qty: 1 },
++    ], new Map([["9-3", 8]]), 4);
++    expect(groups.get(4)?.map((line) => line.sku)).toEqual(["a", "c"]);
++    expect(groups.get(8)?.map((line) => line.sku)).toEqual(["b"]);
++  });
++});
+diff --git a/server/lib/distributorOrderEmail.ts b/server/lib/distributorOrderEmail.ts
+new file mode 100644
+index 0000000..a5f2283
+--- /dev/null
++++ b/server/lib/distributorOrderEmail.ts
+@@ -0,0 +1,220 @@
++// Plans and delivers one distributor's portion of an order. The database
++// wrapper records the outcome; a failure here never throws to order creation.
++
++export type DistributorEmailStatus = "pending" | "sent" | "failed" | "no_email";
++
++export type DistributorEmailLine = {
++  sku: string;
++  description: string;
++  doorStyle: string | null;
++  qty: number;
++};
++
++export type DistributorPortion = {
++  distributorId: number;
++  distributorName: string;
++  orderEmail: string | null;
++  ccEmails: string[];
++  lines: DistributorEmailLine[];
++};
++
++export type DistributorEmailRecord = {
++  distributorId: number;
++  distributorName: string;
++  status: DistributorEmailStatus;
++  sentAt: string | null;
++  sentTo: string | null;
++  error: string | null;
++};
++
++export type DistributorEmailSummary = {
++  distributorEmailStatus: DistributorEmailStatus;
++  distributorEmailSentAt: string | null;
++  distributorEmailTo: string | null;
++  distributorEmailError: string | null;
++};
++
++const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
++
++export function usableEmail(value: string | null | undefined): string | null {
++  const email = value?.trim() ?? "";
++  return email.length > 0 && email.length <= 320 && EMAIL_PATTERN.test(email) ? email : null;
++}
++
++export type AssignableLine = DistributorEmailLine & {
++  distributorId?: number | null;
++  cabinetId?: number | null;
++  styleId?: number | null;
++};
++
++export function assignLinesToDistributors(
++  lines: AssignableLine[],
++  skuDistributor: Map<string, number>,
++  fallbackDistributorId: number | null,
++): Map<number, AssignableLine[]> {
++  const groups = new Map<number, AssignableLine[]>();
++  const push = (distributorId: number, line: AssignableLine) => {
++    const bucket = groups.get(distributorId) ?? [];
++    bucket.push(line);
++    groups.set(distributorId, bucket);
++  };
++  for (const line of lines) {
++    const explicit = line.distributorId != null && line.distributorId > 0 ? line.distributorId : null;
++    const skuKey = line.cabinetId && line.styleId ? `${line.cabinetId}-${line.styleId}` : null;
++    const fromSku = skuKey ? skuDistributor.get(skuKey) ?? null : null;
++    const distributorId = explicit ?? fromSku ?? fallbackDistributorId;
++    if (distributorId == null) continue;
++    push(distributorId, line);
++  }
++  return groups;
++}
++
++export function parseCcEmails(value: string | null | undefined): string[] {
++  const seen = new Set<string>();
++  const out: string[] = [];
++  for (const part of (value ?? "").split(/[,;]+/)) {
++    const email = usableEmail(part);
++    if (!email) continue;
++    const key = email.toLowerCase();
++    if (seen.has(key)) continue;
++    seen.add(key);
++    out.push(email);
++  }
++  return out;
++}
++
++export function composeDistributorOrderEmail(input: {
++  orderNumber: string;
++  orderDate: string;
++  customerName: string | null;
++  shipTo: string[];
++  distributorName: string;
++  lines: DistributorEmailLine[];
++  poNumber: string | null;
++  notes: string | null;
++}): { subject: string; text: string } {
++  const lines = input.lines.length
++    ? input.lines.map((line) => {
++      const style = line.doorStyle ? ` · ${line.doorStyle}` : "";
++      return `- ${line.qty} x ${line.sku || "SKU"} — ${line.description || "Item"}${style}`;
++    })
++    : ["- No line items were assigned to this distributor."];
++  const text = [
++    `Purchase order for ${input.distributorName}`,
++    "",
++    `Order number: ${input.orderNumber}`,
++    `Date: ${input.orderDate}`,
++    input.poNumber ? `PO number: ${input.poNumber}` : null,
++    input.customerName ? `Customer: ${input.customerName}` : null,
++    "",
++    "Ship to:",
++    ...(input.shipTo.length ? input.shipTo : ["No ship-to address was stored on this order."]),
++    "",
++    "Line items:",
++    ...lines,
++    "",
++    input.notes ? `Notes: ${input.notes}` : null,
++    "Cabinet Dealz",
++  ].filter((line): line is string => line != null).join("\n");
++  return {
++    subject: `Purchase Order ${input.orderNumber} — Cabinet Dealz`,
++    text,
++  };
++}
++
++export function summarizeDistributorEmails(records: DistributorEmailRecord[]): DistributorEmailSummary {
++  if (records.length === 0) {
++    return {
++      distributorEmailStatus: "pending",
++      distributorEmailSentAt: null,
++      distributorEmailTo: null,
++      distributorEmailError: null,
++    };
++  }
++  const sent = records.filter((row) => row.status === "sent");
++  const failed = records.filter((row) => row.status === "failed");
++  const missing = records.filter((row) => row.status === "no_email");
++  const status: DistributorEmailStatus = failed.length
++    ? "failed"
++    : sent.length
++      ? "sent"
++      : missing.length
++        ? "no_email"
++        : "pending";
++  const sentAt = sent.map((row) => row.sentAt).filter((value): value is string => Boolean(value)).sort().at(-1) ?? null;
++  const sentTo = records.map((row) => row.sentTo).filter((value): value is string => Boolean(value)).join(", ") || null;
++  const error = [
++    ...failed.map((row) => `${row.distributorName}: ${row.error || "Email failed"}`),
++    ...missing.map((row) => `${row.distributorName}: no order email set`),
++  ].join("; ") || null;
++  return {
++    distributorEmailStatus: status,
++    distributorEmailSentAt: status === "sent" ? sentAt : null,
++    distributorEmailTo: sentTo,
++    distributorEmailError: status === "sent" && !failed.length && !missing.length ? null : error,
++  };
++}
++
++export async function deliverDistributorEmails(input: {
++  portions: DistributorPortion[];
++  prior: DistributorEmailRecord[];
++  force: boolean;
++  now?: Date;
++  send: (portion: DistributorPortion) => Promise<{ ok: boolean; error?: string }>;
++}): Promise<DistributorEmailRecord[]> {
++  const priorById = new Map(input.prior.map((row) => [row.distributorId, row]));
++  const now = (input.now ?? new Date()).toISOString();
++  const results: DistributorEmailRecord[] = [];
++  for (const portion of input.portions) {
++    const previous = priorById.get(portion.distributorId);
++    if (previous?.status === "sent" && !input.force) {
++      results.push(previous);
++      continue;
++    }
++    const email = usableEmail(portion.orderEmail);
++    if (!email) {
++      results.push({
++        distributorId: portion.distributorId,
++        distributorName: portion.distributorName,
++        status: "no_email",
++        sentAt: null,
++        sentTo: null,
++        error: "No order email set",
++      });
++      continue;
++    }
++    try {
++      const sent = await input.send({ ...portion, orderEmail: email });
++      const cc = portion.ccEmails.filter((value) => value.toLowerCase() !== email.toLowerCase());
++      if (!sent.ok) {
++        results.push({
++          distributorId: portion.distributorId,
++          distributorName: portion.distributorName,
++          status: "failed",
++          sentAt: null,
++          sentTo: [email, ...cc].join(", "),
++          error: sent.error || "Email failed",
++        });
++        continue;
++      }
++      results.push({
++        distributorId: portion.distributorId,
++        distributorName: portion.distributorName,
++        status: "sent",
++        sentAt: now,
++        sentTo: [email, ...cc].join(", "),
++        error: null,
++      });
++    } catch (error) {
++      results.push({
++        distributorId: portion.distributorId,
++        distributorName: portion.distributorName,
++        status: "failed",
++        sentAt: null,
++        sentTo: email,
++        error: error instanceof Error ? error.message : String(error),
++      });
++    }
++  }
++  return results;
++}
+diff --git a/server/lib/orderCrmSale.test.ts b/server/lib/orderCrmSale.test.ts
+new file mode 100644
+index 0000000..5c96fd3
+--- /dev/null
++++ b/server/lib/orderCrmSale.test.ts
+@@ -0,0 +1,116 @@
++import { describe, expect, it } from "vitest";
++import {
++  applyCrmBackfill,
++  applyOrderCrmSync,
++  applyOrderRefund,
++  previewCrmBackfill,
++  wonRevenueDeals,
++  type CrmOrderView,
++  type MemoryDeal,
++} from "./orderCrmSale";
++
++function order(partial: Partial<CrmOrderView> & Pick<CrmOrderView, "id" | "status">): CrmOrderView {
++  return {
++    requestNumber: `CD-${partial.id}`,
++    paidAt: null,
++    stripePaymentIntentId: null,
++    totalAmount: "520.00",
++    affiliateId: null,
++    originatorName: "Jamie Carter",
++    originatorEmail: "jamie@example.com",
++    originatorPhone: "555-0100",
++    ...partial,
++  };
++}
++
++function deal(partial: Partial<MemoryDeal> & Pick<MemoryDeal, "id">): MemoryDeal {
++  return {
++    stage: "qualified",
++    orderRequestId: partial.id,
++    estimatedValue: null,
++    closedAt: null,
++    activities: [],
++    saleRefundedAt: null,
++    affiliateId: null,
++    contactEmail: "jamie@example.com",
++    contactName: "Jamie Carter",
++    contactPhone: "555-0100",
++    ...partial,
++  };
++}
++
++describe("order CRM sale sync", () => {
++  it("keeps a submitted unpaid order qualified and does not create a second deal", () => {
++    const submitted = order({ id: 8, status: "submitted" });
++    const once = applyOrderCrmSync([], submitted);
++    expect(once).toHaveLength(1);
++    expect(once[0]).toMatchObject({ stage: "qualified", orderRequestId: 8, contactEmail: "jamie@example.com" });
++    const twice = applyOrderCrmSync(once, submitted);
++    expect(twice).toHaveLength(1);
++    expect(twice[0].id).toBe(once[0].id);
++    expect(twice[0].stage).toBe("qualified");
++  });
++
++  it("moves the existing qualified deal to new_sale when the order is paid", () => {
++    const existing = [deal({ id: 3, orderRequestId: 8, stage: "qualified", contactName: "Jamie Carter" })];
++    const paid = order({ id: 8, status: "confirmed", paidAt: "2026-10-27T15:00:00.000Z", totalAmount: "520.00" });
++    const next = applyOrderCrmSync(existing, paid);
++    expect(next).toHaveLength(1);
++    expect(next[0].id).toBe(3);
++    expect(next[0]).toMatchObject({
++      stage: "new_sale",
++      estimatedValue: "520.00",
++      closedAt: "2026-10-27T15:00:00.000Z",
++      contactName: "Jamie Carter",
++    });
++    expect(next[0].activities).toHaveLength(1);
++    expect(next[0].activities[0]).toContain("New Sale");
++    const again = applyOrderCrmSync(next, paid);
++    expect(again[0].activities).toHaveLength(1);
++  });
++
++  it("creates the deal directly in new_sale when payment lands first", () => {
++    const paid = order({ id: 9, status: "confirmed", stripePaymentIntentId: "pi_123", paidAt: "2026-10-27T15:00:00.000Z" });
++    const next = applyOrderCrmSync([], paid);
++    expect(next).toEqual([expect.objectContaining({ stage: "new_sale", orderRequestId: 9 })]);
++  });
++
++  it("leaves a refunded sale in place and only logs the refund", () => {
++    const paid = order({ id: 8, status: "confirmed", paidAt: "2026-10-27T15:00:00.000Z" });
++    const sold = applyOrderCrmSync([deal({ id: 3, orderRequestId: 8 })], paid);
++    const refunded = applyOrderRefund(sold, paid, "Stripe charge.refunded");
++    expect(refunded).toHaveLength(1);
++    expect(refunded[0].stage).toBe("new_sale");
++    expect(refunded[0].saleRefundedAt).toBeTruthy();
++    expect(refunded[0].activities.some((body) => body.includes(":refund]"))).toBe(true);
++    const repeat = applyOrderRefund(refunded, paid, "Stripe charge.refunded");
++    expect(repeat[0].activities.filter((body) => body.includes(":refund]"))).toHaveLength(1);
++  });
++
++  it("previews a backfill without changing deals, then applies the same moves", () => {
++    const orders = [
++      order({ id: 1, status: "submitted" }),
++      order({ id: 2, status: "confirmed", paidAt: "2026-10-01T00:00:00.000Z" }),
++    ];
++    const deals = [deal({ id: 5, orderRequestId: 2, stage: "qualified" })];
++    const preview = previewCrmBackfill(orders, deals);
++    expect(preview).toEqual({ createQualified: 1, createNewSale: 0, moveToNewSale: 1, unchanged: 0, skipped: 0 });
++    const dry = applyCrmBackfill(orders, deals, true);
++    expect(dry.deals).toBe(deals);
++    expect(dry.deals[0].stage).toBe("qualified");
++    const applied = applyCrmBackfill(orders, deals, false);
++    expect(applied.deals.find((row) => row.orderRequestId === 2)?.stage).toBe("new_sale");
++    expect(applied.deals.find((row) => row.orderRequestId === 1)?.stage).toBe("qualified");
++    expect(applied.deals).toHaveLength(2);
++  });
++
++  it("counts New Sale as won revenue and not as an open lead", () => {
++    const totals = wonRevenueDeals([
++      { stage: "qualified", estimatedValue: "100" },
++      { stage: "new_sale", estimatedValue: "520" },
++      { stage: "won", estimatedValue: "80" },
++      { stage: "lost", estimatedValue: "10" },
++    ]);
++    expect(totals).toEqual({ count: 2, value: 600 });
++  });
++});
+diff --git a/server/lib/orderCrmSale.ts b/server/lib/orderCrmSale.ts
+new file mode 100644
+index 0000000..2d5f80d
+--- /dev/null
++++ b/server/lib/orderCrmSale.ts
+@@ -0,0 +1,176 @@
++// Moves the single crm_deals row already linked by orderRequestId.
++// Submitted unpaid stays qualified. Paid becomes New Sale. A refund keeps the row.
++
++export type CrmOrderView = {
++  id: number;
++  requestNumber: string;
++  status: string;
++  paidAt: string | Date | null;
++  stripePaymentIntentId?: string | null;
++  totalAmount: string | null;
++  affiliateId?: number | null;
++  originatorName?: string | null;
++  originatorEmail?: string | null;
++  originatorPhone?: string | null;
++};
++
++export type CrmDealView = {
++  id: number;
++  stage: string;
++  orderRequestId: number | null;
++  estimatedValue: string | null;
++  closedAt: string | Date | null;
++};
++
++export type MemoryDeal = {
++  id: number;
++  stage: string;
++  orderRequestId: number | null;
++  estimatedValue: string | null;
++  closedAt: string | null;
++  activities: string[];
++  saleRefundedAt: string | null;
++  affiliateId: number | null;
++  contactEmail: string | null;
++  contactName: string | null;
++  contactPhone: string | null;
++};
++
++export type CrmBackfillPreview = {
++  createQualified: number;
++  createNewSale: number;
++  moveToNewSale: number;
++  unchanged: number;
++  skipped: number;
++};
++
++export function orderIsPaid(order: Pick<CrmOrderView, "paidAt" | "stripePaymentIntentId">): boolean {
++  return order.paidAt != null || Boolean(order.stripePaymentIntentId);
++}
++
++export function newSaleActivityBody(order: Pick<CrmOrderView, "id" | "requestNumber" | "totalAmount">): string {
++  return `[order-crm:${order.id}:new_sale] Order ${order.requestNumber} was paid and recorded as a New Sale. Total ${order.totalAmount ?? "—"}.`;
++}
++
++export function refundActivityBody(order: Pick<CrmOrderView, "id" | "requestNumber">, source: string): string {
++  return `[order-crm:${order.id}:refund] Refund recorded for order ${order.requestNumber} (${source}). The CRM sale was kept.`;
++}
++
++export function orderStepActivityBody(orderId: number, step: string, detail: string): string {
++  return `[order-step:${orderId}:${step}] ${detail}`;
++}
++
++function stamp(value: string | Date | null | undefined, fallback: string): string {
++  if (value == null || value === "") return fallback;
++  const date = value instanceof Date ? value : new Date(value);
++  return Number.isNaN(date.getTime()) ? fallback : date.toISOString();
++}
++
++export type CrmSyncPlan =
++  | { kind: "skip" }
++  | { kind: "qualified"; create: boolean; dealId: number | null; setStage: boolean }
++  | { kind: "new_sale"; create: boolean; dealId: number | null; estimatedValue: string | null; closedAt: string; activityBody: string; logActivity: boolean };
++
++export function planOrderCrmSync(order: CrmOrderView, deal: CrmDealView | null, now = new Date()): CrmSyncPlan {
++  const paid = orderIsPaid(order);
++  const tracked = paid || order.status === "submitted" || order.status === "confirmed";
++  if (!tracked || order.status === "cancelled") return { kind: "skip" };
++  if (!paid) {
++    const setStage = deal != null && deal.stage === "new";
++    return { kind: "qualified", create: deal == null, dealId: deal?.id ?? null, setStage };
++  }
++  const closedAt = stamp(deal?.closedAt ?? order.paidAt, now.toISOString());
++  return {
++    kind: "new_sale",
++    create: deal == null,
++    dealId: deal?.id ?? null,
++    estimatedValue: order.totalAmount,
++    closedAt,
++    activityBody: newSaleActivityBody(order),
++    logActivity: deal?.stage !== "new_sale",
++  };
++}
++
++function nextId(deals: MemoryDeal[]): number {
++  return deals.reduce((max, deal) => Math.max(max, deal.id), 0) + 1;
++}
++
++function blankDeal(id: number, order: CrmOrderView, stage: string): MemoryDeal {
++  return {
++    id,
++    stage,
++    orderRequestId: order.id,
++    estimatedValue: stage === "new_sale" ? order.totalAmount : null,
++    closedAt: null,
++    activities: [],
++    saleRefundedAt: null,
++    affiliateId: order.affiliateId ?? null,
++    contactEmail: order.originatorEmail ?? null,
++    contactName: order.originatorName ?? null,
++    contactPhone: order.originatorPhone ?? null,
++  };
++}
++
++export function applyOrderCrmSync(deals: MemoryDeal[], order: CrmOrderView, now = new Date()): MemoryDeal[] {
++  const next = deals.map((deal) => ({ ...deal, activities: [...deal.activities] }));
++  const existing = next.find((deal) => deal.orderRequestId === order.id) ?? null;
++  const plan = planOrderCrmSync(order, existing, now);
++  if (plan.kind === "skip") return next;
++  if (plan.kind === "qualified") {
++    if (plan.create) next.push(blankDeal(nextId(next), order, "qualified"));
++    else if (plan.setStage && existing) existing.stage = "qualified";
++    return next;
++  }
++  const target = existing ?? blankDeal(nextId(next), order, "new_sale");
++  if (!existing) next.push(target);
++  target.stage = "new_sale";
++  target.orderRequestId = order.id;
++  target.estimatedValue = plan.estimatedValue;
++  target.closedAt = target.closedAt ?? plan.closedAt;
++  if (plan.logActivity && !target.activities.some((body) => body.includes(`[order-crm:${order.id}:new_sale]`))) {
++    target.activities.push(plan.activityBody);
++  }
++  return next;
++}
++
++export function applyOrderRefund(deals: MemoryDeal[], order: CrmOrderView, source: string, at = new Date()): MemoryDeal[] {
++  const next = deals.map((deal) => ({ ...deal, activities: [...deal.activities] }));
++  const deal = next.find((row) => row.orderRequestId === order.id);
++  if (!deal) return next;
++  const body = refundActivityBody(order, source);
++  if (!deal.activities.some((activity) => activity.includes(`[order-crm:${order.id}:refund]`))) {
++    deal.activities.push(body);
++  }
++  deal.saleRefundedAt = deal.saleRefundedAt ?? at.toISOString();
++  return next;
++}
++
++export function previewCrmBackfill(orders: CrmOrderView[], deals: MemoryDeal[]): CrmBackfillPreview {
++  const preview: CrmBackfillPreview = { createQualified: 0, createNewSale: 0, moveToNewSale: 0, unchanged: 0, skipped: 0 };
++  for (const order of orders) {
++    const deal = deals.find((row) => row.orderRequestId === order.id) ?? null;
++    const plan = planOrderCrmSync(order, deal);
++    if (plan.kind === "skip") preview.skipped += 1;
++    else if (plan.kind === "qualified" && plan.create) preview.createQualified += 1;
++    else if (plan.kind === "qualified") preview.unchanged += 1;
++    else if (plan.create) preview.createNewSale += 1;
++    else if (plan.logActivity) preview.moveToNewSale += 1;
++    else preview.unchanged += 1;
++  }
++  return preview;
++}
++
++export function applyCrmBackfill(orders: CrmOrderView[], deals: MemoryDeal[], dryRun: boolean): { deals: MemoryDeal[]; preview: CrmBackfillPreview } {
++  const preview = previewCrmBackfill(orders, deals);
++  if (dryRun) return { deals, preview };
++  return { deals: orders.reduce((current, order) => applyOrderCrmSync(current, order), deals), preview };
++}
++
++export function wonRevenueDeals<T extends { stage: string; estimatedValue?: string | null }>(deals: T[]): { count: number; value: number } {
++  const won = deals.filter((deal) => deal.stage === "won" || deal.stage === "new_sale");
++  const value = won.reduce((sum, deal) => {
++    const amount = Number(deal.estimatedValue ?? 0);
++    return sum + (Number.isFinite(amount) ? amount : 0);
++  }, 0);
++  return { count: won.length, value };
++}
+diff --git a/server/lib/orderImageGenerated.test.ts b/server/lib/orderImageGenerated.test.ts
+new file mode 100644
+index 0000000..75d233a
+--- /dev/null
++++ b/server/lib/orderImageGenerated.test.ts
+@@ -0,0 +1,33 @@
++import { describe, expect, it, vi } from "vitest";
++import { bumpImageGenerated, markOrderImageGeneratedWith, orderIdsForDesign } from "./orderImageGenerated";
++
++describe("order image generated counter", () => {
++  it("increments the count and stamps the latest time", () => {
++    const at = new Date("2026-10-27T17:00:00.000Z");
++    expect(bumpImageGenerated(0, at)).toEqual({ imageGeneratedCount: 1, lastImageGeneratedAt: at });
++    expect(bumpImageGenerated(2, at).imageGeneratedCount).toBe(3);
++    expect(bumpImageGenerated(null, at).imageGeneratedCount).toBe(1);
++  });
++
++  it("counts an order linked through the CRM design and an order saved on that design", () => {
++    expect(orderIdsForDesign(15, [
++      { designId: 15, orderRequestId: 8 },
++      { designId: 15, orderRequestId: null },
++      { designId: 4, orderRequestId: 9 },
++    ], [
++      { id: 8, kitchenDesignId: 15 },
++      { id: 12, kitchenDesignId: 15 },
++      { id: 13, kitchenDesignId: 4 },
++    ])).toEqual([8, 12]);
++  });
++
++  it("does not throw when the image columns are missing", async () => {
++    const execute = vi.fn(async () => { throw new Error("Unknown column 'imageGeneratedCount' in 'field list'"); });
++    await expect(markOrderImageGeneratedWith(execute, 8)).resolves.toEqual({ updated: false, schemaMissing: true });
++  });
++
++  it("does not throw when the update fails for another reason", async () => {
++    const execute = vi.fn(async () => { throw new Error("connection reset"); });
++    await expect(markOrderImageGeneratedWith(execute, 8)).resolves.toEqual({ updated: false, schemaMissing: false });
++  });
++});
+diff --git a/server/lib/orderImageGenerated.ts b/server/lib/orderImageGenerated.ts
+new file mode 100644
+index 0000000..6326a30
+--- /dev/null
++++ b/server/lib/orderImageGenerated.ts
+@@ -0,0 +1,91 @@
++import { sql } from "drizzle-orm";
++import { getDb } from "../db";
++import { isMissingSchemaError, schemaErrorMessage } from "./orderSchemaGuard";
++
++export function bumpImageGenerated(count: number | null | undefined, at: Date): { imageGeneratedCount: number; lastImageGeneratedAt: Date } {
++  const current = Number.isFinite(count) ? Number(count) : 0;
++  return { imageGeneratedCount: Math.max(0, current) + 1, lastImageGeneratedAt: at };
++}
++
++export function orderIdsForDesign(
++  designId: number,
++  links: Array<{ designId: number; orderRequestId: number | null }>,
++  orders: Array<{ id: number; kitchenDesignId: number | null }>,
++): number[] {
++  const ids = new Set<number>();
++  for (const link of links) {
++    if (link.designId === designId && link.orderRequestId != null && link.orderRequestId > 0) ids.add(link.orderRequestId);
++  }
++  for (const order of orders) {
++    if (order.kitchenDesignId === designId && order.id > 0) ids.add(order.id);
++  }
++  return Array.from(ids);
++}
++
++type Execute = (query: ReturnType<typeof sql>) => Promise<unknown>;
++
++function rowsFrom(result: unknown): Array<Record<string, unknown>> {
++  if (Array.isArray(result)) {
++    const first = result[0];
++    if (Array.isArray(first)) return first as Array<Record<string, unknown>>;
++    if (first && typeof first === "object") return result as Array<Record<string, unknown>>;
++  }
++  return [];
++}
++
++export async function markOrderImageGeneratedWith(execute: Execute, orderId: number, at = new Date()): Promise<{ updated: boolean; schemaMissing: boolean }> {
++  if (!Number.isInteger(orderId) || orderId <= 0) return { updated: false, schemaMissing: false };
++  try {
++    await execute(sql`UPDATE order_requests SET imageGeneratedCount = COALESCE(imageGeneratedCount, 0) + 1, lastImageGeneratedAt = ${at} WHERE id = ${orderId}`);
++    return { updated: true, schemaMissing: false };
++  } catch (error) {
++    if (isMissingSchemaError(error)) {
++      console.warn(`[OrderImage] order_requests image columns are missing, so order ${orderId} was not counted. Run the 0227 SQL.`);
++      return { updated: false, schemaMissing: true };
++    }
++    console.error(`[OrderImage] Could not count an image for order ${orderId}: ${schemaErrorMessage(error)}`);
++    return { updated: false, schemaMissing: false };
++  }
++}
++
++/** Called by the image-generation flow when it knows the order. */
++export async function markOrderImageGenerated(orderId: number, at = new Date()): Promise<{ updated: boolean; schemaMissing: boolean }> {
++  const db = await getDb();
++  if (!db) return { updated: false, schemaMissing: false };
++  return markOrderImageGeneratedWith((query) => db.execute(query), orderId, at);
++}
++
++/**
++ * Counts the image on every order whose CRM deal links this design, and on
++ * any order saved directly against the same kitchen design.
++ */
++export async function markDesignImageGenerated(designId: number, at = new Date()): Promise<{ orderIds: number[] }> {
++  const db = await getDb();
++  if (!db || !Number.isInteger(designId) || designId <= 0) return { orderIds: [] };
++  const links: Array<{ designId: number; orderRequestId: number | null }> = [];
++  const direct: Array<{ id: number; kitchenDesignId: number | null }> = [];
++  try {
++    const linked = await db.execute(sql`
++      SELECT link.designId AS designId, deal.orderRequestId AS orderRequestId
++      FROM crm_deal_designs AS link
++      INNER JOIN crm_deals AS deal ON deal.id = link.dealId
++      WHERE link.designId = ${designId}
++    `);
++    for (const row of rowsFrom(linked)) {
++      links.push({ designId: Number(row.designId), orderRequestId: row.orderRequestId == null ? null : Number(row.orderRequestId) });
++    }
++  } catch (error) {
++    if (!isMissingSchemaError(error)) console.error(`[OrderImage] Could not read design links for design ${designId}: ${schemaErrorMessage(error)}`);
++  }
++  try {
++    const orders = await db.execute(sql`SELECT id, kitchenDesignId FROM order_requests WHERE kitchenDesignId = ${designId}`);
++    for (const row of rowsFrom(orders)) {
++      direct.push({ id: Number(row.id), kitchenDesignId: row.kitchenDesignId == null ? null : Number(row.kitchenDesignId) });
++    }
++  } catch (error) {
++    if (!isMissingSchemaError(error)) console.error(`[OrderImage] Could not read orders for design ${designId}: ${schemaErrorMessage(error)}`);
++  }
++  const orderIds = orderIdsForDesign(designId, links, direct);
++  for (const orderId of orderIds) await markOrderImageGenerated(orderId, at);
++  return { orderIds };
++}
+diff --git a/server/lib/orderReceiptEmail.ts b/server/lib/orderReceiptEmail.ts
+index a0a638f..7a57a0e 100644
+--- a/server/lib/orderReceiptEmail.ts
++++ b/server/lib/orderReceiptEmail.ts
+@@ -4,6 +4,7 @@ import { getDb } from "../db";
+ import { emailSettingsReady, isEmailConfigured, sendEmail, sendEmailViaSettings, type SendEmailOptions, type SendEmailResult } from "../email";
+ import { readOrderCostSnapshots } from "./orderCostSnapshot";
+ import { dollarsToCents, formatUsdFromCents, summarizeAdminOrder, type OrderMoneyInput } from "./orderMoney";
++import { onOrderPaid } from "./orderSideEffects";
+ 
+ export const DEFAULT_ORDER_NOTIFY_EMAIL = "sales@cabinetdealz.com";
+ 
+@@ -291,4 +292,5 @@ export async function markOrderPaidById(orderId: number, paymentIntentId: string
+     status: order.status === "draft" || order.status === "submitted" ? "confirmed" : order.status,
+     orderRailStatus: order.orderRailStatus === "awaiting_payment" ? "affiliate_review" : order.orderRailStatus,
+   }).where(eq(orderRequests.id, orderId));
++  await onOrderPaid(orderId);
+ }
+diff --git a/server/lib/orderSchemaGuard.ts b/server/lib/orderSchemaGuard.ts
+new file mode 100644
+index 0000000..ad896e8
+--- /dev/null
++++ b/server/lib/orderSchemaGuard.ts
+@@ -0,0 +1,11 @@
++export function schemaErrorMessage(error: unknown): string {
++  return error instanceof Error ? error.message : String(error);
++}
++
++export function isMissingSchemaError(error: unknown): boolean {
++  return /unknown column|ER_BAD_FIELD_ERROR|ER_NO_SUCH_TABLE|doesn't exist|does not exist|no such table|no such column/i.test(schemaErrorMessage(error));
++}
++
++export function isEnumValueError(error: unknown): boolean {
++  return /data truncated|incorrect .*value|invalid .*enum|enum/i.test(schemaErrorMessage(error));
++}
+diff --git a/server/lib/orderSideEffects.hooks.test.ts b/server/lib/orderSideEffects.hooks.test.ts
+new file mode 100644
+index 0000000..feb01a2
+--- /dev/null
++++ b/server/lib/orderSideEffects.hooks.test.ts
+@@ -0,0 +1,35 @@
++import { readFileSync } from "node:fs";
++import { describe, expect, it } from "vitest";
++
++function source(path: string): string {
++  return readFileSync(new URL(path, import.meta.url), "utf8");
++}
++
++describe("order CRM and distributor email hooks", () => {
++  it("keeps submitted orders qualified and emails the distributor without a second deal helper", () => {
++    const orders = source("../routers/orders.ts");
++    expect(orders).toContain("ensureAffiliatePipelineDeal");
++    expect(orders).toContain('stage: "qualified"');
++    expect(orders).toContain("await onOrderPlaced(insertId)");
++    expect(orders).toContain("backfillOrderCrm(!input.apply)");
++    expect(orders).toContain("resendDistributorEmail");
++  });
++
++  it("moves a paid order to New Sale from checkout, payment intent, admin mark-paid, and Stripe sync", () => {
++    expect(source("../stripe.ts")).toContain("await onOrderPaid(paidOrder.id)");
++    expect(source("./orderReceiptEmail.ts")).toContain("await onOrderPaid(orderId)");
++    expect(source("./orderSideEffects.ts")).toContain("export async function adminMarkOrderPaid");
++    expect(source("./orderSideEffects.ts")).toContain("export async function noteStripeMatchedPayment");
++    expect(source("../stripePaymentRecords.ts")).toContain("onLinkedPayment");
++    expect(source("../routers/stripeInvoices.ts")).toContain("noteStripeMatchedPayment");
++    expect(source("../stripeWebhook.ts")).toContain("flagOrderCrmRefund");
++  });
++
++  it("covers manual sample orders and the labor estimator without creating a contacts table", () => {
++    expect(source("../routers/vendorSamples.ts")).toContain("syncStoredOrderCrm");
++    expect(source("../routers/installationEstimates.ts")).toContain("syncStoredOrderCrm");
++    expect(source("./orderSideEffects.ts")).not.toContain("crm_contacts");
++    expect(source("./orderCrmSale.ts")).toContain('target.stage = "new_sale"');
++    expect(source("./orderImageGenerated.ts")).toContain("export async function markOrderImageGenerated");
++  });
++});
+diff --git a/server/lib/orderSideEffects.ts b/server/lib/orderSideEffects.ts
+new file mode 100644
+index 0000000..137a07c
+--- /dev/null
++++ b/server/lib/orderSideEffects.ts
+@@ -0,0 +1,764 @@
++import { and, desc, eq, inArray, isNotNull, isNull, like, or, sql } from "drizzle-orm";
++import {
++  crmActivities,
++  crmDeals,
++  distributorSkus,
++  distributors,
++  doorStyles,
++  emailSettings,
++  orderRequests,
++  type OrderLineItem,
++} from "../../drizzle/schema";
++import { buildNetsuiteOrderCsv } from "@shared/netsuiteOrder";
++import { getDb } from "../db";
++import { emailSettingsReady, sendEmail, sendEmailViaSettings } from "../email";
++import { ensureAffiliatePipelineDeal } from "./crmPipelineAttach";
++import {
++  assignLinesToDistributors,
++  composeDistributorOrderEmail,
++  deliverDistributorEmails,
++  parseCcEmails,
++  summarizeDistributorEmails,
++  usableEmail,
++  type DistributorEmailRecord,
++  type DistributorPortion,
++} from "./distributorOrderEmail";
++import {
++  applyCrmBackfill,
++  orderIsPaid,
++  orderStepActivityBody,
++  planOrderCrmSync,
++  previewCrmBackfill,
++  refundActivityBody,
++  type CrmDealView,
++  type CrmOrderView,
++  type MemoryDeal,
++} from "./orderCrmSale";
++import { isEnumValueError, isMissingSchemaError, schemaErrorMessage } from "./orderSchemaGuard";
++
++type Database = NonNullable<Awaited<ReturnType<typeof getDb>>>;
++
++function rowsFrom(result: unknown): Array<Record<string, unknown>> {
++  if (Array.isArray(result)) {
++    const first = result[0];
++    if (Array.isArray(first)) return first as Array<Record<string, unknown>>;
++    if (first && typeof first === "object") return result as Array<Record<string, unknown>>;
++  }
++  return [];
++}
++
++function text(value: unknown): string | null {
++  if (value == null) return null;
++  const raw = value instanceof Date ? value.toISOString() : String(value);
++  const trimmed = raw.trim();
++  return trimmed ? trimmed : null;
++}
++
++function stamp(value: unknown): string | null {
++  if (value == null) return null;
++  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value.toISOString();
++  const parsed = new Date(String(value));
++  return Number.isNaN(parsed.getTime()) ? text(value) : parsed.toISOString();
++}
++
++export type OrderFulfillmentOverlay = {
++  distributorEmailStatus: string | null;
++  distributorEmailSentAt: string | null;
++  distributorEmailTo: string | null;
++  distributorEmailError: string | null;
++  orderVerifiedAt: string | null;
++  orderVerifiedBy: string | null;
++  orderShippedAt: string | null;
++  orderShippedBy: string | null;
++  shipmentCarrier: string | null;
++  shipmentTracking: string | null;
++  orderSignedAt: string | null;
++  orderSignedBy: string | null;
++  signerName: string | null;
++  crmSyncStatus: string | null;
++  crmSyncError: string | null;
++  crmDealId: number | null;
++  imageGeneratedCount: number;
++  lastImageGeneratedAt: string | null;
++  distributorEmails: DistributorEmailRecord[];
++  shipments: Array<{
++    status: string | null;
++    shippedAt: string | null;
++    carrier: string | null;
++    trackingNumber: string | null;
++    shippedBy: string | null;
++    signatureName: string | null;
++    deliveredWithSignature: boolean;
++  }>;
++};
++
++const EMPTY_OVERLAY: OrderFulfillmentOverlay = {
++  distributorEmailStatus: null,
++  distributorEmailSentAt: null,
++  distributorEmailTo: null,
++  distributorEmailError: null,
++  orderVerifiedAt: null,
++  orderVerifiedBy: null,
++  orderShippedAt: null,
++  orderShippedBy: null,
++  shipmentCarrier: null,
++  shipmentTracking: null,
++  orderSignedAt: null,
++  orderSignedBy: null,
++  signerName: null,
++  crmSyncStatus: null,
++  crmSyncError: null,
++  crmDealId: null,
++  imageGeneratedCount: 0,
++  lastImageGeneratedAt: null,
++  distributorEmails: [],
++  shipments: [],
++};
++
++async function guarded<T>(label: string, fallback: T, run: () => Promise<T>): Promise<T> {
++  try {
++    return await run();
++  } catch (error) {
++    if (isMissingSchemaError(error)) return fallback;
++    console.error(`[OrderEmail] ${label}: ${schemaErrorMessage(error)}`);
++    return fallback;
++  }
++}
++
++export async function readOrderFulfillmentOverlay(db: Database, orderIds: number[]): Promise<Map<number, OrderFulfillmentOverlay>> {
++  const map = new Map<number, OrderFulfillmentOverlay>();
++  if (orderIds.length === 0) return map;
++  const ids = sql.join(orderIds.map((id) => sql`${id}`), sql`, `);
++  const orderRows = await guarded("read order trail columns", [] as Array<Record<string, unknown>>, async () => rowsFrom(await db.execute(sql`
++    SELECT id, distributorEmailStatus, distributorEmailSentAt, distributorEmailTo, distributorEmailError,
++      orderVerifiedAt, orderVerifiedBy, orderShippedAt, orderShippedBy, shipmentCarrier, shipmentTracking,
++      orderSignedAt, orderSignedBy, signerName, crmSyncStatus, crmSyncError, crmDealId,
++      imageGeneratedCount, lastImageGeneratedAt
++    FROM order_requests
++    WHERE id IN (${ids})
++  `)));
++  const emailRows = await guarded("read distributor email rows", [] as Array<Record<string, unknown>>, async () => rowsFrom(await db.execute(sql`
++    SELECT orderRequestId, distributorId, distributorEmailStatus, distributorEmailSentAt, distributorEmailTo, distributorEmailError
++    FROM order_distributor_emails
++    WHERE orderRequestId IN (${ids})
++  `)));
++  const shipmentRows = await guarded("read order shipments", [] as Array<Record<string, unknown>>, async () => rowsFrom(await db.execute(sql`
++    SELECT orderRequestId, status, shippedAt, carrier, trackingNumber
++    FROM order_shipments
++    WHERE orderRequestId IN (${ids})
++  `)));
++  for (const id of orderIds) map.set(id, { ...EMPTY_OVERLAY, distributorEmails: [], shipments: [] });
++  for (const row of orderRows) {
++    const id = Number(row.id);
++    const current = map.get(id);
++    if (!current) continue;
++    current.distributorEmailStatus = text(row.distributorEmailStatus);
++    current.distributorEmailSentAt = stamp(row.distributorEmailSentAt);
++    current.distributorEmailTo = text(row.distributorEmailTo);
++    current.distributorEmailError = text(row.distributorEmailError);
++    current.orderVerifiedAt = stamp(row.orderVerifiedAt);
++    current.orderVerifiedBy = text(row.orderVerifiedBy);
++    current.orderShippedAt = stamp(row.orderShippedAt);
++    current.orderShippedBy = text(row.orderShippedBy);
++    current.shipmentCarrier = text(row.shipmentCarrier);
++    current.shipmentTracking = text(row.shipmentTracking);
++    current.orderSignedAt = stamp(row.orderSignedAt);
++    current.orderSignedBy = text(row.orderSignedBy);
++    current.signerName = text(row.signerName);
++    current.crmSyncStatus = text(row.crmSyncStatus);
++    current.crmSyncError = text(row.crmSyncError);
++    current.crmDealId = row.crmDealId == null ? null : Number(row.crmDealId);
++    current.imageGeneratedCount = Number(row.imageGeneratedCount ?? 0) || 0;
++    current.lastImageGeneratedAt = stamp(row.lastImageGeneratedAt);
++  }
++  for (const row of emailRows) {
++    const current = map.get(Number(row.orderRequestId));
++    if (!current) continue;
++    current.distributorEmails.push({
++      distributorId: Number(row.distributorId),
++      distributorName: `Distributor ${row.distributorId}`,
++      status: (text(row.distributorEmailStatus) as DistributorEmailRecord["status"]) || "pending",
++      sentAt: stamp(row.distributorEmailSentAt),
++      sentTo: text(row.distributorEmailTo),
++      error: text(row.distributorEmailError),
++    });
++  }
++  for (const row of shipmentRows) {
++    const current = map.get(Number(row.orderRequestId));
++    if (!current) continue;
++    current.shipments.push({
++      status: text(row.status),
++      shippedAt: stamp(row.shippedAt),
++      carrier: text(row.carrier),
++      trackingNumber: text(row.trackingNumber),
++      shippedBy: null,
++      signatureName: null,
++      deliveredWithSignature: false,
++    });
++  }
++  return map;
++}
++
++export async function attachOrderFulfillmentOverlay<T extends { id: number }>(db: Database, orders: T[]): Promise<Array<T & OrderFulfillmentOverlay>> {
++  const overlay = await readOrderFulfillmentOverlay(db, orders.map((order) => order.id));
++  return orders.map((order) => ({ ...order, ...(overlay.get(order.id) ?? EMPTY_OVERLAY) }));
++}
++
++async function writeCrmSync(db: Database, orderId: number, status: string, error: string | null, dealId: number | null): Promise<void> {
++  await guarded("write crm sync", undefined, async () => {
++    await db.execute(sql`
++      UPDATE order_requests
++      SET crmSyncStatus = ${status}, crmSyncError = ${error}, crmDealId = ${dealId}
++      WHERE id = ${orderId}
++    `);
++  });
++}
++
++async function writeOrderEmailSummary(db: Database, orderId: number, summary: ReturnType<typeof summarizeDistributorEmails>, distributorId: number | null): Promise<void> {
++  await guarded("write distributor email summary", undefined, async () => {
++    await db.execute(sql`
++      UPDATE order_requests
++      SET distributorEmailStatus = ${summary.distributorEmailStatus},
++          distributorEmailSentAt = ${summary.distributorEmailSentAt},
++          distributorEmailTo = ${summary.distributorEmailTo},
++          distributorEmailError = ${summary.distributorEmailError}
++      WHERE id = ${orderId}
++    `);
++  });
++  if (summary.distributorEmailStatus === "sent" && summary.distributorEmailSentAt) {
++    await db.update(orderRequests).set({
++      sentToDistributorAt: new Date(summary.distributorEmailSentAt),
++      sentToDistributorEmail: summary.distributorEmailTo,
++      ...(distributorId ? { distributorId } : {}),
++    }).where(eq(orderRequests.id, orderId));
++  }
++}
++
++async function writeDistributorEmailRows(db: Database, orderId: number, records: DistributorEmailRecord[]): Promise<void> {
++  for (const record of records) {
++    await guarded(`write distributor ${record.distributorId} email`, undefined, async () => {
++      await db.execute(sql`
++        INSERT INTO order_distributor_emails
++          (orderRequestId, distributorId, distributorEmailStatus, distributorEmailSentAt, distributorEmailTo, distributorEmailError)
++        VALUES (${orderId}, ${record.distributorId}, ${record.status}, ${record.sentAt}, ${record.sentTo}, ${record.error})
++        ON DUPLICATE KEY UPDATE
++          distributorEmailStatus = VALUES(distributorEmailStatus),
++          distributorEmailSentAt = VALUES(distributorEmailSentAt),
++          distributorEmailTo = VALUES(distributorEmailTo),
++          distributorEmailError = VALUES(distributorEmailError)
++      `);
++    });
++  }
++}
++
++function shipTo(order: typeof orderRequests.$inferSelect): string[] {
++  return [
++    order.shippingAddressLine1,
++    order.shippingAddressLine2,
++    [order.shippingCity, order.shippingState, order.zip].filter(Boolean).join(", "),
++  ].map((part) => part?.trim()).filter((part): part is string => Boolean(part));
++}
++
++function toCrmOrder(order: typeof orderRequests.$inferSelect): CrmOrderView {
++  return {
++    id: order.id,
++    requestNumber: order.requestNumber,
++    status: order.status,
++    paidAt: order.paidAt,
++    stripePaymentIntentId: order.stripePaymentIntentId,
++    totalAmount: order.totalAmount,
++    affiliateId: order.affiliateId,
++    originatorName: order.originatorName,
++    originatorEmail: order.originatorEmail,
++    originatorPhone: order.originatorPhone,
++  };
++}
++
++async function findDealForOrder(db: Database, orderId: number, preferredDealId?: number | null): Promise<typeof crmDeals.$inferSelect | null> {
++  const [linked] = await db.select().from(crmDeals).where(eq(crmDeals.orderRequestId, orderId)).orderBy(desc(crmDeals.updatedAt)).limit(1);
++  if (linked) return linked;
++  if (!preferredDealId) return null;
++  const [preferred] = await db.select().from(crmDeals).where(eq(crmDeals.id, preferredDealId)).limit(1);
++  if (!preferred) return null;
++  if (preferred.orderRequestId != null && preferred.orderRequestId !== orderId) return null;
++  if (preferred.orderRequestId == null) {
++    await db.update(crmDeals).set({ orderRequestId: orderId }).where(and(eq(crmDeals.id, preferred.id), isNull(crmDeals.orderRequestId)));
++    return { ...preferred, orderRequestId: orderId };
++  }
++  return preferred;
++}
++
++async function logDealActivity(db: Database, dealId: number, kind: "note" | "stage_change" | "email", body: string, marker: string): Promise<void> {
++  const [existing] = await db.select({ id: crmActivities.id }).from(crmActivities)
++    .where(and(eq(crmActivities.dealId, dealId), like(crmActivities.body, `%${marker}%`)))
++    .limit(1);
++  if (existing) return;
++  await db.insert(crmActivities).values({ dealId, kind, body });
++}
++
++function dealView(deal: typeof crmDeals.$inferSelect): CrmDealView {
++  return {
++    id: deal.id,
++    stage: deal.stage,
++    orderRequestId: deal.orderRequestId,
++    estimatedValue: deal.estimatedValue,
++    closedAt: deal.closedAt,
++  };
++}
++
++function qualifiedDraft(order: typeof orderRequests.$inferSelect, stage: "qualified" | "new_sale") {
++  return {
++    affiliateId: order.affiliateId,
++    match: "order" as const,
++    orderRequestId: order.id,
++    ownerUserId: order.userId,
++    title: `Order ${order.requestNumber}${order.originatorName ? ` — ${order.originatorName}` : ""}`.slice(0, 256),
++    stage,
++    contactName: order.originatorName,
++    contactEmail: order.originatorEmail,
++    contactPhone: order.originatorPhone,
++    location: shipTo(order).join(", ") || order.zip,
++    estimatedValue: order.totalAmount,
++    source: "order_request" as const,
++    referralCode: order.referralCode,
++    notes: [
++      `Order ${order.requestNumber}`,
++      order.totalAmount ? `Total ${order.totalAmount}` : null,
++      order.notes,
++    ].filter(Boolean).join("\n"),
++  };
++}
++
++export async function syncStoredOrderCrm(orderId: number, opts?: { preferredDealId?: number | null }): Promise<void> {
++  const db = await getDb();
++  if (!db) return;
++  try {
++    const [order] = await db.select().from(orderRequests).where(eq(orderRequests.id, orderId)).limit(1);
++    if (!order) return;
++    const deal = await findDealForOrder(db, order.id, opts?.preferredDealId);
++    const plan = planOrderCrmSync(toCrmOrder(order), deal ? dealView(deal) : null);
++    if (plan.kind === "skip") {
++      await writeCrmSync(db, order.id, "skipped", null, deal?.id ?? null);
++      return;
++    }
++    if (plan.kind === "qualified") {
++      if (!deal) {
++        const ensured = await ensureAffiliatePipelineDeal(db, qualifiedDraft(order, "qualified"));
++        await writeCrmSync(db, order.id, "qualified", null, ensured.id);
++        return;
++      }
++      if (plan.setStage && deal.stage === "new") {
++        await db.update(crmDeals).set({ stage: "qualified" }).where(eq(crmDeals.id, deal.id));
++      }
++      await writeCrmSync(db, order.id, "qualified", null, deal.id);
++      return;
++    }
++    let dealId = deal?.id ?? null;
++    if (!dealId) {
++      const ensured = await ensureAffiliatePipelineDeal(db, qualifiedDraft(order, "new_sale"));
++      dealId = ensured.id;
++    }
++    try {
++      await db.update(crmDeals).set({
++        stage: "new_sale",
++        estimatedValue: order.totalAmount,
++        closedAt: deal?.closedAt ?? (order.paidAt ? new Date(order.paidAt) : new Date()),
++      }).where(eq(crmDeals.id, dealId));
++    } catch (error) {
++      const message = isEnumValueError(error) || isMissingSchemaError(error)
++        ? "crm_deals.stage does not include new_sale yet. Run docs/sql/0227_distributor_order_email.tidb.sql."
++        : schemaErrorMessage(error);
++      console.error(`[OrderCrm] Could not move order ${order.requestNumber} to New Sale: ${message}`);
++      await writeCrmSync(db, order.id, "failed", message, dealId);
++      return;
++    }
++    if (plan.logActivity) {
++      await logDealActivity(db, dealId, "stage_change", plan.activityBody, `[order-crm:${order.id}:new_sale]`);
++    }
++    await writeCrmSync(db, order.id, "new_sale", null, dealId);
++  } catch (error) {
++    console.error(`[OrderCrm] Sync failed for order ${orderId}: ${schemaErrorMessage(error)}`);
++    try { await writeCrmSync(db, orderId, "failed", schemaErrorMessage(error), null); } catch { /* the order itself still stands */ }
++  }
++}
++
++export async function flagOrderCrmRefund(orderId: number, source: string): Promise<void> {
++  const db = await getDb();
++  if (!db) return;
++  try {
++    const [order] = await db.select().from(orderRequests).where(eq(orderRequests.id, orderId)).limit(1);
++    if (!order) return;
++    if (orderIsPaid(toCrmOrder(order)) || order.paidAt) await syncStoredOrderCrm(orderId);
++    const [deal] = await db.select().from(crmDeals).where(eq(crmDeals.orderRequestId, orderId)).limit(1);
++    if (!deal) return;
++    await logDealActivity(db, deal.id, "note", refundActivityBody(toCrmOrder(order), source), `[order-crm:${order.id}:refund]`);
++    await guarded("flag refund", undefined, async () => {
++      await db.execute(sql`UPDATE crm_deals SET saleRefundedAt = COALESCE(saleRefundedAt, CURRENT_TIMESTAMP) WHERE id = ${deal.id}`);
++    });
++    console.log(`[OrderCrm] Refund flagged on deal ${deal.id} for order ${order.requestNumber}. The deal was kept.`);
++  } catch (error) {
++    console.error(`[OrderCrm] Refund flag failed for order ${orderId}: ${schemaErrorMessage(error)}`);
++  }
++}
++
++export async function logOrderStep(orderId: number, step: "email_sent" | "verified" | "shipped" | "signed", detail: string): Promise<void> {
++  const db = await getDb();
++  if (!db) return;
++  try {
++    const [deal] = await db.select({ id: crmDeals.id }).from(crmDeals).where(eq(crmDeals.orderRequestId, orderId)).limit(1);
++    if (!deal) return;
++    await logDealActivity(db, deal.id, step === "email_sent" ? "email" : "note", orderStepActivityBody(orderId, step, detail), `[order-step:${orderId}:${step}]`);
++  } catch (error) {
++    console.error(`[OrderCrm] Could not log ${step} for order ${orderId}: ${schemaErrorMessage(error)}`);
++  }
++}
++
++async function loadPortions(db: Database, order: typeof orderRequests.$inferSelect): Promise<DistributorPortion[]> {
++  const lines = (order.lineItems ?? []) as OrderLineItem[];
++  const cabinetIds = lines.map((line) => line.cabinetId).filter((id): id is number => typeof id === "number");
++  const styleIds = new Set<number>();
++  for (const line of lines) if (line.styleId) styleIds.add(line.styleId);
++  if (order.styleId) styleIds.add(order.styleId);
++  const skuRows = cabinetIds.length && styleIds.size
++    ? await db.select({
++      cabinetId: distributorSkus.cabinetId,
++      styleId: distributorSkus.styleId,
++      distributorId: distributorSkus.distributorId,
++      distributorSku: distributorSkus.distributorSku,
++      distributorCode: distributors.code,
++      styleCode: doorStyles.styleCode,
++    }).from(distributorSkus)
++      .innerJoin(distributors, eq(distributorSkus.distributorId, distributors.id))
++      .innerJoin(doorStyles, eq(distributorSkus.styleId, doorStyles.id))
++      .where(and(
++        inArray(distributorSkus.cabinetId, cabinetIds),
++        inArray(distributorSkus.styleId, Array.from(styleIds)),
++        eq(distributorSkus.isAvailable, true),
++      ))
++    : [];
++  const skuDistributor = new Map<string, number>();
++  const poSku = new Map<string, string>();
++  for (const row of skuRows) {
++    const key = `${row.cabinetId}-${row.styleId}`;
++    if (!skuDistributor.has(key)) {
++      skuDistributor.set(key, row.distributorId);
++      poSku.set(key, `${row.distributorCode}-${row.styleCode}-${row.distributorSku}`.toLowerCase());
++    }
++  }
++  let fallback = order.distributorId ?? null;
++  if (fallback == null && order.styleId) {
++    const [style] = await db.select({ distributorId: doorStyles.distributorId }).from(doorStyles).where(eq(doorStyles.id, order.styleId)).limit(1);
++    fallback = style?.distributorId ?? null;
++  }
++  const groups = assignLinesToDistributors(lines.map((line) => {
++    const key = line.cabinetId && line.styleId ? `${line.cabinetId}-${line.styleId}` : "";
++    return {
++      distributorId: line.distributorId,
++      cabinetId: line.cabinetId,
++      styleId: line.styleId ?? order.styleId,
++      sku: line.distributorSku || (key ? poSku.get(key) : null) || line.masterCode || line.rawCode || "",
++      description: line.description,
++      doorStyle: line.doorStyle || order.styleName,
++      qty: line.qty,
++    };
++  }), skuDistributor, fallback);
++  if (groups.size === 0) return [];
++  const ids = Array.from(groups.keys());
++  const dists = await db.select({
++    id: distributors.id,
++    name: distributors.name,
++    brandName: distributors.brandName,
++    orderEmail: distributors.orderEmail,
++    ccEmails: distributors.ccEmails,
++  }).from(distributors).where(inArray(distributors.id, ids));
++  const byId = new Map(dists.map((row) => [row.id, row]));
++  return ids.map((id) => {
++    const dist = byId.get(id);
++    const bucket = groups.get(id) ?? [];
++    return {
++      distributorId: id,
++      distributorName: dist?.brandName || dist?.name || `Distributor ${id}`,
++      orderEmail: dist?.orderEmail ?? null,
++      ccEmails: parseCcEmails(dist?.ccEmails),
++      lines: bucket.map((line) => ({ sku: line.sku, description: line.description, doorStyle: line.doorStyle, qty: line.qty })),
++    };
++  });
++}
++
++async function readPriorEmails(db: Database, orderId: number, _order: typeof orderRequests.$inferSelect): Promise<{ records: DistributorEmailRecord[]; schemaMissing: boolean }> {
++  let schemaMissing = false;
++  const rows = await guarded("read prior distributor emails", null as Array<Record<string, unknown>> | null, async () => {
++    try {
++      return rowsFrom(await db.execute(sql`
++        SELECT distributorId, distributorEmailStatus, distributorEmailSentAt, distributorEmailTo, distributorEmailError
++        FROM order_distributor_emails
++        WHERE orderRequestId = ${orderId}
++      `));
++    } catch (error) {
++      if (isMissingSchemaError(error)) {
++        schemaMissing = true;
++        return null;
++      }
++      throw error;
++    }
++  });
++  if (rows == null) return { records: [], schemaMissing: true };
++  return {
++    schemaMissing,
++    records: rows.map((row) => ({
++      distributorId: Number(row.distributorId),
++      distributorName: `Distributor ${row.distributorId}`,
++      status: (text(row.distributorEmailStatus) as DistributorEmailRecord["status"]) || "pending",
++      sentAt: stamp(row.distributorEmailSentAt),
++      sentTo: text(row.distributorEmailTo),
++      error: text(row.distributorEmailError),
++    })),
++  };
++}
++
++export type DistributorNotifyResult = {
++  status: ReturnType<typeof summarizeDistributorEmails>["distributorEmailStatus"];
++  sentTo: string | null;
++  error: string | null;
++  records: DistributorEmailRecord[];
++};
++
++export async function notifyOrderDistributors(orderId: number, opts?: { force?: boolean; actor?: string }): Promise<DistributorNotifyResult> {
++  const empty: DistributorNotifyResult = { status: "pending", sentTo: null, error: null, records: [] };
++  const db = await getDb();
++  if (!db) return empty;
++  try {
++    const [order] = await db.select().from(orderRequests).where(eq(orderRequests.id, orderId)).limit(1);
++    if (!order) return { ...empty, status: "failed", error: "Order not found" };
++    const portions = await loadPortions(db, order);
++    if (portions.length === 0) {
++      console.warn(`[OrderEmail] Order ${order.requestNumber} has no distributor to email.`);
++      return { status: "pending", sentTo: null, error: "No distributor could be resolved", records: [] };
++    }
++    const priorRead = await readPriorEmails(db, order.id, order);
++    const prior = priorRead.schemaMissing && order.sentToDistributorAt && !opts?.force
++      ? portions.map((portion) => ({
++        distributorId: portion.distributorId,
++        distributorName: portion.distributorName,
++        status: "sent" as const,
++        sentAt: order.sentToDistributorAt!.toISOString(),
++        sentTo: order.sentToDistributorEmail,
++        error: null,
++      }))
++      : priorRead.records;
++    const [settings] = await db.select().from(emailSettings).limit(1);
++    const records = await deliverDistributorEmails({
++      portions,
++      prior,
++      force: Boolean(opts?.force),
++      send: async (portion) => {
++        const message = composeDistributorOrderEmail({
++          orderNumber: order.requestNumber,
++          orderDate: new Date(order.createdAt).toISOString().slice(0, 10),
++          customerName: order.originatorName,
++          shipTo: shipTo(order),
++          distributorName: portion.distributorName,
++          lines: portion.lines,
++          poNumber: order.distributorInvoiceReference,
++          notes: order.notes,
++        });
++        const csv = buildNetsuiteOrderCsv({
++          orderNumber: order.requestNumber,
++          customerName: order.originatorName,
++          styleName: order.styleName,
++          deliveryMethod: order.deliveryMethod,
++          orderDate: new Date(order.createdAt).toISOString(),
++        }, portion.lines.map((line) => ({ poSku: line.sku, description: line.description, qty: line.qty })));
++        const payload = {
++          to: portion.orderEmail || "",
++          cc: portion.ccEmails,
++          subject: message.subject,
++          text: message.text,
++          replyTo: usableEmail(order.originatorEmail) ?? undefined,
++          attachments: [{ filename: `PO-${order.requestNumber}.csv`, content: csv, contentType: "text/csv" }],
++        };
++        const result = emailSettingsReady(settings) ? await sendEmailViaSettings(settings, payload) : await sendEmail(payload);
++        if (result.success) console.log(`[OrderEmail] Sent order ${order.requestNumber} to distributor ${portion.distributorId} (${portion.orderEmail}).`);
++        else console.error(`[OrderEmail] Failed order ${order.requestNumber} to distributor ${portion.distributorId}: ${result.error || "not sent"}`);
++        return { ok: result.success, error: result.error };
++      },
++    });
++    const named = records.map((record) => ({
++      ...record,
++      distributorName: portions.find((portion) => portion.distributorId === record.distributorId)?.distributorName || record.distributorName,
++    }));
++    for (const record of named) {
++      if (record.status === "no_email") console.warn(`[OrderEmail] No order email set for ${record.distributorName} on order ${order.requestNumber}.`);
++    }
++    const summary = summarizeDistributorEmails(named);
++    await writeDistributorEmailRows(db, order.id, named);
++    await writeOrderEmailSummary(db, order.id, summary, named.find((row) => row.status === "sent")?.distributorId ?? portions[0]?.distributorId ?? null);
++    if (summary.distributorEmailStatus === "sent") {
++      const who = opts?.actor ? ` by ${opts.actor}` : "";
++      await logOrderStep(order.id, "email_sent", `Email sent${who} to ${summary.distributorEmailTo || "the distributor"}.`);
++    }
++    return { status: summary.distributorEmailStatus, sentTo: summary.distributorEmailTo, error: summary.distributorEmailError, records: named };
++  } catch (error) {
++    console.error(`[OrderEmail] Order ${orderId} email step failed without blocking the order: ${schemaErrorMessage(error)}`);
++    return { ...empty, status: "failed", error: schemaErrorMessage(error) };
++  }
++}
++
++async function writeTrail(db: Database, orderId: number, patch: Record<string, string | null>): Promise<boolean> {
++  const assignments = Object.entries(patch);
++  if (assignments.length === 0) return false;
++  try {
++    const setSql = sql.join(assignments.map(([column, value]) => sql`${sql.raw(column)} = ${value}`), sql`, `);
++    await db.execute(sql`UPDATE order_requests SET ${setSql} WHERE id = ${orderId}`);
++    return true;
++  } catch (error) {
++    if (isMissingSchemaError(error)) {
++      console.warn(`[OrderEmail] Order trail columns are missing for order ${orderId}. Run the 0227 SQL.`);
++      return false;
++    }
++    console.error(`[OrderEmail] Could not update the order trail for ${orderId}: ${schemaErrorMessage(error)}`);
++    return false;
++  }
++}
++
++export async function markOrderVerified(orderId: number, by: string): Promise<void> {
++  const db = await getDb();
++  if (!db) return;
++  const at = new Date().toISOString();
++  const wrote = await writeTrail(db, orderId, { orderVerifiedAt: at, orderVerifiedBy: by.slice(0, 255) });
++  if (wrote) await logOrderStep(orderId, "verified", `Order verified by ${by}.`);
++}
++
++export async function markOrderShipped(orderId: number, input: { by: string; carrier?: string | null; tracking?: string | null }): Promise<void> {
++  const db = await getDb();
++  if (!db) return;
++  const at = new Date().toISOString();
++  const wrote = await writeTrail(db, orderId, {
++    orderShippedAt: at,
++    orderShippedBy: input.by.slice(0, 255),
++    shipmentCarrier: input.carrier?.trim() || null,
++    shipmentTracking: input.tracking?.trim() || null,
++  });
++  if (wrote) await logOrderStep(orderId, "shipped", `Order shipped by ${input.by}${input.carrier ? ` via ${input.carrier}` : ""}${input.tracking ? ` tracking ${input.tracking}` : ""}.`);
++}
++
++export async function markOrderSigned(orderId: number, input: { by: string; signerName?: string | null }): Promise<void> {
++  const db = await getDb();
++  if (!db) return;
++  const at = new Date().toISOString();
++  const wrote = await writeTrail(db, orderId, {
++    orderSignedAt: at,
++    orderSignedBy: input.by.slice(0, 255),
++    signerName: input.signerName?.trim() || null,
++  });
++  if (wrote) await logOrderStep(orderId, "signed", `Order signed${input.signerName ? ` by ${input.signerName}` : ""} and recorded by ${input.by}.`);
++}
++
++export async function onOrderPlaced(orderId: number): Promise<void> {
++  await notifyOrderDistributors(orderId, { force: false, actor: "Automatic" });
++}
++
++export async function onOrderPaid(orderId: number): Promise<void> {
++  await syncStoredOrderCrm(orderId);
++  await notifyOrderDistributors(orderId, { force: false, actor: "Automatic" });
++}
++
++export async function noteStripeMatchedPayment(orderId: number, status: string): Promise<void> {
++  if (status !== "paid" && status !== "refunded" && status !== "partially_refunded") return;
++  const db = await getDb();
++  if (!db) return;
++  try {
++    const [order] = await db.select({ id: orderRequests.id, paidAt: orderRequests.paidAt, status: orderRequests.status })
++      .from(orderRequests).where(eq(orderRequests.id, orderId)).limit(1);
++    if (!order) return;
++    if (!order.paidAt) {
++      await db.update(orderRequests).set({
++        paidAt: new Date(),
++        status: order.status === "draft" || order.status === "submitted" ? "confirmed" : order.status,
++      }).where(eq(orderRequests.id, orderId));
++    }
++  } catch (error) {
++    console.error(`[OrderCrm] Could not stamp payment for order ${orderId}: ${schemaErrorMessage(error)}`);
++  }
++  await onOrderPaid(orderId);
++  if (status === "refunded" || status === "partially_refunded") await flagOrderCrmRefund(orderId, "Stripe sync");
++}
++
++export async function adminMarkOrderPaid(orderId: number, by: string): Promise<void> {
++  const db = await getDb();
++  if (!db) return;
++  const [order] = await db.select({ id: orderRequests.id, paidAt: orderRequests.paidAt, status: orderRequests.status })
++    .from(orderRequests).where(eq(orderRequests.id, orderId)).limit(1);
++  if (!order) return;
++  await db.update(orderRequests).set({
++    paidAt: order.paidAt ?? new Date(),
++    status: order.status === "draft" || order.status === "submitted" ? "confirmed" : order.status,
++  }).where(eq(orderRequests.id, orderId));
++  await onOrderPaid(orderId);
++  console.log(`[OrderCrm] ${by} marked order ${orderId} paid.`);
++}
++
++function memoryFromDeal(deal: typeof crmDeals.$inferSelect): MemoryDeal {
++  return {
++    id: deal.id,
++    stage: deal.stage,
++    orderRequestId: deal.orderRequestId,
++    estimatedValue: deal.estimatedValue,
++    closedAt: deal.closedAt ? new Date(deal.closedAt).toISOString() : null,
++    activities: [],
++    saleRefundedAt: null,
++    affiliateId: deal.affiliateId,
++    contactEmail: deal.contactEmail,
++    contactName: deal.contactName,
++    contactPhone: deal.contactPhone,
++  };
++}
++
++export async function backfillOrderCrm(dryRun: boolean): Promise<{ dryRun: boolean; preview: ReturnType<typeof previewCrmBackfill>; scanned: number }> {
++  const db = await getDb();
++  if (!db) return { dryRun, scanned: 0, preview: { createQualified: 0, createNewSale: 0, moveToNewSale: 0, unchanged: 0, skipped: 0 } };
++  const orders = await db.select().from(orderRequests).where(or(
++    inArray(orderRequests.status, ["submitted", "confirmed"]),
++    isNotNull(orderRequests.paidAt),
++  )).orderBy(desc(orderRequests.id)).limit(5000);
++  const ids = orders.map((order) => order.id);
++  const deals = ids.length
++    ? await db.select().from(crmDeals).where(inArray(crmDeals.orderRequestId, ids))
++    : [];
++  const views = orders.map(toCrmOrder);
++  const memory = deals.map(memoryFromDeal);
++  const preview = previewCrmBackfill(views, memory);
++  if (!dryRun) {
++    for (const order of orders) await syncStoredOrderCrm(order.id);
++  }
++  const checked = applyCrmBackfill(views, memory, true);
++  return { dryRun, scanned: orders.length, preview: checked.preview };
++}
++
++export async function readDealImageCounts(db: Database, orderIds: number[]): Promise<Map<number, { imageGeneratedCount: number; lastImageGeneratedAt: string | null; saleRefundedAt: string | null }>> {
++  const map = new Map<number, { imageGeneratedCount: number; lastImageGeneratedAt: string | null; saleRefundedAt: string | null }>();
++  if (orderIds.length === 0) return map;
++  const ids = sql.join(orderIds.map((id) => sql`${id}`), sql`, `);
++  const orderRows = await guarded("read image counts", [] as Array<Record<string, unknown>>, async () => rowsFrom(await db.execute(sql`
++    SELECT id, imageGeneratedCount, lastImageGeneratedAt
++    FROM order_requests
++    WHERE id IN (${ids})
++  `)));
++  for (const row of orderRows) {
++    map.set(Number(row.id), {
++      imageGeneratedCount: Number(row.imageGeneratedCount ?? 0) || 0,
++      lastImageGeneratedAt: stamp(row.lastImageGeneratedAt),
++      saleRefundedAt: null,
++    });
++  }
++  const refunds = await guarded("read sale refunds", [] as Array<Record<string, unknown>>, async () => rowsFrom(await db.execute(sql`
++    SELECT orderRequestId, saleRefundedAt FROM crm_deals WHERE orderRequestId IN (${ids})
++  `)));
++  for (const row of refunds) {
++    const id = Number(row.orderRequestId);
++    const current = map.get(id) ?? { imageGeneratedCount: 0, lastImageGeneratedAt: null, saleRefundedAt: null };
++    current.saleRefundedAt = stamp(row.saleRefundedAt);
++    map.set(id, current);
++  }
++  return map;
++}
+diff --git a/server/lib/vendorFulfillmentStore.ts b/server/lib/vendorFulfillmentStore.ts
+index ecc639c..a077ac6 100644
+--- a/server/lib/vendorFulfillmentStore.ts
++++ b/server/lib/vendorFulfillmentStore.ts
+@@ -2,6 +2,7 @@ import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
+ import { TRPCError } from "@trpc/server";
+ import type { getDb } from "../db";
+ import { distributors, orderRequests, orderShipments, vendorLines } from "../../drizzle/schema";
++import { markOrderShipped } from "./orderSideEffects";
+ import { pelicanProducts, pelicanShippingProfiles } from "../../drizzle/pelicanSchema";
+ import { approvedVendorLinkedDistributorIds } from "./approvedVendorAccess";
+ import { HARDWARE_LINE_CODE } from "../../shared/hardwareCommerce";
+@@ -383,7 +384,14 @@ export async function recordShipment(db: FulfillmentDb, input: RecordShipmentInp
+       eq(orderShipments.vendorScope, input.scope),
+       eq(orderShipments.status, "pending"),
+     ));
+-  if (affectedRows(first) > 0) return { firstShip: true };
++  if (affectedRows(first) > 0) {
++    await markOrderShipped(input.orderId, {
++      by: `Vendor ${input.scope}`,
++      carrier: checked.carrier,
++      tracking: checked.trackingNumber,
++    });
++    return { firstShip: true };
++  }
+   await db
+     .update(orderShipments)
+     .set(fields)
+diff --git a/server/routers/crm.board.test.ts b/server/routers/crm.board.test.ts
+index 7b4120a..4115a40 100644
+--- a/server/routers/crm.board.test.ts
++++ b/server/routers/crm.board.test.ts
+@@ -51,7 +51,12 @@ describe("crm.board master visibility", () => {
+ 
+     expect(result.scope).toBe("house");
+     expect(result.isMasterView).toBe(true);
+-    expect(result.deals).toEqual([affiliateDeal]);
++    expect(result.deals).toEqual([{
++      ...affiliateDeal,
++      imageGeneratedCount: 0,
++      lastImageGeneratedAt: null,
++      saleRefundedAt: null,
++    }]);
+     expect(result.affiliateNames).toEqual({ 7: "Reaves Way Cabinet Shop." });
+   });
+ });
+diff --git a/server/routers/crm.ts b/server/routers/crm.ts
+index 15d7663..cad8aea 100644
+--- a/server/routers/crm.ts
++++ b/server/routers/crm.ts
+@@ -3,6 +3,7 @@ import { and, eq, desc, isNull, inArray, or } from "drizzle-orm";
+ import { TRPCError } from "@trpc/server";
+ import { protectedProcedure, adminProcedure, router } from "../_core/trpc";
+ import { getDb } from "../db";
++import { readDealImageCounts } from "../lib/orderSideEffects";
+ import {
+   crmDeals,
+   crmActivities,
+@@ -386,10 +387,21 @@ export const crmRouter = router({
+         accentColor: a.accentColor,
+       }]));
+     }
++    const orderIds = deals.map((deal) => deal.orderRequestId).filter((id): id is number => id != null);
++    const imageCounts = await readDealImageCounts(db, orderIds);
++    const decoratedDeals = deals.map((deal) => {
++      const extra = deal.orderRequestId == null ? undefined : imageCounts.get(deal.orderRequestId);
++      return {
++        ...deal,
++        imageGeneratedCount: extra?.imageGeneratedCount ?? 0,
++        lastImageGeneratedAt: extra?.lastImageGeneratedAt ?? null,
++        saleRefundedAt: extra?.saleRefundedAt ?? null,
++      };
++    });
+     return {
+       scope: scope.kind as "house" | "affiliate" | "contractor",
+       affiliateId: (scope.kind === "affiliate" ? scope.affiliateId : null) as number | null,
+-      deals,
++      deals: decoratedDeals,
+       affiliateNames,
+       affiliateBranding,
+       isMasterView,
+diff --git a/server/routers/distributorPortal.ts b/server/routers/distributorPortal.ts
+index 45f9dc5..b34c17a 100644
+--- a/server/routers/distributorPortal.ts
++++ b/server/routers/distributorPortal.ts
+@@ -28,6 +28,7 @@ import {
+ import { storagePut } from "../storage";
+ import { vendorRoomSceneProcedures } from "./vendorRoomScenes";
+ import { encryptDistributorSecret } from "../lib/distributorIntegrationCrypto";
++import { markOrderVerified } from "../lib/orderSideEffects";
+ import { decryptDistributorSecret } from "../lib/distributorIntegrationCrypto";
+ import { generateImage } from "../_core/imageGeneration";
+ import { nextSampleVerifiedFlag } from "@shared/doorStyleRoomSceneGeneration";
+@@ -2808,6 +2809,7 @@ export const distributorPortalRouter = router({
+         distributorInvoiceNotes: input.invoiceNotes || null,
+         distributorInvoiceReceivedAt: now,
+       }).where(eq(orderRequests.id, order.id));
++      await markOrderVerified(order.id, ctx.user?.name || "Distributor");
+       return { id: order.id, orderRailStatus: "affiliate_invoice_review" as const };
+     }),
+ 
+diff --git a/server/routers/installationEstimates.ts b/server/routers/installationEstimates.ts
+index c1531d3..e41ad5a 100644
+--- a/server/routers/installationEstimates.ts
++++ b/server/routers/installationEstimates.ts
+@@ -3,6 +3,7 @@ import { TRPCError } from "@trpc/server";
+ import { z } from "zod";
+ import { affiliateInstallationEstimates, affiliateTeamMembers, affiliates, cabinets, crmActivities, crmDealDesigns, crmDeals, kitchenDesigns, orderRequests } from "../../drizzle/schema";
+ import { getDb } from "../db";
++import { syncStoredOrderCrm } from "../lib/orderSideEffects";
+ import { protectedProcedure, publicProcedure, router } from "../_core/trpc";
+ import { calculateInstallationEstimate, INSTALLATION_ROOM_TYPES, INSTALLATION_COST_TYPES } from "../../shared/installationEstimate";
+ import { createBlankKitchenCostDefaults, KITCHEN_COST_SHEET_DESCRIPTIONS } from "../../shared/kitchenCostSheet";
+@@ -142,7 +143,7 @@ export const installationEstimatesRouter = router({
+       const affiliateId = await resolveAffiliateId(ctx.user, input.affiliateId, input.roomType === "Kitchen" && input.kitchenDesignId != null);
+       const db = await getDb();
+       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+-      return db.transaction(async (tx) => {
++      const result = await db.transaction(async (tx) => {
+         const kitchenDesignId = input.roomType === "Kitchen" ? (input.kitchenDesignId ?? null) : null;
+         let cabinetBreakdown: KitchenCabinetBreakdown | null = null;
+         let kitchenDesignName: string | null = null;
+@@ -220,6 +221,8 @@ export const installationEstimatesRouter = router({
+         }
+         return { id: estimateId, shareToken, crmDealId, kitchenDesignId, cabinetBreakdown, ...totals };
+       });
++      if (input.orderRequestId) await syncStoredOrderCrm(input.orderRequestId, { preferredDealId: result.crmDealId });
++      return result;
+     }),
+ 
+   updateStatus: protectedProcedure
+diff --git a/server/routers/orders.ts b/server/routers/orders.ts
+index 69e81e9..e3578de 100644
+--- a/server/routers/orders.ts
++++ b/server/routers/orders.ts
+@@ -2,14 +2,8 @@ import { z } from "zod";
+ import { eq, and, or, desc, inArray, like, sql, isNull } from "drizzle-orm";
+ import { TRPCError } from "@trpc/server";
+ import { publicProcedure, protectedProcedure, adminProcedure, router } from "../_core/trpc";
+-import { sendEmailViaSettings, emailSettingsReady } from "../email";
+ import { ensureAffiliatePipelineDeal } from "../lib/crmPipelineAttach";
+ import { resolvePresentation } from "../lib/presentation";
+-import {
+-  buildNetsuiteOrderCsv,
+-  buildOrderEmailText,
+-  type NetsuiteOrderLine,
+-} from "@shared/netsuiteOrder";
+ import { getDb, hasPositivePublishedCabinetPrice, notInConflict } from "../db";
+ import {
+   cabinets,
+@@ -22,7 +16,6 @@ import {
+   crmDealDesigns,
+   affiliates,
+   codeAliases,
+-  emailSettings,
+   crmDeals,
+   vendorProducts,
+   hardwareShippingProfiles,
+@@ -61,6 +54,7 @@ import { callerCanReadOrder, generateOrderAccessToken } from "../lib/orderAccess
+ import { enrichAdminOrderRows, loadAdminOrderDetail } from "../lib/adminOrderRead";
+ import { joinUniqueLabels } from "../lib/orderMoney";
+ import { persistOrderCostSnapshot, withDistributorCostSnapshots } from "../lib/orderCostSnapshot";
++import { adminMarkOrderPaid, attachOrderFulfillmentOverlay, backfillOrderCrm, markOrderShipped, markOrderSigned, markOrderVerified, notifyOrderDistributors, onOrderPlaced } from "../lib/orderSideEffects";
+ import { readStripeChargeFacts } from "../lib/stripeChargeFacts";
+ import { choosePromotedPrice, type PricedCandidate } from "@shared/vendorPromotions";
+ import { loadActivePromotionRules, loadPublishedCabinetPriceRows, priceLineWithPromotion } from "../vendorPromotionPricing";
+@@ -1373,10 +1367,9 @@ export const ordersRouter = router({
+           link: `/admin/orders/${insertId}`,
+         });
+       }
+-      // NOTE: Per owner workflow, a submitted order should eventually be emailed
+-      // to the distributor with copies to affiliates, and confirmed by the
+-      // originator/affiliate. That email step is DEFERRED until distributor email
+-      // is wired. For now we only persist the request.
++      if (input.submit) {
++        await onOrderPlaced(insertId);
++      }
+       return { id: insertId, requestNumber, freightCents: freightQuoteCents, accessToken };
+     }),
+ 
+@@ -1530,7 +1523,7 @@ export const ordersRouter = router({
+         .from(orderRequests)
+         .orderBy(desc(orderRequests.createdAt));
+       const filtered = input?.status ? rows.filter((r) => r.status === input.status) : rows;
+-      return enrichAdminOrderRows(db, filtered);
++      return attachOrderFulfillmentOverlay(db, await enrichAdminOrderRows(db, filtered));
+     }),
+ 
+   // ─── Admin: orders with resolved PO SKUs ─────────────────────────────────
+@@ -1697,7 +1690,7 @@ export const ordersRouter = router({
+           distributorName: orderDistName,
+         };
+       });
+-      return enrichAdminOrderRows(db, withPoSkus);
++      return attachOrderFulfillmentOverlay(db, await enrichAdminOrderRows(db, withPoSkus));
+     }),
+ 
+   // Admin-only invoice breakdown. Costs, margin, and the Stripe fee stay off
+@@ -1721,188 +1714,62 @@ export const ordersRouter = router({
+       });
+     }),
+ 
+-  // ─── Send confirmed order to the distributor ───────────────────────────────
+-  // Admin-triggered after review. Resolves the order's owning distributor, builds
+-  // a human-readable PO plus a NetSuite-ready CSV, and emails it to the
+-  // distributor's order-intake inbox with CC copies (affiliate/sales). The
+-  // NetSuite direct-API mode is stubbed: when a line is set to "netsuite_api" we
+-  // still email the CSV and note that direct push is pending credentials.
++  // Admin resend. Automatic sends are idempotent; this forces another email.
+   sendToDistributor: adminProcedure
+     .input(z.object({ id: z.number().int().positive() }))
+     .mutation(async ({ input, ctx }) => {
+-      if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
+-      const db = await getDb();
+-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+-
+-      const rows = await db
+-        .select()
+-        .from(orderRequests)
+-        .where(eq(orderRequests.id, input.id))
+-        .limit(1);
+-      const order = rows[0];
+-      if (!order) throw new TRPCError({ code: "NOT_FOUND", message: "Order not found" });
+-
+-      const lines = (order.lineItems ?? []) as OrderLineItem[];
+-      if (lines.length === 0)
+-        throw new TRPCError({ code: "BAD_REQUEST", message: "Order has no line items." });
+-
+-      // Resolve the owning distributor from the line items' SKUs (most common),
+-      // falling back to the order-level style's distributor.
+-      const cabinetIds = lines.map((l) => l.cabinetId).filter((x): x is number => typeof x === "number");
+-      const styleIds = new Set<number>();
+-      for (const l of lines) if (l.styleId) styleIds.add(l.styleId);
+-      if (order.styleId) styleIds.add(order.styleId);
+-
+-      const skuRows =
+-        cabinetIds.length && styleIds.size
+-          ? await db
+-              .select({
+-                cabinetId: distributorSkus.cabinetId,
+-                styleId: distributorSkus.styleId,
+-                distributorId: distributorSkus.distributorId,
+-                distributorSku: distributorSkus.distributorSku,
+-                distributorCode: distributors.code,
+-                styleCode: doorStyles.styleCode,
+-              })
+-              .from(distributorSkus)
+-              .innerJoin(distributors, eq(distributorSkus.distributorId, distributors.id))
+-              .innerJoin(doorStyles, eq(distributorSkus.styleId, doorStyles.id))
+-              .where(
+-                and(
+-                  inArray(distributorSkus.cabinetId, cabinetIds),
+-                  inArray(distributorSkus.styleId, Array.from(styleIds)),
+-                  eq(distributorSkus.isAvailable, true)
+-                )
+-              )
+-          : [];
+-
+-      const skuByKey = new Map<string, { poSku: string; distributorId: number }>();
+-      const distCount = new Map<number, number>();
+-      for (const r of skuRows) {
+-        const key = `${r.cabinetId}-${r.styleId}`;
+-        if (!skuByKey.has(key)) {
+-          skuByKey.set(key, {
+-            poSku: `${r.distributorCode.toLowerCase()}-${r.styleCode.toLowerCase()}-${r.distributorSku.toLowerCase()}`,
+-            distributorId: r.distributorId,
+-          });
+-        }
+-        distCount.set(r.distributorId, (distCount.get(r.distributorId) ?? 0) + 1);
+-      }
+-      let distributorId: number | null = null;
+-      let bestN = -1;
+-      for (const [id, n] of Array.from(distCount.entries())) {
+-        if (n > bestN) {
+-          bestN = n;
+-          distributorId = id;
+-        }
+-      }
+-      if (distributorId == null) {
+-        throw new TRPCError({
+-          code: "BAD_REQUEST",
+-          message: "Could not resolve a distributor for this order (no matched SKUs).",
+-        });
+-      }
++      const result = await notifyOrderDistributors(input.id, { force: true, actor: ctx.user.name || "Admin" });
++      const distributorName = result.records.find((row) => row.status === "sent")?.distributorName ?? result.records[0]?.distributorName ?? null;
++      return { id: input.id, sentTo: result.sentTo, status: result.status, error: result.error, records: result.records, distributorName };
++    }),
+ 
+-      const distRows = await db
+-        .select()
+-        .from(distributors)
+-        .where(eq(distributors.id, distributorId))
+-        .limit(1);
+-      const dist = distRows[0];
+-      if (!dist) throw new TRPCError({ code: "NOT_FOUND", message: "Distributor not found" });
+-      if (!dist.orderEmail) {
+-        throw new TRPCError({
+-          code: "BAD_REQUEST",
+-          message: `No order email is set for ${dist.brandName || dist.name}. Add one in Distributor Fulfillment settings.`,
+-        });
+-      }
+-      const emailRows = await db.select().from(emailSettings).limit(1);
+-      const emailCfg = emailRows[0];
+-      if (!emailSettingsReady(emailCfg)) {
+-        throw new TRPCError({
+-          code: "PRECONDITION_FAILED",
+-          message:
+-            "Email is not configured or is disabled. Set up SMTP in Admin → Email Settings before sending orders.",
+-        });
+-      }
++  resendDistributorEmail: adminProcedure
++    .input(z.object({ id: z.number().int().positive() }))
++    .mutation(async ({ input, ctx }) => {
++      const result = await notifyOrderDistributors(input.id, { force: true, actor: ctx.user.name || "Admin" });
++      const distributorName = result.records.find((row) => row.status === "sent")?.distributorName ?? result.records[0]?.distributorName ?? null;
++      return { id: input.id, sentTo: result.sentTo, status: result.status, error: result.error, records: result.records, distributorName };
++    }),
+ 
+-      // Build the NetSuite-ready lines + CSV + text body.
+-      const nsLines: NetsuiteOrderLine[] = lines.map((l) => {
+-        const sid = l.styleId ?? order.styleId ?? null;
+-        const key = l.cabinetId && sid ? `${l.cabinetId}-${sid}` : null;
+-        const poSku = key ? skuByKey.get(key)?.poSku ?? null : null;
+-        return {
+-          poSku,
+-          masterCode: l.masterCode,
+-          rawCode: l.rawCode,
+-          description: l.description,
+-          qty: l.qty,
+-          unitPrice: l.unitPrice ?? null,
+-        };
+-      });
+-      const header = {
+-        orderNumber: order.requestNumber,
+-        customerName: order.originatorName,
+-        styleName: order.styleName,
+-        deliveryMethod: order.deliveryMethod,
+-        orderDate: new Date(order.createdAt).toISOString(),
+-      };
+-      const csv = buildNetsuiteOrderCsv(header, nsLines);
+-      const distName = dist.brandName || dist.name;
+-      const text = buildOrderEmailText(header, nsLines, {
+-        distributorName: distName,
+-        pickupAddress: dist.pickupAddress,
+-        totalAmount: order.totalAmount,
+-      });
++  markVerified: adminProcedure
++    .input(z.object({ id: z.number().int().positive() }))
++    .mutation(async ({ input, ctx }) => {
++      await markOrderVerified(input.id, ctx.user.name || "Admin");
++      return { id: input.id };
++    }),
+ 
+-      const cc = (dist.ccEmails ?? "")
+-        .split(/[,;]+/)
+-        .map((s) => s.trim())
+-        .filter(Boolean);
+-      const apiNote =
+-        dist.fulfillmentMode === "netsuite_api"
+-          ? "\n\n[Note] This line is configured for NetSuite direct-API push, which is not yet activated. The order is delivered by email with the NetSuite CSV attached in the meantime."
+-          : "";
+-
+-      const result = await sendEmailViaSettings(emailCfg!, {
+-        to: dist.orderEmail,
+-        cc: cc.length ? cc : undefined,
+-        subject: `Purchase Order ${order.requestNumber} — Cabinet Dealz`,
+-        text: text + apiNote,
+-        replyTo: order.originatorEmail ?? undefined,
+-        attachments: [
+-          {
+-            filename: `PO-${order.requestNumber}.csv`,
+-            content: csv,
+-            contentType: "text/csv",
+-          },
+-        ],
+-      });
+-      if (!result.success) {
+-        throw new TRPCError({
+-          code: "INTERNAL_SERVER_ERROR",
+-          message: result.error || "Failed to send the order email.",
+-        });
+-      }
++  markShipped: adminProcedure
++    .input(z.object({
++      id: z.number().int().positive(),
++      carrier: z.string().trim().max(120).optional(),
++      tracking: z.string().trim().max(255).optional(),
++    }))
++    .mutation(async ({ input, ctx }) => {
++      await markOrderShipped(input.id, { by: ctx.user.name || "Admin", carrier: input.carrier, tracking: input.tracking });
++      return { id: input.id };
++    }),
+ 
+-      const recipients = [dist.orderEmail, ...cc].join(", ");
+-      await db
+-        .update(orderRequests)
+-        .set({
+-          distributorId,
+-          sentToDistributorAt: new Date(),
+-          sentToDistributorEmail: recipients,
+-        })
+-        .where(eq(orderRequests.id, order.id));
++  markSigned: adminProcedure
++    .input(z.object({
++      id: z.number().int().positive(),
++      signerName: z.string().trim().max(255).optional(),
++    }))
++    .mutation(async ({ input, ctx }) => {
++      await markOrderSigned(input.id, { by: ctx.user.name || "Admin", signerName: input.signerName });
++      return { id: input.id };
++    }),
+ 
+-      return {
+-        id: order.id,
+-        sentTo: recipients,
+-        distributorName: distName,
+-        fulfillmentMode: dist.fulfillmentMode,
+-      };
++  adminMarkPaid: adminProcedure
++    .input(z.object({ id: z.number().int().positive() }))
++    .mutation(async ({ input, ctx }) => {
++      await adminMarkOrderPaid(input.id, ctx.user.name || "Admin");
++      return { id: input.id };
+     }),
+ 
++  backfillCrmSales: adminProcedure
++    .input(z.object({ apply: z.boolean().default(false) }))
++    .mutation(async ({ input }) => backfillOrderCrm(!input.apply)),
++
+   // ─── Persisted manual-fix alias ────────────────────────────────────────────
+   // When a user resolves an unrecognized order code by hand (Fix/swap), remember
+   // the mapping so the same raw code auto-resolves next time. Keyed by the
+diff --git a/server/routers/stripeInvoices.ts b/server/routers/stripeInvoices.ts
+index 17e321d..e09de95 100644
+--- a/server/routers/stripeInvoices.ts
++++ b/server/routers/stripeInvoices.ts
+@@ -19,6 +19,7 @@ import {
+   type StripeMode,
+   type StripePaymentStatus,
+ } from "../stripePaymentRecords";
++import { noteStripeMatchedPayment } from "../lib/orderSideEffects";
+ 
+ const listInput = z.object({
+   search: z.string().max(200).optional(),
+@@ -138,7 +139,11 @@ export const stripeInvoicesRouter = router({
+     const accounts: Array<{ mode: StripeMode; charges: number; sessions: number; invoices: number; upserted: number; created: number; truncated: boolean }> = [];
+     for (const target of targets) {
+       try {
+-        const result = await syncStripeAccount(historyReader(target.secretKey), { store, links });
++        const result = await syncStripeAccount(historyReader(target.secretKey), {
++          store,
++          links,
++          onLinkedPayment: ({ orderId, status }) => noteStripeMatchedPayment(orderId, status),
++        });
+         accounts.push({ mode: target.mode, ...result });
+       } catch (error) {
+         const message = redactSecrets(error instanceof Error ? error.message : "Stripe request failed");
+diff --git a/server/routers/vendorSamples.ts b/server/routers/vendorSamples.ts
+index 5a869a9..cf7e6a3 100644
+--- a/server/routers/vendorSamples.ts
++++ b/server/routers/vendorSamples.ts
+@@ -3,6 +3,7 @@ import { z } from "zod";
+ import { TRPCError } from "@trpc/server";
+ import { adminProcedure, protectedProcedure, router, supplierProfileProcedure } from "../_core/trpc";
+ import { getDb } from "../db";
++import { syncStoredOrderCrm } from "../lib/orderSideEffects";
+ import {
+   cabinets,
+   distributorSkus,
+@@ -344,6 +345,7 @@ export const vendorSamplesRouter = router({
+       deliveryMethod: "ship",
+     });
+     const id = (result as unknown as [{ insertId: number }])[0].insertId;
++    await syncStoredOrderCrm(id);
+     return { id, affiliateId };
+   }),
+ 
+diff --git a/server/salesForecast/load.ts b/server/salesForecast/load.ts
+index 18c0f18..6a62ca0 100644
+--- a/server/salesForecast/load.ts
++++ b/server/salesForecast/load.ts
+@@ -202,7 +202,7 @@ export async function runSalesForecast(input: {
+         ? "ordered"
+         : stage === "lost"
+           ? "lost"
+-          : stage === "won"
++          : stage === "won" || stage === "new_sale"
+             ? "won"
+             : stage === "quoted"
+               ? "quoted"
+diff --git a/server/stripe.ts b/server/stripe.ts
+index 4fe5e6d..e3709fd 100644
+--- a/server/stripe.ts
++++ b/server/stripe.ts
+@@ -10,6 +10,7 @@ import { orderRequests } from "../drizzle/schema";
+ import { eq } from "drizzle-orm";
+ import { requireStripeCredentials } from "./stripeConfig";
+ import { createHardwareCommissionSnapshot } from "./lib/hardwareCommissionSnapshot";
++import { onOrderPaid } from "./lib/orderSideEffects";
+ import { buildHostedCheckoutPaymentFields, checkoutSessionMetadata } from "./stripePaymentRecords";
+ 
+ // ─── Stripe client ────────────────────────────────────────────────────────────
+@@ -136,5 +137,6 @@ export async function fulfillOrder(
+     .limit(1);
+   if (!paidOrder) return null;
+   await createHardwareCommissionSnapshot(paidOrder.id);
++  await onOrderPaid(paidOrder.id);
+   return paidOrder.id;
+ }
+diff --git a/server/stripePaymentRecords.ts b/server/stripePaymentRecords.ts
+index d281d89..8a30bdb 100644
+--- a/server/stripePaymentRecords.ts
++++ b/server/stripePaymentRecords.ts
+@@ -724,7 +724,11 @@ export interface StripeSyncAccountResult {
+ 
+ export async function syncStripeAccount(
+   reader: StripeHistoryReader,
+-  deps: { store: StripePaymentStore; links: PaymentLinkContext },
++  deps: {
++    store: StripePaymentStore;
++    links: PaymentLinkContext;
++    onLinkedPayment?: (event: { orderId: number; status: string }) => Promise<void>;
++  },
+ ): Promise<Omit<StripeSyncAccountResult, "mode">> {
+   const charges = await listPages((startingAfter) => reader.listCharges(startingAfter));
+   const sessions = await listPages((startingAfter) => reader.listCheckoutSessions(startingAfter));
+@@ -737,6 +741,13 @@ export async function syncStripeAccount(
+     const saved = await upsertStripePayment(deps.store, enriched);
+     upserted += 1;
+     if (saved.created) created += 1;
++    if (enriched.orderRequestId && deps.onLinkedPayment) {
++      try {
++        await deps.onLinkedPayment({ orderId: enriched.orderRequestId, status: enriched.status });
++      } catch (error) {
++        console.error(`[OrderCrm] Stripe sync match failed for order ${enriched.orderRequestId}: ${error instanceof Error ? error.message : String(error)}`);
++      }
++    }
+   };
+   for (const charge of charges.items) {
+     const draft = fromCharge(charge, blankDraft({ id: "sync", type: "charge.succeeded" }), "charge.succeeded");
+diff --git a/server/stripeWebhook.ts b/server/stripeWebhook.ts
+index f5dc172..15e2455 100644
+--- a/server/stripeWebhook.ts
++++ b/server/stripeWebhook.ts
+@@ -9,8 +9,11 @@ import express from "express";
+ import type Stripe from "stripe";
+ import { fulfillOrder, getStripe } from "./stripe";
+ import { getDb } from "./db";
++import { orderRequests } from "../drizzle/schema";
++import { eq } from "drizzle-orm";
+ import { createHardwareCommissionSnapshot } from "./lib/hardwareCommissionSnapshot";
+ import { markOrderPaidById, sendPaidOrderReceipt } from "./lib/orderReceiptEmail";
++import { flagOrderCrmRefund } from "./lib/orderSideEffects";
+ import { rememberOrderStripePayout } from "./lib/orderStripePayout";
+ import { createDbPaymentLinkContext, createDrizzleStripePaymentStore } from "./stripePaymentStore";
+ import {
+@@ -118,6 +121,22 @@ export function registerStripeWebhook(app: Express): void {
+             break;
+           }
+ 
++          case "charge.refunded": {
++            const charge = event.data.object as import("stripe").Stripe.Charge;
++            const metaId = Number(charge.metadata?.order_id);
++            let orderId = Number.isInteger(metaId) && metaId > 0 ? metaId : null;
++            const paymentIntentId = typeof charge.payment_intent === "string" ? charge.payment_intent : charge.payment_intent?.id ?? null;
++            if (!orderId && paymentIntentId) {
++              const db = await getDb();
++              const [row] = db
++                ? await db.select({ id: orderRequests.id }).from(orderRequests).where(eq(orderRequests.stripePaymentIntentId, paymentIntentId)).limit(1)
++                : [];
++              orderId = row?.id ?? null;
++            }
++            if (orderId) await flagOrderCrmRefund(orderId, "Stripe charge.refunded");
++            break;
++          }
++
+           case "payment_intent.payment_failed": {
+             const pi = event.data.object as import("stripe").Stripe.PaymentIntent;
+             console.warn(`[Stripe Webhook] Payment failed: ${pi.id}`);
+diff --git a/shared/crm.test.ts b/shared/crm.test.ts
+index 043931f..2c8c412 100644
+--- a/shared/crm.test.ts
++++ b/shared/crm.test.ts
+@@ -1,11 +1,17 @@
+ import { describe, expect, it } from "vitest";
+-import { CRM_PIPELINE_STAGES, CRM_SOURCES, CRM_STAGE_LABELS, CRM_STAGES } from "./crm";
++import { CRM_PIPELINE_STAGES, CRM_SOURCES, CRM_STAGE_LABELS, CRM_STAGES, isClosedStage, isWonRevenueStage } from "./crm";
+ 
+ describe("CRM Image Review workflow constants", () => {
+   it("keeps verified image requests in their own active pipeline lane", () => {
+     expect(CRM_STAGES).toContain("image_review");
+     expect(CRM_PIPELINE_STAGES).toContain("image_review");
+     expect(CRM_STAGE_LABELS.image_review.en).toBe("Image Review");
++    expect(CRM_STAGES.slice(0, 2)).toEqual(["new", "new_sale"]);
++    expect(CRM_PIPELINE_STAGES[1]).toBe("new_sale");
++    expect(CRM_STAGE_LABELS.new_sale.en).toBe("New Sale");
++    expect(isClosedStage("new_sale")).toBe(true);
++    expect(isWonRevenueStage("new_sale")).toBe(true);
++    expect(isWonRevenueStage("qualified")).toBe(false);
+     expect(CRM_SOURCES).toContain("verified_plan_image_request");
+   });
+ });
+diff --git a/shared/crm.ts b/shared/crm.ts
+index ccad567..9427444 100644
+--- a/shared/crm.ts
++++ b/shared/crm.ts
+@@ -2,16 +2,17 @@
+ // the client board (columns, labels). Keep enum values in sync with the
+ // `crm_deals` table in drizzle/schema.ts.
+ 
+-export const CRM_STAGES = ["new", "contacted", "qualified", "image_review", "quoted", "won", "lost"] as const;
++export const CRM_STAGES = ["new", "new_sale", "contacted", "qualified", "image_review", "quoted", "won", "lost"] as const;
+ export type CrmStage = (typeof CRM_STAGES)[number];
+ 
+-// Stages shown as draggable pipeline columns (won/lost are terminal outcomes
+-// rendered separately as collapsed/closed columns but still valid stages).
+-export const CRM_PIPELINE_STAGES: CrmStage[] = ["new", "contacted", "qualified", "image_review", "quoted"];
+-export const CRM_CLOSED_STAGES: CrmStage[] = ["won", "lost"];
++// Board order. New Sale sits beside New. Won stays so older closed deals
++// still have a column; it is not an open lead stage.
++export const CRM_PIPELINE_STAGES: CrmStage[] = ["new", "new_sale", "contacted", "qualified", "image_review", "quoted"];
++export const CRM_CLOSED_STAGES: CrmStage[] = ["new_sale", "won", "lost"];
+ 
+ export const CRM_STAGE_LABELS: Record<CrmStage, { en: string; es: string }> = {
+   new: { en: "New", es: "Nuevo" },
++  new_sale: { en: "New Sale", es: "Nueva venta" },
+   contacted: { en: "Contacted", es: "Contactado" },
+   qualified: { en: "Qualified", es: "Calificado" },
+   image_review: { en: "Image Review", es: "Revisión de imagen" },
+@@ -38,8 +39,12 @@ export type CrmSource = (typeof CRM_SOURCES)[number];
+ export const CRM_LANGUAGES = ["en", "es"] as const;
+ export type CrmLanguage = (typeof CRM_LANGUAGES)[number];
+ 
+-export function isClosedStage(stage: CrmStage): boolean {
+-  return stage === "won" || stage === "lost";
++export function isWonRevenueStage(stage: string | null | undefined): boolean {
++  return stage === "won" || stage === "new_sale";
++}
++
++export function isClosedStage(stage: CrmStage | string | null | undefined): boolean {
++  return stage === "won" || stage === "lost" || stage === "new_sale";
+ }
+ 
+ // ─── CRM email (send-from-card) ─────────────────────────────────────────────────
+diff --git a/shared/crmMailbox.ts b/shared/crmMailbox.ts
+index a018e02..70e81d2 100644
+--- a/shared/crmMailbox.ts
++++ b/shared/crmMailbox.ts
+@@ -4,7 +4,7 @@
+ // public settings shape.
+ 
+ import type { CrmPriority, CrmStage } from "./crm";
+-import { isClosedStage } from "./crm";
++import { isClosedStage, isWonRevenueStage } from "./crm";
+ 
+ export const CRM_EMAIL_PROVIDERS = ["gmail", "outlook", "yahoo", "custom"] as const;
+ export type CrmEmailProvider = (typeof CRM_EMAIL_PROVIDERS)[number];
+@@ -356,7 +356,7 @@ export function summarizeAffiliatePipelines(
+   for (const deal of deals) {
+     const affiliateId = deal.affiliateId ?? null;
+     const row = ensure(affiliateId);
+-    if (deal.stage === "won") row.wonCount += 1;
++    if (isWonRevenueStage(deal.stage)) row.wonCount += 1;
+     if (!isClosedStage(deal.stage)) {
+       row.openCount += 1;
+       const value = Number(deal.estimatedValue ?? 0);
+@@ -402,7 +402,7 @@ export function pickPipelineDeal(candidates: PipelineCandidate[], needle: Pipeli
+   const email = needle.contactEmail?.trim().toLowerCase();
+   if (needle.match === "email" && email) {
+     return scoped.find((row) => {
+-      if (row.stage === "won" || row.stage === "lost") return false;
++      if (row.stage === "won" || row.stage === "lost" || row.stage === "new_sale") return false;
+       return (row.contactEmail ?? "").trim().toLowerCase() === email;
+     }) ?? null;
+   }
+@@ -415,6 +415,7 @@ export const CRM_STAGE_COLORS: Record<CrmStage, string> = {
+   qualified: "#0f766e",
+   image_review: "#7c3aed",
+   quoted: "#c9a227",
++  new_sale: "#047857",
+   won: "#15803d",
+   lost: "#be123c",
+ };
+diff --git a/shared/customerDirectory.ts b/shared/customerDirectory.ts
+index e435715..495740e 100644
+--- a/shared/customerDirectory.ts
++++ b/shared/customerDirectory.ts
+@@ -109,6 +109,7 @@ const STAGE_TO_STATUS: Record<string, CustomerStatus> = {
+   qualified: "contacted",
+   image_review: "contacted",
+   quoted: "quoted",
++  new_sale: "won",
+   won: "won",
+   lost: "lost",
+ };
+diff --git a/shared/orderStatusTrail.test.ts b/shared/orderStatusTrail.test.ts
+new file mode 100644
+index 0000000..79e7bb9
+--- /dev/null
++++ b/shared/orderStatusTrail.test.ts
+@@ -0,0 +1,52 @@
++import { describe, expect, it } from "vitest";
++import { buildOrderStatusTrail } from "./orderStatusTrail";
++
++describe("order status trail", () => {
++  it("shows email sent from the distributor email stamp and address", () => {
++    const steps = buildOrderStatusTrail({
++      distributorEmailStatus: "sent",
++      distributorEmailSentAt: "2026-10-27T15:04:00.000Z",
++      distributorEmailTo: "orders@mill.com",
++    });
++    expect(steps.map((step) => step.label)).toEqual([
++      "Email sent",
++      "Order verified",
++      "Order shipped",
++      "Order signed",
++    ]);
++    expect(steps[0]).toMatchObject({ done: true, at: "2026-10-27T15:04:00.000Z", detail: "orders@mill.com" });
++    expect(steps.slice(1).every((step) => !step.done)).toBe(true);
++  });
++
++  it("explains a missing distributor email without marking the step done", () => {
++    const [email] = buildOrderStatusTrail({ distributorEmailStatus: "no_email" });
++    expect(email.done).toBe(false);
++    expect(email.detail).toBe("No order email set");
++  });
++
++  it("uses a shipment row when the order shipped columns are empty", () => {
++    const steps = buildOrderStatusTrail({
++      shipments: [{ status: "shipped", shippedAt: "2026-10-27T18:00:00.000Z", carrier: "UPS", trackingNumber: "1Z999", shippedBy: "Vendor dist:4" }],
++    });
++    expect(steps[2]).toMatchObject({ done: true, actor: "Vendor dist:4", detail: "UPS · 1Z999" });
++  });
++
++  it("marks signed from a delivery signature even without a manual stamp", () => {
++    const steps = buildOrderStatusTrail({
++      shipments: [{ status: "shipped", shippedAt: "2026-10-27T18:00:00.000Z", deliveredWithSignature: true, signatureName: "A. Rivera" }],
++    });
++    expect(steps[3]).toMatchObject({ done: true, actor: "Delivery signature", detail: "A. Rivera" });
++  });
++
++  it("keeps the verifier and signer names on the completed steps", () => {
++    const steps = buildOrderStatusTrail({
++      orderVerifiedAt: "2026-10-27T16:00:00.000Z",
++      orderVerifiedBy: "Dana Admin",
++      orderSignedAt: "2026-10-28T12:00:00.000Z",
++      orderSignedBy: "Dana Admin",
++      signerName: "Jamie Carter",
++    });
++    expect(steps[1]).toMatchObject({ done: true, actor: "Dana Admin" });
++    expect(steps[3]).toMatchObject({ done: true, actor: "Dana Admin", detail: "Jamie Carter" });
++  });
++});
+diff --git a/shared/orderStatusTrail.ts b/shared/orderStatusTrail.ts
+new file mode 100644
+index 0000000..9f2bc64
+--- /dev/null
++++ b/shared/orderStatusTrail.ts
+@@ -0,0 +1,117 @@
++// Pure status trail for an incoming order. The admin and sales screens render
++// these four steps; the server stores the timestamps and the UI refreshes them.
++
++export type OrderTrailKey = "email_sent" | "verified" | "shipped" | "signed";
++
++export type OrderShipmentFact = {
++  status?: string | null;
++  shippedAt?: string | Date | null;
++  carrier?: string | null;
++  trackingNumber?: string | null;
++  shippedBy?: string | null;
++  signatureName?: string | null;
++  deliveredWithSignature?: boolean | null;
++};
++
++export type OrderTrailInput = {
++  distributorEmailStatus?: string | null;
++  distributorEmailSentAt?: string | Date | null;
++  distributorEmailTo?: string | null;
++  distributorEmailError?: string | null;
++  sentToDistributorAt?: string | Date | null;
++  sentToDistributorEmail?: string | null;
++  orderVerifiedAt?: string | Date | null;
++  orderVerifiedBy?: string | null;
++  orderShippedAt?: string | Date | null;
++  orderShippedBy?: string | null;
++  shipmentCarrier?: string | null;
++  shipmentTracking?: string | null;
++  orderSignedAt?: string | Date | null;
++  orderSignedBy?: string | null;
++  signerName?: string | null;
++  shipments?: OrderShipmentFact[] | null;
++};
++
++export type OrderTrailStep = {
++  key: OrderTrailKey;
++  label: string;
++  done: boolean;
++  at: string | null;
++  actor: string | null;
++  detail: string | null;
++};
++
++export function trailTimestamp(value: string | Date | null | undefined): string | null {
++  if (value == null || value === "") return null;
++  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value.toISOString();
++  const parsed = new Date(value);
++  return Number.isNaN(parsed.getTime()) ? value : parsed.toISOString();
++}
++
++function shippedShipment(shipments: OrderShipmentFact[]): OrderShipmentFact | null {
++  return shipments.find((row) => row.status === "shipped" || row.shippedAt != null) ?? null;
++}
++
++function signedShipment(shipments: OrderShipmentFact[]): OrderShipmentFact | null {
++  return shipments.find((row) => row.deliveredWithSignature || (row.signatureName ?? "").trim()) ?? null;
++}
++
++export function buildOrderStatusTrail(input: OrderTrailInput): OrderTrailStep[] {
++  const shipments = input.shipments ?? [];
++  const shipped = shippedShipment(shipments);
++  const signed = signedShipment(shipments);
++  const emailAt = trailTimestamp(input.distributorEmailSentAt) ?? trailTimestamp(input.sentToDistributorAt);
++  const emailTo = (input.distributorEmailTo || input.sentToDistributorEmail || "").trim() || null;
++  const emailSent = input.distributorEmailStatus === "sent" || emailAt != null;
++  const emailDetail = emailSent
++    ? emailTo
++    : input.distributorEmailStatus === "no_email"
++      ? "No order email set"
++      : input.distributorEmailStatus === "failed"
++        ? (input.distributorEmailError || "Email failed")
++        : input.distributorEmailError || null;
++
++  const shippedAt = trailTimestamp(input.orderShippedAt) ?? trailTimestamp(shipped?.shippedAt);
++  const carrier = input.shipmentCarrier || shipped?.carrier || null;
++  const tracking = input.shipmentTracking || shipped?.trackingNumber || null;
++  const shipDetail = [carrier, tracking].filter(Boolean).join(" · ") || null;
++
++  const signedAt = trailTimestamp(input.orderSignedAt);
++  const signatureDone = signedAt != null || signed != null;
++  const signer = (input.signerName || signed?.signatureName || "").trim() || null;
++
++  return [
++    {
++      key: "email_sent",
++      label: "Email sent",
++      done: emailSent,
++      at: emailAt,
++      actor: emailSent ? "Distributor email" : null,
++      detail: emailDetail,
++    },
++    {
++      key: "verified",
++      label: "Order verified",
++      done: trailTimestamp(input.orderVerifiedAt) != null,
++      at: trailTimestamp(input.orderVerifiedAt),
++      actor: input.orderVerifiedBy?.trim() || null,
++      detail: null,
++    },
++    {
++      key: "shipped",
++      label: "Order shipped",
++      done: shippedAt != null,
++      at: shippedAt,
++      actor: input.orderShippedBy?.trim() || shipped?.shippedBy?.trim() || (shipped ? "Shipment record" : null),
++      detail: shipDetail,
++    },
++    {
++      key: "signed",
++      label: "Order signed",
++      done: signatureDone,
++      at: signedAt,
++      actor: input.orderSignedBy?.trim() || (signed ? "Delivery signature" : null),
++      detail: signer,
++    },
++  ];
++}
+diff --git a/shared/salesForecast.ts b/shared/salesForecast.ts
+index f47fdc7..718c470 100644
+--- a/shared/salesForecast.ts
++++ b/shared/salesForecast.ts
+@@ -111,7 +111,7 @@ export function weightForDesign(
+   if (design.ordered) return { include: false, reason: "ordered", rate: 0 };
+   const stage = (design.crmStage ?? "").toLowerCase();
+   if (stage === "lost") return { include: false, reason: "lost", rate: 0 };
+-  if (stage === "won") return { include: true, reason: "won", rate: 1 };
++  if (stage === "won" || stage === "new_sale") return { include: true, reason: "won", rate: 1 };
+   return { include: true, reason: "age", rate: closeRateFraction(ageDaysFromUpdatedAt(design.updatedAt, now), brackets) };
+ }
+ 
+-- 
+2.43.0
+

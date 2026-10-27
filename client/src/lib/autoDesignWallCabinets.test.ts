@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { AEF_PRINTED_GEOMETRY_MARKER } from "@shared/aefFramelessGeometry";
 import { buildAutoDesignWallCabinets } from "./autoDesignWallCabinets";
 import {
   wallPlacementAt,
@@ -350,5 +351,24 @@ describe("buildAutoDesignWallCabinets", () => {
       cabinetId: 901, styleId: 77, cornerType: "diagonal", x: 0, y: 0,
     });
     expect(wallRunOffset(result.additions[1]!, "top", ROOM)).toBeCloseTo(36, 6);
+  });
+
+  it("reserves the 3/4-inch frameless end panel beside a sink window and uses the next exact width", () => {
+    const window: WallOpening = { uid: "sink-window", kind: "window", side: "top", offset: 36.75, width: 30, sill: 42, height: 36 };
+    const sink = onTopWall(ROOM, { uid: "sink", masterCode: "SB36", description: "Sink Base", placement: "base", width: 30, depth: 24 }, 36.75);
+    const base = onTopWall(ROOM, { uid: "base", masterCode: "B36", placement: "base", width: 36, depth: 24 }, 0);
+    const frameless = [
+      catalogCabinet({ id: 33, masterCode: "W3330", width: "33", height: "30.25", depth: "13.5", constructionMethod: AEF_PRINTED_GEOMETRY_MARKER }),
+      catalogCabinet({ id: 36, masterCode: "W3630", width: "36", height: "30.25", depth: "13.5", constructionMethod: AEF_PRINTED_GEOMETRY_MARKER }),
+    ];
+    const framed = [
+      catalogCabinet({ id: 133, masterCode: "W3330", width: "33", height: "30", depth: "12" }),
+      catalogCabinet({ id: 136, masterCode: "W3630", width: "36", height: "30", depth: "12" }),
+    ];
+    const framelessResult = build({ placed: [sink, base], catalog: frameless, openings: [window] });
+    const framedResult = build({ placed: [sink, base], catalog: framed, openings: [window] });
+    expect(framelessResult.additions.map((cabinet) => cabinet.masterCode)).toContain("W3330");
+    expect(framelessResult.additions.find((cabinet) => cabinet.masterCode === "W3330")?.width).toBe(33);
+    expect(framedResult.additions.map((cabinet) => cabinet.masterCode)).not.toContain("W3330");
   });
 });

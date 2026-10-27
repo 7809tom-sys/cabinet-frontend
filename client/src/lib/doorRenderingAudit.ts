@@ -106,6 +106,9 @@ export type DoorAuditRenderInput = {
   code: string | null;
   distributorName: string | null;
   samplePhotoUrl: string | null;
+  drawerSamplePhotoUrl?: string | null;
+  needsDoorOnlyPhoto?: boolean;
+  styleVerified?: boolean;
   color: string | null;
   sourceFingerprint: string;
   doorProfile: DoorAuditDoorProfile;
@@ -117,7 +120,11 @@ export type DoorAuditStyleRow = {
   code: string | null;
   distributorName: string | null;
   samplePhotoUrl: string | null;
+  /** Featured drawer photo. Compared with the approved reference; not replaced by it. */
   drawerSampleImageUrl: string | null;
+  drawerSamplePhotoUrl?: string | null;
+  needsDoorOnlyPhoto?: boolean;
+  styleVerified?: boolean;
   color: string | null;
   sourceFingerprint: string;
   doorProfile: DoorAuditDoorProfile;
@@ -176,7 +183,7 @@ export type DoorAuditListResult = {
 };
 
 export type DoorAuditCompareSlot = {
-  key: "sample" | "accepted" | "previous" | "latest";
+  key: "sample" | "drawer-sample" | "accepted" | "previous" | "latest";
   label: string;
   imageUrl: string | null;
   version: DoorAuditVersion | null;
@@ -255,6 +262,9 @@ export function doorAuditCompareSlots(row: DoorAuditStyleRow): DoorAuditCompareS
       ? { key: "sample", label: APPROVED_REFERENCE_LABEL, imageUrl: approvedUrl, version: null }
       : { key: "sample", label: "Sample photo", imageUrl: row.samplePhotoUrl, version: null },
   ];
+  if (row.drawerSamplePhotoUrl) {
+    slots.push({ key: "drawer-sample", label: "DRAWER_FRONT sample", imageUrl: row.drawerSamplePhotoUrl, version: null });
+  }
   const shown = new Set<number>();
   const pushVersion = (key: "accepted" | "previous", label: string, version: DoorAuditVersion | null | undefined) => {
     if (!version || version.versionId === latest?.versionId || shown.has(version.versionId)) return;
@@ -601,15 +611,21 @@ export function normalizeDoorAuditRenderInput(raw: unknown, renderingCommit?: un
   const profileSource = record.profile ?? record.doorProfile;
   const featuredDoor = text(record.samplePhotoUrl) ?? text(record.doorSampleImageUrl);
   const approved = text(asRecord(record.approvedReference)?.imageUrl) ?? text(record.approvedReferenceImageUrl);
+  const baseline = comparisonBaseline({
+    approvedReferenceImageUrl: approved,
+    samplePhotoUrl: featuredDoor,
+  });
   return {
     styleId,
     name: doorAuditCatalogName(record),
     code: styleCodeOf(record),
     distributorName: supplierName(record),
-    samplePhotoUrl: comparisonBaseline({
-      approvedReferenceImageUrl: approved,
-      samplePhotoUrl: featuredDoor,
-    }).imageUrl,
+    samplePhotoUrl: baseline.imageUrl,
+    drawerSamplePhotoUrl: text(record.drawerSamplePhotoUrl) ?? text(record.drawerSampleImageUrl),
+    // A combined featured swatch must not texture the capture. An approved
+    // render is a door face, so it is safe to use even when the featured photo is not.
+    needsDoorOnlyPhoto: baseline.source === "approved-reference" ? false : record.needsDoorOnlyPhoto === true,
+    styleVerified: record.styleVerified === false || record.styleVerified === 0 ? false : true,
     color: text(record.color),
     sourceFingerprint: text(record.sourceFingerprint) ?? text(record.renderingCommit) ?? text(renderingCommit) ?? "",
     doorProfile: normalizeProfile(profileSource),
@@ -637,7 +653,7 @@ export function normalizeDoorAuditStyle(raw: unknown): DoorAuditStyleRow | null 
     accepted.isCurrent = true;
   }
   const samplePhotoUrl = text(record.samplePhotoUrl) ?? text(record.doorSampleImageUrl);
-  const drawerSampleImageUrl = text(record.drawerSampleImageUrl);
+  const drawerSampleImageUrl = text(record.drawerSamplePhotoUrl) ?? text(record.drawerSampleImageUrl);
   const featured = featuredImagesAudit({
     approvedReferenceImageUrl: approvedReference?.imageUrl,
     doorSampleImageUrl: samplePhotoUrl,
@@ -651,6 +667,9 @@ export function normalizeDoorAuditStyle(raw: unknown): DoorAuditStyleRow | null 
     distributorName: supplierName(record),
     samplePhotoUrl,
     drawerSampleImageUrl,
+    drawerSamplePhotoUrl: drawerSampleImageUrl,
+    needsDoorOnlyPhoto: record.needsDoorOnlyPhoto === true,
+    styleVerified: record.styleVerified === false || record.styleVerified === 0 ? false : true,
     color: text(record.color),
     sourceFingerprint: text(record.sourceFingerprint)
       ?? text(asRecord(record.latestRender)?.renderingCommit)
@@ -907,15 +926,17 @@ export function enrichDoorAuditQueue(
     if (!style || !Number.isInteger(style.styleId)) return [];
     const known = byId.get(style.styleId);
     if (!known) return [style];
+    const baseline = comparisonBaseline({
+      approvedReferenceImageUrl: known.approvedReference?.imageUrl,
+      samplePhotoUrl: style.samplePhotoUrl ?? known.samplePhotoUrl,
+    });
     return [{
       ...style,
       name: style.name && style.name !== "Door style" ? style.name : known.name,
       code: style.code ?? known.code,
       distributorName: style.distributorName ?? known.distributorName,
-      samplePhotoUrl: comparisonBaseline({
-        approvedReferenceImageUrl: known.approvedReference?.imageUrl,
-        samplePhotoUrl: style.samplePhotoUrl ?? known.samplePhotoUrl,
-      }).imageUrl,
+      samplePhotoUrl: baseline.imageUrl,
+      needsDoorOnlyPhoto: baseline.source === "approved-reference" ? false : style.needsDoorOnlyPhoto,
       color: style.color ?? known.color,
       sourceFingerprint: style.sourceFingerprint || known.sourceFingerprint,
       doorProfile: profileIsBlank(style.doorProfile) ? known.doorProfile : style.doorProfile,

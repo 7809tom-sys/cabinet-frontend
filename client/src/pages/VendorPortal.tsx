@@ -35,6 +35,9 @@ import { Label } from "@/components/ui/label";
 import { csvEscape } from "@shared/inventoryForecast";
 import { VendorOtherProducts } from "@/components/vendor/VendorOtherProducts";
 import { VendorSalesForecast } from "@/components/vendor/VendorSalesForecast";
+import { pelicanVendorCostLabel } from "@/lib/vendorCostLabel";
+import { formatVendorCost } from "@shared/salesForecast";
+import { catalogEditorEntry, isInternalSalesRole, type CatalogEditorEntry } from "@shared/internalSales";
 import { VendorInventory } from "@/components/vendor/VendorInventory";
 import { VendorPricing } from "@/components/vendor/VendorPricing";
 import { VendorSamples } from "@/components/vendor/VendorSamples";
@@ -80,6 +83,12 @@ function money(v: string | null | undefined): string {
   if (v == null) return "—";
   const n = Number(v);
   return Number.isFinite(n) ? `$${n.toFixed(2)}` : "—";
+}
+function cabinetVendorCostLabel(value: unknown): string {
+  if (value == null || value === "") return "No cost on file";
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return "No cost on file";
+  return formatVendorCost(parsed);
 }
 function supplierCatalogLineLabel(line: { code: string; name: string }) {
   if (line.code === "USCD") return `Framed — ${line.name}`;
@@ -136,6 +145,12 @@ function PelicanVendorCatalogPage({
 }) {
   const utils = trpc.useUtils();
   const [search, setSearch] = useState("");
+  const openedEditId = useRef<number | null>(null);
+  const editId = Number(new URLSearchParams(window.location.search).get("edit"));
+  const productForEdit = trpc.pelican.productForVendorEdit.useQuery(
+    { id: editId },
+    { enabled: Number.isInteger(editId) && editId > 0 },
+  );
   const [catalogPage, setCatalogPage] = useState(0);
   const [editingProduct, setEditingProduct] = useState<any | null>(null);
   const [draft, setDraft] = useState({ name: "", description: "", imageUrl: "", yourCost: "", retailPrice: "" });
@@ -176,6 +191,12 @@ function PelicanVendorCatalogPage({
     setEditingProduct(item);
     setDraft({ name: item.name ?? "", description: item.description ?? "", imageUrl: item.imageUrl ?? "", yourCost: item.yourCost == null ? "" : String(item.yourCost), retailPrice: item.retailPrice == null ? "" : String(item.retailPrice) });
   };
+  useEffect(() => {
+    const product = productForEdit.data;
+    if (!product || openedEditId.current === product.id) return;
+    openedEditId.current = product.id;
+    openEditor(product);
+  }, [productForEdit.data]);
   const parseMoney = (value: string, label: string): number | null | undefined => {
     if (!value.trim()) return null;
     const parsed = Number(value);
@@ -356,6 +377,11 @@ function PelicanVendorCatalogPage({
             <div className="grid gap-2">
               <Label htmlFor="pelican-edit-description">Description</Label>
               <Textarea id="pelican-edit-description" rows={5} value={draft.description} onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))} />
+            </div>
+            <div className="grid gap-2">
+              <Label>Vendor cost</Label>
+              <p className="text-sm" data-testid="pelican-vendor-cost">{pelicanVendorCostLabel(editingProduct?.vendorWholesale)}</p>
+              <p className="text-xs text-muted-foreground">Read-only. This is the product&apos;s vendorWholesale, the same vendor cost shown on Sales Forecast. Editing vendor cost is not available on this screen.</p>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="grid gap-2">
@@ -1127,7 +1153,7 @@ function CatalogPage() {
   const myLine = trpc.distributorPortal.myLine.useQuery(adminDistId ? { distributorId: adminDistId } : undefined);
   const [styleId, setStyleId] = useState<string>(ALL);
   const [category, setCategory] = useState<string>(ALL);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get("sku") ?? "");
   const [onlyHidden, setOnlyHidden] = useState(false);
   const [catalogPage, setCatalogPage] = useState(0);
   const [editingPrice, setEditingPrice] = useState<{ skuId: number; field: string; value: string } | null>(null);
@@ -1311,6 +1337,7 @@ function CatalogPage() {
                 <TableHead className="w-16">Image</TableHead>
                 <TableHead>SKU</TableHead>
                 <TableHead>Description</TableHead>
+                <TableHead className="text-right">Vendor cost</TableHead>
                 <TableHead>Style</TableHead>
                 <TableHead>Category</TableHead>
                 <TableHead className="text-right">List</TableHead>
@@ -1336,6 +1363,7 @@ function CatalogPage() {
                   </TableCell>
                   <TableCell className="font-mono text-xs">{item.masterCode ?? item.distributorSku ?? item.platformSku}</TableCell>
                   <TableCell className="max-w-[200px] truncate text-sm">{item.description ?? item.supplierCabinetName ?? "Pending master-cabinet mapping"}</TableCell>
+                  <TableCell className="text-right text-sm" data-testid="cabinet-vendor-cost">{cabinetVendorCostLabel(item.vendorWholesale)}</TableCell>
                   <TableCell><Badge variant="secondary" className="text-xs">{item.styleName}</Badge></TableCell>
                   <TableCell className="text-xs">{item.category ?? <span className="text-muted-foreground">Unmapped</span>}</TableCell>
                   <TableCell className="text-right">
@@ -1407,7 +1435,7 @@ function CatalogPage() {
               ))}
               {catalog.data?.items.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={12} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={13} className="text-center py-8 text-muted-foreground">
                     No products found matching your filters.
                   </TableCell>
                 </TableRow>
@@ -1424,6 +1452,8 @@ function CatalogPage() {
           <Button variant="outline" size="sm" aria-label="Next page" disabled={(catalogPage + 1) * CATALOG_PAGE_SIZE >= (catalog.data?.total ?? 0) || catalog.isFetching} onClick={() => setCatalogPage((page) => page + 1)}>Next page</Button>
         </div>
       </div>}
+
+      <p className="text-xs text-muted-foreground">Vendor cost is this SKU&apos;s vendorWholesale and is read-only. Description shown here is the master catalog description. Photo upload, prices, visibility, and on-hand inventory use this screen&apos;s existing controls.</p>
 
       {/* Hidden file input for image upload */}
       <input
@@ -4478,6 +4508,30 @@ function VendorLoginForm() {
   );
 }
 
+function SalesProductEditor({ entry }: { entry: Exclude<CatalogEditorEntry, { kind: "unspecified" }> }) {
+  const distributorId = entry.kind === "cabinet" ? entry.distributorId : undefined;
+  return (
+    <AdminDistributorContext.Provider value={distributorId}>
+      <div className="mx-auto max-w-6xl space-y-4 p-6">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold">Product editor</h1>
+            <p className="text-sm text-muted-foreground">
+              Opened from Sales Forecast for this product. Vendor cost stays read-only. Other vendors&apos; portals stay closed.
+            </p>
+          </div>
+          <Button variant="outline" onClick={() => { window.location.href = "/admin?tab=sales-forecast"; }}>
+            <ArrowLeft className="mr-2 h-4 w-4" /> Back to Sales Forecast
+          </Button>
+        </div>
+        {entry.kind === "pelican"
+          ? <PelicanVendorCatalogPage category={ALL} onCategoryChange={() => undefined} />
+          : <CatalogPage />}
+      </div>
+    </AdminDistributorContext.Provider>
+  );
+}
+
 // ─── Main Vendor Portal Component ─────────────────────────────────────────────
 export default function VendorPortal() {
   const { user, loading } = useAuth();
@@ -4583,6 +4637,27 @@ export default function VendorPortal() {
 
   if (!user) {
     return <VendorLoginForm />;
+  }
+
+  const editorEntry = catalogEditorEntry(params);
+  const openForecastEditor = editorEntry.kind !== "unspecified" && (isInternalSalesRole(user.role) || user.role === "admin");
+  if (isInternalSalesRole(user.role) && editorEntry.kind === "unspecified") {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="max-w-md space-y-4 text-center">
+          <h1 className="text-2xl font-bold">Product editor</h1>
+          <p className="text-muted-foreground">
+            Open a product from Sales Forecast. This page edits that product and does not open another vendor&apos;s portal.
+          </p>
+          <Button variant="outline" onClick={() => { window.location.href = "/admin?tab=sales-forecast"; }}>
+            <ArrowLeft className="mr-2 h-4 w-4" /> Back to Sales Forecast
+          </Button>
+        </div>
+      </div>
+    );
+  }
+  if (openForecastEditor && editorEntry.kind !== "unspecified") {
+    return <SalesProductEditor entry={editorEntry} />;
   }
 
   if (user.role !== "distributor" && user.role !== "admin") {

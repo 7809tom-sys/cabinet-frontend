@@ -19,6 +19,7 @@ import {
   exactOverFridgeCabinet,
   overFridgeCatalogDimensions,
 } from "@/lib/refrigeratorOverFridgePicker";
+import { FRAMELESS_ABOVE_FRIDGE_HEIGHT_IN, isFramelessFortyWallHeight } from "@/lib/aefAboveFridge";
 
 export type FridgeAbove = "bridge" | "none";
 export type FridgePanels = "left" | "right" | "both" | "none";
@@ -82,6 +83,12 @@ export interface RefrigeratorOptionsDialogProps {
   errorMessage?: string | null;
   /** Existing refrigerator choices, used when reopening the same popup to edit a placed bay. */
   initialChoice?: Partial<FridgeSurroundChoice> | null;
+  /**
+   * Sold wall-run height. When this is the frameless 40 / 40 1/4" class, the
+   * cabinet above offers 22 5/8" and the 13 1/2" depth, preferring 24" deep.
+   * Omit it for framed lines so the 12/15/18/21/24 buttons stay unchanged.
+   */
+  matchWallHeightIn?: number | null;
   /** Apply the chosen surround. Returns false when placement was rejected. */
   onApply: (choice: FridgeSurroundChoice) => boolean | void;
   /** Keep just the refrigerator (no surround). */
@@ -95,16 +102,34 @@ const FRIDGE_HEIGHTS = [66, 70, 72, 78, 84];
 const FRIDGE_DEPTHS = [24, 27, 30, 33, 36];
 
 const BRIDGE_HEIGHT_OPTIONS = [12, 15, 18, 21, 24] as const;
-type BridgeHeight = typeof BRIDGE_HEIGHT_OPTIONS[number];
+const FRAMELESS_FORTY_BRIDGE_DEPTH_IN = 13.5;
 
-const BRIDGE_DEPTH_OPTIONS = [12, 24] as const;
-type BridgeDepth = typeof BRIDGE_DEPTH_OPTIONS[number];
+function bridgeHeightOptions(matchWallHeightIn?: number | null): number[] {
+  if (!isFramelessFortyWallHeight(matchWallHeightIn)) return [...BRIDGE_HEIGHT_OPTIONS];
+  return [12, 15, 18, 21, FRAMELESS_ABOVE_FRIDGE_HEIGHT_IN, 24];
+}
+
+function bridgeDepthOptions(matchWallHeightIn?: number | null): number[] {
+  if (!isFramelessFortyWallHeight(matchWallHeightIn)) return [12, 24];
+  return [12, FRAMELESS_FORTY_BRIDGE_DEPTH_IN, 24];
+}
+
+function bridgeHeightLabel(height: number): string {
+  return Math.abs(height - FRAMELESS_ABOVE_FRIDGE_HEIGHT_IN) < 0.001 ? '22⅝"' : `${height}"`;
+}
+
+function bridgeDepthLabel(depth: number): string {
+  if (Math.abs(depth - FRAMELESS_FORTY_BRIDGE_DEPTH_IN) < 0.001) return "13½″ Deep";
+  if (Math.abs(depth - 12) < 0.001) return "12″ Deep";
+  if (Math.abs(depth - 24) < 0.001) return "24″ Deep";
+  return `${depth}″ Deep`;
+}
 
 // Bridge cabinet widths — all distributors carry 30", 33", 36" fridge cabinets
 const BRIDGE_WIDTH_OPTIONS = [30, 33, 36];
 
 // ─── Helper: panel height from bridge height ──────────────────────────────────
-function calcPanelHeight(fridgeH: number, bridgeH: BridgeHeight): number {
+function calcPanelHeight(fridgeH: number, bridgeH: number): number {
   return fridgeH + REFRIGERATOR_UPPER_CLEARANCE_IN + bridgeH;
 }
 
@@ -219,6 +244,7 @@ export function RefrigeratorOptionsDialog({
   replacementCabinetCode = null,
   errorMessage = null,
   initialChoice = null,
+  matchWallHeightIn = null,
   onApply,
   onSkip,
 }: RefrigeratorOptionsDialogProps) {
@@ -241,8 +267,8 @@ export function RefrigeratorOptionsDialog({
 
   // ── Over-fridge cabinet ────────────────────────────────────────────────────
   const [above, setAbove] = useState<FridgeAbove>("none");
-  const [bridgeHeightChoice, setBridgeHeightChoice] = useState<BridgeHeight>(12);
-  const [bridgeDepthChoice, setBridgeDepthChoice] = useState<BridgeDepth>(12);
+  const [bridgeHeightChoice, setBridgeHeightChoice] = useState<number>(12);
+  const [bridgeDepthChoice, setBridgeDepthChoice] = useState<number>(12);
   // Bridge width is independent of fridge width — always 30/33/36
   const [bridgeWidthChoice, setBridgeWidthChoice] = useState<number>(36);
 
@@ -257,27 +283,40 @@ export function RefrigeratorOptionsDialog({
   // ── Smooth panel ───────────────────────────────────────────────────────────
   const [smooth, setSmooth] = useState(false);
 
+  const heightOptions = useMemo(() => bridgeHeightOptions(matchWallHeightIn), [matchWallHeightIn]);
+  const depthOptions = useMemo(() => bridgeDepthOptions(matchWallHeightIn), [matchWallHeightIn]);
+  const framelessFortyWall = isFramelessFortyWallHeight(matchWallHeightIn);
+
   // Every code, dimension label, cart line, and placement below comes from the
   // exact same active catalog record. There is no narrower-width fallback.
-  const bridgeByDims = useMemo(() => {
-    const result: Record<BridgeHeight, Record<BridgeDepth, SurroundCabinet | null>> = {
-      12: { 12: null, 24: null },
-      15: { 12: null, 24: null },
-      18: { 12: null, 24: null },
-      21: { 12: null, 24: null },
-      24: { 12: null, 24: null },
-    };
-    for (const targetH of BRIDGE_HEIGHT_OPTIONS) {
-      for (const targetD of BRIDGE_DEPTH_OPTIONS) {
-        result[targetH][targetD] = exactOverFridgeCabinet(deepAbove, {
+  const bridgeByKey = useMemo(() => {
+    const result = new Map<string, SurroundCabinet | null>();
+    for (const targetH of heightOptions) {
+      for (const targetD of depthOptions) {
+        result.set(`${targetH}|${targetD}`, exactOverFridgeCabinet(deepAbove, {
           width: bridgeWidthChoice,
           height: targetH,
           depth: targetD,
-        });
+        }));
       }
     }
     return result;
-  }, [deepAbove, bridgeWidthChoice]);
+  }, [deepAbove, bridgeWidthChoice, heightOptions, depthOptions]);
+  const bridgeAt = (height: number, depth: number) => bridgeByKey.get(`${height}|${depth}`) ?? null;
+  const preferFramelessFortyBridge = () => {
+    if (!framelessFortyWall) return false;
+    if (bridgeAt(FRAMELESS_ABOVE_FRIDGE_HEIGHT_IN, 24)) {
+      setBridgeHeightChoice(FRAMELESS_ABOVE_FRIDGE_HEIGHT_IN);
+      setBridgeDepthChoice(24);
+      return true;
+    }
+    if (bridgeAt(FRAMELESS_ABOVE_FRIDGE_HEIGHT_IN, FRAMELESS_FORTY_BRIDGE_DEPTH_IN)) {
+      setBridgeHeightChoice(FRAMELESS_ABOVE_FRIDGE_HEIGHT_IN);
+      setBridgeDepthChoice(FRAMELESS_FORTY_BRIDGE_DEPTH_IN);
+      return true;
+    }
+    return false;
+  };
 
   const availableBridgeWidths = useMemo(
     () => availableOverFridgeWidths(deepAbove, bridgeHeightChoice, bridgeDepthChoice),
@@ -293,7 +332,7 @@ export function RefrigeratorOptionsDialog({
   // filler fallback.
   const hasBridgeAbove = deepAbove.length > 0;
 
-  const chosenBridge = above === "bridge" ? bridgeByDims[bridgeHeightChoice][bridgeDepthChoice] : null;
+  const chosenBridge = above === "bridge" ? bridgeAt(bridgeHeightChoice, bridgeDepthChoice) : null;
   const chosenBridgeDims = chosenBridge ? overFridgeCatalogDimensions(chosenBridge) : null;
   const closestBridgeSuggestion = useMemo(
     () => closestOverFridgeSuggestion(deepAbove, {
@@ -337,8 +376,8 @@ export function RefrigeratorOptionsDialog({
       setFridgeW(w);
       setFridgeH(initialChoice?.fridgeHeight ?? 70);
       setFridgeD(initialChoice?.fridgeDepth ?? 30);
-      setBridgeHeightChoice((initialChoice?.bridgeHeight as BridgeHeight | null | undefined) ?? 12);
-      setBridgeDepthChoice((initialChoice?.bridgeDepth as BridgeDepth | null | undefined) ?? 12);
+      setBridgeHeightChoice(initialChoice?.bridgeHeight ?? 12);
+      setBridgeDepthChoice(initialChoice?.bridgeDepth ?? 12);
       setBridgeWidthChoice(initialChoice?.bridgeWidth ?? BRIDGE_WIDTH_OPTIONS.reduce((best, option) =>
         Math.abs(option - w) < Math.abs(best - w) ? option : best,
       BRIDGE_WIDTH_OPTIONS[0]));
@@ -368,12 +407,10 @@ export function RefrigeratorOptionsDialog({
   // Auto-correct depth when height changes and current depth has no matching cabinet
   useEffect(() => {
     if (above !== "bridge") return;
-    const currentMatch = bridgeByDims[bridgeHeightChoice][bridgeDepthChoice];
+    const currentMatch = bridgeAt(bridgeHeightChoice, bridgeDepthChoice);
     if (!currentMatch) {
       // Find the best available depth for this height
-      const fallback = BRIDGE_DEPTH_OPTIONS.find(
-        (d) => bridgeByDims[bridgeHeightChoice][d as BridgeDepth] != null
-      ) as BridgeDepth | undefined;
+      const fallback = depthOptions.find((depth) => bridgeAt(bridgeHeightChoice, depth) != null);
       if (fallback !== undefined) setBridgeDepthChoice(fallback);
     }
   }, [bridgeHeightChoice, above]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -386,11 +423,12 @@ export function RefrigeratorOptionsDialog({
   useEffect(() => {
     if (!open || above !== "bridge" || !hasBridgeAbove) return;
     if (initialChoice?.bridgeHeight != null || initialChoice?.bridgeDepth != null) return;
-    if (bridgeByDims[bridgeHeightChoice][bridgeDepthChoice]) return;
-    for (const h of BRIDGE_HEIGHT_OPTIONS) {
-      const d = BRIDGE_DEPTH_OPTIONS.find((depth) => bridgeByDims[h as BridgeHeight][depth as BridgeDepth] != null) as BridgeDepth | undefined;
+    if (bridgeAt(bridgeHeightChoice, bridgeDepthChoice)) return;
+    if (preferFramelessFortyBridge()) return;
+    for (const h of heightOptions) {
+      const d = depthOptions.find((depth) => bridgeAt(h, depth) != null);
       if (d !== undefined) {
-        setBridgeHeightChoice(h as BridgeHeight);
+        setBridgeHeightChoice(h);
         setBridgeDepthChoice(d);
         return;
       }
@@ -398,7 +436,7 @@ export function RefrigeratorOptionsDialog({
     // Depends on the current height/depth as well: the reset-on-open effect in
     // the same commit sets 12x12 after this effect already read the previous
     // (available) values, so it must run again once that reset has landed.
-  }, [open, above, hasBridgeAbove, bridgeByDims, bridgeHeightChoice, bridgeDepthChoice]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [open, above, hasBridgeAbove, bridgeByKey, bridgeHeightChoice, bridgeDepthChoice, framelessFortyWall]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleApply = () => {
     if (!canApply) return;
@@ -498,11 +536,13 @@ export function RefrigeratorOptionsDialog({
                   setAbove(v);
                   // Auto-select first available height+depth so user never opens to an error
                   if (v === "bridge") {
-                    for (const h of BRIDGE_HEIGHT_OPTIONS) {
-                      for (const d of BRIDGE_DEPTH_OPTIONS) {
-                        if (bridgeByDims[h as BridgeHeight][d as BridgeDepth]) {
-                          setBridgeHeightChoice(h as BridgeHeight);
-                          setBridgeDepthChoice(d as BridgeDepth);
+                    // A frameless 40" run offers the 22 5/8" box, 24" deep first.
+                    if (preferFramelessFortyBridge()) return;
+                    for (const h of heightOptions) {
+                      for (const d of depthOptions) {
+                        if (bridgeAt(h, d)) {
+                          setBridgeHeightChoice(h);
+                          setBridgeDepthChoice(d);
                           return;
                         }
                       }
@@ -536,9 +576,9 @@ export function RefrigeratorOptionsDialog({
                 <div className="space-y-1.5">
                   <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Height</span>
                   <div className="flex gap-2">
-                    {BRIDGE_HEIGHT_OPTIONS.map((h) => {
+                    {heightOptions.map((h) => {
                       const active = bridgeHeightChoice === h;
-                      const hasAny = BRIDGE_DEPTH_OPTIONS.some((d) => bridgeByDims[h as BridgeHeight][d as BridgeDepth] != null);
+                      const hasAny = depthOptions.some((d) => bridgeAt(h, d) != null);
                       return (
                         <button
                           key={h}
@@ -556,7 +596,7 @@ export function RefrigeratorOptionsDialog({
                           )}
                           aria-pressed={active}
                         >
-                          {h}"
+                          {bridgeHeightLabel(h)}
                         </button>
                       );
                     })}
@@ -567,29 +607,27 @@ export function RefrigeratorOptionsDialog({
                 <div className="space-y-1.5">
                   <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Depth</span>
                   <div className="flex gap-2">
-                    {([
-                      { value: 12 as BridgeDepth, label: '12″ Deep' },
-                      { value: 24 as BridgeDepth, label: '24″ Deep' },
-                    ]).map((o) => {
-                      const active = bridgeDepthChoice === o.value;
-                      const hasDepth = bridgeByDims[bridgeHeightChoice][o.value] != null;
+                    {depthOptions.map((depth) => {
+                      const label = bridgeDepthLabel(depth);
+                      const active = bridgeDepthChoice === depth;
+                      const hasDepth = bridgeAt(bridgeHeightChoice, depth) != null;
                       return (
                         <button
-                          key={o.value}
+                          key={depth}
                           type="button"
                           disabled={!hasDepth}
                           onClick={() => {
                             if (hasDepth) {
-                              setBridgeDepthChoice(o.value);
+                              setBridgeDepthChoice(depth);
                             } else {
                               // Fall back to the other depth if this one has no match
-                              const fallback = BRIDGE_DEPTH_OPTIONS.find(
-                                (d) => d !== o.value && bridgeByDims[bridgeHeightChoice][d] != null
+                              const fallback = depthOptions.find(
+                                (option) => option !== depth && bridgeAt(bridgeHeightChoice, option) != null
                               );
-                              if (fallback) setBridgeDepthChoice(fallback);
+                              if (fallback != null) setBridgeDepthChoice(fallback);
                             }
                           }}
-                          title={!hasDepth ? `No ${o.value}" deep cabinet available for this style` : undefined}
+                          title={!hasDepth ? `No ${depth}" deep cabinet available for this style` : undefined}
                           className={cn(
                             "flex-1 rounded-lg border py-2.5 text-sm font-semibold transition-[background-color,border-color,transform] duration-150 active:scale-[0.97]",
                             active
@@ -600,7 +638,7 @@ export function RefrigeratorOptionsDialog({
                           )}
                           aria-pressed={active}
                         >
-                          {o.label}
+                          {label}
                         </button>
                       );
                     })}

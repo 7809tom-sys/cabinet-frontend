@@ -482,6 +482,7 @@ describe("door rendering audit backend adapter", () => {
     expect(style.name).toBe("Stainless");
     expect(style.samplePhotoUrl).toBe(stainless.doorSampleImageUrl);
     expect(style.drawerSampleImageUrl).toBe(stainless.drawerSampleImageUrl);
+    expect(style.drawerSamplePhotoUrl).toBe(stainless.drawerSampleImageUrl);
     expect(style.sourceStatus).toBe("featured-mismatch");
     expect(style.featuredFailures).toEqual([
       { image: "door", reason: "Featured image doesn't match approved source" },
@@ -508,8 +509,48 @@ describe("door rendering audit backend adapter", () => {
     });
     expect(run.styles[0]?.samplePhotoUrl).toBe(stainless.approvedReferenceImageUrl);
     expect(enrichDoorAuditQueue(
-      [{ ...run.styles[0]!, samplePhotoUrl: stainless.doorSampleImageUrl }],
+      [{ ...run.styles[0]!, samplePhotoUrl: stainless.doorSampleImageUrl, needsDoorOnlyPhoto: true }],
       [style],
-    )[0]?.samplePhotoUrl).toBe(stainless.approvedReferenceImageUrl);
+    )[0]).toMatchObject({
+      samplePhotoUrl: stainless.approvedReferenceImageUrl,
+      needsDoorOnlyPhoto: false,
+    });
+  });
+
+  it("keeps door-face fields and uses an approved render even when the featured photo is combined", () => {
+    const list = normalizeDoorAuditList({
+      styles: [{
+        ...backendBrief,
+        drawerSamplePhotoUrl: "/drawer.png",
+        needsDoorOnlyPhoto: true,
+        styleVerified: 0,
+      }],
+    });
+    expect(list.styles[0]).toMatchObject({
+      samplePhotoUrl: "https://cdn.example/summit.jpg",
+      drawerSampleImageUrl: "/drawer.png",
+      drawerSamplePhotoUrl: "/drawer.png",
+      needsDoorOnlyPhoto: true,
+      styleVerified: false,
+      sourceStatus: "no-approved-source",
+    });
+
+    const run = normalizeDoorAuditStartRun({
+      runId: 31,
+      status: "awaiting_renders",
+      styles: [{
+        ...backendBrief,
+        needsDoorOnlyPhoto: true,
+        styleVerified: false,
+        drawerSampleImageUrl: "/drawer.png",
+        approvedReferenceImageUrl: "/approved.png",
+      }],
+    });
+    expect(run.styles[0]).toMatchObject({
+      samplePhotoUrl: "/approved.png",
+      drawerSamplePhotoUrl: "/drawer.png",
+      needsDoorOnlyPhoto: false,
+      styleVerified: false,
+    });
   });
 });

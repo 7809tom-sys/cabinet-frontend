@@ -47,8 +47,8 @@ describe("AEF window-break wall end panels", () => {
 
     expect(requirements).toHaveLength(2);
     expect(requirements).toEqual(expect.arrayContaining([
-      expect.objectContaining({ cabinetUid: "left-of-window", end: "end", masterCode: "WEP1530", cabinetId: 102, pendingSku: false, stockWidth: 15.25, stockHeight: 30.25, stockThickness: 0.75, depth: 13.5 }),
-      expect.objectContaining({ cabinetUid: "right-of-window", end: "start", masterCode: "WEP1530", cabinetId: 102, pendingSku: false, stockWidth: 15.25, stockHeight: 30.25, stockThickness: 0.75, depth: 13.5 }),
+      expect.objectContaining({ cabinetUid: "left-of-window", end: "end", masterCode: "WEP1530", cabinetId: 102, pendingSku: false, stockWidth: 15.25, stockHeight: 30.25, stockThickness: 0.75, height: 30.25, depth: 14.25 }),
+      expect.objectContaining({ cabinetUid: "right-of-window", end: "start", masterCode: "WEP1530", cabinetId: 102, pendingSku: false, stockWidth: 15.25, stockHeight: 30.25, stockThickness: 0.75, height: 30.25, depth: 14.25 }),
     ]));
     expect(requirements[0].description).toContain('15¼" W × 30¼" H stock');
   });
@@ -59,6 +59,8 @@ describe("AEF window-break wall end panels", () => {
       wall("right-of-window", 84, 24, 40.25),
     ], [window], room, panelCatalog);
     expect(requirements.map((requirement) => requirement.masterCode).sort()).toEqual(["WEP1523", "WEP1542"]);
+    const tallPanel = requirements.find((requirement) => requirement.masterCode === "WEP1542");
+    expect(tallPanel).toMatchObject({ stockHeight: 41.75, height: 40.25, depth: 14.25 });
   });
 
   it("does not apply to framed wall cabinets, cabinets away from the window, or the frozen Wall Builder data model", () => {
@@ -77,9 +79,13 @@ describe("AEF window-break wall end panels", () => {
     ]);
   });
 
-  it("never invents an undersized WEP board for a 24-inch-deep wall cabinet", () => {
+  it("flags TEP3096 for a 24-inch-deep wall instead of an undersized WEP board", () => {
     const requirements = aefWindowEndPanelRequirements([wall("deep", 24, 24, 30.25, 24)], [window], room, panelCatalog);
     expect(requirements).toHaveLength(1);
-    expect(requirements[0]).toMatchObject({ cabinetUid: "deep", masterCode: null, cabinetId: null, pendingSku: true, depth: 24 });
+    expect(requirements[0]).toMatchObject({
+      cabinetUid: "deep", masterCode: "TEP3096", cabinetId: null, pendingSku: true,
+      stockWidth: 29.875, stockHeight: 96, height: 30.25, depth: 24.75,
+    });
+    expect(requirements[0].masterCode.startsWith("WEP")).toBe(false);
   });
 });

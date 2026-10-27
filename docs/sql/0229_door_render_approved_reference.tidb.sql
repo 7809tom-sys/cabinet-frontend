@@ -1,4 +1,11 @@
 -- TiDB SQL editor version of the approved door-render reference.
+-- Numbered 0229. These numbers are already used:
+--   0225 vendor forecast rates
+--   0226 door-face recognition
+--   0227 distributor order email
+--   0228 paid-image customer ledger
+-- This script only adds the approved-render columns and door_rendering_approvals.
+-- It does not change image_generation_ledger, order_requests, or the door-face columns.
 -- Paste each numbered block on its own. Apply before deploying the backend patch
 -- docs/patches/door-render-approved-reference.patch.
 -- One statement per block. No statement-breakpoint markers.

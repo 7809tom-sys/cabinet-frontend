@@ -1,4 +1,5 @@
 import { snapFreestandingFortyFive } from "@/lib/freestandingRun";
+import { isDoorStyleVerified, resolveCabinetFaceImages, type CabinetFacePlan, type DoorStyleFaceInput, type FaceSourceKind } from "@shared/doorFaceRecognition";
 import "./DesignTool.toolbar.css";
 import { useState, useMemo, useCallback, useEffect, useRef, useDeferredValue, type SetStateAction } from "react";
 import { createPortal } from "react-dom";
@@ -123,6 +124,9 @@ import {
 } from "@/lib/smallGapFiller";
 import { buildRemoteDesignSessionUrl } from "@/lib/designShare";
 import { availableLs3612ShelfReplacementChoices, isUnpricedLs3612 } from "@/lib/ls3612Replacement";
+import { applyInventorySuggestion, type InventorySuggestion } from "@/lib/inventoryAlternatives";
+import { useDesignerInventory } from "@/lib/useDesignerInventory";
+import { InventoryDesignStockControl, InventoryStockBadge } from "@/components/design/InventoryStockNotice";
 import { unavailableSavedStyleIds } from "@/lib/unavailableSavedStyles";
 import { applyGlassStackerBulkPlacement as applyBulkGlassStackerPlacements, glassStackerBulkCeilingBlocksAtHeight, glassStackerBulkHeightOptions, glassStackerBulkPlacementCandidates, glassStackerUidsForRemoval, type GlassStackerBulkPlacementCandidate } from "@/lib/glassStackerBulkPlacement";
 import { toast } from "sonner";
@@ -170,7 +174,9 @@ import { buildTrimCartLines,
   type TrimPrice,
 } from "@/lib/trimCart";
 import { hickorySkinSuggestions, type HickorySkinSuggestion, exposedEnds, isHickoryStyle } from "@/lib/hickorySkins";
-import { aefWindowEndPanelRequirements } from "@/lib/aefWindowEndPanels";
+import { aefExposedEndRequirements } from "@/lib/aefExposedEnds";
+import { isFramelessFortyWallHeight } from "@/lib/aefAboveFridge";
+import { hasAefPrintedGeometry } from "@shared/aefFramelessGeometry";
 import { automaticAngledWallFiller, measuredAngledWallTransition, repairMissingAngledWallFillers } from "@/lib/angledWallFiller";
 import { resolveOverRangeMicrowavePlacement } from "./designToolMicrowavePlacement";
 import { resolveRangeHoodPlacement } from "./designToolRangeHoodPlacement";
@@ -200,7 +206,7 @@ import { autoDesignSinkWindow, windowOverlapsReservation } from "@/lib/autoDesig
 import { autoDesignRangeHood, autoDesignRangeNeedsVentilation } from "@/lib/autoDesignRangeHood";
 import { autoBuildCornerCatalog, autoDesignCornerAttempts, autoDesignCornerFamily, autoDesignCornerSlotPoint, autoDesignCornerSlots, isAutoDesignBlindCornerOption, type AutoBuildCornerCandidate, type AutoDesignCornerChoice, type AutoDesignCornerSlot } from "@/lib/autoDesignCornerStage";
 import { buildMandatoryAutoDesignRefrigeratorBay } from "@/lib/autoDesignRefrigeratorBay";
-import { buildAutoDesignWallCabinets, type AutoDesignUpperCorner } from "@/lib/autoDesignWallCabinets";
+import { buildAutoDesignWallCabinets, resolveWallHeightClass, type AutoDesignUpperCorner } from "@/lib/autoDesignWallCabinets";
 import { seatAutoDesignCorner, type AutoDesignApplianceMove } from "@/lib/autoDesignCornerSeating";
 import { validatePlacedCornerRefrigerator } from "@/lib/cornerRefrigeratorPlacement";
 import { validatePlacedCornerRange, CORNER_RANGE_HANDLE_FILLER_IN } from "@/lib/cornerRangePlacement";
@@ -260,7 +266,8 @@ import { InteractiveRoom3D, threeDCrownPerimeterSegments, threeDBacksplashSegmen
 import { crownTakeoffFromExposedSegments } from "@/lib/crownTakeoff";
 import { hasDesignedRoomGeometry, initialDesignWorkspaceView, threeDLeftCatalogDragPayload } from "./designTool3DWorkspace";
 import { nearestFreeWallDropStart, targetedLowerCabinetForThreeDDrop, targetedSinkBaseForThreeDDrop, type ThreeDWallDropTarget } from "./designTool3DDropPlacement";
-import { catalogHeightForCabinet, catalogHeightOptions, filterCatalogByHeight, formatCatalogInchValue, type HeightFilterPaletteType } from "./designToolCatalogHeights";
+import { catalogHeightForCabinet, catalogHeightOptions, filterCatalogByHeight, formatCatalogInchValue, formatCatalogPaletteSize, type HeightFilterPaletteType } from "./designToolCatalogHeights";
+import { CatalogPaletteCard } from "@/components/design/CatalogPaletteCard";
 import { WallPicker } from "@/components/design/WallPicker";
 import { OpeningSizeEditor } from "@/components/design/OpeningSizeEditor";
 import { DoorAttributesDialog } from "@/components/design/DoorAttributesDialog";
@@ -453,6 +460,55 @@ export default function DesignTool(props: { affiliateSlug?: string }) {
   const search = useSearch();
   const scope = resolvedDesignToolStoreScope(props.affiliateSlug, search);
   return <ScopedDesignTool key={scope} {...props} />;
+}
+
+const RUSTIC_HICKORY_GRAIN_URL = "/manus-storage/rustic_hickory_vertical_grain_32d9e28a.webp";
+
+type DesignerFaceStyle = DoorStyleFaceInput & { approvedReferenceImageUrl?: string | null };
+
+/**
+ * Face plan for one cabinet. An approved render is the door texture.
+ * The rustic hickory grain map is only used when that style has no approved reference.
+ * Without an approved reference, door and drawer faces stay on the recognition rules.
+ */
+function designerFacePlan(
+  style: DesignerFaceStyle | null | undefined,
+  placement: string | null | undefined,
+): CabinetFacePlan | null {
+  if (!style) return null;
+  const approved = style.approvedReferenceImageUrl?.trim() ?? "";
+  if (!approved && /rustic hickory|forest rust/i.test(`${style.ourName ?? ""} ${style.aliasName ?? ""}`)) {
+    return resolveCabinetFaceImages({
+      ...style,
+      styleCode: "RUSTIC",
+      doorSampleImageUrl: RUSTIC_HICKORY_GRAIN_URL,
+      drawerSampleImageUrl: null,
+      thumbnailImageUrl: null,
+    }, placement);
+  }
+  if (!approved) return resolveCabinetFaceImages(style, placement);
+
+  const doorUrl = preferredDoorReferenceUrl(style);
+  const drawerReference = preferredDrawerReferenceUrl(style);
+  const wall = (placement ?? "").toLowerCase() === "wall";
+  if (drawerReference && doorUrl && drawerReference !== doorUrl) {
+    return {
+      sourceKind: "split",
+      doorUrl,
+      drawerUrl: wall ? null : drawerReference,
+      sections: wall ? 1 : 2,
+      drawerTextureApplied: !wall,
+      grainRotation: 0,
+    };
+  }
+  return {
+    sourceKind: "legacy-door",
+    doorUrl,
+    drawerUrl: wall ? null : doorUrl,
+    sections: 1,
+    drawerTextureApplied: !wall && Boolean(doorUrl),
+    grainRotation: 0,
+  };
 }
 
 function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?: string }) {
@@ -2678,11 +2734,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     // supply lines that happen to share a style name (e.g. both have "Air White")
     // each keep their own entry instead of one silently shadowing the other.
     for (const s of scoped) {
+      if (!isDoorStyleVerified(s) && s.id !== styleId) continue;
       const key = `${s.distributorId ?? "_"}::${(affiliateStyleName(s) || String(s.id)).toLowerCase()}`;
       if (!map.has(key)) map.set(key, s);
     }
     return Array.from(map.values()).sort((a, b) => affiliateStyleName(a).localeCompare(affiliateStyleName(b)));
-  }, [affiliateStyleName, catalogDistributorScopeId, doorStyles]);
+  }, [affiliateStyleName, catalogDistributorScopeId, doorStyles, styleId]);
 
   // Color 2 (slot B) must come from the same distributor as Color 1 (slot A).
   // Build a filtered list scoped to that distributor so the picker only shows
@@ -2695,12 +2752,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     if (distA == null) return uniqueDoorStyles;
     // Filter to same distributor, then de-duplicate by name (same as uniqueDoorStyles).
     const map = new Map<string, { id: number; ourName: string | null; aliasName?: string | null; thumbnailImageUrl?: string | null; doorSampleImageUrl?: string | null; distributorId?: number; styleCode?: string | null }>();
-    for (const s of source.filter((s) => s.distributorId === distA)) {
+    for (const s of source.filter((s) => s.distributorId === distA && (isDoorStyleVerified(s) || s.id === styleB || s.id === styleId))) {
       const key = (affiliateStyleName(s) || String(s.id)).toLowerCase();
       if (!map.has(key)) map.set(key, s);
     }
     return Array.from(map.values()).sort((a, b) => affiliateStyleName(a).localeCompare(affiliateStyleName(b)));
-  }, [affiliateStyleName, doorStyles, styleA, uniqueDoorStyles]);
+  }, [affiliateStyleName, doorStyles, styleA, styleB, styleId, uniqueDoorStyles]);
   // ColorSlotButton owns several thumbnail image labels internally. Feed it a
   // display-only copy of each style with the scoped affiliate alias substituted
   // into aliasName, while retaining raw doorStyles for pricing and finish logic.
@@ -2826,12 +2883,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     () => (threeDAccessoryCatalog as DesignCabinet[] | undefined) ?? [],
     [threeDAccessoryCatalog],
   );
-  // Frameless V8.2 rule: a window breaks an upper run, so each upper end facing
-  // the window receives one real 3/4-inch WEP panel on the build sheet. This is
-  // a materials requirement only: it never auto-places an object, and does not
-  // affect framed lines or any Continuous Wall Builder geometry.
+  // Frameless V8.2: every visible wall, base, and tall end gets one priced
+  // 3/4" panel, including a window side. One record per cabinet end, so the
+  // window rule is not added a second time. This never places an object and
+  // does not affect framed lines.
   const aefWindowEndPanels = useMemo(
-    () => aefWindowEndPanelRequirements(placed, openings, room, catalogFillers),
+    () => aefExposedEndRequirements(placed, openings, room, catalogFillers),
     [placed, openings, room, catalogFillers],
   );
   // The Wizard presents actual active base cabinets from the selected line.
@@ -3254,6 +3311,57 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     distributorId: lockedDistributorId ?? undefined,
     affiliateSlug: affiliateSlug ?? undefined,
   });
+  const inventoryCatalog = useMemo(() => {
+    const map = new Map<number, DesignCabinet>();
+    for (const cabinet of [
+      ...((liveMasterCabinets as DesignCabinet[] | undefined) ?? []),
+      ...((autoFillCabinets as DesignCabinet[] | undefined) ?? []),
+      ...((wallCabPool as DesignCabinet[] | undefined) ?? []),
+      ...((tallCabPool as DesignCabinet[] | undefined) ?? []),
+      ...catalogFillers,
+    ]) {
+      map.set(cabinet.id, cabinet);
+    }
+    return [...map.values()];
+  }, [autoFillCabinets, catalogFillers, liveMasterCabinets, tallCabPool, wallCabPool]);
+  const inventoryDoorStyles = useMemo(
+    () => ((doorStyles ?? []) as Array<{ id: number; distributorId?: number | null; ourName?: string | null; aliasName?: string | null; styleCode?: string | null }>).map((style) => ({
+      id: style.id,
+      distributorId: style.distributorId,
+      ourName: style.ourName,
+      aliasName: style.aliasName,
+      styleCode: style.styleCode,
+    })),
+    [doorStyles],
+  );
+  const inventory = useDesignerInventory({
+    isAdmin,
+    search,
+    placed,
+    room,
+    designStyleId: styleId,
+    distributorId: catalogDistributorScopeId,
+    affiliateSlug,
+    doorStyles: inventoryDoorStyles,
+    sameStyleCabinets: inventoryCatalog,
+  });
+  const swapInventoryCabinet = useCallback((uid: string, suggestion: InventorySuggestion) => {
+    const result = applyInventorySuggestion({
+      placed: placedRef.current,
+      uid,
+      suggestion,
+      room: roomRef.current,
+      designStyleId: styleId,
+    });
+    if (result.unchanged) {
+      toast.error(result.message);
+      return;
+    }
+    placedRef.current = result.placed;
+    setPlaced(result.placed);
+    if (result.selectedUid) setSelectedUid(result.selectedUid);
+    toast.success(result.message);
+  }, [setPlaced, styleId]);
 
   // The unified "Corner" tab shows BOTH corner base AND corner wall cabinets in
   // one place (grouped into two sections). The base-placement corner cabinets
@@ -3538,7 +3646,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         endPanels: fridgeParts?.endPanels ?? [],
         styleId: styleIdRef.current ?? null,
         makeUid,
-        wallCabinetHeightIn: input.wallCabinetHeightIn ?? 30,
+        wallCabinetHeightIn: (() => {
+          const nominal = input.wallCabinetHeightIn ?? 30;
+          const resolved = resolveWallHeightClass((wallCabPool as DesignCabinet[] | undefined) ?? [], nominal);
+          return resolved != null && isFramelessFortyWallHeight(resolved) ? resolved : nominal;
+        })(),
       });
       if (!refrigeratorBay.ok) return fail(refrigeratorBay.message);
       const fittedBay = fitExplicitRefrigeratorOptionPlacements(working, refrigeratorBay.additions, refrigerator.uid, room);
@@ -4547,13 +4659,13 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       | undefined;
     return finishColors(s?.ourName, s?.color, s?.finish, s?.woodSpecies);
   }, [doorStyles, styleId]);
-  const active3DDoorSampleUrl = useMemo(() => {
-	    const s = doorStyles?.find((d) => d.id === styleId) as { ourName?: string | null; aliasName?: string | null; doorSampleImageUrl?: string | null; thumbnailImageUrl?: string | null; approvedReferenceImageUrl?: string | null } | undefined;
-	    if (!s?.approvedReferenceImageUrl && /rustic hickory|forest rust/i.test(`${s?.ourName ?? ""} ${s?.aliasName ?? ""}`)) {
-	      return "/manus-storage/rustic_hickory_vertical_grain_32d9e28a.webp";
-	    }
-	    return preferredDoorReferenceUrl(s);
+  const activeFacePlan = useMemo(() => {
+    const s = doorStyles?.find((d) => d.id === styleId) as DesignerFaceStyle | undefined;
+    return designerFacePlan(s, "base");
   }, [doorStyles, styleId]);
+  const active3DDoorSampleUrl = activeFacePlan?.doorUrl ?? null;
+  const active3DDrawerSampleUrl = activeFacePlan?.sourceKind === "split" ? activeFacePlan.drawerUrl : null;
+  const activeFaceSourceKind: FaceSourceKind | undefined = activeFacePlan?.sourceKind;
   const active3DRoomSceneReferenceUrl = useMemo(() => {
     const s = doorStyles?.find((d) => d.id === styleId) as { roomSceneImageUrl?: string | null } | undefined;
     return s?.roomSceneImageUrl ?? null;
@@ -4580,20 +4692,21 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     [placed, room, activeStyle]
   );
 
-  // Regular finished ends remain optional. The only non-Hickory exception is
-  // the manufacturer-specific AEF window-break requirement above: the two
-  // facing upper ends need source-sized 3/4-inch panels.
+  // Regular finished ends remain optional on framed lines. Frameless cabinets
+  // add one source-priced 3/4" panel per visible wall, base, or tall end.
+  // The quoted height is the field cut, not the oversized stock sheet.
   const autoEndPanels = useMemo<
-    Array<{ code: string; cabinetId: number | null; description: string; stockWidth: number; stockHeight: number; stockThickness: number; styleId: number | null; pendingSku: boolean }>
+    Array<{ code: string; cabinetId: number | null; description: string; stockWidth: number; stockHeight: number; stockThickness: number; height: number; styleId: number | null; pendingSku: boolean }>
   >(() => aefWindowEndPanels.map((panel) => {
     const owner = placed.find((cabinet) => cabinet.uid === panel.cabinetUid);
     return {
-      code: panel.masterCode ?? "AEF-WEP-CUSTOM-COVERAGE",
+      code: panel.masterCode,
       cabinetId: panel.cabinetId,
       description: panel.description,
       stockWidth: panel.stockWidth,
       stockHeight: panel.stockHeight,
       stockThickness: panel.stockThickness,
+      height: panel.height,
       styleId: owner ? (pricingStyleIdFor(owner) ?? styleId) : styleId,
       pendingSku: panel.pendingSku,
     };
@@ -4834,7 +4947,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     // locked style; otherwise emitted as a pending placeholder.
     const panelMap = new Map<string, BuildSheetRow>();
     for (const ep of autoEndPanels) {
-	      const key = `${ep.code}|${ep.styleId ?? "_"}`;
+	      const key = `${ep.code}|${Math.round(ep.height * 8)}|${ep.styleId ?? "_"}`;
       const existing = panelMap.get(key);
       if (existing) existing.qty += 1;
       else
@@ -4842,7 +4955,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           code: ep.code,
           description: ep.description,
 	          widthIn: ep.stockWidth,
-	          heightIn: ep.stockHeight,
+	          heightIn: ep.height,
 	          depthIn: ep.stockThickness,
 	          placement: "accessory",
 	          qty: 1,
@@ -5067,29 +5180,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     },
     [displayStyleIdForCab, panelKindById, activePanelKind]
   );
-  // Per-style door sample image URL map (for rendering real door photos on
-  // cabinet faces in the elevation view).
-  const doorSampleById = useMemo(() => {
-    const m = new Map<number, string>();
-    doorStyles?.forEach((d) => {
-      const s = d as { id: number; ourName?: string | null; aliasName?: string | null; doorSampleImageUrl?: string | null; thumbnailImageUrl?: string | null; approvedReferenceImageUrl?: string | null };
-      const materialReference = (!s.approvedReferenceImageUrl && /rustic hickory|forest rust/i.test(`${s.ourName ?? ""} ${s.aliasName ?? ""}`))
-        ? "/manus-storage/rustic_hickory_vertical_grain_32d9e28a.webp"
-        : preferredDoorReferenceUrl(s);
-      if (materialReference) m.set(s.id, materialReference);
-    });
-    return m;
-  }, [doorStyles]);
-  // Per-style drawer sample image URL map (separate photo for drawer fronts).
-  const drawerSampleById = useMemo(() => {
-    const m = new Map<number, string>();
-    doorStyles?.forEach((d) => {
-      const s = d as { id: number; drawerSampleImageUrl?: string | null; approvedReferenceImageUrl?: string | null };
-      const drawerReference = preferredDrawerReferenceUrl(s);
-      if (drawerReference) m.set(s.id, drawerReference);
-    });
-    return m;
-  }, [doorStyles]);
   // Per-style frame inset map. Source-bound measurements remain authoritative;
   // the catalog-wide Slim Shaker family rule is the sole exception and always
   // supplies its verified 1-inch rail and stile for every rendered face.
@@ -5131,21 +5221,36 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const DEFAULT_DOOR_SAMPLE_URL = "/manus-storage/default-door-sample_9a6c9607.png";
   const DEFAULT_DRAWER_SAMPLE_URL = "/manus-storage/default-drawer-sample_4fc4653e.jpg";
   const activeDoorSampleUrl = paletteFinishSwatch ?? DEFAULT_DOOR_SAMPLE_URL;
+  const facePlanForCab = useCallback(
+    (cab: PlacedCabinet) => {
+      const sid = displayStyleIdForCab(cab);
+      const style = sid != null ? doorStyles?.find((d) => d.id === sid) as DesignerFaceStyle | undefined : undefined;
+      return designerFacePlan(style, cab.placement);
+    },
+    [displayStyleIdForCab, doorStyles],
+  );
   const doorSampleForCab = useCallback(
     (cab: PlacedCabinet): string | null => {
-      const sid = displayStyleIdForCab(cab);
-      return (sid != null && doorSampleById.get(sid)) || activeDoorSampleUrl;
+      const plan = facePlanForCab(cab);
+      if (!plan) return activeDoorSampleUrl;
+      if (plan.sourceKind === "combined") return null;
+      return plan.doorUrl || activeDoorSampleUrl;
     },
-    [displayStyleIdForCab, doorSampleById, activeDoorSampleUrl]
+    [facePlanForCab, activeDoorSampleUrl]
   );
-  // Returns the drawer sample URL for a cabinet (null = fall back to door sample).
+  // A selected style with a blank drawer uses the door sample (the admin hint).
+  // The stock drawer photo is only the preview before any style is chosen.
+  // A combined swatch is not reused as a drawer front.
   const drawerSampleForCab = useCallback(
     (cab: PlacedCabinet): string | null => {
       const sid = displayStyleIdForCab(cab);
-      // Use the style-specific drawer sample, else fall back to the default drawer image.
-      return (sid != null && drawerSampleById.get(sid)) || DEFAULT_DRAWER_SAMPLE_URL;
+      if (sid == null) return DEFAULT_DRAWER_SAMPLE_URL;
+      const plan = facePlanForCab(cab);
+      if (!plan || plan.sourceKind === "combined") return null;
+      if (plan.sourceKind === "split") return plan.drawerUrl;
+      return plan.doorUrl;
     },
-    [displayStyleIdForCab, drawerSampleById]
+    [displayStyleIdForCab, facePlanForCab]
   );
 
   // Distinct finishes actually used across the design (default + per-cabinet
@@ -6589,6 +6694,24 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         return;
       }
       let floatingShelfMountBottom: number | undefined;
+      // Frameless wall placement keeps the existing 3" window casing and adds
+      // the 3/4" end panel. Framed placement does not receive this candidate.
+      const aefWindowClearanceCandidate = accPlacement === "wall" && hasAefPrintedGeometry(c)
+        ? {
+            uid: "aef-wall-clearance-preview",
+            cabinetId: c.id,
+            masterCode: c.masterCode,
+            description: c.description ?? "",
+            placement: "wall" as const,
+            x: 0,
+            y: 0,
+            width,
+            depth,
+            height,
+            rotation: 0,
+            constructionMethod: c.constructionMethod,
+          } as PlacedCabinet
+        : undefined;
       if (isFloatingShelf) {
         const sameWallShelfCount = prev.filter((item) => isFloatingShelfItem(item) && cabinetWall(item, room) === activeWall).length;
         const mountBottom = Math.min(Math.max(0, roomCeiling(room) - height), 54 + sameWallShelfCount * 12);
@@ -6722,6 +6845,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
               description: c.description,
               placement: accPlacement,
             }),
+            aefWindowClearanceCandidate,
 	          );
           if (!nextSpot && isSinkBasePlacement) {
             // Required sink bases remain placeable even when the ordinary run
@@ -6743,6 +6867,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                description: c.description,
 	                placement: accPlacement,
 	              }),
+	              aefWindowClearanceCandidate,
 	            );
 	            if (alternate) {
 	              setAlternateWallRecommendation({
@@ -6785,10 +6910,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
             prev,
             openings,
             Math.min(width, 9),
-            0,
+            aefWindowClearanceCandidate ? WALL_OPENING_CLEARANCE_IN : 0,
             accPlacement,
             isRefrigerator({ masterCode: c.masterCode, placement: accPlacement }),
-            undefined,
+            aefWindowClearanceCandidate,
             depth,
           );
           const fit = segs.find((segment) => segment.length >= width) ?? segs[0];
@@ -9079,6 +9204,19 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	    () => (fridgeDialog ? placed.find((p) => p.uid === fridgeDialog.fridgeUid) ?? null : null),
 	    [fridgeDialog, placed]
 	  );
+  const framelessFortyWallHeightIn = useMemo(() => {
+    if (!fridgeForDialog) return null;
+    const side = cabinetWall(fridgeForDialog, room);
+    const placedForty = placed.find((cabinet) => (
+      cabinet.placement === "wall"
+      && cabinetWall(cabinet, room) === side
+      && hasAefPrintedGeometry(cabinet)
+      && isFramelessFortyWallHeight(placedHeight(cabinet))
+    ));
+    if (placedForty) return placedHeight(placedForty);
+    const resolved = resolveWallHeightClass((wallCabPool as DesignCabinet[] | undefined) ?? [], wallCabHeight);
+    return resolved != null && isFramelessFortyWallHeight(resolved) ? resolved : null;
+  }, [fridgeForDialog, placed, room, wallCabHeight, wallCabPool]);
   const fridgeDialogInitialChoice = useMemo(() => {
     if (!fridgeForDialog) return null;
     if (fridgeDialog?.initialChoice) {
@@ -13509,18 +13647,33 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     [placed, styleId, doorStyles],
   );
 
+  const threeDCabinetFaces = useMemo(
+    () => placed.flatMap((cabinet) => {
+      const assignedStyleId = effectiveStyleId(cabinet, styleId) ?? styleId;
+      const assignedStyle = assignedStyleId != null ? doorStyles?.find((style) => style.id === assignedStyleId) as DesignerFaceStyle | undefined : undefined;
+      if (!assignedStyle) return [];
+      const plan = designerFacePlan(assignedStyle, cabinet.placement);
+      return [[cabinet.uid, plan] as const];
+    }),
+    [placed, styleId, doorStyles],
+  );
   const threeDCabinetDoorSamples = useMemo(
-	    () => Object.fromEntries(placed.flatMap((cabinet) => {
-	      const assignedStyleId = effectiveStyleId(cabinet, styleId) ?? styleId;
-	      const assignedStyle = assignedStyleId != null ? doorStyles?.find((style) => style.id === assignedStyleId) : null;
-	      const styleLabel = `${assignedStyle?.ourName ?? ""} ${assignedStyle?.aliasName ?? ""}`;
-	      const sampleUrl = /rustic hickory|forest rust/i.test(styleLabel)
-	        ? "/manus-storage/rustic_hickory_vertical_grain_32d9e28a.webp"
-	        : assignedStyleId != null ? doorSampleById.get(assignedStyleId) : null;
-	      return sampleUrl ? [[cabinet.uid, sampleUrl]] : [];
-	    })),
-	    [placed, styleId, doorSampleById, doorStyles],
-	  );
+    () => Object.fromEntries(threeDCabinetFaces.flatMap(([uid, plan]) => {
+      if (plan.sourceKind === "combined") return [[uid, ""]];
+      return plan.doorUrl ? [[uid, plan.doorUrl]] : [];
+    })),
+    [threeDCabinetFaces],
+  );
+  const threeDCabinetDrawerSamples = useMemo(
+    () => Object.fromEntries(threeDCabinetFaces.flatMap(([uid, plan]) => (
+      plan.sourceKind === "split" && plan.drawerUrl ? [[uid, plan.drawerUrl]] : []
+    ))),
+    [threeDCabinetFaces],
+  );
+  const threeDCabinetFaceKinds = useMemo(
+    () => Object.fromEntries(threeDCabinetFaces.map(([uid, plan]) => [uid, plan.sourceKind])),
+    [threeDCabinetFaces],
+  );
 
   const threeDCabinetFrontVisuals = useMemo(() => {
     const liveVisualByCabinetId = new Map<number, string>();
@@ -13603,9 +13756,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	    name: islandStyleId != null ? styleNameById.get(islandStyleId) ?? islandStyle?.ourName ?? islandStyle?.aliasName ?? `Style #${islandStyleId}` : null,
 	    color: islandStyleId != null ? (finishById.get(islandStyleId) ?? activeFinish).face : null,
 	    productId: islandStyleId ?? null,
-	    doorSampleUrl: islandStyleId != null ? (doorSampleById.get(islandStyleId) ?? null) : null,
+	    doorSampleUrl: islandStyle ? designerFacePlan(islandStyle as DesignerFaceStyle, "base")?.doorUrl ?? null : null,
 	  };
-	}, [activeFinish, doorSampleById, doorStyles, finishById, island, placed, styleId, styleNameById]);
+	}, [activeFinish, doorStyles, finishById, island, placed, styleId, styleNameById]);
 	const threeDIslandCountertop = {
 	  name: islandCountertopSurface?.name ?? (island ? countertopMaterial(island.countertopMaterialId ?? countertopMaterialId).name : null),
 	  productId: islandCountertopSurface?.id ?? null,
@@ -13696,8 +13849,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                   hardwareAccent={catalogHardwareSelection ? catalogHardwareFinishAccent(catalogHardwareSelection.finish) : undefined}
                   onHardwareStyleChange={setGenericHardwareStyle}
 	      cabinetDoorSampleUrls={threeDCabinetDoorSamples}
+	      cabinetDrawerSampleUrls={threeDCabinetDrawerSamples}
+	      cabinetFaceSourceKinds={threeDCabinetFaceKinds}
 	      cabinetFrontVisuals={threeDCabinetFrontVisuals}
 	      catalogDoorSampleUrl={active3DDoorSampleUrl}
+	      catalogDrawerSampleUrl={active3DDrawerSampleUrl}
+	      catalogFaceSourceKind={activeFaceSourceKind}
 	      catalogRoomSceneUrl={active3DRoomSceneReferenceUrl}
 	      windowSceneKind={windowSceneKind}
       windowFrameStyle={windowFrameStyle}
@@ -13837,6 +13994,15 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           )}
           <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{t("dt_sh_items", { n: placed.length })}</Badge>
         </div>
+        <InventoryDesignStockControl
+          simulationActive={inventory.simulationActive}
+          forcedOutOfStock={inventory.forcedOutOfStock}
+          notices={inventory.notices}
+          disabled={cabinetsLocked}
+          loading={inventory.loadingAlternatives}
+          onSwap={swapInventoryCabinet}
+          onSelect={setSelectedUid}
+        />
 
         <div className="hidden lg:block h-5 w-px bg-border" />
 
@@ -15525,6 +15691,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 		                {t("dt_cx_selected")} <span className="font-mono font-semibold text-foreground">{selectedCab.masterCode}</span>
 		                <span className="ml-1 hidden sm:inline text-foreground/70">— {selectedCabDisplayDescription}</span>
 		              </span>
+		              <InventoryStockBadge
+		                notice={inventory.noticeFor(selectedCab.uid)}
+		                disabled={cabinetsLocked}
+		                loading={inventory.loadingAlternatives}
+		                onSwap={(suggestion) => swapInventoryCabinet(selectedCab.uid, suggestion)}
+		              />
 		              {selectedCabinetWizard && (
 		                <div data-testid="selected-cabinet-wizard-status" className="flex shrink-0 items-center gap-1.5 rounded-md border border-emerald-300 bg-emerald-50 px-1.5 py-1">
 		                  <Badge className="bg-emerald-800 px-1.5 py-0.5 text-[9px] font-bold tracking-wide text-white hover:bg-emerald-800">WIZARD-BUILT · EDITABLE</Badge>
@@ -15945,6 +16117,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                       )}
                     </div>
 		                    <div className="text-xs text-muted-foreground">{selectedCabDisplayDescription}</div>
+                    <div className="mt-1">
+                      <InventoryStockBadge
+                        notice={inventory.noticeFor(selectedCab.uid)}
+                        disabled={cabinetsLocked}
+                        loading={inventory.loadingAlternatives}
+                        onSwap={(suggestion) => swapInventoryCabinet(selectedCab.uid, suggestion)}
+                      />
+                    </div>
                   </div>
                   {(paletteFinishSwatch || styleId) && (
                     <div
@@ -16536,7 +16716,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	            </div>}
 	          </div>
 
-		          <div className="flex-1 overflow-y-auto p-2 space-y-1">
+		          <div className="@container flex-1 overflow-y-auto p-2 space-y-1">
 		            {roomType === "bathroom" && paletteType === "vanity" && (
 		              <div data-testid="bathroom-vanity-lineup" className="mb-2 space-y-2 rounded-lg border border-[#a87f33]/40 bg-[#fffaf0] p-2">
 		                <p className="text-xs font-semibold text-[#1a2744]">Bath vanities · choose your line and door style</p>
@@ -16819,7 +16999,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                   {open && <div
                     id={groupId}
                     data-testid={`catalog-group-content-${groupId}`}
-                    className={isCompactWorkspace ? "grid grid-cols-2 gap-2" : undefined}
+                    className={isCompactWorkspace ? "grid grid-cols-1 gap-2 @min-[32rem]:grid-cols-2" : undefined}
                   >{group.items.length === 0 ? (
                     <div className="rounded-md border border-dashed border-border bg-muted/25 px-3 py-2 text-[10px] text-muted-foreground">
                       {t("dt_pl_no_category")}
@@ -16863,52 +17043,28 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                     // as an add-on sale in the design tool and is hidden here.
                     if (paletteType === "accessory" || paletteType === "panel") {
                       if (!isPlaceableAccessory(c)) return null;
+                      const panelDimensions = resolvedDesignCabinetDimensions(c);
+                      const panelSizeLabel = panelDimensions.width > 0 && panelDimensions.height > 0 && panelDimensions.depth > 0
+                        ? formatCatalogPaletteSize(c)
+                        : "";
                       return (
-                        <div
+                        <CatalogPaletteCard
                           key={c.masterCode}
-                          data-testid={paletteType === "panel" ? `panel-catalog-item-${c.masterCode}` : undefined}
+                          cabinet={c}
+                          description={c.description}
+                          sizeLabel={panelSizeLabel}
+                          sizeTestId={paletteType === "panel" ? `panel-catalog-dimensions-${c.masterCode}` : undefined}
+                          cardTestId={paletteType === "panel" ? `panel-catalog-item-${c.masterCode}` : undefined}
+                          placeHint={t("dt_pl_click_drag_place")}
                           draggable
                           onDragStart={(event) => { dragDataRef.current = c; setCatalogDragPreview(c); const item = interactive3dCatalogItems.find((candidate) => Number(candidate.id) === Number(c.id) && candidate.category === "Accessory"); if (item) { event.dataTransfer.effectAllowed = "copy"; event.dataTransfer.setData("text/plain", threeDLeftCatalogDragPayload(item.category, item.id)); } }}
                           onDragEnd={() => { dragDataRef.current = null; setCatalogDragPreview(null); }}
-                          className="group flex w-full items-center gap-1.5 rounded-lg border border-border p-2 transition-colors hover:border-primary/50 hover:bg-muted/50"
-                        >
-                          <button
-                            type="button"
-                            onClick={() => addCabinet(c)}
-                            className="flex min-w-0 flex-1 items-center gap-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                            aria-label={`Place ${c.displayMasterCode ?? c.masterCode}`}
-                          >
-                            <div className="h-9 w-9 flex items-center justify-center shrink-0">
-                              <CabinetImage cabinet={c} className="h-full w-auto max-w-full" />
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="font-mono text-xs font-semibold text-foreground truncate">{c.displayMasterCode ?? c.masterCode}</div>
-                              <div className="text-[10px] text-muted-foreground truncate">{c.description}</div>
-                              {(() => {
-                                const dimensions = resolvedDesignCabinetDimensions(c);
-                                return dimensions.width > 0 && dimensions.height > 0 && dimensions.depth > 0 ? (
-                                  <div data-testid={`panel-catalog-dimensions-${c.masterCode}`} className="text-[9px] text-muted-foreground">
-                                    {formatCatalogInchValue(dimensions.width)}″ W × {formatCatalogInchValue(dimensions.height)}″ H × {formatCatalogInchValue(dimensions.depth)}″ D
-                                  </div>
-                                ) : null;
-                              })()}
-                              <div className="text-[9px] font-medium text-primary/70">{t("dt_pl_click_drag_place")}</div>
-                            </div>
-                            <Plus className="h-3.5 w-3.5 text-muted-foreground group-hover:text-primary shrink-0" />
-                          </button>
-                          <Tooltip><TooltipTrigger asChild>
-                            <button
-                              type="button"
-                              data-testid={`catalog-noncabinet-card-specs-${c.masterCode}`}
-                              aria-label={`View specifications for ${c.displayMasterCode ?? c.masterCode}`}
-                              title="View this catalog item’s specifications"
-                              onClick={(event) => { event.stopPropagation(); openCatalogSpecificationsFor(c); }}
-                              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded border border-[#b98d3e]/60 bg-white text-[#634b20] transition hover:bg-[#fff4d8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1a2744] active:scale-95"
-                            >
-                              <FileText className="h-3.5 w-3.5" aria-hidden />
-                            </button>
-                          </TooltipTrigger><TooltipContent>View specifications</TooltipContent></Tooltip>
-                        </div>
+                          onPlace={() => addCabinet(c)}
+                          onOpenSpecs={() => openCatalogSpecificationsFor(c)}
+                          specsTestId={`catalog-noncabinet-card-specs-${c.masterCode}`}
+                          specsAriaLabel={`View specifications for ${c.displayMasterCode ?? c.masterCode}`}
+                          specsTitle="View this catalog item’s specifications"
+                        />
                       );
                     }
 	                    const placementDetail = cabinetPlacementHoverDetail(c);
@@ -16922,100 +17078,40 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                    const appliancePriceNotice = paletteType === "appliance" && Number(c.id) === 0
 	                      ? "Layout model — appliance price is not included in the design total."
 	                      : null;
+	                    // A base-family box (Base/Vanity tab, or a corner BASE
+	                    // cabinet inside the unified Corner tab) is always the
+	                    // standard 34.5" tall; wall/tall/corner-wall boxes use
+	                    // their real catalog height. Depth is always the resolved
+	                    // depth, including 24"-deep fridge walls.
+	                    const isBaseBox =
+	                      paletteType === "base" ||
+	                      (paletteType === "vanity" && !isKneeDrawerItem(c)) ||
+	                      (paletteType === "corner" && isCornerBase(c));
+	                    const sizeLabel = formatCatalogPaletteSize(c, { baseBox: isBaseBox });
+	                    const openSpecs = paletteType === "appliance" ? Boolean(c.specImageUrl) : true;
 	                    return (
-		                    <div
-		                      key={`${c.masterCode}:${c.catalogImageUrl ?? c.id}`}
-                      draggable
-                      onDragStart={(event) => { dragDataRef.current = c; setCatalogDragPreview(c); const item = interactive3dCatalogItems.find((candidate) => Number(candidate.id) === Number(c.id) && candidate.category === "Cabinet"); if (item) { event.dataTransfer.effectAllowed = "copy"; event.dataTransfer.setData("text/plain", threeDLeftCatalogDragPayload(item.category, item.id)); } }}
-                      onDragEnd={() => { dragDataRef.current = null; setCatalogDragPreview(null); }}
-	                      className="group flex w-full items-center gap-1.5 rounded-lg border border-border p-2 transition-colors hover:border-primary/50 hover:bg-muted/50"
-	                      title={placementDetailText}
-	                      data-testid={placementDetail ? `cabinet-placement-detail-${c.masterCode}` : undefined}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => addCabinet(c)}
-                        className="flex min-w-0 flex-1 items-center gap-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                        aria-label={placementDetailText ?? `Place ${c.displayMasterCode ?? c.masterCode}`}
-                      >
-                        <div className="h-9 w-9 shrink-0 flex items-center justify-center">
-                          <CabinetImage cabinet={c} className="h-full w-auto max-w-full" />
-                        </div>
-	                        <div className="min-w-0 flex-1">
-	                          <div className="font-mono text-xs font-semibold text-foreground truncate">{c.displayMasterCode ?? c.masterCode}</div>
-	                          <div className="text-[10px] text-muted-foreground truncate">{isSquareDoubleDoorBaseEnd(c) ? BEC24_DISPLAY_NAME : c.description}</div>
-                          <GlassPolicyBadge masterCode={c.masterCode} glassIncluded={c.glassIncluded} className="mt-0.5" />
-                          {(() => {
-                          // A base-family box (Base/Vanity tab, or a corner BASE
-                          // cabinet inside the unified Corner tab) is always the
-                          // standard 34.5" tall; wall/tall/corner-wall boxes use
-                          // their real catalog height.
-		                          const isBaseBox =
-		                            paletteType === "base" ||
-		                            (paletteType === "vanity" && !isKneeDrawerItem(c)) ||
-                            (paletteType === "corner" && isCornerBase(c));
-                          const dimensions = resolvedDesignCabinetDimensions(c);
-	                          const widthVal = formatCatalogInchValue(dimensions.width);
-	                          const hVal = isBaseBox ? formatCatalogInchValue(34.5) : dimensions.height > 0 ? formatCatalogInchValue(dimensions.height) : "—";
-	                          const showH = isBaseBox || dimensions.height > 0;
-	                          return (
-	                            <div className="text-[10px] text-muted-foreground">{widthVal}"W × {hVal}{showH ? "\"H" : ""}</div>
-	                          );
-	                          })()}
-	                          {placementDetail && (
-	                            <div className="mt-0.5 text-[9px] font-medium leading-snug text-emerald-700">
-	                              Hover for dimensions &amp; flush-seam clearance
-	                            </div>
-	                          )}
-	                          {appliancePriceNotice && (
-	                            <div
-	                              data-testid={`appliance-price-pending-${c.masterCode}`}
-	                              className="mt-0.5 text-[9px] font-medium leading-snug text-amber-700"
-	                            >
-	                              {appliancePriceNotice}
-	                            </div>
-	                          )}
-	                        </div>
-                        {paletteFinishSwatch && (
-                          <img
-                            src={paletteFinishSwatch}
-                            alt={activeStyleName ? `${activeStyleName} finish` : "selected finish"}
-                            title={activeStyleName ?? undefined}
-                            loading="lazy"
-                            className="h-7 w-7 rounded-sm object-cover border border-[#a07d4a]/40 shrink-0"
-                          />
-                        )}
-                        <Plus className="h-3.5 w-3.5 shrink-0 text-muted-foreground group-hover:text-primary" />
-                      </button>
-                      {paletteType === "appliance" && c.specImageUrl ? (
-                        <Tooltip><TooltipTrigger asChild>
-                          <button
-                            type="button"
-                            data-testid={`catalog-appliance-card-specs-${c.masterCode}`}
-                            aria-label={`View specifications for ${c.displayMasterCode ?? c.masterCode}`}
-                            title="View manufacturer specification sheet"
-                            onClick={(event) => { event.stopPropagation(); openCatalogSpecificationsFor(c); }}
-                            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded border border-[#b98d3e]/60 bg-white text-[#634b20] transition hover:bg-[#fff4d8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1a2744] active:scale-95"
-                          >
-                            <FileText className="h-3.5 w-3.5" aria-hidden />
-                          </button>
-                        </TooltipTrigger><TooltipContent>View manufacturer specification sheet</TooltipContent></Tooltip>
-                      ) : paletteType !== "appliance" ? (
-                        <Tooltip><TooltipTrigger asChild>
-                          <button
-                            type="button"
-                            data-testid={`catalog-card-specs-${c.masterCode}`}
-                            aria-label={`View specifications for ${c.displayMasterCode ?? c.masterCode}`}
-                            title="View this catalog item’s specifications"
-                            onClick={(event) => { event.stopPropagation(); openCatalogSpecificationsFor(c); }}
-                            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded border border-[#b98d3e]/60 bg-white text-[#634b20] transition hover:bg-[#fff4d8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1a2744] active:scale-95"
-                          >
-                            <FileText className="h-3.5 w-3.5" aria-hidden />
-                          </button>
-                        </TooltipTrigger><TooltipContent>View specifications</TooltipContent></Tooltip>
-                      ) : null}
-                    </div>
-                    );
+	                    <CatalogPaletteCard
+	                      key={`${c.masterCode}:${c.catalogImageUrl ?? c.id}`}
+	                      cabinet={c}
+	                      description={isSquareDoubleDoorBaseEnd(c) ? BEC24_DISPLAY_NAME : c.description}
+	                      sizeLabel={sizeLabel}
+	                      finishSwatchUrl={paletteFinishSwatch}
+	                      finishName={activeStyleName}
+	                      showGlass
+	                      placementDetailText={placementDetailText}
+	                      showPlacementHint={Boolean(placementDetail)}
+	                      priceNotice={appliancePriceNotice}
+	                      cardTestId={placementDetail ? `cabinet-placement-detail-${c.masterCode}` : undefined}
+	                      draggable
+	                      onDragStart={(event) => { dragDataRef.current = c; setCatalogDragPreview(c); const item = interactive3dCatalogItems.find((candidate) => Number(candidate.id) === Number(c.id) && candidate.category === "Cabinet"); if (item) { event.dataTransfer.effectAllowed = "copy"; event.dataTransfer.setData("text/plain", threeDLeftCatalogDragPayload(item.category, item.id)); } }}
+	                      onDragEnd={() => { dragDataRef.current = null; setCatalogDragPreview(null); }}
+	                      onPlace={() => addCabinet(c)}
+	                      onOpenSpecs={openSpecs ? () => openCatalogSpecificationsFor(c) : undefined}
+	                      specsTestId={paletteType === "appliance" && c.specImageUrl ? `catalog-appliance-card-specs-${c.masterCode}` : paletteType !== "appliance" ? `catalog-card-specs-${c.masterCode}` : undefined}
+	                      specsAriaLabel={`View specifications for ${c.displayMasterCode ?? c.masterCode}`}
+	                      specsTitle={paletteType === "appliance" ? "View manufacturer specification sheet" : "View this catalog item’s specifications"}
+	                    />
+	                    );
                   })}</div>}
                 </div>
                 );
@@ -19947,6 +20043,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	        hasSmoothPanel={((fridgeSurround as { smoothPanels?: unknown[] } | undefined)?.smoothPanels?.length ?? 0) > 0}
 	        replacementCabinetCode={refrigeratorCabinetToReplace?.masterCode ?? null}
 	        initialChoice={fridgeDialogInitialChoice}
+	        matchWallHeightIn={framelessFortyWallHeightIn}
 		        errorMessage={placementWarning}
         onApply={applyFridgeSurround}
 	        onSkip={() => setFridgeDialog(null)}
@@ -21470,8 +21567,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                   hardwareAccent={catalogHardwareSelection ? catalogHardwareFinishAccent(catalogHardwareSelection.finish) : undefined}
                   onHardwareStyleChange={setGenericHardwareStyle}
 	                cabinetDoorSampleUrls={threeDCabinetDoorSamples}
+	                cabinetDrawerSampleUrls={threeDCabinetDrawerSamples}
+	                cabinetFaceSourceKinds={threeDCabinetFaceKinds}
 		                cabinetFrontVisuals={threeDCabinetFrontVisuals}
 	                catalogDoorSampleUrl={active3DDoorSampleUrl}
+	                catalogDrawerSampleUrl={active3DDrawerSampleUrl}
+	                catalogFaceSourceKind={activeFaceSourceKind}
 	                catalogRoomSceneUrl={active3DRoomSceneReferenceUrl}
 	                windowSceneKind={windowSceneKind}
 	                windowFrameStyle={windowFrameStyle}
@@ -21828,7 +21929,7 @@ function PaletteShell({
   if (isMobile) {
     return (
       <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent side="left" className={compact ? "w-[min(840px,96vw)] p-0 gap-0 flex flex-col" : "w-[88vw] max-w-sm p-0 gap-0 flex flex-col"}>
+        <SheetContent side="left" className={compact ? "w-[min(840px,96vw)] max-w-none sm:max-w-[min(840px,96vw)] p-0 gap-0 flex flex-col" : "w-[88vw] max-w-sm p-0 gap-0 flex flex-col"}>
           <SheetHeader className="px-3 py-2 border-b border-border text-left">
             <SheetTitle className="text-sm">{compact ? "Cabinet catalog — tablet view" : t("dt_pl_catalog")}</SheetTitle>
           </SheetHeader>

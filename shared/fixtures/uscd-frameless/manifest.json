@@ -1,0 +1,1084 @@
+{
+  "source": "USCD Spec Manual V8.2",
+  "count": 49,
+  "styles": [
+    {
+      "code": "TWP",
+      "name": "White Pine",
+      "collection": "torino",
+      "pdf_page": 2,
+      "grain_direction": "horizontal",
+      "door_style": "Slab",
+      "folder": "torino/TWP-white-pine",
+      "reveal_rows": [
+        189,
+        198
+      ],
+      "door_rows": [
+        201,
+        884
+      ],
+      "drawer_rows": [
+        4,
+        186
+      ],
+      "source": "USCD Spec Manual V8.2"
+    },
+    {
+      "code": "TGW",
+      "name": "Grey Wood",
+      "collection": "torino",
+      "pdf_page": 2,
+      "grain_direction": "horizontal",
+      "door_style": "Slab",
+      "folder": "torino/TGW-grey-wood",
+      "reveal_rows": [
+        189,
+        198
+      ],
+      "door_rows": [
+        201,
+        884
+      ],
+      "drawer_rows": [
+        4,
+        186
+      ],
+      "source": "USCD Spec Manual V8.2"
+    },
+    {
+      "code": "TDW",
+      "name": "Dark Wood",
+      "collection": "torino",
+      "pdf_page": 2,
+      "grain_direction": "horizontal",
+      "door_style": "Slab",
+      "folder": "torino/TDW-dark-wood",
+      "reveal_rows": [
+        189,
+        198
+      ],
+      "door_rows": [
+        201,
+        884
+      ],
+      "drawer_rows": [
+        4,
+        186
+      ],
+      "source": "USCD Spec Manual V8.2"
+    },
+    {
+      "code": "PGW",
+      "name": "Gloss White",
+      "collection": "palermo",
+      "pdf_page": 3,
+      "grain_direction": "none (solid)",
+      "door_style": "Slab",
+      "folder": "palermo/PGW-gloss-white",
+      "reveal_rows": [
+        192,
+        203
+      ],
+      "door_rows": [
+        206,
+        909
+      ],
+      "drawer_rows": [
+        3,
+        189
+      ],
+      "source": "USCD Spec Manual V8.2"
+    },
+    {
+      "code": "ZCC",
+      "name": "Cashmere",
+      "collection": "zenit-slim-cava",
+      "pdf_page": 4,
+      "grain_direction": "none (solid)",
+      "door_style": "Slim Cava (shaker)",
+      "folder": "zenit-slim-cava/ZCC-cashmere",
+      "reveal_rows": [
+        93,
+        96
+      ],
+      "door_rows": [
+        99,
+        434
+      ],
+      "drawer_rows": [
+        2,
+        90
+      ],
+      "source": "USCD Spec Manual V8.2"
+    },
+    {
+      "code": "ZCN",
+      "name": "Antracita",
+      "collection": "zenit-slim-cava",
+      "pdf_page": 4,
+      "grain_direction": "none (solid)",
+      "door_style": "Slim Cava (shaker)",
+      "folder": "zenit-slim-cava/ZCN-antracita",
+      "reveal_rows": [
+        93,
+        96
+      ],
+      "door_rows": [
+        99,
+        434
+      ],
+      "drawer_rows": [
+        2,
+        90
+      ],
+      "source": "USCD Spec Manual V8.2"
+    },
+    {
+      "code": "ZCK",
+      "name": "Black",
+      "collection": "zenit-slim-cava",
+      "pdf_page": 4,
+      "grain_direction": "none (solid)",
+      "door_style": "Slim Cava (shaker)",
+      "folder": "zenit-slim-cava/ZCK-black",
+      "reveal_rows": [
+        93,
+        94
+      ],
+      "door_rows": [
+        97,
+        434
+      ],
+      "drawer_rows": [
+        2,
+        90
+      ],
+      "source": "USCD Spec Manual V8.2"
+    },
+    {
+      "code": "ZSI",
+      "name": "Azul Indigo",
+      "collection": "zenit",
+      "pdf_page": 4,
+      "grain_direction": "none (solid)",
+      "door_style": "Slab",
+      "folder": "zenit/ZSI-azul-indigo",
+      "reveal_rows": [
+        113,
+        117
+      ],
+      "door_rows": [
+        120,
+        538
+      ],
+      "drawer_rows": [
+        2,
+        110
+      ],
+      "source": "USCD Spec Manual V8.2"
+    },
+    {
+      "code": "ZSM",
+      "name": "Azul Marino",
+      "collection": "zenit",
+      "pdf_page": 4,
+      "grain_direction": "none (solid)",
+      "door_style": "Slab",
+      "folder": "zenit/ZSM-azul-marino",
+      "reveal_rows": [
+        113,
+        117
+      ],
+      "door_rows": [
+        120,
+        538
+      ],
+      "drawer_rows": [
+        2,
+        110
+      ],
+      "source": "USCD Spec Manual V8.2"
+    },
+    {
+      "code": "ZSU",
+      "name": "Agua Marina",
+      "collection": "zenit",
+      "pdf_page": 4,
+      "grain_direction": "none (solid)",
+      "door_style": "Slab",
+      "folder": "zenit/ZSU-agua-marina",
+      "reveal_rows": [
+        113,
+        117
+      ],
+      "door_rows": [
+        120,
+        538
+      ],
+      "drawer_rows": [
+        2,
+        110
+      ],
+      "source": "USCD Spec Manual V8.2"
+    },
+    {
+      "code": "ZSA",
+      "name": "Agave",
+      "collection": "zenit",
+      "pdf_page": 4,
+      "grain_direction": "none (solid)",
+      "door_style": "Slab",
+      "folder": "zenit/ZSA-agave",
+      "reveal_rows": [
+        113,
+        117
+      ],
+      "door_rows": [
+        120,
+        538
+      ],
+      "drawer_rows": [
+        2,
+        110
+      ],
+      "source": "USCD Spec Manual V8.2"
+    },
+    {
+      "code": "ZSV",
+      "name": "Verde Salvia",
+      "collection": "zenit",
+      "pdf_page": 4,
+      "grain_direction": "none (solid)",
+      "door_style": "Slab",
+      "folder": "zenit/ZSV-verde-salvia",
+      "reveal_rows": [
+        113,
+        117
+      ],
+      "door_rows": [
+        120,
+        538
+      ],
+      "drawer_rows": [
+        2,
+        110
+      ],
+      "source": "USCD Spec Manual V8.2"
+    },
+    {
+      "code": "ZSW",
+      "name": "Blanco",
+      "collection": "zenit",
+      "pdf_page": 4,
+      "grain_direction": "none (solid)",
+      "door_style": "Slab",
+      "folder": "zenit/ZSW-blanco",
+      "reveal_rows": [
+        113,
+        115
+      ],
+      "door_rows": [
+        118,
+        538
+      ],
+      "drawer_rows": [
+        2,
+        110
+      ],
+      "source": "USCD Spec Manual V8.2"
+    },
+    {
+      "code": "ZSC",
+      "name": "Cashmere",
+      "collection": "zenit",
+      "pdf_page": 4,
+      "grain_direction": "none (solid)",
+      "door_style": "Slab",
+      "folder": "zenit/ZSC-cashmere",
+      "reveal_rows": [
+        113,
+        117
+      ],
+      "door_rows": [
+        120,
+        538
+      ],
+      "drawer_rows": [
+        2,
+        110
+      ],
+      "source": "USCD Spec Manual V8.2"
+    },
+    {
+      "code": "ZSL",
+      "name": "Albero",
+      "collection": "zenit",
+      "pdf_page": 4,
+      "grain_direction": "none (solid)",
+      "door_style": "Slab",
+      "folder": "zenit/ZSL-albero",
+      "reveal_rows": [
+        113,
+        117
+      ],
+      "door_rows": [
+        120,
+        538
+      ],
+      "drawer_rows": [
+        2,
+        110
+      ],
+      "source": "USCD Spec Manual V8.2"
+    },
+    {
+      "code": "ZSN",
+      "name": "Antracita",
+      "collection": "zenit",
+      "pdf_page": 4,
+      "grain_direction": "none (solid)",
+      "door_style": "Slab",
+      "folder": "zenit/ZSN-antracita",
+      "reveal_rows": [
+        113,
+        117
+      ],
+      "door_rows": [
+        120,
+        538
+      ],
+      "drawer_rows": [
+        2,
+        110
+      ],
+      "source": "USCD Spec Manual V8.2"
+    },
+    {
+      "code": "ZSK",
+      "name": "Black",
+      "collection": "zenit",
+      "pdf_page": 4,
+      "grain_direction": "none (solid)",
+      "door_style": "Slab",
+      "folder": "zenit/ZSK-black",
+      "reveal_rows": [
+        113,
+        117
+      ],
+      "door_rows": [
+        120,
+        538
+      ],
+      "drawer_rows": [
+        2,
+        110
+      ],
+      "source": "USCD Spec Manual V8.2"
+    },
+    {
+      "code": "ZSO",
+      "name": "Coral",
+      "collection": "zenit",
+      "pdf_page": 4,
+      "grain_direction": "none (solid)",
+      "door_style": "Slab",
+      "folder": "zenit/ZSO-coral",
+      "reveal_rows": [
+        113,
+        117
+      ],
+      "door_rows": [
+        120,
+        538
+      ],
+      "drawer_rows": [
+        2,
+        110
+      ],
+      "source": "USCD Spec Manual V8.2"
+    },
+    {
+      "code": "ZSP",
+      "name": "Pompei",
+      "collection": "zenit",
+      "pdf_page": 4,
+      "grain_direction": "none (solid)",
+      "door_style": "Slab",
+      "folder": "zenit/ZSP-pompei",
+      "reveal_rows": [
+        113,
+        117
+      ],
+      "door_rows": [
+        120,
+        538
+      ],
+      "drawer_rows": [
+        2,
+        110
+      ],
+      "source": "USCD Spec Manual V8.2"
+    },
+    {
+      "code": "ZSB",
+      "name": "Basalto",
+      "collection": "zenit",
+      "pdf_page": 4,
+      "grain_direction": "none (solid)",
+      "door_style": "Slab",
+      "folder": "zenit/ZSB-basalto",
+      "reveal_rows": [
+        115,
+        117
+      ],
+      "door_rows": [
+        120,
+        538
+      ],
+      "drawer_rows": [
+        2,
+        112
+      ],
+      "source": "USCD Spec Manual V8.2"
+    },
+    {
+      "code": "LSC",
+      "name": "Cashmere",
+      "collection": "luxe",
+      "pdf_page": 4,
+      "grain_direction": "none (solid)",
+      "door_style": "Slab",
+      "folder": "luxe/LSC-cashmere",
+      "reveal_rows": [
+        111,
+        117
+      ],
+      "door_rows": [
+        120,
+        538
+      ],
+      "drawer_rows": [
+        2,
+        108
+      ],
+      "source": "USCD Spec Manual V8.2"
+    },
+    {
+      "code": "LSA",
+      "name": "Agua Marina",
+      "collection": "luxe",
+      "pdf_page": 4,
+      "grain_direction": "none (solid)",
+      "door_style": "Slab",
+      "folder": "luxe/LSA-agua-marina",
+      "reveal_rows": [
+        111,
+        117
+      ],
+      "door_rows": [
+        120,
+        538
+      ],
+      "drawer_rows": [
+        2,
+        108
+      ],
+      "source": "USCD Spec Manual V8.2"
+    },
+    {
+      "code": "LSN",
+      "name": "Antracita",
+      "collection": "luxe",
+      "pdf_page": 4,
+      "grain_direction": "none (solid)",
+      "door_style": "Slab",
+      "folder": "luxe/LSN-antracita",
+      "reveal_rows": [
+        90,
+        95
+      ],
+      "door_rows": [
+        98,
+        435
+      ],
+      "drawer_rows": [
+        2,
+        87
+      ],
+      "source": "USCD Spec Manual V8.2"
+    },
+    {
+      "code": "LSR",
+      "name": "Rosales 3",
+      "collection": "luxe",
+      "pdf_page": 4,
+      "grain_direction": "vertical",
+      "door_style": "Slab",
+      "folder": "luxe/LSR-rosales-3",
+      "reveal_rows": [
+        111,
+        117
+      ],
+      "door_rows": [
+        120,
+        538
+      ],
+      "drawer_rows": [
+        2,
+        108
+      ],
+      "source": "USCD Spec Manual V8.2"
+    },
+    {
+      "code": "LSP",
+      "name": "Picasso 1",
+      "collection": "luxe",
+      "pdf_page": 4,
+      "grain_direction": "vertical",
+      "door_style": "Slab",
+      "folder": "luxe/LSP-picasso-1",
+      "reveal_rows": [
+        111,
+        117
+      ],
+      "door_rows": [
+        120,
+        538
+      ],
+      "drawer_rows": [
+        2,
+        108
+      ],
+      "source": "USCD Spec Manual V8.2"
+    },
+    {
+      "code": "SSH",
+      "name": "Alhambra 1",
+      "collection": "syncron",
+      "pdf_page": 5,
+      "grain_direction": "vertical",
+      "door_style": "Slab",
+      "folder": "syncron/SSH-alhambra-1",
+      "reveal_rows": [
+        91,
+        95
+      ],
+      "door_rows": [
+        98,
+        434
+      ],
+      "drawer_rows": [
+        2,
+        88
+      ],
+      "source": "USCD Spec Manual V8.2"
+    },
+    {
+      "code": "SSS",
+      "name": "Picasso 3",
+      "collection": "syncron",
+      "pdf_page": 5,
+      "grain_direction": "vertical",
+      "door_style": "Slab",
+      "folder": "syncron/SSS-picasso-3",
+      "reveal_rows": [
+        91,
+        96
+      ],
+      "door_rows": [
+        99,
+        434
+      ],
+      "drawer_rows": [
+        2,
+        88
+      ],
+      "source": "USCD Spec Manual V8.2"
+    },
+    {
+      "code": "SCM",
+      "name": "Muratti 4",
+      "collection": "syncron-slim-cava",
+      "pdf_page": 5,
+      "grain_direction": "vertical",
+      "door_style": "Slim Cava (shaker)",
+      "folder": "syncron-slim-cava/SCM-muratti-4",
+      "reveal_rows": [
+        92,
+        94
+      ],
+      "door_rows": [
+        97,
+        434
+      ],
+      "drawer_rows": [
+        2,
+        89
+      ],
+      "source": "USCD Spec Manual V8.2"
+    },
+    {
+      "code": "SSJ",
+      "name": "Alhambra 2",
+      "collection": "syncron",
+      "pdf_page": 5,
+      "grain_direction": "vertical",
+      "door_style": "Slab",
+      "folder": "syncron/SSJ-alhambra-2",
+      "reveal_rows": [
+        91,
+        95
+      ],
+      "door_rows": [
+        98,
+        434
+      ],
+      "drawer_rows": [
+        2,
+        88
+      ],
+      "source": "USCD Spec Manual V8.2"
+    },
+    {
+      "code": "SSR",
+      "name": "Rosales 1",
+      "collection": "syncron",
+      "pdf_page": 5,
+      "grain_direction": "vertical",
+      "door_style": "Slab",
+      "folder": "syncron/SSR-rosales-1",
+      "reveal_rows": [
+        91,
+        95
+      ],
+      "door_rows": [
+        98,
+        434
+      ],
+      "drawer_rows": [
+        2,
+        88
+      ],
+      "source": "USCD Spec Manual V8.2"
+    },
+    {
+      "code": "SCN",
+      "name": "Nocce 1",
+      "collection": "syncron-slim-cava",
+      "pdf_page": 5,
+      "grain_direction": "vertical",
+      "door_style": "Slim Cava (shaker)",
+      "folder": "syncron-slim-cava/SCN-nocce-1",
+      "reveal_rows": [
+        91,
+        94
+      ],
+      "door_rows": [
+        97,
+        434
+      ],
+      "drawer_rows": [
+        2,
+        88
+      ],
+      "source": "USCD Spec Manual V8.2"
+    },
+    {
+      "code": "SSK",
+      "name": "Alhambra 3",
+      "collection": "syncron",
+      "pdf_page": 5,
+      "grain_direction": "vertical",
+      "door_style": "Slab",
+      "folder": "syncron/SSK-alhambra-3",
+      "reveal_rows": [
+        91,
+        96
+      ],
+      "door_rows": [
+        99,
+        434
+      ],
+      "drawer_rows": [
+        2,
+        88
+      ],
+      "source": "USCD Spec Manual V8.2"
+    },
+    {
+      "code": "SSA",
+      "name": "Rosales 2",
+      "collection": "syncron",
+      "pdf_page": 5,
+      "grain_direction": "vertical",
+      "door_style": "Slab",
+      "folder": "syncron/SSA-rosales-2",
+      "reveal_rows": [
+        91,
+        96
+      ],
+      "door_rows": [
+        99,
+        434
+      ],
+      "drawer_rows": [
+        2,
+        88
+      ],
+      "source": "USCD Spec Manual V8.2"
+    },
+    {
+      "code": "SCQ",
+      "name": "Picasso 2",
+      "collection": "syncron-slim-cava",
+      "pdf_page": 5,
+      "grain_direction": "vertical",
+      "door_style": "Slim Cava (shaker)",
+      "folder": "syncron-slim-cava/SCQ-picasso-2",
+      "reveal_rows": [
+        91,
+        94
+      ],
+      "door_rows": [
+        97,
+        434
+      ],
+      "drawer_rows": [
+        2,
+        88
+      ],
+      "source": "USCD Spec Manual V8.2"
+    },
+    {
+      "code": "SSM",
+      "name": "Muratti 4",
+      "collection": "syncron",
+      "pdf_page": 5,
+      "grain_direction": "vertical",
+      "door_style": "Slab",
+      "folder": "syncron/SSM-muratti-4",
+      "reveal_rows": [
+        91,
+        95
+      ],
+      "door_rows": [
+        98,
+        434
+      ],
+      "drawer_rows": [
+        2,
+        88
+      ],
+      "source": "USCD Spec Manual V8.2"
+    },
+    {
+      "code": "SSD",
+      "name": "Rosales 4",
+      "collection": "syncron",
+      "pdf_page": 5,
+      "grain_direction": "vertical",
+      "door_style": "Slab",
+      "folder": "syncron/SSD-rosales-4",
+      "reveal_rows": [
+        92,
+        95
+      ],
+      "door_rows": [
+        98,
+        434
+      ],
+      "drawer_rows": [
+        2,
+        89
+      ],
+      "source": "USCD Spec Manual V8.2"
+    },
+    {
+      "code": "SCA",
+      "name": "Rosales 2",
+      "collection": "syncron-slim-cava",
+      "pdf_page": 5,
+      "grain_direction": "vertical",
+      "door_style": "Slim Cava (shaker)",
+      "folder": "syncron-slim-cava/SCA-rosales-2",
+      "reveal_rows": [
+        92,
+        96
+      ],
+      "door_rows": [
+        99,
+        434
+      ],
+      "drawer_rows": [
+        2,
+        89
+      ],
+      "source": "USCD Spec Manual V8.2"
+    },
+    {
+      "code": "SSO",
+      "name": "Como Ash 2",
+      "collection": "syncron",
+      "pdf_page": 5,
+      "grain_direction": "vertical",
+      "door_style": "Slab",
+      "folder": "syncron/SSO-como-ash-2",
+      "reveal_rows": [
+        91,
+        95
+      ],
+      "door_rows": [
+        98,
+        434
+      ],
+      "drawer_rows": [
+        2,
+        88
+      ],
+      "source": "USCD Spec Manual V8.2"
+    },
+    {
+      "code": "SSL",
+      "name": "Rosales 3",
+      "collection": "syncron",
+      "pdf_page": 5,
+      "grain_direction": "vertical",
+      "door_style": "Slab",
+      "folder": "syncron/SSL-rosales-3",
+      "reveal_rows": [
+        91,
+        96
+      ],
+      "door_rows": [
+        99,
+        434
+      ],
+      "drawer_rows": [
+        2,
+        88
+      ],
+      "source": "USCD Spec Manual V8.2"
+    },
+    {
+      "code": "SCR",
+      "name": "Rosales 1",
+      "collection": "syncron-slim-cava",
+      "pdf_page": 5,
+      "grain_direction": "vertical",
+      "door_style": "Slim Cava (shaker)",
+      "folder": "syncron-slim-cava/SCR-rosales-1",
+      "reveal_rows": [
+        92,
+        96
+      ],
+      "door_rows": [
+        99,
+        434
+      ],
+      "drawer_rows": [
+        2,
+        89
+      ],
+      "source": "USCD Spec Manual V8.2"
+    },
+    {
+      "code": "SSN",
+      "name": "Nocce 1",
+      "collection": "syncron",
+      "pdf_page": 5,
+      "grain_direction": "vertical",
+      "door_style": "Slab",
+      "folder": "syncron/SSN-nocce-1",
+      "reveal_rows": [
+        92,
+        95
+      ],
+      "door_rows": [
+        98,
+        434
+      ],
+      "drawer_rows": [
+        2,
+        89
+      ],
+      "source": "USCD Spec Manual V8.2"
+    },
+    {
+      "code": "SSV",
+      "name": "Velazquez 1",
+      "collection": "syncron",
+      "pdf_page": 5,
+      "grain_direction": "vertical",
+      "door_style": "Slab",
+      "folder": "syncron/SSV-velazquez-1",
+      "reveal_rows": [
+        91,
+        95
+      ],
+      "door_rows": [
+        98,
+        434
+      ],
+      "drawer_rows": [
+        2,
+        88
+      ],
+      "source": "USCD Spec Manual V8.2"
+    },
+    {
+      "code": "SCL",
+      "name": "Rosales 3",
+      "collection": "syncron-slim-cava",
+      "pdf_page": 5,
+      "grain_direction": "vertical",
+      "door_style": "Slim Cava (shaker)",
+      "folder": "syncron-slim-cava/SCL-rosales-3",
+      "reveal_rows": [
+        92,
+        95
+      ],
+      "door_rows": [
+        98,
+        434
+      ],
+      "drawer_rows": [
+        2,
+        89
+      ],
+      "source": "USCD Spec Manual V8.2"
+    },
+    {
+      "code": "SSP",
+      "name": "Picasso 1",
+      "collection": "syncron",
+      "pdf_page": 5,
+      "grain_direction": "vertical",
+      "door_style": "Slab",
+      "folder": "syncron/SSP-picasso-1",
+      "reveal_rows": [
+        92,
+        96
+      ],
+      "door_rows": [
+        99,
+        434
+      ],
+      "drawer_rows": [
+        2,
+        89
+      ],
+      "source": "USCD Spec Manual V8.2"
+    },
+    {
+      "code": "SSX",
+      "name": "Velazquez 5",
+      "collection": "syncron",
+      "pdf_page": 5,
+      "grain_direction": "vertical",
+      "door_style": "Slab",
+      "folder": "syncron/SSX-velazquez-5",
+      "reveal_rows": [
+        91,
+        96
+      ],
+      "door_rows": [
+        99,
+        434
+      ],
+      "drawer_rows": [
+        2,
+        88
+      ],
+      "source": "USCD Spec Manual V8.2"
+    },
+    {
+      "code": "SSE",
+      "name": "Nocce 3",
+      "collection": "syncron",
+      "pdf_page": 5,
+      "grain_direction": "vertical",
+      "door_style": "Slab",
+      "folder": "syncron/SSE-nocce-3",
+      "reveal_rows": [
+        91,
+        96
+      ],
+      "door_rows": [
+        99,
+        434
+      ],
+      "drawer_rows": [
+        2,
+        88
+      ],
+      "source": "USCD Spec Manual V8.2"
+    },
+    {
+      "code": "SSZ",
+      "name": "Velazquez 2",
+      "collection": "syncron",
+      "pdf_page": 5,
+      "grain_direction": "vertical",
+      "door_style": "Slab",
+      "folder": "syncron/SSZ-velazquez-2",
+      "reveal_rows": [
+        91,
+        96
+      ],
+      "door_rows": [
+        99,
+        434
+      ],
+      "drawer_rows": [
+        2,
+        88
+      ],
+      "source": "USCD Spec Manual V8.2"
+    },
+    {
+      "code": "SCZ",
+      "name": "Velazquez 2",
+      "collection": "syncron-slim-cava",
+      "pdf_page": 5,
+      "grain_direction": "vertical",
+      "door_style": "Slim Cava (shaker)",
+      "folder": "syncron-slim-cava/SCZ-velazquez-2",
+      "reveal_rows": [
+        92,
+        94
+      ],
+      "door_rows": [
+        97,
+        434
+      ],
+      "drawer_rows": [
+        2,
+        89
+      ],
+      "source": "USCD Spec Manual V8.2"
+    },
+    {
+      "code": "SSQ",
+      "name": "Picasso 2",
+      "collection": "syncron",
+      "pdf_page": 5,
+      "grain_direction": "vertical",
+      "door_style": "Slab",
+      "folder": "syncron/SSQ-picasso-2",
+      "reveal_rows": [
+        91,
+        96
+      ],
+      "door_rows": [
+        99,
+        434
+      ],
+      "drawer_rows": [
+        2,
+        88
+      ],
+      "source": "USCD Spec Manual V8.2"
+    }
+  ]
+}

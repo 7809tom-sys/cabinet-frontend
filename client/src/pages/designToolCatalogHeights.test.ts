@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { AEF_PRINTED_GEOMETRY_MARKER } from "@shared/aefFramelessGeometry";
 import type { DesignCabinet } from "@/lib/design";
-import { catalogHeightOptions, filterCatalogByHeight, formatCatalogHeight, formatCatalogInchValue } from "./designToolCatalogHeights";
+import { AEF_PRINTED_GEOMETRY_MARKER } from "@shared/aefFramelessGeometry";
+import { catalogHeightOptions, filterCatalogByHeight, formatCatalogHeight, formatCatalogInchValue, formatCatalogPaletteSize } from "./designToolCatalogHeights";
 
 const cabinet = (masterCode: string, height: number, category = "Wall") => ({
   id: masterCode.length,
@@ -61,10 +63,31 @@ describe("compact designer catalog height selector", () => {
     ]);
   });
 
+  it("lists a marked frameless W3623 at its printed 22.625-inch height", () => {
+    const frameless = {
+      ...cabinet("W3623", 22.63),
+      constructionMethod: AEF_PRINTED_GEOMETRY_MARKER,
+      depth: 13.5,
+    } as DesignCabinet;
+    expect(catalogHeightOptions([frameless], "wall")).toEqual([
+      { height: 22.625, count: 1, label: '22.63"' },
+    ]);
+  });
+
   it("formats whole, half, and uncommon fractional heights compactly", () => {
     expect(formatCatalogHeight(42)).toBe('42"');
     expect(formatCatalogHeight(34.5)).toBe('34½"');
     expect(formatCatalogHeight(17.25)).toBe('17.25"');
+  });
+
+  it("prints width, height, and depth on one line, including a 24-inch-deep fridge wall", () => {
+    const frameless = (masterCode: string) => ({
+      ...cabinet(masterCode, 30),
+      constructionMethod: AEF_PRINTED_GEOMETRY_MARKER,
+    });
+    expect(formatCatalogPaletteSize(frameless("WFD2418-BLUM"))).toBe('24"W × 17.63"H × 13½"D');
+    expect(formatCatalogPaletteSize(frameless("WFD241824-BLUM"))).toBe('24"W × 17.63"H × 24"D');
+    expect(formatCatalogPaletteSize(cabinet("B24", 30, "Base"), { baseBox: true })).toBe('24"W × 34½"H × 24"D');
   });
 
   it("keeps every cabinet selection dimension in inches rather than converting values over twelve inches to feet", () => {

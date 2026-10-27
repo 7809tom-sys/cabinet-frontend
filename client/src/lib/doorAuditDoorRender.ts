@@ -390,7 +390,7 @@ export function createDoorAuditCapture(): DoorAuditCapture {
         disposeObject(current);
         current = null;
       }
-      const texture = input.samplePhotoUrl ? await loadSampleTexture(input.samplePhotoUrl) : null;
+      const texture = input.samplePhotoUrl && !input.needsDoorOnlyPhoto ? await loadSampleTexture(input.samplePhotoUrl) : null;
       const door = buildAuditDoor(input, texture);
       scene.add(door);
       current = door;

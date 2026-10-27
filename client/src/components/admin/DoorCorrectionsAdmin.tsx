@@ -110,6 +110,7 @@ export default function DoorCorrectionsAdmin() {
                   Submitted by {c.submittedByName ?? `user #${c.submittedBy}`} ·{" "}
                   {new Date(c.createdAt).toLocaleDateString()}
                 </p>
+                <Badge variant="outline" className="mr-1">{(c.note ?? "").startsWith("[DRAWER_FRONT]") ? "DRAWER_FRONT" : "DOOR"}</Badge>
                 {c.note ? <p className="text-sm mt-1.5 italic">“{c.note}”</p> : null}
                 <div className="mt-1.5">
                   <Badge

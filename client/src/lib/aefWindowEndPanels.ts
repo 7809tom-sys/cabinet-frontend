@@ -12,20 +12,13 @@ import {
   type WallOpening,
   formatEighthInches,
 } from "./design";
+import { selectAefEndPanel } from "./aefEndPanelStock";
 
 /**
- * AEF Frameless V8.2 wall end panels are 3/4-inch flat stock, 15-1/4 inches
- * wide, and are field-cut to the adjacent standard wall cabinet's 13-1/2-inch
- * depth. The shortest stock height that covers the cabinet is selected.
+ * A window break is one exposed end. Stock, the door-front field cut, and the
+ * 24"-deep TEP3096 / BP9642 fallback all come from the shared end-panel selector
+ * so this path cannot disagree with the general exposed-end rule.
  */
-const AEF_WALL_END_PANEL_STOCK = [
-  { masterCode: "WEP1523", height: 22.625 },
-  { masterCode: "WEP1530", height: 30.25 },
-  { masterCode: "WEP1535", height: 35.25 },
-  { masterCode: "WEP1542", height: 41.75 },
-] as const;
-
-const AEF_WALL_END_PANEL_STOCK_WIDTH_IN = 15.25;
 const EPSILON_IN = 0.01;
 
 type WindowPanelCatalogItem = Pick<
@@ -61,15 +54,6 @@ function isAefWallCabinet(cabinet: PlacedCabinet): boolean {
   return cabinet.placement === "wall"
     && cabinet.constructionMethod === AEF_PRINTED_GEOMETRY_MARKER
     && !isPanelItem(cabinet);
-}
-
-function panelStockFor(cabinet: PlacedCabinet): (typeof AEF_WALL_END_PANEL_STOCK)[number] | null {
-  const sideDepth = rotatedSize(cabinet).d;
-  // The source WEP board is 15-1/4 inches wide. Do not invent a panel that
-  // cannot cover a 24-inch refrigerator-wall side.
-  if (sideDepth > AEF_WALL_END_PANEL_STOCK_WIDTH_IN + EPSILON_IN) return null;
-  const cabinetHeight = placedHeight(cabinet);
-  return AEF_WALL_END_PANEL_STOCK.find((panel) => panel.height + EPSILON_IN >= cabinetHeight) ?? null;
 }
 
 /**
@@ -116,24 +100,21 @@ export function aefWindowEndPanelRequirements(
       const key = `${window.uid}:${cabinet.uid}:${end}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      const stock = panelStockFor(cabinet);
-      const catalogItem = stock ? catalogByCode.get(stock.masterCode) ?? null : null;
-      const depth = rotatedSize(cabinet).d;
+      const selection = selectAefEndPanel("wall", rotatedSize(cabinet).d, placedHeight(cabinet), panelCatalog);
+      const catalogItem = catalogByCode.get(selection.masterCode.toUpperCase()) ?? null;
       requirements.push({
         cabinetUid: cabinet.uid,
         windowUid: window.uid,
         end,
-        masterCode: catalogItem?.masterCode ?? null,
+        masterCode: selection.masterCode,
         cabinetId: catalogItem?.id ?? null,
-        pendingSku: !catalogItem,
-        stockWidth: AEF_WALL_END_PANEL_STOCK_WIDTH_IN,
-        stockHeight: stock?.height ?? placedHeight(cabinet),
-        stockThickness: 0.75,
-        height: placedHeight(cabinet),
-        depth,
-        description: stock
-          ? `${stock.masterCode} — 3/4\" Frameless Wall End Panel: ${formatEighthInches(AEF_WALL_END_PANEL_STOCK_WIDTH_IN)} W × ${formatEighthInches(stock.height)} H stock, trim the stock width to ${formatEighthInches(depth)} for the exposed ${end} side of ${cabinet.masterCode} at window ${window.uid}`
-          : `3/4\" Frameless Wall End Panel — no source WEP stock covers the ${depth}\"-deep exposed ${end} side of ${cabinet.masterCode} at window ${window.uid}`,
+        pendingSku: catalogItem == null,
+        stockWidth: selection.stockWidth,
+        stockHeight: selection.stockHeight,
+        stockThickness: selection.stockThickness,
+        height: selection.height,
+        depth: selection.depth,
+        description: `${selection.masterCode} — 3/4\" Frameless Wall End Panel: ${formatEighthInches(selection.stockWidth)} W × ${formatEighthInches(selection.stockHeight)} H stock, trim flush with the door front to ${formatEighthInches(selection.depth)} deep × ${formatEighthInches(selection.height)} high for the exposed ${end} side of ${cabinet.masterCode} at window ${window.uid}${catalogItem ? "" : ". Spec stock is not in this catalog, so the line is unpriced."}`,
       });
     }
   }

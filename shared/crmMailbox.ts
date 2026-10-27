@@ -4,7 +4,7 @@
 // public settings shape.
 
 import type { CrmPriority, CrmStage } from "./crm";
-import { isClosedStage } from "./crm";
+import { isClosedStage, isWonRevenueStage } from "./crm";
 
 export const CRM_EMAIL_PROVIDERS = ["gmail", "outlook", "yahoo", "custom"] as const;
 export type CrmEmailProvider = (typeof CRM_EMAIL_PROVIDERS)[number];
@@ -356,7 +356,7 @@ export function summarizeAffiliatePipelines(
   for (const deal of deals) {
     const affiliateId = deal.affiliateId ?? null;
     const row = ensure(affiliateId);
-    if (deal.stage === "won") row.wonCount += 1;
+    if (isWonRevenueStage(deal.stage)) row.wonCount += 1;
     if (!isClosedStage(deal.stage)) {
       row.openCount += 1;
       const value = Number(deal.estimatedValue ?? 0);
@@ -402,7 +402,7 @@ export function pickPipelineDeal(candidates: PipelineCandidate[], needle: Pipeli
   const email = needle.contactEmail?.trim().toLowerCase();
   if (needle.match === "email" && email) {
     return scoped.find((row) => {
-      if (row.stage === "won" || row.stage === "lost") return false;
+      if (row.stage === "won" || row.stage === "lost" || row.stage === "new_sale") return false;
       return (row.contactEmail ?? "").trim().toLowerCase() === email;
     }) ?? null;
   }
@@ -415,6 +415,7 @@ export const CRM_STAGE_COLORS: Record<CrmStage, string> = {
   qualified: "#0f766e",
   image_review: "#7c3aed",
   quoted: "#c9a227",
+  new_sale: "#047857",
   won: "#15803d",
   lost: "#be123c",
 };

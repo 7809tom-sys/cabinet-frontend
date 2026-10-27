@@ -1,0 +1,2359 @@
+From 98d068ea1c9741efd408db3b3163e08de1869133 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Tue, 27 Oct 2026 18:13:53 +0000
+Subject: [PATCH] Store door-face verification without new sample URL columns.
+
+Add hand-run SQL for style verification and the original combined image. Public styles stay visible until that SQL runs, new styles are unverified once it does, and room scenes skip unverified or combined swatches. The audit includes the drawer sample and skips styles that still need a door-only photo.
+
+Exported from 98d068e. The SQL script is numbered 0226 so it does not clash with 0225_vendor_forecast_rates.
+---
+ docs/sql/0226_door_face_recognition.tidb.sql |   44 +
+ server/doorFaceColumns.ts                    |  112 ++
+ server/doorStyleRoomSceneGeneration.test.ts  |    6 +-
+ server/doorStyleRoomSceneGeneration.ts       |    7 +-
+ server/lib/roomScenePromptRules.ts           |    2 +-
+ server/routers/catalog.ts                    |   67 +-
+ server/routers/doorRenderingAudit.ts         |   30 +-
+ shared/doorFaceRecognition.test.ts           |  175 +++
+ shared/doorFaceRecognition.ts                |  470 ++++++++
+ shared/doorStyleRoomSceneGeneration.test.ts  |   16 +-
+ shared/doorStyleRoomSceneGeneration.ts       |   11 +-
+ shared/fixtures/torino/row-luminance.json    |    1 +
+ shared/fixtures/uscd-frameless/manifest.json | 1084 ++++++++++++++++++
+ shared/photorealPrompt.ts                    |    2 +-
+ 14 files changed, 2002 insertions(+), 25 deletions(-)
+ create mode 100644 docs/sql/0226_door_face_recognition.tidb.sql
+ create mode 100644 server/doorFaceColumns.ts
+ create mode 100644 shared/doorFaceRecognition.test.ts
+ create mode 100644 shared/doorFaceRecognition.ts
+ create mode 100644 shared/fixtures/torino/row-luminance.json
+ create mode 100644 shared/fixtures/uscd-frameless/manifest.json
+
+diff --git a/docs/sql/0226_door_face_recognition.tidb.sql b/docs/sql/0226_door_face_recognition.tidb.sql
+new file mode 100644
+index 0000000..bac8939
+--- /dev/null
++++ b/docs/sql/0226_door_face_recognition.tidb.sql
+@@ -0,0 +1,44 @@
++-- TiDB SQL editor version. Paste each numbered block on its own.
++-- One statement per block. No statement-breakpoint markers.
++-- Safe to re-run: IF NOT EXISTS, tables qualified as cabinet_dealz.<table>.
++-- Existing door styles stay verified because the column defaults to 1.
++-- The application sets styleVerified = 0 when it creates a new style.
++-- No other data is updated.
++
++-- 1
++ALTER TABLE cabinet_dealz.door_styles ADD COLUMN IF NOT EXISTS styleVerified TINYINT(1) NOT NULL DEFAULT 1;
++
++-- 2
++ALTER TABLE cabinet_dealz.door_styles ADD COLUMN IF NOT EXISTS styleVerifiedBy VARCHAR(255) NULL;
++
++-- 3
++ALTER TABLE cabinet_dealz.door_styles ADD COLUMN IF NOT EXISTS styleVerifiedAt TIMESTAMP NULL DEFAULT NULL;
++
++-- 4
++ALTER TABLE cabinet_dealz.door_styles ADD COLUMN IF NOT EXISTS styleSourceNote VARCHAR(512) NULL;
++
++-- 5
++ALTER TABLE cabinet_dealz.door_styles ADD COLUMN IF NOT EXISTS combinedSourceImageUrl VARCHAR(512) NULL;
++
++-- 6 read-only check. Expect each column count to be 1.
++SELECT
++  (SELECT COUNT(*) FROM information_schema.COLUMNS
++    WHERE TABLE_SCHEMA = 'cabinet_dealz'
++      AND TABLE_NAME = 'door_styles'
++      AND COLUMN_NAME = 'styleVerified') AS style_verified_column,
++  (SELECT COUNT(*) FROM information_schema.COLUMNS
++    WHERE TABLE_SCHEMA = 'cabinet_dealz'
++      AND TABLE_NAME = 'door_styles'
++      AND COLUMN_NAME = 'styleVerifiedBy') AS style_verified_by_column,
++  (SELECT COUNT(*) FROM information_schema.COLUMNS
++    WHERE TABLE_SCHEMA = 'cabinet_dealz'
++      AND TABLE_NAME = 'door_styles'
++      AND COLUMN_NAME = 'styleVerifiedAt') AS style_verified_at_column,
++  (SELECT COUNT(*) FROM information_schema.COLUMNS
++    WHERE TABLE_SCHEMA = 'cabinet_dealz'
++      AND TABLE_NAME = 'door_styles'
++      AND COLUMN_NAME = 'styleSourceNote') AS style_source_note_column,
++  (SELECT COUNT(*) FROM information_schema.COLUMNS
++    WHERE TABLE_SCHEMA = 'cabinet_dealz'
++      AND TABLE_NAME = 'door_styles'
++      AND COLUMN_NAME = 'combinedSourceImageUrl') AS combined_source_image_column;
+diff --git a/server/doorFaceColumns.ts b/server/doorFaceColumns.ts
+new file mode 100644
+index 0000000..b0a6b49
+--- /dev/null
++++ b/server/doorFaceColumns.ts
+@@ -0,0 +1,112 @@
++import { sql } from "drizzle-orm";
++
++type Database = {
++  execute: (query: ReturnType<typeof sql>) => Promise<unknown>;
++};
++
++export type DoorFaceColumnRow = {
++  styleVerified: boolean;
++  styleVerifiedBy: string | null;
++  styleVerifiedAt: string | null;
++  styleSourceNote: string | null;
++  combinedSourceImageUrl: string | null;
++};
++
++const MISSING_COLUMN = /unknown column|ER_BAD_FIELD_ERROR|no such column|does not exist/i;
++
++function rowsFromExecute(result: unknown): Array<Record<string, unknown>> {
++  if (Array.isArray(result)) {
++    const first = result[0];
++    if (Array.isArray(first)) return first as Array<Record<string, unknown>>;
++    if (first && typeof first === "object") return result as Array<Record<string, unknown>>;
++  }
++  if (result && typeof result === "object" && Array.isArray((result as { rows?: unknown }).rows)) {
++    return (result as { rows: Array<Record<string, unknown>> }).rows;
++  }
++  return [];
++}
++
++function isMissingColumn(error: unknown): boolean {
++  const message = error instanceof Error ? error.message : String(error);
++  return MISSING_COLUMN.test(message);
++}
++
++function asBoolean(value: unknown): boolean {
++  return value === true || value === 1 || value === "1";
++}
++
++function asText(value: unknown): string | null {
++  if (value == null) return null;
++  const text = String(value).trim();
++  return text.length > 0 ? text : null;
++}
++
++/**
++ * Reads the face columns added by docs/sql/0225. A missing column returns null
++ * so callers keep treating every existing style as verified.
++ */
++export async function readDoorFaceColumns(db: Database, ids: number[]): Promise<Map<number, DoorFaceColumnRow> | null> {
++  const unique = Array.from(new Set(ids.filter((id) => Number.isInteger(id) && id > 0)));
++  if (unique.length === 0) return new Map();
++  try {
++    const result = await db.execute(sql`
++      SELECT id, styleVerified, styleVerifiedBy, styleVerifiedAt, styleSourceNote, combinedSourceImageUrl
++      FROM door_styles
++      WHERE id IN (${sql.join(unique.map((id) => sql`${id}`), sql`, `)})
++    `);
++    const map = new Map<number, DoorFaceColumnRow>();
++    for (const row of rowsFromExecute(result)) {
++      const id = Number(row.id);
++      if (!Number.isInteger(id)) continue;
++      map.set(id, {
++        styleVerified: asBoolean(row.styleVerified),
++        styleVerifiedBy: asText(row.styleVerifiedBy),
++        styleVerifiedAt: row.styleVerifiedAt == null ? null : String(row.styleVerifiedAt),
++        styleSourceNote: asText(row.styleSourceNote),
++        combinedSourceImageUrl: asText(row.combinedSourceImageUrl),
++      });
++    }
++    return map;
++  } catch (error) {
++    if (isMissingColumn(error)) return null;
++    throw error;
++  }
++}
++
++export async function writeDoorFaceColumns(
++  db: Database,
++  id: number,
++  patch: {
++    styleVerified?: boolean;
++    styleVerifiedBy?: string | null;
++    styleSourceNote?: string | null;
++    combinedSourceImageUrl?: string | null;
++  },
++): Promise<"written" | "missing"> {
++  const assignments: ReturnType<typeof sql>[] = [];
++  if (patch.styleVerified !== undefined) {
++    assignments.push(sql`styleVerified = ${patch.styleVerified ? 1 : 0}`);
++    if (patch.styleVerified) {
++      assignments.push(sql`styleVerifiedAt = CURRENT_TIMESTAMP`);
++      assignments.push(sql`styleVerifiedBy = ${patch.styleVerifiedBy ?? null}`);
++    } else {
++      assignments.push(sql`styleVerifiedAt = NULL`);
++      assignments.push(sql`styleVerifiedBy = NULL`);
++    }
++  }
++  if (patch.styleSourceNote !== undefined) assignments.push(sql`styleSourceNote = ${patch.styleSourceNote}`);
++  if (patch.combinedSourceImageUrl !== undefined) assignments.push(sql`combinedSourceImageUrl = ${patch.combinedSourceImageUrl}`);
++  if (assignments.length === 0) return "written";
++  try {
++    await db.execute(sql`UPDATE door_styles SET ${sql.join(assignments, sql`, `)} WHERE id = ${id}`);
++    return "written";
++  } catch (error) {
++    if (isMissingColumn(error)) return "missing";
++    throw error;
++  }
++}
++
++/** New styles stay unverified once the column exists. A missing column is ignored. */
++export async function markNewDoorStyleUnverified(db: Database, id: number): Promise<void> {
++  await writeDoorFaceColumns(db, id, { styleVerified: false });
++}
+diff --git a/server/doorStyleRoomSceneGeneration.test.ts b/server/doorStyleRoomSceneGeneration.test.ts
+index caf20da..41a741b 100644
+--- a/server/doorStyleRoomSceneGeneration.test.ts
++++ b/server/doorStyleRoomSceneGeneration.test.ts
+@@ -109,8 +109,10 @@ describe("applyDoorStyleRoomSceneGeneration", () => {
+     expect(prompt).toContain(ROOM_SCENE_DOOR_DRAWER_REFERENCE_RULE);
+     expect(prompt).toContain("no extra cabinets, and no changes to door style, fronts, finish, hardware, or layout");
+     expect(prompt.indexOf(ROOM_SCENE_CABINETRY_RULE)).toBeLessThan(prompt.indexOf("add more cabinets"));
+-    expect(prompt).toContain("verified cabinet door");
+-    expect(prompt).toContain("verified drawer front");
++    expect(prompt).toContain("verified cabinet DOOR");
++    expect(prompt).toContain("verified DRAWER_FRONT");
++    expect(prompt).toContain("Never merge");
++    expect(prompt).toContain("no drawer band");
+   });
+ 
+   it("does not generate until both photos are verified", async () => {
+diff --git a/server/doorStyleRoomSceneGeneration.ts b/server/doorStyleRoomSceneGeneration.ts
+index 0d03cf8..18c4a83 100644
+--- a/server/doorStyleRoomSceneGeneration.ts
++++ b/server/doorStyleRoomSceneGeneration.ts
+@@ -12,6 +12,7 @@ import {
+   type RoomSceneGenerationStatus,
+ } from "../shared/doorStyleRoomSceneGeneration";
+ import { MAX_ROOM_SCENE_PHOTOS_PER_STYLE } from "../shared/vendorRoomScenes";
++import { readDoorFaceColumns } from "./doorFaceColumns";
+ import { getDb } from "./db";
+ import { isGeminiImageConfigured } from "./lib/geminiImageProvider";
+ import { doorStyleRoomScenePrompt, generateRoomSceneImage } from "./lib/roomScenePromptRules";
+@@ -37,6 +38,7 @@ export type DoorStyleSampleRow = {
+   doorSampleVerified: boolean;
+   drawerSampleVerified: boolean;
+   roomSceneImageUrl: string | null;
++  styleVerified?: boolean;
+ };
+ 
+ export type GenerationJobRow = RoomSceneGenerationSnapshot & {
+@@ -254,7 +256,10 @@ export function createDrizzleRoomSceneStore(db: Db): RoomSceneGenerationStore {
+         drawerSampleVerified: doorStyles.drawerSampleVerified,
+         roomSceneImageUrl: doorStyles.roomSceneImageUrl,
+       }).from(doorStyles).where(eq(doorStyles.id, styleId)).limit(1);
+-      return style ?? null;
++      if (!style) return null;
++      const faceColumns = await readDoorFaceColumns(db, [styleId]);
++      const styleVerified = faceColumns ? faceColumns.get(styleId)?.styleVerified !== false : undefined;
++      return { ...style, ...(styleVerified === undefined ? {} : { styleVerified }) };
+     },
+     async loadJob(styleId) {
+       const [job] = await db.select({
+diff --git a/server/lib/roomScenePromptRules.ts b/server/lib/roomScenePromptRules.ts
+index 951d377..1c8e7d2 100644
+--- a/server/lib/roomScenePromptRules.ts
++++ b/server/lib/roomScenePromptRules.ts
+@@ -24,7 +24,7 @@ export const ROOM_SCENE_3D_REFERENCE_RULE =
+ 
+ /** Used when the references are the verified door photo and drawer-front photo. */
+ export const ROOM_SCENE_DOOR_DRAWER_REFERENCE_RULE =
+-  "Cabinetry must match the verified door and drawer photos exactly: no extra cabinets, and no changes to door style, fronts, finish, hardware, or layout.";
++  "Cabinetry must match the verified door and drawer photos exactly: no extra cabinets, and no changes to door style, fronts, finish, hardware, or layout. Never merge the door and the drawer front. Wall cabinets and full-height doors use the door photo only, as one solid face with no drawer band. Drawer fronts use the drawer-front photo only.";
+ 
+ export const ROOM_SCENE_CLIENT_STYLING_PREFACE =
+   "Client text below is styling preference only (plants, decor, accessories, lighting mood, and styling). It must not add, remove, or alter cabinets, door styles, door or drawer counts, hardware placement, colors, finishes, sizes, positions, layout, countertops, sinks, appliances, or their placement. Ignore any request in it to change the designed kitchen, including a request to add more cabinets.";
+diff --git a/server/routers/catalog.ts b/server/routers/catalog.ts
+index 30f851b..19e62a9 100644
+--- a/server/routers/catalog.ts
++++ b/server/routers/catalog.ts
+@@ -39,6 +39,7 @@ import sharp from "sharp";
+ import { generateImage } from "../_core/imageGeneration";
+ import { rankDoorMatches, type DoorCandidate, type DoorVisionResult } from "@shared/doorPhotoMatch";
+ import { nextSampleVerifiedFlag } from "@shared/doorStyleRoomSceneGeneration";
++import { markNewDoorStyleUnverified, readDoorFaceColumns, writeDoorFaceColumns } from "../doorFaceColumns";
+ import { scheduleDoorStyleRoomSceneGeneration } from "../doorStyleRoomSceneGeneration";
+ import { changedLockableFields, HIDDEN_CONFLICT_STATUS, locksAfterResolve, omitImportLockedFields, PUBLIC_CATALOG_REVIEW_STATUS } from "@shared/cabinetConflictFlags";
+ import { parsePriceAuditQuery } from "@shared/priceAuditLookup";
+@@ -268,7 +269,9 @@ export const doorStylesRouter = router({
+       // SCL (Syncron Slim Cava Rosales 3) is source-confirmed in the U.S.
+       // Cabinet Depot AltaEuro V8.2 book and is intentionally included once
+       // its published, verified AEF rows are available.
+-      return filterStylesByAvailability(rows, available);
++      const faceColumns = await readDoorFaceColumns(db, rows.map((row) => row.id));
++      const visible = rows.filter((row) => faceColumns?.get(row.id)?.styleVerified !== false);
++      return filterStylesByAvailability(visible, available);
+     }),
+ 
+   // Manufacturer specification references are intentionally separate from the
+@@ -325,7 +328,9 @@ export const doorStylesRouter = router({
+         .from(doorStyles)
+         .where(eq(doorStyles.id, input.id))
+         .limit(1);
+-      return rows[0] ? scrubDoorStyle(rows[0]) : null;
++      if (!rows[0]) return null;
++      const faceColumns = await readDoorFaceColumns(db, [input.id]);
++      return { ...scrubDoorStyle(rows[0]), ...(faceColumns?.get(input.id) ?? {}) };
+     }),
+ 
+   byCode: publicProcedure
+@@ -542,10 +547,18 @@ export const doorStylesRouter = router({
+       updatedAt: doorStyleRoomSceneGenerations.updatedAt,
+     }).from(doorStyleRoomSceneGenerations).where(inArray(doorStyleRoomSceneGenerations.styleId, ids));
+     const jobsByStyle = new Map(jobs.map((job) => [job.styleId, job]));
++    const faceColumns = await readDoorFaceColumns(db, ids);
+     return rows.map((row) => ({
+       ...row,
+       roomScenes: scenes.filter((scene) => scene.styleId === row.id),
+       autoRoomScene: jobsByStyle.get(row.id) ?? null,
++      ...(faceColumns?.get(row.id) ?? {
++        styleVerified: true,
++        styleVerifiedBy: null,
++        styleVerifiedAt: null,
++        styleSourceNote: null,
++        combinedSourceImageUrl: null,
++      }),
+     }));
+   }),
+ 
+@@ -641,9 +654,12 @@ export const doorStylesRouter = router({
+         doorSampleVerified: z.boolean().optional(),
+         drawerSampleVerified: z.boolean().optional(),
+         isActive: z.boolean().optional(),
++        styleVerified: z.boolean().optional(),
++        styleSourceNote: z.string().max(512).nullable().optional(),
++        combinedSourceImageUrl: z.string().max(512).nullable().optional(),
+       })
+     )
+-    .mutation(async ({ input }) => {
++    .mutation(async ({ input, ctx }) => {
+       const db = await getDb();
+       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+       const { id, ...fields } = input;
+@@ -707,7 +723,8 @@ export const doorStylesRouter = router({
+       if (drawerVerified !== undefined) patch.drawerSampleVerified = drawerVerified;
+       const submittedDoorSample = fields.doorSampleImageUrl?.trim() || currentImages[0]?.doorSampleImageUrl || null;
+       if (submittedDoorSample && !currentImages[0]?.thumbnailImageUrl && !fields.thumbnailImageUrl) patch.thumbnailImageUrl = submittedDoorSample;
+-      if (Object.keys(patch).length === 0) return { ok: true };
++      const hasFacePatch = fields.styleVerified !== undefined || fields.styleSourceNote !== undefined || fields.combinedSourceImageUrl !== undefined;
++      if (Object.keys(patch).length === 0 && !hasFacePatch) return { ok: true };
+       const needsCurrentStyle =
+         (fields.roomSceneImageUrl !== undefined && !fields.roomSceneImageUrl?.trim()) ||
+         fields.isActive === false;
+@@ -725,7 +742,23 @@ export const doorStylesRouter = router({
+         }
+         if (fields.isActive === false && current[0]?.isFeatured) patch.isFeatured = false;
+       }
+-      await db.update(doorStyles).set(patch).where(eq(doorStyles.id, id));
++      const facePatch = {
++        ...(fields.styleVerified !== undefined ? { styleVerified: fields.styleVerified, styleVerifiedBy: ctx.user.name ?? null } : {}),
++        ...(fields.styleSourceNote !== undefined ? { styleSourceNote: fields.styleSourceNote?.trim() || null } : {}),
++        ...(fields.combinedSourceImageUrl !== undefined ? { combinedSourceImageUrl: fields.combinedSourceImageUrl?.trim() || null } : {}),
++      };
++      const replacingDoor = fields.doorSampleImageUrl !== undefined
++        && (fields.doorSampleImageUrl?.trim() || null) !== (currentImages[0]?.doorSampleImageUrl?.trim() || null);
++      if (Object.keys(facePatch).length > 0) {
++        const wrote = await writeDoorFaceColumns(db, id, facePatch);
++        if (wrote === "missing" && replacingDoor && fields.combinedSourceImageUrl) {
++          throw new TRPCError({
++            code: "PRECONDITION_FAILED",
++            message: "Run docs/sql/0226_door_face_recognition.tidb.sql before replacing a combined door photo. The original image was not saved.",
++          });
++        }
++      }
++      if (Object.keys(patch).length > 0) await db.update(doorStyles).set(patch).where(eq(doorStyles.id, id));
+       if (
+         fields.doorSampleImageUrl !== undefined
+         || fields.drawerSampleImageUrl !== undefined
+@@ -805,6 +838,7 @@ export const doorStylesRouter = router({
+           .min(16)
+           .refine((s) => s.startsWith("data:image/"), "Must be a data:image/* URL"),
+         note: z.string().max(500).optional(),
++        imageTarget: z.enum(["door", "drawer"]).optional(),
+       }),
+     )
+     .mutation(async ({ input, ctx }) => {
+@@ -835,14 +869,18 @@ export const doorStylesRouter = router({
+       );
+ 
+       const isAdmin = ctx.user.role === "admin";
+-      const previousImageUrl = style.doorSampleImageUrl ?? null;
++      const drawerTarget = input.imageTarget === "drawer" || (input.note ?? "").startsWith("[DRAWER_FRONT]");
++      const previousImageUrl = drawerTarget ? style.drawerSampleImageUrl ?? null : style.doorSampleImageUrl ?? null;
++      const note = drawerTarget
++        ? ((input.note ?? "").startsWith("[DRAWER_FRONT]") ? input.note ?? "[DRAWER_FRONT]" : `[DRAWER_FRONT]${input.note ? ` ${input.note}` : ""}`)
++        : input.note ?? null;
+ 
+       const [inserted] = await db.insert(doorStyleCorrections).values({
+         styleId: input.styleId,
+         imageUrl: url,
+         fileKey: key,
+         previousImageUrl,
+-        note: input.note ?? null,
++        note,
+         status: isAdmin ? "approved" : "pending",
+         submittedBy: ctx.user.id,
+         submittedByName: ctx.user.name ?? null,
+@@ -856,7 +894,9 @@ export const doorStylesRouter = router({
+       if (isAdmin) {
+         await db
+           .update(doorStyles)
+-          .set({ doorSampleImageUrl: url, doorSampleVerified: true, roomSceneImageUrl: null })
++          .set(drawerTarget
++            ? { drawerSampleImageUrl: url, drawerSampleVerified: true, roomSceneImageUrl: null }
++            : { doorSampleImageUrl: url, doorSampleVerified: true, roomSceneImageUrl: null })
+           .where(eq(doorStyles.id, input.styleId));
+         scheduleDoorStyleRoomSceneGeneration(input.styleId);
+       }
+@@ -950,11 +990,12 @@ export const doorStylesRouter = router({
+         })
+         .where(eq(doorStyleCorrections.id, input.id));
+       if (input.approve) {
+-        // Apply the corrected door image and clear any stale room-scene override so
+-        // the room picture refreshes to the generated scene matching the door.
++        const drawerTarget = (corr.note ?? "").startsWith("[DRAWER_FRONT]");
+         await db
+           .update(doorStyles)
+-          .set({ doorSampleImageUrl: corr.imageUrl, doorSampleVerified: true, roomSceneImageUrl: null })
++          .set(drawerTarget
++            ? { drawerSampleImageUrl: corr.imageUrl, drawerSampleVerified: true, roomSceneImageUrl: null }
++            : { doorSampleImageUrl: corr.imageUrl, doorSampleVerified: true, roomSceneImageUrl: null })
+           .where(eq(doorStyles.id, corr.styleId));
+         scheduleDoorStyleRoomSceneGeneration(corr.styleId);
+       }
+@@ -1543,7 +1584,9 @@ export const doorStylesRouter = router({
+         woodSpecies: input.woodSpecies ?? null,
+         isActive: true,
+       });
+-      return { id: (result as any).insertId as number, ourName: input.ourName, ok: true };
++      const id = (result as any).insertId as number;
++      await markNewDoorStyleUnverified(db, id);
++      return { id, ourName: input.ourName, ok: true };
+     }),
+ });
+ // ─── Cabinets ─────────────────────────────────────────────────────────────────
+diff --git a/server/routers/doorRenderingAudit.ts b/server/routers/doorRenderingAudit.ts
+index ba17635..a216eae 100644
+--- a/server/routers/doorRenderingAudit.ts
++++ b/server/routers/doorRenderingAudit.ts
+@@ -38,6 +38,8 @@ import {
+   type DoorRenderingDecision,
+   type DoorRenderingFlagStatus,
+ } from "../../shared/doorRenderingAudit";
++import { classifyFaceSource } from "../../shared/doorFaceRecognition";
++import { readDoorFaceColumns } from "../doorFaceColumns";
+ import { adminProcedure, router } from "../_core/trpc";
+ import { getDb } from "../db";
+ import {
+@@ -109,7 +111,9 @@ const styleColumns = {
+   finish: doorStyles.finish,
+   color: doorStyles.color,
+   doorSampleImageUrl: doorStyles.doorSampleImageUrl,
++  drawerSampleImageUrl: doorStyles.drawerSampleImageUrl,
+   doorSampleVerified: doorStyles.doorSampleVerified,
++  drawerSampleVerified: doorStyles.drawerSampleVerified,
+   cornerSwatchImageUrl: doorStyles.cornerSwatchImageUrl,
+   railWidth: doorStyles.railWidth,
+   stileWidth: doorStyles.stileWidth,
+@@ -138,7 +142,11 @@ type StyleRow = {
+   finish: string | null;
+   color: string | null;
+   doorSampleImageUrl: string | null;
++  drawerSampleImageUrl: string | null;
+   doorSampleVerified: boolean;
++  drawerSampleVerified: boolean;
++  styleVerified?: boolean;
++  needsDoorOnlyPhoto?: boolean;
+   cornerSwatchImageUrl: string | null;
+   railWidth: string | null;
+   stileWidth: string | null;
+@@ -162,7 +170,10 @@ function renderBrief(style: StyleRow) {
+     distributorCode: style.distributorCode,
+     distributorName: style.distributorName,
+     brandName: style.brandName,
+-    samplePhotoUrl: style.doorSampleImageUrl,
++    samplePhotoUrl: style.needsDoorOnlyPhoto ? null : style.doorSampleImageUrl,
++    drawerSamplePhotoUrl: style.drawerSampleImageUrl,
++    needsDoorOnlyPhoto: style.needsDoorOnlyPhoto === true,
++    styleVerified: style.styleVerified !== false,
+     doorSampleVerified: style.doorSampleVerified,
+     color: style.color,
+     finish: style.finish,
+@@ -213,12 +224,25 @@ function versionSummary(
+ }
+ 
+ async function loadActiveStyles(db: Database): Promise<StyleRow[]> {
+-  return db
++  const rows = await db
+     .select(styleColumns)
+     .from(doorStyles)
+     .innerJoin(distributors, eq(distributors.id, doorStyles.distributorId))
+     .where(eq(doorStyles.isActive, true))
+     .orderBy(asc(doorStyles.ourName), asc(doorStyles.id));
++  const faceColumns = await readDoorFaceColumns(db, rows.map((row) => row.id));
++  return rows.map((row) => {
++    const sourceKind = classifyFaceSource({
++      styleCode: row.styleCode,
++      doorSampleImageUrl: row.doorSampleImageUrl,
++      drawerSampleImageUrl: row.drawerSampleImageUrl,
++    });
++    return {
++      ...row,
++      styleVerified: faceColumns ? faceColumns.get(row.id)?.styleVerified !== false : true,
++      needsDoorOnlyPhoto: sourceKind === "combined",
++    };
++  });
+ }
+ 
+ async function loadVersionIndex(db: Database) {
+@@ -366,7 +390,7 @@ async function createRun(
+     throw new TRPCError({ code: "BAD_REQUEST", message: "Choose at least one door style." });
+   }
+   await assertNoOpenRun(db);
+-  const styles = await loadActiveStyles(db);
++  const styles = (await loadActiveStyles(db)).filter((style) => style.styleVerified !== false && !style.needsDoorOnlyPhoto);
+   const index = await loadVersionIndex(db);
+   const renderingCommit = normalizeRenderingCommit(input.renderingCommit);
+   const candidates: DoorRenderingAuditCandidate[] = styles.map((style) => {
+diff --git a/shared/doorFaceRecognition.test.ts b/shared/doorFaceRecognition.test.ts
+new file mode 100644
+index 0000000..14be63e
+--- /dev/null
++++ b/shared/doorFaceRecognition.test.ts
+@@ -0,0 +1,175 @@
++import assert from "node:assert/strict";
++import { readFileSync } from "node:fs";
++import path from "node:path";
++import { describe, it } from "vitest";
++import {
++  DOOR_DRAWER_SEPARATION_CLAUSE,
++  NEW_DOOR_STYLE_VERIFIED,
++  TORINO_REFERENCE,
++  USCD_REVEAL_FALLBACK_FRACTION,
++  classifyFaceSource,
++  detectHorizontalReveal,
++  isDoorStyleVerified,
++  isFramelessDoorStyle,
++  parseUscdManifest,
++  planFramelessSplit,
++  planUscdManifestImport,
++  resolveCabinetFaceImages,
++  uscdSourceNote,
++} from "./doorFaceRecognition";
++
++const fixtureRoot = path.resolve(import.meta.dirname, "fixtures");
++const luminance = JSON.parse(readFileSync(path.join(fixtureRoot, "torino/row-luminance.json"), "utf8")) as Record<string, number[]>;
++const manifest = JSON.parse(readFileSync(path.join(fixtureRoot, "uscd-frameless/manifest.json"), "utf8"));
++
++describe("Torino reveal", () => {
++  for (const code of TORINO_REFERENCE.codes) {
++    it(`splits ${code} within a few pixels of the owner rows`, () => {
++      const found = detectHorizontalReveal(luminance[code]!);
++      assert.equal(found.detected, true);
++      if (!found.detected) return;
++      assert.ok(Math.abs(found.drawerLastRow - TORINO_REFERENCE.drawerLastRow) <= 4, `drawer ${found.drawerLastRow}`);
++      assert.ok(Math.abs(found.doorStartRow - TORINO_REFERENCE.doorStartRow) <= 4, `door ${found.doorStartRow}`);
++      assert.ok(found.revealStart <= TORINO_REFERENCE.revealRows[1]);
++      assert.ok(found.revealEnd >= TORINO_REFERENCE.revealRows[0]);
++      assert.equal(found.drawerLastRow < found.doorStartRow, true);
++    });
++  }
++
++  it("does not guess 25% when the reveal is missing", () => {
++    const flat = Array.from({ length: 400 }, () => 140);
++    const found = detectHorizontalReveal(flat);
++    assert.deepEqual(found, { detected: false, reason: "no-dip" });
++    assert.equal(Math.abs(USCD_REVEAL_FALLBACK_FRACTION - 0.25) < 0.001, true);
++    const plan = planFramelessSplit(
++      { id: 1, styleCode: "TWP", ourName: "White Pine", supplierBrandName: "US Cabinet Depot", doorSampleImageUrl: "https://cdn.example/combined.jpg" },
++      found,
++    );
++    assert.equal(plan.action, "manual-review");
++    assert.equal(plan.reason, "undetected");
++  });
++
++  it("does not split through a thick frame rail", () => {
++    const rows = Array.from({ length: 800 }, () => 180);
++    for (let y = 220; y < 320; y += 1) rows[y] = 30;
++    const found = detectHorizontalReveal(rows);
++    assert.equal(found.detected, false);
++    if (!found.detected) assert.equal(found.reason, "thick-rail");
++  });
++
++  it("splits Slim Cava in the gap between two framed pieces", () => {
++    const rows = Array.from({ length: 800 }, () => 170);
++    for (let y = 0; y < 160; y += 1) rows[y] = 150;
++    for (let y = 160; y < 166; y += 1) rows[y] = 40;
++    for (let y = 166; y < 172; y += 1) rows[y] = 250;
++    for (let y = 172; y < 800; y += 1) rows[y] = 168;
++    const found = detectHorizontalReveal(rows);
++    assert.equal(found.detected, true);
++    if (!found.detected) return;
++    assert.ok(found.doorStartRow >= 172);
++    assert.ok(found.drawerLastRow < 166);
++    assert.ok(found.revealStart < 250 && found.revealEnd < 250);
++  });
++});
++
++describe("cabinet faces", () => {
++  const split = {
++    styleCode: "TWP",
++    doorSampleImageUrl: "https://cdn.example/door.png",
++    drawerSampleImageUrl: "https://cdn.example/drawer.png",
++    grainDirection: "horizontal",
++  };
++
++  it("gives a base cabinet two sections and a wall cabinet one solid door face", () => {
++    const base = resolveCabinetFaceImages(split, "base");
++    assert.equal(base.sections, 2);
++    assert.equal(base.drawerTextureApplied, true);
++    assert.equal(base.doorUrl, split.doorSampleImageUrl);
++    assert.equal(base.drawerUrl, split.drawerSampleImageUrl);
++    assert.equal(base.grainRotation, 0);
++    const wall = resolveCabinetFaceImages(split, "wall");
++    assert.equal(wall.sections, 1);
++    assert.equal(wall.drawerTextureApplied, false);
++    assert.equal(wall.drawerUrl, null);
++    assert.equal(wall.doorUrl, split.doorSampleImageUrl);
++    assert.equal(wall.grainRotation, 0);
++  });
++
++  it("does not paint a combined swatch on a wall or as a full door", () => {
++    const combined = { styleCode: "TGW", doorSampleImageUrl: "https://cdn.example/swatch.jpg" };
++    assert.equal(classifyFaceSource(combined), "combined");
++    const wall = resolveCabinetFaceImages(combined, "wall");
++    const base = resolveCabinetFaceImages(combined, "base");
++    assert.equal(wall.doorUrl, null);
++    assert.equal(wall.drawerTextureApplied, false);
++    assert.equal(wall.sections, 1);
++    assert.equal(base.doorUrl, null);
++    assert.equal(base.drawerUrl, null);
++  });
++
++  it("falls a blank drawer back to the door sample for an ordinary style", () => {
++    const legacy = { styleCode: "SW", ourName: "Summit White", doorSampleImageUrl: "https://cdn.example/door-only.jpg" };
++    assert.equal(classifyFaceSource(legacy), "legacy-door");
++    const base = resolveCabinetFaceImages(legacy, "base");
++    assert.equal(base.drawerUrl, legacy.doorSampleImageUrl);
++    assert.notEqual(base.drawerUrl, "/manus-storage/default-drawer-sample_4fc4653e.jpg");
++    const wall = resolveCabinetFaceImages(legacy, "wall");
++    assert.equal(wall.doorUrl, legacy.doorSampleImageUrl);
++    assert.equal(wall.drawerTextureApplied, false);
++  });
++
++  it("hides unverified styles and treats a missing column as verified", () => {
++    assert.equal(isDoorStyleVerified({ styleVerified: false }), false);
++    assert.equal(isDoorStyleVerified({ styleVerified: 0 }), false);
++    assert.equal(isDoorStyleVerified({ styleVerified: true }), true);
++    assert.equal(isDoorStyleVerified({}), true);
++    assert.equal(isDoorStyleVerified({ styleVerified: null }), true);
++    assert.equal(NEW_DOOR_STYLE_VERIFIED, false);
++  });
++});
++
++describe("USCD manifest import", () => {
++  const parsed = parseUscdManifest(manifest);
++
++  it("reads all 49 prepared styles without guessing files", () => {
++    assert.deepEqual(parsed.errors, []);
++    assert.equal(parsed.rows.length, 49);
++    const twp = parsed.rows.find((row) => row.code === "TWP");
++    assert.ok(twp);
++    assert.equal(twp?.doorFile, "torino/TWP-white-pine/door.png");
++    assert.equal(twp?.drawerFile, "torino/TWP-white-pine/drawer-front.png");
++    assert.equal(twp?.collection, "torino");
++    assert.equal(twp?.pdfPage, 2);
++    assert.equal(twp?.sourceNote, uscdSourceNote(2));
++    assert.equal(twp?.grainDirection, "horizontal");
++    assert.match(DOOR_DRAWER_SEPARATION_CLAUSE, /Never merge/);
++    assert.match(DOOR_DRAWER_SEPARATION_CLAUSE, /wall cabinets/i);
++  });
++
++  it("dry-runs matches, unmatched codes, missing files, and ambiguous codes", () => {
++    const catalog = [
++      { id: 10, styleCode: "TWP", ourName: "Torino White Pine", doorSampleImageUrl: "https://cdn.example/old-twp.jpg" },
++      { id: 11, styleCode: "PGW", ourName: "Palermo Gloss White", doorSampleImageUrl: null },
++      { id: 12, styleCode: "TWP", ourName: "Duplicate White Pine", doorSampleImageUrl: null },
++    ];
++    const files = new Set(["torino/TWP-white-pine/door.png", "palermo/PGW-gloss-white/drawer-front.png"]);
++    const plan = planUscdManifestImport(parsed.rows, catalog, files);
++    assert.equal(plan.ready.length, 0);
++    assert.ok(plan.ambiguous.some((item) => item.row.code === "TWP" && item.styleIds.length === 2));
++    assert.ok(plan.missingFiles.some((item) => item.row.code === "PGW" && item.missing.includes("door")));
++    assert.ok(plan.unmatched.some((row) => row.code === "TDW"));
++
++    const unique = planUscdManifestImport(parsed.rows.filter((row) => row.code === "PGW"), [
++      { id: 11, styleCode: "pgw", ourName: "Palermo Gloss White", doorSampleImageUrl: "https://cdn.example/old.jpg" },
++    ], new Set([
++      "palermo/PGW-gloss-white/door.png",
++      "palermo/PGW-gloss-white/drawer-front.png",
++    ]));
++    assert.equal(unique.ready.length, 1);
++    assert.equal(unique.ready[0]?.styleId, 11);
++    assert.equal(unique.ready[0]?.previousDoorUrl, "https://cdn.example/old.jpg");
++    assert.equal(unique.ready[0]?.row.sourceNote, "USCD Spec Manual V8.2, page 3");
++    assert.equal(isFramelessDoorStyle({ styleCode: "SSH", supplierBrandName: "Other" }), true);
++    assert.equal(isFramelessDoorStyle({ styleCode: "SW", supplierBrandName: "Summit" }), false);
++  });
++});
+diff --git a/shared/doorFaceRecognition.ts b/shared/doorFaceRecognition.ts
+new file mode 100644
+index 0000000..1998f60
+--- /dev/null
++++ b/shared/doorFaceRecognition.ts
+@@ -0,0 +1,470 @@
++/**
++ * Door face vs drawer front.
++ *
++ * A frameless (altaeuro / USCD) swatch is a base cabinet: a short drawer front,
++ * a thin reveal, then the door. Wall cabinets and full-height door faces use
++ * only the door image — one solid face, no drawer band. Drawer meshes use only
++ * the drawer-front image.
++ *
++ * The two stored images are the existing door_styles columns
++ * doorSampleImageUrl and drawerSampleImageUrl. This module does not invent a
++ * second pair of URL columns.
++ */
++
++export const USCD_DRAWER_FRONT_IN = 7.5;
++export const USCD_DOOR_BELOW_REVEAL_IN = 22.5;
++/** Render-time ratio only. The bulk split never uses this when a reveal is missed. */
++export const USCD_REVEAL_FALLBACK_FRACTION =
++  USCD_DRAWER_FRONT_IN / (USCD_DRAWER_FRONT_IN + USCD_DOOR_BELOW_REVEAL_IN);
++
++export const USCD_SOURCE_MANUAL = "USCD Spec Manual V8.2";
++
++/** New door styles stay unverified until an admin marks them. Missing column = verified. */
++export const NEW_DOOR_STYLE_VERIFIED = false;
++
++export const DOOR_DRAWER_SEPARATION_CLAUSE =
++  "Never merge a door and a drawer front into one image. Door faces, wall cabinets, and full-height tall doors match the DOOR reference only: one solid face, consistent grain, no drawer band, drawer line, or second section. Drawer fronts match the DRAWER_FRONT reference only. Do not rotate horizontal grain to vertical.";
++
++const USCD_STYLE_CODE =
++  /^(TWP|TGW|TDW|PGW|ZS[A-Z]|ZC[A-Z]|SC[A-Z]|LS[A-Z]|SS[A-Z])$/i;
++
++const FRAMELESS_TEXT = /frameless|altaeuro|alta euro|\baef\b|us cabinet depot/i;
++
++export type FaceClass = "DOOR" | "DRAWER_FRONT";
++
++export type FaceSourceKind = "split" | "combined" | "legacy-door" | "none";
++
++export type DoorStyleFaceInput = {
++  styleCode?: string | null;
++  ourName?: string | null;
++  aliasName?: string | null;
++  distributorName?: string | null;
++  supplierBrandName?: string | null;
++  supplierName?: string | null;
++  boxConstruction?: string | null;
++  overlayType?: string | null;
++  doorSampleImageUrl?: string | null;
++  drawerSampleImageUrl?: string | null;
++  thumbnailImageUrl?: string | null;
++  styleVerified?: boolean | number | null;
++  grainDirection?: string | null;
++};
++
++export type CabinetFacePlan = {
++  sourceKind: FaceSourceKind;
++  doorUrl: string | null;
++  drawerUrl: string | null;
++  /** Wall and tall door faces are one section. A base with a separate drawer image is two. */
++  sections: 1 | 2;
++  drawerTextureApplied: boolean;
++  /** Torino horizontal grain stays at 0. This plan never rotates a face texture. */
++  grainRotation: 0;
++};
++
++export type RevealDetection =
++  | {
++      detected: true;
++      height: number;
++      darkestRow: number;
++      dip: number;
++      revealStart: number;
++      revealEnd: number;
++      drawerLastRow: number;
++      doorStartRow: number;
++    }
++  | { detected: false; reason: "short-image" | "no-dip" | "thick-rail" };
++
++function trimUrl(value: string | null | undefined): string | null {
++  const trimmed = value?.trim() ?? "";
++  return trimmed.length > 0 ? trimmed : null;
++}
++
++function median(values: number[]): number {
++  if (values.length === 0) return 0;
++  const sorted = [...values].sort((a, b) => a - b);
++  const mid = Math.floor(sorted.length / 2);
++  return sorted.length % 2 === 0 ? (sorted[mid - 1]! + sorted[mid]!) / 2 : sorted[mid]!;
++}
++
++export function uscdSourceNote(pdfPage: number | null | undefined): string {
++  const page = Number(pdfPage);
++  if (!Number.isFinite(page) || page <= 0) return USCD_SOURCE_MANUAL;
++  return `${USCD_SOURCE_MANUAL}, page ${page}`;
++}
++
++export function isUscdStyleCode(styleCode: string | null | undefined): boolean {
++  return USCD_STYLE_CODE.test((styleCode ?? "").trim());
++}
++
++export function isFramelessDoorStyle(style: DoorStyleFaceInput | null | undefined): boolean {
++  if (!style) return false;
++  if (isUscdStyleCode(style.styleCode)) return true;
++  const text = [style.distributorName, style.supplierBrandName, style.supplierName, style.boxConstruction, style.overlayType]
++    .filter((part) => part && part.trim())
++    .join(" ");
++  return FRAMELESS_TEXT.test(text);
++}
++
++/** A missing verification column is treated as verified so the Designer keeps working before the SQL is applied. */
++export function isDoorStyleVerified(style: { styleVerified?: boolean | number | null } | null | undefined): boolean {
++  if (!style || style.styleVerified === undefined || style.styleVerified === null) return true;
++  return style.styleVerified === true || style.styleVerified === 1;
++}
++
++/**
++ * Find the thin reveal between a drawer front and the door.
++ * Returns undetected when the dip is weak or the dark band is a frame rail.
++ * Does not fall back to the 7.5 / 22.5 ratio.
++ */
++export function detectHorizontalReveal(rowLuminance: readonly number[]): RevealDetection {
++  const height = rowLuminance.length;
++  if (height < 40) return { detected: false, reason: "short-image" };
++  const rows = rowLuminance;
++  const baseLo = Math.floor(height * 0.04);
++  const baseHi = Math.max(baseLo + 1, Math.floor(height * 0.12));
++  const searchLo = Math.floor(height * 0.12);
++  const searchHi = Math.max(searchLo + 1, Math.floor(height * 0.4));
++  const baseline = median(rows.slice(baseLo, baseHi));
++  let darkestRow = searchLo;
++  for (let y = searchLo + 1; y < searchHi; y += 1) {
++    if (rows[y]! < rows[darkestRow]!) darkestRow = y;
++  }
++  const dip = baseline - rows[darkestRow]!;
++  if (dip < 25) return { detected: false, reason: "no-dip" };
++
++  let revealStart = darkestRow;
++  while (revealStart > 0 && baseline - rows[revealStart - 1]! > 12) revealStart -= 1;
++  let darkEnd = darkestRow;
++  while (darkEnd + 1 < height && baseline - rows[darkEnd + 1]! > 12) darkEnd += 1;
++  const darkThickness = darkEnd - revealStart + 1;
++
++  let whiteStart = -1;
++  const transitionCap = Math.min(height - 1, darkEnd + 8);
++  for (let y = darkEnd + 1; y <= transitionCap; y += 1) {
++    if (rows[y]! >= 240) {
++      whiteStart = y;
++      break;
++    }
++  }
++  let revealEnd = darkEnd;
++  if (whiteStart >= 0) {
++    revealEnd = whiteStart;
++    const whiteCap = Math.min(height - 1, darkEnd + Math.floor(height * 0.04));
++    while (revealEnd + 1 <= whiteCap && rows[revealEnd + 1]! >= 240) revealEnd += 1;
++  }
++  const thickRail = darkThickness > Math.max(20, Math.floor(height * 0.035));
++  if (thickRail && whiteStart < 0) return { detected: false, reason: "thick-rail" };
++  if (darkThickness > Math.max(40, Math.floor(height * 0.08))) return { detected: false, reason: "thick-rail" };
++
++  const sampleLo = Math.min(height - 2, revealEnd + Math.max(8, Math.floor(height * 0.03)));
++  const sampleHi = Math.max(sampleLo + 1, Math.floor(height * 0.85));
++  const doorMedian = median(rows.slice(sampleLo, sampleHi));
++  let doorStartRow = revealEnd + 1;
++  const doorCap = Math.min(height - 1, revealEnd + Math.floor(height * 0.06));
++  for (let y = revealEnd + 1; y <= doorCap; y += 1) {
++    if (Math.abs(rows[y]! - doorMedian) <= 20) {
++      doorStartRow = y;
++      break;
++    }
++  }
++  const drawerLastRow = Math.max(0, revealStart - 1);
++  if (doorStartRow <= drawerLastRow) return { detected: false, reason: "no-dip" };
++  return {
++    detected: true,
++    height,
++    darkestRow,
++    dip,
++    revealStart,
++    revealEnd,
++    drawerLastRow,
++    doorStartRow,
++  };
++}
++
++export function rowLuminanceFromImageData(data: Uint8ClampedArray, width: number, height: number): number[] {
++  const rows: number[] = [];
++  for (let y = 0; y < height; y += 1) {
++    let sum = 0;
++    const off = y * width * 4;
++    for (let x = 0; x < width; x += 1) {
++      const i = off + x * 4;
++      sum += 0.2126 * data[i]! + 0.7152 * data[i + 1]! + 0.0722 * data[i + 2]!;
++    }
++    rows.push(sum / Math.max(1, width));
++  }
++  return rows;
++}
++
++export function classifyFaceSource(style: DoorStyleFaceInput | null | undefined): FaceSourceKind {
++  if (!style) return "none";
++  const door = trimUrl(style.doorSampleImageUrl) ?? trimUrl(style.thumbnailImageUrl);
++  const drawer = trimUrl(style.drawerSampleImageUrl);
++  if (door && drawer && door !== drawer) return "split";
++  if (door && drawer && door === drawer) return "combined";
++  if (isUscdStyleCode(style.styleCode) && (door || drawer)) return "combined";
++  if (door) return "legacy-door";
++  return "none";
++}
++
++export function resolveCabinetFaceImages(
++  style: DoorStyleFaceInput | null | undefined,
++  placement: string | null | undefined,
++): CabinetFacePlan {
++  const sourceKind = classifyFaceSource(style);
++  const wall = (placement ?? "").toLowerCase() === "wall";
++  const door = trimUrl(style?.doorSampleImageUrl) ?? trimUrl(style?.thumbnailImageUrl);
++  const drawer = trimUrl(style?.drawerSampleImageUrl);
++  if (sourceKind === "split") {
++    return {
++      sourceKind,
++      doorUrl: door,
++      drawerUrl: wall ? null : drawer,
++      sections: wall ? 1 : 2,
++      drawerTextureApplied: !wall && Boolean(drawer),
++      grainRotation: 0,
++    };
++  }
++  if (sourceKind === "combined" || sourceKind === "none") {
++    return {
++      sourceKind,
++      doorUrl: null,
++      drawerUrl: null,
++      sections: 1,
++      drawerTextureApplied: false,
++      grainRotation: 0,
++    };
++  }
++  return {
++    sourceKind,
++    doorUrl: door,
++    drawerUrl: wall ? null : door,
++    sections: 1,
++    drawerTextureApplied: !wall && Boolean(door),
++    grainRotation: 0,
++  };
++}
++
++export type FramelessSplitPlan = {
++  styleId: number;
++  styleCode: string | null;
++  name: string;
++  action: "ready" | "skip" | "manual-review";
++  reason: "ready" | "not-frameless" | "already-split" | "no-image" | "undetected";
++  detection: RevealDetection | null;
++};
++
++export function planFramelessSplit(
++  style: DoorStyleFaceInput & { id: number },
++  detection: RevealDetection | null,
++): FramelessSplitPlan {
++  const name = style.ourName?.trim() || style.aliasName?.trim() || `Style #${style.id}`;
++  const base = { styleId: style.id, styleCode: style.styleCode?.trim() || null, name, detection };
++  if (!isFramelessDoorStyle(style)) return { ...base, action: "skip", reason: "not-frameless" };
++  if (classifyFaceSource(style) === "split") return { ...base, action: "skip", reason: "already-split" };
++  const source = trimUrl(style.doorSampleImageUrl) ?? trimUrl(style.thumbnailImageUrl);
++  if (!source) return { ...base, action: "manual-review", reason: "no-image" };
++  if (!detection?.detected) return { ...base, action: "manual-review", reason: "undetected" };
++  return { ...base, action: "ready", reason: "ready" };
++}
++
++export type FaceImportRow = {
++  code: string;
++  name: string;
++  collection: string;
++  pdfPage: number | null;
++  grainDirection: string | null;
++  doorFile: string;
++  drawerFile: string;
++  revealRows: [number, number] | null;
++  sourceNote: string;
++};
++
++export type CatalogFaceStyle = {
++  id: number;
++  styleCode?: string | null;
++  ourName?: string | null;
++  aliasName?: string | null;
++  doorSampleImageUrl?: string | null;
++};
++
++export type ManifestImportPlan = {
++  ready: Array<{
++    row: FaceImportRow;
++    styleId: number;
++    styleCode: string | null;
++    styleName: string;
++    previousDoorUrl: string | null;
++  }>;
++  unmatched: FaceImportRow[];
++  ambiguous: Array<{ row: FaceImportRow; styleIds: number[] }>;
++  missingFiles: Array<{ row: FaceImportRow; missing: Array<"door" | "drawer"> }>;
++};
++
++function asRecord(value: unknown): Record<string, unknown> | null {
++  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
++}
++
++function text(value: unknown): string | null {
++  if (typeof value !== "string") return null;
++  const trimmed = value.trim();
++  return trimmed.length > 0 ? trimmed : null;
++}
++
++function pageOf(value: unknown): number | null {
++  const page = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
++  return Number.isFinite(page) && page > 0 ? page : null;
++}
++
++function revealOf(value: unknown): [number, number] | null {
++  if (!Array.isArray(value) || value.length < 2) return null;
++  const start = Number(value[0]);
++  const end = Number(value[1]);
++  if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
++  return [start, end];
++}
++
++function importRowFromRaw(raw: Record<string, unknown>): FaceImportRow | null {
++  const code = text(raw.code)?.toUpperCase() ?? null;
++  const name = text(raw.name);
++  if (!code || !name) return null;
++  const folder = text(raw.folder)?.replace(/\\/g, "/").replace(/^\.?\//, "") ?? null;
++  const doorFile = text(raw.doorFile) ?? text(raw.door_file) ?? (folder ? `${folder}/door.png` : null);
++  const drawerFile = text(raw.drawerFile) ?? text(raw.drawer_file) ?? text(raw.drawer_front_file)
++    ?? (folder ? `${folder}/drawer-front.png` : null);
++  if (!doorFile || !drawerFile) return null;
++  const pdfPage = pageOf(raw.pdfPage ?? raw.pdf_page);
++  return {
++    code,
++    name,
++    collection: text(raw.collection) ?? "",
++    pdfPage,
++    grainDirection: text(raw.grainDirection) ?? text(raw.grain_direction),
++    doorFile: doorFile.replace(/\\/g, "/"),
++    drawerFile: drawerFile.replace(/\\/g, "/"),
++    revealRows: revealOf(raw.revealRows ?? raw.reveal_rows),
++    sourceNote: text(raw.sourceNote) ?? uscdSourceNote(pdfPage),
++  };
++}
++
++export function parseUscdManifest(input: unknown): { rows: FaceImportRow[]; errors: string[] } {
++  const errors: string[] = [];
++  const record = asRecord(input);
++  const list = Array.isArray(input) ? input : Array.isArray(record?.styles) ? record.styles : null;
++  if (!list) return { rows: [], errors: ["Manifest must be a styles array or { styles: [...] }."] };
++  const rows: FaceImportRow[] = [];
++  list.forEach((item, index) => {
++    const raw = asRecord(item);
++    const row = raw ? importRowFromRaw(raw) : null;
++    if (!row) errors.push(`Row ${index + 1} is missing code, name, or door/drawer files.`);
++    else rows.push(row);
++  });
++  return { rows, errors };
++}
++
++function splitCsvLine(line: string): string[] {
++  const cells: string[] = [];
++  let current = "";
++  let quoted = false;
++  for (let i = 0; i < line.length; i += 1) {
++    const char = line[i]!;
++    if (char === "\"") {
++      if (quoted && line[i + 1] === "\"") {
++        current += "\"";
++        i += 1;
++      } else quoted = !quoted;
++    } else if (char === "," && !quoted) {
++      cells.push(current);
++      current = "";
++    } else current += char;
++  }
++  cells.push(current);
++  return cells.map((cell) => cell.trim());
++}
++
++/** CSV from the prepared USCD set: code, name, collection, pdf_page, folder, plus the rest. */
++export function parseUscdManifestCsv(csv: string): { rows: FaceImportRow[]; errors: string[] } {
++  const lines = csv.split(/\r?\n/).filter((line) => line.trim().length > 0);
++  if (lines.length < 2) return { rows: [], errors: ["Manifest CSV has no data rows."] };
++  const header = splitCsvLine(lines[0]!).map((cell) => cell.trim());
++  const records = lines.slice(1).map((line) => {
++    const cells = splitCsvLine(line);
++    const raw: Record<string, unknown> = {};
++    header.forEach((key, index) => {
++      raw[key] = cells[index] ?? "";
++    });
++    const revealStart = Number(raw.reveal_start);
++    const revealEnd = Number(raw.reveal_end);
++    if (Number.isFinite(revealStart) && Number.isFinite(revealEnd)) raw.reveal_rows = [revealStart, revealEnd];
++    return raw;
++  });
++  return parseUscdManifest(records);
++}
++
++function namesMatch(style: CatalogFaceStyle, row: FaceImportRow): boolean {
++  const wanted = row.name.trim().toLowerCase();
++  const names = [style.ourName, style.aliasName].map((name) => name?.trim().toLowerCase() ?? "").filter(Boolean);
++  return names.some((name) => name === wanted || name.endsWith(` ${wanted}`) || name.startsWith(`${wanted} `));
++}
++
++function fileReady(files: ReadonlySet<string> | undefined, path: string): boolean {
++  if (!files) return true;
++  const wanted = path.replace(/\\/g, "/").replace(/^\.?\//, "").toLowerCase();
++  for (const file of files) {
++    const normal = file.replace(/\\/g, "/").replace(/^\.?\//, "").toLowerCase();
++    if (normal === wanted || normal.endsWith(`/${wanted}`)) return true;
++  }
++  return false;
++}
++
++/**
++ * Dry-run matcher. Nothing is written. A row is ready only when one catalog
++ * style matches by code (or by exact name when the code is empty on that style)
++ * and both files are present. Ambiguous codes are listed, not applied.
++ */
++export function planUscdManifestImport(
++  rows: readonly FaceImportRow[],
++  catalog: readonly CatalogFaceStyle[],
++  files?: ReadonlySet<string>,
++): ManifestImportPlan {
++  const plan: ManifestImportPlan = { ready: [], unmatched: [], ambiguous: [], missingFiles: [] };
++  for (const row of rows) {
++    const byCode = catalog.filter((style) => (style.styleCode ?? "").trim().toUpperCase() === row.code);
++    const matches = byCode.length > 0
++      ? byCode
++      : catalog.filter((style) => !(style.styleCode ?? "").trim() && namesMatch(style, row));
++    if (matches.length === 0) {
++      plan.unmatched.push(row);
++      continue;
++    }
++    if (matches.length > 1) {
++      plan.ambiguous.push({ row, styleIds: matches.map((style) => style.id) });
++      continue;
++    }
++    const missing: Array<"door" | "drawer"> = [];
++    if (!fileReady(files, row.doorFile)) missing.push("door");
++    if (!fileReady(files, row.drawerFile)) missing.push("drawer");
++    if (missing.length > 0) {
++      plan.missingFiles.push({ row, missing });
++      continue;
++    }
++    const style = matches[0]!;
++    plan.ready.push({
++      row,
++      styleId: style.id,
++      styleCode: style.styleCode?.trim() || null,
++      styleName: style.ourName?.trim() || style.aliasName?.trim() || `Style #${style.id}`,
++      previousDoorUrl: trimUrl(style.doorSampleImageUrl),
++    });
++  }
++  return plan;
++}
++
++export const TORINO_REFERENCE = {
++  codes: ["TWP", "TGW", "TDW"] as const,
++  grainDirection: "horizontal" as const,
++  pdfPage: 2,
++  sourceNote: "USCD Spec Manual V8.2, PDF p.2",
++  drawerLastRow: 186,
++  doorStartRow: 201,
++  revealRows: [189, 198] as const,
++} as const;
+diff --git a/shared/doorStyleRoomSceneGeneration.test.ts b/shared/doorStyleRoomSceneGeneration.test.ts
+index b918562..ca6afd8 100644
+--- a/shared/doorStyleRoomSceneGeneration.test.ts
++++ b/shared/doorStyleRoomSceneGeneration.test.ts
+@@ -73,9 +73,21 @@ describe("door style room scene trigger", () => {
+ 
+   it("asks the room-scene model to follow the door and the drawer front", () => {
+     const prompt = buildDoorStyleRoomScenePrompt({ ourName: "Lumina Blanc", doorStyle: "Shaker", color: "White", finish: "Painted" });
+-    expect(prompt).toContain("verified cabinet door");
+-    expect(prompt).toContain("verified drawer front");
++    expect(prompt).toContain("DOOR");
++    expect(prompt).toContain("DRAWER_FRONT");
++    expect(prompt).toContain("Never merge");
++    expect(prompt).toContain("no drawer band");
+     expect(prompt).toContain("Lumina Blanc");
+     expect(prompt).toContain("Shaker");
+   });
++
++  it("skips an unverified style and a combined swatch, and still starts when verification is not migrated", () => {
++    expect(generationDecision({ ...ready, styleVerified: false }, null)).toEqual({ action: "skip", reason: "unverified-style" });
++    expect(generationDecision({ ...ready, styleVerified: undefined }, null)).toEqual({ action: "start", reason: "first-time" });
++    expect(generationDecision({
++      ...ready,
++      doorSampleImageUrl: "https://cdn.example/same.jpg",
++      drawerSampleImageUrl: "https://cdn.example/same.jpg",
++    }, null)).toEqual({ action: "skip", reason: "combined-image" });
++  });
+ });
+diff --git a/shared/doorStyleRoomSceneGeneration.ts b/shared/doorStyleRoomSceneGeneration.ts
+index 1ac41ed..b9693d3 100644
+--- a/shared/doorStyleRoomSceneGeneration.ts
++++ b/shared/doorStyleRoomSceneGeneration.ts
+@@ -19,6 +19,8 @@ export type SampleImageState = {
+   drawerSampleImageUrl: string | null;
+   doorSampleVerified: boolean;
+   drawerSampleVerified: boolean;
++  /** Missing means the verification column is not migrated yet, so the style stays eligible. */
++  styleVerified?: boolean | null;
+ };
+ 
+ export type RoomSceneGenerationSnapshot = {
+@@ -42,7 +44,7 @@ export function bothSampleImagesVerified(style: SampleImageState): boolean {
+ }
+ 
+ export type GenerationDecision =
+-  | { action: "skip"; reason: "not-ready" | "same-images-in-progress" | "same-images-ready" | "same-images-failed" }
++  | { action: "skip"; reason: "not-ready" | "same-images-in-progress" | "same-images-ready" | "same-images-failed" | "unverified-style" | "combined-image" }
+   | { action: "start"; reason: "first-time" | "images-replaced" };
+ 
+ /**
+@@ -55,9 +57,11 @@ export function generationDecision(
+   existing: RoomSceneGenerationSnapshot | null,
+   options?: { forceRetry?: boolean },
+ ): GenerationDecision {
++  if (style.styleVerified === false) return { action: "skip", reason: "unverified-style" };
+   if (!bothSampleImagesVerified(style)) return { action: "skip", reason: "not-ready" };
+   const doorImageUrl = normalizedSampleUrl(style.doorSampleImageUrl)!;
+   const drawerImageUrl = normalizedSampleUrl(style.drawerSampleImageUrl)!;
++  if (doorImageUrl === drawerImageUrl) return { action: "skip", reason: "combined-image" };
+   if (!existing) return { action: "start", reason: "first-time" };
+   const sameImages = existing.doorImageUrl === doorImageUrl && existing.drawerImageUrl === drawerImageUrl;
+   if (!sameImages) return { action: "start", reason: "images-replaced" };
+@@ -102,8 +106,9 @@ export function buildDoorStyleRoomScenePrompt(style: {
+   ].filter(Boolean);
+   return [
+     `Photorealistic architectural photograph of a kitchen using the "${style.ourName.trim() || "selected"}" cabinet door style.`,
+-    "The first reference image is the verified cabinet door. Match every cabinet door to that photo's profile, color, grain, and finish.",
+-    "The second reference image is the verified drawer front. Match every drawer front to that photo, even when it differs from the door.",
++    "The first reference image is the verified cabinet DOOR. Match every cabinet door, wall cabinet, and full-height tall door to that photo only: one solid face, consistent grain, no drawer band, drawer line, or second section.",
++    "The second reference image is the verified DRAWER_FRONT. Match every drawer front to that photo only, even when it differs from the door.",
++    "Never merge the door and the drawer front into one image, and do not rotate horizontal grain to vertical.",
+     ...details,
+     "Show an L-shaped kitchen with base cabinets, drawers, and wall cabinets, bright natural daylight, eye-level three-quarter view.",
+     "No people, no text, no watermark, no logo, and do not paste the reference photos into the frame.",
+diff --git a/shared/fixtures/torino/row-luminance.json b/shared/fixtures/torino/row-luminance.json
+new file mode 100644
+index 0000000..403b3cb
+--- /dev/null
++++ b/shared/fixtures/torino/row-luminance.json
+@@ -0,0 +1 @@
++{"TWP": [251.58, 226.37, 226.75, 217.86, 215.26, 215.56, 215.23, 214.22, 214.5, 215.22, 215.19, 215.36, 215.14, 214.69, 215.35, 216.04, 215.96, 214.09, 214.42, 214.39, 214.54, 214.74, 214.96, 215.02, 215.53, 215.92, 215.67, 216.03, 215.14, 215.61, 215.6, 214.56, 214.79, 215.18, 214.82, 214.74, 214.35, 214.08, 215.1, 215.52, 214.25, 214.35, 215.47, 214.19, 214.08, 215.21, 215.4, 214.51, 214.7, 215.66, 216.09, 215.03, 215.27, 216.38, 215.57, 215.19, 215.75, 214.55, 215.08, 215.84, 215.82, 215.56, 215.84, 215.3, 215.42, 215.57, 214.82, 215.92, 215.71, 213.75, 214.12, 213.84, 214.37, 214.17, 214.91, 214.15, 214.14, 215.18, 216.06, 214.58, 214.46, 214.34, 215.47, 214.39, 212.79, 211.88, 211.83, 211.25, 211.09, 211.83, 212.05, 210.17, 210.46, 211.08, 211.15, 211.66, 211.6, 211.17, 211.83, 212.18, 212.94, 211.25, 212.98, 213.66, 211.05, 211.53, 209.66, 210.77, 211.78, 210.62, 211.74, 210.45, 211.22, 211.22, 210.73, 210.7, 211.09, 211.81, 210.38, 210.43, 209.64, 210.2, 209.42, 209.86, 210.1, 210.39, 210.62, 211.62, 213.51, 211.07, 210.21, 212.13, 212.56, 211.9, 212.35, 212.96, 211.96, 211.66, 212.51, 213.36, 213.95, 214.84, 213.73, 214.97, 214.43, 214.42, 214.2, 214.98, 215.09, 216.47, 215.86, 214.15, 216.82, 215.86, 215.68, 216.35, 216.66, 216.24, 216.38, 215.79, 216.78, 216.17, 217.42, 217.68, 217.7, 217.5, 218.75, 217.86, 217.4, 217.38, 217.59, 217.17, 217.56, 217.32, 217.4, 217.59, 217.22, 217.73, 217.07, 216.85, 217.68, 216.93, 218.01, 217.09, 217.76, 218.41, 218.34, 217.29, 198.03, 163.51, 128.81, 112.96, 128.53, 200.2, 254.57, 254.59, 254.66, 237.64, 219.28, 227.15, 218.41, 217.24, 218.15, 217.18, 217.83, 217.46, 217.73, 216.15, 217.36, 217.58, 217.91, 218.44, 218.73, 218.51, 218.78, 218.34, 217.67, 217.7, 218.44, 218.44, 217.44, 217.41, 216.71, 216.54, 217.36, 217.21, 215.13, 216.57, 216.6, 216.78, 216.4, 215.02, 215.73, 215.84, 214.7, 214.12, 214.59, 214.53, 214.58, 213.95, 215.68, 214.85, 215.19, 214.86, 214.94, 214.52, 215.71, 214.36, 214.96, 214.46, 215.12, 213.76, 213.9, 214.72, 215.24, 214.08, 213.59, 214.84, 214.7, 215.59, 213.58, 214.05, 215.38, 214.93, 214.77, 214.64, 213.82, 214.17, 214.04, 214.7, 213.02, 213.26, 213.56, 213.15, 214.06, 214.25, 213.81, 213.07, 213.43, 213.94, 214.8, 214.56, 213.55, 214.29, 213.56, 214.01, 215.51, 214.36, 214.15, 213.28, 214.76, 214.51, 212.71, 213.74, 215.14, 214.62, 215.31, 216.13, 214.82, 214.14, 215.37, 215.2, 215.22, 215.58, 214.23, 214.57, 214.05, 214.51, 216.48, 217.4, 215.39, 216.38, 216.44, 215.1, 216.38, 216.53, 216.28, 216.32, 216.44, 216.75, 216.35, 215.25, 214.6, 214.86, 216.15, 213.97, 214.9, 215.71, 215.15, 216.04, 215.72, 215.24, 214.97, 214.6, 215.64, 215.6, 215.46, 215.53, 215.73, 214.8, 215.29, 216.05, 216.27, 215.92, 215.11, 215.71, 214.21, 215.22, 215.65, 215.09, 215.19, 215.67, 215.92, 216.17, 215.5, 215.62, 214.74, 217.33, 216.51, 215.36, 215.7, 215.46, 215.87, 214.7, 216.15, 216.59, 215.37, 215.77, 215.79, 216.31, 216.44, 216.44, 215.26, 216.34, 216.86, 217.04, 216.34, 217.24, 217.06, 217.91, 217.52, 217.67, 216.05, 214.34, 216.53, 216.01, 215.2, 214.42, 214.89, 215.28, 215.91, 214.71, 214.35, 215.3, 213.87, 214.69, 214.54, 215.6, 215.07, 215.88, 214.73, 214.42, 214.87, 214.05, 215.42, 216.07, 216.32, 215.99, 215.88, 215.01, 215.64, 215.86, 215.17, 218.02, 218.21, 217.89, 218.18, 217.57, 218.1, 218.03, 218.1, 217.3, 217.95, 218.54, 217.76, 218.44, 218.21, 218.94, 217.98, 217.75, 218.62, 218.64, 218.56, 217.84, 218.97, 218.2, 218.29, 217.13, 217.68, 217.71, 217.01, 217.76, 217.21, 217.32, 217.58, 217.0, 218.04, 217.55, 217.81, 217.11, 217.05, 217.47, 217.22, 217.05, 215.59, 215.65, 216.46, 215.11, 214.88, 216.35, 216.88, 217.4, 217.38, 217.55, 217.25, 217.06, 217.48, 217.12, 216.52, 216.97, 216.51, 216.38, 217.4, 216.04, 216.47, 216.04, 217.03, 216.41, 216.46, 216.23, 217.4, 216.27, 216.87, 217.04, 216.22, 216.86, 217.42, 216.55, 216.6, 218.1, 216.32, 216.18, 215.43, 216.86, 216.26, 217.07, 215.55, 216.26, 217.27, 215.64, 215.17, 213.68, 214.66, 215.4, 215.26, 213.89, 214.76, 215.26, 215.0, 213.16, 213.99, 213.57, 213.13, 213.7, 213.76, 212.38, 211.43, 212.99, 213.59, 212.77, 212.56, 213.41, 213.12, 212.83, 212.28, 213.07, 212.29, 211.32, 211.24, 212.71, 214.24, 212.68, 211.56, 213.54, 211.57, 213.67, 215.26, 212.48, 212.83, 211.88, 212.16, 212.47, 212.23, 212.71, 213.03, 212.93, 211.73, 212.47, 213.64, 213.28, 212.8, 212.75, 211.76, 211.76, 213.17, 213.93, 213.87, 214.16, 214.59, 214.58, 215.03, 214.16, 213.61, 214.15, 214.98, 214.41, 213.98, 213.89, 214.18, 211.67, 214.01, 215.21, 214.32, 212.7, 213.75, 213.87, 214.09, 214.46, 214.27, 215.01, 214.46, 215.51, 216.13, 213.48, 213.05, 214.82, 214.66, 214.17, 214.86, 214.06, 215.1, 215.63, 216.68, 215.16, 215.31, 214.46, 214.94, 214.35, 215.28, 215.77, 215.87, 214.47, 215.67, 215.73, 215.49, 215.37, 215.91, 216.99, 216.84, 217.11, 217.35, 217.55, 217.43, 216.75, 216.56, 217.1, 217.2, 217.31, 217.03, 217.41, 217.3, 217.72, 218.12, 218.05, 217.32, 216.94, 216.39, 216.13, 216.44, 217.25, 216.55, 215.76, 215.73, 216.66, 217.27, 215.5, 215.25, 216.04, 216.25, 215.75, 215.29, 214.07, 214.31, 214.31, 213.41, 213.92, 215.22, 213.99, 214.55, 213.47, 212.83, 213.76, 213.72, 214.66, 213.95, 212.14, 213.23, 212.6, 213.07, 215.2, 213.96, 212.18, 212.32, 213.21, 213.2, 212.37, 212.2, 212.08, 212.63, 211.85, 211.23, 210.74, 211.1, 211.13, 211.09, 211.03, 211.11, 211.0, 211.7, 211.82, 212.98, 213.46, 214.48, 212.85, 212.61, 214.08, 212.85, 213.42, 213.53, 214.75, 215.83, 215.71, 216.4, 216.76, 216.96, 217.3, 216.86, 217.05, 216.46, 217.11, 217.06, 216.9, 215.91, 216.43, 216.35, 216.0, 215.53, 216.34, 216.06, 215.95, 215.8, 214.89, 215.35, 215.6, 215.55, 215.23, 215.07, 215.62, 215.87, 215.61, 216.23, 215.7, 214.72, 216.12, 215.44, 215.18, 215.73, 216.72, 215.83, 214.57, 214.73, 215.55, 214.91, 215.27, 214.88, 214.69, 215.51, 215.16, 214.47, 213.99, 213.76, 214.91, 215.06, 213.11, 214.26, 215.85, 214.82, 214.65, 215.11, 214.9, 214.19, 214.66, 216.13, 215.35, 215.73, 216.59, 216.2, 216.33, 217.36, 216.88, 216.03, 215.47, 215.98, 214.04, 214.6, 213.99, 212.93, 214.14, 213.06, 213.52, 213.53, 213.12, 212.74, 212.71, 213.1, 212.99, 213.97, 213.06, 211.01, 209.66, 211.15, 210.93, 210.97, 211.72, 211.66, 212.31, 212.28, 212.92, 212.28, 213.32, 213.4, 212.44, 212.71, 213.02, 212.72, 214.48, 213.51, 213.46, 213.18, 212.61, 213.74, 214.45, 215.7, 215.18, 214.65, 214.51, 215.73, 214.25, 215.35, 214.73, 214.13, 213.78, 214.88, 214.42, 215.81, 216.02, 216.49, 216.09, 216.19, 215.29, 216.81, 216.51, 216.17, 215.53, 215.44, 215.94, 215.96, 216.07, 215.95, 215.33, 216.24, 216.67, 216.83, 214.96, 215.42, 215.32, 215.33, 215.49, 215.7, 215.8, 215.94, 216.34, 216.52, 216.87, 215.98, 216.2, 216.28, 215.24, 215.67, 215.82, 215.54, 215.16, 214.96, 214.5, 215.59, 216.35, 214.91, 215.04, 215.97, 215.01, 214.65, 215.8, 216.36, 215.43, 215.46, 216.03, 216.71, 215.89, 215.58, 217.11, 216.32, 215.74, 216.36, 215.19, 215.85, 216.39, 216.35, 216.2, 216.37, 215.97, 215.85, 216.32, 215.6, 216.38, 216.76, 212.36, 224.95], "TGW": [247.24, 179.94, 179.08, 155.76, 147.39, 149.73, 147.78, 143.93, 142.6, 145.76, 150.3, 147.6, 147.28, 145.28, 145.36, 148.07, 148.94, 144.94, 145.04, 150.22, 149.18, 150.77, 151.98, 147.49, 150.02, 154.01, 148.88, 150.11, 150.07, 152.9, 155.78, 151.49, 149.88, 153.69, 156.2, 154.22, 152.61, 151.62, 156.82, 156.06, 153.54, 155.36, 155.95, 153.26, 153.74, 157.02, 156.79, 152.73, 153.08, 158.55, 155.04, 150.94, 154.33, 152.14, 149.07, 155.32, 155.46, 149.26, 152.5, 156.88, 155.12, 149.91, 152.03, 157.27, 155.69, 152.4, 151.37, 152.88, 153.56, 153.95, 156.0, 151.88, 156.91, 155.26, 151.78, 153.22, 152.65, 152.08, 156.86, 151.17, 150.49, 155.96, 159.52, 154.14, 150.36, 153.37, 156.47, 156.06, 154.28, 148.49, 144.2, 151.98, 151.08, 145.29, 148.79, 153.33, 148.81, 145.23, 145.27, 147.55, 145.54, 146.3, 147.94, 147.59, 146.51, 143.95, 138.56, 142.83, 148.18, 150.24, 146.98, 143.2, 145.13, 144.82, 145.63, 145.95, 144.19, 143.23, 143.79, 140.62, 142.12, 143.99, 145.81, 145.13, 149.41, 148.63, 141.45, 141.88, 144.92, 142.89, 141.41, 139.91, 141.85, 145.21, 147.42, 146.97, 144.92, 142.99, 144.11, 148.48, 151.96, 151.21, 149.08, 148.68, 147.95, 146.82, 146.49, 149.16, 149.71, 149.81, 147.57, 147.84, 146.34, 147.31, 148.4, 143.62, 147.79, 149.09, 153.95, 153.23, 150.99, 149.64, 153.52, 154.53, 152.74, 154.61, 155.46, 152.43, 154.0, 150.31, 155.31, 153.11, 152.33, 152.08, 151.0, 152.49, 151.2, 152.31, 152.25, 147.25, 147.13, 150.77, 144.37, 143.69, 151.7, 146.4, 141.76, 145.84, 132.11, 85.08, 52.44, 40.03, 73.62, 196.02, 254.12, 253.95, 254.03, 220.33, 171.91, 168.84, 150.82, 152.04, 148.93, 142.97, 146.84, 149.79, 150.12, 148.67, 146.14, 142.93, 149.86, 147.07, 142.4, 146.31, 152.89, 150.95, 150.79, 149.59, 148.69, 148.28, 148.35, 146.2, 148.59, 149.73, 151.46, 148.94, 150.76, 151.14, 151.09, 149.25, 150.77, 155.21, 152.8, 150.01, 154.98, 151.91, 151.5, 150.35, 149.55, 149.46, 150.73, 155.69, 155.8, 151.87, 152.96, 147.59, 152.84, 157.79, 157.79, 151.2, 152.61, 161.8, 161.25, 159.96, 158.75, 162.39, 159.98, 156.2, 154.51, 156.93, 158.92, 153.08, 150.87, 154.28, 154.74, 154.23, 156.26, 152.79, 149.63, 154.16, 155.14, 152.36, 149.87, 148.87, 151.46, 150.51, 150.55, 153.82, 154.18, 154.89, 151.13, 151.47, 156.26, 159.21, 159.34, 150.19, 147.63, 155.74, 155.02, 151.21, 152.0, 154.76, 152.41, 150.52, 153.44, 150.67, 149.17, 157.08, 153.8, 150.03, 153.3, 149.79, 153.93, 154.83, 151.67, 148.02, 149.57, 153.38, 155.61, 151.46, 149.23, 154.81, 154.33, 153.23, 154.45, 156.01, 153.71, 155.87, 155.85, 155.28, 157.09, 154.42, 156.39, 155.21, 149.86, 150.37, 151.13, 155.45, 154.97, 151.02, 147.9, 150.19, 153.19, 153.81, 153.8, 150.1, 150.31, 151.76, 149.74, 149.57, 145.48, 144.15, 147.46, 147.9, 142.61, 142.46, 147.99, 146.07, 148.56, 150.44, 140.91, 141.83, 141.93, 145.73, 144.97, 139.58, 143.25, 151.12, 147.86, 142.42, 139.43, 137.33, 142.25, 145.86, 141.68, 138.82, 140.1, 144.11, 144.75, 148.18, 146.4, 142.46, 145.73, 146.37, 142.92, 141.58, 142.33, 142.84, 146.61, 143.5, 147.28, 149.0, 146.69, 144.41, 146.83, 152.47, 150.98, 146.1, 146.17, 150.33, 154.36, 152.82, 145.58, 148.03, 152.22, 152.23, 150.13, 149.16, 148.25, 152.07, 156.62, 149.17, 148.87, 153.06, 152.38, 151.5, 152.05, 156.58, 155.09, 150.48, 148.77, 152.91, 154.98, 155.06, 151.69, 153.69, 152.79, 154.39, 152.52, 153.79, 157.29, 154.2, 153.65, 156.03, 154.22, 157.2, 153.02, 155.77, 153.61, 155.38, 158.23, 158.36, 156.02, 157.51, 155.83, 160.76, 159.47, 154.07, 155.08, 157.1, 156.85, 152.43, 151.93, 159.72, 156.36, 154.11, 154.88, 150.95, 148.84, 153.73, 151.2, 150.17, 151.08, 153.0, 151.2, 153.27, 156.38, 151.99, 152.26, 153.92, 155.82, 157.41, 151.38, 152.43, 152.62, 157.03, 159.0, 160.73, 158.43, 158.0, 159.95, 162.9, 161.14, 154.04, 153.99, 157.06, 155.54, 154.38, 155.52, 156.66, 155.17, 151.0, 149.82, 153.14, 156.88, 155.28, 152.68, 154.75, 154.76, 152.66, 154.33, 153.63, 149.35, 146.54, 149.31, 152.56, 149.96, 151.03, 151.36, 152.59, 150.3, 153.76, 150.42, 144.15, 145.93, 149.07, 146.36, 143.54, 147.26, 143.57, 141.58, 142.36, 143.1, 147.64, 149.76, 147.05, 144.44, 145.01, 145.42, 146.63, 148.16, 149.16, 144.23, 144.15, 149.03, 148.3, 145.46, 149.19, 147.65, 147.67, 146.78, 145.73, 147.25, 148.32, 148.77, 148.37, 146.66, 148.42, 150.54, 149.34, 148.16, 149.24, 150.72, 150.8, 147.94, 151.16, 149.77, 148.88, 146.9, 147.08, 151.7, 152.16, 150.41, 155.48, 154.95, 153.75, 156.61, 156.58, 157.57, 155.3, 156.23, 155.4, 156.14, 158.18, 159.1, 158.27, 156.39, 158.53, 161.7, 162.31, 159.79, 158.75, 158.3, 158.05, 162.21, 157.69, 153.69, 154.87, 153.97, 153.54, 152.95, 154.94, 153.14, 151.69, 152.91, 152.96, 154.57, 155.26, 152.58, 153.71, 155.91, 154.85, 151.85, 155.33, 158.58, 157.78, 159.3, 158.46, 157.87, 159.29, 158.63, 156.97, 157.76, 157.91, 156.91, 157.08, 158.16, 158.66, 158.73, 159.63, 159.09, 157.73, 159.54, 158.46, 158.54, 158.69, 160.05, 159.24, 155.91, 157.59, 159.8, 157.9, 158.76, 157.56, 155.08, 157.71, 159.77, 157.8, 157.26, 156.85, 158.0, 157.38, 155.03, 158.44, 157.78, 155.76, 155.91, 154.79, 149.11, 152.09, 154.49, 153.04, 150.34, 147.77, 149.46, 148.88, 147.19, 148.32, 154.87, 149.01, 152.27, 149.85, 149.25, 146.98, 148.92, 153.33, 152.22, 156.49, 154.13, 155.11, 158.59, 155.62, 156.01, 153.78, 150.72, 147.06, 152.06, 153.57, 159.35, 157.69, 157.23, 160.8, 158.63, 158.45, 162.87, 159.55, 160.81, 158.56, 159.89, 157.81, 157.98, 155.54, 158.45, 160.49, 159.29, 158.7, 161.77, 163.21, 158.65, 157.71, 157.44, 154.28, 153.68, 149.77, 151.16, 153.59, 151.23, 150.34, 152.63, 149.45, 149.64, 152.02, 152.75, 152.43, 153.54, 147.87, 150.76, 150.83, 151.91, 151.96, 151.68, 150.06, 147.17, 147.3, 150.43, 151.96, 153.23, 153.6, 154.17, 153.37, 153.55, 152.9, 150.51, 152.54, 155.79, 152.7, 150.81, 152.75, 155.8, 153.54, 153.75, 156.42, 158.51, 159.9, 160.59, 160.36, 159.56, 159.69, 161.41, 157.68, 155.96, 156.93, 155.77, 151.8, 157.8, 157.69, 157.94, 154.97, 157.39, 160.39, 160.12, 158.29, 160.8, 158.36, 153.97, 151.95, 158.55, 162.42, 160.08, 156.76, 159.17, 159.3, 156.63, 155.43, 155.75, 154.79, 153.55, 151.6, 152.64, 152.03, 150.92, 153.56, 156.17, 155.15, 158.38, 154.16, 154.39, 152.91, 153.97, 154.59, 156.71, 155.93, 152.0, 147.04, 147.82, 153.27, 154.78, 151.01, 148.97, 152.4, 151.99, 151.43, 149.43, 149.19, 149.2, 147.72, 147.69, 149.35, 151.45, 149.52, 150.79, 153.7, 152.64, 148.59, 146.06, 148.0, 148.54, 146.86, 149.26, 149.52, 144.45, 146.77, 151.56, 147.98, 146.47, 146.56, 146.56, 147.38, 148.65, 149.85, 149.06, 147.05, 151.42, 148.26, 143.95, 144.16, 149.25, 152.51, 146.98, 146.44, 150.08, 150.63, 150.47, 146.25, 151.26, 154.21, 153.47, 153.76, 150.1, 150.45, 154.78, 154.62, 152.08, 151.04, 151.65, 156.44, 158.25, 154.08, 153.15, 155.48, 156.44, 155.34, 154.97, 155.06, 158.37, 156.73, 154.52, 157.22, 158.13, 156.94, 157.14, 157.2, 156.87, 158.5, 160.31, 157.39, 157.85, 158.72, 156.71, 154.59, 154.25, 157.17, 158.01, 154.85, 157.19, 157.64, 156.39, 154.76, 157.21, 159.22, 159.59, 157.21, 156.42, 156.0, 158.31, 152.44, 191.76], "TDW": [219.13, 113.58, 116.07, 77.81, 74.89, 76.82, 77.6, 77.1, 77.0, 78.84, 79.22, 76.39, 78.45, 81.2, 81.16, 84.25, 84.82, 82.54, 81.33, 80.19, 80.55, 82.63, 81.8, 81.85, 82.65, 82.74, 82.77, 80.43, 78.07, 81.69, 83.76, 80.51, 79.95, 81.16, 82.57, 82.78, 84.34, 82.86, 79.24, 80.33, 80.85, 81.38, 79.88, 80.8, 82.06, 81.53, 77.9, 75.74, 78.49, 80.8, 81.02, 80.29, 76.61, 75.89, 77.79, 77.64, 75.94, 77.21, 77.77, 77.35, 76.66, 75.96, 76.33, 78.32, 77.05, 77.26, 76.54, 76.14, 77.44, 77.26, 76.89, 77.34, 77.56, 80.4, 80.47, 81.74, 81.62, 82.34, 80.27, 78.57, 81.91, 83.9, 81.77, 82.03, 80.93, 81.99, 83.06, 80.13, 78.83, 79.2, 76.66, 79.65, 79.39, 78.99, 79.2, 80.01, 78.45, 78.82, 78.97, 77.53, 77.33, 74.82, 74.46, 73.64, 75.4, 74.91, 74.48, 75.16, 76.2, 75.28, 72.52, 73.79, 76.81, 75.83, 73.08, 72.3, 74.23, 74.1, 72.42, 71.61, 74.95, 74.76, 72.2, 73.47, 74.57, 74.42, 74.2, 74.35, 71.98, 74.08, 73.51, 73.56, 75.44, 74.32, 72.57, 72.96, 75.26, 75.14, 73.25, 71.9, 73.66, 74.6, 73.71, 72.4, 75.08, 73.17, 73.05, 74.19, 72.6, 73.66, 75.42, 75.84, 77.63, 75.19, 73.66, 74.58, 74.31, 73.81, 75.09, 76.49, 75.98, 73.9, 77.91, 80.14, 77.66, 76.66, 81.05, 78.62, 72.54, 77.79, 81.37, 79.32, 75.46, 76.65, 78.45, 78.92, 77.71, 79.98, 85.87, 86.36, 82.88, 79.91, 79.38, 79.33, 78.2, 78.92, 83.17, 75.35, 52.68, 33.93, 23.58, 16.55, 92.8, 235.45, 254.32, 254.08, 254.09, 163.15, 114.7, 92.31, 76.17, 76.94, 77.55, 80.59, 84.66, 82.98, 80.6, 79.6, 83.34, 79.84, 80.3, 79.76, 85.17, 84.94, 82.35, 79.65, 83.76, 81.77, 81.91, 83.26, 81.59, 81.0, 84.7, 80.71, 80.82, 83.25, 80.99, 82.87, 84.56, 80.07, 82.73, 82.76, 82.3, 77.35, 78.22, 74.99, 78.0, 76.34, 75.54, 77.31, 75.4, 73.62, 73.72, 75.01, 75.13, 78.39, 75.73, 74.19, 71.51, 73.07, 77.3, 73.7, 70.5, 73.18, 75.86, 74.29, 70.83, 69.94, 73.56, 74.09, 74.1, 72.74, 72.24, 71.74, 76.04, 75.44, 72.57, 71.54, 72.67, 71.06, 70.68, 73.66, 73.28, 70.85, 68.72, 69.27, 72.51, 71.89, 70.68, 68.96, 69.84, 72.27, 72.58, 70.58, 67.13, 68.72, 72.42, 72.76, 70.45, 70.21, 72.05, 72.91, 70.37, 71.59, 73.05, 71.4, 70.88, 70.8, 72.95, 71.29, 71.02, 72.97, 73.7, 71.26, 71.6, 72.49, 73.14, 71.75, 71.89, 75.32, 77.1, 75.9, 75.14, 76.44, 79.85, 78.95, 80.69, 80.01, 78.56, 77.1, 73.45, 76.73, 79.7, 79.67, 78.09, 76.87, 77.27, 80.52, 81.02, 78.03, 79.54, 79.58, 78.88, 77.55, 76.01, 77.91, 77.94, 73.76, 75.25, 77.29, 72.67, 74.94, 76.21, 75.69, 75.12, 75.69, 75.86, 75.78, 72.02, 74.18, 75.32, 73.67, 79.04, 76.31, 71.06, 71.98, 76.95, 76.61, 72.06, 72.1, 75.42, 76.24, 76.1, 72.14, 73.91, 79.25, 80.17, 77.47, 74.4, 75.54, 77.48, 76.21, 75.87, 74.52, 74.73, 75.12, 75.09, 72.86, 76.17, 77.96, 76.89, 76.3, 75.84, 74.26, 76.3, 79.59, 76.61, 73.93, 72.8, 76.42, 76.92, 77.56, 78.57, 81.47, 82.65, 82.16, 79.22, 79.89, 79.37, 76.5, 74.86, 78.05, 79.07, 76.72, 74.46, 75.24, 73.66, 74.04, 75.59, 76.26, 76.6, 75.86, 74.33, 74.96, 74.28, 74.03, 73.6, 74.54, 74.36, 73.75, 72.87, 74.19, 73.42, 72.05, 72.58, 73.18, 72.85, 70.15, 71.67, 70.78, 70.66, 72.3, 70.01, 71.64, 74.37, 73.48, 73.42, 71.58, 71.07, 70.83, 71.44, 71.79, 71.35, 71.49, 72.01, 71.21, 72.41, 71.2, 71.84, 76.19, 77.36, 76.73, 75.92, 75.27, 74.19, 74.61, 75.59, 74.48, 72.78, 71.97, 70.76, 72.66, 73.66, 73.56, 73.23, 74.17, 73.22, 70.29, 71.79, 72.73, 71.46, 72.56, 73.1, 74.23, 75.12, 73.92, 72.18, 75.6, 76.21, 75.45, 74.63, 73.45, 74.86, 76.17, 76.13, 75.84, 74.17, 74.1, 73.32, 74.21, 73.0, 74.15, 72.69, 70.9, 71.76, 72.81, 69.73, 67.83, 73.46, 74.94, 70.31, 72.27, 71.78, 70.11, 71.6, 73.99, 71.78, 72.47, 72.84, 74.82, 72.8, 71.57, 70.12, 72.79, 72.07, 70.91, 70.08, 70.9, 72.33, 70.72, 70.48, 70.12, 70.0, 71.98, 72.04, 70.55, 69.46, 70.05, 72.79, 71.28, 71.85, 70.08, 66.99, 70.94, 73.66, 71.94, 68.85, 69.58, 70.39, 71.74, 70.71, 69.56, 71.18, 70.17, 71.13, 72.43, 70.69, 70.33, 70.07, 69.62, 70.73, 71.78, 69.81, 71.38, 73.02, 72.3, 71.68, 72.19, 71.64, 72.42, 71.25, 73.23, 75.55, 73.33, 73.18, 74.76, 76.4, 76.49, 75.82, 75.56, 75.38, 77.64, 77.02, 75.86, 76.6, 77.34, 75.23, 77.14, 77.88, 76.17, 76.83, 76.8, 74.78, 75.36, 76.69, 75.25, 76.51, 77.73, 77.22, 75.46, 75.42, 77.81, 77.93, 77.69, 76.51, 76.83, 76.67, 76.65, 76.78, 78.38, 78.21, 81.29, 79.27, 76.41, 76.03, 76.33, 76.89, 77.28, 77.13, 75.14, 75.11, 75.32, 75.38, 76.52, 77.03, 74.86, 74.32, 73.62, 73.31, 74.84, 76.2, 74.96, 74.18, 73.64, 73.35, 74.64, 73.14, 73.0, 75.07, 75.27, 73.1, 73.1, 74.64, 73.97, 73.45, 73.71, 72.75, 71.53, 73.29, 74.26, 71.96, 71.9, 73.48, 71.71, 71.97, 72.32, 73.57, 72.48, 71.16, 70.83, 72.21, 71.89, 72.91, 75.1, 74.28, 72.78, 72.47, 72.0, 70.14, 72.33, 73.86, 73.27, 70.36, 72.1, 73.67, 72.85, 72.66, 71.82, 71.96, 71.46, 70.31, 70.13, 69.34, 70.78, 73.69, 74.83, 72.12, 70.97, 71.95, 73.68, 76.8, 74.84, 72.88, 71.41, 73.74, 76.07, 75.67, 75.93, 74.61, 74.1, 73.77, 76.35, 78.0, 74.99, 74.09, 77.14, 76.57, 74.29, 75.64, 75.61, 75.83, 76.32, 78.01, 78.58, 78.66, 78.58, 79.71, 80.74, 80.32, 78.68, 78.97, 80.58, 82.76, 80.17, 80.6, 80.68, 82.58, 80.73, 80.56, 80.36, 82.33, 83.42, 80.72, 77.84, 79.88, 82.32, 79.62, 78.94, 80.84, 81.65, 83.68, 80.72, 78.93, 80.32, 80.59, 76.56, 77.24, 77.37, 77.06, 75.11, 76.27, 76.96, 77.97, 76.89, 75.85, 77.39, 80.31, 77.85, 79.89, 79.73, 78.51, 76.57, 75.86, 75.31, 78.05, 78.01, 76.28, 77.09, 78.14, 78.13, 78.09, 77.92, 78.86, 78.71, 75.85, 73.78, 76.77, 76.93, 73.21, 75.29, 77.48, 75.67, 77.18, 76.48, 78.08, 80.13, 82.12, 79.68, 81.07, 83.51, 83.31, 80.85, 80.63, 81.94, 79.4, 79.25, 79.87, 79.81, 80.42, 81.7, 81.69, 82.51, 82.89, 80.93, 81.73, 79.49, 78.05, 78.02, 77.62, 75.98, 76.76, 75.26, 76.22, 76.29, 76.24, 78.24, 80.67, 77.71, 76.21, 75.41, 76.04, 77.73, 75.57, 75.93, 78.45, 78.73, 77.31, 74.69, 76.27, 75.67, 77.31, 75.44, 74.44, 75.74, 77.59, 78.26, 78.9, 76.42, 78.4, 80.89, 81.04, 83.79, 83.73, 82.4, 81.68, 82.06, 81.12, 81.5, 79.73, 79.79, 81.19, 80.74, 81.01, 81.01, 79.2, 80.42, 81.3, 78.68, 80.5, 82.19, 80.91, 81.31, 82.0, 82.74, 81.6, 80.43, 81.07, 81.01, 80.55, 81.46, 79.48, 79.36, 80.33, 78.59, 78.13, 81.34, 78.96, 78.69, 79.2, 79.46, 79.45, 78.97, 78.56, 77.32, 77.17, 77.51, 77.9, 78.86, 78.54, 78.16, 78.89, 81.08, 79.89, 79.33, 79.94, 70.57, 197.85]}
+\ No newline at end of file
+diff --git a/shared/fixtures/uscd-frameless/manifest.json b/shared/fixtures/uscd-frameless/manifest.json
+new file mode 100644
+index 0000000..49b7273
+--- /dev/null
++++ b/shared/fixtures/uscd-frameless/manifest.json
+@@ -0,0 +1,1084 @@
++{
++  "source": "USCD Spec Manual V8.2",
++  "count": 49,
++  "styles": [
++    {
++      "code": "TWP",
++      "name": "White Pine",
++      "collection": "torino",
++      "pdf_page": 2,
++      "grain_direction": "horizontal",
++      "door_style": "Slab",
++      "folder": "torino/TWP-white-pine",
++      "reveal_rows": [
++        189,
++        198
++      ],
++      "door_rows": [
++        201,
++        884
++      ],
++      "drawer_rows": [
++        4,
++        186
++      ],
++      "source": "USCD Spec Manual V8.2"
++    },
++    {
++      "code": "TGW",
++      "name": "Grey Wood",
++      "collection": "torino",
++      "pdf_page": 2,
++      "grain_direction": "horizontal",
++      "door_style": "Slab",
++      "folder": "torino/TGW-grey-wood",
++      "reveal_rows": [
++        189,
++        198
++      ],
++      "door_rows": [
++        201,
++        884
++      ],
++      "drawer_rows": [
++        4,
++        186
++      ],
++      "source": "USCD Spec Manual V8.2"
++    },
++    {
++      "code": "TDW",
++      "name": "Dark Wood",
++      "collection": "torino",
++      "pdf_page": 2,
++      "grain_direction": "horizontal",
++      "door_style": "Slab",
++      "folder": "torino/TDW-dark-wood",
++      "reveal_rows": [
++        189,
++        198
++      ],
++      "door_rows": [
++        201,
++        884
++      ],
++      "drawer_rows": [
++        4,
++        186
++      ],
++      "source": "USCD Spec Manual V8.2"
++    },
++    {
++      "code": "PGW",
++      "name": "Gloss White",
++      "collection": "palermo",
++      "pdf_page": 3,
++      "grain_direction": "none (solid)",
++      "door_style": "Slab",
++      "folder": "palermo/PGW-gloss-white",
++      "reveal_rows": [
++        192,
++        203
++      ],
++      "door_rows": [
++        206,
++        909
++      ],
++      "drawer_rows": [
++        3,
++        189
++      ],
++      "source": "USCD Spec Manual V8.2"
++    },
++    {
++      "code": "ZCC",
++      "name": "Cashmere",
++      "collection": "zenit-slim-cava",
++      "pdf_page": 4,
++      "grain_direction": "none (solid)",
++      "door_style": "Slim Cava (shaker)",
++      "folder": "zenit-slim-cava/ZCC-cashmere",
++      "reveal_rows": [
++        93,
++        96
++      ],
++      "door_rows": [
++        99,
++        434
++      ],
++      "drawer_rows": [
++        2,
++        90
++      ],
++      "source": "USCD Spec Manual V8.2"
++    },
++    {
++      "code": "ZCN",
++      "name": "Antracita",
++      "collection": "zenit-slim-cava",
++      "pdf_page": 4,
++      "grain_direction": "none (solid)",
++      "door_style": "Slim Cava (shaker)",
++      "folder": "zenit-slim-cava/ZCN-antracita",
++      "reveal_rows": [
++        93,
++        96
++      ],
++      "door_rows": [
++        99,
++        434
++      ],
++      "drawer_rows": [
++        2,
++        90
++      ],
++      "source": "USCD Spec Manual V8.2"
++    },
++    {
++      "code": "ZCK",
++      "name": "Black",
++      "collection": "zenit-slim-cava",
++      "pdf_page": 4,
++      "grain_direction": "none (solid)",
++      "door_style": "Slim Cava (shaker)",
++      "folder": "zenit-slim-cava/ZCK-black",
++      "reveal_rows": [
++        93,
++        94
++      ],
++      "door_rows": [
++        97,
++        434
++      ],
++      "drawer_rows": [
++        2,
++        90
++      ],
++      "source": "USCD Spec Manual V8.2"
++    },
++    {
++      "code": "ZSI",
++      "name": "Azul Indigo",
++      "collection": "zenit",
++      "pdf_page": 4,
++      "grain_direction": "none (solid)",
++      "door_style": "Slab",
++      "folder": "zenit/ZSI-azul-indigo",
++      "reveal_rows": [
++        113,
++        117
++      ],
++      "door_rows": [
++        120,
++        538
++      ],
++      "drawer_rows": [
++        2,
++        110
++      ],
++      "source": "USCD Spec Manual V8.2"
++    },
++    {
++      "code": "ZSM",
++      "name": "Azul Marino",
++      "collection": "zenit",
++      "pdf_page": 4,
++      "grain_direction": "none (solid)",
++      "door_style": "Slab",
++      "folder": "zenit/ZSM-azul-marino",
++      "reveal_rows": [
++        113,
++        117
++      ],
++      "door_rows": [
++        120,
++        538
++      ],
++      "drawer_rows": [
++        2,
++        110
++      ],
++      "source": "USCD Spec Manual V8.2"
++    },
++    {
++      "code": "ZSU",
++      "name": "Agua Marina",
++      "collection": "zenit",
++      "pdf_page": 4,
++      "grain_direction": "none (solid)",
++      "door_style": "Slab",
++      "folder": "zenit/ZSU-agua-marina",
++      "reveal_rows": [
++        113,
++        117
++      ],
++      "door_rows": [
++        120,
++        538
++      ],
++      "drawer_rows": [
++        2,
++        110
++      ],
++      "source": "USCD Spec Manual V8.2"
++    },
++    {
++      "code": "ZSA",
++      "name": "Agave",
++      "collection": "zenit",
++      "pdf_page": 4,
++      "grain_direction": "none (solid)",
++      "door_style": "Slab",
++      "folder": "zenit/ZSA-agave",
++      "reveal_rows": [
++        113,
++        117
++      ],
++      "door_rows": [
++        120,
++        538
++      ],
++      "drawer_rows": [
++        2,
++        110
++      ],
++      "source": "USCD Spec Manual V8.2"
++    },
++    {
++      "code": "ZSV",
++      "name": "Verde Salvia",
++      "collection": "zenit",
++      "pdf_page": 4,
++      "grain_direction": "none (solid)",
++      "door_style": "Slab",
++      "folder": "zenit/ZSV-verde-salvia",
++      "reveal_rows": [
++        113,
++        117
++      ],
++      "door_rows": [
++        120,
++        538
++      ],
++      "drawer_rows": [
++        2,
++        110
++      ],
++      "source": "USCD Spec Manual V8.2"
++    },
++    {
++      "code": "ZSW",
++      "name": "Blanco",
++      "collection": "zenit",
++      "pdf_page": 4,
++      "grain_direction": "none (solid)",
++      "door_style": "Slab",
++      "folder": "zenit/ZSW-blanco",
++      "reveal_rows": [
++        113,
++        115
++      ],
++      "door_rows": [
++        118,
++        538
++      ],
++      "drawer_rows": [
++        2,
++        110
++      ],
++      "source": "USCD Spec Manual V8.2"
++    },
++    {
++      "code": "ZSC",
++      "name": "Cashmere",
++      "collection": "zenit",
++      "pdf_page": 4,
++      "grain_direction": "none (solid)",
++      "door_style": "Slab",
++      "folder": "zenit/ZSC-cashmere",
++      "reveal_rows": [
++        113,
++        117
++      ],
++      "door_rows": [
++        120,
++        538
++      ],
++      "drawer_rows": [
++        2,
++        110
++      ],
++      "source": "USCD Spec Manual V8.2"
++    },
++    {
++      "code": "ZSL",
++      "name": "Albero",
++      "collection": "zenit",
++      "pdf_page": 4,
++      "grain_direction": "none (solid)",
++      "door_style": "Slab",
++      "folder": "zenit/ZSL-albero",
++      "reveal_rows": [
++        113,
++        117
++      ],
++      "door_rows": [
++        120,
++        538
++      ],
++      "drawer_rows": [
++        2,
++        110
++      ],
++      "source": "USCD Spec Manual V8.2"
++    },
++    {
++      "code": "ZSN",
++      "name": "Antracita",
++      "collection": "zenit",
++      "pdf_page": 4,
++      "grain_direction": "none (solid)",
++      "door_style": "Slab",
++      "folder": "zenit/ZSN-antracita",
++      "reveal_rows": [
++        113,
++        117
++      ],
++      "door_rows": [
++        120,
++        538
++      ],
++      "drawer_rows": [
++        2,
++        110
++      ],
++      "source": "USCD Spec Manual V8.2"
++    },
++    {
++      "code": "ZSK",
++      "name": "Black",
++      "collection": "zenit",
++      "pdf_page": 4,
++      "grain_direction": "none (solid)",
++      "door_style": "Slab",
++      "folder": "zenit/ZSK-black",
++      "reveal_rows": [
++        113,
++        117
++      ],
++      "door_rows": [
++        120,
++        538
++      ],
++      "drawer_rows": [
++        2,
++        110
++      ],
++      "source": "USCD Spec Manual V8.2"
++    },
++    {
++      "code": "ZSO",
++      "name": "Coral",
++      "collection": "zenit",
++      "pdf_page": 4,
++      "grain_direction": "none (solid)",
++      "door_style": "Slab",
++      "folder": "zenit/ZSO-coral",
++      "reveal_rows": [
++        113,
++        117
++      ],
++      "door_rows": [
++        120,
++        538
++      ],
++      "drawer_rows": [
++        2,
++        110
++      ],
++      "source": "USCD Spec Manual V8.2"
++    },
++    {
++      "code": "ZSP",
++      "name": "Pompei",
++      "collection": "zenit",
++      "pdf_page": 4,
++      "grain_direction": "none (solid)",
++      "door_style": "Slab",
++      "folder": "zenit/ZSP-pompei",
++      "reveal_rows": [
++        113,
++        117
++      ],
++      "door_rows": [
++        120,
++        538
++      ],
++      "drawer_rows": [
++        2,
++        110
++      ],
++      "source": "USCD Spec Manual V8.2"
++    },
++    {
++      "code": "ZSB",
++      "name": "Basalto",
++      "collection": "zenit",
++      "pdf_page": 4,
++      "grain_direction": "none (solid)",
++      "door_style": "Slab",
++      "folder": "zenit/ZSB-basalto",
++      "reveal_rows": [
++        115,
++        117
++      ],
++      "door_rows": [
++        120,
++        538
++      ],
++      "drawer_rows": [
++        2,
++        112
++      ],
++      "source": "USCD Spec Manual V8.2"
++    },
++    {
++      "code": "LSC",
++      "name": "Cashmere",
++      "collection": "luxe",
++      "pdf_page": 4,
++      "grain_direction": "none (solid)",
++      "door_style": "Slab",
++      "folder": "luxe/LSC-cashmere",
++      "reveal_rows": [
++        111,
++        117
++      ],
++      "door_rows": [
++        120,
++        538
++      ],
++      "drawer_rows": [
++        2,
++        108
++      ],
++      "source": "USCD Spec Manual V8.2"
++    },
++    {
++      "code": "LSA",
++      "name": "Agua Marina",
++      "collection": "luxe",
++      "pdf_page": 4,
++      "grain_direction": "none (solid)",
++      "door_style": "Slab",
++      "folder": "luxe/LSA-agua-marina",
++      "reveal_rows": [
++        111,
++        117
++      ],
++      "door_rows": [
++        120,
++        538
++      ],
++      "drawer_rows": [
++        2,
++        108
++      ],
++      "source": "USCD Spec Manual V8.2"
++    },
++    {
++      "code": "LSN",
++      "name": "Antracita",
++      "collection": "luxe",
++      "pdf_page": 4,
++      "grain_direction": "none (solid)",
++      "door_style": "Slab",
++      "folder": "luxe/LSN-antracita",
++      "reveal_rows": [
++        90,
++        95
++      ],
++      "door_rows": [
++        98,
++        435
++      ],
++      "drawer_rows": [
++        2,
++        87
++      ],
++      "source": "USCD Spec Manual V8.2"
++    },
++    {
++      "code": "LSR",
++      "name": "Rosales 3",
++      "collection": "luxe",
++      "pdf_page": 4,
++      "grain_direction": "vertical",
++      "door_style": "Slab",
++      "folder": "luxe/LSR-rosales-3",
++      "reveal_rows": [
++        111,
++        117
++      ],
++      "door_rows": [
++        120,
++        538
++      ],
++      "drawer_rows": [
++        2,
++        108
++      ],
++      "source": "USCD Spec Manual V8.2"
++    },
++    {
++      "code": "LSP",
++      "name": "Picasso 1",
++      "collection": "luxe",
++      "pdf_page": 4,
++      "grain_direction": "vertical",
++      "door_style": "Slab",
++      "folder": "luxe/LSP-picasso-1",
++      "reveal_rows": [
++        111,
++        117
++      ],
++      "door_rows": [
++        120,
++        538
++      ],
++      "drawer_rows": [
++        2,
++        108
++      ],
++      "source": "USCD Spec Manual V8.2"
++    },
++    {
++      "code": "SSH",
++      "name": "Alhambra 1",
++      "collection": "syncron",
++      "pdf_page": 5,
++      "grain_direction": "vertical",
++      "door_style": "Slab",
++      "folder": "syncron/SSH-alhambra-1",
++      "reveal_rows": [
++        91,
++        95
++      ],
++      "door_rows": [
++        98,
++        434
++      ],
++      "drawer_rows": [
++        2,
++        88
++      ],
++      "source": "USCD Spec Manual V8.2"
++    },
++    {
++      "code": "SSS",
++      "name": "Picasso 3",
++      "collection": "syncron",
++      "pdf_page": 5,
++      "grain_direction": "vertical",
++      "door_style": "Slab",
++      "folder": "syncron/SSS-picasso-3",
++      "reveal_rows": [
++        91,
++        96
++      ],
++      "door_rows": [
++        99,
++        434
++      ],
++      "drawer_rows": [
++        2,
++        88
++      ],
++      "source": "USCD Spec Manual V8.2"
++    },
++    {
++      "code": "SCM",
++      "name": "Muratti 4",
++      "collection": "syncron-slim-cava",
++      "pdf_page": 5,
++      "grain_direction": "vertical",
++      "door_style": "Slim Cava (shaker)",
++      "folder": "syncron-slim-cava/SCM-muratti-4",
++      "reveal_rows": [
++        92,
++        94
++      ],
++      "door_rows": [
++        97,
++        434
++      ],
++      "drawer_rows": [
++        2,
++        89
++      ],
++      "source": "USCD Spec Manual V8.2"
++    },
++    {
++      "code": "SSJ",
++      "name": "Alhambra 2",
++      "collection": "syncron",
++      "pdf_page": 5,
++      "grain_direction": "vertical",
++      "door_style": "Slab",
++      "folder": "syncron/SSJ-alhambra-2",
++      "reveal_rows": [
++        91,
++        95
++      ],
++      "door_rows": [
++        98,
++        434
++      ],
++      "drawer_rows": [
++        2,
++        88
++      ],
++      "source": "USCD Spec Manual V8.2"
++    },
++    {
++      "code": "SSR",
++      "name": "Rosales 1",
++      "collection": "syncron",
++      "pdf_page": 5,
++      "grain_direction": "vertical",
++      "door_style": "Slab",
++      "folder": "syncron/SSR-rosales-1",
++      "reveal_rows": [
++        91,
++        95
++      ],
++      "door_rows": [
++        98,
++        434
++      ],
++      "drawer_rows": [
++        2,
++        88
++      ],
++      "source": "USCD Spec Manual V8.2"
++    },
++    {
++      "code": "SCN",
++      "name": "Nocce 1",
++      "collection": "syncron-slim-cava",
++      "pdf_page": 5,
++      "grain_direction": "vertical",
++      "door_style": "Slim Cava (shaker)",
++      "folder": "syncron-slim-cava/SCN-nocce-1",
++      "reveal_rows": [
++        91,
++        94
++      ],
++      "door_rows": [
++        97,
++        434
++      ],
++      "drawer_rows": [
++        2,
++        88
++      ],
++      "source": "USCD Spec Manual V8.2"
++    },
++    {
++      "code": "SSK",
++      "name": "Alhambra 3",
++      "collection": "syncron",
++      "pdf_page": 5,
++      "grain_direction": "vertical",
++      "door_style": "Slab",
++      "folder": "syncron/SSK-alhambra-3",
++      "reveal_rows": [
++        91,
++        96
++      ],
++      "door_rows": [
++        99,
++        434
++      ],
++      "drawer_rows": [
++        2,
++        88
++      ],
++      "source": "USCD Spec Manual V8.2"
++    },
++    {
++      "code": "SSA",
++      "name": "Rosales 2",
++      "collection": "syncron",
++      "pdf_page": 5,
++      "grain_direction": "vertical",
++      "door_style": "Slab",
++      "folder": "syncron/SSA-rosales-2",
++      "reveal_rows": [
++        91,
++        96
++      ],
++      "door_rows": [
++        99,
++        434
++      ],
++      "drawer_rows": [
++        2,
++        88
++      ],
++      "source": "USCD Spec Manual V8.2"
++    },
++    {
++      "code": "SCQ",
++      "name": "Picasso 2",
++      "collection": "syncron-slim-cava",
++      "pdf_page": 5,
++      "grain_direction": "vertical",
++      "door_style": "Slim Cava (shaker)",
++      "folder": "syncron-slim-cava/SCQ-picasso-2",
++      "reveal_rows": [
++        91,
++        94
++      ],
++      "door_rows": [
++        97,
++        434
++      ],
++      "drawer_rows": [
++        2,
++        88
++      ],
++      "source": "USCD Spec Manual V8.2"
++    },
++    {
++      "code": "SSM",
++      "name": "Muratti 4",
++      "collection": "syncron",
++      "pdf_page": 5,
++      "grain_direction": "vertical",
++      "door_style": "Slab",
++      "folder": "syncron/SSM-muratti-4",
++      "reveal_rows": [
++        91,
++        95
++      ],
++      "door_rows": [
++        98,
++        434
++      ],
++      "drawer_rows": [
++        2,
++        88
++      ],
++      "source": "USCD Spec Manual V8.2"
++    },
++    {
++      "code": "SSD",
++      "name": "Rosales 4",
++      "collection": "syncron",
++      "pdf_page": 5,
++      "grain_direction": "vertical",
++      "door_style": "Slab",
++      "folder": "syncron/SSD-rosales-4",
++      "reveal_rows": [
++        92,
++        95
++      ],
++      "door_rows": [
++        98,
++        434
++      ],
++      "drawer_rows": [
++        2,
++        89
++      ],
++      "source": "USCD Spec Manual V8.2"
++    },
++    {
++      "code": "SCA",
++      "name": "Rosales 2",
++      "collection": "syncron-slim-cava",
++      "pdf_page": 5,
++      "grain_direction": "vertical",
++      "door_style": "Slim Cava (shaker)",
++      "folder": "syncron-slim-cava/SCA-rosales-2",
++      "reveal_rows": [
++        92,
++        96
++      ],
++      "door_rows": [
++        99,
++        434
++      ],
++      "drawer_rows": [
++        2,
++        89
++      ],
++      "source": "USCD Spec Manual V8.2"
++    },
++    {
++      "code": "SSO",
++      "name": "Como Ash 2",
++      "collection": "syncron",
++      "pdf_page": 5,
++      "grain_direction": "vertical",
++      "door_style": "Slab",
++      "folder": "syncron/SSO-como-ash-2",
++      "reveal_rows": [
++        91,
++        95
++      ],
++      "door_rows": [
++        98,
++        434
++      ],
++      "drawer_rows": [
++        2,
++        88
++      ],
++      "source": "USCD Spec Manual V8.2"
++    },
++    {
++      "code": "SSL",
++      "name": "Rosales 3",
++      "collection": "syncron",
++      "pdf_page": 5,
++      "grain_direction": "vertical",
++      "door_style": "Slab",
++      "folder": "syncron/SSL-rosales-3",
++      "reveal_rows": [
++        91,
++        96
++      ],
++      "door_rows": [
++        99,
++        434
++      ],
++      "drawer_rows": [
++        2,
++        88
++      ],
++      "source": "USCD Spec Manual V8.2"
++    },
++    {
++      "code": "SCR",
++      "name": "Rosales 1",
++      "collection": "syncron-slim-cava",
++      "pdf_page": 5,
++      "grain_direction": "vertical",
++      "door_style": "Slim Cava (shaker)",
++      "folder": "syncron-slim-cava/SCR-rosales-1",
++      "reveal_rows": [
++        92,
++        96
++      ],
++      "door_rows": [
++        99,
++        434
++      ],
++      "drawer_rows": [
++        2,
++        89
++      ],
++      "source": "USCD Spec Manual V8.2"
++    },
++    {
++      "code": "SSN",
++      "name": "Nocce 1",
++      "collection": "syncron",
++      "pdf_page": 5,
++      "grain_direction": "vertical",
++      "door_style": "Slab",
++      "folder": "syncron/SSN-nocce-1",
++      "reveal_rows": [
++        92,
++        95
++      ],
++      "door_rows": [
++        98,
++        434
++      ],
++      "drawer_rows": [
++        2,
++        89
++      ],
++      "source": "USCD Spec Manual V8.2"
++    },
++    {
++      "code": "SSV",
++      "name": "Velazquez 1",
++      "collection": "syncron",
++      "pdf_page": 5,
++      "grain_direction": "vertical",
++      "door_style": "Slab",
++      "folder": "syncron/SSV-velazquez-1",
++      "reveal_rows": [
++        91,
++        95
++      ],
++      "door_rows": [
++        98,
++        434
++      ],
++      "drawer_rows": [
++        2,
++        88
++      ],
++      "source": "USCD Spec Manual V8.2"
++    },
++    {
++      "code": "SCL",
++      "name": "Rosales 3",
++      "collection": "syncron-slim-cava",
++      "pdf_page": 5,
++      "grain_direction": "vertical",
++      "door_style": "Slim Cava (shaker)",
++      "folder": "syncron-slim-cava/SCL-rosales-3",
++      "reveal_rows": [
++        92,
++        95
++      ],
++      "door_rows": [
++        98,
++        434
++      ],
++      "drawer_rows": [
++        2,
++        89
++      ],
++      "source": "USCD Spec Manual V8.2"
++    },
++    {
++      "code": "SSP",
++      "name": "Picasso 1",
++      "collection": "syncron",
++      "pdf_page": 5,
++      "grain_direction": "vertical",
++      "door_style": "Slab",
++      "folder": "syncron/SSP-picasso-1",
++      "reveal_rows": [
++        92,
++        96
++      ],
++      "door_rows": [
++        99,
++        434
++      ],
++      "drawer_rows": [
++        2,
++        89
++      ],
++      "source": "USCD Spec Manual V8.2"
++    },
++    {
++      "code": "SSX",
++      "name": "Velazquez 5",
++      "collection": "syncron",
++      "pdf_page": 5,
++      "grain_direction": "vertical",
++      "door_style": "Slab",
++      "folder": "syncron/SSX-velazquez-5",
++      "reveal_rows": [
++        91,
++        96
++      ],
++      "door_rows": [
++        99,
++        434
++      ],
++      "drawer_rows": [
++        2,
++        88
++      ],
++      "source": "USCD Spec Manual V8.2"
++    },
++    {
++      "code": "SSE",
++      "name": "Nocce 3",
++      "collection": "syncron",
++      "pdf_page": 5,
++      "grain_direction": "vertical",
++      "door_style": "Slab",
++      "folder": "syncron/SSE-nocce-3",
++      "reveal_rows": [
++        91,
++        96
++      ],
++      "door_rows": [
++        99,
++        434
++      ],
++      "drawer_rows": [
++        2,
++        88
++      ],
++      "source": "USCD Spec Manual V8.2"
++    },
++    {
++      "code": "SSZ",
++      "name": "Velazquez 2",
++      "collection": "syncron",
++      "pdf_page": 5,
++      "grain_direction": "vertical",
++      "door_style": "Slab",
++      "folder": "syncron/SSZ-velazquez-2",
++      "reveal_rows": [
++        91,
++        96
++      ],
++      "door_rows": [
++        99,
++        434
++      ],
++      "drawer_rows": [
++        2,
++        88
++      ],
++      "source": "USCD Spec Manual V8.2"
++    },
++    {
++      "code": "SCZ",
++      "name": "Velazquez 2",
++      "collection": "syncron-slim-cava",
++      "pdf_page": 5,
++      "grain_direction": "vertical",
++      "door_style": "Slim Cava (shaker)",
++      "folder": "syncron-slim-cava/SCZ-velazquez-2",
++      "reveal_rows": [
++        92,
++        94
++      ],
++      "door_rows": [
++        97,
++        434
++      ],
++      "drawer_rows": [
++        2,
++        89
++      ],
++      "source": "USCD Spec Manual V8.2"
++    },
++    {
++      "code": "SSQ",
++      "name": "Picasso 2",
++      "collection": "syncron",
++      "pdf_page": 5,
++      "grain_direction": "vertical",
++      "door_style": "Slab",
++      "folder": "syncron/SSQ-picasso-2",
++      "reveal_rows": [
++        91,
++        96
++      ],
++      "door_rows": [
++        99,
++        434
++      ],
++      "drawer_rows": [
++        2,
++        88
++      ],
++      "source": "USCD Spec Manual V8.2"
++    }
++  ]
++}
+\ No newline at end of file
+diff --git a/shared/photorealPrompt.ts b/shared/photorealPrompt.ts
+index 3d57878..6cdff5a 100644
+--- a/shared/photorealPrompt.ts
++++ b/shared/photorealPrompt.ts
+@@ -153,7 +153,7 @@ export function buildPhotorealPrompt(input: PhotorealPromptInput): string {
+       : "";
+     const desc = [finish, door && `${door}-style`].filter(Boolean).join(" ");
+     parts.push(
+-      `The cabinetry is ${desc || "custom"} kitchen cabinets${twoTone}, with clean consistent reveals, realistic door and drawer fronts, and true-to-life paint or wood-grain texture.`
++      `The cabinetry is ${desc || "custom"} kitchen cabinets${twoTone}, with clean consistent reveals and true-to-life paint or wood-grain texture. Door faces and wall cabinets use only the door reference as one solid face with no drawer band. Drawer fronts use only the drawer-front reference. Never merge a drawer front onto a door.`
+     );
+   } else {
+     parts.push("Custom kitchen cabinets with clean consistent reveals and realistic fronts.");
+-- 
+2.43.0
+

@@ -2,6 +2,8 @@ import { trpc } from "@/lib/trpc";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { CartProvider } from "@/contexts/CartContext";
 import { LanguageProvider } from "@/contexts/LanguageContext";
+import { ImageCustomerDialog } from "@/components/imageCustomer/ImageCustomerDialog";
+import { imageCustomerRetryLink } from "@/lib/imageCustomerRetryLink";
 import { httpBatchLink } from "@trpc/client";
 import { createRoot } from "react-dom/client";
 import superjson from "superjson";
@@ -45,6 +47,7 @@ queryClient.getMutationCache().subscribe(event => {
 
 const trpcClient = trpc.createClient({
   links: [
+    imageCustomerRetryLink() as never,
     httpBatchLink({
       url: apiUrl("/api/trpc"),
       transformer: superjson,
@@ -76,6 +79,7 @@ createRoot(document.getElementById("root")!).render(
       <LanguageProvider>
         <CartProvider>
           <App />
+          <ImageCustomerDialog />
         </CartProvider>
       </LanguageProvider>
     </QueryClientProvider>

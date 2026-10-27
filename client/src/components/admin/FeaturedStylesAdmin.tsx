@@ -26,6 +26,8 @@ import DoorPhotoCorrectButton from "./DoorPhotoCorrectButton";
 import { AdminStyleRoomSceneControls } from "@/components/doorStyles/AdminDoorStyleRoomScene";
 import type { AutoRoomScene } from "@/lib/autoRoomScene";
 import { MediaPicker } from "./MediaPicker";
+import { FramelessFaceAdmin } from "./FramelessFaceAdmin";
+import { isDoorStyleVerified, resolveCabinetFaceImages } from "@shared/doorFaceRecognition";
 import { designerFrameCompliance } from "@/lib/doorFrameMetrics";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -81,6 +83,12 @@ interface AdminStyle {
   profileDescription?: string | null;
   sourceSpecification?: string | null;
   cornerSwatchImageUrl?: string | null;
+  styleCode?: string | null;
+  styleVerified?: boolean | number | null;
+  styleVerifiedBy?: string | null;
+  styleVerifiedAt?: string | null;
+  styleSourceNote?: string | null;
+  combinedSourceImageUrl?: string | null;
   isActive: boolean;
 }
 
@@ -343,6 +351,8 @@ function EditDialog({ style, open, onClose, onSaved }: EditDialogProps) {
   const [profileDescription, setProfileDescription] = useState((style as AdminStyle & { profileDescription?: string | null }).profileDescription ?? "");
   const [sourceSpecification, setSourceSpecification] = useState(style.sourceSpecification ?? "");
   const [cornerSwatchImageUrl, setCornerSwatchImageUrl] = useState(style.cornerSwatchImageUrl ?? "");
+  const [styleVerified, setStyleVerified] = useState(style.styleVerified !== false && style.styleVerified !== 0);
+  const [styleSourceNote, setStyleSourceNote] = useState(style.styleSourceNote ?? "");
   const [newSceneUrl, setNewSceneUrl] = useState("");
   const [newSceneSourceNote, setNewSceneSourceNote] = useState("");
 
@@ -378,6 +388,8 @@ function EditDialog({ style, open, onClose, onSaved }: EditDialogProps) {
     setProfileDescription((s as AdminStyle & { profileDescription?: string | null }).profileDescription ?? "");
     setSourceSpecification(s.sourceSpecification ?? "");
     setCornerSwatchImageUrl(s.cornerSwatchImageUrl ?? "");
+    setStyleVerified(s.styleVerified !== false && s.styleVerified !== 0);
+    setStyleSourceNote(s.styleSourceNote ?? "");
   };
 
   const update = trpc.doorStyles.adminUpdateDoorStyle.useMutation({
@@ -471,7 +483,9 @@ function EditDialog({ style, open, onClose, onSaved }: EditDialogProps) {
       profileNotes: profileNotes.trim() || null,
       profileDescription: profileDescription.trim() || null,
       sourceSpecification: sourceSpecification.trim() || null,
-    });
+      styleVerified,
+      styleSourceNote: styleSourceNote.trim() || null,
+    } as Parameters<typeof update.mutate>[0]);
   }
 
   function addWarehouseZip() {
@@ -880,19 +894,37 @@ function EditDialog({ style, open, onClose, onSaved }: EditDialogProps) {
                 <span className="text-xs text-muted-foreground">— used in the 3D Designer and elevation renderer</span>
               </div>
               <ImageField
-                label="Door Sample Photo"
-                hint="Close-up of the door panel only (no drawer front). Used for door panels in the designer."
+                label="DOOR reference"
+                hint="Close-up of the door only. Doors and every wall cabinet use this as one solid face."
                 value={doorSampleImageUrl}
                 onChange={setDoorSampleImageUrl}
                 slot="door-sample"
               />
               <ImageField
-                label="Drawer Sample Photo"
-                hint="Close-up of the drawer front only. Used for drawer fronts in the designer. Leave blank to fall back to the door sample."
+                label="DRAWER_FRONT reference"
+                hint="Close-up of the drawer front only. Leave blank to fall back to the door sample."
                 value={drawerSampleImageUrl}
                 onChange={setDrawerSampleImageUrl}
                 slot="door-sample"
               />
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={styleVerified} onChange={(event) => setStyleVerified(event.target.checked)} />
+                Style verified for the Designer and image generator
+              </label>
+              {!styleVerified ? <Badge variant="outline">Unverified</Badge> : null}
+              {style.styleVerifiedBy ? <p className="text-xs text-muted-foreground">Verified by {style.styleVerifiedBy}{style.styleVerifiedAt ? ` · ${new Date(style.styleVerifiedAt).toLocaleString()}` : ""}</p> : null}
+              <Input value={styleSourceNote} onChange={(event) => setStyleSourceNote(event.target.value)} placeholder="Source note, such as vendor photo or USCD Spec Manual V8.2, page 2" className="h-8 text-xs" />
+              <div
+                className="h-20 w-14 rounded border border-border"
+                style={(() => {
+                  const plan = resolveCabinetFaceImages({ ...style, doorSampleImageUrl, drawerSampleImageUrl }, "wall");
+                  return plan.doorUrl
+                    ? { backgroundImage: `url(${plan.doorUrl})`, backgroundSize: "cover", backgroundPosition: "center" }
+                    : { background: style.color || "#d8d2c8" };
+                })()}
+                aria-label="Wall cabinet preview, one solid face"
+              />
+              <p className="text-xs text-muted-foreground">Wall preview. A combined base swatch is not painted onto the wall.</p>
               <AdminStyleRoomSceneControls style={style} showIdleHint />
             </div>
             {/* Corner Swatch */}
@@ -1427,6 +1459,7 @@ export default function FeaturedStylesAdmin() {
 	      </div>
 
 	      <DoorMeasurementReviewQueue />
+        <FramelessFaceAdmin styles={styles} onApplied={() => utils.doorStyles.listForAdmin.invalidate()} />
 
 	      {/* Featured list */}
       <div>
@@ -1501,6 +1534,7 @@ export default function FeaturedStylesAdmin() {
                       {!designerCompliance.isCompliant && <AlertTriangle className="mr-0.5 h-2.5 w-2.5" />}
                       {designerCompliance.isCompliant ? "Designer compliant" : "Not Designer-compliant"}
                     </Badge>
+                    {!isDoorStyleVerified(s) ? <Badge variant="outline">Unverified</Badge> : null}
                     <span className="text-xs text-muted-foreground">{[s.doorStyle, s.color, s.finish].filter(Boolean).join(" · ")}</span>
                     <SkuBadge style={s} />
                   </div>
@@ -1641,7 +1675,7 @@ export default function FeaturedStylesAdmin() {
                   className="min-w-0 flex-1 text-left"
                   title="Edit this door style"
                 >
-                  <p className="font-medium text-sm truncate">{s.ourName}</p>
+                  <p className="font-medium text-sm truncate">{s.ourName}{!isDoorStyleVerified(s) ? <Badge variant="outline" className="ml-2 align-middle">Unverified</Badge> : null}</p>
                   <p className="text-xs text-muted-foreground truncate flex items-center gap-1.5">
                     {(s.roomScenes?.length ?? 0) > 0 ? `${s.roomScenes?.length}/${MAX_SCENES_PER_STYLE} room scenes` : "Room scene required"}
                     {[s.doorStyle, s.color].filter(Boolean).length > 0 && " · "}

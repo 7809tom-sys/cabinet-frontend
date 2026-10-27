@@ -59,6 +59,8 @@ interface Props {
   styleName: string;
   /** Compact icon-only button for dense lists. */
   compact?: boolean;
+  /** Which face the replacement photo belongs to. Defaults to the door. */
+  imageTarget?: "door" | "drawer";
   onDone?: () => void;
 }
 
@@ -67,7 +69,7 @@ interface Props {
  * mobile), sends it to doorStyles.submitCorrection. For admins the live sample
  * updates immediately; non-admins create a pending correction for review.
  */
-export default function DoorPhotoCorrectButton({ styleId, styleName, compact, onDone }: Props) {
+export default function DoorPhotoCorrectButton({ styleId, styleName, compact, imageTarget = "door", onDone }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const utils = trpc.useUtils();
@@ -99,7 +101,8 @@ export default function DoorPhotoCorrectButton({ styleId, styleName, compact, on
     setBusy(true);
     try {
       const dataUrl = await fileToDataUrl(file);
-      submit.mutate({ styleId, imageDataUrl: dataUrl });
+      const targetNote = imageTarget === "drawer" ? "[DRAWER_FRONT]" : undefined;
+      submit.mutate({ styleId, imageDataUrl: dataUrl, note: targetNote, imageTarget } as { styleId: number; imageDataUrl: string; note?: string });
     } catch (err) {
       setBusy(false);
       toast.error(err instanceof Error ? err.message : "Could not process the image.");
@@ -123,8 +126,8 @@ export default function DoorPhotoCorrectButton({ styleId, styleName, compact, on
         className={compact ? "h-8 w-8" : "h-8"}
         disabled={busy}
         onClick={() => inputRef.current?.click()}
-        title="Wrong door? Upload the correct photo"
-        aria-label="Upload correct door photo"
+        title={imageTarget === "drawer" ? "Wrong drawer front? Upload the correct photo" : "Wrong door? Upload the correct photo"}
+        aria-label={imageTarget === "drawer" ? "Upload correct drawer front photo" : "Upload correct door photo"}
       >
         {busy ? (
           <Loader2 className="h-4 w-4 animate-spin" />

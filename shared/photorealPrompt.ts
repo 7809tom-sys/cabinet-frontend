@@ -159,7 +159,7 @@ export function buildPhotorealPrompt(input: PhotorealPromptInput): string {
       : "";
     const desc = [finish, door && `${door}-style`].filter(Boolean).join(" ");
     parts.push(
-      `The cabinetry is ${desc || "custom"} kitchen cabinets${twoTone}, with clean consistent reveals, realistic door and drawer fronts, and true-to-life paint or wood-grain texture.`
+      `The cabinetry is ${desc || "custom"} kitchen cabinets${twoTone}, with clean consistent reveals and true-to-life paint or wood-grain texture. Door faces and wall cabinets use only the door reference as one solid face with no drawer band. Drawer fronts use only the drawer-front reference. Never merge a drawer front onto a door.`
     );
   } else {
     parts.push("Custom kitchen cabinets with clean consistent reveals and realistic fronts.");

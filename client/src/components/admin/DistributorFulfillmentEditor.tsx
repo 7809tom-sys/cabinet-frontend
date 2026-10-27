@@ -108,6 +108,8 @@ export default function DistributorFulfillmentEditor({ glassOnly = false }: { gl
     setGlassIncluded(Boolean(selected.glassIncluded));
   }, [selected]);
 
+  const emailValid = orderEmail.trim() === "" || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(orderEmail.trim());
+  const ccValid = ccEmails.split(/[,;]+/).map((value) => value.trim()).filter(Boolean).every((value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value));
   const save = trpc.distributorAdmin.updateFulfillment.useMutation({
     onSuccess: () => {
       toast.success("Fulfillment settings saved.");
@@ -125,7 +127,7 @@ export default function DistributorFulfillmentEditor({ glassOnly = false }: { gl
   const freeFreightThresholdCents = freeFreightThresholdDollars.trim() === "" ? null : Math.round(Number(freeFreightThresholdDollars) * 100);
   const hasConfiguredFixedRule = zipRates.length > 0 || (flatFreightFeeCents != null && Number.isInteger(flatFreightFeeCents) && flatFreightFeeCents >= 0);
   const shippingRuleValid = shippingRuleMode === "live" || hasConfiguredFixedRule;
-  const canSave = Boolean(selectedId) && !save.isPending && warehouseZipsValid && shippingRuleValid && (!pickupEnabled || radiusValid);
+  const canSave = Boolean(selectedId) && !save.isPending && warehouseZipsValid && shippingRuleValid && emailValid && ccValid && (!pickupEnabled || radiusValid);
 
   return (
     <Card data-testid={glassOnly ? "glass-policy-admin" : "distributor-fulfillment-admin"}>
@@ -182,6 +184,7 @@ export default function DistributorFulfillmentEditor({ glassOnly = false }: { gl
                         placeholder="orders@distributor.com"
                         maxLength={320}
                       />
+                      {!emailValid && <p className="text-xs text-destructive">Enter a valid order email.</p>}
                     </div>
                     <div className="space-y-1.5">
                       <Label>CC emails (comma-separated)</Label>
@@ -442,7 +445,7 @@ export default function DistributorFulfillmentEditor({ glassOnly = false }: { gl
                   )}
                   {!glassOnly && selected && !selected.orderEmail && !orderEmail.trim() && (
                     <Badge variant="outline" className="text-amber-600 dark:text-amber-400">
-                      No order email — Send to Distributor will be blocked
+                      No order email — automatic distributor email will be marked “No email set”
                     </Badge>
                   )}
                 </div>
