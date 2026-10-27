@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/select";
 import {
   CRM_STAGES, CRM_STAGE_LABELS, CRM_PRIORITIES,
-  CRM_PRIORITY_LABELS, isClosedStage,
+  CRM_PRIORITY_LABELS, isClosedStage, isWonRevenueStage,
   crmEmailBlockedReason, CRM_EMAIL_BLOCK_MESSAGES,
   type CrmStage, type CrmPriority, type CrmLanguage,
 } from "@shared/crm";
@@ -104,6 +104,10 @@ interface DealRow {
   needsHelpDesigning?: boolean;
   needsHelpShipping?: boolean;
   laborEstimateId?: number | null;
+  orderRequestId?: number | null;
+  imageGeneratedCount?: number | null;
+  lastImageGeneratedAt?: string | Date | null;
+  saleRefundedAt?: string | Date | null;
 }
 
 type CrmInvoicePrefill = {
@@ -163,9 +167,10 @@ export function CrmBoard({ lang = "en", affiliateId }: { lang?: Lang; affiliateI
     : masterAffiliateId != null
       ? { affiliateId: masterAffiliateId }
       : undefined;
-  const { data, isLoading, error } = trpc.crm.board.useQuery(
-    boardInput,
-  );
+  const { data, isLoading, error } = trpc.crm.board.useQuery(boardInput, {
+    refetchInterval: 20000,
+    refetchOnWindowFocus: true,
+  });
   const [openDealId, setOpenDealId] = useState<number | null>(() => {
     const requested = Number(new URLSearchParams(window.location.search).get("deal"));
     return Number.isInteger(requested) && requested > 0 ? requested : null;
@@ -215,7 +220,7 @@ export function CrmBoard({ lang = "en", affiliateId }: { lang?: Lang; affiliateI
 
   const byStage = useMemo(() => {
     const map: Record<CrmStage, DealRow[]> = {
-      new: [], contacted: [], qualified: [], image_review: [], quoted: [], won: [], lost: [],
+      new: [], new_sale: [], contacted: [], qualified: [], image_review: [], quoted: [], won: [], lost: [],
     };
     for (const d of filteredDeals) {
       if (viewDeals.some((row) => row.id === d.id)) map[d.stage]?.push(d);
@@ -227,7 +232,7 @@ export function CrmBoard({ lang = "en", affiliateId }: { lang?: Lang; affiliateI
     () => viewDeals.filter((d) => !isClosedStage(d.stage)).reduce((s, d) => s + Number(d.estimatedValue ?? 0), 0),
     [viewDeals],
   );
-  const wonCount = byStage.won.length;
+  const wonCount = viewDeals.filter((deal) => isWonRevenueStage(deal.stage)).length;
   const openCount = viewDeals.filter((d) => !isClosedStage(d.stage)).length;
   const decorations = trpc.crm.boardDecorations.useQuery();
   const quickAdd = trpc.crm.create.useMutation({
@@ -470,6 +475,17 @@ function DealCard({ deal, lang, onOpen, affiliateName, affiliateBrand, summary }
       )}
       {deal.needsHelpShipping && (
         <div className="text-[10px] font-medium text-amber-800 bg-amber-50 rounded px-1.5 py-0.5 inline-block mb-1">Needs Help Shipping Costs</div>
+      )}
+      {(deal.imageGeneratedCount ?? 0) > 0 && (
+        <div className="text-[10px] font-medium text-emerald-800 bg-emerald-50 rounded px-1.5 py-0.5 inline-block mb-1" data-testid="crm-image-generated">
+          Image generated · {deal.imageGeneratedCount}
+          {deal.lastImageGeneratedAt ? ` · ${new Date(deal.lastImageGeneratedAt).toLocaleString()}` : ""}
+        </div>
+      )}
+      {deal.saleRefundedAt && (
+        <div className="text-[10px] font-medium text-red-700 bg-red-50 rounded px-1.5 py-0.5 inline-block mb-1" data-testid="crm-sale-refunded">
+          Refunded · sale kept
+        </div>
       )}
       {deal.source === "verified_plan_image_request" && (
         <div className="text-[10px] font-medium text-sky-800 bg-sky-50 rounded px-1.5 py-0.5 inline-flex items-center gap-1 mb-1"><Image className="h-3 w-3" />Manual AI image review</div>

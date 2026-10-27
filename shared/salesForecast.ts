@@ -111,7 +111,7 @@ export function weightForDesign(
   if (design.ordered) return { include: false, reason: "ordered", rate: 0 };
   const stage = (design.crmStage ?? "").toLowerCase();
   if (stage === "lost") return { include: false, reason: "lost", rate: 0 };
-  if (stage === "won") return { include: true, reason: "won", rate: 1 };
+  if (stage === "won" || stage === "new_sale") return { include: true, reason: "won", rate: 1 };
   return { include: true, reason: "age", rate: closeRateFraction(ageDaysFromUpdatedAt(design.updatedAt, now), brackets) };
 }
 
