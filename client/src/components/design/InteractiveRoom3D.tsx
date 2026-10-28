@@ -3638,6 +3638,42 @@ export function resolvedThreeDFaceLayout(input: {
   };
 }
 
+/**
+ * Diamond (X) lattice for open wine-rack fronts, in inches with the origin at
+ * the bottom-left of the face-frame opening. Bars run at ±45° on lines
+ * x ± y = x0 + odd·h and are clipped to the opening, so nothing extends past
+ * the cabinet box. Cell diagonal s = H / rows (about 6½" per row); outer rows
+ * hold `columns` bottles and the rows between them one fewer, centered. A
+ * 30 × 15 wall rack (27½ × 12½ opening) yields 4 + 3 + 4 = 11 bottle cells.
+ */
+export function latticeWineRackLayout(openingWidth: number, openingHeight: number) {
+  const rows = Math.max(1, Math.round(openingHeight / 6.5));
+  const cell = openingHeight / rows;
+  const half = cell / 2;
+  const columns = Math.max(1, Math.floor(openingWidth / cell));
+  const x0 = (openingWidth - columns * cell) / 2;
+  const bottles: Array<{ x: number; y: number }> = [];
+  for (let j = 1; j <= 2 * rows - 1; j++) {
+    for (let k = j % 2 ? 1 : 2; k <= 2 * columns - 1; k += 2) bottles.push({ x: x0 + k * half, y: j * half });
+  }
+  const bars: Array<{ x: number; y: number; length: number; slope: 1 | -1 }> = [];
+  const addBar = (fromX: number, toX: number, lineY: (x: number) => number, slope: 1 | -1) => {
+    if (toX - fromX < 0.25) return;
+    const midX = (fromX + toX) / 2;
+    bars.push({ x: midX, y: lineY(midX), length: (toX - fromX) * Math.SQRT2, slope });
+  };
+  const firstK = Math.floor((-openingHeight - x0) / half);
+  const lastK = Math.ceil((openingWidth + openingHeight - x0) / half);
+  for (let k = firstK; k <= lastK; k++) {
+    if (Math.abs(k % 2) !== 1) continue;
+    const c = x0 + k * half;
+    // x - y = c (rising) and x + y = c (falling), clipped to [0, W] × [0, H].
+    addBar(Math.max(0, c), Math.min(openingWidth, c + openingHeight), (x) => x - c, 1);
+    addBar(Math.max(0, c - openingHeight), Math.min(openingWidth, c), (x) => c - x, -1);
+  }
+  return { cell, rows, columns, bottles, bars, bottleRadius: half / Math.SQRT2 };
+}
+
 export function resolvedThreeDSpecialtyProfile(sku: Pick<SceneSku, "graphicType" | "customProfile" | "facePattern" | "cornerType" | "cornerGeometryKind" | "masterCode" | "description">) {
   const graphic = `${sku.graphicType ?? ""} ${sku.customProfile ?? ""}`.toLowerCase();
   const normalizedCode = (sku.masterCode ?? "").replace(/[^a-z0-9]/gi, "").toUpperCase();
@@ -6022,6 +6058,39 @@ export function addCabinet(
         farmhouseDoorColumns.columnWidth, farmhouseDoorHeight, door.position.x, door.position.y,
         false, 0.086, "lower", farmhouseFace.doorCount === 1 ? singleDoorHinge : null,
       );
+    }
+  } else if (specialty.kind === "face-pattern" && specialty.pattern === "lattice") {
+    // Open wine rack: a door-style face frame around a dark interior with a
+    // clipped diamond lattice — one cell per bottle — inside the opening.
+    const frameWidth = Math.min(1.25 * INCH, bodyWidth * 0.08, bodyHeight * 0.08);
+    const openingWidth = bodyWidth - frameWidth * 2;
+    const openingHeight = bodyHeight - frameWidth * 2;
+    const interior = new THREE.Mesh(
+      new THREE.BoxGeometry(openingWidth, openingHeight, 0.012),
+      new THREE.MeshStandardMaterial({ color: "#1f1a16", roughness: 0.85 }),
+    );
+    interior.position.z = -0.02;
+    interior.userData = { specialtyProfile: "face-pattern", pattern: "lattice", wineRackInterior: true };
+    frontGroup.add(interior);
+    for (const [width, height, x, y] of [
+      [frameWidth, bodyHeight, -bodyWidth / 2 + frameWidth / 2, 0],
+      [frameWidth, bodyHeight, bodyWidth / 2 - frameWidth / 2, 0],
+      [openingWidth, frameWidth, 0, bodyHeight / 2 - frameWidth / 2],
+      [openingWidth, frameWidth, 0, -bodyHeight / 2 + frameWidth / 2],
+    ] as const) {
+      const member = new THREE.Mesh(new THREE.BoxGeometry(width, height, 0.06), faceMaterial);
+      member.position.set(x, y, 0.004);
+      member.userData = { specialtyProfile: "face-pattern", wineRackFaceFrame: true, cabinetFront: true, flushPhysicalFace: true };
+      frontGroup.add(member);
+    }
+    const lattice = latticeWineRackLayout(openingWidth / INCH, openingHeight / INCH);
+    const barThickness = 0.5 * INCH;
+    for (const bar of lattice.bars) {
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(bar.length * INCH, barThickness, 0.04), faceMaterial);
+      mesh.position.set((bar.x * INCH) - openingWidth / 2, (bar.y * INCH) - openingHeight / 2, -0.004);
+      mesh.rotation.z = bar.slope * Math.PI / 4;
+      mesh.userData = { specialtyProfile: "face-pattern", wineRackLatticeBar: true };
+      frontGroup.add(mesh);
     }
   } else if (specialty.kind === "face-pattern") {
     const recess = new THREE.Mesh(
