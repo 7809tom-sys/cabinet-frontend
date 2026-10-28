@@ -1,0 +1,67 @@
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Wed, 28 Oct 2026 02:20:00 +0000
+Subject: [PATCH] Gate admin cabinet flag checks on real transitions.
+
+adminUpdateCabinet treated a resend of isActive, showInCatalog,
+showInDesigner, designerEligible, showIn2020, or configVerified as a new
+request to turn that flag on. Cabinets with no priced, published supplier
+line (for example LWR3015) then failed every save, including turning a flag
+off or editing an unrelated field. Compare each flag with the row already
+loaded for history. Require a distributor line only when configVerified
+changes from false to true, and require a public price only when one of the
+visibility flags changes from false or null to true.
+
+Apply from the cabinet-backend repository root (main 5769c965):
+
+    git apply /path/to/cabinet-backend-admin-update-flag-transitions.patch
+
+cursor[bot] cannot push to 7809tom-sys/cabinet-backend, so the owner applies
+this file there. This frontend repo does not contain a copy of catalog.ts.
+
+---
+diff --git a/server/routers/catalog.ts b/server/routers/catalog.ts
+index 30f851b..5627e1c 100644
+--- a/server/routers/catalog.ts
++++ b/server/routers/catalog.ts
+@@ -2569,8 +2569,15 @@ export const cabinetsRouter = router({
+       if (input.specNotes !== undefined) patch.specNotes = input.specNotes;
+       if (input.facePattern !== undefined) patch.facePattern = input.facePattern;
+       if (input.glassDoorAddonCode !== undefined) patch.glassDoorAddonCode = input.glassDoorAddonCode;
++      // Loaded before the visibility gates so they compare against the stored
++      // row. The same snapshot is reused for the config history below.
++      const [beforeRow] = await db.select().from(cabinets).where(eq(cabinets.id, input.id)).limit(1);
++      const turnedOn = (next: boolean | undefined, previous: boolean | null | undefined) =>
++        next === true && previous !== true;
+       if (input.configVerified !== undefined) {
+-        if (input.configVerified) {
++        // Only a false/null → true transition needs a distributor line.
++        // Re-saving an already verified cabinet, or clearing the flag, must still succeed.
++        if (turnedOn(input.configVerified, beforeRow?.configVerified)) {
+           const [distributorConnection] = await db
+             .select({ id: distributorSkus.id })
+             .from(distributorSkus)
+@@ -2592,11 +2599,11 @@ export const cabinetsRouter = router({
+           patch.configVerifiedByName = null;
+         }
+       }
+-      const requiresPublicPrice = input.isActive === true
+-        || input.showInCatalog === true
+-        || input.showInDesigner === true
+-        || input.designerEligible === true
+-        || input.showIn2020 === true;
++      const requiresPublicPrice = turnedOn(input.isActive, beforeRow?.isActive)
++        || turnedOn(input.showInCatalog, beforeRow?.showInCatalog)
++        || turnedOn(input.showInDesigner, beforeRow?.showInDesigner)
++        || turnedOn(input.designerEligible, beforeRow?.designerEligible)
++        || turnedOn(input.showIn2020, beforeRow?.showIn2020);
+       if (requiresPublicPrice) {
+         const [sellableSource] = await db
+           .select({ id: distributorSkus.id })
+@@ -2618,7 +2625,6 @@ export const cabinetsRouter = router({
+       if (Object.keys(patch).length === 0) return { ok: true };
+       // Snapshot the row before writing so the Cabinet Config history shows
+       // exactly which fields changed (old → new) and can revert them.
+-      const [beforeRow] = await db.select().from(cabinets).where(eq(cabinets.id, input.id)).limit(1);
+       if (beforeRow) {
+         await snapshotCabinetBeforeEdit(db, { cabinetId: input.id, reason: "before-edit", actor: { id: ctx.user?.id ?? null, name: ctx.user?.name ?? null } });
+       }

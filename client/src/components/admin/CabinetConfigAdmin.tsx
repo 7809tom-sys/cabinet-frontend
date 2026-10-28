@@ -149,6 +149,36 @@ type CabinetRow = {
   specNotes: string | null;
 };
 
+const CABINET_VISIBILITY_FLAGS = [
+  "isActive",
+  "showInCatalog",
+  "showInDesigner",
+  "designerEligible",
+  "showIn2020",
+  "configVerified",
+] as const;
+
+export type CabinetVisibilityFlag = (typeof CABINET_VISIBILITY_FLAGS)[number];
+
+/**
+ * Visibility flags the master update rejects when they are sent as true and no
+ * priced, published supplier line exists. Only a real change versus the row
+ * that was opened belongs in the payload; resending the current value blocks
+ * every other save, including turning a flag off.
+ */
+export function changedCabinetVisibilityFlags(
+  original: Partial<Record<CabinetVisibilityFlag, boolean | null>>,
+  next: Partial<Record<CabinetVisibilityFlag, boolean | null>>,
+): Partial<Record<CabinetVisibilityFlag, boolean>> {
+  const updates: Partial<Record<CabinetVisibilityFlag, boolean>> = {};
+  for (const key of CABINET_VISIBILITY_FLAGS) {
+    const value = next[key];
+    if (value === original[key] || value == null) continue;
+    updates[key] = value;
+  }
+  return updates;
+}
+
 // ─── Layout Spec Types ────────────────────────────────────────────────────────
 export type LayoutSection = {
   type: 'drawer' | 'door' | 'shelf';
@@ -909,6 +939,21 @@ function EditModal({
     },
     onError: (e) => toast.error(`Distributor save failed: ${e.message}`),
   });
+  const requestMasterChangeMutation = trpc.masterChanges.submit.useMutation({
+    onSuccess: (result) => {
+      utils.masterChanges.list.invalidate();
+      utils.masterChanges.counts.invalidate();
+      if (!result.requestId) {
+        toast.info(result.message ?? "No master field differs from the current value.");
+        return;
+      }
+      toast.success("Master change requested. It stays pending until it is approved.");
+      setScopeOpen(false);
+      setDraft({});
+      onClose();
+    },
+    onError: (e) => toast.error(`Master change request failed: ${e.message}`),
+  });
   const removeDistributorMutation = trpc.cabinets.adminRemoveCabinetDistributor.useMutation({
     onSuccess: (result) => {
       utils.cabinets.getDistributorsForCabinet.invalidate({ cabinetId: row.id });
@@ -1044,11 +1089,7 @@ function EditModal({
       altSku1: merged.altSku1 ?? null,
       altSku2: merged.altSku2 ?? null,
       altSku3: merged.altSku3 ?? null,
-      showInCatalog: merged.showInCatalog ?? undefined,
-      showInDesigner: merged.showInDesigner ?? undefined,
-      designerEligible: merged.designerEligible ?? undefined,
-      showIn2020: merged.showIn2020 ?? undefined,
-      isActive: merged.isActive ?? undefined,
+      ...changedCabinetVisibilityFlags(row, merged),
       isNotCabinet: merged.isNotCabinet ?? undefined,
       catalogImageUrl: merged.catalogImageUrl ?? null,
       minPull: merged.minPull != null ? parseFloat(merged.minPull) : null,
@@ -1066,7 +1107,6 @@ function EditModal({
       legWidth: merged.legWidth != null ? parseFloat(merged.legWidth) : null,
       category: merged.category ?? undefined,
       subCategory: merged.subCategory ?? null,
-      configVerified: merged.configVerified ?? undefined,
       doorOrientation: (merged.doorOrientation as "side-by-side" | "stacked" | null | undefined) ?? null,
       doorsPerRow: merged.doorsPerRow ?? null,
       drawerLayout: merged.drawerLayout ?? null,
@@ -1127,7 +1167,7 @@ function EditModal({
       const full = buildMasterPayload() as Record<string, unknown>;
       const housekeeping: Record<string, unknown> = { id: row.id };
       for (const k of ["masterCode","altSku1","altSku2","altSku3","showInCatalog","showInDesigner","designerEligible","showIn2020","isActive","isNotCabinet","catalogImageUrl","configVerified"]) {
-        if (k in draft) housekeeping[k] = full[k];
+        if (k in draft && full[k] !== undefined) housekeeping[k] = full[k];
       }
       updateMutation.mutate(housekeeping as never);
     }
@@ -1138,7 +1178,7 @@ function EditModal({
     });
   };
 
-  const busy = uploading || generating || updateMutation.isPending || estimateMutation.isPending || removeDistributorMutation.isPending || setDistributorConfigMutation.isPending;
+  const busy = uploading || generating || updateMutation.isPending || estimateMutation.isPending || removeDistributorMutation.isPending || setDistributorConfigMutation.isPending || requestMasterChangeMutation.isPending;
   const depthVal = merged.depth ? String(parseFloat(merged.depth)) : "";
   const isStandardDepth = STANDARD_DEPTHS.includes(depthVal);
 
@@ -1209,6 +1249,9 @@ function EditModal({
                     {categoryOptions.map((cat) => (
                       <SelectItem key={cat} value={cat}>{canonicalMouldingLabel(cat)}</SelectItem>
                     ))}
+                    {merged.category && !selectedCatalogOption(categoryOptions, merged.category) && (
+                      <SelectItem value={merged.category}>{canonicalMouldingLabel(merged.category)}</SelectItem>
+                    )}
                   </SelectContent>
                 </Select>
               </div>
@@ -2133,7 +2176,27 @@ function EditModal({
                     );
                   })
                 ) : (
-                  <p className="px-1.5 py-1 text-xs text-muted-foreground">No distributor carries this cabinet yet.</p>
+                  <div className="space-y-2 px-1.5 py-1">
+                    <p className="text-xs text-muted-foreground">No distributor carries this cabinet yet.</p>
+                    {distributorsForCabinet?.length === 0 && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        data-testid="cabinet-config-request-master-change"
+                        disabled={busy}
+                        onClick={() => {
+                          requestMasterChangeMutation.mutate({
+                            cabinetId: row.id,
+                            sourceDistributorId: null,
+                            proposed: buildConfigRule() as never,
+                          });
+                        }}
+                      >
+                        {requestMasterChangeMutation.isPending ? <Spinner className="h-4 w-4" /> : "Request master change"}
+                      </Button>
+                    )}
+                  </div>
                 )}
               </div>
               <div className="flex flex-wrap gap-2 text-xs">
@@ -2587,10 +2650,11 @@ export function CabinetConfigAdmin() {
                   <tr
                     key={row.id}
                     className={cn(
-                      "border-b border-border last:border-0 transition-colors group",
+                      "cursor-pointer border-b border-border last:border-0 transition-colors group",
                       i % 2 === 0 ? "bg-background" : "bg-muted/20",
                       selected.has(row.id) ? "bg-primary/10" : "hover:bg-primary/5 active:bg-primary/10"
                     )}
+                    onClick={() => setEditRow(row as CabinetRow)}
                   >
                     <td className="px-3 py-2.5 text-center" onClick={(e) => e.stopPropagation()}>
                       <Checkbox
@@ -2603,7 +2667,7 @@ export function CabinetConfigAdmin() {
                         }}
                       />
                     </td>
-                    <td className="px-3 py-2.5 cursor-pointer" onClick={() => setEditRow(row as CabinetRow)}>
+                    <td className="px-3 py-2.5">
                       <div className="flex items-center gap-1">
                         {/* Catalog image thumbnail */}
                         <div className="w-10 h-10 rounded border border-border bg-muted/30 flex items-center justify-center overflow-hidden shrink-0">
@@ -2689,7 +2753,14 @@ export function CabinetConfigAdmin() {
                       </div>
                     </td>
                     <td className="px-3 py-2.5 text-center">
-                      <Pencil className="h-3.5 w-3.5 text-muted-foreground group-hover:text-primary transition-colors mx-auto" />
+                      <button
+                        type="button"
+                        className="inline-flex rounded-sm p-1 text-muted-foreground group-hover:text-primary"
+                        aria-label={`Edit ${row.masterCode ?? "cabinet"}`}
+                        onClick={() => setEditRow(row as CabinetRow)}
+                      >
+                        <Pencil className="h-3.5 w-3.5 transition-colors" />
+                      </button>
                     </td>
                   </tr>
                 );
