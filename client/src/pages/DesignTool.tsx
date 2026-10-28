@@ -97,7 +97,7 @@ import { adjustedDesignUnitPrice, buildDesignCabinetCartLines, buildDesignPrevie
 import { combinedFillerNote, fillerCutSourceFor, isCombinedSmallFiller } from "@/lib/fillerBilling";
 import { activeCatalogPricingIdsByMasterCode, currentCatalogPricingCabinetId } from "@/lib/designPricingIdentity";
 import { catalogFillerForGap, catalogFillerPricingId, fittedCatalogFillerDescription, isCatalogFiller, type CatalogFillerCandidate } from "@/lib/catalogFiller";
-import { attachedFillerNeedsReview, attachedFillerPlanForCandidate, type AttachedFillerChoice } from "@/lib/cabinetAttachedFillers";
+import { attachedFillerLeftoverOptions, attachedFillerNeedsReview, attachedFillerPlanForCandidate, type AttachedFillerChoice, type AttachedFillerLeftoverOptions } from "@/lib/cabinetAttachedFillers";
 import { buildAttachedFillerPlacement, supportsAttachedFillerChoice } from "@/lib/cabinetAttachedFillerPlacement";
 import { selectedPeninsulaCabinetSequencePlan, selectedPeninsulaCabinetTotalIn, wizardEligibleBaseCabinets, type PeninsulaWizardCabinet } from "@/lib/peninsulaWizardPlan";
 import { swapStandardSinkBaseForFarmSink, matchingFarmSinkBase } from "@/lib/farmSinkBaseSwap";
@@ -901,6 +901,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     rightText: string;
     leftAllowed: boolean;
     rightAllowed: boolean;
+    leftover: AttachedFillerLeftoverOptions | null;
   } | null>(null);
   useEffect(() => {
     setSmallGapFillerCustomWidth(smallGapFillerPrompt?.remaining ?? null);
@@ -7486,6 +7487,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
             rightText: "",
             leftAllowed: attachment.leftAllowed,
             rightAllowed: attachment.rightAllowed,
+            leftover: attachedFillerLeftoverOptions(attachment),
           });
           setMobilePanel(null);
           return;
@@ -21072,6 +21074,25 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                     </DialogDescription>
                   </DialogHeader>
                   <div className="space-y-3">
+                    {attachedFillerPrompt.leftover && (() => {
+                      const leftover = attachedFillerPrompt.leftover;
+                      const fill = (choice: AttachedFillerChoice) => setAttachedFillerPrompt((current) => current ? {
+                        ...current,
+                        leftText: choice.leftIn > 0 ? String(choice.leftIn) : "",
+                        rightText: choice.rightIn > 0 ? String(choice.rightIn) : "",
+                      } : current);
+                      return (
+                        <div data-testid="attached-filler-leftover" className="rounded-lg border border-[#d9c196] bg-[#fffaf0] px-3 py-2.5">
+                          <p className="text-sm font-semibold text-[#1a2744]">Leftover space: {formatEighthInches(leftover.leftoverIn)}</p>
+                          <p className="mt-0.5 text-xs text-muted-foreground">{leftover.split || (leftover.left && leftover.right) ? "Fill it with one filler on either side, or split it evenly between both sides." : `Measured between ${attachedFillerPrompt.cabinet.masterCode} and the ${leftover.left ? "left" : "right"} wall or cabinet.`}</p>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {leftover.left && <Button type="button" size="sm" variant="outline" data-testid="attached-filler-leftover-left" onClick={() => fill(leftover.left!)}>Filler left {formatEighthInches(leftover.left.leftIn)}</Button>}
+                            {leftover.right && <Button type="button" size="sm" variant="outline" data-testid="attached-filler-leftover-right" onClick={() => fill(leftover.right!)}>Filler right {formatEighthInches(leftover.right.rightIn)}</Button>}
+                            {leftover.split && <Button type="button" size="sm" variant="outline" data-testid="attached-filler-leftover-split" onClick={() => fill(leftover.split!)}>Split {formatEighthInches(leftover.split.leftIn)} left + {formatEighthInches(leftover.split.rightIn)} right</Button>}
+                          </div>
+                        </div>
+                      );
+                    })()}
                     <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
                       <strong>No filler</strong> is the default. A strip of 3″ or less is field-cut from its companion stock board; no short filler SKU or price is invented.
                     </div>

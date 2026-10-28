@@ -25,6 +25,9 @@ export type AttachedFillerPlan = {
   openingStartIn: number;
   openingEndIn: number;
   availableFillerIn: number;
+  /** Measured space between the cabinet and the wall/cabinet on each side. */
+  leftGapIn: number;
+  rightGapIn: number;
   leftAllowed: boolean;
   rightAllowed: boolean;
   cabinetStartIn: number;
@@ -118,12 +121,59 @@ export function attachedFillerPlanForCandidate(
     openingStartIn: openingStart,
     openingEndIn: openingEnd,
     availableFillerIn,
+    leftGapIn,
+    rightGapIn,
     leftAllowed,
     rightAllowed,
     cabinetStartIn: fittedStart,
     cabinetSpanIn: cabinetSpan,
     pieces,
   };
+}
+
+export type AttachedFillerLeftoverOptions = {
+  /** Space to fill: the whole leftover when both sides are bounded, otherwise the one bounded side's gap. */
+  leftoverIn: number;
+  left: AttachedFillerChoice | null;
+  right: AttachedFillerChoice | null;
+  split: AttachedFillerChoice | null;
+};
+
+function fillableGap(gapIn: number) {
+  const rounded = roundToEighth(gapIn);
+  return rounded >= EDGE_EPSILON_IN && rounded <= 6 + EDGE_EPSILON_IN ? rounded : null;
+}
+
+/**
+ * Tells the user the space to fill so they never have to measure it on the
+ * drawing. With walls/cabinets on both sides, the whole leftover can go on
+ * either side or be split evenly (the left strip rounds down to an eighth so
+ * the two strips add up exactly). With only one bounded side, that side's
+ * measured gap is offered on that side.
+ */
+export function attachedFillerLeftoverOptions(
+  plan: Pick<AttachedFillerPlan, "availableFillerIn" | "leftGapIn" | "rightGapIn" | "leftAllowed" | "rightAllowed">,
+): AttachedFillerLeftoverOptions | null {
+  if (plan.leftAllowed && plan.rightAllowed) {
+    const leftoverIn = fillableGap(plan.availableFillerIn);
+    if (leftoverIn == null) return null;
+    const splitLeftIn = Math.floor((leftoverIn / 2) * 8) / 8;
+    return {
+      leftoverIn,
+      left: { leftIn: leftoverIn, rightIn: 0 },
+      right: { leftIn: 0, rightIn: leftoverIn },
+      split: splitLeftIn > 0 ? { leftIn: splitLeftIn, rightIn: roundToEighth(leftoverIn - splitLeftIn) } : null,
+    };
+  }
+  if (plan.leftAllowed) {
+    const gapIn = fillableGap(plan.leftGapIn);
+    return gapIn == null ? null : { leftoverIn: gapIn, left: { leftIn: gapIn, rightIn: 0 }, right: null, split: null };
+  }
+  if (plan.rightAllowed) {
+    const gapIn = fillableGap(plan.rightGapIn);
+    return gapIn == null ? null : { leftoverIn: gapIn, left: null, right: { leftIn: 0, rightIn: gapIn }, split: null };
+  }
+  return null;
 }
 
 /**

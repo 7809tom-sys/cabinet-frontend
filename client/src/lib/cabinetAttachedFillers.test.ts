@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_ROOM, type PlacedCabinet, type RoomData } from "@/lib/design";
-import { attachedFillerNeedsReview, attachedFillerPlanForCandidate } from "./cabinetAttachedFillers";
+import { attachedFillerLeftoverOptions, attachedFillerNeedsReview, attachedFillerPlanForCandidate } from "./cabinetAttachedFillers";
 
 const room: RoomData = { ...DEFAULT_ROOM, width: 120, depth: 120 };
 
@@ -80,5 +80,69 @@ describe("attached cabinet fillers", () => {
     expect(attachedFillerNeedsReview(attached as PlacedCabinet & { fillerAttachmentSide: "right" }, [owner, attached], room)).toBe(true);
     const neighbor = cabinet({ uid: "neighbor", masterCode: "B24", x: 49, y: 0, width: 24 });
     expect(attachedFillerNeedsReview(attached as PlacedCabinet & { fillerAttachmentSide: "right" }, [owner, attached, neighbor], room)).toBe(false);
+  });
+});
+
+describe("attached filler leftover space", () => {
+  const wall = (overrides: Partial<PlacedCabinet>) => cabinet({ placement: "wall", depth: 12, height: 30, ...overrides });
+
+  it("offers a 3-inch leftover between two cabinets as left, right, or an even split", () => {
+    const left = wall({ uid: "left", masterCode: "W2430", x: 0, width: 24 });
+    const target = wall({ uid: "w3030", masterCode: "W3030", x: 24, width: 30 });
+    const right = wall({ uid: "right", masterCode: "W2430", x: 57, width: 24 });
+    const plan = attachedFillerPlanForCandidate(target, [left, right], room);
+    expect(attachedFillerLeftoverOptions(plan!)).toEqual({
+      leftoverIn: 3,
+      left: { leftIn: 3, rightIn: 0 },
+      right: { leftIn: 0, rightIn: 3 },
+      split: { leftIn: 1.5, rightIn: 1.5 },
+    });
+  });
+
+  it("splits an odd leftover so the two strips still add up exactly", () => {
+    const left = wall({ uid: "left", x: 0, width: 24 });
+    const target = wall({ uid: "w3030", x: 24, width: 30 });
+    const right = wall({ uid: "right", x: 55.125, width: 24 });
+    const options = attachedFillerLeftoverOptions(attachedFillerPlanForCandidate(target, [left, right], room)!);
+    expect(options?.leftoverIn).toBe(1.125);
+    expect(options?.split).toEqual({ leftIn: 0.5, rightIn: 0.625 });
+  });
+
+  it("each planned option is accepted by the filler planner", () => {
+    const left = wall({ uid: "left", x: 0, width: 24 });
+    const target = wall({ uid: "w3030", x: 24, width: 30 });
+    const right = wall({ uid: "right", x: 57, width: 24 });
+    const options = attachedFillerLeftoverOptions(attachedFillerPlanForCandidate(target, [left, right], room)!)!;
+    for (const choice of [options.left, options.right, options.split]) {
+      expect(attachedFillerPlanForCandidate(target, [left, right], room, choice)).not.toBeNull();
+    }
+  });
+
+  it("offers the one bounded side's measured gap when the other side is open", () => {
+    // A B36 dropped 1/2 inch from the wall with an open run on its right.
+    const b36 = cabinet({ uid: "b36", masterCode: "B36", x: 0.5, width: 36 });
+    const plan = attachedFillerPlanForCandidate(b36, [], { ...room, width: 120 })!;
+    expect(plan.leftAllowed).toBe(true);
+    expect(plan.rightAllowed).toBe(false);
+    expect(attachedFillerLeftoverOptions(plan)).toEqual({
+      leftoverIn: 0.5,
+      left: { leftIn: 0.5, rightIn: 0 },
+      right: null,
+      split: null,
+    });
+  });
+
+  it("shows no size when the space is over 6 inches", () => {
+    const left = wall({ uid: "left", x: 0, width: 24 });
+    const target = wall({ uid: "w3030", x: 24, width: 30 });
+    const farRight = wall({ uid: "right", x: 61, width: 24 });
+    expect(attachedFillerLeftoverOptions(attachedFillerPlanForCandidate(target, [left, farRight], room)!)).toBeNull();
+  });
+
+  it("shows no leftover when the cabinet already fills the space", () => {
+    const left = wall({ uid: "left", x: 0, width: 24 });
+    const target = wall({ uid: "w3030", x: 24, width: 30 });
+    const right = wall({ uid: "right", x: 54, width: 24 });
+    expect(attachedFillerLeftoverOptions(attachedFillerPlanForCandidate(target, [left, right], room)!)).toBeNull();
   });
 });
