@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
 import { addCabinet, resolvedThreeDSpecialtyProfile, threeDLatticeRackLayout } from "./InteractiveRoom3D";
+import { PLATE_RACK_FRAME_IN, plateRackDividerLayout } from "@/lib/plateRackLayout";
 
 // Kept out of InteractiveRoom3D.test.ts so these run even while that file's
 // __fixtures__/fourAnchorGapKitchen.json import is missing from the repo.
@@ -107,5 +108,23 @@ describe("wine rack lattice render", () => {
     });
     expect(slats).toBe(0);
     expect(slatFaces).toBeGreaterThan(0);
+  });
+
+  it("gives PR30 10 dowel dividers holding 11 plates inside a face frame", () => {
+    const layout = plateRackDividerLayout(30 - PLATE_RACK_FRAME_IN * 2);
+    expect(layout.plates).toBe(11);
+    expect(layout.dividers).toHaveLength(10);
+    const root = new THREE.Group();
+    addCabinet(root, rackSku({ placementUid: "pr30", masterCode: "PR30", description: "Plate Rack", width: 30, height: 15 }), null, {}, 144, 120, "#e8e6df", "#f8f8f6");
+    const dividers: THREE.Mesh[] = [];
+    const frame: THREE.Mesh[] = [];
+    root.traverse((node) => {
+      if (node.userData.plateRackDivider) dividers.push(node as THREE.Mesh);
+      if (node.userData.plateRackFaceFrame) frame.push(node as THREE.Mesh);
+    });
+    expect(dividers).toHaveLength(10);
+    expect(frame).toHaveLength(4);
+    const innerHalfWidth = (30 / 2 - PLATE_RACK_FRAME_IN) / 12;
+    for (const divider of dividers) expect(Math.abs(divider.position.x)).toBeLessThan(innerHalfWidth);
   });
 });

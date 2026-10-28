@@ -1,5 +1,6 @@
 import { doorOpeningAppearance } from "@/lib/doorOpeningAppearance";
 import { threeDLatticeRackLayout } from "@/lib/latticeRackLayout";
+import { PLATE_RACK_FRAME_IN, plateRackDividerLayout } from "@/lib/plateRackLayout";
 import {
   PlacedCabinet, RoomData, STD, elevationBox, WallOpening,
   FinishColors, DEFAULT_FINISH_COLORS, CROWN_HEIGHT_IN, TOE_KICK_HEIGHT_IN, BATTEN_WIDTH_IN, LIGHT_RAIL_HEIGHT_IN,
@@ -2617,7 +2618,22 @@ export function DoorFront({ kind, edge, face, doors, drawers, isWall, doorSample
     return withFace(
       <div className="absolute inset-0 overflow-hidden">
         <div className="absolute inset-0" style={{ border: `3px solid ${stroke}`, borderRadius: 2 }} />
-        {activeFacePattern === "slats" && (
+        {activeFacePattern === "slats" && Number(cabinetWidthIn) > PLATE_RACK_FRAME_IN * 2 + 2 && Number(cabinetHeightIn) > PLATE_RACK_FRAME_IN * 2 && (() => {
+          // Same dividers as the 3D plate rack, drawn in inches.
+          const widthIn = Number(cabinetWidthIn);
+          const heightIn = Number(cabinetHeightIn);
+          const insetIn = PLATE_RACK_FRAME_IN;
+          const layout = plateRackDividerLayout(widthIn - insetIn * 2);
+          return (
+            <svg className="absolute inset-0 w-full h-full" xmlns="http://www.w3.org/2000/svg" viewBox={`${-widthIn / 2} ${-heightIn / 2} ${widthIn} ${heightIn}`} preserveAspectRatio="none">
+              <rect x={-widthIn / 2 + insetIn} y={-heightIn / 2 + insetIn} width={widthIn - insetIn * 2} height={heightIn - insetIn * 2} fill={bgColor} opacity="0.35" />
+              {layout.dividers.map((x, index) => (
+                <line key={index} x1={x} y1={-heightIn / 2 + insetIn} x2={x} y2={heightIn / 2 - insetIn} stroke={barColor} strokeWidth="2" vectorEffect="non-scaling-stroke" />
+              ))}
+            </svg>
+          );
+        })()}
+        {activeFacePattern === "slats" && !(Number(cabinetWidthIn) > PLATE_RACK_FRAME_IN * 2 + 2 && Number(cabinetHeightIn) > PLATE_RACK_FRAME_IN * 2) && (
           <svg className="absolute inset-0 w-full h-full" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none">
             <defs>
               <pattern id="slats-pattern" x="0" y="0" width="10%" height="100%" patternUnits="objectBoundingBox">
