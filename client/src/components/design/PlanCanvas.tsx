@@ -9,7 +9,7 @@ import {
 	  resolveSwing, resolveCabinetHardwarePosition,
 	  WallOpening, clampOpening, FinishColors, DEFAULT_FINISH_COLORS, isWindowBelowCountertop,
   clampRoomInches, inchesToFeetInches, WallSide, type PeninsulaRun, peninsulaRunEndpoints, peninsulaRunMaxLength, peninsulaRunHitAtPoint, peninsulaRunStartOffsetAtPoint, peninsulaRunAssemblyLocked, peninsulaRootRunId,
-	  cabinetWall, wallSpanMeasure, wallRunFrame, wallRunDistanceToPoint, peninsulaRunById, continuousWallApplianceSnapInfo, configuredRefrigeratorAssemblyMembers, customWallCabinetSide,
+	  cabinetWall, wallRunFrame, wallRunDistanceToPoint, peninsulaRunById, continuousWallApplianceSnapInfo, configuredRefrigeratorAssemblyMembers, customWallCabinetSide,
 	  countertopSurfaces, countertopMaterial, potFillerMountedRange, type CountertopSurface, type PotFillerFixture, type SinkFixture, SINK_PRESETS,
   wallGaps, freeSegmentsOnWall, wallGapFitPreview, wallGapFreehandPreview, nearestRectRoomWallAtPoint, nearestWallRunAtPoint, cabinetWallMovePreview, refrigeratorMagneticSnapEnvelope, CABINET_CONFLICT_LOCK_IN, BLIND_CORNER_FILLER_WIDTH_IN, STD, WALL_OPENING_CLEARANCE_IN, resolvedDesignCabinetDimensions, cabinetPlacementHoverDetail, bestFitCatalogOption, smartGapCatalogOptions, smartGapRecommendation, type WallGap, type WallGapFitPreview,
   type DesignCabinet,
@@ -1354,31 +1354,6 @@ export function PlanCanvas({
     setHoverSnap(false);
     setHoverSnapWall(false);
   };
-
-  // Live drag tape-measure: while dragging a cabinet, bracket it along its wall
-  // and show the clearance on BOTH sides (to the neighbor cabinet edge, else the
-  // wall). Built in inches then scaled to px for the overlay.
-  // The tape shows while a cabinet is being dragged AND, for convenience, when a
-  // cabinet is simply selected (idle) so the designer can read the clearance to
-  // each neighbor/wall without nudging it. Drag takes priority.
-  const tapeUid = dragUid ?? (measureMode ? null : selectedUid);
-	  const dragTape = (() => {
-	    if (!tapeUid) return null;
-    const p = cabinets.find((c) => c.uid === tapeUid);
-    if (!p) return null;
-    const side = cabinetWall(p, room);
-    const m = wallSpanMeasure(p, room, cabinets, side);
-	    const frame = wallRunFrame(side, room);
-	    if (!frame) return null;
-	    // Draw just beyond the cabinet front using the same inward normal that
-	    // seats the cabinet. The readout stays parallel to a 45° measured run.
-	    const lineIn = Math.max(0, Number(p.depth) || 0) + 3;
-	    const pointAt = (along: number) => ({
-	      x: (frame.start.x + frame.tangent.x * along + frame.inward.x * lineIn) * ppi,
-	      y: (frame.start.y + frame.tangent.y * along + frame.inward.y * lineIn) * ppi,
-	    });
-	    return { m, frame, pointAt };
-	  })();
 
 	  const activeIslandFaceCapacityWarning = (() => {
 	    if (!catalogDragCabinet || !island || !catalogDragFit) return null;
@@ -3208,56 +3183,6 @@ export function PlanCanvas({
                 {label}
               </div>
             </>
-          );
-        })()}
-
-        {/* Live drag tape-measure: two-sided clearance along the wall */}
-        {measurementBubblesVisible && dragTape && (() => {
-          const { m, frame, pointAt } = dragTape;
-          const tick = { x: -frame.tangent.y * 5, y: frame.tangent.x * 5 };
-          const labelAngle = parallelWallLabelAngleDeg(frame.tangent.x, frame.tangent.y);
-          // Use the same high-contrast white drafting chip as the exterior
-          // dimension rails. During a cabinet drag the old arrow glyphs were
-          // too small to distinguish from the dimension itself, especially on
-          // a diagonal wall. The end ticks and extension lines already show
-          // which side is being measured, so the bubble states the actual
-          // clearance only.
-          const clearanceFontSize = Math.max(10, Math.min(16, Number(room.dimensionLabelStyle?.fontSizePx) || 11));
-          const segs = [
-            { start: m.start - m.before, end: m.start, value: m.before, side: "before" as const },
-            { start: m.end, end: m.end + m.after, value: m.after, side: "after" as const },
-          ];
-          return (
-            <svg data-testid="live-cabinet-gap-dimensions" className="pointer-events-none absolute inset-0 z-40 overflow-visible" width={roomPxW} height={roomPxH} style={measurementBubbleStyle}>
-              {segs.map((segment, index) => {
-                const start = pointAt(segment.start);
-                const end = pointAt(segment.end);
-                const middle = pointAt((segment.start + segment.end) / 2);
-                const label = formatDisplayDimension(segment.value);
-                const labelWidth = Math.max(46, Math.round(label.length * clearanceFontSize * 0.76 + 18));
-                const labelHeight = Math.max(20, clearanceFontSize + 9);
-                return <g key={index} stroke="#1a2744" strokeWidth={1.25}>
-                  <line x1={start.x} y1={start.y} x2={end.x} y2={end.y} />
-                  <line x1={start.x - tick.x} y1={start.y - tick.y} x2={start.x + tick.x} y2={start.y + tick.y} />
-                  <line x1={end.x - tick.x} y1={end.y - tick.y} x2={end.x + tick.x} y2={end.y + tick.y} />
-                  <g transform={`translate(${middle.x} ${middle.y}) rotate(${labelAngle})`}>
-                    <rect
-                      data-testid={`live-gap-dimension-bubble-${segment.side}`}
-                      x={-labelWidth / 2}
-                      y={-labelHeight / 2}
-                      width={labelWidth}
-                      height={labelHeight}
-                      rx={4}
-                      fill="white"
-                      fillOpacity={0.98}
-                      stroke="#a8b5cf"
-                      strokeWidth={1.2}
-                    />
-                    <text x={0} y={clearanceFontSize * 0.34} textAnchor="middle" fontSize={clearanceFontSize} fontWeight={800} fill={room.dimensionLabelStyle?.color || "#1a2744"}>{label}</text>
-                  </g>
-                </g>;
-              })}
-            </svg>
           );
         })()}
 
