@@ -31,6 +31,21 @@ export const KITCHEN_RULE_PARAMETER_DEFAULTS = {
   sink_base_substitute: 1,
   /** 1 asks before replacing a configured out-of-stock SKU. 0 skips the prompt. */
   stock_prompt_enabled: 1,
+  /** Master switch for finished panels on exposed sides. 0 unpublishes the engine. */
+  exposed_panels_enabled: 1,
+  panel_thickness_in: 0.75,
+  panel_end_wall_enabled: 1,
+  panel_dw_enabled: 1,
+  panel_fridge_enabled: 1,
+  panel_island_enabled: 1,
+  panel_window_enabled: 1,
+  panel_open_enabled: 1,
+  panel_wall_end_enabled: 1,
+  panel_tall_enabled: 1,
+  window_cabinet_height_in: 30,
+  window_filler_max_in: 3,
+  /** 1 also panels framed wall cabinets beside a window. 0 is filler only. */
+  window_framed_panel: 0,
 } as const;
 
 export type KitchenRuleParameterKey = keyof typeof KITCHEN_RULE_PARAMETER_DEFAULTS;

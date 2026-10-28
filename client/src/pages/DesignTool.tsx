@@ -97,6 +97,7 @@ import { adjustedDesignUnitPrice, buildDesignCabinetCartLines, buildDesignPrevie
 import { combinedFillerNote, fillerCutSourceFor, isCombinedSmallFiller } from "@/lib/fillerBilling";
 import { activeCatalogPricingIdsByMasterCode, currentCatalogPricingCabinetId } from "@/lib/designPricingIdentity";
 import { catalogFillerForGap, catalogFillerPricingId, fittedCatalogFillerDescription, isCatalogFiller, type CatalogFillerCandidate } from "@/lib/catalogFiller";
+import { syncExposedSidePanels, type ExposedPanelStock, type ExposedPanelWarning } from "@/lib/exposedSidePanels";
 import { attachedFillerLeftoverOptions, attachedFillerNeedsReview, attachedFillerPlanForCandidate, attachedFillerSizeIssues, type AttachedFillerChoice, type AttachedFillerLeftoverOptions, type AttachedFillerSizeIssue } from "@/lib/cabinetAttachedFillers";
 import { buildAttachedFillerPlacement, supportsAttachedFillerChoice } from "@/lib/cabinetAttachedFillerPlacement";
 import { selectedPeninsulaCabinetSequencePlan, selectedPeninsulaCabinetTotalIn, wizardEligibleBaseCabinets, type PeninsulaWizardCabinet } from "@/lib/peninsulaWizardPlan";
@@ -4660,6 +4661,37 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     },
 	    [priceMap, pricingIdForPlacedCabinet, pricingStyleIdFor, styleId, glassDoorAddonCodeFor, glassDoorCatalogProduct]
 	  );
+  const [exposedPanelWarnings, setExposedPanelWarnings] = useState<ExposedPanelWarning[]>([]);
+  const exposedPanelStock = useMemo<ExposedPanelStock[]>(() => {
+    if (!styleId) return [];
+    return catalogFillers.flatMap((item) => {
+      if (!/\bpanel\b/i.test(`${item.masterCode} ${item.description ?? ""} ${item.subCategory ?? ""}`)) return [];
+      const placement = item.placement === "wall" ? "wall" as const : item.placement === "tall" ? "tall" as const : "base" as const;
+      return [{
+        id: item.id,
+        masterCode: item.masterCode,
+        description: item.description || item.masterCode,
+        placement,
+        stockFace: Number(item.width) || Number(item.depth) || 12,
+        stockHeight: Number(item.height) || 34.5,
+        price: priceMap.get(`${item.id}:${styleId}`) ?? null,
+      }];
+    });
+  }, [catalogFillers, priceMap, styleId]);
+  useEffect(() => {
+    if (!priceRowsFetched || exposedPanelStock.length === 0) return;
+    const plan = syncExposedSidePanels({
+      placed: placedRef.current,
+      room: roomRef.current,
+      openings,
+      catalog: exposedPanelStock,
+    });
+    if (plan.placed !== placedRef.current) {
+      placedRef.current = plan.placed;
+      setPlaced(plan.placed);
+    }
+    setExposedPanelWarnings(plan.warnings);
+  }, [exposedPanelStock, openings, priceRowsFetched, room, setPlaced]);
 
   // ── Part 1: every placed cabinet remains visible ─────────────────────────
   // Evaluate the active line as soon as its price query settles. Flags drive
@@ -14369,6 +14401,18 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         onCommit={commitMasterTracTower}
       />}
       <SinkBaseSubstitutionNotice swaps={sinkBaseSwapNotices} onUndo={undoSinkBaseSwap} />
+      {exposedPanelWarnings.length > 0 && (
+        <div role="status" data-testid="design-check-panel" className="border-b border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+          <p className="font-semibold">Design check ({exposedPanelWarnings.length})</p>
+          <ul className="mt-1 space-y-1">
+            {exposedPanelWarnings.map((warning) => (
+              <li key={warning.id}>
+                <button type="button" className="text-left underline-offset-2 hover:underline" onClick={() => setSelectedUid(warning.cabinetUid)}>{warning.message}</button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       <OutOfStockChoiceDialog
         notice={stockPromptNotice}
         phase={stockPromptPhase}

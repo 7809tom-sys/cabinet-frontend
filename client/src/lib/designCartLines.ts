@@ -119,6 +119,7 @@ export function buildDesignCabinetCartLines({
     // Different discounts or custom-size fees must remain separate locked
     // lines; combining them would assign one cabinet's adjusted price to both.
     const modificationNote = cabinet.fieldModificationNote?.trim() || "";
+    const autoAddedLabel = modificationNote.startsWith("Auto-added:") ? modificationNote : undefined;
     const key = `${masterCode}::${resolvedStyleId}::${unitPrice == null ? "pending" : unitPrice.toFixed(4)}::${fillerCartIdentity(cabinet)}::${cabinet.swing ?? ""}::${modificationNote}`;
     const cutNotes = placed
       .filter((candidate) => fillerCutSourceFor(candidate, placed)?.uid === cabinet.uid)
@@ -144,6 +145,7 @@ export function buildDesignCabinetCartLines({
         // and may refresh there, but it can never become a zero-dollar order.
         ...(unitPrice != null ? { priceLocked: true } : {}),
         qty: 1,
+        ...(autoAddedLabel ? { autoAddedLabel } : {}),
         ...(cutNote ? { qtyNote: cutNote } : {}),
         catalogImageUrl: cabinet.catalogImageUrl ?? null,
         ...(cabinet.freeShipping ? { freeShipping: true } : {}),
@@ -381,6 +383,7 @@ export function mergeDesignCartLines(lines: readonly CartItem[]): CartItem[] {
       line.vendorProductId ?? "",
       line.fillerStockWidthIn ?? "",
       line.fillerInstalledCutWidthIn ?? "",
+      line.autoAddedLabel ?? "",
     ].join("::");
     const existing = merged.get(key);
     if (existing) existing.qty += line.qty;

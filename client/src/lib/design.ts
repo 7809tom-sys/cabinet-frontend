@@ -820,6 +820,10 @@ export interface PlacedCabinet {
    * such as a B36 standing in for an out-of-stock sink base.
    */
   fieldModificationNote?: string | null;
+  /** Set on a panel or filler the Designer inserted. Removed when the side is covered. */
+  autoPlacedReason?: string | null;
+  autoPlacedForUid?: string | null;
+  autoPlacedSide?: "start" | "end" | "back" | null;
   /**
    * Identifies a cabinet created by one Peninsula Wizard transaction. This is
    * deliberately separate from `wallId`: a customer can add ordinary cabinets
