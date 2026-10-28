@@ -14,11 +14,12 @@ import { ThreeDHandlesControl } from "./ThreeDHandlesControl";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { APPLIANCES, BLIND_CORNER_FILLER_WIDTH_IN, COUNTERTOP_DEPTH_IN, FURNITURE_CATALOG, STD, applianceAppearanceImage, bearsCountertop, isBaseHeightAppliance, blindCornerRearCountertopExtensionIn, blindPullRange, cabinetWall, cabinetWallDragPreview, cornerLegRatioForPlaced, cornerRotationForPlaced, countertopRunFaceNormal, countertopSurfacePlanPolygon, countertopSurfaces, crownBlockingCabinets, crownEligibleCabinets, customWallCabinetSide, drywallPonyWallAppearance, elevationBox, formatEighthInches, formatInches, glassDoorShelfCount, isAgainstWall, isBaseEndCornerCabinet, isCustomRoomWall, isFillerItem, fillerWidthRange, isGlassDoorCabinet, isMicrowaveOverRangePair, isRangeHoodPlacement, isRangeOrOven, isRefrigerator, isStacker, isWallRunDraggable, isWd18CountertopDrawerCabinet, kitchenCrestGenericOpenEndShelfCount, normalizeInstalledFillersToAdjacentCabinets, peninsulaCountertopPonyWallBackExtensionIn, peninsulaCountertopPonyWallBarOverhang, peninsulaCountertopSeatingOverhang, peninsulaCountertopWaterfallEnd, peninsulaLowerWorktopOppositeSideExtensionIn, peninsulaRunEndpoints, placedCornerGeometryKind, placedFootprint, ponyWallMiteredFootprint, ponyWallPlanFrame, potFillerMountedRange, rangeVisualAppearance, refrigeratorBayVerificationMetrics, resolveCabinetHardwarePosition, resolveSwing, roomWallAppearance, seatedWallRunFrame, wallRunFrame, selectedLowerCabinetWallPlacement, sinkPlanDimensions, usesRaisedFloorWallDoorPull, wallCabinetFitMeasure, wallGapFitPreview, wallGapFreehandPreview, wallGaps, wallPlacementAt, wallRunOffset, wallRunSpan, wallSpanMeasure, wallLength, wd18CountertopFaceLayout, type CabinetWallDragPreview, type CountertopSurface, type IslandZone, type PlacedCabinet, type PlacedCornerGeometryKind, type PlacedFurniture, type PonyWall, type PotFillerFixture, rotatedSize, type RoomData, type SinkFixture, type WallCabinetFitMeasure, type WallGapFitPreview, type WallOpening, type WallSide, type WallSpanMeasure, wallTopLimit, } from "@/lib/design";
+import { APPLIANCES, BLIND_CORNER_FILLER_WIDTH_IN, COUNTERTOP_DEPTH_IN, FURNITURE_CATALOG, STD, applianceAppearanceImage, bearsCountertop, isBaseHeightAppliance, blindCornerRearCountertopExtensionIn, blindPullRange, cabinetWall, cabinetWallDragPreview, cornerLegRatioForPlaced, cornerRotationForPlaced, countertopRunFaceNormal, countertopSurfacePlanPolygon, countertopSurfaces, crownBlockingCabinets, crownEligibleCabinets, customWallCabinetSide, drywallPonyWallAppearance, elevationBox, formatEighthInches, formatInches, glassDoorShelfCount, isAgainstWall, isBaseEndCornerCabinet, isCustomRoomWall, isFillerItem, fillerWidthRange, isGlassDoorCabinet, isMicrowaveOverRangePair, isRangeHoodPlacement, isRangeOrOven, isRefrigerator, isStacker, isWallRunDraggable, isWd18CountertopDrawerCabinet, kitchenCrestGenericOpenEndShelfCount, normalizeInstalledFillersToAdjacentCabinets, peninsulaCountertopPonyWallBackExtensionIn, peninsulaCountertopPonyWallBarOverhang, peninsulaCountertopSeatingOverhang, peninsulaCountertopWaterfallEnd, peninsulaLowerWorktopOppositeSideExtensionIn, peninsulaRunEndpoints, placedCornerGeometryKind, placedFootprint, ponyWallMiteredFootprint, ponyWallPlanFrame, potFillerMountedRange, rangeVisualAppearance, refrigeratorBayVerificationMetrics, resolveCabinetHardwarePosition, resolveSwing, roomWallAppearance, seatedWallRunFrame, wallRunFrame, wallAngleEndHandForPlacement, selectedLowerCabinetWallPlacement, sinkPlanDimensions, usesRaisedFloorWallDoorPull, wallCabinetFitMeasure, wallGapFitPreview, wallGapFreehandPreview, wallGaps, wallPlacementAt, wallRunOffset, wallRunSpan, wallSpanMeasure, wallLength, wd18CountertopFaceLayout, type CabinetWallDragPreview, type CountertopSurface, type IslandZone, type PlacedCabinet, type PlacedCornerGeometryKind, type PlacedFurniture, type PonyWall, type PotFillerFixture, rotatedSize, type RoomData, type SinkFixture, type WallCabinetFitMeasure, type WallGapFitPreview, type WallOpening, type WallSide, type WallSpanMeasure, wallTopLimit, } from "@/lib/design";
 import { refrigeratorEndPanelCutDownNote } from "@/lib/refrigeratorEndPanelCut";
 import { threeDLatticeRackLayout } from "@/lib/latticeRackLayout";
 import { PLATE_RACK_FRAME_IN, plateRackDividerLayout } from "@/lib/plateRackLayout";
 import { baseAngleEndPlan, isBaseAngleEndCabinet, type BaseAngleEndHand, type PlanPoint } from "@/lib/baseAngleEndLayout";
+import { isWallAngleEndCabinet, wallAngleEndPlan, type WallAngleEndHand } from "@/lib/wallAngleEndLayout";
 export { threeDLatticeRackLayout };
 import { islandCountertopRects, islandCountertopVisibleRects, islandRaisedBarRects, islandFaceFitMeasure } from "@/lib/islandScene";
 import { furniturePlanFrame, resolvedFurnitureDimensions } from "@/lib/design";
@@ -256,6 +257,8 @@ type SceneSku = {
   glassDoor?: boolean | null;
   doorOrientation?: "side-by-side" | "stacked" | null;
   swing?: "left" | "right" | "double" | "none" | null;
+  /** Open-end hand for a WAC/AW wall angle cabinet. Right tapers toward +X. */
+  wallAngleEndHand?: "left" | "right" | null;
   handleSide?: "left" | "right" | null;
   hardwarePosition?: "auto" | "left" | "center" | "right" | "paired" | "top-center" | null;
   openingType?: string | null;
@@ -3269,6 +3272,16 @@ function quarterOctagonExtrusion(points: PlanPoint[], height: number) {
   return geometry;
 }
 
+/** Places the wall-angle triangle in the cabinet's local inch box, centered. */
+function wallAngleEndFeet(widthIn: number, depthIn: number, hand: WallAngleEndHand) {
+  const plan = wallAngleEndPlan({ widthIn, depthIn, hand });
+  const toFeet = (point: { x: number; z: number }): PlanPoint => ({
+    x: point.x * INCH,
+    z: point.z * INCH,
+  });
+  return { plan, toFeet };
+}
+
 /** Places the 24" quarter-octagon in the back corner that touches the neighbor. */
 function baseAngleEndFeet(widthIn: number, depthIn: number, hand: BaseAngleEndHand) {
   const sideIn = Math.min(widthIn, depthIn);
@@ -3700,10 +3713,10 @@ export function resolvedThreeDSpecialtyProfile(sku: Pick<SceneSku, "graphicType"
     graphicType: sku.graphicType ?? sku.customProfile ?? null,
   }) === "range-hood-front") return { kind: "range-hood-front" as const, pattern: null };
   if (/^(?:ada[-_])?fsb[-_]?\d/i.test(sku.masterCode) || /farm(?:house)?\s+sink|apron[-\s]?front/i.test(sku.description ?? "")) return { kind: "farmhouse-sink" as const, pattern: null };
-  // AW1230, AW1236, and AW1242 are one angled wall-END family. They are not
-  // room-corner cabinets, but all three use the same true triangular end mesh,
-  // with cabinet height and shelf count supplied by the individual SKU.
-  if (isAngledWallProfile(sku)) return { kind: "diagonal-corner" as const, pattern: null };
+  // WAC1230/WAC1236/WAC1242 and AW aliases are one angled wall-END family.
+  // They are not room-corner cabinets and they do not share the BA-24
+  // quarter-octagon. The triangle's hypotenuse is the room-facing door.
+  if (isAngledWallProfile(sku)) return { kind: "wall-angle-end" as const, pattern: null };
   if (/corner-drawer-base/.test(graphic) || /^cdb[-_]?\d/.test(sku.masterCode) || /corner drawer base/i.test(sku.description ?? "")) return { kind: "corner-drawer" as const, pattern: null };
   if (sku.cornerGeometryKind === "base-end" || /end-angle|base_end_angle|end-return|base_end_return/.test(graphic) || /^(?:bec|ba)[-_]?\d/i.test(sku.masterCode) || /base end (?:corner|cabinet|return)/i.test(sku.description ?? "")) return { kind: "end-return" as const, pattern: null };
   if (sku.cornerGeometryKind === "triangle" || sku.cornerType === "triangle" || /^(?:wtc|btc)[-_]?\d/i.test(sku.masterCode)) return { kind: "triangle-corner" as const, pattern: null };
@@ -3724,10 +3737,7 @@ export function resolvedThreeDSpecialtyProfile(sku: Pick<SceneSku, "graphicType"
 }
 
 function isAngledWallProfile(sku: Pick<SceneSku, "graphicType" | "customProfile" | "masterCode" | "description">) {
-  const graphic = `${sku.graphicType ?? ""} ${sku.customProfile ?? ""}`.toLowerCase();
-  return /(?:^|\s)wall_angle(?:\s|$)|angled-wall/.test(graphic)
-    || /^aw[-_]?\d/i.test(sku.masterCode)
-    || /\bangled wall\b/i.test(sku.description ?? "");
+  return isWallAngleEndCabinet(sku);
 }
 
 /**
@@ -4424,36 +4434,42 @@ export function addCabinet(
     };
     cabinet.add(clippedBody);
     bodyMeshes.push(clippedBody);
-  } else if (specialty.kind === "diagonal-corner") {
-    const wedge = new THREE.Mesh(
-      angledWallProfile
-        ? triangleCornerWedgeGeometry(bodyWidth, bodyDepth, bodyHeight)
-        : diagonalCornerWedgeGeometry(bodyWidth, bodyDepth, bodyHeight),
-      bodyMaterial,
-    );
-    wedge.userData = angledWallProfile
-      ? { specialtyProfile: "angled-wall", angledWallWedge: true, selectedStyleSideSkin: true }
-      : { specialtyProfile: "diagonal-corner", diagonalCornerWedge: true, selectedStyleSideSkin: true };
+  } else if (specialty.kind === "wall-angle-end") {
+    const hand: WallAngleEndHand = sku.wallAngleEndHand === "left" ? "left" : "right";
+    const { plan, toFeet } = wallAngleEndFeet(widthIn, depthIn, hand);
+    const wedge = new THREE.Mesh(quarterOctagonExtrusion(plan.vertices.map(toFeet), bodyHeight), bodyMaterial);
+    wedge.userData = {
+      specialtyProfile: "angled-wall",
+      angledWallWedge: true,
+      wallAngleEndHand: hand,
+      selectedStyleSideSkin: true,
+    };
     cabinet.add(wedge);
     bodyMeshes.push(wedge);
-    if (!angledWallProfile) {
-      // The extruded pentagon's two short return faces inherit directional light
-      // differently from its door planes, which made one WDC side look gray or
-      // like a different finish. Add flush finish skins on only those two exposed
-      // returns and update them from the same selected finish/door-sample crop.
-	      const rightReturnMaterial = new THREE.MeshPhysicalMaterial({ color, ...cabinetPbr });
-	      const leftReturnMaterial = new THREE.MeshPhysicalMaterial({ color, ...cabinetPbr });
-      flatExposedFinishMaterials.push(rightReturnMaterial, leftReturnMaterial);
-      const rightReturn = new THREE.Mesh(new THREE.PlaneGeometry(bodyDepth / 2, bodyHeight), rightReturnMaterial);
-      rightReturn.position.set(bodyWidth / 2 + 0.006, 0, -bodyDepth / 4);
-      rightReturn.rotation.y = Math.PI / 2;
-      rightReturn.userData = { diagonalCornerFinishedReturn: "right", selectedFinishSideSkin: true, selectedFinishStructuralSurface: true };
-      cabinet.add(rightReturn);
-      const leftReturn = new THREE.Mesh(new THREE.PlaneGeometry(bodyWidth / 2, bodyHeight), leftReturnMaterial);
-      leftReturn.position.set(-bodyWidth / 4, 0, bodyDepth / 2 + 0.006);
-      leftReturn.userData = { diagonalCornerFinishedReturn: "left", selectedFinishSideSkin: true, selectedFinishStructuralSurface: true };
-      cabinet.add(leftReturn);
-    }
+  } else if (specialty.kind === "diagonal-corner") {
+    const wedge = new THREE.Mesh(
+      diagonalCornerWedgeGeometry(bodyWidth, bodyDepth, bodyHeight),
+      bodyMaterial,
+    );
+    wedge.userData = { specialtyProfile: "diagonal-corner", diagonalCornerWedge: true, selectedStyleSideSkin: true };
+    cabinet.add(wedge);
+    bodyMeshes.push(wedge);
+    // The extruded pentagon's two short return faces inherit directional light
+    // differently from its door planes, which made one WDC side look gray or
+    // like a different finish. Add flush finish skins on only those two exposed
+    // returns and update them from the same selected finish/door-sample crop.
+    const rightReturnMaterial = new THREE.MeshPhysicalMaterial({ color, ...cabinetPbr });
+    const leftReturnMaterial = new THREE.MeshPhysicalMaterial({ color, ...cabinetPbr });
+    flatExposedFinishMaterials.push(rightReturnMaterial, leftReturnMaterial);
+    const rightReturn = new THREE.Mesh(new THREE.PlaneGeometry(bodyDepth / 2, bodyHeight), rightReturnMaterial);
+    rightReturn.position.set(bodyWidth / 2 + 0.006, 0, -bodyDepth / 4);
+    rightReturn.rotation.y = Math.PI / 2;
+    rightReturn.userData = { diagonalCornerFinishedReturn: "right", selectedFinishSideSkin: true, selectedFinishStructuralSurface: true };
+    cabinet.add(rightReturn);
+    const leftReturn = new THREE.Mesh(new THREE.PlaneGeometry(bodyWidth / 2, bodyHeight), leftReturnMaterial);
+    leftReturn.position.set(-bodyWidth / 4, 0, bodyDepth / 2 + 0.006);
+    leftReturn.userData = { diagonalCornerFinishedReturn: "left", selectedFinishSideSkin: true, selectedFinishStructuralSurface: true };
+    cabinet.add(leftReturn);
   } else if (specialty.kind === "triangle-corner") {
     const wedge = new THREE.Mesh(triangleCornerWedgeGeometry(bodyWidth, bodyDepth, bodyHeight), bodyMaterial);
     wedge.userData = { specialtyProfile: "triangle-corner", triangleCornerWedge: true, selectedStyleSideSkin: true };
@@ -5764,6 +5780,82 @@ export function addCabinet(
     };
     addPantryRow(lowerDoorHeight, -bodyHeight / 2 + 0.05 + lowerDoorHeight / 2, "lower");
     addPantryRow(upperDoorHeight, bodyHeight / 2 - 0.05 - upperDoorHeight / 2, "upper");
+  } else if (specialty.kind === "wall-angle-end") {
+    // The hypotenuse is the only door. It faces the room and tapers toward the
+    // open end; the full-depth side stays against the neighboring cabinet.
+    const hand: WallAngleEndHand = sku.wallAngleEndHand === "left" ? "left" : "right";
+    const { plan, toFeet } = wallAngleEndFeet(widthIn, depthIn, hand);
+    const face = plan.doorFace;
+    const center = toFeet(face.midpoint);
+    const doorThickness = 0.052;
+    const outwardOffset = 0.029;
+    const doorCenter = {
+      x: center.x + face.outward.x * outwardOffset,
+      z: center.z + face.outward.z * outwardOffset,
+    };
+    const doorHeight = Math.max(0.2, bodyHeight - 0.1);
+    const doorWidth = Math.max(0.12, face.length * INCH - 0.03);
+    const door = new THREE.Mesh(
+      new THREE.BoxGeometry(doorWidth, doorHeight, doorThickness),
+      sku.glassDoor ? glassDoorMaterial : faceMaterial,
+    );
+    door.position.set(doorCenter.x, 0, doorCenter.z);
+    door.rotation.y = face.rotationY;
+    door.userData = {
+      specialtyProfile: "angled-wall",
+      angledWallDoor: true,
+      wallAngleEndHand: hand,
+      flushPhysicalFace: true,
+      cabinetFront: true,
+      ...(sku.glassDoor ? { glassCabinetDoor: true, linkedGlassDoorAddon: true } : {}),
+    };
+    frontGroup.add(door);
+    addShakerFrame(
+      doorWidth,
+      doorHeight,
+      doorCenter.x + face.outward.x * 0.034,
+      0,
+      doorCenter.z + face.outward.z * 0.034,
+      face.rotationY,
+      Boolean(sku.glassDoor),
+    );
+    const pullLength = Math.min(Math.max(0.12, doorHeight * 0.28), 0.86);
+    const localX = { x: Math.cos(face.rotationY), z: -Math.sin(face.rotationY) };
+    const pullAlong = face.openSign * Math.max(0.04, doorWidth / 2 - 1.25 * INCH);
+    const pull = new THREE.Mesh(new THREE.BoxGeometry(0.022, pullLength, 0.026), hardwareMaterial);
+    pull.position.set(
+      doorCenter.x + localX.x * pullAlong + face.outward.x * 0.058,
+      -doorHeight * 0.3,
+      doorCenter.z + localX.z * pullAlong + face.outward.z * 0.058,
+    );
+    pull.rotation.y = face.rotationY;
+    pull.userData = {
+      cabinetHardware: true,
+      cabinetPull: "door",
+      diagonalDoorPull: true,
+      verticalPull: true,
+      wallAngleEndHand: hand,
+    };
+    frontGroup.add(pull);
+    if (sku.glassDoor) {
+      const shelfCount = Math.max(0, Math.min(4, Math.round(sku.adjustableShelfCount ?? 0)));
+      const shelfDepth = Math.max(0.08, bodyDepth * 0.28);
+      const shelfRecess = shelfDepth / 2 + 0.065;
+      for (let shelfIndex = 0; shelfIndex < shelfCount; shelfIndex += 1) {
+        const shelf = new THREE.Mesh(
+          new THREE.BoxGeometry(Math.max(0.08, doorWidth * 0.72), 0.024, shelfDepth),
+          new THREE.MeshStandardMaterial({ color: "#d5c7ad", roughness: 0.62, metalness: 0.01 }),
+        );
+        shelf.position.set(
+          doorCenter.x - face.outward.x * shelfRecess,
+          -doorHeight / 2 + (doorHeight * (shelfIndex + 1)) / (shelfCount + 1),
+          doorCenter.z - face.outward.z * shelfRecess,
+        );
+        shelf.rotation.y = face.rotationY;
+        shelf.userData = { visibleThroughGlassDoor: true, diagonalGlassShelf: shelfIndex + 1 };
+        frontGroup.add(shelf);
+      }
+    }
   } else if (specialty.kind === "diagonal-corner") {
     // Match the 2D diagonal corner: a square corner body with two center-meeting
     // doors on the actual 45-degree clipped front—not in the center plane of the
@@ -11441,6 +11533,9 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
           ...baseSku,
           catalogImageUrl: resolvedPlacedCabinetFrontVisual(cabinet, cabinetFrontVisuals, baseSku.catalogImageUrl),
 	          fillerTransitionFootprint: transitionFootprint,
+          ...(isWallAngleEndCabinet(cabinet)
+            ? { wallAngleEndHand: wallAngleEndHandForPlacement(cabinet, room, renderedPlaced) }
+            : {}),
         };
 	        const cabinetFinish = resolvedPlacedCabinetFinish(cabinet, visibleCabinetFinishOverrides, finish);
         const cabinetDoorProfile = resolvedPlacedCabinetDoorProfile(cabinet, cabinetDoorProfiles, resolvedDoorProfile);

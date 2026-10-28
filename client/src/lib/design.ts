@@ -1,6 +1,7 @@
 // ─── Kitchen Design geometry & snapping engine ──────────────────────────────
 // All real-world units are INCHES. The canvas converts inches → pixels via PPI.
 import { baseAngleEndCountertopLocalPoints, isBaseAngleEndCabinet, type BaseAngleEndHand } from "@/lib/baseAngleEndLayout";
+import { isWallAngleEndCabinet, wallAngleEndHandFromRun, type WallAngleEndHand } from "@/lib/wallAngleEndLayout";
 import { freestandingCountertopSurfaces, isFreestandingBase } from "@/lib/freestandingRun";
 import {
   closestWall as closestPolygonWall,
@@ -5762,9 +5763,9 @@ function height_safe(roomDepth: number, _placement: Placement): number {
 export function isCornerCabinet(masterCode: string, description?: string): boolean {
   const code = (masterCode || "").toUpperCase();
   const desc = (description || "").toLowerCase();
-  // AW = angled WALL-END cabinet. It finishes a normal wall run with a 45°
-  // exposed face; it is not installed in or owned by a room corner.
-  if (/^AW[-\d]/.test(code) || (/\bangle(?:d)? wall end\b/.test(desc) && !/corner/.test(desc))) return false;
+  // WAC/AW is an angled WALL-END cabinet. It finishes a normal wall run with a
+  // 45° exposed face; it is not installed in or owned by a room corner.
+  if (isWallAngleEndCabinet({ masterCode, description })) return false;
   // ERB/BER are the easy-reach corner base codes (BER is the Skyline naming;
   // ERB is how the catalog stores the same cabinet). WER is the wall easy-reach.
   // LS## = Lazy Susan (e.g. LS3612, LS3312); LSB## = Lazy Susan Base (older naming)
@@ -5780,11 +5781,41 @@ export function isCornerCabinet(masterCode: string, description?: string): boole
 // this to keep AW units OUT of the Corner palette tab while its dedicated plan
 // clip and 3D profile still render the angled exposed end.
 export function isAngledWallCabinet(masterCode: string, description?: string): boolean {
-  const code = (masterCode || "").toUpperCase();
-  const desc = (description || "").toLowerCase();
-  // A genuine corner unit (e.g. "corner" in the text) is never an angled wall.
-  if (/corner/.test(desc)) return false;
-  return /^AW[-\d]/.test(code) || /\bangled wall\b/.test(desc);
+  return isWallAngleEndCabinet({ masterCode, description });
+}
+
+/**
+ * The open end of a wall angle cabinet along its wall run. "start" is the
+ * lower along-run coordinate. A neighbor on only one side selects the other
+ * side; a cabinet alone on the wall tapers toward the nearer wall end.
+ */
+export function wallAngleEndOpenSide(
+  cabinet: PlacedCabinet,
+  room: RoomData,
+  others: readonly PlacedCabinet[] = [],
+): "start" | "end" {
+  const side = cabinetWall(cabinet, room);
+  const measure = wallSpanMeasure(cabinet, room, others.filter((item) => item.uid !== cabinet.uid), side);
+  const startOpen = !measure.beforeIsCabinet;
+  const endOpen = !measure.afterIsCabinet;
+  if (startOpen !== endOpen) return startOpen ? "start" : "end";
+  return measure.start <= measure.wallLen - measure.end ? "start" : "end";
+}
+
+/** Viewer-right hand for a wall angle cabinet sitting on this room's run. */
+export function wallAngleEndHandForPlacement(
+  cabinet: PlacedCabinet,
+  room: RoomData,
+  others: readonly PlacedCabinet[] = [],
+): WallAngleEndHand {
+  const frame = wallRunFrame(cabinetWall(cabinet, room), room);
+  const openSide = wallAngleEndOpenSide(cabinet, room, others);
+  if (!frame) return openSide === "start" ? "left" : "right";
+  return wallAngleEndHandFromRun({
+    openSide,
+    tangent: frame.tangent,
+    facingRotation: frame.facingRotation,
+  });
 }
 
 /**
