@@ -9469,7 +9469,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           // Center the upper over the fridge run, flush to the same wall.
           const fridgeCenterAlong = fridgeStart + fw / 2;
           const along = fridgeCenterAlong - aWidth / 2;
-          const spot = wallPlacementAt(along, aWidth, aDepth, side, room);
+          // Exact (unclamped) like the end panels: the option fitter below shifts
+          // the refrigerator and every new option by one amount, so a part
+          // pre-clamped at a wall end would no longer line up with the others.
+          const spot = wallPlacementAtUnbounded(along, aWidth, aDepth, side, room);
           // Refrigerator uppers begin at the fixed 72" datum rather than being
           // pulled up by the room ceiling or a neighboring wall cabinet. The
           // side panels share the resulting cap.
@@ -9521,7 +9524,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	            const addCapFiller = (role: "bridge-left-filler" | "bridge-right-filler", along: number) => {
 	              // This is an optional, source-priced cap filler. It is placed as
 	              // its own wall item and cannot shift the refrigerator or panels.
-              const fillerSpot = wallPlacementAt(along, eachFillerWidth, aDepth, side, room);
+              // Exact, like the end panels; see the bridge cabinet above. A clamped
+              // cap filler at a corner left a gap beside the corner-side panel.
+              const fillerSpot = wallPlacementAtUnbounded(along, eachFillerWidth, aDepth, side, room);
               toPlace.push({
                 uid: makeUid(),
                 cabinetId: filler.id,
