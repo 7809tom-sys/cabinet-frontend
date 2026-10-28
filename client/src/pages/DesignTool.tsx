@@ -20279,18 +20279,19 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	          ]);
           setSelectedSinkUid(sinkWithFaucet.uid);
           setCabAttr(sinkBaseDialog.cabinetUid, { sinkTopType: "sink", sinkTopProductId: sinkProduct?.id ?? null, faucetProductId: faucetProduct?.id ?? null, faucetImageUrl: faucetProduct?.imageUrl ?? null, sinkImageUrl: sinkProduct?.imageUrl ?? null, rangeTopImageUrl: null, rangeTopFinish: null });
-          if (sinkProduct) {
-            addRecommendedSurface(
-              { id: sinkProduct.id, slug: sinkProduct.slug, name: sinkProduct.name, category: sinkProduct.category, subCategory: sinkProduct.subCategory, size: sinkProduct.size, imageUrl: sinkProduct.imageUrl, sellPrice: sinkProduct.sellPrice },
-              "sink"
-            );
-          }
-          if (faucetProduct) {
-            addRecommendedSurface(
-              { id: faucetProduct.id, pelicanCode: faucetProduct.pelicanCode, slug: faucetProduct.slug, name: faucetProduct.name, category: faucetProduct.category, subCategory: faucetProduct.subCategory, size: faucetProduct.size, imageUrl: faucetProduct.imageUrl, sellPrice: faucetProduct.sellPrice },
-              "faucet"
-            );
-          }
+          // The fixture above already carries this sink and faucet. Only record
+          // them as selected products here: addRecommendedSurface would re-place
+          // the sink from the pre-update sink list, replacing this fixture with a
+          // faucet-less one, and then fail to find a sink for the faucet.
+          const selectedFixtureProducts: SelectedSurface[] = [
+            ...(sinkProduct ? [{ id: sinkProduct.id, pelicanCode: sinkProduct.pelicanCode, slug: sinkProduct.slug, name: sinkProduct.name, category: sinkProduct.category, subCategory: sinkProduct.subCategory, size: sinkProduct.size, imageUrl: sinkProduct.imageUrl, sellPrice: sinkProduct.sellPrice }] : []),
+            ...(faucetProduct ? [{ id: faucetProduct.id, pelicanCode: faucetProduct.pelicanCode, slug: faucetProduct.slug, name: faucetProduct.name, category: faucetProduct.category, subCategory: faucetProduct.subCategory, size: faucetProduct.size, imageUrl: faucetProduct.imageUrl, sellPrice: faucetProduct.sellPrice }] : []),
+          ];
+          setSelectedSurfaces((prevSurfaces) => [
+            ...prevSurfaces,
+            ...selectedFixtureProducts.filter((product) => !prevSurfaces.some((surface) => surface.id === product.id)),
+          ]);
+          setCountertop(true);
           setSinkBaseDialog(null);
           setRangeTopStep("choose");
           setPendingSinkProduct(null);
