@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import * as THREE from "three";
+import { baseAngleEndPlan } from "@/lib/baseAngleEndLayout";
 import { canSyncThreeDOrderToCart, constrainedThreeDWallHeight, exactFittedFillerInches, filteredThreeDCatalogItems, hybridPlanUnderlayModel, resolvedPlacedCabinetDoorProfile, resolvedPlacedCabinetDoorSampleUrl, resolvedPlacedCabinetFinish, resolvedThreeDWallHeights, shouldShowThreeDCatalog, THREE_D_EMBEDDED_TOOLBAR_CLASS, THREE_D_WORKSPACE_ACTIONS, threeDCabinetHitFromObject, threeDDecorativeEndSides, threeDDrawerZoneHeight, threeDFillerMeasurementNoticeEntries, threeDFittedFillerWidthText, threeDFrontDatumSnapIndicators, threeDHasVerifiedDoorLayout, threeDOrderLineForSelectedCabinet, threeDPointerSelectsCabinet, threeDPreviewFadeAllowed, threeDSelectedCabinetDescription, threeDSelectedCabinetDockClass, threeDSelectionFromPlaced, threeDStructuralFinish, threeDTallPantryDoorsPerRow, threeDTemporaryPreviewCounterText, threeDTouchTapOpensWindow, threeDUpperCabinetWallMinimums, threeDUsesAuthoritativePlanScene, threeDUsesCatalogFrontVisual, threeDWallClearanceText, threeDWallFitGuideText, threeDWallSideForEdge, threeDWallSideForPolygonEdge, updatedThreeDWallHeights } from "./InteractiveRoom3D";
 import { addCabinet, addPotFillerFixture, addSinkFixture, addThreeDPeninsulaCountertops, addWallOpening, cornerDrawerFrontLayout, describedOvenSpecification, diagonalCornerFootprintVertices, diagonalCornerFrontWidth, dimensions, doorProfileKind, existingCabinetTransform, existingCabinetSku, freestandingRangeHeightProfile, hasPersistedTwoDScene, isEnclosedWallMicrowaveCabinet, isEqualHeightTwoDrawerBase, lCornerCarcassParts, openingTransform, potFillerWallMountTransform, quoteMaterialDetails, rangeCooktopLayout, rangeHoodFrontGeometry, rangeHoodGeometry, rangeHoodSceneStatus, rangeOvenFrontLayout, resolvedCatalogFinish, resolvedPlacedCabinetFrontVisual, resolvedThreeDCountertopFinish, resolvedThreeDDoorProfile, resolvedThreeDDoorSampleUrl, resolvedThreeDDrawerRows, resolvedThreeDFaceLayout, resolvedThreeDOvenLayout, resolvedThreeDSpecialtyProfile, savedRangeHoodTransform, sceneCabinetColor, shouldRenderCountertopOverSceneItem, shouldRenderPlacedDesign, shouldRenderSavedSceneCabinet, sinkFaucetTransform, sinkFixtureTransform, singleOvenTowerAssembly, threeDApplianceFrontVisualUrl, threeDBlindCornerFrontLayout, threeDCabinetFrontVisualUrl, threeDCameraDistanceLimits, threeDCountertopDepthIn, threeDDoorMaterialFallback, threeDFaceMaterialColor, threeDMaterialStatusText, threeDPhotoRenderDoorReferenceStatus, threeDPeninsulaCountertopGeometry, threeDPlacedWall, threeDPlanSyncText, threeDRoomFacingRotation, threeDSceneInputDiagnostics, threeDSceneRevisionKey, threeDSceneVisibilityContract, threeDShakerFramePose, threeDShakerRailThickness, threeDUsesDoorSampleTexture, threeDUsesExactDoorSampleMaterial, threeDUsesPhysicalShakerRails, threeDVisibleMaterialMode, triangleCornerFootprintVertices, triangleCornerFrontPose, triangleCornerFrontWidth, THREE_D_DRAWER_REVEAL_DEPTH, THREE_D_EXPORT_SIZE, THREE_D_ROOM_CONTEXT_DEFAULT, THREE_D_WALL_DEPTH_WRITE, THREE_D_WALL_OPACITY, type InteractiveRoomScene } from "./InteractiveRoom3D";
 import { addFurniture, addIslandZone, furnitureTransform, islandZoneTransform, ponyWallTransform } from "./InteractiveRoom3D";
@@ -26,7 +27,7 @@ import { AEF_PRINTED_GEOMETRY_MARKER } from "@shared/aefFramelessGeometry";
 import { ovenOpeningGeometry } from "@/lib/ovenOpening";
 import { addThreeDCrownMolding, applyThreeDStructuralFinishMaterials, threeDStructuralSampleTexture } from "./InteractiveRoom3D";
 import { addThreeDProductionLightRig, normalizeThreeDPlanarUv, THREE_D_BACKSPLASH_FACE_INSET_IN, THREE_D_BACKSPLASH_TILE_SIZE_IN, threeDBacksplashPlaneUv, threeDBacksplashRenderInterval, threeDBacksplashSegments, threeDBacksplashSupportSpans, threeDBacksplashTileTextureTransform, threeDBacksplashTransform, threeDCabinetGrainTransform, threeDCountertopUpstandSegments, threeDCountertopSlabTextureTransform, threeDDoorFinishSurfaceProfile, threeDFlooringPatternProfile, threeDPhysicalSurfaceProfile, threeDPlankAtlasProfile, threeDProductMaterialSource, threeDProductSurfaceTextureTransform, threeDRenderQualityProfile, threeDSupportsBacksplash, threeDSurfaceImageCrop, threeDSurfaceTextureTransform } from "./InteractiveRoom3D";
-import kitchenFixture from "../../lib/__fixtures__/fourAnchorGapKitchen.json";
+import kitchenFixture from "../../lib/__fixtures__/autoDesignGapKitchen.json";
 import type { PlacedCabinet, RoomData, WallOpening } from "@/lib/design";
 
 // The production default is intentionally push-to-open/no decorative hardware.
@@ -3504,7 +3505,7 @@ describe("interactive 3D room scene helpers", () => {
     })).toEqual({ kind: "corner-drawer", pattern: null });
     expect(resolvedThreeDSpecialtyProfile({
       masterCode: "BEC-24", description: "Base End Cabinet", graphicType: "base_end_return", customProfile: "end-angle", facePattern: null, cornerType: null,
-    })).toEqual({ kind: "standard", pattern: null });
+    })).toEqual({ kind: "base-angle-end", pattern: null });
     expect(resolvedThreeDSpecialtyProfile({
       masterCode: "WRC-30", description: "Wine Rack", graphicType: null, customProfile: null, facePattern: "lattice", cornerType: null,
     })).toEqual({ kind: "face-pattern", pattern: "lattice" });
@@ -4337,7 +4338,7 @@ describe("interactive 3D room scene helpers", () => {
     expect(diagnostics.mapped.map((cabinet) => cabinet.masterCode)).toEqual(["CDB36", "BMC30", "DW-24", "W-30-42", "BEC-24"]);
     expect(resolvedThreeDFaceLayout(diagnostics.mapped[1]!)).toEqual({ hasConfiguredOpening: true, doorCount: 0, drawerCount: 1 });
     expect(resolvedThreeDSpecialtyProfile(diagnostics.mapped[0]!)).toEqual({ kind: "corner-drawer", pattern: null });
-    expect(resolvedThreeDSpecialtyProfile(diagnostics.mapped[4]!)).toEqual({ kind: "standard", pattern: null });
+    expect(resolvedThreeDSpecialtyProfile(diagnostics.mapped[4]!)).toEqual({ kind: "base-angle-end", pattern: null });
     expect(shouldRenderCountertopOverSceneItem("appliance", diagnostics.mapped[2]!.masterCode)).toBe(true);
     expect(existingCabinetTransform(placed[3])).toMatchObject({ x: 15, z: 42, bottom: 54 });
   });
@@ -7636,7 +7637,7 @@ describe("interactive 3D room scene helpers", () => {
       { masterCode: "B-24", description: "Base Cabinet", placementType: "base", width: 24, height: 34.5, depth: 24, numberOfDoors: 2, numberOfDrawers: 1, expectedRotations: [0, 0, 0] },
       { masterCode: "T-24", description: "Tall Cabinet", placementType: "tall", width: 24, height: 84, depth: 24, numberOfDoors: 2, numberOfDrawers: 0, expectedRotations: [0, 0] },
       { masterCode: "WDC2430", description: "Diagonal Wall Corner", placementType: "wall", width: 24, height: 30, depth: 24, numberOfDoors: 2, numberOfDrawers: 0, cornerType: "diagonal", expectedRotations: [Math.PI / 4, Math.PI / 4] },
-      { masterCode: "BEC-24", description: "Base End Cabinet", placementType: "base", width: 30, height: 34.5, depth: 24, numberOfDoors: 1, numberOfDrawers: 0, customProfile: "base_end_return", expectedRotations: [0] },
+      { masterCode: "BEC-24", description: "Base End Cabinet", placementType: "base", width: 30, height: 34.5, depth: 24, numberOfDoors: 1, numberOfDrawers: 0, customProfile: "base_end_return", expectedRotations: baseAngleEndPlan().doorFaces.map((face) => face.rotationY) },
     ];
 
     for (const fixture of fixtures) {
@@ -8028,7 +8029,7 @@ describe("interactive 3D room scene helpers", () => {
     expect(becDoors.every((door) => door.userData.doorWidthIn === 8.45 && door.userData.referenceFaceSideIn === 24 && door.userData.attachedEndFront)).toBe(true);
   });
 
-  it("renders BEC24 as a 24-inch square end cabinet with two doors on one flat front", () => {
+  it("renders BEC24 as a quarter-octagon with two 17-inch doors, a recessed toe kick, and no catalog plane", () => {
     const sku = {
       distributorSkuId: -24,
       cabinetId: 9390014,
@@ -8041,36 +8042,46 @@ describe("interactive 3D room scene helpers", () => {
       numberOfDoors: 2,
       numberOfDrawers: 0,
       customProfile: "base-end-quarter-octagon",
+      catalogImageUrl: "/manus-storage/media-library/1791472963612_bec24_1305129d",
     } as never;
-    expect(resolvedThreeDSpecialtyProfile(sku)).toEqual({ kind: "standard", pattern: null });
+    expect(resolvedThreeDSpecialtyProfile(sku)).toEqual({ kind: "base-angle-end", pattern: null });
+    expect(threeDCabinetFrontVisualUrl(sku)).toBeNull();
 
     const root = new THREE.Group();
     addCabinet(root, sku, null, {}, 144, 120, "#8a9ba8", "#f8f8f6");
-    const retiredFaces: THREE.Object3D[] = [];
-    const standardDoors: THREE.Mesh[] = [];
     const bodies: THREE.Mesh[] = [];
+    const doors: THREE.Mesh[] = [];
+    const pulls: THREE.Object3D[] = [];
+    const kicks: THREE.Object3D[] = [];
+    const tops: THREE.Object3D[] = [];
+    const planes: THREE.Object3D[] = [];
     root.traverse((node) => {
-      if (node.userData.nonCornerEndReturnDoor) retiredFaces.push(node);
-      if (node instanceof THREE.Mesh && node.userData.cabinetFront && !node.userData.cabinetDrawerFront) standardDoors.push(node);
-      if (node instanceof THREE.Mesh && node.userData.selectedStyleSideSkin && !node.userData.baseToeKick) bodies.push(node);
+      if (node.userData.baseAngleEndBody && node instanceof THREE.Mesh) bodies.push(node);
+      if (node.userData.baseAngleEndDoor && node instanceof THREE.Mesh) doors.push(node);
+      if (node.userData.baseAngleEndPull) pulls.push(node);
+      if (node.userData.baseAngleEndToeKick) kicks.push(node);
+      if (node.userData.baseAngleEndCountertop) tops.push(node);
+      if (node.userData.authoritativeCabinetFrontVisual) planes.push(node);
     });
-    expect(retiredFaces).toHaveLength(0);
-    expect(standardDoors).toHaveLength(2);
-    // "Quarter-Octagon" contains "-Oc". A broad OC oven-code match formerly
-    // rendered two oven-zone doors plus black oven glass instead of BEC fronts.
-    expect(standardDoors.every((door) => !door.userData.ovenCabinetDoor)).toBe(true);
+    expect(bodies).toHaveLength(1);
+    expect(doors).toHaveLength(2);
+    expect(pulls).toHaveLength(2);
+    expect(kicks).toHaveLength(1);
+    expect(tops).toHaveLength(1);
+    expect(planes).toHaveLength(0);
+    expect(doors.every((door) => door.userData.doorWidthIn === 17 && door.userData.doorPitchDegrees === 45 || Math.abs(door.userData.doorPitchDegrees - 45) < 1e-6)).toBe(true);
+    expect(doors.map((door) => door.userData.baseAngleEndDoor).sort()).toEqual(["end", "front"]);
+    // "Quarter-Octagon" contains "-Oc". That must not become an oven opening.
     const falseOvenParts: THREE.Object3D[] = [];
     root.traverse((node) => { if (node.userData.ovenCabinetOpening || node.userData.ovenCabinetDoor) falseOvenParts.push(node); });
     expect(falseOvenParts).toHaveLength(0);
-    expect(bodies).toHaveLength(1);
     root.updateMatrixWorld(true);
     const box = new THREE.Box3().setFromObject(bodies[0]!);
-    expect(box.max.x - box.min.x).toBeCloseTo(24 / 12, 6);
-    expect(box.max.z - box.min.z).toBeCloseTo(24 / 12, 6);
-    const doorBoxes = standardDoors.map((door) => new THREE.Box3().setFromObject(door));
-    expect(doorBoxes[0]!.max.x).toBeLessThan(doorBoxes[1]!.min.x);
-    expect(doorBoxes[0]!.min.z).toBeCloseTo(doorBoxes[1]!.min.z, 6);
-    expect(doorBoxes[0]!.max.z).toBeCloseTo(doorBoxes[1]!.max.z, 6);
+    expect(box.max.x - box.min.x).toBeCloseTo(24 / 12, 5);
+    expect(box.max.z - box.min.z).toBeCloseTo(24 / 12, 5);
+    const neighborWall = -12 / 12;
+    expect(box.min.x).toBeGreaterThanOrEqual(neighborWall - 1e-4);
+    expect(doors.every((door) => door.userData.faceWidthIn > 17)).toBe(true);
   });
 
   it("keeps standard configured doors and drawers fully outside their physical carcass face without overhanging its width", () => {

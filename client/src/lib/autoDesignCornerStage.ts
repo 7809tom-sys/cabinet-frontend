@@ -28,25 +28,48 @@ export type AutoBuildCornerCandidate = AutoBuildCatalogCandidate & {
   pullMax?: number | null;
 };
 
-/**
- * Keep the requested L/U vertices, and also require any real shared vertex
- * between the measured appliance runs. A Single wall dropdown must not permit
- * appliances on adjoining walls to create a cornerless L-shaped kitchen.
- * Opposing galley runs have no shared endpoint and remain corner-free.
- */
-export function autoDesignCornerSlots(layoutType: AutoDesignLayoutType, measured?: {
+export type AutoDesignCornerMeasurement = {
   wallIds: readonly string[];
   room: RoomData;
   originCorner: AutoDesignOriginCorner;
   runDirection: AutoDesignRunDirection;
-}): AutoDesignCornerSlot[] {
+};
+
+/**
+ * Corner cabinets belong only where two kitchen runs meet.
+ *
+ * A U-shape has one back run and two side runs, so it has two corners. The
+ * open end of a side run — where that run meets the empty front wall of a
+ * closed room — is not a corner. Treating that open end as a corner, and also
+ * discovering the other side run from an appliance, is what placed a third
+ * corner cabinet and then warned that the extra corner still needed one.
+ *
+ * An L-shape has the single back-to-side corner. A single wall or galley has
+ * none, except that appliances measured on two adjoining walls still reveal
+ * the one real corner those runs share. Opposing galley runs do not share an
+ * endpoint.
+ */
+export function autoDesignCornerSlots(layoutType: AutoDesignLayoutType, measured?: AutoDesignCornerMeasurement): AutoDesignCornerSlot[] {
   const slots: AutoDesignCornerSlot[] = [];
   const add = (firstWall: WallLabel, secondWall: WallLabel) => {
-    const id = `${firstWall}-${secondWall}`.toLowerCase().replaceAll(" ", "-");
-    if (!slots.some((slot) => slot.id === id)) slots.push({ id, label: `Corner between ${firstWall} and ${secondWall}`, firstWall, secondWall });
+    const ordered = AUTO_DESIGN_WALL_LABELS.indexOf(firstWall) <= AUTO_DESIGN_WALL_LABELS.indexOf(secondWall)
+      ? [firstWall, secondWall] as const
+      : [secondWall, firstWall] as const;
+    const id = `${ordered[0]}-${ordered[1]}`.toLowerCase().replaceAll(" ", "-");
+    if (!slots.some((slot) => slot.id === id)) {
+      slots.push({ id, label: `Corner between ${ordered[0]} and ${ordered[1]}`, firstWall: ordered[0], secondWall: ordered[1] });
+    }
   };
-  if (layoutType === "l-shape" || layoutType === "u-shape") add("Wall 1", "Wall 2");
-  if (layoutType === "u-shape" && kitchenRuleNumber("u_shape_corner_count") >= 2) add("Wall 2", "Wall 3");
+  if (layoutType === "l-shape") {
+    if (!measured || wallsShareVertex("Wall 1", "Wall 2", measured)) add("Wall 1", "Wall 2");
+    return slots;
+  }
+  if (layoutType === "u-shape") {
+    const pairs = measured ? uShapeCornerPairs(measured) : [["Wall 1", "Wall 2"], ["Wall 1", "Wall 4"]] as const;
+    const limit = Math.max(0, kitchenRuleNumber("u_shape_corner_count"));
+    for (const [firstWall, secondWall] of pairs.slice(0, limit)) add(firstWall, secondWall);
+    return slots;
+  }
   if (!measured) return slots;
   const occupied = AUTO_DESIGN_WALL_LABELS.filter((label) => {
     const ref = wallLabelToEngineWallId(label, measured.room, measured.originCorner, measured.runDirection);
@@ -54,13 +77,78 @@ export function autoDesignCornerSlots(layoutType: AutoDesignLayoutType, measured
   });
   for (let first = 0; first < occupied.length; first++) {
     for (let second = first + 1; second < occupied.length; second++) {
-      const candidate = { id: "", label: "", firstWall: occupied[first], secondWall: occupied[second] };
-      if (autoDesignCornerSlotPoint(candidate, measured.room, measured.originCorner, measured.runDirection)) {
-        add(candidate.firstWall, candidate.secondWall);
-      }
+      if (wallsShareVertex(occupied[first]!, occupied[second]!, measured)) add(occupied[first]!, occupied[second]!);
     }
   }
   return slots;
+}
+
+/** The message shown when a real L or U corner was left without a corner cabinet. */
+export function autoDesignMissingCornerMessage(slot: AutoDesignCornerSlot): string {
+  return `A corner cabinet is required at every Auto-Design L/U corner. Choose a source-priced corner for ${slot.label} before filling the remaining runs.`;
+}
+
+/**
+ * Warnings for real corners that still have no cabinet. A finished U-shape
+ * (its two back corners chosen) returns none. An empty real L or U corner
+ * still warns. Open ends are not slots, so they cannot produce a warning.
+ */
+export function autoDesignMissingCornerWarnings(
+  slots: readonly AutoDesignCornerSlot[],
+  choices: Readonly<Record<string, { cabinetId: number | null } | undefined>>,
+): string[] {
+  return slots
+    .filter((slot) => (choices[slot.id]?.cabinetId ?? null) == null)
+    .map((slot) => autoDesignMissingCornerMessage(slot));
+}
+
+function wallsShareVertex(firstWall: WallLabel, secondWall: WallLabel, measured: AutoDesignCornerMeasurement): boolean {
+  return autoDesignCornerSlotPoint(
+    { id: "", label: "", firstWall, secondWall },
+    measured.room,
+    measured.originCorner,
+    measured.runDirection,
+  ) != null;
+}
+
+/** Walls that meet `label` at one of its endpoints, one wall per endpoint. */
+function wallsMeeting(label: WallLabel, measured: AutoDesignCornerMeasurement): WallLabel[] {
+  const found: WallLabel[] = [];
+  const seen = new Set<string>();
+  for (const other of AUTO_DESIGN_WALL_LABELS) {
+    if (other === label) continue;
+    const point = autoDesignCornerSlotPoint(
+      { id: "", label: "", firstWall: label, secondWall: other },
+      measured.room,
+      measured.originCorner,
+      measured.runDirection,
+    );
+    if (!point) continue;
+    const key = `${Math.round(point.x * 1000)}:${Math.round(point.y * 1000)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    found.push(other);
+  }
+  return found;
+}
+
+/**
+ * The two corners of a U are the two ends of the back run.
+ * On a rectangular plan Wall 1 is that back run, and its two neighbors are the
+ * side runs. The front wall shares no vertex with the back, so the open ends
+ * where the side runs meet the front are not returned.
+ * On an open three-wall U drawn from a side run, Wall 1 has one neighbor: that
+ * neighbor is the back, and both of its joins are the corners.
+ */
+function uShapeCornerPairs(measured: AutoDesignCornerMeasurement): Array<[WallLabel, WallLabel]> {
+  const backNeighbors = wallsMeeting("Wall 1", measured);
+  if (backNeighbors.length >= 2) return backNeighbors.slice(0, 2).map((side) => ["Wall 1", side]);
+  const back = backNeighbors[0];
+  if (!back) return [];
+  const sideRuns = wallsMeeting(back, measured);
+  if (sideRuns.length >= 2) return sideRuns.slice(0, 2).map((side) => [back, side]);
+  if (sideRuns.length === 1) return [[back, sideRuns[0]!]];
+  return [];
 }
 
 /** Resolve the exact shared engine vertex for a selected wall-label pair. */

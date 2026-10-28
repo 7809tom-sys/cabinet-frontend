@@ -128,7 +128,7 @@ describe("admin auto-design Designer wiring", () => {
     expect(pageSource).toContain("wallIds: selectedWalls, room, originCorner: input.originCorner, runDirection: input.runDirection");
     expect(pageSource).toContain("nextAvailableRoomCornerPlacement");
     expect(pageSource).toContain("completeAutoDesignLayout");
-    expect(pageSource).toContain("A corner cabinet is required at every Auto-Design L/U corner");
+    expect(pageSource).toContain("autoDesignMissingCornerMessage");
   });
 
   it("runs aligned source-priced wall cabinets only after required corners and regular base runs", () => {

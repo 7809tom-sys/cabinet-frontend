@@ -83,6 +83,24 @@ describe("mandatory Auto-Design refrigerator bay", () => {
     ]));
   });
 
+  it("cuts a 30 inch refrigerator end panel to a shallower 24 inch refrigerator and remembers the stock depth", () => {
+    const result = buildMandatoryAutoDesignRefrigeratorBay({
+      refrigerator: { ...refrigerator(), depth: 24 },
+      room,
+      caps: [source({ id: 200 })],
+      endPanels: [source({ id: 201, masterCode: "REPV3096", description: "Refrigerator End Panel", category: "Panel", subCategory: "Refrigerator End Panel", width: "0.75", height: "96", depth: "30", placement: "tall", numberOfDoors: 0 })],
+      styleId: 9,
+      makeUid: (() => { let index = 0; return () => `cut-panel-${++index}`; })(),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const panels = result.additions.filter((item) => item.refrigeratorAssemblyRole?.endsWith("panel"));
+    expect(panels).toEqual([
+      expect.objectContaining({ masterCode: "REPV3096", depth: 24, refrigeratorPanelStockDepth: 30 }),
+      expect.objectContaining({ masterCode: "REPV3096", depth: 24, refrigeratorPanelStockDepth: 30 }),
+    ]);
+  });
+
   it("rejects an Auto-Design refrigerator width other than the mandatory 36-inch bay", () => {
     const result = buildMandatoryAutoDesignRefrigeratorBay({
       refrigerator: { ...refrigerator(), masterCode: "FRIDGE-33", width: 33 },

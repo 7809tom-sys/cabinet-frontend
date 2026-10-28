@@ -1,6 +1,7 @@
 import { doorOpeningAppearance } from "@/lib/doorOpeningAppearance";
 import { threeDLatticeRackLayout } from "@/lib/latticeRackLayout";
 import { PLATE_RACK_FRAME_IN, plateRackDividerLayout } from "@/lib/plateRackLayout";
+import { baseAngleEndPlan } from "@/lib/baseAngleEndLayout";
 import {
   PlacedCabinet, RoomData, STD, elevationBox, WallOpening,
   FinishColors, DEFAULT_FINISH_COLORS, CROWN_HEIGHT_IN, TOE_KICK_HEIGHT_IN, BATTEN_WIDTH_IN, LIGHT_RAIL_HEIGHT_IN,
@@ -696,6 +697,7 @@ export function ElevationView({
               drawerSampleUrl={cabDrawerSampleUrl}
               faceWidthIn={p.width}
               faceHeightIn={p.height}
+              angleEndHand={p.angleEndHand}
             />
           )}
           {applianceVisualUrl && (
@@ -881,6 +883,11 @@ export function ElevationView({
               {p.masterCode}
             </span>
           </div>}
+          {isRefrigeratorEndPanel(p) && (
+            <span data-testid="elevation-refrigerator-panel-depth" className="pointer-events-none absolute bottom-0.5 left-0 right-0 z-[6] truncate text-center text-[7px] font-bold leading-none text-[#1a2744]" style={textFlip}>
+              {formatEighthInches(Number(p.depth) || 0)} D
+            </span>
+          )}
         </div>
       </div>
     );
@@ -2398,6 +2405,7 @@ export function CustomProfileFace({
   faceWidthIn,
   faceHeightIn,
   squareOpenEndShelf = false,
+  angleEndHand = null,
 }: {
   profile: string;
   face: string;
@@ -2411,6 +2419,8 @@ export function CustomProfileFace({
   faceHeightIn?: number;
   /** Verified KitchenCrest OE6 line art uses square, not bowed, shelf fronts. */
   squareOpenEndShelf?: boolean;
+  /** AW only: "left" mirrors the drawing so the door sits on the open end. */
+  angleEndHand?: "left" | "right" | null;
 }) {
   const shelfCount = Math.max(2, fixedShelves || adjustableShelves || 3);
   const rail = `color-mix(in srgb, ${face} 68%, #000)`;
@@ -2484,7 +2494,7 @@ export function CustomProfileFace({
     // high. The SKU supplies shelf count; every height keeps one side-hinged door
     // and the same 45-degree exposed-end casing instead of a split WDC face.
     return (
-      <div data-cabinet-profile="angled-wall" className="absolute inset-0 overflow-hidden" style={{ border: `3px solid ${edge}`, background: cavity }}>
+      <div data-cabinet-profile="angled-wall" data-angle-end-hand={angleEndHand === "left" ? "left" : "right"} className="absolute inset-0 overflow-hidden" style={{ border: `3px solid ${edge}`, background: cavity, transform: angleEndHand === "left" ? "scaleX(-1)" : undefined }}>
         <div className="absolute left-0 top-0 bottom-0 w-[60%]" style={{ borderRight: `2px solid ${rail}` }}>
           {shelves}
         </div>
@@ -3224,28 +3234,51 @@ export function DoorFront({ kind, edge, face, doors, drawers, isWall, doorSample
     );
   }
 
-  // ─── SPECIALTY TYPE: BASE END CABINET, 45° ANGLED FRONT ─────────────────
-  // BEC-24 is a 24-by-24 end cabinet, not a room corner. Its single 45-degree
-  // front plane is approximately 17 inches wide and carries two equal 8.45-inch
-  // doors which meet on the center seam.
+  // ─── SPECIALTY TYPE: QUARTER-OCTAGON BASE ANGLE END ────────────────────
+  // Two 24" sides sit against the wall and the neighbor. Two door faces meet
+  // at a 45° pitch. Elevation shows their run-direction spans: about 17" for
+  // the frontal door and about 7" for the foreshortened end door.
   if (cabinetType === "end-angle") {
+    const plan = baseAngleEndPlan();
+    const totalHeight = cabinetHeightIn ?? 34.5;
+    const kickPct = Math.min(40, (plan.toeKickIn / totalHeight) * 100);
+    const ordered = [
+      plan.doorFaces.find((doorFace) => doorFace.id === "front")!,
+      plan.doorFaces.find((doorFace) => doorFace.id === "end")!,
+    ];
+    const span = ordered.reduce((sum, doorFace) => sum + doorFace.runSpanIn, 0) || 1;
+    let cursor = 0;
+    const seamAt = (ordered[0]!.runSpanIn / span) * 100;
     return withFace(
-      <div data-bec-angled-end-face="true" data-bec-45-angle="true" className="absolute inset-0 overflow-hidden">
-        <div
-          className="absolute top-[3%] bottom-[3%] left-[3%] right-[3%] overflow-hidden"
-          style={{
-            clipPath: "polygon(0 5%, 100% 0, 100% 100%, 0 95%)",
-            boxShadow: `inset 0 0 0 2px ${edge}aa, inset 0 -2px 4px rgba(0,0,0,0.14)`,
-          }}
-        >
-          <div data-bec-angled-left-door="8.45in" className="absolute left-0 top-0 bottom-0" style={{ width: "50%" }}>
-            <SingleDoorPanel kind={kind} edge={edge} face={face} stroke={stroke} doorSampleUrl={doorSampleUrl} isWall={isWall} frameInsetPx={frameInsetPx} faceWidthIn={8.45} faceHeightIn={cabinetHeightIn ?? 34.5} />
-          </div>
-          <div data-bec-angled-right-door="8.45in" className="absolute right-0 top-0 bottom-0" style={{ width: "50%" }}>
-            <SingleDoorPanel kind={kind} edge={edge} face={face} stroke={stroke} doorSampleUrl={doorSampleUrl} isWall={isWall} frameInsetPx={frameInsetPx} faceWidthIn={8.45} faceHeightIn={cabinetHeightIn ?? 34.5} />
-          </div>
-          <div data-bec-angled-center-seam="true" className="absolute top-[3%] bottom-[3%]" style={{ left: "50%", width: 2, background: `${edge}cc`, boxShadow: "1px 0 1px rgba(255,255,255,0.42)" }} />
-        </div>
+      <div
+        data-base-angle-end="true"
+        data-bec-angled-end-face="true"
+        data-bec-45-angle="true"
+        data-base-angle-pitch="45"
+        data-base-angle-side-in={String(plan.sideIn)}
+        data-base-angle-face-in={plan.faceIn.toFixed(3)}
+        data-base-angle-door-in={String(plan.doorWidthIn)}
+        className="absolute inset-0 overflow-hidden"
+      >
+        {ordered.map((doorFace) => {
+          const widthPct = (doorFace.runSpanIn / span) * 100;
+          const left = cursor;
+          cursor += widthPct;
+          return (
+            <div
+              key={doorFace.id}
+              data-base-angle-door={doorFace.id}
+              data-base-angle-door-in={String(doorFace.doorWidthIn)}
+              data-base-angle-run-span-in={doorFace.runSpanIn.toFixed(3)}
+              className="absolute"
+              style={{ left: `${left}%`, width: `${widthPct}%`, top: "2%", bottom: `${kickPct}%` }}
+            >
+              <SingleDoorPanel kind={kind} edge={edge} face={face} stroke={stroke} doorSampleUrl={doorSampleUrl} isWall={isWall} frameInsetPx={frameInsetPx} faceWidthIn={doorFace.doorWidthIn} faceHeightIn={totalHeight - plan.toeKickIn} />
+            </div>
+          );
+        })}
+        <div data-base-angle-seam="true" data-bec-angled-center-seam="true" className="absolute" style={{ left: `${seamAt}%`, width: 2, top: "2%", bottom: `${kickPct}%`, background: `${edge}cc` }} />
+        <div data-base-angle-toe-kick="true" className="absolute left-0 right-0 bottom-0" style={{ height: `${kickPct}%`, background: edge, opacity: 0.28 }} />
       </div>,
     );
   }

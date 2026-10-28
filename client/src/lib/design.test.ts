@@ -3479,11 +3479,16 @@ describe("wall cabinet clearance from doors/windows", () => {
     return { uid: "win", kind: "window", label: "Window", side: "top", offset, width, height: 36, sill: 40 };
   }
 
-  it("flags a wall cabinet sitting within 3\" of a window", () => {
-    // Window 54..90. Wall cabinet ending at 92 is 2" away -> violation.
-    const wall = cab({ uid: "w1", placement: "wall", x: 92, y: 0, width: 30, depth: 12 });
-    const bad = wallOpeningClearanceViolations([wall], [topWindow(54)], room);
-    expect(bad.has("w1")).toBe(true);
+  it("lets a user move a wall cabinet up to the window edge but not onto the glass", () => {
+    // Window 54..90. 3" is only the default placement spacing: a cabinet moved
+    // to 2" or flush at 90 is allowed; one starting at 89 overlaps the window.
+    const near = cab({ uid: "w1", placement: "wall", x: 92, y: 0, width: 30, depth: 12 });
+    const flush = cab({ uid: "w0", placement: "wall", x: 90, y: 0, width: 30, depth: 12 });
+    const over = cab({ uid: "wx", placement: "wall", x: 89, y: 0, width: 30, depth: 12 });
+    const bad = wallOpeningClearanceViolations([near, flush, over], [topWindow(54)], room);
+    expect(bad.has("w1")).toBe(false);
+    expect(bad.has("w0")).toBe(false);
+    expect(bad.has("wx")).toBe(true);
   });
 
   it("passes a wall cabinet that keeps >= 3\" from the window", () => {

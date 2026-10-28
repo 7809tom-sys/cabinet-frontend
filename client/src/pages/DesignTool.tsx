@@ -159,7 +159,7 @@ import {
   clampCabinetsToRoom, clampOpeningsToRoom, clampIslandToRoom, clampRoomInches,
   WALL_LABELS, doorPanelKind,
 		  freeSegmentsOnWall, magneticAvailableWallStart, nearestAvailableWallStart, cabinetWallMovePreview, firstCollisionFreeWallPlacement, resolveBaseBlindCornerFillerSnap, roundToEighth, syncWallRunOffsets, backfillLegacyWallRuns, wallRunFrame, wallRunAlongAtPoint, nearestWallRunAtPoint, clampCabinetToRoom, paletteActiveWallPlacementBlocker, wallPlacementAt, wallPlacementAtUnbounded, wallLength, wallRunOffset, wallRunSpan, cabinetWall, cabinetPlacementCollisionDetail, explainPeninsulaSeatFailure, kneeDrawerWallPlacement, isCustomRoomWall, firstCollisionFreeCustomWallPlacement, continuousWallApplianceSnapInfo, peninsulaRunById, peninsulaRootRunId, peninsulaRunAssemblyLocked, peninsulaCountertopPonyWallBarOverhang, peninsulaCountertopRaisedBarEnabled, peninsulaCountertopRaisedBarOverhang, peninsulaCountertopSeatingOverhang, peninsulaCountertopWaterfallEnd, peninsulaRunOffsetAtPoint, peninsulaRunMaxLength, normalizeLegacyPeninsulaCabinets, firstCollisionFreePeninsulaPlacement, bestFitCatalogOption, removePeninsulaRun,
-	  formatEighthInches, formatInches, type WallGap, wallGaps, wallGapFitPreview, wallGapFreehandPreview, nearestRectRoomWallAtPoint, gapFillCandidatesByWidth, nextSmartGapPreviewIndex, withTemporarySmartGapPreview, isRangeHoodPlacement,
+	  formatEighthInches, formatInches, wallOpeningClearanceDetail, ceilingFitDetail, type WallGap, wallGaps, wallGapFitPreview, wallGapFreehandPreview, nearestRectRoomWallAtPoint, gapFillCandidatesByWidth, nextSmartGapPreviewIndex, withTemporarySmartGapPreview, isRangeHoodPlacement,
   rangeOvenClearanceViolations, RANGE_CLEARANCE_FILLER_IN,
 	  wallOpeningClearanceViolations, WALL_OPENING_CLEARANCE_IN, baseOpeningOverlaps,
   elevationBox, isStacker, isGlassDoorCabinet, glassCabinetPlacementAllowed, glassStackerParentPlacement, glassStackerFrontSnapTarget, normalizeGlassStackersToParentFronts, wallCabinetTopLine, bridgeMountBottomAboveWindow, overSinkWallMountBottom, overSinkWindowClearanceMeasure, overSinkWindowClearanceBlocked, normalizeOverSinkWallMounts,
@@ -169,6 +169,7 @@ import {
   type PonyWall, type DrywallPonyWallTexture, DEFAULT_DRYWALL_PONY_WALL_COLOR, DRYWALL_PONY_WALL_TEXTURE_OPTIONS, drywallPonyWallPreviewBackground, makePonyWall, makePeninsulaPonyWall, makePeninsulaDrywallBackPonyWall, ponyWallFitsRoom, clampPonyWall,
 	  type IslandZone, type IslandFace,
 		  flooringMaterial, backsplashMaterial, isFlooringLayoutPattern, refreshPlacedCabinetsFromMasterConfig, refreshPlacedCabinetsFromMasterRules, restoredSavedDesignStyle, roomWithPersistedEntities, MIN_WALL_HEIGHT, wallTopLimit, reseatOnWallRun } from "@/lib/design";
+import { applyRefrigeratorEndPanelFieldCuts, refrigeratorEndPanelCutDownNote, refrigeratorEndPanelInstalledDepth } from "@/lib/refrigeratorEndPanelCut";
 import { applyCabinetFinishScope, autoAdjustIslandDepthForBackFace, inferredIslandFace, isIslandAssemblyMember, islandAssemblyClearance, islandCountertopOverhangIn, islandCountertopRect, islandCountertopVisibleRects, islandRaisedBarRects, islandFaceCapacity, islandFaceFitMeasure, islandFaceLength, islandFacePlacement, islandFaceTransferOption, islandWithFaceSeatingOverhang, moveIslandScene, nextIslandFacePlacement, normalizeIslandRangeRearPlanes, resizeIslandScene, resolvedIslandCabinetStyleId, rotateIslandScene, synchronizeIslandCountertopFootprint, type CabinetFinishScope } from "@/lib/islandScene";
 import { buildTrimCartLines,
   trimPriceForKind,
@@ -208,7 +209,7 @@ import { applyChosenAutoDesignFaucet, catalogFaucetSurface, defaultAutoDesignFau
 import { clampSinkDragForFaucet } from "@/lib/faucetPlacement";
 import { autoDesignSinkWindow, windowOverlapsReservation } from "@/lib/autoDesignSinkWindow";
 import { autoDesignRangeHood, autoDesignRangeNeedsVentilation } from "@/lib/autoDesignRangeHood";
-import { autoBuildCornerCatalog, autoDesignCornerAttempts, autoDesignCornerFamily, autoDesignCornerSlotPoint, autoDesignCornerSlots, isAutoDesignBlindCornerOption, type AutoBuildCornerCandidate, type AutoDesignCornerChoice, type AutoDesignCornerSlot } from "@/lib/autoDesignCornerStage";
+import { autoBuildCornerCatalog, autoDesignCornerAttempts, autoDesignCornerFamily, autoDesignCornerSlotPoint, autoDesignCornerSlots, autoDesignMissingCornerMessage, isAutoDesignBlindCornerOption, type AutoBuildCornerCandidate, type AutoDesignCornerChoice, type AutoDesignCornerSlot } from "@/lib/autoDesignCornerStage";
 import { evaluateAutoDesignCornerFit, type AutoDesignCornerFit } from "@/lib/cornerFit";
 import { useKitchenRuleParameterSync } from "@/lib/kitchenRulesApi";
 import { rangeBridgeSpec, reviewAfterShift, separateRangeAndRefrigerator } from "@/lib/kitchenAdjacency";
@@ -310,7 +311,7 @@ import {
 import { selectedBacksplashTextureUrl } from "@/lib/backsplashProductMaterial";
 import { ProDesignerDialog } from "@/components/design/ProDesignerDialog";
 import { CabinetDrawing } from "@/components/CabinetDrawing";
-import { BEC24_DISPLAY_NAME, baseSubGroup, cabinetDrawingType, isSquareDoubleDoorBaseEnd, type BaseSubGroup } from "@/lib/cabinetGraphics";
+import { baseSubGroup, cabinetDrawingType, type BaseSubGroup } from "@/lib/cabinetGraphics";
 import { GlassPolicyBadge } from "@/components/GlassPolicyBadge";
 import { CabinetImage } from "@/components/CabinetImage";
 import { DoorStyleSwatch } from "@/components/DoorStyleSwatch";
@@ -831,7 +832,20 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const [windowFrameStyle, setWindowFrameStyle] = useState<WindowFrameStyle>("white");
 
   // Room + placement state
-  const [room, setRoom] = useState<RoomData>(DEFAULT_ROOM);
+  const [room, setRoomState] = useState<RoomData>(DEFAULT_ROOM);
+  const roomRef = useRef<RoomData>(room);
+  // setPlaced validates against roomRef at its commit boundary. Its updater
+  // runs before this render reaches `roomRef.current = room`, so a room and
+  // its cabinets set together (restore, Wall Builder edits, peninsula removal)
+  // would be checked against the PREVIOUS room and pushed off their walls.
+  // Updating the ref inside the room updater keeps every commit on the new room.
+  const setRoom = useCallback((update: SetStateAction<RoomData>) => {
+    setRoomState((previous) => {
+      const next = typeof update === "function" ? update(previous) : update;
+      roomRef.current = next;
+      return next;
+    });
+  }, []);
   const [polygonEditMode, setPolygonEditMode] = useState(false);
   const isPolygonRoom = Boolean(room.vertices?.length && room.vertices.length >= 2 && room.customWalls?.length);
   const [placed, setPlacedState] = useState<PlacedCabinet[]>([]);
@@ -842,7 +856,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const defaultAutoDesignFaucetRef = useRef<AutoDesignFaucetProduct | null>(null);
   const autoDesignFaucetPromptedRef = useRef(new Set<string>());
   const autoDesignOwnedFaucetIdsRef = useRef(new Set<number>());
-  const roomRef = useRef<RoomData>(room);
   roomRef.current = room;
   // ONE commit boundary for cabinet state: every seated cabinet's run offset is
   // re-derived from its plan body on every wall kind, so resize, rotate and any
@@ -850,7 +863,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const setPlaced = useCallback((update: SetStateAction<PlacedCabinet[]>) => {
     setPlacedState((prev) => {
       const next = typeof update === "function" ? update(prev) : update;
-      return next === prev ? prev : syncWallRunOffsets(next, roomRef.current);
+      const synced = next === prev ? prev : syncWallRunOffsets(next, roomRef.current);
+      const cut = applyRefrigeratorEndPanelFieldCuts(synced, roomRef.current);
+      return cut === prev ? prev : cut;
     });
   }, []);
   useEffect(() => {
@@ -3985,7 +4000,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         if (!selectedWalls.includes(wallId)) selectedWalls.push(wallId);
       }
       if (choice.cabinetId == null) {
-        return fail(`A corner cabinet is required at every Auto-Design L/U corner. Choose a source-priced corner for ${slot.label} before filling the remaining runs.`);
+        return fail(autoDesignMissingCornerMessage(slot));
       }
       const source = stage.cornerOptions.find((candidate) => candidate.id === choice.cabinetId);
       if (!source) return fail(`${slot.label} must use a current source-priced corner cabinet. The selected catalog item is unavailable.`);
@@ -5209,7 +5224,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	        .map((candidate) => combinedFillerNote(candidate, placed))
 	        .filter((note): note is string => Boolean(note));
 	      const combinedCutNote = combinedCutNotes.join("; ");
-      const key = `${p.masterCode}|${Math.round(p.width)}|${Math.round(placedHeight(p))}|${Math.round(p.depth)}|${sw}|${p.noDoor ? "nd" : ""}|${p.handleSide ?? ""}|${miterCutNote}|${fillerInstallNote}|${p.fieldModificationNote ?? ""}|${cabStyleId ?? "_"}|${discKey}|${gdFlag}`;
+	      const panelCutNote = refrigeratorEndPanelCutDownNote(p.refrigeratorPanelStockDepth, p.depth) ?? "";
+      const key = `${p.masterCode}|${Math.round(p.width)}|${Math.round(placedHeight(p))}|${Math.round(p.depth)}|${sw}|${p.noDoor ? "nd" : ""}|${p.handleSide ?? ""}|${miterCutNote}|${fillerInstallNote}|${panelCutNote}|${p.fieldModificationNote ?? ""}|${cabStyleId ?? "_"}|${discKey}|${gdFlag}`;
       const closet = isClosetPart(p.masterCode);
       const isCooktopItem = p.placement === "appliance" && p.applianceRole === "countertop-opening";
       const isConversionConflict = p.cooktopConversionStatus === "unresolved-standard-base";
@@ -5231,7 +5247,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	          // Part 2: when the active line sells this cabinet under an equivalent
 	          // code (ERB36 placed on a BER line), the list shows the line's code.
           code: rowCode,
-          description: [rowDescription, sizeNote, fillerInstallNote, miterCutNote, combinedCutNote, attrNote]
+          description: [rowDescription, sizeNote, fillerInstallNote, miterCutNote, combinedCutNote, panelCutNote, attrNote]
             .filter(Boolean)
             .join(" \u2014 "),
           color: cabColor,
@@ -5848,7 +5864,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     return {
       id: `${line.masterCode}:${line.styleId}:${line.tier}:${unitPrice ?? "pending"}:${index}`,
       label: line.masterCode,
-      detail: `${line.name}${line.styleLabel ? ` · ${line.styleLabel}` : ""}`,
+      detail: `${line.name}${line.styleLabel ? ` · ${line.styleLabel}` : ""}${line.qtyNote && /inch panel cut down to/.test(line.qtyNote) ? ` · ${line.qtyNote}` : ""}`,
       quantity: line.qty,
       unitPrice,
       lineTotal: unitPrice == null ? null : unitPrice * line.qty,
@@ -6523,6 +6539,33 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   }, [layoutLocked, room]);
   const hasConflicts = conflictUids.size > 0;
   const firstConflictUid = useMemo(() => Array.from(conflictUids)[0] ?? null, [conflictUids]);
+  // One plain-language reason per flagged placement, built from the same rules
+  // that fill conflictUids, so the banner can say what to fix.
+  const conflictReasons = useMemo(() => {
+    const reasons = new Map<string, string>();
+    const note = (uid: string, reason: string) => { if (!reasons.has(uid)) reasons.set(uid, reason); };
+    const missingCorner = missingCornerBaseViolations(placed, room, island, openings);
+    const blindViolations = blindCornerViolations(placed);
+    for (const cabinet of placed) {
+      if (!conflictUids.has(cabinet.uid)) continue;
+      const opening = wallOpeningUids.has(cabinet.uid) ? wallOpeningClearanceDetail(cabinet, openings, room) : null;
+      if (opening) {
+        const kind = opening.opening.kind === "window" ? "window" : opening.opening.kind === "door" ? "door" : "opening";
+        note(cabinet.uid, opening.gap < 0
+          ? `${cabinet.masterCode} overlaps the ${kind} by ${formatEighthInches(-opening.gap)}; ${opening.required > 0 ? `it must stay ${formatEighthInches(opening.required)} clear of it` : "move it off the window"}.`
+          : `${cabinet.masterCode} is ${formatEighthInches(opening.gap)} from the ${kind}; it must be at least ${formatEighthInches(opening.required)} away.`);
+      }
+      const ceiling = ceilingViolationUids.has(cabinet.uid) ? ceilingFitDetail(cabinet, room) : null;
+      if (ceiling) note(cabinet.uid, `${cabinet.masterCode} top is at ${formatEighthInches(ceiling.top)}, above the ${formatEighthInches(ceiling.ceiling)} ceiling of the ${wallNameFor(cabinetWall(cabinet, room), room)} wall.`);
+      if (baseOpeningUids.has(cabinet.uid)) note(cabinet.uid, `${cabinet.masterCode} sits across a door or opening.`);
+      if (applianceConflictUids.has(cabinet.uid)) note(cabinet.uid, `${cabinet.masterCode} overlaps an appliance.`);
+      if (rangeClearanceUids.has(cabinet.uid)) note(cabinet.uid, `${cabinet.masterCode} needs a filler for corner clearance.`);
+      if (blindViolations.has(cabinet.uid) || blindSpecIssues.get(cabinet.uid) === "out-of-range") note(cabinet.uid, `${cabinet.masterCode} needs its blind-corner pull clearance.`);
+      if (missingCorner.has(cabinet.uid)) note(cabinet.uid, `${cabinet.masterCode} is in a corner that needs a corner cabinet.`);
+      note(cabinet.uid, `${cabinet.masterCode} needs attention.`);
+    }
+    return reasons;
+  }, [placed, room, island, openings, conflictUids, wallOpeningUids, ceilingViolationUids, baseOpeningUids, applianceConflictUids, rangeClearanceUids, blindSpecIssues]);
   const preSavePlanReview = useMemo(
     () => buildPreSavePlanReview({
       room,
@@ -9928,9 +9971,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           panelBuildError = `${panelRow!.masterCode} has no verified refrigerator-panel depth, so the selected refrigerator options were not added.`;
           return;
         }
-        // An end panel stays at its verified source depth. Do not turn a UI
-        // preference or the 3D appliance bounding box into package dimensions.
-        const pDepth = sourcePanelDepth;
+        // The ordered SKU stays the source panel. When the refrigerator is
+        // shallower than that stock sheet, the installed panel is shown cut
+        // down to the refrigerator. A deeper refrigerator keeps the stock depth.
+        const panelCut = refrigeratorEndPanelInstalledDepth(sourcePanelDepth, fd);
+        const pDepth = panelCut.installedDepth;
         // Infer dimensions from masterCode when catalog values are null
         // (style-prefixed variants like "ANTIQUE WHITE-S2496" often lack stored dims).
         const code = (panelRow!.masterCode ?? "").toUpperCase();
@@ -9969,6 +10014,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           y: spot.y,
           width: pThick,
           depth: pDepth,
+          nominalDepth: pDepth,
+          ...(panelCut.cutDown ? { refrigeratorPanelStockDepth: panelCut.stockDepth } : {}),
           height: pHeight,
           rotation: spot.rotation,
           wallId: spot.wallId,
@@ -17551,7 +17598,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                    <CatalogPaletteCard
 	                      key={`${c.masterCode}:${c.catalogImageUrl ?? c.id}`}
 	                      cabinet={c}
-	                      description={isSquareDoubleDoorBaseEnd(c) ? BEC24_DISPLAY_NAME : c.description}
+	                      description={c.description}
 	                      sizeLabel={sizeLabel}
 	                      finishSwatchUrl={paletteFinishSwatch}
 	                      finishName={activeStyleName}
@@ -17657,6 +17704,13 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	              <p className="min-w-0 flex-1 leading-snug">
 	                <strong>{conflictUids.size} placement{conflictUids.size === 1 ? " needs" : "s need"} attention.</strong>{" "}
 	                It remains in your Cart, but must be corrected before secure ordering.
+	                {conflictReasons.size > 0 && (
+	                  <span data-testid="design-conflict-reasons" className="mt-1 block">
+	                    {Array.from(conflictReasons.values()).slice(0, 3).map((reason) => (
+	                      <span key={reason} className="block">• {reason}</span>
+	                    ))}
+	                  </span>
+	                )}
 	              </p>
 	              <button
 	                type="button"
@@ -22244,7 +22298,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                <CabinetImage cabinet={catalogSpecificationsItem} className="h-16 w-16 shrink-0 rounded border border-[#d8c7a1] object-contain bg-white" />
 	                <div className="min-w-0">
 	                  <p className="font-mono text-base font-bold">{cabinetCode}</p>
-	                  <p className="text-sm">{isSquareDoubleDoorBaseEnd(catalogSpecificationsItem) ? BEC24_DISPLAY_NAME : catalogSpecificationsItem.description}</p>
+	                  <p className="text-sm">{catalogSpecificationsItem.description}</p>
 	                  <p className="mt-1 text-xs text-[#806a42]">{catalogSpecificationsItem.category ?? "Catalog item"}{catalogSpecificationsItem.subCategory ? ` · ${catalogSpecificationsItem.subCategory}` : ""}</p>
 	                </div>
 	              </div>

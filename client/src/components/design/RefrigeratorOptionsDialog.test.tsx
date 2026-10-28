@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RefrigeratorOptionsDialog } from "./RefrigeratorOptionsDialog";
 
@@ -214,6 +214,33 @@ describe("RefrigeratorOptionsDialog end-panel defaults", () => {
     fireEvent.click(screen.getByText("More enclosure options"));
     fireEvent.click(screen.getByRole("button", { name: "Both" }));
     expect(screen.getAllByText(/S2496 — finished shelf board \/ refrigerator side panel/i)).toHaveLength(2);
+  });
+
+  it("shows a 30 inch panel cut to a 24 inch refrigerator while still submitting the stock depth", () => {
+    const onApply = vi.fn();
+    render(
+      <RefrigeratorOptionsDialog
+        open
+        onOpenChange={vi.fn()}
+        fridgeWidthInches={36}
+        endPanels={[{ id: 9601, masterCode: "REPV3096", description: "Refrigerator End Panel", width: "0.75", height: "96", depth: "30" }]}
+        onApply={onApply}
+        onSkip={vi.fn()}
+      />,
+    );
+    const depthGroup = screen.getByText("Depth").closest("div.space-y-1\\.5");
+    fireEvent.click(within(depthGroup as HTMLElement).getByRole("button", { name: '24"' }));
+    fireEvent.click(screen.getByText("More enclosure options"));
+    fireEvent.click(screen.getByRole("button", { name: "Both" }));
+    expect(screen.getByText(/panel depth:/i).textContent).toContain("24″");
+    expect(screen.getByText(/panel depth:/i).textContent).toContain("30 inch panel cut down to 24");
+    fireEvent.click(screen.getByRole("button", { name: "dt_fridge_apply" }));
+    expect(onApply).toHaveBeenCalledWith(expect.objectContaining({
+      fridgeDepth: 24,
+      panels: "both",
+      endPanelId: 9601,
+      panelDepth: 30,
+    }));
   });
 
   it("labels TEP3096 as a cut-to-fit refrigerator bridge side panel and preserves its stock sheet depth", () => {

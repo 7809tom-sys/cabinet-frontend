@@ -3,6 +3,7 @@ import { blindCornerInstallerNote, customSizeFee, effectiveStyleId, isBlindCorne
 import { isClosetPart } from "@/lib/closet";
 import { calculateCartSubtotal } from "@/lib/cartTotals";
 import { combinedFillerNote, fillerCutSourceFor, isCombinedSmallFiller } from "@/lib/fillerBilling";
+import { refrigeratorEndPanelCutDownNote } from "@/lib/refrigeratorEndPanelCut";
 
 type BuildDesignCabinetCartLinesArgs = {
   placed: PlacedCabinet[];
@@ -39,6 +40,28 @@ export function adjustedDesignUnitPrice(
 ): number | null {
   if (basePrice == null) return null;
   return basePrice * (1 + (cabinet.discountPct ?? 0) / 100) + customSizeFee(cabinet);
+}
+
+function dedupeNotes(note: string | null | undefined): string {
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  for (const part of (note ?? "").split(";")) {
+    const text = part.trim();
+    if (!text || seen.has(text)) continue;
+    seen.add(text);
+    unique.push(text);
+  }
+  return unique.join("; ");
+}
+
+function cabinetCutNote(cabinet: PlacedCabinet, placed: readonly PlacedCabinet[]): string {
+  const cutNotes = placed
+    .filter((candidate) => fillerCutSourceFor(candidate, placed)?.uid === cabinet.uid)
+    .map((candidate) => combinedFillerNote(candidate, placed))
+    .filter((note): note is string => Boolean(note));
+  const doorNote = isBlindCorner(cabinet.masterCode, cabinet.description) ? blindCornerInstallerNote(cabinet.swing) : null;
+  const panelNote = refrigeratorEndPanelCutDownNote(cabinet.refrigeratorPanelStockDepth, cabinet.depth);
+  return dedupeNotes([cutNotes.join("; "), doorNote, panelNote].filter(Boolean).join("; "));
 }
 
 function glassPolicyCartSuffix(cabinet: Pick<PlacedCabinet, "masterCode" | "glassDoor" | "glassIncluded">): string {
@@ -121,16 +144,11 @@ export function buildDesignCabinetCartLines({
     const modificationNote = cabinet.fieldModificationNote?.trim() || "";
     const autoAddedLabel = modificationNote.startsWith("Auto-added:") ? modificationNote : undefined;
     const key = `${masterCode}::${resolvedStyleId}::${unitPrice == null ? "pending" : unitPrice.toFixed(4)}::${fillerCartIdentity(cabinet)}::${cabinet.swing ?? ""}::${modificationNote}`;
-    const cutNotes = placed
-      .filter((candidate) => fillerCutSourceFor(candidate, placed)?.uid === cabinet.uid)
-      .map((candidate) => combinedFillerNote(candidate, placed))
-      .filter((note): note is string => Boolean(note));
-    const doorNote = isBlindCorner(cabinet.masterCode, cabinet.description) ? blindCornerInstallerNote(cabinet.swing) : null;
-    const cutNote = [cutNotes.join("; "), doorNote, modificationNote].filter(Boolean).join("; ");
+    const cutNote = dedupeNotes([cabinetCutNote(cabinet, placed), modificationNote].filter(Boolean).join("; "));
     const existing = lines.get(key);
     if (existing) {
       existing.qty += 1;
-      if (cutNote) existing.qtyNote = [existing.qtyNote, cutNote].filter(Boolean).join("; ");
+      if (cutNote) existing.qtyNote = dedupeNotes([existing.qtyNote, cutNote].filter(Boolean).join("; "));
     } else {
       lines.set(key, {
         masterCode,
@@ -224,7 +242,9 @@ export function bundleCabinetPricingSignature(placed: PlacedCabinet[], styleId: 
       cabinet.discountPct ?? 0,
       cabinet.width,
       cabinet.height,
-      cabinet.depth,
+      // A field-cut refrigerator panel keeps the stock depth in the bundle
+      // signature so cutting the sheet to the refrigerator does not reprice it.
+      cabinet.refrigeratorPanelStockDepth ?? cabinet.depth,
     ].join(":"))
     .sort()
     .join("|");
@@ -270,17 +290,12 @@ export function buildDesignPreviewPricingLines({
     // Different discounts or custom fees must remain distinct priced lines.
     const modificationNote = cabinet.fieldModificationNote?.trim() || "";
     const key = `${masterCode}::${resolvedStyleId}::${adjustedUnitPrice == null ? "pending" : adjustedUnitPrice.toFixed(4)}::${fillerCartIdentity(cabinet)}::${cabinet.swing ?? ""}::${modificationNote}`;
-    const cutNotes = placed
-      .filter((candidate) => fillerCutSourceFor(candidate, placed)?.uid === cabinet.uid)
-      .map((candidate) => combinedFillerNote(candidate, placed))
-      .filter((note): note is string => Boolean(note));
-    const doorNote = isBlindCorner(cabinet.masterCode, cabinet.description) ? blindCornerInstallerNote(cabinet.swing) : null;
-    const cutNote = [cutNotes.join("; "), doorNote, modificationNote].filter(Boolean).join("; ");
+    const cutNote = dedupeNotes([cabinetCutNote(cabinet, placed), modificationNote].filter(Boolean).join("; "));
     const existing = lines.get(key);
     if (existing) {
       existing.qty += 1;
       existing.placementUids = [...(existing.placementUids ?? []), cabinet.uid];
-      if (cutNote) existing.qtyNote = [existing.qtyNote, cutNote].filter(Boolean).join("; ");
+      if (cutNote) existing.qtyNote = dedupeNotes([existing.qtyNote, cutNote].filter(Boolean).join("; "));
     } else {
       lines.set(key, {
         masterCode,
