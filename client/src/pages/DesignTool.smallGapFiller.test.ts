@@ -12,6 +12,8 @@ describe("Design Tool small-gap filler workflow", () => {
     const queueStart = source.indexOf("const queueSmallGapFillerOpportunity");
     const queueEnd = source.indexOf("}, [openings, room]);", queueStart) + "}, [openings, room]);".length;
     const queueSource = source.slice(queueStart, queueEnd);
+    expect(queueSource).toContain("shouldAutoPlaceLeftoverFiller(opportunity.remaining)");
+    expect(queueSource).toContain("applySmallGapFillerRef.current?.(mode, opportunity, opportunity.remaining)");
     expect(queueSource).toContain("setSmallGapFillerPrompt(opportunity)");
     expect(queueSource).not.toContain("catalogFillerForGap");
   });

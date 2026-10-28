@@ -290,6 +290,7 @@ export default function Cart() {
                     )}
                   </div>
                   <p className="mt-0.5 text-sm text-foreground leading-snug">{item.name}</p>
+                  {item.qtyNote && <p className="mt-1 text-xs font-medium text-amber-800">{item.qtyNote}</p>}
                   <p className="text-xs text-muted-foreground">{item.styleLabel}</p>
                   {fillerDimensions && (
                     <dl data-testid="cart-filler-stock-and-cut" className="mt-2 grid grid-cols-2 gap-x-3 rounded-md border border-amber-200 bg-amber-50/70 px-2 py-1.5 text-xs text-amber-950">

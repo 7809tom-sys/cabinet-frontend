@@ -6780,10 +6780,14 @@ export const TRIM_STICK_INCHES = 96; // standard 8 ft trim stick
 export const TRIM_WASTE = 0.1;       // 10% cut/waste allowance
 
 export interface TrimOrder {
-  pieces: number;      // whole sticks to order
+  pieces: number;      // whole sticks to order, including the craftsmanship spare
   stickFeet: number;   // length of each stick, in feet (e.g. 8)
   orderedFeet: number; // total feet ordered (pieces * stickFeet)
   measuredFeet: number; // the raw measured run, in feet (1 decimal)
+  /** Sticks required by the measured run and waste allowance, before the spare. */
+  measuredPieces: number;
+  /** One extra stick ordered whenever the run needs any molding. */
+  extraStick: number;
 }
 
 /**
@@ -6797,15 +6801,21 @@ export function trimPiecesNeeded(
 ): TrimOrder {
   const stickFeet = stickInches / 12;
   if (runInches <= 0) {
-    return { pieces: 0, stickFeet, orderedFeet: 0, measuredFeet: 0 };
+    return { pieces: 0, stickFeet, orderedFeet: 0, measuredFeet: 0, measuredPieces: 0, extraStick: 0 };
   }
   const withWaste = runInches * (1 + waste);
-  const pieces = Math.max(1, Math.ceil(withWaste / stickInches));
+  const measuredPieces = Math.max(1, Math.ceil(withWaste / stickInches));
+  // One spare stick covers a cracked, warped, or defect-cut piece. It is priced
+  // as a normal stick and called out on the BOM; it is not extra waste percent.
+  const extraStick = 1;
+  const pieces = measuredPieces + extraStick;
   return {
     pieces,
     stickFeet,
     orderedFeet: pieces * stickFeet,
     measuredFeet: Math.round((runInches / 12) * 10) / 10,
+    measuredPieces,
+    extraStick,
   };
 }
 

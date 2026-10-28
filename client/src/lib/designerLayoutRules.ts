@@ -41,6 +41,7 @@ import {
   type WallSide,
 } from "./design";
 import { planAutoDesignBaseSegment } from "./autoDesignSeamFillers";
+import { applyFramelessDoorClearanceFillers } from "./framelessDoorClearance";
 import {
   SMALL_GAP_FILLER_MAX_IN,
   findPreferredSmallGapFillerOpportunity,
@@ -109,7 +110,13 @@ export const DESIGNER_LAYOUT_RULES: readonly DesignerLayoutRule[] = [
     id: "small-gap-filler",
     name: "standard small-gap filler",
     phase: "shared-pipeline",
-    summary: "A measured cabinet seam of 6 inches or less receives the standard catalog filler instead of being left open.",
+    summary: "A measured cabinet seam of 6 inches or less receives the standard catalog filler instead of being left open. A leftover of 3 inches or less is placed without asking.",
+  },
+  {
+    id: "frameless-door-clearance-filler",
+    name: "frameless door clearance filler",
+    phase: "shared-pipeline",
+    summary: "A frameless cabinet butted against a refrigerator wall cabinet, refrigerator tall cabinet, or refrigerator end panel receives the standard 3-inch door-clearance filler without asking. Framed lines are unchanged.",
   },
   {
     id: "filler-adjoining-finish",
@@ -882,6 +889,9 @@ export function applyDesignerLayoutRules(input: {
   });
   const angled = repairMissingAngledWallFillers(placed, input.room, input.fillers, input.makeUid, input.styleId);
   placed = angled.placed;
+  placed = applyFramelessDoorClearanceFillers({
+    placed, room: input.room, fillers: input.fillers, makeUid: input.makeUid, styleId: input.styleId,
+  }).placed;
   placed = applyStandardSmallGapFillers({
     placed, room: input.room, openings: input.openings, fillers: input.fillers, makeUid: input.makeUid, styleId: input.styleId,
   });

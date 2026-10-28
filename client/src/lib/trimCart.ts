@@ -73,12 +73,18 @@ export interface TrimCartLine {
   styleLabel: string;
   unitPrice: number;
   qty: number;
+  qtyNote?: string;
 }
+
+/** Visible BOM note for the spare molding stick ordered with every measured run. */
+export const TRIM_CRAFTSMANSHIP_STICK_NOTE = "Added one just in case of craftsmanship issues";
 
 // One active trim to consider: its kind and how many sticks/pieces are needed.
 export interface ActiveTrim {
   kind: TrimKind;
   pieces: number;
+  /** True when `pieces` includes the spare stick beyond the measured run. */
+  craftsmanshipStick?: boolean;
 }
 
 /**
@@ -133,6 +139,7 @@ export function buildTrimCartLines(
       styleLabel,
       unitPrice: priced.unitPrice,
       qty: t.pieces,
+      ...(t.craftsmanshipStick ? { qtyNote: TRIM_CRAFTSMANSHIP_STICK_NOTE } : {}),
     });
   }
   return out;
