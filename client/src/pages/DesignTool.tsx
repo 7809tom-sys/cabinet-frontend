@@ -156,7 +156,7 @@ import {
   clampCabinetsToRoom, clampOpeningsToRoom, clampIslandToRoom, clampRoomInches,
   WALL_LABELS, doorPanelKind,
 		  freeSegmentsOnWall, magneticAvailableWallStart, nearestAvailableWallStart, cabinetWallMovePreview, firstCollisionFreeWallPlacement, resolveBaseBlindCornerFillerSnap, roundToEighth, syncWallRunOffsets, backfillLegacyWallRuns, wallRunFrame, wallRunAlongAtPoint, nearestWallRunAtPoint, clampCabinetToRoom, paletteActiveWallPlacementBlocker, wallPlacementAt, wallPlacementAtUnbounded, wallLength, wallRunOffset, wallRunSpan, cabinetWall, cabinetPlacementCollisionDetail, explainPeninsulaSeatFailure, kneeDrawerWallPlacement, isCustomRoomWall, firstCollisionFreeCustomWallPlacement, continuousWallApplianceSnapInfo, peninsulaRunById, peninsulaRootRunId, peninsulaRunAssemblyLocked, peninsulaCountertopPonyWallBarOverhang, peninsulaCountertopRaisedBarEnabled, peninsulaCountertopRaisedBarOverhang, peninsulaCountertopSeatingOverhang, peninsulaCountertopWaterfallEnd, peninsulaRunOffsetAtPoint, peninsulaRunMaxLength, normalizeLegacyPeninsulaCabinets, firstCollisionFreePeninsulaPlacement, bestFitCatalogOption, removePeninsulaRun,
-	  formatEighthInches, formatInches, type WallGap, wallGaps, wallGapFitPreview, wallGapFreehandPreview, nearestRectRoomWallAtPoint, gapFillCandidatesByWidth, nextSmartGapPreviewIndex, withTemporarySmartGapPreview, isRangeHoodPlacement,
+	  formatEighthInches, formatInches, wallOpeningClearanceDetail, ceilingFitDetail, type WallGap, wallGaps, wallGapFitPreview, wallGapFreehandPreview, nearestRectRoomWallAtPoint, gapFillCandidatesByWidth, nextSmartGapPreviewIndex, withTemporarySmartGapPreview, isRangeHoodPlacement,
   rangeOvenClearanceViolations, RANGE_CLEARANCE_FILLER_IN,
 	  wallOpeningClearanceViolations, WALL_OPENING_CLEARANCE_IN, baseOpeningOverlaps,
   elevationBox, isStacker, isGlassDoorCabinet, glassCabinetPlacementAllowed, glassStackerParentPlacement, glassStackerFrontSnapTarget, normalizeGlassStackersToParentFronts, wallCabinetTopLine, bridgeMountBottomAboveWindow, overSinkWallMountBottom, overSinkWindowClearanceMeasure, overSinkWindowClearanceBlocked, normalizeOverSinkWallMounts,
@@ -6229,6 +6229,33 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   }, [layoutLocked, room]);
   const hasConflicts = conflictUids.size > 0;
   const firstConflictUid = useMemo(() => Array.from(conflictUids)[0] ?? null, [conflictUids]);
+  // One plain-language reason per flagged placement, built from the same rules
+  // that fill conflictUids, so the banner can say what to fix.
+  const conflictReasons = useMemo(() => {
+    const reasons = new Map<string, string>();
+    const note = (uid: string, reason: string) => { if (!reasons.has(uid)) reasons.set(uid, reason); };
+    const missingCorner = missingCornerBaseViolations(placed, room, island, openings);
+    const blindViolations = blindCornerViolations(placed);
+    for (const cabinet of placed) {
+      if (!conflictUids.has(cabinet.uid)) continue;
+      const opening = wallOpeningUids.has(cabinet.uid) ? wallOpeningClearanceDetail(cabinet, openings, room) : null;
+      if (opening) {
+        const kind = opening.opening.kind === "window" ? "window" : opening.opening.kind === "door" ? "door" : "opening";
+        note(cabinet.uid, opening.gap < 0
+          ? `${cabinet.masterCode} overlaps the ${kind} by ${formatEighthInches(-opening.gap)}; it must stay ${formatEighthInches(opening.required)} clear of it.`
+          : `${cabinet.masterCode} is ${formatEighthInches(opening.gap)} from the ${kind}; it must be at least ${formatEighthInches(opening.required)} away.`);
+      }
+      const ceiling = ceilingViolationUids.has(cabinet.uid) ? ceilingFitDetail(cabinet, room) : null;
+      if (ceiling) note(cabinet.uid, `${cabinet.masterCode} top is at ${formatEighthInches(ceiling.top)}, above the ${formatEighthInches(ceiling.ceiling)} ceiling of the ${wallNameFor(cabinetWall(cabinet, room), room)} wall.`);
+      if (baseOpeningUids.has(cabinet.uid)) note(cabinet.uid, `${cabinet.masterCode} sits across a door or opening.`);
+      if (applianceConflictUids.has(cabinet.uid)) note(cabinet.uid, `${cabinet.masterCode} overlaps an appliance.`);
+      if (rangeClearanceUids.has(cabinet.uid)) note(cabinet.uid, `${cabinet.masterCode} needs a filler for corner clearance.`);
+      if (blindViolations.has(cabinet.uid) || blindSpecIssues.get(cabinet.uid) === "out-of-range") note(cabinet.uid, `${cabinet.masterCode} needs its blind-corner pull clearance.`);
+      if (missingCorner.has(cabinet.uid)) note(cabinet.uid, `${cabinet.masterCode} is in a corner that needs a corner cabinet.`);
+      note(cabinet.uid, `${cabinet.masterCode} needs attention.`);
+    }
+    return reasons;
+  }, [placed, room, island, openings, conflictUids, wallOpeningUids, ceilingViolationUids, baseOpeningUids, applianceConflictUids, rangeClearanceUids, blindSpecIssues]);
   const preSavePlanReview = useMemo(
     () => buildPreSavePlanReview({ room, placed, openings, island, catalogFillers, conflictUids }),
     [catalogFillers, conflictUids, island, openings, placed, room],
@@ -17304,6 +17331,13 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	              <p className="min-w-0 flex-1 leading-snug">
 	                <strong>{conflictUids.size} placement{conflictUids.size === 1 ? " needs" : "s need"} attention.</strong>{" "}
 	                It remains in your Cart, but must be corrected before secure ordering.
+	                {conflictReasons.size > 0 && (
+	                  <span data-testid="design-conflict-reasons" className="mt-1 block">
+	                    {Array.from(conflictReasons.values()).slice(0, 3).map((reason) => (
+	                      <span key={reason} className="block">• {reason}</span>
+	                    ))}
+	                  </span>
+	                )}
 	              </p>
 	              <button
 	                type="button"

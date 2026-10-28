@@ -8230,6 +8230,40 @@ export function wallOpeningClearanceViolations(
   return bad;
 }
 
+/**
+ * Why a wall cabinet fails `wallOpeningClearanceViolations`, in the same run
+ * inches that rule measures: the nearest offending opening, the clear gap to
+ * it (negative = overlapping) and the gap the rule requires.
+ */
+export function wallOpeningClearanceDetail(
+  p: PlacedCabinet,
+  openings: WallOpening[],
+  room: RoomData,
+  clearance = WALL_OPENING_CLEARANCE_IN,
+): { opening: WallOpening; gap: number; required: number } | null {
+  if (p.placement !== "wall" || isFillerItem(p)) return null;
+  const side = cabinetWall(p, room);
+  const cStart = wallRunOffset(p, side, room);
+  const cEnd = cStart + wallRunSpan(p, side, room);
+  for (const o of openings) {
+    if (o.side !== side) continue;
+    if (wallCabinetClearsWindow(p, o, room, clearance)) continue;
+    const required = clearance + (o.kind === "window" && hasAefPrintedGeometry(p) ? STD.PANEL_THICKNESS : 0);
+    const gap = Math.max(o.offset - cEnd, cStart - (o.offset + o.width));
+    if (gap < required - 0.01) return { opening: o, gap, required };
+  }
+  return null;
+}
+
+/** Why a wall/tall cabinet fails `ceilingFitViolations`: its top and the wall's low ceiling. */
+export function ceilingFitDetail(p: PlacedCabinet, room: RoomData): { top: number; ceiling: number } | null {
+  const ceiling = wallCeilingMin(room, cabinetWall(p, room));
+  const top = p.placement === "wall"
+    ? (() => { const box = elevationBox(p, room); return box.bottom + box.height; })()
+    : p.placement === "tall" ? placedHeight(p) : null;
+  return top != null && top > ceiling + 0.5 ? { top, ceiling } : null;
+}
+
 // Base (and tall/appliance) cabinets must not sit ACROSS a floor-blocking
 // opening (a door or a cased pass-through). Returns the uids of floor-layer
 // cabinets whose run-axis extent overlaps any door/opening on the SAME wall.
