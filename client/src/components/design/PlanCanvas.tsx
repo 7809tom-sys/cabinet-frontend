@@ -5,7 +5,7 @@ import { Fragment } from "react";
 import {
   PlacedCabinet, RoomData, rotatedSize, placedFootprint, placedCornerGeometryKind, cabinetCornerPlacementInfo, blindCornerSnapInfo, cabinetPlacementCollisionDetail, nextAvailableRoomCornerPlacement, snapPosition, orientToWall,
   type FloorPlanDimensionAdjustment, type FloorPlanDimensionUnit,
-	  isCornerCabinet, isProtectedCornerCabinet, cornerClipPath, cornerLegRatioForPlaced, cornerRotationForPlaced, diagonalCornerClipPath, isDiagonalCorner, isAngledWallCabinet, formatEighthInches, isBlindCorner, isTriangleCorner, triangleCornerClipPath, isRefrigeratorEndPanel,
+	  isCornerCabinet, isProtectedCornerCabinet, cornerClipPath, cornerLegRatioForPlaced, cornerRotationForPlaced, diagonalCornerClipPath, isDiagonalCorner, isAngledWallCabinet, angledWallEndClipPath, formatEighthInches, isBlindCorner, isTriangleCorner, triangleCornerClipPath, isRefrigeratorEndPanel,
 	  resolveSwing, resolveCabinetHardwarePosition,
 	  WallOpening, clampOpening, FinishColors, DEFAULT_FINISH_COLORS, isWindowBelowCountertop,
   clampRoomInches, inchesToFeetInches, WallSide, type PeninsulaRun, peninsulaRunEndpoints, peninsulaRunMaxLength, peninsulaRunHitAtPoint, peninsulaRunStartOffsetAtPoint, peninsulaRunAssemblyLocked, peninsulaRootRunId,
@@ -292,7 +292,7 @@ export function planCabinetClipPath(cabinet: PlacedCabinet, room: RoomData): str
   // inside the cabinet's local frame, so never rotate this clip toward the
   // nearest room corner; the cabinet group's saved wall rotation handles that.
   if (isAngledWallCabinet(cabinet.masterCode, cabinet.description)) {
-    return triangleCornerClipPath(0);
+    return angledWallEndClipPath(cabinet.angleEndHand);
   }
   if (isBaseAngleEndCabinet(cabinet)) {
     const hand: BaseAngleEndHand = cabinet.swing === "left" ? "left" : "right";

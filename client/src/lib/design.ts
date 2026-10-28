@@ -858,6 +858,12 @@ export interface PlacedCabinet {
   // Optional for backward-compat; resolve with resolveSwing() which falls back
   // to a sensible default based on the cabinet's door count.
   swing?: DoorSwing;
+  /**
+   * AW angled wall-end cabinets only: which side holds the square back corner
+   * that tucks against the neighbouring cabinet ("right" = local +x side).
+   * Stamped from the neighbour at the commit boundary; null/absent = "right".
+   */
+  angleEndHand?: "left" | "right" | null;
   numberOfDoors?: number | null;
   numberOfDrawers?: number | null;
   rotation: number;
@@ -10278,7 +10284,55 @@ export function syncWallRunOffsets(placed: PlacedCabinet[], room: RoomData): Pla
     if (synced !== p) changed = true;
     return synced;
   });
+  return stampAngledWallEndHands(changed ? next : placed, room);
+}
+
+/**
+ * The side of an AW angled wall-end cabinet that butts its run neighbour
+ * ("right" = the cabinet's local +x side), or null when it has a neighbour on
+ * both sides or neither. The square back corner belongs on that side, between
+ * the wall and the neighbour, so the door faces out at 45° to the run.
+ */
+export function angledWallEndNeighborSide(p: PlacedCabinet, placed: PlacedCabinet[], room: RoomData): "left" | "right" | null {
+  if (!isAngledWallCabinet(p.masterCode, p.description) || !p.wallId || p.wallOffset == null) return null;
+  const frame = wallRunFrame(p.wallId, room);
+  if (!frame) return null;
+  const start = Number(p.wallOffset);
+  const end = start + alongRunSpan(p);
+  const touch = 0.5;
+  let atStart = false;
+  let atEnd = false;
+  for (const other of placed) {
+    if (other.uid === p.uid || other.wallId !== p.wallId || other.wallOffset == null) continue;
+    // Uppers and tall units (a U249624 pantry) reach the AW's height band.
+    if (other.placement !== "tall" && !occupiesUpperZone(other)) continue;
+    const otherStart = Number(other.wallOffset);
+    const otherEnd = otherStart + alongRunSpan(other);
+    if (Math.abs(otherEnd - start) <= touch) atStart = true;
+    if (Math.abs(otherStart - end) <= touch) atEnd = true;
+  }
+  if (atStart === atEnd) return null;
+  const radians = (Number(p.rotation) || 0) * Math.PI / 180;
+  const localXAlongRun = Math.cos(radians) * frame.tangent.x + Math.sin(radians) * frame.tangent.y > 0;
+  const neighbourAtRunEnd = atEnd;
+  return neighbourAtRunEnd === localXAlongRun ? "right" : "left";
+}
+
+/** Keeps every AW's square corner on its neighbour's side; unchanged when nothing moves. */
+export function stampAngledWallEndHands(placed: PlacedCabinet[], room: RoomData): PlacedCabinet[] {
+  let changed = false;
+  const next = placed.map((p) => {
+    const side = angledWallEndNeighborSide(p, placed, room);
+    if (!side || (p.angleEndHand ?? "right") === side) return p;
+    changed = true;
+    return { ...p, angleEndHand: side };
+  });
   return changed ? next : placed;
+}
+
+/** CSS clip for an AW in its local plan box (wall = top edge). */
+export function angledWallEndClipPath(hand: "left" | "right" | null | undefined): string {
+  return hand === "left" ? "polygon(0 0, 100% 0, 0 100%)" : triangleCornerClipPath(0);
 }
 
 /**
@@ -10319,7 +10373,7 @@ export function backfillLegacyWallRuns(placed: PlacedCabinet[], room: RoomData):
     changed = true;
     return { ...p, ...spot, rotation: spot.rotation, wallId: spot.wallId ?? nearest.frame.id, wallOffset: spot.wallOffset ?? offset };
   });
-  return changed ? next : placed;
+  return stampAngledWallEndHands(changed ? next : placed, room);
 }
 
 export type ContinuousWallApplianceSnapInfo = {
