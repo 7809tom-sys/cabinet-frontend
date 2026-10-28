@@ -1,4 +1,6 @@
 import type { CartItem } from "@/contexts/CartContext";
+import { trimKindForMasterCode } from "@/lib/trimCart";
+import { CATALOG_SUBCATEGORY_TRIM_AND_MOULDING } from "@shared/catalogCategorySpelling";
 
 export type CartCheckoutPrefillItem = {
   code: string;
@@ -67,16 +69,25 @@ export function cartItemToCheckoutPrefill(
   };
 }
 
+/** Cabinet trim (toe kick, crown, light rail, ...) is never a Pelican product. */
+function isCabinetTrimPrefill(item: CartCheckoutPrefillItem): boolean {
+  return trimKindForMasterCode(item.code) != null
+    || item.category?.trim() === CATALOG_SUBCATEGORY_TRIM_AND_MOULDING;
+}
+
 /** Legacy Pelican carts predate productKind and used several supplier-code shapes. */
 export function isSurfaceCheckoutPrefill(item: CartCheckoutPrefillItem): boolean {
   return item.productKind !== "hardware" && (
     item.productKind === "surface"
     || (item.distributorId == null && /^PEL-\d+$/i.test(item.code))
     || (
+      // A Designer trim line saved without a supplier also has a price and a
+      // category; it must stay with the cabinet order, not ship as Pelican.
       item.distributorId == null
       && item.unitPrice != null
       && Number.isFinite(item.unitPrice)
       && Boolean(item.category?.trim())
+      && !isCabinetTrimPrefill(item)
     )
   );
 }

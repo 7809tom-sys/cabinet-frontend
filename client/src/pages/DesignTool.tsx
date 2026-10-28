@@ -5063,13 +5063,17 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // pending-SKU end panels) are NOT added — only real, priced catalog cabinets.
   // The cart is locked to ONE distributor (supply line); the whole design shares
   // the design's locked distributor, so there is never a cross-distributor mix.
+  // Cart lines carry the supplier that sells them. Before a plan is locked to a
+  // line, that is still the selected door style's supplier; a priced design
+  // line without one (e.g. TK8 toe kick, end panels) was read as Pelican.
+  const cartDistributorId = lockedDistributorId ?? selectedStyleDistributorId ?? null;
   const cabinetCartLines = useMemo(() => {
     if (!styleId) return [] as CartItem[];
     const designLines = buildDesignCabinetCartLines({
       placed: placedWithGlassDoorLinks,
       styleId,
       pricingStyleIdFor,
-      distributorId: lockedDistributorId ?? null,
+      distributorId: cartDistributorId,
       tier: DESIGN_TIER_TO_SHARED[tier],
       styleNameById,
       unitPriceFor,
@@ -5087,11 +5091,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	    const rolloutCartLines: CartItem[] = rollOutTrayCartItems({
 	      lines: rolloutLines,
 	      styleNameById,
-	      distributorId: lockedDistributorId ?? null,
+	      distributorId: cartDistributorId,
 	      tier: DESIGN_TIER_TO_SHARED[tier],
 	    });
     return mergeDesignCartLines([...baseLines, ...rolloutCartLines]);
-  }, [placedWithGlassDoorLinks, styleId, unitPriceFor, glassDoorAddonFor, styleNameById, lockedDistributorId, tier, rolloutLines, activeBundlePriceLock, resolvedLineCodeFor]);
+  }, [placedWithGlassDoorLinks, styleId, unitPriceFor, glassDoorAddonFor, styleNameById, cartDistributorId, tier, rolloutLines, activeBundlePriceLock, resolvedLineCodeFor]);
 
   // The V8.2 AEF window-break rule calls for physical WEP stock, not a drawn
   // cabinet. Include its verified homeowner price in the same cart payload
@@ -5105,7 +5109,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         name: panel.description,
         styleId: panel.styleId,
         styleLabel: styleNameById.get(panel.styleId) ?? "",
-        distributorId: lockedDistributorId ?? null,
+        distributorId: cartDistributorId,
         tier: DESIGN_TIER_TO_SHARED[tier],
         unitPrice,
         priceLocked: unitPrice != null,
@@ -5113,7 +5117,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         category: "Cabinet panels",
       }];
     })
-  ), [autoEndPanels, priceMap, styleNameById, lockedDistributorId, tier]);
+  ), [autoEndPanels, priceMap, styleNameById, cartDistributorId, tier]);
 
   // Cabinet-preview lines preserve exact placement UIDs and unavailable
   // cabinets. Complete trim, surface, fixture, and cart parity is added below.
@@ -5122,14 +5126,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       placed: placedWithGlassDoorLinks,
       styleId,
       pricingStyleIdFor,
-      distributorId: lockedDistributorId ?? null,
+      distributorId: cartDistributorId,
       tier: DESIGN_TIER_TO_SHARED[tier],
       styleNameById,
       unitPriceFor,
       glassDoorAddonFor,
     });
     return activeBundlePriceLock ? lockDesignCartLinesToPackageTotal(lines, activeBundlePriceLock.total) : lines;
-  }, [placedWithGlassDoorLinks, styleId, pricingStyleIdFor, lockedDistributorId, tier, styleNameById, unitPriceFor, glassDoorAddonFor, activeBundlePriceLock]);
+  }, [placedWithGlassDoorLinks, styleId, pricingStyleIdFor, cartDistributorId, tier, styleNameById, unitPriceFor, glassDoorAddonFor, activeBundlePriceLock]);
 
 
   // Decorative hardware schedule (knobs / pulls) for the chosen spec.
@@ -5427,7 +5431,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           name: t.name,
           styleId: t.styleId,
           styleLabel: t.styleLabel,
-          distributorId: lockedDistributorId ?? null,
+          distributorId: cartDistributorId,
           tier: DESIGN_TIER_TO_SHARED[tier],
           unitPrice: t.unitPrice,
           qty: t.qty,
@@ -5457,7 +5461,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         }]
       : [];
     return mergeDesignCartLines([...cabinetCartLines, ...aefWindowEndPanelCartLines, ...pricedTrimLines, ...surfaceCartLines, ...hardwareLines]);
-  }, [activeTrims, aefWindowEndPanelCartLines, cabinetCartLines, catalogHardwareSelection?.finish, hasSelectedPricedHardware, hwSchedule, lockedDistributorId, selectedPricedHardware, surfaceCartLines, styleId, tier]);
+  }, [activeTrims, aefWindowEndPanelCartLines, cabinetCartLines, catalogHardwareSelection?.finish, hasSelectedPricedHardware, hwSchedule, cartDistributorId, selectedPricedHardware, surfaceCartLines, styleId, tier]);
 
   // The designer total, cart, checkout, and 3D order drawer now share the same
   // complete price-locked line basis. Keep unpriced placed cabinets as pending
