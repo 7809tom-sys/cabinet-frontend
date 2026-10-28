@@ -2138,7 +2138,7 @@ describe("interactive 3D room scene helpers", () => {
 	  });
 
 	  it("gives each curated Hickory cabinet a stable, distinct source-grain crop without changing its vertical repeat", () => {
-	    const hickory = "/manus-storage/rustic_hickory_vertical_grain_32d9e28a.webp";
+	    const hickory = "/textures/rustic_hickory_vertical_grain_v2.webp";
 	    const first = threeDCabinetGrainTransform("cab-hickory-a", hickory);
 	    const firstAgain = threeDCabinetGrainTransform("cab-hickory-a", hickory);
 	    const second = threeDCabinetGrainTransform("cab-hickory-b", hickory);
