@@ -1,4 +1,5 @@
 import { doorOpeningAppearance } from "@/lib/doorOpeningAppearance";
+import { threeDLatticeRackLayout } from "@/lib/latticeRackLayout";
 import {
   PlacedCabinet, RoomData, STD, elevationBox, WallOpening,
   FinishColors, DEFAULT_FINISH_COLORS, CROWN_HEIGHT_IN, TOE_KICK_HEIGHT_IN, BATTEN_WIDTH_IN, LIGHT_RAIL_HEIGHT_IN,
@@ -2639,18 +2640,43 @@ export function DoorFront({ kind, edge, face, doors, drawers, isWall, doorSample
             <rect x="5%" y="5%" width="90%" height="90%" fill="url(#xpattern)" />
           </svg>
         )}
-        {activeFacePattern === "lattice" && (
-          <svg className="absolute inset-0 w-full h-full" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none">
-            <defs>
-              <pattern id="lattice-pattern" x="0" y="0" width="16" height="16" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-                <line x1="8" y1="0" x2="8" y2="16" stroke={barColor} strokeWidth="2" />
-                <line x1="0" y1="8" x2="16" y2="8" stroke={barColor} strokeWidth="2" />
-              </pattern>
-            </defs>
-            <rect x="5%" y="5%" width="90%" height="90%" fill={bgColor} opacity="0.2" />
-            <rect x="5%" y="5%" width="90%" height="90%" fill="url(#lattice-pattern)" />
-          </svg>
-        )}
+        {activeFacePattern === "lattice" && (() => {
+          // Same diamond layout as the 3D rack: 45-degree slats clipped to the
+          // opening, drawn in inches so the grid scales with the cabinet.
+          const widthIn = Number(cabinetWidthIn);
+          const heightIn = Number(cabinetHeightIn);
+          if (Number.isFinite(widthIn) && Number.isFinite(heightIn) && widthIn > 4 && heightIn > 4) {
+            const insetIn = 1;
+            const layout = threeDLatticeRackLayout((widthIn - insetIn * 2) / 12, (heightIn - insetIn * 2) / 12);
+            return (
+              <svg className="absolute inset-0 w-full h-full" xmlns="http://www.w3.org/2000/svg" viewBox={`${-widthIn / 2} ${-heightIn / 2} ${widthIn} ${heightIn}`} preserveAspectRatio="none">
+                <rect x={-widthIn / 2 + insetIn} y={-heightIn / 2 + insetIn} width={widthIn - insetIn * 2} height={heightIn - insetIn * 2} fill={bgColor} opacity="0.2" />
+                {layout.slats.map((slat, index) => {
+                  const half = (slat.length * 12) / 2 / Math.SQRT2;
+                  const cx = slat.x * 12;
+                  // Screen y grows downward, so a rising slat (+y in the scene) flips sign.
+                  const cy = -slat.y * 12;
+                  const dy = slat.family === "rising" ? -half : half;
+                  return (
+                    <line key={index} x1={cx - half} y1={cy - dy} x2={cx + half} y2={cy + dy} stroke={barColor} strokeWidth="2" vectorEffect="non-scaling-stroke" />
+                  );
+                })}
+              </svg>
+            );
+          }
+          return (
+            <svg className="absolute inset-0 w-full h-full" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none">
+              <defs>
+                <pattern id="lattice-pattern" x="0" y="0" width="16" height="16" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+                  <line x1="8" y1="0" x2="8" y2="16" stroke={barColor} strokeWidth="2" />
+                  <line x1="0" y1="8" x2="16" y2="8" stroke={barColor} strokeWidth="2" />
+                </pattern>
+              </defs>
+              <rect x="5%" y="5%" width="90%" height="90%" fill={bgColor} opacity="0.2" />
+              <rect x="5%" y="5%" width="90%" height="90%" fill="url(#lattice-pattern)" />
+            </svg>
+          );
+        })()}
         {activeFacePattern === "open" && (
           <div
             className="absolute"

@@ -15,6 +15,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { APPLIANCES, BLIND_CORNER_FILLER_WIDTH_IN, COUNTERTOP_DEPTH_IN, FURNITURE_CATALOG, STD, applianceAppearanceImage, bearsCountertop, isBaseHeightAppliance, blindCornerRearCountertopExtensionIn, blindPullRange, cabinetWall, cabinetWallDragPreview, cornerLegRatioForPlaced, cornerRotationForPlaced, countertopRunFaceNormal, countertopSurfacePlanPolygon, countertopSurfaces, crownBlockingCabinets, crownEligibleCabinets, customWallCabinetSide, drywallPonyWallAppearance, elevationBox, formatEighthInches, formatInches, glassDoorShelfCount, isAgainstWall, isBaseEndCornerCabinet, isCustomRoomWall, isFillerItem, fillerWidthRange, isGlassDoorCabinet, isMicrowaveOverRangePair, isRangeHoodPlacement, isRangeOrOven, isRefrigerator, isStacker, isWallRunDraggable, isWd18CountertopDrawerCabinet, kitchenCrestGenericOpenEndShelfCount, normalizeInstalledFillersToAdjacentCabinets, peninsulaCountertopPonyWallBackExtensionIn, peninsulaCountertopPonyWallBarOverhang, peninsulaCountertopSeatingOverhang, peninsulaCountertopWaterfallEnd, peninsulaLowerWorktopOppositeSideExtensionIn, peninsulaRunEndpoints, placedCornerGeometryKind, placedFootprint, ponyWallMiteredFootprint, ponyWallPlanFrame, potFillerMountedRange, rangeVisualAppearance, refrigeratorBayVerificationMetrics, resolveCabinetHardwarePosition, resolveSwing, roomWallAppearance, seatedWallRunFrame, wallRunFrame, selectedLowerCabinetWallPlacement, sinkPlanDimensions, usesRaisedFloorWallDoorPull, wallCabinetFitMeasure, wallGapFitPreview, wallGapFreehandPreview, wallGaps, wallPlacementAt, wallRunOffset, wallRunSpan, wallSpanMeasure, wallLength, wd18CountertopFaceLayout, type CabinetWallDragPreview, type CountertopSurface, type IslandZone, type PlacedCabinet, type PlacedCornerGeometryKind, type PlacedFurniture, type PonyWall, type PotFillerFixture, rotatedSize, type RoomData, type SinkFixture, type WallCabinetFitMeasure, type WallGapFitPreview, type WallOpening, type WallSide, type WallSpanMeasure, wallTopLimit, } from "@/lib/design";
+import { threeDLatticeRackLayout } from "@/lib/latticeRackLayout";
+export { threeDLatticeRackLayout };
 import { islandCountertopRects, islandCountertopVisibleRects, islandRaisedBarRects, islandFaceFitMeasure } from "@/lib/islandScene";
 import { furniturePlanFrame, resolvedFurnitureDimensions } from "@/lib/design";
 import { farmhouseSinkBaseFaceLayout } from "@/lib/farmhouseSinkBaseFace";
@@ -4120,6 +4122,9 @@ export function addCabinet(
     ? { kind: "farmhouse-sink" as const, pattern: null }
     : resolvedThreeDSpecialtyProfile(sku);
   const angledWallProfile = isAngledWallProfile(sku);
+  // Wine/lattice racks are open-front boxes with real crossing slats (not a
+  // solid box with a decal). Appliances such as a wine cooler never qualify.
+  const isLatticeRack = specialty.kind === "face-pattern" && specialty.pattern === "lattice" && placement !== "appliance";
 
 	  const cabinetPbr = threeDPhysicalSurfaceProfile("cabinet", Boolean(doorSampleUrl));
 	  const metalPbr = threeDPhysicalSurfaceProfile("metal");
@@ -4514,6 +4519,63 @@ export function addCabinet(
     };
     cabinet.add(shelfBody);
     bodyMeshes.push(shelfBody);
+  } else if (isLatticeRack) {
+    // Open-front carcass: painted top/bottom/sides in the cabinet finish, a
+    // natural-wood back and liner, and two layers of diagonal wood slats (one
+    // behind the face frame, one at the back) that the bottles rest in.
+    const panel = Math.min(0.045, Math.max(0.03, Math.min(bodyWidth, bodyHeight) * 0.05));
+    const interiorWidth = Math.max(0.08, bodyWidth - panel * 2);
+    const interiorHeight = Math.max(0.08, bodyHeight - panel * 2);
+    const addRackPart = (mesh: THREE.Mesh, data: Record<string, unknown>, structural = true) => {
+      mesh.userData = { wineRackLattice: true, ...(structural ? { selectedStyleSideSkin: true } : {}), ...data };
+      cabinet.add(mesh);
+      if (structural) bodyMeshes.push(mesh);
+    };
+    const top = new THREE.Mesh(new THREE.BoxGeometry(bodyWidth, panel, bodyDepth), bodyMaterial);
+    top.position.y = bodyHeight / 2 - panel / 2;
+    addRackPart(top, { wineRackPart: "top" });
+    const bottom = new THREE.Mesh(new THREE.BoxGeometry(bodyWidth, panel, bodyDepth), bodyMaterial);
+    bottom.position.y = -bodyHeight / 2 + panel / 2;
+    addRackPart(bottom, { wineRackPart: "bottom" });
+    for (const side of [-1, 1] as const) {
+      const sidePanel = new THREE.Mesh(new THREE.BoxGeometry(panel, interiorHeight, bodyDepth), bodyMaterial);
+      sidePanel.position.x = side * (bodyWidth / 2 - panel / 2);
+      addRackPart(sidePanel, { wineRackPart: side === -1 ? "left-side" : "right-side" });
+    }
+    // Natural (unpainted) wood inside, like the manufacturer photo.
+    const rackWood = new THREE.MeshStandardMaterial({ color: "#d9b97f", roughness: 0.62, metalness: 0 });
+    const rackBackWood = new THREE.MeshStandardMaterial({ color: "#c4a06a", roughness: 0.7, metalness: 0 });
+    const back = new THREE.Mesh(new THREE.BoxGeometry(interiorWidth, interiorHeight, panel), rackBackWood);
+    back.position.z = -bodyDepth / 2 + panel / 2;
+    addRackPart(back, { wineRackPart: "back" }, false);
+    const linerThickness = 0.008;
+    const linerDepth = bodyDepth - panel;
+    const linerZ = panel / 2;
+    for (const edge of [-1, 1] as const) {
+      const horizontalLiner = new THREE.Mesh(new THREE.BoxGeometry(interiorWidth, linerThickness, linerDepth), rackWood);
+      horizontalLiner.position.set(0, edge * (interiorHeight / 2 - linerThickness / 2), linerZ);
+      addRackPart(horizontalLiner, { wineRackPart: "liner" }, false);
+      const verticalLiner = new THREE.Mesh(new THREE.BoxGeometry(linerThickness, interiorHeight, linerDepth), rackWood);
+      verticalLiner.position.set(edge * (interiorWidth / 2 - linerThickness / 2), 0, linerZ);
+      addRackPart(verticalLiner, { wineRackPart: "liner" }, false);
+    }
+    const layout = threeDLatticeRackLayout(interiorWidth, interiorHeight);
+    const slatThickness = 0.045;
+    const layerDepth = Math.min(0.25, Math.max(0.08, linerDepth / 3));
+    const frontLayerZ = bodyDepth / 2 - 0.014 - layerDepth / 2;
+    const rearLayerZ = -bodyDepth / 2 + panel + layerDepth / 2;
+    // The falling family sits 1/4in behind the rising family so each crossing
+    // reads as an overlap instead of a flat sheet.
+    const weaveOffset = 0.02;
+    for (const [layerName, layerZ] of [["front", frontLayerZ], ["rear", rearLayerZ]] as const) {
+      for (const slat of layout.slats) {
+        const depth = slat.family === "rising" ? layerDepth : layerDepth - weaveOffset;
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(slat.length, slatThickness, depth), rackWood);
+        mesh.position.set(slat.x, slat.y, layerZ - (slat.family === "rising" ? 0 : weaveOffset / 2));
+        mesh.rotation.z = slat.family === "rising" ? Math.PI / 4 : -Math.PI / 4;
+        addRackPart(mesh, { wineRackSlat: true, latticeLayer: layerName, latticeFamily: slat.family }, false);
+      }
+    }
   } else if (isFloorDishwasher) {
     // A fitted dishwasher holds the same measured 24-inch opening as a base
     // cabinet, but it is an appliance—not a cabinet-finish side panel. The
@@ -6023,6 +6085,13 @@ export function addCabinet(
         false, 0.086, "lower", farmhouseFace.doorCount === 1 ? singleDoorHinge : null,
       );
     }
+  } else if (isLatticeRack) {
+    // The open-front carcass built above already holds the lattice; the
+    // constructed face frame supplies the painted rails around it. Leave a
+    // marker so the specialty profile stays discoverable on the front group.
+    const latticeMarker = new THREE.Group();
+    latticeMarker.userData = { specialtyProfile: "face-pattern", pattern: "lattice", openFrontLatticeRack: true };
+    frontGroup.add(latticeMarker);
   } else if (specialty.kind === "face-pattern") {
     const recess = new THREE.Mesh(
       new THREE.BoxGeometry(bodyWidth - 0.1, bodyHeight - 0.1, 0.03),

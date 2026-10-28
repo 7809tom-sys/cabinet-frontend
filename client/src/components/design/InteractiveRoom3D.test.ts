@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import * as THREE from "three";
 import { canSyncThreeDOrderToCart, constrainedThreeDWallHeight, exactFittedFillerInches, filteredThreeDCatalogItems, hybridPlanUnderlayModel, resolvedPlacedCabinetDoorProfile, resolvedPlacedCabinetDoorSampleUrl, resolvedPlacedCabinetFinish, resolvedThreeDWallHeights, shouldShowThreeDCatalog, THREE_D_EMBEDDED_TOOLBAR_CLASS, THREE_D_WORKSPACE_ACTIONS, threeDCabinetHitFromObject, threeDDecorativeEndSides, threeDDrawerZoneHeight, threeDFillerMeasurementNoticeEntries, threeDFittedFillerWidthText, threeDFrontDatumSnapIndicators, threeDHasVerifiedDoorLayout, threeDOrderLineForSelectedCabinet, threeDPointerSelectsCabinet, threeDPreviewFadeAllowed, threeDSelectedCabinetDescription, threeDSelectedCabinetDockClass, threeDSelectionFromPlaced, threeDStructuralFinish, threeDTallPantryDoorsPerRow, threeDTemporaryPreviewCounterText, threeDTouchTapOpensWindow, threeDUpperCabinetWallMinimums, threeDUsesAuthoritativePlanScene, threeDUsesCatalogFrontVisual, threeDWallClearanceText, threeDWallFitGuideText, threeDWallSideForEdge, threeDWallSideForPolygonEdge, updatedThreeDWallHeights } from "./InteractiveRoom3D";
-import { addCabinet, addPotFillerFixture, addSinkFixture, addThreeDPeninsulaCountertops, addWallOpening, cornerDrawerFrontLayout, describedOvenSpecification, diagonalCornerFootprintVertices, diagonalCornerFrontWidth, dimensions, doorProfileKind, existingCabinetTransform, existingCabinetSku, freestandingRangeHeightProfile, hasPersistedTwoDScene, isEnclosedWallMicrowaveCabinet, isEqualHeightTwoDrawerBase, lCornerCarcassParts, openingTransform, potFillerWallMountTransform, quoteMaterialDetails, rangeCooktopLayout, rangeHoodFrontGeometry, rangeHoodGeometry, rangeHoodSceneStatus, rangeOvenFrontLayout, resolvedCatalogFinish, resolvedPlacedCabinetFrontVisual, resolvedThreeDCountertopFinish, resolvedThreeDDoorProfile, resolvedThreeDDoorSampleUrl, resolvedThreeDDrawerRows, resolvedThreeDFaceLayout, resolvedThreeDOvenLayout, resolvedThreeDSpecialtyProfile, savedRangeHoodTransform, sceneCabinetColor, shouldRenderCountertopOverSceneItem, shouldRenderPlacedDesign, shouldRenderSavedSceneCabinet, sinkFaucetTransform, sinkFixtureTransform, singleOvenTowerAssembly, threeDApplianceFrontVisualUrl, threeDBlindCornerFrontLayout, threeDCabinetFrontVisualUrl, threeDCameraDistanceLimits, threeDCountertopDepthIn, threeDDoorMaterialFallback, threeDFaceMaterialColor, threeDMaterialStatusText, threeDPhotoRenderDoorReferenceStatus, threeDPeninsulaCountertopGeometry, threeDPlacedWall, threeDPlanSyncText, threeDRoomFacingRotation, threeDSceneInputDiagnostics, threeDSceneRevisionKey, threeDSceneVisibilityContract, threeDShakerFramePose, threeDShakerRailThickness, threeDUsesDoorSampleTexture, threeDUsesExactDoorSampleMaterial, threeDUsesPhysicalShakerRails, threeDVisibleMaterialMode, triangleCornerFootprintVertices, triangleCornerFrontPose, triangleCornerFrontWidth, THREE_D_DRAWER_REVEAL_DEPTH, THREE_D_EXPORT_SIZE, THREE_D_ROOM_CONTEXT_DEFAULT, THREE_D_WALL_DEPTH_WRITE, THREE_D_WALL_OPACITY, type InteractiveRoomScene } from "./InteractiveRoom3D";
+import { addCabinet, threeDLatticeRackLayout, addPotFillerFixture, addSinkFixture, addThreeDPeninsulaCountertops, addWallOpening, cornerDrawerFrontLayout, describedOvenSpecification, diagonalCornerFootprintVertices, diagonalCornerFrontWidth, dimensions, doorProfileKind, existingCabinetTransform, existingCabinetSku, freestandingRangeHeightProfile, hasPersistedTwoDScene, isEnclosedWallMicrowaveCabinet, isEqualHeightTwoDrawerBase, lCornerCarcassParts, openingTransform, potFillerWallMountTransform, quoteMaterialDetails, rangeCooktopLayout, rangeHoodFrontGeometry, rangeHoodGeometry, rangeHoodSceneStatus, rangeOvenFrontLayout, resolvedCatalogFinish, resolvedPlacedCabinetFrontVisual, resolvedThreeDCountertopFinish, resolvedThreeDDoorProfile, resolvedThreeDDoorSampleUrl, resolvedThreeDDrawerRows, resolvedThreeDFaceLayout, resolvedThreeDOvenLayout, resolvedThreeDSpecialtyProfile, savedRangeHoodTransform, sceneCabinetColor, shouldRenderCountertopOverSceneItem, shouldRenderPlacedDesign, shouldRenderSavedSceneCabinet, sinkFaucetTransform, sinkFixtureTransform, singleOvenTowerAssembly, threeDApplianceFrontVisualUrl, threeDBlindCornerFrontLayout, threeDCabinetFrontVisualUrl, threeDCameraDistanceLimits, threeDCountertopDepthIn, threeDDoorMaterialFallback, threeDFaceMaterialColor, threeDMaterialStatusText, threeDPhotoRenderDoorReferenceStatus, threeDPeninsulaCountertopGeometry, threeDPlacedWall, threeDPlanSyncText, threeDRoomFacingRotation, threeDSceneInputDiagnostics, threeDSceneRevisionKey, threeDSceneVisibilityContract, threeDShakerFramePose, threeDShakerRailThickness, threeDUsesDoorSampleTexture, threeDUsesExactDoorSampleMaterial, threeDUsesPhysicalShakerRails, threeDVisibleMaterialMode, triangleCornerFootprintVertices, triangleCornerFrontPose, triangleCornerFrontWidth, THREE_D_DRAWER_REVEAL_DEPTH, THREE_D_EXPORT_SIZE, THREE_D_ROOM_CONTEXT_DEFAULT, THREE_D_WALL_DEPTH_WRITE, THREE_D_WALL_OPACITY, type InteractiveRoomScene } from "./InteractiveRoom3D";
 import { addFurniture, addIslandZone, furnitureTransform, islandZoneTransform, ponyWallTransform } from "./InteractiveRoom3D";
 import { threeDFurnitureHitFromIntersections, threeDFurnitureHitFromObject } from "./InteractiveRoom3D";
 import { threeDDesignParitySnapshot, threeDExactPlanGeometryLock } from "./InteractiveRoom3D";
@@ -9322,4 +9322,74 @@ describe("final high-resolution preview controls", () => {
 	    expect(source).toContain("setPhotoRenderUrl(latestCustomerReadyImageQuery.data!.imageUrl!)");
 	    expect(source).toContain("will notify you in the Designer and by email");
 	  });
+});
+
+
+describe("wine rack lattice render", () => {
+  const rackSku = (overrides: Record<string, unknown> = {}) => ({
+    placementUid: "wrc",
+    distributorSkuId: 1,
+    cabinetId: 1,
+    masterCode: "WRC3015",
+    description: "Wall Wine Rack Cabinet",
+    placementType: "wall",
+    width: 30,
+    height: 15,
+    depth: 12,
+    numberOfDoors: 0,
+    numberOfDrawers: 0,
+    ...overrides,
+  }) as Parameters<typeof addCabinet>[1];
+
+  it("clips every diagonal slat inside the opening", () => {
+    const { slats } = threeDLatticeRackLayout(30 / 12, 15 / 12);
+    expect(slats.length).toBeGreaterThan(10);
+    for (const slat of slats) {
+      const half = (slat.length / 2) / Math.SQRT2;
+      const dy = slat.family === "rising" ? half : -half;
+      for (const sign of [-1, 1]) {
+        const x = slat.x + sign * half;
+        const y = slat.y + sign * dy;
+        expect(Math.abs(x)).toBeLessThanOrEqual(30 / 24 + 1e-6);
+        expect(Math.abs(y)).toBeLessThanOrEqual(15 / 24 + 1e-6);
+      }
+    }
+  });
+
+  it("uses the same diamond size standing up or laid on its side", () => {
+    const horizontal = threeDLatticeRackLayout(30 / 12, 15 / 12);
+    const vertical = threeDLatticeRackLayout(15 / 12, 30 / 12);
+    expect(horizontal.pitch).toBeCloseTo(vertical.pitch, 8);
+    expect(horizontal.pitch * 12).toBeCloseTo(6, 6);
+    expect(vertical.slats).toHaveLength(horizontal.slats.length);
+  });
+
+  it("builds an open-front rack with two crossing slat layers in wood, no solid recess", () => {
+    const root = new THREE.Group();
+    addCabinet(root, rackSku(), null, {}, 144, 120, "#e8e6df", "#f8f8f6");
+    const cabinet = root.children.find((node) => node.userData.placedUid === "wrc");
+    expect(cabinet).toBeDefined();
+    const slats: THREE.Object3D[] = [];
+    let recess = 0;
+    cabinet!.traverse((node) => {
+      if (node.userData.wineRackSlat) slats.push(node);
+      if (node.userData.specialtyProfile === "face-pattern" && (node as THREE.Mesh).isMesh) recess += 1;
+    });
+    expect(recess).toBe(0);
+    expect(new Set(slats.map((node) => node.userData.latticeLayer))).toEqual(new Set(["front", "rear"]));
+    expect(new Set(slats.map((node) => node.userData.latticeFamily))).toEqual(new Set(["rising", "falling"]));
+    const frontZ = Math.min(...slats.filter((n) => n.userData.latticeLayer === "front").map((n) => n.position.z));
+    const rearZ = Math.max(...slats.filter((n) => n.userData.latticeLayer === "rear").map((n) => n.position.z));
+    expect(frontZ).toBeGreaterThan(rearZ);
+    const slatMaterial = (slats[0] as THREE.Mesh).material as THREE.MeshStandardMaterial;
+    expect(slatMaterial.color.getHexString()).not.toBe("e8e6df");
+  });
+
+  it("does not turn a wine cooler appliance into a lattice rack", () => {
+    const root = new THREE.Group();
+    addCabinet(root, rackSku({ placementUid: "wine-cooler", masterCode: "WINE-24", description: "Wine cooler", placementType: "appliance", width: 24, height: 34.5, depth: 24 }), null, {}, 144, 120, "#e8e6df", "#f8f8f6");
+    let slats = 0;
+    root.traverse((node) => { if (node.userData.wineRackSlat) slats += 1; });
+    expect(slats).toBe(0);
+  });
 });
