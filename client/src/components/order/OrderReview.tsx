@@ -1101,6 +1101,11 @@ export function OrderReview({ lines, source, onLinesChange, onReset, initialStyl
 
       {/* Order Total with Tax Breakdown */}
       <div className="rounded-lg border border-border bg-card px-5 py-4 space-y-3">
+        {/* Quantity total: the sum of the Qty column above. */}
+        <div className="flex items-center justify-between border-b border-border pb-3" data-testid="order-review-qty-total">
+          <p className="text-sm text-muted-foreground">Total quantity</p>
+          <p className="text-sm font-semibold tabular-nums">{itemCount}</p>
+        </div>
         {/* Subtotal row */}
         <div className="flex items-center justify-between">
           <div>
