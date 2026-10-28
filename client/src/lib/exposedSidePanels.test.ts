@@ -3,6 +3,7 @@ import { DEFAULT_ROOM, wallPlacementAt, type PlacedCabinet, type WallOpening } f
 import { resetKitchenRuleParameters, setKitchenRuleParameters } from "./kitchenRuleParameters";
 import {
   autoAddedOrderSurfaces,
+  catalogItemToExposedPanelStock,
   syncExposedSidePanels,
   type ExposedPanelStock,
 } from "./exposedSidePanels";
@@ -25,10 +26,12 @@ function place(partial: {
   description?: string;
   constructionMethod?: string | null;
   islandFace?: PlacedCabinet["islandFace"];
+  wall?: "top" | "right" | "bottom" | "left";
 }): PlacedCabinet {
   const depth = partial.depth ?? (partial.placement === "wall" ? 12 : 24);
   const height = partial.height ?? (partial.placement === "wall" ? 30 : partial.placement === "tall" ? 84 : 34.5);
-  const spot = wallPlacementAt(partial.offset, partial.width, depth, "top", room);
+  const wall = partial.wall ?? "top";
+  const spot = wallPlacementAt(partial.offset, partial.width, depth, wall, room);
   return {
     uid: partial.uid,
     cabinetId: 1,
@@ -39,7 +42,7 @@ function place(partial: {
     width: partial.width,
     depth,
     height,
-    wallId: spot.wallId ?? "top",
+    wallId: spot.wallId ?? partial.wall ?? "top",
     wallOffset: spot.wallOffset ?? partial.offset,
     constructionMethod: partial.constructionMethod ?? "frameless",
     islandFace: partial.islandFace,
@@ -61,6 +64,7 @@ describe("exposed side panels", () => {
     expect(panels(once.placed).every((item) => item.fieldModificationNote?.startsWith("Auto-added:"))).toBe(true);
     const twice = syncExposedSidePanels({ placed: once.placed, room, catalog: stock });
     expect(panels(twice.placed)).toHaveLength(2);
+    expect(twice.placed).toBe(once.placed);
   });
 
   it("adds a panel where the run ends against the wall", () => {
@@ -170,7 +174,9 @@ describe("exposed side panels", () => {
       catalog: stock.map((item) => ({ ...item, price: null })),
     });
     expect(panels(missing.placed)).toHaveLength(0);
-    expect(missing.warnings[0]?.message).toMatch(/no priced panel/);
+    expect(missing.warnings).toHaveLength(1);
+    expect(missing.warnings[0]?.id).toBe("missing-price:base-end");
+    expect(missing.warnings[0]?.message).toMatch(/no priced base end panel/);
   });
 
   it("warns when the jog cannot make room and drops panels when the engine is unpublished", () => {
@@ -191,5 +197,93 @@ describe("exposed side panels", () => {
     } finally {
       resetKitchenRuleParameters();
     }
+  });
+
+  it("reads refrigerator, wall, and base panel sheets even when thickness is stored as the width", () => {
+    const refrigerator = catalogItemToExposedPanelStock({
+      id: 21, masterCode: "REP2496", description: "Refrigerator End Panel", subCategory: "Refrigerator End Panel",
+      placement: "accessory", width: 0.75, depth: 24, height: 96,
+    }, 140);
+    const wall = catalogItemToExposedPanelStock({
+      id: 22, masterCode: "WEP1542", description: "Wall End Panel", placement: "accessory", width: 0.75, depth: 15.25, height: 42,
+    }, 48);
+    const base = catalogItemToExposedPanelStock({
+      id: 23, masterCode: "BEP2535", description: "Base end panel", placement: "accessory", width: 25.625, depth: 0.75, height: 35.25,
+    }, 86);
+    expect(refrigerator).toMatchObject({ panelType: "tall-fridge", stockFace: 24, price: 140 });
+    expect(wall).toMatchObject({ panelType: "wall-end", stockFace: 15.25 });
+    expect(base).toMatchObject({ panelType: "base-end", stockFace: 25.625 });
+
+    const fridge = syncExposedSidePanels({
+      placed: [place({ uid: "fridge", masterCode: "FRIDGE-36", placement: "appliance", offset: 40, width: 36, depth: 30, height: 70, description: "Refrigerator" })],
+      room,
+      catalog: [refrigerator!, wall!, base!],
+    });
+    expect(panels(fridge.placed).every((item) => item.masterCode === "REP2496")).toBe(true);
+    expect(fridge.warnings).toEqual([]);
+  });
+
+  it("does not flag interior cabinets, fillers, or a range between cabinets in a U-shaped run", () => {
+    const catalog = [
+      catalogItemToExposedPanelStock({ id: 31, masterCode: "BEP2535", description: "Base end panel", width: 25.625, depth: 0.75, height: 35.25 }, 86)!,
+      catalogItemToExposedPanelStock({ id: 32, masterCode: "WEP1530", description: "Wall end panel", width: 0.75, depth: 15.25, height: 42 }, 42)!,
+      catalogItemToExposedPanelStock({ id: 33, masterCode: "TEP3096", description: "Tall end panel", width: 0.75, depth: 30, height: 96 }, 140)!,
+    ];
+    const placed = [
+      place({ uid: "b18", masterCode: "B18", placement: "base", offset: 0, width: 18 }),
+      place({ uid: "b24", masterCode: "B24", placement: "base", offset: 18, width: 24 }),
+      place({ uid: "db", masterCode: "3DB24", placement: "base", offset: 42, width: 24 }),
+      place({ uid: "bt", masterCode: "BT9", placement: "base", offset: 66, width: 9 }),
+      place({ uid: "range", masterCode: "RANGE-30", placement: "appliance", offset: 75, width: 30, description: "Range" }),
+      place({ uid: "filler", masterCode: "F342", placement: "base", offset: 105, width: 3, depth: 24, height: 34.5, description: "Base filler" }),
+      place({ uid: "corner", masterCode: "LSB36", placement: "base", offset: 108, width: 36, depth: 24 }),
+      place({ uid: "right-base", masterCode: "B24", placement: "base", offset: 24, width: 24, wall: "right" }),
+      place({ uid: "w-end", masterCode: "W2142", placement: "wall", offset: 0, width: 21, height: 42 }),
+      place({ uid: "w-filler", masterCode: "WFF342", placement: "wall", offset: 21, width: 3, height: 42, description: "Wall filler" }),
+      place({ uid: "w-mid", masterCode: "W2742", placement: "wall", offset: 24, width: 27, height: 42 }),
+      place({ uid: "w-next", masterCode: "W3030", placement: "wall", offset: 51, width: 30, height: 30 }),
+      place({ uid: "dw-left", masterCode: "B18", placement: "base", offset: 0, width: 20, wall: "left" }),
+      place({ uid: "dw", masterCode: "DW24", placement: "appliance", offset: 20, width: 24, description: "Dishwasher", wall: "left" }),
+      place({ uid: "dw-right", masterCode: "B21", placement: "base", offset: 44, width: 21, wall: "left" }),
+    ];
+    const result = syncExposedSidePanels({ placed, room, catalog });
+    const flagged = result.warnings.map((warning) => warning.message).join("\n");
+    for (const code of ["B24", "3DB24", "BT9", "RANGE-30", "W2742", "F342", "WFF342", "DW24"]) {
+      expect(flagged).not.toContain(code);
+    }
+    const panelFor = (uid: string, side: string) => panels(result.placed).some((item) => item.autoPlacedForUid === uid && item.autoPlacedSide === side);
+    expect(panelFor("b24", "start") || panelFor("b24", "end")).toBe(false);
+    expect(panelFor("db", "start") || panelFor("db", "end")).toBe(false);
+    expect(panelFor("bt", "start") || panelFor("bt", "end")).toBe(false);
+    expect(panelFor("w-mid", "start") || panelFor("w-mid", "end")).toBe(false);
+    expect(panelFor("range", "start") || panelFor("range", "end")).toBe(false);
+    expect(panelFor("dw", "start") || panelFor("dw", "end")).toBe(false);
+    expect(panelFor("right-base", "start")).toBe(false);
+    const sideKeys = panels(result.placed).map((item) => `${item.autoPlacedForUid}:${item.autoPlacedSide}`);
+    expect(new Set(sideKeys).size).toBe(sideKeys.length);
+    const again = syncExposedSidePanels({ placed: result.placed, room, catalog });
+    expect(again.placed).toBe(result.placed);
+  });
+
+  it("panels only a dishwasher or refrigerator side that is actually open", () => {
+    const openDishwasher = syncExposedSidePanels({
+      placed: [place({ uid: "dw", masterCode: "DW24", placement: "appliance", offset: 40, width: 24, description: "Dishwasher" })],
+      room,
+      catalog: stock,
+    });
+    expect(panels(openDishwasher.placed).some((item) => item.autoPlacedReason === "dw-exposed-side")).toBe(true);
+
+    const between = syncExposedSidePanels({
+      placed: [
+        place({ uid: "left", masterCode: "B24", placement: "base", offset: 16, width: 24 }),
+        place({ uid: "dw", masterCode: "DW24", placement: "appliance", offset: 40, width: 24, description: "Dishwasher" }),
+        place({ uid: "right", masterCode: "B24", placement: "base", offset: 64, width: 24 }),
+      ],
+      room,
+      catalog: stock,
+    });
+    expect(panels(between.placed).some((item) => item.autoPlacedForUid === "dw")).toBe(false);
+    expect(panels(between.placed).some((item) => item.autoPlacedForUid === "left" && item.autoPlacedSide === "end")).toBe(false);
+    expect(panels(between.placed).some((item) => item.autoPlacedForUid === "right" && item.autoPlacedSide === "start")).toBe(false);
   });
 });

@@ -4,7 +4,7 @@ import { CartProvider } from "@/contexts/CartContext";
 import { LanguageProvider } from "@/contexts/LanguageContext";
 import { ImageCustomerDialog } from "@/components/imageCustomer/ImageCustomerDialog";
 import { imageCustomerRetryLink } from "@/lib/imageCustomerRetryLink";
-import { httpBatchLink } from "@trpc/client";
+import { httpBatchLink, httpLink, splitLink } from "@trpc/client";
 import { createRoot } from "react-dom/client";
 import superjson from "superjson";
 import App from "./App";
@@ -45,23 +45,32 @@ queryClient.getMutationCache().subscribe(event => {
   }
 });
 
+const trpcHttpOptions = {
+  url: apiUrl("/api/trpc"),
+  transformer: superjson,
+  methodOverride: TRPC_QUERY_METHOD_OVERRIDE,
+  async fetch(input: RequestInfo | URL, init?: RequestInit) {
+    // getSession() returns the cached session and refreshes an expired
+    // access token, so every request carries a currently valid token.
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) return fetchTrpcJson(input, init);
+    const headers = new Headers(init?.headers);
+    headers.set("authorization", `Bearer ${token}`);
+    return fetchTrpcJson(input, { ...init, headers });
+  },
+};
+
 const trpcClient = trpc.createClient({
   links: [
     imageCustomerRetryLink() as never,
-    httpBatchLink({
-      url: apiUrl("/api/trpc"),
-      transformer: superjson,
-      methodOverride: TRPC_QUERY_METHOD_OVERRIDE,
-      async fetch(input, init) {
-        // getSession() returns the cached session and refreshes an expired
-        // access token, so every request carries a currently valid token.
-        const { data } = await supabase.auth.getSession();
-        const token = data.session?.access_token;
-        if (!token) return fetchTrpcJson(input, init);
-        const headers = new Headers(init?.headers);
-        headers.set("authorization", `Bearer ${token}`);
-        return fetchTrpcJson(input, { ...init, headers });
-      },
+    // kitchenRules.parameters is not on the live backend yet. Keep it out of
+    // the Designer load batch so its NOT_FOUND (HTTP 207) cannot fail the
+    // cabinets, prices, and scene queries that share that batch.
+    splitLink({
+      condition: (op) => op.path === "kitchenRules.parameters",
+      true: httpLink(trpcHttpOptions),
+      false: httpBatchLink(trpcHttpOptions),
     }),
   ],
 });

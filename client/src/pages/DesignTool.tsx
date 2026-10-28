@@ -97,7 +97,9 @@ import { adjustedDesignUnitPrice, buildDesignCabinetCartLines, buildDesignPrevie
 import { combinedFillerNote, fillerCutSourceFor, isCombinedSmallFiller } from "@/lib/fillerBilling";
 import { activeCatalogPricingIdsByMasterCode, currentCatalogPricingCabinetId } from "@/lib/designPricingIdentity";
 import { catalogFillerForGap, catalogFillerPricingId, fittedCatalogFillerDescription, isCatalogFiller, type CatalogFillerCandidate } from "@/lib/catalogFiller";
-import { syncExposedSidePanels, type ExposedPanelStock, type ExposedPanelWarning } from "@/lib/exposedSidePanels";
+import { catalogItemToExposedPanelStock, sameExposedPanelWarnings, syncExposedSidePanels, type ExposedPanelStock, type ExposedPanelWarning } from "@/lib/exposedSidePanels";
+import { countertopToastVisible, COUNTERTOP_TOAST_TIMEOUT_MS, useDebouncedValue, stablePricePairKey } from "@/lib/designerPricingStability";
+import { ColorStyleQuickPicker } from "@/components/design/ColorStyleQuickPicker";
 import { attachedFillerLeftoverOptions, attachedFillerNeedsReview, attachedFillerPlanForCandidate, attachedFillerSizeIssues, type AttachedFillerChoice, type AttachedFillerLeftoverOptions, type AttachedFillerSizeIssue } from "@/lib/cabinetAttachedFillers";
 import { buildAttachedFillerPlacement, supportsAttachedFillerChoice } from "@/lib/cabinetAttachedFillerPlacement";
 import { selectedPeninsulaCabinetSequencePlan, selectedPeninsulaCabinetTotalIn, wizardEligibleBaseCabinets, type PeninsulaWizardCabinet } from "@/lib/peninsulaWizardPlan";
@@ -2708,7 +2710,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const canLoadCatalogInteractive3d = Boolean(styleId && selectedStyleDistributorId && (placed.length > 0 || selectedLayoutPresetId));
   const canLoadInteractive3d = hasPersistedTwoDPlan || canLoadCatalogInteractive3d;
 
-  const { data: interactive3dScene, isFetching: interactive3dLoading } = trpc.roomLayouts.scene.useQuery(
+  const { data: interactive3dScene, isFetching: interactive3dLoading, isError: interactive3dError } = trpc.roomLayouts.scene.useQuery(
     {
       layoutPresetId: activeSceneLayoutPresetId,
       distributorId: selectedStyleDistributorId ?? 0,
@@ -4568,6 +4570,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	    // prospective rows, a physically required filler could never pass the
 	    // positive-price gate until it had somehow already been added.
 	    catalogFillers.filter(isCatalogFiller).forEach((filler) => push(filler.id, styleId, filler.masterCode));
+	    catalogFillers.forEach((item) => {
+	      if (!catalogItemToExposedPanelStock(item, null)) return;
+	      push(item.id, styleId, item.masterCode);
+	    });
 	    // AEF window-break WEP panels are source-priced stock. Price each one in
 	    // the exact finish of the upper cabinet whose exposed end it covers.
 	    aefWindowEndPanels.forEach((panel) => {
@@ -4587,9 +4593,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	    return pairs;
 	  }, [placed, pricingIdForPlacedCabinet, pricingStyleIdFor, styleId, glassDoorAddonCodeFor, glassDoorCatalogProduct, catalogFillers, aefWindowEndPanels, refrigeratorSurroundCatalog]);
 
-  const { data: priceRows, isFetching: priceRowsFetching, isFetched: priceRowsFetched } = trpc.design.priceForCabinetsByStyles.useQuery(
-    { pairs: pricePairs, distributorId: lockedDistributorId ?? undefined },
-    { enabled: pricePairs.length > 0 && !!styleId }
+  const pricePairKey = stablePricePairKey(pricePairs, lockedDistributorId);
+  const stablePricePairs = useMemo(() => pricePairs, [pricePairKey]);
+  const debouncedPricePairs = useDebouncedValue(stablePricePairs, 400);
+  const { data: priceRows, isFetching: priceRowsFetching, isFetched: priceRowsFetched, isError: priceRowsError } = trpc.design.priceForCabinetsByStyles.useQuery(
+    { pairs: debouncedPricePairs, distributorId: lockedDistributorId ?? undefined },
+    { enabled: debouncedPricePairs.length > 0 && !!styleId, retry: false, refetchOnWindowFocus: false }
   );
   // Part 2: the server may have priced a placed code through its two-way
   // equivalence group (ERB36 placed on a BER line prices as BER36). Keep the
@@ -4683,21 +4692,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const exposedPanelStock = useMemo<ExposedPanelStock[]>(() => {
     if (!styleId) return [];
     return catalogFillers.flatMap((item) => {
-      if (!/\bpanel\b/i.test(`${item.masterCode} ${item.description ?? ""} ${item.subCategory ?? ""}`)) return [];
-      const placement = item.placement === "wall" ? "wall" as const : item.placement === "tall" ? "tall" as const : "base" as const;
-      return [{
-        id: item.id,
-        masterCode: item.masterCode,
-        description: item.description || item.masterCode,
-        placement,
-        stockFace: Number(item.width) || Number(item.depth) || 12,
-        stockHeight: Number(item.height) || 34.5,
-        price: priceMap.get(`${item.id}:${styleId}`) ?? null,
-      }];
+      const stock = catalogItemToExposedPanelStock(item, priceMap.get(`${item.id}:${styleId}`) ?? null);
+      return stock ? [stock] : [];
     });
   }, [catalogFillers, priceMap, styleId]);
   useEffect(() => {
-    if (!priceRowsFetched || exposedPanelStock.length === 0) return;
+    if (!priceRowsFetched || !styleId) return;
     const plan = syncExposedSidePanels({
       placed: placedRef.current,
       room: roomRef.current,
@@ -4708,8 +4708,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       placedRef.current = plan.placed;
       setPlaced(plan.placed);
     }
-    setExposedPanelWarnings(plan.warnings);
-  }, [exposedPanelStock, openings, priceRowsFetched, room, setPlaced]);
+    setExposedPanelWarnings((current) => sameExposedPanelWarnings(current, plan.warnings) ? current : plan.warnings);
+  }, [exposedPanelStock, openings, priceRowsFetched, room, setPlaced, styleId]);
 
   // ── Part 1: every placed cabinet remains visible ─────────────────────────
   // Evaluate the active line as soon as its price query settles. Flags drive
@@ -9315,6 +9315,25 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	  const countertopGeometryUpdating = deferredCountertopGeometry !== countertopGeometry
 	    || ((viewMode === "threeD" || viewMode === "hybrid") && !interactive3dLoading && !!resolvedInteractive3dScene
 	      && paintedCountertopGeometry !== deferredCountertopGeometry);
+	  const countertopUpdateFailed = priceRowsError || ((viewMode === "threeD" || viewMode === "hybrid") && interactive3dError);
+	  const [countertopToastTimedOut, setCountertopToastTimedOut] = useState(false);
+	  const countertopToastSinceRef = useRef<number | null>(null);
+	  useEffect(() => {
+	    if (!countertopGeometryUpdating) {
+	      countertopToastSinceRef.current = null;
+	      setCountertopToastTimedOut(false);
+	      return;
+	    }
+	    if (countertopToastSinceRef.current == null) countertopToastSinceRef.current = Date.now();
+	    const remaining = Math.max(0, COUNTERTOP_TOAST_TIMEOUT_MS - (Date.now() - countertopToastSinceRef.current));
+	    const timer = window.setTimeout(() => setCountertopToastTimedOut(true), remaining);
+	    return () => window.clearTimeout(timer);
+	  }, [countertopGeometryUpdating]);
+	  const showCountertopToast = countertopToastVisible({
+	    pending: countertopGeometryUpdating,
+	    failed: countertopUpdateFailed,
+	    timedOut: countertopToastTimedOut,
+	  });
 	  useEffect(() => {
 	    if (smartGapPreview.length === 0) return;
 	    const onKeyDown = (event: KeyboardEvent) => {
@@ -14313,6 +14332,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	      initialPresentation={interactive3dPresentation ?? undefined}
 	      catalogFinishOverride={activeFinish.face}
 	      cabinetFinishPreviewOptions={threeDCabinetFinishPreviewOptions}
+	      doorStyleChoices={displayUniqueDoorStyles.map((style) => ({ id: style.id, name: affiliateStyleName(style) }))}
+	      selectedDoorStyleId={styleId}
+	      onDoorStyleChange={(id) => setSlotStyle(activeSlot, id)}
 	      cabinetFinishOverrides={threeDCabinetFinishOverrides}
       cabinetDoorProfiles={threeDCabinetDoorProfiles}
 	      hardwareStyleId={hardwareStyleId}
@@ -14564,6 +14586,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         </div>
 
         <CabinetHandlesControl value={hardwareStyleId} onChange={setGenericHardwareStyle} tablet={isTabletWorkspace} />
+        <ColorStyleQuickPicker
+          styles={displayUniqueDoorStyles.map((style) => ({ id: style.id, name: affiliateStyleName(style) }))}
+          value={styleId}
+          disabled={cabinetsLocked}
+          onChange={(id) => setSlotStyle(activeSlot, id)}
+        />
         <HardwareCatalogPicker
           value={catalogHardwareSelection}
           onSelect={selectCatalogHardware}
@@ -17653,7 +17681,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 
 	        {/* Canvas */}
 	        <div ref={canvasExportRef} className={DESIGNER_CANVAS_CONTAINER_CLASS}>
-	          {countertopGeometryUpdating && !((cornerTowerBoard || rodTowerBoard) && (viewMode === "threeD" || viewMode === "hybrid")) && ((viewMode === "plan" && countertop)
+	          {showCountertopToast && !((cornerTowerBoard || rodTowerBoard) && (viewMode === "threeD" || viewMode === "hybrid")) && ((viewMode === "plan" && countertop)
 	            || ((viewMode === "threeD" || viewMode === "hybrid") && !!resolvedInteractive3dScene)) && (
 	            <div data-testid="countertop-geometry-loading" role="status" aria-live="polite"
 	              className="pointer-events-none absolute bottom-[5.25rem] left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 whitespace-nowrap rounded-full border border-amber-300 bg-white/95 px-3 py-1.5 text-xs font-semibold text-slate-800 shadow-lg backdrop-blur-sm lg:bottom-4">
@@ -22154,6 +22182,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 			                initialPresentation={interactive3dPresentation ?? undefined}
 			                catalogFinishOverride={activeFinish.face}
 	                cabinetFinishPreviewOptions={threeDCabinetFinishPreviewOptions}
+	                doorStyleChoices={displayUniqueDoorStyles.map((style) => ({ id: style.id, name: affiliateStyleName(style) }))}
+	                selectedDoorStyleId={styleId}
+	                onDoorStyleChange={(id) => setSlotStyle(activeSlot, id)}
 	                cabinetFinishOverrides={threeDCabinetFinishOverrides}
 	                cabinetDoorProfiles={threeDCabinetDoorProfiles}
 	                hardwareStyleId={hardwareStyleId}
