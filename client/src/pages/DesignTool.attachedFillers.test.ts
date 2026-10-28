@@ -47,3 +47,12 @@ describe("attached filler size warning popup", () => {
     expect(source).toContain('{!tooLarge && <AlertDialogAction data-testid="attached-filler-size-place-anyway"');
   });
 });
+
+describe("attached filler fit error", () => {
+  it("names what the cabinet or its filler would overlap, and by how much", () => {
+    const start = source.indexOf("Name what was blocked and by what");
+    const block = source.slice(start, source.indexOf("setPlacementWarning(message);", start));
+    expect(block).toContain("cabinetPlacementCollisionDetail(blocked,");
+    expect(block).toContain("would overlap ${blocker.cabinet.masterCode} by ${formatEighthInches(blocker.penetration)}");
+  });
+});

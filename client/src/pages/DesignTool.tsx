@@ -7523,7 +7523,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         }
         const seated = appendCollisionFreePlacements(normalizedPrevious, [attachment.cabinet, ...attachment.fillers], room);
         if (seated.rejected.length > 0 || !seated.placed.some((item) => item.uid === attachment.cabinet.uid)) {
-          const message = `${finalCab.masterCode} and its selected filler${attachment.fillers.length === 1 ? "" : "s"} cannot fit at that exact zero-overlap position. The design was not changed.`;
+          // Name what was blocked and by what, so a "Fits up to" space that
+          // still refuses the cabinet can be traced to the exact neighbor.
+          const blocked = seated.rejected[0] ?? attachment.cabinet;
+          const blocker = cabinetPlacementCollisionDetail(blocked, seated.placed.filter((item) => item.uid !== blocked.uid), room);
+          const blockedName = isFillerItem(blocked) ? `its ${formatEighthInches(Number(blocked.width) || 0)} filler` : blocked.masterCode;
+          const message = blocker
+            ? `${finalCab.masterCode} and its selected filler${attachment.fillers.length === 1 ? "" : "s"} cannot fit: ${blockedName} would overlap ${blocker.cabinet.masterCode} by ${formatEighthInches(blocker.penetration)}. The design was not changed.`
+            : `${finalCab.masterCode} and its selected filler${attachment.fillers.length === 1 ? "" : "s"} cannot fit at that exact zero-overlap position. The design was not changed.`;
           setPlacementWarning(message);
           toast.error(message);
           return;
