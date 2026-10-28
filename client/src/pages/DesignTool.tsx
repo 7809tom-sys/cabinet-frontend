@@ -206,6 +206,9 @@ import { clampSinkDragForFaucet } from "@/lib/faucetPlacement";
 import { autoDesignSinkWindow, windowOverlapsReservation } from "@/lib/autoDesignSinkWindow";
 import { autoDesignRangeHood, autoDesignRangeNeedsVentilation } from "@/lib/autoDesignRangeHood";
 import { autoBuildCornerCatalog, autoDesignCornerAttempts, autoDesignCornerFamily, autoDesignCornerSlotPoint, autoDesignCornerSlots, isAutoDesignBlindCornerOption, type AutoBuildCornerCandidate, type AutoDesignCornerChoice, type AutoDesignCornerSlot } from "@/lib/autoDesignCornerStage";
+import { evaluateAutoDesignCornerFit, type AutoDesignCornerFit } from "@/lib/cornerFit";
+import { rangeBridgeSpec, reviewAfterShift, separateRangeAndRefrigerator } from "@/lib/kitchenAdjacency";
+import { bakesALot, cooksALot, normalizeKitchenUsage } from "@/lib/kitchenUsage";
 import { buildMandatoryAutoDesignRefrigeratorBay } from "@/lib/autoDesignRefrigeratorBay";
 import { buildAutoDesignWallCabinets, resolveWallHeightClass, type AutoDesignUpperCorner } from "@/lib/autoDesignWallCabinets";
 import { isWallWineRackCabinet, withWallWineRacks } from "@shared/wallWineRack";
@@ -1136,6 +1139,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     sinkWindow: WallOpening | null;
     /** Along-wall starts from the user's measurements, before any corner nudge. */
     anchorOrigins: AutoDesignAnchorOrigin[];
+    cornerFit: Record<string, AutoDesignCornerFit>;
   } | null>(null);
   autoDesignSessionRef.current = autoDesignOpen || autoDesignCornerStage != null;
   const [autoDesignFaucetPrompt, setAutoDesignFaucetPrompt] = useState<{ sinkUid: string; queue: string[] } | null>(null);
@@ -3700,6 +3704,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     }
     placedRef.current = working;
     setPlaced(working);
+    setRoom((current) => ({ ...current, kitchenUsage: normalizeKitchenUsage(input.kitchenUsage) }));
     const selectedWallCabinetHeight = input.wallCabinetHeightIn ?? 30;
     setWallCabHeight(selectedWallCabinetHeight);
     wallCabHeightRef.current = selectedWallCabinetHeight;
@@ -3709,6 +3714,23 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       wallIds: selectedWalls, room, originCorner: input.originCorner, runDirection: input.runDirection,
     });
     const cornerOptions = autoBuildCornerCatalog(pool) as AutoBuildCornerCandidate[];
+    const cornerFit: Record<string, AutoDesignCornerFit> = {};
+    const sinkAnchor = anchorsByKind.get("sink") ?? null;
+    for (const slot of slots) {
+      const point = autoDesignCornerSlotPoint(slot, room, input.originCorner, input.runDirection);
+      const firstWall = wallLabelToEngineWallId(slot.firstWall, room, input.originCorner, input.runDirection);
+      const secondWall = wallLabelToEngineWallId(slot.secondWall, room, input.originCorner, input.runDirection);
+      if (!point || !firstWall || !secondWall) continue;
+      cornerFit[slot.id] = evaluateAutoDesignCornerFit({
+        options: cornerOptions,
+        room,
+        placed: working,
+        corner: point,
+        wallIds: [firstWall.engineWallId, secondWall.engineWallId],
+        sink: sinkAnchor,
+        openings,
+      });
+    }
     setAutoDesignOpen(false);
     setAutoDesignCornerStage({
       input,
@@ -3724,6 +3746,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       cornerOptions,
       sinkWindow,
       anchorOrigins,
+      cornerFit,
     });
     setViewMode("plan");
     setSelectedUid(null);
@@ -3731,7 +3754,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       ? "Measured appliances are seated. Choose each real corner cabinet before the remaining wall runs are filled."
       : "Measured appliances are seated. Confirm the next step to fill the remaining wall runs.");
     return { ok: true as const };
-  }, [appliancePalette, autoFillCabinets, autoFillCabinetsLoading, autoDesignAvailable, dishwasherSidePreference, isCornerCabinet, openings, placedRef, refrigeratorSurroundCatalog, room, setCountertop, setPlaced, wallCabPool, wallCabPoolLoading]);
+    }, [appliancePalette, autoFillCabinets, autoFillCabinetsLoading, autoDesignAvailable, dishwasherSidePreference, isCornerCabinet, openings, placedRef, refrigeratorSurroundCatalog, room, setCountertop, setPlaced, setRoom, wallCabPool, wallCabPoolLoading]);
 
   /**
    * The second half of an Auto-Design build. Nothing is guessed: appliances are
@@ -3756,6 +3779,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     let selectedCornerCount = 0;
     const upperCorners: AutoDesignUpperCorner[] = [];
     const applianceMoves: AutoDesignApplianceMove[] = [];
+    const seatedCornerIds = new Map<string, number>();
 
     for (const slot of stage.slots) {
       const choice = choices[slot.id] ?? { cabinetId: null };
@@ -3770,20 +3794,35 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       }
       const source = stage.cornerOptions.find((candidate) => candidate.id === choice.cabinetId);
       if (!source) return fail(`${slot.label} must use a current source-priced corner cabinet. The selected catalog item is unavailable.`);
+      const fit = stage.cornerFit?.[slot.id];
+      let requested = source;
+      if (fit && choice.cabinetId != null && !fit.offeredIds.includes(choice.cabinetId)) {
+        if (fit.selectedId == null) return fail(fit.blockedMessage ?? `${source.masterCode} does not fit ${slot.label}. No corner cabinet fits.`);
+        const fallback = stage.cornerOptions.find((option) => option.id === fit.selectedId);
+        if (!fallback) return fail(fit.blockedMessage ?? `${slot.label}: no corner cabinet fits.`);
+        requested = fallback;
+        if (fit.fallbackNote) {
+          setAutoDesignLayoutNotes((current) => current.includes(fit.fallbackNote!) ? current : [...current, fit.fallbackNote!]);
+        }
+      }
+      const fittingOptions = fit ? stage.cornerOptions.filter((option) => fit.offeredIds.includes(option.id)) : stage.cornerOptions;
       const target = autoDesignCornerSlotPoint(slot, room, stage.input.originCorner, stage.input.runDirection);
       if (!target) return fail(`${slot.label} does not resolve to a real shared wall vertex. No remaining cabinets were added.`);
-      const attempts = autoDesignCornerAttempts(source, stage.cornerOptions);
+      const attempts = autoDesignCornerAttempts(requested, fittingOptions.length ? fittingOptions : stage.cornerOptions);
       let seated: ReturnType<typeof seatAutoDesignCorner> | null = null;
       let seatedSource: AutoBuildCornerCandidate | null = null;
-      let seatMessage = `${source.masterCode} cannot fit at ${slot.label}.`;
+      let seatMessage = fit?.blockedMessage ?? `${requested.masterCode} cannot fit at ${slot.label}.`;
       for (const attempt of attempts) {
         const sourceCatalog = stage.pool.find((candidate) => candidate.id === attempt.id);
         if (!sourceCatalog) continue;
+        const placementWallId = fit?.placementWallById[attempt.id];
+        const seatTarget = placementWallId ? { ...target, firstWallId: placementWallId } : target;
         const trial = seatAutoDesignCorner({
-          source: sourceCatalog, slotLabel: slot.label, target,
+          source: sourceCatalog, slotLabel: slot.label, target: seatTarget,
           cornerWallIds: [firstWall.engineWallId, secondWall.engineWallId],
           working, room, openings: stageOpenings,
           blindPullIn: choice.blindPullIn ?? attempt.pullMax ?? 6,
+          blindRunWallId: isAutoDesignBlindCornerOption(attempt) ? placementWallId : undefined,
           isBlindOption: isAutoDesignBlindCornerOption(attempt),
           catalogFillers, makeUid, styleId: styleIdRef.current ?? null,
         });
@@ -3799,19 +3838,42 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       working = seated.placed;
       applianceMoves.push(...seated.moves);
       selectedCornerCount++;
+      seatedCornerIds.set(slot.id, seatedSource.id);
       upperCorners.push({ base: corner, point: target });
     }
 
     const sinkAnchor = stage.anchors.sink;
+    if (sinkAnchor) {
+      for (const slot of stage.slots) {
+        const fit = stage.cornerFit?.[slot.id];
+        const seatedId = seatedCornerIds.get(slot.id);
+        const shift = seatedId != null ? fit?.sinkShiftByOptionId[seatedId] : null;
+        if (!shift) continue;
+        const sink = working.find((item) => item.uid === sinkAnchor.uid);
+        const origin = stage.anchorOrigins.find((entry) => entry.uid === sinkAnchor.uid);
+        if (!sink || (origin && Math.abs(shift.start - origin.originalStart) > 3.05)) continue;
+        const spot = wallPlacementAt(shift.start, sink.width, Math.max(0, sink.depth), shift.wallId as WallSide, room);
+        if (!spot) continue;
+        working = working.map((item) => item.uid === sink.uid
+          ? { ...item, ...spot, wallId: spot.wallId ?? item.wallId, wallOffset: spot.wallOffset ?? shift.start }
+          : item);
+      }
+    }
     const wiggle = applyAutoDesignWiggleRoom({
       placed: working,
       room,
       openings: stageOpenings,
       catalog: stage.straightBaseCatalog,
       origins: stage.anchorOrigins,
-      lockedUids: stage.sinkWindow && sinkAnchor ? [sinkAnchor.uid] : [],
+      lockedUids: [],
     });
     working = wiggle.placed;
+    const separated = separateRangeAndRefrigerator({
+      placed: working,
+      room,
+      origins: stage.anchorOrigins,
+    });
+    working = separated.placed;
     let refrigeratorReservation = stage.refrigeratorReservation;
     const refrigeratorShift = wiggle.moves.find((move) => move.kind === "refrigerator");
     if (refrigeratorReservation && refrigeratorShift) {
@@ -3823,7 +3885,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     }
 
     const surrounding: PlacedCabinet[] = [];
-    const rangeNeighborNotes: string[] = [];
+    const rangeNeighborNotes: string[] = [...separated.flags];
+    const usage = normalizeKitchenUsage(stage.input.kitchenUsage);
+    const heavyCook = cooksALot(usage);
+    const preferDrawers = heavyCook || bakesALot(usage);
     for (const wallId of selectedWalls) {
       const rawSegments = freeSegmentsOnWall(wallId, room, working, stageOpenings, 9, 0, "base", false, undefined, footprintDepth(stage.baseSource));
       const reservations = [
@@ -3838,6 +3903,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
             : segment.start + segment.length - wallRunOffset(other, wallId, room))) <= 0.05);
         const fill = planAutoDesignBaseSegment({
           length: segment.length, catalog: stage.straightBaseCatalog, rangeAtStart: beside("start"), rangeAtEnd: beside("end"),
+          heavyCookLanding: heavyCook, preferDrawerBesideRange: preferDrawers,
         });
         if (fill.note) rangeNeighborNotes.push(fill.note);
         let along = segment.start;
@@ -3877,6 +3943,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     const seamResult = fillAutoDesignLowerSeams({
       placed: working, room, openings: stageOpenings, fillers: catalogFillers, makeUid,
       styleId: styleIdRef.current ?? null, corners: upperCorners.map((entry) => entry.point),
+      preserveHeavyCookLandings: heavyCook,
     });
     working = seamResult.placed;
     // Wall boxes are last. Match the completed lower projections, retaining
@@ -3915,6 +3982,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       toast.info(`This cabinet line sells its ${requestedUpperIn}″ class as ${formatInches(upperResult.heightUsedIn)} wall cabinets, so those exact source SKUs were used.`);
     }
     if (upperResult.skipped.length) toast.info(`Upper review: ${upperResult.skipped.join(" ")}`, { duration: 15000 });
+    const shiftReview = reviewAfterShift({ placed: working, room, openings: stageOpenings, usage: stage.input.kitchenUsage });
+    for (const entry of shiftReview.findings.filter((entry) => entry.severity === "attention")) {
+      toast.warning(entry.title, { description: entry.description, duration: 12000 });
+    }
     if (stage.sinkWindow) {
       toast.info(`A ${formatInches(stage.sinkWindow.width)} window was placed above the sink as entered; no wall cabinet goes over it.`);
     }
@@ -6226,8 +6297,17 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const hasConflicts = conflictUids.size > 0;
   const firstConflictUid = useMemo(() => Array.from(conflictUids)[0] ?? null, [conflictUids]);
   const preSavePlanReview = useMemo(
-    () => buildPreSavePlanReview({ room, placed, openings, island, catalogFillers, conflictUids }),
-    [catalogFillers, conflictUids, island, openings, placed, room],
+    () => buildPreSavePlanReview({
+      room,
+      placed,
+      openings,
+      island,
+      catalogFillers,
+      conflictUids,
+      kitchenUsage: room.kitchenUsage ?? null,
+      catalog: (autoFillCabinets as DesignCabinet[] | undefined) ?? [],
+    }),
+    [autoFillCabinets, catalogFillers, conflictUids, island, openings, placed, room],
   );
   const reviewPreSavePlanFinding = useCallback((finding: PreSavePlanReviewFinding) => {
     if (finding.action.kind === "filler") {
@@ -6239,6 +6319,16 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         fridgeUid: finding.action.refrigeratorUid,
         replaceCabinetUid: finding.action.replaceCabinetUid,
       });
+      return;
+    }
+    if (finding.action.kind === "adjacency") {
+      setRoom((current) => {
+        const usage = normalizeKitchenUsage(current.kitchenUsage);
+        const accepted = new Set(usage.acceptedSuggestionIds ?? []);
+        accepted.add(finding.id);
+        return { ...current, kitchenUsage: { ...usage, acceptedSuggestionIds: Array.from(accepted) } };
+      });
+      toast.success("Suggestion kept with this design. Nothing on the plan was moved.");
       return;
     }
     setSelectedUid(finding.action.cabinetUid);
@@ -8057,7 +8147,13 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     if (!range) { toast.error("The range changed before the bridge cabinet was offered. Nothing was added."); return; }
     const proposal = rangeCompanionProposal(range, room, wallCabPoolRef.current, appliancePalette, wallCabHeightRef.current);
     if (!proposal) { toast.error("A matching selected-line bridge cabinet and microwave are not available for this range."); return; }
-    setRangeCompanionPrompt({ rangeUid: range.uid, proposal, microwaveAlreadyPlaced: false });
+    const bridgeSpec = rangeBridgeSpec({ rangeWidthIn: Number(range.width) || 30, hangsBelow: true });
+    const bridgeCode = bridgeSpec.code.toUpperCase();
+    const bridgeSource = wallCabPoolRef.current.find((item) => item.masterCode.toUpperCase().replace(/[^A-Z0-9]/g, "") === bridgeCode);
+    const aligned = bridgeSource
+      ? { ...proposal, bridge: bridgeSource, bridgeMountBottom: bridgeSpec.bottomIn }
+      : proposal;
+    setRangeCompanionPrompt({ rangeUid: range.uid, proposal: aligned, microwaveAlreadyPlaced: false });
   }, [appliancePalette, autoDesignRangeVentPrompt, room]);
   const addWscSpiceStackUpper = useCallback((cabinetId: number) => {
 	    const prompt = spiceStackPrompt;
@@ -19742,6 +19838,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	          open
 	          slots={autoDesignCornerStage.slots}
 	          options={autoDesignCornerStage.cornerOptions}
+	          fitBySlot={autoDesignCornerStage.cornerFit}
 	          onCancel={cancelAutoDesignCornerStage}
 	          onConfirm={completeAutoDesignLayout}
 	        />

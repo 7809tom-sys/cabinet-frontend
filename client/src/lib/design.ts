@@ -1834,6 +1834,16 @@ export interface RoomData {
    * the same source plan rather than a partial reconstruction.
    */
   persistedEntities?: PersistedDesignEntities;
+  /**
+   * How the customer said they use the kitchen. Optional and skippable.
+   * Saved with the room so a reload keeps the same placement hints.
+   * The placed sink center is the plumbing anchor; there is no separate plumbing point.
+   */
+  kitchenUsage?: {
+    uses: Array<"baking" | "everyday-cooking" | "entertaining" | "coffee-beverage" | "kids-family" | "minimal-cooking">;
+    skipped: boolean;
+    acceptedSuggestionIds?: string[];
+  };
 }
 
 export type PeninsulaTurn = 45 | 90;

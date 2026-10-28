@@ -16,7 +16,6 @@ import {
   isRangeOrOven,
   isRefrigerator,
   isRefrigeratorEndPanel,
-  isSinkBaseCabinet,
   placedCornerGeometryKind,
   placedFootprint,
   matchInstalledFillerToCabinet,
@@ -416,21 +415,6 @@ function layoutPenalty(
   return penalty;
 }
 
-function sinkLockedByModeledWindow(
-  item: PlacedCabinet,
-  openings: readonly WallOpening[],
-  room: RoomData,
-): boolean {
-  if (!isSinkBaseCabinet(item)) return false;
-  const wall = cabinetWall(item, room);
-  const start = wallRunOffset(item, wall, room);
-  const end = start + wallRunSpan(item, wall, room);
-  return openings.some((opening) => opening.kind === "window"
-    && opening.side === wall
-    && opening.offset < end - COLLISION_EPSILON_IN
-    && opening.offset + opening.width > start + COLLISION_EPSILON_IN);
-}
-
 function applianceDisplayName(kind: string): string {
   if (kind === "sink") return "Sink base";
   if (kind === "dishwasher") return "Dishwasher";
@@ -595,12 +579,13 @@ function wiggleGroup(item: PlacedCabinet, origin: AutoDesignAnchorOrigin, placed
 }
 
 /**
- * Slides each user-placed Auto-Design appliance along its own wall by the
- * smallest distance that produces the best cabinet fit. Ranges and dishwashers
- * stay within 3 inches, sinks within 3 inches, and refrigerators within 6
- * inches of the original placement. A shift that collides, leaves the wall, or
- * pulls a sink off a modeled window is rejected. Equal fits keep the smaller
- * move, and a tie breaks toward the wall start. Each applied shift is returned
+ * Slides each user-placed Auto-Design anchor along its own wall by the
+ * smallest distance that produces the best cabinet fit. Ranges, dishwashers,
+ * and sink bases stay within 3 inches of the original placement. Refrigerators
+ * stay within their own cap. A shift that collides or leaves the wall is
+ * rejected. A sink may leave a modeled window; centering on that window is a
+ * suggestion checked after the shift. Equal fits keep the smaller move, and a
+ * tie breaks toward the wall start. Each applied shift is returned
  * with the appliance, wall, direction, inches, positions, and the cabinet it
  * made room for when that cabinet is already on the plan.
  */
@@ -628,7 +613,7 @@ export function applyAutoDesignWiggleRoom(input: {
     for (const origin of origins) {
       const item = placed.find((candidate) => candidate.uid === origin.uid);
       if (!item) continue;
-      if (locked.has(item.uid) || sinkLockedByModeledWindow(item, input.openings, input.room)) continue;
+      if (locked.has(item.uid)) continue;
       const group = wiggleGroup(item, origin, placed, input.room);
       if (!group) continue;
       const initialStart = alongStart(item, group.wallId, input.room);
