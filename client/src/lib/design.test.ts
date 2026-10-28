@@ -5305,6 +5305,29 @@ describe("filler conflict ownership", () => {
     });
     expect(blindCornerViolations([blind, filler]).has(blind.uid)).toBe(false);
   });
+
+  it("does not flag a BBC for a cabinet butting its door end on its own wall", () => {
+    // BBC36 on the right wall in the top-right corner; 3DB12 butts it below on
+    // the same wall, and the top-wall 3DB36 is held the required 3 inches off.
+    for (const rotation of [90, 270]) {
+      const bbc = cab({ uid: "bbc36", masterCode: "BBC36", description: "Blind Base Corner", placement: "base", x: 96, y: 0, width: 36, depth: 24, height: 34.5, rotation });
+      const sameWall = cab({ uid: "3db12", masterCode: "3DB12", description: "Drawer Base", placement: "base", x: 96, y: 36, width: 12, depth: 24, height: 34.5, rotation });
+      const heldOff = cab({ uid: "3db36", masterCode: "3DB36", description: "Drawer Base", placement: "base", x: 57, y: 0, width: 36, depth: 24, height: 34.5 });
+      expect(blindCornerViolations([bbc, sameWall, heldOff]).has(bbc.uid)).toBe(false);
+    }
+  });
+
+  it("still flags a BBC whose adjoining-wall cabinet butts the blind end without the 3-inch pull", () => {
+    const bbc = cab({ uid: "bbc36", masterCode: "BBC36", description: "Blind Base Corner", placement: "base", x: 96, y: 0, width: 36, depth: 24, height: 34.5, rotation: 90 });
+    const tight = cab({ uid: "3db36", masterCode: "3DB36", description: "Drawer Base", placement: "base", x: 60, y: 0, width: 36, depth: 24, height: 34.5 });
+    expect(blindCornerViolations([bbc, tight]).has(bbc.uid)).toBe(true);
+    // A top-wall BBC is checked across its run (along y), not along it.
+    const topBbc = cab({ uid: "top-bbc", masterCode: "BBC36", description: "Blind Base Corner", placement: "base", x: 0, y: 0, width: 36, depth: 24, height: 34.5 });
+    const besideOnTopWall = cab({ uid: "b24", masterCode: "B24", description: "Base", placement: "base", x: 36, y: 0, width: 24, depth: 24, height: 34.5 });
+    const leftWallTight = cab({ uid: "left-b24", masterCode: "B24", description: "Base", placement: "base", x: 0, y: 24, width: 24, depth: 24, height: 34.5, rotation: 90 });
+    expect(blindCornerViolations([topBbc, besideOnTopWall]).has(topBbc.uid)).toBe(false);
+    expect(blindCornerViolations([topBbc, leftWallTight]).has(topBbc.uid)).toBe(true);
+  });
 });
 
 describe("window sill-to-top clearance", () => {
