@@ -28,6 +28,9 @@ describe("resolveSwatch color resolution", () => {
     expect(resolveSwatch({ ourName: "Oxford Cashmere", color: "Cashmere" }).face.toLowerCase()).toBe("#e3dacd");
     expect(resolveSwatch({ ourName: "Haven Harbor", color: "Harbor" }).face.toLowerCase()).toBe("#9aa0a6");
     expect(resolveSwatch({ ourName: "Iron Black", color: "Black" }).face.toLowerCase()).toBe("#2a2a2c");
+    const charcoal = resolveSwatch({ ourName: "Aspen Charcoal", color: "Espresso Brown", woodSpecies: "Solid Birch" });
+    expect(charcoal.face.toLowerCase()).toBe("#2a211c");
+    expect(charcoal.isWood).toBe(true);
   });
 
   it("falls back to warm wood when no color keyword matches", () => {

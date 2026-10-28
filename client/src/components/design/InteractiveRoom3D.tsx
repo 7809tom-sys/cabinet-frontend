@@ -40,6 +40,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { searchCatalogItems } from "@shared/catalogCodeSearch";
 import { AEF_PRINTED_GEOMETRY_MARKER } from "@shared/aefFramelessGeometry";
 import type { FaceSourceKind } from "@shared/doorFaceRecognition";
+import { RAISED_PANEL_BEVEL_DEPTH_IN, RAISED_PANEL_BEVEL_WIDTH_IN } from "@shared/doorStyleAppearance";
 import { toast } from "sonner";
 import { pantryDrawerFrontLayout } from "@/lib/pantryDrawerLayout";
 import { masterTracProduct, masterTracFinishColor } from "@/lib/closet";
@@ -5080,13 +5081,15 @@ export function addCabinet(
       frameGroup.add(railMesh);
     }
 	    if (raisedProfile) {
+	      const requestedBevelWidth = Number(doorProfile?.bevelWidth);
+	      const requestedBevelDepth = Number(doorProfile?.bevelDepth);
 	      const bevelWidth = Math.max(0.025, Math.min(
-	        Number.isFinite(Number(doorProfile?.bevelWidth)) ? Number(doorProfile?.bevelWidth) * INCH : 0.5 * INCH,
+	        Number.isFinite(requestedBevelWidth) && requestedBevelWidth > 0 ? requestedBevelWidth * INCH : RAISED_PANEL_BEVEL_WIDTH_IN * INCH,
 	        (faceWidth - stile * 2) / 4,
 	        (faceHeight - rail * 2) / 4,
 	      ));
 	      const bevelDepth = Math.max(0.012, Math.min(
-	        Number.isFinite(Number(doorProfile?.bevelDepth)) ? Number(doorProfile?.bevelDepth) * INCH : 0.18 * INCH,
+	        Number.isFinite(requestedBevelDepth) && requestedBevelDepth > 0 ? requestedBevelDepth * INCH : RAISED_PANEL_BEVEL_DEPTH_IN * INCH,
 	        0.07,
 	      ));
 	      const bevelOuterWidth = Math.max(0.06, faceWidth - stile * 2);
