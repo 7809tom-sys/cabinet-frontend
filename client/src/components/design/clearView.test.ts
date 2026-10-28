@@ -103,6 +103,10 @@ describe("regular Designer clear 3D view", () => {
     expect(threeDDollhouseHidesWithWall(item({ measuredBacksplash: true }))).toBe(true);
     const renderer = readFileSync(new URL("./InteractiveRoom3D.tsx", import.meta.url), "utf8");
     expect(renderer).toContain("setThreeDDollhouseHidden(child, threeDDollhouseHidesWithWall(child) && mounted.some((side) => hiddenSides.has(side)));");
+    // Each wall's backsplash segment is its own top-level piece, so it fades
+    // with that wall only.
+    expect(renderer).toContain("mesh.userData = { measuredBacksplash: true, ...segment");
+    expect(renderer).toContain("addThreeDBacksplash(catalogRoot, backsplashSegments");
     // The wall itself still fades away from the camera.
     expect(renderer).toContain("mesh.visible = !hide;");
   });
