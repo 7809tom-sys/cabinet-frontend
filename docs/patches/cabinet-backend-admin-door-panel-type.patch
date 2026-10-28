@@ -1,0 +1,33 @@
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Tue, 27 Oct 2026 23:50:00 +0000
+Subject: [PATCH] Accept door panel type on admin door-style updates.
+
+adminUpdateDoorStyle already patches panel construction and profile fields.
+Door panel type is stored on door_styles and shown in the admin catalog, but
+the input schema dropped it. The Featured Door Style batch editor sends it
+with the panel group through the same per-style mutation. No bulk endpoint.
+
+Apply from the cabinet-backend repository root:
+
+    git apply /path/to/cabinet-backend-admin-door-panel-type.patch
+
+---
+diff --git a/server/routers/catalog.ts b/server/routers/catalog.ts
+--- a/server/routers/catalog.ts	2026-10-27 23:37:17.887914096 +0000
++++ b/server/routers/catalog.ts	2026-10-27 23:48:32.090964059 +0000
+@@ -628,6 +628,7 @@
+         stileWidth: z.number().min(0).max(99).nullable().optional(),
+         centerRailWidth: z.number().min(0).max(99).nullable().optional(),
+         panelConstruction: z.enum(["raised", "flat", "slab", "glass"]).nullable().optional(),
++        doorPanelType: z.string().max(64).nullable().optional(),
+         bevelWidth: z.number().min(0).max(12).nullable().optional(),
+         bevelDepth: z.number().min(0).max(4).nullable().optional(),
+         insideEdgeProfile: z.string().max(64).nullable().optional(),
+@@ -671,6 +672,7 @@
+       if (fields.stileWidth !== undefined) patch.stileWidth = fields.stileWidth ?? null;
+       if (fields.centerRailWidth !== undefined) patch.centerRailWidth = fields.centerRailWidth ?? null;
+       if (fields.panelConstruction !== undefined) patch.panelConstruction = fields.panelConstruction;
++      if (fields.doorPanelType !== undefined) patch.doorPanelType = fields.doorPanelType?.trim() || null;
+       if (fields.bevelWidth !== undefined) patch.bevelWidth = fields.bevelWidth ?? null;
+       if (fields.bevelDepth !== undefined) patch.bevelDepth = fields.bevelDepth ?? null;
+       if (fields.insideEdgeProfile !== undefined) patch.insideEdgeProfile = fields.insideEdgeProfile?.trim() || null;
