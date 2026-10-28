@@ -472,7 +472,10 @@ export default function DesignTool(props: { affiliateSlug?: string }) {
   return <ScopedDesignTool key={scope} {...props} />;
 }
 
-const RUSTIC_HICKORY_GRAIN_URL = "/manus-storage/rustic_hickory_vertical_grain_32d9e28a.webp";
+// Procedural, seamlessly tiling hickory board: long cream sapwood and caramel
+// heartwood streaks, fine straight grain and a few small pin knots (the former
+// storage image read as large dark burn blotches). Served from client/public.
+const RUSTIC_HICKORY_GRAIN_URL = "/textures/rustic_hickory_vertical_grain_v2.webp";
 
 type DesignerFaceStyle = DoorStyleFaceInput & { approvedReferenceImageUrl?: string | null };
 
