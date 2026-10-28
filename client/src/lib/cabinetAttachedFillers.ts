@@ -341,6 +341,64 @@ export function attachedFillerLeftoverOptions(
   return null;
 }
 
+export type AttachedFillerSizeIssue = {
+  side: AttachedFillerSide;
+  chosenIn: number;
+  /** Free space on that side before the next wall or cabinet. */
+  spaceIn: number;
+  /** "too-large": crosses the wall/cabinet. "too-small": leaves an uncovered gap. */
+  problem: "too-large" | "too-small";
+};
+
+/**
+ * Compares a chosen filler size with the measured space before anything is
+ * placed. Too large means the filler would cross the next wall or cabinet (it
+ * cannot be placed); too small means it leaves a gap of 1/8 inch or more
+ * against a wall or cabinet within six inches. Open sides never warn.
+ */
+export function attachedFillerSizeIssues(
+  candidate: PlacedCabinet,
+  placed: readonly PlacedCabinet[],
+  room: RoomData,
+  choice: AttachedFillerChoice,
+): AttachedFillerSizeIssue[] {
+  const leftIn = roundToEighth(finitePositive(choice.leftIn));
+  const rightIn = roundToEighth(finitePositive(choice.rightIn));
+  if (!(leftIn > 0) && !(rightIn > 0)) return [];
+  const free = attachedFillerPlanForCandidate(candidate, placed, room);
+  if (!free) return [];
+  const chosen = attachedFillerPlanForCandidate(candidate, placed, room, { leftIn, rightIn });
+  if (!chosen) {
+    // Name the side(s) that run out of room.
+    const issues: AttachedFillerSizeIssue[] = [];
+    if (free.cornerCabinet || !(free.leftAllowed && free.rightAllowed)) {
+      if (leftIn > free.leftGapIn + EDGE_EPSILON_IN || leftIn > 6 + EDGE_EPSILON_IN) issues.push({ side: "left", chosenIn: leftIn, spaceIn: free.leftGapIn, problem: "too-large" });
+      if (rightIn > free.rightGapIn + EDGE_EPSILON_IN || rightIn > 6 + EDGE_EPSILON_IN) issues.push({ side: "right", chosenIn: rightIn, spaceIn: free.rightGapIn, problem: "too-large" });
+    }
+    if (issues.length === 0) {
+      // Both sides share one leftover: report the chosen sides against it.
+      const spaceIn = roundToEighth(free.availableFillerIn);
+      if (leftIn > 0) issues.push({ side: "left", chosenIn: leftIn, spaceIn, problem: "too-large" });
+      if (rightIn > 0) issues.push({ side: "right", chosenIn: rightIn, spaceIn, problem: "too-large" });
+    }
+    return issues;
+  }
+  const issues: AttachedFillerSizeIssue[] = [];
+  const near = (gapIn: number) => gapIn <= 6 + EDGE_EPSILON_IN;
+  if (chosen.cornerCabinet) {
+    if (near(free.leftGapIn) && free.leftGapIn - leftIn >= EDGE_EPSILON_IN) issues.push({ side: "left", chosenIn: leftIn, spaceIn: free.leftGapIn, problem: "too-small" });
+    if (near(free.rightGapIn) && free.rightGapIn - rightIn >= EDGE_EPSILON_IN) issues.push({ side: "right", chosenIn: rightIn, spaceIn: free.rightGapIn, problem: "too-small" });
+    return issues;
+  }
+  const leftEdge = chosen.cabinetStartIn - leftIn;
+  const rightEdge = chosen.cabinetStartIn + chosen.cabinetSpanIn + rightIn;
+  const leftRemaining = roundToEighth(leftEdge - chosen.openingStartIn);
+  const rightRemaining = roundToEighth(chosen.openingEndIn - rightEdge);
+  if (free.leftAllowed && leftRemaining >= EDGE_EPSILON_IN) issues.push({ side: "left", chosenIn: leftIn, spaceIn: roundToEighth(leftRemaining + leftIn), problem: "too-small" });
+  if (free.rightAllowed && rightRemaining >= EDGE_EPSILON_IN) issues.push({ side: "right", chosenIn: rightIn, spaceIn: roundToEighth(rightRemaining + rightIn), problem: "too-small" });
+  return issues;
+}
+
 /**
  * An installed attached filler is a review item only after its cabinet owner is
  * removed or its outside edge no longer terminates at a wall or adjacent cabinet.

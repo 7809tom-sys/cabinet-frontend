@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_ROOM, type PlacedCabinet, type RoomData } from "@/lib/design";
-import { attachedFillerLeftoverOptions, attachedFillerNeedsReview, attachedFillerPlanForCandidate, isCornerFillerCabinet } from "./cabinetAttachedFillers";
+import { attachedFillerLeftoverOptions, attachedFillerNeedsReview, attachedFillerPlanForCandidate, attachedFillerSizeIssues, isCornerFillerCabinet } from "./cabinetAttachedFillers";
 import { buildAttachedFillerPlacement } from "./cabinetAttachedFillerPlacement";
 import { cabinetWall } from "@/lib/design";
 
@@ -231,6 +231,53 @@ describe("corner cabinet fillers", () => {
 
   it("does not let a filler wider than its leg's gap be chosen", () => {
     expect(attachedFillerPlanForCandidate(lsb36, [b21, b30], room, { leftIn: 4, rightIn: 0 })).toBeNull();
+  });
+});
+
+describe("filler size warning before placement", () => {
+  const wallCab = (overrides: Partial<PlacedCabinet>) => cabinet({ placement: "wall", depth: 12, height: 30, ...overrides });
+  // W3030 between two uppers with 3 inches of leftover.
+  const left = wallCab({ uid: "left", x: 0, width: 24 });
+  const target = wallCab({ uid: "w3030", masterCode: "W3030", x: 24, width: 30 });
+  const right = wallCab({ uid: "right", x: 57, width: 24 });
+
+  it("does not warn when the fillers exactly fill the space, or when none is chosen", () => {
+    expect(attachedFillerSizeIssues(target, [left, right], room, { leftIn: 3, rightIn: 0 })).toEqual([]);
+    expect(attachedFillerSizeIssues(target, [left, right], room, { leftIn: 1.5, rightIn: 1.5 })).toEqual([]);
+    expect(attachedFillerSizeIssues(target, [left, right], room, { leftIn: 0, rightIn: 0 })).toEqual([]);
+  });
+
+  it("warns that a filler is too large for the space", () => {
+    expect(attachedFillerSizeIssues(target, [left, right], room, { leftIn: 4, rightIn: 0 })).toEqual([
+      { side: "left", chosenIn: 4, spaceIn: 3, problem: "too-large" },
+    ]);
+  });
+
+  it("warns that a filler is too small and names the gap left open", () => {
+    expect(attachedFillerSizeIssues(target, [left, right], room, { leftIn: 1, rightIn: 0 })).toEqual([
+      { side: "right", chosenIn: 0, spaceIn: 2, problem: "too-small" },
+    ]);
+    expect(attachedFillerSizeIssues(target, [left, right], room, { leftIn: 1, rightIn: 1 })).toEqual([
+      { side: "right", chosenIn: 1, spaceIn: 2, problem: "too-small" },
+    ]);
+  });
+
+  it("never warns about an open side", () => {
+    const endCabinet = cabinet({ uid: "end", masterCode: "B24", x: 48, y: 0, width: 24 });
+    expect(attachedFillerSizeIssues(endCabinet, [], room, { leftIn: 1, rightIn: 2 })).toEqual([]);
+  });
+
+  it("checks each corner cabinet leg on its own", () => {
+    const lsb36 = cabinet({ uid: "lsb36", masterCode: "LSB36", width: 36, depth: 36, x: 0, y: 0 });
+    const b21 = cabinet({ uid: "b21", masterCode: "B21", width: 21, x: 39, y: 0 });
+    const b30 = cabinet({ uid: "b30", masterCode: "B30", width: 30, x: 0, y: 39, rotation: 90 });
+    expect(attachedFillerSizeIssues(lsb36, [b21, b30], room, { leftIn: 3, rightIn: 3 })).toEqual([]);
+    expect(attachedFillerSizeIssues(lsb36, [b21, b30], room, { leftIn: 2, rightIn: 4 })).toEqual([
+      { side: "right", chosenIn: 4, spaceIn: 3, problem: "too-large" },
+    ]);
+    expect(attachedFillerSizeIssues(lsb36, [b21, b30], room, { leftIn: 2, rightIn: 3 })).toEqual([
+      { side: "left", chosenIn: 2, spaceIn: 3, problem: "too-small" },
+    ]);
   });
 });
 

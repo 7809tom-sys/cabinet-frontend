@@ -97,7 +97,7 @@ import { adjustedDesignUnitPrice, buildDesignCabinetCartLines, buildDesignPrevie
 import { combinedFillerNote, fillerCutSourceFor, isCombinedSmallFiller } from "@/lib/fillerBilling";
 import { activeCatalogPricingIdsByMasterCode, currentCatalogPricingCabinetId } from "@/lib/designPricingIdentity";
 import { catalogFillerForGap, catalogFillerPricingId, fittedCatalogFillerDescription, isCatalogFiller, type CatalogFillerCandidate } from "@/lib/catalogFiller";
-import { attachedFillerLeftoverOptions, attachedFillerNeedsReview, attachedFillerPlanForCandidate, type AttachedFillerChoice, type AttachedFillerLeftoverOptions } from "@/lib/cabinetAttachedFillers";
+import { attachedFillerLeftoverOptions, attachedFillerNeedsReview, attachedFillerPlanForCandidate, attachedFillerSizeIssues, type AttachedFillerChoice, type AttachedFillerLeftoverOptions, type AttachedFillerSizeIssue } from "@/lib/cabinetAttachedFillers";
 import { buildAttachedFillerPlacement, supportsAttachedFillerChoice } from "@/lib/cabinetAttachedFillerPlacement";
 import { selectedPeninsulaCabinetSequencePlan, selectedPeninsulaCabinetTotalIn, wizardEligibleBaseCabinets, type PeninsulaWizardCabinet } from "@/lib/peninsulaWizardPlan";
 import { swapStandardSinkBaseForFarmSink, matchingFarmSinkBase } from "@/lib/farmSinkBaseSwap";
@@ -905,6 +905,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     leftover: AttachedFillerLeftoverOptions | null;
     leftGapIn: number;
     rightGapIn: number;
+    /** The cabinet as it would be placed and its neighbours, for the size check. */
+    fitCandidate: PlacedCabinet;
+    fitPeers: PlacedCabinet[];
+    sizeWarning?: { choice: AttachedFillerChoice; issues: AttachedFillerSizeIssue[] } | null;
   } | null>(null);
   useEffect(() => {
     setSmallGapFillerCustomWidth(smallGapFillerPrompt?.remaining ?? null);
@@ -7493,6 +7497,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
             leftover: attachedFillerLeftoverOptions(attachment),
             leftGapIn: attachment.leftGapIn,
             rightGapIn: attachment.rightGapIn,
+            fitCandidate: finalCab,
+            fitPeers: normalizedPrevious,
+            sizeWarning: null,
           });
           setMobilePanel(null);
           return;
@@ -21143,9 +21150,50 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                     <Button type="button" variant="outline" onClick={() => setAttachedFillerPrompt(null)}>Cancel placement</Button>
                     <div className="flex flex-wrap gap-2">
                       <Button type="button" variant="outline" data-testid="attached-filler-no-filler" onClick={() => place({ leftIn: 0, rightIn: 0 })}>No filler</Button>
-                      <Button type="button" data-testid="attached-filler-place" onClick={() => place({ leftIn, rightIn })}>Place cabinet{leftIn > 0 || rightIn > 0 ? " with fillers" : ""}</Button>
+                      <Button type="button" data-testid="attached-filler-place" onClick={() => {
+                        // Warn before placing when a chosen size is too large or too small for the space.
+                        const issues = attachedFillerSizeIssues(attachedFillerPrompt.fitCandidate, attachedFillerPrompt.fitPeers, room, { leftIn, rightIn });
+                        if (issues.length > 0) {
+                          setAttachedFillerPrompt((current) => current ? { ...current, sizeWarning: { choice: { leftIn, rightIn }, issues } } : current);
+                          return;
+                        }
+                        place({ leftIn, rightIn });
+                      }}>Place cabinet{leftIn > 0 || rightIn > 0 ? " with fillers" : ""}</Button>
                     </div>
                   </DialogFooter>
+                  <AlertDialog open={!!attachedFillerPrompt.sizeWarning} onOpenChange={(open) => { if (!open) setAttachedFillerPrompt((current) => current ? { ...current, sizeWarning: null } : current); }}>
+                    <AlertDialogContent data-testid="attached-filler-size-warning">
+                      {attachedFillerPrompt.sizeWarning && (() => {
+                        const warning = attachedFillerPrompt.sizeWarning;
+                        const tooLarge = warning.issues.some((issue) => issue.problem === "too-large");
+                        const sideLabel = (side: "left" | "right") => side === "left" ? "Left" : "Right";
+                        return <>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>{tooLarge ? "Filler is too large for the space" : "Filler is too small for the space"}</AlertDialogTitle>
+                            <AlertDialogDescription asChild>
+                              <div className="space-y-1.5 text-sm">
+                                {warning.issues.map((issue) => (
+                                  <p key={issue.side} data-testid={`attached-filler-size-issue-${issue.side}`}>
+                                    <strong>{sideLabel(issue.side)}:</strong>{" "}
+                                    {issue.problem === "too-large"
+                                      ? `${formatEighthInches(issue.chosenIn)} chosen, but only ${formatEighthInches(issue.spaceIn)} of space before the next wall or cabinet. It would not fit.`
+                                      : issue.chosenIn > 0
+                                        ? `${formatEighthInches(issue.chosenIn)} chosen for ${formatEighthInches(issue.spaceIn)} of space. A ${formatEighthInches(Math.round((issue.spaceIn - issue.chosenIn) * 8) / 8)} gap would be left.`
+                                        : `no filler chosen, so the ${formatEighthInches(issue.spaceIn)} space would be left open.`}
+                                  </p>
+                                ))}
+                                <p className="pt-1 text-muted-foreground">{tooLarge ? "Change the filler size to place this cabinet." : "Change the filler size, or place the cabinet anyway with the gap."}</p>
+                              </div>
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel data-testid="attached-filler-size-change">Change sizes</AlertDialogCancel>
+                            {!tooLarge && <AlertDialogAction data-testid="attached-filler-size-place-anyway" onClick={() => place(warning.choice)}>Place anyway</AlertDialogAction>}
+                          </AlertDialogFooter>
+                        </>;
+                      })()}
+                    </AlertDialogContent>
+                  </AlertDialog>
                 </>;
               })()}
             </DialogContent>

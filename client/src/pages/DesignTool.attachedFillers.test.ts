@@ -37,3 +37,13 @@ describe("attached filler measured space", () => {
     expect(source).toContain("leftGapIn: attachment.leftGapIn,");
   });
 });
+
+describe("attached filler size warning popup", () => {
+  it("checks the chosen size before placing and offers Place anyway only for a too-small filler", () => {
+    const placeButton = source.slice(source.indexOf('data-testid="attached-filler-place"'), source.indexOf('Place cabinet{leftIn > 0'));
+    expect(placeButton).toContain("attachedFillerSizeIssues(attachedFillerPrompt.fitCandidate, attachedFillerPrompt.fitPeers, room, { leftIn, rightIn })");
+    expect(placeButton.indexOf("return;")).toBeLessThan(placeButton.indexOf("place({ leftIn, rightIn })"));
+    expect(source).toContain('data-testid="attached-filler-size-warning"');
+    expect(source).toContain('{!tooLarge && <AlertDialogAction data-testid="attached-filler-size-place-anyway"');
+  });
+});
