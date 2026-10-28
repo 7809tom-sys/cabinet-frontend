@@ -5,6 +5,7 @@ import {
   buildAuditDoor,
   configureDoorAuditSampleTexture,
 } from "./doorAuditDoorRender";
+import { ASPEN_CHARCOAL_STAIN } from "./doorStyleAppearance";
 import { normalizeDoorAuditStartRun, type DoorAuditRenderInput } from "./doorRenderingAudit";
 
 function input(profile: DoorAuditRenderInput["doorProfile"]): Pick<DoorAuditRenderInput, "doorProfile" | "color" | "samplePhotoUrl"> {
@@ -106,6 +107,97 @@ describe("audit door construction", () => {
   it("reports a missing profile instead of reading a property of undefined", () => {
     expect(() => buildAuditDoor({ color: "#fff", samplePhotoUrl: null, name: "Summit White Shaker" }, null))
       .toThrow(/Summit White Shaker is missing its door profile/);
+  });
+
+  it("renders Aspen Charcoal as a dark stained raised panel, not a light gray slab", () => {
+    const door = buildAuditDoor({
+      name: "Aspen Charcoal",
+      code: "AC",
+      distributorName: "Skyline Cabinetry",
+      distributorCode: "SK",
+      color: "Espresso Brown",
+      finish: "Matching",
+      woodSpecies: "Solid Birch",
+      samplePhotoUrl: null,
+      doorProfile: {
+        doorStyle: "Raised Panel",
+        doorPanelType: "Raised Panel",
+        railWidth: "3.00",
+        stileWidth: "3.00",
+        panelConstruction: "raised",
+        bevelWidth: null,
+        bevelDepth: null,
+        insideEdgeProfile: null,
+        drawerFrontType: "five-piece-raised",
+        grainDirection: "none",
+        finishSheen: "satin",
+      },
+    }, null);
+    expect(door.userData).toMatchObject({
+      auditDoorKind: "raised",
+      auditHardware: false,
+      finishHex: ASPEN_CHARCOAL_STAIN,
+      stainedWood: true,
+    });
+    const meshes: THREE.Object3D[] = [];
+    door.traverse((node) => meshes.push(node));
+    expect(meshes.some((node) => node.userData.raisedCenterPanel)).toBe(true);
+    expect(meshes.some((node) => node.userData.profiledSticking)).toBe(true);
+    expect(meshes.some((node) => node.userData.cabinetHardware || node.userData.cabinetPull)).toBe(false);
+    const slab = door.children.find((child) => child.userData.auditDoorSlab) as THREE.Mesh;
+    expect((slab.material as THREE.MeshPhysicalMaterial).color.getHexString()).toBe(ASPEN_CHARCOAL_STAIN.slice(1));
+    const plan = auditDoorConstruction({
+      doorStyle: "Raised Panel",
+      doorPanelType: null,
+      railWidth: "3",
+      stileWidth: "3",
+      panelConstruction: "raised",
+      bevelWidth: null,
+      bevelDepth: null,
+      insideEdgeProfile: null,
+      drawerFrontType: null,
+      grainDirection: null,
+      finishSheen: "satin",
+    });
+    expect(plan.kind).toBe("raised");
+    expect(plan.bevelDepthIn).toBeGreaterThan(0.18);
+  });
+
+  it("promotes Aspen White onto the raised panel and does not paint an empty color light gray", () => {
+    const white = buildAuditDoor({
+      name: "Aspen White",
+      code: "AW",
+      distributorName: "Preston",
+      distributorCode: "SK",
+      color: "White",
+      samplePhotoUrl: null,
+      doorProfile: {
+        ...shaker,
+        doorStyle: "Shaker",
+        panelConstruction: "raised",
+        bevelWidth: null,
+        bevelDepth: null,
+        insideEdgeProfile: null,
+      },
+    }, null);
+    expect(white.userData.auditDoorKind).toBe("raised");
+    const slab = white.children.find((child) => child.userData.auditDoorSlab) as THREE.Mesh;
+    const hex = (slab.material as THREE.MeshPhysicalMaterial).color.getHexString();
+    expect(hex).not.toBe("d8d2c8");
+    expect(hex).not.toBe("ffffff");
+
+    const espresso = buildAuditDoor({
+      name: "Shaker Espresso",
+      code: "SE",
+      distributorName: "Preston",
+      distributorCode: "SK",
+      color: null,
+      samplePhotoUrl: null,
+      doorProfile: { ...shaker, doorStyle: "Shaker", panelConstruction: "flat" },
+    }, null);
+    const espressoSlab = espresso.children.find((child) => child.userData.auditDoorSlab) as THREE.Mesh;
+    expect((espressoSlab.material as THREE.MeshPhysicalMaterial).color.getHexString()).not.toBe("d8d2c8");
+    expect(espresso.userData.auditDoorKind).toBe("shaker");
   });
 
   it("crops a sample photo to the designer center grain", () => {
