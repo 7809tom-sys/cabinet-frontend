@@ -1,0 +1,202 @@
+import { describe, expect, it } from "vitest";
+import { DEFAULT_ROOM, wallPlacementAt, type PlacedCabinet } from "./design";
+import { applyInventorySuggestion, designInventoryFromStock, type InventoryCatalogCandidate } from "./inventoryAlternatives";
+import { buildDesignCabinetCartLines } from "./designCartLines";
+import { resetKitchenRuleParameters, setKitchenRuleParameters, setKitchenRuleTextParameters } from "./kitchenRuleParameters";
+import { parseStockPrompts, stockPromptOrderNote } from "./stockPrompt";
+import type { StockStatusResult } from "./inventoryProvider";
+
+const STYLE = 11;
+const OTHER_STYLE = 12;
+const VENDOR = 7;
+
+function place(masterCode: string, width: number): PlacedCabinet {
+  const spot = wallPlacementAt(0, width, 24, "top", DEFAULT_ROOM);
+  return {
+    uid: `${masterCode}-0`,
+    cabinetId: 1,
+    masterCode,
+    description: `${width} inch base cabinet`,
+    category: "Base",
+    subCategory: "Base",
+    placement: "base",
+    x: spot.x,
+    y: spot.y,
+    width,
+    depth: 24,
+    height: 34.5,
+    rotation: spot.rotation,
+    wallId: spot.wallId ?? "top",
+    wallOffset: spot.wallOffset ?? 0,
+    numberOfDoors: 1,
+    numberOfDrawers: 1,
+  };
+}
+
+function item(partial: Partial<InventoryCatalogCandidate> & Pick<InventoryCatalogCandidate, "masterCode">): InventoryCatalogCandidate {
+  return {
+    id: partial.id ?? 1,
+    description: partial.description ?? partial.masterCode,
+    width: partial.width ?? 18,
+    height: partial.height ?? 34.5,
+    depth: partial.depth ?? 24,
+    placement: partial.placement ?? "base",
+    styleId: partial.styleId ?? STYLE,
+    distributorId: partial.distributorId ?? VENDOR,
+    doorStyleName: "Shaker",
+    numberOfDoors: partial.numberOfDoors ?? 1,
+    numberOfDrawers: partial.numberOfDrawers ?? 0,
+    ...partial,
+  };
+}
+
+function stock(rows: Array<[string, StockStatusResult["status"]]>): StockStatusResult[] {
+  return rows.map(([sku, status]) => ({ sku, status, qtyAvailable: status === "in_stock" ? 4 : 0 }));
+}
+
+const catalog = [
+  item({ id: 1, masterCode: "B18FH", description: "18 inch full-height door base", numberOfDoors: 1, numberOfDrawers: 0 }),
+  item({ id: 2, masterCode: "B18FH2RS", description: "18 inch full-height base with rollouts", numberOfDoors: 1, numberOfDrawers: 0 }),
+  item({ id: 3, masterCode: "B18FH", description: "18 inch full-height door base", styleId: OTHER_STYLE, numberOfDoors: 1, numberOfDrawers: 0 }),
+  item({ id: 4, masterCode: "DB18", description: "18 inch drawer base", numberOfDoors: 0, numberOfDrawers: 1 }),
+  item({ id: 5, masterCode: "3DB18", description: "18 inch 3-drawer base", numberOfDoors: 0, numberOfDrawers: 3 }),
+  item({ id: 6, masterCode: "B24FH", description: "24 inch full-height door base", width: 24, numberOfDoors: 1, numberOfDrawers: 0 }),
+  item({ id: 7, masterCode: "DB24", description: "24 inch drawer base", width: 24, numberOfDoors: 0, numberOfDrawers: 3 }),
+];
+
+function promptFor(masterCode: string, rows: Array<[string, StockStatusResult["status"]]>, width = 18) {
+  const placed = place(masterCode, width);
+  const report = designInventoryFromStock({
+    providerId: "stub",
+    placed: [placed],
+    catalog,
+    stock: stock(rows),
+    room: DEFAULT_ROOM,
+    designStyleId: STYLE,
+    distributorId: VENDOR,
+    assumeUnlistedInStock: false,
+  });
+  return { placed, notice: report.notices[0] };
+}
+
+describe("out-of-stock cabinet prompt", () => {
+  it("asks for a B18 and does not change the plan", () => {
+    const { placed, notice } = promptFor("B18", [
+      ["B18", "out_of_stock"],
+      ["B18FH", "in_stock"],
+      ["DB18", "in_stock"],
+      ["3DB18", "in_stock"],
+    ]);
+    expect(placed.masterCode).toBe("B18");
+    expect(notice?.choicePrompt?.choices.map((choice) => choice.id)).toEqual(["full-height", "drawer", "readjust"]);
+    expect(notice?.choicePrompt?.choices[0]?.candidate?.masterCode).toBe("B18FH");
+    expect(notice?.choicePrompt?.choices[0]?.candidate?.styleId).toBe(STYLE);
+    expect(notice?.choicePrompt?.choices[1]?.candidate?.masterCode).toBe("3DB18");
+    expect(notice?.choicePrompt?.choices[2]).toMatchObject({ id: "readjust", candidate: null, suggestion: null });
+  });
+
+  it("uses the closest same-width full-height base when B18FH is not in the line", () => {
+    const withoutExact = catalog.filter((candidate) => !(candidate.masterCode === "B18FH" && candidate.styleId === STYLE));
+    const placed = place("B18", 18);
+    const report = designInventoryFromStock({
+      providerId: "stub",
+      placed: [placed],
+      catalog: withoutExact,
+      stock: stock([
+        ["B18", "out_of_stock"],
+        ["B18FH2RS", "in_stock"],
+        ["DB18", "in_stock"],
+      ]),
+      room: DEFAULT_ROOM,
+      designStyleId: STYLE,
+      distributorId: VENDOR,
+      assumeUnlistedInStock: false,
+    });
+    expect(report.notices[0]?.choicePrompt?.choices[0]?.candidate?.masterCode).toBe("B18FH2RS");
+  });
+
+  it("hides a replacement that is out of stock and keeps the other choices", () => {
+    const { notice } = promptFor("B18", [
+      ["B18", "out_of_stock"],
+      ["B18FH", "out_of_stock"],
+      ["B18FH2RS", "out_of_stock"],
+      ["DB18", "in_stock"],
+      ["3DB18", "out_of_stock"],
+    ]);
+    expect(notice?.choicePrompt?.choices.map((choice) => choice.id)).toEqual(["drawer", "readjust"]);
+    expect(notice?.choicePrompt?.choices[0]?.candidate?.masterCode).toBe("DB18");
+  });
+
+  it("applies the chosen cabinet and writes the order note", () => {
+    const { placed, notice } = promptFor("B18", [
+      ["B18", "out_of_stock"],
+      ["B18FH", "in_stock"],
+      ["DB18", "in_stock"],
+    ]);
+    const choice = notice?.choicePrompt?.choices.find((item) => item.id === "full-height");
+    expect(choice?.suggestion?.fieldModificationNote).toBe("out of B18, customer chose full-height door base");
+    const swapped = applyInventorySuggestion({
+      placed: [placed],
+      uid: placed.uid,
+      suggestion: choice!.suggestion!,
+      room: DEFAULT_ROOM,
+      designStyleId: STYLE,
+    });
+    expect(swapped.placed[0]).toMatchObject({
+      masterCode: "B18FH",
+      fieldModificationNote: stockPromptOrderNote("B18", "full-height door base"),
+    });
+    expect(placed.masterCode).toBe("B18");
+    const lines = buildDesignCabinetCartLines({
+      placed: swapped.placed,
+      styleId: STYLE,
+      distributorId: VENDOR,
+      tier: "homeowner",
+      styleNameById: new Map([[STYLE, "Shaker"]]),
+      unitPriceFor: () => 100,
+    });
+    expect(lines[0]?.name).toContain("out of B18, customer chose full-height door base");
+    expect(lines[0]?.qtyNote).toContain("out of B18, customer chose full-height door base");
+  });
+
+  it("lets the owner change which SKUs ask and which options appear", () => {
+    try {
+      setKitchenRuleTextParameters({ stock_prompts: "B24:drawer,readjust;B18:not-a-real-option,drawer" });
+      const b18 = promptFor("B18", [["B18", "out_of_stock"], ["DB18", "in_stock"], ["B18FH", "in_stock"]]);
+      expect(b18.notice?.choicePrompt?.choices.map((choice) => choice.id)).toEqual(["drawer"]);
+      const b24 = promptFor("B24", [["B24", "out_of_stock"], ["DB24", "in_stock"], ["B24FH", "in_stock"]], 24);
+      expect(b24.notice?.choicePrompt?.choices.map((choice) => choice.id)).toEqual(["drawer", "readjust"]);
+      expect(b24.notice?.choicePrompt?.choices[0]?.candidate?.masterCode).toBe("DB24");
+      setKitchenRuleParameters({ stock_prompt_enabled: 0 });
+      expect(promptFor("B18", [["B18", "out_of_stock"], ["B18FH", "in_stock"]]).notice?.choicePrompt).toBeUndefined();
+    } finally {
+      resetKitchenRuleParameters();
+    }
+  });
+
+  it("writes the readjust note only after an alternative is chosen", () => {
+    const { placed, notice } = promptFor("B18", [
+      ["B18", "out_of_stock"],
+      ["B18FH", "in_stock"],
+      ["DB18", "in_stock"],
+    ]);
+    const alternative = notice?.suggestions.find((suggestion) => suggestion.kind === "single");
+    expect(alternative).toBeTruthy();
+    expect(placed.fieldModificationNote ?? null).toBeNull();
+    const swapped = applyInventorySuggestion({
+      placed: [placed],
+      uid: placed.uid,
+      suggestion: { ...alternative!, fieldModificationNote: stockPromptOrderNote("B18", "readjust the plan") },
+      room: DEFAULT_ROOM,
+      designStyleId: STYLE,
+    });
+    expect(swapped.placed[0]?.fieldModificationNote).toBe("out of B18, customer chose readjust the plan");
+  });
+
+  it("parses several cabinet prompts and drops unknown options", () => {
+    expect(parseStockPrompts("B18:full-height,drawer,readjust; B24:drawer,made-up")).toEqual([
+      { sku: "B18", options: ["full-height", "drawer", "readjust"] },
+      { sku: "B24", options: ["drawer"] },
+    ]);
+  });
+});

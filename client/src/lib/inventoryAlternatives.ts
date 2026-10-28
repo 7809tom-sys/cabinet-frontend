@@ -18,6 +18,7 @@
 
 import { RANGE_NEIGHBOR_MIN_WIDTH_IN } from "./autoDesignSeamFillers";
 import { kitchenRuleNumber, kitchenRuleText } from "./kitchenRuleParameters";
+import { buildStockPrompt, stockPromptOrderNote, type StockPromptChoice } from "./stockPrompt";
 import { isRefrigeratorAppliance } from "./autoDesignAvailability";
 import {
   DEFAULT_ROOM,
@@ -148,6 +149,12 @@ export type InventoryCombinationSuggestion = {
   candidates: readonly InventoryCatalogCandidate[];
   reason: string;
   ruleNotes: readonly string[];
+  fieldModificationNote?: string;
+};
+
+export type InventoryChoicePrompt = {
+  fromCode: string;
+  choices: readonly (StockPromptChoice & { suggestion: InventorySingleSuggestion | null })[];
 };
 
 export type InventorySuggestion = InventorySingleSuggestion | InventoryCombinationSuggestion;
@@ -162,6 +169,8 @@ export type InventoryCabinetNotice = {
   vendor?: string;
   asOf?: string;
   suggestions: readonly InventorySuggestion[];
+  /** Present when this SKU must be asked about before any swap. */
+  choicePrompt?: InventoryChoicePrompt;
 };
 
 export type DesignInventoryEvaluation = {
@@ -485,6 +494,36 @@ function suggestForCabinet(
     suggestions.push(...combinations(cabinet, profile, typeKey, pool, styleId, neighbors));
   }
 
+  const prompt = buildStockPrompt({
+    masterCode: cabinet.masterCode,
+    placement: cabinet.placement,
+    styleId,
+    distributorId: vendorId,
+    catalog,
+    stock: [...index.values()],
+    assumeUnlistedInStock: input.assumeUnlistedInStock,
+  });
+  const choicePrompt = prompt
+    ? {
+      fromCode: prompt.fromCode,
+      choices: prompt.choices.map((choice) => ({
+        ...choice,
+        suggestion: choice.candidate
+          ? {
+            id: `stock-prompt:${choice.id}:${choice.candidate.styleId}:${choice.candidate.masterCode}`,
+            kind: "single" as const,
+            tier: "same-style" as const,
+            candidate: choice.candidate,
+            displayLabel: choice.candidate.masterCode,
+            fieldModificationNote: stockPromptOrderNote(cabinet.masterCode, choice.label),
+            reason: choice.buttonLabel,
+            ruleNotes: ["stock-prompt", choice.id, "same-style"],
+          }
+          : null,
+      })),
+    }
+    : undefined;
+
   return {
     uid: cabinet.uid,
     masterCode: cabinet.masterCode,
@@ -495,6 +534,7 @@ function suggestForCabinet(
     vendor: stock.vendor,
     asOf: stock.asOf,
     suggestions: suggestions.slice(0, input.limit),
+    ...(choicePrompt ? { choicePrompt } : {}),
   };
 }
 
@@ -751,7 +791,7 @@ export function applyInventorySuggestion(input: {
   }
   const next = input.suggestion.kind === "single"
     ? replaceSingle(input.placed, original, input.suggestion.candidate, input.designStyleId, input.suggestion.fieldModificationNote ?? null)
-    : replaceWithCombination(input.placed, original, input.suggestion.candidates, input.room, input.designStyleId, input.makeUid ?? makeUid);
+    : replaceWithCombination(input.placed, original, input.suggestion.candidates, input.room, input.designStyleId, input.makeUid ?? makeUid, input.suggestion.fieldModificationNote ?? null);
   if (!next) {
     return {
       placed: [...input.placed],
@@ -786,6 +826,7 @@ function replaceWithCombination(
   room: RoomData,
   designStyleId: number | null,
   nextUid: () => string,
+  fieldModificationNote: string | null,
 ): InventorySwapResult | null {
   if (original.islandFace || candidates.length < 2) return null;
   const wall = cabinetWall(original, room);
@@ -807,7 +848,7 @@ function replaceWithCombination(
       fillerBillingRole: null,
       fillerForCabinetUid: null,
       peninsulaWizardId: null,
-    }, candidate, designStyleId, null);
+    }, candidate, designStyleId, fieldModificationNote);
     pieces.push(piece);
     along += candidate.width;
   }

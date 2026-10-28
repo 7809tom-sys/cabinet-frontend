@@ -36,6 +36,7 @@ describe("kitchen rules catalog", () => {
       "owner-baking-zone",
       "owner-heavy-cook-landing",
       "owner-sink-base-false-front",
+      "owner-stock-prompt",
       "conflict-gas-hood-30",
       "conflict-fridge-panel-25",
     ]));

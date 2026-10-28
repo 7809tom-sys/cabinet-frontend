@@ -293,6 +293,18 @@ const ownerSeeds: KitchenRuleSeed[] = [
     notesText: "Order note: out of SB36, sub with a B36. remove drawer, install false front. Set sink_base_substitute to 0 to disable. Edit sink_base_map to change the prefix pair.",
   },
   {
+    ruleCode: "owner-stock-prompt",
+    category: "Owner placement",
+    title: "Ask before replacing an out-of-stock base",
+    ruleDescription: "When a listed cabinet is out of stock, the Designer asks before it changes the plan. The default cabinet is B18. The choices are a full-height door base, a drawer base, and readjusting the plan. Only in-stock choices are offered.",
+    parameters: { stock_prompt_enabled: 1, stock_prompts: "B18:full-height,drawer,readjust" },
+    enforcementKind: "suggest",
+    sourceText: "Owner",
+    implementationStatus: "implemented",
+    readsParameters: true,
+    notesText: "stock_prompts lists SKU:option,option entries separated by semicolons. Options are full-height, drawer, and readjust. Example for a second cabinet: B18:full-height,drawer,readjust;B24:full-height,drawer,readjust. Set stock_prompt_enabled to 0 to skip the question. Order note: out of B18, customer chose <option>.",
+  },
+  {
     ruleCode: "owner-heavy-cook-landing",
     category: "Usage",
     title: "Heavy-cook counter on both sides of the range",

@@ -29,6 +29,8 @@ export const KITCHEN_RULE_PARAMETER_DEFAULTS = {
   sink_base_default_in: 36,
   /** 1 automatically swaps an out-of-stock SBxx for the mapped base. 0 leaves it. */
   sink_base_substitute: 1,
+  /** 1 asks before replacing a configured out-of-stock SKU. 0 skips the prompt. */
+  stock_prompt_enabled: 1,
 } as const;
 
 export type KitchenRuleParameterKey = keyof typeof KITCHEN_RULE_PARAMETER_DEFAULTS;

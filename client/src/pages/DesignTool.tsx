@@ -126,8 +126,9 @@ import {
 import { buildRemoteDesignSessionUrl } from "@/lib/designShare";
 import { availableLs3612ShelfReplacementChoices, isUnpricedLs3612 } from "@/lib/ls3612Replacement";
 import { applyAutomaticSinkBaseSubstitutions, applyInventorySuggestion, sinkBaseNominalWidth, type InventorySuggestion } from "@/lib/inventoryAlternatives";
+import { stockPromptOrderNote, type StockPromptChoice } from "@/lib/stockPrompt";
 import { useDesignerInventory } from "@/lib/useDesignerInventory";
-import { InventoryDesignStockControl, InventoryStockBadge, SinkBaseSubstitutionNotice } from "@/components/design/InventoryStockNotice";
+import { InventoryDesignStockControl, InventoryStockBadge, OutOfStockChoiceDialog, SinkBaseSubstitutionNotice } from "@/components/design/InventoryStockNotice";
 import { unavailableSavedStyleIds } from "@/lib/unavailableSavedStyles";
 import { applyGlassStackerBulkPlacement as applyBulkGlassStackerPlacements, glassStackerBulkCeilingBlocksAtHeight, glassStackerBulkHeightOptions, glassStackerBulkPlacementCandidates, glassStackerUidsForRemoval, type GlassStackerBulkPlacementCandidate } from "@/lib/glassStackerBulkPlacement";
 import { toast } from "sonner";
@@ -3453,11 +3454,43 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     }
     setSinkBaseSwapNotices((current) => current.filter((item) => item.uid !== uid));
   }, [setPlaced, sinkBaseSwapNotices, sinks]);
-  const swapInventoryCabinet = useCallback((uid: string, suggestion: InventorySuggestion) => {
+  const stockPromptAnsweredRef = useRef(new Set<string>());
+  const stockPromptDismissedRef = useRef(new Set<string>());
+  const [stockPromptUid, setStockPromptUid] = useState<string | null>(null);
+  const [stockPromptPhase, setStockPromptPhase] = useState<"choose" | "readjust">("choose");
+  const [stockPromptUnlocked, setStockPromptUnlocked] = useState<ReadonlySet<string>>(() => new Set());
+  const stockPromptNotice = inventory.notices.find((notice) => notice.uid === stockPromptUid && notice.choicePrompt) ?? null;
+  const pendingStockPromptKey = inventory.notices.filter((notice) => notice.choicePrompt).map((notice) => notice.uid).join("|");
+  useEffect(() => {
+    if (stockPromptUid && inventory.notices.some((notice) => notice.uid === stockPromptUid && notice.choicePrompt)) return;
+    const next = inventory.notices.find((notice) => (
+      notice.choicePrompt
+      && !stockPromptAnsweredRef.current.has(notice.uid)
+      && !stockPromptDismissedRef.current.has(notice.uid)
+    ));
+    if (!next) return;
+    setStockPromptUid(next.uid);
+    setStockPromptPhase("choose");
+    setSelectedUid(next.uid);
+  }, [inventory.notices, pendingStockPromptKey, setSelectedUid, stockPromptUid]);
+  const finishStockPrompt = useCallback((uid: string) => {
+    stockPromptAnsweredRef.current.add(uid);
+    setStockPromptUid((current) => current === uid ? null : current);
+    setStockPromptPhase("choose");
+  }, []);
+  const chooseStockPrompt = useCallback((uid: string, choice: StockPromptChoice & { suggestion: InventorySuggestion | null }) => {
+    if (choice.id === "readjust") {
+      setStockPromptUid(uid);
+      setStockPromptPhase("readjust");
+      setStockPromptUnlocked((current) => new Set([...current, uid]));
+      setSelectedUid(uid);
+      return;
+    }
+    if (!choice.suggestion) return;
     const result = applyInventorySuggestion({
       placed: placedRef.current,
       uid,
-      suggestion,
+      suggestion: choice.suggestion,
       room: roomRef.current,
       designStyleId: styleId,
     });
@@ -3468,8 +3501,33 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     placedRef.current = result.placed;
     setPlaced(result.placed);
     if (result.selectedUid) setSelectedUid(result.selectedUid);
+    finishStockPrompt(uid);
     toast.success(result.message);
-  }, [setPlaced, styleId]);
+  }, [finishStockPrompt, setPlaced, setSelectedUid, styleId]);
+  const swapInventoryCabinet = useCallback((uid: string, suggestion: InventorySuggestion) => {
+    const prompted = inventory.notices.find((notice) => notice.uid === uid && notice.choicePrompt);
+    const noted = prompted && stockPromptUnlocked.has(uid)
+      ? suggestion.kind === "single"
+        ? { ...suggestion, fieldModificationNote: stockPromptOrderNote(prompted.masterCode, "readjust the plan") }
+        : { ...suggestion, fieldModificationNote: stockPromptOrderNote(prompted.masterCode, "readjust the plan") }
+      : suggestion;
+    const result = applyInventorySuggestion({
+      placed: placedRef.current,
+      uid,
+      suggestion: noted,
+      room: roomRef.current,
+      designStyleId: styleId,
+    });
+    if (result.unchanged) {
+      toast.error(result.message);
+      return;
+    }
+    placedRef.current = result.placed;
+    setPlaced(result.placed);
+    if (result.selectedUid) setSelectedUid(result.selectedUid);
+    if (prompted) finishStockPrompt(uid);
+    toast.success(result.message);
+  }, [finishStockPrompt, inventory.notices, setPlaced, setSelectedUid, stockPromptUnlocked, styleId]);
 
   // The unified "Corner" tab shows BOTH corner base AND corner wall cabinets in
   // one place (grouped into two sections). The base-placement corner cabinets
@@ -14270,6 +14328,20 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         onCommit={commitMasterTracTower}
       />}
       <SinkBaseSubstitutionNotice swaps={sinkBaseSwapNotices} onUndo={undoSinkBaseSwap} />
+      <OutOfStockChoiceDialog
+        notice={stockPromptNotice}
+        phase={stockPromptPhase}
+        disabled={cabinetsLocked}
+        onChoose={(choice) => { if (stockPromptNotice) chooseStockPrompt(stockPromptNotice.uid, choice); }}
+        onSwap={(suggestion) => { if (stockPromptNotice) swapInventoryCabinet(stockPromptNotice.uid, suggestion); }}
+        onBack={() => setStockPromptPhase("choose")}
+        onDismiss={() => {
+          if (!stockPromptNotice) return;
+          stockPromptDismissedRef.current.add(stockPromptNotice.uid);
+          setStockPromptUid(null);
+          setStockPromptPhase("choose");
+        }}
+      />
       {/* Toolbar */}
       <div data-testid="designer-toolbar" data-tablet-workspace={isTabletWorkspace ? "true" : undefined} className={`designer-top-toolbar border-b border-border bg-card px-2 py-1 flex flex-wrap items-center gap-1 shrink-0 overflow-visible ${isTabletWorkspace ? `${isTabletPortrait ? "order-last border-b-0 border-t" : tabletImmersiveHeader ? "pl-16" : ""}` : ""}`} style={affiliateBrand ? { borderTop: `3px solid ${affiliateAccent}` } : undefined}>
         {/* Title + badge — desktop only */}
@@ -14292,6 +14364,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           loading={inventory.loadingAlternatives}
           onSwap={swapInventoryCabinet}
           onSelect={setSelectedUid}
+          unlockedUids={stockPromptUnlocked}
+          onChoose={chooseStockPrompt}
         />
 
         <div className="hidden lg:block h-5 w-px bg-border" />
