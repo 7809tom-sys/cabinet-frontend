@@ -7810,7 +7810,9 @@ export function commitConfiguredRefrigeratorCandidate(
       : role === "bridge-left-filler"
         ? metrics.openingStart
         : role === "bridge-right-filler"
-          ? metrics.refrigeratorEnd
+          // Ends at the opening edge beside the right panel, whatever the
+          // refrigerator's exact catalog width under the cabinet.
+          ? metrics.openingEnd - span
           : role === "left-panel"
             ? metrics.openingStart - span
             : role === "right-panel"

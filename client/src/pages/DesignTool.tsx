@@ -9552,7 +9552,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
               });
             };
             addCapFiller("bridge-left-filler", bay.openingStart);
-            addCapFiller("bridge-right-filler", bay.refrigeratorEnd);
+            // Anchor each cap filler to its own edge of the opening, not to the
+            // refrigerator: a source refrigerator a fraction narrower than its
+            // cabinet (35 7/8 under a W36) put the right filler inside the
+            // cabinet and left a sliver beside the right panel.
+            addCapFiller("bridge-right-filler", bay.openingEnd - eachFillerWidth);
             }
           }
         }

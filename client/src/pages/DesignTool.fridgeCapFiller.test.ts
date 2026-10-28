@@ -19,6 +19,6 @@ describe("refrigerator cap filler", () => {
   it("still adds both cap fillers when a priced filler exists", () => {
     const fillerBranch = source.slice(end, source.indexOf("// 2) Refrigerator END PANELS", end));
     expect(fillerBranch).toContain('addCapFiller("bridge-left-filler", bay.openingStart);');
-    expect(fillerBranch).toContain('addCapFiller("bridge-right-filler", bay.refrigeratorEnd);');
+    expect(fillerBranch).toContain('addCapFiller("bridge-right-filler", bay.openingEnd - eachFillerWidth);');
   });
 });
