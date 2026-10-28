@@ -8190,10 +8190,24 @@ export function cabinetPlacementHoverDetail(
   };
 }
 
-// Wall cabinets must keep a minimum clearance (default 3") from door/window
-// openings. Returns the uids of WALL cabinets whose run-axis extent comes within
-// `clearance` inches of any opening on the SAME wall (including overlap). Used
-// for the design-check warning. Pure + deterministic.
+/**
+ * Clear distance a placed wall cabinet must keep from an opening before it is
+ * flagged. The 3-inch window casing clearance is only the default spacing the
+ * Designer places with (free segments, palette adds, auto design); a user may
+ * deliberately slide a cabinet right up to the window edge, so a window only
+ * requires the cabinet stay off the glass. A frameless (AEF) cabinet keeps its
+ * 3/4" window-side end panel out of the opening too. Doors keep the full
+ * clearance for their casing.
+ */
+function wallOpeningRequiredGap(p: PlacedCabinet, o: WallOpening, clearance: number): number {
+  if (o.kind !== "window") return clearance;
+  return hasAefPrintedGeometry(p) ? STD.PANEL_THICKNESS : 0;
+}
+
+// Wall cabinets must keep a minimum clearance (default 3") from doors and must
+// stay off window glass (see wallOpeningRequiredGap). Returns the uids of WALL
+// cabinets that come too close to an opening on the SAME wall. Used for the
+// design-check warning. Pure + deterministic.
 export function wallOpeningClearanceViolations(
   placed: PlacedCabinet[],
   openings: WallOpening[],
@@ -8219,15 +8233,48 @@ export function wallOpeningClearanceViolations(
       // A frameless wall cabinet also keeps its 3/4" window end panel out of
       // the opening. The extra is horizontal only; vertical window clearance
       // stays the caller's value.
-      const panelClearance = o.kind === "window" && hasAefPrintedGeometry(p) ? STD.PANEL_THICKNESS : 0;
       const gap = Math.max(oStart - cEnd, cStart - oEnd);
-      if (gap < clearance + panelClearance - 0.01) {
+      if (gap < wallOpeningRequiredGap(p, o, clearance) - 0.01) {
         bad.add(p.uid);
         break;
       }
     }
   }
   return bad;
+}
+
+/**
+ * Why a wall cabinet fails `wallOpeningClearanceViolations`, in the same run
+ * inches that rule measures: the nearest offending opening, the clear gap to
+ * it (negative = overlapping) and the gap the rule requires.
+ */
+export function wallOpeningClearanceDetail(
+  p: PlacedCabinet,
+  openings: WallOpening[],
+  room: RoomData,
+  clearance = WALL_OPENING_CLEARANCE_IN,
+): { opening: WallOpening; gap: number; required: number } | null {
+  if (p.placement !== "wall" || isFillerItem(p)) return null;
+  const side = cabinetWall(p, room);
+  const cStart = wallRunOffset(p, side, room);
+  const cEnd = cStart + wallRunSpan(p, side, room);
+  for (const o of openings) {
+    if (o.side !== side) continue;
+    if (wallCabinetClearsWindow(p, o, room, clearance)) continue;
+    const required = wallOpeningRequiredGap(p, o, clearance);
+    const gap = Math.max(o.offset - cEnd, cStart - (o.offset + o.width));
+    if (gap < required - 0.01) return { opening: o, gap, required };
+  }
+  return null;
+}
+
+/** Why a wall/tall cabinet fails `ceilingFitViolations`: its top and the wall's low ceiling. */
+export function ceilingFitDetail(p: PlacedCabinet, room: RoomData): { top: number; ceiling: number } | null {
+  const ceiling = wallCeilingMin(room, cabinetWall(p, room));
+  const top = p.placement === "wall"
+    ? (() => { const box = elevationBox(p, room); return box.bottom + box.height; })()
+    : p.placement === "tall" ? placedHeight(p) : null;
+  return top != null && top > ceiling + 0.5 ? { top, ceiling } : null;
 }
 
 // Base (and tall/appliance) cabinets must not sit ACROSS a floor-blocking

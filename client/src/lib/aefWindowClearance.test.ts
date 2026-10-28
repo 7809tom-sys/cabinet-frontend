@@ -46,13 +46,15 @@ describe("frameless window clearance", () => {
     expect(paletteActiveWallPlacement("top", room, [], [window], 33, 13.5, "wall", false, preview(AEF_PRINTED_GEOMETRY_MARKER))?.wallOffset).toBe(0);
   });
 
-  it("flags an AEF wall cabinet inside the panel clearance and leaves a framed cabinet at 3 inches", () => {
-    const opening: WallOpening = { ...window, offset: 36.25 };
+  it("flags an AEF wall cabinet whose end panel would reach the window and lets a framed cabinet sit at the edge", () => {
+    // Cabinet 0..33; window starts 1/2" away: inside the AEF 3/4" panel only.
+    const opening: WallOpening = { ...window, offset: 33.5 };
     const body = (marker: string | null): PlacedCabinet => {
       const spot = wallPlacementAt(0, 33, 13.5, "top", room);
       return { ...preview(marker), ...spot, width: 33, constructionMethod: marker };
     };
     expect(wallOpeningClearanceViolations([body(AEF_PRINTED_GEOMETRY_MARKER)], [opening], room).has("preview")).toBe(true);
     expect(wallOpeningClearanceViolations([body("framed")], [opening], room).has("preview")).toBe(false);
+    expect(wallOpeningClearanceViolations([body("framed")], [{ ...opening, offset: 33 }], room).has("preview")).toBe(false);
   });
 });
