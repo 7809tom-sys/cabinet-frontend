@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { DEFAULT_ROOM, wallPlacementAt, type PlacedCabinet, type WallOpening } from "./design";
 import { resetKitchenRuleParameters, setKitchenRuleParameters } from "./kitchenRuleParameters";
 import {
@@ -9,6 +9,11 @@ import {
 } from "./exposedSidePanels";
 
 const room = DEFAULT_ROOM;
+
+// The engine is off by default (panels are user-chosen); these tests exercise it directly.
+beforeEach(() => {
+  setKitchenRuleParameters({ exposed_panels_enabled: 1 });
+});
 const stock: ExposedPanelStock[] = [
   { id: 11, masterCode: "BEP2535", description: "Base end panel", placement: "base", stockFace: 25.625, stockHeight: 35.25, price: 86 },
   { id: 12, masterCode: "WEP1530", description: "Wall end panel", placement: "wall", stockFace: 15.25, stockHeight: 30.25, price: 42 },

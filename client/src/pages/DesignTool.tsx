@@ -93,11 +93,12 @@ import { styleDisplayName } from "@/lib/styleDisplayName";
 import { affiliateStyleName as resolveAffiliateStyleName } from "@/lib/affiliateStyleName";
 import { frameInsetPxFromInches } from "@/lib/elevationFrameGeometry";
 import { designerDoorFrameMetrics } from "@/lib/doorFrameMetrics";
+import { designerCatalogDoorProfile, doorStyleFinishColors, resolveDoorProfilePanelKind } from "@/lib/doorStyleAppearance";
 import { adjustedDesignUnitPrice, buildDesignCabinetCartLines, buildDesignPreviewPricingLines, bundleCabinetPricingSignature, calculateCartSubtotal, completeDesignPricingLines, lockDesignCartLinesToPackageTotal, mergeDesignCartLines } from "@/lib/designCartLines";
 import { combinedFillerNote, fillerCutSourceFor, isCombinedSmallFiller } from "@/lib/fillerBilling";
 import { activeCatalogPricingIdsByMasterCode, currentCatalogPricingCabinetId } from "@/lib/designPricingIdentity";
 import { catalogFillerForGap, catalogFillerPricingId, fittedCatalogFillerDescription, isCatalogFiller, type CatalogFillerCandidate } from "@/lib/catalogFiller";
-import { catalogItemToExposedPanelStock, isExposedPanelStockCandidate, sameExposedPanelWarnings, syncExposedSidePanels, type ExposedPanelStock, type ExposedPanelWarning } from "@/lib/exposedSidePanels";
+import { removeAutoExposedPanels } from "@/lib/exposedSidePanels";
 import { countertopToastVisible, COUNTERTOP_TOAST_TIMEOUT_MS, useDebouncedValue, stablePricePairKey } from "@/lib/designerPricingStability";
 import { ColorStyleQuickPicker } from "@/components/design/ColorStyleQuickPicker";
 import { attachedFillerLeftoverOptions, attachedFillerNeedsReview, attachedFillerPlanForCandidate, attachedFillerSizeIssues, type AttachedFillerChoice, type AttachedFillerLeftoverOptions, type AttachedFillerSizeIssue } from "@/lib/cabinetAttachedFillers";
@@ -4599,9 +4600,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	    // prospective rows, a physically required filler could never pass the
 	    // positive-price gate until it had somehow already been added.
 	    catalogFillers.filter(isCatalogFiller).forEach((filler) => push(filler.id, styleId, filler.masterCode));
-	    // Exposed-side finished panels are cut from catalog panel stock. Price that
-	    // stock up front, or every exposed side reports "no priced panel SKU".
-	    catalogFillers.filter(isExposedPanelStockCandidate).forEach((panel) => push(panel.id, styleId, panel.masterCode));
 	    // AEF window-break WEP panels are source-priced stock. Price each one in
 	    // the exact finish of the upper cabinet whose exposed end it covers.
 	    aefWindowEndPanels.forEach((panel) => {
@@ -4716,40 +4714,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     },
 	    [priceMap, pricingIdForPlacedCabinet, pricingStyleIdFor, styleId, glassDoorAddonCodeFor, glassDoorCatalogProduct]
 	  );
-  const [exposedPanelWarnings, setExposedPanelWarnings] = useState<ExposedPanelWarning[]>([]);
-  // One line for the collapsed Design check; the per-cabinet list stays one click away.
-  const exposedPanelSummary = useMemo(() => {
-    const unpriced = exposedPanelWarnings.filter((warning) => warning.id.startsWith("missing-price:")).length;
-    const other = exposedPanelWarnings.length - unpriced;
-    const parts: string[] = [];
-    if (unpriced > 0) parts.push(`${unpriced} exposed cabinet side${unpriced === 1 ? "" : "s"} need${unpriced === 1 ? "s" : ""} a finished panel, but this door style has no priced panel SKU, so none were added`);
-    if (other > 0) parts.push(`${other} panel${other === 1 ? "" : "s"} could not be placed`);
-    return `${parts.join("; ")}.`;
-  }, [exposedPanelWarnings]);
-  const exposedPanelStock = useMemo<ExposedPanelStock[]>(() => {
-    if (!styleId) return [];
-    return catalogFillers.flatMap((item) => {
-      if (!isExposedPanelStockCandidate(item)) return [];
-      const stock = catalogItemToExposedPanelStock(item, priceMap.get(`${item.id}:${styleId}`) ?? null);
-      return stock ? [stock] : [];
-    });
-  }, [catalogFillers, priceMap, styleId]);
+  // Finished panels are added only when the user chooses one. The automatic
+  // exposed-side engine is not run; panels it placed in older saves are removed.
   useEffect(() => {
-    // Wait for the panel stock prices too; a refetch in flight still holds the
-    // previous rows and would report every side as unpriced.
-    if (!priceRowsFetched || priceRowsFetching || exposedPanelStock.length === 0) return;
-    const plan = syncExposedSidePanels({
-      placed: placedRef.current,
-      room: roomRef.current,
-      openings,
-      catalog: exposedPanelStock,
-    });
-    if (plan.placed !== placedRef.current) {
-      placedRef.current = plan.placed;
-      setPlaced(plan.placed);
-    }
-    setExposedPanelWarnings((current) => sameExposedPanelWarnings(current, plan.warnings) ? current : plan.warnings);
-  }, [exposedPanelStock, openings, priceRowsFetched, priceRowsFetching, room, setPlaced, styleId]);
+    const cleaned = removeAutoExposedPanels(placed);
+    if (cleaned === placed) return;
+    placedRef.current = cleaned;
+    setPlaced(cleaned);
+  }, [placed, setPlaced]);
 
   // ── Part 1: every placed cabinet remains visible ─────────────────────────
   // Evaluate the active line as soon as its price query settles. Flags drive
@@ -5039,7 +5011,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     const s = doorStyles?.find((d) => d.id === styleId) as
       | { ourName?: string | null; color?: string | null; finish?: string | null; woodSpecies?: string | null }
       | undefined;
-    return finishColors(s?.ourName, s?.color, s?.finish, s?.woodSpecies);
+    return doorStyleFinishColors(s);
   }, [doorStyles, styleId]);
   const activeFacePlan = useMemo(() => {
     const s = doorStyles?.find((d) => d.id === styleId) as DesignerFaceStyle | undefined;
@@ -5525,8 +5497,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   );
   // Panel treatment for the placed cabinets' door fronts in the elevation view.
   const activePanelKind = useMemo(() => {
-    const s = doorStyles?.find((d) => d.id === styleId) as { doorStyle?: string | null } | undefined;
-    return doorPanelKind(s?.doorStyle ?? activeStyleName);
+    const s = doorStyles?.find((d) => d.id === styleId) as { doorStyle?: string | null; ourName?: string | null } | undefined;
+    return s ? resolveDoorProfilePanelKind(s) : doorPanelKind(activeStyleName);
   }, [doorStyles, styleId, activeStyleName]);
 
 
@@ -5538,7 +5510,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     const m = new Map<number, ReturnType<typeof finishColors>>();
     doorStyles?.forEach((d) => {
       const s = d as { id: number; ourName?: string | null; color?: string | null; finish?: string | null; woodSpecies?: string | null };
-      m.set(s.id, finishColors(s.ourName, s.color, s.finish, s.woodSpecies));
+      m.set(s.id, doorStyleFinishColors(s));
     });
     return m;
   }, [doorStyles]);
@@ -5546,7 +5518,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     const m = new Map<number, ReturnType<typeof doorPanelKind>>();
     doorStyles?.forEach((d) => {
       const s = d as { id: number; doorStyle?: string | null; ourName?: string | null };
-      m.set(s.id, doorPanelKind(s.doorStyle ?? s.ourName ?? undefined));
+      m.set(s.id, resolveDoorProfilePanelKind(s));
     });
     return m;
   }, [doorStyles]);
@@ -14187,32 +14159,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     () => Object.fromEntries(placed.flatMap((cabinet) => {
       const assignedStyleId = effectiveStyleId(cabinet, styleId) ?? styleId;
       const assignedStyle = doorStyles?.find((style) => style.id === assignedStyleId) ?? null;
-      if (!assignedStyle) return [];
-      const frameStyle = assignedStyle as typeof assignedStyle & {
-        railWidth?: string | number | null;
-        stileWidth?: string | number | null;
-        panelConstruction?: "raised" | "flat" | "slab" | "glass" | null;
-        bevelWidth?: string | number | null;
-        bevelDepth?: string | number | null;
-        insideEdgeProfile?: string | null;
-        drawerFrontType?: "five-piece-raised" | "five-piece-flat" | "slab" | null;
-        grainDirection?: "vertical-stiles-horizontal-rails" | "vertical" | "horizontal" | "none" | null;
-        finishSheen?: "satin" | "matte" | "gloss" | null;
-      };
-      const frame = designerDoorFrameMetrics(frameStyle);
-      return [[cabinet.uid, {
-        doorStyle: assignedStyle.doorStyle ?? null,
-        doorPanelType: assignedStyle.doorPanelType ?? null,
-        railWidth: frame?.railWidth ?? null,
-        stileWidth: frame?.stileWidth ?? null,
-        panelConstruction: frameStyle.panelConstruction ?? null,
-        bevelWidth: frameStyle.bevelWidth ?? null,
-        bevelDepth: frameStyle.bevelDepth ?? null,
-        insideEdgeProfile: frameStyle.insideEdgeProfile ?? null,
-        drawerFrontType: frameStyle.drawerFrontType ?? null,
-        grainDirection: frameStyle.grainDirection ?? null,
-        finishSheen: frameStyle.finishSheen ?? null,
-      }]];
+      const profile = designerCatalogDoorProfile(assignedStyle);
+      return profile ? [[cabinet.uid, profile]] : [];
     })),
     [placed, styleId, doorStyles],
   );
@@ -14431,31 +14379,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	      catalogRoomSceneUrl={active3DRoomSceneReferenceUrl}
 	      windowSceneKind={windowSceneKind}
       windowFrameStyle={windowFrameStyle}
-      catalogDoorProfile={activeStyle ? (() => {
-	        const styleProfile = activeStyle as typeof activeStyle & {
-	          railWidth?: string | number | null; stileWidth?: string | number | null;
-	          panelConstruction?: "raised" | "flat" | "slab" | "glass" | null;
-	          bevelWidth?: string | number | null; bevelDepth?: string | number | null;
-	          insideEdgeProfile?: string | null;
-	          drawerFrontType?: "five-piece-raised" | "five-piece-flat" | "slab" | null;
-	          grainDirection?: "vertical-stiles-horizontal-rails" | "vertical" | "horizontal" | "none" | null;
-	          finishSheen?: "satin" | "matte" | "gloss" | null;
-	        };
-	        const frame = designerDoorFrameMetrics(styleProfile);
-	        return {
-	          doorStyle: activeStyle.doorStyle ?? activeStyle.ourName ?? null,
-	          doorPanelType: activeStyle.doorPanelType ?? null,
-	          railWidth: frame?.railWidth ?? null,
-	          stileWidth: frame?.stileWidth ?? null,
-	          panelConstruction: styleProfile.panelConstruction ?? null,
-	          bevelWidth: styleProfile.bevelWidth ?? null,
-	          bevelDepth: styleProfile.bevelDepth ?? null,
-	          insideEdgeProfile: styleProfile.insideEdgeProfile ?? null,
-	          drawerFrontType: styleProfile.drawerFrontType ?? null,
-	          grainDirection: styleProfile.grainDirection ?? null,
-	          finishSheen: styleProfile.finishSheen ?? null,
-	        };
-      })() : null}
+      catalogDoorProfile={designerCatalogDoorProfile(activeStyle)}
 	      catalogFinishName={activeStyleName}
 	      catalogFinishProductId={styleId ?? null}
 	      catalogIslandCabinetName={threeDIslandCabinet.name}
@@ -14554,23 +14478,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         onCommit={commitMasterTracTower}
       />}
       <SinkBaseSubstitutionNotice swaps={sinkBaseSwapNotices} onUndo={undoSinkBaseSwap} />
-      {exposedPanelWarnings.length > 0 && (
-        <div role="status" data-testid="design-check-panel" className="border-b border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-950">
-          <details data-testid="design-check-details">
-            <summary className="cursor-pointer font-semibold">
-              Design check: {exposedPanelSummary}
-              <span className="ml-1 font-normal underline underline-offset-2">Show details</span>
-            </summary>
-            <ul className="mt-1 max-h-48 space-y-1 overflow-y-auto">
-              {exposedPanelWarnings.map((warning) => (
-                <li key={warning.id}>
-                  <button type="button" className="text-left underline-offset-2 hover:underline" onClick={() => setSelectedUid(warning.cabinetUid)}>{warning.message}</button>
-                </li>
-              ))}
-            </ul>
-          </details>
-        </div>
-      )}
       <OutOfStockChoiceDialog
         notice={stockPromptNotice}
         phase={stockPromptPhase}
@@ -22290,31 +22197,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                catalogRoomSceneUrl={active3DRoomSceneReferenceUrl}
 	                windowSceneKind={windowSceneKind}
 	                windowFrameStyle={windowFrameStyle}
-	                catalogDoorProfile={activeStyle ? (() => {
-	                  const styleProfile = activeStyle as typeof activeStyle & {
-	                    railWidth?: string | number | null; stileWidth?: string | number | null;
-	                    panelConstruction?: "raised" | "flat" | "slab" | "glass" | null;
-	                    bevelWidth?: string | number | null; bevelDepth?: string | number | null;
-	                    insideEdgeProfile?: string | null;
-	                    drawerFrontType?: "five-piece-raised" | "five-piece-flat" | "slab" | null;
-	                    grainDirection?: "vertical-stiles-horizontal-rails" | "vertical" | "horizontal" | "none" | null;
-	                    finishSheen?: "satin" | "matte" | "gloss" | null;
-	                  };
-	                  const frame = designerDoorFrameMetrics(styleProfile);
-	                  return {
-	                    doorStyle: activeStyle.doorStyle ?? activeStyle.ourName ?? null,
-	                    doorPanelType: activeStyle.doorPanelType ?? null,
-	                    railWidth: frame?.railWidth ?? null,
-	                    stileWidth: frame?.stileWidth ?? null,
-	                    panelConstruction: styleProfile.panelConstruction ?? null,
-	                    bevelWidth: styleProfile.bevelWidth ?? null,
-	                    bevelDepth: styleProfile.bevelDepth ?? null,
-	                    insideEdgeProfile: styleProfile.insideEdgeProfile ?? null,
-	                    drawerFrontType: styleProfile.drawerFrontType ?? null,
-	                    grainDirection: styleProfile.grainDirection ?? null,
-	                    finishSheen: styleProfile.finishSheen ?? null,
-	                  };
-	                })() : null}
+	                catalogDoorProfile={designerCatalogDoorProfile(activeStyle)}
 	                catalogFinishName={activeStyleName}
 	                catalogFinishProductId={styleId ?? null}
 	      catalogIslandCabinetName={threeDIslandCabinet.name}

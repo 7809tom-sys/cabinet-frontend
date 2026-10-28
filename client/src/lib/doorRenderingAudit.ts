@@ -41,11 +41,17 @@ export const DOOR_AUDIT_RENDERING_COMMIT = `door-audit-${DOOR_AUDIT_CAPTURE.widt
  * same way every time — room-scaled designer positions would change with the kitchen.
  */
 export const DOOR_AUDIT_LIGHTS = {
-  background: "#f6f3ed",
-  exposure: 0.84,
-  hemisphere: { sky: "#fffaf2", ground: "#718096", intensity: 0.92 },
-  key: { color: "#fff5e6", intensity: 1.5, position: [0.85, 1.35, 1.6] as const },
-  fill: { color: "#cfe0f4", intensity: 0.38, position: [-1.1, 0.4, 1.8] as const },
+  background: "#f3f0ea",
+  /**
+   * Even studio light, biased slightly from above so a raised panel still
+   * catches an edge. The previous key (1.5) plus a bright room environment
+   * lifted dark stains toward gray.
+   */
+  exposure: 0.68,
+  environment: 0.22,
+  hemisphere: { sky: "#f7f4ee", ground: "#5c564e", intensity: 0.42 },
+  key: { color: "#fff6ea", intensity: 0.72, position: [0.28, 1.05, 2.4] as const },
+  fill: { color: "#f3efe8", intensity: 0.5, position: [-0.45, 0.15, 2.15] as const },
 } as const;
 
 export type DoorAuditRunMode = "all" | "changed-only" | "selected";
@@ -110,6 +116,9 @@ export type DoorAuditRenderInput = {
   needsDoorOnlyPhoto?: boolean;
   styleVerified?: boolean;
   color: string | null;
+  finish?: string | null;
+  woodSpecies?: string | null;
+  distributorCode?: string | null;
   sourceFingerprint: string;
   doorProfile: DoorAuditDoorProfile;
 };
@@ -627,6 +636,9 @@ export function normalizeDoorAuditRenderInput(raw: unknown, renderingCommit?: un
     needsDoorOnlyPhoto: baseline.source === "approved-reference" ? false : record.needsDoorOnlyPhoto === true,
     styleVerified: record.styleVerified === false || record.styleVerified === 0 ? false : true,
     color: text(record.color),
+    finish: text(record.finish),
+    woodSpecies: text(record.woodSpecies),
+    distributorCode: text(record.distributorCode),
     sourceFingerprint: text(record.sourceFingerprint) ?? text(record.renderingCommit) ?? text(renderingCommit) ?? "",
     doorProfile: normalizeProfile(profileSource),
   };
