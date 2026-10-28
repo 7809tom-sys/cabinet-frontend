@@ -6478,6 +6478,20 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 
   const addCabinet = useCallback(
     (c: DesignCabinet, x?: number, y?: number, forceAccessory = false, rotation = 0, strictDropTarget = false, targetCabinetUid?: string | null, targetIslandFace?: IslandFace | null, forceBackDepthAdjustment = false, resolvedWallTarget?: { wallId: WallSide; wallOffset: number; peninsulaSide?: PeninsulaCabinetSide }, blindPullOverride?: number, attachedFillerChoice?: AttachedFillerChoice) => {
+      // Cabinets are priced and sized per supplier line, so none may enter the
+      // plan before a vendor and door style/color are chosen. Every entry path
+      // (room layout, Continuous Wall Builder, catalog click or drag) lands
+      // here. Generic appliances do not depend on a line and stay allowed.
+      if (styleId == null && !isApplianceCode(c.masterCode)) {
+        forcedOpenSinkRef.current = null;
+        pelicanSinkDraftRef.current = null;
+        const message = "Choose a cabinet vendor and door style/color before adding cabinets.";
+        setPlacementWarning(message);
+        toast.error(message);
+        setMobilePanel(null);
+        window.setTimeout(() => setCatalogSetupOpen(true), 0);
+        return;
+      }
       // A configured blind base's pull is an installation choice, not a hidden default.
       // Ask before committing the BBC or its mandatory linked filler;
       // Cancel therefore leaves the plan exactly as it was.
@@ -10443,11 +10457,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     setLayoutStarterOpen(false);
     setMobilePanel(null);
     setSelectedLayoutPresetId(null);
+    // Same next step as choosing a room layout: pick the vendor and door
+    // style/color before any cabinet can be placed on the new walls.
+    if (styleId == null) window.setTimeout(() => setCatalogSetupOpen(true), 0);
     toast.success("Walls applied to design", {
       description: `${outline.customWalls.length} connected wall${outline.customWalls.length === 1 ? " is" : "s are"} now on your floor plan. Select any wall and begin placing cabinets.`,
       duration: 6000,
     });
-  }, [applyRoom, continuousWallBlockedReason, room, setPlacementTarget]);
+  }, [applyRoom, continuousWallBlockedReason, room, setPlacementTarget, styleId]);
 
   const physicalWallSpans = useMemo(
     () => physicalWallMeasurements((phoneMeasureStatus.data?.walls ?? []) as PhysicalRoomMeasurement[]),
