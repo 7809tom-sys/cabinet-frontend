@@ -195,4 +195,26 @@ describe("cart checkout surface prefill", () => {
     expect(cartItemToCheckoutPrefill(item, 180).freeShipping).toBe(true);
     expect(applyCartCheckoutPrefill(unmatched, cartItemToCheckoutPrefill(item, 180)).cartFreeShipping).toBe(true);
   });
+
+  it("keeps a Designer toe kick saved without a supplier out of the Pelican group", () => {
+    // The TK8 line has a price and the Trim & Moulding category but no
+    // distributorId, which is the legacy Pelican shape.
+    expect(isSurfaceCheckoutPrefill({
+      code: "TK8(TKC)",
+      qty: 2,
+      distributorId: null,
+      unitPrice: 38.5,
+      priceLocked: false,
+      category: "Trim & Moulding",
+    })).toBe(false);
+    expect(isSurfaceCheckoutPrefill({
+      code: "LRM-8",
+      qty: 1,
+      distributorId: null,
+      unitPrice: 42,
+      priceLocked: false,
+      category: "Trim & Moulding",
+    })).toBe(false);
+  });
 });
+
