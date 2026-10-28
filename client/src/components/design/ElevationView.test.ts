@@ -550,7 +550,7 @@ describe("configured corner elevation rendering", () => {
       { label: "blind", cabinetType: "blind-corner" as const, doors: 1, drawers: 0, marker: "repeating-linear-gradient(135deg" },
       { label: "diagonal", cabinetType: "diagonal-corner" as const, doors: 2, drawers: 0, marker: "linear-gradient(225deg" },
       { label: "L corner", cabinetType: "l-corner" as const, doors: 1, drawers: 0, marker: "width:6%" },
-      { label: "corner drawer", cabinetType: "corner-drawer-base" as const, doors: 0, drawers: 3, marker: "width:8%" },
+      { label: "corner drawer", cabinetType: "corner-drawer-base" as const, doors: 0, drawers: 3, marker: 'data-corner-drawer-face="right-angle"' },
     ];
 
     for (const fixture of fixtures) {
@@ -596,8 +596,12 @@ describe("configured corner elevation rendering", () => {
     expect(diagonal).toContain("left:15%");
     expect(blind).toContain("left:40%;width:60%");
     expect(lCorner).toContain("top-[3%] bottom-[3%] left-[3%] right-[3%]");
-    expect(cornerDrawer).toContain("left:8%;right:0");
-    expect(cornerDrawer).toContain("height:33.333333333333336%");
+    expect(cornerDrawer).toContain('data-corner-drawer-face="right-angle"');
+    expect(cornerDrawer).toContain('data-corner-drawer-return-inches="24"');
+    expect(cornerDrawer).toContain('data-corner-drawer-face-inches="12"');
+    expect(cornerDrawer).toContain('data-corner-drawer-row-inches="6"');
+    expect(cornerDrawer).toContain('data-corner-drawer-row-inches="14.25"');
+    expect(cornerDrawer).not.toContain("left:8%");
     expect(oven).toContain(`url(${doorSample})`);
     expect(oven).toContain(`url(${drawerSample})`);
     expect(oven).toContain("height:33.33333333333333%");

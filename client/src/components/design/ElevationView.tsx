@@ -1,6 +1,7 @@
 import { doorOpeningAppearance } from "@/lib/doorOpeningAppearance";
 import { threeDLatticeRackLayout } from "@/lib/latticeRackLayout";
 import { PLATE_RACK_FRAME_IN, plateRackDividerLayout } from "@/lib/plateRackLayout";
+import { cornerDrawerElevationSplit } from "@/lib/cornerDrawerLayout";
 import {
   PlacedCabinet, RoomData, STD, elevationBox, WallOpening,
   FinishColors, DEFAULT_FINISH_COLORS, CROWN_HEIGHT_IN, TOE_KICK_HEIGHT_IN, BATTEN_WIDTH_IN, LIGHT_RAIL_HEIGHT_IN,
@@ -3415,43 +3416,45 @@ export function DoorFront({ kind, edge, face, doors, drawers, isWall, doorSample
   }
 
   // ─── SPECIALTY TYPE: CORNER DRAWER BASE ─────────────────────────────────
-  // Corner drawer bases (CDB-*): L-shaped footprint with stacked drawers on
-  // the main visible face. Renders as a full-height drawer stack (like a
-  // drawer base) but with a small corner indicator on the left edge.
+  // CDB36 shares the lazy-Susan L. This wall shows the finished return of the
+  // perpendicular leg, then the exposed stack of right-angle drawer fronts.
+  // Row heights come from the same layout the 3D meshes use.
   if (cabinetType === "corner-drawer-base") {
-    const dCount = Math.max(1, drawerCount || 3);
-    const sliceH = 100 / dCount;
+    const split = cornerDrawerElevationSplit(faceWidth, faceHeight, Math.max(1, drawerCount || 3));
     return withFace(
-      <>
-        {/* Corner indicator: subtle angled mark on left edge */}
+      <div data-corner-drawer-face="right-angle" className="absolute inset-0">
         <div
+          data-corner-drawer-return="true"
+          data-corner-drawer-return-inches={split.returnIn}
           className="absolute top-0 bottom-0 left-0"
-          style={{ width: "8%" }}
+          style={{ width: `${split.returnPct}%`, background: face, boxShadow: `inset -1px 0 0 ${stroke}` }}
+        />
+        <div
+          data-corner-drawer-exposed-face="true"
+          data-corner-drawer-face-inches={split.faceIn}
+          className="absolute top-0 bottom-0"
+          style={{ left: `${split.returnPct}%`, width: `${split.facePct}%` }}
         >
-          <div
-            className="absolute inset-[2px] rounded-[1px]"
-            style={{
-              background: `repeating-linear-gradient(135deg, ${face}22 0px, ${face}22 3px, ${edge}33 3px, ${edge}33 4px)`,
-              boxShadow: `inset 0 0 3px rgba(0,0,0,0.12)`,
-            }}
-          />
+          {split.rows.map((rowIn, i) => {
+            const topPct = (split.rows.slice(0, i).reduce((sum, value) => sum + value, 0) / split.totalIn) * 100;
+            const heightPct = (rowIn / split.totalIn) * 100;
+            return (
+              <div
+                key={`cdb-drw-${i}`}
+                data-corner-drawer-row={i + 1}
+                data-corner-drawer-row-inches={rowIn}
+                className="absolute left-0 right-0"
+                style={{ top: `${topPct}%`, height: `${heightPct}%` }}
+              >
+                {i > 0 && (
+                  <div className="absolute left-0 right-0 top-0" style={{ height: 2, background: stroke }} />
+                )}
+                <StylePanel kind={kind} edge={edge} face={face} drawer doorSampleUrl={doorSampleUrl} drawerSampleUrl={drawerSampleUrl} faceWidthIn={split.faceIn} faceHeightIn={rowIn} />
+              </div>
+            );
+          })}
         </div>
-        {/* Main drawer stack */}
-        <div className="absolute top-0 bottom-0" style={{ left: "8%", right: 0 }}>
-          {Array.from({ length: dCount }).map((_, i) => (
-            <div
-              key={`cdb-drw-${i}`}
-              className="absolute left-0 right-0"
-              style={{ top: `${sliceH * i}%`, height: `${sliceH}%` }}
-            >
-              {i > 0 && (
-                <div className="absolute left-0 right-0 top-0" style={{ height: 2, background: stroke }} />
-              )}
-                            <StylePanel kind={kind} edge={edge} face={face} drawer doorSampleUrl={doorSampleUrl} drawerSampleUrl={drawerSampleUrl} faceWidthIn={faceWidth * 0.92} faceHeightIn={faceHeight / dCount} />
-            </div>
-          ))}
-        </div>
-      </>
+      </div>
     );
   }
   // ─── APPLIANCE OPENING (non-oven-tall) ──────────────────────────────────

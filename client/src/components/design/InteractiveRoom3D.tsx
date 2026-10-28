@@ -17,6 +17,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { APPLIANCES, BLIND_CORNER_FILLER_WIDTH_IN, COUNTERTOP_DEPTH_IN, FURNITURE_CATALOG, STD, applianceAppearanceImage, bearsCountertop, isBaseHeightAppliance, blindCornerRearCountertopExtensionIn, blindPullRange, cabinetWall, cabinetWallDragPreview, cornerLegRatioForPlaced, cornerRotationForPlaced, countertopRunFaceNormal, countertopSurfacePlanPolygon, countertopSurfaces, crownBlockingCabinets, crownEligibleCabinets, customWallCabinetSide, drywallPonyWallAppearance, elevationBox, formatEighthInches, formatInches, glassDoorShelfCount, isAgainstWall, isBaseEndCornerCabinet, isCustomRoomWall, isFillerItem, fillerWidthRange, isGlassDoorCabinet, isMicrowaveOverRangePair, isRangeHoodPlacement, isRangeOrOven, isRefrigerator, isStacker, isWallRunDraggable, isWd18CountertopDrawerCabinet, kitchenCrestGenericOpenEndShelfCount, normalizeInstalledFillersToAdjacentCabinets, peninsulaCountertopPonyWallBackExtensionIn, peninsulaCountertopPonyWallBarOverhang, peninsulaCountertopSeatingOverhang, peninsulaCountertopWaterfallEnd, peninsulaLowerWorktopOppositeSideExtensionIn, peninsulaRunEndpoints, placedCornerGeometryKind, placedFootprint, ponyWallMiteredFootprint, ponyWallPlanFrame, potFillerMountedRange, rangeVisualAppearance, refrigeratorBayVerificationMetrics, resolveCabinetHardwarePosition, resolveSwing, roomWallAppearance, seatedWallRunFrame, wallRunFrame, selectedLowerCabinetWallPlacement, sinkPlanDimensions, usesRaisedFloorWallDoorPull, wallCabinetFitMeasure, wallGapFitPreview, wallGapFreehandPreview, wallGaps, wallPlacementAt, wallRunOffset, wallRunSpan, wallSpanMeasure, wallLength, wd18CountertopFaceLayout, type CabinetWallDragPreview, type CountertopSurface, type IslandZone, type PlacedCabinet, type PlacedCornerGeometryKind, type PlacedFurniture, type PonyWall, type PotFillerFixture, rotatedSize, type RoomData, type SinkFixture, type WallCabinetFitMeasure, type WallGapFitPreview, type WallOpening, type WallSide, type WallSpanMeasure, wallTopLimit, } from "@/lib/design";
 import { threeDLatticeRackLayout } from "@/lib/latticeRackLayout";
 import { PLATE_RACK_FRAME_IN, plateRackDividerLayout } from "@/lib/plateRackLayout";
+import { cornerDrawerFrontLayout, isCornerDrawerBaseCabinet } from "@/lib/cornerDrawerLayout";
 export { threeDLatticeRackLayout };
 import { islandCountertopRects, islandCountertopVisibleRects, islandRaisedBarRects, islandFaceFitMeasure } from "@/lib/islandScene";
 import { furniturePlanFrame, resolvedFurnitureDimensions } from "@/lib/design";
@@ -2635,6 +2636,9 @@ export function threeDCabinetFrontVisualUrl(sku: EnclosedWallMicrowaveCandidate 
   // appliance face inside its configured bay. Its cabinet-card diagram is not
   // an appliance finish and must never cover the upper doors or microwave face.
   if (isEnclosedWallMicrowaveCabinet(sku)) return null;
+  // CDB36 is built from real right-angle drawer meshes. Its catalog line
+  // drawing must never be pasted onto a flat plane over the cabinet front.
+  if (isCornerDrawerBaseCabinet({ masterCode: sku.masterCode, description: sku.description })) return null;
   return sku.catalogImageUrl?.trim() || null;
 }
 
@@ -2795,7 +2799,12 @@ export function threeDUsesCatalogFrontVisual(input: {
   specialtyKind: string;
   isRefrigeratorEndPanel: boolean;
   hasVerifiedDoorLayout: boolean;
+  masterCode?: string | null;
+  description?: string | null;
+  graphicType?: string | null;
+  customProfile?: string | null;
 }) {
+  if (isCornerDrawerBaseCabinet(input) || input.specialtyKind === "corner-drawer") return false;
   return input.hasCatalogFrontVisual
     && !input.hasDoorSample
     && !input.hasDoorTexture
@@ -2969,15 +2978,6 @@ function taperedRangeHoodCanopyGeometry(
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
   return geometry;
-}
-
-/** Matches the 2D Corner Drawer Base face: an 8% corner marker plus a 92% full-height drawer stack. */
-export function cornerDrawerFrontLayout(bodyWidth: number) {
-  const cornerMarkerWidth = Math.max(0.04, bodyWidth * 0.08);
-  return {
-    cornerMarkerWidth,
-    drawerStackWidth: Math.max(0.08, bodyWidth - cornerMarkerWidth),
-  };
 }
 
 /**
@@ -4830,13 +4830,17 @@ export function addCabinet(
   // texture. When it exists, NEVER overlay the Cabinet Config line-art drawing.
   // The catalog front visual is only used as a fallback for cabinets that have
   // NO active door style sample at all.
-  if (catalogFrontVisualUrl && threeDUsesCatalogFrontVisual({
+  if (catalogFrontVisualUrl && !isCornerDrawerBaseCabinet(sku) && threeDUsesCatalogFrontVisual({
     hasCatalogFrontVisual: Boolean(catalogFrontVisualUrl),
     hasDoorSample: Boolean(doorSampleUrl),
     hasDoorTexture: Boolean(doorTexture),
     specialtyKind: specialty.kind,
     isRefrigeratorEndPanel,
     hasVerifiedDoorLayout,
+    masterCode: sku.masterCode,
+    description: sku.description,
+    graphicType: sku.graphicType,
+    customProfile: sku.customProfile,
   })) {
     const frontVisualTexture = new THREE.TextureLoader().load(catalogFrontVisualUrl);
     frontVisualTexture.colorSpace = THREE.SRGBColorSpace;
@@ -5900,30 +5904,97 @@ export function addCabinet(
       }
     }
   } else if (specialty.kind === "corner-drawer") {
-    // CDB36 retains its 36-by-36 plan footprint while its front exactly follows
-    // the 2D Corner Drawer Base elevation: an 8% corner marker and a full-height
-    // 92% stack of measured drawer rows—not a 24-inch blank panel plus a strip.
-    const { cornerMarkerWidth, drawerStackWidth } = cornerDrawerFrontLayout(bodyWidth);
-    const cornerMarker = new THREE.Mesh(
-      new THREE.BoxGeometry(cornerMarkerWidth - 0.01, bodyHeight - 0.08, 0.045),
-      trimMaterial,
-    );
-    cornerMarker.position.set(-bodyWidth / 2 + cornerMarkerWidth / 2 + 0.01, 0, 0.03);
-    cornerMarker.userData = { specialtyProfile: "corner-drawer", cornerDrawerIndicator: true };
-    frontGroup.add(cornerMarker);
-    const rows = resolvedThreeDDrawerRows(sku, bodyHeight - 0.1, Math.max(1, drawerCount || 3));
-    let rowTop = bodyHeight / 2 - 0.05;
-    for (const row of rows) {
-      const drawerWidth = drawerStackWidth / row.count;
-      for (let column = 0; column < row.count; column++) {
-        const drawer = new THREE.Mesh(new THREE.BoxGeometry(drawerWidth - 0.025, Math.max(0.08, row.height - 0.025), 0.052), faceMaterial);
-        drawer.position.set(-bodyWidth / 2 + cornerMarkerWidth + drawerWidth * (column + 0.5), rowTop - row.height / 2, 0.035);
-        drawer.userData = { specialtyProfile: "corner-drawer", cornerDrawerFace: true, cabinetFront: true, cabinetDrawerFront: true, flushPhysicalFace: true };
-        frontGroup.add(drawer);
-        addDrawerReveal(drawerWidth - 0.025, Math.max(0.08, row.height - 0.025), drawer.position.x, drawer.position.y);
-        addShakerFrame(drawerWidth - 0.025, Math.max(0.08, row.height - 0.025), drawer.position.x, drawer.position.y, 0.066);
+    // The L carcass, toe kick, and countertop stay on the shared lazy-Susan
+    // footprint. Only the face changes: three drawer fronts, each two panels
+    // meeting at a right angle on the inside corner. They are not a flat
+    // catalog drawing and they do not cross into the next cabinet.
+    frontGroup.position.z = 0;
+    frontGroup.userData = {
+      ...frontGroup.userData,
+      specialtyProfile: "corner-drawer",
+      cornerDrawerRightAngleFronts: true,
+      catalogFrontVisualSuppressed: true,
+    };
+    const drawerFronts = cornerDrawerFrontLayout({
+      bodyWidth,
+      bodyDepth,
+      bodyHeight,
+      legRatio: lCornerLegRatio,
+      drawerCount: Math.max(1, drawerCount || 3),
+    });
+    const drawerPiece = hardwareStyle(surfaceTextures?.hardwareStyleId).drawerPiece;
+    for (const panel of drawerFronts.panels) {
+      const drawer = new THREE.Mesh(new THREE.BoxGeometry(panel.width, panel.height, panel.thickness), faceMaterial);
+      drawer.position.set(panel.x, panel.y, panel.z);
+      drawer.rotation.y = panel.rotationY;
+      drawer.userData = {
+        specialtyProfile: "corner-drawer",
+        cornerDrawerFace: true,
+        cornerDrawerLeg: panel.leg,
+        cornerDrawerRow: panel.row,
+        cornerDrawerRightAngle: true,
+        cabinetFront: true,
+        cabinetDrawerFront: true,
+        flushPhysicalFace: true,
+      };
+      frontGroup.add(drawer);
+      const normalX = Math.sin(panel.rotationY);
+      const normalZ = Math.cos(panel.rotationY);
+      const reveal = new THREE.Mesh(
+        new THREE.BoxGeometry(Math.max(0.06, panel.width - 0.012), Math.max(0.06, panel.height - 0.012), 0.006),
+        shadowRevealMaterial,
+      );
+      reveal.position.set(panel.x - normalX * 0.02, panel.y, panel.z - normalZ * 0.02);
+      reveal.rotation.y = panel.rotationY;
+      reveal.userData = { cabinetDrawerReveal: true, cornerDrawerReveal: true, recessedPhysicalGap: true };
+      frontGroup.add(reveal);
+      addShakerFrame(
+        panel.width,
+        panel.height,
+        panel.x + normalX * 0.034,
+        panel.y,
+        panel.z + normalZ * 0.034,
+        panel.rotationY,
+      );
+      if (drawerPiece === "none") continue;
+      const pullLength = Math.min(Math.max(0.12, panel.width * 0.48), 0.62);
+      const outward = panel.thickness / 2 + 0.036;
+      const mount = new THREE.Group();
+      mount.position.set(panel.x, panel.y, panel.z);
+      mount.rotation.y = panel.rotationY;
+      const pull = new THREE.Mesh(
+        drawerPiece === "knob"
+          ? new THREE.SphereGeometry(0.035, 14, 10)
+          : drawerPiece === "cup"
+            ? new THREE.CylinderGeometry(0.052, 0.052, Math.min(0.2, pullLength), 14, 1, false, 0, Math.PI)
+            : new THREE.BoxGeometry(pullLength, 0.022, 0.026),
+        hardwareMaterial,
+      );
+      if (drawerPiece === "cup") pull.rotation.z = Math.PI / 2;
+      pull.position.z = outward + (drawerPiece === "knob" ? 0.012 : 0);
+      pull.userData = {
+        cabinetHardware: true,
+        cabinetPull: drawerPiece === "knob" ? "knob" : drawerPiece === "cup" ? "cup-pull" : "drawer",
+        cornerDrawerPull: true,
+        cornerDrawerLeg: panel.leg,
+        cornerDrawerRow: panel.row,
+        hardwareStyleId: surfaceTextures?.hardwareStyleId ?? null,
+        verticalPull: false,
+        pullEdge: "center",
+        handleSide: "center",
+        dimensionalCabinetDetail: true,
+      };
+      mount.add(pull);
+      if (drawerPiece !== "knob") {
+        for (const offset of [-1, 1] as const) {
+          const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.009, 0.05, 10), hardwareMaterial);
+          stem.rotation.x = Math.PI / 2;
+          stem.position.set(drawerPiece === "cup" ? 0 : offset * pullLength * 0.34, 0, outward - 0.018);
+          stem.userData = { cabinetHardwareMount: true, cornerDrawerPullMount: true, cornerDrawerLeg: panel.leg };
+          mount.add(stem);
+        }
       }
-      rowTop -= row.height;
+      frontGroup.add(mount);
     }
   } else if (specialty.kind === "end-return") {
     // BEC / BA has two full-height door planes fixed directly to the two
@@ -6479,7 +6550,7 @@ export function addCabinet(
     // The L corner is built from two overlapping carcass legs. Their individual
     // edge overlays expose the internal construction seam as a false line that
     // projects into the room. The two door frames remain the visible seam.
-    if (specialty.kind === "l-corner" || specialty.kind === "end-return") continue;
+    if (specialty.kind === "l-corner" || specialty.kind === "corner-drawer" || specialty.kind === "end-return") continue;
     const edges = new THREE.LineSegments(
       new THREE.EdgesGeometry(bodyMesh.geometry),
       new THREE.LineBasicMaterial({ color: "#332d25", transparent: true, opacity: 0.34 }),
