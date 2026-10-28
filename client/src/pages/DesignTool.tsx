@@ -824,7 +824,20 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const [windowFrameStyle, setWindowFrameStyle] = useState<WindowFrameStyle>("white");
 
   // Room + placement state
-  const [room, setRoom] = useState<RoomData>(DEFAULT_ROOM);
+  const [room, setRoomState] = useState<RoomData>(DEFAULT_ROOM);
+  const roomRef = useRef<RoomData>(room);
+  // setPlaced validates against roomRef at its commit boundary. Its updater
+  // runs before this render reaches `roomRef.current = room`, so a room and
+  // its cabinets set together (restore, Wall Builder edits, peninsula removal)
+  // would be checked against the PREVIOUS room and pushed off their walls.
+  // Updating the ref inside the room updater keeps every commit on the new room.
+  const setRoom = useCallback((update: SetStateAction<RoomData>) => {
+    setRoomState((previous) => {
+      const next = typeof update === "function" ? update(previous) : update;
+      roomRef.current = next;
+      return next;
+    });
+  }, []);
   const [polygonEditMode, setPolygonEditMode] = useState(false);
   const isPolygonRoom = Boolean(room.vertices?.length && room.vertices.length >= 2 && room.customWalls?.length);
   const [placed, setPlacedState] = useState<PlacedCabinet[]>([]);
@@ -835,7 +848,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const defaultAutoDesignFaucetRef = useRef<AutoDesignFaucetProduct | null>(null);
   const autoDesignFaucetPromptedRef = useRef(new Set<string>());
   const autoDesignOwnedFaucetIdsRef = useRef(new Set<number>());
-  const roomRef = useRef<RoomData>(room);
   roomRef.current = room;
   // ONE commit boundary for cabinet state: every seated cabinet's run offset is
   // re-derived from its plan body on every wall kind, so resize, rotate and any
