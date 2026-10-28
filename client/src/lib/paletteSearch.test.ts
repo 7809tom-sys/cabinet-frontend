@@ -56,6 +56,19 @@ describe("matchesPaletteSearch", () => {
     const w = cab({ masterCode: "W3030", description: "Wall cabinet", width: "30", height: "30" });
     expect(matchesPaletteSearch(w, normalizePaletteSearch("db30"))).toBe(false);
   });
+  it("matches a SKU fragment with or without a line prefix and a wine-rack phrase", () => {
+    const racks = [
+      cab({ masterCode: "DN-WRC3015", description: "Wall Wine Rack Cabinet" }),
+      cab({ masterCode: "LWR3015", description: "Lattice Wine Rack" }),
+      cab({ masterCode: "PR3015", description: "Wall Plate Rack Cabinet" }),
+      cab({ masterCode: "W3015", description: "Wall Cabinet" }),
+      cab({ masterCode: "B24", description: "Base cabinet" }),
+    ];
+    expect(racks.filter((item) => matchesPaletteSearch(item, normalizePaletteSearch("3015"))).map((item) => item.masterCode))
+      .toEqual(["DN-WRC3015", "LWR3015", "PR3015", "W3015"]);
+    expect(racks.filter((item) => matchesPaletteSearch(item, normalizePaletteSearch("wine rack"))).map((item) => item.description))
+      .toEqual(["Wall Wine Rack Cabinet", "Lattice Wine Rack"]);
+  });
   it("matches a listed alias even when the typed code is not the item code", () => {
     const tray = cab({
       masterCode: "BT9",

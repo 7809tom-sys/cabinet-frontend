@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { GlassPolicyBadge } from "@/components/GlassPolicyBadge";
 import { trpc } from "@/lib/trpc";
+import { catalogGlobalSearchTerm } from "@/lib/catalogSearchQuery";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { readReferralCode, readAffiliateSlug, setReferralCode as persistReferralCode } from "@/hooks/useReferral";
 import { affiliateSlugForStoreScope, resolveStoreScope } from "@/lib/affiliateContext";
@@ -127,7 +128,7 @@ function CabinetSearchPicker({
   }, [term]);
 
   const { data, isLoading } = trpc.cabinets.list.useQuery(
-    { search: debounced || undefined, limit: 50, offset: 0 },
+    { search: debounced ? catalogGlobalSearchTerm(debounced) : undefined, limit: 50, offset: 0 },
     { enabled: debounced.length >= 1 }
   );
   const items = data?.items ?? [];

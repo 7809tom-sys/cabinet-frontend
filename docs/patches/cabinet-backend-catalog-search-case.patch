@@ -1,0 +1,103 @@
+diff --git a/server/lib/cabinetAliasSearchSql.test.ts b/server/lib/cabinetAliasSearchSql.test.ts
+index 9fd7edb..6adba86 100644
+--- a/server/lib/cabinetAliasSearchSql.test.ts
++++ b/server/lib/cabinetAliasSearchSql.test.ts
+@@ -1,6 +1,6 @@
+ import { MySqlDialect } from "drizzle-orm/mysql-core/dialect";
+ import { describe, expect, it } from "vitest";
+-import { cabinetAliasSearchRankSql, exactCabinetAliasOwnerSql } from "./cabinetAliasSearchSql";
++import { cabinetAliasSearchRankSql, exactCabinetAliasOwnerSql, publicCabinetSearchSql } from "./cabinetAliasSearchSql";
+ 
+ const dialect = new MySqlDialect();
+ 
+@@ -27,4 +27,17 @@ describe("cabinet alias search SQL", () => {
+     expect(params).toEqual(expect.arrayContaining(["%;FH9;%"]));
+     expect(params.some((value) => value === "%FH9%")).toBe(false);
+   });
++
++  it("matches a description phrase in any case and a SKU fragment inside a prefixed code", () => {
++    const phrase = render(publicCabinetSearchSql("wine rack"));
++    expect(phrase.sql).toContain("LOWER(");
++    expect(phrase.params).toContain("%wine rack%");
++    expect(phrase.params).not.toContain("%wine rack%".toUpperCase());
++
++    const titled = render(publicCabinetSearchSql("Wine Rack"));
++    expect(titled.params).toContain("%wine rack%");
++
++    const fragment = render(publicCabinetSearchSql("3015"));
++    expect(fragment.params).toContain("%3015%");
++  });
+ });
+diff --git a/server/lib/cabinetAliasSearchSql.ts b/server/lib/cabinetAliasSearchSql.ts
+index c865575..83e0995 100644
+--- a/server/lib/cabinetAliasSearchSql.ts
++++ b/server/lib/cabinetAliasSearchSql.ts
+@@ -65,6 +65,28 @@ export function orCabinetAliasMatch(existing: SQL, rawSearch: string): SQL {
+   return sql`(${existing} OR ${extra})`;
+ }
+ 
++/**
++ * Shopper-facing catalog search used by `cabinets.list`.
++ *
++ * Description text is compared in lowercase. The description column is
++ * case-sensitive, so a typed phrase such as "wine rack" must still match
++ * "Wall Wine Rack Cabinet" and "Lattice Wine Rack".
++ *
++ * A code fragment matches the separator-stripped master code, so "3015"
++ * matches WRC3015, LWR3015, PR3015, W3015, and a line-prefixed DN-WRC3015.
++ */
++export function publicCabinetSearchSql(rawSearch: string): SQL {
++  const raw = rawSearch.trim();
++  const canon = normalizeCode(raw);
++  const canonCol = sql`UPPER(REPLACE(REPLACE(REPLACE(${cabinets.masterCode}, '-', ''), ' ', ''), '_', ''))`;
++  const parts: SQL[] = [
++    sql`${cabinets.masterCode} LIKE ${`%${raw}%`}`,
++    sql`LOWER(${cabinets.description}) LIKE ${`%${raw.toLowerCase()}%`}`,
++  ];
++  if (canon) parts.push(sql`${canonCol} LIKE ${`%${canon}%`}`);
++  return orCabinetAliasMatch(sql`(${sql.join(parts, sql` OR `)})`, raw);
++}
++
+ /** Exact item code, then exact alias, then the caller's existing order. */
+ export function aliasSearchOrder(rawSearch: string | undefined, ...rest: SQL[]): SQL[] {
+   const trimmed = rawSearch?.trim() ?? "";
+diff --git a/server/routers/catalog.ts b/server/routers/catalog.ts
+index 30f851b..8fde746 100644
+--- a/server/routers/catalog.ts
++++ b/server/routers/catalog.ts
+@@ -49,7 +49,7 @@ import { canViewAffiliatePrivateCost } from "../lib/affiliatePrivateCost";
+ import { normalizeCode } from "../../shared/cabinetCodeMatch";
+ import { filterCabinetSourceRows, loadAffiliateCatalogGate } from "../lib/affiliateCatalogGate";
+ import { orderCabinetsByAliasRank, rankLoadedCabinetSearch } from "../lib/cabinetAliasSearch";
+-import { aliasSearchOrder, exactCabinetAliasOwnerSql, orCabinetAliasMatch } from "../lib/cabinetAliasSearchSql";
++import { aliasSearchOrder, exactCabinetAliasOwnerSql, orCabinetAliasMatch, publicCabinetSearchSql } from "../lib/cabinetAliasSearchSql";
+ import { priceLadder } from "@shared/pricing";
+ import { resolveCanonicalCatalogSources } from "../lib/canonicalCatalogSources";
+ import { designerCabinetReadinessBySku } from "../lib/designerCabinetReadiness";
+@@ -1570,22 +1570,10 @@ export const cabinetsRouter = router({
+       if (input?.subCategory) {
+         conditions.push(eq(cabinets.subCategory, input.subCategory));
+       }
+-      if (input?.search) {
+-        const raw = input.search.trim();
+-        // Canonical key: strip everything but alphanumerics so glued user codes
+-        // (e.g. "w31824", "W2736", "WDC2430R") match dashed master codes
+-        // ("W-318-24", "W-27-36", "WDC-24-30-R").
+-        const canon = normalizeCode(raw);
+-        // SQL-side canonicalization of masterCode removes every supported separator.
+-        const canonCol = sql`UPPER(REPLACE(REPLACE(REPLACE(${cabinets.masterCode}, '-', ''), ' ', ''), '_', ''))`;
+-        const orParts = [
+-          sql`${cabinets.masterCode} LIKE ${`%${raw}%`}`,
+-          sql`${cabinets.description} LIKE ${`%${raw}%`}`,
+-        ];
+-        if (canon) {
+-          orParts.push(sql`${canonCol} LIKE ${`%${canon}%`}`);
+-        }
+-        conditions.push(orCabinetAliasMatch(sql`(${sql.join(orParts, sql` OR `)})`, raw));
++      if (input?.search?.trim()) {
++        // Case-insensitive description phrase plus a separator-stripped code
++        // fragment. See publicCabinetSearchSql.
++        conditions.push(publicCabinetSearchSql(input.search));
+       }
+ 
+       const limit = input?.limit ?? 50;
