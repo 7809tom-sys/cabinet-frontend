@@ -1,0 +1,243 @@
+diff --git a/server/routers/catalog.ts b/server/routers/catalog.ts
+index 30f851b..e3d7a08 100644
+--- a/server/routers/catalog.ts
++++ b/server/routers/catalog.ts
+@@ -52,6 +52,7 @@ import { orderCabinetsByAliasRank, rankLoadedCabinetSearch } from "../lib/cabine
+ import { aliasSearchOrder, exactCabinetAliasOwnerSql, orCabinetAliasMatch } from "../lib/cabinetAliasSearchSql";
+ import { priceLadder } from "@shared/pricing";
+ import { resolveCanonicalCatalogSources } from "../lib/canonicalCatalogSources";
++import { isWallWineRackCabinet } from "../../shared/wallWineRack";
+ import { designerCabinetReadinessBySku } from "../lib/designerCabinetReadiness";
+ import { landedCostFromList, landedCostMultiplier } from "../lib/distributorCostMultiplier";
+ import { loadAffiliateStorefrontPricing } from "../lib/affiliateStorefrontPricing";
+@@ -68,7 +69,11 @@ function isTrimItem(r: {
+   subCategory: string | null;
+   description: string | null;
+   placementType?: string | null;
++  masterCode?: string | null;
+ }): boolean {
++  // Wall wine racks are upper cabinets, never trim, even when a supplier
++  // filed them under Accessories / Wine Storage or Specialty / Wine Rack.
++  if (isWallWineRackCabinet(r)) return false;
+   const pt  = (r.placementType  || "").toLowerCase();
+   const cat = (r.category       || "").toLowerCase();
+   const sub = (r.subCategory    || "").toLowerCase();
+@@ -1283,7 +1288,7 @@ export const doorStylesRouter = router({
+           // Normalise trim/molding/filler items to category="accessory" so the
+           // client TYPE_FILTERS always route them to the Accessories & Trim tab,
+           // regardless of which DB category the distributor originally assigned.
+-          const normCategory = isTrimItem(r) ? "accessory" : r.category;
++          const normCategory = isWallWineRackCabinet(r) ? "Wall" : isTrimItem(r) ? "accessory" : r.category;
+           // Cost base precedence (yourCost first) MUST match stylesForCabinet
+           // so the Family page and the Cabinet Detail page price identically.
+           const costRow = {
+@@ -1707,7 +1712,10 @@ export const cabinetsRouter = router({
+ 
+       const search = input.search?.trim() ?? "";
+       const matchesFilters = (row: (typeof masters)[number]) => {
+-        if (input.category && row.category !== input.category) return false;
++        if (input.category && row.category !== input.category) {
++          // "Wall" includes wine racks filed under Wall Wine Rack, Wine Storage, or Specialty.
++          if (!(input.category === "Wall" && isWallWineRackCabinet(row))) return false;
++        }
+         if (input.subCategory && row.subCategory !== input.subCategory) return false;
+         if (input.adaOnly) {
+           const code = normalizeCode(row.masterCode);
+@@ -1769,7 +1777,9 @@ export const cabinetsRouter = router({
+         : distinct.sort(sortItems);
+ 
+       const total = ordered.length;
+-      const page = ordered.slice(input.offset, input.offset + input.limit);
++      const page = ordered.slice(input.offset, input.offset + input.limit).map((row) => (
++        isWallWineRackCabinet(row) ? { ...row, category: "Wall", placementType: row.placementType || "wall" } : row
++      ));
+       return { items: page, total, categoryCounts };
+     }),
+ 
+diff --git a/server/routers/design.ts b/server/routers/design.ts
+index 6fa6d34..3c98ef7 100644
+--- a/server/routers/design.ts
++++ b/server/routers/design.ts
+@@ -27,6 +27,7 @@ import { normalizedEquivalenceCode } from "../../shared/codeEquivalence";
+ import { ENV } from "../_core/env";
+ import { priceLadder } from "../../shared/pricing";
+ import { resolveCanonicalCatalogSources } from "../lib/canonicalCatalogSources";
++import { isWallWineRackCabinet } from "../../shared/wallWineRack";
+ import { applyDistributorCabinetConfig, parseDistributorCabinetConfig } from "../lib/distributorCabinetConfig";
+ import { loadAffiliateStorefrontPricing } from "../lib/affiliateStorefrontPricing";
+ import {
+@@ -497,6 +498,8 @@ export const designRouter = router({
+       // tab, never the drag-and-drop placement palette, so they can't leak into
+       // a Base/Wall/Tall tab via the base-bucket fallback below.
+       const isAccessory = (r: { masterCode?: string | null; category: string | null; placementType: string | null; description?: string | null; subCategory?: string | null }) => {
++        // Wine racks stay on the Wall picker. Auto-Design still skips them as straight uppers.
++        if (isWallWineRackCabinet(r)) return false;
+         const pt = (r.placementType || "").toLowerCase();
+         const cat = (r.category || "").toLowerCase();
+         const sub = (r.subCategory || "").toLowerCase();
+@@ -571,7 +574,7 @@ export const designRouter = router({
+       const placeableRows = withPull.filter((r) => !isAccessory(r));
+ 
+       const withPlacement = placeableRows.map((r) => {
+-        let placement = r.placementType;
++        let placement = isWallWineRackCabinet(r) ? "wall" : r.placementType;
+         if (!placement) {
+           const cat = (r.category || "").toLowerCase();
+           if (cat.includes("wall")) placement = "wall";
+diff --git a/server/routers/storefront.ts b/server/routers/storefront.ts
+index 287f204..a21878a 100644
+--- a/server/routers/storefront.ts
++++ b/server/routers/storefront.ts
+@@ -1,4 +1,5 @@
+ import { z } from "zod";
++import { isWallWineRackCabinet } from "../../shared/wallWineRack";
+ import { eq, and, sql, inArray, gte, lte, isNull, ne, or } from "drizzle-orm";
+ import { publicProcedure, router } from "../_core/trpc";
+ import { getDb, notInConflict, getPricingSettings } from "../db";
+@@ -631,7 +632,9 @@ export const storefrontRouter = router({
+ 
+       const search = input.search?.trim() ?? "";
+       const matchesFilter = (row: (typeof masters)[number] & { sourceMasterCode: string | null }) => {
+-        if (input.category && row.category !== input.category) return false;
++        if (input.category && row.category !== input.category) {
++          if (!(input.category === "Wall" && isWallWineRackCabinet(row))) return false;
++        }
+         if (input.subCategory) {
+           if (isAccessoryGroupLabel) {
+             if (accessoryGroupFor(row) !== input.subCategory) return false;
+@@ -674,6 +677,7 @@ export const storefrontRouter = router({
+           : null;
+         return {
+           ...r,
++          category: isWallWineRackCabinet(r) ? "Wall" : r.category,
+           homeownerPrice: affiliateSale != null
+             ? affiliateSale.toFixed(2)
+             : sellPriceForTier(
+diff --git a/shared/wallWineRack.test.ts b/shared/wallWineRack.test.ts
+new file mode 100644
+index 0000000..e06e920
+--- /dev/null
++++ b/shared/wallWineRack.test.ts
+@@ -0,0 +1,35 @@
++import { describe, expect, it } from "vitest";
++import { isWallWineRackCabinet, withWallWineRacks } from "./wallWineRack";
++
++describe("wall wine rack classification", () => {
++  it("recognizes the supplier category names and the WRC/WXR/WWC/LWR codes", () => {
++    expect(isWallWineRackCabinet({ masterCode: "WRC3015", category: "Wall Wine Rack", subCategory: "Wine Rack / Open Display" })).toBe(true);
++    expect(isWallWineRackCabinet({ masterCode: "WRC-30-15", category: "Specialty", subCategory: "Wine Rack" })).toBe(true);
++    expect(isWallWineRackCabinet({ masterCode: "WXR3018", category: "Wall", subCategory: "Wine Rack" })).toBe(true);
++    expect(isWallWineRackCabinet({ masterCode: "WWC630", category: "Wall", subCategory: "Wine Rack" })).toBe(true);
++    expect(isWallWineRackCabinet({ masterCode: "LWR3015", category: "Accessories", subCategory: "Wine Storage" })).toBe(true);
++    expect(isWallWineRackCabinet({ masterCode: "WRC3018", category: "Wall", subCategory: "Wine Rack / Open Display", description: '30"X 18" Wall Wine Rack Cabinet' })).toBe(true);
++    expect(isWallWineRackCabinet({ category: "Specialty", subCategory: "Wine Rack" })).toBe(true);
++    expect(isWallWineRackCabinet({ category: "Wall Wine Rack" })).toBe(true);
++  });
++
++  it("leaves refrigerator walls, ordinary uppers, and other specialty boxes alone", () => {
++    expect(isWallWineRackCabinet({ masterCode: "WR3624", category: "Wall", subCategory: "Refrigerator Wall", description: "Refrigerator wall cabinet" })).toBe(false);
++    expect(isWallWineRackCabinet({ masterCode: "W3018", category: "Wall", subCategory: "Bridge / Stacker" })).toBe(false);
++    expect(isWallWineRackCabinet({ masterCode: "PR3015", category: "Wall", subCategory: "Bridge / Stacker", description: "Wall Plate Rack Cabinet" })).toBe(false);
++    expect(isWallWineRackCabinet({ category: "Specialty", subCategory: "Spice Pull-Out" })).toBe(false);
++    expect(isWallWineRackCabinet({ category: "Accessory", subCategory: "Filler" })).toBe(false);
++  });
++
++  it("puts a wine rack filed under Accessories onto the wall list without duplicating one already there", () => {
++    const wall = [{ id: 1, masterCode: "W3018", category: "Wall", placement: "wall" }];
++    const accessories = [
++      { id: 2, masterCode: "LWR3015", category: "Accessories", subCategory: "Wine Storage", placement: "accessory" },
++      { id: 1, masterCode: "W3018", category: "Wall", placement: "accessory" },
++    ];
++    expect(withWallWineRacks(wall, accessories)).toEqual([
++      wall[0],
++      { id: 2, masterCode: "LWR3015", category: "Accessories", subCategory: "Wine Storage", placement: "wall" },
++    ]);
++  });
++});
+diff --git a/shared/wallWineRack.ts b/shared/wallWineRack.ts
+new file mode 100644
+index 0000000..4c8337f
+--- /dev/null
++++ b/shared/wallWineRack.ts
+@@ -0,0 +1,81 @@
++/**
++ * Wall wine racks are real upper cabinets (WRC, WXR, WWC, LWR).
++ * Suppliers file them under several labels: "Wall Wine Rack",
++ * "Wine Rack / Open Display", "Accessories / Wine Storage", and
++ * "Specialty / Wine Rack". Those labels still belong on the Wall
++ * catalog and in the Designer wall picker. Auto-Design keeps its own
++ * rule and does not treat them as straight uppers.
++ *
++ * WR#### is a refrigerator wall cabinet, not a wine rack.
++ */
++
++export type WallWineRackFields = {
++  id?: number | string | null;
++  masterCode?: string | null;
++  category?: string | null;
++  subCategory?: string | null;
++  description?: string | null;
++  placement?: string | null;
++};
++
++function normalized(value: string | null | undefined): string {
++  return (value ?? "").trim().toLowerCase().replace(/\s+/g, " ");
++}
++
++export function wallWineRackCode(masterCode: string | null | undefined): string {
++  return (masterCode ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
++}
++
++/** True for a wall wine-rack box, including the supplier category names above. */
++export function isWallWineRackCabinet(cabinet: WallWineRackFields): boolean {
++  const code = wallWineRackCode(cabinet.masterCode);
++  if (/^(?:WRC|WXR|WWC|LWR)\d/.test(code)) return true;
++  const category = normalized(cabinet.category);
++  const subCategory = normalized(cabinet.subCategory);
++  if (category === "wall wine rack") return true;
++  if (
++    subCategory === "wine rack"
++    || subCategory === "wine rack / open display"
++    || subCategory === "wine storage"
++  ) {
++    return true;
++  }
++  if (
++    (category === "specialty" || category === "accessory" || category === "accessories")
++    && subCategory.includes("wine")
++  ) {
++    return true;
++  }
++  return false;
++}
++
++function rowKey(row: WallWineRackFields): string {
++  if (row.id != null && String(row.id) !== "") return `id:${Number(row.id)}`;
++  return `code:${wallWineRackCode(row.masterCode)}`;
++}
++
++/**
++ * Keep every wall-placement row, and add wine racks that a category filter
++ * sent to Base or Accessories. Added rows are placed as wall cabinets.
++ */
++export function withWallWineRacks<T extends WallWineRackFields>(
++  wallRows: readonly T[],
++  otherRows: readonly T[],
++): T[] {
++  const seen = new Set<string>();
++  const result: T[] = [];
++  for (const row of wallRows) {
++    const key = rowKey(row);
++    if (seen.has(key)) continue;
++    seen.add(key);
++    result.push(isWallWineRackCabinet(row) ? { ...row, placement: "wall" } : row);
++  }
++  for (const row of otherRows) {
++    if (!isWallWineRackCabinet(row)) continue;
++    const key = rowKey(row);
++    if (seen.has(key)) continue;
++    seen.add(key);
++    result.push({ ...row, placement: "wall" });
++  }
++  return result;
++}
