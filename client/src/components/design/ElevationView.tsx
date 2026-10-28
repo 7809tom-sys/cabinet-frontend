@@ -881,6 +881,11 @@ export function ElevationView({
               {p.masterCode}
             </span>
           </div>}
+          {isRefrigeratorEndPanel(p) && (
+            <span data-testid="elevation-refrigerator-panel-depth" className="pointer-events-none absolute bottom-0.5 left-0 right-0 z-[6] truncate text-center text-[7px] font-bold leading-none text-[#1a2744]" style={textFlip}>
+              {formatEighthInches(Number(p.depth) || 0)} D
+            </span>
+          )}
         </div>
       </div>
     );

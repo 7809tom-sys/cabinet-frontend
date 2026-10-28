@@ -166,6 +166,7 @@ import {
   type PonyWall, type DrywallPonyWallTexture, DEFAULT_DRYWALL_PONY_WALL_COLOR, DRYWALL_PONY_WALL_TEXTURE_OPTIONS, drywallPonyWallPreviewBackground, makePonyWall, makePeninsulaPonyWall, makePeninsulaDrywallBackPonyWall, ponyWallFitsRoom, clampPonyWall,
 	  type IslandZone, type IslandFace,
 		  flooringMaterial, backsplashMaterial, isFlooringLayoutPattern, refreshPlacedCabinetsFromMasterConfig, refreshPlacedCabinetsFromMasterRules, restoredSavedDesignStyle, roomWithPersistedEntities, MIN_WALL_HEIGHT, wallTopLimit, reseatOnWallRun } from "@/lib/design";
+import { applyRefrigeratorEndPanelFieldCuts, refrigeratorEndPanelCutDownNote, refrigeratorEndPanelInstalledDepth } from "@/lib/refrigeratorEndPanelCut";
 import { applyCabinetFinishScope, autoAdjustIslandDepthForBackFace, inferredIslandFace, isIslandAssemblyMember, islandAssemblyClearance, islandCountertopOverhangIn, islandCountertopRect, islandCountertopVisibleRects, islandRaisedBarRects, islandFaceCapacity, islandFaceFitMeasure, islandFaceLength, islandFacePlacement, islandFaceTransferOption, islandWithFaceSeatingOverhang, moveIslandScene, nextIslandFacePlacement, normalizeIslandRangeRearPlanes, resizeIslandScene, resolvedIslandCabinetStyleId, rotateIslandScene, synchronizeIslandCountertopFootprint, type CabinetFinishScope } from "@/lib/islandScene";
 import { buildTrimCartLines,
   trimPriceForKind,
@@ -842,7 +843,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const setPlaced = useCallback((update: SetStateAction<PlacedCabinet[]>) => {
     setPlacedState((prev) => {
       const next = typeof update === "function" ? update(prev) : update;
-      return next === prev ? prev : syncWallRunOffsets(next, roomRef.current);
+      const synced = next === prev ? prev : syncWallRunOffsets(next, roomRef.current);
+      const cut = applyRefrigeratorEndPanelFieldCuts(synced, roomRef.current);
+      return cut === prev ? prev : cut;
     });
   }, []);
   useEffect(() => {
@@ -4911,7 +4914,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	        .map((candidate) => combinedFillerNote(candidate, placed))
 	        .filter((note): note is string => Boolean(note));
 	      const combinedCutNote = combinedCutNotes.join("; ");
-      const key = `${p.masterCode}|${Math.round(p.width)}|${Math.round(placedHeight(p))}|${Math.round(p.depth)}|${sw}|${p.noDoor ? "nd" : ""}|${p.handleSide ?? ""}|${miterCutNote}|${fillerInstallNote}|${cabStyleId ?? "_"}|${discKey}|${gdFlag}`;
+	      const panelCutNote = refrigeratorEndPanelCutDownNote(p.refrigeratorPanelStockDepth, p.depth) ?? "";
+      const key = `${p.masterCode}|${Math.round(p.width)}|${Math.round(placedHeight(p))}|${Math.round(p.depth)}|${sw}|${p.noDoor ? "nd" : ""}|${p.handleSide ?? ""}|${miterCutNote}|${fillerInstallNote}|${panelCutNote}|${cabStyleId ?? "_"}|${discKey}|${gdFlag}`;
       const closet = isClosetPart(p.masterCode);
       const isCooktopItem = p.placement === "appliance" && p.applianceRole === "countertop-opening";
       const isConversionConflict = p.cooktopConversionStatus === "unresolved-standard-base";
@@ -4933,7 +4937,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	          // Part 2: when the active line sells this cabinet under an equivalent
 	          // code (ERB36 placed on a BER line), the list shows the line's code.
           code: rowCode,
-          description: [rowDescription, sizeNote, fillerInstallNote, miterCutNote, combinedCutNote, attrNote]
+          description: [rowDescription, sizeNote, fillerInstallNote, miterCutNote, combinedCutNote, panelCutNote, attrNote]
             .filter(Boolean)
             .join(" \u2014 "),
           color: cabColor,
@@ -5550,7 +5554,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     return {
       id: `${line.masterCode}:${line.styleId}:${line.tier}:${unitPrice ?? "pending"}:${index}`,
       label: line.masterCode,
-      detail: `${line.name}${line.styleLabel ? ` · ${line.styleLabel}` : ""}`,
+      detail: `${line.name}${line.styleLabel ? ` · ${line.styleLabel}` : ""}${line.qtyNote && /inch panel cut down to/.test(line.qtyNote) ? ` · ${line.qtyNote}` : ""}`,
       quantity: line.qty,
       unitPrice,
       lineTotal: unitPrice == null ? null : unitPrice * line.qty,
@@ -9605,9 +9609,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           panelBuildError = `${panelRow!.masterCode} has no verified refrigerator-panel depth, so the selected refrigerator options were not added.`;
           return;
         }
-        // An end panel stays at its verified source depth. Do not turn a UI
-        // preference or the 3D appliance bounding box into package dimensions.
-        const pDepth = sourcePanelDepth;
+        // The ordered SKU stays the source panel. When the refrigerator is
+        // shallower than that stock sheet, the installed panel is shown cut
+        // down to the refrigerator. A deeper refrigerator keeps the stock depth.
+        const panelCut = refrigeratorEndPanelInstalledDepth(sourcePanelDepth, fd);
+        const pDepth = panelCut.installedDepth;
         // Infer dimensions from masterCode when catalog values are null
         // (style-prefixed variants like "ANTIQUE WHITE-S2496" often lack stored dims).
         const code = (panelRow!.masterCode ?? "").toUpperCase();
@@ -9646,6 +9652,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           y: spot.y,
           width: pThick,
           depth: pDepth,
+          nominalDepth: pDepth,
+          ...(panelCut.cutDown ? { refrigeratorPanelStockDepth: panelCut.stockDepth } : {}),
           height: pHeight,
           rotation: spot.rotation,
           wallId: spot.wallId,

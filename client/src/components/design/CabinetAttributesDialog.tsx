@@ -62,6 +62,7 @@ import {
   KNEE_DRAWER_DEFAULT_MOUNT_BOTTOM_IN,
   KNEE_DRAWER_MAX_MOUNT_BOTTOM_IN,
 } from "@/lib/design";
+import { refrigeratorEndPanelCutDownNote } from "@/lib/refrigeratorEndPanelCut";
 import { cabinetDrawingType } from "@/lib/cabinetGraphics";
 import { CUSTOM_CABINET_PROFILES } from "@/lib/customCabinetProfiles";
 import { RollOutTrayPicker } from "@/components/design/RollOutTrayPicker";
@@ -789,6 +790,11 @@ export function CabinetAttributesDialog({
               />
             </div>;
             })()}
+            {refrigeratorEndPanelCutDownNote(cabinet.refrigeratorPanelStockDepth, cabinet.depth) && (
+              <p data-testid="refrigerator-panel-cut-note" className="mt-2 text-xs font-medium text-amber-900">
+                {refrigeratorEndPanelCutDownNote(cabinet.refrigeratorPanelStockDepth, cabinet.depth)}
+              </p>
+            )}
           </section>
 
 	          {cornerClearance && <CabinetCornerClearancePanel clearance={cornerClearance} />}

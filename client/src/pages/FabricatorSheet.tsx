@@ -11,6 +11,7 @@ import {
   bearsCountertop,
 } from "@/lib/design";
 import { islandCountertopVisibleRects } from "@/lib/islandScene";
+import { refrigeratorEndPanelCutDownNote } from "@/lib/refrigeratorEndPanelCut";
 
 /**
  * Fabricator Countertop Sheet — a dimensioned top-down drawing showing:
@@ -534,6 +535,9 @@ export default function FabricatorSheet() {
         <h2 className="text-sm font-bold uppercase tracking-wide text-gray-600 mb-2">Fabrication Notes</h2>
         <ul className="text-xs text-gray-600 space-y-1 list-disc pl-4">
           <li>All dimensions are nominal and should be field-verified before fabrication.</li>
+          {Array.from(new Set((draft?.placed ?? []).map((panel) => refrigeratorEndPanelCutDownNote(panel.refrigeratorPanelStockDepth, panel.depth)).filter((note): note is string => Boolean(note)))).map((note) => (
+            <li key={note} data-testid="fabricator-refrigerator-panel-cut">{note}. Order the stock refrigerator end panel and cut it on site.</li>
+          ))}
           <li>Standard overhang: 1.5" past cabinet face. Verify with installer.</li>
           <li>Sink cutouts are centered on the sink base cabinet. Confirm exact template with plumber.</li>
           {runs.some((r) => r.length > MAX_SLAB_LENGTH_IN) && (

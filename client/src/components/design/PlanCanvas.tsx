@@ -5,7 +5,7 @@ import { Fragment } from "react";
 import {
   PlacedCabinet, RoomData, rotatedSize, placedFootprint, placedCornerGeometryKind, cabinetCornerPlacementInfo, blindCornerSnapInfo, cabinetPlacementCollisionDetail, nextAvailableRoomCornerPlacement, snapPosition, orientToWall,
   type FloorPlanDimensionAdjustment, type FloorPlanDimensionUnit,
-	  isCornerCabinet, isProtectedCornerCabinet, cornerClipPath, cornerLegRatioForPlaced, cornerRotationForPlaced, diagonalCornerClipPath, isDiagonalCorner, isAngledWallCabinet, formatEighthInches, isBlindCorner, isTriangleCorner, triangleCornerClipPath,
+	  isCornerCabinet, isProtectedCornerCabinet, cornerClipPath, cornerLegRatioForPlaced, cornerRotationForPlaced, diagonalCornerClipPath, isDiagonalCorner, isAngledWallCabinet, formatEighthInches, isBlindCorner, isTriangleCorner, triangleCornerClipPath, isRefrigeratorEndPanel,
 	  resolveSwing, resolveCabinetHardwarePosition,
 	  WallOpening, clampOpening, FinishColors, DEFAULT_FINISH_COLORS, isWindowBelowCountertop,
   clampRoomInches, inchesToFeetInches, WallSide, type PeninsulaRun, peninsulaRunEndpoints, peninsulaRunMaxLength, peninsulaRunHitAtPoint, peninsulaRunStartOffsetAtPoint, peninsulaRunAssemblyLocked, peninsulaRootRunId,
@@ -2983,7 +2983,9 @@ export function PlanCanvas({
                     className="text-[7px] leading-none mt-0.5 relative z-10"
                     style={{ color: lbl.color, opacity: 0.8, textShadow: lbl.shadow }}
                   >
-                    {formatEighthInches(Number(p.width) || 0)}
+                    {isRefrigeratorEndPanel(p)
+                      ? `${formatEighthInches(Number(p.width) || 0)} × ${formatEighthInches(Number(p.depth) || 0)} D`
+                      : formatEighthInches(Number(p.width) || 0)}
                   </span>
                 </div>
                 {!isWall && (!isCorner || isBlind) && (

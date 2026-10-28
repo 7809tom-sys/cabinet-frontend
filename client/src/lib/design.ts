@@ -891,6 +891,12 @@ export interface PlacedCabinet {
   stackedOnCabinetUid?: string | null;
   /** Refrigerator UID that owns this over-fridge cabinet or enclosure panel. */
   refrigeratorAssemblyId?: string | null;
+  /**
+   * Catalog depth of a refrigerator end panel when it is field-cut shallower
+   * than stock to match the refrigerator. Absent when the panel is installed
+   * at its stock depth. The ordered SKU stays the stock panel.
+   */
+  refrigeratorPanelStockDepth?: number | null;
   /** Durable role inside a refrigerator enclosure so movement/rebuild cannot orphan a member. */
   refrigeratorAssemblyRole?: RefrigeratorAssemblyRole | null;
   /** Requested enclosure-panel mode persisted on the refrigerator appliance. */
