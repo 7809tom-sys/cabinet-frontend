@@ -207,6 +207,7 @@ import { autoDesignRangeHood, autoDesignRangeNeedsVentilation } from "@/lib/auto
 import { autoBuildCornerCatalog, autoDesignCornerAttempts, autoDesignCornerFamily, autoDesignCornerSlotPoint, autoDesignCornerSlots, isAutoDesignBlindCornerOption, type AutoBuildCornerCandidate, type AutoDesignCornerChoice, type AutoDesignCornerSlot } from "@/lib/autoDesignCornerStage";
 import { buildMandatoryAutoDesignRefrigeratorBay } from "@/lib/autoDesignRefrigeratorBay";
 import { buildAutoDesignWallCabinets, resolveWallHeightClass, type AutoDesignUpperCorner } from "@/lib/autoDesignWallCabinets";
+import { isWallWineRackCabinet, withWallWineRacks } from "@shared/wallWineRack";
 import { seatAutoDesignCorner, type AutoDesignApplianceMove } from "@/lib/autoDesignCornerSeating";
 import { validatePlacedCornerRefrigerator } from "@/lib/cornerRefrigeratorPlacement";
 import { validatePlacedCornerRange, CORNER_RANGE_HANDLE_FILLER_IN } from "@/lib/cornerRangePlacement";
@@ -3986,6 +3987,15 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	              return true;
 	            });
           })()
+        : paletteType === "wall" || paletteType === "wallht"
+        ? withWallWineRacks(
+            (paletteCabinets as DesignCabinet[]) ?? [],
+            [
+              ...((liveMasterCabinets as DesignCabinet[]) ?? []),
+              ...((autoFillCabinets as DesignCabinet[]) ?? []),
+              ...((threeDAccessoryCatalog as DesignCabinet[]) ?? []),
+            ],
+          )
         : ((paletteCabinets as DesignCabinet[]) ?? []);
     const s = normalizePaletteSearch(paletteSearch);
     const typeFiltered = source
@@ -3994,18 +4004,18 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         // The unified Corner tab already merged the right items above; let them
         // all through here (group split happens in groupedPalette).
         if (paletteType === "corner") return true;
-        if (paletteType === "wall" || paletteType === "wallht") return !isCornerWall(c);
+        if (paletteType === "wall" || paletteType === "wallht") return !isCornerWall(c) || isWallWineRackCabinet(c);
         // The dedicated "Vanity" tab shows ONLY vanity-category cabinets.
         if (paletteType === "vanity") return isBathroomVanityCabinet(c);
         // Panels are the source-backed physical panel/skin subset of Accessories.
-        if (paletteType === "panel") return isPanelPaletteItem(c);
+        if (paletteType === "panel") return isPanelPaletteItem(c) && !isWallWineRackCabinet(c);
         // The "Accessories & Trim" tab returns its own server-filtered list
-        // (crown/light-rail molding, fillers, end panels, roll-out trays, etc.),
-        // so every item passes through here unchanged.
-        if (paletteType === "accessory") return true;
+        // (crown/light-rail molding, fillers, end panels, roll-out trays, etc.).
+        // A wall wine rack filed as Accessories / Wine Storage is placed from Wall.
+        if (paletteType === "accessory") return !isWallWineRackCabinet(c);
         // Plain "Base" excludes corner bases (own tab) AND vanities (own Vanity
         // tab in bathroom mode) so they don't duplicate across tabs.
-        if (paletteType === "base") return !isCornerBase(c) && !isVanity(c);
+        if (paletteType === "base") return !isCornerBase(c) && !isVanity(c) && !isWallWineRackCabinet(c);
         return true;
       });
     const hits = searchCatalogItems(typeFiltered, s, (cabinet, query) => matchesPaletteTextOrSize(cabinet, query));
@@ -4013,7 +4023,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       items: hits.map((hit) => hit.item),
       ranks: new Map(hits.map((hit) => [hit.item, hit.rank])),
     };
-	  }, [paletteCabinets, cornerWallCabinets, cornerWallGlassVariants, paletteSearch, paletteType, styleId, appliancePalette, isCornerWall, isCornerBase, isVanity, closetGroups, masterTracFinish]);
+	  }, [paletteCabinets, cornerWallCabinets, cornerWallGlassVariants, paletteSearch, paletteType, styleId, appliancePalette, isCornerWall, isCornerBase, isVanity, closetGroups, masterTracFinish, liveMasterCabinets, autoFillCabinets, threeDAccessoryCatalog]);
   const usesBathroomFixturePalette = roomType === "bathroom" && paletteType === "appliance";
   const paletteHeightOptions = useMemo(
     () => catalogHeightOptions(filteredPalette, paletteType, isCornerBase),
@@ -4051,16 +4061,25 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         return true;
       }).length;
     }
-    const src = ((paletteCabinets as DesignCabinet[]) ?? []);
+    const src = paletteType === "wall" || paletteType === "wallht"
+      ? withWallWineRacks(
+          (paletteCabinets as DesignCabinet[]) ?? [],
+          [
+            ...((liveMasterCabinets as DesignCabinet[]) ?? []),
+            ...((autoFillCabinets as DesignCabinet[]) ?? []),
+            ...((threeDAccessoryCatalog as DesignCabinet[]) ?? []),
+          ],
+        )
+      : ((paletteCabinets as DesignCabinet[]) ?? []);
     return src.filter((c) => {
-      if (paletteType === "wall" || paletteType === "wallht") return !isCornerWall(c);
+      if (paletteType === "wall" || paletteType === "wallht") return !isCornerWall(c) || isWallWineRackCabinet(c);
       if (paletteType === "vanity") return isBathroomVanityCabinet(c);
-      if (paletteType === "panel") return isPanelPaletteItem(c);
-      if (paletteType === "accessory") return true;
-      if (paletteType === "base") return !isCornerBase(c) && !isVanity(c);
+      if (paletteType === "panel") return isPanelPaletteItem(c) && !isWallWineRackCabinet(c);
+      if (paletteType === "accessory") return !isWallWineRackCabinet(c);
+      if (paletteType === "base") return !isCornerBase(c) && !isVanity(c) && !isWallWineRackCabinet(c);
       return true;
     }).length;
-  }, [paletteCabinets, cornerWallCabinets, paletteType, isCornerWall, isCornerBase, isVanity]);
+  }, [paletteCabinets, cornerWallCabinets, paletteType, isCornerWall, isCornerBase, isVanity, liveMasterCabinets, autoFillCabinets, threeDAccessoryCatalog]);
 
   // Group the palette by cabinet height so wall cabinets (and others) are easy
   // to find by size — mirrors how pros scan 2020's catalog by height.
@@ -5528,24 +5547,27 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   }), [interactive3dPricingLines]);
 
 	  const interactive3dCatalogItems = useMemo<InteractiveRoomCatalogItem[]>(() => {
-	    const activeCabinets = [
-	      ...((autoFillCabinets as DesignCabinet[] | undefined) ?? []),
-	      ...((wallCabPool as DesignCabinet[] | undefined) ?? []),
-	      ...((tallCabPool as DesignCabinet[] | undefined) ?? []),
-	      ...cornerWallGlassVariants,
-	    ].filter((item, index, all) => all.findIndex((candidate) => Number(candidate.id) === Number(item.id) && (candidate.glassDoorAddonCode ?? null) === (item.glassDoorAddonCode ?? null)) === index);
+	    const activeCabinets = withWallWineRacks(
+	      [
+	        ...((autoFillCabinets as DesignCabinet[] | undefined) ?? []),
+	        ...((wallCabPool as DesignCabinet[] | undefined) ?? []),
+	        ...((tallCabPool as DesignCabinet[] | undefined) ?? []),
+	        ...cornerWallGlassVariants,
+	      ].filter((item, index, all) => all.findIndex((candidate) => Number(candidate.id) === Number(item.id) && (candidate.glassDoorAddonCode ?? null) === (item.glassDoorAddonCode ?? null)) === index),
+	      (threeDAccessoryCatalog as DesignCabinet[] | undefined) ?? [],
+	    );
 	    const cabinets = activeCabinets.map((item) => {
 	      const dimensions = resolvedDesignCabinetDimensions(item);
 	      const addOnProduct = item.glassDoorAddonCode ? glassDoorCatalogProduct(item.glassDoorAddonCode) : null;
 	      return {
 	        id: item.glassDoor === true && addOnProduct ? -Number(addOnProduct.id) : Number(item.id), sourceCabinetId: Number(item.id), masterCode: item.masterCode, description: item.description ?? null, category: "Cabinet" as const,
-	        catalogGroup: isCornerBase(item) || isCornerWall(item) ? "Corner" as const : item.placement === "tall" ? "Tall" as const : item.placement === "wall" ? "Wall" as const : "Base" as const,
-	        placement: item.placement ?? null, width: dimensions.width, height: dimensions.height, depth: dimensions.depth,
+	        catalogGroup: isWallWineRackCabinet(item) ? "Wall" as const : isCornerBase(item) || isCornerWall(item) ? "Corner" as const : item.placement === "tall" ? "Tall" as const : item.placement === "wall" ? "Wall" as const : "Base" as const,
+	        placement: isWallWineRackCabinet(item) ? "wall" : item.placement ?? null, width: dimensions.width, height: dimensions.height, depth: dimensions.depth,
 	        glassDoor: item.glassDoor === true,
 	        glassDoorAddonCode: item.glassDoorAddonCode ?? null,
 	      };
 	    });
-    const accessories = ((threeDAccessoryCatalog as DesignCabinet[] | undefined) ?? []).map((item) => ({
+    const accessories = ((threeDAccessoryCatalog as DesignCabinet[] | undefined) ?? []).filter((item) => !isWallWineRackCabinet(item)).map((item) => ({
       id: Number(item.id), masterCode: item.masterCode, description: item.description ?? null, category: "Accessory" as const, catalogGroup: "Accessories" as const,
       placement: accessoryPlacement(item), width: dim(item.width, 24), height: dim(item.height, standardHeight(accessoryPlacement(item))), depth: isPanelItem(item) ? 0.75 : footprintDepth(item),
     }));

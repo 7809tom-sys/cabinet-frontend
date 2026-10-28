@@ -478,13 +478,12 @@ export default function Family({ styleCode, affiliateSlug }: { styleCode: string
 
   // Only show type-filter chips that actually have items in this family.
   const availableTypes = useMemo(() => {
-    const cats = new Set(items.map((i) => (i.category ?? "").toLowerCase()));
-    return TYPE_FILTERS.filter((f) => f.key === "all" || cats.has(f.key));
+    return TYPE_FILTERS.filter((f) => f.key === "all" || items.some((item) => familyTypeMatches(f.key, item.category, item.subCategory, item.masterCode)));
   }, [items]);
 
   const visible = useMemo(() => {
     const f = TYPE_FILTERS.find((t) => t.key === activeType) ?? TYPE_FILTERS[0];
-    const typed = items.filter((i) => familyTypeMatches(f.key, i.category));
+    const typed = items.filter((i) => familyTypeMatches(f.key, i.category, i.subCategory, i.masterCode));
     if (!debounced) return typed;
     return searchCatalogItems(typed, debounced, (item, query) => {
       const hay = `${item.masterCode} ${item.description ?? ""} ${item.subCategory ?? ""}`.toLowerCase();
