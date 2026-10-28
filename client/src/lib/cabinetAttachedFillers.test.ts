@@ -145,4 +145,17 @@ describe("attached filler leftover space", () => {
     const right = wall({ uid: "right", x: 54, width: 24 });
     expect(attachedFillerLeftoverOptions(attachedFillerPlanForCandidate(target, [left, right], room)!)).toBeNull();
   });
+
+  it("measures to a corner cabinet on the adjoining wall, like the plan's Fits up to label", () => {
+    // LSB36 sits in the top-left corner on the LEFT wall; its 36-inch leg
+    // reserves the start of the top wall. A B24 dropped 1 inch past that leg
+    // must be offered the 1-inch filler, not measured 37 inches to the wall.
+    const lsb36 = cabinet({ uid: "lsb36", masterCode: "LSB36", description: "Lazy Susan Base", width: 36, depth: 36, x: 0, y: 0, rotation: 90 });
+    const b24 = cabinet({ uid: "b24", masterCode: "B24", x: 37, y: 0 });
+    const plan = attachedFillerPlanForCandidate(b24, [lsb36], room)!;
+    expect(plan).toMatchObject({ leftAllowed: true, leftGapIn: 1, openingStartIn: 36 });
+    expect(attachedFillerLeftoverOptions(plan)).toEqual({ leftoverIn: 1, left: { leftIn: 1, rightIn: 0 }, right: null, split: null });
+    expect(attachedFillerPlanForCandidate(b24, [lsb36], room, { leftIn: 1, rightIn: 0 })?.pieces).toEqual([{ side: "left", startIn: 36, widthIn: 1 }]);
+  });
 });
+

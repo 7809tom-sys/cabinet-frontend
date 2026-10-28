@@ -903,6 +903,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     leftAllowed: boolean;
     rightAllowed: boolean;
     leftover: AttachedFillerLeftoverOptions | null;
+    leftGapIn: number;
+    rightGapIn: number;
   } | null>(null);
   useEffect(() => {
     setSmallGapFillerCustomWidth(smallGapFillerPrompt?.remaining ?? null);
@@ -7489,6 +7491,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
             leftAllowed: attachment.leftAllowed,
             rightAllowed: attachment.rightAllowed,
             leftover: attachedFillerLeftoverOptions(attachment),
+            leftGapIn: attachment.leftGapIn,
+            rightGapIn: attachment.rightGapIn,
           });
           setMobilePanel(null);
           return;
@@ -21106,6 +21110,18 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                         </div>
                       );
                     })()}
+                    {!attachedFillerPrompt.leftover && (
+                      <div data-testid="attached-filler-measured-space" className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs">
+                        <p className="font-semibold text-foreground">Measured space</p>
+                        {([["Left", attachedFillerPrompt.leftAllowed, attachedFillerPrompt.leftGapIn], ["Right", attachedFillerPrompt.rightAllowed, attachedFillerPrompt.rightGapIn]] as const)
+                          .filter(([, allowed]) => allowed)
+                          .map(([label, , gapIn]) => (
+                            <p key={label} className="text-muted-foreground">
+                              {label}: {gapIn < 0.125 ? "flush against the wall or cabinet, no gap" : formatEighthInches(Math.round(gapIn * 8) / 8)}
+                            </p>
+                          ))}
+                      </div>
+                    )}
                     <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
                       <strong>No filler</strong> is the default. A strip of 3″ or less is field-cut from its companion stock board; no short filler SKU or price is invented.
                     </div>
