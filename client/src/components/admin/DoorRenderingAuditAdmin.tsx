@@ -25,8 +25,11 @@ import {
   doorAuditErrorMessage,
   doorAuditFlagLabel,
   doorAuditModeLabel,
+  doorAuditOpenRunId,
+  doorAuditOpenRunIdFromMessage,
   doorAuditProgressLabel,
   doorAuditRevertVersionId,
+  doorAuditRunLimitNotice,
   doorAuditStyleLabel,
   doorRenderingAuditAllowed,
   enrichDoorAuditQueue,
@@ -96,6 +99,8 @@ export type DoorRenderingAuditViewProps = {
   onToggleRuns: () => void;
   onAbandon: (() => void) | null;
   runLimitNotice: string | null;
+  /** False while an earlier run is still awaiting renders or scoring. */
+  canStartRuns?: boolean;
   busy: boolean;
 };
 
@@ -212,6 +217,7 @@ export function DoorRenderingAuditView({
   onToggleRuns,
   onAbandon,
   runLimitNotice,
+  canStartRuns = true,
   busy,
 }: DoorRenderingAuditViewProps) {
   const selected = new Set(selectedIds);
@@ -258,9 +264,9 @@ export function DoorRenderingAuditView({
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <Button type="button" size="sm" disabled={busy || running} onClick={() => onRun("all")}>Run all</Button>
-        <Button type="button" size="sm" variant="outline" disabled={busy || running} onClick={() => onRun("changed-only")}>Run changed only</Button>
-        <Button type="button" size="sm" variant="outline" disabled={busy || running || selectedIds.length === 0} onClick={() => onRun("selected")}>
+        <Button type="button" size="sm" disabled={busy || running || !canStartRuns} onClick={() => onRun("all")}>Run all</Button>
+        <Button type="button" size="sm" variant="outline" disabled={busy || running || !canStartRuns} onClick={() => onRun("changed-only")}>Run changed only</Button>
+        <Button type="button" size="sm" variant="outline" disabled={busy || running || !canStartRuns || selectedIds.length === 0} onClick={() => onRun("selected")}>
           Run selected{selectedIds.length > 0 ? ` (${selectedIds.length})` : ""}
         </Button>
         <Button type="button" size="sm" variant="ghost" onClick={() => onToggleVisible(!allVisibleSelected)}>
@@ -404,7 +410,7 @@ export function DoorRenderingAuditView({
                 </dl>
 
                 <div className="mt-4 flex flex-wrap gap-2">
-                  <Button type="button" size="sm" variant="outline" disabled={busy || running} onClick={() => onRerun(style.styleId)}>
+                  <Button type="button" size="sm" variant="outline" disabled={busy || running || !canStartRuns} onClick={() => onRerun(style.styleId)}>
                     <RotateCcw className="mr-1.5 h-4 w-4" />
                     Re-run
                   </Button>
@@ -573,6 +579,7 @@ function DoorRenderingAuditScreen() {
   const [capturing, setCapturing] = useState(false);
   const [historyStyleId, setHistoryStyleId] = useState<number | null>(null);
   const [runsOpen, setRunsOpen] = useState(false);
+  const [suppressedRunId, setSuppressedRunId] = useState<number | null>(null);
   const announced = useRef<number | null>(null);
   const sawActive = useRef<number | null>(null);
   const capturingRef = useRef(false);
@@ -588,7 +595,16 @@ function DoorRenderingAuditScreen() {
     filter,
     search: debouncedSearch || undefined,
   });
-  const effectiveRunId = runId ?? list.data?.activeRun?.runId ?? null;
+  // Always load history. listStyles on the deployed backend does not return activeRun,
+  // so a run left in awaiting_renders is invisible and every later start is a 409.
+  const runs = api.doorRenderingAudit.listRuns.useQuery({ limit: 20 });
+  const openFromHistory = doorAuditOpenRunId(
+    (runs.data?.runs ?? []).filter((run) => run.runId !== suppressedRunId),
+  );
+  const listedOpenRunId = list.data?.activeRun?.runId ?? null;
+  const effectiveRunId = runId
+    ?? (listedOpenRunId != null && listedOpenRunId !== suppressedRunId ? listedOpenRunId : null)
+    ?? openFromHistory;
   const runStatus = api.doorRenderingAudit.runStatus.useQuery(
     { runId: effectiveRunId ?? 0 },
     {
@@ -600,7 +616,6 @@ function DoorRenderingAuditScreen() {
       },
     },
   );
-  const runs = api.doorRenderingAudit.listRuns.useQuery({ limit: 20 }, { enabled: runsOpen });
   const history = api.doorRenderingAudit.listVersions.useQuery(
     { styleId: historyStyleId ?? 0 },
     { enabled: historyStyleId != null },
@@ -710,11 +725,18 @@ function DoorRenderingAuditScreen() {
     }
   }
 
-  function limitNotice(result: { truncated?: boolean; totalEligible?: number; styles?: unknown[] } | null | undefined): string | null {
-    const shown = Array.isArray(result?.styles) ? result.styles.length : 0;
-    const total = result?.totalEligible ?? shown;
-    if (!result?.truncated || total <= shown) return null;
-    return `This run queued ${shown} of ${total} styles. Abandon it and start again if the server is still stopping early. Saved renders are kept.`;
+  function attachOpenRun(error: unknown, fallback: string): boolean {
+    const message = doorAuditErrorMessage(error, fallback);
+    const existing = doorAuditOpenRunIdFromMessage(message);
+    if (existing == null) {
+      toast.error(message);
+      return false;
+    }
+    setRunId(existing);
+    toast.error("An audit run is already open. Continue the upload, or abandon it to start another. Saved renders are kept.");
+    void utils.doorRenderingAudit.listRuns.invalidate();
+    void utils.doorRenderingAudit.runStatus.invalidate();
+    return true;
   }
 
   async function abandon(activeRunId: number) {
@@ -723,6 +745,7 @@ function DoorRenderingAuditScreen() {
       await abandonRun.mutateAsync({ runId: activeRunId });
       setLocalProgress(null);
       setRunId(null);
+      setSuppressedRunId(activeRunId);
       setRunLimitNotice(null);
       toast.message("Audit run abandoned. Saved renders were kept.");
       void utils.doorRenderingAudit.listStyles.invalidate();
@@ -743,10 +766,10 @@ function DoorRenderingAuditScreen() {
           return;
         }
         setRunId(result.runId);
-        setRunLimitNotice(limitNotice(result));
+        setRunLimitNotice(doorAuditRunLimitNotice(result));
         await captureStyles(result.runId, result.styles);
       } catch (error) {
-        toast.error(doorAuditErrorMessage(error, "Could not re-run that style."));
+        attachOpenRun(error, "Could not re-run that style.");
       }
     });
   }
@@ -763,7 +786,7 @@ function DoorRenderingAuditScreen() {
           return;
         }
         setRunId(result.runId);
-        setRunLimitNotice(limitNotice(result));
+        setRunLimitNotice(doorAuditRunLimitNotice(result));
         const queue = Array.isArray(result.styles) ? result.styles : [];
         if (queue.length === 0) {
           toast.message(mode === "changed-only" ? "No styles changed since the last render." : "No door styles need a new render.");
@@ -771,7 +794,7 @@ function DoorRenderingAuditScreen() {
         }
         await captureStyles(result.runId, queue);
       } catch (error) {
-        toast.error(doorAuditErrorMessage(error, "Could not start the audit."));
+        attachOpenRun(error, "Could not start the audit.");
       }
     });
   }
@@ -822,12 +845,13 @@ function DoorRenderingAuditScreen() {
 
   const catalog = list.data?.styles ?? [];
   const status = runStatus.data ?? list.data?.activeRun ?? null;
+  const statusIsOpen = status?.status === "awaiting-renders" || status?.status === "scoring";
+  const runIsOpen = capturing || statusIsOpen || (status == null && openFromHistory != null);
   const progress = serverProgress(status, localProgress, catalog);
   const pending = status?.status === "awaiting-renders" && Array.isArray(status.pendingStyles)
     ? enrichDoorAuditQueue(status.pendingStyles, catalog)
     : [];
   const busy = capturing || startRun.isPending || abandonRun.isPending || reviewRender.isPending || approveRender.isPending || revokeApproval.isPending || setCurrentVersion.isPending;
-  const runIsOpen = capturing || status?.status === "awaiting-renders" || status?.status === "scoring";
 
   return (
     <DoorRenderingAuditView
@@ -873,6 +897,7 @@ function DoorRenderingAuditScreen() {
       onToggleRuns={() => setRunsOpen((open) => !open)}
       onAbandon={runIsOpen && effectiveRunId != null ? () => { void abandon(effectiveRunId); } : null}
       runLimitNotice={runLimitNotice}
+      canStartRuns={!runIsOpen}
       busy={busy}
     />
   );
