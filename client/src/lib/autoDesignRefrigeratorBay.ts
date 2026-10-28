@@ -1,4 +1,5 @@
 import { framelessAboveFridgeHeight } from "./aefAboveFridge";
+import { refrigeratorEndPanelInstalledDepth } from "./refrigeratorEndPanelCut";
 import {
   clampFillerExtensionIn,
   dim,
@@ -89,7 +90,7 @@ export function pickAutoDesignRefrigeratorCap(
  * the 3/4-in face in `depth`. Auto-Design must retain the real selected SKU in
  * either representation rather than declaring its panel unavailable.
  */
-function refrigeratorPanelDimensions(candidate: DesignCabinet): { thickness: number; installedDepth: number } | null {
+function refrigeratorPanelDimensions(candidate: DesignCabinet): { thickness: number; installedDepth: number; stockDepth: number } | null {
   const sourceWidth = Math.max(0, dim(candidate.width, 0));
   const sourceDepth = Math.max(0, dim(candidate.depth, 0));
   const widthIsThinFace = sourceWidth > 0 && sourceWidth <= 3;
@@ -98,12 +99,14 @@ function refrigeratorPanelDimensions(candidate: DesignCabinet): { thickness: num
   if (widthIsThinFace && sourceDepth > 3) {
     return {
       thickness: refrigeratorEndPanelThickness(candidate.width, 0.75),
+      stockDepth: sourceDepth,
       installedDepth: clampFillerExtensionIn(sourceDepth, "tall"),
     };
   }
   if (depthIsThinFace && sourceWidth > 3) {
     return {
       thickness: refrigeratorEndPanelThickness(candidate.depth, 0.75),
+      stockDepth: sourceWidth,
       installedDepth: clampFillerExtensionIn(sourceWidth, "tall"),
     };
   }
@@ -136,7 +139,7 @@ export function buildMandatoryAutoDesignRefrigeratorBay({
   }
   const panelEntry = endPanels
     .map((candidate) => ({ candidate, dimensions: refrigeratorPanelDimensions(candidate) }))
-    .find((entry): entry is { candidate: DesignCabinet; dimensions: { thickness: number; installedDepth: number } } => entry.dimensions !== null);
+    .find((entry): entry is { candidate: DesignCabinet; dimensions: { thickness: number; installedDepth: number; stockDepth: number } } => entry.dimensions !== null);
   if (!panelEntry) {
     return { ok: false, message: "No source-priced refrigerator end panel is available for the selected cabinet line." };
   }
@@ -144,7 +147,11 @@ export function buildMandatoryAutoDesignRefrigeratorBay({
 
   const bay = refrigeratorBayRunMetrics(refrigerator, room);
   const panelThickness = panelDimensions.thickness;
-  const panelDepth = panelDimensions.installedDepth;
+  // The filler-depth cap still applies when the refrigerator is at least as
+  // deep as the stock sheet. A shallower refrigerator is shown cut to the
+  // appliance, and the stock depth is kept for the master BOM note.
+  const panelCut = refrigeratorEndPanelInstalledDepth(panelDimensions.stockDepth, Number(refrigerator.depth) || 0);
+  const panelDepth = panelCut.cutDown ? panelCut.installedDepth : panelDimensions.installedDepth;
   const capDepth = Math.max(0, dim(cap.depth, 0)) || 24;
   const capHeight = Math.max(0, dim(cap.height, 0)) || 24;
   const panelHeight = refrigeratorSurroundElevation(room, refrigerator.height ?? 70, capHeight).top;
@@ -187,6 +194,8 @@ export function buildMandatoryAutoDesignRefrigeratorBay({
     ...spot,
     width: panelThickness,
     depth: panelDepth,
+    nominalDepth: panelDepth,
+    ...(panelCut.cutDown ? { refrigeratorPanelStockDepth: panelCut.stockDepth } : {}),
     height: panelHeight,
     rotation: spot.rotation,
     wallId: spot.wallId,

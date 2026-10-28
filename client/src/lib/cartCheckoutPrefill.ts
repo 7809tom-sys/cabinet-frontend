@@ -1,4 +1,5 @@
 import type { CartItem } from "@/contexts/CartContext";
+import { refrigeratorPanelCutNotesIn } from "@/lib/refrigeratorEndPanelCut";
 import { trimKindForMasterCode } from "@/lib/trimCart";
 import { CATALOG_SUBCATEGORY_TRIM_AND_MOULDING } from "@shared/catalogCategorySpelling";
 
@@ -18,7 +19,15 @@ export type CartCheckoutPrefillItem = {
   vendorProductId?: number | null;
   glassIncluded?: boolean | null;
   freeShipping?: boolean;
+  qtyNote?: string | null;
 };
+
+function descriptionWithPanelCut(description: string | null | undefined, qtyNote: string | null | undefined, fallback: string): string {
+  const base = description?.trim() || fallback;
+  const note = refrigeratorPanelCutNotesIn(qtyNote);
+  if (!note || base.includes(note)) return base;
+  return `${base} — ${note}`;
+}
 
 type MatchedCheckoutLine = {
   rawCode: string;
@@ -66,6 +75,7 @@ export function cartItemToCheckoutPrefill(
     vendorProductId: item.vendorProductId ?? null,
     glassIncluded: item.glassIncluded ?? null,
     freeShipping: item.freeShipping === true,
+    qtyNote: item.qtyNote ?? null,
   };
 }
 
@@ -109,7 +119,7 @@ export function applyCartCheckoutPrefill<T extends MatchedCheckoutLine>(
         cabinetId: null,
         masterCode: item.code,
         normalized: item.code,
-        description: item.name?.trim() || line.description || item.code,
+        description: descriptionWithPanelCut(item.name, item.qtyNote, item.code),
         matched: true,
         confidence: "exact" as const,
       }
@@ -118,7 +128,7 @@ export function applyCartCheckoutPrefill<T extends MatchedCheckoutLine>(
           cabinetId: null,
           masterCode: item.code,
           normalized: item.code,
-          description: item.name?.trim() || line.description || item.code,
+          description: descriptionWithPanelCut(item.name, item.qtyNote, item.code),
           matched: true,
           confidence: "exact" as const,
         }
@@ -127,6 +137,7 @@ export function applyCartCheckoutPrefill<T extends MatchedCheckoutLine>(
   return {
     ...line,
     ...recognizedLine,
+    description: descriptionWithPanelCut("description" in recognizedLine ? recognizedLine.description : line.description, item.qtyNote, item.code),
     cartUnitPrice: item.unitPrice ?? null,
     cartPriceLocked: item.priceLocked === true || isSurface || isHardware,
     cartStyleId: item.styleId ?? null,
