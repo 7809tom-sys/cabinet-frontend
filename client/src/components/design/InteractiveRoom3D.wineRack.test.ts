@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
-import { addCabinet, threeDLatticeRackLayout } from "./InteractiveRoom3D";
+import { addCabinet, resolvedThreeDSpecialtyProfile, threeDLatticeRackLayout } from "./InteractiveRoom3D";
 
 // Kept out of InteractiveRoom3D.test.ts so these run even while that file's
 // __fixtures__/fourAnchorGapKitchen.json import is missing from the repo.
@@ -88,5 +88,24 @@ describe("wine rack lattice render", () => {
     let slats = 0;
     root.traverse((node) => { if (node.userData.wineRackSlat) slats += 1; });
     expect(slats).toBe(0);
+  });
+
+  it("renders a plate rack such as PR30 with slats, not the wine rack lattice", () => {
+    const plateRack = { masterCode: "PR30", description: "Plate Rack", graphicType: null, customProfile: null, facePattern: null, cornerType: null };
+    expect(resolvedThreeDSpecialtyProfile(plateRack)).toEqual({ kind: "face-pattern", pattern: "slats" });
+    expect(resolvedThreeDSpecialtyProfile({ ...plateRack, masterCode: "WPR30", description: "Wall Plate Rack" })).toEqual({ kind: "face-pattern", pattern: "slats" });
+    // An admin-set pattern still wins.
+    expect(resolvedThreeDSpecialtyProfile({ ...plateRack, facePattern: "lattice" })).toEqual({ kind: "face-pattern", pattern: "lattice" });
+    expect(resolvedThreeDSpecialtyProfile({ ...plateRack, masterCode: "LWR3015", description: "Wine Rack Wall Cabinet" })).toEqual({ kind: "face-pattern", pattern: "lattice" });
+    const root = new THREE.Group();
+    addCabinet(root, rackSku({ placementUid: "pr30", masterCode: "PR30", description: "Plate Rack" }), null, {}, 144, 120, "#e8e6df", "#f8f8f6");
+    let slats = 0;
+    let slatFaces = 0;
+    root.traverse((node) => {
+      if (node.userData.wineRackSlat) slats += 1;
+      if (node.userData.specialtyProfile === "face-pattern" && node.userData.pattern === "slats") slatFaces += 1;
+    });
+    expect(slats).toBe(0);
+    expect(slatFaces).toBeGreaterThan(0);
   });
 });
