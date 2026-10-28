@@ -8,7 +8,7 @@ describe("PlanCanvas filler gap preview", () => {
     expect(source).toContain("fillerGapPreview?: readonly PlacedCabinet[]");
     expect(source).toContain("fillerGapPreview = []");
     expect(source).toContain("data-testid=\"plan-filler-gap-preview\"");
-    expect(source).toContain("Filler {formatInches(preview.width)}");
+    expect(source).toContain("Filler {formatEighthInches(preview.width)}");
     expect(source).toContain("pointer-events-none");
     expect(source).toContain("border-dashed border-amber-500");
   });

@@ -2590,12 +2590,20 @@ export function dim(value: string | null | undefined, fallback: number): number 
  * Keep that structural thickness distinct from a panel's 24-inch depth so the
  * finished enclosure never inflates a 36-inch refrigerator to 42 inches.
  */
+/** Refrigerator end panels are 3/4-inch finished stock (owner rule, 2026-10-28). */
+export const REFRIGERATOR_END_PANEL_THICKNESS_IN = 0.75;
+
+/**
+ * Thickness of a refrigerator end panel. Always 3/4 inch: a catalog width
+ * column of 1 or 1.5 inches made the panel too thick, so a 36-inch fridge bay
+ * measured 39 inches outside instead of 36 + 1/2 + 1/2 + 3/4 + 3/4 = 38 1/2.
+ * The arguments are kept for existing callers.
+ */
 export function refrigeratorEndPanelThickness(
-  value: string | null | undefined,
-  fallback = 0.75,
+  _value?: string | null,
+  _fallback?: number,
 ): number {
-  const parsed = dim(value, fallback);
-  return parsed > 0 && parsed <= 3 ? parsed : fallback;
+  return REFRIGERATOR_END_PANEL_THICKNESS_IN;
 }
 
 export type CabinetDimensionsIn = { width: number; height: number; depth: number };
