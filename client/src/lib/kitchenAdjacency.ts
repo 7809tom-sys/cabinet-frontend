@@ -18,6 +18,7 @@ import {
   type WallSide,
 } from "./design";
 import { kitchenAdjacencyRuleById } from "./kitchenAdjacencyRules";
+import { kitchenRuleNumber } from "./kitchenRuleParameters";
 import {
   bakesALot,
   cooksALot,
@@ -56,9 +57,9 @@ export const APPLIANCE_SHIFT_CAP_IN = 3;
 export type RangeBridgeSpec = {
   code: string;
   widthIn: 30 | 33 | 36;
-  heightIn: 24 | 30;
-  bottomIn: 72 | 66;
-  topIn: 96;
+  heightIn: number;
+  bottomIn: number;
+  topIn: number;
   depthIn: 12;
 };
 
@@ -75,10 +76,25 @@ export function rangeBridgeWidth(rangeWidthIn: number): 30 | 33 | 36 {
  */
 export function rangeBridgeSpec(input: { rangeWidthIn: number; hangsBelow: boolean }): RangeBridgeSpec {
   const widthIn = rangeBridgeWidth(input.rangeWidthIn);
+  const topIn = kitchenRuleNumber("run_top_in");
   if (input.hangsBelow) {
-    return { code: `W${widthIn}24`, widthIn, heightIn: 24, bottomIn: 72, topIn: WALL_RUN_TOP_IN, depthIn: 12 };
+    return {
+      code: `W${widthIn}${kitchenRuleNumber("bridge_hung_height_in")}`,
+      widthIn,
+      heightIn: kitchenRuleNumber("bridge_hung_height_in"),
+      bottomIn: kitchenRuleNumber("bridge_hung_bottom_in"),
+      topIn,
+      depthIn: 12,
+    };
   }
-  return { code: `W${widthIn}30`, widthIn, heightIn: 30, bottomIn: 66, topIn: WALL_RUN_TOP_IN, depthIn: 12 };
+  return {
+    code: `W${widthIn}${kitchenRuleNumber("bridge_open_height_in")}`,
+    widthIn,
+    heightIn: kitchenRuleNumber("bridge_open_height_in"),
+    bottomIn: kitchenRuleNumber("bridge_open_bottom_in"),
+    topIn,
+    depthIn: 12,
+  };
 }
 
 export type AdjacencyFinding = {
@@ -138,14 +154,14 @@ function isLandingBase(item: PlacedCabinet): boolean {
 }
 
 function isQualifyingBetween(item: PlacedCabinet): boolean {
-  return isLandingBase(item) && item.width >= RANGE_FRIDGE_MIN_CABINET_IN - 0.05;
+  return isLandingBase(item) && item.width >= kitchenRuleNumber("range_fridge_min_cabinet_in") - 0.05;
 }
 
 function isSmallAgainstRange(item: PlacedCabinet): boolean {
   if (isFillerItem(item) || isPanelItem(item)) return true;
   if (item.placement === "tall" || isFullHeightCabinet(item) || isRefrigerator(item)) return true;
   if (item.placement === "appliance") return true;
-  return item.placement === "base" && item.width < SMALL_RANGE_NEIGHBOR_BELOW_IN - 0.05;
+  return item.placement === "base" && item.width < kitchenRuleNumber("small_cabinet_below_in") - 0.05;
 }
 
 function touches(leftEnd: number, rightStart: number): boolean {
@@ -189,7 +205,7 @@ export function reviewRangeFridgeSeparation(placed: readonly PlacedCabinet[], ro
           "range-fridge-gap",
           "attention",
           "Range and refrigerator need a 15 inch cabinet between them",
-          `On the ${wall} wall the range and refrigerator have ${Math.round(gap * 8) / 8}" between them and no base cabinet 15" or wider. Fillers and panels do not count.`,
+          `On the ${wall} wall the range and refrigerator have ${Math.round(gap * 8) / 8}" between them and no base cabinet ${kitchenRuleNumber("range_fridge_min_cabinet_in")}" or wider. Fillers and panels do not count.`,
           `:${range.item.uid}:${fridge.item.uid}`,
         ));
       }
@@ -249,8 +265,8 @@ export function separateRangeAndRefrigerator(input: {
           && span.item.uid !== left.item.uid && span.item.uid !== right.item.uid);
         if (between.some((span) => isQualifyingBetween(span.item))) continue;
         const gap = right.start - left.end;
-        if (gap >= RANGE_FRIDGE_MIN_CABINET_IN - 0.05) continue;
-        let shortfall = RANGE_FRIDGE_MIN_CABINET_IN - gap;
+        if (gap >= kitchenRuleNumber("range_fridge_min_cabinet_in") - 0.05) continue;
+        let shortfall = kitchenRuleNumber("range_fridge_min_cabinet_in") - gap;
         const leftBudget = remaining(left.item.uid, left.start);
         const rightBudget = remaining(right.item.uid, right.start);
         const leftMove = Math.min(leftBudget, shortfall);
@@ -266,7 +282,7 @@ export function separateRangeAndRefrigerator(input: {
         const opened = Math.min(leftAfter.end, rightAfter.end) === leftAfter.end
           ? rightAfter.start - leftAfter.end
           : leftAfter.start - rightAfter.end;
-        if (opened < RANGE_FRIDGE_MIN_CABINET_IN - 0.05) {
+        if (opened < kitchenRuleNumber("range_fridge_min_cabinet_in") - 0.05) {
           flags.push(`The range and refrigerator on the ${wall} wall still have ${Math.round(Math.abs(opened) * 8) / 8}" between them after the 3" shift. A 15" cabinet does not fit. Nothing smaller was invented to fill it.`);
         }
       }
@@ -300,7 +316,7 @@ export function reviewHeavyCookLandings(placed: readonly PlacedCabinet[], room: 
       const edge = side === "before" ? span.start : span.end;
       const next = neighbor(spans, edge, side);
       const label = side === "before" ? "on the start side" : "on the end side";
-      if (!next || isSmallAgainstRange(next.item) || next.item.width < HEAVY_COOK_LANDING_IN - 0.05) {
+      if (!next || isSmallAgainstRange(next.item) || next.item.width < kitchenRuleNumber("heavy_cook_landing_in") - 0.05) {
         const name = next ? `${next.item.masterCode} (${Math.round(next.item.width)}")` : "open space";
         findings.push(finding(
           "heavy-cook-landing",
@@ -320,7 +336,7 @@ export function guardHeavyCookRangeLanding<T extends { width: number; isFiller: 
   input: { length: number; rangeAtStart: boolean; rangeAtEnd: boolean },
 ): { items: T[]; note: string | null } {
   if (!input.rangeAtStart && !input.rangeAtEnd) return { items: [...items], note: null };
-  const bad = (item: T | undefined) => !item || item.isFiller || item.width < HEAVY_COOK_LANDING_IN - 0.05;
+  const bad = (item: T | undefined) => !item || item.isFiller || item.width < kitchenRuleNumber("heavy_cook_landing_in") - 0.05;
   const startBad = input.rangeAtStart && bad(items[0]);
   const endBad = input.rangeAtEnd && bad(items[items.length - 1]);
   if (!startBad && !endBad) return { items: [...items], note: null };
@@ -394,7 +410,7 @@ export function reviewAfterShift(input: {
         .map((span) => edgeGap(sinkSpan, span))
         .sort((left, right) => left - right)[0];
       if (nearest == null) continue;
-      if (nearest > SINK_DISHWASHER_MAX_GAP_IN + 0.05) {
+        if (nearest > kitchenRuleNumber("sink_dishwasher_max_gap_in") + 0.05) {
         findings.push(finding(
           "dishwasher-beside-sink",
           "attention",
@@ -495,7 +511,7 @@ export function reviewKitchenAdjacency(input: {
     const right = landingWidth(spans, sink.end, "after");
     const longer = Math.max(left, right);
     const shorter = Math.min(left, right);
-    if (longer < 24 - 0.05 || shorter < 18 - 0.05) {
+    if (longer < kitchenRuleNumber("sink_landing_long_in") - 0.05 || shorter < kitchenRuleNumber("sink_landing_short_in") - 0.05) {
       findings.push(finding(
         "sink-landing",
         "attention",
@@ -559,7 +575,7 @@ export function reviewKitchenAdjacency(input: {
       findings.push(finding("fridge-run-end", "attention", "Refrigerator is in the middle of a run", `${fridge.item.masterCode} has base cabinets on both sides. Put it at the end of the run when the measurement allows.`, `:${fridge.item.uid}`));
     }
     const handleLanding = Math.max(landingWidth(spans, fridge.start, "before"), landingWidth(spans, fridge.end, "after"));
-    if (handleLanding > 0.5 && handleLanding < 15 - 0.05) {
+    if (handleLanding > 0.5 && handleLanding < kitchenRuleNumber("fridge_landing_in") - 0.05) {
       findings.push(finding("fridge-landing", "attention", "Refrigerator landing is under 15 inches", `${fridge.item.masterCode} needs 15" of counter on the handle side.`, `:${fridge.item.uid}`));
     }
   }
@@ -648,9 +664,9 @@ export function reviewKitchenAdjacency(input: {
     if (!span) continue;
     const length = wallLength(span.wall as WallSide, input.room);
     const nearestEnd = Math.min(span.start, Math.max(0, length - span.end));
-    if (nearestEnd < 2 - 0.05) {
+    if (nearestEnd < kitchenRuleNumber("dishwasher_corner_min_in") - 0.05) {
       findings.push(finding("dishwasher-corner-fallback", "attention", "Dishwasher is tighter than 2 inches to a corner", `${dishwasher.masterCode} is ${Math.round(nearestEnd * 8) / 8}" from the end of the wall. Even when a 21" stand is impossible, leave at least 2".`, `:${dishwasher.uid}`));
-    } else if (nearestEnd < DISHWASHER_CORNER_CLEAR_IN - 0.05) {
+    } else if (nearestEnd < kitchenRuleNumber("dishwasher_corner_clear_in") - 0.05) {
       findings.push(finding("dishwasher-corner-clearance", "attention", "Dishwasher is within 21 inches of a corner", `${dishwasher.masterCode} is ${Math.round(nearestEnd * 8) / 8}" from the wall end. It needs 21" of cabinet or sink between it and an inside corner. Auto-design will not slide it more than 3" to clear that.`, `:${dishwasher.uid}`));
     }
     const touchingRange = ranges.some((range) => range.wall === span.wall && (touches(range.end, span.start) || touches(span.end, range.start)));
@@ -667,7 +683,7 @@ export function reviewKitchenAdjacency(input: {
   for (const fridge of fridges) {
     const length = wallLength(fridge.wall as WallSide, input.room);
     const nearestEnd = Math.min(fridge.start, Math.max(0, length - fridge.end));
-    if (nearestEnd > 2.5) continue;
+    if (nearestEnd > kitchenRuleNumber("fridge_hinge_clear_in")) continue;
     const spans = onWall(input.placed, input.room, fridge.wall);
     const cover = spans.some((span) => (isFillerItem(span.item) || isPanelItem(span.item))
       && (touches(span.end, fridge.start) || touches(fridge.end, span.start)));

@@ -1,6 +1,7 @@
 // ─── Kitchen Design geometry & snapping engine ──────────────────────────────
 // All real-world units are INCHES. The canvas converts inches → pixels via PPI.
 import { freestandingCountertopSurfaces, isFreestandingBase } from "@/lib/freestandingRun";
+import { kitchenRuleNumber } from "@/lib/kitchenRuleParameters";
 import {
   closestWall as closestPolygonWall,
   isLocked45Wall,
@@ -1755,7 +1756,7 @@ export function ordinaryWallMountBottom(p: {
   if (isThirtyInchShortUpperAt72(p)) return TWELVE_INCH_WALL_MOUNT_BOTTOM;
   return p.placement === "wall" && !isStacker(p) && height > 0 && height < 30
     ? WALL_CABINET_TOP - height
-    : WALL_MOUNT_BOTTOM;
+    : kitchenRuleNumber("wall_bottom_in");
 }
 
 /** A single wall's ceiling. Either a flat height, or a slope between a high end

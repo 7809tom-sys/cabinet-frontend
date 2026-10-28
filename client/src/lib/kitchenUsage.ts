@@ -1,4 +1,5 @@
 import { dim, type DesignCabinet } from "./design";
+import { kitchenRuleNumber } from "./kitchenRuleParameters";
 
 /** Short answers the customer can pick before auto-design. Saving does not require one. */
 export const KITCHEN_USE_OPTIONS = [
@@ -212,19 +213,18 @@ export function describeBakingZone(input: {
   const fridge = input.fridge;
   const towardFridge = fridge == null ? null : fridge.start >= input.range.end ? "right" as const : fridge.end <= input.range.start ? "left" as const : null;
   const towardWidth = towardFridge === "right" ? right : towardFridge === "left" ? left : 0;
-  const otherWidth = towardFridge === "right" ? left : right;
   const best = Math.max(left, right);
-  const side = towardWidth >= BAKING_ZONE_MIN_IN ? "toward-fridge" as const : best >= BAKING_ZONE_MIN_IN ? "other" as const : "none" as const;
-  const ok = best >= BAKING_ZONE_MIN_IN - 0.01;
+  const minimum = kitchenRuleNumber("baking_zone_min_in");
+  const ok = best >= minimum - 0.01;
   return {
     ok,
     widthIn: Math.round(best * 8) / 8,
-    side,
+    side: towardWidth >= minimum - 0.01 ? "toward-fridge" as const : best >= minimum - 0.01 ? "other" as const : "none" as const,
     nearRange: ok,
-    nearFridge: towardWidth >= BAKING_ZONE_MIN_IN - 0.01,
+    nearFridge: towardWidth >= minimum - 0.01,
     message: ok
-      ? `Baking counter is ${Math.round(best)}" of uninterrupted base beside the range${towardWidth >= BAKING_ZONE_MIN_IN ? ", on the refrigerator side" : ""}.`
-      : `Lots of baking needs at least ${BAKING_ZONE_MIN_IN}" of uninterrupted counter beside the range. The longest clear base run touching the range is ${Math.round(best)}".`,
+      ? `Baking counter is ${Math.round(best)}" of uninterrupted base beside the range${towardWidth >= minimum - 0.01 ? ", on the refrigerator side" : ""}.`
+      : `Lots of baking needs at least ${minimum}" of uninterrupted counter beside the range. The longest clear base run touching the range is ${Math.round(best)}".`,
   };
 }
 

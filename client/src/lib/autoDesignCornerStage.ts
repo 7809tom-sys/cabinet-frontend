@@ -1,4 +1,5 @@
 import { AUTO_DESIGN_WALL_LABELS, wallLabelToEngineWallId, type AutoBuildCatalogCandidate, type AutoDesignLayoutType, type AutoDesignOriginCorner, type AutoDesignRunDirection, type WallLabel } from "./autoDesignAutoBuild";
+import { kitchenRuleNumber } from "./kitchenRuleParameters";
 import { isBaseEndCornerCabinet, isBlindCorner, isCornerCabinet, type RoomData } from "./design";
 
 /** A real room vertex that the admin may explicitly populate after all anchors are seated. */
@@ -45,7 +46,7 @@ export function autoDesignCornerSlots(layoutType: AutoDesignLayoutType, measured
     if (!slots.some((slot) => slot.id === id)) slots.push({ id, label: `Corner between ${firstWall} and ${secondWall}`, firstWall, secondWall });
   };
   if (layoutType === "l-shape" || layoutType === "u-shape") add("Wall 1", "Wall 2");
-  if (layoutType === "u-shape") add("Wall 2", "Wall 3");
+  if (layoutType === "u-shape" && kitchenRuleNumber("u_shape_corner_count") >= 2) add("Wall 2", "Wall 3");
   if (!measured) return slots;
   const occupied = AUTO_DESIGN_WALL_LABELS.filter((label) => {
     const ref = wallLabelToEngineWallId(label, measured.room, measured.originCorner, measured.runDirection);

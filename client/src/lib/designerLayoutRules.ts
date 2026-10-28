@@ -41,10 +41,11 @@ import {
 } from "./design";
 import { planAutoDesignBaseSegment } from "./autoDesignSeamFillers";
 import {
-  SMALL_GAP_FILLER_MAX_IN,
+  effectiveSmallGapFillerMaxIn,
   findPreferredSmallGapFillerOpportunity,
   type SmallGapFillerOpportunity,
 } from "./smallGapFiller";
+import { kitchenRuleNumber } from "./kitchenRuleParameters";
 
 /**
  * The most a user-placed Auto-Design appliance may slide along its own wall
@@ -61,8 +62,7 @@ export const REFRIGERATOR_SHIFT_LIMIT_IN = 6;
 /** Per-appliance cap measured from the original placement. */
 export function autoDesignShiftLimitIn(kind: string): number {
   if (kind === "refrigerator") return REFRIGERATOR_SHIFT_LIMIT_IN;
-  if (kind === "sink") return SINK_SHIFT_LIMIT_IN;
-  return AUTO_DESIGN_WIGGLE_ROOM_IN;
+  return kitchenRuleNumber("jog_max_in");
 }
 
 const WIGGLE_STEP_IN = 1 / 8;
@@ -379,8 +379,9 @@ function segmentPenalty(
   const undersized = fill.items.filter((item) => !item.isFiller && item.width < UNDERSIZED_CABINET_IN - COLLISION_EPSILON_IN).length;
   // A remainder the standard filler can still cut counts as filler. A hole wider
   // than that is a real miss and dominates the score.
-  const smallRemainder = uncovered <= SMALL_GAP_FILLER_MAX_IN ? uncovered : 0;
-  const largeHole = uncovered > SMALL_GAP_FILLER_MAX_IN ? uncovered : 0;
+  const fillerMax = effectiveSmallGapFillerMaxIn();
+  const smallRemainder = uncovered <= fillerMax ? uncovered : 0;
+  const largeHole = uncovered > fillerMax ? uncovered : 0;
   const penalty = largeHole * 1000 + undersized * 100 + (fill.note ? 50 : 0) + filler + smallRemainder;
   cache.set(key, penalty);
   return penalty;
@@ -705,11 +706,11 @@ function gapPieces(opportunity: SmallGapFillerOpportunity): Array<{ start: numbe
   const before = opportunity.cabinetStart - opportunity.openingStart;
   const after = opportunity.openingStart + opportunity.openingLength - (opportunity.cabinetStart + opportunity.cabinetSpan);
   const pieces: Array<{ start: number; width: number; side: "left" | "right"; ownerUid: string }> = [];
-  if (before > COLLISION_EPSILON_IN && before <= SMALL_GAP_FILLER_MAX_IN + COLLISION_EPSILON_IN) {
+  if (before > COLLISION_EPSILON_IN && before <= effectiveSmallGapFillerMaxIn() + COLLISION_EPSILON_IN) {
     const ownerUid = opportunity.boundedCabinetUids?.[0] ?? opportunity.cabinetUid;
     pieces.push({ start: opportunity.cabinetStart - before, width: before, side: "left", ownerUid });
   }
-  if (after > COLLISION_EPSILON_IN && after <= SMALL_GAP_FILLER_MAX_IN + COLLISION_EPSILON_IN) {
+  if (after > COLLISION_EPSILON_IN && after <= effectiveSmallGapFillerMaxIn() + COLLISION_EPSILON_IN) {
     const ownerUid = opportunity.boundedCabinetUids?.[1] ?? opportunity.cabinetUid;
     pieces.push({ start: opportunity.cabinetStart + opportunity.cabinetSpan, width: after, side: "right", ownerUid });
   }

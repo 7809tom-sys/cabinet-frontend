@@ -102,6 +102,7 @@ import VendorUpdatesAdmin from "@/components/admin/VendorUpdatesAdmin";
 import VendorInventoryAdmin from "@/components/admin/VendorInventoryAdmin";
 import VendorOnboardingAdmin from "@/components/admin/VendorOnboardingAdmin";
 import { SampleOrderDesk } from "@/components/samples/SampleOrderDesk";
+import KitchenRulesAdmin from "@/components/admin/KitchenRulesAdmin";
 
 // ─── Group definitions ────────────────────────────────────────────────────────
 const GROUPS = [
@@ -214,6 +215,7 @@ const GROUPS = [
       { value: "quickbooks", label: "QuickBooks" },
       { value: "api-status", label: "API Status" },
       { value: "analytics", label: "Analytics" },
+      { value: "kitchen-rules", label: "Kitchen Rules" },
       { value: "export", label: "Full Export" },
       { value: "affiliate-literature", label: "Affiliate Literature" },
       { value: "affiliate-resources", label: "Affiliate Resources" },
@@ -614,6 +616,7 @@ export default function AdminGroupedTabs() {
         <TabsContent value="quickbooks" className="mt-6"><QuickBooksAdmin /></TabsContent>
         <TabsContent value="api-status" className="mt-6"><ApiStatusAdmin /></TabsContent>
         <TabsContent value="analytics" className="mt-6"><AnalyticsAdmin /></TabsContent>
+        <TabsContent value="kitchen-rules" className="mt-6"><KitchenRulesAdmin /></TabsContent>
         <TabsContent value="export" className="mt-6"><FullDatabaseExport /></TabsContent>
         <TabsContent value="affiliate-literature" className="mt-6"><AdminTabHelp tab="affiliate-literature" /><AffiliateLiteratureAdmin /></TabsContent>
         <TabsContent value="affiliate-resources" className="mt-6"><AdminTabHelp tab="affiliate-resources" /><AffiliateResourcesAdmin /></TabsContent>

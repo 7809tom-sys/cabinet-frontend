@@ -12,10 +12,13 @@ import {
   type RoomData,
   type WallOpening,
 } from "./design";
-import { SINK_SHIFT_LIMIT_IN } from "./designerLayoutRules";
+import { kitchenRuleNumber } from "./kitchenRuleParameters";
 
-/** Open leg of a blind corner: 24 inch base depth plus the required 3 inch filler. */
+/** Open leg of a blind corner: 24 inch base depth plus the required 3 inch filler, unless Kitchen Rules stores another length. */
 export const BLIND_OPEN_LEG_IN = STD.BASE_DEPTH + BLIND_CORNER_FILLER_WIDTH_IN;
+function blindOpenLegIn(): number {
+  return kitchenRuleNumber("blind_open_leg_in");
+}
 
 export type CornerFitOption = {
   id: number;
@@ -82,7 +85,7 @@ export function placeSinkAfterCorner(input: {
   sinkWidthIn: number;
   shiftLimitIn?: number;
 }): { ok: true; sink: CornerSinkPlan } | { ok: false; sink: CornerSinkPlan; reason: string } {
-  const shiftLimit = input.shiftLimitIn ?? SINK_SHIFT_LIMIT_IN;
+  const shiftLimit = input.shiftLimitIn ?? kitchenRuleNumber("jog_max_in");
   const minStart = input.occupiedIn;
   const maxStart = input.availableIn - input.sinkWidthIn;
   const idealStart = input.plumbingCenterFromCornerIn - input.sinkWidthIn / 2;
@@ -128,8 +131,8 @@ function occupancy(option: CornerFitOption, blindOn: LegName | null): { plumbing
   const width = optionWidth(option);
   if (!isBlind(option) || !blindOn) return { plumbing: width, other: width };
   return blindOn === "plumbing"
-    ? { plumbing: width, other: BLIND_OPEN_LEG_IN }
-    : { plumbing: BLIND_OPEN_LEG_IN, other: width };
+    ? { plumbing: width, other: blindOpenLegIn() }
+    : { plumbing: blindOpenLegIn(), other: width };
 }
 
 function legFits(occupied: number, available: number): boolean {
