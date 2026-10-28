@@ -6242,7 +6242,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       if (opening) {
         const kind = opening.opening.kind === "window" ? "window" : opening.opening.kind === "door" ? "door" : "opening";
         note(cabinet.uid, opening.gap < 0
-          ? `${cabinet.masterCode} overlaps the ${kind} by ${formatEighthInches(-opening.gap)}; it must stay ${formatEighthInches(opening.required)} clear of it.`
+          ? `${cabinet.masterCode} overlaps the ${kind} by ${formatEighthInches(-opening.gap)}; ${opening.required > 0 ? `it must stay ${formatEighthInches(opening.required)} clear of it` : "move it off the window"}.`
           : `${cabinet.masterCode} is ${formatEighthInches(opening.gap)} from the ${kind}; it must be at least ${formatEighthInches(opening.required)} away.`);
       }
       const ceiling = ceilingViolationUids.has(cabinet.uid) ? ceilingFitDetail(cabinet, room) : null;
