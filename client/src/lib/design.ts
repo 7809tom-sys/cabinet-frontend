@@ -3157,6 +3157,11 @@ export const CABINET_ADJACENCY_MAGNET_IN = 0.5;
 export const CABINET_CONFLICT_LOCK_IN = 1;
 /** Floating-point dust only. Any real positive overlap remains invalid. */
 export const COLLISION_EPSILON_IN = 1e-9;
+// Along-run seams on an angled wall carry floating-point noise from projecting
+// x/y onto the run (e.g. a neighbour ending at 84.0000001 while the next cabinet
+// is clamped to 84). That is a butt joint, not an overlap; 1/64" is far below
+// the 1/8" resolution the Designer measures and places at.
+export const RUN_SEAM_TOLERANCE_IN = 1 / 64;
 /** Required cabinet setback on each adjoining peninsula leg at an inside turn. */
 export const PENINSULA_INSIDE_CORNER_CLEARANCE_IN = 11;
 
@@ -3186,7 +3191,7 @@ export function cabinetCollisionDetail(moving: PlacedCabinet, others: PlacedCabi
       const otherStart = Number(o.wallOffset);
       const otherEnd = otherStart + alongRunSpan(o);
       const overlap = Math.min(end, otherEnd) - Math.max(start, otherStart);
-      if (overlap > COLLISION_EPSILON_IN) {
+      if (overlap > RUN_SEAM_TOLERANCE_IN) {
         return { cabinet: o, overlapX: overlap, overlapY: Math.min(moving.depth, o.depth), penetration: overlap };
       }
       // Their axis-aligned visual boxes may overlap even when two angled cabinets
@@ -3468,7 +3473,7 @@ function customWallCornerReservationCollision(
   const neighborStart = wallRunOffset(neighbor, neighbor.wallId, room);
   const neighborEnd = neighborStart + wallRunSpan(neighbor, neighbor.wallId, room);
   const overlap = Math.min(neighborEnd, reservedEnd) - Math.max(neighborStart, reservedStart);
-  if (overlap <= COLLISION_EPSILON_IN) return null;
+  if (overlap <= RUN_SEAM_TOLERANCE_IN) return null;
   return {
     cabinet: blockedBy,
     overlapX: overlap,
