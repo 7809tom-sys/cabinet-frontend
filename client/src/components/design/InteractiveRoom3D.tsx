@@ -18,6 +18,7 @@ import { APPLIANCES, BLIND_CORNER_FILLER_WIDTH_IN, COUNTERTOP_DEPTH_IN, FURNITUR
 import { refrigeratorEndPanelCutDownNote } from "@/lib/refrigeratorEndPanelCut";
 import { threeDLatticeRackLayout } from "@/lib/latticeRackLayout";
 import { PLATE_RACK_FRAME_IN, plateRackDividerLayout } from "@/lib/plateRackLayout";
+import { baseAngleEndPlan, isBaseAngleEndCabinet, type BaseAngleEndHand, type PlanPoint } from "@/lib/baseAngleEndLayout";
 export { threeDLatticeRackLayout };
 import { islandCountertopRects, islandCountertopVisibleRects, islandRaisedBarRects, islandFaceFitMeasure } from "@/lib/islandScene";
 import { furniturePlanFrame, resolvedFurnitureDimensions } from "@/lib/design";
@@ -25,7 +26,7 @@ import { farmhouseSinkBaseFaceLayout } from "@/lib/farmhouseSinkBaseFace";
 import { angledWallTransitionFootprint } from "@/lib/angledWallFiller";
 import { miteredWallOutlinesFromInteriorFaces, ROOM_WALL_THICKNESS_IN, wallAngle as polygonWallAngle } from "@/lib/polygonRoom";
 import { deckFaucetWindowWarning, resolveDeckFaucetPlacement, type DeckFaucetPlacement } from "@/lib/faucetPlacement";
-import { cabinetDrawingType, isEqualHeightTwoDrawerBase as isEqualHeightTwoDrawerBaseFamily, isSquareDoubleDoorBaseEnd, isWallBlindCornerCabinet, resolveDoorDrawerCounts, resolvedVanityComboFaceLayout, standardDoorCountForFaceWidth, threeDrawerBaseRowHeights } from "@/lib/cabinetGraphics";
+import { cabinetDrawingType, isEqualHeightTwoDrawerBase as isEqualHeightTwoDrawerBaseFamily, isWallBlindCornerCabinet, resolveDoorDrawerCounts, resolvedVanityComboFaceLayout, standardDoorCountForFaceWidth, threeDrawerBaseRowHeights } from "@/lib/cabinetGraphics";
 import { verifiedPelicanBathroomFixtureProfile, type VerifiedPelicanBathroomFixtureProfile } from "@/lib/pelicanBathroomFixtureProfiles";
 import { makePelicanTubFillerGroup } from "@/lib/pelicanTubFillerMesh";
 import { makePelicanToiletGroup } from "@/lib/pelicanToiletMesh";
@@ -2629,9 +2630,9 @@ export function isEnclosedWallMicrowaveCabinet(sku: EnclosedWallMicrowaveCandida
 /** A supplied Cabinet Config product visual is authoritative for a cabinet front. */
 export function threeDCabinetFrontVisualUrl(sku: EnclosedWallMicrowaveCandidate & Pick<SceneSku, "catalogImageUrl">): string | null {
   if ((sku.placementType ?? "").toLowerCase() === "appliance") return null;
-  // The existing BEC24 source image is a quarter-octagon front. It must not
-  // cover the two physical, coplanar doors of the owner-approved square end.
-  if (isSquareDoubleDoorBaseEnd(sku)) return null;
+  // BAC24 / BEC24 is built from real quarter-octagon geometry. Its catalog
+  // picture is a reference only and must never be mapped onto a front plane.
+  if (isBaseAngleEndCabinet(sku)) return null;
   // The actual enclosed wall-microwave family receives a modeled stainless
   // appliance face inside its configured bay. Its cabinet-card diagram is not
   // an appliance finish and must never cover the upper doors or microwave face.
@@ -2798,6 +2799,7 @@ export function threeDUsesCatalogFrontVisual(input: {
   hasVerifiedDoorLayout: boolean;
 }) {
   return input.hasCatalogFrontVisual
+    && input.specialtyKind !== "base-angle-end"
     && !input.hasDoorSample
     && !input.hasDoorTexture
     && input.specialtyKind === "standard"
@@ -3245,6 +3247,41 @@ function baseEndDiagramGeometry(sideLength: number, height: number) {
   return geometry;
 }
 
+/** Extrudes a quarter-octagon plan (inches already converted to scene feet). */
+function quarterOctagonExtrusion(points: PlanPoint[], height: number) {
+  // Shape space is (x, -z), which mirrors a counterclockwise plan. Reverse when
+  // that mirror would leave the extrusion inside-out.
+  let signedArea = 0;
+  for (let index = 0; index < points.length; index += 1) {
+    const current = points[index]!;
+    const next = points[(index + 1) % points.length]!;
+    signedArea += current.x * -next.z - -current.z * next.x;
+  }
+  const ordered = signedArea < 0 ? points.slice().reverse() : points;
+  const [first, ...rest] = ordered;
+  const shape = new THREE.Shape();
+  shape.moveTo(first!.x, -first!.z);
+  for (const point of rest) shape.lineTo(point.x, -point.z);
+  shape.closePath();
+  const geometry = new THREE.ExtrudeGeometry(shape, { depth: height, bevelEnabled: false });
+  geometry.rotateX(-Math.PI / 2);
+  geometry.translate(0, -height / 2, 0);
+  return geometry;
+}
+
+/** Places the 24" quarter-octagon in the back corner that touches the neighbor. */
+function baseAngleEndFeet(widthIn: number, depthIn: number, hand: BaseAngleEndHand) {
+  const sideIn = Math.min(widthIn, depthIn);
+  const plan = baseAngleEndPlan({ sideIn, hand });
+  const shiftX = hand === "right" ? (-widthIn / 2) - (-sideIn / 2) : (widthIn / 2) - (sideIn / 2);
+  const shiftZ = (-depthIn / 2) - (-sideIn / 2);
+  const toFeet = (point: PlanPoint): PlanPoint => ({
+    x: (point.x + shiftX) * INCH,
+    z: (point.z + shiftZ) * INCH,
+  });
+  return { plan, toFeet };
+}
+
 /** Builds the vertical triangular extrusion defined by the shared 2D triangle footprint. */
 function triangleCornerWedgeGeometry(bodyWidth: number, bodyDepth: number, height: number) {
   const vertices = triangleCornerFootprintVertices(bodyWidth, bodyDepth);
@@ -3654,12 +3691,9 @@ export function resolvedThreeDFaceLayout(input: {
 
 export function resolvedThreeDSpecialtyProfile(sku: Pick<SceneSku, "graphicType" | "customProfile" | "facePattern" | "cornerType" | "cornerGeometryKind" | "masterCode" | "description">) {
   const graphic = `${sku.graphicType ?? ""} ${sku.customProfile ?? ""}`.toLowerCase();
-  const normalizedCode = (sku.masterCode ?? "").replace(/[^a-z0-9]/gi, "").toUpperCase();
-  // BEC24's active master is a 24 × 34½ × 24 two-door base end cabinet.
-  // The owner-approved visible body is a square end-of-run box with two doors
-  // on one flat front. Do not borrow a diagonal or two-face corner mesh from
-  // stale graphicType, customProfile, or legacy supplier descriptions.
-  if (normalizedCode === "BEC24") return { kind: "standard" as const, pattern: null };
+  // BA-24 / BEC24 / BAC24 is a quarter-octagon end cabinet. Its mesh is real
+  // geometry, not the retired square box and not the generic end-return diamond.
+  if (isBaseAngleEndCabinet(sku)) return { kind: "base-angle-end" as const, pattern: null };
   if (cabinetDrawingType({
     masterCode: sku.masterCode,
     description: sku.description,
@@ -4231,6 +4265,26 @@ export function addCabinet(
         cabinet.add(legKick);
         bodyMeshes.push(legKick);
       }
+    } else if (specialty.kind === "base-angle-end") {
+      const hand: BaseAngleEndHand = sku.swing === "left" ? "left" : "right";
+      const { plan, toFeet } = baseAngleEndFeet(widthIn, depthIn, hand);
+      const toeKick = new THREE.Mesh(
+        quarterOctagonExtrusion(plan.toeKickVertices.map(toFeet), toeKickHeight),
+        toeKickMaterial,
+      );
+      toeKick.position.y = -bodyHeight / 2 - toeKickHeight / 2;
+      toeKick.userData = {
+        baseToeKick: true,
+        floorStandingToeKick: true,
+        baseAngleEndToeKick: true,
+        toeKickHeightIn: THREE_D_TOE_KICK,
+        toeKickRecessIn: plan.toeRecessIn,
+        quarterOctagon: true,
+        selectedToeKickFinishSkin: hasSelectedToeKickFinish,
+        visibleToeKickFrontPlane: hasSelectedToeKickFinish,
+      };
+      cabinet.add(toeKick);
+      bodyMeshes.push(toeKick);
     } else if (specialty.kind === "end-return") {
       const attachedFronts = baseEndAttachedFrontLayout(bodyWidth, bodyDepth);
       const toeKickRecess = 3 * INCH;
@@ -4349,6 +4403,24 @@ export function addCabinet(
       sideLengthIn: diagram.sideLength / INCH,
       rearApex: diagram.rearApex,
       exteriorApex: diagram.apex,
+    };
+    cabinet.add(clippedBody);
+    bodyMeshes.push(clippedBody);
+  } else if (specialty.kind === "base-angle-end") {
+    const hand: BaseAngleEndHand = sku.swing === "left" ? "left" : "right";
+    const { plan, toFeet } = baseAngleEndFeet(widthIn, depthIn, hand);
+    const clippedBody = new THREE.Mesh(
+      quarterOctagonExtrusion(plan.vertices.map(toFeet), bodyHeight),
+      bodyMaterial,
+    );
+    clippedBody.userData = {
+      specialtyProfile: "base-angle-end",
+      baseAngleEndBody: true,
+      quarterOctagon: true,
+      sideIn: plan.sideIn,
+      faceIn: plan.faceIn,
+      doorPitchDegrees: plan.doorPitchDegrees,
+      selectedStyleSideSkin: true,
     };
     cabinet.add(clippedBody);
     bodyMeshes.push(clippedBody);
@@ -4831,7 +4903,7 @@ export function addCabinet(
   // texture. When it exists, NEVER overlay the Cabinet Config line-art drawing.
   // The catalog front visual is only used as a fallback for cabinets that have
   // NO active door style sample at all.
-  if (catalogFrontVisualUrl && threeDUsesCatalogFrontVisual({
+  if (catalogFrontVisualUrl && !isBaseAngleEndCabinet(sku) && threeDUsesCatalogFrontVisual({
     hasCatalogFrontVisual: Boolean(catalogFrontVisualUrl),
     hasDoorSample: Boolean(doorSampleUrl),
     hasDoorTexture: Boolean(doorTexture),
@@ -4868,7 +4940,7 @@ export function addCabinet(
   const usesConstructedFaceFrame = placement !== "appliance"
     && !isRefrigeratorEndPanel
     && !isWallOpenShelf
-    && !["diagonal-corner", "triangle-corner", "l-corner", "corner-drawer", "end-return", "blind-corner", "range-hood-front"].includes(specialty.kind);
+    && !["diagonal-corner", "triangle-corner", "l-corner", "corner-drawer", "end-return", "base-angle-end", "blind-corner", "range-hood-front"].includes(specialty.kind);
   if (usesConstructedFaceFrame) {
     const frameMaterial = new THREE.MeshStandardMaterial({ color: plainStructuralColor, roughness: 0.46, metalness: 0.01 });
     structuralFinishMaterials.push(frameMaterial);
@@ -4943,7 +5015,7 @@ export function addCabinet(
   // the footprint center so their rear plane stays on the wall; placing them on
   // the decorative face plane adds another half-depth and makes the hood float
   // forward into the room.
-  frontGroup.position.z = isPlacedHood || specialty.kind === "diagonal-corner" || specialty.kind === "triangle-corner" || specialty.kind === "l-corner" || specialty.kind === "end-return" ? 0 : faceDepth;
+  frontGroup.position.z = isPlacedHood || specialty.kind === "diagonal-corner" || specialty.kind === "triangle-corner" || specialty.kind === "l-corner" || specialty.kind === "end-return" || specialty.kind === "base-angle-end" ? 0 : faceDepth;
   if (isPlacedHood) {
     frontGroup.userData = {
       ...frontGroup.userData,
@@ -5155,7 +5227,7 @@ export function addCabinet(
   // BEC24's source description says "Quarter-Octagon". The generic OC oven
   // code matcher otherwise sees the "-Oc" substring and draws an oven door
   // over this square, two-door end cabinet. Keep all actual oven paths intact.
-  const isOvenCabinet = !isSquareDoubleDoorBaseEnd(sku) && !isPlacedAppliance && Boolean(sku.ovenType || /(?:^|[-_])(UOC|OC|OVEN)|oven cabinet/i.test(sku.masterCode + " " + (sku.description ?? "")));
+  const isOvenCabinet = !isBaseAngleEndCabinet(sku) && !isPlacedAppliance && Boolean(sku.ovenType || /(?:^|[-_])(UOC|OC|OVEN)|oven cabinet/i.test(sku.masterCode + " " + (sku.description ?? "")));
   if (specialty.kind === "range-hood-front") {
     const hoodFront = rangeHoodFrontGeometry(widthIn, heightIn, depthIn);
     frontGroup.userData = {
@@ -5951,6 +6023,60 @@ export function addCabinet(
       const frameNormalZ = Math.cos(door.rotation.y) * 0.031;
       addShakerFrame(attachedFronts.doorWidth - 0.03, faceHeight, door.position.x + frameNormalX, door.position.y, door.position.z + frameNormalZ, door.rotation.y);
     }
+  } else if (specialty.kind === "base-angle-end") {
+    const hand: BaseAngleEndHand = sku.swing === "left" ? "left" : "right";
+    const { plan, toFeet } = baseAngleEndFeet(widthIn, depthIn, hand);
+    const doorThickness = 0.75 * INCH;
+    const doorHeight = Math.max(0.2, bodyHeight - 0.25 * INCH);
+    frontGroup.userData = {
+      ...frontGroup.userData,
+      baseAngleEndFront: true,
+      separateProjectedThirdFace: false,
+    };
+    for (const face of plan.doorFaces) {
+      const center = toFeet(face.midpoint);
+      const doorCenter = {
+        x: center.x + face.outward.x * (doorThickness / 2),
+        z: center.z + face.outward.z * (doorThickness / 2),
+      };
+      const door = new THREE.Mesh(
+        new THREE.BoxGeometry(face.doorWidthIn * INCH, doorHeight, doorThickness),
+        faceMaterial,
+      );
+      door.position.set(doorCenter.x, 0, doorCenter.z);
+      door.rotation.y = face.rotationY;
+      door.userData = {
+        specialtyProfile: "base-angle-end",
+        baseAngleEndDoor: face.id,
+        cabinetFront: true,
+        flushPhysicalFace: true,
+        doorWidthIn: face.doorWidthIn,
+        faceWidthIn: face.length,
+        doorPitchDegrees: plan.doorPitchDegrees,
+        usesDoorSample: Boolean(doorTexture),
+      };
+      frontGroup.add(door);
+      addShakerFrame(
+        face.doorWidthIn * INCH,
+        doorHeight,
+        doorCenter.x + face.outward.x * 0.02,
+        0,
+        doorCenter.z + face.outward.z * 0.02,
+        face.rotationY,
+      );
+      const pullLength = Math.min(0.55, doorHeight * 0.28);
+      const pull = new THREE.Mesh(new THREE.BoxGeometry(0.02, pullLength, 0.026), hardwareMaterial);
+      const pullAlong = face.meetingSign * (face.doorWidthIn * INCH / 2 - 1.25 * INCH);
+      const localX = { x: Math.cos(face.rotationY), z: -Math.sin(face.rotationY) };
+      pull.position.set(
+        doorCenter.x + localX.x * pullAlong + face.outward.x * (doorThickness / 2 + 0.02),
+        doorHeight * 0.12,
+        doorCenter.z + localX.z * pullAlong + face.outward.z * (doorThickness / 2 + 0.02),
+      );
+      pull.rotation.y = face.rotationY;
+      pull.userData = { cabinetHardware: true, cabinetPull: "door", baseAngleEndPull: face.id };
+      frontGroup.add(pull);
+    }
 			  } else if (specialty.kind === "blind-corner") {
 				    const wallBlind = isWallBlindCornerCabinet(sku);
 				    const layout = threeDBlindCornerFrontLayout(
@@ -6480,7 +6606,7 @@ export function addCabinet(
     // The L corner is built from two overlapping carcass legs. Their individual
     // edge overlays expose the internal construction seam as a false line that
     // projects into the room. The two door frames remain the visible seam.
-    if (specialty.kind === "l-corner" || specialty.kind === "end-return") continue;
+    if (specialty.kind === "l-corner" || specialty.kind === "end-return" || specialty.kind === "base-angle-end") continue;
     const edges = new THREE.LineSegments(
       new THREE.EdgesGeometry(bodyMesh.geometry),
       new THREE.LineBasicMaterial({ color: "#332d25", transparent: true, opacity: 0.34 }),
@@ -6578,6 +6704,23 @@ export function addCabinet(
         endReturnCountertop: true,
         nonCornerEndReturnCountertop: true,
         diagramDefinedRearApexCountertop: true,
+      };
+      applyThreeDPlacementIdentity(counter, placementIdentity);
+      root.add(counter);
+    } else if (specialty.kind === "base-angle-end") {
+      const hand: BaseAngleEndHand = sku.swing === "left" ? "left" : "right";
+      const { plan, toFeet } = baseAngleEndFeet(widthIn, depthIn, hand);
+      const counter = new THREE.Mesh(
+        quarterOctagonExtrusion(plan.countertopVertices.map(toFeet), 1.5 * INCH),
+        counterMaterial,
+      );
+      counter.position.copy(cabinet.position);
+      counter.rotation.y = rotation;
+      counter.position.y = countertopCenterY;
+      counter.userData = {
+        baseAngleEndCountertop: true,
+        quarterOctagonCountertop: true,
+        countertopOverhangIn: 1.5,
       };
       applyThreeDPlacementIdentity(counter, placementIdentity);
       root.add(counter);

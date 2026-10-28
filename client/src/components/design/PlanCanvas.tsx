@@ -23,7 +23,8 @@ import {
 import { furniturePlanFrame } from "@/lib/design";
 import { CheckCircle2, Compass, Eye, EyeOff, Maximize2, Minus, PanelTop, Plus, RotateCw, X } from "lucide-react";
 import { useLanguage } from "@/contexts/LanguageContext";
-import { cabinetDrawingType, isSquareDoubleDoorBaseEnd } from "@/lib/cabinetGraphics";
+import { cabinetDrawingType } from "@/lib/cabinetGraphics";
+import { baseAngleEndClipPath, isBaseAngleEndCabinet, type BaseAngleEndHand } from "@/lib/baseAngleEndLayout";
 import { catalogFillerSuggestion, type CatalogFillerCandidate } from "@/lib/catalogFiller";
 import { angledWallTransitionFootprint } from "@/lib/angledWallFiller";
 import { islandCountertopVisibleRects, islandFaceCapacity, islandRaisedBarRects } from "@/lib/islandScene";
@@ -268,9 +269,9 @@ export function planCornerGeometry(cabinet: PlacedCabinet) {
   const drawingType = cabinetDrawingType({ ...cabinet, graphicType: cabinet.customProfile ?? null });
   const isEndAngle = drawingType === "end-angle";
   const isEndReturn = drawingType === "end-return";
-  // Older BEC24 placements can retain triangle/angled Config flags. The exact
-  // square end-of-run identity must not acquire a corner clip or 45° marker.
-  const isEndCabinet = isEndAngle || isEndReturn || isSquareDoubleDoorBaseEnd(cabinet);
+  // Older BEC24 placements can retain triangle/angled Config flags. The
+  // quarter-octagon end keeps its own clip and must not become a room corner.
+  const isEndCabinet = isEndAngle || isEndReturn || isBaseAngleEndCabinet(cabinet);
   const configuredCorner = isEndCabinet ? null : cabinet.cornerType ?? null;
   const sharedKind = placedCornerGeometryKind(cabinet);
   const isCorner = !isEndCabinet && (configuredCorner !== null || isCornerCabinet(cabinet.masterCode, cabinet.description));
@@ -292,6 +293,10 @@ export function planCabinetClipPath(cabinet: PlacedCabinet, room: RoomData): str
   // nearest room corner; the cabinet group's saved wall rotation handles that.
   if (isAngledWallCabinet(cabinet.masterCode, cabinet.description)) {
     return triangleCornerClipPath(0);
+  }
+  if (isBaseAngleEndCabinet(cabinet)) {
+    const hand: BaseAngleEndHand = cabinet.swing === "left" ? "left" : "right";
+    return baseAngleEndClipPath(hand);
   }
   const { isCorner, isTriangle, isDiagonal, isBlind, isConfiguredL } = planCornerGeometry(cabinet);
   const savedRotation = ((Math.round(cabinet.rotation) % 360) + 360) % 360;
