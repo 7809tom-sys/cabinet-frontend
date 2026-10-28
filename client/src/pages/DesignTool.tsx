@@ -126,7 +126,8 @@ import {
 import { buildRemoteDesignSessionUrl } from "@/lib/designShare";
 import { availableLs3612ShelfReplacementChoices, isUnpricedLs3612 } from "@/lib/ls3612Replacement";
 import { applyAutomaticSinkBaseSubstitutions, applyInventorySuggestion, sinkBaseNominalWidth, type InventorySuggestion } from "@/lib/inventoryAlternatives";
-import { readjustOutOfStockRun, stockPromptOrderNote, type StockPromptChoice } from "@/lib/stockPrompt";
+import { kitchenRuleNumber } from "@/lib/kitchenRuleParameters";
+import { suggestReadjustOptions, stockPromptOrderNote, type ReadjustOption, type StockPromptChoice } from "@/lib/stockPrompt";
 import { useDesignerInventory } from "@/lib/useDesignerInventory";
 import { InventoryDesignStockControl, InventoryStockBadge, OutOfStockChoiceDialog, SinkBaseSubstitutionNotice } from "@/components/design/InventoryStockNotice";
 import { unavailableSavedStyleIds } from "@/lib/unavailableSavedStyles";
@@ -3461,6 +3462,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const [stockPromptUnlocked, setStockPromptUnlocked] = useState<ReadonlySet<string>>(() => new Set());
   const [stockPromptMessage, setStockPromptMessage] = useState<string | null>(null);
   const [stockPromptHiddenChoices, setStockPromptHiddenChoices] = useState<readonly string[]>([]);
+  const [readjustOptions, setReadjustOptions] = useState<readonly ReadjustOption[]>([]);
   const stockPromptNotice = inventory.notices.find((notice) => notice.uid === stockPromptUid && notice.choicePrompt) ?? null;
   const pendingStockPromptKey = inventory.notices.filter((notice) => notice.choicePrompt).map((notice) => notice.uid).join("|");
   useEffect(() => {
@@ -3475,6 +3477,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     setStockPromptPhase("choose");
     setStockPromptMessage(null);
     setStockPromptHiddenChoices([]);
+    setReadjustOptions([]);
     setSelectedUid(next.uid);
   }, [inventory.notices, pendingStockPromptKey, setSelectedUid, stockPromptUid]);
   const finishStockPrompt = useCallback((uid: string) => {
@@ -3484,7 +3487,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   }, []);
   const chooseStockPrompt = useCallback((uid: string, choice: StockPromptChoice & { suggestion: InventorySuggestion | null }) => {
     if (choice.id === "readjust") {
-      const result = readjustOutOfStockRun({
+      const options = suggestReadjustOptions({
         placed: placedRef.current,
         uid,
         room: roomRef.current,
@@ -3495,22 +3498,21 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         distributorId: catalogDistributorScopeId,
         assumeUnlistedInStock: inventory.assumeUnlistedInStock,
       });
-      if (!result.ok) {
+      if (options.length === 0) {
         stockPromptDismissedRef.current.delete(uid);
         setStockPromptUid(uid);
         setStockPromptPhase("choose");
-        setStockPromptMessage(result.message);
+        setReadjustOptions([]);
+        setStockPromptMessage(`No fit within ${kitchenRuleNumber("jog_max_in")} inches. Choose a full-height door base or a drawer base.`);
         setStockPromptHiddenChoices(["readjust"]);
         setSelectedUid(uid);
         return;
       }
-      placedRef.current = result.placed;
-      setPlaced(result.placed);
-      setSelectedUid(uid);
-      finishStockPrompt(uid);
+      setReadjustOptions(options);
+      setStockPromptUid(uid);
+      setStockPromptPhase("readjust");
       setStockPromptMessage(null);
-      setStockPromptHiddenChoices([]);
-      toast.success(result.message);
+      setSelectedUid(uid);
       return;
     }
     if (!choice.suggestion) return;
@@ -3529,8 +3531,20 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     setPlaced(result.placed);
     if (result.selectedUid) setSelectedUid(result.selectedUid);
     finishStockPrompt(uid);
+    setReadjustOptions([]);
     toast.success(result.message);
   }, [catalogDistributorScopeId, finishStockPrompt, inventory.assumeUnlistedInStock, inventory.catalog, inventory.stock, openings, setPlaced, setSelectedUid, styleId]);
+  const applyReadjustOption = useCallback((optionId: string) => {
+    const option = readjustOptions.find((item) => item.id === optionId);
+    if (!option || !stockPromptUid) return;
+    placedRef.current = option.placed;
+    setPlaced(option.placed);
+    setSelectedUid(stockPromptUid);
+    finishStockPrompt(stockPromptUid);
+    setReadjustOptions([]);
+    setStockPromptMessage(null);
+    toast.success(option.detail);
+  }, [finishStockPrompt, readjustOptions, setPlaced, setSelectedUid, stockPromptUid]);
   const swapInventoryCabinet = useCallback((uid: string, suggestion: InventorySuggestion) => {
     const prompted = inventory.notices.find((notice) => notice.uid === uid && notice.choicePrompt);
     const noted = prompted && stockPromptUnlocked.has(uid)
@@ -14361,14 +14375,17 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         disabled={cabinetsLocked}
         onChoose={(choice) => { if (stockPromptNotice) chooseStockPrompt(stockPromptNotice.uid, choice); }}
         onSwap={(suggestion) => { if (stockPromptNotice) swapInventoryCabinet(stockPromptNotice.uid, suggestion); }}
-        onBack={() => setStockPromptPhase("choose")}
+        onBack={() => { setStockPromptPhase("choose"); setReadjustOptions([]); }}
         message={stockPromptMessage}
         hiddenChoiceIds={stockPromptHiddenChoices}
+        readjustOptions={readjustOptions}
+        onApplyReadjust={applyReadjustOption}
         onDismiss={() => {
           if (!stockPromptNotice) return;
           stockPromptDismissedRef.current.add(stockPromptNotice.uid);
           setStockPromptUid(null);
           setStockPromptPhase("choose");
+          setReadjustOptions([]);
         }}
       />
       {/* Toolbar */}

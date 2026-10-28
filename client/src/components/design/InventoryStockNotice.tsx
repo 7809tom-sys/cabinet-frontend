@@ -3,7 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import type { InventoryCabinetNotice, InventoryChoicePrompt, InventorySuggestion } from "@/lib/inventoryAlternatives";
-import type { StockPromptChoice } from "@/lib/stockPrompt";
+import type { ReadjustOption, StockPromptChoice } from "@/lib/stockPrompt";
 
 function suggestionLabel(suggestion: InventorySuggestion): string {
   if (suggestion.kind === "single") return suggestion.displayLabel ?? suggestion.candidate.masterCode;
@@ -121,6 +121,8 @@ export function OutOfStockChoiceDialog({
   onDismiss,
   message,
   hiddenChoiceIds,
+  readjustOptions,
+  onApplyReadjust,
 }: {
   notice: InventoryCabinetNotice | null;
   phase: "choose" | "readjust";
@@ -131,6 +133,8 @@ export function OutOfStockChoiceDialog({
   onDismiss: () => void;
   message?: string | null;
   hiddenChoiceIds?: readonly string[];
+  readjustOptions?: readonly ReadjustOption[];
+  onApplyReadjust?: (optionId: string) => void;
 }) {
   if (!notice?.choicePrompt) return null;
   const prompt = hiddenChoiceIds?.length
@@ -143,12 +147,29 @@ export function OutOfStockChoiceDialog({
           <h2 id="stock-prompt-title" className="text-base font-semibold text-[#1a2744]">{notice.masterCode} is out of stock</h2>
           <p className="mt-1 text-xs text-muted-foreground">
             {phase === "choose"
-              ? "Choose one option before anything in the plan changes. Readjust slides this run by at most the jog limit and refills the opening with in-stock cabinets."
-              : "Readjust this opening with an in-stock alternative. The run stays as drawn until you swap."}
+              ? "Choose one option before anything in the plan changes. Readjust can slide the run up to the jog limit or resize neighbors with in-stock cabinets of the same type."
+              : "Choose a readjustment. Nothing changes until you do."}
           </p>
         </div>
         {message ? <p role="alert" data-testid="stock-prompt-fallback" className="rounded-md border border-amber-300 bg-amber-50 px-2 py-1.5 text-xs text-amber-950">{message}</p> : null}
-        {phase === "choose" ? (
+        {phase === "readjust" && readjustOptions && readjustOptions.length > 0 ? (
+          <ul className="space-y-2" data-testid="readjust-options">
+            {readjustOptions.map((option) => (
+              <li key={option.id}>
+                <button
+                  type="button"
+                  disabled={disabled}
+                  data-testid={`readjust-option-${option.id}`}
+                  className="flex w-full flex-col items-start gap-0.5 rounded-md border border-[#1a2744]/20 bg-white px-2 py-2 text-left hover:bg-amber-50 disabled:opacity-50"
+                  onClick={() => onApplyReadjust?.(option.id)}
+                >
+                  <span className="font-mono text-xs font-semibold text-[#1a2744]">{option.label}</span>
+                  <span className="text-[11px] text-muted-foreground">{option.detail}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : phase === "choose" ? (
           <ChoiceButtons prompt={prompt} disabled={disabled} onChoose={onChoose} />
         ) : notice.suggestions.length === 0 ? (
           <p className="text-xs text-muted-foreground" data-testid="stock-prompt-no-alternatives">No in-stock alternative fits this opening. {notice.masterCode} stays where it is.</p>

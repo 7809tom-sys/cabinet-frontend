@@ -3,7 +3,7 @@ import { DEFAULT_ROOM, wallPlacementAt, type PlacedCabinet } from "./design";
 import { applyInventorySuggestion, designInventoryFromStock, type InventoryCatalogCandidate } from "./inventoryAlternatives";
 import { buildDesignCabinetCartLines } from "./designCartLines";
 import { resetKitchenRuleParameters, setKitchenRuleParameters, setKitchenRuleTextParameters } from "./kitchenRuleParameters";
-import { parseStockPrompts, readjustOutOfStockRun, stockPromptOrderNote } from "./stockPrompt";
+import { parseStockPrompts, readjustOutOfStockRun, suggestReadjustOptions, stockPromptOrderNote } from "./stockPrompt";
 import type { StockStatusResult } from "./inventoryProvider";
 
 const STYLE = 11;
@@ -250,6 +250,117 @@ describe("out-of-stock cabinet prompt", () => {
     } finally {
       resetKitchenRuleParameters();
     }
+  });
+
+  it("suggests B33 + B21 for a 54 inch B36 + B18 run and does not apply it", () => {
+    const seat = (masterCode: string, width: number, along: number, uid: string): PlacedCabinet => {
+      const spot = wallPlacementAt(along, width, 24, "top", DEFAULT_ROOM);
+      return { ...place(masterCode, width), ...spot, uid, width, wallId: spot.wallId ?? "top", wallOffset: spot.wallOffset ?? along };
+    };
+    const wide = seat("B36", 36, 0, "wide");
+    const out = seat("B18", 18, 36, "out");
+    const run = [wide, out];
+    const fillCatalog = [
+      item({ id: 33, masterCode: "B33", width: 33, description: "33 inch base cabinet", numberOfDoors: 2, numberOfDrawers: 0 }),
+      item({ id: 21, masterCode: "B21", width: 21, description: "21 inch base cabinet", numberOfDoors: 1, numberOfDrawers: 0 }),
+      item({ id: 30, masterCode: "B30", width: 30, description: "30 inch base cabinet", numberOfDoors: 2, numberOfDrawers: 0 }),
+      item({ id: 24, masterCode: "B24", width: 24, description: "24 inch base cabinet", numberOfDoors: 2, numberOfDrawers: 0 }),
+      item({ id: 27, masterCode: "B27", width: 27, description: "27 inch base cabinet", numberOfDoors: 2, numberOfDrawers: 0 }),
+      item({ id: 133, masterCode: "DB33", width: 33, description: "33 inch drawer base", numberOfDoors: 0, numberOfDrawers: 3 }),
+    ];
+    const options = suggestReadjustOptions({
+      placed: run,
+      uid: out.uid,
+      room: DEFAULT_ROOM,
+      catalog: fillCatalog,
+      stock: stock([
+        ["B18", "out_of_stock"],
+        ["B36", "in_stock"],
+        ["B33", "in_stock"],
+        ["B21", "in_stock"],
+        ["B30", "in_stock"],
+        ["B24", "in_stock"],
+        ["B27", "in_stock"],
+        ["DB33", "in_stock"],
+      ]),
+      designStyleId: STYLE,
+      distributorId: VENDOR,
+      assumeUnlistedInStock: false,
+    });
+    expect(options.length).toBeGreaterThan(0);
+    expect(options.length).toBeLessThanOrEqual(3);
+    expect(options[0]?.label).toBe("B33 + B21");
+    expect(options[0]?.detail).toContain("54");
+    expect(options[0]?.placed.map((cabinet) => cabinet.masterCode)).toEqual(["B33", "B21"]);
+    expect(options[0]?.placed.map((cabinet) => cabinet.wallOffset)).toEqual([0, 33]);
+    expect(options[0]?.placed.every((cabinet) => cabinet.fieldModificationNote === "out of B18, customer chose readjust the plan")).toBe(true);
+    expect(run.map((cabinet) => cabinet.masterCode)).toEqual(["B36", "B18"]);
+    expect(options.some((option) => option.label.startsWith("DB33"))).toBe(false);
+  });
+
+  it("keeps a drawer neighbor a drawer and does not resize a sink", () => {
+    const seat = (masterCode: string, width: number, along: number, uid: string): PlacedCabinet => {
+      const spot = wallPlacementAt(along, width, 24, "top", DEFAULT_ROOM);
+      return { ...place(masterCode, width), ...spot, uid, width, wallId: spot.wallId ?? "top", wallOffset: spot.wallOffset ?? along };
+    };
+    const drawer = { ...seat("DB36", 36, 0, "drawer"), numberOfDoors: 0, numberOfDrawers: 3, description: "36 inch drawer base" };
+    const out = seat("B18", 18, 36, "out");
+    const drawerOptions = suggestReadjustOptions({
+      placed: [drawer, out],
+      uid: out.uid,
+      room: DEFAULT_ROOM,
+      catalog: [
+        item({ id: 33, masterCode: "B33", width: 33, description: "33 inch base cabinet", numberOfDoors: 2, numberOfDrawers: 0 }),
+        item({ id: 21, masterCode: "B21", width: 21, description: "21 inch base cabinet", numberOfDoors: 1, numberOfDrawers: 0 }),
+        item({ id: 233, masterCode: "DB33", width: 33, description: "33 inch drawer base", numberOfDoors: 0, numberOfDrawers: 3 }),
+      ],
+      stock: stock([["B18", "out_of_stock"], ["B33", "in_stock"], ["B21", "in_stock"], ["DB33", "in_stock"]]),
+      designStyleId: STYLE,
+      distributorId: VENDOR,
+      assumeUnlistedInStock: false,
+    });
+    expect(drawerOptions.some((option) => option.label === "DB33 + B21")).toBe(true);
+    expect(drawerOptions.some((option) => option.label === "B33 + B21")).toBe(false);
+
+    const sink = { ...seat("SB36", 36, 0, "sink"), description: "36 inch sink base", subCategory: "Sink Base" };
+    const sinkOptions = suggestReadjustOptions({
+      placed: [sink, out],
+      uid: out.uid,
+      room: DEFAULT_ROOM,
+      catalog: [
+        item({ id: 30, masterCode: "B30", width: 30, description: "30 inch base cabinet", numberOfDoors: 2, numberOfDrawers: 0 }),
+        item({ id: 24, masterCode: "B24", width: 24, description: "24 inch base cabinet", numberOfDoors: 2, numberOfDrawers: 0 }),
+      ],
+      stock: stock([["B18", "out_of_stock"], ["B30", "in_stock"], ["B24", "in_stock"], ["SB36", "in_stock"]]),
+      designStyleId: STYLE,
+      distributorId: VENDOR,
+      assumeUnlistedInStock: false,
+    });
+    expect(sinkOptions.some((option) => option.placed.some((cabinet) => cabinet.masterCode === "B30" || cabinet.masterCode === "B24"))).toBe(false);
+  });
+
+  it("resizes an out-of-stock wall cabinet with wall cabinets of the same style", () => {
+    const seat = (masterCode: string, width: number, along: number, uid: string): PlacedCabinet => {
+      const spot = wallPlacementAt(along, width, 12, "top", DEFAULT_ROOM);
+      return { ...place(masterCode, width), ...spot, uid, width, depth: 12, height: 30, placement: "wall", wallId: spot.wallId ?? "top", wallOffset: spot.wallOffset ?? along, numberOfDoors: 2, numberOfDrawers: 0 };
+    };
+    const wide = seat("W3630", 36, 0, "wide");
+    const out = seat("W1830", 18, 36, "out");
+    const options = suggestReadjustOptions({
+      placed: [wide, out],
+      uid: out.uid,
+      room: DEFAULT_ROOM,
+      catalog: [
+        item({ id: 333, masterCode: "W3330", width: 33, height: 30, depth: 12, placement: "wall", description: "33 inch wall cabinet", numberOfDoors: 2, numberOfDrawers: 0 }),
+        item({ id: 213, masterCode: "W2130", width: 21, height: 30, depth: 12, placement: "wall", description: "21 inch wall cabinet", numberOfDoors: 2, numberOfDrawers: 0 }),
+      ],
+      stock: stock([["W1830", "out_of_stock"], ["W3330", "in_stock"], ["W2130", "in_stock"]]),
+      designStyleId: STYLE,
+      distributorId: VENDOR,
+      assumeUnlistedInStock: false,
+    });
+    expect(options[0]?.label).toBe("W3330 + W2130");
+    expect(options[0]?.placed.every((cabinet) => cabinet.placement === "wall")).toBe(true);
   });
 
   it("parses several cabinet prompts and drops unknown options", () => {

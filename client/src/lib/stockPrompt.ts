@@ -9,6 +9,7 @@
  */
 import { kitchenRuleNumber, kitchenRuleText } from "./kitchenRuleParameters";
 import { effectiveSmallGapFillerMaxIn } from "./smallGapFiller";
+import { reviewAfterShift } from "./kitchenAdjacency";
 import { RANGE_NEIGHBOR_MIN_WIDTH_IN } from "./autoDesignSeamFillers";
 import { inventoryStockKeys, normalizeInventorySku, type StockStatusResult } from "./inventoryProvider";
 import type { InventoryCatalogCandidate } from "./inventoryAlternatives";
@@ -20,6 +21,7 @@ import {
   isCornerCabinet,
   isFillerItem,
   isRangeOrOven,
+  isSinkBaseCabinet,
   makeUid,
   wallLength,
   wallPlacementAt,
@@ -276,9 +278,8 @@ function spanOf(item: PlacedCabinet, side: WallSide, room: RoomData): { start: n
 function canSlideOnRun(item: PlacedCabinet): boolean {
   if (item.placement === "appliance" || item.placement === "tall") return false;
   if (isFillerItem(item)) return true;
-  if (item.placement !== "base") return false;
   if (isCornerCabinet(item.masterCode, item.description ?? undefined)) return false;
-  return true;
+  return item.placement === "base" || item.placement === "wall";
 }
 
 function fillerUsable(candidate: InventoryCatalogCandidate, index: Map<string, StockStatusResult>): boolean {
@@ -538,4 +539,216 @@ export function readjustOutOfStockRun(input: {
   }
   const shown = Number.isInteger(limit) ? String(limit) : String(roundEighth(limit));
   return fail(`No fit within ${shown} inches. Choose a full-height door base or a drawer base.`);
+}
+
+export type ReadjustOption = {
+  id: string;
+  label: string;
+  detail: string;
+  changedCount: number;
+  shiftIn: number;
+  placed: PlacedCabinet[];
+};
+
+type RunFamily = "door" | "drawer" | "wall" | "fixed";
+
+function runFamily(item: {
+  masterCode?: string | null;
+  description?: string | null;
+  subCategory?: string | null;
+  placement?: string | null;
+  numberOfDoors?: number | null;
+  numberOfDrawers?: number | null;
+}): RunFamily {
+  if (item.placement === "appliance" || item.placement === "tall") return "fixed";
+  if (isFillerItem(item) || isCornerCabinet(item.masterCode, item.description ?? undefined) || isSinkBaseCabinet(item)) return "fixed";
+  const code = compactCabinetCode(item.masterCode ?? "");
+  if (/^(?:\d+)?DB\d/.test(code) || ((item.numberOfDrawers ?? 0) > 0 && (item.numberOfDoors ?? 0) === 0)) return "drawer";
+  if (item.placement === "wall") return "wall";
+  if (item.placement === "base") return "door";
+  return "fixed";
+}
+
+function planBreaksRules(before: readonly PlacedCabinet[], after: readonly PlacedCabinet[], room: RoomData, openings: readonly WallOpening[]): boolean {
+  const beforeRules = new Set(reviewAfterShift({ placed: before, room, openings }).findings.filter((finding) => finding.severity === "attention").map((finding) => finding.ruleId));
+  return reviewAfterShift({ placed: after, room, openings }).findings.some((finding) => finding.severity === "attention" && !beforeRules.has(finding.ruleId));
+}
+
+/**
+ * Up to three ways to refill an out-of-stock base or wall cabinet. One may
+ * slide the run by at most the shared jog. The others swap in-stock cabinets
+ * of the same type so the touched span stays the same width. Nothing here
+ * changes the plan the caller passed in.
+ */
+export function suggestReadjustOptions(input: {
+  placed: readonly PlacedCabinet[];
+  uid: string;
+  room: RoomData;
+  openings?: readonly WallOpening[];
+  catalog: readonly InventoryCatalogCandidate[];
+  stock: readonly StockStatusResult[];
+  designStyleId: number | null;
+  distributorId: number | null;
+  assumeUnlistedInStock?: boolean;
+  shiftLimitIn?: number;
+}): ReadjustOption[] {
+  const target = input.placed.find((item) => item.uid === input.uid);
+  if (!target) return [];
+  const side = cabinetWall(target, input.room);
+  if (!side) return [];
+  const wall = side as WallSide;
+  const limit = input.shiftLimitIn ?? kitchenRuleNumber("jog_max_in");
+  const openings = input.openings ?? [];
+  const note = stockPromptOrderNote(target.masterCode, "readjust the plan");
+  const index = new Map(input.stock.map((row) => [normalizeInventorySku(row.sku), row]));
+  const assume = input.assumeUnlistedInStock === true;
+  const options: Array<ReadjustOption & { widthDelta: number }> = [];
+  const seen = new Set<string>();
+  const remember = (option: ReadjustOption & { widthDelta: number }) => {
+    const signature = option.placed
+      .filter((item) => cabinetWall(item, input.room) === wall && (item.placement === target.placement || isFillerItem(item)))
+      .map((item) => `${item.masterCode}@${roundEighth(spanOf(item, wall, input.room).start)}`)
+      .join("|");
+    if (seen.has(signature)) return;
+    seen.add(signature);
+    options.push(option);
+  };
+
+  const shifted = readjustOutOfStockRun(input);
+  if (shifted.ok) {
+    const names = shifted.placed.filter((item) => item.fieldModificationNote === note).map((item) => item.masterCode);
+    remember({
+      id: `shift-${shifted.shiftIn}-${names.join("-")}`,
+      label: names.join(" + ") || target.masterCode,
+      detail: shifted.message,
+      changedCount: Math.max(1, names.length),
+      shiftIn: shifted.shiftIn,
+      widthDelta: shifted.shiftIn,
+      placed: shifted.placed,
+    });
+  }
+
+  const run = input.placed
+    .filter((item) => cabinetWall(item, input.room) === wall && item.placement === target.placement && !isFillerItem(item))
+    .map((item) => ({ item, span: spanOf(item, wall, input.room) }))
+    .sort((left, right) => left.span.start - right.span.start);
+  const targetIndex = run.findIndex((entry) => entry.item.uid === target.uid);
+  if (targetIndex < 0) return options.slice(0, 3);
+  const stocked = input.catalog.filter((candidate) => (
+    candidate.placement === target.placement
+    && (input.designStyleId == null || candidate.styleId === input.designStyleId)
+    && (input.distributorId == null || candidate.distributorId === input.distributorId)
+    && !isFillerItem(candidate)
+    && runFamily(candidate) !== "fixed"
+    && inStock(candidate, index, assume)
+  ));
+  const byFamily = new Map<RunFamily, InventoryCatalogCandidate[]>();
+  for (const candidate of stocked) {
+    const family = runFamily(candidate);
+    const list = byFamily.get(family) ?? [];
+    if (!list.some((item) => item.id === candidate.id && item.masterCode === candidate.masterCode)) list.push(candidate);
+    byFamily.set(family, list);
+  }
+
+  const takeSide = (from: number, direction: -1 | 1, count: number) => {
+    const slots: typeof run = [];
+    for (let step = 1; step <= count; step += 1) {
+      const entry = run[from + direction * step];
+      if (!entry) break;
+      const previous = slots[slots.length - 1] ?? run[from];
+      const gap = direction === -1 ? previous.span.start - entry.span.end : entry.span.start - previous.span.end;
+      if (gap > 0.25) break;
+      slots.push(entry);
+    }
+    return direction === -1 ? slots.reverse() : slots;
+  };
+
+  for (let leftCount = 0; leftCount <= 2; leftCount += 1) {
+    for (let rightCount = 0; rightCount <= 2; rightCount += 1) {
+      const slots = [...takeSide(targetIndex, -1, leftCount), run[targetIndex]!, ...takeSide(targetIndex, 1, rightCount)];
+      if (slots.length !== leftCount + rightCount + 1) continue;
+      const width = roundEighth(slots[slots.length - 1]!.span.end - slots[0]!.span.start);
+      const families = slots.map((slot) => runFamily(slot.item));
+      if (families.every((family) => family === "fixed")) continue;
+      const chosen: InventoryCatalogCandidate[] = [];
+      const visit = (slotIndex: number, remaining: number) => {
+        if (slotIndex === slots.length) {
+          if (Math.abs(remaining) > 0.05) return;
+          let cursor = slots[0]!.span.start;
+          let widthDelta = 0;
+          let changedCount = 0;
+          let fixedShift = 0;
+          const pieces: PlacedCabinet[] = [];
+          for (let index = 0; index < slots.length; index += 1) {
+            const slot = slots[index]!.item;
+            const candidate = chosen[index]!;
+            const piece = pieceFromCandidate(slot, candidate, cursor, candidate.width, wall, input.room, note, slot.uid);
+            if (!piece) return;
+            if (families[index] === "fixed") {
+              fixedShift = Math.max(fixedShift, Math.abs(cursor - slots[index]!.span.start));
+              if (compactCabinetCode(candidate.masterCode) !== compactCabinetCode(slot.masterCode) || Math.abs(candidate.width - slot.width) > 0.05) return;
+            }
+            if (compactCabinetCode(candidate.masterCode) !== compactCabinetCode(slot.masterCode) || Math.abs(candidate.width - slot.width) > 0.05) changedCount += 1;
+            widthDelta += Math.abs(candidate.width - slot.width);
+            pieces.push(piece);
+            cursor = roundEighth(cursor + candidate.width);
+          }
+          if (fixedShift > limit + 0.05 || Math.abs(cursor - slots[slots.length - 1]!.span.end) > 0.05) return;
+          const replaced = new Set(slots.map((slot) => slot.item.uid));
+          const next = input.placed.flatMap((item) => {
+            if (!replaced.has(item.uid)) return [item];
+            if (item.uid !== slots[0]!.item.uid) return [];
+            return pieces;
+          });
+          if (pieces.some((piece) => !placementOk(piece, next.filter((other) => other.uid !== piece.uid), openings, wall, input.room))) return;
+          if (planBreaksRules(input.placed, next, input.room, openings)) return;
+          const names = pieces.map((piece) => piece.masterCode).join(" + ");
+          remember({
+            id: `resize-${pieces.map((piece) => piece.masterCode).join("-")}`,
+            label: names,
+            detail: `Replaces ${slots.map((slot) => slot.item.masterCode).join(" + ")}. The run stays ${width} inches.`,
+            changedCount,
+            shiftIn: 0,
+            widthDelta,
+            placed: next,
+          });
+          return;
+        }
+        const family = families[slotIndex]!;
+        if (family === "fixed") {
+          const current = slots[slotIndex]!.item;
+          const standIn = {
+            id: current.cabinetId,
+            masterCode: current.masterCode,
+            description: current.description,
+            width: current.width,
+            height: current.height ?? 34.5,
+            depth: current.depth,
+            placement: current.placement,
+            styleId: current.styleId ?? input.designStyleId ?? 0,
+            distributorId: input.distributorId ?? 0,
+            numberOfDoors: current.numberOfDoors,
+            numberOfDrawers: current.numberOfDrawers,
+            subCategory: current.subCategory,
+            category: current.category,
+          } satisfies InventoryCatalogCandidate;
+          if (standIn.width > remaining + 0.05) return;
+          chosen[slotIndex] = standIn;
+          visit(slotIndex + 1, roundEighth(remaining - standIn.width));
+          return;
+        }
+        for (const candidate of byFamily.get(family) ?? []) {
+          if (candidate.width > remaining + 0.05) continue;
+          chosen[slotIndex] = candidate;
+          visit(slotIndex + 1, roundEighth(remaining - candidate.width));
+        }
+      };
+      visit(0, width);
+    }
+  }
+
+  return options
+    .sort((left, right) => left.changedCount - right.changedCount || left.shiftIn - right.shiftIn || left.widthDelta - right.widthDelta || left.label.localeCompare(right.label))
+    .slice(0, 3)
+    .map(({ widthDelta: _widthDelta, ...option }) => option);
 }

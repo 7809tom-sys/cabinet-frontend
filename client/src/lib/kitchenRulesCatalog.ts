@@ -302,7 +302,7 @@ const ownerSeeds: KitchenRuleSeed[] = [
     sourceText: "Owner",
     implementationStatus: "implemented",
     readsParameters: true,
-    notesText: "stock_prompts lists SKU:option,option entries separated by semicolons. Options are full-height, drawer, and readjust. Example for a second cabinet: B18:full-height,drawer,readjust;B24:full-height,drawer,readjust. Readjust uses jog_max_in, the same 3 inch jog as appliances and sinks, and filler_gap_max_in for fillers. If nothing fits, the customer is sent back to the full-height and drawer choices. Set stock_prompt_enabled to 0 to skip the question. Order note: out of B18, customer chose <option>.",
+    notesText: "stock_prompts lists SKU:option,option entries separated by semicolons. Options are full-height, drawer, and readjust. Example for a second cabinet: B18:full-height,drawer,readjust;W3012:readjust. Readjust offers up to three in-stock plans for any base or wall cabinet: slide the run by at most jog_max_in, or resize one or two neighbors on each side so the span stays the same width and the cabinet type stays the same. Sinks, corners, and appliances are not resized past that jog. Nothing is applied until the customer picks. If nothing fits, they go back to the other choices. Order note: out of B18, customer chose readjust the plan.",
   },
   {
     ruleCode: "owner-heavy-cook-landing",
