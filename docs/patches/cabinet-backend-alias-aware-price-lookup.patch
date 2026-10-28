@@ -1,0 +1,1726 @@
+diff --git a/server/conflictStatus.test.ts b/server/conflictStatus.test.ts
+index 3c59053..1eb9976 100644
+--- a/server/conflictStatus.test.ts
++++ b/server/conflictStatus.test.ts
+@@ -1,11 +1,13 @@
+ import { describe, it, expect } from "vitest";
+-import { and, eq, ne, or } from "drizzle-orm";
++import { and, eq, ne, or, sql } from "drizzle-orm";
+ import { readFileSync } from "node:fs";
+ import { getDb, hasPositivePublishedCabinetPrice, isCanonicalCabinetMaster, notInConflict } from "./db";
++import { cabinetOrAliasGroupHasFlag } from "./lib/cabinetPriceResolver";
+ import { cabinets } from "../drizzle/schema";
+ import { PUBLIC_CATALOG_REVIEW_STATUS } from "../shared/cabinetConflictFlags";
+ 
+ const dbSource = readFileSync(new URL("./db.ts", import.meta.url), "utf8");
++const resolverSource = readFileSync(new URL("./lib/cabinetPriceResolver.ts", import.meta.url), "utf8");
+ 
+ // The conflict-status feature holds uncertain products in the admin back office
+ // and hides them from every public-facing query. The single source of truth for
+@@ -26,25 +28,30 @@ describe("notInConflict() predicate", () => {
+ 	  // The shared predicate must preserve the exact conflict gate alongside the
+ 	  // canonical-master rule, so ordinary live ('none') products still pass.
+ 	  // Public review flags use a different status and stay in the catalog.
+-	  expect(dbSource).toContain('ne(cabinets.conflictStatus, "conflict")');
++	  expect(dbSource).toContain("notInConflictSql()");
++	  expect(resolverSource).toContain('ne(cabinets.conflictStatus, "conflict")');
+ 	  expect(PUBLIC_CATALOG_REVIEW_STATUS).not.toBe("conflict");
+ 	  expect(dbSource).not.toContain(`ne(cabinets.conflictStatus, "${PUBLIC_CATALOG_REVIEW_STATUS}")`);
++	  expect(resolverSource).not.toContain(`ne(cabinets.conflictStatus, "${PUBLIC_CATALOG_REVIEW_STATUS}")`);
+ 	});
+ 
+ 	it("also excludes retired duplicate master codes through the canonical alias table", () => {
+ 	  expect(isCanonicalCabinetMaster()).toBeDefined();
+-	  expect(dbSource).toContain("sku_master_aliases canonical_sku_alias");
+-	  expect(dbSource).toContain("canonical_sku_alias.aliasCode");
+-	  expect(dbSource).toContain("canonical_sku_alias.conflictStatus = 'ok'");
+-	  expect(dbSource).toContain("isCanonicalCabinetMaster()");
++	  expect(dbSource).toContain("isCanonicalCabinetMasterSql()");
++	  expect(resolverSource).toContain("sku_master_aliases canonical_sku_alias");
++	  expect(resolverSource).toContain("canonical_sku_alias.aliasCode");
++	  expect(resolverSource).toContain("canonical_sku_alias.conflictStatus = 'ok'");
++	  expect(resolverSource).toContain("UPPER(TRIM(canonical_sku_alias.aliasCode)) <> UPPER(TRIM(canonical_sku_alias.masterCode))");
+ 	});
+ 
+ 	 it("suppresses an approved alias when its canonical master has a supplier source", () => {
+ 	   // A canonical item may legitimately remain in Cabinet Attention while it is
+ 	   // unverified or inactive. Its approved aliases must still resolve to that
+ 	   // supplier-backed master instead of appearing as false unlinked products.
+-	   expect(dbSource).toContain("FROM distributor_skus canonical_supplier_sku");
+-	   expect(dbSource).toContain("canonical_supplier_sku.cabinetId = canonical_cabinet.id");
++	   // A price that lives only on the alias cabinet counts as that source.
++	   expect(resolverSource).toContain("FROM distributor_skus canonical_supplier_sku");
++	   expect(resolverSource).toContain("canonical_supplier_sku.cabinetId = canonical_cabinet.id");
++	   expect(resolverSource).toContain("alias_group_price.cabinetId");
+ 	 });
+ 
+   it("keeps every positively priced canonical master visible in Catalog, Designer, and 2020", async () => {
+@@ -68,9 +75,9 @@ describe("notInConflict() predicate", () => {
+         isCanonicalCabinetMaster(),
+         hasPositivePublishedCabinetPrice(),
+         or(
+-          eq(cabinets.isActive, false),
+-          eq(cabinets.showInCatalog, false),
+-          eq(cabinets.showInDesigner, false),
++          sql`NOT ${cabinetOrAliasGroupHasFlag("isActive")}`,
++          sql`NOT ${cabinetOrAliasGroupHasFlag("showInCatalog")}`,
++          sql`NOT ${cabinetOrAliasGroupHasFlag("showInDesigner")}`,
+           eq(cabinets.showIn2020, false),
+         ),
+       ));
+diff --git a/server/db.ts b/server/db.ts
+index 0aef5a4..11c172e 100644
+--- a/server/db.ts
++++ b/server/db.ts
+@@ -7,73 +7,41 @@ import {
+   approvedVendorContactAccess,
+   approvedVendorMatchesDistributor,
+ } from "./lib/approvedVendorAccess";
++import {
++  hasPositivePublishedCabinetPriceSql,
++  isCanonicalCabinetMasterSql,
++  notInConflictSql,
++} from "./lib/cabinetPriceResolver";
+ import { isOwnerEmail, shouldPromoteOwnerToAdmin } from "./lib/ownerAdmin";
+ 
+ /**
+  * A retired duplicate keeps its historical database record, supplier price rows,
+  * and order references, but its master code must never be emitted as a second
+  * product when its alias mapping resolves to a canonical cabinet with a real
+- * supplier source. Configuration review may deliberately keep the canonical
+- * master inactive, but that must not surface a duplicate alias as falsely
+- * "No linked distributor" in Cabinet Attention. Checking the target cabinet
+- * (rather than only the source record) lets historic alias cycles coexist
+- * temporarily without hiding their live canonical record. The retired code
+- * remains discoverable through the canonical cabinet's alias map.
++ * supplier source. The source may sit on the master or on an approved alias
++ * code. A self-alias never retires the cabinet. See cabinetPriceResolver.
+  */
+ export function isCanonicalCabinetMaster() {
+-  return sql`NOT EXISTS (
+-      SELECT 1
+-      FROM sku_master_aliases canonical_sku_alias
+-      INNER JOIN cabinets canonical_cabinet
+-        ON canonical_cabinet.masterCode = canonical_sku_alias.masterCode
+-      WHERE canonical_sku_alias.aliasCode = ${cabinets.masterCode}
+-        AND canonical_sku_alias.conflictStatus = 'ok'
+-        -- A canonical code may be deliberately retained as its own search
+-        -- alias (for example B15 → B15). That preserves lookup history but
+-        -- must never retire the canonical cabinet from public detail routes.
+-        AND canonical_cabinet.id <> ${cabinets.id}
+-        AND (
+-          canonical_cabinet.isActive = true
+-          OR canonical_cabinet.showInCatalog = true
+-          OR canonical_cabinet.showInDesigner = true
+-          OR EXISTS (
+-            SELECT 1
+-            FROM distributor_skus canonical_supplier_sku
+-            WHERE canonical_supplier_sku.cabinetId = canonical_cabinet.id
+-          )
+-        )
+-    )`;
++  return isCanonicalCabinetMasterSql();
+ }
+ 
+ /**
+  * A customer-facing cabinet must have at least one live supplier source with a
+- * positive list price or a positive cost from which the controlled price ladder
+- * can derive a sell price. This keeps incomplete imported records visible to
+- * administrators, but prevents $0.00 products from reaching Catalog, Designer,
+- * cart, or invoices.
++ * positive list price or a positive cost, on its own cabinet row or on any
++ * approved alias cabinet in the same code group. See cabinetPriceResolver.
+  */
+ export function hasPositivePublishedCabinetPrice() {
+-  return sql`EXISTS (
+-    SELECT 1
+-    FROM distributor_skus sellable_price
+-    WHERE sellable_price.cabinetId = \`cabinets\`.\`id\`
+-      AND sellable_price.isAvailable = true
+-      AND sellable_price.isPublished = true
+-      AND (COALESCE(sellable_price.listPrice, 0) > 0 OR COALESCE(sellable_price.yourCost, 0) > 0)
+-  )`;
++  return hasPositivePublishedCabinetPriceSql();
+ }
+ 
+ // Shared public-catalog predicate: exclude inactive records, items held in admin
+ // "conflict", and retired duplicate masters from catalog, storefront, Designer,
+-// order, OCR, and price-shop queries. Each alias continues to resolve to its
+-// canonical active item.
++// order, OCR, and price-shop queries. Active and priced are alias-aware: a
++// master whose own flag is off stays visible when an alias member has it on,
++// and a price on either code counts. Each alias continues to resolve to its
++// canonical item.
+ export function notInConflict() {
+-  return and(
+-    eq(cabinets.isActive, true),
+-    ne(cabinets.conflictStatus, "conflict"),
+-    isCanonicalCabinetMaster(),
+-    hasPositivePublishedCabinetPrice(),
+-  );
++  return notInConflictSql();
+ }
+ 
+ let _db: ReturnType<typeof drizzle> | null = null;
+diff --git a/server/lib/cabinetPriceResolver.test.ts b/server/lib/cabinetPriceResolver.test.ts
+new file mode 100644
+index 0000000..433c655
+--- /dev/null
++++ b/server/lib/cabinetPriceResolver.test.ts
+@@ -0,0 +1,274 @@
++import { MySqlDialect } from "drizzle-orm/mysql-core/dialect";
++import { describe, expect, it } from "vitest";
++import { resolveCanonicalCatalogSources } from "./canonicalCatalogSources";
++import {
++  aliasBackedDesignerListSql,
++  buildCabinetGroupIndex,
++  cabinetOrAliasGroupHasFlag,
++  followApprovedAliasChain,
++  hasPositivePublishedCabinetPriceSql,
++  hasPositivePublishedPrice,
++  isCanonicalCabinetMasterSql,
++  placementFromIdentity,
++  resolveCabinetCodeGroup,
++  resolveCabinetPriceSources,
++  resolveDisplayedCabinetIdentity,
++  resolveGroupVisibility,
++  type CabinetPriceSourceRow,
++} from "./cabinetPriceResolver";
++
++const dialect = new MySqlDialect();
++
++const WINE_LINKS = [
++  { aliasCode: "LWR3015", masterCode: "WRC3015", conflictStatus: "ok" as const },
++  { aliasCode: "WRC3015", masterCode: "WRC3015", conflictStatus: "ok" as const },
++];
++const WINE_CABINETS = [
++  { id: 9360166, masterCode: "WRC3015" },
++  { id: 9390050, masterCode: "LWR3015" },
++];
++const WINE_ROUTES = [{ alias: "LWR3015", cabinetId: 9360166 }];
++
++function wineGroup() {
++  return resolveCabinetCodeGroup(
++    buildCabinetGroupIndex(WINE_LINKS, WINE_CABINETS, WINE_ROUTES),
++    9360166,
++  );
++}
++
++function row(partial: CabinetPriceSourceRow & { id: number }): CabinetPriceSourceRow & { id: number } {
++  return {
++    isAvailable: true,
++    isPublished: true,
++    yourCost: null,
++    ...partial,
++  };
++}
++
++describe("resolveCabinetCodeGroup", () => {
++  it("keeps LWR3015 as an alias of WRC3015 and ignores the self-alias", () => {
++    const group = wineGroup();
++    expect(group).toEqual({
++      masterCode: "WRC3015",
++      masterCabinetId: 9360166,
++      aliasCodes: ["LWR3015"],
++      cabinetIds: [9360166, 9390050],
++    });
++    const byAlias = resolveCabinetCodeGroup(
++      buildCabinetGroupIndex(WINE_LINKS, WINE_CABINETS, WINE_ROUTES),
++      "LWR3015",
++    );
++    expect(byAlias.masterCabinetId).toBe(9360166);
++  });
++
++  it("does not share prices across a true alias cycle", () => {
++    const index = buildCabinetGroupIndex(
++      [
++        { aliasCode: "A", masterCode: "B", conflictStatus: "ok" },
++        { aliasCode: "B", masterCode: "A", conflictStatus: "ok" },
++      ],
++      [
++        { id: 1, masterCode: "A" },
++        { id: 2, masterCode: "B" },
++      ],
++    );
++    const group = resolveCabinetCodeGroup(index, "A");
++    expect(group.aliasCodes).toEqual([]);
++    expect(group.cabinetIds).toEqual([1]);
++    const priced = resolveCabinetPriceSources(group, [
++      row({ id: 10, cabinetId: 2, styleId: 1, distributorId: 1, listPrice: "50" }),
++    ]);
++    expect(priced).toEqual([]);
++    expect(hasPositivePublishedPrice(priced)).toBe(false);
++  });
++});
++
++describe("resolveCabinetPriceSources", () => {
++  const group = wineGroup();
++
++  it("uses the alias cabinet when that is the only priced code", () => {
++    const alias = row({
++      id: 11,
++      cabinetId: 9390050,
++      styleId: 330007,
++      distributorId: 210001,
++      listPrice: "294.76",
++    });
++    const unpublishedMaster = row({
++      id: 12,
++      cabinetId: 9360166,
++      styleId: 330007,
++      distributorId: 210001,
++      listPrice: "10",
++      isPublished: false,
++    });
++    const priced = resolveCabinetPriceSources(group, [alias, unpublishedMaster], { styleId: 330007 });
++    expect(priced).toEqual([alias]);
++    expect(hasPositivePublishedPrice(priced)).toBe(true);
++  });
++
++  it("uses the master cabinet when that is the only priced code", () => {
++    const master = row({
++      id: 21,
++      cabinetId: 9360166,
++      styleId: 330007,
++      distributorId: 210001,
++      listPrice: "280.00",
++    });
++    const zeroAlias = row({
++      id: 22,
++      cabinetId: 9390050,
++      styleId: 330007,
++      distributorId: 210001,
++      listPrice: "0",
++      yourCost: "0",
++    });
++    const priced = resolveCabinetPriceSources(group, [master, zeroAlias]);
++    expect(priced).toEqual([master]);
++  });
++
++  it("prefers the master row when both codes are priced for the same style and distributor", () => {
++    const master = row({
++      id: 31,
++      cabinetId: 9360166,
++      styleId: 330007,
++      distributorId: 210001,
++      listPrice: "310.00",
++    });
++    const alias = row({
++      id: 32,
++      cabinetId: 9390050,
++      styleId: 330007,
++      distributorId: 210001,
++      listPrice: "294.76",
++    });
++    const otherStyle = row({
++      id: 33,
++      cabinetId: 9390050,
++      styleId: 330011,
++      distributorId: 210001,
++      listPrice: "301.00",
++    });
++    const otherDistributor = row({
++      id: 34,
++      cabinetId: 9390050,
++      styleId: 390001,
++      distributorId: 180001,
++      listPrice: "250.00",
++    });
++    const priced = resolveCabinetPriceSources(group, [alias, master, otherStyle, otherDistributor]);
++    const ids = priced.map((source) => source.id).sort((a, b) => a - b);
++    expect(ids).toEqual([31, 33, 34]);
++  });
++});
++
++describe("alias chain cycles", () => {
++  it("treats a self-alias as a no-op so LWR3015 still resolves to WRC3015", () => {
++    const chain = followApprovedAliasChain("LWR3015", new Map([
++      ["LWR3015", "WRC3015"],
++      ["WRC3015", "WRC3015"],
++    ]));
++    expect(chain).toEqual({ canonicalKey: "WRC3015", encounteredCycle: false });
++
++    const resolved = resolveCanonicalCatalogSources(
++      [{ sourceMasterCode: "LWR3015", listPrice: "294.76" }],
++      WINE_LINKS,
++      [{ masterCode: "WRC3015", id: 9360166 }],
++    );
++    expect(resolved).toEqual([
++      expect.objectContaining({
++        master: expect.objectContaining({ id: 9360166, masterCode: "WRC3015" }),
++      }),
++    ]);
++  });
++
++  it("still quarantines a true cycle", () => {
++    const chain = followApprovedAliasChain("A", new Map([
++      ["A", "B"],
++      ["B", "C"],
++      ["C", "A"],
++    ]));
++    expect(chain.encounteredCycle).toBe(true);
++    expect(resolveCanonicalCatalogSources(
++      [{ sourceMasterCode: "A" }],
++      [
++        { aliasCode: "A", masterCode: "B" },
++        { aliasCode: "B", masterCode: "C" },
++        { aliasCode: "C", masterCode: "A" },
++      ],
++      [
++        { masterCode: "A", id: 1 },
++        { masterCode: "B", id: 2 },
++        { masterCode: "C", id: 3 },
++      ],
++    )).toEqual([]);
++  });
++});
++
++describe("Standard Wall with no subcategory", () => {
++  it("places the alias member's Standard Wall category on the wall list when the master has no category", () => {
++    expect(placementFromIdentity({ category: "Standard Wall", subCategory: null, placementType: null })).toBe("wall");
++    expect(placementFromIdentity({ category: "Standard Wall", subCategory: "", placementType: null })).toBe("wall");
++    const shown = resolveDisplayedCabinetIdentity(
++      { category: null, subCategory: null, placementType: null },
++      { category: "Standard Wall", subCategory: null, placementType: null },
++    );
++    expect(shown).toEqual({
++      category: "Standard Wall",
++      subCategory: null,
++      placementType: "wall",
++      placement: "wall",
++    });
++  });
++
++  it("does not let a blank subcategory replace a category the master already has", () => {
++    const shown = resolveDisplayedCabinetIdentity(
++      { category: "Wall", subCategory: null, placementType: null },
++      { category: "Standard Wall", subCategory: null, placementType: null },
++    );
++    expect(shown.category).toBe("Wall");
++    expect(shown.subCategory).toBeNull();
++    expect(shown.placement).toBe("wall");
++  });
++});
++
++describe("resolveGroupVisibility", () => {
++  it("reads flags from the master and falls back to a group member when the master is off", () => {
++    expect(resolveGroupVisibility(
++      { isActive: false, showInCatalog: false, showInDesigner: false, designerEligible: false },
++      [{ isActive: true, showInCatalog: true, showInDesigner: true, designerEligible: true }],
++    )).toEqual({
++      isActive: true,
++      showInCatalog: true,
++      showInDesigner: true,
++      designerEligible: true,
++    });
++    expect(resolveGroupVisibility(
++      { isActive: true, showInCatalog: true, showInDesigner: false, designerEligible: false },
++      [{ isActive: false, showInCatalog: false, showInDesigner: false, designerEligible: false }],
++    ).showInDesigner).toBe(false);
++  });
++});
++
++describe("sellable SQL", () => {
++  it("looks across alias codes and does not treat a self-alias as a different product", () => {
++    const price = dialect.sqlToQuery(hasPositivePublishedCabinetPriceSql());
++    expect(price.sql).toContain("sellable_price");
++    expect(price.sql).toContain("sku_master_aliases");
++    expect(price.sql).toContain("cabinet_aliases");
++    expect(price.sql).toContain("UPPER(TRIM(price_alias.aliasCode)) <> UPPER(TRIM(price_alias.masterCode))");
++
++    const canonical = dialect.sqlToQuery(isCanonicalCabinetMasterSql());
++    expect(canonical.sql).toContain("canonical_sku_alias");
++    expect(canonical.sql).toContain("canonical_supplier_sku");
++    expect(canonical.sql).toContain("UPPER(TRIM(canonical_sku_alias.aliasCode)) <> UPPER(TRIM(canonical_sku_alias.masterCode))");
++
++    const visible = dialect.sqlToQuery(cabinetOrAliasGroupHasFlag("designerEligible"));
++    expect(visible.sql).toContain("group_member.designerEligible = true");
++    expect(visible.sql).toContain("group_alias.aliasCode");
++
++    const designerList = dialect.sqlToQuery(aliasBackedDesignerListSql());
++    expect(designerList.sql).toContain("group_member.showInDesigner = true");
++    expect(designerList.sql).toContain("group_member.isActive = true");
++  });
++});
+diff --git a/server/lib/cabinetPriceResolver.ts b/server/lib/cabinetPriceResolver.ts
+new file mode 100644
+index 0000000..b861cf2
+--- /dev/null
++++ b/server/lib/cabinetPriceResolver.ts
+@@ -0,0 +1,709 @@
++/**
++ * Alias-aware cabinet price and sellable-source resolution.
++ *
++ * Owner rule: when looking up a cabinet's price, check the main SKU code and
++ * any alias codes. If a price exists under either code, that price is the
++ * truth. Resolve a SKU to its main code and every alias code, look up supplier
++ * prices across all of those cabinet rows, and return the price from whichever
++ * code has it. One module owns that rule so a future alias inherits it with
++ * no new call-site work.
++ *
++ * Alias rows stay as they are. This module never splits an alias into its own
++ * sellable code and never deletes or rewrites alias data.
++ *
++ * Which row wins when more than one code is priced:
++ *   the master cabinet's own row for that door style and distributor. An alias
++ *   row is used only when the master has no priced, published, available row
++ *   for that same style and distributor. A different style, or the same style
++ *   on a different distributor, is kept beside the master's row.
++ *
++ * Visibility (isActive, showInCatalog, showInDesigner, designerEligible) is
++ * read from the master. When the master has a flag off, any group member that
++ * has that flag on supplies it. The shopper still sees the master code.
++ * LWR3015 is the Cabinet Config record with Active and Show in Designer on
++ * while WRC3015 may have those flags off; the group still shows.
++ *
++ * A blank subcategory does not hide a cabinet. Category "Standard Wall" with
++ * no subcategory is a wall cabinet. When the master has no category and no
++ * placement, the alias member's category is used for the Designer wall list.
++ *
++ * Self-aliases (WRC3015 → WRC3015) are no-ops. They keep lookup history and
++ * are not hops and not cycles. A loop across two different codes stays
++ * quarantined: those codes do not share a price group, and catalog projection
++ * drops the source.
++ *
++ * Groups are directed `sku_master_aliases` rows with conflictStatus 'ok', plus
++ * `cabinet_aliases` routes (alias text → that cabinet's master code). This is
++ * not the undirected cabinet_code_equivalences graph and it does not read
++ * altSku cells.
++ *
++ * List endpoints must not call the loader once per cabinet. They use the SQL
++ * predicates below (`hasPositivePublishedCabinetPriceSql`,
++ * `isCanonicalCabinetMasterSql`, `cabinetOrAliasGroupHasFlag`) so one
++ * statement filters the page. `loadCabinetGroupIndex` is the batched read for
++ * a single cabinet or a caller that already needs every group.
++ */
++import { and, eq, inArray, ne, sql, type SQL } from "drizzle-orm";
++import { cabinetAliases, cabinets, distributorSkus, skuMasterAliases } from "../../drizzle/schema";
++
++/**
++ * Drizzle handle from getDb(). Structural and loose so this module does not
++ * import server/db.ts (db.ts imports the SQL helpers below).
++ */
++type Db = {
++  select: (...args: any[]) => any;
++};
++
++function listOf<T>(values: { forEach: (fn: (value: T) => void) => void }): T[] {
++  const out: T[] = [];
++  values.forEach((value) => out.push(value));
++  return out;
++}
++
++export type CabinetVisibilityFlag = "isActive" | "showInCatalog" | "showInDesigner" | "designerEligible";
++
++export type CabinetCodeGroup = {
++  masterCode: string;
++  masterCabinetId: number | null;
++  /** Other codes in the group. The master code and self-aliases are omitted. */
++  aliasCodes: string[];
++  /** Master cabinet id plus every alias cabinet id. */
++  cabinetIds: number[];
++};
++
++export type AliasLink = {
++  aliasCode: string | null;
++  masterCode: string | null;
++  conflictStatus?: string | null;
++};
++
++export type CabinetRef = {
++  id: number;
++  masterCode: string | null;
++};
++
++export type CabinetRouteAlias = {
++  alias: string | null;
++  cabinetId: number;
++};
++
++export type CabinetPriceSourceRow = {
++  cabinetId: number | null;
++  styleId?: number | null;
++  distributorId?: number | null;
++  listPrice?: string | number | null;
++  yourCost?: string | number | null;
++  isAvailable?: boolean | null;
++  isPublished?: boolean | null;
++};
++
++export type CabinetVisibility = {
++  isActive: boolean;
++  showInCatalog: boolean;
++  showInDesigner: boolean;
++  designerEligible: boolean;
++};
++
++export type CabinetGroupIndex = {
++  byCode: Map<string, CabinetCodeGroup>;
++  byCabinetId: Map<number, CabinetCodeGroup>;
++  cabinetsById: Map<number, CabinetRef>;
++  cabinetsByCode: Map<string, CabinetRef>;
++};
++
++const EMPTY_GROUP: CabinetCodeGroup = {
++  masterCode: "",
++  masterCabinetId: null,
++  aliasCodes: [],
++  cabinetIds: [],
++};
++
++export function codeKey(code: string | null | undefined): string {
++  return code?.trim().toUpperCase() ?? "";
++}
++
++/** Punctuation-only variants (B12 and B-12) share one identity key. */
++export function normalizedIdentityKey(code: string): string {
++  return codeKey(code).replace(/[\s_-]/g, "");
++}
++
++export function isSelfAlias(aliasCode: string | null | undefined, masterCode: string | null | undefined): boolean {
++  const alias = codeKey(aliasCode);
++  const master = codeKey(masterCode);
++  return Boolean(alias) && alias === master;
++}
++
++/**
++ * Walk alias → master. A code that points at itself stops the walk and is not
++ * a cycle. A loop of different codes is a cycle. A loop whose codes differ
++ * only by hyphen, space, or underscore is one nomenclature identity, matching
++ * the historical B12 ↔ B-12 rule, and is not quarantined.
++ */
++export function followApprovedAliasChain(
++  sourceKey: string,
++  aliasToMaster: ReadonlyMap<string, string>,
++): { canonicalKey: string; encounteredCycle: boolean } {
++  let canonicalKey = sourceKey;
++  const visited = new Set<string>();
++  while (true) {
++    visited.add(canonicalKey);
++    const next = aliasToMaster.get(canonicalKey);
++    if (!next || next === canonicalKey) {
++      return { canonicalKey, encounteredCycle: false };
++    }
++    if (visited.has(next)) {
++      const sourceIdentity = normalizedIdentityKey(sourceKey);
++      const punctuationOnly = listOf(visited).every(
++        (code) => normalizedIdentityKey(code) === sourceIdentity,
++      );
++      return {
++        canonicalKey: punctuationOnly ? sourceKey : canonicalKey,
++        encounteredCycle: !punctuationOnly,
++      };
++    }
++    canonicalKey = next;
++  }
++}
++
++function rememberSpelling(spellings: Map<string, string>, code: string | null | undefined): string {
++  const key = codeKey(code);
++  if (!key) return "";
++  if (!spellings.has(key)) spellings.set(key, code!.trim());
++  return key;
++}
++
++function singletonGroup(masterCode: string, masterCabinetId: number | null): CabinetCodeGroup {
++  return {
++    masterCode,
++    masterCabinetId,
++    aliasCodes: [],
++    cabinetIds: masterCabinetId == null ? [] : [masterCabinetId],
++  };
++}
++
++/**
++ * Build every directed alias group from already loaded rows. Safe to call for
++ * a whole alias table at once (list callers that need groups in memory).
++ * Cyclic codes stay in their own group so a true loop cannot share a price.
++ */
++export function buildCabinetGroupIndex(
++  links: readonly AliasLink[],
++  cabinetRows: readonly CabinetRef[],
++  routeLinks: readonly CabinetRouteAlias[] = [],
++): CabinetGroupIndex {
++  const spellings = new Map<string, string>();
++  const cabinetsById = new Map<number, CabinetRef>();
++  const cabinetsByCode = new Map<string, CabinetRef>();
++  for (const cabinet of cabinetRows) {
++    cabinetsById.set(cabinet.id, cabinet);
++    const key = rememberSpelling(spellings, cabinet.masterCode);
++    if (key && !cabinetsByCode.has(key)) cabinetsByCode.set(key, cabinet);
++  }
++
++  const parent = new Map<string, string>();
++  const addEdge = (aliasCode: string | null | undefined, masterCode: string | null | undefined) => {
++    const from = rememberSpelling(spellings, aliasCode);
++    const to = rememberSpelling(spellings, masterCode);
++    if (!from || !to || from === to) return;
++    if (!parent.has(from)) parent.set(from, to);
++  };
++  for (const link of links) {
++    if (link.conflictStatus != null && link.conflictStatus !== "ok") continue;
++    addEdge(link.aliasCode, link.masterCode);
++  }
++  for (const route of routeLinks) {
++    const target = cabinetsById.get(route.cabinetId);
++    addEdge(route.alias, target?.masterCode ?? null);
++  }
++
++  const rootOf = (code: string): { root: string; cyclic: boolean } => {
++    const seen = new Set<string>();
++    let cursor = code;
++    while (parent.has(cursor)) {
++      if (seen.has(cursor)) return { root: cursor, cyclic: true };
++      seen.add(cursor);
++      cursor = parent.get(cursor)!;
++      if (seen.size > 12) return { root: cursor, cyclic: true };
++    }
++    return { root: cursor, cyclic: false };
++  };
++
++  const membersByRoot = new Map<string, Set<string>>();
++  const cyclic = new Set<string>();
++  const codes = new Set<string>();
++  parent.forEach((to, from) => {
++    codes.add(from);
++    codes.add(to);
++  });
++  codes.forEach((code) => {
++    const { root, cyclic: loop } = rootOf(code);
++    if (loop) {
++      cyclic.add(code);
++      return;
++    }
++    const bucket = membersByRoot.get(root) ?? new Set<string>();
++    bucket.add(code);
++    bucket.add(root);
++    membersByRoot.set(root, bucket);
++  });
++
++  const byCode = new Map<string, CabinetCodeGroup>();
++  const byCabinetId = new Map<number, CabinetCodeGroup>();
++  const publish = (group: CabinetCodeGroup, keys: readonly string[]) => {
++    for (const key of keys) byCode.set(key, group);
++    for (const id of group.cabinetIds) byCabinetId.set(id, group);
++  };
++
++  membersByRoot.forEach((members, root) => {
++    const masterCabinet = chooseMasterCabinet(root, members, cabinetRows, routeLinks);
++    const aliasCodes = listOf(members).filter((key) => key !== root).map((key) => spellings.get(key) ?? key);
++    aliasCodes.sort((a, b) => a.localeCompare(b));
++    const group: CabinetCodeGroup = {
++      masterCode: spellings.get(root) ?? root,
++      masterCabinetId: masterCabinet?.id ?? null,
++      aliasCodes,
++      cabinetIds: cabinetIdsFor(members, cabinetRows, masterCabinet?.id ?? null),
++    };
++    publish(group, listOf(members));
++  });
++  cyclic.forEach((code) => {
++    const cabinet = cabinetsByCode.get(code) ?? null;
++    publish(singletonGroup(spellings.get(code) ?? code, cabinet?.id ?? null), [code]);
++  });
++
++  return { byCode, byCabinetId, cabinetsById, cabinetsByCode };
++}
++
++function chooseMasterCabinet(
++  root: string,
++  members: Set<string>,
++  cabinetRows: readonly CabinetRef[],
++  routeLinks: readonly CabinetRouteAlias[],
++): CabinetRef | null {
++  const matches = cabinetRows.filter((cabinet) => codeKey(cabinet.masterCode) === root);
++  const routed = routeLinks.find(
++    (route) => members.has(codeKey(route.alias)) && matches.some((cabinet) => cabinet.id === route.cabinetId),
++  );
++  if (routed) return matches.find((cabinet) => cabinet.id === routed.cabinetId) ?? null;
++  if (matches.length === 0) return null;
++  return matches.reduce((best, cabinet) => (cabinet.id < best.id ? cabinet : best));
++}
++
++function cabinetIdsFor(members: Set<string>, cabinetRows: readonly CabinetRef[], masterCabinetId: number | null): number[] {
++  const ids = new Set<number>();
++  if (masterCabinetId != null) ids.add(masterCabinetId);
++  for (const cabinet of cabinetRows) {
++    if (members.has(codeKey(cabinet.masterCode))) ids.add(cabinet.id);
++  }
++  return listOf(ids).sort((a, b) => a - b);
++}
++
++/** Resolve one code or cabinet id against a group index loaded in batch. */
++export function resolveCabinetCodeGroup(index: CabinetGroupIndex, key: string | number): CabinetCodeGroup {
++  if (typeof key === "number") {
++    return index.byCabinetId.get(key)
++      ?? singletonGroup(index.cabinetsById.get(key)?.masterCode ?? "", key);
++  }
++  const normalized = codeKey(key);
++  if (!normalized) return EMPTY_GROUP;
++  return index.byCode.get(normalized)
++    ?? singletonGroup(index.cabinetsByCode.get(normalized)?.masterCode ?? key.trim(), index.cabinetsByCode.get(normalized)?.id ?? null);
++}
++
++/**
++ * One read of the alias tables, then one cabinet read. Call this once per
++ * request, then `resolveCabinetCodeGroup` for each id. Do not call it inside
++ * a per-cabinet loop.
++ */
++export async function loadCabinetGroupIndex(db: Db): Promise<CabinetGroupIndex> {
++  const [aliasRows, routeRows] = await Promise.all([
++    db
++      .select({
++        aliasCode: skuMasterAliases.aliasCode,
++        masterCode: skuMasterAliases.masterCode,
++        conflictStatus: skuMasterAliases.conflictStatus,
++      })
++      .from(skuMasterAliases)
++      .where(eq(skuMasterAliases.conflictStatus, "ok")),
++    db
++      .select({
++        alias: cabinetAliases.alias,
++        cabinetId: cabinetAliases.cabinetId,
++        masterCode: cabinets.masterCode,
++      })
++      .from(cabinetAliases)
++      .innerJoin(cabinets, eq(cabinets.id, cabinetAliases.cabinetId))
++      .where(ne(cabinets.conflictStatus, "conflict")),
++  ]);
++
++  const codes = new Set<string>();
++  for (const row of aliasRows) {
++    if (row.aliasCode) codes.add(row.aliasCode);
++    if (row.masterCode) codes.add(row.masterCode);
++  }
++  for (const row of routeRows) {
++    if (row.alias) codes.add(row.alias);
++    if (row.masterCode) codes.add(row.masterCode);
++  }
++  const codeList = listOf(codes);
++  const loadedCabinets = codeList.length === 0
++    ? []
++    : await db
++      .select({ id: cabinets.id, masterCode: cabinets.masterCode })
++      .from(cabinets)
++      .where(inArray(cabinets.masterCode, codeList));
++  const cabinetRows: CabinetRef[] = [...loadedCabinets];
++  const known = new Map(cabinetRows.map((row) => [row.id, row]));
++  for (const route of routeRows) {
++    if (!known.has(route.cabinetId)) {
++      const row = { id: route.cabinetId, masterCode: route.masterCode };
++      known.set(row.id, row);
++      cabinetRows.push(row);
++    }
++  }
++  return buildCabinetGroupIndex(aliasRows, cabinetRows, routeRows);
++}
++
++export async function resolveCabinetCodeGroupFromDb(db: Db, key: string | number): Promise<CabinetCodeGroup> {
++  const index = await loadCabinetGroupIndex(db);
++  if (typeof key === "number" && !index.byCabinetId.has(key) && !index.cabinetsById.has(key)) {
++    const [cabinet] = await db
++      .select({ id: cabinets.id, masterCode: cabinets.masterCode })
++      .from(cabinets)
++      .where(eq(cabinets.id, key))
++      .limit(1);
++    if (cabinet) {
++      index.cabinetsById.set(cabinet.id, cabinet);
++      const normalized = codeKey(cabinet.masterCode);
++      if (normalized && !index.cabinetsByCode.has(normalized)) index.cabinetsByCode.set(normalized, cabinet);
++      return singletonGroup(cabinet.masterCode ?? "", cabinet.id);
++    }
++  }
++  if (typeof key === "string" && !index.byCode.has(codeKey(key))) {
++    const [cabinet] = await db
++      .select({ id: cabinets.id, masterCode: cabinets.masterCode })
++      .from(cabinets)
++      .where(eq(cabinets.masterCode, key.trim()))
++      .limit(1);
++    if (cabinet) return singletonGroup(cabinet.masterCode ?? key.trim(), cabinet.id);
++  }
++  return resolveCabinetCodeGroup(index, key);
++}
++
++export function isPositiveMoney(value: string | number | null | undefined): boolean {
++  const parsed = Number(value ?? 0);
++  return Number.isFinite(parsed) && parsed > 0;
++}
++
++/** Priced, published, and available. Omitted flags were already filtered by the caller. */
++export function isSellablePriceRow(row: CabinetPriceSourceRow): boolean {
++  if (row.isAvailable === false || row.isPublished === false) return false;
++  if (row.cabinetId == null) return false;
++  return isPositiveMoney(row.listPrice) || isPositiveMoney(row.yourCost);
++}
++
++export function hasPositivePublishedPrice(rows: readonly CabinetPriceSourceRow[]): boolean {
++  return rows.some(isSellablePriceRow);
++}
++
++/**
++ * Sellable distributor_skus rows for every cabinet in the group.
++ * Same style + distributor: the master cabinet's row wins. Style and
++ * distributor filters are optional.
++ */
++export function resolveCabinetPriceSources<T extends CabinetPriceSourceRow>(
++  group: CabinetCodeGroup,
++  rows: readonly T[],
++  options?: { styleId?: number; distributorId?: number },
++): T[] {
++  const ids = new Set(group.cabinetIds);
++  const filtered = rows.filter((row) => {
++    if (!isSellablePriceRow(row) || row.cabinetId == null || !ids.has(row.cabinetId)) return false;
++    if (options?.styleId != null && row.styleId !== options.styleId) return false;
++    if (options?.distributorId != null && row.distributorId !== options.distributorId) return false;
++    return true;
++  });
++  const masterId = group.masterCabinetId;
++  const byStyleAndDistributor = new Map<string, T[]>();
++  for (const row of filtered) {
++    const key = `${row.styleId ?? "*"}:${row.distributorId ?? "*"}`;
++    const bucket = byStyleAndDistributor.get(key) ?? [];
++    bucket.push(row);
++    byStyleAndDistributor.set(key, bucket);
++  }
++  const chosen: T[] = [];
++  byStyleAndDistributor.forEach((bucket) => {
++    const masterRows = masterId == null ? [] : bucket.filter((row) => row.cabinetId === masterId);
++    const kept = masterRows.length > 0 ? masterRows : bucket;
++    for (const row of kept) chosen.push(row);
++  });
++  return chosen;
++}
++
++/**
++ * Master's flag when it is on. When the master has the flag off, any group
++ * member that has it on supplies the flag. The displayed cabinet is still the
++ * master.
++ */
++export type CabinetCatalogIdentity = {
++  category: string | null;
++  subCategory: string | null;
++  placementType: string | null;
++};
++
++/**
++ * Wall / base / tall bucket from category and placement. A null or blank
++ * subcategory is ignored, so "Standard Wall" with no subcategory stays on
++ * the Designer wall list.
++ */
++export function placementFromIdentity(
++  row: { category?: string | null; subCategory?: string | null; placementType?: string | null },
++): "base" | "wall" | "tall" | null {
++  const placement = (row.placementType ?? "").trim().toLowerCase();
++  if (placement === "base" || placement === "wall" || placement === "tall") return placement;
++  if (placement.includes("wall")) return "wall";
++  if (placement.includes("tall") || placement.includes("pantry") || placement.includes("oven") || placement.includes("utility")) {
++    return "tall";
++  }
++  if (placement) return "base";
++  const category = (row.category ?? "").trim().toLowerCase();
++  if (!category) return null;
++  if (category.includes("wall")) return "wall";
++  if (category.includes("tall")) return "tall";
++  if (category.includes("base") || category.includes("vanity") || category === "corner") return "base";
++  return null;
++}
++
++/**
++ * Keep the master's category when it already places the cabinet. Otherwise
++ * use an alias member that does. An empty subcategory is copied through as
++ * empty; it is not a reason to drop the row.
++ */
++export function resolveDisplayedCabinetIdentity(
++  master: CabinetCatalogIdentity,
++  member: CabinetCatalogIdentity | null,
++): CabinetCatalogIdentity & { placement: "base" | "wall" | "tall" | null } {
++  const masterPlacement = placementFromIdentity(master);
++  if (masterPlacement) {
++    return {
++      category: master.category,
++      subCategory: master.subCategory ?? null,
++      placementType: master.placementType?.trim() ? master.placementType : masterPlacement,
++      placement: masterPlacement,
++    };
++  }
++  const memberPlacement = member ? placementFromIdentity(member) : null;
++  if (member && memberPlacement) {
++    return {
++      category: member.category,
++      subCategory: member.subCategory ?? null,
++      placementType: member.placementType?.trim() ? member.placementType : memberPlacement,
++      placement: memberPlacement,
++    };
++  }
++  return {
++    category: master.category,
++    subCategory: master.subCategory ?? null,
++    placementType: master.placementType,
++    placement: null,
++  };
++}
++
++/**
++ * 3D Designer list gate. A cabinet with no alias still needs its own
++ * designerEligible flag, because Show in Designer defaults on. A master whose
++ * flags are off is included when an alias member has Show in Designer on
++ * (LWR3015) or designerEligible on.
++ */
++export function aliasBackedDesignerListSql(): SQL {
++  return sql`(
++    ${cabinetOrAliasGroupHasFlag("designerEligible")}
++    OR EXISTS (
++      SELECT 1
++      FROM sku_master_aliases group_alias
++      INNER JOIN cabinets group_member
++        ON group_member.masterCode = group_alias.aliasCode
++      WHERE group_alias.conflictStatus = 'ok'
++        AND UPPER(TRIM(group_alias.aliasCode)) <> UPPER(TRIM(group_alias.masterCode))
++        AND group_alias.masterCode = ${cabinets.masterCode}
++        AND group_member.id <> ${cabinets.id}
++        AND group_member.conflictStatus <> 'conflict'
++        AND group_member.showInDesigner = true
++        AND group_member.isActive = true
++    )
++  )`;
++}
++
++export function resolveGroupVisibility(
++  master: CabinetVisibility | null,
++  members: readonly CabinetVisibility[],
++): CabinetVisibility {
++  const pick = (flag: CabinetVisibilityFlag) =>
++    Boolean(master?.[flag]) || members.some((member) => member[flag]);
++  return {
++    isActive: pick("isActive"),
++    showInCatalog: pick("showInCatalog"),
++    showInDesigner: pick("showInDesigner"),
++    designerEligible: pick("designerEligible"),
++  };
++}
++
++const VISIBILITY_COLUMN = {
++  isActive: cabinets.isActive,
++  showInCatalog: cabinets.showInCatalog,
++  showInDesigner: cabinets.showInDesigner,
++  designerEligible: cabinets.designerEligible,
++} as const;
++
++function memberHasFlagSql(flag: CabinetVisibilityFlag): SQL {
++  return sql`group_member.${sql.raw(flag)} = true`;
++}
++
++/**
++ * This cabinet's flag is on, or it is the master of an approved alias whose
++ * cabinet has the flag on (one hop, plus the grandchild hop used by format
++ * chains such as B-24 → B24 → BASE-24). Self-aliases do not count.
++ */
++export function cabinetOrAliasGroupHasFlag(flag: CabinetVisibilityFlag): SQL {
++  const column = VISIBILITY_COLUMN[flag];
++  const memberFlag = memberHasFlagSql(flag);
++  return sql`(
++    ${eq(column, true)}
++    OR EXISTS (
++      SELECT 1
++      FROM sku_master_aliases group_alias
++      INNER JOIN cabinets group_member
++        ON group_member.masterCode = group_alias.aliasCode
++      WHERE group_alias.conflictStatus = 'ok'
++        AND UPPER(TRIM(group_alias.aliasCode)) <> UPPER(TRIM(group_alias.masterCode))
++        AND group_alias.masterCode = ${cabinets.masterCode}
++        AND group_member.id <> ${cabinets.id}
++        AND group_member.conflictStatus <> 'conflict'
++        AND ${memberFlag}
++    )
++    OR EXISTS (
++      SELECT 1
++      FROM sku_master_aliases group_alias
++      INNER JOIN sku_master_aliases group_hop
++        ON group_hop.conflictStatus = 'ok'
++       AND UPPER(TRIM(group_hop.aliasCode)) <> UPPER(TRIM(group_hop.masterCode))
++       AND group_hop.masterCode = group_alias.aliasCode
++      INNER JOIN cabinets group_member
++        ON group_member.masterCode = group_hop.aliasCode
++      WHERE group_alias.conflictStatus = 'ok'
++        AND UPPER(TRIM(group_alias.aliasCode)) <> UPPER(TRIM(group_alias.masterCode))
++        AND group_alias.masterCode = ${cabinets.masterCode}
++        AND group_member.id <> ${cabinets.id}
++        AND group_member.conflictStatus <> 'conflict'
++        AND ${memberFlag}
++    )
++  )`;
++}
++
++/**
++ * True when this cabinet, an approved alias cabinet, or the cabinet an alias
++ * points at has a positive published available supplier row. Self-aliases are
++ * ignored. List queries use this instead of a per-cabinet lookup.
++ */
++export function hasPositivePublishedCabinetPriceSql(): SQL {
++  return sql`EXISTS (
++    SELECT 1
++    FROM distributor_skus sellable_price
++    INNER JOIN cabinets price_cabinet
++      ON price_cabinet.id = sellable_price.cabinetId
++    WHERE sellable_price.isAvailable = true
++      AND sellable_price.isPublished = true
++      AND (COALESCE(sellable_price.listPrice, 0) > 0 OR COALESCE(sellable_price.yourCost, 0) > 0)
++      AND price_cabinet.conflictStatus <> 'conflict'
++      AND (
++        price_cabinet.id = ${cabinets.id}
++        OR EXISTS (
++          SELECT 1
++          FROM sku_master_aliases price_alias
++          WHERE price_alias.conflictStatus = 'ok'
++            AND UPPER(TRIM(price_alias.aliasCode)) <> UPPER(TRIM(price_alias.masterCode))
++            AND (
++              (price_alias.masterCode = ${cabinets.masterCode} AND price_alias.aliasCode = price_cabinet.masterCode)
++              OR (price_alias.aliasCode = ${cabinets.masterCode} AND price_alias.masterCode = price_cabinet.masterCode)
++            )
++        )
++        OR EXISTS (
++          SELECT 1
++          FROM sku_master_aliases price_alias
++          INNER JOIN sku_master_aliases price_hop
++            ON price_hop.conflictStatus = 'ok'
++           AND UPPER(TRIM(price_hop.aliasCode)) <> UPPER(TRIM(price_hop.masterCode))
++           AND price_hop.aliasCode = price_cabinet.masterCode
++           AND price_hop.masterCode = price_alias.aliasCode
++          WHERE price_alias.conflictStatus = 'ok'
++            AND UPPER(TRIM(price_alias.aliasCode)) <> UPPER(TRIM(price_alias.masterCode))
++            AND price_alias.masterCode = ${cabinets.masterCode}
++        )
++        OR EXISTS (
++          SELECT 1
++          FROM cabinet_aliases route_alias
++          WHERE route_alias.cabinetId = ${cabinets.id}
++            AND route_alias.alias = price_cabinet.masterCode
++            AND UPPER(TRIM(route_alias.alias)) <> UPPER(TRIM(${cabinets.masterCode}))
++        )
++      )
++  )`;
++}
++
++/**
++ * Hide a duplicate alias cabinet when its approved master is a different,
++ * still-live product. A self-alias never retires the cabinet it names.
++ * A positive price on the alias cabinet also counts as the master's supplier
++ * source, so the alias is not published as a second product.
++ */
++export function isCanonicalCabinetMasterSql(): SQL {
++  return sql`NOT EXISTS (
++    SELECT 1
++    FROM sku_master_aliases canonical_sku_alias
++    INNER JOIN cabinets canonical_cabinet
++      ON canonical_cabinet.masterCode = canonical_sku_alias.masterCode
++    WHERE canonical_sku_alias.aliasCode = ${cabinets.masterCode}
++      AND canonical_sku_alias.conflictStatus = 'ok'
++      AND UPPER(TRIM(canonical_sku_alias.aliasCode)) <> UPPER(TRIM(canonical_sku_alias.masterCode))
++      AND canonical_cabinet.id <> ${cabinets.id}
++      AND (
++        canonical_cabinet.isActive = true
++        OR canonical_cabinet.showInCatalog = true
++        OR canonical_cabinet.showInDesigner = true
++        OR EXISTS (
++          SELECT 1
++          FROM distributor_skus canonical_supplier_sku
++          WHERE canonical_supplier_sku.cabinetId = canonical_cabinet.id
++        )
++        OR (
++          canonical_cabinet.conflictStatus <> 'conflict'
++          AND EXISTS (
++            SELECT 1
++            FROM distributor_skus alias_group_price
++            WHERE alias_group_price.cabinetId = ${cabinets.id}
++              AND alias_group_price.isAvailable = true
++              AND alias_group_price.isPublished = true
++              AND (COALESCE(alias_group_price.listPrice, 0) > 0 OR COALESCE(alias_group_price.yourCost, 0) > 0)
++          )
++        )
++      )
++  )`;
++}
++
++export function positivePublishedSkuSql(): SQL {
++  return sql`(
++    ${distributorSkus.isAvailable} = true
++    AND ${distributorSkus.isPublished} = true
++    AND (COALESCE(${distributorSkus.listPrice}, 0) > 0 OR COALESCE(${distributorSkus.yourCost}, 0) > 0)
++  )`;
++}
++
++/** Shared public-catalog predicate. Re-exported from server/db.ts as notInConflict(). */
++export function notInConflictSql(): SQL | undefined {
++  return and(
++    cabinetOrAliasGroupHasFlag("isActive"),
++    ne(cabinets.conflictStatus, "conflict"),
++    isCanonicalCabinetMasterSql(),
++    hasPositivePublishedCabinetPriceSql(),
++  );
++}
+diff --git a/server/lib/canonicalCatalogSources.test.ts b/server/lib/canonicalCatalogSources.test.ts
+index 48b1bc1..e0af9e8 100644
+--- a/server/lib/canonicalCatalogSources.test.ts
++++ b/server/lib/canonicalCatalogSources.test.ts
+@@ -64,6 +64,24 @@ describe("resolveCanonicalCatalogSources", () => {
+     ]);
+   });
+ 
++  it("keeps an alias chain when the master code also has a self-alias", () => {
++    const resolved = resolveCanonicalCatalogSources(
++      [{ sourceMasterCode: "LWR3015", listPrice: "294.76", supplierSku: "HS-LWR3015" }],
++      [
++        { aliasCode: "LWR3015", masterCode: "WRC3015" },
++        { aliasCode: "WRC3015", masterCode: "WRC3015" },
++      ],
++      [{ masterCode: "WRC3015", id: 9360166, description: "Wall wine rack" }],
++    );
++
++    expect(resolved).toEqual([
++      expect.objectContaining({
++        source: expect.objectContaining({ supplierSku: "HS-LWR3015", listPrice: "294.76" }),
++        master: expect.objectContaining({ id: 9360166, masterCode: "WRC3015" }),
++      }),
++    ]);
++  });
++
+   it("projects the BSDC6 supplier spelling onto the verified BSD6 product identity", () => {
+     const resolved = resolveCanonicalCatalogSources(
+       [{ sourceMasterCode: "BSDC6", supplierSku: "SE-BSDC6", listPrice: "412.61" }],
+diff --git a/server/lib/canonicalCatalogSources.ts b/server/lib/canonicalCatalogSources.ts
+index 712bb65..7b0aeff 100644
+--- a/server/lib/canonicalCatalogSources.ts
++++ b/server/lib/canonicalCatalogSources.ts
+@@ -4,10 +4,16 @@
+  * are never rewritten.  When a source code is an approved alias, storefront and
+  * Designer queries project that row onto its active canonical master instead.
+  *
++ * Chain walking lives in cabinetPriceResolver.followApprovedAliasChain. A
++ * self-alias (a code pointing at itself) is a no-op and is not a cycle. A loop
++ * across different codes stays quarantined.
++ *
+  * This preserves the catalog law:
+  *   canonical master = identity, dimensions, description, generic drawing
+  *   supplier row      = SKU, style/finish, price, availability, fulfillment
+  */
++import { followApprovedAliasChain } from "./cabinetPriceResolver";
++
+ export interface CanonicalSourceRow {
+   sourceMasterCode: string | null;
+ }
+@@ -25,11 +31,6 @@ function codeKey(code: string | null | undefined): string {
+   return code?.trim().toUpperCase() ?? "";
+ }
+ 
+-/** Hyphen/space/underscore variants are one nomenclature identity. */
+-function normalizedIdentityKey(code: string): string {
+-  return code.replace(/[\s_-]/g, "");
+-}
+-
+ /**
+  * Pair each positive, available supplier source row with the active canonical
+  * master it should describe. Rows without a valid eligible master are omitted;
+@@ -67,27 +68,10 @@ export function resolveCanonicalCatalogSources<
+     // correctly retired from public visibility. The visited set makes a bad
+     // circular mapping safe: it is quarantined rather than ever turned into a
+     // public product.
+-    let canonicalKey = sourceKey;
+-    const visited = new Set<string>();
+-    let encounteredCycle = false;
+-    while (true) {
+-      visited.add(canonicalKey);
+-      const next = canonicalCodeByAlias.get(canonicalKey);
+-      if (!next) break;
+-      if (visited.has(next)) {
+-        // B12 ↔ B-12 (and equivalent punctuation-only variants) are one
+-        // nomenclature identity, not a structural alias loop. Preserve the
+-        // valid active source master in that case. A loop across genuinely
+-        // different identity keys remains unsafe and is quarantined.
+-        const sourceIdentity = normalizedIdentityKey(sourceKey);
+-        encounteredCycle = !Array.from(visited).every(
+-          (code) => normalizedIdentityKey(code) === sourceIdentity,
+-        );
+-        if (!encounteredCycle) canonicalKey = sourceKey;
+-        break;
+-      }
+-      canonicalKey = next;
+-    }
++    // Self-aliases are no-ops inside followApprovedAliasChain, so an X → M
++    // chain is kept when M also points at itself. A real A → B → A loop is
++    // still quarantined.
++    const { canonicalKey, encounteredCycle } = followApprovedAliasChain(sourceKey, canonicalCodeByAlias);
+     const master = encounteredCycle
+       ? undefined
+       : masterByCode.get(canonicalKey) ?? masterByCode.get(sourceKey);
+diff --git a/server/lib/designerCabinetReadiness.test.ts b/server/lib/designerCabinetReadiness.test.ts
+index 0d4eb97..c903040 100644
+--- a/server/lib/designerCabinetReadiness.test.ts
++++ b/server/lib/designerCabinetReadiness.test.ts
+@@ -49,4 +49,32 @@ describe("designerCabinetReadinessBySku", () => {
+     expect(readiness.get(4)).toMatchObject({ isCompliant: false, reason: "positive source price is missing", canonicalMasterCode: "B-24" });
+     expect(readiness.get(5)).toMatchObject({ isCompliant: false, reason: "canonical cabinet is not eligible for the 3D Designer", canonicalMasterCode: "B-18" });
+   });
++
++  it("counts the master ready when the alias cabinet holds the Designer flags and the self-alias is present", () => {
++    const readiness = designerCabinetReadinessBySku(
++      [{
++        skuId: 9,
++        sourceMasterCode: "LWR3015",
++        isAvailable: true,
++        isPublished: true,
++        listPrice: "294.76",
++        yourCost: null,
++        sourceConflictStatus: "none",
++      }],
++      [
++        { aliasCode: "LWR3015", masterCode: "WRC3015" },
++        { aliasCode: "WRC3015", masterCode: "WRC3015" },
++      ],
++      [
++        { masterCode: "WRC3015", isActive: false, showInDesigner: false, designerEligible: false, conflictStatus: "none" },
++        { masterCode: "LWR3015", isActive: true, showInDesigner: true, designerEligible: false, conflictStatus: "none" },
++      ],
++    );
++
++    expect(readiness.get(9)).toEqual({
++      isCompliant: true,
++      reason: null,
++      canonicalMasterCode: "WRC3015",
++    });
++  });
+ });
+diff --git a/server/lib/designerCabinetReadiness.ts b/server/lib/designerCabinetReadiness.ts
+index 2b23114..3c00ae3 100644
+--- a/server/lib/designerCabinetReadiness.ts
++++ b/server/lib/designerCabinetReadiness.ts
+@@ -1,4 +1,5 @@
+ import { resolveCanonicalCatalogSources, type ApprovedMasterAlias } from "./canonicalCatalogSources";
++import { codeKey, followApprovedAliasChain, resolveGroupVisibility, type CabinetVisibility } from "./cabinetPriceResolver";
+ 
+ /**
+  * One source SKU feeds a cabinet selection only when it has an orderable supplier
+@@ -40,12 +41,77 @@ function positivePrice(value: string | number | null): boolean {
+  * approved legacy alias; the returned canonical code is the master the Designer
+  * would actually offer, never a guessed replacement.
+  */
++function visibilityFor(row: DesignerCabinetMasterRow): CabinetVisibility {
++  return {
++    isActive: row.isActive,
++    showInCatalog: false,
++    showInDesigner: row.showInDesigner,
++    designerEligible: row.designerEligible,
++  };
++}
++
++/**
++ * Master flags, with any alias cabinet's flags filling a flag the master has
++ * off. Computed once for the whole batch so a style count does not walk the
++ * alias table per SKU.
++ */
++function canonicalVisibility(
++  aliases: readonly ApprovedMasterAlias[],
++  masters: readonly DesignerCabinetMasterRow[],
++): (masterCode: string | null) => CabinetVisibility {
++  const links = new Map<string, string>();
++  for (const alias of aliases) {
++    const from = codeKey(alias.aliasCode);
++    const to = codeKey(alias.masterCode);
++    if (from && to) links.set(from, to);
++  }
++  const byCode = new Map<string, CabinetVisibility>();
++  for (const row of masters) {
++    const key = codeKey(row.masterCode);
++    if (!key) continue;
++    const flags = visibilityFor(row);
++    const previous = byCode.get(key);
++    byCode.set(key, previous ? {
++      isActive: previous.isActive || flags.isActive,
++      showInCatalog: previous.showInCatalog || flags.showInCatalog,
++      showInDesigner: previous.showInDesigner || flags.showInDesigner,
++      designerEligible: previous.designerEligible || flags.designerEligible,
++    } : flags);
++  }
++  const membersByRoot = new Map<string, CabinetVisibility[]>();
++  byCode.forEach((flags, code) => {
++    const followed = followApprovedAliasChain(code, links);
++    if (followed.encounteredCycle) return;
++    const root = codeKey(followed.canonicalKey);
++    if (!root || root === code) return;
++    const bucket = membersByRoot.get(root) ?? [];
++    bucket.push(flags);
++    membersByRoot.set(root, bucket);
++  });
++  const cache = new Map<string, CabinetVisibility>();
++  return (masterCode) => {
++    const key = codeKey(masterCode);
++    const cached = cache.get(key);
++    if (cached) return cached;
++    const members = membersByRoot.get(key) ?? [];
++    const resolved = resolveGroupVisibility(byCode.get(key) ?? null, members);
++    // Cabinet Config "Show in Designer" on an alias is the wall-list switch
++    // when nobody in the group has the separate designerEligible flag on.
++    if (!resolved.designerEligible && members.some((member) => member.showInDesigner)) {
++      resolved.designerEligible = true;
++    }
++    cache.set(key, resolved);
++    return resolved;
++  };
++}
++
+ export function designerCabinetReadinessBySku(
+   sources: readonly DesignerCabinetSourceRow[],
+   aliases: readonly ApprovedMasterAlias[],
+   masters: readonly DesignerCabinetMasterRow[],
+ ): Map<number, DesignerCabinetReadiness> {
+   const result = new Map<number, DesignerCabinetReadiness>();
++  const visibility = canonicalVisibility(aliases, masters);
+   const resolved = new Map(
+     resolveCanonicalCatalogSources(sources, aliases, masters)
+       .map(({ source, master }) => [source.skuId, master] as const),
+@@ -79,15 +145,16 @@ export function designerCabinetReadinessBySku(
+       result.set(source.skuId, { isCompliant: false, reason: "canonical cabinet identity is in conflict", canonicalMasterCode });
+       continue;
+     }
+-    if (!master.isActive) {
++    const flags = visibility(master.masterCode);
++    if (!flags.isActive) {
+       result.set(source.skuId, { isCompliant: false, reason: "canonical cabinet is inactive", canonicalMasterCode });
+       continue;
+     }
+-    if (!master.showInDesigner) {
++    if (!flags.showInDesigner) {
+       result.set(source.skuId, { isCompliant: false, reason: "canonical cabinet is not enabled for Designer", canonicalMasterCode });
+       continue;
+     }
+-    if (!master.designerEligible) {
++    if (!flags.designerEligible) {
+       result.set(source.skuId, { isCompliant: false, reason: "canonical cabinet is not eligible for the 3D Designer", canonicalMasterCode });
+       continue;
+     }
+diff --git a/server/routers/catalog.ts b/server/routers/catalog.ts
+index 30f851b..88f5e6b 100644
+--- a/server/routers/catalog.ts
++++ b/server/routers/catalog.ts
+@@ -52,6 +52,12 @@ import { orderCabinetsByAliasRank, rankLoadedCabinetSearch } from "../lib/cabine
+ import { aliasSearchOrder, exactCabinetAliasOwnerSql, orCabinetAliasMatch } from "../lib/cabinetAliasSearchSql";
+ import { priceLadder } from "@shared/pricing";
+ import { resolveCanonicalCatalogSources } from "../lib/canonicalCatalogSources";
++import {
++  cabinetOrAliasGroupHasFlag,
++  hasPositivePublishedPrice,
++  resolveCabinetCodeGroupFromDb,
++  resolveCabinetPriceSources,
++} from "../lib/cabinetPriceResolver";
+ import { designerCabinetReadinessBySku } from "../lib/designerCabinetReadiness";
+ import { landedCostFromList, landedCostMultiplier } from "../lib/distributorCostMultiplier";
+ import { loadAffiliateStorefrontPricing } from "../lib/affiliateStorefrontPricing";
+@@ -1246,8 +1252,8 @@ export const doorStylesRouter = router({
+           })
+           .from(cabinets)
+           .where(and(
+-            eq(cabinets.isActive, true),
+-            eq(cabinets.showInCatalog, true),
++            cabinetOrAliasGroupHasFlag("isActive"),
++            cabinetOrAliasGroupHasFlag("showInCatalog"),
+             ne(cabinets.conflictStatus, "conflict"),
+           )),
+       ]);
+@@ -1563,7 +1569,10 @@ export const cabinetsRouter = router({
+       const db = await getDb();
+       if (!db) return { items: [], total: 0 };
+ 
+-      const conditions = [eq(cabinets.isActive, true), notInConflict()];
++      // notInConflict() is alias-aware (cabinetPriceResolver): a price on the
++      // master or any alias code counts, and an off master flag falls back to
++      // a group member that has it on. The shopper still sees the master code.
++      const conditions = [notInConflict()];
+       if (input?.category) {
+         conditions.push(eq(cabinets.category, input.category));
+       }
+@@ -1699,8 +1708,8 @@ export const cabinetsRouter = router({
+           })
+           .from(cabinets)
+           .where(and(
+-            eq(cabinets.isActive, true),
+-            eq(cabinets.showInCatalog, true),
++            cabinetOrAliasGroupHasFlag("isActive"),
++            cabinetOrAliasGroupHasFlag("showInCatalog"),
+             ne(cabinets.conflictStatus, "conflict"),
+           )),
+       ]);
+@@ -1822,6 +1831,11 @@ export const cabinetsRouter = router({
+       if (!db) return null;
+       const normalizedCode = normalizeCode(input.masterCode);
+ 
++      // cabinet_aliases is checked first and returns the canonical cabinet
++      // (for example LWR3015 → WRC3015). notInConflict() uses
++      // cabinetPriceResolver, so a price that lives only on the alias cabinet
++      // still counts and the response keeps the master code the catalog UI shows.
++
+       // A deliberate legacy alias must win over a duplicate direct master-code
+       // record. This keeps an old route such as 3DB12 on its configured
+       // canonical product 3-DB12 instead of reviving the retired duplicate.
+@@ -2598,17 +2612,27 @@ export const cabinetsRouter = router({
+         || input.designerEligible === true
+         || input.showIn2020 === true;
+       if (requiresPublicPrice) {
+-        const [sellableSource] = await db
+-          .select({ id: distributorSkus.id })
++        const priceGroup = await resolveCabinetCodeGroupFromDb(db, input.id);
++        const priceCabinetIds = priceGroup.cabinetIds.length > 0 ? priceGroup.cabinetIds : [input.id];
++        const sellableRows = await db
++          .select({
++            id: distributorSkus.id,
++            cabinetId: distributorSkus.cabinetId,
++            styleId: distributorSkus.styleId,
++            distributorId: distributorSkus.distributorId,
++            listPrice: distributorSkus.listPrice,
++            yourCost: distributorSkus.yourCost,
++            isAvailable: distributorSkus.isAvailable,
++            isPublished: distributorSkus.isPublished,
++          })
+           .from(distributorSkus)
+           .where(and(
+-            eq(distributorSkus.cabinetId, input.id),
++            inArray(distributorSkus.cabinetId, priceCabinetIds),
+             eq(distributorSkus.isAvailable, true),
+             eq(distributorSkus.isPublished, true),
+             sql`(COALESCE(${distributorSkus.listPrice}, 0) > 0 OR COALESCE(${distributorSkus.yourCost}, 0) > 0)`,
+-          ))
+-          .limit(1);
+-        if (!sellableSource) {
++          ));
++        if (!hasPositivePublishedPrice(resolveCabinetPriceSources(priceGroup, sellableRows))) {
+           throw new TRPCError({
+             code: "BAD_REQUEST",
+             message: "A positive published supplier price is required before this item can be active in Catalog or Designer.",
+@@ -4148,25 +4172,39 @@ export const cabinetsRouter = router({
+     .query(async ({ input }) => {
+       const db = await getDb();
+       if (!db) return [];
+-      
+-      // Get all distributors that have published+available SKUs for this cabinet
++
++      // Distributors that have a priced, published, available SKU on this
++      // cabinet or any cabinet in its alias group. One group load, one query.
++      const priceGroup = await resolveCabinetCodeGroupFromDb(db, input.cabinetId);
++      const priceCabinetIds = priceGroup.cabinetIds.length > 0 ? priceGroup.cabinetIds : [input.cabinetId];
+       const rows = await db
+-        .selectDistinct({
++        .select({
+           id: distributors.id,
+           name: distributors.name,
++          cabinetId: distributorSkus.cabinetId,
++          styleId: distributorSkus.styleId,
++          distributorId: distributorSkus.distributorId,
++          listPrice: distributorSkus.listPrice,
++          yourCost: distributorSkus.yourCost,
++          isAvailable: distributorSkus.isAvailable,
++          isPublished: distributorSkus.isPublished,
+         })
+         .from(distributorSkus)
+         .innerJoin(distributors, eq(distributorSkus.distributorId, distributors.id))
+         .where(
+           and(
+-            eq(distributorSkus.cabinetId, input.cabinetId),
++            inArray(distributorSkus.cabinetId, priceCabinetIds),
+             eq(distributorSkus.isPublished, true),
+-            eq(distributorSkus.isAvailable, true)
++            eq(distributorSkus.isAvailable, true),
++            sql`(COALESCE(${distributorSkus.listPrice}, 0) > 0 OR COALESCE(${distributorSkus.yourCost}, 0) > 0)`,
+           )
+-        )
+-        .orderBy(asc(distributors.name));
+-      
+-      return rows.map(r => ({ id: r.id, name: r.name }));
++        );
++      const priced = resolveCabinetPriceSources(priceGroup, rows);
++      const byDistributor = new Map<number, { id: number; name: string }>();
++      for (const row of priced) {
++        if (!byDistributor.has(row.id)) byDistributor.set(row.id, { id: row.id, name: row.name });
++      }
++      return Array.from(byDistributor.values()).sort((a, b) => a.name.localeCompare(b.name));
+     }),
+ 
+   // ─── Admin: Merge two cabinets (one becomes alias of the other) ───────────────
+@@ -4302,23 +4340,10 @@ export const pricingRouter = router({
+         ? await getPlatformPricingSettings()
+         : null;
+ 
+-      // ── Alias resolution ────────────────────────────────────────────────────
+-      // The Master SKU Alias Program maps supplier-variant codes (e.g. "VS-24")
+-      // to canonical master codes (e.g. "VS24"). When a distributor's price rows
+-      // are linked to a cabinet whose masterCode is an alias of this cabinet's
+-      // masterCode, we want those rows to appear on this product page too.
+-      //
+-      // Steps:
+-      //   1. Look up the masterCode string for the requested cabinetId.
+-      //   2. Find all alias codes that map TO this masterCode.
+-      //   3. Find all cabinet IDs whose masterCode is one of those alias codes.
+-      //   4. Include those cabinet IDs in the WHERE clause alongside the direct match.
+-      const masterCabinetRow = await db
+-        .select({ masterCode: cabinets.masterCode })
+-        .from(cabinets)
+-        .where(eq(cabinets.id, input.cabinetId))
+-        .limit(1);
+-      const masterCode = masterCabinetRow[0]?.masterCode ?? null;
++      // Alias resolution lives in cabinetPriceResolver. The group includes the
++      // master and every approved alias code. When both have a row for the same
++      // style and distributor, the master's row is preferred below.
++      const priceGroup = await resolveCabinetCodeGroupFromDb(db, input.cabinetId);
+ 
+       // Door-style IDs belong to exactly one distributor line. When the detail
+       // page carries ?style=…, use that line as the presentation scope; product
+@@ -4333,34 +4358,14 @@ export const pricingRouter = router({
+           .limit(1))[0] ?? null;
+       const selectedDistributorId = requestedStyle?.distributorId ?? null;
+ 
+-      // Collect all cabinet IDs to include (direct + aliased)
+-      let allCabinetIds: number[] = [input.cabinetId];
+-      if (masterCode) {
+-        // Find alias codes that point to this master code
+-        const aliasRows = await db
+-          .select({ aliasCode: skuMasterAliases.aliasCode })
+-          .from(skuMasterAliases)
+-          .where(and(
+-            eq(skuMasterAliases.masterCode, masterCode),
+-            eq(skuMasterAliases.conflictStatus, "ok"),
+-          ));
+-
+-        if (aliasRows.length > 0) {
+-          const aliasCodes = aliasRows.map((a) => a.aliasCode);
+-          // Find cabinet IDs whose masterCode is one of those alias codes
+-          const aliasCabinets = await db
+-            .select({ id: cabinets.id })
+-            .from(cabinets)
+-            .where(inArray(cabinets.masterCode, aliasCodes));
+-          const aliasIds = aliasCabinets.map((c) => c.id);
+-          allCabinetIds = Array.from(new Set(allCabinetIds.concat(aliasIds)));
+-        }
+-      }
+-      // ── End alias resolution ────────────────────────────────────────────────
++      const allCabinetIds = priceGroup.cabinetIds.length > 0
++        ? priceGroup.cabinetIds
++        : [input.cabinetId];
+ 
+       const rows = await db
+         .select({
+           skuId: distributorSkus.id,
++          cabinetId: distributorSkus.cabinetId,
+           styleId: distributorSkus.styleId,
+           category: cabinets.category,
+           styleCode: doorStyles.styleCode,
+@@ -4430,11 +4435,12 @@ export const pricingRouter = router({
+           )
+         );
+ 
+-      // Keep one row per (style code × distributor) pair so that the same
+-      // door style offered by different supply lines shows as distinct options.
+-      // Within the same distributor+style pair, prefer the lowest contractor price.
+-      const byStyle = new Map<string, (typeof rows)[number]>();
+-      for (const r of rows) {
++      // Master row wins when the alias cabinet is also priced for that style
++      // and distributor. Lowest contractor price is only the tie-break among
++      // the rows the resolver kept.
++      const pricedRows = resolveCabinetPriceSources(priceGroup, rows, selectedDistributorId == null ? undefined : { distributorId: selectedDistributorId });
++      const byStyle = new Map<string, (typeof pricedRows)[number]>();
++      for (const r of pricedRows) {
+         const styleKey = (r.styleCode || r.name || String(r.styleId)).toUpperCase();
+         const key = `${styleKey}__DIST_${r.distributorId ?? 0}`;
+         const existing = byStyle.get(key);
+diff --git a/server/routers/design.ts b/server/routers/design.ts
+index 6fa6d34..2273d21 100644
+--- a/server/routers/design.ts
++++ b/server/routers/design.ts
+@@ -27,6 +27,7 @@ import { normalizedEquivalenceCode } from "../../shared/codeEquivalence";
+ import { ENV } from "../_core/env";
+ import { priceLadder } from "../../shared/pricing";
+ import { resolveCanonicalCatalogSources } from "../lib/canonicalCatalogSources";
++import { aliasBackedDesignerListSql, cabinetOrAliasGroupHasFlag, resolveDisplayedCabinetIdentity } from "../lib/cabinetPriceResolver";
+ import { applyDistributorCabinetConfig, parseDistributorCabinetConfig } from "../lib/distributorCabinetConfig";
+ import { loadAffiliateStorefrontPricing } from "../lib/affiliateStorefrontPricing";
+ import {
+@@ -342,6 +343,9 @@ export const designRouter = router({
+       const loadedSourceRows = await db
+         .select({
+           sourceMasterCode: cabinets.masterCode,
++          sourceCategory: cabinets.category,
++          sourceSubCategory: cabinets.subCategory,
++          sourcePlacementType: cabinets.placementType,
+           sourceDistributorId: distributorSkus.distributorId,
+           sourceStyleId: distributorSkus.styleId,
+           glassIncluded: distributors.glassIncluded,
+@@ -409,13 +413,16 @@ export const designRouter = router({
+           })
+           .from(cabinets)
+           .where(and(
+-            eq(cabinets.isActive, true),
++            cabinetOrAliasGroupHasFlag("isActive"),
+             adminAefPreview && stagedAefMasterCodes.length > 0
+-              ? or(eq(cabinets.showInDesigner, true), inArray(cabinets.masterCode, stagedAefMasterCodes))
+-              : eq(cabinets.showInDesigner, true),
++              ? or(cabinetOrAliasGroupHasFlag("showInDesigner"), inArray(cabinets.masterCode, stagedAefMasterCodes))
++              : cabinetOrAliasGroupHasFlag("showInDesigner"),
++            // Show in Designer on the alias (LWR3015) is enough when the
++            // master's own designerEligible flag is off. A cabinet with no
++            // alias still needs designerEligible, which defaults off.
+             adminAefPreview && stagedAefMasterCodes.length > 0
+-              ? or(eq(cabinets.designerEligible, true), inArray(cabinets.masterCode, stagedAefMasterCodes))
+-              : eq(cabinets.designerEligible, true),
++              ? or(aliasBackedDesignerListSql(), inArray(cabinets.masterCode, stagedAefMasterCodes))
++              : aliasBackedDesignerListSql(),
+             ne(cabinets.conflictStatus, "conflict"),
+           )),
+       ]);
+@@ -430,8 +437,18 @@ export const designRouter = router({
+         // AEF's printed construction belongs to the distributor SKU, not the
+         // shared master. Prefer a verified AEF source when the same master is
+         // also present through another style or the excluded SCL style.
++        // Blank subcategory stays blank. "Standard Wall" on the alias is a
++        // wall cabinet when the master itself has no category or placement.
++        const identity = resolveDisplayedCabinetIdentity(master, {
++          category: source.sourceCategory,
++          subCategory: source.sourceSubCategory,
++          placementType: source.sourcePlacementType,
++        });
+         const next = {
+           ...master,
++          category: identity.category ?? master.category,
++          subCategory: identity.subCategory,
++          placementType: identity.placementType,
+           // Oven type is line-scoped rather than a shared-master attribute.
+           // The selected distributor's validated config supplies it when known.
+           ovenType: null as "single" | "double" | null,
+diff --git a/server/routers/storefront.ts b/server/routers/storefront.ts
+index 287f204..aee5535 100644
+--- a/server/routers/storefront.ts
++++ b/server/routers/storefront.ts
+@@ -20,6 +20,7 @@ import {
+ import { filterCabinetSourceRows, loadAffiliateCatalogGate } from "../lib/affiliateCatalogGate";
+ import { orderCabinetsByAliasRank, rankLoadedCabinetSearch } from "../lib/cabinetAliasSearch";
+ import { resolveCanonicalCatalogSources } from "../lib/canonicalCatalogSources";
++import { cabinetOrAliasGroupHasFlag } from "../lib/cabinetPriceResolver";
+ import { loadAffiliateStorefrontPricing } from "../lib/affiliateStorefrontPricing";
+ 
+ // ─── Family-locked storefront browsing ─────────────────────────────────────────
+@@ -623,8 +624,8 @@ export const storefrontRouter = router({
+           })
+           .from(cabinets)
+           .where(and(
+-            eq(cabinets.isActive, true),
+-            eq(cabinets.showInCatalog, true),
++            cabinetOrAliasGroupHasFlag("isActive"),
++            cabinetOrAliasGroupHasFlag("showInCatalog"),
+             ne(cabinets.conflictStatus, "conflict"),
+           )),
+       ]);
+@@ -793,8 +794,8 @@ export const storefrontRouter = router({
+           })
+           .from(cabinets)
+           .where(and(
+-            eq(cabinets.isActive, true),
+-            eq(cabinets.showInCatalog, true),
++            cabinetOrAliasGroupHasFlag("isActive"),
++            cabinetOrAliasGroupHasFlag("showInCatalog"),
+             ne(cabinets.conflictStatus, "conflict"),
+           )),
+       ]);
