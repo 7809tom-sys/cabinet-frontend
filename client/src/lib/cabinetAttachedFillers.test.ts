@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_ROOM, type PlacedCabinet, type RoomData } from "@/lib/design";
-import { attachedFillerLeftoverOptions, attachedFillerNeedsReview, attachedFillerPlanForCandidate } from "./cabinetAttachedFillers";
+import { attachedFillerLeftoverOptions, attachedFillerNeedsReview, attachedFillerPlanForCandidate, attachedFillerSizeIssues, isCornerFillerCabinet } from "./cabinetAttachedFillers";
+import { buildAttachedFillerPlacement } from "./cabinetAttachedFillerPlacement";
+import { cabinetWall } from "@/lib/design";
 
 const room: RoomData = { ...DEFAULT_ROOM, width: 120, depth: 120 };
 
@@ -56,18 +58,37 @@ describe("attached cabinet fillers", () => {
     expect(plan?.pieces[0]).toEqual({ side: "left", startIn: 0.75, widthIn: 1 });
   });
 
-  it("does not offer a filler on an unbounded exposed end", () => {
+  it("suggests no size on an open exposed end, but attaches any chosen filler to the cabinet's side", () => {
     const endCabinet = cabinet({ uid: "end", masterCode: "BEC24", x: 48, y: 0, width: 24 });
     const plan = attachedFillerPlanForCandidate(endCabinet, [], room);
+    // No wall or cabinet within six inches: nothing is suggested.
     expect(plan).toMatchObject({ leftAllowed: false, rightAllowed: false });
-    // A far room endpoint cannot turn a cabinet across a large open run into a
-    // filler candidate. Only a six-inch-or-less wall/cabinet seam is eligible.
-    const openEndedRoom: RoomData = {
-      ...room,
-      customWalls: [{ id: "wall-open", label: "Open run", start: { x: 0, y: 0 }, end: { x: 96, y: 0 } }],
-    } as RoomData;
-    const openEnd = cabinet({ uid: "open-end", masterCode: "BEC24", wallId: "wall-open", wallOffset: 72, x: 72, y: 0, width: 24 });
-    expect(attachedFillerPlanForCandidate(openEnd, [], openEndedRoom, { leftIn: 0, rightIn: 1 })).toBeNull();
+    expect(attachedFillerLeftoverOptions(plan!)).toBeNull();
+    // The user may still choose any 1/8–6 inch filler on either side. On an
+    // open side it attaches to the cabinet's face and the cabinet stays put.
+    const both = attachedFillerPlanForCandidate(endCabinet, [], room, { leftIn: 1.5, rightIn: 6 });
+    expect(both).toMatchObject({ cabinetStartIn: 48 });
+    expect(both?.pieces).toEqual([
+      { side: "left", startIn: 46.5, widthIn: 1.5 },
+      { side: "right", startIn: 72, widthIn: 6 },
+    ]);
+    expect(attachedFillerPlanForCandidate(endCabinet, [], room, { leftIn: 6.25, rightIn: 0 })).toBeNull();
+  });
+
+  it("accepts any 1/8-inch filler and moves the cabinet over against a near wall", () => {
+    const b24 = cabinet({ uid: "b24", masterCode: "B24", x: 0, y: 0, width: 24 });
+    expect(attachedFillerPlanForCandidate(b24, [], room, { leftIn: 0.125, rightIn: 0 })).toMatchObject({
+      cabinetStartIn: 0.125,
+      pieces: [{ side: "left", startIn: 0, widthIn: 0.125 }],
+    });
+  });
+
+  it("refuses a filler that would cross the next cabinet", () => {
+    const left = cabinet({ uid: "left", masterCode: "W2430", placement: "wall", x: 0, y: 0, width: 24, depth: 12, height: 30 });
+    const target = cabinet({ uid: "w3030", masterCode: "W3030", placement: "wall", x: 24, y: 0, width: 30, depth: 12, height: 30 });
+    const right = cabinet({ uid: "right", masterCode: "W2430", placement: "wall", x: 57, y: 0, width: 24, depth: 12, height: 30 });
+    expect(attachedFillerPlanForCandidate(target, [left, right], room, { leftIn: 2, rightIn: 2 })).toBeNull();
+    expect(attachedFillerPlanForCandidate(target, [left, right], room, { leftIn: 1, rightIn: 2 })).not.toBeNull();
   });
 
   it("flags an attached filler instead of deleting it when the adjoining cabinet disappears", () => {
@@ -96,6 +117,8 @@ describe("attached filler leftover space", () => {
       left: { leftIn: 3, rightIn: 0 },
       right: { leftIn: 0, rightIn: 3 },
       split: { leftIn: 1.5, rightIn: 1.5 },
+      corner: false,
+      both: null,
     });
   });
 
@@ -129,6 +152,8 @@ describe("attached filler leftover space", () => {
       left: { leftIn: 0.5, rightIn: 0 },
       right: null,
       split: null,
+      corner: false,
+      both: null,
     });
   });
 
@@ -154,8 +179,105 @@ describe("attached filler leftover space", () => {
     const b24 = cabinet({ uid: "b24", masterCode: "B24", x: 37, y: 0 });
     const plan = attachedFillerPlanForCandidate(b24, [lsb36], room)!;
     expect(plan).toMatchObject({ leftAllowed: true, leftGapIn: 1, openingStartIn: 36 });
-    expect(attachedFillerLeftoverOptions(plan)).toEqual({ leftoverIn: 1, left: { leftIn: 1, rightIn: 0 }, right: null, split: null });
+    expect(attachedFillerLeftoverOptions(plan)).toEqual({ leftoverIn: 1, left: { leftIn: 1, rightIn: 0 }, right: null, split: null, corner: false, both: null });
     expect(attachedFillerPlanForCandidate(b24, [lsb36], room, { leftIn: 1, rightIn: 0 })?.pieces).toEqual([{ side: "left", startIn: 36, widthIn: 1 }]);
+  });
+});
+
+describe("corner cabinet fillers", () => {
+  // LSB36 seated in the top-left corner; B21 is 3 inches past its top-wall leg
+  // and B30 is 3 inches past its left-wall leg.
+  const lsb36 = cabinet({ uid: "lsb36", masterCode: "LSB36", description: "Lazy Susan Base", width: 36, depth: 36, x: 0, y: 0 });
+  const b21 = cabinet({ uid: "b21", masterCode: "B21", width: 21, x: 39, y: 0 });
+  const b30 = cabinet({ uid: "b30", masterCode: "B30", width: 30, x: 0, y: 39, rotation: 90 });
+  const stock = [{ id: 9, masterCode: "F330", description: "3 inch Filler", category: "Filler", subCategory: "Filler", width: "3", height: "30", depth: "0.75", catalogImageUrl: null }];
+
+  it("recognizes only the listed corner cabinet families", () => {
+    for (const code of ["LSB36", "DCSB36", "LS33", "BER36", "CDB36", "CSB42", "ERB36", "ERB-36"]) expect(isCornerFillerCabinet(code)).toBe(true);
+    for (const code of ["B21", "SB36", "BBC42", "WDC2430", "L36"]) expect(isCornerFillerCabinet(code)).toBe(false);
+  });
+
+  it("offers each leg's own gap, with both fillers together instead of a split", () => {
+    const plan = attachedFillerPlanForCandidate(lsb36, [b21, b30], room)!;
+    expect(plan).toMatchObject({ cornerCabinet: true, leftAllowed: true, rightAllowed: true, leftGapIn: 3, rightGapIn: 3 });
+    expect(attachedFillerLeftoverOptions(plan)).toEqual({
+      leftoverIn: 6,
+      left: { leftIn: 3, rightIn: 0 },
+      right: { leftIn: 0, rightIn: 3 },
+      split: null,
+      corner: true,
+      both: { leftIn: 3, rightIn: 3 },
+    });
+  });
+
+  it("keeps the corner cabinet in the corner and puts each filler at the end of its leg", () => {
+    const plan = attachedFillerPlanForCandidate(lsb36, [b21, b30], room, { leftIn: 3, rightIn: 3 })!;
+    expect(plan.cabinetStartIn).toBe(0);
+    expect(plan.pieces).toEqual([
+      { side: "left", wall: "left", startIn: 36, widthIn: 3, attachmentSide: "right" },
+      { side: "right", startIn: 36, widthIn: 3 },
+    ]);
+    let n = 0;
+    const built = buildAttachedFillerPlacement({ cabinet: lsb36, placed: [b21, b30], room, choice: { leftIn: 3, rightIn: 3 }, catalogFillers: stock as never, makeUid: () => `u${n++}`, styleId: 1 });
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    expect([built.cabinet.x, built.cabinet.y]).toEqual([0, 0]);
+    const [legFiller, ownFiller] = built.fillers;
+    expect([cabinetWall(legFiller, room), legFiller.x, legFiller.y, legFiller.width]).toEqual(["left", 0, 36, 3]);
+    expect([cabinetWall(ownFiller, room), ownFiller.x, ownFiller.y, ownFiller.width]).toEqual(["top", 36, 0, 3]);
+    const placedNow = [built.cabinet, b21, b30, ...built.fillers];
+    for (const filler of built.fillers) expect(attachedFillerNeedsReview(filler as never, placedNow, room)).toBe(false);
+  });
+
+  it("does not let a filler wider than its leg's gap be chosen", () => {
+    expect(attachedFillerPlanForCandidate(lsb36, [b21, b30], room, { leftIn: 4, rightIn: 0 })).toBeNull();
+  });
+});
+
+describe("filler size warning before placement", () => {
+  const wallCab = (overrides: Partial<PlacedCabinet>) => cabinet({ placement: "wall", depth: 12, height: 30, ...overrides });
+  // W3030 between two uppers with 3 inches of leftover.
+  const left = wallCab({ uid: "left", x: 0, width: 24 });
+  const target = wallCab({ uid: "w3030", masterCode: "W3030", x: 24, width: 30 });
+  const right = wallCab({ uid: "right", x: 57, width: 24 });
+
+  it("does not warn when the fillers exactly fill the space, or when none is chosen", () => {
+    expect(attachedFillerSizeIssues(target, [left, right], room, { leftIn: 3, rightIn: 0 })).toEqual([]);
+    expect(attachedFillerSizeIssues(target, [left, right], room, { leftIn: 1.5, rightIn: 1.5 })).toEqual([]);
+    expect(attachedFillerSizeIssues(target, [left, right], room, { leftIn: 0, rightIn: 0 })).toEqual([]);
+  });
+
+  it("warns that a filler is too large for the space", () => {
+    expect(attachedFillerSizeIssues(target, [left, right], room, { leftIn: 4, rightIn: 0 })).toEqual([
+      { side: "left", chosenIn: 4, spaceIn: 3, problem: "too-large" },
+    ]);
+  });
+
+  it("warns that a filler is too small and names the gap left open", () => {
+    expect(attachedFillerSizeIssues(target, [left, right], room, { leftIn: 1, rightIn: 0 })).toEqual([
+      { side: "right", chosenIn: 0, spaceIn: 2, problem: "too-small" },
+    ]);
+    expect(attachedFillerSizeIssues(target, [left, right], room, { leftIn: 1, rightIn: 1 })).toEqual([
+      { side: "right", chosenIn: 1, spaceIn: 2, problem: "too-small" },
+    ]);
+  });
+
+  it("never warns about an open side", () => {
+    const endCabinet = cabinet({ uid: "end", masterCode: "B24", x: 48, y: 0, width: 24 });
+    expect(attachedFillerSizeIssues(endCabinet, [], room, { leftIn: 1, rightIn: 2 })).toEqual([]);
+  });
+
+  it("checks each corner cabinet leg on its own", () => {
+    const lsb36 = cabinet({ uid: "lsb36", masterCode: "LSB36", width: 36, depth: 36, x: 0, y: 0 });
+    const b21 = cabinet({ uid: "b21", masterCode: "B21", width: 21, x: 39, y: 0 });
+    const b30 = cabinet({ uid: "b30", masterCode: "B30", width: 30, x: 0, y: 39, rotation: 90 });
+    expect(attachedFillerSizeIssues(lsb36, [b21, b30], room, { leftIn: 3, rightIn: 3 })).toEqual([]);
+    expect(attachedFillerSizeIssues(lsb36, [b21, b30], room, { leftIn: 2, rightIn: 4 })).toEqual([
+      { side: "right", chosenIn: 4, spaceIn: 3, problem: "too-large" },
+    ]);
+    expect(attachedFillerSizeIssues(lsb36, [b21, b30], room, { leftIn: 2, rightIn: 3 })).toEqual([
+      { side: "left", chosenIn: 2, spaceIn: 3, problem: "too-small" },
+    ]);
   });
 });
 

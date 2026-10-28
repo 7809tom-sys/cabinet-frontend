@@ -49,7 +49,7 @@ export function buildAttachedFillerPlacement({
   styleId: number | null;
 }): AttachedFillerPlacementResult {
   const plan = attachedFillerPlanForCandidate(cabinet, placed, room, choice);
-  if (!plan) return { ok: false, reason: "The chosen attached filler no longer fits the measured, bounded cabinet run." };
+  if (!plan) return { ok: false, reason: attachedFillerDoesNotFitReason(cabinet, placed, room, choice) };
 
   const cabinetSpot = wallPlacementAt(
     plan.cabinetStartIn,
@@ -59,7 +59,8 @@ export function buildAttachedFillerPlacement({
     room,
     cabinet.peninsulaSide,
   );
-  const positionedCabinet: PlacedCabinet = {
+  // A corner cabinet keeps its exact corner seat; only its leg fillers are added.
+  const positionedCabinet: PlacedCabinet = plan.cornerCabinet ? cabinet : {
     ...cabinet,
     x: cabinetSpot.x,
     y: cabinetSpot.y,
@@ -86,6 +87,8 @@ export function buildAttachedFillerPlacement({
       Number(positionedCabinet.height) || (plan.placement === "wall" ? 30 : plan.placement === "tall" ? 96 : 34.5),
     );
     const groupId = `attached-filler-${positionedCabinet.uid}-${piece.side}-${makeUid()}`;
+    const pieceWall = piece.wall ?? plan.wall;
+    const attachmentSide = piece.attachmentSide ?? piece.side;
     const raw: PlacedCabinet = {
       uid: makeUid(),
       cabinetId: stock.id,
@@ -110,13 +113,13 @@ export function buildAttachedFillerPlacement({
       fillerPieceGroupId: groupId,
       fillerBillingRole: "primary",
       fillerTotalWidth: piece.widthIn,
-      fillerPlacementMode: piece.side,
+      fillerPlacementMode: attachmentSide,
       fillerForCabinetUid: positionedCabinet.uid,
-      fillerAttachmentSide: piece.side,
+      fillerAttachmentSide: attachmentSide,
       fillerNeedsReview: false,
     };
     const matched = matchInstalledFillerToCabinet(raw, positionedCabinet, room);
-    const fillerSpot = wallPlacementAt(piece.startIn, piece.widthIn, matched.depth, plan.wall, room, positionedCabinet.peninsulaSide);
+    const fillerSpot = wallPlacementAt(piece.startIn, piece.widthIn, matched.depth, pieceWall, room, pieceWall === plan.wall ? positionedCabinet.peninsulaSide : undefined);
     fillers.push({
       ...matched,
       x: fillerSpot.x,
@@ -131,6 +134,31 @@ export function buildAttachedFillerPlacement({
   }
 
   return { ok: true, plan, cabinet: positionedCabinet, fillers };
+}
+
+function inches(value: number) {
+  const rounded = Math.round(value * 8) / 8;
+  return `${Number.isInteger(rounded) ? rounded : rounded.toFixed(3).replace(/0+$/, "")}"`;
+}
+
+/** Explains a refused filler choice with the real free space on each side. */
+export function attachedFillerDoesNotFitReason(
+  cabinet: PlacedCabinet,
+  placed: readonly PlacedCabinet[],
+  room: RoomData,
+  choice: AttachedFillerChoice,
+): string {
+  const chosen = [
+    choice.leftIn > 0 ? `left ${inches(choice.leftIn)}` : null,
+    choice.rightIn > 0 ? `right ${inches(choice.rightIn)}` : null,
+  ].filter(Boolean).join(" and ");
+  if (choice.leftIn > 6 || choice.rightIn > 6) return `A filler can be ⅛" to 6" wide; ${chosen} was not placed.`;
+  const free = attachedFillerPlanForCandidate(cabinet, placed, room);
+  if (!free) return `The ${chosen} filler does not fit beside ${cabinet.masterCode}.`;
+  const space = free.cornerCabinet
+    ? `left ${inches(free.leftGapIn)}, right ${inches(free.rightGapIn)}`
+    : `${inches(free.availableFillerIn)} in total (left ${inches(free.leftGapIn)}, right ${inches(free.rightGapIn)})`;
+  return `The ${chosen} filler does not fit beside ${cabinet.masterCode}: the free space is ${space} before the next wall or cabinet.`;
 }
 
 /** True only for ordinary regular-Designer cabinet types with an optional chooser. */
