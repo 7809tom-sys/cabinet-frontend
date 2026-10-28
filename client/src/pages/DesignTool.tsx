@@ -9479,11 +9479,13 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
             const eachFillerWidth = remainingOpening / 2;
             const filler = catalogFillerForGap(catalogFillers, eachFillerWidth, "wall");
             if (!filler) {
-              const message = `No source-priced wall filler can close the ${formatEighthInches(eachFillerWidth)} refrigerator-cap gap on each side.`;
+              // The cap filler is optional trim. Without a priced 3" stock filler
+              // in this line, keep the cabinet and panels and leave the reveal
+              // open rather than cancelling the whole refrigerator assembly.
+              const message = `No source-priced 3" wall filler is available for this door style, so the ${formatEighthInches(eachFillerWidth)} gap on each side of ${chosen.masterCode} was left open. The cabinet and panels were still added.`;
               setPlacementWarning(message);
-              toast.error(message);
-              return false;
-            }
+              toast.warning(message, { duration: 15000 });
+            } else {
 	            const addCapFiller = (role: "bridge-left-filler" | "bridge-right-filler", along: number) => {
 	              // This is an optional, source-priced cap filler. It is placed as
 	              // its own wall item and cannot shift the refrigerator or panels.
@@ -9519,6 +9521,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
             };
             addCapFiller("bridge-left-filler", bay.openingStart);
             addCapFiller("bridge-right-filler", bay.refrigeratorEnd);
+            }
           }
         }
       }
