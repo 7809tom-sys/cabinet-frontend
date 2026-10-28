@@ -717,6 +717,37 @@ function styleListFrom(record: Record<string, unknown>): unknown[] | null {
 }
 
 /** `mode: "changed-only"` is the screen's name. The server field is `scope: "changed"`. */
+/** Newest open run in `runHistory`. Production `listStyles` does not return `activeRun`. */
+export function doorAuditOpenRunId(
+  runs: readonly { runId: number; status: DoorAuditRunStatusName | string }[],
+): number | null {
+  const open = runs.find((run) => run.status === "awaiting-renders" || run.status === "scoring");
+  return open && Number.isInteger(open.runId) && open.runId > 0 ? open.runId : null;
+}
+
+/**
+ * `startRun` answers 409 with "An audit run is already in progress (run 12)."
+ * The id is how the page attaches to that run instead of leaving Run stuck.
+ */
+export function doorAuditOpenRunIdFromMessage(message: string | null | undefined): number | null {
+  const match = /\brun\s+(\d+)\b/i.exec(message ?? "");
+  if (!match) return null;
+  const id = Number(match[1]);
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
+
+export function doorAuditRunLimitNotice(
+  result: { truncated?: boolean; totalEligible?: number; styles?: unknown[] } | null | undefined,
+): string | null {
+  const shown = Array.isArray(result?.styles) ? result.styles.length : 0;
+  const total = result?.totalEligible ?? shown;
+  if (!result?.truncated || shown <= 0) return null;
+  if (total > shown) {
+    return `This run queued ${shown} of ${total} styles. Abandon it and start again if the server is still stopping early. Saved renders are kept.`;
+  }
+  return `This run queued ${shown} styles and stopped early. Abandon it and start again if the server is still stopping early. Saved renders are kept.`;
+}
+
 export function doorAuditStartRunInput(
   mode: DoorAuditRunMode,
   styleIds?: number[],

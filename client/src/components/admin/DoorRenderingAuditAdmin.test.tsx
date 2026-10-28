@@ -117,6 +117,19 @@ describe("Door Rendering Audit admin", () => {
     expect(admin.slice(0, grouped)).not.toContain("DoorRenderingAudit");
   });
 
+  it("keeps Run disabled while an earlier run is still open and offers abandon and continue", () => {
+    const markup = renderToStaticMarkup(<DoorRenderingAuditView {...props({
+      progress: { phase: "awaiting-renders", completed: 0, total: 40, detail: "Summit White", error: null },
+      canStartRuns: false,
+      onContinue: () => undefined,
+      onAbandon: () => undefined,
+    })} />);
+    expect(markup).toContain("Continue upload");
+    expect(markup).toContain("data-testid=\"door-audit-abandon\"");
+    expect(markup).toContain("Waiting for door renders");
+    expect(markup).toMatch(/disabled[^>]*>Run all/);
+  });
+
   it("shows the sample, accepted baseline, and latest render with revert and version restore", () => {
     const markup = renderToStaticMarkup(<DoorRenderingAuditView {...props()} />);
     expect(markup).toContain("Door Rendering Audit");
@@ -166,6 +179,8 @@ describe("Door Rendering Audit admin", () => {
     expect(screen).toContain("doorRenderingAuditAllowed");
     expect(screen).toContain("doorAuditStyleLabel");
     expect(screen).toContain('import("@/lib/doorAuditDoorRender")');
+    expect(screen).toContain("doorAuditOpenRunId");
+    expect(screen).toContain("listRuns.useQuery({ limit: 20 })");
     expect(screen).not.toContain("reportRenderFailure");
   });
 

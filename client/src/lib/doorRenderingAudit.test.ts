@@ -11,6 +11,9 @@ import {
   DOOR_AUDIT_RENDERING_COMMIT,
   doorAuditApproveInput,
   doorAuditCanApprove,
+  doorAuditOpenRunId,
+  doorAuditOpenRunIdFromMessage,
+  doorAuditRunLimitNotice,
   doorAuditStartRunInput,
   doorAuditStyleLabel,
   doorAuditSubmitRenderInput,
@@ -426,6 +429,22 @@ describe("door rendering audit backend adapter", () => {
       pngBase64: "a".repeat(40),
       sourceFingerprint: run.styles[0]?.sourceFingerprint,
     }).renderingCommit).toBe(DOOR_AUDIT_RENDERING_COMMIT);
+  });
+
+  it("attaches to the open run the server already has, including a 409 that names it", () => {
+    expect(doorAuditOpenRunId([
+      { runId: 18, status: "complete" },
+      { runId: 12, status: "awaiting-renders" },
+      { runId: 9, status: "scoring" },
+    ])).toBe(12);
+    expect(doorAuditOpenRunId([{ runId: 4, status: "failed" }])).toBeNull();
+    expect(doorAuditOpenRunIdFromMessage(
+      "An audit run is already in progress (run 12). Abandon it before starting another.",
+    )).toBe(12);
+    expect(doorAuditOpenRunIdFromMessage("Could not start the audit.")).toBeNull();
+    expect(doorAuditRunLimitNotice({ truncated: true, styles: [1, 2], totalEligible: 2 })).toMatch(/stopped early/);
+    expect(doorAuditRunLimitNotice({ truncated: true, styles: [1], totalEligible: 40 })).toMatch(/1 of 40/);
+    expect(doorAuditRunLimitNotice({ truncated: false, styles: [1], totalEligible: 1 })).toBeNull();
   });
 
   it("approves a passing render with an optional note and refuses a rejected one", () => {
