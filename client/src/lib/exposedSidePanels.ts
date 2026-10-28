@@ -12,10 +12,13 @@
  */
 import { kitchenRuleNumber } from "./kitchenRuleParameters";
 import {
+  cabinetPlacementCollisionDetail,
   cabinetWall,
   isFillerItem,
   isPanelItem,
   isRefrigerator,
+  isRefrigeratorEndPanel,
+  refrigeratorEndPanelConflictDetail,
   wallLength,
   wallPlacementAt,
   wallRunOffset,
@@ -270,6 +273,20 @@ export function syncExposedSidePanels(input: {
   const refresh = (uid: string, next: PlacedCabinet) => {
     hostsPlaced = hostsPlaced.map((item) => item.uid === uid ? next : item);
   };
+  // A shifted host or a new panel must never land inside another piece: the
+  // overlap repair that runs after every commit would then delete a cabinet
+  // (it removed a B21 jogged into its neighbouring fridge panel).
+  const collides = (candidate: PlacedCabinet, ownerUid: string) => {
+    const others = [
+      ...input.placed.filter((item) => !isAutoPanel(item) && item.uid !== candidate.uid && item.uid !== ownerUid)
+        .map((item) => hostsPlaced.find((host) => host.uid === item.uid) ?? item),
+      ...[...wanted.values()].filter((item) => item.uid !== candidate.uid),
+    ];
+    if (cabinetPlacementCollisionDetail(candidate, others, input.room) != null) return true;
+    // Fridge end panels are exempt from the generic check; the overlap repair
+    // tests them on their own and deletes the panel, so test them the same way.
+    return others.some((other) => isRefrigeratorEndPanel(other) && refrigeratorEndPanelConflictDetail(other, [candidate], null, input.room) != null);
+  };
 
   for (const listed of hosts) {
     const sides: Side[] = listed.islandFace || listed.peninsulaWizardId ? ["start", "end", "back"] : ["start", "end"];
@@ -295,7 +312,8 @@ export function syncExposedSidePanels(input: {
       const thickness = kitchenRuleNumber("panel_thickness_in");
       let along = panelSide === "end" ? hostSpan.end : Math.max(0, hostSpan.start - thickness);
       if (panelSide === "start" && hostSpan.start < thickness - FLUSH) {
-        const shifted = shiftHost(host, thickness - hostSpan.start, input.room);
+        const shiftedCandidate = shiftHost(host, thickness - hostSpan.start, input.room);
+        const shifted = shiftedCandidate && !collides(shiftedCandidate, host.uid) ? shiftedCandidate : null;
         if (!shifted) {
           warnings.push({
             id: `no-room:${key}`,
@@ -312,7 +330,8 @@ export function syncExposedSidePanels(input: {
         const wall = hostSpan.side;
         const end = span(hostsPlaced.find((item) => item.uid === host.uid) ?? host, input.room).end;
         if (end + thickness > wallLength(wall, input.room) + FLUSH) {
-          const shifted = shiftHost(hostsPlaced.find((item) => item.uid === host.uid) ?? host, -thickness, input.room);
+          const shiftedCandidate = shiftHost(hostsPlaced.find((item) => item.uid === host.uid) ?? host, -thickness, input.room);
+          const shifted = shiftedCandidate && !collides(shiftedCandidate, host.uid) ? shiftedCandidate : null;
           if (!shifted) {
             warnings.push({
               id: `no-room:${key}`,
@@ -337,7 +356,8 @@ export function syncExposedSidePanels(input: {
         });
         continue;
       }
-      const panel = placePanel(current, along, thickness, wall, input.room, stock, reason, host.uid, panelSide);
+      const placedPanel = placePanel(current, along, thickness, wall, input.room, stock, reason, host.uid, panelSide);
+      const panel = placedPanel && !collides(placedPanel, host.uid) ? placedPanel : null;
       if (!panel) {
         warnings.push({
           id: `no-room:${key}`,
