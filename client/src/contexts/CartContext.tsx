@@ -52,6 +52,8 @@ export type CartItem = {
   pelicanProductId?: number | null;
   /** Exact Hardware Resources vendor-product row; never inferred from a display SKU. */
   vendorProductId?: number | null;
+  /** Cabinet master marked free shipping. Checkout still confirms the flag on the server. */
+  freeShipping?: boolean;
 };
 
 // Result of an addItem attempt. Multiple cabinet distributors and Pelican may
@@ -244,7 +246,7 @@ function ScopedCartProvider({ children, scope }: { children: ReactNode; scope: S
         const k = lineKey(item);
         const existing = prev.find((p) => lineKey(p) === k);
         if (existing) {
-          return prev.map((p) => (lineKey(p) === k ? { ...p, qty: p.qty + item.qty } : p));
+          return prev.map((p) => (lineKey(p) === k ? { ...p, qty: p.qty + item.qty, freeShipping: p.freeShipping === true || item.freeShipping === true } : p));
         }
         return [...prev, item];
       });

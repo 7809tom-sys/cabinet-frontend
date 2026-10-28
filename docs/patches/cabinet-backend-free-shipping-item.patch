@@ -1,0 +1,434 @@
+diff --git a/drizzle/schema.ts b/drizzle/schema.ts
+index 2faceb2..bf27d88 100644
+--- a/drizzle/schema.ts
++++ b/drizzle/schema.ts
+@@ -764,6 +764,10 @@ export const cabinets = mysqlTable("cabinets", {
+   pkgWidth: decimal("pkgWidth", { precision: 6, scale: 2 }),
+   pkgHeight: decimal("pkgHeight", { precision: 6, scale: 2 }),
+   pkgWeight: decimal("pkgWeight", { precision: 8, scale: 2 }), // packaged/shipping weight in lbs
++  // Catalog-item offer. Lives on the cabinet master, next to package facts,
++  // because one product can have many supplier price rows. Default off so
++  // existing cabinets stay on quoted freight. Not a distributor freight rule.
++  freeShipping: boolean("freeShipping").default(false).notNull(),
+   isActive: boolean("isActive").default(true).notNull(),
+   // Conflict / Needs-Review status.
+   // 'conflict' hides the product from the public catalog, storefront, and Design Tool.
+diff --git a/server/lib/catalogFreeShipping.test.ts b/server/lib/catalogFreeShipping.test.ts
+new file mode 100644
+index 0000000..dd07a5b
+--- /dev/null
++++ b/server/lib/catalogFreeShipping.test.ts
+@@ -0,0 +1,32 @@
++import { readFileSync } from "node:fs";
++import { describe, expect, it } from "vitest";
++import { TEMPORARY_ONE_DOLLAR_TEST_SKU } from "../../shared/temporaryCheckoutTest";
++import { catalogFreeShippingIndexFromRows, isCatalogFreeShippingIdentity } from "../../shared/freeShippingItem";
++
++const ordersSource = readFileSync(new URL("../routers/orders.ts", import.meta.url), "utf8");
++const freightSource = readFileSync(new URL("../routers/freight.ts", import.meta.url), "utf8");
++
++describe("catalog free shipping freight exemption", () => {
++  const index = catalogFreeShippingIndexFromRows([
++    { id: 42, masterCode: "B24", freeShipping: true },
++  ]);
++
++  it("does not treat the temporary payment SKU as a catalog free-shipping item", () => {
++    expect(isCatalogFreeShippingIdentity({
++      cabinetId: 1,
++      masterCode: TEMPORARY_ONE_DOLLAR_TEST_SKU,
++    }, index)).toBe(false);
++    expect(isCatalogFreeShippingIdentity({ cabinetId: 42, masterCode: "B24" }, index)).toBe(true);
++  });
++
++  it("keeps the temporary payment exception and authorizes catalog free shipping from the cabinet master", () => {
++    expect(ordersSource).toContain("isTemporaryOneDollarFreeShippingOrder(normalizedLines)");
++    expect(ordersSource).toContain('deliveryMethod === "ship" && nonHardwareOrderLines.length > 0 && hasOnlyTemporaryFreeShippingItems');
++    expect(ordersSource).toContain("loadCatalogFreeShippingIndex(db, nonHardwareOrderLines)");
++    expect(ordersSource).toContain("linesThatNeedACarrierQuote.length === 0");
++    expect(ordersSource).toContain("quotedMerchandiseCents");
++    expect(ordersSource).toContain('message: "Request a current shipping quote before submitting this order."');
++    expect(freightSource).toContain("loadCatalogFreeShippingIndex");
++    expect(freightSource).toContain('label: "Free shipping"');
++  });
++});
+diff --git a/server/lib/catalogFreeShipping.ts b/server/lib/catalogFreeShipping.ts
+new file mode 100644
+index 0000000..2cadaf4
+--- /dev/null
++++ b/server/lib/catalogFreeShipping.ts
+@@ -0,0 +1,50 @@
++import { inArray, or } from "drizzle-orm";
++import { cabinets } from "../../drizzle/schema";
++import { getDb } from "../db";
++import {
++  catalogFreeShippingIndexFromRows,
++  EMPTY_CATALOG_FREE_SHIPPING_INDEX,
++  isCatalogFreeShippingIdentity,
++  type CatalogFreeShippingIndex,
++  type CatalogFreightIdentity,
++} from "@shared/freeShippingItem";
++
++export { isCatalogFreeShippingIdentity, EMPTY_CATALOG_FREE_SHIPPING_INDEX };
++export type { CatalogFreeShippingIndex, CatalogFreightIdentity };
++
++/**
++ * Reads cabinets.freeShipping for the cabinet ids and master codes on an order
++ * or freight request. The client flag is never the source of truth.
++ */
++export async function loadCatalogFreeShippingIndex(
++  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
++  items: CatalogFreightIdentity[],
++): Promise<CatalogFreeShippingIndex> {
++  const ids = Array.from(new Set(
++    items
++      .map((item) => item.cabinetId)
++      .filter((id): id is number => typeof id === "number" && id > 0),
++  ));
++  const codes = Array.from(new Set(
++    items
++      .map((item) => (item.masterCode ?? item.rawCode ?? "").trim().toUpperCase())
++      .filter((code) => code.length > 0),
++  ));
++  if (ids.length === 0 && codes.length === 0) return EMPTY_CATALOG_FREE_SHIPPING_INDEX;
++
++  const rows = await db
++    .select({
++      id: cabinets.id,
++      masterCode: cabinets.masterCode,
++      freeShipping: cabinets.freeShipping,
++    })
++    .from(cabinets)
++    .where(
++      ids.length > 0 && codes.length > 0
++        ? or(inArray(cabinets.id, ids), inArray(cabinets.masterCode, codes))
++        : ids.length > 0
++          ? inArray(cabinets.id, ids)
++          : inArray(cabinets.masterCode, codes),
++    );
++  return catalogFreeShippingIndexFromRows(rows);
++}
+diff --git a/server/routers/catalog.ts b/server/routers/catalog.ts
+index e3d7a08..3f125fd 100644
+--- a/server/routers/catalog.ts
++++ b/server/routers/catalog.ts
+@@ -1248,6 +1248,7 @@ export const doorStylesRouter = router({
+             numberOfDrawers: cabinets.numberOfDrawers,
+             graphicType: cabinets.graphicType,
+             catalogImageUrl: cabinets.catalogImageUrl,
++            freeShipping: cabinets.freeShipping,
+           })
+           .from(cabinets)
+           .where(and(
+@@ -1701,6 +1702,7 @@ export const cabinetsRouter = router({
+             catalogImageUrl: cabinets.catalogImageUrl,
+             placementType: cabinets.placementType,
+             isCornerCabinet: cabinets.isCornerCabinet,
++            freeShipping: cabinets.freeShipping,
+           })
+           .from(cabinets)
+           .where(and(
+diff --git a/server/routers/design.ts b/server/routers/design.ts
+index 3c98ef7..e17e8a4 100644
+--- a/server/routers/design.ts
++++ b/server/routers/design.ts
+@@ -407,6 +407,7 @@ export const designRouter = router({
+             cornerType: cabinets.cornerType,
+             facePattern: cabinets.facePattern,
+             glassDoorAddonCode: cabinets.glassDoorAddonCode,
++            freeShipping: cabinets.freeShipping,
+           })
+           .from(cabinets)
+           .where(and(
+diff --git a/server/routers/freight.ts b/server/routers/freight.ts
+index 040afed..9d0d5e8 100644
+--- a/server/routers/freight.ts
++++ b/server/routers/freight.ts
+@@ -74,6 +74,7 @@ import {
+   type AuthoritativeParcelPackage,
+ } from "@shared/parcelEligibility";
+ import { freightClassFromDensity, genericCabinetPackage } from "@shared/genericCabinetPackaging";
++import { isCatalogFreeShippingIdentity, loadCatalogFreeShippingIndex } from "../lib/catalogFreeShipping";
+ 
+ // ─── Settings loading + defaults ────────────────────────────────────────────────
+ const DEFAULT_SETTINGS: FreightSettings = {
+@@ -1724,10 +1725,29 @@ export const freightRouter = router({
+       // Carrier integrations currently consume a destination ZIP, while the
+       // signed checkout authorization remains bound to the full normalized address.
+       const kitchenDesignId = await resolveAuthorizedFreightQuoteDesignId(ctx.user, input.kitchenDesignId);
+-      const quoteInput = { ...input, kitchenDesignId, deliveryAddress, destinationZip };
++      let quoteInput = { ...input, kitchenDesignId, deliveryAddress, destinationZip };
++      const freeShippingDb = await getDb();
++      const freeShippingIndex = freeShippingDb
++        ? await loadCatalogFreeShippingIndex(freeShippingDb, quoteInput.items)
++        : { cabinetIds: new Set<number>(), masterCodes: new Set<string>() };
++      const ratedItems = quoteInput.items.filter((item) => !isCatalogFreeShippingIdentity(item, freeShippingIndex));
++      if (quoteInput.items.length > 0 && ratedItems.length === 0) {
++        return {
++          available: true,
++          zoneName: "Free shipping",
++          billableWeightLbs: 0,
++          lines: [{ label: "Free shipping", amountCents: 0 }],
++          freightBeforeMarkupCents: 0,
++          markupCents: 0,
++          damageFeeCents: 0,
++          totalCents: 0,
++          freeFreightApplied: true,
++        };
++      }
++      quoteInput = { ...quoteInput, items: ratedItems };
+       const settingsRow = await loadSettingsRow();
+       const settings = settingsRow ? rowToSettings(settingsRow) : DEFAULT_SETTINGS;
+-      const quoteDistributorIds = Array.from(new Set(input.items
++      const quoteDistributorIds = Array.from(new Set(quoteInput.items
+         .map((item) => item.distributorId)
+         .filter((id): id is number => typeof id === "number")));
+       const distributorUpsCredentials = new Map<number, { clientId: string; clientSecret: string; accountNumber: string; environment: "sandbox" | "production" }>();
+diff --git a/server/routers/genericCabinets.ts b/server/routers/genericCabinets.ts
+index e339b9e..2cc7271 100644
+--- a/server/routers/genericCabinets.ts
++++ b/server/routers/genericCabinets.ts
+@@ -236,6 +236,7 @@ export const genericCabinetsRouter = router({
+           pkgWidth: cabinets.pkgWidth,
+           pkgHeight: cabinets.pkgHeight,
+           pkgWeight: cabinets.pkgWeight,
++          freeShipping: cabinets.freeShipping,
+           sku: cabinets.sku,
+           vendorSku: cabinets.vendorSku,
+           altSku1: cabinets.altSku1,
+@@ -312,6 +313,7 @@ export const genericCabinetsRouter = router({
+         pkgWidth: z.number().min(0).max(999).nullable().optional(),
+         pkgHeight: z.number().min(0).max(999).nullable().optional(),
+         pkgWeight: z.number().min(0).max(10_000).nullable().optional(),
++        freeShipping: z.boolean().optional(),
+         sku: z.string().trim().max(128).nullable().optional(),
+         vendorSku: z.string().trim().max(128).nullable().optional(),
+         altSku1: z.string().trim().max(128).nullable().optional(),
+@@ -428,6 +430,7 @@ export const genericCabinetsRouter = router({
+         pkgWidth: decimalValue(input.pkgWidth),
+         pkgHeight: decimalValue(input.pkgHeight),
+         pkgWeight: decimalValue(input.pkgWeight),
++        freeShipping: input.freeShipping === true,
+         sku: optionalText(input.sku),
+         vendorSku: optionalText(input.vendorSku),
+         altSku1: optionalText(input.altSku1),
+diff --git a/server/routers/orders.ts b/server/routers/orders.ts
+index 69e81e9..c7a0fee 100644
+--- a/server/routers/orders.ts
++++ b/server/routers/orders.ts
+@@ -55,6 +55,8 @@ import { freightQuoteItemsForOrder } from "../lib/freightQuoteOrderIdentity";
+ import { normalizeFreightQuoteDeliveryAddress } from "@shared/freightQuoteAddress";
+ import { calcSalesTax } from "@shared/usSalesTax";
+ import { isTemporaryOneDollarCheckoutTestItem, isTemporaryOneDollarFreeShippingOrder } from "@shared/temporaryCheckoutTest";
++import { isCatalogFreeShippingFlag } from "@shared/freeShippingItem";
++import { isCatalogFreeShippingIdentity, loadCatalogFreeShippingIndex } from "../lib/catalogFreeShipping";
+ import { isStagingTestHost } from "@shared/stagingTestMode";
+ import { HARDWARE_LINE_CODE, hardwareProfileIsComplete, hardwareRetailCents, hardwareVendorOriginZip } from "@shared/hardwareCommerce";
+ import { callerCanReadOrder, generateOrderAccessToken } from "../lib/orderAccess";
+@@ -556,7 +558,7 @@ export const ordersRouter = router({
+       const isAdmin = ctx.user?.role === "admin";
+       const db = await getDb();
+       if (!db || input.cabinetIds.length === 0) {
+-        return { prices: [] as { cabinetId: number; unitPrice: number | null; originalUnitPrice: number | null; promoName: string | null; myCost: number | null }[] };
++        return { prices: [] as { cabinetId: number; unitPrice: number | null; originalUnitPrice: number | null; promoName: string | null; myCost: number | null; freeShipping: boolean }[] };
+       }
+       const ps = await getPricingSettings();
+       const rows = await db
+@@ -652,6 +654,14 @@ export const ordersRouter = router({
+         }
+       }
+ 
++      const freeShippingRows = await db
++        .select({ id: cabinets.id, freeShipping: cabinets.freeShipping })
++        .from(cabinets)
++        .where(inArray(cabinets.id, input.cabinetIds));
++      const freeShippingCabinetIds = new Set(
++        freeShippingRows.filter((row) => isCatalogFreeShippingFlag(row.freeShipping)).map((row) => row.id),
++      );
++
+       return {
+         prices: input.cabinetIds.map((id) => {
+           const promo = promoted.get(id);
+@@ -663,6 +673,7 @@ export const ordersRouter = router({
+             promoName: promo?.promoName ?? null,
+             // Only the owner/admin ever receives a non-null cost.
+             myCost: isAdmin && bestCost.has(id) ? bestCost.get(id)! : null,
++            freeShipping: freeShippingCabinetIds.has(id),
+           };
+         }),
+       };
+@@ -1026,13 +1037,22 @@ export const ordersRouter = router({
+       let shippingService: string | null = null;
+       const hardwareOrderLines = normalizedLines.filter((line) => line.productKind === "hardware");
+       const nonHardwareOrderLines = normalizedLines.filter((line) => line.productKind !== "hardware");
+-      const nonHardwareMerchandiseCents = Math.max(0, Math.round(
+-        nonHardwareOrderLines.reduce((sum, line) => sum + (line.linePrice ?? 0), 0) * 100,
+-      ));
+       const hardwareMerchandiseCents = Math.max(0, Math.round(
+         hardwareOrderLines.reduce((sum, line) => sum + (line.linePrice ?? 0), 0) * 100,
+       ));
+-      if (deliveryMethod === "ship" && nonHardwareOrderLines.length > 0 && input.freightQuoteToken) {
++      const catalogFreeShippingIndex = deliveryMethod === "ship"
++        ? await loadCatalogFreeShippingIndex(db, nonHardwareOrderLines)
++        : { cabinetIds: new Set<number>(), masterCodes: new Set<string>() };
++      const quotedMerchandiseLines = nonHardwareOrderLines.filter(
++        (line) => !isCatalogFreeShippingIdentity(line, catalogFreeShippingIndex),
++      );
++      const linesThatNeedACarrierQuote = quotedMerchandiseLines.filter(
++        (line) => !isTemporaryOneDollarCheckoutTestItem(line),
++      );
++      const quotedMerchandiseCents = Math.max(0, Math.round(
++        quotedMerchandiseLines.reduce((sum, line) => sum + (line.linePrice ?? 0), 0) * 100,
++      ));
++      if (deliveryMethod === "ship" && linesThatNeedACarrierQuote.length > 0 && input.freightQuoteToken) {
+         let quote;
+         try {
+           quote = verifyFreightQuoteToken(input.freightQuoteToken);
+@@ -1042,11 +1062,11 @@ export const ordersRouter = router({
+             message: error instanceof Error ? error.message : "Freight quote is invalid.",
+           });
+         }
+-        const expectedItemsHash = freightItemsHash(freightQuoteItemsForOrder(nonHardwareOrderLines));
++        const expectedItemsHash = freightItemsHash(freightQuoteItemsForOrder(quotedMerchandiseLines));
+         const quoteMatchesOrder =
+           quote.quoteKind !== "hardware" &&
+           quote.destinationAddressHash === expectedAddressHash &&
+-          quote.merchandiseSubtotalCents === nonHardwareMerchandiseCents &&
++          quote.merchandiseSubtotalCents === quotedMerchandiseCents &&
+           quote.residential === (deliveryLocationType === "residential") &&
+           quote.liftgate === liftgateRequired &&
+           quote.itemsHash === expectedItemsHash;
+@@ -1065,6 +1085,14 @@ export const ordersRouter = router({
+         // freight is server-authorized; every ordinary shipping order still
+         // requires a signed current carrier quote below.
+         freightQuoteVerified = true;
++      } else if (deliveryMethod === "ship" && nonHardwareOrderLines.length > 0 && linesThatNeedACarrierQuote.length === 0) {
++        // Free-shipping catalog items are read from cabinets.freeShipping. A
++        // client cannot grant itself $0 freight by sending a flag. Orders that
++        // still contain a quoted cabinet or surface keep the carrier-quote
++        // requirement above, with those free-shipping lines removed from the
++        // signed item list and from the merchandise the quote is matched to.
++        freightQuoteCents = 0;
++        freightQuoteVerified = true;
+       } else if (deliveryMethod === "ship" && nonHardwareOrderLines.length > 0 && input.submit) {
+         throw new TRPCError({
+           code: "BAD_REQUEST",
+diff --git a/server/routers/storefront.ts b/server/routers/storefront.ts
+index a21878a..bb24c98 100644
+--- a/server/routers/storefront.ts
++++ b/server/routers/storefront.ts
+@@ -621,6 +621,7 @@ export const storefrontRouter = router({
+             graphicType: cabinets.graphicType,
+             isCornerCabinet: cabinets.isCornerCabinet,
+             catalogImageUrl: cabinets.catalogImageUrl,
++            freeShipping: cabinets.freeShipping,
+           })
+           .from(cabinets)
+           .where(and(
+diff --git a/shared/freeShippingItem.test.ts b/shared/freeShippingItem.test.ts
+new file mode 100644
+index 0000000..b30e73e
+--- /dev/null
++++ b/shared/freeShippingItem.test.ts
+@@ -0,0 +1,31 @@
++import { describe, expect, it } from "vitest";
++import {
++  catalogFreeShippingIndexFromRows,
++  isCatalogFreeShippingFlag,
++  isCatalogFreeShippingIdentity,
++} from "./freeShippingItem";
++
++describe("catalog free shipping flag", () => {
++  it("accepts only the stored on values", () => {
++    expect(isCatalogFreeShippingFlag(true)).toBe(true);
++    expect(isCatalogFreeShippingFlag(1)).toBe(true);
++    expect(isCatalogFreeShippingFlag(false)).toBe(false);
++    expect(isCatalogFreeShippingFlag(0)).toBe(false);
++    expect(isCatalogFreeShippingFlag(null)).toBe(false);
++    expect(isCatalogFreeShippingFlag(undefined)).toBe(false);
++  });
++
++  it("matches a flagged cabinet by id or master code and leaves other goods quoted", () => {
++    const index = catalogFreeShippingIndexFromRows([
++      { id: 10, masterCode: "B24", freeShipping: 1 },
++      { id: 11, masterCode: "W3018", freeShipping: 0 },
++    ]);
++
++    expect(isCatalogFreeShippingIdentity({ cabinetId: 10, masterCode: "B24" }, index)).toBe(true);
++    expect(isCatalogFreeShippingIdentity({ cabinetId: null, masterCode: "b24" }, index)).toBe(true);
++    expect(isCatalogFreeShippingIdentity({ cabinetId: 11, masterCode: "W3018" }, index)).toBe(false);
++    expect(isCatalogFreeShippingIdentity({ cabinetId: 10, productKind: "surface", masterCode: "B24" }, index)).toBe(false);
++    expect(isCatalogFreeShippingIdentity({ cabinetId: 10, productKind: "hardware", masterCode: "B24" }, index)).toBe(false);
++    expect(isCatalogFreeShippingIdentity({ masterCode: "NOT-A-CABINET" }, index)).toBe(false);
++  });
++});
+diff --git a/shared/freeShippingItem.ts b/shared/freeShippingItem.ts
+new file mode 100644
+index 0000000..a72ab6b
+--- /dev/null
++++ b/shared/freeShippingItem.ts
+@@ -0,0 +1,65 @@
++/**
++ * Catalog free shipping is a property of the cabinet master, not a supplier
++ * freight rule and not the temporary one-dollar checkout SKU.
++ *
++ * The temporary SKU stays a separate, hard-coded exception. This flag is the
++ * admin choice on a real catalog item. Checkout may trust it only after the
++ * server has read cabinets.freeShipping; the client flag is a display hint.
++ */
++
++export function isCatalogFreeShippingFlag(value: unknown): boolean {
++  return value === true || value === 1;
++}
++
++export type CatalogFreightIdentity = {
++  cabinetId?: number | null;
++  masterCode?: string | null;
++  rawCode?: string | null;
++  productKind?: string | null;
++};
++
++export type CatalogFreeShippingIndex = {
++  cabinetIds: ReadonlySet<number>;
++  masterCodes: ReadonlySet<string>;
++};
++
++export const EMPTY_CATALOG_FREE_SHIPPING_INDEX: CatalogFreeShippingIndex = {
++  cabinetIds: new Set<number>(),
++  masterCodes: new Set<string>(),
++};
++
++function normalizedCode(value: string | null | undefined): string {
++  return (value ?? "").trim().toUpperCase();
++}
++
++/**
++ * True when this cabinet master is flagged free shipping in the database.
++ * Surfaces, hardware, and samples are never covered by the cabinet flag.
++ */
++export function isCatalogFreeShippingIdentity(
++  item: CatalogFreightIdentity,
++  index: CatalogFreeShippingIndex,
++): boolean {
++  if (item.productKind === "surface" || item.productKind === "hardware" || item.productKind === "sample") {
++    return false;
++  }
++  if (typeof item.cabinetId === "number" && item.cabinetId > 0 && index.cabinetIds.has(item.cabinetId)) {
++    return true;
++  }
++  const code = normalizedCode(item.masterCode ?? item.rawCode);
++  return code.length > 0 && index.masterCodes.has(code);
++}
++
++export function catalogFreeShippingIndexFromRows(
++  rows: Array<{ id: number; masterCode: string | null; freeShipping: unknown }>,
++): CatalogFreeShippingIndex {
++  const cabinetIds = new Set<number>();
++  const masterCodes = new Set<string>();
++  for (const row of rows) {
++    if (!isCatalogFreeShippingFlag(row.freeShipping)) continue;
++    cabinetIds.add(row.id);
++    const code = normalizedCode(row.masterCode);
++    if (code) masterCodes.add(code);
++  }
++  return { cabinetIds, masterCodes };
++}

@@ -60,6 +60,7 @@ import { affiliateCabinetHref, affiliateCatalogRootHref, affiliateDesignerHref }
 import { affiliateSlugForStoreScope, resolveStoreScope } from "@/lib/affiliateContext";
 import { aefPrintedGeometryForSku } from "@shared/aefFramelessGeometry";
 import { catalogPublicCopy, publicTechnicalDrawingNote } from "@shared/catalogPublicDescription";
+import { isCatalogFreeShippingFlag } from "@shared/freeShippingItem";
 import { aefProductDiagramCabinet } from "@shared/aefProductRenderPresentation";
 import {
   CABINET_ATTENTION_RETURN_URL,
@@ -1030,6 +1031,7 @@ export default function CabinetDetail({ masterCode }: Props) {
       qty,
       catalogImageUrl: cabinet?.catalogImageUrl ?? null,
       glassIncluded: row.glassIncluded ?? null,
+      ...(isCatalogFreeShippingFlag((cabinet as { freeShipping?: boolean | number | null } | null)?.freeShipping) ? { freeShipping: true } : {}),
     });
     if (res.ok) {
       toast.success(`Added ${qty}× ${resolvedMasterCode} to cart`, {
@@ -1143,6 +1145,9 @@ export default function CabinetDetail({ masterCode }: Props) {
           )}
           <span>/</span>
           <span className="text-foreground font-medium">{resolvedMasterCode}</span>
+          {isCatalogFreeShippingFlag((cabinet as { freeShipping?: boolean | number | null }).freeShipping) && (
+            <Badge className="border-emerald-200 bg-emerald-100 text-[10px] text-emerald-800 hover:bg-emerald-100">Free shipping</Badge>
+          )}
         </nav>
         {/* Floating style selector pill — shows the active door style with a
             thumbnail swatch. Tapping it scrolls to the style picker in the

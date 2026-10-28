@@ -15,6 +15,7 @@ export type CartCheckoutPrefillItem = {
   pelicanProductId?: number | null;
   vendorProductId?: number | null;
   glassIncluded?: boolean | null;
+  freeShipping?: boolean;
 };
 
 type MatchedCheckoutLine = {
@@ -40,6 +41,7 @@ export type CartCheckoutMetadata = {
   cartCategory: string | null;
   cartPelicanProductId: number | null;
   cartVendorProductId: number | null;
+  cartFreeShipping: boolean;
 };
 
 export function cartItemToCheckoutPrefill(
@@ -61,6 +63,7 @@ export function cartItemToCheckoutPrefill(
     pelicanProductId: item.pelicanProductId ?? null,
     vendorProductId: item.vendorProductId ?? null,
     glassIncluded: item.glassIncluded ?? null,
+    freeShipping: item.freeShipping === true,
   };
 }
 
@@ -127,6 +130,7 @@ export function applyCartCheckoutPrefill<T extends MatchedCheckoutLine>(
     cartVendorProductId: isHardware && Number.isInteger(item.vendorProductId) && (item.vendorProductId ?? 0) > 0
       ? item.vendorProductId!
       : null,
+    cartFreeShipping: item.freeShipping === true,
   };
 }
 

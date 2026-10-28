@@ -34,6 +34,7 @@ import { toast } from "sonner";
 import { affiliateCabinetDetailHref } from "@/lib/affiliateCabinetDetailRoute";
 import { sortStorefrontCategoryTabs, storefrontCategoryTabLabel } from "@/lib/storefrontCategoryTabs";
 import { canonicalMouldingLabel } from "@shared/catalogCategorySpelling";
+import { isCatalogFreeShippingFlag } from "@shared/freeShippingItem";
 import { affiliateDesignerPath } from "@/lib/affiliateStorefrontUrl";
 import { useLocation, useSearch } from "wouter";
 import { doorStyleColorHex, doorStyleSwatchImageUrl } from "@/lib/doorColorSpectrum";
@@ -871,6 +872,7 @@ type CatalogItem = {
   imageUrl?: string | null;
   catalogImageUrl?: string | null;
   glassIncluded?: boolean | null;
+  freeShipping?: boolean | number | null;
 };
 
 function CatalogCard({
@@ -907,6 +909,9 @@ function CatalogCard({
   );
 
   const showing = glass && upsell ? upsell : item;
+  const shipsFree = isCatalogFreeShippingFlag(
+    (showing as { freeShipping?: boolean | number | null }).freeShipping,
+  );
   const code = showing.masterCode;
   const description = translateSpec(showing.description, lang);
   // The storefront API has already calculated the affiliate's sale price from
@@ -938,9 +943,14 @@ function CatalogCard({
           <span className="font-mono text-xs font-semibold" style={{ color: brand.primary }}>
             {code}
           </span>
-          {item.category && (
-            <Badge variant="secondary" className="text-[10px]">{canonicalMouldingLabel(item.category)}</Badge>
-          )}
+          <span className="flex shrink-0 items-center gap-1">
+            {shipsFree && (
+              <Badge className="border-emerald-200 bg-emerald-100 text-[10px] text-emerald-800 hover:bg-emerald-100">Free shipping</Badge>
+            )}
+            {item.category && (
+              <Badge variant="secondary" className="text-[10px]">{canonicalMouldingLabel(item.category)}</Badge>
+            )}
+          </span>
         </div>
         <GlassPolicyBadge masterCode={code} glassIncluded={showing.glassIncluded} className="mb-1" />
         <p className="line-clamp-2 text-sm text-foreground">{description}</p>
@@ -1059,6 +1069,7 @@ function CatalogCard({
                 category: showing.category,
                 catalogImageUrl: item.catalogImageUrl ?? null,
                 glassIncluded: showing.glassIncluded ?? null,
+                ...(shipsFree ? { freeShipping: true } : {}),
               });
               if (res.ok) {
                 if (slug) setStorefrontSlug(slug);

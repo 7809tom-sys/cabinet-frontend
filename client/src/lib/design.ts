@@ -750,6 +750,8 @@ export interface DesignCabinet {
   /** Floor height for an appliance or configured wall-mounted item. */
   mountBottom?: number | null;
   catalogImageUrl?: string | null;
+  /** Cabinet master free-shipping offer. Copied onto the cart when the palette has it. */
+  freeShipping?: boolean | null;
   // Live Cabinet Config drawing rules. These are refreshed into older placed
   // designs so a catalog correction applies without re-placing the cabinet.
   specImageUrl?: string | null;
@@ -826,6 +828,8 @@ export interface PlacedCabinet {
   // Optional for backward-compat with older saved designs.
   category?: string | null;
   subCategory?: string | null;
+  /** Copied from the catalog master when this cabinet ships free. */
+  freeShipping?: boolean | null;
   /** Current master corner classification, refreshed into older saved designs. */
   isCornerCabinet?: boolean | null;
   /** Persisted Cabinet Config requirement for a linked blind-corner filler assembly. */

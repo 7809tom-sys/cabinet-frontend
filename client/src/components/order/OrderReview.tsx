@@ -38,6 +38,7 @@ import { isHardwareCheckoutLine, isSurfaceCheckoutLine } from "@/lib/cartCheckou
 import { checkoutUnitPriceForLine, isCabinetFreightLine } from "@/lib/orderLinePricing";
 import { getSiteSignInUrl } from "@/const";
 import { isTemporaryOneDollarFreeShippingOrder, isTemporaryOneDollarCheckoutTestItem } from "@shared/temporaryCheckoutTest";
+import { isCatalogFreeShippingFlag } from "@shared/freeShippingItem";
 import { isStagingTestHost } from "@shared/stagingTestMode";
 import { optionalPositiveFreightId } from "@shared/freight";
 import { createdOrderAccessToken, installationEstimateQueryEnabled, orderAccessTokenInput } from "@/lib/orderCheckoutAuth";
@@ -71,6 +72,8 @@ export type ReviewLine = {
   cartPelicanProductId?: number | null;
   /** Exact Hardware Resources catalog row for server-authoritative repricing. */
   cartVendorProductId?: number | null;
+  /** Catalog free-shipping hint copied from the cart. The server re-reads the cabinet master. */
+  cartFreeShipping?: boolean;
 };
 
 type StyleOption = {
@@ -528,6 +531,19 @@ export function OrderReview({ lines, source, onLinesChange, onReset, initialStyl
     () => isTemporaryOneDollarFreeShippingOrder(pricedLines),
     [pricedLines],
   );
+  const freeShippingCabinetIds = useMemo(() => {
+    const ids = new Set<number>();
+    for (const price of priceQuery.data?.prices ?? []) {
+      if (isCatalogFreeShippingFlag((price as { freeShipping?: boolean | number | null }).freeShipping)) {
+        ids.add(price.cabinetId);
+      }
+    }
+    return ids;
+  }, [priceQuery.data]);
+  const lineMarkedFreeShipping = (line: ReviewLine) => (
+    line.cartFreeShipping === true
+    || (line.cabinetId != null && freeShippingCabinetIds.has(line.cabinetId))
+  );
 
   const freightInput = useMemo(
     () => ({
@@ -541,7 +557,9 @@ export function OrderReview({ lines, source, onLinesChange, onReset, initialStyl
         state: taxState,
         zip: zipDebounced,
       },
-      merchandiseSubtotalCents: Math.max(0, Math.round(total * 100)),
+      merchandiseSubtotalCents: Math.max(0, Math.round((total - pricedLines.reduce((sum, line) => (
+        isCabinetFreightLine(line) && lineMarkedFreeShipping(line) ? sum + (line.linePrice ?? 0) : sum
+      ), 0)) * 100)),
       accessorials: {
         residential: deliveryLocationType === "residential",
         liftgate: liftgateRequired,
@@ -550,6 +568,7 @@ export function OrderReview({ lines, source, onLinesChange, onReset, initialStyl
       items: pricedLines
         .filter((line) => (isCabinetFreightLine(line) || isSurfaceCheckoutLine(line)) && !isHardwareCheckoutLine(line))
         .filter((line) => !isTemporaryOneDollarCheckoutTestItem(line))
+        .filter((line) => !lineMarkedFreeShipping(line))
         .map((line) => ({
           cabinetId: line.cabinetId,
           masterCode: line.masterCode,
@@ -564,7 +583,19 @@ export function OrderReview({ lines, source, onLinesChange, onReset, initialStyl
           pelicanProductId: isSurfaceCheckoutLine(line) ? line.cartPelicanProductId ?? null : null,
         })),
     }),
-    [zipDebounced, addressLine1, addressLine2, city, taxState, total, deliveryLocationType, liftgateRequired, carrierPreference, pricedLines, selectedStyle?.styleId, kitchenDesignId],
+    [zipDebounced, addressLine1, addressLine2, city, taxState, total, deliveryLocationType, liftgateRequired, carrierPreference, pricedLines, selectedStyle?.styleId, kitchenDesignId, freeShippingCabinetIds],
+  );
+  const hasOnlyCatalogFreeShippingItems = useMemo(() => {
+    const candidates = pricedLines.filter((line) => (
+      (isCabinetFreightLine(line) || isSurfaceCheckoutLine(line)) && !isHardwareCheckoutLine(line)
+    ));
+    return !hasOnlyTemporaryFreeShippingItems
+      && candidates.length > 0
+      && candidates.every((line) => isTemporaryOneDollarCheckoutTestItem(line) || lineMarkedFreeShipping(line));
+  }, [pricedLines, hasOnlyTemporaryFreeShippingItems, freeShippingCabinetIds]);
+  const hasSomeCatalogFreeShippingItems = useMemo(
+    () => pricedLines.some((line) => isCabinetFreightLine(line) && lineMarkedFreeShipping(line)),
+    [pricedLines, freeShippingCabinetIds],
   );
   const freightEstimate = trpc.freight.estimate.useQuery(freightInput, {
     enabled: deliveryMethod === "ship" && zipDebounced.length >= 5 && city.trim().length > 0 && taxState.length === 2 && addressLine1.trim().length > 0 && freightInput.items.length > 0,
@@ -1332,8 +1363,23 @@ export function OrderReview({ lines, source, onLinesChange, onReset, initialStyl
                   The temporary one-dollar checkout item is freight-exempt for this payment-flow test. Other cabinet products still require a current live shipping quote.
                 </p>
               </div>
+            ) : hasOnlyCatalogFreeShippingItems ? (
+              <div role="status" className="rounded-md border border-emerald-300 bg-emerald-50 p-3 text-emerald-950">
+                <p className="text-sm font-semibold">Free shipping</p>
+                <p className="mt-1 text-xs text-emerald-800">
+                  Every cabinet in this order is marked free shipping. Freight is $0 and a carrier quote is not required.
+                </p>
+              </div>
             ) : (
               <>
+            {hasSomeCatalogFreeShippingItems && (
+              <div role="status" className="rounded-md border border-emerald-300 bg-emerald-50 p-3 text-emerald-950">
+                <p className="text-sm font-semibold">Free shipping on marked items</p>
+                <p className="mt-1 text-xs text-emerald-800">
+                  Items marked free shipping are $0 and are left out of this quote. The quote below covers the remaining merchandise.
+                </p>
+              </div>
+            )}
             <div>
               <p className="text-sm font-medium">Delivery location</p>
               <p className="text-xs text-muted-foreground">

@@ -179,4 +179,20 @@ describe("cart checkout surface prefill", () => {
     expect(result.matched).toBe(false);
     expect(result.cartProductKind).toBeNull();
   });
+
+  it("carries a catalog free-shipping flag into order review", () => {
+    const item: CartItem = {
+      masterCode: "B24",
+      name: "24 in base",
+      styleId: 4,
+      styleLabel: "Shaker",
+      distributorId: 2,
+      tier: "contractor",
+      unitPrice: 180,
+      qty: 1,
+      freeShipping: true,
+    };
+    expect(cartItemToCheckoutPrefill(item, 180).freeShipping).toBe(true);
+    expect(applyCartCheckoutPrefill(unmatched, cartItemToCheckoutPrefill(item, 180)).cartFreeShipping).toBe(true);
+  });
 });

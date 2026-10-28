@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Spinner } from "@/components/ui/spinner";
+import { isCatalogFreeShippingFlag } from "@shared/freeShippingItem";
 
 type CatalogItemFormDialogProps = {
   cabinetId: number | null;
@@ -55,6 +56,7 @@ type FormDraft = {
   pkgWidth: string;
   pkgHeight: string;
   pkgWeight: string;
+  shipping: "standard" | "free";
   sku: string;
   vendorSku: string;
   altSku1: string;
@@ -100,6 +102,7 @@ const EMPTY_DRAFT: FormDraft = {
   pkgWidth: "",
   pkgHeight: "",
   pkgWeight: "",
+  shipping: "standard",
   sku: "",
   vendorSku: "",
   altSku1: "",
@@ -143,6 +146,7 @@ function draftFromDetail(detail: { item: Record<string, any>; sources: Array<Rec
     pkgWidth: decimalString(item.pkgWidth),
     pkgHeight: decimalString(item.pkgHeight),
     pkgWeight: decimalString(item.pkgWeight),
+    shipping: isCatalogFreeShippingFlag(item.freeShipping) ? "free" : "standard",
     sku: item.sku ?? "",
     vendorSku: item.vendorSku ?? "",
     altSku1: item.altSku1 ?? "",
@@ -318,6 +322,7 @@ export function CatalogItemFormDialog({ cabinetId, open, onOpenChange }: Catalog
       pkgWidth: optionalNumber(draft.pkgWidth),
       pkgHeight: optionalNumber(draft.pkgHeight),
       pkgWeight: optionalNumber(draft.pkgWeight),
+      freeShipping: draft.shipping === "free",
       sku: optionalText(draft.sku),
       vendorSku: optionalText(draft.vendorSku),
       altSku1: optionalText(draft.altSku1),
@@ -416,6 +421,19 @@ export function CatalogItemFormDialog({ cabinetId, open, onOpenChange }: Catalog
 
             <section className="rounded-lg border p-4">
               <h3 className="font-semibold">Shipping, aliases, and notes</h3>
+              <div className="mt-4 max-w-md space-y-1.5">
+                <Label htmlFor="catalog-item-shipping">Shipping</Label>
+                <Select value={draft.shipping} onValueChange={(value) => set("shipping", value === "free" ? "free" : "standard")}>
+                  <SelectTrigger id="catalog-item-shipping" aria-label="Shipping">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="standard">Standard (quoted freight)</SelectItem>
+                    <SelectItem value="free">Free shipping</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">Standard keeps carrier-quoted freight. Free shipping marks this catalog item as $0 freight. An order that also contains quoted items still needs a quote for those items.</p>
+              </div>
               <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 {([
                   ["pkgLength", 'Package L (in)'], ["pkgWidth", 'Package W (in)'], ["pkgHeight", 'Package H (in)'], ["pkgWeight", 'Package wt (lb)'],
