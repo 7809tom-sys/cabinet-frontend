@@ -27,6 +27,8 @@ export const KITCHEN_RULE_PARAMETER_DEFAULTS = {
   fridge_hinge_clear_in: 2.5,
   blind_open_leg_in: 27,
   sink_base_default_in: 36,
+  /** 1 offers SBxx → Bxx. 0 hides that suggestion. */
+  sink_base_substitute: 1,
 } as const;
 
 export type KitchenRuleParameterKey = keyof typeof KITCHEN_RULE_PARAMETER_DEFAULTS;

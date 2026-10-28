@@ -4,9 +4,12 @@ import {
   applyInventorySuggestion,
   evaluateDesignInventory,
   inventoryCornerKind,
+  sinkBaseFalseFrontOrderNote,
   type InventoryCatalogCandidate,
   type InventorySuggestion,
 } from "./inventoryAlternatives";
+import { buildDesignCabinetCartLines } from "./designCartLines";
+import { resetKitchenRuleParameters, setKitchenRuleParameters } from "./kitchenRuleParameters";
 import {
   INVENTORY_SIM_FIXTURE_OUT_OF_STOCK,
   StubInventoryProvider,
@@ -218,15 +221,19 @@ describe("Designer inventory alternatives", () => {
     expect(codes(easy.notices[0]?.suggestions ?? [])).toEqual(["LS36"]);
   });
 
-  it("does not replace a sink base with a standard base or a split opening", async () => {
+  it("offers a same-width base as a false-front field modification before another sink base, and never splits the opening", async () => {
     const sink = place("SB36", 36, 0, { description: "Sink base", subCategory: "Sink Base" });
     const report = await suggest(["11:SB36"], [sink], [
       item({ id: 401, masterCode: "B36", description: "Base cabinet" }),
       item({ id: 402, masterCode: "SB18", width: 18, description: "Sink base", subCategory: "Sink Base" }),
       item({ id: 403, masterCode: "SB36", description: "Sink base", subCategory: "Sink Base", styleId: OTHER_STYLE, doorStyleName: "Slab" }),
     ]);
-    expect(codes(report.notices[0]?.suggestions ?? [])).toEqual(["SB36"]);
-    expect(report.notices[0]?.suggestions[0]?.ruleNotes).toContain("sink-base");
+    expect(codes(report.notices[0]?.suggestions ?? [])).toEqual(["B36", "SB36"]);
+    expect(report.notices[0]?.suggestions[0]).toMatchObject({
+      displayLabel: "B36 — remove drawer, install false front",
+    });
+    expect(report.notices[0]?.suggestions[1]?.ruleNotes).toContain("sink-base");
+    expect(report.notices[0]?.suggestions.some((suggestion) => suggestion.kind === "combination")).toBe(false);
   });
 
   it("keeps the cabinet beside a range at least 15 inches and beside a dishwasher flush, without a filler", async () => {
@@ -341,5 +348,69 @@ describe("Designer inventory alternatives", () => {
       expect(cabinetPlacementCollisionDetail(cabinet, combination.placed.filter((other) => other.uid !== cabinet.uid), DEFAULT_ROOM)).toBeNull();
       expect(cabinet).not.toHaveProperty("price");
     }
+  });
+});
+
+describe("out-of-stock sink base false front", () => {
+  const catalog = [
+    item({ id: 301, masterCode: "B36", width: 36, description: "36 inch base cabinet", numberOfDrawers: 1, numberOfDoors: 0 }),
+    item({ id: 302, masterCode: "B36", width: 36, styleId: OTHER_STYLE, description: "36 inch base cabinet" }),
+    item({ id: 303, masterCode: "SB36", width: 36, styleId: OTHER_STYLE, description: "36 inch Sink Base" }),
+    item({ id: 304, masterCode: "B33", width: 33, description: "33 inch base cabinet" }),
+  ];
+
+  it("offers the same-style B36 first and does not swap until chosen", async () => {
+    const sink = place("SB36", 36, 0, { description: "36 inch Sink Base", subCategory: "Sink Base" });
+    const report = await suggest(["SB36"], [sink], catalog);
+    const suggestions = report.notices[0]?.suggestions ?? [];
+    expect(suggestions[0]).toMatchObject({
+      kind: "single",
+      tier: "same-style",
+      displayLabel: "B36 — remove drawer, install false front",
+      fieldModificationNote: "B36 used as sink base: remove drawer, install false front",
+      candidate: { masterCode: "B36", styleId: STYLE },
+    });
+    expect(suggestions.map((suggestion) => suggestion.kind === "single" ? suggestion.candidate.styleId : null)[0]).toBe(STYLE);
+    expect(sink.masterCode).toBe("SB36");
+
+    const swapped = applyInventorySuggestion({
+      placed: [sink],
+      uid: sink.uid,
+      suggestion: suggestions[0]!,
+      room: DEFAULT_ROOM,
+      designStyleId: STYLE,
+    });
+    expect(swapped.unchanged).toBe(false);
+    expect(swapped.placed[0]).toMatchObject({
+      masterCode: "B36",
+      fieldModificationNote: sinkBaseFalseFrontOrderNote("B36"),
+    });
+    const lines = buildDesignCabinetCartLines({
+      placed: swapped.placed,
+      styleId: STYLE,
+      distributorId: VENDOR,
+      tier: "homeowner",
+      styleNameById: new Map([[STYLE, "Shaker"]]),
+      unitPriceFor: () => 100,
+    });
+    expect(lines[0]?.name).toContain("B36 used as sink base: remove drawer, install false front");
+    expect(lines[0]?.qtyNote).toContain("B36 used as sink base: remove drawer, install false front");
+  });
+
+  it("uses B33 for an SB33 and skips the suggestion when the base is out of stock or the rule is off", async () => {
+    const sb33 = place("SB33", 33, 0, { description: "33 inch Sink Base", subCategory: "Sink Base" });
+    const matched = await suggest(["SB33"], [sb33], catalog);
+    expect(matched.notices[0]?.suggestions[0]).toMatchObject({
+      displayLabel: "B33 — remove drawer, install false front",
+      candidate: { masterCode: "B33" },
+    });
+
+    const noBase = await suggest(["SB36", "B36"], [place("SB36", 36, 0, { description: "36 inch Sink Base" })], catalog);
+    expect(noBase.notices[0]?.suggestions.some((suggestion) => suggestion.kind === "single" && suggestion.displayLabel?.includes("false front"))).toBe(false);
+
+    setKitchenRuleParameters({ sink_base_substitute: 0 });
+    const hidden = await suggest(["SB36"], [place("SB36", 36, 0, { description: "36 inch Sink Base" })], catalog);
+    expect(hidden.notices[0]?.suggestions.some((suggestion) => suggestion.kind === "single" && suggestion.fieldModificationNote)).toBe(false);
+    resetKitchenRuleParameters();
   });
 });

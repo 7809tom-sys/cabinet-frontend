@@ -5,7 +5,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import type { InventoryCabinetNotice, InventorySuggestion } from "@/lib/inventoryAlternatives";
 
 function suggestionLabel(suggestion: InventorySuggestion): string {
-  if (suggestion.kind === "single") return suggestion.candidate.masterCode;
+  if (suggestion.kind === "single") return suggestion.displayLabel ?? suggestion.candidate.masterCode;
   return suggestion.candidates.map((candidate) => candidate.masterCode).join(" + ");
 }
 

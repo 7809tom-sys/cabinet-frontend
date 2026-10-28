@@ -816,6 +816,11 @@ export interface PlacedCabinet {
   masterCode: string;
   description: string;
   /**
+   * Shop note when a catalog cabinet is used as a field modification,
+   * such as a B36 standing in for an out-of-stock sink base.
+   */
+  fieldModificationNote?: string | null;
+  /**
    * Identifies a cabinet created by one Peninsula Wizard transaction. This is
    * deliberately separate from `wallId`: a customer can add ordinary cabinets
    * to a peninsula wall without allowing a later Wizard edit to overwrite them.

@@ -17,6 +17,7 @@
  */
 
 import { RANGE_NEIGHBOR_MIN_WIDTH_IN } from "./autoDesignSeamFillers";
+import { kitchenRuleNumber } from "./kitchenRuleParameters";
 import { isRefrigeratorAppliance } from "./autoDesignAvailability";
 import {
   DEFAULT_ROOM,
@@ -55,6 +56,29 @@ import {
 
 const SIZE_TOLERANCE_IN = 0.02;
 const NEIGHBOR_TOLERANCE_IN = 0.25;
+
+/** Owner rule: an out-of-stock SBxx may be suggested as Bxx of the same width. */
+export const SINK_BASE_FALSE_FRONT_RULE = "owner-sink-base-false-front";
+
+export function sinkBaseNominalWidth(masterCode: string): number | null {
+  const code = masterCode.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const match = code.match(/^(?:ADA)?SB(\d{2})$/);
+  if (!match) return null;
+  const width = Number(match[1]);
+  return width >= 12 && width <= 96 ? width : null;
+}
+
+export function plainBaseCodeForWidth(width: number): string {
+  return `B${width}`;
+}
+
+export function sinkBaseFalseFrontLabel(baseCode: string): string {
+  return `${baseCode} — remove drawer, install false front`;
+}
+
+export function sinkBaseFalseFrontOrderNote(baseCode: string): string {
+  return `${baseCode} used as sink base: remove drawer, install false front`;
+}
 
 export type InventoryCornerKind =
   | "blind"
@@ -98,6 +122,10 @@ export type InventorySingleSuggestion = {
   candidate: InventoryCatalogCandidate;
   reason: string;
   ruleNotes: readonly string[];
+  /** Shown in place of the bare SKU, for a field modification. */
+  displayLabel?: string;
+  /** Copied onto the placed cabinet and the order line when the user swaps. */
+  fieldModificationNote?: string;
 };
 
 export type InventoryCombinationSuggestion = {
@@ -426,6 +454,8 @@ function suggestForCabinet(
     .sort((left, right) => styleLabel(left).localeCompare(styleLabel(right)) || left.masterCode.localeCompare(right.masterCode));
 
   const suggestions: InventorySuggestion[] = [];
+  const falseFront = sinkBaseFalseFrontSuggestion(cabinet, catalog, index, styleId, vendorId, input.assumeUnlistedInStock);
+  if (falseFront) suggestions.push(falseFront);
   if (chosenSingles.length > 0) {
     const tier = sameStyle.length > 0 ? "same-style" : "cross-style";
     for (const candidate of chosenSingles) {
@@ -454,6 +484,41 @@ function suggestForCabinet(
     vendor: stock.vendor,
     asOf: stock.asOf,
     suggestions: suggestions.slice(0, input.limit),
+  };
+}
+
+function sinkBaseFalseFrontSuggestion(
+  cabinet: PlacedCabinet,
+  catalog: readonly InventoryCatalogCandidate[],
+  index: Map<string, StockStatusResult>,
+  styleId: number | null,
+  vendorId: number | null,
+  assumeUnlistedInStock: boolean,
+): InventorySingleSuggestion | null {
+  if (kitchenRuleNumber("sink_base_substitute") === 0) return null;
+  if (styleId == null || !isSinkBaseCabinet(cabinet)) return null;
+  const width = sinkBaseNominalWidth(cabinet.masterCode);
+  if (width == null) return null;
+  const baseCode = plainBaseCodeForWidth(width);
+  const matches = catalog.filter((candidate) => {
+    if (vendorId != null && candidate.distributorId !== vendorId) return false;
+    if (candidate.styleId !== styleId || candidate.placement !== "base") return false;
+    if (normalizeInventorySku(candidate.masterCode) !== normalizeInventorySku(baseCode)) return false;
+    if (isSinkBaseCabinet(candidate) || isCornerCabinet(candidate.masterCode, candidate.description)) return false;
+    const stock = resolveStock(inventoryStockKeys(candidate), index, assumeUnlistedInStock);
+    return stock.status === "in_stock";
+  });
+  const candidate = matches.sort((left, right) => left.id - right.id)[0];
+  if (!candidate) return null;
+  return {
+    id: `sink-base-false-front:${candidate.styleId}:${candidate.masterCode}`,
+    kind: "single",
+    tier: "same-style",
+    candidate,
+    displayLabel: sinkBaseFalseFrontLabel(candidate.masterCode),
+    fieldModificationNote: sinkBaseFalseFrontOrderNote(candidate.masterCode),
+    reason: sinkBaseFalseFrontLabel(candidate.masterCode),
+    ruleNotes: ["sink-base-false-front", "field-modification", "same-style", "catalog-price"],
   };
 }
 
@@ -609,7 +674,7 @@ export function applyInventorySuggestion(input: {
     return { placed: [...input.placed], selectedUid: null, unchanged: true, message: "That cabinet is no longer in the design." };
   }
   const next = input.suggestion.kind === "single"
-    ? replaceSingle(input.placed, original, input.suggestion.candidate, input.designStyleId)
+    ? replaceSingle(input.placed, original, input.suggestion.candidate, input.designStyleId, input.suggestion.fieldModificationNote ?? null)
     : replaceWithCombination(input.placed, original, input.suggestion.candidates, input.room, input.designStyleId, input.makeUid ?? makeUid);
   if (!next) {
     return {
@@ -627,8 +692,9 @@ function replaceSingle(
   original: PlacedCabinet,
   candidate: InventoryCatalogCandidate,
   designStyleId: number | null,
+  fieldModificationNote: string | null,
 ): InventorySwapResult | null {
-  const swapped = stampCandidate(original, candidate, designStyleId);
+  const swapped = stampCandidate(original, candidate, designStyleId, fieldModificationNote);
   return {
     placed: placed.map((cabinet) => cabinet.uid === original.uid ? swapped : cabinet),
     selectedUid: original.uid,
@@ -665,7 +731,7 @@ function replaceWithCombination(
       fillerBillingRole: null,
       fillerForCabinetUid: null,
       peninsulaWizardId: null,
-    }, candidate, designStyleId);
+    }, candidate, designStyleId, null);
     pieces.push(piece);
     along += candidate.width;
   }
@@ -690,11 +756,13 @@ function stampCandidate(
   original: PlacedCabinet,
   candidate: InventoryCatalogCandidate,
   designStyleId: number | null,
+  fieldModificationNote: string | null = null,
 ): PlacedCabinet {
   const effective = effectiveStyleId(original, designStyleId);
   const styleId = candidate.styleId === effective ? original.styleId ?? null : candidate.styleId;
   return {
     ...original,
+    fieldModificationNote,
     cabinetId: candidate.id,
     masterCode: candidate.masterCode,
     description: candidate.description,

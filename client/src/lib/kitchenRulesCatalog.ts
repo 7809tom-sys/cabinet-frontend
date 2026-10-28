@@ -281,6 +281,18 @@ const ownerSeeds: KitchenRuleSeed[] = [
     notesText: null,
   },
   {
+    ruleCode: "owner-sink-base-false-front",
+    category: "Owner placement",
+    title: "Out-of-stock sink base substitutes a same-width base",
+    ruleDescription: "When an SBxx sink base is out of stock and a Bxx of the same width exists in the same door style, offer that base first. The shop removes the drawer and installs a false front. Nothing is swapped until the customer chooses it.",
+    parameters: { sink_base_substitute: 1 },
+    enforcementKind: "suggest",
+    sourceText: "Owner",
+    implementationStatus: "implemented",
+    readsParameters: true,
+    notesText: "SB36 prefers B36. The order line note is: B36 used as sink base: remove drawer, install false front. Set sink_base_substitute to 0 to hide the suggestion.",
+  },
+  {
     ruleCode: "owner-heavy-cook-landing",
     category: "Usage",
     title: "Heavy-cook counter on both sides of the range",
