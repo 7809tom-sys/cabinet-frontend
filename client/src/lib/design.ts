@@ -1,5 +1,6 @@
 // ─── Kitchen Design geometry & snapping engine ──────────────────────────────
 // All real-world units are INCHES. The canvas converts inches → pixels via PPI.
+import { baseAngleEndCountertopLocalPoints, isBaseAngleEndCabinet, type BaseAngleEndHand } from "@/lib/baseAngleEndLayout";
 import { freestandingCountertopSurfaces, isFreestandingBase } from "@/lib/freestandingRun";
 import {
   closestWall as closestPolygonWall,
@@ -2846,9 +2847,9 @@ export function placedFootprint(p: PlacedCabinet): { w: number; d: number } {
   // displace an adjoining cabinet run.
   if (p.integratedWallBlindFiller) return { w: 0, d: 0 };
   const cornerKind = placedCornerGeometryKind(p);
-  // BEC24 is a 24×24 square end-of-run box with two doors on its one flat
-  // front. Preserve this plan envelope through rotation, snap and collision;
-  // it is neither a diagonal corner nor a folded two-face return.
+  // The quarter-octagon end cabinet occupies a 24×24 plan envelope: the two
+  // straight sides fill that square, and the angled doors cut the outer corner.
+  // Preserve the envelope through rotation, snap and collision.
   if (cornerKind === "base-end") {
     return { w: STD.BASE_DEPTH, d: STD.BASE_DEPTH };
   }
@@ -3356,6 +3357,40 @@ export function lCornerCountertopWorldPolygon(
     { x: leg + projected, y: bounds.d },
     { x: 0, y: bounds.d },
   ].map(worldPoint);
+}
+
+/** Quarter-octagon countertop for BA-24 / BEC24 / BAC24, overhanging only the two door faces. */
+export function baseAngleEndCountertopWorldPolygon(
+  cabinet: PlacedCabinet,
+  frontOverhang = COUNTERTOP_DEPTH_IN - STD.BASE_DEPTH,
+): PlanFootprintPoint[] {
+  const hand: BaseAngleEndHand = cabinet.swing === "left" ? "left" : "right";
+  const local = baseAngleEndCountertopLocalPoints(hand, frontOverhang);
+  const bounds = placedFootprint(cabinet);
+  const rotation = ((Number(cabinet.rotation) % 360) + 360) % 360;
+  const radians = rotation * Math.PI / 180;
+  const tangent = { x: Math.cos(radians), y: Math.sin(radians) };
+  const normal = { x: -Math.sin(radians), y: Math.cos(radians) };
+  const rotatedMeasuredPlacement = Boolean(
+    cabinet.wallId
+    && cabinet.wallOffset != null
+    && ![0, 90, 180, 270].includes(Math.round(rotation)),
+  );
+  const rotatedWidth = Math.abs(bounds.w * tangent.x) + Math.abs(bounds.d * normal.x);
+  const rotatedDepth = Math.abs(bounds.w * tangent.y) + Math.abs(bounds.d * normal.y);
+  const center = {
+    x: cabinet.x + (rotatedMeasuredPlacement ? rotatedWidth : bounds.w) / 2,
+    y: cabinet.y + (rotatedMeasuredPlacement ? rotatedDepth : bounds.d) / 2,
+  };
+  const clean = (value: number) => Math.abs(value) < 1e-9 ? 0 : Math.round(value * 1e9) / 1e9;
+  return local.map((point) => {
+    const along = point.x - bounds.w / 2;
+    const inward = point.y - bounds.d / 2;
+    return {
+      x: clean(center.x + tangent.x * along + normal.x * inward),
+      y: clean(center.y + tangent.y * along + normal.y * inward),
+    };
+  });
 }
 
 function cabinetPlanBodyPolygons(cabinet: PlacedCabinet): PlanFootprintPoint[][] {
@@ -13649,6 +13684,11 @@ export function countertopSurfaces(
     const customWall = room.customWalls?.find((wall) => wall.id === side);
     if (cornerGeometry === "l-shape" || cornerGeometry === "corner-drawer") {
       const surface = countertopSurfaceFromWorldPolygon(lCornerCountertopWorldPolygon(p));
+      if (surface) out.push(customWall ? { ...surface, customWallId: customWall.id } : surface);
+      continue;
+    }
+    if (isBaseAngleEndCabinet(p)) {
+      const surface = countertopSurfaceFromWorldPolygon(baseAngleEndCountertopWorldPolygon(p));
       if (surface) out.push(customWall ? { ...surface, customWallId: customWall.id } : surface);
       continue;
     }

@@ -303,7 +303,7 @@ import {
 import { selectedBacksplashTextureUrl } from "@/lib/backsplashProductMaterial";
 import { ProDesignerDialog } from "@/components/design/ProDesignerDialog";
 import { CabinetDrawing } from "@/components/CabinetDrawing";
-import { BEC24_DISPLAY_NAME, baseSubGroup, cabinetDrawingType, isSquareDoubleDoorBaseEnd, type BaseSubGroup } from "@/lib/cabinetGraphics";
+import { baseSubGroup, cabinetDrawingType, type BaseSubGroup } from "@/lib/cabinetGraphics";
 import { GlassPolicyBadge } from "@/components/GlassPolicyBadge";
 import { CabinetImage } from "@/components/CabinetImage";
 import { DoorStyleSwatch } from "@/components/DoorStyleSwatch";
@@ -17190,7 +17190,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                    <CatalogPaletteCard
 	                      key={`${c.masterCode}:${c.catalogImageUrl ?? c.id}`}
 	                      cabinet={c}
-	                      description={isSquareDoubleDoorBaseEnd(c) ? BEC24_DISPLAY_NAME : c.description}
+	                      description={c.description}
 	                      sizeLabel={sizeLabel}
 	                      finishSwatchUrl={paletteFinishSwatch}
 	                      finishName={activeStyleName}
@@ -21882,7 +21882,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                <CabinetImage cabinet={catalogSpecificationsItem} className="h-16 w-16 shrink-0 rounded border border-[#d8c7a1] object-contain bg-white" />
 	                <div className="min-w-0">
 	                  <p className="font-mono text-base font-bold">{cabinetCode}</p>
-	                  <p className="text-sm">{isSquareDoubleDoorBaseEnd(catalogSpecificationsItem) ? BEC24_DISPLAY_NAME : catalogSpecificationsItem.description}</p>
+	                  <p className="text-sm">{catalogSpecificationsItem.description}</p>
 	                  <p className="mt-1 text-xs text-[#806a42]">{catalogSpecificationsItem.category ?? "Catalog item"}{catalogSpecificationsItem.subCategory ? ` · ${catalogSpecificationsItem.subCategory}` : ""}</p>
 	                </div>
 	              </div>

@@ -283,7 +283,7 @@ describe("end-angle elevation face", () => {
     expect(resolveElevationFacePresentation(stalePlacedBa, "base_end_return", null).cabinetType).toBe("end-angle");
   });
 
-  it("renders BEC-24 as two 8.45-inch doors meeting on its 17-inch 45-degree non-corner end face", () => {
+  it("renders the quarter-octagon end as two 17-inch doors meeting at 45 degrees", () => {
     const markup = renderToStaticMarkup(
       createElement(DoorFront, {
         kind: "shaker",
@@ -296,12 +296,15 @@ describe("end-angle elevation face", () => {
       }),
     );
 
-    expect(markup).toContain('data-bec-angled-end-face="true"');
-    expect(markup).toContain('data-bec-45-angle="true"');
-    expect(markup).toContain('data-bec-angled-left-door="8.45in"');
-    expect(markup).toContain('data-bec-angled-right-door="8.45in"');
-    expect(markup).toContain('data-bec-angled-center-seam="true"');
-    expect(markup).toContain("clip-path:polygon(0 5%, 100% 0, 100% 100%, 0 95%)");
+    expect(markup).toContain('data-base-angle-end="true"');
+    expect(markup).toContain('data-base-angle-pitch="45"');
+    expect(markup).toContain('data-base-angle-side-in="24"');
+    expect(markup).toContain('data-base-angle-door-in="17"');
+    expect(markup).toContain('data-base-angle-door="front"');
+    expect(markup).toContain('data-base-angle-door="end"');
+    expect(markup).toContain('data-base-angle-seam="true"');
+    expect(markup).toContain('data-base-angle-toe-kick="true"');
+    expect(markup).not.toContain('data-bec-angled-left-door="8.45in"');
   });
 });
 
@@ -532,9 +535,11 @@ describe("configured Cabinet Config elevation presentation", () => {
 
     expect(markup).not.toContain(`src="${imageUrl}"`);
     expect(markup).toContain('data-bec-angled-end-face="true"');
+    expect(markup).toContain('data-base-angle-end="true"');
     expect(markup).toContain('data-bec-45-angle="true"');
-    expect(markup).toContain('data-bec-angled-center-seam="true"');
-    expect(markup).toContain("clip-path:polygon(0 5%, 100% 0, 100% 100%, 0 95%)");
+    expect(markup).toContain('data-base-angle-seam="true"');
+    expect(markup).toContain('data-base-angle-door-in="17"');
+    expect(markup).not.toContain(imageUrl);
     expect(markup).toContain("width:96px");
   });
 });
