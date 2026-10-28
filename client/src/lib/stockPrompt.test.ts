@@ -3,7 +3,7 @@ import { DEFAULT_ROOM, wallPlacementAt, type PlacedCabinet } from "./design";
 import { applyInventorySuggestion, designInventoryFromStock, type InventoryCatalogCandidate } from "./inventoryAlternatives";
 import { buildDesignCabinetCartLines } from "./designCartLines";
 import { resetKitchenRuleParameters, setKitchenRuleParameters, setKitchenRuleTextParameters } from "./kitchenRuleParameters";
-import { parseStockPrompts, stockPromptOrderNote } from "./stockPrompt";
+import { parseStockPrompts, readjustOutOfStockRun, stockPromptOrderNote } from "./stockPrompt";
 import type { StockStatusResult } from "./inventoryProvider";
 
 const STYLE = 11;
@@ -174,23 +174,82 @@ describe("out-of-stock cabinet prompt", () => {
     }
   });
 
-  it("writes the readjust note only after an alternative is chosen", () => {
-    const { placed, notice } = promptFor("B18", [
+  it("re-lays the run within the shared 3 inch jog and falls back when nothing fits", () => {
+    const seat = (masterCode: string, width: number, along: number, uid: string): PlacedCabinet => {
+      const spot = wallPlacementAt(along, width, 24, "top", DEFAULT_ROOM);
+      return { ...place(masterCode, width), ...spot, uid, width, wallId: spot.wallId ?? "top", wallOffset: spot.wallOffset ?? along };
+    };
+    const left = seat("B24", 24, 40, "left");
+    const out = seat("B18", 18, 64, "out");
+    const right = seat("B24", 24, 82, "right");
+    const run = [left, out, right];
+    const fillCatalog = [
+      item({ id: 15, masterCode: "B15", width: 15, description: "15 inch base cabinet" }),
+      item({ id: 21, masterCode: "B21", width: 21, description: "21 inch base cabinet" }),
+      item({ id: 30, masterCode: "B30", width: 30, description: "30 inch base cabinet" }),
+      item({ id: 90, masterCode: "BF3", width: 3, description: "Base filler", subCategory: "Filler", category: "Filler", numberOfDoors: 0 }),
+    ];
+    const rows: Array<[string, "in_stock" | "out_of_stock"]> = [
       ["B18", "out_of_stock"],
-      ["B18FH", "in_stock"],
-      ["DB18", "in_stock"],
-    ]);
-    const alternative = notice?.suggestions.find((suggestion) => suggestion.kind === "single");
-    expect(alternative).toBeTruthy();
-    expect(placed.fieldModificationNote ?? null).toBeNull();
-    const swapped = applyInventorySuggestion({
-      placed: [placed],
-      uid: placed.uid,
-      suggestion: { ...alternative!, fieldModificationNote: stockPromptOrderNote("B18", "readjust the plan") },
-      room: DEFAULT_ROOM,
-      designStyleId: STYLE,
-    });
-    expect(swapped.placed[0]?.fieldModificationNote).toBe("out of B18, customer chose readjust the plan");
+      ["B15", "in_stock"],
+      ["B21", "in_stock"],
+      ["B30", "in_stock"],
+      ["BF3", "in_stock"],
+    ];
+    setKitchenRuleParameters({ filler_gap_max_in: 3, jog_max_in: 3 });
+    try {
+      const withSmallest = readjustOutOfStockRun({
+        placed: run,
+        uid: out.uid,
+        room: DEFAULT_ROOM,
+        catalog: fillCatalog,
+        stock: stock(rows),
+        designStyleId: STYLE,
+        distributorId: VENDOR,
+        assumeUnlistedInStock: false,
+      });
+      expect(withSmallest.ok).toBe(true);
+      if (!withSmallest.ok) return;
+      expect(withSmallest.shiftIn).toBe(0);
+      expect(withSmallest.placed.map((cabinet) => cabinet.masterCode)).toEqual(["B24", "B15", "BF3", "B24"]);
+      expect(withSmallest.placed.find((cabinet) => cabinet.masterCode === "B15")?.fieldModificationNote).toBe("out of B18, customer chose readjust the plan");
+      expect(run.map((cabinet) => cabinet.masterCode)).toEqual(["B24", "B18", "B24"]);
+
+      const shifted = readjustOutOfStockRun({
+        placed: run,
+        uid: out.uid,
+        room: DEFAULT_ROOM,
+        catalog: fillCatalog.filter((candidate) => candidate.masterCode !== "B15"),
+        stock: stock(rows),
+        designStyleId: STYLE,
+        distributorId: VENDOR,
+        assumeUnlistedInStock: false,
+      });
+      expect(shifted.ok).toBe(true);
+      if (!shifted.ok) return;
+      expect(shifted.shiftIn).toBe(1.5);
+      expect(shifted.placed.some((cabinet) => cabinet.masterCode === "B21")).toBe(true);
+      expect(shifted.placed.find((cabinet) => cabinet.uid === "left")?.wallOffset).toBe(38.5);
+      expect(shifted.placed.find((cabinet) => cabinet.uid === "right")?.wallOffset).toBe(83.5);
+
+      setKitchenRuleParameters({ filler_gap_max_in: 3, jog_max_in: 2 });
+      const tooFar = readjustOutOfStockRun({
+        placed: run,
+        uid: out.uid,
+        room: DEFAULT_ROOM,
+        catalog: fillCatalog.filter((candidate) => candidate.masterCode === "B30" || candidate.masterCode === "BF3"),
+        stock: stock([["B18", "out_of_stock"], ["B30", "in_stock"], ["BF3", "in_stock"]]),
+        designStyleId: STYLE,
+        distributorId: VENDOR,
+        assumeUnlistedInStock: false,
+      });
+      expect(tooFar.ok).toBe(false);
+      if (tooFar.ok) return;
+      expect(tooFar.message).toBe("No fit within 2 inches. Choose a full-height door base or a drawer base.");
+      expect(run.find((cabinet) => cabinet.uid === "out")?.masterCode).toBe("B18");
+    } finally {
+      resetKitchenRuleParameters();
+    }
   });
 
   it("parses several cabinet prompts and drops unknown options", () => {

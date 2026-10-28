@@ -119,6 +119,8 @@ export function OutOfStockChoiceDialog({
   onSwap,
   onBack,
   onDismiss,
+  message,
+  hiddenChoiceIds,
 }: {
   notice: InventoryCabinetNotice | null;
   phase: "choose" | "readjust";
@@ -127,8 +129,13 @@ export function OutOfStockChoiceDialog({
   onSwap: (suggestion: InventorySuggestion) => void;
   onBack: () => void;
   onDismiss: () => void;
+  message?: string | null;
+  hiddenChoiceIds?: readonly string[];
 }) {
   if (!notice?.choicePrompt) return null;
+  const prompt = hiddenChoiceIds?.length
+    ? { ...notice.choicePrompt, choices: notice.choicePrompt.choices.filter((choice) => !hiddenChoiceIds.includes(choice.id)) }
+    : notice.choicePrompt;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="presentation">
       <div role="dialog" aria-labelledby="stock-prompt-title" data-testid="stock-prompt-dialog" className="w-full max-w-md space-y-3 rounded-lg border border-amber-300 bg-white p-4 shadow-xl">
@@ -136,12 +143,13 @@ export function OutOfStockChoiceDialog({
           <h2 id="stock-prompt-title" className="text-base font-semibold text-[#1a2744]">{notice.masterCode} is out of stock</h2>
           <p className="mt-1 text-xs text-muted-foreground">
             {phase === "choose"
-              ? "Choose one option before anything in the plan changes."
+              ? "Choose one option before anything in the plan changes. Readjust slides this run by at most the jog limit and refills the opening with in-stock cabinets."
               : "Readjust this opening with an in-stock alternative. The run stays as drawn until you swap."}
           </p>
         </div>
+        {message ? <p role="alert" data-testid="stock-prompt-fallback" className="rounded-md border border-amber-300 bg-amber-50 px-2 py-1.5 text-xs text-amber-950">{message}</p> : null}
         {phase === "choose" ? (
-          <ChoiceButtons prompt={notice.choicePrompt} disabled={disabled} onChoose={onChoose} />
+          <ChoiceButtons prompt={prompt} disabled={disabled} onChoose={onChoose} />
         ) : notice.suggestions.length === 0 ? (
           <p className="text-xs text-muted-foreground" data-testid="stock-prompt-no-alternatives">No in-stock alternative fits this opening. {notice.masterCode} stays where it is.</p>
         ) : (
