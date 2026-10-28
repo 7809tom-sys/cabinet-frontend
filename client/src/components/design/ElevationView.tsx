@@ -697,6 +697,7 @@ export function ElevationView({
               drawerSampleUrl={cabDrawerSampleUrl}
               faceWidthIn={p.width}
               faceHeightIn={p.height}
+              angleEndHand={p.angleEndHand}
             />
           )}
           {applianceVisualUrl && (
@@ -2404,6 +2405,7 @@ export function CustomProfileFace({
   faceWidthIn,
   faceHeightIn,
   squareOpenEndShelf = false,
+  angleEndHand = null,
 }: {
   profile: string;
   face: string;
@@ -2417,6 +2419,8 @@ export function CustomProfileFace({
   faceHeightIn?: number;
   /** Verified KitchenCrest OE6 line art uses square, not bowed, shelf fronts. */
   squareOpenEndShelf?: boolean;
+  /** AW only: "left" mirrors the drawing so the door sits on the open end. */
+  angleEndHand?: "left" | "right" | null;
 }) {
   const shelfCount = Math.max(2, fixedShelves || adjustableShelves || 3);
   const rail = `color-mix(in srgb, ${face} 68%, #000)`;
@@ -2490,7 +2494,7 @@ export function CustomProfileFace({
     // high. The SKU supplies shelf count; every height keeps one side-hinged door
     // and the same 45-degree exposed-end casing instead of a split WDC face.
     return (
-      <div data-cabinet-profile="angled-wall" className="absolute inset-0 overflow-hidden" style={{ border: `3px solid ${edge}`, background: cavity }}>
+      <div data-cabinet-profile="angled-wall" data-angle-end-hand={angleEndHand === "left" ? "left" : "right"} className="absolute inset-0 overflow-hidden" style={{ border: `3px solid ${edge}`, background: cavity, transform: angleEndHand === "left" ? "scaleX(-1)" : undefined }}>
         <div className="absolute left-0 top-0 bottom-0 w-[60%]" style={{ borderRight: `2px solid ${rail}` }}>
           {shelves}
         </div>

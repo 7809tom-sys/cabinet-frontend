@@ -256,6 +256,8 @@ type SceneSku = {
   glassDoor?: boolean | null;
   doorOrientation?: "side-by-side" | "stacked" | null;
   swing?: "left" | "right" | "double" | "none" | null;
+  /** AW only: side of the square back corner ("left" mirrors the wedge). */
+  angleEndHand?: "left" | "right" | null;
   handleSide?: "left" | "right" | null;
   hardwarePosition?: "auto" | "left" | "center" | "right" | "paired" | "top-center" | null;
   openingType?: string | null;
@@ -3136,27 +3138,33 @@ export function triangleCornerFrontWidth(bodyWidth: number, bodyDepth: number) {
 }
 
 /** The exposed hypotenuse plane of a triangular angled-wall cabinet. */
-export function triangleCornerFrontPose(bodyWidth: number, bodyDepth: number, outwardOffset = 0.029) {
-  const normalX = -Math.SQRT1_2;
+export function triangleCornerFrontPose(bodyWidth: number, bodyDepth: number, outwardOffset = 0.029, hand: "left" | "right" = "right") {
+  const normalX = hand === "left" ? Math.SQRT1_2 : -Math.SQRT1_2;
   const normalZ = Math.SQRT1_2;
   void bodyWidth;
   void bodyDepth;
   return {
     x: normalX * outwardOffset,
     z: normalZ * outwardOffset,
-    rotation: -Math.PI / 4,
+    rotation: hand === "left" ? Math.PI / 4 : -Math.PI / 4,
     normalX,
     normalZ,
   };
 }
 
-/** The local triangle assumes the wall corner is back-left; shared rotation orients it elsewhere. */
-export function triangleCornerFootprintVertices(bodyWidth: number, bodyDepth: number) {
-  return [
+/**
+ * The local triangle keeps its square corner at the back-right (wall + right
+ * neighbour); `hand: "left"` mirrors it to the back-left for an AW whose
+ * neighbour is on its left. Shared rotation orients it on the wall.
+ */
+export function triangleCornerFootprintVertices(bodyWidth: number, bodyDepth: number, hand: "left" | "right" = "right") {
+  const vertices = [
     { x: -bodyWidth / 2, z: -bodyDepth / 2 },
     { x: bodyWidth / 2, z: -bodyDepth / 2 },
     { x: bodyWidth / 2, z: bodyDepth / 2 },
   ];
+  // Mirroring flips winding; reverse so the extrusion keeps outward normals.
+  return hand === "left" ? vertices.map((vertex) => ({ x: -vertex.x, z: vertex.z })).reverse() : vertices;
 }
 
 /** Builds the vertical pentagonal extrusion defined by the shared 2D diagonal footprint. */
@@ -3283,8 +3291,8 @@ function baseAngleEndFeet(widthIn: number, depthIn: number, hand: BaseAngleEndHa
 }
 
 /** Builds the vertical triangular extrusion defined by the shared 2D triangle footprint. */
-function triangleCornerWedgeGeometry(bodyWidth: number, bodyDepth: number, height: number) {
-  const vertices = triangleCornerFootprintVertices(bodyWidth, bodyDepth);
+function triangleCornerWedgeGeometry(bodyWidth: number, bodyDepth: number, height: number, hand: "left" | "right" = "right") {
+  const vertices = triangleCornerFootprintVertices(bodyWidth, bodyDepth, hand);
   const shape = new THREE.Shape();
   shape.moveTo(vertices[0]!.x, -vertices[0]!.z);
   for (const vertex of vertices.slice(1)) shape.lineTo(vertex.x, -vertex.z);
@@ -4427,7 +4435,7 @@ export function addCabinet(
   } else if (specialty.kind === "diagonal-corner") {
     const wedge = new THREE.Mesh(
       angledWallProfile
-        ? triangleCornerWedgeGeometry(bodyWidth, bodyDepth, bodyHeight)
+        ? triangleCornerWedgeGeometry(bodyWidth, bodyDepth, bodyHeight, sku.angleEndHand === "left" ? "left" : "right")
         : diagonalCornerWedgeGeometry(bodyWidth, bodyDepth, bodyHeight),
       bodyMaterial,
     );
@@ -5780,7 +5788,7 @@ export function addCabinet(
         : 2;
     const diagonalDoorWidth = diagonalWidth / diagonalDoorCount;
     const diagonalDoorHeight = Math.max(0.2, bodyHeight - 0.1);
-    const angledWallFace = angledWallProfile ? triangleCornerFrontPose(bodyWidth, bodyDepth) : null;
+    const angledWallFace = angledWallProfile ? triangleCornerFrontPose(bodyWidth, bodyDepth, undefined, sku.angleEndHand === "left" ? "left" : "right") : null;
     const diagonalFaceCenterX = angledWallFace?.x ?? bodyWidth / 4;
     const diagonalFaceCenterZ = angledWallFace?.z ?? bodyDepth / 4;
     const diagonalFaceNormal = angledWallProfile ? 0 : Math.SQRT1_2 * 0.045;
@@ -10172,6 +10180,7 @@ export function existingCabinetSku(cabinet: PlacedCabinet, room?: RoomData): Sce
 	    glassDoor: isGlassDoorCabinet(cabinet),
     doorOrientation: cabinet.doorOrientation ?? null,
 	    swing: resolveSwing(cabinet),
+	    angleEndHand: cabinet.angleEndHand === "left" ? "left" : null,
     handleSide: cabinet.handleSide === "left" || cabinet.handleSide === "right" ? cabinet.handleSide : null,
     mountBottom: cabinet.mountBottom ?? null,
     hardwarePosition: resolveCabinetHardwarePosition(cabinet),
