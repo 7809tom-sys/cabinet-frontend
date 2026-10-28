@@ -29,6 +29,11 @@ const EDGE_EPSILON_IN = 0.001;
 export const SMALL_GAP_FILLER_MIN_IN = 0;
 /** A cabinet-to-cabinet seam up to six inches can be intentionally filled. */
 export const SMALL_GAP_FILLER_MAX_IN = 6;
+/**
+ * A leftover run gap at or below this width is filled immediately. Wider seams,
+ * through the six-inch filler maximum, still ask where the filler should go.
+ */
+export const AUTO_PLACE_FILLER_MAX_IN = 3;
 
 /** Saved Kitchen Rules value, or the 6 inch code default when none is stored. */
 export function effectiveSmallGapFillerMaxIn(): number {
@@ -126,6 +131,13 @@ export function installableSmallGapRemainder(value: number): number | null {
 /** The optimal filler consumes the entire measured cabinet-to-cabinet seam. */
 export function optimalSmallGapFillerCut(opportunity: Pick<SmallGapFillerOpportunity, "remaining">): number | null {
   return installableSmallGapRemainder(opportunity.remaining);
+}
+
+/** True when a detected leftover must be filled without asking the user. */
+export function shouldAutoPlaceLeftoverFiller(remaining: number): boolean {
+  return Number.isFinite(remaining)
+    && remaining > EDGE_EPSILON_IN
+    && remaining <= AUTO_PLACE_FILLER_MAX_IN + EDGE_EPSILON_IN;
 }
 
 function gapCrossesWallOpening(openings: readonly WallOpening[], wall: WallSide, start: number, length: number) {

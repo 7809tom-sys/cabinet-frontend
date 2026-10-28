@@ -1678,21 +1678,25 @@ describe("cabinetWall inference", () => {
 });
 
 describe("trimPiecesNeeded (stick rounding)", () => {
-  it("rounds a 63in run up to one 8ft stick", () => {
+  it("rounds a 63in run up to one 8ft stick and adds one spare", () => {
     const t = trimPiecesNeeded(63);
-    expect(t.pieces).toBe(1);
-    expect(t.orderedFeet).toBe(8);
-  });
-
-  it("rounds just over one stick (with waste) up to two sticks", () => {
-    // 90in * 1.1 = 99in > 96 -> 2 sticks
-    const t = trimPiecesNeeded(90);
+    expect(t.measuredPieces).toBe(1);
+    expect(t.extraStick).toBe(1);
     expect(t.pieces).toBe(2);
     expect(t.orderedFeet).toBe(16);
   });
 
-  it("returns 0 pieces for an empty run", () => {
-    expect(trimPiecesNeeded(0).pieces).toBe(0);
+  it("rounds just over one stick (with waste) up to two sticks, then adds the spare", () => {
+    // 90in * 1.1 = 99in > 96 -> 2 measured sticks + 1 spare
+    const t = trimPiecesNeeded(90);
+    expect(t.measuredPieces).toBe(2);
+    expect(t.extraStick).toBe(1);
+    expect(t.pieces).toBe(3);
+    expect(t.orderedFeet).toBe(24);
+  });
+
+  it("returns 0 pieces for an empty run and does not add a spare", () => {
+    expect(trimPiecesNeeded(0)).toMatchObject({ pieces: 0, measuredPieces: 0, extraStick: 0 });
   });
 });
 

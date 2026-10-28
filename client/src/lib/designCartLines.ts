@@ -233,7 +233,7 @@ export function lockDesignCartLinesToPackageTotal<T extends CartItem>(lines: T[]
 /** A bundle price remains valid only while its priced cabinet composition matches the saved snapshot. */
 export function bundleCabinetPricingSignature(placed: PlacedCabinet[], styleId: number | null): string {
   return placed
-    .filter((cabinet) => cabinet.placement !== "appliance" && !isClosetPart(cabinet.masterCode) && cabinet.cabinetId != null && cabinet.fillerBillingRole !== "secondary")
+    .filter((cabinet) => cabinet.placement !== "appliance" && !isClosetPart(cabinet.masterCode) && cabinet.cabinetId != null && cabinet.fillerBillingRole !== "secondary" && !isCombinedSmallFiller(cabinet, placed))
     .map((cabinet) => [
       cabinet.uid,
       cabinet.masterCode,

@@ -13,6 +13,7 @@ import {
 import {
   findIslandSmallGapFillerOpportunity,
   findSmallGapFillerOpportunity,
+  shouldAutoPlaceLeftoverFiller,
   type SmallGapFillerOpportunity,
 } from "@/lib/smallGapFiller";
 import { reviewKitchenAdjacency, type AdjacencySkip } from "@/lib/kitchenAdjacency";
@@ -99,7 +100,7 @@ export function buildPreSavePlanReview({
     const opportunity = cabinet.islandFace && island
       ? findIslandSmallGapFillerOpportunity(island, placed, cabinet.uid)
       : findSmallGapFillerOpportunity(room, placed, openings, cabinet.uid);
-    if (!opportunity) continue;
+    if (!opportunity || shouldAutoPlaceLeftoverFiller(opportunity.remaining)) continue;
 
     const filler = catalogFillerForGap(catalogFillers, opportunity.remaining, opportunity.layer);
     const uniqueOpening = `${opportunity.islandFace ?? opportunity.wall}:${opportunity.layer}:${opportunity.openingStart}:${opportunity.openingLength}`;
