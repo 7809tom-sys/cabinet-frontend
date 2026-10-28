@@ -21087,7 +21087,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                   <DialogHeader>
                     <DialogTitle>Choose attached fillers</DialogTitle>
                     <DialogDescription>
-                      Choose optional ⅛″–6″ fillers before placing {attachedFillerPrompt.cabinet.masterCode}. Only the sides that meet a real wall or adjoining cabinet are offered. Each installed strip uses existing CabinetDealz filler stock and its authorized price.
+                      Choose an optional filler of any size from ⅛″ to 6″ on the left, the right, or both sides of {attachedFillerPrompt.cabinet.masterCode}. Each installed strip uses existing CabinetDealz filler stock and its authorized price.
                     </DialogDescription>
                   </DialogHeader>
                   <div className="space-y-3">
@@ -21119,10 +21119,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                       <div data-testid="attached-filler-measured-space" className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs">
                         <p className="font-semibold text-foreground">Measured space</p>
                         {([["Left", attachedFillerPrompt.leftAllowed, attachedFillerPrompt.leftGapIn], ["Right", attachedFillerPrompt.rightAllowed, attachedFillerPrompt.rightGapIn]] as const)
-                          .filter(([, allowed]) => allowed)
-                          .map(([label, , gapIn]) => (
+                          .map(([label, near, gapIn]) => (
                             <p key={label} className="text-muted-foreground">
-                              {label}: {gapIn < 0.125 ? "flush against the wall or cabinet, no gap" : formatEighthInches(Math.round(gapIn * 8) / 8)}
+                              {label}: {gapIn < 0.125 ? "flush against the wall or cabinet, no gap" : near ? formatEighthInches(Math.round(gapIn * 8) / 8) : gapIn > 6 ? `${formatEighthInches(Math.round(gapIn * 8) / 8)} of open run — a filler attaches to the cabinet's side` : formatEighthInches(Math.round(gapIn * 8) / 8)}
                             </p>
                           ))}
                       </div>
@@ -21131,10 +21130,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                       <strong>No filler</strong> is the default. A strip of 3″ or less is field-cut from its companion stock board; no short filler SKU or price is invented.
                     </div>
                     <div className="grid gap-3 sm:grid-cols-2">
-                      {attachedFillerPrompt.leftAllowed && <label className="grid gap-1 text-sm font-medium">Filler LEFT (inches)
+                      {<label className="grid gap-1 text-sm font-medium">Filler LEFT (inches)
                         <Input data-testid="attached-filler-left-input" aria-label="Left attached filler size in inches" type="number" inputMode="decimal" min="0.125" max="6" step="0.125" placeholder="No filler" value={attachedFillerPrompt.leftText} onChange={(event) => setAttachedFillerPrompt((current) => current ? { ...current, leftText: event.target.value } : current)} />
                       </label>}
-                      {attachedFillerPrompt.rightAllowed && <label className="grid gap-1 text-sm font-medium">Filler RIGHT (inches)
+                      {<label className="grid gap-1 text-sm font-medium">Filler RIGHT (inches)
                         <Input data-testid="attached-filler-right-input" aria-label="Right attached filler size in inches" type="number" inputMode="decimal" min="0.125" max="6" step="0.125" placeholder="No filler" value={attachedFillerPrompt.rightText} onChange={(event) => setAttachedFillerPrompt((current) => current ? { ...current, rightText: event.target.value } : current)} />
                       </label>}
                     </div>

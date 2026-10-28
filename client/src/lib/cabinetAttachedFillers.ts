@@ -196,8 +196,10 @@ export function attachedFillerPlanForCandidate(
     const rightAllowed = cornerLeg.at === "start" ? ownAllowed : legAllowed;
     const leftIn = roundToEighth(finitePositive(choice.leftIn));
     const rightIn = roundToEighth(finitePositive(choice.rightIn));
-    if ((leftIn > EDGE_EPSILON_IN && (!leftAllowed || leftIn > leftGapIn + EDGE_EPSILON_IN))
-      || (rightIn > EDGE_EPSILON_IN && (!rightAllowed || rightIn > rightGapIn + EDGE_EPSILON_IN))) return null;
+    // Any 1/8–6 inch filler may be chosen on either leg, as long as it fits in
+    // the free space past that leg; the cabinet itself never moves.
+    if (leftIn > 6 + EDGE_EPSILON_IN || rightIn > 6 + EDGE_EPSILON_IN) return null;
+    if (leftIn > leftGapIn + EDGE_EPSILON_IN || rightIn > rightGapIn + EDGE_EPSILON_IN) return null;
     const legPiece = (side: AttachedFillerSide, widthIn: number) => ({
       side,
       wall: cornerLeg.wall,
@@ -206,10 +208,10 @@ export function attachedFillerPlanForCandidate(
       attachmentSide: (cornerLeg.legAtStart ? "right" : "left") as AttachedFillerSide,
     });
     const pieces: AttachedFillerPlan["pieces"] = [];
-    if (leftIn > EDGE_EPSILON_IN) {
+    if (leftIn > 0) {
       pieces.push(cornerLeg.at === "start" ? legPiece("left", leftIn) : { side: "left", startIn: cabinetStart - leftIn, widthIn: leftIn });
     }
-    if (rightIn > EDGE_EPSILON_IN) {
+    if (rightIn > 0) {
       pieces.push(cornerLeg.at === "start" ? { side: "right", startIn: cabinetStart + cabinetSpan, widthIn: rightIn } : legPiece("right", rightIn));
     }
     return {
@@ -234,27 +236,31 @@ export function attachedFillerPlanForCandidate(
   const rightGapIn = Math.max(0, openingEnd - (cabinetStart + cabinetSpan));
   const leftIn = roundToEighth(finitePositive(choice.leftIn));
   const rightIn = roundToEighth(finitePositive(choice.rightIn));
-  // An attached filler must finish at a real wall or neighboring cabinet and
-  // be part of a six-inch-or-less installation seam. This deliberately keeps a
-  // free-standing/exposed cabinet end out of the chooser instead of moving a
-  // cabinet across a large open run merely because the far room wall exists.
+  // A side "near" a wall or cabinet (within six inches) is where a leftover
+  // filler is suggested. Any 1/8–6 inch filler may still be chosen on either
+  // side: next to a near wall/cabinet it butts that edge and the cabinet moves
+  // over; on an open side it attaches to the cabinet's face and nothing moves.
   const leftAllowed = (openingStart <= EDGE_EPSILON_IN || leftPeer)
     && leftGapIn <= 6 + EDGE_EPSILON_IN;
   const rightAllowed = (openingEnd >= runLength - EDGE_EPSILON_IN || rightPeer)
     && rightGapIn <= 6 + EDGE_EPSILON_IN;
-  if ((leftIn > EDGE_EPSILON_IN && !leftAllowed) || (rightIn > EDGE_EPSILON_IN && !rightAllowed)) return null;
   if (leftIn > 6 + EDGE_EPSILON_IN || rightIn > 6 + EDGE_EPSILON_IN) return null;
-  if (leftIn + rightIn > availableFillerIn + EDGE_EPSILON_IN) return null;
 
   const placement = candidate.placement;
-  const fittedStart = leftIn > EDGE_EPSILON_IN
-    ? openingStart + leftIn
-    : rightIn > EDGE_EPSILON_IN
-      ? openingEnd - rightIn - cabinetSpan
-      : cabinetStart;
+  let fittedStart = cabinetStart;
+  if (leftIn > 0) {
+    fittedStart = leftAllowed ? openingStart + leftIn : Math.max(cabinetStart, openingStart + leftIn);
+  }
+  if (rightIn > 0 && !(leftIn > 0 && leftAllowed)) {
+    const rightFlushStart = openingEnd - rightIn - cabinetSpan;
+    fittedStart = rightAllowed ? rightFlushStart : Math.min(fittedStart, rightFlushStart);
+  }
+  // Nothing may cross the wall or cabinet on either side.
+  if (fittedStart - leftIn < openingStart - EDGE_EPSILON_IN) return null;
+  if (fittedStart + cabinetSpan + rightIn > openingEnd + EDGE_EPSILON_IN) return null;
   const pieces: AttachedFillerPlan["pieces"] = [];
-  if (leftIn > EDGE_EPSILON_IN) pieces.push({ side: "left", startIn: openingStart, widthIn: leftIn });
-  if (rightIn > EDGE_EPSILON_IN) pieces.push({ side: "right", startIn: fittedStart + cabinetSpan, widthIn: rightIn });
+  if (leftIn > 0) pieces.push({ side: "left", startIn: fittedStart - leftIn, widthIn: leftIn });
+  if (rightIn > 0) pieces.push({ side: "right", startIn: fittedStart + cabinetSpan, widthIn: rightIn });
   return {
     wall,
     placement,
