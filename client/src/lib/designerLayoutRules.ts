@@ -16,7 +16,6 @@ import {
   isRangeOrOven,
   isRefrigerator,
   isRefrigeratorEndPanel,
-  isSinkBaseCabinet,
   placedCornerGeometryKind,
   placedFootprint,
   matchInstalledFillerToCabinet,
@@ -43,10 +42,11 @@ import {
 import { planAutoDesignBaseSegment } from "./autoDesignSeamFillers";
 import { applyFramelessDoorClearanceFillers } from "./framelessDoorClearance";
 import {
-  SMALL_GAP_FILLER_MAX_IN,
+  effectiveSmallGapFillerMaxIn,
   findPreferredSmallGapFillerOpportunity,
   type SmallGapFillerOpportunity,
 } from "./smallGapFiller";
+import { kitchenRuleNumber } from "./kitchenRuleParameters";
 
 /**
  * The most a user-placed Auto-Design appliance may slide along its own wall
@@ -63,8 +63,7 @@ export const REFRIGERATOR_SHIFT_LIMIT_IN = 6;
 /** Per-appliance cap measured from the original placement. */
 export function autoDesignShiftLimitIn(kind: string): number {
   if (kind === "refrigerator") return REFRIGERATOR_SHIFT_LIMIT_IN;
-  if (kind === "sink") return SINK_SHIFT_LIMIT_IN;
-  return AUTO_DESIGN_WIGGLE_ROOM_IN;
+  return kitchenRuleNumber("jog_max_in");
 }
 
 const WIGGLE_STEP_IN = 1 / 8;
@@ -387,8 +386,9 @@ function segmentPenalty(
   const undersized = fill.items.filter((item) => !item.isFiller && item.width < UNDERSIZED_CABINET_IN - COLLISION_EPSILON_IN).length;
   // A remainder the standard filler can still cut counts as filler. A hole wider
   // than that is a real miss and dominates the score.
-  const smallRemainder = uncovered <= SMALL_GAP_FILLER_MAX_IN ? uncovered : 0;
-  const largeHole = uncovered > SMALL_GAP_FILLER_MAX_IN ? uncovered : 0;
+  const fillerMax = effectiveSmallGapFillerMaxIn();
+  const smallRemainder = uncovered <= fillerMax ? uncovered : 0;
+  const largeHole = uncovered > fillerMax ? uncovered : 0;
   const penalty = largeHole * 1000 + undersized * 100 + (fill.note ? 50 : 0) + filler + smallRemainder;
   cache.set(key, penalty);
   return penalty;
@@ -421,21 +421,6 @@ function layoutPenalty(
     }
   }
   return penalty;
-}
-
-function sinkLockedByModeledWindow(
-  item: PlacedCabinet,
-  openings: readonly WallOpening[],
-  room: RoomData,
-): boolean {
-  if (!isSinkBaseCabinet(item)) return false;
-  const wall = cabinetWall(item, room);
-  const start = wallRunOffset(item, wall, room);
-  const end = start + wallRunSpan(item, wall, room);
-  return openings.some((opening) => opening.kind === "window"
-    && opening.side === wall
-    && opening.offset < end - COLLISION_EPSILON_IN
-    && opening.offset + opening.width > start + COLLISION_EPSILON_IN);
 }
 
 function applianceDisplayName(kind: string): string {
@@ -602,12 +587,13 @@ function wiggleGroup(item: PlacedCabinet, origin: AutoDesignAnchorOrigin, placed
 }
 
 /**
- * Slides each user-placed Auto-Design appliance along its own wall by the
- * smallest distance that produces the best cabinet fit. Ranges and dishwashers
- * stay within 3 inches, sinks within 3 inches, and refrigerators within 6
- * inches of the original placement. A shift that collides, leaves the wall, or
- * pulls a sink off a modeled window is rejected. Equal fits keep the smaller
- * move, and a tie breaks toward the wall start. Each applied shift is returned
+ * Slides each user-placed Auto-Design anchor along its own wall by the
+ * smallest distance that produces the best cabinet fit. Ranges, dishwashers,
+ * and sink bases stay within 3 inches of the original placement. Refrigerators
+ * stay within their own cap. A shift that collides or leaves the wall is
+ * rejected. A sink may leave a modeled window; centering on that window is a
+ * suggestion checked after the shift. Equal fits keep the smaller move, and a
+ * tie breaks toward the wall start. Each applied shift is returned
  * with the appliance, wall, direction, inches, positions, and the cabinet it
  * made room for when that cabinet is already on the plan.
  */
@@ -635,7 +621,7 @@ export function applyAutoDesignWiggleRoom(input: {
     for (const origin of origins) {
       const item = placed.find((candidate) => candidate.uid === origin.uid);
       if (!item) continue;
-      if (locked.has(item.uid) || sinkLockedByModeledWindow(item, input.openings, input.room)) continue;
+      if (locked.has(item.uid)) continue;
       const group = wiggleGroup(item, origin, placed, input.room);
       if (!group) continue;
       const initialStart = alongStart(item, group.wallId, input.room);
@@ -727,11 +713,11 @@ function gapPieces(opportunity: SmallGapFillerOpportunity): Array<{ start: numbe
   const before = opportunity.cabinetStart - opportunity.openingStart;
   const after = opportunity.openingStart + opportunity.openingLength - (opportunity.cabinetStart + opportunity.cabinetSpan);
   const pieces: Array<{ start: number; width: number; side: "left" | "right"; ownerUid: string }> = [];
-  if (before > COLLISION_EPSILON_IN && before <= SMALL_GAP_FILLER_MAX_IN + COLLISION_EPSILON_IN) {
+  if (before > COLLISION_EPSILON_IN && before <= effectiveSmallGapFillerMaxIn() + COLLISION_EPSILON_IN) {
     const ownerUid = opportunity.boundedCabinetUids?.[0] ?? opportunity.cabinetUid;
     pieces.push({ start: opportunity.cabinetStart - before, width: before, side: "left", ownerUid });
   }
-  if (after > COLLISION_EPSILON_IN && after <= SMALL_GAP_FILLER_MAX_IN + COLLISION_EPSILON_IN) {
+  if (after > COLLISION_EPSILON_IN && after <= effectiveSmallGapFillerMaxIn() + COLLISION_EPSILON_IN) {
     const ownerUid = opportunity.boundedCabinetUids?.[1] ?? opportunity.cabinetUid;
     pieces.push({ start: opportunity.cabinetStart + opportunity.cabinetSpan, width: after, side: "right", ownerUid });
   }

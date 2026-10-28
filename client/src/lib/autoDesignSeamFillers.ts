@@ -12,6 +12,8 @@ import {
   type DesignCabinet, type PlacedCabinet, type RoomData, type WallOpening,
 } from "./design";
 import { installedFillerVerticalSpec } from "./smallGapFiller";
+import { guardHeavyCookRangeLanding } from "./kitchenAdjacency";
+import { preferDrawerBasesBesideRange } from "./kitchenUsage";
 
 /** A seam narrower than this is tape-measure noise, not a gap. */
 export const SEAM_MIN_IN = 0.125;
@@ -321,12 +323,21 @@ export function fillAutoDesignLowerSeams(input: {
   placed: PlacedCabinet[]; room: RoomData; openings: readonly WallOpening[];
   fillers: readonly CatalogFillerCandidate[]; makeUid: () => string; styleId: number | null;
   corners?: readonly { x: number; y: number }[];
+  /** Everyday cooking: leave a short gap beside the range instead of filling it with a filler. */
+  preserveHeavyCookLandings?: boolean;
 }): { placed: PlacedCabinet[]; additions: PlacedCabinet[]; notes: string[] } {
   let working = [...input.placed];
   const additions: PlacedCabinet[] = [];
   const notes: string[] = [];
   const seams = findAutoDesignSeams({ layer: "base", placed: working, room: input.room, openings: input.openings, corners: input.corners });
   for (const seam of seams) {
+    if (input.preserveHeavyCookLandings) {
+      const touchesRange = [seam.left, seam.right].some((item) => item && item.placement === "appliance" && isRangeOrOven(item.masterCode, item.description));
+      if (touchesRange && seam.end - seam.start < 15 - 0.05) {
+        notes.push(`Left the ${exactWidth(seam.end - seam.start)}″ space beside the range open: everyday cooking needs 15″ of counter, and a filler was not placed against the range.`);
+        continue;
+      }
+    }
     const result = fillersForSeam({ seam, layer: "base", fillers: input.fillers, room: input.room, makeUid: input.makeUid, styleId: input.styleId });
     if ("error" in result) { notes.push(result.error); continue; }
     const accepted = appendCollisionFreePlacements(working, result.pieces, input.room);
@@ -368,7 +379,14 @@ function catalogCabinetForWidth(catalog: DesignCabinet[], width: number): Design
 }
 
 export function planAutoDesignBaseSegment(input: {
-  length: number; catalog: DesignCabinet[]; rangeAtStart: boolean; rangeAtEnd: boolean;
+  length: number;
+  catalog: DesignCabinet[];
+  rangeAtStart: boolean;
+  rangeAtEnd: boolean;
+  /** Everyday cooking: do not put a base under 15" or a filler against the range. */
+  heavyCookLanding?: boolean;
+  /** Baking or everyday cooking: use a same-width drawer base against the range when the line sells one. */
+  preferDrawerBesideRange?: boolean;
 }): { items: FillItem[]; note: string | null } {
   const widths = input.catalog.map((candidate) => dim(candidate.width, 0)).filter((width) => width > 0);
   const solved = searchFewestFillerOpening({ lengthIn: input.length, widthsIn: widths, layer: "base", movementLimitIn: 0 });
@@ -387,7 +405,7 @@ export function planAutoDesignBaseSegment(input: {
       (!input.rangeAtStart || (items[0] && !items[0].isFiller && items[0].width >= RANGE_NEIGHBOR_MIN_WIDTH_IN - COLLISION_EPSILON_IN))
       && (!input.rangeAtEnd || (items[items.length - 1] && !items[items.length - 1]!.isFiller && items[items.length - 1]!.width >= RANGE_NEIGHBOR_MIN_WIDTH_IN - COLLISION_EPSILON_IN))
     );
-    if (!missing && items.length && besideOk) return { items, note: null };
+    if (!missing && items.length && besideOk) return finish(items, null);
   }
   const free = autoFillSpan(input.length, "kitchen", input.catalog, { strategy: "largest-first" });
   const arrange = (items: FillItem[]): FillItem[] => {
@@ -401,7 +419,7 @@ export function planAutoDesignBaseSegment(input: {
     return [...cabinets, ...fillers];
   };
   const arranged = arrange(free.items);
-  if (!input.rangeAtStart && !input.rangeAtEnd) return { items: arranged, note: null };
+  if (!input.rangeAtStart && !input.rangeAtEnd) return finish(arranged, null);
   const beside = (items: FillItem[]): FillItem[] => {
     const out: FillItem[] = [];
     if (input.rangeAtStart && items.length) out.push(items[0]!);
@@ -410,15 +428,21 @@ export function planAutoDesignBaseSegment(input: {
   };
   const ok = (items: FillItem[]) => items.length > 0
     && beside(items).every((item) => !item.isFiller && item.width >= RANGE_NEIGHBOR_MIN_WIDTH_IN - COLLISION_EPSILON_IN);
-  if (ok(arranged)) return { items: arranged, note: null };
+  if (ok(arranged)) return finish(arranged, null);
   const wide = input.catalog.filter((candidate) => dim(candidate.width, 0) >= RANGE_NEIGHBOR_MIN_WIDTH_IN - COLLISION_EPSILON_IN);
   const restricted = autoFillSpan(input.length, "kitchen", wide, { strategy: "largest-first" });
   const restrictedArranged = arrange(restricted.items);
   if (ok(restrictedArranged) && restricted.leftoverInches <= free.leftoverInches + 0.01) {
-    return { items: restrictedArranged, note: null };
+    return finish(restrictedArranged, null);
   }
-  return {
-    items: arranged,
-    note: `The run beside the range is only ${Math.round(input.length * 100) / 100}″, so its neighbor is narrower than ${RANGE_NEIGHBOR_MIN_WIDTH_IN}″.`,
-  };
+  return finish(arranged, `The run beside the range is only ${Math.round(input.length * 100) / 100}″, so its neighbor is narrower than ${RANGE_NEIGHBOR_MIN_WIDTH_IN}″.`);
+
+  function finish(items: FillItem[], note: string | null): { items: FillItem[]; note: string | null } {
+    const preferred = input.preferDrawerBesideRange
+      ? preferDrawerBasesBesideRange(items, input.catalog, input.rangeAtStart, input.rangeAtEnd)
+      : items;
+    if (!input.heavyCookLanding) return { items: preferred, note };
+    const guarded = guardHeavyCookRangeLanding(preferred, input);
+    return { items: guarded.items, note: guarded.note ?? note };
+  }
 }

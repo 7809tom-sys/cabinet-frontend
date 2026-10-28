@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { CabinetDrawing } from "@/components/CabinetDrawing";
-import { cabinetAltText, isSquareDoubleDoorBaseEnd, type CabinetLike } from "@/lib/cabinetGraphics";
+import { cabinetAltText, type CabinetLike } from "@/lib/cabinetGraphics";
 import { catalogMediaRecoveryUrl, newCatalogMediaRetryNonce } from "@/lib/catalogMediaImage";
 
 interface CabinetImageProps {
@@ -24,12 +24,7 @@ interface CabinetImageProps {
  * not replace approved product artwork.
  */
 export function CabinetImage({ cabinet, finishColor, className, overrideImageUrl }: CabinetImageProps) {
-  // BEC24's legacy thumbnail shows a diagonal/quarter-octagon that contradicts
-  // its owner-approved square double-door end shape. Only this code falls back
-  // to the shared deterministic drawing; other catalog art is untouched.
-  const url = isSquareDoubleDoorBaseEnd(cabinet)
-    ? null
-    : overrideImageUrl?.trim() || cabinet.catalogImageUrl?.trim() || null;
+  const url = overrideImageUrl?.trim() || cabinet.catalogImageUrl?.trim() || null;
   const [failed, setFailed] = useState<{ url: string; attempts: number; retryUrl: string | null } | null>(null);
   const attempts = url && failed?.url === url ? failed.attempts : 0;
   if (!url || attempts >= 2) {

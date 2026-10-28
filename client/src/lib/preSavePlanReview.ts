@@ -16,11 +16,14 @@ import {
   shouldAutoPlaceLeftoverFiller,
   type SmallGapFillerOpportunity,
 } from "@/lib/smallGapFiller";
+import { reviewKitchenAdjacency, type AdjacencySkip } from "@/lib/kitchenAdjacency";
+import type { KitchenUsageProfile } from "@/lib/kitchenUsage";
 
 export type PreSavePlanReviewAction =
   | { kind: "filler"; opportunity: SmallGapFillerOpportunity; fillerCode: string }
   | { kind: "refrigerator"; refrigeratorUid: string; replaceCabinetUid?: string; replaceCabinetCode?: string }
-  | { kind: "issue"; cabinetUid: string };
+  | { kind: "issue"; cabinetUid: string }
+  | { kind: "adjacency"; ruleId: string };
 
 export type PreSavePlanReviewFinding = {
   id: string;
@@ -33,6 +36,8 @@ export type PreSavePlanReviewFinding = {
 
 export type PreSavePlanReview = {
   findings: PreSavePlanReviewFinding[];
+  /** Rules that were not checked because the plan does not model that data. */
+  notes: AdjacencySkip[];
 };
 
 export type PreSavePlanReviewInput = {
@@ -42,6 +47,8 @@ export type PreSavePlanReviewInput = {
   island: IslandZone | null;
   catalogFillers: readonly CatalogFillerCandidate[];
   conflictUids: ReadonlySet<string>;
+  kitchenUsage?: KitchenUsageProfile | null;
+  catalog?: readonly { masterCode?: string | null; description?: string | null; subCategory?: string | null; category?: string | null; width?: string | number | null; placement?: string | null; numberOfDoors?: number | null; numberOfDrawers?: number | null }[];
 };
 
 /**
@@ -83,6 +90,8 @@ export function buildPreSavePlanReview({
   island,
   catalogFillers,
   conflictUids,
+  kitchenUsage,
+  catalog,
 }: PreSavePlanReviewInput): PreSavePlanReview {
   const findings: PreSavePlanReviewFinding[] = [];
   const recordedFillers = new Set<string>();
@@ -144,5 +153,25 @@ export function buildPreSavePlanReview({
     });
   }
 
-  return { findings };
+  const adjacency = reviewKitchenAdjacency({
+    placed,
+    room,
+    openings,
+    island,
+    usage: kitchenUsage ?? room.kitchenUsage ?? null,
+    catalog,
+    acceptedSuggestionIds: (kitchenUsage ?? room.kitchenUsage)?.acceptedSuggestionIds,
+  });
+  for (const entry of adjacency.findings) {
+    findings.push({
+      id: entry.id,
+      severity: entry.severity === "attention" ? "attention" : "recommendation",
+      title: entry.title,
+      description: entry.description,
+      actionLabel: entry.severity === "suggestion" ? "Accept suggestion" : "Review placement",
+      action: { kind: "adjacency", ruleId: entry.ruleId },
+    });
+  }
+
+  return { findings, notes: adjacency.skipped };
 }

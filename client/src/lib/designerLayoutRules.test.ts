@@ -209,7 +209,7 @@ describe("auto-design wiggle room", () => {
     expect(Math.abs(wallRunOffset(moved, "bottom", room) - 45)).toBeLessThanOrEqual(3);
   });
 
-  it("does not pull a sink off a modeled window", () => {
+  it("slides a sink base at most 3 inches, including off a modeled window", () => {
     const room = { ...DEFAULT_ROOM, width: 120 };
     const spot = wallPlacementAt(45, 36, 24, "bottom", room);
     const sink: PlacedCabinet = {
@@ -247,8 +247,11 @@ describe("auto-design wiggle room", () => {
       catalog: catalog([36, 30, 24, 18, 12]),
       origins: [originFor(sink, "sink", 45)],
     });
-    expect(wallRunOffset(result.placed[0]!, "bottom", room)).toBeCloseTo(45, 5);
-    expect(result.moves).toEqual([]);
+    const start = wallRunOffset(result.placed[0]!, "bottom", room);
+    expect(Math.abs(start - 45)).toBeLessThanOrEqual(3);
+    expect(start).toBeCloseTo(42, 5);
+    expect(result.moves).toHaveLength(1);
+    expect(result.moves[0]).toMatchObject({ kind: "sink", label: "Sink base" });
     expect(result.placed[0]!.y).toBe(sink.y);
   });
 
