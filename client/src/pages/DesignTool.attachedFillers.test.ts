@@ -29,3 +29,11 @@ describe("regular Designer attached filler workflow", () => {
     expect(source).toContain("REVIEW: attached filler is now on an exposed end");
   });
 });
+
+describe("attached filler measured space", () => {
+  it("states each offered side's measured gap, including flush sides", () => {
+    expect(source).toContain('data-testid="attached-filler-measured-space"');
+    expect(source).toContain("flush against the wall or cabinet, no gap");
+    expect(source).toContain("leftGapIn: attachment.leftGapIn,");
+  });
+});

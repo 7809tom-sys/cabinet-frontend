@@ -1,5 +1,6 @@
 import {
   cabinetWall,
+  freeSegmentsOnWall,
   wallLength,
   wallRunOffset,
   wallRunSpan,
@@ -85,6 +86,24 @@ export function attachedFillerPlanForCandidate(
     }
     if (start >= cabinetStart + cabinetSpan - EDGE_EPSILON_IN && start < openingEnd) {
       openingEnd = start;
+      rightPeer = true;
+    }
+  }
+  // Measure the run the way the plan's "Fits up to" labels do: a cabinet on the
+  // adjoining wall, or the inside-corner hold, ends this run at a corner even
+  // though it is not on this wall. Doors and windows are left out because an
+  // attached filler must finish against a wall or cabinet, never an opening.
+  const others = placed.filter((peer) => peer.uid !== candidate.uid);
+  const segment = freeSegmentsOnWall(wall, room, others, [], 0, 0, candidate.placement, false, candidate, candidate.depth)
+    .find((free) => cabinetStart >= free.start - EDGE_EPSILON_IN
+      && cabinetStart + cabinetSpan <= free.start + free.length + EDGE_EPSILON_IN);
+  if (segment) {
+    if (segment.start > openingStart + EDGE_EPSILON_IN) {
+      openingStart = segment.start;
+      leftPeer = true;
+    }
+    if (segment.start + segment.length < openingEnd - EDGE_EPSILON_IN) {
+      openingEnd = segment.start + segment.length;
       rightPeer = true;
     }
   }
