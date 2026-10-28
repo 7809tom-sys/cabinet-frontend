@@ -96,6 +96,16 @@ function enabled(reason: ExposedPanelReason): boolean {
   return kitchenRuleNumber("exposed_panels_enabled") !== 0 && kitchenRuleNumber(REASON_SWITCH[reason]) !== 0;
 }
 
+/**
+ * Removes every panel this engine auto-placed. The Designer no longer adds
+ * finished panels on its own: a panel is only added when the user picks one.
+ * Designs saved while the engine ran still carry its panels; this strips them.
+ */
+export function removeAutoExposedPanels(placed: readonly PlacedCabinet[]): PlacedCabinet[] {
+  const kept = placed.filter((item) => !isAutoPanel(item));
+  return kept.length === placed.length ? placed as PlacedCabinet[] : kept;
+}
+
 function isAutoPanel(item: PlacedCabinet): boolean {
   return Boolean(item.autoPlacedReason && item.autoPlacedForUid && item.autoPlacedSide);
 }

@@ -97,7 +97,7 @@ import { adjustedDesignUnitPrice, buildDesignCabinetCartLines, buildDesignPrevie
 import { combinedFillerNote, fillerCutSourceFor, isCombinedSmallFiller } from "@/lib/fillerBilling";
 import { activeCatalogPricingIdsByMasterCode, currentCatalogPricingCabinetId } from "@/lib/designPricingIdentity";
 import { catalogFillerForGap, catalogFillerPricingId, fittedCatalogFillerDescription, isCatalogFiller, type CatalogFillerCandidate } from "@/lib/catalogFiller";
-import { isExposedPanelStockCandidate, syncExposedSidePanels, type ExposedPanelStock, type ExposedPanelWarning } from "@/lib/exposedSidePanels";
+import { removeAutoExposedPanels } from "@/lib/exposedSidePanels";
 import { attachedFillerLeftoverOptions, attachedFillerNeedsReview, attachedFillerPlanForCandidate, attachedFillerSizeIssues, type AttachedFillerChoice, type AttachedFillerLeftoverOptions, type AttachedFillerSizeIssue } from "@/lib/cabinetAttachedFillers";
 import { buildAttachedFillerPlacement, supportsAttachedFillerChoice } from "@/lib/cabinetAttachedFillerPlacement";
 import { selectedPeninsulaCabinetSequencePlan, selectedPeninsulaCabinetTotalIn, wizardEligibleBaseCabinets, type PeninsulaWizardCabinet } from "@/lib/peninsulaWizardPlan";
@@ -4597,9 +4597,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	    // prospective rows, a physically required filler could never pass the
 	    // positive-price gate until it had somehow already been added.
 	    catalogFillers.filter(isCatalogFiller).forEach((filler) => push(filler.id, styleId, filler.masterCode));
-	    // Exposed-side finished panels are cut from catalog panel stock. Price that
-	    // stock up front, or every exposed side reports "no priced panel SKU".
-	    catalogFillers.filter(isExposedPanelStockCandidate).forEach((panel) => push(panel.id, styleId, panel.masterCode));
 	    // AEF window-break WEP panels are source-priced stock. Price each one in
 	    // the exact finish of the upper cabinet whose exposed end it covers.
 	    aefWindowEndPanels.forEach((panel) => {
@@ -4711,48 +4708,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     },
 	    [priceMap, pricingIdForPlacedCabinet, pricingStyleIdFor, styleId, glassDoorAddonCodeFor, glassDoorCatalogProduct]
 	  );
-  const [exposedPanelWarnings, setExposedPanelWarnings] = useState<ExposedPanelWarning[]>([]);
-  // One line for the collapsed Design check; the per-cabinet list stays one click away.
-  const exposedPanelSummary = useMemo(() => {
-    const unpriced = exposedPanelWarnings.filter((warning) => warning.id.startsWith("missing-price:")).length;
-    const other = exposedPanelWarnings.length - unpriced;
-    const parts: string[] = [];
-    if (unpriced > 0) parts.push(`${unpriced} exposed cabinet side${unpriced === 1 ? "" : "s"} need${unpriced === 1 ? "s" : ""} a finished panel, but this door style has no priced panel SKU, so none were added`);
-    if (other > 0) parts.push(`${other} panel${other === 1 ? "" : "s"} could not be placed`);
-    return `${parts.join("; ")}.`;
-  }, [exposedPanelWarnings]);
-  const exposedPanelStock = useMemo<ExposedPanelStock[]>(() => {
-    if (!styleId) return [];
-    return catalogFillers.flatMap((item) => {
-      if (!isExposedPanelStockCandidate(item)) return [];
-      const placement = item.placement === "wall" ? "wall" as const : item.placement === "tall" ? "tall" as const : "base" as const;
-      return [{
-        id: item.id,
-        masterCode: item.masterCode,
-        description: item.description || item.masterCode,
-        placement,
-        stockFace: Number(item.width) || Number(item.depth) || 12,
-        stockHeight: Number(item.height) || 34.5,
-        price: priceMap.get(`${item.id}:${styleId}`) ?? null,
-      }];
-    });
-  }, [catalogFillers, priceMap, styleId]);
+  // Finished panels are added only when the user chooses one. The automatic
+  // exposed-side engine is not run; panels it placed in older saves are removed.
   useEffect(() => {
-    // Wait for the panel stock prices too; a refetch in flight still holds the
-    // previous rows and would report every side as unpriced.
-    if (!priceRowsFetched || priceRowsFetching || exposedPanelStock.length === 0) return;
-    const plan = syncExposedSidePanels({
-      placed: placedRef.current,
-      room: roomRef.current,
-      openings,
-      catalog: exposedPanelStock,
-    });
-    if (plan.placed !== placedRef.current) {
-      placedRef.current = plan.placed;
-      setPlaced(plan.placed);
-    }
-    setExposedPanelWarnings(plan.warnings);
-  }, [exposedPanelStock, openings, priceRowsFetched, priceRowsFetching, room, setPlaced]);
+    const cleaned = removeAutoExposedPanels(placed);
+    if (cleaned === placed) return;
+    placedRef.current = cleaned;
+    setPlaced(cleaned);
+  }, [placed, setPlaced]);
 
   // ── Part 1: every placed cabinet remains visible ─────────────────────────
   // Evaluate the active line as soon as its price query settles. Flags drive
@@ -14535,23 +14498,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         onCommit={commitMasterTracTower}
       />}
       <SinkBaseSubstitutionNotice swaps={sinkBaseSwapNotices} onUndo={undoSinkBaseSwap} />
-      {exposedPanelWarnings.length > 0 && (
-        <div role="status" data-testid="design-check-panel" className="border-b border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-950">
-          <details data-testid="design-check-details">
-            <summary className="cursor-pointer font-semibold">
-              Design check: {exposedPanelSummary}
-              <span className="ml-1 font-normal underline underline-offset-2">Show details</span>
-            </summary>
-            <ul className="mt-1 max-h-48 space-y-1 overflow-y-auto">
-              {exposedPanelWarnings.map((warning) => (
-                <li key={warning.id}>
-                  <button type="button" className="text-left underline-offset-2 hover:underline" onClick={() => setSelectedUid(warning.cabinetUid)}>{warning.message}</button>
-                </li>
-              ))}
-            </ul>
-          </details>
-        </div>
-      )}
       <OutOfStockChoiceDialog
         notice={stockPromptNotice}
         phase={stockPromptPhase}

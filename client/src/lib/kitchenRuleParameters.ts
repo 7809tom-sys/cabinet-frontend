@@ -31,8 +31,8 @@ export const KITCHEN_RULE_PARAMETER_DEFAULTS = {
   sink_base_substitute: 1,
   /** 1 asks before replacing a configured out-of-stock SKU. 0 skips the prompt. */
   stock_prompt_enabled: 1,
-  /** Master switch for finished panels on exposed sides. 0 unpublishes the engine. */
-  exposed_panels_enabled: 1,
+  /** Master switch for finished panels on exposed sides. Off: panels are only added when the user chooses one. */
+  exposed_panels_enabled: 0,
   panel_thickness_in: 0.75,
   panel_end_wall_enabled: 1,
   panel_dw_enabled: 1,
