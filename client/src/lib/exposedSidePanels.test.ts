@@ -193,3 +193,21 @@ describe("exposed side panels", () => {
     }
   });
 });
+
+describe("exposed side panels never push a cabinet into its neighbour", () => {
+  it("keeps a B21 against the wall when jogging it would hit the fridge panel", async () => {
+    const { removeOverlappingPlacements } = await import("./design");
+    const b21 = place({ uid: "b21", masterCode: "B21", placement: "base", offset: 0, width: 21 });
+    const fridgePanel = { ...place({ uid: "rep", masterCode: "REP3096", placement: "tall", offset: 21, width: 0.75, depth: 24, height: 96, description: "Refrigerator End Panel" }) };
+    const fridge = place({ uid: "fridge", masterCode: "FRIDGE-36", placement: "appliance", offset: 22.25, width: 36, depth: 24, height: 70, description: "Refrigerator" });
+    const before = [b21, fridgePanel, fridge];
+    const plan = syncExposedSidePanels({ placed: before, room, catalog: stock });
+    const host = plan.placed.find((item) => item.uid === "b21");
+    expect(host?.wallOffset).toBe(0);
+    expect(plan.warnings.some((warning) => warning.cabinetUid === "b21" && /no room/.test(warning.message))).toBe(true);
+    // Nothing the engine produces is deleted by the overlap repair.
+    const repaired = removeOverlappingPlacements(plan.placed, room);
+    expect(repaired.rejected.map((item) => item.uid)).toEqual([]);
+    expect(repaired.placed.some((item) => item.uid === "b21")).toBe(true);
+  });
+});
