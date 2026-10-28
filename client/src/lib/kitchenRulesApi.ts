@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { trpc } from "@/lib/trpc";
-import { setKitchenRuleParameters, setKitchenRuleTextParameters } from "@/lib/kitchenRuleParameters";
+import { resetKitchenRuleParameters, setKitchenRuleParameters, setKitchenRuleTextParameters } from "@/lib/kitchenRuleParameters";
 
 export type KitchenRuleRecord = {
   id: number;
@@ -79,13 +79,42 @@ export function useKitchenRuleMutations() {
   };
 }
 
+export type KitchenRuleParameterPayload = {
+  values: Record<string, number>;
+  text?: Record<string, string>;
+};
+
+/**
+ * A missing kitchenRules.parameters procedure (NOT_FOUND, often inside a 207
+ * batch) must not replace the seeded defaults or block the Designer.
+ */
+export function kitchenRuleSyncPlan(input: {
+  data?: KitchenRuleParameterPayload | null;
+  isError: boolean;
+}): "apply" | "defaults" | "wait" {
+  if (input.isError) return "defaults";
+  if (input.data?.values) return "apply";
+  return "wait";
+}
+
 /** Loads saved numeric parameters for every Designer session. Failures keep the code defaults. */
 export function useKitchenRuleParameterSync() {
-  const query = api().kitchenRules.parameters.useQuery(undefined, { retry: false, staleTime: 60_000 });
+  const query = api().kitchenRules.parameters.useQuery(undefined, {
+    retry: false,
+    staleTime: 60_000,
+    throwOnError: false,
+  });
   useEffect(() => {
-    if (query.data?.values) setKitchenRuleParameters(query.data.values);
-    if (query.data) setKitchenRuleTextParameters(query.data.text ?? {});
-  }, [query.data]);
+    const plan = kitchenRuleSyncPlan({ data: query.data, isError: query.isError });
+    if (plan === "defaults") {
+      resetKitchenRuleParameters();
+      return;
+    }
+    if (plan === "apply" && query.data) {
+      setKitchenRuleParameters(query.data.values);
+      setKitchenRuleTextParameters(query.data.text ?? {});
+    }
+  }, [query.data, query.isError]);
 }
 
 export function kitchenRulesToCsv(rules: readonly KitchenRuleRecord[]): string {

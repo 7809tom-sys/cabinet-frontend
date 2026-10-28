@@ -4197,6 +4197,12 @@ export function removeOverlappingPlacements(placements: PlacedCabinet[], room?: 
       resolution.placed.push(candidate);
       continue;
     }
+    // Auto-added end panels are re-checked by the exposed-side engine. Deleting
+    // them here made that engine place them again and re-price the plan forever.
+    if (candidate.autoPlacedReason) {
+      resolution.placed.push(candidate);
+      continue;
+    }
     const appended = appendCollisionFreePlacements(resolution.placed, [candidate], room);
     resolution.placed = appended.placed;
     resolution.rejected.push(...appended.rejected);
