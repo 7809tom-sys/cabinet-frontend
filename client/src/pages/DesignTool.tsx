@@ -117,6 +117,7 @@ import {
   installableSmallGapRemainder,
 	optimalSmallGapFillerCut,
 	  removePlacedCabinetGroup,
+	  removedCabinetOwnedFillers,
 	  smallGapFillerOpportunityFromDragPreview,
   smallGapFillerLayout,
   type SmallGapFillerOpportunity,
@@ -11056,16 +11057,28 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         .map((cabinet) => cabinet.fillerPieceGroupId)
         .filter((groupId): groupId is string => !!groupId),
     );
+    // A filler placed with a cabinet (attached, small-gap, or refrigerator cap
+    // filler) records that cabinet as its owner. Deleting the cabinet deletes
+    // those fillers and the rest of each filler's purchased group with it.
+    const ownedFillers = removedCabinetOwnedFillers(committed, uidSet);
+    const ownedFillerGroups = new Set(
+      ownedFillers
+        .map((filler) => filler.fillerPieceGroupId)
+        .filter((groupId): groupId is string => !!groupId),
+    );
+    const ownedFillerUids = new Set(ownedFillers.map((filler) => filler.uid));
     let next = uids.reduce(
       (current, uid) => removePlacedCabinetWithRequiredBlindCornerFiller(current, uid),
       committed,
     );
+    next = next.filter((cabinet) => !ownedFillerUids.has(cabinet.uid)
+      && !(cabinet.fillerPieceGroupId && ownedFillerGroups.has(cabinet.fillerPieceGroupId)));
 	    if (removeSharedFillerGroups && fillerGroups.size > 0) {
 	      next = next.filter((cabinet) => !cabinet.fillerPieceGroupId || !fillerGroups.has(cabinet.fillerPieceGroupId));
 	    }
-	    // Optional attached fillers are never silently deleted when a later cabinet
-	    // edit exposes their outside edge. Keep the purchased stock in the design
-	    // and flag it for the installer/customer to review in Attributes and Parts.
+	    // An attached filler whose own cabinet remains is never silently deleted
+	    // when a neighbouring cabinet's removal exposes its outside edge. Keep the
+	    // purchased stock and flag it for review in Attributes and Parts.
 	    next = next.map((cabinet) => cabinet.fillerAttachmentSide
 	      ? { ...cabinet, fillerNeedsReview: attachedFillerNeedsReview(cabinet, next, room) }
 	      : cabinet);
