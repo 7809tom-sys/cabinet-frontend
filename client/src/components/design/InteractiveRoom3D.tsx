@@ -3669,7 +3669,11 @@ export function resolvedThreeDSpecialtyProfile(sku: Pick<SceneSku, "graphicType"
     return { kind: "diagonal-corner" as const, pattern: null };
   }
   if (sku.facePattern) return { kind: "face-pattern" as const, pattern: sku.facePattern };
-  if (/\b(?:wine|lattice|plate)\b/i.test(`${sku.masterCode} ${sku.description ?? ""}`)) return { kind: "face-pattern" as const, pattern: "lattice" as const };
+  // Plate racks hold plates on edge between vertical dividers; only wine and
+  // lattice racks get the diamond bottle lattice. Matches the elevation, which
+  // draws an unset rack pattern as slats.
+  if (/\bplate\b/i.test(`${sku.masterCode} ${sku.description ?? ""}`)) return { kind: "face-pattern" as const, pattern: "slats" as const };
+  if (/\b(?:wine|lattice)\b/i.test(`${sku.masterCode} ${sku.description ?? ""}`)) return { kind: "face-pattern" as const, pattern: "lattice" as const };
   return { kind: "standard" as const, pattern: null };
 }
 
