@@ -3415,13 +3415,19 @@ function cabinetPlanBodyPolygons(cabinet: PlacedCabinet): PlanFootprintPoint[][]
     : [rotatedCabinetBodyPolygon(cabinet)];
 }
 
-/** Convex separating-axis test where flush edge contact remains valid. */
+/**
+ * Convex separating-axis test where flush edge contact remains valid. Axes are
+ * unit length so the gap is in inches: seams projected onto a drawn wall carry
+ * floating-point noise, and anything within RUN_SEAM_TOLERANCE_IN is contact.
+ */
 function convexPlanPolygonsIntersect(left: PlanFootprintPoint[], right: PlanFootprintPoint[]): boolean {
   for (const polygon of [left, right]) {
     for (let index = 0; index < polygon.length; index++) {
       const start = polygon[index];
       const end = polygon[(index + 1) % polygon.length];
-      const axis = { x: -(end.y - start.y), y: end.x - start.x };
+      const edgeLength = Math.hypot(end.x - start.x, end.y - start.y);
+      if (edgeLength <= COLLISION_EPSILON_IN) continue;
+      const axis = { x: -(end.y - start.y) / edgeLength, y: (end.x - start.x) / edgeLength };
       const project = (points: PlanFootprintPoint[]) => points.reduce(
         (range, point) => {
           const value = point.x * axis.x + point.y * axis.y;
@@ -3431,7 +3437,7 @@ function convexPlanPolygonsIntersect(left: PlanFootprintPoint[], right: PlanFoot
       );
       const leftRange = project(left);
       const rightRange = project(right);
-      if (leftRange.max <= rightRange.min + COLLISION_EPSILON_IN || rightRange.max <= leftRange.min + COLLISION_EPSILON_IN) return false;
+      if (leftRange.max <= rightRange.min + RUN_SEAM_TOLERANCE_IN || rightRange.max <= leftRange.min + RUN_SEAM_TOLERANCE_IN) return false;
     }
   }
   return true;
