@@ -472,6 +472,17 @@ export function appendSmallGapFillerPlacement(
   return appendCollisionFreePlacements(preserved, [...pieces], room);
 }
 
+/**
+ * Fillers placed together with a cabinet record it as their owner
+ * (`fillerForCabinetUid`). Returns the fillers owned by the cabinets being
+ * deleted so they leave the design with their cabinet.
+ */
+export function removedCabinetOwnedFillers(placed: readonly PlacedCabinet[], removedUids: ReadonlySet<string>): PlacedCabinet[] {
+  return placed.filter((item) => !removedUids.has(item.uid)
+    && item.fillerForCabinetUid != null
+    && removedUids.has(item.fillerForCabinetUid));
+}
+
 /** Removing either half removes the complete purchased filler group. */
 export function removePlacedCabinetGroup(placed: readonly PlacedCabinet[], uid: string): PlacedCabinet[] {
   const target = placed.find((item) => item.uid === uid);
