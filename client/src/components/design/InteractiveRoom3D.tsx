@@ -2273,6 +2273,16 @@ function threeDDollhouseObjectCenter(node: THREE.Object3D, box: THREE.Box3, targ
   return target;
 }
 
+/**
+ * When the camera-facing wall is cut away, only what is part of that wall goes
+ * with it: its windows and doors and its backsplash tile, which would otherwise
+ * float in mid-air. Cabinets, countertops, sinks, appliances, fillers, and
+ * everything else on that wall stay visible (owner request, 2026-10-28).
+ */
+export function threeDDollhouseHidesWithWall(node: THREE.Object3D): boolean {
+  return node.userData.openingUid != null || node.userData.measuredBacksplash === true;
+}
+
 function setThreeDDollhouseHidden(node: THREE.Object3D, hide: boolean) {
   if (hide) {
     if (node.userData.dollhouseHidden !== true) {
@@ -11405,7 +11415,7 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 	        for (const child of catalogRoot.children) {
 	          const center = threeDDollhouseObjectCenter(child, dollhouseBounds, dollhouseCenter);
 	          const mounted = center ? threeDDollhouseMountWalls(center, dollhouseWallFrames) : [];
-	          setThreeDDollhouseHidden(child, mounted.some((side) => hiddenSides.has(side)));
+	          setThreeDDollhouseHidden(child, threeDDollhouseHidesWithWall(child) && mounted.some((side) => hiddenSides.has(side)));
 	        }
 	      }
 	      renderer.render(threeScene, camera);

@@ -8,9 +8,11 @@ import {
   THREE_D_DOLLHOUSE_MOUNT_DEPTH_IN,
   threeDDollhouseMountWalls,
   threeDDollhouseWallFrames,
+  threeDDollhouseHidesWithWall,
   threeDDollhouseWallHidesFromCamera,
   threeDWallObscuresOrbitTarget,
 } from "./InteractiveRoom3D";
+import * as THREE from "three";
 
 const front = [{ x: 0, y: 0 }, { x: 120, y: 0 }] as const;
 const back = [{ x: 0, y: 120 }, { x: 120, y: 120 }] as const;
@@ -91,4 +93,22 @@ describe("regular Designer clear 3D view", () => {
     expect(threeDDollhouseMountWalls({ x: 0.7, z: 0.7 }, walls, 3).sort()).toEqual(["left", "top"]);
     expect(threeDDollhouseMountWalls({ x: 6, z: 5 }, walls, 3)).toEqual([]);
   });
+
+  it("keeps cabinets on a cut-away wall visible; only that wall's windows, doors, and backsplash go with it", () => {
+    const item = (userData: Record<string, unknown>) => Object.assign(new THREE.Group(), { userData });
+    expect(threeDDollhouseHidesWithWall(item({ placedUid: "b24", masterCode: "B24" }))).toBe(false);
+    expect(threeDDollhouseHidesWithWall(item({ placedUid: "w3030", masterCode: "W3030" }))).toBe(false);
+    expect(threeDDollhouseHidesWithWall(item({ countertop: true }))).toBe(false);
+    expect(threeDDollhouseHidesWithWall(item({ openingUid: "window-1", kind: "window" }))).toBe(true);
+    expect(threeDDollhouseHidesWithWall(item({ measuredBacksplash: true }))).toBe(true);
+    const renderer = readFileSync(new URL("./InteractiveRoom3D.tsx", import.meta.url), "utf8");
+    expect(renderer).toContain("setThreeDDollhouseHidden(child, threeDDollhouseHidesWithWall(child) && mounted.some((side) => hiddenSides.has(side)));");
+    // Each wall's backsplash segment is its own top-level piece, so it fades
+    // with that wall only.
+    expect(renderer).toContain("mesh.userData = { measuredBacksplash: true, ...segment");
+    expect(renderer).toContain("addThreeDBacksplash(catalogRoot, backsplashSegments");
+    // The wall itself still fades away from the camera.
+    expect(renderer).toContain("mesh.visible = !hide;");
+  });
 });
+
