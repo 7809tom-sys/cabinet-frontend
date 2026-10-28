@@ -51,7 +51,7 @@ describe("Design Tool independent refrigerator options", () => {
     expect(transaction).toContain("const sourceDimensions = wallCabinetSkuDimensions(chosen.masterCode)");
     expect(transaction).toContain("const aWidth = sourceDimensions?.width");
     expect(transaction).toContain("wallPlacementAtUnbounded(along, pThick, pDepth, side, room)");
-    expect(transaction).toContain("wallPlacementAt(along, eachFillerWidth, aDepth, side, room)");
+    expect(transaction).toContain("wallPlacementAtUnbounded(along, eachFillerWidth, aDepth, side, room)");
     expect(transaction).not.toContain("? opts.bridgeWidth : fp.w");
   });
 
