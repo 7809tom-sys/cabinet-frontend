@@ -194,6 +194,11 @@ function frameless(cabinet: PlacedCabinet): boolean {
   return cabinet.constructionMethod === "aef" || /frameless/i.test(cabinet.constructionMethod ?? "") || cabinet.constructionMethod === "AEF";
 }
 
+/** Catalog accessories the exposed-side engine may cut a finished panel from. */
+export function isExposedPanelStockCandidate(item: { masterCode: string; description?: string | null; subCategory?: string | null }): boolean {
+  return /\bpanel\b/i.test(`${item.masterCode} ${item.description ?? ""} ${item.subCategory ?? ""}`);
+}
+
 function pickStock(owner: PlacedCabinet, catalog: readonly ExposedPanelStock[]): ExposedPanelStock | null {
   const family = owner.placement === "wall" ? "wall" : owner.placement === "tall" || isRefrigerator(owner) ? "tall" : "base";
   const face = owner.placement === "wall" ? Math.max(owner.depth, 12) : Math.max(owner.depth, 24);
