@@ -38,6 +38,7 @@ import {
   styleIdFromSearch,
   type AffiliateFamilyOverlay,
 } from "@/lib/affiliateBrowse";
+import { catalogGlobalSearchTerm, catalogSearchRequest } from "@/lib/catalogSearchQuery";
 
 // ─── Category presentation config ──────────────────────────────────────────────
 // Maps DB category values to a room-scene image + short description. Categories
@@ -542,7 +543,11 @@ function CategoryView({
     setQuickViewCabinet(null);
   }, [styleId]);
 
-  const { data, isLoading } = trpc.cabinets.listForStyle.useQuery(
+  // A selected door style searches that line. A typed query with no style
+  // searches the public catalog (SKU fragment or description phrase). With
+  // neither, the shopper still has to pick a line before the grid fills in.
+  const searchRequest = catalogSearchRequest(styleId, debouncedSearch);
+  const { data: styleData, isLoading: styleLoading } = trpc.cabinets.listForStyle.useQuery(
     {
       styleId: styleId ?? 0,
       category: category ?? undefined,
@@ -553,8 +558,19 @@ function CategoryView({
       offset,
       affiliateSlug,
     },
-    { enabled: styleId != null }
+    { enabled: searchRequest.kind === "style" }
   );
+  const { data: catalogData, isLoading: catalogLoading } = trpc.cabinets.list.useQuery(
+    {
+      category: category ?? undefined,
+      search: searchRequest.kind === "catalog" ? catalogGlobalSearchTerm(searchRequest.search) : undefined,
+      limit: LIMIT,
+      offset,
+    },
+    { enabled: searchRequest.kind === "catalog" }
+  );
+  const data = searchRequest.kind === "style" ? styleData : searchRequest.kind === "catalog" ? catalogData : undefined;
+  const isLoading = searchRequest.kind === "style" ? styleLoading : searchRequest.kind === "catalog" ? catalogLoading : false;
   // Fetch the selected line's full sellable set only while a quick-view panel
   // is open. This keeps the normal catalog grid light while offering accessory
   // suggestions that truly belong to the shopper's selected door style.
@@ -631,7 +647,7 @@ function CategoryView({
           <CatalogBrowseSidebar
             filters={browseFilters}
             colors={colorOptions}
-            resultCount={styleId == null ? null : total}
+            resultCount={searchRequest.kind === "prompt" ? null : total}
             onChange={setBrowseFilters}
             onClear={clearBrowseFilters}
             idPrefix="mobile-catalog"
@@ -644,7 +660,7 @@ function CategoryView({
           <CatalogBrowseSidebar
             filters={browseFilters}
             colors={colorOptions}
-            resultCount={styleId == null ? null : total}
+            resultCount={searchRequest.kind === "prompt" ? null : total}
             onChange={setBrowseFilters}
             onClear={clearBrowseFilters}
             idPrefix="desktop-catalog"
@@ -652,8 +668,7 @@ function CategoryView({
         </div>
 
         <div>
-      {/* Door style selector — availability is per door style, so the shopper
-          must choose a style before any cabinets are shown. */}
+      {/* Door style narrows availability. A search still runs without one. */}
       <div className="mb-6 rounded-xl border border-border bg-muted/30 p-4">
         <label htmlFor="catalog-door-style" className="block text-sm font-semibold text-foreground mb-2">
           {t("cat_door_style_label")}
@@ -683,18 +698,17 @@ function CategoryView({
         )}
       </div>
 
-      {/* Search (only meaningful once a style is selected) */}
-      {styleId != null && (
-        <div className="relative mb-6 max-w-lg">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder={t("cat_search_within")}
-            className="pl-9"
-            value={search}
-            onChange={(e) => onSearchChange(e.target.value)}
-          />
-        </div>
-      )}
+      <div className="relative mb-6 max-w-lg">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder={styleId != null ? t("cat_search_within") : t("cat_search_placeholder")}
+          className="pl-9"
+          value={search}
+          aria-label="Search cabinets"
+          data-testid="catalog-search-input"
+          onChange={(e) => onSearchChange(e.target.value)}
+        />
+      </div>
 
       {/* Active filters */}
       {debouncedSearch && (
@@ -710,8 +724,8 @@ function CategoryView({
         </div>
       )}
 
-      {/* Prompt to choose a style before any grid renders */}
-      {styleId == null ? (
+      {/* No query and no door style yet: ask for a line. A query renders matches. */}
+      {searchRequest.kind === "prompt" ? (
         <div className="text-center py-16 text-muted-foreground">
           <Package className="h-12 w-12 mx-auto mb-3 opacity-30" />
           <p className="font-medium">{t("cat_choose_style_title")}</p>
@@ -860,11 +874,22 @@ export default function Catalog({ affiliateSlug, embedded = false }: { affiliate
   const goToSearch = (term: string) => {
     const next = new URLSearchParams(searchStr);
     next.delete("category");
-    next.delete("style");
+    // Keep a selected line. Search used to drop ?style=, which left the
+    // results page with a query and no catalog request at all.
     if (term.trim()) next.set("q", term.trim());
     else next.delete("q");
     const qs = next.toString();
     setSearch(term.trim());
+    navigate(`${base}${qs ? `?${qs}` : ""}`);
+  };
+
+  const onSearchChange = (term: string) => {
+    setSearch(term);
+    if (term.trim()) return;
+    const next = new URLSearchParams(searchStr);
+    if (!next.has("q")) return;
+    next.delete("q");
+    const qs = next.toString();
     navigate(`${base}${qs ? `?${qs}` : ""}`);
   };
 
@@ -887,7 +912,7 @@ export default function Catalog({ affiliateSlug, embedded = false }: { affiliate
           styleId={styleId}
           onStyleChange={onStyleChange}
           onBack={backToLanding}
-          onSearchChange={setSearch}
+          onSearchChange={onSearchChange}
           affiliateSlug={affiliateSlug}
           familiesById={familiesById}
           familiesReady={familiesReady}

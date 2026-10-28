@@ -88,6 +88,32 @@ describe("catalog code search", () => {
     expect(catalogItemMatchesCode({ masterCode: "BT9", aliases: "BT-09" }, "BT 09")).toBe(true);
   });
 
+  it("matches a SKU fragment, including a line prefix, and a multi-word description", () => {
+    const items = [
+      { masterCode: "DN-WRC3015", description: "Wall Wine Rack Cabinet" },
+      { masterCode: "LWR3015", description: "Lattice Wine Rack" },
+      { masterCode: "PR3015", description: "Wall Plate Rack Cabinet" },
+      { masterCode: "W3015", description: "Wall Cabinet" },
+      { masterCode: "B24", description: "Base cabinet" },
+    ];
+    const text = (item: { description?: string }, query: string) =>
+      (item.description ?? "").toLowerCase().includes(query.toLowerCase());
+    expect(searchCatalogItems(items, "3015", text).map((hit) => hit.item.masterCode)).toEqual([
+      "DN-WRC3015",
+      "LWR3015",
+      "PR3015",
+      "W3015",
+    ]);
+    expect(searchCatalogItems(items, "wine rack", text).map((hit) => hit.item.masterCode)).toEqual([
+      "DN-WRC3015",
+      "LWR3015",
+    ]);
+    expect(searchCatalogItems(items, "WINE RACK", text).map((hit) => hit.item.description)).toEqual([
+      "Wall Wine Rack Cabinet",
+      "Lattice Wine Rack",
+    ]);
+  });
+
   it("keeps description matches and the original order when nothing was typed", () => {
     const items = [tray, other];
     expect(searchCatalogItems(items, "").map((hit) => hit.item)).toEqual(items);
