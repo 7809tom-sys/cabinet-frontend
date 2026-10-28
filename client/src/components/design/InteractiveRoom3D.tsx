@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { APPLIANCES, BLIND_CORNER_FILLER_WIDTH_IN, COUNTERTOP_DEPTH_IN, FURNITURE_CATALOG, STD, applianceAppearanceImage, bearsCountertop, isBaseHeightAppliance, blindCornerRearCountertopExtensionIn, blindPullRange, cabinetWall, cabinetWallDragPreview, cornerLegRatioForPlaced, cornerRotationForPlaced, countertopRunFaceNormal, countertopSurfacePlanPolygon, countertopSurfaces, crownBlockingCabinets, crownEligibleCabinets, customWallCabinetSide, drywallPonyWallAppearance, elevationBox, formatEighthInches, formatInches, glassDoorShelfCount, isAgainstWall, isBaseEndCornerCabinet, isCustomRoomWall, isFillerItem, fillerWidthRange, isGlassDoorCabinet, isMicrowaveOverRangePair, isRangeHoodPlacement, isRangeOrOven, isRefrigerator, isStacker, isWallRunDraggable, isWd18CountertopDrawerCabinet, kitchenCrestGenericOpenEndShelfCount, normalizeInstalledFillersToAdjacentCabinets, peninsulaCountertopPonyWallBackExtensionIn, peninsulaCountertopPonyWallBarOverhang, peninsulaCountertopSeatingOverhang, peninsulaCountertopWaterfallEnd, peninsulaLowerWorktopOppositeSideExtensionIn, peninsulaRunEndpoints, placedCornerGeometryKind, placedFootprint, ponyWallMiteredFootprint, ponyWallPlanFrame, potFillerMountedRange, rangeVisualAppearance, refrigeratorBayVerificationMetrics, resolveCabinetHardwarePosition, resolveSwing, roomWallAppearance, seatedWallRunFrame, wallRunFrame, selectedLowerCabinetWallPlacement, sinkPlanDimensions, usesRaisedFloorWallDoorPull, wallCabinetFitMeasure, wallGapFitPreview, wallGapFreehandPreview, wallGaps, wallPlacementAt, wallRunOffset, wallRunSpan, wallSpanMeasure, wallLength, wd18CountertopFaceLayout, type CabinetWallDragPreview, type CountertopSurface, type IslandZone, type PlacedCabinet, type PlacedCornerGeometryKind, type PlacedFurniture, type PonyWall, type PotFillerFixture, rotatedSize, type RoomData, type SinkFixture, type WallCabinetFitMeasure, type WallGapFitPreview, type WallOpening, type WallSide, type WallSpanMeasure, wallTopLimit, } from "@/lib/design";
 import { threeDLatticeRackLayout } from "@/lib/latticeRackLayout";
+import { PLATE_RACK_FRAME_IN, plateRackDividerLayout } from "@/lib/plateRackLayout";
 export { threeDLatticeRackLayout };
 import { islandCountertopRects, islandCountertopVisibleRects, islandRaisedBarRects, islandFaceFitMeasure } from "@/lib/islandScene";
 import { furniturePlanFrame, resolvedFurnitureDimensions } from "@/lib/design";
@@ -6096,6 +6097,37 @@ export function addCabinet(
     const latticeMarker = new THREE.Group();
     latticeMarker.userData = { specialtyProfile: "face-pattern", pattern: "lattice", openFrontLatticeRack: true };
     frontGroup.add(latticeMarker);
+  } else if (specialty.kind === "face-pattern" && specialty.pattern === "slats") {
+    // Plate rack: a face frame in the door finish around a dark opening with
+    // round vertical dowels, one plate on edge between each pair.
+    const frameWidth = Math.min(PLATE_RACK_FRAME_IN * INCH, bodyWidth * 0.1, bodyHeight * 0.1);
+    const openingWidth = bodyWidth - frameWidth * 2;
+    const openingHeight = bodyHeight - frameWidth * 2;
+    const interior = new THREE.Mesh(
+      new THREE.BoxGeometry(openingWidth, openingHeight, 0.012),
+      new THREE.MeshStandardMaterial({ color: "#2a231d", roughness: 0.85 }),
+    );
+    interior.position.z = -0.02;
+    interior.userData = { specialtyProfile: "face-pattern", pattern: "slats", plateRackInterior: true };
+    frontGroup.add(interior);
+    for (const [width, height, x, y] of [
+      [frameWidth, bodyHeight, -bodyWidth / 2 + frameWidth / 2, 0],
+      [frameWidth, bodyHeight, bodyWidth / 2 - frameWidth / 2, 0],
+      [openingWidth, frameWidth, 0, bodyHeight / 2 - frameWidth / 2],
+      [openingWidth, frameWidth, 0, -bodyHeight / 2 + frameWidth / 2],
+    ] as const) {
+      const member = new THREE.Mesh(new THREE.BoxGeometry(width, height, 0.06), faceMaterial);
+      member.position.set(x, y, 0.004);
+      member.userData = { specialtyProfile: "face-pattern", plateRackFaceFrame: true, cabinetFront: true, flushPhysicalFace: true };
+      frontGroup.add(member);
+    }
+    const layout = plateRackDividerLayout(openingWidth / INCH);
+    for (const dividerX of layout.dividers) {
+      const dowel = new THREE.Mesh(new THREE.CylinderGeometry(0.3 * INCH, 0.3 * INCH, openingHeight, 12), faceMaterial);
+      dowel.position.set(dividerX * INCH, 0, -0.004);
+      dowel.userData = { specialtyProfile: "face-pattern", plateRackDivider: true };
+      frontGroup.add(dowel);
+    }
   } else if (specialty.kind === "face-pattern") {
     const recess = new THREE.Mesh(
       new THREE.BoxGeometry(bodyWidth - 0.1, bodyHeight - 0.1, 0.03),
