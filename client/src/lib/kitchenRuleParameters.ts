@@ -31,7 +31,8 @@ export const KITCHEN_RULE_PARAMETER_DEFAULTS = {
   sink_base_substitute: 1,
   /** 1 asks before replacing a configured out-of-stock SKU. 0 skips the prompt. */
   stock_prompt_enabled: 1,
-  /** Master switch for finished panels on exposed sides. Off: panels are only added when the user chooses one. */
+  /** Master switch for the broad exposed-side engine. Off: that engine does not run.
+   *  Frameless and Hickory lines still get the narrow auto panels. */
   exposed_panels_enabled: 0,
   panel_thickness_in: 0.75,
   panel_end_wall_enabled: 1,
