@@ -5160,6 +5160,13 @@ export function blindCornerViolations(
   const blinds = placed.filter((p) => isBlindCorner(p.masterCode, p.description));
   for (const blind of blinds) {
     const rb = footprintRect(blind);
+    // Only the cabinet on the ADJOINING wall, in front of the blind end, must
+    // be held off the corner. A cabinet beside the BBC on its own wall butts
+    // its door end and is never a pull-clearance violation. For a square-on
+    // BBC its own run is along x (0°/180°) or y (90°/270°); an angled BBC
+    // keeps the old every-side check.
+    const quarterTurn = ((Math.round(Number(blind.rotation) || 0) % 360) + 360) % 360;
+    const runAxis = quarterTurn === 0 || quarterTurn === 180 ? "x" : quarterTurn === 90 || quarterTurn === 270 ? "y" : null;
     for (const o of placed) {
       if (o.uid === blind.uid) continue;
       if (isBlindCorner(o.masterCode, o.description)) continue;
@@ -5178,10 +5185,11 @@ export function blindCornerViolations(
       // overlapping y-extent — the gap between their facing edges must be >= filler.
       const yOverlap = rb.y1 < ro.y2 && rb.y2 > ro.y1;
       const xOverlap = rb.x1 < ro.x2 && rb.x2 > ro.x1;
-      if (yOverlap && !xOverlap) {
+      // Beside the BBC along x is its own run when the run is along x.
+      if (yOverlap && !xOverlap && runAxis !== "x") {
         const gap = ro.x1 >= rb.x2 ? ro.x1 - rb.x2 : rb.x1 - ro.x2;
         if (gap >= -0.5 && gap < fillerIn - 0.01) bad.add(blind.uid);
-      } else if (xOverlap && !yOverlap) {
+      } else if (xOverlap && !yOverlap && runAxis !== "y") {
         const gap = ro.y1 >= rb.y2 ? ro.y1 - rb.y2 : rb.y1 - ro.y2;
         if (gap >= -0.5 && gap < fillerIn - 0.01) bad.add(blind.uid);
       }
