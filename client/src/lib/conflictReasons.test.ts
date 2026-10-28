@@ -20,14 +20,21 @@ function upper(offset: number, width: number, height = 30): PlacedCabinet {
 }
 
 describe("placement conflict reasons", () => {
-  it("reports the gap to the window for every cabinet the clearance rule flags", () => {
-    const close = upper(2, 33); // ends at 35, 1" from the window
-    const clear = upper(0, 30); // ends at 30, 6" from the window
-    const flagged = wallOpeningClearanceViolations([close, clear], [window], room);
-    expect(flagged.has(close.uid)).toBe(true);
-    expect(wallOpeningClearanceDetail(close, [window], room)).toMatchObject({ gap: 1, required: 3 });
-    expect(flagged.has(clear.uid)).toBe(false);
-    expect(wallOpeningClearanceDetail(clear, [window], room)).toBeNull();
+  it("reports how far a cabinet overlaps the window, and lets one sit at the edge", () => {
+    const over = upper(4, 33); // ends at 37, 1" onto the window
+    const edge = upper(3, 33); // ends at 36, flush with the window edge
+    const flagged = wallOpeningClearanceViolations([over, edge], [window], room);
+    expect(flagged.has(over.uid)).toBe(true);
+    expect(wallOpeningClearanceDetail(over, [window], room)).toMatchObject({ gap: -1, required: 0 });
+    expect(flagged.has(edge.uid)).toBe(false);
+    expect(wallOpeningClearanceDetail(edge, [window], room)).toBeNull();
+  });
+
+  it("keeps the full 3-inch clearance from a door", () => {
+    const door: WallOpening = { uid: "door", kind: "door", side: "top", offset: 36, width: 30, sill: 0, height: 80 };
+    const near = upper(2, 33); // 1" from the door casing
+    expect(wallOpeningClearanceViolations([near], [door], room).has(near.uid)).toBe(true);
+    expect(wallOpeningClearanceDetail(near, [door], room)).toMatchObject({ gap: 1, required: 3 });
   });
 
   it("reports the cabinet top and the wall ceiling for every ceiling violation", () => {

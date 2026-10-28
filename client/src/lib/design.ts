@@ -8190,10 +8190,24 @@ export function cabinetPlacementHoverDetail(
   };
 }
 
-// Wall cabinets must keep a minimum clearance (default 3") from door/window
-// openings. Returns the uids of WALL cabinets whose run-axis extent comes within
-// `clearance` inches of any opening on the SAME wall (including overlap). Used
-// for the design-check warning. Pure + deterministic.
+/**
+ * Clear distance a placed wall cabinet must keep from an opening before it is
+ * flagged. The 3-inch window casing clearance is only the default spacing the
+ * Designer places with (free segments, palette adds, auto design); a user may
+ * deliberately slide a cabinet right up to the window edge, so a window only
+ * requires the cabinet stay off the glass. A frameless (AEF) cabinet keeps its
+ * 3/4" window-side end panel out of the opening too. Doors keep the full
+ * clearance for their casing.
+ */
+function wallOpeningRequiredGap(p: PlacedCabinet, o: WallOpening, clearance: number): number {
+  if (o.kind !== "window") return clearance;
+  return hasAefPrintedGeometry(p) ? STD.PANEL_THICKNESS : 0;
+}
+
+// Wall cabinets must keep a minimum clearance (default 3") from doors and must
+// stay off window glass (see wallOpeningRequiredGap). Returns the uids of WALL
+// cabinets that come too close to an opening on the SAME wall. Used for the
+// design-check warning. Pure + deterministic.
 export function wallOpeningClearanceViolations(
   placed: PlacedCabinet[],
   openings: WallOpening[],
@@ -8219,9 +8233,8 @@ export function wallOpeningClearanceViolations(
       // A frameless wall cabinet also keeps its 3/4" window end panel out of
       // the opening. The extra is horizontal only; vertical window clearance
       // stays the caller's value.
-      const panelClearance = o.kind === "window" && hasAefPrintedGeometry(p) ? STD.PANEL_THICKNESS : 0;
       const gap = Math.max(oStart - cEnd, cStart - oEnd);
-      if (gap < clearance + panelClearance - 0.01) {
+      if (gap < wallOpeningRequiredGap(p, o, clearance) - 0.01) {
         bad.add(p.uid);
         break;
       }
@@ -8248,7 +8261,7 @@ export function wallOpeningClearanceDetail(
   for (const o of openings) {
     if (o.side !== side) continue;
     if (wallCabinetClearsWindow(p, o, room, clearance)) continue;
-    const required = clearance + (o.kind === "window" && hasAefPrintedGeometry(p) ? STD.PANEL_THICKNESS : 0);
+    const required = wallOpeningRequiredGap(p, o, clearance);
     const gap = Math.max(o.offset - cEnd, cStart - (o.offset + o.width));
     if (gap < required - 0.01) return { opening: o, gap, required };
   }
