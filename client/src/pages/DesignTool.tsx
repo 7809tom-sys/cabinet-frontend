@@ -155,7 +155,7 @@ import {
   snapToWall, snapPosition, nextFreeSpotOnWall, mountedMicrowaveOverRangeSpot, overRangeMicrowaveAttachment,
   clampCabinetsToRoom, clampOpeningsToRoom, clampIslandToRoom, clampRoomInches,
   WALL_LABELS, doorPanelKind,
-		  freeSegmentsOnWall, magneticAvailableWallStart, nearestAvailableWallStart, cabinetWallMovePreview, firstCollisionFreeWallPlacement, resolveBaseBlindCornerFillerSnap, roundToEighth, syncWallRunOffsets, backfillLegacyWallRuns, wallRunFrame, wallRunAlongAtPoint, nearestWallRunAtPoint, clampCabinetToRoom, wallPlacementAt, wallPlacementAtUnbounded, wallLength, wallRunOffset, wallRunSpan, cabinetWall, cabinetPlacementCollisionDetail, explainPeninsulaSeatFailure, kneeDrawerWallPlacement, isCustomRoomWall, firstCollisionFreeCustomWallPlacement, continuousWallApplianceSnapInfo, peninsulaRunById, peninsulaRootRunId, peninsulaRunAssemblyLocked, peninsulaCountertopPonyWallBarOverhang, peninsulaCountertopRaisedBarEnabled, peninsulaCountertopRaisedBarOverhang, peninsulaCountertopSeatingOverhang, peninsulaCountertopWaterfallEnd, peninsulaRunOffsetAtPoint, peninsulaRunMaxLength, normalizeLegacyPeninsulaCabinets, firstCollisionFreePeninsulaPlacement, bestFitCatalogOption, removePeninsulaRun,
+		  freeSegmentsOnWall, magneticAvailableWallStart, nearestAvailableWallStart, cabinetWallMovePreview, firstCollisionFreeWallPlacement, resolveBaseBlindCornerFillerSnap, roundToEighth, syncWallRunOffsets, backfillLegacyWallRuns, wallRunFrame, wallRunAlongAtPoint, nearestWallRunAtPoint, clampCabinetToRoom, paletteActiveWallPlacementBlocker, wallPlacementAt, wallPlacementAtUnbounded, wallLength, wallRunOffset, wallRunSpan, cabinetWall, cabinetPlacementCollisionDetail, explainPeninsulaSeatFailure, kneeDrawerWallPlacement, isCustomRoomWall, firstCollisionFreeCustomWallPlacement, continuousWallApplianceSnapInfo, peninsulaRunById, peninsulaRootRunId, peninsulaRunAssemblyLocked, peninsulaCountertopPonyWallBarOverhang, peninsulaCountertopRaisedBarEnabled, peninsulaCountertopRaisedBarOverhang, peninsulaCountertopSeatingOverhang, peninsulaCountertopWaterfallEnd, peninsulaRunOffsetAtPoint, peninsulaRunMaxLength, normalizeLegacyPeninsulaCabinets, firstCollisionFreePeninsulaPlacement, bestFitCatalogOption, removePeninsulaRun,
 	  formatEighthInches, formatInches, type WallGap, wallGaps, wallGapFitPreview, wallGapFreehandPreview, nearestRectRoomWallAtPoint, gapFillCandidatesByWidth, nextSmartGapPreviewIndex, withTemporarySmartGapPreview, isRangeHoodPlacement,
   rangeOvenClearanceViolations, RANGE_CLEARANCE_FILLER_IN,
 	  wallOpeningClearanceViolations, WALL_OPENING_CLEARANCE_IN, baseOpeningOverlaps,
@@ -6944,7 +6944,16 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                ? ` ${c.masterCode} is a base cabinet. To add the ${formatInches(width)} upper, open the Wall tab and choose ${matchingUpper.masterCode}.`
 	                : ` ${c.masterCode} is a base cabinet. To add an upper cabinet, open the Wall tab and choose a W cabinet.`
 	              : "";
-	            const message = `${c.masterCode} was not added because there is no ${width}\" opening after the current ${runName} run on the selected ${wallNameFor(activeWall, room)} wall. The existing layout was not changed.${categoryHint}`;
+	            // A span can be wide enough on paper yet refused by the final
+	            // collision check; name the item in the way so it can be traced.
+	            const spanBlocker = paletteActiveWallPlacementBlocker(
+	              activeWall, room, prev, openings, width, depth, accPlacement,
+	              accPlacement === "wall" && !isRefrigeratorWallCabinet({ masterCode: c.masterCode, description: c.description, placement: accPlacement }),
+	              aefWindowClearanceCandidate,
+	            );
+	            const message = spanBlocker
+	              ? `${c.masterCode} was not added: the ${formatEighthInches(spanBlocker.spanLengthIn)} opening on the ${wallNameFor(activeWall, room)} wall is wide enough, but ${c.masterCode} would overlap ${spanBlocker.blocker.cabinet.masterCode} by ${formatEighthInches(spanBlocker.blocker.penetration)} there. The existing layout was not changed.`
+	              : `${c.masterCode} was not added because there is no ${width}\" opening after the current ${runName} run on the selected ${wallNameFor(activeWall, room)} wall. The existing layout was not changed.${categoryHint}`;
 	            setPlacementWarning(message);
 	            toast.error(message);
 	            return;

@@ -8591,6 +8591,39 @@ export function paletteActiveWallPlacement(
 }
 
 /**
+ * Diagnostic for a refused palette add: when the selected wall has a free
+ * span wide enough for the cabinet but no collision-free position in it, name
+ * the item the cabinet would overlap at that span's start. Returns null when
+ * no span is wide enough (the ordinary "no opening" case) or nothing collides.
+ */
+export function paletteActiveWallPlacementBlocker(
+  side: WallSide,
+  room: RoomData,
+  placed: PlacedCabinet[],
+  openings: WallOpening[],
+  width: number,
+  depth: number,
+  placement: Placement,
+  reserveFullHeightAppliances = false,
+  candidate?: PlacedCabinet,
+): { spanStartIn: number; spanLengthIn: number; blocker: CabinetCollisionDetail } | null {
+  if (peninsulaRunById(room, side)) return null;
+  const segment = freeSegmentsOnWall(
+    side, room, placed, openings, Math.min(width, 9),
+    placement === "wall" ? WALL_OPENING_CLEARANCE_IN : 0,
+    placement, reserveFullHeightAppliances, candidate, depth,
+  ).find((free) => free.length + 0.001 >= width);
+  if (!segment) return null;
+  const spot = wallPlacementAt(segment.start, width, depth, side, room);
+  const probe: PlacedCabinet = {
+    uid: "wall-placement-probe", cabinetId: 0, masterCode: "WALL-PLACEMENT", description: "Wall placement probe",
+    placement, x: spot.x, y: spot.y, width, depth, rotation: spot.rotation, wallId: spot.wallId, wallOffset: spot.wallOffset,
+  };
+  const blocker = cabinetPlacementCollisionDetail(probe, placed, room);
+  return blocker ? { spanStartIn: segment.start, spanLengthIn: segment.length, blocker } : null;
+}
+
+/**
  * Resolves the nearest collision-free position on ANY wall run (standard side,
  * drawn wall or peninsula). It preserves the selected wall, searches only the
  * given span in 1/8-inch increments from the desired start, and never permits a
