@@ -1,4 +1,5 @@
 import { AUTO_DESIGN_WALL_LABELS, wallLabelToEngineWallId, type AutoBuildCatalogCandidate, type AutoDesignLayoutType, type AutoDesignOriginCorner, type AutoDesignRunDirection, type WallLabel } from "./autoDesignAutoBuild";
+import { kitchenRuleNumber } from "./kitchenRuleParameters";
 import { isBaseEndCornerCabinet, isBlindCorner, isCornerCabinet, type RoomData } from "./design";
 
 /** A real room vertex that the admin may explicitly populate after all anchors are seated. */
@@ -65,7 +66,8 @@ export function autoDesignCornerSlots(layoutType: AutoDesignLayoutType, measured
   }
   if (layoutType === "u-shape") {
     const pairs = measured ? uShapeCornerPairs(measured) : [["Wall 1", "Wall 2"], ["Wall 1", "Wall 4"]] as const;
-    for (const [firstWall, secondWall] of pairs) add(firstWall, secondWall);
+    const limit = Math.max(0, kitchenRuleNumber("u_shape_corner_count"));
+    for (const [firstWall, secondWall] of pairs.slice(0, limit)) add(firstWall, secondWall);
     return slots;
   }
   if (!measured) return slots;

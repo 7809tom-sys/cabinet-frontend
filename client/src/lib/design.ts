@@ -2,6 +2,7 @@
 // All real-world units are INCHES. The canvas converts inches → pixels via PPI.
 import { baseAngleEndCountertopLocalPoints, isBaseAngleEndCabinet, type BaseAngleEndHand } from "@/lib/baseAngleEndLayout";
 import { freestandingCountertopSurfaces, isFreestandingBase } from "@/lib/freestandingRun";
+import { kitchenRuleNumber } from "@/lib/kitchenRuleParameters";
 import {
   closestWall as closestPolygonWall,
   isLocked45Wall,
@@ -815,6 +816,15 @@ export interface PlacedCabinet {
   cabinetId: number;
   masterCode: string;
   description: string;
+  /**
+   * Shop note when a catalog cabinet is used as a field modification,
+   * such as a B36 standing in for an out-of-stock sink base.
+   */
+  fieldModificationNote?: string | null;
+  /** Set on a panel or filler the Designer inserted. Removed when the side is covered. */
+  autoPlacedReason?: string | null;
+  autoPlacedForUid?: string | null;
+  autoPlacedSide?: "start" | "end" | "back" | null;
   /**
    * Identifies a cabinet created by one Peninsula Wizard transaction. This is
    * deliberately separate from `wallId`: a customer can add ordinary cabinets
@@ -1768,7 +1778,7 @@ export function ordinaryWallMountBottom(p: {
   if (isThirtyInchShortUpperAt72(p)) return TWELVE_INCH_WALL_MOUNT_BOTTOM;
   return p.placement === "wall" && !isStacker(p) && height > 0 && height < 30
     ? WALL_CABINET_TOP - height
-    : WALL_MOUNT_BOTTOM;
+    : kitchenRuleNumber("wall_bottom_in");
 }
 
 /** A single wall's ceiling. Either a flat height, or a slope between a high end
@@ -1847,6 +1857,16 @@ export interface RoomData {
    * the same source plan rather than a partial reconstruction.
    */
   persistedEntities?: PersistedDesignEntities;
+  /**
+   * How the customer said they use the kitchen. Optional and skippable.
+   * Saved with the room so a reload keeps the same placement hints.
+   * The placed sink center is the plumbing anchor; there is no separate plumbing point.
+   */
+  kitchenUsage?: {
+    uses: Array<"baking" | "everyday-cooking" | "entertaining" | "coffee-beverage" | "kids-family" | "minimal-cooking">;
+    skipped: boolean;
+    acceptedSuggestionIds?: string[];
+  };
 }
 
 export type PeninsulaTurn = 45 | 90;

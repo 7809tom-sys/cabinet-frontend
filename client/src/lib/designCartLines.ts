@@ -141,8 +141,10 @@ export function buildDesignCabinetCartLines({
       : baseCode;
     // Different discounts or custom-size fees must remain separate locked
     // lines; combining them would assign one cabinet's adjusted price to both.
-    const key = `${masterCode}::${resolvedStyleId}::${unitPrice == null ? "pending" : unitPrice.toFixed(4)}::${fillerCartIdentity(cabinet)}::${cabinet.swing ?? ""}`;
-    const cutNote = cabinetCutNote(cabinet, placed);
+    const modificationNote = cabinet.fieldModificationNote?.trim() || "";
+    const autoAddedLabel = modificationNote.startsWith("Auto-added:") ? modificationNote : undefined;
+    const key = `${masterCode}::${resolvedStyleId}::${unitPrice == null ? "pending" : unitPrice.toFixed(4)}::${fillerCartIdentity(cabinet)}::${cabinet.swing ?? ""}::${modificationNote}`;
+    const cutNote = dedupeNotes([cabinetCutNote(cabinet, placed), modificationNote].filter(Boolean).join("; "));
     const existing = lines.get(key);
     if (existing) {
       existing.qty += 1;
@@ -150,7 +152,7 @@ export function buildDesignCabinetCartLines({
     } else {
       lines.set(key, {
         masterCode,
-        name: `${firstClassCooktop ? (cabinet.applianceCatalogName ?? cabinet.description) : installedFillerCartName(cabinet)}${glassPolicyCartSuffix(cabinet)}`,
+        name: `${firstClassCooktop ? (cabinet.applianceCatalogName ?? cabinet.description) : installedFillerCartName(cabinet)}${glassPolicyCartSuffix(cabinet)}${modificationNote ? ` — ${modificationNote}` : ""}`,
         styleId: resolvedStyleId,
         styleLabel: styleNameById.get(resolvedStyleId) ?? "",
         distributorId,
@@ -161,6 +163,7 @@ export function buildDesignCabinetCartLines({
         // and may refresh there, but it can never become a zero-dollar order.
         ...(unitPrice != null ? { priceLocked: true } : {}),
         qty: 1,
+        ...(autoAddedLabel ? { autoAddedLabel } : {}),
         ...(cutNote ? { qtyNote: cutNote } : {}),
         catalogImageUrl: cabinet.catalogImageUrl ?? null,
         ...(cabinet.freeShipping ? { freeShipping: true } : {}),
@@ -285,8 +288,9 @@ export function buildDesignPreviewPricingLines({
       ? `${cabinet.masterCode}GD`
       : cabinet.masterCode;
     // Different discounts or custom fees must remain distinct priced lines.
-    const key = `${masterCode}::${resolvedStyleId}::${adjustedUnitPrice == null ? "pending" : adjustedUnitPrice.toFixed(4)}::${fillerCartIdentity(cabinet)}::${cabinet.swing ?? ""}`;
-    const cutNote = cabinetCutNote(cabinet, placed);
+    const modificationNote = cabinet.fieldModificationNote?.trim() || "";
+    const key = `${masterCode}::${resolvedStyleId}::${adjustedUnitPrice == null ? "pending" : adjustedUnitPrice.toFixed(4)}::${fillerCartIdentity(cabinet)}::${cabinet.swing ?? ""}::${modificationNote}`;
+    const cutNote = dedupeNotes([cabinetCutNote(cabinet, placed), modificationNote].filter(Boolean).join("; "));
     const existing = lines.get(key);
     if (existing) {
       existing.qty += 1;
@@ -295,7 +299,7 @@ export function buildDesignPreviewPricingLines({
     } else {
       lines.set(key, {
         masterCode,
-        name: `${firstClassCooktop ? (cabinet.applianceCatalogName ?? cabinet.description) : installedFillerCartName(cabinet)}${glassPolicyCartSuffix(cabinet)}`,
+        name: `${firstClassCooktop ? (cabinet.applianceCatalogName ?? cabinet.description) : installedFillerCartName(cabinet)}${glassPolicyCartSuffix(cabinet)}${modificationNote ? ` — ${modificationNote}` : ""}`,
         styleId: resolvedStyleId,
         styleLabel: styleNameById.get(resolvedStyleId) ?? "",
         distributorId,
@@ -394,6 +398,7 @@ export function mergeDesignCartLines(lines: readonly CartItem[]): CartItem[] {
       line.vendorProductId ?? "",
       line.fillerStockWidthIn ?? "",
       line.fillerInstalledCutWidthIn ?? "",
+      line.autoAddedLabel ?? "",
     ].join("::");
     const existing = merged.get(key);
     if (existing) existing.qty += line.qty;

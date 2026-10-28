@@ -2,9 +2,7 @@ import {
   overRangeMicrowaveAttachment, isHoodOverRangePair, isMicrowaveOverRangePair,
   type DesignCabinet, type PlacedCabinet, type RoomData,
 } from "./design";
-
-/** The standard hood bottom datum when the catalog row carries none. */
-const DEFAULT_HOOD_MOUNT_BOTTOM_IN = 66;
+import { kitchenRuleNumber } from "./kitchenRuleParameters";
 
 export type AutoDesignRangeHoodResult =
   | { ok: true; hood: PlacedCabinet }
@@ -41,7 +39,7 @@ export function autoDesignRangeHood(input: {
   const spot = attachment.spot as { x: number; y: number; rotation: number; wallId?: string; wallOffset?: number };
   const mountBottom = source.mountBottom != null && Number(source.mountBottom) >= 0
     ? Number(source.mountBottom)
-    : DEFAULT_HOOD_MOUNT_BOTTOM_IN;
+    : kitchenRuleNumber("hood_bottom_in");
   return {
     ok: true,
     hood: {

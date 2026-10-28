@@ -35,6 +35,9 @@ export type DesignerInventoryState = {
   loadingAlternatives: boolean;
   notices: readonly InventoryCabinetNotice[];
   noticeFor: (uid: string | null | undefined) => InventoryCabinetNotice | null;
+  stock: readonly StockStatusResult[] | null;
+  catalog: readonly InventoryCatalogCandidate[];
+  assumeUnlistedInStock: boolean;
 };
 
 type PlaceableQuery = {
@@ -211,5 +214,8 @@ export function useDesignerInventory(input: {
     loadingAlternatives: provider.id === "stub" && loadingAlternatives,
     notices,
     noticeFor: (uid) => (uid ? noticeByUid.get(uid) ?? null : null),
+    stock: stock ?? null,
+    catalog,
+    assumeUnlistedInStock: provider.id === "stub",
   };
 }

@@ -17,6 +17,8 @@
  */
 
 import { RANGE_NEIGHBOR_MIN_WIDTH_IN } from "./autoDesignSeamFillers";
+import { kitchenRuleNumber, kitchenRuleText } from "./kitchenRuleParameters";
+import { buildStockPrompt, stockPromptOrderNote, type StockPromptChoice } from "./stockPrompt";
 import { isRefrigeratorAppliance } from "./autoDesignAvailability";
 import {
   DEFAULT_ROOM,
@@ -34,6 +36,7 @@ import {
   isSinkAppliance,
   isSinkBaseCabinet,
   makeUid,
+  makeDefaultSinkForCabinet,
   placedCornerGeometryKind,
   placedHeight,
   resolvedDesignCabinetDimensions,
@@ -44,6 +47,7 @@ import {
   type Placement,
   type PlacedCabinet,
   type RoomData,
+  type SinkFixture,
 } from "./design";
 import {
   inventoryStockKeys,
@@ -55,6 +59,40 @@ import {
 
 const SIZE_TOLERANCE_IN = 0.02;
 const NEIGHBOR_TOLERANCE_IN = 0.25;
+
+/** Owner rule: an out-of-stock SBxx may be suggested as Bxx of the same width. */
+export const SINK_BASE_FALSE_FRONT_RULE = "owner-sink-base-false-front";
+
+export function sinkBaseNominalWidth(masterCode: string): number | null {
+  const { fromPrefix } = sinkBaseSubstituteMap();
+  const code = masterCode.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const match = code.match(new RegExp(`^(?:ADA)?${fromPrefix}(\\d{2})$`));
+  if (!match) return null;
+  const width = Number(match[1]);
+  return width >= 12 && width <= 96 ? width : null;
+}
+
+export function plainBaseCodeForWidth(width: number): string {
+  return `${sinkBaseSubstituteMap().toPrefix}${width}`;
+}
+
+export function sinkBaseFalseFrontLabel(baseCode: string): string {
+  return `${baseCode} — remove drawer, install false front`;
+}
+
+/** Exact material-list wording for an automatic sink-base substitution. */
+export function sinkBaseSubstitutionOrderNote(fromCode: string, toCode: string, includeSinkAndFaucet: boolean): string {
+  const note = `out of ${fromCode}, sub with a ${toCode}. remove drawer, install false front`;
+  return includeSinkAndFaucet ? `${note}. include sink and faucet` : note;
+}
+
+export function sinkBaseSubstituteMap(): { fromPrefix: string; toPrefix: string } {
+  const raw = kitchenRuleText("sink_base_map", "SBxx->Bxx");
+  const match = raw.toUpperCase().replace(/\s/g, "").match(/^([A-Z]+)XX->([A-Z]+)XX$/)
+    ?? raw.toUpperCase().replace(/\s/g, "").match(/^([A-Z]+)->([A-Z]+)$/);
+  if (!match) return { fromPrefix: "SB", toPrefix: "B" };
+  return { fromPrefix: match[1]!, toPrefix: match[2]! };
+}
 
 export type InventoryCornerKind =
   | "blind"
@@ -98,6 +136,10 @@ export type InventorySingleSuggestion = {
   candidate: InventoryCatalogCandidate;
   reason: string;
   ruleNotes: readonly string[];
+  /** Shown in place of the bare SKU, for a field modification. */
+  displayLabel?: string;
+  /** Copied onto the placed cabinet and the order line when the user swaps. */
+  fieldModificationNote?: string;
 };
 
 export type InventoryCombinationSuggestion = {
@@ -107,6 +149,12 @@ export type InventoryCombinationSuggestion = {
   candidates: readonly InventoryCatalogCandidate[];
   reason: string;
   ruleNotes: readonly string[];
+  fieldModificationNote?: string;
+};
+
+export type InventoryChoicePrompt = {
+  fromCode: string;
+  choices: readonly (StockPromptChoice & { suggestion: InventorySingleSuggestion | null })[];
 };
 
 export type InventorySuggestion = InventorySingleSuggestion | InventoryCombinationSuggestion;
@@ -121,6 +169,8 @@ export type InventoryCabinetNotice = {
   vendor?: string;
   asOf?: string;
   suggestions: readonly InventorySuggestion[];
+  /** Present when this SKU must be asked about before any swap. */
+  choicePrompt?: InventoryChoicePrompt;
 };
 
 export type DesignInventoryEvaluation = {
@@ -444,6 +494,36 @@ function suggestForCabinet(
     suggestions.push(...combinations(cabinet, profile, typeKey, pool, styleId, neighbors));
   }
 
+  const prompt = buildStockPrompt({
+    masterCode: cabinet.masterCode,
+    placement: cabinet.placement,
+    styleId,
+    distributorId: vendorId,
+    catalog,
+    stock: [...index.values()],
+    assumeUnlistedInStock: input.assumeUnlistedInStock,
+  });
+  const choicePrompt = prompt
+    ? {
+      fromCode: prompt.fromCode,
+      choices: prompt.choices.map((choice) => ({
+        ...choice,
+        suggestion: choice.candidate
+          ? {
+            id: `stock-prompt:${choice.id}:${choice.candidate.styleId}:${choice.candidate.masterCode}`,
+            kind: "single" as const,
+            tier: "same-style" as const,
+            candidate: choice.candidate,
+            displayLabel: choice.candidate.masterCode,
+            fieldModificationNote: stockPromptOrderNote(cabinet.masterCode, choice.label),
+            reason: choice.buttonLabel,
+            ruleNotes: ["stock-prompt", choice.id, "same-style"],
+          }
+          : null,
+      })),
+    }
+    : undefined;
+
   return {
     uid: cabinet.uid,
     masterCode: cabinet.masterCode,
@@ -454,6 +534,7 @@ function suggestForCabinet(
     vendor: stock.vendor,
     asOf: stock.asOf,
     suggestions: suggestions.slice(0, input.limit),
+    ...(choicePrompt ? { choicePrompt } : {}),
   };
 }
 
@@ -515,6 +596,106 @@ function formatSize(profile: CabinetProfile): string {
 function trimInches(value: number): string {
   const rounded = Math.round(value * 8) / 8;
   return Number.isInteger(rounded) ? `${rounded}"` : `${rounded}"`;
+}
+
+export type CatalogOrderFixture = {
+  id: number;
+  name: string;
+  pelicanCode?: string | null;
+  imageUrl?: string | null;
+};
+
+export type AutomaticSinkBaseSwap = {
+  uid: string;
+  fromCode: string;
+  toCode: string;
+  orderNote: string;
+  /** True when no catalog sink and faucet SKU was available to add. */
+  includeSinkAndFaucetNote: boolean;
+  sinkProduct: CatalogOrderFixture | null;
+  faucetProduct: CatalogOrderFixture | null;
+};
+
+/**
+ * Swaps every out-of-stock SBxx for an in-stock Bxx in the same door style.
+ * Nothing is invented: a sink or faucet line is added only when a catalog
+ * product is passed in. Otherwise the order note says to include them.
+ */
+export function applyAutomaticSinkBaseSubstitutions(input: {
+  placed: readonly PlacedCabinet[];
+  catalog: readonly InventoryCatalogCandidate[];
+  stock: readonly StockStatusResult[];
+  room: RoomData;
+  designStyleId: number | null;
+  distributorId: number | null;
+  assumeUnlistedInStock?: boolean;
+  skipUids?: ReadonlySet<string>;
+  sinkProduct?: CatalogOrderFixture | null;
+  faucetProduct?: CatalogOrderFixture | null;
+}): { placed: PlacedCabinet[]; sinks: SinkFixture[]; swaps: AutomaticSinkBaseSwap[] } {
+  if (kitchenRuleNumber("sink_base_substitute") === 0 || input.designStyleId == null) {
+    return { placed: [...input.placed], sinks: [], swaps: [] };
+  }
+  const index = stockIndex(input.stock);
+  const assume = input.assumeUnlistedInStock === true;
+  let placed = [...input.placed];
+  const sinks: SinkFixture[] = [];
+  const swaps: AutomaticSinkBaseSwap[] = [];
+  for (const cabinet of input.placed) {
+    if (input.skipUids?.has(cabinet.uid)) continue;
+    if (cabinet.fieldModificationNote) continue;
+    const styleId = effectiveStyleId(cabinet, input.designStyleId);
+    if (styleId == null || !isSinkBaseCabinet(cabinet)) continue;
+    const width = sinkBaseNominalWidth(cabinet.masterCode);
+    if (width == null) continue;
+    const ownStock = resolveStock(inventoryStockKeys({ masterCode: cabinet.masterCode, styleId }), index, assume);
+    if (ownStock.status !== "out_of_stock") continue;
+    const baseCode = plainBaseCodeForWidth(width);
+    const candidate = input.catalog
+      .filter((row) => {
+        if (input.distributorId != null && row.distributorId !== input.distributorId) return false;
+        if (row.styleId !== styleId || row.placement !== "base") return false;
+        if (normalizeInventorySku(row.masterCode) !== normalizeInventorySku(baseCode)) return false;
+        if (isSinkBaseCabinet(row) || isCornerCabinet(row.masterCode, row.description)) return false;
+        return resolveStock(inventoryStockKeys(row), index, assume).status === "in_stock";
+      })
+      .sort((left, right) => left.id - right.id)[0];
+    if (!candidate) continue;
+    let includeSinkAndFaucetNote = !input.sinkProduct || !input.faucetProduct;
+    let fixture: SinkFixture | null = null;
+    if (input.sinkProduct && input.faucetProduct) {
+      try {
+        fixture = {
+          ...makeDefaultSinkForCabinet(cabinet, input.room),
+          faucet: true,
+          pelicanProductId: input.sinkProduct.id,
+          pelicanProductName: input.sinkProduct.name,
+          pelicanProductImage: input.sinkProduct.imageUrl ?? undefined,
+          pelicanFaucetProductId: input.faucetProduct.id,
+          pelicanFaucetProductName: input.faucetProduct.name,
+          pelicanFaucetProductImage: input.faucetProduct.imageUrl ?? undefined,
+          autoDesignFaucet: true,
+        };
+      } catch {
+        fixture = null;
+        includeSinkAndFaucetNote = true;
+      }
+    }
+    const orderNote = sinkBaseSubstitutionOrderNote(cabinet.masterCode, candidate.masterCode, includeSinkAndFaucetNote);
+    const swapped = stampCandidate(cabinet, candidate, input.designStyleId, orderNote);
+    placed = placed.map((item) => item.uid === cabinet.uid ? swapped : item);
+    if (fixture) sinks.push({ ...fixture, cabinetUid: cabinet.uid });
+    swaps.push({
+      uid: cabinet.uid,
+      fromCode: cabinet.masterCode,
+      toCode: candidate.masterCode,
+      orderNote,
+      includeSinkAndFaucetNote,
+      sinkProduct: input.sinkProduct ?? null,
+      faucetProduct: input.faucetProduct ?? null,
+    });
+  }
+  return { placed, sinks, swaps };
 }
 
 export function designInventoryFromStock(input: {
@@ -609,8 +790,8 @@ export function applyInventorySuggestion(input: {
     return { placed: [...input.placed], selectedUid: null, unchanged: true, message: "That cabinet is no longer in the design." };
   }
   const next = input.suggestion.kind === "single"
-    ? replaceSingle(input.placed, original, input.suggestion.candidate, input.designStyleId)
-    : replaceWithCombination(input.placed, original, input.suggestion.candidates, input.room, input.designStyleId, input.makeUid ?? makeUid);
+    ? replaceSingle(input.placed, original, input.suggestion.candidate, input.designStyleId, input.suggestion.fieldModificationNote ?? null)
+    : replaceWithCombination(input.placed, original, input.suggestion.candidates, input.room, input.designStyleId, input.makeUid ?? makeUid, input.suggestion.fieldModificationNote ?? null);
   if (!next) {
     return {
       placed: [...input.placed],
@@ -627,8 +808,9 @@ function replaceSingle(
   original: PlacedCabinet,
   candidate: InventoryCatalogCandidate,
   designStyleId: number | null,
+  fieldModificationNote: string | null,
 ): InventorySwapResult | null {
-  const swapped = stampCandidate(original, candidate, designStyleId);
+  const swapped = stampCandidate(original, candidate, designStyleId, fieldModificationNote);
   return {
     placed: placed.map((cabinet) => cabinet.uid === original.uid ? swapped : cabinet),
     selectedUid: original.uid,
@@ -644,6 +826,7 @@ function replaceWithCombination(
   room: RoomData,
   designStyleId: number | null,
   nextUid: () => string,
+  fieldModificationNote: string | null,
 ): InventorySwapResult | null {
   if (original.islandFace || candidates.length < 2) return null;
   const wall = cabinetWall(original, room);
@@ -665,7 +848,7 @@ function replaceWithCombination(
       fillerBillingRole: null,
       fillerForCabinetUid: null,
       peninsulaWizardId: null,
-    }, candidate, designStyleId);
+    }, candidate, designStyleId, fieldModificationNote);
     pieces.push(piece);
     along += candidate.width;
   }
@@ -690,11 +873,13 @@ function stampCandidate(
   original: PlacedCabinet,
   candidate: InventoryCatalogCandidate,
   designStyleId: number | null,
+  fieldModificationNote: string | null = null,
 ): PlacedCabinet {
   const effective = effectiveStyleId(original, designStyleId);
   const styleId = candidate.styleId === effective ? original.styleId ?? null : candidate.styleId;
   return {
     ...original,
+    fieldModificationNote,
     cabinetId: candidate.id,
     masterCode: candidate.masterCode,
     description: candidate.description,

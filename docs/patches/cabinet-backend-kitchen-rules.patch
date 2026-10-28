@@ -1,0 +1,362 @@
+diff --git a/docs/sql/0233_kitchen_rules.tidb.sql b/docs/sql/0233_kitchen_rules.tidb.sql
+new file mode 100644
+index 0000000..1d069c6
+--- /dev/null
++++ b/docs/sql/0233_kitchen_rules.tidb.sql
+@@ -0,0 +1,113 @@
++-- TiDB SQL editor version. Numbered 0233. Run after 0232.
++-- Paste each numbered block on its own. One statement per block.
++-- Every table is cabinet_dealz.<table>. No reserved-word aliases.
++-- Do not run this from an application. The owner pastes it in the TiDB editor.
++-- Safe to re-run: CREATE TABLE IF NOT EXISTS and INSERT IGNORE.
++
++-- 1
++CREATE TABLE IF NOT EXISTS cabinet_dealz.kitchen_rules (
++  id INT NOT NULL AUTO_INCREMENT,
++  ruleCode VARCHAR(80) NOT NULL,
++  category VARCHAR(80) NOT NULL,
++  title VARCHAR(255) NOT NULL,
++  ruleDescription TEXT NOT NULL,
++  parameterJson TEXT NOT NULL,
++  enforcementKind VARCHAR(32) NOT NULL,
++  sourceText VARCHAR(512) NOT NULL,
++  implementationStatus VARCHAR(32) NOT NULL,
++  enabledFlag TINYINT(1) NOT NULL DEFAULT 1,
++  notesText TEXT NULL,
++  readsParameters TINYINT(1) NOT NULL DEFAULT 0,
++  updatedByName VARCHAR(255) NULL,
++  createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
++  updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
++  PRIMARY KEY (id),
++  UNIQUE KEY kitchen_rules_rule_code_uq (ruleCode)
++);
++
++-- 2
++INSERT IGNORE INTO cabinet_dealz.kitchen_rules (
++  ruleCode,
++  category,
++  title,
++  ruleDescription,
++  parameterJson,
++  enforcementKind,
++  sourceText,
++  implementationStatus,
++  enabledFlag,
++  notesText,
++  readsParameters
++) VALUES
++('placement-order', 'Placement order', 'Fix constraints, then sink, appliances, and corners', 'Auto-design seats measured anchors and corners before it fills straight runs.', '{}', 'auto', 'LA-LAYOUT', 'implemented', 1, NULL, 0),
++('align-wall-cabinets', 'Placement order', 'Line wall cabinets up over the bases', 'Upper runs follow the finished base widths.', '{}', 'auto', 'LA-LAYOUT, DECOR', 'implemented', 1, NULL, 0),
++('tall-at-run-ends', 'Placement order', 'Tall units at the ends of runs', 'A tall cabinet or refrigerator between two base runs is flagged. A measured center is not moved past the shift cap.', '{}', 'review', 'LA-LAYOUT, NKBA #4', 'implemented', 1, NULL, 0),
++('fridge-landing', 'Refrigerator', '15 inch refrigerator landing', 'The handle side needs 15 inches of counter, or 15 inches across an aisle within 48 inches.', '{"fridge_landing_in":15}', 'review', 'NKBA #16', 'implemented', 1, NULL, 1),
++('fridge-run-end', 'Refrigerator', 'Refrigerator at the end of a run', 'A refrigerator with base cabinets on both sides, or tucked into an inside corner, is flagged.', '{}', 'review', 'LA-LAYOUT, NKBA #4, KA-FRIDGE', 'implemented', 1, NULL, 0),
++('fridge-hinge-clearance', 'Refrigerator', 'Hinge-side clearance at a wall', 'A refrigerator whose hinge side lands on a wall with no filler or panel is flagged.', '{"fridge_hinge_clear_in":2.5}', 'review', 'KA-FRIDGE, ULINE', 'implemented', 1, NULL, 1),
++('fridge-opening', 'Refrigerator', '37 inch by 72 inch refrigerator opening', 'Default opening when the size is unknown. The Designer uses the measured refrigerator width and the existing panel bay, not a new 37 inch opening.', '{}', 'reference', 'DECOR, HB-INST', 'reference', 1, 'The Designer uses the measured refrigerator width and the existing panel bay, not a new 37 inch opening.', 0),
++('fridge-end-panels', 'Refrigerator', 'Tall end panels beside the refrigerator', 'The existing refrigerator bay still frames the refrigerator with end panels. Panel depth stays on the owner''s 24 inch cut. Sources that call for 25–30 inches are an open conflict.', '{}', 'auto', 'DECOR', 'implemented', 1, 'Panel depth stays on the owner''s 24 inch cut. Sources that call for 25–30 inches are an open conflict.', 0),
++('over-fridge-depth', 'Refrigerator', 'Deep cabinet over a paneled refrigerator', 'A 12 inch deep wall cabinet over a paneled refrigerator is a suggestion, not a replacement. Any wall cabinet 24 inches tall or shorter may still go over the fridge.', '{}', 'suggest', 'DECOR, KM', 'implemented', 1, NULL, 0),
++('fridge-panel-filler', 'Refrigerator', 'Filler between a wall cabinet and a fridge panel', 'The existing clearance filler between a frameless cabinet and a fridge panel is unchanged.', '{}', 'auto', 'DECOR', 'implemented', 1, NULL, 0),
++('sink-on-window', 'Sink', 'Center the sink on the window', 'After a sink shifts, a window that no longer shares the sink center is a suggestion the customer can accept.', '{}', 'suggest', 'LA-LAYOUT, DECOR', 'implemented', 1, NULL, 0),
++('sink-base-36', 'Sink', '36 inch sink base by default', 'Auto-design still defaults to a 36 inch regular sink base unless the customer picks another size or a farmhouse base.', '{"sink_base_default_in":36}', 'auto', 'DECOR', 'implemented', 1, NULL, 1),
++('sink-landing', 'Sink', 'Sink landing 24 and 18 inches', 'One side of the sink needs 24 inches of counter and the other 18 inches.', '{"sink_landing_long_in":24,"sink_landing_short_in":18}', 'review', 'NKBA #11', 'implemented', 1, NULL, 1),
++('prep-zone', 'Sink', '36 inch prep counter beside the sink', 'A continuous 36 inch counter beside the sink is checked. Baking use also reserves that zone beside the range when the run allows it.', '{}', 'review', 'NKBA #12', 'implemented', 1, NULL, 0),
++('single-sink-near-work', 'Sink', 'Only sink near the range and refrigerator', 'The only sink should share a run or sit across from the range and refrigerator.', '{}', 'review', 'NKBA #10', 'implemented', 1, NULL, 0),
++('trash-pullout', 'Sink', 'Trash pull-out by the sink', 'A trash or double-trash base in the catalog is suggested beside the sink, opposite the dishwasher. It is not forced into the run.', '{}', 'suggest', 'NKBA #14, DECOR', 'implemented', 1, NULL, 0),
++('drawer-near-sink', 'Sink', 'Drawer base in the sink zone', 'A drawer base near the sink is suggested when the line sells one.', '{}', 'suggest', 'DECOR, NKBA #28', 'implemented', 1, NULL, 0),
++('dishwasher-beside-sink', 'Dishwasher', 'Dishwasher within 36 inches of the sink', 'Auto-design seats the dishwasher against the sink. The 36 inch edge check runs again after any shift.', '{"sink_dishwasher_max_gap_in":36}', 'auto', 'NKBA #13, LA-LAYOUT', 'implemented', 1, NULL, 1),
++('dishwasher-corner-clearance', 'Dishwasher', '21 inches between the dishwasher and a corner', 'A dishwasher against an inside corner is flagged. Auto-design will not slide it more than 3 inches to clear the corner.', '{"dishwasher_corner_clear_in":21}', 'review', 'NKBA #13', 'implemented', 1, NULL, 1),
++('dishwasher-corner-fallback', 'Dishwasher', '2 inch side gap if a corner cannot be avoided', 'If the 21 inch stand is impossible, the side still needs 2 inches.', '{"dishwasher_corner_min_in":2}', 'review', 'DW-SPEC', 'implemented', 1, NULL, 1),
++('dishwasher-end-panel', 'Dishwasher', 'Dishwasher end panel', 'A dishwasher at the end of a run suggests a panel. Existing panel tooling is not duplicated.', '{}', 'suggest', 'DECOR, LA-LAYOUT', 'implemented', 1, NULL, 0),
++('dishwasher-away-from-range', 'Dishwasher', 'Avoid a dishwasher directly beside the range', 'A dishwasher touching the range is a suggestion, not a block.', '{}', 'suggest', 'NKBA #24', 'implemented', 1, NULL, 0),
++('appliance-door-clash', 'Dishwasher', 'Appliance doors clear entry doors', 'Checked when the plan has a door. Skipped with a note when it does not.', '{}', 'review', 'NKBA #2', 'implemented', 1, NULL, 0),
++('range-landing', 'Range', 'Landing on both sides of the range', 'Auto-design keeps a real base on both sides of the range. No tall cabinet or refrigerator may sit directly against it. Heavy cooking raises the landing to 15 inches on both sides and rejects bases under 15 inches.', '{}', 'auto', 'NKBA #17, JLC31', 'implemented', 1, NULL, 0),
++('shared-landing', 'Range', 'Shared landing between range and sink or refrigerator', 'The shared counter uses the longer landing plus 12 inches.', '{}', 'review', 'NKBA #24', 'implemented', 1, NULL, 0),
++('range-not-under-window', 'Range', 'Range not under an operable window', 'Checked when a window is on the range wall. Skipped with a note when the plan has no windows.', '{}', 'review', 'NKBA #20', 'implemented', 1, NULL, 0),
++('range-opening', 'Range', '30.5 inch range opening', 'Model a 30 inch range as a 30.5 or 31.25 inch opening. The appliance palette places RANGE-30 at its catalog width. A separate rough opening is not modeled.', '{}', 'reference', 'DECOR, HB-INST', 'reference', 1, 'The appliance palette places RANGE-30 at its catalog width. A separate rough opening is not modeled.', 0),
++('drawers-beside-range', 'Range', 'Drawer bases and a spice pull-out beside the range', 'Suggested for every kitchen. Baking and everyday cooking prefer a drawer base of the same width when the line sells one.', '{}', 'suggest', 'LA-STOVE, DECOR', 'implemented', 1, NULL, 0),
++('hood-width', 'Range', 'Hood at least as wide as the range', 'A hood narrower than the range is flagged.', '{}', 'review', 'DECOR, Thermador', 'implemented', 1, NULL, 0),
++('cooktop-clearance', 'Range', 'Clearance above the cooktop', 'The owner''s 60 inch hood-bottom rule is unchanged. Gas manuals that want 30 inches above the cooktop are an open conflict, not a behavior change.', '{}', 'review', 'NKBA #18, LA-STOVE, GILROY', 'implemented', 1, NULL, 0),
++('wall-bottom-54', 'Wall cabinets', 'Wall cabinet bottoms at 54 inches', 'Standard wall cabinets stay bottom-anchored at 54 inches. A 30 inch box therefore tops at 84 inches.', '{}', 'auto', 'DECOR, KM, FAB', 'implemented', 1, NULL, 0),
++('wall-height-by-ceiling', 'Wall cabinets', 'Wall height follows the ceiling', 'The customer still picks 30, 36, or 42 inch wall cabinets. A 42 inch cabinet on the 54 inch line ends at 96 inches.', '{}', 'auto', 'FAB, KM', 'implemented', 1, NULL, 0),
++('stacked-wall-fillers', 'Wall cabinets', 'Stacked wall fillers', 'Existing filler and molding rules are unchanged.', '{}', 'auto', 'DECOR', 'implemented', 1, NULL, 0),
++('glass-and-microwave-wall', 'Wall cabinets', 'Glass doors and a microwave shelf', 'Glass doors and a microwave wall cabinet are suggestions when those SKUs exist.', '{}', 'suggest', 'DECOR', 'implemented', 1, NULL, 0),
++('run-end-panel', 'Wall cabinets', 'Finished end at the end of a run', 'A run that dies into a wall with no filler or panel is flagged. Auto filler for gaps of 3 inches or less is unchanged.', '{}', 'review', 'DECOR, LA-LAYOUT', 'implemented', 1, NULL, 0),
++('corner-storage', 'Corners', 'Functional corner storage', 'A corner still needs a real corner cabinet. Only sizes that fit the legs are offered, and a blind corner is the fallback.', '{}', 'auto', 'NKBA #29', 'implemented', 1, NULL, 0),
++('blind-pull-filler', 'Corners', 'Blind corner pull and filler', 'The existing blind filler and the door-toward-the-open-run rule are unchanged. Corner fit counts the 3 inch filler on the open leg.', '{}', 'auto', 'THD-PG, HB-INST, LA-LAYOUT', 'implemented', 1, NULL, 0),
++('wall-corner-matches-base', 'Corners', 'Wall corner matches the base corner', 'A blind base still gets a blind wall corner, and a lazy Susan still gets a diagonal or corner upper.', '{}', 'auto', 'DECOR, LA-LAYOUT', 'implemented', 1, NULL, 0),
++('kill-the-corner', 'Corners', 'Kill the corner', 'Leaving the corner open is a suggestion only. Auto-design still requires a corner cabinet at an L or U corner.', '{}', 'suggest', 'DECOR', 'implemented', 1, NULL, 0),
++('corner-base-off-wall', 'Corners', 'Corner base pulled off the wall', 'Blind corners keep their existing pull range.', '{}', 'auto', 'HB-INST', 'implemented', 1, NULL, 0),
++('u-shape-two-corners', 'Corners', 'U-shape has two corners', 'The existing U-shape rule of exactly two corners is unchanged.', '{}', 'auto', 'LA-LAYOUT', 'implemented', 1, NULL, 0),
++('oven-tower-landing', 'Tall and microwave', 'Oven tower landing', 'Checked when a tall oven cabinet is on the plan. Skipped with a note otherwise.', '{}', 'review', 'NKBA #23', 'implemented', 1, NULL, 0),
++('microwave-location', 'Tall and microwave', 'Plan a microwave location', 'A microwave above 54 inches, or no microwave at all, is flagged when the plan is far enough along to know.', '{}', 'review', 'NKBA #21, NKBA #22, DECOR', 'implemented', 1, NULL, 0),
++('tall-depth', 'Tall and microwave', 'Tall cabinets about 25 inches deep', 'Tall cabinets should die into a 25 inch gable. The owner''s refrigerator panel is cut to 24 inches. This depth change is an open conflict and is not applied.', '{}', 'reference', 'DECOR', 'reference', 1, 'The owner''s refrigerator panel is cut to 24 inches. This depth change is an open conflict and is not applied.', 0),
++('work-triangle', 'Aisles and clearances', 'Work triangle', 'Checked from sink, range, and refrigerator centers when all three exist. Skipped with a note otherwise.', '{}', 'review', 'NKBA #3, NKBA #5', 'implemented', 1, NULL, 0),
++('aisles', 'Aisles and clearances', 'Work aisle and walkway', 'Checked when two parallel runs exist. Skipped with a note for a single run.', '{}', 'review', 'NKBA #6, NKBA #7, DECOR', 'implemented', 1, NULL, 0),
++('seating-clearance', 'Aisles and clearances', 'Seating clearance', 'Checked when an island has a raised seating bar. Skipped with a note otherwise.', '{}', 'review', 'NKBA #8, NKBA #9', 'implemented', 1, NULL, 0),
++('island', 'Aisles and clearances', 'Island depth, ends, and range landing', 'Checked when an island is on the plan. Skipped with a note when it is not.', '{}', 'review', 'DECOR, NKBA #17', 'implemented', 1, NULL, 0),
++('door-swing-after-place', 'Aisles and clearances', 'Door and drawer clearance after every placement', 'Run after auto-design, including after an appliance or sink shift, and again in plan review.', '{}', 'review', 'NKBA #2, LA-LAYOUT', 'implemented', 1, NULL, 0),
++('owner-jog-3', 'Owner placement', 'Appliance and sink jog max 3 inches', 'Anything shifted for fit, including the sink base centerline, may move at most 3 inches left or right. The smallest shift that works is used. The refrigerator bay still has its existing 6 inch slide until that cap is changed.', '{"jog_max_in":3}', 'auto', 'Owner', 'implemented', 1, NULL, 1),
++('owner-range-fridge-15', 'Owner placement', '15 inch cabinet between range and refrigerator', 'When the range and refrigerator are on the same run, at least one real cabinet 15 inches wide or wider must sit between them. Fillers and panels do not count.', '{"range_fridge_min_cabinet_in":15}', 'auto', 'Owner', 'implemented', 1, NULL, 1),
++('owner-filler-gap-3', 'Owner fillers and molding', 'Auto filler for gaps of 3 inches or less', 'A measured gap of 3 inches or less receives a filler with no prompt. The code default before this stored value loads is 6 inches.', '{"filler_gap_max_in":3}', 'auto', 'Owner', 'implemented', 1, 'Seed value is 3. The untouched code constant is 6 until the saved parameter loads.', 1),
++('owner-clearance-filler-fridge', 'Owner fillers and molding', 'Clearance filler between a frameless cabinet and a fridge panel', 'A frameless cabinet next to a refrigerator cabinet or end panel keeps a clearance filler so doors and handles do not hit the panel.', '{}', 'auto', 'Owner', 'pending', 1, 'Owned by the filler-molding-rules work. Not reimplemented on this branch.', 0),
++('owner-filler-cut-2-5', 'Owner fillers and molding', 'One filler when combined pieces are 2.5 inches or less', 'Filler pieces whose combined width is 2.5 inches or less are cut from one filler.', '{"filler_cut_combined_max_in":2.5}', 'auto', 'Owner', 'pending', 1, 'Owned by the filler-molding-rules work. The number is stored for that branch.', 0),
++('owner-molding-extra-stick', 'Owner fillers and molding', 'Add one molding stick', 'The bill of materials adds one extra molding stick.', '{"molding_extra_sticks":1}', 'auto', 'Owner', 'pending', 1, 'BOM note: added one just in case of craftsmanship issues. Owned by the filler-molding-rules work.', 0),
++('owner-fridge-panel-24', 'Owner placement', 'Fridge panel cut to 24 inches when the fridge is 24 inches deep', 'A 24 inch deep refrigerator uses an end panel cut to 24 inches.', '{"fridge_panel_cut_in":24}', 'auto', 'Owner', 'pending', 1, 'BOM note: 30 inch panel cut down to 24. Display and BOM are on branch fridge-panel-cut-to-24.', 0),
++('owner-over-fridge-24', 'Owner placement', 'Wall cabinets 24 inches tall or shorter may go over the fridge', 'On every cabinet line, any wall cabinet 24 inches high or shorter may be placed over the refrigerator.', '{"over_fridge_max_height_in":24}', 'auto', 'Owner', 'implemented', 1, 'The designer does not reject a wall cabinet at or under this height above the refrigerator. The number is shown for reference.', 0),
++('owner-u-shape-two-corners', 'Owner placement', 'U-shape has exactly two corners', 'A U-shaped auto-design kitchen has exactly two corner cabinets.', '{"u_shape_corner_count":2}', 'auto', 'Owner', 'implemented', 1, NULL, 1),
++('owner-blind-door-open-run', 'Owner placement', 'Blind corner door defaults toward the open run', 'The blind corner door faces the open run. The blind side tucks into the corner.', '{}', 'auto', 'Owner', 'implemented', 1, NULL, 0),
++('owner-corner-fit', 'Owner placement', 'Corner fit against plumbing and fixed items', 'Before a corner is offered or placed, each leg is measured up to plumbing, appliances, windows, and wall ends. The sink center may move at most the jog limit. The placed sink center is the plumbing anchor.', '{"blind_open_leg_in":27}', 'auto', 'Owner', 'implemented', 1, 'blind_open_leg_in is 24 inches of base depth plus the 3 inch filler.', 1),
++('owner-blind-corner-fallback', 'Owner placement', 'Blind corner fallback when a lazy Susan will not fit', 'If a lazy Susan or other corner will not fit, the largest blind corner that fits is placed, blind side on the longer leg. No corner cabinet fits is reported only when the smallest blind corner fails.', '{}', 'auto', 'Owner', 'implemented', 1, NULL, 0),
++('owner-wall-bottom-54', 'Owner vertical', '54 inch baseline for 30 inch wall cabinets', 'Standard 30 inch wall cabinets anchor with the bottom at 54 inches above the floor.', '{"wall_bottom_in":54}', 'auto', 'Owner', 'implemented', 1, NULL, 1),
++('owner-24-at-66', 'Open questions', '24 inch cabinets at 66 inches', 'The owner also said 24 inch cabinets at 66. That tops out at 90 inches, which misses a 96 inch top. This value is stored and not applied.', '{"open_question_24_bottom_in":66}', 'reference', 'Owner', 'reference', 1, 'Open question. Named in code as OPEN_QUESTION_TWENTY_FOUR_INCH_CABINET_BOTTOM_IN and not used for placement.', 0),
++('owner-bridge-cabinets', 'Owner vertical', 'Bridge cabinets over the range', 'When a microwave or hood hangs below the bridge, use a 24 inch bridge with its bottom at 72. When nothing hangs below, use a 30 inch bridge with its bottom at 66. Width matches the range.', '{"bridge_hung_bottom_in":72,"bridge_hung_height_in":24,"bridge_open_bottom_in":66,"bridge_open_height_in":30}', 'auto', 'Owner', 'implemented', 1, NULL, 1),
++('owner-run-top-96', 'Owner vertical', 'Runs end at 96 inches', 'Wall runs and range bridges are aligned so the top line is 96 inches. A 42 inch wall cabinet on the 54 inch baseline reaches that line. A 30 inch wall cabinet on the 54 inch baseline tops at 84.', '{"run_top_in":96}', 'auto', 'Owner', 'implemented', 1, NULL, 1),
++('owner-hood-bottom-60', 'Owner vertical', '42 inch hood bottom at 60 inches', 'The range hood bottom stays at 60 inches above the floor.', '{"hood_bottom_in":60}', 'auto', 'Owner', 'implemented', 1, 'The code fallback before this value loads is 66 inches, which is the catalog default used when a hood row has no mount.', 1),
++('owner-baking-zone', 'Usage', 'Usage question and 36 inch baking zone', 'Auto-design asks how the kitchen is used. Lots of baking reserves at least 36 inches of uninterrupted counter beside the range, ideally toward the refrigerator, and suggests drawer, tray, and mixer items when the catalog has them. The question is skippable and does not block saving.', '{"baking_zone_min_in":36}', 'auto', 'Owner', 'implemented', 1, NULL, 1),
++('owner-sink-base-false-front', 'Owner placement', 'Out-of-stock sink base substitutes a same-width base', 'When an SBxx sink base is out of stock and the mapped base of the same width is in stock in the same door style, the Designer swaps it automatically. The shop removes the drawer and installs a false front. The customer can undo the swap.', '{"sink_base_substitute":1,"sink_base_map":"SBxx->Bxx"}', 'auto', 'Owner', 'implemented', 1, 'Order note: out of SB36, sub with a B36. remove drawer, install false front. Set sink_base_substitute to 0 to disable. Edit sink_base_map to change the prefix pair.', 1),
++('owner-stock-prompt', 'Owner placement', 'Ask before replacing an out-of-stock base', 'When a listed cabinet is out of stock, the Designer asks before it changes the plan. The default cabinet is B18. The choices are a full-height door base, a drawer base, and readjusting the plan. Only in-stock choices are offered. Readjust slides cabinets on that run by at most the shared jog and refills the opening.', '{"stock_prompt_enabled":1,"stock_prompts":"B18:full-height,drawer,readjust"}', 'suggest', 'Owner', 'implemented', 1, 'stock_prompts lists SKU:option,option entries separated by semicolons. Options are full-height, drawer, and readjust. Example for a second cabinet: B18:full-height,drawer,readjust;W3012:readjust. Readjust offers up to three in-stock plans for any base or wall cabinet: slide the run by at most jog_max_in, or resize one or two neighbors on each side so the span stays the same width and the cabinet type stays the same. Sinks, corners, and appliances are not resized past that jog. Nothing is applied until the customer picks. If nothing fits, they go back to the other choices. Order note: out of B18, customer chose readjust the plan.', 1),
++('owner-heavy-cook-landing', 'Usage', 'Heavy-cook counter on both sides of the range', 'Everyday cooking keeps open uninterrupted counter on both sides of the range. No small cabinet sits directly against the range. Small means a base under 15 inches, a filler, a panel, a tall cabinet, or the refrigerator.', '{"heavy_cook_landing_in":15,"small_cabinet_below_in":15}', 'auto', 'Owner', 'implemented', 1, 'Small cabinet means bases under 15 inches, including 9 and 12 inch spice or tray bases, plus fillers, panels, tall cabinets, and the refrigerator.', 1),
++('conflict-gas-hood-30', 'Open conflicts', 'Gas hood manuals want 30 inches above the cooktop', 'Several gas hood manuals require 30 inches above the cooktop. The owner hood bottom stays at 60 inches, which is 24 inches above a 36 inch cooktop. Behavior is not changed.', '{"gas_hood_clearance_in":30}', 'reference', 'CYC-INSERT, DECOR, owner conflict', 'reference', 1, 'Open conflict. Do not change the 60 inch hood bottom until the owner decides.', 0),
++('conflict-fridge-panel-25', 'Open conflicts', 'Sources cut fridge panels to 25 inches', 'Some sources cut the refrigerator panel to 25 inches so it meets a 25.5 inch countertop. The owner cuts a 24 inch deep refrigerator panel to 24 inches. Behavior is not changed.', '{"source_fridge_panel_in":25}', 'reference', 'DECOR, owner conflict', 'reference', 1, 'Open conflict. The 24 inch owner cut wins until the owner decides.', 0);
+diff --git a/drizzle/schema.ts b/drizzle/schema.ts
+index 10116ec..c0d05b3 100644
+--- a/drizzle/schema.ts
++++ b/drizzle/schema.ts
+@@ -4171,3 +4171,23 @@ export const crmCleanupBackupRows = mysqlTable("crm_cleanup_backup_rows", {
+ }));
+ 
+ export type CrmCleanupBackupRow = typeof crmCleanupBackupRows.$inferSelect;
++
++export const kitchenRules = mysqlTable("kitchen_rules", {
++  id: int("id").autoincrement().primaryKey(),
++  ruleCode: varchar("ruleCode", { length: 80 }).notNull().unique(),
++  category: varchar("category", { length: 80 }).notNull(),
++  title: varchar("title", { length: 255 }).notNull(),
++  ruleDescription: text("ruleDescription").notNull(),
++  parameterJson: text("parameterJson").notNull(),
++  enforcementKind: varchar("enforcementKind", { length: 32 }).notNull(),
++  sourceText: varchar("sourceText", { length: 512 }).notNull(),
++  implementationStatus: varchar("implementationStatus", { length: 32 }).notNull(),
++  enabledFlag: boolean("enabledFlag").default(true).notNull(),
++  notesText: text("notesText"),
++  readsParameters: boolean("readsParameters").default(false).notNull(),
++  updatedByName: varchar("updatedByName", { length: 255 }),
++  createdAt: timestamp("createdAt").defaultNow().notNull(),
++  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
++});
++
++export type KitchenRule = typeof kitchenRules.$inferSelect;
+diff --git a/server/kitchenRules.migration.test.ts b/server/kitchenRules.migration.test.ts
+new file mode 100644
+index 0000000..78fa039
+--- /dev/null
++++ b/server/kitchenRules.migration.test.ts
+@@ -0,0 +1,28 @@
++import { readFileSync } from "node:fs";
++import { describe, expect, it } from "vitest";
++
++const sql = readFileSync(new URL("../docs/sql/0233_kitchen_rules.tidb.sql", import.meta.url), "utf8");
++const router = readFileSync(new URL("./routers/kitchenRules.ts", import.meta.url), "utf8");
++
++describe("kitchen rules migration", () => {
++  it("uses one statement per numbered block and qualifies the table", () => {
++    expect(sql).toContain("CREATE TABLE IF NOT EXISTS cabinet_dealz.kitchen_rules");
++    expect(sql).toContain("INSERT IGNORE INTO cabinet_dealz.kitchen_rules");
++    const blocks = sql.split(/\n-- \d+\n/).slice(1);
++    expect(blocks.length).toBe(2);
++    for (const block of blocks) {
++      const statements = block.split(";").map((part) => part.trim()).filter(Boolean);
++      expect(statements).toHaveLength(1);
++    }
++    expect(sql).not.toMatch(/\bAS\s+(status|key|order|group|range)\b/i);
++  });
++
++  it("keeps catalog edits admin-only and new rules reference-only", () => {
++    expect(router).toContain("list: adminProcedure");
++    expect(router).toContain("create: adminProcedure");
++    expect(router).toContain("update: adminProcedure");
++    expect(router).toContain('implementationStatus: "reference"');
++    expect(router).toContain("readsParameters: false");
++    expect(router).toContain("parameters: publicProcedure");
++  });
++});
+diff --git a/server/routers.ts b/server/routers.ts
+index 9de557a..f73b7f2 100644
+--- a/server/routers.ts
++++ b/server/routers.ts
+@@ -99,6 +99,7 @@ import { vendorSamplesRouter } from "./routers/vendorSamples";
+ import { vendorReferralsRouter } from "./routers/vendorReferrals";
+ import { crmCleanupRouter } from "./routers/crmCleanup";
+ import { doorRenderingAuditRouter } from "./routers/doorRenderingAudit";
++import { kitchenRulesRouter } from "./routers/kitchenRules";
+ 
+ export const appRouter = router({
+   system: systemRouter,
+@@ -233,6 +234,7 @@ export const appRouter = router({
+   vendorReferrals: vendorReferralsRouter,
+   crmCleanup: crmCleanupRouter,
+   doorRenderingAudit: doorRenderingAuditRouter,
++  kitchenRules: kitchenRulesRouter,
+ });
+ 
+ export type AppRouter = typeof appRouter;
+diff --git a/server/routers/kitchenRules.ts b/server/routers/kitchenRules.ts
+new file mode 100644
+index 0000000..e4e4683
+--- /dev/null
++++ b/server/routers/kitchenRules.ts
+@@ -0,0 +1,155 @@
++/**
++ * Admin Kitchen Rules. The TiDB table is created by hand from
++ * docs/sql/0233_kitchen_rules.tidb.sql. This router does not migrate.
++ *
++ * list, create, and update are admin-only.
++ * parameters is public so every Designer session can apply saved numbers.
++ * A missing table returns an empty parameter map and a list error the admin
++ * screen already explains.
++ */
++import { TRPCError } from "@trpc/server";
++import { asc, eq } from "drizzle-orm";
++import { z } from "zod";
++import { kitchenRules } from "../../drizzle/schema";
++import { adminProcedure, publicProcedure, router } from "../_core/trpc";
++import { getDb } from "../db";
++
++const enforcementKind = z.enum(["auto", "suggest", "review", "reference"]);
++const parametersInput = z.record(z.string().regex(/^[a-z0-9_]+$/), z.union([z.number().finite(), z.string().trim().min(1).max(500)]));
++
++function editorName(user: { name?: string | null; email?: string | null }): string {
++  return user.name?.trim() || user.email?.trim() || "admin";
++}
++
++function parseParameters(raw: string | null | undefined): Record<string, number | string> {
++  if (!raw) return {};
++  try {
++    const parsed = JSON.parse(raw) as Record<string, unknown>;
++    const parameters: Record<string, number | string> = {};
++    for (const [key, value] of Object.entries(parsed)) {
++      if (typeof value === "number" && Number.isFinite(value)) parameters[key] = value;
++      else if (typeof value === "string" && value.trim()) parameters[key] = value.trim();
++    }
++    return parameters;
++  } catch {
++    return {};
++  }
++}
++
++function toRow(row: typeof kitchenRules.$inferSelect) {
++  return {
++    id: row.id,
++    ruleCode: row.ruleCode,
++    category: row.category,
++    title: row.title,
++    ruleDescription: row.ruleDescription,
++    parameters: parseParameters(row.parameterJson),
++    enforcementKind: row.enforcementKind as "auto" | "suggest" | "review" | "reference",
++    sourceText: row.sourceText,
++    implementationStatus: row.implementationStatus as "implemented" | "pending" | "reference",
++    enabledFlag: Boolean(row.enabledFlag),
++    notesText: row.notesText,
++    readsParameters: Boolean(row.readsParameters),
++    updatedByName: row.updatedByName,
++    createdAt: row.createdAt ? new Date(row.createdAt).toISOString() : null,
++    updatedAt: row.updatedAt ? new Date(row.updatedAt).toISOString() : null,
++  };
++}
++
++async function database() {
++  const db = await getDb();
++  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
++  return db;
++}
++
++export const kitchenRulesRouter = router({
++  list: adminProcedure.query(async () => {
++    const db = await database();
++    const rows = await db.select().from(kitchenRules).orderBy(asc(kitchenRules.category), asc(kitchenRules.ruleCode));
++    return rows.map(toRow);
++  }),
++
++  parameters: publicProcedure.query(async () => {
++    try {
++      const db = await database();
++      const rows = await db.select().from(kitchenRules);
++      const values: Record<string, number> = {};
++      const text: Record<string, string> = {};
++      for (const row of rows) {
++        if (!row.readsParameters) continue;
++        const parameters = parseParameters(row.parameterJson);
++        if (!row.enabledFlag) {
++          if ("sink_base_substitute" in parameters) values.sink_base_substitute = 0;
++          if ("stock_prompt_enabled" in parameters) values.stock_prompt_enabled = 0;
++          continue;
++        }
++        for (const [key, value] of Object.entries(parameters)) {
++          if (typeof value === "number") values[key] = value;
++          else text[key] = value;
++        }
++      }
++      return { values, text };
++    } catch {
++      return { values: {}, text: {} };
++    }
++  }),
++
++  create: adminProcedure.input(z.object({
++    ruleCode: z.string().trim().regex(/^[a-z0-9-]{3,80}$/),
++    title: z.string().trim().min(1).max(255),
++    category: z.string().trim().min(1).max(80),
++    ruleDescription: z.string().trim().min(1).max(8000),
++    parameters: parametersInput.default({}),
++    enforcementKind: enforcementKind.default("reference"),
++    sourceText: z.string().trim().min(1).max(512).default("Admin"),
++    notesText: z.string().trim().max(4000).nullable().optional(),
++    enabledFlag: z.boolean().default(true),
++  })).mutation(async ({ ctx, input }) => {
++    const db = await database();
++    await db.insert(kitchenRules).values({
++      ruleCode: input.ruleCode,
++      title: input.title,
++      category: input.category,
++      ruleDescription: input.ruleDescription,
++      parameterJson: JSON.stringify(input.parameters),
++      enforcementKind: "reference",
++      sourceText: input.sourceText,
++      implementationStatus: "reference",
++      enabledFlag: input.enabledFlag,
++      notesText: input.notesText ?? null,
++      readsParameters: false,
++      updatedByName: editorName(ctx.user),
++    });
++    return { ok: true as const, implementationStatus: "reference" as const };
++  }),
++
++  update: adminProcedure.input(z.object({
++    id: z.number().int().positive(),
++    title: z.string().trim().min(1).max(255).optional(),
++    category: z.string().trim().min(1).max(80),
++    ruleDescription: z.string().trim().min(1).max(8000),
++    parameters: parametersInput,
++    enforcementKind: enforcementKind.optional(),
++    sourceText: z.string().trim().min(1).max(512).optional(),
++    enabledFlag: z.boolean(),
++    notesText: z.string().trim().max(4000).nullable().optional(),
++  })).mutation(async ({ ctx, input }) => {
++    const db = await database();
++    const existing = await db.select().from(kitchenRules).where(eq(kitchenRules.id, input.id)).limit(1);
++    const row = existing[0];
++    if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Kitchen rule not found" });
++    await db.update(kitchenRules).set({
++      title: input.title ?? row.title,
++      category: input.category,
++      ruleDescription: input.ruleDescription,
++      parameterJson: JSON.stringify(input.parameters),
++      enforcementKind: input.enforcementKind ?? row.enforcementKind,
++      sourceText: input.sourceText ?? row.sourceText,
++      enabledFlag: input.enabledFlag,
++      notesText: input.notesText ?? null,
++      updatedByName: editorName(ctx.user),
++      updatedAt: new Date(),
++    }).where(eq(kitchenRules.id, input.id));
++    return { ok: true as const };
++  }),
++});
