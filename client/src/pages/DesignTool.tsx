@@ -21100,12 +21100,17 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                       } : current);
                       return (
                         <div data-testid="attached-filler-leftover" className="rounded-lg border border-[#d9c196] bg-[#fffaf0] px-3 py-2.5">
-                          <p className="text-sm font-semibold text-[#1a2744]">Leftover space: {formatEighthInches(leftover.leftoverIn)}</p>
-                          <p className="mt-0.5 text-xs text-muted-foreground">{leftover.split || (leftover.left && leftover.right) ? "Fill it with one filler on either side, or split it evenly between both sides." : `Measured between ${attachedFillerPrompt.cabinet.masterCode} and the ${leftover.left ? "left" : "right"} wall or cabinet.`}</p>
+                          <p className="text-sm font-semibold text-[#1a2744]">{leftover.corner
+                            ? `Space beside the corner cabinet: ${[leftover.left ? `left ${formatEighthInches(leftover.left.leftIn)}` : null, leftover.right ? `right ${formatEighthInches(leftover.right.rightIn)}` : null].filter(Boolean).join(" · ")}`
+                            : `Leftover space: ${formatEighthInches(leftover.leftoverIn)}`}</p>
+                          <p className="mt-0.5 text-xs text-muted-foreground">{leftover.corner
+                            ? `${attachedFillerPrompt.cabinet.masterCode} stays in the corner. Each filler goes at the end of its leg, against the next cabinet on that wall.`
+                            : leftover.split || (leftover.left && leftover.right) ? "Fill it with one filler on either side, or split it evenly between both sides." : `Measured between ${attachedFillerPrompt.cabinet.masterCode} and the ${leftover.left ? "left" : "right"} wall or cabinet.`}</p>
                           <div className="mt-2 flex flex-wrap gap-2">
                             {leftover.left && <Button type="button" size="sm" variant="outline" data-testid="attached-filler-leftover-left" onClick={() => fill(leftover.left!)}>Filler left {formatEighthInches(leftover.left.leftIn)}</Button>}
                             {leftover.right && <Button type="button" size="sm" variant="outline" data-testid="attached-filler-leftover-right" onClick={() => fill(leftover.right!)}>Filler right {formatEighthInches(leftover.right.rightIn)}</Button>}
                             {leftover.split && <Button type="button" size="sm" variant="outline" data-testid="attached-filler-leftover-split" onClick={() => fill(leftover.split!)}>Split {formatEighthInches(leftover.split.leftIn)} left + {formatEighthInches(leftover.split.rightIn)} right</Button>}
+                            {leftover.both && <Button type="button" size="sm" variant="outline" data-testid="attached-filler-leftover-both" onClick={() => fill(leftover.both!)}>Both sides {formatEighthInches(leftover.both.leftIn)} left + {formatEighthInches(leftover.both.rightIn)} right</Button>}
                           </div>
                         </div>
                       );

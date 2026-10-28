@@ -59,7 +59,8 @@ export function buildAttachedFillerPlacement({
     room,
     cabinet.peninsulaSide,
   );
-  const positionedCabinet: PlacedCabinet = {
+  // A corner cabinet keeps its exact corner seat; only its leg fillers are added.
+  const positionedCabinet: PlacedCabinet = plan.cornerCabinet ? cabinet : {
     ...cabinet,
     x: cabinetSpot.x,
     y: cabinetSpot.y,
@@ -86,6 +87,8 @@ export function buildAttachedFillerPlacement({
       Number(positionedCabinet.height) || (plan.placement === "wall" ? 30 : plan.placement === "tall" ? 96 : 34.5),
     );
     const groupId = `attached-filler-${positionedCabinet.uid}-${piece.side}-${makeUid()}`;
+    const pieceWall = piece.wall ?? plan.wall;
+    const attachmentSide = piece.attachmentSide ?? piece.side;
     const raw: PlacedCabinet = {
       uid: makeUid(),
       cabinetId: stock.id,
@@ -110,13 +113,13 @@ export function buildAttachedFillerPlacement({
       fillerPieceGroupId: groupId,
       fillerBillingRole: "primary",
       fillerTotalWidth: piece.widthIn,
-      fillerPlacementMode: piece.side,
+      fillerPlacementMode: attachmentSide,
       fillerForCabinetUid: positionedCabinet.uid,
-      fillerAttachmentSide: piece.side,
+      fillerAttachmentSide: attachmentSide,
       fillerNeedsReview: false,
     };
     const matched = matchInstalledFillerToCabinet(raw, positionedCabinet, room);
-    const fillerSpot = wallPlacementAt(piece.startIn, piece.widthIn, matched.depth, plan.wall, room, positionedCabinet.peninsulaSide);
+    const fillerSpot = wallPlacementAt(piece.startIn, piece.widthIn, matched.depth, pieceWall, room, pieceWall === plan.wall ? positionedCabinet.peninsulaSide : undefined);
     fillers.push({
       ...matched,
       x: fillerSpot.x,
