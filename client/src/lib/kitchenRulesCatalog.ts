@@ -8,7 +8,7 @@ export type KitchenRuleSeed = {
   category: string;
   title: string;
   ruleDescription: string;
-  parameters: Record<string, number>;
+  parameters: Record<string, number | string>;
   enforcementKind: KitchenRuleEnforcementKind;
   sourceText: string;
   implementationStatus: KitchenRuleImplementationStatus;
@@ -284,13 +284,13 @@ const ownerSeeds: KitchenRuleSeed[] = [
     ruleCode: "owner-sink-base-false-front",
     category: "Owner placement",
     title: "Out-of-stock sink base substitutes a same-width base",
-    ruleDescription: "When an SBxx sink base is out of stock and a Bxx of the same width exists in the same door style, offer that base first. The shop removes the drawer and installs a false front. Nothing is swapped until the customer chooses it.",
-    parameters: { sink_base_substitute: 1 },
-    enforcementKind: "suggest",
+    ruleDescription: "When an SBxx sink base is out of stock and the mapped base of the same width is in stock in the same door style, the Designer swaps it automatically. The shop removes the drawer and installs a false front. The customer can undo the swap.",
+    parameters: { sink_base_substitute: 1, sink_base_map: "SBxx->Bxx" },
+    enforcementKind: "auto",
     sourceText: "Owner",
     implementationStatus: "implemented",
     readsParameters: true,
-    notesText: "SB36 prefers B36. The order line note is: B36 used as sink base: remove drawer, install false front. Set sink_base_substitute to 0 to hide the suggestion.",
+    notesText: "Order note: out of SB36, sub with a B36. remove drawer, install false front. Set sink_base_substitute to 0 to disable. Edit sink_base_map to change the prefix pair.",
   },
   {
     ruleCode: "owner-heavy-cook-landing",

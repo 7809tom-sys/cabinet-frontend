@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { trpc } from "@/lib/trpc";
-import { setKitchenRuleParameters } from "@/lib/kitchenRuleParameters";
+import { setKitchenRuleParameters, setKitchenRuleTextParameters } from "@/lib/kitchenRuleParameters";
 
 export type KitchenRuleRecord = {
   id: number;
@@ -8,7 +8,7 @@ export type KitchenRuleRecord = {
   category: string;
   title: string;
   ruleDescription: string;
-  parameters: Record<string, number>;
+  parameters: Record<string, number | string>;
   enforcementKind: "auto" | "suggest" | "review" | "reference";
   sourceText: string;
   implementationStatus: "implemented" | "pending" | "reference";
@@ -25,7 +25,7 @@ export type KitchenRuleUpdate = {
   title?: string;
   category: string;
   ruleDescription: string;
-  parameters: Record<string, number>;
+  parameters: Record<string, number | string>;
   enforcementKind?: KitchenRuleRecord["enforcementKind"];
   sourceText?: string;
   enabledFlag: boolean;
@@ -37,7 +37,7 @@ export type KitchenRuleCreate = {
   title: string;
   category: string;
   ruleDescription: string;
-  parameters: Record<string, number>;
+  parameters: Record<string, number | string>;
   enforcementKind: KitchenRuleRecord["enforcementKind"];
   sourceText: string;
   notesText: string | null;
@@ -61,7 +61,7 @@ function api() {
   return trpc as unknown as {
     kitchenRules: {
       list: { useQuery: (input?: undefined, options?: object) => QueryResult<KitchenRuleRecord[]> };
-      parameters: { useQuery: (input?: undefined, options?: object) => QueryResult<{ values: Record<string, number> }> };
+      parameters: { useQuery: (input?: undefined, options?: object) => QueryResult<{ values: Record<string, number>; text?: Record<string, string> }> };
       create: { useMutation: () => Mutation<KitchenRuleCreate> };
       update: { useMutation: () => Mutation<KitchenRuleUpdate> };
     };
@@ -84,6 +84,7 @@ export function useKitchenRuleParameterSync() {
   const query = api().kitchenRules.parameters.useQuery(undefined, { retry: false, staleTime: 60_000 });
   useEffect(() => {
     if (query.data?.values) setKitchenRuleParameters(query.data.values);
+    if (query.data) setKitchenRuleTextParameters(query.data.text ?? {});
   }, [query.data]);
 }
 

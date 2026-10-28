@@ -38,21 +38,22 @@ function seedAsRecord(rule: KitchenRuleSeed, index: number): KitchenRuleRecord {
   };
 }
 
-function parametersText(parameters: Record<string, number>): string {
+function parametersText(parameters: Record<string, number | string>): string {
   return Object.entries(parameters).map(([key, value]) => `${key}=${value}`).join("\n");
 }
 
-function parseParameters(text: string): Record<string, number> | null {
-  const parameters: Record<string, number> = {};
+function parseParameters(text: string): Record<string, number | string> | null {
+  const parameters: Record<string, number | string> = {};
   for (const line of text.split("\n")) {
     const trimmed = line.trim();
     if (!trimmed) continue;
-    const split = trimmed.split("=");
-    if (split.length !== 2) return null;
-    const key = split[0]!.trim();
-    const value = Number(split[1]!.trim());
-    if (!/^[a-z0-9_]+$/.test(key) || !Number.isFinite(value)) return null;
-    parameters[key] = value;
+    const splitAt = trimmed.indexOf("=");
+    if (splitAt <= 0) return null;
+    const key = trimmed.slice(0, splitAt).trim();
+    const raw = trimmed.slice(splitAt + 1).trim();
+    if (!/^[a-z0-9_]+$/.test(key) || !raw) return null;
+    const numeric = Number(raw);
+    parameters[key] = Number.isFinite(numeric) && String(numeric) === raw ? numeric : raw;
   }
   return parameters;
 }
@@ -179,7 +180,7 @@ function RuleEditor({ rule, pending, onClose, onSave }: {
   rule: KitchenRuleRecord;
   pending: boolean;
   onClose: () => void;
-  onSave: (input: { id: number; title: string; category: string; ruleDescription: string; parameters: Record<string, number>; enforcementKind: KitchenRuleRecord["enforcementKind"]; sourceText: string; enabledFlag: boolean; notesText: string | null }) => Promise<void>;
+  onSave: (input: { id: number; title: string; category: string; ruleDescription: string; parameters: Record<string, number | string>; enforcementKind: KitchenRuleRecord["enforcementKind"]; sourceText: string; enabledFlag: boolean; notesText: string | null }) => Promise<void>;
 }) {
   const [title, setTitle] = useState(rule.title);
   const [category, setCategory] = useState(rule.category);
@@ -229,7 +230,7 @@ function RuleEditor({ rule, pending, onClose, onSave }: {
 function RuleCreator({ pending, onClose, onSave }: {
   pending: boolean;
   onClose: () => void;
-  onSave: (input: { ruleCode: string; title: string; category: string; ruleDescription: string; parameters: Record<string, number>; enforcementKind: "reference"; sourceText: string; notesText: string | null; enabledFlag: boolean }) => Promise<void>;
+  onSave: (input: { ruleCode: string; title: string; category: string; ruleDescription: string; parameters: Record<string, number | string>; enforcementKind: "reference"; sourceText: string; notesText: string | null; enabledFlag: boolean }) => Promise<void>;
 }) {
   const [ruleCode, setRuleCode] = useState("");
   const [title, setTitle] = useState("");

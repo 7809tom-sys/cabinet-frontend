@@ -17,7 +17,7 @@
  */
 
 import { RANGE_NEIGHBOR_MIN_WIDTH_IN } from "./autoDesignSeamFillers";
-import { kitchenRuleNumber } from "./kitchenRuleParameters";
+import { kitchenRuleNumber, kitchenRuleText } from "./kitchenRuleParameters";
 import { isRefrigeratorAppliance } from "./autoDesignAvailability";
 import {
   DEFAULT_ROOM,
@@ -35,6 +35,7 @@ import {
   isSinkAppliance,
   isSinkBaseCabinet,
   makeUid,
+  makeDefaultSinkForCabinet,
   placedCornerGeometryKind,
   placedHeight,
   resolvedDesignCabinetDimensions,
@@ -45,6 +46,7 @@ import {
   type Placement,
   type PlacedCabinet,
   type RoomData,
+  type SinkFixture,
 } from "./design";
 import {
   inventoryStockKeys,
@@ -61,23 +63,34 @@ const NEIGHBOR_TOLERANCE_IN = 0.25;
 export const SINK_BASE_FALSE_FRONT_RULE = "owner-sink-base-false-front";
 
 export function sinkBaseNominalWidth(masterCode: string): number | null {
+  const { fromPrefix } = sinkBaseSubstituteMap();
   const code = masterCode.toUpperCase().replace(/[^A-Z0-9]/g, "");
-  const match = code.match(/^(?:ADA)?SB(\d{2})$/);
+  const match = code.match(new RegExp(`^(?:ADA)?${fromPrefix}(\\d{2})$`));
   if (!match) return null;
   const width = Number(match[1]);
   return width >= 12 && width <= 96 ? width : null;
 }
 
 export function plainBaseCodeForWidth(width: number): string {
-  return `B${width}`;
+  return `${sinkBaseSubstituteMap().toPrefix}${width}`;
 }
 
 export function sinkBaseFalseFrontLabel(baseCode: string): string {
   return `${baseCode} — remove drawer, install false front`;
 }
 
-export function sinkBaseFalseFrontOrderNote(baseCode: string): string {
-  return `${baseCode} used as sink base: remove drawer, install false front`;
+/** Exact material-list wording for an automatic sink-base substitution. */
+export function sinkBaseSubstitutionOrderNote(fromCode: string, toCode: string, includeSinkAndFaucet: boolean): string {
+  const note = `out of ${fromCode}, sub with a ${toCode}. remove drawer, install false front`;
+  return includeSinkAndFaucet ? `${note}. include sink and faucet` : note;
+}
+
+export function sinkBaseSubstituteMap(): { fromPrefix: string; toPrefix: string } {
+  const raw = kitchenRuleText("sink_base_map", "SBxx->Bxx");
+  const match = raw.toUpperCase().replace(/\s/g, "").match(/^([A-Z]+)XX->([A-Z]+)XX$/)
+    ?? raw.toUpperCase().replace(/\s/g, "").match(/^([A-Z]+)->([A-Z]+)$/);
+  if (!match) return { fromPrefix: "SB", toPrefix: "B" };
+  return { fromPrefix: match[1]!, toPrefix: match[2]! };
 }
 
 export type InventoryCornerKind =
@@ -454,8 +467,6 @@ function suggestForCabinet(
     .sort((left, right) => styleLabel(left).localeCompare(styleLabel(right)) || left.masterCode.localeCompare(right.masterCode));
 
   const suggestions: InventorySuggestion[] = [];
-  const falseFront = sinkBaseFalseFrontSuggestion(cabinet, catalog, index, styleId, vendorId, input.assumeUnlistedInStock);
-  if (falseFront) suggestions.push(falseFront);
   if (chosenSingles.length > 0) {
     const tier = sameStyle.length > 0 ? "same-style" : "cross-style";
     for (const candidate of chosenSingles) {
@@ -484,41 +495,6 @@ function suggestForCabinet(
     vendor: stock.vendor,
     asOf: stock.asOf,
     suggestions: suggestions.slice(0, input.limit),
-  };
-}
-
-function sinkBaseFalseFrontSuggestion(
-  cabinet: PlacedCabinet,
-  catalog: readonly InventoryCatalogCandidate[],
-  index: Map<string, StockStatusResult>,
-  styleId: number | null,
-  vendorId: number | null,
-  assumeUnlistedInStock: boolean,
-): InventorySingleSuggestion | null {
-  if (kitchenRuleNumber("sink_base_substitute") === 0) return null;
-  if (styleId == null || !isSinkBaseCabinet(cabinet)) return null;
-  const width = sinkBaseNominalWidth(cabinet.masterCode);
-  if (width == null) return null;
-  const baseCode = plainBaseCodeForWidth(width);
-  const matches = catalog.filter((candidate) => {
-    if (vendorId != null && candidate.distributorId !== vendorId) return false;
-    if (candidate.styleId !== styleId || candidate.placement !== "base") return false;
-    if (normalizeInventorySku(candidate.masterCode) !== normalizeInventorySku(baseCode)) return false;
-    if (isSinkBaseCabinet(candidate) || isCornerCabinet(candidate.masterCode, candidate.description)) return false;
-    const stock = resolveStock(inventoryStockKeys(candidate), index, assumeUnlistedInStock);
-    return stock.status === "in_stock";
-  });
-  const candidate = matches.sort((left, right) => left.id - right.id)[0];
-  if (!candidate) return null;
-  return {
-    id: `sink-base-false-front:${candidate.styleId}:${candidate.masterCode}`,
-    kind: "single",
-    tier: "same-style",
-    candidate,
-    displayLabel: sinkBaseFalseFrontLabel(candidate.masterCode),
-    fieldModificationNote: sinkBaseFalseFrontOrderNote(candidate.masterCode),
-    reason: sinkBaseFalseFrontLabel(candidate.masterCode),
-    ruleNotes: ["sink-base-false-front", "field-modification", "same-style", "catalog-price"],
   };
 }
 
@@ -580,6 +556,106 @@ function formatSize(profile: CabinetProfile): string {
 function trimInches(value: number): string {
   const rounded = Math.round(value * 8) / 8;
   return Number.isInteger(rounded) ? `${rounded}"` : `${rounded}"`;
+}
+
+export type CatalogOrderFixture = {
+  id: number;
+  name: string;
+  pelicanCode?: string | null;
+  imageUrl?: string | null;
+};
+
+export type AutomaticSinkBaseSwap = {
+  uid: string;
+  fromCode: string;
+  toCode: string;
+  orderNote: string;
+  /** True when no catalog sink and faucet SKU was available to add. */
+  includeSinkAndFaucetNote: boolean;
+  sinkProduct: CatalogOrderFixture | null;
+  faucetProduct: CatalogOrderFixture | null;
+};
+
+/**
+ * Swaps every out-of-stock SBxx for an in-stock Bxx in the same door style.
+ * Nothing is invented: a sink or faucet line is added only when a catalog
+ * product is passed in. Otherwise the order note says to include them.
+ */
+export function applyAutomaticSinkBaseSubstitutions(input: {
+  placed: readonly PlacedCabinet[];
+  catalog: readonly InventoryCatalogCandidate[];
+  stock: readonly StockStatusResult[];
+  room: RoomData;
+  designStyleId: number | null;
+  distributorId: number | null;
+  assumeUnlistedInStock?: boolean;
+  skipUids?: ReadonlySet<string>;
+  sinkProduct?: CatalogOrderFixture | null;
+  faucetProduct?: CatalogOrderFixture | null;
+}): { placed: PlacedCabinet[]; sinks: SinkFixture[]; swaps: AutomaticSinkBaseSwap[] } {
+  if (kitchenRuleNumber("sink_base_substitute") === 0 || input.designStyleId == null) {
+    return { placed: [...input.placed], sinks: [], swaps: [] };
+  }
+  const index = stockIndex(input.stock);
+  const assume = input.assumeUnlistedInStock === true;
+  let placed = [...input.placed];
+  const sinks: SinkFixture[] = [];
+  const swaps: AutomaticSinkBaseSwap[] = [];
+  for (const cabinet of input.placed) {
+    if (input.skipUids?.has(cabinet.uid)) continue;
+    if (cabinet.fieldModificationNote) continue;
+    const styleId = effectiveStyleId(cabinet, input.designStyleId);
+    if (styleId == null || !isSinkBaseCabinet(cabinet)) continue;
+    const width = sinkBaseNominalWidth(cabinet.masterCode);
+    if (width == null) continue;
+    const ownStock = resolveStock(inventoryStockKeys({ masterCode: cabinet.masterCode, styleId }), index, assume);
+    if (ownStock.status !== "out_of_stock") continue;
+    const baseCode = plainBaseCodeForWidth(width);
+    const candidate = input.catalog
+      .filter((row) => {
+        if (input.distributorId != null && row.distributorId !== input.distributorId) return false;
+        if (row.styleId !== styleId || row.placement !== "base") return false;
+        if (normalizeInventorySku(row.masterCode) !== normalizeInventorySku(baseCode)) return false;
+        if (isSinkBaseCabinet(row) || isCornerCabinet(row.masterCode, row.description)) return false;
+        return resolveStock(inventoryStockKeys(row), index, assume).status === "in_stock";
+      })
+      .sort((left, right) => left.id - right.id)[0];
+    if (!candidate) continue;
+    let includeSinkAndFaucetNote = !input.sinkProduct || !input.faucetProduct;
+    let fixture: SinkFixture | null = null;
+    if (input.sinkProduct && input.faucetProduct) {
+      try {
+        fixture = {
+          ...makeDefaultSinkForCabinet(cabinet, input.room),
+          faucet: true,
+          pelicanProductId: input.sinkProduct.id,
+          pelicanProductName: input.sinkProduct.name,
+          pelicanProductImage: input.sinkProduct.imageUrl ?? undefined,
+          pelicanFaucetProductId: input.faucetProduct.id,
+          pelicanFaucetProductName: input.faucetProduct.name,
+          pelicanFaucetProductImage: input.faucetProduct.imageUrl ?? undefined,
+          autoDesignFaucet: true,
+        };
+      } catch {
+        fixture = null;
+        includeSinkAndFaucetNote = true;
+      }
+    }
+    const orderNote = sinkBaseSubstitutionOrderNote(cabinet.masterCode, candidate.masterCode, includeSinkAndFaucetNote);
+    const swapped = stampCandidate(cabinet, candidate, input.designStyleId, orderNote);
+    placed = placed.map((item) => item.uid === cabinet.uid ? swapped : item);
+    if (fixture) sinks.push({ ...fixture, cabinetUid: cabinet.uid });
+    swaps.push({
+      uid: cabinet.uid,
+      fromCode: cabinet.masterCode,
+      toCode: candidate.masterCode,
+      orderNote,
+      includeSinkAndFaucetNote,
+      sinkProduct: input.sinkProduct ?? null,
+      faucetProduct: input.faucetProduct ?? null,
+    });
+  }
+  return { placed, sinks, swaps };
 }
 
 export function designInventoryFromStock(input: {

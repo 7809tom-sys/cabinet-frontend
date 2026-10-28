@@ -125,9 +125,9 @@ import {
 } from "@/lib/smallGapFiller";
 import { buildRemoteDesignSessionUrl } from "@/lib/designShare";
 import { availableLs3612ShelfReplacementChoices, isUnpricedLs3612 } from "@/lib/ls3612Replacement";
-import { applyInventorySuggestion, type InventorySuggestion } from "@/lib/inventoryAlternatives";
+import { applyAutomaticSinkBaseSubstitutions, applyInventorySuggestion, sinkBaseNominalWidth, type InventorySuggestion } from "@/lib/inventoryAlternatives";
 import { useDesignerInventory } from "@/lib/useDesignerInventory";
-import { InventoryDesignStockControl, InventoryStockBadge } from "@/components/design/InventoryStockNotice";
+import { InventoryDesignStockControl, InventoryStockBadge, SinkBaseSubstitutionNotice } from "@/components/design/InventoryStockNotice";
 import { unavailableSavedStyleIds } from "@/lib/unavailableSavedStyles";
 import { applyGlassStackerBulkPlacement as applyBulkGlassStackerPlacements, glassStackerBulkCeilingBlocksAtHeight, glassStackerBulkHeightOptions, glassStackerBulkPlacementCandidates, glassStackerUidsForRemoval, type GlassStackerBulkPlacementCandidate } from "@/lib/glassStackerBulkPlacement";
 import { toast } from "sonner";
@@ -3360,6 +3360,99 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     doorStyles: inventoryDoorStyles,
     sameStyleCabinets: inventoryCatalog,
   });
+  const sinkBaseOutOfStock = inventory.notices.some((notice) => sinkBaseNominalWidth(notice.masterCode) != null);
+  const { data: automaticSinkProducts, isFetched: automaticSinkProductsFetched, isLoading: automaticSinkProductsLoading } = trpc.surfaces.recommended.useQuery(
+    { role: "sink", limit: 6 },
+    { enabled: sinkBaseOutOfStock },
+  );
+  const { data: automaticFaucetProducts, isFetched: automaticFaucetProductsFetched, isLoading: automaticFaucetProductsLoading } = trpc.surfaces.recommended.useQuery(
+    { role: "faucet", limit: 24 },
+    { enabled: sinkBaseOutOfStock },
+  );
+  const sinkBaseSwapSuppressedRef = useRef(new Set<string>());
+  const [sinkBaseSwapNotices, setSinkBaseSwapNotices] = useState<Array<{ uid: string; fromCode: string; toCode: string; orderNote: string; previous: PlacedCabinet; addedSinkUid: string | null; addedSurfaceIds: number[] }>>([]);
+  useEffect(() => {
+    if (!inventory.stock || inventory.providerId === "unknown") return;
+    if (sinkBaseOutOfStock && (automaticSinkProductsLoading || automaticFaucetProductsLoading || !automaticSinkProductsFetched || !automaticFaucetProductsFetched)) return;
+    const sinkRows = (automaticSinkProducts ?? []) as AutoDesignFaucetProduct[];
+    const sinkProduct = sinkRows.find((row) => Number.isInteger(row.id) && row.name.trim()) ?? null;
+    const faucetProduct = defaultAutoDesignFaucet((automaticFaucetProducts ?? []) as AutoDesignFaucetProduct[]);
+    const result = applyAutomaticSinkBaseSubstitutions({
+      placed: placedRef.current,
+      catalog: inventory.catalog,
+      stock: inventory.stock,
+      room: roomRef.current,
+      designStyleId: styleId,
+      distributorId: catalogDistributorScopeId,
+      assumeUnlistedInStock: inventory.assumeUnlistedInStock,
+      skipUids: sinkBaseSwapSuppressedRef.current,
+      sinkProduct,
+      faucetProduct,
+    });
+    if (result.swaps.length === 0) return;
+    const previousByUid = new Map(placedRef.current.map((cabinet) => [cabinet.uid, cabinet]));
+    for (const swap of result.swaps) sinkBaseSwapSuppressedRef.current.add(swap.uid);
+    placedRef.current = result.placed;
+    setPlaced(result.placed);
+    const existingSurfaceIds = new Set(selectedSurfaces.map((surface) => surface.id));
+    const addedSurfaceIds = [sinkProduct, faucetProduct]
+      .filter((product): product is AutoDesignFaucetProduct => product != null && !existingSurfaceIds.has(product.id))
+      .map((product) => product.id);
+    if (result.sinks.length > 0) {
+      setSinks((current) => [...current, ...result.sinks]);
+      const added = [sinkProduct, faucetProduct].filter((product): product is AutoDesignFaucetProduct => product != null && addedSurfaceIds.includes(product.id))
+        .map((product) => catalogFaucetSurface(product));
+      if (added.length > 0) {
+        setSelectedSurfaces((current) => [
+          ...current,
+          ...added.filter((surface) => !current.some((existing) => existing.id === surface.id)),
+        ]);
+      }
+    }
+    setSinkBaseSwapNotices((current) => [
+      ...current,
+      ...result.swaps.map((swap) => ({
+        uid: swap.uid,
+        fromCode: swap.fromCode,
+        toCode: swap.toCode,
+        orderNote: swap.orderNote,
+        previous: previousByUid.get(swap.uid)!,
+        addedSinkUid: result.sinks.find((sink) => sink.cabinetUid === swap.uid)?.uid ?? null,
+        addedSurfaceIds: result.sinks.some((sink) => sink.cabinetUid === swap.uid) ? addedSurfaceIds : [],
+      })),
+    ]);
+  }, [
+    automaticFaucetProducts,
+    automaticFaucetProductsFetched,
+    automaticFaucetProductsLoading,
+    automaticSinkProducts,
+    automaticSinkProductsFetched,
+    automaticSinkProductsLoading,
+    catalogDistributorScopeId,
+    inventory.assumeUnlistedInStock,
+    inventory.catalog,
+    inventory.providerId,
+    inventory.stock,
+    selectedSurfaces,
+    setPlaced,
+    sinkBaseOutOfStock,
+    styleId,
+  ]);
+  const undoSinkBaseSwap = useCallback((uid: string) => {
+    const notice = sinkBaseSwapNotices.find((item) => item.uid === uid);
+    if (!notice) return;
+    sinkBaseSwapSuppressedRef.current.add(uid);
+    const nextPlaced = placedRef.current.map((cabinet) => cabinet.uid === uid ? notice.previous : cabinet);
+    placedRef.current = nextPlaced;
+    setPlaced(nextPlaced);
+    const remainingSinks = sinks.filter((sink) => sink.uid !== notice.addedSinkUid);
+    const stillUsed = new Set(remainingSinks.flatMap((sink) => [sink.pelicanProductId, sink.pelicanFaucetProductId].filter((id): id is number => typeof id === "number")));
+    if (notice.addedSinkUid) setSinks(remainingSinks);
+    if (notice.addedSurfaceIds.length > 0) {
+      setSelectedSurfaces((current) => current.filter((surface) => !notice.addedSurfaceIds.includes(surface.id) || stillUsed.has(surface.id)));
+    }
+    setSinkBaseSwapNotices((current) => current.filter((item) => item.uid !== uid));
+  }, [setPlaced, sinkBaseSwapNotices, sinks]);
   const swapInventoryCabinet = useCallback((uid: string, suggestion: InventorySuggestion) => {
     const result = applyInventorySuggestion({
       placed: placedRef.current,
@@ -14176,6 +14269,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         onClose={() => setTowerDialog(null)}
         onCommit={commitMasterTracTower}
       />}
+      <SinkBaseSubstitutionNotice swaps={sinkBaseSwapNotices} onUndo={undoSinkBaseSwap} />
       {/* Toolbar */}
       <div data-testid="designer-toolbar" data-tablet-workspace={isTabletWorkspace ? "true" : undefined} className={`designer-top-toolbar border-b border-border bg-card px-2 py-1 flex flex-wrap items-center gap-1 shrink-0 overflow-visible ${isTabletWorkspace ? `${isTabletPortrait ? "order-last border-b-0 border-t" : tabletImmersiveHeader ? "pl-16" : ""}` : ""}`} style={affiliateBrand ? { borderTop: `3px solid ${affiliateAccent}` } : undefined}>
         {/* Title + badge — desktop only */}

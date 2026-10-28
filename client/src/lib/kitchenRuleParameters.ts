@@ -27,13 +27,27 @@ export const KITCHEN_RULE_PARAMETER_DEFAULTS = {
   fridge_hinge_clear_in: 2.5,
   blind_open_leg_in: 27,
   sink_base_default_in: 36,
-  /** 1 offers SBxx → Bxx. 0 hides that suggestion. */
+  /** 1 automatically swaps an out-of-stock SBxx for the mapped base. 0 leaves it. */
   sink_base_substitute: 1,
 } as const;
 
 export type KitchenRuleParameterKey = keyof typeof KITCHEN_RULE_PARAMETER_DEFAULTS;
 
 let overrides: Partial<Record<KitchenRuleParameterKey, number>> = {};
+let textOverrides: Record<string, string> = {};
+
+export function kitchenRuleText(key: string, fallback: string): string {
+  const value = textOverrides[key]?.trim();
+  return value ? value : fallback;
+}
+
+export function setKitchenRuleTextParameters(values: Record<string, string> | null | undefined): void {
+  textOverrides = {};
+  if (!values) return;
+  for (const [key, value] of Object.entries(values)) {
+    if (typeof value === "string" && value.trim()) textOverrides[key] = value.trim();
+  }
+}
 
 export function setKitchenRuleParameters(values: Record<string, number> | null | undefined): void {
   const next: Partial<Record<KitchenRuleParameterKey, number>> = {};
@@ -48,6 +62,7 @@ export function setKitchenRuleParameters(values: Record<string, number> | null |
 
 export function resetKitchenRuleParameters(): void {
   overrides = {};
+  textOverrides = {};
 }
 
 export function kitchenRuleNumber(key: KitchenRuleParameterKey): number {

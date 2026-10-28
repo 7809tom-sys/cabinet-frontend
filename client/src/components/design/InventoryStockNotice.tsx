@@ -103,6 +103,26 @@ export function InventoryStockBadge({
  * and simulation is off. Out-of-stock cabinets stay listed so the warning does
  * not depend on selecting each one.
  */
+export function SinkBaseSubstitutionNotice({
+  swaps,
+  onUndo,
+}: {
+  swaps: readonly { uid: string; fromCode: string; toCode: string; orderNote: string }[];
+  onUndo: (uid: string) => void;
+}) {
+  if (swaps.length === 0) return null;
+  return (
+    <div role="status" data-testid="sink-base-substitution-notice" className="flex w-full flex-wrap items-center gap-2 border-b border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+      {swaps.map((swap) => (
+        <p key={swap.uid} className="flex flex-wrap items-center gap-2">
+          <span>{swap.fromCode} was out of stock, so it was replaced with {swap.toCode}. {swap.orderNote}</span>
+          <button type="button" className="rounded border border-amber-700 bg-white px-2 py-0.5 font-semibold text-amber-950" onClick={() => onUndo(swap.uid)}>Undo</button>
+        </p>
+      ))}
+    </div>
+  );
+}
+
 export function InventoryDesignStockControl({
   simulationActive,
   forcedOutOfStock,

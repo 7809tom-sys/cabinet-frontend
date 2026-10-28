@@ -10,6 +10,8 @@ describe("Designer inventory wiring", () => {
     expect(source).toContain("InventoryDesignStockControl");
     expect(source).toContain("swapInventoryCabinet");
     expect(source).toContain("applyInventorySuggestion");
+    expect(source).toContain("applyAutomaticSinkBaseSubstitutions");
+    expect(source).toContain("SinkBaseSubstitutionNotice");
   });
 
   it("swaps only from the suggestion buttons", () => {
