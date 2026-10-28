@@ -27,6 +27,7 @@ import { useLanguage } from "@/contexts/LanguageContext";
 import { useSeo } from "@/hooks/useSeo";
 import { translateSpec } from "@/lib/i18n/specPhrases";
 import { canonicalMouldingLabel, isCatalogMouldingCategory } from "@shared/catalogCategorySpelling";
+import { isCatalogFreeShippingFlag } from "@shared/freeShippingItem";
 import { affiliateCabinetDetailHref } from "@/lib/affiliateCabinetDetailRoute";
 import {
   affiliateCatalogIndexPath,
@@ -114,6 +115,7 @@ interface CabinetItem extends CabinetLike {
   numberOfDrawers?: number | null;
   numberOfAdjShelves?: number | null;
   glassIncluded?: boolean | null;
+  freeShipping?: boolean | number | null;
 }
 
 function CabinetCard({ cabinet, styleId, distributorLabel, affiliateSlug, onQuickView }: { cabinet: CabinetItem; styleId?: number | null; distributorLabel?: string | null; affiliateSlug?: string; onQuickView: (cabinet: CabinetItem) => void }) {
@@ -141,9 +143,14 @@ function CabinetCard({ cabinet, styleId, distributorLabel, affiliateSlug, onQuic
             <span className="rounded bg-primary/10 px-2 py-0.5 font-mono text-xs font-semibold text-primary">
               {cabinet.masterCode}
             </span>
-            <Badge variant="secondary" className="shrink-0 text-xs">
-              {cabinetTypeLabel(cabinet)}
-            </Badge>
+            <span className="flex shrink-0 items-center gap-1">
+              {isCatalogFreeShippingFlag(cabinet.freeShipping) && (
+                <Badge className="border-emerald-200 bg-emerald-100 text-[10px] text-emerald-800 hover:bg-emerald-100">Free shipping</Badge>
+              )}
+              <Badge variant="secondary" className="shrink-0 text-xs">
+                {cabinetTypeLabel(cabinet)}
+              </Badge>
+            </span>
           </div>
 
           <GlassPolicyBadge

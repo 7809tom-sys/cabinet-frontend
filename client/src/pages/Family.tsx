@@ -21,6 +21,7 @@ import { useCart } from "@/contexts/CartContext";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { familyTypeMatches } from "@/lib/familyCategoryFilters";
 import { searchCatalogItems } from "@shared/catalogCodeSearch";
+import { isCatalogFreeShippingFlag } from "@shared/freeShippingItem";
 import {
   resolveStorefrontTier,
   resolveTierPrice,
@@ -82,6 +83,7 @@ interface FamilyItem extends CabinetLike {
   contractorPrice?: string | null;
   homeownerPrice?: string | null;
   distributorId?: number | null;
+  freeShipping?: boolean | number | null;
 }
 
 function fmtPrice(n: number | null): string {
@@ -149,6 +151,7 @@ function FamilyCabinetCard({
       tier,
       unitPrice,
       qty,
+      ...(isCatalogFreeShippingFlag(item.freeShipping) ? { freeShipping: true } : {}),
     });
     if (!res.ok && res.reason === "distributor_locked") {
       toast.error(
@@ -201,9 +204,14 @@ function FamilyCabinetCard({
             <span className="font-mono text-xs font-semibold text-primary bg-primary/10 px-2 py-0.5 rounded">
               {item.masterCode}
             </span>
-            <Badge variant="secondary" className="text-xs shrink-0">
-              {cabinetTypeLabel(item)}
-            </Badge>
+            <span className="flex shrink-0 items-center gap-1">
+              {isCatalogFreeShippingFlag(item.freeShipping) && (
+                <Badge className="border-emerald-200 bg-emerald-100 text-[10px] text-emerald-800 hover:bg-emerald-100">Free shipping</Badge>
+              )}
+              <Badge variant="secondary" className="text-xs shrink-0">
+                {cabinetTypeLabel(item)}
+              </Badge>
+            </span>
           </div>
 
           <p className="text-sm font-medium text-foreground mt-2 leading-snug line-clamp-2">

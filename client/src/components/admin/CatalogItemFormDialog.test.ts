@@ -23,7 +23,8 @@ describe("Catalog Add Item and Edit Item form", () => {
       "Dimensions and placement", "Placement type", "Corner cabinet",
       "Supplier price and availability", "Supplier line", "Door style", "Supplier SKU",
       "Eligible for 3D Designer",
-      "List Price", "Your Cost", "Shipping, aliases, and notes", "Package L (in)",
+      "List Price", "Your Cost", "Shipping, aliases, and notes", "Shipping",
+      "Standard (quoted freight)", "Free shipping", "Package L (in)",
     ]) {
       expect(source).toContain(field);
     }
@@ -35,6 +36,12 @@ describe("Catalog Add Item and Edit Item form", () => {
     expect(source).toContain('Supplier SKU is required before publishing.');
     expect(source).toContain('className={fieldClass("category")}');
     expect(source).toContain('text-xs text-destructive');
+  });
+
+  it("saves Free shipping on the catalog item and shows it again in edit mode", () => {
+    expect(source).toContain('freeShipping: draft.shipping === "free"');
+    expect(source).toContain('isCatalogFreeShippingFlag(item.freeShipping) ? "free" : "standard"');
+    expect(source).toContain('id="catalog-item-shipping"');
   });
 });
 

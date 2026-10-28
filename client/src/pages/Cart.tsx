@@ -25,6 +25,7 @@ import { cartItemToCheckoutPrefill } from "@/lib/cartCheckoutPrefill";
 import { separateGlassPurchaseItems } from "@/lib/cartGlassPolicy";
 import { formatEighthInches } from "@/lib/design";
 import { isTemporaryOneDollarFreeShippingOrder } from "@shared/temporaryCheckoutTest";
+import { isCatalogFreeShippingFlag } from "@shared/freeShippingItem";
 import { ShippingQuoteBox, ShippingQuoteResults } from "@/components/shipping/ShippingQuoteBox";
 import { cartItemsToShippingQuote, quotesForCartIndexes, type PublicVendorQuote } from "@/components/shipping/cartShippingQuote";
 
@@ -118,9 +119,18 @@ export default function Cart() {
     () => isTemporaryOneDollarFreeShippingOrder(items),
     [items],
   );
+  const hasCatalogFreeShippingItem = useMemo(
+    () => items.some((item) => item.productKind == null && isCatalogFreeShippingFlag(item.freeShipping)),
+    [items],
+  );
+  const hasOnlyCatalogFreeShippingItems = useMemo(() => (
+    !hasOnlyTemporaryFreeShippingItems
+    && hasCatalogFreeShippingItem
+    && items.every((item) => item.productKind == null && isCatalogFreeShippingFlag(item.freeShipping))
+  ), [items, hasOnlyTemporaryFreeShippingItems, hasCatalogFreeShippingItem]);
   const [sectionQuotes, setSectionQuotes] = useState<PublicVendorQuote[] | null>(null);
   const shippingQuoteRequest = useMemo(
-    () => cartItemsToShippingQuote(items.map((item) => ({
+    () => cartItemsToShippingQuote(items.filter((item) => !(item.productKind == null && isCatalogFreeShippingFlag(item.freeShipping))).map((item) => ({
       productKind: item.productKind ?? null,
       pelicanProductId: item.pelicanProductId,
       vendorProductId: item.vendorProductId,
@@ -275,6 +285,9 @@ export default function Cart() {
                     ) : item.tier !== "homeowner" ? (
                       <Badge variant="secondary" className="text-[10px]">{item.tier}</Badge>
                     ) : null}
+                    {item.productKind == null && isCatalogFreeShippingFlag(item.freeShipping) && (
+                      <Badge className="border-emerald-200 bg-emerald-100 text-[10px] text-emerald-800 hover:bg-emerald-100">Free shipping</Badge>
+                    )}
                   </div>
                   <p className="mt-0.5 text-sm text-foreground leading-snug">{item.name}</p>
                   <p className="text-xs text-muted-foreground">{item.styleLabel}</p>
@@ -439,8 +452,8 @@ export default function Cart() {
               <span className="text-muted-foreground inline-flex items-center gap-1">
                 <Truck className="h-3.5 w-3.5" /> {t("crt_shipping")}
               </span>
-              <span className={hasOnlyTemporaryFreeShippingItems ? "text-xs font-semibold text-emerald-700" : "text-xs text-muted-foreground"}>
-                {hasOnlyTemporaryFreeShippingItems ? "Free test shipping" : t("crt_shipping_quoted")}
+              <span className={hasOnlyTemporaryFreeShippingItems || hasOnlyCatalogFreeShippingItems ? "text-xs font-semibold text-emerald-700" : "text-xs text-muted-foreground"}>
+                {hasOnlyTemporaryFreeShippingItems ? "Free test shipping" : hasOnlyCatalogFreeShippingItems ? "Free shipping" : t("crt_shipping_quoted")}
               </span>
             </div>
           </div>
@@ -452,10 +465,20 @@ export default function Cart() {
                 This temporary one-dollar checkout item is exempt from freight. Other merchandise receives a shipping quote after a complete delivery address is entered.
               </p>
             </div>
+          ) : hasOnlyCatalogFreeShippingItems ? (
+            <div role="status" className="mb-4 rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-950">
+              <p className="font-semibold">Free shipping</p>
+              <p className="mt-0.5 text-xs text-emerald-800">
+                Every cabinet in this cart is marked free shipping. Freight is $0 and checkout will not ask for a carrier quote.
+              </p>
+            </div>
           ) : (
             <div data-testid="checkout-address-shipping-notice" className="mb-4 rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs text-sky-950">
               <p className="font-semibold">Shipping is calculated after your delivery address is complete</p>
               <p className="mt-1">Continue to checkout, then enter your name, phone, street address, city, state, and ZIP. The system will request the appropriate carrier and hardware shipping quotes from that complete address.</p>
+              {hasCatalogFreeShippingItem && (
+                <p className="mt-1">Items marked free shipping are $0. The quote covers only the remaining merchandise.</p>
+              )}
               {hardwareItems.length > 0 && (
                 <p className="mt-1">Hardware ships free when it is ordered with qualifying kitchen cabinets.</p>
               )}

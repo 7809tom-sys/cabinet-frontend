@@ -145,6 +145,7 @@ export function buildDesignCabinetCartLines({
         qty: 1,
         ...(cutNote ? { qtyNote: cutNote } : {}),
         catalogImageUrl: cabinet.catalogImageUrl ?? null,
+        ...(cabinet.freeShipping ? { freeShipping: true } : {}),
         ...fillerCartDimensions(cabinet),
       });
     }
@@ -288,6 +289,7 @@ export function buildDesignPreviewPricingLines({
         qty: 1,
         ...(cutNote ? { qtyNote: cutNote } : {}),
         catalogImageUrl: cabinet.catalogImageUrl ?? null,
+        ...(cabinet.freeShipping ? { freeShipping: true } : {}),
         ...fillerCartDimensions(cabinet),
         placementUids: [cabinet.uid],
       });
