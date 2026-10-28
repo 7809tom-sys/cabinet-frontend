@@ -44,6 +44,26 @@ describe("pre-save plan review", () => {
     expect(placed).toHaveLength(3);
   });
 
+  it("does not ask a finished U for another corner cabinet", () => {
+    const leftCorner = cabinet({
+      uid: "back-left", masterCode: "LSB36", description: "36 inch Lazy Susan corner base",
+      placement: "base", x: 0, y: 0, width: 36, depth: 36,
+    });
+    const rightCorner = cabinet({
+      uid: "back-right", masterCode: "LSB36", description: "36 inch Lazy Susan corner base",
+      placement: "base", x: 108, y: 0, width: 36, depth: 36,
+    });
+    const sideRun = cabinet({
+      uid: "right-base", masterCode: "B24", description: "24 inch Base Cabinet",
+      placement: "base", x: 120, y: 36, width: 24, depth: 24, rotation: 90,
+    });
+    const review = buildPreSavePlanReview({
+      room, placed: [leftCorner, rightCorner, sideRun], openings: [], island: null, catalogFillers: [], conflictUids: new Set(),
+    });
+    const text = review.findings.map((finding) => `${finding.title} ${finding.description}`).join("\n");
+    expect(text).not.toMatch(/third corner|corner cabinet is required|needs a corner cabinet/i);
+  });
+
   it("does not recommend an over-refrigerator cabinet when a dedicated bridge is already present", () => {
     const refrigerator = cabinet({ uid: "fridge", masterCode: "FRIDGE-36", placement: "appliance", x: 36, width: 36, height: 70 });
     const bridge = cabinet({ uid: "bridge", masterCode: "WR3624", placement: "wall", x: 36, width: 36, height: 24, refrigeratorAssemblyId: "fridge", refrigeratorAssemblyRole: "bridge" });
