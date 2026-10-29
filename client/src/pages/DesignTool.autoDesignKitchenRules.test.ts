@@ -14,11 +14,11 @@ function between(source: string, start: string, end: string): string {
 
 describe("Auto-Design kitchen rules wiring", () => {
   const build = between(designTool, "const buildAutoDesignLayout = useCallback", "const completeAutoDesignLayout = useCallback");
-  const complete = between(designTool, "const completeAutoDesignLayout = useCallback", "const cancelAutoDesignCornerStage = useCallback");
-  const cancel = between(designTool, "const cancelAutoDesignCornerStage = useCallback", "useEffect(");
+  const complete = between(designTool, "const completeAutoDesignLayout = useCallback", "finishAutoDesignLayoutRef.current = completeAutoDesignLayout");
 
   it("passes the selected upper height so the refrigerator cabinet above reaches the upper line", () => {
-    expect(build).toContain("wallCabinetHeightIn: input.wallCabinetHeightIn ?? 30");
+    expect(build).toContain("const nominal = input.wallCabinetHeightIn ?? 30");
+    expect(build).toContain("wallCabinetHeightIn:");
   });
 
   it("creates the sink window only from the entered window center and refuses an overlap with the refrigerator cabinet", () => {
@@ -26,7 +26,7 @@ describe("Auto-Design kitchen rules wiring", () => {
     expect(build).toContain("autoDesignSinkWindow({ sink: sinkBase, room, uid: makeUid() })");
     expect(build).toContain("windowOverlapsReservation(proposedWindow, refrigeratorReservation)");
     expect(build).toContain("sinkWindow,");
-    expect(build).toContain("setAutoDesignCornerStage({");
+    expect(build).toContain("finishAutoDesignLayoutRef.current");
   });
 
   it("feeds the window to every remaining stage and commits it only when the build completes", () => {
@@ -34,7 +34,9 @@ describe("Auto-Design kitchen rules wiring", () => {
     expect(complete.match(/openings: stageOpenings/g)?.length).toBeGreaterThanOrEqual(2);
     expect(complete).toContain("freeSegmentsOnWall(wallId, room, working, stageOpenings");
     expect(complete).toContain("setOpenings((previous)");
-    expect(cancel).not.toContain("setOpenings");
+    const abandon = complete.slice(complete.indexOf("const abandon"), complete.indexOf("if (!stage)"));
+    expect(abandon).not.toContain("setOpenings");
+    expect(complete.indexOf("setOpenings((previous)")).toBeGreaterThan(complete.indexOf("seatAutoDesignCornerFromCatalog"));
   });
 
   it("asks what goes above a bare range after the build, offering a hood or a bridge cabinet with microwave", () => {
@@ -49,7 +51,7 @@ describe("Auto-Design kitchen rules wiring", () => {
     expect(hood).toContain("appendCollisionFreePlacements(placedRef.current, [built.hood], room)");
     const bridge = between(designTool, "const offerAutoDesignBridgeAndMicrowave = useCallback", "const addWscSpiceStackUpper = useCallback");
     expect(bridge).toContain("rangeCompanionProposal(");
-    expect(bridge).toContain("setRangeCompanionPrompt({ rangeUid: range.uid, proposal, microwaveAlreadyPlaced: false })");
+    expect(bridge).toContain("setRangeCompanionPrompt({ rangeUid: range.uid, proposal: aligned, microwaveAlreadyPlaced: false })");
   });
 
   it("shows the window field for every layout, including galley, and explains what it does", () => {

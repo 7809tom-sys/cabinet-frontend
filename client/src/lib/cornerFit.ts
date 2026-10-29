@@ -257,6 +257,61 @@ function distanceFromCorner(cornerAlong: number, point: number): number {
 }
 
 /**
+ * Inches of clear run from a corner along one wall, stopping at the first
+ * appliance, cabinet, opening, or wall end. This is the room the blind side
+ * can use; it does not add the appliance jog.
+ */
+export function cornerLegClearIn(input: {
+  room: RoomData;
+  placed: readonly PlacedCabinet[];
+  corner: { x: number; y: number };
+  wallId: string;
+  openings?: readonly WallOpening[];
+}): number | null {
+  const frame = wallRunFrame(input.wallId, input.room);
+  if (!frame) return null;
+  const cornerAlong = wallRunAlongAtPoint(frame, input.corner);
+  const towardEnd = cornerAlong <= frame.length / 2;
+  let available = towardEnd ? frame.length - cornerAlong : cornerAlong;
+  for (const opening of input.openings ?? []) {
+    if (opening.side !== input.wallId) continue;
+    const near = towardEnd ? opening.offset : opening.offset + opening.width;
+    const gap = towardEnd ? near - cornerAlong : cornerAlong - near;
+    if (gap > 0.5) available = Math.min(available, gap);
+  }
+  for (const item of input.placed) {
+    if (cabinetWall(item, input.room) !== input.wallId) continue;
+    const start = wallRunOffset(item, input.wallId, input.room);
+    const end = start + wallRunSpan(item, input.wallId, input.room);
+    const near = towardEnd ? start : end;
+    const gap = towardEnd ? near - cornerAlong : cornerAlong - near;
+    if (gap <= 0.5) continue;
+    available = Math.min(available, gap);
+  }
+  return available;
+}
+
+/** The adjoining wall with more clear run. Ties keep the first wall in the list. */
+export function preferredBlindRunWallId(input: {
+  room: RoomData;
+  placed: readonly PlacedCabinet[];
+  corner: { x: number; y: number };
+  wallIds: readonly string[];
+  openings?: readonly WallOpening[];
+  excludedWallIds?: readonly string[];
+}): string | null {
+  const excluded = new Set(input.excludedWallIds ?? []);
+  let best: { id: string; room: number } | null = null;
+  for (const wallId of input.wallIds) {
+    if (excluded.has(wallId)) continue;
+    const room = cornerLegClearIn({ ...input, wallId });
+    if (room == null) continue;
+    if (!best || room > best.room + 0.01) best = { id: wallId, room };
+  }
+  return best?.id ?? null;
+}
+
+/**
  * Room-backed corner filter. The placed sink's center is the plumbing anchor.
  * There is no separate plumbing object in the room model.
  */

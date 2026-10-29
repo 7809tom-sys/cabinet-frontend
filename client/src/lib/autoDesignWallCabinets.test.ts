@@ -353,6 +353,28 @@ describe("buildAutoDesignWallCabinets", () => {
     expect(wallRunOffset(result.additions[1]!, "top", ROOM)).toBeCloseTo(36, 6);
   });
 
+  it("places the matching diagonal wall cabinet above a diagonal corner base before the straight uppers", () => {
+    const cornerBase = onTopWall(ROOM, {
+      uid: "diagonal-base", masterCode: "DCB36", placement: "base", width: 36, depth: 24, height: 34.5,
+      description: "36 inch Diagonal Corner Base", isCornerCabinet: true, cornerType: "diagonal",
+    }, 0);
+    const adjacentBase = onTopWall(ROOM, { uid: "straight-base", masterCode: "B36", placement: "base", width: 36, depth: 24 }, 36);
+    const result = build({
+      placed: [cornerBase, adjacentBase],
+      catalog: [
+        catalogCabinet({
+          id: 911, masterCode: "DCW2430", description: "24 inch Diagonal Corner Wall Cabinet", width: "24", depth: "12",
+          isCornerCabinet: true, cornerType: "diagonal",
+        }),
+        catalogCabinet({ id: 912, masterCode: "W3630", width: "36" }),
+      ],
+      corners: [{ base: cornerBase, point: { x: 0, y: 0, firstWallId: "top" } }],
+    });
+    expect(result.skipped).toEqual([]);
+    expect(result.additions.map((cabinet) => cabinet.masterCode)[0]).toBe("DCW2430");
+    expect(result.additions.map((cabinet) => cabinet.masterCode)).toContain("W3630");
+  });
+
   it("reserves the 3/4-inch frameless end panel beside a sink window and uses the next exact width", () => {
     const window: WallOpening = { uid: "sink-window", kind: "window", side: "top", offset: 36.75, width: 30, sill: 42, height: 36 };
     const sink = onTopWall(ROOM, { uid: "sink", masterCode: "SB36", description: "Sink Base", placement: "base", width: 30, depth: 24 }, 36.75);

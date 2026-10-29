@@ -96,12 +96,30 @@ export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading =
     ...current,
     [field]: { ...current[field], ...patch },
   }));
-  const availableWallLabels = AUTO_DESIGN_WALL_LABELS.slice(0, Math.max(1, Math.min(AUTO_DESIGN_WALL_LABELS.length, wallCount)));
+  const layoutWallLabels = useMemo(() => {
+    const available = AUTO_DESIGN_WALL_LABELS.slice(0, Math.max(1, Math.min(AUTO_DESIGN_WALL_LABELS.length, wallCount)));
+    return layoutType === "u-shape"
+      ? available.filter((label) => label === "Wall 1" || label === "Wall 2" || label === "Wall 3")
+      : available;
+  }, [layoutType, wallCount]);
+  useEffect(() => {
+    if (layoutType !== "u-shape") return;
+    setValues((current) => {
+      const next = { ...current };
+      let changed = false;
+      for (const field of Object.keys(next) as PointField[]) {
+        if (layoutWallLabels.includes(next[field].wallLabel)) continue;
+        next[field] = { ...next[field], wallLabel: "Wall 1" };
+        changed = true;
+      }
+      return changed ? next : current;
+    });
+  }, [layoutType, layoutWallLabels]);
   const wallWidths = useMemo(() => {
     if (!room) return [];
-    const allowed = new Set<string>(availableWallLabels);
+    const allowed = new Set<string>(layoutWallLabels);
     return autoDesignWallWidthRows(room, originCorner, runDirection).filter((row) => allowed.has(row.label));
-  }, [availableWallLabels, originCorner, room, runDirection]);
+  }, [layoutWallLabels, originCorner, room, runDirection]);
   const wallWidthText = (label: WallLabel) => wallWidths.find((row) => row.label === label)?.text ?? label;
   const selectWallOrOmit = (field: PointField, value: string) => {
     if (field !== "sink" && value === `omit-${field}`) {
@@ -218,7 +236,7 @@ export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading =
           </div>
           <div className="rounded-lg border bg-muted/20 p-3 text-sm" data-testid="auto-design-build-order">
             <p className="font-semibold">Build order</p>
-            <p>1. Measured appliances and sink base. 2. Select and place the required corner cabinets. 3. Fill remaining runs with the largest practical regular base cabinets. 4. Place source-sized, aligned wall cabinets above.</p>
+            <p>1. Measured appliances and sink base. 2. Place the required corner cabinets automatically before any other cabinets on those walls. 3. Fill remaining runs with the largest practical regular base cabinets. 4. Place source-sized, aligned wall cabinets above.</p>
             <p className="mt-1 text-xs text-muted-foreground">Specialty bases are not selected automatically. Wall cabinets respect the selected height, windows, doors, refrigerator bay, and ceiling; unavailable or blocked matches are flagged for review.</p>
           </div>
           {catalogLoading && (
@@ -247,7 +265,7 @@ export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading =
                   <SelectTrigger className="w-full min-w-0" aria-label={wallSelectionLabels[field]}><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {field !== "sink" && <SelectItem value={`omit-${field}`}>{omissionLabels[field]}</SelectItem>}
-                    {availableWallLabels.map((wall) => <SelectItem key={wall} value={wall}>{wallWidthText(wall)}</SelectItem>)}
+                    {layoutWallLabels.map((wall) => <SelectItem key={wall} value={wall}>{wallWidthText(wall)}</SelectItem>)}
                   </SelectContent>
                 </Select>
                 <Input

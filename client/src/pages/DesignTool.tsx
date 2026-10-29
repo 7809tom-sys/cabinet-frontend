@@ -219,7 +219,7 @@ import { applyChosenAutoDesignFaucet, catalogFaucetSurface, defaultAutoDesignFau
 import { clampSinkDragForFaucet } from "@/lib/faucetPlacement";
 import { autoDesignSinkWindow, windowOverlapsReservation } from "@/lib/autoDesignSinkWindow";
 import { autoDesignRangeHood, autoDesignRangeNeedsVentilation } from "@/lib/autoDesignRangeHood";
-import { autoBuildCornerCatalog, autoDesignCornerAttempts, autoDesignCornerFamily, autoDesignCornerSlotPoint, autoDesignCornerSlots, autoDesignMissingCornerMessage, isAutoDesignBlindCornerOption, type AutoBuildCornerCandidate, type AutoDesignCornerChoice, type AutoDesignCornerSlot } from "@/lib/autoDesignCornerStage";
+import { autoBuildCornerCatalog, autoDesignCornerSlotPoint, autoDesignCornerSlots, autoDesignExcludedEngineWallIds, autoDesignLayoutUsesWall, autoDesignRunWallIds, type AutoBuildCornerCandidate, type AutoDesignCornerChoice, type AutoDesignCornerSlot } from "@/lib/autoDesignCornerStage";
 import { evaluateAutoDesignCornerFit, type AutoDesignCornerFit } from "@/lib/cornerFit";
 import { useKitchenRuleParameterSync } from "@/lib/kitchenRulesApi";
 import { rangeBridgeSpec, reviewAfterShift, separateRangeAndRefrigerator } from "@/lib/kitchenAdjacency";
@@ -227,7 +227,8 @@ import { bakesALot, cooksALot, normalizeKitchenUsage } from "@/lib/kitchenUsage"
 import { buildMandatoryAutoDesignRefrigeratorBay } from "@/lib/autoDesignRefrigeratorBay";
 import { buildAutoDesignWallCabinets, resolveWallHeightClass, type AutoDesignUpperCorner } from "@/lib/autoDesignWallCabinets";
 import { isWallWineRackCabinet, withWallWineRacks } from "@shared/wallWineRack";
-import { seatAutoDesignCorner, type AutoDesignApplianceMove } from "@/lib/autoDesignCornerSeating";
+import { seatAutoDesignCornerFromCatalog } from "@/lib/autoDesignCornerPlacement";
+import { type AutoDesignApplianceMove } from "@/lib/autoDesignCornerSeating";
 import { validatePlacedCornerRefrigerator } from "@/lib/cornerRefrigeratorPlacement";
 import { validatePlacedCornerRange, CORNER_RANGE_HANDLE_FILLER_IN } from "@/lib/cornerRangePlacement";
 import { buildGlassCornerCatalogChoices } from "@/lib/glassCornerCatalog";
@@ -265,7 +266,6 @@ import { IslandElevationView } from "@/components/design/IslandElevationView";
 import { CsvImportDialog } from "@/components/design/CsvImportDialog";
 import { PlanImageImportDialog, type ReviewedPlan } from "@/components/design/PlanImageImportDialog";
 import { AutoDesignDialog, type AutoDesignSubmitResult } from "@/components/design/AutoDesignDialog";
-import { AutoDesignCornerDialog } from "@/components/design/AutoDesignCornerDialog";
 import { AutoDesignFaucetDialog } from "@/components/design/AutoDesignFaucetDialog";
 import { findClosestPlanCabinet } from "@/lib/planImportMapper";
 import { EmailGate, type LeadContact } from "@/components/design/EmailGate";
@@ -1174,6 +1174,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     anchorOrigins: AutoDesignAnchorOrigin[];
     cornerFit: Record<string, AutoDesignCornerFit>;
   } | null>(null);
+  const finishAutoDesignLayoutRef = useRef<((
+    choices: Record<string, AutoDesignCornerChoice>,
+    stageOverride?: NonNullable<typeof autoDesignCornerStage>,
+  ) => { ok: true } | { ok: false; message: string }) | null>(null);
   autoDesignSessionRef.current = autoDesignOpen || autoDesignCornerStage != null;
   const [autoDesignFaucetPrompt, setAutoDesignFaucetPrompt] = useState<{ sinkUid: string; queue: string[] } | null>(null);
   const queueAutoDesignFaucetPrompt = useCallback((sinkUid: string) => {
@@ -3846,6 +3850,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           ),
         }
         : anchor;
+      if (!autoDesignLayoutUsesWall(input.layoutType, measuredAnchor.wallLabel)) {
+        return fail(`U-shape uses Wall 1, Wall 2, and Wall 3 only. ${measuredAnchor.wallLabel} is not part of this layout.`);
+      }
       const wall = wallLabelToEngineWallId(measuredAnchor.wallLabel, room, input.originCorner, input.runDirection);
       if (!wall) {
         return fail(`${anchor.kind} cannot be placed because ${measuredAnchor.wallLabel} is not available in this room.`);
@@ -3976,10 +3983,16 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       });
     }
     setAutoDesignOpen(false);
-    setAutoDesignCornerStage({
+    const stage = {
       input,
       anchors: Object.fromEntries(anchorsByKind),
-      selectedWalls,
+      selectedWalls: autoDesignRunWallIds({
+        layoutType: input.layoutType,
+        room,
+        originCorner: input.originCorner,
+        runDirection: input.runDirection,
+        wallIds: selectedWalls,
+      }) as WallSide[],
       anchorPlaced: working,
       pool,
       wallPool: (wallCabPool as DesignCabinet[] | undefined) ?? [],
@@ -3991,26 +4004,36 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       sinkWindow,
       anchorOrigins,
       cornerFit,
-    });
+    };
     setViewMode("plan");
     setSelectedUid(null);
-    toast.info(slots.length > 0
-      ? "Measured appliances are seated. Choose each real corner cabinet before the remaining wall runs are filled."
-      : "Measured appliances are seated. Confirm the next step to fill the remaining wall runs.");
-    return { ok: true as const };
+    const finish = finishAutoDesignLayoutRef.current;
+    if (!finish) return fail("The measured kitchen could not place its corners. Start Auto-Design again.");
+    return finish({}, stage);
     }, [appliancePalette, autoFillCabinets, autoFillCabinetsLoading, autoDesignAvailable, dishwasherSidePreference, isCornerCabinet, openings, placedRef, refrigeratorSurroundCatalog, room, setCountertop, setPlaced, setRoom, wallCabPool, wallCabPoolLoading]);
 
   /**
-   * The second half of an Auto-Design build. Nothing is guessed: appliances are
-   * already committed with the refrigerator bay, every L/U corner must receive
-   * a source-priced corner box, and only then do straight base boxes/fillers
-   * tile the remaining run spans.
+   * The second half of an Auto-Design build. Measured appliances are already
+   * seated. Every real corner is placed next — diagonal, then lazy Susan, then
+   * a blind corner — before straight bases, fillers, or wall cabinets go on
+   * the adjoining walls.
    */
-  const completeAutoDesignLayout = useCallback((choices: Record<string, AutoDesignCornerChoice>) => {
-    const stage = autoDesignCornerStage;
+  const completeAutoDesignLayout = useCallback((
+    choices: Record<string, AutoDesignCornerChoice>,
+    stageOverride?: NonNullable<typeof autoDesignCornerStage>,
+  ) => {
+    const stage = stageOverride ?? autoDesignCornerStage;
     const fail = (message: string) => {
       toast.error(message);
       return { ok: false as const, message };
+    };
+    const abandon = (message: string) => {
+      placedRef.current = [];
+      setPlaced([]);
+      setSinks([]);
+      setSelectedSinkUid(null);
+      setAutoDesignCornerStage(null);
+      return fail(message);
     };
     if (!stage) return fail("The measured appliance stage is no longer active. Start the Auto-Design build again from an empty plan.");
 
@@ -4019,7 +4042,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     const stageOpenings = stage.sinkWindow && !openings.some((opening) => opening.uid === stage.sinkWindow!.uid)
       ? [...openings, stage.sinkWindow]
       : openings;
-    const selectedWalls = [...stage.selectedWalls];
+    const excludedWallIds = autoDesignExcludedEngineWallIds(stage.input.layoutType, room, stage.input.originCorner, stage.input.runDirection);
+    const selectedWalls = autoDesignRunWallIds({
+      layoutType: stage.input.layoutType,
+      room,
+      originCorner: stage.input.originCorner,
+      runDirection: stage.input.runDirection,
+      wallIds: stage.selectedWalls,
+    }) as WallSide[];
     let selectedCornerCount = 0;
     const upperCorners: AutoDesignUpperCorner[] = [];
     const applianceMoves: AutoDesignApplianceMove[] = [];
@@ -4029,60 +4059,49 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       const choice = choices[slot.id] ?? { cabinetId: null };
       const firstWall = wallLabelToEngineWallId(slot.firstWall, room, stage.input.originCorner, stage.input.runDirection);
       const secondWall = wallLabelToEngineWallId(slot.secondWall, room, stage.input.originCorner, stage.input.runDirection);
-      if (!firstWall || !secondWall) return fail(`${slot.label} is unavailable in this room. No remaining cabinets were added.`);
+      if (!firstWall || !secondWall) return abandon(`${slot.label} is unavailable in this room. No remaining cabinets were added.`);
+      if (excludedWallIds.includes(firstWall.engineWallId) || excludedWallIds.includes(secondWall.engineWallId)) continue;
       for (const wallId of [firstWall.engineWallId, secondWall.engineWallId] as WallSide[]) {
-        if (!selectedWalls.includes(wallId)) selectedWalls.push(wallId);
+        if (!excludedWallIds.includes(wallId) && !selectedWalls.includes(wallId)) selectedWalls.push(wallId);
       }
-      if (choice.cabinetId == null) {
-        return fail(autoDesignMissingCornerMessage(slot));
+      const preferred = choice.cabinetId == null
+        ? null
+        : stage.cornerOptions.find((candidate) => candidate.id === choice.cabinetId) ?? null;
+      if (choice.cabinetId != null && !preferred) {
+        return abandon(`${slot.label} must use a current source-priced corner cabinet. The selected catalog item is unavailable.`);
       }
-      const source = stage.cornerOptions.find((candidate) => candidate.id === choice.cabinetId);
-      if (!source) return fail(`${slot.label} must use a current source-priced corner cabinet. The selected catalog item is unavailable.`);
       const fit = stage.cornerFit?.[slot.id];
-      let requested = source;
-      if (fit && choice.cabinetId != null && !fit.offeredIds.includes(choice.cabinetId)) {
-        if (fit.selectedId == null) return fail(fit.blockedMessage ?? `${source.masterCode} does not fit ${slot.label}. No corner cabinet fits.`);
-        const fallback = stage.cornerOptions.find((option) => option.id === fit.selectedId);
-        if (!fallback) return fail(fit.blockedMessage ?? `${slot.label}: no corner cabinet fits.`);
-        requested = fallback;
-        if (fit.fallbackNote) {
-          setAutoDesignLayoutNotes((current) => current.includes(fit.fallbackNote!) ? current : [...current, fit.fallbackNote!]);
-        }
+      if (fit?.fallbackNote) {
+        setAutoDesignLayoutNotes((current) => current.includes(fit.fallbackNote!) ? current : [...current, fit.fallbackNote!]);
       }
-      const fittingOptions = fit ? stage.cornerOptions.filter((option) => fit.offeredIds.includes(option.id)) : stage.cornerOptions;
       const target = autoDesignCornerSlotPoint(slot, room, stage.input.originCorner, stage.input.runDirection);
-      if (!target) return fail(`${slot.label} does not resolve to a real shared wall vertex. No remaining cabinets were added.`);
-      const attempts = autoDesignCornerAttempts(requested, fittingOptions.length ? fittingOptions : stage.cornerOptions);
-      let seated: ReturnType<typeof seatAutoDesignCorner> | null = null;
-      let seatedSource: AutoBuildCornerCandidate | null = null;
-      let seatMessage = fit?.blockedMessage ?? `${requested.masterCode} cannot fit at ${slot.label}.`;
-      for (const attempt of attempts) {
-        const sourceCatalog = stage.pool.find((candidate) => candidate.id === attempt.id);
-        if (!sourceCatalog) continue;
-        const placementWallId = fit?.placementWallById[attempt.id];
-        const seatTarget = placementWallId ? { ...target, firstWallId: placementWallId } : target;
-        const trial = seatAutoDesignCorner({
-          source: sourceCatalog, slotLabel: slot.label, target: seatTarget,
-          cornerWallIds: [firstWall.engineWallId, secondWall.engineWallId],
-          working, room, openings: stageOpenings,
-          blindPullIn: choice.blindPullIn ?? attempt.pullMax ?? 6,
-          blindRunWallId: isAutoDesignBlindCornerOption(attempt) ? placementWallId : undefined,
-          isBlindOption: isAutoDesignBlindCornerOption(attempt),
-          catalogFillers, makeUid, styleId: styleIdRef.current ?? null,
-        });
-        if (trial.ok) { seated = trial; seatedSource = attempt; break; }
-        seatMessage = trial.message;
-      }
-      if (!seated || !seated.ok || !seatedSource) return fail(seatMessage);
-      if (autoDesignCornerFamily(source) === "lazy-susan" && autoDesignCornerFamily(seatedSource) === "lazy-susan" && seatedSource.id !== source.id) {
-        const note = `Lazy Susan reduced to ${seatedSource.width ?? seatedSource.masterCode}" to fit`;
-        setAutoDesignLayoutNotes((current) => current.includes(note) ? current : [...current, note]);
+      if (!target) return abandon(`${slot.label} does not resolve to a real shared wall vertex. No remaining cabinets were added.`);
+      const seated = seatAutoDesignCornerFromCatalog({
+        slot,
+        options: stage.cornerOptions,
+        pool: stage.pool,
+        preferred,
+        target,
+        cornerWallIds: [firstWall.engineWallId, secondWall.engineWallId],
+        working,
+        room,
+        openings: stageOpenings,
+        measuredApplianceUids: stage.anchorOrigins.filter((entry) => entry.kind === "refrigerator").map((entry) => entry.uid),
+        blindPullIn: choice.blindPullIn,
+        catalogFillers,
+        makeUid,
+        styleId: styleIdRef.current ?? null,
+        excludedWallIds,
+      });
+      if (!seated.ok) return abandon(seated.message);
+      if (seated.fallbackNote) {
+        setAutoDesignLayoutNotes((current) => current.includes(seated.fallbackNote!) ? current : [...current, seated.fallbackNote!]);
       }
       const corner = seated.corner;
       working = seated.placed;
       applianceMoves.push(...seated.moves);
       selectedCornerCount++;
-      seatedCornerIds.set(slot.id, seatedSource.id);
+      seatedCornerIds.set(slot.id, seated.source.id);
       upperCorners.push({ base: corner, point: target });
     }
 
@@ -4239,17 +4258,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     if (bareRange) setAutoDesignRangeVentPrompt({ rangeUid: bareRange.uid });
     return { ok: true as const };
   }, [catalogFillers, autoDesignCornerStage, openings, room, setPlaced, setOpenings]);
-
-  const cancelAutoDesignCornerStage = useCallback(() => {
-    // The staged build is transactional. Cancelling this required choice leaves
-    // no auto-created appliance, sink, filler, or cabinet in the empty plan.
-    placedRef.current = [];
-    setPlaced([]);
-    setSinks([]);
-    setSelectedSinkUid(null);
-    setAutoDesignCornerStage(null);
-    toast.info("Measured appliance anchors were cancelled; the Designer remains empty.");
-  }, [setPlaced]);
+  finishAutoDesignLayoutRef.current = completeAutoDesignLayout;
   // A previous automatic microwave workflow could persist WSC30—the real
   // 30×6 spice cabinet—directly above an MW-30. Convert only that centered
   // legacy microwave assembly to the selected source W30 bridge; ordinary spice
@@ -20245,16 +20254,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	          catalogLoading={autoFillCabinetsLoading || wallCabPoolLoading}
 	          wallCount={Math.min(6, Math.max(1, room.customWalls?.length ?? 4))}
 	          room={room}
-	        />
-	      )}
-	      {autoDesignAvailable && autoDesignCornerStage && (
-	        <AutoDesignCornerDialog
-	          open
-	          slots={autoDesignCornerStage.slots}
-	          options={autoDesignCornerStage.cornerOptions}
-	          fitBySlot={autoDesignCornerStage.cornerFit}
-	          onCancel={cancelAutoDesignCornerStage}
-	          onConfirm={completeAutoDesignLayout}
 	        />
 	      )}
 	      {autoDesignAvailable && (
