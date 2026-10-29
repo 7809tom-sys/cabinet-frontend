@@ -19,6 +19,7 @@ import { toast } from "sonner";
 import { startVersionWatcher, setVersionNotifier } from "@/lib/versionWatcher";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { useReferral } from "@/hooks/useReferral";
 import {
   affiliateSlugForStoreScope,
   affiliateStorefrontFallbackPath,
@@ -284,6 +285,7 @@ function AffiliateOwnerScopeGuard({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   const [, navigate] = useLocation();
+  useReferral();
 
   // Canonicalize an affiliate custom-domain visit into the branded route tree.
   // A full location replacement is intentional: some transparent proxy paths
@@ -784,6 +786,14 @@ export default function App() {
           </Suspense>
         </Route>
 
+        <Route path="/contractor/login">
+          <AppLayout>
+            <Suspense fallback={<PageLoader />}>
+              <SignIn portal="contractor" />
+            </Suspense>
+          </AppLayout>
+        </Route>
+
         <Route path="/contractor">
           <AppLayout>
             <Suspense fallback={<PageLoader />}>
@@ -831,6 +841,14 @@ export default function App() {
         </Route>
 
         <Route path="/account">
+          <AppLayout>
+            <Suspense fallback={<PageLoader />}>
+              <Account />
+            </Suspense>
+          </AppLayout>
+        </Route>
+
+        <Route path="/customer">
           <AppLayout>
             <Suspense fallback={<PageLoader />}>
               <Account />
