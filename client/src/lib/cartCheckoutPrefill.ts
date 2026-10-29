@@ -1,4 +1,5 @@
 import type { CartItem } from "@/contexts/CartContext";
+import { refrigeratorPanelCutNotesIn } from "@/lib/refrigeratorEndPanelCut";
 import { trimKindForMasterCode } from "@/lib/trimCart";
 import { CATALOG_SUBCATEGORY_TRIM_AND_MOULDING } from "@shared/catalogCategorySpelling";
 
@@ -18,7 +19,17 @@ export type CartCheckoutPrefillItem = {
   vendorProductId?: number | null;
   glassIncluded?: boolean | null;
   freeShipping?: boolean;
+  /** Designer BOM note, such as a combined filler cut or spare molding stick. */
+  note?: string | null;
+  qtyNote?: string | null;
 };
+
+function descriptionWithPanelCut(description: string | null | undefined, qtyNote: string | null | undefined, fallback: string): string {
+  const base = description?.trim() || fallback;
+  const note = refrigeratorPanelCutNotesIn(qtyNote);
+  if (!note || base.includes(note)) return base;
+  return `${base} — ${note}`;
+}
 
 type MatchedCheckoutLine = {
   rawCode: string;
@@ -66,7 +77,17 @@ export function cartItemToCheckoutPrefill(
     vendorProductId: item.vendorProductId ?? null,
     glassIncluded: item.glassIncluded ?? null,
     freeShipping: item.freeShipping === true,
+    note: item.qtyNote ?? null,
+    qtyNote: item.qtyNote ?? null,
   };
+}
+
+function descriptionWithBomNote(description: string | null | undefined, note: string | null | undefined): string | null {
+  const base = description?.trim() || "";
+  const extra = note?.trim() || "";
+  if (!extra) return description ?? null;
+  if (base.includes(extra)) return base;
+  return base ? `${base} — ${extra}` : extra;
 }
 
 /** Cabinet trim (toe kick, crown, light rail, ...) is never a Pelican product. */
@@ -109,7 +130,7 @@ export function applyCartCheckoutPrefill<T extends MatchedCheckoutLine>(
         cabinetId: null,
         masterCode: item.code,
         normalized: item.code,
-        description: item.name?.trim() || line.description || item.code,
+        description: descriptionWithPanelCut(item.name, item.qtyNote, item.code),
         matched: true,
         confidence: "exact" as const,
       }
@@ -118,15 +139,24 @@ export function applyCartCheckoutPrefill<T extends MatchedCheckoutLine>(
           cabinetId: null,
           masterCode: item.code,
           normalized: item.code,
-          description: item.name?.trim() || line.description || item.code,
+          description: descriptionWithPanelCut(item.name, item.qtyNote, item.code),
           matched: true,
           confidence: "exact" as const,
         }
       : {};
 
+  const panelDescription = descriptionWithPanelCut(
+    "description" in recognizedLine ? recognizedLine.description : line.description,
+    item.qtyNote,
+    item.code,
+  );
+  const notedDescription = item.note?.trim()
+    ? descriptionWithBomNote(panelDescription, item.note)
+    : panelDescription;
   return {
     ...line,
     ...recognizedLine,
+    ...(notedDescription !== undefined ? { description: notedDescription } : {}),
     cartUnitPrice: item.unitPrice ?? null,
     cartPriceLocked: item.priceLocked === true || isSurface || isHardware,
     cartStyleId: item.styleId ?? null,

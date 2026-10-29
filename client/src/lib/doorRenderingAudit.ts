@@ -15,6 +15,13 @@ import {
   NO_APPROVED_SOURCE_LABEL,
   type FeaturedImageFailure,
 } from "@/lib/approvedDoorReference";
+import { DOOR_RENDERER_VERSION, RESTORED_DOOR_LIGHTS } from "@shared/doorRenderLights";
+import {
+  PROFILE_GUESSED_LABEL,
+  doorAuditFingerprintForStyle,
+  resolveDoorShapeDecision,
+  type DoorProfileSource,
+} from "@shared/doorRenderIdentity";
 
 export const DOOR_AUDIT_IMPROVEMENT_POINTS = 1;
 
@@ -32,21 +39,44 @@ export const DOOR_AUDIT_CAPTURE = {
   margin: 1.08,
 } as const;
 
-/** Sent on every audit run so "changed only" can see a new designer capture. */
-export const DOOR_AUDIT_RENDERING_COMMIT = `door-audit-${DOOR_AUDIT_CAPTURE.widthPx}x${DOOR_AUDIT_CAPTURE.heightPx}`;
+/**
+ * Renderer version plus capture size. A change here marks older renders stale.
+ * Per-style profile, color, and swatch are appended by `doorAuditStyleFingerprint`.
+ */
+export const DOOR_AUDIT_RENDERING_COMMIT = `door-audit-v${DOOR_RENDERER_VERSION}-${DOOR_AUDIT_CAPTURE.widthPx}x${DOOR_AUDIT_CAPTURE.heightPx}`;
 
 /**
- * Designer scene lights (InteractiveRoom3D) use these colors and intensities.
- * Positions are fixed in door-local feet so a single front-on door reads the
- * same way every time — room-scaled designer positions would change with the kitchen.
+ * Restored pre-#101 Designer lights. Very dark stains swap in the softer rig
+ * inside the capture. Positions stay in door-local feet.
  */
-export const DOOR_AUDIT_LIGHTS = {
-  background: "#f6f3ed",
-  exposure: 0.84,
-  hemisphere: { sky: "#fffaf2", ground: "#718096", intensity: 0.92 },
-  key: { color: "#fff5e6", intensity: 1.5, position: [0.85, 1.35, 1.6] as const },
-  fill: { color: "#cfe0f4", intensity: 0.38, position: [-1.1, 0.4, 1.8] as const },
-} as const;
+export const DOOR_AUDIT_LIGHTS = RESTORED_DOOR_LIGHTS;
+
+export { PROFILE_GUESSED_LABEL };
+
+export function doorAuditStyleFingerprint(input: {
+  ourName?: string | null;
+  name?: string | null;
+  styleCode?: string | null;
+  code?: string | null;
+  doorStyle?: string | null;
+  doorPanelType?: string | null;
+  panelConstruction?: string | null;
+  doorShape?: string | null;
+  profileDescription?: string | null;
+  profileNotes?: string | null;
+  color?: string | null;
+  finish?: string | null;
+  woodSpecies?: string | null;
+  renderHex?: string | null;
+  swatchCode?: string | null;
+  swatchHex?: string | null;
+}): string {
+  return doorAuditFingerprintForStyle({ ...input, version: DOOR_AUDIT_RENDERING_COMMIT });
+}
+
+export function doorAuditProfileSource(input: Parameters<typeof doorAuditStyleFingerprint>[0]): DoorProfileSource {
+  return resolveDoorShapeDecision(input).source;
+}
 
 export type DoorAuditRunMode = "all" | "changed-only" | "selected";
 
@@ -110,6 +140,18 @@ export type DoorAuditRenderInput = {
   needsDoorOnlyPhoto?: boolean;
   styleVerified?: boolean;
   color: string | null;
+  finish?: string | null;
+  woodSpecies?: string | null;
+  distributorCode?: string | null;
+  renderHex?: string | null;
+  doorShape?: string | null;
+  swatchCode?: string | null;
+  swatchHex?: string | null;
+  profileDescription?: string | null;
+  profileNotes?: string | null;
+  profileSource?: DoorProfileSource;
+  renderExposure?: number | null;
+  colorDeltaEMax?: number | null;
   sourceFingerprint: string;
   doorProfile: DoorAuditDoorProfile;
 };
@@ -126,6 +168,13 @@ export type DoorAuditStyleRow = {
   needsDoorOnlyPhoto?: boolean;
   styleVerified?: boolean;
   color: string | null;
+  renderHex?: string | null;
+  doorShape?: string | null;
+  swatchCode?: string | null;
+  swatchHex?: string | null;
+  profileDescription?: string | null;
+  profileNotes?: string | null;
+  profileSource: DoorProfileSource;
   sourceFingerprint: string;
   doorProfile: DoorAuditDoorProfile;
   changedSinceLastRender: boolean;
@@ -224,6 +273,11 @@ export function doorAuditFlag(input: {
   return "needs-review";
 }
 
+/** Score flags plus a guessed Shaker profile, which has no distributor shape. */
+export function doorAuditRowFlagged(row: Pick<DoorAuditStyleRow, "flag" | "profileSource">): boolean {
+  return row.flag === "improved" || row.flag === "needs-review" || row.profileSource === "guessed";
+}
+
 export function doorAuditMatchesSearch(row: Pick<DoorAuditStyleRow, "name" | "code" | "distributorName">, search: string): boolean {
   const needle = search.trim().toLowerCase();
   if (!needle) return true;
@@ -246,7 +300,7 @@ export function orderDoorAuditStyles(styles: DoorAuditStyleRow[], filter: DoorAu
 export function applyDoorAuditFilter(styles: DoorAuditStyleRow[], filter: DoorAuditFilter, search: string): DoorAuditStyleRow[] {
   const searched = (styles ?? []).filter((row) => row != null && doorAuditMatchesSearch(row, search));
   const filtered = searched.filter((row) => {
-    if (filter === "flagged") return row.flag === "improved" || row.flag === "needs-review";
+    if (filter === "flagged") return doorAuditRowFlagged(row);
     if (filter === "unaudited") return row.flag === "unaudited" || row.current == null;
     if (filter === "furthest") return row.current?.scores?.overall != null;
     return true;
@@ -627,8 +681,39 @@ export function normalizeDoorAuditRenderInput(raw: unknown, renderingCommit?: un
     needsDoorOnlyPhoto: baseline.source === "approved-reference" ? false : record.needsDoorOnlyPhoto === true,
     styleVerified: record.styleVerified === false || record.styleVerified === 0 ? false : true,
     color: text(record.color),
-    sourceFingerprint: text(record.sourceFingerprint) ?? text(record.renderingCommit) ?? text(renderingCommit) ?? "",
+    finish: text(record.finish),
+    woodSpecies: text(record.woodSpecies),
+    distributorCode: text(record.distributorCode),
+    renderHex: text(record.renderHex),
+    doorShape: text(record.doorShape),
+    swatchCode: text(record.swatchCode),
+    swatchHex: text(record.swatchHex),
+    profileDescription: text(record.profileDescription) ?? text(asRecord(profileSource)?.profileDescription),
+    profileNotes: text(record.profileNotes) ?? text(asRecord(profileSource)?.profileNotes),
+    profileSource: doorAuditProfileSource(doorAuditIdentity(record, normalizeProfile(profileSource))),
+    sourceFingerprint: doorAuditStyleFingerprint(doorAuditIdentity(record, normalizeProfile(profileSource))),
     doorProfile: normalizeProfile(profileSource),
+  };
+}
+
+function doorAuditIdentity(record: Record<string, unknown>, profile: DoorAuditDoorProfile) {
+  return {
+    ourName: doorAuditCatalogName(record),
+    name: doorAuditCatalogName(record),
+    styleCode: styleCodeOf(record),
+    code: styleCodeOf(record),
+    doorStyle: profile.doorStyle,
+    doorPanelType: profile.doorPanelType,
+    panelConstruction: profile.panelConstruction,
+    doorShape: text(record.doorShape),
+    profileDescription: text(record.profileDescription),
+    profileNotes: text(record.profileNotes),
+    color: text(record.color),
+    finish: text(record.finish),
+    woodSpecies: text(record.woodSpecies),
+    renderHex: text(record.renderHex),
+    swatchCode: text(record.swatchCode),
+    swatchHex: text(record.swatchHex),
   };
 }
 
@@ -660,6 +745,8 @@ export function normalizeDoorAuditStyle(raw: unknown): DoorAuditStyleRow | null 
     drawerSampleImageUrl,
   });
   const flag = mapFlagStatus(record.flag ?? record.flagStatus) ?? (current ? "needs-review" : "unaudited");
+  const doorProfile = normalizeProfile(record.profile ?? record.doorProfile);
+  const identity = doorAuditIdentity(record, doorProfile);
   return {
     styleId,
     name: doorAuditCatalogName(record),
@@ -671,11 +758,18 @@ export function normalizeDoorAuditStyle(raw: unknown): DoorAuditStyleRow | null 
     needsDoorOnlyPhoto: record.needsDoorOnlyPhoto === true,
     styleVerified: record.styleVerified === false || record.styleVerified === 0 ? false : true,
     color: text(record.color),
+    renderHex: text(record.renderHex),
+    doorShape: text(record.doorShape),
+    swatchCode: text(record.swatchCode),
+    swatchHex: text(record.swatchHex),
+    profileDescription: text(record.profileDescription),
+    profileNotes: text(record.profileNotes),
+    profileSource: doorAuditProfileSource(identity),
     sourceFingerprint: text(record.sourceFingerprint)
       ?? text(asRecord(record.latestRender)?.renderingCommit)
       ?? text(asRecord(record.current)?.sourceFingerprint)
-      ?? "",
-    doorProfile: normalizeProfile(record.profile ?? record.doorProfile),
+      ?? doorAuditStyleFingerprint(identity),
+    doorProfile,
     changedSinceLastRender: record.changedSinceLastRender === true,
     current,
     accepted,
@@ -690,7 +784,7 @@ export function normalizeDoorAuditStyle(raw: unknown): DoorAuditStyleRow | null 
 export function doorAuditCounts(styles: readonly DoorAuditStyleRow[]): DoorAuditListResult["counts"] {
   return {
     all: styles.length,
-    flagged: styles.filter((style) => style.flag === "improved" || style.flag === "needs-review").length,
+    flagged: styles.filter((style) => doorAuditRowFlagged(style)).length,
     furthest: styles.filter((style) => style.current?.scores?.overall != null).length,
     unaudited: styles.filter((style) => style.flag === "unaudited" || style.current == null).length,
   };

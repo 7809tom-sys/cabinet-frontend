@@ -6,6 +6,7 @@ import { isCatalogFiller } from "@/lib/catalogFiller";
 import { normalizeFinalMaterialSelections } from "@/lib/surfaceSelection";
 import { equivalentTrimMasterCodes } from "@/lib/trimCart";
 import { canonicalMouldingLabel } from "@shared/catalogCategorySpelling";
+import { refrigeratorPanelCutNotesIn } from "@/lib/refrigeratorEndPanelCut";
 
 export type MaterialsListSection = "cabinet" | "other";
 export type MaterialsListPriceStatus = "priced" | "quote_required" | "unavailable";
@@ -182,6 +183,7 @@ export function buildMaterialsListRows(args: MaterialsListArgs): MaterialsListRo
     const unitPrice = safePrice(exact?.line.unitPrice ?? build.pricingUnitPrice ?? build.unitPrice);
     const section = materialsListSectionFor({ code: build.code, description: build.description, category: build.placement, placement: build.placement });
     const priceStatus = priceStatusFor({ section, unitPrice, sourceUids: build.sourceUids });
+    const panelCutNote = refrigeratorPanelCutNotesIn(exact?.line.qtyNote) || refrigeratorPanelCutNotesIn(build.description);
     rows.push({
       sourceUids: build.sourceUids,
       section,
@@ -195,7 +197,7 @@ export function buildMaterialsListRows(args: MaterialsListArgs): MaterialsListRo
       unitPrice,
       lineTotal: unitPrice == null ? null : unitPrice * build.qty,
       priceStatus,
-      notes: appendNote(build.swing ? `${build.swing} hinge` : "", unitPrice == null ? unpricedNote(priceStatus) : ""),
+      notes: appendNote(appendNote(build.swing ? `${build.swing} hinge` : "", panelCutNote), unitPrice == null ? unpricedNote(priceStatus) : ""),
     });
   }
 

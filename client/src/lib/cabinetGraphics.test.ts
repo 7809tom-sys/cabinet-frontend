@@ -104,7 +104,7 @@ describe("cabinetDrawingType", () => {
   });
 
 	  it("labels every AW height as an angled wall end cabinet rather than a diagonal corner", () => {
-	    for (const masterCode of ["AW1230", "AW1236", "AW1242"]) {
+	    for (const masterCode of ["WAC1230", "WAC1236", "WAC1242", "AW1230", "AW1236", "AW1242"]) {
 	      const cabinet = {
 	        masterCode,
 	        description: `12\" Angled Wall End Cabinet`,
@@ -296,7 +296,7 @@ describe("cabinetDrawingType", () => {
     expect(cabinetDrawingType(cab)).toBe("diagonal-corner");
   });
 
-  it("names BEC24 as a square double-door end cabinet, even with stale angled Config", () => {
+  it("names BEC24 as a quarter-octagon end cabinet, even with stale angled Config", () => {
     const cab: CabinetLike = {
       masterCode: "BEC24",
       description: '24" W x 34-1/2" H x 24" D Base End Cabinet — Quarter-Octagon Shape, 2 Doors',
@@ -309,9 +309,9 @@ describe("cabinetDrawingType", () => {
       isCornerCabinet: false,
       graphicType: "base-end-quarter-octagon",
     };
-    expect(cabinetDrawingType(cab)).toBe("standard-door");
-    expect(cabinetTypeLabel(cab)).toBe("Square Double-Door Base End Cabinet");
-    expect(cabinetAltText(cab)).toContain("two doors on one flat front");
+    expect(cabinetDrawingType(cab)).toBe("end-angle");
+    expect(cabinetTypeLabel(cab)).toBe("Base End Cabinet — 45° Angled End");
+    expect(cabinetAltText(cab)).toContain("quarter-octagon");
     expect(resolveDoorDrawerCounts(cab)).toEqual({ doors: 2, drawers: 0 });
     expect(baseSubGroup(cab)).toBe("specialty");
   });
@@ -323,8 +323,8 @@ describe("cabinetDrawingType", () => {
     expect(cabinetDrawingType({ ...base, cornerType: "lazy-susan" })).toBe("l-corner");
   });
 
-  it("keeps both BEC24 spellings square, preserving unrelated BA-24 angled geometry", () => {
-    for (const masterCode of ["BEC-24", "BEC24"]) {
+  it("keeps BA-24, BEC-24, and BEC24 on the quarter-octagon end face", () => {
+    for (const masterCode of ["BA-24", "BEC-24", "BEC24", "BAC24"]) {
       const cabinet = {
         masterCode,
         description: '24" Base End Cabinet — 45° Angled End, 1 Door',
@@ -338,11 +338,10 @@ describe("cabinetDrawingType", () => {
         isCornerCabinet: false,
         graphicType: "end-angle",
       };
-      expect(cabinetDrawingType(cabinet)).toBe("standard-door");
-      expect(cabinetTypeLabel(cabinet)).toBe("Square Double-Door Base End Cabinet");
+      expect(cabinetDrawingType(cabinet)).toBe("end-angle");
+      expect(cabinetTypeLabel(cabinet)).toBe("Base End Cabinet — 45° Angled End");
       expect(resolveDoorDrawerCounts(cabinet)).toEqual({ doors: 2, drawers: 0 });
     }
-    expect(cabinetDrawingType({ masterCode: "BA-24", description: "Base End Cabinet", graphicType: "end-angle" })).toBe("end-angle");
   });
 
   it("ignores legacy BEC end-return metadata without changing BA-24 or AW", () => {
@@ -357,7 +356,7 @@ describe("cabinetDrawingType", () => {
       numberOfDoors: 1,
       numberOfDrawers: 0,
       graphicType: "base_end_return",
-    })).toBe("standard-door");
+    })).toBe("end-angle");
   });
 
   it("uses the user-created Base End Cabinet subcategory as an authoritative end-return signal", () => {

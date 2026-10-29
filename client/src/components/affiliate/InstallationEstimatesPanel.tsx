@@ -31,11 +31,19 @@ const createKitchenRows = (): KitchenCostRow[] => KITCHEN_COST_SHEET_DESCRIPTION
 
 const emptyLine = (): DraftLine => ({ description: "", quantity: 1, unitCost: 0, costType: "labor" });
 
-export function InstallationEstimatesPanel({ affiliateId }: { affiliateId: number }) {
+type EstimatePanelProps = { affiliateId: number } | { audience: "contractor" };
+
+function estimateQuery(props: EstimatePanelProps): { affiliateId?: number; audience: "affiliate" | "contractor" } {
+  if ("audience" in props) return { audience: "contractor" };
+  return { audience: "affiliate", affiliateId: props.affiliateId };
+}
+
+export function InstallationEstimatesPanel(props: EstimatePanelProps) {
+  const scope = estimateQuery(props);
   const utils = trpc.useUtils();
-  const estimates = trpc.installationEstimates.list.useQuery({ affiliateId });
-  const kitchenPlans = trpc.installationEstimates.kitchenPlans.useQuery({ affiliateId });
-  const kitchenDefaults = trpc.installationEstimates.kitchenCostDefaults.useQuery({ affiliateId });
+  const estimates = trpc.installationEstimates.list.useQuery(scope);
+  const kitchenPlans = trpc.installationEstimates.kitchenPlans.useQuery(scope);
+  const kitchenDefaults = trpc.installationEstimates.kitchenCostDefaults.useQuery(scope);
   const [customerName, setCustomerName] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
@@ -107,17 +115,19 @@ export function InstallationEstimatesPanel({ affiliateId }: { affiliateId: numbe
       toast.success(result.crmDealId ? `Installation estimate saved and linked to CRM deal #${result.crmDealId}.` : "Installation estimate saved separately from the material order.");
       setCustomerName(""); setCustomerEmail(""); setCustomerPhone(""); setOrderRequestId(""); setNotes("");
       setRoomType("Kitchen"); setSelectedKitchenPlanId(null); setMarkupPercent(0); setMarkupOpen(false); setKitchenRows(createKitchenRows); setLines([emptyLine()]);
-      utils.installationEstimates.list.invalidate({ affiliateId });
+      utils.installationEstimates.list.invalidate(scope);
     },
     onError: (error) => toast.error("Could not save installation estimate", { description: error.message }),
   });
   const updateStatus = trpc.installationEstimates.updateStatus.useMutation({
-    onSuccess: () => utils.installationEstimates.list.invalidate({ affiliateId }),
+    onSuccess: () => utils.installationEstimates.list.invalidate(scope),
     onError: (error) => toast.error(error.message),
   });
   const saveDefaults = trpc.installationEstimates.saveKitchenCostDefaults.useMutation({
     onSuccess: () => {
-      toast.success("Kitchen material and labor rates saved permanently for this affiliate.");
+      toast.success(scope.audience === "contractor"
+        ? "Kitchen material and labor rates saved permanently for this contractor."
+        : "Kitchen material and labor rates saved permanently for this affiliate.");
       kitchenDefaults.refetch();
     },
     onError: (error) => toast.error("Could not save Kitchen defaults", { description: error.message }),
@@ -125,7 +135,7 @@ export function InstallationEstimatesPanel({ affiliateId }: { affiliateId: numbe
 
   function saveKitchenDefaults() {
     saveDefaults.mutate({
-      affiliateId,
+      ...scope,
       defaults: kitchenRows.map((row) => ({ description: row.description, materialUnitCost: row.materialUnitCost, laborUnitCost: row.laborUnitCost })),
     });
   }
@@ -142,7 +152,7 @@ export function InstallationEstimatesPanel({ affiliateId }: { affiliateId: numbe
       return;
     }
     create.mutate({
-      affiliateId, roomType, kitchenDesignId: roomType === "Kitchen" ? selectedKitchenPlanId : null, markupPercent, orderRequestId: Number(orderRequestId) || null,
+      ...scope, roomType, kitchenDesignId: roomType === "Kitchen" ? selectedKitchenPlanId : null, markupPercent, orderRequestId: Number(orderRequestId) || null,
       customerName: customerName.trim() || null, customerEmail: customerEmail.trim() || null, customerPhone: customerPhone.trim() || null,
       notes: notes.trim() || null, lineItems,
     });
@@ -175,7 +185,7 @@ export function InstallationEstimatesPanel({ affiliateId }: { affiliateId: numbe
         <Button className="w-full" onClick={saveEstimate} disabled={create.isPending}><ReceiptText className="mr-2 h-4 w-4" />Save installation estimate</Button>
       </section>
 
-      <section className="rounded-xl border border-border bg-card p-5 space-y-4"><div><h2 className="text-xl font-bold">Customer presentation</h2><p className="text-sm text-muted-foreground">Show these installation totals separately from the CabinetDealz material invoice.</p></div>{estimates.isLoading ? <p className="text-sm text-muted-foreground">Loading installation estimates…</p> : estimates.data?.length ? estimates.data.map((estimate) => { const lineItems = (estimate.lineItems ?? []) as SavedLine[]; const breakdown = estimate.cabinetBreakdown; const exportData = { id: estimate.id, roomType: estimate.roomType, customerName: estimate.customerName, customerEmail: estimate.customerEmail, customerPhone: estimate.customerPhone, lineItems, subtotal: estimate.subtotal, markupPercent: estimate.markupPercent, markupAmount: estimate.markupAmount, totalAmount: estimate.totalAmount, cabinetBreakdown: breakdown }; return <article key={estimate.id} className="rounded-lg border border-border p-4 space-y-3"><div className="flex items-start justify-between gap-3"><div><p className="font-semibold">{estimate.customerName || estimate.customerEmail || `Installation estimate #${estimate.id}`}</p><p className="text-xs text-muted-foreground">{estimate.roomType} · Affiliate installation invoice · Material invoice is issued separately by CabinetDealz</p>{breakdown && <p className="mt-1 text-xs text-muted-foreground">Plan cabinets: {breakdown.base} Base · {breakdown.wall} Wall · {breakdown.tall} Tall · {breakdown.total} total · {estimate.crmDealId ? `CRM deal #${estimate.crmDealId}` : "No saved plan linked"}</p>}</div><Badge variant="outline" className="capitalize">{estimate.status}</Badge></div><div className="space-y-1.5 text-sm">{lineItems.map((line, index) => <div key={index} className="flex justify-between gap-3"><span>{line.quantity} × {line.description} <span className="text-xs text-muted-foreground">({line.costType})</span></span><span className="tabular-nums">{money(line.lineTotal)}</span></div>)}</div><div className="border-t pt-2 flex items-center justify-between font-bold"><span>Installation total</span><span>{money(estimate.totalAmount)}</span></div>{Number(estimate.markupPercent) > 0 && <p className="text-xs text-muted-foreground">Markup: {Number(estimate.markupPercent).toFixed(2)}% ({money(estimate.markupAmount)})</p>}{estimate.notes && <p className="text-xs text-muted-foreground whitespace-pre-wrap">{estimate.notes}</p>}<div className="flex flex-wrap gap-2">{installationEstimateStatusAction(estimate.status) === "share" && <Button size="sm" variant="outline" onClick={() => updateStatus.mutate({ id: estimate.id, affiliateId, status: "shared" })}><Send className="mr-1 h-3.5 w-3.5" />Mark shared with customer</Button>}<Button size="sm" variant="outline" onClick={() => downloadInstallationEstimateCsv(exportData)}>Download CSV</Button><Button size="sm" variant="outline" onClick={() => { void downloadInstallationEstimatePdf(exportData).catch((error: unknown) => toast.error("Could not create PDF", { description: error instanceof Error ? error.message : "Please try again." })); }}>Download PDF</Button>{isCustomerVisibleInstallationEstimate(estimate.status) && estimate.shareToken && <Button size="sm" variant="outline" onClick={() => { navigator.clipboard.writeText(`${window.location.origin}${installationEstimateDocumentPath(estimate.shareToken!)}`); toast.success("Customer installation document link copied."); }}><Copy className="mr-1 h-3.5 w-3.5" />Copy customer document</Button>}</div></article>; }) : <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">No installation estimates yet. Create one for the customer’s installation work.</div>}</section>
+      <section className="rounded-xl border border-border bg-card p-5 space-y-4"><div><h2 className="text-xl font-bold">Customer presentation</h2><p className="text-sm text-muted-foreground">Show these installation totals separately from the CabinetDealz material invoice.</p></div>{estimates.isLoading ? <p className="text-sm text-muted-foreground">Loading installation estimates…</p> : estimates.data?.length ? estimates.data.map((estimate) => { const lineItems = (estimate.lineItems ?? []) as SavedLine[]; const breakdown = estimate.cabinetBreakdown; const exportData = { id: estimate.id, roomType: estimate.roomType, customerName: estimate.customerName, customerEmail: estimate.customerEmail, customerPhone: estimate.customerPhone, lineItems, subtotal: estimate.subtotal, markupPercent: estimate.markupPercent, markupAmount: estimate.markupAmount, totalAmount: estimate.totalAmount, cabinetBreakdown: breakdown }; return <article key={estimate.id} className="rounded-lg border border-border p-4 space-y-3"><div className="flex items-start justify-between gap-3"><div><p className="font-semibold">{estimate.customerName || estimate.customerEmail || `Installation estimate #${estimate.id}`}</p><p className="text-xs text-muted-foreground">{estimate.roomType} · Affiliate installation invoice · Material invoice is issued separately by CabinetDealz</p>{breakdown && <p className="mt-1 text-xs text-muted-foreground">Plan cabinets: {breakdown.base} Base · {breakdown.wall} Wall · {breakdown.tall} Tall · {breakdown.total} total · {estimate.crmDealId ? `CRM deal #${estimate.crmDealId}` : "No saved plan linked"}</p>}</div><Badge variant="outline" className="capitalize">{estimate.status}</Badge></div><div className="space-y-1.5 text-sm">{lineItems.map((line, index) => <div key={index} className="flex justify-between gap-3"><span>{line.quantity} × {line.description} <span className="text-xs text-muted-foreground">({line.costType})</span></span><span className="tabular-nums">{money(line.lineTotal)}</span></div>)}</div><div className="border-t pt-2 flex items-center justify-between font-bold"><span>Installation total</span><span>{money(estimate.totalAmount)}</span></div>{Number(estimate.markupPercent) > 0 && <p className="text-xs text-muted-foreground">Markup: {Number(estimate.markupPercent).toFixed(2)}% ({money(estimate.markupAmount)})</p>}{estimate.notes && <p className="text-xs text-muted-foreground whitespace-pre-wrap">{estimate.notes}</p>}<div className="flex flex-wrap gap-2">{installationEstimateStatusAction(estimate.status) === "share" && <Button size="sm" variant="outline" onClick={() => updateStatus.mutate({ id: estimate.id, ...scope, status: "shared" })}><Send className="mr-1 h-3.5 w-3.5" />Mark shared with customer</Button>}<Button size="sm" variant="outline" onClick={() => downloadInstallationEstimateCsv(exportData)}>Download CSV</Button><Button size="sm" variant="outline" onClick={() => { void downloadInstallationEstimatePdf(exportData).catch((error: unknown) => toast.error("Could not create PDF", { description: error instanceof Error ? error.message : "Please try again." })); }}>Download PDF</Button>{isCustomerVisibleInstallationEstimate(estimate.status) && estimate.shareToken && <Button size="sm" variant="outline" onClick={() => { navigator.clipboard.writeText(`${window.location.origin}${installationEstimateDocumentPath(estimate.shareToken!)}`); toast.success("Customer installation document link copied."); }}><Copy className="mr-1 h-3.5 w-3.5" />Copy customer document</Button>}</div></article>; }) : <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">No installation estimates yet. Create one for the customer’s installation work.</div>}</section>
     </div>
   );
 }

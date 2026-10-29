@@ -23,6 +23,12 @@ import {
   type DoorAuditDoorProfile,
   type DoorAuditRenderInput,
 } from "@/lib/doorRenderingAudit";
+import { resolveDoorStyleAppearance } from "@/lib/doorStyleAppearance";
+import { RAISED_PANEL_BEVEL_DEPTH_IN, RAISED_PANEL_BEVEL_WIDTH_IN } from "@shared/doorStyleAppearance";
+import { ColorGateBlock, runColorGate } from "@shared/colorGate";
+import { doorLightsForFinish, type DoorLightRig } from "@shared/doorRenderLights";
+import { resolveDoorSwatchHex } from "@shared/doorRenderIdentity";
+import { hexFromCanvas } from "@/lib/doorColorProbe";
 import { applyThreeDCabinetPieceGrain } from "@/lib/woodGrainVariation";
 
 const INCH = 1 / 12;
@@ -79,13 +85,15 @@ export function auditDoorConstruction(profile: DoorAuditDoorProfile | ThreeDDoor
   let bevelWidthIn: number | null = null;
   let bevelDepthIn: number | null = null;
   if (kind === "raised" && framed) {
+    const requestedBevelWidth = Number(door.bevelWidth);
+    const requestedBevelDepth = Number(door.bevelDepth);
     const bevelWidthFt = Math.max(0.025, Math.min(
-      Number.isFinite(Number(door.bevelWidth)) ? Number(door.bevelWidth) * INCH : 0.5 * INCH,
+      Number.isFinite(requestedBevelWidth) && requestedBevelWidth > 0 ? requestedBevelWidth * INCH : RAISED_PANEL_BEVEL_WIDTH_IN * INCH,
       (widthFt - stileFt * 2) / 4,
       (heightFt - railFt * 2) / 4,
     ));
     const bevelDepthFt = Math.max(0.012, Math.min(
-      Number.isFinite(Number(door.bevelDepth)) ? Number(door.bevelDepth) * INCH : 0.18 * INCH,
+      Number.isFinite(requestedBevelDepth) && requestedBevelDepth > 0 ? requestedBevelDepth * INCH : RAISED_PANEL_BEVEL_DEPTH_IN * INCH,
       0.07,
     ));
     bevelWidthIn = bevelWidthFt / INCH;
@@ -122,9 +130,72 @@ export function configureDoorAuditSampleTexture(texture: THREE.Texture, sampleUr
   return texture;
 }
 
-function finishColor(color: string | null | undefined): string {
-  const trimmed = color?.trim();
-  return trimmed ? trimmed : "#d8d2c8";
+/**
+ * A featured sample is often a whole cabinet face: drawer front on top, door
+ * below, frame included. Projecting that photograph onto a constructed door
+ * prints the drawer and the photo's rails on top of the real profile. Keep
+ * only the uninterrupted center of the door panel and tile that wood.
+ */
+export function cropAuditSampleToPanelGrain(texture: THREE.Texture): THREE.Texture {
+  const image = texture.image as { width?: number; height?: number } | undefined;
+  if (!image?.width || !image.height || typeof document === "undefined") return texture;
+  const canvas = document.createElement("canvas");
+  canvas.width = 512;
+  canvas.height = 512;
+  const context = canvas.getContext("2d");
+  if (!context) return texture;
+  // Stay inside the raised center panel. The stile edges of a cabinet-face
+  // photo are bright highlights, and tiling those highlights reads as bar pulls.
+  const sx = image.width * 0.4;
+  const sy = image.height * 0.52;
+  const sw = image.width * 0.2;
+  const sh = image.height * 0.22;
+  context.drawImage(image as CanvasImageSource, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+  const cropped = new THREE.CanvasTexture(canvas);
+  cropped.colorSpace = THREE.SRGBColorSpace;
+  cropped.wrapS = THREE.RepeatWrapping;
+  cropped.wrapT = THREE.RepeatWrapping;
+  cropped.anisotropy = texture.anisotropy || 8;
+  cropped.needsUpdate = true;
+  cropped.userData = {
+    ...texture.userData,
+    materialOnlyNoDoorGeometry: true,
+    curatedCabinetFinish: true,
+    doorPanelGrainCrop: true,
+  };
+  return cropped;
+}
+
+/**
+ * Vertical stained-wood board used when a door has no sample photo. The canvas
+ * is already the stain color, so the material stays untinted (white) and the
+ * grain reads as wood instead of a flat gray slab.
+ */
+export function stainedWoodGrainTexture(hex: string): THREE.Texture | null {
+  if (typeof document === "undefined") return null;
+  const canvas = document.createElement("canvas");
+  canvas.width = 256;
+  canvas.height = 512;
+  const context = canvas.getContext("2d");
+  if (!context) return null;
+  context.fillStyle = hex;
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  for (let line = 0; line < 42; line += 1) {
+    const x = (line * 37) % canvas.width;
+    context.strokeStyle = line % 4 === 0 ? "rgba(255,244,230,0.07)" : "rgba(0,0,0,0.22)";
+    context.lineWidth = line % 5 === 0 ? 2 : 1;
+    context.beginPath();
+    context.moveTo(x, 0);
+    context.bezierCurveTo(x + 8, 140, x - 6, 320, x + 3, canvas.height);
+    context.stroke();
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.needsUpdate = true;
+  texture.userData = { stainedWoodGrain: true, curatedCabinetFinish: true };
+  return texture;
 }
 
 function faceMaterial(
@@ -145,15 +216,19 @@ function faceMaterial(
     color: map && piece === "rail" ? "#ffffff" : threeDFaceMaterialColor(color, Boolean(texture)),
     map,
     ...threeDDoorFinishSurfaceProfile(sheen ?? undefined, Boolean(texture)),
+    // The room environment is only a soft fill. A stronger map lifts a
+    // charcoal stain toward gray.
+    envMapIntensity: 0.55,
   });
   material.userData = { grainPiece: piece };
   return material;
 }
 
 export function buildAuditDoor(
-  input: (Pick<DoorAuditRenderInput, "color" | "samplePhotoUrl"> & {
+  input: (Pick<DoorAuditRenderInput, "color" | "samplePhotoUrl" | "name" | "code" | "distributorName" | "distributorCode" | "finish" | "woodSpecies" | "renderHex"> & {
     doorProfile?: DoorAuditDoorProfile | null;
-    name?: string | null;
+    ourName?: string | null;
+    styleCode?: string | null;
     styleId?: number | null;
   }) | null | undefined,
   texture: THREE.Texture | null,
@@ -162,15 +237,25 @@ export function buildAuditDoor(
     const label = input?.name?.trim() || "This door";
     throw new Error(`${label} is missing its door profile, so it cannot be rendered.`);
   }
-  const profile = input.doorProfile;
+  const appearance = resolveDoorStyleAppearance(input);
+  const profile = appearance.profile;
   const plan = auditDoorConstruction(profile);
-  const color = finishColor(input?.color);
+  const color = appearance.finishHex;
+  const stainedGrain = !texture && appearance.stainedWood ? stainedWoodGrainTexture(color) : null;
+  const faceTexture = texture ?? stainedGrain;
   const width = plan.widthIn * INCH;
   const height = plan.heightIn * INCH;
   const thickness = plan.thicknessIn * INCH;
   const group = new THREE.Group();
-  group.userData = { auditDoor: true, auditDoorKind: plan.kind };
-  const slabMaterial = faceMaterial(color, texture, profile.finishSheen, "slab", profile.grainDirection);
+  group.userData = {
+    auditDoor: true,
+    auditDoorKind: plan.kind,
+    // One door, front-on. No cabinet box and no bar pulls.
+    auditHardware: false,
+    finishHex: color,
+    stainedWood: appearance.stainedWood,
+  };
+  const slabMaterial = faceMaterial(color, faceTexture, profile.finishSheen, "slab", profile.grainDirection);
 
   if (plan.kind === "glass" && plan.framed && plan.railIn != null && plan.stileIn != null) {
     const rail = plan.railIn * INCH;
@@ -209,8 +294,11 @@ export function buildAuditDoor(
       placementUid: styleKey,
       sampleUrl: input.samplePhotoUrl,
       grainDirection: profile.grainDirection,
-      curated: /rustic_hickory_vertical_grain/i.test(input.samplePhotoUrl ?? ""),
-      sourceTexture: texture,
+      curated: /rustic_hickory_vertical_grain/i.test(input.samplePhotoUrl ?? "")
+        || faceTexture?.userData?.stainedWoodGrain === true
+        || faceTexture?.userData?.doorPanelGrainCrop === true
+        || faceTexture?.userData?.curatedCabinetFinish === true,
+      sourceTexture: faceTexture,
     });
     return group;
   };
@@ -236,7 +324,7 @@ export function buildAuditDoor(
   for (const [pieceWidth, pieceHeight, x, y, piece] of pieces) {
     const mesh = new THREE.Mesh(
       new THREE.BoxGeometry(pieceWidth, pieceHeight, railDepth),
-      faceMaterial(color, texture, profile.finishSheen, piece, profile.grainDirection),
+      faceMaterial(color, faceTexture, profile.finishSheen, piece, profile.grainDirection),
     );
     mesh.position.set(x, y, 0);
     mesh.castShadow = true;
@@ -259,14 +347,27 @@ export function buildAuditDoor(
     frame.add(recessed);
     const bevel = new THREE.Mesh(
       new THREE.BoxGeometry(bevelOuterWidth - 0.006, bevelOuterHeight - 0.006, Math.max(0.018, bevelDepth * 0.62)),
-      faceMaterial(color, texture, profile.finishSheen, "panel", profile.grainDirection),
+      faceMaterial(color, faceTexture, profile.finishSheen, "panel", profile.grainDirection),
     );
     bevel.position.z = bevelDepth * 0.31;
-    bevel.userData = { raisedPanelBevel: true };
+    bevel.userData = { raisedPanelBevel: true, insideEdgeProfile: profile.insideEdgeProfile ?? "bevel" };
     frame.add(bevel);
+    if (/ogee|bead/i.test(profile.insideEdgeProfile ?? "")) {
+      const sticking = new THREE.Mesh(
+        new THREE.BoxGeometry(
+          Math.max(0.05, bevelOuterWidth - bevelWidth * 0.7),
+          Math.max(0.05, bevelOuterHeight - bevelWidth * 0.7),
+          Math.max(0.012, bevelDepth * 0.45),
+        ),
+        faceMaterial(color, faceTexture, profile.finishSheen, "panel", profile.grainDirection),
+      );
+      sticking.position.z = bevelDepth * 0.72;
+      sticking.userData = { profiledSticking: true, insideEdgeProfile: profile.insideEdgeProfile };
+      frame.add(sticking);
+    }
     const center = new THREE.Mesh(
       new THREE.BoxGeometry(panelWidth, panelHeight, Math.max(0.02, bevelDepth)),
-      faceMaterial(color, texture, profile.finishSheen, "panel", profile.grainDirection),
+      faceMaterial(color, faceTexture, profile.finishSheen, "panel", profile.grainDirection),
     );
     center.position.z = bevelDepth;
     center.castShadow = true;
@@ -312,7 +413,7 @@ function loadSampleTexture(url: string): Promise<THREE.Texture> {
     }, 15_000);
     loader.load(
       url,
-      (texture) => finish(undefined, configureDoorAuditSampleTexture(texture, url)),
+      (texture) => finish(undefined, cropAuditSampleToPanelGrain(configureDoorAuditSampleTexture(texture, url))),
       undefined,
       () => finish(new Error("Could not load the sample photo for this door. The image may be blocking a canvas export.")),
     );
@@ -351,12 +452,14 @@ export function createDoorAuditCapture(): DoorAuditCapture {
   pmrem.compileEquirectangularShader();
   const environment = pmrem.fromScene(new RoomEnvironment(), 0.04);
   scene.environment = environment.texture;
+  scene.environmentIntensity = DOOR_AUDIT_LIGHTS.environment;
 
-  scene.add(new THREE.HemisphereLight(
+  const hemi = new THREE.HemisphereLight(
     DOOR_AUDIT_LIGHTS.hemisphere.sky,
     DOOR_AUDIT_LIGHTS.hemisphere.ground,
     DOOR_AUDIT_LIGHTS.hemisphere.intensity,
-  ));
+  );
+  scene.add(hemi);
   const key = new THREE.DirectionalLight(DOOR_AUDIT_LIGHTS.key.color, DOOR_AUDIT_LIGHTS.key.intensity);
   key.position.set(...DOOR_AUDIT_LIGHTS.key.position);
   key.castShadow = true;
@@ -376,6 +479,21 @@ export function createDoorAuditCapture(): DoorAuditCapture {
   fill.position.set(...DOOR_AUDIT_LIGHTS.fill.position);
   scene.add(fill);
 
+  const applyLights = (lights: DoorLightRig) => {
+    renderer.toneMappingExposure = lights.exposure;
+    scene.background = new THREE.Color(lights.background);
+    scene.environmentIntensity = lights.environment;
+    hemi.color.set(lights.hemisphere.sky);
+    hemi.groundColor.set(lights.hemisphere.ground);
+    hemi.intensity = lights.hemisphere.intensity;
+    key.color.set(lights.key.color);
+    key.intensity = lights.key.intensity;
+    key.position.set(lights.key.position[0], lights.key.position[1], lights.key.position[2]);
+    fill.color.set(lights.fill.color);
+    fill.intensity = lights.fill.intensity;
+    fill.position.set(lights.fill.position[0], lights.fill.position[1], lights.fill.position[2]);
+  };
+
   const bounds = auditDoorCameraBounds();
   const camera = new THREE.OrthographicCamera(bounds.left, bounds.right, bounds.top, bounds.bottom, bounds.near, bounds.far);
   camera.position.set(...bounds.position);
@@ -390,8 +508,31 @@ export function createDoorAuditCapture(): DoorAuditCapture {
         disposeObject(current);
         current = null;
       }
+      const appearance = resolveDoorStyleAppearance(input);
+      const lights = doorLightsForFinish(appearance.finishHex, input.renderExposure ?? null);
+      applyLights(lights);
+      const swatchHex = resolveDoorSwatchHex(input);
+      const measurePatch = async (hex: string) => {
+        const material = new THREE.MeshStandardMaterial({ color: hex, roughness: 0.55, metalness: 0.02 });
+        const patch = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 1.4), material);
+        patch.position.z = 0.05;
+        scene.add(patch);
+        renderer.render(scene, camera);
+        const measured = hexFromCanvas(renderer.domElement);
+        scene.remove(patch);
+        material.dispose();
+        patch.geometry.dispose();
+        return measured;
+      };
+      const gate = await runColorGate({
+        baseHex: appearance.finishHex,
+        swatchHex,
+        threshold: input.colorDeltaEMax ?? null,
+        measure: measurePatch,
+      });
+      if (gate.status !== "pass") throw new ColorGateBlock(gate);
       const texture = input.samplePhotoUrl && !input.needsDoorOnlyPhoto ? await loadSampleTexture(input.samplePhotoUrl) : null;
-      const door = buildAuditDoor(input, texture);
+      const door = buildAuditDoor({ ...input, renderHex: gate.hex, color: gate.hex }, texture);
       scene.add(door);
       current = door;
       renderer.render(scene, camera);

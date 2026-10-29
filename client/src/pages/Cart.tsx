@@ -22,6 +22,7 @@ import {
   type StoreScope,
 } from "@/lib/affiliateContext";
 import { cartItemToCheckoutPrefill } from "@/lib/cartCheckoutPrefill";
+import { refrigeratorPanelCutNotesIn } from "@/lib/refrigeratorEndPanelCut";
 import { separateGlassPurchaseItems } from "@/lib/cartGlassPolicy";
 import { formatEighthInches } from "@/lib/design";
 import { isTemporaryOneDollarFreeShippingOrder } from "@shared/temporaryCheckoutTest";
@@ -290,7 +291,11 @@ export default function Cart() {
                     )}
                   </div>
                   <p className="mt-0.5 text-sm text-foreground leading-snug">{item.name}</p>
+                  {item.qtyNote && <p className="mt-1 text-xs font-medium text-amber-800">{item.qtyNote}</p>}
                   <p className="text-xs text-muted-foreground">{item.styleLabel}</p>
+                  {refrigeratorPanelCutNotesIn(item.qtyNote) && (
+                    <p data-testid="cart-refrigerator-panel-cut" className="mt-1 text-xs font-medium text-amber-800">{refrigeratorPanelCutNotesIn(item.qtyNote)}</p>
+                  )}
                   {fillerDimensions && (
                     <dl data-testid="cart-filler-stock-and-cut" className="mt-2 grid grid-cols-2 gap-x-3 rounded-md border border-amber-200 bg-amber-50/70 px-2 py-1.5 text-xs text-amber-950">
                       <div><dt className="uppercase tracking-wide text-[10px] font-semibold text-amber-800">Purchased stock</dt><dd className="font-semibold">{fillerDimensions.stock} wide</dd></div>

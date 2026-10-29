@@ -18,6 +18,25 @@ describe("AutoDesignDialog", () => {
     expect(order).toContain("Specialty bases are not selected automatically");
   });
 
+  it("submits a skipped kitchen-use answer when the customer does not pick one", () => {
+    const onBuild = vi.fn((): { ok: true } => ({ ok: true }));
+    render(<AutoDesignDialog open onOpenChange={vi.fn()} onBuild={onBuild} />);
+    fireEvent.click(screen.getByTestId("auto-design-build-submit"));
+    expect(onBuild).toHaveBeenCalledWith(expect.objectContaining({
+      kitchenUsage: { uses: [], skipped: true, acceptedSuggestionIds: [] },
+    }));
+  });
+
+  it("stores lots of baking with the build and does not require an answer", () => {
+    const onBuild = vi.fn((): { ok: true } => ({ ok: true }));
+    render(<AutoDesignDialog open onOpenChange={vi.fn()} onBuild={onBuild} />);
+    fireEvent.click(screen.getByLabelText("Lots of baking"));
+    fireEvent.click(screen.getByTestId("auto-design-build-submit"));
+    expect(onBuild).toHaveBeenCalledWith(expect.objectContaining({
+      kitchenUsage: { uses: ["baking"], skipped: false, acceptedSuggestionIds: [] },
+    }));
+  });
+
   it("submits the selected wall-cabinet height as a real build input", () => {
     const onBuild = vi.fn((): { ok: true } => ({ ok: true }));
     render(<AutoDesignDialog open onOpenChange={vi.fn()} onBuild={onBuild} />);

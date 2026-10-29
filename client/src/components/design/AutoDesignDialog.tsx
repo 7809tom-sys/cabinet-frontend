@@ -5,6 +5,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AUTO_DESIGN_WALL_LABELS, autoDesignWallWidthRows } from "@/lib/autoDesignAutoBuild";
+import { Checkbox } from "@/components/ui/checkbox";
+import { KITCHEN_USE_OPTIONS, type KitchenUseId } from "@/lib/kitchenUsage";
 import type { RoomData } from "@/lib/design";
 import type {
   DishwasherSide,
@@ -80,6 +82,7 @@ export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading =
   const [dishwasherSide, setDishwasherSide] = useState<DishwasherSide>("right");
   const refrigeratorWidth: RefrigeratorWidth = 36;
   const [windowCenter, setWindowCenter] = useState("");
+  const [kitchenUses, setKitchenUses] = useState<KitchenUseId[]>([]);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -135,6 +138,9 @@ export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading =
       sinkWindowCenter: windowCenter.trim()
         ? { wallLabel: values.sink.wallLabel, centerOffsetIn: Number(windowCenter) }
         : null,
+      kitchenUsage: kitchenUses.length
+        ? { uses: kitchenUses, skipped: false, acceptedSuggestionIds: [] }
+        : { uses: [], skipped: true, acceptedSuggestionIds: [] },
     });
     if (!result.ok) setSubmitError(result.message);
   };
@@ -307,6 +313,24 @@ export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading =
               The sink is centered on this measurement and a window as wide as the sink base is placed above it. No wall cabinet goes above the sink, and the next cabinets start 3 inches past the window. Leave blank for nothing above the sink.
             </p>
           </div>
+          <fieldset className="space-y-2 rounded-lg border p-3" data-testid="auto-design-kitchen-use">
+            <legend className="px-1 text-sm font-medium">How do you use this kitchen?</legend>
+            <p className="text-xs text-muted-foreground">Optional. Pick any that apply. You can build without answering, and saving is never blocked if this stays blank.</p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {KITCHEN_USE_OPTIONS.map((option) => (
+                <label key={option.id} className="flex items-center gap-2 text-sm" htmlFor={`kitchen-use-${option.id}`}>
+                  <Checkbox
+                    id={`kitchen-use-${option.id}`}
+                    checked={kitchenUses.includes(option.id)}
+                    onCheckedChange={(checked) => setKitchenUses((current) => checked
+                      ? Array.from(new Set([...current, option.id]))
+                      : current.filter((use) => use !== option.id))}
+                  />
+                  {option.label}
+                </label>
+              ))}
+            </div>
+          </fieldset>
           {submitError && (
             <div role="alert" data-testid="auto-design-build-error" className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
               {submitError}

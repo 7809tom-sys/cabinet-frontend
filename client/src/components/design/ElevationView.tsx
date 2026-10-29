@@ -1,13 +1,14 @@
 import { doorOpeningAppearance } from "@/lib/doorOpeningAppearance";
 import { threeDLatticeRackLayout } from "@/lib/latticeRackLayout";
 import { PLATE_RACK_FRAME_IN, plateRackDividerLayout } from "@/lib/plateRackLayout";
-import { cornerDrawerElevationSplit } from "@/lib/cornerDrawerLayout";
+import { baseAngleEndPlan } from "@/lib/baseAngleEndLayout";
+import { isWallAngleEndCabinet } from "@/lib/wallAngleEndLayout";
 import {
   PlacedCabinet, RoomData, STD, elevationBox, WallOpening,
   FinishColors, DEFAULT_FINISH_COLORS, CROWN_HEIGHT_IN, TOE_KICK_HEIGHT_IN, BATTEN_WIDTH_IN, LIGHT_RAIL_HEIGHT_IN,
   type DoorPanelKind, type WallSide, cabinetWall, blindCornerSwingForView,
   countertopMaterial, roomCeiling, bearsCountertop, isBaseHeightAppliance, isSinkBaseCabinet, isFarmerSinkBase, isFillerItem, fillerWidthRange, formatEighthInches,
-  wallCeiling, wallCeilingIsSloped, wallLength, wallRunOffset, wallRunSpan, wallRunFrame, wallPlacementAt,
+  wallCeiling, wallCeilingIsSloped, wallLength, wallRunOffset, wallRunSpan, wallRunFrame, wallPlacementAt, wallAngleEndOpenSide,
   backsplashMaterial, isStacker, isBridgeOverRange, resolveSwing,
   isRangeOrOven, wallCabinetTopLine, isBlindCorner, placedFootprint, crownEligibleCabinets, isLightRailEligibleCabinet, usesRaisedFloorWallDoorPull,
 	  flooringMaterial, normalizeInstalledFillersToAdjacentCabinets, normalizeRefrigeratorBayUppers, applianceAppearanceImage, applianceElevationPresentation, rangeVisualAppearance, resolveCabinetHardwarePosition, isWd18CountertopDrawerCabinet, wd18CountertopFaceLayout,
@@ -496,6 +497,13 @@ export function ElevationView({
 	    const customProfile = kitchenCrestGenericShelfCount != null
 	      ? "curved-open-shelf"
 	      : p.customProfile ?? null;
+    const wallAngleOpen = isWallAngleEndCabinet({
+      masterCode: p.masterCode,
+      description: p.description,
+      subCategory: p.subCategory,
+      graphicType: customProfile,
+      customProfile,
+    }) ? wallAngleEndOpenSide(p, room, elevationCabinets) : null;
     const facePresentation = resolveElevationFacePresentation(p, customProfile, p.genericDrawingUrl, isAppliance);
     const cabType: CabinetDrawingType | null = facePresentation.cabinetType;
     const isEndAngle = facePresentation.isEndAngle;
@@ -682,6 +690,7 @@ export function ElevationView({
               frameInsetPx={cabFrameInset ?? undefined}
               frameMetrics={cabFrameMetrics ?? undefined}
               farmhouseSinkBase={Boolean(farmhouseFace)}
+              wallAngleOpen={wallAngleOpen}
             />
           )}
           {showProfileFallback && (
@@ -697,6 +706,7 @@ export function ElevationView({
               drawerSampleUrl={cabDrawerSampleUrl}
               faceWidthIn={p.width}
               faceHeightIn={p.height}
+              wallAngleOpen={wallAngleOpen ?? "end"}
             />
           )}
           {applianceVisualUrl && (
@@ -882,6 +892,11 @@ export function ElevationView({
               {p.masterCode}
             </span>
           </div>}
+          {isRefrigeratorEndPanel(p) && (
+            <span data-testid="elevation-refrigerator-panel-depth" className="pointer-events-none absolute bottom-0.5 left-0 right-0 z-[6] truncate text-center text-[7px] font-bold leading-none text-[#1a2744]" style={textFlip}>
+              {formatEighthInches(Number(p.depth) || 0)} D
+            </span>
+          )}
         </div>
       </div>
     );
@@ -2387,6 +2402,61 @@ export function StylePanel({ kind, edge, face, drawer = false, doorSampleUrl, dr
 // placed cabinet visibly changes appearance when the user switches styles. When
 // `drawers` > 0 it splits the face into a top drawer band (one front per drawer)
 // and a door region below, so drawer bases show their real drawer fronts.
+/** Front elevation of a WAC/AW. The door fills the face; the taper mark sits on the open end of the run. */
+function AngledWallElevationFace({
+  openSide = "end",
+  edge,
+  face,
+  kind,
+  doorSampleUrl,
+  faceWidthIn,
+  faceHeightIn,
+}: {
+  openSide?: "start" | "end";
+  edge: string;
+  face: string;
+  kind: DoorPanelKind;
+  doorSampleUrl?: string | null;
+  faceWidthIn?: number;
+  faceHeightIn?: number;
+}) {
+  const openOnRight = openSide !== "start";
+  return (
+    <div
+      data-cabinet-profile="angled-wall"
+      data-wall-angle-open={openOnRight ? "end" : "start"}
+      className="absolute inset-0 overflow-hidden"
+      style={{ border: `3px solid ${edge}`, background: `color-mix(in srgb, ${face} 30%, #000)` }}
+    >
+      <div className="absolute inset-[4%]">
+        <SingleDoorPanel
+          kind={kind}
+          edge={edge}
+          face={face}
+          stroke={`${edge}99`}
+          doorSampleUrl={doorSampleUrl}
+          isWall
+          faceWidthIn={faceWidthIn ?? 12}
+          faceHeightIn={faceHeightIn ?? 30}
+        />
+      </div>
+      <div
+        data-wall-angle-taper="true"
+        className="absolute top-[4%] bottom-[4%]"
+        style={{
+          width: "28%",
+          left: openOnRight ? undefined : "4%",
+          right: openOnRight ? "4%" : undefined,
+          clipPath: openOnRight ? "polygon(35% 0, 100% 0, 100% 100%)" : "polygon(0 0, 65% 0, 0 100%)",
+          background: openOnRight
+            ? `linear-gradient(to left, ${edge}66, transparent)`
+            : `linear-gradient(to right, ${edge}66, transparent)`,
+        }}
+      />
+    </div>
+  );
+}
+
 export function CustomProfileFace({
   profile,
   face,
@@ -2399,6 +2469,7 @@ export function CustomProfileFace({
   faceWidthIn,
   faceHeightIn,
   squareOpenEndShelf = false,
+  wallAngleOpen = "end",
 }: {
   profile: string;
   face: string;
@@ -2412,6 +2483,8 @@ export function CustomProfileFace({
   faceHeightIn?: number;
   /** Verified KitchenCrest OE6 line art uses square, not bowed, shelf fronts. */
   squareOpenEndShelf?: boolean;
+  /** Run-start is the left of an unmirrored elevation. The angle tapers toward this open end. */
+  wallAngleOpen?: "start" | "end";
 }) {
   const shelfCount = Math.max(2, fixedShelves || adjustableShelves || 3);
   const rail = `color-mix(in srgb, ${face} 68%, #000)`;
@@ -2481,19 +2554,16 @@ export function CustomProfileFace({
   }
 
   if (profile === "wall_angle") {
-    // AW1230/AW1236/AW1242: one angled wall-end design at 30, 36, or 42 inches
-    // high. The SKU supplies shelf count; every height keeps one side-hinged door
-    // and the same 45-degree exposed-end casing instead of a split WDC face.
     return (
-      <div data-cabinet-profile="angled-wall" className="absolute inset-0 overflow-hidden" style={{ border: `3px solid ${edge}`, background: cavity }}>
-        <div className="absolute left-0 top-0 bottom-0 w-[60%]" style={{ borderRight: `2px solid ${rail}` }}>
-          {shelves}
-        </div>
-        <div className="absolute right-0 top-0 bottom-0 w-[40%]" style={{ background: face, borderLeft: `2px solid ${edge}` }}>
-          <SingleDoorPanel kind={kind} edge={edge} face={face} stroke={`${edge}99`} doorSampleUrl={doorSampleUrl} faceWidthIn={(faceWidthIn ?? 12) * 0.4} faceHeightIn={faceHeightIn ?? 30} />
-        </div>
-        <div className="absolute left-[4%] right-[4%] top-[3%] h-[2px]" style={{ background: rail, transform: "rotate(-8deg)", transformOrigin: "left center" }} />
-      </div>
+      <AngledWallElevationFace
+        openSide={wallAngleOpen}
+        edge={edge}
+        face={face}
+        kind={kind}
+        doorSampleUrl={doorSampleUrl}
+        faceWidthIn={faceWidthIn}
+        faceHeightIn={faceHeightIn}
+      />
     );
   }
 
@@ -2511,7 +2581,7 @@ export function CustomProfileFace({
   );
 }
 
-export function DoorFront({ kind, edge, face, doors, drawers, isWall, doorSampleUrl, drawerSampleUrl, cabinetType, blindOnLeft, cabinetHeightIn, cabinetWidthIn, faceFillOverride, ovenType, openingType, doorHeight, drawerHeight, doorOrientation, layoutSpec, drawerLayout, masterCode, graphicType, category, placementType, description, numberOfDoors, numberOfDrawers, facePattern, shelfCount, glassDoor, frameInsetPx, frameMetrics, farmhouseSinkBase = false }: { kind: DoorPanelKind; edge: string; face: string; doors?: number; drawers?: number; isWall?: boolean; doorSampleUrl?: string | null; drawerSampleUrl?: string | null; cabinetType?: CabinetDrawingType | null; blindOnLeft?: boolean; cabinetHeightIn?: number; cabinetWidthIn?: number; faceFillOverride?: string; ovenType?: "single" | "double" | null; openingType?: "top" | "middle" | "bottom" | null; doorHeight?: number | null; drawerHeight?: number | null; doorOrientation?: "side-by-side" | "stacked" | null; layoutSpec?: string | null; drawerLayout?: string | null; masterCode?: string | null; graphicType?: string | null; category?: string | null; placementType?: string | null; description?: string | null; numberOfDoors?: number | null; numberOfDrawers?: number | null; facePattern?: "slats" | "criss-cross" | "lattice" | "open" | null; shelfCount?: number | null; glassDoor?: boolean; frameInsetPx?: number; frameMetrics?: { stileInches?: number | null; railInches?: number | null }; farmhouseSinkBase?: boolean }) {
+export function DoorFront({ kind, edge, face, doors, drawers, isWall, doorSampleUrl, drawerSampleUrl, cabinetType, blindOnLeft, cabinetHeightIn, cabinetWidthIn, faceFillOverride, ovenType, openingType, doorHeight, drawerHeight, doorOrientation, layoutSpec, drawerLayout, masterCode, graphicType, category, placementType, description, numberOfDoors, numberOfDrawers, facePattern, shelfCount, glassDoor, frameInsetPx, frameMetrics, farmhouseSinkBase = false, wallAngleOpen = null }: { kind: DoorPanelKind; edge: string; face: string; doors?: number; drawers?: number; isWall?: boolean; doorSampleUrl?: string | null; drawerSampleUrl?: string | null; cabinetType?: CabinetDrawingType | null; blindOnLeft?: boolean; cabinetHeightIn?: number; cabinetWidthIn?: number; faceFillOverride?: string; ovenType?: "single" | "double" | null; openingType?: "top" | "middle" | "bottom" | null; doorHeight?: number | null; drawerHeight?: number | null; doorOrientation?: "side-by-side" | "stacked" | null; layoutSpec?: string | null; drawerLayout?: string | null; masterCode?: string | null; graphicType?: string | null; category?: string | null; placementType?: string | null; description?: string | null; numberOfDoors?: number | null; numberOfDrawers?: number | null; facePattern?: "slats" | "criss-cross" | "lattice" | "open" | null; shelfCount?: number | null; glassDoor?: boolean; frameInsetPx?: number; frameMetrics?: { stileInches?: number | null; railInches?: number | null }; farmhouseSinkBase?: boolean; wallAngleOpen?: "start" | "end" | null }) {
   const drawerCount = drawers ?? 0;
   const doorCount = doors ?? 0;
   const stroke = `${edge}99`;
@@ -3225,28 +3295,51 @@ export function DoorFront({ kind, edge, face, doors, drawers, isWall, doorSample
     );
   }
 
-  // ─── SPECIALTY TYPE: BASE END CABINET, 45° ANGLED FRONT ─────────────────
-  // BEC-24 is a 24-by-24 end cabinet, not a room corner. Its single 45-degree
-  // front plane is approximately 17 inches wide and carries two equal 8.45-inch
-  // doors which meet on the center seam.
+  // ─── SPECIALTY TYPE: QUARTER-OCTAGON BASE ANGLE END ────────────────────
+  // Two 24" sides sit against the wall and the neighbor. Two door faces meet
+  // at a 45° pitch. Elevation shows their run-direction spans: about 17" for
+  // the frontal door and about 7" for the foreshortened end door.
   if (cabinetType === "end-angle") {
+    const plan = baseAngleEndPlan();
+    const totalHeight = cabinetHeightIn ?? 34.5;
+    const kickPct = Math.min(40, (plan.toeKickIn / totalHeight) * 100);
+    const ordered = [
+      plan.doorFaces.find((doorFace) => doorFace.id === "front")!,
+      plan.doorFaces.find((doorFace) => doorFace.id === "end")!,
+    ];
+    const span = ordered.reduce((sum, doorFace) => sum + doorFace.runSpanIn, 0) || 1;
+    let cursor = 0;
+    const seamAt = (ordered[0]!.runSpanIn / span) * 100;
     return withFace(
-      <div data-bec-angled-end-face="true" data-bec-45-angle="true" className="absolute inset-0 overflow-hidden">
-        <div
-          className="absolute top-[3%] bottom-[3%] left-[3%] right-[3%] overflow-hidden"
-          style={{
-            clipPath: "polygon(0 5%, 100% 0, 100% 100%, 0 95%)",
-            boxShadow: `inset 0 0 0 2px ${edge}aa, inset 0 -2px 4px rgba(0,0,0,0.14)`,
-          }}
-        >
-          <div data-bec-angled-left-door="8.45in" className="absolute left-0 top-0 bottom-0" style={{ width: "50%" }}>
-            <SingleDoorPanel kind={kind} edge={edge} face={face} stroke={stroke} doorSampleUrl={doorSampleUrl} isWall={isWall} frameInsetPx={frameInsetPx} faceWidthIn={8.45} faceHeightIn={cabinetHeightIn ?? 34.5} />
-          </div>
-          <div data-bec-angled-right-door="8.45in" className="absolute right-0 top-0 bottom-0" style={{ width: "50%" }}>
-            <SingleDoorPanel kind={kind} edge={edge} face={face} stroke={stroke} doorSampleUrl={doorSampleUrl} isWall={isWall} frameInsetPx={frameInsetPx} faceWidthIn={8.45} faceHeightIn={cabinetHeightIn ?? 34.5} />
-          </div>
-          <div data-bec-angled-center-seam="true" className="absolute top-[3%] bottom-[3%]" style={{ left: "50%", width: 2, background: `${edge}cc`, boxShadow: "1px 0 1px rgba(255,255,255,0.42)" }} />
-        </div>
+      <div
+        data-base-angle-end="true"
+        data-bec-angled-end-face="true"
+        data-bec-45-angle="true"
+        data-base-angle-pitch="45"
+        data-base-angle-side-in={String(plan.sideIn)}
+        data-base-angle-face-in={plan.faceIn.toFixed(3)}
+        data-base-angle-door-in={String(plan.doorWidthIn)}
+        className="absolute inset-0 overflow-hidden"
+      >
+        {ordered.map((doorFace) => {
+          const widthPct = (doorFace.runSpanIn / span) * 100;
+          const left = cursor;
+          cursor += widthPct;
+          return (
+            <div
+              key={doorFace.id}
+              data-base-angle-door={doorFace.id}
+              data-base-angle-door-in={String(doorFace.doorWidthIn)}
+              data-base-angle-run-span-in={doorFace.runSpanIn.toFixed(3)}
+              className="absolute"
+              style={{ left: `${left}%`, width: `${widthPct}%`, top: "2%", bottom: `${kickPct}%` }}
+            >
+              <SingleDoorPanel kind={kind} edge={edge} face={face} stroke={stroke} doorSampleUrl={doorSampleUrl} isWall={isWall} frameInsetPx={frameInsetPx} faceWidthIn={doorFace.doorWidthIn} faceHeightIn={totalHeight - plan.toeKickIn} />
+            </div>
+          );
+        })}
+        <div data-base-angle-seam="true" data-bec-angled-center-seam="true" className="absolute" style={{ left: `${seamAt}%`, width: 2, top: "2%", bottom: `${kickPct}%`, background: `${edge}cc` }} />
+        <div data-base-angle-toe-kick="true" className="absolute left-0 right-0 bottom-0" style={{ height: `${kickPct}%`, background: edge, opacity: 0.28 }} />
       </div>,
     );
   }
@@ -3300,6 +3393,20 @@ export function DoorFront({ kind, edge, face, doors, drawers, isWall, doorSample
           />
         </div>
       </>
+    );
+  }
+
+  if (cabinetType === "wall-end-angle") {
+    return withFace(
+      <AngledWallElevationFace
+        openSide={wallAngleOpen ?? "end"}
+        edge={edge}
+        face={face}
+        kind={kind}
+        doorSampleUrl={doorSampleUrl}
+        faceWidthIn={cabinetWidthIn}
+        faceHeightIn={cabinetHeightIn}
+      />,
     );
   }
 
@@ -3416,45 +3523,43 @@ export function DoorFront({ kind, edge, face, doors, drawers, isWall, doorSample
   }
 
   // ─── SPECIALTY TYPE: CORNER DRAWER BASE ─────────────────────────────────
-  // CDB36 shares the lazy-Susan L. This wall shows the finished return of the
-  // perpendicular leg, then the exposed stack of right-angle drawer fronts.
-  // Row heights come from the same layout the 3D meshes use.
+  // Corner drawer bases (CDB-*): L-shaped footprint with stacked drawers on
+  // the main visible face. Renders as a full-height drawer stack (like a
+  // drawer base) but with a small corner indicator on the left edge.
   if (cabinetType === "corner-drawer-base") {
-    const split = cornerDrawerElevationSplit(faceWidth, faceHeight, Math.max(1, drawerCount || 3));
+    const dCount = Math.max(1, drawerCount || 3);
+    const sliceH = 100 / dCount;
     return withFace(
-      <div data-corner-drawer-face="right-angle" className="absolute inset-0">
+      <>
+        {/* Corner indicator: subtle angled mark on left edge */}
         <div
-          data-corner-drawer-return="true"
-          data-corner-drawer-return-inches={split.returnIn}
           className="absolute top-0 bottom-0 left-0"
-          style={{ width: `${split.returnPct}%`, background: face, boxShadow: `inset -1px 0 0 ${stroke}` }}
-        />
-        <div
-          data-corner-drawer-exposed-face="true"
-          data-corner-drawer-face-inches={split.faceIn}
-          className="absolute top-0 bottom-0"
-          style={{ left: `${split.returnPct}%`, width: `${split.facePct}%` }}
+          style={{ width: "8%" }}
         >
-          {split.rows.map((rowIn, i) => {
-            const topPct = (split.rows.slice(0, i).reduce((sum, value) => sum + value, 0) / split.totalIn) * 100;
-            const heightPct = (rowIn / split.totalIn) * 100;
-            return (
-              <div
-                key={`cdb-drw-${i}`}
-                data-corner-drawer-row={i + 1}
-                data-corner-drawer-row-inches={rowIn}
-                className="absolute left-0 right-0"
-                style={{ top: `${topPct}%`, height: `${heightPct}%` }}
-              >
-                {i > 0 && (
-                  <div className="absolute left-0 right-0 top-0" style={{ height: 2, background: stroke }} />
-                )}
-                <StylePanel kind={kind} edge={edge} face={face} drawer doorSampleUrl={doorSampleUrl} drawerSampleUrl={drawerSampleUrl} faceWidthIn={split.faceIn} faceHeightIn={rowIn} />
-              </div>
-            );
-          })}
+          <div
+            className="absolute inset-[2px] rounded-[1px]"
+            style={{
+              background: `repeating-linear-gradient(135deg, ${face}22 0px, ${face}22 3px, ${edge}33 3px, ${edge}33 4px)`,
+              boxShadow: `inset 0 0 3px rgba(0,0,0,0.12)`,
+            }}
+          />
         </div>
-      </div>
+        {/* Main drawer stack */}
+        <div className="absolute top-0 bottom-0" style={{ left: "8%", right: 0 }}>
+          {Array.from({ length: dCount }).map((_, i) => (
+            <div
+              key={`cdb-drw-${i}`}
+              className="absolute left-0 right-0"
+              style={{ top: `${sliceH * i}%`, height: `${sliceH}%` }}
+            >
+              {i > 0 && (
+                <div className="absolute left-0 right-0 top-0" style={{ height: 2, background: stroke }} />
+              )}
+                            <StylePanel kind={kind} edge={edge} face={face} drawer doorSampleUrl={doorSampleUrl} drawerSampleUrl={drawerSampleUrl} faceWidthIn={faceWidth * 0.92} faceHeightIn={faceHeight / dCount} />
+            </div>
+          ))}
+        </div>
+      </>
     );
   }
   // ─── APPLIANCE OPENING (non-oven-tall) ──────────────────────────────────

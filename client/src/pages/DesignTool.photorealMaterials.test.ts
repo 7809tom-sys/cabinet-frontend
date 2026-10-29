@@ -11,7 +11,7 @@ describe("Designer programmed photoreal material wiring", () => {
     expect(designToolSource).toContain("const doorUrl = preferredDoorReferenceUrl(style);");
     expect(designToolSource).toContain("const drawerReference = preferredDrawerReferenceUrl(style);");
     expect(designToolSource).toContain("if (!approved && /rustic hickory|forest rust/i.test(`${style.ourName ?? \"\"} ${style.aliasName ?? \"\"}`))");
-    expect(designToolSource).toContain('const RUSTIC_HICKORY_GRAIN_URL = "/manus-storage/rustic_hickory_vertical_grain_32d9e28a.webp";');
+    expect(designToolSource).toContain('const RUSTIC_HICKORY_GRAIN_URL = "/textures/rustic_hickory_vertical_grain_v2.webp";');
     expect(designToolSource).toContain("return designerFacePlan(s, \"base\");");
     expect(designToolSource).toContain("catalogDoorSampleUrl={active3DDoorSampleUrl}");
     expect(designToolSource).toContain("{paletteFinishSwatch ? (");

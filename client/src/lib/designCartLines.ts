@@ -3,6 +3,7 @@ import { blindCornerInstallerNote, customSizeFee, effectiveStyleId, isBlindCorne
 import { isClosetPart } from "@/lib/closet";
 import { calculateCartSubtotal } from "@/lib/cartTotals";
 import { combinedFillerNote, fillerCutSourceFor, isCombinedSmallFiller } from "@/lib/fillerBilling";
+import { refrigeratorEndPanelCutDownNote } from "@/lib/refrigeratorEndPanelCut";
 
 type BuildDesignCabinetCartLinesArgs = {
   placed: PlacedCabinet[];
@@ -39,6 +40,28 @@ export function adjustedDesignUnitPrice(
 ): number | null {
   if (basePrice == null) return null;
   return basePrice * (1 + (cabinet.discountPct ?? 0) / 100) + customSizeFee(cabinet);
+}
+
+function dedupeNotes(note: string | null | undefined): string {
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  for (const part of (note ?? "").split(";")) {
+    const text = part.trim();
+    if (!text || seen.has(text)) continue;
+    seen.add(text);
+    unique.push(text);
+  }
+  return unique.join("; ");
+}
+
+function cabinetCutNote(cabinet: PlacedCabinet, placed: readonly PlacedCabinet[]): string {
+  const cutNotes = placed
+    .filter((candidate) => fillerCutSourceFor(candidate, placed)?.uid === cabinet.uid)
+    .map((candidate) => combinedFillerNote(candidate, placed))
+    .filter((note): note is string => Boolean(note));
+  const doorNote = isBlindCorner(cabinet.masterCode, cabinet.description) ? blindCornerInstallerNote(cabinet.swing) : null;
+  const panelNote = refrigeratorEndPanelCutDownNote(cabinet.refrigeratorPanelStockDepth, cabinet.depth);
+  return dedupeNotes([cutNotes.join("; "), doorNote, panelNote].filter(Boolean).join("; "));
 }
 
 function glassPolicyCartSuffix(cabinet: Pick<PlacedCabinet, "masterCode" | "glassDoor" | "glassIncluded">): string {
@@ -118,21 +141,18 @@ export function buildDesignCabinetCartLines({
       : baseCode;
     // Different discounts or custom-size fees must remain separate locked
     // lines; combining them would assign one cabinet's adjusted price to both.
-    const key = `${masterCode}::${resolvedStyleId}::${unitPrice == null ? "pending" : unitPrice.toFixed(4)}::${fillerCartIdentity(cabinet)}::${cabinet.swing ?? ""}`;
-    const cutNotes = placed
-      .filter((candidate) => fillerCutSourceFor(candidate, placed)?.uid === cabinet.uid)
-      .map((candidate) => combinedFillerNote(candidate, placed))
-      .filter((note): note is string => Boolean(note));
-    const doorNote = isBlindCorner(cabinet.masterCode, cabinet.description) ? blindCornerInstallerNote(cabinet.swing) : null;
-    const cutNote = [cutNotes.join("; "), doorNote].filter(Boolean).join("; ");
+    const modificationNote = cabinet.fieldModificationNote?.trim() || "";
+    const autoAddedLabel = modificationNote.startsWith("Auto-added:") ? modificationNote : undefined;
+    const key = `${masterCode}::${resolvedStyleId}::${unitPrice == null ? "pending" : unitPrice.toFixed(4)}::${fillerCartIdentity(cabinet)}::${cabinet.swing ?? ""}::${modificationNote}`;
+    const cutNote = dedupeNotes([cabinetCutNote(cabinet, placed), modificationNote].filter(Boolean).join("; "));
     const existing = lines.get(key);
     if (existing) {
       existing.qty += 1;
-      if (cutNote) existing.qtyNote = [existing.qtyNote, cutNote].filter(Boolean).join("; ");
+      if (cutNote) existing.qtyNote = dedupeNotes([existing.qtyNote, cutNote].filter(Boolean).join("; "));
     } else {
       lines.set(key, {
         masterCode,
-        name: `${firstClassCooktop ? (cabinet.applianceCatalogName ?? cabinet.description) : installedFillerCartName(cabinet)}${glassPolicyCartSuffix(cabinet)}`,
+        name: `${firstClassCooktop ? (cabinet.applianceCatalogName ?? cabinet.description) : installedFillerCartName(cabinet)}${glassPolicyCartSuffix(cabinet)}${modificationNote ? ` — ${modificationNote}` : ""}`,
         styleId: resolvedStyleId,
         styleLabel: styleNameById.get(resolvedStyleId) ?? "",
         distributorId,
@@ -143,6 +163,7 @@ export function buildDesignCabinetCartLines({
         // and may refresh there, but it can never become a zero-dollar order.
         ...(unitPrice != null ? { priceLocked: true } : {}),
         qty: 1,
+        ...(autoAddedLabel ? { autoAddedLabel } : {}),
         ...(cutNote ? { qtyNote: cutNote } : {}),
         catalogImageUrl: cabinet.catalogImageUrl ?? null,
         ...(cabinet.freeShipping ? { freeShipping: true } : {}),
@@ -212,7 +233,7 @@ export function lockDesignCartLinesToPackageTotal<T extends CartItem>(lines: T[]
 /** A bundle price remains valid only while its priced cabinet composition matches the saved snapshot. */
 export function bundleCabinetPricingSignature(placed: PlacedCabinet[], styleId: number | null): string {
   return placed
-    .filter((cabinet) => cabinet.placement !== "appliance" && !isClosetPart(cabinet.masterCode) && cabinet.cabinetId != null && cabinet.fillerBillingRole !== "secondary")
+    .filter((cabinet) => cabinet.placement !== "appliance" && !isClosetPart(cabinet.masterCode) && cabinet.cabinetId != null && cabinet.fillerBillingRole !== "secondary" && !isCombinedSmallFiller(cabinet, placed))
     .map((cabinet) => [
       cabinet.uid,
       cabinet.masterCode,
@@ -221,7 +242,9 @@ export function bundleCabinetPricingSignature(placed: PlacedCabinet[], styleId: 
       cabinet.discountPct ?? 0,
       cabinet.width,
       cabinet.height,
-      cabinet.depth,
+      // A field-cut refrigerator panel keeps the stock depth in the bundle
+      // signature so cutting the sheet to the refrigerator does not reprice it.
+      cabinet.refrigeratorPanelStockDepth ?? cabinet.depth,
     ].join(":"))
     .sort()
     .join("|");
@@ -265,22 +288,18 @@ export function buildDesignPreviewPricingLines({
       ? `${cabinet.masterCode}GD`
       : cabinet.masterCode;
     // Different discounts or custom fees must remain distinct priced lines.
-    const key = `${masterCode}::${resolvedStyleId}::${adjustedUnitPrice == null ? "pending" : adjustedUnitPrice.toFixed(4)}::${fillerCartIdentity(cabinet)}::${cabinet.swing ?? ""}`;
-    const cutNotes = placed
-      .filter((candidate) => fillerCutSourceFor(candidate, placed)?.uid === cabinet.uid)
-      .map((candidate) => combinedFillerNote(candidate, placed))
-      .filter((note): note is string => Boolean(note));
-    const doorNote = isBlindCorner(cabinet.masterCode, cabinet.description) ? blindCornerInstallerNote(cabinet.swing) : null;
-    const cutNote = [cutNotes.join("; "), doorNote].filter(Boolean).join("; ");
+    const modificationNote = cabinet.fieldModificationNote?.trim() || "";
+    const key = `${masterCode}::${resolvedStyleId}::${adjustedUnitPrice == null ? "pending" : adjustedUnitPrice.toFixed(4)}::${fillerCartIdentity(cabinet)}::${cabinet.swing ?? ""}::${modificationNote}`;
+    const cutNote = dedupeNotes([cabinetCutNote(cabinet, placed), modificationNote].filter(Boolean).join("; "));
     const existing = lines.get(key);
     if (existing) {
       existing.qty += 1;
       existing.placementUids = [...(existing.placementUids ?? []), cabinet.uid];
-      if (cutNote) existing.qtyNote = [existing.qtyNote, cutNote].filter(Boolean).join("; ");
+      if (cutNote) existing.qtyNote = dedupeNotes([existing.qtyNote, cutNote].filter(Boolean).join("; "));
     } else {
       lines.set(key, {
         masterCode,
-        name: `${firstClassCooktop ? (cabinet.applianceCatalogName ?? cabinet.description) : installedFillerCartName(cabinet)}${glassPolicyCartSuffix(cabinet)}`,
+        name: `${firstClassCooktop ? (cabinet.applianceCatalogName ?? cabinet.description) : installedFillerCartName(cabinet)}${glassPolicyCartSuffix(cabinet)}${modificationNote ? ` — ${modificationNote}` : ""}`,
         styleId: resolvedStyleId,
         styleLabel: styleNameById.get(resolvedStyleId) ?? "",
         distributorId,
@@ -379,6 +398,7 @@ export function mergeDesignCartLines(lines: readonly CartItem[]): CartItem[] {
       line.vendorProductId ?? "",
       line.fillerStockWidthIn ?? "",
       line.fillerInstalledCutWidthIn ?? "",
+      line.autoAddedLabel ?? "",
     ].join("::");
     const existing = merged.get(key);
     if (existing) existing.qty += line.qty;

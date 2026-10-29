@@ -23,7 +23,7 @@ import {
 	  blindCornerSpecViolations, blindCornerViolations, blindPullRange, blindCornerPullPlacement, resolveBaseBlindCornerFillerSnap,
 	  blindCornerAutoFiller, blindCornerRearCountertopExtensionIn,
 			  isStacker, glassStackerParentPlacement, glassStackerFrontFlushSpot, glassStackerFrontSnapTarget, normalizeGlassStackersToParentFronts, isWd18CountertopDrawerCabinet, wd18CountertopFaceLayout, normalizeWd18CountertopMounts, normalizeStandardWallMounts,
-  isDiagonalCorner, footprintDepth,
+  isDiagonalCorner, footprintDepth, wallAngleEndHandForPlacement, wallAngleEndOpenSide,
   isLCornerCabinet, cornerLegRatioForPlaced, placedCornerGeometryKind, placedFootprint, normalizeLCornerDepths,
 	  baseOpeningOverlaps, blocksFloorRun, missingCornerBaseViolations, isWindowBelowCountertop, windowVerticallyOverlapsCabinet,
   snapPosition, snapCabinetSeamOverlap, CABINET_CONFLICT_LOCK_IN, orientToWall, hasCollision, collisionReason, cabinetPlacementCollisionDetail, wallCabinetPlacementReason, removeOverlappingPlacements, shouldBlockPlacementCollision, isHoodOverRangePair,
@@ -908,7 +908,7 @@ describe("corner cabinet detection", () => {
 
 describe("angled wall cabinets are NOT corner cabinets (palette tab routing)", () => {
   it("flags AW-* angled wall cabinets", () => {
-    for (const code of ["AW1230", "AW1236", "AW1242", "AW-12-30", "AW-12-36", "AW-12-42"]) {
+    for (const code of ["WAC1230", "WAC1236", "WAC1242", "WAC-12-30", "AW1230", "AW1236", "AW1242", "AW-12-30", "AW-12-36", "AW-12-42"]) {
       expect(isAngledWallCabinet(code, "Angled Wall End Cabinet")).toBe(true);
       expect(isCornerCabinet(code, "Angled Wall End Cabinet")).toBe(false);
     }
@@ -925,10 +925,49 @@ describe("angled wall cabinets are NOT corner cabinets (palette tab routing)", (
   it("an angled wall cabinet is still drawn diagonally (rendering unchanged)", () => {
     // Routing to the Wall tab must NOT change its canvas footprint.
     expect(isDiagonalCorner("AW-12-30", "12x30 Angled Wall End Cabinet")).toBe(false);
+    expect(isDiagonalCorner("WAC1230", "12x30 Wall Angle Cabinet")).toBe(false);
+  });
+
+  it("tapers a wall angle cabinet toward the open end on the left and right of a run", () => {
+    const room = { width: 144, depth: 120, ceilingHeight: 96 };
+    const neighbor = {
+      uid: "neighbor", cabinetId: 1, masterCode: "W3030", description: "Wall Cabinet",
+      placement: "wall" as const, x: 36, y: 0, width: 30, depth: 12, height: 30, rotation: 0,
+      wallId: "top", wallOffset: 36,
+    };
+    const rightEnd = {
+      uid: "wac-right", cabinetId: 2, masterCode: "WAC1230", description: "Wall Angle Cabinet",
+      placement: "wall" as const, x: 66, y: 0, width: 12, depth: 12, height: 30, rotation: 0,
+      wallId: "top", wallOffset: 66,
+    };
+    const leftEnd = {
+      uid: "wac-left", cabinetId: 3, masterCode: "WAC1236", description: "Wall Angle Cabinet",
+      placement: "wall" as const, x: 0, y: 0, width: 12, depth: 12, height: 30, rotation: 0,
+      wallId: "top", wallOffset: 0,
+    };
+    expect(wallAngleEndOpenSide(rightEnd, room, [neighbor, rightEnd])).toBe("end");
+    expect(wallAngleEndHandForPlacement(rightEnd, room, [neighbor, rightEnd])).toBe("right");
+    expect(wallAngleEndOpenSide(leftEnd, room, [neighbor, leftEnd])).toBe("start");
+    expect(wallAngleEndHandForPlacement(leftEnd, room, [neighbor, leftEnd])).toBe("left");
+    const bottomNeighbor = { ...neighbor, uid: "bottom-neighbor", y: 108, rotation: 0, wallId: "bottom", wallOffset: 36 };
+    const bottomRight = { ...rightEnd, uid: "bottom-right", y: 108, wallId: "bottom", wallOffset: 0, x: 0 };
+    expect(wallAngleEndHandForPlacement(bottomRight, room, [bottomNeighbor, bottomRight])).toBe("right");
+    const pantry = {
+      uid: "pantry", cabinetId: 4, masterCode: "U249624", description: "Pantry",
+      placement: "tall" as const, x: 0, y: 0, width: 24, depth: 24, height: 96, rotation: 0,
+      wallId: "top", wallOffset: 0,
+    };
+    const besidePantry = {
+      uid: "aw-pantry", cabinetId: 5, masterCode: "AW1242", description: "Wall Angle Cabinet",
+      placement: "wall" as const, x: 24, y: 0, width: 12, depth: 12, height: 42, rotation: 0,
+      wallId: "top", wallOffset: 24,
+    };
+    expect(wallAngleEndOpenSide(besidePantry, room, [pantry, besidePantry])).toBe("end");
+    expect(wallAngleEndHandForPlacement(besidePantry, room, [pantry, besidePantry])).toBe("right");
   });
 
   it("does not force AW aliases into protected room-corner placement or movement locks", () => {
-    for (const masterCode of ["AW1230", "AW1236", "AW1242", "AW-12-30", "AW-12-36", "AW-12-42"]) {
+    for (const masterCode of ["WAC1230", "WAC1236", "WAC1242", "AW1230", "AW1236", "AW1242", "AW-12-30", "AW-12-36", "AW-12-42"]) {
       expect(isProtectedCornerCabinet(masterCode, '12" Angled Wall End Cabinet')).toBe(false);
       expect(requiresRoomCornerPlacement({ masterCode, description: '12" Angled Wall End Cabinet', placement: "wall" })).toBe(false);
     }
@@ -1678,21 +1717,25 @@ describe("cabinetWall inference", () => {
 });
 
 describe("trimPiecesNeeded (stick rounding)", () => {
-  it("rounds a 63in run up to one 8ft stick", () => {
+  it("rounds a 63in run up to one 8ft stick and adds one spare", () => {
     const t = trimPiecesNeeded(63);
-    expect(t.pieces).toBe(1);
-    expect(t.orderedFeet).toBe(8);
-  });
-
-  it("rounds just over one stick (with waste) up to two sticks", () => {
-    // 90in * 1.1 = 99in > 96 -> 2 sticks
-    const t = trimPiecesNeeded(90);
+    expect(t.measuredPieces).toBe(1);
+    expect(t.extraStick).toBe(1);
     expect(t.pieces).toBe(2);
     expect(t.orderedFeet).toBe(16);
   });
 
-  it("returns 0 pieces for an empty run", () => {
-    expect(trimPiecesNeeded(0).pieces).toBe(0);
+  it("rounds just over one stick (with waste) up to two sticks, then adds the spare", () => {
+    // 90in * 1.1 = 99in > 96 -> 2 measured sticks + 1 spare
+    const t = trimPiecesNeeded(90);
+    expect(t.measuredPieces).toBe(2);
+    expect(t.extraStick).toBe(1);
+    expect(t.pieces).toBe(3);
+    expect(t.orderedFeet).toBe(24);
+  });
+
+  it("returns 0 pieces for an empty run and does not add a spare", () => {
+    expect(trimPiecesNeeded(0)).toMatchObject({ pieces: 0, measuredPieces: 0, extraStick: 0 });
   });
 });
 
@@ -1788,6 +1831,9 @@ describe("doorPanelKind", () => {
     expect(doorPanelKind("Slab")).toBe("slab");
     expect(doorPanelKind("Contemporary")).toBe("slab");
     expect(doorPanelKind("Euro Flat")).toBe("slab");
+    expect(doorPanelKind("Flat Panel")).toBe("shaker");
+    expect(doorPanelKind("Recessed Panel")).toBe("shaker");
+    expect(doorPanelKind("Traditional Ogee")).toBe("raised");
     expect(doorPanelKind("Beaded")).toBe("beaded");
     expect(doorPanelKind("Inset")).toBe("inset");
   });
@@ -3479,11 +3525,16 @@ describe("wall cabinet clearance from doors/windows", () => {
     return { uid: "win", kind: "window", label: "Window", side: "top", offset, width, height: 36, sill: 40 };
   }
 
-  it("flags a wall cabinet sitting within 3\" of a window", () => {
-    // Window 54..90. Wall cabinet ending at 92 is 2" away -> violation.
-    const wall = cab({ uid: "w1", placement: "wall", x: 92, y: 0, width: 30, depth: 12 });
-    const bad = wallOpeningClearanceViolations([wall], [topWindow(54)], room);
-    expect(bad.has("w1")).toBe(true);
+  it("lets a user move a wall cabinet up to the window edge but not onto the glass", () => {
+    // Window 54..90. 3" is only the default placement spacing: a cabinet moved
+    // to 2" or flush at 90 is allowed; one starting at 89 overlaps the window.
+    const near = cab({ uid: "w1", placement: "wall", x: 92, y: 0, width: 30, depth: 12 });
+    const flush = cab({ uid: "w0", placement: "wall", x: 90, y: 0, width: 30, depth: 12 });
+    const over = cab({ uid: "wx", placement: "wall", x: 89, y: 0, width: 30, depth: 12 });
+    const bad = wallOpeningClearanceViolations([near, flush, over], [topWindow(54)], room);
+    expect(bad.has("w1")).toBe(false);
+    expect(bad.has("w0")).toBe(false);
+    expect(bad.has("wx")).toBe(true);
   });
 
   it("passes a wall cabinet that keeps >= 3\" from the window", () => {

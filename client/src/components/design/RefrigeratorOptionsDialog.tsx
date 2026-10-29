@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { REFRIGERATOR_UPPER_CLEARANCE_IN } from "@/lib/design";
+import { refrigeratorEndPanelCutDownNote, refrigeratorEndPanelInstalledDepth } from "@/lib/refrigeratorEndPanelCut";
 import {
   availableOverFridgeWidths,
   closestOverFridgeSuggestion,
@@ -364,6 +365,10 @@ export function RefrigeratorOptionsDialog({
     const alternate = parseFloat(String(selectedPanel?.width ?? ""));
     return Number.isFinite(alternate) && alternate > 3 ? alternate : null;
   }, [selectedPanel]);
+  const installedPanel = sourcePanelDepth == null ? null : refrigeratorEndPanelInstalledDepth(sourcePanelDepth, fridgeD);
+  const panelCutNote = installedPanel?.cutDown
+    ? refrigeratorEndPanelCutDownNote(installedPanel.stockDepth, installedPanel.installedDepth)
+    : null;
 
   const hasRequiredBridge = above !== "bridge" || Boolean(chosenBridge);
   const hasRequiredPanels = panels === "none" || Boolean(bestPanel);
@@ -714,7 +719,8 @@ export function RefrigeratorOptionsDialog({
             {panels !== "none" && (
               <div className="space-y-3 pt-1">
                 <p className="text-xs text-muted-foreground">
-                  Panel depth: <span className="font-semibold text-foreground">{sourcePanelDepth ?? "—"}{sourcePanelDepth != null ? "″" : ""}</span>
+                  Panel depth: <span className="font-semibold text-foreground">{installedPanel?.installedDepth ?? "—"}{installedPanel != null ? "″" : ""}</span>
+                  {panelCutNote ? <> — {panelCutNote}</> : null}
                   {selectedPanel ? <> from source SKU <span className="font-semibold text-foreground">{panelSourceLabel(selectedPanel.masterCode)}</span></> : null}
                 </p>
 

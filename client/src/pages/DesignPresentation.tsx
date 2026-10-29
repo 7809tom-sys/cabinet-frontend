@@ -12,6 +12,7 @@ import {
   type PlanAnnotation,
 } from "@/lib/design";
 import type { HardwareStyleId } from "@/lib/hardware";
+import { combinedFillerNote, fillerCutSourceFor, isCombinedSmallFiller } from "@/lib/fillerBilling";
 import {
   designerDraftActiveKey,
   designerDraftStorageKey,
@@ -127,20 +128,28 @@ export default function DesignPresentation() {
     return (["bottom", "top", "left", "right"] as WallSide[]).filter((w) => walls.has(w));
   }, [draft]);
 
-  // BOM grouping
+  // BOM grouping. Filler pieces that share one stock board stay one line, with
+  // the cut note the shop uses to rip them.
   const bomLines = useMemo(() => {
     if (!draft) return [];
     const map = new Map<string, { code: string; description: string; qty: number; placement: string }>();
     for (const p of draft.placed) {
+      if (p.fillerBillingRole === "secondary" || isCombinedSmallFiller(p, draft.placed)) continue;
+      const cutNote = draft.placed
+        .filter((candidate) => fillerCutSourceFor(candidate, draft.placed)?.uid === p.uid)
+        .map((candidate) => combinedFillerNote(candidate, draft.placed))
+        .filter((note): note is string => Boolean(note))
+        .join("; ");
       const code = p.glassDoor ? `${p.masterCode}GD` : p.masterCode;
-      const key = `${code}|${p.placement}`;
+      const description = [p.description || code, cutNote].filter(Boolean).join(" — ");
+      const key = `${code}|${p.placement}|${cutNote}`;
       const existing = map.get(key);
       if (existing) {
         existing.qty++;
       } else {
         map.set(key, {
           code,
-          description: p.description || code,
+          description,
           qty: 1,
           placement: p.placement,
         });

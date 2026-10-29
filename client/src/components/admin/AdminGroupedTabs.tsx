@@ -102,6 +102,8 @@ import VendorUpdatesAdmin from "@/components/admin/VendorUpdatesAdmin";
 import VendorInventoryAdmin from "@/components/admin/VendorInventoryAdmin";
 import VendorOnboardingAdmin from "@/components/admin/VendorOnboardingAdmin";
 import { SampleOrderDesk } from "@/components/samples/SampleOrderDesk";
+import KitchenRulesAdmin from "@/components/admin/KitchenRulesAdmin";
+import ContractorAccessAdmin from "@/components/admin/ContractorAccessAdmin";
 
 // ─── Group definitions ────────────────────────────────────────────────────────
 const GROUPS = [
@@ -137,6 +139,7 @@ const GROUPS = [
       { value: "payouts", label: "Payouts" },
       { value: "commissions", label: "Sales Commissions" },
       { value: "pros", label: "Pro Applications" },
+      { value: "contractor-access", label: "Contractor Access" },
       { value: "vendors", label: "Vendors" },
       { value: "approved-vendors", label: "Approved Vendors" },
       { value: "vendor-referrals", label: "Vendor Referrals" },
@@ -214,6 +217,7 @@ const GROUPS = [
       { value: "quickbooks", label: "QuickBooks" },
       { value: "api-status", label: "API Status" },
       { value: "analytics", label: "Analytics" },
+      { value: "kitchen-rules", label: "Kitchen Rules" },
       { value: "export", label: "Full Export" },
       { value: "affiliate-literature", label: "Affiliate Literature" },
       { value: "affiliate-resources", label: "Affiliate Resources" },
@@ -557,6 +561,7 @@ export default function AdminGroupedTabs() {
         <TabsContent value="payouts" className="mt-6"><AdminTabHelp tab="payouts" /><PayoutsAdmin /></TabsContent>
         <TabsContent value="commissions" className="mt-6"><AdminTabHelp tab="commissions" /><SalesCommissionsAdmin /></TabsContent>
         <TabsContent value="pros" className="mt-6"><AdminTabHelp tab="pros" /><ProApplications /></TabsContent>
+        <TabsContent value="contractor-access" className="mt-6"><ContractorAccessAdmin /></TabsContent>
         <TabsContent value="vendors" className="mt-6"><AdminTabHelp tab="vendors" /><VendorApplications /></TabsContent>
         <TabsContent value="approved-vendors" className="mt-6"><ApprovedVendorsAdmin /></TabsContent>
         <TabsContent value="vendor-referrals" className="mt-6"><VendorReferralsAdmin /></TabsContent>
@@ -614,6 +619,7 @@ export default function AdminGroupedTabs() {
         <TabsContent value="quickbooks" className="mt-6"><QuickBooksAdmin /></TabsContent>
         <TabsContent value="api-status" className="mt-6"><ApiStatusAdmin /></TabsContent>
         <TabsContent value="analytics" className="mt-6"><AnalyticsAdmin /></TabsContent>
+        <TabsContent value="kitchen-rules" className="mt-6"><KitchenRulesAdmin /></TabsContent>
         <TabsContent value="export" className="mt-6"><FullDatabaseExport /></TabsContent>
         <TabsContent value="affiliate-literature" className="mt-6"><AdminTabHelp tab="affiliate-literature" /><AffiliateLiteratureAdmin /></TabsContent>
         <TabsContent value="affiliate-resources" className="mt-6"><AdminTabHelp tab="affiliate-resources" /><AffiliateResourcesAdmin /></TabsContent>

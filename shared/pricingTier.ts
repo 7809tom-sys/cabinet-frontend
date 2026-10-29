@@ -98,11 +98,56 @@ export function resolveTierPrice(
  * visitors (and users without an explicit tier) see the retail HOMEOWNER price;
  * a logged-in pro sees the tier the owner assigned to their account.
  */
-export function resolveStorefrontTier(
-  user: { pricingTier?: unknown } | null | undefined,
-): PricingTier {
-  if (!user) return DEFAULT_PRICING_TIER;
-  return normalizeTier(user.pricingTier);
+export type PricingAudience = "admin" | "affiliate" | "contractor" | "customer";
+
+export type ResolvedPricing = {
+  audience: PricingAudience;
+  /** Column `visiblePricesForViewer` is allowed to return. */
+  tier: PricingTier;
+  /** Contractor and wholesale columns may leave the server. */
+  canSeeTradePricing: boolean;
+};
+
+type PricingViewer = {
+  role?: string | null;
+  pricingTier?: unknown;
+} | null | undefined;
+
+/**
+ * One pricing decision for a signed-in person.
+ *
+ * Affiliate tier selection stays on the account's assigned `pricingTier` so the
+ * separate affiliate-tier work can replace that assignment without a second
+ * gate. An approved contractor (role `contractor`) uses the contractor trade
+ * column, the same trade prices an affiliate sees once their tier is trade.
+ * Customers and pending applicants stay on the homeowner column unless an
+ * owner has already assigned them a trade tier.
+ */
+export function resolvePricingFor(user: PricingViewer): ResolvedPricing {
+  const assigned = !user ? DEFAULT_PRICING_TIER : normalizeTier(user.pricingTier);
+  if (user?.role === "admin") {
+    return { audience: "admin", tier: "wholesale", canSeeTradePricing: true };
+  }
+  if (user?.role === "partner" || user?.role === "dealer") {
+    return {
+      audience: "affiliate",
+      tier: assigned,
+      canSeeTradePricing: assigned !== "homeowner",
+    };
+  }
+  if (user?.role === "contractor") {
+    const tier: PricingTier = assigned === "wholesale" ? "wholesale" : "contractor";
+    return { audience: "contractor", tier, canSeeTradePricing: true };
+  }
+  return {
+    audience: "customer",
+    tier: assigned,
+    canSeeTradePricing: assigned !== "homeowner",
+  };
+}
+
+export function resolveStorefrontTier(user: PricingViewer): PricingTier {
+  return resolvePricingFor(user).tier;
 }
 
 /**

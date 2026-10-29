@@ -27,6 +27,7 @@ export function useAuth(options?: UseAuthOptions) {
 
   const logout = useCallback(async () => {
     try {
+      window.sessionStorage.removeItem("cd.testAccountToken");
       await supabase.auth.signOut();
       // Also clears any legacy session cookie.
       await logoutMutation.mutateAsync();

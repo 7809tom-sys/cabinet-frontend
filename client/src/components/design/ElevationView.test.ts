@@ -283,7 +283,7 @@ describe("end-angle elevation face", () => {
     expect(resolveElevationFacePresentation(stalePlacedBa, "base_end_return", null).cabinetType).toBe("end-angle");
   });
 
-  it("renders BEC-24 as two 8.45-inch doors meeting on its 17-inch 45-degree non-corner end face", () => {
+  it("renders the quarter-octagon end as two 17-inch doors meeting at 45 degrees", () => {
     const markup = renderToStaticMarkup(
       createElement(DoorFront, {
         kind: "shaker",
@@ -296,12 +296,15 @@ describe("end-angle elevation face", () => {
       }),
     );
 
-    expect(markup).toContain('data-bec-angled-end-face="true"');
-    expect(markup).toContain('data-bec-45-angle="true"');
-    expect(markup).toContain('data-bec-angled-left-door="8.45in"');
-    expect(markup).toContain('data-bec-angled-right-door="8.45in"');
-    expect(markup).toContain('data-bec-angled-center-seam="true"');
-    expect(markup).toContain("clip-path:polygon(0 5%, 100% 0, 100% 100%, 0 95%)");
+    expect(markup).toContain('data-base-angle-end="true"');
+    expect(markup).toContain('data-base-angle-pitch="45"');
+    expect(markup).toContain('data-base-angle-side-in="24"');
+    expect(markup).toContain('data-base-angle-door-in="17"');
+    expect(markup).toContain('data-base-angle-door="front"');
+    expect(markup).toContain('data-base-angle-door="end"');
+    expect(markup).toContain('data-base-angle-seam="true"');
+    expect(markup).toContain('data-base-angle-toe-kick="true"');
+    expect(markup).not.toContain('data-bec-angled-left-door="8.45in"');
   });
 });
 
@@ -532,9 +535,11 @@ describe("configured Cabinet Config elevation presentation", () => {
 
     expect(markup).not.toContain(`src="${imageUrl}"`);
     expect(markup).toContain('data-bec-angled-end-face="true"');
+    expect(markup).toContain('data-base-angle-end="true"');
     expect(markup).toContain('data-bec-45-angle="true"');
-    expect(markup).toContain('data-bec-angled-center-seam="true"');
-    expect(markup).toContain("clip-path:polygon(0 5%, 100% 0, 100% 100%, 0 95%)");
+    expect(markup).toContain('data-base-angle-seam="true"');
+    expect(markup).toContain('data-base-angle-door-in="17"');
+    expect(markup).not.toContain(imageUrl);
     expect(markup).toContain("width:96px");
   });
 });
@@ -550,7 +555,7 @@ describe("configured corner elevation rendering", () => {
       { label: "blind", cabinetType: "blind-corner" as const, doors: 1, drawers: 0, marker: "repeating-linear-gradient(135deg" },
       { label: "diagonal", cabinetType: "diagonal-corner" as const, doors: 2, drawers: 0, marker: "linear-gradient(225deg" },
       { label: "L corner", cabinetType: "l-corner" as const, doors: 1, drawers: 0, marker: "width:6%" },
-      { label: "corner drawer", cabinetType: "corner-drawer-base" as const, doors: 0, drawers: 3, marker: 'data-corner-drawer-face="right-angle"' },
+      { label: "corner drawer", cabinetType: "corner-drawer-base" as const, doors: 0, drawers: 3, marker: "width:8%" },
     ];
 
     for (const fixture of fixtures) {
@@ -596,12 +601,8 @@ describe("configured corner elevation rendering", () => {
     expect(diagonal).toContain("left:15%");
     expect(blind).toContain("left:40%;width:60%");
     expect(lCorner).toContain("top-[3%] bottom-[3%] left-[3%] right-[3%]");
-    expect(cornerDrawer).toContain('data-corner-drawer-face="right-angle"');
-    expect(cornerDrawer).toContain('data-corner-drawer-return-inches="24"');
-    expect(cornerDrawer).toContain('data-corner-drawer-face-inches="12"');
-    expect(cornerDrawer).toContain('data-corner-drawer-row-inches="6"');
-    expect(cornerDrawer).toContain('data-corner-drawer-row-inches="14.25"');
-    expect(cornerDrawer).not.toContain("left:8%");
+    expect(cornerDrawer).toContain("left:8%;right:0");
+    expect(cornerDrawer).toContain("height:33.333333333333336%");
     expect(oven).toContain(`url(${doorSample})`);
     expect(oven).toContain(`url(${drawerSample})`);
     expect(oven).toContain("height:33.33333333333333%");

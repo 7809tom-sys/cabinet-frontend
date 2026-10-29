@@ -54,6 +54,8 @@ export type CartItem = {
   vendorProductId?: number | null;
   /** Cabinet master marked free shipping. Checkout still confirms the flag on the server. */
   freeShipping?: boolean;
+  /** Shown on every customer and order surface when the Designer inserted the line. */
+  autoAddedLabel?: string | null;
 };
 
 // Result of an addItem attempt. Multiple cabinet distributors and Pelican may

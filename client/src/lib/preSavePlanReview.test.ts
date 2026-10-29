@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildPreSavePlanReview, unsuitableWallCabinetAboveRefrigerator } from "./preSavePlanReview";
+
 import type { PlacedCabinet, RoomData } from "./design";
 
 const room = { width: 144, depth: 120, ceilingHeight: 96 } as RoomData;
@@ -22,7 +23,7 @@ function cabinet(partial: Partial<PlacedCabinet> & Pick<PlacedCabinet, "uid" | "
 
 describe("pre-save plan review", () => {
   it("finds a measured filler opportunity, missing refrigerator upper, and unresolved placement without changing the plan", () => {
-    const nearFullBase = cabinet({ uid: "base", masterCode: "B-34", placement: "base", width: 34 });
+    const nearFullBase = cabinet({ uid: "base", masterCode: "B-32", placement: "base", width: 32.75 });
     const floorBlocker = cabinet({ uid: "blocker", masterCode: "DW-24", placement: "appliance", x: 36, width: 24 });
     const refrigerator = cabinet({ uid: "fridge", masterCode: "FRIDGE-36", placement: "appliance", x: 72, width: 36, height: 70 });
     const placed = [nearFullBase, floorBlocker, refrigerator];
@@ -32,16 +33,54 @@ describe("pre-save plan review", () => {
       placed,
       openings: [],
       island: null,
-      catalogFillers: [{ id: 8, masterCode: "BF-3", description: "3 inch Base Filler", category: "Filler", subCategory: null, width: "3", height: "34.5", depth: "24", catalogImageUrl: null }],
+      catalogFillers: [{ id: 8, masterCode: "BF6", description: "6 inch Base Filler", category: "Filler", subCategory: null, width: "6", height: "34.5", depth: "24", catalogImageUrl: null }],
       conflictUids: new Set(["blocker"]),
     });
 
     expect(review.findings).toHaveLength(3);
     expect(review.findings.map((finding) => finding.action.kind)).toEqual(["filler", "refrigerator", "issue"]);
-    expect(review.findings[0]).toMatchObject({ title: 'Finish a 2" gap with BF-3', action: { kind: "filler", fillerCode: "BF-3" } });
+    expect(review.findings[0]).toMatchObject({ title: 'Finish a 3.25" gap with BF6', action: { kind: "filler", fillerCode: "BF6" } });
     expect(review.findings[1]).toMatchObject({ action: { kind: "refrigerator", refrigeratorUid: "fridge" } });
     expect(review.findings[2]).toMatchObject({ action: { kind: "issue", cabinetUid: "blocker" } });
     expect(placed).toHaveLength(3);
+  });
+
+  it("does not ask about a leftover of 3 inches, and still asks above that", () => {
+    const filler = { id: 8, masterCode: "BF6", description: "6 inch Base Filler", category: "Filler", subCategory: null, width: "6", height: "34.5", depth: "24", catalogImageUrl: null };
+    const reviewFor = (width: number) => buildPreSavePlanReview({
+      room,
+      placed: [
+        cabinet({ uid: "base", masterCode: "B", placement: "base", width }),
+        cabinet({ uid: "blocker", masterCode: "DW-24", placement: "appliance", x: 36, width: 24 }),
+      ],
+      openings: [],
+      island: null,
+      catalogFillers: [filler],
+      conflictUids: new Set(),
+    });
+    expect(reviewFor(33).findings.some((finding) => finding.action.kind === "filler")).toBe(false);
+    expect(reviewFor(34).findings.some((finding) => finding.action.kind === "filler")).toBe(false);
+    expect(reviewFor(32.75).findings.some((finding) => finding.action.kind === "filler")).toBe(true);
+  });
+
+  it("does not ask a finished U for another corner cabinet", () => {
+    const leftCorner = cabinet({
+      uid: "back-left", masterCode: "LSB36", description: "36 inch Lazy Susan corner base",
+      placement: "base", x: 0, y: 0, width: 36, depth: 36,
+    });
+    const rightCorner = cabinet({
+      uid: "back-right", masterCode: "LSB36", description: "36 inch Lazy Susan corner base",
+      placement: "base", x: 108, y: 0, width: 36, depth: 36,
+    });
+    const sideRun = cabinet({
+      uid: "right-base", masterCode: "B24", description: "24 inch Base Cabinet",
+      placement: "base", x: 120, y: 36, width: 24, depth: 24, rotation: 90,
+    });
+    const review = buildPreSavePlanReview({
+      room, placed: [leftCorner, rightCorner, sideRun], openings: [], island: null, catalogFillers: [], conflictUids: new Set(),
+    });
+    const text = review.findings.map((finding) => `${finding.title} ${finding.description}`).join("\n");
+    expect(text).not.toMatch(/third corner|corner cabinet is required|needs a corner cabinet/i);
   });
 
   it("does not recommend an over-refrigerator cabinet when a dedicated bridge is already present", () => {

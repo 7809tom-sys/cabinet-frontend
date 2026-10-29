@@ -5,7 +5,7 @@ import {
   BLIND_CORNER_FILLER_WIDTH_IN, COLLISION_EPSILON_IN, appendCollisionFreePlacements, blindCornerDoorSide, blindCornerPullPlacement, isBlindCorner,
   cabinetCollisionDetail, cabinetPlacementCollisionDetail, cabinetWall, dim, footprintDepth, formatInches, freeSegmentsOnWall, hasCollision,
   isRangeOrOven, isRefrigerator, isRefrigeratorEndPanel, refrigeratorEndPanelConflictDetail, standardHeight,
-  wallLength, wallPlacementAtUnbounded, wallRunAlongAtPoint, wallRunCornerPlacement, wallRunFrame, wallRunOffset,
+  wallLength, wallPlacementAt, wallPlacementAtUnbounded, wallRunAlongAtPoint, wallRunCornerPlacement, wallRunFrame, wallRunOffset,
   wallRunSpan, type DesignCabinet, type PlacedCabinet, type RoomData, type WallOpening, type WallSide,
 } from "./design";
 
@@ -130,6 +130,11 @@ export function seatAutoDesignCorner(input: {
   openings: WallOpening[];
   /** Resolved blind pull for a base blind-corner SKU; undefined for non-blind corners. */
   blindPullIn?: number;
+  /**
+   * Wall the blind cabinet's width runs along. Set when corner-fit puts the
+   * blind portion on the longer leg. Omitted callers keep the shared corner seater.
+   */
+  blindRunWallId?: string;
   isBlindOption: boolean;
   catalogFillers: readonly CatalogFillerCandidate[];
   makeUid: () => string;
@@ -158,7 +163,17 @@ export function seatAutoDesignCorner(input: {
     | { ok: false; message: string; blocker?: PlacedCabinet };
   const trySeat = (working: PlacedCabinet[]): Trial => {
     // Direct vertex seating: this can never drift to a different, emptier room corner.
-    const spot = wallRunCornerPlacement(preview, frame, at, room);
+    const blindFrame = input.blindRunWallId ? wallRunFrame(input.blindRunWallId, room) : null;
+    const blindSpot = blindFrame && input.isBlindOption
+      ? (() => {
+        const cornerAlong = wallRunAlongAtPoint(blindFrame, target);
+        const atStart = cornerAlong <= blindFrame.length / 2;
+        const pull = Math.max(0, input.blindPullIn ?? 0);
+        const offset = atStart ? cornerAlong + pull : Math.max(0, cornerAlong - width - pull);
+        return wallPlacementAt(offset, width, depth, input.blindRunWallId as WallSide, room);
+      })()
+      : null;
+    const spot = blindSpot ?? wallRunCornerPlacement(preview, frame, at, room);
     if (!spot) return { ok: false, message: `${code} cannot be seated: ${slotLabel} is not a true 90° wall corner.` };
     let corner: PlacedCabinet = { ...preview, ...spot };
     if (input.isBlindOption) {

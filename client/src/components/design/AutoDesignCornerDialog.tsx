@@ -13,34 +13,54 @@ import {
 
 export type AutoDesignCornerConfirmResult = { ok: true } | { ok: false; message: string };
 
+export type AutoDesignCornerFitView = {
+  offeredIds: number[];
+  selectedId: number | null;
+  rejected: readonly { id: number; masterCode: string; reason: string }[];
+  blockedMessage: string | null;
+  fallbackNote: string | null;
+};
+
 type Props = {
   open: boolean;
   slots: readonly AutoDesignCornerSlot[];
   options: readonly AutoBuildCornerCandidate[];
+  /** Per-slot fit. Corners that miss the sink or the leg length are flagged and not offered. */
+  fitBySlot?: Readonly<Record<string, AutoDesignCornerFitView>>;
   /** Test-only seed; ordinary Designer launches default to the largest eligible real corner. */
   initialChoices?: Record<string, AutoDesignCornerChoice>;
   onCancel: () => void;
   onConfirm: (choices: Record<string, AutoDesignCornerChoice>) => AutoDesignCornerConfirmResult;
 };
 
-function initialChoices(slots: readonly AutoDesignCornerSlot[], options: readonly AutoBuildCornerCandidate[]): Record<string, AutoDesignCornerChoice> {
+function initialChoices(
+  slots: readonly AutoDesignCornerSlot[],
+  options: readonly AutoBuildCornerCandidate[],
+  fitBySlot?: Readonly<Record<string, AutoDesignCornerFitView>>,
+): Record<string, AutoDesignCornerChoice> {
   const defaultCorner = preferredAutoDesignCorner(options);
-  return Object.fromEntries(slots.map((slot) => [slot.id, {
-    cabinetId: defaultCorner?.id ?? null,
-    ...(defaultCorner && isAutoDesignBlindCornerOption(defaultCorner) ? { blindPullIn: defaultCorner.pullMax ?? 6 } : {}),
-  }]));
+  return Object.fromEntries(slots.map((slot) => {
+    const fit = fitBySlot?.[slot.id];
+    const preferred = fit?.selectedId != null
+      ? options.find((option) => option.id === fit.selectedId) ?? defaultCorner
+      : defaultCorner;
+    return [slot.id, {
+      cabinetId: preferred?.id ?? null,
+      ...(preferred && isAutoDesignBlindCornerOption(preferred) ? { blindPullIn: preferred.pullMax ?? 6 } : {}),
+    }];
+  }));
 }
 
-export function AutoDesignCornerDialog({ open, slots, options, initialChoices: seededChoices, onCancel, onConfirm }: Props) {
-  const [choices, setChoices] = useState<Record<string, AutoDesignCornerChoice>>(() => seededChoices ?? initialChoices(slots, options));
+export function AutoDesignCornerDialog({ open, slots, options, fitBySlot, initialChoices: seededChoices, onCancel, onConfirm }: Props) {
+  const [choices, setChoices] = useState<Record<string, AutoDesignCornerChoice>>(() => seededChoices ?? initialChoices(slots, options, fitBySlot));
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (open) {
-      setChoices(seededChoices ?? initialChoices(slots, options));
+      setChoices(seededChoices ?? initialChoices(slots, options, fitBySlot));
       setError(null);
     }
-  }, [open, seededChoices, slots, options]);
+  }, [open, seededChoices, slots, options, fitBySlot]);
 
   const optionById = useMemo(() => new Map(options.map((option) => [option.id, option])), [options]);
   const selectCorner = (slotId: string, value: string) => {
@@ -75,7 +95,9 @@ export function AutoDesignCornerDialog({ open, slots, options, initialChoices: s
           {slots.length === 0 ? (
             <p className="rounded-lg border bg-muted/20 p-3 text-sm text-muted-foreground">This layout has no shared corner selected for the measured build. The remaining cabinet runs are ready to fill.</p>
           ) : slots.map((slot) => {
-            const choice = choices[slot.id] ?? { cabinetId: options[0]?.id ?? null };
+            const fit = fitBySlot?.[slot.id];
+            const slotOptions = fit ? options.filter((option) => fit.offeredIds.includes(option.id)) : options;
+            const choice = choices[slot.id] ?? { cabinetId: slotOptions[0]?.id ?? null };
             const selected = choice.cabinetId == null ? null : optionById.get(choice.cabinetId);
             const isBlind = selected != null && isAutoDesignBlindCornerOption(selected);
             const minPull = selected?.pullMin ?? 3;
@@ -86,9 +108,14 @@ export function AutoDesignCornerDialog({ open, slots, options, initialChoices: s
                 <Select value={choice.cabinetId == null ? undefined : String(choice.cabinetId)} onValueChange={(value) => selectCorner(slot.id, value)}>
                   <SelectTrigger id={`auto-design-corner-${slot.id}`} aria-label={`${slot.label} cabinet type`} className="mt-2"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {options.map((option) => <SelectItem key={option.id} value={String(option.id)}>{option.masterCode} — {option.description}</SelectItem>)}
+                    {slotOptions.map((option) => <SelectItem key={option.id} value={String(option.id)}>{option.masterCode} — {option.description}</SelectItem>)}
                   </SelectContent>
                 </Select>
+                {fit?.fallbackNote && <p className="mt-2 text-xs text-amber-950" data-testid={`auto-design-corner-fallback-${slot.id}`}>{fit.fallbackNote}</p>}
+                {fit?.rejected.map((entry) => (
+                  <p key={entry.id} className="mt-2 text-xs text-destructive" data-testid={`auto-design-corner-rejected-${entry.masterCode}`}>{entry.reason}</p>
+                ))}
+                {fit?.blockedMessage && <p className="mt-2 text-sm text-destructive" role="alert">{fit.blockedMessage}</p>}
                 {isBlind && (
                   <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3">
                     <Label htmlFor={`auto-design-corner-pull-${slot.id}`}>Blind-corner pull from wall</Label>
@@ -107,7 +134,7 @@ export function AutoDesignCornerDialog({ open, slots, options, initialChoices: s
         </div>
         <DialogFooter>
           <Button type="button" variant="outline" onClick={onCancel}>Cancel measured build</Button>
-          <Button type="button" data-testid="auto-design-corner-confirm" onClick={confirm} disabled={options.length === 0 && slots.length > 0}>Place corners, fill bases, then walls</Button>
+          <Button type="button" data-testid="auto-design-corner-confirm" onClick={confirm} disabled={(options.length === 0 && slots.length > 0) || slots.some((slot) => fitBySlot?.[slot.id]?.blockedMessage && fitBySlot[slot.id]?.selectedId == null)}>Place corners, fill bases, then walls</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
