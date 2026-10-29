@@ -1792,6 +1792,9 @@ describe("doorPanelKind", () => {
     expect(doorPanelKind("Slab")).toBe("slab");
     expect(doorPanelKind("Contemporary")).toBe("slab");
     expect(doorPanelKind("Euro Flat")).toBe("slab");
+    expect(doorPanelKind("Flat Panel")).toBe("shaker");
+    expect(doorPanelKind("Recessed Panel")).toBe("shaker");
+    expect(doorPanelKind("Traditional Ogee")).toBe("raised");
     expect(doorPanelKind("Beaded")).toBe("beaded");
     expect(doorPanelKind("Inset")).toBe("inset");
   });

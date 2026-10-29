@@ -25,6 +25,10 @@ import {
 } from "@/lib/doorRenderingAudit";
 import { resolveDoorStyleAppearance } from "@/lib/doorStyleAppearance";
 import { RAISED_PANEL_BEVEL_DEPTH_IN, RAISED_PANEL_BEVEL_WIDTH_IN } from "@shared/doorStyleAppearance";
+import { ColorGateBlock, runColorGate } from "@shared/colorGate";
+import { doorLightsForFinish, type DoorLightRig } from "@shared/doorRenderLights";
+import { resolveDoorSwatchHex } from "@shared/doorRenderIdentity";
+import { hexFromCanvas } from "@/lib/doorColorProbe";
 import { applyThreeDCabinetPieceGrain } from "@/lib/woodGrainVariation";
 
 const INCH = 1 / 12;
@@ -214,14 +218,14 @@ function faceMaterial(
     ...threeDDoorFinishSurfaceProfile(sheen ?? undefined, Boolean(texture)),
     // The room environment is only a soft fill. A stronger map lifts a
     // charcoal stain toward gray.
-    envMapIntensity: 0.2,
+    envMapIntensity: 0.55,
   });
   material.userData = { grainPiece: piece };
   return material;
 }
 
 export function buildAuditDoor(
-  input: (Pick<DoorAuditRenderInput, "color" | "samplePhotoUrl" | "name" | "code" | "distributorName" | "distributorCode" | "finish" | "woodSpecies"> & {
+  input: (Pick<DoorAuditRenderInput, "color" | "samplePhotoUrl" | "name" | "code" | "distributorName" | "distributorCode" | "finish" | "woodSpecies" | "renderHex"> & {
     doorProfile?: DoorAuditDoorProfile | null;
     ourName?: string | null;
     styleCode?: string | null;
@@ -450,11 +454,12 @@ export function createDoorAuditCapture(): DoorAuditCapture {
   scene.environment = environment.texture;
   scene.environmentIntensity = DOOR_AUDIT_LIGHTS.environment;
 
-  scene.add(new THREE.HemisphereLight(
+  const hemi = new THREE.HemisphereLight(
     DOOR_AUDIT_LIGHTS.hemisphere.sky,
     DOOR_AUDIT_LIGHTS.hemisphere.ground,
     DOOR_AUDIT_LIGHTS.hemisphere.intensity,
-  ));
+  );
+  scene.add(hemi);
   const key = new THREE.DirectionalLight(DOOR_AUDIT_LIGHTS.key.color, DOOR_AUDIT_LIGHTS.key.intensity);
   key.position.set(...DOOR_AUDIT_LIGHTS.key.position);
   key.castShadow = true;
@@ -474,6 +479,21 @@ export function createDoorAuditCapture(): DoorAuditCapture {
   fill.position.set(...DOOR_AUDIT_LIGHTS.fill.position);
   scene.add(fill);
 
+  const applyLights = (lights: DoorLightRig) => {
+    renderer.toneMappingExposure = lights.exposure;
+    scene.background = new THREE.Color(lights.background);
+    scene.environmentIntensity = lights.environment;
+    hemi.color.set(lights.hemisphere.sky);
+    hemi.groundColor.set(lights.hemisphere.ground);
+    hemi.intensity = lights.hemisphere.intensity;
+    key.color.set(lights.key.color);
+    key.intensity = lights.key.intensity;
+    key.position.set(lights.key.position[0], lights.key.position[1], lights.key.position[2]);
+    fill.color.set(lights.fill.color);
+    fill.intensity = lights.fill.intensity;
+    fill.position.set(lights.fill.position[0], lights.fill.position[1], lights.fill.position[2]);
+  };
+
   const bounds = auditDoorCameraBounds();
   const camera = new THREE.OrthographicCamera(bounds.left, bounds.right, bounds.top, bounds.bottom, bounds.near, bounds.far);
   camera.position.set(...bounds.position);
@@ -488,8 +508,31 @@ export function createDoorAuditCapture(): DoorAuditCapture {
         disposeObject(current);
         current = null;
       }
+      const appearance = resolveDoorStyleAppearance(input);
+      const lights = doorLightsForFinish(appearance.finishHex, input.renderExposure ?? null);
+      applyLights(lights);
+      const swatchHex = resolveDoorSwatchHex(input);
+      const measurePatch = async (hex: string) => {
+        const material = new THREE.MeshStandardMaterial({ color: hex, roughness: 0.55, metalness: 0.02 });
+        const patch = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 1.4), material);
+        patch.position.z = 0.05;
+        scene.add(patch);
+        renderer.render(scene, camera);
+        const measured = hexFromCanvas(renderer.domElement);
+        scene.remove(patch);
+        material.dispose();
+        patch.geometry.dispose();
+        return measured;
+      };
+      const gate = await runColorGate({
+        baseHex: appearance.finishHex,
+        swatchHex,
+        threshold: input.colorDeltaEMax ?? null,
+        measure: measurePatch,
+      });
+      if (gate.status !== "pass") throw new ColorGateBlock(gate);
       const texture = input.samplePhotoUrl && !input.needsDoorOnlyPhoto ? await loadSampleTexture(input.samplePhotoUrl) : null;
-      const door = buildAuditDoor(input, texture);
+      const door = buildAuditDoor({ ...input, renderHex: gate.hex, color: gate.hex }, texture);
       scene.add(door);
       current = door;
       renderer.render(scene, camera);

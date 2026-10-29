@@ -17,6 +17,10 @@ import {
 } from "@/components/ui/table";
 import { ApprovedDoorReferenceNotice } from "@/components/admin/ApprovedDoorReferenceNotice";
 import { useDoorRenderingAuditApi } from "@/components/admin/doorRenderingAuditApi";
+import { trpc } from "@/lib/trpc";
+import { clampColorDeltaE } from "@shared/colorGate";
+import { resolveDoorSwatchHex } from "@shared/doorRenderIdentity";
+import { clampRenderExposure } from "@shared/doorRenderLights";
 import {
   applyDoorAuditFilter,
   assertDoorAuditRenderable,
@@ -29,8 +33,10 @@ import {
   doorAuditOpenRunIdFromMessage,
   doorAuditProgressLabel,
   doorAuditRevertVersionId,
+  doorAuditRowFlagged,
   doorAuditRunLimitNotice,
   doorAuditStyleLabel,
+  PROFILE_GUESSED_LABEL,
   doorRenderingAuditAllowed,
   enrichDoorAuditQueue,
   formatDoorAuditDelta,
@@ -355,7 +361,7 @@ export function DoorRenderingAuditView({
             const identity = doorAuditStyleLabel(style);
             const slots = doorAuditCompareSlots(style);
             const revertId = doorAuditRevertVersionId(style);
-            const flagged = style.flag === "improved" || style.flag === "needs-review";
+            const flagged = doorAuditRowFlagged(style);
             const delta = formatDoorAuditDelta(style.current?.scores?.overall, style.accepted?.scores?.overall);
             const historyOpen = historyStyleId === style.styleId;
             return (
@@ -376,6 +382,8 @@ export function DoorRenderingAuditView({
                       {style.styleVerified === false ? <Badge variant="outline">Unverified</Badge> : null}
                       {style.needsDoorOnlyPhoto ? <Badge variant="outline">Needs door-only photo</Badge> : null}
                       {style.changedSinceLastRender ? <Badge variant="outline">Changed</Badge> : null}
+                      {style.profileSource === "guessed" ? <Badge variant="outline">{PROFILE_GUESSED_LABEL}</Badge> : null}
+                      {resolveDoorSwatchHex(style) ? null : <Badge variant="outline">Needs swatch</Badge>}
                       {delta ? <span className="text-xs text-muted-foreground">{delta}</span> : null}
                     </div>
                     {style.distributorName ? (
@@ -569,6 +577,9 @@ export default function DoorRenderingAuditAdmin() {
 
 function DoorRenderingAuditScreen() {
   const api = useDoorRenderingAuditApi();
+  const renderSettings = trpc.siteSettings.getPublicSettings.useQuery(undefined, { staleTime: 30_000 });
+  const renderExposure = clampRenderExposure((renderSettings.data as { renderExposure?: unknown } | undefined)?.renderExposure);
+  const colorDeltaEMax = clampColorDeltaE((renderSettings.data as { colorMatchDeltaE?: unknown } | undefined)?.colorMatchDeltaE);
   const utils = api.useUtils();
   const [filter, setFilter] = useState<DoorAuditFilter>("all");
   const [search, setSearch] = useState("");
@@ -681,7 +692,7 @@ function DoorRenderingAuditScreen() {
         setLocalProgress({ phase: "rendering", completed: index, total: styles.length, detail: label });
         try {
           assertDoorAuditRenderable(style);
-          const png = await session.capture(style);
+          const png = await session.capture({ ...style, renderExposure, colorDeltaEMax });
           if (!png?.base64) throw new Error(`${label} produced an empty image.`);
           await submitRender.mutateAsync({
             runId: activeRunId,
@@ -854,6 +865,8 @@ function DoorRenderingAuditScreen() {
   const busy = capturing || startRun.isPending || abandonRun.isPending || reviewRender.isPending || approveRender.isPending || revokeApproval.isPending || setCurrentVersion.isPending;
 
   return (
+    <div className="space-y-4">
+    <RenderBrightnessSettings currentExposure={renderExposure} currentDeltaE={colorDeltaEMax} />
     <DoorRenderingAuditView
       styles={styles}
       counts={list.data?.counts ?? null}
@@ -900,5 +913,56 @@ function DoorRenderingAuditScreen() {
       canStartRuns={!runIsOpen}
       busy={busy}
     />
+    </div>
+  );
+}
+
+function RenderBrightnessSettings({ currentExposure, currentDeltaE }: { currentExposure: number | null; currentDeltaE: number | null }) {
+  const utils = trpc.useUtils();
+  const [exposure, setExposure] = useState(currentExposure == null ? "" : String(currentExposure));
+  const [deltaE, setDeltaE] = useState(currentDeltaE == null ? "3" : String(currentDeltaE));
+  const save = (trpc.siteSettings as unknown as {
+    updateRenderControls: {
+      useMutation: (options?: { onSuccess?: () => void; onError?: (error: { message: string }) => void }) => {
+        mutate: (input: { renderExposure: number | null; colorMatchDeltaE: number | null }) => void;
+        isPending: boolean;
+      };
+    };
+  }).updateRenderControls.useMutation({
+    onSuccess: () => {
+      toast.success("Render brightness saved. The Designer and the next audit run both use it.");
+      void utils.siteSettings.getPublicSettings.invalidate();
+    },
+    onError: (error) => toast.error(error.message),
+  });
+  return (
+    <form
+      className="flex flex-wrap items-end gap-3 rounded-lg border border-border bg-card p-3"
+      onSubmit={(event) => {
+        event.preventDefault();
+        const nextExposure = exposure.trim() ? clampRenderExposure(exposure) : null;
+        const nextDelta = clampColorDeltaE(deltaE);
+        if (exposure.trim() && nextExposure == null) {
+          toast.error("Exposure must be a number from 0.2 to 2.");
+          return;
+        }
+        if (nextDelta == null) {
+          toast.error("The color match limit must be a number from 0.5 to 20.");
+          return;
+        }
+        save.mutate({ renderExposure: nextExposure, colorMatchDeltaE: nextDelta });
+      }}
+    >
+      <label className="space-y-1 text-xs">
+        <span className="font-medium">Render exposure</span>
+        <Input value={exposure} onChange={(event) => setExposure(event.target.value)} placeholder="0.84 automatic" className="h-8 w-36" />
+      </label>
+      <label className="space-y-1 text-xs">
+        <span className="font-medium">Color match dE</span>
+        <Input value={deltaE} onChange={(event) => setDeltaE(event.target.value)} className="h-8 w-28" />
+      </label>
+      <Button type="submit" size="sm" variant="outline" disabled={save.isPending}>{save.isPending ? "Saving…" : "Save brightness"}</Button>
+      <p className="max-w-xl text-xs text-muted-foreground">Blank exposure uses 0.84, or the softer rig for a very dark stain. This exposure is shared by the Designer and the audit. A door renders only when the lit patch is within dE of its swatch.</p>
+    </form>
   );
 }

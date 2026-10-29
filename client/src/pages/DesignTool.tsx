@@ -94,6 +94,9 @@ import { affiliateStyleName as resolveAffiliateStyleName } from "@/lib/affiliate
 import { frameInsetPxFromInches } from "@/lib/elevationFrameGeometry";
 import { designerDoorFrameMetrics } from "@/lib/doorFrameMetrics";
 import { designerCatalogDoorProfile, doorStyleFinishColors, resolveDoorProfilePanelKind } from "@/lib/doorStyleAppearance";
+import { resolveDoorSwatchHex } from "@shared/doorRenderIdentity";
+import { clampColorDeltaE } from "@shared/colorGate";
+import { clampRenderExposure } from "@shared/doorRenderLights";
 import { adjustedDesignUnitPrice, buildDesignCabinetCartLines, buildDesignPreviewPricingLines, bundleCabinetPricingSignature, calculateCartSubtotal, completeDesignPricingLines, lockDesignCartLinesToPackageTotal, mergeDesignCartLines } from "@/lib/designCartLines";
 import { combinedFillerNote, fillerCutSourceFor, isCombinedSmallFiller } from "@/lib/fillerBilling";
 import { activeCatalogPricingIdsByMasterCode, currentCatalogPricingCabinetId } from "@/lib/designPricingIdentity";
@@ -5087,6 +5090,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     () => doorStyles?.find((s) => s.id === styleId) ?? null,
     [doorStyles, styleId]
   );
+  const doorRenderSettings = trpc.siteSettings.getPublicSettings.useQuery(undefined, { staleTime: 60_000 });
+  const doorRenderExposure = clampRenderExposure((doorRenderSettings.data as { renderExposure?: number | string | null } | undefined)?.renderExposure);
+  const doorColorDeltaE = clampColorDeltaE((doorRenderSettings.data as { colorMatchDeltaE?: number | string | null } | undefined)?.colorMatchDeltaE);
+  const activeDoorSwatch = resolveDoorSwatchHex(activeStyle as { swatchCode?: string | null; swatchHex?: string | null } | null);
   // Small finish swatch shown on each palette tile so the chosen finish is
   // visible while browsing cabinets. Empty until a door style is selected.
   const paletteFinishSwatch = useMemo<string | null>(
@@ -14417,6 +14424,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	      onSyncCart={syncThreeDOrderWithCart}
 	      initialPresentation={interactive3dPresentation ?? undefined}
 	      catalogFinishOverride={activeFinish.face}
+	      renderExposure={doorRenderExposure}
+	      colorDeltaEMax={doorColorDeltaE}
+	      doorSwatchHex={activeDoorSwatch}
+	      doorSwatchCode={(activeStyle as { swatchCode?: string | null } | null)?.swatchCode ?? null}
 	      cabinetFinishPreviewOptions={threeDCabinetFinishPreviewOptions}
 	      doorStyleChoices={displayUniqueDoorStyles.map((style) => ({ id: style.id, name: affiliateStyleName(style) }))}
 	      selectedDoorStyleId={styleId}
@@ -22245,6 +22256,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                onSyncCart={syncThreeDOrderWithCart}
 			                initialPresentation={interactive3dPresentation ?? undefined}
 			                catalogFinishOverride={activeFinish.face}
+	      renderExposure={doorRenderExposure}
+	      colorDeltaEMax={doorColorDeltaE}
+	      doorSwatchHex={activeDoorSwatch}
+	      doorSwatchCode={(activeStyle as { swatchCode?: string | null } | null)?.swatchCode ?? null}
 	                cabinetFinishPreviewOptions={threeDCabinetFinishPreviewOptions}
 	                doorStyleChoices={displayUniqueDoorStyles.map((style) => ({ id: style.id, name: affiliateStyleName(style) }))}
 	                selectedDoorStyleId={styleId}

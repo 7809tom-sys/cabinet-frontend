@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import {
   Star, Search, GripVertical, ArrowUp, ArrowDown, X,
   AlertTriangle, CheckCircle2, Pencil, RotateCcw, Upload, Loader2, ImageIcon, EyeOff, Eye,
@@ -36,6 +36,8 @@ import {
   specValuesFromEditor,
 } from "./applyDoorStyleSpecs";
 import { isDoorStyleVerified, resolveCabinetFaceImages } from "@shared/doorFaceRecognition";
+import { sherwinWilliamsColor, SHERWIN_WILLIAMS_COLORS } from "@shared/sherwinWilliamsColors";
+import { resolveDoorShapeDecision, resolveRenderHex, PROFILE_GUESSED_LABEL } from "@shared/doorRenderIdentity";
 import { designerFrameCompliance } from "@/lib/doorFrameMetrics";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -51,6 +53,10 @@ interface AdminStyle {
   featuredLabel: string | null;
   doorStyle: string | null;
   color: string | null;
+  renderHex?: string | null;
+  doorShape?: "raised" | "recessed-shaker" | "slab" | "glass" | null;
+  swatchCode?: string | null;
+  swatchHex?: string | null;
   finish: string | null;
   woodSpecies: string | null;
   thumbnailImageUrl: string | null;
@@ -335,6 +341,10 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
   const [ourName, setOurName] = useState(style.ourName);
   const [doorStyle, setDoorStyle] = useState(style.doorStyle ?? "");
   const [color, setColor] = useState(style.color ?? "");
+  const [renderHex, setRenderHex] = useState(style.renderHex ?? "");
+  const [doorShape, setDoorShape] = useState(style.doorShape ?? "");
+  const [swatchCode, setSwatchCode] = useState(style.swatchCode ?? "");
+  const [swatchHex, setSwatchHex] = useState(style.swatchHex ?? "");
   const [finish, setFinish] = useState(style.finish ?? "");
   const [woodSpecies, setWoodSpecies] = useState(style.woodSpecies ?? "");
   const [warehouseZips, setWarehouseZips] = useState(() => originZipList(style));
@@ -373,6 +383,10 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
     setOurName(s.ourName);
     setDoorStyle(s.doorStyle ?? "");
     setColor(s.color ?? "");
+    setRenderHex(s.renderHex ?? "");
+    setDoorShape(s.doorShape ?? "");
+    setSwatchCode(s.swatchCode ?? "");
+    setSwatchHex(s.swatchHex ?? "");
     setFinish(s.finish ?? "");
     setWoodSpecies(s.woodSpecies ?? "");
     setWarehouseZips(originZipList(s));
@@ -496,6 +510,10 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
       ourName: ourName.trim(),
       doorStyle: doorStyle.trim() || null,
       color: color.trim() || null,
+      renderHex: /^#[0-9a-f]{6}$/i.test(renderHex.trim()) ? renderHex.trim().toLowerCase() : null,
+      doorShape: doorShape || null,
+      swatchCode: swatchCode.trim() || null,
+      swatchHex: /^#[0-9a-f]{6}$/i.test(swatchHex.trim()) ? swatchHex.trim().toLowerCase() : null,
       finish: finish.trim() || null,
       woodSpecies: woodSpecies.trim() || null,
       warehouseZips: warehouseZips.length > 0 ? warehouseZips : null,
@@ -755,6 +773,42 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
               />
             </div>
           </div>
+
+          <DoorRenderOverrides
+            renderHex={renderHex}
+            onRenderHex={setRenderHex}
+            doorShape={doorShape}
+            onDoorShape={setDoorShape}
+            swatchCode={swatchCode}
+            onSwatchCode={(value) => {
+              setSwatchCode(value);
+              const published = sherwinWilliamsColor(value);
+              if (published) setSwatchHex(published.hex);
+            }}
+            swatchHex={swatchHex}
+            onSwatchHex={setSwatchHex}
+            sampleImageUrl={doorSampleImageUrl || style.doorSampleImageUrl || ""}
+            preview={resolveDoorShapeDecision({
+              ourName,
+              styleCode: style.styleCode,
+              doorStyle,
+              doorPanelType: style.doorPanelType,
+              panelConstruction,
+              doorShape: doorShape || null,
+              profileDescription,
+              profileNotes,
+              color,
+              renderHex,
+            })}
+            resolvedHex={resolveRenderHex({
+              ourName,
+              styleCode: style.styleCode,
+              color,
+              finish,
+              woodSpecies,
+              renderHex,
+            })}
+          />
 
           {/* Frame Profile Measurements */}
           <div className="rounded-lg border border-emerald-200 bg-emerald-50/40 px-3 py-3 space-y-3">
@@ -1956,6 +2010,131 @@ export default function FeaturedStylesAdmin() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+    </div>
+  );
+}
+
+function DoorRenderOverrides({
+  renderHex,
+  onRenderHex,
+  doorShape,
+  onDoorShape,
+  swatchCode,
+  onSwatchCode,
+  swatchHex,
+  onSwatchHex,
+  sampleImageUrl,
+  preview,
+  resolvedHex,
+}: {
+  renderHex: string;
+  onRenderHex: (value: string) => void;
+  doorShape: string;
+  onDoorShape: (value: string) => void;
+  swatchCode: string;
+  onSwatchCode: (value: string) => void;
+  swatchHex: string;
+  onSwatchHex: (value: string) => void;
+  sampleImageUrl: string;
+  preview: { shape: string; source: string };
+  resolvedHex: string | null;
+}) {
+  return (
+    <div className="space-y-3 rounded-lg border border-border px-3 py-3">
+      <div>
+        <span className="text-xs font-semibold">Render color and door shape</span>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          Render hex wins over the name fallback. Door shape wins over a guess. Distributor phrases (raised, ogee, cathedral, arch, traditional, flat panel, recessed) still fill the shape when this is left on automatic. Aspen Charcoal and Aspen White stay raised until a shape is chosen.
+        </p>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="space-y-1.5">
+          <Label htmlFor="ed-render-hex">Render hex</Label>
+          <div className="flex items-center gap-2">
+            <Input id="ed-render-hex" value={renderHex} onChange={(event) => onRenderHex(event.target.value)} placeholder="#2a211c" />
+            <input aria-label="Pick render hex" type="color" value={/^#[0-9a-f]{6}$/i.test(renderHex) ? renderHex : "#f2f0ea"} onChange={(event) => onRenderHex(event.target.value)} />
+          </div>
+          <p className="text-xs text-muted-foreground">Resolved for render: {resolvedHex ?? "name fallback"}</p>
+        </div>
+        <div className="space-y-1.5">
+          <Label>Door shape</Label>
+          <Select value={doorShape || "auto"} onValueChange={(value) => onDoorShape(value === "auto" ? "" : value)}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="auto">Automatic</SelectItem>
+              <SelectItem value="raised">Raised</SelectItem>
+              <SelectItem value="recessed-shaker">Recessed shaker</SelectItem>
+              <SelectItem value="slab">Slab</SelectItem>
+              <SelectItem value="glass">Glass</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            {preview.source === "guessed" ? PROFILE_GUESSED_LABEL : `${preview.shape} · ${preview.source}`}
+          </p>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="ed-swatch-code">Sherwin-Williams code</Label>
+          <Input id="ed-swatch-code" value={swatchCode} onChange={(event) => onSwatchCode(event.target.value)} placeholder="SW7069" list="sw-color-codes" />
+          <datalist id="sw-color-codes">
+            {SHERWIN_WILLIAMS_COLORS.map((row) => <option key={row.code} value={row.code}>{row.name}</option>)}
+          </datalist>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="ed-swatch-hex">Swatch hex</Label>
+          <div className="flex items-center gap-2">
+            <Input id="ed-swatch-hex" value={swatchHex} onChange={(event) => onSwatchHex(event.target.value)} placeholder="From the code or the photo" />
+            <span className="h-8 w-8 shrink-0 rounded border" style={{ background: /^#[0-9a-f]{6}$/i.test(swatchHex) ? swatchHex : "transparent" }} />
+          </div>
+        </div>
+      </div>
+      <SampleEyedropper imageUrl={sampleImageUrl} onPick={onSwatchHex} />
+    </div>
+  );
+}
+
+function SampleEyedropper({ imageUrl, onPick }: { imageUrl: string; onPick: (hex: string) => void }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [note, setNote] = useState("");
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !imageUrl) return;
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+    image.onload = () => {
+      canvas.width = 180;
+      canvas.height = 240;
+      const context = canvas.getContext("2d");
+      if (!context) return;
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      setNote("Click the sample photo to pick the swatch.");
+    };
+    image.onerror = () => setNote("This sample could not be loaded for the eyedropper. Paste a hex instead.");
+    image.src = imageUrl;
+  }, [imageUrl]);
+  if (!imageUrl) return <p className="text-xs text-muted-foreground">Add a door sample photo to pick a swatch from it.</p>;
+  return (
+    <div className="space-y-1">
+      <canvas
+        ref={canvasRef}
+        className="h-40 w-28 cursor-crosshair rounded border bg-muted"
+        onClick={(event) => {
+          const canvas = canvasRef.current;
+          const context = canvas?.getContext("2d");
+          if (!canvas || !context) return;
+          const rect = canvas.getBoundingClientRect();
+          const x = Math.round((event.clientX - rect.left) * (canvas.width / rect.width));
+          const y = Math.round((event.clientY - rect.top) * (canvas.height / rect.height));
+          try {
+            const pixel = context.getImageData(x, y, 1, 1).data;
+            const hex = `#${[pixel[0], pixel[1], pixel[2]].map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
+            onPick(hex);
+            setNote(`Picked ${hex}.`);
+          } catch {
+            setNote("The browser blocked reading this photo. Paste the swatch hex instead.");
+          }
+        }}
+      />
+      {note ? <p className="text-xs text-muted-foreground">{note}</p> : null}
     </div>
   );
 }

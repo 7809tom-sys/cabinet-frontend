@@ -14,6 +14,7 @@ import {
   type DoorStyleAppearanceInput,
   type ResolvedDoorProfile,
 } from "@shared/doorStyleAppearance";
+import { resolveRenderHex } from "@shared/doorRenderIdentity";
 
 export {
   ASPEN_CHARCOAL_STAIN,
@@ -43,9 +44,13 @@ function identityOf(style: DoorStyleAppearanceInput | null | undefined): DoorSty
  */
 export function resolveDoorFinishHex(style: DoorStyleAppearanceInput | null | undefined): string {
   const identity = identityOf(style);
-  if (isAspenCharcoal(identity)) return ASPEN_CHARCOAL_STAIN;
+  const override = exactDoorFinishHex(identity.renderHex);
+  if (override) return override;
   const supplied = exactDoorFinishHex(identity.color);
   if (supplied) return supplied;
+  if (isAspenCharcoal(identity)) return ASPEN_CHARCOAL_STAIN;
+  const named = resolveRenderHex(identity);
+  if (named) return named;
   return finishColors(
     identity.ourName,
     identity.name,

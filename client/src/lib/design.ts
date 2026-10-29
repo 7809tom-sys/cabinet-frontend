@@ -6369,7 +6369,10 @@ export function doorPanelKind(doorStyle?: string | null): DoorPanelKind {
   // swatch can draw the thin frame.
   if (/slim|narrow|thin[ -]?frame|skinny/.test(s) && /shaker/.test(s)) return "slim-shaker";
   if (/slim shaker|narrow shaker/.test(s)) return "slim-shaker";
-  if (/raised|cathedral|arch/.test(s)) return "raised";
+  // "Flat panel" and "recessed" are a framed shaker, not a slab. Raised phrases
+  // are checked before the generic flat/slab words.
+  if (/flat[\s-]?panel|\brecessed\b/.test(s)) return "shaker";
+  if (/raised|cathedral|\barch(?:ed)?\b|\bogee\b|traditional/.test(s)) return "raised";
   if (/slab|flat|contemporary|euro|modern/.test(s)) return "slab";
   if (/bead/.test(s)) return "beaded";
   if (/inset/.test(s)) return "inset";
