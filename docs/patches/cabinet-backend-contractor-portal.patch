@@ -1,0 +1,1882 @@
+From c3f06d0dcca4edb2d370d5e41f52b0d1eda8aa7b Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Thu, 29 Oct 2026 13:08:46 +0000
+Subject: [PATCH] Add contractor portal APIs, approval, and gated test logins.
+
+Scope CRM and labor estimates to the contractor who owns them, keep trade prices behind resolvePricingFor, and accept the customer and contractor test logins only when ENABLE_TEST_ACCOUNTS=true.
+---
+ docs/sql/0234_contractor_portal.tidb.sql |  83 ++++++++++
+ docs/test-accounts.md                    |  30 ++++
+ drizzle/schema.ts                        |  52 +++++-
+ server/_core/sdk.ts                      |  21 ++-
+ server/crm.contractorRole.test.ts        |  46 +-----
+ server/lib/loginTestAccount.ts           | 134 ++++++++++++++++
+ server/lib/testAccounts.test.ts          |  22 +++
+ server/lib/testAccounts.ts               |  67 ++++++++
+ server/routers.ts                        |  23 ++-
+ server/routers/contractorAccess.ts       |  90 +++++++++++
+ server/routers/contractorPortal.ts       | 134 ++++++++++++++++
+ server/routers/crm.ts                    |  29 +++-
+ server/routers/customers.ts              |  29 +---
+ server/routers/installationEstimates.ts  | 101 ++++++++----
+ server/routers/orderTracking.ts          | 191 +++++++++++++++++++++++
+ server/routers/orders.ts                 |   9 +-
+ shared/affiliateResolution.test.ts       |  14 +-
+ shared/affiliateResolution.ts            |  49 ++++++
+ shared/orderTracking.test.ts             |  69 ++++++++
+ shared/orderTracking.ts                  | 116 ++++++++++++++
+ shared/pricingAccess.test.ts             |  43 +++++
+ shared/pricingTier.ts                    |  55 ++++++-
+ 22 files changed, 1296 insertions(+), 111 deletions(-)
+ create mode 100644 docs/sql/0234_contractor_portal.tidb.sql
+ create mode 100644 docs/test-accounts.md
+ create mode 100644 server/lib/loginTestAccount.ts
+ create mode 100644 server/lib/testAccounts.test.ts
+ create mode 100644 server/lib/testAccounts.ts
+ create mode 100644 server/routers/contractorAccess.ts
+ create mode 100644 server/routers/contractorPortal.ts
+ create mode 100644 server/routers/orderTracking.ts
+ create mode 100644 shared/orderTracking.test.ts
+ create mode 100644 shared/orderTracking.ts
+ create mode 100644 shared/pricingAccess.test.ts
+
+diff --git a/docs/sql/0234_contractor_portal.tidb.sql b/docs/sql/0234_contractor_portal.tidb.sql
+new file mode 100644
+index 0000000..de546e0
+--- /dev/null
++++ b/docs/sql/0234_contractor_portal.tidb.sql
+@@ -0,0 +1,83 @@
++-- Contractor portal customers, design assignment, and contractor labor estimates.
++-- Paste each numbered block on its own in the TiDB SQL editor.
++-- One statement per block. Do not paste this into an automatic migration.
++-- Safe to re-run: CREATE TABLE IF NOT EXISTS, CREATE INDEX IF NOT EXISTS,
++-- and ADD COLUMN IF NOT EXISTS.
++-- Every table is cabinet_dealz.<table>.
++-- Order tracking reads existing order_requests and order_shipments columns.
++-- It does not add order columns. Delivered uses the existing delivery signature
++-- (orderSignedAt). Shipped uses orderShippedAt and order_shipments.shippedAt.
++-- Sent to distributor uses sentToDistributorAt and the distributor email columns
++-- from SQL 0227.
++
++-- 1
++CREATE TABLE IF NOT EXISTS cabinet_dealz.contractor_customers (
++  id INT NOT NULL AUTO_INCREMENT,
++  contractorUserId INT NOT NULL,
++  name VARCHAR(256) NOT NULL,
++  email VARCHAR(320) NULL,
++  phone VARCHAR(32) NULL,
++  notes TEXT NULL,
++  createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
++  updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
++  PRIMARY KEY (id)
++);
++
++-- 2
++CREATE INDEX IF NOT EXISTS contractor_customers_owner_idx
++  ON cabinet_dealz.contractor_customers (contractorUserId, name);
++
++-- 3
++ALTER TABLE cabinet_dealz.kitchen_designs
++  ADD COLUMN IF NOT EXISTS contractorCustomerId INT NULL;
++
++-- 4
++CREATE INDEX IF NOT EXISTS kitchen_designs_contractor_customer_idx
++  ON cabinet_dealz.kitchen_designs (contractorCustomerId);
++
++-- 5
++ALTER TABLE cabinet_dealz.affiliate_installation_estimates
++  ADD COLUMN IF NOT EXISTS contractorUserId INT NULL;
++
++-- 6
++ALTER TABLE cabinet_dealz.affiliate_installation_estimates
++  MODIFY COLUMN affiliateId INT NULL;
++
++-- 7
++CREATE INDEX IF NOT EXISTS affiliate_installation_estimates_contractor_idx
++  ON cabinet_dealz.affiliate_installation_estimates (contractorUserId);
++
++-- 8
++CREATE TABLE IF NOT EXISTS cabinet_dealz.contractor_kitchen_cost_defaults (
++  contractorUserId INT NOT NULL,
++  defaultsJson TEXT NOT NULL,
++  updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
++  PRIMARY KEY (contractorUserId)
++);
++
++-- 9
++ALTER TABLE cabinet_dealz.crm_deals
++  ADD COLUMN IF NOT EXISTS contractorCustomerId INT NULL;
++
++-- 10
++CREATE INDEX IF NOT EXISTS crm_deals_contractor_customer_idx
++  ON cabinet_dealz.crm_deals (contractorCustomerId);
++
++-- 11
++CREATE TABLE IF NOT EXISTS cabinet_dealz.contractor_access_requests (
++  id INT NOT NULL AUTO_INCREMENT,
++  userId INT NOT NULL,
++  businessName VARCHAR(256) NOT NULL,
++  phone VARCHAR(32) NOT NULL,
++  licenseNumber VARCHAR(64) NULL,
++  status VARCHAR(16) NOT NULL DEFAULT 'pending',
++  reviewedByUserId INT NULL,
++  reviewedAt TIMESTAMP NULL,
++  createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
++  updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
++  PRIMARY KEY (id)
++);
++
++-- 12
++CREATE INDEX IF NOT EXISTS contractor_access_requests_user_idx
++  ON cabinet_dealz.contractor_access_requests (userId, status);
+diff --git a/docs/test-accounts.md b/docs/test-accounts.md
+new file mode 100644
+index 0000000..3b439f1
+--- /dev/null
++++ b/docs/test-accounts.md
+@@ -0,0 +1,30 @@
++# Test accounts
++
++These logins exist so Tom can open the customer and contractor dashboards. They are **off unless the API process has `ENABLE_TEST_ACCOUNTS=true`**. The default is off. Production stays off until that variable is set on Railway and the API is restarted. Turning it off (unset the variable, or set it to anything other than `true`) makes the login return "Not found" and ignores any previously issued test token.
++
++| Username | Password | Role | Lands on |
++| --- | --- | --- | --- |
++| `customer` | `test` | customer (`users.role = user`) | `/customer` |
++| `contractor` | `test` | approved contractor | `/contractor` |
++
++The password is checked only after the flag is on. It is not a production backdoor.
++
++## Turn on
++
++On the **cabinet-backend** service (Railway), set:
++
++```
++ENABLE_TEST_ACCOUNTS=true
++```
++
++`JWT_SECRET` must already be set. The API signs a 12-hour token with it. Restart the API after changing the flag.
++
++The sign-in pages then show a "Test login" box. The first successful login creates the two database users if they are missing and seeds a sample design and order. The contractor login also seeds a sample customer and a CRM contact. Run `docs/sql/0234_contractor_portal.tidb.sql` first or those extra rows are skipped.
++
++## Turn off
++
++Remove `ENABLE_TEST_ACCOUNTS` or set it to `false`, then restart the API. No frontend deploy is required.
++
++## Supabase
++
++These accounts are **not** Supabase users. The browser sends `x-cd-test-account` instead of a Supabase access token, and the API accepts that header only while the flag is on and only for the two seeded open ids (`test-account-customer`, `test-account-contractor`). Do not create them with the service role key from this repository. If you later want real Supabase users, create them in the Supabase dashboard and leave this flag off.
+diff --git a/drizzle/schema.ts b/drizzle/schema.ts
+index 10116ec..8e58e12 100644
+--- a/drizzle/schema.ts
++++ b/drizzle/schema.ts
+@@ -1376,6 +1376,8 @@ export const kitchenDesigns = mysqlTable("kitchen_designs", {
+   // A non-null owner keeps affiliate-storefront designs and plans isolated from
+   // the Cabinet Dealz house pipeline and attaches them to that affiliate CRM.
+   affiliateId: int("affiliateId"),
++  // Set when a contractor assigns this owner-scope plan to one of their customers.
++  contractorCustomerId: int("contractorCustomerId"),
+   name: varchar("name", { length: 256 }).notNull(),
+   // Master Project grouping: several rooms (kitchen + baths + laundry) can share
+   // one projectName, becoming a single job. roomLabel names the room within the
+@@ -1852,9 +1854,55 @@ export type InstallationEstimateLineItem = {
+   costType: "labor" | "material";
+ };
+ 
++// Customers a contractor organizes designs under. Separate from affiliate CRM
++// contacts and from the homeowner user account.
++export const contractorCustomers = mysqlTable("contractor_customers", {
++  id: int("id").autoincrement().primaryKey(),
++  contractorUserId: int("contractorUserId").notNull(),
++  name: varchar("name", { length: 256 }).notNull(),
++  email: varchar("email", { length: 320 }),
++  phone: varchar("phone", { length: 32 }),
++  notes: text("notes"),
++  createdAt: timestamp("createdAt").defaultNow().notNull(),
++  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
++}, (t) => ({
++  ownerIdx: index("contractor_customers_owner_idx").on(t.contractorUserId, t.name),
++}));
++export type ContractorCustomer = typeof contractorCustomers.$inferSelect;
++export type InsertContractorCustomer = typeof contractorCustomers.$inferInsert;
++
++// Pending contractor applications. Approval sets users.role to contractor.
++// Rejection leaves the account as a customer (role user).
++export const contractorAccessRequests = mysqlTable("contractor_access_requests", {
++  id: int("id").autoincrement().primaryKey(),
++  userId: int("userId").notNull(),
++  businessName: varchar("businessName", { length: 256 }).notNull(),
++  phone: varchar("phone", { length: 32 }).notNull(),
++  licenseNumber: varchar("licenseNumber", { length: 64 }),
++  status: varchar("status", { length: 16 }).default("pending").notNull(),
++  reviewedByUserId: int("reviewedByUserId"),
++  reviewedAt: timestamp("reviewedAt"),
++  createdAt: timestamp("createdAt").defaultNow().notNull(),
++  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
++}, (t) => ({
++  userStatusIdx: index("contractor_access_requests_user_idx").on(t.userId, t.status),
++}));
++export type ContractorAccessRequest = typeof contractorAccessRequests.$inferSelect;
++
++// Kitchen cost-sheet rates saved by a contractor. Affiliates keep theirs on
++// affiliates.kitchenCostDefaultsJson. The estimator reads one or the other.
++export const contractorKitchenCostDefaults = mysqlTable("contractor_kitchen_cost_defaults", {
++  contractorUserId: int("contractorUserId").primaryKey(),
++  defaultsJson: text("defaultsJson").notNull(),
++  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
++});
++export type ContractorKitchenCostDefault = typeof contractorKitchenCostDefaults.$inferSelect;
++
+ export const affiliateInstallationEstimates = mysqlTable("affiliate_installation_estimates", {
+   id: int("id").autoincrement().primaryKey(),
+-  affiliateId: int("affiliateId").notNull(),
++  // Null only for a contractor-owned estimate. Affiliate rows still set this.
++  affiliateId: int("affiliateId"),
++  contractorUserId: int("contractorUserId"),
+   orderRequestId: int("orderRequestId"),
+   kitchenDesignId: int("kitchenDesignId"),
+   crmDealId: int("crmDealId"),
+@@ -2126,6 +2174,8 @@ export const crmDeals = mysqlTable("crm_deals", {
+   // Ownership / scope
+   affiliateId: int("affiliateId"), // NULL = house/admin deal; else the owning affiliate
+   ownerUserId: int("ownerUserId"), // assigned salesperson / partner user (nullable)
++  // Set when this contact belongs to a contractor's customer folder.
++  contractorCustomerId: int("contractorCustomerId"),
+   // Pipeline
+   title: varchar("title", { length: 256 }).notNull(), // e.g. "Kitchen remodel — J. Rivera"
+   stage: mysqlEnum("stage", [
+diff --git a/server/_core/sdk.ts b/server/_core/sdk.ts
+index c344704..6d5c2de 100644
+--- a/server/_core/sdk.ts
++++ b/server/_core/sdk.ts
+@@ -3,9 +3,11 @@ import { ForbiddenError } from "@shared/_core/errors";
+ import axios from "axios";
+ import type { Request } from "express";
+ import { createRemoteJWKSet, decodeProtectedHeader, jwtVerify } from "jose";
+-import type { User } from "../../drizzle/schema";
++import { eq } from "drizzle-orm";
++import { users, type User } from "../../drizzle/schema";
+ import * as db from "../db";
+ import { ENV } from "./env";
++import { readTestAccountUserId, TEST_ACCOUNT_HEADER, testAccountsEnabled } from "../lib/testAccounts";
+ // Utility function
+ const isNonEmptyString = (value: unknown): value is string =>
+   typeof value === "string" && value.length > 0;
+@@ -224,6 +226,23 @@ class SDKServer {
+   }
+ 
+   async authenticateRequest(req: Request): Promise<AuthenticatedUser> {
++    if (testAccountsEnabled(process.env.ENABLE_TEST_ACCOUNTS) && ENV.cookieSecret) {
++      const raw = req.headers[TEST_ACCOUNT_HEADER];
++      const token = Array.isArray(raw) ? raw[0] : raw;
++      if (typeof token === "string" && token) {
++        const userId = await readTestAccountUserId(token, ENV.cookieSecret);
++        if (userId) {
++          const database = await db.getDb();
++          const [user] = database
++            ? await database.select().from(users).where(eq(users.id, userId)).limit(1)
++            : [];
++          if (user && (user.openId === "test-account-customer" || user.openId === "test-account-contractor")) {
++            return user;
++          }
++        }
++      }
++    }
++
+     const bearerUser = await this.authenticateSupabaseBearer(req);
+     if (bearerUser) return bearerUser;
+ 
+diff --git a/server/crm.contractorRole.test.ts b/server/crm.contractorRole.test.ts
+index 9cbd11d..6d731a9 100644
+--- a/server/crm.contractorRole.test.ts
++++ b/server/crm.contractorRole.test.ts
+@@ -109,47 +109,9 @@ describe("contractor role — CRM scope (deals they own)", () => {
+   });
+ });
+ 
+-describe("becomeContractor — self-serve role upgrade", () => {
+-  it("promotes a plain user to contractor and is idempotent; refuses non-user roles", async () => {
+-    const db = await getDb();
+-    if (!db) return;
+-
+-    // Seed a plain user we can safely mutate.
+-    const email = "become-contractor-test@example.com";
+-    await db.delete(users).where(eq(users.email, email));
+-    const res = await db.insert(users).values({
+-      openId: "become-contractor-openid",
+-      name: "Aspiring Contractor",
+-      email,
+-      role: "user",
+-    });
+-    const userId = (res as unknown as [{ insertId: number }])[0].insertId;
+-
+-    try {
+-      const caller = appRouter.createCaller(ctxFor(userId, "user", email));
+-      const out = await caller.customers.becomeContractor();
+-      expect(out.role).toBe("contractor");
+-
+-      const [after] = await db
+-        .select({ role: users.role })
+-        .from(users)
+-        .where(eq(users.id, userId));
+-      expect(after.role).toBe("contractor");
+-
+-      // Idempotent: calling again (now as contractor) still succeeds.
+-      const again = appRouter
+-        .createCaller(ctxFor(userId, "contractor", email));
+-      const out2 = await again.customers.becomeContractor();
+-      expect(out2.role).toBe("contractor");
+-
+-      // An admin cannot be downgraded/clobbered by self-classifying.
+-      const adminCaller = appRouter.createCaller(ctxFor(userId, "admin", email));
+-      // (role in ctx is admin, but DB says contractor — the guard reads the DB row,
+-      //  which is "contractor", so this is an idempotent success, NOT a clobber.)
+-      const out3 = await adminCaller.customers.becomeContractor();
+-      expect(out3.role).toBe("contractor");
+-    } finally {
+-      await db.delete(users).where(eq(users.id, userId));
+-    }
++describe("becomeContractor — self-serve role upgrade is closed", () => {
++  it("refuses to promote a customer without an admin approval", async () => {
++    const caller = appRouter.createCaller(ctxFor(999301, "user", "pending@example.com"));
++    await expect(caller.customers.becomeContractor()).rejects.toMatchObject({ code: "FORBIDDEN" });
+   });
+ });
+diff --git a/server/lib/loginTestAccount.ts b/server/lib/loginTestAccount.ts
+new file mode 100644
+index 0000000..9d90d23
+--- /dev/null
++++ b/server/lib/loginTestAccount.ts
+@@ -0,0 +1,134 @@
++import { TRPCError } from "@trpc/server";
++import { eq } from "drizzle-orm";
++import { contractorCustomers, crmDeals, kitchenDesigns, orderRequests, users } from "../../drizzle/schema";
++import { ENV } from "../_core/env";
++import { getDb } from "../db";
++import { signTestAccountToken, testAccountProfile, testAccountsEnabled } from "./testAccounts";
++
++const SAMPLE_LINES = [{
++  cabinetId: null,
++  masterCode: "B36",
++  description: "Base cabinet 36",
++  qty: 2,
++  unitPrice: 420,
++  linePrice: 840,
++  matched: false,
++}];
++
++export async function loginTestAccount(username: string, password: string) {
++  if (!testAccountsEnabled(process.env.ENABLE_TEST_ACCOUNTS)) {
++    throw new TRPCError({ code: "NOT_FOUND", message: "Not found" });
++  }
++  const profile = testAccountProfile(username.trim().toLowerCase());
++  if (!profile || password !== "test") {
++    throw new TRPCError({ code: "UNAUTHORIZED", message: "Those test credentials were not accepted." });
++  }
++  if (!ENV.cookieSecret) {
++    throw new TRPCError({
++      code: "PRECONDITION_FAILED",
++      message: "Set JWT_SECRET on the API before test accounts can sign in.",
++    });
++  }
++  const db = await getDb();
++  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
++
++  let [user] = await db.select().from(users).where(eq(users.openId, profile.openId)).limit(1);
++  if (!user) {
++    const inserted = await db.insert(users).values({
++      openId: profile.openId,
++      name: profile.name,
++      email: profile.email,
++      emailLower: profile.email,
++      role: profile.role,
++      pricingTier: profile.role === "contractor" ? "contractor" : "homeowner",
++      loginMethod: "test-account",
++    });
++    const id = Number((inserted as unknown as [{ insertId: number }])[0].insertId);
++    [user] = await db.select().from(users).where(eq(users.id, id)).limit(1);
++  } else if (profile.role === "contractor" && user.role === "user") {
++    await db.update(users).set({ role: "contractor", pricingTier: "contractor" }).where(eq(users.id, user.id));
++    user = { ...user, role: "contractor", pricingTier: "contractor" };
++  }
++  if (!user) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Test account was not created." });
++
++  await seedSample(user.id, profile.role === "contractor");
++  const token = await signTestAccountToken(user.id, ENV.cookieSecret);
++  return {
++    token,
++    role: user.role,
++    destination: profile.role === "contractor" ? "/contractor" : "/customer",
++  };
++}
++
++async function seedSample(userId: number, contractor: boolean) {
++  const db = await getDb();
++  if (!db) return;
++  const designName = contractor ? "Sample contractor kitchen" : "Sample customer kitchen";
++  const [existingDesign] = await db.select({ id: kitchenDesigns.id }).from(kitchenDesigns)
++    .where(eq(kitchenDesigns.userId, userId)).limit(1);
++  let designId = existingDesign?.id ?? null;
++  if (designId == null) {
++    try {
++      const inserted = await db.insert(kitchenDesigns).values({
++        userId,
++        affiliateId: null,
++        name: designName,
++        roomLabel: "Kitchen",
++        roomType: "Kitchen",
++        placedCabinets: [],
++      });
++      designId = Number((inserted as unknown as [{ insertId: number }])[0].insertId);
++    } catch (error) {
++      console.warn("[TestAccount] Design seed skipped", error instanceof Error ? error.message : "unknown error");
++    }
++  }
++  const requestNumber = contractor ? "TEST-CONTRACTOR-1" : "TEST-CUSTOMER-1";
++  const [existingOrder] = await db.select({ id: orderRequests.id }).from(orderRequests)
++    .where(eq(orderRequests.requestNumber, requestNumber)).limit(1);
++  if (!existingOrder) {
++    try {
++      await db.insert(orderRequests).values({
++        userId,
++        requestNumber,
++        originatorName: contractor ? "Sample Homeowner" : "Test Customer",
++        originatorEmail: contractor ? "homeowner@cabinetdealz.test" : "customer@cabinetdealz.test",
++        status: "confirmed",
++        source: "manual",
++        lineItems: SAMPLE_LINES,
++        itemCount: 2,
++        totalAmount: "840.00",
++        kitchenDesignId: designId,
++        confirmedAt: new Date(),
++      });
++    } catch (error) {
++      console.warn("[TestAccount] Order seed skipped", error instanceof Error ? error.message : "unknown error");
++    }
++  }
++  if (!contractor) return;
++  try {
++    const [existingCustomer] = await db.select({ id: contractorCustomers.id }).from(contractorCustomers)
++      .where(eq(contractorCustomers.contractorUserId, userId)).limit(1);
++    if (existingCustomer) return;
++    const inserted = await db.insert(contractorCustomers).values({
++      contractorUserId: userId,
++      name: "Sample Homeowner",
++      email: "homeowner@cabinetdealz.test",
++      phone: "555-0100",
++      notes: "Seeded for the contractor test login.",
++    });
++    const customerId = Number((inserted as unknown as [{ insertId: number }])[0].insertId);
++    await db.insert(crmDeals).values({
++      affiliateId: null,
++      ownerUserId: userId,
++      contractorCustomerId: customerId,
++      title: "Sample Homeowner",
++      contactName: "Sample Homeowner",
++      contactEmail: "homeowner@cabinetdealz.test",
++      contactPhone: "555-0100",
++      stage: "new",
++      source: "manual",
++    });
++  } catch (error) {
++    console.warn("[TestAccount] Contractor customer seed skipped until the SQL file is applied", error instanceof Error ? error.message : "unknown error");
++  }
++}
+diff --git a/server/lib/testAccounts.test.ts b/server/lib/testAccounts.test.ts
+new file mode 100644
+index 0000000..ed81de6
+--- /dev/null
++++ b/server/lib/testAccounts.test.ts
+@@ -0,0 +1,22 @@
++import { describe, expect, it } from "vitest";
++import { readTestAccountUserId, signTestAccountToken, testAccountProfile, testAccountsEnabled } from "./testAccounts";
++
++describe("test account gate", () => {
++  it("stays off unless the env flag is exactly true", () => {
++    expect(testAccountsEnabled(undefined)).toBe(false);
++    expect(testAccountsEnabled("")).toBe(false);
++    expect(testAccountsEnabled("1")).toBe(false);
++    expect(testAccountsEnabled("TRUE")).toBe(false);
++    expect(testAccountsEnabled("true")).toBe(true);
++  });
++
++  it("maps the two usernames and signs a token that dies without the secret", async () => {
++    expect(testAccountProfile("customer")?.role).toBe("user");
++    expect(testAccountProfile("contractor")?.role).toBe("contractor");
++    expect(testAccountProfile("admin")).toBeNull();
++    const token = await signTestAccountToken(42, "test-secret");
++    expect(await readTestAccountUserId(token, "test-secret")).toBe(42);
++    expect(await readTestAccountUserId(token, "other-secret")).toBeNull();
++    expect(await readTestAccountUserId(token, "")).toBeNull();
++  });
++});
+diff --git a/server/lib/testAccounts.ts b/server/lib/testAccounts.ts
+new file mode 100644
+index 0000000..a8ef691
+--- /dev/null
++++ b/server/lib/testAccounts.ts
+@@ -0,0 +1,67 @@
++import { SignJWT, jwtVerify } from "jose";
++
++export const TEST_ACCOUNT_ISSUER = "cabinetdealz-test-accounts";
++export const TEST_ACCOUNT_AUDIENCE = "test-account";
++export const TEST_ACCOUNT_HEADER = "x-cd-test-account";
++
++export type TestAccountUsername = "customer" | "contractor";
++
++export type TestAccountProfile = {
++  username: TestAccountUsername;
++  email: string;
++  name: string;
++  role: "user" | "contractor";
++  openId: string;
++};
++
++const ACCOUNTS: Record<TestAccountUsername, TestAccountProfile> = {
++  customer: {
++    username: "customer",
++    email: "customer@cabinetdealz.test",
++    name: "Test Customer",
++    role: "user",
++    openId: "test-account-customer",
++  },
++  contractor: {
++    username: "contractor",
++    email: "contractor@cabinetdealz.test",
++    name: "Test Contractor",
++    role: "contractor",
++    openId: "test-account-contractor",
++  },
++};
++
++/** Default off. Only the exact string "true" enables the test logins. */
++export function testAccountsEnabled(flag: string | undefined): boolean {
++  return flag === "true";
++}
++
++export function testAccountProfile(username: string): TestAccountProfile | null {
++  if (username === "customer" || username === "contractor") return ACCOUNTS[username];
++  return null;
++}
++
++export async function signTestAccountToken(userId: number, secret: string): Promise<string> {
++  return new SignJWT({ purpose: "test-account" })
++    .setProtectedHeader({ alg: "HS256" })
++    .setIssuer(TEST_ACCOUNT_ISSUER)
++    .setAudience(TEST_ACCOUNT_AUDIENCE)
++    .setSubject(String(userId))
++    .setIssuedAt()
++    .setExpirationTime("12h")
++    .sign(new TextEncoder().encode(secret));
++}
++
++export async function readTestAccountUserId(token: string, secret: string): Promise<number | null> {
++  if (!secret) return null;
++  try {
++    const { payload } = await jwtVerify(token, new TextEncoder().encode(secret), {
++      issuer: TEST_ACCOUNT_ISSUER,
++      audience: TEST_ACCOUNT_AUDIENCE,
++    });
++    const id = Number(payload.sub);
++    return Number.isInteger(id) && id > 0 ? id : null;
++  } catch {
++    return null;
++  }
++}
+diff --git a/server/routers.ts b/server/routers.ts
+index 9de557a..e541b59 100644
+--- a/server/routers.ts
++++ b/server/routers.ts
+@@ -99,6 +99,11 @@ import { vendorSamplesRouter } from "./routers/vendorSamples";
+ import { vendorReferralsRouter } from "./routers/vendorReferrals";
+ import { crmCleanupRouter } from "./routers/crmCleanup";
+ import { doorRenderingAuditRouter } from "./routers/doorRenderingAudit";
++import { contractorPortalRouter } from "./routers/contractorPortal";
++import { contractorAccessRouter } from "./routers/contractorAccess";
++import { orderTrackingRouter } from "./routers/orderTracking";
++import { loginTestAccount } from "./lib/loginTestAccount";
++import { testAccountsEnabled } from "./lib/testAccounts";
+ 
+ export const appRouter = router({
+   system: systemRouter,
+@@ -109,7 +114,10 @@ export const appRouter = router({
+     // validated client-side. Affiliate owners and team members go to their
+     // own portal. Admins, and any explicit /admin return, do not.
+     signInDestination: protectedProcedure
+-      .input(z.object({ returnPath: z.string().max(2048).nullable() }))
++      .input(z.object({
++        returnPath: z.string().max(2048).nullable(),
++        portal: z.enum(["affiliate", "contractor", "customer"]).nullable().optional(),
++      }))
+       .query(async ({ ctx, input }) => {
+         const user = ctx.user;
+         const returnPath =
+@@ -143,12 +151,22 @@ export const appRouter = router({
+             );
+           }
+         }
++        const portal = input.portal === "affiliate" || input.portal === "contractor" || input.portal === "customer"
++          ? input.portal
++          : null;
+         return resolveSignInDestination({
+           returnPath,
+           userRole: user.role,
+           resolution,
++          portal,
+         });
+       }),
++    testAccountsEnabled: publicProcedure.query(() => ({
++      enabled: testAccountsEnabled(process.env.ENABLE_TEST_ACCOUNTS),
++    })),
++    testLogin: publicProcedure
++      .input(z.object({ username: z.string().max(32), password: z.string().max(64) }))
++      .mutation(({ input }) => loginTestAccount(input.username, input.password)),
+     logout: publicProcedure.mutation(({ ctx }) => {
+       const cookieOptions = getSessionCookieOptions(ctx.req);
+       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
+@@ -233,6 +251,9 @@ export const appRouter = router({
+   vendorReferrals: vendorReferralsRouter,
+   crmCleanup: crmCleanupRouter,
+   doorRenderingAudit: doorRenderingAuditRouter,
++  contractorPortal: contractorPortalRouter,
++  contractorAccess: contractorAccessRouter,
++  orderTracking: orderTrackingRouter,
+ });
+ 
+ export type AppRouter = typeof appRouter;
+diff --git a/server/routers/contractorAccess.ts b/server/routers/contractorAccess.ts
+new file mode 100644
+index 0000000..b64dc72
+--- /dev/null
++++ b/server/routers/contractorAccess.ts
+@@ -0,0 +1,90 @@
++import { and, desc, eq } from "drizzle-orm";
++import { TRPCError } from "@trpc/server";
++import { z } from "zod";
++import { contractorAccessRequests, users } from "../../drizzle/schema";
++import { getDb } from "../db";
++import { adminProcedure, protectedProcedure, router } from "../_core/trpc";
++
++const STATUSES = ["pending", "approved", "rejected"] as const;
++
++export const contractorAccessRouter = router({
++  mine: protectedProcedure.query(async ({ ctx }) => {
++    const db = await getDb();
++    if (!db) return null;
++    const [row] = await db.select().from(contractorAccessRequests)
++      .where(eq(contractorAccessRequests.userId, ctx.user.id))
++      .orderBy(desc(contractorAccessRequests.createdAt))
++      .limit(1);
++    return row ?? null;
++  }),
++  apply: protectedProcedure.input(z.object({
++    businessName: z.string().trim().min(2).max(256),
++    phone: z.string().trim().min(7).max(32),
++    licenseNumber: z.string().trim().max(64).nullable().optional(),
++  })).mutation(async ({ ctx, input }) => {
++    if (ctx.user.role === "contractor") {
++      throw new TRPCError({ code: "BAD_REQUEST", message: "This account is already an approved contractor." });
++    }
++    if (ctx.user.role !== "user") {
++      throw new TRPCError({ code: "FORBIDDEN", message: "Affiliate and staff accounts keep their current role." });
++    }
++    const db = await getDb();
++    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
++    const [pending] = await db.select({ id: contractorAccessRequests.id }).from(contractorAccessRequests)
++      .where(and(eq(contractorAccessRequests.userId, ctx.user.id), eq(contractorAccessRequests.status, "pending")))
++      .limit(1);
++    if (pending) return { id: pending.id, status: "pending" as const };
++    const result = await db.insert(contractorAccessRequests).values({
++      userId: ctx.user.id,
++      businessName: input.businessName,
++      phone: input.phone,
++      licenseNumber: input.licenseNumber || null,
++      status: "pending",
++    });
++    return { id: Number((result as unknown as [{ insertId: number }])[0].insertId), status: "pending" as const };
++  }),
++  list: adminProcedure.input(z.object({ status: z.enum(STATUSES).optional() }).optional()).query(async ({ input }) => {
++    const db = await getDb();
++    if (!db) return [];
++    const rows = await db.select({
++      id: contractorAccessRequests.id,
++      userId: contractorAccessRequests.userId,
++      businessName: contractorAccessRequests.businessName,
++      phone: contractorAccessRequests.phone,
++      licenseNumber: contractorAccessRequests.licenseNumber,
++      status: contractorAccessRequests.status,
++      createdAt: contractorAccessRequests.createdAt,
++      email: users.email,
++      name: users.name,
++      role: users.role,
++    }).from(contractorAccessRequests)
++      .leftJoin(users, eq(users.id, contractorAccessRequests.userId))
++      .orderBy(desc(contractorAccessRequests.createdAt));
++    return input?.status ? rows.filter((row) => row.status === input.status) : rows;
++  }),
++  review: adminProcedure.input(z.object({
++    id: z.number().int().positive(),
++    decision: z.enum(["approved", "rejected"]),
++  })).mutation(async ({ ctx, input }) => {
++    const db = await getDb();
++    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
++    const [request] = await db.select().from(contractorAccessRequests).where(eq(contractorAccessRequests.id, input.id)).limit(1);
++    if (!request) throw new TRPCError({ code: "NOT_FOUND", message: "Request not found." });
++    const [account] = await db.select({ id: users.id, role: users.role }).from(users).where(eq(users.id, request.userId)).limit(1);
++    if (!account) throw new TRPCError({ code: "NOT_FOUND", message: "Account not found." });
++    if (input.decision === "approved") {
++      if (account.role !== "user" && account.role !== "contractor") {
++        throw new TRPCError({ code: "BAD_REQUEST", message: "This account already has a staff or affiliate role." });
++      }
++      if (account.role === "user") {
++        await db.update(users).set({ role: "contractor" }).where(eq(users.id, account.id));
++      }
++    }
++    await db.update(contractorAccessRequests).set({
++      status: input.decision,
++      reviewedByUserId: ctx.user.id,
++      reviewedAt: new Date(),
++    }).where(eq(contractorAccessRequests.id, request.id));
++    return { ok: true as const, status: input.decision };
++  }),
++});
+diff --git a/server/routers/contractorPortal.ts b/server/routers/contractorPortal.ts
+new file mode 100644
+index 0000000..432f425
+--- /dev/null
++++ b/server/routers/contractorPortal.ts
+@@ -0,0 +1,134 @@
++import { and, desc, eq, inArray, isNull } from "drizzle-orm";
++import { TRPCError } from "@trpc/server";
++import { z } from "zod";
++import { contractorCustomers, crmDealDesigns, crmDeals, kitchenDesigns } from "../../drizzle/schema";
++import { getDb } from "../db";
++import { protectedProcedure, router } from "../_core/trpc";
++
++function assertContractor(role: string) {
++  if (role !== "contractor") {
++    throw new TRPCError({ code: "FORBIDDEN", message: "Approved contractor access is required." });
++  }
++}
++
++const customerInput = z.object({
++  name: z.string().trim().min(2).max(256),
++  email: z.string().trim().email().max(320).nullable().optional(),
++  phone: z.string().trim().max(32).nullable().optional(),
++  notes: z.string().trim().max(4000).nullable().optional(),
++});
++
++export const contractorPortalRouter = router({
++  customers: router({
++    list: protectedProcedure.query(async ({ ctx }) => {
++      assertContractor(ctx.user.role);
++      const db = await getDb();
++      if (!db) return [];
++      return db.select().from(contractorCustomers)
++        .where(eq(contractorCustomers.contractorUserId, ctx.user.id))
++        .orderBy(desc(contractorCustomers.updatedAt));
++    }),
++    create: protectedProcedure.input(customerInput).mutation(async ({ ctx, input }) => {
++      assertContractor(ctx.user.role);
++      const db = await getDb();
++      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
++      const result = await db.insert(contractorCustomers).values({
++        contractorUserId: ctx.user.id,
++        name: input.name,
++        email: input.email || null,
++        phone: input.phone || null,
++        notes: input.notes || null,
++      });
++      const id = Number((result as unknown as [{ insertId: number }])[0].insertId);
++      await db.insert(crmDeals).values({
++        affiliateId: null,
++        ownerUserId: ctx.user.id,
++        contractorCustomerId: id,
++        title: input.name,
++        contactName: input.name,
++        contactEmail: input.email || null,
++        contactPhone: input.phone || null,
++        notes: input.notes || null,
++        stage: "new",
++        source: "manual",
++      });
++      const [row] = await db.select().from(contractorCustomers).where(eq(contractorCustomers.id, id)).limit(1);
++      return row ?? { id, contractorUserId: ctx.user.id, name: input.name, email: input.email ?? null, phone: input.phone ?? null, notes: input.notes ?? null };
++    }),
++  }),
++  designs: router({
++    list: protectedProcedure.query(async ({ ctx }) => {
++      assertContractor(ctx.user.role);
++      const db = await getDb();
++      if (!db) return [];
++      return db.select({
++        id: kitchenDesigns.id,
++        name: kitchenDesigns.name,
++        projectName: kitchenDesigns.projectName,
++        roomLabel: kitchenDesigns.roomLabel,
++        roomType: kitchenDesigns.roomType,
++        thumbnailUrl: kitchenDesigns.thumbnailUrl,
++        updatedAt: kitchenDesigns.updatedAt,
++        contractorCustomerId: kitchenDesigns.contractorCustomerId,
++      }).from(kitchenDesigns)
++        .where(and(eq(kitchenDesigns.userId, ctx.user.id), isNull(kitchenDesigns.affiliateId)))
++        .orderBy(desc(kitchenDesigns.updatedAt));
++    }),
++    assign: protectedProcedure.input(z.object({
++      designId: z.number().int().positive(),
++      customerId: z.number().int().positive().nullable(),
++    })).mutation(async ({ ctx, input }) => {
++      assertContractor(ctx.user.role);
++      const db = await getDb();
++      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
++      const [design] = await db.select({ id: kitchenDesigns.id }).from(kitchenDesigns)
++        .where(and(
++          eq(kitchenDesigns.id, input.designId),
++          eq(kitchenDesigns.userId, ctx.user.id),
++          isNull(kitchenDesigns.affiliateId),
++        ))
++        .limit(1);
++      if (!design) throw new TRPCError({ code: "NOT_FOUND", message: "Saved design not found." });
++      if (input.customerId != null) {
++        const [customer] = await db.select({ id: contractorCustomers.id }).from(contractorCustomers)
++          .where(and(eq(contractorCustomers.id, input.customerId), eq(contractorCustomers.contractorUserId, ctx.user.id)))
++          .limit(1);
++        if (!customer) throw new TRPCError({ code: "NOT_FOUND", message: "Customer not found." });
++      }
++      await db.update(kitchenDesigns)
++        .set({ contractorCustomerId: input.customerId })
++        .where(eq(kitchenDesigns.id, input.designId));
++      const ownedDeals = await db.select({ id: crmDeals.id, contractorCustomerId: crmDeals.contractorCustomerId })
++        .from(crmDeals)
++        .where(and(eq(crmDeals.ownerUserId, ctx.user.id), isNull(crmDeals.affiliateId)));
++      const ownedDealIds = ownedDeals.map((deal) => deal.id);
++      if (ownedDealIds.length) {
++        await db.delete(crmDealDesigns).where(and(eq(crmDealDesigns.designId, input.designId), inArray(crmDealDesigns.dealId, ownedDealIds)));
++      }
++      if (input.customerId != null) {
++        let dealId = ownedDeals.find((row) => row.contractorCustomerId === input.customerId)?.id ?? null;
++        if (dealId == null) {
++          const [customer] = await db.select({ name: contractorCustomers.name }).from(contractorCustomers).where(eq(contractorCustomers.id, input.customerId)).limit(1);
++          const created = await db.insert(crmDeals).values({
++            affiliateId: null,
++            ownerUserId: ctx.user.id,
++            contractorCustomerId: input.customerId,
++            title: customer?.name ?? "Customer design",
++            contactName: customer?.name ?? null,
++            stage: "new",
++            source: "manual",
++          });
++          dealId = Number((created as unknown as [{ insertId: number }])[0].insertId);
++        }
++        const [named] = await db.select({ name: kitchenDesigns.name }).from(kitchenDesigns).where(eq(kitchenDesigns.id, input.designId)).limit(1);
++        await db.insert(crmDealDesigns).values({
++          dealId,
++          designId: input.designId,
++          designName: named?.name ?? "Saved design",
++          linkedByUserId: ctx.user.id,
++        });
++      }
++      return { ok: true as const, designId: input.designId, customerId: input.customerId };
++    }),
++  }),
++});
+diff --git a/server/routers/crm.ts b/server/routers/crm.ts
+index 55035be..f1c9cfd 100644
+--- a/server/routers/crm.ts
++++ b/server/routers/crm.ts
+@@ -571,7 +571,12 @@ export const crmRouter = router({
+       // owner must choose an eligible affiliate estimate from this same customer
+       // or directly linked order; that selected estimate becomes a separately
+       // labeled Labor line in the consolidated CRM invoice draft.
+-      const laborEstimateRows = deal.affiliateId == null || (!deal.orderRequestId && !deal.contactEmail && !deal.laborEstimateId)
++      const laborOwner = deal.affiliateId != null
++        ? eq(affiliateInstallationEstimates.affiliateId, deal.affiliateId)
++        : deal.ownerUserId != null
++          ? eq(affiliateInstallationEstimates.contractorUserId, deal.ownerUserId)
++          : null;
++      const laborEstimateRows = laborOwner == null || (!deal.orderRequestId && !deal.contactEmail && !deal.laborEstimateId)
+         ? []
+         : await db.select({
+           id: affiliateInstallationEstimates.id,
+@@ -583,7 +588,7 @@ export const crmRouter = router({
+           totalAmount: affiliateInstallationEstimates.totalAmount,
+           updatedAt: affiliateInstallationEstimates.updatedAt,
+         }).from(affiliateInstallationEstimates)
+-          .where(eq(affiliateInstallationEstimates.affiliateId, deal.affiliateId))
++          .where(laborOwner!)
+           .orderBy(desc(affiliateInstallationEstimates.updatedAt))
+           .limit(100);
+       const laborEstimates = laborEstimateRows.filter((estimate) => (
+@@ -762,13 +767,31 @@ export const crmRouter = router({
+   setLaborEstimate: protectedProcedure
+     .input(z.object({ dealId: z.number().int(), laborEstimateId: z.number().int().positive().nullable() }))
+     .mutation(async ({ ctx, input }) => {
+-      const { db, deal } = await getOwnedDeal(ctx, input.dealId);
++      const { db, deal, scope } = await getOwnedDeal(ctx, input.dealId);
+       if (input.laborEstimateId == null) {
+         await db.update(crmDeals)
+           .set({ laborEstimateId: null, updatedAt: new Date() })
+           .where(eq(crmDeals.id, deal.id));
+         return { ok: true, laborEstimateId: null };
+       }
++      if (scope.kind === "contractor") {
++        const rows = await db.select({
++          id: affiliateInstallationEstimates.id,
++          crmDealId: affiliateInstallationEstimates.crmDealId,
++          contractorUserId: affiliateInstallationEstimates.contractorUserId,
++          orderRequestId: affiliateInstallationEstimates.orderRequestId,
++          customerEmail: affiliateInstallationEstimates.customerEmail,
++          status: affiliateInstallationEstimates.status,
++        }).from(affiliateInstallationEstimates)
++          .where(eq(affiliateInstallationEstimates.id, input.laborEstimateId))
++          .limit(1);
++        const laborEstimate = rows[0];
++        if (!laborEstimate || laborEstimate.contractorUserId !== scope.userId || laborEstimate.status === "cancelled" || !laborEstimateMatchesDeal(laborEstimate, deal)) {
++          throw new TRPCError({ code: "NOT_FOUND", message: "Labor estimate is not available for this deal." });
++        }
++        await db.update(crmDeals).set({ laborEstimateId: laborEstimate.id, updatedAt: new Date() }).where(eq(crmDeals.id, deal.id));
++        return { ok: true, laborEstimateId: laborEstimate.id };
++      }
+       if (deal.affiliateId == null) {
+         throw new TRPCError({ code: "BAD_REQUEST", message: "Labor estimates are available only for affiliate deals." });
+       }
+diff --git a/server/routers/customers.ts b/server/routers/customers.ts
+index 364c09b..3b40f38 100644
+--- a/server/routers/customers.ts
++++ b/server/routers/customers.ts
+@@ -307,29 +307,10 @@ export const customersRouter = router({
+   // get their own CRM-only admin screen (deals they own). Only a plain "user"
+   // may self-upgrade; specialized/staff accounts are left untouched so this can
+   // never strip an admin/distributor/partner of their existing access.
+-  becomeContractor: protectedProcedure.mutation(async ({ ctx }) => {
+-    const db = await getDb();
+-    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+-
+-    const [me] = await db
+-      .select({ id: users.id, role: users.role })
+-      .from(users)
+-      .where(eq(users.id, ctx.user.id))
+-      .limit(1);
+-    if (!me) throw new TRPCError({ code: "NOT_FOUND", message: "Account not found" });
+-
+-    // Already a contractor → idempotent success.
+-    if (me.role === "contractor") return { ok: true, role: "contractor" as const };
+-
+-    // Only a plain member can self-classify (don't clobber staff/partner roles).
+-    if (me.role !== "user") {
+-      throw new TRPCError({
+-        code: "BAD_REQUEST",
+-        message: "Your account already has a role that includes CRM access.",
+-      });
+-    }
+-
+-    await db.update(users).set({ role: "contractor" }).where(eq(users.id, ctx.user.id));
+-    return { ok: true, role: "contractor" as const };
++  becomeContractor: protectedProcedure.mutation(async () => {
++    throw new TRPCError({
++      code: "FORBIDDEN",
++      message: "Contractor access is approved by CabinetDealz. Apply from the contractor page.",
++    });
+   }),
+ });
+diff --git a/server/routers/installationEstimates.ts b/server/routers/installationEstimates.ts
+index 18bef1d..d04ccb9 100644
+--- a/server/routers/installationEstimates.ts
++++ b/server/routers/installationEstimates.ts
+@@ -1,7 +1,7 @@
+ import { and, desc, eq, inArray, isNull, or } from "drizzle-orm";
+ import { TRPCError } from "@trpc/server";
+ import { z } from "zod";
+-import { affiliateInstallationEstimates, affiliateTeamMembers, affiliates, cabinets, crmActivities, crmDealDesigns, crmDeals, kitchenDesigns, orderRequests } from "../../drizzle/schema";
++import { affiliateInstallationEstimates, affiliateTeamMembers, affiliates, cabinets, contractorKitchenCostDefaults, crmActivities, crmDealDesigns, crmDeals, kitchenDesigns, orderRequests } from "../../drizzle/schema";
+ import { getDb } from "../db";
+ import { syncStoredOrderCrm } from "../lib/orderSideEffects";
+ import { protectedProcedure, publicProcedure, router } from "../_core/trpc";
+@@ -18,7 +18,10 @@ const estimateLineSchema = z.object({
+   costType: z.enum(INSTALLATION_COST_TYPES).default("labor"),
+ });
+ 
++const audienceSchema = z.enum(["affiliate", "contractor"]).optional();
++
+ const estimateInputSchema = z.object({
++  audience: audienceSchema,
+   affiliateId: z.number().int().positive().optional(),
+   orderRequestId: z.number().int().positive().nullable().optional(),
+   customerName: z.string().trim().max(256).nullable().optional(),
+@@ -64,16 +67,41 @@ async function resolveAffiliateId(user: AuthUser, requestedAffiliateId?: number,
+   throw new TRPCError({ code: "FORBIDDEN", message: "You do not have access to affiliate installation estimates." });
+ }
+ 
++type EstimateOwner = { kind: "affiliate"; affiliateId: number } | { kind: "contractor"; userId: number };
++
++async function resolveEstimateOwner(
++  user: AuthUser,
++  input?: { audience?: "affiliate" | "contractor"; affiliateId?: number },
++  requireDesigner = false,
++): Promise<EstimateOwner> {
++  if (input?.audience === "contractor") {
++    if (user.role !== "contractor") {
++      throw new TRPCError({ code: "FORBIDDEN", message: "Contractor installation estimates are available to approved contractor accounts." });
++    }
++    return { kind: "contractor", userId: user.id };
++  }
++  return { kind: "affiliate", affiliateId: await resolveAffiliateId(user, input?.affiliateId, requireDesigner) };
++}
++
++function ownerWhere(owner: EstimateOwner) {
++  return owner.kind === "affiliate"
++    ? eq(affiliateInstallationEstimates.affiliateId, owner.affiliateId)
++    : eq(affiliateInstallationEstimates.contractorUserId, owner.userId);
++}
++
+ export const installationEstimatesRouter = router({
+   kitchenPlans: protectedProcedure
+-    .input(z.object({ affiliateId: z.number().int().positive().optional() }).optional())
++    .input(z.object({ audience: audienceSchema, affiliateId: z.number().int().positive().optional() }).optional())
+     .query(async ({ ctx, input }) => {
+-      const affiliateId = await resolveAffiliateId(ctx.user, input?.affiliateId, true);
++      const owner = await resolveEstimateOwner(ctx.user, input, true);
+       const db = await getDb();
+       if (!db) return [];
++      const scope = owner.kind === "affiliate"
++        ? eq(kitchenDesigns.affiliateId, owner.affiliateId)
++        : and(eq(kitchenDesigns.userId, owner.userId), isNull(kitchenDesigns.affiliateId));
+       const designs = await db.select({ id: kitchenDesigns.id, name: kitchenDesigns.name, projectName: kitchenDesigns.projectName, roomLabel: kitchenDesigns.roomLabel, updatedAt: kitchenDesigns.updatedAt, placedCabinets: kitchenDesigns.placedCabinets })
+         .from(kitchenDesigns)
+-        .where(and(eq(kitchenDesigns.affiliateId, affiliateId), or(isNull(kitchenDesigns.roomType), eq(kitchenDesigns.roomType, "Kitchen"), eq(kitchenDesigns.roomType, "kitchen"))))
++        .where(and(scope, or(isNull(kitchenDesigns.roomType), eq(kitchenDesigns.roomType, "Kitchen"), eq(kitchenDesigns.roomType, "kitchen"))))
+         .orderBy(desc(kitchenDesigns.updatedAt));
+       const ids = Array.from(new Set(designs.flatMap((design) => (Array.isArray(design.placedCabinets) ? design.placedCabinets : []).map((item) => Number((item as { cabinetId?: number } | null)?.cabinetId)).filter((id) => Number.isInteger(id) && id > 0))));
+       const catalogRows = ids.length
+@@ -92,17 +120,18 @@ export const installationEstimatesRouter = router({
+     }),
+ 
+   kitchenCostDefaults: protectedProcedure
+-    .input(z.object({ affiliateId: z.number().int().positive().optional() }).optional())
++    .input(z.object({ audience: audienceSchema, affiliateId: z.number().int().positive().optional() }).optional())
+     .query(async ({ ctx, input }) => {
+-      const affiliateId = await resolveAffiliateId(ctx.user, input?.affiliateId);
++      const owner = await resolveEstimateOwner(ctx.user, input);
+       const db = await getDb();
+       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+-      const [affiliate] = await db.select({ kitchenCostDefaultsJson: affiliates.kitchenCostDefaultsJson })
+-        .from(affiliates).where(eq(affiliates.id, affiliateId)).limit(1);
++      const storedJson = owner.kind === "affiliate"
++        ? (await db.select({ kitchenCostDefaultsJson: affiliates.kitchenCostDefaultsJson }).from(affiliates).where(eq(affiliates.id, owner.affiliateId)).limit(1))[0]?.kitchenCostDefaultsJson
++        : (await db.select({ defaultsJson: contractorKitchenCostDefaults.defaultsJson }).from(contractorKitchenCostDefaults).where(eq(contractorKitchenCostDefaults.contractorUserId, owner.userId)).limit(1))[0]?.defaultsJson;
+       const blank = createBlankKitchenCostDefaults();
+-      if (!affiliate?.kitchenCostDefaultsJson) return { defaults: blank, hasSavedDefaults: false };
++      if (!storedJson) return { defaults: blank, hasSavedDefaults: false };
+       try {
+-        const saved = z.array(kitchenCostDefaultSchema).parse(JSON.parse(affiliate.kitchenCostDefaultsJson));
++        const saved = z.array(kitchenCostDefaultSchema).parse(JSON.parse(storedJson));
+         const byDescription = new Map(saved.map((row) => [row.description, row]));
+         return { defaults: blank.map((row) => ({ ...row, ...(byDescription.get(row.description) ?? {}) })), hasSavedDefaults: true };
+       } catch {
+@@ -111,9 +140,9 @@ export const installationEstimatesRouter = router({
+     }),
+ 
+   saveKitchenCostDefaults: protectedProcedure
+-    .input(z.object({ affiliateId: z.number().int().positive().optional(), defaults: kitchenCostDefaultsInputSchema }))
++    .input(z.object({ audience: audienceSchema, affiliateId: z.number().int().positive().optional(), defaults: kitchenCostDefaultsInputSchema }))
+     .mutation(async ({ ctx, input }) => {
+-      const affiliateId = await resolveAffiliateId(ctx.user, input.affiliateId);
++      const owner = await resolveEstimateOwner(ctx.user, input);
+       const db = await getDb();
+       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+       const byDescription = new Map(input.defaults.map((row) => [row.description, row]));
+@@ -122,25 +151,31 @@ export const installationEstimatesRouter = router({
+         materialUnitCost: byDescription.get(row.description)?.materialUnitCost ?? 0,
+         laborUnitCost: byDescription.get(row.description)?.laborUnitCost ?? 0,
+       }));
+-      await db.update(affiliates).set({ kitchenCostDefaultsJson: JSON.stringify(normalized) }).where(eq(affiliates.id, affiliateId));
++      const payload = JSON.stringify(normalized);
++      if (owner.kind === "affiliate") {
++        await db.update(affiliates).set({ kitchenCostDefaultsJson: payload }).where(eq(affiliates.id, owner.affiliateId));
++      } else {
++        await db.insert(contractorKitchenCostDefaults).values({ contractorUserId: owner.userId, defaultsJson: payload })
++          .onDuplicateKeyUpdate({ set: { defaultsJson: payload } });
++      }
+       return { success: true, defaults: normalized };
+     }),
+ 
+   list: protectedProcedure
+-    .input(z.object({ affiliateId: z.number().int().positive().optional() }).optional())
++    .input(z.object({ audience: audienceSchema, affiliateId: z.number().int().positive().optional() }).optional())
+     .query(async ({ ctx, input }) => {
+-      const affiliateId = await resolveAffiliateId(ctx.user, input?.affiliateId);
++      const owner = await resolveEstimateOwner(ctx.user, input);
+       const db = await getDb();
+       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+       return db.select().from(affiliateInstallationEstimates)
+-        .where(eq(affiliateInstallationEstimates.affiliateId, affiliateId))
++        .where(ownerWhere(owner))
+         .orderBy(desc(affiliateInstallationEstimates.updatedAt));
+     }),
+ 
+   create: protectedProcedure
+     .input(estimateInputSchema)
+     .mutation(async ({ ctx, input }) => {
+-      const affiliateId = await resolveAffiliateId(ctx.user, input.affiliateId, input.roomType === "Kitchen" && input.kitchenDesignId != null);
++      const owner = await resolveEstimateOwner(ctx.user, input, input.roomType === "Kitchen" && input.kitchenDesignId != null);
+       const db = await getDb();
+       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+       const result = await db.transaction(async (tx) => {
+@@ -148,11 +183,14 @@ export const installationEstimatesRouter = router({
+         let cabinetBreakdown: KitchenCabinetBreakdown | null = null;
+         let kitchenDesignName: string | null = null;
+         if (kitchenDesignId != null) {
++          const designScope = owner.kind === "affiliate"
++            ? eq(kitchenDesigns.affiliateId, owner.affiliateId)
++            : and(eq(kitchenDesigns.userId, owner.userId), isNull(kitchenDesigns.affiliateId));
+           const [design] = await tx.select({ id: kitchenDesigns.id, name: kitchenDesigns.name, affiliateId: kitchenDesigns.affiliateId, placedCabinets: kitchenDesigns.placedCabinets })
+             .from(kitchenDesigns)
+-            .where(and(eq(kitchenDesigns.id, kitchenDesignId), eq(kitchenDesigns.affiliateId, affiliateId), or(isNull(kitchenDesigns.roomType), eq(kitchenDesigns.roomType, "Kitchen"), eq(kitchenDesigns.roomType, "kitchen"))))
++            .where(and(eq(kitchenDesigns.id, kitchenDesignId), designScope, or(isNull(kitchenDesigns.roomType), eq(kitchenDesigns.roomType, "Kitchen"), eq(kitchenDesigns.roomType, "kitchen"))))
+             .limit(1).for("update");
+-          if (!design) throw new TRPCError({ code: "NOT_FOUND", message: "The selected kitchen plan was not found in this affiliate store." });
++          if (!design) throw new TRPCError({ code: "NOT_FOUND", message: owner.kind === "contractor" ? "The selected kitchen plan was not found on your contractor account." : "The selected kitchen plan was not found in this affiliate store." });
+           kitchenDesignName = design.name;
+           const placed = (Array.isArray(design.placedCabinets) ? design.placedCabinets : []) as Array<{ cabinetId?: number | null; qty?: number | null }>;
+           const ids = Array.from(new Set(placed.filter(Boolean).map((item) => Number(item.cabinetId)).filter((id) => Number.isInteger(id) && id > 0)));
+@@ -162,14 +200,18 @@ export const installationEstimatesRouter = router({
+           cabinetBreakdown = countKitchenCabinets(placed, new Map(catalogRows.map((row) => [row.id, row])));
+         }
+         if (input.orderRequestId != null) {
++          const orderScope = owner.kind === "affiliate"
++            ? eq(orderRequests.affiliateId, owner.affiliateId)
++            : eq(orderRequests.userId, owner.userId);
+           const [order] = await tx.select({ id: orderRequests.id }).from(orderRequests)
+-            .where(and(eq(orderRequests.id, input.orderRequestId), eq(orderRequests.affiliateId, affiliateId))).limit(1);
++            .where(and(eq(orderRequests.id, input.orderRequestId), orderScope)).limit(1);
+           if (!order) throw new TRPCError({ code: "NOT_FOUND", message: "The material order was not found in this affiliate store." });
+         }
+         const totals = calculateInstallationEstimate(input.lineItems, input.taxAmount, input.markupPercent);
+         const shareToken = crypto.randomUUID().replace(/-/g, "");
+         const result = await tx.insert(affiliateInstallationEstimates).values({
+-          affiliateId,
++          affiliateId: owner.kind === "affiliate" ? owner.affiliateId : null,
++          contractorUserId: owner.kind === "contractor" ? owner.userId : null,
+           shareToken,
+           orderRequestId: input.orderRequestId ?? null,
+           kitchenDesignId,
+@@ -188,7 +230,8 @@ export const installationEstimatesRouter = router({
+         });
+         const estimateId = Number((result as unknown as [{ insertId: number }])[0].insertId);
+         let crmDealId: number | null = null;
+-        if (input.roomType === "Kitchen" && (kitchenDesignId != null || input.customerName || input.customerEmail || input.customerPhone)) {
++        const affiliateId = owner.kind === "affiliate" ? owner.affiliateId : null;
++        if (affiliateId != null && input.roomType === "Kitchen" && (kitchenDesignId != null || input.customerName || input.customerEmail || input.customerPhone)) {
+           let matching = kitchenDesignId == null ? [] : await tx.select({ id: crmDeals.id })
+             .from(crmDealDesigns).innerJoin(crmDeals, eq(crmDeals.id, crmDealDesigns.dealId))
+             .where(and(eq(crmDealDesigns.designId, kitchenDesignId), eq(crmDeals.affiliateId, affiliateId)))
+@@ -232,13 +275,13 @@ export const installationEstimatesRouter = router({
+     }),
+ 
+   updateStatus: protectedProcedure
+-    .input(z.object({ id: z.number().int().positive(), affiliateId: z.number().int().positive().optional(), status: z.enum(["draft", "shared", "accepted", "cancelled"]) }))
++    .input(z.object({ id: z.number().int().positive(), audience: audienceSchema, affiliateId: z.number().int().positive().optional(), status: z.enum(["draft", "shared", "accepted", "cancelled"]) }))
+     .mutation(async ({ ctx, input }) => {
+-      const affiliateId = await resolveAffiliateId(ctx.user, input.affiliateId);
++      const owner = await resolveEstimateOwner(ctx.user, input);
+       const db = await getDb();
+       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+       await db.update(affiliateInstallationEstimates).set({ status: input.status })
+-        .where(and(eq(affiliateInstallationEstimates.id, input.id), eq(affiliateInstallationEstimates.affiliateId, affiliateId)));
++        .where(and(eq(affiliateInstallationEstimates.id, input.id), ownerWhere(owner)));
+       return { success: true };
+     }),
+ 
+@@ -251,9 +294,11 @@ export const installationEstimatesRouter = router({
+         .where(and(eq(affiliateInstallationEstimates.shareToken, input.token), or(eq(affiliateInstallationEstimates.status, "shared"), eq(affiliateInstallationEstimates.status, "accepted"))))
+         .limit(1);
+       if (!estimate) throw new TRPCError({ code: "NOT_FOUND", message: "Installation document is not available." });
+-      const [affiliate] = await db.select({ storeName: affiliates.storeName, logoUrl: affiliates.logoUrl, primaryColor: affiliates.primaryColor, publicEmail: affiliates.publicEmail, publicPhone: affiliates.publicPhone })
+-        .from(affiliates).where(eq(affiliates.id, estimate.affiliateId)).limit(1);
+-      return { estimate, affiliate: affiliate ?? null };
++      const [affiliate] = estimate.affiliateId
++        ? await db.select({ storeName: affiliates.storeName, logoUrl: affiliates.logoUrl, primaryColor: affiliates.primaryColor, publicEmail: affiliates.publicEmail, publicPhone: affiliates.publicPhone })
++          .from(affiliates).where(eq(affiliates.id, estimate.affiliateId)).limit(1)
++        : [undefined];
++      return { estimate, affiliate: affiliate ?? { storeName: "CabinetDealz", logoUrl: null, primaryColor: null, publicEmail: null, publicPhone: null } };
+     }),
+ 
+   // The material-order confirmation can only reveal a separate installation
+diff --git a/server/routers/orderTracking.ts b/server/routers/orderTracking.ts
+new file mode 100644
+index 0000000..ace006f
+--- /dev/null
++++ b/server/routers/orderTracking.ts
+@@ -0,0 +1,191 @@
++import { desc, eq, inArray, or, sql } from "drizzle-orm";
++import { orderRequests, orderShipments } from "../../drizzle/schema";
++import { getDb } from "../db";
++import { resolveAffiliateAccess } from "../lib/affiliateAccess";
++import { columnPresent, readOrderSchemaSupport } from "../lib/orderSchemaSupport";
++import { protectedProcedure, router } from "../_core/trpc";
++import {
++  buildCustomerOrderTimeline,
++  invoiceMoney,
++  orderVisibleToViewer,
++  type CustomerOrderInput,
++  type OrderTrackingLine,
++} from "../../shared/orderTracking";
++
++const TRAIL_COLUMNS = [
++  "orderShippedAt",
++  "orderSignedAt",
++  "shipmentCarrier",
++  "shipmentTracking",
++  "distributorEmailStatus",
++  "distributorEmailSentAt",
++  "distributorEmailTo",
++  "signerName",
++] as const;
++
++type TrailRow = {
++  id: number;
++  orderShippedAt?: string | Date | null;
++  orderSignedAt?: string | Date | null;
++  shipmentCarrier?: string | null;
++  shipmentTracking?: string | null;
++  distributorEmailStatus?: string | null;
++  distributorEmailSentAt?: string | Date | null;
++  distributorEmailTo?: string | null;
++  signerName?: string | null;
++};
++
++function rowsFrom(result: unknown): Array<Record<string, unknown>> {
++  if (Array.isArray(result)) {
++    const first = result[0];
++    if (Array.isArray(first)) return first as Array<Record<string, unknown>>;
++    if (first && typeof first === "object") return result as Array<Record<string, unknown>>;
++  }
++  return [];
++}
++
++function readField(row: Record<string, unknown>, name: string): unknown {
++  const target = name.toLowerCase();
++  for (const [key, value] of Object.entries(row)) {
++    if (key.toLowerCase() === target) return value;
++  }
++  return null;
++}
++
++function lineItemsOf(value: unknown): OrderTrackingLine[] {
++  if (!Array.isArray(value)) return [];
++  return value.map((item) => {
++    const line = (item ?? {}) as Record<string, unknown>;
++    const qty = Number(line.qty ?? 0);
++    const unit = line.unitPrice == null ? null : Number(line.unitPrice);
++    const total = line.linePrice == null ? null : Number(line.linePrice);
++    return {
++      description: String(line.description ?? line.masterCode ?? "Item"),
++      code: line.masterCode == null ? null : String(line.masterCode),
++      qty: Number.isFinite(qty) ? qty : 0,
++      unitPrice: unit != null && Number.isFinite(unit) ? unit : null,
++      linePrice: total != null && Number.isFinite(total) ? total : null,
++    };
++  });
++}
++
++export const orderTrackingRouter = router({
++  list: protectedProcedure.query(async ({ ctx }) => {
++    const db = await getDb();
++    if (!db) return [];
++    const access = await resolveAffiliateAccess(db, ctx.user);
++    const affiliateCanSeeReferred = Boolean(access && (access.isOwner || access.accessCrm));
++    const email = (ctx.user.email ?? "").trim();
++    const viewer = {
++      userId: ctx.user.id,
++      email: ctx.user.email ?? null,
++      role: ctx.user.role,
++      affiliateId: access?.affiliateId ?? null,
++      affiliateCanSeeReferred,
++    };
++    const filters = [eq(orderRequests.userId, ctx.user.id)];
++    if (email) filters.push(eq(orderRequests.originatorEmail, email));
++    if (affiliateCanSeeReferred && access) filters.push(eq(orderRequests.affiliateId, access.affiliateId));
++
++    const orders = await db.select({
++      id: orderRequests.id,
++      userId: orderRequests.userId,
++      affiliateId: orderRequests.affiliateId,
++      originatorEmail: orderRequests.originatorEmail,
++      originatorName: orderRequests.originatorName,
++      requestNumber: orderRequests.requestNumber,
++      status: orderRequests.status,
++      createdAt: orderRequests.createdAt,
++      confirmedAt: orderRequests.confirmedAt,
++      paidAt: orderRequests.paidAt,
++      sentToDistributorAt: orderRequests.sentToDistributorAt,
++      totalAmount: orderRequests.totalAmount,
++      taxAmount: orderRequests.taxAmount,
++      freightQuoteCents: orderRequests.freightQuoteCents,
++      lineItems: orderRequests.lineItems,
++      qboInvoiceId: orderRequests.qboInvoiceId,
++      styleName: orderRequests.styleName,
++    }).from(orderRequests)
++      .where(or(...filters))
++      .orderBy(desc(orderRequests.createdAt))
++      .limit(100);
++
++    const visible = orders.filter((order) => orderVisibleToViewer(order, viewer));
++    const ids = visible.map((order) => order.id);
++    const shipments = ids.length
++      ? await db.select({
++        orderRequestId: orderShipments.orderRequestId,
++        status: orderShipments.status,
++        shippedAt: orderShipments.shippedAt,
++        carrier: orderShipments.carrier,
++        trackingNumber: orderShipments.trackingNumber,
++      }).from(orderShipments).where(inArray(orderShipments.orderRequestId, ids))
++      : [];
++
++    const trailById = new Map<number, TrailRow>();
++    if (ids.length) {
++      try {
++        const support = await readOrderSchemaSupport(db);
++        const columns = TRAIL_COLUMNS.filter((column) => !support || columnPresent(support, "order_requests", column));
++        if (columns.length > 0) {
++          const idList = sql.join(ids.map((id) => sql`${id}`), sql`, `);
++          const columnList = sql.join(columns.map((column) => sql.raw(column)), sql`, `);
++          const result = await db.execute(sql`SELECT id, ${columnList} FROM order_requests WHERE id IN (${idList})`);
++          for (const row of rowsFrom(result)) {
++            const id = Number(readField(row, "id"));
++            if (!Number.isInteger(id)) continue;
++            const entry: TrailRow = { id };
++            for (const column of columns) {
++              (entry as Record<string, unknown>)[column] = readField(row, column);
++            }
++            trailById.set(id, entry);
++          }
++        }
++      } catch (error) {
++        console.warn("[OrderTracking] Status columns are not readable yet", error instanceof Error ? error.message : "unknown error");
++      }
++    }
++
++    return visible.map((order) => {
++      const orderShipmentsForRow = shipments.filter((row) => row.orderRequestId === order.id);
++      const trail = trailById.get(order.id);
++      const input: CustomerOrderInput = {
++        status: order.status,
++        createdAt: order.createdAt,
++        confirmedAt: order.confirmedAt,
++        paidAt: order.paidAt,
++        sentToDistributorAt: order.sentToDistributorAt,
++        distributorEmailStatus: trail?.distributorEmailStatus ?? null,
++        distributorEmailSentAt: trail?.distributorEmailSentAt ?? null,
++        distributorEmailTo: trail?.distributorEmailTo ?? null,
++        orderShippedAt: trail?.orderShippedAt ?? null,
++        shipmentCarrier: trail?.shipmentCarrier ?? null,
++        shipmentTracking: trail?.shipmentTracking ?? null,
++        orderSignedAt: trail?.orderSignedAt ?? null,
++        signerName: trail?.signerName ?? null,
++        shipments: orderShipmentsForRow,
++      };
++      const lines = lineItemsOf(order.lineItems);
++      const merchandise = lines.reduce((sum, line) => sum + (line.linePrice ?? 0), 0);
++      const freight = (order.freightQuoteCents ?? 0) / 100;
++      return {
++        id: order.id,
++        requestNumber: order.requestNumber,
++        status: order.status,
++        customerName: order.originatorName,
++        customerEmail: order.originatorEmail,
++        styleName: order.styleName,
++        createdAt: order.createdAt,
++        timeline: buildCustomerOrderTimeline(input),
++        lines,
++        invoice: {
++          merchandise,
++          tax: invoiceMoney(order.taxAmount),
++          freight,
++          total: invoiceMoney(order.totalAmount),
++          qboInvoiceId: order.qboInvoiceId,
++        },
++      };
++    });
++  }),
++});
+diff --git a/server/routers/orders.ts b/server/routers/orders.ts
+index 05553a1..3230d4f 100644
+--- a/server/routers/orders.ts
++++ b/server/routers/orders.ts
+@@ -37,6 +37,7 @@ import {
+ } from "@shared/codeMatch";
+ import { invokeLLM } from "../_core/llm";
+ import { sellPriceForTier } from "@shared/margins";
++import { resolvePricingFor } from "@shared/pricingTier";
+ import { getPricingSettings } from "../db";
+ import { resolveAffiliateStorefrontSale } from "@shared/affiliateBranding";
+ import { affiliateStyleBranding } from "../../drizzle/schema";
+@@ -812,14 +813,14 @@ export const ordersRouter = router({
+       // Server-side tier enforcement: non-admin users always get their assigned pricingTier.
+       // Admins may pass any tier (for quoting on behalf of a customer).
+       const isAdmin = (ctx as { user?: { role?: string } }).user?.role === "admin";
+-      const userDbTier = (ctx as { user?: { pricingTier?: string } }).user?.pricingTier;
++      const pricing = resolvePricingFor(ctx.user);
+       const resolvedTier: "Wholesale" | "Contractor" | "Homeowner" = isAdmin
+         ? input.tier
+-        : userDbTier === "wholesale"
++        : pricing.tier === "wholesale"
+           ? "Wholesale"
+-          : userDbTier === "contractor"
++          : pricing.tier === "contractor"
+             ? "Contractor"
+-            : "Homeowner"; // guests and homeowners default to Homeowner
++            : "Homeowner";
+       const scopeSlug = input.storeScope.trim().toLowerCase();
+       const affiliatePricing = await loadAffiliateStorefrontPricing(scopeSlug);
+       if (scopeSlug !== "owner" && !affiliatePricing) {
+diff --git a/shared/affiliateResolution.test.ts b/shared/affiliateResolution.test.ts
+index aa27800..4b6cb74 100644
+--- a/shared/affiliateResolution.test.ts
++++ b/shared/affiliateResolution.test.ts
+@@ -17,9 +17,10 @@ function affiliate(partial: AffiliateCandidate): AffiliateCandidate {
+ function destination(
+   resolution: ReturnType<typeof resolveAffiliateRelationship>,
+   returnPath: string,
+-  userRole: string | null = "user"
++  userRole: string | null = "user",
++  portal: "affiliate" | "contractor" | "customer" | null = null,
+ ) {
+-  return resolveSignInDestination({ returnPath, userRole, resolution });
++  return resolveSignInDestination({ returnPath, userRole, resolution, portal });
+ }
+ 
+ describe("affiliate sign-in and portal resolution", () => {
+@@ -39,6 +40,8 @@ describe("affiliate sign-in and portal resolution", () => {
+     expect(resolution.link).toBeNull();
+     expect(shouldLinkAffiliateOnLogin("admin", resolution.link)).toBe(false);
+     expect(signedInHomeForRole("admin")).toBe("/admin");
++    expect(signedInHomeForRole("contractor")).toBe("/contractor");
++    expect(signedInHomeForRole("user")).toBe("/account");
+     expect(destination(resolution, "/admin", "admin")).toMatchObject({
+       destination: "/admin",
+       resolution: "admin",
+@@ -154,6 +157,11 @@ describe("affiliate sign-in and portal resolution", () => {
+     expect(destination(resolution, "/account").destination).toBe(
+       "/affiliate?viewAs=15"
+     );
++    expect(destination(resolution, "/account", "user", "customer").destination).toBe("/customer");
++    expect(destination(resolution, "/affiliate", "user", "contractor").destination).toBe("/contractor");
++    expect(destination(resolution, "/customer", "contractor", "affiliate").destination).toBe(
++      "/affiliate?viewAs=15"
++    );
+     expect(destination(resolution, "/admin").destination).toBe("/admin");
+ 
+     const alreadyClaimed = resolveAffiliateRelationship({
+@@ -254,6 +262,8 @@ describe("affiliate sign-in and portal resolution", () => {
+       resolution: "none",
+     });
+     expect(destination(resolution, "/affiliate").destination).toBe("/account");
++    expect(destination(resolution, "/affiliate", "user", "affiliate").destination).toBe("/affiliate");
++    expect(destination(resolution, "/signin", "user", "customer").destination).toBe("/customer");
+     expect(destination(resolution, "/affiliate?viewAs=4").destination).toBe(
+       "/account"
+     );
+diff --git a/shared/affiliateResolution.ts b/shared/affiliateResolution.ts
+index 7ffddd9..120a014 100644
+--- a/shared/affiliateResolution.ts
++++ b/shared/affiliateResolution.ts
+@@ -54,6 +54,9 @@ export type SignInDestination = {
+   ambiguousAffiliateIds: number[];
+ };
+ 
++/** Chosen on an affiliate landing or referral sign-in before the password step. */
++export type SignInPortal = "affiliate" | "contractor" | "customer";
++
+ export function normalizeAffiliateEmail(
+   email: string | null | undefined
+ ): string {
+@@ -70,6 +73,7 @@ export function signedInHomeForRole(
+ ): string {
+   if (userRole === "admin") return "/admin";
+   if (userRole === "distributor") return "/vendor";
++  if (userRole === "contractor") return "/contractor";
+   return "/account";
+ }
+ 
+@@ -265,14 +269,57 @@ export function shouldLinkAffiliateOnLogin(
+  * Where to navigate after sign-in. `returnPath` is already the role home when
+  * the client did not ask for a specific page.
+  */
++function portalDestination(
++  portal: SignInPortal | null | undefined,
++  resolution: AffiliateResolution,
++  ambiguousAffiliateIds: number[],
++): SignInDestination | null {
++  if (portal === "contractor") {
++    return {
++      destination: "/contractor",
++      affiliateId: resolution.access?.affiliateId ?? null,
++      resolution: resolution.access ? "affiliate" : "none",
++      ambiguousAffiliateIds,
++    };
++  }
++  if (portal === "customer") {
++    return {
++      destination: "/customer",
++      affiliateId: resolution.access?.affiliateId ?? null,
++      resolution: resolution.access ? "affiliate" : "none",
++      ambiguousAffiliateIds,
++    };
++  }
++  if (portal === "affiliate") {
++    if (resolution.access) {
++      return {
++        destination: affiliatePortalPath(resolution.access.affiliateId),
++        affiliateId: resolution.access.affiliateId,
++        resolution: "affiliate",
++        ambiguousAffiliateIds: [],
++      };
++    }
++    return {
++      destination: "/affiliate",
++      affiliateId: null,
++      resolution: ambiguousAffiliateIds.length > 0 ? "ambiguous" : "none",
++      ambiguousAffiliateIds,
++    };
++  }
++  return null;
++}
++
+ export function resolveSignInDestination({
+   returnPath,
+   userRole,
+   resolution,
++  portal = null,
+ }: {
+   returnPath: string;
+   userRole?: string | null;
+   resolution: AffiliateResolution;
++  /** Set only when the person picked Affiliate, Contractor, or Customer. */
++  portal?: SignInPortal | null;
+ }): SignInDestination {
+   const ambiguousAffiliateIds = resolution.ambiguousAffiliateIds;
+   if (userRole === "admin") {
+@@ -283,6 +330,8 @@ export function resolveSignInDestination({
+       ambiguousAffiliateIds,
+     };
+   }
++  const chosen = portalDestination(portal, resolution, ambiguousAffiliateIds);
++  if (chosen) return chosen;
+   // Admin role wins above. An explicit /admin request is never replaced either,
+   // including when the same email is also an affiliate login.
+   if (isAdminReturnPath(returnPath)) {
+diff --git a/shared/orderTracking.test.ts b/shared/orderTracking.test.ts
+new file mode 100644
+index 0000000..7392a2c
+--- /dev/null
++++ b/shared/orderTracking.test.ts
+@@ -0,0 +1,69 @@
++import { describe, expect, it } from "vitest";
++import { buildCustomerOrderTimeline, orderVisibleToViewer, type OrderTrackingViewer } from "./orderTracking";
++
++const customer: OrderTrackingViewer = {
++  userId: 4,
++  email: "ada@example.com",
++  role: "user",
++  affiliateId: null,
++  affiliateCanSeeReferred: false,
++};
++
++describe("order visibility", () => {
++  it("lets a customer see an order they placed or that uses their email", () => {
++    expect(orderVisibleToViewer({ userId: 4, affiliateId: 9, originatorEmail: "other@example.com" }, customer)).toBe(true);
++    expect(orderVisibleToViewer({ userId: 8, affiliateId: null, originatorEmail: "Ada@example.com" }, customer)).toBe(true);
++    expect(orderVisibleToViewer({ userId: 8, affiliateId: 9, originatorEmail: "other@example.com" }, customer)).toBe(false);
++  });
++
++  it("lets an affiliate see referred orders only when CRM access allows it, plus their own", () => {
++    const affiliate: OrderTrackingViewer = {
++      userId: 3,
++      email: "shop@example.com",
++      role: "partner",
++      affiliateId: 7,
++      affiliateCanSeeReferred: true,
++    };
++    expect(orderVisibleToViewer({ userId: 90, affiliateId: 7, originatorEmail: "buyer@example.com" }, affiliate)).toBe(true);
++    expect(orderVisibleToViewer({ userId: 3, affiliateId: null, originatorEmail: "shop@example.com" }, affiliate)).toBe(true);
++    expect(orderVisibleToViewer({ userId: 90, affiliateId: 8, originatorEmail: "buyer@example.com" }, affiliate)).toBe(false);
++
++    const noCrm = { ...affiliate, affiliateCanSeeReferred: false };
++    expect(orderVisibleToViewer({ userId: 90, affiliateId: 7, originatorEmail: "buyer@example.com" }, noCrm)).toBe(false);
++    expect(orderVisibleToViewer({ userId: 3, affiliateId: 8, originatorEmail: "other@example.com" }, noCrm)).toBe(true);
++  });
++});
++
++describe("customer order timeline", () => {
++  it("maps placed, distributor email, shipment, and the delivery signature", () => {
++    const steps = buildCustomerOrderTimeline({
++      status: "confirmed",
++      createdAt: "2026-10-01T12:00:00.000Z",
++      paidAt: "2026-10-01T12:05:00.000Z",
++      distributorEmailStatus: "sent",
++      distributorEmailSentAt: "2026-10-02T15:00:00.000Z",
++      distributorEmailTo: "orders@mill.com",
++      orderShippedAt: "2026-10-04T18:00:00.000Z",
++      shipmentCarrier: "UPS",
++      shipmentTracking: "1Z999",
++      orderSignedAt: "2026-10-06T20:00:00.000Z",
++      signerName: "Ada Lovelace",
++    });
++    expect(steps.map((step) => [step.key, step.label, step.done])).toEqual([
++      ["placed", "Placed", true],
++      ["sent_to_distributor", "Sent to distributor", true],
++      ["shipped", "Shipped", true],
++      ["delivered", "Delivered", true],
++    ]);
++    expect(steps[1].detail).toBe("orders@mill.com");
++    expect(steps[2].detail).toContain("1Z999");
++    expect(steps[3].detail).toBe("Ada Lovelace");
++    expect(steps[0].at).toBe("2026-10-01T12:05:00.000Z");
++  });
++
++  it("leaves a draft unplaced", () => {
++    const [placed] = buildCustomerOrderTimeline({ status: "draft", createdAt: "2026-10-01T12:00:00.000Z" });
++    expect(placed.done).toBe(false);
++    expect(placed.at).toBeNull();
++  });
++});
+diff --git a/shared/orderTracking.ts b/shared/orderTracking.ts
+new file mode 100644
+index 0000000..63b6c31
+--- /dev/null
++++ b/shared/orderTracking.ts
+@@ -0,0 +1,116 @@
++// Customer-facing order timeline. The later steps reuse the existing distributor
++// trail (email sent, shipped, signed) so those dates are not calculated twice.
++import { buildOrderStatusTrail, trailTimestamp, type OrderTrailInput } from "./orderStatusTrail";
++
++export type OrderTrackingViewer = {
++  userId: number;
++  email: string | null;
++  role: string;
++  /** Set when this person can see an affiliate's referred orders. */
++  affiliateId: number | null;
++  /** Mirrors affiliate CRM access: owners and CRM members see referred orders. */
++  affiliateCanSeeReferred: boolean;
++};
++
++export type OrderTrackingLine = {
++  description: string;
++  code: string | null;
++  qty: number;
++  unitPrice: number | null;
++  linePrice: number | null;
++};
++
++export type CustomerOrderStepKey = "placed" | "sent_to_distributor" | "shipped" | "delivered";
++
++export type CustomerOrderStep = {
++  key: CustomerOrderStepKey;
++  label: string;
++  done: boolean;
++  at: string | null;
++  detail: string | null;
++};
++
++export type CustomerOrderInput = OrderTrailInput & {
++  status?: string | null;
++  createdAt?: string | Date | null;
++  confirmedAt?: string | Date | null;
++  paidAt?: string | Date | null;
++};
++
++const STEP_LABELS: Record<CustomerOrderStepKey, string> = {
++  placed: "Placed",
++  sent_to_distributor: "Sent to distributor",
++  shipped: "Shipped",
++  delivered: "Delivered",
++};
++
++function emailsMatch(left: string | null | undefined, right: string | null | undefined): boolean {
++  const a = (left ?? "").trim().toLowerCase();
++  const b = (right ?? "").trim().toLowerCase();
++  return a.length > 0 && a === b;
++}
++
++/**
++ * Customers see orders they placed. Contractors see orders they placed.
++ * Affiliates additionally see referred orders when the existing CRM rule allows
++ * it (owner or CRM access on that affiliate).
++ */
++export function orderVisibleToViewer(
++  order: { userId?: number | null; affiliateId?: number | null; originatorEmail?: string | null },
++  viewer: OrderTrackingViewer,
++): boolean {
++  if (order.userId != null && order.userId === viewer.userId) return true;
++  if (emailsMatch(order.originatorEmail, viewer.email)) return true;
++  if (
++    viewer.affiliateCanSeeReferred
++    && viewer.affiliateId != null
++    && order.affiliateId != null
++    && order.affiliateId === viewer.affiliateId
++  ) {
++    return true;
++  }
++  return false;
++}
++
++export function buildCustomerOrderTimeline(input: CustomerOrderInput): CustomerOrderStep[] {
++  const trail = buildOrderStatusTrail(input);
++  const sent = trail.find((step) => step.key === "email_sent");
++  const shipped = trail.find((step) => step.key === "shipped");
++  const delivered = trail.find((step) => step.key === "signed");
++  const status = (input.status ?? "").toLowerCase();
++  const placedAt = trailTimestamp(input.paidAt)
++    ?? trailTimestamp(input.confirmedAt)
++    ?? (status === "draft" ? null : trailTimestamp(input.createdAt));
++  const placed = placedAt != null && status !== "cancelled";
++
++  return [
++    { key: "placed", label: STEP_LABELS.placed, done: placed, at: placed ? placedAt : null, detail: null },
++    {
++      key: "sent_to_distributor",
++      label: STEP_LABELS.sent_to_distributor,
++      done: Boolean(sent?.done),
++      at: sent?.at ?? null,
++      detail: sent?.detail ?? null,
++    },
++    {
++      key: "shipped",
++      label: STEP_LABELS.shipped,
++      done: Boolean(shipped?.done),
++      at: shipped?.at ?? null,
++      detail: shipped?.detail ?? null,
++    },
++    {
++      key: "delivered",
++      label: STEP_LABELS.delivered,
++      done: Boolean(delivered?.done),
++      at: delivered?.at ?? null,
++      detail: delivered?.detail ?? null,
++    },
++  ];
++}
++
++export function invoiceMoney(value: number | string | null | undefined): number | null {
++  if (value == null || value === "") return null;
++  const amount = typeof value === "number" ? value : Number(value);
++  return Number.isFinite(amount) ? amount : null;
++}
+diff --git a/shared/pricingAccess.test.ts b/shared/pricingAccess.test.ts
+new file mode 100644
+index 0000000..438ade7
+--- /dev/null
++++ b/shared/pricingAccess.test.ts
+@@ -0,0 +1,43 @@
++import { describe, expect, it } from "vitest";
++import { resolvePricingFor, visiblePricesForViewer } from "./pricingTier";
++
++const row = {
++  listPrice: "100",
++  wholesalePrice: "40",
++  contractorPrice: "55",
++  homeownerPrice: "80",
++};
++
++describe("resolvePricingFor", () => {
++  it("gives an approved contractor the trade column and hides it from customers", () => {
++    expect(resolvePricingFor({ role: "contractor", pricingTier: "homeowner" })).toMatchObject({
++      audience: "contractor",
++      tier: "contractor",
++      canSeeTradePricing: true,
++    });
++    expect(resolvePricingFor({ role: "user", pricingTier: "homeowner" })).toMatchObject({
++      audience: "customer",
++      tier: "homeowner",
++      canSeeTradePricing: false,
++    });
++    expect(resolvePricingFor(null).canSeeTradePricing).toBe(false);
++  });
++
++  it("keeps affiliate tier selection on the assigned pricing tier", () => {
++    expect(resolvePricingFor({ role: "partner", pricingTier: "wholesale" }).tier).toBe("wholesale");
++    expect(resolvePricingFor({ role: "partner", pricingTier: "homeowner" })).toMatchObject({
++      audience: "affiliate",
++      tier: "homeowner",
++    });
++  });
++
++  it("nulls trade prices in the response for a customer and keeps the contractor price for a contractor", () => {
++    const customer = visiblePricesForViewer(row, resolvePricingFor({ role: "user" }).tier, false);
++    const contractor = visiblePricesForViewer(row, resolvePricingFor({ role: "contractor" }).tier, false);
++    expect(customer.contractorPrice).toBeNull();
++    expect(customer.wholesalePrice).toBeNull();
++    expect(customer.homeownerPrice).toBe("80");
++    expect(contractor.contractorPrice).toBe("55");
++    expect(contractor.wholesalePrice).toBeNull();
++  });
++});
+diff --git a/shared/pricingTier.ts b/shared/pricingTier.ts
+index 55f34b2..2a1e286 100644
+--- a/shared/pricingTier.ts
++++ b/shared/pricingTier.ts
+@@ -98,11 +98,56 @@ export function resolveTierPrice(
+  * visitors (and users without an explicit tier) see the retail HOMEOWNER price;
+  * a logged-in pro sees the tier the owner assigned to their account.
+  */
+-export function resolveStorefrontTier(
+-  user: { pricingTier?: unknown } | null | undefined,
+-): PricingTier {
+-  if (!user) return DEFAULT_PRICING_TIER;
+-  return normalizeTier(user.pricingTier);
++export type PricingAudience = "admin" | "affiliate" | "contractor" | "customer";
++
++export type ResolvedPricing = {
++  audience: PricingAudience;
++  /** Column `visiblePricesForViewer` is allowed to return. */
++  tier: PricingTier;
++  /** Contractor and wholesale columns may leave the server. */
++  canSeeTradePricing: boolean;
++};
++
++type PricingViewer = {
++  role?: string | null;
++  pricingTier?: unknown;
++} | null | undefined;
++
++/**
++ * One pricing decision for a signed-in person.
++ *
++ * Affiliate tier selection stays on the account's assigned `pricingTier` so the
++ * separate affiliate-tier work can replace that assignment without a second
++ * gate. An approved contractor (role `contractor`) uses the contractor trade
++ * column, the same trade prices an affiliate sees once their tier is trade.
++ * Customers and pending applicants stay on the homeowner column unless an
++ * owner has already assigned them a trade tier.
++ */
++export function resolvePricingFor(user: PricingViewer): ResolvedPricing {
++  const assigned = !user ? DEFAULT_PRICING_TIER : normalizeTier(user.pricingTier);
++  if (user?.role === "admin") {
++    return { audience: "admin", tier: "wholesale", canSeeTradePricing: true };
++  }
++  if (user?.role === "partner" || user?.role === "dealer") {
++    return {
++      audience: "affiliate",
++      tier: assigned,
++      canSeeTradePricing: assigned !== "homeowner",
++    };
++  }
++  if (user?.role === "contractor") {
++    const tier: PricingTier = assigned === "wholesale" ? "wholesale" : "contractor";
++    return { audience: "contractor", tier, canSeeTradePricing: true };
++  }
++  return {
++    audience: "customer",
++    tier: assigned,
++    canSeeTradePricing: assigned !== "homeowner",
++  };
++}
++
++export function resolveStorefrontTier(user: PricingViewer): PricingTier {
++  return resolvePricingFor(user).tier;
+ }
+ 
+ /**
+-- 
+2.43.0
+
