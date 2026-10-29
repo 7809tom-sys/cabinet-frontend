@@ -1,15 +1,16 @@
 /**
  * One engine for finished panels on exposed cabinet sides.
  *
- * A side is exposed when no adjacent cabinet box, panel, or filler covers it,
- * and no built-in appliance with its own finished side covers it. A run end
- * that meets a wall is also exposed: the owner wants a 3/4" panel there.
- * Each named reason has its own Kitchen Rules switch. The master switch
- * turns the whole engine off.
+ * The broad engine (every exposed side) stays behind exposed_panels_enabled,
+ * which defaults off. Frameless and Hickory door styles use a narrower pass:
+ * a 3/4" catalog panel on an open run end, a window side, an island back, or
+ * the wall-cabinet side that faces a range/hood gap. A run end against a wall
+ * does not get a panel. Other lines get a panel only when the customer chooses one.
  *
  * Panels are real placed pieces so plan, elevation, and 3D draw them. They
  * are priced from a catalog SKU. A missing price does not insert a $0 line.
  */
+import { requiresAutoEndPanels, type DoorStyleEndPanelInput } from "./autoEndPanels";
 import { kitchenRuleNumber } from "./kitchenRuleParameters";
 import {
   cabinetPlacementCollisionDetail,
@@ -17,6 +18,7 @@ import {
   isCornerCabinet,
   isFillerItem,
   isPanelItem,
+  isRangeOrOven,
   isRefrigerator,
   isRefrigeratorEndPanel,
   refrigeratorEndPanelConflictDetail,
@@ -63,6 +65,9 @@ export const EXPOSED_PANEL_REASONS = {
   "tall-cabinet-end": "Auto-added: tall cabinet end",
   "vanity-end": "Auto-added: vanity end",
   "base-open-end": "Auto-added: open side",
+  "open-end-of-run": "Auto-added: open end of run",
+  "window-side": "Auto-added: window side",
+  "wall-beside-range": "Auto-added: wall cabinet beside range",
 } as const;
 
 export type ExposedPanelReason = keyof typeof EXPOSED_PANEL_REASONS;
@@ -82,7 +87,18 @@ const REASON_SWITCH: Record<ExposedPanelReason, "panel_end_wall_enabled" | "pane
   "tall-cabinet-end": "panel_tall_enabled",
   "vanity-end": "panel_open_enabled",
   "base-open-end": "panel_open_enabled",
+  "open-end-of-run": "panel_open_enabled",
+  "window-side": "panel_window_enabled",
+  "wall-beside-range": "panel_open_enabled",
 };
+
+/** Reasons the frameless / Hickory pass is allowed to auto-add. */
+export const QUALIFIED_AUTO_PANEL_REASONS = ["open-end-of-run", "window-side", "island-back", "wall-beside-range"] as const;
+
+const QUALIFIED_AUTO_REASON_SET = new Set<string>(QUALIFIED_AUTO_PANEL_REASONS);
+
+/** A wall cabinet this close to a range or hood opening faces that gap. */
+const BESIDE_RANGE_GAP_IN = 12;
 
 export type ExposedPanelStock = {
   id: number;
@@ -172,12 +188,20 @@ function enabled(reason: ExposedPanelReason): boolean {
 }
 
 /**
- * Removes every panel this engine auto-placed. The Designer no longer adds
- * finished panels on its own: a panel is only added when the user picks one.
- * Designs saved while the engine ran still carry its panels; this strips them.
+ * Strips panels the broad engine auto-placed. Frameless and Hickory panels
+ * from the narrow pass stay; every other auto panel is removed. User-chosen
+ * panels have no auto-placed reason and always stay.
  */
-export function removeAutoExposedPanels(placed: readonly PlacedCabinet[]): PlacedCabinet[] {
-  const kept = placed.filter((item) => !isAutoPanel(item));
+export function removeAutoExposedPanels(
+  placed: readonly PlacedCabinet[],
+  doorStyleFor?: (cabinet: PlacedCabinet) => DoorStyleEndPanelInput | null | undefined,
+): PlacedCabinet[] {
+  const kept = placed.filter((item) => {
+    if (!isAutoPanel(item)) return true;
+    if (!doorStyleFor || !item.autoPlacedReason || !QUALIFIED_AUTO_REASON_SET.has(item.autoPlacedReason)) return false;
+    const host = placed.find((candidate) => candidate.uid === item.autoPlacedForUid);
+    return requiresAutoEndPanels(doorStyleFor(host ?? item));
+  });
   return kept.length === placed.length ? placed as PlacedCabinet[] : kept;
 }
 
@@ -364,6 +388,311 @@ function placePanel(template: PlacedCabinet, along: number, width: number, side:
   };
 }
 
+function isHoodAppliance(item: PlacedCabinet): boolean {
+  const code = (item.masterCode ?? "").toUpperCase();
+  const desc = (item.description ?? "").toLowerCase();
+  if (/^RHF/.test(code) || /range\s*hood\s*front/.test(desc)) return false;
+  return /^HOOD(?:-|\b)/.test(code) || (item.placement === "appliance" && /\bhood\b/.test(desc));
+}
+
+function isRunCabinet(item: PlacedCabinet): boolean {
+  if (isAutoPanel(item) || isPanelItem(item) || isRunFiller(item)) return false;
+  return item.placement === "base" || item.placement === "wall" || item.placement === "tall";
+}
+
+function isRunBridge(item: PlacedCabinet): boolean {
+  if (isAutoPanel(item)) return false;
+  if (isRunFiller(item) || isPanelItem(item)) return true;
+  return item.placement === "appliance";
+}
+
+function runGroupKey(item: PlacedCabinet, room: RoomData): string {
+  const layer = item.placement === "wall" ? "wall" : "base";
+  return `${item.islandFace ?? ""}|${cabinetWall(item, room)}|${layer}`;
+}
+
+function endAgainstWall(owner: PlacedCabinet, side: Side, room: RoomData): boolean {
+  if (side === "back" || owner.islandFace) return false;
+  const ownerSpan = span(owner, room);
+  const wallGap = side === "start" ? ownerSpan.start : wallLength(ownerSpan.side, room) - ownerSpan.end;
+  return wallGap <= EXPOSED_NEIGHBOR_TOLERANCE_IN && wallGap >= -EXPOSED_NEIGHBOR_TOLERANCE_IN;
+}
+
+function facesWindow(owner: PlacedCabinet, side: Side, room: RoomData, openings: readonly WallOpening[]): boolean {
+  if (side === "back" || owner.islandFace) return false;
+  const ownerSpan = span(owner, room);
+  const edge = side === "start" ? ownerSpan.start : ownerSpan.end;
+  const maxGap = kitchenRuleNumber("window_filler_max_in") + kitchenRuleNumber("panel_thickness_in");
+  return windowAt(edge, side, ownerSpan.side, openings, maxGap) != null;
+}
+
+/** A base or tall end that looks open only because a dishwasher or range sits there. */
+function applianceBlocksOpenEnd(owner: PlacedCabinet, side: Side, placed: readonly PlacedCabinet[], room: RoomData): boolean {
+  if (owner.placement === "wall" || side === "back") return false;
+  const ownerSpan = span(owner, room);
+  const edge = side === "start" ? ownerSpan.start : ownerSpan.end;
+  let nearestDist = Number.POSITIVE_INFINITY;
+  let blocks = false;
+  for (const other of placed) {
+    if (other.uid === owner.uid || isAutoPanel(other) || other.placement === "wall" || isHoodAppliance(other)) continue;
+    if (owner.islandFace) {
+      if (other.islandFace !== owner.islandFace) continue;
+    } else if (other.islandFace || cabinetWall(other, room) !== ownerSpan.side) continue;
+    const otherSpan = span(other, room);
+    const dist = side === "end" ? otherSpan.start - edge : edge - otherSpan.end;
+    if (dist < -EXPOSED_NEIGHBOR_TOLERANCE_IN || dist >= nearestDist) continue;
+    nearestDist = dist;
+    const appliance = other.placement === "appliance" || isRangeOrOven(other.masterCode, other.description) || isDishwasherAppliance(other);
+    blocks = appliance && dist <= 48;
+  }
+  return blocks;
+}
+
+function collectRunEndKeys(placed: readonly PlacedCabinet[], room: RoomData): Set<string> {
+  const members = placed.filter(isRunCabinet);
+  const bridges = placed.filter(isRunBridge);
+  const groups = new Map<string, PlacedCabinet[]>();
+  for (const item of members) {
+    const key = runGroupKey(item, room);
+    const group = groups.get(key);
+    if (group) group.push(item);
+    else groups.set(key, [item]);
+  }
+  const ends = new Set<string>();
+  for (const group of Array.from(groups.values())) {
+    const sorted = [...group].sort((a, b) => span(a, room).start - span(b, room).start);
+    const runs: PlacedCabinet[][] = [];
+    let current: PlacedCabinet[] = [];
+    for (const item of sorted) {
+      const previous = current[current.length - 1];
+      if (!previous) {
+        current.push(item);
+        continue;
+      }
+      const gapStart = span(previous, room).end;
+      const gapEnd = span(item, room).start;
+      const bridged = gapEnd - gapStart <= EXPOSED_NEIGHBOR_TOLERANCE_IN || bridges.some((bridge) => {
+        if ((bridge.islandFace ?? null) !== (previous.islandFace ?? null)) return false;
+        if (!previous.islandFace && cabinetWall(bridge, room) !== cabinetWall(previous, room)) return false;
+        const bridgeSpan = span(bridge, room);
+        return bridgeSpan.end >= gapStart - EXPOSED_NEIGHBOR_TOLERANCE_IN && bridgeSpan.start <= gapEnd + EXPOSED_NEIGHBOR_TOLERANCE_IN;
+      });
+      if (bridged) current.push(item);
+      else {
+        runs.push(current);
+        current = [item];
+      }
+    }
+    if (current.length > 0) runs.push(current);
+    for (const run of runs) {
+      const first = run[0];
+      const last = run[run.length - 1];
+      if (first) ends.add(`${first.uid}:start`);
+      if (last) ends.add(`${last.uid}:end`);
+    }
+  }
+  return ends;
+}
+
+function wallCabinetsBesideCooking(placed: readonly PlacedCabinet[], room: RoomData): Set<string> {
+  const raw: { wall: string; island: string | null; start: number; end: number }[] = [];
+  for (const item of placed) {
+    if (!isRangeOrOven(item.masterCode, item.description) && !isHoodAppliance(item)) continue;
+    const itemSpan = span(item, room);
+    raw.push({ wall: itemSpan.side, island: item.islandFace ?? null, start: itemSpan.start, end: itemSpan.end });
+  }
+  raw.sort((a, b) => a.start - b.start);
+  const gaps: typeof raw = [];
+  for (const gap of raw) {
+    const last = gaps[gaps.length - 1];
+    if (last && last.wall === gap.wall && last.island === gap.island && gap.start <= last.end + EXPOSED_NEIGHBOR_TOLERANCE_IN) {
+      last.end = Math.max(last.end, gap.end);
+    } else gaps.push({ ...gap });
+  }
+  const sides = new Set<string>();
+  const wallCabinets = placed.filter((item) => item.placement === "wall" && isRunCabinet(item));
+  for (const gap of gaps) {
+    let left: { uid: string; dist: number } | null = null;
+    let right: { uid: string; dist: number } | null = null;
+    for (const cabinet of wallCabinets) {
+      if ((cabinet.islandFace ?? null) !== gap.island) continue;
+      const cabinetSpan = span(cabinet, room);
+      if (cabinetSpan.side !== gap.wall) continue;
+      const leftDist = gap.start - cabinetSpan.end;
+      if (leftDist >= -EXPOSED_NEIGHBOR_TOLERANCE_IN && leftDist <= BESIDE_RANGE_GAP_IN && (!left || leftDist < left.dist)) {
+        left = { uid: cabinet.uid, dist: leftDist };
+      }
+      const rightDist = cabinetSpan.start - gap.end;
+      if (rightDist >= -EXPOSED_NEIGHBOR_TOLERANCE_IN && rightDist <= BESIDE_RANGE_GAP_IN && (!right || rightDist < right.dist)) {
+        right = { uid: cabinet.uid, dist: rightDist };
+      }
+    }
+    if (left) sides.add(`${left.uid}:end`);
+    if (right) sides.add(`${right.uid}:start`);
+  }
+  return sides;
+}
+
+function placeBackPanel(host: PlacedCabinet, stock: ExposedPanelStock, room: RoomData): PlacedCabinet | null {
+  const thickness = kitchenRuleNumber("panel_thickness_in");
+  const rotation = ((Math.round(host.rotation) % 360) + 360) % 360;
+  let x = host.x;
+  let y = host.y;
+  let width = host.width;
+  let depth = thickness;
+  if (rotation === 90 || rotation === 270) {
+    width = thickness;
+    depth = Math.max(host.width, 0.75);
+    x = rotation === 90 ? host.x + host.depth : host.x - thickness;
+  } else {
+    width = Math.max(host.width, 0.75);
+    depth = thickness;
+    y = rotation === 180 ? host.y + host.depth : host.y - thickness;
+  }
+  const spot = { x, y, rotation: host.rotation, wallId: host.wallId, wallOffset: host.wallOffset };
+  if (!Number.isFinite(spot.x) || !Number.isFinite(spot.y)) return null;
+  const label = EXPOSED_PANEL_REASONS["island-back"];
+  return {
+    ...host,
+    ...spot,
+    uid: `auto-panel:${host.uid}:back`,
+    cabinetId: stock.id,
+    masterCode: stock.masterCode,
+    description: stock.description,
+    category: "Panels",
+    subCategory: "End panel",
+    width,
+    depth,
+    height: host.height,
+    nominalWidth: width,
+    nominalHeight: host.height,
+    nominalDepth: depth,
+    placement: host.placement === "wall" ? "wall" : "base",
+    numberOfDoors: 0,
+    numberOfDrawers: 0,
+    fieldModificationNote: `${label}. Cut from ${stock.masterCode}.`,
+    autoPlacedReason: "island-back",
+    autoPlacedForUid: host.uid,
+    autoPlacedSide: "back",
+    islandFace: host.islandFace ?? null,
+  };
+}
+
+type QualifiedSyncInput = {
+  placed: readonly PlacedCabinet[];
+  room: RoomData;
+  openings?: readonly WallOpening[];
+  catalog: readonly ExposedPanelStock[];
+  doorStyleFor?: (cabinet: PlacedCabinet) => DoorStyleEndPanelInput | null | undefined;
+  pricesReady?: boolean;
+  priceFor?: (stock: ExposedPanelStock, owner: PlacedCabinet) => number | null;
+};
+
+function syncQualifiedAutoPanels(input: QualifiedSyncInput): ExposedSidePlan {
+  const doorStyleFor = input.doorStyleFor ?? (() => null);
+  if (input.pricesReady === false) {
+    const placed = removeAutoExposedPanels(input.placed, doorStyleFor);
+    return { placed, warnings: [] };
+  }
+  const openings = input.openings ?? [];
+  const runEnds = collectRunEndKeys(input.placed, input.room);
+  const besideRange = wallCabinetsBesideCooking(input.placed, input.room);
+  const warnings: ExposedPanelWarning[] = [];
+  const wanted = new Map<string, PlacedCabinet>();
+  const missingPrice = new Map<ExposedPanelType, { uid: string; reason: ExposedPanelReason }>();
+  const hosts = input.placed.filter((item) => isRunCabinet(item) && requiresAutoEndPanels(doorStyleFor(item)));
+
+  const collides = (candidate: PlacedCabinet, ownerUid: string, ignoreUids: readonly string[] = []) => {
+    const ignored = new Set(ignoreUids);
+    const others = [
+      ...input.placed.filter((item) => !isAutoPanel(item) && item.uid !== candidate.uid && item.uid !== ownerUid && !ignored.has(item.uid)),
+      ...Array.from(wanted.values()).filter((item) => item.uid !== candidate.uid),
+    ];
+    if (cabinetPlacementCollisionDetail(candidate, others, input.room) != null) return true;
+    return others.some((other) => isRefrigeratorEndPanel(other) && refrigeratorEndPanelConflictDetail(other, [candidate], null, input.room) != null);
+  };
+
+  const catalogFor = (owner: PlacedCabinet) => input.priceFor
+    ? input.catalog.map((item) => ({ ...item, price: input.priceFor!(item, owner) }))
+    : input.catalog;
+
+  for (const host of hosts) {
+    const sides: Side[] = host.islandFace ? ["start", "end", "back"] : ["start", "end"];
+    for (const panelSide of sides) {
+      const key = `${host.uid}:${panelSide}`;
+      let reason: ExposedPanelReason | null = null;
+      if (panelSide !== "back" && besideRange.has(key) && !coveredByNeighbor(host, panelSide, input.placed, input.room)) {
+        reason = "wall-beside-range";
+      } else if (facesWindow(host, panelSide, input.room, openings) && !coveredByNeighbor(host, panelSide, input.placed, input.room)) {
+        reason = "window-side";
+      } else if (panelSide === "back" && host.islandFace) {
+        reason = "island-back";
+      } else if (panelSide !== "back" && runEnds.has(key) && !endAgainstWall(host, panelSide, input.room) && !coveredByNeighbor(host, panelSide, input.placed, input.room) && !applianceBlocksOpenEnd(host, panelSide, input.placed, input.room)) {
+        reason = "open-end-of-run";
+      }
+      if (!reason) continue;
+      const stock = pickStock(host, reason, catalogFor(host));
+      if (!stock) {
+        const type = panelTypeFor(host, reason);
+        if (!missingPrice.has(type)) missingPrice.set(type, { uid: host.uid, reason });
+        continue;
+      }
+      const thickness = kitchenRuleNumber("panel_thickness_in");
+      let panel: PlacedCabinet | null = null;
+      const cookingUids = reason === "wall-beside-range"
+        ? input.placed.filter((item) => isRangeOrOven(item.masterCode, item.description) || isHoodAppliance(item)).map((item) => item.uid)
+        : [];
+      if (panelSide === "back") {
+        const back = placeBackPanel(host, stock, input.room);
+        panel = back && !collides(back, host.uid) ? back : null;
+      } else {
+        const hostSpan = span(host, input.room);
+        const along = panelSide === "end" ? hostSpan.end : hostSpan.start - thickness;
+        const wall = hostSpan.side;
+        if (along < -FLUSH || along + thickness > wallLength(wall, input.room) + FLUSH) {
+          warnings.push({
+            id: `no-room:${key}`,
+            cabinetUid: host.uid,
+            reason,
+            message: `${host.masterCode} needs a ${thickness}" panel (${EXPOSED_PANEL_REASONS[reason]}) and the run has no room for it.`,
+          });
+          continue;
+        }
+        const placedPanel = placePanel(host, along, thickness, wall, input.room, stock, reason, host.uid, panelSide);
+        panel = placedPanel && !collides(placedPanel, host.uid, cookingUids) ? placedPanel : null;
+        if (!panel) {
+          warnings.push({
+            id: `no-room:${key}`,
+            cabinetUid: host.uid,
+            reason,
+            message: `${host.masterCode} needs a panel (${EXPOSED_PANEL_REASONS[reason]}) and the run has no room for it.`,
+          });
+          continue;
+        }
+      }
+      if (panel) wanted.set(key, panel);
+    }
+  }
+
+  for (const [type, info] of Array.from(missingPrice.entries())) {
+    warnings.push({
+      id: `missing-price:${type}`,
+      cabinetUid: info.uid,
+      reason: info.reason,
+      message: MISSING_PRICE_BY_TYPE[type],
+    });
+  }
+
+  const nonAuto = input.placed.filter((item) => !isAutoPanel(item));
+  const placed = [...nonAuto, ...Array.from(wanted.values())];
+  const signature = (items: readonly PlacedCabinet[]) => items
+    .map((item) => `${item.uid}:${item.wallOffset ?? ""}:${item.masterCode}:${item.autoPlacedReason ?? ""}`)
+    .sort()
+    .join("|");
+  if (signature(placed) === signature(input.placed)) return { placed: input.placed as PlacedCabinet[], warnings };
+  return { placed, warnings };
+}
+
 function shiftHost(host: PlacedCabinet, delta: number, room: RoomData): PlacedCabinet | null {
   if (Math.abs(delta) <= 0.001) return host;
   if (Math.abs(delta) > kitchenRuleNumber("jog_max_in") + 0.001) return null;
@@ -379,7 +708,14 @@ export function syncExposedSidePanels(input: {
   room: RoomData;
   openings?: readonly WallOpening[];
   catalog: readonly ExposedPanelStock[];
+  /** Frameless and Hickory pass. Does not use the broad exposed-side switch. */
+  qualifiedOnly?: boolean;
+  doorStyleFor?: (cabinet: PlacedCabinet) => DoorStyleEndPanelInput | null | undefined;
+  /** False while catalog prices are still loading, so a missing price is not warned yet. */
+  pricesReady?: boolean;
+  priceFor?: (stock: ExposedPanelStock, owner: PlacedCabinet) => number | null;
 }): ExposedSidePlan {
+  if (input.qualifiedOnly) return syncQualifiedAutoPanels(input);
   if (kitchenRuleNumber("exposed_panels_enabled") === 0) {
     const placed = input.placed.filter((item) => !isAutoPanel(item));
     return { placed: placed.length === input.placed.length ? input.placed as PlacedCabinet[] : placed, warnings: [] };

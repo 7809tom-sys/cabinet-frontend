@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { DEFAULT_ROOM, wallPlacementAt, type PlacedCabinet, type WallOpening } from "./design";
+import type { DoorStyleEndPanelInput } from "./autoEndPanels";
+import { DEFAULT_ROOM, syncWallRunOffsets, wallPlacementAt, type PlacedCabinet, type WallOpening } from "./design";
+import { buildMaterialsListRows, materialsListPrintHtml } from "./designMaterialsList";
+import { stablePricePairKey } from "./designerPricingStability";
 import { resetKitchenRuleParameters, setKitchenRuleParameters } from "./kitchenRuleParameters";
 import {
   autoAddedOrderSurfaces,
@@ -308,5 +311,224 @@ describe("exposed side panels never push a cabinet into its neighbour", () => {
     const repaired = removeOverlappingPlacements(plan.placed, room);
     expect(repaired.rejected.map((item) => item.uid)).toEqual([]);
     expect(repaired.placed.some((item) => item.uid === "b21")).toBe(true);
+  });
+});
+
+const framelessStyle: DoorStyleEndPanelInput = { boxConstruction: "standard altaeuro frameless box", distributorName: "US Cabinet Depot" };
+const hickoryStyle: DoorStyleEndPanelInput = { woodSpecies: "Hickory", ourName: "Hickory skin", boxConstruction: "face frame" };
+const framedStyle: DoorStyleEndPanelInput = { woodSpecies: "Maple", ourName: "White Shaker", boxConstruction: "1/2 in. plywood face frame", distributorName: "Summit", styleCode: "SW" };
+
+function qualified(placed: PlacedCabinet[], extra: { openings?: WallOpening[]; style?: DoorStyleEndPanelInput | null; styleFor?: (cabinet: PlacedCabinet) => DoorStyleEndPanelInput | null } = {}) {
+  return syncExposedSidePanels({
+    placed,
+    room,
+    openings: extra.openings,
+    catalog: stock,
+    qualifiedOnly: true,
+    doorStyleFor: extra.styleFor ?? (() => extra.style === undefined ? framelessStyle : extra.style),
+  });
+}
+
+describe("frameless and Hickory auto panels", () => {
+  it("gives a frameless U-shape panels only on open ends, and none against a wall or on interior cabinets", () => {
+    const placed = [
+      place({ uid: "left-a", masterCode: "B24", placement: "base", offset: 0, width: 24, wall: "left" }),
+      place({ uid: "left-b", masterCode: "B24", placement: "base", offset: 24, width: 24, wall: "left" }),
+      place({ uid: "left-c", masterCode: "B18", placement: "base", offset: 48, width: 18, wall: "left" }),
+      place({ uid: "top-a", masterCode: "B48", placement: "base", offset: 0, width: 48, wall: "top" }),
+      place({ uid: "top-b", masterCode: "B48", placement: "base", offset: 48, width: 48, wall: "top" }),
+      place({ uid: "top-c", masterCode: "B48", placement: "base", offset: 96, width: 48, wall: "top" }),
+      place({ uid: "right-a", masterCode: "B24", placement: "base", offset: 0, width: 24, wall: "right" }),
+      place({ uid: "right-b", masterCode: "T2484", placement: "tall", offset: 24, width: 24, height: 84, wall: "right" }),
+      place({ uid: "wall-a", masterCode: "W3030", placement: "wall", offset: 0, width: 30, height: 30, wall: "top" }),
+      place({ uid: "wall-b", masterCode: "W3030", placement: "wall", offset: 30, width: 30, height: 30, wall: "top" }),
+      place({ uid: "wall-c", masterCode: "W3030", placement: "wall", offset: 60, width: 30, height: 30, wall: "top" }),
+    ];
+    const result = qualified(placed);
+    const panelFor = (uid: string, side: string) => panels(result.placed).find((item) => item.autoPlacedForUid === uid && item.autoPlacedSide === side);
+    expect(panelFor("left-a", "start")).toBeUndefined();
+    expect(panelFor("left-b", "start") ?? panelFor("left-b", "end")).toBeUndefined();
+    expect(panelFor("left-c", "end")?.autoPlacedReason).toBe("open-end-of-run");
+    expect(panelFor("left-c", "end")?.fieldModificationNote).toContain("Auto-added: open end of run");
+    expect(panelFor("left-c", "end")?.width).toBe(0.75);
+    expect(panelFor("top-a", "start") ?? panelFor("top-c", "end")).toBeUndefined();
+    expect(panelFor("top-b", "start") ?? panelFor("top-b", "end")).toBeUndefined();
+    expect(panelFor("right-a", "start") ?? panelFor("right-a", "end")).toBeUndefined();
+    expect(panelFor("right-b", "end")?.masterCode).toBe("TEP3096");
+    expect(panelFor("wall-a", "start")).toBeUndefined();
+    expect(panelFor("wall-b", "start") ?? panelFor("wall-b", "end")).toBeUndefined();
+    expect(panelFor("wall-c", "end")?.autoPlacedReason).toBe("open-end-of-run");
+    expect(panelFor("wall-c", "end")?.masterCode).toBe("WEP1530");
+    expect(panels(result.placed).every((item) => item.fieldModificationNote?.startsWith("Auto-added:"))).toBe(true);
+    const again = qualified(result.placed);
+    expect(again.placed).toBe(result.placed);
+    const reseated = syncWallRunOffsets(result.placed, room);
+    const afterReseat = qualified(reseated);
+    expect(afterReseat.placed).toBe(reseated);
+  });
+
+  it("does not panel a run end that sits against a wall", () => {
+    const against = qualified([
+      place({ uid: "end", masterCode: "B18", placement: "base", offset: 0, width: 18 }),
+    ]);
+    expect(panels(against.placed).map((item) => item.autoPlacedSide)).toEqual(["end"]);
+    expect(against.placed.find((item) => item.uid === "end")?.wallOffset).toBe(0);
+    const bothWalls = qualified([
+      place({ uid: "full", masterCode: "B144", placement: "base", offset: 0, width: 144 }),
+    ]);
+    expect(panels(bothWalls.placed)).toHaveLength(0);
+  });
+
+  it("panels the cabinet side that faces a window and skips that panel on a framed line", () => {
+    const window: WallOpening = { uid: "win", kind: "window", side: "top", offset: 42, width: 30, sill: 42, height: 36, label: "Window" };
+    const placed = [
+      place({ uid: "left", masterCode: "W3030", placement: "wall", offset: 10, width: 30, height: 30, depth: 12 }),
+      place({ uid: "right", masterCode: "W3030", placement: "wall", offset: 74, width: 30, height: 30, depth: 12 }),
+    ];
+    const frameless = qualified(placed, { openings: [window] });
+    const windowPanels = panels(frameless.placed).filter((item) => item.autoPlacedReason === "window-side");
+    expect(windowPanels.map((item) => `${item.autoPlacedForUid}:${item.autoPlacedSide}`).sort()).toEqual(["left:end", "right:start"]);
+    expect(windowPanels.every((item) => item.fieldModificationNote?.includes("Auto-added: window side"))).toBe(true);
+    const framed = qualified(placed, { openings: [window], style: framedStyle });
+    expect(panels(framed.placed)).toHaveLength(0);
+  });
+
+  it("panels Hickory and a mixed frameless cabinet, and adds nothing for framed Maple", () => {
+    const open = [place({ uid: "only", masterCode: "B24", placement: "base", offset: 40, width: 24 })];
+    expect(panels(qualified(open, { style: hickoryStyle }).placed).map((item) => item.autoPlacedReason).sort()).toEqual(["open-end-of-run", "open-end-of-run"]);
+    expect(panels(qualified(open, { style: framedStyle }).placed)).toHaveLength(0);
+    const mixed = qualified([
+      place({ uid: "maple", masterCode: "B24", placement: "base", offset: 10, width: 24 }),
+      place({ uid: "frameless", masterCode: "B24", placement: "base", offset: 80, width: 24 }),
+    ], {
+      styleFor: (cabinet) => cabinet.uid === "frameless" ? framelessStyle : framedStyle,
+    });
+    expect(panels(mixed.placed).map((item) => item.autoPlacedForUid).sort()).toEqual(["frameless", "frameless"]);
+  });
+
+  it("panels wall cabinets on the sides that face a range or hood, and not the bases beside them", () => {
+    const placed = [
+      place({ uid: "base-left", masterCode: "B24", placement: "base", offset: 0, width: 24 }),
+      place({ uid: "base-mid", masterCode: "B21", placement: "base", offset: 24, width: 21 }),
+      place({ uid: "range", masterCode: "RANGE-30", placement: "appliance", offset: 45, width: 30, description: "Range" }),
+      place({ uid: "base-right", masterCode: "B24", placement: "base", offset: 75, width: 24 }),
+      place({ uid: "wall-left", masterCode: "W3030", placement: "wall", offset: 15, width: 30, height: 30, depth: 12 }),
+      place({ uid: "wall-right", masterCode: "W3030", placement: "wall", offset: 75, width: 30, height: 30, depth: 12 }),
+      place({ uid: "hood", masterCode: "HOOD-30", placement: "appliance", offset: 45, width: 30, depth: 12, height: 18, description: "Range Hood" }),
+    ];
+    const result = qualified(placed);
+    const facing = panels(result.placed).filter((item) => item.autoPlacedReason === "wall-beside-range");
+    expect(facing.map((item) => `${item.autoPlacedForUid}:${item.autoPlacedSide}`).sort()).toEqual(["wall-left:end", "wall-right:start"]);
+    expect(facing.every((item) => item.fieldModificationNote?.includes("Auto-added: wall cabinet beside range"))).toBe(true);
+    expect(panels(result.placed).some((item) => item.autoPlacedForUid === "base-mid" || item.autoPlacedForUid === "base-left" && item.autoPlacedSide === "end")).toBe(false);
+    expect(panels(result.placed).some((item) => item.autoPlacedForUid === "base-right" && item.autoPlacedSide === "start")).toBe(false);
+    expect(panels(result.placed).some((item) => /dw-exposed|beside-window|end of run against wall|open side/.test(item.fieldModificationNote ?? ""))).toBe(false);
+  });
+
+  it("panels an island back and the island's open ends", () => {
+    const island = place({ uid: "isle", masterCode: "B36", placement: "base", offset: 40, width: 36, islandFace: "front" });
+    island.y = 48;
+    const result = qualified([island]);
+    const reasons = panels(result.placed).map((item) => item.autoPlacedReason).sort();
+    expect(reasons).toEqual(["island-back", "open-end-of-run", "open-end-of-run"]);
+    expect(panels(result.placed).some((item) => item.fieldModificationNote?.includes("Auto-added: island back"))).toBe(true);
+  });
+
+  it("prices every order surface from the catalog and keeps the pricing key stable", () => {
+    const initial = [place({ uid: "only", masterCode: "B24", placement: "base", offset: 40, width: 24 })];
+    const pairsOf = (placed: readonly PlacedCabinet[]) => {
+      const seen = new Set<string>();
+      const rows: { cabinetId: number; styleId: number; masterCode: string }[] = [];
+      for (const item of [
+        ...placed.map((cabinet) => ({ cabinetId: cabinet.cabinetId, styleId: 11, masterCode: cabinet.masterCode })),
+        ...stock.map((cabinet) => ({ cabinetId: cabinet.id, styleId: 11, masterCode: cabinet.masterCode })),
+      ]) {
+        const key = `${item.cabinetId}:${item.styleId}:${item.masterCode}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        rows.push(item);
+      }
+      return stablePricePairKey(rows, 7);
+    };
+    const before = pairsOf(initial);
+    let current = initial;
+    const keys = [before];
+    for (let pass = 0; pass < 6; pass += 1) {
+      const plan = qualified(current);
+      current = plan.placed;
+      keys.push(pairsOf(current));
+    }
+    expect(new Set(keys).size).toBe(1);
+    expect(qualified(current).placed).toBe(current);
+    const prices = new Map(stock.map((item) => [item.id, item.price]));
+    const surfaces = autoAddedOrderSurfaces({
+      placed: current,
+      styleId: 11,
+      distributorId: 7,
+      tier: "homeowner",
+      styleName: "Frameless Shaker",
+      unitPriceFor: (cabinet) => prices.get(cabinet.cabinetId) ?? null,
+    });
+    expect(surfaces.materialList.length).toBeGreaterThan(0);
+    expect(surfaces.materialList.every((line) => line.unitPrice === 86 && line.autoAddedLabel.startsWith("Auto-added:"))).toBe(true);
+    expect(surfaces.cart.some((line) => line.unitPrice === 0)).toBe(false);
+    expect(surfaces.invoice.total).toBe(surfaces.distributorPo.total);
+    expect(surfaces.invoice.total).toBeGreaterThan(0);
+
+    const missing = syncExposedSidePanels({
+      placed: initial,
+      room,
+      catalog: stock.map((item) => ({ ...item, price: null })),
+      qualifiedOnly: true,
+      doorStyleFor: () => framelessStyle,
+    });
+    expect(panels(missing.placed)).toHaveLength(0);
+    expect(missing.warnings).toHaveLength(1);
+    expect(missing.warnings[0]?.id).toBe("missing-price:base-end");
+  });
+
+  it("shows priced auto-added panels on a frameless material list and none on a framed list", () => {
+    const window: WallOpening = { uid: "win", kind: "window", side: "top", offset: 78, width: 36, sill: 42, height: 36, label: "Window" };
+    const layout = [
+      place({ uid: "b-a", masterCode: "B24", placement: "base", offset: 0, width: 24 }),
+      place({ uid: "b-b", masterCode: "B24", placement: "base", offset: 24, width: 24 }),
+      place({ uid: "b-c", masterCode: "B18", placement: "base", offset: 48, width: 18 }),
+      place({ uid: "w-left", masterCode: "W3030", placement: "wall", offset: 48, width: 30, height: 30, depth: 12 }),
+      place({ uid: "w-right", masterCode: "W3030", placement: "wall", offset: 116, width: 28, height: 30, depth: 12 }),
+    ];
+    const prices = new Map<number, number>([[1, 240], [11, 86], [12, 42], [13, 140]]);
+    const unitPriceFor = (cabinet: PlacedCabinet) => prices.get(cabinet.cabinetId) ?? null;
+    const listFor = (styleName: string, style: DoorStyleEndPanelInput | null) => {
+      const plan = qualified(layout, { openings: [window], style });
+      const rows = buildMaterialsListRows({
+        buildRows: plan.placed.filter((item) => item.placement !== "appliance").map((item) => ({
+          sourceUids: [item.uid],
+          code: item.masterCode,
+          description: [item.description, item.fieldModificationNote].filter(Boolean).join(" — "),
+          widthIn: item.width,
+          heightIn: item.height ?? 0,
+          depthIn: item.depth,
+          placement: item.placement,
+          color: styleName,
+          qty: 1,
+          unitPrice: unitPriceFor(item),
+          pricingUnitPrice: unitPriceFor(item),
+        })),
+        pricingLines: [],
+        defaultDistributorName: "Cabinet supplier",
+        defaultStyleName: styleName,
+      });
+      return rows;
+    };
+    const frameless = listFor("Frameless White", framelessStyle);
+    const framed = listFor("White Shaker", framedStyle);
+    const autoRows = frameless.filter((row) => /Auto-added:/.test(row.description));
+    expect(autoRows.length).toBeGreaterThan(0);
+    expect(autoRows.every((row) => row.unitPrice != null && row.unitPrice > 0)).toBe(true);
+    expect(autoRows.some((row) => row.description.includes("Auto-added: open end of run"))).toBe(true);
+    expect(autoRows.some((row) => row.description.includes("Auto-added: window side"))).toBe(true);
+    expect(framed.some((row) => /Auto-added:/.test(row.description))).toBe(false);
+    expect(materialsListPrintHtml({ rows: frameless, title: "Materials & Parts — Frameless line", styleName: "Frameless White" })).toContain("Auto-added: open end of run");
+    expect(materialsListPrintHtml({ rows: framed, title: "Materials & Parts — Framed line", styleName: "White Shaker" })).not.toContain("Auto-added:");
   });
 });

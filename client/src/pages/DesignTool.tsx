@@ -98,7 +98,8 @@ import { adjustedDesignUnitPrice, buildDesignCabinetCartLines, buildDesignPrevie
 import { combinedFillerNote, fillerCutSourceFor, isCombinedSmallFiller } from "@/lib/fillerBilling";
 import { activeCatalogPricingIdsByMasterCode, currentCatalogPricingCabinetId } from "@/lib/designPricingIdentity";
 import { catalogFillerForGap, catalogFillerPricingId, fittedCatalogFillerDescription, isCatalogFiller, type CatalogFillerCandidate } from "@/lib/catalogFiller";
-import { removeAutoExposedPanels } from "@/lib/exposedSidePanels";
+import { requiresAutoEndPanels, type DoorStyleEndPanelInput } from "@/lib/autoEndPanels";
+import { catalogItemToExposedPanelStock, sameExposedPanelWarnings, syncExposedSidePanels, type ExposedPanelStock, type ExposedPanelWarning } from "@/lib/exposedSidePanels";
 import { countertopToastVisible, COUNTERTOP_TOAST_TIMEOUT_MS, useDebouncedValue, stablePricePairKey } from "@/lib/designerPricingStability";
 import { ColorStyleQuickPicker } from "@/components/design/ColorStyleQuickPicker";
 import { attachedFillerLeftoverOptions, attachedFillerNeedsReview, attachedFillerPlanForCandidate, attachedFillerSizeIssues, type AttachedFillerChoice, type AttachedFillerLeftoverOptions, type AttachedFillerSizeIssue } from "@/lib/cabinetAttachedFillers";
@@ -2925,14 +2926,21 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     () => (threeDAccessoryCatalog as DesignCabinet[] | undefined) ?? [],
     [threeDAccessoryCatalog],
   );
-  // Frameless V8.2: every visible wall, base, and tall end gets one priced
-  // 3/4" panel, including a window side. One record per cabinet end, so the
-  // window rule is not added a second time. This never places an object and
-  // does not affect framed lines.
-  const aefWindowEndPanels = useMemo(
-    () => aefExposedEndRequirements(placed, openings, room, catalogFillers),
-    [placed, openings, room, catalogFillers],
-  );
+  // Older frameless bill-of-material lines. Frameless and Hickory cabinets
+  // are left out here: those lines get a placed, priced panel only on an open
+  // run end, a window side, an island back, or a wall cabinet beside a range.
+  const aefWindowEndPanels = useMemo(() => {
+    const requirements = aefExposedEndRequirements(placed, openings, room, catalogFillers);
+    const byId = new Map(((doorStyles ?? []) as Array<DoorStyleEndPanelInput & { id: number }>).map((style) => [style.id, style]));
+    // Frameless and Hickory cabinets get placed run-end panels instead of a
+    // second, broader bill-of-material line for every exposed side.
+    return requirements.filter((requirement) => {
+      const owner = placed.find((cabinet) => cabinet.uid === requirement.cabinetUid);
+      if (!owner) return true;
+      const sid = pricingStyleIdFor(owner) ?? styleId;
+      return !requiresAutoEndPanels(sid != null ? byId.get(sid) ?? null : null);
+    });
+  }, [catalogFillers, doorStyles, openings, placed, pricingStyleIdFor, room, styleId]);
   // The Wizard presents actual active base cabinets from the selected line.
   // Catalog fillers remain a separate, priced stock source for true remainders.
 	  const peninsulaWizardBaseCabinets = useMemo(() => {
@@ -4600,6 +4608,25 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	    // prospective rows, a physically required filler could never pass the
 	    // positive-price gate until it had somehow already been added.
 	    catalogFillers.filter(isCatalogFiller).forEach((filler) => push(filler.id, styleId, filler.masterCode));
+    // Panel sheets are priced before they are placed so adding an auto panel
+    // does not change the pricing key and refetch in a loop.
+    const stylesById = new Map((doorStyles ?? []).map((style) => [style.id, style as DoorStyleEndPanelInput & { id: number }]));
+    const autoPanelStyleIds = new Set<number>();
+    const rememberAutoPanelStyle = (sid: number | null | undefined) => {
+      if (sid == null) return;
+      if (requiresAutoEndPanels(stylesById.get(sid) ?? null)) autoPanelStyleIds.add(sid);
+    };
+    rememberAutoPanelStyle(styleId);
+    placed.forEach((cabinet) => {
+      if (cabinet.autoPlacedReason) return;
+      rememberAutoPanelStyle(pricingStyleIdFor(cabinet) ?? styleId);
+    });
+    if (autoPanelStyleIds.size > 0) {
+      catalogFillers.forEach((item) => {
+        if (!catalogItemToExposedPanelStock(item, null)) return;
+        autoPanelStyleIds.forEach((sid) => push(item.id, sid, item.masterCode));
+      });
+    }
 	    // AEF window-break WEP panels are source-priced stock. Price each one in
 	    // the exact finish of the upper cabinet whose exposed end it covers.
 	    aefWindowEndPanels.forEach((panel) => {
@@ -4617,7 +4644,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         ...(refrigeratorParts?.smoothPanels ?? []),
       ].forEach((part) => push(part.id, styleId, part.masterCode));
 	    return pairs;
-	  }, [placed, pricingIdForPlacedCabinet, pricingStyleIdFor, styleId, glassDoorAddonCodeFor, glassDoorCatalogProduct, catalogFillers, aefWindowEndPanels, refrigeratorSurroundCatalog]);
+	  }, [placed, pricingIdForPlacedCabinet, pricingStyleIdFor, styleId, glassDoorAddonCodeFor, glassDoorCatalogProduct, catalogFillers, aefWindowEndPanels, refrigeratorSurroundCatalog, doorStyles]);
 
   const pricePairKey = stablePricePairKey(pricePairs, lockedDistributorId);
   const stablePricePairs = useMemo(() => pricePairs, [pricePairKey]);
@@ -4714,14 +4741,42 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     },
 	    [priceMap, pricingIdForPlacedCabinet, pricingStyleIdFor, styleId, glassDoorAddonCodeFor, glassDoorCatalogProduct]
 	  );
-  // Finished panels are added only when the user chooses one. The automatic
-  // exposed-side engine is not run; panels it placed in older saves are removed.
+  // Frameless and Hickory lines get a 3/4" panel on an open run end, a window
+  // side, an island back, or a wall cabinet facing a range. Other lines keep a
+  // panel only when the customer chooses one. Prices are read from the catalog
+  // after the stable price query settles so placing a panel cannot refetch.
+  const [exposedPanelWarnings, setExposedPanelWarnings] = useState<ExposedPanelWarning[]>([]);
+  const exposedPanelStock = useMemo<ExposedPanelStock[]>(() => catalogFillers.flatMap((item) => {
+    const stock = catalogItemToExposedPanelStock(item, styleId != null ? priceMap.get(`${item.id}:${styleId}`) ?? null : null);
+    return stock ? [stock] : [];
+  }), [catalogFillers, priceMap, styleId]);
   useEffect(() => {
-    const cleaned = removeAutoExposedPanels(placed);
-    if (cleaned === placed) return;
-    placedRef.current = cleaned;
-    setPlaced(cleaned);
-  }, [placed, setPlaced]);
+    const styles = (doorStyles ?? []) as Array<DoorStyleEndPanelInput & { id: number }>;
+    const byId = new Map(styles.map((style) => [style.id, style]));
+    const doorStyleForPlaced = (cabinet: PlacedCabinet) => {
+      const sid = pricingStyleIdFor(cabinet) ?? styleId;
+      return sid != null ? byId.get(sid) ?? null : null;
+    };
+    const current = placedRef.current;
+    const plan = syncExposedSidePanels({
+      placed: current,
+      room: roomRef.current,
+      openings,
+      catalog: exposedPanelStock,
+      qualifiedOnly: true,
+      doorStyleFor: doorStyleForPlaced,
+      pricesReady: catalogFillersLoading ? false : priceRowsFetched || exposedPanelStock.length === 0,
+      priceFor: (stock, owner) => {
+        const sid = pricingStyleIdFor(owner) ?? styleId;
+        return sid != null ? priceMap.get(`${stock.id}:${sid}`) ?? null : null;
+      },
+    });
+    if (plan.placed !== current) {
+      placedRef.current = plan.placed;
+      setPlaced(plan.placed);
+    }
+    setExposedPanelWarnings((prev) => sameExposedPanelWarnings(prev, plan.warnings) ? prev : plan.warnings);
+  }, [catalogFillersLoading, doorStyles, exposedPanelStock, openings, placed, priceMap, priceRowsFetched, pricingStyleIdFor, setPlaced, styleId]);
 
   // ── Part 1: every placed cabinet remains visible ─────────────────────────
   // Evaluate the active line as soon as its price query settles. Flags drive
@@ -5041,10 +5096,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // Auto-suggested Hickory finished-end skins, one per exposed cabinet end.
   // Empty unless the selected finish is Hickory. NOTE: the real skin SKU/price
   // is pending owner confirmation, so these carry pendingSku=true.
-  const hickorySkins = useMemo<HickorySkinSuggestion[]>(
-    () => hickorySkinSuggestions(placed, room, activeStyle as never),
-    [placed, room, activeStyle]
-  );
+  const hickorySkins = useMemo<HickorySkinSuggestion[]>(() => {
+    // Hickory now gets a priced catalog panel on the sides listed above.
+    // The older unpriced skin suggestion would add a second line.
+    if (requiresAutoEndPanels(activeStyle as DoorStyleEndPanelInput | null)) return [];
+    return hickorySkinSuggestions(placed, room, activeStyle as never);
+  }, [placed, room, activeStyle]);
 
   // Regular finished ends remain optional on framed lines. Frameless cabinets
   // add one source-priced 3/4" panel per visible wall, base, or tall end.
@@ -14458,6 +14515,16 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 
   return (
       <div className="flex flex-col h-full min-h-0">
+      {exposedPanelWarnings.length > 0 && (
+        <div data-testid="design-check-panel" role="status" className="border-b border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-950">
+          <p className="font-semibold">Design check ({exposedPanelWarnings.length})</p>
+          <ul className="mt-1 list-disc pl-5">
+            {exposedPanelWarnings.map((warning) => (
+              <li key={warning.id}>{warning.message}</li>
+            ))}
+          </ul>
+        </div>
+      )}
       {tabletPreviewMode && (
         <TabletPreviewOverlay
           mode={tabletPreviewMode}
