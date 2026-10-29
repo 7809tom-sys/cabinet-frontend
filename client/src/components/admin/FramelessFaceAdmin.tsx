@@ -125,13 +125,15 @@ function WallPreview({ style }: { style: FramelessAdminStyle }) {
       <div
         className="h-24 w-16 rounded border border-border"
         style={plan.doorUrl
-          ? { backgroundImage: `url(${plan.doorUrl})`, backgroundSize: "cover", backgroundPosition: "center" }
+          ? plan.sourceKind === "combined"
+            ? { backgroundImage: `url(${plan.doorUrl})`, backgroundSize: "100% 140%", backgroundPosition: "center bottom" }
+            : { backgroundImage: `url(${plan.doorUrl})`, backgroundSize: "cover", backgroundPosition: "center" }
           : { background: finish }}
         aria-label="Wall cabinet preview"
       />
       <p className="text-xs text-muted-foreground max-w-xs">
         Wall preview uses the DOOR image only, as one solid face.
-        {plan.sourceKind === "combined" ? " This style still has a combined swatch, so the wall stays the finish color until a door clip is stored." : ""}
+        {plan.sourceKind === "combined" ? " This style still has one combined swatch. The wall shows the lower door band until a door-only photo is stored." : ""}
       </p>
     </div>
   );

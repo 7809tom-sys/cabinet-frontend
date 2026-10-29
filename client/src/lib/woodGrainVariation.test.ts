@@ -167,4 +167,23 @@ describe("per-piece wood grain", () => {
     applyThreeDCabinetPieceGrain(neighborGroup, { ...options, placementUid: "run-27" });
     expect(uvSignature(neighbor.geometry)).not.toBe(stamped);
   });
+
+  it("leaves a combined door-band crop on the full face", () => {
+    const texture = new THREE.Texture();
+    texture.userData = { combinedFaceWindow: { offsetX: 0, offsetY: 0, repeatX: 1, repeatY: 0.72 } };
+    const material = new THREE.MeshPhysicalMaterial({ color: "#ffffff", map: texture });
+    const door = new THREE.Mesh(new THREE.BoxGeometry(1.2, 2.2, 0.05), material);
+    door.userData = { cabinetFront: true };
+    const group = new THREE.Group();
+    group.add(door);
+    const before = uvSignature(door.geometry);
+    applyThreeDCabinetPieceGrain(group, {
+      placementUid: "wall-1",
+      sampleUrl: "https://cdn.example/combined-swatch.png",
+      grainDirection: "horizontal",
+      sourceTexture: texture,
+    });
+    expect(uvSignature(door.geometry)).toBe(before);
+    expect(door.userData.woodGrainStamped).toBeUndefined();
+  });
 });
