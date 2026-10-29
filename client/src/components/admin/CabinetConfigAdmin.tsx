@@ -17,6 +17,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Search, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Settings2, CheckCircle2, Upload, ImageIcon, Sparkles, Pencil, Trash2, Plus, AlertTriangle, Globe, Building2, GripVertical, Layers } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { standardBaseDoorSaveError } from "@/lib/genericCabinetDrawerReference";
 import { DoorDrawerDiagram } from "@/components/design/DoorDrawerDiagram";
 import MediaLibraryAdmin from "@/components/admin/MediaLibraryAdmin";
 import { MediaPicker } from "@/components/admin/MediaPicker";
@@ -1143,6 +1144,11 @@ function EditModal({
   );
   const handleSave = () => {
     if (Object.keys(draft).length === 0) { onClose(); return; }
+    const doorCountError = standardBaseDoorSaveError(merged.masterCode, merged.numberOfDoors);
+    if (doorCountError) {
+      toast.error(doorCountError);
+      return;
+    }
     const requestedMasterCode = (merged.masterCode ?? "").trim().toUpperCase();
     if (!requestedMasterCode) {
       toast.error("A master code is required. Add an alias instead if this is an alternate code.");
@@ -1158,6 +1164,11 @@ function EditModal({
     setScopeOpen(true);
   };
   const handleSaveForDistributors = () => {
+    const doorCountError = standardBaseDoorSaveError(merged.masterCode, merged.numberOfDoors);
+    if (doorCountError) {
+      toast.error(doorCountError);
+      return;
+    }
     if (scopeDistributorIds.length === 0) {
       toast.error("Tick at least one distributor, or request a master change.");
       return;
@@ -1385,6 +1396,9 @@ function EditModal({
                         ))}
                       </SelectContent>
                     </Select>
+                    {standardBaseDoorSaveError(merged.masterCode, merged.numberOfDoors) && (
+                      <p className="text-[11px] text-amber-700">{standardBaseDoorSaveError(merged.masterCode, merged.numberOfDoors)}</p>
+                    )}
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-sm font-medium">Number of Drawers</Label>

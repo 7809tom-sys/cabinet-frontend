@@ -39,6 +39,7 @@ import { MediaPicker } from "@/components/admin/MediaPicker";
 import { DrawerLayoutEditor, LayoutSpecBuilder, defaultLayoutSpec } from "@/components/admin/CabinetConfigAdmin";
 import { CUSTOM_CABINET_PROFILES } from "@/lib/customCabinetProfiles";
 import { cabinetTypeLabel, resolveDoorDrawerCounts, cabinetDrawingType } from "@/lib/cabinetGraphics";
+import { standardBaseDoorSaveError } from "@/lib/genericCabinetDrawerReference";
 import { DoorStyleSwatch } from "@/components/DoorStyleSwatch";
 import { doorFamilyPhoto } from "@/lib/doorFamilyPhotos";
 import { finishColors, finishColorsWithName } from "@/lib/design";
@@ -931,6 +932,11 @@ export default function CabinetDetail({ masterCode }: Props) {
     if (!cabinet?.id) return;
     if (editConfigVerified && !canFinalizeCabinetConfiguration(distCoverage?.length)) {
       toast.error(DISTRIBUTOR_CONNECTION_REQUIRED_MESSAGE);
+      return;
+    }
+    const doorCountError = standardBaseDoorSaveError(cabinet.masterCode, parseInt(editNumDoors) || 0);
+    if (doorCountError) {
+      toast.error(doorCountError);
       return;
     }
     // A cabinet rule is never applied to every distributor at once from here:
@@ -2010,6 +2016,9 @@ export default function CabinetDetail({ masterCode }: Props) {
                         {[0,1,2,3,4].map(n => <SelectItem key={n} value={String(n)}>{n === 0 ? "None" : n}</SelectItem>)}
                       </SelectContent>
                     </Select>
+                    {standardBaseDoorSaveError(cabinet?.masterCode, parseInt(editNumDoors) || 0) && (
+                      <p className="text-[11px] text-amber-700">{standardBaseDoorSaveError(cabinet?.masterCode, parseInt(editNumDoors) || 0)}</p>
+                    )}
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs text-muted-foreground">Drawers</Label>

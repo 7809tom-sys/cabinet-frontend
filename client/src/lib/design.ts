@@ -14,6 +14,7 @@ import {
 } from "./polygonRoom";
 import { VERIFIED_PELICAN_BATHROOM_FIXTURE_PROFILES, verifiedPelicanBathroomFixtureProfile } from "./pelicanBathroomFixtureProfiles";
 import { aefPrintedGeometryForSku, hasAefPrintedGeometry } from "@shared/aefFramelessGeometry";
+import { standardBaseDoorCount } from "@shared/genericCabinetDrawerReference";
 export { isGlassPolicyNomenclature } from "./glassPolicy";
 
 export const STD = {
@@ -1460,7 +1461,9 @@ export function isCabinetDoorHardwareEligible(
   if (p.noDoor || p.placement === "appliance" || !hasDoorSwing(p)) return false;
   if (side === "top-center") return supportsCenteredTopDoorPull(p);
   if (side !== "paired") return true;
-  return resolveSwing(p) === "double" || (p.numberOfDoors ?? 0) >= 2;
+  const standardDoors = standardBaseDoorCount(p);
+  const doors = standardDoors ?? (p.numberOfDoors ?? 0);
+  return resolveSwing(p) === "double" || doors >= 2;
 }
 
 /** Copy a door-hardware choice to every eligible cabinet without touching any
@@ -1648,7 +1651,9 @@ export function resolveSwing(p: PlacedCabinet): DoorSwing {
   const code = (p.masterCode ?? "").toUpperCase();
   const hay = `${p.description ?? ""} ${p.masterCode ?? ""}`.toLowerCase();
   if (/^(?:LSB?|ERB|BER)[-_]?\d/.test(code) || /lazy\s*susan|easy\s*reach/.test(hay)) return "left";
-  if (typeof p.numberOfDoors === "number" && p.numberOfDoors >= 2) return "double";
+  const standardDoors = standardBaseDoorCount(p);
+  const doorCount = standardDoors ?? (typeof p.numberOfDoors === "number" ? p.numberOfDoors : 0);
+  if (doorCount >= 2) return "double";
   // `none` on a legacy one-door placement means the swing was never authored,
   // not that the physical door disappeared. Once hasDoorSwing has established
   // a real hinged door, use the standard left default until the user selects a
