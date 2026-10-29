@@ -20,6 +20,10 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Spinner } from "@/components/ui/spinner";
 import { Eye, EyeOff } from "lucide-react";
+import { useReferral } from "@/hooks/useReferral";
+import { isPortalChoice, type PortalChoice } from "@/lib/portalSignIn";
+import { PortalSignInChooser } from "@/components/auth/PortalSignInChooser";
+import { TestAccountLogin } from "@/components/auth/TestAccountLogin";
 
 // signInWithOAuth does not report a failure when the person backs out, cancels,
 // or the browser restores this page from bfcache. Release the spinner if this
@@ -44,8 +48,13 @@ function GoogleGlyph() {
   );
 }
 
-export default function SignIn() {
+export default function SignIn({ portal: portalProp }: { portal?: PortalChoice } = {}) {
+  useReferral();
   const utils = trpc.useUtils();
+  const portal: PortalChoice | null = portalProp
+    ?? (typeof window !== "undefined" && isPortalChoice(new URLSearchParams(window.location.search).get("portal"))
+      ? new URLSearchParams(window.location.search).get("portal") as PortalChoice
+      : null);
   const { t, lang } = useLanguage();
   useSeo({ title: t("seo_signin_t"), description: t("seo_signin_d"), lang });
 
@@ -86,7 +95,11 @@ export default function SignIn() {
 
   const requestedReturn = () => {
     const value = new URLSearchParams(window.location.search).get("returnTo");
-    return isSafeSiteReturnPath(value) ? value : null;
+    if (isSafeSiteReturnPath(value)) return value;
+    if (portal === "contractor") return "/contractor";
+    if (portal === "customer") return "/customer";
+    if (portal === "affiliate") return "/affiliate";
+    return null;
   };
 
   const afterAuth = async (mode: "automatic" | "submit") => {
@@ -102,7 +115,8 @@ export default function SignIn() {
         toast.error("Your sign-in could not be confirmed. Please try again.");
         return;
       }
-      const { destination: serverDestination } = await utils.auth.signInDestination.fetch({ returnPath: requestedReturn() });
+      window.sessionStorage.removeItem("cd.testAccountToken");
+      const { destination: serverDestination } = await utils.auth.signInDestination.fetch({ returnPath: requestedReturn(), portal });
       const now = Date.now();
       const decision = decideSignInNavigation({
         role: me.role,
@@ -176,9 +190,13 @@ export default function SignIn() {
   // Supabase emails and OAuth come back to this same page (and same origin,
   // so affiliate subdomains keep their own session), preserving returnTo.
   const authRedirectUrl = () => {
-    const url = new URL("/signin", window.location.origin);
+    const url = new URL(window.location.pathname || "/signin", window.location.origin);
+    const current = new URLSearchParams(window.location.search);
     const returnTo = requestedReturn();
     if (returnTo) url.searchParams.set("returnTo", returnTo);
+    if (portal) url.searchParams.set("portal", portal);
+    const ref = current.get("ref");
+    if (ref) url.searchParams.set("ref", ref);
     return url.toString();
   };
 
@@ -278,13 +296,26 @@ export default function SignIn() {
     toast.success("If that email is registered, a reset link is on its way.");
   };
 
+  const onStoreSignIn = typeof window !== "undefined" && /\/store\/[^/]+\/signin\/?$/.test(window.location.pathname);
+  const showChooser = onStoreSignIn || portal != null || (typeof window !== "undefined" && new URLSearchParams(window.location.search).has("ref"));
+  const title = portal === "contractor" ? "Contractor sign in" : portal === "customer" ? "Customer sign in" : portal === "affiliate" ? "Affiliate sign in" : "Welcome to CabinetDealz";
+  const description = portal === "contractor"
+    ? "Sign in to save designs, organize customers, and estimate labor."
+    : portal === "customer"
+      ? "Sign in to see your saved designs and track orders."
+      : portal === "affiliate"
+        ? "Sign in to your affiliate dashboard."
+        : "Sign in to manage orders, pricing, and designs.";
+
   return (
-    <div className="container max-w-md py-12">
+    <div className="container max-w-lg py-12">
+      {showChooser ? <PortalSignInChooser active={portal} /> : null}
+      <TestAccountLogin suggested={portal === "contractor" ? "contractor" : portal === "customer" ? "customer" : undefined} />
       <Card>
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl">Welcome to CabinetDealz</CardTitle>
+          <CardTitle className="text-2xl">{title}</CardTitle>
           <CardDescription>
-            Sign in to manage orders, pricing, and designs.
+            {description}
           </CardDescription>
         </CardHeader>
         <CardContent>

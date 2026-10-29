@@ -14,6 +14,14 @@
  *   its doorStyle text still says "Shaker".
  */
 
+import {
+  isAspenCharcoalIdentity,
+  isAspenRaisedDefault,
+  resolveDoorShapeDecision,
+  type DoorProfileSource,
+  type DoorShape,
+} from "./doorRenderIdentity";
+
 export const RAISED_PANEL_BEVEL_WIDTH_IN = 0.75;
 export const RAISED_PANEL_BEVEL_DEPTH_IN = 0.28;
 
@@ -21,6 +29,8 @@ export const RAISED_PANEL_BEVEL_DEPTH_IN = 0.28;
 export const ASPEN_CHARCOAL_STAIN = "#2a211c";
 
 export const ASPEN_RAISED_EDGE = "ogee";
+
+export type { DoorProfileSource, DoorShape };
 
 export type DoorPanelConstruction = "raised" | "flat" | "slab" | "glass";
 export type DoorDrawerFrontType = "five-piece-raised" | "five-piece-flat" | "slab";
@@ -49,6 +59,14 @@ export type DoorStyleAppearanceInput = {
   drawerFrontType?: DoorDrawerFrontType | string | null;
   grainDirection?: DoorGrainDirection | string | null;
   finishSheen?: DoorFinishSheen | string | null;
+  /** Admin door shape. When set, it wins over distributor text and the Aspen default. */
+  doorShape?: DoorShape | string | null;
+  /** Admin render color. When set, it wins over the name fallback and a distributor hex. */
+  renderHex?: string | null;
+  swatchCode?: string | null;
+  swatchHex?: string | null;
+  profileDescription?: string | null;
+  profileNotes?: string | null;
   doorProfile?: DoorStyleAppearanceInput | null;
 };
 
@@ -64,6 +82,7 @@ export type ResolvedDoorProfile = {
   drawerFrontType: DoorDrawerFrontType | null;
   grainDirection: DoorGrainDirection | null;
   finishSheen: DoorFinishSheen | null;
+  profileSource: DoorProfileSource;
 };
 
 const PANEL_CONSTRUCTIONS = ["raised", "flat", "slab", "glass"] as const;
@@ -158,19 +177,31 @@ function flattenProfile(input: DoorStyleAppearanceInput | null | undefined): Doo
  */
 export function resolveDoorProfile(input: DoorStyleAppearanceInput | null | undefined): ResolvedDoorProfile {
   const source = flattenProfile(input);
+  const decision = resolveDoorShapeDecision({ ...input, ...source });
+  const glass = decision.shape === "glass";
+  const raised = decision.shape === "raised";
+  const slab = decision.shape === "slab";
   const doorStyleText = `${text(source.doorStyle)} ${text(source.doorPanelType)}`.toLowerCase();
-  const glass = source.panelConstruction === "glass" || /\bglass\b/.test(doorStyleText);
-  const aspen = !glass && isSkylineAspenRaised({ ...input, ...source });
-  const raisedByText = /raised|bevel|cathedral/.test(doorStyleText);
-  const raised = !glass && (source.panelConstruction === "raised" || raisedByText || aspen);
-  const charcoal = isAspenCharcoal({ ...input, ...source });
+  const raisedByText = /raised|bevel|cathedral|\bogee\b|\barch(?:ed)?\b|traditional/.test(doorStyleText);
+  const aspenFamily = isAspenRaisedDefault({ ...input, ...source }) || isSkylineAspenRaised({ ...input, ...source });
+  const charcoal = isAspenCharcoal({ ...input, ...source }) || isAspenCharcoalIdentity({ ...input, ...source });
 
   let doorStyle = text(source.doorStyle) || null;
   let doorPanelType = text(source.doorPanelType) || null;
-  if (aspen && !raisedByText) {
+  if (raised && !raisedByText) {
     doorStyle = "Raised Panel";
     doorPanelType = doorPanelType ?? "Raised Panel";
+  } else if (decision.shape === "recessed-shaker") {
+    if (!doorStyle || /\bslab\b|flat[\s-]?panel|\bflat\b/.test(doorStyle.toLowerCase())) doorStyle = "Shaker";
+    if (doorPanelType && /flat[\s-]?panel|\bslab\b/.test(doorPanelType.toLowerCase())) doorPanelType = "Recessed Panel";
+  } else if (slab) {
+    doorStyle = "Slab";
+    doorPanelType = "Slab";
+  } else if (glass && !/\bglass\b/.test(doorStyleText)) {
+    doorStyle = "Glass";
+    doorPanelType = doorPanelType ?? "Glass";
   }
+  if (!doorStyle && decision.source === "guessed") doorStyle = "Shaker";
 
   const storedGrain = oneOf(source.grainDirection, GRAIN_DIRECTIONS);
   const grainDirection: DoorGrainDirection | null = charcoal && (!storedGrain || storedGrain === "none")
@@ -187,12 +218,13 @@ export function resolveDoorProfile(input: DoorStyleAppearanceInput | null | unde
     doorPanelType,
     railWidth: positiveInches(source.railWidth) ?? (text(source.railWidth) || null),
     stileWidth: positiveInches(source.stileWidth) ?? (text(source.stileWidth) || null),
-    panelConstruction: glass ? "glass" : raised ? "raised" : oneOf(source.panelConstruction, PANEL_CONSTRUCTIONS),
+    panelConstruction: glass ? "glass" : raised ? "raised" : slab ? "slab" : "flat",
     bevelWidth: raised ? (storedBevelWidth ?? RAISED_PANEL_BEVEL_WIDTH_IN) : (storedBevelWidth ?? (text(source.bevelWidth) || null)),
     bevelDepth: raised ? (storedBevelDepth ?? RAISED_PANEL_BEVEL_DEPTH_IN) : (storedBevelDepth ?? (text(source.bevelDepth) || null)),
-    insideEdgeProfile: raised ? (storedEdge || (aspen ? ASPEN_RAISED_EDGE : "bevel")) : storedEdge,
-    drawerFrontType: storedDrawer ?? (aspen ? "five-piece-raised" : null),
+    insideEdgeProfile: raised ? (storedEdge || (aspenFamily ? ASPEN_RAISED_EDGE : "bevel")) : storedEdge,
+    drawerFrontType: storedDrawer ?? (raised && aspenFamily ? "five-piece-raised" : null),
     grainDirection,
     finishSheen: oneOf(source.finishSheen, FINISH_SHEENS),
+    profileSource: decision.source,
   };
 }

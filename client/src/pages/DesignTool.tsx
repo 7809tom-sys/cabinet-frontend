@@ -94,6 +94,9 @@ import { affiliateStyleName as resolveAffiliateStyleName } from "@/lib/affiliate
 import { frameInsetPxFromInches } from "@/lib/elevationFrameGeometry";
 import { designerDoorFrameMetrics } from "@/lib/doorFrameMetrics";
 import { designerCatalogDoorProfile, doorStyleFinishColors, resolveDoorProfilePanelKind } from "@/lib/doorStyleAppearance";
+import { resolveDoorSwatchHex } from "@shared/doorRenderIdentity";
+import { clampColorDeltaE } from "@shared/colorGate";
+import { clampRenderExposure } from "@shared/doorRenderLights";
 import { adjustedDesignUnitPrice, buildDesignCabinetCartLines, buildDesignPreviewPricingLines, bundleCabinetPricingSignature, calculateCartSubtotal, completeDesignPricingLines, lockDesignCartLinesToPackageTotal, mergeDesignCartLines } from "@/lib/designCartLines";
 import { combinedFillerNote, fillerCutSourceFor, isCombinedSmallFiller } from "@/lib/fillerBilling";
 import { activeCatalogPricingIdsByMasterCode, currentCatalogPricingCabinetId } from "@/lib/designPricingIdentity";
@@ -4650,7 +4653,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const stablePricePairs = useMemo(() => pricePairs, [pricePairKey]);
   const debouncedPricePairs = useDebouncedValue(stablePricePairs, 400);
   const { data: priceRows, isFetching: priceRowsFetching, isFetched: priceRowsFetched, isError: priceRowsError } = trpc.design.priceForCabinetsByStyles.useQuery(
-    { pairs: debouncedPricePairs, distributorId: lockedDistributorId ?? undefined },
+    { pairs: debouncedPricePairs, distributorId: lockedDistributorId ?? undefined, affiliateSlug: affiliateSlug ?? undefined },
     { enabled: debouncedPricePairs.length > 0 && !!styleId, retry: false, refetchOnWindowFocus: false }
   );
   // Part 2: the server may have priced a placed code through its two-way
@@ -4700,6 +4703,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       targetStyleId: pendingPlanStyleSwitch?.newStyleId ?? 0,
       distributorId: pendingPlanStyleSwitch?.distributorId ?? undefined,
       tier: DESIGN_TIER_TO_SHARED[tier],
+      affiliateSlug: affiliateSlug ?? undefined,
       cabinets: planSwitchReviewCabinets,
     },
     { enabled: pendingPlanStyleSwitch != null && planSwitchNeedsPricingReview },
@@ -5087,6 +5091,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     () => doorStyles?.find((s) => s.id === styleId) ?? null,
     [doorStyles, styleId]
   );
+  const doorRenderSettings = trpc.siteSettings.getPublicSettings.useQuery(undefined, { staleTime: 60_000 });
+  const doorRenderExposure = clampRenderExposure((doorRenderSettings.data as { renderExposure?: number | string | null } | undefined)?.renderExposure);
+  const doorColorDeltaE = clampColorDeltaE((doorRenderSettings.data as { colorMatchDeltaE?: number | string | null } | undefined)?.colorMatchDeltaE);
+  const activeDoorSwatch = resolveDoorSwatchHex(activeStyle as { swatchCode?: string | null; swatchHex?: string | null } | null);
   // Small finish swatch shown on each palette tile so the chosen finish is
   // visible while browsing cabinets. Empty until a door style is selected.
   const paletteFinishSwatch = useMemo<string | null>(
@@ -14417,6 +14425,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	      onSyncCart={syncThreeDOrderWithCart}
 	      initialPresentation={interactive3dPresentation ?? undefined}
 	      catalogFinishOverride={activeFinish.face}
+	      renderExposure={doorRenderExposure}
+	      colorDeltaEMax={doorColorDeltaE}
+	      doorSwatchHex={activeDoorSwatch}
+	      doorSwatchCode={(activeStyle as { swatchCode?: string | null } | null)?.swatchCode ?? null}
 	      cabinetFinishPreviewOptions={threeDCabinetFinishPreviewOptions}
 	      doorStyleChoices={displayUniqueDoorStyles.map((style) => ({ id: style.id, name: affiliateStyleName(style) }))}
 	      selectedDoorStyleId={styleId}
@@ -16150,7 +16162,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
               <DialogHeader>
                 <DialogTitle>Customer &amp; Affiliate Price List</DialogTitle>
                 <DialogDescription>
-                  Private to this affiliate owner. Customer price is shown beside your affiliate cost and pricing position; supplier cost is never shown.
+                  Private to this affiliate owner. Customer price is your tier cost plus your markup. Supplier cost is never shown.
+                  {affiliatePriceList.data?.tierLabel ? ` Pricing tier: ${affiliatePriceList.data.tierLabel}.` : ""}
                 </DialogDescription>
               </DialogHeader>
               {affiliatePriceList.isLoading ? (
@@ -22247,6 +22260,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                onSyncCart={syncThreeDOrderWithCart}
 			                initialPresentation={interactive3dPresentation ?? undefined}
 			                catalogFinishOverride={activeFinish.face}
+	      renderExposure={doorRenderExposure}
+	      colorDeltaEMax={doorColorDeltaE}
+	      doorSwatchHex={activeDoorSwatch}
+	      doorSwatchCode={(activeStyle as { swatchCode?: string | null } | null)?.swatchCode ?? null}
 	                cabinetFinishPreviewOptions={threeDCabinetFinishPreviewOptions}
 	                doorStyleChoices={displayUniqueDoorStyles.map((style) => ({ id: style.id, name: affiliateStyleName(style) }))}
 	                selectedDoorStyleId={styleId}

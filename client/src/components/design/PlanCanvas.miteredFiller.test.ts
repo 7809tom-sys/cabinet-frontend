@@ -23,6 +23,6 @@ describe("PlanCanvas angled filler", () => {
   });
 
   it("keeps normal cabinet clipping for every non-transition placement", () => {
-    expect(source).toContain(": planCabinetClipPath(p, room)");
+    expect(source).toContain(": planCabinetClipPath(p, room, cabinets)");
   });
 });

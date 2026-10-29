@@ -15,11 +15,13 @@ import { ColorStyleQuickPicker } from "./ColorStyleQuickPicker";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { APPLIANCES, BLIND_CORNER_FILLER_WIDTH_IN, COUNTERTOP_DEPTH_IN, FURNITURE_CATALOG, STD, applianceAppearanceImage, bearsCountertop, isBaseHeightAppliance, blindCornerRearCountertopExtensionIn, blindPullRange, cabinetWall, cabinetWallDragPreview, cornerLegRatioForPlaced, cornerRotationForPlaced, countertopRunFaceNormal, countertopSurfacePlanPolygon, countertopSurfaces, crownBlockingCabinets, crownEligibleCabinets, customWallCabinetSide, drywallPonyWallAppearance, elevationBox, formatEighthInches, formatInches, glassDoorShelfCount, isAgainstWall, isBaseEndCornerCabinet, isCustomRoomWall, isFillerItem, fillerWidthRange, isGlassDoorCabinet, isMicrowaveOverRangePair, isRangeHoodPlacement, isRangeOrOven, isRefrigerator, isStacker, isWallRunDraggable, isWd18CountertopDrawerCabinet, kitchenCrestGenericOpenEndShelfCount, normalizeInstalledFillersToAdjacentCabinets, peninsulaCountertopPonyWallBackExtensionIn, peninsulaCountertopPonyWallBarOverhang, peninsulaCountertopSeatingOverhang, peninsulaCountertopWaterfallEnd, peninsulaLowerWorktopOppositeSideExtensionIn, peninsulaRunEndpoints, placedCornerGeometryKind, placedFootprint, ponyWallMiteredFootprint, ponyWallPlanFrame, potFillerMountedRange, rangeVisualAppearance, refrigeratorBayVerificationMetrics, resolveCabinetHardwarePosition, resolveSwing, roomWallAppearance, seatedWallRunFrame, wallRunFrame, selectedLowerCabinetWallPlacement, sinkPlanDimensions, usesRaisedFloorWallDoorPull, wallCabinetFitMeasure, wallGapFitPreview, wallGapFreehandPreview, wallGaps, wallPlacementAt, wallRunOffset, wallRunSpan, wallSpanMeasure, wallLength, wd18CountertopFaceLayout, type CabinetWallDragPreview, type CountertopSurface, type IslandZone, type PlacedCabinet, type PlacedCornerGeometryKind, type PlacedFurniture, type PonyWall, type PotFillerFixture, rotatedSize, type RoomData, type SinkFixture, type WallCabinetFitMeasure, type WallGapFitPreview, type WallOpening, type WallSide, type WallSpanMeasure, wallTopLimit, } from "@/lib/design";
+import { APPLIANCES, BLIND_CORNER_FILLER_WIDTH_IN, COUNTERTOP_DEPTH_IN, FURNITURE_CATALOG, STD, applianceAppearanceImage, bearsCountertop, isBaseHeightAppliance, blindCornerRearCountertopExtensionIn, blindPullRange, cabinetWall, cabinetWallDragPreview, cornerLegRatioForPlaced, cornerRotationForPlaced, countertopRunFaceNormal, countertopSurfacePlanPolygon, countertopSurfaces, crownBlockingCabinets, crownEligibleCabinets, customWallCabinetSide, drywallPonyWallAppearance, DESK_TOP_HEIGHT_IN, elevationBox, formatEighthInches, formatInches, glassDoorShelfCount, isKneeDrawerItem, isAgainstWall, isBaseEndCornerCabinet, isCustomRoomWall, isFillerItem, fillerWidthRange, isGlassDoorCabinet, isMicrowaveOverRangePair, isRangeHoodPlacement, isRangeOrOven, isRefrigerator, isStacker, isWallRunDraggable, isWd18CountertopDrawerCabinet, kitchenCrestGenericOpenEndShelfCount, normalizeInstalledFillersToAdjacentCabinets, peninsulaCountertopPonyWallBackExtensionIn, peninsulaCountertopPonyWallBarOverhang, peninsulaCountertopSeatingOverhang, peninsulaCountertopWaterfallEnd, peninsulaLowerWorktopOppositeSideExtensionIn, peninsulaRunEndpoints, placedCornerGeometryKind, placedFootprint, ponyWallMiteredFootprint, ponyWallPlanFrame, potFillerMountedRange, rangeVisualAppearance, refrigeratorBayVerificationMetrics, resolveCabinetHardwarePosition, resolveSwing, roomWallAppearance, seatedWallRunFrame, wallRunFrame, wallAngleEndHandForPlacement, selectedLowerCabinetWallPlacement, sinkPlanDimensions, usesRaisedFloorWallDoorPull, wallCabinetFitMeasure, wallGapFitPreview, wallGapFreehandPreview, wallGaps, wallPlacementAt, wallRunOffset, wallRunSpan, wallSpanMeasure, wallLength, wd18CountertopFaceLayout, type CabinetWallDragPreview, type CountertopSurface, type IslandZone, type PlacedCabinet, type PlacedCornerGeometryKind, type PlacedFurniture, type PonyWall, type PotFillerFixture, rotatedSize, type RoomData, type SinkFixture, type WallCabinetFitMeasure, type WallGapFitPreview, type WallOpening, type WallSide, type WallSpanMeasure, wallTopLimit, } from "@/lib/design";
 import { refrigeratorEndPanelCutDownNote } from "@/lib/refrigeratorEndPanelCut";
 import { threeDLatticeRackLayout } from "@/lib/latticeRackLayout";
 import { PLATE_RACK_FRAME_IN, plateRackDividerLayout } from "@/lib/plateRackLayout";
+import { cornerDrawerFrontLayout, isCornerDrawerBaseCabinet } from "@/lib/cornerDrawerLayout";
 import { baseAngleEndPlan, isBaseAngleEndCabinet, type BaseAngleEndHand, type PlanPoint } from "@/lib/baseAngleEndLayout";
+import { isWallAngleEndCabinet, wallAngleEndPlan, type WallAngleEndHand } from "@/lib/wallAngleEndLayout";
 export { threeDLatticeRackLayout };
 import { islandCountertopRects, islandCountertopVisibleRects, islandRaisedBarRects, islandFaceFitMeasure } from "@/lib/islandScene";
 import { furniturePlanFrame, resolvedFurnitureDimensions } from "@/lib/design";
@@ -41,7 +43,12 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { searchCatalogItems } from "@shared/catalogCodeSearch";
 import { AEF_PRINTED_GEOMETRY_MARKER } from "@shared/aefFramelessGeometry";
 import type { FaceSourceKind } from "@shared/doorFaceRecognition";
-import { RAISED_PANEL_BEVEL_DEPTH_IN, RAISED_PANEL_BEVEL_WIDTH_IN } from "@shared/doorStyleAppearance";
+import { RAISED_PANEL_BEVEL_DEPTH_IN, RAISED_PANEL_BEVEL_WIDTH_IN, resolveDoorProfile } from "@shared/doorStyleAppearance";
+import { matchCabinetColorName } from "@shared/cabinetColorNames";
+import { runColorGate, type ColorGateResult } from "@shared/colorGate";
+import { resolveDoorSwatchHex } from "@shared/doorRenderIdentity";
+import { doorLightsForFinish } from "@shared/doorRenderLights";
+import { probeFlatPatchHex } from "@/lib/doorColorProbe";
 import { toast } from "sonner";
 import { pantryDrawerFrontLayout } from "@/lib/pantryDrawerLayout";
 import { masterTracProduct, masterTracFinishColor } from "@/lib/closet";
@@ -267,7 +274,9 @@ type SceneSku = {
   glassDoor?: boolean | null;
   doorOrientation?: "side-by-side" | "stacked" | null;
   swing?: "left" | "right" | "double" | "none" | null;
-  /** AW only: side of the square back corner ("left" mirrors the wedge). */
+  /** Open-end hand for a WAC/AW wall angle cabinet. Right tapers toward +X. */
+  wallAngleEndHand?: "left" | "right" | null;
+  /** Stamped neighbour side from the wall-run commit. Rendering uses wallAngleEndHand. */
   angleEndHand?: "left" | "right" | null;
   handleSide?: "left" | "right" | null;
   hardwarePosition?: "auto" | "left" | "center" | "right" | "paired" | "top-center" | null;
@@ -821,6 +830,13 @@ interface Props {
   initialPresentation?: InteractiveRoomPresentation;
   /** Active design-tool finish derived from the chosen catalog door style. */
   catalogFinishOverride?: string | null;
+  /** Admin render exposure shared with the door audit. Null keeps the style rig. */
+  renderExposure?: number | null;
+  /** CIEDE2000 pass limit. Null uses the default of 3. */
+  colorDeltaEMax?: number | null;
+  /** Reference swatch hex. Empty blocks audit and photo renders as Needs swatch. */
+  doorSwatchHex?: string | null;
+  doorSwatchCode?: string | null;
   /** Real selected catalog finishes available for a temporary whole-room color check. */
   cabinetFinishPreviewOptions?: ThreeDCabinetFinishPreviewOption[];
   /** Door styles the owner can apply from the 3D front view on every screen size. */
@@ -2729,6 +2745,9 @@ export function threeDCabinetFrontVisualUrl(sku: EnclosedWallMicrowaveCandidate 
   // appliance face inside its configured bay. Its cabinet-card diagram is not
   // an appliance finish and must never cover the upper doors or microwave face.
   if (isEnclosedWallMicrowaveCabinet(sku)) return null;
+  // CDB36 is built from real right-angle drawer meshes. Its catalog line
+  // drawing must never be pasted onto a flat plane over the cabinet front.
+  if (isCornerDrawerBaseCabinet({ masterCode: sku.masterCode, description: sku.description })) return null;
   return sku.catalogImageUrl?.trim() || null;
 }
 
@@ -2739,8 +2758,10 @@ export function threeDCabinetFrontVisualUrl(sku: EnclosedWallMicrowaveCandidate 
  * flattening every door and drawer in the 3D Designer.
  */
 export function threeDUsesPhysicalShakerRails(profileKind: string, hasSuppliedDoorSample: boolean): boolean {
-  // A supplied sample changes only the material map, never the Shaker geometry.
+  // A supplied sample changes only the material map, never the frame geometry.
+  // Raised is checked before shaker so a raised panel is not dropped as a slab.
   void hasSuppliedDoorSample;
+  if (profileKind === "raised") return true;
   return profileKind === "shaker";
 }
 
@@ -2889,7 +2910,12 @@ export function threeDUsesCatalogFrontVisual(input: {
   specialtyKind: string;
   isRefrigeratorEndPanel: boolean;
   hasVerifiedDoorLayout: boolean;
+  masterCode?: string | null;
+  description?: string | null;
+  graphicType?: string | null;
+  customProfile?: string | null;
 }) {
+  if (isCornerDrawerBaseCabinet(input) || input.specialtyKind === "corner-drawer") return false;
   return input.hasCatalogFrontVisual
     && input.specialtyKind !== "base-angle-end"
     && !input.hasDoorSample
@@ -3064,15 +3090,6 @@ function taperedRangeHoodCanopyGeometry(
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
   return geometry;
-}
-
-/** Matches the 2D Corner Drawer Base face: an 8% corner marker plus a 92% full-height drawer stack. */
-export function cornerDrawerFrontLayout(bodyWidth: number) {
-  const cornerMarkerWidth = Math.max(0.04, bodyWidth * 0.08);
-  return {
-    cornerMarkerWidth,
-    drawerStackWidth: Math.max(0.08, bodyWidth - cornerMarkerWidth),
-  };
 }
 
 /**
@@ -3367,6 +3384,16 @@ function quarterOctagonExtrusion(points: PlanPoint[], height: number) {
   return geometry;
 }
 
+/** Places the wall-angle triangle in the cabinet's local inch box, centered. */
+function wallAngleEndFeet(widthIn: number, depthIn: number, hand: WallAngleEndHand) {
+  const plan = wallAngleEndPlan({ widthIn, depthIn, hand });
+  const toFeet = (point: { x: number; z: number }): PlanPoint => ({
+    x: point.x * INCH,
+    z: point.z * INCH,
+  });
+  return { plan, toFeet };
+}
+
 /** Places the 24" quarter-octagon in the back corner that touches the neighbor. */
 function baseAngleEndFeet(widthIn: number, depthIn: number, hand: BaseAngleEndHand) {
   const sideIn = Math.min(widthIn, depthIn);
@@ -3412,21 +3439,12 @@ export function constrainedThreeDWallHeight(value: unknown, fallback = 96) {
 export function sceneCabinetColor(scene: InteractiveRoomScene) {
   const color = scene.materials?.cabinet.color?.trim() ?? "";
   if (/^#[0-9a-f]{6}$/i.test(color)) return color;
-  const source = `${scene.materials?.cabinet.finish ?? ""} ${color}`.toLowerCase();
-  // Calibrated from the verified Preston Aero Sage door, drawer, full-door,
-  // and room-scene references supplied by the catalog owner. This specific
-  // finish intentionally takes precedence over the broad generic sage fallback.
-  if (/(aero sage|aston green)/.test(source)) return "#4f5549";
-  if (/(black|charcoal|obsidian|graphite)/.test(source)) return "#34363a";
-  if (/(navy|blue|ocean)/.test(source)) return "#435b77";
-  if (/(green|sage|forest)/.test(source)) return "#78826b";
-  if (/(walnut|espresso|brown|mocha)/.test(source)) return "#75523e";
-  // Calibrated from the owner-supplied Designer Natural door, drawer, full-door,
-  // and installed-room references: a light creamy maple/oak rather than the
-  // former orange-brown generic wood fallback.
-  if (/(oak|maple|honey|natural)/.test(source)) return "#d1ba8f";
-  if (/(cream|beige|linen|almond)/.test(source)) return "#ded5c1";
-  return "#f2f0ea";
+  const renderHex = scene.materials?.cabinet && "renderHex" in scene.materials.cabinet
+    ? (scene.materials.cabinet as { renderHex?: string | null }).renderHex
+    : null;
+  if (renderHex && /^#[0-9a-f]{6}$/i.test(renderHex.trim())) return renderHex.trim().toLowerCase();
+  const source = `${scene.materials?.cabinet.name ?? ""} ${scene.materials?.cabinet.finish ?? ""} ${color}`;
+  return matchCabinetColorName(source) ?? "#f2f0ea";
 }
 
 export function resolvedCatalogFinish(scene: InteractiveRoomScene, catalogFinishOverride?: string | null) {
@@ -3487,7 +3505,17 @@ export function resolvedThreeDDoorProfile(
   catalogDoorProfile?: ThreeDDoorProfile | null,
 ) {
   const selectedProfile = `${catalogDoorProfile?.doorStyle ?? ""} ${catalogDoorProfile?.doorPanelType ?? ""}`.trim();
-  return selectedProfile ? catalogDoorProfile : scene.materials?.cabinet ?? null;
+  const fallback = scene.materials?.cabinet ?? null;
+  const source = selectedProfile ? catalogDoorProfile : fallback;
+  if (!source) return null;
+  const resolved = resolveDoorProfile({
+    ...source,
+    ourName: scene.materials?.cabinet.name ?? null,
+    name: scene.materials?.cabinet.publicName ?? scene.materials?.cabinet.name ?? null,
+    color: scene.materials?.cabinet.color ?? null,
+    finish: scene.materials?.cabinet.finish ?? null,
+  });
+  return { ...source, ...resolved };
 }
 
 export function shouldRenderPlacedDesign(placed: PlacedCabinet[]) {
@@ -3508,8 +3536,10 @@ export function quoteMaterialDetails(input: {
 
 export function doorProfileKind(doorStyle: string | null | undefined, doorPanelType: string | null | undefined) {
   const profile = `${doorStyle ?? ""} ${doorPanelType ?? ""}`.toLowerCase();
-  if (/raised|bevel|cathedral/.test(profile)) return "raised" as const;
-  if (/shaker|recessed|frame/.test(profile)) return "shaker" as const;
+  // Raised is checked before shaker. "Flat panel" and "recessed" are shaker, not a slab.
+  if (/raised|bevel|cathedral|\bogee\b|\barch(?:ed)?\b|traditional/.test(profile)) return "raised" as const;
+  if (/flat[\s-]?panel|recessed|shaker|\bframe\b/.test(profile)) return "shaker" as const;
+  if (/\bslab\b|contemporary|euro|modern|\bflat\b/.test(profile)) return "flat" as const;
   return "flat" as const;
 }
 
@@ -3798,10 +3828,10 @@ export function resolvedThreeDSpecialtyProfile(sku: Pick<SceneSku, "graphicType"
     graphicType: sku.graphicType ?? sku.customProfile ?? null,
   }) === "range-hood-front") return { kind: "range-hood-front" as const, pattern: null };
   if (/^(?:ada[-_])?fsb[-_]?\d/i.test(sku.masterCode) || /farm(?:house)?\s+sink|apron[-\s]?front/i.test(sku.description ?? "")) return { kind: "farmhouse-sink" as const, pattern: null };
-  // AW1230, AW1236, and AW1242 are one angled wall-END family. They are not
-  // room-corner cabinets, but all three use the same true triangular end mesh,
-  // with cabinet height and shelf count supplied by the individual SKU.
-  if (isAngledWallProfile(sku)) return { kind: "diagonal-corner" as const, pattern: null };
+  // WAC1230/WAC1236/WAC1242 and AW aliases are one angled wall-END family.
+  // They are not room-corner cabinets and they do not share the BA-24
+  // quarter-octagon. The triangle's hypotenuse is the room-facing door.
+  if (isAngledWallProfile(sku)) return { kind: "wall-angle-end" as const, pattern: null };
   if (/corner-drawer-base/.test(graphic) || /^cdb[-_]?\d/.test(sku.masterCode) || /corner drawer base/i.test(sku.description ?? "")) return { kind: "corner-drawer" as const, pattern: null };
   if (sku.cornerGeometryKind === "base-end" || /end-angle|base_end_angle|end-return|base_end_return/.test(graphic) || /^(?:bec|ba)[-_]?\d/i.test(sku.masterCode) || /base end (?:corner|cabinet|return)/i.test(sku.description ?? "")) return { kind: "end-return" as const, pattern: null };
   if (sku.cornerGeometryKind === "triangle" || sku.cornerType === "triangle" || /^(?:wtc|btc)[-_]?\d/i.test(sku.masterCode)) return { kind: "triangle-corner" as const, pattern: null };
@@ -3822,10 +3852,7 @@ export function resolvedThreeDSpecialtyProfile(sku: Pick<SceneSku, "graphicType"
 }
 
 function isAngledWallProfile(sku: Pick<SceneSku, "graphicType" | "customProfile" | "masterCode" | "description">) {
-  const graphic = `${sku.graphicType ?? ""} ${sku.customProfile ?? ""}`.toLowerCase();
-  return /(?:^|\s)wall_angle(?:\s|$)|angled-wall/.test(graphic)
-    || /^aw[-_]?\d/i.test(sku.masterCode)
-    || /\bangled wall\b/i.test(sku.description ?? "");
+  return isWallAngleEndCabinet(sku);
 }
 
 /**
@@ -4066,6 +4093,7 @@ export function addCabinet(
   surfaceTextures?: { countertop?: THREE.Texture | null; suppressCountertop?: boolean; suppressFittedFillerToeKick?: boolean; suppressContinuousBaseToeKick?: boolean; suppressFarmhouseSinkPlaceholder?: boolean; selectedToeKick?: boolean; hardwareStyleId?: HardwareStyleId; hardwareAccent?: string; drawerSampleUrl?: string | null; faceSourceKind?: FaceSourceKind },
 ) {
   const placement = (sku.placementType ?? "base").toLowerCase();
+  const isKneeDrawer = isKneeDrawerItem(sku);
   const isWall = placement === "wall";
   if (surfaceTextures?.faceSourceKind === "combined") doorSampleUrl = null;
   const isTall = placement === "tall";
@@ -4111,7 +4139,9 @@ export function addCabinet(
   const resolvedHeightIn = isFreestandingRange
     ? Math.max(STD.RANGE_COOKING_SURFACE_HEIGHT, configuredHeightIn)
     : configuredHeightIn;
-  const catalogMountBottom = sku.mountBottom != null
+  const catalogMountBottom = isKneeDrawer
+    ? Math.max(0, DESK_TOP_HEIGHT_IN - resolvedHeightIn)
+    : sku.mountBottom != null
     ? numberValue(sku.mountBottom, 0)
     : (isWd18CountertopDrawerCabinet({ masterCode: sku.masterCode, placement })
       ? STD.COUNTERTOP_HEIGHT
@@ -4152,7 +4182,10 @@ export function addCabinet(
   // follow the refrigerator from the finished floor to its top—never the
   // neighboring base's face elevation or toe-kick construction.
   const isFullOwnerEnvelopeFiller = isBaseFillerPiece && sku.fillerMatchesFullOwnerEnvelope === true;
-  const isFloorStandingCabinet = placement !== "appliance"
+  // A knee drawer is only the hanging drawer box. Classifying it as a floor
+  // base would add a toe kick and a carcass through the knee space.
+  const isFloorStandingCabinet = !isKneeDrawer
+    && placement !== "appliance"
     && !isRefrigeratorEndPanel
     && !usesBaseFillerFaceElevation
     && !isFullOwnerEnvelopeFiller
@@ -4522,36 +4555,42 @@ export function addCabinet(
     };
     cabinet.add(clippedBody);
     bodyMeshes.push(clippedBody);
-  } else if (specialty.kind === "diagonal-corner") {
-    const wedge = new THREE.Mesh(
-      angledWallProfile
-        ? triangleCornerWedgeGeometry(bodyWidth, bodyDepth, bodyHeight, sku.angleEndHand === "left" ? "left" : "right")
-        : diagonalCornerWedgeGeometry(bodyWidth, bodyDepth, bodyHeight),
-      bodyMaterial,
-    );
-    wedge.userData = angledWallProfile
-      ? { specialtyProfile: "angled-wall", angledWallWedge: true, selectedStyleSideSkin: true }
-      : { specialtyProfile: "diagonal-corner", diagonalCornerWedge: true, selectedStyleSideSkin: true };
+  } else if (specialty.kind === "wall-angle-end") {
+    const hand: WallAngleEndHand = sku.wallAngleEndHand === "left" ? "left" : "right";
+    const { plan, toFeet } = wallAngleEndFeet(widthIn, depthIn, hand);
+    const wedge = new THREE.Mesh(quarterOctagonExtrusion(plan.vertices.map(toFeet), bodyHeight), bodyMaterial);
+    wedge.userData = {
+      specialtyProfile: "angled-wall",
+      angledWallWedge: true,
+      wallAngleEndHand: hand,
+      selectedStyleSideSkin: true,
+    };
     cabinet.add(wedge);
     bodyMeshes.push(wedge);
-    if (!angledWallProfile) {
-      // The extruded pentagon's two short return faces inherit directional light
-      // differently from its door planes, which made one WDC side look gray or
-      // like a different finish. Add flush finish skins on only those two exposed
-      // returns and update them from the same selected finish/door-sample crop.
-	      const rightReturnMaterial = new THREE.MeshPhysicalMaterial({ color, ...cabinetPbr });
-	      const leftReturnMaterial = new THREE.MeshPhysicalMaterial({ color, ...cabinetPbr });
-      flatExposedFinishMaterials.push(rightReturnMaterial, leftReturnMaterial);
-      const rightReturn = new THREE.Mesh(new THREE.PlaneGeometry(bodyDepth / 2, bodyHeight), rightReturnMaterial);
-      rightReturn.position.set(bodyWidth / 2 + 0.006, 0, -bodyDepth / 4);
-      rightReturn.rotation.y = Math.PI / 2;
-      rightReturn.userData = { diagonalCornerFinishedReturn: "right", selectedFinishSideSkin: true, selectedFinishStructuralSurface: true };
-      cabinet.add(rightReturn);
-      const leftReturn = new THREE.Mesh(new THREE.PlaneGeometry(bodyWidth / 2, bodyHeight), leftReturnMaterial);
-      leftReturn.position.set(-bodyWidth / 4, 0, bodyDepth / 2 + 0.006);
-      leftReturn.userData = { diagonalCornerFinishedReturn: "left", selectedFinishSideSkin: true, selectedFinishStructuralSurface: true };
-      cabinet.add(leftReturn);
-    }
+  } else if (specialty.kind === "diagonal-corner") {
+    const wedge = new THREE.Mesh(
+      diagonalCornerWedgeGeometry(bodyWidth, bodyDepth, bodyHeight),
+      bodyMaterial,
+    );
+    wedge.userData = { specialtyProfile: "diagonal-corner", diagonalCornerWedge: true, selectedStyleSideSkin: true };
+    cabinet.add(wedge);
+    bodyMeshes.push(wedge);
+    // The extruded pentagon's two short return faces inherit directional light
+    // differently from its door planes, which made one WDC side look gray or
+    // like a different finish. Add flush finish skins on only those two exposed
+    // returns and update them from the same selected finish/door-sample crop.
+    const rightReturnMaterial = new THREE.MeshPhysicalMaterial({ color, ...cabinetPbr });
+    const leftReturnMaterial = new THREE.MeshPhysicalMaterial({ color, ...cabinetPbr });
+    flatExposedFinishMaterials.push(rightReturnMaterial, leftReturnMaterial);
+    const rightReturn = new THREE.Mesh(new THREE.PlaneGeometry(bodyDepth / 2, bodyHeight), rightReturnMaterial);
+    rightReturn.position.set(bodyWidth / 2 + 0.006, 0, -bodyDepth / 4);
+    rightReturn.rotation.y = Math.PI / 2;
+    rightReturn.userData = { diagonalCornerFinishedReturn: "right", selectedFinishSideSkin: true, selectedFinishStructuralSurface: true };
+    cabinet.add(rightReturn);
+    const leftReturn = new THREE.Mesh(new THREE.PlaneGeometry(bodyWidth / 2, bodyHeight), leftReturnMaterial);
+    leftReturn.position.set(-bodyWidth / 4, 0, bodyDepth / 2 + 0.006);
+    leftReturn.userData = { diagonalCornerFinishedReturn: "left", selectedFinishSideSkin: true, selectedFinishStructuralSurface: true };
+    cabinet.add(leftReturn);
   } else if (specialty.kind === "triangle-corner") {
     const wedge = new THREE.Mesh(triangleCornerWedgeGeometry(bodyWidth, bodyDepth, bodyHeight), bodyMaterial);
     wedge.userData = { specialtyProfile: "triangle-corner", triangleCornerWedge: true, selectedStyleSideSkin: true };
@@ -5001,13 +5040,17 @@ export function addCabinet(
   // texture. When it exists, NEVER overlay the Cabinet Config line-art drawing.
   // The catalog front visual is only used as a fallback for cabinets that have
   // NO active door style sample at all.
-  if (catalogFrontVisualUrl && !isBaseAngleEndCabinet(sku) && threeDUsesCatalogFrontVisual({
+  if (catalogFrontVisualUrl && !isCornerDrawerBaseCabinet(sku) && !isBaseAngleEndCabinet(sku) && threeDUsesCatalogFrontVisual({
     hasCatalogFrontVisual: Boolean(catalogFrontVisualUrl),
     hasDoorSample: Boolean(doorSampleUrl),
     hasDoorTexture: Boolean(doorTexture),
     specialtyKind: specialty.kind,
     isRefrigeratorEndPanel,
     hasVerifiedDoorLayout,
+    masterCode: sku.masterCode,
+    description: sku.description,
+    graphicType: sku.graphicType,
+    customProfile: sku.customProfile,
   })) {
     const frontVisualTexture = new THREE.TextureLoader().load(catalogFrontVisualUrl);
     frontVisualTexture.colorSpace = THREE.SRGBColorSpace;
@@ -5864,6 +5907,82 @@ export function addCabinet(
     };
     addPantryRow(lowerDoorHeight, -bodyHeight / 2 + 0.05 + lowerDoorHeight / 2, "lower");
     addPantryRow(upperDoorHeight, bodyHeight / 2 - 0.05 - upperDoorHeight / 2, "upper");
+  } else if (specialty.kind === "wall-angle-end") {
+    // The hypotenuse is the only door. It faces the room and tapers toward the
+    // open end; the full-depth side stays against the neighboring cabinet.
+    const hand: WallAngleEndHand = sku.wallAngleEndHand === "left" ? "left" : "right";
+    const { plan, toFeet } = wallAngleEndFeet(widthIn, depthIn, hand);
+    const face = plan.doorFace;
+    const center = toFeet(face.midpoint);
+    const doorThickness = 0.052;
+    const outwardOffset = 0.029;
+    const doorCenter = {
+      x: center.x + face.outward.x * outwardOffset,
+      z: center.z + face.outward.z * outwardOffset,
+    };
+    const doorHeight = Math.max(0.2, bodyHeight - 0.1);
+    const doorWidth = Math.max(0.12, face.length * INCH - 0.03);
+    const door = new THREE.Mesh(
+      new THREE.BoxGeometry(doorWidth, doorHeight, doorThickness),
+      sku.glassDoor ? glassDoorMaterial : faceMaterial,
+    );
+    door.position.set(doorCenter.x, 0, doorCenter.z);
+    door.rotation.y = face.rotationY;
+    door.userData = {
+      specialtyProfile: "angled-wall",
+      angledWallDoor: true,
+      wallAngleEndHand: hand,
+      flushPhysicalFace: true,
+      cabinetFront: true,
+      ...(sku.glassDoor ? { glassCabinetDoor: true, linkedGlassDoorAddon: true } : {}),
+    };
+    frontGroup.add(door);
+    addShakerFrame(
+      doorWidth,
+      doorHeight,
+      doorCenter.x + face.outward.x * 0.034,
+      0,
+      doorCenter.z + face.outward.z * 0.034,
+      face.rotationY,
+      Boolean(sku.glassDoor),
+    );
+    const pullLength = Math.min(Math.max(0.12, doorHeight * 0.28), 0.86);
+    const localX = { x: Math.cos(face.rotationY), z: -Math.sin(face.rotationY) };
+    const pullAlong = face.openSign * Math.max(0.04, doorWidth / 2 - 1.25 * INCH);
+    const pull = new THREE.Mesh(new THREE.BoxGeometry(0.022, pullLength, 0.026), hardwareMaterial);
+    pull.position.set(
+      doorCenter.x + localX.x * pullAlong + face.outward.x * 0.058,
+      -doorHeight * 0.3,
+      doorCenter.z + localX.z * pullAlong + face.outward.z * 0.058,
+    );
+    pull.rotation.y = face.rotationY;
+    pull.userData = {
+      cabinetHardware: true,
+      cabinetPull: "door",
+      diagonalDoorPull: true,
+      verticalPull: true,
+      wallAngleEndHand: hand,
+    };
+    frontGroup.add(pull);
+    if (sku.glassDoor) {
+      const shelfCount = Math.max(0, Math.min(4, Math.round(sku.adjustableShelfCount ?? 0)));
+      const shelfDepth = Math.max(0.08, bodyDepth * 0.28);
+      const shelfRecess = shelfDepth / 2 + 0.065;
+      for (let shelfIndex = 0; shelfIndex < shelfCount; shelfIndex += 1) {
+        const shelf = new THREE.Mesh(
+          new THREE.BoxGeometry(Math.max(0.08, doorWidth * 0.72), 0.024, shelfDepth),
+          new THREE.MeshStandardMaterial({ color: "#d5c7ad", roughness: 0.62, metalness: 0.01 }),
+        );
+        shelf.position.set(
+          doorCenter.x - face.outward.x * shelfRecess,
+          -doorHeight / 2 + (doorHeight * (shelfIndex + 1)) / (shelfCount + 1),
+          doorCenter.z - face.outward.z * shelfRecess,
+        );
+        shelf.rotation.y = face.rotationY;
+        shelf.userData = { visibleThroughGlassDoor: true, diagonalGlassShelf: shelfIndex + 1 };
+        frontGroup.add(shelf);
+      }
+    }
   } else if (specialty.kind === "diagonal-corner") {
     // Match the 2D diagonal corner: a square corner body with two center-meeting
     // doors on the actual 45-degree clipped front—not in the center plane of the
@@ -6073,30 +6192,97 @@ export function addCabinet(
       }
     }
   } else if (specialty.kind === "corner-drawer") {
-    // CDB36 retains its 36-by-36 plan footprint while its front exactly follows
-    // the 2D Corner Drawer Base elevation: an 8% corner marker and a full-height
-    // 92% stack of measured drawer rows—not a 24-inch blank panel plus a strip.
-    const { cornerMarkerWidth, drawerStackWidth } = cornerDrawerFrontLayout(bodyWidth);
-    const cornerMarker = new THREE.Mesh(
-      new THREE.BoxGeometry(cornerMarkerWidth - 0.01, bodyHeight - 0.08, 0.045),
-      trimMaterial,
-    );
-    cornerMarker.position.set(-bodyWidth / 2 + cornerMarkerWidth / 2 + 0.01, 0, 0.03);
-    cornerMarker.userData = { specialtyProfile: "corner-drawer", cornerDrawerIndicator: true };
-    frontGroup.add(cornerMarker);
-    const rows = resolvedThreeDDrawerRows(sku, bodyHeight - 0.1, Math.max(1, drawerCount || 3));
-    let rowTop = bodyHeight / 2 - 0.05;
-    for (const row of rows) {
-      const drawerWidth = drawerStackWidth / row.count;
-      for (let column = 0; column < row.count; column++) {
-        const drawer = new THREE.Mesh(new THREE.BoxGeometry(drawerWidth - 0.025, Math.max(0.08, row.height - 0.025), 0.052), faceMaterial);
-        drawer.position.set(-bodyWidth / 2 + cornerMarkerWidth + drawerWidth * (column + 0.5), rowTop - row.height / 2, 0.035);
-        drawer.userData = { specialtyProfile: "corner-drawer", cornerDrawerFace: true, cabinetFront: true, cabinetDrawerFront: true, flushPhysicalFace: true };
-        frontGroup.add(drawer);
-        addDrawerReveal(drawerWidth - 0.025, Math.max(0.08, row.height - 0.025), drawer.position.x, drawer.position.y);
-        addShakerFrame(drawerWidth - 0.025, Math.max(0.08, row.height - 0.025), drawer.position.x, drawer.position.y, 0.066);
+    // The L carcass, toe kick, and countertop stay on the shared lazy-Susan
+    // footprint. Only the face changes: three drawer fronts, each two panels
+    // meeting at a right angle on the inside corner. They are not a flat
+    // catalog drawing and they do not cross into the next cabinet.
+    frontGroup.position.z = 0;
+    frontGroup.userData = {
+      ...frontGroup.userData,
+      specialtyProfile: "corner-drawer",
+      cornerDrawerRightAngleFronts: true,
+      catalogFrontVisualSuppressed: true,
+    };
+    const drawerFronts = cornerDrawerFrontLayout({
+      bodyWidth,
+      bodyDepth,
+      bodyHeight,
+      legRatio: lCornerLegRatio,
+      drawerCount: Math.max(1, drawerCount || 3),
+    });
+    const drawerPiece = hardwareStyle(surfaceTextures?.hardwareStyleId).drawerPiece;
+    for (const panel of drawerFronts.panels) {
+      const drawer = new THREE.Mesh(new THREE.BoxGeometry(panel.width, panel.height, panel.thickness), faceMaterial);
+      drawer.position.set(panel.x, panel.y, panel.z);
+      drawer.rotation.y = panel.rotationY;
+      drawer.userData = {
+        specialtyProfile: "corner-drawer",
+        cornerDrawerFace: true,
+        cornerDrawerLeg: panel.leg,
+        cornerDrawerRow: panel.row,
+        cornerDrawerRightAngle: true,
+        cabinetFront: true,
+        cabinetDrawerFront: true,
+        flushPhysicalFace: true,
+      };
+      frontGroup.add(drawer);
+      const normalX = Math.sin(panel.rotationY);
+      const normalZ = Math.cos(panel.rotationY);
+      const reveal = new THREE.Mesh(
+        new THREE.BoxGeometry(Math.max(0.06, panel.width - 0.012), Math.max(0.06, panel.height - 0.012), 0.006),
+        shadowRevealMaterial,
+      );
+      reveal.position.set(panel.x - normalX * 0.02, panel.y, panel.z - normalZ * 0.02);
+      reveal.rotation.y = panel.rotationY;
+      reveal.userData = { cabinetDrawerReveal: true, cornerDrawerReveal: true, recessedPhysicalGap: true };
+      frontGroup.add(reveal);
+      addShakerFrame(
+        panel.width,
+        panel.height,
+        panel.x + normalX * 0.034,
+        panel.y,
+        panel.z + normalZ * 0.034,
+        panel.rotationY,
+      );
+      if (drawerPiece === "none") continue;
+      const pullLength = Math.min(Math.max(0.12, panel.width * 0.48), 0.62);
+      const outward = panel.thickness / 2 + 0.036;
+      const mount = new THREE.Group();
+      mount.position.set(panel.x, panel.y, panel.z);
+      mount.rotation.y = panel.rotationY;
+      const pull = new THREE.Mesh(
+        drawerPiece === "knob"
+          ? new THREE.SphereGeometry(0.035, 14, 10)
+          : drawerPiece === "cup"
+            ? new THREE.CylinderGeometry(0.052, 0.052, Math.min(0.2, pullLength), 14, 1, false, 0, Math.PI)
+            : new THREE.BoxGeometry(pullLength, 0.022, 0.026),
+        hardwareMaterial,
+      );
+      if (drawerPiece === "cup") pull.rotation.z = Math.PI / 2;
+      pull.position.z = outward + (drawerPiece === "knob" ? 0.012 : 0);
+      pull.userData = {
+        cabinetHardware: true,
+        cabinetPull: drawerPiece === "knob" ? "knob" : drawerPiece === "cup" ? "cup-pull" : "drawer",
+        cornerDrawerPull: true,
+        cornerDrawerLeg: panel.leg,
+        cornerDrawerRow: panel.row,
+        hardwareStyleId: surfaceTextures?.hardwareStyleId ?? null,
+        verticalPull: false,
+        pullEdge: "center",
+        handleSide: "center",
+        dimensionalCabinetDetail: true,
+      };
+      mount.add(pull);
+      if (drawerPiece !== "knob") {
+        for (const offset of [-1, 1] as const) {
+          const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.009, 0.05, 10), hardwareMaterial);
+          stem.rotation.x = Math.PI / 2;
+          stem.position.set(drawerPiece === "cup" ? 0 : offset * pullLength * 0.34, 0, outward - 0.018);
+          stem.userData = { cabinetHardwareMount: true, cornerDrawerPullMount: true, cornerDrawerLeg: panel.leg };
+          mount.add(stem);
+        }
       }
-      rowTop -= row.height;
+      frontGroup.add(mount);
     }
   } else if (specialty.kind === "end-return") {
     // BEC / BA has two full-height door planes fixed directly to the two
@@ -6319,7 +6505,7 @@ export function addCabinet(
       };
       frontGroup.add(door);
       addFaceShadow(farmhouseDoorColumns.columnWidth, farmhouseDoorHeight, door.position.x, door.position.y);
-      if (profileKind === "shaker" || profileKind === "raised" || doorProfile?.panelConstruction === "raised") {
+      if (profileKind === "raised" || doorProfile?.panelConstruction === "raised" || profileKind === "shaker") {
         addShakerFrame(farmhouseDoorColumns.columnWidth, farmhouseDoorHeight, door.position.x, door.position.y);
       }
       addPull(
@@ -6427,7 +6613,7 @@ export function addCabinet(
       door.position.set(-centerFaceWidth / 2 + centerDoorWidth * (index + 0.5), -faceHeight / 2 + lowerFaceHeight / 2, 0);
       door.userData = { cabinetFront: true, vanityComboCenterDoor: index + 1, flushPhysicalFace: true };
       frontGroup.add(door);
-      if (profileKind === "shaker") addShakerFrame(centerDoorWidth, lowerFaceHeight - 0.025, door.position.x, door.position.y);
+      if (profileKind === "raised" || doorProfile?.panelConstruction === "raised" || profileKind === "shaker") addShakerFrame(centerDoorWidth, lowerFaceHeight - 0.025, door.position.x, door.position.y);
       addFaceShadow(centerDoorWidth, lowerFaceHeight - 0.025, door.position.x, door.position.y);
       addPull(centerDoorWidth, lowerFaceHeight - 0.025, door.position.x, door.position.y, false, 0.086, "lower", index === 0 ? "right" : "left");
     }
@@ -6457,7 +6643,7 @@ export function addCabinet(
     door.position.set(doorX, 0, 0);
     door.userData = { cabinetFront: true, vanityDoorFront: true, drawerSide: vanityFaceLayout.drawerSide, flushPhysicalFace: true };
     frontGroup.add(door);
-    if (profileKind === 'shaker') addShakerFrame(doorWidth - 0.03, faceHeight, door.position.x, door.position.y);
+    if (profileKind === "raised" || doorProfile?.panelConstruction === "raised" || profileKind === "shaker") addShakerFrame(doorWidth - 0.03, faceHeight, door.position.x, door.position.y);
     addFaceShadow(doorWidth - 0.03, faceHeight, door.position.x, door.position.y);
     addPull(doorWidth - 0.03, faceHeight, door.position.x, door.position.y, false, 0.086, "lower", singleDoorHinge);
   } else {
@@ -6503,10 +6689,10 @@ export function addCabinet(
 	    frontGroup.add(door);
 	    if (!sku.glassDoor) addFaceShadow(doorWidth, doorHeight, door.position.x, door.position.y);
 		    addPull(doorWidth, doorHeight, door.position.x, door.position.y, false, 0.086, standardDoorZone, doorCount === 1 ? singleDoorHinge : null);
-	    if (sku.glassDoor || profileKind === "shaker") {
-	      addShakerFrame(doorWidth, doorHeight, door.position.x, door.position.y, 0.036, 0, Boolean(sku.glassDoor));
-	    } else if (profileKind === "raised" || doorProfile?.panelConstruction === "raised") {
+	    if (!sku.glassDoor && (profileKind === "raised" || doorProfile?.panelConstruction === "raised")) {
 	      addShakerFrame(doorWidth, doorHeight, door.position.x, door.position.y);
+	    } else if (sku.glassDoor || profileKind === "shaker") {
+	      addShakerFrame(doorWidth, doorHeight, door.position.x, door.position.y, 0.036, 0, Boolean(sku.glassDoor));
 	    }
 	  }
 	  // Preserve the measured 1/8-inch door gap, but add enough contrast for the
@@ -6706,7 +6892,7 @@ export function addCabinet(
     // The L corner is built from two overlapping carcass legs. Their individual
     // edge overlays expose the internal construction seam as a false line that
     // projects into the room. The two door frames remain the visible seam.
-    if (specialty.kind === "l-corner" || specialty.kind === "end-return" || specialty.kind === "base-angle-end") continue;
+    if (specialty.kind === "l-corner" || specialty.kind === "corner-drawer" || specialty.kind === "end-return" || specialty.kind === "base-angle-end") continue;
     const edges = new THREE.LineSegments(
       new THREE.EdgesGeometry(bodyMesh.geometry),
       new THREE.LineBasicMaterial({ color: "#332d25", transparent: true, opacity: 0.34 }),
@@ -7100,6 +7286,7 @@ export function threeDBlindCornerFrontLayout(bodyWidth: number, doorSide: "left"
 export function existingCabinetTransform(
   cabinet: PlacedCabinet,
   room?: (Pick<RoomData, "ceilingHeight"> & Partial<Pick<RoomData, "width" | "depth" | "peninsulaRuns" | "customWalls">>) | null,
+  peers?: readonly PlacedCabinet[],
 ) {
   // Placed coordinates are the top-left of the 2D rotation-aware footprint.
   // Using nominal width/depth here offsets rotated runs by up to half a cabinet,
@@ -7128,9 +7315,13 @@ export function existingCabinetTransform(
   // front projects into the room and every back sits against its wall.
   const savedRotationRadians = Number.isFinite(planRotation) ? planRotation * Math.PI / 180 : 0;
   const rotation = threeDRoomFacingRotation(cabinet, room, savedRotationRadians);
-  const sharedElevation = elevationBox(cabinet, room);
+  const sharedElevation = elevationBox(cabinet, room, peers);
   const explicitMountBottom = cabinet.mountBottom == null ? null : numberValue(cabinet.mountBottom, 0);
-  const bottom = cabinet.islandFace && cabinet.mountBottomAdjusted !== true
+  // A knee drawer hangs under the desk. A saved base mount of 0 is the floor
+  // default, not a chosen height, so the shared elevation wins in both views.
+  const bottom = isKneeDrawerItem(cabinet)
+    ? sharedElevation.bottom
+    : cabinet.islandFace && cabinet.mountBottomAdjusted !== true
     ? sharedElevation.bottom
     : cabinet.placement === "wall" || cabinet.placement === "appliance" || explicitMountBottom != null
       ? explicitMountBottom ?? sharedElevation.bottom
@@ -8084,7 +8275,7 @@ export type ThreeDContinuousToeKickSegment = {
  */
 export function threeDContinuousToeKickSegments(placed: PlacedCabinet[], room: RoomData): ThreeDContinuousToeKickSegment[] {
   const candidates = placed.flatMap((cabinet) => {
-    if (cabinet.placement !== "base" || placedCornerGeometryKind(cabinet) !== "standard") return [];
+    if (cabinet.placement !== "base" || isKneeDrawerItem(cabinet) || placedCornerGeometryKind(cabinet) !== "standard") return [];
     const wallId = cabinetWall(cabinet, room);
     if (!wallRunFrame(wallId, room)) return [];
     // A free-standing box in the middle of the room is only *nearest* to this
@@ -10702,7 +10893,7 @@ export function attachAutoDesignWiggleSprite(owner: THREE.Object3D, label: strin
   owner.add(sprite);
 }
 
-export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick = false, roomOverride, openings = [], sinks = [], potFillers = [], island = null, islandFocusRequest = null, furniture = [], selectedFurnitureUid = null, onSelectFurniture, onRemoveFurniture, onRotateFurniture, onOpenFurnitureAttributes, ponyWalls = [], orderSummary, orderLines = [], initialPresentation, catalogFinishOverride, cabinetFinishPreviewOptions = [], doorStyleChoices = [], selectedDoorStyleId = null, onDoorStyleChange, cabinetFinishOverrides, cabinetDoorProfiles, cabinetDoorSampleUrls, cabinetDrawerSampleUrls, cabinetFaceSourceKinds, cabinetFrontVisuals, catalogDoorSampleUrl, catalogDrawerSampleUrl, catalogFaceSourceKind, catalogRoomSceneUrl, catalogDoorProfile, windowSceneKind = DEFAULT_WINDOW_SCENE_KIND, windowFrameStyle = "white", hardwareStyleId = "none", hardwareAccent, onHardwareStyleChange, catalogFinishName, catalogFinishProductId, catalogIslandCabinetName, catalogIslandCabinetColor, catalogIslandCabinetProductId, catalogIslandDoorSampleUrl, catalogCountertopName, catalogCountertopProductId, catalogCountertopReferenceUrl, catalogIslandCountertopName, catalogIslandCountertopProductId, catalogIslandCountertopReferenceUrl, catalogFlooringName, catalogFlooringProductId, catalogFlooringReferenceUrl, catalogFlooringCategory, catalogFlooringSubCategory, catalogFlooringSize, catalogBacksplashName, catalogBacksplashProductId, catalogBacksplashReferenceUrl, catalogHardwareReferenceUrl, catalogHardwareName, savedDesignId, savedDesignRevision, canAffiliateGeminiImageTest = false, isCurrentPlanSaved = false, savedPlanFingerprintPayload = null, backsplashHeightMode = "standard", countertopBacksplashHeightIn = 0, catalogCountertopColor, catalogIslandCountertopColor, catalogCountertopImageUrl, catalogIslandCountertopImageUrl, catalogFlooringImageUrl, catalogFlooringCardImageUrl = null, catalogBacksplashImageUrl, catalogBacksplashCardImageUrl = null, catalogBacksplashSize = null, catalogBacksplashCategory = null, catalogBacksplashSubCategory = null, shareContext, catalogItems = [], catalogDragItem = null, catalogDropWall, onAddCatalogItem, onAddRangeHood, onSaveToAccount, onSyncCart, onPresentationChange, onRoomWallHeightChange, onRoomWallHeightsChange, onMoveCabinet, onMoveCabinetTo, selectedCabinetUid, attributesTargetUid = null, missingPriceUids, onSelectCabinet, onOpenCabinetEditor, onSelectOpening, onOpenWindowEditor, onOpenDoorEditor, onRequestFiller, onSnapGlassCabinetToFront, onRotateCabinet, onRemoveCabinet, showWallLayer, onToggleWallLayer, temporaryPreviewMessage, onClearTemporaryPreview, temporaryPreviewCounter, temporaryPreviewTransitionKey, fillerInsertionTransition, cabinetConfigHref, embedded = false, cutawayRoomWalls = true, hybridPlanUnderlay = false, className, onGeometryRendered, autoDesignWiggleMoves = NO_AUTO_DESIGN_WIGGLE_MOVES }: Props) {
+export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick = false, roomOverride, openings = [], sinks = [], potFillers = [], island = null, islandFocusRequest = null, furniture = [], selectedFurnitureUid = null, onSelectFurniture, onRemoveFurniture, onRotateFurniture, onOpenFurnitureAttributes, ponyWalls = [], orderSummary, orderLines = [], initialPresentation, catalogFinishOverride, renderExposure = null, colorDeltaEMax = null, doorSwatchHex = null, doorSwatchCode = null, cabinetFinishPreviewOptions = [], doorStyleChoices = [], selectedDoorStyleId = null, onDoorStyleChange, cabinetFinishOverrides, cabinetDoorProfiles, cabinetDoorSampleUrls, cabinetDrawerSampleUrls, cabinetFaceSourceKinds, cabinetFrontVisuals, catalogDoorSampleUrl, catalogDrawerSampleUrl, catalogFaceSourceKind, catalogRoomSceneUrl, catalogDoorProfile, windowSceneKind = DEFAULT_WINDOW_SCENE_KIND, windowFrameStyle = "white", hardwareStyleId = "none", hardwareAccent, onHardwareStyleChange, catalogFinishName, catalogFinishProductId, catalogIslandCabinetName, catalogIslandCabinetColor, catalogIslandCabinetProductId, catalogIslandDoorSampleUrl, catalogCountertopName, catalogCountertopProductId, catalogCountertopReferenceUrl, catalogIslandCountertopName, catalogIslandCountertopProductId, catalogIslandCountertopReferenceUrl, catalogFlooringName, catalogFlooringProductId, catalogFlooringReferenceUrl, catalogFlooringCategory, catalogFlooringSubCategory, catalogFlooringSize, catalogBacksplashName, catalogBacksplashProductId, catalogBacksplashReferenceUrl, catalogHardwareReferenceUrl, catalogHardwareName, savedDesignId, savedDesignRevision, canAffiliateGeminiImageTest = false, isCurrentPlanSaved = false, savedPlanFingerprintPayload = null, backsplashHeightMode = "standard", countertopBacksplashHeightIn = 0, catalogCountertopColor, catalogIslandCountertopColor, catalogCountertopImageUrl, catalogIslandCountertopImageUrl, catalogFlooringImageUrl, catalogFlooringCardImageUrl = null, catalogBacksplashImageUrl, catalogBacksplashCardImageUrl = null, catalogBacksplashSize = null, catalogBacksplashCategory = null, catalogBacksplashSubCategory = null, shareContext, catalogItems = [], catalogDragItem = null, catalogDropWall, onAddCatalogItem, onAddRangeHood, onSaveToAccount, onSyncCart, onPresentationChange, onRoomWallHeightChange, onRoomWallHeightsChange, onMoveCabinet, onMoveCabinetTo, selectedCabinetUid, attributesTargetUid = null, missingPriceUids, onSelectCabinet, onOpenCabinetEditor, onSelectOpening, onOpenWindowEditor, onOpenDoorEditor, onRequestFiller, onSnapGlassCabinetToFront, onRotateCabinet, onRemoveCabinet, showWallLayer, onToggleWallLayer, temporaryPreviewMessage, onClearTemporaryPreview, temporaryPreviewCounter, temporaryPreviewTransitionKey, fillerInsertionTransition, cabinetConfigHref, embedded = false, cutawayRoomWalls = true, hybridPlanUnderlay = false, className, onGeometryRendered, autoDesignWiggleMoves = NO_AUTO_DESIGN_WIGGLE_MOVES }: Props) {
   const previewRootRef = useRef<HTMLElement>(null);
   const mountRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -10905,6 +11096,32 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
   // resolved finish color over a sparse style-record color field from the scene
   // endpoint, then fall back to the server-derived catalog material.
 	  const catalogFinish = resolvedCatalogFinish(scene, catalogFinishOverride);
+  const [colorGate, setColorGate] = useState<ColorGateResult | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const swatchHex = resolveDoorSwatchHex({ swatchCode: doorSwatchCode, swatchHex: doorSwatchHex });
+    const lights = doorLightsForFinish(catalogFinish, renderExposure);
+    void runColorGate({
+      baseHex: catalogFinish,
+      swatchHex,
+      threshold: colorDeltaEMax,
+      measure: (hex) => probeFlatPatchHex(lights, hex),
+    }).then((result) => {
+      if (!cancelled) setColorGate(result);
+    }).catch(() => {
+      if (!cancelled) {
+        setColorGate({
+          status: "color-mismatch",
+          hex: catalogFinish,
+          deltaE: null,
+          attempts: 0,
+          label: "Color mismatch (dE ?)",
+        });
+      }
+    });
+    return () => { cancelled = true; };
+  }, [catalogFinish, colorDeltaEMax, doorSwatchCode, doorSwatchHex, renderExposure]);
+  const gatedFinish = colorGate?.hex ?? catalogFinish;
 	  const selectedCabinetPreviewFinish = cabinetFinishPreviewOptions.find((option) => option.id === cabinetPreviewFinishId) ?? null;
   // Saved-plan fallback scenes deliberately carry neutral material metadata.
   // The active 2D selected style remains authoritative for physical 3D face
@@ -10989,7 +11206,8 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
     missing: true,
   })) ?? [];
   const photoRenderReviewReferences = [...photoRenderVisualReferences, ...photoRenderMissingReferences];
-	  const resolvedCabinetFinish = selectedCabinetPreviewFinish?.color ?? catalogFinish;
+	  const resolvedCabinetFinish = selectedCabinetPreviewFinish?.color ?? gatedFinish;
+  const studioLights = useMemo(() => doorLightsForFinish(resolvedCabinetFinish, renderExposure), [renderExposure, resolvedCabinetFinish]);
 	  const cabinetFinishLabel = selectedCabinetPreviewFinish?.name ?? catalogFinishName ?? scene.materials?.cabinet.publicName ?? scene.materials?.cabinet.name ?? scene.materials?.cabinet.finish ?? "Active catalog finish";
 	  const cycleCabinetPreviewFinish = () => {
 	    setCabinetPreviewFinishId((current) => nextThreeDCabinetFinishPreviewId(cabinetFinishPreviewOptions, current));
@@ -11169,15 +11387,16 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 	    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 	    renderer.outputColorSpace = THREE.SRGBColorSpace;
 	    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-	    renderer.toneMappingExposure = 0.84;
+	    renderer.toneMappingExposure = studioLights.exposure;
 	    mount.replaceChildren(renderer.domElement);
 
 	    const threeScene = new THREE.Scene();
-	    threeScene.background = new THREE.Color("#f6f3ed");
+	    threeScene.background = new THREE.Color(studioLights.background);
 	    const pmremGenerator = new THREE.PMREMGenerator(renderer);
 	    pmremGenerator.compileEquirectangularShader();
 	    const environmentTarget = pmremGenerator.fromScene(new RoomEnvironment(), 0.04);
 	    threeScene.environment = environmentTarget.texture;
+    threeScene.environmentIntensity = studioLights.environment;
     const camera = new THREE.PerspectiveCamera(42, canvasWidth / canvasHeight, 0.1, 100);
     const maxSpan = Math.max(room.width, room.depth) * INCH;
     const cameraDistances = threeDCameraDistanceLimits(maxSpan);
@@ -11207,8 +11426,8 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
     controls.autoRotateSpeed = 1.1;
     controls.update();
 
-	    threeScene.add(new THREE.HemisphereLight("#fffaf2", "#8a8178", 0.92));
-	    const keyLight = new THREE.DirectionalLight("#fff5e6", 1.5);
+	    threeScene.add(new THREE.HemisphereLight(studioLights.hemisphere.sky, studioLights.hemisphere.ground, studioLights.hemisphere.intensity));
+	    const keyLight = new THREE.DirectionalLight(studioLights.key.color, studioLights.key.intensity);
 	    keyLight.position.set(maxSpan, maxSpan * 1.8, maxSpan * 0.8);
 	    keyLight.castShadow = true;
 	    keyLight.shadow.mapSize.set(renderQuality.shadowMapSize, renderQuality.shadowMapSize);
@@ -11221,7 +11440,7 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 	    keyLight.shadow.bias = -0.00018;
 	    keyLight.shadow.normalBias = 0.018;
 	    threeScene.add(keyLight);
-	    const fillLight = new THREE.DirectionalLight("#f3efe8", 0.38);
+	    const fillLight = new THREE.DirectionalLight(studioLights.fill.color, studioLights.fill.intensity);
 	    fillLight.position.set(-maxSpan, maxSpan, maxSpan);
 	    threeScene.add(fillLight);
 	    const wallHeight = Math.max(...Object.values(wallHeights)) * INCH;
@@ -11578,13 +11797,16 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
           ...baseSku,
           catalogImageUrl: resolvedPlacedCabinetFrontVisual(cabinet, cabinetFrontVisuals, baseSku.catalogImageUrl),
 	          fillerTransitionFootprint: transitionFootprint,
+          ...(isWallAngleEndCabinet(cabinet)
+            ? { wallAngleEndHand: wallAngleEndHandForPlacement(cabinet, room, renderedPlaced) }
+            : {}),
         };
 	        const cabinetFinish = resolvedPlacedCabinetFinish(cabinet, visibleCabinetFinishOverrides, finish);
         const cabinetDoorProfile = resolvedPlacedCabinetDoorProfile(cabinet, cabinetDoorProfiles, resolvedDoorProfile);
         const cabinetDoorTexture = resolvedPlacedCabinetDoorSampleUrl(cabinet, cabinetDoorSampleUrls, catalogDoorSampleUrl, renderExistingDesign);
 	        const transform = /^HOOD[-_]?/i.test(cabinet.masterCode ?? "")
 	          ? savedRangeHoodTransform(cabinet, renderedPlaced, room)
-          : existingCabinetTransform(cabinet, room);
+          : existingCabinetTransform(cabinet, room, renderedPlaced);
 	        const hasExactFarmhouseFixture = sinks.some((sink) => (
 	          sink.cabinetUid === cabinet.uid
 	          && sink.type === "farmhouse"
@@ -11742,7 +11964,7 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
       if (controlsRef.current === controls) controlsRef.current = null;
       if (catalogRootRef.current === catalogRoot) catalogRootRef.current = null;
     };
-  }, [scene, validSuggestions, placed, crown, toeKick, roomOverride, openings, sinks, potFillers, island, furniture, selectedFurnitureUid, ponyWalls, renderExistingDesign, resetKey, cameraPreset, showRoomContext, showSolidFrontWalls, cutawayRoomWalls, hybridPlanUnderlay, wallHeightIn, wallHeights, resolvedCabinetFinish, cabinetPreviewFinishId, cabinetFinishOverrides, cabinetDoorProfiles, cabinetDoorSampleUrls, cabinetDrawerSampleUrls, cabinetFaceSourceKinds, cabinetFrontVisuals, catalogDrawerSampleUrl, catalogFaceSourceKind, countertopFinish, cabinetFinish, catalogDoorSampleUrl, catalogRoomSceneUrl, hardwareStyleId, hardwareAccent, catalogCountertopName, catalogCountertopProductId, catalogIslandCountertopName, catalogIslandCountertopProductId, catalogIslandCountertopColor, catalogFlooringName, catalogFlooringProductId, catalogFlooringCategory, catalogFlooringSubCategory, catalogFlooringSize, catalogBacksplashName, catalogBacksplashProductId, catalogBacksplashSize, catalogBacksplashCategory, catalogBacksplashSubCategory, backsplashHeightMode, countertopBacksplashHeightIn, catalogCountertopImageUrl, catalogIslandCountertopImageUrl, catalogFlooringImageUrl, catalogFlooringCardImageUrl, catalogBacksplashImageUrl, catalogBacksplashCardImageUrl, autoDesignWiggleMoves]);
+  }, [scene, validSuggestions, placed, crown, toeKick, roomOverride, openings, sinks, potFillers, island, furniture, selectedFurnitureUid, ponyWalls, renderExistingDesign, resetKey, cameraPreset, showRoomContext, showSolidFrontWalls, cutawayRoomWalls, hybridPlanUnderlay, wallHeightIn, wallHeights, resolvedCabinetFinish, studioLights, cabinetPreviewFinishId, cabinetFinishOverrides, cabinetDoorProfiles, cabinetDoorSampleUrls, cabinetDrawerSampleUrls, cabinetFaceSourceKinds, cabinetFrontVisuals, catalogDrawerSampleUrl, catalogFaceSourceKind, countertopFinish, cabinetFinish, catalogDoorSampleUrl, catalogRoomSceneUrl, hardwareStyleId, hardwareAccent, catalogCountertopName, catalogCountertopProductId, catalogIslandCountertopName, catalogIslandCountertopProductId, catalogIslandCountertopColor, catalogFlooringName, catalogFlooringProductId, catalogFlooringCategory, catalogFlooringSubCategory, catalogFlooringSize, catalogBacksplashName, catalogBacksplashProductId, catalogBacksplashSize, catalogBacksplashCategory, catalogBacksplashSubCategory, backsplashHeightMode, countertopBacksplashHeightIn, catalogCountertopImageUrl, catalogIslandCountertopImageUrl, catalogFlooringImageUrl, catalogFlooringCardImageUrl, catalogBacksplashImageUrl, catalogBacksplashCardImageUrl, autoDesignWiggleMoves]);
 	  // A catalog filler has already passed geometry/collision validation before this
 	  // cue runs. Animate only its visual group, so the final coordinates and the
 	  // saved plan remain authoritative while the user sees it settle into the seam.
@@ -11991,6 +12213,14 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 
   const createPathTracePreview = async () => {
     if (!isPhotoQualityTest || !IN_HOUSE_PATH_TRACE_ENABLED) return;
+    if (colorGate && colorGate.status !== "pass") {
+      toast.error(`${colorGate.label}. Photo renders stay blocked until the swatch matches. The 3D kitchen still shows the closest door.`);
+      return;
+    }
+    if (!colorGate) {
+      toast.error("The door color check is still running. Wait a moment, then try the production render again.");
+      return;
+    }
     if (!photoRenderDoorReference.ready) {
       toast.error(photoRenderDoorReference.message);
       return;
@@ -12038,7 +12268,7 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
       renderer.setPixelRatio(1);
       renderer.setSize(THREE_D_PATH_TRACE_PREVIEW.width, THREE_D_PATH_TRACE_PREVIEW.height, false);
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
-      renderer.toneMappingExposure = 0.84;
+      renderer.toneMappingExposure = studioLights.exposure;
       renderer.outputColorSpace = THREE.SRGBColorSpace;
 
       const pathTraceScene = sourceScene.clone(true);
@@ -12680,6 +12910,14 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
   };
 
   const openPhotoRenderDialog = async () => {
+    if (colorGate && colorGate.status !== "pass") {
+      toast.error(`${colorGate.label}. Photo renders stay blocked until the swatch matches. The 3D kitchen still shows the closest door.`);
+      return;
+    }
+    if (!colorGate) {
+      toast.error("The door color check is still running. Wait a moment, then open the photo render again.");
+      return;
+    }
     if (!user) {
       toast.error("Sign in to create a high-resolution 3D preview for your saved design.");
       return;

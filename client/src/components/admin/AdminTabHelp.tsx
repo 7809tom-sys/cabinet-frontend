@@ -135,6 +135,10 @@ const TAB_HELP: Record<string, { en: string; zh: string; link?: { label: string;
     en: "Control which users can view trade pricing. Grant or revoke pricing access for specific accounts.",
     zh: "控制哪些使用者可以查看貿易定價。為特定帳戶授予或撤銷定價存取權限。",
   },
+  "affiliate-tiers": {
+    en: "Define affiliate buy-cost tiers and review the example placeholders. Assign a tier on the Affiliates tab. Customer markup stays on the affiliate’s own pricing page. Example tiers are not live discounts.",
+    zh: "定義聯盟進貨價格層級，並查看範例占位。在聯盟分頁指派層級。客戶加價仍由聯盟自己的定價頁設定。範例層級不是正式折扣。",
+  },
   "affiliate-resources": {
     en: "Manage the affiliate Marketing Hub: scripts, guides, videos, private PDFs, and social posts. Unpublished drafts stay hidden from affiliates.",
     zh: "管理联盟行销中心：脚本、指南、视频、私密 PDF 和社交贴文。未发布的草稿对联盟隐藏。",

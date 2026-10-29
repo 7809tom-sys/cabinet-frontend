@@ -104,11 +104,12 @@ describe("Designer programmed photoreal material wiring", () => {
   });
 
   it("keeps the corrected photographic exposure below neutral after the washed-out mobile regression", () => {
-    expect(rendererSource).toContain("renderer.toneMappingExposure = 0.84");
-    expect(rendererSource).toContain('new THREE.HemisphereLight("#fffaf2", "#8a8178", 0.92)');
-    expect(rendererSource).toContain('new THREE.DirectionalLight("#f3efe8", 0.38)');
+    expect(rendererSource).toContain("renderer.toneMappingExposure = studioLights.exposure");
+    expect(rendererSource).toContain("new THREE.HemisphereLight(studioLights.hemisphere.sky, studioLights.hemisphere.ground, studioLights.hemisphere.intensity)");
+    expect(rendererSource).toContain("new THREE.DirectionalLight(studioLights.key.color, studioLights.key.intensity)");
+    expect(rendererSource).toContain("new THREE.DirectionalLight(studioLights.fill.color, studioLights.fill.intensity)");
     expect(rendererSource).not.toContain("renderer.toneMappingExposure = 0.68");
-    expect(rendererSource).toContain('new THREE.DirectionalLight("#fff5e6", 1.5)');
+    expect(rendererSource).not.toContain("renderer.toneMappingExposure = 0.84");
     expect(rendererSource).toContain('new THREE.PointLight("#ffdca6", 2.8');
   });
 

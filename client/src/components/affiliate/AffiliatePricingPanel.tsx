@@ -8,6 +8,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
 import { Badge } from "@/components/ui/badge";
 import { DollarSign, Calculator, Save, Info, PackageCheck, ExternalLink } from "lucide-react";
+import { AffiliateTierCard } from "@/components/affiliate/AffiliateTierCard";
+import type { AffiliateTierDashboard } from "@shared/affiliatePricingTier";
 
 // ─── Fee constants ────────────────────────────────────────────────────────────
 const BASELINE_PCT = 0.05;   // 5% CabinetDealz margin on affiliate
@@ -91,6 +93,10 @@ export default function AffiliatePricingPanel({ affiliateId, isAdminView = false
   );
   const data = isAdminView ? adminBranding.data : ownBranding.data;
   const isLoading = isAdminView ? adminBranding.isLoading : ownBranding.isLoading;
+  const pricingTier = trpc.affiliates.myPricingTier.useQuery(
+    { affiliateId },
+    { enabled: affiliateId != null || !isAdminView, retry: false },
+  );
 
   // Local state for default markup
   const [defaultPct, setDefaultPct] = useState<string>("");
@@ -184,9 +190,11 @@ export default function AffiliatePricingPanel({ affiliateId, isAdminView = false
         </p>
       </div>
 
+      <AffiliateTierCard tier={(pricingTier.data ?? null) as AffiliateTierDashboard | null} />
+
       <Card className="border-blue-200 bg-blue-50/60">
         <CardContent className="p-4 text-sm text-blue-950">
-          <strong>Two pricing layers:</strong> CabinetDealz maintains the platform/category baseline. Each affiliate can add its own markup on cabinets, door styles, and Pelican non-cabinet categories. Blank category fields inherit the affiliate default; a saved 0% means no additional affiliate markup.
+          <strong>Two pricing layers:</strong> Your Cabinetdealz cost comes from the pricing tier an administrator assigns. The markup on this page is added on top for your customers. Blank category fields inherit the affiliate default; a saved 0% means no additional affiliate markup. Flooring and appliances use the 40/60 markup split instead of the cabinet tier.
         </CardContent>
       </Card>
 
