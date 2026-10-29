@@ -668,7 +668,7 @@ index 0000000..b64dc72
 +      .limit(1);
 +    return row ?? null;
 +  }),
-+  apply: protectedProcedure.input(z.object({
++  submit: protectedProcedure.input(z.object({
 +    businessName: z.string().trim().min(2).max(256),
 +    phone: z.string().trim().min(7).max(32),
 +    licenseNumber: z.string().trim().max(64).nullable().optional(),

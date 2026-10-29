@@ -57,7 +57,7 @@ export default function ContractorDashboard() {
   const { user, loading, isAuthenticated } = useAuth();
   const [justUpgraded, setJustUpgraded] = useState(false);
   const application = trpc.contractorAccess.mine.useQuery(undefined, { enabled: isAuthenticated && !preview, retry: false });
-  const apply = trpc.contractorAccess.apply.useMutation({
+  const submit = trpc.contractorAccess.submit.useMutation({
     onSuccess: async () => {
       toast.success("Application sent. You'll stay a customer until it's approved.");
       await application.refetch();
@@ -110,14 +110,14 @@ export default function ContractorDashboard() {
           ) : (
             <form className="grid gap-3" onSubmit={(event) => {
               event.preventDefault();
-              apply.mutate({ businessName: businessName.trim(), phone: phone.trim(), licenseNumber: licenseNumber.trim() || null });
+              submit.mutate({ businessName: businessName.trim(), phone: phone.trim(), licenseNumber: licenseNumber.trim() || null });
             }}>
               <p className="text-sm text-muted-foreground">Contractor tools stay closed until an admin approves this request. Your account remains a customer in the meantime.</p>
               <div className="space-y-1"><Label htmlFor="apply-business">Business name</Label><Input id="apply-business" value={businessName} onChange={(event) => setBusinessName(event.target.value)} required /></div>
               <div className="space-y-1"><Label htmlFor="apply-phone">Phone</Label><Input id="apply-phone" value={phone} onChange={(event) => setPhone(event.target.value)} required /></div>
               <div className="space-y-1"><Label htmlFor="apply-license">License (optional)</Label><Input id="apply-license" value={licenseNumber} onChange={(event) => setLicenseNumber(event.target.value)} /></div>
-              <Button type="submit" className="w-fit bg-[var(--color-navy,#1a2b4a)] text-white" disabled={apply.isPending}>
-                {apply.isPending ? <Spinner className="h-4 w-4 mr-2" /> : <HardHat className="h-4 w-4 mr-2" />}
+              <Button type="submit" className="w-fit bg-[var(--color-navy,#1a2b4a)] text-white" disabled={submit.isPending}>
+                {submit.isPending ? <Spinner className="h-4 w-4 mr-2" /> : <HardHat className="h-4 w-4 mr-2" />}
                 Apply for contractor access
               </Button>
             </form>
