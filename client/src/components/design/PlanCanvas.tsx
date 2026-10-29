@@ -5,7 +5,7 @@ import { Fragment } from "react";
 import {
   PlacedCabinet, RoomData, rotatedSize, placedFootprint, placedCornerGeometryKind, cabinetCornerPlacementInfo, blindCornerSnapInfo, cabinetPlacementCollisionDetail, nextAvailableRoomCornerPlacement, snapPosition, orientToWall,
   type FloorPlanDimensionAdjustment, type FloorPlanDimensionUnit,
-	  isCornerCabinet, isProtectedCornerCabinet, cornerClipPath, cornerLegRatioForPlaced, cornerRotationForPlaced, diagonalCornerClipPath, isDiagonalCorner, isAngledWallCabinet, angledWallEndClipPath, formatEighthInches, isBlindCorner, isTriangleCorner, triangleCornerClipPath, isRefrigeratorEndPanel,
+	  isCornerCabinet, isProtectedCornerCabinet, cornerClipPath, cornerLegRatioForPlaced, cornerRotationForPlaced, diagonalCornerClipPath, isDiagonalCorner, isAngledWallCabinet, wallAngleEndHandForPlacement, formatEighthInches, isBlindCorner, isTriangleCorner, triangleCornerClipPath, isRefrigeratorEndPanel,
 	  resolveSwing, resolveCabinetHardwarePosition,
 	  WallOpening, clampOpening, FinishColors, DEFAULT_FINISH_COLORS, isWindowBelowCountertop,
   clampRoomInches, inchesToFeetInches, WallSide, type PeninsulaRun, peninsulaRunEndpoints, peninsulaRunMaxLength, peninsulaRunHitAtPoint, peninsulaRunStartOffsetAtPoint, peninsulaRunAssemblyLocked, peninsulaRootRunId,
@@ -25,6 +25,7 @@ import { CheckCircle2, Compass, Eye, EyeOff, Maximize2, Minus, PanelTop, Plus, R
 import { useLanguage } from "@/contexts/LanguageContext";
 import { cabinetDrawingType } from "@/lib/cabinetGraphics";
 import { baseAngleEndClipPath, isBaseAngleEndCabinet, type BaseAngleEndHand } from "@/lib/baseAngleEndLayout";
+import { isWallAngleEndCabinet, wallAngleEndClipPath } from "@/lib/wallAngleEndLayout";
 import { catalogFillerSuggestion, type CatalogFillerCandidate } from "@/lib/catalogFiller";
 import { angledWallTransitionFootprint } from "@/lib/angledWallFiller";
 import { islandCountertopVisibleRects, islandFaceCapacity, islandRaisedBarRects } from "@/lib/islandScene";
@@ -287,12 +288,31 @@ export function planCornerGeometry(cabinet: PlacedCabinet) {
  * plan footprint and 3D conversion. Keeping the render value here makes a
  * diagonal WDC impossible to silently fall back to a square box.
  */
-export function planCabinetClipPath(cabinet: PlacedCabinet, room: RoomData): string | undefined {
-  // AW is positioned like a standard wall cabinet. Its exposed end is angled
-  // inside the cabinet's local frame, so never rotate this clip toward the
-  // nearest room corner; the cabinet group's saved wall rotation handles that.
-  if (isAngledWallCabinet(cabinet.masterCode, cabinet.description)) {
-    return angledWallEndClipPath(cabinet.angleEndHand);
+export function planCabinetClipPath(
+  cabinet: PlacedCabinet,
+  room: RoomData,
+  others: readonly PlacedCabinet[] = [],
+): string | undefined {
+  // WAC/AW stays in its wall-run box. The clip only mirrors the hypotenuse
+  // toward the open end. A measured 45° run CSS-rotates the whole div, so that
+  // clip stays in the local frame; cardinal walls map it through the wall facing.
+  if (isAngledWallCabinet(cabinet.masterCode, cabinet.description) || isWallAngleEndCabinet(cabinet)) {
+    const normalizedRotation = ((Math.round(cabinet.rotation) % 360) + 360) % 360;
+    const cssRotated = Boolean(
+      cabinet.wallId
+      && cabinet.wallOffset != null
+      && [45, 135, 225, 315].includes(normalizedRotation),
+    );
+    const frame = wallRunFrame(cabinetWall(cabinet, room), room);
+    const footprint = placedFootprint(cabinet);
+    return wallAngleEndClipPath({
+      hand: wallAngleEndHandForPlacement(cabinet, room, others),
+      widthIn: Math.max(0.01, cabinet.width),
+      depthIn: Math.max(0.01, cabinet.depth),
+      divWidthIn: cssRotated ? Math.max(0.01, cabinet.width) : footprint.w,
+      divDepthIn: cssRotated ? Math.max(0.01, cabinet.depth) : footprint.d,
+      facingRotation: cssRotated ? 0 : (frame?.facingRotation ?? 0),
+    });
   }
   if (isBaseAngleEndCabinet(cabinet)) {
     const hand: BaseAngleEndHand = cabinet.swing === "left" ? "left" : "right";
@@ -2608,7 +2628,7 @@ export function PlanCanvas({
 	              ? p.fillerMiteredEnd === "start"
 	                ? `polygon(${miterCutPercent}% 0, 100% 0, 100% 100%, 0 100%)`
 	                : `polygon(0 0, ${100 - miterCutPercent}% 0, 100% 100%, 0 100%)`
-	              : planCabinetClipPath(p, room);
+	              : planCabinetClipPath(p, room, cabinets);
 	            const isSeatedProtectedCorner = isSeatedErb36 || isSeatedBlindCorner;
 	            const showSeatedPeninsulaCornerFeedback = isSeatedPeninsulaCorner && showPeninsulaCornerSnapFeedback;
 	            const showProtectedCornerFeedback = isSeatedProtectedCorner && (!isSeatedPeninsulaCorner || showPeninsulaCornerSnapFeedback);

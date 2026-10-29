@@ -104,7 +104,7 @@ describe("cabinetDrawingType", () => {
   });
 
 	  it("labels every AW height as an angled wall end cabinet rather than a diagonal corner", () => {
-	    for (const masterCode of ["AW1230", "AW1236", "AW1242"]) {
+	    for (const masterCode of ["WAC1230", "WAC1236", "WAC1242", "AW1230", "AW1236", "AW1242"]) {
 	      const cabinet = {
 	        masterCode,
 	        description: `12\" Angled Wall End Cabinet`,

@@ -1,6 +1,7 @@
 // ─── Kitchen Design geometry & snapping engine ──────────────────────────────
 // All real-world units are INCHES. The canvas converts inches → pixels via PPI.
 import { baseAngleEndCountertopLocalPoints, isBaseAngleEndCabinet, type BaseAngleEndHand } from "@/lib/baseAngleEndLayout";
+import { isWallAngleEndCabinet, wallAngleEndHandFromRun, type WallAngleEndHand } from "@/lib/wallAngleEndLayout";
 import { freestandingCountertopSurfaces, isFreestandingBase } from "@/lib/freestandingRun";
 import { kitchenRuleNumber } from "@/lib/kitchenRuleParameters";
 import {
@@ -5800,9 +5801,9 @@ function height_safe(roomDepth: number, _placement: Placement): number {
 export function isCornerCabinet(masterCode: string, description?: string): boolean {
   const code = (masterCode || "").toUpperCase();
   const desc = (description || "").toLowerCase();
-  // AW = angled WALL-END cabinet. It finishes a normal wall run with a 45°
-  // exposed face; it is not installed in or owned by a room corner.
-  if (/^AW[-\d]/.test(code) || (/\bangle(?:d)? wall end\b/.test(desc) && !/corner/.test(desc))) return false;
+  // WAC/AW is an angled WALL-END cabinet. It finishes a normal wall run with a
+  // 45° exposed face; it is not installed in or owned by a room corner.
+  if (isWallAngleEndCabinet({ masterCode, description })) return false;
   // ERB/BER are the easy-reach corner base codes (BER is the Skyline naming;
   // ERB is how the catalog stores the same cabinet). WER is the wall easy-reach.
   // LS## = Lazy Susan (e.g. LS3612, LS3312); LSB## = Lazy Susan Base (older naming)
@@ -5818,11 +5819,70 @@ export function isCornerCabinet(masterCode: string, description?: string): boole
 // this to keep AW units OUT of the Corner palette tab while its dedicated plan
 // clip and 3D profile still render the angled exposed end.
 export function isAngledWallCabinet(masterCode: string, description?: string): boolean {
-  const code = (masterCode || "").toUpperCase();
-  const desc = (description || "").toLowerCase();
-  // A genuine corner unit (e.g. "corner" in the text) is never an angled wall.
-  if (/corner/.test(desc)) return false;
-  return /^AW[-\d]/.test(code) || /\bangled wall\b/.test(desc);
+  return isWallAngleEndCabinet({ masterCode, description });
+}
+
+/**
+ * Upper and tall cabinets touching one side of a WAC/AW. A U249624 pantry is
+ * on the floor layer, so a wall-only span check would miss it and taper the
+ * door back into the pantry. Both sides, or neither, returns null.
+ */
+function angledWallEndRunTouch(
+  cabinet: PlacedCabinet,
+  others: readonly PlacedCabinet[],
+): { atStart: boolean; atEnd: boolean } | null {
+  if (!isAngledWallCabinet(cabinet.masterCode, cabinet.description) || !cabinet.wallId || cabinet.wallOffset == null) return null;
+  const start = Number(cabinet.wallOffset);
+  const end = start + alongRunSpan(cabinet);
+  const touch = 0.5;
+  let atStart = false;
+  let atEnd = false;
+  for (const other of others) {
+    if (other.uid === cabinet.uid || other.wallId !== cabinet.wallId || other.wallOffset == null) continue;
+    if (other.placement !== "tall" && !occupiesUpperZone(other)) continue;
+    const otherStart = Number(other.wallOffset);
+    const otherEnd = otherStart + alongRunSpan(other);
+    if (Math.abs(otherEnd - start) <= touch) atStart = true;
+    if (Math.abs(otherStart - end) <= touch) atEnd = true;
+  }
+  return { atStart, atEnd };
+}
+
+/**
+ * The open end of a wall angle cabinet along its wall run. "start" is the
+ * lower along-run coordinate. A neighbor on only one side, including a tall
+ * pantry, selects the other side; a cabinet alone on the wall tapers toward
+ * the nearer wall end.
+ */
+export function wallAngleEndOpenSide(
+  cabinet: PlacedCabinet,
+  room: RoomData,
+  others: readonly PlacedCabinet[] = [],
+): "start" | "end" {
+  const touch = angledWallEndRunTouch(cabinet, others);
+  if (touch && touch.atStart !== touch.atEnd) return touch.atStart ? "end" : "start";
+  const side = cabinetWall(cabinet, room);
+  const measure = wallSpanMeasure(cabinet, room, others.filter((item) => item.uid !== cabinet.uid), side);
+  const startOpen = !measure.beforeIsCabinet;
+  const endOpen = !measure.afterIsCabinet;
+  if (startOpen !== endOpen) return startOpen ? "start" : "end";
+  return measure.start <= measure.wallLen - measure.end ? "start" : "end";
+}
+
+/** Viewer-right hand for a wall angle cabinet sitting on this room's run. */
+export function wallAngleEndHandForPlacement(
+  cabinet: PlacedCabinet,
+  room: RoomData,
+  others: readonly PlacedCabinet[] = [],
+): WallAngleEndHand {
+  const frame = wallRunFrame(cabinetWall(cabinet, room), room);
+  const openSide = wallAngleEndOpenSide(cabinet, room, others);
+  if (!frame) return openSide === "start" ? "left" : "right";
+  return wallAngleEndHandFromRun({
+    openSide,
+    tangent: frame.tangent,
+    facingRotation: frame.facingRotation,
+  });
 }
 
 /**
@@ -10383,27 +10443,13 @@ export function syncWallRunOffsets(placed: PlacedCabinet[], room: RoomData): Pla
  * the wall and the neighbour, so the door faces out at 45° to the run.
  */
 export function angledWallEndNeighborSide(p: PlacedCabinet, placed: PlacedCabinet[], room: RoomData): "left" | "right" | null {
-  if (!isAngledWallCabinet(p.masterCode, p.description) || !p.wallId || p.wallOffset == null) return null;
+  const touch = angledWallEndRunTouch(p, placed);
+  if (!touch || touch.atStart === touch.atEnd || !p.wallId) return null;
   const frame = wallRunFrame(p.wallId, room);
   if (!frame) return null;
-  const start = Number(p.wallOffset);
-  const end = start + alongRunSpan(p);
-  const touch = 0.5;
-  let atStart = false;
-  let atEnd = false;
-  for (const other of placed) {
-    if (other.uid === p.uid || other.wallId !== p.wallId || other.wallOffset == null) continue;
-    // Uppers and tall units (a U249624 pantry) reach the AW's height band.
-    if (other.placement !== "tall" && !occupiesUpperZone(other)) continue;
-    const otherStart = Number(other.wallOffset);
-    const otherEnd = otherStart + alongRunSpan(other);
-    if (Math.abs(otherEnd - start) <= touch) atStart = true;
-    if (Math.abs(otherStart - end) <= touch) atEnd = true;
-  }
-  if (atStart === atEnd) return null;
   const radians = (Number(p.rotation) || 0) * Math.PI / 180;
   const localXAlongRun = Math.cos(radians) * frame.tangent.x + Math.sin(radians) * frame.tangent.y > 0;
-  const neighbourAtRunEnd = atEnd;
+  const neighbourAtRunEnd = touch.atEnd;
   return neighbourAtRunEnd === localXAlongRun ? "right" : "left";
 }
 

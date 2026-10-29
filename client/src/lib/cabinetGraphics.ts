@@ -2,6 +2,7 @@
 // image slug, and descriptive alt text. Kept framework-free so it is unit-testable.
 import { parseCatalogNomenclature } from "@shared/catalogNomenclature";
 import { isBaseAngleEndCabinet } from "./baseAngleEndLayout";
+import { isWallAngleEndCabinet } from "./wallAngleEndLayout";
 
 export type CabinetDrawingType =
   | "standard-door" // 1+ door box (base/wall/tall)
@@ -11,7 +12,7 @@ export type CabinetDrawingType =
   | "appliance-garage" // tambour roll-up slats
   | "blind-corner" // L-shaped footprint (blind corner cabinets)
   | "diagonal-corner" // 45° room-corner front face (DCW, WDC, DCB, AG)
-  | "wall-end-angle" // AW: regular wall-run end with one 45° exposed face
+  | "wall-end-angle" // WAC/AW: wall-run end with one 45° door facing the room
   | "l-corner" // L-shaped corner with doors on angled face (LS, ER, CSB)
   | "corner-drawer-base" // L-shaped corner with stacked drawers on the main face (CDB-*)
   | "vanity" // vanity door/drawer combo
@@ -352,11 +353,9 @@ export function cabinetDrawingType(cab: CabinetLike): CabinetDrawingType {
   // beats a stale square, diagonal, or two-face return override.
   if (isBaseAngleEndCabinet(cab)) return "end-angle";
 
-  // Cabinet Config's explicitly authored graphic type takes precedence over
-  // inconsistent supplier category or corner fields on saved placements.
-  if (graphic === "wall_angle" || /^(?:aw[-_]?\d|aw[-_]?\d+-\d+)/.test(code) || /angle(?:d)? wall end cabinet/.test(hay)) {
-    return "wall-end-angle";
-  }
+  // WAC1230/WAC1236/WAC1242 and AW aliases. Cabinet Config's wall_angle profile
+  // is the same family. This is a wall-run end, not the BA-24 quarter-octagon.
+  if (isWallAngleEndCabinet(cab)) return "wall-end-angle";
   if (graphic === "end-angle" || graphic === "base_end_angle") {
     return "end-angle";
   }
