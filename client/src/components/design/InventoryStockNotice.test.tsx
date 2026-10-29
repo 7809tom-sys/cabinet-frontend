@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { InventoryDesignStockControl, InventoryStockBadge, InventorySuggestionList } from "./InventoryStockNotice";
+import { InventoryDesignStockControl, InventoryStockBadge, InventorySuggestionList, OutOfStockChoiceDialog } from "./InventoryStockNotice";
 import type { InventoryCabinetNotice } from "@/lib/inventoryAlternatives";
 
 afterEach(cleanup);
@@ -60,6 +60,40 @@ describe("inventory stock notice", () => {
     );
     expect(screen.queryByTestId("inventory-design-stock")).toBeNull();
     expect(screen.queryByTestId("inventory-stock-badge")).toBeNull();
+  });
+
+  it("asks with the three choices and applies nothing until one is chosen", () => {
+    const onChoose = vi.fn();
+    const prompted: InventoryCabinetNotice = {
+      ...notice,
+      masterCode: "B18",
+      choicePrompt: {
+        fromCode: "B18",
+        choices: [
+          { id: "full-height", label: "full-height door base", buttonLabel: "Full-height door base", candidate: { ...notice.suggestions[0] && notice.suggestions[0].kind === "single" ? notice.suggestions[0].candidate : notice.suggestions[0], masterCode: "B18FH" } as never, suggestion: null },
+          { id: "drawer", label: "drawer base", buttonLabel: "Drawer base", candidate: null, suggestion: null },
+          { id: "readjust", label: "readjust the plan", buttonLabel: "Readjust the plan", candidate: null, suggestion: null },
+        ],
+      },
+    };
+    render(
+      <OutOfStockChoiceDialog
+        notice={prompted}
+        phase="choose"
+        onChoose={onChoose}
+        onSwap={vi.fn()}
+        onBack={vi.fn()}
+        onDismiss={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId("stock-prompt-dialog").textContent).toMatch(/Choose one option before anything in the plan changes/);
+    expect(screen.getByTestId("stock-prompt-full-height").textContent).toMatch(/Full-height door base/);
+    expect(screen.getByTestId("stock-prompt-drawer").textContent).toMatch(/Drawer base/);
+    expect(screen.getByTestId("stock-prompt-readjust").textContent).toMatch(/Readjust the plan/);
+    expect(onChoose).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId("stock-prompt-full-height"));
+    expect(onChoose).toHaveBeenCalledTimes(1);
+    expect(onChoose.mock.calls[0]?.[0].id).toBe("full-height");
   });
 
   it("lists the suggestion without applying it", () => {

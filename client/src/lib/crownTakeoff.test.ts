@@ -50,6 +50,8 @@ describe("crownTakeoffFromExposedSegments", () => {
     expect(takeoff.rawLinearInches).toBe(230);
     expect(takeoff.exposedMiterCornerCount).toBe(4);
     expect(takeoff.miterAllowanceInches).toBe(32);
-    expect(trimPiecesNeeded(takeoff.totalLinearInches).pieces).toBe(4);
+    expect(trimPiecesNeeded(takeoff.totalLinearInches).measuredPieces).toBe(4);
+    expect(trimPiecesNeeded(takeoff.totalLinearInches).pieces).toBe(5);
+    expect(trimPiecesNeeded(takeoff.totalLinearInches).extraStick).toBe(1);
   });
 });

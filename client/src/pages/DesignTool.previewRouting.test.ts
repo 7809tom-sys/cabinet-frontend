@@ -29,10 +29,8 @@ describe("DesignTool deterministic 3D preview routing", () => {
   });
 
   it("passes the live selected door profile into persisted 3D scenes whose stored material metadata is neutral", () => {
-	  expect(designToolSource).toContain("catalogDoorProfile={activeStyle ? (() => {");
-	  expect(designToolSource).toContain("designerDoorFrameMetrics(styleProfile");
-    expect(designToolSource).toContain("doorStyle: activeStyle.doorStyle ?? activeStyle.ourName ?? null");
-    expect(designToolSource).toContain("doorPanelType: activeStyle.doorPanelType ?? null");
+	  expect(designToolSource).toContain("catalogDoorProfile={designerCatalogDoorProfile(activeStyle)}");
+	  expect(designToolSource).toContain("designerCatalogDoorProfile");
   });
 
   it("supports a guarded direct 3D preview link after a saved 2D plan is ready", () => {

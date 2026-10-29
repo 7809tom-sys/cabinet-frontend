@@ -5,6 +5,7 @@ import {
   isRefrigeratorEndPanel,
   refrigeratorAssemblyMemberRole,
   wallPlacementAtUnbounded,
+  wallRunFrame,
   wallRunOffset,
   type PlacedCabinet,
   type RoomData,
@@ -106,6 +107,9 @@ export function applyRefrigeratorEndPanelFieldCuts(
     const stockField = cut.cutDown ? cut.stockDepth : null;
     const wasCustomDepth = isCustomDim(panel.depth, panel.nominalDepth);
     const nominalDepth = wasCustomDepth ? panel.nominalDepth : installed;
+    // A panel whose wall is not in this room (a restore committing before the
+    // restored room is current) must not be re-seated against another wall.
+    if (panel.wallId && !wallRunFrame(panel.wallId, room)) return panel;
     const side = (panel.wallId ?? cabinetWall(panel, room)) as WallSide;
     const along = panel.wallOffset != null && Number.isFinite(Number(panel.wallOffset))
       ? Number(panel.wallOffset)

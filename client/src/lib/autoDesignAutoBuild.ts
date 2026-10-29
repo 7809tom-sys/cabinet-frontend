@@ -1,4 +1,5 @@
 import { STD, dim, formatEighthInches, isCornerCabinet, isFarmerSinkBase, isSinkBaseCabinet, wallRunFrame, type RoomData, type WallRunFrame } from "./design";
+import type { KitchenUsageProfile } from "./kitchenUsage";
 import { baseSubGroup, cabinetDrawingType, type CabinetLike } from "./cabinetGraphics";
 
 export type AutoDesignSinkBaseKind = "regular" | "farmhouse";
@@ -212,6 +213,8 @@ export type AutoDesignInputs = {
   refrigeratorPanels?: RefrigeratorPanelChoice;
   refrigeratorEnclosure?: RefrigeratorEnclosureChoice;
   sinkWindowCenter?: AutoDesignMeasurement | null;
+  /** Optional. An empty or skipped answer does not block the build or a later save. */
+  kitchenUsage?: KitchenUsageProfile | null;
 };
 
 export type AutoDesignPlacement = AutoDesignMeasurement & {

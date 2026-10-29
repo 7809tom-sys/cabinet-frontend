@@ -11,6 +11,7 @@
 import type { PlacedCabinet } from "./design";
 import { isApplianceCode } from "./design";
 import { isClosetPart } from "./closet";
+import { isCombinedSmallFiller } from "./fillerBilling";
 
 export type MissingPriceFlag = {
   uid: string;
@@ -55,7 +56,7 @@ export function summarizeMissingPrices(args: {
     return { flags, uids, codes: [], count: 0 };
   }
   for (const cabinet of args.placed) {
-    if (!isPriceRequiredPlacedCabinet(cabinet)) continue;
+    if (!isPriceRequiredPlacedCabinet(cabinet) || isCombinedSmallFiller(cabinet, args.placed)) continue;
     const price = args.unitPriceFor(cabinet);
     if (price != null && Number.isFinite(price) && price > 0) continue;
     flags.push({

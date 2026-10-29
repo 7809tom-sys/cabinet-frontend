@@ -15,9 +15,21 @@ import {
 	optimalSmallGapFillerCut,
 	removePlacedCabinetGroup,
   smallGapFillerOpportunityFromDragPreview,
+  shouldAutoPlaceLeftoverFiller,
   smallGapFillerLayout,
   wallBlindCornerPreferredFillerMode,
 } from "@/lib/smallGapFiller";
+
+describe("automatic leftover filler", () => {
+  it("fills a 3-inch leftover without asking and keeps the prompt for 3.25 inches", () => {
+    expect(shouldAutoPlaceLeftoverFiller(3)).toBe(true);
+    expect(shouldAutoPlaceLeftoverFiller(1)).toBe(true);
+    expect(shouldAutoPlaceLeftoverFiller(0.125)).toBe(true);
+    expect(shouldAutoPlaceLeftoverFiller(3.25)).toBe(false);
+    expect(shouldAutoPlaceLeftoverFiller(6)).toBe(false);
+    expect(shouldAutoPlaceLeftoverFiller(0)).toBe(false);
+  });
+});
 
 const cabinet: PlacedCabinet = {
   uid: "cabinet-1", cabinetId: 10, masterCode: "B-18", description: "18 inch base", placement: "base",

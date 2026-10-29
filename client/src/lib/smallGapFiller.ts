@@ -1,3 +1,4 @@
+import { kitchenRuleNumber } from "./kitchenRuleParameters";
 import {
 	STD,
 	PENINSULA_INSIDE_CORNER_CLEARANCE_IN,
@@ -28,6 +29,16 @@ const EDGE_EPSILON_IN = 0.001;
 export const SMALL_GAP_FILLER_MIN_IN = 0;
 /** A cabinet-to-cabinet seam up to six inches can be intentionally filled. */
 export const SMALL_GAP_FILLER_MAX_IN = 6;
+/**
+ * A leftover run gap at or below this width is filled immediately. Wider seams,
+ * through the six-inch filler maximum, still ask where the filler should go.
+ */
+export const AUTO_PLACE_FILLER_MAX_IN = 3;
+
+/** Saved Kitchen Rules value, or the 6 inch code default when none is stored. */
+export function effectiveSmallGapFillerMaxIn(): number {
+  return kitchenRuleNumber("filler_gap_max_in");
+}
 /** Two pieces are available whenever both halves have a positive cut width. */
 export const SMALL_GAP_SPLIT_PIECE_MIN_IN = 0;
 
@@ -111,15 +122,22 @@ function near(left: number, right: number) {
 
 /** Gap prompts use field-cut source-filler widths with fine tape-measure precision. */
 export function installableSmallGapRemainder(value: number): number | null {
-  if (!Number.isFinite(value) || value <= EDGE_EPSILON_IN || value > SMALL_GAP_FILLER_MAX_IN + EDGE_EPSILON_IN) return null;
+  if (!Number.isFinite(value) || value <= EDGE_EPSILON_IN || value > effectiveSmallGapFillerMaxIn() + EDGE_EPSILON_IN) return null;
   const rounded = Math.round(value * 16) / 16;
   const normalized = rounded > EDGE_EPSILON_IN ? rounded : value;
-  return normalized > EDGE_EPSILON_IN && normalized <= SMALL_GAP_FILLER_MAX_IN + EDGE_EPSILON_IN ? normalized : null;
+  return normalized > EDGE_EPSILON_IN && normalized <= effectiveSmallGapFillerMaxIn() + EDGE_EPSILON_IN ? normalized : null;
 }
 
 /** The optimal filler consumes the entire measured cabinet-to-cabinet seam. */
 export function optimalSmallGapFillerCut(opportunity: Pick<SmallGapFillerOpportunity, "remaining">): number | null {
   return installableSmallGapRemainder(opportunity.remaining);
+}
+
+/** True when a detected leftover must be filled without asking the user. */
+export function shouldAutoPlaceLeftoverFiller(remaining: number): boolean {
+  return Number.isFinite(remaining)
+    && remaining > EDGE_EPSILON_IN
+    && remaining <= AUTO_PLACE_FILLER_MAX_IN + EDGE_EPSILON_IN;
 }
 
 function gapCrossesWallOpening(openings: readonly WallOpening[], wall: WallSide, start: number, length: number) {
@@ -218,13 +236,13 @@ export function findSmallGapFillerOpportunity(
 	const openingBefore = openings
 		.filter((opening) => opening.side === wall)
 		.map((opening) => cabinetStart - (opening.offset + opening.width))
-		.filter((gap) => gap >= -EDGE_EPSILON_IN && gap <= SMALL_GAP_FILLER_MAX_IN + EDGE_EPSILON_IN)
+		.filter((gap) => gap >= -EDGE_EPSILON_IN && gap <= effectiveSmallGapFillerMaxIn() + EDGE_EPSILON_IN)
 		.map((gap) => Math.max(0, gap))
 		.sort((left, right) => left - right)[0];
 	const openingAfter = openings
 		.filter((opening) => opening.side === wall)
 		.map((opening) => opening.offset - cabinetEnd)
-		.filter((gap) => gap >= -EDGE_EPSILON_IN && gap <= SMALL_GAP_FILLER_MAX_IN + EDGE_EPSILON_IN)
+		.filter((gap) => gap >= -EDGE_EPSILON_IN && gap <= effectiveSmallGapFillerMaxIn() + EDGE_EPSILON_IN)
 		.map((gap) => Math.max(0, gap))
 		.sort((left, right) => left - right)[0];
 	const measuredBefore = before ?? installableSmallGapRemainder(openingBefore ?? Number.NaN);

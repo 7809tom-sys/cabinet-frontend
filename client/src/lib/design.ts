@@ -3,6 +3,7 @@
 import { baseAngleEndCountertopLocalPoints, isBaseAngleEndCabinet, type BaseAngleEndHand } from "@/lib/baseAngleEndLayout";
 import { isWallAngleEndCabinet, wallAngleEndHandFromRun, type WallAngleEndHand } from "@/lib/wallAngleEndLayout";
 import { freestandingCountertopSurfaces, isFreestandingBase } from "@/lib/freestandingRun";
+import { kitchenRuleNumber } from "@/lib/kitchenRuleParameters";
 import {
   closestWall as closestPolygonWall,
   isLocked45Wall,
@@ -817,6 +818,15 @@ export interface PlacedCabinet {
   masterCode: string;
   description: string;
   /**
+   * Shop note when a catalog cabinet is used as a field modification,
+   * such as a B36 standing in for an out-of-stock sink base.
+   */
+  fieldModificationNote?: string | null;
+  /** Set on a panel or filler the Designer inserted. Removed when the side is covered. */
+  autoPlacedReason?: string | null;
+  autoPlacedForUid?: string | null;
+  autoPlacedSide?: "start" | "end" | "back" | null;
+  /**
    * Identifies a cabinet created by one Peninsula Wizard transaction. This is
    * deliberately separate from `wallId`: a customer can add ordinary cabinets
    * to a peninsula wall without allowing a later Wizard edit to overwrite them.
@@ -859,6 +869,12 @@ export interface PlacedCabinet {
   // Optional for backward-compat; resolve with resolveSwing() which falls back
   // to a sensible default based on the cabinet's door count.
   swing?: DoorSwing;
+  /**
+   * AW angled wall-end cabinets only: which side holds the square back corner
+   * that tucks against the neighbouring cabinet ("right" = local +x side).
+   * Stamped from the neighbour at the commit boundary; null/absent = "right".
+   */
+  angleEndHand?: "left" | "right" | null;
   numberOfDoors?: number | null;
   numberOfDrawers?: number | null;
   rotation: number;
@@ -1763,7 +1779,7 @@ export function ordinaryWallMountBottom(p: {
   if (isThirtyInchShortUpperAt72(p)) return TWELVE_INCH_WALL_MOUNT_BOTTOM;
   return p.placement === "wall" && !isStacker(p) && height > 0 && height < 30
     ? WALL_CABINET_TOP - height
-    : WALL_MOUNT_BOTTOM;
+    : kitchenRuleNumber("wall_bottom_in");
 }
 
 /** A single wall's ceiling. Either a flat height, or a slope between a high end
@@ -1842,6 +1858,16 @@ export interface RoomData {
    * the same source plan rather than a partial reconstruction.
    */
   persistedEntities?: PersistedDesignEntities;
+  /**
+   * How the customer said they use the kitchen. Optional and skippable.
+   * Saved with the room so a reload keeps the same placement hints.
+   * The placed sink center is the plumbing anchor; there is no separate plumbing point.
+   */
+  kitchenUsage?: {
+    uses: Array<"baking" | "everyday-cooking" | "entertaining" | "coffee-beverage" | "kids-family" | "minimal-cooking">;
+    skipped: boolean;
+    acceptedSuggestionIds?: string[];
+  };
 }
 
 export type PeninsulaTurn = 45 | 90;
@@ -3410,13 +3436,19 @@ function cabinetPlanBodyPolygons(cabinet: PlacedCabinet): PlanFootprintPoint[][]
     : [rotatedCabinetBodyPolygon(cabinet)];
 }
 
-/** Convex separating-axis test where flush edge contact remains valid. */
+/**
+ * Convex separating-axis test where flush edge contact remains valid. Axes are
+ * unit length so the gap is in inches: seams projected onto a drawn wall carry
+ * floating-point noise, and anything within RUN_SEAM_TOLERANCE_IN is contact.
+ */
 function convexPlanPolygonsIntersect(left: PlanFootprintPoint[], right: PlanFootprintPoint[]): boolean {
   for (const polygon of [left, right]) {
     for (let index = 0; index < polygon.length; index++) {
       const start = polygon[index];
       const end = polygon[(index + 1) % polygon.length];
-      const axis = { x: -(end.y - start.y), y: end.x - start.x };
+      const edgeLength = Math.hypot(end.x - start.x, end.y - start.y);
+      if (edgeLength <= COLLISION_EPSILON_IN) continue;
+      const axis = { x: -(end.y - start.y) / edgeLength, y: (end.x - start.x) / edgeLength };
       const project = (points: PlanFootprintPoint[]) => points.reduce(
         (range, point) => {
           const value = point.x * axis.x + point.y * axis.y;
@@ -3426,7 +3458,7 @@ function convexPlanPolygonsIntersect(left: PlanFootprintPoint[], right: PlanFoot
       );
       const leftRange = project(left);
       const rightRange = project(right);
-      if (leftRange.max <= rightRange.min + COLLISION_EPSILON_IN || rightRange.max <= leftRange.min + COLLISION_EPSILON_IN) return false;
+      if (leftRange.max <= rightRange.min + RUN_SEAM_TOLERANCE_IN || rightRange.max <= leftRange.min + RUN_SEAM_TOLERANCE_IN) return false;
     }
   }
   return true;
@@ -4163,6 +4195,12 @@ export function removeOverlappingPlacements(placements: PlacedCabinet[], room?: 
       ? resolution.placed.find((item) => item.uid === ownerUid && item.placement === "base" && Math.abs(item.x - candidate.x) < COLLISION_EPSILON_IN && Math.abs(item.y - candidate.y) < COLLISION_EPSILON_IN && Math.abs(item.width - candidate.width) < COLLISION_EPSILON_IN && Math.abs(item.depth - candidate.depth) < COLLISION_EPSILON_IN && Math.abs(Number(item.rotation ?? 0) - Number(candidate.rotation ?? 0)) < COLLISION_EPSILON_IN && item.wallId === candidate.wallId && item.islandFace === candidate.islandFace)
       : null;
     if (candidate.placement === "appliance" && candidate.applianceRole === "countertop-opening" && supportingBase) {
+      resolution.placed.push(candidate);
+      continue;
+    }
+    // Auto-added end panels are re-checked by the exposed-side engine. Deleting
+    // them here made that engine place them again and re-price the plan forever.
+    if (candidate.autoPlacedReason) {
       resolution.placed.push(candidate);
       continue;
     }
@@ -5785,15 +5823,44 @@ export function isAngledWallCabinet(masterCode: string, description?: string): b
 }
 
 /**
+ * Upper and tall cabinets touching one side of a WAC/AW. A U249624 pantry is
+ * on the floor layer, so a wall-only span check would miss it and taper the
+ * door back into the pantry. Both sides, or neither, returns null.
+ */
+function angledWallEndRunTouch(
+  cabinet: PlacedCabinet,
+  others: readonly PlacedCabinet[],
+): { atStart: boolean; atEnd: boolean } | null {
+  if (!isAngledWallCabinet(cabinet.masterCode, cabinet.description) || !cabinet.wallId || cabinet.wallOffset == null) return null;
+  const start = Number(cabinet.wallOffset);
+  const end = start + alongRunSpan(cabinet);
+  const touch = 0.5;
+  let atStart = false;
+  let atEnd = false;
+  for (const other of others) {
+    if (other.uid === cabinet.uid || other.wallId !== cabinet.wallId || other.wallOffset == null) continue;
+    if (other.placement !== "tall" && !occupiesUpperZone(other)) continue;
+    const otherStart = Number(other.wallOffset);
+    const otherEnd = otherStart + alongRunSpan(other);
+    if (Math.abs(otherEnd - start) <= touch) atStart = true;
+    if (Math.abs(otherStart - end) <= touch) atEnd = true;
+  }
+  return { atStart, atEnd };
+}
+
+/**
  * The open end of a wall angle cabinet along its wall run. "start" is the
- * lower along-run coordinate. A neighbor on only one side selects the other
- * side; a cabinet alone on the wall tapers toward the nearer wall end.
+ * lower along-run coordinate. A neighbor on only one side, including a tall
+ * pantry, selects the other side; a cabinet alone on the wall tapers toward
+ * the nearer wall end.
  */
 export function wallAngleEndOpenSide(
   cabinet: PlacedCabinet,
   room: RoomData,
   others: readonly PlacedCabinet[] = [],
 ): "start" | "end" {
+  const touch = angledWallEndRunTouch(cabinet, others);
+  if (touch && touch.atStart !== touch.atEnd) return touch.atStart ? "end" : "start";
   const side = cabinetWall(cabinet, room);
   const measure = wallSpanMeasure(cabinet, room, others.filter((item) => item.uid !== cabinet.uid), side);
   const startOpen = !measure.beforeIsCabinet;
@@ -6852,10 +6919,14 @@ export const TRIM_STICK_INCHES = 96; // standard 8 ft trim stick
 export const TRIM_WASTE = 0.1;       // 10% cut/waste allowance
 
 export interface TrimOrder {
-  pieces: number;      // whole sticks to order
+  pieces: number;      // whole sticks to order, including the craftsmanship spare
   stickFeet: number;   // length of each stick, in feet (e.g. 8)
   orderedFeet: number; // total feet ordered (pieces * stickFeet)
   measuredFeet: number; // the raw measured run, in feet (1 decimal)
+  /** Sticks required by the measured run and waste allowance, before the spare. */
+  measuredPieces: number;
+  /** One extra stick ordered whenever the run needs any molding. */
+  extraStick: number;
 }
 
 /**
@@ -6869,15 +6940,21 @@ export function trimPiecesNeeded(
 ): TrimOrder {
   const stickFeet = stickInches / 12;
   if (runInches <= 0) {
-    return { pieces: 0, stickFeet, orderedFeet: 0, measuredFeet: 0 };
+    return { pieces: 0, stickFeet, orderedFeet: 0, measuredFeet: 0, measuredPieces: 0, extraStick: 0 };
   }
   const withWaste = runInches * (1 + waste);
-  const pieces = Math.max(1, Math.ceil(withWaste / stickInches));
+  const measuredPieces = Math.max(1, Math.ceil(withWaste / stickInches));
+  // One spare stick covers a cracked, warped, or defect-cut piece. It is priced
+  // as a normal stick and called out on the BOM; it is not extra waste percent.
+  const extraStick = 1;
+  const pieces = measuredPieces + extraStick;
   return {
     pieces,
     stickFeet,
     orderedFeet: pieces * stickFeet,
     measuredFeet: Math.round((runInches / 12) * 10) / 10,
+    measuredPieces,
+    extraStick,
   };
 }
 
@@ -8221,10 +8298,24 @@ export function cabinetPlacementHoverDetail(
   };
 }
 
-// Wall cabinets must keep a minimum clearance (default 3") from door/window
-// openings. Returns the uids of WALL cabinets whose run-axis extent comes within
-// `clearance` inches of any opening on the SAME wall (including overlap). Used
-// for the design-check warning. Pure + deterministic.
+/**
+ * Clear distance a placed wall cabinet must keep from an opening before it is
+ * flagged. The 3-inch window casing clearance is only the default spacing the
+ * Designer places with (free segments, palette adds, auto design); a user may
+ * deliberately slide a cabinet right up to the window edge, so a window only
+ * requires the cabinet stay off the glass. A frameless (AEF) cabinet keeps its
+ * 3/4" window-side end panel out of the opening too. Doors keep the full
+ * clearance for their casing.
+ */
+function wallOpeningRequiredGap(p: PlacedCabinet, o: WallOpening, clearance: number): number {
+  if (o.kind !== "window") return clearance;
+  return hasAefPrintedGeometry(p) ? STD.PANEL_THICKNESS : 0;
+}
+
+// Wall cabinets must keep a minimum clearance (default 3") from doors and must
+// stay off window glass (see wallOpeningRequiredGap). Returns the uids of WALL
+// cabinets that come too close to an opening on the SAME wall. Used for the
+// design-check warning. Pure + deterministic.
 export function wallOpeningClearanceViolations(
   placed: PlacedCabinet[],
   openings: WallOpening[],
@@ -8250,15 +8341,48 @@ export function wallOpeningClearanceViolations(
       // A frameless wall cabinet also keeps its 3/4" window end panel out of
       // the opening. The extra is horizontal only; vertical window clearance
       // stays the caller's value.
-      const panelClearance = o.kind === "window" && hasAefPrintedGeometry(p) ? STD.PANEL_THICKNESS : 0;
       const gap = Math.max(oStart - cEnd, cStart - oEnd);
-      if (gap < clearance + panelClearance - 0.01) {
+      if (gap < wallOpeningRequiredGap(p, o, clearance) - 0.01) {
         bad.add(p.uid);
         break;
       }
     }
   }
   return bad;
+}
+
+/**
+ * Why a wall cabinet fails `wallOpeningClearanceViolations`, in the same run
+ * inches that rule measures: the nearest offending opening, the clear gap to
+ * it (negative = overlapping) and the gap the rule requires.
+ */
+export function wallOpeningClearanceDetail(
+  p: PlacedCabinet,
+  openings: WallOpening[],
+  room: RoomData,
+  clearance = WALL_OPENING_CLEARANCE_IN,
+): { opening: WallOpening; gap: number; required: number } | null {
+  if (p.placement !== "wall" || isFillerItem(p)) return null;
+  const side = cabinetWall(p, room);
+  const cStart = wallRunOffset(p, side, room);
+  const cEnd = cStart + wallRunSpan(p, side, room);
+  for (const o of openings) {
+    if (o.side !== side) continue;
+    if (wallCabinetClearsWindow(p, o, room, clearance)) continue;
+    const required = wallOpeningRequiredGap(p, o, clearance);
+    const gap = Math.max(o.offset - cEnd, cStart - (o.offset + o.width));
+    if (gap < required - 0.01) return { opening: o, gap, required };
+  }
+  return null;
+}
+
+/** Why a wall/tall cabinet fails `ceilingFitViolations`: its top and the wall's low ceiling. */
+export function ceilingFitDetail(p: PlacedCabinet, room: RoomData): { top: number; ceiling: number } | null {
+  const ceiling = wallCeilingMin(room, cabinetWall(p, room));
+  const top = p.placement === "wall"
+    ? (() => { const box = elevationBox(p, room); return box.bottom + box.height; })()
+    : p.placement === "tall" ? placedHeight(p) : null;
+  return top != null && top > ceiling + 0.5 ? { top, ceiling } : null;
 }
 
 // Base (and tall/appliance) cabinets must not sit ACROSS a floor-blocking
@@ -10309,7 +10433,41 @@ export function syncWallRunOffsets(placed: PlacedCabinet[], room: RoomData): Pla
     if (synced !== p) changed = true;
     return synced;
   });
+  return stampAngledWallEndHands(changed ? next : placed, room);
+}
+
+/**
+ * The side of an AW angled wall-end cabinet that butts its run neighbour
+ * ("right" = the cabinet's local +x side), or null when it has a neighbour on
+ * both sides or neither. The square back corner belongs on that side, between
+ * the wall and the neighbour, so the door faces out at 45° to the run.
+ */
+export function angledWallEndNeighborSide(p: PlacedCabinet, placed: PlacedCabinet[], room: RoomData): "left" | "right" | null {
+  const touch = angledWallEndRunTouch(p, placed);
+  if (!touch || touch.atStart === touch.atEnd || !p.wallId) return null;
+  const frame = wallRunFrame(p.wallId, room);
+  if (!frame) return null;
+  const radians = (Number(p.rotation) || 0) * Math.PI / 180;
+  const localXAlongRun = Math.cos(radians) * frame.tangent.x + Math.sin(radians) * frame.tangent.y > 0;
+  const neighbourAtRunEnd = touch.atEnd;
+  return neighbourAtRunEnd === localXAlongRun ? "right" : "left";
+}
+
+/** Keeps every AW's square corner on its neighbour's side; unchanged when nothing moves. */
+export function stampAngledWallEndHands(placed: PlacedCabinet[], room: RoomData): PlacedCabinet[] {
+  let changed = false;
+  const next = placed.map((p) => {
+    const side = angledWallEndNeighborSide(p, placed, room);
+    if (!side || (p.angleEndHand ?? "right") === side) return p;
+    changed = true;
+    return { ...p, angleEndHand: side };
+  });
   return changed ? next : placed;
+}
+
+/** CSS clip for an AW in its local plan box (wall = top edge). */
+export function angledWallEndClipPath(hand: "left" | "right" | null | undefined): string {
+  return hand === "left" ? "polygon(0 0, 100% 0, 0 100%)" : triangleCornerClipPath(0);
 }
 
 /**
@@ -10350,7 +10508,7 @@ export function backfillLegacyWallRuns(placed: PlacedCabinet[], room: RoomData):
     changed = true;
     return { ...p, ...spot, rotation: spot.rotation, wallId: spot.wallId ?? nearest.frame.id, wallOffset: spot.wallOffset ?? offset };
   });
-  return changed ? next : placed;
+  return stampAngledWallEndHands(changed ? next : placed, room);
 }
 
 export type ContinuousWallApplianceSnapInfo = {
