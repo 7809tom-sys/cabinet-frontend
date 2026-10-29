@@ -121,11 +121,47 @@ describe("knee drawer mounting", () => {
     expect(accessoryPlacement(dkd30)).toBe("baseTop");
   });
 
-  it("defaults to 30 inches and constrains custom knee-drawer mounting height to 24–30 inches", () => {
-    expect(elevationBox(kneeDrawer, ROOM_12x10)).toEqual({ bottom: 30, height: 7 });
+  it("hangs an unmounted knee drawer from the 30-inch desk line and still clamps an explicit mount to 24–30 inches", () => {
+    expect(elevationBox(kneeDrawer, ROOM_12x10)).toEqual({ bottom: 23, height: 7 });
     expect(elevationBox({ ...kneeDrawer, mountBottom: 24 }, ROOM_12x10)).toEqual({ bottom: 24, height: 7 });
     expect(elevationBox({ ...kneeDrawer, mountBottom: 20 }, ROOM_12x10)).toEqual({ bottom: 24, height: 7 });
     expect(elevationBox({ ...kneeDrawer, mountBottom: 36 }, ROOM_12x10)).toEqual({ bottom: 30, height: 7 });
+  });
+
+  it("hangs a DKD30, DKD-30, or other knee drawer under the neighboring desk or base top", () => {
+    const room = ROOM_12x10;
+    const drawer = (masterCode: string, height = 6): PlacedCabinet => ({
+      uid: "dkd", cabinetId: 30, masterCode, description: "30 inch x 6 inch Knee Drawer Base Cabinet",
+      category: "Base", subCategory: "Knee Drawer", placement: "base",
+      x: 30, y: 0, width: 30, depth: 21, height, rotation: 0, numberOfDoors: 0, numberOfDrawers: 1,
+      mountBottom: 0,
+    });
+    const desk = (uid: string, x: number, height: number, masterCode: string, description: string): PlacedCabinet => ({
+      uid, cabinetId: 1, masterCode, description, category: "Base", subCategory: "Desk",
+      placement: "base", x, y: 0, width: 30, depth: 24, height, rotation: 0, numberOfDoors: 1, numberOfDrawers: 1,
+    });
+    expect(isKneeDrawerItem({ masterCode: "DKD-30", description: "Desk knee drawer" })).toBe(true);
+    expect(isKneeDrawerItem({ masterCode: "KD24", description: "Knee drawer" })).toBe(true);
+
+    const alone = drawer("DKD30");
+    expect(elevationBox(alone, room)).toEqual({ bottom: 24, height: 6 });
+    expect(bearsCountertop(alone)).toBe(false);
+
+    const deskRun = [desk("left", 0, 30, "DB30", '30" Desk Base'), drawer("DKD-30"), desk("right", 60, 30, "DB30", '30" Desk Base')];
+    expect(elevationBox(deskRun[1]!, room, deskRun)).toEqual({ bottom: 24, height: 6 });
+
+    const shorterDesk = [desk("left", 0, 28.5, "DB30", '30" Desk Base'), drawer("DKD30")];
+    expect(elevationBox(shorterDesk[1]!, room, shorterDesk)).toEqual({ bottom: 22.5, height: 6 });
+
+    const kitchenBase: PlacedCabinet = {
+      uid: "base", cabinetId: 2, masterCode: "B36", description: "Base Cabinet", category: "Base",
+      placement: "base", x: 0, y: 0, width: 30, depth: 24, height: 34.5, rotation: 0, numberOfDoors: 2, numberOfDrawers: 0,
+    };
+    const besideBase = [kitchenBase, drawer("DKD30")];
+    expect(elevationBox(besideBase[1]!, room, besideBase)).toEqual({ bottom: 28.5, height: 6 });
+
+    const mixed = [desk("left", 0, 30, "DB30", '30" Desk Base'), drawer("DKD30"), { ...kitchenBase, uid: "right", x: 60 }];
+    expect(elevationBox(mixed[1]!, room, mixed)).toEqual({ bottom: 24, height: 6 });
   });
 
   it("targets the first measured base-cabinet knee-space void rather than placing above a base cabinet", () => {

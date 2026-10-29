@@ -206,6 +206,8 @@ export function kitchenCrestGenericOpenEndShelfCount(c: {
 export const KNEE_DRAWER_MIN_MOUNT_BOTTOM_IN = 24;
 export const KNEE_DRAWER_DEFAULT_MOUNT_BOTTOM_IN = 30;
 export const KNEE_DRAWER_MAX_MOUNT_BOTTOM_IN = 30;
+/** Finished top of a desk when no neighboring desk or base cabinet sets the line. */
+export const DESK_TOP_HEIGHT_IN = 30;
 
 /** A shallow pull-out drawer mounted in a seated knee-space opening. */
 export function isKneeDrawerItem(c: {
@@ -5622,9 +5624,62 @@ export function wd18CountertopFaceLayout(
   };
 }
 
+type KneeDrawerRoom = {
+  ceilingHeight?: number;
+  width?: number;
+  depth?: number;
+  peninsulaRuns?: RoomData["peninsulaRuns"];
+  customWalls?: RoomData["customWalls"];
+} | null | undefined;
+
+function isDeskBaseCabinet(cabinet: {
+  masterCode?: string | null;
+  description?: string | null;
+  category?: string | null;
+  subCategory?: string | null;
+}): boolean {
+  if (isKneeDrawerItem(cabinet)) return false;
+  return /\bdesk\b/i.test(`${cabinet.category ?? ""} ${cabinet.subCategory ?? ""} ${cabinet.description ?? ""} ${cabinet.masterCode ?? ""}`);
+}
+
+/**
+ * Top of the nearest desk or base cabinet sharing the knee drawer's wall.
+ * Desk bases win over a kitchen base at the same seam. Returns null when the
+ * drawer is alone, so the caller can use the 30-inch desk height.
+ */
+export function kneeDrawerNeighborTopInches(
+  drawer: PlacedCabinet,
+  room?: KneeDrawerRoom,
+  peers: readonly PlacedCabinet[] = [],
+): number | null {
+  if (!room || !Number.isFinite(room.width) || !Number.isFinite(room.depth) || peers.length === 0) return null;
+  const plan = room as RoomData;
+  const wall = cabinetWall(drawer, plan);
+  const start = wallRunOffset(drawer, wall, plan);
+  const end = start + wallRunSpan(drawer, wall, plan);
+  const neighbors: { gap: number; top: number; desk: boolean }[] = [];
+  for (const peer of peers) {
+    if (peer.uid === drawer.uid || peer.placement !== "base" || isKneeDrawerItem(peer) || isPanelItem(peer) || isFillerItem(peer)) continue;
+    if (cabinetWall(peer, plan) !== wall) continue;
+    const peerStart = wallRunOffset(peer, wall, plan);
+    const peerEnd = peerStart + wallRunSpan(peer, wall, plan);
+    const gap = peerEnd <= start + 0.01 ? start - peerEnd : peerStart >= end - 0.01 ? peerStart - end : 0;
+    if (gap > 1.5) continue;
+    const box = elevationBox(peer, room);
+    neighbors.push({ gap: Math.max(0, gap), top: box.bottom + box.height, desk: isDeskBaseCabinet(peer) });
+  }
+  if (neighbors.length === 0) return null;
+  const closestGap = Math.min(...neighbors.map((neighbor) => neighbor.gap));
+  const closest = neighbors.filter((neighbor) => Math.abs(neighbor.gap - closestGap) <= 0.01);
+  const desks = closest.filter((neighbor) => neighbor.desk);
+  const chosen = desks.length > 0 ? desks : closest;
+  return Math.min(...chosen.map((neighbor) => neighbor.top));
+}
+
 export function elevationBox(
   p: PlacedCabinet,
-  room?: { ceilingHeight?: number } | null
+  room?: KneeDrawerRoom,
+  peers?: readonly PlacedCabinet[],
 ): { bottom: number; height: number } {
   if (isFillerItem(p) && p.fillerMatchesFullOwnerEnvelope === true) {
     return {
@@ -5638,6 +5693,24 @@ export function elevationBox(
   // sizes the pair to the refrigerator bridge's physical cap.
   if (isRefrigeratorEndPanel(p)) {
     return { bottom: 0, height: placedHeight(p) };
+  }
+  // A desk knee drawer (DKD30, DKD-30, VKD, or any knee-drawer code) is a
+  // shallow box hung in open knee space. Its top meets the neighboring desk
+  // or base top, or 30 inches when it is placed alone. An explicit base-top
+  // mount from the attributes control still wins. It never sits on the floor.
+  if (isKneeDrawerItem(p)) {
+    const height = placedHeight(p);
+    if (p.placement === "baseTop" && typeof p.mountBottom === "number") {
+      return {
+        bottom: Math.min(KNEE_DRAWER_MAX_MOUNT_BOTTOM_IN, Math.max(KNEE_DRAWER_MIN_MOUNT_BOTTOM_IN, p.mountBottom)),
+        height,
+      };
+    }
+    if (p.mountBottomAdjusted === true && typeof p.mountBottom === "number") {
+      return { bottom: Math.max(0, p.mountBottom), height };
+    }
+    const top = kneeDrawerNeighborTopInches(p, room, peers) ?? DESK_TOP_HEIGHT_IN;
+    return { bottom: Math.max(0, top - height), height };
   }
   // A shallow wall cabinet used on an island is a counter-height opposing face,
   // not a room-wall upper. Its top aligns with the adjoining base cabinet box.
@@ -5728,14 +5801,10 @@ export function elevationBox(
     //    which wins.
     return { bottom: ordinaryWallMountBottom(p), height: h };
   }
-  // baseTop: specialty items (knee drawers, spice racks) that sit in the
-  // counter-height zone. A knee drawer may be installed from 24–30 inches off
-  // the finished floor; 30 inches is the default just below the countertop.
+  // baseTop: specialty items (spice racks and similar) that sit in the
+  // counter-height zone. Knee drawers are resolved above.
   if (p.placement === "baseTop") {
-    const requested = typeof p.mountBottom === "number" ? p.mountBottom : KNEE_DRAWER_DEFAULT_MOUNT_BOTTOM_IN;
-    const bottom = isKneeDrawerItem(p)
-      ? Math.min(KNEE_DRAWER_MAX_MOUNT_BOTTOM_IN, Math.max(KNEE_DRAWER_MIN_MOUNT_BOTTOM_IN, requested))
-      : requested;
+    const bottom = typeof p.mountBottom === "number" ? p.mountBottom : KNEE_DRAWER_DEFAULT_MOUNT_BOTTOM_IN;
     return { bottom, height: placedHeight(p) };
   }
   // underCabinet: specialty items (stem glass holders) that hang under wall cabinets
@@ -6727,7 +6796,7 @@ export function crownLinearInches(placed: PlacedCabinet[], room?: RoomData): num
 
 export function toeKickLinearInches(placed: PlacedCabinet[]): number {
   return placed
-    .filter((p) => p.category !== "MasterTrac Closet" && (p.placement === "base" || p.placement === "tall"))
+    .filter((p) => p.category !== "MasterTrac Closet" && !isKneeDrawerItem(p) && (p.placement === "base" || p.placement === "tall"))
     .reduce((sum, p) => sum + alongRunSpan(p), 0);
 }
 
@@ -12339,6 +12408,9 @@ export function bearsCountertop(p: {
 	  fillerTransitionKind?: "angled-wedge" | "corner-provisional" | "front-miter-pair" | null;
 }): boolean {
 	  if (p.placement !== "base" && !isBaseHeightAppliance(p)) return false;
+  // A knee drawer hangs in open knee space. It is not a cabinet box the
+  // desktop can bear, and it must not close that opening with a slab.
+  if (isKneeDrawerItem(p)) return false;
   // Some legacy plans stored a freestanding stove in the base layer. A stove
   // remains an appliance opening regardless of that stale layer value, so it
 	  // must never receive a countertop slab.
