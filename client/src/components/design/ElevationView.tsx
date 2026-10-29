@@ -12,7 +12,7 @@ import {
   backsplashMaterial, isStacker, isBridgeOverRange, resolveSwing,
   isRangeOrOven, wallCabinetTopLine, isBlindCorner, placedFootprint, crownEligibleCabinets, isLightRailEligibleCabinet, usesRaisedFloorWallDoorPull,
 	  flooringMaterial, normalizeInstalledFillersToAdjacentCabinets, normalizeRefrigeratorBayUppers, applianceAppearanceImage, applianceElevationPresentation, rangeVisualAppearance, resolveCabinetHardwarePosition, isWd18CountertopDrawerCabinet, wd18CountertopFaceLayout,
-	  isGlassDoorCabinet, glassDoorShelfCount, kitchenCrestGenericOpenEndShelfCount,
+	  isGlassDoorCabinet, glassDoorShelfCount, isKneeDrawerItem, kitchenCrestGenericOpenEndShelfCount,
 } from "@/lib/design";
 import { crownTopRuns, formatCrownTop } from "@/lib/crownTopRuns";
 import { threeDBacksplashSupportSpans } from "./InteractiveRoom3D";
@@ -379,13 +379,14 @@ export function ElevationView({
   const crownRuns = mergedElevationTrimRuns(crownEligibleCabinets(sorted, room)
     .map((p) => {
       const start = wallRunOffset(p, side, room);
-      const { bottom, height } = elevationBox(p, room);
+      const { bottom, height } = elevationBox(p, room, elevationCabinets);
       return { start, end: start + wallRunSpan(p, side, room), level: bottom + height, uid: p.uid };
     }));
   const toeKickRuns = mergedElevationTrimRuns(sorted
     .filter((p) => {
-      const { bottom } = elevationBox(p, room);
-      return p.fillerMatchesFullOwnerEnvelope !== true
+      const { bottom } = elevationBox(p, room, elevationCabinets);
+      return !isKneeDrawerItem(p)
+        && p.fillerMatchesFullOwnerEnvelope !== true
         && toeKickHeightForElevation(p.placement, bottom, TOE_KICK_HEIGHT_IN) > 0
         && p.cabinetId !== 0;
     })
@@ -406,7 +407,7 @@ export function ElevationView({
     // regardless of stored depth (which may be stale/wrong from old saves).
     const sizeAlong = wallRunSpan(p, side, room);
     const posAlong = seam ? 0 : wallRunOffset(p, side, room);
-    const { bottom: rawBottom, height: rawHeight } = elevationBox(p, room);
+    const { bottom: rawBottom, height: rawHeight } = elevationBox(p, room, elevationCabinets);
     const masterTracBoard = masterTracProduct(p.masterCode);
     if (masterTracBoard?.placeable && masterTracBoard.shape) {
       const selected = p.uid === selectedUid;
@@ -456,7 +457,7 @@ export function ElevationView({
     const isBaseOrTall = p.placement === "base" || p.placement === "tall";
     // Refrigerator end panels are exposed architectural skins, not toe-kicked
     // cabinets. They must visibly run from the floor to the refrigerator top.
-    const toeOffset = refrigeratorEndPanel || fullOwnerEnvelopeFiller
+    const toeOffset = refrigeratorEndPanel || fullOwnerEnvelopeFiller || isKneeDrawerItem(p)
       ? 0
       : toeKickHeightForElevation(p.placement, rawBottom, TOE_KICK_HEIGHT_IN);
     const bottom = rawBottom + toeOffset;
@@ -924,7 +925,7 @@ export function ElevationView({
     if (dragAxis.current === "vertical" && canVertical && onMoveVertical) {
       // Screen Y grows downward but mount height grows upward, so invert dy.
       const dyIn = (vDragStartY.current - e.clientY) / ppi;
-      const { height } = elevationBox(cabinet, room);
+      const { height } = elevationBox(cabinet, room, elevationCabinets);
       const maxBottom = Math.max(0, WALL_TOTAL_HEIGHT - height);
       let nextBottom = vDragStartBottom.current + dyIn;
       nextBottom = Math.max(0, Math.min(maxBottom, nextBottom));
@@ -950,10 +951,10 @@ export function ElevationView({
     // intentionally allowed to overlap (e.g. a bridge over a microwave, a sink
     // over a sink base, a stacker over its host) are excluded so they don't
     // block the slide.
-    const dBox = elevationBox(cabinet, room);
+    const dBox = elevationBox(cabinet, room, elevationCabinets);
     const dTop = dBox.bottom + dBox.height;
     const bandOverlap = (o: PlacedCabinet) => {
-      const oBox = elevationBox(o, room);
+      const oBox = elevationBox(o, room, elevationCabinets);
       const oTop = oBox.bottom + oBox.height;
       // Two boxes share a vertical band if their [bottom, top] ranges overlap.
       return dBox.bottom < oTop - 0.01 && oBox.bottom < dTop - 0.01;
@@ -1048,7 +1049,7 @@ export function ElevationView({
       if ((e.key === "ArrowUp" || e.key === "ArrowDown") && cab.placement === "wall" && onMoveVertical) {
         e.preventDefault();
         const dir = e.key === "ArrowUp" ? 1 : -1;
-        const { bottom, height } = elevationBox(cab, room);
+        const { bottom, height } = elevationBox(cab, room, elevationCabinets);
         const maxBottom = Math.max(0, WALL_TOTAL_HEIGHT - height);
         const next = Math.max(0, Math.min(maxBottom, bottom + dir * step));
         onMoveVertical(cab.uid, Math.round(next * 10) / 10);
@@ -1960,7 +1961,7 @@ export function ElevationView({
         {lightRail && sorted.filter((p) => isLightRailEligibleCabinet(p, room)).map((p) => {
           const sizeAlong = wallRunSpan(p, side, room);
           const posAlong = wallRunOffset(p, side, room);
-          const { bottom } = elevationBox(p, room);
+          const { bottom } = elevationBox(p, room, elevationCabinets);
           const cabF = finishFor ? finishFor(p) : finish;
           return (
             <div
@@ -2027,8 +2028,8 @@ export function ElevationView({
             const pEnd = pAlong + pSize;
             // Only draw where the two cabinets actually touch (within 1.5").
             if (Math.abs(nextAlong - pEnd) > 1.5) return null;
-            const { bottom, height } = elevationBox(p, room);
-            const nextBox = elevationBox(next, room);
+            const { bottom, height } = elevationBox(p, room, elevationCabinets);
+            const nextBox = elevationBox(next, room, elevationCabinets);
             const top = Math.max(bottom + height, nextBox.bottom + nextBox.height);
             const base = Math.min(bottom, nextBox.bottom);
             const widthPx = Math.max(3, BATTEN_WIDTH_IN * ppi);

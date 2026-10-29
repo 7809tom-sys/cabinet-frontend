@@ -15,7 +15,7 @@ import { ColorStyleQuickPicker } from "./ColorStyleQuickPicker";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { APPLIANCES, BLIND_CORNER_FILLER_WIDTH_IN, COUNTERTOP_DEPTH_IN, FURNITURE_CATALOG, STD, applianceAppearanceImage, bearsCountertop, isBaseHeightAppliance, blindCornerRearCountertopExtensionIn, blindPullRange, cabinetWall, cabinetWallDragPreview, cornerLegRatioForPlaced, cornerRotationForPlaced, countertopRunFaceNormal, countertopSurfacePlanPolygon, countertopSurfaces, crownBlockingCabinets, crownEligibleCabinets, customWallCabinetSide, drywallPonyWallAppearance, elevationBox, formatEighthInches, formatInches, glassDoorShelfCount, isAgainstWall, isBaseEndCornerCabinet, isCustomRoomWall, isFillerItem, fillerWidthRange, isGlassDoorCabinet, isMicrowaveOverRangePair, isRangeHoodPlacement, isRangeOrOven, isRefrigerator, isStacker, isWallRunDraggable, isWd18CountertopDrawerCabinet, kitchenCrestGenericOpenEndShelfCount, normalizeInstalledFillersToAdjacentCabinets, peninsulaCountertopPonyWallBackExtensionIn, peninsulaCountertopPonyWallBarOverhang, peninsulaCountertopSeatingOverhang, peninsulaCountertopWaterfallEnd, peninsulaLowerWorktopOppositeSideExtensionIn, peninsulaRunEndpoints, placedCornerGeometryKind, placedFootprint, ponyWallMiteredFootprint, ponyWallPlanFrame, potFillerMountedRange, rangeVisualAppearance, refrigeratorBayVerificationMetrics, resolveCabinetHardwarePosition, resolveSwing, roomWallAppearance, seatedWallRunFrame, wallRunFrame, wallAngleEndHandForPlacement, selectedLowerCabinetWallPlacement, sinkPlanDimensions, usesRaisedFloorWallDoorPull, wallCabinetFitMeasure, wallGapFitPreview, wallGapFreehandPreview, wallGaps, wallPlacementAt, wallRunOffset, wallRunSpan, wallSpanMeasure, wallLength, wd18CountertopFaceLayout, type CabinetWallDragPreview, type CountertopSurface, type IslandZone, type PlacedCabinet, type PlacedCornerGeometryKind, type PlacedFurniture, type PonyWall, type PotFillerFixture, rotatedSize, type RoomData, type SinkFixture, type WallCabinetFitMeasure, type WallGapFitPreview, type WallOpening, type WallSide, type WallSpanMeasure, wallTopLimit, } from "@/lib/design";
+import { APPLIANCES, BLIND_CORNER_FILLER_WIDTH_IN, COUNTERTOP_DEPTH_IN, FURNITURE_CATALOG, STD, applianceAppearanceImage, bearsCountertop, isBaseHeightAppliance, blindCornerRearCountertopExtensionIn, blindPullRange, cabinetWall, cabinetWallDragPreview, cornerLegRatioForPlaced, cornerRotationForPlaced, countertopRunFaceNormal, countertopSurfacePlanPolygon, countertopSurfaces, crownBlockingCabinets, crownEligibleCabinets, customWallCabinetSide, drywallPonyWallAppearance, DESK_TOP_HEIGHT_IN, elevationBox, formatEighthInches, formatInches, glassDoorShelfCount, isKneeDrawerItem, isAgainstWall, isBaseEndCornerCabinet, isCustomRoomWall, isFillerItem, fillerWidthRange, isGlassDoorCabinet, isMicrowaveOverRangePair, isRangeHoodPlacement, isRangeOrOven, isRefrigerator, isStacker, isWallRunDraggable, isWd18CountertopDrawerCabinet, kitchenCrestGenericOpenEndShelfCount, normalizeInstalledFillersToAdjacentCabinets, peninsulaCountertopPonyWallBackExtensionIn, peninsulaCountertopPonyWallBarOverhang, peninsulaCountertopSeatingOverhang, peninsulaCountertopWaterfallEnd, peninsulaLowerWorktopOppositeSideExtensionIn, peninsulaRunEndpoints, placedCornerGeometryKind, placedFootprint, ponyWallMiteredFootprint, ponyWallPlanFrame, potFillerMountedRange, rangeVisualAppearance, refrigeratorBayVerificationMetrics, resolveCabinetHardwarePosition, resolveSwing, roomWallAppearance, seatedWallRunFrame, wallRunFrame, wallAngleEndHandForPlacement, selectedLowerCabinetWallPlacement, sinkPlanDimensions, usesRaisedFloorWallDoorPull, wallCabinetFitMeasure, wallGapFitPreview, wallGapFreehandPreview, wallGaps, wallPlacementAt, wallRunOffset, wallRunSpan, wallSpanMeasure, wallLength, wd18CountertopFaceLayout, type CabinetWallDragPreview, type CountertopSurface, type IslandZone, type PlacedCabinet, type PlacedCornerGeometryKind, type PlacedFurniture, type PonyWall, type PotFillerFixture, rotatedSize, type RoomData, type SinkFixture, type WallCabinetFitMeasure, type WallGapFitPreview, type WallOpening, type WallSide, type WallSpanMeasure, wallTopLimit, } from "@/lib/design";
 import { refrigeratorEndPanelCutDownNote } from "@/lib/refrigeratorEndPanelCut";
 import { threeDLatticeRackLayout } from "@/lib/latticeRackLayout";
 import { PLATE_RACK_FRAME_IN, plateRackDividerLayout } from "@/lib/plateRackLayout";
@@ -4009,6 +4009,7 @@ export function addCabinet(
   surfaceTextures?: { countertop?: THREE.Texture | null; suppressCountertop?: boolean; suppressFittedFillerToeKick?: boolean; suppressContinuousBaseToeKick?: boolean; suppressFarmhouseSinkPlaceholder?: boolean; selectedToeKick?: boolean; hardwareStyleId?: HardwareStyleId; hardwareAccent?: string; drawerSampleUrl?: string | null; faceSourceKind?: FaceSourceKind },
 ) {
   const placement = (sku.placementType ?? "base").toLowerCase();
+  const isKneeDrawer = isKneeDrawerItem(sku);
   const isWall = placement === "wall";
   if (surfaceTextures?.faceSourceKind === "combined") doorSampleUrl = null;
   const isTall = placement === "tall";
@@ -4054,7 +4055,9 @@ export function addCabinet(
   const resolvedHeightIn = isFreestandingRange
     ? Math.max(STD.RANGE_COOKING_SURFACE_HEIGHT, configuredHeightIn)
     : configuredHeightIn;
-  const catalogMountBottom = sku.mountBottom != null
+  const catalogMountBottom = isKneeDrawer
+    ? Math.max(0, DESK_TOP_HEIGHT_IN - resolvedHeightIn)
+    : sku.mountBottom != null
     ? numberValue(sku.mountBottom, 0)
     : (isWd18CountertopDrawerCabinet({ masterCode: sku.masterCode, placement })
       ? STD.COUNTERTOP_HEIGHT
@@ -4095,7 +4098,10 @@ export function addCabinet(
   // follow the refrigerator from the finished floor to its top—never the
   // neighboring base's face elevation or toe-kick construction.
   const isFullOwnerEnvelopeFiller = isBaseFillerPiece && sku.fillerMatchesFullOwnerEnvelope === true;
-  const isFloorStandingCabinet = placement !== "appliance"
+  // A knee drawer is only the hanging drawer box. Classifying it as a floor
+  // base would add a toe kick and a carcass through the knee space.
+  const isFloorStandingCabinet = !isKneeDrawer
+    && placement !== "appliance"
     && !isRefrigeratorEndPanel
     && !usesBaseFillerFaceElevation
     && !isFullOwnerEnvelopeFiller
@@ -7125,6 +7131,7 @@ export function threeDBlindCornerFrontLayout(bodyWidth: number, doorSide: "left"
 export function existingCabinetTransform(
   cabinet: PlacedCabinet,
   room?: (Pick<RoomData, "ceilingHeight"> & Partial<Pick<RoomData, "width" | "depth" | "peninsulaRuns" | "customWalls">>) | null,
+  peers?: readonly PlacedCabinet[],
 ) {
   // Placed coordinates are the top-left of the 2D rotation-aware footprint.
   // Using nominal width/depth here offsets rotated runs by up to half a cabinet,
@@ -7153,9 +7160,13 @@ export function existingCabinetTransform(
   // front projects into the room and every back sits against its wall.
   const savedRotationRadians = Number.isFinite(planRotation) ? planRotation * Math.PI / 180 : 0;
   const rotation = threeDRoomFacingRotation(cabinet, room, savedRotationRadians);
-  const sharedElevation = elevationBox(cabinet, room);
+  const sharedElevation = elevationBox(cabinet, room, peers);
   const explicitMountBottom = cabinet.mountBottom == null ? null : numberValue(cabinet.mountBottom, 0);
-  const bottom = cabinet.islandFace && cabinet.mountBottomAdjusted !== true
+  // A knee drawer hangs under the desk. A saved base mount of 0 is the floor
+  // default, not a chosen height, so the shared elevation wins in both views.
+  const bottom = isKneeDrawerItem(cabinet)
+    ? sharedElevation.bottom
+    : cabinet.islandFace && cabinet.mountBottomAdjusted !== true
     ? sharedElevation.bottom
     : cabinet.placement === "wall" || cabinet.placement === "appliance" || explicitMountBottom != null
       ? explicitMountBottom ?? sharedElevation.bottom
@@ -8109,7 +8120,7 @@ export type ThreeDContinuousToeKickSegment = {
  */
 export function threeDContinuousToeKickSegments(placed: PlacedCabinet[], room: RoomData): ThreeDContinuousToeKickSegment[] {
   const candidates = placed.flatMap((cabinet) => {
-    if (cabinet.placement !== "base" || placedCornerGeometryKind(cabinet) !== "standard") return [];
+    if (cabinet.placement !== "base" || isKneeDrawerItem(cabinet) || placedCornerGeometryKind(cabinet) !== "standard") return [];
     const wallId = cabinetWall(cabinet, room);
     if (!wallRunFrame(wallId, room)) return [];
     // A free-standing box in the middle of the room is only *nearest* to this
@@ -11607,7 +11618,7 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
         const cabinetDoorTexture = resolvedPlacedCabinetDoorSampleUrl(cabinet, cabinetDoorSampleUrls, catalogDoorSampleUrl, renderExistingDesign);
 	        const transform = /^HOOD[-_]?/i.test(cabinet.masterCode ?? "")
 	          ? savedRangeHoodTransform(cabinet, renderedPlaced, room)
-          : existingCabinetTransform(cabinet, room);
+          : existingCabinetTransform(cabinet, room, renderedPlaced);
 	        const hasExactFarmhouseFixture = sinks.some((sink) => (
 	          sink.cabinetUid === cabinet.uid
 	          && sink.type === "farmhouse"

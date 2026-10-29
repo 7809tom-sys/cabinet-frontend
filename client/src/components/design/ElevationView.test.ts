@@ -42,6 +42,37 @@ import { CustomProfileFace, DoorFront, ElevationView, isBaseEndAngleCabinet, isR
     expect(markup).toContain("top:50%;height:50%");
   });
 
+	  it("hangs a DKD30 knee drawer under the desk top and leaves the knee space open", () => {
+	    const desk = (uid: string, x: number) => ({
+	      uid, cabinetId: 1, masterCode: "DB30", description: '30" Desk Base', category: "Base", subCategory: "Desk",
+	      placement: "base" as const, x, y: 0, width: 30, height: 30, depth: 24, rotation: 0, numberOfDoors: 1, numberOfDrawers: 1,
+	    });
+	    const markup = renderToStaticMarkup(
+	      createElement(LanguageProvider, null, createElement(ElevationView, {
+	        room: { width: 120, depth: 96, ceilingHeight: 96 },
+	        cabinets: [
+	          desk("desk-left", 0),
+	          {
+	            uid: "dkd30", cabinetId: 30, masterCode: "DKD30", description: "30 inch x 6 inch Knee Drawer Base Cabinet",
+	            category: "Base", subCategory: "Knee Drawer", placement: "base", x: 30, y: 0, width: 30, height: 6, depth: 21, rotation: 0,
+	            numberOfDoors: 0, numberOfDrawers: 1, mountBottom: 0, customProfile: "knee-drawer",
+	          },
+	          desk("desk-right", 60),
+	        ],
+	        selectedUid: null,
+	        onSelect: () => undefined,
+	        wall: "back",
+	      })),
+	    );
+	    // 6-inch drawer, top flush with the 30-inch desks: bottom 24" = 96px at 4px/in.
+	    expect(markup).toContain("bottom:96px;height:24px");
+	    expect(markup).not.toContain("bottom:18px;height:6px");
+	    // Desk bases keep their own toe kicks. The kicks do not bridge the knee opening.
+	    expect(markup).toContain('data-testid="continuous-toe-kick-run"');
+	    expect(markup).toContain("width:112px");
+	    expect(markup).not.toContain("width:352px");
+	  });
+
 	  it("keeps a 34½-inch base envelope as a 30-inch face above a 4½-inch toe kick", () => {
 	    const markup = renderToStaticMarkup(
 	      createElement(LanguageProvider, null, createElement(ElevationView, {
