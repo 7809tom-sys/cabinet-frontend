@@ -14,7 +14,7 @@ describe("Designer programmed photoreal material wiring", () => {
     expect(designToolSource).toContain('const RUSTIC_HICKORY_GRAIN_URL = "/textures/rustic_hickory_vertical_grain_v2.webp";');
     expect(designToolSource).toContain("return designerFacePlan(s, \"base\");");
     expect(designToolSource).toContain("catalogDoorSampleUrl={active3DDoorSampleUrl}");
-    expect(designToolSource).toContain("{paletteFinishSwatch ? (");
+    expect(designToolSource).toContain("photoUrl={paletteFinishSwatch}");
   });
 
 	  it("keeps all staged catalog imagery out of 3D texture props while providing verified Astoria, Bahia, and Acorn flooring maps", () => {

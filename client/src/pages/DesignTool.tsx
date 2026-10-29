@@ -5101,6 +5101,16 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     () => preferredDoorReferenceUrl(activeStyle as { approvedReferenceImageUrl?: string | null; doorSampleImageUrl?: string | null; thumbnailImageUrl?: string | null } | null),
     [activeStyle]
   );
+  const activeStyleDistributorName = useMemo(() => {
+    const styleDistributorId = (activeStyle as { distributorId?: number | null } | null)?.distributorId ?? null;
+    const distributorId = styleDistributorId ?? catalogDistributorId;
+    if (distributorId == null) return null;
+    return distributorNameById.get(distributorId) ?? null;
+  }, [activeStyle, catalogDistributorId, distributorNameById]);
+  const activeDrawerSampleUrl = useMemo(
+    () => preferredDrawerReferenceUrl(activeStyle as { approvedReferenceImageUrl?: string | null; drawerSampleImageUrl?: string | null } | null),
+    [activeStyle],
+  );
   // Auto-suggested Hickory finished-end skins, one per exposed cabinet end.
   // Empty unless the selected finish is Hickory. NOTE: the real skin SKU/price
   // is pending owner confirmation, so these carry pendingSku=true.
@@ -16274,29 +16284,15 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                   editing the cabinet. Falls back to a color chip from the
                   finish palette when the style has no sample photo. */}
               {!masterTracProduct(selectedCab.masterCode) && (paletteFinishSwatch || styleId) && (
-                <div
-                  className="flex items-center gap-1.5 shrink-0"
-                  title={`Door style: ${activeStyleName || "selected style"}`}
-                >
-                  {paletteFinishSwatch ? (
-                    <img
-                      src={paletteFinishSwatch}
-                      alt={`${activeStyleName || "Door"} door sample`}
-                      className="h-9 w-9 rounded border border-border object-cover"
-                      loading="lazy"
-                    />
-                  ) : (
-                    <span
-                      className="flex h-9 w-9 items-center justify-center rounded border text-[8px] font-semibold"
-                      style={{ backgroundColor: activeFinish.face, borderColor: activeFinish.edge, color: activeFinish.label }}
-                    >
-                      {t("dt_cx_door")}
-                    </span>
-                  )}
-                  <span className="hidden md:inline text-[10px] leading-tight text-muted-foreground">
-                    {t("dt_cx_door")}<br /><span className="font-medium text-foreground/80">{activeStyleName || "—"}</span>
-                  </span>
-                </div>
+                <SelectedCabinetDoorIdentity
+                  photoUrl={paletteFinishSwatch}
+                  styleName={activeStyleName}
+                  distributorName={activeStyleDistributorName}
+                  fallbackFace={activeFinish.face}
+                  fallbackEdge={activeFinish.edge}
+                  fallbackLabel={activeFinish.label}
+                  doorLabel={t("dt_cx_door")}
+                />
               )}
 		              <span className="text-[11px] text-muted-foreground">
 		                {t("dt_cx_selected")} <span className="font-mono font-semibold text-foreground">{selectedCab.masterCode}</span>
@@ -16738,26 +16734,15 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                     </div>
                   </div>
                   {(paletteFinishSwatch || styleId) && (
-                    <div
-                      className="flex shrink-0 items-center gap-1.5"
-                      title={`Door style: ${activeStyleName || "selected style"}`}
-                    >
-                      {paletteFinishSwatch ? (
-                        <img
-                          src={paletteFinishSwatch}
-                          alt={`${activeStyleName || "Door"} door sample`}
-                          className="h-10 w-10 rounded border border-border object-cover"
-                          loading="lazy"
-                        />
-                      ) : (
-                        <span
-                          className="flex h-10 w-10 items-center justify-center rounded border text-[8px] font-semibold"
-                          style={{ backgroundColor: activeFinish.face, borderColor: activeFinish.edge, color: activeFinish.label }}
-                        >
-                          {t("dt_cx_door")}
-                        </span>
-                      )}
-                    </div>
+                    <SelectedCabinetDoorIdentity
+                      photoUrl={paletteFinishSwatch}
+                      styleName={activeStyleName}
+                      distributorName={activeStyleDistributorName}
+                      fallbackFace={activeFinish.face}
+                      fallbackEdge={activeFinish.edge}
+                      fallbackLabel={activeFinish.label}
+                      doorLabel={t("dt_cx_door")}
+                    />
                   )}
 	                </div>
 
@@ -22012,7 +21997,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       <Dialog open={catalogSetupOpen} onOpenChange={(open) => { if (open) setCatalogSetupOpen(true); }}>
         <DialogContent
           data-testid="fresh-room-catalog-setup"
-          className="max-w-lg"
+          className="max-h-[min(92vh,900px)] max-w-3xl overflow-y-auto"
           onPointerDownOutside={(event) => event.preventDefault()}
           onInteractOutside={(event) => event.preventDefault()}
         >
@@ -22042,29 +22027,60 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
               {(distributorLabels ?? []).length === 0 && <p className="text-xs text-muted-foreground">Loading available cabinet distributors…</p>}
             </div>
             <div className="space-y-1.5" data-testid="fresh-room-door-style-step">
-              <Label htmlFor="fresh-room-door-style">2. Door style / color</Label>
-              <Select
-                value={styleId == null ? "" : String(styleId)}
-                onValueChange={(value) => setSlotStyle("A", Number(value))}
+              <Label id="fresh-room-door-style-label">2. Door style / color</Label>
+              <fieldset
+                aria-labelledby="fresh-room-door-style-label"
+                aria-label="Choose door style"
                 disabled={catalogDistributorId == null || displayUniqueDoorStyles.length === 0}
+                className="min-w-0 border-0 p-0"
               >
-                <SelectTrigger id="fresh-room-door-style" className="h-11" aria-label="Choose door style" disabled={catalogDistributorId == null || displayUniqueDoorStyles.length === 0}>
-                  <Palette className="mr-2 h-4 w-4 text-[#a87f33]" />
-                  <SelectValue placeholder={catalogDistributorId == null ? "Choose a distributor first" : "Choose a door style"} />
-                </SelectTrigger>
-                <SelectContent className="max-h-[min(65vh,26rem)]">
-                  {displayUniqueDoorStyles.map((style) => (
-                    <SelectItem key={style.id} value={String(style.id)} data-testid="fresh-room-door-style-option">
-                      <span className="flex items-center gap-2.5" aria-label={`${affiliateStyleName(style)} door thumbnail`}>
-                        <DoorStyleSwatch style={style} className="h-12 w-9 shrink-0 rounded border border-border object-cover" />
-                        <span className="min-w-0 truncate">{affiliateStyleName(style)}</span>
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                {catalogDistributorId == null ? (
+                  <p className="rounded-lg border border-dashed border-border bg-neutral-50 px-3 py-6 text-center text-xs text-muted-foreground">Choose a distributor first</p>
+                ) : (
+                  <div className="max-h-[min(42vh,22rem)] overflow-y-auto rounded-lg border border-border bg-neutral-50 p-2">
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                      {displayUniqueDoorStyles.map((style) => {
+                        const name = affiliateStyleName(style);
+                        const photoUrl = preferredDoorReferenceUrl(style);
+                        const selected = styleId === style.id;
+                        return (
+                          <button
+                            key={style.id}
+                            type="button"
+                            data-testid="fresh-room-door-style-option"
+                            aria-label={`${name} door thumbnail`}
+                            aria-pressed={selected}
+                            onClick={() => setSlotStyle("A", style.id)}
+                            className={`flex flex-col overflow-hidden rounded-lg border bg-white text-left transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#192432] ${selected ? "border-[#a87f33] ring-2 ring-[#a87f33]" : "border-border hover:border-[#a87f33]"}`}
+                          >
+                            <DoorSamplePhoto url={photoUrl} alt="" className="h-36 w-full" />
+                            <span className="truncate px-2 py-1.5 text-xs font-medium text-[#192432]">{name}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </fieldset>
               {catalogDistributorId != null && displayUniqueDoorStyles.length === 0 && <p className="text-xs text-amber-700">No door styles are currently available for this distributor.</p>}
             </div>
+            {styleId != null && (
+              <div data-testid="fresh-room-door-style-preview" className="rounded-xl border border-[#d8c7a1] bg-[#fffaf0] p-3">
+                <p className="text-sm font-semibold text-[#192432]">{activeStyleName || "Selected door"}</p>
+                <div className={`mt-2 grid gap-3 ${activeDrawerSampleUrl ? "grid-cols-2" : "grid-cols-1"}`}>
+                  <div>
+                    <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Door</p>
+                    <DoorSamplePhoto url={paletteFinishSwatch} alt={`${activeStyleName || "Door"} door sample`} className="h-52 w-full rounded-lg border border-border" />
+                  </div>
+                  {activeDrawerSampleUrl && (
+                    <div>
+                      <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Drawer</p>
+                      <DoorSamplePhoto url={activeDrawerSampleUrl} alt={`${activeStyleName || "Door"} drawer sample`} className="h-52 w-full rounded-lg border border-border" />
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button
@@ -22594,6 +22610,69 @@ function MobileBarButton({
       </span>
       {label}
     </button>
+  );
+}
+
+function DoorSamplePhoto({ url, alt, className }: { url: string | null; alt: string; className?: string }) {
+  return (
+    <span className={`flex items-center justify-center overflow-hidden bg-neutral-100 ${className ?? ""}`}>
+      {url ? (
+        <img src={url} alt={alt} loading="lazy" className="h-full w-full object-contain" />
+      ) : (
+        <span className="px-2 text-center text-[10px] font-medium text-neutral-500">No photo</span>
+      )}
+    </span>
+  );
+}
+
+function SelectedCabinetDoorIdentity({
+  photoUrl,
+  styleName,
+  distributorName,
+  fallbackFace,
+  fallbackEdge,
+  fallbackLabel,
+  doorLabel,
+}: {
+  photoUrl: string | null;
+  styleName: string | null;
+  distributorName: string | null;
+  fallbackFace: string;
+  fallbackEdge: string;
+  fallbackLabel: string;
+  doorLabel: string;
+}) {
+  return (
+    <div
+      data-testid="selected-cabinet-door-identity"
+      className="flex shrink-0 flex-col items-center gap-0.5"
+      title={`Door style: ${styleName || "selected style"}`}
+    >
+      {photoUrl ? (
+        <img
+          src={photoUrl}
+          alt={`${styleName || "Door"} door sample`}
+          loading="lazy"
+          className="h-16 w-12 rounded border border-neutral-200 bg-white object-contain"
+        />
+      ) : (
+        <span
+          data-testid="selected-cabinet-door-color-chip"
+          className="flex h-16 w-12 items-center justify-center rounded border text-[8px] font-semibold"
+          style={{ backgroundColor: fallbackFace, borderColor: fallbackEdge, color: fallbackLabel }}
+        >
+          {doorLabel}
+        </span>
+      )}
+      <span className="max-w-[4.75rem] truncate text-center text-[10px] font-medium leading-tight text-foreground/80">
+        {styleName || "—"}
+      </span>
+      {distributorName ? (
+        <span data-testid="selected-cabinet-door-distributor" className="max-w-[4.75rem] truncate text-center text-[10px] leading-tight text-muted-foreground">
+          {distributorName}
+        </span>
+      ) : null}
+    </div>
   );
 }
 
