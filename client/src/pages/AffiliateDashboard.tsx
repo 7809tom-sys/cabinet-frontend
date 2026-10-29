@@ -3,6 +3,8 @@ import { Link } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { affiliateDashboardLinks, affiliateDashboardPath, affiliateDesignerPath, affiliateStorefrontUrl } from "@/lib/affiliateStorefrontUrl";
 import { affiliatePortalFallback, resolveAffiliateDashboardSelection } from "@/lib/affiliateDashboardSelection";
+import { AffiliateTierCard } from "@/components/affiliate/AffiliateTierCard";
+import type { AffiliateTierDashboard } from "@shared/affiliatePricingTier";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { AffiliateDashboardLayout, type AffiliateSection } from "@/components/affiliate/AffiliateDashboardLayout";
 import AffiliatePricingPanel from "@/components/affiliate/AffiliatePricingPanel";
@@ -605,6 +607,7 @@ export default function AffiliateDashboard() {
                 {(commissionRate * 100).toFixed(1)}% commission on confirmed orders
               </p>
             </div>
+            <AffiliateTierCard tier={(activeQuery.data as { pricingTier?: AffiliateTierDashboard | null }).pricingTier} />
             {/* KPI cards */}
             <div className="grid gap-4 sm:grid-cols-3">
               {[
