@@ -54,9 +54,11 @@ const trpcHttpOptions = {
     // access token, so every request carries a currently valid token.
     const { data } = await supabase.auth.getSession();
     const token = data.session?.access_token;
-    if (!token) return fetchTrpcJson(input, init);
     const headers = new Headers(init?.headers);
-    headers.set("authorization", `Bearer ${token}`);
+    const testToken = window.sessionStorage.getItem("cd.testAccountToken");
+    if (testToken) headers.set("x-cd-test-account", testToken);
+    if (token) headers.set("authorization", `Bearer ${token}`);
+    if (!token && !testToken) return fetchTrpcJson(input, init);
     return fetchTrpcJson(input, { ...init, headers });
   },
 };

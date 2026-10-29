@@ -21,7 +21,8 @@ import { AffiliateAppointmentsPanel } from "@/components/affiliate/AffiliateAppo
 import { ReferVendorForm } from "@/components/affiliate/ReferVendorForm";
 import { InstallationEstimatesPanel } from "@/components/affiliate/InstallationEstimatesPanel";
 import { SampleOrderDesk } from "@/components/samples/SampleOrderDesk";
-import { getLoginUrl } from "@/const";
+import { PortalSignInChooser } from "@/components/auth/PortalSignInChooser";
+import { OrderTrackingPanel } from "@/components/orders/OrderTrackingPanel";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -286,17 +287,15 @@ function AffiliateLanding() {
           <p className="text-muted-foreground text-lg mt-4 mb-8">
             Join the network. Get your storefront. Start earning.
           </p>
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+          <div className="flex flex-col items-center justify-center gap-4">
             <Link href="/pro-network">
               <Button size="lg" className="bg-[var(--color-navy)] text-white hover:bg-[var(--color-navy)]/90 font-bold text-base px-8 gap-2">
                 Apply to Join <ArrowRight className="h-5 w-5" />
               </Button>
             </Link>
-            <a href={getLoginUrl()}>
-              <Button size="lg" variant="outline" className="gap-2">
-                Already a member? Sign in
-              </Button>
-            </a>
+            <div className="w-full max-w-xl text-left">
+              <PortalSignInChooser />
+            </div>
           </div>
           <p className="text-xs text-muted-foreground mt-6">
             {formatMembershipPrice()}/{AFFILIATE_MEMBERSHIP.billingPeriod} · Free to apply · No inventory required
@@ -691,7 +690,8 @@ export default function AffiliateDashboard() {
         return <SampleOrderDesk mode="affiliate" />;
       case "orders":
         return (
-          <div className="max-w-4xl">
+          <div className="max-w-4xl space-y-8">
+            <OrderTrackingPanel heading="Order status" />
             <h2 className="text-xl font-bold mb-4">Referred Orders</h2>
             {orders.length === 0 ? (
               <div className="rounded-xl border border-dashed border-border p-10 text-center text-muted-foreground">

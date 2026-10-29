@@ -23,6 +23,10 @@ vi.mock("@/lib/trpc", () => ({
         signInDestination: { fetch: vi.fn() },
       },
     }),
+    auth: {
+      testAccountsEnabled: { useQuery: () => ({ data: { enabled: false } }) },
+      testLogin: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
+    },
   },
 }));
 

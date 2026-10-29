@@ -197,9 +197,10 @@ export function CrmBoard({ lang = "en", affiliateId }: { lang?: Lang; affiliateI
     () => ((data?.deals ?? []) as DealRow[]).slice(0, 300).map((deal) => ({ id: deal.id, contactEmail: deal.contactEmail, contactPhone: deal.contactPhone, affiliateId: deal.affiliateId ?? null })),
     [data?.deals],
   );
+  const boardScopeEarly = (data as { scope?: string } | undefined)?.scope;
   const summaries = trpc.affiliateCustomers.summaries.useQuery(
     { deals: summaryDeals },
-    { enabled: summaryDeals.length > 0, retry: false },
+    { enabled: summaryDeals.length > 0 && boardScopeEarly !== "contractor", retry: false },
   );
   const summaryByDeal = (summaries.data?.byDealId ?? {}) as Record<number, CustomerSummary>;
   const filteredDeals = useMemo(() => filterDealsByHelpType(deals, helpFilter), [deals, helpFilter]);

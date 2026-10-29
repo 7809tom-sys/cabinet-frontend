@@ -26,6 +26,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/_core/hooks/useAuth";
 import {
   type PricingTier,
+  resolvePricingFor,
   resolveStorefrontTier,
   resolveTierPrice,
   compareAtPrice,
@@ -617,9 +618,7 @@ export default function CabinetDetail({ masterCode }: Props) {
     if (pricingVisibility === "public") return true;
     if (pricingVisibility === "logged_in") return !!user;
     if (pricingVisibility === "dealer") {
-      const tradeRoles = ["admin", "dealer", "distributor", "partner"];
-      const tradeTiers = ["contractor", "wholesale"];
-      return !!user && (tradeRoles.includes(user.role ?? "") || tradeTiers.includes(user.pricingTier ?? ""));
+      return resolvePricingFor(user).canSeeTradePricing || user?.role === "distributor";
     }
     if (pricingVisibility === "admin") return false; // only admin (handled above)
     return true;
