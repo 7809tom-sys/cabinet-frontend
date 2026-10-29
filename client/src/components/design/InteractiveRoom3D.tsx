@@ -63,6 +63,15 @@ import {
   parseBacksplashSheetInches,
   resolveDesignerMaterialUrl,
 } from "@/lib/backsplashProductMaterial";
+import {
+  THREE_D_NEUTRAL_FLOOR_COLOR,
+  threeDAverageMaterialHex,
+  threeDCuratedIdentityMatches,
+  threeDFlooringFallbackColor,
+  threeDMosaicSheetMap,
+  threeDRetailContentBounds,
+  threeDTextureUrlIsColorMap,
+} from "@/lib/flooringMaterialAppearance";
 
 export { applyThreeDCabinetPieceGrain, threeDPieceGrainTransform };
 
@@ -227,7 +236,7 @@ export function addThreeDProductionLightRig(
   ceiling.lookAt(target);
   ceiling.userData = { productionRenderLight: true, rig: "ceiling", cloneOnly: true };
 
-  const softFill = new THREE.PointLight("#dfeeff", 1.05, Math.max(roomWidth, roomDepth) * 2.4, 2);
+  const softFill = new THREE.PointLight("#f3efe8", 1.05, Math.max(roomWidth, roomDepth) * 2.4, 2);
   softFill.position.set(roomWidth * 0.88, wallHeight * 0.56, roomDepth * 0.82);
   softFill.userData = { productionRenderLight: true, rig: "soft-fill", cloneOnly: true };
 
@@ -914,7 +923,11 @@ interface Props {
   catalogCountertopImageUrl?: string | null;
   catalogIslandCountertopImageUrl?: string | null;
   catalogFlooringImageUrl?: string | null;
+  /** Catalog card photo used only to sample a floor color when no swatch exists. */
+  catalogFlooringCardImageUrl?: string | null;
   catalogBacksplashImageUrl?: string | null;
+  /** Full-sheet mosaic photo used when the approved swatch is a close-up. */
+  catalogBacksplashCardImageUrl?: string | null;
   /** Catalog size string for the selected tile or mosaic sheet, when the product has one. */
   catalogBacksplashSize?: string | null;
   catalogBacksplashCategory?: string | null;
@@ -1078,6 +1091,10 @@ export type ThreeDProductMaterialSource = {
   backsplashGroutJointIn?: number | null;
   /** Selected product has no usable image. Do not paint a generic tile. */
   textureUnavailable?: boolean;
+  /** Flat tint for a missing swatch. Real photos stay white so the map is not recolored. */
+  materialColor?: string | null;
+  /** Drop the white retail field so mosaic chips fill the sheet. */
+  cropRetailBackground?: boolean;
 };
 
 export type ThreeDFlooringPatternKind = "plank" | "tile" | "sheet" | "unknown";
@@ -1136,14 +1153,20 @@ export function threeDProductMaterialSource(
 	role: ThreeDProductSurfaceRole,
 	productName: string | null | undefined,
 	originalUrl: string | null | undefined,
-	surfaceMetadata?: { productId?: number | null; category?: string | null; subCategory?: string | null; size?: string | null },
+	surfaceMetadata?: { productId?: number | null; category?: string | null; subCategory?: string | null; size?: string | null; cardImageUrl?: string | null; sampledColor?: string | null },
 ): ThreeDProductMaterialSource | null {
 	const normalizedName = (productName ?? "").trim().toLowerCase();
 	const productId = surfaceMetadata?.productId ?? null;
 	const flooringProfile = role === "flooring"
 		? threeDFlooringPatternProfile({ name: productName, ...surfaceMetadata })
 		: null;
-	if (role === "flooring" && (normalizedName === "bahia 12mil vinyl flooring" || productId === 82)) {
+	const tileSheet = role === "flooring" && flooringProfile?.kind === "tile"
+		? parseBacksplashSheetInches({ name: productName, size: surfaceMetadata?.size, category: surfaceMetadata?.category, subCategory: surfaceMetadata?.subCategory })
+		: null;
+	const flooringMaterialColor = role === "flooring"
+		? threeDFlooringFallbackColor(surfaceMetadata?.sampledColor)
+		: null;
+	if (role === "flooring" && threeDCuratedIdentityMatches(productName, productId, "bahia 12mil vinyl flooring", 82)) {
     return {
       url: THREE_D_BAHIA_12MIL_FLOOR_URL,
       key: "bahia-12mil-7x48",
@@ -1158,7 +1181,7 @@ export function threeDProductMaterialSource(
       staggerOffsetsIn: THREE_D_PLANK_STAGGER_FRACTIONS.map((fraction) => Math.round(48 * fraction * 8) / 8),
     };
   }
-	if (role === "flooring" && (normalizedName === "acorn 20mil dryback planks" || productId === 40)) {
+	if (role === "flooring" && threeDCuratedIdentityMatches(productName, productId, "acorn 20mil dryback planks", 40)) {
 	  return {
       url: THREE_D_ACORN_20MIL_FLOOR_URL,
       key: "acorn-20mil-7.5x48",
@@ -1173,7 +1196,7 @@ export function threeDProductMaterialSource(
 	    staggerOffsetsIn: THREE_D_PLANK_STAGGER_FRACTIONS.map((fraction) => Math.round(48 * fraction * 8) / 8),
 	  };
 	}
-	if (role === "flooring" && (normalizedName === "astoria 22mil vinyl flooring" || productId === 54)) {
+	if (role === "flooring" && threeDCuratedIdentityMatches(productName, productId, "astoria 22mil vinyl flooring", 54)) {
 	  return {
 	    url: THREE_D_ASTORIA_22MIL_FLOOR_URL,
 	    key: "astoria-22mil-9x60",
@@ -1204,7 +1227,7 @@ export function threeDProductMaterialSource(
       staggerOffsetsIn: null,
     };
   }
-	if (role === "backsplash" && (normalizedName === "desert clay" || productId === 183)) {
+	if (role === "backsplash" && threeDCuratedIdentityMatches(productName, productId, "desert clay", 183)) {
 	  return {
 	    url: THREE_D_DESERT_CLAY_MOSAIC_URL,
       key: "desert-clay-11.81in-interlocking-mosaic",
@@ -1222,43 +1245,49 @@ export function threeDProductMaterialSource(
 	    backsplashGroutJointIn: 1 / 16,
 	  };
 	}
-	if (role === "backsplash" && (normalizedName === "arctic vail" || productId === 47)) {
+	if (role === "backsplash" && threeDCuratedIdentityMatches(productName, productId, "arctic vail", 47)) {
+	  const sheet = threeDMosaicSheetMap(THREE_D_ARCTIC_VAIL_MOSAIC_URL, 10.71, 10.55, surfaceMetadata?.cardImageUrl);
 	  return {
-	    url: THREE_D_ARCTIC_VAIL_MOSAIC_URL,
+	    url: sheet.url,
 	    key: "arctic-vail-10.71in-interlocking-hex-mosaic",
 	    curated: true,
 	    proceduralFallback: false,
-	    physicalWidthIn: 10.71,
-	    physicalDepthIn: 10.55,
+	    cropRetailBackground: sheet.cropRetailBackground,
+	    physicalWidthIn: sheet.widthIn,
+	    physicalDepthIn: sheet.heightIn,
 	    sourceProductName: productName ?? null,
 	    flooringPatternKind: null,
 	    plankWidthIn: null,
 	    plankLengthIn: null,
 	    staggerOffsetsIn: null,
 	    backsplashPatternKind: "interlocking-mosaic",
-	    backsplashModuleIn: 10.71,
+	    backsplashModuleIn: sheet.widthIn,
+	    backsplashModuleHeightIn: sheet.heightIn,
 	    backsplashGroutJointIn: 1 / 16,
 	  };
 	}
-	if (role === "backsplash" && (normalizedName === "carbon hex" || productId === 142)) {
+	if (role === "backsplash" && threeDCuratedIdentityMatches(productName, productId, "carbon hex", 142)) {
+	  const sheet = threeDMosaicSheetMap(THREE_D_CARBON_HEX_MOSAIC_URL, 12.8, 11.1, surfaceMetadata?.cardImageUrl);
 	  return {
-	    url: THREE_D_CARBON_HEX_MOSAIC_URL,
+	    url: sheet.url,
 	    key: "carbon-hex-12.80in-marble-hex-mosaic",
 	    curated: true,
 	    proceduralFallback: false,
-	    physicalWidthIn: 12.8,
-	    physicalDepthIn: 11.1,
+	    cropRetailBackground: sheet.cropRetailBackground,
+	    physicalWidthIn: sheet.widthIn,
+	    physicalDepthIn: sheet.heightIn,
 	    sourceProductName: productName ?? null,
 	    flooringPatternKind: null,
 	    plankWidthIn: null,
 	    plankLengthIn: null,
 	    staggerOffsetsIn: null,
 	    backsplashPatternKind: "interlocking-mosaic",
-	    backsplashModuleIn: 12.8,
+	    backsplashModuleIn: sheet.widthIn,
+	    backsplashModuleHeightIn: sheet.heightIn,
 	    backsplashGroutJointIn: 1 / 16,
 	  };
 	}
-		if (role === "flooring" && (normalizedName === "aveline 20mil vinyl flooring" || productId === 73)) {
+		if (role === "flooring" && threeDCuratedIdentityMatches(productName, productId, "aveline 20mil vinyl flooring", 73)) {
     return {
 	      url: THREE_D_AVELINE_20MIL_FLOOR_URL,
 	      key: "aveline-20mil-7x48",
@@ -1273,7 +1302,7 @@ export function threeDProductMaterialSource(
       staggerOffsetsIn: THREE_D_PLANK_STAGGER_FRACTIONS.map((fraction) => Math.round(48 * fraction * 8) / 8),
     };
   }
-	if (role === "backsplash" && (normalizedName === "carrara subway" || productId === 144)) {
+	if (role === "backsplash" && threeDCuratedIdentityMatches(productName, productId, "carrara subway", 144)) {
 		return {
 			url: THREE_D_CARRARA_SUBWAY_MOSAIC_URL,
 			key: "carrara-subway-11.97in-running-bond-mosaic",
@@ -1291,7 +1320,7 @@ export function threeDProductMaterialSource(
 			backsplashGroutJointIn: 1 / 16,
 		};
 	}
-	if (role === "backsplash" && (normalizedName === "cloudline marble" || productId === 149)) {
+	if (role === "backsplash" && threeDCuratedIdentityMatches(productName, productId, "cloudline marble", 149)) {
 		return {
 			url: THREE_D_CLOUDLINE_MARBLE_MOSAIC_URL,
 			key: "cloudline-marble-11.81in-staggered-glass-marble-mosaic",
@@ -1309,7 +1338,7 @@ export function threeDProductMaterialSource(
 			backsplashGroutJointIn: 1 / 16,
 		};
 	}
-	if (role === "backsplash" && (normalizedName === "concord square" || productId === 164)) {
+	if (role === "backsplash" && threeDCuratedIdentityMatches(productName, productId, "concord square", 164)) {
 		return {
 			url: THREE_D_CONCORD_SQUARE_MOSAIC_URL,
 			key: "concord-square-11.81in-glass-marble-mosaic",
@@ -1327,7 +1356,7 @@ export function threeDProductMaterialSource(
 			backsplashGroutJointIn: 1 / 16,
 		};
 	}
-	if (role === "backsplash" && (normalizedName === "glacier shift" || productId === 242)) {
+	if (role === "backsplash" && threeDCuratedIdentityMatches(productName, productId, "glacier shift", 242)) {
 		return {
 			url: THREE_D_GLACIER_SHIFT_HERRINGBONE_URL,
 			key: "glacier-shift-12.05in-recycled-glass-herringbone",
@@ -1345,7 +1374,7 @@ export function threeDProductMaterialSource(
 			backsplashGroutJointIn: 1 / 16,
 		};
 	}
-	if (role === "backsplash" && (normalizedName === "golden trace" || productId === 244)) {
+	if (role === "backsplash" && threeDCuratedIdentityMatches(productName, productId, "golden trace", 244)) {
 		return {
 			url: THREE_D_GOLDEN_TRACE_MOSAIC_URL,
 			key: "golden-trace-11.81in-marble-aluminum-mosaic",
@@ -1373,7 +1402,8 @@ export function threeDProductMaterialSource(
 			category: surfaceMetadata?.category,
 			subCategory: surfaceMetadata?.subCategory,
 		});
-		if (!originalUrl?.trim()) {
+		const backsplashUrl = originalUrl?.trim() && threeDTextureUrlIsColorMap(originalUrl) ? originalUrl.trim() : "";
+		if (!backsplashUrl) {
 			return {
 				url: "",
 				key: "backsplash-image-unavailable",
@@ -1393,11 +1423,12 @@ export function threeDProductMaterialSource(
 			};
 		}
 		return {
-			url: originalUrl.trim(),
+			url: backsplashUrl,
 			key: productId != null ? `catalog-backsplash:${productId}` : `catalog-backsplash:${normalizedName || "selected"}`,
 			curated: false,
 			proceduralFallback: false,
 			textureUnavailable: false,
+			cropRetailBackground: true,
 			physicalWidthIn: sheet.widthIn,
 			physicalDepthIn: sheet.heightIn,
 			sourceProductName: productName,
@@ -1410,15 +1441,17 @@ export function threeDProductMaterialSource(
 			backsplashModuleHeightIn: sheet.heightIn,
 		};
 	}
-	if (!originalUrl) {
+	const usableUrl = originalUrl && threeDTextureUrlIsColorMap(originalUrl) ? originalUrl.trim() : "";
+	if (!usableUrl) {
 		if (!productName?.trim()) return null;
 		return {
 			url: "",
 			key: `representative-${role}`,
 			curated: false,
 			proceduralFallback: true,
-			physicalWidthIn: role === "countertop" ? 138 : null,
-			physicalDepthIn: role === "countertop" ? 79 : null,
+			materialColor: flooringMaterialColor,
+			physicalWidthIn: role === "countertop" ? 138 : tileSheet?.widthIn ?? null,
+			physicalDepthIn: role === "countertop" ? 79 : tileSheet?.heightIn ?? null,
 			sourceProductName: productName,
 			flooringPatternKind: flooringProfile?.kind ?? null,
 			plankWidthIn: flooringProfile?.plankWidthIn ?? null,
@@ -1427,12 +1460,13 @@ export function threeDProductMaterialSource(
 		};
 	}
 	return {
-	  url: originalUrl,
+	  url: usableUrl,
 	  key: null,
 	  curated: false,
 	  proceduralFallback: false,
-	  physicalWidthIn: null,
-    physicalDepthIn: null,
+	  cropRetailBackground: role === "flooring" && flooringProfile?.kind === "tile",
+	  physicalWidthIn: tileSheet?.widthIn ?? null,
+    physicalDepthIn: tileSheet?.heightIn ?? null,
     sourceProductName: productName ?? null,
     flooringPatternKind: flooringProfile?.kind ?? null,
     plankWidthIn: flooringProfile?.plankWidthIn ?? null,
@@ -1441,23 +1475,16 @@ export function threeDProductMaterialSource(
 	};
 }
 
-/** Stable seed used only to vary a neutral representative material preview. */
-function threeDMaterialPreviewSeed(value: string | null | undefined) {
-	return Array.from(value ?? "").reduce((seed, char) => ((seed * 31) + char.charCodeAt(0)) >>> 0, 2166136261);
-}
-
 /**
- * In-memory neutral material fields retain visual surface feedback while a
- * selected catalog product awaits an admin-approved material-only swatch. They
- * cannot contain retail labels, framed samples, room photography, or geometry.
+ * Grayscale stand-in while a selected product awaits an approved swatch.
+ * The mesh color supplies the product tint. This canvas must not invent a
+ * green, blue, purple, or black hue from the product name.
  */
 function threeDRepresentativeSurfaceTexture(role: ThreeDProductSurfaceRole, source: ThreeDProductMaterialSource): THREE.CanvasTexture | null {
 	if (typeof document === "undefined") return null;
 	const canvas = document.createElement("canvas");
 	const context = canvas.getContext("2d");
 	if (!context) return null;
-	const seed = threeDMaterialPreviewSeed(source.sourceProductName);
-	const tone = seed % 18;
 
 	if (role === "flooring" && source.flooringPatternKind === "plank") {
 		const profile = threeDPlankAtlasProfile(source.plankWidthIn ?? 7, source.plankLengthIn ?? 48);
@@ -1466,8 +1493,8 @@ function threeDRepresentativeSurfaceTexture(role: ThreeDProductSurfaceRole, sour
 		const rowHeight = canvas.height / profile.rows;
 		const boardWidth = canvas.width / profile.columns;
 		for (let row = 0; row < profile.rows; row += 1) {
-			const lightness = 34 + ((tone + row * 5) % 14);
-			context.fillStyle = `hsl(${25 + ((seed + row * 7) % 24)} ${20 + (seed % 12)}% ${lightness}%)`;
+			const shade = 214 + (row % 3) * 8;
+			context.fillStyle = `rgb(${shade}, ${shade}, ${shade})`;
 			context.fillRect(0, row * rowHeight, canvas.width, rowHeight);
 			const offset = (profile.staggerOffsetsIn[row] / (source.plankLengthIn ?? 48)) * boardWidth;
 			context.strokeStyle = "rgba(48,35,24,0.48)";
@@ -1487,7 +1514,7 @@ function threeDRepresentativeSurfaceTexture(role: ThreeDProductSurfaceRole, sour
 		// construction rhythm without turning into a plank or a blank color.
 		canvas.width = 240;
 		canvas.height = 240;
-		context.fillStyle = `hsl(${24 + (seed % 28)} ${8 + (seed % 11)}% ${69 + (tone % 17)}%)`;
+		context.fillStyle = "#e4e0d8";
 		context.fillRect(0, 0, canvas.width, canvas.height);
 		context.strokeStyle = "rgba(83,78,71,0.5)";
 		context.lineWidth = 4;
@@ -1506,7 +1533,7 @@ function threeDRepresentativeSurfaceTexture(role: ThreeDProductSurfaceRole, sour
 	} else if (role === "backsplash") {
 		canvas.width = 240;
 		canvas.height = 240;
-		context.fillStyle = `hsl(${30 + (seed % 26)} ${9 + (seed % 12)}% ${78 + (tone % 11)}%)`;
+		context.fillStyle = "#efeae3";
 		context.fillRect(0, 0, canvas.width, canvas.height);
 		context.strokeStyle = "rgba(91,86,79,0.46)";
 		context.lineWidth = 5;
@@ -1520,12 +1547,12 @@ function threeDRepresentativeSurfaceTexture(role: ThreeDProductSurfaceRole, sour
 	} else if (role === "countertop") {
 		canvas.width = 690;
 		canvas.height = 395;
-		context.fillStyle = `hsl(${28 + (seed % 24)} ${7 + (seed % 10)}% ${74 + (tone % 13)}%)`;
+		context.fillStyle = "#e7e2da";
 		context.fillRect(0, 0, canvas.width, canvas.height);
 		for (let vein = 0; vein < 7; vein += 1) {
-			const y = 30 + ((seed >>> (vein % 16)) % Math.max(1, canvas.height - 60));
+			const y = 30 + ((vein * 47) % Math.max(1, canvas.height - 60));
 			context.strokeStyle = vein % 2 ? "rgba(121,111,99,0.26)" : "rgba(255,255,255,0.46)";
-			context.lineWidth = 1.2 + ((seed + vein) % 3);
+			context.lineWidth = 1.2 + (vein % 3);
 			context.beginPath();
 			context.moveTo(-30, y);
 			context.bezierCurveTo(canvas.width * 0.24, y - 44, canvas.width * 0.66, y + 48, canvas.width + 30, y + ((vein % 3) - 1) * 32);
@@ -1534,7 +1561,7 @@ function threeDRepresentativeSurfaceTexture(role: ThreeDProductSurfaceRole, sour
 	} else {
 		canvas.width = 320;
 		canvas.height = 320;
-		context.fillStyle = `hsl(${25 + (seed % 25)} 13% ${63 + (tone % 16)}%)`;
+		context.fillStyle = "#e6e1d8";
 		context.fillRect(0, 0, canvas.width, canvas.height);
 	}
 	const texture = new THREE.CanvasTexture(canvas);
@@ -1558,6 +1585,16 @@ export function threeDProductSurfaceTextureTransform(
       offsetX: 0,
       offsetY: 0,
       rotation: rotateForLongRoom ? Math.PI / 2 : 0,
+    };
+  }
+  if (role === "flooring" && source.flooringPatternKind === "tile" && source.physicalWidthIn && source.physicalDepthIn) {
+    return {
+      wrap: "repeat" as const,
+      repeatX: Math.max(0.01, widthIn / source.physicalWidthIn),
+      repeatY: Math.max(0.01, depthIn / source.physicalDepthIn),
+      offsetX: 0,
+      offsetY: 0,
+      rotation: 0,
     };
   }
   if (role === "flooring" && source.flooringPatternKind === "plank" && source.plankWidthIn && source.plankLengthIn) {
@@ -1762,6 +1799,53 @@ function normalizedThreeDBacksplashTileImage(
     canvasSide,
     canvasSide,
   );
+  return canvas;
+}
+
+function imagePixelSize(source: CanvasImageSource & { width?: number; height?: number; naturalWidth?: number; naturalHeight?: number }) {
+  const width = Number(source.naturalWidth || source.width || 0);
+  const height = Number(source.naturalHeight || source.height || 0);
+  return { width, height };
+}
+
+function readImagePixels(source: CanvasImageSource & { width?: number; height?: number; naturalWidth?: number; naturalHeight?: number }) {
+  const { width, height } = imagePixelSize(source);
+  if (!width || !height || typeof document === "undefined") return null;
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) return null;
+  context.drawImage(source, 0, 0, width, height);
+  return { width, height, data: context.getImageData(0, 0, width, height).data, canvas, context };
+}
+
+/** Sample a product picture for the floor tint. The picture itself is not tiled. */
+function sampleThreeDImageColor(source: CanvasImageSource & { width?: number; height?: number; naturalWidth?: number; naturalHeight?: number }): string | null {
+  const pixels = readImagePixels(source);
+  if (!pixels) return null;
+  return threeDAverageMaterialHex(pixels.data, pixels.width, pixels.height);
+}
+
+/**
+ * Cut the white retail field off a mosaic or tile photo so the chips fill the
+ * sheet. A full-bleed sheet is left alone.
+ */
+function croppedThreeDRetailImage(
+  source: HTMLImageElement,
+  maxDimension: number,
+): HTMLImageElement | HTMLCanvasElement {
+  const pixels = readImagePixels(source);
+  if (!pixels) return source;
+  const bounds = threeDRetailContentBounds(pixels.data, pixels.width, pixels.height);
+  if (!bounds) return source;
+  const scale = Math.min(1, maxDimension / Math.max(bounds.width, bounds.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(bounds.width * scale));
+  canvas.height = Math.max(1, Math.round(bounds.height * scale));
+  const context = canvas.getContext("2d");
+  if (!context) return source;
+  context.drawImage(source, bounds.x, bounds.y, bounds.width, bounds.height, 0, 0, canvas.width, canvas.height);
   return canvas;
 }
 
@@ -10809,7 +10893,7 @@ export function attachAutoDesignWiggleSprite(owner: THREE.Object3D, label: strin
   owner.add(sprite);
 }
 
-export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick = false, roomOverride, openings = [], sinks = [], potFillers = [], island = null, islandFocusRequest = null, furniture = [], selectedFurnitureUid = null, onSelectFurniture, onRemoveFurniture, onRotateFurniture, onOpenFurnitureAttributes, ponyWalls = [], orderSummary, orderLines = [], initialPresentation, catalogFinishOverride, renderExposure = null, colorDeltaEMax = null, doorSwatchHex = null, doorSwatchCode = null, cabinetFinishPreviewOptions = [], doorStyleChoices = [], selectedDoorStyleId = null, onDoorStyleChange, cabinetFinishOverrides, cabinetDoorProfiles, cabinetDoorSampleUrls, cabinetDrawerSampleUrls, cabinetFaceSourceKinds, cabinetFrontVisuals, catalogDoorSampleUrl, catalogDrawerSampleUrl, catalogFaceSourceKind, catalogRoomSceneUrl, catalogDoorProfile, windowSceneKind = DEFAULT_WINDOW_SCENE_KIND, windowFrameStyle = "white", hardwareStyleId = "none", hardwareAccent, onHardwareStyleChange, catalogFinishName, catalogFinishProductId, catalogIslandCabinetName, catalogIslandCabinetColor, catalogIslandCabinetProductId, catalogIslandDoorSampleUrl, catalogCountertopName, catalogCountertopProductId, catalogCountertopReferenceUrl, catalogIslandCountertopName, catalogIslandCountertopProductId, catalogIslandCountertopReferenceUrl, catalogFlooringName, catalogFlooringProductId, catalogFlooringReferenceUrl, catalogFlooringCategory, catalogFlooringSubCategory, catalogFlooringSize, catalogBacksplashName, catalogBacksplashProductId, catalogBacksplashReferenceUrl, catalogHardwareReferenceUrl, catalogHardwareName, savedDesignId, savedDesignRevision, canAffiliateGeminiImageTest = false, isCurrentPlanSaved = false, savedPlanFingerprintPayload = null, backsplashHeightMode = "standard", countertopBacksplashHeightIn = 0, catalogCountertopColor, catalogIslandCountertopColor, catalogCountertopImageUrl, catalogIslandCountertopImageUrl, catalogFlooringImageUrl, catalogBacksplashImageUrl, catalogBacksplashSize = null, catalogBacksplashCategory = null, catalogBacksplashSubCategory = null, shareContext, catalogItems = [], catalogDragItem = null, catalogDropWall, onAddCatalogItem, onAddRangeHood, onSaveToAccount, onSyncCart, onPresentationChange, onRoomWallHeightChange, onRoomWallHeightsChange, onMoveCabinet, onMoveCabinetTo, selectedCabinetUid, attributesTargetUid = null, missingPriceUids, onSelectCabinet, onOpenCabinetEditor, onSelectOpening, onOpenWindowEditor, onOpenDoorEditor, onRequestFiller, onSnapGlassCabinetToFront, onRotateCabinet, onRemoveCabinet, showWallLayer, onToggleWallLayer, temporaryPreviewMessage, onClearTemporaryPreview, temporaryPreviewCounter, temporaryPreviewTransitionKey, fillerInsertionTransition, cabinetConfigHref, embedded = false, cutawayRoomWalls = true, hybridPlanUnderlay = false, className, onGeometryRendered, autoDesignWiggleMoves = NO_AUTO_DESIGN_WIGGLE_MOVES }: Props) {
+export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick = false, roomOverride, openings = [], sinks = [], potFillers = [], island = null, islandFocusRequest = null, furniture = [], selectedFurnitureUid = null, onSelectFurniture, onRemoveFurniture, onRotateFurniture, onOpenFurnitureAttributes, ponyWalls = [], orderSummary, orderLines = [], initialPresentation, catalogFinishOverride, renderExposure = null, colorDeltaEMax = null, doorSwatchHex = null, doorSwatchCode = null, cabinetFinishPreviewOptions = [], doorStyleChoices = [], selectedDoorStyleId = null, onDoorStyleChange, cabinetFinishOverrides, cabinetDoorProfiles, cabinetDoorSampleUrls, cabinetDrawerSampleUrls, cabinetFaceSourceKinds, cabinetFrontVisuals, catalogDoorSampleUrl, catalogDrawerSampleUrl, catalogFaceSourceKind, catalogRoomSceneUrl, catalogDoorProfile, windowSceneKind = DEFAULT_WINDOW_SCENE_KIND, windowFrameStyle = "white", hardwareStyleId = "none", hardwareAccent, onHardwareStyleChange, catalogFinishName, catalogFinishProductId, catalogIslandCabinetName, catalogIslandCabinetColor, catalogIslandCabinetProductId, catalogIslandDoorSampleUrl, catalogCountertopName, catalogCountertopProductId, catalogCountertopReferenceUrl, catalogIslandCountertopName, catalogIslandCountertopProductId, catalogIslandCountertopReferenceUrl, catalogFlooringName, catalogFlooringProductId, catalogFlooringReferenceUrl, catalogFlooringCategory, catalogFlooringSubCategory, catalogFlooringSize, catalogBacksplashName, catalogBacksplashProductId, catalogBacksplashReferenceUrl, catalogHardwareReferenceUrl, catalogHardwareName, savedDesignId, savedDesignRevision, canAffiliateGeminiImageTest = false, isCurrentPlanSaved = false, savedPlanFingerprintPayload = null, backsplashHeightMode = "standard", countertopBacksplashHeightIn = 0, catalogCountertopColor, catalogIslandCountertopColor, catalogCountertopImageUrl, catalogIslandCountertopImageUrl, catalogFlooringImageUrl, catalogFlooringCardImageUrl = null, catalogBacksplashImageUrl, catalogBacksplashCardImageUrl = null, catalogBacksplashSize = null, catalogBacksplashCategory = null, catalogBacksplashSubCategory = null, shareContext, catalogItems = [], catalogDragItem = null, catalogDropWall, onAddCatalogItem, onAddRangeHood, onSaveToAccount, onSyncCart, onPresentationChange, onRoomWallHeightChange, onRoomWallHeightsChange, onMoveCabinet, onMoveCabinetTo, selectedCabinetUid, attributesTargetUid = null, missingPriceUids, onSelectCabinet, onOpenCabinetEditor, onSelectOpening, onOpenWindowEditor, onOpenDoorEditor, onRequestFiller, onSnapGlassCabinetToFront, onRotateCabinet, onRemoveCabinet, showWallLayer, onToggleWallLayer, temporaryPreviewMessage, onClearTemporaryPreview, temporaryPreviewCounter, temporaryPreviewTransitionKey, fillerInsertionTransition, cabinetConfigHref, embedded = false, cutawayRoomWalls = true, hybridPlanUnderlay = false, className, onGeometryRendered, autoDesignWiggleMoves = NO_AUTO_DESIGN_WIGGLE_MOVES }: Props) {
   const previewRootRef = useRef<HTMLElement>(null);
   const mountRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -11369,6 +11453,7 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 	    const hasRoomWallAppearance = Boolean(roomOverride?.wallAppearance);
 	    const textureLoader = new THREE.TextureLoader();
 	    let disposed = false;
+	    let floorMaterial: THREE.MeshPhysicalMaterial | null = null;
 	    let backsplashRoot: THREE.Group | null = null;
 	    let backsplashImageFailed = false;
 	    const hideFailedBacksplash = () => {
@@ -11402,10 +11487,10 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 	            source.plankLengthIn,
 	            renderQuality.tier === "mobile" ? 768 : 1024,
 	          );
-	        } else if (role === "backsplash") {
-	          (loadedTexture as THREE.Texture<HTMLImageElement | HTMLCanvasElement>).image = normalizedThreeDBacksplashTileImage(
+	        } else if (role === "backsplash" || source.cropRetailBackground || (role === "flooring" && source.flooringPatternKind === "tile")) {
+	          (loadedTexture as THREE.Texture<HTMLImageElement | HTMLCanvasElement>).image = croppedThreeDRetailImage(
 	            loadedTexture.image,
-	            renderQuality.tier === "mobile" ? 384 : 640,
+	            renderQuality.tier === "mobile" ? 768 : 1280,
 	          );
 	        } else if (!source.curated) {
 	          (loadedTexture as THREE.Texture<HTMLImageElement | HTMLCanvasElement>).image = normalizedThreeDSurfaceImage(
@@ -11420,6 +11505,14 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 	        }
 	        loadedTexture.needsUpdate = true;
 	      }, undefined, () => {
+	        if (role === "flooring") {
+	          if (floorMaterial) {
+	            floorMaterial.map = null;
+	            floorMaterial.color.set(source.materialColor || THREE_D_NEUTRAL_FLOOR_COLOR);
+	            floorMaterial.needsUpdate = true;
+	          }
+	          return;
+	        }
 	        if (role !== "backsplash" || disposed) return;
 	        backsplashImageFailed = true;
 	        setBacksplashTextureWarning(backsplashTextureWarningMessage(source.sourceProductName, "failed"));
@@ -11427,7 +11520,11 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 	      });
 	      if (!texture) return null;
 	      texture.colorSpace = THREE.SRGBColorSpace;
-	      texture.anisotropy = Math.min(renderQuality.maxAnisotropy, renderer.capabilities.getMaxAnisotropy());
+	      texture.generateMipmaps = true;
+	      texture.minFilter = THREE.LinearMipmapLinearFilter;
+	      texture.magFilter = THREE.LinearFilter;
+	      const anisotropyCap = role === "flooring" || role === "backsplash" ? 16 : renderQuality.maxAnisotropy;
+	      texture.anisotropy = Math.min(anisotropyCap, renderer.capabilities.getMaxAnisotropy());
 	      const transform = threeDProductSurfaceTextureTransform(role, source, widthIn, depthIn);
 	      texture.wrapS = transform.wrap === "repeat" ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
 	      texture.wrapT = transform.wrap === "repeat" ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
@@ -11462,6 +11559,7 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 	      category: catalogFlooringCategory,
 	      subCategory: catalogFlooringSubCategory,
 	      size: catalogFlooringSize,
+	      cardImageUrl: catalogFlooringCardImageUrl,
 	    });
 		    const countertopSource = threeDProductMaterialSource("countertop", catalogCountertopName, catalogCountertopImageUrl);
 		    const islandCountertopSource = threeDProductMaterialSource(
@@ -11474,6 +11572,7 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 	      category: catalogBacksplashCategory,
 	      subCategory: catalogBacksplashSubCategory,
 	      size: catalogBacksplashSize,
+	      cardImageUrl: catalogBacksplashCardImageUrl,
 	    });
 	    setBacksplashTextureWarning(backsplashSource?.textureUnavailable
 	      ? backsplashTextureWarningMessage(backsplashSource.sourceProductName, "missing")
@@ -11501,12 +11600,19 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
       : roomPolygon(activeThreeDRoomGeometry(roomOverride, scene.roomShape), room.width, room.depth);
 	    const floorShape = new THREE.Shape(polygon);
 	    const floorGeometry = normalizeThreeDPlanarUv(new THREE.ExtrudeGeometry(floorShape, { depth: 0.08, bevelEnabled: false }));
-	    const floorMaterial = new THREE.MeshPhysicalMaterial({
-	      color: floorTexture ? "#ffffff" : materialDefaults.floor,
+	    const floorTint = floorSource?.proceduralFallback
+	      ? (floorSource.materialColor || THREE_D_NEUTRAL_FLOOR_COLOR)
+	      : (floorTexture ? "#ffffff" : (floorSource?.materialColor || materialDefaults.floor || THREE_D_NEUTRAL_FLOOR_COLOR));
+	    const floorSurfaceMaterial = new THREE.MeshPhysicalMaterial({
+	      color: floorTint,
 	      map: floorTexture,
+	      polygonOffset: true,
+	      polygonOffsetFactor: 1,
+	      polygonOffsetUnits: 1,
 	      ...threeDPhysicalSurfaceProfile("flooring", Boolean(floorTexture)),
 	    });
-	    floorMaterial.userData = {
+	    floorMaterial = floorSurfaceMaterial;
+	    floorSurfaceMaterial.userData = {
 	      selectedSurfaceRole: "flooring",
 	      usesAuthoritativeProductImage: Boolean(floorSource && !floorSource.proceduralFallback),
 	      representativePreview: Boolean(floorSource?.proceduralFallback),
@@ -11514,12 +11620,26 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 	    };
 	    const floor = new THREE.Mesh(
 	      floorGeometry,
-	      floorMaterial,
+	      floorSurfaceMaterial,
 	    );
     floor.rotation.x = -Math.PI / 2;
     floor.position.y = -0.08;
     floor.receiveShadow = true;
     threeScene.add(floor);
+    if (floorSource?.proceduralFallback && catalogFlooringCardImageUrl?.trim()) {
+      const cardAsset = resolveDesignerMaterialUrl(catalogFlooringCardImageUrl, typeof window !== "undefined" ? window.location.origin : null);
+      if (cardAsset) {
+        if (cardAsset.crossOrigin) textureLoader.setCrossOrigin(cardAsset.crossOrigin);
+        textureLoader.load(cardAsset.url, (cardTexture) => {
+          if (disposed || !floorMaterial) return;
+          const sampled = sampleThreeDImageColor(cardTexture.image);
+          cardTexture.dispose();
+          if (!sampled) return;
+          floorMaterial.color.set(sampled);
+          floorMaterial.needsUpdate = true;
+        });
+      }
+    }
     if (hybridPlanUnderlay && roomOverride) {
       const underlayGeometry = new THREE.ShapeGeometry(floorShape);
       underlayGeometry.computeBoundingBox();
@@ -11844,7 +11964,7 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
       if (controlsRef.current === controls) controlsRef.current = null;
       if (catalogRootRef.current === catalogRoot) catalogRootRef.current = null;
     };
-  }, [scene, validSuggestions, placed, crown, toeKick, roomOverride, openings, sinks, potFillers, island, furniture, selectedFurnitureUid, ponyWalls, renderExistingDesign, resetKey, cameraPreset, showRoomContext, showSolidFrontWalls, cutawayRoomWalls, hybridPlanUnderlay, wallHeightIn, wallHeights, resolvedCabinetFinish, studioLights, cabinetPreviewFinishId, cabinetFinishOverrides, cabinetDoorProfiles, cabinetDoorSampleUrls, cabinetDrawerSampleUrls, cabinetFaceSourceKinds, cabinetFrontVisuals, catalogDrawerSampleUrl, catalogFaceSourceKind, countertopFinish, cabinetFinish, catalogDoorSampleUrl, catalogRoomSceneUrl, hardwareStyleId, hardwareAccent, catalogCountertopName, catalogCountertopProductId, catalogIslandCountertopName, catalogIslandCountertopProductId, catalogIslandCountertopColor, catalogFlooringName, catalogFlooringProductId, catalogFlooringCategory, catalogFlooringSubCategory, catalogFlooringSize, catalogBacksplashName, catalogBacksplashProductId, catalogBacksplashSize, catalogBacksplashCategory, catalogBacksplashSubCategory, backsplashHeightMode, countertopBacksplashHeightIn, catalogCountertopImageUrl, catalogIslandCountertopImageUrl, catalogFlooringImageUrl, catalogBacksplashImageUrl, autoDesignWiggleMoves]);
+  }, [scene, validSuggestions, placed, crown, toeKick, roomOverride, openings, sinks, potFillers, island, furniture, selectedFurnitureUid, ponyWalls, renderExistingDesign, resetKey, cameraPreset, showRoomContext, showSolidFrontWalls, cutawayRoomWalls, hybridPlanUnderlay, wallHeightIn, wallHeights, resolvedCabinetFinish, studioLights, cabinetPreviewFinishId, cabinetFinishOverrides, cabinetDoorProfiles, cabinetDoorSampleUrls, cabinetDrawerSampleUrls, cabinetFaceSourceKinds, cabinetFrontVisuals, catalogDrawerSampleUrl, catalogFaceSourceKind, countertopFinish, cabinetFinish, catalogDoorSampleUrl, catalogRoomSceneUrl, hardwareStyleId, hardwareAccent, catalogCountertopName, catalogCountertopProductId, catalogIslandCountertopName, catalogIslandCountertopProductId, catalogIslandCountertopColor, catalogFlooringName, catalogFlooringProductId, catalogFlooringCategory, catalogFlooringSubCategory, catalogFlooringSize, catalogBacksplashName, catalogBacksplashProductId, catalogBacksplashSize, catalogBacksplashCategory, catalogBacksplashSubCategory, backsplashHeightMode, countertopBacksplashHeightIn, catalogCountertopImageUrl, catalogIslandCountertopImageUrl, catalogFlooringImageUrl, catalogFlooringCardImageUrl, catalogBacksplashImageUrl, catalogBacksplashCardImageUrl, autoDesignWiggleMoves]);
 	  // A catalog filler has already passed geometry/collision validation before this
 	  // cue runs. Animate only its visual group, so the final coordinates and the
 	  // saved plan remain authoritative while the user sees it settle into the seam.
