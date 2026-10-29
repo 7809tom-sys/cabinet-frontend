@@ -1,0 +1,674 @@
+From d15c111a6dffce83bcc09992a8c975198c3dbfc5 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Thu, 29 Oct 2026 22:30:18 +0000
+Subject: [PATCH] Resolve a CRM invoice recipient when the lead has no email.
+
+Fall back to the linked order, the stored Stripe checkout email, the customer account, then a live Stripe lookup that fails soft. Copy a missing order email onto the lead at New Sale, and save the address used to send the invoice.
+---
+ server/lib/crmPipelineAttach.ts           |   7 +-
+ server/lib/invoiceRecipient.test.ts       | 122 +++++++++++
+ server/lib/invoiceRecipient.ts            | 255 ++++++++++++++++++++++
+ server/lib/orderCrmSale.test.ts           |  43 ++++
+ server/lib/orderCrmSale.ts                |  32 ++-
+ server/lib/orderSideEffects.hooks.test.ts |   3 +
+ server/lib/orderSideEffects.ts            |  13 +-
+ server/routers/crm.ts                     |  24 +-
+ 8 files changed, 489 insertions(+), 10 deletions(-)
+ create mode 100644 server/lib/invoiceRecipient.test.ts
+ create mode 100644 server/lib/invoiceRecipient.ts
+
+diff --git a/server/lib/crmPipelineAttach.ts b/server/lib/crmPipelineAttach.ts
+index b60630a..f5602da 100644
+--- a/server/lib/crmPipelineAttach.ts
++++ b/server/lib/crmPipelineAttach.ts
+@@ -2,6 +2,7 @@ import { and, desc, eq, isNull, sql } from "drizzle-orm";
+ import { crmDeals } from "../../drizzle/schema";
+ import type { getDb } from "../db";
+ import { pickPipelineDeal, type PipelineCandidate } from "@shared/crmMailbox";
++import { contactEmailToBackfill } from "./invoiceRecipient";
+ 
+ type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
+ 
+@@ -47,7 +48,11 @@ export async function ensureAffiliatePipelineDeal(db: Db, draft: PipelineDealDra
+       .where(and(eq(crmDeals.orderRequestId, draft.orderRequestId), scopeCondition(draft.affiliateId)))
+       .limit(5);
+     const picked = pickPipelineDeal(rows, { affiliateId: draft.affiliateId, match: "order", orderRequestId: draft.orderRequestId });
+-    if (picked) return { id: picked.id, created: false };
++    if (picked) {
++      const backfill = contactEmailToBackfill(picked.contactEmail, email);
++      if (backfill) await db.update(crmDeals).set({ contactEmail: backfill }).where(eq(crmDeals.id, picked.id));
++      return { id: picked.id, created: false };
++    }
+   }
+   if (draft.match === "email" && email) {
+     const rows = await db
+diff --git a/server/lib/invoiceRecipient.test.ts b/server/lib/invoiceRecipient.test.ts
+new file mode 100644
+index 0000000..3df8b86
+--- /dev/null
++++ b/server/lib/invoiceRecipient.test.ts
+@@ -0,0 +1,122 @@
++import { readFileSync } from "node:fs";
++import { describe, expect, it, vi } from "vitest";
++import {
++  chooseInvoiceRecipient,
++  contactEmailToBackfill,
++  customerEmailFromStripeResource,
++  lookupStripeCustomerEmail,
++  usableInvoiceEmail,
++} from "./invoiceRecipient";
++
++const SANDBOX_MISS = "No such payment_intent: 'pi_3UJHny3gL4KQ5uZE0TBGOfzN' (This is an unclaimed Stripe sandbox...)";
++
++describe("invoice recipient resolution", () => {
++  it("keeps a usable address and rejects a blank or malformed one", () => {
++    expect(usableInvoiceEmail("  Home@Example.com ")).toBe("Home@Example.com");
++    expect(usableInvoiceEmail(" ")).toBeNull();
++    expect(usableInvoiceEmail("not-an-email")).toBeNull();
++  });
++
++  it("backfills only when the lead has no contact email", () => {
++    expect(contactEmailToBackfill(null, "home@example.com")).toBe("home@example.com");
++    expect(contactEmailToBackfill("  ", "home@example.com")).toBe("home@example.com");
++    expect(contactEmailToBackfill("kept@example.com", "other@example.com")).toBeNull();
++    expect(contactEmailToBackfill(null, "not-an-email")).toBeNull();
++  });
++
++  it("prefers the linked order, then the stored checkout email, then the account", () => {
++    expect(chooseInvoiceRecipient({
++      dealEmail: null,
++      orderEmail: "order@example.com",
++      checkoutEmail: "stripe-row@example.com",
++      accountEmail: "account@example.com",
++    })).toEqual({ email: "order@example.com", source: "order", stripeLookup: "not_needed" });
++
++    expect(chooseInvoiceRecipient({
++      checkoutEmail: "stripe-row@example.com",
++      accountEmail: "account@example.com",
++      stripeLiveEmail: "live@example.com",
++    })).toEqual({ email: "stripe-row@example.com", source: "stripe_record", stripeLookup: "not_needed" });
++
++    expect(chooseInvoiceRecipient({
++      accountEmail: "account@example.com",
++    })).toEqual({ email: "account@example.com", source: "account", stripeLookup: "not_needed" });
++  });
++
++  it("uses a live Stripe email only after local sources are empty", () => {
++    expect(chooseInvoiceRecipient({
++      dealEmail: "lead@example.com",
++      stripeLiveEmail: "live@example.com",
++    })).toEqual({ email: "lead@example.com", source: "deal", stripeLookup: "not_needed" });
++    expect(chooseInvoiceRecipient({
++      stripeLiveEmail: "live@example.com",
++    })).toEqual({ email: "live@example.com", source: "stripe", stripeLookup: "found" });
++    expect(chooseInvoiceRecipient({
++      stripeLookup: "unavailable",
++    })).toEqual({ email: null, source: null, stripeLookup: "unavailable" });
++  });
++
++  it("reads receipt_email, then billing_details.email, then customer.email", () => {
++    expect(customerEmailFromStripeResource({
++      receipt_email: "receipt@example.com",
++      billing_details: { email: "billing@example.com" },
++      email: "customer@example.com",
++    })).toBe("receipt@example.com");
++    expect(customerEmailFromStripeResource({
++      receipt_email: "",
++      latest_charge: { billing_details: { email: "billing@example.com" } },
++    })).toBe("billing@example.com");
++    expect(customerEmailFromStripeResource({
++      customer_details: { email: "checkout@example.com" },
++    })).toBe("checkout@example.com");
++    expect(customerEmailFromStripeResource({ email: "customer@example.com", deleted: false })).toBe("customer@example.com");
++    expect(customerEmailFromStripeResource({ email: "customer@example.com", deleted: true })).toBeNull();
++  });
++
++  it("treats a payment intent on another Stripe account as unavailable and does not throw", async () => {
++    const error = vi.spyOn(console, "error").mockImplementation(() => {});
++    const result = await lookupStripeCustomerEmail({
++      paymentIntentId: "pi_3UJHny3gL4KQ5uZE0TBGOfzN",
++      chargeId: "ch_missing",
++      sessionId: "cs_missing",
++      customerId: "cus_missing",
++    }, {
++      orderId: 11700001,
++      reader: {
++        retrievePaymentIntent: async () => { throw new Error(SANDBOX_MISS); },
++        retrieveCharge: async () => { throw new Error("No such charge"); },
++        retrieveCheckoutSession: async () => { throw new Error("No such checkout.session"); },
++        retrieveCustomer: async () => { throw new Error("No such customer"); },
++      },
++    });
++    expect(result).toEqual({ email: null, unavailable: true });
++    expect(error).toHaveBeenCalled();
++    expect(String(error.mock.calls[0]?.[0])).toContain("11700001");
++    expect(String(error.mock.calls[0]?.[0])).toContain("pi_3UJHny3gL4KQ5uZE0TBGOfzN");
++    error.mockRestore();
++  });
++
++  it("returns the first Stripe object that actually has an email", async () => {
++    const result = await lookupStripeCustomerEmail({
++      paymentIntentId: "pi_other_account",
++      chargeId: "ch_live",
++    }, {
++      reader: {
++        retrievePaymentIntent: async () => { throw new Error(SANDBOX_MISS); },
++        retrieveCharge: async () => ({ billing_details: { email: "charge@example.com" }, receipt_email: null }),
++        retrieveCheckoutSession: async () => { throw new Error("not called"); },
++        retrieveCustomer: async () => { throw new Error("not called"); },
++      },
++    });
++    expect(result).toEqual({ email: "charge@example.com", unavailable: false });
++  });
++
++  it("keeps the CRM invoice send and New Sale sync on this resolver", () => {
++    const crm = readFileSync(new URL("../routers/crm.ts", import.meta.url), "utf8");
++    expect(crm).toContain("loadDealInvoiceRecipient");
++    expect(crm).toContain("contactEmailToBackfill(deal.contactEmail, to)");
++    expect(crm).toContain("invoiceRecipient");
++    const attach = readFileSync(new URL("./crmPipelineAttach.ts", import.meta.url), "utf8");
++    expect(attach).toContain("contactEmailToBackfill(picked.contactEmail, email)");
++  });
++});
+diff --git a/server/lib/invoiceRecipient.ts b/server/lib/invoiceRecipient.ts
+new file mode 100644
+index 0000000..5c66f51
+--- /dev/null
++++ b/server/lib/invoiceRecipient.ts
+@@ -0,0 +1,255 @@
++import { desc, eq, or } from "drizzle-orm";
++import { orderRequests, stripePaymentRecords, users } from "../../drizzle/schema";
++import type { getDb } from "../db";
++
++type Database = NonNullable<Awaited<ReturnType<typeof getDb>>>;
++
++const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
++
++export type InvoiceEmailSource = "deal" | "order" | "account" | "stripe_record" | "stripe";
++export type InvoiceStripeLookup = "not_needed" | "found" | "unavailable" | "skipped";
++
++export type InvoiceRecipient = {
++  email: string | null;
++  source: InvoiceEmailSource | null;
++  stripeLookup: InvoiceStripeLookup;
++};
++
++export type StripeEmailIds = {
++  paymentIntentId?: string | null;
++  chargeId?: string | null;
++  customerId?: string | null;
++  sessionId?: string | null;
++};
++
++export type StripeEmailReader = {
++  retrievePaymentIntent(id: string): Promise<unknown>;
++  retrieveCharge(id: string): Promise<unknown>;
++  retrieveCustomer(id: string): Promise<unknown>;
++  retrieveCheckoutSession(id: string): Promise<unknown>;
++};
++
++/** A stored address we can actually send to. Blank and malformed values are ignored. */
++export function usableInvoiceEmail(value: string | null | undefined): string | null {
++  const email = value?.trim() ?? "";
++  if (!email || email.length > 320 || !EMAIL_PATTERN.test(email)) return null;
++  return email;
++}
++
++/**
++ * Copy an incoming address onto a lead only when the lead does not already
++ * have one. An existing contact email is left alone.
++ */
++export function contactEmailToBackfill(existing: string | null | undefined, incoming: string | null | undefined): string | null {
++  if (usableInvoiceEmail(existing)) return null;
++  return usableInvoiceEmail(incoming);
++}
++
++/**
++ * Local records win over a live Stripe call.
++ * Deal contact, then the linked order, then the checkout row we already stored,
++ * then the customer account, then a live Stripe email when one was returned.
++ */
++export function chooseInvoiceRecipient(input: {
++  dealEmail?: string | null;
++  orderEmail?: string | null;
++  checkoutEmail?: string | null;
++  accountEmail?: string | null;
++  stripeLiveEmail?: string | null;
++  stripeLookup?: InvoiceStripeLookup;
++}): InvoiceRecipient {
++  const dealEmail = usableInvoiceEmail(input.dealEmail);
++  if (dealEmail) return { email: dealEmail, source: "deal", stripeLookup: "not_needed" };
++  const orderEmail = usableInvoiceEmail(input.orderEmail);
++  if (orderEmail) return { email: orderEmail, source: "order", stripeLookup: "not_needed" };
++  const checkoutEmail = usableInvoiceEmail(input.checkoutEmail);
++  if (checkoutEmail) return { email: checkoutEmail, source: "stripe_record", stripeLookup: "not_needed" };
++  const accountEmail = usableInvoiceEmail(input.accountEmail);
++  if (accountEmail) return { email: accountEmail, source: "account", stripeLookup: "not_needed" };
++  const stripeLiveEmail = usableInvoiceEmail(input.stripeLiveEmail);
++  if (stripeLiveEmail) return { email: stripeLiveEmail, source: "stripe", stripeLookup: "found" };
++  return { email: null, source: null, stripeLookup: input.stripeLookup ?? "skipped" };
++}
++
++function asRecord(value: unknown): Record<string, unknown> | null {
++  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
++}
++
++function asString(value: unknown): string | null {
++  if (typeof value !== "string") return null;
++  const trimmed = value.trim();
++  return trimmed ? trimmed : null;
++}
++
++/**
++ * Pull the customer address off one Stripe object.
++ * Preference is receipt_email, then billing_details.email, then customer.email
++ * (and the checkout session's customer_details.email / customer_email).
++ */
++export function customerEmailFromStripeResource(payload: unknown): string | null {
++  const record = asRecord(payload);
++  if (!record || record.deleted === true) return null;
++  const charge = asRecord(record.latest_charge) ?? record;
++  const billing = asRecord(charge.billing_details) ?? asRecord(record.billing_details);
++  const customerDetails = asRecord(record.customer_details);
++  return usableInvoiceEmail(asString(record.receipt_email))
++    ?? usableInvoiceEmail(asString(charge.receipt_email))
++    ?? usableInvoiceEmail(asString(billing?.email))
++    ?? usableInvoiceEmail(asString(customerDetails?.email))
++    ?? usableInvoiceEmail(asString(record.customer_email))
++    ?? usableInvoiceEmail(asString(record.email));
++}
++
++async function readStripeResource(
++  label: string,
++  orderId: number | null,
++  load: () => Promise<unknown>,
++  timeoutMs: number,
++): Promise<{ payload: unknown | null; failed: boolean }> {
++  try {
++    const payload = await new Promise<unknown>((resolve, reject) => {
++      const timer = setTimeout(() => reject(new Error(`${label} timed out`)), timeoutMs);
++      load().then(
++        (value) => { clearTimeout(timer); resolve(value); },
++        (error) => { clearTimeout(timer); reject(error); },
++      );
++    });
++    return { payload, failed: false };
++  } catch (error) {
++    const message = error instanceof Error ? error.message : "unknown error";
++    console.error(`[CRM invoice] Stripe customer email lookup failed for order ${orderId ?? "unknown"}: ${message}`);
++    return { payload: null, failed: true };
++  }
++}
++
++/**
++ * Live Stripe lookup. A missing payment intent (for example a sandbox charge
++ * the current account cannot see) is logged and skipped. It never throws.
++ */
++export async function lookupStripeCustomerEmail(
++  ids: StripeEmailIds,
++  options?: { reader?: StripeEmailReader; orderId?: number | null; timeoutMs?: number },
++): Promise<{ email: string | null; unavailable: boolean }> {
++  const reader = options?.reader ?? await defaultStripeEmailReader();
++  if (!reader) return { email: null, unavailable: false };
++  const timeoutMs = options?.timeoutMs ?? 4000;
++  const orderId = options?.orderId ?? null;
++  let unavailable = false;
++  let chargeId = ids.chargeId ?? null;
++  let customerId = ids.customerId ?? null;
++
++  const consider = async (label: string, id: string | null | undefined, load: (value: string) => Promise<unknown>): Promise<unknown | null> => {
++    if (!id) return null;
++    const result = await readStripeResource(label, orderId, () => load(id), timeoutMs);
++    if (result.failed) unavailable = true;
++    return result.payload;
++  };
++
++  const intent = await consider("payment_intent", ids.paymentIntentId, (id) => reader.retrievePaymentIntent(id));
++  const intentEmail = customerEmailFromStripeResource(intent);
++  if (intentEmail) return { email: intentEmail, unavailable: false };
++  const intentRecord = asRecord(intent);
++  if (typeof intentRecord?.latest_charge === "string") chargeId = chargeId || intentRecord.latest_charge;
++  if (typeof intentRecord?.customer === "string") customerId = customerId || intentRecord.customer;
++
++  const charge = await consider("charge", chargeId, (id) => reader.retrieveCharge(id));
++  const chargeEmail = customerEmailFromStripeResource(charge);
++  if (chargeEmail) return { email: chargeEmail, unavailable: false };
++  const chargeRecord = asRecord(charge);
++  if (typeof chargeRecord?.customer === "string") customerId = customerId || chargeRecord.customer;
++
++  const session = await consider("checkout_session", ids.sessionId, (id) => reader.retrieveCheckoutSession(id));
++  const sessionEmail = customerEmailFromStripeResource(session);
++  if (sessionEmail) return { email: sessionEmail, unavailable: false };
++  const sessionRecord = asRecord(session);
++  if (typeof sessionRecord?.customer === "string") customerId = customerId || sessionRecord.customer;
++
++  const customer = await consider("customer", customerId, (id) => reader.retrieveCustomer(id));
++  const customerEmail = customerEmailFromStripeResource(customer);
++  if (customerEmail) return { email: customerEmail, unavailable: false };
++  return { email: null, unavailable };
++}
++
++async function defaultStripeEmailReader(): Promise<StripeEmailReader | null> {
++  const { ENV } = await import("../_core/env");
++  if (!ENV.stripeSecretKey) return null;
++  const { getStripe } = await import("../stripe");
++  const stripe = getStripe();
++  return {
++    retrievePaymentIntent: (id) => stripe.paymentIntents.retrieve(id, { expand: ["latest_charge"] }),
++    retrieveCharge: (id) => stripe.charges.retrieve(id),
++    retrieveCustomer: (id) => stripe.customers.retrieve(id),
++    retrieveCheckoutSession: (id) => stripe.checkout.sessions.retrieve(id),
++  };
++}
++
++/**
++ * Email to offer for a CRM invoice.
++ * Uses only rows we already stored unless every local source is empty and the
++ * order has a Stripe id. A failed Stripe read leaves the email empty.
++ */
++export async function loadDealInvoiceRecipient(
++  db: Database,
++  deal: { contactEmail?: string | null; orderRequestId?: number | null },
++): Promise<InvoiceRecipient> {
++  const dealEmail = usableInvoiceEmail(deal.contactEmail);
++  if (dealEmail) return { email: dealEmail, source: "deal", stripeLookup: "not_needed" };
++  if (deal.orderRequestId == null) return { email: null, source: null, stripeLookup: "skipped" };
++
++  const [order] = await db.select({
++    id: orderRequests.id,
++    requestNumber: orderRequests.requestNumber,
++    originatorEmail: orderRequests.originatorEmail,
++    userId: orderRequests.userId,
++    stripePaymentIntentId: orderRequests.stripePaymentIntentId,
++    stripeSessionId: orderRequests.stripeSessionId,
++  }).from(orderRequests).where(eq(orderRequests.id, deal.orderRequestId)).limit(1);
++  if (!order) return { email: null, source: null, stripeLookup: "skipped" };
++
++  const orderEmail = usableInvoiceEmail(order.originatorEmail);
++  if (orderEmail) return { email: orderEmail, source: "order", stripeLookup: "not_needed" };
++
++  const records = await db.select({
++    customerEmail: stripePaymentRecords.customerEmail,
++    receiptEmail: stripePaymentRecords.receiptEmail,
++    paymentIntentId: stripePaymentRecords.paymentIntentId,
++    chargeId: stripePaymentRecords.chargeId,
++    customerId: stripePaymentRecords.customerId,
++    checkoutSessionId: stripePaymentRecords.checkoutSessionId,
++  }).from(stripePaymentRecords).where(or(
++    eq(stripePaymentRecords.orderRequestId, order.id),
++    eq(stripePaymentRecords.orderNumber, order.requestNumber),
++  )).orderBy(desc(stripePaymentRecords.occurredAt)).limit(5);
++
++  let checkoutEmail: string | null = null;
++  const stripeIds: StripeEmailIds = {
++    paymentIntentId: order.stripePaymentIntentId,
++    sessionId: order.stripeSessionId,
++    chargeId: null,
++    customerId: null,
++  };
++  for (const record of records) {
++    checkoutEmail = checkoutEmail
++      ?? usableInvoiceEmail(record.customerEmail)
++      ?? usableInvoiceEmail(record.receiptEmail);
++    stripeIds.paymentIntentId = stripeIds.paymentIntentId || record.paymentIntentId;
++    stripeIds.sessionId = stripeIds.sessionId || record.checkoutSessionId;
++    stripeIds.chargeId = stripeIds.chargeId || record.chargeId;
++    stripeIds.customerId = stripeIds.customerId || record.customerId;
++  }
++  if (checkoutEmail) return { email: checkoutEmail, source: "stripe_record", stripeLookup: "not_needed" };
++
++  if (order.userId) {
++    const [account] = await db.select({ email: users.email }).from(users).where(eq(users.id, order.userId)).limit(1);
++    const accountEmail = usableInvoiceEmail(account?.email);
++    if (accountEmail) return { email: accountEmail, source: "account", stripeLookup: "not_needed" };
++  }
++
++  const hasStripeId = Boolean(stripeIds.paymentIntentId || stripeIds.chargeId || stripeIds.customerId || stripeIds.sessionId);
++  if (!hasStripeId) return { email: null, source: null, stripeLookup: "skipped" };
++  const live = await lookupStripeCustomerEmail(stripeIds, { orderId: order.id });
++  return chooseInvoiceRecipient({
++    stripeLiveEmail: live.email,
++    stripeLookup: live.email ? "found" : live.unavailable ? "unavailable" : "skipped",
++  });
++}
+diff --git a/server/lib/orderCrmSale.test.ts b/server/lib/orderCrmSale.test.ts
+index 5c96fd3..7224270 100644
+--- a/server/lib/orderCrmSale.test.ts
++++ b/server/lib/orderCrmSale.test.ts
+@@ -69,6 +69,49 @@ describe("order CRM sale sync", () => {
+     expect(again[0].activities).toHaveLength(1);
+   });
+ 
++  it("copies the order email onto a New Sale lead that was linked without one", () => {
++    const existing = [deal({
++      id: 3,
++      orderRequestId: 11700001,
++      stage: "qualified",
++      contactEmail: null,
++      contactName: null,
++      contactPhone: null,
++    })];
++    const paid = order({
++      id: 11700001,
++      requestNumber: "CD-20261022-OLOUT",
++      status: "confirmed",
++      paidAt: "2026-10-22T15:00:00.000Z",
++      originatorEmail: "homeowner@example.com",
++      originatorName: "Home Owner",
++    });
++    const next = applyOrderCrmSync(existing, paid);
++    expect(next).toHaveLength(1);
++    expect(next[0]).toMatchObject({
++      stage: "new_sale",
++      contactEmail: "homeowner@example.com",
++      contactName: "Home Owner",
++    });
++  });
++
++  it("does not replace a contact email the lead already has", () => {
++    const existing = [deal({ id: 3, orderRequestId: 8, contactEmail: "kept@example.com" })];
++    const paid = order({
++      id: 8,
++      status: "confirmed",
++      paidAt: "2026-10-27T15:00:00.000Z",
++      originatorEmail: "other@example.com",
++    });
++    expect(applyOrderCrmSync(existing, paid)[0].contactEmail).toBe("kept@example.com");
++  });
++
++  it("fills a blank email when an unpaid order stays qualified", () => {
++    const existing = [deal({ id: 4, orderRequestId: 8, stage: "qualified", contactEmail: null })];
++    const next = applyOrderCrmSync(existing, order({ id: 8, status: "submitted", originatorEmail: "ada@example.com" }));
++    expect(next[0]).toMatchObject({ stage: "qualified", contactEmail: "ada@example.com" });
++  });
++
+   it("creates the deal directly in new_sale when payment lands first", () => {
+     const paid = order({ id: 9, status: "confirmed", stripePaymentIntentId: "pi_123", paidAt: "2026-10-27T15:00:00.000Z" });
+     const next = applyOrderCrmSync([], paid);
+diff --git a/server/lib/orderCrmSale.ts b/server/lib/orderCrmSale.ts
+index 2d5f80d..2d01d19 100644
+--- a/server/lib/orderCrmSale.ts
++++ b/server/lib/orderCrmSale.ts
+@@ -1,5 +1,6 @@
+ // Moves the single crm_deals row already linked by orderRequestId.
+ // Submitted unpaid stays qualified. Paid becomes New Sale. A refund keeps the row.
++import { contactEmailToBackfill } from "./invoiceRecipient";
+ 
+ export type CrmOrderView = {
+   id: number;
+@@ -95,6 +96,26 @@ function nextId(deals: MemoryDeal[]): number {
+   return deals.reduce((max, deal) => Math.max(max, deal.id), 0) + 1;
+ }
+ 
++/** Fill contact fields that the lead is still missing. Never overwrite a stored email. */
++export function blankCrmContactPatch(
++  deal: { contactEmail?: string | null; contactName?: string | null; contactPhone?: string | null } | null,
++  order: Pick<CrmOrderView, "originatorEmail" | "originatorName" | "originatorPhone">,
++): { contactEmail?: string; contactName?: string; contactPhone?: string } {
++  const patch: { contactEmail?: string; contactName?: string; contactPhone?: string } = {};
++  const email = contactEmailToBackfill(deal?.contactEmail, order.originatorEmail);
++  if (email) patch.contactEmail = email;
++  if (!deal?.contactName?.trim() && order.originatorName?.trim()) patch.contactName = order.originatorName.trim();
++  if (!deal?.contactPhone?.trim() && order.originatorPhone?.trim()) patch.contactPhone = order.originatorPhone.trim();
++  return patch;
++}
++
++function applyBlankContact(target: MemoryDeal, order: CrmOrderView) {
++  const patch = blankCrmContactPatch(target, order);
++  if (patch.contactEmail) target.contactEmail = patch.contactEmail;
++  if (patch.contactName) target.contactName = patch.contactName;
++  if (patch.contactPhone) target.contactPhone = patch.contactPhone;
++}
++
+ function blankDeal(id: number, order: CrmOrderView, stage: string): MemoryDeal {
+   return {
+     id,
+@@ -117,8 +138,14 @@ export function applyOrderCrmSync(deals: MemoryDeal[], order: CrmOrderView, now
+   const plan = planOrderCrmSync(order, existing, now);
+   if (plan.kind === "skip") return next;
+   if (plan.kind === "qualified") {
+-    if (plan.create) next.push(blankDeal(nextId(next), order, "qualified"));
+-    else if (plan.setStage && existing) existing.stage = "qualified";
++    if (plan.create) {
++      const created = blankDeal(nextId(next), order, "qualified");
++      applyBlankContact(created, order);
++      next.push(created);
++    } else if (existing) {
++      if (plan.setStage) existing.stage = "qualified";
++      applyBlankContact(existing, order);
++    }
+     return next;
+   }
+   const target = existing ?? blankDeal(nextId(next), order, "new_sale");
+@@ -127,6 +154,7 @@ export function applyOrderCrmSync(deals: MemoryDeal[], order: CrmOrderView, now
+   target.orderRequestId = order.id;
+   target.estimatedValue = plan.estimatedValue;
+   target.closedAt = target.closedAt ?? plan.closedAt;
++  applyBlankContact(target, order);
+   if (plan.logActivity && !target.activities.some((body) => body.includes(`[order-crm:${order.id}:new_sale]`))) {
+     target.activities.push(plan.activityBody);
+   }
+diff --git a/server/lib/orderSideEffects.hooks.test.ts b/server/lib/orderSideEffects.hooks.test.ts
+index 0599f8b..c89e776 100644
+--- a/server/lib/orderSideEffects.hooks.test.ts
++++ b/server/lib/orderSideEffects.hooks.test.ts
+@@ -34,6 +34,9 @@ describe("order CRM and distributor email hooks", () => {
+     expect(source("../routers/installationEstimates.ts")).toContain("syncStoredOrderCrm");
+     expect(source("./orderSideEffects.ts")).not.toContain("crm_contacts");
+     expect(source("./orderCrmSale.ts")).toContain('target.stage = "new_sale"');
++    expect(source("./orderCrmSale.ts")).toContain("applyBlankContact(target, order)");
++    expect(source("./orderSideEffects.ts")).toContain("blankCrmContactPatch");
++    expect(source("./orderSideEffects.ts")).toContain("...contactPatch");
+     expect(source("./orderImageGenerated.ts")).toContain("export async function markOrderImageGenerated");
+   });
+ });
+diff --git a/server/lib/orderSideEffects.ts b/server/lib/orderSideEffects.ts
+index 12a0cfe..1329a24 100644
+--- a/server/lib/orderSideEffects.ts
++++ b/server/lib/orderSideEffects.ts
+@@ -27,6 +27,7 @@ import {
+ } from "./distributorOrderEmail";
+ import {
+   applyCrmBackfill,
++  blankCrmContactPatch,
+   orderIsPaid,
+   orderStepActivityBody,
+   planOrderCrmSync,
+@@ -382,7 +383,9 @@ export async function syncStoredOrderCrm(orderId: number, opts?: { preferredDeal
+     const [order] = await db.select().from(orderRequests).where(eq(orderRequests.id, orderId)).limit(1);
+     if (!order) return;
+     const deal = await findDealForOrder(db, order.id, opts?.preferredDealId);
+-    const plan = planOrderCrmSync(toCrmOrder(order), deal ? dealView(deal) : null);
++    const crmOrder = toCrmOrder(order);
++    const plan = planOrderCrmSync(crmOrder, deal ? dealView(deal) : null);
++    const contactPatch = blankCrmContactPatch(deal, crmOrder);
+     if (plan.kind === "skip") {
+       await writeCrmSync(db, order.id, "skipped", null, deal?.id ?? null);
+       return;
+@@ -393,8 +396,11 @@ export async function syncStoredOrderCrm(orderId: number, opts?: { preferredDeal
+         await writeCrmSync(db, order.id, "qualified", null, ensured.id);
+         return;
+       }
+-      if (plan.setStage && deal.stage === "new") {
+-        await db.update(crmDeals).set({ stage: "qualified" }).where(eq(crmDeals.id, deal.id));
++      if ((plan.setStage && deal.stage === "new") || Object.keys(contactPatch).length > 0) {
++        await db.update(crmDeals).set({
++          ...(plan.setStage && deal.stage === "new" ? { stage: "qualified" as const } : {}),
++          ...contactPatch,
++        }).where(eq(crmDeals.id, deal.id));
+       }
+       await writeCrmSync(db, order.id, "qualified", null, deal.id);
+       return;
+@@ -414,6 +420,7 @@ export async function syncStoredOrderCrm(orderId: number, opts?: { preferredDeal
+         stage: "new_sale",
+         estimatedValue: order.totalAmount,
+         closedAt: deal?.closedAt ?? (order.paidAt ? new Date(order.paidAt) : new Date()),
++        ...contactPatch,
+       }).where(eq(crmDeals.id, dealId));
+     } catch (error) {
+       const schemaRejected = isEnumValueError(error) || isMissingSchemaError(error);
+diff --git a/server/routers/crm.ts b/server/routers/crm.ts
+index f8fbabf..3957c3f 100644
+--- a/server/routers/crm.ts
++++ b/server/routers/crm.ts
+@@ -48,6 +48,7 @@ import { crmCustomerImportIdentities, prepareCrmCustomerImport } from "@shared/c
+ import { sendEmail } from "../email";
+ import { loadCrmOutboundPlan } from "../lib/crmOutboundMail";
+ import { sendCrmDealEmail } from "../lib/crmCustomerMail";
++import { contactEmailToBackfill, loadDealInvoiceRecipient, usableInvoiceEmail } from "../lib/invoiceRecipient";
+ import { buildOrderDistributorMessage } from "../lib/orderSideEffects";
+ import { createDistributorPoPdf } from "../lib/distributorPoPdf";
+ import { crmHtmlToText, crmMailboxVisible, sanitizeCrmEmailHtml } from "@shared/crmMailbox";
+@@ -644,7 +645,11 @@ export const crmRouter = router({
+         laborAmount: laborPrefill.amount,
+         laborSource: laborPrefill.source,
+       };
+-      return { deal, activities, linkedDesigns, emails, invoiceBrand, invoicePrefill, laborEstimates };
++      const invoiceRecipient = await loadDealInvoiceRecipient(db, {
++        contactEmail: deal.contactEmail,
++        orderRequestId: deal.orderRequestId,
++      });
++      return { deal, activities, linkedDesigns, emails, invoiceBrand, invoicePrefill, invoiceRecipient, laborEstimates };
+     }),
+ 
+   // ── Saved designs compatible with this CRM scope/deal ──────────────────────
+@@ -1056,11 +1061,13 @@ export const crmRouter = router({
+     }),
+ 
+   // ── Send a final branded invoice PDF to the CRM lead contact ────────────────
+-  // The recipient always comes from the scoped deal itself; callers cannot turn
+-  // this into an arbitrary outbound-email endpoint.
++  // The address is the one the deal owner typed, otherwise the lead, the linked
++  // order, the stored Stripe checkout row, the customer account, or a live
++  // Stripe customer email. A blank lead is filled in when the invoice is sent.
+   sendInvoiceEmail: protectedProcedure
+     .input(z.object({
+       dealId: z.number().int(),
++      to: z.string().trim().email().max(320).optional(),
+       lines: z.array(z.object({
+         description: z.string().trim().min(1).max(256),
+         amount: z.number().finite().min(0).max(10_000_000),
+@@ -1071,10 +1078,19 @@ export const crmRouter = router({
+     }))
+     .mutation(async ({ ctx, input }) => {
+       const { db, deal } = await getOwnedDeal(ctx, input.dealId);
+-      const to = deal.contactEmail?.trim();
++      const typed = usableInvoiceEmail(input.to);
++      const resolved = typed ? null : await loadDealInvoiceRecipient(db, {
++        contactEmail: deal.contactEmail,
++        orderRequestId: deal.orderRequestId,
++      });
++      const to = typed ?? resolved?.email ?? null;
+       if (!to) {
+         throw new TRPCError({ code: "PRECONDITION_FAILED", message: "missing_recipient" });
+       }
++      const backfill = contactEmailToBackfill(deal.contactEmail, to);
++      if (backfill) {
++        await db.update(crmDeals).set({ contactEmail: backfill }).where(eq(crmDeals.id, deal.id));
++      }
+ 
+       const plan = await loadCrmOutbound(db, deal.affiliateId);
+       if (!plan.ok) throw new TRPCError({ code: "PRECONDITION_FAILED", message: plan.reason });
+-- 
+2.43.0
+
