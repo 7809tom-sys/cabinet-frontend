@@ -33,7 +33,7 @@ import {
   LayoutDashboard, LogOut, PanelLeft, ShoppingBag, DollarSign,
   Palette, FileText, BarChart2, Megaphone, Tag, BookOpen, ExternalLink,
   Calendar, Gift, Users, Puzzle, Wrench, PackageOpen, ImageIcon, Boxes,
-  Settings, ChevronDown, Layers, Store,
+  Settings, ChevronDown, Layers, Store, HardHat,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
@@ -62,6 +62,7 @@ export type AffiliateSection =
   | "plugins"
   | "tax"
   | "team"
+  | "contractors"
   | "settings"
   | "bundles";
 
@@ -87,6 +88,7 @@ const NAV_ITEMS: { icon: React.ElementType; label: string; section: AffiliateSec
   { icon: Puzzle, label: "Plugins & Add-ons", section: "plugins" },
   { icon: FileText, label: "Tax Info (W-9)", section: "tax" },
   { icon: Users, label: "My Team", section: "team" },
+  { icon: HardHat, label: "Add a contractor", section: "contractors" },
   { icon: Settings, label: "Domain Setup", section: "settings" },
 ];
 
@@ -193,7 +195,7 @@ function SidebarInner({
   const quoteUrl = affiliateOrderPath(storeSlug);
   const isAdmin = user?.role === "admin";
   const visibleNavItems = NAV_ITEMS.filter((item) =>
-    isAffiliateOwner || isAdmin || item.section === "overview" || ((item.section === "crm" || item.section === "customers") && canAccessCrm) || (item.section === "design" && canAccessDesigner) || (item.section === "appointments" && (canAccessCrm || canAccessDesigner)),
+    isAffiliateOwner || isAdmin || item.section === "overview" || item.section === "contractors" || ((item.section === "crm" || item.section === "customers") && canAccessCrm) || (item.section === "design" && canAccessDesigner) || (item.section === "appointments" && (canAccessCrm || canAccessDesigner)),
   );
   const ordersRank = NAV_ITEMS.findIndex((item) => item.section === "orders");
   const rankOf = (item: { section: AffiliateSection }) => NAV_ITEMS.findIndex((entry) => entry.section === item.section);

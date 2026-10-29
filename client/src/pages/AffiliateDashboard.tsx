@@ -21,6 +21,7 @@ import AffiliatePromotionsPanel from "@/components/affiliate/AffiliatePromotions
 import { AffiliatePluginsPanel } from "@/components/affiliate/AffiliatePluginsPanel";
 import { AffiliateAppointmentsPanel } from "@/components/affiliate/AffiliateAppointmentsPanel";
 import { ReferVendorForm } from "@/components/affiliate/ReferVendorForm";
+import { AddContractorPanel } from "@/components/affiliate/AddContractorPanel";
 import { InstallationEstimatesPanel } from "@/components/affiliate/InstallationEstimatesPanel";
 import { SampleOrderDesk } from "@/components/samples/SampleOrderDesk";
 import { PortalSignInChooser } from "@/components/auth/PortalSignInChooser";
@@ -45,7 +46,7 @@ import {
   LinkIcon, Save, Loader2, PencilRuler, Globe, Users,
   ArrowRight, Sparkles, Star, TrendingUp, Shield, Palette, Truck,
   Wand2, Send, ChevronRight, ImageIcon, FileText, AlertCircle, Upload, Eye, EyeOff,
-  ShoppingBag, BarChart2, BookOpen, Tag, Megaphone, Wrench, Share2, Facebook, Linkedin, Info,
+  ShoppingBag, BarChart2, BookOpen, Tag, Megaphone, Wrench, Share2, Facebook, Linkedin, Info, HardHat,
 } from "lucide-react";
 import { CrmBoard } from "@/components/crm/CrmBoard";
 import { MyCustomersPanel } from "@/components/affiliate/MyCustomersPanel";
@@ -381,6 +382,7 @@ export default function AffiliateDashboard() {
     "plugins",
     "tax",
     "team",
+    "contractors",
     "settings",
   ] as const;
   const sectionParam = params.get("section");
@@ -665,6 +667,7 @@ export default function AffiliateDashboard() {
                 { label: "Hardware pricing", section: "pricing" as AffiliateSection, icon: Package },
                 { label: "Marketing Hub", section: "marketing" as AffiliateSection, icon: Megaphone },
                 { label: "Installation", section: "installation" as AffiliateSection, icon: Wrench },
+                { label: "Add a contractor", section: "contractors" as AffiliateSection, icon: HardHat },
               ] as const).map((item) => (
                 <button
                   key={`${item.section}-${item.label}`}
@@ -831,6 +834,8 @@ export default function AffiliateDashboard() {
         );
       case "team":
         return <AffiliateTeamPanel affiliateId={affiliate.id} />;
+      case "contractors":
+        return <AddContractorPanel />;
       case "settings":
         return (
           <div className="space-y-6 max-w-4xl">
