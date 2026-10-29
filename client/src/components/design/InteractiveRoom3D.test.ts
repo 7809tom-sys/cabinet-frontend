@@ -1441,9 +1441,13 @@ describe("interactive 3D room scene helpers", () => {
 					curated: true, proceduralFallback: false, physicalWidthIn: 192, physicalDepthIn: 90,
 					flooringPatternKind: "plank", plankWidthIn: 7.5, plankLengthIn: 48,
 				});
-				expect(threeDProductMaterialSource("flooring", "Legacy floor label", null, { productId: 40 })).toMatchObject({
+				expect(threeDProductMaterialSource("flooring", null, null, { productId: 40 })).toMatchObject({
 					key: "acorn-20mil-7.5x48", curated: true, proceduralFallback: false,
 				});
+				expect(threeDProductMaterialSource("flooring", "Greenline Square", null, { productId: 40 })).toMatchObject({
+					key: "representative-flooring", curated: false, proceduralFallback: true, materialColor: "#c4b39a",
+				});
+				expect(threeDProductMaterialSource("flooring", "Greenline Square", null, { productId: 40 })?.url).not.toContain("acorn");
 				const astoria = threeDProductMaterialSource("flooring", "Astoria 22mil Vinyl Flooring", "/manus-storage/pelican/54_65e4c5a2.png", { productId: 54, category: "Flooring", subCategory: "Planks & Flooring", size: null });
 				expect(astoria).toMatchObject({
 					url: "/manus-storage/astoria_22mil_9x60_staggered_floor_cd0a1cf7.webp", key: "astoria-22mil-9x60",
@@ -1451,7 +1455,7 @@ describe("interactive 3D room scene helpers", () => {
 					flooringPatternKind: "plank", plankWidthIn: 9, plankLengthIn: 60,
 				});
 					expect(astoria?.url).not.toContain("pelican/54_65e4c5a2.png");
-					expect(threeDProductMaterialSource("flooring", "Legacy renamed flooring", null, { productId: 73 })).toMatchObject({
+					expect(threeDProductMaterialSource("flooring", null, null, { productId: 73 })).toMatchObject({
 						url: "/manus-storage/aveline_20mil_7x48_staggered_floor_2675d409.webp",
 						key: "aveline-20mil-7x48",
 						curated: true,
@@ -1460,6 +1464,8 @@ describe("interactive 3D room scene helpers", () => {
 						plankWidthIn: 7,
 						plankLengthIn: 48,
 					});
+					expect(threeDProductMaterialSource("flooring", "Santorini Blue", "/floor_normal.jpg", { productId: 73 })?.url).not.toContain("aveline");
+					expect(threeDProductMaterialSource("flooring", "Santorini Blue", "/floor_normal.jpg", { productId: 73 })?.proceduralFallback).toBe(true);
 				expect(threeDProductMaterialSource("countertop", "Bedrock 3cm", null)).toMatchObject({
 			url: "/manus-storage/pelican/quartz/bedrock-3cm_source_slab_e61a47e8.webp", key: "pelican-quartz:bedrock-3cm",
 				curated: true, proceduralFallback: false, physicalWidthIn: 126, physicalDepthIn: 63,
@@ -1471,14 +1477,32 @@ describe("interactive 3D room scene helpers", () => {
 				});
 				expect(threeDProductMaterialSource("backsplash", "Arctic Vail", null)).toMatchObject({
 					url: "/manus-storage/arctic_vail_candidate_2_a8bed842.png", key: "arctic-vail-10.71in-interlocking-hex-mosaic",
-					curated: true, proceduralFallback: false, physicalWidthIn: 10.71, physicalDepthIn: 10.55,
-					backsplashPatternKind: "interlocking-mosaic", backsplashModuleIn: 10.71, backsplashGroutJointIn: 1 / 16,
+					curated: true, proceduralFallback: false, physicalWidthIn: 4, physicalDepthIn: 4 * (10.55 / 10.71),
+					backsplashPatternKind: "interlocking-mosaic", backsplashModuleIn: 4, backsplashGroutJointIn: 1 / 16,
+				});
+				expect(threeDProductMaterialSource("backsplash", "Arctic Vail", null, {
+					cardImageUrl: "/manus-storage/pelican/47_105baf1c.png",
+				})).toMatchObject({
+					url: "/manus-storage/pelican/47_105baf1c.png",
+					cropRetailBackground: true,
+					physicalWidthIn: 10.71,
+					physicalDepthIn: 10.55,
+					backsplashModuleIn: 10.71,
 				});
 				expect(threeDProductMaterialSource("backsplash", "Carbon Hex", null)).toMatchObject({
 						url: "/manus-storage/carbon_hex_candidate_1_2af63616.png", key: "carbon-hex-12.80in-marble-hex-mosaic",
-						curated: true, proceduralFallback: false, physicalWidthIn: 12.8, physicalDepthIn: 11.1,
-						backsplashPatternKind: "interlocking-mosaic", backsplashModuleIn: 12.8, backsplashGroutJointIn: 1 / 16,
+						curated: true, proceduralFallback: false, physicalWidthIn: 4, physicalDepthIn: 4 * (11.1 / 12.8),
+						backsplashPatternKind: "interlocking-mosaic", backsplashModuleIn: 4, backsplashGroutJointIn: 1 / 16,
 					});
+				expect(threeDProductMaterialSource("backsplash", "Carbon Hex", null, {
+					cardImageUrl: "/manus-storage/pelican/142_0904bb42.png",
+					size: "12.80 x 11.10 x 8",
+				})).toMatchObject({
+					url: "/manus-storage/pelican/142_0904bb42.png",
+					cropRetailBackground: true,
+					physicalWidthIn: 12.8,
+					backsplashModuleIn: 12.8,
+				});
 				expect(threeDProductMaterialSource("backsplash", "Carrara Subway", null)).toMatchObject({
 							url: "/manus-storage/carrara_subway_11_97x12_13_running_bond_f57029f6.webp", key: "carrara-subway-11.97in-running-bond-mosaic",
 							curated: true, proceduralFallback: false, physicalWidthIn: 11.97, physicalDepthIn: 12.13,
@@ -1515,14 +1539,14 @@ describe("interactive 3D room scene helpers", () => {
 						{ productId: 244, key: "golden-trace-11.81in-marble-aluminum-mosaic", pattern: "interlocking-mosaic", moduleIn: 11.81 },
 					] as const;
 					for (const patternCase of sourceIdentityCases) {
-						expect(threeDProductMaterialSource("backsplash", "Legacy renamed tile", null, { productId: patternCase.productId })).toMatchObject({
+						expect(threeDProductMaterialSource("backsplash", null, null, { productId: patternCase.productId })).toMatchObject({
 							key: patternCase.key,
 							curated: true,
 							proceduralFallback: false,
 							backsplashPatternKind: patternCase.pattern,
-							backsplashModuleIn: patternCase.moduleIn,
 							backsplashGroutJointIn: 1 / 16,
 						});
+						expect(threeDProductMaterialSource("backsplash", "Unrelated Mosaic", null, { productId: patternCase.productId })?.key).not.toBe(patternCase.key);
 					}
 			  });
 
@@ -1589,7 +1613,12 @@ describe("interactive 3D room scene helpers", () => {
 		    });
 		    const tile = threeDProductMaterialSource("flooring", "Carrara Porcelain Tile", "/tile.jpg", { category: "Flooring", subCategory: "Tile", size: '12" x 24"' });
 		    expect(tile?.flooringPatternKind).toBe("tile");
-		    expect(threeDProductSurfaceTextureTransform("flooring", tile!, 120, 96)).toEqual({ wrap: "repeat", repeatX: 5, repeatY: 4, offsetX: 0, offsetY: 0, rotation: 0 });
+		    expect(tile).toMatchObject({ physicalWidthIn: 12, physicalDepthIn: 24, cropRetailBackground: true });
+		    expect(threeDProductSurfaceTextureTransform("flooring", tile!, 120, 96)).toEqual({ wrap: "repeat", repeatX: 10, repeatY: 4, offsetX: 0, offsetY: 0, rotation: 0 });
+		    const mosaicFloor = threeDProductMaterialSource("flooring", "Moonstone Hex Mosaic", "/moonstone.png", { category: "Tile & Mosaic", subCategory: "Mosaic", size: "12.80 x 11.10 x 8" });
+		    expect(mosaicFloor).toMatchObject({ flooringPatternKind: "tile", physicalWidthIn: 12.8, physicalDepthIn: 11.1 });
+		    expect(threeDProductSurfaceTextureTransform("flooring", mosaicFloor!, 144, 120).repeatX).toBeCloseTo(144 / 12.8);
+		    expect(threeDProductSurfaceTextureTransform("flooring", mosaicFloor!, 144, 120).repeatY).toBeCloseTo(120 / 11.1);
 		    const sheet = threeDProductMaterialSource("flooring", "Commercial Sheet Vinyl", "/sheet.jpg", { category: "Flooring", subCategory: "Sheet", size: null });
 		    expect(sheet).toMatchObject({ flooringPatternKind: "sheet", plankWidthIn: null, plankLengthIn: null, staggerOffsetsIn: null });
 		    expect(threeDProductSurfaceTextureTransform("flooring", sheet!, 120, 96)).toEqual({ wrap: "repeat", repeatX: 5, repeatY: 4, offsetX: 0, offsetY: 0, rotation: 0 });
