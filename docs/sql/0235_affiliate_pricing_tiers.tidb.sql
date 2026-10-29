@@ -1,4 +1,4 @@
--- TiDB SQL editor version. Numbered 0234. Run after 0233.
+-- TiDB SQL editor version. Numbered 0235. Run after 0234.
 -- Paste each numbered block on its own. One statement per block.
 -- Every table is cabinet_dealz.<table>. No reserved-word aliases.
 -- Do not run this from an application. The owner pastes it in the TiDB editor.

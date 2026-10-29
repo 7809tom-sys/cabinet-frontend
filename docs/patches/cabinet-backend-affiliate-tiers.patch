@@ -1,0 +1,1682 @@
+From bdace500e44414580cf1b2f7451b370e351f9671 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Thu, 29 Oct 2026 13:27:16 +0000
+Subject: [PATCH] Enforce affiliate buy-cost from the assigned pricing tier.
+
+Designer, cart, catalog, orders, and CRM plan totals use the shared tier resolver. Unassigned affiliates keep the platform markup. Flooring and appliances use the 40/60 markup split. Affiliate storefront prices stay the customer price for every viewer, including an approved contractor resolved by resolvePricingFor.
+---
+ .../sql/0235_affiliate_pricing_tiers.tidb.sql |  82 ++++++
+ drizzle/schema.ts                             |  23 ++
+ server/lib/affiliateStorefrontPricing.ts      | 115 +++++++--
+ server/lib/affiliateTierPricing.ts            | 202 +++++++++++++++
+ server/routers/affiliates.ts                  | 122 ++++++++-
+ server/routers/catalog.ts                     |  17 +-
+ server/routers/crm.ts                         |  27 +-
+ server/routers/design.ts                      | 128 +++++++---
+ server/routers/orders.ts                      |  17 +-
+ server/routers/pelican.ts                     |  25 +-
+ server/routers/storefront.ts                  |  13 +-
+ shared/affiliateBranding.test.ts              |  24 ++
+ shared/affiliateBranding.ts                   |  53 ++--
+ shared/affiliatePricingTier.test.ts           | 101 ++++++++
+ shared/affiliatePricingTier.ts                | 238 ++++++++++++++++++
+ 15 files changed, 1090 insertions(+), 97 deletions(-)
+ create mode 100644 docs/sql/0235_affiliate_pricing_tiers.tidb.sql
+ create mode 100644 server/lib/affiliateTierPricing.ts
+ create mode 100644 shared/affiliatePricingTier.test.ts
+ create mode 100644 shared/affiliatePricingTier.ts
+
+diff --git a/docs/sql/0235_affiliate_pricing_tiers.tidb.sql b/docs/sql/0235_affiliate_pricing_tiers.tidb.sql
+new file mode 100644
+index 0000000..4cf20c7
+--- /dev/null
++++ b/docs/sql/0235_affiliate_pricing_tiers.tidb.sql
+@@ -0,0 +1,82 @@
++-- TiDB SQL editor version. Numbered 0235. Run after 0234.
++-- Paste each numbered block on its own. One statement per block.
++-- Every table is cabinet_dealz.<table>. No reserved-word aliases.
++-- Do not run this from an application. The owner pastes it in the TiDB editor.
++-- Safe to re-run: CREATE TABLE IF NOT EXISTS, ADD COLUMN IF NOT EXISTS,
++-- CREATE INDEX IF NOT EXISTS, and INSERT IGNORE.
++--
++-- The three inserted tiers are placeholders for Tom to edit. Their numbers are
++-- neutral (×1.00 of cost, or 0% off list) and are not live discounts.
++-- No affiliate is assigned a tier by this script.
++
++-- 1
++CREATE TABLE IF NOT EXISTS cabinet_dealz.affiliate_pricing_tiers (
++  id INT NOT NULL AUTO_INCREMENT,
++  tierCode VARCHAR(64) NOT NULL,
++  tierName VARCHAR(128) NOT NULL,
++  basisKind VARCHAR(32) NOT NULL,
++  basisPoints INT NOT NULL,
++  volumeThresholdCents INT NULL,
++  examplePlaceholder TINYINT(1) NOT NULL DEFAULT 0,
++  sortOrder INT NOT NULL DEFAULT 0,
++  activeFlag TINYINT(1) NOT NULL DEFAULT 1,
++  notesText TEXT NULL,
++  createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
++  updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
++  PRIMARY KEY (id),
++  UNIQUE KEY affiliate_pricing_tiers_code_uq (tierCode)
++);
++
++-- 2
++ALTER TABLE cabinet_dealz.affiliates
++  ADD COLUMN IF NOT EXISTS pricingTierId INT NULL;
++
++-- 3
++CREATE INDEX IF NOT EXISTS affiliates_pricing_tier_idx
++  ON cabinet_dealz.affiliates (pricingTierId);
++
++-- 4
++INSERT IGNORE INTO cabinet_dealz.affiliate_pricing_tiers (
++  tierCode,
++  tierName,
++  basisKind,
++  basisPoints,
++  volumeThresholdCents,
++  examplePlaceholder,
++  sortOrder,
++  activeFlag,
++  notesText
++) VALUES
++(
++  'example-tier-1',
++  'Tier 1 (example)',
++  'cost_multiplier',
++  10000,
++  NULL,
++  1,
++  1,
++  1,
++  'Placeholder. ×1.00 of Cabinetdealz cost until Tom sets the real multiplier. Not a live discount. Assign it only after editing.'
++),
++(
++  'example-tier-2',
++  'Tier 2 (example)',
++  'list_discount',
++  0,
++  NULL,
++  1,
++  2,
++  1,
++  'Placeholder. 0% off list until Tom sets the real discount. Not a live discount. Assign it only after editing.'
++),
++(
++  'example-tier-3',
++  'Tier 3 (example)',
++  'cost_multiplier',
++  10000,
++  NULL,
++  1,
++  3,
++  1,
++  'Placeholder volume tier. Set the volume threshold and the multiplier before assigning anyone. Not a live discount.'
++);
+diff --git a/drizzle/schema.ts b/drizzle/schema.ts
+index 10116ec..32d4848 100644
+--- a/drizzle/schema.ts
++++ b/drizzle/schema.ts
+@@ -1964,6 +1964,9 @@ export const affiliates = mysqlTable("affiliates", {
+   // affiliate cost to produce the customer-facing retail price. Per-style and
+   // per-category overrides live in affiliateStyleBranding / as JSON below.
+   defaultMarkupBps: int("defaultMarkupBps").default(2000).notNull(), // 20% default
++  // Assigned affiliate buy-cost tier. Null keeps the platform affiliate markup.
++  // The tier row lives in affiliate_pricing_tiers. Hand-run SQL adds the column.
++  pricingTierId: int("pricingTierId"),
+   // Separate list-price markup for Decorative Hardware. It never participates in
+   // cabinet or surface price calculations. The baseline is the supplier list
+   // price; affiliates may set an above-list value, including zero.
+@@ -2008,6 +2011,26 @@ export const affiliates = mysqlTable("affiliates", {
+ export type Affiliate = typeof affiliates.$inferSelect;
+ export type InsertAffiliate = typeof affiliates.$inferInsert;
+ 
++// Admin-defined affiliate buy-cost tiers. Example rows are placeholders.
++// Volume threshold is assignment guidance and is not applied automatically.
++export const affiliatePricingTiers = mysqlTable("affiliate_pricing_tiers", {
++  id: int("id").autoincrement().primaryKey(),
++  tierCode: varchar("tierCode", { length: 64 }).notNull().unique(),
++  tierName: varchar("tierName", { length: 128 }).notNull(),
++  basisKind: varchar("basisKind", { length: 32 }).notNull(),
++  basisPoints: int("basisPoints").notNull(),
++  volumeThresholdCents: int("volumeThresholdCents"),
++  examplePlaceholder: boolean("examplePlaceholder").default(false).notNull(),
++  sortOrder: int("sortOrder").default(0).notNull(),
++  activeFlag: boolean("activeFlag").default(true).notNull(),
++  notesText: text("notesText"),
++  createdAt: timestamp("createdAt").defaultNow().notNull(),
++  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
++});
++
++export type AffiliatePricingTier = typeof affiliatePricingTiers.$inferSelect;
++export type InsertAffiliatePricingTier = typeof affiliatePricingTiers.$inferInsert;
++
+ // ─── Affiliate-approved imported testimonials ────────────────────────────────
+ // These are never created by Cabinet Dealz. Each row is copied from an
+ // affiliate-provided public website, retains its source URL, and remains hidden
+diff --git a/server/lib/affiliateStorefrontPricing.ts b/server/lib/affiliateStorefrontPricing.ts
+index 83061b6..bc31910 100644
+--- a/server/lib/affiliateStorefrontPricing.ts
++++ b/server/lib/affiliateStorefrontPricing.ts
+@@ -1,7 +1,16 @@
+ import { and, eq } from "drizzle-orm";
+-import { affiliates, affiliateStyleBranding } from "../../drizzle/schema";
++import { affiliates, affiliatePricingTiers, affiliateStyleBranding } from "../../drizzle/schema";
+ import { getDb, getPlatformPricingSettings } from "../db";
+ import type { AffiliateMarkup } from "@shared/affiliateBranding";
++import {
++  affiliateTierDashboard,
++  affiliateTierRule,
++  type AffiliateTierView,
++  affiliateTierView,
++  type StoredAffiliateTier,
++} from "./affiliateTierPricing";
++import type { AffiliatePricingTierRule } from "@shared/affiliatePricingTier";
++import type { AffiliateTierDashboard } from "@shared/affiliatePricingTier";
+ 
+ /**
+  * Server-only pricing context for one public affiliate storefront.
+@@ -15,6 +24,10 @@ export type AffiliateStorefrontPricing = {
+   /** Decorative Hardware uses supplier list plus this independent affiliate markup. */
+   hardwareMarkupBps: number;
+   platformSettings: Awaited<ReturnType<typeof getPlatformPricingSettings>>;
++  /** Active buy-cost rule. Null keeps the platform affiliate markup. */
++  tier: AffiliatePricingTierRule | null;
++  tierView: AffiliateTierView | null;
++  tierDashboard: AffiliateTierDashboard;
+ };
+ 
+ function parseCategoryMarkup(value: string | null): Record<string, number> {
+@@ -31,6 +44,60 @@ function parseCategoryMarkup(value: string | null): Record<string, number> {
+   }
+ }
+ 
++async function pricingForAffiliate(
++  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
++  affiliate: {
++    id: number;
++    defaultMarkupBps: number | null;
++    categoryMarkupJson: string | null;
++    hardwareMarkupBps: number | null;
++    pricingTierId: number | null;
++  },
++): Promise<AffiliateStorefrontPricing> {
++  const rows = await db
++    .select({ styleId: affiliateStyleBranding.styleId, markupBps: affiliateStyleBranding.markupBps })
++    .from(affiliateStyleBranding)
++    .where(eq(affiliateStyleBranding.affiliateId, affiliate.id));
++  const styleMarkupBps: Record<number, number> = {};
++  for (const row of rows) {
++    if (typeof row.markupBps === "number" && Number.isFinite(row.markupBps) && row.markupBps >= 0) {
++      styleMarkupBps[row.styleId] = row.markupBps;
++    }
++  }
++  const tierRow = affiliate.pricingTierId == null
++    ? null
++    : (await db.select().from(affiliatePricingTiers).where(eq(affiliatePricingTiers.id, affiliate.pricingTierId)).limit(1))[0] ?? null;
++  const stored = tierRow ? storedTier(tierRow) : null;
++  return {
++    affiliateId: affiliate.id,
++    markup: {
++      globalMarkupBps: affiliate.defaultMarkupBps ?? 0,
++      categoryMarkupBps: parseCategoryMarkup(affiliate.categoryMarkupJson),
++      styleMarkupBps,
++    },
++    hardwareMarkupBps: Math.max(0, affiliate.hardwareMarkupBps ?? 0),
++    platformSettings: await getPlatformPricingSettings(),
++    tier: affiliateTierRule(stored),
++    tierView: stored ? affiliateTierView(stored) : null,
++    tierDashboard: affiliateTierDashboard(stored),
++  };
++}
++
++function storedTier(row: typeof affiliatePricingTiers.$inferSelect): StoredAffiliateTier {
++  return {
++    id: row.id,
++    tierCode: row.tierCode,
++    tierName: row.tierName,
++    basisKind: row.basisKind,
++    basisPoints: row.basisPoints,
++    volumeThresholdCents: row.volumeThresholdCents,
++    examplePlaceholder: row.examplePlaceholder,
++    sortOrder: row.sortOrder,
++    activeFlag: row.activeFlag,
++    notesText: row.notesText,
++  };
++}
++
+ /**
+  * Resolve an active affiliate storefront's markup configuration. Disabled,
+  * inactive, unknown, and owner scopes never receive an affiliate price context.
+@@ -49,6 +116,7 @@ export async function loadAffiliateStorefrontPricing(
+       defaultMarkupBps: affiliates.defaultMarkupBps,
+       categoryMarkupJson: affiliates.categoryMarkupJson,
+       hardwareMarkupBps: affiliates.hardwareMarkupBps,
++      pricingTierId: affiliates.pricingTierId,
+     })
+     .from(affiliates)
+     .where(and(
+@@ -58,26 +126,31 @@ export async function loadAffiliateStorefrontPricing(
+     ))
+     .limit(1);
+   if (!affiliate) return null;
++  return pricingForAffiliate(db, affiliate);
++}
+ 
+-  const rows = await db
+-    .select({ styleId: affiliateStyleBranding.styleId, markupBps: affiliateStyleBranding.markupBps })
+-    .from(affiliateStyleBranding)
+-    .where(eq(affiliateStyleBranding.affiliateId, affiliate.id));
+-  const styleMarkupBps: Record<number, number> = {};
+-  for (const row of rows) {
+-    if (typeof row.markupBps === "number" && Number.isFinite(row.markupBps) && row.markupBps >= 0) {
+-      styleMarkupBps[row.styleId] = row.markupBps;
+-    }
+-  }
++/** Owner, estimator, and CRM pricing. Does not require the public storefront to be enabled. */
++export async function loadAffiliatePricingById(
++  affiliateId: number,
++): Promise<AffiliateStorefrontPricing | null> {
++  const db = await getDb();
++  if (!db) return null;
++  const [affiliate] = await db
++    .select({
++      id: affiliates.id,
++      defaultMarkupBps: affiliates.defaultMarkupBps,
++      categoryMarkupJson: affiliates.categoryMarkupJson,
++      hardwareMarkupBps: affiliates.hardwareMarkupBps,
++      pricingTierId: affiliates.pricingTierId,
++    })
++    .from(affiliates)
++    .where(eq(affiliates.id, affiliateId))
++    .limit(1);
++  if (!affiliate) return null;
++  return pricingForAffiliate(db, affiliate);
++}
+ 
+-  return {
+-    affiliateId: affiliate.id,
+-    markup: {
+-      globalMarkupBps: affiliate.defaultMarkupBps ?? 0,
+-      categoryMarkupBps: parseCategoryMarkup(affiliate.categoryMarkupJson),
+-      styleMarkupBps,
+-    },
+-    hardwareMarkupBps: Math.max(0, affiliate.hardwareMarkupBps ?? 0),
+-    platformSettings: await getPlatformPricingSettings(),
+-  };
++export async function loadAffiliateTierDashboard(affiliateId: number): Promise<AffiliateTierDashboard> {
++  const pricing = await loadAffiliatePricingById(affiliateId);
++  return pricing?.tierDashboard ?? { assigned: false, inactive: false, tierName: null, summary: "No pricing tier assigned. Cabinet cost uses the platform affiliate markup until an administrator assigns a tier.", examplePlaceholder: false, volumeLabel: null };
+ }
+diff --git a/server/lib/affiliateTierPricing.ts b/server/lib/affiliateTierPricing.ts
+new file mode 100644
+index 0000000..03c837b
+--- /dev/null
++++ b/server/lib/affiliateTierPricing.ts
+@@ -0,0 +1,202 @@
++import { and, eq, inArray } from "drizzle-orm";
++import type { AffiliateMarkup } from "@shared/affiliateBranding";
++import { resolveAffiliateStorefrontSale } from "@shared/affiliateBranding";
++import {
++  affiliateTierCodeFromName,
++  affiliateTierSummary,
++  formatVolumeThreshold,
++  unassignedAffiliateTier,
++  validateAffiliateTierDraft,
++  type AffiliatePricingTierRule,
++  type AffiliateTierDashboard,
++  type AffiliateTierDraft,
++} from "@shared/affiliatePricingTier";
++import { cabinets, distributorSkus } from "../../drizzle/schema";
++import type { AffiliateStorefrontPricing } from "./affiliateStorefrontPricing";
++
++export type StoredAffiliateTier = {
++  id: number;
++  tierCode: string;
++  tierName: string;
++  basisKind: string;
++  basisPoints: number;
++  volumeThresholdCents: number | null;
++  examplePlaceholder: boolean;
++  sortOrder: number;
++  activeFlag: boolean;
++  notesText: string | null;
++};
++
++export type AffiliateTierView = {
++  id: number;
++  tierCode: string;
++  tierName: string;
++  basis: "cost_multiplier" | "list_discount";
++  basisPoints: number;
++  volumeThresholdCents: number | null;
++  examplePlaceholder: boolean;
++  sortOrder: number;
++  active: boolean;
++  notes: string | null;
++  summary: string;
++};
++
++export function affiliateTierRule(row: StoredAffiliateTier | null | undefined): AffiliatePricingTierRule | null {
++  if (!row?.activeFlag) return null;
++  if (row.basisKind !== "cost_multiplier" && row.basisKind !== "list_discount") return null;
++  return { basis: row.basisKind, basisPoints: row.basisPoints };
++}
++
++export function affiliateTierView(row: StoredAffiliateTier): AffiliateTierView {
++  const basis = row.basisKind === "list_discount" ? "list_discount" : "cost_multiplier";
++  return {
++    id: row.id,
++    tierCode: row.tierCode,
++    tierName: row.tierName,
++    basis,
++    basisPoints: row.basisPoints,
++    volumeThresholdCents: row.volumeThresholdCents,
++    examplePlaceholder: row.examplePlaceholder,
++    sortOrder: row.sortOrder,
++    active: row.activeFlag,
++    notes: row.notesText,
++    summary: affiliateTierSummary({
++      basis,
++      basisPoints: row.basisPoints,
++      volumeThresholdCents: row.volumeThresholdCents,
++      examplePlaceholder: row.examplePlaceholder,
++      active: row.activeFlag,
++    }),
++  };
++}
++
++export function affiliateTierDashboard(row: StoredAffiliateTier | null | undefined): AffiliateTierDashboard {
++  if (!row) return unassignedAffiliateTier();
++  const view = affiliateTierView(row);
++  if (!row.activeFlag) {
++    return {
++      assigned: true,
++      inactive: true,
++      tierName: row.tierName,
++      summary: `${view.summary}. Platform affiliate markup is used until an active tier is assigned.`,
++      examplePlaceholder: row.examplePlaceholder,
++      volumeLabel: formatVolumeThreshold(row.volumeThresholdCents),
++    };
++  }
++  return {
++    assigned: true,
++    inactive: false,
++    tierName: row.tierName,
++    summary: view.summary,
++    examplePlaceholder: row.examplePlaceholder,
++    volumeLabel: formatVolumeThreshold(row.volumeThresholdCents),
++  };
++}
++
++export function dollarsToCents(value: string | number | null | undefined): number | null {
++  if (value == null || value === "") return null;
++  const amount = Number(value);
++  if (!Number.isFinite(amount)) return null;
++  return Math.round(amount * 100);
++}
++
++export function affiliateStorefrontSale(
++  pricing: Pick<AffiliateStorefrontPricing, "platformSettings" | "markup" | "tier">,
++  sourceCostCents: number,
++  opts: {
++    categoryKey?: string | null;
++    styleId?: number | null;
++    listPriceCents?: number | null;
++    referenceRetailCents?: number | null;
++  } = {},
++) {
++  return resolveAffiliateStorefrontSale(sourceCostCents, pricing.platformSettings, pricing.markup, {
++    ...opts,
++    tier: pricing.tier,
++  });
++}
++
++type PlacedPriceLine = {
++  masterCode?: string | null;
++  styleId?: number | null;
++  category?: string | null;
++};
++
++type PriceDb = {
++  select: Function;
++};
++
++/** Server total for a saved affiliate design. Null when any cabinet line cannot be priced. */
++export async function sumPlacedAffiliateSale(
++  db: PriceDb,
++  pricing: Pick<AffiliateStorefrontPricing, "platformSettings" | "markup" | "tier">,
++  placedRaw: unknown,
++  fallbackStyleId: number | null,
++  distributorId: number | null,
++): Promise<number | null> {
++  const placed = Array.isArray(placedRaw) ? placedRaw as PlacedPriceLine[] : [];
++  const items = new Map<string, { masterCode: string; styleId: number; category: string | null; qty: number }>();
++  for (const item of placed) {
++    const masterCode = item.masterCode?.trim();
++    const styleId = item.styleId ?? fallbackStyleId;
++    if (!masterCode || styleId == null) continue;
++    const key = `${masterCode.toUpperCase()}:${styleId}`;
++    const existing = items.get(key);
++    if (existing) existing.qty += 1;
++    else items.set(key, { masterCode, styleId, category: item.category ?? null, qty: 1 });
++  }
++  if (items.size === 0) return null;
++  const codes = Array.from(new Set(Array.from(items.values()).map((item) => item.masterCode)));
++  const styleIds = Array.from(new Set(Array.from(items.values()).map((item) => item.styleId)));
++  const rows = await db
++    .select({
++      masterCode: cabinets.masterCode,
++      category: cabinets.category,
++      styleId: distributorSkus.styleId,
++      yourCost: distributorSkus.yourCost,
++      listPrice: distributorSkus.listPrice,
++    })
++    .from(distributorSkus)
++    .innerJoin(cabinets, eq(cabinets.id, distributorSkus.cabinetId))
++    .where(and(
++      inArray(cabinets.masterCode, codes),
++      inArray(distributorSkus.styleId, styleIds),
++      eq(distributorSkus.isAvailable, true),
++      eq(distributorSkus.isPublished, true),
++      ...(distributorId ? [eq(distributorSkus.distributorId, distributorId)] : []),
++    ));
++  let totalCents = 0;
++  let priced = 0;
++  for (const item of Array.from(items.values())) {
++    const matches = rows.filter((row: { masterCode: string; styleId: number; yourCost: string | null }) =>
++      row.masterCode.toUpperCase() === item.masterCode.toUpperCase() && Number(row.styleId) === item.styleId);
++    if (matches.length === 0) continue;
++    matches.sort((a: { yourCost: string | null }, b: { yourCost: string | null }) => Number(a.yourCost ?? Infinity) - Number(b.yourCost ?? Infinity));
++    const row = matches[0] as { yourCost: string | null; listPrice: string | null; category: string | null };
++    const sourceCostCents = dollarsToCents(row.yourCost);
++    if (sourceCostCents == null || sourceCostCents <= 0) continue;
++    const sale = affiliateStorefrontSale(pricing, sourceCostCents, {
++      categoryKey: item.category ?? row.category,
++      styleId: item.styleId,
++      listPriceCents: dollarsToCents(row.listPrice),
++    });
++    totalCents += sale.retailCents * item.qty;
++    priced += 1;
++  }
++  if (priced !== items.size) return null;
++  return Math.round(totalCents) / 100;
++}
++
++export function checkedTierDraft(input: AffiliateTierDraft) {
++  return validateAffiliateTierDraft(input);
++}
++
++export function nextTierCode(name: string, existing: string[]): string {
++  const base = affiliateTierCodeFromName(name);
++  if (!existing.includes(base)) return base;
++  let suffix = 2;
++  while (existing.includes(`${base}-${suffix}`)) suffix += 1;
++  return `${base}-${suffix}`;
++}
++
++export type { AffiliateMarkup };
+diff --git a/server/routers/affiliates.ts b/server/routers/affiliates.ts
+index df4ab9c..266e9fe 100644
+--- a/server/routers/affiliates.ts
++++ b/server/routers/affiliates.ts
+@@ -13,11 +13,14 @@ import {
+   router,
+ } from "../_core/trpc";
+ import { getDb } from "../db";
+-import { affiliates, affiliateTestimonials, orderRequests, affiliateStyleBranding, affiliateDistributorSelections, affiliateFeaturedDistributorEvents, doorStyles, distributors, distributorSkus, affiliatePayouts, affiliateBannerSchedules, affiliatePromoDiscounts, designConsultations, designLeads, affiliateTeamMembers, affiliateHardwareCommissionSnapshots, users } from "../../drizzle/schema";
++import { affiliates, affiliatePricingTiers, affiliateTestimonials, orderRequests, affiliateStyleBranding, affiliateDistributorSelections, affiliateFeaturedDistributorEvents, doorStyles, distributors, distributorSkus, affiliatePayouts, affiliateBannerSchedules, affiliatePromoDiscounts, designConsultations, designLeads, affiliateTeamMembers, affiliateHardwareCommissionSnapshots, users } from "../../drizzle/schema";
+ import { resendConfigured, sendEmail } from "../email";
+ import { buildSalesDemoInvite, deliverInviteThenGrant, SALES_DEMO_AFFILIATE_SLUG, SALES_DEMO_TEAM_ACCESS } from "../salesDemoInvite";
+ import { buildAffiliateSetupInvite } from "../affiliateSetupInvite";
+ import { resolveAffiliateAccess } from "../lib/affiliateAccess";
++import { loadAffiliatePricingById } from "../lib/affiliateStorefrontPricing";
++import { affiliateTierDashboard, affiliateTierView, checkedTierDraft, nextTierCode } from "../lib/affiliateTierPricing";
++import { unassignedAffiliateTier } from "@shared/affiliatePricingTier";
+ import { toAdminAffiliate, toPublicStorefront, toViewerAffiliate } from "../lib/affiliatePrivacy";
+ import { encryptW9TaxId, maskW9TaxId, w9TaxIdLast4 } from "../lib/w9TaxIdCrypto";
+ import { resolveConsultationViewer } from "../lib/consultationAffiliate";
+@@ -562,7 +565,12 @@ export const affiliatesRouter = router({
+     const db = await getDb();
+     if (!db) return [];
+     const rows = await db.select().from(affiliates).orderBy(desc(affiliates.createdAt));
+-    return rows.map(toAdminAffiliate);
++    const tiers = await db.select().from(affiliatePricingTiers);
++    const tierById = new Map(tiers.map((tier) => [tier.id, tier]));
++    return rows.map((row) => ({
++      ...toAdminAffiliate(row),
++      pricingTier: affiliateTierDashboard(row.pricingTierId == null ? null : tierById.get(row.pricingTierId) ?? null),
++    }));
+   }),
+ 
+   adminGet: adminProcedure
+@@ -1169,11 +1177,15 @@ export const affiliatesRouter = router({
+       orders.map((o) => ({ totalAmount: o.totalAmount === null ? null : Number(o.totalAmount), status: o.status })),
+       rate
+     );
++    const [tierRow] = mine.pricingTierId == null
++      ? []
++      : await db.select().from(affiliatePricingTiers).where(eq(affiliatePricingTiers.id, mine.pricingTierId)).limit(1);
+     return {
+       affiliate: toViewerAffiliate(mine, access),
+       orders,
+       summary,
+       commissionRate: rate,
++      pricingTier: affiliateTierDashboard(tierRow ?? null),
+     };
+   }),
+ 
+@@ -1594,6 +1606,9 @@ export const affiliatesRouter = router({
+         orders.map((o) => ({ totalAmount: o.totalAmount === null ? null : Number(o.totalAmount), status: o.status })),
+         rate
+       );
++      const [tierRow] = a.pricingTierId == null
++        ? []
++        : await db.select().from(affiliatePricingTiers).where(eq(affiliatePricingTiers.id, a.pricingTierId)).limit(1);
+       return {
+         affiliate: {
+           ...toAdminAffiliate(a),
+@@ -1605,6 +1620,7 @@ export const affiliatesRouter = router({
+         orders,
+         summary,
+         commissionRate: rate,
++        pricingTier: affiliateTierDashboard(tierRow ?? null),
+       };
+     }),
+ 
+@@ -2360,4 +2376,106 @@ export const affiliatesRouter = router({
+   updatePayoutVerification: adminProcedure
+     .input(z.object({ affiliateId: z.number(), status: z.string(), notes: z.string().optional() }))
+     .mutation(async () => ({ ok: true })),
++
++  adminPricingTiers: adminProcedure.query(async () => {
++    const db = await getDb();
++    if (!db) return [];
++    const rows = await db.select().from(affiliatePricingTiers).orderBy(affiliatePricingTiers.sortOrder, affiliatePricingTiers.tierName);
++    return rows.map((row) => affiliateTierView(row));
++  }),
++
++  adminSavePricingTier: adminProcedure
++    .input(z.object({
++      id: z.number().int().positive().optional(),
++      tierName: z.string().min(1).max(128),
++      basis: z.enum(["cost_multiplier", "list_discount"]),
++      basisPoints: z.number().int(),
++      volumeThresholdCents: z.number().int().nullable(),
++      examplePlaceholder: z.boolean(),
++      active: z.boolean(),
++      sortOrder: z.number().int(),
++      notes: z.string().max(2000).nullable(),
++    }))
++    .mutation(async ({ input }) => {
++      const checked = checkedTierDraft({
++        tierName: input.tierName,
++        basis: input.basis,
++        basisPoints: input.basisPoints,
++        volumeThresholdCents: input.volumeThresholdCents,
++        examplePlaceholder: input.examplePlaceholder,
++        notes: input.notes,
++        active: input.active,
++        sortOrder: input.sortOrder,
++      });
++      if (!checked.ok) throw new TRPCError({ code: "BAD_REQUEST", message: checked.message });
++      const db = await getDb();
++      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
++      const draft = checked.draft;
++      if (input.id) {
++        const [existing] = await db.select({ id: affiliatePricingTiers.id }).from(affiliatePricingTiers).where(eq(affiliatePricingTiers.id, input.id)).limit(1);
++        if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Pricing tier not found." });
++        await db.update(affiliatePricingTiers).set({
++          tierName: draft.tierName,
++          basisKind: draft.basis,
++          basisPoints: draft.basisPoints,
++          volumeThresholdCents: draft.volumeThresholdCents,
++          examplePlaceholder: draft.examplePlaceholder,
++          activeFlag: draft.active,
++          sortOrder: draft.sortOrder,
++          notesText: draft.notes,
++        }).where(eq(affiliatePricingTiers.id, input.id));
++        return { id: input.id };
++      }
++      const codes = (await db.select({ tierCode: affiliatePricingTiers.tierCode }).from(affiliatePricingTiers)).map((row) => row.tierCode);
++      const inserted = await db.insert(affiliatePricingTiers).values({
++        tierCode: nextTierCode(draft.tierName, codes),
++        tierName: draft.tierName,
++        basisKind: draft.basis,
++        basisPoints: draft.basisPoints,
++        volumeThresholdCents: draft.volumeThresholdCents,
++        examplePlaceholder: draft.examplePlaceholder,
++        sortOrder: draft.sortOrder,
++        activeFlag: draft.active,
++        notesText: draft.notes,
++      });
++      const id = (inserted as unknown as [{ insertId: number }])[0].insertId;
++      return { id };
++    }),
++
++  adminAssignPricingTier: adminProcedure
++    .input(z.object({
++      affiliateId: z.number().int().positive(),
++      pricingTierId: z.number().int().positive().nullable(),
++    }))
++    .mutation(async ({ input }) => {
++      const db = await getDb();
++      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
++      const [affiliate] = await db.select({ id: affiliates.id }).from(affiliates).where(eq(affiliates.id, input.affiliateId)).limit(1);
++      if (!affiliate) throw new TRPCError({ code: "NOT_FOUND", message: "Affiliate not found." });
++      if (input.pricingTierId != null) {
++        const [tier] = await db.select({ id: affiliatePricingTiers.id, activeFlag: affiliatePricingTiers.activeFlag })
++          .from(affiliatePricingTiers)
++          .where(eq(affiliatePricingTiers.id, input.pricingTierId))
++          .limit(1);
++        if (!tier?.activeFlag) throw new TRPCError({ code: "BAD_REQUEST", message: "Choose an active pricing tier." });
++      }
++      await db.update(affiliates).set({ pricingTierId: input.pricingTierId }).where(eq(affiliates.id, input.affiliateId));
++      return { id: input.affiliateId, pricingTierId: input.pricingTierId };
++    }),
++
++  myPricingTier: partnerProcedure
++    .input(z.object({ affiliateId: z.number().int().positive().optional() }).optional())
++    .query(async ({ ctx, input }) => {
++      const db = await getDb();
++      if (!db) return unassignedAffiliateTier();
++      let affiliateId = input?.affiliateId ?? null;
++      if (ctx.user.role !== "admin" || affiliateId == null) {
++        const access = await resolveAffiliateAccess(db, ctx.user);
++        if (ctx.user.role !== "admin") affiliateId = access?.affiliateId ?? null;
++        else if (affiliateId == null) affiliateId = access?.affiliateId ?? null;
++      }
++      if (affiliateId == null) return unassignedAffiliateTier();
++      const pricing = await loadAffiliatePricingById(affiliateId);
++      return pricing?.tierDashboard ?? unassignedAffiliateTier();
++    }),
+ });
+diff --git a/server/routers/catalog.ts b/server/routers/catalog.ts
+index 3f125fd..ff7454e 100644
+--- a/server/routers/catalog.ts
++++ b/server/routers/catalog.ts
+@@ -33,7 +33,8 @@ import {
+ import { resolvePresentation, applyMarkup } from "../lib/presentation";
+ import { resolveStorefrontTier, visiblePricesForViewer } from "../../shared/pricingTier";
+ import { sellPriceForTier } from "@shared/margins";
+-import { resolveAffiliateStorefrontSale } from "@shared/affiliateBranding";
++import { loadAffiliateStorefrontPricing } from "../lib/affiliateStorefrontPricing";
++import { affiliateStorefrontSale, dollarsToCents } from "../lib/affiliateTierPricing";
+ import { invokeLLM } from "../_core/llm";
+ import sharp from "sharp";
+ import { generateImage } from "../_core/imageGeneration";
+@@ -55,7 +56,6 @@ import { resolveCanonicalCatalogSources } from "../lib/canonicalCatalogSources";
+ import { isWallWineRackCabinet } from "../../shared/wallWineRack";
+ import { designerCabinetReadinessBySku } from "../lib/designerCabinetReadiness";
+ import { landedCostFromList, landedCostMultiplier } from "../lib/distributorCostMultiplier";
+-import { loadAffiliateStorefrontPricing } from "../lib/affiliateStorefrontPricing";
+ import { loadCodeEquivalenceGroups } from "../lib/codeEquivalenceLoader";
+ import { framelessCatalogPresentation } from "../lib/framelessCatalogPresentation";
+ 
+@@ -4485,12 +4485,14 @@ export const pricingRouter = router({
+             isAdmin,
+           );
+           const sourceCostCents = r.yourCost == null ? null : Math.round(Number(r.yourCost) * 100);
+-          const affiliateSale = affiliatePricing && sourceCostCents != null && Number.isFinite(sourceCostCents) && sourceCostCents > 0
+-            ? resolveAffiliateStorefrontSale(sourceCostCents, affiliatePricing.platformSettings, affiliatePricing.markup, {
++          const affiliateSaleQuote = affiliatePricing && sourceCostCents != null && Number.isFinite(sourceCostCents) && sourceCostCents > 0
++            ? affiliateStorefrontSale(affiliatePricing, sourceCostCents, {
+                 styleId: Number(r.styleId),
+                 categoryKey: r.category,
+-              }).retailCents / 100
++                listPriceCents: dollarsToCents(r.listPrice),
++              })
+             : null;
++          const affiliateSale = affiliateSaleQuote ? affiliateSaleQuote.retailCents / 100 : null;
+           const publicPrices = affiliatePricing
+             ? {
+                 // An affiliate page shows its actual sale price, not a public
+@@ -4503,8 +4505,9 @@ export const pricingRouter = router({
+               }
+             : gated;
+           const rawCost = r.yourCost == null ? null : Number(r.yourCost);
+-          const affiliateAdjustedCost =
+-            rawCost != null && Number.isFinite(rawCost) && affiliateFeeSettings
++          const affiliateAdjustedCost = affiliateSaleQuote
++            ? (affiliateSaleQuote.affiliateCostCents / 100).toFixed(2)
++            : rawCost != null && Number.isFinite(rawCost) && affiliateFeeSettings
+               ? (priceLadder(Math.round(rawCost * 100), affiliateFeeSettings).affiliateCents / 100).toFixed(2)
+               : null;
+           return {
+diff --git a/server/routers/crm.ts b/server/routers/crm.ts
+index cb5c296..318ba4c 100644
+--- a/server/routers/crm.ts
++++ b/server/routers/crm.ts
+@@ -38,6 +38,8 @@ import {
+   shouldCreateCommission,
+ } from "@shared/salesPrograms";
+ import { resolveAffiliateAccess } from "../lib/affiliateAccess";
++import { loadAffiliatePricingById } from "../lib/affiliateStorefrontPricing";
++import { sumPlacedAffiliateSale } from "../lib/affiliateTierPricing";
+ import { verifyUsAddress, formatEnteredAddress } from "../lib/addressVerification";
+ import { buildCrmInvoiceEmailHtml, createCrmInvoicePdf } from "../crmInvoicePdf";
+ import { usableInvoicePrefill, verifiedFreightInvoicePrefill } from "../crmInvoicePrefill";
+@@ -460,6 +462,7 @@ export const crmRouter = router({
+           createdAt: kitchenDesigns.createdAt,
+           updatedAt: kitchenDesigns.updatedAt,
+           selectedStyleId: kitchenDesigns.selectedStyleId,
++          selectedDistributorId: kitchenDesigns.selectedDistributorId,
+           selectedSurfaces: kitchenDesigns.selectedSurfaces,
+           placedCabinets: kitchenDesigns.placedCabinets,
+         })
+@@ -474,6 +477,23 @@ export const crmRouter = router({
+       const viewsByDesignId = new Map<number, typeof viewRows>();
+       for (const v of viewRows) viewsByDesignId.set(v.designId, [...(viewsByDesignId.get(v.designId) ?? []), v]);
+       const savedDesignById = new Map(savedDesignRows.map((design) => [design.id, design]));
++      const tierSaleByDesignId = new Map<number, number>();
++      if (deal.affiliateId != null) {
++        const affiliatePricing = await loadAffiliatePricingById(deal.affiliateId);
++        if (affiliatePricing) {
++          for (const design of savedDesignRows) {
++            if (design.affiliateId !== deal.affiliateId) continue;
++            const total = await sumPlacedAffiliateSale(
++              db,
++              affiliatePricing,
++              design.placedCabinets,
++              design.selectedStyleId,
++              design.selectedDistributorId ?? null,
++            );
++            if (total != null && total > 0) tierSaleByDesignId.set(design.id, total);
++          }
++        }
++      }
+ 	  const scopedLinkedDesignIds = savedDesignRows.filter((design) => design.affiliateId === deal.affiliateId).map((design) => design.id);
+       const shareRows = scopedLinkedDesignIds.length === 0
+         ? []
+@@ -497,8 +517,9 @@ export const crmRouter = router({
+ 	      if (!savedDesign || savedDesign.affiliateId !== deal.affiliateId) return [];
+         const share = shareByDesignId.get(link.designId);
+         const shareSubtotal = Number(share?.orderSubtotal ?? 0);
++        const tierSale = tierSaleByDesignId.get(link.designId) ?? 0;
+         const submittedOrderValue = linkedOrder?.kitchenDesignId === link.designId ? Number(linkedOrder.totalAmount ?? 0) : 0;
+-        const designValue = shareSubtotal > 0 ? shareSubtotal : submittedOrderValue > 0 ? submittedOrderValue : 0;
++        const designValue = tierSale > 0 ? tierSale : shareSubtotal > 0 ? shareSubtotal : submittedOrderValue > 0 ? submittedOrderValue : 0;
+ 	      const creatorAffiliate = savedDesign.affiliateId == null ? null : linkedAffiliateById.get(savedDesign.affiliateId) ?? null;
+         return [{
+           ...link,
+@@ -517,7 +538,9 @@ export const crmRouter = router({
+           // A zero plan share is not an authorized sell price. Keep it out of
+           // the invoice until a verified saved-order subtotal exists.
+           catalogSubtotal: designValue > 0 ? designValue.toFixed(2) : null,
+-          catalogSubtotalSource: shareSubtotal > 0
++          catalogSubtotalSource: tierSale > 0
++            ? "Affiliate pricing tier"
++            : shareSubtotal > 0
+             ? "Saved design catalog subtotal"
+             : submittedOrderValue > 0
+               ? "Submitted order value"
+diff --git a/server/routers/design.ts b/server/routers/design.ts
+index e17e8a4..a9016b7 100644
+--- a/server/routers/design.ts
++++ b/server/routers/design.ts
+@@ -13,7 +13,8 @@ import { invokeLLM } from "../_core/llm";
+ import { generateRoomSceneImage, photorealRoomScenePrompt } from "../lib/roomScenePromptRules";
+ import { autoFillSpan, type FillCabinet, type FillMode } from "../../shared/fillEngine";
+ import { sellPriceForTier } from "@shared/margins";
+-import { resolveAffiliateStorefrontSale } from "@shared/affiliateBranding";
++import { loadAffiliateStorefrontPricing, loadAffiliatePricingById } from "../lib/affiliateStorefrontPricing";
++import { affiliateStorefrontSale, dollarsToCents } from "../lib/affiliateTierPricing";
+ import { getPricingSettings } from "../db";
+ import { resolveStorefrontTier, visiblePricesForViewer } from "../../shared/pricingTier";
+ import { resolveAffiliateAccess } from "../lib/affiliateAccess";
+@@ -29,7 +30,6 @@ import { priceLadder } from "../../shared/pricing";
+ import { resolveCanonicalCatalogSources } from "../lib/canonicalCatalogSources";
+ import { isWallWineRackCabinet } from "../../shared/wallWineRack";
+ import { applyDistributorCabinetConfig, parseDistributorCabinetConfig } from "../lib/distributorCabinetConfig";
+-import { loadAffiliateStorefrontPricing } from "../lib/affiliateStorefrontPricing";
+ import {
+   AEF_PRINTED_GEOMETRY_MARKER,
+   aefPrintedGeometryForSku,
+@@ -1037,6 +1037,7 @@ export const designRouter = router({
+           }))
+           .max(2000),
+         distributorId: z.number().optional(),
++        affiliateSlug: z.string().trim().min(1).max(64).optional(),
+       })
+     )
+     .query(async ({ ctx, input }) => {
+@@ -1215,6 +1216,7 @@ export const designRouter = router({
+           homeownerPrice: distributorSkus.homeownerPrice,
+           adjustedListPrice: distributorSkus.adjustedListPrice,
+           yourCost: distributorSkus.yourCost,
++          category: cabinets.category,
+           retailPriceBasis: distributors.retailPriceBasis,
+           vendorWholesale: distributorSkus.vendorWholesale,
+           vendorMarkupPercent: distributors.markupPercent,
+@@ -1223,11 +1225,15 @@ export const designRouter = router({
+         // correct tier price (cost × markup).
+         .from(distributorSkus)
+         .innerJoin(distributors, eq(distributors.id, distributorSkus.distributorId))
++        .innerJoin(cabinets, eq(cabinets.id, distributorSkus.cabinetId))
+         .where(and(...conditions));
+ 
+       // Best (cheapest contractor) row per requested pair. An authorized legacy
+       // alias may resolve to a different canonical cabinet id in the query, but
+       // it must return under the requested id for the saved design's price map.
++      // Affiliate storefronts choose the lowest Cabinetdealz cost so the later
++      // tier price matches the owner estimator.
++      const affiliatePricing = await loadAffiliateStorefrontPricing(input.affiliateSlug);
+       const best = new Map<string, { requestedCabinetId: number; row: (typeof rows)[number]; exact: boolean }>();
+       for (const r of rows) {
+         const requestedIds = requestedIdsBySourcePair.get(`${r.cabinetId}:${r.styleId}`) ?? [];
+@@ -1241,8 +1247,12 @@ export const designRouter = router({
+           if (!cur) { best.set(key, { requestedCabinetId, row: r, exact }); continue; }
+           // The requested code's own row always beats an alias-group swap.
+           if (exact !== cur.exact) { if (exact) best.set(key, { requestedCabinetId, row: r, exact }); continue; }
+-          const a = Number(r.contractorPrice ?? r.wholesalePrice ?? Infinity);
+-          const b = Number(cur.row.contractorPrice ?? cur.row.wholesalePrice ?? Infinity);
++          const a = affiliatePricing
++            ? Number(r.yourCost ?? Infinity)
++            : Number(r.contractorPrice ?? r.wholesalePrice ?? Infinity);
++          const b = affiliatePricing
++            ? Number(cur.row.yourCost ?? Infinity)
++            : Number(cur.row.contractorPrice ?? cur.row.wholesalePrice ?? Infinity);
+           if (a < b) best.set(key, { requestedCabinetId, row: r, exact });
+         }
+       }
+@@ -1251,19 +1261,30 @@ export const designRouter = router({
+       // verified cost/list basis through the saved tier markup; never bypass
+       // this resolver with stale stored columns.
+       const ps = await getPricingSettings();
+-      return Array.from(best.values()).map(({ requestedCabinetId, row, exact }) => ({
+-        cabinetId: requestedCabinetId,
+-        styleId: Number(row.styleId),
+-        /** Code the active line actually sells; differs from the placed code only after an equivalence swap. */
+-        resolvedMasterCode: masterCodeByCabinetId.get(Number(row.cabinetId)) ?? masterCodeByRequestedId.get(requestedCabinetId) ?? null,
+-        resolvedCabinetId: Number(row.cabinetId),
+-        aliasSwapped: !exact,
+-        listPrice: row.listPrice,
+-        adjustedListPrice: row.adjustedListPrice,
+-        wholesalePrice: sellPriceForTier(row, ps, "wholesale")?.toFixed(2) ?? null,
+-        contractorPrice: sellPriceForTier(row, ps, "contractor")?.toFixed(2) ?? null,
+-        homeownerPrice: sellPriceForTier(row, ps, "homeowner")?.toFixed(2) ?? null,
+-      }));
++      return Array.from(best.values()).map(({ requestedCabinetId, row, exact }) => {
++        const sourceCostCents = dollarsToCents(row.yourCost);
++        const affiliateSale = affiliatePricing && sourceCostCents != null && sourceCostCents > 0
++          ? affiliateStorefrontSale(affiliatePricing, sourceCostCents, {
++              categoryKey: row.category,
++              styleId: Number(row.styleId),
++              listPriceCents: dollarsToCents(row.listPrice),
++            }).retailCents / 100
++          : null;
++        const saleText = affiliateSale != null ? affiliateSale.toFixed(2) : null;
++        return {
++          cabinetId: requestedCabinetId,
++          styleId: Number(row.styleId),
++          /** Code the active line actually sells; differs from the placed code only after an equivalence swap. */
++          resolvedMasterCode: masterCodeByCabinetId.get(Number(row.cabinetId)) ?? masterCodeByRequestedId.get(requestedCabinetId) ?? null,
++          resolvedCabinetId: Number(row.cabinetId),
++          aliasSwapped: !exact,
++          listPrice: affiliatePricing ? null : row.listPrice,
++          adjustedListPrice: affiliatePricing ? null : row.adjustedListPrice,
++          wholesalePrice: saleText ?? sellPriceForTier(row, ps, "wholesale")?.toFixed(2) ?? null,
++          contractorPrice: saleText ?? sellPriceForTier(row, ps, "contractor")?.toFixed(2) ?? null,
++          homeownerPrice: saleText ?? sellPriceForTier(row, ps, "homeowner")?.toFixed(2) ?? null,
++        };
++      });
+     }),
+ 
+   /**
+@@ -1276,6 +1297,7 @@ export const designRouter = router({
+       targetStyleId: z.number().int().positive(),
+       distributorId: z.number().int().positive().optional(),
+       tier: z.enum(["homeowner", "contractor", "wholesale"]),
++      affiliateSlug: z.string().trim().min(1).max(64).optional(),
+       cabinets: z.array(z.object({
+         uid: z.string().min(1).max(160),
+         cabinetId: z.number().int().nonnegative(),
+@@ -1331,9 +1353,18 @@ export const designRouter = router({
+         .where(and(...conditions));
+ 
+       const pricingSettings = await getPricingSettings();
++      const affiliatePricing = await loadAffiliateStorefrontPricing(input.affiliateSlug);
+       const bestCandidateByCabinetId = new Map<number, PricedPlanSwitchCandidate>();
+       for (const row of rows) {
+-        const customerPrice = sellPriceForTier(row, pricingSettings, input.tier);
++        const sourceCostCents = dollarsToCents(row.yourCost);
++        const affiliateSale = affiliatePricing && sourceCostCents != null && sourceCostCents > 0
++          ? affiliateStorefrontSale(affiliatePricing, sourceCostCents, {
++              categoryKey: row.category,
++              styleId: input.targetStyleId,
++              listPriceCents: dollarsToCents(row.listPrice),
++            }).retailCents / 100
++          : null;
++        const customerPrice = affiliateSale ?? sellPriceForTier(row, pricingSettings, input.tier);
+         if (customerPrice == null || customerPrice <= 0) continue;
+         const candidate: PricedPlanSwitchCandidate = {
+           cabinetId: row.cabinetId,
+@@ -3185,6 +3216,7 @@ Return an empty actions array ONLY if the user asked a pure question with no wal
+           distributorId: distributorSkus.distributorId,
+           listPrice: distributorSkus.listPrice,
+           yourCost: distributorSkus.yourCost,
++          category: cabinets.category,
+           wholesalePrice: distributorSkus.wholesalePrice,
+           adjustedListPrice: distributorSkus.adjustedListPrice,
+           retailPriceBasis: distributors.retailPriceBasis,
+@@ -3211,13 +3243,28 @@ Return an empty actions array ONLY if the user asked a pure question with no wal
+ 
+       const pricing = await getPricingSettings();
+       const affiliateFees = await getPlatformPricingSettings();
++      const affiliatePricing = requestedAffiliate
++        ? await loadAffiliatePricingById(requestedAffiliate.id)
++        : null;
+       const items = canonicalItems.map((item) => {
+         const row = best.get(`${item.masterCode}:${item.styleId}`);
+-        const customerUnitPrice = row ? sellPriceForTier(row, pricing, "homeowner") : null;
+-        const rawCost = row?.yourCost == null ? null : Number(row.yourCost);
+-        const affiliateUnitCost = rawCost != null && Number.isFinite(rawCost)
+-          ? priceLadder(Math.round(rawCost * 100), affiliateFees).affiliateCents / 100
++        const sourceCostCents = dollarsToCents(row?.yourCost);
++        const quote = affiliatePricing && sourceCostCents != null && sourceCostCents > 0
++          ? affiliateStorefrontSale(affiliatePricing, sourceCostCents, {
++              categoryKey: row?.category,
++              styleId: item.styleId,
++              listPriceCents: dollarsToCents(row?.listPrice),
++            })
+           : null;
++        const customerUnitPrice = quote
++          ? quote.retailCents / 100
++          : row ? sellPriceForTier(row, pricing, "homeowner") : null;
++        const rawCost = row?.yourCost == null ? null : Number(row.yourCost);
++        const affiliateUnitCost = quote
++          ? quote.affiliateCostCents / 100
++          : rawCost != null && Number.isFinite(rawCost)
++            ? priceLadder(Math.round(rawCost * 100), affiliateFees).affiliateCents / 100
++            : null;
+         return {
+           masterCode: item.requestedMasterCode,
+           styleId: item.styleId,
+@@ -3239,6 +3286,9 @@ Return an empty actions array ONLY if the user asked a pure question with no wal
+           affiliate: Math.round(totals.affiliate * 100) / 100,
+           position: Math.round(totals.position * 100) / 100,
+         },
++        tierLabel: affiliatePricing?.tierDashboard.tierName
++          ? `${affiliatePricing.tierDashboard.tierName} — ${affiliatePricing.tierDashboard.summary}`
++          : affiliatePricing?.tierDashboard.summary ?? null,
+       };
+     }),
+ 
+@@ -3335,9 +3385,10 @@ Return an empty actions array ONLY if the user asked a pure question with no wal
+         const r = selected.row;
+         const sourceCostCents = r.yourCost == null ? null : Math.round(Number(r.yourCost) * 100);
+         const affiliateSale = affiliatePricing && sourceCostCents != null && Number.isFinite(sourceCostCents) && sourceCostCents > 0
+-          ? resolveAffiliateStorefrontSale(sourceCostCents, affiliatePricing.platformSettings, affiliatePricing.markup, {
++          ? affiliateStorefrontSale(affiliatePricing, sourceCostCents, {
+               styleId: Number(r.styleId),
+               categoryKey: r.category,
++              listPriceCents: dollarsToCents(r.listPrice),
+             }).retailCents / 100
+           : null;
+         return [{
+@@ -3345,17 +3396,28 @@ Return an empty actions array ONLY if the user asked a pure question with no wal
+           styleId: Number(r.styleId),
+           distributorId: item.distributorId ?? null,
+           ...visiblePricesForViewer(
+-            {
+-              listPrice: r.listPrice,
+-              adjustedListPrice: r.adjustedListPrice,
+-              wholesalePrice: sellPriceForTier(r, ps, "wholesale")?.toFixed(2) ?? null,
+-              contractorPrice: sellPriceForTier(r, ps, "contractor")?.toFixed(2) ?? null,
+-              homeownerPrice: affiliateSale != null
+-                ? affiliateSale.toFixed(2)
+-                : sellPriceForTier(r, ps, "homeowner")?.toFixed(2) ?? null,
+-            },
++            affiliateSale != null
++              ? {
++                  // Affiliate storefront price is the customer price for every
++                  // viewer. resolvePricingFor may select the contractor column
++                  // for an approved contractor; leaving that column empty makes
++                  // the contractor fallback use this sale instead of a
++                  // Cabinetdealz trade price.
++                  listPrice: null,
++                  adjustedListPrice: null,
++                  wholesalePrice: null,
++                  contractorPrice: null,
++                  homeownerPrice: affiliateSale.toFixed(2),
++                }
++              : {
++                  listPrice: r.listPrice,
++                  adjustedListPrice: r.adjustedListPrice,
++                  wholesalePrice: sellPriceForTier(r, ps, "wholesale")?.toFixed(2) ?? null,
++                  contractorPrice: sellPriceForTier(r, ps, "contractor")?.toFixed(2) ?? null,
++                  homeownerPrice: sellPriceForTier(r, ps, "homeowner")?.toFixed(2) ?? null,
++                },
+             resolveStorefrontTier(ctx.user),
+-            ctx.user?.role === "admin",
++            ctx.user?.role === "admin" && affiliateSale == null,
+           ),
+         }];
+       });
+diff --git a/server/routers/orders.ts b/server/routers/orders.ts
+index 05553a1..9a9dec2 100644
+--- a/server/routers/orders.ts
++++ b/server/routers/orders.ts
+@@ -40,5 +40,5 @@ import { sellPriceForTier } from "@shared/margins";
+ import { getPricingSettings } from "../db";
+-import { resolveAffiliateStorefrontSale } from "@shared/affiliateBranding";
+ import { affiliateStyleBranding } from "../../drizzle/schema";
+ import { loadAffiliateStorefrontPricing } from "../lib/affiliateStorefrontPricing";
++import { affiliateStorefrontSale, dollarsToCents } from "../lib/affiliateTierPricing";
+ import { buildAffiliateOrderPersistence } from "@shared/affiliateOrderAlias";
+@@ -610,9 +610,10 @@ export const ordersRouter = router({
+         if (r.cabinetId == null) continue;
+         const sourceCostCents = r.yourCost == null ? null : Math.round(Number(r.yourCost) * 100);
+         const price = affiliatePricing && sourceCostCents != null && Number.isFinite(sourceCostCents) && sourceCostCents > 0
+-          ? resolveAffiliateStorefrontSale(sourceCostCents, affiliatePricing.platformSettings, affiliatePricing.markup, {
++          ? affiliateStorefrontSale(affiliatePricing, sourceCostCents, {
+               styleId: input.styleId,
+               categoryKey: r.category,
++              listPriceCents: dollarsToCents(r.listPrice),
+             }).retailCents / 100
+           : requestedAffiliateScope
+             ? null
+@@ -861,6 +862,7 @@ export const ordersRouter = router({
+               category: cabinets.category,
+               styleId: distributorSkus.styleId,
+               yourCost: distributorSkus.yourCost,
++              listPrice: distributorSkus.listPrice,
+             })
+             .from(cabinets)
+             .innerJoin(distributorSkus, eq(distributorSkus.cabinetId, cabinets.id))
+@@ -873,12 +875,11 @@ export const ordersRouter = router({
+           for (const row of rows) {
+             const sourceCostCents = row.yourCost == null ? null : Math.round(Number(row.yourCost) * 100);
+             if (sourceCostCents == null || !Number.isFinite(sourceCostCents) || sourceCostCents <= 0) continue;
+-            const saleCents = resolveAffiliateStorefrontSale(
+-              sourceCostCents,
+-              affiliatePricing.platformSettings,
+-              affiliatePricing.markup,
+-              { styleId: Number(row.styleId), categoryKey: row.category },
+-            ).retailCents;
++            const saleCents = affiliateStorefrontSale(affiliatePricing, sourceCostCents, {
++              styleId: Number(row.styleId),
++              categoryKey: row.category,
++              listPriceCents: dollarsToCents(row.listPrice),
++            }).retailCents;
+             saleByLine.set(`${row.masterCode}:${row.styleId}`, saleCents / 100);
+           }
+         }
+diff --git a/server/routers/pelican.ts b/server/routers/pelican.ts
+index c2db458..3e03daf 100644
+--- a/server/routers/pelican.ts
++++ b/server/routers/pelican.ts
+@@ -12,7 +12,9 @@ import { positiveAuthorizedSurfaceBase } from "../../shared/surfacePricing";
+ import { auditPelicanDesignerReadiness, isPelicanDesignerSelectable, pelicanDesignerRenderFlags } from "../lib/pelicanDesignerReadiness";
+ import { comparisonProfileForPelicanProduct } from "../../shared/pelicanComparablePackaging";
+ import { loadAffiliateStorefrontPricing } from "../lib/affiliateStorefrontPricing";
+-import { resolveMarkupBps } from "../../shared/affiliateBranding";
++import { resolveAffiliateRetail, resolveMarkupBps } from "../../shared/affiliateBranding";
++import { isAttachProductCategory, resolveAffiliateTierCost } from "../../shared/affiliatePricingTier";
++import { dollarsToCents } from "../lib/affiliateTierPricing";
+ 
+ /**
+  * Any stored pelican_products.category. The value is trimmed and capped at the
+@@ -114,9 +116,24 @@ function withPricing<T extends { listPrice: string | null; yourCost: string | nu
+   affiliateMarkupBps?: number,
+ ): T & { sellPrice: number | null; markupBps: number; platformSellPrice: number | null; affiliateMarkupBps: number } {
+   const platformSellPrice = computeSellPrice(product, map);
+-  const sellPrice = platformSellPrice == null || affiliateMarkupBps == null
+-    ? platformSellPrice
+-    : Math.round(platformSellPrice * (1 + affiliateMarkupBps / 10000) * 100) / 100;
++  let sellPrice = platformSellPrice;
++  if (platformSellPrice != null && affiliateMarkupBps != null) {
++    if (isAttachProductCategory(product.category)) {
++      const cost = resolveAffiliateTierCost({
++        yourCostCents: dollarsToCents(product.yourCost),
++        listPriceCents: dollarsToCents(product.listPrice),
++        referenceRetailCents: Math.round(platformSellPrice * 100),
++        productClass: "attach",
++        tier: null,
++        platformAffiliateMarkupBps: 0,
++      });
++      sellPrice = cost.affiliateCostCents == null
++        ? Math.round(platformSellPrice * (1 + affiliateMarkupBps / 10000) * 100) / 100
++        : resolveAffiliateRetail(cost.affiliateCostCents, { globalMarkupBps: affiliateMarkupBps }).retailCents / 100;
++    } else {
++      sellPrice = Math.round(platformSellPrice * (1 + affiliateMarkupBps / 10000) * 100) / 100;
++    }
++  }
+   return {
+     ...product,
+     sellPrice,
+diff --git a/server/routers/storefront.ts b/server/routers/storefront.ts
+index bb24c98..a893c8a 100644
+--- a/server/routers/storefront.ts
++++ b/server/routers/storefront.ts
+@@ -4,7 +4,8 @@ import { eq, and, sql, inArray, gte, lte, isNull, ne, or } from "drizzle-orm";
+ import { publicProcedure, router } from "../_core/trpc";
+ import { getDb, notInConflict, getPricingSettings } from "../db";
+ import { sellPriceForTier } from "@shared/margins";
+-import { resolveAffiliateStorefrontSale } from "@shared/affiliateBranding";
++import { loadAffiliateStorefrontPricing } from "../lib/affiliateStorefrontPricing";
++import { affiliateStorefrontSale, dollarsToCents } from "../lib/affiliateTierPricing";
+ import {
+   cabinets,
+   distributors,
+@@ -21,7 +22,6 @@ import {
+ import { filterCabinetSourceRows, loadAffiliateCatalogGate } from "../lib/affiliateCatalogGate";
+ import { orderCabinetsByAliasRank, rankLoadedCabinetSearch } from "../lib/cabinetAliasSearch";
+ import { resolveCanonicalCatalogSources } from "../lib/canonicalCatalogSources";
+-import { loadAffiliateStorefrontPricing } from "../lib/affiliateStorefrontPricing";
+ 
+ // ─── Family-locked storefront browsing ─────────────────────────────────────────
+ // RULE: a shopping/quote session is locked to ONE distributor + ONE cabinet
+@@ -671,9 +671,10 @@ export const storefrontRouter = router({
+       const priced = rows.slice(input.offset, input.offset + input.limit).map(({ wholesalePrice, adjustedListPrice, yourCost, retailPriceBasis, ...r }) => {
+         const sourceCostCents = yourCost == null ? null : Math.round(Number(yourCost) * 100);
+         const affiliateSale = affiliatePricing && sourceCostCents != null && Number.isFinite(sourceCostCents) && sourceCostCents > 0
+-          ? resolveAffiliateStorefrontSale(sourceCostCents, affiliatePricing.platformSettings, affiliatePricing.markup, {
++          ? affiliateStorefrontSale(affiliatePricing, sourceCostCents, {
+               styleId: input.styleId,
+               categoryKey: r.category,
++              listPriceCents: dollarsToCents(r.listPrice),
+             }).retailCents / 100
+           : null;
+         return {
+@@ -834,9 +835,10 @@ export const storefrontRouter = router({
+       const items = rows.slice(0, input.limit).map(({ wholesalePrice, adjustedListPrice, yourCost, retailPriceBasis, ...r }) => {
+         const sourceCostCents = yourCost == null ? null : Math.round(Number(yourCost) * 100);
+         const affiliateSale = affiliatePricing && sourceCostCents != null && Number.isFinite(sourceCostCents) && sourceCostCents > 0
+-          ? resolveAffiliateStorefrontSale(sourceCostCents, affiliatePricing.platformSettings, affiliatePricing.markup, {
++          ? affiliateStorefrontSale(affiliatePricing, sourceCostCents, {
+               styleId: input.styleId,
+               categoryKey: r.category,
++              listPriceCents: dollarsToCents(r.listPrice),
+             }).retailCents / 100
+           : null;
+         return {
+@@ -923,9 +925,10 @@ export const storefrontRouter = router({
+       const { wholesalePrice, adjustedListPrice, yourCost, retailPriceBasis, ...rest } = g;
+       const sourceCostCents = yourCost == null ? null : Math.round(Number(yourCost) * 100);
+       const affiliateSale = affiliatePricing && sourceCostCents != null && Number.isFinite(sourceCostCents) && sourceCostCents > 0
+-        ? resolveAffiliateStorefrontSale(sourceCostCents, affiliatePricing.platformSettings, affiliatePricing.markup, {
++        ? affiliateStorefrontSale(affiliatePricing, sourceCostCents, {
+             styleId: input.styleId,
+             categoryKey: rest.category,
++            listPriceCents: dollarsToCents(rest.listPrice),
+           }).retailCents / 100
+         : null;
+       return {
+diff --git a/shared/affiliateBranding.test.ts b/shared/affiliateBranding.test.ts
+index 62b2dd6..6757ac2 100644
+--- a/shared/affiliateBranding.test.ts
++++ b/shared/affiliateBranding.test.ts
+@@ -101,4 +101,28 @@ describe("resolveAffiliateStorefrontSale", () => {
+     expect(sale.retailCents).toBe(12_600);
+     expect(sale.retailCents).toBeGreaterThanOrEqual(sale.affiliateCostCents);
+   });
++
++  it("uses an assigned cost-multiplier tier, then the affiliate markup", () => {
++    const sale = resolveAffiliateStorefrontSale(
++      10_000,
++      { ...DEFAULT_PRICING_SETTINGS, affiliateMarkupBps: 500 },
++      { globalMarkupBps: 2_000 },
++      { categoryKey: "Base", tier: { basis: "cost_multiplier", basisPoints: 12_000 } },
++    );
++    expect(sale.affiliateCostCents).toBe(12_000);
++    expect(sale.retailCents).toBe(14_400);
++    expect(sale.costSource).toBe("tier_cost_multiplier");
++  });
++
++  it("prices flooring with the 40/60 split before the affiliate markup", () => {
++    const sale = resolveAffiliateStorefrontSale(
++      10_000,
++      DEFAULT_PRICING_SETTINGS,
++      { globalMarkupBps: 2_000 },
++      { categoryKey: "Flooring", listPriceCents: 20_000, tier: { basis: "cost_multiplier", basisPoints: 5_000 } },
++    );
++    expect(sale.affiliateCostCents).toBe(14_000);
++    expect(sale.retailCents).toBe(16_800);
++    expect(sale.costSource).toBe("attach_split");
++  });
+ });
+diff --git a/shared/affiliateBranding.ts b/shared/affiliateBranding.ts
+index c338625..778a7dc 100644
+--- a/shared/affiliateBranding.ts
++++ b/shared/affiliateBranding.ts
+@@ -1,7 +1,7 @@
+ // ─────────────────────────────────────────────────────────────────────────────
+ // Affiliate white-label branding + markup resolution (pure, unit-tested)
+ //
+-// An affiliate sells the central Cabinet Dealz catalog under their OWN brand:
++// An affiliate sells the central CabinetDealz catalog under their OWN brand:
+ //   • Brand NAME override — they can rename a door style (e.g. central "Aspen
+ //     White" → their "Coastal White") without touching the shared catalog.
+ //   • MARKUP — they set a default markup % applied on top of their affiliate
+@@ -20,6 +20,12 @@ import {
+   roundCents,
+   type PlatformPricingSettings,
+ } from "./pricing";
++import {
++  classifyAffiliateProduct,
++  resolveAffiliateTierCost,
++  type AffiliatePricingTierRule,
++  type AffiliateProductClass,
++} from "./affiliatePricingTier";
+ 
+ /** A single brand-name override row for one affiliate. */
+ export interface BrandNameOverride {
+@@ -85,6 +91,8 @@ export interface AffiliateRetailResult {
+   retailCents: number;
+   /** retailCents - affiliateCostCents (the affiliate's gross profit, cents). */
+   profitCents: number;
++  /** How the affiliate cost was chosen. Present on storefront sales. */
++  costSource?: string;
+ }
+ 
+ /**
+@@ -110,24 +118,39 @@ export function resolveAffiliateRetail(
+ /**
+  * The only customer-facing price calculation for an affiliate storefront.
+  *
+- * Start from the confidential supplier cost, derive the platform's protected
+- * affiliate cost with the current fee ladder, then apply that affiliate's own
+- * saved markup.  The supplier cost and intermediate affiliate cost remain
+- * server-only; callers return only `retailCents` to a shopper.
+- *
+- * This deliberately does not accept the CabinetDealz homeowner/list price as
+- * an input.  An affiliate's public sale price must never inherit another
+- * storefront's price or fall below its protected affiliate cost.
++ * Affiliate cost comes from the assigned pricing tier when one is passed.
++ * With no tier, it stays the platform affiliate markup over supplier cost.
++ * A list price is only the basis for a list-discount tier or the attach
++ * 40/60 split. It is never itself the customer price. The affiliate's saved
++ * markup still applies on top. Supplier cost stays server-only.
+  */
+ export function resolveAffiliateStorefrontSale(
+   sourceCostCents: number,
+   platformSettings: PlatformPricingSettings,
+   markup: AffiliateMarkup,
+-  opts: { categoryKey?: string | null; styleId?: number | null } = {},
++  opts: {
++    categoryKey?: string | null;
++    styleId?: number | null;
++    listPriceCents?: number | null;
++    referenceRetailCents?: number | null;
++    tier?: AffiliatePricingTierRule | null;
++    productClass?: AffiliateProductClass;
++  } = {},
+ ): AffiliateRetailResult {
+-  const affiliateCostCents = priceLadder(
+-    Math.max(0, roundCents(sourceCostCents)),
+-    platformSettings,
+-  ).affiliateCents;
+-  return resolveAffiliateRetail(affiliateCostCents, markup, opts);
++  const source = Math.max(0, roundCents(sourceCostCents));
++  const productClass = opts.productClass ?? classifyAffiliateProduct(opts.categoryKey);
++  const resolved = resolveAffiliateTierCost({
++    yourCostCents: source,
++    listPriceCents: opts.listPriceCents ?? null,
++    referenceRetailCents: opts.referenceRetailCents ?? opts.listPriceCents ?? null,
++    productClass,
++    tier: opts.tier ?? null,
++    platformAffiliateMarkupBps: platformSettings.affiliateMarkupBps,
++  });
++  const affiliateCostCents = resolved.affiliateCostCents
++    ?? priceLadder(source, platformSettings).affiliateCents;
++  return {
++    ...resolveAffiliateRetail(affiliateCostCents, markup, opts),
++    costSource: resolved.source,
++  };
+ }
+diff --git a/shared/affiliatePricingTier.test.ts b/shared/affiliatePricingTier.test.ts
+new file mode 100644
+index 0000000..9e0ef9b
+--- /dev/null
++++ b/shared/affiliatePricingTier.test.ts
+@@ -0,0 +1,101 @@
++import { describe, expect, it } from "vitest";
++import {
++  ATTACH_AFFILIATE_MARKUP_SHARE_BPS,
++  ATTACH_PLATFORM_MARKUP_SHARE_BPS,
++  affiliateTierSummary,
++  isAttachProductCategory,
++  resolveAffiliateTierCost,
++  unassignedAffiliateTier,
++  validateAffiliateTierDraft,
++} from "./affiliatePricingTier";
++
++describe("resolveAffiliateTierCost", () => {
++  it("keeps the platform affiliate markup when no tier is assigned", () => {
++    const cost = resolveAffiliateTierCost({
++      yourCostCents: 10_000,
++      listPriceCents: 40_000,
++      platformAffiliateMarkupBps: 500,
++      tier: null,
++    });
++    expect(cost).toEqual({ affiliateCostCents: 10_500, source: "platform_default" });
++  });
++
++  it("multiplies Cabinetdealz cost by the assigned tier", () => {
++    const cost = resolveAffiliateTierCost({
++      yourCostCents: 10_000,
++      listPriceCents: 40_000,
++      platformAffiliateMarkupBps: 500,
++      tier: { basis: "cost_multiplier", basisPoints: 12_500 },
++    });
++    expect(cost).toEqual({ affiliateCostCents: 12_500, source: "tier_cost_multiplier" });
++  });
++
++  it("prices a list-discount tier from list, not from the platform markup", () => {
++    const cost = resolveAffiliateTierCost({
++      yourCostCents: 10_000,
++      listPriceCents: 20_000,
++      platformAffiliateMarkupBps: 500,
++      tier: { basis: "list_discount", basisPoints: 1_000 },
++    });
++    expect(cost).toEqual({ affiliateCostCents: 18_000, source: "tier_list_discount" });
++  });
++
++  it("falls back to the platform markup when a list-discount tier has no list", () => {
++    const cost = resolveAffiliateTierCost({
++      yourCostCents: 10_000,
++      listPriceCents: null,
++      platformAffiliateMarkupBps: 500,
++      tier: { basis: "list_discount", basisPoints: 1_000 },
++    });
++    expect(cost.source).toBe("platform_default");
++    expect(cost.affiliateCostCents).toBe(10_500);
++  });
++
++  it("splits attach-product markup 40/60 and ignores the cabinet tier", () => {
++    expect(ATTACH_PLATFORM_MARKUP_SHARE_BPS).toBe(4000);
++    expect(ATTACH_AFFILIATE_MARKUP_SHARE_BPS).toBe(6000);
++    const cost = resolveAffiliateTierCost({
++      yourCostCents: 10_000,
++      listPriceCents: 20_000,
++      referenceRetailCents: 20_000,
++      productClass: "attach",
++      platformAffiliateMarkupBps: 500,
++      tier: { basis: "cost_multiplier", basisPoints: 5_000 },
++    });
++    // $100 cost, $200 reference. Cabinetdealz keeps 40% of the $100 spread.
++    expect(cost).toEqual({ affiliateCostCents: 14_000, source: "attach_split" });
++  });
++
++  it("treats flooring and appliances as attach products", () => {
++    expect(isAttachProductCategory("Flooring")).toBe(true);
++    expect(isAttachProductCategory("Appliances")).toBe(true);
++    expect(isAttachProductCategory("Base")).toBe(false);
++    expect(isAttachProductCategory("Sinks & Faucets")).toBe(false);
++  });
++});
++
++describe("affiliate tier drafts", () => {
++  it("rejects a tier that would zero every price", () => {
++    const zero = validateAffiliateTierDraft({
++      tierName: "Broken",
++      basis: "list_discount",
++      basisPoints: 10_000,
++      volumeThresholdCents: null,
++      examplePlaceholder: false,
++      notes: null,
++      active: true,
++      sortOrder: 0,
++    });
++    expect(zero.ok).toBe(false);
++  });
++
++  it("labels example placeholders without treating them as a live discount", () => {
++    expect(affiliateTierSummary({
++      basis: "cost_multiplier",
++      basisPoints: 10_000,
++      volumeThresholdCents: null,
++      examplePlaceholder: true,
++    })).toBe("×1.00 of Cabinetdealz cost · example placeholder");
++    expect(unassignedAffiliateTier().assigned).toBe(false);
++  });
++});
+diff --git a/shared/affiliatePricingTier.ts b/shared/affiliatePricingTier.ts
+new file mode 100644
+index 0000000..4bfe5af
+--- /dev/null
++++ b/shared/affiliatePricingTier.ts
+@@ -0,0 +1,238 @@
++// Affiliate buy-cost tiers. These are separate from the customer sell tiers in
++// pricingTier.ts (homeowner | contractor | wholesale).
++//
++// resolvePricingFor(user) chooses the sell column. An approved contractor
++// (role "contractor") gets the contractor trade column from that function.
++// This module does not replace that decision and must not write a buy-cost
++// tier into users.pricingTier.
++//
++// resolveAffiliateTierCost is only what an affiliate pays Cabinetdealz.
++// The affiliate's own markup still sits on top for their customers. On an
++// affiliate storefront that customer price is the price every viewer pays,
++// including an approved contractor. Volume thresholds are assignment guidance
++// only. They never change a price by themselves.
++
++export const ATTACH_PLATFORM_MARKUP_SHARE_BPS = 4000;
++export const ATTACH_AFFILIATE_MARKUP_SHARE_BPS = 6000;
++
++export type AffiliateTierBasis = "cost_multiplier" | "list_discount";
++
++export interface AffiliatePricingTierRule {
++  basis: AffiliateTierBasis;
++  /** cost_multiplier: 10000 = ×1.00 of Cabinetdealz cost.
++      list_discount: basis points taken off list. 0 = pay the full list. */
++  basisPoints: number;
++}
++
++export type AffiliateProductClass = "cabinet" | "attach";
++
++export type AffiliateCostSource =
++  | "tier_cost_multiplier"
++  | "tier_list_discount"
++  | "attach_split"
++  | "platform_default"
++  | "unavailable";
++
++export interface AffiliateCostInput {
++  yourCostCents: number | null;
++  listPriceCents?: number | null;
++  /** Platform or list price used as the attach-product markup reference. */
++  referenceRetailCents?: number | null;
++  productClass?: AffiliateProductClass;
++  tier?: AffiliatePricingTierRule | null;
++  /** Used when no active tier applies. Same basis points as pricing_settings.affiliateMarkupBps. */
++  platformAffiliateMarkupBps: number;
++}
++
++export interface AffiliateCostResult {
++  affiliateCostCents: number | null;
++  source: AffiliateCostSource;
++}
++
++export interface AffiliateTierDraft {
++  tierName: string;
++  basis: AffiliateTierBasis;
++  basisPoints: number;
++  volumeThresholdCents: number | null;
++  examplePlaceholder: boolean;
++  notes: string | null;
++  active: boolean;
++  sortOrder: number;
++}
++
++const MAX_MULTIPLIER_BPS = 200_000;
++const MAX_VOLUME_CENTS = 2_000_000_000;
++
++function positiveCents(value: number | null | undefined): number | null {
++  if (value == null || !Number.isFinite(value)) return null;
++  const cents = Math.round(value);
++  return cents > 0 ? cents : null;
++}
++
++function wholeBps(value: number | null | undefined): number | null {
++  if (value == null || !Number.isFinite(value)) return null;
++  return Math.round(value);
++}
++
++/** Flooring and appliances share markup 40% Cabinetdealz / 60% affiliate. */
++export function isAttachProductCategory(category: string | null | undefined): boolean {
++  const name = (category ?? "").trim().toLowerCase();
++  return name.includes("flooring") || name.includes("appliance");
++}
++
++export function classifyAffiliateProduct(category: string | null | undefined): AffiliateProductClass {
++  return isAttachProductCategory(category) ? "attach" : "cabinet";
++}
++
++/**
++ * The affiliate's Cabinetdealz cost for one item.
++ * Cabinets use the assigned tier, or the platform affiliate markup when no
++ * active tier is assigned. Flooring and appliances ignore the cabinet tier
++ * and use the 40/60 markup split against the reference retail price.
++ */
++export function resolveAffiliateTierCost(input: AffiliateCostInput): AffiliateCostResult {
++  const yourCost = positiveCents(input.yourCostCents);
++  const list = positiveCents(input.listPriceCents);
++  const productClass = input.productClass ?? "cabinet";
++
++  if (productClass === "attach") {
++    if (yourCost == null) return { affiliateCostCents: null, source: "unavailable" };
++    const reference = positiveCents(input.referenceRetailCents) ?? list;
++    if (reference == null || reference <= yourCost) {
++      return { affiliateCostCents: yourCost, source: "attach_split" };
++    }
++    const spread = reference - yourCost;
++    const platformShare = Math.round((spread * ATTACH_PLATFORM_MARKUP_SHARE_BPS) / 10000);
++    return { affiliateCostCents: yourCost + platformShare, source: "attach_split" };
++  }
++
++  const tier = input.tier;
++  const tierBps = tier ? wholeBps(tier.basisPoints) : null;
++  if (tier && tierBps != null) {
++    if (tier.basis === "cost_multiplier" && tierBps >= 1 && tierBps <= MAX_MULTIPLIER_BPS) {
++      if (yourCost == null) return { affiliateCostCents: null, source: "unavailable" };
++      return {
++        affiliateCostCents: Math.round((yourCost * tierBps) / 10000),
++        source: "tier_cost_multiplier",
++      };
++    }
++    if (tier.basis === "list_discount" && tierBps >= 0 && tierBps < 10000) {
++      if (list != null) {
++        const payBps = 10000 - tierBps;
++        return {
++          affiliateCostCents: Math.round((list * payBps) / 10000),
++          source: "tier_list_discount",
++        };
++      }
++    }
++  }
++
++  if (yourCost == null) return { affiliateCostCents: null, source: "unavailable" };
++  const platformBps = wholeBps(input.platformAffiliateMarkupBps) ?? 0;
++  const safeBps = Math.min(MAX_MULTIPLIER_BPS, Math.max(0, platformBps));
++  return {
++    affiliateCostCents: yourCost + Math.round((yourCost * safeBps) / 10000),
++    source: "platform_default",
++  };
++}
++
++export function validateAffiliateTierDraft(
++  draft: AffiliateTierDraft,
++): { ok: true; draft: AffiliateTierDraft } | { ok: false; message: string } {
++  const tierName = draft.tierName.trim();
++  if (!tierName || tierName.length > 128) {
++    return { ok: false, message: "Enter a tier name up to 128 characters." };
++  }
++  if (draft.basis !== "cost_multiplier" && draft.basis !== "list_discount") {
++    return { ok: false, message: "Choose a cost multiplier or a discount off list." };
++  }
++  const basisPoints = wholeBps(draft.basisPoints);
++  if (basisPoints == null) return { ok: false, message: "Enter a numeric tier value." };
++  if (draft.basis === "cost_multiplier" && (basisPoints < 1 || basisPoints > MAX_MULTIPLIER_BPS)) {
++    return { ok: false, message: "Cost multiplier must be between 0.01 and 20.00." };
++  }
++  if (draft.basis === "list_discount" && (basisPoints < 0 || basisPoints >= 10000)) {
++    return { ok: false, message: "Discount off list must be from 0% up to, but not including, 100%." };
++  }
++  const volume = draft.volumeThresholdCents;
++  if (volume != null && (!Number.isFinite(volume) || volume < 0 || Math.round(volume) > MAX_VOLUME_CENTS)) {
++    return { ok: false, message: "Volume threshold must be empty or a positive dollar amount." };
++  }
++  const notes = draft.notes?.trim() || null;
++  if (notes && notes.length > 2000) return { ok: false, message: "Notes must be 2000 characters or less." };
++  return {
++    ok: true,
++    draft: {
++      tierName,
++      basis: draft.basis,
++      basisPoints,
++      volumeThresholdCents: volume == null ? null : Math.round(volume),
++      examplePlaceholder: Boolean(draft.examplePlaceholder),
++      notes,
++      active: draft.active !== false,
++      sortOrder: Number.isFinite(draft.sortOrder) ? Math.round(draft.sortOrder) : 0,
++    },
++  };
++}
++
++export function affiliateTierCodeFromName(name: string): string {
++  const slug = name
++    .trim()
++    .toLowerCase()
++    .replace(/[^a-z0-9]+/g, "-")
++    .replace(/^-+|-+$/g, "")
++    .slice(0, 48);
++  return slug || "tier";
++}
++
++export function formatAffiliateTierPrice(basis: AffiliateTierBasis, basisPoints: number): string {
++  if (basis === "cost_multiplier") {
++    return `×${(basisPoints / 10000).toFixed(2)} of Cabinetdealz cost`;
++  }
++  return `${(basisPoints / 100).toFixed(2)}% off list`;
++}
++
++export function formatVolumeThreshold(cents: number | null | undefined): string | null {
++  if (cents == null || !Number.isFinite(cents)) return null;
++  return (cents / 100).toLocaleString("en-US", {
++    style: "currency",
++    currency: "USD",
++    maximumFractionDigits: 0,
++  });
++}
++
++export function affiliateTierSummary(tier: {
++  basis: AffiliateTierBasis;
++  basisPoints: number;
++  volumeThresholdCents?: number | null;
++  examplePlaceholder?: boolean;
++  active?: boolean;
++}): string {
++  const price = formatAffiliateTierPrice(tier.basis, tier.basisPoints);
++  const volume = formatVolumeThreshold(tier.volumeThresholdCents);
++  const parts = [price];
++  if (volume) parts.push(`volume ${volume}`);
++  if (tier.active === false) parts.push("inactive");
++  if (tier.examplePlaceholder) parts.push("example placeholder");
++  return parts.join(" · ");
++}
++
++export interface AffiliateTierDashboard {
++  assigned: boolean;
++  inactive: boolean;
++  tierName: string | null;
++  summary: string;
++  examplePlaceholder: boolean;
++  volumeLabel: string | null;
++}
++
++export function unassignedAffiliateTier(): AffiliateTierDashboard {
++  return {
++    assigned: false,
++    inactive: false,
++    tierName: null,
++    summary: "No pricing tier assigned. Cabinet cost uses the platform affiliate markup until an administrator assigns a tier.",
++    examplePlaceholder: false,
++    volumeLabel: null,
++  };
++}
+-- 
+2.43.0
+

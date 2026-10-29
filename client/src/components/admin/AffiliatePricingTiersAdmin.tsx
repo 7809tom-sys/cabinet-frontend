@@ -116,7 +116,7 @@ export default function AffiliatePricingTiersAdmin({ seedRows }: { seedRows?: Ti
     return (
       <div className="space-y-3 py-8 text-center">
         <p className="text-destructive">Couldn’t load affiliate pricing tiers: {tiers.error.message}</p>
-        <p className="text-sm text-muted-foreground">Run docs/sql/0234_affiliate_pricing_tiers.tidb.sql in the TiDB editor, then retry.</p>
+        <p className="text-sm text-muted-foreground">Run docs/sql/0235_affiliate_pricing_tiers.tidb.sql in the TiDB editor, then retry.</p>
         <Button variant="outline" size="sm" onClick={() => tiers.refetch()}>Retry</Button>
       </div>
     );

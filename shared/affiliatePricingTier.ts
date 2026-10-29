@@ -1,12 +1,16 @@
 // Affiliate buy-cost tiers. These are separate from the customer sell tiers in
-// pricingTier.ts (homeowner | contractor | wholesale). An affiliate tier decides
-// what the affiliate pays Cabinetdealz. The affiliate's own markup still sits
-// on top of that cost for their customers.
+// pricingTier.ts (homeowner | contractor | wholesale).
 //
-// A contractor portal should call resolveAffiliateTierCost for affiliate cost
-// and resolveTierPrice / sellPriceForTier for a contractor's own sell tier.
-// Volume thresholds are assignment guidance only. They never change a price
-// by themselves; an administrator assigns the tier.
+// resolvePricingFor(user) chooses the sell column. An approved contractor
+// (role "contractor") gets the contractor trade column from that function.
+// This module does not replace that decision and must not write a buy-cost
+// tier into users.pricingTier.
+//
+// resolveAffiliateTierCost is only what an affiliate pays Cabinetdealz.
+// The affiliate's own markup still sits on top for their customers. On an
+// affiliate storefront that customer price is the price every viewer pays,
+// including an approved contractor. Volume thresholds are assignment guidance
+// only. They never change a price by themselves.
 
 export const ATTACH_PLATFORM_MARKUP_SHARE_BPS = 4000;
 export const ATTACH_AFFILIATE_MARKUP_SHARE_BPS = 6000;
