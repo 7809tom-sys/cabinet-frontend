@@ -62,6 +62,14 @@ export default function AffiliatesAdmin() {
     },
     onError: (e) => toast.error(e.message),
   });
+  const pricingTiers = trpc.affiliates.adminPricingTiers.useQuery();
+  const assignTier = trpc.affiliates.adminAssignPricingTier.useMutation({
+    onSuccess: () => {
+      utils.affiliates.adminList.invalidate();
+      toast.success("Pricing tier assigned");
+    },
+    onError: (e) => toast.error(e.message),
+  });
 
   if (isLoading) {
     return (
@@ -116,6 +124,9 @@ export default function AffiliatesAdmin() {
                     <Badge variant={statusVariant(a.status)} className="capitalize">{a.status}</Badge>
                     <Badge variant="outline" className="font-mono">{a.referralCode}</Badge>
                     <Badge variant="secondary">{(Number(a.commissionRate) * 100).toFixed(1)}%</Badge>
+                    <Badge variant="outline">
+                      {(a as { pricingTier?: { tierName: string } | null }).pricingTier?.tierName ?? "No pricing tier"}
+                    </Badge>
                     {a.w9Status === "verified" && (
                       <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 gap-1">
                         <FileText className="h-3 w-3" /> W-9 Verified
@@ -146,6 +157,21 @@ export default function AffiliatesAdmin() {
                 </div>
 
                 <div className="flex md:flex-col gap-2 shrink-0">
+                  <Select
+                    value={(a as { pricingTierId?: number | null }).pricingTierId ? String((a as { pricingTierId?: number | null }).pricingTierId) : "none"}
+                    onValueChange={(v) => assignTier.mutate({
+                      affiliateId: a.id,
+                      pricingTierId: v === "none" ? null : Number(v),
+                    })}
+                  >
+                    <SelectTrigger className="w-44 h-9"><SelectValue placeholder="Pricing tier" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">No pricing tier</SelectItem>
+                      {((pricingTiers.data ?? []) as Array<{ id: number; tierName: string; active: boolean }>).filter((tier) => tier.active).map((tier) => (
+                        <SelectItem key={tier.id} value={String(tier.id)}>{tier.tierName}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <Select
                     value={a.status}
                     onValueChange={(v) => setStatus.mutate({ id: a.id, status: v as "active" | "paused" | "inactive" })}

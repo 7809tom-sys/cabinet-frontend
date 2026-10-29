@@ -29,6 +29,7 @@ import {
 // Tab content components
 import { CrmBoard } from "@/components/crm/CrmBoard";
 import AffiliatesAdmin from "@/components/admin/AffiliatesAdmin";
+import AffiliatePricingTiersAdmin from "@/components/admin/AffiliatePricingTiersAdmin";
 import DistributorImport from "@/components/admin/DistributorImport";
 import LineBrandingEditor from "@/components/admin/LineBrandingEditor";
 import DistributorFulfillmentEditor from "@/components/admin/DistributorFulfillmentEditor";
@@ -186,6 +187,7 @@ const GROUPS = [
       { value: "margins", label: "Pricing & Margins" },
       { value: "cost-lookup", label: "Price Audit" },
       { value: "pricing-access", label: "Pricing Access" },
+      { value: "affiliate-tiers", label: "Affiliate Tiers" },
     ],
   },
   {
@@ -597,6 +599,7 @@ export default function AdminGroupedTabs() {
         <TabsContent value="margins" className="mt-6"><AdminTabHelp tab="margins" /><MarginsAdmin /></TabsContent>
         <TabsContent value="cost-lookup" className="mt-6"><AdminTabHelp tab="cost-lookup" /><CostLookupAdmin /></TabsContent>
         <TabsContent value="pricing-access" className="mt-6"><AdminTabHelp tab="pricing-access" /><PricingAccessAdmin /></TabsContent>
+        <TabsContent value="affiliate-tiers" className="mt-6"><AdminTabHelp tab="affiliate-tiers" /><AffiliatePricingTiersAdmin /></TabsContent>
 
         {/* Operations */}
         <TabsContent value="shipping" className="mt-6"><AdminTabHelp tab="shipping" /><div className="mb-6"><CarrierKeysPanel /></div><ShippingAdmin /><div className="mt-6"><FreightApiLogsPanel /><FreightQuoteHistoryPanel /></div></TabsContent>

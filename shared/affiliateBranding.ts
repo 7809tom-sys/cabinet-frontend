@@ -20,6 +20,12 @@ import {
   roundCents,
   type PlatformPricingSettings,
 } from "./pricing";
+import {
+  classifyAffiliateProduct,
+  resolveAffiliateTierCost,
+  type AffiliatePricingTierRule,
+  type AffiliateProductClass,
+} from "./affiliatePricingTier";
 
 /** A single brand-name override row for one affiliate. */
 export interface BrandNameOverride {
@@ -85,6 +91,8 @@ export interface AffiliateRetailResult {
   retailCents: number;
   /** retailCents - affiliateCostCents (the affiliate's gross profit, cents). */
   profitCents: number;
+  /** How the affiliate cost was chosen. Present on storefront sales. */
+  costSource?: string;
 }
 
 /**
@@ -110,24 +118,39 @@ export function resolveAffiliateRetail(
 /**
  * The only customer-facing price calculation for an affiliate storefront.
  *
- * Start from the confidential supplier cost, derive the platform's protected
- * affiliate cost with the current fee ladder, then apply that affiliate's own
- * saved markup.  The supplier cost and intermediate affiliate cost remain
- * server-only; callers return only `retailCents` to a shopper.
- *
- * This deliberately does not accept the CabinetDealz homeowner/list price as
- * an input.  An affiliate's public sale price must never inherit another
- * storefront's price or fall below its protected affiliate cost.
+ * Affiliate cost comes from the assigned pricing tier when one is passed.
+ * With no tier, it stays the platform affiliate markup over supplier cost.
+ * A list price is only the basis for a list-discount tier or the attach
+ * 40/60 split. It is never itself the customer price. The affiliate's saved
+ * markup still applies on top. Supplier cost stays server-only.
  */
 export function resolveAffiliateStorefrontSale(
   sourceCostCents: number,
   platformSettings: PlatformPricingSettings,
   markup: AffiliateMarkup,
-  opts: { categoryKey?: string | null; styleId?: number | null } = {},
+  opts: {
+    categoryKey?: string | null;
+    styleId?: number | null;
+    listPriceCents?: number | null;
+    referenceRetailCents?: number | null;
+    tier?: AffiliatePricingTierRule | null;
+    productClass?: AffiliateProductClass;
+  } = {},
 ): AffiliateRetailResult {
-  const affiliateCostCents = priceLadder(
-    Math.max(0, roundCents(sourceCostCents)),
-    platformSettings,
-  ).affiliateCents;
-  return resolveAffiliateRetail(affiliateCostCents, markup, opts);
+  const source = Math.max(0, roundCents(sourceCostCents));
+  const productClass = opts.productClass ?? classifyAffiliateProduct(opts.categoryKey);
+  const resolved = resolveAffiliateTierCost({
+    yourCostCents: source,
+    listPriceCents: opts.listPriceCents ?? null,
+    referenceRetailCents: opts.referenceRetailCents ?? opts.listPriceCents ?? null,
+    productClass,
+    tier: opts.tier ?? null,
+    platformAffiliateMarkupBps: platformSettings.affiliateMarkupBps,
+  });
+  const affiliateCostCents = resolved.affiliateCostCents
+    ?? priceLadder(source, platformSettings).affiliateCents;
+  return {
+    ...resolveAffiliateRetail(affiliateCostCents, markup, opts),
+    costSource: resolved.source,
+  };
 }

@@ -4650,7 +4650,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const stablePricePairs = useMemo(() => pricePairs, [pricePairKey]);
   const debouncedPricePairs = useDebouncedValue(stablePricePairs, 400);
   const { data: priceRows, isFetching: priceRowsFetching, isFetched: priceRowsFetched, isError: priceRowsError } = trpc.design.priceForCabinetsByStyles.useQuery(
-    { pairs: debouncedPricePairs, distributorId: lockedDistributorId ?? undefined },
+    { pairs: debouncedPricePairs, distributorId: lockedDistributorId ?? undefined, affiliateSlug: affiliateSlug ?? undefined },
     { enabled: debouncedPricePairs.length > 0 && !!styleId, retry: false, refetchOnWindowFocus: false }
   );
   // Part 2: the server may have priced a placed code through its two-way
@@ -4700,6 +4700,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       targetStyleId: pendingPlanStyleSwitch?.newStyleId ?? 0,
       distributorId: pendingPlanStyleSwitch?.distributorId ?? undefined,
       tier: DESIGN_TIER_TO_SHARED[tier],
+      affiliateSlug: affiliateSlug ?? undefined,
       cabinets: planSwitchReviewCabinets,
     },
     { enabled: pendingPlanStyleSwitch != null && planSwitchNeedsPricingReview },
@@ -16148,7 +16149,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
               <DialogHeader>
                 <DialogTitle>Customer &amp; Affiliate Price List</DialogTitle>
                 <DialogDescription>
-                  Private to this affiliate owner. Customer price is shown beside your affiliate cost and pricing position; supplier cost is never shown.
+                  Private to this affiliate owner. Customer price is your tier cost plus your markup. Supplier cost is never shown.
+                  {affiliatePriceList.data?.tierLabel ? ` Pricing tier: ${affiliatePriceList.data.tierLabel}.` : ""}
                 </DialogDescription>
               </DialogHeader>
               {affiliatePriceList.isLoading ? (
