@@ -41,7 +41,7 @@ export const DOOR_AUDIT_CAPTURE = {
 
 /**
  * Renderer version plus capture size. A change here marks older renders stale.
- * Per-style profile, color, and swatch are appended by `doorAuditStyleFingerprint`.
+ * Per-style profile, color, and render hex are appended by `doorAuditStyleFingerprint`.
  */
 export const DOOR_AUDIT_RENDERING_COMMIT = `door-audit-v${DOOR_RENDERER_VERSION}-${DOOR_AUDIT_CAPTURE.widthPx}x${DOOR_AUDIT_CAPTURE.heightPx}`;
 
@@ -68,8 +68,6 @@ export function doorAuditStyleFingerprint(input: {
   finish?: string | null;
   woodSpecies?: string | null;
   renderHex?: string | null;
-  swatchCode?: string | null;
-  swatchHex?: string | null;
 }): string {
   return doorAuditFingerprintForStyle({ ...input, version: DOOR_AUDIT_RENDERING_COMMIT });
 }
@@ -145,8 +143,6 @@ export type DoorAuditRenderInput = {
   distributorCode?: string | null;
   renderHex?: string | null;
   doorShape?: string | null;
-  swatchCode?: string | null;
-  swatchHex?: string | null;
   profileDescription?: string | null;
   profileNotes?: string | null;
   profileSource?: DoorProfileSource;
@@ -170,8 +166,6 @@ export type DoorAuditStyleRow = {
   color: string | null;
   renderHex?: string | null;
   doorShape?: string | null;
-  swatchCode?: string | null;
-  swatchHex?: string | null;
   profileDescription?: string | null;
   profileNotes?: string | null;
   profileSource: DoorProfileSource;
@@ -686,8 +680,6 @@ export function normalizeDoorAuditRenderInput(raw: unknown, renderingCommit?: un
     distributorCode: text(record.distributorCode),
     renderHex: text(record.renderHex),
     doorShape: text(record.doorShape),
-    swatchCode: text(record.swatchCode),
-    swatchHex: text(record.swatchHex),
     profileDescription: text(record.profileDescription) ?? text(asRecord(profileSource)?.profileDescription),
     profileNotes: text(record.profileNotes) ?? text(asRecord(profileSource)?.profileNotes),
     profileSource: doorAuditProfileSource(doorAuditIdentity(record, normalizeProfile(profileSource))),
@@ -712,8 +704,6 @@ function doorAuditIdentity(record: Record<string, unknown>, profile: DoorAuditDo
     finish: text(record.finish),
     woodSpecies: text(record.woodSpecies),
     renderHex: text(record.renderHex),
-    swatchCode: text(record.swatchCode),
-    swatchHex: text(record.swatchHex),
   };
 }
 
@@ -760,8 +750,6 @@ export function normalizeDoorAuditStyle(raw: unknown): DoorAuditStyleRow | null 
     color: text(record.color),
     renderHex: text(record.renderHex),
     doorShape: text(record.doorShape),
-    swatchCode: text(record.swatchCode),
-    swatchHex: text(record.swatchHex),
     profileDescription: text(record.profileDescription),
     profileNotes: text(record.profileNotes),
     profileSource: doorAuditProfileSource(identity),

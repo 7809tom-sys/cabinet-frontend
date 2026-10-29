@@ -47,7 +47,7 @@ describe("door shape decisions", () => {
     expect(resolveRenderHex({ color: "Light Gray" })).toBe("#d5d4d0");
   });
 
-  it("puts the renderer version, profile, color, and swatch in the fingerprint", () => {
+  it("puts the renderer version, profile, and resolved render hex in the fingerprint", () => {
     const first = doorAuditFingerprintForStyle({
       version: "door-audit-v2-720x1080",
       ourName: "Aspen Charcoal",
@@ -55,7 +55,6 @@ describe("door shape decisions", () => {
       doorStyle: "Raised Panel",
       panelConstruction: "raised",
       color: "Espresso Brown",
-      swatchCode: "SW7069",
     });
     const changed = doorAuditFingerprintForStyle({
       version: "door-audit-v2-720x1080",
@@ -65,13 +64,14 @@ describe("door shape decisions", () => {
       panelConstruction: "raised",
       color: "Espresso Brown",
       renderHex: "#010101",
-      swatchCode: "SW7069",
     });
     expect(first.startsWith("door-audit-v2-720x1080|")).toBe(true);
     expect(first).toContain("raised");
-    expect(first).toContain("#434341");
+    expect(first).toContain("#2a211c");
+    expect(first.endsWith("#2a211c")).toBe(true);
     expect(changed).not.toBe(first);
     expect(changed).toContain("#010101");
+    expect(changed.endsWith("#010101")).toBe(true);
   });
 });
 

@@ -27,7 +27,6 @@ import { resolveDoorStyleAppearance } from "@/lib/doorStyleAppearance";
 import { RAISED_PANEL_BEVEL_DEPTH_IN, RAISED_PANEL_BEVEL_WIDTH_IN } from "@shared/doorStyleAppearance";
 import { ColorGateBlock, runColorGate } from "@shared/colorGate";
 import { doorLightsForFinish, type DoorLightRig } from "@shared/doorRenderLights";
-import { resolveDoorSwatchHex } from "@shared/doorRenderIdentity";
 import { hexFromCanvas } from "@/lib/doorColorProbe";
 import { applyThreeDCabinetPieceGrain } from "@/lib/woodGrainVariation";
 
@@ -511,7 +510,6 @@ export function createDoorAuditCapture(): DoorAuditCapture {
       const appearance = resolveDoorStyleAppearance(input);
       const lights = doorLightsForFinish(appearance.finishHex, input.renderExposure ?? null);
       applyLights(lights);
-      const swatchHex = resolveDoorSwatchHex(input);
       const measurePatch = async (hex: string) => {
         const material = new THREE.MeshStandardMaterial({ color: hex, roughness: 0.55, metalness: 0.02 });
         const patch = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 1.4), material);
@@ -526,7 +524,7 @@ export function createDoorAuditCapture(): DoorAuditCapture {
       };
       const gate = await runColorGate({
         baseHex: appearance.finishHex,
-        swatchHex,
+        renderHex: input.renderHex,
         threshold: input.colorDeltaEMax ?? null,
         measure: measurePatch,
       });

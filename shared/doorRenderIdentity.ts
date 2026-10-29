@@ -19,7 +19,6 @@
  */
 import { CABINET_NAME_COLORS, matchCabinetColorName } from "./cabinetColorNames";
 import { DEFAULT_CABINET_HEX } from "./doorRenderLights";
-import { sherwinWilliamsColor } from "./sherwinWilliamsColors";
 
 export const PROFILE_GUESSED_LABEL = "Profile guessed (Shaker default)";
 
@@ -43,8 +42,6 @@ export type DoorIdentityInput = {
   finish?: string | null;
   woodSpecies?: string | null;
   renderHex?: string | null;
-  swatchCode?: string | null;
-  swatchHex?: string | null;
 };
 
 export type DoorShapeDecision = {
@@ -120,19 +117,13 @@ export function resolvedDoorColorHex(input: DoorIdentityInput | null | undefined
   return resolveRenderHex(input) ?? DEFAULT_CABINET_HEX;
 }
 
-export function resolveDoorSwatchHex(input: Pick<DoorIdentityInput, "swatchCode" | "swatchHex"> | null | undefined): string | null {
-  const eyedropper = exactHex(input?.swatchHex);
-  if (eyedropper) return eyedropper;
-  return sherwinWilliamsColor(input?.swatchCode)?.hex ?? null;
-}
-
 export function doorRenderFingerprint(input: {
   version: string;
   source: DoorProfileSource;
   panel: string | null;
   doorStyle: string | null;
   finishHex: string | null;
-  swatch: string | null;
+  renderHex: string | null;
 }): string {
   return [
     input.version,
@@ -140,20 +131,21 @@ export function doorRenderFingerprint(input: {
     input.panel ?? "none",
     (input.doorStyle ?? "none").replace(/\|/g, "/"),
     (input.finishHex ?? "none").toLowerCase(),
-    (input.swatch ?? "none").toLowerCase(),
+    (input.renderHex ?? "none").toLowerCase(),
   ].join("|").slice(0, 128);
 }
 
 export function doorAuditFingerprintForStyle(input: DoorIdentityInput & { version: string }): string {
   const decision = resolveDoorShapeDecision(input);
   const panel = decision.shape === "recessed-shaker" ? "flat" : decision.shape;
+  const renderHex = resolveRenderHex(input);
   return doorRenderFingerprint({
     version: input.version,
     source: decision.source,
     panel,
     doorStyle: text(input.doorStyle) || decision.shape,
     finishHex: resolvedDoorColorHex(input),
-    swatch: resolveDoorSwatchHex(input),
+    renderHex,
   });
 }
 

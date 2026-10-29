@@ -19,7 +19,6 @@ import { ApprovedDoorReferenceNotice } from "@/components/admin/ApprovedDoorRefe
 import { useDoorRenderingAuditApi } from "@/components/admin/doorRenderingAuditApi";
 import { trpc } from "@/lib/trpc";
 import { clampColorDeltaE } from "@shared/colorGate";
-import { resolveDoorSwatchHex } from "@shared/doorRenderIdentity";
 import { clampRenderExposure } from "@shared/doorRenderLights";
 import {
   applyDoorAuditFilter,
@@ -383,7 +382,6 @@ export function DoorRenderingAuditView({
                       {style.needsDoorOnlyPhoto ? <Badge variant="outline">Needs door-only photo</Badge> : null}
                       {style.changedSinceLastRender ? <Badge variant="outline">Changed</Badge> : null}
                       {style.profileSource === "guessed" ? <Badge variant="outline">{PROFILE_GUESSED_LABEL}</Badge> : null}
-                      {resolveDoorSwatchHex(style) ? null : <Badge variant="outline">Needs swatch</Badge>}
                       {delta ? <span className="text-xs text-muted-foreground">{delta}</span> : null}
                     </div>
                     {style.distributorName ? (

@@ -36,7 +36,6 @@ import {
   specValuesFromEditor,
 } from "./applyDoorStyleSpecs";
 import { isDoorStyleVerified, resolveCabinetFaceImages } from "@shared/doorFaceRecognition";
-import { sherwinWilliamsColor, SHERWIN_WILLIAMS_COLORS } from "@shared/sherwinWilliamsColors";
 import { resolveDoorShapeDecision, resolveRenderHex, PROFILE_GUESSED_LABEL } from "@shared/doorRenderIdentity";
 import { designerFrameCompliance } from "@/lib/doorFrameMetrics";
 import {
@@ -55,8 +54,6 @@ interface AdminStyle {
   color: string | null;
   renderHex?: string | null;
   doorShape?: "raised" | "recessed-shaker" | "slab" | "glass" | null;
-  swatchCode?: string | null;
-  swatchHex?: string | null;
   finish: string | null;
   woodSpecies: string | null;
   thumbnailImageUrl: string | null;
@@ -343,8 +340,6 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
   const [color, setColor] = useState(style.color ?? "");
   const [renderHex, setRenderHex] = useState(style.renderHex ?? "");
   const [doorShape, setDoorShape] = useState(style.doorShape ?? "");
-  const [swatchCode, setSwatchCode] = useState(style.swatchCode ?? "");
-  const [swatchHex, setSwatchHex] = useState(style.swatchHex ?? "");
   const [finish, setFinish] = useState(style.finish ?? "");
   const [woodSpecies, setWoodSpecies] = useState(style.woodSpecies ?? "");
   const [warehouseZips, setWarehouseZips] = useState(() => originZipList(style));
@@ -385,8 +380,6 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
     setColor(s.color ?? "");
     setRenderHex(s.renderHex ?? "");
     setDoorShape(s.doorShape ?? "");
-    setSwatchCode(s.swatchCode ?? "");
-    setSwatchHex(s.swatchHex ?? "");
     setFinish(s.finish ?? "");
     setWoodSpecies(s.woodSpecies ?? "");
     setWarehouseZips(originZipList(s));
@@ -512,8 +505,6 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
       color: color.trim() || null,
       renderHex: /^#[0-9a-f]{6}$/i.test(renderHex.trim()) ? renderHex.trim().toLowerCase() : null,
       doorShape: doorShape || null,
-      swatchCode: swatchCode.trim() || null,
-      swatchHex: /^#[0-9a-f]{6}$/i.test(swatchHex.trim()) ? swatchHex.trim().toLowerCase() : null,
       finish: finish.trim() || null,
       woodSpecies: woodSpecies.trim() || null,
       warehouseZips: warehouseZips.length > 0 ? warehouseZips : null,
@@ -779,14 +770,6 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
             onRenderHex={setRenderHex}
             doorShape={doorShape}
             onDoorShape={setDoorShape}
-            swatchCode={swatchCode}
-            onSwatchCode={(value) => {
-              setSwatchCode(value);
-              const published = sherwinWilliamsColor(value);
-              if (published) setSwatchHex(published.hex);
-            }}
-            swatchHex={swatchHex}
-            onSwatchHex={setSwatchHex}
             sampleImageUrl={doorSampleImageUrl || style.doorSampleImageUrl || ""}
             preview={resolveDoorShapeDecision({
               ourName,
@@ -2019,10 +2002,6 @@ function DoorRenderOverrides({
   onRenderHex,
   doorShape,
   onDoorShape,
-  swatchCode,
-  onSwatchCode,
-  swatchHex,
-  onSwatchHex,
   sampleImageUrl,
   preview,
   resolvedHex,
@@ -2031,10 +2010,6 @@ function DoorRenderOverrides({
   onRenderHex: (value: string) => void;
   doorShape: string;
   onDoorShape: (value: string) => void;
-  swatchCode: string;
-  onSwatchCode: (value: string) => void;
-  swatchHex: string;
-  onSwatchHex: (value: string) => void;
   sampleImageUrl: string;
   preview: { shape: string; source: string };
   resolvedHex: string | null;
@@ -2072,22 +2047,8 @@ function DoorRenderOverrides({
             {preview.source === "guessed" ? PROFILE_GUESSED_LABEL : `${preview.shape} · ${preview.source}`}
           </p>
         </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="ed-swatch-code">Sherwin-Williams code</Label>
-          <Input id="ed-swatch-code" value={swatchCode} onChange={(event) => onSwatchCode(event.target.value)} placeholder="SW7069" list="sw-color-codes" />
-          <datalist id="sw-color-codes">
-            {SHERWIN_WILLIAMS_COLORS.map((row) => <option key={row.code} value={row.code}>{row.name}</option>)}
-          </datalist>
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="ed-swatch-hex">Swatch hex</Label>
-          <div className="flex items-center gap-2">
-            <Input id="ed-swatch-hex" value={swatchHex} onChange={(event) => onSwatchHex(event.target.value)} placeholder="From the code or the photo" />
-            <span className="h-8 w-8 shrink-0 rounded border" style={{ background: /^#[0-9a-f]{6}$/i.test(swatchHex) ? swatchHex : "transparent" }} />
-          </div>
-        </div>
       </div>
-      <SampleEyedropper imageUrl={sampleImageUrl} onPick={onSwatchHex} />
+      <SampleEyedropper imageUrl={sampleImageUrl} onPick={onRenderHex} />
     </div>
   );
 }
@@ -2106,12 +2067,12 @@ function SampleEyedropper({ imageUrl, onPick }: { imageUrl: string; onPick: (hex
       const context = canvas.getContext("2d");
       if (!context) return;
       context.drawImage(image, 0, 0, canvas.width, canvas.height);
-      setNote("Click the sample photo to pick the swatch.");
+      setNote("Click the sample photo to set Render hex.");
     };
-    image.onerror = () => setNote("This sample could not be loaded for the eyedropper. Paste a hex instead.");
+    image.onerror = () => setNote("This sample could not be loaded for the eyedropper. Paste a render hex instead.");
     image.src = imageUrl;
   }, [imageUrl]);
-  if (!imageUrl) return <p className="text-xs text-muted-foreground">Add a door sample photo to pick a swatch from it.</p>;
+  if (!imageUrl) return <p className="text-xs text-muted-foreground">Add a door sample photo to set Render hex from it.</p>;
   return (
     <div className="space-y-1">
       <canvas
@@ -2128,9 +2089,9 @@ function SampleEyedropper({ imageUrl, onPick }: { imageUrl: string; onPick: (hex
             const pixel = context.getImageData(x, y, 1, 1).data;
             const hex = `#${[pixel[0], pixel[1], pixel[2]].map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
             onPick(hex);
-            setNote(`Picked ${hex}.`);
+            setNote(`Picked ${hex} for Render hex.`);
           } catch {
-            setNote("The browser blocked reading this photo. Paste the swatch hex instead.");
+            setNote("The browser blocked reading this photo. Paste the render hex instead.");
           }
         }}
       />

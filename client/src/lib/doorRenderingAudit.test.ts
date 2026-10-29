@@ -264,6 +264,29 @@ describe("door rendering audit backend adapter", () => {
     expect(submit).not.toHaveProperty("sourceFingerprint");
   });
 
+  it("uses render hex when the API no longer returns swatch fields", () => {
+    const withoutSwatch = normalizeDoorAuditStartRun({
+      runId: 3,
+      status: "awaiting_renders",
+      styles: [{ ...backendBrief, renderHex: "#112233" }],
+    });
+    expect(withoutSwatch.styles[0]?.renderHex).toBe("#112233");
+    expect(withoutSwatch.styles[0]).not.toHaveProperty("swatchCode");
+    expect(withoutSwatch.styles[0]).not.toHaveProperty("swatchHex");
+    expect(withoutSwatch.styles[0]?.sourceFingerprint).toContain("#112233");
+
+    const leftoverSwatch = normalizeDoorAuditStartRun({
+      runId: 4,
+      status: "awaiting_renders",
+      styles: [{ ...backendBrief, renderHex: "#112233", swatchCode: "SW7069", swatchHex: "#434341" }],
+    });
+    expect(leftoverSwatch.styles[0]?.renderHex).toBe("#112233");
+    expect(leftoverSwatch.styles[0]).not.toHaveProperty("swatchCode");
+    expect(leftoverSwatch.styles[0]).not.toHaveProperty("swatchHex");
+    expect(leftoverSwatch.styles[0]?.sourceFingerprint).toContain("#112233");
+    expect(leftoverSwatch.styles[0]?.sourceFingerprint).not.toContain("#434341");
+  });
+
   it("reads a selected run that arrives under items and falls back to alias or style code", () => {
     const run = normalizeDoorAuditStartRun({
       runId: 8,

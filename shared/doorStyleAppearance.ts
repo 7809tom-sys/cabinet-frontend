@@ -63,8 +63,6 @@ export type DoorStyleAppearanceInput = {
   doorShape?: DoorShape | string | null;
   /** Admin render color. When set, it wins over the name fallback and a distributor hex. */
   renderHex?: string | null;
-  swatchCode?: string | null;
-  swatchHex?: string | null;
   profileDescription?: string | null;
   profileNotes?: string | null;
   doorProfile?: DoorStyleAppearanceInput | null;
