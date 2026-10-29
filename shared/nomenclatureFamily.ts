@@ -11,6 +11,8 @@
  * Susan is never the same price as a 42" blind corner — pricing is always the
  * exact cabinet's own row.
  */
+import { standardBaseDoorCount } from "./genericCabinetDrawerReference";
+
 export type NomenclatureFamily =
   | "CORNER"
   | "BASE"
@@ -170,8 +172,10 @@ export function alternativeDifferences(source: FamilySource, candidate: FamilyCa
   const sh = hingeKey(source.hingeSide);
   const ch = hingeKey(candidate.hingeSide);
   if (sh && ch && sh !== ch) out.push(`${ch} hinge instead of ${sh}`);
-  if (source.numberOfDoors != null && candidate.numberOfDoors != null && source.numberOfDoors !== candidate.numberOfDoors) {
-    out.push(`${candidate.numberOfDoors}-door front instead of ${source.numberOfDoors}-door`);
+  const sourceDoors = standardBaseDoorCount(source.masterCode) ?? source.numberOfDoors;
+  const candidateDoors = standardBaseDoorCount(candidate.masterCode) ?? candidate.numberOfDoors;
+  if (sourceDoors != null && candidateDoors != null && sourceDoors !== candidateDoors) {
+    out.push(`${candidateDoors}-door front instead of ${sourceDoors}-door`);
   }
   if (source.numberOfDrawers != null && candidate.numberOfDrawers != null && source.numberOfDrawers !== candidate.numberOfDrawers) {
     out.push(`${candidate.numberOfDrawers} drawers instead of ${source.numberOfDrawers}`);

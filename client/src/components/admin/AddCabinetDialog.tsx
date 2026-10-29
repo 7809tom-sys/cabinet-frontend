@@ -13,6 +13,7 @@ import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { Plus } from "lucide-react";
+import { standardBaseDoorSaveError } from "@/lib/genericCabinetDrawerReference";
 
 const CATEGORIES = ["Base", "Wall", "Tall", "ADA", "Vanity", "Accessory", "Sink Base", "Drawer Base"];
 const PLACEMENT_TYPES = ["base", "wall", "tall", "island"];
@@ -70,6 +71,11 @@ export default function AddCabinetDialog({ onCreated }: Props) {
     e.preventDefault();
     if (!masterCode.trim() || !description.trim() || !category) {
       toast.error("Master Code, Description, and Category are required.");
+      return;
+    }
+    const doorCountError = standardBaseDoorSaveError(masterCode, numberOfDoors ? parseInt(numberOfDoors) : null);
+    if (doorCountError) {
+      toast.error(doorCountError);
       return;
     }
     const input: Parameters<typeof createMut.mutate>[0] = {

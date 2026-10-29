@@ -16,6 +16,7 @@
  * close a remainder, and a filler is never offered as a cabinet substitute.
  */
 
+import { isStandardDoorBase } from "@/lib/genericCabinetDrawerReference";
 import { RANGE_NEIGHBOR_MIN_WIDTH_IN } from "./autoDesignSeamFillers";
 import { kitchenRuleNumber, kitchenRuleText } from "./kitchenRuleParameters";
 import { buildStockPrompt, stockPromptOrderNote, type StockPromptChoice } from "./stockPrompt";
@@ -281,6 +282,8 @@ function isDishwasherCode(masterCode?: string | null): boolean {
 function isDrawerBase(item: CabinetProfile): boolean {
   const code = item.masterCode.toUpperCase().replace(/[^A-Z0-9]/g, "");
   if (/^(?:\d+)?DB\d/.test(code)) return true;
+  // A standard B18 with a stale zero door count is still a door base, not a DB18.
+  if (isStandardDoorBase(item.masterCode)) return false;
   const doors = item.numberOfDoors ?? 0;
   const drawers = item.numberOfDrawers ?? 0;
   return drawers > 0 && doors === 0;

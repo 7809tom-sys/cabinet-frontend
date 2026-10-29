@@ -30,6 +30,7 @@ import { angledWallTransitionFootprint } from "@/lib/angledWallFiller";
 import { miteredWallOutlinesFromInteriorFaces, ROOM_WALL_THICKNESS_IN, wallAngle as polygonWallAngle } from "@/lib/polygonRoom";
 import { deckFaucetWindowWarning, resolveDeckFaucetPlacement, type DeckFaucetPlacement } from "@/lib/faucetPlacement";
 import { cabinetDrawingType, isEqualHeightTwoDrawerBase as isEqualHeightTwoDrawerBaseFamily, isWallBlindCornerCabinet, resolveDoorDrawerCounts, resolvedVanityComboFaceLayout, standardDoorCountForFaceWidth, threeDrawerBaseRowHeights } from "@/lib/cabinetGraphics";
+import { standardBaseFaceReference } from "@/lib/genericCabinetDrawerReference";
 import { verifiedPelicanBathroomFixtureProfile, type VerifiedPelicanBathroomFixtureProfile } from "@/lib/pelicanBathroomFixtureProfiles";
 import { makePelicanTubFillerGroup } from "@/lib/pelicanTubFillerMesh";
 import { makePelicanToiletGroup } from "@/lib/pelicanToiletMesh";
@@ -2754,6 +2755,16 @@ export function resolvedThreeDDrawerRows(
   } catch {
     // Older placements may not have a valid JSON drawer layout. Use counts.
   }
+  // Standard door bases with no usable drawerLayout follow the generic catalog
+  // reference: one top row, full width under 33 inches and two columns from 33
+  // inches up. The 6-inch zone height is chosen by the caller. Saved JSON above
+  // already returned. Drawer-only, sink, corner, and specialty codes do not match.
+  const standardBaseFace = standardBaseFaceReference(sku.masterCode);
+  if (standardBaseFace) {
+    if (!standardBaseFace.drawerRows.length || !(availableHeight > 0)) return [];
+    const rowHeight = availableHeight / standardBaseFace.drawerRows.length;
+    return standardBaseFace.drawerRows.map((row) => ({ count: row.count, height: rowHeight }));
+  }
   const verifiedThreeDrawerRows = useShallowTopDrawer
     ? threeDrawerBaseRowHeights(sku, availableHeight / INCH, count)
     : null;
@@ -3693,7 +3704,7 @@ export function resolvedThreeDFaceLayout(input: {
   drawerHeight?: number | null;
 }) {
   const hasProvidedFaceDescription = /\b(?:door|drawer|opening)\b/i.test(input.description ?? "");
-  const isExactStandardBase = /^B[-_]?\d{1,2}$/i.test(input.masterCode ?? "");
+  const isExactStandardBase = standardBaseFaceReference(input.masterCode) != null;
   const descriptionFaceCounts = resolveDoorDrawerCounts({
     masterCode: input.masterCode ?? undefined,
     description: input.description ?? null,
