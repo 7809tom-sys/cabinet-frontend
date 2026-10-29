@@ -3025,6 +3025,13 @@ describe("interactive 3D room scene helpers", () => {
     expect(sceneCabinetColor({ ...baseScene, materials: { ...baseScene.materials!, cabinet: { ...baseScene.materials!.cabinet, color: "Sage", finish: "Painted" } } })).toBe("#78826b");
     expect(sceneCabinetColor({ ...baseScene, materials: { ...baseScene.materials!, cabinet: { ...baseScene.materials!.cabinet, color: "Aero Sage (Preston)", finish: "Matching" } } })).toBe("#4f5549");
     expect(sceneCabinetColor({ ...baseScene, materials: { ...baseScene.materials!, cabinet: { ...baseScene.materials!.cabinet, color: "Designer Natural", finish: "Natural Maple" } } })).toBe("#d1ba8f");
+    expect(sceneCabinetColor({ ...baseScene, materials: { ...baseScene.materials!, cabinet: { ...baseScene.materials!.cabinet, color: "Blue Gray", finish: "" } } })).toBe("#8d8f92");
+    expect(sceneCabinetColor({ ...baseScene, materials: { ...baseScene.materials!, cabinet: { ...baseScene.materials!.cabinet, color: "Natural Walnut", finish: "" } } })).toBe("#75523e");
+    expect(sceneCabinetColor({ ...baseScene, materials: { ...baseScene.materials!, cabinet: { ...baseScene.materials!.cabinet, color: "Light Gray", finish: "" } } })).toBe("#d5d4d0");
+    expect(sceneCabinetColor({ ...baseScene, materials: { ...baseScene.materials!, cabinet: { ...baseScene.materials!.cabinet, color: "Cherry", finish: "" } } })).toBe("#7a3b32");
+    expect(sceneCabinetColor({ ...baseScene, materials: { ...baseScene.materials!, cabinet: { ...baseScene.materials!.cabinet, color: "Hickory", finish: "" } } })).toBe("#b08968");
+    expect(sceneCabinetColor({ ...baseScene, materials: { ...baseScene.materials!, cabinet: { ...baseScene.materials!.cabinet, color: "Smoke", finish: "" } } })).toBe("#6f6d6a");
+    expect(sceneCabinetColor({ ...baseScene, materials: { ...baseScene.materials!, cabinet: { ...baseScene.materials!.cabinet, color: "Paint", finish: "" } } })).toBe("#f7f6f3");
   });
 
   it("constrains adjustable 3D wall height from one inch through ten feet", () => {
@@ -3080,11 +3087,16 @@ describe("interactive 3D room scene helpers", () => {
 
   it("uses the active saved Shaker profile when a persisted room intentionally carries neutral material metadata", () => {
     expect(baseScene.materials?.cabinet.doorStyle).toBeNull();
-    expect(resolvedThreeDDoorProfile(baseScene, { doorStyle: "Shaker", doorPanelType: null })).toEqual({
+    expect(resolvedThreeDDoorProfile(baseScene, { doorStyle: "Shaker", doorPanelType: null })).toMatchObject({
       doorStyle: "Shaker",
       doorPanelType: null,
+      profileSource: "distributor",
+      panelConstruction: "flat",
     });
-    expect(resolvedThreeDDoorProfile(baseScene, null)).toEqual(baseScene.materials?.cabinet);
+    expect(resolvedThreeDDoorProfile(baseScene, null)).toMatchObject({
+      doorStyle: "Shaker",
+      profileSource: "guessed",
+    });
   });
 
   it("keeps cabinet faces visibly calibrated when a selected 2D door image fails to load", () => {
@@ -7619,7 +7631,9 @@ describe("interactive 3D room scene helpers", () => {
   it("recognizes Shaker, raised-panel, and flat-panel cabinet door geometry", () => {
     expect(doorProfileKind("Shaker", null)).toBe("shaker");
     expect(doorProfileKind("Raised Panel", null)).toBe("raised");
-    expect(doorProfileKind("Slab", "Flat Panel")).toBe("flat");
+    expect(doorProfileKind("Slab", "Flat Panel")).toBe("shaker");
+    expect(doorProfileKind("Slab", null)).toBe("flat");
+    expect(doorProfileKind("Raised Panel", "Shaker")).toBe("raised");
   });
 
   it("uses a physical three-inch rail and stile for twelve- and twenty-one-inch 3D Shaker faces", () => {

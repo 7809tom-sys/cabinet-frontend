@@ -56,6 +56,7 @@ function row(): DoorAuditStyleRow {
     approvedReference: null,
     featuredFailures: [],
     sourceStatus: "no-approved-source",
+    profileSource: "distributor",
     flag: "improved",
   };
 }
