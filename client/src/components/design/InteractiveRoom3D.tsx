@@ -44,6 +44,7 @@ import { searchCatalogItems } from "@shared/catalogCodeSearch";
 import { AEF_PRINTED_GEOMETRY_MARKER } from "@shared/aefFramelessGeometry";
 import type { FaceSourceKind } from "@shared/doorFaceRecognition";
 import { RAISED_PANEL_BEVEL_DEPTH_IN, RAISED_PANEL_BEVEL_WIDTH_IN, resolveDoorProfile } from "@shared/doorStyleAppearance";
+import { attachSlopedRaisedPanel, effectiveRaisedBevelDepthIn, threeDFaceUsesRaisedPanelBevel } from "./raisedPanelBevel";
 import { matchCabinetColorName } from "@shared/cabinetColorNames";
 import { runColorGate, type ColorGateResult } from "@shared/colorGate";
 import { resolveDoorSwatchHex } from "@shared/doorRenderIdentity";
@@ -3666,12 +3667,14 @@ function disposeObject(root: THREE.Object3D) {
     }
     material.dispose();
   };
+  const sharedRaisedPanelResource = (resource: { userData?: { sharedRaisedPanelBevel?: boolean } } | null | undefined) =>
+    resource?.userData?.sharedRaisedPanelBevel === true;
   root.traverse((child) => {
     const mesh = child as THREE.Mesh;
-    mesh.geometry?.dispose?.();
+    if (mesh.geometry && !sharedRaisedPanelResource(mesh.geometry)) mesh.geometry.dispose?.();
     const material = mesh.material;
-    if (Array.isArray(material)) material.forEach(disposeMaterial);
-    else if (material) disposeMaterial(material);
+    if (Array.isArray(material)) material.forEach((entry) => { if (!sharedRaisedPanelResource(entry)) disposeMaterial(entry); });
+    else if (material && !sharedRaisedPanelResource(material)) disposeMaterial(material);
   });
   textures.forEach((texture) => texture.dispose());
 }
@@ -5098,8 +5101,14 @@ export function addCabinet(
   const profileFrameWidthIn = Number.isFinite(requestedProfileStile) && requestedProfileStile > 0
     ? requestedProfileStile
     : 3;
-	  const addShakerFrame = (faceWidth: number, faceHeight: number, x: number, y: number, z = 0.036, rotationY = 0, forceGlassFrame = false) => {
-	    const raisedProfile = !forceGlassFrame && (profileKind === "raised" || doorProfile?.panelConstruction === "raised");
+	  const addShakerFrame = (faceWidth: number, faceHeight: number, x: number, y: number, z = 0.036, rotationY = 0, forceGlassFrame = false, faceRole: "door" | "drawer" = "door") => {
+	    const raisedProfile = threeDFaceUsesRaisedPanelBevel({
+	      profileKind,
+	      panelConstruction: doorProfile?.panelConstruction,
+	      drawerFrontType: doorProfile?.drawerFrontType,
+	      faceRole,
+	      forceGlassFrame,
+	    });
 	    const framedProfile = forceGlassFrame || raisedProfile || threeDUsesPhysicalShakerRails(profileKind, Boolean(doorTexture));
 	    if (!framedProfile) return;
     const rail = threeDShakerRailThickness(faceWidth, faceHeight, doorProfile?.railWidth);
@@ -5112,6 +5121,7 @@ export function addCabinet(
 	    frameGroup.userData = {
 	      selectedStyleFace: forceGlassFrame ? "glass-door-frame" : raisedProfile ? "raised-panel" : "shaker",
 	      physicalRails: true,
+	      faceRole,
 	      panelConstruction: raisedProfile ? "raised" : doorProfile?.panelConstruction ?? "flat",
 	      insideEdgeProfile: doorProfile?.insideEdgeProfile ?? "square",
 	      ...(forceGlassFrame ? { glassDoorFrame: true, selectedFinishGlassFrame: true } : {}),
@@ -5137,25 +5147,21 @@ export function addCabinet(
 	        (faceHeight - rail * 2) / 4,
 	      ));
 	      const bevelDepth = Math.max(0.012, Math.min(
-	        Number.isFinite(requestedBevelDepth) && requestedBevelDepth > 0 ? requestedBevelDepth * INCH : RAISED_PANEL_BEVEL_DEPTH_IN * INCH,
+	        effectiveRaisedBevelDepthIn(Number.isFinite(requestedBevelDepth) && requestedBevelDepth > 0 ? requestedBevelDepth : RAISED_PANEL_BEVEL_DEPTH_IN) * INCH,
 	        0.07,
 	      ));
 	      const bevelOuterWidth = Math.max(0.06, faceWidth - stile * 2);
 	      const bevelOuterHeight = Math.max(0.06, faceHeight - rail * 2);
-	      const panelWidth = Math.max(0.04, bevelOuterWidth - bevelWidth * 2);
-	      const panelHeight = Math.max(0.04, bevelOuterHeight - bevelWidth * 2);
-	      const recessedBed = new THREE.Mesh(new THREE.BoxGeometry(bevelOuterWidth, bevelOuterHeight, 0.008), shadowRevealMaterial);
-	      recessedBed.position.z = -0.012;
-	      recessedBed.userData = { raisedPanelRecess: true, insideEdgeProfile: doorProfile?.insideEdgeProfile ?? "bevel" };
-	      frameGroup.add(recessedBed);
-	      const bevel = new THREE.Mesh(new THREE.BoxGeometry(bevelOuterWidth - 0.006, bevelOuterHeight - 0.006, Math.max(0.018, bevelDepth * 0.62)), frameMaterialFor("panel"));
-	      bevel.position.z = bevelDepth * 0.31;
-	      bevel.userData = { raisedPanelBevel: true, bevelWidthIn: bevelWidth / INCH, bevelDepthIn: bevelDepth / INCH, insideEdgeProfile: doorProfile?.insideEdgeProfile ?? "bevel" };
-	      frameGroup.add(bevel);
-	      const centerPanel = new THREE.Mesh(new THREE.BoxGeometry(panelWidth, panelHeight, Math.max(0.02, bevelDepth)), faceMaterial);
-	      centerPanel.position.z = bevelDepth;
-	      centerPanel.userData = { raisedCenterPanel: true, panelConstruction: "raised", drawerFrontType: doorProfile?.drawerFrontType ?? null, grainPiece: "panel" };
-	      frameGroup.add(centerPanel);
+	      attachSlopedRaisedPanel(frameGroup, {
+	        outerWidth: bevelOuterWidth,
+	        outerHeight: bevelOuterHeight,
+	        bevelWidth,
+	        bevelDepth,
+	        faceColor: color,
+	        insideEdgeProfile: doorProfile?.insideEdgeProfile ?? "bevel",
+	        drawerFrontType: doorProfile?.drawerFrontType ?? null,
+	        centerMaterial: faceMaterial,
+	      });
 	    }
     frontGroup.add(frameGroup);
   };
@@ -5749,7 +5755,7 @@ export function addCabinet(
           drawer.userData = { cabinetFront: true, cabinetDrawerFront: true, ovenCabinetDrawer: true, flushPhysicalFace: true };
           frontGroup.add(drawer);
           addDrawerReveal(drawerWidth - 0.025, Math.max(0.08, row.height - 0.025), drawer.position.x, drawer.position.y);
-          addShakerFrame(drawerWidth - 0.025, Math.max(0.08, row.height - 0.025), drawer.position.x, drawer.position.y, 0.066);
+          addShakerFrame(drawerWidth - 0.025, Math.max(0.08, row.height - 0.025), drawer.position.x, drawer.position.y, 0.066, 0, false, "drawer");
           addFaceShadow(drawerWidth - 0.025, Math.max(0.08, row.height - 0.025), drawer.position.x, drawer.position.y);
           addPull(drawerWidth - 0.025, Math.max(0.08, row.height - 0.025), drawer.position.x, drawer.position.y, true);
         }
@@ -6159,6 +6165,8 @@ export function addCabinet(
         panel.y,
         panel.z + normalZ * 0.034,
         panel.rotationY,
+        false,
+        "drawer",
       );
       if (drawerPiece === "none") continue;
       const pullLength = Math.min(Math.max(0.12, panel.width * 0.48), 0.62);
@@ -6352,7 +6360,7 @@ export function addCabinet(
 		      };
 		      frontGroup.add(drawer);
 		      addFaceShadow(layout.doorWidth - 0.06, drawerFaceHeight - 0.025, drawer.position.x, drawer.position.y);
-		      addShakerFrame(layout.doorWidth - 0.06, drawerFaceHeight - 0.025, drawer.position.x, drawer.position.y);
+		      addShakerFrame(layout.doorWidth - 0.06, drawerFaceHeight - 0.025, drawer.position.x, drawer.position.y, 0.036, 0, false, "drawer");
 		      addPull(layout.doorWidth - 0.06, drawerFaceHeight - 0.025, drawer.position.x, drawer.position.y, true, 0.086, placement === "wall" ? "upper" : "lower");
 		    }
 	  } else if (specialty.kind === "farmhouse-sink") {
@@ -6506,7 +6514,7 @@ export function addCabinet(
     longDrawer.userData = { cabinetFront: true, cabinetDrawerFront: true, vanityComboLongDrawerFront: true, flushPhysicalFace: true };
     frontGroup.add(longDrawer);
     addDrawerReveal(centerFaceWidth, longDrawerHeight - 0.025, longDrawer.position.x, longDrawer.position.y);
-    addShakerFrame(centerFaceWidth, longDrawerHeight - 0.025, longDrawer.position.x, longDrawer.position.y);
+    addShakerFrame(centerFaceWidth, longDrawerHeight - 0.025, longDrawer.position.x, longDrawer.position.y, 0.036, 0, false, "drawer");
     addFaceShadow(centerFaceWidth, longDrawerHeight - 0.025, longDrawer.position.x, longDrawer.position.y);
     addPull(centerFaceWidth, longDrawerHeight - 0.025, longDrawer.position.x, longDrawer.position.y, true);
 
@@ -6518,7 +6526,7 @@ export function addCabinet(
         drawer.userData = { cabinetFront: true, cabinetDrawerFront: true, vanityComboSide: side === -1 ? "left" : "right", vanityDrawerFront: true, flushPhysicalFace: true };
         frontGroup.add(drawer);
         addDrawerReveal(sideFaceWidth, sideDrawerHeight - 0.025, drawer.position.x, drawer.position.y);
-        addShakerFrame(sideFaceWidth, sideDrawerHeight - 0.025, drawer.position.x, drawer.position.y);
+        addShakerFrame(sideFaceWidth, sideDrawerHeight - 0.025, drawer.position.x, drawer.position.y, 0.036, 0, false, "drawer");
         addFaceShadow(sideFaceWidth, sideDrawerHeight - 0.025, drawer.position.x, drawer.position.y);
         addPull(sideFaceWidth, sideDrawerHeight - 0.025, drawer.position.x, drawer.position.y, true);
       }
@@ -6551,7 +6559,7 @@ export function addCabinet(
       drawer.userData = { cabinetFront: true, cabinetDrawerFront: true, vanityDrawerFront: true, drawerSide: vanityFaceLayout.drawerSide, flushPhysicalFace: true };
       frontGroup.add(drawer);
       addDrawerReveal(drawerBankWidth - 0.025, drawerHeight - 0.025, drawer.position.x, drawer.position.y);
-      addShakerFrame(drawerBankWidth - 0.025, drawerHeight - 0.025, drawer.position.x, drawer.position.y);
+      addShakerFrame(drawerBankWidth - 0.025, drawerHeight - 0.025, drawer.position.x, drawer.position.y, 0.036, 0, false, "drawer");
       addFaceShadow(drawerBankWidth - 0.025, drawerHeight - 0.025, drawer.position.x, drawer.position.y);
       addPull(drawerBankWidth - 0.025, drawerHeight - 0.025, drawer.position.x, drawer.position.y, true);
     }
@@ -6654,7 +6662,7 @@ export function addCabinet(
 	      drawer.userData = { cabinetFront: true, cabinetDrawerFront: true, ...(isStandardSinkBase ? { falseDrawerFront: true } : {}), ...(wd18Layout ? { wd18BottomDrawer: true } : {}), flushPhysicalFace: true };
 	      frontGroup.add(drawer);
 	      addDrawerReveal(drawerWidth, rowHeight, drawer.position.x, drawer.position.y);
-	      addShakerFrame(drawerWidth, rowHeight, drawer.position.x, drawer.position.y);
+	      addShakerFrame(drawerWidth, rowHeight, drawer.position.x, drawer.position.y, 0.036, 0, false, "drawer");
 	      addFaceShadow(drawerWidth, rowHeight, drawer.position.x, drawer.position.y);
       // A standard sink base may have a shallow false front above its doors,
       // but that face is not an operable drawer and must not receive a

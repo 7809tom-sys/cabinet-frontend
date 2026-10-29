@@ -7693,6 +7693,8 @@ describe("interactive 3D room scene helpers", () => {
     expect(raisedPanels.length).toBeGreaterThanOrEqual(2);
     expect(bevels.length).toBeGreaterThanOrEqual(2);
     expect(bevels.every((node) => node.userData.insideEdgeProfile === "beveled ogee")).toBe(true);
+    expect(bevels.every((node) => node.userData.sloped === true)).toBe(true);
+    expect(bevels.every((node) => (node as THREE.Mesh).geometry.type !== "BoxGeometry")).toBe(true);
     expect(hardware).toHaveLength(0);
 
     const withKnob = new THREE.Group();
@@ -7701,6 +7703,94 @@ describe("interactive 3D room scene helpers", () => {
     withKnob.traverse((node) => { if (node.userData.cabinetPull === "knob") knobs.push(node); });
 	    expect(knobs.length).toBeGreaterThanOrEqual(2);
 	  });
+
+  it("builds sloped raised bevels for a non-Lumina raised style and leaves shaker doors square", () => {
+    const casselberry = {
+      doorStyle: "Casselberry",
+      doorPanelType: "Mitered frame",
+      panelConstruction: "raised" as const,
+      bevelWidth: 0.75,
+      bevelDepth: 0.28,
+      insideEdgeProfile: "bevel",
+      drawerFrontType: "five-piece-raised" as const,
+    };
+    const raisedRoot = new THREE.Group();
+    const b18 = { masterCode: "B18", description: "18 inch base", placementType: "base", width: 18, height: 34.5, depth: 24, numberOfDoors: 1, numberOfDrawers: 1 } as never;
+    addCabinet(raisedRoot, b18, null, {}, 144, 120, "#f7f4ef", "#f8f8f6", casselberry, undefined, undefined, undefined, { hardwareStyleId: "none" });
+    const raisedBevels: THREE.Object3D[] = [];
+    raisedRoot.traverse((node) => {
+      if (node.userData.raisedPanelBevel) raisedBevels.push(node);
+    });
+    expect(raisedBevels.length).toBeGreaterThanOrEqual(2);
+    expect(raisedBevels.every((node) => node.userData.sloped === true)).toBe(true);
+    expect(raisedBevels.every((node) => node.parent?.userData.faceRole === "door" || node.parent?.userData.faceRole === "drawer")).toBe(true);
+    expect(raisedBevels.some((node) => node.parent?.userData.faceRole === "door")).toBe(true);
+    expect(raisedBevels.some((node) => node.parent?.userData.faceRole === "drawer")).toBe(true);
+    for (const bevel of raisedBevels) {
+      const normals = (bevel as THREE.Mesh).geometry.getAttribute("normal");
+      const colors = (bevel as THREE.Mesh).geometry.getAttribute("color");
+      expect(normals).toBeTruthy();
+      expect(colors).toBeTruthy();
+      let slopesUp = false;
+      let slopesDown = false;
+      let lightTop = 0;
+      let lightTopCount = 0;
+      let darkBottom = 0;
+      let darkBottomCount = 0;
+      for (let index = 0; index < normals.count; index++) {
+        expect(normals.getZ(index)).toBeGreaterThan(0.15);
+        if (normals.getY(index) > 0.2) slopesUp = true;
+        if (normals.getY(index) < -0.2) slopesDown = true;
+        const tone = colors.getX(index);
+        if (normals.getY(index) > 0.2) {
+          lightTop += tone;
+          lightTopCount += 1;
+        }
+        if (normals.getY(index) < -0.2) {
+          darkBottom += tone;
+          darkBottomCount += 1;
+        }
+      }
+      expect(slopesUp).toBe(true);
+      expect(slopesDown).toBe(true);
+      expect(lightTop / lightTopCount).toBeGreaterThan(darkBottom / darkBottomCount);
+      expect(bevel.userData.bevelDepthIn).toBeGreaterThanOrEqual(0.4);
+    }
+
+    const shakerRoot = new THREE.Group();
+    addCabinet(shakerRoot, b18, null, {}, 144, 120, "#f7f4ef", "#f8f8f6", {
+      doorStyle: "Shaker",
+      doorPanelType: "Recessed Panel",
+      panelConstruction: "flat",
+      drawerFrontType: "slab",
+    }, undefined, undefined, undefined, { hardwareStyleId: "none" });
+    const shakerBevels: THREE.Object3D[] = [];
+    const shakerRails: THREE.Object3D[] = [];
+    shakerRoot.traverse((node) => {
+      if (node.userData.raisedPanelBevel) shakerBevels.push(node);
+      if (node.userData.physicalRail) shakerRails.push(node);
+    });
+    expect(shakerBevels).toHaveLength(0);
+    expect(shakerRails.length).toBeGreaterThanOrEqual(8);
+
+    const drawerOnlyRaised = new THREE.Group();
+    addCabinet(drawerOnlyRaised, b18, null, {}, 144, 120, "#f7f4ef", "#f8f8f6", {
+      doorStyle: "Shaker",
+      doorPanelType: "Recessed Panel",
+      panelConstruction: "flat",
+      drawerFrontType: "five-piece-raised",
+    }, undefined, undefined, undefined, { hardwareStyleId: "none" });
+    const drawerBevels: THREE.Object3D[] = [];
+    const doorBevels: THREE.Object3D[] = [];
+    drawerOnlyRaised.traverse((node) => {
+      if (!node.userData.raisedPanelBevel) return;
+      if (node.parent?.userData.faceRole === "drawer") drawerBevels.push(node);
+      if (node.parent?.userData.faceRole === "door") doorBevels.push(node);
+    });
+    expect(drawerBevels.length).toBeGreaterThan(0);
+    expect(drawerBevels.every((node) => node.userData.sloped === true)).toBe(true);
+    expect(doorBevels).toHaveLength(0);
+  });
 
 	  it("does not let an LSB36 specialty door bypass the selected None hardware style", () => {
 	    const lsb36 = {
