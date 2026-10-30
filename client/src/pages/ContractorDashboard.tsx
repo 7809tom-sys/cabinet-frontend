@@ -11,6 +11,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { InstallationEstimatesPanel } from "@/components/affiliate/InstallationEstimatesPanel";
+import { ContractorApplicationFields } from "@/components/contractor/ContractorApplicationFields";
 import { OrderTrackingPanel, SAMPLE_TRACKED_ORDERS } from "@/components/orders/OrderTrackingPanel";
 import { PortalSignInChooser } from "@/components/auth/PortalSignInChooser";
 import { CrmBoard } from "@/components/crm/CrmBoard";
@@ -113,9 +114,14 @@ export default function ContractorDashboard() {
               submit.mutate({ businessName: businessName.trim(), phone: phone.trim(), licenseNumber: licenseNumber.trim() || null });
             }}>
               <p className="text-sm text-muted-foreground">Contractor tools stay closed until an admin approves this request. Your account remains a customer in the meantime.</p>
-              <div className="space-y-1"><Label htmlFor="apply-business">Business name</Label><Input id="apply-business" value={businessName} onChange={(event) => setBusinessName(event.target.value)} required /></div>
-              <div className="space-y-1"><Label htmlFor="apply-phone">Phone</Label><Input id="apply-phone" value={phone} onChange={(event) => setPhone(event.target.value)} required /></div>
-              <div className="space-y-1"><Label htmlFor="apply-license">License (optional)</Label><Input id="apply-license" value={licenseNumber} onChange={(event) => setLicenseNumber(event.target.value)} /></div>
+              <ContractorApplicationFields
+                businessName={businessName}
+                phone={phone}
+                licenseNumber={licenseNumber}
+                onBusinessNameChange={setBusinessName}
+                onPhoneChange={setPhone}
+                onLicenseNumberChange={setLicenseNumber}
+              />
               <Button type="submit" className="w-fit bg-[var(--color-navy,#1a2b4a)] text-white" disabled={submit.isPending}>
                 {submit.isPending ? <Spinner className="h-4 w-4 mr-2" /> : <HardHat className="h-4 w-4 mr-2" />}
                 Apply for contractor access
