@@ -94,7 +94,6 @@ import { affiliateStyleName as resolveAffiliateStyleName } from "@/lib/affiliate
 import { frameInsetPxFromInches } from "@/lib/elevationFrameGeometry";
 import { designerDoorFrameMetrics } from "@/lib/doorFrameMetrics";
 import { designerCatalogDoorProfile, doorStyleFinishColors, resolveDoorProfilePanelKind } from "@/lib/doorStyleAppearance";
-import { resolveDoorSwatchHex } from "@shared/doorRenderIdentity";
 import { clampColorDeltaE } from "@shared/colorGate";
 import { clampRenderExposure } from "@shared/doorRenderLights";
 import { adjustedDesignUnitPrice, buildDesignCabinetCartLines, buildDesignPreviewPricingLines, bundleCabinetPricingSignature, calculateCartSubtotal, completeDesignPricingLines, lockDesignCartLinesToPackageTotal, mergeDesignCartLines } from "@/lib/designCartLines";
@@ -5103,7 +5102,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const doorRenderSettings = trpc.siteSettings.getPublicSettings.useQuery(undefined, { staleTime: 60_000 });
   const doorRenderExposure = clampRenderExposure((doorRenderSettings.data as { renderExposure?: number | string | null } | undefined)?.renderExposure);
   const doorColorDeltaE = clampColorDeltaE((doorRenderSettings.data as { colorMatchDeltaE?: number | string | null } | undefined)?.colorMatchDeltaE);
-  const activeDoorSwatch = resolveDoorSwatchHex(activeStyle as { swatchCode?: string | null; swatchHex?: string | null } | null);
+  const activeDoorRenderHex = (activeStyle as { renderHex?: string | null } | null)?.renderHex ?? null;
   // Small finish swatch shown on each palette tile so the chosen finish is
   // visible while browsing cabinets. Empty until a door style is selected.
   const paletteFinishSwatch = useMemo<string | null>(
@@ -14446,8 +14445,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	      catalogFinishOverride={activeFinish.face}
 	      renderExposure={doorRenderExposure}
 	      colorDeltaEMax={doorColorDeltaE}
-	      doorSwatchHex={activeDoorSwatch}
-	      doorSwatchCode={(activeStyle as { swatchCode?: string | null } | null)?.swatchCode ?? null}
+	      doorRenderHex={activeDoorRenderHex}
 	      cabinetFinishPreviewOptions={threeDCabinetFinishPreviewOptions}
 	      doorStyleChoices={displayUniqueDoorStyles.map((style) => ({ id: style.id, name: affiliateStyleName(style) }))}
 	      selectedDoorStyleId={styleId}
@@ -22277,8 +22275,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 			                catalogFinishOverride={activeFinish.face}
 	      renderExposure={doorRenderExposure}
 	      colorDeltaEMax={doorColorDeltaE}
-	      doorSwatchHex={activeDoorSwatch}
-	      doorSwatchCode={(activeStyle as { swatchCode?: string | null } | null)?.swatchCode ?? null}
+	      doorRenderHex={activeDoorRenderHex}
 	                cabinetFinishPreviewOptions={threeDCabinetFinishPreviewOptions}
 	                doorStyleChoices={displayUniqueDoorStyles.map((style) => ({ id: style.id, name: affiliateStyleName(style) }))}
 	                selectedDoorStyleId={styleId}
