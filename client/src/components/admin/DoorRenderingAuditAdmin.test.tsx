@@ -103,9 +103,10 @@ function props(overrides: Partial<DoorRenderingAuditViewProps> = {}): DoorRender
 describe("Door Rendering Audit admin", () => {
   it("is an admin-only Products & Catalog tab", () => {
     const tabs = readFileSync(new URL("./AdminGroupedTabs.tsx", import.meta.url), "utf8");
+    const nav = readFileSync(new URL("./catalogAdminTabs.ts", import.meta.url), "utf8");
     const admin = readFileSync(new URL("../../pages/Admin.tsx", import.meta.url), "utf8");
     const help = readFileSync(new URL("./AdminTabHelp.tsx", import.meta.url), "utf8");
-    expect(tabs).toContain('{ value: "door-rendering-audit", label: "Door Rendering Audit" }');
+    expect(nav).toContain('{ value: "door-rendering-audit", label: "Door Rendering Audit", editors: ["DoorRenderingAuditAdmin"], help: "door-rendering-audit", boundary: "Door Rendering Audit" }');
     expect(tabs).toContain('<TabsContent value="door-rendering-audit" className="mt-6"><AdminTabErrorBoundary tabName="Door Rendering Audit"><AdminTabHelp tab="door-rendering-audit" /><DoorRenderingAuditAdmin /></AdminTabErrorBoundary></TabsContent>');
     expect(help).toContain('"door-rendering-audit"');
     const salesRep = admin.indexOf("if (isSalesRep)");
