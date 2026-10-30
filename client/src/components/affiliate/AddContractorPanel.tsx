@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { HardHat } from "lucide-react";
 import { toast } from "sonner";
 import { ContractorApplicationFields } from "@/components/contractor/ContractorApplicationFields";
@@ -11,12 +11,14 @@ import {
   AFFILIATE_CONTRACTOR_DUPLICATE_MESSAGE,
   AFFILIATE_CONTRACTOR_SUCCESS_MESSAGE,
   contractorAccountLabel,
+  contractorProcedureError,
   contractorRequestStatusLabel,
   formatContractorAccessDate,
   validateAffiliateContractorDraft,
   type AffiliateContractorDraft,
 } from "@/lib/contractorAccessForm";
 import { useContractorAccessProcedures } from "@/lib/contractorAccessProcedures";
+import { ContractorPricingCard } from "@/components/affiliate/ContractorPricingCard";
 
 const EMPTY_DRAFT: AffiliateContractorDraft = {
   contractorName: "",
@@ -34,6 +36,8 @@ export function AddContractorPanel() {
   const [error, setError] = useState<string | null>(null);
   const [errorField, setErrorField] = useState<"contractorName" | "contractorEmail" | "businessName" | "phone" | null>(null);
   const [notice, setNotice] = useState<{ message: string; duplicate: boolean } | null>(null);
+  const [reviewError, setReviewError] = useState<{ id: number; message: string } | null>(null);
+  const reviewTarget = useRef(0);
 
   const submit = api.contractorAccess.submitForContractor.useMutation({
     onSuccess: (result) => {
@@ -51,6 +55,20 @@ export function AddContractorPanel() {
       setNotice(null);
       setError(message);
       setErrorField(null);
+      toast.error(message);
+    },
+  });
+
+  const review = api.contractorAccess.affiliateReview.useMutation({
+    onSuccess: (_result, input) => {
+      setReviewError(null);
+      toast.success(input.decision === "approved" ? "Contractor approved." : "Contractor rejected.");
+      void requests.refetch();
+      void utils.contractorAccess.myAffiliateRequests.invalidate();
+    },
+    onError: (mutationError) => {
+      const message = contractorProcedureError(mutationError);
+      setReviewError({ id: reviewTarget.current, message });
       toast.error(message);
     },
   });
@@ -85,9 +103,11 @@ export function AddContractorPanel() {
       <div>
         <h1 className="font-serif text-2xl font-bold">Add a contractor</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Request contractor access for someone you work with. An admin approves it before they get contractor tools.
+          Request contractor access for someone you work with. You approve it before they get contractor tools.
         </p>
       </div>
+
+      <ContractorPricingCard />
 
       <form className="grid gap-3 rounded-xl border border-border bg-card p-5" onSubmit={onSubmit} noValidate>
         <p className="text-sm text-muted-foreground">
@@ -157,6 +177,36 @@ export function AddContractorPanel() {
             <p className="text-sm">Requested {formatContractorAccessDate(row.createdAt)}</p>
             <p className="text-sm">{row.reviewedAt ? `Reviewed ${formatContractorAccessDate(row.reviewedAt)}` : "Not reviewed yet"}</p>
             <p className="text-sm">{contractorAccountLabel(row.hasAccount)}</p>
+            {row.status === "pending" ? (
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={review.isPending}
+                  onClick={() => {
+                    reviewTarget.current = row.id;
+                    setReviewError(null);
+                    review.mutate({ id: row.id, decision: "approved" });
+                  }}
+                >
+                  Approve
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={review.isPending}
+                  onClick={() => {
+                    reviewTarget.current = row.id;
+                    setReviewError(null);
+                    review.mutate({ id: row.id, decision: "rejected" });
+                  }}
+                >
+                  Reject
+                </Button>
+              </div>
+            ) : null}
+            {reviewError?.id === row.id ? <p role="alert" className="text-sm text-destructive">{reviewError.message}</p> : null}
           </article>
         ))}
       </div>

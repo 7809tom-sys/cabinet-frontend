@@ -1,10 +1,13 @@
 // @vitest-environment jsdom
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ContractorAccessListRow } from "@/lib/contractorAccessForm";
 
 const selfRow: ContractorAccessListRow = {
   id: 1,
+  userId: 15,
   businessName: "Self Co",
   phone: "555-0101",
   licenseNumber: null,
@@ -21,6 +24,7 @@ const selfRow: ContractorAccessListRow = {
 
 const affiliatePending: ContractorAccessListRow = {
   id: 2,
+  userId: 81,
   businessName: "Build Co",
   phone: "555-0199",
   licenseNumber: "LIC-9",
@@ -38,15 +42,17 @@ const affiliatePending: ContractorAccessListRow = {
 const affiliateApproved: ContractorAccessListRow = {
   ...affiliatePending,
   id: 3,
+  userId: null,
   businessName: "Reviewed Co",
   status: "approved",
   contractorName: "Riley Approved",
   contractorEmail: "riley@build.example",
 };
 
-const { reviewMutate, invalidate, mutationOptions, listMode } = vi.hoisted(() => ({
+const { reviewMutate, invalidate, markupMutate, mutationOptions, listMode, markup } = vi.hoisted(() => ({
   reviewMutate: vi.fn(),
   invalidate: vi.fn(async () => undefined),
+  markupMutate: vi.fn(),
   mutationOptions: {
     current: null as null | {
       onSuccess?: () => void;
@@ -54,11 +60,19 @@ const { reviewMutate, invalidate, mutationOptions, listMode } = vi.hoisted(() =>
     },
   },
   listMode: { current: "ready" as "ready" | "empty" | "error" },
+  markup: {
+    current: {
+      data: { markupPercent: null as number | null, siteDefaultPercent: 10 },
+      isLoading: false,
+      error: null as { message: string } | null,
+      refetch: vi.fn(),
+    },
+  },
 }));
 
 vi.mock("@/lib/trpc", () => ({
   trpc: {
-    useUtils: () => ({ contractorAccess: { list: { invalidate } } }),
+    useUtils: () => ({ contractorAccess: { list: { invalidate }, affiliateMarkup: { invalidate } } }),
     contractorAccess: {
       list: {
         useQuery: (input?: { status?: string; submittedByUserId?: number }) => {
@@ -83,6 +97,12 @@ vi.mock("@/lib/trpc", () => ({
           return { mutate: reviewMutate, isPending: false };
         },
       },
+      affiliateMarkup: {
+        useQuery: () => markup.current,
+      },
+      setAffiliateMarkup: {
+        useMutation: () => ({ mutate: markupMutate, isPending: false }),
+      },
     },
   },
 }));
@@ -94,9 +114,11 @@ import ContractorAccessAdmin from "./ContractorAccessAdmin";
 afterEach(() => {
   cleanup();
   reviewMutate.mockReset();
+  markupMutate.mockReset();
   invalidate.mockReset();
   mutationOptions.current = null;
   listMode.current = "ready";
+  markup.current = { data: { markupPercent: null, siteDefaultPercent: 10 }, isLoading: false, error: null, refetch: vi.fn() };
 });
 
 describe("Contractor access admin", () => {
@@ -123,6 +145,7 @@ describe("Contractor access admin", () => {
     expect(reviewed?.textContent).toContain("Approved");
     expect(reviewed?.querySelector("button")).toBeNull();
     expect(screen.getByText(/Follow up if this affiliate is not responding/)).toBeTruthy();
+    expect(screen.getByText("No contractor account yet")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Approve" }));
     expect(reviewMutate).toHaveBeenCalledWith({ id: 2, decision: "approved" });
@@ -142,5 +165,28 @@ describe("Contractor access admin", () => {
     render(<ContractorAccessAdmin />);
     const error = screen.getByText("Forbidden");
     expect(error.className).toContain("text-destructive");
+  });
+
+  it("lets any admin open a contractor page and set that affiliate's markup", () => {
+    const source = readFileSync(resolve(process.cwd(), "client/src/components/admin/ContractorAccessAdmin.tsx"), "utf8");
+    expect(source).toContain("trpc.contractorAccess.review.useMutation");
+    expect(source).not.toContain("affiliateReview");
+    render(<ContractorAccessAdmin />);
+    const self = screen.getByRole("heading", { name: "Self Co" }).closest("article");
+    const affiliate = screen.getByRole("heading", { name: "Build Co" }).closest("article");
+    expect(self?.textContent).toContain("Affiliate: None");
+    expect(affiliate?.textContent).toContain("Affiliate: Ada Partner · ada@store.example");
+    const links = screen.getAllByRole("link", { name: "View contractor" });
+    expect(links.map((link) => link.getAttribute("href"))).toEqual([
+      "/contractor?contractorUserId=15",
+      "/contractor?contractorUserId=81",
+    ]);
+    expect(screen.getByRole("heading", { name: "Contractor pricing for Ada Partner · ada@store.example" })).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Markup over cost (%)"), { target: { value: "15" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(markupMutate).toHaveBeenCalledWith({ markupPercent: 15, affiliateUserId: 9 });
+    fireEvent.click(screen.getByRole("button", { name: "Use site default" }));
+    expect(markupMutate).toHaveBeenCalledWith({ markupPercent: null, affiliateUserId: 9 });
+    expect(source).not.toContain("Log in as");
   });
 });

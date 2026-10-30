@@ -28,5 +28,14 @@ describe("InstallationEstimatesPanel room and cost controls", () => {
     expect(source).toContain('id="installation-kitchen-plan"');
     expect(source).toContain("cabinetBreakdown.base");
     expect(source).toContain("kitchenDesignId: roomType === \"Kitchen\"");
+    expect(source).toContain("contractorEstimateScope");
+    expect(source).toContain('installationEstimates.list.useQuery(scope)');
+    expect(source).toContain('installationEstimates.kitchenPlans.useQuery(scope)');
+    expect(source).toContain('installationEstimates.kitchenCostDefaults.useQuery(scope)');
+    expect(source).toContain("installationEstimates.create.useMutation");
+    expect(source).toContain("installationEstimates.saveKitchenCostDefaults.useMutation");
+    expect(source).toContain("installationEstimates.updateStatus.useMutation");
+    expect(source).toContain("This estimate is your installation and labor invoice. CabinetDealz materials are invoiced separately.");
+    expect(source).toContain("Your installation and labor invoice. CabinetDealz materials are invoiced separately.");
   });
 });

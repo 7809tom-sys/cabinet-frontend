@@ -4,11 +4,13 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
+import { ContractorPricingCard } from "@/components/affiliate/ContractorPricingCard";
 import {
   affiliateSubmitterLabel,
   affiliateSubmitterOptions,
   contractorAccessListInput,
   contractorAccessSourceLabel,
+  contractorPagePath,
   contractorRequestStatusLabel,
   listRowContractorEmail,
   listRowContractorName,
@@ -37,7 +39,7 @@ export default function ContractorAccessAdmin() {
     <div className="space-y-4 max-w-3xl">
       <div>
         <h2 className="text-xl font-bold">Contractor access</h2>
-        <p className="text-sm text-muted-foreground">Approve a request to grant the contractor role. Reject leaves the account as a customer. Affiliate and admin roles are not changed.</p>
+        <p className="text-sm text-muted-foreground">Approve a request to grant the contractor role. Reject leaves the account as a customer. Affiliate and admin roles are not changed. Any admin can open a contractor's page and set that affiliate's markup.</p>
       </div>
       <Label className="text-sm block max-w-md">
         Affiliate
@@ -70,6 +72,14 @@ export default function ContractorAccessAdmin() {
         </p>
       ) : null}
       <div className="space-y-3">
+        {affiliateSubmitterOptions(rows).map((option) => (
+          <ContractorPricingCard
+            key={option.userId}
+            affiliateUserId={option.userId}
+            idPrefix={`affiliate-${option.userId}`}
+            heading={`Contractor pricing for ${affiliateSubmitterLabel(option)}`}
+          />
+        ))}
         {rows.map((row) => (
           <article key={row.id} className="rounded-xl border border-border p-4 space-y-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -78,15 +88,25 @@ export default function ContractorAccessAdmin() {
             </div>
             <p className="text-sm text-muted-foreground">{row.name || "Customer"} · {row.email || "No email"} · {row.phone}</p>
             <p className="text-sm">Source: {contractorAccessSourceLabel(row.source)}</p>
+            <p className="text-sm">Affiliate: {row.source === "affiliate" ? listRowSubmitter(row) : "None"}</p>
             <p className="text-sm">Submitted by: {listRowSubmitter(row)}</p>
             <p className="text-sm">Contractor: {listRowContractorName(row)} · {listRowContractorEmail(row)}</p>
             {row.licenseNumber ? <p className="text-sm">License {row.licenseNumber}</p> : null}
-            {row.status === "pending" ? (
-              <div className="flex flex-wrap gap-2">
-                <Button size="sm" disabled={review.isPending} onClick={() => review.mutate({ id: row.id, decision: "approved" })}>Approve</Button>
-                <Button size="sm" variant="outline" disabled={review.isPending} onClick={() => review.mutate({ id: row.id, decision: "rejected" })}>Reject</Button>
-              </div>
-            ) : null}
+            <div className="flex flex-wrap gap-2">
+              {row.userId != null ? (
+                <Button asChild size="sm" variant="outline">
+                  <a href={contractorPagePath(row.userId)}>View contractor</a>
+                </Button>
+              ) : (
+                <p className="text-sm text-muted-foreground">No contractor account yet</p>
+              )}
+              {row.status === "pending" ? (
+                <>
+                  <Button size="sm" disabled={review.isPending} onClick={() => review.mutate({ id: row.id, decision: "approved" })}>Approve</Button>
+                  <Button size="sm" variant="outline" disabled={review.isPending} onClick={() => review.mutate({ id: row.id, decision: "rejected" })}>Reject</Button>
+                </>
+              ) : null}
+            </div>
           </article>
         ))}
       </div>
