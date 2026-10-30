@@ -38,6 +38,7 @@ import {
 import { isDoorStyleVerified, resolveCabinetFaceImages } from "@shared/doorFaceRecognition";
 import { resolveDoorShapeDecision, resolveRenderHex, PROFILE_GUESSED_LABEL } from "@shared/doorRenderIdentity";
 import { designerFrameCompliance } from "@/lib/doorFrameMetrics";
+import { OpenDesignerLink } from "@/components/design/OpenDesignerLink";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -1079,7 +1080,12 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
           </div>
         </div>
 
-        <DialogFooter className="shrink-0 pt-2 border-t border-border">
+        <DialogFooter className="shrink-0 pt-2 border-t border-border sm:justify-between">
+          <OpenDesignerLink
+            doorStyleId={style.id}
+            distributorId={style.distributorId}
+            ariaLabel={`Open Designer for ${style.ourName}`}
+          />
           <Button variant="outline" onClick={onClose} disabled={savePhase === "saving"}>
             Cancel
           </Button>
@@ -1684,6 +1690,11 @@ export default function FeaturedStylesAdmin() {
                   <AdminStyleRoomSceneControls style={s} />
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
+                  <OpenDesignerLink
+                    doorStyleId={s.id}
+                    distributorId={s.distributorId}
+                    ariaLabel={`Open Designer for ${s.ourName}`}
+                  />
                   {/* Quick-edit button */}
                   <Button
                     size="icon"
@@ -1813,6 +1824,11 @@ export default function FeaturedStylesAdmin() {
                   <span className="mt-1 block min-w-0"><SourceAttribution style={s} /></span>
                 </button>
                 <div className="flex items-center gap-1 shrink-0">
+                  <OpenDesignerLink
+                    doorStyleId={s.id}
+                    distributorId={s.distributorId}
+                    ariaLabel={`Open Designer for ${s.ourName}`}
+                  />
                   <Button
                     size="icon"
                     variant="ghost"
@@ -1900,6 +1916,11 @@ export default function FeaturedStylesAdmin() {
                   <AdminStyleRoomSceneControls style={s} />
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
+                  <OpenDesignerLink
+                    doorStyleId={s.id}
+                    distributorId={s.distributorId}
+                    ariaLabel={`Open Designer for ${s.ourName}`}
+                  />
                   <Button
                     size="icon"
                     variant="ghost"

@@ -3,6 +3,7 @@ import { blindCornerInstallerNote, customSizeFee, effectiveStyleId, isBlindCorne
 import { isClosetPart } from "@/lib/closet";
 import { calculateCartSubtotal } from "@/lib/cartTotals";
 import { combinedFillerNote, fillerCutSourceFor, isCombinedSmallFiller } from "@/lib/fillerBilling";
+import { fittedCatalogFillerDescription } from "@/lib/catalogFiller";
 import { refrigeratorEndPanelCutDownNote } from "@/lib/refrigeratorEndPanelCut";
 
 type BuildDesignCabinetCartLinesArgs = {
@@ -84,13 +85,20 @@ function fillerCartIdentity(cabinet: PlacedCabinet): string {
     : "";
 }
 
-/** Preserve an imported SCR SKU while naming the installed physical role clearly. */
-export function installedFillerCartName(cabinet: Pick<PlacedCabinet, "masterCode" | "description" | "category" | "subCategory" | "width">): string {
+/** Name a billed filler by its stock SKU width and the installed cut, not a mismatched vendor sentence. */
+export function installedFillerCartName(cabinet: Pick<PlacedCabinet, "masterCode" | "description" | "category" | "subCategory" | "width" | "nominalWidth">): string {
   const description = cabinet.description?.trim() || cabinet.masterCode;
-  if (!isFillerItem(cabinet) || !/\bscribe\b/i.test(description)) return description;
-  const cut = description.match(/(?:[AB]\s+front\s+)?filler\s+cut\s+to\s+.+$/i)?.[0]
-    ?? description.match(/cut\s+to\s+.+$/i)?.[0];
-  return cut ? `Filler — ${cut}` : "Filler";
+  if (!isFillerItem(cabinet)) return description;
+  const stock = Number(cabinet.nominalWidth);
+  const installed = Number(cabinet.width);
+  if (Number.isFinite(stock) && stock > 0 && Number.isFinite(installed) && installed > 0) {
+    return fittedCatalogFillerDescription(
+      { masterCode: cabinet.masterCode, description: cabinet.description, width: stock },
+      installed,
+    );
+  }
+  if (/^Filler .+ stock, cut to /i.test(description)) return description;
+  return description;
 }
 
 /**

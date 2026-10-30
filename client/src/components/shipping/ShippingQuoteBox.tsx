@@ -9,19 +9,22 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Truck } from "lucide-react";
 import { toast } from "sonner";
 import type { PublicVendorQuote, ShippingQuoteRequestItem } from "./cartShippingQuote";
+import { asArray, displayValue, formatCents } from "@/lib/safeDisplay";
 
-function money(cents: number) {
-  return `$${(cents / 100).toFixed(2)}`;
+function money(cents: unknown) {
+  return `$${formatCents(cents)}`;
 }
 
-export function ShippingQuoteResults({ quotes }: { quotes: readonly PublicVendorQuote[] }) {
-  if (quotes.length === 0) return null;
+export function ShippingQuoteResults({ quotes }: { quotes: readonly PublicVendorQuote[] | null | undefined }) {
+  const rows = asArray<PublicVendorQuote>(quotes);
+  if (rows.length === 0) return null;
   return (
     <div className="space-y-2" data-testid="shipping-quote-results">
-      {quotes.map((quote) => {
-        const option = quote.options[0];
+      {rows.map((quote) => {
+        const itemIndexes = asArray(quote.itemIndexes);
+        const option = asArray<NonNullable<typeof quote.options>[number]>(quote.options)[0];
         return (
-          <div key={`${quote.vendorScope}-${quote.itemIndexes.join("-")}`} className="rounded-md border border-border bg-background p-3 text-sm">
+          <div key={`${quote.vendorScope}-${itemIndexes.join("-")}`} className="rounded-md border border-border bg-background p-3 text-sm">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="font-medium">{quote.vendorName}</p>
               {quote.ok && quote.sourceLabel && (
@@ -32,8 +35,8 @@ export function ShippingQuoteResults({ quotes }: { quotes: readonly PublicVendor
             </div>
             {quote.ok && option ? (
               <p className="mt-1 text-foreground">
-                {option.carrier ? `${option.carrier} · ` : ""}{option.method} · {money(option.costCents)}
-                {option.transitDays != null ? ` · ${option.transitDays} transit day${option.transitDays === 1 ? "" : "s"}` : ""}
+                {option.carrier ? `${option.carrier} · ` : ""}{displayValue(option.method, "Shipping")} · {money(option.costCents)}
+                {option.transitDays != null ? ` · ${displayValue(option.transitDays)} transit day${Number(option.transitDays) === 1 ? "" : "s"}` : ""}
               </p>
             ) : (
               <p className="mt-1 text-muted-foreground">{quote.error || "No shipping quote was returned."}</p>
@@ -93,7 +96,7 @@ export function ShippingQuoteBox({
         </Button>
       </div>
       {quote.error && <p className="mt-2 text-xs text-destructive">{quote.error.message}</p>}
-      {quote.data && <div className="mt-3"><ShippingQuoteResults quotes={quote.data.vendors} /></div>}
+      {quote.data && <div className="mt-3"><ShippingQuoteResults quotes={asArray<PublicVendorQuote>(quote.data.vendors)} /></div>}
     </div>
   );
 }
@@ -135,7 +138,7 @@ export function VendorShippingQuoteCard({
   }>(null);
   const current = config.data;
   const form = draft ?? (current ? {
-    serviceCodes: current.serviceCodes.join(", "),
+    serviceCodes: Array.isArray(current.serviceCodes) ? current.serviceCodes.join(", ") : typeof current.serviceCodes === "string" ? current.serviceCodes : "",
     freightClass: current.freightClass ?? "",
     shipFromZip: current.shipFromZip ?? "",
     provider: current.provider,
@@ -259,9 +262,23 @@ export function VendorShippingQuoteCard({
             {test.isPending ? "Testing…" : "Test quote"}
           </Button>
         </div>
-        {test.data && <ShippingQuoteResults quotes={test.data.vendors} />}
+        {test.data && <ShippingQuoteResults quotes={asArray<PublicVendorQuote>(test.data.vendors)} />}
       </CardContent>
     </Card>
+  );
+}
+
+function PelicanWeightMismatches({ data }: { data: { quartzNote?: unknown; mismatches?: unknown; pagesRead?: unknown; catalogSkus?: unknown } }) {
+  const mismatches = asArray<{ pelicanCode?: unknown; profileWeightLbs?: unknown; catalogWeightLbs?: unknown }>(data.mismatches);
+  const pagesRead = displayValue(data.pagesRead, "0");
+  return (
+    <div className="mt-3 space-y-2">
+      <p>{displayValue(data.quartzNote, "")}</p>
+      <p>{mismatches.length} mismatch{mismatches.length === 1 ? "" : "es"} in the first {pagesRead} catalog page{Number(pagesRead) === 1 ? "" : "s"} ({displayValue(data.catalogSkus, "0")} SKUs).</p>
+      {mismatches.slice(0, 12).map((row, index) => (
+        <p key={String(row?.pelicanCode ?? index)}>{displayValue(row?.pelicanCode, "SKU")}: profile {displayValue(row?.profileWeightLbs)} lb, catalog {displayValue(row?.catalogWeightLbs)} lb</p>
+      ))}
+    </div>
   );
 }
 
@@ -277,15 +294,7 @@ export function PelicanCatalogWeightCompare() {
           {compare.isPending ? "Comparing…" : "Compare catalog weights"}
         </Button>
       </div>
-      {compare.data && (
-        <div className="mt-3 space-y-2">
-          <p>{compare.data.quartzNote}</p>
-          <p>{compare.data.mismatches.length} mismatch{compare.data.mismatches.length === 1 ? "" : "es"} in the first {compare.data.pagesRead} catalog page{compare.data.pagesRead === 1 ? "" : "s"} ({compare.data.catalogSkus} SKUs).</p>
-          {compare.data.mismatches.slice(0, 12).map((row) => (
-            <p key={row.pelicanCode}>{row.pelicanCode}: profile {row.profileWeightLbs ?? "—"} lb, catalog {row.catalogWeightLbs} lb</p>
-          ))}
-        </div>
-      )}
+      {compare.data && <PelicanWeightMismatches data={compare.data} />}
     </div>
   );
 }

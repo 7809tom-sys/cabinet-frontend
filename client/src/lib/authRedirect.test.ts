@@ -19,12 +19,17 @@ describe("shouldRedirectToLoginOnError (browser Back-trap guard)", () => {
     expect(shouldRedirectToLoginOnError(trpcErr("Something else broke"), "query")).toBe(false);
   });
 
-  it("redirects on an unauthorized MUTATION error (deliberate action, expired session)", () => {
+  it("redirects on an unauthorized mutation only when auth.me has no user", () => {
+    expect(shouldRedirectToLoginOnError(trpcErr(UNAUTHED_ERR_MSG), "mutation", null)).toBe(true);
     expect(shouldRedirectToLoginOnError(trpcErr(UNAUTHED_ERR_MSG), "mutation")).toBe(true);
   });
 
+  it("leaves a procedure 401 on the form when auth.me already has a user", () => {
+    expect(shouldRedirectToLoginOnError(trpcErr(UNAUTHED_ERR_MSG), "mutation", { id: 4, role: "admin" })).toBe(false);
+  });
+
   it("does NOT redirect on a mutation error that is not the unauthorized message", () => {
-    expect(shouldRedirectToLoginOnError(trpcErr("Validation failed"), "mutation")).toBe(false);
+    expect(shouldRedirectToLoginOnError(trpcErr("Validation failed"), "mutation", null)).toBe(false);
   });
 
   it("ignores non-tRPC errors", () => {

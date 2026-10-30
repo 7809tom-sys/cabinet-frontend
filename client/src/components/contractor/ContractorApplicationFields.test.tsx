@@ -39,9 +39,13 @@ describe("contractor application fields", () => {
   it("leaves the /contractor application copy and submit payload in place", () => {
     const dashboard = readFileSync(resolve(process.cwd(), "client/src/pages/ContractorDashboard.tsx"), "utf8");
     const form = dashboard.slice(dashboard.indexOf("<form"), dashboard.indexOf("Apply for contractor access"));
-    expect(form).toContain("Contractor tools stay closed until an admin approves this request. Your account remains a customer in the meantime.");
+    expect(form).toContain("Contractor tools stay closed until your affiliate or CabinetDealz approves this request. Your account remains a customer in the meantime.");
     expect(form).toContain("<ContractorApplicationFields");
-    expect(form).toContain("submit.mutate({ businessName: businessName.trim(), phone: phone.trim(), licenseNumber: licenseNumber.trim() || null })");
+    expect(form).toContain("businessName: businessName.trim()");
+    expect(form).toContain("phone: phone.trim()");
+    expect(form).toContain("licenseNumber: licenseNumber.trim() || null");
+    expect(form).toContain('new URLSearchParams(window.location.search).get("store")');
+    expect(form).toContain("storeScope");
     expect(form).toContain('className="grid gap-3"');
     expect(dashboard).toContain('trpc.contractorAccess.submit.useMutation');
     expect(dashboard).toContain('trpc.contractorAccess.mine.useQuery');

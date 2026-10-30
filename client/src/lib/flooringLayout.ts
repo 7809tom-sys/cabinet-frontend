@@ -1,5 +1,31 @@
 import { FLOORING_LAYOUT_PATTERNS, type FlooringLayoutPattern } from "@/lib/design";
 
+/** Plank or tile direction for the room floor. 0 is the product's native direction. */
+export const FLOORING_ROTATION_DEGREES = [0, 90, 45] as const;
+export type FlooringRotationDegrees = (typeof FLOORING_ROTATION_DEGREES)[number];
+
+export function isFlooringRotation(value: unknown): value is FlooringRotationDegrees {
+  return value === 0 || value === 45 || value === 90;
+}
+
+export function flooringRotationRadians(degrees: FlooringRotationDegrees): number {
+  return (degrees * Math.PI) / 180;
+}
+
+/** Cover a rectangular room when the plank pattern is rotated, then clip to the room. */
+export function flooringPlanRotationLayerStyle(
+  degrees: FlooringRotationDegrees,
+  roomPxW: number,
+  roomPxH: number,
+): { width: number; height: number; transform: string } {
+  const cover = Math.ceil(Math.hypot(Math.max(roomPxW, 1), Math.max(roomPxH, 1)));
+  return {
+    width: cover,
+    height: cover,
+    transform: `translate(-50%, -50%) rotate(${degrees}deg)`,
+  };
+}
+
 /** Standard installed-floor waste. Herringbone cuts substantially more offcuts. */
 export const FLOORING_STANDARD_OVERAGE = 0.1;
 export const FLOORING_HERRINGBONE_OVERAGE = 0.2;

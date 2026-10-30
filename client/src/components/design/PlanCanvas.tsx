@@ -1,5 +1,6 @@
-import { doorOpeningAppearance, roomDoorSwing, supportsRoomDoorSwing } from "@/lib/doorOpeningAppearance";
-import { flooringPlanPatternStyle } from "@/lib/flooringLayout";
+import { FlooringRotationControl } from "@/components/design/FlooringLayoutPicker";
+import { PlacedItemContextMenu, type PlacedItemContextMenuState } from "@/components/design/PlacedItemContextMenu";
+import { flooringPlanPatternStyle, flooringPlanRotationLayerStyle, type FlooringRotationDegrees } from "@/lib/flooringLayout";
 import { useRef, useState, useCallback, useEffect, useMemo } from "react";
 import { Fragment } from "react";
 import {
@@ -483,6 +484,9 @@ interface Props {
   flooringMaterialId?: string | null;
   // Flooring layout pattern: how planks are arranged (affects SVG tile rendering).
   flooringPattern?: import("@/lib/design").FlooringLayoutPattern | null;
+  /** 0, 90, or 45 degree plank/tile direction for the room floor. */
+  flooringRotation?: FlooringRotationDegrees;
+  onFlooringRotationChange?: (degrees: FlooringRotationDegrees) => void;
   // Cabinet lock: when true, cabinet drag/drop/delete are blocked.
   cabinetsLocked?: boolean;
   // Gap intelligence: one representative real cabinet per width (keyed by width
@@ -537,6 +541,58 @@ function readableLabel(fillHex: string): { color: string; shadow: string; isDark
     : { color: "#1a2744", shadow: "0 1px 1px rgba(255,255,255,0.55)", isDarkFill };
 }
 
+function planFloorPattern(
+  flooringMaterialId: string | null,
+  flooringPattern: import("@/lib/design").FlooringLayoutPattern | null,
+  ppi: number,
+): { backgroundImage?: string; backgroundSize?: string } {
+  if (!flooringMaterialId) {
+    return {
+      backgroundImage: "linear-gradient(#f1f4f8 1px, transparent 1px), linear-gradient(90deg, #f1f4f8 1px, transparent 1px)",
+      backgroundSize: `${12 * ppi}px ${12 * ppi}px`,
+    };
+  }
+  const fm = flooringMaterial(flooringMaterialId);
+  const tw = Math.max(6, fm.tileW * ppi);
+  const th = Math.max(6, fm.tileH * ppi);
+  if (fm.pattern === "hardwood" || fm.pattern === "plank") {
+    const laid = flooringPlanPatternStyle(flooringPattern, fm.grout, tw, th);
+    return { backgroundImage: laid.backgroundImage, backgroundSize: laid.backgroundSize ?? `${tw}px ${th}px` };
+  }
+  if (fm.pattern === "tile-grid" || fm.pattern === "tile-diagonal") {
+    return {
+      backgroundImage: `repeating-linear-gradient(0deg, ${fm.grout} 0px, ${fm.grout} 1px, transparent 1px, transparent ${th}px), repeating-linear-gradient(90deg, ${fm.grout} 0px, ${fm.grout} 1px, transparent 1px, transparent ${tw}px)`,
+      backgroundSize: `${tw}px ${th}px`,
+    };
+  }
+  if (fm.pattern === "tile-stagger") {
+    const g = fm.grout;
+    const offset = Math.round(tw / 2);
+    const h2 = th * 2;
+    const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='${tw}' height='${h2}'>`
+      + `<rect x='0' y='0' width='${tw}' height='${h2}' fill='none'/>`
+      + `<line x1='0' y1='0' x2='${tw}' y2='0' stroke='${g}' stroke-width='1'/>`
+      + `<line x1='0' y1='${th}' x2='${tw}' y2='${th}' stroke='${g}' stroke-width='1'/>`
+      + `<line x1='0' y1='0' x2='0' y2='${th}' stroke='${g}' stroke-width='1'/>`
+      + `<line x1='${offset}' y1='${th}' x2='${offset}' y2='${h2}' stroke='${g}' stroke-width='1'/>`
+      + `</svg>`;
+    return { backgroundImage: `url("data:image/svg+xml,${encodeURIComponent(svg)}")`, backgroundSize: `${tw}px ${h2}px` };
+  }
+  if (fm.pattern === "herringbone") {
+    return {
+      backgroundImage: `repeating-linear-gradient(45deg, ${fm.grout} 0px, ${fm.grout} 1px, transparent 1px, transparent ${th}px), repeating-linear-gradient(-45deg, ${fm.grout} 0px, ${fm.grout} 1px, transparent 1px, transparent ${th}px)`,
+      backgroundSize: `${tw}px ${th}px`,
+    };
+  }
+  if (fm.pattern === "chevron") {
+    return {
+      backgroundImage: `repeating-linear-gradient(60deg, ${fm.grout} 0px, ${fm.grout} 1px, transparent 1px, transparent ${th}px), repeating-linear-gradient(-60deg, ${fm.grout} 0px, ${fm.grout} 1px, transparent 1px, transparent ${th}px)`,
+      backgroundSize: `${tw}px ${th}px`,
+    };
+  }
+  return { backgroundSize: `${tw}px ${th}px` };
+}
+
 export function PlanCanvas({
   room, autoDesignWallGuides = [], autoDesignWiggleMoves = NO_AUTO_DESIGN_WIGGLE_MOVES, catalogDragCabinet = null, cabinets, countertopGeometry, selectedUid, attributesTargetUid = null, onSelect, onMove, onDelete, onRotate, onUnlockCorner, onOpenAttributes, onDropNew, onDropToFloor,
   showWallLayer, showCrownTopBadges = false, onToggleWallLayer, measureMode = false, autoDimensions = false, onDimensionAdjustmentChange, showPeninsulaCornerSnapFeedback = true, island = null, onIslandChange, onIslandMove,
@@ -552,6 +608,8 @@ export function PlanCanvas({
   furniture = [], selectedFurnUid = null, onSelectFurn, onMoveFurn, onDeleteFurn, onRotateFurn, onOpenFurnitureAttributes, bathroomZoneWarningsByFixture,
   flooringMaterialId = null,
 	  flooringPattern = null,
+	  flooringRotation = 0,
+	  onFlooringRotationChange,
 	  cabinetsLocked = false,
 	  automaticSnapping = true,
   gapFillCandidates,
@@ -811,6 +869,8 @@ export function PlanCanvas({
     dimensionLeaderDrag.current = null;
   }, [moveDimensionLeaderDrag]);
   const [dragUid, setDragUid] = useState<string | null>(null);
+  const [planItemMenu, setPlanItemMenu] = useState<PlacedItemContextMenuState | null>(null);
+  const planRightPress = useRef<{ x: number; y: number; uid: string; moved: boolean } | null>(null);
   const dragOffset = useRef({ x: 0, y: 0 });
   const [hoverSnap, setHoverSnap] = useState(false);
   const [hoverSnapWall, setHoverSnapWall] = useState(false);
@@ -1235,6 +1295,10 @@ export function PlanCanvas({
       return;
     }
     onSelect(p.uid);
+    if (e.button === 2) {
+      planRightPress.current = { x: e.clientX, y: e.clientY, uid: p.uid, moved: false };
+      return;
+    }
     setWallSnapSuccessUid(null);
     if (wallSnapSuccessTimeout.current != null) {
       clearTimeout(wallSnapSuccessTimeout.current);
@@ -1259,6 +1323,10 @@ export function PlanCanvas({
 
   const handlePointerMove = useCallback(
     (e: React.PointerEvent) => {
+      const press = planRightPress.current;
+      if (press && !press.moved && Math.hypot(e.clientX - press.x, e.clientY - press.y) >= 6) {
+        planRightPress.current = { ...press, moved: true };
+      }
       if (!dragUid) return;
       const container = containerRef.current;
       if (!container) return;
@@ -1401,6 +1469,7 @@ export function PlanCanvas({
     const by = b.y * ppi;
     return { ax, ay, bx, by, midX: (ax + bx) / 2, midY: (ay + by) / 2, dx, dy, distIn: distance };
   })();
+  const floorPattern = planFloorPattern(flooringMaterialId, flooringPattern, ppi);
 
   return (
     <div
@@ -1408,7 +1477,7 @@ export function PlanCanvas({
       data-testid="floor-plan-canvas"
       data-floor-plan-zoom={floorPlanZoom}
       className={`relative w-full h-full overflow-hidden bg-[#eef1f5] select-none touch-none ${drawMode || measureMode ? "cursor-crosshair" : ""}`}
-      onClick={(e) => { if (!measureMode && !drawMode && e.target === e.currentTarget) { onSelect(null); onSelectPonyWall?.(null); } }}
+      onClick={(e) => { if (!measureMode && !drawMode && e.target === e.currentTarget) { onSelect(null); onSelectPonyWall?.(null); setPlanItemMenu(null); } }}
       onPointerDown={onCanvasPointerDown}
       onPointerMove={onCanvasPointerMove}
       onPointerUp={onCanvasPointerUp}
@@ -1462,6 +1531,20 @@ export function PlanCanvas({
 	        setCatalogDragFreehand(false);
       }}
 	    >
+      {onFlooringRotationChange && (
+        <div className="absolute bottom-3 left-3 z-40 rounded-lg border bg-white/95 p-1.5 shadow-sm" onPointerDown={(event) => event.stopPropagation()}>
+          <FlooringRotationControl value={flooringRotation} onChange={onFlooringRotationChange} testId="plan-flooring-rotation" />
+        </div>
+      )}
+      {planItemMenu && (
+        <PlacedItemContextMenu
+          menu={planItemMenu}
+          onEdit={onOpenAttributes}
+          onMove={(uid) => onSelect(uid)}
+          onRemove={onDelete}
+          onClose={() => setPlanItemMenu(null)}
+        />
+      )}
 	      {lowSillWindows.length > 0 && (
 	        <div
 	          role="alert"
@@ -1503,57 +1586,23 @@ export function PlanCanvas({
           backgroundColor: flooringMaterialId
             ? flooringMaterial(flooringMaterialId).fill
             : "#ffffff",
-          backgroundImage: (() => {
-            if (!flooringMaterialId) {
-              return "linear-gradient(#f1f4f8 1px, transparent 1px), linear-gradient(90deg, #f1f4f8 1px, transparent 1px)";
-            }
-            const fm = flooringMaterial(flooringMaterialId);
-            const tw = Math.max(6, fm.tileW * ppi);
-            const th = Math.max(6, fm.tileH * ppi);
-            if (fm.pattern === "hardwood" || fm.pattern === "plank") {
-              return flooringPlanPatternStyle(flooringPattern, fm.grout, tw, th).backgroundImage;
-            }
-            if (fm.pattern === "tile-grid" || fm.pattern === "tile-diagonal") {
-              return `repeating-linear-gradient(0deg, ${fm.grout} 0px, ${fm.grout} 1px, transparent 1px, transparent ${th}px), repeating-linear-gradient(90deg, ${fm.grout} 0px, ${fm.grout} 1px, transparent 1px, transparent ${tw}px)`;
-            }
-            if (fm.pattern === "tile-stagger") {
-              // Brick-lay for rectangular tiles: offset every other row by half tile width.
-              const g = fm.grout;
-              const offset = Math.round(tw / 2);
-              const h2 = th * 2;
-              const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='${tw}' height='${h2}'>`
-                + `<rect x='0' y='0' width='${tw}' height='${h2}' fill='none'/>`
-                + `<line x1='0' y1='0' x2='${tw}' y2='0' stroke='${g}' stroke-width='1'/>`
-                + `<line x1='0' y1='${th}' x2='${tw}' y2='${th}' stroke='${g}' stroke-width='1'/>`
-                + `<line x1='0' y1='0' x2='0' y2='${th}' stroke='${g}' stroke-width='1'/>`
-                + `<line x1='${offset}' y1='${th}' x2='${offset}' y2='${h2}' stroke='${g}' stroke-width='1'/>`
-                + `</svg>`;
-              return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
-            }
-            if (fm.pattern === "herringbone") {
-              return `repeating-linear-gradient(45deg, ${fm.grout} 0px, ${fm.grout} 1px, transparent 1px, transparent ${th}px), repeating-linear-gradient(-45deg, ${fm.grout} 0px, ${fm.grout} 1px, transparent 1px, transparent ${th}px)`;
-            }
-            if (fm.pattern === "chevron") {
-              return `repeating-linear-gradient(60deg, ${fm.grout} 0px, ${fm.grout} 1px, transparent 1px, transparent ${th}px), repeating-linear-gradient(-60deg, ${fm.grout} 0px, ${fm.grout} 1px, transparent 1px, transparent ${th}px)`;
-            }
-            // solid / concrete
-            return undefined;
-          })(),
-          backgroundSize: (() => {
-            if (!flooringMaterialId) return `${12 * ppi}px ${12 * ppi}px`;
-            const fm = flooringMaterial(flooringMaterialId);
-            const tw = Math.max(6, fm.tileW * ppi);
-            const th = Math.max(6, fm.tileH * ppi);
-            if (fm.pattern === "hardwood" || fm.pattern === "plank") {
-              return flooringPlanPatternStyle(flooringPattern, fm.grout, tw, th).backgroundSize ?? `${tw}px ${th}px`;
-            }
-            if (fm.pattern === "tile-stagger") {
-              return `${tw}px ${th * 2}px`;
-            }
-            return `${tw}px ${th}px`;
-          })(),
+          backgroundImage: flooringMaterialId ? undefined : floorPattern.backgroundImage,
+          backgroundSize: flooringMaterialId ? undefined : floorPattern.backgroundSize,
         }}
       >
+        {flooringMaterialId && (
+          <div data-testid="plan-flooring-rotation-layer" data-flooring-rotation={flooringRotation} className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
+            <div
+              className="absolute left-1/2 top-1/2"
+              style={{
+                ...flooringPlanRotationLayerStyle(flooringRotation, roomPxW, roomPxH),
+                backgroundColor: flooringMaterial(flooringMaterialId).fill,
+                backgroundImage: floorPattern.backgroundImage,
+                backgroundSize: floorPattern.backgroundSize,
+              }}
+            />
+          </div>
+        )}
 	        {positionedAutoDesignWallGuides.length > 0 && (
 	          <div data-testid="auto-design-wall-guide" className="pointer-events-none absolute inset-0 z-[28]" aria-label="Auto-Design wall guide">
 	            {positionedAutoDesignWallGuides.map(({ guide, labelPosition, startPosition }) => (
@@ -2643,15 +2692,16 @@ export function PlanCanvas({
                 onPointerDown={(e) => handlePointerDown(e, p)}
                 onPointerMove={handlePointerMove}
                 onPointerUp={handlePointerUp}
-                onContextMenu={
-                  onOpenAttributes
-                    ? (e) => {
-                        e.preventDefault();
-                        onSelect(p.uid);
-                        onOpenAttributes(p.uid);
-                      }
-                    : undefined
-                }
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const press = planRightPress.current;
+                  const dragged = press?.uid === p.uid && press.moved;
+                  planRightPress.current = null;
+                  if (dragged) return;
+                  onSelect(p.uid);
+                  setPlanItemMenu({ x: e.clientX, y: e.clientY, uid: p.uid, label: p.masterCode || "Item" });
+                }}
                 onDoubleClick={
                   onOpenAttributes
                     ? (e) => {

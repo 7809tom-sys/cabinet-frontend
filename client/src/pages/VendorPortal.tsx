@@ -25,9 +25,11 @@ import {
 import { trpc } from "@/lib/trpc";
 import { VendorRoomSceneLibrary } from "@/components/vendor/VendorRoomSceneLibrary";
 import { VendorAutoRoomSceneBadge } from "@/components/doorStyles/VendorAutoRoomSceneBadge";
+import { OpenDesignerLink } from "@/components/design/OpenDesignerLink";
 import { VENDOR_AUTO_ROOM_SCENE_COPY, type AutoRoomScene } from "@/lib/autoRoomScene";
 import { PublicRoomSceneStrip } from "@/components/PublicRoomScenes";
 import { supabase } from "@/lib/supabase";
+import { ACCOUNT_ALREADY_EXISTS_MESSAGE, isRepeatedSignup } from "@/lib/accountAuth";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { getLoginUrl } from "@/const";
 import { toast } from "sonner";
@@ -519,9 +521,15 @@ function OverviewPage({ onNavigate }: { onNavigate: (page: VendorPage) => void }
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold tracking-tight">{line.name}</h2>
-        <p className="text-muted-foreground">Manage your product line, pricing, and 3D Designer presence.</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight">{line.name}</h2>
+          <p className="text-muted-foreground">Manage your product line, pricing, and 3D Designer presence.</p>
+        </div>
+        <OpenDesignerLink
+          distributorId={line.id}
+          ariaLabel={`Open Designer for ${line.name}`}
+        />
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -1834,12 +1842,20 @@ function DoorStylesPage() {
 
   return (
     <div className="space-y-6">
-	      <div>
+	      <div className="flex flex-wrap items-start justify-between gap-3">
+	        <div>
 	        <h2 className="text-xl font-bold">Door Styles</h2>
 	        <p className="text-muted-foreground text-sm mt-1">
 	          Manage images for your door styles. Upload room scenes, door samples, and thumbnails.
 	        </p>
 	        <p className="mt-1 max-w-2xl text-sm text-muted-foreground">{VENDOR_AUTO_ROOM_SCENE_COPY}</p>
+	        </div>
+	        {styles.length === 0 && (
+	          <OpenDesignerLink
+	            distributorId={myLine.data?.line.id ?? adminDistId ?? null}
+	            ariaLabel="Open Designer for this product line"
+	          />
+	        )}
 	      </div>
 	      <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-3 text-sm text-amber-950">
 	        <p className="font-semibold">Sample-door measurements</p>
@@ -1906,6 +1922,12 @@ function DoorStylesPage() {
 	              </div>
 	              <VendorAutoRoomSceneBadge styleId={style.id} distributorId={adminDistId} live />
 
+	              <OpenDesignerLink
+	                doorStyleId={style.id}
+	                distributorId={myLine.data?.line.id ?? adminDistId ?? null}
+	                className="h-8 w-full gap-1.5"
+	                ariaLabel={`Open Designer for ${style.ourName}`}
+	              />
 	              <Button
 	                type="button"
 	                variant="outline"
@@ -2537,7 +2559,11 @@ function VendorFeaturedStyleEditor({
           onChanged={onSaved}
         />
       </div>
-      <DialogFooter className="shrink-0 border-t border-border pt-3"><Button variant="outline" onClick={onClose} disabled={update.isPending}>Cancel</Button><Button onClick={save} disabled={update.isPending} className="bg-amber-600 text-white hover:bg-amber-700">{update.isPending ? "Saving…" : "Save Featured Style"}</Button></DialogFooter>
+      <DialogFooter className="shrink-0 border-t border-border pt-3 sm:justify-between">
+        <OpenDesignerLink doorStyleId={style.id} distributorId={style.distributorId} ariaLabel={`Open Designer for ${style.ourName}`} />
+        <Button variant="outline" onClick={onClose} disabled={update.isPending}>Cancel</Button>
+        <Button onClick={save} disabled={update.isPending} className="bg-amber-600 text-white hover:bg-amber-700">{update.isPending ? "Saving…" : "Save Featured Style"}</Button>
+      </DialogFooter>
     </DialogContent>
   </Dialog>;
 }
@@ -2625,7 +2651,15 @@ function VendorFeaturedStylesPage() {
 	          </p>
 	          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">{VENDOR_AUTO_ROOM_SCENE_COPY}</p>
 	        </div>
-	        <Badge variant="secondary" className="self-start text-sm sm:self-auto">{featured.length} matching featured line{featured.length === 1 ? "" : "s"}</Badge>
+	        <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+	          {featured.length === 0 && available.length === 0 && (
+	            <OpenDesignerLink
+	              distributorId={adminDistId ?? null}
+	              ariaLabel="Open Designer for this product line"
+	            />
+	          )}
+	          <Badge variant="secondary" className="text-sm">{featured.length} matching featured line{featured.length === 1 ? "" : "s"}</Badge>
+	        </div>
 	      </div>
 
 	      <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
@@ -2706,6 +2740,7 @@ function VendorFeaturedStylesPage() {
 	                    {hasActiveFilters && style.matchingCabinets.length > 0 && <p className="mt-1 truncate text-[11px] text-primary">Matches: {style.matchingCabinets.map((cabinet) => cabinet.masterCode).join(", ")} {style.matchingCabinetCount > style.matchingCabinets.length ? `+${style.matchingCabinetCount - style.matchingCabinets.length} more` : ""}</p>}
 	                  </div>
 			                  <div className="flex shrink-0 items-center gap-1">
+			                    <OpenDesignerLink doorStyleId={style.id} distributorId={style.distributorId} ariaLabel={`Open Designer for ${style.ourName}`} />
 			                    <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => setEditingStyle(style)} aria-label={`Edit ${style.ourName} Featured Style materials`} title="Edit Featured Style materials"><Pencil className="h-3.5 w-3.5" />Edit materials</Button>
 	                    <Button size="icon" variant="ghost" className="h-8 w-8" disabled={index === 0 || reorder.isPending || hasActiveFilters} onClick={() => move(index, -1)} aria-label={`Move ${style.ourName} up`} title={hasActiveFilters ? "Clear filters to reorder" : "Move up"}><ArrowUp className="h-4 w-4" /></Button>
 	                    <Button size="icon" variant="ghost" className="h-8 w-8" disabled={index === featured.length - 1 || reorder.isPending || hasActiveFilters} onClick={() => move(index, 1)} aria-label={`Move ${style.ourName} down`} title={hasActiveFilters ? "Clear filters to reorder" : "Move down"}><ArrowDown className="h-4 w-4" /></Button>
@@ -2739,7 +2774,7 @@ function VendorFeaturedStylesPage() {
 	                    <p className={`mt-1 text-[10px] ${sceneReady ? "text-emerald-700" : "text-amber-700"}`}>{sceneReady ? "Verified room scene ready" : "Add a verified room scene in Door Styles first"}</p>
 	                    <VendorAutoRoomSceneBadge styleId={style.id} distributorId={adminDistId} snapshot={style.autoRoomScene ?? null} doorSampleVerified={style.doorSampleVerified} drawerSampleVerified={style.drawerSampleVerified} />
 	                  </div>
-		                  <div className="flex shrink-0 items-center gap-1"><Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => setEditingStyle(style)} aria-label={`Edit ${style.ourName} Featured Style materials`} title="Edit Featured Style materials"><Pencil className="h-3.5 w-3.5" />Edit materials</Button><Button size="icon" variant="ghost" className="h-8 w-8" disabled={setFeatured.isPending || !sceneReady} onClick={() => setFeatured.mutate(mutateInput({ styleId: style.id, featured: true }))} aria-label={`Feature ${style.ourName}`} title={sceneReady ? "Feature this cabinet line" : "Add a verified matching room scene in Door Styles first"}><Star className="h-4 w-4 text-muted-foreground/60" /></Button></div>
+		                  <div className="flex shrink-0 items-center gap-1"><OpenDesignerLink doorStyleId={style.id} distributorId={style.distributorId} ariaLabel={`Open Designer for ${style.ourName}`} /><Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => setEditingStyle(style)} aria-label={`Edit ${style.ourName} Featured Style materials`} title="Edit Featured Style materials"><Pencil className="h-3.5 w-3.5" />Edit materials</Button><Button size="icon" variant="ghost" className="h-8 w-8" disabled={setFeatured.isPending || !sceneReady} onClick={() => setFeatured.mutate(mutateInput({ styleId: style.id, featured: true }))} aria-label={`Feature ${style.ourName}`} title={sceneReady ? "Feature this cabinet line" : "Add a verified matching room scene in Door Styles first"}><Star className="h-4 w-4 text-muted-foreground/60" /></Button></div>
                 </div>
               );
             })}
@@ -4337,6 +4372,7 @@ function VendorLoginForm() {
 
   const [isPending, setIsPending] = useState(false);
   const [notice, setNotice] = useState("");
+  const [existingAccount, setExistingAccount] = useState(false);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -4372,6 +4408,10 @@ function VendorLoginForm() {
     setIsPending(false);
     if (authError) {
       setError(authError.message || (mode === "register" ? "Registration failed." : "Invalid email or password."));
+      return;
+    }
+    if (mode === "register" && isRepeatedSignup(data.user)) {
+      setExistingAccount(true);
       return;
     }
     if (!data.session) {
@@ -4449,6 +4489,15 @@ function VendorLoginForm() {
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   autoComplete="new-password"
                 />
+              </div>
+            )}
+            {existingAccount && (
+              <div role="alert" className="rounded-md border border-amber-300 bg-amber-50 px-3 py-3 text-sm text-amber-950">
+                <p>{ACCOUNT_ALREADY_EXISTS_MESSAGE}</p>
+                <p className="mt-2 flex gap-3">
+                  <button type="button" className="font-medium underline" onClick={() => { setExistingAccount(false); setMode("login"); }}>Sign in</button>
+                  <a href="/signin" className="font-medium underline">Reset</a>
+                </p>
               </div>
             )}
             {error && (

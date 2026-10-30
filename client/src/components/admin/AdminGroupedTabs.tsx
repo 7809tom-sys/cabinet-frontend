@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useEffect, useState, useMemo, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
@@ -65,6 +65,7 @@ import QuickBooksAdmin from "@/components/admin/QuickBooksAdmin";
 import IncomingOrdersAdmin from "@/components/admin/IncomingOrdersAdmin";
 import { DesignerCoverageAdmin } from "@/components/admin/DesignerCoverageAdmin";
 import { AdminTabHelp } from "@/components/admin/AdminTabHelp";
+import { CATALOG_SECTIONS, canonicalAdminTab, catalogLeaves, resolveCatalogTab } from "@/components/admin/catalogAdminTabs";
 import ApprovedVendorsAdmin from "@/components/admin/ApprovedVendorsAdmin";
 import VendorReferralsAdmin from "@/components/admin/VendorReferralsAdmin";
 import PelicanCatalogAdmin from "@/components/admin/PelicanCatalogAdmin";
@@ -105,6 +106,7 @@ import VendorOnboardingAdmin from "@/components/admin/VendorOnboardingAdmin";
 import { SampleOrderDesk } from "@/components/samples/SampleOrderDesk";
 import KitchenRulesAdmin from "@/components/admin/KitchenRulesAdmin";
 import ContractorAccessAdmin from "@/components/admin/ContractorAccessAdmin";
+import { AdminTabErrorBoundary } from "@/components/admin/AdminTabErrorBoundary";
 
 // ─── Group definitions ────────────────────────────────────────────────────────
 const GROUPS = [
@@ -150,35 +152,7 @@ const GROUPS = [
     id: "catalog",
     label: "Products & Catalog",
     icon: Package,
-    tabs: [
-      { value: "cabinets", label: "Catalog" },
-      { value: "distributors", label: "Distributors" },
-      { value: "glass-policy", label: "Glass Policy" },
-      { value: "catalog-importer", label: "📥 Catalog Importer" },
-      { value: "featured", label: "Featured Styles" },
-      { value: "door-corrections", label: "Door Corrections" },
-      { value: "door-rendering-audit", label: "Door Rendering Audit" },
-      { value: "images", label: "Product Images" },
-      { value: "pelican-catalog", label: "Pelican Catalog" },
-      { value: "conflicts", label: "Conflicts" },
-      { value: "vendor-onboarding", label: "Vendor Onboarding" },
-      { value: "merge-suggestions", label: "Merge Suggestions" },
-      { value: "master-sku", label: "Master SKU Aliases" },
-      { value: "cabinet-config", label: "Cabinet Config" },
-      { value: "master-changes", label: "Master Changes" },
-      { value: "data-recovery", label: "🛟 Data Recovery" },
-      { value: "package-data", label: "📦 Package Data & Parcel" },
-      { value: "cabinet-attention", label: "⚠ Cabinet Attention" },
-      { value: "unpriced-items", label: "⚠ Unpriced Items" },
-      { value: "designer-price-flags", label: "🚩 Designer Price Flags" },
-      { value: "categories", label: "Categories" },
-      { value: "pending-review", label: "⏳ Pending Review" },
-      { value: "pending-distributor-connections", label: "✎ Supplier Products" },
-      { value: "bundle-deals", label: "📦 Kitchen Packages" },
-      { value: "price-shop-10x10", label: "10×10 Price Shop" },
-      { value: "media-library", label: "📁 Media Library" },
-      { value: "generated-design-images", label: "✨ Generated Design Images" },
-    ],
+    tabs: CATALOG_SECTIONS.map((section) => ({ value: section.id, label: section.label })),
   },
   {
     id: "pricing",
@@ -225,14 +199,19 @@ const GROUPS = [
       { value: "affiliate-resources", label: "Affiliate Resources" },
     ],
   },
-] as const;
+];
 
-// Build a lookup from tab value → group id
+// Build a lookup from tab value → group id.
+// Catalog leaves keep their historical ?tab= values even though the visible
+// row is the shorter section list.
 const TAB_TO_GROUP: Record<string, string> = {};
 for (const g of GROUPS) {
   for (const t of g.tabs) {
     TAB_TO_GROUP[t.value] = g.id;
   }
+}
+for (const leaf of catalogLeaves()) {
+  TAB_TO_GROUP[leaf.value] = "catalog";
 }
 
 function statusVariant(status: string): "default" | "secondary" | "destructive" | "outline" {
@@ -459,10 +438,51 @@ function PendingVendorCount({ compact = false }: { compact?: boolean }) {
   );
 }
 
+function CatalogSubTabs({
+  sectionId,
+  activeTab,
+  onSelect,
+  children,
+}: {
+  sectionId: string;
+  activeTab: string;
+  onSelect: (value: string) => void;
+  children: ReactNode;
+}) {
+  const section = CATALOG_SECTIONS.find((item) => item.id === sectionId);
+  if (!section) return null;
+  const leaves = catalogLeaves(section);
+  const value = leaves.some((leaf) => leaf.value === activeTab) ? activeTab : leaves[0]?.value;
+  if (!value) return null;
+  return (
+    <Tabs value={value} onValueChange={onSelect}>
+      <div className="space-y-3" data-testid={`catalog-subtabs-${section.id}`}>
+        {section.groups.map((group) => (
+          <div key={group.label || section.id} className="space-y-1.5">
+            {group.label ? (
+              <p className="px-0.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                {group.label}
+              </p>
+            ) : null}
+            <TabsList className="flex h-auto w-full max-w-full flex-wrap justify-start gap-y-1">
+              {group.leaves.map((leaf) => (
+                <TabsTrigger key={leaf.value} value={leaf.value}>
+                  {leaf.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </div>
+        ))}
+      </div>
+      {children}
+    </Tabs>
+  );
+}
+
 export default function AdminGroupedTabs() {
   const initialTab = useMemo(() => {
     const params = new URLSearchParams(window.location.search);
-    return params.get("tab") || "crm";
+    return canonicalAdminTab(params.get("tab") || "crm");
   }, []);
 
   const initialGroup = TAB_TO_GROUP[initialTab] || "sales";
@@ -473,22 +493,36 @@ export default function AdminGroupedTabs() {
   const currentGroup = GROUPS.find((g) => g.id === activeGroup)!;
   const inbox = trpc.vendorInventory.inboxCount.useQuery();
 
-  const handleGroupChange = (groupId: string) => {
-    setActiveGroup(groupId);
-    const group = GROUPS.find((g) => g.id === groupId)!;
-    const firstTab = group.tabs[0].value;
-    setActiveTab(firstTab);
+  const selectTab = (tabValue: string) => {
+    const next = canonicalAdminTab(tabValue);
+    setActiveTab(next);
     const url = new URL(window.location.href);
-    url.searchParams.set("tab", firstTab);
+    url.searchParams.set("tab", next);
     window.history.replaceState({}, "", url.toString());
   };
 
-  const handleTabChange = (tabValue: string) => {
-    setActiveTab(tabValue);
+  // A section id such as ?tab=door-styles opens that section's first editor
+  // and the address bar keeps the leaf value those links already used.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const raw = params.get("tab");
+    if (!raw) return;
+    const next = canonicalAdminTab(raw);
+    if (next === raw) return;
     const url = new URL(window.location.href);
-    url.searchParams.set("tab", tabValue);
+    url.searchParams.set("tab", next);
     window.history.replaceState({}, "", url.toString());
+  }, []);
+
+  const handleGroupChange = (groupId: string) => {
+    setActiveGroup(groupId);
+    const group = GROUPS.find((g) => g.id === groupId)!;
+    selectTab(group.tabs[0].value);
   };
+
+  const outerTabValue = currentGroup.id === "catalog"
+    ? (resolveCatalogTab(activeTab)?.sectionId ?? CATALOG_SECTIONS[0].id)
+    : activeTab;
 
   return (
     <div className="space-y-4">
@@ -518,8 +552,8 @@ export default function AdminGroupedTabs() {
 
       {/* Sub-tabs for the active group */}
       <Tabs
-        value={activeTab}
-        onValueChange={handleTabChange}
+        value={outerTabValue}
+        onValueChange={selectTab}
         className={currentGroup.id === "settings" ? "lg:grid lg:grid-cols-[13rem_minmax(0,1fr)] lg:items-start lg:gap-6" : undefined}
       >
         <TabsList className={cn(
@@ -541,91 +575,108 @@ export default function AdminGroupedTabs() {
 
         <div className={currentGroup.id === "settings" ? "min-w-0" : undefined}>
         {/* Sales & Orders */}
-        <TabsContent value="orders" className="mt-6"><AdminTabHelp tab="orders" /><IncomingOrdersAdmin /></TabsContent>
-        <TabsContent value="sales-forecast" className="mt-6"><SalesForecastAdmin /></TabsContent>
-        <TabsContent value="sample-orders" className="mt-6"><SampleOrderDesk mode="admin" /></TabsContent>
-        <TabsContent value="vendor-updates" className="mt-6"><VendorUpdatesAdmin /></TabsContent>
-        <TabsContent value="vendor-inventory" className="mt-6"><VendorInventoryAdmin /></TabsContent>
-        <TabsContent value="crm" className="mt-6"><AdminTabHelp tab="crm" /><CrmBoard lang="en" /></TabsContent>
-        <TabsContent value="consultations" className="mt-6"><AdminTabHelp tab="consultations" /><ConsultationsAdmin /></TabsContent>
-        <TabsContent value="design-leads" className="mt-6"><AdminTabHelp tab="design-leads" /><DesignLeadsAdmin /></TabsContent>
-        <TabsContent value="quotes" className="mt-6"><AdminTabHelp tab="quotes" /><CountertopQuotes /></TabsContent>
-        <TabsContent value="payments" className="mt-6"><AdminTabHelp tab="payments" /><PaymentsAdmin /></TabsContent>
-        <TabsContent value="stripe-invoices" className="mt-6"><AdminTabHelp tab="stripe-invoices" /><StripeInvoicesAdmin /></TabsContent>
+        <TabsContent value="orders" className="mt-6"><AdminTabErrorBoundary tabName="Incoming Orders"><AdminTabHelp tab="orders" /><IncomingOrdersAdmin /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="sales-forecast" className="mt-6"><AdminTabErrorBoundary tabName="Sales Forecast"><SalesForecastAdmin /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="sample-orders" className="mt-6"><AdminTabErrorBoundary tabName="Sample Orders"><SampleOrderDesk mode="admin" /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="vendor-updates" className="mt-6"><AdminTabErrorBoundary tabName="Vendor Updates"><VendorUpdatesAdmin /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="vendor-inventory" className="mt-6"><AdminTabErrorBoundary tabName="Vendor Inventory"><VendorInventoryAdmin /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="crm" className="mt-6"><AdminTabErrorBoundary tabName="Sales CRM"><AdminTabHelp tab="crm" /><CrmBoard lang="en" /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="consultations" className="mt-6"><AdminTabErrorBoundary tabName="Consultations"><AdminTabHelp tab="consultations" /><ConsultationsAdmin /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="design-leads" className="mt-6"><AdminTabErrorBoundary tabName="Design Leads"><AdminTabHelp tab="design-leads" /><DesignLeadsAdmin /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="quotes" className="mt-6"><AdminTabErrorBoundary tabName="Countertop Quotes"><AdminTabHelp tab="quotes" /><CountertopQuotes /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="payments" className="mt-6"><AdminTabErrorBoundary tabName="Payments"><AdminTabHelp tab="payments" /><PaymentsAdmin /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="stripe-invoices" className="mt-6"><AdminTabErrorBoundary tabName="Stripe Invoices"><AdminTabHelp tab="stripe-invoices" /><StripeInvoicesAdmin /></AdminTabErrorBoundary></TabsContent>
 
         {/* People */}
-        <TabsContent value="customers" className="mt-6"><AdminTabHelp tab="customers" /><CustomersAdmin /></TabsContent>
-        <TabsContent value="image-generations" className="mt-6"><ImageGenerationsAdmin /></TabsContent>
-        <TabsContent value="crm-cleanup" className="mt-6"><AdminTabHelp tab="crm-cleanup" /><CrmCleanupAdmin /></TabsContent>
-        <TabsContent value="roles" className="mt-6"><AdminTabHelp tab="roles" /><RolesAdmin /></TabsContent>
-        <TabsContent value="affiliates" className="mt-6"><AdminTabHelp tab="affiliates" /><AffiliatesAdmin /></TabsContent>
-        <TabsContent value="affiliate-invoices" className="mt-6"><AdminTabHelp tab="affiliate-invoices" /><AffiliateInvoicesAdmin /></TabsContent>
-        <TabsContent value="payouts" className="mt-6"><AdminTabHelp tab="payouts" /><PayoutsAdmin /></TabsContent>
-        <TabsContent value="commissions" className="mt-6"><AdminTabHelp tab="commissions" /><SalesCommissionsAdmin /></TabsContent>
-        <TabsContent value="pros" className="mt-6"><AdminTabHelp tab="pros" /><ProApplications /></TabsContent>
-        <TabsContent value="contractor-access" className="mt-6"><ContractorAccessAdmin /></TabsContent>
-        <TabsContent value="vendors" className="mt-6"><AdminTabHelp tab="vendors" /><VendorApplications /></TabsContent>
-        <TabsContent value="approved-vendors" className="mt-6"><ApprovedVendorsAdmin /></TabsContent>
-        <TabsContent value="vendor-referrals" className="mt-6"><VendorReferralsAdmin /></TabsContent>
+        <TabsContent value="customers" className="mt-6"><AdminTabErrorBoundary tabName="Customers"><AdminTabHelp tab="customers" /><CustomersAdmin /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="image-generations" className="mt-6"><AdminTabErrorBoundary tabName="Image Generations"><ImageGenerationsAdmin /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="crm-cleanup" className="mt-6"><AdminTabErrorBoundary tabName="CRM Cleanup"><AdminTabHelp tab="crm-cleanup" /><CrmCleanupAdmin /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="roles" className="mt-6"><AdminTabErrorBoundary tabName="Roles"><AdminTabHelp tab="roles" /><RolesAdmin /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="affiliates" className="mt-6"><AdminTabErrorBoundary tabName="Affiliates"><AdminTabHelp tab="affiliates" /><AffiliatesAdmin /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="affiliate-invoices" className="mt-6"><AdminTabErrorBoundary tabName="Affiliate Invoices"><AdminTabHelp tab="affiliate-invoices" /><AffiliateInvoicesAdmin /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="payouts" className="mt-6"><AdminTabErrorBoundary tabName="Payouts"><AdminTabHelp tab="payouts" /><PayoutsAdmin /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="commissions" className="mt-6"><AdminTabErrorBoundary tabName="Sales Commissions"><AdminTabHelp tab="commissions" /><SalesCommissionsAdmin /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="pros" className="mt-6"><AdminTabErrorBoundary tabName="Pro Applications"><AdminTabHelp tab="pros" /><ProApplications /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="contractor-access" className="mt-6"><AdminTabErrorBoundary tabName="Contractor Access"><ContractorAccessAdmin /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="vendors" className="mt-6"><AdminTabErrorBoundary tabName="Vendors"><AdminTabHelp tab="vendors" /><VendorApplications /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="approved-vendors" className="mt-6"><AdminTabErrorBoundary tabName="Approved Vendors"><ApprovedVendorsAdmin /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="vendor-referrals" className="mt-6"><AdminTabErrorBoundary tabName="Vendor Referrals"><VendorReferralsAdmin /></AdminTabErrorBoundary></TabsContent>
 
-        {/* Products & Catalog */}
-        <TabsContent value="cabinets" className="mt-6 space-y-8"><AdminTabHelp tab="cabinets" /><GenericCabinetsAdmin /><CabinetSpreadsheetAdmin /><CabinetLineDownload /></TabsContent>
-        <TabsContent value="distributors" className="mt-6 space-y-6"><AdminTabHelp tab="distributors" /><LineBrandingEditor /><DistributorFulfillmentEditor /><DistributorImport /></TabsContent>
-        <TabsContent value="glass-policy" className="mt-6"><AdminTabHelp tab="glass-policy" /><DistributorFulfillmentEditor glassOnly /></TabsContent>
-        <TabsContent value="catalog-importer" className="mt-6"><CatalogImporterTab /></TabsContent>
-        <TabsContent value="featured" className="mt-6"><AdminTabHelp tab="featured" /><FeaturedStylesAdmin /></TabsContent>
-        <TabsContent value="door-corrections" className="mt-6"><AdminTabHelp tab="door-corrections" /><DoorCorrectionsAdmin /></TabsContent>
-        <TabsContent value="door-rendering-audit" className="mt-6"><AdminTabHelp tab="door-rendering-audit" /><DoorRenderingAuditAdmin /></TabsContent>
-        <TabsContent value="images" className="mt-6"><AdminTabHelp tab="images" /><SkuImageManager /></TabsContent>
-        <TabsContent value="pelican-catalog" className="mt-6"><PelicanCatalogAdmin /></TabsContent>
-        <TabsContent value="conflicts" className="mt-6"><AdminTabHelp tab="conflicts" /><ConflictsAdmin /></TabsContent>
-        <TabsContent value="vendor-onboarding" className="mt-6"><AdminTabHelp tab="vendor-onboarding" /><VendorOnboardingAdmin /></TabsContent>
-        <TabsContent value="merge-suggestions" className="mt-6"><PotentialMergesAdmin /></TabsContent>
-        <TabsContent value="master-sku" className="mt-6"><MasterSkuAdmin /></TabsContent>
-        <TabsContent value="cabinet-config" className="mt-6"><CabinetConfigAdmin /></TabsContent>
-        <TabsContent value="master-changes" className="mt-6"><MasterChangesAdmin /></TabsContent>
-        <TabsContent value="data-recovery" className="mt-6"><DataRecoveryAdmin /></TabsContent>
-        <TabsContent value="package-data" className="mt-6"><BulkDimensionsAdmin /></TabsContent>
-        <TabsContent value="cabinet-attention" className="mt-6"><CabinetConfigReviewQueueAdmin /></TabsContent>
-        <TabsContent value="unpriced-items" className="mt-6"><UnpricedCabinetsAdmin /></TabsContent>
-        <TabsContent value="designer-price-flags" className="mt-6"><DesignerPriceFlagsAdmin /></TabsContent>
-        <TabsContent value="categories" className="mt-6"><CategoriesAdmin /></TabsContent>
-        <TabsContent value="pending-review" className="mt-6"><PendingReviewAdmin /></TabsContent>
-        <TabsContent value="pending-distributor-connections" className="mt-6"><PendingDistributorConnectionsAdmin /></TabsContent>
-        <TabsContent value="bundle-deals" className="mt-6"><BundleDealsAdmin /></TabsContent>
-        <TabsContent value="price-shop-10x10" className="mt-6"><PriceShop10x10 /></TabsContent>
-        <TabsContent value="media-library" className="mt-6"><MediaLibraryAdmin /></TabsContent>
-        <TabsContent value="generated-design-images" className="mt-6"><GeneratedDesignImagesAdmin /></TabsContent>
+        {/* Products & Catalog. Single-purpose editors stay on the top row.
+            Grouped editors keep their original ?tab= value as an inner tab. */}
+        <TabsContent value="cabinets" className="mt-6 space-y-8"><AdminTabErrorBoundary tabName="Catalog"><AdminTabHelp tab="cabinets" /><GenericCabinetsAdmin /><CabinetSpreadsheetAdmin /><CabinetLineDownload /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="door-styles" className="mt-4">
+          <CatalogSubTabs sectionId="door-styles" activeTab={activeTab} onSelect={selectTab}>
+            <TabsContent value="featured" className="mt-6"><AdminTabErrorBoundary tabName="Featured Styles"><AdminTabHelp tab="featured" /><FeaturedStylesAdmin /></AdminTabErrorBoundary></TabsContent>
+            <TabsContent value="door-corrections" className="mt-6"><AdminTabErrorBoundary tabName="Door Corrections"><AdminTabHelp tab="door-corrections" /><DoorCorrectionsAdmin /></AdminTabErrorBoundary></TabsContent>
+            <TabsContent value="door-rendering-audit" className="mt-6"><AdminTabErrorBoundary tabName="Door Rendering Audit"><AdminTabHelp tab="door-rendering-audit" /><DoorRenderingAuditAdmin /></AdminTabErrorBoundary></TabsContent>
+          </CatalogSubTabs>
+        </TabsContent>
+        <TabsContent value="catalog-images" className="mt-4">
+          <CatalogSubTabs sectionId="catalog-images" activeTab={activeTab} onSelect={selectTab}>
+            <TabsContent value="images" className="mt-6"><AdminTabErrorBoundary tabName="Product Images"><AdminTabHelp tab="images" /><SkuImageManager /></AdminTabErrorBoundary></TabsContent>
+            <TabsContent value="media-library" className="mt-6"><AdminTabErrorBoundary tabName="📁 Media Library"><MediaLibraryAdmin /></AdminTabErrorBoundary></TabsContent>
+            <TabsContent value="generated-design-images" className="mt-6"><AdminTabErrorBoundary tabName="✨ Generated Design Images"><GeneratedDesignImagesAdmin /></AdminTabErrorBoundary></TabsContent>
+          </CatalogSubTabs>
+        </TabsContent>
+        <TabsContent value="suppliers" className="mt-4">
+          <CatalogSubTabs sectionId="suppliers" activeTab={activeTab} onSelect={selectTab}>
+            <TabsContent value="distributors" className="mt-6 space-y-6"><AdminTabErrorBoundary tabName="Distributors"><AdminTabHelp tab="distributors" /><LineBrandingEditor /><DistributorFulfillmentEditor /><DistributorImport /></AdminTabErrorBoundary></TabsContent>
+            <TabsContent value="glass-policy" className="mt-6"><AdminTabErrorBoundary tabName="Glass Policy"><AdminTabHelp tab="glass-policy" /><DistributorFulfillmentEditor glassOnly /></AdminTabErrorBoundary></TabsContent>
+            <TabsContent value="catalog-importer" className="mt-6"><AdminTabErrorBoundary tabName="📥 Catalog Importer"><CatalogImporterTab /></AdminTabErrorBoundary></TabsContent>
+            <TabsContent value="pending-distributor-connections" className="mt-6"><AdminTabErrorBoundary tabName="✎ Supplier Products"><PendingDistributorConnectionsAdmin /></AdminTabErrorBoundary></TabsContent>
+            <TabsContent value="vendor-onboarding" className="mt-6"><AdminTabErrorBoundary tabName="Vendor Onboarding"><AdminTabHelp tab="vendor-onboarding" /><VendorOnboardingAdmin /></AdminTabErrorBoundary></TabsContent>
+          </CatalogSubTabs>
+        </TabsContent>
+        <TabsContent value="cabinet-config" className="mt-6"><AdminTabErrorBoundary tabName="Cabinet Config"><CabinetConfigAdmin /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="categories" className="mt-6"><AdminTabErrorBoundary tabName="Categories"><CategoriesAdmin /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="package-data" className="mt-6"><AdminTabErrorBoundary tabName="📦 Package Data & Parcel"><BulkDimensionsAdmin /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="pelican-catalog" className="mt-6"><AdminTabErrorBoundary tabName="Pelican Catalog"><PelicanCatalogAdmin /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="bundle-deals" className="mt-6"><AdminTabErrorBoundary tabName="📦 Kitchen Packages"><BundleDealsAdmin /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="price-shop-10x10" className="mt-6"><AdminTabErrorBoundary tabName="10×10 Price Shop"><PriceShop10x10 /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="catalog-quality" className="mt-4">
+          <CatalogSubTabs sectionId="catalog-quality" activeTab={activeTab} onSelect={selectTab}>
+            <TabsContent value="conflicts" className="mt-6"><AdminTabErrorBoundary tabName="Conflicts"><AdminTabHelp tab="conflicts" /><ConflictsAdmin /></AdminTabErrorBoundary></TabsContent>
+            <TabsContent value="merge-suggestions" className="mt-6"><AdminTabErrorBoundary tabName="Merge Suggestions"><PotentialMergesAdmin /></AdminTabErrorBoundary></TabsContent>
+            <TabsContent value="master-sku" className="mt-6"><AdminTabErrorBoundary tabName="Master SKU Aliases"><MasterSkuAdmin /></AdminTabErrorBoundary></TabsContent>
+            <TabsContent value="master-changes" className="mt-6"><AdminTabErrorBoundary tabName="Master Changes"><MasterChangesAdmin /></AdminTabErrorBoundary></TabsContent>
+            <TabsContent value="unpriced-items" className="mt-6"><AdminTabErrorBoundary tabName="⚠ Unpriced Items"><UnpricedCabinetsAdmin /></AdminTabErrorBoundary></TabsContent>
+            <TabsContent value="designer-price-flags" className="mt-6"><AdminTabErrorBoundary tabName="🚩 Designer Price Flags"><DesignerPriceFlagsAdmin /></AdminTabErrorBoundary></TabsContent>
+            <TabsContent value="pending-review" className="mt-6"><AdminTabErrorBoundary tabName="⏳ Pending Review"><PendingReviewAdmin /></AdminTabErrorBoundary></TabsContent>
+            <TabsContent value="cabinet-attention" className="mt-6"><AdminTabErrorBoundary tabName="⚠ Cabinet Attention"><CabinetConfigReviewQueueAdmin /></AdminTabErrorBoundary></TabsContent>
+            <TabsContent value="data-recovery" className="mt-6"><AdminTabErrorBoundary tabName="🛟 Data Recovery"><DataRecoveryAdmin /></AdminTabErrorBoundary></TabsContent>
+          </CatalogSubTabs>
+        </TabsContent>
 
         {/* Pricing */}
-        <TabsContent value="multipliers" className="mt-6"><DistributorMultipliersAdmin /></TabsContent>
-        <TabsContent value="margins" className="mt-6"><AdminTabHelp tab="margins" /><MarginsAdmin /></TabsContent>
-        <TabsContent value="cost-lookup" className="mt-6"><AdminTabHelp tab="cost-lookup" /><CostLookupAdmin /></TabsContent>
-        <TabsContent value="pricing-access" className="mt-6"><AdminTabHelp tab="pricing-access" /><PricingAccessAdmin /></TabsContent>
-        <TabsContent value="affiliate-tiers" className="mt-6"><AdminTabHelp tab="affiliate-tiers" /><AffiliatePricingTiersAdmin /></TabsContent>
+        <TabsContent value="multipliers" className="mt-6"><AdminTabErrorBoundary tabName="Multipliers"><DistributorMultipliersAdmin /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="margins" className="mt-6"><AdminTabErrorBoundary tabName="Pricing & Margins"><AdminTabHelp tab="margins" /><MarginsAdmin /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="cost-lookup" className="mt-6"><AdminTabErrorBoundary tabName="Price Audit"><AdminTabHelp tab="cost-lookup" /><CostLookupAdmin /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="pricing-access" className="mt-6"><AdminTabErrorBoundary tabName="Pricing Access"><AdminTabHelp tab="pricing-access" /><PricingAccessAdmin /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="affiliate-tiers" className="mt-6"><AdminTabErrorBoundary tabName="Affiliate Tiers"><AdminTabHelp tab="affiliate-tiers" /><AffiliatePricingTiersAdmin /></AdminTabErrorBoundary></TabsContent>
 
         {/* Operations */}
-        <TabsContent value="shipping" className="mt-6"><AdminTabHelp tab="shipping" /><div className="mb-6"><CarrierKeysPanel /></div><ShippingAdmin /><div className="mt-6"><FreightApiLogsPanel /><FreightQuoteHistoryPanel /></div></TabsContent>
-        <TabsContent value="coverage" className="mt-6"><AdminTabHelp tab="coverage" /><DesignerCoverageAdmin /></TabsContent>
-        <TabsContent value="designer-availability" className="mt-6"><AdminTabHelp tab="designer-availability" /><DesignerAvailabilityAdmin /></TabsContent>
-        <TabsContent value="gemini-image-provider" className="mt-6"><GeminiImageProviderAdmin /></TabsContent>
-        <TabsContent value="elevenlabs-operations" className="mt-6"><ElevenLabsOperationsAdmin /></TabsContent>
-        <TabsContent value="manual-ai-renders" className="mt-6"><ManualAiRenderQueueAdmin /></TabsContent>
-        <TabsContent value="team-notes" className="mt-6"><AdminStickyNotes /></TabsContent>
+        <TabsContent value="shipping" className="mt-6"><AdminTabErrorBoundary tabName="Shipping"><AdminTabHelp tab="shipping" /><div className="mb-6"><CarrierKeysPanel /></div><ShippingAdmin /><div className="mt-6"><FreightApiLogsPanel /><FreightQuoteHistoryPanel /></div></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="coverage" className="mt-6"><AdminTabErrorBoundary tabName="Designer Coverage"><AdminTabHelp tab="coverage" /><DesignerCoverageAdmin /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="designer-availability" className="mt-6"><AdminTabErrorBoundary tabName="Designer Availability"><AdminTabHelp tab="designer-availability" /><DesignerAvailabilityAdmin /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="gemini-image-provider" className="mt-6"><AdminTabErrorBoundary tabName="AI Image Provider"><GeminiImageProviderAdmin /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="elevenlabs-operations" className="mt-6"><AdminTabErrorBoundary tabName="ElevenLabs Audio"><ElevenLabsOperationsAdmin /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="manual-ai-renders" className="mt-6"><AdminTabErrorBoundary tabName="Manual AI Renders"><ManualAiRenderQueueAdmin /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="team-notes" className="mt-6"><AdminTabErrorBoundary tabName="Team Notes"><AdminStickyNotes /></AdminTabErrorBoundary></TabsContent>
 
         {/* Settings */}
-        <TabsContent value="banners" className="mt-6"><BannerAdmin /></TabsContent>
-        <TabsContent value="stripe-payment" className="mt-6"><StripePaymentSettingsAdmin /></TabsContent>
-        <TabsContent value="email-settings" className="mt-6"><AdminTabHelp tab="email-settings" /><EmailSettingsAdmin /></TabsContent>
-        <TabsContent value="branding" className="mt-6"><AdminTabHelp tab="branding" /><BrandingSettingsAdmin /></TabsContent>
-        <TabsContent value="notifications" className="mt-6"><AdminTabHelp tab="notifications" /><NotificationSettingsAdmin /></TabsContent>
-        <TabsContent value="quickbooks" className="mt-6"><QuickBooksAdmin /></TabsContent>
-        <TabsContent value="api-status" className="mt-6"><ApiStatusAdmin /></TabsContent>
-        <TabsContent value="analytics" className="mt-6"><AnalyticsAdmin /></TabsContent>
-        <TabsContent value="kitchen-rules" className="mt-6"><KitchenRulesAdmin /></TabsContent>
-        <TabsContent value="export" className="mt-6"><FullDatabaseExport /></TabsContent>
-        <TabsContent value="affiliate-literature" className="mt-6"><AdminTabHelp tab="affiliate-literature" /><AffiliateLiteratureAdmin /></TabsContent>
-        <TabsContent value="affiliate-resources" className="mt-6"><AdminTabHelp tab="affiliate-resources" /><AffiliateResourcesAdmin /></TabsContent>
+        <TabsContent value="banners" className="mt-6"><AdminTabErrorBoundary tabName="Banner Management"><BannerAdmin /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="stripe-payment" className="mt-6"><AdminTabErrorBoundary tabName="Stripe Payment"><StripePaymentSettingsAdmin /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="email-settings" className="mt-6"><AdminTabErrorBoundary tabName="Email Settings"><AdminTabHelp tab="email-settings" /><EmailSettingsAdmin /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="branding" className="mt-6"><AdminTabErrorBoundary tabName="Site Branding"><AdminTabHelp tab="branding" /><BrandingSettingsAdmin /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="notifications" className="mt-6"><AdminTabErrorBoundary tabName="Notifications"><AdminTabHelp tab="notifications" /><NotificationSettingsAdmin /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="quickbooks" className="mt-6"><AdminTabErrorBoundary tabName="QuickBooks"><QuickBooksAdmin /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="api-status" className="mt-6"><AdminTabErrorBoundary tabName="API Status"><ApiStatusAdmin /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="analytics" className="mt-6"><AdminTabErrorBoundary tabName="Analytics"><AnalyticsAdmin /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="kitchen-rules" className="mt-6"><AdminTabErrorBoundary tabName="Kitchen Rules"><KitchenRulesAdmin /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="export" className="mt-6"><AdminTabErrorBoundary tabName="Full Export"><FullDatabaseExport /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="affiliate-literature" className="mt-6"><AdminTabErrorBoundary tabName="Affiliate Literature"><AdminTabHelp tab="affiliate-literature" /><AffiliateLiteratureAdmin /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="affiliate-resources" className="mt-6"><AdminTabErrorBoundary tabName="Affiliate Resources"><AdminTabHelp tab="affiliate-resources" /><AffiliateResourcesAdmin /></AdminTabErrorBoundary></TabsContent>
         </div>
       </Tabs>
     </div>

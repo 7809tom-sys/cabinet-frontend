@@ -17,6 +17,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { useWhiteLabelHead } from "@/hooks/useWhiteLabelHead";
 import { StorefrontEmbed } from "@/components/storefront/StorefrontEmbed";
 import { StorefrontSocialIcons } from "@/components/storefront/StorefrontSocialIcons";
+import { StoreCornerMenu } from "@/components/storefront/StoreCornerMenu";
 import type { PublicAffiliateSocialLink } from "@shared/affiliateSocialLinks";
 import type { AffiliateStorefrontTemplate } from "@shared/affiliateStorefrontTemplates";
 import { affiliateDashboardPath } from "@/lib/affiliateStorefrontUrl";
@@ -561,12 +562,14 @@ function NavLinks({
   withRef,
   variant,
   slug,
+  storeId,
   socialLinks,
 }: {
   t: TFn;
   withRef: HeaderProps["withRef"];
   variant: "light" | "dark";
   slug: string;
+  storeId: number | null | undefined;
   socialLinks: PublicAffiliateSocialLink[];
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -588,9 +591,7 @@ function NavLinks({
       <Link href={withRef(`/design?affiliate=${slug}`)} className="hidden sm:block">
         <Button variant="ghost" size="sm" className={cls}>{t("nav_design")}</Button>
       </Link>
-      <Link href={withRef(`/store/${slug}/account`)}>
-        <Button variant="ghost" size="sm" className={cls}>Account</Button>
-      </Link>
+      <StoreCornerMenu slug={slug} storeId={storeId} className={cls} />
       <Link href={withRef(`/store/${slug}/cart`)} aria-label="Cart">
         <Button variant="ghost" size="sm" className={`relative ${cls}`}>
           <ShoppingCart className="h-5 w-5" />
@@ -624,6 +625,7 @@ function NavLinks({
             <Link href={withRef(`/store/${slug}/kitchens`)} onClick={() => setMenuOpen(false)}>Plan Your Kitchen</Link>
             <Link href={withRef(`/design?affiliate=${slug}`)} onClick={() => setMenuOpen(false)}>{t("nav_design")}</Link>
             <Link href={withRef(`/store/${slug}/order`)} onClick={() => setMenuOpen(false)}>{t("nav_quote")}</Link>
+            <StoreCornerMenu slug={slug} storeId={storeId} stacked />
             <StorefrontSocialIcons links={socialLinks} className="pt-2" />
           </div>
         </div>
@@ -641,7 +643,7 @@ function ClassicHeader({ data, brand, t, withRef, headlineFont, LangToggle, Logo
         <div className="container flex items-center justify-between h-16">
           <Logo />
           <div className="flex items-center gap-2">
-            <NavLinks socialLinks={data.socialLinks ?? []} t={t} withRef={withRef} variant="dark" slug={data.slug} />
+            <NavLinks socialLinks={data.socialLinks ?? []} t={t} withRef={withRef} variant="dark" slug={data.slug} storeId={data.id} />
             {LangToggle}
             <Link href={withRef(`/store/${data.slug}/order`)}>
               <Button size="sm" className="font-semibold text-white" style={{ backgroundColor: brand.accent }}>
@@ -723,7 +725,7 @@ function ShowcaseHero({ data, brand, t, withRef, headlineFont, heroImg, LangTogg
         <div className="container flex items-center justify-between h-16">
           <Logo light />
           <div className="flex items-center gap-2 text-white">
-            <NavLinks socialLinks={data.socialLinks ?? []} t={t} withRef={withRef} variant="light" slug={data.slug} />
+            <NavLinks socialLinks={data.socialLinks ?? []} t={t} withRef={withRef} variant="light" slug={data.slug} storeId={data.id} />
             {LangToggle}
             <Link href={withRef(`/store/${data.slug}/order`)}>
               <Button size="sm" className="font-semibold text-white" style={{ backgroundColor: brand.accent }}>
@@ -774,7 +776,7 @@ function MinimalHero({ data, brand, t, withRef, headlineFont, heroImg, LangToggl
         <div className="container flex items-center justify-between h-16">
           <Logo />
           <div className="flex items-center gap-2">
-            <NavLinks socialLinks={data.socialLinks ?? []} t={t} withRef={withRef} variant="dark" slug={data.slug} />
+            <NavLinks socialLinks={data.socialLinks ?? []} t={t} withRef={withRef} variant="dark" slug={data.slug} storeId={data.id} />
             {LangToggle}
             <Link href={withRef(`/store/${data.slug}/order`)}>
               <Button size="sm" variant="outline" className="font-semibold" style={{ borderColor: brand.primary, color: brand.primary }}>
@@ -832,7 +834,7 @@ function CraftsmanHero({ data, brand, t, withRef, headlineFont, LangToggle, Logo
         <div className="container flex items-center justify-between h-16">
           <Logo />
           <div className="flex items-center gap-2">
-            <NavLinks socialLinks={data.socialLinks ?? []} t={t} withRef={withRef} variant="dark" slug={data.slug} />
+            <NavLinks socialLinks={data.socialLinks ?? []} t={t} withRef={withRef} variant="dark" slug={data.slug} storeId={data.id} />
             {LangToggle}
             <Link href={withRef(`/store/${data.slug}/order`)}>
               <Button size="sm" className="font-semibold text-white" style={{ backgroundColor: brand.primary }}>
@@ -903,7 +905,7 @@ function CoastalHero({ data, brand, t, withRef, headlineFont, heroImg, LangToggl
         <div className="container flex h-16 items-center justify-between">
           <Logo />
           <div className="flex items-center gap-2">
-            <NavLinks socialLinks={data.socialLinks ?? []} t={t} withRef={withRef} variant="dark" slug={data.slug} />
+            <NavLinks socialLinks={data.socialLinks ?? []} t={t} withRef={withRef} variant="dark" slug={data.slug} storeId={data.id} />
             {LangToggle}
             <Link href={withRef(`/store/${data.slug}/order`)}>
               <Button size="sm" className="font-semibold text-white" style={{ backgroundColor: brand.primary }}>{t("nav_quote")}</Button>
@@ -947,7 +949,7 @@ function GalleryHero({ data, brand, t, withRef, headlineFont, heroImg, LangToggl
       <div className="container flex h-16 items-center justify-between border-b border-white/15">
         <Logo light />
         <div className="flex items-center gap-2">
-          <NavLinks socialLinks={data.socialLinks ?? []} t={t} withRef={withRef} variant="light" slug={data.slug} />
+          <NavLinks socialLinks={data.socialLinks ?? []} t={t} withRef={withRef} variant="light" slug={data.slug} storeId={data.id} />
           {LangToggle}
           <Link href={withRef(`/store/${data.slug}/order`)}><Button size="sm" className="font-semibold text-white" style={{ backgroundColor: brand.accent }}>{t("nav_quote")}</Button></Link>
         </div>
@@ -986,7 +988,7 @@ function StudioHero({ data, brand, t, withRef, headlineFont, heroImg, LangToggle
         <div className="container flex h-16 items-center justify-between">
           <Logo />
           <div className="flex items-center gap-2">
-            <NavLinks socialLinks={data.socialLinks ?? []} t={t} withRef={withRef} variant="dark" slug={data.slug} />
+            <NavLinks socialLinks={data.socialLinks ?? []} t={t} withRef={withRef} variant="dark" slug={data.slug} storeId={data.id} />
             {LangToggle}
             <Link href={withRef(`/store/${data.slug}/order`)}><Button size="sm" className="font-semibold text-white" style={{ backgroundColor: brand.primary }}>{t("nav_quote")}</Button></Link>
           </div>
@@ -1027,7 +1029,7 @@ function HeritageHero({ data, brand, t, withRef, headlineFont, heroImg, LangTogg
         <div className="container flex h-16 items-center justify-between">
           <Logo />
           <div className="flex items-center gap-2">
-            <NavLinks socialLinks={data.socialLinks ?? []} t={t} withRef={withRef} variant="dark" slug={data.slug} />
+            <NavLinks socialLinks={data.socialLinks ?? []} t={t} withRef={withRef} variant="dark" slug={data.slug} storeId={data.id} />
             {LangToggle}
             <Link href={withRef(`/store/${data.slug}/order`)}><Button size="sm" className="font-semibold text-white" style={{ backgroundColor: brand.primary }}>{t("nav_quote")}</Button></Link>
           </div>

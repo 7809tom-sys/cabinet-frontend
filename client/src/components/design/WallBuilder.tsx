@@ -27,6 +27,7 @@ import {
   WALL_BUILDER_MIN_WALL_IN,
   wallBuilderGeometry,
   wallBuilderMetrics,
+  wallBuilderPoints,
   wallBuilderRoomGeometry,
   type WallBuilderRoomGeometry,
   type WallBuilderSegment,
@@ -109,15 +110,78 @@ function rotatePreviewPoint(point: { x: number; y: number }, rotationDeg: number
   return point;
 }
 
-function WallBuilderPreview({ segments, viewRotationDeg }: { segments: WallBuilderSegment[]; viewRotationDeg: number }) {
+/** Plan length of the open-end pointer. Short enough to read as a hint, not a wall. */
+const NEXT_WALL_POINTER_IN = 16;
+
+interface NextWallPointer {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+}
+
+/**
+ * A short arrow that starts at the open end and runs in the direction the next
+ * wall will take. It is omitted once the measured walls return to the start,
+ * so a closed room is not crossed by the direction hint.
+ */
+function nextWallPointer(
+  segments: WallBuilderSegment[],
+  viewRotationDeg: number,
+  nextTurn: TurnChoice,
+  closed: boolean,
+): NextWallPointer | null {
+  if (segments.length === 0 || closed) return null;
+  const probe = wallBuilderPoints(appendWallBuilderSegment(segments, NEXT_WALL_POINTER_IN, nextTurn))
+    .map((point) => rotatePreviewPoint(point, viewRotationDeg));
+  const start = probe[probe.length - 2];
+  const end = probe[probe.length - 1];
+  if (!start || !end) return null;
+  return { x1: start.x, y1: start.y, x2: end.x, y2: end.y };
+}
+
+function nextWallLabelPlacement(pointer: NextWallPointer, labelSize: number) {
+  const dx = pointer.x2 - pointer.x1;
+  const dy = pointer.y2 - pointer.y1;
+  const length = Math.hypot(dx, dy) || 1;
+  const ux = dx / length;
+  const uy = dy / length;
+  if (ux >= 0.5) {
+    return { x: pointer.x2 + labelSize * 0.45, y: pointer.y2, textAnchor: "start" as const };
+  }
+  if (ux <= -0.5) {
+    return { x: pointer.x2 - labelSize * 0.45, y: pointer.y2, textAnchor: "end" as const };
+  }
+  const gap = labelSize * 0.95;
+  return { x: pointer.x2 + ux * gap, y: pointer.y2 + uy * gap, textAnchor: "middle" as const };
+}
+
+function WallBuilderPreview({
+  segments,
+  viewRotationDeg,
+  nextTurn,
+}: {
+  segments: WallBuilderSegment[];
+  viewRotationDeg: number;
+  nextTurn: TurnChoice;
+}) {
   const geometry = useMemo(() => wallBuilderGeometry(segments), [segments]);
   const displayPoints = useMemo(
     () => geometry.points.map((point) => rotatePreviewPoint(point, viewRotationDeg)),
     [geometry.points, viewRotationDeg],
   );
+  const nextPointer = useMemo(
+    () => nextWallPointer(segments, viewRotationDeg, nextTurn, geometry.closed),
+    [geometry.closed, nextTurn, segments, viewRotationDeg],
+  );
   const bounds = useMemo(() => {
     const xs = displayPoints.map((point) => point.x);
     const ys = displayPoints.map((point) => point.y);
+    if (nextPointer) {
+      const labelAllowance = 36;
+      xs.push(nextPointer.x2 - labelAllowance, nextPointer.x2 + labelAllowance);
+      ys.push(nextPointer.y2 - labelAllowance, nextPointer.y2 + labelAllowance);
+    }
     const minX = Math.min(0, ...xs);
     const maxX = Math.max(1, ...xs);
     const minY = Math.min(0, ...ys);
@@ -126,12 +190,10 @@ function WallBuilderPreview({ segments, viewRotationDeg }: { segments: WallBuild
     const height = Math.max(36, maxY - minY);
     const padding = Math.max(18, Math.max(width, height) * 0.13);
     return { minX: minX - padding, minY: minY - padding, width: width + padding * 2, height: height + padding * 2 };
-  }, [displayPoints]);
+  }, [displayPoints, nextPointer]);
   const labelSize = Math.max(6, Math.min(13, Math.max(bounds.width, bounds.height) / 23));
   const path = displayPoints.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
-  const activeLeg = segments.length > 0
-    ? { start: displayPoints[displayPoints.length - 2], end: displayPoints[displayPoints.length - 1] }
-    : null;
+  const nextWallLabel = nextPointer ? nextWallLabelPlacement(nextPointer, labelSize) : null;
 
   return (
     <div className="relative min-h-64 overflow-hidden rounded-xl border border-[#d8c7a1] bg-[#fbfaf6] shadow-inner" data-testid="wall-builder-preview" data-view-rotation={viewRotationDeg}>
@@ -159,13 +221,13 @@ function WallBuilderPreview({ segments, viewRotationDeg }: { segments: WallBuild
             <path d={`${path} Z`} fill="#d4a75a" fillOpacity="0.13" stroke="none" />
           ) : null}
           <path d={path} fill="none" stroke="#1a2744" strokeWidth="4" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-          {activeLeg ? (
+          {nextPointer ? (
             <line
               data-testid="wall-builder-clockwise-arrow"
-              x1={activeLeg.start.x}
-              y1={activeLeg.start.y}
-              x2={activeLeg.end.x}
-              y2={activeLeg.end.y}
+              x1={nextPointer.x1}
+              y1={nextPointer.y1}
+              x2={nextPointer.x2}
+              y2={nextPointer.y2}
               stroke="#b98d3e"
               strokeWidth="1.8"
               strokeDasharray="4 3"
@@ -177,7 +239,19 @@ function WallBuilderPreview({ segments, viewRotationDeg }: { segments: WallBuild
             <circle key={`${point.x}-${point.y}-${index}`} cx={point.x} cy={point.y} r={index === 0 ? 3.4 : 2.5} fill={index === 0 ? "#b98d3e" : "#1a2744"} stroke="white" strokeWidth="1" vectorEffect="non-scaling-stroke" />
           ))}
           <text x={displayPoints[0].x} y={displayPoints[0].y - labelSize * 1.15} textAnchor="middle" fontSize={labelSize * 0.78} fontWeight="700" fill="#765416">START · WALL 1</text>
-          {activeLeg ? <text x={activeLeg.end.x} y={activeLeg.end.y - labelSize * 1.15} textAnchor="middle" fontSize={labelSize * 0.78} fontWeight="700" fill="#765416">NEXT WALL</text> : null}
+          {nextWallLabel ? (
+            <text
+              data-testid="wall-builder-next-wall-label"
+              x={nextWallLabel.x}
+              y={nextWallLabel.y}
+              textAnchor={nextWallLabel.textAnchor}
+              fontSize={labelSize * 0.78}
+              fontWeight="700"
+              fill="#765416"
+            >
+              NEXT WALL
+            </text>
+          ) : null}
           {segments.map((segment, index) => {
             const start = displayPoints[index];
             const end = displayPoints[index + 1];
@@ -373,7 +447,7 @@ export function WallBuilder({ wallHeightIn, blockedReason, draft, onDraftChange,
                 <RotateCw className="mr-1.5 h-4 w-4" /> Rotate view · {viewRotationDeg}°
               </Button>
             </div>
-            <WallBuilderPreview segments={segments} viewRotationDeg={viewRotationDeg} />
+            <WallBuilderPreview segments={segments} viewRotationDeg={viewRotationDeg} nextTurn={turn} />
             <div className="grid grid-cols-2 gap-2" aria-label="Live room measurements">
               <div className="rounded-lg border border-[#d8c7a1] bg-white px-3 py-2 shadow-sm">
                 <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Perimeter</p>
@@ -399,7 +473,7 @@ export function WallBuilder({ wallHeightIn, blockedReason, draft, onDraftChange,
               <div className="flex items-center justify-between gap-2">
                 <div>
                   <p className="text-sm font-bold text-[#1a2744]">{segments.length === 0 ? "Wall 1" : `Wall ${segments.length + 1}`}</p>
-                  <p className="text-[11px] text-muted-foreground">{segments.length === 0 ? "Clockwise start: Wall 1 begins at the gold point and runs right." : "Clockwise sequence: this wall begins at the gold arrow on the last wall."}</p>
+                  <p className="text-[11px] text-muted-foreground">{segments.length === 0 ? "Clockwise start: Wall 1 begins at the gold point and runs right." : "Clockwise sequence: this wall begins at the gold arrow at the end of the last wall."}</p>
                 </div>
                 <span className="rounded-md bg-[#1a2744]/5 px-2 py-1 text-[10px] font-bold text-[#1a2744]">Exact 1/8&quot;</span>
               </div>

@@ -8,6 +8,7 @@ import ChatWidget from "@/components/ChatWidget";
 import { useWhiteLabelHead } from "@/hooks/useWhiteLabelHead";
 import { StorefrontEmbed } from "@/components/storefront/StorefrontEmbed";
 import { StorefrontSocialIcons } from "@/components/storefront/StorefrontSocialIcons";
+import { StoreCornerMenu } from "@/components/storefront/StoreCornerMenu";
 import { GoogleAnalyticsTracker } from "@/components/GoogleAnalyticsTracker";
 import Home from "@/pages/Home";
 import NotFound from "@/pages/NotFound";
@@ -197,6 +198,7 @@ function AffiliateShell({ slug, children, fullHeight = false, hideAdminEditModeB
           <span data-testid="social-links-slot" className="inline-flex items-center">
             <StorefrontSocialIcons links={data?.socialLinks ?? []} />
           </span>
+          <StoreCornerMenu slug={slug} storeId={data?.id ?? null} />
           <a href={`/store/${slug}/cart`} aria-label="Shopping cart" className="hover:text-foreground">
             <ShoppingCart className="h-5 w-5" />
           </a>
@@ -216,9 +218,11 @@ function DesignerRoute() {
   const search = useSearch();
   const affiliateSlug = new URLSearchParams(search).get("affiliate")?.trim() || null;
   const designer = (
-    <Suspense fallback={<PageLoader />}>
-      <DesignTool affiliateSlug={affiliateSlug ?? undefined} />
-    </Suspense>
+    <ErrorBoundary>
+      <Suspense fallback={<PageLoader />}>
+        <DesignTool affiliateSlug={affiliateSlug ?? undefined} />
+      </Suspense>
+    </ErrorBoundary>
   );
 
   if (affiliateSlug) {
@@ -401,11 +405,13 @@ export default function App() {
         )}
         <Route path="/store/:slug/design">
           {(params) => (
-            <Suspense fallback={<PageLoader />}>
-              <AffiliateShell slug={params.slug} fullHeight hideAdminEditModeBar>
-                <DesignTool affiliateSlug={params.slug} />
-              </AffiliateShell>
-            </Suspense>
+            <ErrorBoundary>
+              <Suspense fallback={<PageLoader />}>
+                <AffiliateShell slug={params.slug} fullHeight hideAdminEditModeBar>
+                  <DesignTool affiliateSlug={params.slug} />
+                </AffiliateShell>
+              </Suspense>
+            </ErrorBoundary>
           )}
         </Route>
         {/* A branded subdomain rewrites /signin to /store/:slug/signin. Keep

@@ -5,17 +5,23 @@ import {
   contractorAccessListInput,
   contractorAccessSourceLabel,
   contractorAccountLabel,
+  contractorMarkupExample,
+  contractorPagePath,
+  contractorProcedureError,
   contractorRequestStatusLabel,
+  contractorSellPrice,
   formatContractorAccessDate,
   listRowContractorEmail,
   listRowContractorName,
   listRowSubmitter,
+  parseAffiliateMarkupPercent,
   validateAffiliateContractorDraft,
   type ContractorAccessListRow,
 } from "./contractorAccessForm";
 
 const affiliateRow: ContractorAccessListRow = {
   id: 2,
+  userId: null,
   businessName: "Build Co",
   phone: "555-0199",
   licenseNumber: "LIC-9",
@@ -94,5 +100,20 @@ describe("affiliate contractor request helpers", () => {
       phone: "12",
       licenseNumber: "",
     }).ok).toBe(false);
+  });
+
+  it("parses affiliate markup and prices a $100 cost", () => {
+    expect(parseAffiliateMarkupPercent(" 12.5 ")).toEqual({ ok: true, value: 12.5 });
+    expect(parseAffiliateMarkupPercent("0")).toEqual({ ok: true, value: 0 });
+    expect(parseAffiliateMarkupPercent("200")).toEqual({ ok: true, value: 200 });
+    expect(parseAffiliateMarkupPercent("")).toEqual({ ok: false, message: "Enter a markup percent, or use the site default." });
+    expect(parseAffiliateMarkupPercent("10.555").ok).toBe(false);
+    expect(parseAffiliateMarkupPercent("201").ok).toBe(false);
+    expect(contractorSellPrice(100, 12.5)).toBe(112.5);
+    expect(contractorMarkupExample(12.5)).toBe("A $100.00 cost sells to your contractors at $112.50");
+    expect(contractorMarkupExample(12.5, "admin")).toBe("A $100.00 cost sells to this affiliate's contractors at $112.50");
+    expect(contractorPagePath(81)).toBe("/contractor?contractorUserId=81");
+    expect(contractorProcedureError({ message: "FORBIDDEN" })).toBe("FORBIDDEN");
+    expect(contractorProcedureError({ message: "Not allowed", data: { code: "FORBIDDEN" } })).toBe("FORBIDDEN: Not allowed");
   });
 });
