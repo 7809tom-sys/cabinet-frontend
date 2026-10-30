@@ -70,12 +70,12 @@ export function ContractorPricingCard({
         <h2 className="text-xl font-bold">{heading}</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           {audience === "admin"
-            ? "Set or clear this affiliate's markup over cost for their contractors."
-            : "Set the markup you charge over CabinetDealz cost. Leave it unset to use the site default."}
+            ? "Set or clear this affiliate's markup over their cost (what they pay Cabinet Dealz) for their contractors."
+            : "Set the markup you charge contractors over your cost (what you pay Cabinet Dealz). Leave it unset to use the site default."}
         </p>
       </div>
       <div className="space-y-1 max-w-xs">
-        <Label htmlFor={inputId}>Markup over cost (%)</Label>
+        <Label htmlFor={inputId}>{audience === "admin" ? "Markup over their cost (%)" : "Markup over your cost (%)"}</Label>
         <Input
           id={inputId}
           type="number"

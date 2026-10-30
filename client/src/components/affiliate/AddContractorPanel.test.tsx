@@ -274,13 +274,14 @@ describe("Add a contractor", () => {
     expect((screen.getByRole("button", { name: "Reject" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it("saves a markup over cost and can clear it back to the site default", () => {
+  it("saves a markup over the affiliate's cost and can clear it back to the site default", () => {
     render(<AddContractorPanel />);
     expect(screen.getByRole("heading", { name: "Contractor pricing" })).toBeTruthy();
+    expect(screen.getByText("Set the markup you charge contractors over your cost (what you pay Cabinet Dealz). Leave it unset to use the site default.")).toBeTruthy();
     expect(screen.getByText("Site default is 20%.")).toBeTruthy();
     expect(screen.getByTestId("contractor-markup-example").textContent).toBe("A $100.00 cost sells to your contractors at $120.00");
 
-    fireEvent.change(screen.getByLabelText("Markup over cost (%)"), { target: { value: "12.5" } });
+    fireEvent.change(screen.getByLabelText("Markup over your cost (%)"), { target: { value: "12.5" } });
     expect(screen.getByTestId("contractor-markup-example").textContent).toBe("A $100.00 cost sells to your contractors at $112.50");
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(markupMutate).toHaveBeenCalledWith({ markupPercent: 12.5 });
