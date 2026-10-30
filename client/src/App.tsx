@@ -218,9 +218,11 @@ function DesignerRoute() {
   const search = useSearch();
   const affiliateSlug = new URLSearchParams(search).get("affiliate")?.trim() || null;
   const designer = (
-    <Suspense fallback={<PageLoader />}>
-      <DesignTool affiliateSlug={affiliateSlug ?? undefined} />
-    </Suspense>
+    <ErrorBoundary>
+      <Suspense fallback={<PageLoader />}>
+        <DesignTool affiliateSlug={affiliateSlug ?? undefined} />
+      </Suspense>
+    </ErrorBoundary>
   );
 
   if (affiliateSlug) {
@@ -403,11 +405,13 @@ export default function App() {
         )}
         <Route path="/store/:slug/design">
           {(params) => (
-            <Suspense fallback={<PageLoader />}>
-              <AffiliateShell slug={params.slug} fullHeight hideAdminEditModeBar>
-                <DesignTool affiliateSlug={params.slug} />
-              </AffiliateShell>
-            </Suspense>
+            <ErrorBoundary>
+              <Suspense fallback={<PageLoader />}>
+                <AffiliateShell slug={params.slug} fullHeight hideAdminEditModeBar>
+                  <DesignTool affiliateSlug={params.slug} />
+                </AffiliateShell>
+              </Suspense>
+            </ErrorBoundary>
           )}
         </Route>
         {/* A branded subdomain rewrites /signin to /store/:slug/signin. Keep

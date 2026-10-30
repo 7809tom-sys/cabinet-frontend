@@ -2460,6 +2460,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       : selectedSurfaces.filter((surface) => surfaceRole(surface) !== "backsplash"),
     [backsplashEnabled, selectedSurfaces],
   );
+  // Flooring layout pattern: how planks are arranged (random stagger, 1/3 offset, diagonal, herringbone).
+  // These must be declared before threeDPresentationForSave, which reads them during render.
+  const [flooringPattern, setFlooringPattern] = useState<import("@/lib/design").FlooringLayoutPattern | null>(null);
+  const [flooringRotation, setFlooringRotation] = useState<FlooringRotationDegrees>(0);
   const threeDPresentationForSave = useMemo(() => ({
     ...(interactive3dPresentation ?? {}),
     windowScene: windowSceneKind,
@@ -2473,9 +2477,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   }), [interactive3dPresentation, windowSceneKind, windowFrameStyle, backsplashEnabled, backsplashHeightMode, countertopBacksplashHeightIn, catalogHardwareSelection, flooringPattern, flooringRotation]);
   // Flooring material: shown as a pattern in the bird's-eye plan view.
   const [flooringMaterialId, setFlooringMaterialId] = useState<string | null>(null);
-  // Flooring layout pattern: how planks are arranged (random stagger, 1/3 offset, diagonal, herringbone).
-  const [flooringPattern, setFlooringPattern] = useState<import("@/lib/design").FlooringLayoutPattern | null>(null);
-  const [flooringRotation, setFlooringRotation] = useState<FlooringRotationDegrees>(0);
   // Cabinet lock: when true, placed cabinets cannot be moved, deleted, or have
   // new ones dropped. The room/walls/openings/island are still editable.
   // Explicit temporary override for intentional custom overlaps. Normal
