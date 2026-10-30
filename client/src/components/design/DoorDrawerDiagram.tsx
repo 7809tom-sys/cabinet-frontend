@@ -19,6 +19,7 @@ import React from "react";
 import { cabinetDrawingType, isEqualHeightTwoDrawerBase, resolveDoorDrawerCounts, threeDrawerBaseRowHeights } from "@/lib/cabinetGraphics";
 import type { CabinetLike } from "@/lib/cabinetGraphics";
 import { pantryDrawerFrontLayout } from "@/lib/pantryDrawerLayout";
+import { standardBaseFaceReference, standardBaseRenderedCounts } from "@/lib/genericCabinetDrawerReference";
 
 // ─── Palette ────────────────────────────────────────────────────────────────
 const CLR = {
@@ -286,6 +287,17 @@ export function DoorDrawerDiagram({ cabinet, width = 180, className }: Props) {
       const w = toNum(cabinet.width);
       effectiveDoors = w !== null && w >= 24 ? 2 : 1;
     }
+  }
+  const standardFace = standardBaseFaceReference(cabinet.masterCode);
+  if (standardFace) {
+    const rendered = standardBaseRenderedCounts({
+      masterCode: cabinet.masterCode,
+      drawerLayout: cabinet.drawerLayout,
+      doors: effectiveDoors,
+      drawers: effectiveDrawers,
+    });
+    effectiveDoors = rendered.doors;
+    effectiveDrawers = rendered.drawers;
   }
 
   const pantryDrawerLayout = pantryDrawerFrontLayout({
@@ -937,16 +949,22 @@ export function DoorDrawerDiagram({ cabinet, width = 180, className }: Props) {
   } else if (effectiveDrawers > 0 && effectiveDoors > 0) {
     // Standard base: drawer rows stacked on top, doors side-by-side below
     // Parse drawerLayout JSON for row-based grid rendering
-    const drawerRows = parseDrawerLayout(cabinet.drawerLayout, effectiveDrawers);
+    const parsedDrawerRows = parseDrawerLayout(cabinet.drawerLayout, effectiveDrawers);
+    const drawerRows = parsedDrawerRows.length > 0
+      ? parsedDrawerRows
+      : (standardFace?.drawerRows ?? []);
 
     const drawerBandH = Math.min(
-      Math.round(iH * DRAWER_BAND_PCT * effectiveDrawers),
+      Math.round(iH * DRAWER_BAND_PCT * Math.max(1, drawerRows.length || 1)),
       Math.round(iH * 0.55) // never take more than 55% of height
     );
     const doorH = iH - drawerBandH;
-    // doorsPerRow: explicit admin override; fallback = all doors side-by-side in one row
+    // Standard bases use the width table for door columns. Other cabinets may
+    // still honor an explicit doors-per-row override.
     const doorsPerRow = (cabinet as CabinetLike & { doorsPerRow?: number | null }).doorsPerRow;
-    const colsPerRow = doorsPerRow != null && doorsPerRow >= 1 ? doorsPerRow : effectiveDoors;
+    const colsPerRow = standardFace
+      ? effectiveDoors
+      : doorsPerRow != null && doorsPerRow >= 1 ? doorsPerRow : effectiveDoors;
     const numDoorRows = Math.ceil(effectiveDoors / colsPerRow);
     const doorRowH = doorH / numDoorRows;
 
@@ -1025,7 +1043,9 @@ export function DoorDrawerDiagram({ cabinet, width = 180, className }: Props) {
     // Door-only (wall cabinets, single/double door base with no drawers)
     // doorsPerRow: explicit admin override; fallback = all doors side-by-side in one row
     const doorsPerRowOnly = (cabinet as CabinetLike & { doorsPerRow?: number | null }).doorsPerRow;
-    const colsPerRowOnly = doorsPerRowOnly != null && doorsPerRowOnly >= 1 ? doorsPerRowOnly : effectiveDoors;
+    const colsPerRowOnly = standardFace
+      ? effectiveDoors
+      : doorsPerRowOnly != null && doorsPerRowOnly >= 1 ? doorsPerRowOnly : effectiveDoors;
     const numDoorRowsOnly = Math.ceil(effectiveDoors / colsPerRowOnly);
     const doorRowHOnly = iH / numDoorRowsOnly;
     let doorIdxOnly = 0;

@@ -59,11 +59,23 @@ export const AUTO_DESIGN_WIGGLE_ROOM_IN = 3;
 export const SINK_SHIFT_LIMIT_IN = 3;
 /** A refrigerator bay may slide at most this far from the measured center to close a gap. */
 export const REFRIGERATOR_SHIFT_LIMIT_IN = 6;
+/**
+ * A user-measured refrigerator may slide this far away from a corner while a
+ * corner cabinet is seated. This does not change the bay gap-closing slide.
+ * The live value is `measuredRefrigeratorCornerShiftLimitIn()` so an admin
+ * override and the corner-seating error stay on the same number.
+ */
+export const MEASURED_REFRIGERATOR_CORNER_SHIFT_LIMIT_IN = 12;
 
 /** Per-appliance cap measured from the original placement. */
 export function autoDesignShiftLimitIn(kind: string): number {
   if (kind === "refrigerator") return REFRIGERATOR_SHIFT_LIMIT_IN;
   return kitchenRuleNumber("jog_max_in");
+}
+
+/** Corner-seating cap for a refrigerator the user placed by center measurement. */
+export function measuredRefrigeratorCornerShiftLimitIn(): number {
+  return kitchenRuleNumber("measured_fridge_corner_shift_in");
 }
 
 const WIGGLE_STEP_IN = 1 / 8;
@@ -199,7 +211,7 @@ export const DESIGNER_LAYOUT_RULES: readonly DesignerLayoutRule[] = [
     id: "corner-appliance-nudge",
     name: "corner appliance nudge",
     phase: "auto-design-stage",
-    summary: "A range or refrigerator may slide up to 3 inches away from a corner so the corner cabinet can sit on the vertex.",
+    summary: "A range may slide up to 3 inches away from a corner. A user-measured refrigerator may slide up to 12 inches. An auto-placed refrigerator keeps the 6 inch cap. The smallest shift that clears the corner is used.",
   },
   {
     id: "sink-fixture-on-base",

@@ -12,7 +12,7 @@ describe("AutoDesignDialog", () => {
     render(<AutoDesignDialog open onOpenChange={vi.fn()} onBuild={() => ({ ok: true })} />);
     const order = screen.getByTestId("auto-design-build-order").textContent ?? "";
     expect(order).toContain("1. Measured appliances and sink base");
-    expect(order).toContain("2. Select and place the required corner cabinets");
+    expect(order).toContain("2. Place the required corner cabinets automatically before any other cabinets on those walls");
     expect(order).toContain("3. Fill remaining runs with the largest practical regular base cabinets");
     expect(order).toContain("4. Place source-sized, aligned wall cabinets above");
     expect(order).toContain("Specialty bases are not selected automatically");
@@ -57,6 +57,19 @@ describe("AutoDesignDialog", () => {
     expect(screen.getByText("Sink base style")).toBeTruthy();
     fireEvent.click(screen.getByTestId("auto-design-build-submit"));
     expect(onBuild).toHaveBeenCalledWith(expect.objectContaining({ sinkBaseKind: "regular" }));
+  });
+
+  it("hides Wall 4 when the layout is a U-shape, even if the room still has that wall", () => {
+    render(<AutoDesignDialog open onOpenChange={vi.fn()} onBuild={() => ({ ok: true })} room={DEFAULT_ROOM} wallCount={4} />);
+    expect(screen.getByTestId("auto-design-wall-width-wall-4")).toBeTruthy();
+    fireEvent.click(screen.getByLabelText("Layout type"));
+    fireEvent.click(screen.getByRole("option", { name: "U-shape" }));
+    expect(screen.queryByTestId("auto-design-wall-width-wall-4")).toBeNull();
+    expect(screen.getByTestId("auto-design-wall-width-wall-1")).toBeTruthy();
+    expect(screen.getByTestId("auto-design-wall-width-wall-3")).toBeTruthy();
+    fireEvent.click(screen.getByLabelText("Layout type"));
+    fireEvent.click(screen.getByRole("option", { name: "L-shape" }));
+    expect(screen.getByTestId("auto-design-wall-width-wall-4")).toBeTruthy();
   });
 
   it("offers Wall 1 through Wall 6 and submits an explicit no-appliance choice without guessing placements", () => {

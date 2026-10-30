@@ -1442,9 +1442,13 @@ describe("interactive 3D room scene helpers", () => {
 					curated: true, proceduralFallback: false, physicalWidthIn: 192, physicalDepthIn: 90,
 					flooringPatternKind: "plank", plankWidthIn: 7.5, plankLengthIn: 48,
 				});
-				expect(threeDProductMaterialSource("flooring", "Legacy floor label", null, { productId: 40 })).toMatchObject({
+				expect(threeDProductMaterialSource("flooring", null, null, { productId: 40 })).toMatchObject({
 					key: "acorn-20mil-7.5x48", curated: true, proceduralFallback: false,
 				});
+				expect(threeDProductMaterialSource("flooring", "Greenline Square", null, { productId: 40 })).toMatchObject({
+					key: "representative-flooring", curated: false, proceduralFallback: true, materialColor: "#c4b39a",
+				});
+				expect(threeDProductMaterialSource("flooring", "Greenline Square", null, { productId: 40 })?.url).not.toContain("acorn");
 				const astoria = threeDProductMaterialSource("flooring", "Astoria 22mil Vinyl Flooring", "/manus-storage/pelican/54_65e4c5a2.png", { productId: 54, category: "Flooring", subCategory: "Planks & Flooring", size: null });
 				expect(astoria).toMatchObject({
 					url: "/manus-storage/astoria_22mil_9x60_staggered_floor_cd0a1cf7.webp", key: "astoria-22mil-9x60",
@@ -1452,7 +1456,7 @@ describe("interactive 3D room scene helpers", () => {
 					flooringPatternKind: "plank", plankWidthIn: 9, plankLengthIn: 60,
 				});
 					expect(astoria?.url).not.toContain("pelican/54_65e4c5a2.png");
-					expect(threeDProductMaterialSource("flooring", "Legacy renamed flooring", null, { productId: 73 })).toMatchObject({
+					expect(threeDProductMaterialSource("flooring", null, null, { productId: 73 })).toMatchObject({
 						url: "/manus-storage/aveline_20mil_7x48_staggered_floor_2675d409.webp",
 						key: "aveline-20mil-7x48",
 						curated: true,
@@ -1461,6 +1465,8 @@ describe("interactive 3D room scene helpers", () => {
 						plankWidthIn: 7,
 						plankLengthIn: 48,
 					});
+					expect(threeDProductMaterialSource("flooring", "Santorini Blue", "/floor_normal.jpg", { productId: 73 })?.url).not.toContain("aveline");
+					expect(threeDProductMaterialSource("flooring", "Santorini Blue", "/floor_normal.jpg", { productId: 73 })?.proceduralFallback).toBe(true);
 				expect(threeDProductMaterialSource("countertop", "Bedrock 3cm", null)).toMatchObject({
 			url: "/manus-storage/pelican/quartz/bedrock-3cm_source_slab_e61a47e8.webp", key: "pelican-quartz:bedrock-3cm",
 				curated: true, proceduralFallback: false, physicalWidthIn: 126, physicalDepthIn: 63,
@@ -1472,14 +1478,32 @@ describe("interactive 3D room scene helpers", () => {
 				});
 				expect(threeDProductMaterialSource("backsplash", "Arctic Vail", null)).toMatchObject({
 					url: "/manus-storage/arctic_vail_candidate_2_a8bed842.png", key: "arctic-vail-10.71in-interlocking-hex-mosaic",
-					curated: true, proceduralFallback: false, physicalWidthIn: 10.71, physicalDepthIn: 10.55,
-					backsplashPatternKind: "interlocking-mosaic", backsplashModuleIn: 10.71, backsplashGroutJointIn: 1 / 16,
+					curated: true, proceduralFallback: false, physicalWidthIn: 4, physicalDepthIn: 4 * (10.55 / 10.71),
+					backsplashPatternKind: "interlocking-mosaic", backsplashModuleIn: 4, backsplashGroutJointIn: 1 / 16,
+				});
+				expect(threeDProductMaterialSource("backsplash", "Arctic Vail", null, {
+					cardImageUrl: "/manus-storage/pelican/47_105baf1c.png",
+				})).toMatchObject({
+					url: "/manus-storage/pelican/47_105baf1c.png",
+					cropRetailBackground: true,
+					physicalWidthIn: 10.71,
+					physicalDepthIn: 10.55,
+					backsplashModuleIn: 10.71,
 				});
 				expect(threeDProductMaterialSource("backsplash", "Carbon Hex", null)).toMatchObject({
 						url: "/manus-storage/carbon_hex_candidate_1_2af63616.png", key: "carbon-hex-12.80in-marble-hex-mosaic",
-						curated: true, proceduralFallback: false, physicalWidthIn: 12.8, physicalDepthIn: 11.1,
-						backsplashPatternKind: "interlocking-mosaic", backsplashModuleIn: 12.8, backsplashGroutJointIn: 1 / 16,
+						curated: true, proceduralFallback: false, physicalWidthIn: 4, physicalDepthIn: 4 * (11.1 / 12.8),
+						backsplashPatternKind: "interlocking-mosaic", backsplashModuleIn: 4, backsplashGroutJointIn: 1 / 16,
 					});
+				expect(threeDProductMaterialSource("backsplash", "Carbon Hex", null, {
+					cardImageUrl: "/manus-storage/pelican/142_0904bb42.png",
+					size: "12.80 x 11.10 x 8",
+				})).toMatchObject({
+					url: "/manus-storage/pelican/142_0904bb42.png",
+					cropRetailBackground: true,
+					physicalWidthIn: 12.8,
+					backsplashModuleIn: 12.8,
+				});
 				expect(threeDProductMaterialSource("backsplash", "Carrara Subway", null)).toMatchObject({
 							url: "/manus-storage/carrara_subway_11_97x12_13_running_bond_f57029f6.webp", key: "carrara-subway-11.97in-running-bond-mosaic",
 							curated: true, proceduralFallback: false, physicalWidthIn: 11.97, physicalDepthIn: 12.13,
@@ -1516,14 +1540,14 @@ describe("interactive 3D room scene helpers", () => {
 						{ productId: 244, key: "golden-trace-11.81in-marble-aluminum-mosaic", pattern: "interlocking-mosaic", moduleIn: 11.81 },
 					] as const;
 					for (const patternCase of sourceIdentityCases) {
-						expect(threeDProductMaterialSource("backsplash", "Legacy renamed tile", null, { productId: patternCase.productId })).toMatchObject({
+						expect(threeDProductMaterialSource("backsplash", null, null, { productId: patternCase.productId })).toMatchObject({
 							key: patternCase.key,
 							curated: true,
 							proceduralFallback: false,
 							backsplashPatternKind: patternCase.pattern,
-							backsplashModuleIn: patternCase.moduleIn,
 							backsplashGroutJointIn: 1 / 16,
 						});
+						expect(threeDProductMaterialSource("backsplash", "Unrelated Mosaic", null, { productId: patternCase.productId })?.key).not.toBe(patternCase.key);
 					}
 			  });
 
@@ -1590,7 +1614,12 @@ describe("interactive 3D room scene helpers", () => {
 		    });
 		    const tile = threeDProductMaterialSource("flooring", "Carrara Porcelain Tile", "/tile.jpg", { category: "Flooring", subCategory: "Tile", size: '12" x 24"' });
 		    expect(tile?.flooringPatternKind).toBe("tile");
-		    expect(threeDProductSurfaceTextureTransform("flooring", tile!, 120, 96)).toEqual({ wrap: "repeat", repeatX: 5, repeatY: 4, offsetX: 0, offsetY: 0, rotation: 0 });
+		    expect(tile).toMatchObject({ physicalWidthIn: 12, physicalDepthIn: 24, cropRetailBackground: true });
+		    expect(threeDProductSurfaceTextureTransform("flooring", tile!, 120, 96)).toEqual({ wrap: "repeat", repeatX: 10, repeatY: 4, offsetX: 0, offsetY: 0, rotation: 0 });
+		    const mosaicFloor = threeDProductMaterialSource("flooring", "Moonstone Hex Mosaic", "/moonstone.png", { category: "Tile & Mosaic", subCategory: "Mosaic", size: "12.80 x 11.10 x 8" });
+		    expect(mosaicFloor).toMatchObject({ flooringPatternKind: "tile", physicalWidthIn: 12.8, physicalDepthIn: 11.1 });
+		    expect(threeDProductSurfaceTextureTransform("flooring", mosaicFloor!, 144, 120).repeatX).toBeCloseTo(144 / 12.8);
+		    expect(threeDProductSurfaceTextureTransform("flooring", mosaicFloor!, 144, 120).repeatY).toBeCloseTo(120 / 11.1);
 		    const sheet = threeDProductMaterialSource("flooring", "Commercial Sheet Vinyl", "/sheet.jpg", { category: "Flooring", subCategory: "Sheet", size: null });
 		    expect(sheet).toMatchObject({ flooringPatternKind: "sheet", plankWidthIn: null, plankLengthIn: null, staggerOffsetsIn: null });
 		    expect(threeDProductSurfaceTextureTransform("flooring", sheet!, 120, 96)).toEqual({ wrap: "repeat", repeatX: 5, repeatY: 4, offsetX: 0, offsetY: 0, rotation: 0 });
@@ -7693,6 +7722,8 @@ describe("interactive 3D room scene helpers", () => {
     expect(raisedPanels.length).toBeGreaterThanOrEqual(2);
     expect(bevels.length).toBeGreaterThanOrEqual(2);
     expect(bevels.every((node) => node.userData.insideEdgeProfile === "beveled ogee")).toBe(true);
+    expect(bevels.every((node) => node.userData.sloped === true)).toBe(true);
+    expect(bevels.every((node) => (node as THREE.Mesh).geometry.type !== "BoxGeometry")).toBe(true);
     expect(hardware).toHaveLength(0);
 
     const withKnob = new THREE.Group();
@@ -7701,6 +7732,94 @@ describe("interactive 3D room scene helpers", () => {
     withKnob.traverse((node) => { if (node.userData.cabinetPull === "knob") knobs.push(node); });
 	    expect(knobs.length).toBeGreaterThanOrEqual(2);
 	  });
+
+  it("builds sloped raised bevels for a non-Lumina raised style and leaves shaker doors square", () => {
+    const casselberry = {
+      doorStyle: "Casselberry",
+      doorPanelType: "Mitered frame",
+      panelConstruction: "raised" as const,
+      bevelWidth: 0.75,
+      bevelDepth: 0.28,
+      insideEdgeProfile: "bevel",
+      drawerFrontType: "five-piece-raised" as const,
+    };
+    const raisedRoot = new THREE.Group();
+    const b18 = { masterCode: "B18", description: "18 inch base", placementType: "base", width: 18, height: 34.5, depth: 24, numberOfDoors: 1, numberOfDrawers: 1 } as never;
+    addCabinet(raisedRoot, b18, null, {}, 144, 120, "#f7f4ef", "#f8f8f6", casselberry, undefined, undefined, undefined, { hardwareStyleId: "none" });
+    const raisedBevels: THREE.Object3D[] = [];
+    raisedRoot.traverse((node) => {
+      if (node.userData.raisedPanelBevel) raisedBevels.push(node);
+    });
+    expect(raisedBevels.length).toBeGreaterThanOrEqual(2);
+    expect(raisedBevels.every((node) => node.userData.sloped === true)).toBe(true);
+    expect(raisedBevels.every((node) => node.parent?.userData.faceRole === "door" || node.parent?.userData.faceRole === "drawer")).toBe(true);
+    expect(raisedBevels.some((node) => node.parent?.userData.faceRole === "door")).toBe(true);
+    expect(raisedBevels.some((node) => node.parent?.userData.faceRole === "drawer")).toBe(true);
+    for (const bevel of raisedBevels) {
+      const normals = (bevel as THREE.Mesh).geometry.getAttribute("normal");
+      const colors = (bevel as THREE.Mesh).geometry.getAttribute("color");
+      expect(normals).toBeTruthy();
+      expect(colors).toBeTruthy();
+      let slopesUp = false;
+      let slopesDown = false;
+      let lightTop = 0;
+      let lightTopCount = 0;
+      let darkBottom = 0;
+      let darkBottomCount = 0;
+      for (let index = 0; index < normals.count; index++) {
+        expect(normals.getZ(index)).toBeGreaterThan(0.15);
+        if (normals.getY(index) > 0.2) slopesUp = true;
+        if (normals.getY(index) < -0.2) slopesDown = true;
+        const tone = colors.getX(index);
+        if (normals.getY(index) > 0.2) {
+          lightTop += tone;
+          lightTopCount += 1;
+        }
+        if (normals.getY(index) < -0.2) {
+          darkBottom += tone;
+          darkBottomCount += 1;
+        }
+      }
+      expect(slopesUp).toBe(true);
+      expect(slopesDown).toBe(true);
+      expect(lightTop / lightTopCount).toBeGreaterThan(darkBottom / darkBottomCount);
+      expect(bevel.userData.bevelDepthIn).toBeGreaterThanOrEqual(0.4);
+    }
+
+    const shakerRoot = new THREE.Group();
+    addCabinet(shakerRoot, b18, null, {}, 144, 120, "#f7f4ef", "#f8f8f6", {
+      doorStyle: "Shaker",
+      doorPanelType: "Recessed Panel",
+      panelConstruction: "flat",
+      drawerFrontType: "slab",
+    }, undefined, undefined, undefined, { hardwareStyleId: "none" });
+    const shakerBevels: THREE.Object3D[] = [];
+    const shakerRails: THREE.Object3D[] = [];
+    shakerRoot.traverse((node) => {
+      if (node.userData.raisedPanelBevel) shakerBevels.push(node);
+      if (node.userData.physicalRail) shakerRails.push(node);
+    });
+    expect(shakerBevels).toHaveLength(0);
+    expect(shakerRails.length).toBeGreaterThanOrEqual(8);
+
+    const drawerOnlyRaised = new THREE.Group();
+    addCabinet(drawerOnlyRaised, b18, null, {}, 144, 120, "#f7f4ef", "#f8f8f6", {
+      doorStyle: "Shaker",
+      doorPanelType: "Recessed Panel",
+      panelConstruction: "flat",
+      drawerFrontType: "five-piece-raised",
+    }, undefined, undefined, undefined, { hardwareStyleId: "none" });
+    const drawerBevels: THREE.Object3D[] = [];
+    const doorBevels: THREE.Object3D[] = [];
+    drawerOnlyRaised.traverse((node) => {
+      if (!node.userData.raisedPanelBevel) return;
+      if (node.parent?.userData.faceRole === "drawer") drawerBevels.push(node);
+      if (node.parent?.userData.faceRole === "door") doorBevels.push(node);
+    });
+    expect(drawerBevels.length).toBeGreaterThan(0);
+    expect(drawerBevels.every((node) => node.userData.sloped === true)).toBe(true);
+    expect(doorBevels).toHaveLength(0);
+  });
 
 	  it("does not let an LSB36 specialty door bypass the selected None hardware style", () => {
 	    const lsb36 = {

@@ -31,15 +31,51 @@ describe("fresh room catalog onboarding", () => {
     expect(source).toContain('toast.success("Catalog ready. Choose a cabinet to begin your design.")');
   });
 
-  it("shows a readable door thumbnail beside every available door style/color", () => {
+  it("shows a scrollable door-card grid and selects a style from the sample photo", () => {
     const selectorStart = source.indexOf('data-testid="fresh-room-door-style-step"');
-    const selectorEnd = source.indexOf("</Select>", selectorStart);
+    const selectorEnd = source.indexOf('data-testid="fresh-room-door-style-preview"', selectorStart);
     const selector = source.slice(selectorStart, selectorEnd);
 
     expect(selectorStart).toBeGreaterThan(-1);
     expect(selectorEnd).toBeGreaterThan(selectorStart);
     expect(selector).toContain('data-testid="fresh-room-door-style-option"');
-    expect(selector).toContain('<DoorStyleSwatch style={style} className="h-12 w-9 shrink-0 rounded border border-border object-cover" />');
-    expect(selector).toContain('aria-label={`${affiliateStyleName(style)} door thumbnail`}');
+    expect(selector).toContain('aria-label={`${name} door thumbnail`}');
+    expect(selector).toContain('const photoUrl = preferredDoorReferenceUrl(style);');
+    expect(selector).toContain('onClick={() => setSlotStyle("A", style.id)}');
+    expect(selector).toContain('aria-pressed={selected}');
+    expect(selector).toContain("overflow-y-auto");
+    expect(selector).toContain("<DoorSamplePhoto url={photoUrl} alt=\"\" className=\"h-36 w-full\" />");
+    expect(source).toContain('loading="lazy"');
+    expect(source).toContain("object-contain");
+  });
+
+  it("shows the selected door and drawer sample above the continue button", () => {
+    const previewStart = source.indexOf('data-testid="fresh-room-door-style-preview"');
+    const footerStart = source.indexOf("<DialogFooter>", previewStart);
+    const preview = source.slice(previewStart, footerStart);
+
+    expect(previewStart).toBeGreaterThan(-1);
+    expect(footerStart).toBeGreaterThan(previewStart);
+    expect(preview).toContain("DoorSamplePhoto url={paletteFinishSwatch}");
+    expect(preview).toContain("DoorSamplePhoto url={activeDrawerSampleUrl}");
+    expect(preview).toContain("Drawer");
+    expect(source).toContain("const activeDrawerSampleUrl = useMemo(");
+    expect(source).toContain("preferredDrawerReferenceUrl(activeStyle");
+  });
+
+  it("stacks the selected cabinet door photo, style name, and distributor on desktop and mobile", () => {
+    const identityCount = source.split('data-testid="selected-cabinet-door-identity"').length - 1;
+    expect(identityCount).toBe(1);
+    expect(source).toContain("<SelectedCabinetDoorIdentity");
+    expect(source.split("<SelectedCabinetDoorIdentity").length - 1).toBe(2);
+    expect(source).toContain('className="h-16 w-12 rounded border border-neutral-200 bg-white object-contain"');
+    expect(source).toContain('data-testid="selected-cabinet-door-distributor"');
+    expect(source).toContain("text-[10px] leading-tight text-muted-foreground");
+    expect(source).toContain("const activeStyleDistributorName = useMemo(");
+    expect(source).toContain("distributorNameById.get(distributorId)");
+    expect(source).toContain("styleDistributorId ?? catalogDistributorId");
+    expect(source).toContain('data-testid="selected-cabinet-door-color-chip"');
+    expect(source).not.toContain('className="h-9 w-9 rounded border border-border object-cover"');
+    expect(source).not.toContain("hidden md:inline text-[10px] leading-tight text-muted-foreground");
   });
 });

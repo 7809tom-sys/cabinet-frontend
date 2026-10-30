@@ -6,6 +6,7 @@ import {
   type DesignCabinet, type PlacedCabinet,
 } from "./design";
 import { AUTO_DESIGN_MAX_APPLIANCE_NUDGE_IN, seatAutoDesignCorner } from "./autoDesignCornerSeating";
+import { MEASURED_REFRIGERATOR_CORNER_SHIFT_LIMIT_IN, REFRIGERATOR_SHIFT_LIMIT_IN } from "./designerLayoutRules";
 import { buildAutoDesignWallCabinets, resolveWallHeightClass } from "./autoDesignWallCabinets";
 
 type Fixture = Record<string, { base: unknown[]; wall: unknown[]; accessory: unknown[] }>;
@@ -105,6 +106,45 @@ describe("Auto-Design corner seating: real catalog, appliance first", () => {
     expect(result.message).toMatch(/slide about 5"/);
     expect(result.message).toMatch(/may only move 3"/);
     expect(JSON.stringify(blocked)).toBe(original);
+  });
+
+  it("slides a measured refrigerator up to 12 inches and leaves an auto-placed refrigerator at 6", () => {
+    expect(MEASURED_REFRIGERATOR_CORNER_SHIFT_LIMIT_IN).toBe(12);
+    expect(REFRIGERATOR_SHIFT_LIMIT_IN).toBe(6);
+    // Ends at 127": the BBC36 filler starts at 117", so the refrigerator must slide 10".
+    const fridge = range(36, 91);
+    fridge.uid = "fridge-1";
+    fridge.masterCode = "FRIDGE-36";
+    fridge.description = '36" Refrigerator';
+    const measured = seat([fridge], { measuredApplianceUids: ["fridge-1"] });
+    expect(measured.ok, measured.ok ? "" : measured.message).toBe(true);
+    if (!measured.ok) return;
+    expect(measured.moves).toHaveLength(1);
+    expect(measured.moves[0]!.kind).toBe("refrigerator");
+    expect(measured.moves[0]!.shiftIn).toBe(10);
+    expect(measured.moves[0]!.shiftIn).toBeLessThanOrEqual(MEASURED_REFRIGERATOR_CORNER_SHIFT_LIMIT_IN);
+    expect(measured.moves[0]!.shiftIn).toBeGreaterThan(REFRIGERATOR_SHIFT_LIMIT_IN);
+
+    const autoPlaced = seat([fridge]);
+    expect(autoPlaced.ok).toBe(false);
+    if (autoPlaced.ok) return;
+    expect(autoPlaced.message).toMatch(/auto-placed refrigerator/i);
+    expect(autoPlaced.message).toMatch(/may only move 6"/);
+    expect(autoPlaced.message).toMatch(/slide about 10"/);
+    expect(fridge.wallOffset).toBe(91);
+  });
+
+  it("names the 12 inch cap when a measured refrigerator still cannot clear the corner", () => {
+    const fridge = range(36, 95);
+    fridge.uid = "fridge-1";
+    fridge.masterCode = "FRIDGE-36";
+    fridge.description = '36" Refrigerator';
+    const result = seat([fridge], { measuredApplianceUids: ["fridge-1"] });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.message).toMatch(/measured refrigerator/i);
+    expect(result.message).toMatch(/may only move 12"/);
+    expect(result.message).not.toMatch(/may only move 6"/);
   });
 
   it("never slides a sink base or other cabinet; it names the blocker instead", () => {

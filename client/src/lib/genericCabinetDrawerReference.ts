@@ -1,0 +1,15 @@
+export {
+  STANDARD_BASE_B33_B42_GENERIC_IMAGE,
+  STANDARD_BASE_NARROW_GENERIC_IMAGE,
+  STANDARD_BASE_SINGLE_DRAWER_GENERIC_IMAGE,
+  isStandardDoorBase,
+  parsedDrawerLayoutRows,
+  standardBaseDoorCount,
+  standardBaseDoorSaveError,
+  standardBaseFaceReference,
+  standardBaseNominalWidth,
+  standardBaseRenderedCounts,
+  type DrawerLayoutRow,
+  type StandardBaseDrawerRow,
+  type StandardBaseFaceReference,
+} from "@shared/genericCabinetDrawerReference";

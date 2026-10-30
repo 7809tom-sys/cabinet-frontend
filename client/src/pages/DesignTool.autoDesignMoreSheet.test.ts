@@ -38,7 +38,8 @@ describe("Auto-Design in the More sheet (tablet and phone)", () => {
     expect(pageSource).toContain('data-testid="admin-auto-design-auto-build"');
     expect(pageSource).toContain("const autoDesignAvailable = isAdmin || Boolean(affiliateSlug);");
     expect(pageSource).toMatch(/\{autoDesignAvailable && \(\s*<AutoDesignDialog/);
-    expect(pageSource).toMatch(/\{autoDesignAvailable && autoDesignCornerStage && \(\s*<AutoDesignCornerDialog/);
+    expect(pageSource).toContain("seatAutoDesignCornerFromCatalog");
+    expect(pageSource).not.toContain("<AutoDesignCornerDialog");
   });
 
   it("does not expose the row outside the audience guard anywhere else in the sheet", () => {

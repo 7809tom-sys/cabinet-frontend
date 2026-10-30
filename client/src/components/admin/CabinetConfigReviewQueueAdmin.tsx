@@ -7,6 +7,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CabinetImage } from "@/components/CabinetImage";
 import { AlertTriangle, CheckCircle2, Pencil, RefreshCw, Search } from "lucide-react";
+import { standardBaseDoorSaveError } from "@/lib/genericCabinetDrawerReference";
 import {
   CABINET_ATTENTION_SEARCH_PLACEHOLDER,
   CABINET_ATTENTION_EDITOR_LINK_ATTRIBUTES,
@@ -202,6 +203,11 @@ export default function CabinetConfigReviewQueueAdmin() {
                     </td>
                     <td className="px-3 py-2.5">
                       <div className="flex flex-wrap gap-1">
+                        {standardBaseDoorSaveError(row.masterCode, row.numberOfDoors) && (
+                          <Badge variant="outline" className="border-rose-300 text-rose-700">
+                            One door only
+                          </Badge>
+                        )}
                         {reasons.map((reason) => (
                           <Badge
                             key={reason}

@@ -27,6 +27,7 @@ import {
   normalizeDoorHardwareFramePosition,
 } from "@/lib/hardware";
 import { resolveConfiguredFaceCounts, resolveDoorDrawerCounts, cabinetDrawingType, isWallBlindCornerCabinet, threeDrawerBaseRowHeights, type CabinetDrawingType, type CabinetLike } from "@/lib/cabinetGraphics";
+import { standardBaseRenderedCounts } from "@/lib/genericCabinetDrawerReference";
 import { toeKickHeightForElevation } from "@/lib/elevationToeKick";
 import { drawerPanelInsetPx, elevationFrameInsetPx, isShakerElevationStyle, shakerFacePanelGeometry } from "@/lib/elevationFrameGeometry";
 import { isCustomCabinetProfile } from "@/lib/customCabinetProfiles";
@@ -557,13 +558,19 @@ export function ElevationView({
 	    const farmhouseFace = isFarmhouseSinkBaseFace
 	      ? farmhouseSinkBaseFaceLayout(sizeAlong, height, configuredDisplayCounts.doors)
 	      : null;
-	    const displayCounts = farmhouseFace
+	    const rawDisplayCounts = farmhouseFace
       ? { doors: farmhouseFace.doorCount, drawers: 0 }
       : isWd18CountertopDrawerCabinet(p)
       ? { doors: 1, drawers: 2 }
       : isLegacyWdcDiagonal
 	        ? { doors: Math.max(2, configuredDisplayCounts.doors), drawers: 0 }
 	        : configuredDisplayCounts;
+    const displayCounts = standardBaseRenderedCounts({
+      masterCode: p.masterCode,
+      drawerLayout: p.drawerLayout ?? null,
+      doors: rawDisplayCounts.doors,
+      drawers: rawDisplayCounts.drawers,
+    });
 	    const isGlassDoor = isGlassDoorCabinet(p);
 	    const visibleGlassShelfCount = glassDoorShelfCount(p);
     // DEBUG: log O-code cabinets to diagnose oven-tall rendering
@@ -2583,8 +2590,14 @@ export function CustomProfileFace({
 }
 
 export function DoorFront({ kind, edge, face, doors, drawers, isWall, doorSampleUrl, drawerSampleUrl, cabinetType, blindOnLeft, cabinetHeightIn, cabinetWidthIn, faceFillOverride, ovenType, openingType, doorHeight, drawerHeight, doorOrientation, layoutSpec, drawerLayout, masterCode, graphicType, category, placementType, description, numberOfDoors, numberOfDrawers, facePattern, shelfCount, glassDoor, frameInsetPx, frameMetrics, farmhouseSinkBase = false, wallAngleOpen = null }: { kind: DoorPanelKind; edge: string; face: string; doors?: number; drawers?: number; isWall?: boolean; doorSampleUrl?: string | null; drawerSampleUrl?: string | null; cabinetType?: CabinetDrawingType | null; blindOnLeft?: boolean; cabinetHeightIn?: number; cabinetWidthIn?: number; faceFillOverride?: string; ovenType?: "single" | "double" | null; openingType?: "top" | "middle" | "bottom" | null; doorHeight?: number | null; drawerHeight?: number | null; doorOrientation?: "side-by-side" | "stacked" | null; layoutSpec?: string | null; drawerLayout?: string | null; masterCode?: string | null; graphicType?: string | null; category?: string | null; placementType?: string | null; description?: string | null; numberOfDoors?: number | null; numberOfDrawers?: number | null; facePattern?: "slats" | "criss-cross" | "lattice" | "open" | null; shelfCount?: number | null; glassDoor?: boolean; frameInsetPx?: number; frameMetrics?: { stileInches?: number | null; railInches?: number | null }; farmhouseSinkBase?: boolean; wallAngleOpen?: "start" | "end" | null }) {
-  const drawerCount = drawers ?? 0;
-  const doorCount = doors ?? 0;
+  const standardFace = standardBaseRenderedCounts({
+    masterCode,
+    drawerLayout,
+    doors: doors ?? 0,
+    drawers: drawers ?? 0,
+  });
+  const drawerCount = standardFace.drawers;
+  const doorCount = standardFace.doors;
   const stroke = `${edge}99`;
   const faceWidth = cabinetWidthIn ?? 24;
   const faceHeight = cabinetHeightIn ?? 34.5;
@@ -3727,7 +3740,7 @@ export function DoorFront({ kind, edge, face, doors, drawers, isWall, doorSample
           {/* single drawer row: drawerCount side-by-side drawers at 20% height */}
           <div className="absolute left-0 right-0" style={{ top: 0, height: `${DRAWER_ROW_PCT}%` }}>
             {Array.from({ length: Math.max(1, drawerCount) }).map((_, ci) => (
-              <div key={ci} className="absolute top-0 bottom-0" style={{ left: `${drawerColW * ci}%`, width: `${drawerColW}%` }}>
+              <div key={ci} data-standard-base-drawer={ci + 1} className="absolute top-0 bottom-0" style={{ left: `${drawerColW * ci}%`, width: `${drawerColW}%` }}>
                 {ci > 0 && <div className="absolute top-0 bottom-0 left-0" style={{ width: 2, background: stroke }} />}
                 <StylePanel kind={kind} edge={edge} face={face} drawer doorSampleUrl={doorSampleUrl} drawerSampleUrl={drawerSampleUrl} frameInsetPx={frameInsetPx} faceWidthIn={(cabinetWidthIn ?? 24) / Math.max(1, drawerCount)} faceHeightIn={(cabinetHeightIn ?? 34.5) * (DRAWER_ROW_PCT / 100)} />
               </div>
@@ -3739,6 +3752,7 @@ export function DoorFront({ kind, edge, face, doors, drawers, isWall, doorSample
           {Array.from({ length: cols }).map((_, i) => (
             <div
               key={`bdoor-${i}`}
+              data-standard-base-door={i + 1}
               className="absolute"
               style={{ left: `${colW * i}%`, width: `${colW}%`, top: `${DRAWER_ROW_PCT}%`, bottom: 0 }}
             >

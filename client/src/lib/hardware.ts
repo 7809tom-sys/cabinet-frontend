@@ -18,6 +18,7 @@ import {
   isPanelItem,
   isLCornerCabinet,
 } from "./design";
+import { standardBaseDoorCount, standardBaseRenderedCounts } from "@/lib/genericCabinetDrawerReference";
 
 // True only for the genuine Corner Drawer Base (CDB), which legitimately shows a
 // drawer stack. All OTHER L-corner cabinets (easy-reach ERB, lazy-Susan LSB,
@@ -177,9 +178,9 @@ function carriesHardware(p: PlacedCabinet): boolean {
   return true;
 }
 
-// At/above this width (inches) a standard door cabinet is built with TWO doors
-// (and, on a base, two side-by-side top drawers). Below it, one door + one
-// full-width top drawer. 24" is the industry break: B-24 up = two doors.
+// Fallback only for cabinets that are not exact B## door bases and have no
+// stored door count. Exact standard bases use standardBaseDoorCount instead:
+// B21 and under is one door, and B24–B30 keep one full-width drawer.
 const TWO_DOOR_MIN_WIDTH_IN = 24;
 
 // The cabinet's width in inches: the live width the customer sees, falling back
@@ -198,6 +199,10 @@ function cabinetWidthIn(p: PlacedCabinet): number {
  */
 export function doorCountForCabinet(p: PlacedCabinet): number {
   if (!carriesHardware(p)) return 0;
+  // B09–B21 are always one door, even when a catalog row says 2. B24 and wider
+  // standard bases are always two doors. Other families still trust the stored count.
+  const standardDoors = standardBaseDoorCount(p);
+  if (standardDoors != null) return standardDoors;
   if (typeof p.numberOfDoors === "number") return Math.max(0, p.numberOfDoors);
   const hay = `${p.description ?? ""} ${p.masterCode ?? ""}`.toLowerCase();
   if ((/\bdrawer base\b|^db|drawer\b/.test(hay)) && !/door/.test(hay)) return 0;
@@ -241,6 +246,17 @@ export function drawerCountForCabinet(p: PlacedCabinet): number {
  * underlying count.
  */
 export function displayDrawerCount(p: PlacedCabinet): number {
+  // Standard door bases draw the generic catalog top row. numberOfDrawers is
+  // not trusted (B30 is stored as 2). A saved drawerLayout still overrides.
+  if (standardBaseDoorCount(p) != null) {
+    if (!carriesHardware(p)) return 0;
+    return standardBaseRenderedCounts({
+      masterCode: p.masterCode,
+      drawerLayout: p.drawerLayout,
+      doors: 0,
+      drawers: 0,
+    }).drawers;
+  }
   const base = drawerCountForCabinet(p);
   if (base > 0) return base;
   if (!carriesHardware(p)) return 0;
@@ -252,9 +268,8 @@ export function displayDrawerCount(p: PlacedCabinet): number {
   if (/lazy|susan|\bls\b|corner|blind|\bbwb\b|trash|waste|\bfhd\b|full height|farm|apron/.test(hay)) return 0;
   const doors = doorCountForCabinet(p);
   if (doors <= 0) return 0;
-  // A standard base gets ONE top drawer per door: a single-door base (≤21")
-  // shows one full-width top drawer; a two-door base (B-24, B-30, …) shows two
-  // side-by-side top drawers that line up over its two doors.
+  // Cabinets that are not exact B## door bases still get one top drawer per
+  // inferred door. B24–B30 are handled above and keep a single full-width drawer.
   return Math.max(1, doors);
 }
 

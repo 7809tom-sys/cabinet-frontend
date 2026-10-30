@@ -38,11 +38,10 @@ export type AutoDesignCornerMeasurement = {
 /**
  * Corner cabinets belong only where two kitchen runs meet.
  *
- * A U-shape has one back run and two side runs, so it has two corners. The
- * open end of a side run — where that run meets the empty front wall of a
- * closed room — is not a corner. Treating that open end as a corner, and also
- * discovering the other side run from an appliance, is what placed a third
- * corner cabinet and then warned that the extra corner still needed one.
+ * A U-shape uses Wall 1, Wall 2, and Wall 3 only, so it has the two corners
+ * those walls actually share. Wall 4 is ignored, including a leftover length
+ * from an earlier closed room. An open end that is not one of those joins is
+ * not a corner.
  *
  * An L-shape has the single back-to-side corner. A single wall or galley has
  * none, except that appliances measured on two adjoining walls still reveal
@@ -65,7 +64,9 @@ export function autoDesignCornerSlots(layoutType: AutoDesignLayoutType, measured
     return slots;
   }
   if (layoutType === "u-shape") {
-    const pairs = measured ? uShapeCornerPairs(measured) : [["Wall 1", "Wall 2"], ["Wall 1", "Wall 4"]] as const;
+    // A U uses the three walls the customer entered. Wall 4 is not a corner,
+    // even when the room still has that wall from an earlier closed plan.
+    const pairs = measured ? uShapeCornerPairs(measured) : [["Wall 1", "Wall 2"], ["Wall 2", "Wall 3"]] as const;
     const limit = Math.max(0, kitchenRuleNumber("u_shape_corner_count"));
     for (const [firstWall, secondWall] of pairs.slice(0, limit)) add(firstWall, secondWall);
     return slots;
@@ -111,44 +112,61 @@ function wallsShareVertex(firstWall: WallLabel, secondWall: WallLabel, measured:
   ) != null;
 }
 
-/** Walls that meet `label` at one of its endpoints, one wall per endpoint. */
-function wallsMeeting(label: WallLabel, measured: AutoDesignCornerMeasurement): WallLabel[] {
-  const found: WallLabel[] = [];
-  const seen = new Set<string>();
-  for (const other of AUTO_DESIGN_WALL_LABELS) {
-    if (other === label) continue;
-    const point = autoDesignCornerSlotPoint(
-      { id: "", label: "", firstWall: label, secondWall: other },
-      measured.room,
-      measured.originCorner,
-      measured.runDirection,
-    );
-    if (!point) continue;
-    const key = `${Math.round(point.x * 1000)}:${Math.round(point.y * 1000)}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    found.push(other);
+/** The only walls a U-shape Auto-Design kitchen may receive cabinets on. */
+export const AUTO_DESIGN_U_SHAPE_WALLS = ["Wall 1", "Wall 2", "Wall 3"] as const satisfies readonly WallLabel[];
+
+export function autoDesignLayoutUsesWall(layoutType: AutoDesignLayoutType, label: WallLabel): boolean {
+  if (layoutType !== "u-shape") return true;
+  return (AUTO_DESIGN_U_SHAPE_WALLS as readonly string[]).includes(label);
+}
+
+/** Engine walls a U-shape must not receive any cabinet, filler, panel, or corner. */
+export function autoDesignExcludedEngineWallIds(
+  layoutType: AutoDesignLayoutType,
+  room: RoomData,
+  originCorner: AutoDesignOriginCorner,
+  runDirection: AutoDesignRunDirection,
+): string[] {
+  if (layoutType !== "u-shape") return [];
+  const excluded: string[] = [];
+  for (const label of AUTO_DESIGN_WALL_LABELS) {
+    if (autoDesignLayoutUsesWall(layoutType, label)) continue;
+    const wall = wallLabelToEngineWallId(label, room, originCorner, runDirection);
+    if (wall && !excluded.includes(wall.engineWallId)) excluded.push(wall.engineWallId);
   }
-  return found;
+  return excluded;
+}
+
+/** Drops Wall 4 (and any later wall) from a U-shape run list. Other layouts keep every wall. */
+export function autoDesignRunWallIds(input: {
+  layoutType: AutoDesignLayoutType;
+  room: RoomData;
+  originCorner: AutoDesignOriginCorner;
+  runDirection: AutoDesignRunDirection;
+  wallIds: readonly string[];
+}): string[] {
+  const excluded = new Set(autoDesignExcludedEngineWallIds(input.layoutType, input.room, input.originCorner, input.runDirection));
+  const kept: string[] = [];
+  for (const wallId of input.wallIds) {
+    if (excluded.has(wallId) || kept.includes(wallId)) continue;
+    kept.push(wallId);
+  }
+  return kept;
 }
 
 /**
- * The two corners of a U are the two ends of the back run.
- * On a rectangular plan Wall 1 is that back run, and its two neighbors are the
- * side runs. The front wall shares no vertex with the back, so the open ends
- * where the side runs meet the front are not returned.
- * On an open three-wall U drawn from a side run, Wall 1 has one neighbor: that
- * neighbor is the back, and both of its joins are the corners.
+ * The two corners of a U are the real joins among Wall 1, Wall 2, and Wall 3.
+ * Wall 4 is never one of them, even when that wall still has a length.
  */
 function uShapeCornerPairs(measured: AutoDesignCornerMeasurement): Array<[WallLabel, WallLabel]> {
-  const backNeighbors = wallsMeeting("Wall 1", measured);
-  if (backNeighbors.length >= 2) return backNeighbors.slice(0, 2).map((side) => ["Wall 1", side]);
-  const back = backNeighbors[0];
-  if (!back) return [];
-  const sideRuns = wallsMeeting(back, measured);
-  if (sideRuns.length >= 2) return sideRuns.slice(0, 2).map((side) => [back, side]);
-  if (sideRuns.length === 1) return [[back, sideRuns[0]!]];
-  return [];
+  const walls = AUTO_DESIGN_U_SHAPE_WALLS;
+  const pairs: Array<[WallLabel, WallLabel]> = [];
+  for (let first = 0; first < walls.length; first++) {
+    for (let second = first + 1; second < walls.length; second++) {
+      if (wallsShareVertex(walls[first]!, walls[second]!, measured)) pairs.push([walls[first]!, walls[second]!]);
+    }
+  }
+  return pairs;
 }
 
 /** Resolve the exact shared engine vertex for a selected wall-label pair. */

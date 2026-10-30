@@ -1,9 +1,9 @@
 import { buildRequiredBlindCornerFiller, requiresConfiguredBlindCornerFiller } from "./blindCornerRequiredFiller";
-import { REFRIGERATOR_SHIFT_LIMIT_IN, SINK_SHIFT_LIMIT_IN } from "./designerLayoutRules";
+import { REFRIGERATOR_SHIFT_LIMIT_IN, measuredRefrigeratorCornerShiftLimitIn } from "./designerLayoutRules";
 import type { CatalogFillerCandidate } from "./catalogFiller";
 import {
   BLIND_CORNER_FILLER_WIDTH_IN, COLLISION_EPSILON_IN, appendCollisionFreePlacements, blindCornerDoorSide, blindCornerPullPlacement, isBlindCorner,
-  cabinetCollisionDetail, cabinetPlacementCollisionDetail, cabinetWall, dim, footprintDepth, formatInches, freeSegmentsOnWall, hasCollision,
+  cabinetCollisionDetail, cabinetPlacementCollisionDetail, cabinetWall, dim, footprintDepth, formatEighthInches, formatInches, freeSegmentsOnWall, hasCollision,
   isRangeOrOven, isRefrigerator, isRefrigeratorEndPanel, refrigeratorEndPanelConflictDetail, standardHeight,
   wallLength, wallPlacementAt, wallPlacementAtUnbounded, wallRunAlongAtPoint, wallRunCornerPlacement, wallRunFrame, wallRunOffset,
   wallRunSpan, type DesignCabinet, type PlacedCabinet, type RoomData, type WallOpening, type WallSide,
@@ -116,8 +116,10 @@ const applianceName = (item: PlacedCabinet) => (isRefrigerator(item) ? "refriger
  * Seats the chosen corner box at the exact shared vertex. If a measured range
  * or refrigerator sits inside the corner's footprint, that appliance (and its
  * refrigerator bay) is slid *away from the corner* by the smallest 1/8-inch
- * amount that clears it, never more than three inches. Sink and dishwasher
- * stay where they were measured. Every move is returned for disclosure.
+ * amount that clears it. A range stays within 3 inches. A user-measured
+ * refrigerator may slide up to the measured-fridge corner cap; an auto-placed
+ * refrigerator keeps the 6 inch bay cap. Sink and dishwasher stay where they
+ * were measured. Every move is returned for disclosure.
  */
 export function seatAutoDesignCorner(input: {
   source: DesignCabinet;
@@ -140,6 +142,12 @@ export function seatAutoDesignCorner(input: {
   makeUid: () => string;
   styleId: number | null;
   maxNudgeIn?: number;
+  /**
+   * UIDs of appliances the user placed by a center measurement. A refrigerator
+   * in this set may slide `measuredRefrigeratorCornerShiftLimitIn`. Any other
+   * refrigerator keeps the 6 inch bay cap.
+   */
+  measuredApplianceUids?: readonly string[];
 }): AutoDesignCornerSeatResult {
   const { source, slotLabel, target, room, openings } = input;
   const code = source.masterCode;
@@ -218,12 +226,11 @@ export function seatAutoDesignCorner(input: {
   if (!isBlocked(first.message)) return { ok: false, message: first.message };
 
   // Something real occupies the corner footprint: slide only a blocking range/refrigerator away from it.
-  const applianceCap = (kind: string) => {
-    const kindCap = kind === "refrigerator"
-      ? REFRIGERATOR_SHIFT_LIMIT_IN
-      : kind === "sink"
-        ? SINK_SHIFT_LIMIT_IN
-        : AUTO_DESIGN_MAX_APPLIANCE_NUDGE_IN;
+  const measuredIds = new Set(input.measuredApplianceUids ?? []);
+  const applianceCap = (group: Group) => {
+    const kindCap = group.kind === "refrigerator"
+      ? (measuredIds.has(group.main.uid) ? measuredRefrigeratorCornerShiftLimitIn() : REFRIGERATOR_SHIFT_LIMIT_IN)
+      : AUTO_DESIGN_MAX_APPLIANCE_NUDGE_IN;
     return Math.max(0, Math.min(input.maxNudgeIn ?? kindCap, kindCap));
   };
   const groups = movableGroups(input.working, room, target, input.cornerWallIds).slice(0, 2);
@@ -232,7 +239,7 @@ export function seatAutoDesignCorner(input: {
     for (let step = 0; step * NUDGE_STEP_IN <= limit + COLLISION_EPSILON_IN; step++) steps.push(step * NUDGE_STEP_IN);
     return steps;
   };
-  const groupSteps = groups.map((group) => stepsFor(applianceCap(group.kind)));
+  const groupSteps = groups.map((group) => stepsFor(applianceCap(group)));
   const combos: number[][] = groupSteps.length === 0 ? [] : groupSteps.length === 1
     ? groupSteps[0]!.map((a) => [a])
     : groupSteps[0]!.flatMap((a) => groupSteps[1]!.map((b) => [a, b]));
@@ -279,10 +286,14 @@ export function seatAutoDesignCorner(input: {
         if (trySeat(shifted).ok) { needed = amount; break; }
       }
       const shortBy = needed != null ? `about ${formatInches(needed)}` : "more than the room allows";
+      const cap = applianceCap(group);
+      const who = group.kind === "refrigerator"
+        ? (measuredIds.has(group.main.uid) ? "measured refrigerator" : "auto-placed refrigerator")
+        : `measured ${group.kind}`;
       return {
         ok: false,
         message: `${code} cannot fit at ${slotLabel}: the ${name} is too close to the corner. It would have to slide ${shortBy} away, `
-          + `but a measured ${group.kind} may only move ${formatInches(group.kind === "refrigerator" ? REFRIGERATOR_SHIFT_LIMIT_IN : AUTO_DESIGN_MAX_APPLIANCE_NUDGE_IN)}. Choose a smaller corner cabinet or change that appliance's center measurement.`,
+          + `but a ${who} may only move ${formatEighthInches(cap)}. Choose a smaller corner cabinet or change that appliance's center measurement.`,
       };
     }
     return {
