@@ -117,7 +117,13 @@ export default function ContractorDashboard() {
           ) : (
             <form className="grid gap-3" onSubmit={(event) => {
               event.preventDefault();
-              submit.mutate({ businessName: businessName.trim(), phone: phone.trim(), licenseNumber: licenseNumber.trim() || null });
+              const storeScope = new URLSearchParams(window.location.search).get("store")?.trim();
+              submit.mutate({
+                businessName: businessName.trim(),
+                phone: phone.trim(),
+                licenseNumber: licenseNumber.trim() || null,
+                ...(storeScope ? { storeScope } : {}),
+              });
             }}>
               <p className="text-sm text-muted-foreground">Contractor tools stay closed until your affiliate or CabinetDealz approves this request. Your account remains a customer in the meantime.</p>
               <ContractorApplicationFields
