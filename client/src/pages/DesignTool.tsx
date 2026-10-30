@@ -104,6 +104,8 @@ import { requiresAutoEndPanels, type DoorStyleEndPanelInput } from "@/lib/autoEn
 import { catalogItemToExposedPanelStock, sameExposedPanelWarnings, syncExposedSidePanels, type ExposedPanelStock, type ExposedPanelWarning } from "@/lib/exposedSidePanels";
 import { countertopToastVisible, COUNTERTOP_TOAST_TIMEOUT_MS, useDebouncedValue, stablePricePairKey } from "@/lib/designerPricingStability";
 import { ColorStyleQuickPicker } from "@/components/design/ColorStyleQuickPicker";
+import { StyleSamplePreview } from "@/components/design/StyleSamplePreview";
+import type { SampleStyleImages } from "@/lib/sampleImageQa";
 import { attachedFillerLeftoverOptions, attachedFillerNeedsReview, attachedFillerPlanForCandidate, attachedFillerSizeIssues, type AttachedFillerChoice, type AttachedFillerLeftoverOptions, type AttachedFillerSizeIssue } from "@/lib/cabinetAttachedFillers";
 import { buildAttachedFillerPlacement, supportsAttachedFillerChoice } from "@/lib/cabinetAttachedFillerPlacement";
 import { selectedPeninsulaCabinetSequencePlan, selectedPeninsulaCabinetTotalIn, wizardEligibleBaseCabinets, type PeninsulaWizardCabinet } from "@/lib/peninsulaWizardPlan";
@@ -5115,10 +5117,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     if (distributorId == null) return null;
     return distributorNameById.get(distributorId) ?? null;
   }, [activeStyle, catalogDistributorId, distributorNameById]);
-  const activeDrawerSampleUrl = useMemo(
-    () => preferredDrawerReferenceUrl(activeStyle as { approvedReferenceImageUrl?: string | null; drawerSampleImageUrl?: string | null } | null),
-    [activeStyle],
-  );
   // Auto-suggested Hickory finished-end skins, one per exposed cabinet end.
   // Empty unless the selected finish is Hickory. NOTE: the real skin SKU/price
   // is pending owner confirmation, so these carry pendingSku=true.
@@ -22065,18 +22063,13 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
             {styleId != null && (
               <div data-testid="fresh-room-door-style-preview" className="rounded-xl border border-[#d8c7a1] bg-[#fffaf0] p-3">
                 <p className="text-sm font-semibold text-[#192432]">{activeStyleName || "Selected door"}</p>
-                <div className={`mt-2 grid gap-3 ${activeDrawerSampleUrl ? "grid-cols-2" : "grid-cols-1"}`}>
-                  <div>
-                    <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Door</p>
-                    <DoorSamplePhoto url={paletteFinishSwatch} alt={`${activeStyleName || "Door"} door sample`} className="h-52 w-full rounded-lg border border-border" />
-                  </div>
-                  {activeDrawerSampleUrl && (
-                    <div>
-                      <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Drawer</p>
-                      <DoorSamplePhoto url={activeDrawerSampleUrl} alt={`${activeStyleName || "Door"} drawer sample`} className="h-52 w-full rounded-lg border border-border" />
-                    </div>
-                  )}
-                </div>
+                <StyleSamplePreview
+                  className="mt-2"
+                  style={activeStyle as SampleStyleImages | null}
+                  styleName={activeStyleName}
+                  finish={activeFinish}
+                  showImageCheck={isAdmin}
+                />
               </div>
             )}
           </div>
