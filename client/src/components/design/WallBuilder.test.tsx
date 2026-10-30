@@ -29,6 +29,65 @@ function addWall() {
   fireEvent.click(screen.getByTestId("add-continuous-wall"));
 }
 
+type PreviewPoint = { x: number; y: number };
+
+function previewWallPoints(): PreviewPoint[] {
+  const preview = screen.getByLabelText("Live clockwise continuous wall preview");
+  const stroke = preview.querySelector('path[stroke="#1a2744"]');
+  const d = stroke?.getAttribute("d") ?? "";
+  const points: PreviewPoint[] = [];
+  const pattern = /[ML]\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)/g;
+  let match: RegExpExecArray | null = pattern.exec(d);
+  while (match) {
+    points.push({ x: Number(match[1]), y: Number(match[2]) });
+    match = pattern.exec(d);
+  }
+  return points;
+}
+
+function arrowLine(): { start: PreviewPoint; end: PreviewPoint } {
+  const arrow = screen.getByTestId("wall-builder-clockwise-arrow");
+  return {
+    start: { x: Number(arrow.getAttribute("x1")), y: Number(arrow.getAttribute("y1")) },
+    end: { x: Number(arrow.getAttribute("x2")), y: Number(arrow.getAttribute("y2")) },
+  };
+}
+
+function liesOnOpenSegment(point: PreviewPoint, start: PreviewPoint, end: PreviewPoint): boolean {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const lengthSquared = dx * dx + dy * dy;
+  if (lengthSquared === 0) return false;
+  const t = ((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared;
+  if (t <= 0.02 || t >= 0.98) return false;
+  const projectedX = start.x + t * dx;
+  const projectedY = start.y + t * dy;
+  return Math.hypot(point.x - projectedX, point.y - projectedY) <= 0.2;
+}
+
+function expectArrowOffTheOpenWall() {
+  const points = previewWallPoints();
+  expect(points.length).toBeGreaterThan(1);
+  const last = points[points.length - 1];
+  const previous = points[points.length - 2];
+  const arrow = arrowLine();
+  expect(arrow.start.x).toBeCloseTo(last.x, 2);
+  expect(arrow.start.y).toBeCloseTo(last.y, 2);
+  const arrowLength = Math.hypot(arrow.end.x - arrow.start.x, arrow.end.y - arrow.start.y);
+  const wallLength = Math.hypot(last.x - previous.x, last.y - previous.y);
+  expect(arrowLength).toBeGreaterThan(1);
+  expect(arrowLength).toBeLessThan(wallLength);
+  const midpoint = {
+    x: (arrow.start.x + arrow.end.x) / 2,
+    y: (arrow.start.y + arrow.end.y) / 2,
+  };
+  for (let index = 0; index < points.length - 1; index += 1) {
+    expect(liesOnOpenSegment(arrow.end, points[index], points[index + 1])).toBe(false);
+    expect(liesOnOpenSegment(midpoint, points[index], points[index + 1])).toBe(false);
+  }
+  expect(screen.getByTestId("wall-builder-next-wall-label").textContent).toBe("NEXT WALL");
+}
+
 describe("Continuous Wall Builder", () => {
   it("explains the clockwise sequence and marks the exact next-wall endpoint", () => {
     render(<WallBuilder wallHeightIn={96} onApply={() => undefined} />);
@@ -40,8 +99,45 @@ describe("Continuous Wall Builder", () => {
     addWall();
 
     expect(screen.getByLabelText("Live clockwise continuous wall preview")).toBeTruthy();
-    expect(screen.getByTestId("wall-builder-clockwise-arrow")).toBeTruthy();
+    expectArrowOffTheOpenWall();
+    const rightTurn = arrowLine();
+    expect(rightTurn.end.x).toBeCloseTo(rightTurn.start.x, 2);
+    expect(rightTurn.end.y).toBeGreaterThan(rightTurn.start.y);
     expect(screen.getByText(/Clockwise sequence: this wall begins at the gold arrow/i)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Straight" }));
+    expectArrowOffTheOpenWall();
+    const straight = arrowLine();
+    expect(straight.end.x).toBeGreaterThan(straight.start.x);
+    expect(straight.end.y).toBeCloseTo(straight.start.y, 2);
+  });
+
+  it("drops the direction arrow after a measured room closes and keeps it off the open wall", () => {
+    render(<WallBuilder wallHeightIn={96} onApply={() => undefined} />);
+    openBuilder();
+
+    setLength("145");
+    addWall();
+    fireEvent.click(screen.getByRole("button", { name: /90° right/i }));
+    addWall();
+    fireEvent.click(screen.getByRole("button", { name: /90° right/i }));
+    addWall();
+
+    expect(screen.queryByText("Room closed")).toBeNull();
+    expectArrowOffTheOpenWall();
+    const openArrow = arrowLine();
+    const openPoints = previewWallPoints();
+    const openEnd = openPoints[openPoints.length - 1];
+    expect(openArrow.start.x).toBeCloseTo(openEnd.x, 2);
+    expect(openArrow.start.y).toBeCloseTo(openEnd.y, 2);
+
+    fireEvent.click(screen.getByRole("button", { name: /90° right/i }));
+    addWall();
+
+    expect(screen.getByText("Room closed")).toBeTruthy();
+    expect(screen.queryByTestId("wall-builder-clockwise-arrow")).toBeNull();
+    expect(screen.queryByTestId("wall-builder-next-wall-label")).toBeNull();
+    expect(screen.queryByText("NEXT WALL")).toBeNull();
   });
 
   it("adds measured walls continuously with an exact 45-degree choice", () => {
