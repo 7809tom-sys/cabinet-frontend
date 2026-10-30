@@ -25,6 +25,8 @@ import { AddContractorPanel } from "@/components/affiliate/AddContractorPanel";
 import { InstallationEstimatesPanel } from "@/components/affiliate/InstallationEstimatesPanel";
 import { SampleOrderDesk } from "@/components/samples/SampleOrderDesk";
 import { PortalSignInChooser } from "@/components/auth/PortalSignInChooser";
+import { readReferralCode } from "@/hooks/useReferral";
+import { contractorSignInHref, portalSignInHref } from "@/lib/portalSignIn";
 import { OrderTrackingPanel } from "@/components/orders/OrderTrackingPanel";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -70,8 +72,19 @@ const MEMBERSHIP_BENEFIT_ICONS = [PencilRuler, Globe, Users];
 
 // ─── Affiliate Landing Page (shown to non-members) ──────────────────────────
 function AffiliateLanding() {
+  const pathname = typeof window === "undefined" ? "/affiliate" : window.location.pathname;
+  const search = typeof window === "undefined" ? "" : window.location.search;
+  const storedRef = readReferralCode();
+  const contractorHref = contractorSignInHref({ pathname, search, storedRef });
+  const affiliateHref = portalSignInHref({ portal: "affiliate", pathname, search, storedRef });
   return (
     <div>
+      <nav aria-label="Portal sign in" className="border-b border-border bg-background">
+        <div className="container flex flex-wrap items-center justify-end gap-x-6 gap-y-2 py-3">
+          <Link href={affiliateHref} className="text-sm font-semibold text-[var(--color-navy)] underline underline-offset-4">Affiliate sign in</Link>
+          <Link href={contractorHref} className="text-sm font-semibold text-[var(--color-navy)] underline underline-offset-4">Contractor sign in</Link>
+        </div>
+      </nav>
       {/* Hero */}
       <section className="bg-[var(--color-navy)] text-white">
         <div className="container py-16 md:py-24">
@@ -298,6 +311,9 @@ function AffiliateLanding() {
             </Link>
             <div className="w-full max-w-xl text-left">
               <PortalSignInChooser />
+              <p className="text-center">
+                <Link href={contractorHref} className="text-sm font-semibold text-[var(--color-navy)] underline underline-offset-4">Contractor sign in</Link>
+              </p>
             </div>
           </div>
           <p className="text-xs text-muted-foreground mt-6">
