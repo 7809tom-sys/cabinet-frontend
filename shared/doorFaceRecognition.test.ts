@@ -8,6 +8,7 @@ import {
   TORINO_REFERENCE,
   USCD_REVEAL_FALLBACK_FRACTION,
   classifyFaceSource,
+  combinedSwatchTextureWindow,
   detectHorizontalReveal,
   isDoorStyleVerified,
   isFramelessDoorStyle,
@@ -95,16 +96,25 @@ describe("cabinet faces", () => {
     assert.equal(wall.grainRotation, 0);
   });
 
-  it("does not paint a combined swatch on a wall or as a full door", () => {
+  it("uses the combined swatch as a door on a wall and as a drawer only on a base", () => {
     const combined = { styleCode: "TGW", doorSampleImageUrl: "https://cdn.example/swatch.jpg" };
     assert.equal(classifyFaceSource(combined), "combined");
     const wall = resolveCabinetFaceImages(combined, "wall");
     const base = resolveCabinetFaceImages(combined, "base");
-    assert.equal(wall.doorUrl, null);
+    assert.equal(wall.doorUrl, combined.doorSampleImageUrl);
+    assert.equal(wall.drawerUrl, null);
     assert.equal(wall.drawerTextureApplied, false);
     assert.equal(wall.sections, 1);
-    assert.equal(base.doorUrl, null);
-    assert.equal(base.drawerUrl, null);
+    assert.equal(base.doorUrl, combined.doorSampleImageUrl);
+    assert.equal(base.drawerUrl, combined.doorSampleImageUrl);
+    assert.equal(base.sections, 2);
+    assert.equal(base.drawerTextureApplied, true);
+    const door = combinedSwatchTextureWindow("door");
+    const drawer = combinedSwatchTextureWindow("drawer");
+    assert.ok(door.offsetY > 0);
+    assert.ok(door.offsetY + door.repeatY <= drawer.offsetY);
+    assert.ok(drawer.offsetY + drawer.repeatY <= 1);
+    assert.ok(door.repeatY > drawer.repeatY);
   });
 
   it("falls a blank drawer back to the door sample for an ordinary style", () => {

@@ -196,6 +196,9 @@ function usesSharedDoorGrain(mesh: THREE.Mesh, source: THREE.Texture): boolean {
 export function applyThreeDCabinetPieceGrain(root: THREE.Object3D, options: CabinetPieceGrainOptions): void {
   const source = options.sourceTexture;
   if (!source) return;
+  // A combined swatch is already cropped to one face. A second UV window would
+  // zoom into a knot and can pull the drawer/door seam back into view.
+  if (source.userData?.combinedFaceWindow) return;
   const curated = options.curated === true
     || source.userData?.curatedCabinetFinish === true
     || /rustic_hickory_vertical_grain/i.test(options.sampleUrl ?? "");

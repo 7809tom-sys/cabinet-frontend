@@ -43,7 +43,7 @@ import { formatAutoDesignWiggleBadge, type AutoDesignWiggleMove } from "@/lib/de
 import { useAuth } from "@/_core/hooks/useAuth";
 import { searchCatalogItems } from "@shared/catalogCodeSearch";
 import { AEF_PRINTED_GEOMETRY_MARKER } from "@shared/aefFramelessGeometry";
-import type { FaceSourceKind } from "@shared/doorFaceRecognition";
+import { combinedSwatchTextureWindow, type FaceSourceKind, type FaceTextureWindow } from "@shared/doorFaceRecognition";
 import { RAISED_PANEL_BEVEL_DEPTH_IN, RAISED_PANEL_BEVEL_WIDTH_IN, resolveDoorProfile } from "@shared/doorStyleAppearance";
 import { attachSlopedRaisedPanel, effectiveRaisedBevelDepthIn, threeDFaceUsesRaisedPanelBevel } from "./raisedPanelBevel";
 import { matchCabinetColorName } from "@shared/cabinetColorNames";
@@ -2565,6 +2565,12 @@ export function threeDStructuralFinish(color: string, hasProvidedDoorSample: boo
  */
 export function threeDStructuralSampleTexture(texture: THREE.Texture) {
   const structural = texture.clone();
+  if (texture.userData?.combinedFaceWindow) {
+    structural.wrapS = THREE.ClampToEdgeWrapping;
+    structural.wrapT = THREE.ClampToEdgeWrapping;
+    structural.needsUpdate = true;
+    return structural;
+  }
   const curatedCabinetGrain = texture.userData?.curatedCabinetFinish === true;
   structural.wrapS = curatedCabinetGrain ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
   structural.wrapT = curatedCabinetGrain ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
@@ -2778,6 +2784,40 @@ export function threeDVisibleMaterialMode(doorSampleUrl: string | null | undefin
  */
 export function threeDUsesDoorSampleTexture(doorSampleUrl?: string | null) {
   return Boolean(doorSampleUrl);
+}
+
+/** Center crop used for a framed door photo. A combined swatch uses a vertical band instead. */
+export const THREE_D_PHOTO_SAMPLE_FRAME: FaceTextureWindow = {
+  offsetX: 0.29,
+  offsetY: 0.29,
+  repeatX: 0.42,
+  repeatY: 0.42,
+};
+
+/**
+ * Door faces of a combined swatch sample the door band. Drawer faces sample the
+ * drawer band. Split and legacy photos keep the center crop.
+ */
+export function threeDSampleTextureFrame(
+  faceSourceKind: FaceSourceKind | null | undefined,
+  face: "door" | "drawer",
+): FaceTextureWindow {
+  if (faceSourceKind === "combined") return combinedSwatchTextureWindow(face);
+  return THREE_D_PHOTO_SAMPLE_FRAME;
+}
+
+/** A combined swatch still needs its own drawer crop even when both URLs match. */
+export function threeDUsesSeparateDrawerTexture(input: {
+  isWall: boolean;
+  doorSampleUrl?: string | null;
+  drawerSampleUrl?: string | null;
+  faceSourceKind?: FaceSourceKind | null;
+}) {
+  if (input.isWall) return false;
+  const drawer = input.drawerSampleUrl?.trim() ?? "";
+  if (!drawer) return false;
+  if (input.faceSourceKind === "combined") return true;
+  return drawer !== (input.doorSampleUrl?.trim() ?? "");
 }
 
 /** Exact supplied samples must not be altered by scene lighting or generic tinting. */
@@ -4107,7 +4147,6 @@ export function addCabinet(
   const placement = (sku.placementType ?? "base").toLowerCase();
   const isKneeDrawer = isKneeDrawerItem(sku);
   const isWall = placement === "wall";
-  if (surfaceTextures?.faceSourceKind === "combined") doorSampleUrl = null;
   const isTall = placement === "tall";
   const isBaseCabinet = placement === "base";
   const isPlacedAppliance = placement === "appliance";
@@ -4905,19 +4944,24 @@ export function addCabinet(
   if (doorTexture) onDoorTextureState?.("loading");
 	  if (doorTexture) {
 	    doorTexture.colorSpace = THREE.SRGBColorSpace;
-	    doorTexture.wrapS = usesCuratedCabinetGrain ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
-	    doorTexture.wrapT = usesCuratedCabinetGrain ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
-	    // A door-sample photo often includes rails, stiles, and studio background.
-	    // The renderer already builds the saved door profile physically, so use only
-	    // the uninterrupted center finish grain as its material map.
-	    doorTexture.repeat.set(usesCuratedCabinetGrain ? 1 : 0.42, usesCuratedCabinetGrain ? 1 : 0.42);
+	    const doorFrame = threeDSampleTextureFrame(surfaceTextures?.faceSourceKind, "door");
 	    const grainTransform = usesCuratedCabinetGrain
 	      ? threeDCabinetGrainTransform(sku.placementUid, doorSampleUrl)
 	      : null;
-	    doorTexture.offset.set(grainTransform?.offsetX ?? 0.29, grainTransform?.offsetY ?? 0.29);
+	    doorTexture.wrapS = usesCuratedCabinetGrain ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
+	    doorTexture.wrapT = usesCuratedCabinetGrain ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
+	    // A framed door photo often includes rails and studio background, so the
+	    // center crop is the finish. A combined door+drawer swatch instead uses
+	    // only the lower door band on door faces.
+	    doorTexture.repeat.set(
+	      usesCuratedCabinetGrain ? 1 : doorFrame.repeatX,
+	      usesCuratedCabinetGrain ? 1 : doorFrame.repeatY,
+	    );
+	    doorTexture.offset.set(grainTransform?.offsetX ?? doorFrame.offsetX, grainTransform?.offsetY ?? doorFrame.offsetY);
 	    doorTexture.userData = {
 	      ...doorTexture.userData,
 	      curatedCabinetFinish: usesCuratedCabinetGrain,
+	      ...(surfaceTextures?.faceSourceKind === "combined" ? { combinedFaceWindow: doorFrame } : {}),
 	      ...(grainTransform ? { cabinetGrainTransform: grainTransform, grainPlacementUid: sku.placementUid ?? "legacy-cabinet" } : {}),
 	      materialOnlyNoDoorGeometry: true,
 	    };
@@ -4934,18 +4978,35 @@ export function addCabinet(
   // Door faces use the door sample. Drawer meshes (cabinetDrawerFront) get the
   // drawer-front sample below. A wall cabinet never receives that drawer texture.
   const drawerSampleUrl = !isWall ? surfaceTextures?.drawerSampleUrl?.trim() || null : null;
-  const useDrawerTexture = Boolean(drawerSampleUrl) && drawerSampleUrl !== doorSampleUrl && surfaceTextures?.faceSourceKind !== "combined";
+  const useDrawerTexture = threeDUsesSeparateDrawerTexture({
+    isWall,
+    doorSampleUrl,
+    drawerSampleUrl,
+    faceSourceKind: surfaceTextures?.faceSourceKind,
+  });
   const usesCuratedDrawerGrain = /rustic_hickory_vertical_grain/i.test(drawerSampleUrl ?? "");
   const drawerTexture = useDrawerTexture && drawerSampleUrl
     ? new THREE.TextureLoader().load(drawerSampleUrl)
     : null;
   if (drawerTexture) {
+    const drawerFrame = threeDSampleTextureFrame(surfaceTextures?.faceSourceKind, "drawer");
     drawerTexture.colorSpace = THREE.SRGBColorSpace;
     drawerTexture.wrapS = usesCuratedDrawerGrain ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
     drawerTexture.wrapT = usesCuratedDrawerGrain ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
-    drawerTexture.repeat.set(usesCuratedDrawerGrain ? 1 : 0.42, usesCuratedDrawerGrain ? 1 : 0.42);
-    drawerTexture.offset.set(usesCuratedDrawerGrain ? 0 : 0.29, usesCuratedDrawerGrain ? 0 : 0.29);
-    drawerTexture.userData = { ...drawerTexture.userData, drawerFrontSample: true, grainRotation: 0 };
+    drawerTexture.repeat.set(
+      usesCuratedDrawerGrain ? 1 : drawerFrame.repeatX,
+      usesCuratedDrawerGrain ? 1 : drawerFrame.repeatY,
+    );
+    drawerTexture.offset.set(
+      usesCuratedDrawerGrain ? 0 : drawerFrame.offsetX,
+      usesCuratedDrawerGrain ? 0 : drawerFrame.offsetY,
+    );
+    drawerTexture.userData = {
+      ...drawerTexture.userData,
+      drawerFrontSample: true,
+      grainRotation: 0,
+      ...(surfaceTextures?.faceSourceKind === "combined" ? { combinedFaceWindow: drawerFrame } : {}),
+    };
   }
   const applyDrawerFrontTextures = (root: THREE.Object3D) => {
     if (!drawerTexture) return;
@@ -11147,7 +11208,7 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
   // a style has no explicit color field. It is applied to actual face panels,
   // while physical rails, stiles, carcasses, and skins remain constructed meshes.
   const activeDoorTexture = resolvedThreeDDoorSampleUrl("catalog", catalogDoorSampleUrl, renderExistingDesign);
-  const activeDrawerTexture = catalogFaceSourceKind === "combined" ? null : catalogDrawerSampleUrl?.trim() || null;
+  const activeDrawerTexture = catalogDrawerSampleUrl?.trim() || null;
   const activeFaceSourceKind = catalogFaceSourceKind;
   const visibleMaterialMode = threeDVisibleMaterialMode(activeDoorTexture, doorTextureState);
   const photoRenderDoorReference = threeDPhotoRenderDoorReferenceStatus(activeDoorTexture, doorTextureState);

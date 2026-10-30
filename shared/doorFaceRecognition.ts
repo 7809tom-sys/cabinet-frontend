@@ -17,6 +17,40 @@ export const USCD_DOOR_BELOW_REVEAL_IN = 22.5;
 export const USCD_REVEAL_FALLBACK_FRACTION =
   USCD_DRAWER_FRONT_IN / (USCD_DRAWER_FRONT_IN + USCD_DOOR_BELOW_REVEAL_IN);
 
+/** Keep the dark reveal out of both crops when the only file is the combined swatch. */
+export const USCD_COMBINED_REVEAL_GAP = 0.03;
+/** Sample captions and page margins sit in the outer band of a catalog swatch. */
+export const USCD_COMBINED_OUTER_MARGIN = 0.1;
+
+export type FaceTextureWindow = {
+  offsetX: number;
+  offsetY: number;
+  repeatX: number;
+  repeatY: number;
+};
+
+/**
+ * UV window for one face of a combined door+drawer swatch.
+ * Image top is the drawer (about 7.5 in). Three.js flipY puts that at v = 1.
+ * Door faces use the lower band. Drawer faces use the upper band. The bands do not overlap.
+ */
+export function combinedSwatchTextureWindow(face: "door" | "drawer"): FaceTextureWindow {
+  const drawer = USCD_REVEAL_FALLBACK_FRACTION;
+  const gap = USCD_COMBINED_REVEAL_GAP;
+  const margin = USCD_COMBINED_OUTER_MARGIN;
+  if (face === "drawer") {
+    const offsetY = 1 - drawer + gap;
+    const repeatY = Math.max(0.08, drawer - gap - margin);
+    return { offsetX: 0, offsetY, repeatX: 1, repeatY };
+  }
+  return {
+    offsetX: 0,
+    offsetY: margin,
+    repeatX: 1,
+    repeatY: Math.max(0.2, 1 - drawer - gap - margin),
+  };
+}
+
 export const USCD_SOURCE_MANUAL = "USCD Spec Manual V8.2";
 
 /** New door styles stay unverified until an admin marks them. Missing column = verified. */
@@ -224,13 +258,26 @@ export function resolveCabinetFaceImages(
       grainRotation: 0,
     };
   }
-  if (sourceKind === "combined" || sourceKind === "none") {
+  if (sourceKind === "none") {
     return {
       sourceKind,
       doorUrl: null,
       drawerUrl: null,
       sections: 1,
       drawerTextureApplied: false,
+      grainRotation: 0,
+    };
+  }
+  // One combined swatch is the only file. Door faces still use it, cropped to
+  // the door band in the 3D renderer. Drawer faces use the same file, cropped
+  // to the drawer band. A real door.png / drawer-front.png pair stays "split".
+  if (sourceKind === "combined") {
+    return {
+      sourceKind,
+      doorUrl: door,
+      drawerUrl: wall ? null : door,
+      sections: wall ? 1 : 2,
+      drawerTextureApplied: !wall && Boolean(door),
       grainRotation: 0,
     };
   }

@@ -14259,15 +14259,16 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     [placed, styleId, doorStyles],
   );
   const threeDCabinetDoorSamples = useMemo(
-    () => Object.fromEntries(threeDCabinetFaces.flatMap(([uid, plan]) => {
-      if (plan.sourceKind === "combined") return [[uid, ""]];
-      return plan.doorUrl ? [[uid, plan.doorUrl]] : [];
-    })),
+    () => Object.fromEntries(threeDCabinetFaces.flatMap(([uid, plan]) => (
+      plan.doorUrl ? [[uid, plan.doorUrl]] : []
+    ))),
     [threeDCabinetFaces],
   );
   const threeDCabinetDrawerSamples = useMemo(
     () => Object.fromEntries(threeDCabinetFaces.flatMap(([uid, plan]) => (
-      plan.sourceKind === "split" && plan.drawerUrl ? [[uid, plan.drawerUrl]] : []
+      (plan.sourceKind === "split" || plan.sourceKind === "combined") && plan.drawerUrl
+        ? [[uid, plan.drawerUrl]]
+        : []
     ))),
     [threeDCabinetFaces],
   );
