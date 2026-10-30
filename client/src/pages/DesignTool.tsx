@@ -235,12 +235,12 @@ import { evaluateAutoDesignCornerFit, type AutoDesignCornerFit } from "@/lib/cor
 import { useKitchenRuleParameterSync } from "@/lib/kitchenRulesApi";
 import { rangeBridgeSpec, reviewAfterShift, separateRangeAndRefrigerator } from "@/lib/kitchenAdjacency";
 import { bakesALot, cooksALot, normalizeKitchenUsage } from "@/lib/kitchenUsage";
-import { AUTO_DESIGN_REFRIGERATOR_WALL_END_SHIFT_IN, buildMandatoryAutoDesignRefrigeratorBay } from "@/lib/autoDesignRefrigeratorBay";
+import { acceptMeasuredCornerRefrigeratorBay, buildMandatoryAutoDesignRefrigeratorBay } from "@/lib/autoDesignRefrigeratorBay";
 import { buildAutoDesignWallCabinets, resolveWallHeightClass, type AutoDesignUpperCorner } from "@/lib/autoDesignWallCabinets";
 import { isWallWineRackCabinet, withWallWineRacks } from "@shared/wallWineRack";
 import { seatAutoDesignCornerFromCatalog } from "@/lib/autoDesignCornerPlacement";
 import { type AutoDesignApplianceMove } from "@/lib/autoDesignCornerSeating";
-import { validatePlacedCornerRefrigerator } from "@/lib/cornerRefrigeratorPlacement";
+import { cornerOccupantRefrigeratorUids, refrigeratorOccupyingCorner, validatePlacedCornerRefrigerator } from "@/lib/cornerRefrigeratorPlacement";
 import { validatePlacedCornerRange, CORNER_RANGE_HANDLE_FILLER_IN } from "@/lib/cornerRangePlacement";
 import { buildGlassCornerCatalogChoices } from "@/lib/glassCornerCatalog";
 import {
@@ -3998,24 +3998,30 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       });
       if (!refrigeratorBay.ok) return fail(refrigeratorBay.message);
       const fittedBay = fitExplicitRefrigeratorOptionPlacements(working, refrigeratorBay.additions, refrigerator.uid, room);
-      // A quarter-inch slide only brings the 3/4 inch end panels flush with the
-      // wall. The measured center is kept for anything larger.
-      if (Math.abs(fittedBay.shiftIn) > AUTO_DESIGN_REFRIGERATOR_WALL_END_SHIFT_IN + COLLISION_EPSILON_IN) {
+      // A quarter-inch slide only brings a 3/4 inch panel flush with the wall.
+      // A refrigerator measured into the corner needs about 1¼ inches for the
+      // corner-side panel. That panel is omitted and the refrigerator stays;
+      // any larger slide that is not this corner case is still refused.
+      const acceptedBay = acceptMeasuredCornerRefrigeratorBay({
+        refrigerator,
+        room,
+        additions: refrigeratorBay.additions,
+        fitted: fittedBay,
+        reservation: refrigeratorBay.reservation,
+      });
+      if (!acceptedBay) {
         return fail("The measured refrigerator bay does not have room for its two panels and matching cabinet above. Adjust the refrigerator center measurement; Auto-Design will not move it.");
       }
-      const committedBay = appendRefrigeratorEnclosurePlacements(fittedBay.existing, fittedBay.additions, refrigerator.uid, room);
+      const committedBay = appendRefrigeratorEnclosurePlacements(acceptedBay.existing, acceptedBay.additions, refrigerator.uid, room);
       if (committedBay.rejected.length > 0) {
         return fail("The measured refrigerator bay overlaps an anchor, opening, or wall end. Adjust the refrigerator center measurement; Auto-Design will not add a filler or move it.");
       }
       working = committedBay.placed;
-      refrigeratorReservation = {
-        ...refrigeratorBay.reservation,
-        start: refrigeratorBay.reservation.start + fittedBay.shiftIn,
-        end: refrigeratorBay.reservation.end + fittedBay.shiftIn,
-      };
+      refrigeratorReservation = acceptedBay.reservation;
       for (const note of refrigeratorBay.notes) toast.info(note, { duration: 12000 });
-      if (Math.abs(fittedBay.shiftIn) > COLLISION_EPSILON_IN) {
-        toast.info(`Moved the refrigerator ${formatEighthInches(Math.abs(fittedBay.shiftIn))} so its end panels stay on the wall.`, { duration: 12000 });
+      if (acceptedBay.note) toast.info(acceptedBay.note, { duration: 12000 });
+      if (Math.abs(acceptedBay.shiftIn) > COLLISION_EPSILON_IN) {
+        toast.info(`Moved the refrigerator ${formatEighthInches(Math.abs(acceptedBay.shiftIn))} so its end panels stay on the wall.`, { duration: 12000 });
       }
     }
     const sinkBase = anchorsByKind.get("sink");
@@ -4166,6 +4172,17 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       }
       const target = autoDesignCornerSlotPoint(slot, room, stage.input.originCorner, stage.input.runDirection);
       if (!target) return abandon(`${slot.label} does not resolve to a real shared wall vertex. No remaining cabinets were added.`);
+      const cornerRefrigerator = refrigeratorOccupyingCorner({
+        placed: working,
+        room,
+        corner: target,
+        wallIds: [firstWall.engineWallId, secondWall.engineWallId],
+      });
+      if (cornerRefrigerator) {
+        const note = `${slot.label}: the refrigerator stays in this corner, so no blind corner cabinet was added and the refrigerator was not moved.`;
+        setAutoDesignLayoutNotes((current) => current.includes(note) ? current : [...current, note]);
+        continue;
+      }
       const seated = seatAutoDesignCornerFromCatalog({
         slot,
         options: stage.cornerOptions,
@@ -4218,7 +4235,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       openings: stageOpenings,
       catalog: stage.straightBaseCatalog,
       origins: stage.anchorOrigins,
-      lockedUids: [],
+      lockedUids: cornerOccupantRefrigeratorUids(working, room),
     });
     working = wiggle.placed;
     const separated = separateRangeAndRefrigerator({
@@ -10323,9 +10340,19 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         .filter((item) => !existingOptionUids.has(item.uid) && item.uid !== refrigeratorCabinetToReplace?.uid)
         .map((item) => item.uid === fridge.uid ? configuredFridge : item);
 	      const fittedOptions = fitExplicitRefrigeratorOptionPlacements(configuredPlaced, toPlace, fridge.uid, room);
+	      const cornerBay = acceptMeasuredCornerRefrigeratorBay({
+	        refrigerator: configuredFridge,
+	        room,
+	        additions: toPlace,
+	        fitted: fittedOptions,
+	        reservation: { wall: cabinetWall(configuredFridge, room), start: 0, end: 0 },
+	      });
+	      const bayExisting = cornerBay?.existing ?? fittedOptions.existing;
+	      const bayAdditions = cornerBay?.additions ?? fittedOptions.additions;
+	      const appliedShift = cornerBay?.shiftIn ?? fittedOptions.shiftIn;
 	      const previewResult = appendRefrigeratorEnclosurePlacements(
-	        fittedOptions.existing,
-	        fittedOptions.additions,
+	        bayExisting,
+	        bayAdditions,
 	        fridge.uid,
 	        room,
 	      );
@@ -10361,9 +10388,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       const committedPreview = previewResult.placed;
       placedRef.current = committedPreview;
       setPlaced(() => committedPreview);
-	      if (Math.abs(fittedOptions.shiftIn) > COLLISION_EPSILON_IN) {
+	      if (cornerBay?.note) {
+	        toast.info(cornerBay.note, { duration: 12000 });
+	      } else if (Math.abs(appliedShift) > COLLISION_EPSILON_IN) {
 	        toast.info(
-	          `Refrigerator and selected parts moved ${formatEighthInches(Math.abs(fittedOptions.shiftIn))} along the wall to fit the selected panels. Existing cabinets stayed in place.`,
+	          `Refrigerator and selected parts moved ${formatEighthInches(Math.abs(appliedShift))} along the wall to fit the selected panels. Existing cabinets stayed in place.`,
 	        );
 	      }
       if (omittedCapFillerCodes.length > 0) {
