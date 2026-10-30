@@ -338,6 +338,11 @@ export type ThreeDDoorProfile = {
   drawerFrontType?: "five-piece-raised" | "five-piece-flat" | "slab" | null;
   grainDirection?: "vertical-stiles-horizontal-rails" | "vertical" | "horizontal" | "none" | null;
   finishSheen?: "satin" | "matte" | "gloss" | null;
+  /**
+   * AltaEuro slab whose catalog color is a style code, not a hex. Sides, tops,
+   * and end panels use the door-face sample and this profile's sheen.
+   */
+  exposedSidesMatchDoorFace?: boolean;
 };
 
 export function resolvedThreeDVanityFaceLayout(layoutSpec: string | null | undefined): VanityFaceLayout | null {
@@ -2608,9 +2613,45 @@ export function applyThreeDStructuralFinishMaterials(
       selectedFinishStructuralSurface: true,
       usesDoorSample: false,
       usesDoorImage: false,
+      framelessDoorFaceSide: false,
     };
   }
   return { color: finishColor, texture: null as THREE.Texture | null };
+}
+
+/**
+ * AltaEuro sides and end panels that have no hex finish. The door sample is the
+ * color (LSA green). Sheen comes from the door profile, which is the catalog
+ * column or the AltaEuro spec (Luxe is gloss). Framed lines do not call this.
+ */
+export function applyThreeDDoorFaceStructuralFinish(
+  materials: THREE.MeshStandardMaterial[],
+  texture: THREE.Texture,
+  finishSheen: ThreeDDoorProfile["finishSheen"] | undefined,
+) {
+  const surface = threeDDoorFinishSurfaceProfile(finishSheen, true);
+  for (const material of materials) {
+    material.color.set("#ffffff");
+    material.map = texture;
+    material.roughness = surface.roughness;
+    material.metalness = surface.metalness;
+    material.envMapIntensity = surface.envMapIntensity;
+    if ("clearcoat" in material) {
+      const physical = material as THREE.MeshPhysicalMaterial;
+      physical.clearcoat = surface.clearcoat;
+      physical.clearcoatRoughness = surface.clearcoatRoughness;
+    }
+    material.needsUpdate = true;
+    material.userData = {
+      ...material.userData,
+      selectedFinishStructuralSurface: true,
+      framelessDoorFaceSide: true,
+      usesDoorSample: true,
+      usesDoorImage: true,
+      finishSheen: finishSheen ?? "satin",
+    };
+  }
+  return { color: "#ffffff", texture, finishSheen: finishSheen ?? "satin" };
 }
 
 /** Decorative end panels are opt-in; normal cabinet ends are plain finished skins. */
@@ -5049,8 +5090,19 @@ export function addCabinet(
   const structuralFinish = threeDStructuralFinish(color, Boolean(doorTexture));
   let plainStructuralColor = structuralFinish.color;
   let structuralSampleTexture: THREE.Texture | null = null;
-  const applyStructuralFinish = (finishColor: string, sampleTexture: THREE.Texture | null = null) => {
-    const applied = applyThreeDStructuralFinishMaterials(structuralFinishMaterials, finishColor, sampleTexture);
+  const exposedSidesMatchDoorFace = doorProfile?.exposedSidesMatchDoorFace === true && Boolean(doorTexture);
+  const applyStructuralFinish = (finishColor: string, _sampleTexture: THREE.Texture | null = null) => {
+    if (exposedSidesMatchDoorFace && doorTexture) {
+      const applied = applyThreeDDoorFaceStructuralFinish(
+        [...structuralFinishMaterials, ...flatExposedFinishMaterials],
+        doorTexture,
+        doorProfile?.finishSheen,
+      );
+      plainStructuralColor = applied.color;
+      structuralSampleTexture = applied.texture;
+      return;
+    }
+    const applied = applyThreeDStructuralFinishMaterials(structuralFinishMaterials, finishColor, null);
     for (const material of flatExposedFinishMaterials) {
       material.color.set(applied.texture ? "#ffffff" : finishColor);
       material.map = applied.texture;
@@ -5060,6 +5112,7 @@ export function addCabinet(
         selectedFinishStructuralSurface: true,
         usesDoorSample: Boolean(applied.texture),
         usesDoorImage: Boolean(applied.texture),
+        framelessDoorFaceSide: false,
       };
     }
     plainStructuralColor = applied.color;
@@ -5256,6 +5309,10 @@ export function addCabinet(
     usesDoorImage: false,
   };
   structuralFinishMaterials.push(decorativeEndSkin);
+  // End skins, the face frame, and the carcass are registered above. Paint them
+  // again so an AltaEuro door-face side is on every exposed surface, not only
+  // the box that existed at the first pass.
+  applyStructuralFinish(color, null);
   for (const side of threeDDecorativeEndSides(sku.decorativeEnd)) {
     const endPanel = new THREE.Mesh(
       new THREE.BoxGeometry(0.042, Math.max(0.12, bodyHeight - 0.05), Math.max(0.12, bodyDepth - 0.05)),

@@ -425,6 +425,32 @@ describe("frameless and Hickory auto panels", () => {
     expect(panels(result.placed).some((item) => /dw-exposed|beside-window|end of run against wall|open side/.test(item.fieldModificationNote ?? ""))).toBe(false);
   });
 
+  it("places LSA panels from the spec sheets and does not panel framed Madison", () => {
+    const lsa = {
+      styleCode: "LSA",
+      ourName: "Luxe Classic LSA",
+      color: "LSA",
+      doorStyle: "Slab",
+      finish: "Luxe Classic",
+      boxConstruction: "18mm plywood composite cabinet box; standard altaeuro frameless box",
+      distributorName: "Frameless",
+    };
+    const open = [place({ uid: "only", masterCode: "B24", placement: "base", offset: 40, width: 24 })];
+    const placed = panels(qualified(open, { style: lsa }).placed);
+    expect(placed.map((item) => item.autoPlacedReason).sort()).toEqual(["open-end-of-run", "open-end-of-run"]);
+    expect(placed.every((item) => item.masterCode === "BEP2535" && item.width === 0.75)).toBe(true);
+    const madison = {
+      styleCode: "SC",
+      ourName: "Shaker Cinder",
+      doorStyle: "Shaker",
+      color: "#5A5A5A",
+      boxConstruction: "1/2-inch plywood box with UV-coated matching exterior",
+      distributorName: "Madison",
+      overlayType: "Full overlay",
+    };
+    expect(panels(qualified(open, { style: madison }).placed)).toHaveLength(0);
+  });
+
   it("panels an island back and the island's open ends", () => {
     const island = place({ uid: "isle", masterCode: "B36", placement: "base", offset: 40, width: 36, islandFace: "front" });
     island.y = 48;

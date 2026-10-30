@@ -1,3 +1,5 @@
+import { isAefFramelessStyleCode } from "./aefFramelessSpecs";
+
 /**
  * Door face vs drawer front.
  *
@@ -130,9 +132,16 @@ export function isUscdStyleCode(styleCode: string | null | undefined): boolean {
   return USCD_STYLE_CODE.test((styleCode ?? "").trim());
 }
 
+const NAMED_AEF_STYLE_CODE = /\b(?:TWP|TGW|TDW|PGW|(?:LS|ZS|ZC|SS|SC)[A-Z])\b/;
+
 export function isFramelessDoorStyle(style: DoorStyleFaceInput | null | undefined): boolean {
   if (!style) return false;
-  if (isUscdStyleCode(style.styleCode)) return true;
+  if (isAefFramelessStyleCode(style.styleCode) || isUscdStyleCode(style.styleCode)) return true;
+  // A saved row can keep the code in the display name after the style-code
+  // column is blank (Luxe Classic LSA on a framed distributor name).
+  const named = [style.ourName, style.aliasName].filter((part) => part && part.trim()).join(" ").toUpperCase();
+  const namedCode = named.match(NAMED_AEF_STYLE_CODE)?.[0] ?? null;
+  if (isAefFramelessStyleCode(namedCode)) return true;
   const text = [style.distributorName, style.supplierBrandName, style.supplierName, style.boxConstruction, style.overlayType]
     .filter((part) => part && part.trim())
     .join(" ");
