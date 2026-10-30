@@ -18,6 +18,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { APPLIANCES, BLIND_CORNER_FILLER_WIDTH_IN, COUNTERTOP_DEPTH_IN, FURNITURE_CATALOG, STD, applianceAppearanceImage, bearsCountertop, isBaseHeightAppliance, blindCornerRearCountertopExtensionIn, blindPullRange, cabinetWall, cabinetWallDragPreview, cornerLegRatioForPlaced, cornerRotationForPlaced, countertopRunFaceNormal, countertopSurfacePlanPolygon, countertopSurfaces, crownBlockingCabinets, crownEligibleCabinets, customWallCabinetSide, drywallPonyWallAppearance, DESK_TOP_HEIGHT_IN, elevationBox, formatEighthInches, formatInches, glassDoorShelfCount, isKneeDrawerItem, isAgainstWall, isBaseEndCornerCabinet, isCustomRoomWall, isFillerItem, fillerWidthRange, isGlassDoorCabinet, isMicrowaveOverRangePair, isRangeHoodPlacement, isRangeOrOven, isRefrigerator, isStacker, isWallRunDraggable, isWd18CountertopDrawerCabinet, kitchenCrestGenericOpenEndShelfCount, normalizeInstalledFillersToAdjacentCabinets, peninsulaCountertopPonyWallBackExtensionIn, peninsulaCountertopPonyWallBarOverhang, peninsulaCountertopSeatingOverhang, peninsulaCountertopWaterfallEnd, peninsulaLowerWorktopOppositeSideExtensionIn, peninsulaRunEndpoints, placedCornerGeometryKind, placedFootprint, ponyWallMiteredFootprint, ponyWallPlanFrame, potFillerMountedRange, rangeVisualAppearance, refrigeratorBayVerificationMetrics, resolveCabinetHardwarePosition, resolveSwing, roomWallAppearance, seatedWallRunFrame, wallRunFrame, wallAngleEndHandForPlacement, selectedLowerCabinetWallPlacement, sinkPlanDimensions, usesRaisedFloorWallDoorPull, wallCabinetFitMeasure, wallGapFitPreview, wallGapFreehandPreview, wallGaps, wallPlacementAt, wallRunOffset, wallRunSpan, wallSpanMeasure, wallLength, wd18CountertopFaceLayout, type CabinetWallDragPreview, type CountertopSurface, type IslandZone, type PlacedCabinet, type PlacedCornerGeometryKind, type PlacedFurniture, type PonyWall, type PotFillerFixture, rotatedSize, type RoomData, type SinkFixture, type WallCabinetFitMeasure, type WallGapFitPreview, type WallOpening, type WallSide, type WallSpanMeasure, wallTopLimit, } from "@/lib/design";
+import { refrigeratorEndPanelCutDownNote } from "@/lib/refrigeratorEndPanelCut";
+import { roomWallRunFrames } from "@/lib/design";
 import { flooringRotationRadians, type FlooringRotationDegrees } from "@/lib/flooringLayout";
 import { threeDLatticeRackLayout } from "@/lib/latticeRackLayout";
 import { PLATE_RACK_FRAME_IN, plateRackDividerLayout } from "@/lib/plateRackLayout";
@@ -9572,7 +9574,8 @@ export function addIslandZone(
 }
 
 export type ThreeDBacksplashSegment = {
-  side: WallSide;
+  /** Cardinal side, or a drawn-wall id from the room. */
+  side: string;
   start: number;
   end: number;
   bottom: number;
@@ -9609,7 +9612,7 @@ export function threeDBacksplashTileTextureTransform(segment: ThreeDBacksplashSe
   };
 }
 
-function threeDWallRunSpan(cabinet: PlacedCabinet, side: WallSide, room: RoomData) {
+function threeDWallRunSpan(cabinet: PlacedCabinet, side: string, room: RoomData) {
 	  // The shared run helpers retain the catalog-authoritative 36-inch BBC body
 	  // for legacy saves that stored its reduced 33-inch box width.
 	  const start = wallRunOffset(cabinet, side, room);
@@ -9626,7 +9629,7 @@ function threeDWallRunSpan(cabinet: PlacedCabinet, side: WallSide, room: RoomDat
  */
 export function threeDBlindCornerBacksplashSpans(
   cabinet: PlacedCabinet,
-  side: WallSide,
+  side: string,
   room: RoomData,
 ): Array<{ start: number; end: number }> {
   const owning = cabinetWall(cabinet, room);
@@ -9685,6 +9688,10 @@ export function threeDBacksplashPlaneUv(
   return { u: along / safeModuleIn, v: elevation / safeModuleHeightIn };
 }
 
+function threeDBacksplashSideIsCardinal(side: string): side is WallSide {
+  return side === "top" || side === "bottom" || side === "left" || side === "right";
+}
+
 /** Inset a run only where another backsplash plane meets it, so the inside corner butts instead of crossing. */
 export function threeDBacksplashRenderInterval(
   segment: ThreeDBacksplashSegment,
@@ -9695,6 +9702,7 @@ export function threeDBacksplashRenderInterval(
   const tolerance = 0.35;
   let start = segment.start;
   let end = segment.end;
+  if (!threeDBacksplashSideIsCardinal(segment.side)) return { start, end };
   const reaches = (other: ThreeDBacksplashSegment, at: number) => other.start <= at + tolerance && other.end >= at - tolerance;
   const horizontal = segment.side === "top" || segment.side === "bottom";
   if (horizontal) {
@@ -9718,8 +9726,13 @@ export function threeDBacksplashRenderInterval(
  * with it. This adds wall coverage only—it never changes the saved corner
  * footprint, cabinet placement, countertop, or camera.
  */
-export function threeDBacksplashSupportSpans(cabinet: PlacedCabinet, side: WallSide, room: RoomData) {
+export function threeDBacksplashSupportSpans(cabinet: PlacedCabinet, side: string, room: RoomData) {
   if (!threeDSupportsBacksplash(cabinet, room)) return [];
+  // Drawn walls are not the four room sides. Tile the cabinet's own along-wall
+  // run on the wall it belongs to, including a corner cabinet's owning leg.
+  if (!threeDBacksplashSideIsCardinal(side)) {
+    return cabinetWall(cabinet, room) === side ? [threeDWallRunSpan(cabinet, side, room)] : [];
+  }
 	const cornerKind = placedCornerGeometryKind(cabinet);
 	const wrapsCornerLegs = cornerKind === "l-shape" || cornerKind === "diagonal" || cornerKind === "corner-drawer";
 	if (cornerKind === "blind-corner") return threeDBlindCornerBacksplashSpans(cabinet, side, room);
@@ -9765,6 +9778,30 @@ function subtractThreeDBacksplashRect(
   return pieces.filter((piece) => piece.end - piece.start > 0.001 && piece.top - piece.bottom > 0.001);
 }
 
+/** Perimeter runs that receive tile: drawn walls when the room has them, otherwise the four sides. */
+export function threeDBacksplashWallIds(room: RoomData): string[] {
+  return roomWallRunFrames(room).filter((frame) => frame.kind !== "peninsula").map((frame) => frame.id);
+}
+
+/**
+ * Along-wall tile coverage: counter-level bases, fillers, panels, and
+ * under-counter appliances, plus every wall cabinet on that same wall.
+ */
+export function threeDBacksplashCoverageIntervals(
+  placed: readonly PlacedCabinet[],
+  room: RoomData,
+  side: string,
+): Array<{ start: number; end: number }> {
+  const wallItems = placed.filter((cabinet) => !cabinet.islandFace && cabinetWall(cabinet, room) === side);
+  const supportIntervals = mergeThreeDIntervals(placed.flatMap((cabinet) =>
+    cabinet.islandFace ? [] : threeDBacksplashSupportSpans(cabinet, side, room),
+  ));
+  const wallCabinetIntervals = mergeThreeDIntervals(wallItems
+    .filter((cabinet) => cabinet.placement === "wall")
+    .map((cabinet) => threeDWallRunSpan(cabinet, side, room)));
+  return mergeThreeDIntervals([...supportIntervals, ...wallCabinetIntervals]);
+}
+
 export function threeDBacksplashSegments(
 		placed: PlacedCabinet[],
 		openings: WallOpening[],
@@ -9772,7 +9809,7 @@ export function threeDBacksplashSegments(
 		heightMode: BacksplashHeightMode = "standard",
 		countertopUpstandIn = 0,
 ) {
-  const sides: WallSide[] = ["top", "bottom", "left", "right"];
+  const sides = threeDBacksplashWallIds(room);
   const countertopTop = COUNTERTOP_TOP;
   const tileBottom = countertopTop + (countertopUpstandIn === 2.5 || countertopUpstandIn === 3 ? countertopUpstandIn : 0);
   const ceilingTop = room.ceilingHeight ?? 96;
@@ -9780,9 +9817,7 @@ export function threeDBacksplashSegments(
   const segments: ThreeDBacksplashSegment[] = [];
   for (const side of sides) {
     const wallItems = placed.filter((cabinet) => !cabinet.islandFace && cabinetWall(cabinet, room) === side);
-    const supportIntervals = mergeThreeDIntervals(placed.flatMap((cabinet) =>
-      cabinet.islandFace ? [] : threeDBacksplashSupportSpans(cabinet, side, room),
-    ));
+    const supportIntervals = threeDBacksplashCoverageIntervals(placed, room, side);
 		const rangeIntervals = mergeThreeDIntervals(wallItems.flatMap((cabinet) => {
 			if (cabinet.islandFace || cabinetWall(cabinet, room) !== side || cabinet.placement !== "appliance") return [];
 			return isRangeOrOven(cabinet.masterCode, cabinet.description) ? [threeDWallRunSpan(cabinet, side, room)] : [];
@@ -9805,18 +9840,13 @@ export function threeDBacksplashSegments(
 	        const raisedAppliance = cabinet.placement === "appliance" && box.bottom > countertopTop;
 	        const floorTallAppliance = cabinet.placement === "appliance" && box.bottom <= 0.5 && !threeDSupportsBacksplash(cabinet, room);
 	        if (cabinet.placement !== "wall" && cabinet.placement !== "tall" && !raisedAppliance && !floorTallAppliance) return [];
+			// A corner cabinet cuts only its along-wall run, never a square wider than that run.
 			const span = threeDWallRunSpan(cabinet, side, room);
 	        return [{ ...span, bottom: box.bottom, top: box.bottom + box.height }];
 	      }),
 	    ];
-		// These are the real countertop/range-supported wall runs. Use exactly the
-		// same spans for display, elevation parity, and materials—never a room-wide
-		// perimeter field that can paint an open wall or bare floor.
-		const wallCabinetIntervals = mergeThreeDIntervals(wallItems
-			.filter((cabinet) => cabinet.placement === "wall")
-			.map((cabinet) => threeDWallRunSpan(cabinet, side, room)));
-		const supportedIntervals = mergeThreeDIntervals([...supportIntervals, ...wallCabinetIntervals]);
-	    const sourceSegments: Array<Omit<ThreeDBacksplashSegment, "side">> = supportedIntervals.map((interval) => ({
+		// Coverage is already the union of counter supports and wall cabinets.
+	    const sourceSegments: Array<Omit<ThreeDBacksplashSegment, "side">> = supportIntervals.map((interval) => ({
       ...interval,
       bottom: tileBottom,
       top: heightMode === "full-height" ? ceilingTop : standardTop,
@@ -9865,7 +9895,16 @@ export function threeDBacksplashTransform(segment: ThreeDBacksplashSegment, room
   if (segment.side === "bottom") return { x: center, y: centerY, z: room.depth - 0.07, rotation: Math.PI };
   if (segment.side === "left") return { x: 0.07, y: centerY, z: center, rotation: Math.PI / 2 };
   if (segment.side === "right") return { x: room.width - 0.07, y: centerY, z: center, rotation: -Math.PI / 2 };
-  return { x: center, y: centerY, z: 0.07, rotation: 0 };
+  if (segment.side === "top") return { x: center, y: centerY, z: 0.07, rotation: 0 };
+  const frame = wallRunFrame(segment.side, room);
+  if (!frame) return { x: center, y: centerY, z: 0.07, rotation: 0 };
+  const inset = 0.07;
+  return {
+    x: frame.start.x + frame.tangent.x * center + frame.inward.x * inset,
+    y: centerY,
+    z: frame.start.y + frame.tangent.y * center + frame.inward.y * inset,
+    rotation: (frame.facingRotation * Math.PI) / 180,
+  };
 }
 
 function addThreeDBacksplash(
