@@ -33,6 +33,7 @@ import { affiliateCardColor, type CrmAffiliateBrand } from "@/lib/crmAffiliateBr
 import { MASTER_AFFILIATE_FILTER_ALL, masterAffiliateFilterId } from "@/lib/crmMasterFilter";
 import { filterDealsByHelpType, type CrmHelpFilter } from "@/lib/crmHelpFilter";
 import { crmQuickInvoiceTotal, openCrmQuickInvoicePdf, type CrmQuickInvoiceBrand, type CrmQuickInvoiceLine } from "@/lib/crmQuickInvoice";
+import { invoiceEmailButtonDisabled, invoiceEmailSourceLabel, suggestedInvoiceEmail, usableInvoiceEmail, type CrmInvoiceRecipient } from "@/lib/crmInvoiceEmail";
 import { CustomerGeneratedImages } from "@/components/imageCustomer/CustomerGeneratedImages";
 import { CRM_SAVED_VIEW_STORAGE_PREFIX, crmDueState, filterMondayDeals, summarizeAffiliatePipelines, type MondayFilters } from "@shared/crmMailbox";
 import { CrmStageBoard } from "@/components/crm/monday/CrmStageBoard";
@@ -808,6 +809,8 @@ function DealDrawer({ dealId, lang, summary, onClose, onCompose }: { dealId: num
   const linkedDesigns = (data?.linkedDesigns ?? []) as LinkedInvoiceDesign[];
   const invoiceBrand = (data as { invoiceBrand?: CrmQuickInvoiceBrand } | undefined)?.invoiceBrand;
   const invoicePrefill = (data as { invoicePrefill?: CrmInvoicePrefill } | undefined)?.invoicePrefill;
+  const invoiceRecipient = (data as { invoiceRecipient?: CrmInvoiceRecipient } | undefined)?.invoiceRecipient;
+  const homeownerEmail = suggestedInvoiceEmail(deal?.contactEmail, invoiceRecipient);
   const laborEstimates = (data?.laborEstimates ?? []) as CrmLaborEstimate[];
   const emails = (data?.emails ?? []) as {
     id: number; toEmail: string; fromEmail: string; subject: string; body: string;
@@ -831,7 +834,7 @@ function DealDrawer({ dealId, lang, summary, onClose, onCompose }: { dealId: num
               <CustomerGeneratedImages customerId={deal.id} customerKind="crm" title="Generated images" />
               <Button type="button" variant="outline" onClick={() => onCompose?.({
                 dealId: deal.id,
-                to: deal.contactEmail ?? "",
+                to: homeownerEmail,
                 contactName: deal.contactName ?? "",
                 dealTitle: deal.title,
                 estimatedValue: deal.estimatedValue ?? "",
@@ -853,6 +856,15 @@ function DealDrawer({ dealId, lang, summary, onClose, onCompose }: { dealId: num
               <div className="rounded-lg border border-border p-3 space-y-1.5 text-sm">
                 {deal.contactName && <div>{deal.contactName}</div>}
                 {deal.contactEmail && <div className="flex items-center gap-2"><Mail className="h-3.5 w-3.5 text-muted-foreground" /><a className="text-primary hover:underline" href={`mailto:${deal.contactEmail}`}>{deal.contactEmail}</a></div>}
+                {!deal.contactEmail && invoiceRecipient?.email && (
+                  <div className="flex items-start gap-2">
+                    <Mail className="mt-0.5 h-3.5 w-3.5 text-muted-foreground" />
+                    <div>
+                      <a className="text-primary hover:underline" href={`mailto:${invoiceRecipient.email}`}>{invoiceRecipient.email}</a>
+                      {invoiceEmailSourceLabel(invoiceRecipient.source, lang) && <p className="text-[11px] text-muted-foreground">{invoiceEmailSourceLabel(invoiceRecipient.source, lang)}</p>}
+                    </div>
+                  </div>
+                )}
                 {deal.contactPhone && <div className="flex items-center gap-2"><Phone className="h-3.5 w-3.5 text-muted-foreground" /><a className="text-primary hover:underline" href={`tel:${deal.contactPhone}`}>{deal.contactPhone}</a></div>}
                 {deal.company && <div className="flex items-center gap-2"><Building2 className="h-3.5 w-3.5 text-muted-foreground" />{deal.company}</div>}
                 {deal.location && <div className="flex items-center gap-2"><MapPin className="h-3.5 w-3.5 text-muted-foreground" />{deal.location}</div>}
@@ -938,7 +950,7 @@ function DealDrawer({ dealId, lang, summary, onClose, onCompose }: { dealId: num
               </div>
 
               {/* Email the contact */}
-              <EmailSection deal={deal} lang={lang} emails={emails} dealId={deal.id} linkedDesigns={linkedDesigns} />
+              <EmailSection deal={deal} lang={lang} emails={emails} dealId={deal.id} linkedDesigns={linkedDesigns} suggestedEmail={homeownerEmail} />
               <CrmDealFiles dealId={deal.id} />
 
               {/* Linked designs */}
@@ -1012,7 +1024,7 @@ function DealDrawer({ dealId, lang, summary, onClose, onCompose }: { dealId: num
                 {deal.laborEstimateId != null && !selectedLaborEstimateIsEligible && <p className="mt-1.5 text-[11px] text-amber-700">{lang === "es" ? "El estimado seleccionado ya no está disponible; elija otro o elimine la selección." : "The selected labor estimate is no longer available; choose another or clear the selection."}</p>}
               </div>
 
-              <QuickInvoiceDialog deal={deal} dealId={deal.id} linkedDesigns={linkedDesigns} brand={invoiceBrand} prefill={invoicePrefill} lang={lang} />
+              <QuickInvoiceDialog deal={deal} dealId={deal.id} linkedDesigns={linkedDesigns} brand={invoiceBrand} prefill={invoicePrefill} invoiceRecipient={invoiceRecipient} lang={lang} />
 
               <Button variant="ghost" className="text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => remove.mutate({ id: deal.id })} disabled={remove.isPending}>
                 <Trash2 className="h-4 w-4 mr-1" />{lang === "es" ? "Eliminar trato" : "Delete deal"}
@@ -1072,6 +1084,7 @@ function QuickInvoiceDialog({
   linkedDesigns,
   brand,
   prefill,
+  invoiceRecipient,
   lang,
 }: {
   deal: DealRow;
@@ -1079,6 +1092,7 @@ function QuickInvoiceDialog({
   linkedDesigns: LinkedInvoiceDesign[];
   brand?: CrmQuickInvoiceBrand;
   prefill?: CrmInvoicePrefill;
+  invoiceRecipient?: CrmInvoiceRecipient;
   lang: Lang;
 }) {
   const utils = trpc.useUtils();
@@ -1091,6 +1105,9 @@ function QuickInvoiceDialog({
   const [selectedDesignId, setSelectedDesignId] = useState<string>(linkedDesigns[0] ? String(linkedDesigns[0].id) : "none");
   const [notes, setNotes] = useState("");
   const [previewLines, setPreviewLines] = useState<CrmQuickInvoiceLine[] | null>(null);
+  const suggestedEmail = suggestedInvoiceEmail(deal.contactEmail, invoiceRecipient);
+  const [recipient, setRecipient] = useState(suggestedEmail);
+  const [recipientEdited, setRecipientEdited] = useState(false);
 
   useEffect(() => {
     const nextHasPricedLinkedPlan = Number(linkedDesigns[0]?.catalogSubtotal ?? 0) > 0;
@@ -1101,12 +1118,19 @@ function QuickInvoiceDialog({
     setSelectedDesignId(linkedDesigns[0] ? String(linkedDesigns[0].id) : "none");
     setNotes("");
     setPreviewLines(null);
+    setRecipientEdited(false);
+    setRecipient(suggestedInvoiceEmail(deal.contactEmail, invoiceRecipient));
   }, [deal.id, linkedDesigns.length, linkedDesigns[0]?.id, linkedDesigns[0]?.catalogSubtotal, prefill?.cabinetOrderAmount, prefill?.shippingAmount, prefill?.laborAmount]);
+
+  useEffect(() => {
+    if (!recipientEdited) setRecipient(suggestedEmail);
+  }, [suggestedEmail, recipientEdited]);
 
   const addActivity = trpc.crm.addActivity.useMutation({
     onSuccess: () => utils.crm.deal.invalidate({ id: dealId }),
   });
-  const { data: emailReadiness } = trpc.crm.emailReadiness.useQuery(undefined, { enabled: open && previewLines != null });
+  const emailReadyQuery = trpc.crm.emailReadiness.useQuery({ dealId }, { enabled: open && previewLines != null, retry: false });
+  const emailReadiness = emailReadyQuery.data;
   const sendInvoiceEmail = trpc.crm.sendInvoiceEmail.useMutation({
     onSuccess: () => {
       toast.success(label("Branded invoice PDF emailed to the customer.", "La factura PDF personalizada se envió al cliente."));
@@ -1117,7 +1141,7 @@ function QuickInvoiceDialog({
     },
     onError: (error) => {
       const message = error.message;
-      if (message === "missing_recipient") toast.error(label("Add a customer email to this lead before sending the invoice.", "Agregue un correo electrónico del cliente antes de enviar la factura."));
+      if (message === "missing_recipient") toast.error(label("Enter the homeowner email to send this invoice.", "Ingrese el correo del propietario para enviar esta factura."));
       else if (message === "not_configured" || message === "disabled") toast.error(CRM_EMAIL_BLOCK_MESSAGES[message][lang]);
       else toast.error(message || label("Could not send the invoice email.", "No se pudo enviar el correo de la factura."));
     },
@@ -1180,7 +1204,7 @@ function QuickInvoiceDialog({
       invoiceNumber: `CRM-${dealId}-${now.toISOString().slice(0, 10).replaceAll("-", "")}`,
       issuedOn: now.toLocaleDateString(),
       customerName: deal.contactName || deal.company || deal.title,
-      customerEmail: deal.contactEmail,
+      customerEmail: usableInvoiceEmail(recipient) ?? deal.contactEmail,
       customerPhone: deal.contactPhone,
       linkedDesignName: selectedDesign?.designName ?? null,
       notes: notes.trim() || null,
@@ -1205,6 +1229,7 @@ function QuickInvoiceDialog({
     if (!previewLines?.length) return;
     sendInvoiceEmail.mutate({
       dealId,
+      to: recipient.trim(),
       lines: previewLines,
       linkedDesignId: selectedDesign?.id ?? null,
       notes: notes.trim() || null,
@@ -1231,11 +1256,11 @@ function QuickInvoiceDialog({
 
   const invoiceTotal = crmQuickInvoiceTotal(previewLines ?? []);
   const formatMoney = (amount: number) => amount.toLocaleString(undefined, { style: "currency", currency: "USD" });
-  const smtpReady = emailReadiness?.configured && emailReadiness.enabled;
-  const customerEmail = deal.contactEmail?.trim();
+  const deliveryBlocked = emailReadyQuery.isFetched && !emailReadyQuery.isError && !(emailReadiness?.configured && emailReadiness.enabled);
+  const sourceLabel = recipientEdited ? null : invoiceEmailSourceLabel(invoiceRecipient?.source ?? (deal.contactEmail ? "deal" : null), lang);
 
   return (
-    <Dialog open={open} onOpenChange={(nextOpen) => { setOpen(nextOpen); if (!nextOpen) setPreviewLines(null); }}>
+    <Dialog open={open} onOpenChange={(nextOpen) => { setOpen(nextOpen); if (!nextOpen) { setPreviewLines(null); setRecipientEdited(false); setRecipient(suggestedEmail); } }}>
       <DialogTrigger asChild>
         <Button variant="outline" className="w-full bg-card"><FileText className="mr-2 h-4 w-4" />{label("Quick PDF Invoice", "Factura PDF rápida")}</Button>
       </DialogTrigger>
@@ -1261,9 +1286,19 @@ function QuickInvoiceDialog({
             </div>
             {selectedDesign && <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950"><strong>{label("Linked design:", "Diseño vinculado:")}</strong> {selectedDesign.designName}</div>}
             <div className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground"><strong className="text-foreground">{brand?.storeName ?? "CabinetDealz"}</strong>{brand?.logoUrl ? label(" logo and colors will appear on both the PDF and customer email.", " aparecerán con su logo y colores en el PDF y el correo al cliente.") : label(" branding will appear on both the PDF and customer email.", " aparecerá en el PDF y el correo al cliente.")}</div>
-            <DialogFooter className="gap-2 sm:justify-between"><Button variant="outline" onClick={() => setPreviewLines(null)}>{label("Back to selections", "Volver a selecciones")}</Button><div className="flex flex-wrap justify-end gap-2"><Button variant="outline" onClick={emailInvoice} disabled={!customerEmail || !smtpReady || sendInvoiceEmail.isPending}><Mail className="mr-2 h-4 w-4" />{sendInvoiceEmail.isPending ? label("Sending…", "Enviando…") : label("Email PDF to Customer", "Enviar PDF al cliente")}</Button><Button onClick={createInvoice} disabled={addActivity.isPending} className="bg-[var(--color-navy,#1a2b4a)] text-white"><FileText className="mr-2 h-4 w-4" />{label("Generate Final PDF", "Generar PDF final")}</Button></div></DialogFooter>
-            {!customerEmail && <p className="text-xs text-amber-700">{label("Add the customer email to this lead to enable direct invoice delivery.", "Agregue el correo del cliente a este prospecto para habilitar el envío directo.")}</p>}
-            {customerEmail && !smtpReady && <p className="text-xs text-amber-700">{label("Configure and enable CRM email to send the PDF directly.", "Configure y habilite el correo CRM para enviar el PDF directamente.")}</p>}
+            <Field label={label("Homeowner email", "Correo del propietario")}>
+              <Input
+                aria-label={label("Homeowner email", "Correo del propietario")}
+                type="email"
+                value={recipient}
+                placeholder="homeowner@example.com"
+                onChange={(event) => { setRecipientEdited(true); setRecipient(event.target.value); }}
+              />
+            </Field>
+            {sourceLabel && usableInvoiceEmail(recipient) && <p className="text-xs text-muted-foreground">{invoiceRecipient?.source && invoiceRecipient.source !== "deal" ? label(`Prefilled ${sourceLabel}.`, `Completado ${sourceLabel}.`) : label("Using the email on this lead.", "Se usa el correo de este prospecto.")}</p>}
+            <DialogFooter className="gap-2 sm:justify-between"><Button variant="outline" onClick={() => setPreviewLines(null)}>{label("Back to selections", "Volver a selecciones")}</Button><div className="flex flex-wrap justify-end gap-2"><Button variant="outline" onClick={emailInvoice} disabled={invoiceEmailButtonDisabled({ recipient, pending: sendInvoiceEmail.isPending })}><Mail className="mr-2 h-4 w-4" />{sendInvoiceEmail.isPending ? label("Sending…", "Enviando…") : label("Email PDF to Customer", "Enviar PDF al cliente")}</Button><Button onClick={createInvoice} disabled={addActivity.isPending} className="bg-[var(--color-navy,#1a2b4a)] text-white"><FileText className="mr-2 h-4 w-4" />{label("Generate Final PDF", "Generar PDF final")}</Button></div></DialogFooter>
+            {!usableInvoiceEmail(recipient) && <p className="text-xs text-amber-700">{invoiceRecipient?.stripeLookup === "unavailable" ? label("Stripe could not be read for this order because the payment is on a different Stripe account. Enter the homeowner email to send this invoice.", "No se pudo leer Stripe para este pedido porque el pago está en otra cuenta de Stripe. Ingrese el correo del propietario para enviar esta factura.") : label("Enter the homeowner email to send this invoice.", "Ingrese el correo del propietario para enviar esta factura.")}</p>}
+            {usableInvoiceEmail(recipient) && deliveryBlocked && <p className="text-xs text-amber-700">{label("Email delivery is not confirmed yet. You can still try to send; the server will report the exact reason if it cannot.", "El envío de correo aún no está confirmado. Puede intentar enviarlo; el servidor indicará el motivo si no puede.")}</p>}
           </>
         ) : (
           <>
@@ -1313,10 +1348,12 @@ function EmailSection({
   emails,
   dealId,
   linkedDesigns = [],
+  suggestedEmail = "",
 }: {
   linkedDesigns?: LinkedInvoiceDesign[];
   deal: DealRow;
   lang: Lang;
+  suggestedEmail?: string;
   emails: {
     id: number; toEmail: string; fromEmail: string; subject: string; body: string;
     sentByName: string | null; sentAt: string | Date;
@@ -1324,9 +1361,9 @@ function EmailSection({
   dealId: number;
 }) {
   const utils = trpc.useUtils();
-  const { data: readiness } = trpc.crm.emailReadiness.useQuery();
+  const { data: readiness } = trpc.crm.emailReadiness.useQuery({ dealId });
   const [open, setOpen] = useState(false);
-  const [to, setTo] = useState(deal.contactEmail ?? "");
+  const [to, setTo] = useState(deal.contactEmail || suggestedEmail);
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
 
@@ -1339,7 +1376,7 @@ function EmailSection({
   const [seededFor, setSeededFor] = useState<number | null>(null);
   if (seededFor !== dealId) {
     setSeededFor(dealId);
-    setTo(deal.contactEmail ?? "");
+    setTo(deal.contactEmail || suggestedEmail);
     setSubject("");
     setBody("");
   }
