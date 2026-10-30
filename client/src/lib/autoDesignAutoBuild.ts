@@ -389,6 +389,16 @@ export function isAutoBuildStraightSinkBaseCandidate(candidate: AutoBuildCatalog
  * depend on the order the catalog lists its rows; null means the line sells no
  * such base at that width, so the caller reports it instead of substituting.
  */
+/** Auto-Design keeps one sink fixture, on the measured sink base. A second basin is never added. */
+export function keepSingleAutoDesignSink<T extends { cabinetUid?: string | null }>(
+  sinks: readonly T[],
+  sinkBaseUid: string,
+): T[] {
+  const onBase = sinks.filter((sink) => sink.cabinetUid === sinkBaseUid);
+  if (onBase.length > 0) return [onBase[0]!];
+  return sinks.length > 0 ? [sinks[0]!] : [];
+}
+
 export function pickAutoDesignSinkBase<T extends AutoBuildCatalogCandidate & { width?: string | number | null }>(
   catalog: readonly T[],
   widthIn: number,

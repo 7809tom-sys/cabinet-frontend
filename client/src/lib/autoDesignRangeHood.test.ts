@@ -22,7 +22,7 @@ describe("Auto-Design range ventilation", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const hood = result.hood;
-    expect(hood).toMatchObject({ uid: "hood-1", masterCode: "HOOD-30", placement: "appliance", width: 30, mountBottom: 66 });
+    expect(hood).toMatchObject({ uid: "hood-1", masterCode: "HOOD-30", placement: "appliance", width: 30, mountBottom: 60 });
     expect(isHoodOverRangePair(hood, r)).toBe(true);
     const wall = cabinetWall(hood, DEFAULT_ROOM);
     expect(wall).toBe("top");

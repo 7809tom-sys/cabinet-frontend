@@ -263,7 +263,7 @@ describe("owner U-shape: 150 inch walls, fridge center 131 on wall 3", () => {
     expect(report.cornerNotes.join(" ")).toMatch(/LSB33/);
     expect(report.cornerFailures.join(" ")).toMatch(/Wall 2 and Wall 3/);
     expect(report.cornerFailures.join(" ")).toMatch(/12"/);
-    expect(report.twoFour.map((item) => item.masterCode).sort()).toEqual(["DCW2442", "W2442"]);
+    expect(report.twoFour.map((item) => item.masterCode).sort()).toEqual(["DCW2442", "DCW2442", "DCW2442"]);
     const rightPanel = report.panels.find((item) => item.role === "right-panel")!;
     expect(rightPanel.along[1]).toBeCloseTo(150, 2);
     expect(rightPanel.top).toBeCloseTo(96, 2);

@@ -37,9 +37,9 @@ export function autoDesignRangeHood(input: {
   const attachment = overRangeMicrowaveAttachment([range], room, null, range.uid, { x: range.x, y: range.y }, { width, depth });
   if (!attachment) return { ok: false, message: `${source.masterCode} must be installed above a compatible saved range.` };
   const spot = attachment.spot as { x: number; y: number; rotation: number; wallId?: string; wallOffset?: number };
-  const mountBottom = source.mountBottom != null && Number(source.mountBottom) >= 0
-    ? Number(source.mountBottom)
-    : kitchenRuleNumber("hood_bottom_in");
+  // Owner rule: a 42" hood's bottom is 60" above the floor. The palette's
+  // stored mount (often 66) does not override that Auto-Design datum.
+  const mountBottom = kitchenRuleNumber("hood_bottom_in");
   return {
     ok: true,
     hood: {

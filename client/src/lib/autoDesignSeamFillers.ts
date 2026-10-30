@@ -19,6 +19,8 @@ import { preferDrawerBasesBesideRange } from "./kitchenUsage";
 export const SEAM_MIN_IN = 0.125;
 /** One filler board closes a seam. A second board is never placed beside it. */
 export const SEAM_MAX_FILLER_IN = MAX_FILLER_RUN_WIDTH_IN;
+/** Auto-Design closes a run with a filler only when the remainder is 3 inches or less. No prompt. */
+export const AUTO_DESIGN_FILLER_MAX_IN = 3;
 /** A range always has a real cabinet at least this wide on each side. */
 export const RANGE_NEIGHBOR_MIN_WIDTH_IN = 15;
 
@@ -325,12 +327,19 @@ export function fillAutoDesignLowerSeams(input: {
   corners?: readonly { x: number; y: number }[];
   /** Everyday cooking: leave a short gap beside the range instead of filling it with a filler. */
   preserveHeavyCookLandings?: boolean;
+  /** Widest filler Auto-Design may place. Defaults to the shared seam maximum. */
+  maxFillerIn?: number;
 }): { placed: PlacedCabinet[]; additions: PlacedCabinet[]; notes: string[] } {
   let working = [...input.placed];
   const additions: PlacedCabinet[] = [];
   const notes: string[] = [];
   const seams = findAutoDesignSeams({ layer: "base", placed: working, room: input.room, openings: input.openings, corners: input.corners });
+  const maxFiller = input.maxFillerIn ?? SEAM_MAX_FILLER_IN;
   for (const seam of seams) {
+    if (seam.end - seam.start > maxFiller + COLLISION_EPSILON_IN) {
+      notes.push(`The ${exactWidth(seam.end - seam.start)}″ opening on the ${seam.wall} wall is wider than ${maxFiller}″, so a filler was not used.`);
+      continue;
+    }
     if (input.preserveHeavyCookLandings) {
       const touchesRange = [seam.left, seam.right].some((item) => item && item.placement === "appliance" && isRangeOrOven(item.masterCode, item.description));
       if (touchesRange && seam.end - seam.start < 15 - 0.05) {
@@ -348,7 +357,11 @@ export function fillAutoDesignLowerSeams(input: {
   return { placed: working, additions, notes };
 }
 
-/** Spans on a wall that must stay empty in the upper layer: over the range, over the sink, and the whole refrigerator assembly. */
+/**
+ * Spans that stay empty in the upper layer: the refrigerator assembly, and a
+ * range only while a hood already covers it. A sink is covered by a wall
+ * cabinet unless a window is there; the window clearance is handled separately.
+ */
 export function upperReservedZones(placed: readonly PlacedCabinet[], room: RoomData): (wall: string) => SeamPiece[] {
   return (wall: string) => {
     const zones: SeamPiece[] = [];
@@ -356,8 +369,10 @@ export function upperReservedZones(placed: readonly PlacedCabinet[], room: RoomD
     for (const item of placed) {
       if (item.islandFace || wallOf(item, room) !== wall) continue;
       const span = { start: startOf(item, wall, room), end: endOf(item, wall, room) };
-      if ((item.placement === "appliance" && isRangeOrOven(item.masterCode, item.description))
-        || (item.placement === "base" && isSinkBaseCabinet(item))) zones.push(span);
+      if (item.placement === "appliance" && isRangeOrOven(item.masterCode, item.description)) {
+        const hooded = placed.some((other) => /hood/i.test(other.masterCode ?? "") && wallOf(other, room) === wall);
+        if (hooded) zones.push(span);
+      }
       if (assemblyKey(item) && item.placement !== "wall") fridge.push(span);
     }
     if (fridge.length) zones.push({ start: Math.min(...fridge.map((z) => z.start)), end: Math.max(...fridge.map((z) => z.end)) });
@@ -390,7 +405,7 @@ export function planAutoDesignBaseSegment(input: {
 }): { items: FillItem[]; note: string | null } {
   const widths = input.catalog.map((candidate) => dim(candidate.width, 0)).filter((width) => width > 0);
   const solved = searchFewestFillerOpening({ lengthIn: input.length, widthsIn: widths, layer: "base", movementLimitIn: 0 });
-  if (solved && solved.covered) {
+  if (solved && solved.covered && (solved.fillerWidth ?? 0) <= AUTO_DESIGN_FILLER_MAX_IN + COLLISION_EPSILON_IN) {
     const items: FillItem[] = [];
     let missing = false;
     for (const width of solved.cabinetWidths) {
@@ -418,7 +433,7 @@ export function planAutoDesignBaseSegment(input: {
     if (input.rangeAtEnd) return [...fillers, ...[...cabinets].reverse()];
     return [...cabinets, ...fillers];
   };
-  const arranged = arrange(free.items);
+  const arranged = arrange(free.items).filter((item) => !item.isFiller || item.width <= AUTO_DESIGN_FILLER_MAX_IN + COLLISION_EPSILON_IN);
   if (!input.rangeAtStart && !input.rangeAtEnd) return finish(arranged, null);
   const beside = (items: FillItem[]): FillItem[] => {
     const out: FillItem[] = [];

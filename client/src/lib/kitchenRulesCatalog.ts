@@ -175,8 +175,8 @@ const ownerSeeds: KitchenRuleSeed[] = [
   {
     ruleCode: "owner-u-shape-two-corners",
     category: "Owner placement",
-    title: "U-shape has exactly two corners",
-    ruleDescription: "A U-shaped auto-design kitchen has exactly two corner cabinets, and only on Wall 1, Wall 2, and Wall 3. Wall 4 is ignored, including a leftover length from an earlier room, so nothing is placed on it and no corner is created there.",
+    title: "U-shape corners follow the walls that exist",
+    ruleDescription: "An open three-wall U has exactly two corner cabinets, on the joins among Wall 1, Wall 2, and Wall 3. A closed room that still has Wall 4 cabinets that wall too, with a corner at each end and a continuous base and wall run between them. Wall 5 and Wall 6 stay out of a U.",
     parameters: { u_shape_corner_count: 2 },
     enforcementKind: "auto",
     sourceText: "Owner",
@@ -278,7 +278,7 @@ const ownerSeeds: KitchenRuleSeed[] = [
     sourceText: "Owner",
     implementationStatus: "implemented",
     readsParameters: true,
-    notesText: "The code fallback before this value loads is 66 inches, which is the catalog default used when a hood row has no mount.",
+    notesText: "Auto-Design places the hood with its bottom at this height. The code default is 60 inches.",
   },
   {
     ruleCode: "owner-baking-zone",
