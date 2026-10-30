@@ -15,6 +15,8 @@ import { ContractorApplicationFields } from "@/components/contractor/ContractorA
 import { OrderTrackingPanel, SAMPLE_TRACKED_ORDERS } from "@/components/orders/OrderTrackingPanel";
 import { PortalSignInChooser } from "@/components/auth/PortalSignInChooser";
 import { CrmBoard } from "@/components/crm/CrmBoard";
+import { useContractorPortalProcedures } from "@/lib/contractorPortalProcedures";
+import { contractorPortalScope, readContractorUserId, resolveContractorDashboardView } from "@/lib/contractorScope";
 import {
   HardHat,
   ClipboardList,
@@ -56,11 +58,11 @@ function previewRequested(): boolean {
 export default function ContractorDashboard() {
   const preview = previewRequested();
   const { user, loading, isAuthenticated } = useAuth();
-  const [justUpgraded, setJustUpgraded] = useState(false);
+  const justUpgraded = false;
   const application = trpc.contractorAccess.mine.useQuery(undefined, { enabled: isAuthenticated && !preview, retry: false });
   const submit = trpc.contractorAccess.submit.useMutation({
     onSuccess: async () => {
-      toast.success("Application sent. You'll stay a customer until it's approved.");
+      toast.success("Application sent. You'll stay a customer until your affiliate or CabinetDealz approves it.");
       await application.refetch();
     },
     onError: (error) => toast.error(error.message),
@@ -94,10 +96,14 @@ export default function ContractorDashboard() {
   }
 
   const role = user?.role ?? "user";
-  const isContractor = preview || role === "contractor";
-  const hasOtherCrmHome = ["admin", "designer", "partner", "sales_rep", "distributor"].includes(role);
+  const requestedContractorUserId = preview || typeof window === "undefined" ? null : readContractorUserId(window.location.search);
+  const view = resolveContractorDashboardView({ role, requestedContractorUserId });
 
-  if (!preview && !isContractor && !hasOtherCrmHome) {
+  if (!preview && view.mode === "admin-contractor") {
+    return <ContractorHome preview={false} justUpgraded={false} contractorUserId={view.contractorUserId} />;
+  }
+
+  if (!preview && view.mode === "applicant") {
     const pending = application.data?.status === "pending";
     return (
       <div className="container py-12 max-w-3xl">
@@ -105,7 +111,7 @@ export default function ContractorDashboard() {
         <div className="mt-8 rounded-xl border border-border bg-card p-6 space-y-4">
           {pending ? (
             <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-              Your contractor application is pending approval. You can keep using your customer dashboard until CabinetDealz approves it.
+              Your contractor application is pending approval. You can keep using your customer dashboard until your affiliate or CabinetDealz approves it.
               <div className="mt-3"><Button asChild variant="outline"><Link href="/customer">Go to your customer dashboard</Link></Button></div>
             </div>
           ) : (
@@ -113,7 +119,7 @@ export default function ContractorDashboard() {
               event.preventDefault();
               submit.mutate({ businessName: businessName.trim(), phone: phone.trim(), licenseNumber: licenseNumber.trim() || null });
             }}>
-              <p className="text-sm text-muted-foreground">Contractor tools stay closed until an admin approves this request. Your account remains a customer in the meantime.</p>
+              <p className="text-sm text-muted-foreground">Contractor tools stay closed until your affiliate or CabinetDealz approves this request. Your account remains a customer in the meantime.</p>
               <ContractorApplicationFields
                 businessName={businessName}
                 phone={phone}
@@ -133,7 +139,7 @@ export default function ContractorDashboard() {
     );
   }
 
-  if (!preview && hasOtherCrmHome) {
+  if (!preview && view.mode === "other-portal") {
     return (
       <div className="container py-16 max-w-2xl text-center">
         <HardHat className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
@@ -151,11 +157,13 @@ export default function ContractorDashboard() {
   return <ContractorHome preview={preview} justUpgraded={justUpgraded} />;
 }
 
-function ContractorHome({ preview, justUpgraded }: { preview: boolean; justUpgraded: boolean }) {
+function ContractorHome({ preview, justUpgraded, contractorUserId }: { preview: boolean; justUpgraded: boolean; contractorUserId?: number }) {
   const utils = trpc.useUtils();
-  const customersQuery = trpc.contractorPortal.customers.list.useQuery(undefined, { enabled: !preview, retry: false });
-  const designsQuery = trpc.contractorPortal.designs.list.useQuery(undefined, { enabled: !preview, retry: false });
-  const [tab, setTab] = useState("designs");
+  const portal = useContractorPortalProcedures();
+  const portalScope = contractorPortalScope(contractorUserId);
+  const customersQuery = portal.contractorPortal.customers.list.useQuery(portalScope, { enabled: !preview, retry: false });
+  const designsQuery = portal.contractorPortal.designs.list.useQuery(portalScope, { enabled: !preview, retry: false });
+  const [tab, setTab] = useState("customers");
   const [customerFilter, setCustomerFilter] = useState<string>("all");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -170,7 +178,7 @@ function ContractorHome({ preview, justUpgraded }: { preview: boolean; justUpgra
     return designs.filter((design) => design.contractorCustomerId === id);
   }, [customerFilter, designs]);
 
-  const createCustomer = trpc.contractorPortal.customers.create.useMutation({
+  const createCustomer = portal.contractorPortal.customers.create.useMutation({
     onSuccess: () => {
       setName(""); setEmail(""); setPhone(""); setNotes("");
       toast.success("Customer saved");
@@ -178,7 +186,7 @@ function ContractorHome({ preview, justUpgraded }: { preview: boolean; justUpgra
     },
     onError: (error) => toast.error(error.message),
   });
-  const assignDesign = trpc.contractorPortal.designs.assign.useMutation({
+  const assignDesign = portal.contractorPortal.designs.assign.useMutation({
     onSuccess: () => void utils.contractorPortal.designs.list.invalidate(),
     onError: (error) => toast.error(error.message),
   });
@@ -191,27 +199,69 @@ function ContractorHome({ preview, justUpgraded }: { preview: boolean; justUpgra
             <HardHat className="h-6 w-6 text-[var(--color-navy,#1a2b4a)]" />
             <h1 className="font-serif text-3xl font-bold">Contractor portal</h1>
           </div>
-          <p className="text-muted-foreground">Save designs from the 3D Designer, group them by customer, and price labor with the same estimator affiliates use.</p>
+          <p className="text-muted-foreground">Save designs from the 3D Designer, keep them on your own CRM, and price your installation and labor invoice separately from CabinetDealz materials.</p>
         </div>
         <Button asChild variant="outline" className="gap-2">
           <Link href="/design"><ClipboardList className="h-4 w-4" /> Open 3D Designer</Link>
         </Button>
       </div>
+      {contractorUserId != null ? (
+        <p className="mb-4 rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm">
+          Viewing this contractor as an admin. CRM, saved designs, and labor estimates are limited to this contractor.
+        </p>
+      ) : null}
       {preview ? <p className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950">Sample layout. Sign in to load your designs, customers, and orders.</p> : null}
       {justUpgraded ? (
         <div className="mb-6 flex items-center gap-2 rounded-lg border border-emerald-400/50 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
           <CheckCircle2 className="h-4 w-4" />
-          You're a contractor. Plans you save in the designer show up under Designs.
+          You're a contractor. Plans you save in the designer show up under Saved designs.
         </div>
       ) : null}
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1">
-          <TabsTrigger value="designs" className="gap-1"><ClipboardList className="h-4 w-4" /> Designs</TabsTrigger>
-          <TabsTrigger value="customers" className="gap-1"><Users className="h-4 w-4" /> Customers</TabsTrigger>
-          <TabsTrigger value="labor" className="gap-1"><Wrench className="h-4 w-4" /> Labor</TabsTrigger>
-          <TabsTrigger value="orders" className="gap-1"><Package className="h-4 w-4" /> Orders</TabsTrigger>
-          <TabsTrigger value="crm" className="gap-1"><Users className="h-4 w-4" /> CRM</TabsTrigger>
+          <TabsTrigger value="customers" className="gap-1"><Users className="h-4 w-4" /> Customers / CRM</TabsTrigger>
+          <TabsTrigger value="designs" className="gap-1"><ClipboardList className="h-4 w-4" /> Saved designs</TabsTrigger>
+          <TabsTrigger value="labor" className="gap-1"><Wrench className="h-4 w-4" /> Labor estimates</TabsTrigger>
+          {contractorUserId == null ? <TabsTrigger value="orders" className="gap-1"><Package className="h-4 w-4" /> Orders</TabsTrigger> : null}
         </TabsList>
+        <TabsContent value="customers" className="mt-6 space-y-6">
+          <div className="space-y-4">
+            <h2 className="text-xl font-bold">Customers</h2>
+            <form className="grid gap-3 rounded-xl border border-border p-4 sm:grid-cols-2" onSubmit={(event) => {
+              event.preventDefault();
+              if (preview) return;
+              createCustomer.mutate({
+                name: name.trim(),
+                email: email.trim() || null,
+                phone: phone.trim() || null,
+                notes: notes.trim() || null,
+                ...(contractorPortalScope(contractorUserId) ?? {}),
+              });
+            }}>
+              <div className="space-y-1"><Label htmlFor="customer-name">Name</Label><Input id="customer-name" value={name} onChange={(event) => setName(event.target.value)} required /></div>
+              <div className="space-y-1"><Label htmlFor="customer-email">Email</Label><Input id="customer-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} /></div>
+              <div className="space-y-1"><Label htmlFor="customer-phone">Phone</Label><Input id="customer-phone" value={phone} onChange={(event) => setPhone(event.target.value)} /></div>
+              <div className="space-y-1 sm:col-span-2"><Label htmlFor="customer-notes">Notes</Label><Textarea id="customer-notes" value={notes} onChange={(event) => setNotes(event.target.value)} /></div>
+              <Button type="submit" className="sm:col-span-2 w-fit" disabled={preview || createCustomer.isPending}>Add customer</Button>
+            </form>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {customers.map((customer) => {
+                const count = designs.filter((design) => design.contractorCustomerId === customer.id).length;
+                return (
+                  <button key={customer.id} type="button" className="rounded-xl border border-border p-4 text-left hover:border-[var(--color-navy,#1a2b4a)]" onClick={() => { setCustomerFilter(String(customer.id)); setTab("designs"); }}>
+                    <div className="font-semibold">{customer.name}</div>
+                    <div className="text-sm text-muted-foreground">{customer.email || customer.phone || "No contact yet"}</div>
+                    <div className="mt-2 text-xs">{count} design{count === 1 ? "" : "s"}</div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div className="space-y-3">
+            <h2 className="text-xl font-bold">CRM</h2>
+            {preview ? <p className="text-sm text-muted-foreground">The CRM is the same board affiliates use. After approval it shows only this contractor's deals, contacts, notes, and invoice PDF.</p> : <CrmBoard lang="en" contractorUserId={contractorUserId} />}
+          </div>
+        </TabsContent>
         <TabsContent value="designs" className="mt-6 space-y-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div>
@@ -249,7 +299,11 @@ function ContractorHome({ preview, justUpgraded }: { preview: boolean; justUpgra
                     disabled={preview || assignDesign.isPending}
                     onChange={(event) => {
                       const value = event.target.value;
-                      assignDesign.mutate({ designId: design.id, customerId: value ? Number(value) : null });
+                      assignDesign.mutate({
+                        designId: design.id,
+                        customerId: value ? Number(value) : null,
+                        ...(contractorPortalScope(contractorUserId) ?? {}),
+                      });
                     }}
                   >
                     <option value="">No customer</option>
@@ -260,41 +314,14 @@ function ContractorHome({ preview, justUpgraded }: { preview: boolean; justUpgra
             ))}
           </div>
         </TabsContent>
-        <TabsContent value="customers" className="mt-6 space-y-4">
-          <h2 className="text-xl font-bold">Customers</h2>
-          <form className="grid gap-3 rounded-xl border border-border p-4 sm:grid-cols-2" onSubmit={(event) => {
-            event.preventDefault();
-            if (preview) return;
-            createCustomer.mutate({ name: name.trim(), email: email.trim() || null, phone: phone.trim() || null, notes: notes.trim() || null });
-          }}>
-            <div className="space-y-1"><Label htmlFor="customer-name">Name</Label><Input id="customer-name" value={name} onChange={(event) => setName(event.target.value)} required /></div>
-            <div className="space-y-1"><Label htmlFor="customer-email">Email</Label><Input id="customer-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} /></div>
-            <div className="space-y-1"><Label htmlFor="customer-phone">Phone</Label><Input id="customer-phone" value={phone} onChange={(event) => setPhone(event.target.value)} /></div>
-            <div className="space-y-1 sm:col-span-2"><Label htmlFor="customer-notes">Notes</Label><Textarea id="customer-notes" value={notes} onChange={(event) => setNotes(event.target.value)} /></div>
-            <Button type="submit" className="sm:col-span-2 w-fit" disabled={preview || createCustomer.isPending}>Add customer</Button>
-          </form>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {customers.map((customer) => {
-              const count = designs.filter((design) => design.contractorCustomerId === customer.id).length;
-              return (
-                <button key={customer.id} type="button" className="rounded-xl border border-border p-4 text-left hover:border-[var(--color-navy,#1a2b4a)]" onClick={() => { setCustomerFilter(String(customer.id)); setTab("designs"); }}>
-                  <div className="font-semibold">{customer.name}</div>
-                  <div className="text-sm text-muted-foreground">{customer.email || customer.phone || "No contact yet"}</div>
-                  <div className="mt-2 text-xs">{count} design{count === 1 ? "" : "s"}</div>
-                </button>
-              );
-            })}
-          </div>
-        </TabsContent>
         <TabsContent value="labor" className="mt-6">
-          {preview ? <p className="text-sm text-muted-foreground">The labor estimator loads after you sign in. It is the same Kitchen cost sheet affiliates use.</p> : <InstallationEstimatesPanel audience="contractor" />}
+          {preview ? <p className="text-sm text-muted-foreground">The labor estimator loads after you sign in. This estimate is your installation and labor invoice. CabinetDealz materials are invoiced separately.</p> : <InstallationEstimatesPanel audience="contractor" contractorUserId={contractorUserId} />}
         </TabsContent>
-        <TabsContent value="orders" className="mt-6">
-          <OrderTrackingPanel previewOrders={preview ? SAMPLE_TRACKED_ORDERS : null} heading="Your orders" />
-        </TabsContent>
-        <TabsContent value="crm" className="mt-6">
-          {preview ? <p className="text-sm text-muted-foreground">The CRM is the same board affiliates use. After approval it shows only this contractor's deals, contacts, notes, and invoice PDF.</p> : <CrmBoard lang="en" />}
-        </TabsContent>
+        {contractorUserId == null ? (
+          <TabsContent value="orders" className="mt-6">
+            <OrderTrackingPanel previewOrders={preview ? SAMPLE_TRACKED_ORDERS : null} heading="Your orders" />
+          </TabsContent>
+        ) : null}
       </Tabs>
     </div>
   );
@@ -307,7 +334,7 @@ function ContractorIntro() {
         <HardHat className="h-4 w-4" /> For contractors
       </span>
       <h1 className="font-serif text-4xl font-bold mt-4">Designs, customers, and labor in one place</h1>
-      <p className="text-muted-foreground text-lg mt-3 max-w-2xl">Save a kitchen in the 3D Designer, attach it to a customer, and build the same installation estimate an affiliate would.</p>
+      <p className="text-muted-foreground text-lg mt-3 max-w-2xl">Save a kitchen in the 3D Designer, attach it to a customer on your CRM, and build your installation and labor invoice separately from CabinetDealz materials.</p>
     </div>
   );
 }
