@@ -182,7 +182,8 @@ describe("Contractor access admin", () => {
       "/contractor?contractorUserId=81",
     ]);
     expect(screen.getByRole("heading", { name: "Contractor pricing for Ada Partner · ada@store.example" })).toBeTruthy();
-    fireEvent.change(screen.getByLabelText("Markup over cost (%)"), { target: { value: "15" } });
+    expect(screen.getByText("Set or clear this affiliate's markup over their cost (what they pay Cabinet Dealz) for their contractors.")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Markup over their cost (%)"), { target: { value: "15" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(markupMutate).toHaveBeenCalledWith({ markupPercent: 15, affiliateUserId: 9 });
     fireEvent.click(screen.getByRole("button", { name: "Use site default" }));
