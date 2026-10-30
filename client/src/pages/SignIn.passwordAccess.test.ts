@@ -32,9 +32,13 @@ describe("SignIn password access", () => {
     expect(source).toContain('await afterAuth("submit")');
   });
 
-  it("refuses to enter a requested Designer route as anonymous", () => {
+  it("leaves the sign-in page when auth.me returns a user, and does not call a missing profile a password error", () => {
     expect(source).toContain("if (!me) {");
-    expect(source).toContain("Your sign-in could not be confirmed. Please try again.");
+    expect(source).toContain("PROFILE_UNAVAILABLE_MESSAGE");
+    expect(source).toContain("utils.auth.signInDestination.fetch({ returnPath: requestedReturn(), portal })");
+    expect(source).toContain("window.location.assign(decision.destination)");
     expect(source).toContain("if (isSafeSiteReturnPath(value)) return value;");
+    expect(source).toContain("isRepeatedSignup(data.user)");
+    expect(source).toContain("ACCOUNT_ALREADY_EXISTS_MESSAGE");
   });
 });

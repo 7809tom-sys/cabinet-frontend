@@ -8,6 +8,7 @@ import ChatWidget from "@/components/ChatWidget";
 import { useWhiteLabelHead } from "@/hooks/useWhiteLabelHead";
 import { StorefrontEmbed } from "@/components/storefront/StorefrontEmbed";
 import { StorefrontSocialIcons } from "@/components/storefront/StorefrontSocialIcons";
+import { StoreCornerMenu } from "@/components/storefront/StoreCornerMenu";
 import { GoogleAnalyticsTracker } from "@/components/GoogleAnalyticsTracker";
 import Home from "@/pages/Home";
 import NotFound from "@/pages/NotFound";
@@ -197,6 +198,7 @@ function AffiliateShell({ slug, children, fullHeight = false, hideAdminEditModeB
           <span data-testid="social-links-slot" className="inline-flex items-center">
             <StorefrontSocialIcons links={data?.socialLinks ?? []} />
           </span>
+          <StoreCornerMenu slug={slug} storeId={data?.id ?? null} />
           <a href={`/store/${slug}/cart`} aria-label="Shopping cart" className="hover:text-foreground">
             <ShoppingCart className="h-5 w-5" />
           </a>

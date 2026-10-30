@@ -21,9 +21,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Spinner } from "@/components/ui/spinner";
 import { Eye, EyeOff } from "lucide-react";
 import { useReferral } from "@/hooks/useReferral";
-import { isPortalChoice, type PortalChoice } from "@/lib/portalSignIn";
+import { isPortalChoice, storeSignInSlug, type PortalChoice } from "@/lib/portalSignIn";
 import { PortalSignInChooser } from "@/components/auth/PortalSignInChooser";
 import { TestAccountLogin } from "@/components/auth/TestAccountLogin";
+import { ACCOUNT_ALREADY_EXISTS_MESSAGE, isRepeatedSignup, PROFILE_UNAVAILABLE_MESSAGE } from "@/lib/accountAuth";
+import { signInStayHref } from "@/lib/storeCornerMenu";
 
 // signInWithOAuth does not report a failure when the person backs out, cancels,
 // or the browser restores this page from bfcache. Release the spinner if this
@@ -76,6 +78,16 @@ export default function SignIn({ portal: portalProp }: { portal?: PortalChoice }
 
   const [pending, setPending] = useState<"login" | "signup" | "reset" | "google" | null>(null);
   const [redirectStopped, setRedirectStopped] = useState(false);
+  const [profileUnavailable, setProfileUnavailable] = useState(false);
+  const [existingAccount, setExistingAccount] = useState(false);
+  const [tab, setTab] = useState<"login" | "signup">(() =>
+    typeof window !== "undefined" && new URLSearchParams(window.location.search).get("tab") === "signup" ? "signup" : "login",
+  );
+  const storeSlug = typeof window !== "undefined" ? storeSignInSlug(window.location.pathname) : null;
+  const storeRecord = trpc.affiliates.bySlug.useQuery(
+    { slug: storeSlug ?? "" },
+    { enabled: Boolean(storeSlug), retry: false },
+  );
   const finishing = useRef(false);
   const googleRedirectStarted = useRef(false);
   const googleLeftPage = useRef(false);
@@ -96,9 +108,13 @@ export default function SignIn({ portal: portalProp }: { portal?: PortalChoice }
   const requestedReturn = () => {
     const value = new URLSearchParams(window.location.search).get("returnTo");
     if (isSafeSiteReturnPath(value)) return value;
-    if (portal === "contractor") return "/contractor";
-    if (portal === "customer") return "/customer";
-    if (portal === "affiliate") return "/affiliate";
+    const slug = storeSignInSlug(window.location.pathname);
+    if (portal === "contractor") return slug ? `/contractor?store=${encodeURIComponent(slug)}` : "/contractor";
+    if (portal === "customer") return slug ? `/store/${encodeURIComponent(slug)}/account` : "/customer";
+    if (portal === "affiliate") {
+      const storeId = storeRecord.data?.id;
+      return storeId ? `/affiliate?viewAs=${encodeURIComponent(String(storeId))}` : "/affiliate";
+    }
     return null;
   };
 
@@ -112,9 +128,11 @@ export default function SignIn({ portal: portalProp }: { portal?: PortalChoice }
       await utils.auth.me.invalidate();
       const me = await utils.auth.me.fetch();
       if (!me) {
-        toast.error("Your sign-in could not be confirmed. Please try again.");
+        setProfileUnavailable(true);
+        toast.error(PROFILE_UNAVAILABLE_MESSAGE);
         return;
       }
+      setProfileUnavailable(false);
       window.sessionStorage.removeItem("cd.testAccountToken");
       const { destination: serverDestination } = await utils.auth.signInDestination.fetch({ returnPath: requestedReturn(), portal });
       const now = Date.now();
@@ -267,6 +285,12 @@ export default function SignIn({ portal: portalProp }: { portal?: PortalChoice }
       toast.error(errMessage(error, "Unable to create account."));
       return;
     }
+    if (isRepeatedSignup(data.user)) {
+      setPending(null);
+      setExistingAccount(true);
+      setResetEmail(signupEmail.trim());
+      return;
+    }
     if (!data.session) {
       // Email confirmation is on: the account becomes usable from the link.
       setPending(null);
@@ -309,7 +333,7 @@ export default function SignIn({ portal: portalProp }: { portal?: PortalChoice }
 
   return (
     <div className="container max-w-lg py-12">
-      {showChooser ? <PortalSignInChooser active={portal} /> : null}
+      {showChooser ? <PortalSignInChooser active={portal} affiliateId={storeRecord.data?.id ?? null} /> : null}
       <TestAccountLogin suggested={portal === "contractor" ? "contractor" : portal === "customer" ? "customer" : undefined} />
       <Card>
         <CardHeader className="text-center">
@@ -319,6 +343,11 @@ export default function SignIn({ portal: portalProp }: { portal?: PortalChoice }
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {profileUnavailable && (
+            <div role="alert" className="mb-4 rounded-md border border-amber-300 bg-amber-50 px-3 py-3 text-sm text-amber-950">
+              {PROFILE_UNAVAILABLE_MESSAGE}
+            </div>
+          )}
           {redirectStopped && (
             <div className="mb-4 rounded-md border border-amber-300 bg-amber-50 px-3 py-3 text-sm text-amber-950">
               <p>You're already signed in. We stopped a redirect back to the same page.</p>
@@ -332,7 +361,7 @@ export default function SignIn({ portal: portalProp }: { portal?: PortalChoice }
               </Button>
             </div>
           )}
-          <Tabs defaultValue="login" className="w-full">
+          <Tabs value={tab} onValueChange={(value) => setTab(value as "login" | "signup")} className="w-full">
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="login">Sign In</TabsTrigger>
               <TabsTrigger value="signup">Create Account</TabsTrigger>
@@ -500,6 +529,25 @@ export default function SignIn({ portal: portalProp }: { portal?: PortalChoice }
                     </button>
                   </div>
                 </div>
+                {existingAccount ? (
+                  <div role="alert" className="rounded-md border border-amber-300 bg-amber-50 px-3 py-3 text-sm text-amber-950">
+                    <p>{ACCOUNT_ALREADY_EXISTS_MESSAGE}</p>
+                    <p className="mt-2 flex gap-3">
+                      <a href={signInStayHref(window.location.pathname, window.location.search)} className="font-medium underline">Sign in</a>
+                      <button
+                        type="button"
+                        className="font-medium underline"
+                        onClick={() => {
+                          setResetEmail(signupEmail.trim());
+                          setShowResetRequest(true);
+                          setTab("login");
+                        }}
+                      >
+                        Reset
+                      </button>
+                    </p>
+                  </div>
+                ) : null}
                 <Button
                   type="submit"
                   className="w-full"

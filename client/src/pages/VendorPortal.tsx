@@ -28,6 +28,7 @@ import { VendorAutoRoomSceneBadge } from "@/components/doorStyles/VendorAutoRoom
 import { VENDOR_AUTO_ROOM_SCENE_COPY, type AutoRoomScene } from "@/lib/autoRoomScene";
 import { PublicRoomSceneStrip } from "@/components/PublicRoomScenes";
 import { supabase } from "@/lib/supabase";
+import { ACCOUNT_ALREADY_EXISTS_MESSAGE, isRepeatedSignup } from "@/lib/accountAuth";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { getLoginUrl } from "@/const";
 import { toast } from "sonner";
@@ -4337,6 +4338,7 @@ function VendorLoginForm() {
 
   const [isPending, setIsPending] = useState(false);
   const [notice, setNotice] = useState("");
+  const [existingAccount, setExistingAccount] = useState(false);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -4372,6 +4374,10 @@ function VendorLoginForm() {
     setIsPending(false);
     if (authError) {
       setError(authError.message || (mode === "register" ? "Registration failed." : "Invalid email or password."));
+      return;
+    }
+    if (mode === "register" && isRepeatedSignup(data.user)) {
+      setExistingAccount(true);
       return;
     }
     if (!data.session) {
@@ -4449,6 +4455,15 @@ function VendorLoginForm() {
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   autoComplete="new-password"
                 />
+              </div>
+            )}
+            {existingAccount && (
+              <div role="alert" className="rounded-md border border-amber-300 bg-amber-50 px-3 py-3 text-sm text-amber-950">
+                <p>{ACCOUNT_ALREADY_EXISTS_MESSAGE}</p>
+                <p className="mt-2 flex gap-3">
+                  <button type="button" className="font-medium underline" onClick={() => { setExistingAccount(false); setMode("login"); }}>Sign in</button>
+                  <a href="/signin" className="font-medium underline">Reset</a>
+                </p>
               </div>
             )}
             {error && (

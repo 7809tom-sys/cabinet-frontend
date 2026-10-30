@@ -8,7 +8,7 @@ const CHOICES: Array<{ portal: PortalChoice; label: string; detail: string; icon
   { portal: "customer", label: "Customer", detail: "Saved designs and orders", icon: UserRound },
 ];
 
-export function PortalSignInChooser({ active }: { active?: PortalChoice | null }) {
+export function PortalSignInChooser({ active, affiliateId }: { active?: PortalChoice | null; affiliateId?: number | null }) {
   useReferral();
   const pathname = typeof window === "undefined" ? "/" : window.location.pathname;
   const search = typeof window === "undefined" ? "" : window.location.search;
@@ -23,6 +23,7 @@ export function PortalSignInChooser({ active }: { active?: PortalChoice | null }
             pathname,
             search,
             storedRef: readReferralCode(),
+            affiliateId,
           });
           const selected = active === choice.portal;
           const Icon = choice.icon;
