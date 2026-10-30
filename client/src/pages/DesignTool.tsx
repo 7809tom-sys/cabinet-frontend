@@ -225,7 +225,7 @@ import { evaluateAutoDesignCornerFit, type AutoDesignCornerFit } from "@/lib/cor
 import { useKitchenRuleParameterSync } from "@/lib/kitchenRulesApi";
 import { rangeBridgeSpec, reviewAfterShift, separateRangeAndRefrigerator } from "@/lib/kitchenAdjacency";
 import { bakesALot, cooksALot, normalizeKitchenUsage } from "@/lib/kitchenUsage";
-import { buildMandatoryAutoDesignRefrigeratorBay } from "@/lib/autoDesignRefrigeratorBay";
+import { AUTO_DESIGN_REFRIGERATOR_WALL_END_SHIFT_IN, buildMandatoryAutoDesignRefrigeratorBay } from "@/lib/autoDesignRefrigeratorBay";
 import { buildAutoDesignWallCabinets, resolveWallHeightClass, type AutoDesignUpperCorner } from "@/lib/autoDesignWallCabinets";
 import { isWallWineRackCabinet, withWallWineRacks } from "@shared/wallWineRack";
 import { seatAutoDesignCornerFromCatalog } from "@/lib/autoDesignCornerPlacement";
@@ -3914,12 +3914,15 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         wallCabinetHeightIn: (() => {
           const nominal = input.wallCabinetHeightIn ?? 30;
           const resolved = resolveWallHeightClass((wallCabPool as DesignCabinet[] | undefined) ?? [], nominal);
-          return resolved != null && isFramelessFortyWallHeight(resolved) ? resolved : nominal;
+          return resolved ?? nominal;
         })(),
+        framelessLine: ((wallCabPool as DesignCabinet[] | undefined) ?? []).some((row) => hasAefPrintedGeometry(row)),
       });
       if (!refrigeratorBay.ok) return fail(refrigeratorBay.message);
       const fittedBay = fitExplicitRefrigeratorOptionPlacements(working, refrigeratorBay.additions, refrigerator.uid, room);
-      if (Math.abs(fittedBay.shiftIn) > COLLISION_EPSILON_IN) {
+      // A quarter-inch slide only brings the 3/4 inch end panels flush with the
+      // wall. The measured center is kept for anything larger.
+      if (Math.abs(fittedBay.shiftIn) > AUTO_DESIGN_REFRIGERATOR_WALL_END_SHIFT_IN + COLLISION_EPSILON_IN) {
         return fail("The measured refrigerator bay does not have room for its two panels and matching cabinet above. Adjust the refrigerator center measurement; Auto-Design will not move it.");
       }
       const committedBay = appendRefrigeratorEnclosurePlacements(fittedBay.existing, fittedBay.additions, refrigerator.uid, room);
@@ -3927,7 +3930,15 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         return fail("The measured refrigerator bay overlaps an anchor, opening, or wall end. Adjust the refrigerator center measurement; Auto-Design will not add a filler or move it.");
       }
       working = committedBay.placed;
-      refrigeratorReservation = refrigeratorBay.reservation;
+      refrigeratorReservation = {
+        ...refrigeratorBay.reservation,
+        start: refrigeratorBay.reservation.start + fittedBay.shiftIn,
+        end: refrigeratorBay.reservation.end + fittedBay.shiftIn,
+      };
+      for (const note of refrigeratorBay.notes) toast.info(note, { duration: 12000 });
+      if (Math.abs(fittedBay.shiftIn) > COLLISION_EPSILON_IN) {
+        toast.info(`Moved the refrigerator ${formatEighthInches(Math.abs(fittedBay.shiftIn))} so its end panels stay on the wall.`, { duration: 12000 });
+      }
     }
     const sinkBase = anchorsByKind.get("sink");
     if (sinkBase) {

@@ -10,6 +10,13 @@ const fillers = [
 ] as const;
 
 describe("catalogFillerForGap", () => {
+	it("does not let a blank base-filler depth lose to a 12-inch wall filler", () => {
+	  const blankDepthBase = { id: 8, masterCode: "BFF3", description: '3" x 34.5" Fluted Base Filler', category: "Filler", subCategory: "Filler", width: 3, depth: null, height: 34.5, catalogImageUrl: null };
+	  const wall = { id: 9, masterCode: "WFF342", description: '3" x 42" Wall Filler', category: "Filler", subCategory: "Filler", width: 3, depth: 12, height: 42, catalogImageUrl: null };
+	  expect(catalogFillerForGap([wall, blankDepthBase], 0.5, "base")?.masterCode).toBe("BFF3");
+	  expect(catalogFillerForGap([wall, blankDepthBase], 0.5, "wall")?.masterCode).toBe("WFF342");
+	});
+
 	it("uses one real 3-inch stock filler for every installed cut through 3 inches", () => {
 	  expect(catalogFillerForGap(fillers, 2.25, "base")?.masterCode).toBe("BF-3");
 	  expect(catalogFillerForGap(fillers, 4.5, "base")?.masterCode).toBe("BF-6");
