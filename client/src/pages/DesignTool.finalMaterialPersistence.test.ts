@@ -12,7 +12,7 @@ describe("Designer final material persistence", () => {
   });
 
   it("writes a draft after a direct surface selection changes", () => {
-    expect(source).toContain("flooringPattern, selectedSurfaces, cabinetsLocked");
+    expect(source).toContain("flooringPattern, flooringRotation, selectedSurfaces, cabinetsLocked");
   });
 
   it("loads an older designId link instead of falling through to a local draft with generic materials", () => {

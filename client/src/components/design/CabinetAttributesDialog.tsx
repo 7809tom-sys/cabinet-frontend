@@ -396,6 +396,8 @@ export interface CabinetAttributesDialogProps {
   cabinet: PlacedCabinet | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Deletes this cabinet, panel, filler, or appliance after confirmation. */
+  onDelete?: (uid: string) => void;
   /** Cabinet belongs to a persisted, safely editable Peninsula Wizard assembly. */
   wizardBuiltEditable?: boolean;
   /** Opens the assembly's exact Wizard recipe without altering this cabinet first. */
@@ -521,6 +523,7 @@ export function CabinetAttributesDialog({
   cabinet,
   open,
   onOpenChange,
+  onDelete,
   wizardBuiltEditable = false,
   onJumpToWizard,
   customFee,
@@ -644,7 +647,10 @@ export function CabinetAttributesDialog({
         <SheetContent side="bottom" className="max-h-[85vh] overflow-y-auto rounded-t-2xl p-0">
           <SheetHeader className="border-b p-4 text-left"><SheetTitle>MasterTrac {cabinet.masterCode}</SheetTitle><SheetDescription>{masterTrac.description}</SheetDescription></SheetHeader>
           {boardControls}
-          <div className="border-t p-4"><Button type="button" className="w-full" onClick={() => onOpenChange(false)}>Done</Button></div>
+          <div className="border-t p-4 flex gap-2">
+            {onDelete && <Button type="button" variant="outline" className="border-red-300 text-red-700" data-testid="cabinet-attributes-delete" onClick={() => onDelete(uid)}>Delete</Button>}
+            <Button type="button" className="w-full" onClick={() => onOpenChange(false)}>Done</Button>
+          </div>
         </SheetContent>
       </Sheet>
     ) : (
@@ -693,7 +699,8 @@ export function CabinetAttributesDialog({
 	              Please use a tablet or desktop computer to access full cabinet attributes.
 	            </div>
           </div>
-          <div className="border-t p-4">
+          <div className="border-t p-4 flex gap-2">
+            {onDelete && <Button type="button" variant="outline" className="border-red-300 text-red-700" data-testid="cabinet-attributes-delete" onClick={() => onDelete(uid)}>Delete</Button>}
             <Button type="button" className="w-full" onClick={() => onOpenChange(false)}>
               {t("dt_ca_done")}
             </Button>
@@ -1424,7 +1431,12 @@ export function CabinetAttributesDialog({
           </details>
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="gap-2 sm:justify-between">
+          {onDelete && (
+            <Button type="button" variant="outline" className="border-red-300 text-red-700 hover:bg-red-50" data-testid="cabinet-attributes-delete" onClick={() => onDelete(uid)}>
+              Delete
+            </Button>
+          )}
           <Button type="button" onClick={() => onOpenChange(false)}>
             {t("dt_ca_done")}
           </Button>
