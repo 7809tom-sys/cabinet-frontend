@@ -28,7 +28,7 @@ describe("approved contractor portal", () => {
     expect(home).toContain("contractorPortal.designs.assign.useMutation");
     expect(home).toContain("contractorPortalScope(contractorUserId)");
     expect(home).toContain('<CrmBoard lang="en" contractorUserId={contractorUserId} />');
-    expect(home).toContain('<InstallationEstimatesPanel audience="contractor" contractorUserId={contractorUserId} />');
+    expect(home).toContain('audience="contractor" contractorUserId={contractorUserId} readOnly={staffPreview}');
     expect(home).toContain("This estimate is your installation and labor invoice. CabinetDealz materials are invoiced separately.");
     expect(portal).toContain("optional contractorUserId");
     expect(portal).toContain("Cast until AppRouter includes it");
@@ -48,5 +48,34 @@ describe("approved contractor portal", () => {
     expect(estimates).toContain("installationEstimates.saveKitchenCostDefaults.useMutation");
     expect(estimates).toContain("updateStatus.mutate({ id: estimate.id, ...scope, status: \"shared\" })");
     expect(estimates).toContain("installationEstimates.updateStatus.useMutation");
+  });
+
+  it("shows staff a read-only contractor portal instead of the other-portal page", () => {
+    expect(dashboard).toContain('view.mode === "staff-preview"');
+    expect(dashboard).toContain("staffPreviewRole={view.role}");
+    expect(dashboard).toContain("staffPreviewBannerText(staffPreviewRole)");
+    expect(dashboard).toContain("staffDashboardPath(staffPreviewRole)");
+    expect(dashboard).toContain("Back to your dashboard");
+    expect(dashboard).toContain('data-testid="contractor-staff-preview-banner"');
+    expect(dashboard).toContain("if (preview || staffPreview) return");
+    expect(dashboard).toContain("staffPreviewQueryRows(staffPreview, customersQuery.data, customersQuery.error)");
+    expect(dashboard).toContain("staffPreviewQueryRows(staffPreview, designsQuery.data, designsQuery.error)");
+    expect(dashboard).toContain('staffPreviewEmptyCopy("customers")');
+    expect(dashboard).toContain('staffPreviewEmptyCopy("designs")');
+    expect(dashboard).toContain('staffPreviewEmptyCopy("crm")');
+    expect(dashboard).toContain('staffPreviewEmptyCopy("orders")');
+    expect(dashboard).toContain("Customers / CRM");
+    expect(dashboard).toContain("Saved designs");
+    expect(dashboard).toContain("Labor estimates");
+    expect(dashboard).toContain("Orders");
+    expect(dashboard).not.toContain("Log in as");
+    expect(estimates).toContain('const readOnly = "audience" in props && props.readOnly === true');
+    expect(estimates).toContain("if (readOnly) return;");
+    expect(estimates).toContain('staffPreviewEmptyCopy("labor")');
+    expect(estimates).toContain("if (readOnly) return; updateStatus.mutate");
+    const home = dashboard.slice(dashboard.indexOf("function ContractorHome"));
+    const crmBranch = home.slice(home.indexOf("<h2 className=\"text-xl font-bold\">CRM</h2>"));
+    expect(crmBranch).toContain("staffPreview ?");
+    expect(crmBranch.indexOf("staffPreviewEmptyCopy(\"crm\")")).toBeLessThan(crmBranch.indexOf("<CrmBoard"));
   });
 });

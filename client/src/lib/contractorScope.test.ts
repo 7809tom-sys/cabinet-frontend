@@ -8,6 +8,11 @@ import {
   parseContractorUserId,
   resolveContractorDashboardView,
   setAffiliateMarkupInput,
+  STAFF_PREVIEW_ACTION_TITLE,
+  staffDashboardPath,
+  staffPreviewBannerText,
+  staffPreviewEmptyCopy,
+  staffPreviewQueryRows,
 } from "./contractorScope";
 
 describe("contractor scope", () => {
@@ -26,10 +31,46 @@ describe("contractor scope", () => {
       mode: "admin-contractor",
       contractorUserId: 81,
     });
-    expect(resolveContractorDashboardView({ role: "admin", requestedContractorUserId: null })).toEqual({ mode: "other-portal" });
     expect(resolveContractorDashboardView({ role: "contractor", requestedContractorUserId: 81 })).toEqual({ mode: "contractor" });
     expect(resolveContractorDashboardView({ role: "user", requestedContractorUserId: 81 })).toEqual({ mode: "applicant" });
-    expect(resolveContractorDashboardView({ role: "partner", requestedContractorUserId: null })).toEqual({ mode: "other-portal" });
+    expect(resolveContractorDashboardView({ role: "designer", requestedContractorUserId: null })).toEqual({ mode: "other-portal" });
+    expect(resolveContractorDashboardView({ role: "sales_rep", requestedContractorUserId: null })).toEqual({ mode: "other-portal" });
+  });
+
+  it("previews the contractor portal for every admin, affiliate, and distributor without a contractor id", () => {
+    expect(resolveContractorDashboardView({ role: "admin", requestedContractorUserId: null })).toEqual({
+      mode: "staff-preview",
+      role: "admin",
+    });
+    expect(resolveContractorDashboardView({ role: "partner", requestedContractorUserId: null })).toEqual({
+      mode: "staff-preview",
+      role: "partner",
+    });
+    expect(resolveContractorDashboardView({ role: "partner", requestedContractorUserId: 81 })).toEqual({
+      mode: "staff-preview",
+      role: "partner",
+    });
+    expect(resolveContractorDashboardView({ role: "distributor", requestedContractorUserId: null })).toEqual({
+      mode: "staff-preview",
+      role: "distributor",
+    });
+    expect(staffPreviewBannerText("admin")).toBe("Preview mode — you're viewing the contractor portal as admin. Actions may be limited.");
+    expect(staffPreviewBannerText("partner")).toBe("Preview mode — you're viewing the contractor portal as affiliate. Actions may be limited.");
+    expect(staffPreviewBannerText("distributor")).toBe("Preview mode — you're viewing the contractor portal as distributor. Actions may be limited.");
+    expect(staffDashboardPath("admin")).toBe("/admin");
+    expect(staffDashboardPath("partner")).toBe("/affiliate");
+    expect(staffDashboardPath("distributor")).toBe("/distributor");
+    expect(staffDashboardPath("sales_rep")).toBe("/admin");
+    expect(staffPreviewEmptyCopy("customers")).toBe("No customers to show in preview. This login can't load a contractor's customers.");
+    expect(staffPreviewEmptyCopy("designs")).toBe("No saved designs to show in preview. This login can't load a contractor's designs.");
+    expect(staffPreviewEmptyCopy("crm")).toBe("No CRM deals to show in preview. This board stays empty so this login doesn't change a real CRM.");
+    expect(staffPreviewEmptyCopy("labor")).toBe("No labor estimates to show in preview. This login can't load or save contractor invoices.");
+    expect(staffPreviewEmptyCopy("orders")).toBe("No orders to show in preview. Contractor orders stay hidden for this login.");
+    expect(STAFF_PREVIEW_ACTION_TITLE).toBe("Preview mode can't change contractor data.");
+    expect(staffPreviewQueryRows(true, [{ id: 1 }], { message: "FORBIDDEN" })).toEqual([]);
+    expect(staffPreviewQueryRows(true, [{ id: 1 }], null)).toEqual([{ id: 1 }]);
+    expect(staffPreviewQueryRows(false, [{ id: 1 }], { message: "FORBIDDEN" })).toEqual([{ id: 1 }]);
+    expect(staffPreviewQueryRows(false, undefined, null)).toEqual([]);
   });
 
   it("builds the contractor estimate, portal, CRM, and markup inputs", () => {

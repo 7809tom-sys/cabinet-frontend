@@ -13,7 +13,7 @@ import { INSTALLATION_ROOM_TYPES, type InstallationCostType, type InstallationRo
 import { KITCHEN_COST_SHEET_DESCRIPTIONS } from "@shared/kitchenCostSheet";
 import { KitchenCostSheet, type KitchenCostRow } from "./KitchenCostSheet";
 import { downloadInstallationEstimateCsv, downloadInstallationEstimatePdf } from "@/lib/installationEstimateExport";
-import { contractorEstimateScope, type ContractorEstimateScope } from "@/lib/contractorScope";
+import { contractorEstimateScope, STAFF_PREVIEW_ACTION_TITLE, staffPreviewEmptyCopy, type ContractorEstimateScope } from "@/lib/contractorScope";
 
 type DraftLine = { description: string; quantity: number; unitCost: number; costType: InstallationCostType };
 type SavedLine = DraftLine & { lineTotal: number };
@@ -32,7 +32,7 @@ const createKitchenRows = (): KitchenCostRow[] => KITCHEN_COST_SHEET_DESCRIPTION
 
 const emptyLine = (): DraftLine => ({ description: "", quantity: 1, unitCost: 0, costType: "labor" });
 
-type EstimatePanelProps = { affiliateId: number } | { audience: "contractor"; contractorUserId?: number };
+type EstimatePanelProps = { affiliateId: number } | { audience: "contractor"; contractorUserId?: number; readOnly?: boolean };
 
 type EstimateScope = { audience: "affiliate"; affiliateId: number } | ContractorEstimateScope;
 
@@ -43,6 +43,7 @@ function estimateQuery(props: EstimatePanelProps): EstimateScope {
 
 export function InstallationEstimatesPanel(props: EstimatePanelProps) {
   const scope = estimateQuery(props);
+  const readOnly = "audience" in props && props.readOnly === true;
   const isContractorEstimate = scope.audience === "contractor";
   const estimateIntro = isContractorEstimate
     ? "This estimate is your installation and labor invoice. CabinetDealz materials are invoiced separately."
@@ -147,6 +148,7 @@ export function InstallationEstimatesPanel(props: EstimatePanelProps) {
   });
 
   function saveKitchenDefaults() {
+    if (readOnly) return;
     saveDefaults.mutate({
       ...scope,
       defaults: kitchenRows.map((row) => ({ description: row.description, materialUnitCost: row.materialUnitCost, laborUnitCost: row.laborUnitCost })),
@@ -154,6 +156,7 @@ export function InstallationEstimatesPanel(props: EstimatePanelProps) {
   }
 
   function saveEstimate() {
+    if (readOnly) return;
     const lineItems = roomType === "Kitchen"
       ? kitchenRows.flatMap((row) => [
         row.materialQuantity > 0 ? { description: row.description, quantity: row.materialQuantity, unitCost: row.materialUnitCost, costType: "material" as const } : null,
@@ -171,6 +174,28 @@ export function InstallationEstimatesPanel(props: EstimatePanelProps) {
     });
   }
 
+  if (readOnly) {
+    const blocked = estimates.error != null || kitchenPlans.error != null || kitchenDefaults.error != null;
+    return (
+      <div className="space-y-4">
+        <div>
+          <h2 className="text-xl font-bold">Installation estimate</h2>
+          <p className="text-sm text-muted-foreground">{estimateIntro}</p>
+        </div>
+        {estimates.isLoading || kitchenPlans.isLoading || kitchenDefaults.isLoading ? (
+          <p className="text-sm text-muted-foreground">Loading installation estimates…</p>
+        ) : (
+          <p className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+            {blocked ? staffPreviewEmptyCopy("labor") : "Saving labor estimates is turned off in preview."}
+          </p>
+        )}
+        <span title={STAFF_PREVIEW_ACTION_TITLE} className="inline-flex">
+          <Button type="button" disabled>Save installation estimate</Button>
+        </span>
+      </div>
+    );
+  }
+
   return (
     <div className="grid min-w-0 gap-6 2xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
       <section className="min-w-0 rounded-xl border border-border bg-card p-3 sm:p-5 space-y-5">
@@ -184,7 +209,7 @@ export function InstallationEstimatesPanel(props: EstimatePanelProps) {
         {roomType === "Kitchen" ? (
           <div className="space-y-3 rounded-lg border border-dashed border-primary/30 bg-muted/20 p-3">
             <div className="grid min-w-0 gap-2 rounded-lg border border-primary/20 bg-background p-3"><div className="space-y-1.5"><Label htmlFor="installation-kitchen-plan">Bring in a saved Kitchen plan</Label><select id="installation-kitchen-plan" value={selectedKitchenPlanId ?? ""} onChange={(event) => setSelectedKitchenPlanId(event.target.value ? Number(event.target.value) : null)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><option value="">No saved plan selected</option>{kitchenPlans.data?.map((plan) => <option key={plan.id} value={plan.id}>{plan.name}{plan.roomLabel ? ` · ${plan.roomLabel}` : ""} · {plan.cabinetBreakdown.total} cabinets</option>)}</select><p className="text-xs text-muted-foreground">Every measurable material represented in the saved plan is prefilled where catalog geometry supports it; prices remain editable.</p></div>{selectedKitchenPlan && <><div className="grid grid-cols-4 gap-1 text-center text-xs"><div className="rounded bg-muted/50 px-2 py-2"><div className="font-bold text-base">{selectedKitchenPlan.cabinetBreakdown.base}</div><div className="text-muted-foreground">Base</div></div><div className="rounded bg-muted/50 px-2 py-2"><div className="font-bold text-base">{selectedKitchenPlan.cabinetBreakdown.wall}</div><div className="text-muted-foreground">Wall</div></div><div className="rounded bg-muted/50 px-2 py-2"><div className="font-bold text-base">{selectedKitchenPlan.cabinetBreakdown.tall}</div><div className="text-muted-foreground">Tall</div></div><div className="rounded bg-primary/10 px-2 py-2"><div className="font-bold text-base">{selectedKitchenPlan.cabinetBreakdown.total}</div><div className="text-muted-foreground">Total</div></div></div><p className="text-xs text-muted-foreground">Known quantities prefilled below: {selectedKitchenPlan.workQuantities.cabinetAssembly} assemblies, {selectedKitchenPlan.workQuantities.pantryCabinet} pantry cabinets, {selectedKitchenPlan.workQuantities.countertopSquareFeet.toFixed(1)} sq ft countertop, {selectedKitchenPlan.workQuantities.fillerLinearFeet.toFixed(1)} linear ft fillers, {selectedKitchenPlan.workQuantities.crownMoldingLinearFeet.toFixed(1)} linear ft crown (includes cut allowance), {selectedKitchenPlan.workQuantities.toeKickLinearFeet.toFixed(1)} linear ft toe kick, {selectedKitchenPlan.workQuantities.handles} handles/knobs.</p></>}</div>
-            <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-sm font-semibold">Kitchen Cost Sheet Cabinets</p><p className="text-xs text-muted-foreground">{savedRatesHint}</p></div><div className="flex flex-wrap items-center gap-2"><Badge variant="outline">{kitchenDefaults.data?.hasSavedDefaults ? "Saved rates applied" : "No saved rates"}</Badge><Button type="button" size="sm" variant="outline" onClick={saveKitchenDefaults} disabled={saveDefaults.isPending}>{saveDefaults.isPending ? "Saving…" : "Save rates as defaults"}</Button></div></div>
+            <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-sm font-semibold">Kitchen Cost Sheet Cabinets</p><p className="text-xs text-muted-foreground">{savedRatesHint}</p></div><div className="flex flex-wrap items-center gap-2"><Badge variant="outline">{kitchenDefaults.data?.hasSavedDefaults ? "Saved rates applied" : "No saved rates"}</Badge><Button type="button" size="sm" variant="outline" onClick={saveKitchenDefaults} disabled={readOnly || saveDefaults.isPending}>{saveDefaults.isPending ? "Saving…" : "Save rates as defaults"}</Button></div></div>
             <KitchenCostSheet rows={kitchenRows} onChange={updateKitchenRow} />
             <div className="grid gap-1 text-sm lg:grid-cols-3"><div className="flex justify-between rounded bg-background px-3 py-2"><span>Material total</span><span className="font-semibold tabular-nums">{money(kitchenTotals.material)}</span></div><div className="flex justify-between rounded bg-background px-3 py-2"><span>Labor total</span><span className="font-semibold tabular-nums">{money(kitchenTotals.labor)}</span></div><div className="flex justify-between rounded bg-background px-3 py-2 font-bold"><span>Kitchen subtotal</span><span className="tabular-nums">{money(subtotal)}</span></div></div>
           </div>
@@ -195,10 +220,10 @@ export function InstallationEstimatesPanel(props: EstimatePanelProps) {
         <div className="space-y-2"><Label>Customer-facing notes</Label><Textarea value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Scope, exclusions, schedule, or warranty notes." /></div>
         <div className="space-y-3 rounded-lg border border-border bg-muted/30 p-3"><Button type="button" variant="outline" onClick={() => setMarkupOpen((open) => !open)} aria-expanded={markupOpen}><Percent className="mr-2 h-4 w-4" />{markupOpen ? "Hide markup" : "Mark Up"}</Button>{markupOpen && <div className="grid gap-3 sm:grid-cols-[180px_minmax(0,1fr)] sm:items-end"><div className="space-y-1.5"><Label htmlFor="installation-markup">Add markup (%)</Label><div className="relative"><Input id="installation-markup" type="number" min="0" step="0.01" value={markupPercent} onChange={(event) => setMarkupPercent(Math.max(0, Number(event.target.value) || 0))} className="pr-8" /><span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-muted-foreground">%</span></div></div><p className="text-xs text-muted-foreground">Markup applies to the installation subtotal only. CabinetDealz material pricing remains separate.</p></div>}</div>
         <div className="space-y-1 rounded-lg bg-muted/40 px-4 py-3 text-sm"><div className="flex justify-between"><span>Installation subtotal</span><span className="tabular-nums">{money(subtotal)}</span></div>{markupPercent > 0 && <div className="flex justify-between"><span>Markup ({markupPercent}%)</span><span className="tabular-nums">{money(markupAmount)}</span></div>}<div className="flex justify-between border-t pt-1 font-bold"><span>Installation total</span><span className="text-xl tabular-nums">{money(total)}</span></div></div>
-        <Button className="w-full" onClick={saveEstimate} disabled={create.isPending}><ReceiptText className="mr-2 h-4 w-4" />Save installation estimate</Button>
+        <Button className="w-full" onClick={saveEstimate} disabled={readOnly || create.isPending}><ReceiptText className="mr-2 h-4 w-4" />Save installation estimate</Button>
       </section>
 
-      <section className="rounded-xl border border-border bg-card p-5 space-y-4"><div><h2 className="text-xl font-bold">Customer presentation</h2><p className="text-sm text-muted-foreground">Show these installation totals separately from the CabinetDealz material invoice.</p></div>{estimates.isLoading ? <p className="text-sm text-muted-foreground">Loading installation estimates…</p> : estimates.data?.length ? estimates.data.map((estimate) => { const lineItems = (estimate.lineItems ?? []) as SavedLine[]; const breakdown = estimate.cabinetBreakdown; const exportData = { id: estimate.id, roomType: estimate.roomType, customerName: estimate.customerName, customerEmail: estimate.customerEmail, customerPhone: estimate.customerPhone, lineItems, subtotal: estimate.subtotal, markupPercent: estimate.markupPercent, markupAmount: estimate.markupAmount, totalAmount: estimate.totalAmount, cabinetBreakdown: breakdown }; return <article key={estimate.id} className="rounded-lg border border-border p-4 space-y-3"><div className="flex items-start justify-between gap-3"><div><p className="font-semibold">{estimate.customerName || estimate.customerEmail || `Installation estimate #${estimate.id}`}</p><p className="text-xs text-muted-foreground">{estimate.roomType} · {savedInvoiceLabel}</p>{breakdown && <p className="mt-1 text-xs text-muted-foreground">Plan cabinets: {breakdown.base} Base · {breakdown.wall} Wall · {breakdown.tall} Tall · {breakdown.total} total · {estimate.crmDealId ? `CRM deal #${estimate.crmDealId}` : "No saved plan linked"}</p>}</div><Badge variant="outline" className="capitalize">{estimate.status}</Badge></div><div className="space-y-1.5 text-sm">{lineItems.map((line, index) => <div key={index} className="flex justify-between gap-3"><span>{line.quantity} × {line.description} <span className="text-xs text-muted-foreground">({line.costType})</span></span><span className="tabular-nums">{money(line.lineTotal)}</span></div>)}</div><div className="border-t pt-2 flex items-center justify-between font-bold"><span>Installation total</span><span>{money(estimate.totalAmount)}</span></div>{Number(estimate.markupPercent) > 0 && <p className="text-xs text-muted-foreground">Markup: {Number(estimate.markupPercent).toFixed(2)}% ({money(estimate.markupAmount)})</p>}{estimate.notes && <p className="text-xs text-muted-foreground whitespace-pre-wrap">{estimate.notes}</p>}<div className="flex flex-wrap gap-2">{installationEstimateStatusAction(estimate.status) === "share" && <Button size="sm" variant="outline" onClick={() => updateStatus.mutate({ id: estimate.id, ...scope, status: "shared" })}><Send className="mr-1 h-3.5 w-3.5" />Mark shared with customer</Button>}<Button size="sm" variant="outline" onClick={() => downloadInstallationEstimateCsv(exportData)}>Download CSV</Button><Button size="sm" variant="outline" onClick={() => { void downloadInstallationEstimatePdf(exportData).catch((error: unknown) => toast.error("Could not create PDF", { description: error instanceof Error ? error.message : "Please try again." })); }}>Download PDF</Button>{isCustomerVisibleInstallationEstimate(estimate.status) && estimate.shareToken && <Button size="sm" variant="outline" onClick={() => { navigator.clipboard.writeText(`${window.location.origin}${installationEstimateDocumentPath(estimate.shareToken!)}`); toast.success("Customer installation document link copied."); }}><Copy className="mr-1 h-3.5 w-3.5" />Copy customer document</Button>}</div></article>; }) : <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">No installation estimates yet. Create one for the customer’s installation work.</div>}</section>
+      <section className="rounded-xl border border-border bg-card p-5 space-y-4"><div><h2 className="text-xl font-bold">Customer presentation</h2><p className="text-sm text-muted-foreground">Show these installation totals separately from the CabinetDealz material invoice.</p></div>{estimates.isLoading ? <p className="text-sm text-muted-foreground">Loading installation estimates…</p> : estimates.data?.length ? estimates.data.map((estimate) => { const lineItems = (estimate.lineItems ?? []) as SavedLine[]; const breakdown = estimate.cabinetBreakdown; const exportData = { id: estimate.id, roomType: estimate.roomType, customerName: estimate.customerName, customerEmail: estimate.customerEmail, customerPhone: estimate.customerPhone, lineItems, subtotal: estimate.subtotal, markupPercent: estimate.markupPercent, markupAmount: estimate.markupAmount, totalAmount: estimate.totalAmount, cabinetBreakdown: breakdown }; return <article key={estimate.id} className="rounded-lg border border-border p-4 space-y-3"><div className="flex items-start justify-between gap-3"><div><p className="font-semibold">{estimate.customerName || estimate.customerEmail || `Installation estimate #${estimate.id}`}</p><p className="text-xs text-muted-foreground">{estimate.roomType} · {savedInvoiceLabel}</p>{breakdown && <p className="mt-1 text-xs text-muted-foreground">Plan cabinets: {breakdown.base} Base · {breakdown.wall} Wall · {breakdown.tall} Tall · {breakdown.total} total · {estimate.crmDealId ? `CRM deal #${estimate.crmDealId}` : "No saved plan linked"}</p>}</div><Badge variant="outline" className="capitalize">{estimate.status}</Badge></div><div className="space-y-1.5 text-sm">{lineItems.map((line, index) => <div key={index} className="flex justify-between gap-3"><span>{line.quantity} × {line.description} <span className="text-xs text-muted-foreground">({line.costType})</span></span><span className="tabular-nums">{money(line.lineTotal)}</span></div>)}</div><div className="border-t pt-2 flex items-center justify-between font-bold"><span>Installation total</span><span>{money(estimate.totalAmount)}</span></div>{Number(estimate.markupPercent) > 0 && <p className="text-xs text-muted-foreground">Markup: {Number(estimate.markupPercent).toFixed(2)}% ({money(estimate.markupAmount)})</p>}{estimate.notes && <p className="text-xs text-muted-foreground whitespace-pre-wrap">{estimate.notes}</p>}<div className="flex flex-wrap gap-2">{installationEstimateStatusAction(estimate.status) === "share" && <Button size="sm" variant="outline" onClick={() => { if (readOnly) return; updateStatus.mutate({ id: estimate.id, ...scope, status: "shared" }); }}><Send className="mr-1 h-3.5 w-3.5" />Mark shared with customer</Button>}<Button size="sm" variant="outline" onClick={() => downloadInstallationEstimateCsv(exportData)}>Download CSV</Button><Button size="sm" variant="outline" onClick={() => { void downloadInstallationEstimatePdf(exportData).catch((error: unknown) => toast.error("Could not create PDF", { description: error instanceof Error ? error.message : "Please try again." })); }}>Download PDF</Button>{isCustomerVisibleInstallationEstimate(estimate.status) && estimate.shareToken && <Button size="sm" variant="outline" onClick={() => { navigator.clipboard.writeText(`${window.location.origin}${installationEstimateDocumentPath(estimate.shareToken!)}`); toast.success("Customer installation document link copied."); }}><Copy className="mr-1 h-3.5 w-3.5" />Copy customer document</Button>}</div></article>; }) : <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">No installation estimates yet. Create one for the customer’s installation work.</div>}</section>
     </div>
   );
 }

@@ -16,7 +16,17 @@ import { OrderTrackingPanel, SAMPLE_TRACKED_ORDERS } from "@/components/orders/O
 import { PortalSignInChooser } from "@/components/auth/PortalSignInChooser";
 import { CrmBoard } from "@/components/crm/CrmBoard";
 import { useContractorPortalProcedures } from "@/lib/contractorPortalProcedures";
-import { contractorPortalScope, readContractorUserId, resolveContractorDashboardView } from "@/lib/contractorScope";
+import {
+  contractorPortalScope,
+  readContractorUserId,
+  resolveContractorDashboardView,
+  STAFF_PREVIEW_ACTION_TITLE,
+  staffDashboardPath,
+  staffPreviewBannerText,
+  staffPreviewEmptyCopy,
+  staffPreviewQueryRows,
+  type StaffPreviewRole,
+} from "@/lib/contractorScope";
 import {
   HardHat,
   ClipboardList,
@@ -103,6 +113,10 @@ export default function ContractorDashboard() {
     return <ContractorHome preview={false} justUpgraded={false} contractorUserId={view.contractorUserId} />;
   }
 
+  if (!preview && view.mode === "staff-preview") {
+    return <ContractorHome preview={false} justUpgraded={false} staffPreviewRole={view.role} />;
+  }
+
   if (!preview && view.mode === "applicant") {
     const pending = application.data?.status === "pending";
     return (
@@ -163,7 +177,8 @@ export default function ContractorDashboard() {
   return <ContractorHome preview={preview} justUpgraded={justUpgraded} />;
 }
 
-function ContractorHome({ preview, justUpgraded, contractorUserId }: { preview: boolean; justUpgraded: boolean; contractorUserId?: number }) {
+function ContractorHome({ preview, justUpgraded, contractorUserId, staffPreviewRole }: { preview: boolean; justUpgraded: boolean; contractorUserId?: number; staffPreviewRole?: StaffPreviewRole }) {
+  const staffPreview = staffPreviewRole != null;
   const utils = trpc.useUtils();
   const portal = useContractorPortalProcedures();
   const portalScope = contractorPortalScope(contractorUserId);
@@ -175,8 +190,9 @@ function ContractorHome({ preview, justUpgraded, contractorUserId }: { preview: 
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [notes, setNotes] = useState("");
-  const customers = (preview ? SAMPLE_CUSTOMERS : customersQuery.data ?? []) as CustomerRow[];
-  const designs = (preview ? SAMPLE_DESIGNS : designsQuery.data ?? []) as DesignRow[];
+  const customers = (preview ? SAMPLE_CUSTOMERS : staffPreviewQueryRows(staffPreview, customersQuery.data, customersQuery.error)) as CustomerRow[];
+  const designs = (preview ? SAMPLE_DESIGNS : staffPreviewQueryRows(staffPreview, designsQuery.data, designsQuery.error)) as DesignRow[];
+  const designsDenied = staffPreview && designsQuery.error != null;
   const visibleDesigns = useMemo(() => {
     if (customerFilter === "all") return designs;
     if (customerFilter === "none") return designs.filter((design) => design.contractorCustomerId == null);
@@ -198,6 +214,17 @@ function ContractorHome({ preview, justUpgraded, contractorUserId }: { preview: 
   });
 
   return (
+    <div>
+      {staffPreviewRole ? (
+        <div role="status" data-testid="contractor-staff-preview-banner" className="sticky top-16 z-40 border-b border-amber-300 bg-amber-50 text-amber-950">
+          <div className="container flex max-w-6xl flex-wrap items-center justify-between gap-x-4 gap-y-2 py-3 text-sm">
+            <p>{staffPreviewBannerText(staffPreviewRole)}</p>
+            <Link href={staffDashboardPath(staffPreviewRole)} className="font-semibold underline underline-offset-2">
+              Back to your dashboard
+            </Link>
+          </div>
+        </div>
+      ) : null}
     <div className="container py-8 sm:py-10 max-w-6xl">
       <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
         <div>
@@ -235,7 +262,7 @@ function ContractorHome({ preview, justUpgraded, contractorUserId }: { preview: 
             <h2 className="text-xl font-bold">Customers</h2>
             <form className="grid gap-3 rounded-xl border border-border p-4 sm:grid-cols-2" onSubmit={(event) => {
               event.preventDefault();
-              if (preview) return;
+              if (preview || staffPreview) return;
               createCustomer.mutate({
                 name: name.trim(),
                 email: email.trim() || null,
@@ -244,12 +271,20 @@ function ContractorHome({ preview, justUpgraded, contractorUserId }: { preview: 
                 ...(contractorPortalScope(contractorUserId) ?? {}),
               });
             }}>
-              <div className="space-y-1"><Label htmlFor="customer-name">Name</Label><Input id="customer-name" value={name} onChange={(event) => setName(event.target.value)} required /></div>
-              <div className="space-y-1"><Label htmlFor="customer-email">Email</Label><Input id="customer-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} /></div>
-              <div className="space-y-1"><Label htmlFor="customer-phone">Phone</Label><Input id="customer-phone" value={phone} onChange={(event) => setPhone(event.target.value)} /></div>
-              <div className="space-y-1 sm:col-span-2"><Label htmlFor="customer-notes">Notes</Label><Textarea id="customer-notes" value={notes} onChange={(event) => setNotes(event.target.value)} /></div>
-              <Button type="submit" className="sm:col-span-2 w-fit" disabled={preview || createCustomer.isPending}>Add customer</Button>
+              <div className="space-y-1"><Label htmlFor="customer-name">Name</Label><Input id="customer-name" value={name} onChange={(event) => setName(event.target.value)} required disabled={staffPreview} /></div>
+              <div className="space-y-1"><Label htmlFor="customer-email">Email</Label><Input id="customer-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} disabled={staffPreview} /></div>
+              <div className="space-y-1"><Label htmlFor="customer-phone">Phone</Label><Input id="customer-phone" value={phone} onChange={(event) => setPhone(event.target.value)} disabled={staffPreview} /></div>
+              <div className="space-y-1 sm:col-span-2"><Label htmlFor="customer-notes">Notes</Label><Textarea id="customer-notes" value={notes} onChange={(event) => setNotes(event.target.value)} disabled={staffPreview} /></div>
+              <span title={staffPreview ? STAFF_PREVIEW_ACTION_TITLE : undefined} className="sm:col-span-2 w-fit">
+                <Button type="submit" disabled={preview || staffPreview || createCustomer.isPending}>Add customer</Button>
+              </span>
+              {staffPreview ? <p className="text-sm text-muted-foreground sm:col-span-2">{STAFF_PREVIEW_ACTION_TITLE}</p> : null}
             </form>
+            {staffPreview && customersQuery.isLoading ? (
+              <p className="text-sm text-muted-foreground">Loading customers…</p>
+            ) : staffPreview && customersQuery.error ? (
+              <p className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">{staffPreviewEmptyCopy("customers")}</p>
+            ) : (
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {customers.map((customer) => {
                 const count = designs.filter((design) => design.contractorCustomerId === customer.id).length;
@@ -262,10 +297,11 @@ function ContractorHome({ preview, justUpgraded, contractorUserId }: { preview: 
                 );
               })}
             </div>
+            )}
           </div>
           <div className="space-y-3">
             <h2 className="text-xl font-bold">CRM</h2>
-            {preview ? <p className="text-sm text-muted-foreground">The CRM is the same board affiliates use. After approval it shows only this contractor's deals, contacts, notes, and invoice PDF.</p> : <CrmBoard lang="en" contractorUserId={contractorUserId} />}
+            {preview ? <p className="text-sm text-muted-foreground">The CRM is the same board affiliates use. After approval it shows only this contractor's deals, contacts, notes, and invoice PDF.</p> : staffPreview ? <p className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">{staffPreviewEmptyCopy("crm")}</p> : <CrmBoard lang="en" contractorUserId={contractorUserId} />}
           </div>
         </TabsContent>
         <TabsContent value="designs" className="mt-6 space-y-4">
@@ -284,8 +320,9 @@ function ContractorHome({ preview, justUpgraded, contractorUserId }: { preview: 
             </Label>
           </div>
           {!preview && designsQuery.isLoading ? <p className="text-sm text-muted-foreground">Loading designs…</p> : null}
-          {!preview && designsQuery.error ? <p className="text-sm text-destructive">{designsQuery.error.message}</p> : null}
-          {visibleDesigns.length === 0 ? <p className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">No designs in this filter. Open the 3D Designer and save a plan.</p> : null}
+          {!preview && !staffPreview && designsQuery.error ? <p className="text-sm text-destructive">{designsQuery.error.message}</p> : null}
+          {designsDenied ? <p className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">{staffPreviewEmptyCopy("designs")}</p> : null}
+          {!designsDenied && visibleDesigns.length === 0 && !(staffPreview && designsQuery.isLoading) ? <p className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">No designs in this filter. Open the 3D Designer and save a plan.</p> : null}
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             {visibleDesigns.map((design) => (
               <article key={design.id} className="rounded-xl border border-border p-4 space-y-3">
@@ -297,13 +334,21 @@ function ContractorHome({ preview, justUpgraded, contractorUserId }: { preview: 
                   <Badge variant="outline">{design.contractorCustomerId == null ? "Unassigned" : "Assigned"}</Badge>
                 </div>
                 <div className="flex flex-col gap-2 sm:flex-row">
-                  <Button asChild size="sm" variant="outline"><a href={`/design?load=${design.id}`}>Open</a></Button>
+                  {staffPreview ? (
+                    <span title={STAFF_PREVIEW_ACTION_TITLE} className="inline-flex">
+                      <Button type="button" size="sm" variant="outline" disabled>Open</Button>
+                    </span>
+                  ) : (
+                    <Button asChild size="sm" variant="outline"><a href={`/design?load=${design.id}`}>Open</a></Button>
+                  )}
+                  <span title={staffPreview ? STAFF_PREVIEW_ACTION_TITLE : undefined} className="flex flex-1">
                   <select
                     aria-label={`Assign ${design.name}`}
-                    className="h-9 flex-1 rounded-md border border-input bg-background px-2 text-sm"
+                    className={`h-9 w-full rounded-md border border-input bg-background px-2 text-sm ${staffPreview ? "pointer-events-none" : ""}`}
                     value={design.contractorCustomerId == null ? "" : String(design.contractorCustomerId)}
-                    disabled={preview || assignDesign.isPending}
+                    disabled={preview || staffPreview || assignDesign.isPending}
                     onChange={(event) => {
+                      if (preview || staffPreview) return;
                       const value = event.target.value;
                       assignDesign.mutate({
                         designId: design.id,
@@ -315,20 +360,32 @@ function ContractorHome({ preview, justUpgraded, contractorUserId }: { preview: 
                     <option value="">No customer</option>
                     {customers.map((customer) => <option key={customer.id} value={String(customer.id)}>{customer.name}</option>)}
                   </select>
+                  </span>
                 </div>
               </article>
             ))}
           </div>
         </TabsContent>
         <TabsContent value="labor" className="mt-6">
-          {preview ? <p className="text-sm text-muted-foreground">The labor estimator loads after you sign in. This estimate is your installation and labor invoice. CabinetDealz materials are invoiced separately.</p> : <InstallationEstimatesPanel audience="contractor" contractorUserId={contractorUserId} />}
+          {preview ? <p className="text-sm text-muted-foreground">The labor estimator loads after you sign in. This estimate is your installation and labor invoice. CabinetDealz materials are invoiced separately.</p> : <InstallationEstimatesPanel audience="contractor" contractorUserId={contractorUserId} readOnly={staffPreview} />}
         </TabsContent>
         {contractorUserId == null ? (
           <TabsContent value="orders" className="mt-6">
-            <OrderTrackingPanel previewOrders={preview ? SAMPLE_TRACKED_ORDERS : null} heading="Your orders" />
+            {staffPreview ? (
+              <section className="space-y-4">
+                <div>
+                  <h2 className="text-xl font-bold">Your orders</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">Placed, sent to the distributor, shipped, and delivered. Invoice totals stay with the order.</p>
+                </div>
+                <p className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">{staffPreviewEmptyCopy("orders")}</p>
+              </section>
+            ) : (
+              <OrderTrackingPanel previewOrders={preview ? SAMPLE_TRACKED_ORDERS : null} heading="Your orders" />
+            )}
           </TabsContent>
         ) : null}
       </Tabs>
+    </div>
     </div>
   );
 }
