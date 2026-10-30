@@ -6,11 +6,15 @@ const source = readFileSync(
   resolve(process.cwd(), "client/src/components/admin/AdminGroupedTabs.tsx"),
   "utf8",
 );
+const nav = readFileSync(
+  resolve(process.cwd(), "client/src/components/admin/catalogAdminTabs.ts"),
+  "utf8",
+);
 
 describe("Admin package data workspace", () => {
   it("keeps the supplier-carton editor reachable from Products & Catalog", () => {
     expect(source).toContain('import { BulkDimensionsAdmin } from "@/components/admin/BulkDimensionsAdmin"');
-    expect(source).toContain('{ value: "package-data", label: "📦 Package Data & Parcel" }');
+    expect(nav).toContain('{ value: "package-data", label: "📦 Package Data & Parcel", editors: ["BulkDimensionsAdmin"], help: null, boundary: "📦 Package Data & Parcel" }');
     expect(source).toContain('<TabsContent value="package-data" className="mt-6"><AdminTabErrorBoundary tabName="📦 Package Data & Parcel"><BulkDimensionsAdmin /></AdminTabErrorBoundary></TabsContent>');
   });
 });

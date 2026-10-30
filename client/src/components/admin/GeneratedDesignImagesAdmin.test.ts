@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 const source = readFileSync(resolve(process.cwd(), "client/src/components/admin/GeneratedDesignImagesAdmin.tsx"), "utf8");
 const tabs = readFileSync(resolve(process.cwd(), "client/src/components/admin/AdminGroupedTabs.tsx"), "utf8");
+const nav = readFileSync(resolve(process.cwd(), "client/src/components/admin/catalogAdminTabs.ts"), "utf8");
 
 describe("GeneratedDesignImagesAdmin", () => {
   it("shows generated-image provenance and asks an administrator to select a cabinet finish", () => {
@@ -23,7 +24,7 @@ describe("GeneratedDesignImagesAdmin", () => {
   });
 
   it("is available from the grouped administration navigation", () => {
-    expect(tabs).toContain('value: "generated-design-images"');
+    expect(nav).toContain('value: "generated-design-images"');
     expect(tabs).toContain('<GeneratedDesignImagesAdmin />');
   });
 });
