@@ -121,18 +121,18 @@ describe("admin auto-design Designer wiring", () => {
     expect(pageSource).not.toContain("y: room.depth - STD.BASE_DEPTH");
   });
 
-  it("seats the measured appliances before prompting for catalog-backed room corners and filling the remaining runs", () => {
-    expect(pageSource).toContain("setAutoDesignCornerStage");
-    expect(pageSource).toContain("AutoDesignCornerDialog");
+  it("seats the measured appliances, then places catalog corners automatically before filling the remaining runs", () => {
+    expect(pageSource).toContain("seatAutoDesignCornerFromCatalog");
     expect(pageSource).toContain("autoDesignCornerSlots(input.layoutType, {");
     expect(pageSource).toContain("wallIds: selectedWalls, room, originCorner: input.originCorner, runDirection: input.runDirection");
-    expect(pageSource).toContain("nextAvailableRoomCornerPlacement");
+    expect(pageSource).toContain("finishAutoDesignLayoutRef.current");
     expect(pageSource).toContain("completeAutoDesignLayout");
-    expect(pageSource).toContain("autoDesignMissingCornerMessage");
+    expect(pageSource).not.toContain("AutoDesignCornerDialog");
+    expect(pageSource).toContain("autoDesignRunWallIds");
   });
 
   it("runs aligned source-priced wall cabinets only after required corners and regular base runs", () => {
-    const completion = pageSource.slice(pageSource.indexOf("const completeAutoDesignLayout"), pageSource.indexOf("const cancelAutoDesignCornerStage"));
+    const completion = pageSource.slice(pageSource.indexOf("const completeAutoDesignLayout"), pageSource.indexOf("finishAutoDesignLayoutRef.current = completeAutoDesignLayout"));
     const corners = completion.indexOf("for (const slot of stage.slots)");
     const bases = completion.indexOf("planAutoDesignBaseSegment({");
     const seams = completion.indexOf("fillAutoDesignLowerSeams({");

@@ -16,7 +16,9 @@ import { CROWN_MITER_CUT_ALLOWANCE_IN } from "./crownTakeoff";
 import {
   DESIGNER_LAYOUT_RULES,
   AUTO_DESIGN_WIGGLE_ROOM_IN,
+  MEASURED_REFRIGERATOR_CORNER_SHIFT_LIMIT_IN,
   REFRIGERATOR_SHIFT_LIMIT_IN,
+  measuredRefrigeratorCornerShiftLimitIn,
   SINK_SHIFT_LIMIT_IN,
   activeAutoDesignWiggleMoves,
   applyDesignerLayoutRules,
@@ -144,6 +146,8 @@ describe("auto-design wiggle room", () => {
 
   it("moves a refrigerator up to 6 inches and keeps a sink inside 3 inches", () => {
     expect(REFRIGERATOR_SHIFT_LIMIT_IN).toBe(6);
+    expect(MEASURED_REFRIGERATOR_CORNER_SHIFT_LIMIT_IN).toBe(12);
+    expect(measuredRefrigeratorCornerShiftLimitIn()).toBe(12);
     expect(SINK_SHIFT_LIMIT_IN).toBe(3);
     const { room, item } = rangeOnBottom(77, 15);
     const fridge = { ...item, uid: "fridge-1" };
@@ -518,7 +522,7 @@ describe("shared designer layout rules", () => {
 
 describe("auto-design completion wiring", () => {
   it("runs wiggle room and the shared rules inside the measured build", () => {
-    const completion = pageSource.slice(pageSource.indexOf("const completeAutoDesignLayout"), pageSource.indexOf("const cancelAutoDesignCornerStage"));
+    const completion = pageSource.slice(pageSource.indexOf("const completeAutoDesignLayout"), pageSource.indexOf("finishAutoDesignLayoutRef.current = completeAutoDesignLayout"));
     const corners = completion.indexOf("for (const slot of stage.slots)");
     const wiggle = completion.indexOf("applyAutoDesignWiggleRoom({");
     const bases = completion.indexOf("planAutoDesignBaseSegment({");

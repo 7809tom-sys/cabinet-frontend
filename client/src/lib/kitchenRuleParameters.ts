@@ -5,6 +5,8 @@
  */
 export const KITCHEN_RULE_PARAMETER_DEFAULTS = {
   jog_max_in: 3,
+  // Corner-seating slide for a user-measured refrigerator. Bay gap-closing stays at 6.
+  measured_fridge_corner_shift_in: 12,
   range_fridge_min_cabinet_in: 15,
   filler_gap_max_in: 6,
   wall_bottom_in: 54,
