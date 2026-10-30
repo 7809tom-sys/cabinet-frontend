@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,9 +17,10 @@ import FreightTestLab from "./FreightTestLab";
 import { PelicanCatalogWeightCompare } from "@/components/shipping/ShippingQuoteBox";
 import { isValidZipPrefix, normalizeZipPrefix, parseZipPrefixes, serializeZipPrefixes } from "@/lib/shippingZipPrefixes";
 import { pagedRows } from "@/lib/vendorCatalogFilter";
+import { asArray, displayValue, finiteNumber, formatCents, formatFixed, formatTimestamp, joinList, textSnippet } from "@/lib/safeDisplay";
 
 // Dollars <-> cents helpers (we edit dollars, store cents).
-const toDollars = (cents: number) => (cents / 100).toFixed(2);
+const toDollars = (cents: unknown) => formatCents(cents);
 const toCents = (dollars: string) => Math.round((parseFloat(dollars) || 0) * 100);
 const numOr = (s: string, d: number) => {
   const n = parseFloat(s);
@@ -51,7 +52,7 @@ function HardwareResourcesShippingProfile() {
     if (!profileQuery.data || form) return;
     const profile = profileQuery.data.profile;
     setForm({
-      enabled: profile?.enabled ?? false,
+      enabled: profile?.enabled === true || profile?.enabled === 1 || profile?.enabled === "1",
       packageLengthIn: profile?.packageLengthIn == null ? "" : String(profile.packageLengthIn),
       packageWidthIn: profile?.packageWidthIn == null ? "" : String(profile.packageWidthIn),
       packageHeightIn: profile?.packageHeightIn == null ? "" : String(profile.packageHeightIn),
@@ -196,8 +197,8 @@ export default function ShippingAdmin() {
       liftgateFee: toDollars(s?.liftgateFeeCents ?? 7500),
       residentialFee: toDollars(s?.residentialFeeCents ?? 6500),
       insideDeliveryFee: toDollars(s?.insideDeliveryFeeCents ?? 5000),
-      markupPct: ((s?.markupBps ?? 1500) / 100).toString(),
-      damageFeePct: ((s?.damageFeeBps ?? 0) / 100).toString(),
+      markupPct: (finiteNumber(s?.markupBps, 1500) / 100).toString(),
+      damageFeePct: (finiteNumber(s?.damageFeeBps, 0) / 100).toString(),
       freeFreightThreshold: toDollars(s?.freeFreightThresholdCents ?? 0),
       defaultCabinetWeightLbs: String(s?.defaultCabinetWeightLbs ?? "45"),
       quoteMode: (s?.quoteMode ?? "estimator") as "estimator" | "live",
@@ -236,9 +237,9 @@ export default function ShippingAdmin() {
       defaultCabinetCubicFt: String(s?.defaultCabinetCubicFt ?? "8"),
     });
     setZones(
-      (data.zones ?? []).map((z) => ({
-        zoneName: z.zoneName,
-        zipPrefixes: z.zipPrefixes,
+      asArray<{ zoneName?: string | null; zipPrefixes?: unknown; rateCents?: unknown }>(data.zones).map((z) => ({
+        zoneName: z.zoneName ?? "",
+        zipPrefixes: typeof z.zipPrefixes === "string" ? z.zipPrefixes : "",
         rateDollars: toDollars(z.rateCents),
       }))
     );
@@ -935,7 +936,8 @@ type PelicanShippingProfileDraft = {
 };
 
 function shippingProfileDraft(row: PelicanShippingProfileRow): PelicanShippingProfileDraft {
-  const formatDate = row.verifiedAt ? new Date(row.verifiedAt).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
+  const verified = formatTimestamp(row.verifiedAt, "iso");
+  const formatDate = verified === "—" ? new Date().toISOString().slice(0, 10) : verified.slice(0, 10);
   return {
     originName: row.originName ?? "",
     originZip: row.originZip ?? "",
@@ -1108,10 +1110,11 @@ export function PelicanShippingProfilesPanel({ isAdmin = true }: { isAdmin?: boo
   );
 }
 
-export function packageSummary(packages: Array<{ kind: string; lengthIn: number; widthIn: number; heightIn: number; weightLbs: number }> | undefined | null): string {
-  if (!packages || packages.length === 0) return "—";
-  return packages
-    .map((p, i) => `${p.kind === "pallet" ? "Pallet" : "Carton"} ${i + 1}: ${p.lengthIn}×${p.widthIn}×${p.heightIn} in, ${p.weightLbs} lb`)
+export function packageSummary(packages: unknown): string {
+  const rows = asArray<{ kind?: unknown; lengthIn?: unknown; widthIn?: unknown; heightIn?: unknown; weightLbs?: unknown }>(packages);
+  if (rows.length === 0) return "—";
+  return rows
+    .map((p, i) => `${p?.kind === "pallet" ? "Pallet" : "Carton"} ${i + 1}: ${displayValue(p?.lengthIn)}×${displayValue(p?.widthIn)}×${displayValue(p?.heightIn)} in, ${displayValue(p?.weightLbs)} lb`)
     .join("\n");
 }
 
@@ -1142,11 +1145,11 @@ export function FreightQuoteHistoryPanel() {
   });
   const exportCsv = () => {
     const header = ["Date", "Broker", "From", "To", "Pallets", "Units", "Weight lb", "Class", "Accessorials", "Saved design", "Design link", "Result", "Price", "Carrier", "Service", "Error"];
-    const lines = (rows ?? []).map((r) => [
-      new Date(r.createdAt).toISOString(), r.broker, r.fromZip, r.toZip, r.palletCount,
-      packageSummary(r.packages as any).replace(/\n/g, " | "), r.totalWeightLbs, r.freightClass, r.accessorials,
+    const lines = asArray<NonNullable<typeof rows>[number]>(rows).map((r) => [
+      formatTimestamp(r.createdAt, "iso"), r.broker, r.fromZip, r.toZip, r.palletCount,
+      packageSummary(r.packages).replace(/\n/g, " | "), finiteNumber(r.totalWeightLbs), r.freightClass, joinList(r.accessorials, ", ", ""),
       r.design?.name ?? "No saved design", r.design?.url ?? "",
-      r.ok ? "quoted" : "failed", r.ok ? (r.amountCents / 100).toFixed(2) : "", r.carrier, r.service, r.error,
+      r.ok ? "quoted" : "failed", r.ok ? formatCents(r.amountCents) : "", r.carrier, r.service, r.error,
     ].map(csvCell).join(","));
     const blob = new Blob([[header.join(","), ...lines].join("\n")], { type: "text/csv" });
     const a = document.createElement("a");
@@ -1155,6 +1158,7 @@ export function FreightQuoteHistoryPanel() {
     a.click();
     URL.revokeObjectURL(a.href);
   };
+  const historyRows = asArray<NonNullable<typeof rows>[number]>(rows);
   return (
     <Card data-testid="freight-quote-history">
       <CardHeader>
@@ -1172,15 +1176,15 @@ export function FreightQuoteHistoryPanel() {
             </select>
             <label className="flex items-center gap-1 text-xs"><input type="checkbox" checked={onlyOk} onChange={(e) => setOnlyOk(e.target.checked)} /> Quoted only</label>
             <Button variant="outline" size="sm" className="bg-background" onClick={() => refetch()}>Refresh</Button>
-            <Button variant="outline" size="sm" className="bg-background" onClick={exportCsv} disabled={!rows?.length}>Export CSV</Button>
+            <Button variant="outline" size="sm" className="bg-background" onClick={exportCsv} disabled={historyRows.length === 0}>Export CSV</Button>
           </span>
         </CardTitle>
         <p className="text-xs text-muted-foreground">Every quote request is saved with its pallet/carton sizes and weights so you can compare against rates you look up online. When a quote came from an authorized saved plan, its design link is retained here.</p>
       </CardHeader>
       <CardContent>
         {isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
-        {!isLoading && (!rows || rows.length === 0) && <p className="text-sm text-muted-foreground">No quotes saved yet. History starts with the next quote request.</p>}
-        {rows && rows.length > 0 && (
+        {!isLoading && historyRows.length === 0 && <p className="text-sm text-muted-foreground">No quotes saved yet. History starts with the next quote request.</p>}
+        {historyRows.length > 0 && (
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
@@ -1197,20 +1201,20 @@ export function FreightQuoteHistoryPanel() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.map((r) => (
+                {historyRows.map((r) => (
                   <TableRow key={r.id}>
-                    <TableCell className="text-xs whitespace-nowrap">{new Date(r.createdAt).toLocaleString()}</TableCell>
-                    <TableCell className="text-xs font-mono">{r.broker}</TableCell>
-                    <TableCell className="text-xs font-mono whitespace-nowrap">{r.fromZip} → {r.toZip}</TableCell>
-                    <TableCell className="text-xs font-mono whitespace-pre-line">{packageSummary(r.packages as any)}</TableCell>
-                    <TableCell className="text-xs">{r.totalWeightLbs.toFixed(0)} lb</TableCell>
+                    <TableCell className="text-xs whitespace-nowrap">{formatTimestamp(r.createdAt)}</TableCell>
+                    <TableCell className="text-xs font-mono">{displayValue(r.broker, "")}</TableCell>
+                    <TableCell className="text-xs font-mono whitespace-nowrap">{displayValue(r.fromZip, "")} → {displayValue(r.toZip, "")}</TableCell>
+                    <TableCell className="text-xs font-mono whitespace-pre-line">{packageSummary(r.packages)}</TableCell>
+                    <TableCell className="text-xs">{formatFixed(r.totalWeightLbs, 0)} lb</TableCell>
                     <TableCell className="text-xs">{r.freightClass ?? "—"}</TableCell>
-                    <TableCell className="text-xs">{r.accessorials || "—"}</TableCell>
+                    <TableCell className="text-xs">{joinList(r.accessorials)}</TableCell>
                     <TableCell className="max-w-52 text-xs"><SavedDesignLink design={r.design} /></TableCell>
                     <TableCell className="text-xs">
                       {r.ok
-                        ? <span className="text-emerald-600 font-medium">${(r.amountCents / 100).toFixed(2)} {r.carrier}{r.service ? ` · ${r.service}` : ""}</span>
-                        : <span className="text-destructive" title={r.error ?? ""}>✗ {(r.error ?? "error").slice(0, 60)}</span>}
+                        ? <span className="text-emerald-600 font-medium">${formatCents(r.amountCents)} {displayValue(r.carrier, "")}{r.service ? ` · ${r.service}` : ""}</span>
+                        : <span className="text-destructive" title={textSnippet(r.error, 200, "")}>✗ {textSnippet(r.error, 60)}</span>}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -1244,10 +1248,10 @@ export function FreightApiLogsPanel() {
       </CardHeader>
       <CardContent>
         {isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
-        {!isLoading && (!logs || logs.length === 0) && (
+        {!isLoading && asArray(logs).length === 0 && (
           <p className="text-sm text-muted-foreground">No API calls logged yet. Switch to Live mode and request a freight quote to see entries here.</p>
         )}
-        {logs && logs.length > 0 && (
+        {asArray(logs).length > 0 && (
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
@@ -1266,17 +1270,18 @@ export function FreightApiLogsPanel() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {logs.map((log) => {
+                {asArray<NonNullable<typeof logs>[number]>(logs).map((log) => {
                   const expanded = expandedLogIds.has(log.id);
-                  return <>
-                  <TableRow key={log.id}>
-                    <TableCell className="text-xs whitespace-nowrap">{new Date(log.ts).toLocaleTimeString()}</TableCell>
-                    <TableCell className="text-xs font-mono">{log.broker}</TableCell>
-                    <TableCell className="text-xs font-mono">{log.fromZip} → {log.toZip}</TableCell>
+                  const packages = asArray<NonNullable<typeof log.packages>[number]>(log.packages);
+                  return <Fragment key={log.id}>
+                  <TableRow>
+                    <TableCell className="text-xs whitespace-nowrap">{formatTimestamp(log.ts, "time")}</TableCell>
+                    <TableCell className="text-xs font-mono">{displayValue(log.broker, "")}</TableCell>
+                    <TableCell className="text-xs font-mono">{displayValue(log.fromZip, "")} → {displayValue(log.toZip, "")}</TableCell>
                     <TableCell className="text-xs font-mono whitespace-pre-line">{packageSummary(log.packages)}</TableCell>
-                    <TableCell className="text-xs">{log.totalWeightLbs.toFixed(0)} lbs</TableCell>
-                    <TableCell className="text-xs">{log.freightClass}</TableCell>
-                    <TableCell className="text-xs">{log.accessorials.join(", ") || "—"}</TableCell>
+                    <TableCell className="text-xs">{formatFixed(log.totalWeightLbs, 0)} lbs</TableCell>
+                    <TableCell className="text-xs">{displayValue(log.freightClass, "")}</TableCell>
+                    <TableCell className="text-xs">{joinList(log.accessorials)}</TableCell>
                     <TableCell className="text-xs">
                       <Button
                         type="button"
@@ -1291,38 +1296,38 @@ export function FreightApiLogsPanel() {
                           return next;
                         })}
                       >
-                        {log.packages?.length ?? 0} {log.packages?.length === 1 ? "unit" : "units"}
+                        {packages.length} {packages.length === 1 ? "unit" : "units"}
                         {expanded ? <ChevronUp className="ml-1 h-3.5 w-3.5" /> : <ChevronDown className="ml-1 h-3.5 w-3.5" />}
                       </Button>
                     </TableCell>
                     <TableCell className="max-w-52 text-xs"><SavedDesignLink design={log.design} /></TableCell>
                     <TableCell className="text-xs">
                       {log.ok ? (
-                        <span className="text-emerald-600 font-medium">${(log.amountCents / 100).toFixed(2)} {log.carrier}</span>
+                        <span className="text-emerald-600 font-medium">${formatCents(log.amountCents)} {displayValue(log.carrier, "")}</span>
                       ) : (
-                        <span className="text-destructive" title={log.error}>✗ {(log.error ?? "error").slice(0, 40)}</span>
+                        <span className="text-destructive" title={textSnippet(log.error, 200, "")}>✗ {textSnippet(log.error, 40)}</span>
                       )}
                     </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{log.durationMs}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{displayValue(log.durationMs, "")}</TableCell>
                   </TableRow>
-                  {expanded && <TableRow key={`${log.id}-packages`}>
+                  {expanded && <TableRow>
                     <TableCell colSpan={11} className="bg-muted/30 p-3">
                       <div className="space-y-2">
                         <p className="text-xs font-semibold">Exact handling units sent or prepared for this quote</p>
                         <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-                          {(log.packages ?? []).map((pkg) => (
-                            <div key={`${log.id}-${pkg.kind}-${pkg.index}`} className="rounded-md border bg-background p-2 text-xs">
-                              <div className="font-medium">{pkg.kind === "pallet" ? "Pallet" : "Carton"} {pkg.index}{pkg.label ? ` · ${pkg.label}` : ""}</div>
-                              <div className="mt-1 font-mono">{pkg.lengthIn}″ L × {pkg.widthIn}″ W × {pkg.heightIn}″ H · {pkg.weightLbs} lb</div>
-                              {pkg.contentsWeightLbs != null && <div className="text-muted-foreground">Contents: {pkg.contentsWeightLbs} lb{pkg.contentsCubicFt != null ? ` · ${pkg.contentsCubicFt} ft³` : ""}</div>}
-                              {pkg.reason && <div className="mt-1 text-muted-foreground">{pkg.reason}</div>}
+                          {packages.map((pkg, index) => (
+                            <div key={`${log.id}-${displayValue(pkg?.kind, "unit")}-${displayValue(pkg?.index, String(index))}`} className="rounded-md border bg-background p-2 text-xs">
+                              <div className="font-medium">{pkg?.kind === "pallet" ? "Pallet" : "Carton"} {displayValue(pkg?.index, String(index + 1))}{pkg?.label ? ` · ${displayValue(pkg.label, "")}` : ""}</div>
+                              <div className="mt-1 font-mono">{displayValue(pkg?.lengthIn)}″ L × {displayValue(pkg?.widthIn)}″ W × {displayValue(pkg?.heightIn)}″ H · {displayValue(pkg?.weightLbs)} lb</div>
+                              {pkg?.contentsWeightLbs != null && <div className="text-muted-foreground">Contents: {displayValue(pkg.contentsWeightLbs)} lb{pkg.contentsCubicFt != null ? ` · ${displayValue(pkg.contentsCubicFt)} ft³` : ""}</div>}
+                              {pkg?.reason && <div className="mt-1 text-muted-foreground">{displayValue(pkg.reason, "")}</div>}
                             </div>
                           ))}
                         </div>
                       </div>
                     </TableCell>
                   </TableRow>}
-                </>;
+                </Fragment>;
                 })}
               </TableBody>
             </Table>

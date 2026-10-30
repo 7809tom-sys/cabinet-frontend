@@ -12,13 +12,14 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { toast } from "sonner";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../../server/routers";
+import { asArray, displayValue, finiteNumber, formatCents, formatFixed } from "@/lib/safeDisplay";
 
 type SimulationMode = "pallet_preview" | "saved_configuration";
 type SavedDesignSimulationResult = inferRouterOutputs<AppRouter>["freight"]["adminSimulateSavedDesignFreight"];
 type SimulationResultMode = SimulationMode | "plan_b";
 
-const money = (cents: number | null | undefined) =>
-  cents == null ? "Not configured" : `$${(cents / 100).toFixed(2)}`;
+const money = (cents: unknown) =>
+  cents == null || cents === "" ? "Not configured" : `$${formatCents(cents)}`;
 
 const modeLabel: Record<SimulationResultMode, string> = {
   pallet_preview: "Pallets only",
@@ -118,8 +119,11 @@ export default function FreightTestLab() {
   }
 
   const result = resultsByMode[mode];
-  const selectedDesign = designsQuery.data?.find((design) => String(design.id) === selectedDesignId);
-  const carrierRateLimited = /temporarily rate-limited/i.test(result?.quote?.reason ?? "");
+  const designs = asArray<NonNullable<typeof designsQuery.data>[number]>(designsQuery.data);
+  const selectedDesign = designs.find((design) => String(design.id) === selectedDesignId);
+  const groups = asArray<NonNullable<NonNullable<typeof result>["groups"]>[number]>(result?.groups);
+  const quoteLines = asArray<NonNullable<NonNullable<NonNullable<typeof result>["quote"]>["lines"]>[number]>(result?.quote?.lines);
+  const carrierRateLimited = /temporarily rate-limited/i.test(typeof result?.quote?.reason === "string" ? result.quote.reason : "");
   const activeCarrierRetryAt = result?.carrierRetryAt ?? carrierRetryAt;
   const carrierCooldownRemainingMs = activeCarrierRetryAt == null ? 0 : Math.max(0, activeCarrierRetryAt - now);
   const carrierCooldownActive = mode === "saved_configuration" && carrierCooldownRemainingMs > 0;
@@ -151,7 +155,7 @@ export default function FreightTestLab() {
               <h3 id="freight-test-items-heading" className="font-semibold">1. Saved design</h3>
               <p className="text-xs text-muted-foreground">Use the cabinet selections already saved in a design. Appliances and unresolved catalog selections are never assigned an invented package.</p>
             </div>
-            {selectedDesign && <span className="text-sm font-medium">{selectedDesign.cabinetUnits} cabinet unit(s)</span>}
+            {selectedDesign && <span className="text-sm font-medium">{finiteNumber(selectedDesign.cabinetUnits)} cabinet unit(s)</span>}
           </div>
 
           <div className="max-w-2xl space-y-2">
@@ -160,15 +164,18 @@ export default function FreightTestLab() {
               <SelectTrigger id="freight-test-saved-design" aria-label="Saved design for freight simulation"><SelectValue placeholder="Choose a saved design" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">Choose a saved design</SelectItem>
-                {designsQuery.data?.map((design) => (
-                  <SelectItem key={design.id} value={String(design.id)} disabled={!design.readyForFreight}>
-                    {design.name} · {design.cabinetUnits} cabinet unit{design.cabinetUnits === 1 ? "" : "s"}
+                {designs.map((design) => {
+                  const units = finiteNumber(design.cabinetUnits);
+                  return (
+                  <SelectItem key={design.id ?? design.name} value={String(design.id)} disabled={!design.readyForFreight}>
+                    {design.name || "Saved design"} · {units} cabinet unit{units === 1 ? "" : "s"}
                   </SelectItem>
-                ))}
+                  );
+                })}
               </SelectContent>
             </Select>
             {designsQuery.isLoading && <p className="text-xs text-muted-foreground">Loading saved designs…</p>}
-            {designsQuery.data?.length === 0 && <p className="border border-dashed p-3 text-sm text-muted-foreground">No saved designs with cabinet selections are available yet.</p>}
+            {!designsQuery.isLoading && designsQuery.data != null && designs.length === 0 && <p className="border border-dashed p-3 text-sm text-muted-foreground">No saved designs with cabinet selections are available yet.</p>}
             {selectedDesign && !selectedDesign.readyForFreight && <p className="text-xs text-destructive">This saved design needs a selected door style and distributor before it can be tested.</p>}
           </div>
         </section>
@@ -253,7 +260,7 @@ export default function FreightTestLab() {
                   <PackageCheck className="h-4 w-4 text-emerald-700" /> Test result
                 </h3>
                 <p className="text-xs text-muted-foreground">{result.note}</p>
-                <p className="mt-1 text-xs text-muted-foreground">Saved design: <span className="font-medium text-foreground">{result.savedDesign.name}</span> · {result.savedDesign.quotedCabinetUnits} catalog cabinet unit(s) tested</p>
+                <p className="mt-1 text-xs text-muted-foreground">Saved design: <span className="font-medium text-foreground">{result.savedDesign?.name || "Saved design"}</span> · {finiteNumber(result.savedDesign?.quotedCabinetUnits)} catalog cabinet unit(s) tested</p>
               </div>
               <div className="text-right text-xs text-muted-foreground">
                 <div>{modeLabel[result.mode]}</div>
@@ -276,7 +283,7 @@ export default function FreightTestLab() {
                 <p className="mt-1 text-sm text-muted-foreground">Pallets only does not request a carrier price. Select Carrier shipping quote to price this saved design and ZIP.</p>
               ) : (
                 <div className="mt-1 space-y-2">
-                  <p className="text-sm text-destructive">{result.quote?.reason ?? "Carrier shipping cost is unavailable for this test."}</p>
+                  <p className="text-sm text-destructive">{displayValue(result.quote?.reason, "") || "Carrier shipping cost is unavailable for this test."}</p>
                   {carrierRateLimited ? (
                     <p className="text-sm font-medium text-foreground">{carrierCooldownActive ? `WWEX is temporarily busy. Retry available in ${formatCooldown(carrierCooldownRemainingMs)}; your saved credentials do not need to be replaced.` : "WWEX is temporarily busy. The cooldown has ended, so you can retry; your saved credentials do not need to be replaced."}</p>
                   ) : (
@@ -289,41 +296,43 @@ export default function FreightTestLab() {
               </p>
             </div>
 
-            {(result.savedDesign.excludedPlacementUnits > 0 || result.savedDesign.unmatchedCatalogUnits > 0 || result.savedDesign.unpricedCatalogUnits > 0) && (
+            {(finiteNumber(result.savedDesign?.excludedPlacementUnits) > 0 || finiteNumber(result.savedDesign?.unmatchedCatalogUnits) > 0 || finiteNumber(result.savedDesign?.unpricedCatalogUnits) > 0) && (
               <div className="flex items-start gap-2 border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950/30 dark:text-amber-100">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                 <span>
-                  {result.savedDesign.excludedPlacementUnits > 0 && `${result.savedDesign.excludedPlacementUnits} non-cabinet or unconfigured design unit(s) skipped. `}
-                  {result.savedDesign.unmatchedCatalogUnits > 0 && `${result.savedDesign.unmatchedCatalogUnits} cabinet unit(s) no longer match the current catalog and were not tested. `}
-                  {result.savedDesign.unpricedCatalogUnits > 0 && `${result.savedDesign.unpricedCatalogUnits} tested cabinet unit(s) have no current price, so they are excluded from the merchandise subtotal.`}
+                  {finiteNumber(result.savedDesign?.excludedPlacementUnits) > 0 && `${finiteNumber(result.savedDesign?.excludedPlacementUnits)} non-cabinet or unconfigured design unit(s) skipped. `}
+                  {finiteNumber(result.savedDesign?.unmatchedCatalogUnits) > 0 && `${finiteNumber(result.savedDesign?.unmatchedCatalogUnits)} cabinet unit(s) no longer match the current catalog and were not tested. `}
+                  {finiteNumber(result.savedDesign?.unpricedCatalogUnits) > 0 && `${finiteNumber(result.savedDesign?.unpricedCatalogUnits)} tested cabinet unit(s) have no current price, so they are excluded from the merchandise subtotal.`}
                 </span>
               </div>
             )}
 
             <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
-              <div className="border p-3"><div className="text-xs text-muted-foreground">Units</div><div className="text-xl font-semibold">{result.totalUnits}</div></div>
-              <div className="border p-3"><div className="text-xs text-muted-foreground">Origin groups</div><div className="text-xl font-semibold">{result.groups.length}</div></div>
-              <div className="border p-3"><div className="text-xs text-muted-foreground">Loaded weight</div><div className="text-xl font-semibold">{result.totalBillableWeightLbs.toFixed(0)} lbs</div></div>
+              <div className="border p-3"><div className="text-xs text-muted-foreground">Units</div><div className="text-xl font-semibold">{finiteNumber(result.totalUnits)}</div></div>
+              <div className="border p-3"><div className="text-xs text-muted-foreground">Origin groups</div><div className="text-xl font-semibold">{groups.length}</div></div>
+              <div className="border p-3"><div className="text-xs text-muted-foreground">Loaded weight</div><div className="text-xl font-semibold">{formatFixed(result.totalBillableWeightLbs, 0)} lbs</div></div>
             </div>
 
             <div className="space-y-3">
-              {result.groups.map((group) => (
-                <div key={group.key} className="border p-4">
+              {groups.map((group, groupIndex) => {
+                const pallets = asArray<NonNullable<typeof group.pallets>[number]>(group?.pallets);
+                return (
+                <div key={group?.key ?? groupIndex} className="border p-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <div className="font-medium">{group.label}</div>
-                      <div className="text-xs text-muted-foreground">Origin {group.originZip} · {group.palletCount} pallet(s) · {group.totalCubicFt.toFixed(2)} cu ft</div>
+                      <div className="font-medium">{displayValue(group?.label, "Origin")}</div>
+                      <div className="text-xs text-muted-foreground">Origin {displayValue(group?.originZip, "")} · {finiteNumber(group?.palletCount)} pallet(s) · {formatFixed(group?.totalCubicFt, 2)} cu ft</div>
                     </div>
                     <div className="text-right text-xs">
-                      <div className="font-semibold uppercase tracking-wide">{group.source.replace("_", " ")}</div>
-                      <div>Plan B: {money(group.planBFeeCents)}</div>
-                      {group.baseAmountCents != null && <div>Selected base: {money(group.baseAmountCents)}</div>}
+                      <div className="font-semibold uppercase tracking-wide">{String(group?.source ?? "").replace("_", " ")}</div>
+                      <div>Plan B: {money(group?.planBFeeCents)}</div>
+                      {group?.baseAmountCents != null && <div>Selected base: {money(group.baseAmountCents)}</div>}
                     </div>
                   </div>
-                  {group.liveError && (
+                  {displayValue(group.liveError, "") && (
                     <div className="mt-3 flex items-start gap-2 border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950/30 dark:text-amber-100">
                       <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                      <span>{group.liveError}</span>
+                      <span>{displayValue(group.liveError, "")}</span>
                     </div>
                   )}
                   {group.usedOperationsOriginFallback && (
@@ -352,19 +361,20 @@ export default function FreightTestLab() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {group.pallets.map((pallet, index) => (
-                          <TableRow key={`${group.key}:pallet:${index}`}>
+                        {pallets.map((pallet, index) => (
+                          <TableRow key={`${group?.key ?? groupIndex}:pallet:${index}`}>
                             <TableCell>#{index + 1}</TableCell>
-                            <TableCell className="whitespace-nowrap">{pallet.lengthIn} × {pallet.widthIn} × {pallet.heightIn} in</TableCell>
-                            <TableCell className="whitespace-nowrap font-medium">{pallet.weightLbs} lbs</TableCell>
-                            <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{pallet.contentsWeightLbs} lbs · {pallet.contentsCubicFt.toFixed(2)} cu ft</TableCell>
+                            <TableCell className="whitespace-nowrap">{displayValue(pallet?.lengthIn)} × {displayValue(pallet?.widthIn)} × {displayValue(pallet?.heightIn)} in</TableCell>
+                            <TableCell className="whitespace-nowrap font-medium">{displayValue(pallet?.weightLbs)} lbs</TableCell>
+                            <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{displayValue(pallet?.contentsWeightLbs)} lbs · {formatFixed(pallet?.contentsCubicFt, 2)} cu ft</TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
                     </Table>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
 
             {result.quote && (
@@ -373,14 +383,14 @@ export default function FreightTestLab() {
                   {result.quote.available ? <ShieldCheck className="h-4 w-4 text-emerald-700" /> : <AlertTriangle className="h-4 w-4 text-destructive" />}
                   {result.quote.available ? "Carrier shipping quote details" : "Simulation could not produce a price"}
                 </div>
-                {!result.quote.available && <p className="mt-2 text-sm text-destructive">{result.quote.reason}</p>}
+                {!result.quote.available && <p className="mt-2 text-sm text-destructive">{displayValue(result.quote.reason, "Carrier shipping cost is unavailable for this test.")}</p>}
                 {result.quote.available && (
                   <div className="mt-3 space-y-2 text-sm">
-                    {result.quote.lines.map((line, index) => (
-                      <div key={`${line.label}:${index}`} className="flex justify-between gap-4"><span>{line.label}</span><span>{money(line.amountCents)}</span></div>
+                    {quoteLines.map((line, index) => (
+                      <div key={`${displayValue(line?.label, "line")}:${index}`} className="flex justify-between gap-4"><span>{displayValue(line?.label, "")}</span><span>{money(line?.amountCents)}</span></div>
                     ))}
                     <div className="flex justify-between gap-4 border-t pt-2"><span>Operations markup</span><span>{money(result.quote.markupCents)}</span></div>
-                    {result.quote.damageFeeCents > 0 && <div className="flex justify-between gap-4"><span>Damage coverage</span><span>{money(result.quote.damageFeeCents)}</span></div>}
+                    {finiteNumber(result.quote.damageFeeCents) > 0 && <div className="flex justify-between gap-4"><span>Damage coverage</span><span>{money(result.quote.damageFeeCents)}</span></div>}
                     <div className="flex justify-between gap-4 border-t pt-2 text-lg font-semibold"><span>Test total</span><span>{money(result.quote.totalCents)}</span></div>
                   </div>
                 )}

@@ -68,9 +68,12 @@ describe("Operations Freight Test Lab UI", () => {
     expect(source).toContain("Inside delivery");
     expect(source).toContain("Limited access");
     expect(source).toContain("Loaded weight");
-    expect(source).toContain("pallet.lengthIn");
-    expect(source).toContain("pallet.widthIn");
-    expect(source).toContain("pallet.heightIn");
-    expect(source).toContain("pallet.weightLbs");
+    expect(source).toContain("displayValue(pallet?.lengthIn)");
+    expect(source).toContain("displayValue(pallet?.widthIn)");
+    expect(source).toContain("displayValue(pallet?.heightIn)");
+    expect(source).toContain("displayValue(pallet?.weightLbs)");
+    expect(source).toContain("formatFixed(pallet?.contentsCubicFt, 2)");
+    expect(source).toContain("formatFixed(result.totalBillableWeightLbs, 0)");
+    expect(source).toContain("formatFixed(group?.totalCubicFt, 2)");
   });
 });

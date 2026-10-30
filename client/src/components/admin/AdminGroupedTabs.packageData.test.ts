@@ -11,6 +11,6 @@ describe("Admin package data workspace", () => {
   it("keeps the supplier-carton editor reachable from Products & Catalog", () => {
     expect(source).toContain('import { BulkDimensionsAdmin } from "@/components/admin/BulkDimensionsAdmin"');
     expect(source).toContain('{ value: "package-data", label: "📦 Package Data & Parcel" }');
-    expect(source).toContain('<TabsContent value="package-data" className="mt-6"><BulkDimensionsAdmin /></TabsContent>');
+    expect(source).toContain('<TabsContent value="package-data" className="mt-6"><AdminTabErrorBoundary tabName="📦 Package Data & Parcel"><BulkDimensionsAdmin /></AdminTabErrorBoundary></TabsContent>');
   });
 });
