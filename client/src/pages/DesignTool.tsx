@@ -73,6 +73,13 @@ import { bathroomTubWallParallelPlacement, rotateBathroomFurniture } from "@/lib
 import BathroomZoneAttributesDialog from "@/components/design/BathroomZoneAttributesDialog";
 import { isBathroomVanityCabinet } from "@/lib/bathroomVanityCatalog";
 import { canAdminReviewSavedDesign } from "@/lib/designAccess";
+import {
+  DEFAULT_FRESH_LAYOUT_PRESET_ID,
+  defaultFreshKitchenFootprint,
+  freshDesignDraftStorageKey,
+  readFreshDesignRequest,
+  skipsDesignerLeadGate,
+} from "@/lib/designerFreshStart";
 import { DESIGNER_CANVAS_CONTAINER_CLASS } from "@/lib/designerLayout";
 import { rotateCustomPlanClockwise } from "@/lib/rotatePlan";
 import { canShowCompactWorkspaceMoveControl } from "@/lib/compactWorkspaceMove";
@@ -539,7 +546,8 @@ function designerFacePlan(
 function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?: string }) {
   const { t, lang } = useLanguage();
   const { user, isAuthenticated } = useAuth();
-  const isAdmin = (user as any)?.role === "admin";
+  const signedInRole = (user as { role?: string | null } | null)?.role ?? null;
+  const isAdmin = signedInRole === "admin";
   useKitchenRuleParameterSync();
   const search = useSearch();
   const storeScope = useMemo(
@@ -641,6 +649,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     setVerifiedName(contact.name ?? "");
     setVerifiedPhone(contact.phone ?? "");
     setVerified(true);
+    // Signed-in staff, admins, and vendors already pass the email form because
+    // EmailGate calls this with their account email. Recording a lead for that
+    // bypass only creates junk CRM rows when they open the Designer to preview
+    // a door style. Shoppers still get a lead.
+    if (skipsDesignerLeadGate(signedInRole)) return;
     // Record the lead so a rep has contact info even if the visitor never saves
     // a design or requests a quote. Fire-and-forget — never block entry on it.
     captureLead.mutate({
@@ -650,12 +663,13 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	  affiliateSlug: affiliateSlug ?? undefined,
       featuredStyleId: featuredStyleIdForAttribution,
     });
-  }, [affiliateSlug, captureLead, featuredStyleIdForAttribution]);
+  }, [affiliateSlug, captureLead, featuredStyleIdForAttribution, signedInRole]);
   const addOptionalContact = useCallback((contact: Pick<LeadContact, "name" | "phone">) => {
     if (!verifiedEmail || (!contact.name && !contact.phone)) return;
     setVerifiedName(contact.name ?? "");
     setVerifiedPhone(contact.phone ?? "");
     setShowOptionalContactNudge(false);
+    if (skipsDesignerLeadGate(signedInRole)) return;
     captureLead.mutate({
       email: verifiedEmail,
       name: contact.name,
@@ -667,12 +681,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       onSuccess: () => toast.success("Contact details saved"),
       onError: () => toast.error("Your design is still available, but we could not save those contact details."),
     });
-  }, [affiliateSlug, captureLead, featuredStyleIdForAttribution, verifiedEmail]);
+  }, [affiliateSlug, captureLead, featuredStyleIdForAttribution, signedInRole, verifiedEmail]);
   useEffect(() => {
-    if (!verified || verifiedName || verifiedPhone || optionalContactDismissed) return;
+    if (!verified || skipsDesignerLeadGate(signedInRole) || verifiedName || verifiedPhone || optionalContactDismissed) return;
     const timer = window.setTimeout(() => setShowOptionalContactNudge(true), 90_000);
     return () => window.clearTimeout(timer);
-  }, [optionalContactDismissed, verified, verifiedName, verifiedPhone]);
+  }, [optionalContactDismissed, signedInRole, verified, verifiedName, verifiedPhone]);
   // Optional saved design to load (?load=<designId>), e.g. from a CRM deal's
   // "Linked Designs" list. A prior Designer link shape used `designId`; honor
   // it as a read-compatible alias so an existing saved plan cannot silently
@@ -731,6 +745,13 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const preloadStyleId = useMemo(() => {
     return featuredStyleIdForAttribution ?? null;
   }, [featuredStyleIdForAttribution]);
+  // `?new=1` starts a separate design. Latch it for this page load so a later
+  // "start new" URL cleanup cannot fall back onto the visitor's real draft key.
+  const [latchedFreshStart] = useState(() => readFreshDesignRequest(search));
+  const freshSessionRestoredRef = useRef(false);
+  const freshStartAppliedRef = useRef(false);
+  const preserveCanonicalDraftRef = useRef(latchedFreshStart.fresh);
+  preserveCanonicalDraftRef.current = latchedFreshStart.fresh;
   const loadedDesignRef = useRef<number | null>(null);
   const canvasExportRef = useRef<HTMLDivElement>(null);
   // Auto-save draft: flips true once we've attempted to restore a saved draft,
@@ -2624,7 +2645,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 
   // Data — door-style-first: members pick a door style; the supply line behind
   // it is resolved server-side and never shown.
-  const { data: doorStylesRaw } = trpc.doorStyles.list.useQuery();
+  const { data: doorStylesRaw, isError: doorStylesError } = trpc.doorStyles.list.useQuery();
   const unavailableStyleIds = useMemo(
     () => doorStylesRaw?.length
       ? unavailableSavedStyleIds(styleId, [styleA, styleB, ...placed.map((cabinet) => cabinet.styleId)], doorStylesRaw.map((style) => style.id))
@@ -13251,8 +13272,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // tab is backgrounded (visibilitychange / pagehide — the events mobile browsers
   // reliably fire before freezing/discarding a tab), then restore it on return.
   const draftKey = useMemo(
-    () => designerDraftStorageKey(storeScope, verifiedEmail),
-    [storeScope, verifiedEmail],
+    () => latchedFreshStart.fresh
+      ? freshDesignDraftStorageKey(storeScope, verifiedEmail, latchedFreshStart.doorStyleId, latchedFreshStart.distributorId)
+      : designerDraftStorageKey(storeScope, verifiedEmail),
+    [latchedFreshStart, storeScope, verifiedEmail],
   );
   const activeDraftKey = useMemo(() => designerDraftActiveKey(storeScope), [storeScope]);
 
@@ -13317,7 +13340,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         snap.styleId != null;
       if (worthKeeping) {
         localStorage.setItem(draftKey, JSON.stringify(snap));
-        localStorage.setItem(activeDraftKey, draftKey);
+        // A fresh preview from Featured Styles or the vendor portal must not
+        // become the draft that /design restores next time.
+        if (!preserveCanonicalDraftRef.current) {
+          localStorage.setItem(activeDraftKey, draftKey);
+        }
       }
     } catch {
       /* storage full / unavailable — ignore */
@@ -13334,6 +13361,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       return;
     }
     let restoredDesignedKitchen = false;
+    let restoredSnapshot = false;
     try {
       // A v1 draft had no store truth. Move it only to owner and delete the
       // ambiguous source, even when the current page is an affiliate store.
@@ -13342,6 +13370,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       if (raw) {
         const d = JSON.parse(raw);
         if (d && typeof d === "object" && d.v === 2 && d.originScope === storeScope) {
+          restoredSnapshot = true;
 	          historyRebaseRequestedRef.current = true;
 	          lastPushedRef.current = null;
           localStorage.setItem(activeDraftKey, draftKey);
@@ -13477,8 +13506,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       /* corrupt draft — ignore */
     }
     draftRestoredRef.current = true;
+    if (latchedFreshStart.fresh && restoredSnapshot) freshSessionRestoredRef.current = true;
+    // A fresh door-style preview never resumes the previous draft, and it does
+    // not stop on the room-layout wizard. The floor plan opens directly.
     if (!restoredDesignedKitchen && !roomLayoutHandoffAppliedRef.current) {
-      setLayoutStarterOpen(true);
+      // A door-style preview starts on the floor plan instead of the room wizard.
+      if (!latchedFreshStart.fresh) setLayoutStarterOpen(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [verified, draftKey, activeDraftKey, storeScope, verifiedEmail, loadDesignId, bundleIdParam, selectCatalogHardware]);
@@ -13489,26 +13522,68 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const preloadStyleAppliedRef = useRef(false);
   useEffect(() => {
     if (!verified || !draftRestoredRef.current || preloadStyleAppliedRef.current) return;
+    if (latchedFreshStart.fresh) return;
     if (preloadStyleId == null) return;
     if (!doorStyles || doorStyles.length === 0) return;
     preloadStyleAppliedRef.current = true;
     // Only apply if no style is already set (fresh canvas or empty draft).
     if (styleId != null) return;
     setSlotStyle("A", preloadStyleId);
-  }, [verified, preloadStyleId, doorStyles, styleId, setSlotStyle]);
+  }, [verified, preloadStyleId, doorStyles, styleId, setSlotStyle, latchedFreshStart.fresh]);
 
   // The public Frameless line opens with a real source finish selected so its
   // catalog price and door sample appear immediately. A customer may still
   // choose any other published finish from the same selector.
   useEffect(() => {
     if (!verified || !draftRestoredRef.current || styleId != null) return;
+    if (latchedFreshStart.fresh && latchedFreshStart.doorStyleId != null) return;
     const scopedName = distributorNameById.get(catalogDistributorScopeId ?? -1) ?? "";
     if (!scopedName.toLowerCase().includes("frameless")) return;
     const firstAefStyle = (doorStyles ?? [])
       .filter((style) => style.distributorId === catalogDistributorScopeId)
       .sort((a, b) => (a.styleCode ?? "").localeCompare(b.styleCode ?? ""))[0];
     if (firstAefStyle) setSlotStyle("A", firstAefStyle.id);
-  }, [catalogDistributorScopeId, distributorNameById, doorStyles, setSlotStyle, styleId, verified]);
+  }, [catalogDistributorScopeId, distributorNameById, doorStyles, latchedFreshStart.doorStyleId, latchedFreshStart.fresh, setSlotStyle, styleId, verified]);
+
+  // Open Designer from Featured Styles or the vendor portal: a new floor plan
+  // with the requested door style, skipping the room wizard and the vendor/color
+  // dialog. The canonical draft is a different storage key, so it stays put.
+  useEffect(() => {
+    if (!latchedFreshStart.fresh || !verified || !draftRestoredRef.current || freshStartAppliedRef.current) return;
+    if (freshSessionRestoredRef.current) {
+      freshStartAppliedRef.current = true;
+      setLayoutStarterOpen(false);
+      setCatalogSetupOpen(false);
+      setViewMode("plan");
+      return;
+    }
+    const requestedStyleId = latchedFreshStart.doorStyleId;
+    if (requestedStyleId != null && doorStylesRaw === undefined && !doorStylesError) return;
+    freshStartAppliedRef.current = true;
+    setLayoutStarterOpen(false);
+    setCatalogSetupOpen(false);
+    setViewMode("plan");
+    setMobilePanel(null);
+    setSelectedLayoutPresetId(DEFAULT_FRESH_LAYOUT_PRESET_ID);
+    setRoom(defaultFreshKitchenFootprint());
+    setActiveSavedDesignId(null);
+    const matched = requestedStyleId == null
+      ? undefined
+      : (doorStyles ?? []).find((style) => style.id === requestedStyleId);
+    const distributorId = matched?.distributorId ?? latchedFreshStart.distributorId;
+    if (distributorId != null) setCatalogDistributorId(distributorId);
+    if (requestedStyleId != null) {
+      setStyleA(requestedStyleId);
+      setActiveSlot("A");
+      setStyleId(requestedStyleId);
+      setPaletteType("base");
+    }
+    toast.success("New design started", {
+      description: requestedStyleId != null
+        ? "The floor plan is ready with this door style. Your other draft was left unchanged."
+        : "The floor plan is ready. Your other draft was left unchanged.",
+    });
+  }, [doorStyles, doorStylesError, doorStylesRaw, latchedFreshStart, setRoom, verified]);
 
   // Consume the Surfaces & Fixtures wizard hand-off ONCE, after verification and
   // after the draft has been restored. This only fires when the customer clicked
@@ -13520,6 +13595,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   useEffect(() => {
     if (!verified || !draftRestoredRef.current) return;
     if (surfaceSelectionAppliedRef.current) return;
+    if (latchedFreshStart.fresh) {
+      surfaceSelectionAppliedRef.current = true;
+      return;
+    }
     if (loadDesignId != null) {
       // Loading a saved design takes precedence over a wizard hand-off.
       surfaceSelectionAppliedRef.current = true;
