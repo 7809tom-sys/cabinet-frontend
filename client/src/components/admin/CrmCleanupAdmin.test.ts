@@ -17,7 +17,7 @@ describe("CRM cleanup admin", () => {
     expect(people.indexOf('{ value: "customers", label: "Customers" }')).toBeLessThan(
       people.indexOf('{ value: "crm-cleanup", label: "CRM Cleanup" }'),
     );
-    expect(tabs).toContain('<TabsContent value="crm-cleanup" className="mt-6"><AdminTabHelp tab="crm-cleanup" /><CrmCleanupAdmin /></TabsContent>');
+    expect(tabs).toContain('<TabsContent value="crm-cleanup" className="mt-6"><AdminTabErrorBoundary tabName="CRM Cleanup"><AdminTabHelp tab="crm-cleanup" /><CrmCleanupAdmin /></AdminTabErrorBoundary></TabsContent>');
     expect(tabs).toContain('{ value: "stripe-invoices", label: "Stripe Invoices" }');
 
     expect(help).toContain("Preview does not delete anything.");

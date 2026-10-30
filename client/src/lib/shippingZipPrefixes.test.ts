@@ -10,6 +10,8 @@ describe("shipping ZIP prefix editor", () => {
 
   it("keeps multiple unique ZIP codes or prefixes in their stored comma-delimited format", () => {
     expect(parseZipPrefixes("30301, 34230,30301,30")).toEqual(["30301", "34230", "30"]);
+    expect(parseZipPrefixes(null)).toEqual([]);
+    expect(parseZipPrefixes(undefined)).toEqual([]);
     expect(serializeZipPrefixes(["30301", "34230", "30301", "30"])).toBe("30301,34230,30");
   });
 

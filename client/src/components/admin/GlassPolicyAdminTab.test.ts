@@ -7,7 +7,7 @@ const editor = readFileSync(new URL("./DistributorFulfillmentEditor.tsx", import
 describe("Glass Policy administration tab", () => {
   it("makes the distributor-wide glass audit a first-class Products & Catalog tab", () => {
     expect(tabs).toContain('{ value: "glass-policy", label: "Glass Policy" }');
-    expect(tabs).toContain('<TabsContent value="glass-policy" className="mt-6"><AdminTabHelp tab="glass-policy" /><DistributorFulfillmentEditor glassOnly /></TabsContent>');
+    expect(tabs).toContain('<TabsContent value="glass-policy" className="mt-6"><AdminTabErrorBoundary tabName="Glass Policy"><AdminTabHelp tab="glass-policy" /><DistributorFulfillmentEditor glassOnly /></AdminTabErrorBoundary></TabsContent>');
     expect(editor).toContain('Distributor glass policy audit');
     expect(editor).toContain('data-testid={glassOnly ? "glass-policy-admin" : "distributor-fulfillment-admin"}');
     expect(editor).toContain('Save glass policy');

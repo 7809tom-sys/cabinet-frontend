@@ -75,7 +75,7 @@ describe("VendorReferralsAdmin", () => {
     expect(approved).toBeGreaterThan(-1);
     expect(referrals).toBeGreaterThan(approved);
     expect(tabs.slice(approved + approvedLine.length, referrals)).not.toContain("{ value:");
-    expect(tabs).toContain('<TabsContent value="vendor-referrals" className="mt-6"><VendorReferralsAdmin /></TabsContent>');
+    expect(tabs).toContain('<TabsContent value="vendor-referrals" className="mt-6"><AdminTabErrorBoundary tabName="Vendor Referrals"><VendorReferralsAdmin /></AdminTabErrorBoundary></TabsContent>');
     const source = readFileSync(resolve(process.cwd(), "client/src/components/admin/VendorReferralsAdmin.tsx"), "utf8");
     expect(source).toContain("vendorReferrals.adminList");
     expect(source).toContain("vendorReferrals.adminUpdateStatus");
