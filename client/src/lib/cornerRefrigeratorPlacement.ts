@@ -7,6 +7,7 @@ import {
   wallRunFrame,
   wallRunJoinAt,
   wallRunOffset,
+  wallRunSpan,
   type PlacedCabinet,
   type RoomData,
   type WallOpening,
@@ -61,6 +62,52 @@ export type CornerRefrigeratorResult = CornerRefrigeratorPlacement | CornerRefri
 
 const EPSILON_IN = 0.125;
 const REFRIGERATOR_DEPTH_IN = 24;
+
+/**
+ * A refrigerator whose body meets a real inside corner is that corner's
+ * occupant. Blind-corner seating and the standard-width nudge must leave it
+ * there. A refrigerator about 30 inches down the run is not in the corner.
+ */
+export function refrigeratorOccupyingCorner(input: {
+  placed: readonly PlacedCabinet[];
+  room: RoomData;
+  corner: { x: number; y: number };
+  wallIds: readonly string[];
+}): PlacedCabinet | null {
+  const walls = new Set(input.wallIds);
+  for (const fridge of input.placed) {
+    if (!isRefrigerator(fridge)) continue;
+    const side = cabinetWall(fridge, input.room);
+    if (!walls.has(side)) continue;
+    const frame = wallRunFrame(side, input.room);
+    if (!frame) continue;
+    const atStart = Math.hypot(frame.start.x - input.corner.x, frame.start.y - input.corner.y) <= 0.05;
+    const atEnd = Math.hypot(frame.end.x - input.corner.x, frame.end.y - input.corner.y) <= 0.05;
+    if (!atStart && !atEnd) continue;
+    const start = wallRunOffset(fridge, side, input.room);
+    const end = start + wallRunSpan(fridge, side, input.room);
+    if (atStart && start <= EPSILON_IN) return fridge;
+    if (atEnd && end >= frame.length - EPSILON_IN) return fridge;
+  }
+  return null;
+}
+
+/** Refrigerators seated against an inside corner. Wiggle room must not slide them out. */
+export function cornerOccupantRefrigeratorUids(placed: readonly PlacedCabinet[], room: RoomData): string[] {
+  const ids: string[] = [];
+  for (const fridge of placed) {
+    if (!isRefrigerator(fridge)) continue;
+    const side = cabinetWall(fridge, room);
+    const frame = wallRunFrame(side, room);
+    if (!frame) continue;
+    const start = wallRunOffset(fridge, side, room);
+    const end = start + wallRunSpan(fridge, side, room);
+    const touchesStart = start <= EPSILON_IN && wallRunJoinAt(frame, "start", room) != null;
+    const touchesEnd = end >= frame.length - EPSILON_IN && wallRunJoinAt(frame, "end", room) != null;
+    if (touchesStart || touchesEnd) ids.push(fridge.uid);
+  }
+  return ids;
+}
 
 /**
  * Adapter for the normal Designer transaction. Direct catalog placement has
