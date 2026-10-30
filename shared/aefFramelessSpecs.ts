@@ -16,7 +16,22 @@ const COMMON_HINGES = "Adjustable 110° soft-close hinges";
 const COMMON_GEOMETRY = "SKU dims: bases 30-1/4\" H × 24\" D; walls 13-1/2\" D.";
 const COMMON_EMISSIONS = "CARB II emissions compliant";
 
-export function aefFramelessSpec(styleCode: string): AefFramelessSpec | null {
+/**
+ * AltaEuro frameless catalog codes: Torino, Palermo, Luxe LS plus a letter,
+ * Zenit ZS or ZC plus a letter, and Syncron SS or SC plus a letter.
+ * The third letter is required. Bare "SC" is Madison Shaker Cinder, and a
+ * code that merely starts with Z is not Zenit.
+ */
+export function isAefFramelessStyleCode(styleCode: string | null | undefined): boolean {
+  const code = (styleCode ?? "").trim().toUpperCase();
+  if (!code) return false;
+  if (code === "TWP" || code === "TGW" || code === "TDW" || code === "PGW") return true;
+  return /^(?:LS|ZS|ZC|SS|SC)[A-Z]$/.test(code);
+}
+
+export function aefFramelessSpec(rawStyleCode: string): AefFramelessSpec | null {
+  const styleCode = (rawStyleCode ?? "").trim().toUpperCase();
+  if (!isAefFramelessStyleCode(styleCode)) return null;
   if (["TWP", "TGW", "TDW"].includes(styleCode)) {
     return {
       boxConstruction: COMMON_BOX,

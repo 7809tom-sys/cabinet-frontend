@@ -108,6 +108,9 @@ import { combinedFillerNote, fillerCutSourceFor, isCombinedSmallFiller } from "@
 import { activeCatalogPricingIdsByMasterCode, currentCatalogPricingCabinetId } from "@/lib/designPricingIdentity";
 import { catalogFillerForGap, catalogFillerPricingId, fittedCatalogFillerDescription, isCatalogFiller, type CatalogFillerCandidate } from "@/lib/catalogFiller";
 import { requiresAutoEndPanels, type DoorStyleEndPanelInput } from "@/lib/autoEndPanels";
+import { AEF_SPEC_END_PANEL_CODES, aefSpecPanelCabinet } from "@/lib/aefSpecPanelCatalog";
+import { withFramelessExposedFinish } from "@/lib/framelessExposedFinish";
+import { isAefFramelessStyleCode } from "@shared/aefFramelessSpecs";
 import { catalogItemToExposedPanelStock, sameExposedPanelWarnings, syncExposedSidePanels, type ExposedPanelStock, type ExposedPanelWarning } from "@/lib/exposedSidePanels";
 import { countertopToastVisible, COUNTERTOP_TOAST_TIMEOUT_MS, useDebouncedValue, stablePricePairKey } from "@/lib/designerPricingStability";
 import { ColorStyleQuickPicker } from "@/components/design/ColorStyleQuickPicker";
@@ -2960,6 +2963,55 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     () => (threeDAccessoryCatalog as DesignCabinet[] | undefined) ?? [],
     [threeDAccessoryCatalog],
   );
+  // AltaEuro end panels are priced (BEP2535, WEP*, TEP3096) but omitted from
+  // placeableCabinets: the row's placement is blank, and the tall sheet is not
+  // on the accessory palette. Resolve them by code only for an AltaEuro style.
+  const needsAefSpecPanels = useMemo(() => {
+    const styles = (doorStyles ?? []) as Array<{ id: number; styleCode?: string | null }>;
+    const byId = new Map(styles.map((style) => [style.id, style]));
+    const ids = new Set<number>();
+    if (styleId != null) ids.add(styleId);
+    for (const cabinet of placed) {
+      const sid = pricingStyleIdFor(cabinet) ?? styleId;
+      if (sid != null) ids.add(sid);
+    }
+    for (const id of ids) {
+      if (isAefFramelessStyleCode(byId.get(id)?.styleCode)) return true;
+    }
+    return false;
+  }, [doorStyles, placed, pricingStyleIdFor, styleId]);
+  const [aefSpecPanelCabinets, setAefSpecPanelCabinets] = useState<DesignCabinet[]>([]);
+  const [aefSpecPanelsLoading, setAefSpecPanelsLoading] = useState(false);
+  useEffect(() => {
+    if (!needsAefSpecPanels) {
+      setAefSpecPanelCabinets([]);
+      setAefSpecPanelsLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setAefSpecPanelsLoading(true);
+    void Promise.all(AEF_SPEC_END_PANEL_CODES.map((code) => (
+      trpcUtils.cabinets.byCode.fetch({ masterCode: code }).catch(() => null)
+    ))).then((rows) => {
+      if (cancelled) return;
+      const panels = rows.flatMap((row) => {
+        const panel = aefSpecPanelCabinet(row);
+        return panel ? [panel as DesignCabinet] : [];
+      });
+      setAefSpecPanelCabinets(panels);
+      setAefSpecPanelsLoading(false);
+    }).catch(() => {
+      if (cancelled) return;
+      setAefSpecPanelCabinets([]);
+      setAefSpecPanelsLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [needsAefSpecPanels, trpcUtils]);
+  const autoPanelCatalog = useMemo(() => {
+    const seen = new Set(catalogFillers.map((item) => item.masterCode.trim().toUpperCase()));
+    const extras = aefSpecPanelCabinets.filter((item) => !seen.has(item.masterCode.trim().toUpperCase()));
+    return extras.length > 0 ? [...catalogFillers, ...extras] : catalogFillers;
+  }, [aefSpecPanelCabinets, catalogFillers]);
   // Older frameless bill-of-material lines. Frameless and Hickory cabinets
   // are left out here: those lines get a placed, priced panel only on an open
   // run end, a window side, an island back, or a wall cabinet beside a range.
@@ -4672,7 +4724,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       rememberAutoPanelStyle(pricingStyleIdFor(cabinet) ?? styleId);
     });
     if (autoPanelStyleIds.size > 0) {
-      catalogFillers.forEach((item) => {
+      autoPanelCatalog.forEach((item) => {
         if (!catalogItemToExposedPanelStock(item, null)) return;
         autoPanelStyleIds.forEach((sid) => push(item.id, sid, item.masterCode));
       });
@@ -4694,7 +4746,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         ...(refrigeratorParts?.smoothPanels ?? []),
       ].forEach((part) => push(part.id, styleId, part.masterCode));
 	    return pairs;
-	  }, [placed, pricingIdForPlacedCabinet, pricingStyleIdFor, styleId, glassDoorAddonCodeFor, glassDoorCatalogProduct, catalogFillers, aefWindowEndPanels, refrigeratorSurroundCatalog, doorStyles]);
+	  }, [placed, pricingIdForPlacedCabinet, pricingStyleIdFor, styleId, glassDoorAddonCodeFor, glassDoorCatalogProduct, catalogFillers, autoPanelCatalog, aefWindowEndPanels, refrigeratorSurroundCatalog, doorStyles]);
 
   const pricePairKey = stablePricePairKey(pricePairs, lockedDistributorId);
   const stablePricePairs = useMemo(() => pricePairs, [pricePairKey]);
@@ -4797,10 +4849,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // panel only when the customer chooses one. Prices are read from the catalog
   // after the stable price query settles so placing a panel cannot refetch.
   const [exposedPanelWarnings, setExposedPanelWarnings] = useState<ExposedPanelWarning[]>([]);
-  const exposedPanelStock = useMemo<ExposedPanelStock[]>(() => catalogFillers.flatMap((item) => {
+  const exposedPanelStock = useMemo<ExposedPanelStock[]>(() => autoPanelCatalog.flatMap((item) => {
     const stock = catalogItemToExposedPanelStock(item, styleId != null ? priceMap.get(`${item.id}:${styleId}`) ?? null : null);
     return stock ? [stock] : [];
-  }), [catalogFillers, priceMap, styleId]);
+  }), [autoPanelCatalog, priceMap, styleId]);
   useEffect(() => {
     const styles = (doorStyles ?? []) as Array<DoorStyleEndPanelInput & { id: number }>;
     const byId = new Map(styles.map((style) => [style.id, style]));
@@ -4816,7 +4868,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       catalog: exposedPanelStock,
       qualifiedOnly: true,
       doorStyleFor: doorStyleForPlaced,
-      pricesReady: catalogFillersLoading ? false : priceRowsFetched || exposedPanelStock.length === 0,
+      pricesReady: catalogFillersLoading || aefSpecPanelsLoading ? false : priceRowsFetched || exposedPanelStock.length === 0,
       priceFor: (stock, owner) => {
         const sid = pricingStyleIdFor(owner) ?? styleId;
         return sid != null ? priceMap.get(`${stock.id}:${sid}`) ?? null : null;
@@ -4827,7 +4879,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       setPlaced(plan.placed);
     }
     setExposedPanelWarnings((prev) => sameExposedPanelWarnings(prev, plan.warnings) ? prev : plan.warnings);
-  }, [catalogFillersLoading, doorStyles, exposedPanelStock, openings, placed, priceMap, priceRowsFetched, pricingStyleIdFor, setPlaced, styleId]);
+  }, [aefSpecPanelsLoading, catalogFillersLoading, doorStyles, exposedPanelStock, openings, placed, priceMap, priceRowsFetched, pricingStyleIdFor, setPlaced, styleId]);
 
   // ── Part 1: every placed cabinet remains visible ─────────────────────────
   // Evaluate the active line as soon as its price query settles. Flags drive
@@ -14341,11 +14393,15 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     });
   }, [activeFinish, finishById, placed, styleA, styleB, styleId, styleNameById]);
 
+  const activeCatalogDoorProfile = useMemo(
+    () => withFramelessExposedFinish(activeStyle, designerCatalogDoorProfile(activeStyle)),
+    [activeStyle],
+  );
   const threeDCabinetDoorProfiles = useMemo(
     () => Object.fromEntries(placed.flatMap((cabinet) => {
       const assignedStyleId = effectiveStyleId(cabinet, styleId) ?? styleId;
       const assignedStyle = doorStyles?.find((style) => style.id === assignedStyleId) ?? null;
-      const profile = designerCatalogDoorProfile(assignedStyle);
+      const profile = withFramelessExposedFinish(assignedStyle, designerCatalogDoorProfile(assignedStyle));
       return profile ? [[cabinet.uid, profile]] : [];
     })),
     [placed, styleId, doorStyles],
@@ -14569,7 +14625,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	      catalogRoomSceneUrl={active3DRoomSceneReferenceUrl}
 	      windowSceneKind={windowSceneKind}
       windowFrameStyle={windowFrameStyle}
-      catalogDoorProfile={designerCatalogDoorProfile(activeStyle)}
+      catalogDoorProfile={activeCatalogDoorProfile}
 	      catalogFinishName={activeStyleName}
 	      catalogFinishProductId={styleId ?? null}
 	      catalogIslandCabinetName={threeDIslandCabinet.name}
@@ -22411,7 +22467,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                catalogRoomSceneUrl={active3DRoomSceneReferenceUrl}
 	                windowSceneKind={windowSceneKind}
 	                windowFrameStyle={windowFrameStyle}
-	                catalogDoorProfile={designerCatalogDoorProfile(activeStyle)}
+	                catalogDoorProfile={activeCatalogDoorProfile}
 	                catalogFinishName={activeStyleName}
 	                catalogFinishProductId={styleId ?? null}
 	      catalogIslandCabinetName={threeDIslandCabinet.name}
