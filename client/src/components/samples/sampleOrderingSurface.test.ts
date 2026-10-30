@@ -24,7 +24,7 @@ describe("sample ordering stays off public customer pages", () => {
   it("mounts the desk only in the admin and affiliate back office", () => {
     expect(source("components/admin/AdminGroupedTabs.tsx")).toContain('<SampleOrderDesk mode="admin" />');
     expect(source("components/admin/AdminGroupedTabs.tsx")).toContain('value: "stripe-invoices", label: "Stripe Invoices"');
-    expect(source("pages/AffiliateDashboard.tsx")).toContain('<SampleOrderDesk mode="affiliate" />');
+    expect(source("pages/AffiliateDashboard.tsx")).toContain('<SampleOrderDesk mode="affiliate" affiliateId={affiliate.id} />');
     expect(source("pages/AffiliateDashboard.tsx")).toContain('"samples"');
     expect(source("components/affiliate/AffiliateDashboardLayout.tsx")).toContain('section: "samples"');
   });

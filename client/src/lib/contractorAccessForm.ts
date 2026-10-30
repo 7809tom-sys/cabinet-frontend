@@ -17,6 +17,8 @@ export type SubmitForContractorInput = {
   businessName: string;
   phone: string;
   licenseNumber?: string | null;
+  /** Store this request belongs to. Omit to let the server use the caller's only store. */
+  affiliateId?: number;
 };
 
 export type SubmitForContractorResult = {

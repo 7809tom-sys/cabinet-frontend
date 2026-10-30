@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import { CRM_CUSTOMER_LIST_TEMPLATE, crmCustomerFileReadProgress, parseCrmCustomerListCsv, type CrmCustomerImportRow, type CrmCustomerImportSkippedRow } from "@shared/crmCustomerListImport";
 import { affiliateCardColor, type CrmAffiliateBrand } from "@/lib/crmAffiliateBrand";
+import { crmBoardQueryInput, dealCustomerInput } from "@/lib/affiliateSiteScope";
 import { MASTER_AFFILIATE_FILTER_ALL, masterAffiliateFilterId } from "@/lib/crmMasterFilter";
 import { filterDealsByHelpType, type CrmHelpFilter } from "@/lib/crmHelpFilter";
 import { crmQuickInvoiceTotal, openCrmQuickInvoicePdf, type CrmQuickInvoiceBrand, type CrmQuickInvoiceLine } from "@/lib/crmQuickInvoice";
@@ -164,11 +165,8 @@ export function CrmBoard({ lang = "en", affiliateId }: { lang?: Lang; affiliateI
   const [masterAffiliateFilter, setMasterAffiliateFilter] = useState(MASTER_AFFILIATE_FILTER_ALL);
   const [helpFilter, setHelpFilter] = useState<CrmHelpFilter>("all");
   const masterAffiliateId = masterAffiliateFilterId(masterAffiliateFilter);
-  const boardInput = affiliateId != null
-    ? { affiliateId }
-    : masterAffiliateId != null
-      ? { affiliateId: masterAffiliateId }
-      : undefined;
+  const scopedAffiliateId = affiliateId ?? masterAffiliateId;
+  const boardInput = crmBoardQueryInput(scopedAffiliateId);
   const { data, isLoading, error } = trpc.crm.board.useQuery(boardInput, {
     refetchInterval: 20000,
     refetchOnWindowFocus: true,
@@ -200,7 +198,7 @@ export function CrmBoard({ lang = "en", affiliateId }: { lang?: Lang; affiliateI
   );
   const boardScopeEarly = (data as { scope?: string } | undefined)?.scope;
   const summaries = trpc.affiliateCustomers.summaries.useQuery(
-    { deals: summaryDeals },
+    { deals: summaryDeals, ...crmBoardQueryInput(scopedAffiliateId) },
     { enabled: summaryDeals.length > 0 && boardScopeEarly !== "contractor", retry: false },
   );
   const summaryByDeal = (summaries.data?.byDealId ?? {}) as Record<number, CustomerSummary>;
@@ -306,7 +304,7 @@ export function CrmBoard({ lang = "en", affiliateId }: { lang?: Lang; affiliateI
               <SelectItem value="shipping">Needs Shipping Cost Help</SelectItem>
             </SelectContent>
           </Select>
-          <ImportLeadsDialog lang={lang} />
+          <ImportLeadsDialog lang={lang} affiliateId={scopedAffiliateId} />
           <CustomerListImportDialog lang={lang} affiliateId={affiliateId} />
           <NewDealDialog lang={lang} affiliateId={affiliateId} />
         </div>
@@ -680,10 +678,11 @@ function CustomerListImportDialog({ lang, affiliateId }: { lang: Lang; affiliate
 }
 
 // ─── Import leads dialog ──────────────────────────────────────────────────────
-function ImportLeadsDialog({ lang }: { lang: Lang }) {
+function ImportLeadsDialog({ lang, affiliateId }: { lang: Lang; affiliateId?: number }) {
   const utils = trpc.useUtils();
   const [open, setOpen] = useState(false);
-  const { data, isLoading } = trpc.crm.importableLeads.useQuery(undefined, { enabled: open });
+  const leadScope = crmBoardQueryInput(affiliateId);
+  const { data, isLoading } = trpc.crm.importableLeads.useQuery(leadScope, { enabled: open });
   const importLead = trpc.crm.importLead.useMutation({
     onSuccess: () => {
       toast.success(lang === "es" ? "Prospecto importado" : "Lead imported");
@@ -720,7 +719,7 @@ function ImportLeadsDialog({ lang }: { lang: Lang }) {
                         <div className="font-medium text-foreground">{r.requestNumber}</div>
                         <div className="text-xs text-muted-foreground">{r.originatorName ?? "—"} · {money(r.totalAmount)}</div>
                       </div>
-                      <Button size="sm" variant="outline" disabled={importLead.isPending} onClick={() => importLead.mutate({ type: "order_request", id: r.id })}>
+                      <Button size="sm" variant="outline" disabled={importLead.isPending} onClick={() => importLead.mutate({ type: "order_request", id: r.id, ...leadScope })}>
                         {lang === "es" ? "Importar" : "Import"}
                       </Button>
                     </div>
@@ -738,7 +737,7 @@ function ImportLeadsDialog({ lang }: { lang: Lang }) {
                         <div className="font-medium text-foreground">{a.companyName}</div>
                         <div className="text-xs text-muted-foreground">{a.contactName}</div>
                       </div>
-                      <Button size="sm" variant="outline" disabled={importLead.isPending} onClick={() => importLead.mutate({ type: "pro_application", id: a.id })}>
+                      <Button size="sm" variant="outline" disabled={importLead.isPending} onClick={() => importLead.mutate({ type: "pro_application", id: a.id, ...leadScope })}>
                         {lang === "es" ? "Importar" : "Import"}
                       </Button>
                     </div>
@@ -798,8 +797,8 @@ function DealDrawer({ dealId, lang, summary, onClose, onCompose }: { dealId: num
 
   const deal = data?.deal as DealRow | undefined;
   const customerDetail = trpc.affiliateCustomers.get.useQuery(
-    { affiliateId: deal?.affiliateId ?? null, customerKey: summary?.customerKey ?? "" },
-    { enabled: dealId != null && Boolean(summary?.customerKey), retry: false },
+    { ...dealCustomerInput(deal?.affiliateId), customerKey: summary?.customerKey ?? "" },
+    { enabled: deal != null && Boolean(summary?.customerKey), retry: false },
   );
   const savePackage = trpc.priceShop.saveDesignAsPackage.useMutation({
     onSuccess: () => toast.success("Kitchen package saved as a copy."),

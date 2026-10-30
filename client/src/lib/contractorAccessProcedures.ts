@@ -35,7 +35,7 @@ export function useContractorAccessProcedures() {
         };
       };
       myAffiliateRequests: {
-        useQuery: (input?: undefined, options?: QueryOptions) => QueryResult<AffiliateContractorRequest[]>;
+        useQuery: (input?: { affiliateId?: number }, options?: QueryOptions) => QueryResult<AffiliateContractorRequest[]>;
       };
       list: {
         useQuery: (input?: ListInput, options?: QueryOptions) => QueryResult<ContractorAccessListRow[]>;

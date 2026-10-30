@@ -17,6 +17,7 @@ import {
 import { CustomerGeneratedImages } from "@/components/imageCustomer/CustomerGeneratedImages";
 import { Users, Search, Building2, Mail, Clock, ShieldCheck, Trash2 } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { customerOwnerStoreLabel } from "@/lib/affiliateSiteScope";
 
 type Tier = "homeowner" | "contractor" | "wholesale";
 
@@ -53,6 +54,16 @@ function tierVariant(t: string): "default" | "secondary" | "outline" {
 }
 
 const PAGE_SIZE = 25;
+
+function OwnerStoreLine({ row }: { row: { ownerStoreName?: string | null; ownerAffiliateId?: number | null } }) {
+  const label = customerOwnerStoreLabel(row);
+  if (!label) return null;
+  return (
+    <span className="inline-flex items-center gap-1">
+      <Building2 className="h-3.5 w-3.5" /> {label}
+    </span>
+  );
+}
 
 export default function CustomersAdmin() {
   const utils = trpc.useUtils();
@@ -215,6 +226,7 @@ export default function CustomersAdmin() {
                           <Building2 className="h-3.5 w-3.5" /> {u.companyName}
                         </span>
                       )}
+                      <OwnerStoreLine row={u} />
                       {u.lastSignedIn && (
                         <span className="inline-flex items-center gap-1">
                           <Clock className="h-3.5 w-3.5" /> Last seen {new Date(u.lastSignedIn).toLocaleDateString()}

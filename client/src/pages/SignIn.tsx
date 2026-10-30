@@ -20,6 +20,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Spinner } from "@/components/ui/spinner";
 import { Eye, EyeOff } from "lucide-react";
+import { signupStoreScope } from "@/lib/affiliateSiteScope";
 import { useReferral } from "@/hooks/useReferral";
 import { isPortalChoice, type PortalChoice } from "@/lib/portalSignIn";
 import { PortalSignInChooser } from "@/components/auth/PortalSignInChooser";
@@ -259,7 +260,7 @@ export default function SignIn({ portal: portalProp }: { portal?: PortalChoice }
       options: {
         emailRedirectTo: authRedirectUrl(),
         // Read by the server when it creates the users row.
-        data: { name: name.trim() || undefined, companyName: companyName.trim() || undefined },
+        data: { name: name.trim() || undefined, companyName: companyName.trim() || undefined, storeScope: signupStoreScope() },
       },
     });
     if (error) {
