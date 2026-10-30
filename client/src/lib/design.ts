@@ -1,6 +1,7 @@
 // ─── Kitchen Design geometry & snapping engine ──────────────────────────────
 // All real-world units are INCHES. The canvas converts inches → pixels via PPI.
 import { baseAngleEndCountertopLocalPoints, isBaseAngleEndCabinet, type BaseAngleEndHand } from "@/lib/baseAngleEndLayout";
+import { isWallAngleEndCabinet, wallAngleEndHandFromRun, type WallAngleEndHand } from "@/lib/wallAngleEndLayout";
 import { freestandingCountertopSurfaces, isFreestandingBase } from "@/lib/freestandingRun";
 import { kitchenRuleNumber } from "@/lib/kitchenRuleParameters";
 import {
@@ -13,6 +14,7 @@ import {
 } from "./polygonRoom";
 import { VERIFIED_PELICAN_BATHROOM_FIXTURE_PROFILES, verifiedPelicanBathroomFixtureProfile } from "./pelicanBathroomFixtureProfiles";
 import { aefPrintedGeometryForSku, hasAefPrintedGeometry } from "@shared/aefFramelessGeometry";
+import { standardBaseDoorCount } from "@shared/genericCabinetDrawerReference";
 export { isGlassPolicyNomenclature } from "./glassPolicy";
 
 export const STD = {
@@ -205,6 +207,8 @@ export function kitchenCrestGenericOpenEndShelfCount(c: {
 export const KNEE_DRAWER_MIN_MOUNT_BOTTOM_IN = 24;
 export const KNEE_DRAWER_DEFAULT_MOUNT_BOTTOM_IN = 30;
 export const KNEE_DRAWER_MAX_MOUNT_BOTTOM_IN = 30;
+/** Finished top of a desk when no neighboring desk or base cabinet sets the line. */
+export const DESK_TOP_HEIGHT_IN = 30;
 
 /** A shallow pull-out drawer mounted in a seated knee-space opening. */
 export function isKneeDrawerItem(c: {
@@ -1457,7 +1461,9 @@ export function isCabinetDoorHardwareEligible(
   if (p.noDoor || p.placement === "appliance" || !hasDoorSwing(p)) return false;
   if (side === "top-center") return supportsCenteredTopDoorPull(p);
   if (side !== "paired") return true;
-  return resolveSwing(p) === "double" || (p.numberOfDoors ?? 0) >= 2;
+  const standardDoors = standardBaseDoorCount(p);
+  const doors = standardDoors ?? (p.numberOfDoors ?? 0);
+  return resolveSwing(p) === "double" || doors >= 2;
 }
 
 /** Copy a door-hardware choice to every eligible cabinet without touching any
@@ -1645,7 +1651,9 @@ export function resolveSwing(p: PlacedCabinet): DoorSwing {
   const code = (p.masterCode ?? "").toUpperCase();
   const hay = `${p.description ?? ""} ${p.masterCode ?? ""}`.toLowerCase();
   if (/^(?:LSB?|ERB|BER)[-_]?\d/.test(code) || /lazy\s*susan|easy\s*reach/.test(hay)) return "left";
-  if (typeof p.numberOfDoors === "number" && p.numberOfDoors >= 2) return "double";
+  const standardDoors = standardBaseDoorCount(p);
+  const doorCount = standardDoors ?? (typeof p.numberOfDoors === "number" ? p.numberOfDoors : 0);
+  if (doorCount >= 2) return "double";
   // `none` on a legacy one-door placement means the swing was never authored,
   // not that the physical door disappeared. Once hasDoorSwing has established
   // a real hinged door, use the standard left default until the user selects a
@@ -5621,9 +5629,62 @@ export function wd18CountertopFaceLayout(
   };
 }
 
+type KneeDrawerRoom = {
+  ceilingHeight?: number;
+  width?: number;
+  depth?: number;
+  peninsulaRuns?: RoomData["peninsulaRuns"];
+  customWalls?: RoomData["customWalls"];
+} | null | undefined;
+
+function isDeskBaseCabinet(cabinet: {
+  masterCode?: string | null;
+  description?: string | null;
+  category?: string | null;
+  subCategory?: string | null;
+}): boolean {
+  if (isKneeDrawerItem(cabinet)) return false;
+  return /\bdesk\b/i.test(`${cabinet.category ?? ""} ${cabinet.subCategory ?? ""} ${cabinet.description ?? ""} ${cabinet.masterCode ?? ""}`);
+}
+
+/**
+ * Top of the nearest desk or base cabinet sharing the knee drawer's wall.
+ * Desk bases win over a kitchen base at the same seam. Returns null when the
+ * drawer is alone, so the caller can use the 30-inch desk height.
+ */
+export function kneeDrawerNeighborTopInches(
+  drawer: PlacedCabinet,
+  room?: KneeDrawerRoom,
+  peers: readonly PlacedCabinet[] = [],
+): number | null {
+  if (!room || !Number.isFinite(room.width) || !Number.isFinite(room.depth) || peers.length === 0) return null;
+  const plan = room as RoomData;
+  const wall = cabinetWall(drawer, plan);
+  const start = wallRunOffset(drawer, wall, plan);
+  const end = start + wallRunSpan(drawer, wall, plan);
+  const neighbors: { gap: number; top: number; desk: boolean }[] = [];
+  for (const peer of peers) {
+    if (peer.uid === drawer.uid || peer.placement !== "base" || isKneeDrawerItem(peer) || isPanelItem(peer) || isFillerItem(peer)) continue;
+    if (cabinetWall(peer, plan) !== wall) continue;
+    const peerStart = wallRunOffset(peer, wall, plan);
+    const peerEnd = peerStart + wallRunSpan(peer, wall, plan);
+    const gap = peerEnd <= start + 0.01 ? start - peerEnd : peerStart >= end - 0.01 ? peerStart - end : 0;
+    if (gap > 1.5) continue;
+    const box = elevationBox(peer, room);
+    neighbors.push({ gap: Math.max(0, gap), top: box.bottom + box.height, desk: isDeskBaseCabinet(peer) });
+  }
+  if (neighbors.length === 0) return null;
+  const closestGap = Math.min(...neighbors.map((neighbor) => neighbor.gap));
+  const closest = neighbors.filter((neighbor) => Math.abs(neighbor.gap - closestGap) <= 0.01);
+  const desks = closest.filter((neighbor) => neighbor.desk);
+  const chosen = desks.length > 0 ? desks : closest;
+  return Math.min(...chosen.map((neighbor) => neighbor.top));
+}
+
 export function elevationBox(
   p: PlacedCabinet,
-  room?: { ceilingHeight?: number } | null
+  room?: KneeDrawerRoom,
+  peers?: readonly PlacedCabinet[],
 ): { bottom: number; height: number } {
   if (isFillerItem(p) && p.fillerMatchesFullOwnerEnvelope === true) {
     return {
@@ -5637,6 +5698,24 @@ export function elevationBox(
   // sizes the pair to the refrigerator bridge's physical cap.
   if (isRefrigeratorEndPanel(p)) {
     return { bottom: 0, height: placedHeight(p) };
+  }
+  // A desk knee drawer (DKD30, DKD-30, VKD, or any knee-drawer code) is a
+  // shallow box hung in open knee space. Its top meets the neighboring desk
+  // or base top, or 30 inches when it is placed alone. An explicit base-top
+  // mount from the attributes control still wins. It never sits on the floor.
+  if (isKneeDrawerItem(p)) {
+    const height = placedHeight(p);
+    if (p.placement === "baseTop" && typeof p.mountBottom === "number") {
+      return {
+        bottom: Math.min(KNEE_DRAWER_MAX_MOUNT_BOTTOM_IN, Math.max(KNEE_DRAWER_MIN_MOUNT_BOTTOM_IN, p.mountBottom)),
+        height,
+      };
+    }
+    if (p.mountBottomAdjusted === true && typeof p.mountBottom === "number") {
+      return { bottom: Math.max(0, p.mountBottom), height };
+    }
+    const top = kneeDrawerNeighborTopInches(p, room, peers) ?? DESK_TOP_HEIGHT_IN;
+    return { bottom: Math.max(0, top - height), height };
   }
   // A shallow wall cabinet used on an island is a counter-height opposing face,
   // not a room-wall upper. Its top aligns with the adjoining base cabinet box.
@@ -5727,14 +5806,10 @@ export function elevationBox(
     //    which wins.
     return { bottom: ordinaryWallMountBottom(p), height: h };
   }
-  // baseTop: specialty items (knee drawers, spice racks) that sit in the
-  // counter-height zone. A knee drawer may be installed from 24–30 inches off
-  // the finished floor; 30 inches is the default just below the countertop.
+  // baseTop: specialty items (spice racks and similar) that sit in the
+  // counter-height zone. Knee drawers are resolved above.
   if (p.placement === "baseTop") {
-    const requested = typeof p.mountBottom === "number" ? p.mountBottom : KNEE_DRAWER_DEFAULT_MOUNT_BOTTOM_IN;
-    const bottom = isKneeDrawerItem(p)
-      ? Math.min(KNEE_DRAWER_MAX_MOUNT_BOTTOM_IN, Math.max(KNEE_DRAWER_MIN_MOUNT_BOTTOM_IN, requested))
-      : requested;
+    const bottom = typeof p.mountBottom === "number" ? p.mountBottom : KNEE_DRAWER_DEFAULT_MOUNT_BOTTOM_IN;
     return { bottom, height: placedHeight(p) };
   }
   // underCabinet: specialty items (stem glass holders) that hang under wall cabinets
@@ -5800,9 +5875,9 @@ function height_safe(roomDepth: number, _placement: Placement): number {
 export function isCornerCabinet(masterCode: string, description?: string): boolean {
   const code = (masterCode || "").toUpperCase();
   const desc = (description || "").toLowerCase();
-  // AW = angled WALL-END cabinet. It finishes a normal wall run with a 45°
-  // exposed face; it is not installed in or owned by a room corner.
-  if (/^AW[-\d]/.test(code) || (/\bangle(?:d)? wall end\b/.test(desc) && !/corner/.test(desc))) return false;
+  // WAC/AW is an angled WALL-END cabinet. It finishes a normal wall run with a
+  // 45° exposed face; it is not installed in or owned by a room corner.
+  if (isWallAngleEndCabinet({ masterCode, description })) return false;
   // ERB/BER are the easy-reach corner base codes (BER is the Skyline naming;
   // ERB is how the catalog stores the same cabinet). WER is the wall easy-reach.
   // LS## = Lazy Susan (e.g. LS3612, LS3312); LSB## = Lazy Susan Base (older naming)
@@ -5818,11 +5893,70 @@ export function isCornerCabinet(masterCode: string, description?: string): boole
 // this to keep AW units OUT of the Corner palette tab while its dedicated plan
 // clip and 3D profile still render the angled exposed end.
 export function isAngledWallCabinet(masterCode: string, description?: string): boolean {
-  const code = (masterCode || "").toUpperCase();
-  const desc = (description || "").toLowerCase();
-  // A genuine corner unit (e.g. "corner" in the text) is never an angled wall.
-  if (/corner/.test(desc)) return false;
-  return /^AW[-\d]/.test(code) || /\bangled wall\b/.test(desc);
+  return isWallAngleEndCabinet({ masterCode, description });
+}
+
+/**
+ * Upper and tall cabinets touching one side of a WAC/AW. A U249624 pantry is
+ * on the floor layer, so a wall-only span check would miss it and taper the
+ * door back into the pantry. Both sides, or neither, returns null.
+ */
+function angledWallEndRunTouch(
+  cabinet: PlacedCabinet,
+  others: readonly PlacedCabinet[],
+): { atStart: boolean; atEnd: boolean } | null {
+  if (!isAngledWallCabinet(cabinet.masterCode, cabinet.description) || !cabinet.wallId || cabinet.wallOffset == null) return null;
+  const start = Number(cabinet.wallOffset);
+  const end = start + alongRunSpan(cabinet);
+  const touch = 0.5;
+  let atStart = false;
+  let atEnd = false;
+  for (const other of others) {
+    if (other.uid === cabinet.uid || other.wallId !== cabinet.wallId || other.wallOffset == null) continue;
+    if (other.placement !== "tall" && !occupiesUpperZone(other)) continue;
+    const otherStart = Number(other.wallOffset);
+    const otherEnd = otherStart + alongRunSpan(other);
+    if (Math.abs(otherEnd - start) <= touch) atStart = true;
+    if (Math.abs(otherStart - end) <= touch) atEnd = true;
+  }
+  return { atStart, atEnd };
+}
+
+/**
+ * The open end of a wall angle cabinet along its wall run. "start" is the
+ * lower along-run coordinate. A neighbor on only one side, including a tall
+ * pantry, selects the other side; a cabinet alone on the wall tapers toward
+ * the nearer wall end.
+ */
+export function wallAngleEndOpenSide(
+  cabinet: PlacedCabinet,
+  room: RoomData,
+  others: readonly PlacedCabinet[] = [],
+): "start" | "end" {
+  const touch = angledWallEndRunTouch(cabinet, others);
+  if (touch && touch.atStart !== touch.atEnd) return touch.atStart ? "end" : "start";
+  const side = cabinetWall(cabinet, room);
+  const measure = wallSpanMeasure(cabinet, room, others.filter((item) => item.uid !== cabinet.uid), side);
+  const startOpen = !measure.beforeIsCabinet;
+  const endOpen = !measure.afterIsCabinet;
+  if (startOpen !== endOpen) return startOpen ? "start" : "end";
+  return measure.start <= measure.wallLen - measure.end ? "start" : "end";
+}
+
+/** Viewer-right hand for a wall angle cabinet sitting on this room's run. */
+export function wallAngleEndHandForPlacement(
+  cabinet: PlacedCabinet,
+  room: RoomData,
+  others: readonly PlacedCabinet[] = [],
+): WallAngleEndHand {
+  const frame = wallRunFrame(cabinetWall(cabinet, room), room);
+  const openSide = wallAngleEndOpenSide(cabinet, room, others);
+  if (!frame) return openSide === "start" ? "left" : "right";
+  return wallAngleEndHandFromRun({
+    openSide,
+    tangent: frame.tangent,
+    facingRotation: frame.facingRotation,
+  });
 }
 
 /**
@@ -6369,7 +6503,10 @@ export function doorPanelKind(doorStyle?: string | null): DoorPanelKind {
   // swatch can draw the thin frame.
   if (/slim|narrow|thin[ -]?frame|skinny/.test(s) && /shaker/.test(s)) return "slim-shaker";
   if (/slim shaker|narrow shaker/.test(s)) return "slim-shaker";
-  if (/raised|cathedral|arch/.test(s)) return "raised";
+  // "Flat panel" and "recessed" are a framed shaker, not a slab. Raised phrases
+  // are checked before the generic flat/slab words.
+  if (/flat[\s-]?panel|\brecessed\b/.test(s)) return "shaker";
+  if (/raised|cathedral|\barch(?:ed)?\b|\bogee\b|traditional/.test(s)) return "raised";
   if (/slab|flat|contemporary|euro|modern/.test(s)) return "slab";
   if (/bead/.test(s)) return "beaded";
   if (/inset/.test(s)) return "inset";
@@ -6667,7 +6804,7 @@ export function crownLinearInches(placed: PlacedCabinet[], room?: RoomData): num
 
 export function toeKickLinearInches(placed: PlacedCabinet[]): number {
   return placed
-    .filter((p) => p.category !== "MasterTrac Closet" && (p.placement === "base" || p.placement === "tall"))
+    .filter((p) => p.category !== "MasterTrac Closet" && !isKneeDrawerItem(p) && (p.placement === "base" || p.placement === "tall"))
     .reduce((sum, p) => sum + alongRunSpan(p), 0);
 }
 
@@ -10383,27 +10520,13 @@ export function syncWallRunOffsets(placed: PlacedCabinet[], room: RoomData): Pla
  * the wall and the neighbour, so the door faces out at 45° to the run.
  */
 export function angledWallEndNeighborSide(p: PlacedCabinet, placed: PlacedCabinet[], room: RoomData): "left" | "right" | null {
-  if (!isAngledWallCabinet(p.masterCode, p.description) || !p.wallId || p.wallOffset == null) return null;
+  const touch = angledWallEndRunTouch(p, placed);
+  if (!touch || touch.atStart === touch.atEnd || !p.wallId) return null;
   const frame = wallRunFrame(p.wallId, room);
   if (!frame) return null;
-  const start = Number(p.wallOffset);
-  const end = start + alongRunSpan(p);
-  const touch = 0.5;
-  let atStart = false;
-  let atEnd = false;
-  for (const other of placed) {
-    if (other.uid === p.uid || other.wallId !== p.wallId || other.wallOffset == null) continue;
-    // Uppers and tall units (a U249624 pantry) reach the AW's height band.
-    if (other.placement !== "tall" && !occupiesUpperZone(other)) continue;
-    const otherStart = Number(other.wallOffset);
-    const otherEnd = otherStart + alongRunSpan(other);
-    if (Math.abs(otherEnd - start) <= touch) atStart = true;
-    if (Math.abs(otherStart - end) <= touch) atEnd = true;
-  }
-  if (atStart === atEnd) return null;
   const radians = (Number(p.rotation) || 0) * Math.PI / 180;
   const localXAlongRun = Math.cos(radians) * frame.tangent.x + Math.sin(radians) * frame.tangent.y > 0;
-  const neighbourAtRunEnd = atEnd;
+  const neighbourAtRunEnd = touch.atEnd;
   return neighbourAtRunEnd === localXAlongRun ? "right" : "left";
 }
 
@@ -12293,6 +12416,9 @@ export function bearsCountertop(p: {
 	  fillerTransitionKind?: "angled-wedge" | "corner-provisional" | "front-miter-pair" | null;
 }): boolean {
 	  if (p.placement !== "base" && !isBaseHeightAppliance(p)) return false;
+  // A knee drawer hangs in open knee space. It is not a cabinet box the
+  // desktop can bear, and it must not close that opening with a slab.
+  if (isKneeDrawerItem(p)) return false;
   // Some legacy plans stored a freestanding stove in the base layer. A stove
   // remains an appliance opening regardless of that stale layer value, so it
 	  // must never receive a countertop slab.

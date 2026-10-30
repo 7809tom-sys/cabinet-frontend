@@ -18,6 +18,7 @@ describe("kitchen rules catalog", () => {
     for (const rule of KITCHEN_ADJACENCY_RULES) expect(codes).toContain(rule.id);
     expect(codes).toEqual(expect.arrayContaining([
       "owner-jog-3",
+      "owner-measured-fridge-corner-shift",
       "owner-range-fridge-15",
       "owner-filler-gap-3",
       "owner-filler-cut-2-5",

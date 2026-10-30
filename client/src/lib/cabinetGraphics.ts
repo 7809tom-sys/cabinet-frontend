@@ -1,7 +1,9 @@
 // Pure helpers that map a cabinet record to a 2D drawing type, an SEO-friendly
 // image slug, and descriptive alt text. Kept framework-free so it is unit-testable.
 import { parseCatalogNomenclature } from "@shared/catalogNomenclature";
+import { standardBaseFaceReference } from "@shared/genericCabinetDrawerReference";
 import { isBaseAngleEndCabinet } from "./baseAngleEndLayout";
+import { isWallAngleEndCabinet } from "./wallAngleEndLayout";
 
 export type CabinetDrawingType =
   | "standard-door" // 1+ door box (base/wall/tall)
@@ -11,7 +13,7 @@ export type CabinetDrawingType =
   | "appliance-garage" // tambour roll-up slats
   | "blind-corner" // L-shaped footprint (blind corner cabinets)
   | "diagonal-corner" // 45° room-corner front face (DCW, WDC, DCB, AG)
-  | "wall-end-angle" // AW: regular wall-run end with one 45° exposed face
+  | "wall-end-angle" // WAC/AW: wall-run end with one 45° door facing the room
   | "l-corner" // L-shaped corner with doors on angled face (LS, ER, CSB)
   | "corner-drawer-base" // L-shaped corner with stacked drawers on the main face (CDB-*)
   | "vanity" // vanity door/drawer combo
@@ -220,14 +222,18 @@ export function resolveDoorDrawerCounts(cab: CabinetLike): {
     };
   }
 
-  // The exact B-12/B-15/B-18/... family is the standard base construction:
-  // one centered top drawer and lower hinged door(s). Saved/imported face counts
-  // must not turn the lower door into a second drawer, which would incorrectly
-  // render a horizontal centered pull on the door panel. Specialty B-prefixed
-  // families (BFH, BMC, blind, etc.) do not match this exact code contract.
-  const standardBaseCode = code.match(/^b[-_]?(\d{1,2})$/);
-  if (standardBaseCode && (w ?? Number(standardBaseCode[1])) >= 12) {
-    return { doors: standardDoorCountForFaceWidth(w ?? standardBaseCode[1]), drawers: 1 };
+  // Exact B09–B48 door bases (including B-18 and B21-R spellings). Door and
+  // top-drawer counts come from the generic catalog reference, not from a stale
+  // numberOfDoors / numberOfDrawers pair. B21 and under is one door. B24–B30
+  // are two doors over one full-width drawer. B33 and wider are two doors over
+  // one row of two drawers. Specialty B-prefixed families (BFH, BMC, blind,
+  // sink, drawer bases) do not match this code.
+  const standardFace = standardBaseFaceReference(cab.masterCode);
+  if (standardFace) {
+    return {
+      doors: standardFace.doors,
+      drawers: standardFace.drawerRows.reduce((sum, row) => sum + row.count, 0),
+    };
   }
 
   // 0) Authored Cabinet Config is authoritative. Legacy supplier counts exist on
@@ -352,11 +358,9 @@ export function cabinetDrawingType(cab: CabinetLike): CabinetDrawingType {
   // beats a stale square, diagonal, or two-face return override.
   if (isBaseAngleEndCabinet(cab)) return "end-angle";
 
-  // Cabinet Config's explicitly authored graphic type takes precedence over
-  // inconsistent supplier category or corner fields on saved placements.
-  if (graphic === "wall_angle" || /^(?:aw[-_]?\d|aw[-_]?\d+-\d+)/.test(code) || /angle(?:d)? wall end cabinet/.test(hay)) {
-    return "wall-end-angle";
-  }
+  // WAC1230/WAC1236/WAC1242 and AW aliases. Cabinet Config's wall_angle profile
+  // is the same family. This is a wall-run end, not the BA-24 quarter-octagon.
+  if (isWallAngleEndCabinet(cab)) return "wall-end-angle";
   if (graphic === "end-angle" || graphic === "base_end_angle") {
     return "end-angle";
   }

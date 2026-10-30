@@ -94,6 +94,9 @@ import { affiliateStyleName as resolveAffiliateStyleName } from "@/lib/affiliate
 import { frameInsetPxFromInches } from "@/lib/elevationFrameGeometry";
 import { designerDoorFrameMetrics } from "@/lib/doorFrameMetrics";
 import { designerCatalogDoorProfile, doorStyleFinishColors, resolveDoorProfilePanelKind } from "@/lib/doorStyleAppearance";
+import { resolveDoorSwatchHex } from "@shared/doorRenderIdentity";
+import { clampColorDeltaE } from "@shared/colorGate";
+import { clampRenderExposure } from "@shared/doorRenderLights";
 import { adjustedDesignUnitPrice, buildDesignCabinetCartLines, buildDesignPreviewPricingLines, bundleCabinetPricingSignature, calculateCartSubtotal, completeDesignPricingLines, lockDesignCartLinesToPackageTotal, mergeDesignCartLines } from "@/lib/designCartLines";
 import { combinedFillerNote, fillerCutSourceFor, isCombinedSmallFiller } from "@/lib/fillerBilling";
 import { activeCatalogPricingIdsByMasterCode, currentCatalogPricingCabinetId } from "@/lib/designPricingIdentity";
@@ -216,7 +219,7 @@ import { applyChosenAutoDesignFaucet, catalogFaucetSurface, defaultAutoDesignFau
 import { clampSinkDragForFaucet } from "@/lib/faucetPlacement";
 import { autoDesignSinkWindow, windowOverlapsReservation } from "@/lib/autoDesignSinkWindow";
 import { autoDesignRangeHood, autoDesignRangeNeedsVentilation } from "@/lib/autoDesignRangeHood";
-import { autoBuildCornerCatalog, autoDesignCornerAttempts, autoDesignCornerFamily, autoDesignCornerSlotPoint, autoDesignCornerSlots, autoDesignMissingCornerMessage, isAutoDesignBlindCornerOption, type AutoBuildCornerCandidate, type AutoDesignCornerChoice, type AutoDesignCornerSlot } from "@/lib/autoDesignCornerStage";
+import { autoBuildCornerCatalog, autoDesignCornerSlotPoint, autoDesignCornerSlots, autoDesignExcludedEngineWallIds, autoDesignLayoutUsesWall, autoDesignRunWallIds, type AutoBuildCornerCandidate, type AutoDesignCornerChoice, type AutoDesignCornerSlot } from "@/lib/autoDesignCornerStage";
 import { evaluateAutoDesignCornerFit, type AutoDesignCornerFit } from "@/lib/cornerFit";
 import { useKitchenRuleParameterSync } from "@/lib/kitchenRulesApi";
 import { rangeBridgeSpec, reviewAfterShift, separateRangeAndRefrigerator } from "@/lib/kitchenAdjacency";
@@ -224,7 +227,8 @@ import { bakesALot, cooksALot, normalizeKitchenUsage } from "@/lib/kitchenUsage"
 import { buildMandatoryAutoDesignRefrigeratorBay } from "@/lib/autoDesignRefrigeratorBay";
 import { buildAutoDesignWallCabinets, resolveWallHeightClass, type AutoDesignUpperCorner } from "@/lib/autoDesignWallCabinets";
 import { isWallWineRackCabinet, withWallWineRacks } from "@shared/wallWineRack";
-import { seatAutoDesignCorner, type AutoDesignApplianceMove } from "@/lib/autoDesignCornerSeating";
+import { seatAutoDesignCornerFromCatalog } from "@/lib/autoDesignCornerPlacement";
+import { type AutoDesignApplianceMove } from "@/lib/autoDesignCornerSeating";
 import { validatePlacedCornerRefrigerator } from "@/lib/cornerRefrigeratorPlacement";
 import { validatePlacedCornerRange, CORNER_RANGE_HANDLE_FILLER_IN } from "@/lib/cornerRangePlacement";
 import { buildGlassCornerCatalogChoices } from "@/lib/glassCornerCatalog";
@@ -262,7 +266,6 @@ import { IslandElevationView } from "@/components/design/IslandElevationView";
 import { CsvImportDialog } from "@/components/design/CsvImportDialog";
 import { PlanImageImportDialog, type ReviewedPlan } from "@/components/design/PlanImageImportDialog";
 import { AutoDesignDialog, type AutoDesignSubmitResult } from "@/components/design/AutoDesignDialog";
-import { AutoDesignCornerDialog } from "@/components/design/AutoDesignCornerDialog";
 import { AutoDesignFaucetDialog } from "@/components/design/AutoDesignFaucetDialog";
 import { findClosestPlanCabinet } from "@/lib/planImportMapper";
 import { EmailGate, type LeadContact } from "@/components/design/EmailGate";
@@ -1171,6 +1174,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     anchorOrigins: AutoDesignAnchorOrigin[];
     cornerFit: Record<string, AutoDesignCornerFit>;
   } | null>(null);
+  const finishAutoDesignLayoutRef = useRef<((
+    choices: Record<string, AutoDesignCornerChoice>,
+    stageOverride?: NonNullable<typeof autoDesignCornerStage>,
+  ) => { ok: true } | { ok: false; message: string }) | null>(null);
   autoDesignSessionRef.current = autoDesignOpen || autoDesignCornerStage != null;
   const [autoDesignFaucetPrompt, setAutoDesignFaucetPrompt] = useState<{ sinkUid: string; queue: string[] } | null>(null);
   const queueAutoDesignFaucetPrompt = useCallback((sinkUid: string) => {
@@ -3843,6 +3850,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           ),
         }
         : anchor;
+      if (!autoDesignLayoutUsesWall(input.layoutType, measuredAnchor.wallLabel)) {
+        return fail(`U-shape uses Wall 1, Wall 2, and Wall 3 only. ${measuredAnchor.wallLabel} is not part of this layout.`);
+      }
       const wall = wallLabelToEngineWallId(measuredAnchor.wallLabel, room, input.originCorner, input.runDirection);
       if (!wall) {
         return fail(`${anchor.kind} cannot be placed because ${measuredAnchor.wallLabel} is not available in this room.`);
@@ -3973,10 +3983,16 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       });
     }
     setAutoDesignOpen(false);
-    setAutoDesignCornerStage({
+    const stage = {
       input,
       anchors: Object.fromEntries(anchorsByKind),
-      selectedWalls,
+      selectedWalls: autoDesignRunWallIds({
+        layoutType: input.layoutType,
+        room,
+        originCorner: input.originCorner,
+        runDirection: input.runDirection,
+        wallIds: selectedWalls,
+      }) as WallSide[],
       anchorPlaced: working,
       pool,
       wallPool: (wallCabPool as DesignCabinet[] | undefined) ?? [],
@@ -3988,26 +4004,36 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       sinkWindow,
       anchorOrigins,
       cornerFit,
-    });
+    };
     setViewMode("plan");
     setSelectedUid(null);
-    toast.info(slots.length > 0
-      ? "Measured appliances are seated. Choose each real corner cabinet before the remaining wall runs are filled."
-      : "Measured appliances are seated. Confirm the next step to fill the remaining wall runs.");
-    return { ok: true as const };
+    const finish = finishAutoDesignLayoutRef.current;
+    if (!finish) return fail("The measured kitchen could not place its corners. Start Auto-Design again.");
+    return finish({}, stage);
     }, [appliancePalette, autoFillCabinets, autoFillCabinetsLoading, autoDesignAvailable, dishwasherSidePreference, isCornerCabinet, openings, placedRef, refrigeratorSurroundCatalog, room, setCountertop, setPlaced, setRoom, wallCabPool, wallCabPoolLoading]);
 
   /**
-   * The second half of an Auto-Design build. Nothing is guessed: appliances are
-   * already committed with the refrigerator bay, every L/U corner must receive
-   * a source-priced corner box, and only then do straight base boxes/fillers
-   * tile the remaining run spans.
+   * The second half of an Auto-Design build. Measured appliances are already
+   * seated. Every real corner is placed next — diagonal, then lazy Susan, then
+   * a blind corner — before straight bases, fillers, or wall cabinets go on
+   * the adjoining walls.
    */
-  const completeAutoDesignLayout = useCallback((choices: Record<string, AutoDesignCornerChoice>) => {
-    const stage = autoDesignCornerStage;
+  const completeAutoDesignLayout = useCallback((
+    choices: Record<string, AutoDesignCornerChoice>,
+    stageOverride?: NonNullable<typeof autoDesignCornerStage>,
+  ) => {
+    const stage = stageOverride ?? autoDesignCornerStage;
     const fail = (message: string) => {
       toast.error(message);
       return { ok: false as const, message };
+    };
+    const abandon = (message: string) => {
+      placedRef.current = [];
+      setPlaced([]);
+      setSinks([]);
+      setSelectedSinkUid(null);
+      setAutoDesignCornerStage(null);
+      return fail(message);
     };
     if (!stage) return fail("The measured appliance stage is no longer active. Start the Auto-Design build again from an empty plan.");
 
@@ -4016,7 +4042,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     const stageOpenings = stage.sinkWindow && !openings.some((opening) => opening.uid === stage.sinkWindow!.uid)
       ? [...openings, stage.sinkWindow]
       : openings;
-    const selectedWalls = [...stage.selectedWalls];
+    const excludedWallIds = autoDesignExcludedEngineWallIds(stage.input.layoutType, room, stage.input.originCorner, stage.input.runDirection);
+    const selectedWalls = autoDesignRunWallIds({
+      layoutType: stage.input.layoutType,
+      room,
+      originCorner: stage.input.originCorner,
+      runDirection: stage.input.runDirection,
+      wallIds: stage.selectedWalls,
+    }) as WallSide[];
     let selectedCornerCount = 0;
     const upperCorners: AutoDesignUpperCorner[] = [];
     const applianceMoves: AutoDesignApplianceMove[] = [];
@@ -4026,60 +4059,49 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       const choice = choices[slot.id] ?? { cabinetId: null };
       const firstWall = wallLabelToEngineWallId(slot.firstWall, room, stage.input.originCorner, stage.input.runDirection);
       const secondWall = wallLabelToEngineWallId(slot.secondWall, room, stage.input.originCorner, stage.input.runDirection);
-      if (!firstWall || !secondWall) return fail(`${slot.label} is unavailable in this room. No remaining cabinets were added.`);
+      if (!firstWall || !secondWall) return abandon(`${slot.label} is unavailable in this room. No remaining cabinets were added.`);
+      if (excludedWallIds.includes(firstWall.engineWallId) || excludedWallIds.includes(secondWall.engineWallId)) continue;
       for (const wallId of [firstWall.engineWallId, secondWall.engineWallId] as WallSide[]) {
-        if (!selectedWalls.includes(wallId)) selectedWalls.push(wallId);
+        if (!excludedWallIds.includes(wallId) && !selectedWalls.includes(wallId)) selectedWalls.push(wallId);
       }
-      if (choice.cabinetId == null) {
-        return fail(autoDesignMissingCornerMessage(slot));
+      const preferred = choice.cabinetId == null
+        ? null
+        : stage.cornerOptions.find((candidate) => candidate.id === choice.cabinetId) ?? null;
+      if (choice.cabinetId != null && !preferred) {
+        return abandon(`${slot.label} must use a current source-priced corner cabinet. The selected catalog item is unavailable.`);
       }
-      const source = stage.cornerOptions.find((candidate) => candidate.id === choice.cabinetId);
-      if (!source) return fail(`${slot.label} must use a current source-priced corner cabinet. The selected catalog item is unavailable.`);
       const fit = stage.cornerFit?.[slot.id];
-      let requested = source;
-      if (fit && choice.cabinetId != null && !fit.offeredIds.includes(choice.cabinetId)) {
-        if (fit.selectedId == null) return fail(fit.blockedMessage ?? `${source.masterCode} does not fit ${slot.label}. No corner cabinet fits.`);
-        const fallback = stage.cornerOptions.find((option) => option.id === fit.selectedId);
-        if (!fallback) return fail(fit.blockedMessage ?? `${slot.label}: no corner cabinet fits.`);
-        requested = fallback;
-        if (fit.fallbackNote) {
-          setAutoDesignLayoutNotes((current) => current.includes(fit.fallbackNote!) ? current : [...current, fit.fallbackNote!]);
-        }
+      if (fit?.fallbackNote) {
+        setAutoDesignLayoutNotes((current) => current.includes(fit.fallbackNote!) ? current : [...current, fit.fallbackNote!]);
       }
-      const fittingOptions = fit ? stage.cornerOptions.filter((option) => fit.offeredIds.includes(option.id)) : stage.cornerOptions;
       const target = autoDesignCornerSlotPoint(slot, room, stage.input.originCorner, stage.input.runDirection);
-      if (!target) return fail(`${slot.label} does not resolve to a real shared wall vertex. No remaining cabinets were added.`);
-      const attempts = autoDesignCornerAttempts(requested, fittingOptions.length ? fittingOptions : stage.cornerOptions);
-      let seated: ReturnType<typeof seatAutoDesignCorner> | null = null;
-      let seatedSource: AutoBuildCornerCandidate | null = null;
-      let seatMessage = fit?.blockedMessage ?? `${requested.masterCode} cannot fit at ${slot.label}.`;
-      for (const attempt of attempts) {
-        const sourceCatalog = stage.pool.find((candidate) => candidate.id === attempt.id);
-        if (!sourceCatalog) continue;
-        const placementWallId = fit?.placementWallById[attempt.id];
-        const seatTarget = placementWallId ? { ...target, firstWallId: placementWallId } : target;
-        const trial = seatAutoDesignCorner({
-          source: sourceCatalog, slotLabel: slot.label, target: seatTarget,
-          cornerWallIds: [firstWall.engineWallId, secondWall.engineWallId],
-          working, room, openings: stageOpenings,
-          blindPullIn: choice.blindPullIn ?? attempt.pullMax ?? 6,
-          blindRunWallId: isAutoDesignBlindCornerOption(attempt) ? placementWallId : undefined,
-          isBlindOption: isAutoDesignBlindCornerOption(attempt),
-          catalogFillers, makeUid, styleId: styleIdRef.current ?? null,
-        });
-        if (trial.ok) { seated = trial; seatedSource = attempt; break; }
-        seatMessage = trial.message;
-      }
-      if (!seated || !seated.ok || !seatedSource) return fail(seatMessage);
-      if (autoDesignCornerFamily(source) === "lazy-susan" && autoDesignCornerFamily(seatedSource) === "lazy-susan" && seatedSource.id !== source.id) {
-        const note = `Lazy Susan reduced to ${seatedSource.width ?? seatedSource.masterCode}" to fit`;
-        setAutoDesignLayoutNotes((current) => current.includes(note) ? current : [...current, note]);
+      if (!target) return abandon(`${slot.label} does not resolve to a real shared wall vertex. No remaining cabinets were added.`);
+      const seated = seatAutoDesignCornerFromCatalog({
+        slot,
+        options: stage.cornerOptions,
+        pool: stage.pool,
+        preferred,
+        target,
+        cornerWallIds: [firstWall.engineWallId, secondWall.engineWallId],
+        working,
+        room,
+        openings: stageOpenings,
+        measuredApplianceUids: stage.anchorOrigins.filter((entry) => entry.kind === "refrigerator").map((entry) => entry.uid),
+        blindPullIn: choice.blindPullIn,
+        catalogFillers,
+        makeUid,
+        styleId: styleIdRef.current ?? null,
+        excludedWallIds,
+      });
+      if (!seated.ok) return abandon(seated.message);
+      if (seated.fallbackNote) {
+        setAutoDesignLayoutNotes((current) => current.includes(seated.fallbackNote!) ? current : [...current, seated.fallbackNote!]);
       }
       const corner = seated.corner;
       working = seated.placed;
       applianceMoves.push(...seated.moves);
       selectedCornerCount++;
-      seatedCornerIds.set(slot.id, seatedSource.id);
+      seatedCornerIds.set(slot.id, seated.source.id);
       upperCorners.push({ base: corner, point: target });
     }
 
@@ -4236,17 +4258,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     if (bareRange) setAutoDesignRangeVentPrompt({ rangeUid: bareRange.uid });
     return { ok: true as const };
   }, [catalogFillers, autoDesignCornerStage, openings, room, setPlaced, setOpenings]);
-
-  const cancelAutoDesignCornerStage = useCallback(() => {
-    // The staged build is transactional. Cancelling this required choice leaves
-    // no auto-created appliance, sink, filler, or cabinet in the empty plan.
-    placedRef.current = [];
-    setPlaced([]);
-    setSinks([]);
-    setSelectedSinkUid(null);
-    setAutoDesignCornerStage(null);
-    toast.info("Measured appliance anchors were cancelled; the Designer remains empty.");
-  }, [setPlaced]);
+  finishAutoDesignLayoutRef.current = completeAutoDesignLayout;
   // A previous automatic microwave workflow could persist WSC30—the real
   // 30×6 spice cabinet—directly above an MW-30. Convert only that centered
   // legacy microwave assembly to the selected source W30 bridge; ordinary spice
@@ -4650,7 +4662,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const stablePricePairs = useMemo(() => pricePairs, [pricePairKey]);
   const debouncedPricePairs = useDebouncedValue(stablePricePairs, 400);
   const { data: priceRows, isFetching: priceRowsFetching, isFetched: priceRowsFetched, isError: priceRowsError } = trpc.design.priceForCabinetsByStyles.useQuery(
-    { pairs: debouncedPricePairs, distributorId: lockedDistributorId ?? undefined },
+    { pairs: debouncedPricePairs, distributorId: lockedDistributorId ?? undefined, affiliateSlug: affiliateSlug ?? undefined },
     { enabled: debouncedPricePairs.length > 0 && !!styleId, retry: false, refetchOnWindowFocus: false }
   );
   // Part 2: the server may have priced a placed code through its two-way
@@ -4700,6 +4712,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       targetStyleId: pendingPlanStyleSwitch?.newStyleId ?? 0,
       distributorId: pendingPlanStyleSwitch?.distributorId ?? undefined,
       tier: DESIGN_TIER_TO_SHARED[tier],
+      affiliateSlug: affiliateSlug ?? undefined,
       cabinets: planSwitchReviewCabinets,
     },
     { enabled: pendingPlanStyleSwitch != null && planSwitchNeedsPricingReview },
@@ -5087,11 +5100,25 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     () => doorStyles?.find((s) => s.id === styleId) ?? null,
     [doorStyles, styleId]
   );
+  const doorRenderSettings = trpc.siteSettings.getPublicSettings.useQuery(undefined, { staleTime: 60_000 });
+  const doorRenderExposure = clampRenderExposure((doorRenderSettings.data as { renderExposure?: number | string | null } | undefined)?.renderExposure);
+  const doorColorDeltaE = clampColorDeltaE((doorRenderSettings.data as { colorMatchDeltaE?: number | string | null } | undefined)?.colorMatchDeltaE);
+  const activeDoorSwatch = resolveDoorSwatchHex(activeStyle as { swatchCode?: string | null; swatchHex?: string | null } | null);
   // Small finish swatch shown on each palette tile so the chosen finish is
   // visible while browsing cabinets. Empty until a door style is selected.
   const paletteFinishSwatch = useMemo<string | null>(
     () => preferredDoorReferenceUrl(activeStyle as { approvedReferenceImageUrl?: string | null; doorSampleImageUrl?: string | null; thumbnailImageUrl?: string | null } | null),
     [activeStyle]
+  );
+  const activeStyleDistributorName = useMemo(() => {
+    const styleDistributorId = (activeStyle as { distributorId?: number | null } | null)?.distributorId ?? null;
+    const distributorId = styleDistributorId ?? catalogDistributorId;
+    if (distributorId == null) return null;
+    return distributorNameById.get(distributorId) ?? null;
+  }, [activeStyle, catalogDistributorId, distributorNameById]);
+  const activeDrawerSampleUrl = useMemo(
+    () => preferredDrawerReferenceUrl(activeStyle as { approvedReferenceImageUrl?: string | null; drawerSampleImageUrl?: string | null } | null),
+    [activeStyle],
   );
   // Auto-suggested Hickory finished-end skins, one per exposed cabinet end.
   // Empty unless the selected finish is Hickory. NOTE: the real skin SKU/price
@@ -14418,6 +14445,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	      onSyncCart={syncThreeDOrderWithCart}
 	      initialPresentation={interactive3dPresentation ?? undefined}
 	      catalogFinishOverride={activeFinish.face}
+	      renderExposure={doorRenderExposure}
+	      colorDeltaEMax={doorColorDeltaE}
+	      doorSwatchHex={activeDoorSwatch}
+	      doorSwatchCode={(activeStyle as { swatchCode?: string | null } | null)?.swatchCode ?? null}
 	      cabinetFinishPreviewOptions={threeDCabinetFinishPreviewOptions}
 	      doorStyleChoices={displayUniqueDoorStyles.map((style) => ({ id: style.id, name: affiliateStyleName(style) }))}
 	      selectedDoorStyleId={styleId}
@@ -14476,7 +14507,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       catalogCountertopImageUrl={threeDSurfaceTextureUrls.countertop}
 	      catalogIslandCountertopImageUrl={threeDIslandCountertop.imageUrl}
       catalogFlooringImageUrl={threeDSurfaceTextureUrls.flooring}
+      catalogFlooringCardImageUrl={activeFlooringSurface?.imageUrl ?? null}
       catalogBacksplashImageUrl={backsplashEnabled ? threeDSurfaceTextureUrls.backsplash : null}
+      catalogBacksplashCardImageUrl={backsplashEnabled ? activeBacksplashSurface?.imageUrl ?? null : null}
       onPresentationChange={setInteractive3dPresentation}
       onRoomWallHeightChange={(ceilingHeight) => setRoom((current) => ({ ...current, ceilingHeight, wallCeilings: undefined }))}
       onRoomWallHeightsChange={(heights) => setRoom((current) => ({ ...current, wallCeilings: Object.fromEntries(Object.entries(heights).map(([side, height]) => [side, { high: height, low: height }])) as RoomData["wallCeilings"] }))}
@@ -16149,7 +16182,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
               <DialogHeader>
                 <DialogTitle>Customer &amp; Affiliate Price List</DialogTitle>
                 <DialogDescription>
-                  Private to this affiliate owner. Customer price is shown beside your affiliate cost and pricing position; supplier cost is never shown.
+                  Private to this affiliate owner. Customer price is your tier cost plus your markup. Supplier cost is never shown.
+                  {affiliatePriceList.data?.tierLabel ? ` Pricing tier: ${affiliatePriceList.data.tierLabel}.` : ""}
                 </DialogDescription>
               </DialogHeader>
               {affiliatePriceList.isLoading ? (
@@ -16260,29 +16294,15 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                   editing the cabinet. Falls back to a color chip from the
                   finish palette when the style has no sample photo. */}
               {!masterTracProduct(selectedCab.masterCode) && (paletteFinishSwatch || styleId) && (
-                <div
-                  className="flex items-center gap-1.5 shrink-0"
-                  title={`Door style: ${activeStyleName || "selected style"}`}
-                >
-                  {paletteFinishSwatch ? (
-                    <img
-                      src={paletteFinishSwatch}
-                      alt={`${activeStyleName || "Door"} door sample`}
-                      className="h-9 w-9 rounded border border-border object-cover"
-                      loading="lazy"
-                    />
-                  ) : (
-                    <span
-                      className="flex h-9 w-9 items-center justify-center rounded border text-[8px] font-semibold"
-                      style={{ backgroundColor: activeFinish.face, borderColor: activeFinish.edge, color: activeFinish.label }}
-                    >
-                      {t("dt_cx_door")}
-                    </span>
-                  )}
-                  <span className="hidden md:inline text-[10px] leading-tight text-muted-foreground">
-                    {t("dt_cx_door")}<br /><span className="font-medium text-foreground/80">{activeStyleName || "—"}</span>
-                  </span>
-                </div>
+                <SelectedCabinetDoorIdentity
+                  photoUrl={paletteFinishSwatch}
+                  styleName={activeStyleName}
+                  distributorName={activeStyleDistributorName}
+                  fallbackFace={activeFinish.face}
+                  fallbackEdge={activeFinish.edge}
+                  fallbackLabel={activeFinish.label}
+                  doorLabel={t("dt_cx_door")}
+                />
               )}
 		              <span className="text-[11px] text-muted-foreground">
 		                {t("dt_cx_selected")} <span className="font-mono font-semibold text-foreground">{selectedCab.masterCode}</span>
@@ -16724,26 +16744,15 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                     </div>
                   </div>
                   {(paletteFinishSwatch || styleId) && (
-                    <div
-                      className="flex shrink-0 items-center gap-1.5"
-                      title={`Door style: ${activeStyleName || "selected style"}`}
-                    >
-                      {paletteFinishSwatch ? (
-                        <img
-                          src={paletteFinishSwatch}
-                          alt={`${activeStyleName || "Door"} door sample`}
-                          className="h-10 w-10 rounded border border-border object-cover"
-                          loading="lazy"
-                        />
-                      ) : (
-                        <span
-                          className="flex h-10 w-10 items-center justify-center rounded border text-[8px] font-semibold"
-                          style={{ backgroundColor: activeFinish.face, borderColor: activeFinish.edge, color: activeFinish.label }}
-                        >
-                          {t("dt_cx_door")}
-                        </span>
-                      )}
-                    </div>
+                    <SelectedCabinetDoorIdentity
+                      photoUrl={paletteFinishSwatch}
+                      styleName={activeStyleName}
+                      distributorName={activeStyleDistributorName}
+                      fallbackFace={activeFinish.face}
+                      fallbackEdge={activeFinish.edge}
+                      fallbackLabel={activeFinish.label}
+                      doorLabel={t("dt_cx_door")}
+                    />
                   )}
 	                </div>
 
@@ -20248,16 +20257,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	          room={room}
 	        />
 	      )}
-	      {autoDesignAvailable && autoDesignCornerStage && (
-	        <AutoDesignCornerDialog
-	          open
-	          slots={autoDesignCornerStage.slots}
-	          options={autoDesignCornerStage.cornerOptions}
-	          fitBySlot={autoDesignCornerStage.cornerFit}
-	          onCancel={cancelAutoDesignCornerStage}
-	          onConfirm={completeAutoDesignLayout}
-	        />
-	      )}
 	      {autoDesignAvailable && (
 	        <AutoDesignFaucetDialog
 	          open={autoDesignFaucetPrompt != null}
@@ -21998,7 +21997,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       <Dialog open={catalogSetupOpen} onOpenChange={(open) => { if (open) setCatalogSetupOpen(true); }}>
         <DialogContent
           data-testid="fresh-room-catalog-setup"
-          className="max-w-lg"
+          className="max-h-[min(92vh,900px)] max-w-3xl overflow-y-auto"
           onPointerDownOutside={(event) => event.preventDefault()}
           onInteractOutside={(event) => event.preventDefault()}
         >
@@ -22028,29 +22027,60 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
               {(distributorLabels ?? []).length === 0 && <p className="text-xs text-muted-foreground">Loading available cabinet distributors…</p>}
             </div>
             <div className="space-y-1.5" data-testid="fresh-room-door-style-step">
-              <Label htmlFor="fresh-room-door-style">2. Door style / color</Label>
-              <Select
-                value={styleId == null ? "" : String(styleId)}
-                onValueChange={(value) => setSlotStyle("A", Number(value))}
+              <Label id="fresh-room-door-style-label">2. Door style / color</Label>
+              <fieldset
+                aria-labelledby="fresh-room-door-style-label"
+                aria-label="Choose door style"
                 disabled={catalogDistributorId == null || displayUniqueDoorStyles.length === 0}
+                className="min-w-0 border-0 p-0"
               >
-                <SelectTrigger id="fresh-room-door-style" className="h-11" aria-label="Choose door style" disabled={catalogDistributorId == null || displayUniqueDoorStyles.length === 0}>
-                  <Palette className="mr-2 h-4 w-4 text-[#a87f33]" />
-                  <SelectValue placeholder={catalogDistributorId == null ? "Choose a distributor first" : "Choose a door style"} />
-                </SelectTrigger>
-                <SelectContent className="max-h-[min(65vh,26rem)]">
-                  {displayUniqueDoorStyles.map((style) => (
-                    <SelectItem key={style.id} value={String(style.id)} data-testid="fresh-room-door-style-option">
-                      <span className="flex items-center gap-2.5" aria-label={`${affiliateStyleName(style)} door thumbnail`}>
-                        <DoorStyleSwatch style={style} className="h-12 w-9 shrink-0 rounded border border-border object-cover" />
-                        <span className="min-w-0 truncate">{affiliateStyleName(style)}</span>
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                {catalogDistributorId == null ? (
+                  <p className="rounded-lg border border-dashed border-border bg-neutral-50 px-3 py-6 text-center text-xs text-muted-foreground">Choose a distributor first</p>
+                ) : (
+                  <div className="max-h-[min(42vh,22rem)] overflow-y-auto rounded-lg border border-border bg-neutral-50 p-2">
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                      {displayUniqueDoorStyles.map((style) => {
+                        const name = affiliateStyleName(style);
+                        const photoUrl = preferredDoorReferenceUrl(style);
+                        const selected = styleId === style.id;
+                        return (
+                          <button
+                            key={style.id}
+                            type="button"
+                            data-testid="fresh-room-door-style-option"
+                            aria-label={`${name} door thumbnail`}
+                            aria-pressed={selected}
+                            onClick={() => setSlotStyle("A", style.id)}
+                            className={`flex flex-col overflow-hidden rounded-lg border bg-white text-left transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#192432] ${selected ? "border-[#a87f33] ring-2 ring-[#a87f33]" : "border-border hover:border-[#a87f33]"}`}
+                          >
+                            <DoorSamplePhoto url={photoUrl} alt="" className="h-36 w-full" />
+                            <span className="truncate px-2 py-1.5 text-xs font-medium text-[#192432]">{name}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </fieldset>
               {catalogDistributorId != null && displayUniqueDoorStyles.length === 0 && <p className="text-xs text-amber-700">No door styles are currently available for this distributor.</p>}
             </div>
+            {styleId != null && (
+              <div data-testid="fresh-room-door-style-preview" className="rounded-xl border border-[#d8c7a1] bg-[#fffaf0] p-3">
+                <p className="text-sm font-semibold text-[#192432]">{activeStyleName || "Selected door"}</p>
+                <div className={`mt-2 grid gap-3 ${activeDrawerSampleUrl ? "grid-cols-2" : "grid-cols-1"}`}>
+                  <div>
+                    <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Door</p>
+                    <DoorSamplePhoto url={paletteFinishSwatch} alt={`${activeStyleName || "Door"} door sample`} className="h-52 w-full rounded-lg border border-border" />
+                  </div>
+                  {activeDrawerSampleUrl && (
+                    <div>
+                      <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Drawer</p>
+                      <DoorSamplePhoto url={activeDrawerSampleUrl} alt={`${activeStyleName || "Door"} drawer sample`} className="h-52 w-full rounded-lg border border-border" />
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button
@@ -22246,6 +22276,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                onSyncCart={syncThreeDOrderWithCart}
 			                initialPresentation={interactive3dPresentation ?? undefined}
 			                catalogFinishOverride={activeFinish.face}
+	      renderExposure={doorRenderExposure}
+	      colorDeltaEMax={doorColorDeltaE}
+	      doorSwatchHex={activeDoorSwatch}
+	      doorSwatchCode={(activeStyle as { swatchCode?: string | null } | null)?.swatchCode ?? null}
 	                cabinetFinishPreviewOptions={threeDCabinetFinishPreviewOptions}
 	                doorStyleChoices={displayUniqueDoorStyles.map((style) => ({ id: style.id, name: affiliateStyleName(style) }))}
 	                selectedDoorStyleId={styleId}
@@ -22304,6 +22338,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                catalogCountertopImageUrl={threeDSurfaceTextureUrls.countertop}
 	                catalogIslandCountertopImageUrl={threeDIslandCountertop.imageUrl}
 	                catalogFlooringImageUrl={threeDSurfaceTextureUrls.flooring}
+	                catalogFlooringCardImageUrl={activeFlooringSurface?.imageUrl ?? null}
+	                catalogBacksplashCardImageUrl={backsplashEnabled ? activeBacksplashSurface?.imageUrl ?? null : null}
 	                catalogBacksplashImageUrl={backsplashEnabled ? threeDSurfaceTextureUrls.backsplash : null}
                 onPresentationChange={setInteractive3dPresentation}
                 onRoomWallHeightChange={(ceilingHeight) => setRoom((current) => ({ ...current, ceilingHeight, wallCeilings: undefined }))}
@@ -22574,6 +22610,69 @@ function MobileBarButton({
       </span>
       {label}
     </button>
+  );
+}
+
+function DoorSamplePhoto({ url, alt, className }: { url: string | null; alt: string; className?: string }) {
+  return (
+    <span className={`flex items-center justify-center overflow-hidden bg-neutral-100 ${className ?? ""}`}>
+      {url ? (
+        <img src={url} alt={alt} loading="lazy" className="h-full w-full object-contain" />
+      ) : (
+        <span className="px-2 text-center text-[10px] font-medium text-neutral-500">No photo</span>
+      )}
+    </span>
+  );
+}
+
+function SelectedCabinetDoorIdentity({
+  photoUrl,
+  styleName,
+  distributorName,
+  fallbackFace,
+  fallbackEdge,
+  fallbackLabel,
+  doorLabel,
+}: {
+  photoUrl: string | null;
+  styleName: string | null;
+  distributorName: string | null;
+  fallbackFace: string;
+  fallbackEdge: string;
+  fallbackLabel: string;
+  doorLabel: string;
+}) {
+  return (
+    <div
+      data-testid="selected-cabinet-door-identity"
+      className="flex shrink-0 flex-col items-center gap-0.5"
+      title={`Door style: ${styleName || "selected style"}`}
+    >
+      {photoUrl ? (
+        <img
+          src={photoUrl}
+          alt={`${styleName || "Door"} door sample`}
+          loading="lazy"
+          className="h-16 w-12 rounded border border-neutral-200 bg-white object-contain"
+        />
+      ) : (
+        <span
+          data-testid="selected-cabinet-door-color-chip"
+          className="flex h-16 w-12 items-center justify-center rounded border text-[8px] font-semibold"
+          style={{ backgroundColor: fallbackFace, borderColor: fallbackEdge, color: fallbackLabel }}
+        >
+          {doorLabel}
+        </span>
+      )}
+      <span className="max-w-[4.75rem] truncate text-center text-[10px] font-medium leading-tight text-foreground/80">
+        {styleName || "—"}
+      </span>
+      {distributorName ? (
+        <span data-testid="selected-cabinet-door-distributor" className="max-w-[4.75rem] truncate text-center text-[10px] leading-tight text-muted-foreground">
+          {distributorName}
+        </span>
+      ) : null}
+    </div>
   );
 }
 

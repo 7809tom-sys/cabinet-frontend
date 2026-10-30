@@ -6,7 +6,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Link } from "wouter";
-import { getLoginUrl } from "@/const";
 import { trpc } from "@/lib/trpc";
 import { applyVendorDiscount, selectVendorPromotion, toPromotionRule } from "@shared/vendorPromotions";
 import { Button } from "@/components/ui/button";
@@ -398,7 +397,7 @@ function FamilyPicker({
               ) : (
                 <>
                   Saved on this device. {" "}
-                  <a href={getLoginUrl()} className="font-semibold underline underline-offset-2 hover:no-underline">
+                  <a href={`/store/${slug}/signin`} className="font-semibold underline underline-offset-2 hover:no-underline">
                     Sign in to sync across devices
                   </a>
                 </>

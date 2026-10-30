@@ -446,7 +446,7 @@ export function parseCatalogNomenclature(masterCode: string): CatalogNomenclatur
     };
   }
 
-  const angleWall = normalizedCode.match(/^AW(\d{2})(\d{2})$/);
+  const angleWall = normalizedCode.match(/^(?:AW|WAC)(\d{2})(\d{2})$/);
   if (angleWall) {
     return {
       code,

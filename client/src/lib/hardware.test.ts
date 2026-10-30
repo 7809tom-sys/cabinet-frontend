@@ -84,6 +84,13 @@ describe("door / drawer counting", () => {
     expect(doorCountForCabinet(cab({ numberOfDoors: 2 }))).toBe(2);
   });
 
+  it("keeps B21 and under at one door even when the stored count says two", () => {
+    for (const masterCode of ["B12", "B-15", "B18", "B-21", "B21-R"]) {
+      expect(doorCountForCabinet(cab({ masterCode, numberOfDoors: 2, width: 36 }))).toBe(1);
+    }
+    expect(doorCountForCabinet(cab({ masterCode: "W-2130", description: "Wall 21", placement: "wall", width: 21, numberOfDoors: 2 }))).toBe(2);
+  });
+
   it("treats a drawer base (no door) as zero doors", () => {
     expect(doorCountForCabinet(cab({ masterCode: "DB-24-3", description: "Drawer Base 24 (3 drawer)" }))).toBe(0);
   });
@@ -136,9 +143,10 @@ describe("display drawer count (elevation drawer fronts)", () => {
     expect(displayDrawerCount(cab({ masterCode: "B-24", description: "Base 24", numberOfDoors: 1 }))).toBe(1);
   });
 
-  it("gives a two-door base TWO top drawer fronts (one over each door)", () => {
-    expect(displayDrawerCount(cab({ masterCode: "B-30", description: "Base 30", width: 30 }))).toBe(2);
-    expect(displayDrawerCount(cab({ masterCode: "B-36", description: "Base 36", numberOfDoors: 2 }))).toBe(2);
+  it("gives B24–B30 one full-width drawer and B33–B42 two side-by-side drawers", () => {
+    expect(displayDrawerCount(cab({ masterCode: "B-30", description: "Base 30", width: 30, numberOfDrawers: 2 }))).toBe(1);
+    expect(displayDrawerCount(cab({ masterCode: "B-36", description: "Base 36", numberOfDoors: 2, numberOfDrawers: 2 }))).toBe(2);
+    expect(displayDrawerCount(cab({ masterCode: "B42", numberOfDrawers: 2, drawerLayout: JSON.stringify([{ count: 1 }]) }))).toBe(1);
   });
 
   it("does not add a top drawer to wall cabinets", () => {
@@ -201,25 +209,26 @@ describe("hardware schedule aggregation", () => {
 
   it("totals knobs across doors + drawers, skipping appliances and panels", () => {
     const s = hardwareSchedule(layout, "knob");
-    // 1 door knob (B-24) + 3 drawer knobs (DB-24-3) = 4; range + panel skipped
-    expect(s.knobs).toBe(4);
-    expect(s.total).toBe(4);
+    // B-24 is a two-door standard base even if the stored count says 1,
+    // plus 3 drawer knobs on DB-24-3. Range and panel are skipped.
+    expect(s.knobs).toBe(5);
+    expect(s.total).toBe(5);
     expect(s.cabinetsWithHardware).toBe(2);
   });
 
   it("cup-pull schedule splits cup pulls (drawers) and knobs (doors)", () => {
     const s = hardwareSchedule(layout, "cup-pull");
-    expect(s.knobs).toBe(1); // B-24 door
+    expect(s.knobs).toBe(2); // B-24's two doors
     expect(s.cupPulls).toBe(3); // DB-24-3 drawers
-    expect(s.total).toBe(4);
+    expect(s.total).toBe(5);
   });
 
   it("builds a human-readable build-sheet note", () => {
     const note = hardwareScheduleNote(hardwareSchedule(layout, "cup-pull"));
     expect(note).toContain("Cup Pulls");
-    expect(note).toContain("1 knob");
+    expect(note).toContain("2 knobs");
     expect(note).toContain("3 cup pulls");
-    expect(note).toContain("4 pieces total");
+    expect(note).toContain("5 pieces total");
   });
 });
 

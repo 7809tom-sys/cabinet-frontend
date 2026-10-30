@@ -9,7 +9,7 @@ describe("auto-design applies the shared designer rules", () => {
     expect(pageSource).toContain("anchorOrigins.push({ uid: candidate.uid, kind: anchor.kind, wallId: wall.engineWallId, originalStart: along })");
     expect(pageSource).toContain("applyAutoDesignWiggleRoom({");
     expect(pageSource).toContain("origins: stage.anchorOrigins");
-    const completion = pageSource.slice(pageSource.indexOf("const completeAutoDesignLayout"), pageSource.indexOf("const cancelAutoDesignCornerStage"));
+    const completion = pageSource.slice(pageSource.indexOf("const completeAutoDesignLayout"), pageSource.indexOf("finishAutoDesignLayoutRef.current = completeAutoDesignLayout"));
     expect(completion.indexOf("applyAutoDesignWiggleRoom({")).toBeGreaterThan(completion.indexOf("for (const slot of stage.slots)"));
     expect(completion.indexOf("planAutoDesignBaseSegment({")).toBeGreaterThan(completion.indexOf("applyAutoDesignWiggleRoom({"));
     expect(completion.indexOf("applyDesignerLayoutRules({")).toBeGreaterThan(completion.indexOf("planAutoDesignBaseSegment({"));

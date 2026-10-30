@@ -8,6 +8,7 @@ import {
   type CabinetDrawingType,
 } from "@/lib/cabinetGraphics";
 import { parseCatalogNomenclature } from "@shared/catalogNomenclature";
+import { standardBaseRenderedCounts } from "@/lib/genericCabinetDrawerReference";
 
 interface CabinetDrawingProps {
   cabinet: CabinetLike;
@@ -225,32 +226,42 @@ function BaseEndAngleFront({ x, y, w, h, fill }: Omit<FrontProps, "type" | "cabi
 // Standard door cabinet: outer box + 1..N door panels, optional top drawer row.
 function StandardDoorFront({ x, y, w, h, fill, cabinet }: Omit<FrontProps, "type">) {
   const counts = resolveDoorDrawerCounts(cabinet ?? {});
-  const doors = Math.max(1, counts.doors || (w > 21 ? 2 : 1));
-  const drawers = counts.drawers;
+  const rendered = standardBaseRenderedCounts({
+    masterCode: cabinet?.masterCode,
+    drawerLayout: cabinet?.drawerLayout,
+    doors: Math.max(1, counts.doors || (w > 21 ? 2 : 1)),
+    drawers: counts.drawers,
+  });
+  const doors = Math.max(1, rendered.doors);
+  const drawerColumns = Math.max(0, rendered.drawers);
   const rollOutShelfCount = parseCatalogNomenclature(cabinet.masterCode ?? "").rollOutShelfCount ?? 0;
   const inset = 4;
-  const hasTopDrawer = drawers > 0;
+  const hasTopDrawer = drawerColumns > 0;
   const drawerH = hasTopDrawer ? Math.min(14, h * 0.18) : 0;
   const doorTop = y + inset + (hasTopDrawer ? drawerH + inset : 0);
   const doorBottom = y + h - inset;
   const doorAreaH = doorBottom - doorTop;
   const innerW = w - inset * 2;
   const doorW = (innerW - (doors - 1) * 3) / doors;
+  const drawerGap = drawerColumns > 1 ? 3 : 0;
+  const drawerW = hasTopDrawer ? (innerW - drawerGap * (drawerColumns - 1)) / drawerColumns : 0;
   return (
     <g>
       <Box x={x} y={y} w={w} h={h} fill={fill} />
-      {hasTopDrawer && (
+      {hasTopDrawer && Array.from({ length: drawerColumns }).map((_, index) => (
         <rect
-          x={x + inset}
+          key={index}
+          data-standard-base-line-drawer={index + 1}
+          x={x + inset + index * (drawerW + drawerGap)}
           y={y + inset}
-          width={innerW}
+          width={drawerW}
           height={drawerH}
           rx={1.5}
           fill={PANEL_FILL}
           stroke={STROKE_LIGHT}
           strokeWidth={1}
         />
-      )}
+      ))}
       {Array.from({ length: doors }).map((_, i) => (
         <g key={i}>
           <rect

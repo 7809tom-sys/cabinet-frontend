@@ -23,7 +23,7 @@ import {
 	  blindCornerSpecViolations, blindCornerViolations, blindPullRange, blindCornerPullPlacement, resolveBaseBlindCornerFillerSnap,
 	  blindCornerAutoFiller, blindCornerRearCountertopExtensionIn,
 			  isStacker, glassStackerParentPlacement, glassStackerFrontFlushSpot, glassStackerFrontSnapTarget, normalizeGlassStackersToParentFronts, isWd18CountertopDrawerCabinet, wd18CountertopFaceLayout, normalizeWd18CountertopMounts, normalizeStandardWallMounts,
-  isDiagonalCorner, footprintDepth,
+  isDiagonalCorner, footprintDepth, wallAngleEndHandForPlacement, wallAngleEndOpenSide,
   isLCornerCabinet, cornerLegRatioForPlaced, placedCornerGeometryKind, placedFootprint, normalizeLCornerDepths,
 	  baseOpeningOverlaps, blocksFloorRun, missingCornerBaseViolations, isWindowBelowCountertop, windowVerticallyOverlapsCabinet,
   snapPosition, snapCabinetSeamOverlap, CABINET_CONFLICT_LOCK_IN, orientToWall, hasCollision, collisionReason, cabinetPlacementCollisionDetail, wallCabinetPlacementReason, removeOverlappingPlacements, shouldBlockPlacementCollision, isHoodOverRangePair,
@@ -121,11 +121,47 @@ describe("knee drawer mounting", () => {
     expect(accessoryPlacement(dkd30)).toBe("baseTop");
   });
 
-  it("defaults to 30 inches and constrains custom knee-drawer mounting height to 24–30 inches", () => {
-    expect(elevationBox(kneeDrawer, ROOM_12x10)).toEqual({ bottom: 30, height: 7 });
+  it("hangs an unmounted knee drawer from the 30-inch desk line and still clamps an explicit mount to 24–30 inches", () => {
+    expect(elevationBox(kneeDrawer, ROOM_12x10)).toEqual({ bottom: 23, height: 7 });
     expect(elevationBox({ ...kneeDrawer, mountBottom: 24 }, ROOM_12x10)).toEqual({ bottom: 24, height: 7 });
     expect(elevationBox({ ...kneeDrawer, mountBottom: 20 }, ROOM_12x10)).toEqual({ bottom: 24, height: 7 });
     expect(elevationBox({ ...kneeDrawer, mountBottom: 36 }, ROOM_12x10)).toEqual({ bottom: 30, height: 7 });
+  });
+
+  it("hangs a DKD30, DKD-30, or other knee drawer under the neighboring desk or base top", () => {
+    const room = ROOM_12x10;
+    const drawer = (masterCode: string, height = 6): PlacedCabinet => ({
+      uid: "dkd", cabinetId: 30, masterCode, description: "30 inch x 6 inch Knee Drawer Base Cabinet",
+      category: "Base", subCategory: "Knee Drawer", placement: "base",
+      x: 30, y: 0, width: 30, depth: 21, height, rotation: 0, numberOfDoors: 0, numberOfDrawers: 1,
+      mountBottom: 0,
+    });
+    const desk = (uid: string, x: number, height: number, masterCode: string, description: string): PlacedCabinet => ({
+      uid, cabinetId: 1, masterCode, description, category: "Base", subCategory: "Desk",
+      placement: "base", x, y: 0, width: 30, depth: 24, height, rotation: 0, numberOfDoors: 1, numberOfDrawers: 1,
+    });
+    expect(isKneeDrawerItem({ masterCode: "DKD-30", description: "Desk knee drawer" })).toBe(true);
+    expect(isKneeDrawerItem({ masterCode: "KD24", description: "Knee drawer" })).toBe(true);
+
+    const alone = drawer("DKD30");
+    expect(elevationBox(alone, room)).toEqual({ bottom: 24, height: 6 });
+    expect(bearsCountertop(alone)).toBe(false);
+
+    const deskRun = [desk("left", 0, 30, "DB30", '30" Desk Base'), drawer("DKD-30"), desk("right", 60, 30, "DB30", '30" Desk Base')];
+    expect(elevationBox(deskRun[1]!, room, deskRun)).toEqual({ bottom: 24, height: 6 });
+
+    const shorterDesk = [desk("left", 0, 28.5, "DB30", '30" Desk Base'), drawer("DKD30")];
+    expect(elevationBox(shorterDesk[1]!, room, shorterDesk)).toEqual({ bottom: 22.5, height: 6 });
+
+    const kitchenBase: PlacedCabinet = {
+      uid: "base", cabinetId: 2, masterCode: "B36", description: "Base Cabinet", category: "Base",
+      placement: "base", x: 0, y: 0, width: 30, depth: 24, height: 34.5, rotation: 0, numberOfDoors: 2, numberOfDrawers: 0,
+    };
+    const besideBase = [kitchenBase, drawer("DKD30")];
+    expect(elevationBox(besideBase[1]!, room, besideBase)).toEqual({ bottom: 28.5, height: 6 });
+
+    const mixed = [desk("left", 0, 30, "DB30", '30" Desk Base'), drawer("DKD30"), { ...kitchenBase, uid: "right", x: 60 }];
+    expect(elevationBox(mixed[1]!, room, mixed)).toEqual({ bottom: 24, height: 6 });
   });
 
   it("targets the first measured base-cabinet knee-space void rather than placing above a base cabinet", () => {
@@ -908,7 +944,7 @@ describe("corner cabinet detection", () => {
 
 describe("angled wall cabinets are NOT corner cabinets (palette tab routing)", () => {
   it("flags AW-* angled wall cabinets", () => {
-    for (const code of ["AW1230", "AW1236", "AW1242", "AW-12-30", "AW-12-36", "AW-12-42"]) {
+    for (const code of ["WAC1230", "WAC1236", "WAC1242", "WAC-12-30", "AW1230", "AW1236", "AW1242", "AW-12-30", "AW-12-36", "AW-12-42"]) {
       expect(isAngledWallCabinet(code, "Angled Wall End Cabinet")).toBe(true);
       expect(isCornerCabinet(code, "Angled Wall End Cabinet")).toBe(false);
     }
@@ -925,10 +961,49 @@ describe("angled wall cabinets are NOT corner cabinets (palette tab routing)", (
   it("an angled wall cabinet is still drawn diagonally (rendering unchanged)", () => {
     // Routing to the Wall tab must NOT change its canvas footprint.
     expect(isDiagonalCorner("AW-12-30", "12x30 Angled Wall End Cabinet")).toBe(false);
+    expect(isDiagonalCorner("WAC1230", "12x30 Wall Angle Cabinet")).toBe(false);
+  });
+
+  it("tapers a wall angle cabinet toward the open end on the left and right of a run", () => {
+    const room = { width: 144, depth: 120, ceilingHeight: 96 };
+    const neighbor = {
+      uid: "neighbor", cabinetId: 1, masterCode: "W3030", description: "Wall Cabinet",
+      placement: "wall" as const, x: 36, y: 0, width: 30, depth: 12, height: 30, rotation: 0,
+      wallId: "top", wallOffset: 36,
+    };
+    const rightEnd = {
+      uid: "wac-right", cabinetId: 2, masterCode: "WAC1230", description: "Wall Angle Cabinet",
+      placement: "wall" as const, x: 66, y: 0, width: 12, depth: 12, height: 30, rotation: 0,
+      wallId: "top", wallOffset: 66,
+    };
+    const leftEnd = {
+      uid: "wac-left", cabinetId: 3, masterCode: "WAC1236", description: "Wall Angle Cabinet",
+      placement: "wall" as const, x: 0, y: 0, width: 12, depth: 12, height: 30, rotation: 0,
+      wallId: "top", wallOffset: 0,
+    };
+    expect(wallAngleEndOpenSide(rightEnd, room, [neighbor, rightEnd])).toBe("end");
+    expect(wallAngleEndHandForPlacement(rightEnd, room, [neighbor, rightEnd])).toBe("right");
+    expect(wallAngleEndOpenSide(leftEnd, room, [neighbor, leftEnd])).toBe("start");
+    expect(wallAngleEndHandForPlacement(leftEnd, room, [neighbor, leftEnd])).toBe("left");
+    const bottomNeighbor = { ...neighbor, uid: "bottom-neighbor", y: 108, rotation: 0, wallId: "bottom", wallOffset: 36 };
+    const bottomRight = { ...rightEnd, uid: "bottom-right", y: 108, wallId: "bottom", wallOffset: 0, x: 0 };
+    expect(wallAngleEndHandForPlacement(bottomRight, room, [bottomNeighbor, bottomRight])).toBe("right");
+    const pantry = {
+      uid: "pantry", cabinetId: 4, masterCode: "U249624", description: "Pantry",
+      placement: "tall" as const, x: 0, y: 0, width: 24, depth: 24, height: 96, rotation: 0,
+      wallId: "top", wallOffset: 0,
+    };
+    const besidePantry = {
+      uid: "aw-pantry", cabinetId: 5, masterCode: "AW1242", description: "Wall Angle Cabinet",
+      placement: "wall" as const, x: 24, y: 0, width: 12, depth: 12, height: 42, rotation: 0,
+      wallId: "top", wallOffset: 24,
+    };
+    expect(wallAngleEndOpenSide(besidePantry, room, [pantry, besidePantry])).toBe("end");
+    expect(wallAngleEndHandForPlacement(besidePantry, room, [pantry, besidePantry])).toBe("right");
   });
 
   it("does not force AW aliases into protected room-corner placement or movement locks", () => {
-    for (const masterCode of ["AW1230", "AW1236", "AW1242", "AW-12-30", "AW-12-36", "AW-12-42"]) {
+    for (const masterCode of ["WAC1230", "WAC1236", "WAC1242", "AW1230", "AW1236", "AW1242", "AW-12-30", "AW-12-36", "AW-12-42"]) {
       expect(isProtectedCornerCabinet(masterCode, '12" Angled Wall End Cabinet')).toBe(false);
       expect(requiresRoomCornerPlacement({ masterCode, description: '12" Angled Wall End Cabinet', placement: "wall" })).toBe(false);
     }
@@ -1792,6 +1867,9 @@ describe("doorPanelKind", () => {
     expect(doorPanelKind("Slab")).toBe("slab");
     expect(doorPanelKind("Contemporary")).toBe("slab");
     expect(doorPanelKind("Euro Flat")).toBe("slab");
+    expect(doorPanelKind("Flat Panel")).toBe("shaker");
+    expect(doorPanelKind("Recessed Panel")).toBe("shaker");
+    expect(doorPanelKind("Traditional Ogee")).toBe("raised");
     expect(doorPanelKind("Beaded")).toBe("beaded");
     expect(doorPanelKind("Inset")).toBe("inset");
   });

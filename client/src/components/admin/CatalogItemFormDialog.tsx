@@ -11,6 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Spinner } from "@/components/ui/spinner";
 import { isCatalogFreeShippingFlag } from "@shared/freeShippingItem";
+import { standardBaseDoorSaveError } from "@/lib/genericCabinetDrawerReference";
 
 type CatalogItemFormDialogProps = {
   cabinetId: number | null;
@@ -261,6 +262,8 @@ export function CatalogItemFormDialog({ cabinetId, open, onOpenChange }: Catalog
       if (Number.isNaN(optionalNumber(draft[field]))) next[field] = "Enter a valid non-negative number.";
     }
     if (Number.isNaN(optionalNumber(draft.numberOfDoors))) next.numberOfDoors = "Enter a whole number.";
+    const narrowBaseDoorError = standardBaseDoorSaveError(draft.masterCode, optionalNumber(draft.numberOfDoors) ?? null);
+    if (narrowBaseDoorError) next.numberOfDoors = narrowBaseDoorError;
     if (Number.isNaN(optionalNumber(draft.numberOfDrawers))) next.numberOfDrawers = "Enter a whole number.";
     if (Number.isNaN(optionalNumber(draft.numberOfFixedShelves))) next.numberOfFixedShelves = "Enter a whole number.";
     if (Number.isNaN(optionalNumber(draft.numberOfAdjShelves))) next.numberOfAdjShelves = "Enter a whole number.";

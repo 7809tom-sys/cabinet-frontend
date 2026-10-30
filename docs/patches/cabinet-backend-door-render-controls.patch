@@ -1,0 +1,832 @@
+From c9637c59d02d4ba7b1a23311fbfeaf9186cf1a0f Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Thu, 29 Oct 2026 13:31:18 +0000
+Subject: [PATCH] Store door render hex, shape, swatch, and shared exposure.
+
+The admin editor can save a render color, an explicit door shape, and a reference swatch. Audit runs compare a per-style fingerprint of the resolved profile, color, and swatch so a renderer or style change marks older captures stale.
+
+Run docs/sql/0233_door_render_controls.tidb.sql first. Then, from the cabinet-backend repository root:
+
+    git apply /path/to/cabinet-backend-door-render-controls.patch
+
+---
+ drizzle/schema.ts                    |  10 ++
+ server/routers/catalog.ts            |  32 ++++++
+ server/routers/doorRenderingAudit.ts |  54 +++++++++
+ server/routers/siteSettings.ts       |  23 ++++
+ shared/cabinetColorNames.ts          |  58 ++++++++++
+ shared/ciede2000.ts                  | 111 +++++++++++++++++++
+ shared/doorRenderIdentity.ts         | 160 +++++++++++++++++++++++++++
+ shared/doorRenderLights.ts           |  75 +++++++++++++
+ shared/doorRenderingAudit.test.ts    |   9 ++
+ shared/doorRenderingAudit.ts         |   5 +-
+ shared/sherwinWilliamsColors.ts      |  60 ++++++++++
+ 11 files changed, 596 insertions(+), 1 deletion(-)
+ create mode 100644 shared/cabinetColorNames.ts
+ create mode 100644 shared/ciede2000.ts
+ create mode 100644 shared/doorRenderIdentity.ts
+ create mode 100644 shared/doorRenderLights.ts
+ create mode 100644 shared/sherwinWilliamsColors.ts
+
+diff --git a/drizzle/schema.ts b/drizzle/schema.ts
+index 10116ec..4336c79 100644
+--- a/drizzle/schema.ts
++++ b/drizzle/schema.ts
+@@ -406,6 +406,12 @@ export const doorStyles = mysqlTable("door_styles", {
+   woodSpecies: varchar("woodSpecies", { length: 64 }),
+   finish: varchar("finish", { length: 128 }),
+   color: varchar("color", { length: 64 }),
++  // Admin render color. Wins over the name fallback when set.
++  renderHex: varchar("renderHex", { length: 7 }),
++  // raised | recessed-shaker | slab | glass. Null keeps distributor parsing.
++  doorShape: varchar("doorShape", { length: 32 }),
++  swatchCode: varchar("swatchCode", { length: 16 }),
++  swatchHex: varchar("swatchHex", { length: 7 }),
+   boxConstruction: varchar("boxConstruction", { length: 128 }),
+   drawerConstruction: varchar("drawerConstruction", { length: 128 }),
+   hardware: varchar("hardware", { length: 128 }),
+@@ -2958,6 +2964,10 @@ export const siteSettings = mysqlTable("site_settings", {
+   // GA4 Measurement IDs are public web-stream identifiers, not secrets. A
+   // nullable value lets the owner disable analytics without deleting settings.
+   googleAnalyticsMeasurementId: varchar("googleAnalyticsMeasurementId", { length: 32 }),
++  // Null keeps the automatic door exposure (0.84, softer on a very dark stain).
++  renderExposure: decimal("renderExposure", { precision: 4, scale: 2 }),
++  // Null keeps the CIEDE2000 pass limit at 3.
++  colorMatchDeltaE: decimal("colorMatchDeltaE", { precision: 4, scale: 2 }),
+   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+ });
+ export type SiteSettings = typeof siteSettings.$inferSelect;
+diff --git a/server/routers/catalog.ts b/server/routers/catalog.ts
+index 3f125fd..a9901db 100644
+--- a/server/routers/catalog.ts
++++ b/server/routers/catalog.ts
+@@ -224,6 +224,10 @@ export const doorStylesRouter = router({
+         woodSpecies: doorStyles.woodSpecies,
+         finish: doorStyles.finish,
+         color: doorStyles.color,
++        renderHex: doorStyles.renderHex,
++        doorShape: doorStyles.doorShape,
++        swatchCode: doorStyles.swatchCode,
++        swatchHex: doorStyles.swatchHex,
+         boxConstruction: doorStyles.boxConstruction,
+         drawerConstruction: doorStyles.drawerConstruction,
+         hardware: doorStyles.hardware,
+@@ -294,6 +298,10 @@ export const doorStylesRouter = router({
+         woodSpecies: doorStyles.woodSpecies,
+         finish: doorStyles.finish,
+         color: doorStyles.color,
++        renderHex: doorStyles.renderHex,
++        doorShape: doorStyles.doorShape,
++        swatchCode: doorStyles.swatchCode,
++        swatchHex: doorStyles.swatchHex,
+         doorSampleImageUrl: doorStyles.doorSampleImageUrl,
+         roomSceneImageUrl: doorStyles.roomSceneImageUrl,
+         thumbnailImageUrl: doorStyles.thumbnailImageUrl,
+@@ -489,6 +497,10 @@ export const doorStylesRouter = router({
+         woodSpecies: doorStyles.woodSpecies,
+         finish: doorStyles.finish,
+         color: doorStyles.color,
++        renderHex: doorStyles.renderHex,
++        doorShape: doorStyles.doorShape,
++        swatchCode: doorStyles.swatchCode,
++        swatchHex: doorStyles.swatchHex,
+         boxConstruction: doorStyles.boxConstruction,
+         drawerConstruction: doorStyles.drawerConstruction,
+         hardware: doorStyles.hardware,
+@@ -633,6 +645,10 @@ export const doorStylesRouter = router({
+         stileWidth: z.number().min(0).max(99).nullable().optional(),
+         centerRailWidth: z.number().min(0).max(99).nullable().optional(),
+         panelConstruction: z.enum(["raised", "flat", "slab", "glass"]).nullable().optional(),
++        renderHex: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().optional(),
++        doorShape: z.enum(["raised", "recessed-shaker", "slab", "glass"]).nullable().optional(),
++        swatchCode: z.string().max(16).nullable().optional(),
++        swatchHex: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().optional(),
+         bevelWidth: z.number().min(0).max(12).nullable().optional(),
+         bevelDepth: z.number().min(0).max(4).nullable().optional(),
+         insideEdgeProfile: z.string().max(64).nullable().optional(),
+@@ -676,6 +692,10 @@ export const doorStylesRouter = router({
+       if (fields.stileWidth !== undefined) patch.stileWidth = fields.stileWidth ?? null;
+       if (fields.centerRailWidth !== undefined) patch.centerRailWidth = fields.centerRailWidth ?? null;
+       if (fields.panelConstruction !== undefined) patch.panelConstruction = fields.panelConstruction;
++      if (fields.renderHex !== undefined) patch.renderHex = fields.renderHex?.trim().toLowerCase() || null;
++      if (fields.doorShape !== undefined) patch.doorShape = fields.doorShape;
++      if (fields.swatchCode !== undefined) patch.swatchCode = fields.swatchCode?.trim().toUpperCase() || null;
++      if (fields.swatchHex !== undefined) patch.swatchHex = fields.swatchHex?.trim().toLowerCase() || null;
+       if (fields.bevelWidth !== undefined) patch.bevelWidth = fields.bevelWidth ?? null;
+       if (fields.bevelDepth !== undefined) patch.bevelDepth = fields.bevelDepth ?? null;
+       if (fields.insideEdgeProfile !== undefined) patch.insideEdgeProfile = fields.insideEdgeProfile?.trim() || null;
+@@ -1062,6 +1082,10 @@ export const doorStylesRouter = router({
+           ourName: doorStyles.ourName,
+           doorStyle: doorStyles.doorStyle,
+           color: doorStyles.color,
++        renderHex: doorStyles.renderHex,
++        doorShape: doorStyles.doorShape,
++        swatchCode: doorStyles.swatchCode,
++        swatchHex: doorStyles.swatchHex,
+           finish: doorStyles.finish,
+           woodSpecies: doorStyles.woodSpecies,
+           doorSampleImageUrl: doorStyles.doorSampleImageUrl,
+@@ -4383,6 +4407,10 @@ export const pricingRouter = router({
+           doorStyle: doorStyles.doorStyle,
+           finish: doorStyles.finish,
+           color: doorStyles.color,
++        renderHex: doorStyles.renderHex,
++        doorShape: doorStyles.doorShape,
++        swatchCode: doorStyles.swatchCode,
++        swatchHex: doorStyles.swatchHex,
+           doorSampleImageUrl: doorStyles.doorSampleImageUrl,
+           roomSceneImageUrl: doorStyles.roomSceneImageUrl,
+           thumbnailImageUrl: doorStyles.thumbnailImageUrl,
+@@ -5428,6 +5456,10 @@ export const pricingRouter = router({
+           woodSpecies: doorStyles.woodSpecies,
+           finish: doorStyles.finish,
+           color: doorStyles.color,
++        renderHex: doorStyles.renderHex,
++        doorShape: doorStyles.doorShape,
++        swatchCode: doorStyles.swatchCode,
++        swatchHex: doorStyles.swatchHex,
+           boxConstruction: doorStyles.boxConstruction,
+           drawerConstruction: doorStyles.drawerConstruction,
+           hardware: doorStyles.hardware,
+diff --git a/server/routers/doorRenderingAudit.ts b/server/routers/doorRenderingAudit.ts
+index ba17635..ce2ff9c 100644
+--- a/server/routers/doorRenderingAudit.ts
++++ b/server/routers/doorRenderingAudit.ts
+@@ -14,6 +14,7 @@
+ import { TRPCError } from "@trpc/server";
+ import { and, asc, count as countRows, desc, eq, inArray, max } from "drizzle-orm";
+ import { z } from "zod";
++import { doorAuditFingerprintForStyle } from "../../shared/doorRenderIdentity";
+ import {
+   distributors,
+   doorRenderingAuditResults,
+@@ -108,6 +109,10 @@ const styleColumns = {
+   woodSpecies: doorStyles.woodSpecies,
+   finish: doorStyles.finish,
+   color: doorStyles.color,
++  renderHex: doorStyles.renderHex,
++  doorShape: doorStyles.doorShape,
++  swatchCode: doorStyles.swatchCode,
++  swatchHex: doorStyles.swatchHex,
+   doorSampleImageUrl: doorStyles.doorSampleImageUrl,
+   doorSampleVerified: doorStyles.doorSampleVerified,
+   cornerSwatchImageUrl: doorStyles.cornerSwatchImageUrl,
+@@ -121,6 +126,8 @@ const styleColumns = {
+   drawerFrontType: doorStyles.drawerFrontType,
+   grainDirection: doorStyles.grainDirection,
+   finishSheen: doorStyles.finishSheen,
++  profileDescription: doorStyles.profileDescription,
++  profileNotes: doorStyles.profileNotes,
+ };
+ 
+ type StyleRow = {
+@@ -137,6 +144,10 @@ type StyleRow = {
+   woodSpecies: string | null;
+   finish: string | null;
+   color: string | null;
++  renderHex: string | null;
++  doorShape: string | null;
++  swatchCode: string | null;
++  swatchHex: string | null;
+   doorSampleImageUrl: string | null;
+   doorSampleVerified: boolean;
+   cornerSwatchImageUrl: string | null;
+@@ -150,6 +161,8 @@ type StyleRow = {
+   drawerFrontType: string | null;
+   grainDirection: string | null;
+   finishSheen: string | null;
++  profileDescription: string | null;
++  profileNotes: string | null;
+ };
+ 
+ function renderBrief(style: StyleRow) {
+@@ -167,6 +180,29 @@ function renderBrief(style: StyleRow) {
+     color: style.color,
+     finish: style.finish,
+     woodSpecies: style.woodSpecies,
++    renderHex: style.renderHex,
++    doorShape: style.doorShape,
++    swatchCode: style.swatchCode,
++    swatchHex: style.swatchHex,
++    profileDescription: style.profileDescription,
++    profileNotes: style.profileNotes,
++    sourceFingerprint: doorAuditFingerprintForStyle({
++      version: "door-audit-v2-720x1080",
++      ourName: style.ourName,
++      styleCode: style.styleCode,
++      doorStyle: style.doorStyle,
++      doorPanelType: style.doorPanelType,
++      panelConstruction: style.panelConstruction,
++      doorShape: style.doorShape,
++      profileDescription: style.profileDescription,
++      profileNotes: style.profileNotes,
++      color: style.color,
++      finish: style.finish,
++      woodSpecies: style.woodSpecies,
++      renderHex: style.renderHex,
++      swatchCode: style.swatchCode,
++      swatchHex: style.swatchHex,
++    }),
+     cornerSwatchImageUrl: style.cornerSwatchImageUrl,
+     profile: {
+       doorStyle: style.doorStyle,
+@@ -371,9 +407,27 @@ async function createRun(
+   const renderingCommit = normalizeRenderingCommit(input.renderingCommit);
+   const candidates: DoorRenderingAuditCandidate[] = styles.map((style) => {
+     const latest = index.versionById.get(index.latestIdByStyle.get(style.id) ?? -1) ?? null;
++    const version = (renderingCommit ?? "door-audit-v2-720x1080").split("|")[0] || "door-audit-v2-720x1080";
+     return {
+       styleId: style.id,
+       samplePhotoUrl: style.doorSampleImageUrl,
++      expectedFingerprint: doorAuditFingerprintForStyle({
++        version,
++        ourName: style.ourName,
++        styleCode: style.styleCode,
++        doorStyle: style.doorStyle,
++        doorPanelType: style.doorPanelType,
++        panelConstruction: style.panelConstruction,
++        doorShape: style.doorShape,
++        profileDescription: style.profileDescription,
++        profileNotes: style.profileNotes,
++        color: style.color,
++        finish: style.finish,
++        woodSpecies: style.woodSpecies,
++        renderHex: style.renderHex,
++        swatchCode: style.swatchCode,
++        swatchHex: style.swatchHex,
++      }),
+       latest: latest
+         ? { samplePhotoUrl: latest.samplePhotoUrl, renderingCommit: latest.renderingCommit }
+         : null,
+diff --git a/server/routers/siteSettings.ts b/server/routers/siteSettings.ts
+index 30964e0..b04b863 100644
+--- a/server/routers/siteSettings.ts
++++ b/server/routers/siteSettings.ts
+@@ -75,4 +75,27 @@ export const siteSettingsRouter = router({
+         .where(eq(siteSettings.id, 1));
+       return getOrCreateSettings();
+     }),
++
++  /** Admin: door-render exposure and CIEDE2000 limit, shared by the Designer and the audit. */
++  updateRenderControls: protectedProcedure
++    .input(z.object({
++      renderExposure: z.number().min(0.2).max(2).nullable(),
++      colorMatchDeltaE: z.number().min(0.5).max(20).nullable(),
++    }))
++    .mutation(async ({ ctx, input }) => {
++      if (ctx.user.role !== "admin") {
++        throw new TRPCError({ code: "FORBIDDEN", message: "Admin only" });
++      }
++      const db = await getDb();
++      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
++      await getOrCreateSettings();
++      await db
++        .update(siteSettings)
++        .set({
++          renderExposure: input.renderExposure == null ? null : input.renderExposure.toFixed(2),
++          colorMatchDeltaE: input.colorMatchDeltaE == null ? null : input.colorMatchDeltaE.toFixed(2),
++        })
++        .where(eq(siteSettings.id, 1));
++      return getOrCreateSettings();
++    }),
+ });
+diff --git a/shared/cabinetColorNames.ts b/shared/cabinetColorNames.ts
+new file mode 100644
+index 0000000..dd6cb74
+--- /dev/null
++++ b/shared/cabinetColorNames.ts
+@@ -0,0 +1,58 @@
++/**
++ * Name → hex for the 3D cabinet fallback (`sceneCabinetColor`).
++ * Two-word phrases are tested before single words, and every word is a
++ * whole word so "ash" does not match inside another word and "paint" does
++ * not match "painted".
++ */
++
++export const CABINET_NAME_COLORS = {
++  gray: "#8d8f92",
++  lightGray: "#d5d4d0",
++  cherry: "#7a3b32",
++  hickory: "#b08968",
++  white: "#f7f6f3",
++  smoke: "#6f6d6a",
++  aeroSage: "#4f5549",
++  black: "#34363a",
++  navy: "#435b77",
++  green: "#78826b",
++  walnut: "#75523e",
++  natural: "#d1ba8f",
++  cream: "#ded5c1",
++  default: "#f2f0ea",
++} as const;
++
++const PHRASES: ReadonlyArray<readonly [RegExp, string]> = [
++  [/\b(?:aero[\s-]+sage|aston[\s-]+green)\b/i, CABINET_NAME_COLORS.aeroSage],
++  [/\bblue[\s-]+gr[ae]y\b/i, CABINET_NAME_COLORS.gray],
++  [/\blight[\s-]+gr[ae]y\b/i, CABINET_NAME_COLORS.lightGray],
++  [/\bnatural[\s-]+walnut\b/i, CABINET_NAME_COLORS.walnut],
++  [/\bwhite[\s-]+oak\b/i, CABINET_NAME_COLORS.natural],
++];
++
++const WORDS: ReadonlyArray<readonly [RegExp, string]> = [
++  [/\b(?:cherry|mahogany|cognac)\b/i, CABINET_NAME_COLORS.cherry],
++  [/\b(?:hickory|rustic|chestnut)\b/i, CABINET_NAME_COLORS.hickory],
++  [/\b(?:smoke|ash)\b/i, CABINET_NAME_COLORS.smoke],
++  [/\b(?:black|charcoal|obsidian|graphite)\b/i, CABINET_NAME_COLORS.black],
++  [/\b(?:navy|blue|ocean)\b/i, CABINET_NAME_COLORS.navy],
++  [/\b(?:green|sage|forest)\b/i, CABINET_NAME_COLORS.green],
++  [/\b(?:walnut|espresso|brown|mocha)\b/i, CABINET_NAME_COLORS.walnut],
++  [/\b(?:oak|maple|honey|natural)\b/i, CABINET_NAME_COLORS.natural],
++  [/\b(?:cream|beige|linen|almond)\b/i, CABINET_NAME_COLORS.cream],
++  [/\b(?:gr[ae]y|greige|slate|stone|pebble)\b/i, CABINET_NAME_COLORS.gray],
++  [/\b(?:white|paint)\b/i, CABINET_NAME_COLORS.white],
++];
++
++/** The first matching phrase, then the first matching whole word. Null when nothing matches. */
++export function matchCabinetColorName(source: string | null | undefined): string | null {
++  const text = (source ?? "").trim();
++  if (!text) return null;
++  for (const [pattern, hex] of PHRASES) {
++    if (pattern.test(text)) return hex;
++  }
++  for (const [pattern, hex] of WORDS) {
++    if (pattern.test(text)) return hex;
++  }
++  return null;
++}
+diff --git a/shared/ciede2000.ts b/shared/ciede2000.ts
+new file mode 100644
+index 0000000..b44737a
+--- /dev/null
++++ b/shared/ciede2000.ts
+@@ -0,0 +1,111 @@
++/**
++ * CIEDE2000 (Sharma, Wu, Dalal 2005) and sRGB → CIE L*a*b* (D65, 2°).
++ * Lab white point is the standard D65 XYZ (95.047, 100, 108.883).
++ */
++
++export type Lab = { L: number; a: number; b: number };
++
++function clampByte(value: number): number {
++  return Math.min(255, Math.max(0, Math.round(value)));
++}
++
++export function parseHex(hex: string): { r: number; g: number; b: number } | null {
++  const match = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
++  if (!match) return null;
++  const raw = match[1];
++  return {
++    r: Number.parseInt(raw.slice(0, 2), 16),
++    g: Number.parseInt(raw.slice(2, 4), 16),
++    b: Number.parseInt(raw.slice(4, 6), 16),
++  };
++}
++
++export function rgbToHex(r: number, g: number, b: number): string {
++  return `#${[r, g, b].map((channel) => clampByte(channel).toString(16).padStart(2, "0")).join("")}`;
++}
++
++function linearize(channel: number): number {
++  const value = channel / 255;
++  return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
++}
++
++/** sRGB hex to CIE L*a*b* under D65. */
++export function labFromHex(hex: string): Lab | null {
++  const rgb = parseHex(hex);
++  if (!rgb) return null;
++  const r = linearize(rgb.r);
++  const g = linearize(rgb.g);
++  const b = linearize(rgb.b);
++  const x = (0.4124564 * r + 0.3575761 * g + 0.1804375 * b) / 0.95047;
++  const y = 0.2126729 * r + 0.7151522 * g + 0.0721750 * b;
++  const z = (0.0193339 * r + 0.1191920 * g + 0.9503041 * b) / 1.08883;
++  const pivot = (value: number) => (value > 0.008856 ? Math.cbrt(value) : (7.787 * value) + (16 / 116));
++  const fx = pivot(x);
++  const fy = pivot(y);
++  const fz = pivot(z);
++  return {
++    L: (116 * fy) - 16,
++    a: 500 * (fx - fy),
++    b: 200 * (fy - fz),
++  };
++}
++
++function hypot(a: number, b: number): number {
++  return Math.sqrt(a * a + b * b);
++}
++
++/**
++ * CIEDE2000 color difference. Identical colors return 0.
++ * The reference pair used in tests is Sharma 2005 pair 1 (ΔE ≈ 2.0425).
++ */
++export function deltaE2000(first: Lab, second: Lab): number {
++  const avgLp = (first.L + second.L) / 2;
++  const c1 = hypot(first.a, first.b);
++  const c2 = hypot(second.a, second.b);
++  const avgC = (c1 + c2) / 2;
++  const avgC7 = Math.pow(avgC, 7);
++  const g = 0.5 * (1 - Math.sqrt(avgC7 / (avgC7 + Math.pow(25, 7))));
++  const a1p = first.a * (1 + g);
++  const a2p = second.a * (1 + g);
++  const c1p = hypot(a1p, first.b);
++  const c2p = hypot(a2p, second.b);
++  const avgCp = (c1p + c2p) / 2;
++  const h1p = Math.atan2(first.b, a1p);
++  const h2p = Math.atan2(second.b, a2p);
++  const h1 = h1p >= 0 ? h1p : h1p + 2 * Math.PI;
++  const h2 = h2p >= 0 ? h2p : h2p + 2 * Math.PI;
++  let deltahp = h2 - h1;
++  if (c1p * c2p === 0) deltahp = 0;
++  else if (Math.abs(deltahp) > Math.PI) deltahp += deltahp > 0 ? -2 * Math.PI : 2 * Math.PI;
++  const deltaLp = second.L - first.L;
++  const deltaCp = c2p - c1p;
++  const deltaHp = 2 * Math.sqrt(c1p * c2p) * Math.sin(deltahp / 2);
++  let avgHp = (h1 + h2) / 2;
++  if (c1p * c2p === 0) avgHp = h1 + h2;
++  else if (Math.abs(h1 - h2) > Math.PI) avgHp += h1 + h2 < 2 * Math.PI ? Math.PI : -Math.PI;
++  const t = 1
++    - 0.17 * Math.cos(avgHp - Math.PI / 6)
++    + 0.24 * Math.cos(2 * avgHp)
++    + 0.32 * Math.cos(3 * avgHp + Math.PI / 30)
++    - 0.20 * Math.cos(4 * avgHp - (63 * Math.PI) / 180);
++  const avgLp50 = avgLp - 50;
++  const sL = 1 + (0.015 * avgLp50 * avgLp50) / Math.sqrt(20 + avgLp50 * avgLp50);
++  const sC = 1 + 0.045 * avgCp;
++  const sH = 1 + 0.015 * avgCp * t;
++  const avgCp7 = Math.pow(avgCp, 7);
++  const rC = 2 * Math.sqrt(avgCp7 / (avgCp7 + Math.pow(25, 7)));
++  const hueDegrees = (avgHp * 180) / Math.PI;
++  const deltaTheta = (30 * Math.PI / 180) * Math.exp(-Math.pow((hueDegrees - 275) / 25, 2));
++  const rT = -rC * Math.sin(2 * deltaTheta);
++  const lTerm = deltaLp / sL;
++  const cTerm = deltaCp / sC;
++  const hTerm = deltaHp / sH;
++  return Math.sqrt(lTerm * lTerm + cTerm * cTerm + hTerm * hTerm + rT * cTerm * hTerm);
++}
++
++export function deltaE2000Hex(firstHex: string, secondHex: string): number | null {
++  const first = labFromHex(firstHex);
++  const second = labFromHex(secondHex);
++  if (!first || !second) return null;
++  return deltaE2000(first, second);
++}
+diff --git a/shared/doorRenderIdentity.ts b/shared/doorRenderIdentity.ts
+new file mode 100644
+index 0000000..9e4c5b6
+--- /dev/null
++++ b/shared/doorRenderIdentity.ts
+@@ -0,0 +1,160 @@
++/**
++ * Shared door-shape and render-color decisions.
++ *
++ * Precedence, highest first:
++ * 1. An admin doorShape or renderHex. These are explicit corrections and win
++ *    over automatic fallbacks.
++ * 2. Distributor description text (raised, ogee, cathedral, arch, traditional,
++ *    flat panel, recessed, slab, glass) and a stored panelConstruction other
++ *    than an empty value. Distributor source beats name guesses and the
++ *    Aspen hard-code.
++ * 3. Aspen Charcoal / Aspen White (codes AC and AW) stay raised when no
++ *    explicit shape and no distributor phrase says otherwise. The old
++ *    name-wide Aspen hard-code does not run once doorShape is set.
++ * 4. The word "shaker" is a distributor label, not a guess.
++ * 5. Anything else is a Shaker guess and is badged in the audit.
++ *
++ * renderHex wins over a distributor color hex. A distributor hex wins over
++ * the name map. The name map wins over the off-white default.
++ */
++import { CABINET_NAME_COLORS, matchCabinetColorName } from "./cabinetColorNames";
++import { DEFAULT_CABINET_HEX } from "./doorRenderLights";
++import { sherwinWilliamsColor } from "./sherwinWilliamsColors";
++
++export const PROFILE_GUESSED_LABEL = "Profile guessed (Shaker default)";
++
++export const DOOR_SHAPES = ["raised", "recessed-shaker", "slab", "glass"] as const;
++export type DoorShape = (typeof DOOR_SHAPES)[number];
++export type DoorProfileSource = "explicit" | "distributor" | "aspen-default" | "guessed";
++
++export type DoorIdentityInput = {
++  ourName?: string | null;
++  aliasName?: string | null;
++  name?: string | null;
++  styleCode?: string | null;
++  code?: string | null;
++  doorStyle?: string | null;
++  doorPanelType?: string | null;
++  panelConstruction?: string | null;
++  doorShape?: string | null;
++  profileDescription?: string | null;
++  profileNotes?: string | null;
++  color?: string | null;
++  finish?: string | null;
++  woodSpecies?: string | null;
++  renderHex?: string | null;
++  swatchCode?: string | null;
++  swatchHex?: string | null;
++};
++
++export type DoorShapeDecision = {
++  shape: DoorShape;
++  source: DoorProfileSource;
++};
++
++function text(value: unknown): string {
++  return typeof value === "string" ? value.trim() : "";
++}
++
++function exactHex(value: unknown): string | null {
++  const match = /^#([0-9a-f]{6})$/i.exec(text(value));
++  return match ? `#${match[1].toLowerCase()}` : null;
++}
++
++export function isAspenRaisedDefault(style: DoorIdentityInput | null | undefined): boolean {
++  const name = [style?.ourName, style?.aliasName, style?.name].map(text).join(" ").toLowerCase();
++  const code = text(style?.styleCode || style?.code).toUpperCase();
++  if (code === "AC" || code === "AW") return true;
++  return /\baspen\b/.test(name) && /\b(?:charcoal|white)\b/.test(name);
++}
++
++export function isAspenCharcoalIdentity(style: DoorIdentityInput | null | undefined): boolean {
++  const name = [style?.ourName, style?.aliasName, style?.name].map(text).join(" ").toLowerCase();
++  const code = text(style?.styleCode || style?.code).toUpperCase();
++  if (/\baspen\b/.test(name) && /\bcharcoal\b/.test(name)) return true;
++  return code === "AC" && /\b(?:aspen|charcoal)\b/.test(name);
++}
++
++/** Distributor phrases. "Flat panel" and "recessed" are shaker, not slab. The bare word "flat" is not slab. */
++export function parseDistributorDoorShape(description: string): DoorShape | null {
++  const source = description.toLowerCase();
++  if (!source.trim()) return null;
++  if (/\bglass\b/.test(source)) return "glass";
++  if (/flat[\s-]?panel|\brecessed\b/.test(source)) return "recessed-shaker";
++  if (/\braised\b|\bogee\b|\bcathedral\b|\barch(?:ed)?\b|\btraditional\b/.test(source)) return "raised";
++  if (/\bslab\b/.test(source)) return "slab";
++  return null;
++}
++
++export function resolveDoorShapeDecision(input: DoorIdentityInput | null | undefined): DoorShapeDecision {
++  const explicit = text(input?.doorShape).toLowerCase();
++  if ((DOOR_SHAPES as readonly string[]).includes(explicit)) {
++    return { shape: explicit as DoorShape, source: "explicit" };
++  }
++  const description = [input?.doorStyle, input?.doorPanelType, input?.profileDescription, input?.profileNotes].map(text).join(" ");
++  const parsed = parseDistributorDoorShape(description);
++  if (parsed) return { shape: parsed, source: "distributor" };
++  const stored = text(input?.panelConstruction).toLowerCase();
++  if (stored === "raised" || stored === "slab" || stored === "glass") {
++    return { shape: stored === "slab" ? "slab" : stored === "glass" ? "glass" : "raised", source: "distributor" };
++  }
++  if (isAspenRaisedDefault(input)) return { shape: "raised", source: "aspen-default" };
++  if (stored === "flat" || /\bshaker\b/.test(description.toLowerCase())) {
++    return { shape: "recessed-shaker", source: "distributor" };
++  }
++  return { shape: "recessed-shaker", source: "guessed" };
++}
++
++/** renderHex, then a distributor hex, then the Aspen Charcoal sample, then the name map. */
++export function resolveRenderHex(input: DoorIdentityInput | null | undefined): string | null {
++  const override = exactHex(input?.renderHex);
++  if (override) return override;
++  const supplied = exactHex(input?.color);
++  if (supplied) return supplied;
++  if (isAspenCharcoalIdentity(input)) return "#2a211c";
++  const named = matchCabinetColorName([input?.ourName, input?.name, input?.color, input?.finish, input?.woodSpecies].map(text).join(" "));
++  return named;
++}
++
++export function resolvedDoorColorHex(input: DoorIdentityInput | null | undefined): string {
++  return resolveRenderHex(input) ?? DEFAULT_CABINET_HEX;
++}
++
++export function resolveDoorSwatchHex(input: Pick<DoorIdentityInput, "swatchCode" | "swatchHex"> | null | undefined): string | null {
++  const eyedropper = exactHex(input?.swatchHex);
++  if (eyedropper) return eyedropper;
++  return sherwinWilliamsColor(input?.swatchCode)?.hex ?? null;
++}
++
++export function doorRenderFingerprint(input: {
++  version: string;
++  source: DoorProfileSource;
++  panel: string | null;
++  doorStyle: string | null;
++  finishHex: string | null;
++  swatch: string | null;
++}): string {
++  return [
++    input.version,
++    input.source,
++    input.panel ?? "none",
++    (input.doorStyle ?? "none").replace(/\|/g, "/"),
++    (input.finishHex ?? "none").toLowerCase(),
++    (input.swatch ?? "none").toLowerCase(),
++  ].join("|").slice(0, 128);
++}
++
++export function doorAuditFingerprintForStyle(input: DoorIdentityInput & { version: string }): string {
++  const decision = resolveDoorShapeDecision(input);
++  const panel = decision.shape === "recessed-shaker" ? "flat" : decision.shape;
++  return doorRenderFingerprint({
++    version: input.version,
++    source: decision.source,
++    panel,
++    doorStyle: text(input.doorStyle) || decision.shape,
++    finishHex: resolvedDoorColorHex(input),
++    swatch: resolveDoorSwatchHex(input),
++  });
++}
++
++export const GRAY_CABINET_HEX = CABINET_NAME_COLORS.gray;
+diff --git a/shared/doorRenderLights.ts b/shared/doorRenderLights.ts
+new file mode 100644
+index 0000000..3e221ac
+--- /dev/null
++++ b/shared/doorRenderLights.ts
+@@ -0,0 +1,75 @@
++/**
++ * Door studio lights.
++ *
++ * Pre-#101 (commit 542103b) values are the default for every style. The dimmer
++ * rig from that PR is kept only for very dark stains, where the bright key
++ * lifted charcoal toward gray. An admin exposure replaces tone-mapping
++ * exposure for both rigs and is shared by the audit and the Designer.
++ */
++import { CABINET_NAME_COLORS } from "./cabinetColorNames";
++
++export const DOOR_RENDERER_VERSION = "2";
++
++export type DoorLightRig = {
++  background: string;
++  exposure: number;
++  environment: number;
++  hemisphere: { sky: string; ground: string; intensity: number };
++  key: { color: string; intensity: number; position: readonly [number, number, number] };
++  fill: { color: string; intensity: number; position: readonly [number, number, number] };
++};
++
++/** Designer scene lights before PR #101, plus environment intensity 1 (the Three.js default that PR #101 lowered to 0.22). */
++export const RESTORED_DOOR_LIGHTS: DoorLightRig = {
++  background: "#f6f3ed",
++  exposure: 0.84,
++  environment: 1,
++  hemisphere: { sky: "#fffaf2", ground: "#718096", intensity: 0.92 },
++  key: { color: "#fff5e6", intensity: 1.5, position: [0.85, 1.35, 1.6] },
++  fill: { color: "#cfe0f4", intensity: 0.38, position: [-1.1, 0.4, 1.8] },
++};
++
++/** The softer PR #101 rig. Used only when the resolved stain is very dark. */
++export const DARK_STAIN_DOOR_LIGHTS: DoorLightRig = {
++  background: "#f3f0ea",
++  exposure: 0.68,
++  environment: 0.22,
++  hemisphere: { sky: "#f7f4ee", ground: "#5c564e", intensity: 0.42 },
++  key: { color: "#fff6ea", intensity: 0.72, position: [0.28, 1.05, 2.4] },
++  fill: { color: "#f3efe8", intensity: 0.5, position: [-0.45, 0.15, 2.15] },
++};
++
++export function clampRenderExposure(value: unknown): number | null {
++  const numeric = typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value) : Number.NaN;
++  if (!Number.isFinite(numeric)) return null;
++  return Math.min(2, Math.max(0.2, Math.round(numeric * 100) / 100));
++}
++
++function linearize(channel: number): number {
++  const value = channel / 255;
++  return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
++}
++
++/** Relative luminance of an sRGB hex. Very dark stains are below 0.08. */
++export function relativeLuminance(hex: string | null | undefined): number | null {
++  const match = /^#?([0-9a-f]{6})$/i.exec((hex ?? "").trim());
++  if (!match) return null;
++  const raw = match[1];
++  const r = linearize(Number.parseInt(raw.slice(0, 2), 16));
++  const g = linearize(Number.parseInt(raw.slice(2, 4), 16));
++  const b = linearize(Number.parseInt(raw.slice(4, 6), 16));
++  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
++}
++
++export function isVeryDarkCabinetStain(hex: string | null | undefined): boolean {
++  const luminance = relativeLuminance(hex);
++  return luminance != null && luminance < 0.08;
++}
++
++export function doorLightsForFinish(hex: string | null | undefined, exposureOverride?: number | null): DoorLightRig {
++  const rig = isVeryDarkCabinetStain(hex) ? DARK_STAIN_DOOR_LIGHTS : RESTORED_DOOR_LIGHTS;
++  const exposure = clampRenderExposure(exposureOverride);
++  return exposure == null ? rig : { ...rig, exposure };
++}
++
++export const DEFAULT_CABINET_HEX = CABINET_NAME_COLORS.default;
+diff --git a/shared/doorRenderingAudit.test.ts b/shared/doorRenderingAudit.test.ts
+index af26480..ce02e16 100644
+--- a/shared/doorRenderingAudit.test.ts
++++ b/shared/doorRenderingAudit.test.ts
+@@ -115,6 +115,15 @@ describe("door rendering audit run selection", () => {
+     expect(styleChangedSinceLastRender(current, "bbb")).toBe(true);
+     expect(styleChangedSinceLastRender({ ...current, samplePhotoUrl: "/manus-storage/new.png" }, "aaa")).toBe(true);
+     expect(styleChangedSinceLastRender(style({ styleId: 2 }), null)).toBe(true);
++    expect(styleChangedSinceLastRender({
++      ...current,
++      expectedFingerprint: "door-audit-v2-720x1080|raised|raised|Raised Panel|#2a211c|#434341",
++    }, "door-audit-v2-720x1080")).toBe(true);
++    expect(styleChangedSinceLastRender({
++      ...current,
++      latest: { samplePhotoUrl: "/manus-storage/sample.png", renderingCommit: "door-audit-v2-720x1080|raised|raised|Raised Panel|#2a211c|#434341" },
++      expectedFingerprint: "door-audit-v2-720x1080|raised|raised|Raised Panel|#2a211c|#434341",
++    }, "door-audit-v2-720x1080")).toBe(false);
+   });
+ 
+   it("skips unchanged styles by default and caps a run at 40", () => {
+diff --git a/shared/doorRenderingAudit.ts b/shared/doorRenderingAudit.ts
+index b9148dd..fee3707 100644
+--- a/shared/doorRenderingAudit.ts
++++ b/shared/doorRenderingAudit.ts
+@@ -37,6 +37,8 @@ export type DoorRenderScoreSet = {
+ export type DoorRenderingAuditCandidate = {
+   styleId: number;
+   samplePhotoUrl: string | null;
++  /** Resolved profile, color, and swatch. When set, this is what "changed" compares. */
++  expectedFingerprint?: string | null;
+   latest: {
+     samplePhotoUrl: string;
+     renderingCommit: string | null;
+@@ -83,7 +85,8 @@ export function styleChangedSinceLastRender(
+   if (!normalizeAuditUrl(style.samplePhotoUrl)) return false;
+   if (!style.latest) return true;
+   if (normalizeAuditUrl(style.samplePhotoUrl) !== normalizeAuditUrl(style.latest.samplePhotoUrl)) return true;
+-  if (renderingCommit && renderingCommit !== (style.latest.renderingCommit ?? "")) return true;
++  const expected = style.expectedFingerprint ?? renderingCommit;
++  if (expected && expected !== (style.latest.renderingCommit ?? "")) return true;
+   return false;
+ }
+ 
+diff --git a/shared/sherwinWilliamsColors.ts b/shared/sherwinWilliamsColors.ts
+new file mode 100644
+index 0000000..bcafa3a
+--- /dev/null
++++ b/shared/sherwinWilliamsColors.ts
+@@ -0,0 +1,60 @@
++/**
++ * Small Sherwin-Williams reference table for door-style swatches.
++ *
++ * Hex values are the HEX attribute published on sherwin-williams.com color
++ * pages (confirmed from the page data, not a third-party palette):
++ *   SW 7005 Pure White  #EDECE6  https://www.sherwin-williams.com/sherwinwilliams/SW7005-pure-white
++ *   SW 7015 Repose Gray #CCC9C0  https://www.sherwin-williams.com/sherwinwilliams/SW7015-reposegray
++ *   SW 7069 Iron Ore    #434341  https://www.sherwin-williams.com/sherwinwilliams/SW7069-iron-ore
++ * CIE L*a*b* is not published on those pages. It is computed from the
++ * published sRGB hex with the D65 / 2° conversion in `ciede2000.ts`.
++ * Colors outside this table use the admin eyedropper on the distributor photo.
++ */
++import { labFromHex, type Lab } from "./ciede2000";
++
++export type SherwinWilliamsColor = {
++  code: string;
++  name: string;
++  hex: string;
++  lab: Lab;
++  source: string;
++};
++
++const PUBLISHED: ReadonlyArray<{ code: string; name: string; hex: string; source: string }> = [
++  {
++    code: "SW7005",
++    name: "Pure White",
++    hex: "#edece6",
++    source: "https://www.sherwin-williams.com/sherwinwilliams/SW7005-pure-white",
++  },
++  {
++    code: "SW7015",
++    name: "Repose Gray",
++    hex: "#ccc9c0",
++    source: "https://www.sherwin-williams.com/sherwinwilliams/SW7015-reposegray",
++  },
++  {
++    code: "SW7069",
++    name: "Iron Ore",
++    hex: "#434341",
++    source: "https://www.sherwin-williams.com/sherwinwilliams/SW7069-iron-ore",
++  },
++];
++
++export const SHERWIN_WILLIAMS_COLORS: readonly SherwinWilliamsColor[] = PUBLISHED.flatMap((row) => {
++  const lab = labFromHex(row.hex);
++  return lab ? [{ ...row, lab }] : [];
++});
++
++export function normalizeSherwinWilliamsCode(value: string | null | undefined): string | null {
++  const compact = (value ?? "").trim().toUpperCase().replace(/[\s-]+/g, "");
++  if (!compact) return null;
++  const match = /^(?:SW)?(\d{4})$/.exec(compact);
++  return match ? `SW${match[1]}` : null;
++}
++
++export function sherwinWilliamsColor(code: string | null | undefined): SherwinWilliamsColor | null {
++  const normalized = normalizeSherwinWilliamsCode(code);
++  if (!normalized) return null;
++  return SHERWIN_WILLIAMS_COLORS.find((row) => row.code === normalized) ?? null;
++}
+-- 
+2.43.0
+

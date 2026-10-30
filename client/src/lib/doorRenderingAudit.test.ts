@@ -54,6 +54,7 @@ function row(overrides: Partial<DoorAuditStyleRow> = {}): DoorAuditStyleRow {
     samplePhotoUrl: "/sample.png",
     drawerSampleImageUrl: null,
     color: "#f4f1ea",
+    profileSource: "distributor",
     sourceFingerprint: "abc",
     doorProfile: {
       doorStyle: "Shaker",
@@ -207,7 +208,7 @@ describe("door rendering audit backend adapter", () => {
       renderingCommit: DOOR_AUDIT_RENDERING_COMMIT,
     });
     expect(doorAuditStartRunInput("all")).toEqual({ scope: "all", renderingCommit: DOOR_AUDIT_RENDERING_COMMIT });
-    expect(DOOR_AUDIT_RENDERING_COMMIT).toBe("door-audit-720x1080");
+    expect(DOOR_AUDIT_RENDERING_COMMIT).toBe("door-audit-v2-720x1080");
 
     const run = normalizeDoorAuditStartRun({
       runId: 15,
@@ -232,8 +233,10 @@ describe("door rendering audit backend adapter", () => {
       distributorName: "Summit Cabinets",
       samplePhotoUrl: "https://cdn.example/summit.jpg",
       color: "#f4f1ea",
-      sourceFingerprint: "",
     });
+    expect(run.styles[0]?.sourceFingerprint.startsWith(DOOR_AUDIT_RENDERING_COMMIT)).toBe(true);
+    expect(run.styles[0]?.sourceFingerprint).toContain("#f4f1ea");
+    expect(run.styles[0]?.profileSource).toBe("distributor");
     expect(run.styles[0]?.doorProfile).toMatchObject({
       doorStyle: "Shaker",
       finishSheen: "satin",
@@ -254,6 +257,7 @@ describe("door rendering audit backend adapter", () => {
       styleId: 41,
       imageBase64: "a".repeat(40),
       contentType: "image/png",
+      renderingCommit: run.styles[0]?.sourceFingerprint,
     });
     expect(submit).not.toHaveProperty("pngBase64");
     expect(submit).not.toHaveProperty("mode");
@@ -422,13 +426,13 @@ describe("door rendering audit backend adapter", () => {
     expect(run.truncated).toBe(false);
     expect(run.totalEligible).toBe(86);
     expect(run.styles).toHaveLength(86);
-    expect(run.styles[0]?.sourceFingerprint).toBe(DOOR_AUDIT_RENDERING_COMMIT);
+    expect(run.styles[0]?.sourceFingerprint.startsWith(`${DOOR_AUDIT_RENDERING_COMMIT}|`)).toBe(true);
     expect(doorAuditSubmitRenderInput({
       runId: run.runId,
       styleId: 1,
       pngBase64: "a".repeat(40),
       sourceFingerprint: run.styles[0]?.sourceFingerprint,
-    }).renderingCommit).toBe(DOOR_AUDIT_RENDERING_COMMIT);
+    }).renderingCommit).toBe(run.styles[0]?.sourceFingerprint);
   });
 
   it("attaches to the open run the server already has, including a 409 that names it", () => {

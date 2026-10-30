@@ -14,7 +14,7 @@ describe("Designer programmed photoreal material wiring", () => {
     expect(designToolSource).toContain('const RUSTIC_HICKORY_GRAIN_URL = "/textures/rustic_hickory_vertical_grain_v2.webp";');
     expect(designToolSource).toContain("return designerFacePlan(s, \"base\");");
     expect(designToolSource).toContain("catalogDoorSampleUrl={active3DDoorSampleUrl}");
-    expect(designToolSource).toContain("{paletteFinishSwatch ? (");
+    expect(designToolSource).toContain("photoUrl={paletteFinishSwatch}");
   });
 
 	  it("keeps all staged catalog imagery out of 3D texture props while providing verified Astoria, Bahia, and Acorn flooring maps", () => {
@@ -104,9 +104,12 @@ describe("Designer programmed photoreal material wiring", () => {
   });
 
   it("keeps the corrected photographic exposure below neutral after the washed-out mobile regression", () => {
-    expect(rendererSource).toContain("renderer.toneMappingExposure = 0.84");
-    expect(rendererSource).toContain('new THREE.HemisphereLight("#fffaf2", "#718096", 0.92)');
-    expect(rendererSource).toContain('new THREE.DirectionalLight("#fff5e6", 1.5)');
+    expect(rendererSource).toContain("renderer.toneMappingExposure = studioLights.exposure");
+    expect(rendererSource).toContain("new THREE.HemisphereLight(studioLights.hemisphere.sky, studioLights.hemisphere.ground, studioLights.hemisphere.intensity)");
+    expect(rendererSource).toContain("new THREE.DirectionalLight(studioLights.key.color, studioLights.key.intensity)");
+    expect(rendererSource).toContain("new THREE.DirectionalLight(studioLights.fill.color, studioLights.fill.intensity)");
+    expect(rendererSource).not.toContain("renderer.toneMappingExposure = 0.68");
+    expect(rendererSource).not.toContain("renderer.toneMappingExposure = 0.84");
     expect(rendererSource).toContain('new THREE.PointLight("#ffdca6", 2.8');
   });
 

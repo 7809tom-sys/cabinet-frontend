@@ -23,7 +23,7 @@ describe("SignIn password access", () => {
 
   it("reloads the server-chosen destination after sign-in so the mounted Designer header reads the new session", () => {
     expect(source).toContain("await utils.auth.me.fetch()");
-    expect(source).toContain("utils.auth.signInDestination.fetch({ returnPath: requestedReturn() })");
+    expect(source).toContain("utils.auth.signInDestination.fetch({ returnPath: requestedReturn(), portal })");
     expect(source).toContain("window.location.assign(decision.destination)");
     expect(source).toContain('decideSignInNavigation({');
     expect(source).toContain('role: me.role');
@@ -35,6 +35,6 @@ describe("SignIn password access", () => {
   it("refuses to enter a requested Designer route as anonymous", () => {
     expect(source).toContain("if (!me) {");
     expect(source).toContain("Your sign-in could not be confirmed. Please try again.");
-    expect(source).toContain("return isSafeSiteReturnPath(value) ? value : null;");
+    expect(source).toContain("if (isSafeSiteReturnPath(value)) return value;");
   });
 });

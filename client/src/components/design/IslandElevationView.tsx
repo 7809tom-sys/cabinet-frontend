@@ -38,6 +38,7 @@ import {
   normalizeDoorHardwareFramePosition,
 } from "@/lib/hardware";
 import { resolveConfiguredFaceCounts, resolveDoorDrawerCounts, cabinetDrawingType, isWallBlindCornerCabinet, type CabinetDrawingType } from "@/lib/cabinetGraphics";
+import { standardBaseRenderedCounts } from "@/lib/genericCabinetDrawerReference";
 import { useRef, useEffect, useState } from "react";
 import { useLanguage } from "@/contexts/LanguageContext";
 
@@ -480,9 +481,15 @@ export function IslandElevationView({
     const farmhouseFace = !isAppliance && !isWall && isFarmerSinkBase(p)
       ? farmhouseSinkBaseFaceLayout(cabSizeAlong, height, configuredDisplayCounts.doors)
       : null;
-    const displayCounts = farmhouseFace
+    const rawDisplayCounts = farmhouseFace
       ? { doors: farmhouseFace.doorCount, drawers: 0 }
       : configuredDisplayCounts;
+    const displayCounts = standardBaseRenderedCounts({
+      masterCode: p.masterCode,
+      drawerLayout: p.drawerLayout ?? null,
+      doors: rawDisplayCounts.doors,
+      drawers: rawDisplayCounts.drawers,
+    });
     const isBlind = isBlindCorner(p.masterCode, p.description);
     const islandDoorSide = isBlind ? blindCornerSwingForView(p, room, cabinets) : null;
     const blindLeft = isBlind
