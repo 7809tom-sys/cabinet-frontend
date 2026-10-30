@@ -2,15 +2,53 @@ import { FLOORING_LAYOUT_PATTERNS, type FlooringLayoutPattern } from "@/lib/desi
 import {
   FLOORING_HERRINGBONE_OVERAGE,
   FLOORING_INSTALLATION_RULES,
+  FLOORING_ROTATION_DEGREES,
   FLOORING_STANDARD_OVERAGE,
+  type FlooringRotationDegrees,
 } from "@/lib/flooringLayout";
+
+export function FlooringRotationControl({
+  value,
+  onChange,
+  testId = "flooring-rotation",
+}: {
+  value: FlooringRotationDegrees;
+  onChange?: (degrees: FlooringRotationDegrees) => void;
+  testId?: string;
+}) {
+  return (
+    <div data-testid={testId} className="flex flex-wrap items-center gap-1" role="group" aria-label="Floor plank direction">
+      <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Floor direction</span>
+      {FLOORING_ROTATION_DEGREES.map((degrees) => {
+        const selected = value === degrees;
+        return (
+          <button
+            key={degrees}
+            type="button"
+            data-testid={`${testId}-${degrees}`}
+            aria-pressed={selected}
+            disabled={!onChange}
+            onClick={() => onChange?.(degrees)}
+            className={`h-8 min-w-10 rounded-md border px-2 text-[11px] font-semibold ${selected ? "border-[#a87f33] bg-[#a87f33]/10 text-[#1a2744]" : "border-border bg-background text-[#1a2744] hover:bg-muted"}`}
+          >
+            {degrees}°
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 export function FlooringLayoutPicker({
   value,
   onChange,
+  rotation = 0,
+  onRotationChange,
 }: {
   value: FlooringLayoutPattern | null;
   onChange: (pattern: FlooringLayoutPattern) => void;
+  rotation?: FlooringRotationDegrees;
+  onRotationChange?: (degrees: FlooringRotationDegrees) => void;
 }) {
   const herringbonePct = Math.round(FLOORING_HERRINGBONE_OVERAGE * 100);
   const standardPct = Math.round(FLOORING_STANDARD_OVERAGE * 100);
@@ -35,6 +73,10 @@ export function FlooringLayoutPicker({
         <p className="px-1 pt-1.5 text-[11px] leading-snug text-muted-foreground">
           {value ? "The layout you choose is shown on the floor plan and on the quote." : "No layout is selected yet. Choose one to show it on the floor plan and the quote."}
         </p>
+        <div className="px-1 pt-2">
+          <FlooringRotationControl value={rotation} onChange={onRotationChange} />
+          <p className="pt-1 text-[11px] leading-snug text-muted-foreground">Turns the plank or tile direction on the plan and in the 3D room. Saved with this design.</p>
+        </div>
         <div className="mt-2 grid grid-cols-2 gap-2">
           {FLOORING_LAYOUT_PATTERNS.map((pattern) => {
             const selected = value === pattern.id;

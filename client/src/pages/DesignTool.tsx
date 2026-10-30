@@ -343,7 +343,8 @@ const noSelectedPelicanIds: ReadonlySet<number> = new Set<number>();
 
 
 import { buildSurfaceCartLines } from "@/lib/surfaceCartLines";
-import { flooringLayoutName } from "@/lib/flooringLayout";
+import { flooringLayoutName, isFlooringRotation, type FlooringRotationDegrees } from "@/lib/flooringLayout";
+import { confirmPlacedItemRemoval } from "@/lib/placedItemRemoval";
 import { surfaceRole, formatPrice } from "@/lib/pelican";
 import { buildRollOutLines, normalizedRollOutTrayQty, rollOutTrayCartItems, type TrayOptionForStyle, type TrayPlaced } from "@/lib/rollOutTrayMatch";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -2465,11 +2466,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     backsplashHeightMode,
     countertopBacksplashHeightIn,
     catalogHardwareSelection,
-  }), [interactive3dPresentation, windowSceneKind, windowFrameStyle, backsplashEnabled, backsplashHeightMode, countertopBacksplashHeightIn, catalogHardwareSelection]);
+    ...(flooringPattern ? { flooringPattern } : {}),
+    ...(flooringRotation !== 0 ? { flooringRotation } : {}),
+  }), [interactive3dPresentation, windowSceneKind, windowFrameStyle, backsplashEnabled, backsplashHeightMode, countertopBacksplashHeightIn, catalogHardwareSelection, flooringPattern, flooringRotation]);
   // Flooring material: shown as a pattern in the bird's-eye plan view.
   const [flooringMaterialId, setFlooringMaterialId] = useState<string | null>(null);
   // Flooring layout pattern: how planks are arranged (random stagger, 1/3 offset, diagonal, herringbone).
   const [flooringPattern, setFlooringPattern] = useState<import("@/lib/design").FlooringLayoutPattern | null>(null);
+  const [flooringRotation, setFlooringRotation] = useState<FlooringRotationDegrees>(0);
   // Cabinet lock: when true, placed cabinets cannot be moved, deleted, or have
   // new ones dropped. The room/walls/openings/island are still editable.
   // Explicit temporary override for intentional custom overlaps. Normal
@@ -11668,6 +11672,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	  }, [removeCabinetsAndReleaseVoid]);
 
 		  const requestCabinetDeletion = useCallback((uid: string) => {
+		    const target = placedRef.current.find((cabinet) => cabinet.uid === uid);
+		    if (!confirmPlacedItemRemoval(target?.masterCode || "this item")) return;
 		    // Every refrigerator option is an independent part. Deleting one part
 		    // never removes, moves, or prompts about any other cabinet or panel.
 		    removeCabinetAndReleaseVoid(uid);
@@ -13160,6 +13166,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     } else {
       setBacksplashEnabled(true);
     }
+    if (isFlooringLayoutPattern((savedPresentation as { flooringPattern?: unknown } | null)?.flooringPattern)) {
+      setFlooringPattern((savedPresentation as { flooringPattern: import("@/lib/design").FlooringLayoutPattern }).flooringPattern);
+    }
+    setFlooringRotation(isFlooringRotation((savedPresentation as { flooringRotation?: unknown } | null)?.flooringRotation)
+      ? (savedPresentation as { flooringRotation: FlooringRotationDegrees }).flooringRotation
+      : 0);
     if (savedPresentation?.countertopBacksplashHeightIn === 2.5 || savedPresentation?.countertopBacksplashHeightIn === 3) {
       setCountertopBacksplashHeightIn(savedPresentation.countertopBacksplashHeightIn);
     }
@@ -13263,6 +13275,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     countertopBacksplashHeightIn,
     flooringMaterialId,
     flooringPattern,
+    flooringRotation,
     selectedSurfaces: normalizeInstalledMaterialSelections(selectedSurfaces),
     cabinetsLocked,
 	    sinks,
@@ -13413,6 +13426,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           if (d.countertopBacksplashHeightIn === 2.5 || d.countertopBacksplashHeightIn === 3) setCountertopBacksplashHeightIn(d.countertopBacksplashHeightIn);
           if (typeof d.flooringMaterialId === "string") setFlooringMaterialId(d.flooringMaterialId);
           if (isFlooringLayoutPattern(d.flooringPattern)) setFlooringPattern(d.flooringPattern);
+          if (isFlooringRotation(d.flooringRotation)) setFlooringRotation(d.flooringRotation);
           if (typeof d.cabinetsLocked === "boolean") setCabinetsLocked(d.cabinetsLocked);
           // Restore the exact final Pelican surface & fixture picks so the cart,
           // 3D View gate and plan/elevation fill cannot retain replaced materials.
@@ -13557,7 +13571,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     if (!draftRestoredRef.current) return;
     const t = setTimeout(writeDraft, 400);
     return () => clearTimeout(t);
-  }, [room, placed, openings, island, styleId, tier, crown, toeKick, batten, lightRail, valance, trimQtyOverride, countertop, countertopMaterialId, edgeProfileId, backsplashMaterialId, backsplashEnabled, backsplashHeightMode, countertopBacksplashHeightIn, flooringMaterialId, flooringPattern, selectedSurfaces, cabinetsLocked, sinks, potFillers, roomType, activeWall, layoutLocked, lockedWalls, lockedDistributorId, mixedWarehouseOverride, hardwareStyleId, catalogHardwareSelection, wallCabHeight, annotations, writeDraft]);
+  }, [room, placed, openings, island, styleId, tier, crown, toeKick, batten, lightRail, valance, trimQtyOverride, countertop, countertopMaterialId, edgeProfileId, backsplashMaterialId, backsplashEnabled, backsplashHeightMode, countertopBacksplashHeightIn, flooringMaterialId, flooringPattern, flooringRotation, selectedSurfaces, cabinetsLocked, sinks, potFillers, roomType, activeWall, layoutLocked, lockedWalls, lockedDistributorId, mixedWarehouseOverride, hardwareStyleId, catalogHardwareSelection, wallCabHeight, annotations, writeDraft]);
 
   // Immediate save when the tab is hidden/backgrounded or about to unload —
   // this is what catches an incoming phone call or an OS tab eviction.
@@ -14505,6 +14519,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       catalogCountertopImageUrl={threeDSurfaceTextureUrls.countertop}
 	      catalogIslandCountertopImageUrl={threeDIslandCountertop.imageUrl}
       catalogFlooringImageUrl={threeDSurfaceTextureUrls.flooring}
+      flooringRotationDeg={flooringRotation}
+      onFlooringRotationChange={setFlooringRotation}
       catalogFlooringCardImageUrl={activeFlooringSurface?.imageUrl ?? null}
       catalogBacksplashImageUrl={backsplashEnabled ? threeDSurfaceTextureUrls.backsplash : null}
       catalogBacksplashCardImageUrl={backsplashEnabled ? activeBacksplashSurface?.imageUrl ?? null : null}
@@ -16172,6 +16188,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                 if (d.threeDPresentation?.countertopBacksplashHeightIn === 2.5 || d.threeDPresentation?.countertopBacksplashHeightIn === 3) {
                   setCountertopBacksplashHeightIn(d.threeDPresentation.countertopBacksplashHeightIn);
                 }
+                const restoredPresentation = d.threeDPresentation as { flooringPattern?: unknown; flooringRotation?: unknown } | null | undefined;
+                if (isFlooringLayoutPattern(restoredPresentation?.flooringPattern)) setFlooringPattern(restoredPresentation.flooringPattern);
+                setFlooringRotation(isFlooringRotation(restoredPresentation?.flooringRotation) ? restoredPresentation.flooringRotation : 0);
               }
             }
           />
@@ -17446,7 +17465,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                onPlaceBathroomFixture={placePelicanBathroomFixture}
 	                affiliateSlug={affiliateSlug}
 	              />
-	              <FlooringLayoutPicker value={flooringPattern} onChange={setFlooringPattern} />
+	              <FlooringLayoutPicker value={flooringPattern} onChange={setFlooringPattern} rotation={flooringRotation} onRotationChange={setFlooringRotation} />
               </>
 	            ) : usesBathroomFixturePalette ? (
 	              <RecommendedSurfaces
@@ -18103,6 +18122,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       onOpenFurnitureAttributes={openFurnitureAttributes}
 	              flooringMaterialId={flooringMaterialId}
 	              flooringPattern={flooringPattern}
+              flooringRotation={flooringRotation}
+              onFlooringRotationChange={setFlooringRotation}
 	              cabinetsLocked={cabinetsLocked}
 	              gapFillCandidates={gapFillCandidates}
 	              catalogFillerCandidates={catalogFillers}
@@ -18398,6 +18419,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       onOpenFurnitureAttributes={openFurnitureAttributes}
 	              flooringMaterialId={flooringMaterialId}
 	              flooringPattern={flooringPattern}
+              flooringRotation={flooringRotation}
+              onFlooringRotationChange={setFlooringRotation}
 	              cabinetsLocked={cabinetsLocked}
 	              gapFillCandidates={gapFillCandidates}
 	              catalogFillerCandidates={catalogFillers}
@@ -20496,6 +20519,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	          setAttrOpen(open);
 	          if (!open) setAttrUid(null);
 	        }}
+	        onDelete={(uid) => {
+	          const before = placedRef.current.length;
+	          deleteCabinet(uid);
+	          if (!placedRef.current.some((cabinet) => cabinet.uid === uid) && placedRef.current.length < before) {
+	            setAttrOpen(false);
+	            setAttrUid(null);
+	          }
+	        }}
 	        wizardBuiltEditable={Boolean(attrCabinetWizard)}
 	        onJumpToWizard={attrCabinetWizard ? jumpCabinetToWizard : undefined}
 	        refrigeratorPanelsRequestedButMissing={attrRefrigeratorPanelsRequestedButMissing}
@@ -22335,6 +22366,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                catalogCountertopImageUrl={threeDSurfaceTextureUrls.countertop}
 	                catalogIslandCountertopImageUrl={threeDIslandCountertop.imageUrl}
 	                catalogFlooringImageUrl={threeDSurfaceTextureUrls.flooring}
+      flooringRotationDeg={flooringRotation}
+      onFlooringRotationChange={setFlooringRotation}
 	                catalogFlooringCardImageUrl={activeFlooringSurface?.imageUrl ?? null}
 	                catalogBacksplashCardImageUrl={backsplashEnabled ? activeBacksplashSurface?.imageUrl ?? null : null}
 	                catalogBacksplashImageUrl={backsplashEnabled ? threeDSurfaceTextureUrls.backsplash : null}

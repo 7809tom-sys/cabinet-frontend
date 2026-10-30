@@ -137,11 +137,16 @@ describe("per-piece wood grain", () => {
     expect(left.userData.woodGrainPieceIndex).toBe(0);
     expect(right.userData.woodGrainPieceIndex).toBe(1);
     expect(drawer.userData.woodGrainRole).toBe("drawer");
-    expect(side.userData.woodGrainRole).toBe("box");
+    expect(side.userData.woodGrainRole).toBeUndefined();
+    expect(side.geometry.userData?.woodGrainStamped).not.toBe(true);
     expect(uvSignature(left.geometry)).not.toBe(uvSignature(right.geometry));
     expect(uvSignature(drawer.geometry)).not.toBe(uvSignature(left.geometry));
-    expect(uvSignature(side.geometry)).not.toBe(uvSignature(left.geometry));
-    for (const mesh of [left, right, drawer, side]) {
+    const sideExtent = uvExtent(side.geometry);
+    expect(sideExtent.minU).toBeCloseTo(0);
+    expect(sideExtent.minV).toBeCloseTo(0);
+    expect(sideExtent.maxU).toBeCloseTo(1);
+    expect(sideExtent.maxV).toBeCloseTo(1);
+    for (const mesh of [left, right, drawer]) {
       const extent = uvExtent(mesh.geometry);
       expect(extent.minU).toBeGreaterThanOrEqual(-0.0001);
       expect(extent.minV).toBeGreaterThanOrEqual(-0.0001);

@@ -1,4 +1,4 @@
-import type { DesignCabinet } from "@/lib/design";
+import { formatEighthInches, type DesignCabinet } from "@/lib/design";
 
 export type CatalogFillerCandidate = Pick<
   DesignCabinet,
@@ -113,15 +113,21 @@ export function catalogFillerForGap(
     })[0] ?? null;
 }
 
-export function fittedCatalogFillerDescription(candidate: Pick<CatalogFillerCandidate, "description" | "masterCode">, gapWidth: number): string {
-  const source = candidate.description ?? candidate.masterCode;
-  // A few vendor imports call a cuttable stock board a "scribe molding". Its
-  // purchase code and price remain authoritative, but once it is fitted beside
-  // a cabinet the designer must describe the installed part by its job: filler.
-  // That avoids presenting an ordinary cabinet filler as decorative molding.
-  const installedName = /\bscribe\b/i.test(source) ? "Filler" : source;
-  const rounded = Math.round(gapWidth * 100) / 100;
-  return `${installedName} — cut to ${rounded}"`;
+/**
+ * Material-list name for a filler that is cut to the measured gap and billed as
+ * its catalog stock width. The stock width is the SKU's width, never a wider
+ * phrase copied from a vendor sentence (a 3" or 6" filler must not read as 12").
+ */
+export function fittedCatalogFillerDescription(
+  candidate: Pick<CatalogFillerCandidate, "description" | "masterCode" | "width">,
+  gapWidth: number,
+): string {
+  const stock = numberValue(candidate.width);
+  const cut = formatEighthInches(gapWidth);
+  const stockLabel = stock > 0 ? formatEighthInches(stock) : null;
+  const base = stockLabel ? `Filler ${stockLabel} stock, cut to ${cut}` : `Filler, cut to ${cut}`;
+  const miter = candidate.description?.match(/with\s+\d+(?:\.\d+)?°\s+miter.*$/i)?.[0];
+  return miter ? `${base} ${miter}` : base;
 }
 
 /**
