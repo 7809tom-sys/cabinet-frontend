@@ -55,3 +55,39 @@ export function portalSignInHref(input: {
   if (ref) next.set("ref", ref);
   return `${path}?${next.toString()}`;
 }
+
+/**
+ * Plain contractor sign-in link. Always opens /contractor/login.
+ * A storefront slug already carried by the portal helper stays on returnTo.
+ * An explicit ?store= on the current page is copied onto that return path.
+ */
+export function contractorSignInHref(input: {
+  pathname: string;
+  search: string;
+  storedRef?: string | null;
+}): string {
+  const built = portalSignInHref({
+    portal: "contractor",
+    pathname: input.pathname,
+    search: input.search,
+    storedRef: input.storedRef,
+  });
+  const current = new URLSearchParams(input.search.startsWith("?") ? input.search.slice(1) : input.search);
+  const store = (current.get("store") || "").trim();
+  const url = new URL(built, "http://local.invalid");
+  const needsLoginPath = url.pathname !== "/contractor/login";
+  if (!store && !needsLoginPath) return built;
+  if (needsLoginPath) url.pathname = "/contractor/login";
+  if (store) {
+    const returnTo = url.searchParams.get("returnTo") || "/contractor";
+    const queryAt = returnTo.indexOf("?");
+    const nested = new URLSearchParams(queryAt >= 0 ? returnTo.slice(queryAt + 1) : "");
+    if (!nested.get("store")) {
+      nested.set("store", store);
+      const pathOnly = queryAt >= 0 ? returnTo.slice(0, queryAt) : returnTo;
+      url.searchParams.set("returnTo", `${pathOnly}?${nested.toString()}`);
+    }
+  }
+  const query = url.searchParams.toString();
+  return query ? `${url.pathname}?${query}` : url.pathname;
+}
