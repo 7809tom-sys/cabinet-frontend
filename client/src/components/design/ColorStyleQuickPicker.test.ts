@@ -14,7 +14,7 @@ describe("color style quick picker", () => {
     expect(designer).toContain("<ColorStyleQuickPicker");
     expect(designer).toContain('onChange={(id) => setSlotStyle(activeSlot, id)}');
     expect(room).toContain('testId="three-d-color-style-picker"');
-    expect(room).toContain("left-1/2 top-3 z-30 flex");
+    expect(room).toContain("bottom-3 left-3 z-30 flex");
     expect(room).not.toContain("three-d-color-style-picker\" className={`hidden");
   });
 });
