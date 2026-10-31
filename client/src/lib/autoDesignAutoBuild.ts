@@ -259,6 +259,20 @@ function orderedEngineWallIds(
   return STANDARD_WALL_ORDER[originCorner][runDirection];
 }
 
+/** Engine wall id to the Auto-Design label, for example `top` → `Wall 1`. */
+export function autoDesignWallNameByEngineId(
+  room: RoomData,
+  originCorner: AutoDesignOriginCorner,
+  runDirection: AutoDesignRunDirection,
+): Record<string, string> {
+  const names: Record<string, string> = {};
+  for (const label of AUTO_DESIGN_WALL_LABELS) {
+    const ref = wallLabelToEngineWallId(label, room, originCorner, runDirection);
+    if (ref) names[ref.engineWallId] = label;
+  }
+  return names;
+}
+
 /**
  * Resolves the UI-only Wall 1–6 label to the existing placement engine wall.
  * No placement coordinates are produced here; callers must use the returned

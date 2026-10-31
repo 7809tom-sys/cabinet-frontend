@@ -44,10 +44,9 @@ export type AutoDesignCornerMeasurement = {
  * and Wall 3. An open three-wall U has no Wall 4, so it still has only the two
  * corners its walls actually share. Wall 5 and Wall 6 stay out of a U.
  *
- * An L-shape has the single back-to-side corner. A single wall or galley has
- * none, except that appliances measured on two adjoining walls still reveal
- * the one real corner those runs share. Opposing galley runs do not share an
- * endpoint.
+ * An L-shape has the single back-to-side corner. A galley is two opposite
+ * straight runs and a one-wall kitchen is one straight run. Neither has a
+ * corner, even when the measured walls happen to share a room vertex.
  */
 export function autoDesignCornerSlots(layoutType: AutoDesignLayoutType, measured?: AutoDesignCornerMeasurement): AutoDesignCornerSlot[] {
   const slots: AutoDesignCornerSlot[] = [];
@@ -60,6 +59,10 @@ export function autoDesignCornerSlots(layoutType: AutoDesignLayoutType, measured
       slots.push({ id, label: `Corner between ${ordered[0]} and ${ordered[1]}`, firstWall: ordered[0], secondWall: ordered[1] });
     }
   };
+  // Galley and one-wall never grow a corner slot. The generic branch below
+  // used to add one for any two selected walls that share a vertex, which
+  // seated a blind corner between Wall 1 and Wall 2 on a galley.
+  if (layoutType === "galley" || layoutType === "single-wall") return slots;
   if (layoutType === "l-shape") {
     if (!measured || wallsShareVertex("Wall 1", "Wall 2", measured)) add("Wall 1", "Wall 2");
     return slots;
@@ -117,7 +120,18 @@ function wallsShareVertex(firstWall: WallLabel, secondWall: WallLabel, measured:
 /** Walls a U-shape always cabinets. Wall 4 is added when that wall exists. */
 export const AUTO_DESIGN_U_SHAPE_WALLS = ["Wall 1", "Wall 2", "Wall 3"] as const satisfies readonly WallLabel[];
 
+/** A galley cabinets the two opposite runs: Wall 1 and Wall 3. */
+export const AUTO_DESIGN_GALLEY_WALLS = ["Wall 1", "Wall 3"] as const satisfies readonly WallLabel[];
+
+export function autoDesignSelectableWallLabels(layoutType: AutoDesignLayoutType, wallCount: number): WallLabel[] {
+  const available = AUTO_DESIGN_WALL_LABELS.slice(0, Math.max(1, Math.min(AUTO_DESIGN_WALL_LABELS.length, wallCount)));
+  if (layoutType === "galley") return available.filter((label) => (AUTO_DESIGN_GALLEY_WALLS as readonly string[]).includes(label));
+  if (layoutType === "u-shape") return available.filter((label) => label === "Wall 1" || label === "Wall 2" || label === "Wall 3");
+  return [...available];
+}
+
 export function autoDesignLayoutUsesWall(layoutType: AutoDesignLayoutType, label: WallLabel): boolean {
+  if (layoutType === "galley") return (AUTO_DESIGN_GALLEY_WALLS as readonly string[]).includes(label);
   if (layoutType !== "u-shape") return true;
   return (AUTO_DESIGN_U_SHAPE_WALLS as readonly string[]).includes(label) || label === "Wall 4";
 }

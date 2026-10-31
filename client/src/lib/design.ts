@@ -2727,19 +2727,25 @@ export function resolvedDesignCabinetDimensions(cabinet: DesignCabinet): Cabinet
         depth: printed.depth,
       };
     }
+    const standardFramelessWall = cabinet.placement === "wall"
+      && !isFramelessDeepWallCabinet(cabinet)
+      && !isLCornerCabinet(cabinet.masterCode, cabinet.description)
+      && !isDiagonalCorner(cabinet.masterCode, cabinet.description);
     return {
       width: isBlindCorner(cabinet.masterCode, cabinet.description)
         ? blindCornerNominalWidth(cabinet)
         : dim(cabinet.width, 24),
       height: dim(cabinet.height, standardHeight(cabinet.placement)),
-      depth: dim(
-        cabinet.depth,
-        cabinet.placement === "wall"
-          ? STD.WALL_DEPTH
-          : cabinet.placement === "tall"
-            ? STD.TALL_DEPTH
-            : STD.BASE_DEPTH,
-      ),
+      depth: standardFramelessWall
+        ? FRAMELESS_STANDARD_WALL_DEPTH_IN
+        : dim(
+          cabinet.depth,
+          cabinet.placement === "wall"
+            ? STD.WALL_DEPTH
+            : cabinet.placement === "tall"
+              ? STD.TALL_DEPTH
+              : STD.BASE_DEPTH,
+        ),
     };
   }
   const sku = cabinet.placement === "wall" ? wallCabinetSkuDimensions(cabinet.masterCode) : null;
@@ -2931,7 +2937,11 @@ export function placedFootprint(p: PlacedCabinet): { w: number; d: number } {
     return { w: side, d: side };
   }
   if (cornerKind === "blind-corner") {
-    const stdDepth = p.placement === "wall" ? 12 : 24;
+    const stdDepth = p.placement === "wall"
+      ? (hasAefPrintedGeometry(p) || Math.abs(p.depth - FRAMELESS_STANDARD_WALL_DEPTH_IN) <= 0.2
+        ? FRAMELESS_STANDARD_WALL_DEPTH_IN
+        : 12)
+      : 24;
     const nominalWidth = blindCornerNominalWidth(p);
     const rot = ((p.rotation % 360) + 360) % 360;
     return rot === 90 || rot === 270 ? { w: stdDepth, d: nominalWidth } : { w: nominalWidth, d: stdDepth };
@@ -4097,6 +4107,11 @@ export type CollisionResolution = {
  */
 export function normalizePlacedWallCabinetSkuDimensions(cabinet: PlacedCabinet): PlacedCabinet {
   if (cabinet.placement !== "wall") return cabinet;
+  if (hasAefPrintedGeometry(cabinet) && !isFramelessDeepWallCabinet(cabinet) && !isLCornerCabinet(cabinet.masterCode, cabinet.description)) {
+    const depth = FRAMELESS_STANDARD_WALL_DEPTH_IN;
+    if (Math.abs(cabinet.depth - depth) <= COLLISION_EPSILON_IN && cabinet.nominalDepth === depth) return cabinet;
+    return { ...cabinet, depth, nominalDepth: depth };
+  }
   const sku = wallCabinetSkuDimensions(cabinet.masterCode);
   if (!sku) return cabinet;
   const intentionallyCustom = (value: number, nominal: number | null | undefined) =>
@@ -6335,6 +6350,8 @@ export interface WallOpening {
   width: number;
   height: number;
   sill: number;
+  /** Installer note when Auto-Design raised this window so a deck faucet clears the sill. */
+  faucetClearanceNote?: string;
 }
 
 export function wallLength(side: WallSide | string, room: RoomData): number {

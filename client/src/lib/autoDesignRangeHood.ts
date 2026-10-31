@@ -4,6 +4,15 @@ import {
 } from "./design";
 import { kitchenRuleNumber } from "./kitchenRuleParameters";
 
+/** Every hood except the 42 inch hood sits with its bottom 54 inches off the floor. */
+export const AUTO_DESIGN_STANDARD_HOOD_BOTTOM_IN = 54;
+
+/** Only a 42 inch hood is raised so its bottom is at the owner 60 inch datum. */
+export function autoDesignHoodMountBottom(widthIn: number): number {
+  if (Math.abs(widthIn - 42) <= 0.5) return kitchenRuleNumber("hood_bottom_in");
+  return AUTO_DESIGN_STANDARD_HOOD_BOTTOM_IN;
+}
+
 export type AutoDesignRangeHoodResult =
   | { ok: true; hood: PlacedCabinet }
   | { ok: false; message: string };
@@ -37,9 +46,9 @@ export function autoDesignRangeHood(input: {
   const attachment = overRangeMicrowaveAttachment([range], room, null, range.uid, { x: range.x, y: range.y }, { width, depth });
   if (!attachment) return { ok: false, message: `${source.masterCode} must be installed above a compatible saved range.` };
   const spot = attachment.spot as { x: number; y: number; rotation: number; wallId?: string; wallOffset?: number };
-  // Owner rule: a 42" hood's bottom is 60" above the floor. The palette's
-  // stored mount (often 66) does not override that Auto-Design datum.
-  const mountBottom = kitchenRuleNumber("hood_bottom_in");
+  // A 42 inch hood is raised to 60 inches. Every other width keeps 54,
+  // even when the palette stored a 66 inch mount.
+  const mountBottom = autoDesignHoodMountBottom(width);
   return {
     ok: true,
     hood: {

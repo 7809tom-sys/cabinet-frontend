@@ -23,6 +23,11 @@ export type RoomScenePhoto = {
   sourceDistributorId?: number | null;
   taggedCabinetIds?: number[] | null;
   taggedStyleIds?: number[] | null;
+  /**
+   * Proposed. The current room-scene row does not store the kitchen layout.
+   * See `DesignSceneTags` in shared/designSceneTags.ts.
+   */
+  layoutShape?: "galley" | "l-shape" | "u-shape" | "single-wall" | null;
 };
 
 export type RoomSceneGroup<T extends RoomScenePhoto = RoomScenePhoto> = {

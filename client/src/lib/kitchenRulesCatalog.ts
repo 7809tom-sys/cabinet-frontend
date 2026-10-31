@@ -278,7 +278,7 @@ const ownerSeeds: KitchenRuleSeed[] = [
     sourceText: "Owner",
     implementationStatus: "implemented",
     readsParameters: true,
-    notesText: "Auto-Design places the hood with its bottom at this height. The code default is 60 inches.",
+    notesText: "Only the 42 inch hood uses this 60 inch bottom. 30, 36, and 48 inch hoods stay at 54 inches.",
   },
   {
     ruleCode: "owner-baking-zone",

@@ -101,7 +101,13 @@ export function findAutoDesignSeams(input: {
     const frame = wallRunFrame(wall, room);
     if (!frame) continue;
     const items = placed.filter((item) => isLayerItem(item, layer) && wallOf(item, room) === wall);
-    if (!items.length) continue;
+    // A wall that already has base cabinets but no uppers is still a seam.
+    // Stopping here is why a run that missed its first exact width match
+    // never continued to the end of the wall.
+    if (!items.length) {
+      const hasBase = layer === "wall" && placed.some((item) => isLayerItem(item, "base") && wallOf(item, room) === wall);
+      if (!hasBase) continue;
+    }
     const clearance = layer === "wall" ? WALL_OPENING_CLEARANCE_IN : 0;
     const openingZones = input.openings.filter((opening) => opening.side === wall)
       .map((opening) => ({ start: opening.offset - clearance, end: opening.offset + opening.width + clearance }));

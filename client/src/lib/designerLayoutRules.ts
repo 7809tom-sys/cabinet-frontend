@@ -67,9 +67,13 @@ export const REFRIGERATOR_SHIFT_LIMIT_IN = 6;
  */
 export const MEASURED_REFRIGERATOR_CORNER_SHIFT_LIMIT_IN = 12;
 
-/** Per-appliance cap measured from the original placement. */
+/**
+ * Wiggle-room jog from the measured center. Every appliance, including the
+ * refrigerator, stays inside the 3 inch jog. The 6 inch bay slide and the
+ * 12 inch corner-seating slide are separate and are not this jog.
+ */
 export function autoDesignShiftLimitIn(kind: string): number {
-  if (kind === "refrigerator") return REFRIGERATOR_SHIFT_LIMIT_IN;
+  void kind;
   return kitchenRuleNumber("jog_max_in");
 }
 
@@ -560,19 +564,10 @@ function wiggleReasonCabinet(input: {
   return best ? describeWiggleReason(best.item, wallId, input.room) : null;
 }
 
-export function formatAutoDesignWiggleMessage(move: AutoDesignWiggleMove): string {
-  const reason = move.reason ? `to fit the ${move.reason.label}` : "to fit standard cabinet widths";
-  return `Wiggle room applied: ${move.label} moved ${formatEighthInches(move.inchesMoved)} ${move.direction} ${reason}`;
-}
-
-export function formatAutoDesignWiggleBadge(move: AutoDesignWiggleMove): string {
-  return `Moved ${formatEighthInches(move.inchesMoved)} ${move.direction === "left" ? "←" : "→"}`;
-}
-
 /**
  * Drops a reported shift once that appliance is gone or no longer sits at the
  * shifted position. A manual move, or a later Auto-Design run that does not
- * shift it, clears the notice and the plan badge.
+ * shift it, drops it from the returned move list.
  */
 export function activeAutoDesignWiggleMoves(
   moves: readonly AutoDesignWiggleMove[],

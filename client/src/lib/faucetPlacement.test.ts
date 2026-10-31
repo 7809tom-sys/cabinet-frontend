@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
 import { addSinkFixture, sinkFaucetTransform } from "@/components/design/InteractiveRoom3D";
-import { DEFAULT_ROOM, type SinkFixture, type WallOpening } from "./design";
+import { DEFAULT_ROOM, STD, makeSinkForCabinet, wallPlacementAt, type PlacedCabinet, type SinkFixture, type WallOpening } from "./design";
 import {
+  FAUCET_FRAME_GAP_IN,
   FAUCET_WINDOW_CONFLICT_MESSAGE,
   clampSinkDragForFaucet,
+  minimumFaucetClearSill,
+  raiseWindowsForDeckFaucet,
   resolveDeckFaucetPlacement,
   windowFrameObstacle,
+  windowTrimWidthIn,
 } from "./faucetPlacement";
 
 const room = DEFAULT_ROOM;
@@ -150,5 +154,164 @@ describe("deck faucet placement around windows", () => {
     expect(alongCounter.blocked).toBe(false);
     expect(alongCounter.x).toBe(90);
     expect(alongCounter.y).toBe(placed.y);
+  });
+});
+
+function roundSillUp(value: number): number {
+  const halves = value * 2;
+  const nearest = Math.round(halves);
+  if (Math.abs(halves - nearest) <= 1e-6) return nearest / 2;
+  return Math.ceil(halves - 1e-9) / 2;
+}
+
+/** Farmhouse apron sink centered under a window, with no rear-deck offset. */
+function farmhouseUnderWindow(faucetHeightIn: number, sill = 42, height = 36) {
+  const spot = wallPlacementAt(54, 36, 24, "top", room);
+  const cabinet: PlacedCabinet = {
+    uid: "fsb-36",
+    cabinetId: 36,
+    masterCode: "FSB36",
+    description: "36 inch farmhouse sink base",
+    category: "Base",
+    placement: "base",
+    x: spot!.x,
+    y: spot!.y,
+    width: 36,
+    depth: 24,
+    height: 34.5,
+    rotation: spot!.rotation,
+    wallId: spot!.wallId,
+    wallOffset: spot!.wallOffset,
+    numberOfDoors: 0,
+    numberOfDrawers: 0,
+  };
+  const placed = makeSinkForCabinet("farmhouse", cabinet, room, { width: 33, depth: 21 });
+  const fixture: SinkFixture = {
+    ...placed,
+    uid: "farm-sink",
+    faucet: true,
+    faucetOverallHeight: faucetHeightIn,
+    faucetSpoutLength: 9.375,
+    faucetSpoutHeight: 6.5,
+    faucetForm: "pull-down",
+    pelicanFaucetProfileId: "pelican-pl-8213-fountain-pull-down",
+    faucetRearDeckOffsetIn: undefined,
+  };
+  const along = fixture.x + fixture.width / 2;
+  const window: WallOpening = {
+    uid: "window-over-farm",
+    kind: "window",
+    label: "Over sink",
+    side: "top",
+    offset: along - 18,
+    width: 36,
+    height,
+    sill,
+  };
+  return { fixture, window };
+}
+
+describe("Auto-Design raises a window instead of hiding the faucet", () => {
+  it("raises a low sill the minimum half inch and then draws the faucet", () => {
+    const { fixture, window } = farmhouseUnderWindow(15.75);
+    expect(fixture.faucetRearDeckOffsetIn).toBeUndefined();
+    expect(fixture.type).toBe("farmhouse");
+    const before = resolveDeckFaucetPlacement(fixture, room, [window], counter);
+    expect(before.conflict).toBe("window-frame");
+    expect(before.renderFaucet).toBe(false);
+
+    const rawSill = minimumFaucetClearSill(window, 15.75);
+    const expectedSill = roundSillUp(rawSill);
+    expect(expectedSill).toBeGreaterThan(window.sill);
+    expect(expectedSill * 2).toBe(Math.round(expectedSill * 2));
+    const apron = windowTrimWidthIn(window.width) * 1.6;
+    expect(expectedSill - apron).toBeGreaterThanOrEqual(STD.COUNTERTOP_HEIGHT + 15.75 + FAUCET_FRAME_GAP_IN - 1e-6);
+
+    const raised = raiseWindowsForDeckFaucet({
+      sinks: [fixture],
+      room,
+      openings: [window],
+      countertops: counter,
+      wallLabels: { top: "Wall 1" },
+    });
+    const opening = raised.openings[0]!;
+    expect(opening.sill).toBe(expectedSill);
+    expect(opening.height).toBe(window.height);
+    expect(opening.sill - window.sill).toBeCloseTo(expectedSill - window.sill, 5);
+    expect(raised.unresolved).toBe(false);
+    expect(raised.notes[0]?.text).toBe(
+      `Window on Wall 1 raised ${expectedSill - window.sill} in. so the faucet clears the sill (new sill height ${expectedSill} in.)`,
+    );
+
+    const after = resolveDeckFaucetPlacement(fixture, room, raised.openings, counter);
+    expect(after.conflict).toBeNull();
+    expect(after.warning).toBeNull();
+    expect(after.renderFaucet).toBe(true);
+    const root = new THREE.Group();
+    addSinkFixture(root, fixture, after);
+    const faucetParts: string[] = [];
+    root.traverse((node) => {
+      if (node.userData.sinkFaucet || node.userData.sinkFaucetBase || node.userData.sinkFaucetSpout) {
+        faucetParts.push("faucet");
+      }
+    });
+    expect(faucetParts.length).toBeGreaterThan(0);
+  });
+
+  it("leaves a window that already clears the faucet where it is", () => {
+    const { fixture, window } = farmhouseUnderWindow(15.75, 72, 18);
+    const before = resolveDeckFaucetPlacement(fixture, room, [window], counter);
+    expect(before.conflict).toBeNull();
+    const raised = raiseWindowsForDeckFaucet({ sinks: [fixture], room, openings: [window], countertops: counter });
+    expect(raised.openings[0]).toBe(window);
+    expect(raised.notes).toEqual([]);
+    expect(raised.unresolved).toBe(false);
+  });
+
+  it("keeps the hidden-faucet warning when the wall is too low to raise the sill", () => {
+    const { fixture, window } = farmhouseUnderWindow(15.75);
+    const lowRoom = {
+      ...room,
+      customWalls: [{ id: "top", startVertexId: "a", endVertexId: "b", height: 48 }],
+    };
+    const raised = raiseWindowsForDeckFaucet({
+      sinks: [fixture],
+      room: lowRoom,
+      openings: [window],
+      countertops: counter,
+      wallLabels: { top: "Wall 1" },
+    });
+    expect(raised.unresolved).toBe(true);
+    expect(raised.openings[0]?.sill).toBe(window.sill);
+    expect(raised.openings[0]?.height).toBe(window.height);
+    expect(raised.notes[0]?.text).toBe("Window on Wall 1 could not be raised enough for the faucet to clear the sill.");
+    const stillBlocked = resolveDeckFaucetPlacement(fixture, lowRoom, raised.openings, counter);
+    expect(stillBlocked.renderFaucet).toBe(false);
+    expect(stillBlocked.warning).toBe(FAUCET_WINDOW_CONFLICT_MESSAGE);
+    expect(FAUCET_WINDOW_CONFLICT_MESSAGE).not.toMatch(/lower faucet/i);
+    expect(FAUCET_WINDOW_CONFLICT_MESSAGE).toMatch(/raise the window/i);
+  });
+
+  it("raises the window again when a taller faucet replaces the first one", () => {
+    const short = farmhouseUnderWindow(8);
+    const first = raiseWindowsForDeckFaucet({
+      sinks: [short.fixture],
+      room,
+      openings: [short.window],
+      countertops: counter,
+      wallLabels: { top: "Wall 1" },
+    });
+    const tallFixture = { ...short.fixture, faucetOverallHeight: 15.75 };
+    const second = raiseWindowsForDeckFaucet({
+      sinks: [tallFixture],
+      room,
+      openings: first.openings,
+      countertops: counter,
+      wallLabels: { top: "Wall 1" },
+    });
+    expect(second.openings[0]!.sill).toBeGreaterThan(first.openings[0]!.sill);
+    expect(resolveDeckFaucetPlacement(tallFixture, room, second.openings, counter).renderFaucet).toBe(true);
+    expect(resolveDeckFaucetPlacement(tallFixture, room, second.openings, counter).conflict).toBeNull();
+    expect(second.notes[0]?.text).toMatch(/Window on Wall 1 raised .+ in\. so the faucet clears the sill/);
   });
 });
