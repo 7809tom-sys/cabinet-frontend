@@ -4,6 +4,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import VendorClosetStudio from "./VendorClosetStudio";
 
+// The page reads the storefront hidden-catalog query; there is no tRPC provider in these unit tests.
+vi.mock("@/lib/trpc", () => ({
+  trpc: { storefront: { hiddenCatalogKeys: { useQuery: () => ({ data: undefined }) } } },
+}));
+
 vi.mock("@/components/vendor/VendorClosetScene", () => ({
   VendorClosetScene: () => <div data-testid="mock-vendor-scene">3D scene</div>,
 }));
@@ -71,7 +76,7 @@ describe("Closet Studio tablet workspace", () => {
     expect(screen.getByTestId("vendor-controls").className).toContain("min-[1800px]:static");
     const referencePanel = screen.getByTestId("vendor-reference-panel");
     expect(referencePanel.parentElement?.parentElement?.className).toContain("min-[1800px]:block");
-    expect(screen.getByTestId("vendor-part-tray").className).toContain("overflow-hidden");
+    expect(screen.queryByTestId("vendor-part-tray")).toBeNull();
     const more = within(screen.getByTestId("vendor-tablet-options-dock")).getByRole("combobox", { name: "More parts for selected tower" });
     expect(more.className).toContain("h-full");
     expect(more.className).toContain("inset-0");
@@ -88,10 +93,10 @@ describe("Closet Studio tablet workspace", () => {
     const material = within(dock).getByTestId("vendor-tablet-material-disclosure");
     const toggle = within(material).getByRole("button", { name: "Material reference details" });
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
-    expect(screen.getByTestId("vendor-tower-controls").className).toContain("hidden");
-    expect(screen.getByTestId("vendor-tower-controls").className).toContain("min-[1800px]:block");
-    expect(screen.getByTestId("vendor-part-tray").className).toContain("hidden");
-    expect(screen.getByTestId("vendor-part-tray").className).toContain("min-[1800px]:block");
+    // One copy of the controls only: the old wide-desktop bottom panels are gone, not CSS-hidden.
+    expect(screen.queryByTestId("vendor-tower-controls")).toBeNull();
+    expect(screen.queryByTestId("vendor-part-tray")).toBeNull();
+    expect(screen.getAllByTestId("vendor-tablet-options-dock")).toHaveLength(1);
     expect(within(dock).getByRole("button", { name: "Select Tower 2" })).toBeTruthy();
     expect(within(dock).getByRole("combobox", { name: "More parts for selected tower" })).toBeTruthy();
 
@@ -101,7 +106,7 @@ describe("Closet Studio tablet workspace", () => {
     expect(within(material).getByTestId("vendor-reference-total")).toBeTruthy();
   });
 
-  it("uses the Kitchen-style phone action strip to open focused Room, Tower, Parts, and List sheets instead of bottom editing controls", () => {
+  it("uses the Kitchen-style phone action strip to jump to the Tower, Parts, and List controls that scroll below the fixed 3D panel", () => {
     window.history.replaceState(null, "", "/closet?demo=mixed");
     render(<VendorClosetStudio />);
 
@@ -110,20 +115,21 @@ describe("Closet Studio tablet workspace", () => {
     const tower = within(strip).getByRole("button", { name: "Tower controls" });
     const parts = within(strip).getByRole("button", { name: "Add closet parts" });
     const list = within(strip).getByRole("button", { name: "Material reference" });
-    expect(screen.getByTestId("vendor-tower-controls").className).toContain("hidden");
-    expect(screen.getByTestId("vendor-tower-controls").className).toContain("min-[1800px]:block");
+    expect(screen.queryByTestId("vendor-tower-controls")).toBeNull();
 
+    const dock = screen.getByTestId("vendor-tablet-options-dock");
+    expect(dock.className).not.toContain("fixed");
+    expect(screen.getByTestId("vendor-scene-panel").className).toContain("flex-none");
+    expect(screen.getByTestId("vendor-scene-panel").className).not.toContain("flex-1");
     fireEvent.click(tower);
-    expect(screen.getByTestId("vendor-tablet-options-dock").className).toContain("fixed inset-x-0 bottom-0");
-    expect(within(screen.getByTestId("vendor-tablet-options-dock")).getByRole("button", { name: "Select Tower 2" })).toBeTruthy();
+    expect(within(dock).getByRole("button", { name: "Select Tower 2" })).toBeTruthy();
     fireEvent.click(parts);
-    expect(within(screen.getByTestId("vendor-tablet-options-dock")).getByRole("combobox", { name: "More parts for selected tower" })).toBeTruthy();
-    fireEvent.click(within(screen.getByTestId("vendor-tablet-options-dock")).getByRole("button", { name: /Adjustable shelf/ }));
-    expect(screen.getByTestId("vendor-tablet-options-dock").className).toContain("hidden");
+    expect(within(dock).getByRole("combobox", { name: "More parts for selected tower" })).toBeTruthy();
+    fireEvent.click(within(dock).getByRole("button", { name: /Adjustable shelf/ }));
     const source = readFileSync(`${process.cwd()}/client/src/pages/VendorClosetStudio.tsx`, "utf8");
     expect(source).toContain('partToPlace && hasBay ? "top-24 sm:top-28" : "bottom-3 sm:bottom-5"');
     fireEvent.click(list);
-    expect(within(screen.getByTestId("vendor-tablet-options-dock")).getByTestId("vendor-tablet-material-list")).toBeTruthy();
+    expect(within(dock).getByTestId("vendor-tablet-material-list")).toBeTruthy();
   });
 
   it("lets a tablet user plan a sourced straight shelf cut in the right dock without exposing unverified accessory cuts", () => {
@@ -221,8 +227,8 @@ describe("Closet Studio tablet workspace", () => {
     fireEvent.click(entry);
 
     const planners = screen.getAllByTestId("vendor-corner-planning-controls");
-    expect(planners.map((planner) => planner.id)).toEqual(["vendor-corner-shelf-planner-wide", "vendor-corner-shelf-planner-dock"]);
-    const planner = planners[1];
+    expect(planners.map((planner) => planner.id)).toEqual(["vendor-corner-shelf-planner-dock"]);
+    const planner = planners[0];
     expect(within(planner).getByRole("button", { name: "Build visual corner" })).toBeTruthy();
   });
 
