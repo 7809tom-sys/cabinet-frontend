@@ -1,4 +1,5 @@
 import { isAefFramelessStyleCode } from "./aefFramelessSpecs";
+import { findDlcFinishForStyle } from "./dlcFr26Mapping";
 
 /**
  * Door face vs drawer front.
@@ -84,6 +85,7 @@ export type DoorStyleFaceInput = {
   thumbnailImageUrl?: string | null;
   styleVerified?: boolean | number | null;
   grainDirection?: string | null;
+  distributorId?: number | null;
 };
 
 export type CabinetFacePlan = {
@@ -95,6 +97,14 @@ export type CabinetFacePlan = {
   drawerTextureApplied: boolean;
   /** Torino horizontal grain stays at 0. This plan never rotates a face texture. */
   grainRotation: 0;
+  /** Set when the textures are processed DLC_FR26 crops (already cropped; fit, never tile). */
+  dlcCrop?: {
+    slug: string;
+    doorSize: [number, number];
+    drawerSize: [number, number] | null;
+    /** Drawer front colour when the photo has no drawer crop. The drawer never gets the door image. */
+    drawerSolidColor: string | null;
+  };
 };
 
 export type RevealDetection =
@@ -253,8 +263,26 @@ export function resolveCabinetFaceImages(
   style: DoorStyleFaceInput | null | undefined,
   placement: string | null | undefined,
 ): CabinetFacePlan {
-  const sourceKind = classifyFaceSource(style);
   const wall = (placement ?? "").toLowerCase() === "wall";
+  // A DL style that maps to a DLC_FR26 finish uses the processed (cropped) door and drawer PNGs.
+  const dlc = findDlcFinishForStyle(style);
+  if (dlc) {
+    return {
+      sourceKind: dlc.drawer ? "split" : "legacy-door",
+      doorUrl: dlc.door,
+      drawerUrl: wall ? null : dlc.drawer,
+      sections: wall ? 1 : dlc.drawer ? 2 : 1,
+      drawerTextureApplied: !wall && Boolean(dlc.drawer),
+      grainRotation: 0,
+      dlcCrop: {
+        slug: dlc.slug,
+        doorSize: dlc.doorSize,
+        drawerSize: dlc.drawerSize,
+        drawerSolidColor: dlc.drawer ? null : dlc.solidColor,
+      },
+    };
+  }
+  const sourceKind = classifyFaceSource(style);
   const door = trimUrl(style?.doorSampleImageUrl) ?? trimUrl(style?.thumbnailImageUrl);
   const drawer = trimUrl(style?.drawerSampleImageUrl);
   if (sourceKind === "split") {

@@ -91,3 +91,43 @@ export const DLC_GRAIN_TEXTURES: Record<string, { horizontal: string; vertical: 
     verticalNormal: "source/textures/EWO_V.jpg_nm,5.png",
   },
 };
+
+/** The crop sizes the 3D renderer needs. Same shape as CabinetFacePlan.dlcCrop minus the slug. */
+export interface DlcFaceCrop {
+  doorSize: [number, number];
+  drawerSize: [number, number] | null;
+  drawerSolidColor: string | null;
+}
+
+export const DLC_DRAWER_FRONT_HEIGHT_IN = 6;
+/** Toe kick plus the drawer rail above a base door; the door itself is what is left. */
+export const DLC_BASE_DOOR_TRIM_IN = 10;
+
+/**
+ * Real proportions of one door or drawer front on a cabinet (inches). Cabinets 24in and wider carry
+ * two doors; base doors sit under the drawer rail. This is an approximation used only to choose
+ * how much of a cropped photo to show; the texture is never stretched to it.
+ */
+export function dlcFaceProportions(
+  face: DlcFace,
+  cabinet: { widthIn: number; heightIn: number; isWall: boolean },
+): { widthIn: number; heightIn: number } {
+  const w = Math.max(1, cabinet.widthIn);
+  const h = Math.max(1, cabinet.heightIn);
+  if (face === "drawer") return { widthIn: w, heightIn: DLC_DRAWER_FRONT_HEIGHT_IN };
+  const doorW = w >= 24 ? w / 2 : w;
+  const doorH = cabinet.isWall || h > 48 ? h : Math.max(6, h - DLC_BASE_DOOR_TRIM_IN);
+  return { widthIn: doorW, heightIn: doorH };
+}
+
+/** Texture window (centre crop, no stretch, no repeat) for one face of a DLC-cropped cabinet. */
+export function dlcFaceTextureWindow(
+  face: DlcFace,
+  crop: DlcFaceCrop,
+  cabinet: { widthIn: number; heightIn: number; isWall: boolean },
+): { offsetX: number; offsetY: number; repeatX: number; repeatY: number } | null {
+  const size = face === "door" ? crop.doorSize : crop.drawerSize;
+  if (!size) return null;
+  const p = dlcFaceProportions(face, cabinet);
+  return fitWithoutStretch(size[0], size[1], p.widthIn, p.heightIn);
+}

@@ -5064,6 +5064,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const active3DDoorSampleUrl = activeFacePlan?.doorUrl ?? null;
   const active3DDrawerSampleUrl = activeFacePlan?.sourceKind === "split" ? activeFacePlan.drawerUrl : null;
   const activeFaceSourceKind: FaceSourceKind | undefined = activeFacePlan?.sourceKind;
+  const activeFaceCrop = activeFacePlan?.dlcCrop
+    ? { doorSize: activeFacePlan.dlcCrop.doorSize, drawerSize: activeFacePlan.dlcCrop.drawerSize, drawerSolidColor: activeFacePlan.dlcCrop.drawerSolidColor }
+    : null;
   const active3DRoomSceneReferenceUrl = useMemo(() => {
     const s = doorStyles?.find((d) => d.id === styleId) as { roomSceneImageUrl?: string | null } | undefined;
     return s?.roomSceneImageUrl ?? null;
@@ -5663,6 +5666,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       if (sid == null) return DEFAULT_DRAWER_SAMPLE_URL;
       const plan = facePlanForCab(cab);
       if (!plan || plan.sourceKind === "combined") return null;
+      // Processed DLC crops: the drawer has its own crop or none (solid colour); never the door photo.
+      if (plan.dlcCrop) return plan.drawerUrl;
       if (plan.sourceKind === "split") return plan.drawerUrl;
       return plan.doorUrl;
     },
@@ -14356,6 +14361,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     ))),
     [threeDCabinetFaces],
   );
+  const threeDCabinetFaceCrops = useMemo(
+    () => Object.fromEntries(threeDCabinetFaces.flatMap(([uid, plan]) => (
+      plan.dlcCrop
+        ? [[uid, { doorSize: plan.dlcCrop.doorSize, drawerSize: plan.dlcCrop.drawerSize, drawerSolidColor: plan.dlcCrop.drawerSolidColor }]]
+        : []
+    ))),
+    [threeDCabinetFaces],
+  );
   const threeDCabinetFaceKinds = useMemo(
     () => Object.fromEntries(threeDCabinetFaces.map(([uid, plan]) => [uid, plan.sourceKind])),
     [threeDCabinetFaces],
@@ -14542,6 +14555,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	      cabinetDoorSampleUrls={threeDCabinetDoorSamples}
 	      cabinetDrawerSampleUrls={threeDCabinetDrawerSamples}
 	      cabinetFaceSourceKinds={threeDCabinetFaceKinds}
+	      cabinetFaceCrops={threeDCabinetFaceCrops}
+	      catalogFaceCrop={activeFaceCrop}
 	      cabinetFrontVisuals={threeDCabinetFrontVisuals}
 	      catalogDoorSampleUrl={active3DDoorSampleUrl}
 	      catalogDrawerSampleUrl={active3DDrawerSampleUrl}
@@ -22394,6 +22409,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                cabinetDoorSampleUrls={threeDCabinetDoorSamples}
 	                cabinetDrawerSampleUrls={threeDCabinetDrawerSamples}
 	                cabinetFaceSourceKinds={threeDCabinetFaceKinds}
+	      cabinetFaceCrops={threeDCabinetFaceCrops}
+	      catalogFaceCrop={activeFaceCrop}
 		                cabinetFrontVisuals={threeDCabinetFrontVisuals}
 	                catalogDoorSampleUrl={active3DDoorSampleUrl}
 	                catalogDrawerSampleUrl={active3DDrawerSampleUrl}
