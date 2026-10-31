@@ -2837,17 +2837,35 @@ export function threeDUsesDoorSampleTexture(doorSampleUrl?: string | null) {
   return Boolean(doorSampleUrl);
 }
 
-/** Center crop used for a framed door photo. A combined swatch uses a vertical band instead. */
+/**
+ * Window used for a framed door photo: the whole photo (repeat 1, offset 0).
+ * Door and drawer photos are already cropped inside the door edge, so no
+ * further center crop is applied. A combined swatch uses a vertical band instead.
+ */
 export const THREE_D_PHOTO_SAMPLE_FRAME: FaceTextureWindow = {
-  offsetX: 0.29,
-  offsetY: 0.29,
-  repeatX: 0.42,
-  repeatY: 0.42,
+  offsetX: 0,
+  offsetY: 0,
+  repeatX: 1,
+  repeatY: 1,
 };
 
 /**
+ * Filtering for door and drawer photo textures so they stay sharp at an angle:
+ * mipmaps on, trilinear minification, and the renderer's maximum anisotropy.
+ * three.js clamps anisotropy to the GPU limit, so passing the cap is safe.
+ */
+export function applyThreeDFaceTextureFiltering(texture: THREE.Texture, maxAnisotropy?: number | null) {
+  texture.generateMipmaps = true;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  if (typeof maxAnisotropy === "number" && Number.isFinite(maxAnisotropy) && maxAnisotropy > 0) {
+    texture.anisotropy = maxAnisotropy;
+  }
+}
+
+/**
  * Door faces of a combined swatch sample the door band. Drawer faces sample the
- * drawer band. Split and legacy photos keep the center crop.
+ * drawer band. Split and legacy photos use the whole photo.
  */
 export function threeDSampleTextureFrame(
   faceSourceKind: FaceSourceKind | null | undefined,
@@ -4193,7 +4211,7 @@ export function addCabinet(
   transform?: { x: number; z: number; rotation: number; bottom?: number },
   doorSampleUrl?: string | null,
   onDoorTextureState?: (state: "loading" | "loaded" | "failed") => void,
-  surfaceTextures?: { countertop?: THREE.Texture | null; suppressCountertop?: boolean; suppressFittedFillerToeKick?: boolean; suppressContinuousBaseToeKick?: boolean; suppressFarmhouseSinkPlaceholder?: boolean; selectedToeKick?: boolean; hardwareStyleId?: HardwareStyleId; hardwareAccent?: string; drawerSampleUrl?: string | null; faceSourceKind?: FaceSourceKind },
+  surfaceTextures?: { countertop?: THREE.Texture | null; suppressCountertop?: boolean; suppressFittedFillerToeKick?: boolean; suppressContinuousBaseToeKick?: boolean; suppressFarmhouseSinkPlaceholder?: boolean; selectedToeKick?: boolean; hardwareStyleId?: HardwareStyleId; hardwareAccent?: string; drawerSampleUrl?: string | null; faceSourceKind?: FaceSourceKind; maxAnisotropy?: number },
 ) {
   const placement = (sku.placementType ?? "base").toLowerCase();
   const isKneeDrawer = isKneeDrawerItem(sku);
@@ -4995,15 +5013,16 @@ export function addCabinet(
   if (doorTexture) onDoorTextureState?.("loading");
 	  if (doorTexture) {
 	    doorTexture.colorSpace = THREE.SRGBColorSpace;
+	    applyThreeDFaceTextureFiltering(doorTexture, surfaceTextures?.maxAnisotropy);
 	    const doorFrame = threeDSampleTextureFrame(surfaceTextures?.faceSourceKind, "door");
 	    const grainTransform = usesCuratedCabinetGrain
 	      ? threeDCabinetGrainTransform(sku.placementUid, doorSampleUrl)
 	      : null;
 	    doorTexture.wrapS = usesCuratedCabinetGrain ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
 	    doorTexture.wrapT = usesCuratedCabinetGrain ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
-	    // A framed door photo often includes rails and studio background, so the
-	    // center crop is the finish. A combined door+drawer swatch instead uses
-	    // only the lower door band on door faces.
+	    // Door photos are already cropped inside the door edge, so the whole photo
+	    // is the finish. A combined door+drawer swatch instead uses only the
+	    // lower door band on door faces.
 	    doorTexture.repeat.set(
 	      usesCuratedCabinetGrain ? 1 : doorFrame.repeatX,
 	      usesCuratedCabinetGrain ? 1 : doorFrame.repeatY,
@@ -5042,6 +5061,7 @@ export function addCabinet(
   if (drawerTexture) {
     const drawerFrame = threeDSampleTextureFrame(surfaceTextures?.faceSourceKind, "drawer");
     drawerTexture.colorSpace = THREE.SRGBColorSpace;
+    applyThreeDFaceTextureFiltering(drawerTexture, surfaceTextures?.maxAnisotropy);
     drawerTexture.wrapS = usesCuratedDrawerGrain ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
     drawerTexture.wrapT = usesCuratedDrawerGrain ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
     drawerTexture.repeat.set(
@@ -11998,6 +12018,7 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 		          hardwareAccent,
 		          drawerSampleUrl: cabinet.placement === "wall" ? null : cabinetDrawerSampleUrls?.[cabinet.uid] ?? null,
 		          faceSourceKind: cabinetFaceSourceKinds?.[cabinet.uid],
+		          maxAnisotropy: renderer.capabilities.getMaxAnisotropy(),
 	        });
 	        if (cabinet.masterTracConceptStorage || cabinet.masterTracStorageItems) {
 	          const fixedTopIn = renderedPlaced.find((board) => board.masterTracTowerId === cabinet.masterTracTowerId
@@ -12018,7 +12039,7 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 	    } else {
       for (const suggestion of validSuggestions) {
         if (!suggestion.sku) continue;
-	        addCabinet(catalogRoot, suggestion.sku, suggestion.zone.wallKey, cursor, room.width, room.depth, finish, materialDefaults.countertop, resolvedDoorProfile ?? undefined, undefined, activeDoorTexture, updateDoorTextureState, { countertop: countertopTexture, selectedToeKick: toeKick, hardwareStyleId, hardwareAccent, drawerSampleUrl: suggestion.sku.placementType === "wall" ? null : activeDrawerTexture, faceSourceKind: activeFaceSourceKind });
+	        addCabinet(catalogRoot, suggestion.sku, suggestion.zone.wallKey, cursor, room.width, room.depth, finish, materialDefaults.countertop, resolvedDoorProfile ?? undefined, undefined, activeDoorTexture, updateDoorTextureState, { countertop: countertopTexture, selectedToeKick: toeKick, hardwareStyleId, hardwareAccent, drawerSampleUrl: suggestion.sku.placementType === "wall" ? null : activeDrawerTexture, faceSourceKind: activeFaceSourceKind, maxAnisotropy: renderer.capabilities.getMaxAnisotropy() });
 	      }
 	    }
 	    if (countertopUpstandSegments.length > 0) {

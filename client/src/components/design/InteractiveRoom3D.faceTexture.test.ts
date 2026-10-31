@@ -1,6 +1,12 @@
+import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 import { combinedSwatchTextureWindow } from "@shared/doorFaceRecognition";
-import { threeDSampleTextureFrame, threeDUsesSeparateDrawerTexture } from "./InteractiveRoom3D";
+import {
+  THREE_D_PHOTO_SAMPLE_FRAME,
+  applyThreeDFaceTextureFiltering,
+  threeDSampleTextureFrame,
+  threeDUsesSeparateDrawerTexture,
+} from "./InteractiveRoom3D";
 
 describe("3D door and drawer sample frames", () => {
   it("maps a wall door onto the door band of a combined swatch", () => {
@@ -31,13 +37,13 @@ describe("3D door and drawer sample frames", () => {
     expect(frame.repeatY).toBeLessThan(0.3);
   });
 
-  it("keeps a real door.png and drawer-front.png on the photo crop", () => {
-    expect(threeDSampleTextureFrame("split", "door")).toEqual({
-      offsetX: 0.29,
-      offsetY: 0.29,
-      repeatX: 0.42,
-      repeatY: 0.42,
-    });
+  it("uses the whole photo for a real door.png and drawer-front.png", () => {
+    const wholePhoto = { offsetX: 0, offsetY: 0, repeatX: 1, repeatY: 1 };
+    expect(THREE_D_PHOTO_SAMPLE_FRAME).toEqual(wholePhoto);
+    expect(threeDSampleTextureFrame("split", "door")).toEqual(wholePhoto);
+    expect(threeDSampleTextureFrame("split", "drawer")).toEqual(wholePhoto);
+    expect(threeDSampleTextureFrame("legacy-door", "door")).toEqual(wholePhoto);
+    expect(threeDSampleTextureFrame(null, "door")).toEqual(wholePhoto);
     expect(threeDUsesSeparateDrawerTexture({
       isWall: false,
       doorSampleUrl: "/door.png",
@@ -50,5 +56,33 @@ describe("3D door and drawer sample frames", () => {
       drawerSampleUrl: "/door-only.jpg",
       faceSourceKind: "legacy-door",
     })).toBe(false);
+  });
+
+  it("leaves a combined swatch on its own band instead of the whole photo", () => {
+    expect(threeDSampleTextureFrame("combined", "door")).not.toEqual(THREE_D_PHOTO_SAMPLE_FRAME);
+    expect(threeDSampleTextureFrame("combined", "drawer")).not.toEqual(THREE_D_PHOTO_SAMPLE_FRAME);
+  });
+});
+
+describe("3D door and drawer texture filtering", () => {
+  it("turns on mipmaps and the renderer's maximum anisotropy", () => {
+    const texture = new THREE.Texture();
+    texture.generateMipmaps = false;
+    texture.minFilter = THREE.LinearFilter;
+    applyThreeDFaceTextureFiltering(texture, 16);
+    expect(texture.generateMipmaps).toBe(true);
+    expect(texture.minFilter).toBe(THREE.LinearMipmapLinearFilter);
+    expect(texture.magFilter).toBe(THREE.LinearFilter);
+    expect(texture.anisotropy).toBe(16);
+  });
+
+  it("still enables mipmaps and keeps the default anisotropy when no cap is supplied", () => {
+    for (const cap of [undefined, null, 0, Number.NaN]) {
+      const texture = new THREE.Texture();
+      applyThreeDFaceTextureFiltering(texture, cap);
+      expect(texture.generateMipmaps).toBe(true);
+      expect(texture.minFilter).toBe(THREE.LinearMipmapLinearFilter);
+      expect(texture.anisotropy).toBe(1);
+    }
   });
 });
