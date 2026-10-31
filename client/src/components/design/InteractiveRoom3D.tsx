@@ -4218,6 +4218,11 @@ export function addCabinet(
   onDoorTextureState?: (state: "loading" | "loaded" | "failed") => void,
   surfaceTextures?: { countertop?: THREE.Texture | null; suppressCountertop?: boolean; suppressFittedFillerToeKick?: boolean; suppressContinuousBaseToeKick?: boolean; suppressFarmhouseSinkPlaceholder?: boolean; selectedToeKick?: boolean; hardwareStyleId?: HardwareStyleId; hardwareAccent?: string; drawerSampleUrl?: string | null; faceSourceKind?: FaceSourceKind; faceCrop?: DlcFaceCrop | null; maxAnisotropy?: number },
 ) {
+  // DLC_FR26 styles: every exposed side, end panel, skin and carcass surface uses the door finish
+  // colour (never the door photo with its frame lines). Only Hickory Shaker and the US Cabinet
+  // Depot frameless lines get separate skins, and they do not go through this path.
+  const dlcDoorFinish = surfaceTextures?.faceCrop?.solidColor ?? null;
+  if (dlcDoorFinish) color = dlcDoorFinish;
   const placement = (sku.placementType ?? "base").toLowerCase();
   const isKneeDrawer = isKneeDrawerItem(sku);
   const isWall = placement === "wall";
@@ -5136,7 +5141,7 @@ export function addCabinet(
   const structuralFinish = threeDStructuralFinish(color, Boolean(doorTexture));
   let plainStructuralColor = structuralFinish.color;
   let structuralSampleTexture: THREE.Texture | null = null;
-  const exposedSidesMatchDoorFace = doorProfile?.exposedSidesMatchDoorFace === true && Boolean(doorTexture);
+  const exposedSidesMatchDoorFace = doorProfile?.exposedSidesMatchDoorFace === true && Boolean(doorTexture) && !dlcDoorFinish;
   const applyStructuralFinish = (finishColor: string, _sampleTexture: THREE.Texture | null = null) => {
     if (exposedSidesMatchDoorFace && doorTexture) {
       const applied = applyThreeDDoorFaceStructuralFinish(
@@ -5345,7 +5350,7 @@ export function addCabinet(
       rearPlaneUsesSavedWallFootprint: true,
     };
   }
-  const decorativeEndIsDoor = threeDDecorativeEndIsDoor(sku);
+  const decorativeEndIsDoor = threeDDecorativeEndIsDoor(sku) && !dlcDoorFinish;
   const decorativeEndSkin = new THREE.MeshStandardMaterial({ color, roughness: 0.5, metalness: 0.01 });
   decorativeEndSkin.userData = {
     selectedFinishStructuralSurface: true,

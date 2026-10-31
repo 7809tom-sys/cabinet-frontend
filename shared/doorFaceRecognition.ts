@@ -104,6 +104,8 @@ export type CabinetFacePlan = {
     drawerSize: [number, number] | null;
     /** Drawer front colour when the photo has no drawer crop. The drawer never gets the door image. */
     drawerSolidColor: string | null;
+    /** Door finish colour for exposed sides, end panels and skins. */
+    solidColor: string;
   };
 };
 
@@ -279,6 +281,7 @@ export function resolveCabinetFaceImages(
         doorSize: dlc.doorSize,
         drawerSize: dlc.drawerSize,
         drawerSolidColor: dlc.drawer ? null : dlc.solidColor,
+        solidColor: dlc.solidColor,
       },
     };
   }

@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { resolveCabinetFaceImages } from "./doorFaceRecognition";
 import { DLC_FR26_CATALOG } from "./dlcFr26Catalog.generated";
 import { findDlcFinishForStyle, normalizeFinishName } from "./dlcFr26Mapping";
+import { resolveDoorFinishHex } from "../client/src/lib/doorStyleAppearance";
 import { dlcFaceProportions, dlcFaceTextureWindow } from "./dlcFr26Textures";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -127,5 +128,32 @@ describe("renderer and Designer are connected", () => {
     expect(s).toMatch(/if \(plan\.dlcCrop\) return plan\.drawerUrl;/);
     expect(s.match(/cabinetFaceCrops=\{threeDCabinetFaceCrops\}/g)).toHaveLength(2);
     expect(s.match(/catalogFaceCrop=\{activeFaceCrop\}/g)).toHaveLength(2);
+  });
+});
+
+describe("DL sides, end panels and skins match the door finish", () => {
+  const solid = (slug: string) => DLC_FR26_CATALOG.find((e) => e.slug === slug)!.solidColor;
+  it("the finish colour used for sides/skins is the door colour, even when a stale light-grey hex is stored", () => {
+    for (const [name, code, slug] of [["Cyber Grey", "DL-CG", "cyber-grey"], ["Driftwood", "DL-DW", "driftwood"]] as const) {
+      const style = dl(name, code, { color: "#d9dde3", finish: "Painted" });
+      expect(resolveDoorFinishHex(style), name).toBe(solid(slug));
+      expect(resolveCabinetFaceImages(style, "base").dlcCrop?.solidColor, name).toBe(solid(slug));
+    }
+  });
+  it("sides are never white, light grey or light blue for any mapped finish that is itself dark or coloured", () => {
+    const lum = (h: string) => 0.2126 * parseInt(h.slice(1, 3), 16) + 0.7152 * parseInt(h.slice(3, 5), 16) + 0.0722 * parseInt(h.slice(5, 7), 16);
+    expect(lum(solid("cyber-grey"))).toBeLessThan(120);
+    expect(lum(solid("driftwood"))).toBeLessThan(140);
+    expect(lum(solid("slim-shaker-ebony"))).toBeLessThan(60);
+  });
+  it("non-DL and unmapped styles keep their own colour", () => {
+    expect(resolveDoorFinishHex({ distributorId: 12, ourName: "Cyber Grey", color: "#336699" })).toBe("#336699");
+    expect(resolveDoorFinishHex(dl("Champagne Mist", "DL-CM", { color: "#c9b99a" }))).toBe("#c9b99a");
+  });
+  it("3D: DLC cabinets use the door colour for every structural surface and never the door photo on ends or sides", () => {
+    const src = fs.readFileSync(path.join(repo, "client/src/components/design/InteractiveRoom3D.tsx"), "utf8");
+    expect(src).toMatch(/if \(dlcDoorFinish\) color = dlcDoorFinish;/);
+    expect(src).toMatch(/exposedSidesMatchDoorFace === true && Boolean\(doorTexture\) && !dlcDoorFinish/);
+    expect(src).toMatch(/threeDDecorativeEndIsDoor\(sku\) && !dlcDoorFinish/);
   });
 });

@@ -97,6 +97,8 @@ export interface DlcFaceCrop {
   doorSize: [number, number];
   drawerSize: [number, number] | null;
   drawerSolidColor: string | null;
+  /** The door finish colour. Sides, end panels, skins and the carcass use exactly this (never the door photo). */
+  solidColor: string;
 }
 
 export const DLC_DRAWER_FRONT_HEIGHT_IN = 6;

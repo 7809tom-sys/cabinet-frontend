@@ -5065,7 +5065,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const active3DDrawerSampleUrl = activeFacePlan?.sourceKind === "split" ? activeFacePlan.drawerUrl : null;
   const activeFaceSourceKind: FaceSourceKind | undefined = activeFacePlan?.sourceKind;
   const activeFaceCrop = activeFacePlan?.dlcCrop
-    ? { doorSize: activeFacePlan.dlcCrop.doorSize, drawerSize: activeFacePlan.dlcCrop.drawerSize, drawerSolidColor: activeFacePlan.dlcCrop.drawerSolidColor }
+    ? { doorSize: activeFacePlan.dlcCrop.doorSize, drawerSize: activeFacePlan.dlcCrop.drawerSize, drawerSolidColor: activeFacePlan.dlcCrop.drawerSolidColor, solidColor: activeFacePlan.dlcCrop.solidColor }
     : null;
   const active3DRoomSceneReferenceUrl = useMemo(() => {
     const s = doorStyles?.find((d) => d.id === styleId) as { roomSceneImageUrl?: string | null } | undefined;
@@ -14364,7 +14364,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const threeDCabinetFaceCrops = useMemo(
     () => Object.fromEntries(threeDCabinetFaces.flatMap(([uid, plan]) => (
       plan.dlcCrop
-        ? [[uid, { doorSize: plan.dlcCrop.doorSize, drawerSize: plan.dlcCrop.drawerSize, drawerSolidColor: plan.dlcCrop.drawerSolidColor }]]
+        ? [[uid, { doorSize: plan.dlcCrop.doorSize, drawerSize: plan.dlcCrop.drawerSize, drawerSolidColor: plan.dlcCrop.drawerSolidColor, solidColor: plan.dlcCrop.solidColor }]]
         : []
     ))),
     [threeDCabinetFaces],
