@@ -13,7 +13,7 @@
  * generation.
  */
 export type DesignSceneTags = {
-  layoutShape: "galley" | "l-shape" | "u-shape" | "single-wall";
+  layoutShape: "galley" | "l-shape" | "u-shape" | "single-wall" | "peninsula";
   doorStyleId: number;
   doorStyleName: string;
   seed: string;

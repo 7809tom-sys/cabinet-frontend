@@ -278,5 +278,201 @@
     },
     "corners": "none",
     "file": "varied-7-single-wall-540029.json"
+  },
+  {
+    "id": "pen-l-left-540005",
+    "section": "peninsula",
+    "seed": "pen-left-lsa",
+    "layout": "l-shape",
+    "styleId": 540005,
+    "styleName": "Luxe Classic LSA",
+    "room": {
+      "width": 144,
+      "depth": 120
+    },
+    "corners": "lazy-susan:BER36",
+    "file": "pen-l-left-540005.json"
+  },
+  {
+    "id": "pen-l-right-540007",
+    "section": "peninsula",
+    "seed": "pen-right-lsc",
+    "layout": "l-shape",
+    "styleId": 540007,
+    "styleName": "Luxe Classic LSC",
+    "room": {
+      "width": 144,
+      "depth": 120
+    },
+    "corners": "lazy-susan:BER36",
+    "file": "pen-l-right-540007.json"
+  },
+  {
+    "id": "pen-u-left-330014",
+    "section": "peninsula",
+    "seed": "pen-left-shaker",
+    "layout": "u-shape",
+    "styleId": 330014,
+    "styleName": "Shaker White",
+    "room": {
+      "width": 144,
+      "depth": 120
+    },
+    "corners": "diagonal:LSB36, diagonal:LSB36",
+    "file": "pen-u-left-330014.json"
+  },
+  {
+    "id": "pen-l-right-angled-540005",
+    "section": "peninsula",
+    "seed": "pen-right-angled-lsa",
+    "layout": "l-shape",
+    "styleId": 540005,
+    "styleName": "Luxe Classic LSA",
+    "room": {
+      "width": 144,
+      "depth": 120
+    },
+    "corners": "lazy-susan:BER36",
+    "file": "pen-l-right-angled-540005.json"
+  },
+  {
+    "id": "pen-u-left-angled-330014",
+    "section": "peninsula",
+    "seed": "pen-left-angled-shaker",
+    "layout": "u-shape",
+    "styleId": 330014,
+    "styleName": "Shaker White",
+    "room": {
+      "width": 144,
+      "depth": 120
+    },
+    "corners": "diagonal:LSB36, diagonal:LSB36",
+    "file": "pen-u-left-angled-330014.json"
+  },
+  {
+    "id": "pen-sink-left-540005",
+    "section": "peninsula",
+    "seed": "pen-sink-lsa",
+    "layout": "l-shape",
+    "styleId": 540005,
+    "styleName": "Luxe Classic LSA",
+    "room": {
+      "width": 144,
+      "depth": 120
+    },
+    "corners": "lazy-susan:BER36",
+    "file": "pen-sink-left-540005.json"
+  },
+  {
+    "id": "pen-oven-right-540007",
+    "section": "peninsula",
+    "seed": "pen-oven-lsc",
+    "layout": "l-shape",
+    "styleId": 540007,
+    "styleName": "Luxe Classic LSC",
+    "room": {
+      "width": 144,
+      "depth": 120
+    },
+    "corners": "lazy-susan:BER36",
+    "file": "pen-oven-right-540007.json"
+  },
+  {
+    "id": "pen-grill-left-angled-330014",
+    "section": "peninsula",
+    "seed": "pen-grill-shaker",
+    "layout": "u-shape",
+    "styleId": 330014,
+    "styleName": "Shaker White",
+    "room": {
+      "width": 144,
+      "depth": 120
+    },
+    "corners": "diagonal:LSB36, diagonal:LSB36",
+    "file": "pen-grill-left-angled-330014.json"
+  },
+  {
+    "id": "pen-cooktop-right-540005",
+    "section": "peninsula",
+    "seed": "pen-cooktop-lsa",
+    "layout": "l-shape",
+    "styleId": 540005,
+    "styleName": "Luxe Classic LSA",
+    "room": {
+      "width": 144,
+      "depth": 120
+    },
+    "corners": "lazy-susan:BER36",
+    "file": "pen-cooktop-right-540005.json"
+  },
+  {
+    "id": "pen-double-left-540007",
+    "section": "peninsula",
+    "seed": "pen-double-lsc",
+    "layout": "u-shape",
+    "styleId": 540007,
+    "styleName": "Luxe Classic LSC",
+    "room": {
+      "width": 144,
+      "depth": 120
+    },
+    "corners": "lazy-susan:BER36, lazy-susan:BER36",
+    "file": "pen-double-left-540007.json"
+  },
+  {
+    "id": "pen-double-right-330014",
+    "section": "peninsula",
+    "seed": "pen-double-shaker",
+    "layout": "l-shape",
+    "styleId": 330014,
+    "styleName": "Shaker White",
+    "room": {
+      "width": 144,
+      "depth": 120
+    },
+    "corners": "diagonal:LSB36",
+    "file": "pen-double-right-330014.json"
+  },
+  {
+    "id": "pen-varied-81120",
+    "section": "peninsula",
+    "seed": "81120",
+    "layout": "l-shape",
+    "styleId": 540005,
+    "styleName": "Luxe Classic LSA",
+    "room": {
+      "width": 168,
+      "depth": 132
+    },
+    "corners": "lazy-susan:BER36",
+    "file": "pen-varied-81120.json"
+  },
+  {
+    "id": "pen-varied-81121",
+    "section": "peninsula",
+    "seed": "81121",
+    "layout": "u-shape",
+    "styleId": 330020,
+    "styleName": "Shaker Black",
+    "room": {
+      "width": 144,
+      "depth": 120
+    },
+    "corners": "diagonal:LSB36, diagonal:LSB36",
+    "file": "pen-varied-81121.json"
+  },
+  {
+    "id": "pen-varied-81122",
+    "section": "peninsula",
+    "seed": "81122",
+    "layout": "l-shape",
+    "styleId": 540029,
+    "styleName": "Syncron Select SSE",
+    "room": {
+      "width": 192,
+      "depth": 120
+    },
+    "corners": "lazy-susan:BER36",
+    "file": "pen-varied-81122.json"
   }
 ]

@@ -7,6 +7,7 @@ import catalogFixture from "./__fixtures__/autoDesignMatrixCatalog.json";
 import { AUTO_DESIGN_GALLEY_WALLS, autoDesignCornerSlots } from "./autoDesignCornerStage";
 import { wallLabelToEngineWallId, type AutoDesignInputs, type AutoDesignLayoutType } from "./autoDesignAutoBuild";
 import { mergeAutoDesignRefrigeratorCaps, runAutoDesignLayout, type AutoDesignLayoutSuccess } from "./autoDesignLayout";
+import { AUTO_DESIGN_PENINSULA_AISLE_IN, autoDesignPeninsulaAttachment, type AutoDesignPeninsulaRequest } from "./autoDesignPeninsula";
 import { reviewRangeFridgeSeparation } from "./kitchenAdjacency";
 import { autoDesignHoodMountBottom } from "./autoDesignRangeHood";
 import { kitchenRuleNumber, resetKitchenRuleParameters } from "./kitchenRuleParameters";
@@ -51,6 +52,8 @@ type CaseSpec = {
   dishwasherSide: "left" | "right";
   stoveCode?: string;
   skipDishwasher?: boolean;
+  peninsula?: AutoDesignPeninsulaRequest;
+  extraCatalog?: DesignCabinet[];
 };
 
 function mulberry32(seed: number) {
@@ -225,6 +228,27 @@ function layoutWalls(spec: CaseSpec, room: RoomData): WallSide[] {
 
 function audit(spec: CaseSpec, run: AutoDesignLayoutSuccess, room: RoomData): string[] {
   const issues: string[] = [];
+  if (spec.peninsula) {
+    const summary = run.peninsula;
+    if (!summary) issues.push("peninsula missing");
+    else {
+      if (summary.side !== spec.peninsula.side) issues.push(`peninsula side ${summary.side}`);
+      if (Math.abs(summary.lengthIn - (spec.peninsula.lengthIn ?? 60)) > 1.5) issues.push(`peninsula length ${summary.lengthIn}`);
+      if (summary.aisleIn + 0.05 < AUTO_DESIGN_PENINSULA_AISLE_IN) issues.push(`aisle ${summary.aisleIn}`);
+      if (summary.overhangIn < 12) issues.push(`overhang ${summary.overhangIn}`);
+      if (run.placed.some((item) => item.placement === "wall" && item.wallId === "auto-peninsula")) issues.push("upper on peninsula");
+      if ((spec.peninsula.front ?? "straight") === "angled" && !run.peninsulaRuns.some((entry) => entry.turn === 45)) issues.push("45 degree front missing");
+      if (summary.stoolCount < 1) issues.push("no stools");
+      const spacing = summary.lengthIn / Math.max(1, summary.stoolCount);
+      if (spacing + 0.5 < 20) issues.push(`stools spaced ${spacing}`);
+      if (spec.peninsula.appliance && spec.peninsula.appliance !== "none" && !summary.applianceSku) issues.push("peninsula appliance missing");
+      if (spec.peninsula.appliance === "sink" && run.sinks.length !== 1) issues.push("peninsula sink count");
+      if ((spec.peninsula.appliance === "cooktop" || spec.peninsula.appliance === "grill") && !run.notes.some((note) => /downdraft|ceiling\/island hood/i.test(note))) {
+        issues.push("ventilation note missing");
+      }
+      if ((spec.peninsula.front ?? "straight") === "angled" && summary.panelCodes.length < 1) issues.push("angled end panel missing");
+    }
+  }
   const placed = run.placed;
   const frameless = FRAMELESS.has(spec.styleId) || placed.some((item) => hasAefPrintedGeometry(item));
   const slots = autoDesignCornerSlots(spec.layout, {
@@ -271,9 +295,11 @@ function audit(spec: CaseSpec, run: AutoDesignLayoutSuccess, room: RoomData): st
       issues.push(`fridge jog ${move.inchesMoved}`);
     }
   }
-  const walls = spec.layout === "galley" || spec.layout === "single-wall"
+    const peninsulaHold = spec.peninsula ? autoDesignPeninsulaAttachment(room, spec.peninsula.side) : null;
+    const walls = (spec.layout === "galley" || spec.layout === "single-wall"
     ? layoutWalls(spec, room)
-    : Array.from(new Set(placed.filter((item) => item.placement === "base" || item.placement === "appliance").map((item) => cabinetWall(item, room) as WallSide)));
+    : Array.from(new Set(placed.filter((item) => item.placement === "base" || item.placement === "appliance").map((item) => cabinetWall(item, room) as WallSide))))
+      .filter((wall) => !peninsulaHold || wall !== (spec.peninsula!.side === "left" ? "left" : "right"));
   for (const wall of walls) {
     const frame = wallRunFrame(wall, room);
     if (!frame) continue;
@@ -299,13 +325,15 @@ function audit(spec: CaseSpec, run: AutoDesignLayoutSuccess, room: RoomData): st
     };
     const baseGaps = freeSegmentsOnWall(wall, room, placed, run.sinkWindow ? [run.sinkWindow] : [], 3.05, 0, "base", false);
     for (const gap of baseGaps) {
-      if (gap.length > 3.05 && !coveredByCabinet(gap.start + gap.length / 2) && !probeBlocked(gap.start, gap.length, "base", 24)) {
+      const reserved = peninsulaHold && wall === "bottom" && gap.start < peninsulaHold.reserveEnd && gap.start + gap.length > peninsulaHold.reserveStart;
+      if (!reserved && gap.length > 3.05 && !coveredByCabinet(gap.start + gap.length / 2) && !probeBlocked(gap.start, gap.length, "base", 24)) {
         issues.push(`base gap ${gap.length.toFixed(2)}" on ${wall}`);
       }
     }
     const upperGaps = freeSegmentsOnWall(wall, room, placed, run.sinkWindow ? [run.sinkWindow] : [], 3.05, 3, "wall", true);
     for (const gap of upperGaps) {
-      if (gap.length > 3.05 && !coveredByCabinet(gap.start + gap.length / 2) && !probeBlocked(gap.start, gap.length, "wall", 13.5)) {
+      const upperReserved = peninsulaHold && wall === "bottom" && gap.start < peninsulaHold.reserveEnd && gap.start + gap.length > peninsulaHold.reserveStart;
+      if (!upperReserved && gap.length > 3.05 && !coveredByCabinet(gap.start + gap.length / 2) && !probeBlocked(gap.start, gap.length, "wall", 13.5)) {
         issues.push(`upper gap ${gap.length.toFixed(2)}" on ${wall}`);
       }
     }
@@ -317,7 +345,7 @@ function audit(spec: CaseSpec, run: AutoDesignLayoutSuccess, room: RoomData): st
 
 function payload(spec: CaseSpec, run: AutoDesignLayoutSuccess, room: RoomData) {
   const tags: DesignSceneTags = {
-    layoutShape: spec.layout,
+    layoutShape: spec.peninsula ? "peninsula" : spec.layout,
     doorStyleId: Number(spec.styleId),
     doorStyleName: catalog[spec.styleId]!.name,
     seed: spec.seed,
@@ -332,7 +360,8 @@ function payload(spec: CaseSpec, run: AutoDesignLayoutSuccess, room: RoomData) {
     sceneTags: tags,
     room: {
       ...room,
-      persistedEntities: { openings: run.sinkWindow ? [run.sinkWindow] : [], sinks: run.sinks, potFillers: [], island: null, furniture: [], ponyWalls: [] },
+      peninsulaRuns: run.peninsulaRuns,
+      persistedEntities: { openings: run.sinkWindow ? [run.sinkWindow] : [], sinks: run.sinks, potFillers: [], island: null, furniture: run.furniture, ponyWalls: [] },
     },
     placed: run.placed,
   };
@@ -348,7 +377,7 @@ function runCase(spec: CaseSpec) {
     input: inputFor(spec),
     room,
     openings: [],
-    baseCatalog: pack.base,
+    baseCatalog: [...pack.base, ...(spec.extraCatalog ?? [])],
     wallCatalog: pack.wall,
     fillers: pack.accessory,
     appliancePalette: palette.map((item) => spec.stoveCode && item.masterCode === "RANGE-30" ? item : item),
@@ -357,6 +386,7 @@ function runCase(spec: CaseSpec) {
     styleId: Number(spec.styleId),
     makeUid: () => `m-${++uid}`,
     stoveMasterCode: spec.stoveCode,
+    peninsula: spec.peninsula,
   });
   return { result, room };
 }
@@ -415,10 +445,50 @@ describe("Auto-Design live repros", () => {
   });
 });
 
+function ovenCabinet(code: string, description: string): DesignCabinet {
+  return {
+    id: 880000 + code.length, masterCode: code, description, category: "Tall", subCategory: "Oven",
+    width: code.startsWith("O") ? "33" : "30", height: "84", depth: "24", placement: "tall",
+  } as DesignCabinet;
+}
+
+const PENINSULA_OVENS: Record<string, DesignCabinet[]> = {
+  "540005": [ovenCabinet("TOD3084", "Tall Double Oven Cabinet"), ovenCabinet("TOS2DB3084", "Tall Single Oven Cabinet")],
+  "540007": [ovenCabinet("TOD3084", "Tall Double Oven Cabinet"), ovenCabinet("TOS2DB3084", "Tall Single Oven Cabinet")],
+  "540029": [ovenCabinet("TOD3084", "Tall Double Oven Cabinet"), ovenCabinet("TOS2DB3084", "Tall Single Oven Cabinet")],
+  "330014": [ovenCabinet("O338424", "33 x 84 Oven Pantry Cabinet")],
+  "330020": [ovenCabinet("O338424", "33 x 84 Oven Pantry Cabinet")],
+};
+
+function peninsulaCase(partial: CaseSpec): CaseSpec {
+  return { ...partial, extraCatalog: PENINSULA_OVENS[partial.styleId] ?? [] };
+}
+
+const peninsulaCases: CaseSpec[] = [
+  peninsulaCase({ id: "pen-l-left-540005", seed: "pen-left-lsa", styleId: "540005", layout: "l-shape", room: { width: 144, depth: 120 }, sinkCenter: 72, rangeWall: "Wall 2", rangeCenter: 60, fridgeWall: "Wall 1", fridgeCenter: 72, dishwasherSide: "right", peninsula: { side: "left", lengthIn: 60, front: "straight", appliance: "none" } }),
+  peninsulaCase({ id: "pen-l-right-540007", seed: "pen-right-lsc", styleId: "540007", layout: "l-shape", room: { width: 144, depth: 120 }, sinkCenter: 72, rangeWall: "Wall 2", rangeCenter: 60, fridgeWall: "Wall 1", fridgeCenter: 72, dishwasherSide: "right", peninsula: { side: "right", lengthIn: 60, front: "straight", appliance: "none" } }),
+  peninsulaCase({ id: "pen-u-left-330014", seed: "pen-left-shaker", styleId: "330014", layout: "u-shape", room: { width: 144, depth: 120 }, sinkCenter: 72, rangeWall: "Wall 2", rangeCenter: 60, fridgeWall: "Wall 1", fridgeCenter: 108, dishwasherSide: "right", peninsula: { side: "left", lengthIn: 60, front: "straight", appliance: "none" } }),
+  peninsulaCase({ id: "pen-l-right-angled-540005", seed: "pen-right-angled-lsa", styleId: "540005", layout: "l-shape", room: { width: 144, depth: 120 }, sinkCenter: 72, rangeWall: "Wall 2", rangeCenter: 60, fridgeWall: "Wall 1", fridgeCenter: 72, dishwasherSide: "right", peninsula: { side: "right", lengthIn: 46, front: "angled", appliance: "none" } }),
+  peninsulaCase({ id: "pen-u-left-angled-330014", seed: "pen-left-angled-shaker", styleId: "330014", layout: "u-shape", room: { width: 144, depth: 120 }, sinkCenter: 72, rangeWall: "Wall 2", rangeCenter: 60, fridgeWall: "Wall 1", fridgeCenter: 108, dishwasherSide: "right", peninsula: { side: "left", lengthIn: 46, front: "angled", appliance: "none" } }),
+  peninsulaCase({ id: "pen-sink-left-540005", seed: "pen-sink-lsa", styleId: "540005", layout: "l-shape", room: { width: 144, depth: 120 }, sinkCenter: 72, rangeWall: "Wall 2", rangeCenter: 60, fridgeWall: "Wall 1", fridgeCenter: 72, dishwasherSide: "right", peninsula: { side: "left", lengthIn: 60, appliance: "sink" } }),
+  peninsulaCase({ id: "pen-oven-right-540007", seed: "pen-oven-lsc", styleId: "540007", layout: "l-shape", room: { width: 144, depth: 120 }, sinkCenter: 72, rangeWall: "Wall 2", rangeCenter: 60, fridgeWall: "Wall 1", fridgeCenter: 72, dishwasherSide: "right", peninsula: { side: "right", lengthIn: 60, appliance: "oven" } }),
+  peninsulaCase({ id: "pen-grill-left-angled-330014", seed: "pen-grill-shaker", styleId: "330014", layout: "u-shape", room: { width: 144, depth: 120 }, sinkCenter: 72, rangeWall: "Wall 2", rangeCenter: 60, fridgeWall: "Wall 1", fridgeCenter: 108, dishwasherSide: "right", peninsula: { side: "left", lengthIn: 46, front: "angled", appliance: "grill" } }),
+  peninsulaCase({ id: "pen-cooktop-right-540005", seed: "pen-cooktop-lsa", styleId: "540005", layout: "l-shape", room: { width: 144, depth: 120 }, sinkCenter: 72, rangeWall: "Wall 2", rangeCenter: 60, fridgeWall: "Wall 1", fridgeCenter: 72, dishwasherSide: "right", peninsula: { side: "right", lengthIn: 60, appliance: "cooktop" } }),
+  peninsulaCase({ id: "pen-double-left-540007", seed: "pen-double-lsc", styleId: "540007", layout: "u-shape", room: { width: 144, depth: 120 }, sinkCenter: 72, rangeWall: "Wall 2", rangeCenter: 60, fridgeWall: "Wall 1", fridgeCenter: 108, dishwasherSide: "right", peninsula: { side: "left", lengthIn: 60, appliance: "double-oven" } }),
+  peninsulaCase({ id: "pen-double-right-330014", seed: "pen-double-shaker", styleId: "330014", layout: "l-shape", room: { width: 144, depth: 120 }, sinkCenter: 72, rangeWall: "Wall 2", rangeCenter: 60, fridgeWall: "Wall 1", fridgeCenter: 72, dishwasherSide: "right", peninsula: { side: "right", lengthIn: 60, appliance: "double-oven" } }),
+  peninsulaCase({ id: "pen-varied-81120", seed: "81120", styleId: "540005", layout: "l-shape", room: { width: 168, depth: 132 }, sinkCenter: 72, rangeWall: "Wall 2", rangeCenter: 60, fridgeWall: "Wall 1", fridgeCenter: 72, dishwasherSide: "left", peninsula: { side: "left", lengthIn: 54, front: "angled", appliance: "none" } }),
+  peninsulaCase({ id: "pen-varied-81121", seed: "81121", styleId: "330020", layout: "u-shape", room: { width: 144, depth: 120 }, sinkCenter: 72, rangeWall: "Wall 2", rangeCenter: 60, fridgeWall: "Wall 1", fridgeCenter: 108, dishwasherSide: "right", peninsula: { side: "right", lengthIn: 60, front: "straight", appliance: "cooktop" } }),
+  peninsulaCase({ id: "pen-varied-81122", seed: "81122", styleId: "540029", layout: "l-shape", room: { width: 192, depth: 120 }, sinkCenter: 72, rangeWall: "Wall 1", rangeCenter: 100, fridgeWall: "Wall 1", fridgeCenter: 36, dishwasherSide: "right", peninsula: { side: "left", lengthIn: 46, front: "angled", appliance: "oven" } }),
+];
+
 describe("Auto-Design matrix", () => {
   const rows: { section: string; spec: CaseSpec; issues: string[]; corners: string; run: AutoDesignLayoutSuccess | null }[] = [];
 
-  for (const spec of [...standard.map((item) => ({ section: "standard", spec: item })), ...variedCases().map((item) => ({ section: "varied", spec: item }))]) {
+  for (const spec of [
+    ...standard.map((item) => ({ section: "standard", spec: item })),
+    ...variedCases().map((item) => ({ section: "varied", spec: item })),
+    ...peninsulaCases.map((item) => ({ section: "peninsula", spec: item })),
+  ]) {
     it(`${spec.section} ${spec.spec.id} seed ${spec.spec.seed}`, () => {
       const { result, room } = runCase(spec.spec);
       const issues = result.ok ? audit(spec.spec, result, room) : [result.message];
@@ -453,6 +523,6 @@ describe("Auto-Design matrix", () => {
       const room = roomOf(row.spec.room);
       writeFileSync(resolve(dir, `${row.spec.id}.json`), JSON.stringify(payload(row.spec, row.run!, room)));
     }
-    expect(perfect.length).toBe(standard.length + variedStyles.length);
+    expect(perfect.length).toBe(standard.length + variedStyles.length + peninsulaCases.length);
   });
 });

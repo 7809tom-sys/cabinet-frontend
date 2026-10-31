@@ -34,6 +34,12 @@ import { AUTO_DESIGN_REFRIGERATOR_WALL_END_SHIFT_IN, buildMandatoryAutoDesignRef
 import { autoDesignSinkWindow, windowOverlapsReservation } from "./autoDesignSinkWindow";
 import { buildAutoDesignWallCabinets, resolveWallHeightClass, type AutoDesignUpperCorner } from "./autoDesignWallCabinets";
 import {
+  autoDesignPeninsulaAttachment,
+  buildAutoDesignPeninsula,
+  type AutoDesignPeninsulaRequest,
+  type AutoDesignPeninsulaSummary,
+} from "./autoDesignPeninsula";
+import {
   COLLISION_EPSILON_IN,
   appendCollisionFreePlacements,
   appendRefrigeratorEnclosurePlacements,
@@ -54,6 +60,7 @@ import {
   wallRunSpan,
   type DesignCabinet,
   type PlacedCabinet,
+  type PlacedFurniture,
   type RoomData,
   type SinkFixture,
   type WallOpening,
@@ -87,6 +94,9 @@ export type AutoDesignLayoutSuccess = {
   basePieceCount: number;
   fillerCount: number;
   upperCount: number;
+  peninsula: AutoDesignPeninsulaSummary | null;
+  peninsulaRuns: import("./design").PeninsulaRun[];
+  furniture: PlacedFurniture[];
 };
 
 export type AutoDesignLayoutResult = AutoDesignLayoutSuccess | { ok: false; message: string };
@@ -205,6 +215,7 @@ export function runAutoDesignLayout(args: {
   styleId: number | null;
   makeUid: () => string;
   stoveMasterCode?: string;
+  peninsula?: AutoDesignPeninsulaRequest | null;
 }): AutoDesignLayoutResult {
   const { input, room, makeUid } = args;
   const openings = [...args.openings];
@@ -465,7 +476,11 @@ export function runAutoDesignLayout(args: {
   let basePieceCount = 0;
   for (const wallId of runWalls) {
     const rawSegments = freeSegmentsOnWall(wallId, room, working, stageOpenings, 9, 0, "base", false, undefined, footprintDepth(stage.baseSource));
-    const reservations = reservation?.wall === wallId ? [{ start: reservation.start, end: reservation.end }] : [];
+    const peninsulaHold = args.peninsula && wallId === "bottom" ? autoDesignPeninsulaAttachment(room, args.peninsula.side) : null;
+    const reservations = [
+      ...(reservation?.wall === wallId ? [{ start: reservation.start, end: reservation.end }] : []),
+      ...(peninsulaHold ? [{ start: peninsulaHold.reserveStart, end: peninsulaHold.reserveEnd }] : []),
+    ];
     for (const segment of subtractAnchorRunReservations(rawSegments, reservations)) {
       const beside = (edge: "start" | "end") => working.some((other) => other.placement === "appliance"
         && isRangeOrOven(other.masterCode, other.description) && cabinetWall(other, room) === wallId
@@ -545,6 +560,27 @@ export function runAutoDesignLayout(args: {
     placed: working, room, openings: stageOpenings, fillers: catalogFillers, makeUid, styleId: args.styleId,
   });
   working = capAutoDesignFillerWidth(finishedRules.placed);
+  let peninsulaSummary: AutoDesignPeninsulaSummary | null = null;
+  let peninsulaRuns: import("./design").PeninsulaRun[] = [];
+  let furniture: PlacedFurniture[] = [];
+  if (args.peninsula) {
+    const built = buildAutoDesignPeninsula({
+      request: args.peninsula,
+      room,
+      placed: working,
+      sinks,
+      catalog: [...args.baseCatalog, ...args.wallCatalog],
+      endPanels: args.refrigeratorEndPanels,
+      styleId: args.styleId,
+      makeUid,
+    });
+    working = built.placed;
+    sinks = built.sinks;
+    notes.push(...built.notes);
+    peninsulaSummary = built.summary;
+    peninsulaRuns = built.runs;
+    furniture = built.furniture;
+  }
   const reportedWiggleMoves = activeAutoDesignWiggleMoves(wiggle.moves, working, room);
   const shiftReview = reviewAfterShift({ placed: working, room, openings: stageOpenings, usage: stage.input.kitchenUsage });
   const warnings = shiftReview.findings.filter((entry) => entry.severity === "attention").map((entry) => `${entry.title}: ${entry.description}`);
@@ -568,5 +604,8 @@ export function runAutoDesignLayout(args: {
     basePieceCount,
     fillerCount: seamResult.additions.length,
     upperCount: upperResult.additions.length,
+    peninsula: peninsulaSummary,
+    peninsulaRuns,
+    furniture,
   };
 }
