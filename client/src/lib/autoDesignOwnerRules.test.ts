@@ -133,16 +133,20 @@ describe("Auto-Design rule: uppers over the sink and the range", () => {
     expect(result.additions.some((item) => item.placement === "wall" && item.width >= 30)).toBe(false);
   });
 
-  it("sets the auto hood bottom at 60 inches", () => {
+  it("raises only the 42 inch hood to 60 inches and places W3012 at 13.5 before the depth SQL", () => {
     resetKitchenRuleParameters();
     expect(kitchenRuleNumber("hood_bottom_in")).toBe(60);
+    const w3012 = framelessWall.find((row) => row.masterCode === "W3012");
+    expect(w3012).toBeTruthy();
+    expect(Number(w3012!.depth)).toBe(12);
+    expect(footprintDepth(w3012!)).toBe(13.5);
     const range = {
-      uid: "range", cabinetId: 0, masterCode: "RANGE-30", description: "Range", placement: "appliance",
-      ...wallPlacementAt(40, 30, 25, "right", DEFAULT_ROOM), width: 30, depth: 25, height: 36,
+      uid: "range", cabinetId: 0, masterCode: "RANGE-42", description: "Range", placement: "appliance",
+      ...wallPlacementAt(40, 42, 25, "right", DEFAULT_ROOM), width: 42, depth: 25, height: 36,
     } as PlacedCabinet;
     const hood = autoDesignRangeHood({
       range, room: DEFAULT_ROOM, uid: "hood",
-      palette: [{ id: 0, masterCode: "HOOD-30", description: "Hood", width: "30", depth: "18", height: "18", placement: "appliance", mountBottom: 66 } as DesignCabinet],
+      palette: [{ id: 0, masterCode: "HOOD-42", description: "42 inch hood", width: "42", depth: "18", height: "18", placement: "appliance", mountBottom: 66 } as DesignCabinet],
     });
     expect(hood.ok).toBe(true);
     if (hood.ok) expect(hood.hood.mountBottom).toBe(60);

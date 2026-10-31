@@ -171,6 +171,52 @@ export function solveCabinetSpan(input: {
   return empty;
 }
 
+/**
+ * Cabinets that cover a run of any length, not only the six-piece search.
+ * The remainder is the uncovered tail. Callers treat a remainder of 3 inches
+ * or less as a filler, not as a reason to throw the cabinets away.
+ */
+export function coverCatalogSpan(
+  lengthIn: number,
+  widthsIn: readonly number[],
+  maxRemainderIn = 3,
+): { widths: number[]; remainder: number } {
+  const target = toEighths(lengthIn);
+  const maxGap = toEighths(maxRemainderIn);
+  if (target <= 0) return { widths: [], remainder: 0 };
+  if (target <= maxGap) return { widths: [], remainder: fromEighths(target) };
+  const widths = uniqueWidths(widthsIn).map(toEighths);
+  const prev = new Int32Array(target + 1).fill(-1);
+  prev[0] = 0;
+  for (let sum = 0; sum <= target; sum += 1) {
+    if (sum !== 0 && prev[sum] < 0) continue;
+    for (const width of widths) {
+      const next = sum + width;
+      if (next <= target && prev[next] < 0) prev[next] = width;
+    }
+  }
+  let best = -1;
+  for (let sum = target; sum >= 0; sum -= 1) {
+    if (sum !== 0 && prev[sum] < 0) continue;
+    if (target - sum <= maxGap) { best = sum; break; }
+  }
+  if (best < 0) {
+    for (let sum = target; sum >= 0; sum -= 1) {
+      if (sum === 0 || prev[sum] >= 0) { best = sum; break; }
+    }
+  }
+  const chosen: number[] = [];
+  let cursor = Math.max(0, best);
+  while (cursor > 0) {
+    const width = prev[cursor];
+    if (width <= 0) break;
+    chosen.push(fromEighths(width));
+    cursor -= width;
+  }
+  chosen.reverse();
+  return { widths: chosen, remainder: fromEighths(target - chosen.reduce((sum, width) => sum + toEighths(width), 0)) };
+}
+
 function candidateKey(candidate: SpanCandidate): number[] {
   return [candidate.fillerCount, candidate.fillerTotal, candidate.movementIn, candidate.cabinetWidths.length];
 }

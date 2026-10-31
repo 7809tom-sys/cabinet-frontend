@@ -1,0 +1,282 @@
+[
+  {
+    "id": "galley-540005",
+    "section": "standard",
+    "seed": "standard-galley-540005",
+    "layout": "galley",
+    "styleId": 540005,
+    "styleName": "Luxe Classic LSA",
+    "room": {
+      "width": 144,
+      "depth": 120
+    },
+    "corners": "none",
+    "file": "galley-540005.json"
+  },
+  {
+    "id": "galley-540007",
+    "section": "standard",
+    "seed": "standard-galley-540007",
+    "layout": "galley",
+    "styleId": 540007,
+    "styleName": "Luxe Classic LSC",
+    "room": {
+      "width": 144,
+      "depth": 120
+    },
+    "corners": "none",
+    "file": "galley-540007.json"
+  },
+  {
+    "id": "galley-330014",
+    "section": "standard",
+    "seed": "standard-galley-330014",
+    "layout": "galley",
+    "styleId": 330014,
+    "styleName": "Shaker White",
+    "room": {
+      "width": 144,
+      "depth": 120
+    },
+    "corners": "none",
+    "file": "galley-330014.json"
+  },
+  {
+    "id": "l-shape-540005",
+    "section": "standard",
+    "seed": "standard-l-shape-540005",
+    "layout": "l-shape",
+    "styleId": 540005,
+    "styleName": "Luxe Classic LSA",
+    "room": {
+      "width": 144,
+      "depth": 120
+    },
+    "corners": "lazy-susan:BER36",
+    "file": "l-shape-540005.json"
+  },
+  {
+    "id": "l-shape-540007",
+    "section": "standard",
+    "seed": "standard-l-shape-540007",
+    "layout": "l-shape",
+    "styleId": 540007,
+    "styleName": "Luxe Classic LSC",
+    "room": {
+      "width": 144,
+      "depth": 120
+    },
+    "corners": "lazy-susan:BER36",
+    "file": "l-shape-540007.json"
+  },
+  {
+    "id": "l-shape-330014",
+    "section": "standard",
+    "seed": "standard-l-shape-330014",
+    "layout": "l-shape",
+    "styleId": 330014,
+    "styleName": "Shaker White",
+    "room": {
+      "width": 144,
+      "depth": 120
+    },
+    "corners": "diagonal:LSB36",
+    "file": "l-shape-330014.json"
+  },
+  {
+    "id": "u-shape-540005",
+    "section": "standard",
+    "seed": "standard-u-shape-540005",
+    "layout": "u-shape",
+    "styleId": 540005,
+    "styleName": "Luxe Classic LSA",
+    "room": {
+      "width": 144,
+      "depth": 120
+    },
+    "corners": "lazy-susan:BER36, lazy-susan:BER36",
+    "file": "u-shape-540005.json"
+  },
+  {
+    "id": "u-shape-540007",
+    "section": "standard",
+    "seed": "standard-u-shape-540007",
+    "layout": "u-shape",
+    "styleId": 540007,
+    "styleName": "Luxe Classic LSC",
+    "room": {
+      "width": 144,
+      "depth": 120
+    },
+    "corners": "lazy-susan:BER36, lazy-susan:BER36",
+    "file": "u-shape-540007.json"
+  },
+  {
+    "id": "u-shape-330014",
+    "section": "standard",
+    "seed": "standard-u-shape-330014",
+    "layout": "u-shape",
+    "styleId": 330014,
+    "styleName": "Shaker White",
+    "room": {
+      "width": 144,
+      "depth": 120
+    },
+    "corners": "diagonal:LSB36, diagonal:LSB36",
+    "file": "u-shape-330014.json"
+  },
+  {
+    "id": "single-wall-540005",
+    "section": "standard",
+    "seed": "standard-single-wall-540005",
+    "layout": "single-wall",
+    "styleId": 540005,
+    "styleName": "Luxe Classic LSA",
+    "room": {
+      "width": 144,
+      "depth": 120
+    },
+    "corners": "none",
+    "file": "single-wall-540005.json"
+  },
+  {
+    "id": "single-wall-540007",
+    "section": "standard",
+    "seed": "standard-single-wall-540007",
+    "layout": "single-wall",
+    "styleId": 540007,
+    "styleName": "Luxe Classic LSC",
+    "room": {
+      "width": 144,
+      "depth": 120
+    },
+    "corners": "none",
+    "file": "single-wall-540007.json"
+  },
+  {
+    "id": "single-wall-330014",
+    "section": "standard",
+    "seed": "standard-single-wall-330014",
+    "layout": "single-wall",
+    "styleId": 330014,
+    "styleName": "Shaker White",
+    "room": {
+      "width": 144,
+      "depth": 120
+    },
+    "corners": "none",
+    "file": "single-wall-330014.json"
+  },
+  {
+    "id": "varied-0-galley-540029",
+    "section": "varied",
+    "seed": "81100",
+    "layout": "galley",
+    "styleId": 540029,
+    "styleName": "Syncron Select SSE",
+    "room": {
+      "width": 120,
+      "depth": 96
+    },
+    "corners": "none",
+    "file": "varied-0-galley-540029.json"
+  },
+  {
+    "id": "varied-1-l-shape-330020",
+    "section": "varied",
+    "seed": "81101",
+    "layout": "l-shape",
+    "styleId": 330020,
+    "styleName": "Shaker Black",
+    "room": {
+      "width": 120,
+      "depth": 144
+    },
+    "corners": "diagonal:LSB36",
+    "file": "varied-1-l-shape-330020.json"
+  },
+  {
+    "id": "varied-2-u-shape-510004",
+    "section": "varied",
+    "seed": "81102",
+    "layout": "u-shape",
+    "styleId": 510004,
+    "styleName": "Haven Harbor",
+    "room": {
+      "width": 168,
+      "depth": 132
+    },
+    "corners": "diagonal:LSB36, diagonal:LSB36, diagonal:LSB36",
+    "file": "varied-2-u-shape-510004.json"
+  },
+  {
+    "id": "varied-3-single-wall-330002",
+    "section": "varied",
+    "seed": "81103",
+    "layout": "single-wall",
+    "styleId": 330002,
+    "styleName": "Classic Cream",
+    "room": {
+      "width": 192,
+      "depth": 120
+    },
+    "corners": "none",
+    "file": "varied-3-single-wall-330002.json"
+  },
+  {
+    "id": "varied-4-galley-540005",
+    "section": "varied",
+    "seed": "81104",
+    "layout": "galley",
+    "styleId": 540005,
+    "styleName": "Luxe Classic LSA",
+    "room": {
+      "width": 144,
+      "depth": 120
+    },
+    "corners": "none",
+    "file": "varied-4-galley-540005.json"
+  },
+  {
+    "id": "varied-5-l-shape-330014",
+    "section": "varied",
+    "seed": "81105",
+    "layout": "l-shape",
+    "styleId": 330014,
+    "styleName": "Shaker White",
+    "room": {
+      "width": 120,
+      "depth": 96
+    },
+    "corners": "diagonal:LSB36",
+    "file": "varied-5-l-shape-330014.json"
+  },
+  {
+    "id": "varied-6-u-shape-540007",
+    "section": "varied",
+    "seed": "81106",
+    "layout": "u-shape",
+    "styleId": 540007,
+    "styleName": "Luxe Classic LSC",
+    "room": {
+      "width": 144,
+      "depth": 120
+    },
+    "corners": "lazy-susan:BER36, lazy-susan:BER36",
+    "file": "varied-6-u-shape-540007.json"
+  },
+  {
+    "id": "varied-7-single-wall-540029",
+    "section": "varied",
+    "seed": "81107",
+    "layout": "single-wall",
+    "styleId": 540029,
+    "styleName": "Syncron Select SSE",
+    "room": {
+      "width": 144,
+      "depth": 96
+    },
+    "corners": "none",
+    "file": "varied-7-single-wall-540029.json"
+  }
+]

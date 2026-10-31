@@ -230,6 +230,7 @@ import { applyChosenAutoDesignFaucet, catalogFaucetSurface, defaultAutoDesignFau
 import { clampSinkDragForFaucet } from "@/lib/faucetPlacement";
 import { autoDesignSinkWindow, windowOverlapsReservation } from "@/lib/autoDesignSinkWindow";
 import { autoDesignRangeHood, autoDesignRangeNeedsVentilation } from "@/lib/autoDesignRangeHood";
+import { mergeAutoDesignRefrigeratorCaps, runAutoDesignLayout } from "@/lib/autoDesignLayout";
 import { autoBuildCornerCatalog, autoDesignCornerSlotPoint, autoDesignCornerSlots, autoDesignExcludedEngineWallIds, autoDesignLayoutUsesWall, autoDesignRunWallIds, type AutoBuildCornerCandidate, type AutoDesignCornerChoice, type AutoDesignCornerSlot } from "@/lib/autoDesignCornerStage";
 import { evaluateAutoDesignCornerFit, type AutoDesignCornerFit } from "@/lib/cornerFit";
 import { useKitchenRuleParameterSync } from "@/lib/kitchenRulesApi";
@@ -3855,252 +3856,71 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     if (!canRunAutoDesign(autoDesignAvailable, placedRef.current.length > 0)) {
       return fail("The auto-design build only runs on an empty Designer.");
     }
-    const result = planAutoDesignAutoBuild(input);
-    if (!result.ok) {
-      return fail(`Missing required measurement: ${result.missing.join(", ")}.`);
-    }
     if (autoFillCabinetsLoading || wallCabPoolLoading) {
       return fail("The selected line’s source-priced cabinets are still loading. Wait a moment, then build the measured kitchen again.");
     }
-    const sinkBaseWidth = input.sinkBaseWidthIn ?? 36;
-    const refrigeratorWidth = input.refrigeratorWidthIn ?? 36;
     const pool = (autoFillCabinets as DesignCabinet[] | undefined) ?? [];
-    // The SB size selector is a straight sink base on the chosen wall—not a
-    // CSB/DCSB corner sink box sharing the same nominal width.
-    const straightBaseCatalog = autoBuildStraightBaseCatalog(pool);
-    // A kitchen defaults to the REGULAR sink base; the farmhouse (apron-front) base is built only on request.
-    const sinkBaseKind = input.sinkBaseKind ?? "regular";
-    const sinkBaseSource = pickAutoDesignSinkBase(pool, sinkBaseWidth, sinkBaseKind);
-    if (!sinkBaseSource) {
-      return fail(sinkBaseKind === "farmhouse"
-        ? `No source-priced ${sinkBaseWidth}″ farmhouse sink base is available for the selected line. Choose the regular sink base or another door style, then try again.`
-        : `No source-priced SB${sinkBaseWidth} sink base is available for the selected line. Choose a door style with a priced sink base, then try again.`);
-    }
-    const applianceByKind: Record<string, DesignCabinet | undefined> = {
-      stove: appliancePalette.find((item) => item.masterCode === "RANGE-30"),
-      dishwasher: appliancePalette.find((item) => item.masterCode === "DW-24"),
-      refrigerator: appliancePalette.find((item) => item.masterCode === "FRIDGE-36"),
-    };
-    const requestedApplianceKinds = result.plan.anchors
-      .filter((anchor) => anchor.kind !== "sink")
-      .map((anchor) => anchor.kind);
-    if (requestedApplianceKinds.some((kind) => !applianceByKind[kind])) {
-      return fail("The kitchen appliance palette is still loading. Wait for the source-priced cabinet catalog, then try again.");
-    }
-    const baseSource = straightBaseCatalog
-      .find((item) => Math.abs(dim(item.width, 0) - 24) < 0.1)
-      ?? straightBaseCatalog[0];
-    if (!baseSource) {
-      return fail("No source-priced standard base cabinet is available for the selected line. Choose a compatible door style, then try again.");
-    }
+    const wallPool = (wallCabPool as DesignCabinet[] | undefined) ?? [];
     const fridgeParts = refrigeratorSurroundCatalog as
       | { deepAbove?: DesignCabinet[]; endPanels?: DesignCabinet[] }
       | undefined;
-    const refrigeratorRequested = result.plan.anchors.some((anchor) => anchor.kind === "refrigerator");
-    if (refrigeratorRequested && (!fridgeParts?.deepAbove?.length || !fridgeParts.endPanels?.length)) {
-      return fail("The selected line’s source-priced 36-inch refrigerator cabinet and two end panels are still loading or unavailable. The measured build was not changed.");
+    // A refrigerator that already occupies a corner is handled by PR #133
+    // (cursor/frameless-corner-fridge-a890) inside the bay fit. This build
+    // passes that fit the same caps, including 24 inch wall-pool boxes such
+    // as W362324 that the surround query omits.
+    const run = runAutoDesignLayout({
+      input,
+      room,
+      openings,
+      baseCatalog: pool,
+      wallCatalog: wallPool,
+      fillers: catalogFillers,
+      appliancePalette,
+      refrigeratorCaps: mergeAutoDesignRefrigeratorCaps(wallPool, fridgeParts?.deepAbove ?? []),
+      refrigeratorEndPanels: fridgeParts?.endPanels ?? [],
+      styleId: styleIdRef.current ?? null,
+      makeUid,
+    });
+    if (!run.ok) return fail(run.message);
+    if (run.sinks[0]) {
+      const remembered = rememberAutoDesignSink(run.sinks[0]);
+      setSinks(keepSingleAutoDesignSink([remembered], remembered.cabinetUid ?? run.sinks[0].cabinetUid ?? ""));
+      setSelectedSinkUid(remembered.uid);
     }
-
-    let working: PlacedCabinet[] = [];
-    const anchorsByKind = new Map<string, PlacedCabinet>();
-    const anchorOrigins: AutoDesignAnchorOrigin[] = [];
-    const selectedWalls: WallSide[] = [];
-    for (const anchor of result.plan.anchors) {
-      const source = anchor.kind === "sink" ? sinkBaseSource : applianceByKind[anchor.kind]!;
-      const width = anchor.kind === "sink"
-        ? sinkBaseWidth
-        : anchor.kind === "refrigerator"
-        ? refrigeratorWidth
-        : dim(source.width, 24);
-      const depth = dim(source.depth, STD.BASE_DEPTH);
-      const height = dim(source.height, standardHeight(anchor.kind === "sink" ? "base" : "appliance"));
-      const measuredAnchor = anchor.kind === "dishwasher" && anchor.source === "adjacent-to-sink"
-        ? {
-          ...anchor,
-          wallLabel: input.sink.wallLabel,
-          centerOffsetIn: adjacentDishwasherCenterIn(
-            input.sink.centerOffsetIn,
-            sinkBaseWidth,
-            width,
-            resolveDishwasherSide({
-              preference: dishwasherSidePreference ?? input.dishwasherSide ?? null,
-              originCorner: input.originCorner,
-            }),
-          ),
-        }
-        : anchor;
-      if (!autoDesignLayoutUsesWall(input.layoutType, measuredAnchor.wallLabel)) {
-        return fail(`U-shape uses Wall 1 through Wall 4 only. ${measuredAnchor.wallLabel} is not part of this layout.`);
-      }
-      const wall = wallLabelToEngineWallId(measuredAnchor.wallLabel, room, input.originCorner, input.runDirection);
-      if (!wall) {
-        return fail(`${anchor.kind} cannot be placed because ${measuredAnchor.wallLabel} is not available in this room.`);
-      }
-      const along = anchorAlongStartIn(measuredAnchor, width, wall);
-      const usableStart = wall.frame.runStart;
-      const usableEnd = wall.frame.runEnd;
-      if (along < usableStart - COLLISION_EPSILON_IN || along + width > usableEnd + COLLISION_EPSILON_IN) {
-        return fail(`${anchor.kind} does not fit on ${measuredAnchor.wallLabel} at the selected center measurement.`);
-      }
-      const spot = wallPlacementAt(along, width, depth, wall.engineWallId as WallSide, room);
-      const candidate: PlacedCabinet = {
-        uid: makeUid(), cabinetId: source.id,
-        masterCode: anchor.kind === "refrigerator" ? `FRIDGE-${refrigeratorWidth}` : source.masterCode,
-        description: anchor.kind === "refrigerator" ? `${refrigeratorWidth}″ Refrigerator` : source.description,
-        category: source.category, subCategory: source.subCategory,
-        placement: anchor.kind === "sink" ? "base" : "appliance",
-        ...(anchor.kind === "sink" ? {} : { applianceRole: "base-height" as const }),
-        ...(anchor.kind === "refrigerator" ? { refrigeratorPanelMode: "both" as const, refrigeratorOptionsChosen: true } : {}),
-        ...spot, width, depth, height, mountBottom: source.mountBottom ?? 0, catalogImageUrl: source.catalogImageUrl ?? null,
-        numberOfDoors: source.numberOfDoors, numberOfDrawers: source.numberOfDrawers, styleId: styleIdRef.current ?? null,
-      };
-      const available = freeSegmentsOnWall(
-        wall.engineWallId as WallSide,
-        room,
-        working,
-        openings,
-        width,
-        0,
-        "base",
-        false,
-        candidate,
-        depth,
-      ).some((segment) => along >= segment.start - COLLISION_EPSILON_IN
-        && along + width <= segment.start + segment.length + COLLISION_EPSILON_IN);
-      if (!available) {
-        return fail(`${anchor.kind} cannot be placed at that exact measurement on ${measuredAnchor.wallLabel}: it overlaps a same-wall anchor, door, or required corner clearance. No layout was built.`);
-      }
-      const preflight = appendCollisionFreePlacements(working, [candidate], room);
-      if (preflight.rejected.length > 0) {
-        return fail(`${anchor.kind} cannot be placed at that exact measurement on ${measuredAnchor.wallLabel}: it overlaps an existing anchor, opening, or adjoining wall clearance. No layout was built.`);
-      }
-      working = preflight.placed;
-      anchorsByKind.set(anchor.kind, candidate);
-      anchorOrigins.push({ uid: candidate.uid, kind: anchor.kind, wallId: wall.engineWallId, originalStart: along });
-      if (!selectedWalls.includes(wall.engineWallId as WallSide)) selectedWalls.push(wall.engineWallId as WallSide);
-    }
-    const refrigerator = anchorsByKind.get("refrigerator");
-    let refrigeratorReservation: { wall: string; start: number; end: number } | null = null;
-    if (refrigerator) {
-      const refrigeratorBay = buildMandatoryAutoDesignRefrigeratorBay({
-        refrigerator,
-        room,
-        caps: fridgeParts?.deepAbove ?? [],
-        endPanels: fridgeParts?.endPanels ?? [],
-        styleId: styleIdRef.current ?? null,
-        makeUid,
-        wallCabinetHeightIn: (() => {
-          const nominal = input.wallCabinetHeightIn ?? 30;
-          const resolved = resolveWallHeightClass((wallCabPool as DesignCabinet[] | undefined) ?? [], nominal);
-          return resolved ?? nominal;
-        })(),
-        framelessLine: ((wallCabPool as DesignCabinet[] | undefined) ?? []).some((row) => hasAefPrintedGeometry(row)),
-      });
-      if (!refrigeratorBay.ok) return fail(refrigeratorBay.message);
-      const fittedBay = fitExplicitRefrigeratorOptionPlacements(working, refrigeratorBay.additions, refrigerator.uid, room);
-      // A quarter-inch slide only brings the 3/4 inch end panels flush with the
-      // wall. The measured center is kept for anything larger.
-      if (Math.abs(fittedBay.shiftIn) > AUTO_DESIGN_REFRIGERATOR_WALL_END_SHIFT_IN + COLLISION_EPSILON_IN) {
-        return fail("The measured refrigerator bay does not have room for its two panels and matching cabinet above. Adjust the refrigerator center measurement; Auto-Design will not move it.");
-      }
-      const committedBay = appendRefrigeratorEnclosurePlacements(fittedBay.existing, fittedBay.additions, refrigerator.uid, room);
-      if (committedBay.rejected.length > 0) {
-        return fail("The measured refrigerator bay overlaps an anchor, opening, or wall end. Adjust the refrigerator center measurement; Auto-Design will not add a filler or move it.");
-      }
-      working = committedBay.placed;
-      refrigeratorReservation = {
-        ...refrigeratorBay.reservation,
-        start: refrigeratorBay.reservation.start + fittedBay.shiftIn,
-        end: refrigeratorBay.reservation.end + fittedBay.shiftIn,
-      };
-      for (const note of refrigeratorBay.notes) toast.info(note, { duration: 12000 });
-      if (Math.abs(fittedBay.shiftIn) > COLLISION_EPSILON_IN) {
-        toast.info(`Moved the refrigerator ${formatEighthInches(Math.abs(fittedBay.shiftIn))} so its end panels stay on the wall.`, { duration: 12000 });
-      }
-    }
-    const sinkBase = anchorsByKind.get("sink");
-    if (sinkBase) {
-      const defaultSinkType: SinkType = isFarmSinkBasePaletteItem(sinkBase)
-        ? "farmhouse"
-        : sinkBase.width >= 33 ? "double" : "single";
-      const defaultSink = rememberAutoDesignSink(makeDefaultSinkForCabinet(sinkBase, room, defaultSinkType));
-      setSinks(keepSingleAutoDesignSink([defaultSink], sinkBase.uid));
-      setSelectedSinkUid(defaultSink.uid);
-    }
-    // A measured window center creates the real window above the sink, as wide as
-    // the sink base. Upper cabinets never go over it and stop 3 inches short of it.
-    let sinkWindow: WallOpening | null = null;
-    if (input.sinkWindowCenter && sinkBase) {
-      const proposedWindow = autoDesignSinkWindow({ sink: sinkBase, room, uid: makeUid() });
-      const touchesOpening = openings.some((opening) => opening.side === proposedWindow.side
-        && opening.offset < proposedWindow.offset + proposedWindow.width - COLLISION_EPSILON_IN
-        && opening.offset + opening.width > proposedWindow.offset + COLLISION_EPSILON_IN);
-      if (windowOverlapsReservation(proposedWindow, refrigeratorReservation)) {
-        toast.warning("The sink window was not created: with its required 3-inch clearance it would run into the refrigerator’s cabinet above. Move the window center or the refrigerator, then build again.", { duration: 15000 });
-      } else if (touchesOpening) {
-        toast.warning("The sink window was not created because it would overlap an existing door or window on that wall.", { duration: 15000 });
-      } else {
-        sinkWindow = proposedWindow;
-      }
-    }
-    placedRef.current = working;
-    setPlaced(working);
+    placedRef.current = run.placed;
+    setPlaced(run.placed);
     setRoom((current) => ({ ...current, kitchenUsage: normalizeKitchenUsage(input.kitchenUsage) }));
     const selectedWallCabinetHeight = input.wallCabinetHeightIn ?? 30;
     setWallCabHeight(selectedWallCabinetHeight);
     wallCabHeightRef.current = selectedWallCabinetHeight;
     wallCabHeightPromptedRef.current = true;
     setCountertop(true);
-    const slots = autoDesignCornerSlots(input.layoutType, {
-      wallIds: selectedWalls, room, originCorner: input.originCorner, runDirection: input.runDirection,
-    });
-    const cornerOptions = autoBuildCornerCatalog(pool) as AutoBuildCornerCandidate[];
-    const cornerFit: Record<string, AutoDesignCornerFit> = {};
-    const sinkAnchor = anchorsByKind.get("sink") ?? null;
-    for (const slot of slots) {
-      const point = autoDesignCornerSlotPoint(slot, room, input.originCorner, input.runDirection);
-      const firstWall = wallLabelToEngineWallId(slot.firstWall, room, input.originCorner, input.runDirection);
-      const secondWall = wallLabelToEngineWallId(slot.secondWall, room, input.originCorner, input.runDirection);
-      if (!point || !firstWall || !secondWall) continue;
-      cornerFit[slot.id] = evaluateAutoDesignCornerFit({
-        options: cornerOptions,
-        room,
-        placed: working,
-        corner: point,
-        wallIds: [firstWall.engineWallId, secondWall.engineWallId],
-        sink: sinkAnchor,
-        openings,
-      });
-    }
     setAutoDesignOpen(false);
-    const stage = {
-      input,
-      anchors: Object.fromEntries(anchorsByKind),
-      selectedWalls: autoDesignRunWallIds({
-        layoutType: input.layoutType,
-        room,
-        originCorner: input.originCorner,
-        runDirection: input.runDirection,
-        wallIds: selectedWalls,
-      }) as WallSide[],
-      anchorPlaced: working,
-      pool,
-      wallPool: (wallCabPool as DesignCabinet[] | undefined) ?? [],
-      straightBaseCatalog,
-      baseSource,
-      refrigeratorReservation,
-      slots,
-      cornerOptions,
-      sinkWindow,
-      anchorOrigins,
-      cornerFit,
-    };
     setViewMode("plan");
     setSelectedUid(null);
-    const finish = finishAutoDesignLayoutRef.current;
-    if (!finish) return fail("The measured kitchen could not place its corners. Start Auto-Design again.");
-    return finish({}, stage);
-    }, [appliancePalette, autoFillCabinets, autoFillCabinetsLoading, autoDesignAvailable, dishwasherSidePreference, isCornerCabinet, openings, placedRef, refrigeratorSurroundCatalog, room, setCountertop, setPlaced, setRoom, wallCabPool, wallCabPoolLoading]);
+    const reportedWiggleMoves = activeAutoDesignWiggleMoves(run.wiggleMoves, run.placed, room);
+    setAutoDesignWiggleMoves(reportedWiggleMoves);
+    if (run.sinkWindow) {
+      const windowToCommit = run.sinkWindow;
+      setOpenings((previous) => (previous.some((opening) => opening.uid === windowToCommit.uid) ? previous : [...previous, windowToCommit]));
+    }
+    setAutoDesignCornerStage(null);
+    setViewMode("threeD");
+    toast.success(`Placed ${run.cornerCount} selected corners, ${run.basePieceCount} regular base-run pieces, ${run.fillerCount} filler pieces closing every gap, and ${run.upperCount} aligned wall cabinets and fillers.`);
+    for (const note of run.notes) toast.info(note, { duration: 15000 });
+    for (const move of run.applianceMoves) {
+      toast.info(`Moved the ${move.label} ${formatInches(move.shiftIn)} away from the corner to fit the required corner cabinet. Its measured center is now ${formatInches(move.centerAlongIn)} along the wall.`, { duration: 12000 });
+    }
+    for (const move of reportedWiggleMoves) toast.info(formatAutoDesignWiggleMessage(move), { duration: 12000 });
+    if (run.heightUsedIn != null && Math.abs(run.heightUsedIn - run.requestedUpperIn) > 0.005) {
+      toast.info(`This cabinet line sells its ${run.requestedUpperIn}″ class as ${formatInches(run.heightUsedIn)} wall cabinets, so those exact source SKUs were used.`);
+    }
+    if (run.skippedUppers.length) toast.info(`Upper review: ${run.skippedUppers.join(" ")}`, { duration: 15000 });
+    for (const warning of run.warnings) toast.warning(warning, { duration: 12000 });
+    if (run.sinkWindow) toast.info(`A ${formatInches(run.sinkWindow.width)} window was placed above the sink as entered; no wall cabinet goes over it.`);
+    if (run.bareRangeUid) setAutoDesignRangeVentPrompt({ rangeUid: run.bareRangeUid });
+    return { ok: true as const };
+    }, [appliancePalette, autoFillCabinets, autoFillCabinetsLoading, autoDesignAvailable, catalogFillers, dishwasherSidePreference, openings, placedRef, refrigeratorSurroundCatalog, room, setCountertop, setOpenings, setPlaced, setRoom, wallCabPool, wallCabPoolLoading]);
 
   /**
    * The second half of an Auto-Design build. Measured appliances are already
@@ -5461,9 +5281,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
             .filter(Boolean)
             .join(" \u2014 "),
           color: cabColor,
-          widthIn: rotatedSize(p).w,
+          widthIn: p.width,
           heightIn: placedHeight(p),
-          depthIn: rotatedSize(p).d,
+          depthIn: p.depth,
 	          placement: p.placement,
 	          swing: sw === "none" ? undefined : sw,
 	          qty: 1,
