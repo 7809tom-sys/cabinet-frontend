@@ -129,6 +129,9 @@ describe("Designer wires the fresh start without replacing the saved draft", () 
     expect(source).toContain("setLayoutStarterOpen(false)");
     expect(source).toContain("setActiveSavedDesignId(null)");
     expect(source).toContain("!latchedFreshStart.fresh");
+    expect(source).toContain("sessionSellableStyleIds");
+    expect(source).toContain("freshOpenedStyleUsable");
+    expect(source).toContain("Door style #${freshOpenedStyleId} could not be opened.");
   });
 
   it("does not record a lead when a signed-in staff, admin, or vendor opens the Designer", () => {

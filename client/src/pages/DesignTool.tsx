@@ -150,7 +150,7 @@ import { kitchenRuleNumber } from "@/lib/kitchenRuleParameters";
 import { suggestReadjustOptions, stockPromptOrderNote, type ReadjustOption, type StockPromptChoice } from "@/lib/stockPrompt";
 import { useDesignerInventory } from "@/lib/useDesignerInventory";
 import { InventoryDesignStockControl, InventoryStockBadge, OutOfStockChoiceDialog, SinkBaseSubstitutionNotice } from "@/components/design/InventoryStockNotice";
-import { unavailableSavedStyleIds } from "@/lib/unavailableSavedStyles";
+import { sessionSellableStyleIds, unavailableSavedStyleIds } from "@/lib/unavailableSavedStyles";
 import { applyGlassStackerBulkPlacement as applyBulkGlassStackerPlacements, glassStackerBulkCeilingBlocksAtHeight, glassStackerBulkHeightOptions, glassStackerBulkPlacementCandidates, glassStackerUidsForRemoval, type GlassStackerBulkPlacementCandidate } from "@/lib/glassStackerBulkPlacement";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -2649,15 +2649,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // Data — door-style-first: members pick a door style; the supply line behind
   // it is resolved server-side and never shown.
   const { data: doorStylesRaw, isError: doorStylesError } = trpc.doorStyles.list.useQuery();
-  const unavailableStyleIds = useMemo(
-    () => doorStylesRaw?.length
-      ? unavailableSavedStyleIds(styleId, [styleA, styleB, ...placed.map((cabinet) => cabinet.styleId)], doorStylesRaw.map((style) => style.id))
-      : [],
-    [doorStylesRaw, styleId, styleA, styleB, placed],
-  );
   const selectedStyleMissingFromPicker =
     styleId != null && !(doorStylesRaw ?? []).some((style) => style.id === styleId);
-  const { data: persistedSelectedStyle } = trpc.doorStyles.byId.useQuery(
+  const { data: persistedSelectedStyle, isFetching: persistedStyleFetching } = trpc.doorStyles.byId.useQuery(
     { id: styleId ?? 0 },
     { enabled: selectedStyleMissingFromPicker },
   );
@@ -2671,6 +2665,26 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         : (doorStylesRaw ?? []),
     [doorStylesRaw, persistedSelectedStyle],
   );
+  const freshOpenedStyleId = latchedFreshStart.fresh ? latchedFreshStart.doorStyleId : null;
+  const freshOpenedStyleUsable = freshOpenedStyleId != null && (
+    doorStyles.some((style) => style.id === freshOpenedStyleId)
+    || (selectedStyleMissingFromPicker && persistedStyleFetching)
+  );
+  const unavailableStyleIds = useMemo(
+    () => doorStylesRaw?.length
+      ? unavailableSavedStyleIds(
+          styleId,
+          [styleA, styleB, ...placed.map((cabinet) => cabinet.styleId)],
+          sessionSellableStyleIds(doorStylesRaw.map((style) => style.id), freshOpenedStyleUsable && freshOpenedStyleId != null
+            ? { styleId: freshOpenedStyleId, usable: true }
+            : null),
+        )
+      : [],
+    [doorStylesRaw, freshOpenedStyleId, freshOpenedStyleUsable, placed, styleA, styleB, styleId],
+  );
+  const freshOpenRejected = freshOpenedStyleId != null
+    && unavailableStyleIds.includes(freshOpenedStyleId)
+    && !doorStyles.some((style) => style.id === freshOpenedStyleId);
   const styleDistributorIdById = useMemo(
     () => new Map((doorStyles ?? []).map((style) => [style.id, style.distributorId] as const)),
     [doorStyles],
@@ -17517,8 +17531,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 		            )}
 		            {unavailableStyleIds.length > 0 && (
 		              <div role="status" data-testid="unavailable-saved-style-warning" className="mb-2 rounded-lg border border-amber-500/60 bg-amber-50 px-3 py-3 text-xs text-amber-950">
-		                <p className="font-semibold">Saved door style unavailable in the current priced catalog: {unavailableStyleIds.map((id) => `Style #${id}`).join(", ")}</p>
-		                <p className="mt-1 leading-snug">The cabinets and drawing are preserved. Prices and availability cannot be inferred for this finish; choose a currently available door style and review each flagged cabinet before checkout.</p>
+		                <p className="font-semibold">{freshOpenRejected
+		                  ? `Door style #${freshOpenedStyleId} could not be opened. It is not in the Designer catalog.`
+		                  : `Saved door style unavailable in the current priced catalog: ${unavailableStyleIds.map((id) => `Style #${id}`).join(", ")}`}</p>
+		                <p className="mt-1 leading-snug">{freshOpenRejected
+		                  ? "Choose a listed door style to price cabinets. This new floor plan did not replace another saved design."
+		                  : "The cabinets and drawing are preserved. Prices and availability cannot be inferred for this finish; choose a currently available door style and review each flagged cabinet before checkout."}</p>
 		                <button type="button" className="mt-2 rounded border border-amber-600 px-2 py-1 font-semibold hover:bg-amber-100" onClick={() => {
 		                  if (panelDrawerMode) setMobilePanel("style");
 		                  else document.getElementById("door-style-picker-card")?.scrollIntoView({ behavior: "smooth", block: "center" });
