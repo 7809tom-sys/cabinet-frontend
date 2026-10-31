@@ -15,6 +15,7 @@ import {
   type ResolvedDoorProfile,
 } from "@shared/doorStyleAppearance";
 import { resolveRenderHex } from "@shared/doorRenderIdentity";
+import { findDlcFinishForStyle } from "@shared/dlcFr26Mapping";
 
 export {
   ASPEN_CHARCOAL_STAIN,
@@ -46,6 +47,10 @@ export function resolveDoorFinishHex(style: DoorStyleAppearanceInput | null | un
   const identity = identityOf(style);
   const override = exactDoorFinishHex(identity.renderHex);
   if (override) return override;
+  // A DL style that maps to a DLC_FR26 finish: sides, ends and skins take the colour of the door
+  // the shopper sees (median of the processed door crop), not a keyword guess or a stale hex.
+  const dlc = findDlcFinishForStyle(identity as Parameters<typeof findDlcFinishForStyle>[0]);
+  if (dlc) return dlc.solidColor;
   const supplied = exactDoorFinishHex(identity.color);
   if (supplied) return supplied;
   if (isAspenCharcoal(identity)) return ASPEN_CHARCOAL_STAIN;

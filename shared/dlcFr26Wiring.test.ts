@@ -5,7 +5,9 @@ import { fileURLToPath } from "node:url";
 import { resolveCabinetFaceImages } from "./doorFaceRecognition";
 import { DLC_FR26_CATALOG } from "./dlcFr26Catalog.generated";
 import { findDlcFinishForStyle, normalizeFinishName } from "./dlcFr26Mapping";
-import { dlcFaceProportions, dlcFaceTextureWindow } from "./dlcFr26Textures";
+import { resolveDoorFinishHex } from "../client/src/lib/doorStyleAppearance";
+import { RESTORED_DOOR_LIGHTS, DARK_STAIN_DOOR_LIGHTS } from "./doorRenderLights";
+import { dlcPhotoLightCompensation, dlcFaceProportions, dlcFaceTextureWindow } from "./dlcFr26Textures";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const dl = (ourName: string, styleCode: string | null = null, extra: Record<string, unknown> = {}) => ({
@@ -81,6 +83,14 @@ describe("texture files ship with the build", () => {
       }
     }
   });
+  it("every finish ships a frame-free grain patch for sides (or says it has none)", () => {
+    for (const e of DLC_FR26_CATALOG) {
+      const pub = path.join(repo, "client", "public", e.grain);
+      expect(fs.existsSync(pub), e.grain).toBe(true);
+      expect(fs.readFileSync(pub).equals(fs.readFileSync(path.join(repo, "data", "dlc-fr26", "processed", "grain", `${e.slug}.png`))), e.grain).toBe(true);
+    }
+    expect(DLC_FR26_CATALOG.filter((e) => !e.grainFrameFree).map((e) => e.slug)).toEqual(["peccan"]);
+  });
   it("if a build exists, the textures are in dist/public too", () => {
     const dist = path.join(repo, "dist", "public");
     if (!fs.existsSync(dist)) return;
@@ -127,5 +137,66 @@ describe("renderer and Designer are connected", () => {
     expect(s).toMatch(/if \(plan\.dlcCrop\) return plan\.drawerUrl;/);
     expect(s.match(/cabinetFaceCrops=\{threeDCabinetFaceCrops\}/g)).toHaveLength(2);
     expect(s.match(/catalogFaceCrop=\{activeFaceCrop\}/g)).toHaveLength(2);
+  });
+});
+
+describe("DL sides, end panels and skins match the door finish", () => {
+  const solid = (slug: string) => DLC_FR26_CATALOG.find((e) => e.slug === slug)!.solidColor;
+  it("the finish colour used for sides/skins is the door colour, even when a stale light-grey hex is stored", () => {
+    for (const [name, code, slug] of [["Cyber Grey", "DL-CG", "cyber-grey"], ["Driftwood", "DL-DW", "driftwood"]] as const) {
+      const style = dl(name, code, { color: "#d9dde3", finish: "Painted" });
+      expect(resolveDoorFinishHex(style), name).toBe(solid(slug));
+      expect(resolveCabinetFaceImages(style, "base").dlcCrop?.solidColor, name).toBe(solid(slug));
+    }
+  });
+  it("sides are never white, light grey or light blue for any mapped finish that is itself dark or coloured", () => {
+    const lum = (h: string) => 0.2126 * parseInt(h.slice(1, 3), 16) + 0.7152 * parseInt(h.slice(3, 5), 16) + 0.0722 * parseInt(h.slice(5, 7), 16);
+    expect(lum(solid("cyber-grey"))).toBeLessThan(120);
+    expect(lum(solid("driftwood"))).toBeLessThan(140);
+    expect(lum(solid("slim-shaker-ebony"))).toBeLessThan(60);
+  });
+  it("non-DL and unmapped styles keep their own colour", () => {
+    expect(resolveDoorFinishHex({ distributorId: 12, ourName: "Cyber Grey", color: "#336699" })).toBe("#336699");
+    expect(resolveDoorFinishHex(dl("Champagne Mist", "DL-CM", { color: "#c9b99a" }))).toBe("#c9b99a");
+  });
+  it("3D: DLC cabinets use the door colour for every structural surface and never the door photo on ends or sides", () => {
+    const src = fs.readFileSync(path.join(repo, "client/src/components/design/InteractiveRoom3D.tsx"), "utf8");
+    expect(src).toMatch(/if \(dlcDoorFinish\) color = dlcDoorFinish;/);
+    expect(src).toMatch(/exposedSidesMatchDoorFace === true && Boolean\(doorTexture\) && !dlcDoorFinish/);
+    expect(src).toMatch(/threeDDecorativeEndIsDoor\(sku\) && !dlcDoorFinish/);
+  });
+});
+
+describe("sides carry the door's grain, and photo materials are not over-lit", () => {
+  const src = () => fs.readFileSync(path.join(repo, "client/src/components/design/InteractiveRoom3D.tsx"), "utf8");
+  it("Versa Shaker (style 600011 in the live DB) is mapped by name/code, never by style id", () => {
+    const plan = resolveCabinetFaceImages({ ...dl("Versa Shaker", "DL-VS"), id: 600011 }, "base");
+    expect(plan.dlcCrop?.slug).toBe("versa-shaker");
+    // the same id with another name must not become Versa Shaker, and Cyber Grey stays Cyber Grey
+    expect(resolveCabinetFaceImages({ ...dl("Cyber Grey", "DL-CG"), id: 600011 }, "base").dlcCrop?.slug).toBe("cyber-grey");
+    expect(findDlcFinishForStyle({ ...dl("Versa Shaker", "DL-VS"), id: 600011 })?.door).toMatch(/versa-shaker\.png$/);
+  });
+  it("the plan hands sides a grain patch and the same colour as the door", () => {
+    const plan = resolveCabinetFaceImages(dl("Versa Shaker", "DL-VS"), "base");
+    expect(plan.dlcCrop?.grainUrl).toBe("/textures/dlc-fr26/grain/versa-shaker.png");
+    expect(plan.dlcCrop?.solidColor).toBe(DLC_FR26_CATALOG.find((e) => e.slug === "versa-shaker")!.solidColor);
+    expect(resolveCabinetFaceImages(dl("Peccan", "DL-PC"), "base").dlcCrop?.grainUrl).toBeNull();
+  });
+  it("light compensation cancels the rig's gain (about 0.62 for the standard rig) and stays in range", () => {
+    const std = dlcPhotoLightCompensation(RESTORED_DOOR_LIGHTS);
+    expect(std.linear).toBeGreaterThan(0.55);
+    expect(std.linear).toBeLessThan(0.7);
+    expect(std.hex).toMatch(/^#([0-9a-f]{2})\1\1$/);
+    const dark = dlcPhotoLightCompensation(DARK_STAIN_DOOR_LIGHTS);
+    expect(dark.linear).toBeGreaterThanOrEqual(0.45);
+    expect(dark.linear).toBeLessThanOrEqual(1);
+  });
+  it("3D applies the grain to structural surfaces (mirrored, sRGB) and the tint to every photo material", () => {
+    const s = src();
+    expect(s).toMatch(/dlcSideGrain: true/);
+    expect(s).toMatch(/MirroredRepeatWrapping/);
+    expect(s).toMatch(/applyStructuralFinishBase\(finishColor, _sampleTexture\);\s*applyDlcGrain\(\);/);
+    expect((s.match(/color\.set\(dlcPhotoTint\)/g) ?? []).length).toBeGreaterThanOrEqual(2);
+    expect(s).toMatch(/color: dlcPhotoTint, map, \.\.\.doorFinishSurface/);
   });
 });
