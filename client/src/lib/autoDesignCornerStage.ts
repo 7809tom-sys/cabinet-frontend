@@ -38,10 +38,11 @@ export type AutoDesignCornerMeasurement = {
 /**
  * Corner cabinets belong only where two kitchen runs meet.
  *
- * A U-shape uses Wall 1, Wall 2, and Wall 3 only, so it has the two corners
- * those walls actually share. Wall 4 is ignored, including a leftover length
- * from an earlier closed room. An open end that is not one of those joins is
- * not a corner.
+ * A U-shape cabinets Wall 1, Wall 2, and Wall 3. When the room also has a real
+ * Wall 4 (a closed four-wall plan), that wall is part of the same kitchen: it
+ * gets a continuous run and a corner cabinet at each end where it meets Wall 1
+ * and Wall 3. An open three-wall U has no Wall 4, so it still has only the two
+ * corners its walls actually share. Wall 5 and Wall 6 stay out of a U.
  *
  * An L-shape has the single back-to-side corner. A single wall or galley has
  * none, except that appliances measured on two adjoining walls still reveal
@@ -64,10 +65,11 @@ export function autoDesignCornerSlots(layoutType: AutoDesignLayoutType, measured
     return slots;
   }
   if (layoutType === "u-shape") {
-    // A U uses the three walls the customer entered. Wall 4 is not a corner,
-    // even when the room still has that wall from an earlier closed plan.
     const pairs = measured ? uShapeCornerPairs(measured) : [["Wall 1", "Wall 2"], ["Wall 2", "Wall 3"]] as const;
-    const limit = Math.max(0, kitchenRuleNumber("u_shape_corner_count"));
+    // An open U is capped at its two real corners. A closed room's Wall 4 adds
+    // two more real corners; a saved cap of 2 must not drop them.
+    const closedFourthWall = measured != null && uShapeHasWall4(measured);
+    const limit = closedFourthWall ? pairs.length : Math.max(0, kitchenRuleNumber("u_shape_corner_count"));
     for (const [firstWall, secondWall] of pairs.slice(0, limit)) add(firstWall, secondWall);
     return slots;
   }
@@ -112,12 +114,16 @@ function wallsShareVertex(firstWall: WallLabel, secondWall: WallLabel, measured:
   ) != null;
 }
 
-/** The only walls a U-shape Auto-Design kitchen may receive cabinets on. */
+/** Walls a U-shape always cabinets. Wall 4 is added when that wall exists. */
 export const AUTO_DESIGN_U_SHAPE_WALLS = ["Wall 1", "Wall 2", "Wall 3"] as const satisfies readonly WallLabel[];
 
 export function autoDesignLayoutUsesWall(layoutType: AutoDesignLayoutType, label: WallLabel): boolean {
   if (layoutType !== "u-shape") return true;
-  return (AUTO_DESIGN_U_SHAPE_WALLS as readonly string[]).includes(label);
+  return (AUTO_DESIGN_U_SHAPE_WALLS as readonly string[]).includes(label) || label === "Wall 4";
+}
+
+function uShapeHasWall4(measured: AutoDesignCornerMeasurement): boolean {
+  return wallLabelToEngineWallId("Wall 4", measured.room, measured.originCorner, measured.runDirection) != null;
 }
 
 /** Engine walls a U-shape must not receive any cabinet, filler, panel, or corner. */
@@ -128,16 +134,18 @@ export function autoDesignExcludedEngineWallIds(
   runDirection: AutoDesignRunDirection,
 ): string[] {
   if (layoutType !== "u-shape") return [];
+  const measured = { wallIds: [], room, originCorner, runDirection };
   const excluded: string[] = [];
   for (const label of AUTO_DESIGN_WALL_LABELS) {
-    if (autoDesignLayoutUsesWall(layoutType, label)) continue;
+    if ((AUTO_DESIGN_U_SHAPE_WALLS as readonly string[]).includes(label)) continue;
+    if (label === "Wall 4" && uShapeHasWall4(measured)) continue;
     const wall = wallLabelToEngineWallId(label, room, originCorner, runDirection);
     if (wall && !excluded.includes(wall.engineWallId)) excluded.push(wall.engineWallId);
   }
   return excluded;
 }
 
-/** Drops Wall 4 (and any later wall) from a U-shape run list. Other layouts keep every wall. */
+/** Drops Wall 5+ from a U-shape. Wall 4 stays when the room actually has that wall. Other layouts keep every wall. */
 export function autoDesignRunWallIds(input: {
   layoutType: AutoDesignLayoutType;
   room: RoomData;
@@ -155,11 +163,12 @@ export function autoDesignRunWallIds(input: {
 }
 
 /**
- * The two corners of a U are the real joins among Wall 1, Wall 2, and Wall 3.
- * Wall 4 is never one of them, even when that wall still has a length.
+ * Real joins among the U's walls. Wall 4 is included only when the room has it,
+ * which adds the two corners at the ends of that wall.
  */
 function uShapeCornerPairs(measured: AutoDesignCornerMeasurement): Array<[WallLabel, WallLabel]> {
-  const walls = AUTO_DESIGN_U_SHAPE_WALLS;
+  const walls: WallLabel[] = [...AUTO_DESIGN_U_SHAPE_WALLS];
+  if (uShapeHasWall4(measured)) walls.push("Wall 4");
   const pairs: Array<[WallLabel, WallLabel]> = [];
   for (let first = 0; first < walls.length; first++) {
     for (let second = first + 1; second < walls.length; second++) {

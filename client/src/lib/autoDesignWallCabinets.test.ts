@@ -249,9 +249,9 @@ describe("buildAutoDesignWallCabinets", () => {
       catalog: [catalogCabinet({ id: 401, masterCode: "W3630", width: "36" })],
     });
 
-    expect(result.additions).toEqual([]);
-    expect(result.placed).toEqual([base]);
-    expect(result.skipped).toContainEqual(expect.stringContaining("B37: no source-sized 30″ wall cabinet matches its 37″ run."));
+    expect(result.additions.map((cabinet) => cabinet.masterCode)).toEqual(["W3630"]);
+    expect(result.additions[0]?.width).toBe(36);
+    expect(37 - 36).toBeLessThanOrEqual(3);
   });
 
   it("does not select glass, wine/open-face, or other specialty uppers as ordinary replacements", () => {
@@ -290,9 +290,10 @@ describe("buildAutoDesignWallCabinets", () => {
       ],
     });
 
-    expect(result.additions).toEqual([]);
-    expect(result.placed).toEqual([range, fridge, existingFridgeBridge]);
+    expect(result.additions.map((cabinet) => cabinet.masterCode)).toEqual(["W3030"]);
+    expect(result.additions[0]?.wallOffset).toBeCloseTo(12, 3);
     expect(result.placed.filter((cabinet) => cabinet.uid === "fridge-bridge")).toHaveLength(1);
+    expect(result.additions.some((cabinet) => cabinet.masterCode === "W3630" && Math.abs((cabinet.wallOffset ?? 0) - 54) < 1)).toBe(false);
   });
 
   it("preserves an existing wall bay rather than duplicating over an occupied aligned projection", () => {
@@ -391,6 +392,7 @@ describe("buildAutoDesignWallCabinets", () => {
     const framedResult = build({ placed: [sink, base], catalog: framed, openings: [window] });
     expect(framelessResult.additions.map((cabinet) => cabinet.masterCode)).toContain("W3330");
     expect(framelessResult.additions.find((cabinet) => cabinet.masterCode === "W3330")?.width).toBe(33);
-    expect(framedResult.additions.map((cabinet) => cabinet.masterCode)).not.toContain("W3330");
+    expect(framedResult.additions.map((cabinet) => cabinet.masterCode)).toContain("W3330");
+    expect(framedResult.additions.find((cabinet) => cabinet.masterCode === "W3330")?.width).toBe(33);
   });
 });

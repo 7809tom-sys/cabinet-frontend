@@ -1,9 +1,9 @@
-import { hasAefPrintedGeometry } from "@shared/aefFramelessGeometry";
+import { hasAefPrintedGeometry, isFramelessDeepWallCabinet } from "@shared/aefFramelessGeometry";
 import { AEF_SLAB_DOOR_THICKNESS_IN } from "./aefEndPanelStock";
 import { autoFillSpan } from "./autofill";
 import { planWallWidthsOverBase, solveCabinetSpan } from "./autoDesignGapSolver";
 import {
-  SEAM_MIN_IN, findAutoDesignSeams, fillersForSeam, intersectWithCoverage, lowerCoverageOnWall, upperReservedZones,
+  AUTO_DESIGN_FILLER_MAX_IN, SEAM_MIN_IN, findAutoDesignSeams, fillersForSeam, intersectWithCoverage, lowerCoverageOnWall, upperReservedZones,
   type AutoDesignSeam,
 } from "./autoDesignSeamFillers";
 import { buildRequiredBlindCornerFiller, requiresConfiguredBlindCornerFiller } from "./blindCornerRequiredFiller";
@@ -32,7 +32,18 @@ function isStraightStandardUpper(source: DesignCabinet): boolean {
   return cabinetDrawingType(source) === "standard-door"
     && source.glassDoor !== true && source.isCornerCabinet !== true
     && !isCornerCabinet(source.masterCode, source.description)
+    && !isFramelessDeepWallCabinet(source)
     && !NOT_A_STRAIGHT_UPPER.test(`${source.masterCode} ${source.description} ${source.subCategory ?? ""}`);
+}
+
+/** A window sits over this sink, so the wall above it stays open. */
+export function sinkHasWindowAbove(sink: PlacedCabinet, openings: readonly WallOpening[], room: RoomData): boolean {
+  const wall = cabinetWall(sink, room);
+  const start = wallRunOffset(sink, wall, room);
+  const end = start + wallRunSpan(sink, wall, room);
+  return openings.some((opening) => opening.kind === "window" && opening.side === wall
+    && start < opening.offset + opening.width - COLLISION_EPSILON_IN
+    && end > opening.offset + COLLISION_EPSILON_IN);
 }
 
 /**
@@ -314,12 +325,16 @@ export function buildAutoDesignWallCabinets(input: {
 
   for (const lower of input.placed) {
     if (lower.placement !== "base" && lower.placement !== "appliance") continue;
-    // Above the sink there is either the measured window or nothing at all.
-    if (lower.placement === "base" && isSinkBaseCabinet(lower)) continue;
-    if (isRefrigerator(lower) || isRangeOrOven(lower.masterCode, lower.description)
+    if (lower.placement === "base" && isSinkBaseCabinet(lower) && sinkHasWindowAbove(lower, openings, room)) {
+      skipped.push(`Left open above ${lower.masterCode}: a window is over the sink.`);
+      continue;
+    }
+    const rangeCovered = isRangeOrOven(lower.masterCode, lower.description)
+      && working.some((item) => /hood/i.test(item.masterCode ?? "") && cabinetWall(item, room) === cabinetWall(lower, room));
+    if (isRefrigerator(lower) || rangeCovered
       || isCornerCabinet(lower.masterCode, lower.description) || isPanelItem(lower)
       || /filler|scribe/i.test(`${lower.masterCode} ${lower.description} ${lower.subCategory ?? ""}`)) continue;
-    if (lower.placement === "appliance" && !/^DW[-_]?/i.test(lower.masterCode)) continue;
+    if (lower.placement === "appliance" && !/^DW[-_]?/i.test(lower.masterCode) && !isRangeOrOven(lower.masterCode, lower.description)) continue;
     const wall = cabinetWall(lower, room);
     const lowerStart = wallRunOffset(lower, wall, room);
     const lowerSpan = wallRunSpan(lower, wall, room);
@@ -348,7 +363,9 @@ export function buildAutoDesignWallCabinets(input: {
           standard.map((row) => ({ ...row, placement: "base" as const })), { strategy: "largest-first" });
       const sources = Array.isArray(tiled) ? tiled : tiled.items.filter((item) => !item.isFiller)
         .map((item) => standard.find((row) => row.id === item.cabinet.id)!);
-      if (!sources.length || Math.abs(sources.reduce((sum, source) => sum + dim(source.width, 0), 0) - piece.span) > COLLISION_EPSILON_IN) {
+      const covered = sources.reduce((sum, source) => sum + dim(source.width, 0), 0);
+      const shortfall = piece.span - covered;
+      if (!sources.length || shortfall > AUTO_DESIGN_FILLER_MAX_IN + COLLISION_EPSILON_IN || shortfall < -COLLISION_EPSILON_IN) {
         working = before;
         additions.splice(addedBefore);
         skipped.push(`${lower.masterCode}: no source-sized ${height}″ wall cabinet matches its ${piece.span}″ run.`);
@@ -402,7 +419,7 @@ export function buildAutoDesignWallCabinets(input: {
           remainder = length - used;
           if (fromRight) { along = region.start; } 
         }
-        if (remainder >= SEAM_MIN_IN) {
+        if (remainder >= SEAM_MIN_IN && remainder <= AUTO_DESIGN_FILLER_MAX_IN + COLLISION_EPSILON_IN) {
           const fromRight = leftNeighbor == null && rightNeighbor != null && placedHere.length > 0;
           const start = placedHere.length ? (fromRight ? region.start : along) : region.start;
           const end = start + remainder;

@@ -224,7 +224,7 @@ import { HardwareCatalogPicker } from "@/components/design/HardwareCatalogPicker
 import { isPanelPaletteItem } from "./designToolPanels";
 import { normalizePaletteSearch, matchesPaletteSearch, matchesPaletteTextOrSize } from "@/lib/paletteSearch";
 import { searchCatalogItems } from "@shared/catalogCodeSearch";
-import { adjacentDishwasherCenterIn, anchorAlongStartIn, autoBuildStraightBaseCatalog, buildAutoDesignWallGuides, canRunAutoDesign, closestDishwasherStart, isAutoBuildStraightSinkBaseCandidate, makeAutoDesignSixWallTrainingRoom, pickAutoDesignSinkBase, planAutoDesignAutoBuild, resolveDishwasherSide, subtractAnchorRunReservations, wallLabelToEngineWallId, type AutoDesignInputs, type AutoDesignOriginCorner, type AutoDesignRunDirection, type DishwasherSide } from "@/lib/autoDesignAutoBuild";
+import { adjacentDishwasherCenterIn, anchorAlongStartIn, autoBuildStraightBaseCatalog, buildAutoDesignWallGuides, canRunAutoDesign, closestDishwasherStart, isAutoBuildStraightSinkBaseCandidate, makeAutoDesignSixWallTrainingRoom, keepSingleAutoDesignSink, pickAutoDesignSinkBase, planAutoDesignAutoBuild, resolveDishwasherSide, subtractAnchorRunReservations, wallLabelToEngineWallId, type AutoDesignInputs, type AutoDesignOriginCorner, type AutoDesignRunDirection, type DishwasherSide } from "@/lib/autoDesignAutoBuild";
 import { AUTO_DESIGN_REFRIGERATOR_NOTE, autoDesignControlState, autoDesignShouldTurnOffForRefrigerator, isRefrigeratorAppliance, refrigeratorBlocksAutoDesign } from "@/lib/autoDesignAvailability";
 import { applyChosenAutoDesignFaucet, catalogFaucetSurface, defaultAutoDesignFaucet, ensureAutoDesignFaucet, isCatalogFaucet, type AutoDesignFaucetProduct } from "@/lib/autoDesignFaucet";
 import { clampSinkDragForFaucet } from "@/lib/faucetPlacement";
@@ -256,7 +256,7 @@ import { MasterTracRod3D, MasterTracRodElevation } from "@/components/design/Mas
 import { defaultTowerConfig, isMasterTracCornerBoard, planMasterTracTower, towerCleatReferenceItems, towerConceptReferenceSubtotal, towerConceptStorageReferenceItems, towerConfigFromPlacements, towerCornerReferenceItems, towerRodHardwareTakeoff, type MasterTracTowerConfig } from "@/lib/masterTracTower";
 import { canCommitPlanStyleSwitchWithoutReview, planStyleReviewCandidates } from "@/lib/planStyleSwitch";
 import { autoFillSpan, makeFiller, type FillMode } from "@/lib/autofill";
-import { fillAutoDesignLowerSeams, planAutoDesignBaseSegment } from "@/lib/autoDesignSeamFillers";
+import { AUTO_DESIGN_FILLER_MAX_IN, fillAutoDesignLowerSeams, planAutoDesignBaseSegment } from "@/lib/autoDesignSeamFillers";
 import { SINK_SHIFT_LIMIT_IN, activeAutoDesignWiggleMoves, applyDesignerLayoutRules, applyAutoDesignWiggleRoom, formatAutoDesignWiggleMessage, type AutoDesignAnchorOrigin, type AutoDesignWiggleMove } from "@/lib/designerLayoutRules";
 import { AutoDesignWiggleNotice } from "@/components/design/AutoDesignWiggleNotice";
 import { resolveTierPrice } from "@shared/pricingTier";
@@ -3944,7 +3944,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         }
         : anchor;
       if (!autoDesignLayoutUsesWall(input.layoutType, measuredAnchor.wallLabel)) {
-        return fail(`U-shape uses Wall 1, Wall 2, and Wall 3 only. ${measuredAnchor.wallLabel} is not part of this layout.`);
+        return fail(`U-shape uses Wall 1 through Wall 4 only. ${measuredAnchor.wallLabel} is not part of this layout.`);
       }
       const wall = wallLabelToEngineWallId(measuredAnchor.wallLabel, room, input.originCorner, input.runDirection);
       if (!wall) {
@@ -4044,7 +4044,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         ? "farmhouse"
         : sinkBase.width >= 33 ? "double" : "single";
       const defaultSink = rememberAutoDesignSink(makeDefaultSinkForCabinet(sinkBase, room, defaultSinkType));
-      setSinks([defaultSink]);
+      setSinks(keepSingleAutoDesignSink([defaultSink], sinkBase.uid));
       setSelectedSinkUid(defaultSink.uid);
     }
     // A measured window center creates the real window above the sink, as wide as
@@ -4214,7 +4214,22 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         styleId: styleIdRef.current ?? null,
         excludedWallIds,
       });
-      if (!seated.ok) return abandon(seated.message);
+      if (!seated.ok) {
+        // A closed room's fourth wall is extra. If that corner cannot seat
+        // (a measured refrigerator is already in the corner), keep the kitchen
+        // and still fill the open run. The original two U corners still stop
+        // the build when they cannot be placed.
+        // Wall 4 is the closed room's fourth run. A corner there that cannot
+        // seat must not wipe the kitchen. A refrigerator that already occupies
+        // a corner is handled by PR #133 (cursor/frameless-corner-fridge-a890):
+        // that branch skips the corner cabinet before this call.
+        const closesFourthWall = slot.firstWall === "Wall 4" || slot.secondWall === "Wall 4";
+        if (closesFourthWall) {
+          setAutoDesignLayoutNotes((current) => current.includes(seated.message) ? current : [...current, seated.message]);
+          continue;
+        }
+        return abandon(seated.message);
+      }
       if (seated.fallbackNote) {
         setAutoDesignLayoutNotes((current) => current.includes(seated.fallbackNote!) ? current : [...current, seated.fallbackNote!]);
       }
@@ -4292,9 +4307,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         if (fill.note) rangeNeighborNotes.push(fill.note);
         let along = segment.start;
         for (const item of fill.items) {
-          const catalogFillerCandidate = item.isFiller ? catalogFillerForGap(stage.pool, item.width, "base") : null;
-          const catalogFiller = catalogFillerCandidate ? stage.pool.find((candidate) => candidate.id === catalogFillerCandidate.id) ?? null : null;
-          if (item.isFiller && !catalogFiller) { along += item.width; continue; }
+          const catalogFillerCandidate = item.isFiller ? catalogFillerForGap(catalogFillers, item.width, "base") : null;
+          const catalogFiller = catalogFillerCandidate ? catalogFillers.find((candidate) => candidate.id === catalogFillerCandidate.id) ?? null : null;
+          if (item.isFiller && (!catalogFiller || item.width > AUTO_DESIGN_FILLER_MAX_IN + 0.001)) { along += item.width; continue; }
           const source = catalogFiller ?? item.cabinet;
           const width = item.width;
           const depth = footprintDepth(source);
@@ -4328,8 +4343,18 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       placed: working, room, openings: stageOpenings, fillers: catalogFillers, makeUid,
       styleId: styleIdRef.current ?? null, corners: upperCorners.map((entry) => entry.point),
       preserveHeavyCookLandings: heavyCook,
+      maxFillerIn: AUTO_DESIGN_FILLER_MAX_IN,
     });
     working = seamResult.placed;
+    const bareRangeForHood = working.find((item) => item.placement === "appliance" && isRangeOrOven(item.masterCode, item.description)
+      && autoDesignRangeNeedsVentilation(working, item));
+    if (bareRangeForHood) {
+      const builtHood = autoDesignRangeHood({ range: bareRangeForHood, room, palette: appliancePalette, uid: makeUid() });
+      if (builtHood.ok) {
+        const hooded = appendCollisionFreePlacements(working, [builtHood.hood], room);
+        if (hooded.rejected.length === 0) working = hooded.placed;
+      }
+    }
     // Wall boxes are last. Match the completed lower projections, retaining
     // selected-line SKUs, height and opening clearances without moving anchors.
     const upperResult = buildAutoDesignWallCabinets({
@@ -4378,7 +4403,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       && autoDesignRangeNeedsVentilation(working, item));
     if (bareRange) setAutoDesignRangeVentPrompt({ rangeUid: bareRange.uid });
     return { ok: true as const };
-  }, [catalogFillers, autoDesignCornerStage, openings, room, setPlaced, setOpenings]);
+  }, [appliancePalette, catalogFillers, autoDesignCornerStage, openings, room, setPlaced, setOpenings]);
   finishAutoDesignLayoutRef.current = completeAutoDesignLayout;
   // A previous automatic microwave workflow could persist WSC30—the real
   // 30×6 spice cabinet—directly above an MW-30. Convert only that centered

@@ -187,7 +187,7 @@ export const DESIGNER_LAYOUT_RULES: readonly DesignerLayoutRule[] = [
     id: "nothing-above-sink",
     name: "nothing above the sink",
     phase: "auto-design-stage",
-    summary: "Upper cabinets are not placed over the sink.",
+    summary: "A wall cabinet goes over the sink. A window over the sink leaves that span open.",
   },
   {
     id: "sink-window-clearance",
