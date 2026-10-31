@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   addStudioBay, addStudioBasketPlacement, addStudioBasketReference, addStudioConnectedCorner, addStudioCornerShelf, canStageStudioPart, changeStudioFinish, configureStudioBayCut, createStudioDesign, createStudioReviewDemo, MODE_RECOMMENDATIONS, moveStudioBasketPlacement, moveStudioCornerShelf, moveStudioItem, removeStudioBasketPlacement, removeStudioBasketReference, studioCornerShelfSku, studioTowerFootprint, updateStudioBasketPlacement,
   restoreStudioDesign, snapStudioPart, STUDIO_FINISHES, studioBayCut, studioBays, studioCollision, studioCornerShelvesForWall, studioPartReferences, studioTakeoff, studioWallOccupancy, studioWidth, switchStudioWall,
+  autoBuildStudio, autoBuildStudioDesign, createKidsStudioDesign, kidsAgeBand, kidsGuidance, kidsRodHeightIn, KIDS_UPPER_ROD_IN, MODE_AUTO_BUILD_DEFAULTS, STUDIO_MODES, studioFixedTop, studioPanelHeight, studioTowerFootprint as towerFootprint, type StudioAutoBuildOptions, type StudioWall,
   STUDIO_BASKET_REFERENCE_OPTIONS, STUDIO_BASKET_VISUAL_DEPTH_IN, STUDIO_CORNER_SHELF_NOMINAL_FOOTPRINT_IN, STUDIO_CORNER_SHELF_GEOMETRY_REVISION, STUDIO_ILLUSTRATIVE_SHOE_PITCH_DEG, studioBasketPlacementsForWall, studioBasketReferences, studioCornerMeasuredGap, studioCornerPlanningFootprint, studioFitCapability, studioItemHeight,
   type StudioDesign,
 } from "./vendorClosetStudio";
@@ -337,3 +338,247 @@ describe("isolated vendor Closet Studio", () => {
     if (!rejected.ok) expect(rejected.reason).toMatch(/drawer|fit/i);
   });
 });
+
+const WALLS: StudioWall[] = ["back", "left", "right", "front"];
+const placedItems = (design: StudioDesign) => WALLS.flatMap((wall) => studioBays(design, wall).flatMap((bay, bayIndex) => bay.items.map((item) => ({ wall, bayIndex, item }))));
+const countKind = (design: StudioDesign, kind: string) => placedItems(design).filter(({ item }) => item.kind === kind).length;
+/** Every placed part must still pass the same collision and fit check a manual placement would. */
+const collisionErrors = (design: StudioDesign) => WALLS.flatMap((wall) => {
+  const scoped = switchStudioWall(design, wall);
+  return studioBays(scoped).flatMap((bay, index) => bay.items.map((item) => studioCollision(scoped, index, item, item.id))).filter(Boolean);
+});
+const room = (mode: "closet" | "pantry" | "mudroom" | "kids", wallWidthIn: number, roomDepthIn: number, extra: Partial<Parameters<typeof autoBuildStudio>[0]> = {}) =>
+  autoBuildStudio({ mode, mount: "floor", finish: "Glacier White", wallWidthIn, roomDepthIn, roomHeightIn: 96, ...(mode === "kids" ? { kids: { ageYears: 4, heightIn: 40 } } : {}), ...extra });
+
+describe("Closet Studio kids' closet mode", () => {
+  it("adds kids as a fourth mode with rod, shelf and drawer recommendations", () => {
+    expect(STUDIO_MODES).toEqual(["closet", "pantry", "mudroom", "kids"]);
+    expect(MODE_RECOMMENDATIONS.kids).toEqual(["rod", "shelf", "drawer"]);
+  });
+
+  it("puts the child rod at about the child's height within the age band, and switches to the adult 40-inch rod from age 11", () => {
+    expect(kidsRodHeightIn(4, 40)).toBe(36);
+    expect(kidsRodHeightIn(4, 34)).toBe(34);
+    expect(kidsRodHeightIn(7, 50)).toBe(45);
+    expect(kidsRodHeightIn(9, 46)).toBe(48);
+    expect(kidsRodHeightIn(11, 60)).toBe(40);
+    expect(kidsRodHeightIn(12, 30)).toBe(40);
+  });
+
+  it("builds a starter design with an 80-inch rod, an adult double hang from age 11, and nothing above the child's reach", () => {
+    for (const [age, height] of [[4, 40], [7, 50], [9, 46], [11, 60]] as const) {
+      const design = createKidsStudioDesign(age, height);
+      const band = kidsAgeBand(age);
+      expect(design.mode).toBe("kids");
+      expect(design.kids).toEqual({ ageYears: age, heightIn: height });
+      const rods = placedItems(design).filter(({ item }) => item.kind === "rod").map(({ item }) => item.bottomIn).sort((a, b) => a - b);
+      expect(rods).toEqual([kidsRodHeightIn(age, height), KIDS_UPPER_ROD_IN]);
+      expect(collisionErrors(design)).toEqual([]);
+      for (const { item } of placedItems(design)) {
+        if ((item.kind === "rod" || item.kind === "shelf") && item.bottomIn >= KIDS_UPPER_ROD_IN) continue;
+        expect(item.bottomIn + studioItemHeight(item.kind)).toBeLessThanOrEqual(item.kind === "rod" ? Math.max(band.maxReachIn, band.rodMaxIn) : band.maxReachIn);
+      }
+      expect(kidsGuidance(design).filter((line) => /reach warning/i.test(line))).toEqual([]);
+      expect(restoreStudioDesign(JSON.stringify(design))).toEqual(design);
+    }
+    const teen = createKidsStudioDesign(11, 60);
+    expect(placedItems(teen).filter(({ item }) => item.kind === "rod").map(({ item }) => item.bottomIn).sort((a, b) => a - b)).toEqual([40, 80]);
+    expect(teen.bays).toHaveLength(1);
+    expect(createKidsStudioDesign(4, 40).bays).toHaveLength(2);
+    expect(countKind(createKidsStudioDesign(4, 40), "drawer")).toBe(3);
+  });
+
+  it("always tells parents to anchor, asks for a tip restraint only when drawers make a tall unit, and warns when a drawer is moved out of reach", () => {
+    const small = createKidsStudioDesign(4, 40);
+    const notes = kidsGuidance(small);
+    expect(notes.some((line) => /Anchor every tall unit to studs/.test(line))).toBe(true);
+    expect(notes.some((line) => /Tip restraint required on drawer units 27 in or taller \(ASTM F2057 \/ 16 CFR 1261\)/.test(line))).toBe(true);
+    expect(notes[0]).toMatch(/Kids' reach: keep everything the child uses at or below 36 in \(ADA children's reach, ages 3–5\)/);
+    expect(notes.some((line) => /Upper rod at 80 in holds off-season and next-size clothes/.test(line))).toBe(true);
+    expect(notes.some((line) => /Toy bins and shoes go in floor-level open cubbies/.test(line))).toBe(true);
+    expect(notes.some((line) => /24 in deep.*12 in deep.*14\.5 in/.test(line))).toBe(true);
+    expect(notes.some((line) => /3 ft walkway/.test(line))).toBe(false);
+    expect(kidsGuidance({ ...small, roomDepthIn: 50 }).some((line) => /3 ft walkway/.test(line))).toBe(true);
+    expect(kidsGuidance(createKidsStudioDesign(10, 55))[0]).toMatch(/at or below 44 in.*ages 9–12.*up to 54 in for taller kids/);
+
+    const noDrawers = kidsGuidance(createKidsStudioDesign(11, 60));
+    expect(noDrawers.some((line) => /Anchor every tall unit to studs/.test(line))).toBe(true);
+    expect(noDrawers.some((line) => /Tip restraint/.test(line))).toBe(false);
+
+    const drawer = placedItems(small).find(({ item }) => item.kind === "drawer")!;
+    const moved = moveStudioItem(small, drawer.bayIndex, drawer.item.id, 40);
+    expect(moved.ok).toBe(true);
+    if (!moved.ok) return;
+    expect(kidsGuidance(moved.design).some((line) => /Reach warning: drawer at 40 in.*Tower 2.*above the 36 in/.test(line))).toBe(true);
+    const upper = placedItems(small).find(({ item }) => item.id === "kids-upper-rod")!;
+    expect(upper.item.bottomIn).toBe(80);
+    expect(kidsGuidance(small).some((line) => /Reach warning/.test(line))).toBe(false);
+    expect(kidsGuidance(createStudioDesign())).toEqual([]);
+  });
+
+  it("appends the kids' notes to the unverified list without changing any material line or price", () => {
+    const kids = createKidsStudioDesign(4, 40);
+    const asCloset = { ...kids, mode: "closet" as const };
+    const kidsBill = studioTakeoff(kids);
+    const closetBill = studioTakeoff(asCloset);
+    expect(kidsBill.lines).toEqual(closetBill.lines);
+    expect(kidsBill.subtotalUsd).toBe(closetBill.subtotalUsd);
+    expect(kidsBill.missing.slice(0, closetBill.missing.length)).toEqual(closetBill.missing);
+    expect(kidsBill.missing.slice(closetBill.missing.length)).toEqual(kidsGuidance(kids));
+    expect(kidsGuidance(asCloset)).toEqual([]);
+  });
+
+  it("restores kids drafts, rejects a kids draft with no valid child, and leaves older drafts alone", () => {
+    const kids = createKidsStudioDesign(7, 48);
+    expect(restoreStudioDesign(JSON.stringify(kids))).toEqual(kids);
+    const switchedAway = { ...kids, mode: "pantry" as const };
+    expect(restoreStudioDesign(JSON.stringify(switchedAway))).toEqual(switchedAway);
+    expect(restoreStudioDesign(JSON.stringify({ ...kids, kids: undefined }))).toBeNull();
+    expect(restoreStudioDesign(JSON.stringify({ ...kids, kids: { ageYears: 2, heightIn: 40 } }))).toBeNull();
+    expect(restoreStudioDesign(JSON.stringify({ ...kids, kids: { ageYears: 13, heightIn: 40 } }))).toBeNull();
+    expect(restoreStudioDesign(JSON.stringify({ ...kids, kids: { ageYears: 7, heightIn: 29 } }))).toBeNull();
+    expect(restoreStudioDesign(JSON.stringify({ ...kids, kids: { ageYears: 7, heightIn: 67 } }))).toBeNull();
+    expect(restoreStudioDesign(JSON.stringify({ ...createStudioDesign(), kids: { ageYears: 99, heightIn: 40 } }))).toBeNull();
+    for (const mode of ["closet", "pantry", "mudroom"] as const) {
+      const old = { ...createStudioDesign(), mode };
+      expect(restoreStudioDesign(JSON.stringify(old))).toEqual(old);
+    }
+  });
+});
+
+describe("Closet Studio room height and auto-build", () => {
+  it("uses the 94-inch floor upright only when the room leaves four inches of ceiling clearance, and restores drafts with or without a room height", () => {
+    const base = createStudioDesign();
+    expect(studioPanelHeight(base)).toBe(87);
+    expect(studioPanelHeight({ ...base, roomHeightIn: 96 })).toBe(87);
+    expect(studioPanelHeight({ ...base, roomHeightIn: 97 })).toBe(87);
+    expect(studioPanelHeight({ ...base, roomHeightIn: 98 })).toBe(94);
+    expect(studioPanelHeight({ ...base, roomHeightIn: 120 })).toBe(94);
+    expect(studioPanelHeight({ ...base, mount: "hanging", roomHeightIn: 120 })).toBe(80);
+    expect(studioFixedTop({ ...base, roomHeightIn: 100 })).toBe(93.25);
+
+    const tall: StudioDesign = { ...base, roomHeightIn: 100 };
+    expect(studioTakeoff(tall).lines.filter((line) => line.section === "panel").map((line) => line.sku)).toEqual(["432514", "432526"]);
+    expect(studioTakeoff({ ...base, roomHeightIn: 96 }).lines.filter((line) => line.section === "panel").map((line) => line.sku)).toEqual(["432136", "432525"]);
+    expect(restoreStudioDesign(JSON.stringify(tall))).toEqual(tall);
+    expect(restoreStudioDesign(JSON.stringify(base))).toEqual(base);
+    expect(restoreStudioDesign(JSON.stringify({ ...base, roomHeightIn: 50 }))).toBeNull();
+    expect(restoreStudioDesign(JSON.stringify({ ...base, roomHeightIn: 500 }))).toBeNull();
+  });
+
+  it("builds a reach-in closet on the back wall only when the room is too shallow for a walk-in, with no overlapping parts", () => {
+    const { design, notices } = room("closet", 120, 24);
+    expect(studioBays(design, "back").length).toBeGreaterThan(0);
+    expect(studioBays(design, "left")).toEqual([]);
+    expect(studioBays(design, "right")).toEqual([]);
+    expect(design.cornerShelves ?? []).toEqual([]);
+    expect(collisionErrors(design)).toEqual([]);
+    expect(studioTakeoff(design).lines.length).toBeGreaterThan(0);
+    expect(notices.some((line) => /left over/i.test(line))).toBe(true);
+    expect(design.version).toBe(2);
+    expect(design.roomHeightIn).toBe(96);
+    expect(restoreStudioDesign(JSON.stringify(design))).toEqual(design);
+  });
+
+  it("builds a walk-in with side walls and connected corner shelves, and keeps a 36-inch walkway", () => {
+    const { design } = room("closet", 120, 96);
+    expect(studioBays(design, "back").length).toBeGreaterThan(0);
+    expect(studioBays(design, "left").length).toBeGreaterThan(0);
+    expect(studioBays(design, "right").length).toBeGreaterThan(0);
+    expect(design.cornerShelves?.map((shelf) => shelf.cornerId).sort()).toEqual(["back-left", "back-right"]);
+    expect(design.cornerShelves?.every((shelf) => shelf.towerConnection === "visualAligned")).toBe(true);
+    const walkway = towerFootprint(design, "right").xMin - towerFootprint(design, "left").xMax;
+    expect(walkway).toBeGreaterThanOrEqual(36);
+    expect(collisionErrors(design)).toEqual([]);
+    expect(restoreStudioDesign(JSON.stringify(design))).toEqual(design);
+
+    const narrow = room("closet", 70, 96).design;
+    expect(studioBays(narrow, "left").length > 0 && studioBays(narrow, "right").length > 0).toBe(false);
+    const skipped = room("closet", 60, 96);
+    expect(skipped.notices.some((line) => /walkway/i.test(line))).toBe(true);
+    expect(towerFootprint(skipped.design, "left").xMax + 36).toBeLessThanOrEqual(60);
+  });
+
+  it("puts a leftover run into a field-cut shelf tower, and says when a gap is too narrow to use", () => {
+    const cut = room("closet", 90, 24, { options: { rods: 8, shelves: 8, drawers: 3, shoes: 0 } });
+    const cutBay = studioBays(cut.design, "back").find((bay) => studioBayCut(bay));
+    expect(cutBay).toBeTruthy();
+    expect(cutBay?.items.every((item) => item.kind === "shelf")).toBe(true);
+    expect(studioWidth(cut.design)).toBeLessThanOrEqual(90);
+    expect(restoreStudioDesign(JSON.stringify(cut.design))).toEqual(cut.design);
+
+    const narrow = room("closet", 80, 24);
+    expect(studioBays(narrow.design, "back").some((bay) => studioBayCut(bay))).toBe(false);
+    expect(narrow.notices.some((line) => /too narrow.*stays empty/i.test(line))).toBe(true);
+  });
+
+  it("places each mode's own template parts", () => {
+    const closet = room("closet", 120, 24).design;
+    const closetRods = placedItems(closet).filter(({ item }) => item.kind === "rod").map(({ item }) => item.bottomIn).sort((a, b) => a - b);
+    expect(closetRods).toEqual([40, 66, 80]);
+    expect(countKind(closet, "drawer")).toBe(3);
+    expect(countKind(closet, "shoe")).toBe(2);
+    expect(placedItems(closet).filter(({ item }) => item.kind === "drawer").map(({ item }) => item.bottomIn).sort((a, b) => a - b)[0]).toBeLessThan(10);
+
+    const pantry = room("pantry", 120, 24).design;
+    expect(countKind(pantry, "rod")).toBe(0);
+    expect(countKind(pantry, "drawer")).toBe(3);
+    expect(countKind(pantry, "shelf")).toBe(8);
+
+    const mudroom = room("mudroom", 120, 24).design;
+    expect(countKind(mudroom, "shoe")).toBe(4);
+    expect(placedItems(mudroom).filter(({ item }) => item.kind === "rod").map(({ item }) => item.bottomIn)).toEqual([60, 60]);
+    expect(placedItems(mudroom).some(({ item }) => item.kind === "shelf" && item.bottomIn >= 70)).toBe(true);
+    expect(placedItems(mudroom).filter(({ item }) => item.kind === "shoe").every(({ item }) => item.bottomIn < 40)).toBe(true);
+
+    const kids = room("kids", 120, 24).design;
+    expect(kids.mode).toBe("kids");
+    expect(kids.kids).toEqual({ ageYears: 4, heightIn: 40 });
+    const kidsRods = placedItems(kids).filter(({ item }) => item.kind === "rod").map(({ item }) => item.bottomIn).sort((a, b) => a - b);
+    expect(kidsRods[0]).toBeLessThanOrEqual(36);
+    expect(kidsRods).toContain(80);
+    const reach = kidsAgeBand(4).maxReachIn;
+    expect(placedItems(kids).filter(({ item }) => item.kind === "drawer").every(({ item }) => item.bottomIn + studioItemHeight("drawer") <= reach)).toBe(true);
+    expect(kidsGuidance(kids).filter((line) => /reach warning/i.test(line))).toEqual([]);
+  });
+
+  it("changes the part counts with the options", () => {
+    const counts = (options: StudioAutoBuildOptions) => {
+      const design = room("closet", 120, 24, { options }).design;
+      return { rods: countKind(design, "rod"), shelves: countKind(design, "shelf"), drawers: countKind(design, "drawer"), shoes: countKind(design, "shoe") };
+    };
+    expect(counts({ rods: 1, shelves: 0, drawers: 0, shoes: 0 })).toEqual({ rods: 1, shelves: 0, drawers: 0, shoes: 0 });
+    expect(counts({ rods: 2, shelves: 0, drawers: 0, shoes: 0 }).rods).toBe(2);
+    expect(counts({ rods: 0, shelves: 0, drawers: 3, shoes: 0 }).drawers).toBe(3);
+    expect(counts({ rods: 0, shelves: 0, drawers: 0, shoes: 3 }).shoes).toBe(3);
+    expect(counts({ rods: 0, shelves: 4, drawers: 0, shoes: 0 }).shelves).toBe(4);
+    expect(counts({ rods: 0, shelves: 0, drawers: 0, shoes: 0 })).toEqual({ rods: 0, shelves: 0, drawers: 0, shoes: 0 });
+    expect(counts({ rods: 4, shelves: 0, drawers: 0, shoes: 0 }).rods).toBeGreaterThan(counts({ rods: 2, shelves: 0, drawers: 0, shoes: 0 }).rods);
+    expect(Object.keys(MODE_AUTO_BUILD_DEFAULTS).sort()).toEqual(["closet", "kids", "mudroom", "pantry"]);
+    const clamped = room("closet", 120, 24, { options: { rods: 99, shelves: -4, drawers: 0, shoes: Number.NaN } }).design;
+    expect(countKind(clamped, "rod")).toBeLessThanOrEqual(8);
+    expect(countKind(clamped, "shelf")).toBe(0);
+    expect(countKind(clamped, "shoe")).toBe(0);
+    expect(countKind(room("closet", 120, 24, { options: { rods: 0, shelves: 0, drawers: 2.4, shoes: 0 } }).design, "drawer")).toBe(2);
+  });
+
+  it("skips a part the fit rules reject instead of forcing it, and leaves its input untouched", () => {
+    const input = { mode: "closet" as const, mount: "hanging" as const, finish: "Slate Rift" as const, wallWidthIn: 120, roomDepthIn: 96, roomHeightIn: 96 };
+    const before = JSON.stringify(input);
+    const result = autoBuildStudio(input);
+    expect(JSON.stringify(input)).toBe(before);
+    expect(collisionErrors(result.design)).toEqual([]);
+    expect(placedItems(result.design).every(({ item }) => item.bottomIn <= studioFixedTop(result.design))).toBe(true);
+    expect(studioBays(result.design, "left")).toEqual([]);
+    expect(result.notices.some((line) => /could not be placed/i.test(line))).toBe(true);
+    expect(autoBuildStudioDesign(input)).toEqual(result.design);
+    expect(restoreStudioDesign(JSON.stringify(result.design))).toEqual(result.design);
+
+    const tall = room("closet", 120, 24, { roomHeightIn: 100 }).design;
+    expect(studioPanelHeight(tall)).toBe(94);
+    expect(collisionErrors(tall)).toEqual([]);
+    const ids = placedItems(room("closet", 120, 96).design).map(({ item }) => item.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+});
+

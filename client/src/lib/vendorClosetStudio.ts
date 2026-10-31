@@ -1,7 +1,7 @@
 import { CLOSET_PARTS, masterTracProduct, type MasterTracProduct } from "./closet";
 import { towerStorageSkuReferences } from "./masterTracTower";
 
-export type StudioMode = "closet" | "pantry" | "mudroom";
+export type StudioMode = "closet" | "pantry" | "mudroom" | "kids";
 export type StudioMount = "floor" | "hanging";
 export type StudioWall = "back" | "left" | "right" | "front";
 export type StudioKind = "shelf" | "rod" | "drawer" | "shoe";
@@ -70,6 +70,10 @@ export type StudioDesign = {
   cornerShelves?: StudioCornerShelf[];
   basketReferences?: StudioBasketReference[];
   basketPlacements?: StudioBasketPlacement[];
+  /** Kids' closet only: the child the rod and reach guidance are planned around. Kept when the mode is switched away so switching back needs no re-entry. */
+  kids?: { ageYears: number; heightIn: number };
+  /** Finished ceiling height. Optional so older drafts restore; unset behaves as the 96 in default. */
+  roomHeightIn?: number;
 };
 export type StudioShelfCut = { stockWidthIn: 18 | 24 | 30; installedWidthIn: number; offcutIn: number };
 export type ReferenceLine = { sku: string; label: string; qty: number; unitUsd: number; section: "cleat" | "panel" | "shelf" | "accessory" | "hardware"; packNote?: string; stockWidthIn?: number; installedWidthIn?: number; offcutIn?: number };
@@ -114,7 +118,7 @@ export const STUDIO_BASKET_REFERENCE_OPTIONS: readonly StudioBasketReferenceOpti
   { sku: "432902", nominalHeightIn: 17, nominalWidthIn: 24, finish: "Chrome", sourceRevision: "floor-579554-p13-historical-reference-v1" },
   { sku: "432905", nominalHeightIn: 17, nominalWidthIn: 30, finish: "Chrome", sourceRevision: "floor-579554-p13-historical-reference-v1" },
 ];
-export const STUDIO_MODES: StudioMode[] = ["closet", "pantry", "mudroom"];
+export const STUDIO_MODES: StudioMode[] = ["closet", "pantry", "mudroom", "kids"];
 export const STUDIO_PART_KINDS: StudioKind[] = ["shelf", "rod", "drawer", "shoe"];
 export const STUDIO_WALLS: StudioWall[] = ["back", "left", "right", "front"];
 export const STUDIO_CORNER_IDS: StudioCornerId[] = ["back-left", "back-right", "front-left", "front-right"];
@@ -126,7 +130,7 @@ const STUDIO_ILLUSTRATIVE_SHOE_PITCH_RAD = STUDIO_ILLUSTRATIVE_SHOE_PITCH_DEG * 
 const STUDIO_ILLUSTRATIVE_SHOE_ENVELOPE_HEIGHT_IN = STUDIO_SHOE_SHELF_DEPTH_IN * Math.sin(STUDIO_ILLUSTRATIVE_SHOE_PITCH_RAD)
   + (THICKNESS + STUDIO_SHOE_FENCE_HEIGHT_IN) * Math.cos(STUDIO_ILLUSTRATIVE_SHOE_PITCH_RAD);
 export const MODE_RECOMMENDATIONS: Record<StudioMode, StudioKind[]> = {
-  closet: ["shelf", "rod", "shoe"], pantry: ["shelf", "drawer"], mudroom: ["shoe", "rod", "shelf"],
+  closet: ["shelf", "rod", "shoe"], pantry: ["shelf", "drawer"], mudroom: ["shoe", "rod", "shelf"], kids: ["rod", "shelf", "drawer"],
 };
 
 const blankWallLayouts = (): Record<StudioWall, StudioWallLayout> => ({
@@ -174,7 +178,12 @@ export function createStudioDesign(): StudioDesign {
   wallLayouts.back = { wallId: "back", bays: [{ id: "bay-1", wallId: "back", widthIn: 24, items: [{ id: "shelf-1", wallId: "back", kind: "shelf", bottomIn: 38 }] }] };
   return { version: 2, mode: "closet", mount: "floor", finish: "Glacier White", wall: "back", wallWidthIn: 120, roomDepthIn: 96, wallLayouts, bays: wallLayouts.back.bays };
 }
-export const studioPanelHeight = (design: StudioDesign) => design.mount === "hanging" ? 80 : 87;
+/** The catalog sells floor uprights at 87 in and 94 in (the 94 in part is named 96″); use the taller one only when the room leaves the required ceiling clearance. */
+export const STUDIO_TALL_FLOOR_PANEL_IN = 94;
+export const STUDIO_CEILING_CLEARANCE_IN = 4;
+export const STUDIO_ROOM_HEIGHT_DEFAULT_IN = 96;
+export const studioPanelHeight = (design: StudioDesign) => design.mount === "hanging" ? 80
+  : design.roomHeightIn !== undefined && design.roomHeightIn - STUDIO_TALL_FLOOR_PANEL_IN >= STUDIO_CEILING_CLEARANCE_IN ? STUDIO_TALL_FLOOR_PANEL_IN : 87;
 export const studioFixedBottom = (design: StudioDesign) => design.mount === "hanging" ? 1.5 : 6;
 export const studioFixedTop = (design: StudioDesign) => studioPanelHeight(design) - THICKNESS;
 export const studioWidth = (design: StudioDesign) => studioWidthForWall(design, design.wall);
@@ -617,6 +626,311 @@ export function createStudioReviewDemo(): StudioDesign {
   return design;
 }
 
+/**
+ * Kids' closet planning numbers. Sources (rules of thumb, not a MasterTrac specification):
+ * - Reach: ADA Standards for Accessible Design 2010, Advisory 308.1 (children's reach ranges by age).
+ * - Rod heights: Refined Space, HomeGuide, ClosetDesign.app and Oregon State University Extension closet-planning guidance.
+ * - Tip restraint: ASTM F2057 / 16 CFR 1261 (clothing storage units 27 in or taller).
+ * `stretchReachIn` is the higher "taller kids" reach for ages 9–12.
+ */
+export const KIDS_AGE_BANDS = [
+  { minAge: 3, maxAge: 5,  rodMinIn: 32, rodMaxIn: 36, maxReachIn: 36 },
+  { minAge: 6, maxAge: 8,  rodMinIn: 42, rodMaxIn: 45, maxReachIn: 40 },
+  { minAge: 9, maxAge: 12, rodMinIn: 48, rodMaxIn: 54, maxReachIn: 44, stretchReachIn: 54 },
+] as const;
+export const KIDS_ADULT_DOUBLE_HANG_AGE = 11; // switch to adult 40/80 double hang
+export const KIDS_UPPER_ROD_IN = 80;          // off-season / next-size clothes
+export const KIDS_CHILD_SHELF_DEPTH_IN = 12;  // guidance; MasterTrac Studio boards are 14.5 in
+export const KIDS_CLOSET_DEPTH_IN = 24;       // build depth so it grows into an adult closet
+export const KIDS_TIP_RESTRAINT_MIN_HEIGHT_IN = 27;
+export const KIDS_MIN_AGE = 3;
+export const KIDS_MAX_AGE = 12;
+export const KIDS_MIN_HEIGHT_IN = 30;
+export const KIDS_MAX_HEIGHT_IN = 66;
+const KIDS_ADULT_ROD_IN = 40;
+const KIDS_UPPER_SHELF_CLEARANCE_IN = 4;
+const KIDS_DRAWER_COUNT = 3;
+const KIDS_BIN_SHELF_GAP_IN = 1.25;
+type KidsAgeBand = { minAge: number; maxAge: number; rodMinIn: number; rodMaxIn: number; maxReachIn: number; stretchReachIn?: number };
+const KIDS_ITEM_NAMES: Record<StudioKind, string> = { shelf: "Shelf", rod: "Hanging rod", drawer: "Drawer", shoe: "Shoe organizer" };
+const validKids = (kids: unknown): kids is NonNullable<StudioDesign["kids"]> => {
+  const k = kids as { ageYears?: unknown; heightIn?: unknown } | null | undefined;
+  return !!k && typeof k === "object" && typeof k.ageYears === "number" && Number.isFinite(k.ageYears) && k.ageYears >= KIDS_MIN_AGE && k.ageYears <= KIDS_MAX_AGE
+    && typeof k.heightIn === "number" && Number.isFinite(k.heightIn) && k.heightIn >= KIDS_MIN_HEIGHT_IN && k.heightIn <= KIDS_MAX_HEIGHT_IN;
+};
+export const kidsAgeBand = (ageYears: number): KidsAgeBand => KIDS_AGE_BANDS.find((band) => ageYears <= band.maxAge) ?? KIDS_AGE_BANDS[KIDS_AGE_BANDS.length - 1];
+
+/** Child rod height in inches: the adult 40 in lower rod from age 11, otherwise about the child's height within the age band. */
+export function kidsRodHeightIn(ageYears: number, heightIn: number): number {
+  if (ageYears >= KIDS_ADULT_DOUBLE_HANG_AGE) return KIDS_ADULT_ROD_IN;
+  const band = kidsAgeBand(ageYears);
+  return Math.max(band.rodMinIn, Math.min(band.rodMaxIn, Math.round(heightIn)));
+}
+
+/** Places a part through snapStudioPart (so every fit and collision rule runs). Snap rounds the request to a whole inch, so a result within `toleranceIn` of the plan is accepted; anything else is skipped, never forced. */
+function stageStudioPart(design: StudioDesign, bayIndex: number, kind: StudioKind, bottomIn: number, id: string, toleranceIn = 0.5): { design: StudioDesign; item: StudioItem | null } {
+  const result = snapStudioPart(design, bayIndex, kind, bottomIn, id);
+  return result.ok && Math.abs(result.item.bottomIn - bottomIn) <= toleranceIn + EPS ? { design: result.design, item: result.item } : { design, item: null };
+}
+
+/**
+ * Starter kids' closet: one 24 in hanging tower (child rod, 80 in upper rod, a shelf above it, a low toy-bin shelf) and, for ages 3–10,
+ * a second 24 in tower of drawers plus a low bin shelf. Every part goes through snapStudioPart, so the normal fit and collision rules apply;
+ * a part that is rejected or would land away from its planned height is skipped, never forced.
+ */
+export function createKidsStudioDesign(ageYears: number, heightIn: number, room?: { wallWidthIn: number; roomDepthIn: number; roomHeightIn: number }): StudioDesign {
+  const base = { ...createStudioDesign(), ...room };
+  let design: StudioDesign = { ...replaceStudioWallBays(base, "back", [{ ...base.bays[0], items: [] }]), mode: "kids", kids: { ageYears, heightIn } };
+  const band = kidsAgeBand(ageYears);
+  const stage = (bayIndex: number, kind: StudioKind, bottomIn: number, id: string) => {
+    const staged = stageStudioPart(design, bayIndex, kind, bottomIn, id);
+    design = staged.design;
+    return staged.item;
+  };
+  const lowestIn = studioFixedBottom(design) + THICKNESS;
+  stage(0, "rod", kidsRodHeightIn(ageYears, heightIn), "kids-rod");
+  stage(0, "rod", KIDS_UPPER_ROD_IN, "kids-upper-rod");
+  stage(0, "shelf", KIDS_UPPER_ROD_IN + KIDS_UPPER_SHELF_CLEARANCE_IN, "kids-upper-shelf");
+  stage(0, "shelf", lowestIn, "kids-toy-bin-shelf");
+  if (ageYears < KIDS_ADULT_DOUBLE_HANG_AGE) {
+    const neighbor = addStudioBay(design, 24);
+    if (neighbor.ok) {
+      design = replaceStudioWallBays(neighbor.design, "back", studioBays(neighbor.design, "back").map((bay, index) => index === 1 ? { ...bay, id: "bay-2" } : bay));
+      let nextIn = lowestIn;
+      for (let n = 1; n <= KIDS_DRAWER_COUNT; n++) {
+        if (nextIn + studioItemHeight("drawer") > band.maxReachIn) break;
+        const drawer = stage(1, "drawer", nextIn, `kids-drawer-${n}`);
+        if (!drawer) break;
+        nextIn = drawer.bottomIn + studioItemHeight("drawer");
+      }
+      if (nextIn + KIDS_BIN_SHELF_GAP_IN + THICKNESS <= band.maxReachIn) stage(1, "shelf", nextIn + KIDS_BIN_SHELF_GAP_IN, "kids-bin-shelf");
+    }
+  }
+  return design;
+}
+
+/** Kids' closet planning notes: reach, safety and growth guidance. Empty for every other mode. */
+export function kidsGuidance(design: StudioDesign): string[] {
+  if (design.mode !== "kids" || !design.kids) return [];
+  const band = kidsAgeBand(design.kids.ageYears);
+  const limitIn = band.stretchReachIn ?? band.maxReachIn;
+  const notes = [`Kids' reach: keep everything the child uses at or below ${band.maxReachIn} in (ADA children's reach, ages ${band.minAge}–${band.maxAge})${band.stretchReachIn ? `, up to ${band.stretchReachIn} in for taller kids` : ""}.`];
+  for (const wall of STUDIO_WALLS) studioBays(design, wall).forEach((bay, index) => bay.items.forEach((item) => {
+    if ((item.kind === "rod" || item.kind === "shelf") && item.bottomIn >= KIDS_UPPER_ROD_IN) return; // the upper rod and shelf are for adults
+    const topIn = Math.round((item.bottomIn + studioItemHeight(item.kind)) * 10) / 10;
+    // A child rod sits at about the child's height, which can be above the reach limit for ages 6–8; it is flagged only above the age band's rod range.
+    const itemLimitIn = item.kind === "rod" ? Math.max(limitIn, band.rodMaxIn) : limitIn;
+    if (topIn > itemLimitIn + EPS) notes.push(`Reach warning: ${KIDS_ITEM_NAMES[item.kind].toLowerCase()} at ${item.bottomIn} in (top ${topIn} in) in Tower ${index + 1} on the ${wall} wall is above the ${itemLimitIn} in kids' reach limit.`);
+  }));
+  notes.push(`Upper rod at ${KIDS_UPPER_ROD_IN} in holds off-season and next-size clothes.`);
+  notes.push(`Plan the closet ${KIDS_CLOSET_DEPTH_IN} in deep so it can become an adult closet; keep shelves the child uses about ${KIDS_CHILD_SHELF_DEPTH_IN} in deep (Studio boards are 14.5 in).`);
+  if (design.roomDepthIn < KIDS_CLOSET_DEPTH_IN + 36) notes.push("Leave a 3 ft walkway in front of hanging clothes.");
+  notes.push("Toy bins and shoes go in floor-level open cubbies.");
+  notes.push("Anchor every tall unit to studs.");
+  // A tower that holds drawers is one unit as tall as its panels, so any drawer makes the unit tall enough to need a tip restraint.
+  if (STUDIO_WALLS.some((wall) => studioBays(design, wall).some((bay) => bay.items.some((item) => item.kind === "drawer"))) && studioPanelHeight(design) >= KIDS_TIP_RESTRAINT_MIN_HEIGHT_IN)
+    notes.push(`Tip restraint required on drawer units ${KIDS_TIP_RESTRAINT_MIN_HEIGHT_IN} in or taller (ASTM F2057 / 16 CFR 1261).`);
+  return notes;
+}
+
+/** Part counts for an auto-build. Rods are hanging rods, shelves are adjustable shelves, drawers are small slab drawers, shoes are shoe organizers. */
+export type StudioAutoBuildOptions = { rods: number; shelves: number; drawers: number; shoes: number };
+export const MODE_AUTO_BUILD_DEFAULTS: Record<StudioMode, StudioAutoBuildOptions> = {
+  closet: { rods: 3, shelves: 4, drawers: 3, shoes: 2 },
+  pantry: { rods: 0, shelves: 8, drawers: 3, shoes: 0 },
+  mudroom: { rods: 2, shelves: 2, drawers: 0, shoes: 4 },
+  kids: { rods: 2, shelves: 3, drawers: 3, shoes: 0 },
+};
+export const STUDIO_AUTO_BUILD_MAX_COUNT = 8;
+export type StudioAutoBuildInput = {
+  mode: StudioMode; mount: StudioMount; finish: StudioDesign["finish"];
+  wallWidthIn: number; roomDepthIn: number; roomHeightIn: number;
+  kids?: StudioDesign["kids"]; options?: StudioAutoBuildOptions;
+};
+export type StudioAutoBuildResult = { design: StudioDesign; notices: string[] };
+
+const AUTO_HANG_DEPTH_IN = 24;
+const AUTO_WALKWAY_IN = 36;
+const AUTO_TOWER_DEPTH_IN = 14.5;
+const AUTO_BAY_IN = 24;
+const AUTO_MAX_BAYS_PER_WALL = 4;
+const AUTO_CORNER_ELEVATION_IN = 36;
+const AUTO_SHELF_STEP_IN = 12;
+type AutoSpec = { kind: StudioKind; at: number };
+type AutoPlan = { specs: AutoSpec[] };
+const runWidthIn = (widths: number[]) => widths.length ? widths.reduce((sum, width) => sum + width, 0) + THICKNESS * (widths.length + 1) : 0;
+const roundIn = (value: number) => Math.round(value * 100) / 100;
+
+/** Bay-by-bay part plans for a mode. Each count is consumed as parts are assigned, so the totals placed match the options unless a wall runs out of room. */
+function planAutoBays(design: StudioDesign, mode: StudioMode, options: StudioAutoBuildOptions, kids?: StudioDesign["kids"]): AutoPlan[] {
+  const left = { ...options };
+  const plans: AutoPlan[] = [];
+  const lowestIn = studioFixedBottom(design) + THICKNESS;
+  const maxTopIn = studioFixedTop(design);
+  const upperRodIn = Math.min(KIDS_UPPER_ROD_IN, Math.floor(maxTopIn - 1));
+  const band = kids ? kidsAgeBand(kids.ageYears) : null;
+  const take = (key: keyof StudioAutoBuildOptions, count: number) => { const n = Math.min(left[key], count); left[key] -= n; return n; };
+  const shelvesFrom = (startIn: number, count: number, limitIn = Infinity): AutoSpec[] => Array.from({ length: count }, (_, i) => ({ kind: "shelf" as const, at: startIn + i * AUTO_SHELF_STEP_IN })).filter((spec) => spec.at + THICKNESS <= limitIn);
+  const drawersLow = (count: number, limitIn = Infinity): AutoSpec[] => Array.from({ length: count }, (_, i) => ({ kind: "drawer" as const, at: lowestIn + i * studioItemHeight("drawer") })).filter((spec) => spec.at + studioItemHeight("drawer") <= limitIn);
+  const shoesLow = (count: number, limitIn = Infinity): AutoSpec[] => Array.from({ length: count }, (_, i) => ({ kind: "shoe" as const, at: lowestIn + i * (studioItemHeight("shoe") + 0.25) })).filter((spec) => spec.at + studioItemHeight("shoe") <= limitIn);
+  const hang = (): void => {
+    while (left.rods >= 2) { take("rods", 2); const specs: AutoSpec[] = [{ kind: "rod", at: KIDS_ADULT_ROD_IN }, { kind: "rod", at: upperRodIn }]; if (take("shelves", 1)) specs.push({ kind: "shelf", at: upperRodIn + KIDS_UPPER_SHELF_CLEARANCE_IN }); plans.push({ specs }); }
+    if (left.rods === 1) { take("rods", 1); const specs: AutoSpec[] = [{ kind: "rod", at: 66 }]; if (take("shelves", 1)) specs.push({ kind: "shelf", at: 70 }); plans.push({ specs }); }
+  };
+  const shoes = (perBay: number, limitIn?: number): void => { while (left.shoes > 0) plans.push({ specs: shoesLow(take("shoes", perBay), limitIn) }); };
+  const shelfDrawer = (shelvesPerBay: number, limitIn?: number): void => {
+    while (left.drawers > 0 || left.shelves > 0) {
+      const drawers = take("drawers", 3);
+      const startIn = drawers ? lowestIn + drawers * studioItemHeight("drawer") + 1.25 : lowestIn + AUTO_SHELF_STEP_IN - 1.5;
+      plans.push({ specs: [...drawersLow(drawers, limitIn), ...shelvesFrom(startIn, take("shelves", shelvesPerBay), limitIn)] });
+    }
+  };
+  if (mode === "closet") { hang(); shoes(4); shelfDrawer(5); }
+  else if (mode === "pantry") { shelfDrawer(6); hang(); shoes(4); }
+  else if (mode === "mudroom") {
+    while (left.shoes > 0 || left.rods > 0) {
+      const specs = shoesLow(take("shoes", 2));
+      if (take("rods", 1)) specs.push({ kind: "rod", at: 60 });
+      if (take("shelves", 1)) specs.push({ kind: "shelf", at: 74 });
+      plans.push({ specs });
+    }
+    shelfDrawer(5);
+  } else if (band && kids) {
+    const reachIn = band.maxReachIn;
+    while (left.rods > 0) {
+      const rods = take("rods", 2);
+      const specs: AutoSpec[] = [{ kind: "rod", at: kidsRodHeightIn(kids.ageYears, kids.heightIn) }];
+      if (rods === 2) specs.push({ kind: "rod", at: upperRodIn });
+      if (rods === 2 && take("shelves", 1)) specs.push({ kind: "shelf", at: upperRodIn + KIDS_UPPER_SHELF_CLEARANCE_IN });
+      if (take("shelves", 1)) specs.push({ kind: "shelf", at: lowestIn }); // toy-bin zone, low enough for hanging clothes above it
+      plans.push({ specs });
+    }
+    shoes(2, reachIn);
+    shelfDrawer(2, reachIn);
+  }
+  return plans.filter((plan) => plan.specs.length);
+}
+
+/**
+ * Builds a whole room from a mode, size and part counts. Pure: it only composes the existing Studio helpers
+ * (addStudioBay, configureStudioBayCut, addStudioConnectedCorner, snapStudioPart), so every fit and collision rule still runs
+ * and a part those rules reject is skipped, never forced. Anything left out is reported in `notices`.
+ */
+export function autoBuildStudio(input: StudioAutoBuildInput): StudioAutoBuildResult {
+  const notices: string[] = [];
+  const mode = input.mode;
+  let kids = input.kids;
+  if (mode === "kids" && !validKids(kids)) { kids = { ageYears: 8, heightIn: 48 }; notices.push("No child age or height was given, so the kids' closet is planned for age 8 and 48 in."); }
+  const requested = input.options ?? MODE_AUTO_BUILD_DEFAULTS[mode];
+  const count = (value: number) => Math.max(0, Math.min(STUDIO_AUTO_BUILD_MAX_COUNT, Math.round(Number.isFinite(value) ? value : 0)));
+  const options: StudioAutoBuildOptions = { rods: count(requested.rods), shelves: count(requested.shelves), drawers: count(requested.drawers), shoes: count(requested.shoes) };
+  const layouts = blankWallLayouts();
+  let design: StudioDesign = {
+    version: 2, mode, mount: input.mount, finish: input.finish, wall: "back", wallWidthIn: input.wallWidthIn, roomDepthIn: input.roomDepthIn, roomHeightIn: input.roomHeightIn,
+    ...(mode === "kids" ? { kids } : {}), wallLayouts: layouts, bays: layouts.back.bays,
+  };
+  if (design.mount === "floor" && input.roomHeightIn < 87 + STUDIO_CEILING_CLEARANCE_IN) notices.push(`A ${input.roomHeightIn} in ceiling leaves less than ${STUDIO_CEILING_CLEARANCE_IN} in above the shortest 87 in floor upright; confirm the ceiling clearance before ordering.`);
+
+  // Reach-in (back wall only) or walk-in (back plus side walls that keep a 36 in walkway).
+  const walkIn = input.roomDepthIn >= AUTO_HANG_DEPTH_IN + AUTO_WALKWAY_IN;
+  const sides: StudioWall[] = [];
+  if (walkIn && design.mount === "hanging") notices.push("Hanging mount is planned on the back wall only; side-wall corners are floor-mounted.");
+  else if (walkIn) for (const side of ["left", "right"] as const) {
+    if (input.wallWidthIn - (sides.length + 1) * AUTO_TOWER_DEPTH_IN >= AUTO_WALKWAY_IN) sides.push(side);
+    else notices.push(`The ${side} wall is skipped: towers there would leave less than a ${AUTO_WALKWAY_IN} in walkway.`);
+  }
+  const cornerIn = STUDIO_CORNER_SHELF_NOMINAL_FOOTPRINT_IN;
+  const availableIn = (wall: StudioWall) => wall === "back" ? input.wallWidthIn - sides.length * cornerIn : input.roomDepthIn - cornerIn;
+  const walls: StudioWall[] = ["back", ...sides];
+  const capacity = new Map<StudioWall, { stock: number; remainderIn: number }>();
+  for (const wall of walls) {
+    const widths: number[] = [];
+    while (widths.length < AUTO_MAX_BAYS_PER_WALL && runWidthIn([...widths, AUTO_BAY_IN]) <= availableIn(wall) + EPS) widths.push(AUTO_BAY_IN);
+    capacity.set(wall, { stock: widths.length, remainderIn: roundIn(availableIn(wall) - runWidthIn(widths)) });
+    if (!widths.length) notices.push(`The ${wall} wall has no room for a 24 in tower.`);
+  }
+
+  // Assign part plans round-robin across the walls, one tower per plan.
+  const plans = planAutoBays(design, mode, options, kids);
+  const assigned = new Map<StudioWall, AutoPlan[]>(walls.map((wall) => [wall, []]));
+  const droppedPlans: AutoPlan[] = [];
+  plans.forEach((plan, index) => {
+    for (let step = 0; step < walls.length; step++) {
+      const wall = walls[(index + step) % walls.length];
+      if ((assigned.get(wall)?.length ?? 0) < (capacity.get(wall)?.stock ?? 0)) { assigned.get(wall)!.push(plan); return; }
+    }
+    droppedPlans.push(plan);
+  });
+
+  // Build each wall: stock towers, then one cut tower (shelves only) from a saturated wall's remainder when shelves are left over.
+  const droppedShelves = droppedPlans.reduce((sum, plan) => sum + plan.specs.filter((spec) => spec.kind === "shelf").length, 0);
+  let cutShelves = droppedShelves;
+  const slots: { wall: StudioWall; index: number; plan: AutoPlan }[] = [];
+  for (const wall of walls) {
+    design = switchStudioWall(design, wall);
+    const mine = assigned.get(wall) ?? [];
+    for (let i = 0; i < mine.length; i++) {
+      const added = addStudioBay(design, AUTO_BAY_IN);
+      if (!added.ok) { notices.push(`The ${wall} wall stopped at ${i} tower${i === 1 ? "" : "s"}: ${added.reason}`); break; }
+      design = replaceStudioWallBays(added.design, wall, studioBays(added.design, wall).map((bay, index) => index === i ? { ...bay, id: `${wall}-bay-${i + 1}` } : bay));
+      slots.push({ wall, index: i, plan: mine[i] });
+    }
+    const cap = capacity.get(wall)!;
+    const built = studioBays(design, wall).length;
+    const saturated = mine.length >= cap.stock && built === cap.stock;
+    const installedIn = roundIn(cap.remainderIn - (built ? THICKNESS : THICKNESS * 2));
+    if (saturated && built < AUTO_MAX_BAYS_PER_WALL && installedIn >= CUT_PLANNING_MIN_IN) {
+      if (cutShelves > 0) {
+        const stockIn = installedIn <= 18 ? 18 : installedIn <= 24 ? 24 : 30;
+        const cutIndex = built;
+        const withTower = replaceStudioWallBays(design, wall, [...studioBays(design, wall), { id: `${wall}-bay-${cutIndex + 1}`, wallId: wall, widthIn: 18, items: [] }]);
+        const cut = configureStudioBayCut(withTower, cutIndex, stockIn, installedIn);
+        if (cut.ok) {
+          design = cut.design;
+          const shelves = Math.min(cutShelves, 5);
+          cutShelves -= shelves;
+          slots.push({ wall, index: cutIndex, plan: { specs: Array.from({ length: shelves }, (_, i) => ({ kind: "shelf" as const, at: 18 + i * AUTO_SHELF_STEP_IN })) } });
+          notices.push(`The ${wall} wall ends in a ${installedIn} in field-cut shelf tower cut from ${stockIn} in stock; it holds shelves only because drawer, rod and shoe fit is not verified in a cut tower.`);
+        } else notices.push(`The ${wall} wall's last ${installedIn} in stays empty: ${cut.reason}`);
+      } else notices.push(`The ${wall} wall has ${installedIn} in left over after its towers; it stays empty.`);
+    } else if (saturated && cap.remainderIn > THICKNESS && installedIn < CUT_PLANNING_MIN_IN) {
+      notices.push(`The ${wall} wall has ${cap.remainderIn} in left over, too narrow for another tower (12 in minimum); it stays empty.`);
+    } else if (saturated && built >= AUTO_MAX_BAYS_PER_WALL && cap.remainderIn > THICKNESS) {
+      notices.push(`The ${wall} wall has ${cap.remainderIn} in left over after four towers (the Studio limit); it stays empty.`);
+    }
+  }
+
+  const dropped = droppedPlans.reduce((sum, plan) => sum + plan.specs.length, 0) - (droppedShelves - cutShelves);
+  if (dropped > 0) notices.push(`${dropped} part${dropped === 1 ? "" : "s"} did not fit in the available wall space and ${dropped === 1 ? "was" : "were"} left out.`);
+
+  // Connect the two walls at each side corner with the existing visual corner shelf; if one is refused, drop that side wall.
+  if (design.mount === "floor") for (const side of sides) {
+    const cornerId: StudioCornerId = side === "left" ? "back-left" : "back-right";
+    if (!studioBays(design, side).length) continue;
+    const connected = addStudioConnectedCorner(design, cornerId, "fixed", AUTO_CORNER_ELEVATION_IN, `auto-corner-${cornerId}`);
+    if (connected.ok) design = connected.design;
+    else {
+      design = replaceStudioWallBays(design, side, []);
+      for (let i = slots.length - 1; i >= 0; i--) if (slots[i].wall === side) slots.splice(i, 1);
+      notices.push(`The ${side} wall is skipped: ${connected.reason}`);
+    }
+  }
+
+  // Place parts only through snapStudioPart; a refused or displaced part is skipped.
+  let skipped = 0;
+  for (const slot of slots) {
+    design = switchStudioWall(design, slot.wall);
+    slot.plan.specs.forEach((spec, n) => {
+      const staged = stageStudioPart(design, slot.index, spec.kind, spec.at, `auto-${slot.wall}-${slot.index + 1}-${spec.kind}-${n + 1}`, spec.kind === "rod" || spec.kind === "drawer" ? 0.5 : 3);
+      if (staged.item) design = staged.design; else skipped++;
+    });
+  }
+  if (skipped) notices.push(`${skipped} part${skipped === 1 ? "" : "s"} could not be placed without breaking a fit or spacing rule and ${skipped === 1 ? "was" : "were"} skipped.`);
+  return { design: switchStudioWall(design, "back"), notices };
+}
+
+export const autoBuildStudioDesign = (input: StudioAutoBuildInput): StudioDesign => autoBuildStudio(input).design;
+
 /** Every priced line is from the public-only 2022 catalog. Unknown screws, anchors, cam locks and slide hardware are NOT silently counted. */
 export function studioTakeoff(design: StudioDesign): StudioTakeoff {
   const rows = new Map<string, ReferenceLine>();
@@ -701,6 +1015,7 @@ export function studioTakeoff(design: StudioDesign): StudioTakeoff {
   if (STUDIO_WALLS.some((wallId) => studioBays(design, wallId).some((bay) => studioBayCut(bay)))) missing.push("Field-cut shelf planning: measure the finished opening; use the manufacturer’s adjustable-shelf template or fixed-shelf connector-hole jig as applicable. This Studio is not a cutting or drilling guide.");
   missing.push("Wall anchors, cleat fasteners, connector/cam-lock quantities, and drawer slide hardware are not verified by the provided sources; obtain the installation schedule before ordering.");
   if (design.mount === "hanging") missing.push("Hanging-panel installation elevation and fastener locations are not certified here; the 3D height is illustrative.");
+  if (design.mode === "kids") missing.push(...kidsGuidance(design));
   const order: ReferenceLine["section"][] = ["cleat", "panel", "shelf", "accessory", "hardware"];
   const lines = Array.from(rows.values()).sort((a, b) => order.indexOf(a.section) - order.indexOf(b.section) || a.sku.localeCompare(b.sku));
   return { lines, subtotalUsd: Math.round(lines.reduce((sum, line) => sum + line.qty * line.unitUsd, 0) * 100) / 100, missing };
@@ -718,7 +1033,9 @@ export function restoreStudioDesign(raw: string | null): StudioDesign | null {
       || v.wallWidthIn! < 24 || v.wallWidthIn! > 360 || v.roomDepthIn! < 24 || v.roomDepthIn! > 360
       || (v.cornerShelves != null && !Array.isArray(v.cornerShelves))
       || (v.basketReferences != null && !Array.isArray(v.basketReferences))
-      || (v.basketPlacements != null && !Array.isArray(v.basketPlacements))) return null;
+      || (v.basketPlacements != null && !Array.isArray(v.basketPlacements))
+      || (v.roomHeightIn != null && (!Number.isFinite(v.roomHeightIn) || v.roomHeightIn < 72 || v.roomHeightIn > 120))
+      || (v.kids != null && !validKids(v.kids)) || (v.mode === "kids" && !validKids(v.kids))) return null;
     const validBays = (bays: unknown, wallId: StudioWall, requireIdentity: boolean): bays is StudioBay[] => Array.isArray(bays) && bays.length <= 4 && bays.every((bay: StudioBay) => !!bay && typeof bay.id === "string" && Number.isFinite(bay.widthIn)
       && bay.widthIn >= CUT_PLANNING_MIN_IN && bay.widthIn <= 30
       && (!requireIdentity || bay.wallId === wallId)
