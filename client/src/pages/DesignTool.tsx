@@ -258,8 +258,7 @@ import { defaultTowerConfig, isMasterTracCornerBoard, planMasterTracTower, tower
 import { canCommitPlanStyleSwitchWithoutReview, planStyleReviewCandidates } from "@/lib/planStyleSwitch";
 import { autoFillSpan, makeFiller, type FillMode } from "@/lib/autofill";
 import { AUTO_DESIGN_FILLER_MAX_IN, fillAutoDesignLowerSeams, planAutoDesignBaseSegment } from "@/lib/autoDesignSeamFillers";
-import { SINK_SHIFT_LIMIT_IN, activeAutoDesignWiggleMoves, applyDesignerLayoutRules, applyAutoDesignWiggleRoom, formatAutoDesignWiggleMessage, type AutoDesignAnchorOrigin, type AutoDesignWiggleMove } from "@/lib/designerLayoutRules";
-import { AutoDesignWiggleNotice } from "@/components/design/AutoDesignWiggleNotice";
+import { SINK_SHIFT_LIMIT_IN, applyDesignerLayoutRules, applyAutoDesignWiggleRoom, type AutoDesignAnchorOrigin } from "@/lib/designerLayoutRules";
 import { resolveTierPrice } from "@shared/pricingTier";
 import {
   CATALOG_SUBCATEGORY_TRIM_AND_MOULDING,
@@ -1216,14 +1215,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   }, []);
   // After a measured build, a range with nothing above it asks what goes there.
   const [autoDesignRangeVentPrompt, setAutoDesignRangeVentPrompt] = useState<{ rangeUid: string } | null>(null);
-  const [autoDesignWiggleMoves, setAutoDesignWiggleMoves] = useState<AutoDesignWiggleMove[]>([]);
-  useEffect(() => {
-    setAutoDesignWiggleMoves((current) => {
-      if (current.length === 0) return current;
-      const next = activeAutoDesignWiggleMoves(current, placed, room);
-      return next.length === current.length ? current : next;
-    });
-  }, [placed, room]);
   const [islandSeatingOverhangPrompt, setIslandSeatingOverhangPrompt] = useState<{
     cabinetCode: string;
     face: IslandFace;
@@ -3898,8 +3889,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     setAutoDesignOpen(false);
     setViewMode("plan");
     setSelectedUid(null);
-    const reportedWiggleMoves = activeAutoDesignWiggleMoves(run.wiggleMoves, run.placed, room);
-    setAutoDesignWiggleMoves(reportedWiggleMoves);
     if (run.sinkWindow) {
       const windowToCommit = run.sinkWindow;
       setOpenings((previous) => (previous.some((opening) => opening.uid === windowToCommit.uid) ? previous : [...previous, windowToCommit]));
@@ -3911,7 +3900,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     for (const move of run.applianceMoves) {
       toast.info(`Moved the ${move.label} ${formatInches(move.shiftIn)} away from the corner to fit the required corner cabinet. Its measured center is now ${formatInches(move.centerAlongIn)} along the wall.`, { duration: 12000 });
     }
-    for (const move of reportedWiggleMoves) toast.info(formatAutoDesignWiggleMessage(move), { duration: 12000 });
     if (run.heightUsedIn != null && Math.abs(run.heightUsedIn - run.requestedUpperIn) > 0.005) {
       toast.info(`This cabinet line sells its ${run.requestedUpperIn}″ class as ${formatInches(run.heightUsedIn)} wall cabinets, so those exact source SKUs were used.`);
     }
@@ -4158,8 +4146,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     });
     working = finishedRules.placed;
     placedRef.current = working;
-    const reportedWiggleMoves = activeAutoDesignWiggleMoves(wiggle.moves, working, room);
-    setAutoDesignWiggleMoves(reportedWiggleMoves);
     setPlaced(working);
     if (stage.sinkWindow) {
       const windowToCommit = stage.sinkWindow;
@@ -4171,9 +4157,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     for (const note of [...seamResult.notes, ...rangeNeighborNotes]) toast.info(note, { duration: 15000 });
     for (const move of applianceMoves) {
       toast.info(`Moved the ${move.label} ${formatInches(move.shiftIn)} away from the corner to fit the required corner cabinet. Its measured center is now ${formatInches(move.centerAlongIn)} along the wall.`, { duration: 12000 });
-    }
-    for (const move of reportedWiggleMoves) {
-      toast.info(formatAutoDesignWiggleMessage(move), { duration: 12000 });
     }
     const requestedUpperIn = stage.input.wallCabinetHeightIn ?? 30;
     if (upperResult.heightUsedIn != null && Math.abs(upperResult.heightUsedIn - requestedUpperIn) > 0.005) {
@@ -14390,7 +14373,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       : <div className="flex h-full min-h-[360px] items-center justify-center rounded-xl border border-dashed px-6 text-center text-sm text-muted-foreground">Choose an active door style and add a cabinet, or choose a starter room layout, to load the synchronized 3D canvas.</div>;
 	    return <InteractiveRoom3D
 		      key={`active-surfaces-${threeDSurfaceProductIds.flooring ?? "none"}-${threeDSurfaceTextureUrls.flooring ?? "pending"}-${backsplashEnabled ? threeDSurfaceProductIds.backsplash ?? "none" : "off"}-${backsplashEnabled ? threeDSurfaceTextureUrls.backsplash ?? "pending" : "off"}`}
-		      autoDesignWiggleMoves={autoDesignWiggleMoves}
 		      embedded
 		      cutawayRoomWalls
 		      hybridPlanUnderlay={hybridPlanUnderlay}
@@ -17830,9 +17812,15 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	              </button>
 	            </div>
 	          )}
-	          {(autoDesignWiggleMoves.length > 0 || autoDesignLayoutNotes.length > 0) && (
+	          {autoDesignLayoutNotes.length > 0 && (
 	            <div className="absolute bottom-3 left-3 z-40 max-w-md">
-	              <AutoDesignWiggleNotice moves={autoDesignWiggleMoves} notes={autoDesignLayoutNotes} />
+	              <div role="status" className="rounded-lg border border-amber-400 bg-amber-50 px-3 py-2 text-sm text-amber-950 shadow-md">
+	                <ul className="space-y-1">
+	                  {autoDesignLayoutNotes.map((note) => (
+	                    <li key={note} data-testid="auto-design-layout-note">{note}</li>
+	                  ))}
+	                </ul>
+	              </div>
 	            </div>
 	          )}
 	          {placementWarning && (
@@ -18031,7 +18019,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	            <PlanCanvas onPreviewGap={previewSmartGap}
 	              room={room}
 	              autoDesignWallGuides={autoDesignWallGuides}
-	              autoDesignWiggleMoves={autoDesignWiggleMoves}
 	              catalogDragCabinet={catalogDragPreview}
 	              fillerGapPreview={smallGapFillerPlanPreview}
 	              automaticSnapping={automaticSnapping}
@@ -18328,7 +18315,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                <PlanCanvas onPreviewGap={previewSmartGap}
 	                  room={room}
 	                  autoDesignWallGuides={autoDesignWallGuides}
-	                  autoDesignWiggleMoves={autoDesignWiggleMoves}
 	                  catalogDragCabinet={catalogDragPreview}
 	                  fillerGapPreview={smallGapFillerPlanPreview}
 	                  automaticSnapping={automaticSnapping}
@@ -22245,7 +22231,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
             ) : resolvedInteractive3dScene ? (
               <InteractiveRoom3D
 			      key={`active-surfaces-full-${threeDSurfaceProductIds.flooring ?? "none"}-${threeDSurfaceTextureUrls.flooring ?? "pending"}-${backsplashEnabled ? threeDSurfaceProductIds.backsplash ?? "none" : "off"}-${backsplashEnabled ? threeDSurfaceTextureUrls.backsplash ?? "pending" : "off"}`}
-                autoDesignWiggleMoves={autoDesignWiggleMoves}
                 scene={resolvedInteractive3dScene}
                 placed={threeDPlaced}
                 crown={crown}
