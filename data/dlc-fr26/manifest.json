@@ -1,0 +1,1726 @@
+{
+  "catalog": "DLC_FR26_1 (DLC Framed Cabinetry, September 2026)",
+  "enhancement": {
+    "enabled": true,
+    "method": "unsharp mask on luminance only, radius 0.8, percent 35, threshold 2",
+    "originalsKept": true
+  },
+  "finishes": [
+    {
+      "slug": "arctic-white",
+      "sourceFile": "source/finishes/Arctic White.jpg",
+      "sourceSize": [
+        149,
+        320
+      ],
+      "catalogOption": null,
+      "outerTrim": {
+        "top": 6,
+        "bottom": 6,
+        "left": 4,
+        "right": 4
+      },
+      "reveal": {
+        "bandStart": 70,
+        "bandEnd": 72,
+        "peakRow": 71,
+        "depth": 43.4,
+        "spanCoverage": 1.0
+      },
+      "hasDrawerFront": true,
+      "doorBox": [
+        4,
+        75,
+        145,
+        314
+      ],
+      "drawerBox": [
+        4,
+        6,
+        145,
+        68
+      ],
+      "door": {
+        "file": "processed/door/arctic-white.png",
+        "size": [
+          141,
+          239
+        ],
+        "enhanced": {
+          "file": "processed/enhanced/door/arctic-white.png",
+          "meanChannelShift": [
+            -0.003,
+            -0.003,
+            -0.003
+          ],
+          "meanAbsChange": 0.017,
+          "withinLimits": true
+        }
+      },
+      "drawer": {
+        "file": "processed/drawer/arctic-white.png",
+        "size": [
+          141,
+          62
+        ],
+        "enhanced": {
+          "file": "processed/enhanced/drawer/arctic-white.png",
+          "meanChannelShift": [
+            -0.008,
+            -0.008,
+            -0.008
+          ],
+          "meanAbsChange": 0.047,
+          "withinLimits": true
+        }
+      },
+      "softness": {
+        "laplacianVariance": 9.1,
+        "interiorStd": 2.7,
+        "tier": "flat-finish"
+      },
+      "flags": []
+    },
+    {
+      "slug": "chestnut",
+      "sourceFile": "source/finishes/Chestnut.jpg",
+      "sourceSize": [
+        149,
+        320
+      ],
+      "catalogOption": null,
+      "outerTrim": {
+        "top": 6,
+        "bottom": 6,
+        "left": 4,
+        "right": 4
+      },
+      "reveal": {
+        "bandStart": 66,
+        "bandEnd": 71,
+        "peakRow": 70,
+        "depth": 38.1,
+        "spanCoverage": 1.0
+      },
+      "hasDrawerFront": true,
+      "doorBox": [
+        4,
+        74,
+        145,
+        314
+      ],
+      "drawerBox": [
+        4,
+        6,
+        145,
+        64
+      ],
+      "door": {
+        "file": "processed/door/chestnut.png",
+        "size": [
+          141,
+          240
+        ],
+        "enhanced": {
+          "file": "processed/enhanced/door/chestnut.png",
+          "meanChannelShift": [
+            -0.004,
+            -0.004,
+            -0.004
+          ],
+          "meanAbsChange": 0.177,
+          "withinLimits": true
+        }
+      },
+      "drawer": {
+        "file": "processed/drawer/chestnut.png",
+        "size": [
+          141,
+          58
+        ],
+        "enhanced": {
+          "file": "processed/enhanced/drawer/chestnut.png",
+          "meanChannelShift": [
+            -0.01,
+            -0.01,
+            -0.01
+          ],
+          "meanAbsChange": 0.281,
+          "withinLimits": true
+        }
+      },
+      "softness": {
+        "laplacianVariance": 89.1,
+        "interiorStd": 15.8,
+        "tier": "soft"
+      },
+      "flags": [
+        "soft-needs-higher-res-photo"
+      ]
+    },
+    {
+      "slug": "cyber-grey",
+      "sourceFile": "source/finishes/Cyber Grey.jpg",
+      "sourceSize": [
+        148,
+        320
+      ],
+      "catalogOption": {
+        "code": "CG",
+        "displayName": "Cyber Grey"
+      },
+      "outerTrim": {
+        "top": 6,
+        "bottom": 6,
+        "left": 4,
+        "right": 4
+      },
+      "reveal": {
+        "bandStart": 66,
+        "bandEnd": 69,
+        "peakRow": 68,
+        "depth": 74.2,
+        "spanCoverage": 1.0
+      },
+      "hasDrawerFront": true,
+      "doorBox": [
+        4,
+        72,
+        144,
+        314
+      ],
+      "drawerBox": [
+        4,
+        6,
+        144,
+        64
+      ],
+      "door": {
+        "file": "processed/door/cyber-grey.png",
+        "size": [
+          140,
+          242
+        ],
+        "enhanced": {
+          "file": "processed/enhanced/door/cyber-grey.png",
+          "meanChannelShift": [
+            0.0,
+            -0.001,
+            -0.001
+          ],
+          "meanAbsChange": 0.193,
+          "withinLimits": true
+        }
+      },
+      "drawer": {
+        "file": "processed/drawer/cyber-grey.png",
+        "size": [
+          140,
+          58
+        ],
+        "enhanced": {
+          "file": "processed/enhanced/drawer/cyber-grey.png",
+          "meanChannelShift": [
+            0.013,
+            0.004,
+            0.004
+          ],
+          "meanAbsChange": 0.215,
+          "withinLimits": true
+        }
+      },
+      "softness": {
+        "laplacianVariance": 99.8,
+        "interiorStd": 17.6,
+        "tier": "soft"
+      },
+      "flags": [
+        "soft-needs-higher-res-photo"
+      ]
+    },
+    {
+      "slug": "dark-caramel",
+      "sourceFile": "source/finishes/Dark Caramel.jpg",
+      "sourceSize": [
+        147,
+        320
+      ],
+      "catalogOption": {
+        "code": "DC",
+        "displayName": "Dark Caramel"
+      },
+      "outerTrim": {
+        "top": 6,
+        "bottom": 6,
+        "left": 4,
+        "right": 4
+      },
+      "reveal": {
+        "bandStart": 69,
+        "bandEnd": 72,
+        "peakRow": 70,
+        "depth": 82.1,
+        "spanCoverage": 1.0
+      },
+      "hasDrawerFront": true,
+      "doorBox": [
+        4,
+        75,
+        143,
+        314
+      ],
+      "drawerBox": [
+        4,
+        6,
+        143,
+        67
+      ],
+      "door": {
+        "file": "processed/door/dark-caramel.png",
+        "size": [
+          139,
+          239
+        ],
+        "enhanced": {
+          "file": "processed/enhanced/door/dark-caramel.png",
+          "meanChannelShift": [
+            -0.019,
+            -0.019,
+            -0.018
+          ],
+          "meanAbsChange": 1.112,
+          "withinLimits": true
+        }
+      },
+      "drawer": {
+        "file": "processed/drawer/dark-caramel.png",
+        "size": [
+          139,
+          61
+        ],
+        "enhanced": {
+          "file": "processed/enhanced/drawer/dark-caramel.png",
+          "meanChannelShift": [
+            -0.007,
+            -0.007,
+            -0.005
+          ],
+          "meanAbsChange": 2.025,
+          "withinLimits": true
+        }
+      },
+      "softness": {
+        "laplacianVariance": 993.5,
+        "interiorStd": 23.4,
+        "tier": "sharp"
+      },
+      "flags": []
+    },
+    {
+      "slug": "dove-gray",
+      "sourceFile": "source/finishes/Dove Gray.jpg",
+      "sourceSize": [
+        149,
+        320
+      ],
+      "catalogOption": {
+        "code": "DG",
+        "displayName": "Dove Grey"
+      },
+      "outerTrim": {
+        "top": 6,
+        "bottom": 6,
+        "left": 4,
+        "right": 4
+      },
+      "reveal": {
+        "bandStart": 69,
+        "bandEnd": 73,
+        "peakRow": 70,
+        "depth": 113.7,
+        "spanCoverage": 1.0
+      },
+      "hasDrawerFront": true,
+      "doorBox": [
+        4,
+        76,
+        145,
+        314
+      ],
+      "drawerBox": [
+        4,
+        6,
+        145,
+        67
+      ],
+      "door": {
+        "file": "processed/door/dove-gray.png",
+        "size": [
+          141,
+          238
+        ],
+        "enhanced": {
+          "file": "processed/enhanced/door/dove-gray.png",
+          "meanChannelShift": [
+            -0.0,
+            -0.0,
+            -0.0
+          ],
+          "meanAbsChange": 0.075,
+          "withinLimits": true
+        }
+      },
+      "drawer": {
+        "file": "processed/drawer/dove-gray.png",
+        "size": [
+          141,
+          61
+        ],
+        "enhanced": {
+          "file": "processed/enhanced/drawer/dove-gray.png",
+          "meanChannelShift": [
+            -0.013,
+            -0.013,
+            -0.013
+          ],
+          "meanAbsChange": 0.104,
+          "withinLimits": true
+        }
+      },
+      "softness": {
+        "laplacianVariance": 25.4,
+        "interiorStd": 12.6,
+        "tier": "soft"
+      },
+      "flags": [
+        "soft-needs-higher-res-photo"
+      ]
+    },
+    {
+      "slug": "driftwood",
+      "sourceFile": "source/finishes/Driftwood.jpg",
+      "sourceSize": [
+        149,
+        320
+      ],
+      "catalogOption": {
+        "code": "DW",
+        "displayName": "Driftwood"
+      },
+      "outerTrim": {
+        "top": 6,
+        "bottom": 6,
+        "left": 4,
+        "right": 4
+      },
+      "reveal": null,
+      "hasDrawerFront": false,
+      "doorBox": [
+        4,
+        6,
+        145,
+        314
+      ],
+      "drawerBox": null,
+      "door": {
+        "file": "processed/door/driftwood.png",
+        "size": [
+          141,
+          308
+        ],
+        "enhanced": {
+          "file": "processed/enhanced/door/driftwood.png",
+          "meanChannelShift": [
+            -0.007,
+            -0.007,
+            -0.007
+          ],
+          "meanAbsChange": 0.222,
+          "withinLimits": true
+        }
+      },
+      "drawer": null,
+      "softness": {
+        "laplacianVariance": 124.7,
+        "interiorStd": 24.7,
+        "tier": "soft"
+      },
+      "flags": [
+        "no-drawer-front-in-photo",
+        "soft-needs-higher-res-photo"
+      ]
+    },
+    {
+      "slug": "ewo",
+      "sourceFile": "source/finishes/EWO.jpg",
+      "sourceSize": [
+        149,
+        320
+      ],
+      "catalogOption": {
+        "code": "EWO",
+        "displayName": "European White Oak"
+      },
+      "outerTrim": {
+        "top": 6,
+        "bottom": 6,
+        "left": 4,
+        "right": 4
+      },
+      "reveal": {
+        "bandStart": 82,
+        "bandEnd": 84,
+        "peakRow": 83,
+        "depth": 146.7,
+        "spanCoverage": 1.0
+      },
+      "hasDrawerFront": true,
+      "doorBox": [
+        4,
+        87,
+        145,
+        314
+      ],
+      "drawerBox": [
+        4,
+        6,
+        145,
+        80
+      ],
+      "door": {
+        "file": "processed/door/ewo.png",
+        "size": [
+          141,
+          227
+        ],
+        "enhanced": {
+          "file": "processed/enhanced/door/ewo.png",
+          "meanChannelShift": [
+            -0.01,
+            -0.01,
+            -0.01
+          ],
+          "meanAbsChange": 0.325,
+          "withinLimits": true
+        }
+      },
+      "drawer": {
+        "file": "processed/drawer/ewo.png",
+        "size": [
+          141,
+          74
+        ],
+        "enhanced": {
+          "file": "processed/enhanced/drawer/ewo.png",
+          "meanChannelShift": [
+            -0.009,
+            -0.009,
+            -0.009
+          ],
+          "meanAbsChange": 0.445,
+          "withinLimits": true
+        }
+      },
+      "softness": {
+        "laplacianVariance": 161.5,
+        "interiorStd": 11.4,
+        "tier": "medium"
+      },
+      "flags": []
+    },
+    {
+      "slug": "expresso-shaker",
+      "sourceFile": "source/finishes/Expresso Shaker.jpg",
+      "sourceSize": [
+        148,
+        320
+      ],
+      "catalogOption": null,
+      "outerTrim": {
+        "top": 6,
+        "bottom": 6,
+        "left": 4,
+        "right": 4
+      },
+      "reveal": {
+        "bandStart": 68,
+        "bandEnd": 72,
+        "peakRow": 70,
+        "depth": 76.6,
+        "spanCoverage": 1.0
+      },
+      "hasDrawerFront": true,
+      "doorBox": [
+        4,
+        75,
+        144,
+        314
+      ],
+      "drawerBox": [
+        4,
+        6,
+        144,
+        66
+      ],
+      "door": {
+        "file": "processed/door/expresso-shaker.png",
+        "size": [
+          140,
+          239
+        ],
+        "enhanced": {
+          "file": "processed/enhanced/door/expresso-shaker.png",
+          "meanChannelShift": [
+            -0.002,
+            -0.002,
+            -0.002
+          ],
+          "meanAbsChange": 0.162,
+          "withinLimits": true
+        }
+      },
+      "drawer": {
+        "file": "processed/drawer/expresso-shaker.png",
+        "size": [
+          140,
+          60
+        ],
+        "enhanced": {
+          "file": "processed/enhanced/drawer/expresso-shaker.png",
+          "meanChannelShift": [
+            -0.005,
+            -0.005,
+            -0.005
+          ],
+          "meanAbsChange": 0.379,
+          "withinLimits": true
+        }
+      },
+      "softness": {
+        "laplacianVariance": 84.0,
+        "interiorStd": 14.6,
+        "tier": "soft"
+      },
+      "flags": [
+        "soft-needs-higher-res-photo"
+      ]
+    },
+    {
+      "slug": "glacier-white",
+      "sourceFile": "source/finishes/Glacier White.jpg",
+      "sourceSize": [
+        149,
+        320
+      ],
+      "catalogOption": {
+        "code": "GW",
+        "displayName": "Glacier White"
+      },
+      "outerTrim": {
+        "top": 6,
+        "bottom": 6,
+        "left": 4,
+        "right": 4
+      },
+      "reveal": {
+        "bandStart": 70,
+        "bandEnd": 71,
+        "peakRow": 71,
+        "depth": 102.3,
+        "spanCoverage": 0.986
+      },
+      "hasDrawerFront": true,
+      "doorBox": [
+        4,
+        74,
+        145,
+        314
+      ],
+      "drawerBox": [
+        4,
+        6,
+        145,
+        68
+      ],
+      "door": {
+        "file": "processed/door/glacier-white.png",
+        "size": [
+          141,
+          240
+        ],
+        "enhanced": {
+          "file": "processed/enhanced/door/glacier-white.png",
+          "meanChannelShift": [
+            -0.027,
+            -0.029,
+            -0.032
+          ],
+          "meanAbsChange": 0.249,
+          "withinLimits": true
+        }
+      },
+      "drawer": {
+        "file": "processed/drawer/glacier-white.png",
+        "size": [
+          141,
+          62
+        ],
+        "enhanced": {
+          "file": "processed/enhanced/drawer/glacier-white.png",
+          "meanChannelShift": [
+            -0.03,
+            -0.031,
+            -0.038
+          ],
+          "meanAbsChange": 0.241,
+          "withinLimits": true
+        }
+      },
+      "softness": {
+        "laplacianVariance": 165.2,
+        "interiorStd": 20.8,
+        "tier": "medium"
+      },
+      "flags": []
+    },
+    {
+      "slug": "grey-shaker",
+      "sourceFile": "source/finishes/Grey Shaker.jpg",
+      "sourceSize": [
+        148,
+        320
+      ],
+      "catalogOption": null,
+      "outerTrim": {
+        "top": 6,
+        "bottom": 6,
+        "left": 4,
+        "right": 4
+      },
+      "reveal": {
+        "bandStart": 68,
+        "bandEnd": 71,
+        "peakRow": 69,
+        "depth": 109.2,
+        "spanCoverage": 1.0
+      },
+      "hasDrawerFront": true,
+      "doorBox": [
+        4,
+        74,
+        144,
+        314
+      ],
+      "drawerBox": [
+        4,
+        6,
+        144,
+        66
+      ],
+      "door": {
+        "file": "processed/door/grey-shaker.png",
+        "size": [
+          140,
+          240
+        ],
+        "enhanced": {
+          "file": "processed/enhanced/door/grey-shaker.png",
+          "meanChannelShift": [
+            -0.005,
+            -0.005,
+            -0.005
+          ],
+          "meanAbsChange": 0.12,
+          "withinLimits": true
+        }
+      },
+      "drawer": {
+        "file": "processed/drawer/grey-shaker.png",
+        "size": [
+          140,
+          60
+        ],
+        "enhanced": {
+          "file": "processed/enhanced/drawer/grey-shaker.png",
+          "meanChannelShift": [
+            -0.022,
+            -0.022,
+            -0.022
+          ],
+          "meanAbsChange": 0.239,
+          "withinLimits": true
+        }
+      },
+      "softness": {
+        "laplacianVariance": 42.0,
+        "interiorStd": 6.4,
+        "tier": "soft"
+      },
+      "flags": [
+        "soft-needs-higher-res-photo"
+      ]
+    },
+    {
+      "slug": "ivory-white",
+      "sourceFile": "source/finishes/Ivory White.jpg",
+      "sourceSize": [
+        148,
+        320
+      ],
+      "catalogOption": null,
+      "outerTrim": {
+        "top": 6,
+        "bottom": 6,
+        "left": 4,
+        "right": 4
+      },
+      "reveal": {
+        "bandStart": 70,
+        "bandEnd": 71,
+        "peakRow": 71,
+        "depth": 66.4,
+        "spanCoverage": 1.0
+      },
+      "hasDrawerFront": true,
+      "doorBox": [
+        4,
+        74,
+        144,
+        314
+      ],
+      "drawerBox": [
+        4,
+        6,
+        144,
+        68
+      ],
+      "door": {
+        "file": "processed/door/ivory-white.png",
+        "size": [
+          140,
+          240
+        ],
+        "enhanced": {
+          "file": "processed/enhanced/door/ivory-white.png",
+          "meanChannelShift": [
+            -0.012,
+            -0.012,
+            -0.012
+          ],
+          "meanAbsChange": 0.07,
+          "withinLimits": true
+        }
+      },
+      "drawer": {
+        "file": "processed/drawer/ivory-white.png",
+        "size": [
+          140,
+          62
+        ],
+        "enhanced": {
+          "file": "processed/enhanced/drawer/ivory-white.png",
+          "meanChannelShift": [
+            -0.008,
+            -0.008,
+            -0.008
+          ],
+          "meanAbsChange": 0.243,
+          "withinLimits": true
+        }
+      },
+      "softness": {
+        "laplacianVariance": 35.4,
+        "interiorStd": 4.3,
+        "tier": "flat-finish"
+      },
+      "flags": []
+    },
+    {
+      "slug": "mc",
+      "sourceFile": "source/finishes/MC.jpg",
+      "sourceSize": [
+        156,
+        320
+      ],
+      "catalogOption": {
+        "code": "MC",
+        "displayName": "Midnight Cove"
+      },
+      "outerTrim": {
+        "top": 6,
+        "bottom": 6,
+        "left": 5,
+        "right": 5
+      },
+      "reveal": {
+        "bandStart": 73,
+        "bandEnd": 75,
+        "peakRow": 73,
+        "depth": 65.7,
+        "spanCoverage": 1.0
+      },
+      "hasDrawerFront": true,
+      "doorBox": [
+        5,
+        78,
+        151,
+        314
+      ],
+      "drawerBox": [
+        5,
+        6,
+        151,
+        71
+      ],
+      "door": {
+        "file": "processed/door/mc.png",
+        "size": [
+          146,
+          236
+        ],
+        "enhanced": {
+          "file": "processed/enhanced/door/mc.png",
+          "meanChannelShift": [
+            -0.0,
+            -0.0,
+            -0.0
+          ],
+          "meanAbsChange": 0.108,
+          "withinLimits": true
+        }
+      },
+      "drawer": {
+        "file": "processed/drawer/mc.png",
+        "size": [
+          146,
+          65
+        ],
+        "enhanced": {
+          "file": "processed/enhanced/drawer/mc.png",
+          "meanChannelShift": [
+            0.007,
+            0.007,
+            0.007
+          ],
+          "meanAbsChange": 0.148,
+          "withinLimits": true
+        }
+      },
+      "softness": {
+        "laplacianVariance": 37.3,
+        "interiorStd": 10.2,
+        "tier": "soft"
+      },
+      "flags": [
+        "soft-needs-higher-res-photo"
+      ]
+    },
+    {
+      "slug": "new-york-glaze",
+      "sourceFile": "source/finishes/New York Glaze.jpg",
+      "sourceSize": [
+        149,
+        320
+      ],
+      "catalogOption": null,
+      "outerTrim": {
+        "top": 6,
+        "bottom": 6,
+        "left": 4,
+        "right": 4
+      },
+      "reveal": {
+        "bandStart": 71,
+        "bandEnd": 73,
+        "peakRow": 72,
+        "depth": 89.0,
+        "spanCoverage": 0.936
+      },
+      "hasDrawerFront": true,
+      "doorBox": [
+        4,
+        76,
+        145,
+        314
+      ],
+      "drawerBox": [
+        4,
+        6,
+        145,
+        69
+      ],
+      "door": {
+        "file": "processed/door/new-york-glaze.png",
+        "size": [
+          141,
+          238
+        ],
+        "enhanced": {
+          "file": "processed/enhanced/door/new-york-glaze.png",
+          "meanChannelShift": [
+            -0.02,
+            -0.02,
+            -0.015
+          ],
+          "meanAbsChange": 1.173,
+          "withinLimits": true
+        }
+      },
+      "drawer": {
+        "file": "processed/drawer/new-york-glaze.png",
+        "size": [
+          141,
+          63
+        ],
+        "enhanced": {
+          "file": "processed/enhanced/drawer/new-york-glaze.png",
+          "meanChannelShift": [
+            -0.011,
+            -0.011,
+            0.002
+          ],
+          "meanAbsChange": 2.046,
+          "withinLimits": true
+        }
+      },
+      "softness": {
+        "laplacianVariance": 901.2,
+        "interiorStd": 24.9,
+        "tier": "sharp"
+      },
+      "flags": []
+    },
+    {
+      "slug": "pearl-white",
+      "sourceFile": "source/finishes/Pearl White.jpg",
+      "sourceSize": [
+        148,
+        320
+      ],
+      "catalogOption": {
+        "code": "PW",
+        "displayName": "Pearl White"
+      },
+      "outerTrim": {
+        "top": 6,
+        "bottom": 6,
+        "left": 4,
+        "right": 4
+      },
+      "reveal": {
+        "bandStart": 78,
+        "bandEnd": 80,
+        "peakRow": 79,
+        "depth": 71.3,
+        "spanCoverage": 1.0
+      },
+      "hasDrawerFront": true,
+      "doorBox": [
+        4,
+        83,
+        144,
+        314
+      ],
+      "drawerBox": [
+        4,
+        6,
+        144,
+        76
+      ],
+      "door": {
+        "file": "processed/door/pearl-white.png",
+        "size": [
+          140,
+          231
+        ],
+        "enhanced": {
+          "file": "processed/enhanced/door/pearl-white.png",
+          "meanChannelShift": [
+            -0.011,
+            -0.011,
+            -0.011
+          ],
+          "meanAbsChange": 0.07,
+          "withinLimits": true
+        }
+      },
+      "drawer": {
+        "file": "processed/drawer/pearl-white.png",
+        "size": [
+          140,
+          70
+        ],
+        "enhanced": {
+          "file": "processed/enhanced/drawer/pearl-white.png",
+          "meanChannelShift": [
+            -0.043,
+            -0.043,
+            -0.043
+          ],
+          "meanAbsChange": 0.245,
+          "withinLimits": true
+        }
+      },
+      "softness": {
+        "laplacianVariance": 31.3,
+        "interiorStd": 3.6,
+        "tier": "flat-finish"
+      },
+      "flags": []
+    },
+    {
+      "slug": "peccan",
+      "sourceFile": "source/finishes/Peccan.jpg",
+      "sourceSize": [
+        148,
+        320
+      ],
+      "catalogOption": null,
+      "outerTrim": {
+        "top": 7,
+        "bottom": 7,
+        "left": 4,
+        "right": 4
+      },
+      "reveal": {
+        "bandStart": 68,
+        "bandEnd": 73,
+        "peakRow": 72,
+        "depth": 68.5,
+        "spanCoverage": 0.936
+      },
+      "hasDrawerFront": true,
+      "doorBox": [
+        4,
+        76,
+        144,
+        313
+      ],
+      "drawerBox": [
+        4,
+        7,
+        144,
+        66
+      ],
+      "door": {
+        "file": "processed/door/peccan.png",
+        "size": [
+          140,
+          237
+        ],
+        "enhanced": {
+          "file": "processed/enhanced/door/peccan.png",
+          "meanChannelShift": [
+            -0.011,
+            -0.011,
+            -0.005
+          ],
+          "meanAbsChange": 1.039,
+          "withinLimits": true
+        }
+      },
+      "drawer": {
+        "file": "processed/drawer/peccan.png",
+        "size": [
+          140,
+          59
+        ],
+        "enhanced": {
+          "file": "processed/enhanced/drawer/peccan.png",
+          "meanChannelShift": [
+            -0.022,
+            -0.022,
+            0.04
+          ],
+          "meanAbsChange": 1.338,
+          "withinLimits": true
+        }
+      },
+      "softness": {
+        "laplacianVariance": 725.1,
+        "interiorStd": 27.7,
+        "tier": "sharp"
+      },
+      "flags": []
+    },
+    {
+      "slug": "port",
+      "sourceFile": "source/finishes/Port.jpg",
+      "sourceSize": [
+        149,
+        320
+      ],
+      "catalogOption": null,
+      "outerTrim": {
+        "top": 6,
+        "bottom": 6,
+        "left": 4,
+        "right": 4
+      },
+      "reveal": {
+        "bandStart": 64,
+        "bandEnd": 68,
+        "peakRow": 66,
+        "depth": 106.4,
+        "spanCoverage": 0.993
+      },
+      "hasDrawerFront": true,
+      "doorBox": [
+        4,
+        71,
+        145,
+        314
+      ],
+      "drawerBox": [
+        4,
+        6,
+        145,
+        62
+      ],
+      "door": {
+        "file": "processed/door/port.png",
+        "size": [
+          141,
+          243
+        ],
+        "enhanced": {
+          "file": "processed/enhanced/door/port.png",
+          "meanChannelShift": [
+            -0.018,
+            -0.018,
+            0.023
+          ],
+          "meanAbsChange": 0.802,
+          "withinLimits": true
+        }
+      },
+      "drawer": {
+        "file": "processed/drawer/port.png",
+        "size": [
+          141,
+          56
+        ],
+        "enhanced": {
+          "file": "processed/enhanced/drawer/port.png",
+          "meanChannelShift": [
+            -0.012,
+            -0.012,
+            0.018
+          ],
+          "meanAbsChange": 1.628,
+          "withinLimits": true
+        }
+      },
+      "softness": {
+        "laplacianVariance": 797.3,
+        "interiorStd": 14.5,
+        "tier": "sharp"
+      },
+      "flags": []
+    },
+    {
+      "slug": "slim-shaker-alabaster",
+      "sourceFile": "source/finishes/Slim Shaker Alabaster.jpg",
+      "sourceSize": [
+        149,
+        320
+      ],
+      "catalogOption": {
+        "code": "SSA",
+        "displayName": "Slim Shaker Alabaster"
+      },
+      "outerTrim": {
+        "top": 6,
+        "bottom": 6,
+        "left": 4,
+        "right": 4
+      },
+      "reveal": {
+        "bandStart": 65,
+        "bandEnd": 66,
+        "peakRow": 65,
+        "depth": 69.4,
+        "spanCoverage": 1.0
+      },
+      "hasDrawerFront": true,
+      "doorBox": [
+        4,
+        69,
+        145,
+        314
+      ],
+      "drawerBox": [
+        4,
+        6,
+        145,
+        63
+      ],
+      "door": {
+        "file": "processed/door/slim-shaker-alabaster.png",
+        "size": [
+          141,
+          245
+        ],
+        "enhanced": {
+          "file": "processed/enhanced/door/slim-shaker-alabaster.png",
+          "meanChannelShift": [
+            -0.003,
+            -0.003,
+            -0.003
+          ],
+          "meanAbsChange": 0.061,
+          "withinLimits": true
+        }
+      },
+      "drawer": {
+        "file": "processed/drawer/slim-shaker-alabaster.png",
+        "size": [
+          141,
+          57
+        ],
+        "enhanced": {
+          "file": "processed/enhanced/drawer/slim-shaker-alabaster.png",
+          "meanChannelShift": [
+            -0.007,
+            -0.007,
+            -0.007
+          ],
+          "meanAbsChange": 0.109,
+          "withinLimits": true
+        }
+      },
+      "softness": {
+        "laplacianVariance": 21.2,
+        "interiorStd": 2.2,
+        "tier": "flat-finish"
+      },
+      "flags": []
+    },
+    {
+      "slug": "slim-shaker-ebony",
+      "sourceFile": "source/finishes/Slim Shaker Ebony.jpg",
+      "sourceSize": [
+        149,
+        320
+      ],
+      "catalogOption": {
+        "code": "SSE",
+        "displayName": "Slim Shaker Ebony"
+      },
+      "outerTrim": {
+        "top": 6,
+        "bottom": 6,
+        "left": 4,
+        "right": 4
+      },
+      "reveal": {
+        "bandStart": 66,
+        "bandEnd": 67,
+        "peakRow": 66,
+        "depth": 31.7,
+        "spanCoverage": 1.0
+      },
+      "hasDrawerFront": true,
+      "doorBox": [
+        4,
+        70,
+        145,
+        314
+      ],
+      "drawerBox": [
+        4,
+        6,
+        145,
+        64
+      ],
+      "door": {
+        "file": "processed/door/slim-shaker-ebony.png",
+        "size": [
+          141,
+          244
+        ],
+        "enhanced": {
+          "file": "processed/enhanced/door/slim-shaker-ebony.png",
+          "meanChannelShift": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "meanAbsChange": 0.06,
+          "withinLimits": true
+        }
+      },
+      "drawer": {
+        "file": "processed/drawer/slim-shaker-ebony.png",
+        "size": [
+          141,
+          58
+        ],
+        "enhanced": {
+          "file": "processed/enhanced/drawer/slim-shaker-ebony.png",
+          "meanChannelShift": [
+            -0.016,
+            -0.016,
+            -0.016
+          ],
+          "meanAbsChange": 0.139,
+          "withinLimits": true
+        }
+      },
+      "softness": {
+        "laplacianVariance": 23.2,
+        "interiorStd": 4.5,
+        "tier": "flat-finish"
+      },
+      "flags": []
+    },
+    {
+      "slug": "versa-shaker",
+      "sourceFile": "source/finishes/Versa Shaker.jpg",
+      "sourceSize": [
+        149,
+        320
+      ],
+      "catalogOption": {
+        "code": "VS",
+        "displayName": "Versa Shaker"
+      },
+      "outerTrim": {
+        "top": 6,
+        "bottom": 6,
+        "left": 4,
+        "right": 4
+      },
+      "reveal": {
+        "bandStart": 66,
+        "bandEnd": 74,
+        "peakRow": 66,
+        "depth": 52.6,
+        "spanCoverage": 1.0
+      },
+      "hasDrawerFront": true,
+      "doorBox": [
+        4,
+        77,
+        145,
+        314
+      ],
+      "drawerBox": [
+        4,
+        6,
+        145,
+        64
+      ],
+      "door": {
+        "file": "processed/door/versa-shaker.png",
+        "size": [
+          141,
+          237
+        ],
+        "enhanced": {
+          "file": "processed/enhanced/door/versa-shaker.png",
+          "meanChannelShift": [
+            -0.011,
+            -0.008,
+            -0.008
+          ],
+          "meanAbsChange": 0.258,
+          "withinLimits": true
+        }
+      },
+      "drawer": {
+        "file": "processed/drawer/versa-shaker.png",
+        "size": [
+          141,
+          58
+        ],
+        "enhanced": {
+          "file": "processed/enhanced/drawer/versa-shaker.png",
+          "meanChannelShift": [
+            -0.034,
+            -0.001,
+            0.0
+          ],
+          "meanAbsChange": 0.476,
+          "withinLimits": true
+        }
+      },
+      "softness": {
+        "laplacianVariance": 133.4,
+        "interiorStd": 12.4,
+        "tier": "medium"
+      },
+      "flags": []
+    },
+    {
+      "slug": "white-shaker",
+      "sourceFile": "source/finishes/White Shaker.jpg",
+      "sourceSize": [
+        148,
+        320
+      ],
+      "catalogOption": {
+        "code": "WS",
+        "displayName": "White Shaker"
+      },
+      "outerTrim": {
+        "top": 6,
+        "bottom": 6,
+        "left": 4,
+        "right": 4
+      },
+      "reveal": {
+        "bandStart": 68,
+        "bandEnd": 71,
+        "peakRow": 70,
+        "depth": 29.3,
+        "spanCoverage": 1.0
+      },
+      "hasDrawerFront": true,
+      "doorBox": [
+        4,
+        74,
+        144,
+        314
+      ],
+      "drawerBox": [
+        4,
+        6,
+        144,
+        66
+      ],
+      "door": {
+        "file": "processed/door/white-shaker.png",
+        "size": [
+          140,
+          240
+        ],
+        "enhanced": {
+          "file": "processed/enhanced/door/white-shaker.png",
+          "meanChannelShift": [
+            -0.006,
+            -0.006,
+            -0.006
+          ],
+          "meanAbsChange": 0.015,
+          "withinLimits": true
+        }
+      },
+      "drawer": {
+        "file": "processed/drawer/white-shaker.png",
+        "size": [
+          140,
+          60
+        ],
+        "enhanced": {
+          "file": "processed/enhanced/drawer/white-shaker.png",
+          "meanChannelShift": [
+            -0.0,
+            -0.0,
+            -0.0
+          ],
+          "meanAbsChange": 0.069,
+          "withinLimits": true
+        }
+      },
+      "softness": {
+        "laplacianVariance": 4.9,
+        "interiorStd": 2.5,
+        "tier": "flat-finish"
+      },
+      "flags": []
+    }
+  ],
+  "skipped": [
+    {
+      "file": "IMG.jpg",
+      "reason": "image-not-available placeholder, never used as a texture"
+    }
+  ],
+  "textures": [
+    {
+      "file": "source/textures/543645.jpg",
+      "size": [
+        512,
+        512
+      ],
+      "isNormalMap": false
+    },
+    {
+      "file": "source/textures/543645.jpg_nm,0_05.png",
+      "size": [
+        512,
+        512
+      ],
+      "isNormalMap": true
+    },
+    {
+      "file": "source/textures/Cinnamon.jpg",
+      "size": [
+        291,
+        291
+      ],
+      "isNormalMap": false
+    },
+    {
+      "file": "source/textures/Cinnamon_1.jpg",
+      "size": [
+        291,
+        291
+      ],
+      "isNormalMap": false
+    },
+    {
+      "file": "source/textures/Cinnamon_1.jpg_nm,0_05.png",
+      "size": [
+        256,
+        256
+      ],
+      "isNormalMap": true
+    },
+    {
+      "file": "source/textures/Cinnamon_1.jpg_nm,5.png",
+      "size": [
+        256,
+        256
+      ],
+      "isNormalMap": true
+    },
+    {
+      "file": "source/textures/Coffee.jpg",
+      "size": [
+        253,
+        253
+      ],
+      "isNormalMap": false
+    },
+    {
+      "file": "source/textures/Coffee_1.jpg",
+      "size": [
+        138,
+        138
+      ],
+      "isNormalMap": false
+    },
+    {
+      "file": "source/textures/Coffee_1.jpg_nm,0_05.png",
+      "size": [
+        256,
+        256
+      ],
+      "isNormalMap": true
+    },
+    {
+      "file": "source/textures/EWO_H.jpg",
+      "size": [
+        1024,
+        1024
+      ],
+      "isNormalMap": false
+    },
+    {
+      "file": "source/textures/EWO_H.jpg_nm,5.png",
+      "size": [
+        1024,
+        1024
+      ],
+      "isNormalMap": true
+    },
+    {
+      "file": "source/textures/EWO_V.jpg",
+      "size": [
+        1024,
+        1024
+      ],
+      "isNormalMap": false
+    },
+    {
+      "file": "source/textures/EWO_V.jpg_nm,5.png",
+      "size": [
+        1024,
+        1024
+      ],
+      "isNormalMap": true
+    },
+    {
+      "file": "source/textures/Graphite.jpg",
+      "size": [
+        250,
+        250
+      ],
+      "isNormalMap": false
+    },
+    {
+      "file": "source/textures/Graphite_1.jpg",
+      "size": [
+        250,
+        250
+      ],
+      "isNormalMap": false
+    },
+    {
+      "file": "source/textures/Graphite_1.jpg_nm,0_05.png",
+      "size": [
+        256,
+        256
+      ],
+      "isNormalMap": true
+    },
+    {
+      "file": "source/textures/Mocha.jpg",
+      "size": [
+        223,
+        223
+      ],
+      "isNormalMap": false
+    },
+    {
+      "file": "source/textures/Mocha_1.jpg",
+      "size": [
+        223,
+        223
+      ],
+      "isNormalMap": false
+    },
+    {
+      "file": "source/textures/Mocha_1.jpg_nm,0_05.png",
+      "size": [
+        256,
+        256
+      ],
+      "isNormalMap": true
+    },
+    {
+      "file": "source/textures/Mocha_1.jpg_nm,5.png",
+      "size": [
+        256,
+        256
+      ],
+      "isNormalMap": true
+    },
+    {
+      "file": "source/textures/Smoke.jpg",
+      "size": [
+        252,
+        252
+      ],
+      "isNormalMap": false
+    },
+    {
+      "file": "source/textures/Smoke_1.jpg",
+      "size": [
+        252,
+        252
+      ],
+      "isNormalMap": false
+    },
+    {
+      "file": "source/textures/Smoke_1.jpg_nm,0_05.png",
+      "size": [
+        256,
+        256
+      ],
+      "isNormalMap": true
+    }
+  ]
+}
