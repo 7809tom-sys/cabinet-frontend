@@ -1,5 +1,6 @@
 import { FlooringRotationControl } from "@/components/design/FlooringLayoutPicker";
 import { PlacedItemContextMenu, type PlacedItemContextMenuState } from "@/components/design/PlacedItemContextMenu";
+import { doorOpeningAppearance, roomDoorSwing, supportsRoomDoorSwing } from "@/lib/doorOpeningAppearance";
 import { flooringPlanPatternStyle, flooringPlanRotationLayerStyle, type FlooringRotationDegrees } from "@/lib/flooringLayout";
 import { useRef, useState, useCallback, useEffect, useMemo } from "react";
 import { Fragment } from "react";
