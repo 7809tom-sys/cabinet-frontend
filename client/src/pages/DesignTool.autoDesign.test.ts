@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const pageSource = readFileSync(resolve(process.cwd(), "client/src/pages/DesignTool.tsx"), "utf8");
+const layoutSource = readFileSync(resolve(process.cwd(), "client/src/lib/autoDesignLayout.ts"), "utf8");
 const dialogSource = readFileSync(resolve(process.cwd(), "client/src/components/design/AutoDesignDialog.tsx"), "utf8");
 
 describe("admin auto-design Designer wiring", () => {
@@ -16,6 +17,7 @@ describe("admin auto-design Designer wiring", () => {
     expect(pageSource).toContain("disabled={!autoDesignControl.enabled}");
     expect(pageSource).toContain("AUTO_DESIGN_REFRIGERATOR_NOTE");
     expect(pageSource).toContain("buildAutoDesignLayout");
+    expect(pageSource).toContain("runAutoDesignLayout");
     expect(pageSource).toContain("Auto-Design layout is available in affiliate Designers and for CabinetDealz admins.");
     expect(pageSource).not.toContain("The auto-design build is admin-only");
   });
@@ -61,9 +63,9 @@ describe("admin auto-design Designer wiring", () => {
     expect(dialogSource).toContain("Do not add Range / stove");
     expect(dialogSource).toContain("Do not add Dishwasher");
     expect(dialogSource).toContain("Do not add Refrigerator");
-    expect(pageSource).toContain('const refrigeratorRequested = result.plan.anchors.some((anchor) => anchor.kind === "refrigerator")');
-    expect(pageSource).toContain("if (refrigeratorRequested && (!fridgeParts?.deepAbove?.length || !fridgeParts.endPanels?.length))");
-    expect(pageSource).toContain("if (refrigerator) {");
+    expect(layoutSource).toContain('const refrigeratorRequested = plan.plan.anchors.some((anchor) => anchor.kind === "refrigerator")');
+    expect(layoutSource).toContain("if (refrigeratorRequested && (!args.refrigeratorCaps.length || !args.refrigeratorEndPanels.length))");
+    expect(layoutSource).toContain("if (refrigerator) {");
   });
 
   it("offers a left or right sink-adjacent dishwasher choice when no exact center is entered", () => {
@@ -84,9 +86,9 @@ describe("admin auto-design Designer wiring", () => {
     expect(dialogSource).toContain("36″ refrigerator");
     expect(dialogSource).toContain("Two source-priced side panels");
     expect(dialogSource).toContain("Matching source-priced 36″ cabinet above");
-    expect(pageSource).toContain("No source-priced SB${sinkBaseWidth} sink base");
-    expect(pageSource).toContain("makeDefaultSinkForCabinet(sinkBase");
-    expect(pageSource).toContain("buildMandatoryAutoDesignRefrigeratorBay");
+    expect(layoutSource).toContain("No source-priced SB${sinkBaseWidth} sink base");
+    expect(layoutSource).toContain("makeDefaultSinkForCabinet(sinkBase");
+    expect(layoutSource).toContain("buildMandatoryAutoDesignRefrigeratorBay");
   });
 
   it("collects the requested 30, 36, or 42 inch wall-cabinet height and keeps submit failures visible", () => {
@@ -99,11 +101,11 @@ describe("admin auto-design Designer wiring", () => {
   });
 
   it("resolves the selected SB width only to a straight sink base and never fills a wall gap with a corner SKU", () => {
-    expect(pageSource).toContain("const straightBaseCatalog = autoBuildStraightBaseCatalog(pool);");
+    expect(layoutSource).toContain("const straightBaseCatalog = autoBuildStraightBaseCatalog(pool);");
     // The sink base is chosen by the shared picker: REGULAR by default (never the farmhouse apron-front base,
     // a vanity or a corner sink box) and farmhouse only on an explicit request.
-    expect(pageSource).toContain("pickAutoDesignSinkBase(pool, sinkBaseWidth, sinkBaseKind)");
-    expect(pageSource).toContain('input.sinkBaseKind ?? "regular"');
+    expect(layoutSource).toContain("pickAutoDesignSinkBase(pool, sinkBaseWidth, sinkBaseKind)");
+    expect(layoutSource).toContain('input.sinkBaseKind ?? "regular"');
     // The largest-first fill now runs through the range-aware planner (which calls autoFillSpan with the same strategy and
     // the same straight-base catalog) so a range always gets a 15-inch-or-wider cabinet on each side.
     expect(pageSource).toContain("planAutoDesignBaseSegment({");
@@ -123,8 +125,8 @@ describe("admin auto-design Designer wiring", () => {
 
   it("seats the measured appliances, then places catalog corners automatically before filling the remaining runs", () => {
     expect(pageSource).toContain("seatAutoDesignCornerFromCatalog");
-    expect(pageSource).toContain("autoDesignCornerSlots(input.layoutType, {");
-    expect(pageSource).toContain("wallIds: selectedWalls, room, originCorner: input.originCorner, runDirection: input.runDirection");
+    expect(layoutSource).toContain("autoDesignCornerSlots(input.layoutType, {");
+    expect(layoutSource).toContain("wallIds: selectedWalls, room, originCorner: input.originCorner, runDirection: input.runDirection");
     expect(pageSource).toContain("finishAutoDesignLayoutRef.current");
     expect(pageSource).toContain("completeAutoDesignLayout");
     expect(pageSource).not.toContain("AutoDesignCornerDialog");
