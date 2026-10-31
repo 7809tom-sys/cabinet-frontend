@@ -1,4 +1,4 @@
-import { COUNTERTOP_DEPTH_IN, STD, type RoomData, type SinkFixture, type WallOpening, type WallSide } from "./design";
+import { COUNTERTOP_DEPTH_IN, STD, WALL_LABELS, wallCeilingMin, type RoomData, type SinkFixture, type WallOpening, type WallSide } from "./design";
 
 /**
  * Deck faucets are mounted on the counter behind the sink. The 3D window is not
@@ -7,7 +7,7 @@ import { COUNTERTOP_DEPTH_IN, STD, type RoomData, type SinkFixture, type WallOpe
  * match the meshes in `addWallOpening` (that code builds the frame in feet).
  */
 export const FAUCET_WINDOW_CONFLICT_MESSAGE =
-  "Faucet conflicts with window sill/frame; raise the window or choose a lower faucet";
+  "Faucet conflicts with window sill/frame; raise the window";
 
 /** CylinderGeometry(0.075, 0.095, 0.11) on the deck faucet, converted to inches. */
 export const FAUCET_BASE_RADIUS_IN = 0.095 * 12;
@@ -306,6 +306,127 @@ export function resolveDeckFaucetPlacement(
     conflict,
     warning: conflict ? FAUCET_WINDOW_CONFLICT_MESSAGE : null,
   };
+}
+
+/** Same floor used by `clampOpening` so a raised window stays a real opening. */
+const WINDOW_MIN_HEIGHT_IN = 6;
+
+export type FaucetWindowClearanceNote = {
+  openingUid: string;
+  text: string;
+};
+
+export type FaucetWindowRaiseResult = {
+  openings: WallOpening[];
+  notes: FaucetWindowClearanceNote[];
+  /** True when a conflicting window could not be lifted clear of the ceiling. */
+  unresolved: boolean;
+};
+
+function roundSillUpToHalfInch(value: number): number {
+  const halves = value * 2;
+  const nearest = Math.round(halves);
+  if (Math.abs(halves - nearest) <= 1e-6) return nearest / 2;
+  return Math.ceil(halves - 1e-9) / 2;
+}
+
+function formatRaiseInches(value: number): string {
+  const rounded = Math.round(value * 2) / 2;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+}
+
+function faucetWindowLabel(opening: WallOpening, room: RoomData, wallLabels?: Readonly<Record<string, string>>): string {
+  const custom = room.customWalls?.find((wall) => wall.id === opening.side)?.label?.trim();
+  if (custom) return custom;
+  const numbered = wallLabels?.[opening.side]?.trim();
+  if (numbered) return numbered;
+  const standard = (WALL_LABELS as Record<string, string | undefined>)[opening.side];
+  return standard ? `${standard} wall` : opening.side;
+}
+
+/**
+ * Minimum sill so the faucet top, plus the frame gap, sits below the sill,
+ * casing, and apron. The apron hangs `trim * 1.6` below the sill.
+ */
+export function minimumFaucetClearSill(opening: Pick<WallOpening, "width">, faucetHeightIn: number): number {
+  const apronBelowSill = windowTrimWidthIn(opening.width) * 1.6;
+  return STD.COUNTERTOP_HEIGHT + faucetHeightIn + FAUCET_FRAME_GAP_IN + apronBelowSill;
+}
+
+/**
+ * Auto-Design's resolution for a deck faucet that hits a window: raise that
+ * window's sill the minimum half-inch that clears the faucet. The height stays
+ * the same unless the top would pass the wall, in which case the height shrinks
+ * from the bottom. A window that cannot clear the ceiling is left alone.
+ */
+export function raiseWindowsForDeckFaucet(input: {
+  sinks: readonly SinkFixture[];
+  room: RoomData;
+  openings: readonly WallOpening[];
+  countertops?: readonly FaucetCountertop[];
+  wallLabels?: Readonly<Record<string, string>>;
+}): FaucetWindowRaiseResult {
+  let openings = [...input.openings];
+  const notes: FaucetWindowClearanceNote[] = [];
+  let unresolved = false;
+  const countertops = input.countertops ?? [];
+
+  for (const sink of input.sinks) {
+    if (!sink.faucet || sink.faucetForm === "wall-mounted-bridge") continue;
+    const anchor = sinkAnchor(sink, input.room);
+    if (!anchor) continue;
+    const heightIn = sink.faucetOverallHeight ?? DEFAULT_DECK_FAUCET_HEIGHT_IN;
+    const placement = resolveDeckFaucetPlacement(sink, input.room, openings, countertops);
+    if (!placement.conflict) continue;
+    const hitting = windowsOnWall(anchor, anchor.along, openings)
+      .filter((opening) => faucetHitsWindow(placement.centerFromWallIn, anchor.along, heightIn, opening));
+    const targets = hitting.length > 0 ? hitting : windowsOnWall(anchor, anchor.along, openings);
+    if (targets.length === 0) {
+      unresolved = true;
+      continue;
+    }
+    for (const opening of targets) {
+      const label = faucetWindowLabel(opening, input.room, input.wallLabels);
+      const requiredSill = roundSillUpToHalfInch(minimumFaucetClearSill(opening, heightIn));
+      const wallTop = wallCeilingMin(input.room, opening.side);
+      const nextSill = Math.max(opening.sill, requiredSill);
+      const roomForHeight = wallTop - nextSill;
+      if (roomForHeight < WINDOW_MIN_HEIGHT_IN - 1e-6) {
+        unresolved = true;
+        const text = `Window on ${label} could not be raised enough for the faucet to clear the sill.`;
+        notes.push({ openingUid: opening.uid, text });
+        openings = openings.map((item) => item.uid === opening.uid ? { ...item, faucetClearanceNote: text } : item);
+        continue;
+      }
+      const nextHeight = Math.min(opening.height, roomForHeight);
+      const heightShrunk = nextHeight < opening.height - 1e-6;
+      const raised = nextSill > opening.sill + 1e-6;
+      if (!raised && !heightShrunk) {
+        unresolved = true;
+        const text = `Window on ${label} could not be raised enough for the faucet to clear the sill.`;
+        notes.push({ openingUid: opening.uid, text });
+        openings = openings.map((item) => item.uid === opening.uid ? { ...item, faucetClearanceNote: text } : item);
+        continue;
+      }
+      const candidate: WallOpening = { ...opening, sill: nextSill, height: nextHeight };
+      if (faucetHitsWindow(placement.centerFromWallIn, anchor.along, heightIn, candidate)) {
+        unresolved = true;
+        const text = `Window on ${label} could not be raised enough for the faucet to clear the sill.`;
+        notes.push({ openingUid: opening.uid, text });
+        openings = openings.map((item) => item.uid === opening.uid ? { ...item, faucetClearanceNote: text } : item);
+        continue;
+      }
+      const delta = nextSill - opening.sill;
+      let text = `Window on ${label} raised ${formatRaiseInches(delta)} in. so the faucet clears the sill (new sill height ${formatRaiseInches(nextSill)} in.)`;
+      if (heightShrunk) {
+        text += ` Window height reduced to ${formatRaiseInches(nextHeight)} in. so the top stays at the wall.`;
+      }
+      notes.push({ openingUid: opening.uid, text });
+      openings = openings.map((item) => item.uid === opening.uid ? { ...candidate, faucetClearanceNote: text } : item);
+    }
+  }
+
+  return { openings: notes.length === 0 ? input.openings as WallOpening[] : openings, notes, unresolved };
 }
 
 export function deckFaucetWindowWarning(

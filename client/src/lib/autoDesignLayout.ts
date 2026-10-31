@@ -7,6 +7,7 @@ import {
   planAutoDesignAutoBuild,
   pickAutoDesignSinkBase,
   subtractAnchorRunReservations,
+  autoDesignWallNameByEngineId,
   wallLabelToEngineWallId,
   type AutoDesignInputs,
 } from "./autoDesignAutoBuild";
@@ -32,6 +33,7 @@ import { AUTO_DESIGN_FILLER_MAX_IN, fillAutoDesignLowerSeams, planAutoDesignBase
 import { autoDesignRangeHood, autoDesignRangeNeedsVentilation } from "./autoDesignRangeHood";
 import { AUTO_DESIGN_REFRIGERATOR_WALL_END_SHIFT_IN, buildMandatoryAutoDesignRefrigeratorBay } from "./autoDesignRefrigeratorBay";
 import { autoDesignSinkWindow, windowOverlapsReservation } from "./autoDesignSinkWindow";
+import { raiseWindowsForDeckFaucet } from "./faucetPlacement";
 import { buildAutoDesignWallCabinets, resolveWallHeightClass, type AutoDesignUpperCorner } from "./autoDesignWallCabinets";
 import {
   autoDesignPeninsulaAttachment,
@@ -80,6 +82,8 @@ export type AutoDesignLayoutSuccess = {
   placed: PlacedCabinet[];
   sinks: SinkFixture[];
   sinkWindow: WallOpening | null;
+  openings: WallOpening[];
+  faucetWindowNotes: { openingUid: string; text: string }[];
   notes: string[];
   warnings: string[];
   wiggleMoves: AutoDesignWiggleMove[];
@@ -353,6 +357,14 @@ export function runAutoDesignLayout(args: {
     } else sinkWindow = proposedWindow;
   }
 
+  let workingOpenings = sinkWindow ? [...openings, sinkWindow] : openings;
+  const wallLabels = autoDesignWallNameByEngineId(room, input.originCorner, input.runDirection);
+  const raisedForSink = raiseWindowsForDeckFaucet({ sinks, room, openings: workingOpenings, wallLabels });
+  workingOpenings = raisedForSink.openings;
+  if (sinkWindow) sinkWindow = workingOpenings.find((opening) => opening.uid === sinkWindow!.uid) ?? sinkWindow;
+  let faucetWindowNotes = [...raisedForSink.notes];
+  notes.push(...raisedForSink.notes.map((note) => note.text));
+
   const fillWallIds = input.layoutType === "galley"
     ? AUTO_DESIGN_GALLEY_WALLS.flatMap((label) => {
       const wall = wallLabelToEngineWallId(label, room, input.originCorner, input.runDirection);
@@ -383,7 +395,7 @@ export function runAutoDesignLayout(args: {
     anchorOrigins,
   };
 
-  const stageOpenings = stage.sinkWindow ? [...openings, stage.sinkWindow] : openings;
+  const stageOpenings = workingOpenings;
   const excludedWallIds = autoDesignExcludedEngineWallIds(stage.input.layoutType, room, stage.input.originCorner, stage.input.runDirection);
   const runWalls = [...stage.selectedWalls];
   const upperCorners: AutoDesignUpperCorner[] = [];
@@ -577,6 +589,17 @@ export function runAutoDesignLayout(args: {
     working = built.placed;
     sinks = built.sinks;
     notes.push(...built.notes);
+    const raisedForPeninsula = raiseWindowsForDeckFaucet({ sinks, room, openings: workingOpenings, wallLabels });
+    workingOpenings = raisedForPeninsula.openings;
+    if (sinkWindow) sinkWindow = workingOpenings.find((opening) => opening.uid === sinkWindow!.uid) ?? sinkWindow;
+    if (raisedForPeninsula.notes.length) {
+      const replaced = new Set(raisedForPeninsula.notes.map((note) => note.openingUid));
+      faucetWindowNotes = [
+        ...faucetWindowNotes.filter((note) => !replaced.has(note.openingUid)),
+        ...raisedForPeninsula.notes,
+      ];
+      notes.push(...raisedForPeninsula.notes.map((note) => note.text));
+    }
     peninsulaSummary = built.summary;
     peninsulaRuns = built.runs;
     furniture = built.furniture;
@@ -590,6 +613,8 @@ export function runAutoDesignLayout(args: {
     placed: working,
     sinks,
     sinkWindow,
+    openings: workingOpenings,
+    faucetWindowNotes,
     notes,
     warnings,
     wiggleMoves: reportedWiggleMoves,

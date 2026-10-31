@@ -6350,6 +6350,8 @@ export interface WallOpening {
   width: number;
   height: number;
   sill: number;
+  /** Installer note when Auto-Design raised this window so a deck faucet clears the sill. */
+  faucetClearanceNote?: string;
 }
 
 export function wallLength(side: WallSide | string, room: RoomData): number {
