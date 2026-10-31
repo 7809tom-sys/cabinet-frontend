@@ -224,10 +224,10 @@ import { HardwareCatalogPicker } from "@/components/design/HardwareCatalogPicker
 import { isPanelPaletteItem } from "./designToolPanels";
 import { normalizePaletteSearch, matchesPaletteSearch, matchesPaletteTextOrSize } from "@/lib/paletteSearch";
 import { searchCatalogItems } from "@shared/catalogCodeSearch";
-import { adjacentDishwasherCenterIn, anchorAlongStartIn, autoBuildStraightBaseCatalog, buildAutoDesignWallGuides, canRunAutoDesign, closestDishwasherStart, isAutoBuildStraightSinkBaseCandidate, makeAutoDesignSixWallTrainingRoom, keepSingleAutoDesignSink, pickAutoDesignSinkBase, planAutoDesignAutoBuild, resolveDishwasherSide, subtractAnchorRunReservations, wallLabelToEngineWallId, type AutoDesignInputs, type AutoDesignOriginCorner, type AutoDesignRunDirection, type DishwasherSide } from "@/lib/autoDesignAutoBuild";
+import { adjacentDishwasherCenterIn, anchorAlongStartIn, autoBuildStraightBaseCatalog, autoDesignWallNameByEngineId, buildAutoDesignWallGuides, canRunAutoDesign, closestDishwasherStart, isAutoBuildStraightSinkBaseCandidate, makeAutoDesignSixWallTrainingRoom, keepSingleAutoDesignSink, pickAutoDesignSinkBase, planAutoDesignAutoBuild, resolveDishwasherSide, subtractAnchorRunReservations, wallLabelToEngineWallId, type AutoDesignInputs, type AutoDesignOriginCorner, type AutoDesignRunDirection, type DishwasherSide } from "@/lib/autoDesignAutoBuild";
 import { AUTO_DESIGN_REFRIGERATOR_NOTE, autoDesignControlState, autoDesignShouldTurnOffForRefrigerator, isRefrigeratorAppliance, refrigeratorBlocksAutoDesign } from "@/lib/autoDesignAvailability";
 import { applyChosenAutoDesignFaucet, catalogFaucetSurface, defaultAutoDesignFaucet, ensureAutoDesignFaucet, isCatalogFaucet, type AutoDesignFaucetProduct } from "@/lib/autoDesignFaucet";
-import { clampSinkDragForFaucet } from "@/lib/faucetPlacement";
+import { clampSinkDragForFaucet, raiseWindowsForDeckFaucet, type FaucetWindowClearanceNote } from "@/lib/faucetPlacement";
 import { autoDesignSinkWindow, windowOverlapsReservation } from "@/lib/autoDesignSinkWindow";
 import { autoDesignRangeHood, autoDesignRangeNeedsVentilation } from "@/lib/autoDesignRangeHood";
 import { mergeAutoDesignRefrigeratorCaps, runAutoDesignLayout } from "@/lib/autoDesignLayout";
@@ -1779,6 +1779,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const [layoutLocked, setLayoutLocked] = useState(false);
   const [dishwasherSidePreference, setDishwasherSidePreference] = useState<DishwasherSide | null>(null);
   const [autoDesignLayoutNotes, setAutoDesignLayoutNotes] = useState<string[]>([]);
+  const autoDesignWallLabelsRef = useRef<Record<string, string>>({});
+  const lastFaucetWindowNotesRef = useRef<FaucetWindowClearanceNote[]>([]);
+  const announceFaucetWindowNotes = useCallback((notes: readonly FaucetWindowClearanceNote[]) => {
+    lastFaucetWindowNotesRef.current = [...notes];
+    for (const note of notes) toast.info(note.text, { duration: 12000 });
+  }, []);
   layoutLockedRef.current = layoutLocked;
   const layoutHasRefrigerator = useMemo(() => placed.some(isRefrigeratorAppliance), [placed]);
   const autoDesignControl = useMemo(() => autoDesignControlState({
@@ -1805,7 +1811,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     setAutoDesignCornerStage(null);
     toast.info(AUTO_DESIGN_REFRIGERATOR_NOTE);
   }, [autoDesignCornerStage, autoDesignOpen, refrigeratorBlocksAutoDesignSession]);
-  const rememberAutoDesignSink = useCallback((sink: SinkFixture): SinkFixture => {
+  const rememberAutoDesignSink = useCallback((sink: SinkFixture, openingOverride?: readonly WallOpening[]): SinkFixture => {
     if (!autoDesignSessionRef.current) return sink;
     const result = ensureAutoDesignFaucet(sink, defaultAutoDesignFaucetRef.current);
     if (result.sink.pelicanFaucetProductId != null) {
@@ -1820,8 +1826,19 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       autoDesignFaucetPromptedRef.current.add(result.sink.uid);
       queueAutoDesignFaucetPrompt(result.sink.uid);
     }
+    const openingList = openingOverride ?? openings;
+    const raised = raiseWindowsForDeckFaucet({
+      sinks: [result.sink],
+      room,
+      openings: openingList,
+      wallLabels: autoDesignWallLabelsRef.current,
+    });
+    if (openingOverride || raised.notes.length > 0 || raised.openings !== openingList) {
+      setOpenings(raised.openings);
+    }
+    announceFaucetWindowNotes(raised.notes);
     return result.sink;
-  }, [queueAutoDesignFaucetPrompt]);
+  }, [announceFaucetWindowNotes, openings, queueAutoDesignFaucetPrompt, room]);
   adoptAutoDesignSinkRef.current = rememberAutoDesignSink;
   const [lockedWalls, setLockedWalls] = useState<Set<WallSide>>(() => new Set());
 	  const activateSelectedWallCompassDrag = useCallback(() => {
@@ -3859,6 +3876,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     // (cursor/frameless-corner-fridge-a890) inside the bay fit. This build
     // passes that fit the same caps, including 24 inch wall-pool boxes such
     // as W362324 that the surround query omits.
+    lastFaucetWindowNotesRef.current = [];
+    autoDesignWallLabelsRef.current = autoDesignWallNameByEngineId(room, input.originCorner, input.runDirection);
     const run = runAutoDesignLayout({
       input,
       room,
@@ -3874,9 +3893,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     });
     if (!run.ok) return fail(run.message);
     if (run.sinks[0]) {
-      const remembered = rememberAutoDesignSink(run.sinks[0]);
+      const remembered = rememberAutoDesignSink(run.sinks[0], run.openings);
       setSinks(keepSingleAutoDesignSink([remembered], remembered.cabinetUid ?? run.sinks[0].cabinetUid ?? ""));
       setSelectedSinkUid(remembered.uid);
+      if (!autoDesignSessionRef.current) setOpenings(run.openings);
+    } else {
+      setOpenings(run.openings);
     }
     placedRef.current = run.placed;
     setPlaced(run.placed);
@@ -3889,14 +3911,15 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     setAutoDesignOpen(false);
     setViewMode("plan");
     setSelectedUid(null);
-    if (run.sinkWindow) {
-      const windowToCommit = run.sinkWindow;
-      setOpenings((previous) => (previous.some((opening) => opening.uid === windowToCommit.uid) ? previous : [...previous, windowToCommit]));
-    }
     setAutoDesignCornerStage(null);
     setViewMode("threeD");
     toast.success(`Placed ${run.cornerCount} selected corners, ${run.basePieceCount} regular base-run pieces, ${run.fillerCount} filler pieces closing every gap, and ${run.upperCount} aligned wall cabinets and fillers.`);
-    for (const note of run.notes) toast.info(note, { duration: 15000 });
+    const preliminaryFaucetNotes = new Set(run.faucetWindowNotes.map((note) => note.text));
+    const announcedFaucetNotes = new Set(lastFaucetWindowNotesRef.current.map((note) => note.text));
+    for (const note of run.notes) {
+      if (preliminaryFaucetNotes.has(note) && announcedFaucetNotes.size > 0) continue;
+      toast.info(note, { duration: 15000 });
+    }
     for (const move of run.applianceMoves) {
       toast.info(`Moved the ${move.label} ${formatInches(move.shiftIn)} away from the corner to fit the required corner cabinet. Its measured center is now ${formatInches(move.centerAlongIn)} along the wall.`, { duration: 12000 });
     }
@@ -3934,6 +3957,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       return fail(message);
     };
     if (!stage) return fail("The measured appliance stage is no longer active. Start the Auto-Design build again from an empty plan.");
+    autoDesignWallLabelsRef.current = autoDesignWallNameByEngineId(room, stage.input.originCorner, stage.input.runDirection);
 
     let working = [...stage.anchorPlaced];
     // The sink window is part of the room for every remaining stage.
@@ -4147,10 +4171,19 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     working = finishedRules.placed;
     placedRef.current = working;
     setPlaced(working);
-    if (stage.sinkWindow) {
-      const windowToCommit = stage.sinkWindow;
-      setOpenings((previous) => (previous.some((opening) => opening.uid === windowToCommit.uid) ? previous : [...previous, windowToCommit]));
+    const openingBase = stage.sinkWindow && !openings.some((opening) => opening.uid === stage.sinkWindow!.uid)
+      ? [...openings, stage.sinkWindow]
+      : openings;
+    const raisedWindows = raiseWindowsForDeckFaucet({
+      sinks,
+      room,
+      openings: openingBase,
+      wallLabels: autoDesignWallLabelsRef.current,
+    });
+    if (stage.sinkWindow || raisedWindows.notes.length > 0 || raisedWindows.openings !== openingBase) {
+      setOpenings(raisedWindows.openings);
     }
+    announceFaucetWindowNotes(raisedWindows.notes);
     setAutoDesignCornerStage(null);
     setViewMode("threeD");
     toast.success(`Placed ${selectedCornerCount} selected corners, ${surrounding.length} regular base-run pieces, ${seamResult.additions.length} filler pieces closing every gap, and ${upperResult.additions.length} aligned wall cabinets and fillers.`);
@@ -4175,7 +4208,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       && autoDesignRangeNeedsVentilation(working, item));
     if (bareRange) setAutoDesignRangeVentPrompt({ rangeUid: bareRange.uid });
     return { ok: true as const };
-  }, [appliancePalette, catalogFillers, autoDesignCornerStage, openings, room, setPlaced, setOpenings]);
+  }, [announceFaucetWindowNotes, appliancePalette, catalogFillers, autoDesignCornerStage, openings, room, setPlaced, setOpenings, sinks]);
   finishAutoDesignLayoutRef.current = completeAutoDesignLayout;
   // A previous automatic microwave workflow could persist WSC30—the real
   // 30×6 spice cabinet—directly above an MW-30. Convert only that centered
@@ -6810,9 +6843,20 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         ...(trim.craftsmanshipStick ? { notes: TRIM_CRAFTSMANSHIP_STICK_NOTE } : {}),
       });
     }
+    for (const opening of openings) {
+      if (!opening.faucetClearanceNote) continue;
+      out.push({
+        code: `WIN-${opening.uid}`,
+        description: opening.faucetClearanceNote,
+        category: "Installer note",
+        qty: 1,
+        unitPrice: 0,
+        notes: opening.faucetClearanceNote,
+      });
+    }
 
     return out;
-  }, [activeStyleName, activeTrims, cartableLines, distributorNameById, lockedDistributorId, trimPriceByCode]);
+  }, [activeStyleName, activeTrims, cartableLines, distributorNameById, lockedDistributorId, openings, trimPriceByCode]);
 
   const materialsListRows = useMemo(() => buildMaterialsListRows({
     buildRows,
@@ -9570,14 +9614,23 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     const waiting = sinks.some((sink) => sink.autoDesignFaucet && sink.pelicanFaucetProductId == null);
     if (!waiting) return;
     autoDesignOwnedFaucetIdsRef.current.add(product.id);
-    setSinks((current) => current.map((sink) => (
+    const nextSinks = sinks.map((sink) => (
       sink.autoDesignFaucet && sink.pelicanFaucetProductId == null
         ? applyChosenAutoDesignFaucet(sink, product)
         : sink
-    )));
+    ));
+    setSinks(nextSinks);
+    const raised = raiseWindowsForDeckFaucet({
+      sinks: nextSinks,
+      room,
+      openings,
+      wallLabels: autoDesignWallLabelsRef.current,
+    });
+    if (raised.notes.length > 0 || raised.openings !== openings) setOpenings(raised.openings);
+    announceFaucetWindowNotes(raised.notes);
     const surface = catalogFaucetSurface(product);
     setSelectedSurfaces((previous) => previous.some((item) => item.id === surface.id) ? previous : [...previous, surface]);
-  }, [autoDesignFaucetProducts, sinks]);
+  }, [announceFaucetWindowNotes, autoDesignFaucetProducts, openings, room, sinks]);
   useEffect(() => {
     if (sinks.some((sink) => sink.autoDesignFaucet && sink.pelicanFaucetProductId == null)) return;
     const used = new Set<number>();
@@ -9623,9 +9676,16 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     }
     autoDesignOwnedFaucetIdsRef.current.add(product.id);
     targets.forEach((uid) => autoDesignFaucetPromptedRef.current.add(uid));
-    setSinks((current) => current.map((sink) => (
-      targets.has(sink.uid) ? applyChosenAutoDesignFaucet(sink, product) : sink
-    )));
+    const nextSinks = sinks.map((sink) => targets.has(sink.uid) ? applyChosenAutoDesignFaucet(sink, product) : sink);
+    setSinks(nextSinks);
+    const raised = raiseWindowsForDeckFaucet({
+      sinks: nextSinks,
+      room,
+      openings,
+      wallLabels: autoDesignWallLabelsRef.current,
+    });
+    if (raised.notes.length > 0 || raised.openings !== openings) setOpenings(raised.openings);
+    announceFaucetWindowNotes(raised.notes);
     const surface = catalogFaucetSurface(product);
     setSelectedSurfaces((previous) => previous.some((item) => item.id === surface.id) ? previous : [...previous, surface]);
     setCountertop(true);
@@ -9635,7 +9695,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     }
     const [next, ...rest] = prompt.queue;
     setAutoDesignFaucetPrompt(next ? { sinkUid: next, queue: rest } : null);
-  }, [autoDesignFaucetPrompt, sinks]);
+  }, [announceFaucetWindowNotes, autoDesignFaucetPrompt, openings, room, sinks]);
   const autoDesignFaucetPromptSink = sinks.find((sink) => sink.uid === autoDesignFaucetPrompt?.sinkUid) ?? null;
   const autoDesignFaucetPromptCabinet = autoDesignFaucetPromptSink
     ? placed.find((cabinet) => cabinet.uid === autoDesignFaucetPromptSink.cabinetUid)
@@ -17812,12 +17872,15 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	              </button>
 	            </div>
 	          )}
-	          {autoDesignLayoutNotes.length > 0 && (
+	          {(autoDesignLayoutNotes.length > 0 || openings.some((opening) => opening.faucetClearanceNote)) && (
 	            <div className="absolute bottom-3 left-3 z-40 max-w-md">
 	              <div role="status" className="rounded-lg border border-amber-400 bg-amber-50 px-3 py-2 text-sm text-amber-950 shadow-md">
 	                <ul className="space-y-1">
 	                  {autoDesignLayoutNotes.map((note) => (
 	                    <li key={note} data-testid="auto-design-layout-note">{note}</li>
+	                  ))}
+	                  {openings.flatMap((opening) => opening.faucetClearanceNote ? [opening.faucetClearanceNote] : []).map((note) => (
+	                    <li key={note} data-testid="faucet-window-clearance-note">{note}</li>
 	                  ))}
 	                </ul>
 	              </div>
