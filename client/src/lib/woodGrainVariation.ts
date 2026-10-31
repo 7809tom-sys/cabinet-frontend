@@ -165,7 +165,7 @@ function grainRole(mesh: THREE.Mesh, material: THREE.MeshStandardMaterial): stri
   const piece = mesh.userData?.grainPiece ?? material.userData?.grainPiece;
   if (piece === "rail" || piece === "stile" || piece === "panel") return piece;
   if (piece === "slab") return "door";
-  if (material.userData?.selectedFinishStructuralSurface === true && material.userData?.usesDoorSample === true) return "box";
+  if (material.userData?.selectedFinishStructuralSurface === true) return "box";
   if (
     mesh.userData?.cabinetDrawerFront === true
     || mesh.userData?.vanityDrawerFront === true
@@ -184,7 +184,10 @@ function usesSharedDoorGrain(mesh: THREE.Mesh, source: THREE.Texture): boolean {
   const material = materialOf(mesh);
   if (!material?.map) return false;
   if (mesh.geometry?.userData?.woodGrainStamped === true) return false;
-  if (material.userData?.selectedFinishStructuralSurface === true && material.userData?.usesDoorSample === true) return true;
+  // Carcass, toe kick, crown, and end skins stay a solid finish. A per-cabinet
+  // UV window would slide a door photograph onto the box, including the back.
+  if (material.userData?.selectedFinishStructuralSurface === true) return false;
+  if (mesh.userData?.decorativeEndPanel === true && mesh.userData?.decorativeEndIsDoor !== true) return false;
   if (typeof material.userData?.grainPiece === "string" || typeof mesh.userData?.grainPiece === "string") return true;
   return material.map === source;
 }

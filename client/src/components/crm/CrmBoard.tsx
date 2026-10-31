@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import { crmBoardScope } from "@/lib/contractorScope";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -159,15 +160,19 @@ const priorityColor: Record<CrmPriority, string> = {
   high: "bg-red-100 text-red-700",
 };
 
-export function CrmBoard({ lang = "en", affiliateId }: { lang?: Lang; affiliateId?: number }) {
+export function CrmBoard({ lang = "en", affiliateId, contractorUserId }: { lang?: Lang; affiliateId?: number; contractorUserId?: number }) {
   const t = L(lang);
   const utils = trpc.useUtils();
   const [masterAffiliateFilter, setMasterAffiliateFilter] = useState(MASTER_AFFILIATE_FILTER_ALL);
   const [helpFilter, setHelpFilter] = useState<CrmHelpFilter>("all");
   const masterAffiliateId = masterAffiliateFilterId(masterAffiliateFilter);
   const scopedAffiliateId = affiliateId ?? masterAffiliateId;
-  const boardInput = crmBoardQueryInput(scopedAffiliateId);
-  const { data, isLoading, error } = trpc.crm.board.useQuery(boardInput, {
+  // An admin viewing one contractor wins. Otherwise the board is scoped to the
+  // open store (or the master filter), and with no store it is the admin directory.
+  const boardInput = crmBoardScope({ contractorUserId, affiliateId, masterAffiliateId }) ?? crmBoardQueryInput(scopedAffiliateId);
+  // contractorUserId is an admin-only addition on the paired backend. The cast
+  // keeps the call valid until AppRouter lists that field; the property is still sent.
+  const { data, isLoading, error } = trpc.crm.board.useQuery(boardInput as { affiliateId?: number } | undefined, {
     refetchInterval: 20000,
     refetchOnWindowFocus: true,
   });

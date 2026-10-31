@@ -15,7 +15,7 @@ import {
 	  isGlassDoorCabinet, glassDoorShelfCount, isKneeDrawerItem, kitchenCrestGenericOpenEndShelfCount,
 } from "@/lib/design";
 import { crownTopRuns, formatCrownTop } from "@/lib/crownTopRuns";
-import { threeDBacksplashSupportSpans } from "./InteractiveRoom3D";
+import { threeDBacksplashCoverageIntervals } from "./InteractiveRoom3D";
 import {
   type HardwareStyleId,
   hardwareStyle as resolveHardwareStyle,
@@ -1398,19 +1398,8 @@ export function ElevationView({
           // or the full wall-cabinet top line if no wall cab sits above.
           const BACKSPLASH_RANGE_TOP = wallCabinetTopLine(room); // 84" on 8ft ceiling
 
-	          // A selected backsplash exists only behind a real countertop/range
-	          // support on this solid wall. Use the same base/filler/dishwasher
-	          // support spans as 3D so an open wall, peninsula room-side, or bare
-	          // floor can never receive a floating field of tile.
-	          const runs = elevationCabinets
-	            .flatMap((cabinet) => threeDBacksplashSupportSpans(cabinet, side as WallSide, room))
-	            .sort((left, right) => left.start - right.start)
-	            .reduce<{ start: number; end: number }[]>((merged, run) => {
-	              const previous = merged[merged.length - 1];
-	              if (previous && run.start <= previous.end + 0.01) previous.end = Math.max(previous.end, run.end);
-	              else merged.push({ ...run });
-	              return merged;
-	            }, []);
+	          // The same base, appliance, and wall-cabinet union the 3D view tiles.
+	          const runs = threeDBacksplashCoverageIntervals(elevationCabinets, room, side);
 
           // Identify range positions on this wall for the taller stretch zone.
           const rangeSpans = sorted

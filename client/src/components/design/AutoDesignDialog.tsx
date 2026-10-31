@@ -4,7 +4,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { AUTO_DESIGN_WALL_LABELS, autoDesignWallWidthRows } from "@/lib/autoDesignAutoBuild";
+import { autoDesignWallWidthRows } from "@/lib/autoDesignAutoBuild";
+import { autoDesignSelectableWallLabels } from "@/lib/autoDesignCornerStage";
 import { Checkbox } from "@/components/ui/checkbox";
 import { KITCHEN_USE_OPTIONS, type KitchenUseId } from "@/lib/kitchenUsage";
 import type { RoomData } from "@/lib/design";
@@ -69,7 +70,7 @@ export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading =
     sink: { wallLabel: "Wall 1", centerOffsetIn: "24" },
     stove: { wallLabel: "Wall 1", centerOffsetIn: "120" },
     dishwasher: { wallLabel: "Wall 1", centerOffsetIn: "" },
-    refrigerator: { wallLabel: "Wall 1", centerOffsetIn: "84" },
+    refrigerator: { wallLabel: "Wall 1", centerOffsetIn: "72" },
   });
   const [omitted, setOmitted] = useState<Record<(typeof applianceFields)[number], boolean>>({
     stove: false,
@@ -96,14 +97,12 @@ export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading =
     ...current,
     [field]: { ...current[field], ...patch },
   }));
-  const layoutWallLabels = useMemo(() => {
-    const available = AUTO_DESIGN_WALL_LABELS.slice(0, Math.max(1, Math.min(AUTO_DESIGN_WALL_LABELS.length, wallCount)));
-    return layoutType === "u-shape"
-      ? available.filter((label) => label === "Wall 1" || label === "Wall 2" || label === "Wall 3")
-      : available;
-  }, [layoutType, wallCount]);
+  const layoutWallLabels = useMemo(
+    () => autoDesignSelectableWallLabels(layoutType, wallCount),
+    [layoutType, wallCount],
+  );
   useEffect(() => {
-    if (layoutType !== "u-shape") return;
+    if (layoutType !== "u-shape" && layoutType !== "galley") return;
     setValues((current) => {
       const next = { ...current };
       let changed = false;

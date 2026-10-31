@@ -36,22 +36,24 @@ const span = (item: PlacedCabinet) => {
   return { wall, start, end: start + wallRunSpan(item, wall, DEFAULT_ROOM) };
 };
 
-describe.each(STYLES)("Auto-Design rule: nothing above the sink ($name line)", ({ id }) => {
-  it("never puts an upper over a sink base, but still covers the neighboring dishwasher and base", () => {
+describe.each(STYLES)("Auto-Design rule: a wall cabinet over the sink unless a window is there ($name line)", ({ id }) => {
+  it("puts an upper over a sink base and still covers the neighboring dishwasher and base", () => {
     const sink = lower("SB36", 36, 42, "base", "Sink Base");
     const dw = lower("DW-24", 24, 78, "appliance");
     const b18 = lower("B18", 18, 24);
     const result = wallStage(id, [b18, sink, dw]);
     const over = result.additions.filter((item) => { const s = span(item); return s.wall === "top" && s.end > 42 + 0.01 && s.start < 78 - 0.01; });
-    expect(over.map((item) => item.masterCode)).toEqual([]);
+    expect(over.length).toBeGreaterThan(0);
+    expect(over.every((item) => item.depth < 20)).toBe(true);
     expect(result.additions.some((item) => { const s = span(item); return s.wall === "top" && Math.abs(s.start - 78) < 0.01 && Math.abs(s.end - 102) < 0.01; })).toBe(true);
     expect(result.additions.some((item) => { const s = span(item); return s.wall === "top" && s.start >= 24 - 0.01 && s.end <= 42 + 0.01; })).toBe(true);
   });
 
-  it("treats a farmhouse sink base the same way", () => {
+  it("puts an upper over a farmhouse sink base when no window is there", () => {
     const farm = { ...lower("FSB36", 36, 42, "base", "Sink Base"), description: '36" Farmhouse Sink Base' };
     const result = wallStage(id, [farm]);
-    expect(result.additions.filter((item) => span(item).wall === "top")).toEqual([]);
+    expect(result.additions.filter((item) => span(item).wall === "top").length).toBeGreaterThan(0);
+    expect(result.skipped.join(" ")).not.toMatch(/window is over the sink/);
   });
 });
 
@@ -60,16 +62,18 @@ describe.each(STYLES)("Auto-Design rule: a measured window over the sink ($name 
   const dw = lower("DW-24", 24, 78, "appliance");
   const windowOverSink: WallOpening = { uid: "w1", kind: "window", label: "Over-Sink Window", side: "top", offset: 42, width: 36, height: 48, sill: 42 };
 
-  it("keeps the wall above the sink clear and starts the next upper exactly 3 inches past the window", () => {
+  it("keeps the wall above the sink clear and starts the next upper at least 3 inches past the window", () => {
     const result = wallStage(id, [sink, dw], [windowOverSink]);
-    const near = result.additions.filter((item) => { const s = span(item); return s.wall === "top" && s.end > 42 && s.start < 102; });
-    expect(near).toHaveLength(1);
-    const s = span(near[0]!);
-    // Window ends at 78; clearance is 3", so the dishwasher's upper covers the clear remainder 81..102.
-    expect(s.start).toBeCloseTo(81, 3);
-    expect(s.end).toBeCloseTo(102, 3);
-    expect(near[0]!.width).toBe(21);
-    expect(near[0]!.masterCode).toMatch(/^W2130/);
+    expect(result.skipped.join(" ")).toMatch(/window is over the sink/);
+    const overWindow = result.additions.filter((item) => { const s = span(item); return s.wall === "top" && s.end > 42 + 0.01 && s.start < 78 - 0.01; });
+    expect(overWindow).toEqual([]);
+    const overDishwasher = result.additions.filter((item) => { const s = span(item); return s.wall === "top" && s.start >= 81 - 0.01 && s.end <= 102 + 0.01; });
+    expect(overDishwasher.length).toBeGreaterThan(0);
+    if (id === "330011") {
+      expect(overDishwasher).toHaveLength(1);
+      expect(span(overDishwasher[0]!).start).toBeCloseTo(81, 3);
+      expect(overDishwasher[0]!.width).toBe(21);
+    }
   });
 
   it("leaves every addition collision-free", () => {

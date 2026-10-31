@@ -55,6 +55,10 @@ describe("Catalog administration wiring", () => {
     resolve(process.cwd(), "client/src/components/admin/AdminGroupedTabs.tsx"),
     "utf8",
   );
+  const navSource = readFileSync(
+    resolve(process.cwd(), "client/src/components/admin/catalogAdminTabs.ts"),
+    "utf8",
+  );
 
   it("makes Add Item and the same edit form available under Products and Catalog", () => {
     expect(adminSource).toContain('Add Item');
@@ -63,7 +67,9 @@ describe("Catalog administration wiring", () => {
     expect(adminSource).toContain('Eligible for 3D Designer: No');
     expect(adminSource).toContain('CatalogItemFormDialog');
     expect(adminSource).toContain('setItemEditor({ mode: "edit", id: cabinet.id })');
-    expect(tabsSource).toContain('{ value: "cabinets", label: "Catalog" }');
+    expect(navSource).toContain('value: "cabinets"');
+    expect(navSource).toContain('label: "Catalog"');
+    expect(navSource).toContain('"GenericCabinetsAdmin"');
     expect(tabsSource).toContain('<GenericCabinetsAdmin />');
   });
 });

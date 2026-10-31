@@ -10,6 +10,13 @@ const fillers = [
 ] as const;
 
 describe("catalogFillerForGap", () => {
+	it("does not let a blank base-filler depth lose to a 12-inch wall filler", () => {
+	  const blankDepthBase = { id: 8, masterCode: "BFF3", description: '3" x 34.5" Fluted Base Filler', category: "Filler", subCategory: "Filler", width: 3, depth: null, height: 34.5, catalogImageUrl: null };
+	  const wall = { id: 9, masterCode: "WFF342", description: '3" x 42" Wall Filler', category: "Filler", subCategory: "Filler", width: 3, depth: 12, height: 42, catalogImageUrl: null };
+	  expect(catalogFillerForGap([wall, blankDepthBase], 0.5, "base")?.masterCode).toBe("BFF3");
+	  expect(catalogFillerForGap([wall, blankDepthBase], 0.5, "wall")?.masterCode).toBe("WFF342");
+	});
+
 	it("uses one real 3-inch stock filler for every installed cut through 3 inches", () => {
 	  expect(catalogFillerForGap(fillers, 2.25, "base")?.masterCode).toBe("BF-3");
 	  expect(catalogFillerForGap(fillers, 4.5, "base")?.masterCode).toBe("BF-6");
@@ -78,7 +85,7 @@ describe("catalogFillerForGap", () => {
       catalogWidth: 3,
       installedWidth: 2.5,
       trimAmount: 0.5,
-      description: '3" x 34.5" Base Filler — cut to 2.5"',
+      description: 'Filler 3" stock, cut to 2½"',
     });
     expect(catalogFillerSuggestion(fillers, 7, "base")).toBeNull();
   });
@@ -86,13 +93,33 @@ describe("catalogFillerForGap", () => {
   it("prefers the matching wall-depth filler and preserves the catalog description with the exact cut size", () => {
     const wallFiller = catalogFillerForGap(fillers, 2.5, "wall");
     expect(wallFiller?.masterCode).toBe("WF342");
-    expect(fittedCatalogFillerDescription(wallFiller!, 2.5)).toBe('3" x 30" Wall Filler — cut to 2.5"');
+    expect(fittedCatalogFillerDescription(wallFiller!, 2.5)).toBe('Filler 3" stock, cut to 2½"');
   });
 
   it("calls fitted scribe stock a filler while preserving its source SKU for ordering", () => {
     const scribeStock = { id: 41, masterCode: "SCR", description: 'Scribe Molding - 96"', category: "Filler", subCategory: "Filler", width: 3, depth: 0.75, height: 96, catalogImageUrl: null } as const;
     expect(isCatalogFiller(scribeStock)).toBe(true);
-    expect(fittedCatalogFillerDescription(scribeStock, 2.75)).toBe('Filler — cut to 2.75"');
+    expect(fittedCatalogFillerDescription(scribeStock, 2.75)).toBe('Filler 3" stock, cut to 2¾"');
+  });
+
+  it("names the billed stock width, not a wider width printed in the vendor sentence", () => {
+    const mislabeled = {
+      id: 12,
+      masterCode: "F3",
+      description: '12" x 96" Wall Filler',
+      category: "Filler",
+      subCategory: "Filler",
+      width: 3,
+      depth: 0.75,
+      height: 96,
+      catalogImageUrl: null,
+    } as const;
+    const description = fittedCatalogFillerDescription(mislabeled, 0.5);
+    expect(description).toBe('Filler 3" stock, cut to ½"');
+    expect(description).not.toContain('12"');
+    const sixInch = fittedCatalogFillerDescription({ ...mislabeled, masterCode: "F6", description: '12" Filler', width: 6 }, 4.5);
+    expect(sixInch).toBe('Filler 6" stock, cut to 4½"');
+    expect(sixInch).not.toContain('12"');
   });
 
   it("keeps a trimmed catalog filler at its approved SKU price rather than applying a generic cabinet resize fee", () => {

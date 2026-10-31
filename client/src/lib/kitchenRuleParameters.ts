@@ -15,7 +15,7 @@ export const KITCHEN_RULE_PARAMETER_DEFAULTS = {
   bridge_open_bottom_in: 66,
   bridge_open_height_in: 30,
   run_top_in: 96,
-  hood_bottom_in: 66,
+  hood_bottom_in: 60,
   baking_zone_min_in: 36,
   heavy_cook_landing_in: 15,
   small_cabinet_below_in: 15,

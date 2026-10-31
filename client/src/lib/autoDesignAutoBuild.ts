@@ -259,6 +259,20 @@ function orderedEngineWallIds(
   return STANDARD_WALL_ORDER[originCorner][runDirection];
 }
 
+/** Engine wall id to the Auto-Design label, for example `top` → `Wall 1`. */
+export function autoDesignWallNameByEngineId(
+  room: RoomData,
+  originCorner: AutoDesignOriginCorner,
+  runDirection: AutoDesignRunDirection,
+): Record<string, string> {
+  const names: Record<string, string> = {};
+  for (const label of AUTO_DESIGN_WALL_LABELS) {
+    const ref = wallLabelToEngineWallId(label, room, originCorner, runDirection);
+    if (ref) names[ref.engineWallId] = label;
+  }
+  return names;
+}
+
 /**
  * Resolves the UI-only Wall 1–6 label to the existing placement engine wall.
  * No placement coordinates are produced here; callers must use the returned
@@ -389,6 +403,16 @@ export function isAutoBuildStraightSinkBaseCandidate(candidate: AutoBuildCatalog
  * depend on the order the catalog lists its rows; null means the line sells no
  * such base at that width, so the caller reports it instead of substituting.
  */
+/** Auto-Design keeps one sink fixture, on the measured sink base. A second basin is never added. */
+export function keepSingleAutoDesignSink<T extends { cabinetUid?: string | null }>(
+  sinks: readonly T[],
+  sinkBaseUid: string,
+): T[] {
+  const onBase = sinks.filter((sink) => sink.cabinetUid === sinkBaseUid);
+  if (onBase.length > 0) return [onBase[0]!];
+  return sinks.length > 0 ? [sinks[0]!] : [];
+}
+
 export function pickAutoDesignSinkBase<T extends AutoBuildCatalogCandidate & { width?: string | number | null }>(
   catalog: readonly T[],
   widthIn: number,

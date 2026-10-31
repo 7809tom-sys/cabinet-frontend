@@ -67,9 +67,13 @@ export const REFRIGERATOR_SHIFT_LIMIT_IN = 6;
  */
 export const MEASURED_REFRIGERATOR_CORNER_SHIFT_LIMIT_IN = 12;
 
-/** Per-appliance cap measured from the original placement. */
+/**
+ * Wiggle-room jog from the measured center. Every appliance, including the
+ * refrigerator, stays inside the 3 inch jog. The 6 inch bay slide and the
+ * 12 inch corner-seating slide are separate and are not this jog.
+ */
 export function autoDesignShiftLimitIn(kind: string): number {
-  if (kind === "refrigerator") return REFRIGERATOR_SHIFT_LIMIT_IN;
+  void kind;
   return kitchenRuleNumber("jog_max_in");
 }
 
@@ -187,7 +191,7 @@ export const DESIGNER_LAYOUT_RULES: readonly DesignerLayoutRule[] = [
     id: "nothing-above-sink",
     name: "nothing above the sink",
     phase: "auto-design-stage",
-    summary: "Upper cabinets are not placed over the sink.",
+    summary: "A wall cabinet goes over the sink. A window over the sink leaves that span open.",
   },
   {
     id: "sink-window-clearance",
@@ -205,13 +209,13 @@ export const DESIGNER_LAYOUT_RULES: readonly DesignerLayoutRule[] = [
     id: "refrigerator-bay",
     name: "refrigerator bay",
     phase: "auto-design-stage",
-    summary: "The refrigerator keeps its panels and the cabinet above. The whole bay may slide at most 6 inches along its wall to close a gap.",
+    summary: "The refrigerator keeps its panels and the cabinet above. The whole bay may slide at most 6 inches along its wall to close a gap. A refrigerator seated in a corner stays there: the panel that would leave the wall is omitted, and the open-side panel is field-cut flush to the refrigerator depth.",
   },
   {
     id: "corner-appliance-nudge",
     name: "corner appliance nudge",
     phase: "auto-design-stage",
-    summary: "A range may slide up to 3 inches away from a corner. A user-measured refrigerator may slide up to 12 inches. An auto-placed refrigerator keeps the 6 inch cap. The smallest shift that clears the corner is used.",
+    summary: "A range may slide up to 3 inches away from a corner. A refrigerator that sits in the corner is the corner occupant: no blind corner is added there and the refrigerator is not nudged out. A refrigerator that is only near the corner may still slide up to 12 inches when the user measured it, or 6 inches when it was auto-placed. The smallest shift that clears the corner is used.",
   },
   {
     id: "sink-fixture-on-base",
@@ -560,19 +564,10 @@ function wiggleReasonCabinet(input: {
   return best ? describeWiggleReason(best.item, wallId, input.room) : null;
 }
 
-export function formatAutoDesignWiggleMessage(move: AutoDesignWiggleMove): string {
-  const reason = move.reason ? `to fit the ${move.reason.label}` : "to fit standard cabinet widths";
-  return `Wiggle room applied: ${move.label} moved ${formatEighthInches(move.inchesMoved)} ${move.direction} ${reason}`;
-}
-
-export function formatAutoDesignWiggleBadge(move: AutoDesignWiggleMove): string {
-  return `Moved ${formatEighthInches(move.inchesMoved)} ${move.direction === "left" ? "←" : "→"}`;
-}
-
 /**
  * Drops a reported shift once that appliance is gone or no longer sits at the
  * shifted position. A manual move, or a later Auto-Design run that does not
- * shift it, clears the notice and the plan badge.
+ * shift it, drops it from the returned move list.
  */
 export function activeAutoDesignWiggleMoves(
   moves: readonly AutoDesignWiggleMove[],

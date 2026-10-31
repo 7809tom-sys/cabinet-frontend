@@ -5,11 +5,13 @@ import { LanguageProvider } from "@/contexts/LanguageContext";
 import { ImageCustomerDialog } from "@/components/imageCustomer/ImageCustomerDialog";
 import { imageCustomerRetryLink } from "@/lib/imageCustomerRetryLink";
 import { httpBatchLink, httpLink, splitLink } from "@trpc/client";
+import { TRPCClientError } from "@trpc/client";
 import { createRoot } from "react-dom/client";
 import superjson from "superjson";
+import { toast } from "sonner";
 import App from "./App";
 import { getLoginUrl } from "./const";
-import { shouldRedirectToLoginOnError } from "./lib/authRedirect";
+import { isUnauthorizedClientError, shouldRedirectToLoginOnError } from "./lib/authRedirect";
 import { fetchTrpcJson, TRPC_QUERY_METHOD_OVERRIDE } from "./lib/trpcTransport";
 import { supabase } from "./lib/supabase";
 import { apiUrl } from "./lib/apiBase";
@@ -35,12 +37,22 @@ queryClient.getQueryCache().subscribe(event => {
   }
 });
 
+function cachedAuthMeUser(): unknown {
+  const rows = queryClient.getQueriesData({ queryKey: [["auth", "me"]] });
+  return rows.find(([, data]) => data != null)?.[1] ?? null;
+}
+
 queryClient.getMutationCache().subscribe(event => {
   if (event.type === "updated" && event.action.type === "error") {
     const error = event.mutation.state.error;
-    // Only a deliberate ACTION (mutation) that fails with "unauthorized" sends
-    // the user to log in — an expired session on submit/save/checkout.
-    if (shouldRedirectToLoginOnError(error, "mutation")) goToLogin();
+    const me = cachedAuthMeUser();
+    // Redirect only when auth.me itself has no user. Any other 401 stays on
+    // the form; the server message is the toast.
+    if (shouldRedirectToLoginOnError(error, "mutation", me)) goToLogin();
+    else if (isUnauthorizedClientError(error) && me != null) {
+      const message = error instanceof TRPCClientError ? error.message : "Please sign in again.";
+      toast.error(message, { id: "trpc-unauthorized" });
+    }
     console.error("[API Mutation Error]", error);
   }
 });

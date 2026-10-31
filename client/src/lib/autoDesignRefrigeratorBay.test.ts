@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { wallPlacementAt, type DesignCabinet, type PlacedCabinet, type RoomData } from "./design";
-import { buildMandatoryAutoDesignRefrigeratorBay } from "./autoDesignRefrigeratorBay";
+import { fitExplicitRefrigeratorOptionPlacements, wallPlacementAt, wallRunOffset, type DesignCabinet, type PlacedCabinet, type RoomData } from "./design";
+import { acceptMeasuredCornerRefrigeratorBay, buildMandatoryAutoDesignRefrigeratorBay } from "./autoDesignRefrigeratorBay";
 import catalogFixture from "./__fixtures__/autoDesignRealCatalog.json";
 
 const room: RoomData = { width: 144, depth: 120, ceilingHeight: 96 };
@@ -131,11 +131,23 @@ describe("Auto-Design refrigerator cabinet above: always the 24-inch-deep refrig
     expect(cap.masterCode).toBe("W361224");
     expect(cap.depth).toBe(24);
   });
-  it("refuses with a plain message instead of silently using a 12-inch-deep box", () => {
-    const result = build([source({ id: 1, masterCode: "W3612", width: "36", height: "12", depth: "12" })]);
+  it("falls back to a 12-inch-deep bridge when the line has no 24-inch-deep box and notes the swap", () => {
+    const result = build([source({ id: 1, masterCode: "W3612", description: "36 x 12 Wall", width: "36", height: "12", depth: "12" })]);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.additions[0].masterCode).toBe("W3612");
+    expect(result.additions[0].depth).toBe(12);
+    expect(result.additions[0].fieldModificationNote).toContain('Over-fridge 36x24 not in line; used W3612 (12" H)');
+    expect(result.additions[0].fieldModificationNote).toContain("pulled forward flush");
+    expect(result.additions[0].depthPositionAdjusted).toBe(true);
+    expect(result.notes[0]).toBe('Over-fridge 36x24 not in line; used W3612 (12" H)');
+  });
+  it("refuses with a plain message when the line has no bridge under 30 inches", () => {
+    const result = build([source({ id: 1, masterCode: "W363024", width: "36", height: "30", depth: "24" })]);
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.message).toMatch(/24-inch-deep/i);
+    expect(result.message).toMatch(/under 30/i);
   });
   it("chooses the height that tops out at the wall-cabinet line (54 + 30 = 84), not the first row", () => {
     // Fridge top 70 + 2 clearance = 72, so a 12-inch box reaches 84 exactly.
@@ -167,13 +179,36 @@ describe("Auto-Design refrigerator cabinet above: always the 24-inch-deep refrig
     expect(result.additions[0].depth).toBe(24);
   });
 
-  it("does not substitute another height when the frameless 22.625 by 24-inch cap is missing", () => {
+  it("uses the tallest under-30 bridge when the frameless 22.625 by 24-inch cap is missing", () => {
     const result = buildMandatoryAutoDesignRefrigeratorBay({
       refrigerator: refrigerator(), room,
-      caps: [source({ id: 15, masterCode: "W361824", width: "36", height: "18", depth: "24" })],
+      caps: [
+        source({ id: 15, masterCode: "W361824", width: "36", height: "18", depth: "24" }),
+        source({ id: 19, masterCode: "W363024", width: "36", height: "30", depth: "24" }),
+        source({ id: 20, masterCode: "W362275", width: "36", height: "22.75", depth: "13.5" }),
+      ],
       endPanels: [panel()], styleId: 9, makeUid: () => "missing", wallCabinetHeightIn: 40,
     });
-    expect(result.ok).toBe(false);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.additions[0].masterCode).toBe("W361824");
+    expect(result.additions[0].fieldModificationNote).toBe('Over-fridge 36x24 not in line; used W361824 (18" H)');
+  });
+
+  it("treats a framed 40 inch wall as a wall-line match, not the frameless 22.625 box", () => {
+    const caps = [
+      source({ id: 17, masterCode: "W362424", width: "36", height: "24", depth: "24" }),
+      source({ id: 18, masterCode: "W362275", width: "36", height: "22.75", depth: "24" }),
+    ];
+    const result = buildMandatoryAutoDesignRefrigeratorBay({
+      refrigerator: refrigerator(), room, caps, endPanels: [panel()], styleId: 9,
+      makeUid: () => "framed-forty", wallCabinetHeightIn: 40, framelessLine: false,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Wall line is 94. The 22.75 box tops at 94.75, closer than 24 at 96 or 22.625 at 94.625.
+    expect(result.additions[0].masterCode).toBe("W362275");
+    expect(result.notes).toEqual([]);
   });
 
   it("keeps a framed 42-inch wall on the 24-inch cap", () => {
@@ -190,6 +225,39 @@ describe("Auto-Design refrigerator cabinet above: always the 24-inch-deep refrig
     expect(result.additions[0].masterCode).toBe("W362424");
   });
 
+  it("keeps the wall-line 36 by 24 box when one exists and does not note a substitution", () => {
+    const caps = [
+      source({ id: 21, masterCode: "W301824", width: "30", height: "18", depth: "24" }),
+      source({ id: 22, masterCode: "W362275", width: "36", height: "22.75", depth: "24" }),
+      source({ id: 23, masterCode: "W361824", width: "36", height: "18", depth: "24" }),
+      source({ id: 24, masterCode: "W363024", width: "36", height: "30", depth: "24" }),
+      source({ id: 25, masterCode: "W3623", width: "36", height: "22.75", depth: "12" }),
+    ];
+    const result = build(caps);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Fridge top 72, wall line 84. The 18 inch box lands at 90, closer than 22.75 at 94.75.
+    expect(result.additions[0].masterCode).toBe("W361824");
+    expect(result.notes).toEqual([]);
+    expect(result.additions[0].fieldModificationNote).toBeUndefined();
+  });
+
+  it("when no 24-inch-deep box exists, the fallback keeps 36 inch width, then the closest depth, and the tallest under 30", () => {
+    const caps = [
+      source({ id: 31, masterCode: "W332275", width: "33", height: "22.75", depth: "24" }),
+      source({ id: 32, masterCode: "W3612", width: "36", height: "12", depth: "12" }),
+      source({ id: 33, masterCode: "W362275S", width: "36", height: "22.75", depth: "13.5" }),
+      source({ id: 34, masterCode: "W3636", width: "36", height: "36", depth: "13.5" }),
+    ];
+    const result = build(caps);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.additions[0].masterCode).toBe("W362275S");
+    expect(result.additions[0].fieldModificationNote).toContain("W362275S");
+    expect(result.additions[0].fieldModificationNote).toContain('22.75" H');
+    expect(result.additions[0].depthPositionAdjusted).toBe(true);
+  });
+
   it("on the real framed and frameless catalogs the cap is the 24-inch-deep refrigerator cabinet", () => {
     for (const style of ["330011", "540005"] as const) {
       const wall = (catalogFixture as unknown as Record<string, { wall: DesignCabinet[] }>)[style]!.wall;
@@ -200,6 +268,86 @@ describe("Auto-Design refrigerator cabinet above: always the 24-inch-deep refrig
       expect(result.additions[0].depth, style).toBe(24);
       expect(result.additions[0].masterCode, style).toMatch(/24$|^WR36/);
     }
+  });
+});
+
+describe("refrigerator measured into a corner", () => {
+  function cornerFridge(along: number): PlacedCabinet {
+    const spot = wallPlacementAt(along, 36, 24, "top", room);
+    return {
+      ...refrigerator(),
+      ...spot,
+      depth: 24,
+      wallOffset: along,
+    };
+  }
+
+  function bayFor(fridge: PlacedCabinet) {
+    return buildMandatoryAutoDesignRefrigeratorBay({
+      refrigerator: fridge,
+      room,
+      caps: [source({ id: 200, masterCode: "W362424", description: "36 x 24 x 24 Refrigerator Wall", width: "36", height: "24", depth: "24" })],
+      endPanels: [source({
+        id: 201,
+        masterCode: "TEP3096",
+        description: "Tall End Panel for Refrigerator Bridge",
+        category: "Panel",
+        subCategory: "Refrigerator End Panel",
+        width: "29.875",
+        height: "96",
+        depth: "0.75",
+        placement: "tall",
+        numberOfDoors: 0,
+      })],
+      styleId: 540005,
+      framelessLine: true,
+      wallCabinetHeightIn: 30,
+      makeUid: (() => { let index = 0; return () => `corner-bay-${++index}`; })(),
+    });
+  }
+
+  it("keeps a frameless refrigerator in the corner and field-cuts the open-side panel", () => {
+    const fridge = cornerFridge(0);
+    const bay = bayFor(fridge);
+    expect(bay.ok, bay.ok ? "" : bay.message).toBe(true);
+    if (!bay.ok) return;
+    const fitted = fitExplicitRefrigeratorOptionPlacements([fridge], bay.additions, fridge.uid, room);
+    expect(fitted.shiftIn).toBeCloseTo(1.25, 5);
+    const accepted = acceptMeasuredCornerRefrigeratorBay({
+      refrigerator: fridge,
+      room,
+      additions: bay.additions,
+      fitted,
+      reservation: bay.reservation,
+    });
+    expect(accepted).not.toBeNull();
+    if (!accepted) return;
+    expect(accepted.shiftIn).toBe(0);
+    expect(accepted.omittedCornerPanel).toBe("left-panel");
+    expect(wallRunOffset(accepted.existing.find((item) => item.uid === fridge.uid)!, "top", room)).toBe(0);
+    const openPanel = accepted.additions.find((item) => item.refrigeratorAssemblyRole === "right-panel");
+    expect(openPanel).toMatchObject({ masterCode: "TEP3096", depth: 24, refrigeratorPanelStockDepth: 29.875 });
+    expect(accepted.note).toContain("stays in the corner");
+    expect(accepted.note).toContain("field-cut flush to the refrigerator depth");
+    expect(accepted.additions.some((item) => item.refrigeratorAssemblyRole === "bridge")).toBe(true);
+  });
+
+  it("keeps both panels when the refrigerator is about 30 inches away from the corner", () => {
+    const fridge = cornerFridge(30);
+    const bay = bayFor(fridge);
+    expect(bay.ok, bay.ok ? "" : bay.message).toBe(true);
+    if (!bay.ok) return;
+    const fitted = fitExplicitRefrigeratorOptionPlacements([fridge], bay.additions, fridge.uid, room);
+    const accepted = acceptMeasuredCornerRefrigeratorBay({
+      refrigerator: fridge,
+      room,
+      additions: bay.additions,
+      fitted,
+      reservation: bay.reservation,
+    });
+    expect(accepted?.omittedCornerPanel).toBeNull();
+    expect(accepted?.additions.filter((item) => item.refrigeratorAssemblyRole?.endsWith("panel"))).toHaveLength(2);
+    expect(wallRunOffset(accepted!.existing.find((item) => item.uid === fridge.uid)!, "top", room)).toBeCloseTo(30, 5);
   });
 });
 

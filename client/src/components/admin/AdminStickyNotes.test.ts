@@ -32,7 +32,7 @@ describe("AdminStickyNotes workspace", () => {
     const source = readFileSync(new URL("./AdminGroupedTabs.tsx", import.meta.url), "utf8");
     const adminPage = readFileSync(new URL("../../pages/Admin.tsx", import.meta.url), "utf8");
     expect(source).toContain('{ value: "team-notes", label: "Team Notes" }');
-    expect(source).toContain('<TabsContent value="team-notes" className="mt-6"><AdminStickyNotes /></TabsContent>');
+    expect(source).toContain('<TabsContent value="team-notes" className="mt-6"><AdminTabErrorBoundary tabName="Team Notes"><AdminStickyNotes /></AdminTabErrorBoundary></TabsContent>');
     expect(adminPage).toContain('if (isSalesRep)');
     expect(adminPage).toContain('if (isDesigner)');
     expect(adminPage).toContain('<AdminGroupedTabs />');

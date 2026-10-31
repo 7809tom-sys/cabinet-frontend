@@ -38,6 +38,8 @@ import {
 import { isDoorStyleVerified, resolveCabinetFaceImages } from "@shared/doorFaceRecognition";
 import { resolveDoorShapeDecision, resolveRenderHex, PROFILE_GUESSED_LABEL } from "@shared/doorRenderIdentity";
 import { designerFrameCompliance } from "@/lib/doorFrameMetrics";
+import { OpenDesignerLink } from "@/components/design/OpenDesignerLink";
+import { DoorStyleIdentity } from "@/components/doorStyles/DoorStyleIdentity";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -283,13 +285,13 @@ function SourceAttribution({ style }: { style: AdminStyle }) {
 
   return (
     <span
-      className="inline-flex max-w-full items-center gap-1 text-[10px] font-medium text-amber-800"
+      className="inline-flex max-w-full flex-wrap items-center gap-x-1 gap-y-0.5 text-[10px] font-medium text-amber-800"
       title="Verified distributor attribution. It is visible only to authorized staff and is never shown to public shoppers."
     >
       <Building2 className="h-2.5 w-2.5 shrink-0" />
       <span className="shrink-0">Verified distributor:</span>
-      <span className="truncate">{source ?? `Source record #${style.distributorId}`}</span>
-      {supplierStyle && <span className="truncate text-muted-foreground">· Source style: {supplierStyle}</span>}
+      <span className="break-words">{source ?? `Source record #${style.distributorId}`}</span>
+      {supplierStyle && <span className="break-words text-muted-foreground">· Source style: {supplierStyle}</span>}
     </span>
   );
 }
@@ -1079,7 +1081,12 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
           </div>
         </div>
 
-        <DialogFooter className="shrink-0 pt-2 border-t border-border">
+        <DialogFooter className="shrink-0 pt-2 border-t border-border sm:justify-between">
+          <OpenDesignerLink
+            doorStyleId={style.id}
+            distributorId={style.distributorId}
+            ariaLabel={`Open Designer for ${style.ourName}`}
+          />
           <Button variant="outline" onClick={onClose} disabled={savePhase === "saving"}>
             Cancel
           </Button>
@@ -1608,8 +1615,9 @@ export default function FeaturedStylesAdmin() {
 	              <li
 	                key={s.id}
 	                data-testid={allDesignerCompliant ? "featured-style-designer-compliant" : "featured-style-designer-noncompliant"}
-	                className={`flex items-center gap-3 rounded-lg border p-2.5 ${allDesignerCompliant ? "border-border bg-card" : "border-red-400 bg-red-50/80"}`}
+	                className={`flex flex-col gap-2 rounded-lg border p-2.5 sm:flex-row sm:flex-wrap sm:items-start sm:gap-3 ${allDesignerCompliant ? "border-border bg-card" : "border-red-400 bg-red-50/80"}`}
               >
+                <div className="flex items-center gap-3">
                 <span className="flex items-center justify-center h-6 w-6 rounded bg-primary/10 text-primary text-xs font-bold shrink-0">
                   {i + 1}
                 </span>
@@ -1617,35 +1625,28 @@ export default function FeaturedStylesAdmin() {
                 {thumb(s) ? (
                   <img
                     src={thumb(s)!}
-                    alt={s.ourName}
+                    alt={`${s.ourName} door`}
                     className="h-12 w-12 rounded object-cover ring-1 ring-border shrink-0"
                   />
                 ) : (
                   <div className="h-12 w-12 rounded bg-muted shrink-0" />
                 )}
-                <div className="min-w-0 flex-1">
-                  {/* Public label (if set) vs internal name */}
-                  <p className="font-medium text-sm truncate flex items-center gap-1.5">
-                    {s.featuredLabel ? (
-                      <>
-                        <span className="text-primary">{s.featuredLabel}</span>
-                        <span className="text-muted-foreground font-normal text-xs">({s.ourName})</span>
-                      </>
-                    ) : (
-                      <>
-                        {s.ourName}
-                        {s.doorSampleVerified ? (
-                          <span title="Sample photo verified" className="inline-flex items-center text-emerald-600">
-                            <CheckCircle2 className="h-4 w-4" />
-                          </span>
-                        ) : (
-                          <span title="Unverified door photo" className="inline-flex items-center text-amber-600">
-                            <AlertTriangle className="h-4 w-4" />
-                          </span>
-                        )}
-                      </>
+                </div>
+                <div className="min-w-0 w-full sm:min-w-[12rem] sm:w-auto sm:flex-1">
+                  <DoorStyleIdentity
+                    style={s}
+                    trailing={s.featuredLabel ? undefined : (
+                      s.doorSampleVerified ? (
+                        <span title="Sample photo verified" className="inline-flex items-center text-emerald-600">
+                          <CheckCircle2 className="h-4 w-4" />
+                        </span>
+                      ) : (
+                        <span title="Unverified door photo" className="inline-flex items-center text-amber-600">
+                          <AlertTriangle className="h-4 w-4" />
+                        </span>
+                      )
                     )}
-                  </p>
+                  />
                   <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
                     <Badge variant="outline" className="border-emerald-300 bg-emerald-50 px-1.5 py-0 text-[10px] text-emerald-700">
                       <ImageIcon className="mr-0.5 h-2.5 w-2.5" /> Room scene ready
@@ -1683,7 +1684,12 @@ export default function FeaturedStylesAdmin() {
                   </div>
                   <AdminStyleRoomSceneControls style={s} />
                 </div>
-                <div className="flex items-center gap-1 shrink-0">
+                <div className="flex w-full flex-wrap items-center gap-1 sm:w-auto sm:shrink-0">
+                  <OpenDesignerLink
+                    doorStyleId={s.id}
+                    distributorId={s.distributorId}
+                    ariaLabel={`Open Designer for ${s.ourName}`}
+                  />
                   {/* Quick-edit button */}
                   <Button
                     size="icon"
@@ -1778,7 +1784,7 @@ export default function FeaturedStylesAdmin() {
                 key={s.id}
                 className="flex flex-col gap-2 rounded-lg border border-border bg-card p-2.5"
               >
-                <div className="flex items-center gap-3">
+                <div className="flex min-w-0 flex-1 flex-wrap items-start gap-3">
                 <button
                   type="button"
                   onClick={() => setEditingStyle(s)}
@@ -1788,7 +1794,7 @@ export default function FeaturedStylesAdmin() {
                   {thumb(s) ? (
                     <img
                       src={thumb(s)!}
-                      alt={s.ourName}
+                      alt={`${s.ourName} door`}
                       className="h-11 w-11 rounded object-cover ring-1 ring-border"
                     />
                   ) : (
@@ -1800,19 +1806,26 @@ export default function FeaturedStylesAdmin() {
                 <button
                   type="button"
                   onClick={() => setEditingStyle(s)}
-                  className="min-w-0 flex-1 text-left"
+                  className="min-w-0 w-full basis-full text-left"
                   title="Edit this door style"
                 >
-                  <p className="font-medium text-sm truncate">{s.ourName}{!isDoorStyleVerified(s) ? <Badge variant="outline" className="ml-2 align-middle">Unverified</Badge> : null}</p>
-                  <p className="text-xs text-muted-foreground truncate flex items-center gap-1.5">
+                  <DoorStyleIdentity style={s} />
+                  {!isDoorStyleVerified(s) ? <Badge variant="outline" className="mt-1">Unverified</Badge> : null}
+                  <p className="mt-0.5 break-words text-xs leading-snug text-muted-foreground">
                     {(s.roomScenes?.length ?? 0) > 0 ? `${s.roomScenes?.length}/${MAX_SCENES_PER_STYLE} room scenes` : "Room scene required"}
                     {[s.doorStyle, s.color].filter(Boolean).length > 0 && " · "}
                     {[s.doorStyle, s.color].filter(Boolean).join(" · ")}
+                    {" "}
                     <SkuBadge style={s} />
                   </p>
                   <span className="mt-1 block min-w-0"><SourceAttribution style={s} /></span>
                 </button>
-                <div className="flex items-center gap-1 shrink-0">
+                <div className="flex w-full flex-wrap items-center gap-1">
+                  <OpenDesignerLink
+                    doorStyleId={s.id}
+                    distributorId={s.distributorId}
+                    ariaLabel={`Open Designer for ${s.ourName}`}
+                  />
                   <Button
                     size="icon"
                     variant="ghost"
@@ -1871,13 +1884,14 @@ export default function FeaturedStylesAdmin() {
             {inactive.map((s) => (
               <div
                 key={s.id}
-                className="flex items-center gap-3 rounded-lg border border-border bg-muted/30 p-2.5 opacity-60"
+                className="flex flex-col gap-2 rounded-lg border border-border bg-muted/30 p-2.5 opacity-60"
               >
+                <div className="flex min-w-0 flex-1 items-start gap-3">
                 <div className="shrink-0">
                   {thumb(s) ? (
                     <img
                       src={thumb(s)!}
-                      alt={s.ourName}
+                      alt={`${s.ourName} door`}
                       className="h-11 w-11 rounded object-cover ring-1 ring-border grayscale"
                     />
                   ) : (
@@ -1887,19 +1901,21 @@ export default function FeaturedStylesAdmin() {
                   )}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="font-medium text-sm truncate line-through text-muted-foreground">{s.ourName}</p>
-                  <p className="text-xs text-muted-foreground truncate flex items-center gap-1.5">
-                    {(s.supplierBrandName || s.supplierName) && (
-                      <span className="flex items-center gap-0.5 text-[10px] font-medium text-amber-700 shrink-0">
-                        <Building2 className="h-2.5 w-2.5" />{s.supplierBrandName || s.supplierName}
-                      </span>
-                    )}
+                  <DoorStyleIdentity style={s} nameClassName="text-muted-foreground line-through" />
+                  <p className="mt-0.5 break-words text-xs leading-snug text-muted-foreground">
                     {[s.doorStyle, s.color].filter(Boolean).join(" · ")}
+                    {" "}
                     <SkuBadge style={s} />
                   </p>
                   <AdminStyleRoomSceneControls style={s} />
                 </div>
-                <div className="flex items-center gap-1 shrink-0">
+                </div>
+                <div className="flex flex-wrap items-center gap-1">
+                  <OpenDesignerLink
+                    doorStyleId={s.id}
+                    distributorId={s.distributorId}
+                    ariaLabel={`Open Designer for ${s.ourName}`}
+                  />
                   <Button
                     size="icon"
                     variant="ghost"

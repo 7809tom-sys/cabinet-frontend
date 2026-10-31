@@ -13,7 +13,7 @@ import {
   wallSegmentLength as polygonWallSegmentLength,
 } from "./polygonRoom";
 import { VERIFIED_PELICAN_BATHROOM_FIXTURE_PROFILES, verifiedPelicanBathroomFixtureProfile } from "./pelicanBathroomFixtureProfiles";
-import { aefPrintedGeometryForSku, hasAefPrintedGeometry } from "@shared/aefFramelessGeometry";
+import { aefPrintedGeometryForSku, FRAMELESS_DEEP_WALL_DEPTH_IN, FRAMELESS_STANDARD_WALL_DEPTH_IN, hasAefPrintedGeometry, isFramelessDeepWallCabinet } from "@shared/aefFramelessGeometry";
 import { standardBaseDoorCount } from "@shared/genericCabinetDrawerReference";
 export { isGlassPolicyNomenclature } from "./glassPolicy";
 
@@ -2727,19 +2727,25 @@ export function resolvedDesignCabinetDimensions(cabinet: DesignCabinet): Cabinet
         depth: printed.depth,
       };
     }
+    const standardFramelessWall = cabinet.placement === "wall"
+      && !isFramelessDeepWallCabinet(cabinet)
+      && !isLCornerCabinet(cabinet.masterCode, cabinet.description)
+      && !isDiagonalCorner(cabinet.masterCode, cabinet.description);
     return {
       width: isBlindCorner(cabinet.masterCode, cabinet.description)
         ? blindCornerNominalWidth(cabinet)
         : dim(cabinet.width, 24),
       height: dim(cabinet.height, standardHeight(cabinet.placement)),
-      depth: dim(
-        cabinet.depth,
-        cabinet.placement === "wall"
-          ? STD.WALL_DEPTH
-          : cabinet.placement === "tall"
-            ? STD.TALL_DEPTH
-            : STD.BASE_DEPTH,
-      ),
+      depth: standardFramelessWall
+        ? FRAMELESS_STANDARD_WALL_DEPTH_IN
+        : dim(
+          cabinet.depth,
+          cabinet.placement === "wall"
+            ? STD.WALL_DEPTH
+            : cabinet.placement === "tall"
+              ? STD.TALL_DEPTH
+              : STD.BASE_DEPTH,
+        ),
     };
   }
   const sku = cabinet.placement === "wall" ? wallCabinetSkuDimensions(cabinet.masterCode) : null;
@@ -2769,10 +2775,29 @@ export function footprintDepth(c: DesignCabinet): number {
   // parser's standard 12-inch wall depth. Keep it authoritative in every
   // plan/placement path that asks for a footprint.
   if (hasAefPrintedGeometry(c)) {
-    return aefPrintedGeometryForSku(c.masterCode)?.depth ?? dim(
-      c.depth,
-      c.placement === "wall" ? STD.WALL_DEPTH : c.placement === "tall" ? STD.TALL_DEPTH : STD.BASE_DEPTH,
-    );
+    const cornerBox = isBaseEndCornerCabinet(c)
+      || c.cornerType === "base-end-corner"
+      || isAngledWallCabinet(c.masterCode || "", c.description || undefined)
+      || isDiagonalCorner(c.masterCode || "", c.description || undefined)
+      || isLCornerCabinet(c.masterCode || "", c.description || undefined)
+      || isBlindCorner(c.masterCode || "", c.description || undefined);
+    if (!cornerBox) {
+      if (c.placement === "wall") {
+        if (isFramelessDeepWallCabinet(c)) {
+          const recorded = dim(c.depth, FRAMELESS_DEEP_WALL_DEPTH_IN);
+          return recorded >= 20 ? recorded : FRAMELESS_DEEP_WALL_DEPTH_IN;
+        }
+        const printed = aefPrintedGeometryForSku(c.masterCode)?.depth;
+        if (printed != null && Math.abs(printed - FRAMELESS_STANDARD_WALL_DEPTH_IN) <= 0.2) return printed;
+        const recorded = dim(c.depth, 0);
+        if (Math.abs(recorded - FRAMELESS_STANDARD_WALL_DEPTH_IN) <= 0.2) return recorded;
+        return FRAMELESS_STANDARD_WALL_DEPTH_IN;
+      }
+      return aefPrintedGeometryForSku(c.masterCode)?.depth ?? dim(
+        c.depth,
+        c.placement === "tall" ? STD.TALL_DEPTH : STD.BASE_DEPTH,
+      );
+    }
   }
   const wallSku = c.placement === "wall" ? wallCabinetSkuDimensions(c.masterCode) : null;
   if (wallSku) return wallSku.depth;
@@ -2796,7 +2821,7 @@ export function footprintDepth(c: DesignCabinet): number {
   // base/wall depth (24" for base, 12" for wall). The catalog depth field
   // sometimes stores the pull dimension instead, so we force standard depth.
   if (isBlindCorner(c.masterCode || "", c.description || undefined)) {
-    if (c.placement === "wall") return STD.WALL_DEPTH;
+    if (c.placement === "wall") return hasAefPrintedGeometry(c) ? FRAMELESS_STANDARD_WALL_DEPTH_IN : STD.WALL_DEPTH;
     return STD.BASE_DEPTH;
   }
   // An L-shaped corner cabinet (lazy-Susan / easy-reach corner) runs the
@@ -2808,7 +2833,18 @@ export function footprintDepth(c: DesignCabinet): number {
     const w = dim(c.width, 24);
     return w > 0 ? w : 24;
   }
-  if (c.placement === "wall") return dim(c.depth, STD.WALL_DEPTH);
+  if (c.placement === "wall") {
+    if (hasAefPrintedGeometry(c)) {
+      if (isFramelessDeepWallCabinet(c)) {
+        const recorded = dim(c.depth, 24);
+        return recorded >= 20 ? recorded : 24;
+      }
+      const recorded = dim(c.depth, 0);
+      if (Math.abs(recorded - FRAMELESS_STANDARD_WALL_DEPTH_IN) <= 0.2) return recorded;
+      return FRAMELESS_STANDARD_WALL_DEPTH_IN;
+    }
+    return dim(c.depth, STD.WALL_DEPTH);
+  }
   if (c.placement === "tall") return dim(c.depth, STD.TALL_DEPTH);
   if (c.placement === "appliance") return dim(c.depth, STD.BASE_DEPTH);
   return dim(c.depth, STD.BASE_DEPTH);
@@ -2901,7 +2937,11 @@ export function placedFootprint(p: PlacedCabinet): { w: number; d: number } {
     return { w: side, d: side };
   }
   if (cornerKind === "blind-corner") {
-    const stdDepth = p.placement === "wall" ? 12 : 24;
+    const stdDepth = p.placement === "wall"
+      ? (hasAefPrintedGeometry(p) || Math.abs(p.depth - FRAMELESS_STANDARD_WALL_DEPTH_IN) <= 0.2
+        ? FRAMELESS_STANDARD_WALL_DEPTH_IN
+        : 12)
+      : 24;
     const nominalWidth = blindCornerNominalWidth(p);
     const rot = ((p.rotation % 360) + 360) % 360;
     return rot === 90 || rot === 270 ? { w: stdDepth, d: nominalWidth } : { w: nominalWidth, d: stdDepth };
@@ -4067,6 +4107,11 @@ export type CollisionResolution = {
  */
 export function normalizePlacedWallCabinetSkuDimensions(cabinet: PlacedCabinet): PlacedCabinet {
   if (cabinet.placement !== "wall") return cabinet;
+  if (hasAefPrintedGeometry(cabinet) && !isFramelessDeepWallCabinet(cabinet) && !isLCornerCabinet(cabinet.masterCode, cabinet.description)) {
+    const depth = FRAMELESS_STANDARD_WALL_DEPTH_IN;
+    if (Math.abs(cabinet.depth - depth) <= COLLISION_EPSILON_IN && cabinet.nominalDepth === depth) return cabinet;
+    return { ...cabinet, depth, nominalDepth: depth };
+  }
   const sku = wallCabinetSkuDimensions(cabinet.masterCode);
   if (!sku) return cabinet;
   const intentionallyCustom = (value: number, nominal: number | null | undefined) =>
@@ -6305,6 +6350,8 @@ export interface WallOpening {
   width: number;
   height: number;
   sill: number;
+  /** Installer note when Auto-Design raised this window so a deck faucet clears the sill. */
+  faucetClearanceNote?: string;
 }
 
 export function wallLength(side: WallSide | string, room: RoomData): number {

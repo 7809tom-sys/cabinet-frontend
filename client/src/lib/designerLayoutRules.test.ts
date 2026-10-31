@@ -25,8 +25,6 @@ import {
   applyAutoDesignWiggleRoom,
   crownMiterCutAllowanceIn,
   enforceTrimSupplierContinuity,
-  formatAutoDesignWiggleBadge,
-  formatAutoDesignWiggleMessage,
   type AutoDesignAnchorOrigin,
 } from "./designerLayoutRules";
 
@@ -349,8 +347,6 @@ describe("auto-design wiggle room", () => {
     expect(move.distanceFromOriginalIn).toBeLessThanOrEqual(3);
     expect(wallRunOffset(result.placed.find((item) => item.uid === "range-1")!, "bottom", room)).toBeCloseTo(36, 5);
     expect(result.placed.find((item) => item.uid === "ls-36")!.wallOffset).toBe(susan.wallOffset);
-    expect(formatAutoDesignWiggleMessage(move)).toBe('Wiggle room applied: Range moved 2" right to fit the 36" lazy Susan');
-    expect(formatAutoDesignWiggleBadge(move)).toBe('Moved 2" →');
     expect(activeAutoDesignWiggleMoves(result.moves, result.placed, room)).toEqual(result.moves);
     expect(activeAutoDesignWiggleMoves(result.moves, syncWallRunOffsets(result.placed, room), room)).toEqual(result.moves);
     const nudged = result.placed.find((item) => item.uid === "range-1")!;

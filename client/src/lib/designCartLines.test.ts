@@ -122,8 +122,8 @@ describe("designer cabinet cart lines", () => {
 	      placed: [installedScribe], styleId: 330002, distributorId: 210001, tier: "homeowner" as const,
 	      styleNameById: new Map([[330002, "Aero Blanc (Preston)"]]), unitPriceFor: () => 18.25,
 	    };
-	    expect(buildDesignCabinetCartLines(common)[0]).toMatchObject({ masterCode: "SCR", name: 'Filler — A front filler cut to 2¾" with 22.5° miter (forms 45° turn)' });
-	    expect(buildDesignPreviewPricingLines(common)[0]).toMatchObject({ masterCode: "SCR", name: 'Filler — A front filler cut to 2¾" with 22.5° miter (forms 45° turn)' });
+	    expect(buildDesignCabinetCartLines(common)[0]).toMatchObject({ masterCode: "SCR", name: 'Filler 3" stock, cut to 2¾" with 22.5° miter (forms 45° turn)' });
+	    expect(buildDesignPreviewPricingLines(common)[0]).toMatchObject({ masterCode: "SCR", name: 'Filler 3" stock, cut to 2¾" with 22.5° miter (forms 45° turn)' });
   });
 
   it("keeps cart and preview identity on the active supplier style for a stale foreign saved finish", () => {

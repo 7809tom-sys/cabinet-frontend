@@ -1,9 +1,8 @@
-import { hasAefPrintedGeometry } from "@shared/aefFramelessGeometry";
+import { hasAefPrintedGeometry, isFramelessDeepWallCabinet } from "@shared/aefFramelessGeometry";
 import { AEF_SLAB_DOOR_THICKNESS_IN } from "./aefEndPanelStock";
-import { autoFillSpan } from "./autofill";
-import { planWallWidthsOverBase, solveCabinetSpan } from "./autoDesignGapSolver";
+import { planWallWidthsOverBase, coverCatalogSpan } from "./autoDesignGapSolver";
 import {
-  SEAM_MIN_IN, findAutoDesignSeams, fillersForSeam, intersectWithCoverage, lowerCoverageOnWall, upperReservedZones,
+  AUTO_DESIGN_FILLER_MAX_IN, SEAM_MIN_IN, findAutoDesignSeams, fillersForSeam, intersectWithCoverage, lowerCoverageOnWall, upperReservedZones,
   type AutoDesignSeam,
 } from "./autoDesignSeamFillers";
 import { buildRequiredBlindCornerFiller, requiresConfiguredBlindCornerFiller } from "./blindCornerRequiredFiller";
@@ -32,7 +31,18 @@ function isStraightStandardUpper(source: DesignCabinet): boolean {
   return cabinetDrawingType(source) === "standard-door"
     && source.glassDoor !== true && source.isCornerCabinet !== true
     && !isCornerCabinet(source.masterCode, source.description)
+    && !isFramelessDeepWallCabinet(source)
     && !NOT_A_STRAIGHT_UPPER.test(`${source.masterCode} ${source.description} ${source.subCategory ?? ""}`);
+}
+
+/** A window sits over this sink, so the wall above it stays open. */
+export function sinkHasWindowAbove(sink: PlacedCabinet, openings: readonly WallOpening[], room: RoomData): boolean {
+  const wall = cabinetWall(sink, room);
+  const start = wallRunOffset(sink, wall, room);
+  const end = start + wallRunSpan(sink, wall, room);
+  return openings.some((opening) => opening.kind === "window" && opening.side === wall
+    && start < opening.offset + opening.width - COLLISION_EPSILON_IN
+    && end > opening.offset + COLLISION_EPSILON_IN);
 }
 
 /**
@@ -56,28 +66,21 @@ export function resolveWallHeightClass(catalog: readonly DesignCabinet[], nomina
 const WALL_WIDTH_STEP_IN = 3;
 const MIN_UPPER_WIDTH_IN = 9;
 
-/** Catalog widths first, equal halves before a lopsided pair, and never a 3" wall filler. */
+/**
+ * Tile the whole span. A 3 inch tail is a filler, not a reason to discard the
+ * run. The old six-piece search stopped a long wall early, and an exact 3 inch
+ * remainder used to throw away every cabinet in the span.
+ */
 function wallRunCabinets(length: number, standard: readonly DesignCabinet[]): { cabinets: DesignCabinet[]; remainder: number } {
   const widths = standard.map((row) => dim(row.width, 0)).filter((width) => width > 0);
-  const solved = solveCabinetSpan({ lengthIn: length, widthsIn: widths, layer: "wall", preferEqualHalves: true });
-  if (solved.covered && solved.cabinetWidths.length) {
-    const cabinets: DesignCabinet[] = [];
-    for (const width of solved.cabinetWidths) {
-      const row = standard.find((candidate) => Math.abs(dim(candidate.width, 0) - width) <= COLLISION_EPSILON_IN);
-      if (!row) return { cabinets: [], remainder: length };
-      cabinets.push(row);
-    }
-    const used = cabinets.reduce((sum, row) => sum + dim(row.width, 0), 0);
-    return { cabinets, remainder: Math.max(0, Math.round((length - used) * 8) / 8) };
+  const cover = coverCatalogSpan(length, widths, AUTO_DESIGN_FILLER_MAX_IN);
+  const cabinets: DesignCabinet[] = [];
+  for (const width of cover.widths) {
+    const row = standard.find((candidate) => Math.abs(dim(candidate.width, 0) - width) <= COLLISION_EPSILON_IN);
+    if (!row) return { cabinets: [], remainder: length };
+    cabinets.push(row);
   }
-  const tiled = autoFillSpan(length, "kitchen", standard.map((row) => ({ ...row, placement: "base" as const })), { strategy: "largest-first" });
-  const cabinets = tiled.items.filter((item) => !item.isFiller)
-    .map((item) => standard.find((row) => row.id === item.cabinet.id))
-    .filter((row): row is DesignCabinet => row != null);
-  const used = cabinets.reduce((sum, row) => sum + dim(row.width, 0), 0);
-  const remainder = Math.max(0, Math.round((length - used) * 8) / 8);
-  if (Math.abs(remainder - 3) <= 0.05) return { cabinets: [], remainder: length };
-  return { cabinets, remainder };
+  return { cabinets, remainder: cover.remainder };
 }
 /** The corner cabinet an Auto-Design blind corner gets: a plain 12-inch-wide upper in the corner square. */
 export const AUTO_DESIGN_CORNER_UPPER_WIDTH_IN = 12;
@@ -314,12 +317,16 @@ export function buildAutoDesignWallCabinets(input: {
 
   for (const lower of input.placed) {
     if (lower.placement !== "base" && lower.placement !== "appliance") continue;
-    // Above the sink there is either the measured window or nothing at all.
-    if (lower.placement === "base" && isSinkBaseCabinet(lower)) continue;
-    if (isRefrigerator(lower) || isRangeOrOven(lower.masterCode, lower.description)
+    if (lower.placement === "base" && isSinkBaseCabinet(lower) && sinkHasWindowAbove(lower, openings, room)) {
+      skipped.push(`Left open above ${lower.masterCode}: a window is over the sink.`);
+      continue;
+    }
+    const rangeCovered = isRangeOrOven(lower.masterCode, lower.description)
+      && working.some((item) => /hood/i.test(item.masterCode ?? "") && cabinetWall(item, room) === cabinetWall(lower, room));
+    if (isRefrigerator(lower) || rangeCovered
       || isCornerCabinet(lower.masterCode, lower.description) || isPanelItem(lower)
       || /filler|scribe/i.test(`${lower.masterCode} ${lower.description} ${lower.subCategory ?? ""}`)) continue;
-    if (lower.placement === "appliance" && !/^DW[-_]?/i.test(lower.masterCode)) continue;
+    if (lower.placement === "appliance" && !/^DW[-_]?/i.test(lower.masterCode) && !isRangeOrOven(lower.masterCode, lower.description)) continue;
     const wall = cabinetWall(lower, room);
     const lowerStart = wallRunOffset(lower, wall, room);
     const lowerSpan = wallRunSpan(lower, wall, room);
@@ -340,15 +347,20 @@ export function buildAutoDesignWallCabinets(input: {
     const addedBefore = additions.length;
     let complete = true;
     for (const piece of pieces) {
+      const widths = standard.map((row) => dim(row.width, 0));
       const exact = standard.find((source) => Math.abs(dim(source.width, 0) - piece.span) <= COLLISION_EPSILON_IN);
-      const equalWidths = exact ? null : planWallWidthsOverBase(piece.span, standard.map((row) => dim(row.width, 0)));
-      const tiled = exact ? [exact] : equalWidths
-        ? equalWidths.map((width) => standard.find((row) => Math.abs(dim(row.width, 0) - width) <= COLLISION_EPSILON_IN)!)
-        : autoFillSpan(piece.span, "kitchen",
-          standard.map((row) => ({ ...row, placement: "base" as const })), { strategy: "largest-first" });
-      const sources = Array.isArray(tiled) ? tiled : tiled.items.filter((item) => !item.isFiller)
-        .map((item) => standard.find((row) => row.id === item.cabinet.id)!);
-      if (!sources.length || Math.abs(sources.reduce((sum, source) => sum + dim(source.width, 0), 0) - piece.span) > COLLISION_EPSILON_IN) {
+      const equalWidths = exact ? null : planWallWidthsOverBase(piece.span, widths);
+      const cover = exact
+        ? { widths: [piece.span], remainder: 0 }
+        : equalWidths
+          ? { widths: equalWidths, remainder: 0 }
+          : coverCatalogSpan(piece.span, widths, AUTO_DESIGN_FILLER_MAX_IN);
+      const sources = cover.widths
+        .map((width) => standard.find((row) => Math.abs(dim(row.width, 0) - width) <= COLLISION_EPSILON_IN))
+        .filter((row): row is DesignCabinet => row != null);
+      const covered = sources.reduce((sum, source) => sum + dim(source.width, 0), 0);
+      const shortfall = piece.span - covered;
+      if (!sources.length || shortfall > AUTO_DESIGN_FILLER_MAX_IN + COLLISION_EPSILON_IN || shortfall < -COLLISION_EPSILON_IN) {
         working = before;
         additions.splice(addedBefore);
         skipped.push(`${lower.masterCode}: no source-sized ${height}″ wall cabinet matches its ${piece.span}″ run.`);
@@ -387,22 +399,32 @@ export function buildAutoDesignWallCabinets(input: {
         let remainder = length;
         const placedHere: PlacedCabinet[] = [];
         if (length >= MIN_UPPER_WIDTH_IN - COLLISION_EPSILON_IN && standard.length) {
-          const sources = wallRunCabinets(length, standard).cabinets;
-          const fromRight = leftNeighbor == null && rightNeighbor != null;
-          const ordered = fromRight ? [...sources].reverse() : sources;
-          const total = ordered.reduce((sum, row) => sum + dim(row.width, 0), 0);
-          if (fromRight) along = region.end - total;
-          for (const source of ordered) {
-            const candidate = makeCandidate(source);
-            const spot = wallPlacementAt(along, candidate.width, candidate.depth, seam.wall as never, room);
-            if (spot && commit({ ...candidate, ...spot })) { placedHere.push(additions[additions.length - 1]!); along += candidate.width; }
-            else break;
+          const widths = standard.map((row) => dim(row.width, 0)).filter((width) => width > 0).sort((a, b) => b - a);
+          let guard = 0;
+          while (region.end - along > AUTO_DESIGN_FILLER_MAX_IN + COLLISION_EPSILON_IN && guard < 40) {
+            guard += 1;
+            const remain = region.end - along;
+            const cover = coverCatalogSpan(remain, widths, AUTO_DESIGN_FILLER_MAX_IN);
+            const candidates = [...new Set([...(cover.widths[0] != null ? [cover.widths[0]] : []), ...widths.filter((width) => width <= remain + COLLISION_EPSILON_IN)])];
+            let seated = false;
+            for (const width of candidates) {
+              const source = standard.find((row) => Math.abs(dim(row.width, 0) - width) <= COLLISION_EPSILON_IN);
+              if (!source) continue;
+              const candidate = makeCandidate(source);
+              const spot = wallPlacementAt(along, candidate.width, candidate.depth, seam.wall as never, room);
+              if (spot && commit({ ...candidate, ...spot })) {
+                placedHere.push(additions[additions.length - 1]!);
+                along += candidate.width;
+                seated = true;
+                break;
+              }
+            }
+            // A corner or hood blocks this spot. Step ahead instead of ending the run.
+            if (!seated) along += Math.min(3, Math.max(0, remain));
           }
-          const used = placedHere.reduce((sum, item) => sum + item.width, 0);
-          remainder = length - used;
-          if (fromRight) { along = region.start; } 
+          remainder = Math.max(0, region.end - along);
         }
-        if (remainder >= SEAM_MIN_IN) {
+        if (remainder >= SEAM_MIN_IN && remainder <= AUTO_DESIGN_FILLER_MAX_IN + COLLISION_EPSILON_IN) {
           const fromRight = leftNeighbor == null && rightNeighbor != null && placedHere.length > 0;
           const start = placedHere.length ? (fromRight ? region.start : along) : region.start;
           const end = start + remainder;

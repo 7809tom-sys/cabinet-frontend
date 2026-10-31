@@ -63,6 +63,7 @@ import PelicanCatalogAdmin from "@/components/admin/PelicanCatalogAdmin";
 import { AnalyticsAdmin } from "@/components/admin/AnalyticsAdmin";
 import FullDatabaseExport from "@/components/admin/FullDatabaseExport";
 import AdminGroupedTabs from "@/components/admin/AdminGroupedTabs";
+import { AdminTabErrorBoundary } from "@/components/admin/AdminTabErrorBoundary";
 
 function statusVariant(status: string): "default" | "secondary" | "destructive" | "outline" {
   if (status === "approved" || status === "won") return "default";
@@ -569,13 +570,19 @@ export default function Admin() {
             <TabsTrigger value="commissions">My Commissions</TabsTrigger>
           </TabsList>
           <TabsContent value="crm" className="mt-6">
-            <CrmBoard lang="en" />
+            <AdminTabErrorBoundary tabName="Sales CRM">
+              <CrmBoard lang="en" />
+            </AdminTabErrorBoundary>
           </TabsContent>
           <TabsContent value="sales-forecast" className="mt-6">
-            <SalesForecastAdmin />
+            <AdminTabErrorBoundary tabName="Sales Forecast">
+              <SalesForecastAdmin />
+            </AdminTabErrorBoundary>
           </TabsContent>
           <TabsContent value="commissions" className="mt-6">
-            <SalesCommissionsAdmin />
+            <AdminTabErrorBoundary tabName="My Commissions">
+              <SalesCommissionsAdmin />
+            </AdminTabErrorBoundary>
           </TabsContent>
         </Tabs>
         <div className="mt-8">
@@ -612,13 +619,19 @@ export default function Admin() {
             <TabsTrigger value="consultations">Consultations</TabsTrigger>
           </TabsList>
           <TabsContent value="crm" className="mt-6">
-            <CrmBoard lang="en" />
+            <AdminTabErrorBoundary tabName="Sales CRM">
+              <CrmBoard lang="en" />
+            </AdminTabErrorBoundary>
           </TabsContent>
           <TabsContent value="sales-forecast" className="mt-6">
-            <SalesForecastAdmin />
+            <AdminTabErrorBoundary tabName="Sales Forecast">
+              <SalesForecastAdmin />
+            </AdminTabErrorBoundary>
           </TabsContent>
           <TabsContent value="consultations" className="mt-6">
-            <ConsultationsAdmin />
+            <AdminTabErrorBoundary tabName="Consultations">
+              <ConsultationsAdmin />
+            </AdminTabErrorBoundary>
           </TabsContent>
         </Tabs>
       </div>

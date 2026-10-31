@@ -45,6 +45,7 @@ export type ContractorAccessSource = "self" | "affiliate";
 /** Row from `contractorAccess.list` after the paired backend adds affiliate submission fields. */
 export type ContractorAccessListRow = {
   id: number;
+  userId: number | null;
   businessName: string;
   phone: string;
   licenseNumber: string | null;
@@ -58,6 +59,25 @@ export type ContractorAccessListRow = {
   submittedByEmail: string | null;
   contractorName: string | null;
   contractorEmail: string | null;
+};
+
+export type AffiliateMarkupResult = {
+  markupPercent: number | null;
+  siteDefaultPercent: number;
+};
+
+export type AffiliateMarkupQuery = {
+  affiliateUserId?: number;
+};
+
+export type SetAffiliateMarkupInput = {
+  markupPercent: number | null;
+  affiliateUserId?: number;
+};
+
+export type AffiliateReviewInput = {
+  id: number;
+  decision: "approved" | "rejected";
 };
 
 export type AffiliateSubmitterOption = {
@@ -137,6 +157,56 @@ export function listRowSubmitter(row: ContractorAccessListRow): string {
   const name = row.submittedByName?.trim() || "Affiliate";
   const email = row.submittedByEmail?.trim() || "No email";
   return `${name} · ${email}`;
+}
+
+export function contractorPagePath(contractorUserId: number): string {
+  return `/contractor?contractorUserId=${contractorUserId}`;
+}
+
+export function contractorProcedureError(error: { message?: string; data?: { code?: string } | null } | null | undefined): string {
+  const code = error?.data?.code?.trim();
+  const message = error?.message?.trim();
+  if (code && message && !message.includes(code)) return `${code}: ${message}`;
+  return message || code || "Could not update this request.";
+}
+
+/** Markup over cost is a percent from 0 through 200, with at most two decimal places. */
+export function parseAffiliateMarkupPercent(
+  raw: string,
+): { ok: true; value: number } | { ok: false; message: string } {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return { ok: false, message: "Enter a markup percent, or use the site default." };
+  }
+  if (!/^\d+(\.\d{1,2})?$/.test(trimmed)) {
+    return { ok: false, message: "Use at most 2 decimal places." };
+  }
+  const value = Number(trimmed);
+  if (!Number.isFinite(value) || value < 0 || value > 200) {
+    return { ok: false, message: "Markup must be between 0 and 200." };
+  }
+  return { ok: true, value: Math.round(value * 100) / 100 };
+}
+
+export function formatMarkupPercent(value: number): string {
+  return Number(value.toFixed(2)).toString();
+}
+
+export function contractorSellPrice(cost: number, markupPercent: number): number {
+  return Math.round(cost * (1 + markupPercent / 100) * 100) / 100;
+}
+
+export function contractorMarkupExample(markupPercent: number, audience: "affiliate" | "admin" = "affiliate"): string {
+  const sell = contractorSellPrice(100, markupPercent).toFixed(2);
+  const buyers = audience === "admin" ? "this affiliate's contractors" : "your contractors";
+  return `A $100.00 cost sells to ${buyers} at $${sell}`;
+}
+
+export function effectiveMarkupPercent(draft: string, siteDefaultPercent: number): number | null {
+  const trimmed = draft.trim();
+  if (!trimmed) return siteDefaultPercent;
+  const parsed = parseAffiliateMarkupPercent(trimmed);
+  return parsed.ok ? parsed.value : null;
 }
 
 export function validateAffiliateContractorDraft(

@@ -73,6 +73,13 @@ import { bathroomTubWallParallelPlacement, rotateBathroomFurniture } from "@/lib
 import BathroomZoneAttributesDialog from "@/components/design/BathroomZoneAttributesDialog";
 import { isBathroomVanityCabinet } from "@/lib/bathroomVanityCatalog";
 import { canAdminReviewSavedDesign } from "@/lib/designAccess";
+import {
+  DEFAULT_FRESH_LAYOUT_PRESET_ID,
+  defaultFreshKitchenFootprint,
+  freshDesignDraftStorageKey,
+  readFreshDesignRequest,
+  skipsDesignerLeadGate,
+} from "@/lib/designerFreshStart";
 import { DESIGNER_CANVAS_CONTAINER_CLASS } from "@/lib/designerLayout";
 import { rotateCustomPlanClockwise } from "@/lib/rotatePlan";
 import { canShowCompactWorkspaceMoveControl } from "@/lib/compactWorkspaceMove";
@@ -101,9 +108,14 @@ import { combinedFillerNote, fillerCutSourceFor, isCombinedSmallFiller } from "@
 import { activeCatalogPricingIdsByMasterCode, currentCatalogPricingCabinetId } from "@/lib/designPricingIdentity";
 import { catalogFillerForGap, catalogFillerPricingId, fittedCatalogFillerDescription, isCatalogFiller, type CatalogFillerCandidate } from "@/lib/catalogFiller";
 import { requiresAutoEndPanels, type DoorStyleEndPanelInput } from "@/lib/autoEndPanels";
+import { AEF_SPEC_END_PANEL_CODES, aefSpecPanelCabinet } from "@/lib/aefSpecPanelCatalog";
+import { withFramelessExposedFinish } from "@/lib/framelessExposedFinish";
+import { isAefFramelessStyleCode } from "@shared/aefFramelessSpecs";
 import { catalogItemToExposedPanelStock, sameExposedPanelWarnings, syncExposedSidePanels, type ExposedPanelStock, type ExposedPanelWarning } from "@/lib/exposedSidePanels";
 import { countertopToastVisible, COUNTERTOP_TOAST_TIMEOUT_MS, useDebouncedValue, stablePricePairKey } from "@/lib/designerPricingStability";
 import { ColorStyleQuickPicker } from "@/components/design/ColorStyleQuickPicker";
+import { StyleSamplePreview } from "@/components/design/StyleSamplePreview";
+import type { SampleStyleImages } from "@/lib/sampleImageQa";
 import { attachedFillerLeftoverOptions, attachedFillerNeedsReview, attachedFillerPlanForCandidate, attachedFillerSizeIssues, type AttachedFillerChoice, type AttachedFillerLeftoverOptions, type AttachedFillerSizeIssue } from "@/lib/cabinetAttachedFillers";
 import { buildAttachedFillerPlacement, supportsAttachedFillerChoice } from "@/lib/cabinetAttachedFillerPlacement";
 import { selectedPeninsulaCabinetSequencePlan, selectedPeninsulaCabinetTotalIn, wizardEligibleBaseCabinets, type PeninsulaWizardCabinet } from "@/lib/peninsulaWizardPlan";
@@ -138,7 +150,7 @@ import { kitchenRuleNumber } from "@/lib/kitchenRuleParameters";
 import { suggestReadjustOptions, stockPromptOrderNote, type ReadjustOption, type StockPromptChoice } from "@/lib/stockPrompt";
 import { useDesignerInventory } from "@/lib/useDesignerInventory";
 import { InventoryDesignStockControl, InventoryStockBadge, OutOfStockChoiceDialog, SinkBaseSubstitutionNotice } from "@/components/design/InventoryStockNotice";
-import { unavailableSavedStyleIds } from "@/lib/unavailableSavedStyles";
+import { sessionSellableStyleIds, unavailableSavedStyleIds } from "@/lib/unavailableSavedStyles";
 import { applyGlassStackerBulkPlacement as applyBulkGlassStackerPlacements, glassStackerBulkCeilingBlocksAtHeight, glassStackerBulkHeightOptions, glassStackerBulkPlacementCandidates, glassStackerUidsForRemoval, type GlassStackerBulkPlacementCandidate } from "@/lib/glassStackerBulkPlacement";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -212,23 +224,24 @@ import { HardwareCatalogPicker } from "@/components/design/HardwareCatalogPicker
 import { isPanelPaletteItem } from "./designToolPanels";
 import { normalizePaletteSearch, matchesPaletteSearch, matchesPaletteTextOrSize } from "@/lib/paletteSearch";
 import { searchCatalogItems } from "@shared/catalogCodeSearch";
-import { adjacentDishwasherCenterIn, anchorAlongStartIn, autoBuildStraightBaseCatalog, buildAutoDesignWallGuides, canRunAutoDesign, closestDishwasherStart, isAutoBuildStraightSinkBaseCandidate, makeAutoDesignSixWallTrainingRoom, pickAutoDesignSinkBase, planAutoDesignAutoBuild, resolveDishwasherSide, subtractAnchorRunReservations, wallLabelToEngineWallId, type AutoDesignInputs, type AutoDesignOriginCorner, type AutoDesignRunDirection, type DishwasherSide } from "@/lib/autoDesignAutoBuild";
+import { adjacentDishwasherCenterIn, anchorAlongStartIn, autoBuildStraightBaseCatalog, autoDesignWallNameByEngineId, buildAutoDesignWallGuides, canRunAutoDesign, closestDishwasherStart, isAutoBuildStraightSinkBaseCandidate, makeAutoDesignSixWallTrainingRoom, keepSingleAutoDesignSink, pickAutoDesignSinkBase, planAutoDesignAutoBuild, resolveDishwasherSide, subtractAnchorRunReservations, wallLabelToEngineWallId, type AutoDesignInputs, type AutoDesignOriginCorner, type AutoDesignRunDirection, type DishwasherSide } from "@/lib/autoDesignAutoBuild";
 import { AUTO_DESIGN_REFRIGERATOR_NOTE, autoDesignControlState, autoDesignShouldTurnOffForRefrigerator, isRefrigeratorAppliance, refrigeratorBlocksAutoDesign } from "@/lib/autoDesignAvailability";
 import { applyChosenAutoDesignFaucet, catalogFaucetSurface, defaultAutoDesignFaucet, ensureAutoDesignFaucet, isCatalogFaucet, type AutoDesignFaucetProduct } from "@/lib/autoDesignFaucet";
-import { clampSinkDragForFaucet } from "@/lib/faucetPlacement";
+import { clampSinkDragForFaucet, raiseWindowsForDeckFaucet, type FaucetWindowClearanceNote } from "@/lib/faucetPlacement";
 import { autoDesignSinkWindow, windowOverlapsReservation } from "@/lib/autoDesignSinkWindow";
 import { autoDesignRangeHood, autoDesignRangeNeedsVentilation } from "@/lib/autoDesignRangeHood";
+import { mergeAutoDesignRefrigeratorCaps, runAutoDesignLayout } from "@/lib/autoDesignLayout";
 import { autoBuildCornerCatalog, autoDesignCornerSlotPoint, autoDesignCornerSlots, autoDesignExcludedEngineWallIds, autoDesignLayoutUsesWall, autoDesignRunWallIds, type AutoBuildCornerCandidate, type AutoDesignCornerChoice, type AutoDesignCornerSlot } from "@/lib/autoDesignCornerStage";
 import { evaluateAutoDesignCornerFit, type AutoDesignCornerFit } from "@/lib/cornerFit";
 import { useKitchenRuleParameterSync } from "@/lib/kitchenRulesApi";
 import { rangeBridgeSpec, reviewAfterShift, separateRangeAndRefrigerator } from "@/lib/kitchenAdjacency";
 import { bakesALot, cooksALot, normalizeKitchenUsage } from "@/lib/kitchenUsage";
-import { buildMandatoryAutoDesignRefrigeratorBay } from "@/lib/autoDesignRefrigeratorBay";
+import { acceptMeasuredCornerRefrigeratorBay } from "@/lib/autoDesignRefrigeratorBay";
 import { buildAutoDesignWallCabinets, resolveWallHeightClass, type AutoDesignUpperCorner } from "@/lib/autoDesignWallCabinets";
 import { isWallWineRackCabinet, withWallWineRacks } from "@shared/wallWineRack";
 import { seatAutoDesignCornerFromCatalog } from "@/lib/autoDesignCornerPlacement";
 import { type AutoDesignApplianceMove } from "@/lib/autoDesignCornerSeating";
-import { validatePlacedCornerRefrigerator } from "@/lib/cornerRefrigeratorPlacement";
+import { cornerOccupantRefrigeratorUids, refrigeratorOccupyingCorner, validatePlacedCornerRefrigerator } from "@/lib/cornerRefrigeratorPlacement";
 import { validatePlacedCornerRange, CORNER_RANGE_HANDLE_FILLER_IN } from "@/lib/cornerRangePlacement";
 import { buildGlassCornerCatalogChoices } from "@/lib/glassCornerCatalog";
 import {
@@ -244,9 +257,8 @@ import { MasterTracRod3D, MasterTracRodElevation } from "@/components/design/Mas
 import { defaultTowerConfig, isMasterTracCornerBoard, planMasterTracTower, towerCleatReferenceItems, towerConceptReferenceSubtotal, towerConceptStorageReferenceItems, towerConfigFromPlacements, towerCornerReferenceItems, towerRodHardwareTakeoff, type MasterTracTowerConfig } from "@/lib/masterTracTower";
 import { canCommitPlanStyleSwitchWithoutReview, planStyleReviewCandidates } from "@/lib/planStyleSwitch";
 import { autoFillSpan, makeFiller, type FillMode } from "@/lib/autofill";
-import { fillAutoDesignLowerSeams, planAutoDesignBaseSegment } from "@/lib/autoDesignSeamFillers";
-import { SINK_SHIFT_LIMIT_IN, activeAutoDesignWiggleMoves, applyDesignerLayoutRules, applyAutoDesignWiggleRoom, formatAutoDesignWiggleMessage, type AutoDesignAnchorOrigin, type AutoDesignWiggleMove } from "@/lib/designerLayoutRules";
-import { AutoDesignWiggleNotice } from "@/components/design/AutoDesignWiggleNotice";
+import { AUTO_DESIGN_FILLER_MAX_IN, fillAutoDesignLowerSeams, planAutoDesignBaseSegment } from "@/lib/autoDesignSeamFillers";
+import { SINK_SHIFT_LIMIT_IN, applyDesignerLayoutRules, applyAutoDesignWiggleRoom, type AutoDesignAnchorOrigin } from "@/lib/designerLayoutRules";
 import { resolveTierPrice } from "@shared/pricingTier";
 import {
   CATALOG_SUBCATEGORY_TRIM_AND_MOULDING,
@@ -343,7 +355,8 @@ const noSelectedPelicanIds: ReadonlySet<number> = new Set<number>();
 
 
 import { buildSurfaceCartLines } from "@/lib/surfaceCartLines";
-import { flooringLayoutName } from "@/lib/flooringLayout";
+import { flooringLayoutName, isFlooringRotation, type FlooringRotationDegrees } from "@/lib/flooringLayout";
+import { confirmPlacedItemRemoval } from "@/lib/placedItemRemoval";
 import { surfaceRole, formatPrice } from "@/lib/pelican";
 import { buildRollOutLines, normalizedRollOutTrayQty, rollOutTrayCartItems, type TrayOptionForStyle, type TrayPlaced } from "@/lib/rollOutTrayMatch";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -536,7 +549,8 @@ function designerFacePlan(
 function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?: string }) {
   const { t, lang } = useLanguage();
   const { user, isAuthenticated } = useAuth();
-  const isAdmin = (user as any)?.role === "admin";
+  const signedInRole = (user as { role?: string | null } | null)?.role ?? null;
+  const isAdmin = signedInRole === "admin";
   useKitchenRuleParameterSync();
   const search = useSearch();
   const storeScope = useMemo(
@@ -638,6 +652,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     setVerifiedName(contact.name ?? "");
     setVerifiedPhone(contact.phone ?? "");
     setVerified(true);
+    // Signed-in staff, admins, and vendors already pass the email form because
+    // EmailGate calls this with their account email. Recording a lead for that
+    // bypass only creates junk CRM rows when they open the Designer to preview
+    // a door style. Shoppers still get a lead.
+    if (skipsDesignerLeadGate(signedInRole)) return;
     // Record the lead so a rep has contact info even if the visitor never saves
     // a design or requests a quote. Fire-and-forget — never block entry on it.
     captureLead.mutate({
@@ -647,12 +666,13 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	  affiliateSlug: affiliateSlug ?? undefined,
       featuredStyleId: featuredStyleIdForAttribution,
     });
-  }, [affiliateSlug, captureLead, featuredStyleIdForAttribution]);
+  }, [affiliateSlug, captureLead, featuredStyleIdForAttribution, signedInRole]);
   const addOptionalContact = useCallback((contact: Pick<LeadContact, "name" | "phone">) => {
     if (!verifiedEmail || (!contact.name && !contact.phone)) return;
     setVerifiedName(contact.name ?? "");
     setVerifiedPhone(contact.phone ?? "");
     setShowOptionalContactNudge(false);
+    if (skipsDesignerLeadGate(signedInRole)) return;
     captureLead.mutate({
       email: verifiedEmail,
       name: contact.name,
@@ -664,12 +684,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       onSuccess: () => toast.success("Contact details saved"),
       onError: () => toast.error("Your design is still available, but we could not save those contact details."),
     });
-  }, [affiliateSlug, captureLead, featuredStyleIdForAttribution, verifiedEmail]);
+  }, [affiliateSlug, captureLead, featuredStyleIdForAttribution, signedInRole, verifiedEmail]);
   useEffect(() => {
-    if (!verified || verifiedName || verifiedPhone || optionalContactDismissed) return;
+    if (!verified || skipsDesignerLeadGate(signedInRole) || verifiedName || verifiedPhone || optionalContactDismissed) return;
     const timer = window.setTimeout(() => setShowOptionalContactNudge(true), 90_000);
     return () => window.clearTimeout(timer);
-  }, [optionalContactDismissed, verified, verifiedName, verifiedPhone]);
+  }, [optionalContactDismissed, signedInRole, verified, verifiedName, verifiedPhone]);
   // Optional saved design to load (?load=<designId>), e.g. from a CRM deal's
   // "Linked Designs" list. A prior Designer link shape used `designId`; honor
   // it as a read-compatible alias so an existing saved plan cannot silently
@@ -728,6 +748,13 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const preloadStyleId = useMemo(() => {
     return featuredStyleIdForAttribution ?? null;
   }, [featuredStyleIdForAttribution]);
+  // `?new=1` starts a separate design. Latch it for this page load so a later
+  // "start new" URL cleanup cannot fall back onto the visitor's real draft key.
+  const [latchedFreshStart] = useState(() => readFreshDesignRequest(search));
+  const freshSessionRestoredRef = useRef(false);
+  const freshStartAppliedRef = useRef(false);
+  const preserveCanonicalDraftRef = useRef(latchedFreshStart.fresh);
+  preserveCanonicalDraftRef.current = latchedFreshStart.fresh;
   const loadedDesignRef = useRef<number | null>(null);
   const canvasExportRef = useRef<HTMLDivElement>(null);
   // Auto-save draft: flips true once we've attempted to restore a saved draft,
@@ -1188,14 +1215,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   }, []);
   // After a measured build, a range with nothing above it asks what goes there.
   const [autoDesignRangeVentPrompt, setAutoDesignRangeVentPrompt] = useState<{ rangeUid: string } | null>(null);
-  const [autoDesignWiggleMoves, setAutoDesignWiggleMoves] = useState<AutoDesignWiggleMove[]>([]);
-  useEffect(() => {
-    setAutoDesignWiggleMoves((current) => {
-      if (current.length === 0) return current;
-      const next = activeAutoDesignWiggleMoves(current, placed, room);
-      return next.length === current.length ? current : next;
-    });
-  }, [placed, room]);
   const [islandSeatingOverhangPrompt, setIslandSeatingOverhangPrompt] = useState<{
     cabinetCode: string;
     face: IslandFace;
@@ -1760,6 +1779,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const [layoutLocked, setLayoutLocked] = useState(false);
   const [dishwasherSidePreference, setDishwasherSidePreference] = useState<DishwasherSide | null>(null);
   const [autoDesignLayoutNotes, setAutoDesignLayoutNotes] = useState<string[]>([]);
+  const autoDesignWallLabelsRef = useRef<Record<string, string>>({});
+  const lastFaucetWindowNotesRef = useRef<FaucetWindowClearanceNote[]>([]);
+  const announceFaucetWindowNotes = useCallback((notes: readonly FaucetWindowClearanceNote[]) => {
+    lastFaucetWindowNotesRef.current = [...notes];
+    for (const note of notes) toast.info(note.text, { duration: 12000 });
+  }, []);
   layoutLockedRef.current = layoutLocked;
   const layoutHasRefrigerator = useMemo(() => placed.some(isRefrigeratorAppliance), [placed]);
   const autoDesignControl = useMemo(() => autoDesignControlState({
@@ -1786,7 +1811,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     setAutoDesignCornerStage(null);
     toast.info(AUTO_DESIGN_REFRIGERATOR_NOTE);
   }, [autoDesignCornerStage, autoDesignOpen, refrigeratorBlocksAutoDesignSession]);
-  const rememberAutoDesignSink = useCallback((sink: SinkFixture): SinkFixture => {
+  const rememberAutoDesignSink = useCallback((sink: SinkFixture, openingOverride?: readonly WallOpening[]): SinkFixture => {
     if (!autoDesignSessionRef.current) return sink;
     const result = ensureAutoDesignFaucet(sink, defaultAutoDesignFaucetRef.current);
     if (result.sink.pelicanFaucetProductId != null) {
@@ -1801,8 +1826,19 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       autoDesignFaucetPromptedRef.current.add(result.sink.uid);
       queueAutoDesignFaucetPrompt(result.sink.uid);
     }
+    const openingList = openingOverride ?? openings;
+    const raised = raiseWindowsForDeckFaucet({
+      sinks: [result.sink],
+      room,
+      openings: openingList,
+      wallLabels: autoDesignWallLabelsRef.current,
+    });
+    if (openingOverride || raised.notes.length > 0 || raised.openings !== openingList) {
+      setOpenings(raised.openings);
+    }
+    announceFaucetWindowNotes(raised.notes);
     return result.sink;
-  }, [queueAutoDesignFaucetPrompt]);
+  }, [announceFaucetWindowNotes, openings, queueAutoDesignFaucetPrompt, room]);
   adoptAutoDesignSinkRef.current = rememberAutoDesignSink;
   const [lockedWalls, setLockedWalls] = useState<Set<WallSide>>(() => new Set());
 	  const activateSelectedWallCompassDrag = useCallback(() => {
@@ -2457,6 +2493,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       : selectedSurfaces.filter((surface) => surfaceRole(surface) !== "backsplash"),
     [backsplashEnabled, selectedSurfaces],
   );
+  // Flooring layout pattern: how planks are arranged (random stagger, 1/3 offset, diagonal, herringbone).
+  // These must be declared before threeDPresentationForSave, which reads them during render.
+  const [flooringPattern, setFlooringPattern] = useState<import("@/lib/design").FlooringLayoutPattern | null>(null);
+  const [flooringRotation, setFlooringRotation] = useState<FlooringRotationDegrees>(0);
   const threeDPresentationForSave = useMemo(() => ({
     ...(interactive3dPresentation ?? {}),
     windowScene: windowSceneKind,
@@ -2465,11 +2505,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     backsplashHeightMode,
     countertopBacksplashHeightIn,
     catalogHardwareSelection,
-  }), [interactive3dPresentation, windowSceneKind, windowFrameStyle, backsplashEnabled, backsplashHeightMode, countertopBacksplashHeightIn, catalogHardwareSelection]);
+    ...(flooringPattern ? { flooringPattern } : {}),
+    ...(flooringRotation !== 0 ? { flooringRotation } : {}),
+  }), [interactive3dPresentation, windowSceneKind, windowFrameStyle, backsplashEnabled, backsplashHeightMode, countertopBacksplashHeightIn, catalogHardwareSelection, flooringPattern, flooringRotation]);
   // Flooring material: shown as a pattern in the bird's-eye plan view.
   const [flooringMaterialId, setFlooringMaterialId] = useState<string | null>(null);
-  // Flooring layout pattern: how planks are arranged (random stagger, 1/3 offset, diagonal, herringbone).
-  const [flooringPattern, setFlooringPattern] = useState<import("@/lib/design").FlooringLayoutPattern | null>(null);
   // Cabinet lock: when true, placed cabinets cannot be moved, deleted, or have
   // new ones dropped. The room/walls/openings/island are still editable.
   // Explicit temporary override for intentional custom overlaps. Normal
@@ -2617,16 +2657,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 
   // Data — door-style-first: members pick a door style; the supply line behind
   // it is resolved server-side and never shown.
-  const { data: doorStylesRaw } = trpc.doorStyles.list.useQuery();
-  const unavailableStyleIds = useMemo(
-    () => doorStylesRaw?.length
-      ? unavailableSavedStyleIds(styleId, [styleA, styleB, ...placed.map((cabinet) => cabinet.styleId)], doorStylesRaw.map((style) => style.id))
-      : [],
-    [doorStylesRaw, styleId, styleA, styleB, placed],
-  );
+  const { data: doorStylesRaw, isError: doorStylesError } = trpc.doorStyles.list.useQuery();
   const selectedStyleMissingFromPicker =
     styleId != null && !(doorStylesRaw ?? []).some((style) => style.id === styleId);
-  const { data: persistedSelectedStyle } = trpc.doorStyles.byId.useQuery(
+  const { data: persistedSelectedStyle, isFetching: persistedStyleFetching } = trpc.doorStyles.byId.useQuery(
     { id: styleId ?? 0 },
     { enabled: selectedStyleMissingFromPicker },
   );
@@ -2640,6 +2674,26 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         : (doorStylesRaw ?? []),
     [doorStylesRaw, persistedSelectedStyle],
   );
+  const freshOpenedStyleId = latchedFreshStart.fresh ? latchedFreshStart.doorStyleId : null;
+  const freshOpenedStyleUsable = freshOpenedStyleId != null && (
+    doorStyles.some((style) => style.id === freshOpenedStyleId)
+    || (selectedStyleMissingFromPicker && persistedStyleFetching)
+  );
+  const unavailableStyleIds = useMemo(
+    () => doorStylesRaw?.length
+      ? unavailableSavedStyleIds(
+          styleId,
+          [styleA, styleB, ...placed.map((cabinet) => cabinet.styleId)],
+          sessionSellableStyleIds(doorStylesRaw.map((style) => style.id), freshOpenedStyleUsable && freshOpenedStyleId != null
+            ? { styleId: freshOpenedStyleId, usable: true }
+            : null),
+        )
+      : [],
+    [doorStylesRaw, freshOpenedStyleId, freshOpenedStyleUsable, placed, styleA, styleB, styleId],
+  );
+  const freshOpenRejected = freshOpenedStyleId != null
+    && unavailableStyleIds.includes(freshOpenedStyleId)
+    && !doorStyles.some((style) => style.id === freshOpenedStyleId);
   const styleDistributorIdById = useMemo(
     () => new Map((doorStyles ?? []).map((style) => [style.id, style.distributorId] as const)),
     [doorStyles],
@@ -2932,6 +2986,55 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     () => (threeDAccessoryCatalog as DesignCabinet[] | undefined) ?? [],
     [threeDAccessoryCatalog],
   );
+  // AltaEuro end panels are priced (BEP2535, WEP*, TEP3096) but omitted from
+  // placeableCabinets: the row's placement is blank, and the tall sheet is not
+  // on the accessory palette. Resolve them by code only for an AltaEuro style.
+  const needsAefSpecPanels = useMemo(() => {
+    const styles = (doorStyles ?? []) as Array<{ id: number; styleCode?: string | null }>;
+    const byId = new Map(styles.map((style) => [style.id, style]));
+    const ids = new Set<number>();
+    if (styleId != null) ids.add(styleId);
+    for (const cabinet of placed) {
+      const sid = pricingStyleIdFor(cabinet) ?? styleId;
+      if (sid != null) ids.add(sid);
+    }
+    for (const id of ids) {
+      if (isAefFramelessStyleCode(byId.get(id)?.styleCode)) return true;
+    }
+    return false;
+  }, [doorStyles, placed, pricingStyleIdFor, styleId]);
+  const [aefSpecPanelCabinets, setAefSpecPanelCabinets] = useState<DesignCabinet[]>([]);
+  const [aefSpecPanelsLoading, setAefSpecPanelsLoading] = useState(false);
+  useEffect(() => {
+    if (!needsAefSpecPanels) {
+      setAefSpecPanelCabinets([]);
+      setAefSpecPanelsLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setAefSpecPanelsLoading(true);
+    void Promise.all(AEF_SPEC_END_PANEL_CODES.map((code) => (
+      trpcUtils.cabinets.byCode.fetch({ masterCode: code }).catch(() => null)
+    ))).then((rows) => {
+      if (cancelled) return;
+      const panels = rows.flatMap((row) => {
+        const panel = aefSpecPanelCabinet(row);
+        return panel ? [panel as DesignCabinet] : [];
+      });
+      setAefSpecPanelCabinets(panels);
+      setAefSpecPanelsLoading(false);
+    }).catch(() => {
+      if (cancelled) return;
+      setAefSpecPanelCabinets([]);
+      setAefSpecPanelsLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [needsAefSpecPanels, trpcUtils]);
+  const autoPanelCatalog = useMemo(() => {
+    const seen = new Set(catalogFillers.map((item) => item.masterCode.trim().toUpperCase()));
+    const extras = aefSpecPanelCabinets.filter((item) => !seen.has(item.masterCode.trim().toUpperCase()));
+    return extras.length > 0 ? [...catalogFillers, ...extras] : catalogFillers;
+  }, [aefSpecPanelCabinets, catalogFillers]);
   // Older frameless bill-of-material lines. Frameless and Hickory cabinets
   // are left out here: those lines get a placed, priced panel only on an open
   // run end, a window side, an island back, or a wall cabinet beside a range.
@@ -3775,241 +3878,74 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     if (!canRunAutoDesign(autoDesignAvailable, placedRef.current.length > 0)) {
       return fail("The auto-design build only runs on an empty Designer.");
     }
-    const result = planAutoDesignAutoBuild(input);
-    if (!result.ok) {
-      return fail(`Missing required measurement: ${result.missing.join(", ")}.`);
-    }
     if (autoFillCabinetsLoading || wallCabPoolLoading) {
       return fail("The selected line’s source-priced cabinets are still loading. Wait a moment, then build the measured kitchen again.");
     }
-    const sinkBaseWidth = input.sinkBaseWidthIn ?? 36;
-    const refrigeratorWidth = input.refrigeratorWidthIn ?? 36;
     const pool = (autoFillCabinets as DesignCabinet[] | undefined) ?? [];
-    // The SB size selector is a straight sink base on the chosen wall—not a
-    // CSB/DCSB corner sink box sharing the same nominal width.
-    const straightBaseCatalog = autoBuildStraightBaseCatalog(pool);
-    // A kitchen defaults to the REGULAR sink base; the farmhouse (apron-front) base is built only on request.
-    const sinkBaseKind = input.sinkBaseKind ?? "regular";
-    const sinkBaseSource = pickAutoDesignSinkBase(pool, sinkBaseWidth, sinkBaseKind);
-    if (!sinkBaseSource) {
-      return fail(sinkBaseKind === "farmhouse"
-        ? `No source-priced ${sinkBaseWidth}″ farmhouse sink base is available for the selected line. Choose the regular sink base or another door style, then try again.`
-        : `No source-priced SB${sinkBaseWidth} sink base is available for the selected line. Choose a door style with a priced sink base, then try again.`);
-    }
-    const applianceByKind: Record<string, DesignCabinet | undefined> = {
-      stove: appliancePalette.find((item) => item.masterCode === "RANGE-30"),
-      dishwasher: appliancePalette.find((item) => item.masterCode === "DW-24"),
-      refrigerator: appliancePalette.find((item) => item.masterCode === "FRIDGE-36"),
-    };
-    const requestedApplianceKinds = result.plan.anchors
-      .filter((anchor) => anchor.kind !== "sink")
-      .map((anchor) => anchor.kind);
-    if (requestedApplianceKinds.some((kind) => !applianceByKind[kind])) {
-      return fail("The kitchen appliance palette is still loading. Wait for the source-priced cabinet catalog, then try again.");
-    }
-    const baseSource = straightBaseCatalog
-      .find((item) => Math.abs(dim(item.width, 0) - 24) < 0.1)
-      ?? straightBaseCatalog[0];
-    if (!baseSource) {
-      return fail("No source-priced standard base cabinet is available for the selected line. Choose a compatible door style, then try again.");
-    }
+    const wallPool = (wallCabPool as DesignCabinet[] | undefined) ?? [];
     const fridgeParts = refrigeratorSurroundCatalog as
       | { deepAbove?: DesignCabinet[]; endPanels?: DesignCabinet[] }
       | undefined;
-    const refrigeratorRequested = result.plan.anchors.some((anchor) => anchor.kind === "refrigerator");
-    if (refrigeratorRequested && (!fridgeParts?.deepAbove?.length || !fridgeParts.endPanels?.length)) {
-      return fail("The selected line’s source-priced 36-inch refrigerator cabinet and two end panels are still loading or unavailable. The measured build was not changed.");
+    // A refrigerator that already occupies a corner is handled by PR #133
+    // (cursor/frameless-corner-fridge-a890) inside the bay fit. This build
+    // passes that fit the same caps, including 24 inch wall-pool boxes such
+    // as W362324 that the surround query omits.
+    lastFaucetWindowNotesRef.current = [];
+    autoDesignWallLabelsRef.current = autoDesignWallNameByEngineId(room, input.originCorner, input.runDirection);
+    const run = runAutoDesignLayout({
+      input,
+      room,
+      openings,
+      baseCatalog: pool,
+      wallCatalog: wallPool,
+      fillers: catalogFillers,
+      appliancePalette,
+      refrigeratorCaps: mergeAutoDesignRefrigeratorCaps(wallPool, fridgeParts?.deepAbove ?? []),
+      refrigeratorEndPanels: fridgeParts?.endPanels ?? [],
+      styleId: styleIdRef.current ?? null,
+      makeUid,
+    });
+    if (!run.ok) return fail(run.message);
+    if (run.sinks[0]) {
+      const remembered = rememberAutoDesignSink(run.sinks[0], run.openings);
+      setSinks(keepSingleAutoDesignSink([remembered], remembered.cabinetUid ?? run.sinks[0].cabinetUid ?? ""));
+      setSelectedSinkUid(remembered.uid);
+      if (!autoDesignSessionRef.current) setOpenings(run.openings);
+    } else {
+      setOpenings(run.openings);
     }
-
-    let working: PlacedCabinet[] = [];
-    const anchorsByKind = new Map<string, PlacedCabinet>();
-    const anchorOrigins: AutoDesignAnchorOrigin[] = [];
-    const selectedWalls: WallSide[] = [];
-    for (const anchor of result.plan.anchors) {
-      const source = anchor.kind === "sink" ? sinkBaseSource : applianceByKind[anchor.kind]!;
-      const width = anchor.kind === "sink"
-        ? sinkBaseWidth
-        : anchor.kind === "refrigerator"
-        ? refrigeratorWidth
-        : dim(source.width, 24);
-      const depth = dim(source.depth, STD.BASE_DEPTH);
-      const height = dim(source.height, standardHeight(anchor.kind === "sink" ? "base" : "appliance"));
-      const measuredAnchor = anchor.kind === "dishwasher" && anchor.source === "adjacent-to-sink"
-        ? {
-          ...anchor,
-          wallLabel: input.sink.wallLabel,
-          centerOffsetIn: adjacentDishwasherCenterIn(
-            input.sink.centerOffsetIn,
-            sinkBaseWidth,
-            width,
-            resolveDishwasherSide({
-              preference: dishwasherSidePreference ?? input.dishwasherSide ?? null,
-              originCorner: input.originCorner,
-            }),
-          ),
-        }
-        : anchor;
-      if (!autoDesignLayoutUsesWall(input.layoutType, measuredAnchor.wallLabel)) {
-        return fail(`U-shape uses Wall 1, Wall 2, and Wall 3 only. ${measuredAnchor.wallLabel} is not part of this layout.`);
-      }
-      const wall = wallLabelToEngineWallId(measuredAnchor.wallLabel, room, input.originCorner, input.runDirection);
-      if (!wall) {
-        return fail(`${anchor.kind} cannot be placed because ${measuredAnchor.wallLabel} is not available in this room.`);
-      }
-      const along = anchorAlongStartIn(measuredAnchor, width, wall);
-      const usableStart = wall.frame.runStart;
-      const usableEnd = wall.frame.runEnd;
-      if (along < usableStart - COLLISION_EPSILON_IN || along + width > usableEnd + COLLISION_EPSILON_IN) {
-        return fail(`${anchor.kind} does not fit on ${measuredAnchor.wallLabel} at the selected center measurement.`);
-      }
-      const spot = wallPlacementAt(along, width, depth, wall.engineWallId as WallSide, room);
-      const candidate: PlacedCabinet = {
-        uid: makeUid(), cabinetId: source.id,
-        masterCode: anchor.kind === "refrigerator" ? `FRIDGE-${refrigeratorWidth}` : source.masterCode,
-        description: anchor.kind === "refrigerator" ? `${refrigeratorWidth}″ Refrigerator` : source.description,
-        category: source.category, subCategory: source.subCategory,
-        placement: anchor.kind === "sink" ? "base" : "appliance",
-        ...(anchor.kind === "sink" ? {} : { applianceRole: "base-height" as const }),
-        ...(anchor.kind === "refrigerator" ? { refrigeratorPanelMode: "both" as const, refrigeratorOptionsChosen: true } : {}),
-        ...spot, width, depth, height, mountBottom: source.mountBottom ?? 0, catalogImageUrl: source.catalogImageUrl ?? null,
-        numberOfDoors: source.numberOfDoors, numberOfDrawers: source.numberOfDrawers, styleId: styleIdRef.current ?? null,
-      };
-      const available = freeSegmentsOnWall(
-        wall.engineWallId as WallSide,
-        room,
-        working,
-        openings,
-        width,
-        0,
-        "base",
-        false,
-        candidate,
-        depth,
-      ).some((segment) => along >= segment.start - COLLISION_EPSILON_IN
-        && along + width <= segment.start + segment.length + COLLISION_EPSILON_IN);
-      if (!available) {
-        return fail(`${anchor.kind} cannot be placed at that exact measurement on ${measuredAnchor.wallLabel}: it overlaps a same-wall anchor, door, or required corner clearance. No layout was built.`);
-      }
-      const preflight = appendCollisionFreePlacements(working, [candidate], room);
-      if (preflight.rejected.length > 0) {
-        return fail(`${anchor.kind} cannot be placed at that exact measurement on ${measuredAnchor.wallLabel}: it overlaps an existing anchor, opening, or adjoining wall clearance. No layout was built.`);
-      }
-      working = preflight.placed;
-      anchorsByKind.set(anchor.kind, candidate);
-      anchorOrigins.push({ uid: candidate.uid, kind: anchor.kind, wallId: wall.engineWallId, originalStart: along });
-      if (!selectedWalls.includes(wall.engineWallId as WallSide)) selectedWalls.push(wall.engineWallId as WallSide);
-    }
-    const refrigerator = anchorsByKind.get("refrigerator");
-    let refrigeratorReservation: { wall: string; start: number; end: number } | null = null;
-    if (refrigerator) {
-      const refrigeratorBay = buildMandatoryAutoDesignRefrigeratorBay({
-        refrigerator,
-        room,
-        caps: fridgeParts?.deepAbove ?? [],
-        endPanels: fridgeParts?.endPanels ?? [],
-        styleId: styleIdRef.current ?? null,
-        makeUid,
-        wallCabinetHeightIn: (() => {
-          const nominal = input.wallCabinetHeightIn ?? 30;
-          const resolved = resolveWallHeightClass((wallCabPool as DesignCabinet[] | undefined) ?? [], nominal);
-          return resolved != null && isFramelessFortyWallHeight(resolved) ? resolved : nominal;
-        })(),
-      });
-      if (!refrigeratorBay.ok) return fail(refrigeratorBay.message);
-      const fittedBay = fitExplicitRefrigeratorOptionPlacements(working, refrigeratorBay.additions, refrigerator.uid, room);
-      if (Math.abs(fittedBay.shiftIn) > COLLISION_EPSILON_IN) {
-        return fail("The measured refrigerator bay does not have room for its two panels and matching cabinet above. Adjust the refrigerator center measurement; Auto-Design will not move it.");
-      }
-      const committedBay = appendRefrigeratorEnclosurePlacements(fittedBay.existing, fittedBay.additions, refrigerator.uid, room);
-      if (committedBay.rejected.length > 0) {
-        return fail("The measured refrigerator bay overlaps an anchor, opening, or wall end. Adjust the refrigerator center measurement; Auto-Design will not add a filler or move it.");
-      }
-      working = committedBay.placed;
-      refrigeratorReservation = refrigeratorBay.reservation;
-    }
-    const sinkBase = anchorsByKind.get("sink");
-    if (sinkBase) {
-      const defaultSinkType: SinkType = isFarmSinkBasePaletteItem(sinkBase)
-        ? "farmhouse"
-        : sinkBase.width >= 33 ? "double" : "single";
-      const defaultSink = rememberAutoDesignSink(makeDefaultSinkForCabinet(sinkBase, room, defaultSinkType));
-      setSinks([defaultSink]);
-      setSelectedSinkUid(defaultSink.uid);
-    }
-    // A measured window center creates the real window above the sink, as wide as
-    // the sink base. Upper cabinets never go over it and stop 3 inches short of it.
-    let sinkWindow: WallOpening | null = null;
-    if (input.sinkWindowCenter && sinkBase) {
-      const proposedWindow = autoDesignSinkWindow({ sink: sinkBase, room, uid: makeUid() });
-      const touchesOpening = openings.some((opening) => opening.side === proposedWindow.side
-        && opening.offset < proposedWindow.offset + proposedWindow.width - COLLISION_EPSILON_IN
-        && opening.offset + opening.width > proposedWindow.offset + COLLISION_EPSILON_IN);
-      if (windowOverlapsReservation(proposedWindow, refrigeratorReservation)) {
-        toast.warning("The sink window was not created: with its required 3-inch clearance it would run into the refrigerator’s cabinet above. Move the window center or the refrigerator, then build again.", { duration: 15000 });
-      } else if (touchesOpening) {
-        toast.warning("The sink window was not created because it would overlap an existing door or window on that wall.", { duration: 15000 });
-      } else {
-        sinkWindow = proposedWindow;
-      }
-    }
-    placedRef.current = working;
-    setPlaced(working);
+    placedRef.current = run.placed;
+    setPlaced(run.placed);
     setRoom((current) => ({ ...current, kitchenUsage: normalizeKitchenUsage(input.kitchenUsage) }));
     const selectedWallCabinetHeight = input.wallCabinetHeightIn ?? 30;
     setWallCabHeight(selectedWallCabinetHeight);
     wallCabHeightRef.current = selectedWallCabinetHeight;
     wallCabHeightPromptedRef.current = true;
     setCountertop(true);
-    const slots = autoDesignCornerSlots(input.layoutType, {
-      wallIds: selectedWalls, room, originCorner: input.originCorner, runDirection: input.runDirection,
-    });
-    const cornerOptions = autoBuildCornerCatalog(pool) as AutoBuildCornerCandidate[];
-    const cornerFit: Record<string, AutoDesignCornerFit> = {};
-    const sinkAnchor = anchorsByKind.get("sink") ?? null;
-    for (const slot of slots) {
-      const point = autoDesignCornerSlotPoint(slot, room, input.originCorner, input.runDirection);
-      const firstWall = wallLabelToEngineWallId(slot.firstWall, room, input.originCorner, input.runDirection);
-      const secondWall = wallLabelToEngineWallId(slot.secondWall, room, input.originCorner, input.runDirection);
-      if (!point || !firstWall || !secondWall) continue;
-      cornerFit[slot.id] = evaluateAutoDesignCornerFit({
-        options: cornerOptions,
-        room,
-        placed: working,
-        corner: point,
-        wallIds: [firstWall.engineWallId, secondWall.engineWallId],
-        sink: sinkAnchor,
-        openings,
-      });
-    }
     setAutoDesignOpen(false);
-    const stage = {
-      input,
-      anchors: Object.fromEntries(anchorsByKind),
-      selectedWalls: autoDesignRunWallIds({
-        layoutType: input.layoutType,
-        room,
-        originCorner: input.originCorner,
-        runDirection: input.runDirection,
-        wallIds: selectedWalls,
-      }) as WallSide[],
-      anchorPlaced: working,
-      pool,
-      wallPool: (wallCabPool as DesignCabinet[] | undefined) ?? [],
-      straightBaseCatalog,
-      baseSource,
-      refrigeratorReservation,
-      slots,
-      cornerOptions,
-      sinkWindow,
-      anchorOrigins,
-      cornerFit,
-    };
     setViewMode("plan");
     setSelectedUid(null);
-    const finish = finishAutoDesignLayoutRef.current;
-    if (!finish) return fail("The measured kitchen could not place its corners. Start Auto-Design again.");
-    return finish({}, stage);
-    }, [appliancePalette, autoFillCabinets, autoFillCabinetsLoading, autoDesignAvailable, dishwasherSidePreference, isCornerCabinet, openings, placedRef, refrigeratorSurroundCatalog, room, setCountertop, setPlaced, setRoom, wallCabPool, wallCabPoolLoading]);
+    setAutoDesignCornerStage(null);
+    setViewMode("threeD");
+    toast.success(`Placed ${run.cornerCount} selected corners, ${run.basePieceCount} regular base-run pieces, ${run.fillerCount} filler pieces closing every gap, and ${run.upperCount} aligned wall cabinets and fillers.`);
+    const preliminaryFaucetNotes = new Set(run.faucetWindowNotes.map((note) => note.text));
+    const announcedFaucetNotes = new Set(lastFaucetWindowNotesRef.current.map((note) => note.text));
+    for (const note of run.notes) {
+      if (preliminaryFaucetNotes.has(note) && announcedFaucetNotes.size > 0) continue;
+      toast.info(note, { duration: 15000 });
+    }
+    for (const move of run.applianceMoves) {
+      toast.info(`Moved the ${move.label} ${formatInches(move.shiftIn)} away from the corner to fit the required corner cabinet. Its measured center is now ${formatInches(move.centerAlongIn)} along the wall.`, { duration: 12000 });
+    }
+    if (run.heightUsedIn != null && Math.abs(run.heightUsedIn - run.requestedUpperIn) > 0.005) {
+      toast.info(`This cabinet line sells its ${run.requestedUpperIn}″ class as ${formatInches(run.heightUsedIn)} wall cabinets, so those exact source SKUs were used.`);
+    }
+    if (run.skippedUppers.length) toast.info(`Upper review: ${run.skippedUppers.join(" ")}`, { duration: 15000 });
+    for (const warning of run.warnings) toast.warning(warning, { duration: 12000 });
+    if (run.sinkWindow) toast.info(`A ${formatInches(run.sinkWindow.width)} window was placed above the sink as entered; no wall cabinet goes over it.`);
+    if (run.bareRangeUid) setAutoDesignRangeVentPrompt({ rangeUid: run.bareRangeUid });
+    return { ok: true as const };
+    }, [appliancePalette, autoFillCabinets, autoFillCabinetsLoading, autoDesignAvailable, catalogFillers, dishwasherSidePreference, openings, placedRef, refrigeratorSurroundCatalog, room, setCountertop, setOpenings, setPlaced, setRoom, wallCabPool, wallCabPoolLoading]);
 
   /**
    * The second half of an Auto-Design build. Measured appliances are already
@@ -4035,6 +3971,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       return fail(message);
     };
     if (!stage) return fail("The measured appliance stage is no longer active. Start the Auto-Design build again from an empty plan.");
+    autoDesignWallLabelsRef.current = autoDesignWallNameByEngineId(room, stage.input.originCorner, stage.input.runDirection);
 
     let working = [...stage.anchorPlaced];
     // The sink window is part of the room for every remaining stage.
@@ -4075,6 +4012,17 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       }
       const target = autoDesignCornerSlotPoint(slot, room, stage.input.originCorner, stage.input.runDirection);
       if (!target) return abandon(`${slot.label} does not resolve to a real shared wall vertex. No remaining cabinets were added.`);
+      const cornerRefrigerator = refrigeratorOccupyingCorner({
+        placed: working,
+        room,
+        corner: target,
+        wallIds: [firstWall.engineWallId, secondWall.engineWallId],
+      });
+      if (cornerRefrigerator) {
+        const note = `${slot.label}: the refrigerator stays in this corner, so no blind corner cabinet was added and the refrigerator was not moved.`;
+        setAutoDesignLayoutNotes((current) => current.includes(note) ? current : [...current, note]);
+        continue;
+      }
       const seated = seatAutoDesignCornerFromCatalog({
         slot,
         options: stage.cornerOptions,
@@ -4092,7 +4040,22 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         styleId: styleIdRef.current ?? null,
         excludedWallIds,
       });
-      if (!seated.ok) return abandon(seated.message);
+      if (!seated.ok) {
+        // A closed room's fourth wall is extra. If that corner cannot seat
+        // (a measured refrigerator is already in the corner), keep the kitchen
+        // and still fill the open run. The original two U corners still stop
+        // the build when they cannot be placed.
+        // Wall 4 is the closed room's fourth run. A corner there that cannot
+        // seat must not wipe the kitchen. A refrigerator that already occupies
+        // a corner is handled by PR #133 (cursor/frameless-corner-fridge-a890):
+        // that branch skips the corner cabinet before this call.
+        const closesFourthWall = slot.firstWall === "Wall 4" || slot.secondWall === "Wall 4";
+        if (closesFourthWall) {
+          setAutoDesignLayoutNotes((current) => current.includes(seated.message) ? current : [...current, seated.message]);
+          continue;
+        }
+        return abandon(seated.message);
+      }
       if (seated.fallbackNote) {
         setAutoDesignLayoutNotes((current) => current.includes(seated.fallbackNote!) ? current : [...current, seated.fallbackNote!]);
       }
@@ -4127,7 +4090,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       openings: stageOpenings,
       catalog: stage.straightBaseCatalog,
       origins: stage.anchorOrigins,
-      lockedUids: [],
+      lockedUids: cornerOccupantRefrigeratorUids(working, room),
     });
     working = wiggle.placed;
     const separated = separateRangeAndRefrigerator({
@@ -4170,9 +4133,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         if (fill.note) rangeNeighborNotes.push(fill.note);
         let along = segment.start;
         for (const item of fill.items) {
-          const catalogFillerCandidate = item.isFiller ? catalogFillerForGap(stage.pool, item.width, "base") : null;
-          const catalogFiller = catalogFillerCandidate ? stage.pool.find((candidate) => candidate.id === catalogFillerCandidate.id) ?? null : null;
-          if (item.isFiller && !catalogFiller) { along += item.width; continue; }
+          const catalogFillerCandidate = item.isFiller ? catalogFillerForGap(catalogFillers, item.width, "base") : null;
+          const catalogFiller = catalogFillerCandidate ? catalogFillers.find((candidate) => candidate.id === catalogFillerCandidate.id) ?? null : null;
+          if (item.isFiller && (!catalogFiller || item.width > AUTO_DESIGN_FILLER_MAX_IN + 0.001)) { along += item.width; continue; }
           const source = catalogFiller ?? item.cabinet;
           const width = item.width;
           const depth = footprintDepth(source);
@@ -4206,8 +4169,18 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       placed: working, room, openings: stageOpenings, fillers: catalogFillers, makeUid,
       styleId: styleIdRef.current ?? null, corners: upperCorners.map((entry) => entry.point),
       preserveHeavyCookLandings: heavyCook,
+      maxFillerIn: AUTO_DESIGN_FILLER_MAX_IN,
     });
     working = seamResult.placed;
+    const bareRangeForHood = working.find((item) => item.placement === "appliance" && isRangeOrOven(item.masterCode, item.description)
+      && autoDesignRangeNeedsVentilation(working, item));
+    if (bareRangeForHood) {
+      const builtHood = autoDesignRangeHood({ range: bareRangeForHood, room, palette: appliancePalette, uid: makeUid() });
+      if (builtHood.ok) {
+        const hooded = appendCollisionFreePlacements(working, [builtHood.hood], room);
+        if (hooded.rejected.length === 0) working = hooded.placed;
+      }
+    }
     // Wall boxes are last. Match the completed lower projections, retaining
     // selected-line SKUs, height and opening clearances without moving anchors.
     const upperResult = buildAutoDesignWallCabinets({
@@ -4222,22 +4195,26 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     });
     working = finishedRules.placed;
     placedRef.current = working;
-    const reportedWiggleMoves = activeAutoDesignWiggleMoves(wiggle.moves, working, room);
-    setAutoDesignWiggleMoves(reportedWiggleMoves);
     setPlaced(working);
-    if (stage.sinkWindow) {
-      const windowToCommit = stage.sinkWindow;
-      setOpenings((previous) => (previous.some((opening) => opening.uid === windowToCommit.uid) ? previous : [...previous, windowToCommit]));
+    const openingBase = stage.sinkWindow && !openings.some((opening) => opening.uid === stage.sinkWindow!.uid)
+      ? [...openings, stage.sinkWindow]
+      : openings;
+    const raisedWindows = raiseWindowsForDeckFaucet({
+      sinks,
+      room,
+      openings: openingBase,
+      wallLabels: autoDesignWallLabelsRef.current,
+    });
+    if (stage.sinkWindow || raisedWindows.notes.length > 0 || raisedWindows.openings !== openingBase) {
+      setOpenings(raisedWindows.openings);
     }
+    announceFaucetWindowNotes(raisedWindows.notes);
     setAutoDesignCornerStage(null);
     setViewMode("threeD");
     toast.success(`Placed ${selectedCornerCount} selected corners, ${surrounding.length} regular base-run pieces, ${seamResult.additions.length} filler pieces closing every gap, and ${upperResult.additions.length} aligned wall cabinets and fillers.`);
     for (const note of [...seamResult.notes, ...rangeNeighborNotes]) toast.info(note, { duration: 15000 });
     for (const move of applianceMoves) {
       toast.info(`Moved the ${move.label} ${formatInches(move.shiftIn)} away from the corner to fit the required corner cabinet. Its measured center is now ${formatInches(move.centerAlongIn)} along the wall.`, { duration: 12000 });
-    }
-    for (const move of reportedWiggleMoves) {
-      toast.info(formatAutoDesignWiggleMessage(move), { duration: 12000 });
     }
     const requestedUpperIn = stage.input.wallCabinetHeightIn ?? 30;
     if (upperResult.heightUsedIn != null && Math.abs(upperResult.heightUsedIn - requestedUpperIn) > 0.005) {
@@ -4256,7 +4233,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       && autoDesignRangeNeedsVentilation(working, item));
     if (bareRange) setAutoDesignRangeVentPrompt({ rangeUid: bareRange.uid });
     return { ok: true as const };
-  }, [catalogFillers, autoDesignCornerStage, openings, room, setPlaced, setOpenings]);
+  }, [announceFaucetWindowNotes, appliancePalette, catalogFillers, autoDesignCornerStage, openings, room, setPlaced, setOpenings, sinks]);
   finishAutoDesignLayoutRef.current = completeAutoDesignLayout;
   // A previous automatic microwave workflow could persist WSC30—the real
   // 30×6 spice cabinet—directly above an MW-30. Convert only that centered
@@ -4633,7 +4610,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       rememberAutoPanelStyle(pricingStyleIdFor(cabinet) ?? styleId);
     });
     if (autoPanelStyleIds.size > 0) {
-      catalogFillers.forEach((item) => {
+      autoPanelCatalog.forEach((item) => {
         if (!catalogItemToExposedPanelStock(item, null)) return;
         autoPanelStyleIds.forEach((sid) => push(item.id, sid, item.masterCode));
       });
@@ -4655,7 +4632,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         ...(refrigeratorParts?.smoothPanels ?? []),
       ].forEach((part) => push(part.id, styleId, part.masterCode));
 	    return pairs;
-	  }, [placed, pricingIdForPlacedCabinet, pricingStyleIdFor, styleId, glassDoorAddonCodeFor, glassDoorCatalogProduct, catalogFillers, aefWindowEndPanels, refrigeratorSurroundCatalog, doorStyles]);
+	  }, [placed, pricingIdForPlacedCabinet, pricingStyleIdFor, styleId, glassDoorAddonCodeFor, glassDoorCatalogProduct, catalogFillers, autoPanelCatalog, aefWindowEndPanels, refrigeratorSurroundCatalog, doorStyles]);
 
   const pricePairKey = stablePricePairKey(pricePairs, lockedDistributorId);
   const stablePricePairs = useMemo(() => pricePairs, [pricePairKey]);
@@ -4758,10 +4735,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // panel only when the customer chooses one. Prices are read from the catalog
   // after the stable price query settles so placing a panel cannot refetch.
   const [exposedPanelWarnings, setExposedPanelWarnings] = useState<ExposedPanelWarning[]>([]);
-  const exposedPanelStock = useMemo<ExposedPanelStock[]>(() => catalogFillers.flatMap((item) => {
+  const exposedPanelStock = useMemo<ExposedPanelStock[]>(() => autoPanelCatalog.flatMap((item) => {
     const stock = catalogItemToExposedPanelStock(item, styleId != null ? priceMap.get(`${item.id}:${styleId}`) ?? null : null);
     return stock ? [stock] : [];
-  }), [catalogFillers, priceMap, styleId]);
+  }), [autoPanelCatalog, priceMap, styleId]);
   useEffect(() => {
     const styles = (doorStyles ?? []) as Array<DoorStyleEndPanelInput & { id: number }>;
     const byId = new Map(styles.map((style) => [style.id, style]));
@@ -4777,7 +4754,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       catalog: exposedPanelStock,
       qualifiedOnly: true,
       doorStyleFor: doorStyleForPlaced,
-      pricesReady: catalogFillersLoading ? false : priceRowsFetched || exposedPanelStock.length === 0,
+      pricesReady: catalogFillersLoading || aefSpecPanelsLoading ? false : priceRowsFetched || exposedPanelStock.length === 0,
       priceFor: (stock, owner) => {
         const sid = pricingStyleIdFor(owner) ?? styleId;
         return sid != null ? priceMap.get(`${stock.id}:${sid}`) ?? null : null;
@@ -4788,7 +4765,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       setPlaced(plan.placed);
     }
     setExposedPanelWarnings((prev) => sameExposedPanelWarnings(prev, plan.warnings) ? prev : plan.warnings);
-  }, [catalogFillersLoading, doorStyles, exposedPanelStock, openings, placed, priceMap, priceRowsFetched, pricingStyleIdFor, setPlaced, styleId]);
+  }, [aefSpecPanelsLoading, catalogFillersLoading, doorStyles, exposedPanelStock, openings, placed, priceMap, priceRowsFetched, pricingStyleIdFor, setPlaced, styleId]);
 
   // ── Part 1: every placed cabinet remains visible ─────────────────────────
   // Evaluate the active line as soon as its price query settles. Flags drive
@@ -5115,10 +5092,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     if (distributorId == null) return null;
     return distributorNameById.get(distributorId) ?? null;
   }, [activeStyle, catalogDistributorId, distributorNameById]);
-  const activeDrawerSampleUrl = useMemo(
-    () => preferredDrawerReferenceUrl(activeStyle as { approvedReferenceImageUrl?: string | null; drawerSampleImageUrl?: string | null } | null),
-    [activeStyle],
-  );
   // Auto-suggested Hickory finished-end skins, one per exposed cabinet end.
   // Empty unless the selected finish is Hickory. NOTE: the real skin SKU/price
   // is pending owner confirmation, so these carry pendingSku=true.
@@ -5349,9 +5322,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
             .filter(Boolean)
             .join(" \u2014 "),
           color: cabColor,
-          widthIn: rotatedSize(p).w,
+          widthIn: p.width,
           heightIn: placedHeight(p),
-          depthIn: rotatedSize(p).d,
+          depthIn: p.depth,
 	          placement: p.placement,
 	          swing: sw === "none" ? undefined : sw,
 	          qty: 1,
@@ -6895,9 +6868,20 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         ...(trim.craftsmanshipStick ? { notes: TRIM_CRAFTSMANSHIP_STICK_NOTE } : {}),
       });
     }
+    for (const opening of openings) {
+      if (!opening.faucetClearanceNote) continue;
+      out.push({
+        code: `WIN-${opening.uid}`,
+        description: opening.faucetClearanceNote,
+        category: "Installer note",
+        qty: 1,
+        unitPrice: 0,
+        notes: opening.faucetClearanceNote,
+      });
+    }
 
     return out;
-  }, [activeStyleName, activeTrims, cartableLines, distributorNameById, lockedDistributorId, trimPriceByCode]);
+  }, [activeStyleName, activeTrims, cartableLines, distributorNameById, lockedDistributorId, openings, trimPriceByCode]);
 
   const materialsListRows = useMemo(() => buildMaterialsListRows({
     buildRows,
@@ -9655,14 +9639,23 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     const waiting = sinks.some((sink) => sink.autoDesignFaucet && sink.pelicanFaucetProductId == null);
     if (!waiting) return;
     autoDesignOwnedFaucetIdsRef.current.add(product.id);
-    setSinks((current) => current.map((sink) => (
+    const nextSinks = sinks.map((sink) => (
       sink.autoDesignFaucet && sink.pelicanFaucetProductId == null
         ? applyChosenAutoDesignFaucet(sink, product)
         : sink
-    )));
+    ));
+    setSinks(nextSinks);
+    const raised = raiseWindowsForDeckFaucet({
+      sinks: nextSinks,
+      room,
+      openings,
+      wallLabels: autoDesignWallLabelsRef.current,
+    });
+    if (raised.notes.length > 0 || raised.openings !== openings) setOpenings(raised.openings);
+    announceFaucetWindowNotes(raised.notes);
     const surface = catalogFaucetSurface(product);
     setSelectedSurfaces((previous) => previous.some((item) => item.id === surface.id) ? previous : [...previous, surface]);
-  }, [autoDesignFaucetProducts, sinks]);
+  }, [announceFaucetWindowNotes, autoDesignFaucetProducts, openings, room, sinks]);
   useEffect(() => {
     if (sinks.some((sink) => sink.autoDesignFaucet && sink.pelicanFaucetProductId == null)) return;
     const used = new Set<number>();
@@ -9708,9 +9701,16 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     }
     autoDesignOwnedFaucetIdsRef.current.add(product.id);
     targets.forEach((uid) => autoDesignFaucetPromptedRef.current.add(uid));
-    setSinks((current) => current.map((sink) => (
-      targets.has(sink.uid) ? applyChosenAutoDesignFaucet(sink, product) : sink
-    )));
+    const nextSinks = sinks.map((sink) => targets.has(sink.uid) ? applyChosenAutoDesignFaucet(sink, product) : sink);
+    setSinks(nextSinks);
+    const raised = raiseWindowsForDeckFaucet({
+      sinks: nextSinks,
+      room,
+      openings,
+      wallLabels: autoDesignWallLabelsRef.current,
+    });
+    if (raised.notes.length > 0 || raised.openings !== openings) setOpenings(raised.openings);
+    announceFaucetWindowNotes(raised.notes);
     const surface = catalogFaucetSurface(product);
     setSelectedSurfaces((previous) => previous.some((item) => item.id === surface.id) ? previous : [...previous, surface]);
     setCountertop(true);
@@ -9720,7 +9720,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     }
     const [next, ...rest] = prompt.queue;
     setAutoDesignFaucetPrompt(next ? { sinkUid: next, queue: rest } : null);
-  }, [autoDesignFaucetPrompt, sinks]);
+  }, [announceFaucetWindowNotes, autoDesignFaucetPrompt, openings, room, sinks]);
   const autoDesignFaucetPromptSink = sinks.find((sink) => sink.uid === autoDesignFaucetPrompt?.sinkUid) ?? null;
   const autoDesignFaucetPromptCabinet = autoDesignFaucetPromptSink
     ? placed.find((cabinet) => cabinet.uid === autoDesignFaucetPromptSink.cabinetUid)
@@ -10236,9 +10236,19 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         .filter((item) => !existingOptionUids.has(item.uid) && item.uid !== refrigeratorCabinetToReplace?.uid)
         .map((item) => item.uid === fridge.uid ? configuredFridge : item);
 	      const fittedOptions = fitExplicitRefrigeratorOptionPlacements(configuredPlaced, toPlace, fridge.uid, room);
+	      const cornerBay = acceptMeasuredCornerRefrigeratorBay({
+	        refrigerator: configuredFridge,
+	        room,
+	        additions: toPlace,
+	        fitted: fittedOptions,
+	        reservation: { wall: cabinetWall(configuredFridge, room), start: 0, end: 0 },
+	      });
+	      const bayExisting = cornerBay?.existing ?? fittedOptions.existing;
+	      const bayAdditions = cornerBay?.additions ?? fittedOptions.additions;
+	      const appliedShift = cornerBay?.shiftIn ?? fittedOptions.shiftIn;
 	      const previewResult = appendRefrigeratorEnclosurePlacements(
-	        fittedOptions.existing,
-	        fittedOptions.additions,
+	        bayExisting,
+	        bayAdditions,
 	        fridge.uid,
 	        room,
 	      );
@@ -10274,9 +10284,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       const committedPreview = previewResult.placed;
       placedRef.current = committedPreview;
       setPlaced(() => committedPreview);
-	      if (Math.abs(fittedOptions.shiftIn) > COLLISION_EPSILON_IN) {
+	      if (cornerBay?.note) {
+	        toast.info(cornerBay.note, { duration: 12000 });
+	      } else if (Math.abs(appliedShift) > COLLISION_EPSILON_IN) {
 	        toast.info(
-	          `Refrigerator and selected parts moved ${formatEighthInches(Math.abs(fittedOptions.shiftIn))} along the wall to fit the selected panels. Existing cabinets stayed in place.`,
+	          `Refrigerator and selected parts moved ${formatEighthInches(Math.abs(appliedShift))} along the wall to fit the selected panels. Existing cabinets stayed in place.`,
 	        );
 	      }
       if (omittedCapFillerCodes.length > 0) {
@@ -11668,6 +11680,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	  }, [removeCabinetsAndReleaseVoid]);
 
 		  const requestCabinetDeletion = useCallback((uid: string) => {
+		    const target = placedRef.current.find((cabinet) => cabinet.uid === uid);
+		    if (!confirmPlacedItemRemoval(target?.masterCode || "this item")) return;
 		    // Every refrigerator option is an independent part. Deleting one part
 		    // never removes, moves, or prompts about any other cabinet or panel.
 		    removeCabinetAndReleaseVoid(uid);
@@ -13160,6 +13174,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     } else {
       setBacksplashEnabled(true);
     }
+    if (isFlooringLayoutPattern((savedPresentation as { flooringPattern?: unknown } | null)?.flooringPattern)) {
+      setFlooringPattern((savedPresentation as { flooringPattern: import("@/lib/design").FlooringLayoutPattern }).flooringPattern);
+    }
+    setFlooringRotation(isFlooringRotation((savedPresentation as { flooringRotation?: unknown } | null)?.flooringRotation)
+      ? (savedPresentation as { flooringRotation: FlooringRotationDegrees }).flooringRotation
+      : 0);
     if (savedPresentation?.countertopBacksplashHeightIn === 2.5 || savedPresentation?.countertopBacksplashHeightIn === 3) {
       setCountertopBacksplashHeightIn(savedPresentation.countertopBacksplashHeightIn);
     }
@@ -13229,8 +13249,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // tab is backgrounded (visibilitychange / pagehide — the events mobile browsers
   // reliably fire before freezing/discarding a tab), then restore it on return.
   const draftKey = useMemo(
-    () => designerDraftStorageKey(storeScope, verifiedEmail),
-    [storeScope, verifiedEmail],
+    () => latchedFreshStart.fresh
+      ? freshDesignDraftStorageKey(storeScope, verifiedEmail, latchedFreshStart.doorStyleId, latchedFreshStart.distributorId)
+      : designerDraftStorageKey(storeScope, verifiedEmail),
+    [latchedFreshStart, storeScope, verifiedEmail],
   );
   const activeDraftKey = useMemo(() => designerDraftActiveKey(storeScope), [storeScope]);
 
@@ -13263,6 +13285,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     countertopBacksplashHeightIn,
     flooringMaterialId,
     flooringPattern,
+    flooringRotation,
     selectedSurfaces: normalizeInstalledMaterialSelections(selectedSurfaces),
     cabinetsLocked,
 	    sinks,
@@ -13294,7 +13317,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         snap.styleId != null;
       if (worthKeeping) {
         localStorage.setItem(draftKey, JSON.stringify(snap));
-        localStorage.setItem(activeDraftKey, draftKey);
+        // A fresh preview from Featured Styles or the vendor portal must not
+        // become the draft that /design restores next time.
+        if (!preserveCanonicalDraftRef.current) {
+          localStorage.setItem(activeDraftKey, draftKey);
+        }
       }
     } catch {
       /* storage full / unavailable — ignore */
@@ -13311,6 +13338,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       return;
     }
     let restoredDesignedKitchen = false;
+    let restoredSnapshot = false;
     try {
       // A v1 draft had no store truth. Move it only to owner and delete the
       // ambiguous source, even when the current page is an affiliate store.
@@ -13319,6 +13347,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       if (raw) {
         const d = JSON.parse(raw);
         if (d && typeof d === "object" && d.v === 2 && d.originScope === storeScope) {
+          restoredSnapshot = true;
 	          historyRebaseRequestedRef.current = true;
 	          lastPushedRef.current = null;
           localStorage.setItem(activeDraftKey, draftKey);
@@ -13413,6 +13442,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           if (d.countertopBacksplashHeightIn === 2.5 || d.countertopBacksplashHeightIn === 3) setCountertopBacksplashHeightIn(d.countertopBacksplashHeightIn);
           if (typeof d.flooringMaterialId === "string") setFlooringMaterialId(d.flooringMaterialId);
           if (isFlooringLayoutPattern(d.flooringPattern)) setFlooringPattern(d.flooringPattern);
+          if (isFlooringRotation(d.flooringRotation)) setFlooringRotation(d.flooringRotation);
           if (typeof d.cabinetsLocked === "boolean") setCabinetsLocked(d.cabinetsLocked);
           // Restore the exact final Pelican surface & fixture picks so the cart,
           // 3D View gate and plan/elevation fill cannot retain replaced materials.
@@ -13453,8 +13483,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       /* corrupt draft — ignore */
     }
     draftRestoredRef.current = true;
+    if (latchedFreshStart.fresh && restoredSnapshot) freshSessionRestoredRef.current = true;
+    // A fresh door-style preview never resumes the previous draft, and it does
+    // not stop on the room-layout wizard. The floor plan opens directly.
     if (!restoredDesignedKitchen && !roomLayoutHandoffAppliedRef.current) {
-      setLayoutStarterOpen(true);
+      // A door-style preview starts on the floor plan instead of the room wizard.
+      if (!latchedFreshStart.fresh) setLayoutStarterOpen(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [verified, draftKey, activeDraftKey, storeScope, verifiedEmail, loadDesignId, bundleIdParam, selectCatalogHardware]);
@@ -13465,26 +13499,68 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const preloadStyleAppliedRef = useRef(false);
   useEffect(() => {
     if (!verified || !draftRestoredRef.current || preloadStyleAppliedRef.current) return;
+    if (latchedFreshStart.fresh) return;
     if (preloadStyleId == null) return;
     if (!doorStyles || doorStyles.length === 0) return;
     preloadStyleAppliedRef.current = true;
     // Only apply if no style is already set (fresh canvas or empty draft).
     if (styleId != null) return;
     setSlotStyle("A", preloadStyleId);
-  }, [verified, preloadStyleId, doorStyles, styleId, setSlotStyle]);
+  }, [verified, preloadStyleId, doorStyles, styleId, setSlotStyle, latchedFreshStart.fresh]);
 
   // The public Frameless line opens with a real source finish selected so its
   // catalog price and door sample appear immediately. A customer may still
   // choose any other published finish from the same selector.
   useEffect(() => {
     if (!verified || !draftRestoredRef.current || styleId != null) return;
+    if (latchedFreshStart.fresh && latchedFreshStart.doorStyleId != null) return;
     const scopedName = distributorNameById.get(catalogDistributorScopeId ?? -1) ?? "";
     if (!scopedName.toLowerCase().includes("frameless")) return;
     const firstAefStyle = (doorStyles ?? [])
       .filter((style) => style.distributorId === catalogDistributorScopeId)
       .sort((a, b) => (a.styleCode ?? "").localeCompare(b.styleCode ?? ""))[0];
     if (firstAefStyle) setSlotStyle("A", firstAefStyle.id);
-  }, [catalogDistributorScopeId, distributorNameById, doorStyles, setSlotStyle, styleId, verified]);
+  }, [catalogDistributorScopeId, distributorNameById, doorStyles, latchedFreshStart.doorStyleId, latchedFreshStart.fresh, setSlotStyle, styleId, verified]);
+
+  // Open Designer from Featured Styles or the vendor portal: a new floor plan
+  // with the requested door style, skipping the room wizard and the vendor/color
+  // dialog. The canonical draft is a different storage key, so it stays put.
+  useEffect(() => {
+    if (!latchedFreshStart.fresh || !verified || !draftRestoredRef.current || freshStartAppliedRef.current) return;
+    if (freshSessionRestoredRef.current) {
+      freshStartAppliedRef.current = true;
+      setLayoutStarterOpen(false);
+      setCatalogSetupOpen(false);
+      setViewMode("plan");
+      return;
+    }
+    const requestedStyleId = latchedFreshStart.doorStyleId;
+    if (requestedStyleId != null && doorStylesRaw === undefined && !doorStylesError) return;
+    freshStartAppliedRef.current = true;
+    setLayoutStarterOpen(false);
+    setCatalogSetupOpen(false);
+    setViewMode("plan");
+    setMobilePanel(null);
+    setSelectedLayoutPresetId(DEFAULT_FRESH_LAYOUT_PRESET_ID);
+    setRoom(defaultFreshKitchenFootprint());
+    setActiveSavedDesignId(null);
+    const matched = requestedStyleId == null
+      ? undefined
+      : (doorStyles ?? []).find((style) => style.id === requestedStyleId);
+    const distributorId = matched?.distributorId ?? latchedFreshStart.distributorId;
+    if (distributorId != null) setCatalogDistributorId(distributorId);
+    if (requestedStyleId != null) {
+      setStyleA(requestedStyleId);
+      setActiveSlot("A");
+      setStyleId(requestedStyleId);
+      setPaletteType("base");
+    }
+    toast.success("New design started", {
+      description: requestedStyleId != null
+        ? "The floor plan is ready with this door style. Your other draft was left unchanged."
+        : "The floor plan is ready. Your other draft was left unchanged.",
+    });
+  }, [doorStyles, doorStylesError, doorStylesRaw, latchedFreshStart, setRoom, verified]);
 
   // Consume the Surfaces & Fixtures wizard hand-off ONCE, after verification and
   // after the draft has been restored. This only fires when the customer clicked
@@ -13496,6 +13572,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   useEffect(() => {
     if (!verified || !draftRestoredRef.current) return;
     if (surfaceSelectionAppliedRef.current) return;
+    if (latchedFreshStart.fresh) {
+      surfaceSelectionAppliedRef.current = true;
+      return;
+    }
     if (loadDesignId != null) {
       // Loading a saved design takes precedence over a wizard hand-off.
       surfaceSelectionAppliedRef.current = true;
@@ -13557,7 +13637,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     if (!draftRestoredRef.current) return;
     const t = setTimeout(writeDraft, 400);
     return () => clearTimeout(t);
-  }, [room, placed, openings, island, styleId, tier, crown, toeKick, batten, lightRail, valance, trimQtyOverride, countertop, countertopMaterialId, edgeProfileId, backsplashMaterialId, backsplashEnabled, backsplashHeightMode, countertopBacksplashHeightIn, flooringMaterialId, flooringPattern, selectedSurfaces, cabinetsLocked, sinks, potFillers, roomType, activeWall, layoutLocked, lockedWalls, lockedDistributorId, mixedWarehouseOverride, hardwareStyleId, catalogHardwareSelection, wallCabHeight, annotations, writeDraft]);
+  }, [room, placed, openings, island, styleId, tier, crown, toeKick, batten, lightRail, valance, trimQtyOverride, countertop, countertopMaterialId, edgeProfileId, backsplashMaterialId, backsplashEnabled, backsplashHeightMode, countertopBacksplashHeightIn, flooringMaterialId, flooringPattern, flooringRotation, selectedSurfaces, cabinetsLocked, sinks, potFillers, roomType, activeWall, layoutLocked, lockedWalls, lockedDistributorId, mixedWarehouseOverride, hardwareStyleId, catalogHardwareSelection, wallCabHeight, annotations, writeDraft]);
 
   // Immediate save when the tab is hidden/backgrounded or about to unload —
   // this is what catches an incoming phone call or an OS tab eviction.
@@ -14238,11 +14318,15 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     });
   }, [activeFinish, finishById, placed, styleA, styleB, styleId, styleNameById]);
 
+  const activeCatalogDoorProfile = useMemo(
+    () => withFramelessExposedFinish(activeStyle, designerCatalogDoorProfile(activeStyle)),
+    [activeStyle],
+  );
   const threeDCabinetDoorProfiles = useMemo(
     () => Object.fromEntries(placed.flatMap((cabinet) => {
       const assignedStyleId = effectiveStyleId(cabinet, styleId) ?? styleId;
       const assignedStyle = doorStyles?.find((style) => style.id === assignedStyleId) ?? null;
-      const profile = designerCatalogDoorProfile(assignedStyle);
+      const profile = withFramelessExposedFinish(assignedStyle, designerCatalogDoorProfile(assignedStyle));
       return profile ? [[cabinet.uid, profile]] : [];
     })),
     [placed, styleId, doorStyles],
@@ -14386,7 +14470,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       : <div className="flex h-full min-h-[360px] items-center justify-center rounded-xl border border-dashed px-6 text-center text-sm text-muted-foreground">Choose an active door style and add a cabinet, or choose a starter room layout, to load the synchronized 3D canvas.</div>;
 	    return <InteractiveRoom3D
 		      key={`active-surfaces-${threeDSurfaceProductIds.flooring ?? "none"}-${threeDSurfaceTextureUrls.flooring ?? "pending"}-${backsplashEnabled ? threeDSurfaceProductIds.backsplash ?? "none" : "off"}-${backsplashEnabled ? threeDSurfaceTextureUrls.backsplash ?? "pending" : "off"}`}
-		      autoDesignWiggleMoves={autoDesignWiggleMoves}
 		      embedded
 		      cutawayRoomWalls
 		      hybridPlanUnderlay={hybridPlanUnderlay}
@@ -14466,7 +14549,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	      catalogRoomSceneUrl={active3DRoomSceneReferenceUrl}
 	      windowSceneKind={windowSceneKind}
       windowFrameStyle={windowFrameStyle}
-      catalogDoorProfile={designerCatalogDoorProfile(activeStyle)}
+      catalogDoorProfile={activeCatalogDoorProfile}
 	      catalogFinishName={activeStyleName}
 	      catalogFinishProductId={styleId ?? null}
 	      catalogIslandCabinetName={threeDIslandCabinet.name}
@@ -14505,6 +14588,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       catalogCountertopImageUrl={threeDSurfaceTextureUrls.countertop}
 	      catalogIslandCountertopImageUrl={threeDIslandCountertop.imageUrl}
       catalogFlooringImageUrl={threeDSurfaceTextureUrls.flooring}
+      flooringRotationDeg={flooringRotation}
+      onFlooringRotationChange={setFlooringRotation}
       catalogFlooringCardImageUrl={activeFlooringSurface?.imageUrl ?? null}
       catalogBacksplashImageUrl={backsplashEnabled ? threeDSurfaceTextureUrls.backsplash : null}
       catalogBacksplashCardImageUrl={backsplashEnabled ? activeBacksplashSurface?.imageUrl ?? null : null}
@@ -16172,6 +16257,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                 if (d.threeDPresentation?.countertopBacksplashHeightIn === 2.5 || d.threeDPresentation?.countertopBacksplashHeightIn === 3) {
                   setCountertopBacksplashHeightIn(d.threeDPresentation.countertopBacksplashHeightIn);
                 }
+                const restoredPresentation = d.threeDPresentation as { flooringPattern?: unknown; flooringRotation?: unknown } | null | undefined;
+                if (isFlooringLayoutPattern(restoredPresentation?.flooringPattern)) setFlooringPattern(restoredPresentation.flooringPattern);
+                setFlooringRotation(isFlooringRotation(restoredPresentation?.flooringRotation) ? restoredPresentation.flooringRotation : 0);
               }
             }
           />
@@ -17353,8 +17441,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 		            )}
 		            {unavailableStyleIds.length > 0 && (
 		              <div role="status" data-testid="unavailable-saved-style-warning" className="mb-2 rounded-lg border border-amber-500/60 bg-amber-50 px-3 py-3 text-xs text-amber-950">
-		                <p className="font-semibold">Saved door style unavailable in the current priced catalog: {unavailableStyleIds.map((id) => `Style #${id}`).join(", ")}</p>
-		                <p className="mt-1 leading-snug">The cabinets and drawing are preserved. Prices and availability cannot be inferred for this finish; choose a currently available door style and review each flagged cabinet before checkout.</p>
+		                <p className="font-semibold">{freshOpenRejected
+		                  ? `Door style #${freshOpenedStyleId} could not be opened. It is not in the Designer catalog.`
+		                  : `Saved door style unavailable in the current priced catalog: ${unavailableStyleIds.map((id) => `Style #${id}`).join(", ")}`}</p>
+		                <p className="mt-1 leading-snug">{freshOpenRejected
+		                  ? "Choose a listed door style to price cabinets. This new floor plan did not replace another saved design."
+		                  : "The cabinets and drawing are preserved. Prices and availability cannot be inferred for this finish; choose a currently available door style and review each flagged cabinet before checkout."}</p>
 		                <button type="button" className="mt-2 rounded border border-amber-600 px-2 py-1 font-semibold hover:bg-amber-100" onClick={() => {
 		                  if (panelDrawerMode) setMobilePanel("style");
 		                  else document.getElementById("door-style-picker-card")?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -17446,7 +17538,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                onPlaceBathroomFixture={placePelicanBathroomFixture}
 	                affiliateSlug={affiliateSlug}
 	              />
-	              <FlooringLayoutPicker value={flooringPattern} onChange={setFlooringPattern} />
+	              <FlooringLayoutPicker value={flooringPattern} onChange={setFlooringPattern} rotation={flooringRotation} onRotationChange={setFlooringRotation} />
               </>
 	            ) : usesBathroomFixturePalette ? (
 	              <RecommendedSurfaces
@@ -17821,9 +17913,18 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	              </button>
 	            </div>
 	          )}
-	          {(autoDesignWiggleMoves.length > 0 || autoDesignLayoutNotes.length > 0) && (
+	          {(autoDesignLayoutNotes.length > 0 || openings.some((opening) => opening.faucetClearanceNote)) && (
 	            <div className="absolute bottom-3 left-3 z-40 max-w-md">
-	              <AutoDesignWiggleNotice moves={autoDesignWiggleMoves} notes={autoDesignLayoutNotes} />
+	              <div role="status" className="rounded-lg border border-amber-400 bg-amber-50 px-3 py-2 text-sm text-amber-950 shadow-md">
+	                <ul className="space-y-1">
+	                  {autoDesignLayoutNotes.map((note) => (
+	                    <li key={note} data-testid="auto-design-layout-note">{note}</li>
+	                  ))}
+	                  {openings.flatMap((opening) => opening.faucetClearanceNote ? [opening.faucetClearanceNote] : []).map((note) => (
+	                    <li key={note} data-testid="faucet-window-clearance-note">{note}</li>
+	                  ))}
+	                </ul>
+	              </div>
 	            </div>
 	          )}
 	          {placementWarning && (
@@ -18022,7 +18123,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	            <PlanCanvas onPreviewGap={previewSmartGap}
 	              room={room}
 	              autoDesignWallGuides={autoDesignWallGuides}
-	              autoDesignWiggleMoves={autoDesignWiggleMoves}
 	              catalogDragCabinet={catalogDragPreview}
 	              fillerGapPreview={smallGapFillerPlanPreview}
 	              automaticSnapping={automaticSnapping}
@@ -18103,6 +18203,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       onOpenFurnitureAttributes={openFurnitureAttributes}
 	              flooringMaterialId={flooringMaterialId}
 	              flooringPattern={flooringPattern}
+              flooringRotation={flooringRotation}
+              onFlooringRotationChange={setFlooringRotation}
 	              cabinetsLocked={cabinetsLocked}
 	              gapFillCandidates={gapFillCandidates}
 	              catalogFillerCandidates={catalogFillers}
@@ -18317,7 +18419,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                <PlanCanvas onPreviewGap={previewSmartGap}
 	                  room={room}
 	                  autoDesignWallGuides={autoDesignWallGuides}
-	                  autoDesignWiggleMoves={autoDesignWiggleMoves}
 	                  catalogDragCabinet={catalogDragPreview}
 	                  fillerGapPreview={smallGapFillerPlanPreview}
 	                  automaticSnapping={automaticSnapping}
@@ -18398,6 +18499,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       onOpenFurnitureAttributes={openFurnitureAttributes}
 	              flooringMaterialId={flooringMaterialId}
 	              flooringPattern={flooringPattern}
+              flooringRotation={flooringRotation}
+              onFlooringRotationChange={setFlooringRotation}
 	              cabinetsLocked={cabinetsLocked}
 	              gapFillCandidates={gapFillCandidates}
 	              catalogFillerCandidates={catalogFillers}
@@ -20496,6 +20599,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	          setAttrOpen(open);
 	          if (!open) setAttrUid(null);
 	        }}
+	        onDelete={(uid) => {
+	          const before = placedRef.current.length;
+	          deleteCabinet(uid);
+	          if (!placedRef.current.some((cabinet) => cabinet.uid === uid) && placedRef.current.length < before) {
+	            setAttrOpen(false);
+	            setAttrUid(null);
+	          }
+	        }}
 	        wizardBuiltEditable={Boolean(attrCabinetWizard)}
 	        onJumpToWizard={attrCabinetWizard ? jumpCabinetToWizard : undefined}
 	        refrigeratorPanelsRequestedButMissing={attrRefrigeratorPanelsRequestedButMissing}
@@ -22065,18 +22176,13 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
             {styleId != null && (
               <div data-testid="fresh-room-door-style-preview" className="rounded-xl border border-[#d8c7a1] bg-[#fffaf0] p-3">
                 <p className="text-sm font-semibold text-[#192432]">{activeStyleName || "Selected door"}</p>
-                <div className={`mt-2 grid gap-3 ${activeDrawerSampleUrl ? "grid-cols-2" : "grid-cols-1"}`}>
-                  <div>
-                    <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Door</p>
-                    <DoorSamplePhoto url={paletteFinishSwatch} alt={`${activeStyleName || "Door"} door sample`} className="h-52 w-full rounded-lg border border-border" />
-                  </div>
-                  {activeDrawerSampleUrl && (
-                    <div>
-                      <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Drawer</p>
-                      <DoorSamplePhoto url={activeDrawerSampleUrl} alt={`${activeStyleName || "Door"} drawer sample`} className="h-52 w-full rounded-lg border border-border" />
-                    </div>
-                  )}
-                </div>
+                <StyleSamplePreview
+                  className="mt-2"
+                  style={activeStyle as SampleStyleImages | null}
+                  styleName={activeStyleName}
+                  finish={activeFinish}
+                  showImageCheck={isAdmin}
+                />
               </div>
             )}
           </div>
@@ -22229,7 +22335,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
             ) : resolvedInteractive3dScene ? (
               <InteractiveRoom3D
 			      key={`active-surfaces-full-${threeDSurfaceProductIds.flooring ?? "none"}-${threeDSurfaceTextureUrls.flooring ?? "pending"}-${backsplashEnabled ? threeDSurfaceProductIds.backsplash ?? "none" : "off"}-${backsplashEnabled ? threeDSurfaceTextureUrls.backsplash ?? "pending" : "off"}`}
-                autoDesignWiggleMoves={autoDesignWiggleMoves}
                 scene={resolvedInteractive3dScene}
                 placed={threeDPlaced}
                 crown={crown}
@@ -22296,7 +22401,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                catalogRoomSceneUrl={active3DRoomSceneReferenceUrl}
 	                windowSceneKind={windowSceneKind}
 	                windowFrameStyle={windowFrameStyle}
-	                catalogDoorProfile={designerCatalogDoorProfile(activeStyle)}
+	                catalogDoorProfile={activeCatalogDoorProfile}
 	                catalogFinishName={activeStyleName}
 	                catalogFinishProductId={styleId ?? null}
 	      catalogIslandCabinetName={threeDIslandCabinet.name}
@@ -22335,6 +22440,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                catalogCountertopImageUrl={threeDSurfaceTextureUrls.countertop}
 	                catalogIslandCountertopImageUrl={threeDIslandCountertop.imageUrl}
 	                catalogFlooringImageUrl={threeDSurfaceTextureUrls.flooring}
+      flooringRotationDeg={flooringRotation}
+      onFlooringRotationChange={setFlooringRotation}
 	                catalogFlooringCardImageUrl={activeFlooringSurface?.imageUrl ?? null}
 	                catalogBacksplashCardImageUrl={backsplashEnabled ? activeBacksplashSurface?.imageUrl ?? null : null}
 	                catalogBacksplashImageUrl={backsplashEnabled ? threeDSurfaceTextureUrls.backsplash : null}

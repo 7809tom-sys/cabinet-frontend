@@ -47,6 +47,15 @@ describe("authoritative wall cabinet SKU dimensions", () => {
       .toEqual({ width: 36, height: 24, depth: 12 });
   });
 
+  it("lists an AEF wall that is missing from the printed table at 13.5 rather than the stored 12", () => {
+    expect(resolvedDesignCabinetDimensions(wallCabinet("WBC333630", {
+      width: "33",
+      height: "30",
+      depth: "12",
+      constructionMethod: "Frameless; distributor geometry is printed in AltaEuro Collection Full Spec Book V8.2",
+    })).depth).toBe(13.5);
+  });
+
   it("uses the AEF printed dimensions instead of stale shared-master columns", () => {
     expect(resolvedDesignCabinetDimensions(wallCabinet("W3012", {
       width: "30",

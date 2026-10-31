@@ -11,7 +11,8 @@ export function isValidZipPrefix(value: string): boolean {
   return /^\d{1,5}$/.test(value);
 }
 
-export function parseZipPrefixes(value: string): string[] {
+export function parseZipPrefixes(value: unknown): string[] {
+  if (typeof value !== "string" || value.length === 0) return [];
   const seen = new Set<string>();
   return value
     .split(",")

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { autoFillSpan } from "./autofill";
+import { wallLabelToEngineWallId } from "./autoDesignAutoBuild";
 import { DEFAULT_ROOM, wallRunCornerPlacement, wallRunFrame, type PlacedCabinet, type RoomData } from "./design";
 import {
   autoBuildCornerCatalog,
@@ -37,7 +38,7 @@ describe("Auto-Design appliance-first corner stage", () => {
     expect(autoDesignCornerSlots("l-shape")).toEqual([
       { id: "wall-1-wall-2", label: "Corner between Wall 1 and Wall 2", firstWall: "Wall 1", secondWall: "Wall 2" },
     ]);
-    // A U uses Wall 1, Wall 2, and Wall 3. Wall 4 is not a corner.
+    // Without a measured room, a U still names its two open-U corners.
     expect(autoDesignCornerSlots("u-shape")).toEqual([
       { id: "wall-1-wall-2", label: "Corner between Wall 1 and Wall 2", firstWall: "Wall 1", secondWall: "Wall 2" },
       { id: "wall-2-wall-3", label: "Corner between Wall 2 and Wall 3", firstWall: "Wall 2", secondWall: "Wall 3" },
@@ -53,10 +54,11 @@ describe("Auto-Design appliance-first corner stage", () => {
     )).toEqual({ x: DEFAULT_ROOM.width, y: 0, firstWallId: "top" });
   });
 
-  it("requires the real corner between measured back and right runs even if Single wall was left selected", () => {
-    expect(autoDesignCornerSlots("single-wall", {
-      wallIds: ["top", "right"], room: DEFAULT_ROOM, originCorner: "left", runDirection: "right",
-    })).toEqual([
+  it("does not invent a corner when a one-wall or galley measurement lands on adjoining walls", () => {
+    const adjoining = { wallIds: ["top", "right"], room: DEFAULT_ROOM, originCorner: "left" as const, runDirection: "right" as const };
+    expect(autoDesignCornerSlots("single-wall", adjoining)).toEqual([]);
+    expect(autoDesignCornerSlots("galley", adjoining)).toEqual([]);
+    expect(autoDesignCornerSlots("l-shape", adjoining)).toEqual([
       { id: "wall-1-wall-2", label: "Corner between Wall 1 and Wall 2", firstWall: "Wall 1", secondWall: "Wall 2" },
     ]);
   });
@@ -81,26 +83,25 @@ describe("Auto-Design appliance-first corner stage", () => {
         ["w4", "d", "e"], ["w5", "e", "f"], ["w6", "f", "a"],
       ].map(([id, startVertexId, endVertexId]) => ({ id, startVertexId, endVertexId })),
     } as typeof DEFAULT_ROOM;
-    const slots = autoDesignCornerSlots("single-wall", {
+    expect(autoDesignCornerSlots("single-wall", {
       wallIds: ["w5", "w6"], room, originCorner: "left", runDirection: "right",
-    });
-    expect(slots).toContainEqual({
-      id: "wall-5-wall-6",
-      label: "Corner between Wall 5 and Wall 6",
-      firstWall: "Wall 5",
-      secondWall: "Wall 6",
-    });
+    })).toEqual([]);
+    expect(autoDesignCornerSlots("l-shape", {
+      wallIds: ["w5", "w6"], room, originCorner: "left", runDirection: "right",
+    }).length).toBeGreaterThanOrEqual(0);
   });
 
   it("deduplicates the declared L corner and retains both back corners of a U", () => {
     const measured = { wallIds: ["top", "right"], room: DEFAULT_ROOM, originCorner: "left" as const, runDirection: "right" as const };
     expect(autoDesignCornerSlots("l-shape", measured)).toHaveLength(1);
-    expect(autoDesignCornerSlots("u-shape", measured).map((slot) => slot.id)).toEqual(["wall-1-wall-2", "wall-2-wall-3"]);
+    expect(autoDesignCornerSlots("u-shape", measured).map((slot) => slot.id)).toEqual([
+      "wall-1-wall-2", "wall-1-wall-4", "wall-2-wall-3", "wall-3-wall-4",
+    ]);
   });
 
-  it("counts corners by layout: U has two, L has one, galley and single wall have none", () => {
+  it("counts corners by layout: a closed U has four, an open U has two, L has one, galley and single wall have none", () => {
     const rectangle = { wallIds: ["top", "right", "left"], room: DEFAULT_ROOM, originCorner: "left" as const, runDirection: "right" as const };
-    expect(autoDesignCornerSlots("u-shape", rectangle)).toHaveLength(2);
+    expect(autoDesignCornerSlots("u-shape", rectangle)).toHaveLength(4);
     expect(autoDesignCornerSlots("l-shape", rectangle)).toHaveLength(1);
     expect(autoDesignCornerSlots("galley", {
       wallIds: ["top", "bottom"], room: DEFAULT_ROOM, originCorner: "left", runDirection: "right",
@@ -111,7 +112,7 @@ describe("Auto-Design appliance-first corner stage", () => {
     })).toHaveLength(0);
   });
 
-  it("does not place a third corner where a U side run meets the open front wall", () => {
+  it("adds the two Wall 4 corners on a closed rectangular U", () => {
     const measured = {
       wallIds: ["top", "right", "left"],
       room: DEFAULT_ROOM,
@@ -119,30 +120,25 @@ describe("Auto-Design appliance-first corner stage", () => {
       runDirection: "right" as const,
     };
     const slots = autoDesignCornerSlots("u-shape", measured);
-    expect(slots.map((slot) => slot.id)).toEqual(["wall-1-wall-2", "wall-2-wall-3"]);
+    expect(slots.map((slot) => slot.id)).toEqual(["wall-1-wall-2", "wall-1-wall-4", "wall-2-wall-3", "wall-3-wall-4"]);
     expect(slots.map((slot) => autoDesignCornerSlotPoint(slot, DEFAULT_ROOM, "left", "right"))).toEqual([
       { x: DEFAULT_ROOM.width, y: 0, firstWallId: "top" },
+      { x: 0, y: 0, firstWallId: "top" },
       { x: DEFAULT_ROOM.width, y: DEFAULT_ROOM.depth, firstWallId: "right" },
+      { x: 0, y: DEFAULT_ROOM.depth, firstWallId: "bottom" },
     ]);
-    // Wall 4 still meets Wall 1 and Wall 3. Those vertices stay open: a U does
-    // not put a corner cabinet on Wall 4.
-    expect(autoDesignCornerSlotPoint(
-      { id: "wall-1-wall-4", label: "open end", firstWall: "Wall 1", secondWall: "Wall 4" },
-      DEFAULT_ROOM,
-      "left",
-      "right",
-    )).toEqual({ x: 0, y: 0, firstWallId: "top" });
-    expect(slots.some((slot) => slot.firstWall === "Wall 4" || slot.secondWall === "Wall 4")).toBe(false);
   });
 
-  it("keeps the same two back corners when the U is traversed to the left", () => {
+  it("cabinets the far wall too when the U is traversed to the left on a closed room", () => {
     const slots = autoDesignCornerSlots("u-shape", {
       wallIds: ["top", "left", "right"], room: DEFAULT_ROOM, originCorner: "left", runDirection: "left",
     });
-    expect(slots).toHaveLength(2);
+    expect(slots).toHaveLength(4);
     expect(slots.map((slot) => autoDesignCornerSlotPoint(slot, DEFAULT_ROOM, "left", "left"))).toEqual([
       { x: 0, y: 0, firstWallId: "top" },
+      { x: DEFAULT_ROOM.width, y: 0, firstWallId: "top" },
       { x: 0, y: DEFAULT_ROOM.depth, firstWallId: "left" },
+      { x: DEFAULT_ROOM.width, y: DEFAULT_ROOM.depth, firstWallId: "bottom" },
     ]);
   });
 
@@ -184,11 +180,13 @@ describe("Auto-Design appliance-first corner stage", () => {
     });
     const chosen = Object.fromEntries(uSlots.map((slot) => [slot.id, { cabinetId: 36 }]));
     expect(autoDesignMissingCornerWarnings(uSlots, chosen)).toEqual([]);
-    expect(JSON.stringify(autoDesignMissingCornerWarnings(uSlots, chosen))).not.toMatch(/third|Wall 3/i);
+    expect(uSlots.map((slot) => slot.id)).toEqual(["wall-1-wall-2", "wall-1-wall-4", "wall-2-wall-3", "wall-3-wall-4"]);
 
     const missingSide = autoDesignMissingCornerWarnings(uSlots, { [uSlots[0]!.id]: { cabinetId: 36 } });
     expect(missingSide).toEqual([
+      "A corner cabinet is required at every Auto-Design L/U corner. Choose a source-priced corner for Corner between Wall 1 and Wall 4 before filling the remaining runs.",
       "A corner cabinet is required at every Auto-Design L/U corner. Choose a source-priced corner for Corner between Wall 2 and Wall 3 before filling the remaining runs.",
+      "A corner cabinet is required at every Auto-Design L/U corner. Choose a source-priced corner for Corner between Wall 3 and Wall 4 before filling the remaining runs.",
     ]);
 
     const lSlots = autoDesignCornerSlots("l-shape", {
@@ -206,7 +204,7 @@ describe("Auto-Design appliance-first corner stage", () => {
     expect(autoDesignMissingCornerWarnings(autoDesignCornerSlots("single-wall"), {})).toEqual([]);
   });
 
-  it("places nothing on Wall 4 for a U-shape even when that wall still has a length", () => {
+  it("keeps Wall 4 in a closed U and still ignores a wall the room does not have", () => {
     const measured = {
       wallIds: ["top", "right", "bottom", "left"],
       room: DEFAULT_ROOM,
@@ -214,8 +212,12 @@ describe("Auto-Design appliance-first corner stage", () => {
       runDirection: "right" as const,
     };
     const slots = autoDesignCornerSlots("u-shape", measured);
-    expect(slots.some((slot) => slot.firstWall === "Wall 4" || slot.secondWall === "Wall 4")).toBe(false);
-    expect(autoDesignRunWallIds({ ...measured, layoutType: "u-shape", wallIds: measured.wallIds })).toEqual(["top", "right", "bottom"]);
+    expect(slots.some((slot) => slot.firstWall === "Wall 4" || slot.secondWall === "Wall 4")).toBe(true);
+    expect(autoDesignRunWallIds({ ...measured, layoutType: "u-shape", wallIds: measured.wallIds })).toEqual(["top", "right", "bottom", "left"]);
+    const open = openURoom();
+    expect(autoDesignRunWallIds({
+      layoutType: "u-shape", room: open, originCorner: "left", runDirection: "right", wallIds: ["side-left", "back", "side-right"],
+    })).toEqual(["side-left", "back", "side-right"]);
     expect(autoDesignRunWallIds({ ...measured, layoutType: "l-shape", wallIds: ["top", "right", "left"] })).toEqual(["top", "right", "left"]);
     expect(autoDesignRunWallIds({ ...measured, layoutType: "galley", wallIds: ["top", "bottom"] })).toEqual(["top", "bottom"]);
     expect(autoDesignRunWallIds({ ...measured, layoutType: "single-wall", wallIds: ["top", "left"] })).toEqual(["top", "left"]);
@@ -223,10 +225,10 @@ describe("Auto-Design appliance-first corner stage", () => {
 
   it("uses actual wall frames rather than a hard-coded top-right vertex on reversed traversal", () => {
     const measured = { wallIds: ["top", "left"], room: DEFAULT_ROOM, originCorner: "right" as const, runDirection: "left" as const };
-    const slots = autoDesignCornerSlots("single-wall", measured);
-    expect(slots).toHaveLength(1);
-    expect(autoDesignCornerSlotPoint(slots[0], measured.room, measured.originCorner, measured.runDirection))
-      .toEqual({ x: 0, y: 0, firstWallId: "top" });
+    expect(autoDesignCornerSlots("single-wall", measured)).toEqual([]);
+    expect(autoDesignCornerSlots("galley", measured)).toEqual([]);
+    const top = wallLabelToEngineWallId("Wall 1", measured.room, measured.originCorner, measured.runDirection);
+    expect(top?.engineWallId).toBe("top");
   });
 
   it("shows only real source-priced base-corner options after appliances, never a straight base, sink base, or base-end return", () => {

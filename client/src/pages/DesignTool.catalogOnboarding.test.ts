@@ -56,11 +56,12 @@ describe("fresh room catalog onboarding", () => {
 
     expect(previewStart).toBeGreaterThan(-1);
     expect(footerStart).toBeGreaterThan(previewStart);
-    expect(preview).toContain("DoorSamplePhoto url={paletteFinishSwatch}");
-    expect(preview).toContain("DoorSamplePhoto url={activeDrawerSampleUrl}");
-    expect(preview).toContain("Drawer");
-    expect(source).toContain("const activeDrawerSampleUrl = useMemo(");
-    expect(source).toContain("preferredDrawerReferenceUrl(activeStyle");
+    expect(preview).toContain("<StyleSamplePreview");
+    expect(preview).toContain("showImageCheck={isAdmin}");
+    expect(preview).toContain("finish={activeFinish}");
+    expect(preview).not.toContain("h-52");
+    expect(preview).not.toContain("activeDrawerSampleUrl");
+    expect(source).toContain("preferredDrawerReferenceUrl(style)");
   });
 
   it("stacks the selected cabinet door photo, style name, and distributor on desktop and mobile", () => {

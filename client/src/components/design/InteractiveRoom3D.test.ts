@@ -26,7 +26,7 @@ import { addThreeDContinuousToeKicks, threeDContinuousToeKickSegments } from "./
 import { COUNTERTOP_DEPTH_IN, DEFAULT_ROOM, STD, cornerLegRatioForPlaced, countertopRunFaceNormal, countertopSurfacePlanPolygon, countertopSurfaces, nextAvailableRoomCornerPlacement, peninsulaRunEndpoints, placedCornerGeometryKind, placedFootprint, wallPlacementAt } from "@/lib/design";
 import { AEF_PRINTED_GEOMETRY_MARKER } from "@shared/aefFramelessGeometry";
 import { ovenOpeningGeometry } from "@/lib/ovenOpening";
-import { addThreeDCrownMolding, applyThreeDStructuralFinishMaterials, threeDStructuralSampleTexture } from "./InteractiveRoom3D";
+import { addThreeDCrownMolding, applyThreeDStructuralFinishMaterials, threeDDecorativeEndIsDoor, threeDStructuralSampleTexture } from "./InteractiveRoom3D";
 import { addThreeDProductionLightRig, normalizeThreeDPlanarUv, THREE_D_BACKSPLASH_FACE_INSET_IN, THREE_D_BACKSPLASH_TILE_SIZE_IN, threeDBacksplashPlaneUv, threeDBacksplashRenderInterval, threeDBacksplashSegments, threeDBacksplashSupportSpans, threeDBacksplashTileTextureTransform, threeDBacksplashTransform, threeDCabinetGrainTransform, threeDCountertopUpstandSegments, threeDCountertopSlabTextureTransform, threeDDoorFinishSurfaceProfile, threeDFlooringPatternProfile, threeDPhysicalSurfaceProfile, threeDPlankAtlasProfile, threeDProductMaterialSource, threeDProductSurfaceTextureTransform, threeDRenderQualityProfile, threeDSupportsBacksplash, threeDSurfaceImageCrop, threeDSurfaceTextureTransform } from "./InteractiveRoom3D";
 import kitchenFixture from "../../lib/__fixtures__/autoDesignGapKitchen.json";
 import type { PlacedCabinet, RoomData, WallOpening } from "@/lib/design";
@@ -2129,31 +2129,28 @@ describe("interactive 3D room scene helpers", () => {
 
   it("uses every selected cabinet finish on structural surfaces, including texture-backed styles", () => {
     expect(threeDStructuralFinish("#4f5549", false)).toEqual({ color: "#4f5549", usesDoorSample: false });
-    expect(threeDStructuralFinish("#C8A040", true)).toEqual({ color: "#ffffff", usesDoorSample: true });
+    expect(threeDStructuralFinish("#C8A040", true)).toEqual({ color: "#C8A040", usesDoorSample: false });
   });
 
-  it("crops the uninterrupted center finish from a door sample for sides and toe kicks without altering the framed door texture", () => {
+  it("keeps door photographs off cabinet boxes, toe kicks, and end skins", () => {
     const selectedSample = new THREE.Texture();
     const side = new THREE.MeshStandardMaterial({ color: "#C8A040" });
     const toeKick = new THREE.MeshStandardMaterial({ color: "#C8A040" });
     side.userData = { selectedFinishSideSkin: true };
     toeKick.userData = { baseToeKick: true };
 
-    const structuralSample = threeDStructuralSampleTexture(selectedSample);
-    expect(structuralSample).not.toBe(selectedSample);
-    expect(structuralSample.repeat.toArray()).toEqual([0.42, 0.42]);
-    expect(structuralSample.offset.toArray()).toEqual([0.29, 0.29]);
-    expect(selectedSample.repeat.toArray()).toEqual([1, 1]);
-    expect(selectedSample.offset.toArray()).toEqual([0, 0]);
-
     const result = applyThreeDStructuralFinishMaterials([side, toeKick], "#C8A040", selectedSample);
-    expect(result.color).toBe("#ffffff");
-    expect(side.map).toBe(result.texture);
-    expect(toeKick.map).toBe(result.texture);
-    expect(side.color.getHexString()).toBe("ffffff");
-    expect(toeKick.color.getHexString()).toBe("ffffff");
-    expect(side.userData).toMatchObject({ selectedFinishSideSkin: true, selectedFinishStructuralSurface: true, usesDoorSample: true, usesDoorImage: true });
-	    expect(toeKick.userData).toMatchObject({ baseToeKick: true, selectedFinishStructuralSurface: true, usesDoorSample: true, usesDoorImage: true });
+    expect(result.color).toBe("#C8A040");
+    expect(result.texture).toBeNull();
+    expect(side.map).toBeNull();
+    expect(toeKick.map).toBeNull();
+    expect(side.color.getHexString()).toBe("c8a040");
+    expect(toeKick.color.getHexString()).toBe("c8a040");
+    expect(side.userData).toMatchObject({ selectedFinishSideSkin: true, selectedFinishStructuralSurface: true, usesDoorSample: false, usesDoorImage: false });
+    expect(toeKick.userData).toMatchObject({ baseToeKick: true, selectedFinishStructuralSurface: true, usesDoorSample: false, usesDoorImage: false });
+    expect(selectedSample.repeat.toArray()).toEqual([1, 1]);
+    expect(threeDDecorativeEndIsDoor({})).toBe(false);
+    expect(threeDDecorativeEndIsDoor({ decorativeEndIsDoor: true })).toBe(true);
 	  });
 
 	  it("keeps a curated Rustic Hickory center-grain asset intact instead of cropping or stretching it like a complete door photograph", () => {

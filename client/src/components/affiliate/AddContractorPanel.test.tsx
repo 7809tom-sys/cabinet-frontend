@@ -5,15 +5,32 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AffiliateContractorRequest } from "@/lib/contractorAccessForm";
 
-const { mutate, invalidate, mutationOptions, requests, queryInput } = vi.hoisted(() => ({
+const { mutate, invalidate, refetchRequests, mutationOptions, reviewMutate, reviewOptions, reviewPending, markupMutate, markupOptions, markupPending, requests, markup, queryInput } = vi.hoisted(() => ({
   mutate: vi.fn(),
   invalidate: vi.fn(async () => undefined),
+  refetchRequests: vi.fn(),
   mutationOptions: {
     current: null as null | {
       onSuccess?: (result: { id: number; status: "pending"; duplicate: boolean }) => void;
       onError?: (error: { message: string }) => void;
     },
   },
+  reviewMutate: vi.fn(),
+  reviewOptions: {
+    current: null as null | {
+      onSuccess?: (result: { ok: true; status: "approved" | "rejected" }, input: { id: number; decision: "approved" | "rejected" }) => void;
+      onError?: (error: { message: string; data?: { code?: string } | null }) => void;
+    },
+  },
+  reviewPending: { current: false },
+  markupMutate: vi.fn(),
+  markupOptions: {
+    current: null as null | {
+      onSuccess?: (result: { ok: true }, input: { markupPercent: number | null; affiliateUserId?: number }) => void;
+      onError?: (error: { message: string; data?: { code?: string } | null }) => void;
+    },
+  },
+  markupPending: { current: false },
   requests: {
     current: {
       data: [] as AffiliateContractorRequest[],
@@ -23,11 +40,19 @@ const { mutate, invalidate, mutationOptions, requests, queryInput } = vi.hoisted
     },
   },
   queryInput: { current: undefined as unknown },
+  markup: {
+    current: {
+      data: { markupPercent: null as number | null, siteDefaultPercent: 20 },
+      isLoading: false,
+      error: null as { message: string; data?: { code?: string } | null } | null,
+      refetch: vi.fn(),
+    },
+  },
 }));
 
 vi.mock("@/lib/trpc", () => ({
   trpc: {
-    useUtils: () => ({ contractorAccess: { myAffiliateRequests: { invalidate } } }),
+    useUtils: () => ({ contractorAccess: { myAffiliateRequests: { invalidate }, affiliateMarkup: { invalidate } } }),
     contractorAccess: {
       submitForContractor: {
         useMutation: (options: typeof mutationOptions.current) => {
@@ -39,6 +64,21 @@ vi.mock("@/lib/trpc", () => ({
         useQuery: (input?: unknown) => {
           queryInput.current = input;
           return requests.current;
+        },
+      },
+      affiliateReview: {
+        useMutation: (options: typeof reviewOptions.current) => {
+          reviewOptions.current = options ?? null;
+          return { mutate: reviewMutate, isPending: reviewPending.current };
+        },
+      },
+      affiliateMarkup: {
+        useQuery: () => markup.current,
+      },
+      setAffiliateMarkup: {
+        useMutation: (options: typeof markupOptions.current) => {
+          markupOptions.current = options ?? null;
+          return { mutate: markupMutate, isPending: markupPending.current };
         },
       },
     },
@@ -66,10 +106,18 @@ const request: AffiliateContractorRequest = {
 afterEach(() => {
   cleanup();
   mutate.mockReset();
+  reviewMutate.mockReset();
+  markupMutate.mockReset();
   invalidate.mockReset();
+  refetchRequests.mockReset();
   mutationOptions.current = null;
   queryInput.current = undefined;
-  requests.current = { data: [], isLoading: false, error: null, refetch: vi.fn() };
+  reviewOptions.current = null;
+  markupOptions.current = null;
+  reviewPending.current = false;
+  markupPending.current = false;
+  requests.current = { data: [], isLoading: false, error: null, refetch: refetchRequests };
+  markup.current = { data: { markupPercent: null, siteDefaultPercent: 20 }, isLoading: false, error: null, refetch: vi.fn() };
   vi.mocked(toast.success).mockReset();
   vi.mocked(toast.message).mockReset();
   vi.mocked(toast.error).mockReset();
@@ -208,10 +256,62 @@ describe("Add a contractor", () => {
     expect(approved?.textContent).toContain("Approved");
     expect(approved?.textContent).toContain("Has an account");
     expect(approved?.textContent).toContain(`Reviewed ${new Date("2026-10-20T12:00:00.000Z").toLocaleDateString()}`);
+    expect(pending?.querySelector("button")?.textContent).toContain("Approve");
+    expect(approved?.querySelector("button")).toBeNull();
     unmount();
 
     requests.current = { ...requests.current, data: [], error: { message: "Forbidden" } };
     render(<AddContractorPanel />);
     expect(screen.getByText("Forbidden").className).toContain("text-destructive");
+  });
+
+  it("lets the affiliate approve or reject a pending request and shows the server error", () => {
+    requests.current = { ...requests.current, data: [request], refetch: refetchRequests };
+    render(<AddContractorPanel />);
+    expect(screen.getByText(/You approve it before they get contractor tools/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    expect(reviewMutate).toHaveBeenCalledWith({ id: 4, decision: "approved" });
+    act(() => {
+      reviewOptions.current?.onSuccess?.({ ok: true, status: "approved" }, { id: 4, decision: "approved" });
+    });
+    expect(toast.success).toHaveBeenCalledWith("Contractor approved.");
+    expect(refetchRequests).toHaveBeenCalled();
+    expect(invalidate).toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Reject" }));
+    expect(reviewMutate).toHaveBeenCalledWith({ id: 4, decision: "rejected" });
+    act(() => {
+      reviewOptions.current?.onError?.({ message: "Only the submitting affiliate can review this request.", data: { code: "FORBIDDEN" } });
+    });
+    expect(screen.getByRole("alert").textContent).toBe("FORBIDDEN: Only the submitting affiliate can review this request.");
+    expect(toast.error).toHaveBeenCalledWith("FORBIDDEN: Only the submitting affiliate can review this request.");
+  });
+
+  it("disables approve and reject while the review is pending", () => {
+    reviewPending.current = true;
+    requests.current = { ...requests.current, data: [request], refetch: refetchRequests };
+    render(<AddContractorPanel />);
+    expect((screen.getByRole("button", { name: "Approve" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Reject" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("saves a markup over the affiliate's cost and can clear it back to the site default", () => {
+    render(<AddContractorPanel />);
+    expect(screen.getByRole("heading", { name: "Contractor pricing" })).toBeTruthy();
+    expect(screen.getByText("Set the markup you charge contractors over your cost (what you pay Cabinet Dealz). Leave it unset to use the site default.")).toBeTruthy();
+    expect(screen.getByText("Site default is 20%.")).toBeTruthy();
+    expect(screen.getByTestId("contractor-markup-example").textContent).toBe("A $100.00 cost sells to your contractors at $120.00");
+
+    fireEvent.change(screen.getByLabelText("Markup over your cost (%)"), { target: { value: "12.5" } });
+    expect(screen.getByTestId("contractor-markup-example").textContent).toBe("A $100.00 cost sells to your contractors at $112.50");
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(markupMutate).toHaveBeenCalledWith({ markupPercent: 12.5 });
+
+    fireEvent.click(screen.getByRole("button", { name: "Use site default" }));
+    expect(markupMutate).toHaveBeenCalledWith({ markupPercent: null });
+    act(() => {
+      markupOptions.current?.onError?.({ message: "FORBIDDEN" });
+    });
+    expect(toast.error).toHaveBeenCalledWith("FORBIDDEN");
   });
 });

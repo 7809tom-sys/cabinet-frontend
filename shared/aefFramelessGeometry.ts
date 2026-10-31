@@ -14,6 +14,41 @@ export type AefPrintedGeometry = {
 export const AEF_PRINTED_GEOMETRY_MARKER =
   "Frameless; distributor geometry is printed in AltaEuro Collection Full Spec Book V8.2";
 
+/** AltaEuro V8 standard wall depth. The separate 24"D family is over-fridge only. */
+export const FRAMELESS_STANDARD_WALL_DEPTH_IN = 13.5;
+export const FRAMELESS_DEEP_WALL_DEPTH_IN = 24;
+
+/**
+ * AltaEuro wall code: W / WER + width + nominal height, with an optional 24
+ * that marks the deep (over-fridge) family. Easy-reach corners are not deep boxes.
+ */
+export function framelessWallFamily(masterCode: string | null | undefined): { deep: boolean; depth: number } | null {
+  const sku = (masterCode ?? "").trim().toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean).pop() ?? "";
+  const wall = sku.replace(/S$/, "").match(/^W(ER)?(\d{2})(12|15|18|23|30|35|40)(24)?$/);
+  if (!wall || wall[1]) return null;
+  const deep = Boolean(wall[4]);
+  return { deep, depth: deep ? FRAMELESS_DEEP_WALL_DEPTH_IN : FRAMELESS_STANDARD_WALL_DEPTH_IN };
+}
+
+/** 24"D wall boxes and 24"D flip-up Aventos cabinets. They belong above a refrigerator, not in a normal run. */
+export function isFramelessDeepWallCabinet(cabinet: {
+  masterCode?: string | null;
+  description?: string | null;
+  subCategory?: string | null;
+  depth?: string | number | null;
+  placement?: string | null;
+}): boolean {
+  const code = (cabinet.masterCode ?? "").trim().toUpperCase();
+  const text = `${cabinet.description ?? ""} ${cabinet.subCategory ?? ""}`;
+  if (/refrigerator\s+wall|over[-\s]?fridge/i.test(text)) return true;
+  if (/^WFD\d+24(?:-BLUM)?$/.test(code)) return true;
+  const family = framelessWallFamily(code);
+  if (family?.deep) return true;
+  const depth = Number(cabinet.depth);
+  if (cabinet.placement === "wall" && Number.isFinite(depth) && depth >= 20 && !/corner|blind|easy reach|lazy/i.test(text)) return true;
+  return false;
+}
+
 export function hasAefPrintedGeometry(cabinet: { constructionMethod?: string | null }): boolean {
   return cabinet.constructionMethod === AEF_PRINTED_GEOMETRY_MARKER;
 }
