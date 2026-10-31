@@ -106,6 +106,8 @@ export type CabinetFacePlan = {
     drawerSolidColor: string | null;
     /** Door finish colour for exposed sides, end panels and skins. */
     solidColor: string;
+    /** Frame-free grain patch for sides/end panels/skins, or null when no clean patch exists. */
+    grainUrl: string | null;
   };
 };
 
@@ -282,6 +284,7 @@ export function resolveCabinetFaceImages(
         drawerSize: dlc.drawerSize,
         drawerSolidColor: dlc.drawer ? null : dlc.solidColor,
         solidColor: dlc.solidColor,
+        grainUrl: dlc.grainFrameFree ? dlc.grain : null,
       },
     };
   }

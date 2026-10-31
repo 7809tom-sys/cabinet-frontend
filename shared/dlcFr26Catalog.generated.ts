@@ -10,6 +10,10 @@ export interface DlcFr26CatalogEntry {
   drawerSize: [number, number] | null;
   /** Median door color, used for a drawer front that has no crop. */
   solidColor: string;
+  /** Frame-free grain patch from inside the door panel: sides, end panels and skins use it (tiled, mirrored). */
+  grain: string;
+  grainSize: [number, number];
+  grainFrameFree: boolean;
 }
 
 export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
@@ -28,7 +32,13 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       141,
       62
     ],
-    "solidColor": "#e5e6e8"
+    "solidColor": "#e5e6e8",
+    "grain": "/textures/dlc-fr26/grain/arctic-white.png",
+    "grainSize": [
+      56,
+      106
+    ],
+    "grainFrameFree": true
   },
   {
     "slug": "chestnut",
@@ -45,7 +55,13 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       141,
       58
     ],
-    "solidColor": "#656363"
+    "solidColor": "#656363",
+    "grain": "/textures/dlc-fr26/grain/chestnut.png",
+    "grainSize": [
+      56,
+      105
+    ],
+    "grainFrameFree": true
   },
   {
     "slug": "cyber-grey",
@@ -62,7 +78,13 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       140,
       58
     ],
-    "solidColor": "#3b4a63"
+    "solidColor": "#3b4a63",
+    "grain": "/textures/dlc-fr26/grain/cyber-grey.png",
+    "grainSize": [
+      56,
+      107
+    ],
+    "grainFrameFree": true
   },
   {
     "slug": "dark-caramel",
@@ -79,7 +101,13 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       139,
       61
     ],
-    "solidColor": "#856b63"
+    "solidColor": "#856b63",
+    "grain": "/textures/dlc-fr26/grain/dark-caramel.png",
+    "grainSize": [
+      56,
+      106
+    ],
+    "grainFrameFree": true
   },
   {
     "slug": "dove-gray",
@@ -97,7 +125,13 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       141,
       61
     ],
-    "solidColor": "#c9c9cb"
+    "solidColor": "#c9c9cb",
+    "grain": "/textures/dlc-fr26/grain/dove-gray.png",
+    "grainSize": [
+      56,
+      105
+    ],
+    "grainFrameFree": true
   },
   {
     "slug": "driftwood",
@@ -111,7 +145,13 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       308
     ],
     "drawerSize": null,
-    "solidColor": "#78726d"
+    "solidColor": "#78726d",
+    "grain": "/textures/dlc-fr26/grain/driftwood.png",
+    "grainSize": [
+      56,
+      135
+    ],
+    "grainFrameFree": true
   },
   {
     "slug": "ewo",
@@ -129,7 +169,13 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       141,
       74
     ],
-    "solidColor": "#978869"
+    "solidColor": "#978869",
+    "grain": "/textures/dlc-fr26/grain/ewo.png",
+    "grainSize": [
+      36,
+      62
+    ],
+    "grainFrameFree": true
   },
   {
     "slug": "expresso-shaker",
@@ -147,7 +193,13 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       140,
       60
     ],
-    "solidColor": "#5f5d60"
+    "solidColor": "#5f5d60",
+    "grain": "/textures/dlc-fr26/grain/expresso-shaker.png",
+    "grainSize": [
+      56,
+      106
+    ],
+    "grainFrameFree": true
   },
   {
     "slug": "glacier-white",
@@ -164,7 +216,13 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       141,
       62
     ],
-    "solidColor": "#d7d8dd"
+    "solidColor": "#d7d8dd",
+    "grain": "/textures/dlc-fr26/grain/glacier-white.png",
+    "grainSize": [
+      48,
+      89
+    ],
+    "grainFrameFree": true
   },
   {
     "slug": "grey-shaker",
@@ -181,7 +239,13 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       140,
       60
     ],
-    "solidColor": "#bac1cb"
+    "solidColor": "#bac1cb",
+    "grain": "/textures/dlc-fr26/grain/grey-shaker.png",
+    "grainSize": [
+      56,
+      105
+    ],
+    "grainFrameFree": true
   },
   {
     "slug": "ivory-white",
@@ -198,7 +262,13 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       140,
       62
     ],
-    "solidColor": "#e1e1e1"
+    "solidColor": "#e1e1e1",
+    "grain": "/textures/dlc-fr26/grain/ivory-white.png",
+    "grainSize": [
+      56,
+      105
+    ],
+    "grainFrameFree": true
   },
   {
     "slug": "mc",
@@ -216,7 +286,13 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       146,
       65
     ],
-    "solidColor": "#6d827b"
+    "solidColor": "#6d827b",
+    "grain": "/textures/dlc-fr26/grain/mc.png",
+    "grainSize": [
+      59,
+      103
+    ],
+    "grainFrameFree": true
   },
   {
     "slug": "new-york-glaze",
@@ -233,7 +309,13 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       141,
       63
     ],
-    "solidColor": "#c69a72"
+    "solidColor": "#c69a72",
+    "grain": "/textures/dlc-fr26/grain/new-york-glaze.png",
+    "grainSize": [
+      56,
+      105
+    ],
+    "grainFrameFree": true
   },
   {
     "slug": "pearl-white",
@@ -250,7 +332,13 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       140,
       70
     ],
-    "solidColor": "#eaebed"
+    "solidColor": "#eaebed",
+    "grain": "/textures/dlc-fr26/grain/pearl-white.png",
+    "grainSize": [
+      56,
+      102
+    ],
+    "grainFrameFree": true
   },
   {
     "slug": "peccan",
@@ -268,7 +356,13 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       140,
       59
     ],
-    "solidColor": "#aa7a61"
+    "solidColor": "#aa7a61",
+    "grain": "/textures/dlc-fr26/grain/peccan.png",
+    "grainSize": [
+      24,
+      24
+    ],
+    "grainFrameFree": false
   },
   {
     "slug": "port",
@@ -285,7 +379,13 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       141,
       56
     ],
-    "solidColor": "#be7f6c"
+    "solidColor": "#be7f6c",
+    "grain": "/textures/dlc-fr26/grain/port.png",
+    "grainSize": [
+      56,
+      106
+    ],
+    "grainFrameFree": true
   },
   {
     "slug": "slim-shaker-alabaster",
@@ -302,7 +402,13 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       141,
       57
     ],
-    "solidColor": "#eff3f5"
+    "solidColor": "#eff3f5",
+    "grain": "/textures/dlc-fr26/grain/slim-shaker-alabaster.png",
+    "grainSize": [
+      56,
+      108
+    ],
+    "grainFrameFree": true
   },
   {
     "slug": "slim-shaker-ebony",
@@ -319,7 +425,13 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       141,
       58
     ],
-    "solidColor": "#2d2d33"
+    "solidColor": "#2d2d33",
+    "grain": "/textures/dlc-fr26/grain/slim-shaker-ebony.png",
+    "grainSize": [
+      56,
+      107
+    ],
+    "grainFrameFree": true
   },
   {
     "slug": "versa-shaker",
@@ -336,7 +448,13 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       141,
       58
     ],
-    "solidColor": "#c7b695"
+    "solidColor": "#c7b695",
+    "grain": "/textures/dlc-fr26/grain/versa-shaker.png",
+    "grainSize": [
+      56,
+      104
+    ],
+    "grainFrameFree": true
   },
   {
     "slug": "white-shaker",
@@ -353,6 +471,12 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       140,
       60
     ],
-    "solidColor": "#e7eaef"
+    "solidColor": "#e7eaef",
+    "grain": "/textures/dlc-fr26/grain/white-shaker.png",
+    "grainSize": [
+      56,
+      105
+    ],
+    "grainFrameFree": true
   }
 ];

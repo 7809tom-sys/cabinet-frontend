@@ -45,7 +45,8 @@ import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { searchCatalogItems } from "@shared/catalogCodeSearch";
 import { AEF_PRINTED_GEOMETRY_MARKER } from "@shared/aefFramelessGeometry";
-import { dlcFaceTextureWindow, type DlcFaceCrop } from "@shared/dlcFr26Textures";
+import { dlcFaceTextureWindow, dlcPhotoLightCompensation, type DlcFaceCrop } from "@shared/dlcFr26Textures";
+import { DARK_STAIN_DOOR_LIGHTS, RESTORED_DOOR_LIGHTS, isVeryDarkCabinetStain } from "@shared/doorRenderLights";
 import { combinedSwatchTextureWindow, type FaceSourceKind, type FaceTextureWindow } from "@shared/doorFaceRecognition";
 import { RAISED_PANEL_BEVEL_DEPTH_IN, RAISED_PANEL_BEVEL_WIDTH_IN, resolveDoorProfile } from "@shared/doorStyleAppearance";
 import { attachSlopedRaisedPanel, effectiveRaisedBevelDepthIn, threeDFaceUsesRaisedPanelBevel } from "./raisedPanelBevel";
@@ -5121,7 +5122,7 @@ export function addCabinet(
       if (!source || typeof source.clone !== "function") return;
       const material = source.clone();
       material.map = drawerTexture;
-      material.color.set("#ffffff");
+      material.color.set(dlcPhotoTint);
       material.needsUpdate = true;
       material.userData = { ...material.userData, drawerFrontSample: true };
       mesh.material = material;
@@ -5131,7 +5132,11 @@ export function addCabinet(
   // The active catalog sample is applied to actual door faces.
   // Shaker rails and stiles remain physical meshes over those faces, preserving
   // the selected Door Style's recessed-panel construction in the 3D Designer.
-  const faceColor = threeDFaceMaterialColor(color, Boolean(doorTexture));
+  // DLC photo textures: cancel the scene rig's brightening so the render matches the sample photo.
+  const dlcPhotoTint = dlcDoorFinish
+    ? dlcPhotoLightCompensation(isVeryDarkCabinetStain(dlcDoorFinish) ? DARK_STAIN_DOOR_LIGHTS : RESTORED_DOOR_LIGHTS).hex
+    : "#ffffff";
+  const faceColor = threeDFaceMaterialColor(color, Boolean(doorTexture)) === "#ffffff" ? dlcPhotoTint : threeDFaceMaterialColor(color, Boolean(doorTexture));
 	  const doorFinishSurface = threeDDoorFinishSurfaceProfile(doorProfile?.finishSheen, Boolean(doorTexture));
 	  const faceMaterial = new THREE.MeshPhysicalMaterial({
 	    color: faceColor,
@@ -5142,7 +5147,23 @@ export function addCabinet(
   let plainStructuralColor = structuralFinish.color;
   let structuralSampleTexture: THREE.Texture | null = null;
   const exposedSidesMatchDoorFace = doorProfile?.exposedSidesMatchDoorFace === true && Boolean(doorTexture) && !dlcDoorFinish;
+  // DLC styles: sides, end panels, skins and carcass carry the door's grain (a frame-free patch, tiled
+  // mirrored so seams do not show) in the door's colour. Never the door photo with its frame lines.
+  let dlcGrainTexture: THREE.Texture | null = null;
+  const applyDlcGrain = () => {
+    if (!dlcGrainTexture) return;
+    for (const material of [...structuralFinishMaterials, ...flatExposedFinishMaterials]) {
+      material.map = dlcGrainTexture;
+      material.color.set(dlcPhotoTint);
+      material.needsUpdate = true;
+      material.userData = { ...material.userData, dlcSideGrain: true, usesDoorImage: false, framelessDoorFaceSide: false };
+    }
+  };
   const applyStructuralFinish = (finishColor: string, _sampleTexture: THREE.Texture | null = null) => {
+    applyStructuralFinishBase(finishColor, _sampleTexture);
+    applyDlcGrain();
+  };
+  const applyStructuralFinishBase = (finishColor: string, _sampleTexture: THREE.Texture | null = null) => {
     if (exposedSidesMatchDoorFace && doorTexture) {
       const applied = applyThreeDDoorFaceStructuralFinish(
         [...structuralFinishMaterials, ...flatExposedFinishMaterials],
@@ -5171,6 +5192,18 @@ export function addCabinet(
   };
   applyPlainStructuralFinish = applyStructuralFinish;
   applyStructuralFinish(color, null);
+  if (dlcDoorFinish && surfaceTextures?.faceCrop?.grainUrl) {
+    new THREE.TextureLoader().load(surfaceTextures.faceCrop.grainUrl, (texture) => {
+      texture.colorSpace = THREE.SRGBColorSpace;
+      applyThreeDFaceTextureFiltering(texture, surfaceTextures?.maxAnisotropy);
+      // Mirrored tiles, about one door-panel per tile; grain runs vertically like the doors.
+      texture.wrapS = THREE.MirroredRepeatWrapping;
+      texture.wrapT = THREE.MirroredRepeatWrapping;
+      texture.repeat.set(2, 1.5);
+      dlcGrainTexture = texture;
+      applyStructuralFinish(color, null);
+    });
+  }
 	  const trimMaterial = new THREE.MeshPhysicalMaterial({ color: faceColor, map: doorTexture, ...doorFinishSurface });
 	  // A per-host Door Style sample can fail to load. Faces and their physical
 	  // rails must then fall back together to the chosen style color instead of
@@ -5186,7 +5219,7 @@ export function addCabinet(
 	    map.center.set(0.5, 0.5);
 	    map.rotation = piece === "rail" ? Math.PI / 2 : 0;
 	    map.needsUpdate = true;
-	    const material = new THREE.MeshPhysicalMaterial({ color: "#ffffff", map, ...doorFinishSurface });
+	    const material = new THREE.MeshPhysicalMaterial({ color: dlcPhotoTint, map, ...doorFinishSurface });
 	    material.userData = { grainPiece: piece, grainDirection: doorProfile.grainDirection };
 	    textureMaterials.push(material);
 	    return material;
@@ -13717,7 +13750,7 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 		        {catalogDragMeasurement?.fit.status === "valid" && <ThreeDRemainingSpaceLine before={catalogDragMeasurement.fit.before} after={catalogDragMeasurement.fit.after} />}
 		        {hybridPlanUnderlay && <div data-testid="three-d-plan-underlay-badge" className="pointer-events-none absolute left-3 top-3 z-20 rounded-md border border-[#d9c196] bg-white/90 px-2.5 py-1.5 text-[11px] font-semibold text-[#634b20] shadow-sm backdrop-blur">3D over plan · same placement rules</div>}
 	        {temporaryPreviewMessage && <div data-testid="three-d-preview-fade" aria-hidden="true" className={`pointer-events-none absolute inset-0 z-10 bg-background transition-opacity duration-200 motion-reduce:hidden ${temporaryPreviewFading ? "opacity-40" : "opacity-0"}`} />}
-        {embedded && onDoorStyleChange && <div className="absolute left-1/2 top-3 z-30 flex max-w-[calc(100%-1.5rem)] -translate-x-1/2" onPointerDown={(event) => event.stopPropagation()} onPointerUp={(event) => event.stopPropagation()}><ColorStyleQuickPicker testId="three-d-color-style-picker" styles={doorStyleChoices} value={selectedDoorStyleId} onChange={onDoorStyleChange} /></div>}
+        {embedded && onDoorStyleChange && <div className="absolute bottom-3 left-3 z-30 flex max-w-[calc(100%-1.5rem)]" onPointerDown={(event) => event.stopPropagation()} onPointerUp={(event) => event.stopPropagation()}><ColorStyleQuickPicker testId="three-d-color-style-picker" styles={doorStyleChoices} value={selectedDoorStyleId} onChange={onDoorStyleChange} /></div>}
         {embedded && <><div className={`${THREE_D_EMBEDDED_TOOLBAR_CLASS} ${tabletOverlay ? "hidden" : "hidden sm:flex"}`} onPointerDown={(event) => event.stopPropagation()} onPointerUp={(event) => event.stopPropagation()}>{onHardwareStyleChange && <ThreeDHandlesControl value={hardwareStyleId} onChange={onHardwareStyleChange} />}<button type="button" data-testid="three-d-add-cabinet" onClick={() => setWorkspacePanel("catalog")} className="inline-flex items-center gap-1.5 rounded-md bg-[#1a2744] px-2.5 py-1.5 text-xs font-semibold text-white transition hover:bg-[#1a2744]/85 active:scale-95"><Plus className="h-3.5 w-3.5" />Add cabinet</button>{cabinetFinishPreviewOptions.length > 1 && <button type="button" data-testid="three-d-cabinet-color-toggle" onClick={cycleCabinetPreviewFinish} aria-pressed={Boolean(selectedCabinetPreviewFinish)} className={`inline-flex max-w-52 items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-semibold transition active:scale-95 ${selectedCabinetPreviewFinish ? "border-[#a87f33] bg-[#fff7e8] text-[#614512]" : "bg-background text-[#1a2744] hover:bg-muted"}`} title="Temporarily show every cabinet and rear filler in the next selected finish"><Palette className="h-3.5 w-3.5" /><span className="h-3 w-3 shrink-0 rounded-full border border-black/15" style={{ backgroundColor: selectedCabinetPreviewFinish?.color ?? catalogFinish }} /><span className="truncate">Color: {selectedCabinetPreviewFinish?.name ?? "Plan colors"}</span></button>}{onFlooringRotationChange && <FlooringRotationControl value={flooringRotationDeg} onChange={onFlooringRotationChange} testId="three-d-flooring-rotation" />}<button type="button" data-testid="three-d-wall-heights" onClick={() => setWorkspacePanel("room")} className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-semibold text-[#1a2744] transition hover:bg-muted active:scale-95" aria-label="Set individual wall heights"><Rotate3D className="h-3.5 w-3.5" />Wall heights</button><button type="button" data-testid="three-d-room-context-toggle" onClick={() => setShowRoomContext((current) => !current)} className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-semibold text-[#1a2744] transition hover:bg-muted active:scale-95" aria-pressed={showRoomContext} title={showRoomContext ? "Hide the room walls for an unobstructed cabinet view" : "Show the finished-thickness room walls and mitered corners"}><Eye className="h-3.5 w-3.5" />{showRoomContext ? "Hide room walls" : "Show room walls"}</button>{onToggleWallLayer && <button type="button" data-testid="three-d-toggle-wall-cabinets" onClick={onToggleWallLayer} className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-semibold text-[#1a2744] transition hover:bg-muted active:scale-95" aria-pressed={showWallLayer}><PanelTop className="h-3.5 w-3.5" />{showWallLayer ? "Hide wall cabinets" : "Show wall cabinets"}</button>}</div><div data-testid="three-d-mobile-canvas-tools" className={`absolute right-3 top-3 z-20 flex items-start gap-1 ${tabletOverlay ? "" : "sm:hidden"}`} onPointerDown={(event) => event.stopPropagation()} onPointerUp={(event) => event.stopPropagation()}>{onHardwareStyleChange && <ThreeDHandlesControl value={hardwareStyleId} onChange={onHardwareStyleChange} />}{!tabletOverlay && <button type="button" data-testid="three-d-add-cabinet-mobile" onClick={() => setWorkspacePanel("catalog")} className="inline-flex h-10 items-center gap-1.5 rounded-md bg-[#1a2744] px-3 text-xs font-semibold text-white shadow-sm active:scale-95"><Plus className="h-4 w-4" />Add</button>}<div className="relative"><button type="button" data-testid="three-d-mobile-canvas-tools-trigger" onClick={() => setMobileCanvasToolsOpen((open) => !open)} aria-expanded={mobileCanvasToolsOpen} aria-label="Canvas controls" className="inline-flex h-11 w-11 items-center justify-center rounded-md border bg-background/95 text-[#1a2744] shadow-sm active:scale-95"><PanelTop className="h-4 w-4" /></button>{mobileCanvasToolsOpen && <div data-testid="three-d-mobile-canvas-tools-menu" className="absolute right-0 top-11 w-56 rounded-lg border bg-background/95 p-2 text-xs shadow-lg backdrop-blur">{cabinetFinishPreviewOptions.length > 1 && <button type="button" data-testid="three-d-mobile-cabinet-color-toggle" onClick={() => { cycleCabinetPreviewFinish(); setMobileCanvasToolsOpen(false); }} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left font-semibold text-[#1a2744] hover:bg-muted" aria-pressed={Boolean(selectedCabinetPreviewFinish)}><Palette className="h-3.5 w-3.5" /><span className="h-3 w-3 shrink-0 rounded-full border border-black/15" style={{ backgroundColor: selectedCabinetPreviewFinish?.color ?? catalogFinish }} /><span className="truncate">Color: {selectedCabinetPreviewFinish?.name ?? "Plan colors"}</span></button>}<button type="button" data-testid="three-d-mobile-wall-heights" onClick={() => { setWorkspacePanel("room"); setMobileCanvasToolsOpen(false); }} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left font-semibold text-[#1a2744] hover:bg-muted"><Rotate3D className="h-3.5 w-3.5" />Move wall</button>{onToggleWallLayer && <button type="button" data-testid="three-d-mobile-toggle-wall-cabinets" onClick={() => { onToggleWallLayer(); setMobileCanvasToolsOpen(false); }} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left font-semibold text-[#1a2744] hover:bg-muted" aria-pressed={showWallLayer}><PanelTop className="h-3.5 w-3.5" />{showWallLayer ? "Hide walls" : "Show walls"}</button>}{fillerNoticeEntries.length > 0 && <div data-testid="three-d-mobile-filler-notice" className={`mt-1 border-t px-2.5 pt-2 ${hasOverMaximumFiller ? "border-red-300 text-red-950" : "border-[#ead9b6] text-[#634b20]"}`}><p className="font-semibold">Fillers</p>{fillerNoticeEntries.map((label) => <p key={`${label.masterCode}-${label.installedWidth}-${label.maximum}-${label.over}`} className="mt-1 truncate font-medium">{label.masterCode} · {formatEighthInches(label.installedWidth)} installed · {formatEighthInches(label.maximum)} max{label.over ? " · OVER MAX" : ""}{label.quantity > 1 ? <> · ×{label.quantity}</> : null}</p>)}</div>}</div>}</div></div></>}
         {fillerNoticeEntries.length > 0 && tabletOverlay && <div data-testid="three-d-filler-notice-chip" className="absolute left-3 top-3 z-20" onPointerDown={(event) => event.stopPropagation()} onPointerUp={(event) => event.stopPropagation()}>
           <button type="button" onClick={() => setFillerChipOpen((open) => !open)} aria-expanded={fillerChipOpen} className={`inline-flex h-11 items-center gap-1.5 rounded-full border bg-[#fffaf1]/95 px-3 text-xs font-semibold shadow-sm backdrop-blur active:scale-95 ${hasOverMaximumFiller ? "border-red-300 text-red-950" : "border-[#d9c196] text-[#634b20]"}`}>Fillers ({fillerNoticePieceCount})</button>
