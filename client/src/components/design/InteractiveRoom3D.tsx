@@ -5108,6 +5108,10 @@ export function addCabinet(
         const material = source.clone();
         material.map = null;
         material.color.set(drawerSolidColor);
+        if (dlcPhotoComp) {
+          material.color.multiplyScalar(dlcPhotoComp.linear);
+          material.toneMapped = false;
+        }
         material.needsUpdate = true;
         material.userData = { ...material.userData, drawerFrontSolidColor: drawerSolidColor };
         mesh.material = material;
@@ -5123,6 +5127,7 @@ export function addCabinet(
       const material = source.clone();
       material.map = drawerTexture;
       material.color.set(dlcPhotoTint);
+      if (dlcPhotoComp) material.toneMapped = false;
       material.needsUpdate = true;
       material.userData = { ...material.userData, drawerFrontSample: true };
       mesh.material = material;
@@ -5133,15 +5138,19 @@ export function addCabinet(
   // Shaker rails and stiles remain physical meshes over those faces, preserving
   // the selected Door Style's recessed-panel construction in the 3D Designer.
   // DLC photo textures: cancel the scene rig's brightening so the render matches the sample photo.
-  const dlcPhotoTint = dlcDoorFinish
-    ? dlcPhotoLightCompensation(isVeryDarkCabinetStain(dlcDoorFinish) ? DARK_STAIN_DOOR_LIGHTS : RESTORED_DOOR_LIGHTS).hex
-    : "#ffffff";
+  // These materials are drawn with tone mapping off (see dlcPhotoLightCompensation): light finishes keep
+  // their grain contrast and their true brightness.
+  const dlcPhotoComp = dlcDoorFinish
+    ? dlcPhotoLightCompensation(isVeryDarkCabinetStain(dlcDoorFinish) ? DARK_STAIN_DOOR_LIGHTS : RESTORED_DOOR_LIGHTS)
+    : null;
+  const dlcPhotoTint = dlcPhotoComp?.hex ?? "#ffffff";
   const faceColor = threeDFaceMaterialColor(color, Boolean(doorTexture)) === "#ffffff" ? dlcPhotoTint : threeDFaceMaterialColor(color, Boolean(doorTexture));
 	  const doorFinishSurface = threeDDoorFinishSurfaceProfile(doorProfile?.finishSheen, Boolean(doorTexture));
 	  const faceMaterial = new THREE.MeshPhysicalMaterial({
 	    color: faceColor,
 	    map: doorTexture,
 	    ...doorFinishSurface,
+	    ...(dlcPhotoComp ? { toneMapped: false } : {}),
 	  });
   const structuralFinish = threeDStructuralFinish(color, Boolean(doorTexture));
   let plainStructuralColor = structuralFinish.color;
@@ -5151,12 +5160,18 @@ export function addCabinet(
   // mirrored so seams do not show) in the door's colour. Never the door photo with its frame lines.
   let dlcGrainTexture: THREE.Texture | null = null;
   const applyDlcGrain = () => {
-    if (!dlcGrainTexture) return;
+    if (!dlcPhotoComp) return;
     for (const material of [...structuralFinishMaterials, ...flatExposedFinishMaterials]) {
-      material.map = dlcGrainTexture;
-      material.color.set(dlcPhotoTint);
+      // Same light handling as the doors, grain patch or not, so sides and doors always match.
+      material.toneMapped = false;
+      if (dlcGrainTexture) {
+        material.map = dlcGrainTexture;
+        material.color.set(dlcPhotoTint);
+        material.userData = { ...material.userData, dlcSideGrain: true, usesDoorImage: false, framelessDoorFaceSide: false };
+      } else {
+        material.color.multiplyScalar(dlcPhotoComp.linear);
+      }
       material.needsUpdate = true;
-      material.userData = { ...material.userData, dlcSideGrain: true, usesDoorImage: false, framelessDoorFaceSide: false };
     }
   };
   const applyStructuralFinish = (finishColor: string, _sampleTexture: THREE.Texture | null = null) => {
@@ -5204,7 +5219,7 @@ export function addCabinet(
       applyStructuralFinish(color, null);
     });
   }
-	  const trimMaterial = new THREE.MeshPhysicalMaterial({ color: faceColor, map: doorTexture, ...doorFinishSurface });
+	  const trimMaterial = new THREE.MeshPhysicalMaterial({ color: faceColor, map: doorTexture, ...doorFinishSurface, ...(dlcPhotoComp ? { toneMapped: false } : {}) });
 	  // A per-host Door Style sample can fail to load. Faces and their physical
 	  // rails must then fall back together to the chosen style color instead of
 	  // leaving the rails with an unresolved (black) texture map.
@@ -5219,7 +5234,7 @@ export function addCabinet(
 	    map.center.set(0.5, 0.5);
 	    map.rotation = piece === "rail" ? Math.PI / 2 : 0;
 	    map.needsUpdate = true;
-	    const material = new THREE.MeshPhysicalMaterial({ color: dlcPhotoTint, map, ...doorFinishSurface });
+	    const material = new THREE.MeshPhysicalMaterial({ color: dlcPhotoTint, map, ...doorFinishSurface, ...(dlcPhotoComp ? { toneMapped: false } : {}) });
 	    material.userData = { grainPiece: piece, grainDirection: doorProfile.grainDirection };
 	    textureMaterials.push(material);
 	    return material;
