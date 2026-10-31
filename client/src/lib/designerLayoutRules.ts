@@ -209,13 +209,13 @@ export const DESIGNER_LAYOUT_RULES: readonly DesignerLayoutRule[] = [
     id: "refrigerator-bay",
     name: "refrigerator bay",
     phase: "auto-design-stage",
-    summary: "The refrigerator keeps its panels and the cabinet above. The whole bay may slide at most 6 inches along its wall to close a gap.",
+    summary: "The refrigerator keeps its panels and the cabinet above. The whole bay may slide at most 6 inches along its wall to close a gap. A refrigerator seated in a corner stays there: the panel that would leave the wall is omitted, and the open-side panel is field-cut flush to the refrigerator depth.",
   },
   {
     id: "corner-appliance-nudge",
     name: "corner appliance nudge",
     phase: "auto-design-stage",
-    summary: "A range may slide up to 3 inches away from a corner. A user-measured refrigerator may slide up to 12 inches. An auto-placed refrigerator keeps the 6 inch cap. The smallest shift that clears the corner is used.",
+    summary: "A range may slide up to 3 inches away from a corner. A refrigerator that sits in the corner is the corner occupant: no blind corner is added there and the refrigerator is not nudged out. A refrigerator that is only near the corner may still slide up to 12 inches when the user measured it, or 6 inches when it was auto-placed. The smallest shift that clears the corner is used.",
   },
   {
     id: "sink-fixture-on-base",

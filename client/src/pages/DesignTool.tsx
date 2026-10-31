@@ -150,7 +150,7 @@ import { kitchenRuleNumber } from "@/lib/kitchenRuleParameters";
 import { suggestReadjustOptions, stockPromptOrderNote, type ReadjustOption, type StockPromptChoice } from "@/lib/stockPrompt";
 import { useDesignerInventory } from "@/lib/useDesignerInventory";
 import { InventoryDesignStockControl, InventoryStockBadge, OutOfStockChoiceDialog, SinkBaseSubstitutionNotice } from "@/components/design/InventoryStockNotice";
-import { unavailableSavedStyleIds } from "@/lib/unavailableSavedStyles";
+import { sessionSellableStyleIds, unavailableSavedStyleIds } from "@/lib/unavailableSavedStyles";
 import { applyGlassStackerBulkPlacement as applyBulkGlassStackerPlacements, glassStackerBulkCeilingBlocksAtHeight, glassStackerBulkHeightOptions, glassStackerBulkPlacementCandidates, glassStackerUidsForRemoval, type GlassStackerBulkPlacementCandidate } from "@/lib/glassStackerBulkPlacement";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -236,12 +236,12 @@ import { evaluateAutoDesignCornerFit, type AutoDesignCornerFit } from "@/lib/cor
 import { useKitchenRuleParameterSync } from "@/lib/kitchenRulesApi";
 import { rangeBridgeSpec, reviewAfterShift, separateRangeAndRefrigerator } from "@/lib/kitchenAdjacency";
 import { bakesALot, cooksALot, normalizeKitchenUsage } from "@/lib/kitchenUsage";
-import { AUTO_DESIGN_REFRIGERATOR_WALL_END_SHIFT_IN, buildMandatoryAutoDesignRefrigeratorBay } from "@/lib/autoDesignRefrigeratorBay";
+import { acceptMeasuredCornerRefrigeratorBay } from "@/lib/autoDesignRefrigeratorBay";
 import { buildAutoDesignWallCabinets, resolveWallHeightClass, type AutoDesignUpperCorner } from "@/lib/autoDesignWallCabinets";
 import { isWallWineRackCabinet, withWallWineRacks } from "@shared/wallWineRack";
 import { seatAutoDesignCornerFromCatalog } from "@/lib/autoDesignCornerPlacement";
 import { type AutoDesignApplianceMove } from "@/lib/autoDesignCornerSeating";
-import { validatePlacedCornerRefrigerator } from "@/lib/cornerRefrigeratorPlacement";
+import { cornerOccupantRefrigeratorUids, refrigeratorOccupyingCorner, validatePlacedCornerRefrigerator } from "@/lib/cornerRefrigeratorPlacement";
 import { validatePlacedCornerRange, CORNER_RANGE_HANDLE_FILLER_IN } from "@/lib/cornerRangePlacement";
 import { buildGlassCornerCatalogChoices } from "@/lib/glassCornerCatalog";
 import {
@@ -2641,15 +2641,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // Data — door-style-first: members pick a door style; the supply line behind
   // it is resolved server-side and never shown.
   const { data: doorStylesRaw, isError: doorStylesError } = trpc.doorStyles.list.useQuery();
-  const unavailableStyleIds = useMemo(
-    () => doorStylesRaw?.length
-      ? unavailableSavedStyleIds(styleId, [styleA, styleB, ...placed.map((cabinet) => cabinet.styleId)], doorStylesRaw.map((style) => style.id))
-      : [],
-    [doorStylesRaw, styleId, styleA, styleB, placed],
-  );
   const selectedStyleMissingFromPicker =
     styleId != null && !(doorStylesRaw ?? []).some((style) => style.id === styleId);
-  const { data: persistedSelectedStyle } = trpc.doorStyles.byId.useQuery(
+  const { data: persistedSelectedStyle, isFetching: persistedStyleFetching } = trpc.doorStyles.byId.useQuery(
     { id: styleId ?? 0 },
     { enabled: selectedStyleMissingFromPicker },
   );
@@ -2663,6 +2657,26 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         : (doorStylesRaw ?? []),
     [doorStylesRaw, persistedSelectedStyle],
   );
+  const freshOpenedStyleId = latchedFreshStart.fresh ? latchedFreshStart.doorStyleId : null;
+  const freshOpenedStyleUsable = freshOpenedStyleId != null && (
+    doorStyles.some((style) => style.id === freshOpenedStyleId)
+    || (selectedStyleMissingFromPicker && persistedStyleFetching)
+  );
+  const unavailableStyleIds = useMemo(
+    () => doorStylesRaw?.length
+      ? unavailableSavedStyleIds(
+          styleId,
+          [styleA, styleB, ...placed.map((cabinet) => cabinet.styleId)],
+          sessionSellableStyleIds(doorStylesRaw.map((style) => style.id), freshOpenedStyleUsable && freshOpenedStyleId != null
+            ? { styleId: freshOpenedStyleId, usable: true }
+            : null),
+        )
+      : [],
+    [doorStylesRaw, freshOpenedStyleId, freshOpenedStyleUsable, placed, styleA, styleB, styleId],
+  );
+  const freshOpenRejected = freshOpenedStyleId != null
+    && unavailableStyleIds.includes(freshOpenedStyleId)
+    && !doorStyles.some((style) => style.id === freshOpenedStyleId);
   const styleDistributorIdById = useMemo(
     () => new Map((doorStyles ?? []).map((style) => [style.id, style.distributorId] as const)),
     [doorStyles],
@@ -3974,6 +3988,17 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       }
       const target = autoDesignCornerSlotPoint(slot, room, stage.input.originCorner, stage.input.runDirection);
       if (!target) return abandon(`${slot.label} does not resolve to a real shared wall vertex. No remaining cabinets were added.`);
+      const cornerRefrigerator = refrigeratorOccupyingCorner({
+        placed: working,
+        room,
+        corner: target,
+        wallIds: [firstWall.engineWallId, secondWall.engineWallId],
+      });
+      if (cornerRefrigerator) {
+        const note = `${slot.label}: the refrigerator stays in this corner, so no blind corner cabinet was added and the refrigerator was not moved.`;
+        setAutoDesignLayoutNotes((current) => current.includes(note) ? current : [...current, note]);
+        continue;
+      }
       const seated = seatAutoDesignCornerFromCatalog({
         slot,
         options: stage.cornerOptions,
@@ -4041,7 +4066,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       openings: stageOpenings,
       catalog: stage.straightBaseCatalog,
       origins: stage.anchorOrigins,
-      lockedUids: [],
+      lockedUids: cornerOccupantRefrigeratorUids(working, room),
     });
     working = wiggle.placed;
     const separated = separateRangeAndRefrigerator({
@@ -10151,9 +10176,19 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         .filter((item) => !existingOptionUids.has(item.uid) && item.uid !== refrigeratorCabinetToReplace?.uid)
         .map((item) => item.uid === fridge.uid ? configuredFridge : item);
 	      const fittedOptions = fitExplicitRefrigeratorOptionPlacements(configuredPlaced, toPlace, fridge.uid, room);
+	      const cornerBay = acceptMeasuredCornerRefrigeratorBay({
+	        refrigerator: configuredFridge,
+	        room,
+	        additions: toPlace,
+	        fitted: fittedOptions,
+	        reservation: { wall: cabinetWall(configuredFridge, room), start: 0, end: 0 },
+	      });
+	      const bayExisting = cornerBay?.existing ?? fittedOptions.existing;
+	      const bayAdditions = cornerBay?.additions ?? fittedOptions.additions;
+	      const appliedShift = cornerBay?.shiftIn ?? fittedOptions.shiftIn;
 	      const previewResult = appendRefrigeratorEnclosurePlacements(
-	        fittedOptions.existing,
-	        fittedOptions.additions,
+	        bayExisting,
+	        bayAdditions,
 	        fridge.uid,
 	        room,
 	      );
@@ -10189,9 +10224,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       const committedPreview = previewResult.placed;
       placedRef.current = committedPreview;
       setPlaced(() => committedPreview);
-	      if (Math.abs(fittedOptions.shiftIn) > COLLISION_EPSILON_IN) {
+	      if (cornerBay?.note) {
+	        toast.info(cornerBay.note, { duration: 12000 });
+	      } else if (Math.abs(appliedShift) > COLLISION_EPSILON_IN) {
 	        toast.info(
-	          `Refrigerator and selected parts moved ${formatEighthInches(Math.abs(fittedOptions.shiftIn))} along the wall to fit the selected panels. Existing cabinets stayed in place.`,
+	          `Refrigerator and selected parts moved ${formatEighthInches(Math.abs(appliedShift))} along the wall to fit the selected panels. Existing cabinets stayed in place.`,
 	        );
 	      }
       if (omittedCapFillerCodes.length > 0) {
@@ -17344,8 +17381,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 		            )}
 		            {unavailableStyleIds.length > 0 && (
 		              <div role="status" data-testid="unavailable-saved-style-warning" className="mb-2 rounded-lg border border-amber-500/60 bg-amber-50 px-3 py-3 text-xs text-amber-950">
-		                <p className="font-semibold">Saved door style unavailable in the current priced catalog: {unavailableStyleIds.map((id) => `Style #${id}`).join(", ")}</p>
-		                <p className="mt-1 leading-snug">The cabinets and drawing are preserved. Prices and availability cannot be inferred for this finish; choose a currently available door style and review each flagged cabinet before checkout.</p>
+		                <p className="font-semibold">{freshOpenRejected
+		                  ? `Door style #${freshOpenedStyleId} could not be opened. It is not in the Designer catalog.`
+		                  : `Saved door style unavailable in the current priced catalog: ${unavailableStyleIds.map((id) => `Style #${id}`).join(", ")}`}</p>
+		                <p className="mt-1 leading-snug">{freshOpenRejected
+		                  ? "Choose a listed door style to price cabinets. This new floor plan did not replace another saved design."
+		                  : "The cabinets and drawing are preserved. Prices and availability cannot be inferred for this finish; choose a currently available door style and review each flagged cabinet before checkout."}</p>
 		                <button type="button" className="mt-2 rounded border border-amber-600 px-2 py-1 font-semibold hover:bg-amber-100" onClick={() => {
 		                  if (panelDrawerMode) setMobilePanel("style");
 		                  else document.getElementById("door-style-picker-card")?.scrollIntoView({ behavior: "smooth", block: "center" });

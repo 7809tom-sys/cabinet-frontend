@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_ROOM, wallPlacementAt, wallRunFrame, wallRunJoinAt } from "./design";
-import { placeCornerRefrigerator, validatePlacedCornerRefrigerator } from "./cornerRefrigeratorPlacement";
+import { cornerOccupantRefrigeratorUids, placeCornerRefrigerator, refrigeratorOccupyingCorner, validatePlacedCornerRefrigerator } from "./cornerRefrigeratorPlacement";
 
 const refrigerator = {
   masterCode: "FRIDGE-36",
@@ -82,6 +82,19 @@ describe("corner refrigerator placement", () => {
     const spot = wallPlacementAt(48, 36, 24, "top", DEFAULT_ROOM);
     const candidate = { ...refrigerator, uid: "fridge", cabinetId: 0, x: spot.x, y: spot.y, rotation: spot.rotation, height: 84, numberOfDoors: 2, numberOfDrawers: 0 };
     expect(validatePlacedCornerRefrigerator(candidate, DEFAULT_ROOM, [])).toBeNull();
+  });
+
+  it("treats a refrigerator flush at a wall junction as the corner occupant and leaves one 30 inches away alone", () => {
+    const frame = wallRunFrame("right", DEFAULT_ROOM)!;
+    const join = wallRunJoinAt(frame, "start", DEFAULT_ROOM)!;
+    const flush = wallPlacementAt(0, 36, 24, "right", DEFAULT_ROOM);
+    const away = wallPlacementAt(30, 36, 24, "right", DEFAULT_ROOM);
+    const fridgeAtCorner = { ...refrigerator, uid: "corner-fridge", cabinetId: 0, ...flush, height: 70, numberOfDoors: 2, numberOfDrawers: 0, wallOffset: 0 };
+    const fridgeAway = { ...refrigerator, uid: "away-fridge", cabinetId: 0, ...away, height: 70, numberOfDoors: 2, numberOfDrawers: 0, wallOffset: 30 };
+    const wallIds = ["right", join.frame.id];
+    expect(refrigeratorOccupyingCorner({ placed: [fridgeAtCorner], room: DEFAULT_ROOM, corner: frame.start, wallIds })?.uid).toBe("corner-fridge");
+    expect(refrigeratorOccupyingCorner({ placed: [fridgeAway], room: DEFAULT_ROOM, corner: frame.start, wallIds })).toBeNull();
+    expect(cornerOccupantRefrigeratorUids([fridgeAtCorner, fridgeAway], DEFAULT_ROOM)).toEqual(["corner-fridge"]);
   });
 
   it("rejects a corner refrigerator collision before generic magnetic recovery can move it", () => {

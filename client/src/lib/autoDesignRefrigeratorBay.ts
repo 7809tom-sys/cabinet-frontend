@@ -2,6 +2,7 @@ import { framelessAboveFridgeHeight } from "./aefAboveFridge";
 import { catalogSizeFromNumbers, pickClosestCatalogSize } from "./closestCatalogSize";
 import { refrigeratorEndPanelInstalledDepth } from "./refrigeratorEndPanelCut";
 import {
+  cabinetWall,
   clampFillerExtensionIn,
   dim,
   refrigeratorBayRunMetrics,
@@ -9,6 +10,9 @@ import {
   refrigeratorSurroundElevation,
   wallPlacementAt,
   wallPlacementAtUnbounded,
+  wallRunFrame,
+  wallRunOffset,
+  wallRunSpan,
   type DesignCabinet,
   type PlacedCabinet,
   type RoomData,
@@ -312,6 +316,106 @@ export function buildMandatoryAutoDesignRefrigeratorBay({
       end: bay.openingEnd + panelThickness,
     },
     notes,
+  };
+}
+
+export type MeasuredRefrigeratorBay = {
+  existing: PlacedCabinet[];
+  additions: PlacedCabinet[];
+  shiftIn: number;
+  omittedCornerPanel: "left-panel" | "right-panel" | null;
+  reservation: { wall: string; start: number; end: number };
+  /** Told to the user when the refrigerator stays in the corner. */
+  note: string | null;
+};
+
+function measuredAlong(item: PlacedCabinet, side: WallSide, room: RoomData): { start: number; end: number } {
+  const start = item.wallId === side && Number.isFinite(Number(item.wallOffset))
+    ? Number(item.wallOffset)
+    : wallRunOffset(item, side, room);
+  return { start, end: start + wallRunSpan(item, side, room) };
+}
+
+function isBayPanel(item: PlacedCabinet): boolean {
+  return item.refrigeratorAssemblyRole === "left-panel" || item.refrigeratorAssemblyRole === "right-panel";
+}
+
+function isBayFiller(item: PlacedCabinet): boolean {
+  return item.refrigeratorAssemblyRole === "bridge-left-filler" || item.refrigeratorAssemblyRole === "bridge-right-filler";
+}
+
+/**
+ * Keep a measured refrigerator that sits in a corner. The ordinary fitter
+ * slides the whole bay about 1¼ inches so both ¾ inch panels land on the same
+ * wall, and Auto-Design then refuses any slide larger than ¼ inch. That
+ * refusal is not a catalog gap: the adjoining wall already closes the corner
+ * side. Drop only the panel (and filler) that would leave the wall, leave the
+ * refrigerator where it was measured, and keep the open-side panel at the
+ * depth already field-cut flush to the refrigerator.
+ *
+ * Returns null when the slide is not explained by a corner-side panel, so the
+ * caller can still refuse a bay that overlaps another cabinet.
+ */
+export function acceptMeasuredCornerRefrigeratorBay(input: {
+  refrigerator: PlacedCabinet;
+  room: RoomData;
+  additions: readonly PlacedCabinet[];
+  fitted: { existing: PlacedCabinet[]; additions: PlacedCabinet[]; shiftIn: number };
+  reservation: { wall: string; start: number; end: number };
+}): MeasuredRefrigeratorBay | null {
+  const shiftLimit = AUTO_DESIGN_REFRIGERATOR_WALL_END_SHIFT_IN + 1e-6;
+  if (Math.abs(input.fitted.shiftIn) <= shiftLimit) {
+    return {
+      existing: input.fitted.existing,
+      additions: input.fitted.additions,
+      shiftIn: input.fitted.shiftIn,
+      omittedCornerPanel: null,
+      reservation: {
+        wall: input.reservation.wall,
+        start: input.reservation.start + input.fitted.shiftIn,
+        end: input.reservation.end + input.fitted.shiftIn,
+      },
+      note: null,
+    };
+  }
+
+  const side = cabinetWall(input.refrigerator, input.room);
+  const frame = wallRunFrame(side, input.room);
+  if (!frame) return null;
+  const fridgeSpan = measuredAlong(input.refrigerator, side, input.room);
+  if (fridgeSpan.start < -0.02 || fridgeSpan.end > frame.length + 0.02) return null;
+
+  const offRun = (item: PlacedCabinet) => {
+    const span = measuredAlong(item, side, input.room);
+    return span.start < -0.02 || span.end > frame.length + 0.02;
+  };
+  const hanging = input.additions.filter(offRun);
+  if (hanging.length === 0 || hanging.some((item) => !isBayPanel(item) && !isBayFiller(item))) return null;
+  const omitted = hanging.find(isBayPanel);
+  const keptPanels = input.additions.filter((item) => isBayPanel(item) && !offRun(item));
+  if (!omitted || keptPanels.length === 0) return null;
+  if (omitted.refrigeratorAssemblyRole !== "left-panel" && omitted.refrigeratorAssemblyRole !== "right-panel") return null;
+
+  const dropped = new Set(hanging.map((item) => item.uid));
+  const additions = input.additions.filter((item) => !dropped.has(item.uid));
+  let start = fridgeSpan.start;
+  let end = fridgeSpan.end;
+  for (const item of additions) {
+    const span = measuredAlong(item, side, input.room);
+    start = Math.min(start, Math.max(0, span.start));
+    end = Math.max(end, Math.min(frame.length, span.end));
+  }
+  const openPanel = keptPanels[0]!;
+  const cut = openPanel.refrigeratorPanelStockDepth != null
+    ? ` The open-side ${openPanel.masterCode} panel is field-cut flush to the refrigerator depth.`
+    : "";
+  return {
+    existing: input.fitted.existing.map((item) => item.uid === input.refrigerator.uid ? input.refrigerator : item),
+    additions,
+    shiftIn: 0,
+    omittedCornerPanel: omitted.refrigeratorAssemblyRole,
+    reservation: { wall: side, start, end },
+    note: `The refrigerator stays in the corner. The corner-side end panel is omitted because the adjoining wall closes that side.${cut}`,
   };
 }
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { wallPlacementAt, type DesignCabinet, type PlacedCabinet, type RoomData } from "./design";
-import { buildMandatoryAutoDesignRefrigeratorBay } from "./autoDesignRefrigeratorBay";
+import { fitExplicitRefrigeratorOptionPlacements, wallPlacementAt, wallRunOffset, type DesignCabinet, type PlacedCabinet, type RoomData } from "./design";
+import { acceptMeasuredCornerRefrigeratorBay, buildMandatoryAutoDesignRefrigeratorBay } from "./autoDesignRefrigeratorBay";
 import catalogFixture from "./__fixtures__/autoDesignRealCatalog.json";
 
 const room: RoomData = { width: 144, depth: 120, ceilingHeight: 96 };
@@ -268,6 +268,86 @@ describe("Auto-Design refrigerator cabinet above: always the 24-inch-deep refrig
       expect(result.additions[0].depth, style).toBe(24);
       expect(result.additions[0].masterCode, style).toMatch(/24$|^WR36/);
     }
+  });
+});
+
+describe("refrigerator measured into a corner", () => {
+  function cornerFridge(along: number): PlacedCabinet {
+    const spot = wallPlacementAt(along, 36, 24, "top", room);
+    return {
+      ...refrigerator(),
+      ...spot,
+      depth: 24,
+      wallOffset: along,
+    };
+  }
+
+  function bayFor(fridge: PlacedCabinet) {
+    return buildMandatoryAutoDesignRefrigeratorBay({
+      refrigerator: fridge,
+      room,
+      caps: [source({ id: 200, masterCode: "W362424", description: "36 x 24 x 24 Refrigerator Wall", width: "36", height: "24", depth: "24" })],
+      endPanels: [source({
+        id: 201,
+        masterCode: "TEP3096",
+        description: "Tall End Panel for Refrigerator Bridge",
+        category: "Panel",
+        subCategory: "Refrigerator End Panel",
+        width: "29.875",
+        height: "96",
+        depth: "0.75",
+        placement: "tall",
+        numberOfDoors: 0,
+      })],
+      styleId: 540005,
+      framelessLine: true,
+      wallCabinetHeightIn: 30,
+      makeUid: (() => { let index = 0; return () => `corner-bay-${++index}`; })(),
+    });
+  }
+
+  it("keeps a frameless refrigerator in the corner and field-cuts the open-side panel", () => {
+    const fridge = cornerFridge(0);
+    const bay = bayFor(fridge);
+    expect(bay.ok, bay.ok ? "" : bay.message).toBe(true);
+    if (!bay.ok) return;
+    const fitted = fitExplicitRefrigeratorOptionPlacements([fridge], bay.additions, fridge.uid, room);
+    expect(fitted.shiftIn).toBeCloseTo(1.25, 5);
+    const accepted = acceptMeasuredCornerRefrigeratorBay({
+      refrigerator: fridge,
+      room,
+      additions: bay.additions,
+      fitted,
+      reservation: bay.reservation,
+    });
+    expect(accepted).not.toBeNull();
+    if (!accepted) return;
+    expect(accepted.shiftIn).toBe(0);
+    expect(accepted.omittedCornerPanel).toBe("left-panel");
+    expect(wallRunOffset(accepted.existing.find((item) => item.uid === fridge.uid)!, "top", room)).toBe(0);
+    const openPanel = accepted.additions.find((item) => item.refrigeratorAssemblyRole === "right-panel");
+    expect(openPanel).toMatchObject({ masterCode: "TEP3096", depth: 24, refrigeratorPanelStockDepth: 29.875 });
+    expect(accepted.note).toContain("stays in the corner");
+    expect(accepted.note).toContain("field-cut flush to the refrigerator depth");
+    expect(accepted.additions.some((item) => item.refrigeratorAssemblyRole === "bridge")).toBe(true);
+  });
+
+  it("keeps both panels when the refrigerator is about 30 inches away from the corner", () => {
+    const fridge = cornerFridge(30);
+    const bay = bayFor(fridge);
+    expect(bay.ok, bay.ok ? "" : bay.message).toBe(true);
+    if (!bay.ok) return;
+    const fitted = fitExplicitRefrigeratorOptionPlacements([fridge], bay.additions, fridge.uid, room);
+    const accepted = acceptMeasuredCornerRefrigeratorBay({
+      refrigerator: fridge,
+      room,
+      additions: bay.additions,
+      fitted,
+      reservation: bay.reservation,
+    });
+    expect(accepted?.omittedCornerPanel).toBeNull();
+    expect(accepted?.additions.filter((item) => item.refrigeratorAssemblyRole?.endsWith("panel"))).toHaveLength(2);
+    expect(wallRunOffset(accepted!.existing.find((item) => item.uid === fridge.uid)!, "top", room)).toBeCloseTo(30, 5);
   });
 });
 
