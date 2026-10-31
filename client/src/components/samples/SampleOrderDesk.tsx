@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { affiliateStoreInput } from "@/lib/affiliateSiteScope";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,10 +21,10 @@ const emptyShip = {
   affiliateId: "",
 };
 
-export function SampleOrderDesk({ mode }: { mode: "admin" | "affiliate" }) {
+export function SampleOrderDesk({ mode, affiliateId }: { mode: "admin" | "affiliate"; affiliateId?: number }) {
   const utils = trpc.useUtils();
   const catalog = trpc.vendorSamples.catalogForOrdering.useQuery();
-  const mine = trpc.vendorSamples.myOrders.useQuery(undefined, { enabled: mode === "affiliate" });
+  const mine = trpc.vendorSamples.myOrders.useQuery(affiliateStoreInput(affiliateId), { enabled: mode === "affiliate" });
   const admin = trpc.vendorSamples.adminOrders.useQuery(undefined, { enabled: mode === "admin" });
   const place = trpc.vendorSamples.placeOrder.useMutation({
     onSuccess: () => {

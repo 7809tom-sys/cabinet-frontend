@@ -479,7 +479,7 @@ export default function AffiliateDashboard() {
   if (isAdmin && params.get("scope") === "house" && section === "customers") {
     return (
       <AffiliateDashboardLayout section="customers" onSection={setSection} storeName="House customers" storeSlug="" isAffiliateOwner canAccessCrm canAccessDesigner>
-        <MyCustomersPanel affiliateId={null} initialCustomerKey={params.get("customer")} canAssist />
+        <MyCustomersPanel affiliateId={null} house initialCustomerKey={params.get("customer")} canAssist />
       </AffiliateDashboardLayout>
     );
   }
@@ -709,11 +709,11 @@ export default function AffiliateDashboard() {
           <MyCustomersPanel affiliateId={affiliate.id} initialCustomerKey={params.get("customer")} canAssist={access.accessDesigner} />
         );
       case "samples":
-        return <SampleOrderDesk mode="affiliate" />;
+        return <SampleOrderDesk mode="affiliate" affiliateId={affiliate.id} />;
       case "orders":
         return (
           <div className="max-w-4xl space-y-8">
-            <OrderTrackingPanel heading="Order status" />
+            <OrderTrackingPanel heading="Order status" affiliateId={affiliate.id} />
             <h2 className="text-xl font-bold mb-4">Referred Orders</h2>
             {orders.length === 0 ? (
               <div className="rounded-xl border border-dashed border-border p-10 text-center text-muted-foreground">
@@ -851,7 +851,7 @@ export default function AffiliateDashboard() {
       case "team":
         return <AffiliateTeamPanel affiliateId={affiliate.id} />;
       case "contractors":
-        return <AddContractorPanel />;
+        return <AddContractorPanel affiliateId={affiliate.id} />;
       case "settings":
         return (
           <div className="space-y-6 max-w-4xl">

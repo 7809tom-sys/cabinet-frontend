@@ -42,7 +42,7 @@ export function useContractorAccessProcedures() {
         };
       };
       myAffiliateRequests: {
-        useQuery: (input?: undefined, options?: QueryOptions) => QueryResult<AffiliateContractorRequest[]>;
+        useQuery: (input?: { affiliateId?: number }, options?: QueryOptions) => QueryResult<AffiliateContractorRequest[]>;
       };
       affiliateReview: {
         useMutation: (options?: {

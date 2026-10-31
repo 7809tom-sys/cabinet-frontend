@@ -17,6 +17,7 @@ import {
   validateAffiliateContractorDraft,
   type AffiliateContractorDraft,
 } from "@/lib/contractorAccessForm";
+import { affiliateStoreInput } from "@/lib/affiliateSiteScope";
 import { useContractorAccessProcedures } from "@/lib/contractorAccessProcedures";
 import { ContractorPricingCard } from "@/components/affiliate/ContractorPricingCard";
 
@@ -28,10 +29,10 @@ const EMPTY_DRAFT: AffiliateContractorDraft = {
   licenseNumber: "",
 };
 
-export function AddContractorPanel() {
+export function AddContractorPanel({ affiliateId }: { affiliateId?: number }) {
   const api = useContractorAccessProcedures();
   const utils = api.useUtils();
-  const requests = api.contractorAccess.myAffiliateRequests.useQuery(undefined, { retry: false });
+  const requests = api.contractorAccess.myAffiliateRequests.useQuery(affiliateStoreInput(affiliateId), { retry: false });
   const [draft, setDraft] = useState<AffiliateContractorDraft>(EMPTY_DRAFT);
   const [error, setError] = useState<string | null>(null);
   const [errorField, setErrorField] = useState<"contractorName" | "contractorEmail" | "businessName" | "phone" | null>(null);
@@ -93,7 +94,7 @@ export function AddContractorPanel() {
     }
     setError(null);
     setErrorField(null);
-    submit.mutate(parsed.value);
+    submit.mutate({ ...parsed.value, ...affiliateStoreInput(affiliateId) });
   }
 
   const rows = requests.data ?? [];

@@ -5,7 +5,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AffiliateContractorRequest } from "@/lib/contractorAccessForm";
 
-const { mutate, invalidate, refetchRequests, mutationOptions, reviewMutate, reviewOptions, reviewPending, markupMutate, markupOptions, markupPending, requests, markup } = vi.hoisted(() => ({
+const { mutate, invalidate, refetchRequests, mutationOptions, reviewMutate, reviewOptions, reviewPending, markupMutate, markupOptions, markupPending, requests, markup, queryInput } = vi.hoisted(() => ({
   mutate: vi.fn(),
   invalidate: vi.fn(async () => undefined),
   refetchRequests: vi.fn(),
@@ -39,6 +39,7 @@ const { mutate, invalidate, refetchRequests, mutationOptions, reviewMutate, revi
       refetch: vi.fn(),
     },
   },
+  queryInput: { current: undefined as unknown },
   markup: {
     current: {
       data: { markupPercent: null as number | null, siteDefaultPercent: 20 },
@@ -60,7 +61,10 @@ vi.mock("@/lib/trpc", () => ({
         },
       },
       myAffiliateRequests: {
-        useQuery: () => requests.current,
+        useQuery: (input?: unknown) => {
+          queryInput.current = input;
+          return requests.current;
+        },
       },
       affiliateReview: {
         useMutation: (options: typeof reviewOptions.current) => {
@@ -107,6 +111,7 @@ afterEach(() => {
   invalidate.mockReset();
   refetchRequests.mockReset();
   mutationOptions.current = null;
+  queryInput.current = undefined;
   reviewOptions.current = null;
   markupOptions.current = null;
   reviewPending.current = false;
@@ -137,7 +142,7 @@ describe("Add a contractor", () => {
     expect(layout).toContain('{ icon: HardHat, label: "Add a contractor", section: "contractors" }');
     expect(dashboard).toContain('"contractors",');
     expect(dashboard).toContain('case "contractors":');
-    expect(dashboard).toContain("<AddContractorPanel />");
+    expect(dashboard).toContain("<AddContractorPanel affiliateId={affiliate.id} />");
     expect(dashboard).toContain('{ label: "Add a contractor", section: "contractors" as AffiliateSection, icon: HardHat }');
     expect(layout).toContain('item.section === "contractors"');
     const panel = readFileSync(resolve(process.cwd(), "client/src/components/affiliate/AddContractorPanel.tsx"), "utf8");
@@ -165,6 +170,7 @@ describe("Add a contractor", () => {
     render(<AddContractorPanel />);
     fillRequest();
     fireEvent.click(screen.getByRole("button", { name: "Add a contractor" }));
+    expect(queryInput.current).toBeUndefined();
     expect(mutate).toHaveBeenCalledWith({
       contractorName: "Sam Builder",
       contractorEmail: "sam@build.example",
@@ -189,6 +195,21 @@ describe("Add a contractor", () => {
     });
     expect(toast.success).toHaveBeenCalledWith("Contractor request sent.");
     expect(screen.getByRole("status").textContent).toBe("Contractor request sent.");
+  });
+
+  it("sends the open store on the contractor list and the submit", () => {
+    render(<AddContractorPanel affiliateId={7} />);
+    expect(queryInput.current).toEqual({ affiliateId: 7 });
+    fillRequest();
+    fireEvent.click(screen.getByRole("button", { name: "Add a contractor" }));
+    expect(mutate).toHaveBeenCalledWith({
+      contractorName: "Sam Builder",
+      contractorEmail: "sam@build.example",
+      businessName: "Build Co",
+      phone: "555-0199",
+      licenseNumber: "LIC-9",
+      affiliateId: 7,
+    });
   });
 
   it("shows the server error for an account that is already an approved contractor", () => {

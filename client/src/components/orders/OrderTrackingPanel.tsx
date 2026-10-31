@@ -1,3 +1,4 @@
+import { affiliateStoreInput } from "@/lib/affiliateSiteScope";
 import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
 import { Check } from "lucide-react";
@@ -36,11 +37,14 @@ function money(value: number | null | undefined): string {
 export function OrderTrackingPanel({
   previewOrders = null,
   heading = "Your orders",
+  affiliateId,
 }: {
   previewOrders?: TrackedOrder[] | null;
   heading?: string;
+  /** Store desk. Omit on account and contractor pages so the list is only orders that person placed. */
+  affiliateId?: number;
 }) {
-  const query = trpc.orderTracking.list.useQuery(undefined, { enabled: previewOrders == null, retry: false });
+  const query = trpc.orderTracking.list.useQuery(affiliateStoreInput(affiliateId), { enabled: previewOrders == null, retry: false });
   const orders = previewOrders ?? query.data ?? [];
 
   return (
