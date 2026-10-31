@@ -40,11 +40,13 @@ describe("public Closet Studio replacement boundary", () => {
     expect((studio.match(/href="\/design"/g) ?? [])).toHaveLength(2);
     expect(studio).toContain("Kitchen Designer");
     expect(studio).toContain('aria-label="Back to room choice"');
-    expect(studio).toContain('if (!isReviewDemo) localStorage.setItem(STORAGE_KEY, JSON.stringify(design))');
+    expect(studio).toContain('const storageKey = affiliateSlug ? `${STORAGE_KEY}:${affiliateSlug}` : STORAGE_KEY;');
+    expect(studio).toContain('if (!isReviewDemo) localStorage.setItem(storageKey, JSON.stringify(design))');
   });
 
   it("keeps source-priced reference outside checkout and sample mode outside personal local drafts", () => {
-    expect(studio).toContain('if (!isReviewDemo) localStorage.setItem(STORAGE_KEY, JSON.stringify(design))');
+    expect(studio).toContain('const storageKey = affiliateSlug ? `${STORAGE_KEY}:${affiliateSlug}` : STORAGE_KEY;');
+    expect(studio).toContain('if (!isReviewDemo) localStorage.setItem(storageKey, JSON.stringify(design))');
     expect(studio).toContain('Historical reference only—<strong>not checkout pricing</strong>.');
     expect(studio).toContain('href="/closet" className="shrink-0 underline underline-offset-2"');
     expect(studio).not.toContain("Invoice (dealer)");
