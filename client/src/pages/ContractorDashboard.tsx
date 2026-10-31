@@ -35,6 +35,7 @@ import {
   Package,
   ArrowRight,
   CheckCircle2,
+  LayoutGrid,
 } from "lucide-react";
 
 type CustomerRow = { id: number; name: string; email: string | null; phone: string | null; notes: string | null };
@@ -233,10 +234,16 @@ function ContractorHome({ preview, justUpgraded, contractorUserId, staffPreviewR
             <h1 className="font-serif text-3xl font-bold">Contractor portal</h1>
           </div>
           <p className="text-muted-foreground">Save designs from the 3D Designer, keep them on your own CRM, and price your installation and labor invoice separately from CabinetDealz materials.</p>
+          <p className="text-muted-foreground mt-1">Closets too: lay out closets, pantries, and mudrooms one tower at a time in Closet Studio.</p>
         </div>
-        <Button asChild variant="outline" className="gap-2">
-          <Link href="/design"><ClipboardList className="h-4 w-4" /> Open 3D Designer</Link>
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button asChild variant="outline" className="gap-2">
+            <Link href="/design"><ClipboardList className="h-4 w-4" /> Open 3D Designer</Link>
+          </Button>
+          <Button asChild variant="outline" className="gap-2">
+            <Link href="/closet"><LayoutGrid className="h-4 w-4" /> Open Closet Studio</Link>
+          </Button>
+        </div>
       </div>
       {contractorUserId != null ? (
         <p className="mb-4 rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm">
