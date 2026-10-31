@@ -1,0 +1,22 @@
+sourceFileStem,catalogOptionCode,canonicalFinish,note,status
+Arctic White,AW?,Arctic White,,ok
+Chestnut,,Chestnut,,ok
+Cyber Grey,CG,Cyber Grey,'Grey' spelling; 'Dove Gray' / 'Grey Shaker' use the other spellings. Canonical spelling to be chosen by Tom.,ok
+Dark Caramel,DC,Dark Caramel,,ok
+Dove Gray,DG,Dove Gray,"paf.xml display name is 'Dove Grey', file is 'Dove Gray'",spelling-mixed
+Driftwood,,Driftwood,photo shows a door only (no drawer front),ok
+EWO,EWO,European White Oak,abbreviation; grain textures EWO_H / EWO_V exist,abbreviation
+Expresso Shaker,SSE,Espresso Shaker,misspelling of Espresso (source file name left as is),misspelled
+Glacier White,GW,Glacier White,,ok
+Grey Shaker,,Grey Shaker,'Grey' spelling vs 'Dove Gray',spelling-mixed
+Ivory White,,Ivory White,,ok
+MC,MC,Midnight Cove (UNCONFIRMED),abbreviation; paf.xml says MC = Midnight Cove; Tom to confirm,abbreviation-unconfirmed
+New York Glaze,,New York Glaze,,ok
+Pearl White,PW,Pearl White,,ok
+Peccan,,Pecan,misspelling of Pecan (source file name left as is),misspelled
+Port,,Port,,ok
+Slim Shaker Alabaster,SSA,Slim Shaker Alabaster,,ok
+Slim Shaker Ebony,,Slim Shaker Ebony,,ok
+Versa Shaker,VS,Versa Shaker,,ok
+White Shaker,WS,White Shaker,,ok
+IMG,,(none),'image not available' placeholder; never used as a texture,placeholder-excluded
