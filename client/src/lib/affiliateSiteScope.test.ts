@@ -94,7 +94,8 @@ describe("affiliate site scope wiring", () => {
   it("sends adminAll from the admin CRM and house for a deal with no store", () => {
     const board = source("client/src/components/crm/CrmBoard.tsx");
     expect(board).toContain("const scopedAffiliateId = affiliateId ?? masterAffiliateId");
-    expect(board).toContain("const boardInput = crmBoardQueryInput(scopedAffiliateId)");
+    expect(board).toContain("crmBoardScope({ contractorUserId, affiliateId, masterAffiliateId })");
+    expect(board).toContain("crmBoardQueryInput(scopedAffiliateId)");
     expect(board).toContain("...crmBoardQueryInput(scopedAffiliateId)");
     expect(board).toContain("<ImportLeadsDialog lang={lang} affiliateId={scopedAffiliateId} />");
     expect(board).toContain("trpc.crm.importableLeads.useQuery");
