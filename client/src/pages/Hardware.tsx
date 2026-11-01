@@ -184,6 +184,7 @@ export default function Hardware() {
                           src={selected.imageUrl}
                           alt={`${item.collection} ${item.productType}, ${item.label}; ${selected.finish} finish`}
                           loading="lazy"
+                          decoding="async"
                           className="h-full w-full object-contain transition-transform duration-200 group-hover:scale-[1.025]"
                         />
                       ) : null}

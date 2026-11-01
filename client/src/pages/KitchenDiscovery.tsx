@@ -130,6 +130,8 @@ export default function KitchenDiscovery({ affiliateSlug }: KitchenDiscoveryProp
               src={KITCHEN_SCENES["shaker-white"]}
               alt="A complete bright kitchen with cabinetry, island, countertops, and lighting"
               className="h-[240px] w-full object-cover sm:h-[320px] lg:h-[360px]"
+              fetchPriority="high"
+              decoding="async"
             />
             <figcaption className="flex items-center gap-3 px-5 py-4 text-sm text-slate-200">
               <LayoutTemplate className="h-4 w-4 shrink-0 text-[#e3b45f]" aria-hidden="true" />
@@ -149,7 +151,7 @@ export default function KitchenDiscovery({ affiliateSlug }: KitchenDiscoveryProp
           <div className="mt-8 grid gap-5 md:grid-cols-3">
             {KITCHEN_PATHS.map((path) => (
               <article key={path.name} className="overflow-hidden rounded-xl border border-border bg-card">
-                <img src={KITCHEN_SCENES[path.scene]} alt={`${path.name} complete kitchen inspiration`} className="h-[210px] w-full object-cover" />
+                <img src={KITCHEN_SCENES[path.scene]} alt={`${path.name} complete kitchen inspiration`} className="h-[210px] w-full object-cover" loading="lazy" decoding="async" />
                 <div className="p-5">
                   <h3 className="font-serif text-xl font-bold">{path.name}</h3>
                   <p className="mt-2 min-h-[48px] text-sm leading-relaxed text-muted-foreground">{path.detail}</p>

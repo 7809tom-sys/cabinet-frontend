@@ -146,6 +146,8 @@ export default function StoneCreekCollection() {
             src={tab === "kitchen" ? HERO_KITCHEN : HERO_BATH}
             alt="StoneCreek Collection"
             className="h-full w-full object-cover transition-opacity duration-700"
+            fetchPriority="high"
+            decoding="async"
           />
           <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/40 to-transparent" />
         </div>
@@ -314,6 +316,8 @@ export default function StoneCreekCollection() {
               src={HERO_DETAIL}
               alt="StoneCreek faucet in use"
               className="h-full w-full object-cover"
+              loading="lazy"
+              decoding="async"
             />
           </div>
         </div>
@@ -371,6 +375,7 @@ function StoneCreekCard({ product, onAddToDesign }: { product: any; onAddToDesig
               src={product.imageUrl}
               alt={product.name}
               loading="lazy"
+              decoding="async"
               className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
             />
           ) : (

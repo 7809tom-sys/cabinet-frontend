@@ -6587,28 +6587,10 @@ function hashString(s: string): number {
 const DEFAULT_FINISH: FinishColors = FALLBACK_FINISHES[0];
 export const DEFAULT_FINISH_COLORS = DEFAULT_FINISH;
 
-// Door-panel treatment derived from the door-style family name. Used to render
-// the correct front detail (recessed Shaker frame, raised center, flat slab,
-// beaded boards, stacked double-shaker) on door swatches AND on placed cabinets
-// in the elevation view, so picking a style visibly changes the door look.
-export type DoorPanelKind = "shaker" | "slim-shaker" | "raised" | "slab" | "beaded" | "inset" | "double-shaker";
-export function doorPanelKind(doorStyle?: string | null): DoorPanelKind {
-  const s = (doorStyle ?? "").toLowerCase();
-  if (/double/.test(s)) return "double-shaker";
-  // Slim / narrow Shaker: a Shaker door built with a narrow ~1/2" rail & stile
-  // instead of the standard ~2.25". Detect it before the generic shaker so the
-  // swatch can draw the thin frame.
-  if (/slim|narrow|thin[ -]?frame|skinny/.test(s) && /shaker/.test(s)) return "slim-shaker";
-  if (/slim shaker|narrow shaker/.test(s)) return "slim-shaker";
-  // "Flat panel" and "recessed" are a framed shaker, not a slab. Raised phrases
-  // are checked before the generic flat/slab words.
-  if (/flat[\s-]?panel|\brecessed\b/.test(s)) return "shaker";
-  if (/raised|cathedral|\barch(?:ed)?\b|\bogee\b|traditional/.test(s)) return "raised";
-  if (/slab|flat|contemporary|euro|modern/.test(s)) return "slab";
-  if (/bead/.test(s)) return "beaded";
-  if (/inset/.test(s)) return "inset";
-  return "shaker";
-}
+// Door-panel treatment lives in its own module so storefront swatches do not
+// pull this geometry engine into the first page load. Re-exported here so
+// existing designer imports keep working.
+export { doorPanelKind, type DoorPanelKind } from "./doorPanelKind";
 
 // Returns the matched SW color entry including swName when available.
 // Used by the product detail hero to display the SW color name as attribution.

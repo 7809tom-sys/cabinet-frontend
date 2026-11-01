@@ -196,6 +196,8 @@ export default function PlumbersChoice() {
             src={HERO_IMG}
             alt="Modern bathroom with premium fixtures"
             className="h-full w-full object-cover opacity-40"
+            fetchPriority="high"
+            decoding="async"
           />
           <div className="absolute inset-0 bg-gradient-to-r from-[var(--color-navy)] via-[var(--color-navy)]/80 to-transparent" />
         </div>
@@ -426,7 +428,7 @@ export default function PlumbersChoice() {
             ) : (
               <div className="space-y-3">
                 <div className="relative rounded-lg overflow-hidden border bg-muted/30">
-                  <img src={fixturePreview} alt="Uploaded fixture" className="max-h-52 w-full object-contain" />
+                  <img src={fixturePreview} alt="Uploaded fixture" className="max-h-52 w-full object-contain" decoding="async" />
                 </div>
                 <div className="flex gap-2">
                   <Button variant="outline" size="sm" onClick={() => fixtureFileRef.current?.click()}>
@@ -449,7 +451,7 @@ export default function PlumbersChoice() {
                 {fixtureMatches.filter((m: any) => m.matched).map((m: any, i: number) => (
                   <div key={`fm-${i}`} className="flex items-center gap-3 rounded-lg border p-2.5">
                     {m.product?.imageUrl && (
-                      <img src={m.product.imageUrl} alt={m.product.name} className="h-12 w-12 rounded object-contain bg-muted/30 shrink-0" />
+                      <img src={m.product.imageUrl} alt={m.product.name} className="h-12 w-12 rounded object-contain bg-muted/30 shrink-0" width={48} height={48} loading="lazy" decoding="async" />
                     )}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">

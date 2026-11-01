@@ -29,6 +29,7 @@ export function CatalogSkuImage({ src, alt, cabinet, finishColor, className }: C
       alt={alt}
       className={className}
       loading="lazy"
+      decoding="async"
       onError={() => {
         if (attempts === 0) {
           const retryUrl = catalogMediaRecoveryUrl(src, newCatalogMediaRetryNonce());

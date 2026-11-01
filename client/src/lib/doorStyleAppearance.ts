@@ -4,7 +4,8 @@
  * the elevation and the swatches (`finishColors`), then the Aspen Charcoal
  * stain overrides that table so a color *name* never reaches WebGL.
  */
-import { doorPanelKind, finishColors, type DoorPanelKind, type FinishColors } from "@/lib/design";
+import { doorPanelKind, type DoorPanelKind } from "@/lib/doorPanelKind";
+import { finishColors, type FinishColors } from "@/lib/design";
 import { designerDoorFrameMetrics } from "@/lib/doorFrameMetrics";
 import {
   ASPEN_CHARCOAL_STAIN,

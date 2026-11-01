@@ -575,6 +575,8 @@ export default function Family({ styleCode, affiliateSlug }: { styleCode: string
             src={realScene}
             alt={`${familyName} kitchen room scene`}
             className="absolute inset-0 h-full w-full object-cover"
+            fetchPriority="high"
+            decoding="async"
           />
         ) : (
           // No verified photo for this family yet — fill the backdrop with this
@@ -691,6 +693,7 @@ export default function Family({ styleCode, affiliateSlug }: { styleCode: string
                   src={realDoor}
                   alt={`${familyName} door sample`}
                   className="h-24 w-full rounded object-cover ring-1 ring-border"
+                  decoding="async"
                 />
               ) : (
                 <DoorStyleSwatch style={s} className="h-24 w-full" />
@@ -707,6 +710,7 @@ export default function Family({ styleCode, affiliateSlug }: { styleCode: string
                     src={realScene}
                     alt={`${familyName} kitchen room scene`}
                     className="h-24 w-full object-cover"
+                    decoding="async"
                   />
                   <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
                     <Expand className="text-white opacity-0 group-hover:opacity-100 transition-opacity w-5 h-5 drop-shadow" />
@@ -735,6 +739,9 @@ export default function Family({ styleCode, affiliateSlug }: { styleCode: string
                   src={realDoor}
                   alt={`${familyName} door sample`}
                   className="h-44 w-44 rounded-lg object-cover ring-1 ring-border"
+                  width={176}
+                  height={176}
+                  decoding="async"
                 />
               ) : (
                 <DoorStyleSwatch style={s} className="h-44 w-auto" />
@@ -751,6 +758,9 @@ export default function Family({ styleCode, affiliateSlug }: { styleCode: string
                     src={realScene}
                     alt={`${familyName} kitchen room scene`}
                     className="h-44 w-44 object-cover"
+                    width={176}
+                    height={176}
+                    decoding="async"
                   />
                   <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
                     <Expand className="text-white opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 drop-shadow" />
@@ -788,6 +798,7 @@ export default function Family({ styleCode, affiliateSlug }: { styleCode: string
             src={realScene}
             alt={`${familyName} kitchen room scene`}
             className="max-w-full max-h-[90vh] rounded-xl shadow-2xl object-contain"
+            decoding="async"
             onClick={(e) => e.stopPropagation()}
           />
           <p className="absolute bottom-6 left-1/2 -translate-x-1/2 text-white/70 text-sm">
@@ -826,6 +837,10 @@ export default function Family({ styleCode, affiliateSlug }: { styleCode: string
                 src={realDoor}
                 alt={familyName}
                 className="h-6 w-6 rounded object-cover ring-1 ring-border shrink-0"
+                width={24}
+                height={24}
+                loading="lazy"
+                decoding="async"
               />
             )}
             <span className="text-sm font-semibold text-foreground truncate max-w-[200px]">{familyName}</span>
