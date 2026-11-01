@@ -14,6 +14,16 @@ export interface DlcFr26CatalogEntry {
   grain: string;
   grainSize: [number, number];
   grainFrameFree: boolean;
+  /** Face textures: frame-free grain for door and drawer faces. The 3D rails and stiles supply the frame. */
+  faceDoor: string;
+  faceDrawer: string;
+  /** Physical size of one grain tile in inches [door, drawer]. */
+  faceTileIn: [number, number];
+  faceTileDrawerIn: [number, number];
+  /** Normal map for grain depth (European White Oak only). */
+  faceNormal: string | null;
+  /** Multiplier (sRGB hex, applied in linear) that brings the texture to the sample colour; null = none. */
+  faceTint: string | null;
 }
 
 export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
@@ -38,7 +48,19 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       56,
       106
     ],
-    "grainFrameFree": true
+    "grainFrameFree": true,
+    "faceDoor": "/textures/dlc-fr26/grain/arctic-white.png",
+    "faceDrawer": "/textures/dlc-fr26/grain/arctic-white-drawer.png",
+    "faceTileIn": [
+      6.35,
+      12.03
+    ],
+    "faceTileDrawerIn": [
+      4.54,
+      5.9
+    ],
+    "faceNormal": null,
+    "faceTint": null
   },
   {
     "slug": "chestnut",
@@ -61,7 +83,19 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       56,
       105
     ],
-    "grainFrameFree": true
+    "grainFrameFree": true,
+    "faceDoor": "/textures/dlc-fr26/grain/chestnut.png",
+    "faceDrawer": "/textures/dlc-fr26/grain/chestnut-drawer.png",
+    "faceTileIn": [
+      6.35,
+      11.91
+    ],
+    "faceTileDrawerIn": [
+      4.54,
+      6.01
+    ],
+    "faceNormal": null,
+    "faceTint": null
   },
   {
     "slug": "cyber-grey",
@@ -84,7 +118,19 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       56,
       107
     ],
-    "grainFrameFree": true
+    "grainFrameFree": true,
+    "faceDoor": "/textures/dlc-fr26/grain/cyber-grey.png",
+    "faceDrawer": "/textures/dlc-fr26/grain/cyber-grey-drawer.png",
+    "faceTileIn": [
+      6.4,
+      12.23
+    ],
+    "faceTileDrawerIn": [
+      4.46,
+      6.17
+    ],
+    "faceNormal": null,
+    "faceTint": null
   },
   {
     "slug": "dark-caramel",
@@ -107,7 +153,19 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       56,
       106
     ],
-    "grainFrameFree": true
+    "grainFrameFree": true,
+    "faceDoor": "/textures/dlc-fr26/grain/dark-caramel.png",
+    "faceDrawer": "/textures/dlc-fr26/grain/dark-caramel-drawer.png",
+    "faceTileIn": [
+      6.45,
+      12.2
+    ],
+    "faceTileDrawerIn": [
+      4.37,
+      5.99
+    ],
+    "faceNormal": null,
+    "faceTint": null
   },
   {
     "slug": "dove-gray",
@@ -131,7 +189,19 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       56,
       105
     ],
-    "grainFrameFree": true
+    "grainFrameFree": true,
+    "faceDoor": "/textures/dlc-fr26/grain/dove-gray.png",
+    "faceDrawer": "/textures/dlc-fr26/grain/dove-gray-drawer.png",
+    "faceTileIn": [
+      6.35,
+      11.91
+    ],
+    "faceTileDrawerIn": [
+      4.54,
+      6.01
+    ],
+    "faceNormal": null,
+    "faceTint": null
   },
   {
     "slug": "driftwood",
@@ -151,7 +221,19 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       56,
       135
     ],
-    "grainFrameFree": true
+    "grainFrameFree": true,
+    "faceDoor": "/textures/dlc-fr26/grain/driftwood.png",
+    "faceDrawer": "/textures/dlc-fr26/grain/driftwood-drawer.png",
+    "faceTileIn": [
+      6.35,
+      15.32
+    ],
+    "faceTileDrawerIn": [
+      4.54,
+      7.6
+    ],
+    "faceNormal": null,
+    "faceTint": null
   },
   {
     "slug": "ewo",
@@ -170,12 +252,24 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       74
     ],
     "solidColor": "#978869",
-    "grain": "/textures/dlc-fr26/grain/ewo.png",
+    "grain": "/textures/dlc-fr26/grain/ewo-v.jpg",
     "grainSize": [
-      36,
-      62
+      1024,
+      1024
     ],
-    "grainFrameFree": true
+    "grainFrameFree": true,
+    "faceDoor": "/textures/dlc-fr26/grain/ewo-v.jpg",
+    "faceDrawer": "/textures/dlc-fr26/grain/ewo-v.jpg",
+    "faceTileIn": [
+      24.0,
+      24.0
+    ],
+    "faceTileDrawerIn": [
+      24.0,
+      24.0
+    ],
+    "faceNormal": "/textures/dlc-fr26/grain/ewo-v-nm.png",
+    "faceTint": "#c8cbb8"
   },
   {
     "slug": "expresso-shaker",
@@ -199,7 +293,19 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       56,
       106
     ],
-    "grainFrameFree": true
+    "grainFrameFree": true,
+    "faceDoor": "/textures/dlc-fr26/grain/expresso-shaker.png",
+    "faceDrawer": "/textures/dlc-fr26/grain/expresso-shaker-drawer.png",
+    "faceTileIn": [
+      6.4,
+      12.11
+    ],
+    "faceTileDrawerIn": [
+      4.46,
+      5.94
+    ],
+    "faceNormal": null,
+    "faceTint": null
   },
   {
     "slug": "glacier-white",
@@ -222,7 +328,19 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       48,
       89
     ],
-    "grainFrameFree": true
+    "grainFrameFree": true,
+    "faceDoor": "/textures/dlc-fr26/grain/glacier-white.png",
+    "faceDrawer": "/textures/dlc-fr26/grain/glacier-white-drawer.png",
+    "faceTileIn": [
+      5.45,
+      10.1
+    ],
+    "faceTileDrawerIn": [
+      4.54,
+      6.01
+    ],
+    "faceNormal": null,
+    "faceTint": null
   },
   {
     "slug": "grey-shaker",
@@ -245,7 +363,19 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       56,
       105
     ],
-    "grainFrameFree": true
+    "grainFrameFree": true,
+    "faceDoor": "/textures/dlc-fr26/grain/grey-shaker.png",
+    "faceDrawer": "/textures/dlc-fr26/grain/grey-shaker-drawer.png",
+    "faceTileIn": [
+      6.4,
+      12.0
+    ],
+    "faceTileDrawerIn": [
+      4.46,
+      6.06
+    ],
+    "faceNormal": null,
+    "faceTint": null
   },
   {
     "slug": "ivory-white",
@@ -268,7 +398,19 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       56,
       105
     ],
-    "grainFrameFree": true
+    "grainFrameFree": true,
+    "faceDoor": "/textures/dlc-fr26/grain/ivory-white.png",
+    "faceDrawer": "/textures/dlc-fr26/grain/ivory-white-drawer.png",
+    "faceTileIn": [
+      6.4,
+      12.0
+    ],
+    "faceTileDrawerIn": [
+      4.46,
+      6.06
+    ],
+    "faceNormal": null,
+    "faceTint": null
   },
   {
     "slug": "mc",
@@ -292,7 +434,19 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       59,
       103
     ],
-    "grainFrameFree": true
+    "grainFrameFree": true,
+    "faceDoor": "/textures/dlc-fr26/grain/mc.png",
+    "faceDrawer": "/textures/dlc-fr26/grain/mc-drawer.png",
+    "faceTileIn": [
+      6.47,
+      11.29
+    ],
+    "faceTileDrawerIn": [
+      4.49,
+      5.7
+    ],
+    "faceNormal": null,
+    "faceTint": null
   },
   {
     "slug": "new-york-glaze",
@@ -315,7 +469,19 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       56,
       105
     ],
-    "grainFrameFree": true
+    "grainFrameFree": true,
+    "faceDoor": "/textures/dlc-fr26/grain/new-york-glaze.png",
+    "faceDrawer": "/textures/dlc-fr26/grain/new-york-glaze-drawer.png",
+    "faceTileIn": [
+      6.35,
+      11.91
+    ],
+    "faceTileDrawerIn": [
+      2.5,
+      3.29
+    ],
+    "faceNormal": null,
+    "faceTint": null
   },
   {
     "slug": "pearl-white",
@@ -338,7 +504,19 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       56,
       102
     ],
-    "grainFrameFree": true
+    "grainFrameFree": true,
+    "faceDoor": "/textures/dlc-fr26/grain/pearl-white.png",
+    "faceDrawer": "/textures/dlc-fr26/grain/pearl-white-drawer.png",
+    "faceTileIn": [
+      6.4,
+      11.66
+    ],
+    "faceTileDrawerIn": [
+      4.46,
+      5.71
+    ],
+    "faceNormal": null,
+    "faceTint": null
   },
   {
     "slug": "peccan",
@@ -362,7 +540,19 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       24,
       24
     ],
-    "grainFrameFree": false
+    "grainFrameFree": false,
+    "faceDoor": "/textures/dlc-fr26/grain/peccan.png",
+    "faceDrawer": "/textures/dlc-fr26/grain/peccan-drawer.png",
+    "faceTileIn": [
+      2.74,
+      2.74
+    ],
+    "faceTileDrawerIn": [
+      2.74,
+      2.74
+    ],
+    "faceNormal": null,
+    "faceTint": null
   },
   {
     "slug": "port",
@@ -385,7 +575,19 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       56,
       106
     ],
-    "grainFrameFree": true
+    "grainFrameFree": true,
+    "faceDoor": "/textures/dlc-fr26/grain/port.png",
+    "faceDrawer": "/textures/dlc-fr26/grain/port-drawer.png",
+    "faceTileIn": [
+      6.35,
+      12.03
+    ],
+    "faceTileDrawerIn": [
+      4.54,
+      6.01
+    ],
+    "faceNormal": null,
+    "faceTint": null
   },
   {
     "slug": "slim-shaker-alabaster",
@@ -408,7 +610,19 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       56,
       108
     ],
-    "grainFrameFree": true
+    "grainFrameFree": true,
+    "faceDoor": "/textures/dlc-fr26/grain/slim-shaker-alabaster.png",
+    "faceDrawer": "/textures/dlc-fr26/grain/slim-shaker-alabaster-drawer.png",
+    "faceTileIn": [
+      6.35,
+      12.26
+    ],
+    "faceTileDrawerIn": [
+      4.54,
+      6.13
+    ],
+    "faceNormal": null,
+    "faceTint": null
   },
   {
     "slug": "slim-shaker-ebony",
@@ -431,7 +645,19 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       56,
       107
     ],
-    "grainFrameFree": true
+    "grainFrameFree": true,
+    "faceDoor": "/textures/dlc-fr26/grain/slim-shaker-ebony.png",
+    "faceDrawer": "/textures/dlc-fr26/grain/slim-shaker-ebony-drawer.png",
+    "faceTileIn": [
+      6.35,
+      12.14
+    ],
+    "faceTileDrawerIn": [
+      4.54,
+      6.13
+    ],
+    "faceNormal": null,
+    "faceTint": null
   },
   {
     "slug": "versa-shaker",
@@ -454,7 +680,19 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       56,
       104
     ],
-    "grainFrameFree": true
+    "grainFrameFree": true,
+    "faceDoor": "/textures/dlc-fr26/grain/versa-shaker.png",
+    "faceDrawer": "/textures/dlc-fr26/grain/versa-shaker-drawer.png",
+    "faceTileIn": [
+      6.35,
+      11.8
+    ],
+    "faceTileDrawerIn": [
+      4.54,
+      5.9
+    ],
+    "faceNormal": null,
+    "faceTint": null
   },
   {
     "slug": "white-shaker",
@@ -477,6 +715,18 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       56,
       105
     ],
-    "grainFrameFree": true
+    "grainFrameFree": true,
+    "faceDoor": "/textures/dlc-fr26/grain/white-shaker.png",
+    "faceDrawer": "/textures/dlc-fr26/grain/white-shaker-drawer.png",
+    "faceTileIn": [
+      6.4,
+      12.0
+    ],
+    "faceTileDrawerIn": [
+      4.46,
+      6.06
+    ],
+    "faceNormal": null,
+    "faceTint": null
   }
 ];

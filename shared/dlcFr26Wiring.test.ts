@@ -7,7 +7,7 @@ import { DLC_FR26_CATALOG } from "./dlcFr26Catalog.generated";
 import { findDlcFinishForStyle, normalizeFinishName } from "./dlcFr26Mapping";
 import { resolveDoorFinishHex } from "../client/src/lib/doorStyleAppearance";
 import { RESTORED_DOOR_LIGHTS, DARK_STAIN_DOOR_LIGHTS } from "./doorRenderLights";
-import { dlcPhotoLightCompensation, dlcFaceProportions, dlcFaceTextureWindow } from "./dlcFr26Textures";
+import { dlcFaceGrainRepeat, dlcPhotoLightCompensation, dlcFaceProportions, dlcFaceTextureWindow } from "./dlcFr26Textures";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const dl = (ourName: string, styleCode: string | null = null, extra: Record<string, unknown> = {}) => ({
@@ -15,21 +15,32 @@ const dl = (ourName: string, styleCode: string | null = null, extra: Record<stri
 });
 
 describe("DL style -> DLC_FR26 finish", () => {
-  it("Cyber Grey resolves to the processed door and drawer PNGs, as different files", () => {
+  it("Cyber Grey faces use the frame-free grain, door and drawer as different files, never a photo crop", () => {
     const plan = resolveCabinetFaceImages(dl("Cyber Grey", "DL-CG"), "base");
-    expect(plan.doorUrl).toBe("/textures/dlc-fr26/door/cyber-grey.png");
-    expect(plan.drawerUrl).toBe("/textures/dlc-fr26/drawer/cyber-grey.png");
+    expect(plan.doorUrl).toBe("/textures/dlc-fr26/grain/cyber-grey.png");
+    expect(plan.drawerUrl).toBe("/textures/dlc-fr26/grain/cyber-grey-drawer.png");
     expect(plan.drawerUrl).not.toBe(plan.doorUrl);
+    expect(plan.doorUrl).not.toMatch(/\/(door|drawer)\//);
+    expect(plan.drawerUrl).not.toMatch(/\/(door|drawer)\//);
     expect(plan.sourceKind).toBe("split");
+  });
+
+  it("Driftwood has a drawer face too (its own grain patch, not the door file and not a solid colour)", () => {
+    const plan = resolveCabinetFaceImages(dl("Driftwood", "DL-DW"), "base");
+    expect(plan.doorUrl).toBe("/textures/dlc-fr26/grain/driftwood.png");
+    expect(plan.drawerUrl).toBe("/textures/dlc-fr26/grain/driftwood-drawer.png");
+    expect(plan.drawerUrl).not.toBe(plan.doorUrl);
     expect(plan.dlcCrop?.drawerSolidColor).toBeNull();
   });
 
-  it("Driftwood resolves to a door PNG and has NO drawer image: a solid colour instead", () => {
-    const plan = resolveCabinetFaceImages(dl("Driftwood", "DL-DW"), "base");
-    expect(plan.doorUrl).toBe("/textures/dlc-fr26/door/driftwood.png");
-    expect(plan.drawerUrl).toBeNull();
-    expect(plan.drawerUrl).not.toBe(plan.doorUrl);
-    expect(plan.dlcCrop?.drawerSolidColor).toMatch(/^#[0-9a-f]{6}$/);
+  it("European White Oak faces use the real 1024px vertical grain with its normal map and a colour tint", () => {
+    const plan = resolveCabinetFaceImages(dl("European White Oak", "DL-EWO"), "base");
+    expect(plan.doorUrl).toBe("/textures/dlc-fr26/grain/ewo-v.jpg");
+    expect(plan.drawerUrl).toBe("/textures/dlc-fr26/grain/ewo-v.jpg");
+    expect(plan.dlcCrop?.normalUrl).toBe("/textures/dlc-fr26/grain/ewo-v-nm.png");
+    expect(plan.dlcCrop?.tintHex).toMatch(/^#[0-9a-f]{6}$/);
+    expect(plan.dlcCrop?.grainUrl).toBe("/textures/dlc-fr26/grain/ewo-v.jpg");
+    for (const f of ["ewo-v.jpg", "ewo-v-nm.png"]) expect(fs.existsSync(path.join(repo, "client/public/textures/dlc-fr26/grain", f)), f).toBe(true);
   });
 
   it("matches by name alone (no code) and through the spelling aliases", () => {
@@ -83,11 +94,13 @@ describe("texture files ship with the build", () => {
       }
     }
   });
-  it("every finish ships a frame-free grain patch for sides (or says it has none)", () => {
+  it("every face grain file ships in client/public (and the patches match the processed copies)", () => {
     for (const e of DLC_FR26_CATALOG) {
-      const pub = path.join(repo, "client", "public", e.grain);
-      expect(fs.existsSync(pub), e.grain).toBe(true);
-      expect(fs.readFileSync(pub).equals(fs.readFileSync(path.join(repo, "data", "dlc-fr26", "processed", "grain", `${e.slug}.png`))), e.grain).toBe(true);
+      for (const url of [e.faceDoor, e.faceDrawer, e.grain]) expect(fs.existsSync(path.join(repo, "client", "public", url)), url).toBe(true);
+      if (e.slug === "ewo") continue;
+      for (const [url, name] of [[e.faceDoor, `${e.slug}.png`], [e.faceDrawer, `${e.slug}-drawer.png`]] as const) {
+        expect(fs.readFileSync(path.join(repo, "client", "public", url)).equals(fs.readFileSync(path.join(repo, "data", "dlc-fr26", "processed", "grain", name))), url).toBe(true);
+      }
     }
     expect(DLC_FR26_CATALOG.filter((e) => !e.grainFrameFree).map((e) => e.slug)).toEqual(["peccan"]);
   });
@@ -204,5 +217,40 @@ describe("sides carry the door's grain, and photo materials are not over-lit", (
     expect(s).toMatch(/applyStructuralFinishBase\(finishColor, _sampleTexture\);\s*applyDlcGrain\(\);/);
     expect((s.match(/color\.set\(dlcPhotoTint\)/g) ?? []).length).toBeGreaterThanOrEqual(2);
     expect(s).toMatch(/color: dlcPhotoTint, map, \.\.\.doorFinishSurface/);
+  });
+});
+
+describe("grain faces: no photo frame lines on any face", () => {
+  const src = () => fs.readFileSync(path.join(repo, "client/src/components/design/InteractiveRoom3D.tsx"), "utf8");
+  it("no mapped DL style hands a face a door or drawer photo crop", () => {
+    for (const e of DLC_FR26_CATALOG) {
+      for (const url of [e.faceDoor, e.faceDrawer]) expect(url, e.slug).not.toMatch(/\/textures\/dlc-fr26\/(door|drawer)\//);
+      const plan = resolveCabinetFaceImages({ distributorId: 450001, ourName: e.names[0], styleCode: null }, "base");
+      if (plan.dlcCrop) {
+        expect(plan.doorUrl, e.slug).not.toMatch(/\/(door|drawer)\//);
+        expect(plan.drawerUrl, e.slug).not.toMatch(/\/(door|drawer)\//);
+      }
+    }
+  });
+  it("grain tiles at its physical size without stretching: repeat is face size over tile size, both axes", () => {
+    const crop = { doorSize: [141, 308] as [number, number], drawerSize: null, drawerSolidColor: null, solidColor: "#aa7a61", grainUrl: null, faceTileIn: [6, 12] as [number, number], faceTileDrawerIn: [4, 8] as [number, number] };
+    const cab = { widthIn: 30, heightIn: 34.5, isWall: false };
+    const d = dlcFaceGrainRepeat("door", crop, cab)!;
+    const p = dlcFaceProportions("door", cab);
+    expect(d.repeatX * 6).toBeCloseTo(p.widthIn, 5);
+    expect(d.repeatY * 12).toBeCloseTo(p.heightIn, 5);
+    const dr = dlcFaceGrainRepeat("drawer", crop, cab)!;
+    expect(dr.repeatX * 4).toBeCloseTo(30, 5);
+    expect(dr.repeatY * 8).toBeCloseTo(6, 5);
+    expect(dlcFaceGrainRepeat("door", { ...crop, faceTileIn: undefined }, cab)).toBeNull();
+  });
+  it("3D tiles grain faces mirrored, gives the drawer its own texture, and loads the EWO normal map", () => {
+    const s = src();
+    expect(s).toMatch(/dlcFaceGrainRepeat\("door"/);
+    expect(s).toMatch(/dlcFaceGrainRepeat\("drawer"/);
+    expect(s).toMatch(/dlcDoorGrain \? THREE\.MirroredRepeatWrapping/);
+    expect(s).toMatch(/dlcDrawerGrain \? THREE\.MirroredRepeatWrapping/);
+    expect(s).toMatch(/separateFace: Boolean\(surfaceTextures\?\.faceCrop\?\.faceTileDrawerIn\)/);
+    expect(s).toMatch(/material\.normalMap = normal/);
   });
 });
