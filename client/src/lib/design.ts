@@ -8066,7 +8066,8 @@ export function refrigeratorSurroundElevation(_room: RoomData | null | undefined
   // refrigerator height*. The normal 70-inch appliance therefore begins at the
   // familiar 72-inch installation datum, while another source-sized appliance
   // keeps the same verified clearance instead of intersecting its upper.
-  const mountBottom = Math.max(0, fridgeTop) + REFRIGERATOR_UPPER_CLEARANCE_IN;
+  // Tom's rule (Nov 1): a fridge cabinet mounts at 72 inches, or above the fridge when the fridge is taller.
+  const mountBottom = Math.max(72, Math.max(0, fridgeTop) + REFRIGERATOR_UPPER_CLEARANCE_IN);
   return { mountBottom, top: mountBottom + upperHeight };
 }
 
@@ -11279,7 +11280,10 @@ export function wallCabinetFitMeasure(
     // A normal wall cabinet beside a refrigerator must measure against the
     // refrigerator's true edge, not an inset over-fridge bridge. Dedicated
     // refrigerator bridge cabinets remain allowed to share the appliance span.
-    moving.placement === "wall" && !isRefrigeratorWallCabinet(moving),
+    // A bridge that is mounted above the fridge may share its span; one whose height still reaches a
+    // floor appliance (hand-dropped at the default mount) may not, so the opening and the snap range
+    // must count that appliance too and never point back at it.
+    moving.placement === "wall" && (!isRefrigeratorWallCabinet(moving) || peers.some((peer) => isRefrigerator(peer) && verticalEnvelopesOverlap(moving, peer))),
     moving,
   );
   const distanceToSegment = (segment: WallSegment) => {

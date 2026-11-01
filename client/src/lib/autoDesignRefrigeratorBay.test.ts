@@ -101,7 +101,7 @@ describe("mandatory Auto-Design refrigerator bay", () => {
     ]);
   });
 
-  it("rejects an Auto-Design refrigerator width other than the mandatory 36-inch bay", () => {
+  it("refuses a 33-inch refrigerator when the line has only a 36-inch cabinet above, never using an over-wide one", () => {
     const result = buildMandatoryAutoDesignRefrigeratorBay({
       refrigerator: { ...refrigerator(), masterCode: "FRIDGE-33", width: 33 },
       room,
@@ -111,7 +111,20 @@ describe("mandatory Auto-Design refrigerator bay", () => {
       makeUid: () => "unused",
     });
 
-    expect(result).toMatchObject({ ok: false, message: expect.stringContaining("36") });
+    expect(result).toMatchObject({ ok: false, message: expect.stringContaining("33") });
+  });
+
+  it("refuses a refrigerator width Auto-Design has no bay for", () => {
+    const result = buildMandatoryAutoDesignRefrigeratorBay({
+      refrigerator: { ...refrigerator(), masterCode: "FRIDGE-39", width: 39 },
+      room,
+      caps: [source({ id: 200 })],
+      endPanels: [],
+      styleId: 9,
+      makeUid: () => "unused",
+    });
+
+    expect(result).toMatchObject({ ok: false, message: expect.stringContaining("30, 33, 36 or 42") });
   });
 });
 

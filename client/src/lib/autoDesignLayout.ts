@@ -34,6 +34,7 @@ import { reviewAfterShift, separateRangeAndRefrigerator } from "./kitchenAdjacen
 import { AUTO_DESIGN_FILLER_MAX_IN, fillAutoDesignLowerSeams, planAutoDesignBaseSegment } from "./autoDesignSeamFillers";
 import { autoDesignRangeNeedsVentilation } from "./autoDesignRangeHood";
 import { AUTO_DESIGN_REFRIGERATOR_WALL_END_SHIFT_IN, buildMandatoryAutoDesignRefrigeratorBay } from "./autoDesignRefrigeratorBay";
+import { clampRefrigeratorAssemblyToPanels } from "./refrigeratorPanelClamp";
 import { autoDesignSinkWindow, windowOverlapsReservation } from "./autoDesignSinkWindow";
 import { raiseWindowsForDeckFaucet } from "./faucetPlacement";
 import { buildAutoDesignWallCabinets, resolveWallHeightClass, type AutoDesignUpperCorner } from "./autoDesignWallCabinets";
@@ -339,6 +340,16 @@ export function runAutoDesignLayout(args: {
       return fail("The measured refrigerator bay overlaps an anchor, opening, or wall end. Adjust the refrigerator center measurement; Auto-Design will not add a filler or move it.");
     }
     working = committedBay.placed;
+    // Final containment pass after all fitting: the refrigerator and its cabinet above stay inside the end panels.
+    const contained = clampRefrigeratorAssemblyToPanels({
+      placed: working,
+      refrigeratorUid: refrigerator.uid,
+      room,
+      addPanel: (panelSide, opening) => refrigeratorBay.panelFor(panelSide, opening),
+    });
+    working = contained.placed;
+    for (const warning of contained.warnings) if (!refrigeratorBayWarnings.includes(warning)) refrigeratorBayWarnings.push(warning);
+    notes.push(...contained.notes);
     refrigeratorReservation = {
       ...refrigeratorBay.reservation,
       start: refrigeratorBay.reservation.start + fittedBay.shiftIn,
