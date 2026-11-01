@@ -192,7 +192,7 @@ for _slug, _hex in WALNUT_TARGETS.items():
 # solidColor, so doors, drawers, sides, skins and end panels all get the same result. Alabaster only.
 WARM_TARGETS = {
     "slim-shaker-alabaster": ("#ebe5e5", 0.05),
-    "pearl-white": ("#e8e6e6", 0.0),  # Tom, Oct 31: Pearl White leaned cool; warm to a neutral off-white, no extra cut
+    "pearl-white": ("#dfd9d9", 0.0),  # Tom, Oct 31: still too white next to the DL sample; antique white measured from the sample door, no extra cut
 }
 for _slug, (_hex, _cut) in WARM_TARGETS.items():
     _row = next(r for r in rows if r["slug"] == _slug)

@@ -233,13 +233,13 @@ describe("sides carry the door's grain, and photo materials are not over-lit", (
       expect(DLC_FR26_CATALOG.find((x) => x.slug === slug)!.faceTint).toBeNull();
     }
   });
-  it("Pearl White is warmed to a neutral off-white (Tom, Oct 31): no longer bluer than red, no extra cut", () => {
+  it("Pearl White is antique white (Tom, Oct 31): #dfd9d9 measured from the DL sample, no extra cut", () => {
     const e = DLC_FR26_CATALOG.find((x) => x.slug === "pearl-white")!;
-    expect(e.solidColor).toBe("#e8e6e6");
+    expect(e.solidColor).toBe("#dfd9d9");
     expect(e.faceTint).toMatch(/^#[0-9a-f]{6}$/);
     expect(e.faceDoor).toBe("/textures/dlc-fr26/grain/pearl-white.png");
     const plan = resolveCabinetFaceImages(dl("Pearl White", "DL-PW"), "base");
-    expect(plan.dlcCrop?.solidColor).toBe("#e8e6e6");
+    expect(plan.dlcCrop?.solidColor).toBe("#dfd9d9");
     expect(plan.dlcCrop?.tintHex).toBe(e.faceTint);
   });
   it("light compensation cancels the rig's light sum per channel (tone mapping off) and stays in range", () => {
