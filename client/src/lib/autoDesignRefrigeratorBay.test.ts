@@ -351,3 +351,54 @@ describe("refrigerator measured into a corner", () => {
   });
 });
 
+
+describe("Auto-Design refrigerator stays inside its end panels (Tom, Oct 31)", () => {
+  const panel = (depth: string) => source({ id: 201, masterCode: "REPV2496", category: "Panel", subCategory: "Refrigerator End Panel", width: "1.5", height: "96", depth, placement: "tall", numberOfDoors: 0 });
+  const fridge = (depth: number, height = 70): PlacedCabinet => ({ ...refrigerator(), ...wallPlacementAt(48, 36, depth, "top", room), depth, height });
+  const build = (f: PlacedCabinet, cap: DesignCabinet, endPanel: DesignCabinet) => buildMandatoryAutoDesignRefrigeratorBay({
+    refrigerator: f, room, caps: [cap], endPanels: [endPanel], styleId: 9, makeUid: (() => { let index = 0; return () => `fit-${++index}`; })(),
+  });
+
+  it("clamps a 30-inch-deep refrigerator to the 24-inch panels so nothing sticks out past their face", () => {
+    const result = build(fridge(30), source({ id: 200 }), panel("24"));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const [cap, left, right] = result.additions;
+    expect(left.depth).toBe(24);
+    expect(right.depth).toBe(24);
+    expect(result.refrigerator.depth).toBe(24);
+    expect(result.refrigerator.width).toBe(36);
+    // same wall position: the clamp changes depth only, so the left/right clearances are unchanged
+    expect(result.refrigerator.wallOffset).toBe(refrigerator().wallOffset);
+    expect(cap.depth).toBeLessThanOrEqual(24);
+    expect(result.refrigeratorClampNote).toContain("stays inside its end panels");
+    expect(result.notes.some((note) => note.includes("stays inside"))).toBe(false); // substitution notes are untouched
+    expect(result.warnings).toEqual([]);
+  });
+
+  it("leaves a refrigerator that already fits untouched", () => {
+    const f = fridge(24);
+    const result = build(f, source({ id: 200 }), panel("24"));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.refrigerator).toBe(f);
+    expect(result.refrigeratorClampNote).toBeNull();
+  });
+
+  it("keeps the over-fridge flush rule: a pulled-forward cabinet above ends at the panel face, never past it", () => {
+    const result = build(fridge(30), source({ id: 200, masterCode: "W3612", height: "12", depth: "12", description: "36 x 12 Wall" }), panel("24"));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const [cap, left] = result.additions;
+    expect(cap.depth + (cap.y ?? 0)).toBeLessThanOrEqual(left.depth + 0.05);
+    expect(cap.depth + (cap.y ?? 0)).toBeCloseTo(result.refrigerator.depth, 2);
+  });
+
+  it("warns, instead of letting it stick out, when the cabinet above is deeper than the panels", () => {
+    const result = build(fridge(24), source({ id: 200, depth: "26" }), panel("24"));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0]).toMatch(/sticks out/);
+  });
+});

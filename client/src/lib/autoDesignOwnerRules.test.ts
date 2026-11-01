@@ -94,14 +94,15 @@ describe("Auto-Design rule: an empty wall is filled", () => {
 });
 
 describe("Auto-Design rule: a corner refrigerator stays put", () => {
-  it("defers the corner-occupant refrigerator to PR 133 instead of editing the seating or bay modules", () => {
+  it("keeps the corner-occupant refrigerator in the bay module (PR 133 landed) and out of the seating module", () => {
     const designTool = readFileSync(resolve(process.cwd(), "client/src/pages/DesignTool.tsx"), "utf8");
     const seating = readFileSync(resolve(process.cwd(), "client/src/lib/autoDesignCornerSeating.ts"), "utf8");
     const bay = readFileSync(resolve(process.cwd(), "client/src/lib/autoDesignRefrigeratorBay.ts"), "utf8");
     expect(designTool).toContain("PR #133");
     expect(designTool).toContain("cursor/frameless-corner-fridge-a890");
     expect(seating).not.toContain("autoDesignLaysOutAroundCornerRefrigerator");
-    expect(bay).not.toContain("acceptMeasuredCornerRefrigeratorBay");
+    // PR #133's measured-corner bay acceptance now lives in the bay module (one definition, used by DesignTool).
+    expect(bay.match(/export function acceptMeasuredCornerRefrigeratorBay\b/g)).toHaveLength(1);
   });
 });
 

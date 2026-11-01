@@ -306,6 +306,7 @@ export function runAutoDesignLayout(args: {
   }
 
   const notes: string[] = [];
+  const refrigeratorBayWarnings: string[] = [];
   const refrigerator = anchorsByKind.get("refrigerator");
   let refrigeratorReservation: { wall: string; start: number; end: number } | null = null;
   if (refrigerator) {
@@ -321,6 +322,10 @@ export function runAutoDesignLayout(args: {
       framelessLine: args.wallCatalog.some((row) => hasAefPrintedGeometry(row)),
     });
     if (!refrigeratorBay.ok) return fail(refrigeratorBay.message);
+    // The refrigerator must stay inside its end panels: take the clamped copy (depth/height) before fitting.
+    working = working.map((item) => (item.uid === refrigeratorBay.refrigerator.uid ? refrigeratorBay.refrigerator : item));
+    anchorsByKind.set("refrigerator", refrigeratorBay.refrigerator);
+    refrigeratorBayWarnings.push(...refrigeratorBay.warnings);
     const fittedBay = fitExplicitRefrigeratorOptionPlacements(working, refrigeratorBay.additions, refrigerator.uid, room);
     if (Math.abs(fittedBay.shiftIn) > AUTO_DESIGN_REFRIGERATOR_WALL_END_SHIFT_IN + COLLISION_EPSILON_IN) {
       return fail("The measured refrigerator bay does not have room for its two panels and matching cabinet above. Adjust the refrigerator center measurement; Auto-Design will not move it.");
@@ -335,7 +340,7 @@ export function runAutoDesignLayout(args: {
       start: refrigeratorBay.reservation.start + fittedBay.shiftIn,
       end: refrigeratorBay.reservation.end + fittedBay.shiftIn,
     };
-    notes.push(...refrigeratorBay.notes);
+    notes.push(...refrigeratorBay.notes, ...(refrigeratorBay.refrigeratorClampNote ? [refrigeratorBay.refrigeratorClampNote] : []));
   }
 
   const sinkBase = anchorsByKind.get("sink");
@@ -606,7 +611,7 @@ export function runAutoDesignLayout(args: {
   }
   const reportedWiggleMoves = activeAutoDesignWiggleMoves(wiggle.moves, working, room);
   const shiftReview = reviewAfterShift({ placed: working, room, openings: stageOpenings, usage: stage.input.kitchenUsage });
-  const warnings = shiftReview.findings.filter((entry) => entry.severity === "attention").map((entry) => `${entry.title}: ${entry.description}`);
+  const warnings = [...refrigeratorBayWarnings, ...shiftReview.findings.filter((entry) => entry.severity === "attention").map((entry) => `${entry.title}: ${entry.description}`)];
   const bareRange = working.find((item) => item.placement === "appliance" && isRangeOrOven(item.masterCode, item.description) && autoDesignRangeNeedsVentilation(working, item));
   return {
     ok: true,
