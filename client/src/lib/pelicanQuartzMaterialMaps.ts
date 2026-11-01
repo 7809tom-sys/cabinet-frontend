@@ -672,3 +672,53 @@ export function pelicanQuartzMaterialMap(code: string | null | undefined): Pelic
   if (!normalized) return null;
   return PELICAN_QUARTZ_MATERIAL_MAPS.find((map) => map.codes.some((candidate) => normalizePelicanQuartzCode(candidate) === normalized)) ?? null;
 }
+
+/** Slab size used when a vendor Designer photo has no built-in quartz entry. */
+export const PELICAN_UPLOADED_SLAB_WIDTH_IN = 126;
+export const PELICAN_UPLOADED_SLAB_DEPTH_IN = 63;
+
+export type PelicanDesignerMaterial = {
+  url: string;
+  /** Includes the image URL when the photo is an upload, so a new file cannot reuse a cached slab. */
+  key: string;
+  physicalWidthIn: number;
+  physicalDepthIn: number;
+  source: "uploaded" | "static-map";
+};
+
+function pelicanMaterialImageIsColorMap(url: string): boolean {
+  const value = url.trim().toLowerCase();
+  if (!value) return false;
+  return !/(_normal\b|normalmap|normal_map|_roughness\b|roughnessmap|_rough\b|_nrm\b|_ao\b|occlusionmap|_metallic\b)/.test(value);
+}
+
+/**
+ * Vendor Designer photos (`materialImageUrl`) win over the built-in quartz slab.
+ * With no uploaded photo, the built-in slab is unchanged. An upload keeps that
+ * slab's physical size when the product is mapped, and otherwise uses 126 x 63.
+ */
+export function resolvePelicanDesignerMaterial(
+  productName: string | null | undefined,
+  materialImageUrl: string | null | undefined,
+): PelicanDesignerMaterial | null {
+  const quartzMap = pelicanQuartzMaterialMap(productName);
+  const uploaded = (materialImageUrl ?? "").trim();
+  if (uploaded && pelicanMaterialImageIsColorMap(uploaded)) {
+    const handle = quartzMap?.handle ?? "uploaded";
+    return {
+      url: uploaded,
+      key: `pelican-quartz:${handle}:${uploaded}`,
+      physicalWidthIn: quartzMap?.physicalWidthIn ?? PELICAN_UPLOADED_SLAB_WIDTH_IN,
+      physicalDepthIn: quartzMap?.physicalDepthIn ?? PELICAN_UPLOADED_SLAB_DEPTH_IN,
+      source: "uploaded",
+    };
+  }
+  if (!quartzMap) return null;
+  return {
+    url: quartzMap.materialImageUrl,
+    key: `pelican-quartz:${quartzMap.handle}`,
+    physicalWidthIn: quartzMap.physicalWidthIn,
+    physicalDepthIn: quartzMap.physicalDepthIn,
+    source: "static-map",
+  };
+}

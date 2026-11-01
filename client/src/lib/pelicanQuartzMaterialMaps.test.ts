@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   PELICAN_QUARTZ_MATERIAL_MAPS,
   pelicanQuartzMaterialMap,
+  resolvePelicanDesignerMaterial,
 } from "./pelicanQuartzMaterialMaps";
 
 const OFFICIAL_CURRENT_VARIANTS = [
@@ -60,6 +61,41 @@ describe("Pelican Quartz material-map registry", () => {
     const right = pelicanQuartzMaterialMap("Riviera 3cm Right");
     expect(left).not.toBeNull();
     expect(right).toEqual(left);
+  });
+
+  it("prefers an uploaded Designer photo over the static quartz slab and falls back when none is set", () => {
+    const bedrock = pelicanQuartzMaterialMap("Bedrock 3cm");
+    const uploaded = "/manus-storage/pelican/uploads/bedrock-designer.webp";
+    expect(resolvePelicanDesignerMaterial("Bedrock 3cm", uploaded)).toEqual({
+      url: uploaded,
+      key: `pelican-quartz:bedrock-3cm:${uploaded}`,
+      physicalWidthIn: bedrock?.physicalWidthIn,
+      physicalDepthIn: bedrock?.physicalDepthIn,
+      source: "uploaded",
+    });
+    expect(resolvePelicanDesignerMaterial("Bedrock 3cm", "  ")).toMatchObject({
+      url: bedrock?.materialImageUrl,
+      key: "pelican-quartz:bedrock-3cm",
+      source: "static-map",
+    });
+    expect(resolvePelicanDesignerMaterial("Bedrock 3cm", null)).toMatchObject({
+      url: bedrock?.materialImageUrl,
+      key: "pelican-quartz:bedrock-3cm",
+      physicalWidthIn: 126,
+      physicalDepthIn: 63,
+      source: "static-map",
+    });
+    expect(resolvePelicanDesignerMaterial("Bedrock 3cm", "/textures/bedrock_normal.jpg")?.url).toBe(bedrock?.materialImageUrl);
+    const custom = "/manus-storage/pelican/uploads/custom-limestone.png";
+    expect(resolvePelicanDesignerMaterial("Custom Limestone", custom)).toEqual({
+      url: custom,
+      key: `pelican-quartz:uploaded:${custom}`,
+      physicalWidthIn: 126,
+      physicalDepthIn: 63,
+      source: "uploaded",
+    });
+    expect(resolvePelicanDesignerMaterial("Custom Limestone", null)).toBeNull();
+    expect(resolvePelicanDesignerMaterial("Apollo 3cm", null)).toBeNull();
   });
 
   it("does not treat a local-only legacy quartz row as a current official product map", () => {

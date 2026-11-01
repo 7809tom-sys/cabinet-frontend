@@ -32,6 +32,35 @@ describe("Pelican vendor catalog editor", () => {
     expect(catalogSource).toContain("Edit");
   });
 
+  it("shows separate catalog and Designer photo uploads that store the trimmed response", () => {
+    expect(catalogSource).toContain('data-testid="pelican-upload-catalog-photo"');
+    expect(catalogSource).toContain('data-testid="pelican-upload-designer-photo"');
+    expect(catalogSource).toContain("Upload regular photo");
+    expect(catalogSource).toContain("Upload Designer photo");
+    expect(catalogSource).toContain('data-testid="pelican-catalog-photo-preview"');
+    expect(catalogSource).toContain('data-testid="pelican-designer-photo-preview"');
+    expect(catalogSource).toContain('alt="Current catalog photo"');
+    expect(catalogSource).toContain('alt="Current Designer photo"');
+    expect(catalogSource).toContain('accept="image/jpeg,image/png,image/webp"');
+    expect(catalogSource).toContain('uploadPelicanPhoto(file, "catalog")');
+    expect(catalogSource).toContain('uploadPelicanPhoto(file, "designer")');
+    expect(catalogSource).toContain('target,');
+    expect(catalogSource).toContain('useAsDesignerPhoto: target === "designer"');
+    expect(catalogSource).toContain('alsoSetCatalogImage: target === "catalog"');
+    expect(catalogSource).toContain("trimmedPelicanPhotoUrl");
+    expect(catalogSource).toContain("White border trimmed automatically");
+    expect(catalogSource).toContain("validatePelicanProductImageFile");
+    expect(catalogSource).toContain("utils.pelican.adminList.invalidate()");
+    expect(catalogSource).toContain("utils.pelican.categories.invalidate()");
+    expect(catalogSource).toContain("utils.pelican.byCategory.invalidate()");
+    expect(catalogSource).toContain("utils.pelican.bySlug.invalidate()");
+    expect(catalogSource).toContain('id="pelican-edit-image"');
+    expect(catalogSource).not.toContain("Use as Designer photo");
+    expect(catalogSource).not.toContain("gemini");
+    expect(catalogSource).not.toContain("banana");
+    expect(catalogSource).not.toContain("createObjectURL");
+  });
+
   it("routes Pelican vendors to the shipping profile editor", () => {
     expect(source).toContain("PelicanShippingProfilesPanel");
     expect(source).toContain("page === \"shipping\" && (isPelican");
