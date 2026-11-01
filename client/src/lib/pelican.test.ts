@@ -131,6 +131,16 @@ describe("surfaceRole (real Pelican storefront categories)", () => {
 
   it("maps Tile & Mosaic to backsplash", () => {
     expect(surfaceRole({ category: "Tile & Mosaic", name: "Subway White 3x6" })).toBe("backsplash");
+    expect(surfaceRole({ category: "Tile & Mosaic", subCategory: "Mosaic", name: "Arctic Vail" })).toBe("backsplash");
+  });
+
+  it("keeps a floor-installed mosaic on the floor without removing it from backsplash", () => {
+    expect(surfaceRole({
+      category: "Tile & Mosaic",
+      subCategory: "Mosaic",
+      name: "Arctic Vail",
+      installedAs: "flooring",
+    })).toBe("flooring");
   });
 
   it("splits the combined Sinks & Faucets line by subCategory", () => {

@@ -15,6 +15,13 @@ import { DenoiseMaterial, WebGLPathTracer } from "three-gpu-pathtracer";
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Camera, CheckCircle2, ChevronDown, Download, Eye, FileDown, Info, LoaderCircle, Magnet, Mail, Maximize2, Minimize2, Minus, Move3D, Palette, PanelTop, Plus, Printer, RefreshCw, Rotate3D, Save, Share2, Sparkles, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { FlooringRotationControl } from "./FlooringLayoutPicker";
+import { MosaicFloorPatternControl } from "./MosaicFloorPatternDialog";
+import {
+  isMosaicFloorProduct,
+  mosaicFloorPatternOrStraight,
+  mosaicFloorUv,
+  type MosaicFloorPattern,
+} from "@/lib/mosaicFloorTile";
 import { PlacedItemContextMenu, type PlacedItemContextMenuState } from "./PlacedItemContextMenu";
 import { ColorStyleQuickPicker } from "./ColorStyleQuickPicker";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -25,7 +32,7 @@ import { refrigeratorEndPanelCutDownNote } from "@/lib/refrigeratorEndPanelCut";
 import { roomWallRunFrames } from "@/lib/design";
 import {
   baseboardSpans, mosaicFinishedEdges, mosaicInterlockSpecForKey, mosaicSheetSpecFor, mosaicInterlockUnitPlan, mosaicPhaseAnchorEdge, mosaicPitchIn,
-  clampMosaicGroutIn, type MosaicInterlockSpec,
+  clampMosaicGroutIn, isMosaicPatternKind, type MosaicInterlockSpec,
 } from "@/lib/backsplashMosaic";
 import { flooringRotationRadians, type FlooringRotationDegrees } from "@/lib/flooringLayout";
 import { threeDLatticeRackLayout } from "@/lib/latticeRackLayout";
@@ -951,6 +958,9 @@ interface Props {
   /** Saved plank or tile direction for the room floor. 0 keeps the product's native direction. */
   flooringRotationDeg?: FlooringRotationDegrees;
   onFlooringRotationChange?: (degrees: FlooringRotationDegrees) => void;
+  /** Mosaic floor pattern for this room. Absent designs are Straight (90°). */
+  mosaicFloorPattern?: MosaicFloorPattern | null;
+  onMosaicFloorPatternChange?: (pattern: MosaicFloorPattern) => void;
   /** Catalog card photo used only to sample a floor color when no swatch exists. */
   catalogFlooringCardImageUrl?: string | null;
   catalogBacksplashImageUrl?: string | null;
@@ -1183,6 +1193,11 @@ export function threeDProductMaterialSource(
 ): ThreeDProductMaterialSource | null {
 	const normalizedName = (productName ?? "").trim().toLowerCase();
 	const productId = surfaceMetadata?.productId ?? null;
+	const mosaicOnFloor = role === "flooring" && isMosaicFloorProduct({
+	  name: productName,
+	  category: surfaceMetadata?.category,
+	  subCategory: surfaceMetadata?.subCategory,
+	});
 	const flooringProfile = role === "flooring"
 		? threeDFlooringPatternProfile({ name: productName, ...surfaceMetadata })
 		: null;
@@ -1253,7 +1268,7 @@ export function threeDProductMaterialSource(
       staggerOffsetsIn: null,
     };
   }
-	if (role === "backsplash" && threeDCuratedIdentityMatches(productName, productId, "desert clay", 183)) {
+	if ((role === "backsplash" || mosaicOnFloor) && threeDCuratedIdentityMatches(productName, productId, "desert clay", 183)) {
 	  return {
 	    url: THREE_D_DESERT_CLAY_MOSAIC_URL,
       key: "desert-clay-11.81in-interlocking-mosaic",
@@ -1271,7 +1286,7 @@ export function threeDProductMaterialSource(
 	    backsplashGroutJointIn: 1 / 16,
 	  };
 	}
-	if (role === "backsplash" && threeDCuratedIdentityMatches(productName, productId, "arctic vail", 47)) {
+	if ((role === "backsplash" || mosaicOnFloor) && threeDCuratedIdentityMatches(productName, productId, "arctic vail", 47)) {
 	  const sheet = threeDMosaicSheetMap(THREE_D_ARCTIC_VAIL_MOSAIC_URL, 10.71, 10.55, surfaceMetadata?.cardImageUrl);
 	  return {
 	    url: sheet.url,
@@ -1292,7 +1307,7 @@ export function threeDProductMaterialSource(
 	    backsplashGroutJointIn: 1 / 16,
 	  };
 	}
-	if (role === "backsplash" && threeDCuratedIdentityMatches(productName, productId, "carbon hex", 142)) {
+	if ((role === "backsplash" || mosaicOnFloor) && threeDCuratedIdentityMatches(productName, productId, "carbon hex", 142)) {
 	  const sheet = threeDMosaicSheetMap(THREE_D_CARBON_HEX_MOSAIC_URL, 12.8, 11.1, surfaceMetadata?.cardImageUrl);
 	  return {
 	    url: sheet.url,
@@ -1328,7 +1343,7 @@ export function threeDProductMaterialSource(
       staggerOffsetsIn: THREE_D_PLANK_STAGGER_FRACTIONS.map((fraction) => Math.round(48 * fraction * 8) / 8),
     };
   }
-	if (role === "backsplash" && threeDCuratedIdentityMatches(productName, productId, "carrara subway", 144)) {
+	if ((role === "backsplash" || mosaicOnFloor) && threeDCuratedIdentityMatches(productName, productId, "carrara subway", 144)) {
 		return {
 			url: THREE_D_CARRARA_SUBWAY_MOSAIC_URL,
 			key: "carrara-subway-11.97in-running-bond-mosaic",
@@ -1346,7 +1361,7 @@ export function threeDProductMaterialSource(
 			backsplashGroutJointIn: 1 / 16,
 		};
 	}
-	if (role === "backsplash" && threeDCuratedIdentityMatches(productName, productId, "cloudline marble", 149)) {
+	if ((role === "backsplash" || mosaicOnFloor) && threeDCuratedIdentityMatches(productName, productId, "cloudline marble", 149)) {
 		return {
 			url: THREE_D_CLOUDLINE_MARBLE_MOSAIC_URL,
 			key: "cloudline-marble-11.81in-staggered-glass-marble-mosaic",
@@ -1364,7 +1379,7 @@ export function threeDProductMaterialSource(
 			backsplashGroutJointIn: 1 / 16,
 		};
 	}
-	if (role === "backsplash" && threeDCuratedIdentityMatches(productName, productId, "concord square", 164)) {
+	if ((role === "backsplash" || mosaicOnFloor) && threeDCuratedIdentityMatches(productName, productId, "concord square", 164)) {
 		return {
 			url: THREE_D_CONCORD_SQUARE_MOSAIC_URL,
 			key: "concord-square-11.81in-glass-marble-mosaic",
@@ -1382,7 +1397,7 @@ export function threeDProductMaterialSource(
 			backsplashGroutJointIn: 1 / 16,
 		};
 	}
-	if (role === "backsplash" && threeDCuratedIdentityMatches(productName, productId, "glacier shift", 242)) {
+	if ((role === "backsplash" || mosaicOnFloor) && threeDCuratedIdentityMatches(productName, productId, "glacier shift", 242)) {
 		return {
 			url: THREE_D_GLACIER_SHIFT_HERRINGBONE_URL,
 			key: "glacier-shift-12.05in-recycled-glass-herringbone",
@@ -1400,7 +1415,7 @@ export function threeDProductMaterialSource(
 			backsplashGroutJointIn: 1 / 16,
 		};
 	}
-	if (role === "backsplash" && threeDCuratedIdentityMatches(productName, productId, "golden trace", 244)) {
+	if ((role === "backsplash" || mosaicOnFloor) && threeDCuratedIdentityMatches(productName, productId, "golden trace", 244)) {
 		return {
 			url: THREE_D_GOLDEN_TRACE_MOSAIC_URL,
 			key: "golden-trace-11.81in-marble-aluminum-mosaic",
@@ -1443,7 +1458,7 @@ export function threeDProductMaterialSource(
 	// Flooring and countertops still refuse an unapproved room photo and use a
 	// neutral preview. A selected backsplash uses its own picture; with no
 	// picture it stays unlabeled instead of becoming a generic tile.
-	if (role === "backsplash" && productName?.trim()) {
+	if ((role === "backsplash" || mosaicOnFloor) && productName?.trim()) {
 		const sheet = parseBacksplashSheetInches({
 			name: productName,
 			size: surfaceMetadata?.size,
@@ -11425,7 +11440,29 @@ export function MobileThreeDViewerNavigation(actions: ThreeDViewerNavigationActi
   );
 }
 
-export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick = false, roomOverride, openings = [], sinks = [], potFillers = [], island = null, islandFocusRequest = null, furniture = [], selectedFurnitureUid = null, onSelectFurniture, onRemoveFurniture, onRotateFurniture, onOpenFurnitureAttributes, ponyWalls = [], orderSummary, orderLines = [], initialPresentation, catalogFinishOverride, renderExposure = null, colorDeltaEMax = null, doorRenderHex = null, cabinetFinishPreviewOptions = [], doorStyleChoices = [], selectedDoorStyleId = null, onDoorStyleChange, cabinetFinishOverrides, cabinetDoorProfiles, cabinetDoorSampleUrls, cabinetDrawerSampleUrls, cabinetFaceSourceKinds, cabinetFaceCrops, catalogFaceCrop, cabinetFrontVisuals, catalogDoorSampleUrl, catalogDrawerSampleUrl, catalogFaceSourceKind, catalogRoomSceneUrl, catalogDoorProfile, windowSceneKind = DEFAULT_WINDOW_SCENE_KIND, windowFrameStyle = "white", hardwareStyleId = "none", hardwareAccent, catalogFinishName, catalogFinishProductId, catalogIslandCabinetName, catalogIslandCabinetColor, catalogIslandCabinetProductId, catalogIslandDoorSampleUrl, catalogCountertopName, catalogCountertopProductId, catalogCountertopReferenceUrl, catalogIslandCountertopName, catalogIslandCountertopProductId, catalogIslandCountertopReferenceUrl, catalogFlooringName, catalogFlooringProductId, catalogFlooringReferenceUrl, catalogFlooringCategory, catalogFlooringSubCategory, catalogFlooringSize, catalogBacksplashName, catalogBacksplashProductId, catalogBacksplashReferenceUrl, catalogHardwareReferenceUrl, catalogHardwareName, savedDesignId, savedDesignRevision, canAffiliateGeminiImageTest = false, isCurrentPlanSaved = false, savedPlanFingerprintPayload = null, backsplashHeightMode = "standard", countertopBacksplashHeightIn = 0, catalogCountertopColor, catalogIslandCountertopColor, catalogCountertopImageUrl, catalogIslandCountertopImageUrl, catalogFlooringImageUrl, catalogFlooringCardImageUrl = null, flooringRotationDeg = 0, onFlooringRotationChange, catalogBacksplashImageUrl, catalogBacksplashCardImageUrl = null, catalogBacksplashSize = null, catalogBacksplashCategory = null, catalogBacksplashSubCategory = null, shareContext, catalogItems = [], catalogDragItem = null, catalogDropWall, onAddCatalogItem, onAddRangeHood, onSaveToAccount, onSyncCart, onPresentationChange, onRoomWallHeightChange, onRoomWallHeightsChange, onMoveCabinet, onMoveCabinetTo, selectedCabinetUid, attributesTargetUid = null, missingPriceUids, onSelectCabinet, onOpenCabinetEditor, onSelectOpening, onOpenWindowEditor, onOpenDoorEditor, onRequestFiller, onSnapGlassCabinetToFront, onRotateCabinet, onRemoveCabinet, showWallLayer, onToggleWallLayer, temporaryPreviewMessage, onClearTemporaryPreview, temporaryPreviewCounter, temporaryPreviewTransitionKey, fillerInsertionTransition, cabinetConfigHref, embedded = false, cutawayRoomWalls = true, hybridPlanUnderlay = false, className, onGeometryRendered }: Props) {
+function ThreeDFloorMaterialControl({
+  mosaicFloor,
+  mosaicFloorPattern,
+  onMosaicFloorPatternChange,
+  rotation,
+  onRotationChange,
+  testId,
+}: {
+  mosaicFloor: boolean;
+  mosaicFloorPattern?: MosaicFloorPattern | null;
+  onMosaicFloorPatternChange?: (pattern: MosaicFloorPattern) => void;
+  rotation: FlooringRotationDegrees;
+  onRotationChange?: (degrees: FlooringRotationDegrees) => void;
+  testId: string;
+}) {
+  if (mosaicFloor) {
+    return <MosaicFloorPatternControl value={mosaicFloorPattern} onChange={onMosaicFloorPatternChange} testId={testId} />;
+  }
+  if (!onRotationChange) return null;
+  return <FlooringRotationControl value={rotation} onChange={onRotationChange} testId={testId} />;
+}
+
+export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick = false, roomOverride, openings = [], sinks = [], potFillers = [], island = null, islandFocusRequest = null, furniture = [], selectedFurnitureUid = null, onSelectFurniture, onRemoveFurniture, onRotateFurniture, onOpenFurnitureAttributes, ponyWalls = [], orderSummary, orderLines = [], initialPresentation, catalogFinishOverride, renderExposure = null, colorDeltaEMax = null, doorRenderHex = null, cabinetFinishPreviewOptions = [], doorStyleChoices = [], selectedDoorStyleId = null, onDoorStyleChange, cabinetFinishOverrides, cabinetDoorProfiles, cabinetDoorSampleUrls, cabinetDrawerSampleUrls, cabinetFaceSourceKinds, cabinetFaceCrops, catalogFaceCrop, cabinetFrontVisuals, catalogDoorSampleUrl, catalogDrawerSampleUrl, catalogFaceSourceKind, catalogRoomSceneUrl, catalogDoorProfile, windowSceneKind = DEFAULT_WINDOW_SCENE_KIND, windowFrameStyle = "white", hardwareStyleId = "none", hardwareAccent, catalogFinishName, catalogFinishProductId, catalogIslandCabinetName, catalogIslandCabinetColor, catalogIslandCabinetProductId, catalogIslandDoorSampleUrl, catalogCountertopName, catalogCountertopProductId, catalogCountertopReferenceUrl, catalogIslandCountertopName, catalogIslandCountertopProductId, catalogIslandCountertopReferenceUrl, catalogFlooringName, catalogFlooringProductId, catalogFlooringReferenceUrl, catalogFlooringCategory, catalogFlooringSubCategory, catalogFlooringSize, catalogBacksplashName, catalogBacksplashProductId, catalogBacksplashReferenceUrl, catalogHardwareReferenceUrl, catalogHardwareName, savedDesignId, savedDesignRevision, canAffiliateGeminiImageTest = false, isCurrentPlanSaved = false, savedPlanFingerprintPayload = null, backsplashHeightMode = "standard", countertopBacksplashHeightIn = 0, catalogCountertopColor, catalogIslandCountertopColor, catalogCountertopImageUrl, catalogIslandCountertopImageUrl, catalogFlooringImageUrl, catalogFlooringCardImageUrl = null, flooringRotationDeg = 0, onFlooringRotationChange, mosaicFloorPattern = null, onMosaicFloorPatternChange, catalogBacksplashImageUrl, catalogBacksplashCardImageUrl = null, catalogBacksplashSize = null, catalogBacksplashCategory = null, catalogBacksplashSubCategory = null, shareContext, catalogItems = [], catalogDragItem = null, catalogDropWall, onAddCatalogItem, onAddRangeHood, onSaveToAccount, onSyncCart, onPresentationChange, onRoomWallHeightChange, onRoomWallHeightsChange, onMoveCabinet, onMoveCabinetTo, selectedCabinetUid, attributesTargetUid = null, missingPriceUids, onSelectCabinet, onOpenCabinetEditor, onSelectOpening, onOpenWindowEditor, onOpenDoorEditor, onRequestFiller, onSnapGlassCabinetToFront, onRotateCabinet, onRemoveCabinet, showWallLayer, onToggleWallLayer, temporaryPreviewMessage, onClearTemporaryPreview, temporaryPreviewCounter, temporaryPreviewTransitionKey, fillerInsertionTransition, cabinetConfigHref, embedded = false, cutawayRoomWalls = true, hybridPlanUnderlay = false, className, onGeometryRendered }: Props) {
   const previewRootRef = useRef<HTMLElement>(null);
   const mountRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -12006,7 +12043,8 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 	        : resolveDesignerMaterialUrl(source.url, typeof window !== "undefined" ? window.location.origin : null);
 	      if (!source.proceduralFallback && !resolvedAsset) return null;
 	      if (resolvedAsset?.crossOrigin) textureLoader.setCrossOrigin(resolvedAsset.crossOrigin);
-	      const interlockSpec = role === "backsplash"
+	      const mosaicSurface = role === "backsplash" || (role === "flooring" && isMosaicPatternKind(source.backsplashPatternKind));
+	      const interlockSpec = mosaicSurface
 	        ? mosaicSheetSpecFor({ key: source.key, name: source.sourceProductName, widthIn: source.backsplashModuleIn ?? source.physicalWidthIn, heightIn: source.backsplashModuleHeightIn ?? source.physicalDepthIn, patternKind: source.backsplashPatternKind })
 	        : null;
 	      const texture = source.proceduralFallback
@@ -12023,7 +12061,7 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 	            source.plankLengthIn,
 	            renderQuality.tier === "mobile" ? 768 : 1024,
 	          );
-	        } else if (role === "backsplash" && interlockSpec && (() => {
+	        } else if (mosaicSurface && interlockSpec && (() => {
 	          // Hard rule (lib/backsplashMosaic.ts): the border is cut automatically and the repeat is measured from the photo.
 	          const unit = buildMosaicUnitImage(loadedTexture.image as HTMLImageElement, interlockSpec, renderQuality.tier === "mobile" ? 1024 : 2048);
 	          if (!unit) return false;
@@ -12083,7 +12121,14 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 	      texture.repeat.set(transform.repeatX, transform.repeatY);
 	      texture.offset.set(transform.offsetX, transform.offsetY);
 	      texture.center.set(0.5, 0.5);
-	      texture.rotation = transform.rotation + (role === "flooring" ? flooringRotationRadians(flooringRotationDeg) : 0);
+	      const mosaicFloorField = role === "flooring" && Boolean(interlockSpec);
+	      texture.rotation = mosaicFloorField ? 0 : transform.rotation + (role === "flooring" ? flooringRotationRadians(flooringRotationDeg) : 0);
+	      if (mosaicFloorField) {
+	        texture.repeat.set(1, 1);
+	        texture.offset.set(0, 0);
+	        texture.wrapS = THREE.RepeatWrapping;
+	        texture.wrapT = THREE.RepeatWrapping;
+	      }
 	      texture.userData = {
 	        selectedSurfaceRole: role,
 	        authoritativeWebsiteProductImage: !source.proceduralFallback,
@@ -12156,6 +12201,20 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
       : roomPolygon(activeThreeDRoomGeometry(roomOverride, scene.roomShape), room.width, room.depth);
 	    const floorShape = new THREE.Shape(polygon);
 	    const floorGeometry = normalizeThreeDPlanarUv(new THREE.ExtrudeGeometry(floorShape, { depth: 0.08, bevelEnabled: false }));
+	    const floorMosaicSpec = floorTexture?.userData?.backsplashMosaicSpec as Parameters<typeof mosaicPitchIn>[0] | null | undefined;
+	    if (floorMosaicSpec) {
+	      const pitch = mosaicPitchIn(floorMosaicSpec);
+	      const positions = floorGeometry.getAttribute("position");
+	      const uvs = floorGeometry.getAttribute("uv");
+	      if (positions && uvs) {
+	        const pattern = mosaicFloorPatternOrStraight(mosaicFloorPattern);
+	        for (let index = 0; index < positions.count; index += 1) {
+	          const uv = mosaicFloorUv(positions.getX(index) / INCH, positions.getY(index) / INCH, pitch.x, pitch.y, pattern);
+	          uvs.setXY(index, uv.u, uv.v);
+	        }
+	        uvs.needsUpdate = true;
+	      }
+	    }
 	    const floorTint = floorSource?.proceduralFallback
 	      ? (floorSource.materialColor || THREE_D_NEUTRAL_FLOOR_COLOR)
 	      : (floorTexture ? "#ffffff" : (floorSource?.materialColor || materialDefaults.floor || THREE_D_NEUTRAL_FLOOR_COLOR));
@@ -12542,7 +12601,7 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
       if (controlsRef.current === controls) controlsRef.current = null;
       if (catalogRootRef.current === catalogRoot) catalogRootRef.current = null;
     };
-  }, [scene, validSuggestions, placed, crown, toeKick, roomOverride, openings, sinks, potFillers, island, furniture, selectedFurnitureUid, ponyWalls, renderExistingDesign, resetKey, cameraPreset, showRoomContext, showSolidFrontWalls, cutawayRoomWalls, hybridPlanUnderlay, wallHeightIn, wallHeights, resolvedCabinetFinish, studioLights, cabinetPreviewFinishId, cabinetFinishOverrides, cabinetDoorProfiles, cabinetDoorSampleUrls, cabinetDrawerSampleUrls, cabinetFaceSourceKinds, cabinetFaceCrops, catalogFaceCrop, cabinetFrontVisuals, catalogDrawerSampleUrl, catalogFaceSourceKind, countertopFinish, cabinetFinish, catalogDoorSampleUrl, catalogRoomSceneUrl, hardwareStyleId, hardwareAccent, catalogCountertopName, catalogCountertopProductId, catalogIslandCountertopName, catalogIslandCountertopProductId, catalogIslandCountertopColor, catalogFlooringName, catalogFlooringProductId, catalogFlooringCategory, catalogFlooringSubCategory, catalogFlooringSize, catalogBacksplashName, catalogBacksplashProductId, catalogBacksplashSize, catalogBacksplashCategory, catalogBacksplashSubCategory, backsplashHeightMode, countertopBacksplashHeightIn, catalogCountertopImageUrl, catalogIslandCountertopImageUrl, catalogFlooringImageUrl, catalogFlooringCardImageUrl, flooringRotationDeg, catalogBacksplashImageUrl, catalogBacksplashCardImageUrl]);
+  }, [scene, validSuggestions, placed, crown, toeKick, roomOverride, openings, sinks, potFillers, island, furniture, selectedFurnitureUid, ponyWalls, renderExistingDesign, resetKey, cameraPreset, showRoomContext, showSolidFrontWalls, cutawayRoomWalls, hybridPlanUnderlay, wallHeightIn, wallHeights, resolvedCabinetFinish, studioLights, cabinetPreviewFinishId, cabinetFinishOverrides, cabinetDoorProfiles, cabinetDoorSampleUrls, cabinetDrawerSampleUrls, cabinetFaceSourceKinds, cabinetFaceCrops, catalogFaceCrop, cabinetFrontVisuals, catalogDrawerSampleUrl, catalogFaceSourceKind, countertopFinish, cabinetFinish, catalogDoorSampleUrl, catalogRoomSceneUrl, hardwareStyleId, hardwareAccent, catalogCountertopName, catalogCountertopProductId, catalogIslandCountertopName, catalogIslandCountertopProductId, catalogIslandCountertopColor, catalogFlooringName, catalogFlooringProductId, catalogFlooringCategory, catalogFlooringSubCategory, catalogFlooringSize, catalogBacksplashName, catalogBacksplashProductId, catalogBacksplashSize, catalogBacksplashCategory, catalogBacksplashSubCategory, backsplashHeightMode, countertopBacksplashHeightIn, catalogCountertopImageUrl, catalogIslandCountertopImageUrl, catalogFlooringImageUrl, catalogFlooringCardImageUrl, flooringRotationDeg, mosaicFloorPattern, catalogBacksplashImageUrl, catalogBacksplashCardImageUrl]);
 	  // A catalog filler has already passed geometry/collision validation before this
 	  // cue runs. Animate only its visual group, so the final coordinates and the
 	  // saved plan remain authoritative while the user sees it settle into the seam.
@@ -14066,7 +14125,7 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 		        {hybridPlanUnderlay && <div data-testid="three-d-plan-underlay-badge" className="pointer-events-none absolute left-3 top-3 z-20 rounded-md border border-[#d9c196] bg-white/90 px-2.5 py-1.5 text-[11px] font-semibold text-[#634b20] shadow-sm backdrop-blur">3D over plan · same placement rules</div>}
 	        {temporaryPreviewMessage && <div data-testid="three-d-preview-fade" aria-hidden="true" className={`pointer-events-none absolute inset-0 z-10 bg-background transition-opacity duration-200 motion-reduce:hidden ${temporaryPreviewFading ? "opacity-40" : "opacity-0"}`} />}
         {embedded && onDoorStyleChange && isFullscreen && <div className="absolute bottom-3 left-3 z-30 flex max-w-[calc(100%-1.5rem)]" onPointerDown={(event) => event.stopPropagation()} onPointerUp={(event) => event.stopPropagation()}><ColorStyleQuickPicker testId="three-d-color-style-picker" styles={doorStyleChoices} value={selectedDoorStyleId} onChange={onDoorStyleChange} /></div>}
-        {embedded && <><div className={`${THREE_D_EMBEDDED_TOOLBAR_CLASS} ${tabletOverlay ? "hidden" : "hidden sm:flex"}`} onPointerDown={(event) => event.stopPropagation()} onPointerUp={(event) => event.stopPropagation()}><button type="button" data-testid="three-d-add-cabinet" onClick={() => setWorkspacePanel("catalog")} className="inline-flex items-center gap-1.5 rounded-md bg-[#1a2744] px-2.5 py-1.5 text-xs font-semibold text-white transition hover:bg-[#1a2744]/85 active:scale-95"><Plus className="h-3.5 w-3.5" />Add cabinet</button>{cabinetFinishPreviewOptions.length > 1 && <button type="button" data-testid="three-d-cabinet-color-toggle" onClick={cycleCabinetPreviewFinish} aria-pressed={Boolean(selectedCabinetPreviewFinish)} className={`inline-flex max-w-52 items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-semibold transition active:scale-95 ${selectedCabinetPreviewFinish ? "border-[#a87f33] bg-[#fff7e8] text-[#614512]" : "bg-background text-[#1a2744] hover:bg-muted"}`} title="Temporarily show every cabinet and rear filler in the next selected finish"><Palette className="h-3.5 w-3.5" /><span className="h-3 w-3 shrink-0 rounded-full border border-black/15" style={{ backgroundColor: selectedCabinetPreviewFinish?.color ?? catalogFinish }} /><span className="truncate">Color: {selectedCabinetPreviewFinish?.name ?? "Plan colors"}</span></button>}{onFlooringRotationChange && <FlooringRotationControl value={flooringRotationDeg} onChange={onFlooringRotationChange} testId="three-d-flooring-rotation" />}<button type="button" data-testid="three-d-wall-heights" onClick={() => setWorkspacePanel("room")} className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-semibold text-[#1a2744] transition hover:bg-muted active:scale-95" aria-label="Set individual wall heights"><Rotate3D className="h-3.5 w-3.5" />Wall heights</button><button type="button" data-testid="three-d-room-context-toggle" onClick={() => setShowRoomContext((current) => !current)} className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-semibold text-[#1a2744] transition hover:bg-muted active:scale-95" aria-pressed={showRoomContext} title={showRoomContext ? "Hide the room walls for an unobstructed cabinet view" : "Show the finished-thickness room walls and mitered corners"}><Eye className="h-3.5 w-3.5" />{showRoomContext ? "Hide room walls" : "Show room walls"}</button>{onToggleWallLayer && <button type="button" data-testid="three-d-toggle-wall-cabinets" onClick={onToggleWallLayer} className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-semibold text-[#1a2744] transition hover:bg-muted active:scale-95" aria-pressed={showWallLayer}><PanelTop className="h-3.5 w-3.5" />{showWallLayer ? "Hide wall cabinets" : "Show wall cabinets"}</button>}</div><div data-testid="three-d-mobile-canvas-tools" className={`absolute right-3 top-3 z-20 flex items-start gap-1 ${tabletOverlay ? "" : "sm:hidden"}`} onPointerDown={(event) => event.stopPropagation()} onPointerUp={(event) => event.stopPropagation()}>{!tabletOverlay && <button type="button" data-testid="three-d-add-cabinet-mobile" onClick={() => setWorkspacePanel("catalog")} className="inline-flex h-10 items-center gap-1.5 rounded-md bg-[#1a2744] px-3 text-xs font-semibold text-white shadow-sm active:scale-95"><Plus className="h-4 w-4" />Add</button>}<div className="relative"><button type="button" data-testid="three-d-mobile-canvas-tools-trigger" onClick={() => setMobileCanvasToolsOpen((open) => !open)} aria-expanded={mobileCanvasToolsOpen} aria-label="Canvas controls" className="inline-flex h-11 w-11 items-center justify-center rounded-md border bg-background/95 text-[#1a2744] shadow-sm active:scale-95"><PanelTop className="h-4 w-4" /></button>{mobileCanvasToolsOpen && <div data-testid="three-d-mobile-canvas-tools-menu" className="absolute right-0 top-11 w-56 rounded-lg border bg-background/95 p-2 text-xs shadow-lg backdrop-blur">{cabinetFinishPreviewOptions.length > 1 && <button type="button" data-testid="three-d-mobile-cabinet-color-toggle" onClick={() => { cycleCabinetPreviewFinish(); setMobileCanvasToolsOpen(false); }} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left font-semibold text-[#1a2744] hover:bg-muted" aria-pressed={Boolean(selectedCabinetPreviewFinish)}><Palette className="h-3.5 w-3.5" /><span className="h-3 w-3 shrink-0 rounded-full border border-black/15" style={{ backgroundColor: selectedCabinetPreviewFinish?.color ?? catalogFinish }} /><span className="truncate">Color: {selectedCabinetPreviewFinish?.name ?? "Plan colors"}</span></button>}<button type="button" data-testid="three-d-mobile-wall-heights" onClick={() => { setWorkspacePanel("room"); setMobileCanvasToolsOpen(false); }} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left font-semibold text-[#1a2744] hover:bg-muted"><Rotate3D className="h-3.5 w-3.5" />Move wall</button>{onToggleWallLayer && <button type="button" data-testid="three-d-mobile-toggle-wall-cabinets" onClick={() => { onToggleWallLayer(); setMobileCanvasToolsOpen(false); }} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left font-semibold text-[#1a2744] hover:bg-muted" aria-pressed={showWallLayer}><PanelTop className="h-3.5 w-3.5" />{showWallLayer ? "Hide walls" : "Show walls"}</button>}{fillerNoticeEntries.length > 0 && <div data-testid="three-d-mobile-filler-notice" className={`mt-1 border-t px-2.5 pt-2 ${hasOverMaximumFiller ? "border-red-300 text-red-950" : "border-[#ead9b6] text-[#634b20]"}`}><p className="font-semibold">Fillers</p>{fillerNoticeEntries.map((label) => <p key={`${label.masterCode}-${label.installedWidth}-${label.maximum}-${label.over}`} className="mt-1 truncate font-medium">{label.masterCode} · {formatEighthInches(label.installedWidth)} installed · {formatEighthInches(label.maximum)} max{label.over ? " · OVER MAX" : ""}{label.quantity > 1 ? <> · ×{label.quantity}</> : null}</p>)}</div>}</div>}</div></div></>}
+        {embedded && <><div className={`${THREE_D_EMBEDDED_TOOLBAR_CLASS} ${tabletOverlay ? "hidden" : "hidden sm:flex"}`} onPointerDown={(event) => event.stopPropagation()} onPointerUp={(event) => event.stopPropagation()}><button type="button" data-testid="three-d-add-cabinet" onClick={() => setWorkspacePanel("catalog")} className="inline-flex items-center gap-1.5 rounded-md bg-[#1a2744] px-2.5 py-1.5 text-xs font-semibold text-white transition hover:bg-[#1a2744]/85 active:scale-95"><Plus className="h-3.5 w-3.5" />Add cabinet</button>{cabinetFinishPreviewOptions.length > 1 && <button type="button" data-testid="three-d-cabinet-color-toggle" onClick={cycleCabinetPreviewFinish} aria-pressed={Boolean(selectedCabinetPreviewFinish)} className={`inline-flex max-w-52 items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-semibold transition active:scale-95 ${selectedCabinetPreviewFinish ? "border-[#a87f33] bg-[#fff7e8] text-[#614512]" : "bg-background text-[#1a2744] hover:bg-muted"}`} title="Temporarily show every cabinet and rear filler in the next selected finish"><Palette className="h-3.5 w-3.5" /><span className="h-3 w-3 shrink-0 rounded-full border border-black/15" style={{ backgroundColor: selectedCabinetPreviewFinish?.color ?? catalogFinish }} /><span className="truncate">Color: {selectedCabinetPreviewFinish?.name ?? "Plan colors"}</span></button>}<ThreeDFloorMaterialControl mosaicFloor={isMosaicFloorProduct({ name: catalogFlooringName, category: catalogFlooringCategory, subCategory: catalogFlooringSubCategory })} mosaicFloorPattern={mosaicFloorPattern} onMosaicFloorPatternChange={onMosaicFloorPatternChange} rotation={flooringRotationDeg} onRotationChange={onFlooringRotationChange} testId="three-d-flooring-rotation" /><button type="button" data-testid="three-d-wall-heights" onClick={() => setWorkspacePanel("room")} className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-semibold text-[#1a2744] transition hover:bg-muted active:scale-95" aria-label="Set individual wall heights"><Rotate3D className="h-3.5 w-3.5" />Wall heights</button><button type="button" data-testid="three-d-room-context-toggle" onClick={() => setShowRoomContext((current) => !current)} className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-semibold text-[#1a2744] transition hover:bg-muted active:scale-95" aria-pressed={showRoomContext} title={showRoomContext ? "Hide the room walls for an unobstructed cabinet view" : "Show the finished-thickness room walls and mitered corners"}><Eye className="h-3.5 w-3.5" />{showRoomContext ? "Hide room walls" : "Show room walls"}</button>{onToggleWallLayer && <button type="button" data-testid="three-d-toggle-wall-cabinets" onClick={onToggleWallLayer} className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-semibold text-[#1a2744] transition hover:bg-muted active:scale-95" aria-pressed={showWallLayer}><PanelTop className="h-3.5 w-3.5" />{showWallLayer ? "Hide wall cabinets" : "Show wall cabinets"}</button>}</div><div data-testid="three-d-mobile-canvas-tools" className={`absolute right-3 top-3 z-20 flex items-start gap-1 ${tabletOverlay ? "" : "sm:hidden"}`} onPointerDown={(event) => event.stopPropagation()} onPointerUp={(event) => event.stopPropagation()}>{!tabletOverlay && <button type="button" data-testid="three-d-add-cabinet-mobile" onClick={() => setWorkspacePanel("catalog")} className="inline-flex h-10 items-center gap-1.5 rounded-md bg-[#1a2744] px-3 text-xs font-semibold text-white shadow-sm active:scale-95"><Plus className="h-4 w-4" />Add</button>}<div className="relative"><button type="button" data-testid="three-d-mobile-canvas-tools-trigger" onClick={() => setMobileCanvasToolsOpen((open) => !open)} aria-expanded={mobileCanvasToolsOpen} aria-label="Canvas controls" className="inline-flex h-11 w-11 items-center justify-center rounded-md border bg-background/95 text-[#1a2744] shadow-sm active:scale-95"><PanelTop className="h-4 w-4" /></button>{mobileCanvasToolsOpen && <div data-testid="three-d-mobile-canvas-tools-menu" className="absolute right-0 top-11 w-56 rounded-lg border bg-background/95 p-2 text-xs shadow-lg backdrop-blur">{cabinetFinishPreviewOptions.length > 1 && <button type="button" data-testid="three-d-mobile-cabinet-color-toggle" onClick={() => { cycleCabinetPreviewFinish(); setMobileCanvasToolsOpen(false); }} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left font-semibold text-[#1a2744] hover:bg-muted" aria-pressed={Boolean(selectedCabinetPreviewFinish)}><Palette className="h-3.5 w-3.5" /><span className="h-3 w-3 shrink-0 rounded-full border border-black/15" style={{ backgroundColor: selectedCabinetPreviewFinish?.color ?? catalogFinish }} /><span className="truncate">Color: {selectedCabinetPreviewFinish?.name ?? "Plan colors"}</span></button>}<button type="button" data-testid="three-d-mobile-wall-heights" onClick={() => { setWorkspacePanel("room"); setMobileCanvasToolsOpen(false); }} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left font-semibold text-[#1a2744] hover:bg-muted"><Rotate3D className="h-3.5 w-3.5" />Move wall</button>{onToggleWallLayer && <button type="button" data-testid="three-d-mobile-toggle-wall-cabinets" onClick={() => { onToggleWallLayer(); setMobileCanvasToolsOpen(false); }} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left font-semibold text-[#1a2744] hover:bg-muted" aria-pressed={showWallLayer}><PanelTop className="h-3.5 w-3.5" />{showWallLayer ? "Hide walls" : "Show walls"}</button>}{fillerNoticeEntries.length > 0 && <div data-testid="three-d-mobile-filler-notice" className={`mt-1 border-t px-2.5 pt-2 ${hasOverMaximumFiller ? "border-red-300 text-red-950" : "border-[#ead9b6] text-[#634b20]"}`}><p className="font-semibold">Fillers</p>{fillerNoticeEntries.map((label) => <p key={`${label.masterCode}-${label.installedWidth}-${label.maximum}-${label.over}`} className="mt-1 truncate font-medium">{label.masterCode} · {formatEighthInches(label.installedWidth)} installed · {formatEighthInches(label.maximum)} max{label.over ? " · OVER MAX" : ""}{label.quantity > 1 ? <> · ×{label.quantity}</> : null}</p>)}</div>}</div>}</div></div></>}
         {fillerNoticeEntries.length > 0 && <div data-testid="three-d-filler-notice-chip" className={`absolute left-3 z-20 ${tabletOverlay ? "top-3" : "bottom-16"}`} onPointerDown={(event) => event.stopPropagation()} onPointerUp={(event) => event.stopPropagation()}>
           <button type="button" onClick={() => setFillerChipOpen((open) => !open)} aria-expanded={fillerChipOpen} className={`inline-flex h-11 items-center gap-1.5 rounded-full border bg-[#fffaf1]/95 px-3 text-xs font-semibold shadow-sm backdrop-blur active:scale-95 ${hasOverMaximumFiller ? "border-red-300 text-red-950" : "border-[#d9c196] text-[#634b20]"}`}>Fillers ({fillerNoticePieceCount})</button>
           {fillerChipOpen && <div className={`mt-1 w-56 rounded-lg border bg-[#fffaf1]/98 px-2.5 py-2 text-xs shadow-lg backdrop-blur ${hasOverMaximumFiller ? "border-red-300 text-red-950" : "border-[#d9c196] text-[#634b20]"}`}><p className="font-semibold">Fillers</p>{fillerNoticeEntries.map((label) => <p key={`${label.masterCode}-${label.installedWidth}-${label.maximum}-${label.over}`} className="mt-0.5 truncate font-medium">{label.masterCode} · {formatEighthInches(label.installedWidth)} installed · {formatEighthInches(label.maximum)} max{label.over ? " · OVER MAX" : ""}{label.quantity > 1 ? <> · ×{label.quantity}</> : null}</p>)}</div>}
@@ -14268,7 +14327,7 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
           </>}
           {workspacePanel === "view" && <>
             <SheetHeader><SheetTitle>3D view</SheetTitle></SheetHeader>
-            <div className="mt-4">{onFlooringRotationChange && <FlooringRotationControl value={flooringRotationDeg} onChange={onFlooringRotationChange} testId="three-d-view-flooring-rotation" />}</div><div className="mt-4 flex flex-wrap gap-2" aria-label="3D camera presets">{([ ["presentation", "Perspective"], ["front", "Front"], ["wide", "Wide"], ["detail", "Detail"] ] as const).map(([preset, label]) => <Button key={preset} type="button" variant={cameraPreset === preset ? "default" : "outline"} onClick={() => { setCameraPreset(preset); setWorkspacePanel(null); }}>{label}</Button>)}</div>
+            <div className="mt-4"><ThreeDFloorMaterialControl mosaicFloor={isMosaicFloorProduct({ name: catalogFlooringName, category: catalogFlooringCategory, subCategory: catalogFlooringSubCategory })} mosaicFloorPattern={mosaicFloorPattern} onMosaicFloorPatternChange={onMosaicFloorPatternChange} rotation={flooringRotationDeg} onRotationChange={onFlooringRotationChange} testId="three-d-view-flooring-rotation" /></div><div className="mt-4 flex flex-wrap gap-2" aria-label="3D camera presets">{([ ["presentation", "Perspective"], ["front", "Front"], ["wide", "Wide"], ["detail", "Detail"] ] as const).map(([preset, label]) => <Button key={preset} type="button" variant={cameraPreset === preset ? "default" : "outline"} onClick={() => { setCameraPreset(preset); setWorkspacePanel(null); }}>{label}</Button>)}</div>
             {cutawayRoomWalls && <Button type="button" className="mt-4" variant="outline" aria-pressed={showSolidFrontWalls} onClick={() => setShowSolidFrontWalls((current) => !current)}>{showSolidFrontWalls ? "Clear view (cut away front walls)" : "Show solid front walls"}</Button>}
             <div className="mt-4 flex flex-wrap gap-2"><Button type="button" variant="outline" onClick={() => setShowRoomContext((current) => !current)}>{showRoomContext ? "Hide room walls" : "Show room walls"}</Button><Button type="button" variant="outline" onClick={() => setAutoRotate((current) => !current)}><Rotate3D className="mr-1.5 h-4 w-4" />{autoRotate ? "Pause rotation" : "Rotate room"}</Button><Button type="button" variant="outline" onClick={toggleFullscreen}>{isFullscreen ? "Exit full screen" : "Full screen"}</Button></div>
           </>}

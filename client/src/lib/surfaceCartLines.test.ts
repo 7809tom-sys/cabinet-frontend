@@ -265,4 +265,24 @@ describe("buildSurfaceCartLines — box quantity with overage", () => {
     const [line] = buildSurfaceCartLines([mosaic], "contractor", areas);
     expect(line.qty).toBe(7);
   });
+
+  it("prices a mosaic used as the floor from the floor area and keeps the wall use separate", () => {
+    const mosaicFloor: SurfacePick = {
+      id: 404,
+      name: "Arctic Vail",
+      category: "Tile & Mosaic",
+      subCategory: "Mosaic",
+      size: "11.81 x 11.81",
+      sellPrice: 12,
+      coverageSqFt: 10,
+      installedAs: "flooring",
+    };
+    const mosaicWall: SurfacePick = { ...mosaicFloor, installedAs: "backsplash" };
+    const lines = buildSurfaceCartLines([mosaicFloor, mosaicWall], "homeowner", areas);
+    const floorLine = lines.find((line) => line.masterCode === "PEL-404-floor");
+    const wallLine = lines.find((line) => line.masterCode === "PEL-404");
+    expect(floorLine?.qtyNote).toContain("120.0 sq ft");
+    expect(wallLine?.qtyNote).toContain("30.0 sq ft");
+    expect(floorLine?.styleId).not.toBe(wallLine?.styleId);
+  });
 });

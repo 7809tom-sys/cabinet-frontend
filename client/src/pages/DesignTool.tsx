@@ -327,6 +327,8 @@ import { SurfacesPickerDialog, type SelectedSurface } from "@/components/design/
 import { FlooringCartonFacts } from "@/components/design/FlooringCartonFacts";
 import { FlooringLayoutPicker } from "@/components/design/FlooringLayoutPicker";
 import { FlooringAccessorySuggestionsDialog } from "@/components/design/FlooringAccessorySuggestionsDialog";
+import { MosaicFloorPatternDialog, MosaicFloorPatternControl } from "@/components/design/MosaicFloorPatternDialog";
+import { mosaicFloorFieldPitch, type MosaicFloorFieldInput } from "@/components/design/MosaicFloorField";
 import { RecommendedSurfaces, type RecommendedRole } from "@/components/design/RecommendedSurfaces";
 import { flooringSceneTextureUrl } from "@/lib/designerTileMosaicCatalog";
 
@@ -349,6 +351,13 @@ import {
   type SurfaceRole,
 } from "@/lib/surfaceSelection";
 import { selectedBacksplashTextureUrl } from "@/lib/backsplashProductMaterial";
+import {
+  isMosaicFloorPattern,
+  isMosaicFloorProduct,
+  mosaicFloorPatternLabel,
+  mosaicFloorPatternOrStraight,
+  type MosaicFloorPattern,
+} from "@/lib/mosaicFloorTile";
 import { ProDesignerDialog } from "@/components/design/ProDesignerDialog";
 import { CabinetDrawing } from "@/components/CabinetDrawing";
 import { baseSubGroup, cabinetDrawingType, type BaseSubGroup } from "@/lib/cabinetGraphics";
@@ -1601,10 +1610,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     if (role === "flooring") {
       const id = guessFlooringMaterialId(pick);
       if (id) setFlooringMaterialId(id);
-      // Close the full picker before the separate accessory chooser opens so
+      // Close the full picker before the separate chooser opens so
       // the customer sees one clear, explicit decision at a time.
       setSurfacesOpen(false);
-      setFlooringAccessoryPromptFloor(item);
+      if (isMosaicFloorProduct(item)) {
+        setMosaicFloorPrompt(item);
+      } else {
+        setFlooringAccessoryPromptFloor(item);
+      }
     } else if (role === "backsplash") {
       const id = guessBacksplashMaterialId(pick);
       if (id) setBacksplashMaterialId(id);
@@ -2477,6 +2490,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // These must be declared before threeDPresentationForSave, which reads them during render.
   const [flooringPattern, setFlooringPattern] = useState<import("@/lib/design").FlooringLayoutPattern | null>(null);
   const [flooringRotation, setFlooringRotation] = useState<FlooringRotationDegrees>(0);
+  const [mosaicFloorPattern, setMosaicFloorPattern] = useState<MosaicFloorPattern | null>(null);
+  const [mosaicFloorPrompt, setMosaicFloorPrompt] = useState<SelectedSurface | null>(null);
   const threeDPresentationForSave = useMemo(() => ({
     ...(interactive3dPresentation ?? {}),
     windowScene: windowSceneKind,
@@ -2485,9 +2500,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     backsplashHeightMode,
     countertopBacksplashHeightIn,
     catalogHardwareSelection,
+    mosaicFloorPattern: mosaicFloorPatternOrStraight(mosaicFloorPattern),
     ...(flooringPattern ? { flooringPattern } : {}),
     ...(flooringRotation !== 0 ? { flooringRotation } : {}),
-  }), [interactive3dPresentation, windowSceneKind, windowFrameStyle, backsplashEnabled, backsplashHeightMode, countertopBacksplashHeightIn, catalogHardwareSelection, flooringPattern, flooringRotation]);
+  }), [interactive3dPresentation, windowSceneKind, windowFrameStyle, backsplashEnabled, backsplashHeightMode, countertopBacksplashHeightIn, catalogHardwareSelection, mosaicFloorPattern, flooringPattern, flooringRotation]);
   // Flooring material: shown as a pattern in the bird's-eye plan view.
   const [flooringMaterialId, setFlooringMaterialId] = useState<string | null>(null);
   // Cabinet lock: when true, placed cabinets cannot be moved, deleted, or have
@@ -13248,6 +13264,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     if (isFlooringLayoutPattern((savedPresentation as { flooringPattern?: unknown } | null)?.flooringPattern)) {
       setFlooringPattern((savedPresentation as { flooringPattern: import("@/lib/design").FlooringLayoutPattern }).flooringPattern);
     }
+    setMosaicFloorPattern(isMosaicFloorPattern((savedPresentation as { mosaicFloorPattern?: unknown } | null)?.mosaicFloorPattern)
+      ? (savedPresentation as { mosaicFloorPattern: MosaicFloorPattern }).mosaicFloorPattern
+      : null);
     setFlooringRotation(isFlooringRotation((savedPresentation as { flooringRotation?: unknown } | null)?.flooringRotation)
       ? (savedPresentation as { flooringRotation: FlooringRotationDegrees }).flooringRotation
       : 0);
@@ -13357,6 +13376,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     flooringMaterialId,
     flooringPattern,
     flooringRotation,
+    mosaicFloorPattern,
     selectedSurfaces: normalizeInstalledMaterialSelections(selectedSurfaces),
     cabinetsLocked,
 	    sinks,
@@ -13514,6 +13534,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           if (typeof d.flooringMaterialId === "string") setFlooringMaterialId(d.flooringMaterialId);
           if (isFlooringLayoutPattern(d.flooringPattern)) setFlooringPattern(d.flooringPattern);
           if (isFlooringRotation(d.flooringRotation)) setFlooringRotation(d.flooringRotation);
+          setMosaicFloorPattern(isMosaicFloorPattern(d.mosaicFloorPattern) ? d.mosaicFloorPattern : null);
           if (typeof d.cabinetsLocked === "boolean") setCabinetsLocked(d.cabinetsLocked);
           // Restore the exact final Pelican surface & fixture picks so the cart,
           // 3D View gate and plan/elevation fill cannot retain replaced materials.
@@ -13709,7 +13730,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     if (!draftRestoredRef.current) return;
     const t = setTimeout(writeDraft, 400);
     return () => clearTimeout(t);
-  }, [room, placed, openings, island, styleId, tier, crown, toeKick, batten, lightRail, valance, trimQtyOverride, countertop, countertopMaterialId, edgeProfileId, backsplashMaterialId, backsplashEnabled, backsplashHeightMode, countertopBacksplashHeightIn, flooringMaterialId, flooringPattern, flooringRotation, selectedSurfaces, cabinetsLocked, sinks, potFillers, roomType, activeWall, layoutLocked, lockedWalls, lockedDistributorId, mixedWarehouseOverride, hardwareStyleId, catalogHardwareSelection, wallCabHeight, annotations, writeDraft]);
+  }, [room, placed, openings, island, styleId, tier, crown, toeKick, batten, lightRail, valance, trimQtyOverride, countertop, countertopMaterialId, edgeProfileId, backsplashMaterialId, backsplashEnabled, backsplashHeightMode, countertopBacksplashHeightIn, flooringMaterialId, flooringPattern, flooringRotation, mosaicFloorPattern, selectedSurfaces, cabinetsLocked, sinks, potFillers, roomType, activeWall, layoutLocked, lockedWalls, lockedDistributorId, mixedWarehouseOverride, hardwareStyleId, catalogHardwareSelection, wallCabHeight, annotations, writeDraft]);
 
   // Immediate save when the tab is hidden/backgrounded or about to unload —
   // this is what catches an incoming phone call or an OS tab eviction.
@@ -13869,6 +13890,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     setBacksplashMaterialId(null);
     setFlooringMaterialId(null);
     setFlooringPattern(null);
+    setMosaicFloorPattern(null);
     setSelectedSurfaces([]);
     setCabinetsLocked(false);
     setConsultMessages([]);
@@ -14275,6 +14297,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     setBacksplashMaterialId(null);
     setFlooringMaterialId(null);
     setFlooringPattern(null);
+    setMosaicFloorPattern(null);
     setSelectedSurfaces([]);
     setCabinetsLocked(false);
     setLayoutLocked(false);
@@ -14456,6 +14479,20 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     () => [...selectedSurfaces].reverse().find((surface) => surfaceRole(surface) === "flooring") ?? null,
     [selectedSurfaces],
   );
+  const mosaicFloorView = useMemo<MosaicFloorFieldInput | null>(() => {
+    if (!activeFlooringSurface || !isMosaicFloorProduct(activeFlooringSurface)) return null;
+    const pitch = mosaicFloorFieldPitch(activeFlooringSurface);
+    return {
+      imageUrl: selectedBacksplashTextureUrl(activeFlooringSurface).url,
+      name: activeFlooringSurface.name,
+      size: activeFlooringSurface.size ?? null,
+      category: activeFlooringSurface.category,
+      subCategory: activeFlooringSurface.subCategory ?? null,
+      pattern: mosaicFloorPatternOrStraight(mosaicFloorPattern),
+      pitchXIn: pitch.x,
+      pitchYIn: pitch.y,
+    };
+  }, [activeFlooringSurface, mosaicFloorPattern]);
   const activeBacksplashSurface = useMemo(
     () => activeThreeDSurface(selectedSurfaces.filter((surface) => surfaceRole(surface) === "backsplash")),
     [selectedSurfaces],
@@ -14478,6 +14515,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       // for flooring and countertops; named curated assets are resolved
       // separately by the 3D renderer. Flooring still refuses staged room photography.
       if (role === "flooring") {
+        // A mosaic marked Use as floor tile uses the same picture as its wall
+        // backsplash. Planks still refuse a staged room or catalog photo.
+        if (isMosaicFloorProduct(selected)) return selectedBacksplashTextureUrl(selected).url;
         // Never let a staged room/card image tile across a floor. An explicit
         // designerRenderReady or hasSwatch flag wins; otherwise materialImageUrl
         // is the approved swatch. Known product maps stay available. Any other
@@ -14671,6 +14711,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       catalogFlooringImageUrl={threeDSurfaceTextureUrls.flooring}
       flooringRotationDeg={flooringRotation}
       onFlooringRotationChange={setFlooringRotation}
+      mosaicFloorPattern={mosaicFloorView?.pattern ?? null}
+      onMosaicFloorPatternChange={setMosaicFloorPattern}
       catalogFlooringCardImageUrl={activeFlooringSurface?.imageUrl ?? null}
       catalogBacksplashImageUrl={backsplashEnabled ? threeDSurfaceTextureUrls.backsplash : null}
       catalogBacksplashCardImageUrl={backsplashEnabled ? activeBacksplashSurface?.imageUrl ?? null : null}
@@ -16355,9 +16397,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                 if (d.threeDPresentation?.countertopBacksplashHeightIn === 2.5 || d.threeDPresentation?.countertopBacksplashHeightIn === 3) {
                   setCountertopBacksplashHeightIn(d.threeDPresentation.countertopBacksplashHeightIn);
                 }
-                const restoredPresentation = d.threeDPresentation as { flooringPattern?: unknown; flooringRotation?: unknown } | null | undefined;
+                const restoredPresentation = d.threeDPresentation as { flooringPattern?: unknown; flooringRotation?: unknown; mosaicFloorPattern?: unknown } | null | undefined;
                 if (isFlooringLayoutPattern(restoredPresentation?.flooringPattern)) setFlooringPattern(restoredPresentation.flooringPattern);
                 setFlooringRotation(isFlooringRotation(restoredPresentation?.flooringRotation) ? restoredPresentation.flooringRotation : 0);
+                setMosaicFloorPattern(isMosaicFloorPattern(restoredPresentation?.mosaicFloorPattern) ? restoredPresentation.mosaicFloorPattern : null);
               }
             }
           />
@@ -17619,7 +17662,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                <div data-testid="remove-flooring-control" className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-[#d8c7a1] bg-[#fffaf0] px-3 py-2">
 	                  <div className="min-w-0">
 	                    <p className="truncate text-xs font-semibold text-[#1a2744]">{activeFlooringSurface?.name ?? flooringMaterial(flooringMaterialId!).name}</p>
-	                    <p className="text-[10px] text-muted-foreground">Applied flooring{flooringLayoutName(flooringPattern) ? ` · ${flooringLayoutName(flooringPattern)}` : " · layout not chosen"}</p>
+	                    <p className="text-[10px] text-muted-foreground">Applied flooring{mosaicFloorView ? ` · ${mosaicFloorPatternLabel(mosaicFloorView.pattern)}` : flooringLayoutName(flooringPattern) ? ` · ${flooringLayoutName(flooringPattern)}` : " · layout not chosen"}</p>
 	                    {activeFlooringSurface && <FlooringCartonFacts product={activeFlooringSurface} testId="applied-flooring-carton-facts" className="mt-1" />}
 	                  </div>
 	                  <Button type="button" variant="outline" size="sm" onClick={removeFlooring} className="h-7 shrink-0 border-rose-300 px-2 text-[10px] font-semibold text-rose-700 hover:bg-rose-50 hover:text-rose-800">
@@ -17636,7 +17679,13 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                onPlaceBathroomFixture={placePelicanBathroomFixture}
 	                affiliateSlug={affiliateSlug}
 	              />
-	              <FlooringLayoutPicker value={flooringPattern} onChange={setFlooringPattern} rotation={flooringRotation} onRotationChange={setFlooringRotation} />
+	              {mosaicFloorView ? (
+	                <div data-testid="mosaic-floor-material-controls" className="mt-4 rounded-lg border border-[#d8c7a1] bg-[#fffaf0] px-3 py-2.5">
+	                  <MosaicFloorPatternControl value={mosaicFloorView.pattern} onChange={setMosaicFloorPattern} testId="mosaic-floor-material-pattern" />
+	                </div>
+	              ) : (
+	                <FlooringLayoutPicker value={flooringPattern} onChange={setFlooringPattern} rotation={flooringRotation} onRotationChange={setFlooringRotation} />
+	              )}
               </>
 	            ) : usesBathroomFixturePalette ? (
 	              <RecommendedSurfaces
@@ -18307,6 +18356,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	              flooringPattern={flooringPattern}
               flooringRotation={flooringRotation}
               onFlooringRotationChange={setFlooringRotation}
+              mosaicFloor={mosaicFloorView}
+              onMosaicFloorPatternChange={setMosaicFloorPattern}
 	              cabinetsLocked={cabinetsLocked}
 	              gapFillCandidates={gapFillCandidates}
 	              catalogFillerCandidates={catalogFillers}
@@ -18433,6 +18484,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
               backsplashProductSize={backsplashEnabled ? activeBacksplashSurface?.size ?? null : null}
               flooringMaterialId={flooringMaterialId}
               flooringPattern={flooringPattern}
+              mosaicFloor={mosaicFloorView}
               openings={openings}
               finish={activeFinish}
               crown={crown}
@@ -18603,6 +18655,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	              flooringPattern={flooringPattern}
               flooringRotation={flooringRotation}
               onFlooringRotationChange={setFlooringRotation}
+              mosaicFloor={mosaicFloorView}
+              onMosaicFloorPatternChange={setMosaicFloorPattern}
 	              cabinetsLocked={cabinetsLocked}
 	              gapFillCandidates={gapFillCandidates}
 	              catalogFillerCandidates={catalogFillers}
@@ -18637,6 +18691,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
               backsplashProductSize={backsplashEnabled ? activeBacksplashSurface?.size ?? null : null}
                   flooringMaterialId={flooringMaterialId}
                   flooringPattern={flooringPattern}
+                  mosaicFloor={mosaicFloorView}
                   openings={openings}
                   finish={activeFinish}
                   crown={crown}
@@ -20524,6 +20579,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         onBacksplashHeightModeChange={setBacksplashHeightMode}
         countertopBacksplashHeightIn={countertopBacksplashHeightIn}
         onCountertopBacksplashHeightChange={setCountertopBacksplashHeightIn}
+      />
+      <MosaicFloorPatternDialog
+        floor={mosaicFloorPrompt}
+        pattern={mosaicFloorPattern}
+        onChange={setMosaicFloorPattern}
+        onOpenChange={(open) => { if (!open) setMosaicFloorPrompt(null); }}
       />
       <FlooringAccessorySuggestionsDialog
         floor={flooringAccessoryPromptFloor}
@@ -22591,6 +22652,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                catalogFlooringImageUrl={threeDSurfaceTextureUrls.flooring}
       flooringRotationDeg={flooringRotation}
       onFlooringRotationChange={setFlooringRotation}
+      mosaicFloorPattern={mosaicFloorView?.pattern ?? null}
+      onMosaicFloorPatternChange={setMosaicFloorPattern}
 	                catalogFlooringCardImageUrl={activeFlooringSurface?.imageUrl ?? null}
 	                catalogBacksplashCardImageUrl={backsplashEnabled ? activeBacksplashSurface?.imageUrl ?? null : null}
 	                catalogBacksplashImageUrl={backsplashEnabled ? threeDSurfaceTextureUrls.backsplash : null}

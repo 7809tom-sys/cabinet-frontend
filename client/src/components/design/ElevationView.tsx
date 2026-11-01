@@ -18,6 +18,7 @@ import {
 } from "@/lib/design";
 import { crownTopRuns, formatCrownTop } from "@/lib/crownTopRuns";
 import { threeDBacksplashCoverageIntervals } from "./InteractiveRoom3D";
+import { MosaicFloorField } from "./MosaicFloorField";
 import {
   type HardwareStyleId,
   hardwareStyle as resolveHardwareStyle,
@@ -119,6 +120,8 @@ interface Props {
   flooringMaterialId?: string | null;
   // Flooring layout pattern: how planks are arranged.
   flooringPattern?: import("@/lib/design").FlooringLayoutPattern | null;
+  /** Mosaic sheet laid on this room's floor. Replaces the plank strip when set. */
+  mosaicFloor?: import("./MosaicFloorField").MosaicFloorFieldInput | null;
   /** Hide cabinet and appliance master codes in customer-facing protected documents. */
   showProductCodes?: boolean;
 }
@@ -274,6 +277,7 @@ export function ElevationView({
   onMove, onMoveVertical, moveLocked = false,
   flooringMaterialId = null,
   flooringPattern = null,
+  mosaicFloor = null,
   showProductCodes = true,
 }: Props) {
   const { t } = useLanguage();
@@ -1117,6 +1121,21 @@ export function ElevationView({
         {/* Floor plane */}
         {(() => {
           const fm = flooringMaterial(flooringMaterialId);
+          if (mosaicFloor) {
+            return (
+              <div
+                className="absolute left-0 right-0 overflow-hidden"
+                data-testid="elevation-mosaic-floor"
+                style={{
+                  bottom: 0,
+                  height: PADDING,
+                  borderTop: `2px solid color-mix(in srgb, ${fm.fill} 50%, #000000)`,
+                }}
+              >
+                <MosaicFloorField floor={mosaicFloor} widthPx={wallPxW} heightPx={PADDING} pixelsPerInch={ppi} testId="elevation-mosaic-floor-field" />
+              </div>
+            );
+          }
           if (!realistic) {
             // Simplified: flat color strip, no pattern
             return (

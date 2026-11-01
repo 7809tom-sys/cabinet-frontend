@@ -49,6 +49,8 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { getLoginUrl } from "@/const";
 import { toast } from "sonner";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import { isMosaicCatalogItem, readUsableAsFloor } from "@/lib/mosaicFloorTile";
 import { csvEscape } from "@shared/inventoryForecast";
 import {
   addShippingOriginZip,
@@ -192,6 +194,7 @@ function PelicanVendorCatalogPage({
   const [catalogPhotoTrimmed, setCatalogPhotoTrimmed] = useState(false);
   const [designerPhotoTrimmed, setDesignerPhotoTrimmed] = useState(false);
   const [roomScenePhotoTrimmed, setRoomScenePhotoTrimmed] = useState(false);
+  const [usableAsFloor, setUsableAsFloor] = useState(false);
   const [designerTransparencyWarning, setDesignerTransparencyWarning] = useState<string | null>(null);
   const [designerCleanedPreviewUrl, setDesignerCleanedPreviewUrl] = useState<string | null>(null);
   const categoryFilter = selectedCatalogCategory(category);
@@ -290,6 +293,7 @@ function PelicanVendorCatalogPage({
     setCatalogPhotoTrimmed(false);
     setDesignerPhotoTrimmed(false);
     setRoomScenePhotoTrimmed(false);
+    setUsableAsFloor(readUsableAsFloor(item));
     setDesignerTransparencyWarning(null);
     setDesignerCleanedPreviewUrl(null);
   };
@@ -319,7 +323,8 @@ function PelicanVendorCatalogPage({
       roomSceneImageUrlBaseline: roomSceneBaseline,
     });
     if (photos.error) { toast.error(photos.error); return; }
-    updateProduct.mutate({
+    const mosaicFloor = isMosaicCatalogItem(editingProduct);
+    const input = {
       id: editingProduct.id,
       name: draft.name.trim(),
       description: draft.description.trim(),
@@ -328,7 +333,11 @@ function PelicanVendorCatalogPage({
       ...(photos.imageUrl !== undefined ? { imageUrl: photos.imageUrl } : {}),
       ...(photos.materialImageUrl !== undefined ? { materialImageUrl: photos.materialImageUrl } : {}),
       ...(photos.roomSceneImageUrl !== undefined ? { roomSceneImageUrl: photos.roomSceneImageUrl } : {}),
-    });
+      ...(mosaicFloor ? { usableAsFloor } : {}),
+    };
+    // `usableAsFloor` is optional until the backend patch accepts it. An older
+    // update procedure strips the unknown key; a missing read stays unchecked.
+    updateProduct.mutate(input as typeof input & { usableAsFloor?: boolean });
   };
   const uploadPelicanPhoto = async (file: File, target: Exclude<PelicanProductImageTarget, "both">) => {
     if (!editingProduct) return;
@@ -601,6 +610,22 @@ function PelicanVendorCatalogPage({
                 <input ref={roomScenePhotoInputRef} data-testid="pelican-room-scene-photo-input" type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void uploadPelicanPhoto(file, "roomScene"); }} />
               </div>
             </div>
+            {isMosaicCatalogItem(editingProduct) && (
+              <div data-testid="pelican-mosaic-use-options" className="flex flex-col gap-3 rounded-lg border px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-medium">Wall backsplash</p>
+                  <p className="text-xs text-muted-foreground">This mosaic is a wall backsplash. Leave the floor box unchecked to keep it off the floor picker.</p>
+                </div>
+                <label htmlFor="pelican-use-as-floor-tile" className="flex items-center gap-2 text-sm font-medium">
+                  <Checkbox
+                    id="pelican-use-as-floor-tile"
+                    checked={usableAsFloor}
+                    onCheckedChange={(value) => setUsableAsFloor(value === true)}
+                  />
+                  Use as floor tile
+                </label>
+              </div>
+            )}
             <div className="grid gap-2">
               <Label htmlFor="pelican-edit-image">Image URL</Label>
               <Input id="pelican-edit-image" value={draft.imageUrl} placeholder="https://…" onChange={(e) => setDraft((d) => ({ ...d, imageUrl: e.target.value }))} />

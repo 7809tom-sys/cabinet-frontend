@@ -2,6 +2,9 @@ import { FlooringRotationControl } from "@/components/design/FlooringLayoutPicke
 import { PlacedItemContextMenu, type PlacedItemContextMenuState } from "@/components/design/PlacedItemContextMenu";
 import { doorOpeningAppearance, roomDoorSwing, supportsRoomDoorSwing } from "@/lib/doorOpeningAppearance";
 import { flooringPlanPatternStyle, flooringPlanRotationLayerStyle, type FlooringRotationDegrees } from "@/lib/flooringLayout";
+import { MosaicFloorField, type MosaicFloorFieldInput } from "./MosaicFloorField";
+import { MosaicFloorPatternControl } from "./MosaicFloorPatternDialog";
+import type { MosaicFloorPattern } from "@/lib/mosaicFloorTile";
 import { useRef, useState, useCallback, useEffect, useMemo } from "react";
 import { Fragment } from "react";
 import {
@@ -480,6 +483,9 @@ interface Props {
   flooringPattern?: import("@/lib/design").FlooringLayoutPattern | null;
   /** 0, 90, or 45 degree plank/tile direction for the room floor. */
   flooringRotation?: FlooringRotationDegrees;
+  /** Mosaic used as this room's floor. Straight and diagonal share one seamless sheet. */
+  mosaicFloor?: MosaicFloorFieldInput | null;
+  onMosaicFloorPatternChange?: (pattern: MosaicFloorPattern) => void;
   onFlooringRotationChange?: (degrees: FlooringRotationDegrees) => void;
   // Cabinet lock: when true, cabinet drag/drop/delete are blocked.
   cabinetsLocked?: boolean;
@@ -604,6 +610,8 @@ export function PlanCanvas({
 	  flooringPattern = null,
 	  flooringRotation = 0,
 	  onFlooringRotationChange,
+	  mosaicFloor = null,
+	  onMosaicFloorPatternChange,
 	  cabinetsLocked = false,
 	  automaticSnapping = true,
   gapFillCandidates,
@@ -1524,11 +1532,15 @@ export function PlanCanvas({
 	        setCatalogDragFreehand(false);
       }}
 	    >
-      {onFlooringRotationChange && (
-        <div className="absolute bottom-3 left-3 z-40 rounded-lg border bg-white/95 p-1.5 shadow-sm" onPointerDown={(event) => event.stopPropagation()}>
-          <FlooringRotationControl value={flooringRotation} onChange={onFlooringRotationChange} testId="plan-flooring-rotation" />
+      {(mosaicFloor && onMosaicFloorPatternChange) || onFlooringRotationChange ? (
+        <div className="absolute bottom-3 left-3 z-40 max-w-[min(22rem,calc(100%-1.5rem))] rounded-lg border bg-white/95 p-1.5 shadow-sm" onPointerDown={(event) => event.stopPropagation()}>
+          {mosaicFloor && onMosaicFloorPatternChange
+            ? <MosaicFloorPatternControl value={mosaicFloor.pattern} onChange={onMosaicFloorPatternChange} testId="plan-mosaic-floor-pattern" />
+            : onFlooringRotationChange
+              ? <FlooringRotationControl value={flooringRotation} onChange={onFlooringRotationChange} testId="plan-flooring-rotation" />
+              : null}
         </div>
-      )}
+      ) : null}
       {planItemMenu && (
         <PlacedItemContextMenu
           menu={planItemMenu}
@@ -1583,7 +1595,10 @@ export function PlanCanvas({
           backgroundSize: flooringMaterialId ? undefined : floorPattern.backgroundSize,
         }}
       >
-        {flooringMaterialId && (
+        {mosaicFloor && (
+          <MosaicFloorField floor={mosaicFloor} widthPx={roomPxW} heightPx={roomPxH} pixelsPerInch={ppi} testId="plan-mosaic-floor" />
+        )}
+        {flooringMaterialId && !mosaicFloor && (
           <div data-testid="plan-flooring-rotation-layer" data-flooring-rotation={flooringRotation} className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
             <div
               className="absolute left-1/2 top-1/2"

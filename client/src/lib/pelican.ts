@@ -367,7 +367,10 @@ export function surfaceRole(input: {
   category?: string | null;
   subCategory?: string | null;
   name?: string | null;
+  /** Mosaic chosen from the floor picker. Category alone would still say backsplash. */
+  installedAs?: "flooring" | "backsplash" | null;
 }): SurfaceRole {
+  if (input.installedAs === "flooring" || input.installedAs === "backsplash") return input.installedAs;
   const cat = (input.category || "").trim();
   const sub = (input.subCategory || "").trim().toLowerCase();
   const name = (input.name || "").toLowerCase();

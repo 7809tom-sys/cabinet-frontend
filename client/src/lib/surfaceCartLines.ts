@@ -21,6 +21,8 @@ export type SurfacePick = {
   description?: string | null;
   /** Countertop assignment; legacy undefined applies the product to the combined design area. */
   countertopScope?: "perimeter" | "island" | "all";
+  /** Mosaic installed from the floor picker. Category stays Tile & Mosaic. */
+  installedAs?: "flooring" | "backsplash" | null;
 };
 
 /** Minimal cart line shape (subset of CartItem) produced for a surface pick. */
@@ -124,7 +126,14 @@ export function buildSurfaceCartLines(
   // A replaced flooring or backsplash product is not part of the final kitchen.
   // Normalize defensively here as well as in the Designer state so stale saved
   // selections cannot leak into cart pricing or checkout.
-  for (const s of normalizeFinalMaterialSelections(surfaces)) {
+  const normalized = normalizeFinalMaterialSelections(surfaces);
+  const sharedIds = new Set<number>();
+  const seenIds = new Set<number>();
+  for (const surface of normalized) {
+    if (seenIds.has(surface.id)) sharedIds.add(surface.id);
+    seenIds.add(surface.id);
+  }
+  for (const s of normalized) {
     if (s.sellPrice == null) continue; // skip unpriced (quote-only) picks
     const label = s.size ? `${s.category} · ${s.size}` : s.category;
     let qty = 1;
@@ -135,11 +144,12 @@ export function buildSurfaceCartLines(
       qtyNote = `${qty} installed ${qty === 1 ? "fixture" : "fixtures"}`;
     }
     const cat = s.category.toLowerCase();
-    const isBacksplash = cat.includes("backsplash") || cat.includes("mosaic") || cat.includes("tile");
     // Pelican flooring trim is a separately selected quoted item, not an
     // installed floor material. Only source-classified Planks & Flooring use
-    // room area and overage to calculate carton quantity.
+    // room area and overage to calculate carton quantity. A mosaic installed
+    // as the floor uses the floor area, not the wall-tile area.
     const isFlooring = surfaceRole(s) === "flooring";
+    const isBacksplash = !isFlooring && (cat.includes("backsplash") || cat.includes("mosaic") || cat.includes("tile"));
     const isCountertop = cat.includes("countertop") || cat.includes("quartz slab");
 
     if (!fixtureQuantities?.has(s.id) && areas && isCountertop) {
@@ -185,10 +195,11 @@ export function buildSurfaceCartLines(
       }
     }
 
+    const floorAndWall = sharedIds.has(s.id) && isFlooring;
     lines.push({
-      masterCode: `PEL-${s.id}`,
+      masterCode: floorAndWall ? `PEL-${s.id}-floor` : `PEL-${s.id}`,
       name: s.name,
-      styleId: -s.id, // stable + unique so two picks never collapse
+      styleId: floorAndWall ? -(1_000_000 + s.id) : -s.id, // stable + unique so two picks never collapse
       styleLabel: label,
       distributorId: null,
       tier,

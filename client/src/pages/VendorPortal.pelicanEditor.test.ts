@@ -67,6 +67,13 @@ describe("Pelican vendor catalog editor", () => {
     expect(catalogSource).toContain("utils.pelican.bySlug.invalidate()");
     expect(catalogSource).toContain('id="pelican-edit-image"');
     expect(catalogSource).not.toContain("Use as Designer photo");
+    expect(catalogSource).toContain('id="pelican-use-as-floor-tile"');
+    expect(catalogSource).toContain("Use as floor tile");
+    expect(catalogSource).toContain('data-testid="pelican-mosaic-use-options"');
+    expect(catalogSource).toContain("Wall backsplash");
+    expect(catalogSource).toContain("isMosaicCatalogItem(editingProduct)");
+    expect(catalogSource).toContain("readUsableAsFloor(item)");
+    expect(catalogSource).toContain("usableAsFloor");
     expect(catalogSource).not.toContain("gemini");
     expect(catalogSource).not.toContain("banana");
     expect(catalogSource).not.toContain("createObjectURL");

@@ -23,6 +23,7 @@ import {
   PELICAN_STOREFRONT_CATEGORIES,
   CATEGORY_GRADIENT,
   formatPrice,
+  surfaceRole,
   type PelicanCategory,
 } from "@/lib/pelican";
 import {
@@ -59,6 +60,7 @@ import {
   readDesignerRenderFlags,
   type DesignerPaletteRow,
 } from "@/lib/designerTileMosaicCatalog";
+import { floorCapableMosaics, isMosaicCatalogItem } from "@/lib/mosaicFloorTile";
 import type { CountertopScope } from "@/lib/surfaceSelection";
 
 export type SelectedSurface = {
@@ -90,6 +92,10 @@ export type SelectedSurface = {
   piecesPerBox?: number | null;
   /** Supplier/fabricator-verified maximum unsupported overhang for this exact material. */
   unsupportedOverhangLimitIn?: number | null;
+  /** Mosaic installed from the floor picker. The catalog category stays Tile & Mosaic. */
+  installedAs?: "flooring" | "backsplash" | null;
+  /** Vendor flag. Absent until the backend column is deployed; missing means backsplash only. */
+  usableAsFloor?: boolean | null;
 };
 
 // The server applies the verified-only readiness gate before pagination. Keep
@@ -305,6 +311,8 @@ export function SurfacesPickerDialog({
   // trim, and underlayment. Catalog photos stay on the card and off the floor.
   const browsingTileMosaic = (!isBathroom && category === "Tile & Mosaic")
     || (isBathroom && activeBathroomRole === "backsplash");
+  const showingFloorMaterials = (!isBathroom && category === "Flooring")
+    || (isBathroom && bathroomPaletteMode === "surfaces" && activeBathroomRole === "flooring");
   const catalogCategory = (browsingTileMosaic ? "Tile & Mosaic" : category) as PelicanCategory;
   const catalogInput = {
     category: catalogCategory,
@@ -322,6 +330,22 @@ export function SurfacesPickerDialog({
   const { data: catalogPage2, isLoading: catalogPage2Loading } = trpc.pelican.byCategory.useQuery(
     { ...catalogInput, offset: PAGE_LIMIT },
     { enabled: catalogPage2Enabled },
+  );
+  const floorMosaicInput = {
+    category: "Tile & Mosaic" as const,
+    scope: "catalog" as const,
+    affiliateSlug: affiliateSlug ?? undefined,
+    limit: PAGE_LIMIT,
+    offset: 0,
+  };
+  const { data: floorMosaicPage, isLoading: floorMosaicLoading } = trpc.pelican.byCategory.useQuery(
+    floorMosaicInput,
+    { enabled: open && showingFloorMaterials },
+  );
+  const floorMosaicPage2Enabled = Boolean(open && showingFloorMaterials && (floorMosaicPage?.total ?? 0) > (floorMosaicPage?.items.length ?? 0));
+  const { data: floorMosaicPage2, isLoading: floorMosaicPage2Loading } = trpc.pelican.byCategory.useQuery(
+    { ...floorMosaicInput, offset: PAGE_LIMIT },
+    { enabled: floorMosaicPage2Enabled },
   );
   const { data: bathroomData, isLoading: bathroomLoading } = trpc.surfaces.recommended.useQuery(
     { role: activeBathroomRole, limit: activeBathroomRole === "flooring" ? 500 : PAGE_LIMIT },
@@ -372,16 +396,25 @@ export function SurfacesPickerDialog({
     () => concatCatalogPages<SelectedSurface>([data?.items as SelectedSurface[] | undefined, catalogPage2?.items as SelectedSurface[] | undefined]),
     [catalogPage2?.items, data?.items],
   );
-  const items: SelectedSurface[] = (isBathroom
+  const floorMosaics = useMemo(
+    () => (showingFloorMaterials
+      ? floorCapableMosaics(concatCatalogPages([floorMosaicPage?.items, floorMosaicPage2?.items]))
+      : []) as SelectedSurface[],
+    [floorMosaicPage?.items, floorMosaicPage2?.items, showingFloorMaterials],
+  );
+  const baseItems: SelectedSurface[] = (isBathroom
     ? (browsingTileMosaic ? categoryItems : bathroomData ?? [])
     : category === "Preferred"
       ? preferredItems
       : categoryItems) as SelectedSurface[];
+  const items: SelectedSurface[] = showingFloorMaterials
+    ? concatCatalogPages([baseItems, floorMosaics])
+    : baseItems;
   const paletteLoading = isBathroom
-    ? (browsingTileMosaic ? isLoading || (catalogPage2Enabled && catalogPage2Loading) : bathroomLoading)
+    ? (browsingTileMosaic ? isLoading || (catalogPage2Enabled && catalogPage2Loading) : bathroomLoading || (showingFloorMaterials && (floorMosaicLoading || (floorMosaicPage2Enabled && floorMosaicPage2Loading))))
     : category === "Preferred"
       ? preferredProductsLoading || catalogPreferredLoading
-      : isLoading || (catalogPage2Enabled && catalogPage2Loading);
+      : isLoading || (catalogPage2Enabled && catalogPage2Loading) || (showingFloorMaterials && (floorMosaicLoading || (floorMosaicPage2Enabled && floorMosaicPage2Loading)));
   const selectedBathroomFixture = useMemo(() => {
     if (!isBathroom || bathroomPaletteMode !== "fixtures") return null;
     return selected.find((item) => Boolean(
@@ -635,8 +668,8 @@ export function SurfacesPickerDialog({
                   <p className="mt-1.5 text-[10px] leading-relaxed text-muted-foreground">The bar extension across a drywall pony wall is included in this measured coverage. Supplier pricing is per whole slab, so the total changes when that added coverage requires another slab.</p>
                 </div>
               )}
-              {((!isBathroom && category === "Flooring") || (isBathroom && bathroomPaletteMode === "surfaces" && activeBathroomRole === "flooring")) && (
-                <p data-testid="flooring-selection-availability" className="text-[10px] leading-relaxed text-muted-foreground">All active, source-priced flooring planks are available to select and quote. Molding, trim, and underlayment stay in accessory suggestions. A plank without an approved repeatable swatch keeps its catalog photo on this card and is shown in 3D as a labeled neutral floor until its material swatch is supplied.</p>
+              {showingFloorMaterials && (
+                <p data-testid="flooring-selection-availability" className="text-[10px] leading-relaxed text-muted-foreground">All active, source-priced flooring planks are available to select and quote. Mosaics marked Use as floor tile are included here and stay available as wall backsplash. Unchecked mosaics are wall backsplash only. Molding, trim, and underlayment stay in accessory suggestions. A plank without an approved repeatable swatch keeps its catalog photo on this card and is shown in 3D as a labeled neutral floor until its material swatch is supplied.</p>
               )}
               {((!isBathroom && category === "Quartz Slabs (Countertops)") || (isBathroom && bathroomPaletteMode === "surfaces" && activeBathroomRole === "countertop")) && (
                 <p data-testid="countertop-selection-availability" className="text-[10px] leading-relaxed text-muted-foreground">All active, source-priced countertop products are available to select and quote. A product without an approved repeatable slab swatch remains accurately priced and is shown in 3D with the labeled neutral preview until its material swatch is supplied.</p>
@@ -677,15 +710,14 @@ export function SurfacesPickerDialog({
                 {configurations.map((configuration) => {
                   const displayVariant = pelicanDisplayVariant(configuration, selectedIds, chosenVariantIds[configuration.key]);
                   const p: any = displayVariant.item;
-                  const isSel = selectedIds.has(p.id);
-                  const siblingSelected = isSel ? undefined : configuration.variants.find((entry) => selectedIds.has(entry.item.id));
                   const hasVariants = configuration.variants.length > 1;
                   const gradient =
                     CATEGORY_GRADIENT[p.category] ?? "linear-gradient(135deg,#e5e7eb,#cbd5e1)";
                   const hasThreeDMaterialRole = /floor|tile|mosaic|backsplash|countertop|quartz|slab/i.test(`${p.category ?? ""} ${p.subCategory ?? ""}`);
                   const hasApprovedMaterialSwatch = designerMaterialRenderReady(p);
                   const isBacksplash = p.category === "Tile & Mosaic";
-                  const isActiveThreeDBacksplash = isBacksplash && activeThreeDBacksplashId === p.id;
+                  const floorMosaic = showingFloorMaterials && isMosaicCatalogItem(p);
+                  const isActiveThreeDBacksplash = isBacksplash && !floorMosaic && activeThreeDBacksplashId === p.id;
                   const item: SelectedSurface = {
                     id: p.id,
                     pelicanCode: p.pelicanCode,
@@ -702,7 +734,14 @@ export function SurfacesPickerDialog({
                     coverageSqFt: flooringCartonFacts(p)?.sqFtPerBox ?? null,
                     piecesPerBox: flooringCartonFacts(p)?.piecesPerBox ?? null,
                     unsupportedOverhangLimitIn: p.unsupportedOverhangLimitIn == null ? null : Number(p.unsupportedOverhangLimitIn),
+                    ...(floorMosaic ? { installedAs: "flooring" as const } : {}),
                   };
+                  const isSel = floorMosaic
+                    ? selected.some((surface) => surface.id === p.id && surfaceRole(surface) === "flooring")
+                    : isBacksplash
+                      ? selected.some((surface) => surface.id === p.id && surfaceRole(surface) === "backsplash")
+                      : selectedIds.has(p.id);
+                  const siblingSelected = isSel ? undefined : configuration.variants.find((entry) => selectedIds.has(entry.item.id));
                   const bathroomFixtureProfile = isBathroom
                     ? verifiedPelicanBathroomFixtureProfile(item.pelicanCode)
                     : null;
