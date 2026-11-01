@@ -231,6 +231,8 @@ import { adjacentDishwasherCenterIn, anchorAlongStartIn, autoBuildStraightBaseCa
 import { AUTO_DESIGN_REFRIGERATOR_NOTE, autoDesignControlState, autoDesignShouldTurnOffForRefrigerator, isRefrigeratorAppliance, refrigeratorBlocksAutoDesign } from "@/lib/autoDesignAvailability";
 import { applyChosenAutoDesignFaucet, catalogFaucetSurface, defaultAutoDesignFaucet, ensureAutoDesignFaucet, isCatalogFaucet, type AutoDesignFaucetProduct } from "@/lib/autoDesignFaucet";
 import { clampSinkDragForFaucet, raiseWindowsForDeckFaucet, type FaucetWindowClearanceNote } from "@/lib/faucetPlacement";
+import { dropDuplicateAutoWindows, moveWindowsWithWallTops } from "@/lib/windowOpenings";
+import { useTransientNotice } from "@/components/design/useTransientNotice";
 import { autoDesignSinkWindow, windowOverlapsReservation } from "@/lib/autoDesignSinkWindow";
 import { autoDesignRangeHood, autoDesignRangeNeedsVentilation } from "@/lib/autoDesignRangeHood";
 import { mergeAutoDesignRefrigeratorCaps, runAutoDesignLayout } from "@/lib/autoDesignLayout";
@@ -1080,7 +1082,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // index within its section. Populated when the user clicks move-up/move-down.
   const [bomOrder, setBomOrder] = useState<Record<string, number>>({});
   const [selectedUid, setSelectedUid] = useState<string | null>(null);
-  const [placementWarning, setPlacementWarning] = useState<string | null>(null);
+  const [placementWarning, setPlacementWarningState] = useState<string | null>(null);
+  const [placementNoticeEpoch, setPlacementNoticeEpoch] = useState(0);
+  const setPlacementWarning = useCallback((value: string | null) => {
+    setPlacementNoticeEpoch((epoch) => epoch + 1);
+    setPlacementWarningState(value);
+  }, []);
 	  const [failedWallFit, setFailedWallFit] = useState<{ requested: PlacedCabinet; gap: WallGap; measurement: WallCabinetFitMeasure; blockers: string[] } | null>(null);
   const [peninsulaFitRecommendation, setPeninsulaFitRecommendation] = useState<null | {
     cabinet: DesignCabinet;
@@ -1287,6 +1294,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         room,
       ));
   }, [placed, openings, room, setPlaced]);
+  // A saved plan can contain one Auto-Design window copied onto every wall.
+  // Drop only those copies. Hand-placed windows stay.
+  useEffect(() => {
+    const cleaned = dropDuplicateAutoWindows(openings, room, placed);
+    if (cleaned !== openings) setOpenings(cleaned);
+  }, [openings, placed, room]);
   // Trim toggles rendered in elevation + added to the BOM. A fresh drawing
   // begins with its required toe kick selected; all other trim remains opt-in
   // until its physical layout rule or the customer selects it.
@@ -1964,6 +1977,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	    setAllWallsAppearanceUndo(null);
 	    toast.success("Restored the previous room wall appearance.");
 	  }, [allWallsAppearanceUndo]);
+	  const commitRoomWallTops = useCallback((nextRoom: RoomData) => {
+	    setOpenings((current) => moveWindowsWithWallTops(current, room, nextRoom));
+	    setRoom(nextRoom);
+	  }, [room]);
 	  const saveWallSettings = useCallback(() => {
     const draft = wallSettingsDraft;
     if (!draft) return;
@@ -2074,13 +2091,13 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         return;
       }
       const bounds = polygonBounds(updated.vertices);
-      setRoom((previous) => ({
-        ...previous,
+      commitRoomWallTops({
+        ...room,
         vertices: updated.vertices,
         customWalls: updated.customWalls,
         width: Math.max(36, bounds.width),
         depth: Math.max(36, bounds.height),
-      }));
+      });
       setActiveWall(updated.editedWallId as WallSide);
       setWallSettingsOpen(false);
       toast.success(`Updated ${draft.label}.`);
@@ -2092,14 +2109,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       toast.error("Move or remove room contents before resizing a perimeter wall span. This protects existing cabinets, openings, and fixtures from being silently moved.");
       return;
     }
-    setRoom((previous) => ({
-      ...previous,
+    commitRoomWallTops({
+      ...room,
       [axis]: length,
-      wallCeilings: { ...previous.wallCeilings, [draft.wallId]: { high: height, low: height } },
-    }));
+      wallCeilings: { ...room.wallCeilings, [draft.wallId]: { high: height, low: height } },
+    });
     setWallSettingsOpen(false);
     toast.success(`Updated ${draft.label}.`);
-	  }, [island, openings.length, placed, room, sinks.length, wallSettingsDraft]);
+	  }, [commitRoomWallTops, island, openings.length, placed, room, sinks.length, wallSettingsDraft]);
 	const requestPeninsulaDeletion = useCallback(() => {
 	  const draft = wallSettingsDraft;
 	  if (!draft || draft.kind !== "peninsula") return;
@@ -14626,8 +14643,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       catalogBacksplashImageUrl={backsplashEnabled ? threeDSurfaceTextureUrls.backsplash : null}
       catalogBacksplashCardImageUrl={backsplashEnabled ? activeBacksplashSurface?.imageUrl ?? null : null}
       onPresentationChange={setInteractive3dPresentation}
-      onRoomWallHeightChange={(ceilingHeight) => setRoom((current) => ({ ...current, ceilingHeight, wallCeilings: undefined }))}
-      onRoomWallHeightsChange={(heights) => setRoom((current) => ({ ...current, wallCeilings: Object.fromEntries(Object.entries(heights).map(([side, height]) => [side, { high: height, low: height }])) as RoomData["wallCeilings"] }))}
+      onRoomWallHeightChange={(ceilingHeight) => commitRoomWallTops({ ...room, ceilingHeight, wallCeilings: undefined })}
+      onRoomWallHeightsChange={(heights) => commitRoomWallTops({ ...room, wallCeilings: Object.fromEntries(Object.entries(heights).map(([side, height]) => [side, { high: height, low: height }])) as RoomData["wallCeilings"] })}
 	      onMoveCabinet={cabinetsLocked ? undefined : moveCabinetFrom3D}
 	      onMoveCabinetTo={cabinetsLocked ? undefined : moveCabinetToFrom3D}
 		      cabinetConfigHref={isAdmin ? (cabinet) => cabinetEditConfigHref(cabinet.masterCode, cabinet.cabinetId) : undefined}
@@ -14639,6 +14656,22 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	      fillerInsertionTransition={fillerInsertionTransition}
 	    />;
   };
+
+  const layoutNoticeSignature = [
+    ...autoDesignLayoutNotes,
+    ...openings.flatMap((opening) => opening.faucetClearanceNote ? [opening.faucetClearanceNote] : []),
+  ].join("\n");
+  const layoutNotice = useTransientNotice(layoutNoticeSignature, 8000);
+  const placementNotice = useTransientNotice(placementWarning ? `${placementNoticeEpoch}:${placementWarning}` : "", 8000);
+  const conflictNotice = useTransientNotice(
+    hasConflicts ? Array.from(conflictUids).sort().join("|") : "",
+    8000,
+  );
+  const designCheckNotice = useTransientNotice(
+    exposedPanelWarnings.map((warning) => warning.id).join("|"),
+    8000,
+  );
+  const automaticSaveNotice = useTransientNotice(automaticSaveAt == null ? "" : String(automaticSaveAt), 5000);
 
   if (!verified) {
     return (
@@ -14664,14 +14697,17 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 
   return (
       <div className="flex flex-col h-full min-h-0">
-      {exposedPanelWarnings.length > 0 && (
-        <div data-testid="design-check-panel" role="status" className="border-b border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-950">
-          <p className="font-semibold">Design check ({exposedPanelWarnings.length})</p>
-          <ul className="mt-1 list-disc pl-5">
-            {exposedPanelWarnings.map((warning) => (
-              <li key={warning.id}>{warning.message}</li>
-            ))}
-          </ul>
+      {designCheckNotice.visible && exposedPanelWarnings.length > 0 && (
+        <div data-testid="design-check-panel" role="status" className="flex items-start justify-between gap-3 border-b border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-950">
+          <div>
+            <p className="font-semibold">Design check ({exposedPanelWarnings.length})</p>
+            <ul className="mt-1 list-disc pl-5">
+              {exposedPanelWarnings.map((warning) => (
+                <li key={warning.id}>{warning.message}</li>
+              ))}
+            </ul>
+          </div>
+          <button type="button" onClick={designCheckNotice.dismiss} className="shrink-0 rounded p-0.5 text-amber-800 hover:bg-amber-100" aria-label="Dismiss design check">Close</button>
         </div>
       )}
       {tabletPreviewMode && (
@@ -15166,7 +15202,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         >
           <Save className="h-3.5 w-3.5" /> {currentSavedDesignId != null ? "Update design" : "Save design"}
         </Button>
-        {automaticSaveAt != null && (
+        {automaticSaveNotice.visible && automaticSaveAt != null && (
           <span
             data-testid="designer-automatic-save-status"
             role="status"
@@ -15176,6 +15212,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           >
             <Check className="h-3.5 w-3.5" aria-hidden="true" />
             Saved automatically {new Date(automaticSaveAt).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
+            <button type="button" onClick={automaticSaveNotice.dismiss} className="ml-1 font-bold leading-none" aria-label="Dismiss saved notice">×</button>
           </span>
         )}
         {/* Start New / Clear Design — desktop only */}
@@ -17913,7 +17950,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	              />
 	            </div>
 	          )}
-	          {hasConflicts && firstConflictUid && (
+	          {conflictNotice.visible && hasConflicts && firstConflictUid && (
 	            <div
 	              data-testid="design-conflict-canvas-notice"
 	              role="status"
@@ -17940,23 +17977,27 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	              >
 	                Review
 	              </button>
+	              <button type="button" onClick={conflictNotice.dismiss} className="shrink-0 rounded p-0.5 text-red-800 hover:bg-red-100" aria-label="Dismiss placement attention">Close</button>
 	            </div>
 	          )}
-	          {(autoDesignLayoutNotes.length > 0 || openings.some((opening) => opening.faucetClearanceNote)) && (
-	            <div className="absolute bottom-3 left-3 z-40 max-w-md">
+	          {layoutNotice.visible && (autoDesignLayoutNotes.length > 0 || openings.some((opening) => opening.faucetClearanceNote)) && (
+	            <div className="absolute bottom-3 left-3 z-40 max-w-md" data-testid="designer-layout-notice">
 	              <div role="status" className="rounded-lg border border-amber-400 bg-amber-50 px-3 py-2 text-sm text-amber-950 shadow-md">
-	                <ul className="space-y-1">
-	                  {autoDesignLayoutNotes.map((note) => (
-	                    <li key={note} data-testid="auto-design-layout-note">{note}</li>
-	                  ))}
-	                  {openings.flatMap((opening) => opening.faucetClearanceNote ? [opening.faucetClearanceNote] : []).map((note) => (
-	                    <li key={note} data-testid="faucet-window-clearance-note">{note}</li>
-	                  ))}
-	                </ul>
+	                <div className="flex items-start gap-2">
+	                  <ul className="min-w-0 flex-1 space-y-1">
+	                    {autoDesignLayoutNotes.map((note) => (
+	                      <li key={note} data-testid="auto-design-layout-note">{note}</li>
+	                    ))}
+	                    {openings.flatMap((opening) => opening.faucetClearanceNote ? [opening.faucetClearanceNote] : []).map((note) => (
+	                      <li key={note} data-testid="faucet-window-clearance-note">{note}</li>
+	                    ))}
+	                  </ul>
+	                  <button type="button" onClick={layoutNotice.dismiss} className="shrink-0 rounded p-0.5 text-amber-800 hover:bg-amber-100" aria-label="Dismiss notice">Close</button>
+	                </div>
 	              </div>
 	            </div>
 	          )}
-	          {placementWarning && (
+	          {placementNotice.visible && placementWarning && (
 	            <div role="alert" className="absolute left-3 right-3 top-3 z-40 max-h-[70%] overflow-y-auto rounded-lg border border-amber-400 bg-amber-50 px-3 py-2 text-sm text-amber-950 shadow-md sm:right-auto sm:max-w-lg">
 	              {/\bCorner protected:\s*ERB36\b/i.test(placementWarning) && (
 	                <div
@@ -22476,11 +22517,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                catalogBacksplashCardImageUrl={backsplashEnabled ? activeBacksplashSurface?.imageUrl ?? null : null}
 	                catalogBacksplashImageUrl={backsplashEnabled ? threeDSurfaceTextureUrls.backsplash : null}
                 onPresentationChange={setInteractive3dPresentation}
-                onRoomWallHeightChange={(ceilingHeight) => setRoom((current) => ({ ...current, ceilingHeight, wallCeilings: undefined }))}
-                onRoomWallHeightsChange={(heights) => setRoom((current) => ({
-                  ...current,
+                onRoomWallHeightChange={(ceilingHeight) => commitRoomWallTops({ ...room, ceilingHeight, wallCeilings: undefined })}
+                onRoomWallHeightsChange={(heights) => commitRoomWallTops({
+                  ...room,
                   wallCeilings: Object.fromEntries(Object.entries(heights).map(([side, height]) => [side, { high: height, low: height }])) as RoomData["wallCeilings"],
-                }))}
+                })}
 	                onMoveCabinet={cabinetsLocked ? undefined : moveCabinetFrom3D}
 	                onMoveCabinetTo={cabinetsLocked ? undefined : moveCabinetToFrom3D}
 	                onRotateCabinet={rotateCabinet}

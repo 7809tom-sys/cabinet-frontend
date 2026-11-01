@@ -235,13 +235,16 @@ describe("Auto-Design raises a window instead of hiding the faucet", () => {
       wallLabels: { top: "Wall 1" },
     });
     const opening = raised.openings[0]!;
+    const fixedTop = window.sill + window.height;
     expect(opening.sill).toBe(expectedSill);
-    expect(opening.height).toBe(window.height);
-    expect(opening.sill - window.sill).toBeCloseTo(expectedSill - window.sill, 5);
+    expect(opening.sill + opening.height).toBeCloseTo(fixedTop, 5);
+    expect(opening.height).toBeCloseTo(fixedTop - expectedSill, 5);
+    expect(opening.offset).toBe(window.offset);
+    expect(opening.side).toBe(window.side);
     expect(raised.unresolved).toBe(false);
-    expect(raised.notes[0]?.text).toBe(
-      `Window on Wall 1 raised ${expectedSill - window.sill} in. so the faucet clears the sill (new sill height ${expectedSill} in.)`,
-    );
+    expect(raised.notes[0]?.text).toMatch(/sill raised/);
+    expect(raised.notes[0]?.text).toMatch(/was not raised or moved/);
+    expect(raised.notes[0]?.text).not.toMatch(/Window on Wall 1 raised/);
 
     const after = resolveDeckFaucetPlacement(fixture, room, raised.openings, counter);
     expect(after.conflict).toBeNull();
@@ -284,12 +287,13 @@ describe("Auto-Design raises a window instead of hiding the faucet", () => {
     expect(raised.unresolved).toBe(true);
     expect(raised.openings[0]?.sill).toBe(window.sill);
     expect(raised.openings[0]?.height).toBe(window.height);
-    expect(raised.notes[0]?.text).toBe("Window on Wall 1 could not be raised enough for the faucet to clear the sill.");
+    expect(raised.notes[0]?.text).toBe("Window on Wall 1 was left where it is. The sill could not be raised enough for the faucet without moving the top.");
     const stillBlocked = resolveDeckFaucetPlacement(fixture, lowRoom, raised.openings, counter);
     expect(stillBlocked.renderFaucet).toBe(false);
     expect(stillBlocked.warning).toBe(FAUCET_WINDOW_CONFLICT_MESSAGE);
     expect(FAUCET_WINDOW_CONFLICT_MESSAGE).not.toMatch(/lower faucet/i);
-    expect(FAUCET_WINDOW_CONFLICT_MESSAGE).toMatch(/raise the window/i);
+    expect(FAUCET_WINDOW_CONFLICT_MESSAGE).toMatch(/raising the sill/i);
+    expect(FAUCET_WINDOW_CONFLICT_MESSAGE).toMatch(/top stays put/i);
   });
 
   it("raises the window again when a taller faucet replaces the first one", () => {
@@ -312,6 +316,8 @@ describe("Auto-Design raises a window instead of hiding the faucet", () => {
     expect(second.openings[0]!.sill).toBeGreaterThan(first.openings[0]!.sill);
     expect(resolveDeckFaucetPlacement(tallFixture, room, second.openings, counter).renderFaucet).toBe(true);
     expect(resolveDeckFaucetPlacement(tallFixture, room, second.openings, counter).conflict).toBeNull();
-    expect(second.notes[0]?.text).toMatch(/Window on Wall 1 raised .+ in\. so the faucet clears the sill/);
+    expect(second.openings[0]!.sill + second.openings[0]!.height).toBeCloseTo(short.window.sill + short.window.height, 5);
+    expect(second.notes[0]?.text).toMatch(/sill raised .+ in\. so the faucet clears it/);
+    expect(second.notes[0]?.text).toMatch(/was not raised or moved/);
   });
 });

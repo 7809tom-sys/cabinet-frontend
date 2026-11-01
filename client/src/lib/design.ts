@@ -6392,8 +6392,12 @@ export interface WallOpening {
   width: number;
   height: number;
   sill: number;
-  /** Installer note when Auto-Design raised this window so a deck faucet clears the sill. */
+  /** Installer note when Auto-Design shortened this window so a deck faucet clears the sill. */
   faucetClearanceNote?: string;
+  /** True when Auto-Design created this window (the one over the sink). Hand-placed windows omit it. */
+  autoPlaced?: boolean;
+  /** Set after the window moved with its wall. Auto-Design will not shorten it again. */
+  wallHeightLocked?: boolean;
 }
 
 export function wallLength(side: WallSide | string, room: RoomData): number {
