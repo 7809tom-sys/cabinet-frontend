@@ -5687,13 +5687,12 @@ export function addCabinet(
       const railDepthForNotch = dlcDoorFinish ? DLC_FRAME_DETAIL.railDepth : DLC_FRAME_DETAIL.standardRailDepth;
       const railLocalZ = dlcDoorFinish ? (railDepthForNotch - DLC_FRAME_DETAIL.standardRailDepth) / 2 : 0;
       const notchZ = railLocalZ + railDepthForNotch / 2 - 0.016 - SHAKER_NOTCH_THICKNESS / 2;
-      const notchMaterial = shakerNotchMaterial(color);
       for (const piece of shakerNotchPieces(openingW, openingH)) {
-        const mesh = new THREE.Mesh(new THREE.BoxGeometry(piece.w, piece.h, SHAKER_NOTCH_THICKNESS), notchMaterial);
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(piece.w, piece.h, SHAKER_NOTCH_THICKNESS), shakerNotchMaterial(color, piece.band));
         mesh.position.set(piece.x, piece.y, notchZ);
         mesh.castShadow = false;
         mesh.receiveShadow = true;
-        mesh.userData = { shakerNotch: true, shakerNotchSide: piece.side, dimensionalCabinetDetail: true };
+        mesh.userData = { shakerNotch: true, shakerNotchSide: piece.side, shakerNotchBand: piece.band, dimensionalCabinetDetail: true };
         frameGroup.add(mesh);
       }
     }
