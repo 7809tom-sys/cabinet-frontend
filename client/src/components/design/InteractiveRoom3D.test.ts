@@ -1,6 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import { dlcPhotoLightCompensation } from "@shared/dlcFr26Textures";
-import { DARK_STAIN_DOOR_LIGHTS, RESTORED_DOOR_LIGHTS, isVeryDarkCabinetStain, relativeLuminance } from "@shared/doorRenderLights";
 import { readFileSync } from "node:fs";
 import * as THREE from "three";
 import { baseAngleEndPlan } from "@/lib/baseAngleEndLayout";
@@ -9578,11 +9576,6 @@ describe("Forest Rust photo face tone mapping", () => {
   const doorPhoto = "/manus-storage/forest-rust-door-1740x2496.webp";
   const drawerPhoto = "/manus-storage/forest-rust-drawer.webp";
 
-  function compensationHex(finish: string) {
-    const rig = isVeryDarkCabinetStain(finish) ? DARK_STAIN_DOOR_LIGHTS : RESTORED_DOOR_LIGHTS;
-    return dlcPhotoLightCompensation(rig, relativeLuminance(finish)).hex.replace("#", "");
-  }
-
   function renderCabinet(profile: typeof shaker & { styleId?: number; styleCode?: string | null; distributorId?: number | null; exposedSidesMatchDoorFace?: boolean }, finish = "#73482a", drawerSampleUrl: string | null = drawerPhoto) {
     const root = new THREE.Group();
     addCabinet(root, baseSku, null, {}, 144, 120, finish, "#d9d3cb", profile, undefined, doorPhoto, undefined, {
@@ -9627,16 +9620,15 @@ describe("Forest Rust photo face tone mapping", () => {
     try {
       const finish = "#73482a";
       const forest = renderCabinet({ ...shaker, styleId: 330011, styleCode: "RH", distributorId: 210001 }, finish);
-      const expected = compensationHex(finish);
       expect(forest.photoFaces.length).toBeGreaterThan(0);
-      expect(forest.photoFaces.every((material) => material.map && material.toneMapped === false && material.color.getHexString() === expected)).toBe(true);
+      expect(forest.photoFaces.every((material) => material.map && material.toneMapped === false && material.color.getHexString() === "9c8424" && material.roughness === 1 && material.clearcoat === 0 && material.envMapIntensity === 0 && material.userData.photoFaceSaturation === 1.22)).toBe(true);
       expect(forest.shadows.length).toBeGreaterThan(0);
       expect(forest.shadows.every((material) => material.toneMapped === true && material.color.getHexString() === "1c1814" && material.map == null)).toBe(true);
       expect(forest.skins.length).toBeGreaterThan(0);
       expect(forest.skins.every((material) => material.toneMapped === true && material.map == null && material.color.getHexString() === "73482a")).toBe(true);
 
       const byCode = renderCabinet({ ...shaker, styleCode: "RH", distributorId: 210001 }, finish, null);
-      expect(byCode.photoFaces.every((material) => material.toneMapped === false && material.color.getHexString() === expected)).toBe(true);
+      expect(byCode.photoFaces.every((material) => material.toneMapped === false && material.color.getHexString() === "9c8424" && material.userData.photoFaceSaturation === 1.22)).toBe(true);
 
       const white = renderCabinet({ ...shaker, styleId: 330002, styleCode: "WS", distributorId: 210001 }, "#f4f1ea");
       expect(white.photoFaces.every((material) => material.toneMapped === true && material.color.getHexString() === "ffffff")).toBe(true);
@@ -9651,11 +9643,10 @@ describe("Forest Rust photo face tone mapping", () => {
     const load = vi.spyOn(THREE.TextureLoader.prototype, "load").mockImplementation((() => new THREE.Texture()) as THREE.TextureLoader["load"]);
     try {
       const finish = "#73482a";
-      const expected = compensationHex(finish);
       const forest = renderCabinet({ ...shaker, styleId: 330011, exposedSidesMatchDoorFace: true }, finish, null);
       const photoSides = forest.skins.filter((material) => material.map);
       expect(photoSides.length).toBeGreaterThan(0);
-      expect(photoSides.every((material) => material.toneMapped === false && material.color.getHexString() === expected && material.userData.photoFaceToneMapOff === true)).toBe(true);
+      expect(photoSides.every((material) => material.toneMapped === false && material.color.getHexString() === "9c8424" && material.roughness === 1 && material.envMapIntensity === 0 && material.userData.photoFaceToneMapOff === true)).toBe(true);
 
       const other = renderCabinet({ ...shaker, styleId: 12, styleCode: "LSA", exposedSidesMatchDoorFace: true }, "#c6b9a7", null);
       const otherSides = other.skins.filter((material) => material.map);

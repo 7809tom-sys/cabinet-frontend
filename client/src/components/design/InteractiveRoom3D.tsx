@@ -374,33 +374,51 @@ export type ThreeDDoorProfile = {
 };
 
 /**
- * Photo door faces whose mids ACES tone mapping lifts toward orange under the
- * studio rig. Each entry matches by catalog id, or by style code plus
- * distributor, so another style can be added without a special case.
- * Forest Rust (Ashford) / Rustic Hickory is 330011, code RH, distributor 210001.
+ * Photo door faces that the studio rig must not recolor. Same mechanism as DL
+ * photos (tone mapping off) plus a measured albedo and saturation so the lit
+ * face matches that style's source photo. An entry matches by catalog id, or
+ * by style code plus distributor.
+ *
+ * Forest Rust (Ashford) / Rustic Hickory, id 330011, code RH, distributor 210001.
+ * Faircrest door center: rgb 113,68,36 saturation 0.71.
+ * ACES with a white map color: 189,151,128 saturation 0.33.
+ * Tone mapping off alone: 194,149,126 saturation 0.35 (slightly punchier, still washed).
+ * The neutral DL light-sum tint: 166,136,121 saturation 0.27 (grayer).
+ * The values below, with specular off: 115,68,39 saturation 0.65.
  */
 export const PHOTO_FACE_TONE_MAP_OFF_STYLES: readonly {
   id?: number;
   styleCode?: string;
   distributorId?: number;
+  color: string;
+  saturation: number;
 }[] = [
-  { id: 330011, styleCode: "RH", distributorId: 210001 },
+  { id: 330011, styleCode: "RH", distributorId: 210001, color: "#9c8424", saturation: 1.22 },
 ];
+
+export function photoFaceToneMapCorrection(style: {
+  id?: number | null;
+  styleCode?: string | null;
+  distributorId?: number | null;
+} | null | undefined): { color: string; saturation: number } | null {
+  if (!style) return null;
+  const code = (style.styleCode ?? "").trim().toUpperCase();
+  const distributorId = style.distributorId ?? null;
+  const id = style.id ?? null;
+  const entry = PHOTO_FACE_TONE_MAP_OFF_STYLES.find((candidate) => {
+    if (candidate.id != null && id === candidate.id) return true;
+    if (!candidate.styleCode || candidate.distributorId == null) return false;
+    return code === candidate.styleCode.trim().toUpperCase() && distributorId === candidate.distributorId;
+  });
+  return entry ? { color: entry.color, saturation: entry.saturation } : null;
+}
 
 export function photoFaceSkipsToneMapping(style: {
   id?: number | null;
   styleCode?: string | null;
   distributorId?: number | null;
 } | null | undefined): boolean {
-  if (!style) return false;
-  const code = (style.styleCode ?? "").trim().toUpperCase();
-  const distributorId = style.distributorId ?? null;
-  const id = style.id ?? null;
-  return PHOTO_FACE_TONE_MAP_OFF_STYLES.some((entry) => {
-    if (entry.id != null && id === entry.id) return true;
-    if (!entry.styleCode || entry.distributorId == null) return false;
-    return code === entry.styleCode.trim().toUpperCase() && distributorId === entry.distributorId;
-  });
+  return photoFaceToneMapCorrection(style) != null;
 }
 
 /** Copies catalog id, style code, and distributor onto the 3D door profile the renderer matches. */
@@ -5189,8 +5207,16 @@ export function addCabinet(
       material.color.set(fallback.color);
       // A failed sample falls back to the solid finish, which stays on the scene tone map.
       if (material.userData?.photoFaceToneMapOff) {
+        const previous = material.userData.photoFacePrevious as { roughness?: number; clearcoat?: number; envMapIntensity?: number } | undefined;
         material.toneMapped = true;
-        material.userData = { ...material.userData, photoFaceToneMapOff: false };
+        if (previous?.roughness != null) material.roughness = previous.roughness;
+        if (previous?.envMapIntensity != null) material.envMapIntensity = previous.envMapIntensity;
+        if (previous?.clearcoat != null && "clearcoat" in material) {
+          (material as THREE.MeshPhysicalMaterial).clearcoat = previous.clearcoat;
+        }
+        material.onBeforeCompile = () => {};
+        material.customProgramCacheKey = () => "";
+        material.userData = { ...material.userData, photoFaceToneMapOff: false, photoFacePrevious: undefined };
       }
       material.needsUpdate = true;
     }
@@ -5379,21 +5405,48 @@ export function addCabinet(
       ? `#${new THREE.Color(dlcPhotoComp.hex).multiply(new THREE.Color(surfaceTextures.faceCrop.tintHex)).getHexString()}`
       : dlcPhotoComp.hex)
     : "#ffffff";
-  // Listed photo styles (Forest Rust / Rustic Hickory) use the same face compensation as DLC:
-  // tone mapping off, and the light-sum tint so the studio rig does not wash the photo out.
-  // Skins and the Driftwood shaker shadow strips are not part of this path.
-  const photoFaceComp = !dlcDoorFinish && Boolean(doorTexture || drawerTexture) && photoFaceSkipsToneMapping({
-    id: doorProfile?.styleId,
-    styleCode: doorProfile?.styleCode,
-    distributorId: doorProfile?.distributorId,
-  })
-    ? dlcPhotoLightCompensation(isVeryDarkCabinetStain(color) ? DARK_STAIN_DOOR_LIGHTS : RESTORED_DOOR_LIGHTS, relativeLuminance(color))
+  // Forest Rust reuses the DL photo path (tone mapping off) and adds the measured
+  // albedo plus a small output saturation so the Faircrest photo is not washed
+  // or pushed orange. Specular is off because the photograph already has its sheen;
+  // a second highlight grays the wood. Skins and Driftwood shadow strips are untouched.
+  const photoFaceFix = !dlcDoorFinish && Boolean(doorTexture || drawerTexture)
+    ? photoFaceToneMapCorrection({
+      id: doorProfile?.styleId,
+      styleCode: doorProfile?.styleCode,
+      distributorId: doorProfile?.distributorId,
+    })
     : null;
   const markPhotoFaceToneMapOff = (material: THREE.MeshStandardMaterial) => {
-    if (!photoFaceComp || !material.map) return;
-    material.color.set(photoFaceComp.hex);
+    if (!photoFaceFix || !material.map) return;
+    const physical = material as THREE.MeshPhysicalMaterial;
+    const previous = (material.userData?.photoFacePrevious as { roughness: number; clearcoat: number; envMapIntensity: number } | undefined) ?? {
+      roughness: material.roughness,
+      clearcoat: "clearcoat" in physical ? physical.clearcoat : 0,
+      envMapIntensity: material.envMapIntensity,
+    };
+    material.color.set(photoFaceFix.color);
     material.toneMapped = false;
-    material.userData = { ...material.userData, photoFaceToneMapOff: true };
+    material.roughness = 1;
+    material.metalness = 0;
+    material.envMapIntensity = 0;
+    if ("clearcoat" in physical) {
+      physical.clearcoat = 0;
+      physical.clearcoatRoughness = 1;
+    }
+    const saturation = photoFaceFix.saturation;
+    material.customProgramCacheKey = () => `photo-face-sat-${saturation}`;
+    material.onBeforeCompile = (shader) => {
+      shader.fragmentShader = shader.fragmentShader.replace(
+        "#include <opaque_fragment>",
+        `#include <opaque_fragment>
+         {
+           vec3 photoLit = gl_FragColor.rgb;
+           float photoLuma = dot(photoLit, vec3(0.2126, 0.7152, 0.0722));
+           gl_FragColor.rgb = clamp(mix(vec3(photoLuma), photoLit, ${saturation.toFixed(2)}), 0.0, 1.0);
+         }`,
+      );
+    };
+    material.userData = { ...material.userData, photoFaceToneMapOff: true, photoFaceSaturation: saturation, photoFacePrevious: previous };
     material.needsUpdate = true;
   };
   const faceColor = threeDFaceMaterialColor(color, Boolean(doorTexture)) === "#ffffff" ? dlcPhotoTint : threeDFaceMaterialColor(color, Boolean(doorTexture));
