@@ -585,6 +585,14 @@ export const APPLIANCES: ApplianceDef[] = [
   { key: "range-white-gas", masterCode: "RANGE-30", description: '30" White Gas Range', width: 30, depth: 25, elevBottom: 0, elevHeight: 36, catalogImageUrl: "/manus-storage/30inchWideWhiteGasRange-cropped_df211ef6.webp", rooms: ["kitchen"] },
   { key: "fridge30", masterCode: "FRIDGE-30", description: 'Refrigerator 30"', width: 30, depth: 30, elevBottom: 0, elevHeight: 70, rooms: ["kitchen"] },
   { key: "fridge", masterCode: "FRIDGE-36", description: 'Refrigerator 36"', width: 36, depth: 30, elevBottom: 0, elevHeight: 70, catalogImageUrl: "/manus-storage/lg_french_door_refrigerator_front_b498406f.webp", rooms: ["kitchen"] },
+  // Fridge styles. Each distinct envelope has its own master code because an
+  // appliance is looked up by master code (first match) for its height/mount.
+  // They use the built-in fridge shape until a supplied photo is added.
+  { key: "fridge30-top-freezer", masterCode: "FRIDGE-30-TF", description: 'Top-Freezer Refrigerator 30"', width: 30, depth: 30, elevBottom: 0, elevHeight: 66, rooms: ["kitchen"] },
+  { key: "fridge33-bottom-freezer", masterCode: "FRIDGE-33", description: 'Bottom-Freezer Refrigerator 33"', width: 33, depth: 34, elevBottom: 0, elevHeight: 70, rooms: ["kitchen"] },
+  { key: "fridge36-side-by-side", masterCode: "FRIDGE-36-SBS", description: 'Side-by-Side Refrigerator 36"', width: 36, depth: 30, elevBottom: 0, elevHeight: 70, rooms: ["kitchen"] },
+  { key: "fridge36-counter-depth", masterCode: "FRIDGE-36-CD", description: 'Counter-Depth Refrigerator 36"', width: 36, depth: 25, elevBottom: 0, elevHeight: 70, rooms: ["kitchen"] },
+  { key: "fridge42-side-by-side", masterCode: "FRIDGE-42", description: 'Side-by-Side Refrigerator 42"', width: 42, depth: 30, elevBottom: 0, elevHeight: 70, rooms: ["kitchen"] },
   { key: "dishwasher", masterCode: "DW-24", description: 'Dishwasher 24"', width: 24, depth: 24, elevBottom: 0, elevHeight: 34.5, catalogImageUrl: "/manus-storage/whirlpool_dishwasher_front_5c695d52.webp", rooms: ["kitchen"] },
   { key: "winecooler", masterCode: "WINE-24", description: 'Wine Cooler 24"', width: 24, depth: 24, elevBottom: 0, elevHeight: 34.5, rooms: ["kitchen"] },
   { key: "sink", masterCode: "SINK-33", description: 'Sink 33"', width: 33, depth: 22, elevBottom: 30, elevHeight: 6, rooms: ["kitchen"] },
