@@ -103,21 +103,34 @@ export interface DlcFaceCrop {
   grainUrl: string | null;
 }
 
+function srgbLuminanceLinear(hex: string): number {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return 1;
+  const ch = (i: number) => {
+    const c = Number.parseInt(m[1]!.slice(i, i + 2), 16) / 255;
+    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * ch(0) + 0.7152 * ch(2) + 0.0722 * ch(4);
+}
+
 /**
- * Photo textures are lit again by the Designer rig, which brightens them (about 1.6x) and ACES then
- * pushes them toward cream. This returns the linear multiplier (<= 1) that cancels the rig's gain on
- * a front-facing surface, and the sRGB grey to set as the material colour (THREE.Color.set takes
- * sRGB and converts to linear). It ignores the environment map, so treat it as a first-order fix.
+ * DLC photo materials are rendered with tone mapping OFF (toneMapped = false). ACES compresses bright
+ * colours, which flattened light finishes (grain contrast about a third of the photo's) and darkened
+ * whites. Without tone mapping the rig only multiplies the albedo by its light sum on a front-facing
+ * surface: hemisphere (average of sky and ground), key and fill. This returns the linear multiplier
+ * (<= 1) that cancels that sum, so the render reproduces the sample photo with full grain contrast, and
+ * the sRGB grey to use as the material colour (THREE.Color.set takes sRGB and converts to linear).
+ * The environment map is not modelled, so treat the result as a first-order estimate.
  */
 export function dlcPhotoLightCompensation(rig: {
-  exposure: number;
-  hemisphere: { intensity: number };
+  hemisphere: { sky: string; ground: string; intensity: number };
   key: { intensity: number; position: readonly [number, number, number] };
   fill: { intensity: number; position: readonly [number, number, number] };
 }): { linear: number; hex: string } {
   const cosZ = (p: readonly [number, number, number]) => p[2] / Math.hypot(p[0], p[1], p[2]);
-  const gain = rig.exposure * (rig.hemisphere.intensity * 0.6 + rig.key.intensity * cosZ(rig.key.position) + rig.fill.intensity * cosZ(rig.fill.position));
-  const linear = Math.min(1, Math.max(0.45, gain > 0 ? 1 / gain : 1));
+  const hemi = rig.hemisphere.intensity * (srgbLuminanceLinear(rig.hemisphere.sky) + srgbLuminanceLinear(rig.hemisphere.ground)) / 2;
+  const sum = hemi + rig.key.intensity * cosZ(rig.key.position) + rig.fill.intensity * cosZ(rig.fill.position);
+  const linear = Math.min(1, Math.max(0.4, sum > 0 ? 1 / sum : 1));
   const srgb = linear <= 0.0031308 ? linear * 12.92 : 1.055 * linear ** (1 / 2.4) - 0.055;
   const v = Math.round(Math.min(1, Math.max(0, srgb)) * 255).toString(16).padStart(2, "0");
   return { linear, hex: `#${v}${v}${v}` };

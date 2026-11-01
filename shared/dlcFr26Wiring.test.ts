@@ -182,14 +182,20 @@ describe("sides carry the door's grain, and photo materials are not over-lit", (
     expect(plan.dlcCrop?.solidColor).toBe(DLC_FR26_CATALOG.find((e) => e.slug === "versa-shaker")!.solidColor);
     expect(resolveCabinetFaceImages(dl("Peccan", "DL-PC"), "base").dlcCrop?.grainUrl).toBeNull();
   });
-  it("light compensation cancels the rig's gain (about 0.62 for the standard rig) and stays in range", () => {
+  it("light compensation cancels the rig's light sum (tone mapping off) and stays in range", () => {
     const std = dlcPhotoLightCompensation(RESTORED_DOOR_LIGHTS);
-    expect(std.linear).toBeGreaterThan(0.55);
-    expect(std.linear).toBeLessThan(0.7);
+    expect(std.linear).toBeGreaterThan(0.45);
+    expect(std.linear).toBeLessThan(0.6);
     expect(std.hex).toMatch(/^#([0-9a-f]{2})\1\1$/);
     const dark = dlcPhotoLightCompensation(DARK_STAIN_DOOR_LIGHTS);
-    expect(dark.linear).toBeGreaterThanOrEqual(0.45);
+    expect(dark.linear).toBeGreaterThan(std.linear);
     expect(dark.linear).toBeLessThanOrEqual(1);
+  });
+  it("no tone mapping on DLC photo materials: faces, rails, drawers, and sides without a grain patch", () => {
+    const s = src();
+    expect((s.match(/toneMapped: false/g) ?? []).length).toBeGreaterThanOrEqual(3);
+    expect(s).toMatch(/material\.toneMapped = false;/);
+    expect(s).toMatch(/material\.color\.multiplyScalar\(dlcPhotoComp\.linear\)/);
   });
   it("3D applies the grain to structural surfaces (mirrored, sRGB) and the tint to every photo material", () => {
     const s = src();
