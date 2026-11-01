@@ -58,6 +58,7 @@ import { DARK_STAIN_DOOR_LIGHTS, RESTORED_DOOR_LIGHTS, isVeryDarkCabinetStain, r
 import { combinedSwatchTextureWindow, type FaceSourceKind, type FaceTextureWindow } from "@shared/doorFaceRecognition";
 import { RAISED_PANEL_BEVEL_DEPTH_IN, RAISED_PANEL_BEVEL_WIDTH_IN, resolveDoorProfile } from "@shared/doorStyleAppearance";
 import { attachSlopedRaisedPanel, effectiveRaisedBevelDepthIn, threeDFaceUsesRaisedPanelBevel } from "./raisedPanelBevel";
+import { loadApplianceFrontTexture, refrigeratorBodyMaterialParams } from "./applianceFinishTint";
 import { matchCabinetColorName } from "@shared/cabinetColorNames";
 import { runColorGate, type ColorGateResult } from "@shared/colorGate";
 import { doorLightsForFinish } from "@shared/doorRenderLights";
@@ -310,6 +311,8 @@ type SceneSku = {
   cornerGeometryKind?: PlacedCornerGeometryKind;
   /** Original product visual selected in the 2D appliance palette. */
   catalogImageUrl?: string | null;
+  /** Appliance package color; the 3D view recolors the stainless catalog photo and fridge body to match. */
+  applianceFinish?: PlacedCabinet["applianceFinish"];
   decorativeEnd?: "none" | "left" | "right" | "both";
   masterTracShelfCut?: PlacedCabinet["masterTracShelfCut"];
 	  fillerPieceGroupId?: string | null;
@@ -4477,7 +4480,7 @@ export function addCabinet(
 	  const cabinetPbr = threeDPhysicalSurfaceProfile("cabinet", Boolean(doorSampleUrl));
 	  const metalPbr = threeDPhysicalSurfaceProfile("metal");
 	  const bodyMaterial = new THREE.MeshPhysicalMaterial(isRefrigeratorAppliance
-	    ? { color: "#5f666d", roughness: 0.3, metalness: 0.58, clearcoat: 0.08, clearcoatRoughness: 0.28, envMapIntensity: 1.02 }
+	    ? refrigeratorBodyMaterialParams(sku.applianceFinish)
 	    : { color: "#c6b9a7", ...cabinetPbr });
   const structuralFinishMaterials: THREE.MeshStandardMaterial[] = isRefrigeratorAppliance ? [] : [bodyMaterial];
   const flatExposedFinishMaterials: THREE.MeshStandardMaterial[] = [];
@@ -6138,7 +6141,7 @@ export function addCabinet(
       // the browser image texture in a real WebGL document context.
       const originalTexture = typeof document === "undefined"
         ? null
-        : new THREE.TextureLoader().load(originalVisualUrl);
+        : loadApplianceFrontTexture(originalVisualUrl, sku.applianceFinish);
       if (originalTexture) {
         originalTexture.colorSpace = THREE.SRGBColorSpace;
         originalTexture.minFilter = THREE.LinearFilter;
@@ -11010,6 +11013,7 @@ export function existingCabinetSku(cabinet: PlacedCabinet, room?: RoomData): Sce
     cornerType: sharedCornerKind === "diagonal" ? "diagonal" : sharedCornerKind === "l-shape" || sharedCornerKind === "corner-drawer" ? "l-shape" : cabinet.cornerType ?? null,
     cornerGeometryKind: sharedCornerKind,
     catalogImageUrl: cabinet.catalogImageUrl ?? appliance?.catalogImageUrl ?? null,
+    applianceFinish: cabinet.applianceFinish ?? null,
     decorativeEnd: cabinet.decorativeEnd ?? "none",
 	    fillerPieceGroupId: cabinet.fillerPieceGroupId ?? null,
 	    fillerTotalWidth: cabinet.fillerTotalWidth ?? null,
