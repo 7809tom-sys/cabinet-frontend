@@ -161,6 +161,31 @@ for f in m["finishes"]:
         "grainPaleSoftened": bool(pale),
     })
 
+# Tom (Oct 31, Dark Caramel): the catalog photo is a muted pink-grey (#856b63) while DL's own thumbnail is a warm
+# walnut. Tom chose warm walnut. Keep the photo's grain, move its colour to WALNUT_TARGET with a multiplicative
+# tint (same mechanism as EWO), and soften the patch like Driftwood's. Target is an estimate from the thumbnail.
+WALNUT_TARGETS = {"dark-caramel": "#6a4631"}
+WALNUT_SOFTEN_CONTRAST = 0.65
+WALNUT_SOFTEN_BLUR = 0.6
+_lin = lambda c: np.where(c / 255 <= .04045, c / 255 / 12.92, ((c / 255 + .055) / 1.055) ** 2.4)
+_srgb = lambda l: np.round(255 * np.where(l <= .0031308, l * 12.92, 1.055 * np.power(l, 1 / 2.4) - .055)).astype(int)
+for _slug, _hex in WALNUT_TARGETS.items():
+    _row = next(r for r in rows if r["slug"] == _slug)
+    from PIL import ImageFilter
+    _means = []
+    for _name in (f"{_slug}.png", f"{_slug}-drawer.png"):
+        _im = Image.open(pub / "grain" / _name).convert("RGB")
+        _a = np.asarray(_im, dtype=float)
+        _m = _a.reshape(-1, 3).mean(axis=0)
+        _means.append(_m)
+        _soft = _m + (_a - _m) * WALNUT_SOFTEN_CONTRAST
+        _out = Image.fromarray(np.clip(_soft.round(), 0, 255).astype("uint8"), "RGB").filter(ImageFilter.GaussianBlur(WALNUT_SOFTEN_BLUR))
+        _out.save(pub / "grain" / _name)
+        _out.save(data / "processed" / "grain" / _name)
+    _tgt = np.array([int(_hex[i:i + 2], 16) for i in (1, 3, 5)], dtype=float)
+    _ratio = np.clip(_lin(_tgt) / _lin(np.mean(_means, axis=0)), 0, 1)
+    _row.update({"solidColor": _hex, "faceTint": "#%02x%02x%02x" % tuple(_srgb(_ratio)), "grainSoftened": True})
+
 # European White Oak: the catalog ships a real 1024px vertical-grain texture with a normal map. Use it for
 # door, drawer and side faces. It is lighter than the finish photo, so a tint brings it to the sample colour.
 EWO = next(r for r in rows if r["slug"] == "ewo")
