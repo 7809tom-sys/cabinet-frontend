@@ -57,7 +57,6 @@ const bevelGeometryCache = new Map<string, THREE.BufferGeometry>();
 const grooveGeometryCache = new Map<string, THREE.BufferGeometry>();
 const boxGeometryCache = new Map<string, THREE.BoxGeometry>();
 const bevelMaterialCache = new Map<string, THREE.MeshStandardMaterial>();
-let recessMaterial: THREE.MeshStandardMaterial | null = null;
 
 function quantize(value: number): string {
   return value.toFixed(4);
@@ -165,21 +164,28 @@ function sharedBox(width: number, height: number, depth: number): THREE.BoxGeome
   return geometry;
 }
 
-function sharedRecessMaterial(): THREE.MeshStandardMaterial {
-  if (!recessMaterial) {
-    recessMaterial = new THREE.MeshStandardMaterial({
-      color: "#0b0908",
-      roughness: 0.94,
-      metalness: 0,
-      transparent: true,
-      opacity: 0.94,
-      polygonOffset: true,
-      polygonOffsetFactor: 1,
-      polygonOffsetUnits: 1,
-    });
-    markShared(recessMaterial);
-  }
-  return recessMaterial;
+const recessMaterialCache = new Map<string, THREE.MeshStandardMaterial>();
+
+/** Groove/recess shadow tinted from the door color (dark doors stay near-black; white doors get a soft gray line, not a black box). */
+function sharedRecessMaterial(faceColor = "#f4f1ea"): THREE.MeshStandardMaterial {
+  const key = faceColor.trim().toLowerCase() || "#f4f1ea";
+  const cached = recessMaterialCache.get(key);
+  if (cached) return cached;
+  const shade = new THREE.Color(key);
+  const luma = 0.2126 * shade.r + 0.7152 * shade.g + 0.0722 * shade.b;
+  const material = new THREE.MeshStandardMaterial({
+    color: shade.clone().multiplyScalar(luma > 0.6 ? 0.5 : 0.18),
+    roughness: 0.94,
+    metalness: 0,
+    transparent: true,
+    opacity: 0.94,
+    polygonOffset: true,
+    polygonOffsetFactor: 1,
+    polygonOffsetUnits: 1,
+  });
+  markShared(material);
+  recessMaterialCache.set(key, material);
+  return material;
 }
 
 function sharedBevelMaterial(color: string): THREE.MeshStandardMaterial {
@@ -224,14 +230,14 @@ export function attachSlopedRaisedPanel(
   const panelThickness = Math.max(0.012, Math.min(0.02, input.bevelDepth * 0.45));
   const insideEdgeProfile = input.insideEdgeProfile;
 
-  const recessedBed = new THREE.Mesh(sharedBox(input.outerWidth, input.outerHeight, 0.006), sharedRecessMaterial());
+  const recessedBed = new THREE.Mesh(sharedBox(input.outerWidth, input.outerHeight, 0.006), sharedRecessMaterial(input.faceColor));
   recessedBed.position.z = -0.01;
   recessedBed.userData = { raisedPanelRecess: true, insideEdgeProfile };
   parent.add(recessedBed);
 
   const grooveMesh = new THREE.Mesh(
     createRaisedPanelGrooveGeometry(input.outerWidth, input.outerHeight, groove),
-    sharedRecessMaterial(),
+    sharedRecessMaterial(input.faceColor),
   );
   grooveMesh.position.z = 0.001;
   grooveMesh.userData = { raisedPanelRecess: true, raisedPanelGroove: true, insideEdgeProfile };
