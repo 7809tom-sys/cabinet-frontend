@@ -229,7 +229,7 @@ describe("sides carry the door's grain, and photo materials are not over-lit", (
     expect(plan.dlcCrop?.solidColor).toBe(e.solidColor);
     expect(plan.dlcCrop?.tintHex).toBe(e.faceTint);
     // other pale finishes untouched by this change
-    for (const slug of ["arctic-white", "glacier-white", "white-shaker", "ivory-white", "dove-gray"]) {
+    for (const slug of ["arctic-white", "white-shaker", "ivory-white", "dove-gray"]) {
       expect(DLC_FR26_CATALOG.find((x) => x.slug === slug)!.faceTint).toBeNull();
     }
   });
@@ -241,6 +241,15 @@ describe("sides carry the door's grain, and photo materials are not over-lit", (
     const plan = resolveCabinetFaceImages(dl("Pearl White", "DL-PW"), "base");
     expect(plan.dlcCrop?.solidColor).toBe("#dfd9d9");
     expect(plan.dlcCrop?.tintHex).toBe(e.faceTint);
+  });
+  it("Glacier White matches Pearl White's antique white (Tom, Oct 31): #dfd9d9, grain shifted (no tint), same colour for sides", () => {
+    const e = DLC_FR26_CATALOG.find((x) => x.slug === "glacier-white")!;
+    expect(e.solidColor).toBe("#dfd9d9");
+    expect(e.solidColor).toBe(DLC_FR26_CATALOG.find((x) => x.slug === "pearl-white")!.solidColor);
+    expect(e.faceTint).toBeNull(); // a tint cannot brighten red/green, so the grain patch itself carries the colour
+    expect(e.faceDoor).toBe("/textures/dlc-fr26/grain/glacier-white.png");
+    const plan = resolveCabinetFaceImages(dl("Glacier White", "DL-GW"), "base");
+    expect(plan.dlcCrop?.solidColor).toBe("#dfd9d9");
   });
   it("light compensation cancels the rig's light sum per channel (tone mapping off) and stays in range", () => {
     const std = dlcPhotoLightCompensation(RESTORED_DOOR_LIGHTS);

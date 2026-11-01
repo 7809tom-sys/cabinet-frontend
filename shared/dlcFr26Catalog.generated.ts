@@ -342,7 +342,7 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       141,
       62
     ],
-    "solidColor": "#d7d8dd",
+    "solidColor": "#dfd9d9",
     "grain": "/textures/dlc-fr26/grain/glacier-white.png",
     "grainSize": [
       48,
