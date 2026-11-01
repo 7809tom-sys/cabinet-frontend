@@ -34,11 +34,13 @@ import {
   validatePelicanProductImageFile,
   type PelicanProductImageTarget,
 } from "@/lib/pelicanProductImageUpload";
+import { isPelicanTileOrMosaicItem, prepareDesignerTileUpload } from "@/lib/mosaicCheckerboard";
 import { VendorRoomSceneLibrary } from "@/components/vendor/VendorRoomSceneLibrary";
 import { VendorAutoRoomSceneBadge } from "@/components/doorStyles/VendorAutoRoomSceneBadge";
 import { InheritedVendorOriginZips } from "@/components/doorStyles/InheritedVendorOriginZips";
 import { OpenDesignerLink } from "@/components/design/OpenDesignerLink";
 import { DoorStyleIdentity } from "@/components/doorStyles/DoorStyleIdentity";
+import { DoorStyleNeedToggles } from "@/components/doorStyles/DoorStyleNeedToggles";
 import { VENDOR_AUTO_ROOM_SCENE_COPY, type AutoRoomScene } from "@/lib/autoRoomScene";
 import { PublicRoomSceneStrip } from "@/components/PublicRoomScenes";
 import { supabase } from "@/lib/supabase";
@@ -193,6 +195,8 @@ function PelicanVendorCatalogPage({
   const [designerPhotoTrimmed, setDesignerPhotoTrimmed] = useState(false);
   const [roomScenePhotoTrimmed, setRoomScenePhotoTrimmed] = useState(false);
   const [usableAsFloor, setUsableAsFloor] = useState(false);
+  const [designerTransparencyWarning, setDesignerTransparencyWarning] = useState<string | null>(null);
+  const [designerCleanedPreviewUrl, setDesignerCleanedPreviewUrl] = useState<string | null>(null);
   const categoryFilter = selectedCatalogCategory(category);
   const input = useMemo(
     () => ({
@@ -290,6 +294,8 @@ function PelicanVendorCatalogPage({
     setDesignerPhotoTrimmed(false);
     setRoomScenePhotoTrimmed(false);
     setUsableAsFloor(readUsableAsFloor(item));
+    setDesignerTransparencyWarning(null);
+    setDesignerCleanedPreviewUrl(null);
   };
   useEffect(() => {
     const product = productForEdit.data;
@@ -342,7 +348,23 @@ function PelicanVendorCatalogPage({
     }
     const mutation = target === "catalog" ? uploadCatalogPhoto : target === "designer" ? uploadDesignerPhoto : uploadRoomScenePhoto;
     try {
-      const dataBase64 = await readPelicanProductImageBase64(file);
+      let uploadBlob: Blob = file;
+      let contentType = validation.contentType;
+      if (target === "designer" && isPelicanTileOrMosaicItem(editingProduct)) {
+        const prepared = await prepareDesignerTileUpload(file);
+        setDesignerTransparencyWarning(prepared.warning);
+        setDesignerCleanedPreviewUrl(prepared.previewDataUrl);
+        if (prepared.pngBlob) {
+          const pngCheck = validatePelicanProductImageFile({ type: "image/png", size: prepared.pngBlob.size, name: "sheet.png" });
+          if (!pngCheck.ok) {
+            toast.error(pngCheck.message);
+            return;
+          }
+          uploadBlob = prepared.pngBlob;
+          contentType = "image/png";
+        }
+      }
+      const dataBase64 = await readPelicanProductImageBase64(uploadBlob);
       if (!dataBase64) {
         toast.error("The photo could not be read.");
         return;
@@ -350,7 +372,7 @@ function PelicanVendorCatalogPage({
       const result = await mutation.mutateAsync({
         id: editingProduct.id,
         dataBase64,
-        contentType: validation.contentType,
+        contentType,
         target,
         useAsDesignerPhoto: target === "designer",
         alsoSetCatalogImage: target === "catalog",
@@ -549,6 +571,25 @@ function PelicanVendorCatalogPage({
                   {uploadDesignerPhoto.isPending && <div className="absolute inset-0 flex items-center justify-center bg-background/70"><Loader2 className="h-5 w-5 animate-spin" /></div>}
                 </div>
                 {designerPhotoTrimmed && <p data-testid="pelican-designer-trim-note" className="text-xs text-muted-foreground">White border trimmed automatically</p>}
+                {designerCleanedPreviewUrl && (
+                  <div data-testid="pelican-designer-cleaned-preview" className="flex items-center gap-2">
+                    <img
+                      src={designerCleanedPreviewUrl}
+                      alt="Cleaned Designer photo"
+                      className="h-16 w-16 rounded border object-contain"
+                      style={{
+                        backgroundColor: "#ffffff",
+                        backgroundImage: "linear-gradient(45deg, #d4d4d4 25%, transparent 25%), linear-gradient(-45deg, #d4d4d4 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #d4d4d4 75%), linear-gradient(-45deg, transparent 75%, #d4d4d4 75%)",
+                        backgroundSize: "12px 12px",
+                        backgroundPosition: "0 0, 0 6px, 6px -6px, -6px 0",
+                      }}
+                    />
+                    <p className="text-xs text-muted-foreground">Checkerboard removed. Transparent edges upload as PNG.</p>
+                  </div>
+                )}
+                {designerTransparencyWarning && (
+                  <p data-testid="pelican-designer-transparency-warning" className="rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-950">{designerTransparencyWarning}</p>
+                )}
                 <Button type="button" variant="outline" data-testid="pelican-upload-designer-photo" disabled={uploadDesignerPhoto.isPending} onClick={() => designerPhotoInputRef.current?.click()}>
                   {uploadDesignerPhoto.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
                   Upload Designer photo
@@ -2580,6 +2621,12 @@ type VendorFeaturedStyle = {
   color: string | null;
   finish: string | null;
   woodSpecies: string | null;
+  boxConstruction?: string | null;
+  overlayType?: string | null;
+  supplierBrandName?: string | null;
+  supplierName?: string | null;
+  skinNeeded?: boolean | number | null;
+  finishedEndNeeded?: boolean | number | null;
   doorSampleImageUrl: string | null;
 	  drawerSampleImageUrl: string | null;
   roomSceneImageUrl: string | null;
@@ -2821,6 +2868,15 @@ function VendorFeaturedStylesPage() {
     },
     onError: (error) => toast.error(error.message),
   });
+  const saveNeeds = trpc.distributorPortal.updateFeaturedStyleMaterials.useMutation({
+    onSuccess: () => utils.distributorPortal.featuredStyles.invalidate(),
+    onError: (error) => toast.error(error.message),
+  });
+  const needInput = (styleId: number, patch: { skinNeeded?: boolean; finishedEndNeeded?: boolean }) => ({
+    styleId,
+    ...patch,
+    ...(adminDistId ? { distributorId: adminDistId } : {}),
+  });
   const reorder = trpc.distributorPortal.reorderFeaturedStyles.useMutation({
     onSuccess: () => utils.distributorPortal.featuredStyles.invalidate(),
     onError: (error) => toast.error(error.message),
@@ -2958,6 +3014,12 @@ function VendorFeaturedStylesPage() {
 	                        distributorName: style.distributorName,
 	                      }}
 	                    />
+	                    <DoorStyleNeedToggles
+	                      style={style}
+	                      pending={saveNeeds.isPending}
+	                      onSkinNeeded={(styleId, skinNeeded) => saveNeeds.mutate(needInput(styleId, { skinNeeded }) as never)}
+	                      onFinishedEndNeeded={(styleId, finishedEndNeeded) => saveNeeds.mutate(needInput(styleId, { finishedEndNeeded }) as never)}
+	                    />
 	                    <div className="mt-1 flex flex-wrap items-center gap-1.5">
 	                      <Badge variant="outline" className="border-blue-300 bg-blue-50 px-1.5 py-0 text-[10px] text-blue-700"><Package className="mr-0.5 h-2.5 w-2.5" /> {style.skuCount} cabinet SKU{style.skuCount === 1 ? "" : "s"}</Badge>
 	                      <Badge variant="outline" className="border-emerald-300 bg-emerald-50 px-1.5 py-0 text-[10px] text-emerald-700"><ImageIcon className="mr-0.5 h-2.5 w-2.5" /> Room scene ready</Badge>
@@ -3019,6 +3081,12 @@ function VendorFeaturedStylesPage() {
 	                        styleCode: style.styleCode,
 	                        distributorName: style.distributorName,
 	                      }}
+	                    />
+	                    <DoorStyleNeedToggles
+	                      style={style}
+	                      pending={saveNeeds.isPending}
+	                      onSkinNeeded={(styleId, skinNeeded) => saveNeeds.mutate(needInput(styleId, { skinNeeded }) as never)}
+	                      onFinishedEndNeeded={(styleId, finishedEndNeeded) => saveNeeds.mutate(needInput(styleId, { finishedEndNeeded }) as never)}
 	                    />
 	                    <p className="mt-0.5 break-words text-xs text-muted-foreground">{style.skuCount} cabinet SKU{style.skuCount === 1 ? "" : "s"} {[style.doorStyle, style.color].filter(Boolean).length > 0 ? `· ${[style.doorStyle, style.color].filter(Boolean).join(" · ")}` : ""}</p>
 	                    {hasActiveFilters && style.matchingCabinets.length > 0 && <p className="truncate text-[11px] text-primary">Matches: {style.matchingCabinets.map((cabinet) => cabinet.masterCode).join(", ")}{style.matchingCabinetCount > style.matchingCabinets.length ? ` +${style.matchingCabinetCount - style.matchingCabinets.length}` : ""}</p>}

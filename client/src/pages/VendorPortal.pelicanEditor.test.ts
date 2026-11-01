@@ -77,6 +77,14 @@ describe("Pelican vendor catalog editor", () => {
     expect(catalogSource).not.toContain("gemini");
     expect(catalogSource).not.toContain("banana");
     expect(catalogSource).not.toContain("createObjectURL");
+    expect(catalogSource).toContain("isPelicanTileOrMosaicItem");
+    expect(catalogSource).toContain("prepareDesignerTileUpload");
+    expect(catalogSource).toContain('data-testid="pelican-designer-cleaned-preview"');
+    expect(catalogSource).toContain('data-testid="pelican-designer-transparency-warning"');
+    const checkerboard = readFileSync(resolve(process.cwd(), "client/src/lib/mosaicCheckerboard.ts"), "utf8");
+    expect(checkerboard).toContain("This image has no transparency - mosaic edges may show seams");
+    expect(catalogSource).toContain('uploadPelicanPhoto(file, "catalog")');
+    expect(catalogSource).toContain('uploadPelicanPhoto(file, "roomScene")');
   });
 
   it("does not show the Pelican room scene photo on the public product page", () => {

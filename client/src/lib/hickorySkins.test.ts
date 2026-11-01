@@ -88,8 +88,8 @@ describe("hickorySkinSuggestions", () => {
     expect(hickorySkinSuggestions([midBase], ROOM, { woodSpecies: "Maple" })).toEqual([]);
   });
 
-  it("suggests one skin per exposed end for a hickory style", () => {
-    const out = hickorySkinSuggestions([midBase], ROOM, { woodSpecies: "Hickory" });
+  it("suggests one skin per exposed end for hickory frameless only", () => {
+    const out = hickorySkinSuggestions([midBase], ROOM, { woodSpecies: "Hickory", boxConstruction: "frameless", styleCode: "SSH" });
     expect(out.length).toBe(2); // both ends exposed
     for (const s of out) {
       expect(s.pendingSku).toBe(true);
@@ -102,7 +102,7 @@ describe("hickorySkinSuggestions", () => {
   it("uses the right placeholder code per placement bucket", () => {
     const wall = cab({ uid: "w", x: 48, y: 0, width: 24, depth: 12, placement: "wall", height: 30 });
     const tall = cab({ uid: "t", x: 90, y: 0, width: 24, depth: 24, placement: "tall", height: 84 });
-    const out = hickorySkinSuggestions([wall, tall], ROOM, { woodSpecies: "Hickory" });
+    const out = hickorySkinSuggestions([wall, tall], ROOM, { woodSpecies: "Hickory", boxConstruction: "standard altaeuro frameless box" });
     const codes = new Set(out.map((s) => s.suggestCode));
     expect(codes.has("HICKORY-SKIN-WALL")).toBe(true);
     expect(codes.has("HICKORY-SKIN-TALL")).toBe(true);
@@ -110,5 +110,12 @@ describe("hickorySkinSuggestions", () => {
 
   it("exposedEndCount matches the number of suggestions", () => {
     expect(exposedEndCount([midBase], ROOM)).toBe(2);
+  });
+
+  it("never suggests skins for hickory framed, non-hickory frameless, or a forced flag", () => {
+    expect(hickorySkinSuggestions([midBase], ROOM, { woodSpecies: "Hickory", boxConstruction: "face frame", styleCode: "HS" })).toEqual([]);
+    expect(hickorySkinSuggestions([midBase], ROOM, { woodSpecies: "Maple", boxConstruction: "frameless", styleCode: "SW", skinNeeded: true })).toEqual([]);
+    expect(hickorySkinSuggestions([midBase], ROOM, { ourName: "Forest Rust", styleCode: "RH", skinNeeded: true })).toEqual([]);
+    expect(hickorySkinSuggestions([midBase], ROOM, { woodSpecies: "Oak", doorStyle: "Slab" })).toEqual([]);
   });
 });

@@ -6545,6 +6545,10 @@ const FINISH_BY_KEYWORD: { match: RegExp; face: string; edge: string; label: str
   { match: /grey|gray|stone|pewter|graphite|slate|fog|cinder|relic|repose|dovetail|grizzle|greige|ash|smoke|nickel|harbor|mist|pebble|amberg/, face: "#9aa0a6", edge: "#6f747a", label: "#1f2937" },
   // BLUES
   { match: /navy|blue|indigo|ocean|naval|cobalt|abyss|cobblestone|denim|sapphire|marine|teal|peacock/, face: "#3b4d63", edge: "#26354a", label: "#f8fafc" },
+  // RUST before any forest/green word. Forest Rust is the rust stain on every
+  // face. "forest green" has no rust word, so it stays green. "rustic" is not
+  // the word "rust". This is a solid color, never a hickory grain texture.
+  { match: /\brust\b/, face: "#b5603a", edge: "#8a4324", label: "#fff8f3" },
   // GREENS (incl. Aston Green, sage breeze)
   { match: /green|sage|forest|hunter|olive|fern|moss|evergreen|basil|juniper|aston/, face: "#566f5a", edge: "#3c4f40", label: "#f8fafc" },
   // BLACKS / NEAR-BLACK (incl. Iron Black, Midnight Glass/Black, Charcoal)

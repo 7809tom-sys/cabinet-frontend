@@ -10,6 +10,7 @@
  * Panels are real placed pieces so plan, elevation, and 3D draw them. They
  * are priced from a catalog SKU. A missing price does not insert a $0 line.
  */
+import { skinsAreNeeded } from "@shared/canHaveSkins";
 import { requiresAutoEndPanels, type DoorStyleEndPanelInput } from "./autoEndPanels";
 import { kitchenRuleNumber } from "./kitchenRuleParameters";
 import {
@@ -200,7 +201,9 @@ export function removeAutoExposedPanels(
     if (!isAutoPanel(item)) return true;
     if (!doorStyleFor || !item.autoPlacedReason || !QUALIFIED_AUTO_REASON_SET.has(item.autoPlacedReason)) return false;
     const host = placed.find((candidate) => candidate.uid === item.autoPlacedForUid);
-    return requiresAutoEndPanels(doorStyleFor(host ?? item));
+    const style = doorStyleFor(host ?? item);
+    if (skinsAreNeeded(style)) return false;
+    return requiresAutoEndPanels(style);
   });
   return kept.length === placed.length ? placed as PlacedCabinet[] : kept;
 }
@@ -600,7 +603,11 @@ function syncQualifiedAutoPanels(input: QualifiedSyncInput): ExposedSidePlan {
   const warnings: ExposedPanelWarning[] = [];
   const wanted = new Map<string, PlacedCabinet>();
   const missingPrice = new Map<ExposedPanelType, { uid: string; reason: ExposedPanelReason }>();
-  const hosts = input.placed.filter((item) => isRunCabinet(item) && requiresAutoEndPanels(doorStyleFor(item)));
+  const hosts = input.placed.filter((item) => {
+    const style = doorStyleFor(item);
+    if (skinsAreNeeded(style)) return false;
+    return isRunCabinet(item) && requiresAutoEndPanels(style);
+  });
 
   const collides = (candidate: PlacedCabinet, ownerUid: string, ignoreUids: readonly string[] = []) => {
     const ignored = new Set(ignoreUids);

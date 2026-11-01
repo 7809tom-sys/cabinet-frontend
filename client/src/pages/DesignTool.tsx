@@ -203,7 +203,8 @@ import { buildTrimCartLines,
   type TrimPrice,
 } from "@/lib/trimCart";
 import { applyFramelessDoorClearanceFillers } from "@/lib/framelessDoorClearance";
-import { hickorySkinSuggestions, type HickorySkinSuggestion, exposedEnds, isHickoryStyle } from "@/lib/hickorySkins";
+import { dropIneligibleSkins, isSkinProduct, skinsAreNeeded } from "@shared/canHaveSkins";
+import { hickorySkinSuggestions, type HickorySkinSuggestion } from "@/lib/hickorySkins";
 import { aefExposedEndRequirements } from "@/lib/aefExposedEnds";
 import { isFramelessFortyWallHeight } from "@/lib/aefAboveFridge";
 import { hasAefPrintedGeometry } from "@shared/aefFramelessGeometry";
@@ -4339,6 +4340,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         // The dedicated "Vanity" tab shows ONLY vanity-category cabinets.
         if (paletteType === "vanity") return isBathroomVanityCabinet(c);
         // Panels are the source-backed physical panel/skin subset of Accessories.
+        if (paletteType === "panel" || paletteType === "accessory") {
+          if (isSkinProduct(c) && !skinsAreNeeded(doorStyles?.find((style) => style.id === styleId) ?? null)) return false;
+        }
         if (paletteType === "panel") return isPanelPaletteItem(c) && !isWallWineRackCabinet(c);
         // The "Accessories & Trim" tab returns its own server-filtered list
         // (crown/light-rail molding, fillers, end panels, roll-out trays, etc.).
@@ -4354,7 +4358,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       items: hits.map((hit) => hit.item),
       ranks: new Map(hits.map((hit) => [hit.item, hit.rank])),
     };
-	  }, [paletteCabinets, cornerWallCabinets, cornerWallGlassVariants, paletteSearch, paletteType, styleId, appliancePalette, isCornerWall, isCornerBase, isVanity, closetGroups, masterTracFinish, liveMasterCabinets, autoFillCabinets, threeDAccessoryCatalog]);
+	  }, [doorStyles, paletteCabinets, cornerWallCabinets, cornerWallGlassVariants, paletteSearch, paletteType, styleId, appliancePalette, isCornerWall, isCornerBase, isVanity, closetGroups, masterTracFinish, liveMasterCabinets, autoFillCabinets, threeDAccessoryCatalog]);
   const usesBathroomFixturePalette = roomType === "bathroom" && paletteType === "appliance";
   const paletteHeightOptions = useMemo(
     () => catalogHeightOptions(filteredPalette, paletteType, isCornerBase),
@@ -4405,12 +4409,13 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     return src.filter((c) => {
       if (paletteType === "wall" || paletteType === "wallht") return !isCornerWall(c) || isWallWineRackCabinet(c);
       if (paletteType === "vanity") return isBathroomVanityCabinet(c);
+      if ((paletteType === "panel" || paletteType === "accessory") && isSkinProduct(c) && !skinsAreNeeded(doorStyles?.find((style) => style.id === styleId) ?? null)) return false;
       if (paletteType === "panel") return isPanelPaletteItem(c) && !isWallWineRackCabinet(c);
       if (paletteType === "accessory") return !isWallWineRackCabinet(c);
       if (paletteType === "base") return !isCornerBase(c) && !isVanity(c) && !isWallWineRackCabinet(c);
       return true;
     }).length;
-  }, [paletteCabinets, cornerWallCabinets, paletteType, isCornerWall, isCornerBase, isVanity, liveMasterCabinets, autoFillCabinets, threeDAccessoryCatalog]);
+  }, [doorStyles, paletteCabinets, cornerWallCabinets, paletteType, styleId, isCornerWall, isCornerBase, isVanity, liveMasterCabinets, autoFillCabinets, threeDAccessoryCatalog]);
 
   // Group the palette by cabinet height so wall cabinets (and others) are easy
   // to find by size — mirrors how pros scan 2020's catalog by height.
@@ -5090,6 +5095,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     () => doorStyles?.find((s) => s.id === styleId) ?? null,
     [doorStyles, styleId]
   );
+  const activeStyleRef = useRef(activeStyle);
+  activeStyleRef.current = activeStyle;
+  useEffect(() => {
+    if (styleId != null && !activeStyle) return;
+    setPlaced((current) => dropIneligibleSkins(current, activeStyle));
+  }, [activeStyle, styleId]);
   const doorRenderSettings = trpc.siteSettings.getPublicSettings.useQuery(undefined, { staleTime: 60_000 });
   const doorRenderExposure = clampRenderExposure((doorRenderSettings.data as { renderExposure?: number | string | null } | undefined)?.renderExposure);
   const doorColorDeltaE = clampColorDeltaE((doorRenderSettings.data as { colorMatchDeltaE?: number | string | null } | undefined)?.colorMatchDeltaE);
@@ -5110,9 +5121,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // Empty unless the selected finish is Hickory. NOTE: the real skin SKU/price
   // is pending owner confirmation, so these carry pendingSku=true.
   const hickorySkins = useMemo<HickorySkinSuggestion[]>(() => {
-    // Hickory now gets a priced catalog panel on the sides listed above.
-    // The older unpriced skin suggestion would add a second line.
-    if (requiresAutoEndPanels(activeStyle as DoorStyleEndPanelInput | null)) return [];
     return hickorySkinSuggestions(placed, room, activeStyle as never);
   }, [placed, room, activeStyle]);
 
@@ -5212,7 +5220,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	        restoredRoom,
 	      ).placed;
       const pricedPlaced = clearForeignSavedStyleOverrides(repairedPlaced, restoredStyle.distributorId, styleDistributorIdById);
-      setPlaced(restoredIsland ? normalizeIslandRangeRearPlanes(restoredIsland, pricedPlaced, restoredRoom) : pricedPlaced);
+      const restoredDoorStyle = doorStyles?.find((style) => style.id === restoredStyle.styleId) ?? null;
+      const styleKnown = restoredStyle.styleId == null || restoredDoorStyle != null;
+      const withoutIneligibleSkins = styleKnown ? dropIneligibleSkins(pricedPlaced, restoredDoorStyle) : pricedPlaced;
+      setPlaced(restoredIsland ? normalizeIslandRangeRearPlanes(restoredIsland, withoutIneligibleSkins, restoredRoom) : withoutIneligibleSkins);
       setStyleId(restoredStyle.styleId);
       const restoredIslandStyleId = typeof restoredIsland?.cabinetStyleId === "number"
         && restoredIsland.cabinetStyleId !== restoredStyle.styleId
@@ -5259,7 +5270,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       }
       setSelectedUid(null);
     },
-    [styleDistributorIdById]
+    [doorStyles, styleDistributorIdById]
   );
 
   // Map of door-style id -> display name. Defined here (before buildRows) so the
@@ -6996,6 +7007,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	      const pelicanSinkDraft = pelicanSinkDraftRef.current;
 	      forcedOpenSinkRef.current = null;
 	      pelicanSinkDraftRef.current = null;
+	      if (isSkinProduct(c) && !skinsAreNeeded(activeStyleRef.current)) {
+	        const message = "Only hickory frameless cabinets get skins.";
+	        setPlacementWarning(message);
+	        toast.error(message);
+	        return;
+	      }
 	      isAddingRef.current = true;
 	      setTimeout(() => { isAddingRef.current = false; }, 500);
 	      if (!(strictDropTarget && x != null && y != null)) {
@@ -20020,7 +20037,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                   <div key="hickory" className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-2 text-[11px] text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
                     <span className="mt-0.5 inline-block h-2 w-2 shrink-0 rounded-full bg-amber-500" />
                     <span>
-                      <strong>Hickory exposed ends:</strong> {hickorySkins.length} finished-end skin{hickorySkins.length > 1 ? "s" : ""} auto-added to your build sheet to cover the unfinished side{hickorySkins.length > 1 ? "s" : ""} of your Hickory cabinets. Skin pricing is confirmed by our team (SKU pending), so it is not included in the estimate yet.
+                      <strong>Hickory frameless exposed ends:</strong> {hickorySkins.length} finished-end skin{hickorySkins.length > 1 ? "s" : ""} auto-added to your build sheet. Only hickory frameless cabinets get skins. Skin pricing is confirmed by our team (SKU pending), so it is not included in the estimate yet.
                     </span>
                   </div>,
                 );
