@@ -222,6 +222,18 @@ const ownerSeeds: KitchenRuleSeed[] = [
     notesText: null,
   },
   {
+    ruleCode: "owner-corner-after-anchors",
+    category: "Owner placement",
+    title: "Corner cabinet is chosen after the appliances, sink and refrigerator",
+    ruleDescription: "Order of placement: appliances, sink and refrigerator first. Then the corner cabinet is chosen from what is left on each leg, picking the corner that needs the fewest fillers while still working (doors and drawers open, lazy Susan or blind corner usable). Fillers close what remains.",
+    parameters: {},
+    enforcementKind: "auto",
+    sourceText: "Owner",
+    implementationStatus: "pending",
+    readsParameters: false,
+    notesText: "Today Auto-Design seats the largest corner that fits (diagonal, then lazy Susan, then blind). It does not yet compare the filler each candidate leaves. Tom set this rule 2026-11-01.",
+  },
+  {
     ruleCode: "owner-wall-bottom-54",
     category: "Owner vertical",
     title: "54 inch baseline for 30 inch wall cabinets",

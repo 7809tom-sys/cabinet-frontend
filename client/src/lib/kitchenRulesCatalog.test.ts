@@ -105,3 +105,11 @@ describe("kitchen rule export", () => {
     expect(statusLabel("implemented")).toBe("Implemented in code");
   });
 });
+
+describe("corner after anchors rule", () => {
+  it("is in the seed, owner-sourced, and honest that it is not implemented yet", () => {
+    const rule = KITCHEN_RULE_SEED.find((r) => r.ruleCode === "owner-corner-after-anchors");
+    expect(rule).toMatchObject({ category: "Owner placement", sourceText: "Owner", implementationStatus: "pending" });
+    expect(rule!.ruleDescription).toMatch(/fewest fillers/);
+  });
+});
