@@ -101,6 +101,8 @@ describe("regular Designer clear 3D view", () => {
     expect(threeDDollhouseHidesWithWall(item({ countertop: true }))).toBe(false);
     expect(threeDDollhouseHidesWithWall(item({ openingUid: "window-1", kind: "window" }))).toBe(true);
     expect(threeDDollhouseHidesWithWall(item({ measuredBacksplash: true }))).toBe(true);
+    // Baseboards (PR #162) are wall-mounted trim, so they fade with their wall like the backsplash does.
+    expect(threeDDollhouseHidesWithWall(item({ baseboard: true, side: "top" }))).toBe(true);
     const renderer = readFileSync(new URL("./InteractiveRoom3D.tsx", import.meta.url), "utf8");
     expect(renderer).toContain("setThreeDDollhouseHidden(child, threeDDollhouseHidesWithWall(child) && mounted.some((side) => hiddenSides.has(side)));");
     // Each wall's backsplash segment is its own top-level piece, so it fades
