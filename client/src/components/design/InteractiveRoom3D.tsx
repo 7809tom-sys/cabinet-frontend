@@ -11542,7 +11542,8 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
   const tabletTier = useTabletWorkspace();
   // Tablet overlay: the floating 3D row folds into one "Canvas" menu so the
   // page toolbar is the only bar over the room; fitted fillers collapse to a chip.
-  const tabletOverlay = embedded && tabletTier.tablet;
+  // Every embedded size uses the compact Canvas menu so no banner sits in front of the room walls.
+  const tabletOverlay = embedded;
   const [fillerChipOpen, setFillerChipOpen] = useState(false);
   useEffect(() => {
     if (!fillerChipOpen) return;

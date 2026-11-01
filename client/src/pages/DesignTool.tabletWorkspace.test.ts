@@ -48,7 +48,7 @@ describe("tablet workspace layout (1024–1366px or touch)", () => {
   });
 
   it("collapses the 3D floating row, fitted fillers, and pan pad on tablets", () => {
-    expect(room3d).toContain("const tabletOverlay = embedded && tabletTier.tablet;");
+    expect(room3d).toContain("const tabletOverlay = embedded;");
     expect(room3d).toContain('${tabletOverlay ? "hidden" : "hidden sm:flex"}');
     expect(room3d).toContain('data-testid="three-d-fitted-filler-chip"');
     expect(room3d).toContain("Fillers ({fittedFillerLabels.length})");
