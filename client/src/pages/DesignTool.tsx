@@ -3869,15 +3869,17 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const applyAppliancePackageColor = useCallback((finish: ApplianceFinish) => {
     const result = applyApplianceFinish(placedRef.current, appliancePalette, finish);
     const label = APPLIANCE_FINISH_CHOICES.find((choice) => choice.finish === finish)?.label ?? finish;
-    if (result.changed === 0) {
+    if (result.changed === 0 && result.tinted === 0) {
       toast.info(result.skipped > 0
         ? `No ${label.toLowerCase()} range is available in the catalog for this layout. Nothing changed.`
-        : `Ranges are already ${label.toLowerCase()}, or this plan has no range.`);
+        : `Appliances already match ${label.toLowerCase()}, or this plan has none.`);
       return;
     }
     placedRef.current = result.placed;
     setPlaced(() => result.placed);
-    toast.success(`${result.changed === 1 ? "Range" : `${result.changed} ranges`} switched to ${label.toLowerCase()}. Refrigerator, dishwasher and hood keep their current look.`);
+    const rangeNote = result.changed > 0 ? `${result.changed === 1 ? "Range" : `${result.changed} ranges`} switched to ${label.toLowerCase()}. ` : "";
+    const tintNote = result.tinted > 0 ? `Refrigerator, dishwasher, microwave and hood are recolored in the 3D view (preview tint, not a catalog photo).` : "";
+    toast.success(`${rangeNote}${tintNote}`.trim());
   }, [appliancePalette, setPlaced]);
   const buildAutoDesignLayout = useCallback((input: AutoDesignInputs) => {
     const fail = (message: string) => {

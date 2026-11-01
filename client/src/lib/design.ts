@@ -899,6 +899,11 @@ export interface PlacedCabinet {
   // Optional for backward-compat with older saved designs; the canvas falls
   // back to the to-scale code-drawn shape when absent.
   catalogImageUrl?: string | null;
+  /**
+   * Appliance package color applied to a refrigerator, dishwasher, microwave or hood that only has a stainless
+   * catalog photo. The 3D view recolors that photo; absent means the catalog look as supplied.
+   */
+  applianceFinish?: "stainless" | "black-stainless" | "black" | "white" | null;
   // Optional Custom Cabinet Rule profile and generic line drawing. These come
   // from Cabinet Config and preserve non-standard cabinet rendering in designs.
   customProfile?: string | null;

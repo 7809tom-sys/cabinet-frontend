@@ -18,13 +18,17 @@ export type ApplianceFinishResult = {
   changed: number;
   /** Ranges left as they were because no matching catalog range exists in that color. */
   skipped: number;
+  /** Refrigerators, dishwashers, microwaves and hoods recolored in the 3D view (they have no catalog photo in that color). */
+  tinted: number;
 };
 
+const TINTABLE_APPLIANCE = /^(FRIDGE|DW|MW|HOOD)[-_]/i;
+
 /**
- * Appliance package by color. Only ranges carry a real color variant in the catalog today, so those are the
- * pieces that change; the refrigerator, dishwasher, hood and microwave are left exactly as placed. A range keeps
- * its position, size and fuel (gas/electric) and control style; only the catalog variant (description, picture and
- * source id) is swapped for the same-style range in the requested color.
+ * Appliance package by color. Ranges carry real color variants in the catalog, so a range keeps its position, size,
+ * fuel and control style and only its catalog variant (description, picture, source id) is swapped. The refrigerator,
+ * dishwasher, microwave and hood only have a stainless photo, so they keep their catalog item and get an
+ * `applianceFinish` that the 3D view uses to recolor that photo.
  */
 export function applyApplianceFinish(
   placed: readonly PlacedCabinet[],
@@ -33,7 +37,14 @@ export function applyApplianceFinish(
 ): ApplianceFinishResult {
   let changed = 0;
   let skipped = 0;
+  let tinted = 0;
   const next = placed.map((item) => {
+    if (TINTABLE_APPLIANCE.test(item.masterCode ?? "") && !/end[-\s]?panel/i.test(`${item.description ?? ""} ${item.masterCode ?? ""}`)) {
+      const wanted = finish === "stainless" ? null : finish;
+      if ((item.applianceFinish ?? null) === wanted) return item;
+      tinted += 1;
+      return { ...item, applianceFinish: wanted } as PlacedCabinet;
+    }
     if (item.placement !== "appliance" || !isRangeOrOven(item.masterCode, item.description) || /^HOOD|^MW/i.test(item.masterCode)) return item;
     const current = rangeVisualAppearance(item);
     if (current.finish === finish) return item;
@@ -54,5 +65,5 @@ export function applyApplianceFinish(
       catalogImageUrl: source.catalogImageUrl ?? null,
     } as PlacedCabinet;
   });
-  return { placed: changed > 0 ? next : (placed as PlacedCabinet[]), changed, skipped };
+  return { placed: changed + tinted > 0 ? next : (placed as PlacedCabinet[]), changed, skipped, tinted };
 }
