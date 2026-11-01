@@ -528,7 +528,7 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       140,
       70
     ],
-    "solidColor": "#eaebed",
+    "solidColor": "#e8e6e6",
     "grain": "/textures/dlc-fr26/grain/pearl-white.png",
     "grainSize": [
       56,
@@ -546,7 +546,7 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       5.71
     ],
     "faceNormal": null,
-    "faceTint": null,
+    "faceTint": "#fdf9f7",
     "grainSoftened": false,
     "grainPaleSoftened": true
   },
