@@ -45,7 +45,7 @@ import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { searchCatalogItems } from "@shared/catalogCodeSearch";
 import { AEF_PRINTED_GEOMETRY_MARKER } from "@shared/aefFramelessGeometry";
-import { dlcFaceTextureWindow, dlcPhotoLightCompensation, type DlcFaceCrop } from "@shared/dlcFr26Textures";
+import { dlcFaceGrainRepeat, dlcFaceTextureWindow, dlcPhotoLightCompensation, type DlcFaceCrop } from "@shared/dlcFr26Textures";
 import { DARK_STAIN_DOOR_LIGHTS, RESTORED_DOOR_LIGHTS, isVeryDarkCabinetStain } from "@shared/doorRenderLights";
 import { combinedSwatchTextureWindow, type FaceSourceKind, type FaceTextureWindow } from "@shared/doorFaceRecognition";
 import { RAISED_PANEL_BEVEL_DEPTH_IN, RAISED_PANEL_BEVEL_WIDTH_IN, resolveDoorProfile } from "@shared/doorStyleAppearance";
@@ -2887,10 +2887,13 @@ export function threeDUsesSeparateDrawerTexture(input: {
   doorSampleUrl?: string | null;
   drawerSampleUrl?: string | null;
   faceSourceKind?: FaceSourceKind | null;
+  /** DLC grain faces: the drawer is its own texture object even when it shares the grain file with the door. */
+  separateFace?: boolean;
 }) {
   if (input.isWall) return false;
   const drawer = input.drawerSampleUrl?.trim() ?? "";
   if (!drawer) return false;
+  if (input.separateFace) return true;
   if (input.faceSourceKind === "combined") return true;
   return drawer !== (input.doorSampleUrl?.trim() ?? "");
 }
@@ -5026,14 +5029,18 @@ export function addCabinet(
 	    doorTexture.colorSpace = THREE.SRGBColorSpace;
 	    applyThreeDFaceTextureFiltering(doorTexture, surfaceTextures?.maxAnisotropy);
 	    // Processed DLC_FR26 crops: centre-crop to the front's real proportions (never stretched, never repeated).
-	    const doorFrame = (surfaceTextures?.faceCrop
+	    // DLC grain faces tile the frame-free grain at its physical size (mirrored, no photo frame lines).
+	    const dlcDoorGrain = surfaceTextures?.faceCrop
+	      ? dlcFaceGrainRepeat("door", surfaceTextures.faceCrop, { widthIn, heightIn, isWall })
+	      : null;
+	    const doorFrame = dlcDoorGrain ?? (surfaceTextures?.faceCrop
 	      ? dlcFaceTextureWindow("door", surfaceTextures.faceCrop, { widthIn, heightIn, isWall })
 	      : null) ?? threeDSampleTextureFrame(surfaceTextures?.faceSourceKind, "door");
 	    const grainTransform = usesCuratedCabinetGrain
 	      ? threeDCabinetGrainTransform(sku.placementUid, doorSampleUrl)
 	      : null;
-	    doorTexture.wrapS = usesCuratedCabinetGrain ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
-	    doorTexture.wrapT = usesCuratedCabinetGrain ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
+	    doorTexture.wrapS = dlcDoorGrain ? THREE.MirroredRepeatWrapping : usesCuratedCabinetGrain ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
+	    doorTexture.wrapT = dlcDoorGrain ? THREE.MirroredRepeatWrapping : usesCuratedCabinetGrain ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
 	    // Door photos are already cropped inside the door edge, so the whole photo
 	    // is the finish. A combined door+drawer swatch instead uses only the
 	    // lower door band on door faces.
@@ -5067,19 +5074,23 @@ export function addCabinet(
     doorSampleUrl,
     drawerSampleUrl,
     faceSourceKind: surfaceTextures?.faceSourceKind,
+    separateFace: Boolean(surfaceTextures?.faceCrop?.faceTileDrawerIn),
   });
   const usesCuratedDrawerGrain = /rustic_hickory_vertical_grain/i.test(drawerSampleUrl ?? "");
   const drawerTexture = useDrawerTexture && drawerSampleUrl
     ? new THREE.TextureLoader().load(drawerSampleUrl)
     : null;
   if (drawerTexture) {
-    const drawerFrame = (surfaceTextures?.faceCrop
+    const dlcDrawerGrain = surfaceTextures?.faceCrop
+      ? dlcFaceGrainRepeat("drawer", surfaceTextures.faceCrop, { widthIn, heightIn, isWall })
+      : null;
+    const drawerFrame = dlcDrawerGrain ?? (surfaceTextures?.faceCrop
       ? dlcFaceTextureWindow("drawer", surfaceTextures.faceCrop, { widthIn, heightIn, isWall })
       : null) ?? threeDSampleTextureFrame(surfaceTextures?.faceSourceKind, "drawer");
     drawerTexture.colorSpace = THREE.SRGBColorSpace;
     applyThreeDFaceTextureFiltering(drawerTexture, surfaceTextures?.maxAnisotropy);
-    drawerTexture.wrapS = usesCuratedDrawerGrain ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
-    drawerTexture.wrapT = usesCuratedDrawerGrain ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
+    drawerTexture.wrapS = dlcDrawerGrain ? THREE.MirroredRepeatWrapping : usesCuratedDrawerGrain ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
+    drawerTexture.wrapT = dlcDrawerGrain ? THREE.MirroredRepeatWrapping : usesCuratedDrawerGrain ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
     drawerTexture.repeat.set(
       usesCuratedDrawerGrain ? 1 : drawerFrame.repeatX,
       usesCuratedDrawerGrain ? 1 : drawerFrame.repeatY,
@@ -5098,6 +5109,29 @@ export function addCabinet(
   // A DLC finish whose photo has no drawer front: the drawer gets a solid finish colour,
   // never the door photo.
   const drawerSolidColor = !isWall && !drawerTexture ? surfaceTextures?.faceCrop?.drawerSolidColor ?? null : null;
+  // The drawer's own normal map (its repeat differs from the door's).
+  let dlcDrawerNormal: THREE.Texture | null = null;
+  const dlcDrawerRepeat = dlcDoorFinish && surfaceTextures?.faceCrop
+    ? dlcFaceGrainRepeat("drawer", surfaceTextures.faceCrop, { widthIn, heightIn, isWall })
+    : null;
+  const dlcDrawerNormalUrl = !isWall && dlcDrawerRepeat ? surfaceTextures?.faceCrop?.normalUrl ?? null : null;
+  if (dlcDrawerNormalUrl && dlcDrawerRepeat) {
+    new THREE.TextureLoader().load(dlcDrawerNormalUrl, (normal) => {
+      normal.wrapS = THREE.MirroredRepeatWrapping;
+      normal.wrapT = THREE.MirroredRepeatWrapping;
+      normal.repeat.set(dlcDrawerRepeat.repeatX, dlcDrawerRepeat.repeatY);
+      dlcDrawerNormal = normal;
+      const apply = (node: THREE.Object3D) => {
+        const mesh = node as THREE.Mesh;
+        if (!mesh.isMesh || !mesh.userData?.cabinetDrawerFront || Array.isArray(mesh.material)) return;
+        const material = mesh.material as THREE.MeshPhysicalMaterial;
+        material.normalMap = normal;
+        material.normalScale.set(0.6, 0.6);
+        material.needsUpdate = true;
+      };
+      cabinet.traverse(apply);
+    });
+  }
   const applyDrawerFrontTextures = (root: THREE.Object3D) => {
     if (!drawerTexture && drawerSolidColor) {
       root.traverse((node) => {
@@ -5128,6 +5162,10 @@ export function addCabinet(
       material.map = drawerTexture;
       material.color.set(dlcPhotoTint);
       if (dlcPhotoComp) material.toneMapped = false;
+      if (dlcDrawerNormalUrl && dlcDrawerNormal) {
+        material.normalMap = dlcDrawerNormal;
+        material.normalScale.set(0.6, 0.6);
+      }
       material.needsUpdate = true;
       material.userData = { ...material.userData, drawerFrontSample: true };
       mesh.material = material;
@@ -5143,7 +5181,11 @@ export function addCabinet(
   const dlcPhotoComp = dlcDoorFinish
     ? dlcPhotoLightCompensation(isVeryDarkCabinetStain(dlcDoorFinish) ? DARK_STAIN_DOOR_LIGHTS : RESTORED_DOOR_LIGHTS)
     : null;
-  const dlcPhotoTint = dlcPhotoComp?.hex ?? "#ffffff";
+  const dlcPhotoTint = dlcPhotoComp
+    ? (surfaceTextures?.faceCrop?.tintHex
+      ? `#${new THREE.Color(dlcPhotoComp.hex).multiply(new THREE.Color(surfaceTextures.faceCrop.tintHex)).getHexString()}`
+      : dlcPhotoComp.hex)
+    : "#ffffff";
   const faceColor = threeDFaceMaterialColor(color, Boolean(doorTexture)) === "#ffffff" ? dlcPhotoTint : threeDFaceMaterialColor(color, Boolean(doorTexture));
 	  const doorFinishSurface = threeDDoorFinishSurfaceProfile(doorProfile?.finishSheen, Boolean(doorTexture));
 	  const faceMaterial = new THREE.MeshPhysicalMaterial({
@@ -5214,7 +5256,10 @@ export function addCabinet(
       // Mirrored tiles, about one door-panel per tile; grain runs vertically like the doors.
       texture.wrapS = THREE.MirroredRepeatWrapping;
       texture.wrapT = THREE.MirroredRepeatWrapping;
-      texture.repeat.set(2, 1.5);
+      const tile = surfaceTextures?.faceCrop?.faceTileIn;
+      // Sides tile the grain at its physical size (about one cabinet depth wide, one height tall).
+      if (tile && tile[0] > 0 && tile[1] > 0) texture.repeat.set(Math.max(0.1, 24 / tile[0]), Math.max(0.1, heightIn / tile[1]));
+      else texture.repeat.set(2, 1.5);
       dlcGrainTexture = texture;
       applyStructuralFinish(color, null);
     });
@@ -5224,6 +5269,23 @@ export function addCabinet(
 	  // rails must then fall back together to the chosen style color instead of
 	  // leaving the rails with an unresolved (black) texture map.
 	  textureMaterials.push(faceMaterial, trimMaterial);
+	  // European White Oak ships a normal map for its grain; faces, rails and stiles get it (grain depth).
+	  const dlcNormalUrl = dlcDoorFinish ? surfaceTextures?.faceCrop?.normalUrl ?? null : null;
+	  const dlcDoorRepeat = dlcDoorFinish && surfaceTextures?.faceCrop
+	    ? dlcFaceGrainRepeat("door", surfaceTextures.faceCrop, { widthIn, heightIn, isWall })
+	    : null;
+	  if (dlcNormalUrl && dlcDoorRepeat) {
+	    new THREE.TextureLoader().load(dlcNormalUrl, (normal) => {
+	      normal.wrapS = THREE.MirroredRepeatWrapping;
+	      normal.wrapT = THREE.MirroredRepeatWrapping;
+	      normal.repeat.set(dlcDoorRepeat.repeatX, dlcDoorRepeat.repeatY);
+	      for (const material of [faceMaterial, trimMaterial]) {
+	        material.normalMap = normal;
+	        material.normalScale.set(0.6, 0.6);
+	        material.needsUpdate = true;
+	      }
+	    });
+	  }
 	  const frameMaterialFor = (piece: "rail" | "stile" | "panel") => {
 	    // The catalog profile can explicitly request traditional frame grain: rails
 	    // run horizontally, stiles and center panels vertically. A cloned material
