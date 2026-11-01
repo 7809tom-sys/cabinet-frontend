@@ -24,6 +24,8 @@ export interface DlcFr26CatalogEntry {
   faceNormal: string | null;
   /** Multiplier (sRGB hex, applied in linear) that brings the texture to the sample colour; null = none. */
   faceTint: string | null;
+  /** True when the grain patch was softened because its light/dark swing was unusually high. */
+  grainSoftened: boolean;
 }
 
 export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
@@ -60,7 +62,8 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       5.9
     ],
     "faceNormal": null,
-    "faceTint": null
+    "faceTint": null,
+    "grainSoftened": false
   },
   {
     "slug": "chestnut",
@@ -95,7 +98,8 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       6.01
     ],
     "faceNormal": null,
-    "faceTint": null
+    "faceTint": null,
+    "grainSoftened": false
   },
   {
     "slug": "cyber-grey",
@@ -130,7 +134,8 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       6.17
     ],
     "faceNormal": null,
-    "faceTint": null
+    "faceTint": null,
+    "grainSoftened": false
   },
   {
     "slug": "dark-caramel",
@@ -165,7 +170,8 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       5.99
     ],
     "faceNormal": null,
-    "faceTint": null
+    "faceTint": null,
+    "grainSoftened": false
   },
   {
     "slug": "dove-gray",
@@ -201,7 +207,8 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       6.01
     ],
     "faceNormal": null,
-    "faceTint": null
+    "faceTint": null,
+    "grainSoftened": false
   },
   {
     "slug": "driftwood",
@@ -233,7 +240,8 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       7.6
     ],
     "faceNormal": null,
-    "faceTint": null
+    "faceTint": null,
+    "grainSoftened": true
   },
   {
     "slug": "ewo",
@@ -269,7 +277,8 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       24.0
     ],
     "faceNormal": "/textures/dlc-fr26/grain/ewo-v-nm.png",
-    "faceTint": "#c8cbb8"
+    "faceTint": "#c8cbb8",
+    "grainSoftened": false
   },
   {
     "slug": "expresso-shaker",
@@ -305,7 +314,8 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       5.94
     ],
     "faceNormal": null,
-    "faceTint": null
+    "faceTint": null,
+    "grainSoftened": false
   },
   {
     "slug": "glacier-white",
@@ -340,7 +350,8 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       6.01
     ],
     "faceNormal": null,
-    "faceTint": null
+    "faceTint": null,
+    "grainSoftened": false
   },
   {
     "slug": "grey-shaker",
@@ -375,7 +386,8 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       6.06
     ],
     "faceNormal": null,
-    "faceTint": null
+    "faceTint": null,
+    "grainSoftened": false
   },
   {
     "slug": "ivory-white",
@@ -410,7 +422,8 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       6.06
     ],
     "faceNormal": null,
-    "faceTint": null
+    "faceTint": null,
+    "grainSoftened": false
   },
   {
     "slug": "mc",
@@ -446,7 +459,8 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       5.7
     ],
     "faceNormal": null,
-    "faceTint": null
+    "faceTint": null,
+    "grainSoftened": false
   },
   {
     "slug": "new-york-glaze",
@@ -481,7 +495,8 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       3.29
     ],
     "faceNormal": null,
-    "faceTint": null
+    "faceTint": null,
+    "grainSoftened": false
   },
   {
     "slug": "pearl-white",
@@ -516,7 +531,8 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       5.71
     ],
     "faceNormal": null,
-    "faceTint": null
+    "faceTint": null,
+    "grainSoftened": false
   },
   {
     "slug": "peccan",
@@ -552,7 +568,8 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       2.74
     ],
     "faceNormal": null,
-    "faceTint": null
+    "faceTint": null,
+    "grainSoftened": false
   },
   {
     "slug": "port",
@@ -587,7 +604,8 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       6.01
     ],
     "faceNormal": null,
-    "faceTint": null
+    "faceTint": null,
+    "grainSoftened": false
   },
   {
     "slug": "slim-shaker-alabaster",
@@ -622,7 +640,8 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       6.13
     ],
     "faceNormal": null,
-    "faceTint": null
+    "faceTint": null,
+    "grainSoftened": false
   },
   {
     "slug": "slim-shaker-ebony",
@@ -657,7 +676,8 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       6.13
     ],
     "faceNormal": null,
-    "faceTint": null
+    "faceTint": null,
+    "grainSoftened": false
   },
   {
     "slug": "versa-shaker",
@@ -692,7 +712,8 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       5.9
     ],
     "faceNormal": null,
-    "faceTint": null
+    "faceTint": null,
+    "grainSoftened": false
   },
   {
     "slug": "white-shaker",
@@ -727,6 +748,7 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       6.06
     ],
     "faceNormal": null,
-    "faceTint": null
+    "faceTint": null,
+    "grainSoftened": false
   }
 ];

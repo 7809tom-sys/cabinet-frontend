@@ -190,3 +190,51 @@ export function dlcFaceTextureWindow(
   const p = dlcFaceProportions(face, cabinet);
   return fitWithoutStretch(size[0], size[1], p.widthIn, p.heightIn);
 }
+
+/**
+ * Frame definition for DL shaker frames (Tom, Oct 31). First-guess strengths, kept as one object so a
+ * single preview round can tune them. Shadow strips sit on the panel just inside the opening along the
+ * top and left edges (the room's key light comes from the upper right); thin highlights sit on the
+ * opposite edges. Everything is semi-transparent, so the door finish itself is not darkened.
+ */
+export const DLC_FRAME_DETAIL = {
+  /** Rail/stile depth in scene units. The standard frame is 0.026; +20% = 0.031. */
+  standardRailDepth: 0.026,
+  railDepth: 0.031,
+  /** Local z of the strips: just in front of the panel surface, behind the rails' front. */
+  stripZ: -0.0035,
+  stripDepth: 0.002,
+  /** Two stacked shadow strips fake a soft falloff: [width, opacity]. */
+  shadow: [
+    [0.012, 0.22],
+    [0.024, 0.1],
+  ] as ReadonlyArray<readonly [number, number]>,
+  highlight: { width: 0.006, opacity: 0.12 },
+} as const;
+
+export interface DlcFrameStrip {
+  /** Centre in the frame group's local space. */
+  x: number;
+  y: number;
+  /** Size of the strip. */
+  w: number;
+  h: number;
+  kind: "shadow" | "highlight";
+  opacity: number;
+}
+
+/** Strip layout for the opening inside a frame. Pure so it can be tested; the renderer only draws it. */
+export function dlcFrameStrips(openingW: number, openingH: number): DlcFrameStrip[] {
+  if (!(openingW > 0.04) || !(openingH > 0.04)) return [];
+  const out: DlcFrameStrip[] = [];
+  for (const [width, opacity] of DLC_FRAME_DETAIL.shadow) {
+    const t = Math.min(width, openingW / 3, openingH / 3);
+    out.push({ kind: "shadow", opacity, w: openingW, h: t, x: 0, y: openingH / 2 - t / 2 }); // top
+    out.push({ kind: "shadow", opacity, w: t, h: openingH, x: -openingW / 2 + t / 2, y: 0 }); // left
+  }
+  const hw = Math.min(DLC_FRAME_DETAIL.highlight.width, openingW / 3, openingH / 3);
+  const hop = DLC_FRAME_DETAIL.highlight.opacity;
+  out.push({ kind: "highlight", opacity: hop, w: openingW, h: hw, x: 0, y: -openingH / 2 + hw / 2 }); // bottom
+  out.push({ kind: "highlight", opacity: hop, w: hw, h: openingH, x: openingW / 2 - hw / 2, y: 0 }); // right
+  return out;
+}

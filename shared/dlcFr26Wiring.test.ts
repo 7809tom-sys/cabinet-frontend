@@ -7,7 +7,7 @@ import { DLC_FR26_CATALOG } from "./dlcFr26Catalog.generated";
 import { findDlcFinishForStyle, normalizeFinishName } from "./dlcFr26Mapping";
 import { resolveDoorFinishHex } from "../client/src/lib/doorStyleAppearance";
 import { RESTORED_DOOR_LIGHTS, DARK_STAIN_DOOR_LIGHTS } from "./doorRenderLights";
-import { dlcFaceGrainRepeat, dlcPhotoLightCompensation, dlcFaceProportions, dlcFaceTextureWindow } from "./dlcFr26Textures";
+import { DLC_FRAME_DETAIL, dlcFrameStrips, dlcFaceGrainRepeat, dlcPhotoLightCompensation, dlcFaceProportions, dlcFaceTextureWindow } from "./dlcFr26Textures";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const dl = (ourName: string, styleCode: string | null = null, extra: Record<string, unknown> = {}) => ({
@@ -252,5 +252,39 @@ describe("grain faces: no photo frame lines on any face", () => {
     expect(s).toMatch(/dlcDrawerGrain \? THREE\.MirroredRepeatWrapping/);
     expect(s).toMatch(/separateFace: Boolean\(surfaceTextures\?\.faceCrop\?\.faceTileDrawerIn\)/);
     expect(s).toMatch(/material\.normalMap = normal/);
+  });
+});
+
+describe("Driftwood polish: softer grain, more defined frames", () => {
+  const src = () => fs.readFileSync(path.join(repo, "client/src/components/design/InteractiveRoom3D.tsx"), "utf8");
+  it("only Driftwood's grain is softened (the only finish with an unusually high light/dark swing)", () => {
+    expect(DLC_FR26_CATALOG.filter((e) => e.grainSoftened).map((e) => e.slug)).toEqual(["driftwood"]);
+  });
+  it("frame strips: shadows on the top and left of the opening, highlights on the bottom and right, all inside it", () => {
+    const strips = dlcFrameStrips(1.0, 2.0);
+    const shadows = strips.filter((t) => t.kind === "shadow");
+    const highs = strips.filter((t) => t.kind === "highlight");
+    expect(shadows).toHaveLength(DLC_FRAME_DETAIL.shadow.length * 2);
+    expect(highs).toHaveLength(2);
+    for (const t of shadows) expect(t.y > 0 || t.x < 0).toBe(true); // top (y>0) or left (x<0)
+    for (const t of highs) expect(t.y < 0 || t.x > 0).toBe(true); // bottom or right
+    for (const t of strips) {
+      expect(Math.abs(t.x) + t.w / 2).toBeLessThanOrEqual(0.5 + 1e-9 + (t.w === 1 ? 0 : 0));
+      expect(Math.abs(t.y) + t.h / 2).toBeLessThanOrEqual(1.0 + 1e-9);
+      expect(t.opacity).toBeGreaterThan(0);
+      expect(t.opacity).toBeLessThan(0.3); // translucent: the finish is not darkened
+    }
+  });
+  it("tiny openings get no strips; rails stand 20% proud", () => {
+    expect(dlcFrameStrips(0.03, 1)).toEqual([]);
+    expect(DLC_FRAME_DETAIL.railDepth / DLC_FRAME_DETAIL.standardRailDepth).toBeCloseTo(1.2, 1);
+  });
+  it("3D draws the strips only for DL frames that are not raised or glass, deepens the rails, and staggers grain", () => {
+    const s = src();
+    expect(s).toMatch(/if \(dlcDoorFinish && !raisedProfile && !forceGlassFrame\)/);
+    expect(s).toMatch(/dlcDoorFinish \? DLC_FRAME_DETAIL\.railDepth : DLC_FRAME_DETAIL\.standardRailDepth/);
+    expect(s).toMatch(/dlcStagger\?\.offsetX/);
+    expect(s).toMatch(/dlcDrawerStagger\?\.offsetX/);
+    expect(s).toMatch(/normal\.offset\.copy\(doorTexture\.offset\)/);
   });
 });
