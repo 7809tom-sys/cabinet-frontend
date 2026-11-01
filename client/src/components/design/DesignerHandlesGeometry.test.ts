@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
 import { addCabinet } from "./InteractiveRoom3D";
-import { DEFAULT_DESIGNER_HARDWARE_STYLE_ID } from "./CabinetHandlesControl";
-import { hardwareSchedule, hardwareScheduleNote } from "@/lib/hardware";
+import { DEFAULT_DESIGNER_HARDWARE_STYLE_ID, hardwareSchedule, hardwareScheduleNote } from "@/lib/hardware";
 import type { PlacedCabinet } from "@/lib/design";
 
 const vanity = {

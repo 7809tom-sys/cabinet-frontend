@@ -6,8 +6,7 @@ describe("regular Designer handles and Panels integration", () => {
   it("starts and resets only this Designer with visible handles, preserving saved None metadata", () => {
     expect(source).toContain("useState<HardwareStyleId>(DEFAULT_DESIGNER_HARDWARE_STYLE_ID)");
     expect(source).toContain("setHardwareStyleId(DEFAULT_DESIGNER_HARDWARE_STYLE_ID)");
-    expect(source).toContain('<CabinetHandlesControl value={hardwareStyleId} onChange={setGenericHardwareStyle} tablet={isTabletWorkspace} />');
-    expect(source).toContain('if (typeof d.hardwareStyleId === "string") setHardwareStyleId(d.hardwareStyleId as HardwareStyleId);');
+    expect(source).toContain('setHardwareStyleId(savedHardwareFallbackStyleId(d.hardwareStyleId))');
   });
   it("uses a real selected hardware SKU as one current-priced material and cart line, with generic quote fallback", () => {
     expect(source).toContain('HardwareCatalogPicker');
