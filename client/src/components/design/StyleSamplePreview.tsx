@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { preferredDoorReferenceUrl } from "@/lib/approvedDoorReference";
+import { darkenHex, readDoorPhotoColor } from "@/lib/sampleDoorColor";
 import {
   assessDoorSample,
   assessDrawerSample,
@@ -83,7 +84,7 @@ function SampleFrame({
   );
 }
 
-function SamplePhoto({ url, alt, onMeasured }: { url: string; alt: string; onMeasured?: (size: { width: number; height: number } | "error") => void }) {
+function SamplePhoto({ url, alt, onMeasured, onLoadedImage }: { url: string; alt: string; onMeasured?: (size: { width: number; height: number } | "error") => void; onLoadedImage?: (img: HTMLImageElement) => void }) {
   return (
     <img
       src={url}
@@ -93,6 +94,7 @@ function SamplePhoto({ url, alt, onMeasured }: { url: string; alt: string; onMea
       onLoad={(event) => {
         const img = event.currentTarget;
         onMeasured?.({ width: img.naturalWidth, height: img.naturalHeight });
+        onLoadedImage?.(img);
       }}
       onError={() => onMeasured?.("error")}
     />
@@ -164,6 +166,8 @@ export function StyleSamplePreview({
   const doorUrl = preferredDoorReferenceUrl(style);
   const drawerCandidate = distinctDrawerSampleUrl(style);
   const [doorReported, setDoorReported] = useState<{ url: string; size: KnownSampleSize } | null>(null);
+  // The drawn drawer front takes the door photo's colour, so it matches the door shown next to it.
+  const [doorColor, setDoorColor] = useState<{ url: string; hex: string } | null>(null);
   const drawerMeasurement = useDrawerMeasurement(drawerCandidate, knownSize?.drawer, controlled);
 
   const doorMeasurement: SampleMeasurement = !doorUrl
@@ -176,6 +180,7 @@ export function StyleSamplePreview({
 
   const doorIssues = assessDoorSample(style, doorMeasurement);
   const drawer = assessDrawerSample(style, drawerMeasurement);
+  const doorPhotoHex = doorUrl && doorColor?.url === doorUrl ? doorColor.hex : null;
   const name = styleName?.trim() || "Door";
   const doorFlag = formatSampleImageFlag(doorIssues, doorMeasurement === "error");
   const drawerFlag = formatSampleImageFlag(drawer.issues, drawer.loadFailed);
@@ -192,6 +197,10 @@ export function StyleSamplePreview({
               onMeasured={(size) => {
                 if (!controlled) setDoorReported({ url: doorUrl, size });
               }}
+              onLoadedImage={(img) => {
+                const hex = readDoorPhotoColor(img);
+                if (hex) setDoorColor({ url: doorUrl, hex });
+              }}
             />
           ) : (
             <span className="px-2 text-center text-[10px] font-medium text-neutral-500">No photo</span>
@@ -203,7 +212,12 @@ export function StyleSamplePreview({
         <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Drawer</p>
         <SampleFrame role="drawer" busy={drawer.pending} className={drawer.pending ? "animate-pulse" : undefined}>
           {drawer.useDrawing ? (
-            <DrawerFrontDiagram face={finish.face} edge={finish.edge} label={finish.label} title={`${name} drawer front`} />
+            <DrawerFrontDiagram
+              face={doorPhotoHex ?? finish.face}
+              edge={doorPhotoHex ? darkenHex(doorPhotoHex) : finish.edge}
+              label={finish.label}
+              title={`${name} drawer front`}
+            />
           ) : drawer.photoUrl && !drawer.pending ? (
             <SamplePhoto url={drawer.photoUrl} alt={`${name} drawer sample`} />
           ) : (
