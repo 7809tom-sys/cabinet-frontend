@@ -67,4 +67,13 @@ describe("realistic designer appliance appearances", () => {
 	    expect(APPLIANCES.find((item) => item.masterCode === "MW-30"))
 	      .toMatchObject({ width: 30, depth: 15, elevBottom: 56, elevHeight: 16 });
 	  });
+
+  it("offers several refrigerator styles without disturbing the default FRIDGE-36 that Auto-Design uses", () => {
+    const fridges = APPLIANCES.filter((item) => /^FRIDGE-/.test(item.masterCode));
+    expect(fridges.map((item) => item.masterCode)).toEqual(expect.arrayContaining(["FRIDGE-30", "FRIDGE-30-TF", "FRIDGE-33", "FRIDGE-36", "FRIDGE-36-SBS", "FRIDGE-36-CD", "FRIDGE-42"]));
+    expect(new Set(fridges.map((item) => item.masterCode)).size).toBe(fridges.length);
+    expect(new Set(APPLIANCES.map((item) => item.key)).size).toBe(APPLIANCES.length);
+    expect(APPLIANCES.find((item) => item.masterCode === "FRIDGE-36")?.key).toBe("fridge");
+    expect(fridges.find((item) => item.masterCode === "FRIDGE-36-CD")?.depth).toBe(25);
+  });
 });
