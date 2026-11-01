@@ -135,6 +135,75 @@ export function preferDrawerBasesBesideRange<T extends DrawerItem>(
   });
 }
 
+/** A three-drawer base: no doors, three drawers (3DB##, DB##). */
+export function isThreeDrawerBaseCatalog(item: CatalogLike): boolean {
+  if (!isDrawerBaseCatalog(item)) return false;
+  if ((item.placement ?? "base") !== "base") return false;
+  const code = `${item.masterCode ?? ""}`.toUpperCase();
+  return /^(?:3DB|DB)-?\d+$/.test(code) || ((item.numberOfDrawers ?? 0) === 3 && /^[A-Z0-9-]*DB/.test(code) && !/FH|TCPO|PO/.test(code));
+}
+
+/** A plain door base that can be split: B##, with doors and no sink/corner/blind/trash/spice style text. */
+export function isSplittableDoorBaseCatalog(item: CatalogLike): boolean {
+  if ((item.placement ?? "base") !== "base") return false;
+  if (!/^B-?\d+$/.test(`${item.masterCode ?? ""}`.toUpperCase())) return false;
+  if ((item.numberOfDoors ?? 0) <= 0) return false;
+  return !/sink|corner|blind|trash|filler|panel|wine|spice|tray|appliance|oven|microwave|diagonal|lazy/.test(haystack(item));
+}
+
+/** Tom (Oct 31): a wide door base at or above this width beside the range is split into door + drawer. */
+export const DRAWER_SPLIT_MIN_WIDTH_IN = 30;
+/** Drawer-base widths to try first, in order. 39 beside the range = B21 + 18 three-drawer, as Tom described. */
+export const DRAWER_SPLIT_PREFERRED_DRAWER_WIDTHS_IN = [18, 15, 21, 24] as const;
+
+function catalogWidth(item: CatalogLike): number {
+  return dim(item.width as string | null | undefined, Number(item.width) || 0);
+}
+
+/** The (door, drawer) catalog pair that adds up to `width`, drawer nearest-the-range first choice 18. */
+export function pickDoorDrawerSplit<T extends CatalogLike>(
+  width: number,
+  catalog: readonly T[],
+): { door: T; drawer: T } | null {
+  if (width < DRAWER_SPLIT_MIN_WIDTH_IN - 0.05) return null;
+  const drawers = catalog.filter(isThreeDrawerBaseCatalog);
+  const doors = catalog.filter(isSplittableDoorBaseCatalog);
+  for (const drawerWidth of DRAWER_SPLIT_PREFERRED_DRAWER_WIDTHS_IN) {
+    const drawer = drawers.find((candidate) => Math.abs(catalogWidth(candidate) - drawerWidth) <= 0.05);
+    const door = drawer ? doors.find((candidate) => Math.abs(catalogWidth(candidate) - (width - drawerWidth)) <= 0.05) : undefined;
+    if (drawer && door) return { door, drawer };
+  }
+  return null;
+}
+
+type SplitItem = DrawerItem & { drawerSplit?: boolean };
+
+/**
+ * When one wide door base sits against the range, split it into a smaller door base plus a three-drawer base of the
+ * same total width, drawer nearest the range. Only catalog widths the line sells are used; a run with no matching pair
+ * is left alone. A cabinet that is already a drawer base is never split.
+ */
+export function splitWideDoorBaseBesideRange<T extends SplitItem>(
+  items: readonly T[],
+  catalog: readonly CatalogLike[],
+  rangeAtStart: boolean,
+  rangeAtEnd: boolean,
+): T[] {
+  const out: T[] = [];
+  items.forEach((item, index) => {
+    const atStart = rangeAtStart && index === 0;
+    const atEnd = rangeAtEnd && index === items.length - 1;
+    if ((!atStart && !atEnd) || item.isFiller || !isSplittableDoorBaseCatalog(item.cabinet)) { out.push(item); return; }
+    const pair = pickDoorDrawerSplit(item.width, catalog);
+    if (!pair) { out.push(item); return; }
+    const door = { ...item, cabinet: pair.door, width: catalogWidth(pair.door), drawerSplit: true } as T;
+    const drawer = { ...item, cabinet: pair.drawer, width: catalogWidth(pair.drawer), drawerSplit: true } as T;
+    // drawer nearest the range: first when the range is at the start, last when it is at the end
+    if (atStart) out.push(drawer, door); else out.push(door, drawer);
+  });
+  return out;
+}
+
 export type UsageSuggestion = {
   id: string;
   use: KitchenUseId;

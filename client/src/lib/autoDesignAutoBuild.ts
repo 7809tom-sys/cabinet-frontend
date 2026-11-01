@@ -1,3 +1,4 @@
+import { isThreeDrawerBaseCatalog } from "./kitchenUsage";
 import { STD, dim, formatEighthInches, isCornerCabinet, isFarmerSinkBase, isSinkBaseCabinet, wallRunFrame, type RoomData, type WallRunFrame } from "./design";
 import type { KitchenUsageProfile } from "./kitchenUsage";
 import { baseSubGroup, cabinetDrawingType, type CabinetLike } from "./cabinetGraphics";
@@ -444,6 +445,20 @@ export function autoBuildStraightBaseCatalog<T extends AutoBuildCatalogCandidate
     // design choice and are never a substitute for an ordinary base run.
     && baseSubGroup(candidate) === "base"
     && cabinetDrawingType(candidate) === "standard-door"
+  ));
+}
+
+/**
+ * Three-drawer bases (3DB##, DB##) of the line. They are deliberately NOT in the straight-base catalog above (an
+ * all-drawer box is never a substitute for an ordinary base run), so the drawer-base rule reads them from here:
+ * Auto-Design splits a wide door base beside the range into door + drawer, or converts a run when none was placed.
+ */
+export function autoBuildDrawerBaseCatalog<T extends AutoBuildCatalogCandidate>(catalog: readonly T[]): T[] {
+  return catalog.filter((candidate) => (
+    candidate.placement === "base"
+    && candidate.isCornerCabinet !== true
+    && !isCornerCabinet(candidate.masterCode, candidate.description ?? undefined)
+    && isThreeDrawerBaseCatalog(candidate as never)
   ));
 }
 

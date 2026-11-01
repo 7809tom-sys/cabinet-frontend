@@ -3,6 +3,7 @@ import {
   adjacentDishwasherCenterIn,
   anchorAlongStartIn,
   autoBuildStraightBaseCatalog,
+  autoBuildDrawerBaseCatalog,
   keepSingleAutoDesignSink,
   planAutoDesignAutoBuild,
   pickAutoDesignSinkBase,
@@ -28,6 +29,7 @@ import { evaluateAutoDesignCornerFit } from "./cornerFit";
 import { catalogFillerForGap, fittedCatalogFillerDescription, type CatalogFillerCandidate } from "./catalogFiller";
 import { activeAutoDesignWiggleMoves, applyAutoDesignWiggleRoom, applyDesignerLayoutRules, type AutoDesignAnchorOrigin, type AutoDesignWiggleMove } from "./designerLayoutRules";
 import { bakesALot, cooksALot, normalizeKitchenUsage } from "./kitchenUsage";
+import { ensureDrawerBase } from "./autoDesignDrawerRule";
 import { reviewAfterShift, separateRangeAndRefrigerator } from "./kitchenAdjacency";
 import { AUTO_DESIGN_FILLER_MAX_IN, fillAutoDesignLowerSeams, planAutoDesignBaseSegment } from "./autoDesignSeamFillers";
 import { autoDesignRangeHood, autoDesignRangeNeedsVentilation } from "./autoDesignRangeHood";
@@ -230,6 +232,7 @@ export function runAutoDesignLayout(args: {
   const refrigeratorWidth = input.refrigeratorWidthIn ?? 36;
   const pool = args.baseCatalog;
   const straightBaseCatalog = autoBuildStraightBaseCatalog(pool);
+  const drawerBaseCatalog = autoBuildDrawerBaseCatalog(pool);
   const sinkBaseKind = input.sinkBaseKind ?? "regular";
   const sinkBaseSource = pickAutoDesignSinkBase(pool, sinkBaseWidth, sinkBaseKind);
   if (!sinkBaseSource) {
@@ -307,6 +310,7 @@ export function runAutoDesignLayout(args: {
 
   const notes: string[] = [];
   const refrigeratorBayWarnings: string[] = [];
+  const drawerRuleWarnings: string[] = [];
   const refrigerator = anchorsByKind.get("refrigerator");
   let refrigeratorReservation: { wall: string; start: number; end: number } | null = null;
   if (refrigerator) {
@@ -390,6 +394,7 @@ export function runAutoDesignLayout(args: {
     pool,
     wallPool: args.wallCatalog,
     straightBaseCatalog,
+    drawerBaseCatalog,
     baseSource,
     refrigeratorReservation,
     slots: autoDesignCornerSlots(input.layoutType, {
@@ -511,9 +516,41 @@ export function runAutoDesignLayout(args: {
         const remain = segmentEnd - along;
         const fill = planAutoDesignBaseSegment({
           length: remain, catalog: stage.straightBaseCatalog, rangeAtStart: beside("start") && along <= segment.start + 0.05, rangeAtEnd: beside("end"),
-          heavyCookLanding: heavyCook, preferDrawerBesideRange: preferDrawers,
+          heavyCookLanding: heavyCook, preferDrawerBesideRange: preferDrawers, drawerCatalog: stage.drawerBaseCatalog,
         });
         if (fill.note) notes.push(fill.note);
+        // A door + drawer split beside the range is placed as one unit, in order, so the drawer base really lands
+        // against the range instead of being re-planned (as a plain door base) on the next pass.
+        if (fill.items.some((entry) => entry.drawerSplit)) {
+          let trial = working;
+          let cursor = along;
+          let pieces = 0;
+          let allPlaced = true;
+          for (const entry of fill.items) {
+            if (entry.isFiller) { cursor += entry.width; continue; }
+            const source = entry.cabinet;
+            const depth = footprintDepth(source);
+            const spot = wallPlacementAt(cursor, entry.width, depth, wallId, room);
+            if (!spot) { allPlaced = false; break; }
+            const piece: PlacedCabinet = {
+              uid: makeUid(), cabinetId: source.id, masterCode: source.masterCode, description: source.description,
+              category: source.category, subCategory: source.subCategory, placement: "base", ...spot, width: entry.width, depth,
+              height: dim(source.height, standardHeight("base")), catalogImageUrl: source.catalogImageUrl ?? null,
+              numberOfDoors: source.numberOfDoors, numberOfDrawers: source.numberOfDrawers, styleId: args.styleId,
+            };
+            const accepted = appendCollisionFreePlacements(trial, [piece], room);
+            if (accepted.rejected.length > 0) { allPlaced = false; break; }
+            trial = accepted.placed;
+            cursor += entry.width;
+            pieces += 1;
+          }
+          if (allPlaced && pieces > 0) {
+            working = trial;
+            basePieceCount += pieces;
+            along = cursor;
+            continue;
+          }
+        }
         const widths = Array.from(new Set(stage.straightBaseCatalog.map((row) => dim(row.width, 0)).filter((width) => width > 0 && width <= remain + 0.05)))
           .sort((a, b) => b - a);
         const preferred = fill.items.find((item) => !item.isFiller)?.width;
@@ -548,6 +585,12 @@ export function runAutoDesignLayout(args: {
     }
   }
   working = absorbOpenBaseGaps(working, room, stage.straightBaseCatalog, runWalls, args.styleId, makeUid);
+  // Every layout has at least one three-drawer base (Tom, Oct 31). The planner already splits a wide door base beside
+  // the range; if no drawer base landed anywhere, convert the best-fitting base run. A line with no drawer base only warns.
+  const drawerRule = ensureDrawerBase({ placed: working, room, catalog: [...stage.straightBaseCatalog, ...stage.drawerBaseCatalog], makeUid, styleId: args.styleId });
+  working = drawerRule.placed;
+  if (drawerRule.note) notes.push(drawerRule.note);
+  if (drawerRule.warning) drawerRuleWarnings.push(drawerRule.warning);
   const baseRules = applyDesignerLayoutRules({
     placed: working, room, openings: stageOpenings, fillers: catalogFillers, makeUid, styleId: args.styleId,
   });
@@ -611,7 +654,7 @@ export function runAutoDesignLayout(args: {
   }
   const reportedWiggleMoves = activeAutoDesignWiggleMoves(wiggle.moves, working, room);
   const shiftReview = reviewAfterShift({ placed: working, room, openings: stageOpenings, usage: stage.input.kitchenUsage });
-  const warnings = [...refrigeratorBayWarnings, ...shiftReview.findings.filter((entry) => entry.severity === "attention").map((entry) => `${entry.title}: ${entry.description}`)];
+  const warnings = [...refrigeratorBayWarnings, ...drawerRuleWarnings, ...shiftReview.findings.filter((entry) => entry.severity === "attention").map((entry) => `${entry.title}: ${entry.description}`)];
   const bareRange = working.find((item) => item.placement === "appliance" && isRangeOrOven(item.masterCode, item.description) && autoDesignRangeNeedsVentilation(working, item));
   return {
     ok: true,
