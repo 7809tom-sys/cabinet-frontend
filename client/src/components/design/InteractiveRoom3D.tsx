@@ -9802,6 +9802,8 @@ export type ThreeDBacksplashSegment = {
 
 export type BacksplashHeightMode = "standard" | "full-height";
 export const THREE_D_BACKSPLASH_TILE_SIZE_IN = 12;
+/** A bare wall strip no wider than this beside a tiled run, a tall unit or an inside corner is tiled so the field reads as one. */
+export const THREE_D_BACKSPLASH_BRIDGE_GAP_IN = 12;
 /** Planes sit this far off the wall face. A shared corner insets each run by the same amount so the two tiles meet without overlap. */
 export const THREE_D_BACKSPLASH_FACE_INSET_IN = 0.07;
 
@@ -10043,7 +10045,28 @@ export function threeDBacksplashCoverageIntervals(
   const wallCabinetIntervals = mergeThreeDIntervals(wallItems
     .filter((cabinet) => cabinet.placement === "wall")
     .map((cabinet) => threeDWallRunSpan(cabinet, side, room)));
-  return mergeThreeDIntervals([...supportIntervals, ...wallCabinetIntervals]);
+  const merged = mergeThreeDIntervals([...supportIntervals, ...wallCabinetIntervals]);
+  if (!threeDBacksplashSideIsCardinal(side) || merged.length === 0) return merged;
+  // Real tile is one continuous field: a short bare strip beside a refrigerator, tall unit or inside corner,
+  // or between two tiled runs, is tiled too. Larger openings stay open.
+  const bridgeIn = THREE_D_BACKSPLASH_BRIDGE_GAP_IN;
+  const wallLen = wallLength(side, room);
+  const tallStops = wallItems
+    .filter((cabinet) => cabinet.placement === "tall" || isRefrigerator(cabinet))
+    .map((cabinet) => threeDWallRunSpan(cabinet, side, room));
+  const bridged = merged.map((interval) => ({ ...interval }));
+  for (let index = 0; index < bridged.length; index += 1) {
+    const current = bridged[index]!;
+    const previousEnd = index > 0 ? bridged[index - 1]!.end : 0;
+    const nextStart = index < bridged.length - 1 ? bridged[index + 1]!.start : wallLen;
+    const before = tallStops.filter((stop) => stop.end <= current.start + 0.01).map((stop) => stop.end);
+    const after = tallStops.filter((stop) => stop.start >= current.end - 0.01).map((stop) => stop.start);
+    const leftStop = Math.max(previousEnd, ...before, 0);
+    const rightStop = Math.min(nextStart, ...after, wallLen > 0 ? wallLen : nextStart);
+    if (current.start - leftStop > 0.001 && current.start - leftStop <= bridgeIn) current.start = leftStop;
+    if (rightStop - current.end > 0.001 && rightStop - current.end <= bridgeIn) current.end = rightStop;
+  }
+  return mergeThreeDIntervals(bridged);
 }
 
 export function threeDBacksplashSegments(
