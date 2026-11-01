@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import { catalogCategoryKey } from "@shared/catalogCategory";
 import { catalogCategoryValuesEqual } from "@shared/catalogCategorySpelling";
 import { trpc } from "@/lib/trpc";
@@ -235,6 +236,88 @@ export function catalogEditorItemFromCreate(result: CreatePelicanProductResult) 
     isActive: result.isActive,
     showInCatalog: result.showInCatalog,
     showInDesigner: result.showInDesigner,
+  };
+}
+
+/** `pelican.adminList` accepts at most 500 rows. Walk every page for one category. */
+export const PELICAN_ADMIN_LIST_PAGE = 500;
+const PELICAN_SUBCATEGORY_ROW_CAP = 20_000;
+
+export type PelicanSubcategoryPage = {
+  items?: readonly { subCategory?: string | null }[];
+  total?: number;
+};
+
+/**
+ * Distinct sub-categories for one category from the vendor catalog.
+ * `pelican.byCategory.subCategories` only includes active, priced, catalog-visible
+ * rows, so this walks `pelican.adminList`, which returns every stored row.
+ */
+export async function collectPelicanSubcategories(
+  category: string,
+  fetchPage: (input: { category: string; limit: number; offset: number }) => Promise<PelicanSubcategoryPage>,
+  pageSize = PELICAN_ADMIN_LIST_PAGE,
+): Promise<string[]> {
+  const key = category.trim();
+  if (!key) return [];
+  const subs: string[] = [];
+  const seen = new Set<string>();
+  let offset = 0;
+  let total = Number.POSITIVE_INFINITY;
+  while (offset < total && offset < PELICAN_SUBCATEGORY_ROW_CAP) {
+    const page = await fetchPage({ category: key, limit: pageSize, offset });
+    const items = page.items ?? [];
+    for (const item of items) {
+      const sub = catalogCategoryKey(item.subCategory);
+      if (!sub) continue;
+      const folded = sub.toLowerCase();
+      if (seen.has(folded)) continue;
+      seen.add(folded);
+      subs.push(sub);
+    }
+    const reported = Number(page.total);
+    total = Number.isFinite(reported) ? reported : offset + items.length;
+    offset += pageSize;
+    if (items.length === 0) break;
+  }
+  return subs;
+}
+
+export function usePelicanSubcategoryChoices(category: string, enabled: boolean): {
+  subcategories: string[];
+  loading: boolean;
+} {
+  const utils = trpc.useUtils();
+  const utilsRef = useRef(utils);
+  utilsRef.current = utils;
+  const key = category.trim();
+  const active = enabled && Boolean(key);
+  const family = trpc.pelican.byCategory.useQuery(
+    { category: key || "Tile & Mosaic", scope: "all", limit: 1, offset: 0 },
+    { enabled: active },
+  );
+  const [fromAdmin, setFromAdmin] = useState<string[]>([]);
+  const [settled, setSettled] = useState(false);
+  useEffect(() => {
+    if (!active) {
+      setFromAdmin([]);
+      setSettled(false);
+      return;
+    }
+    let cancelled = false;
+    setSettled(false);
+    void collectPelicanSubcategories(key, (input) => utilsRef.current.pelican.adminList.fetch(input)).then(
+      (subs) => { if (!cancelled) { setFromAdmin(subs); setSettled(true); } },
+      () => { if (!cancelled) { setFromAdmin([]); setSettled(true); } },
+    );
+    return () => { cancelled = true; };
+  }, [active, key]);
+  return {
+    subcategories: catalogSubcategoryOptions({
+      category: key,
+      serverSubs: [...(family.data?.subCategories ?? []), ...fromAdmin],
+    }),
+    loading: active && !settled,
   };
 }
 

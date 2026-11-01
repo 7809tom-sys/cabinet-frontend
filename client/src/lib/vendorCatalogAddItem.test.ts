@@ -5,6 +5,7 @@ import {
   PELICAN_NAME_MAX,
   PELICAN_SUBCATEGORY_MAX,
   buildCreatePelicanProductInput,
+  collectPelicanSubcategories,
   catalogBrowseLabel,
   catalogEditorItemFromCreate,
   catalogSubcategoryOptions,
@@ -143,5 +144,18 @@ describe("vendor catalog add item", () => {
     expect(catalogSubcategoryOptions({ category: "", items })).toEqual([]);
     expect(itemsMatchingSubcategory(items, "Mosaic")).toEqual([items[0]]);
     expect(itemsMatchingSubcategory(items, undefined)).toEqual(items);
+  });
+
+  it("collects every sub-category for one category from paged catalog rows", async () => {
+    const pageSize = 2;
+    const subs = await collectPelicanSubcategories("Sinks & Faucets", async ({ category, offset, limit }) => {
+      expect(category).toBe("Sinks & Faucets");
+      expect(limit).toBe(pageSize);
+      if (offset === 0) return { items: [{ subCategory: "Sinks" }, { subCategory: "Faucets" }], total: 3 };
+      if (offset === 2) return { items: [{ subCategory: " sinks " }, { subCategory: "Disposals & Accessories" }], total: 3 };
+      return { items: [], total: 3 };
+    }, pageSize);
+    expect(subs).toEqual(["Sinks", "Faucets", "Disposals & Accessories"]);
+    await expect(collectPelicanSubcategories("  ", async () => ({ items: [], total: 0 }))).resolves.toEqual([]);
   });
 });

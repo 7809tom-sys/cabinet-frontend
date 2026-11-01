@@ -10,7 +10,6 @@ import {
   PELICAN_DESCRIPTION_MAX,
   PELICAN_NAME_MAX,
   PELICAN_SIZE_MAX,
-  PELICAN_SUBCATEGORY_MAX,
   type AddCatalogItemDraft,
 } from "@/lib/vendorCatalogAddItem";
 
@@ -20,6 +19,7 @@ export function AddCatalogItemDialog({
   draft,
   categories,
   subcategories,
+  subcategoriesLoading = false,
   browseLabel,
   onDraft,
   onClose,
@@ -30,6 +30,7 @@ export function AddCatalogItemDialog({
   draft: AddCatalogItemDraft;
   categories: readonly string[];
   subcategories: readonly string[];
+  subcategoriesLoading?: boolean;
   browseLabel: string | null;
   onDraft: (draft: AddCatalogItemDraft) => void;
   onClose: () => void;
@@ -75,29 +76,23 @@ export function AddCatalogItemDialog({
             </div>
             <div className="grid gap-2">
               <Label htmlFor="vendor-add-item-subcategory">Sub-category</Label>
-              {subcategories.length > 0 && (
-                <Select
-                  value={subcategories.includes(draft.subCategory) ? draft.subCategory : undefined}
-                  onValueChange={(subCategory) => set({ subCategory })}
-                >
-                  <SelectTrigger aria-label="Existing sub-category" data-testid="vendor-add-item-subcategory-choices">
-                    <SelectValue placeholder="Choose an existing sub-category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {subcategories.map((subCategory) => (
-                      <SelectItem key={subCategory} value={subCategory}>{subCategory}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <Select
+                value={subcategories.includes(draft.subCategory) ? draft.subCategory : undefined}
+                onValueChange={(subCategory) => set({ subCategory })}
+                disabled={!draft.category || subcategories.length === 0}
+              >
+                <SelectTrigger id="vendor-add-item-subcategory" aria-label="Sub-category" data-testid="vendor-add-item-subcategory">
+                  <SelectValue placeholder={subcategoriesLoading ? "Loading sub-categories…" : draft.category ? "Choose a sub-category" : "Choose a category first"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {subcategories.map((subCategory) => (
+                    <SelectItem key={subCategory} value={subCategory}>{subCategory}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {!subcategoriesLoading && draft.category && subcategories.length === 0 && (
+                <p className="text-xs text-muted-foreground">No sub-categories are on file for this category.</p>
               )}
-              <Input
-                id="vendor-add-item-subcategory"
-                data-testid="vendor-add-item-subcategory"
-                value={draft.subCategory}
-                maxLength={PELICAN_SUBCATEGORY_MAX}
-                placeholder="Mosaic"
-                onChange={(event) => set({ subCategory: event.target.value })}
-              />
             </div>
           </div>
           <div className="grid gap-2">

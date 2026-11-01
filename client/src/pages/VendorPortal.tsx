@@ -75,6 +75,7 @@ import {
   isCatalogProcedureNotFound,
   itemsMatchingSubcategory,
   useCreatePelicanProduct,
+  usePelicanSubcategoryChoices,
   type AddCatalogItemDraft,
 } from "@/lib/vendorCatalogAddItem";
 import { catalogCategoryValuesEqual } from "@shared/catalogCategorySpelling";
@@ -436,22 +437,16 @@ function PelicanVendorCatalogPage({
     }
     return options;
   }, [categoryOptions.data, categoryFilter]);
-  const draftFamily = trpc.pelican.byCategory.useQuery(
-    { category: addDraft.category, scope: "all", limit: 1, offset: 0 },
-    { enabled: addOpen && Boolean(addDraft.category) && !catalogCategoryValuesEqual(addDraft.category, categoryFilter) },
-  );
   const subOptions = useMemo(() => catalogSubcategoryOptions({
     category: categoryFilter,
     serverSubs: [subFilter, ...(browsedFamily.data?.subCategories ?? [])],
     items: data?.items,
   }), [categoryFilter, subFilter, browsedFamily.data?.subCategories, data?.items]);
+  const addSubcategories = usePelicanSubcategoryChoices(addDraft.category, addOpen);
   const addSubOptions = useMemo(() => catalogSubcategoryOptions({
     category: addDraft.category,
-    serverSubs: catalogCategoryValuesEqual(addDraft.category, categoryFilter)
-      ? browsedFamily.data?.subCategories
-      : draftFamily.data?.subCategories,
-    items: data?.items,
-  }), [addDraft.category, categoryFilter, browsedFamily.data?.subCategories, draftFamily.data?.subCategories, data?.items]);
+    serverSubs: addSubcategories.loading ? [addDraft.subCategory, ...addSubcategories.subcategories] : addSubcategories.subcategories,
+  }), [addDraft.category, addDraft.subCategory, addSubcategories.loading, addSubcategories.subcategories]);
   const addCategories = categoryChoices(categories.map((option) => option.category), addDraft.category);
   const visibleItems = useMemo(
     () => itemsMatchingSubcategory(data?.items ?? [], subFilter),
@@ -463,6 +458,12 @@ function PelicanVendorCatalogPage({
   useEffect(() => {
     setCatalogPage(0);
   }, [categoryFilter, subFilter, search]);
+
+  useEffect(() => {
+    if (!addOpen || addSubcategories.loading || !addDraft.subCategory) return;
+    if (addSubOptions.some((sub) => catalogCategoryValuesEqual(sub, addDraft.subCategory))) return;
+    setAddDraft((current) => current.subCategory === addDraft.subCategory ? { ...current, subCategory: "" } : current);
+  }, [addOpen, addSubcategories.loading, addDraft.subCategory, addSubOptions]);
 
   useEffect(() => {
     let cancelled = false;
@@ -754,6 +755,7 @@ function PelicanVendorCatalogPage({
         draft={addDraft}
         categories={addCategories}
         subcategories={addSubOptions}
+        subcategoriesLoading={addSubcategories.loading}
         browseLabel={catalogBrowseLabel(addDraft.category, addDraft.subCategory)}
         onDraft={setAddDraft}
         onClose={() => setAddOpen(false)}

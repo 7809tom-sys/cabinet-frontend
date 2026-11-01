@@ -35,7 +35,14 @@ describe("VendorPortal add item", () => {
     expect(dialogSource).toContain('data-testid="vendor-add-item-category"');
     expect(dialogSource).toContain('data-testid="vendor-add-item-subcategory"');
     expect(dialogSource).toContain('data-testid="vendor-add-item-code"');
+    expect(catalogSource).toContain("usePelicanSubcategoryChoices");
+    expect(catalogSource).toContain('trpc.pelican.categories.useQuery({ scope: "admin" })');
+    expect(createSource).toContain("collectPelicanSubcategories");
+    expect(createSource).toContain("pelican.adminList");
     expect(dialogSource).toContain("Choose a category");
+    expect(dialogSource).toContain("Choose a sub-category");
+    expect(dialogSource).not.toContain('placeholder="Mosaic"');
+    expect(dialogSource).not.toContain("maxLength={PELICAN_SUBCATEGORY_MAX}");
     expect(dialogSource).toContain("Code / SKU");
     expect(dialogSource).toContain("List price");
     expect(dialogSource).toContain("MSRP");
