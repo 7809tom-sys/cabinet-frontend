@@ -207,15 +207,15 @@ describe("sides carry the door's grain, and photo materials are not over-lit", (
     expect(plan.dlcCrop?.tintHex).toBe(e.faceTint);
   });
   it("pale finishes get stronger frame-edge shadows; mid and dark finishes keep the standard ones", () => {
-    const shadow = (y?: number | null) => dlcFrameStrips(1, 2, y).filter((x) => x.kind === "shadow").map((x) => x.opacity);
+    const shadow = (y?: number | null) => dlcFrameStrips(1, 2, y, "driftwood").filter((x) => x.kind === "shadow").map((x) => x.opacity);
     expect(shadow(0.1)).toEqual(shadow());
     expect(shadow(0.4)).toEqual(shadow());
     const pale = shadow(0.88);
     expect(pale[0]).toBeGreaterThan(shadow()[0]!);
     expect(Math.max(...pale)).toBeLessThanOrEqual(DLC_FRAME_MAX_OPACITY);
     expect(dlcFrameShadowScale(0.88)).toBeCloseTo(1.8, 5);
-    expect(dlcFrameStrips(1, 2, 0.88).filter((x) => x.kind === "highlight")).toEqual(dlcFrameStrips(1, 2).filter((x) => x.kind === "highlight"));
-    expect(src()).toMatch(/dlcFrameStrips\(faceWidth - stile \* 2, faceHeight - rail \* 2, relativeLuminance\(dlcDoorFinish\)\)/);
+    expect(dlcFrameStrips(1, 2, 0.88, "driftwood").filter((x) => x.kind === "highlight")).toEqual(dlcFrameStrips(1, 2, undefined, "driftwood").filter((x) => x.kind === "highlight"));
+    expect(src()).toMatch(/dlcFrameStrips\(faceWidth - stile \* 2, faceHeight - rail \* 2, relativeLuminance\(dlcDoorFinish\), surfaceTextures\?\.faceCrop\?\.slug \?\? null\)/);
   });
   it("Slim Shaker Alabaster is warm off-white (Tom, Oct 31): warm tint and extra cut baked in, only this finish", () => {
     const e = DLC_FR26_CATALOG.find((x) => x.slug === "slim-shaker-alabaster")!;
@@ -343,7 +343,7 @@ describe("Driftwood polish: softer grain, more defined frames", () => {
     expect(DLC_FR26_CATALOG.find((e) => e.slug === "dove-gray")!.solidColor).toBe("#c9c9cb"); // catalog grey, no blue
   });
   it("frame strips: shadows on the top and left of the opening, highlights on the bottom and right, all inside it", () => {
-    const strips = dlcFrameStrips(1.0, 2.0);
+    const strips = dlcFrameStrips(1.0, 2.0, null, "driftwood");
     const shadows = strips.filter((t) => t.kind === "shadow");
     const highs = strips.filter((t) => t.kind === "highlight");
     expect(shadows).toHaveLength(DLC_FRAME_DETAIL.shadow.length * 2);
@@ -358,7 +358,7 @@ describe("Driftwood polish: softer grain, more defined frames", () => {
     }
   });
   it("tiny openings get no strips; rails stand 20% proud", () => {
-    expect(dlcFrameStrips(0.03, 1)).toEqual([]);
+    expect(dlcFrameStrips(0.03, 1, null, "driftwood")).toEqual([]);
     expect(DLC_FRAME_DETAIL.railDepth / DLC_FRAME_DETAIL.standardRailDepth).toBeCloseTo(1.2, 1);
   });
   it("3D draws the strips only for DL frames that are not raised or glass, deepens the rails, and staggers grain", () => {
@@ -368,5 +368,23 @@ describe("Driftwood polish: softer grain, more defined frames", () => {
     expect(s).toMatch(/dlcStagger\?\.offsetX/);
     expect(s).toMatch(/dlcDrawerStagger\?\.offsetX/);
     expect(s).toMatch(/normal\.offset\.copy\(doorTexture\.offset\)/);
+  });
+
+  it("frame strips render on Driftwood only (Tom, Nov 1): every other finish gets none, by finish id, not by paleness", () => {
+    expect(dlcFrameStrips(1, 2, 0.3, "driftwood").length).toBeGreaterThan(0);
+    for (const entry of DLC_FR26_CATALOG) {
+      if (entry.slug === "driftwood") continue;
+      expect(dlcFrameStrips(1, 2, 0.95, entry.slug)).toEqual([]);
+      expect(dlcFrameStrips(1, 2, 0.1, entry.slug)).toEqual([]);
+    }
+    expect(dlcFrameStrips(1, 2, 0.5)).toEqual([]);
+    // Driftwood keeps exactly the strips it had: same count, depths and opacities.
+    const d = dlcFrameStrips(1, 2, 0.4, "driftwood");
+    expect(d.filter((x) => x.kind === "shadow")).toHaveLength(DLC_FRAME_DETAIL.shadow.length * 2);
+    expect(d.filter((x) => x.kind === "highlight")).toHaveLength(2);
+  });
+  it("the 3D cabinet face crop carries the finish slug so the gate can read it", () => {
+    const plan = resolveCabinetFaceImages(dl("Driftwood", "DL-DW"), "base");
+    expect(plan.dlcCrop?.slug).toBe("driftwood");
   });
 });

@@ -94,6 +94,8 @@ export const DLC_GRAIN_TEXTURES: Record<string, { horizontal: string; vertical: 
 
 /** The crop sizes the 3D renderer needs. Same shape as CabinetFacePlan.dlcCrop minus the slug. */
 export interface DlcFaceCrop {
+  /** Finish id (catalog slug, e.g. "driftwood"). Gates finish-specific frame detail. */
+  slug?: string;
   doorSize: [number, number];
   drawerSize: [number, number] | null;
   drawerSolidColor: string | null;
@@ -265,7 +267,14 @@ export interface DlcFrameStrip {
 }
 
 /** Strip layout for the opening inside a frame. Pure so it can be tested; the renderer only draws it. */
-export function dlcFrameStrips(openingW: number, openingH: number, finishLuminance?: number | null): DlcFrameStrip[] {
+/**
+ * Tom's rule (Nov 1): the inner-frame shadow and highlight strips render on Driftwood only. Every other
+ * finish gets none, so its rails and stiles read straight with no step. Gated on the finish id, never on paleness.
+ */
+export const DLC_FRAME_STRIP_FINISHES: readonly string[] = ["driftwood"];
+
+export function dlcFrameStrips(openingW: number, openingH: number, finishLuminance?: number | null, finishSlug?: string | null): DlcFrameStrip[] {
+  if (!finishSlug || !DLC_FRAME_STRIP_FINISHES.includes(finishSlug)) return [];
   if (!(openingW > 0.04) || !(openingH > 0.04)) return [];
   const out: DlcFrameStrip[] = [];
   const scale = dlcFrameShadowScale(finishLuminance);

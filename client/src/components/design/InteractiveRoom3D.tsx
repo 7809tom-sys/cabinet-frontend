@@ -5607,7 +5607,7 @@ export function addCabinet(
     // DL shaker frames: soft shadow just inside the opening (top/left) and a thin highlight on the opposite
     // edges. Semi-transparent strips on the panel, so the finish colour is not darkened.
     if (dlcDoorFinish && !raisedProfile && !forceGlassFrame) {
-      for (const strip of dlcFrameStrips(faceWidth - stile * 2, faceHeight - rail * 2, relativeLuminance(dlcDoorFinish))) {
+      for (const strip of dlcFrameStrips(faceWidth - stile * 2, faceHeight - rail * 2, relativeLuminance(dlcDoorFinish), surfaceTextures?.faceCrop?.slug ?? null)) {
         const mesh = new THREE.Mesh(
           new THREE.BoxGeometry(strip.w, strip.h, DLC_FRAME_DETAIL.stripDepth),
           new THREE.MeshBasicMaterial({
