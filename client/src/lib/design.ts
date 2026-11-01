@@ -5238,6 +5238,15 @@ export function isBridgeOverRange(a: PlacedCabinet, b: PlacedCabinet): boolean {
   );
 }
 
+/** An auto-added wall end panel beside a range/oven/hood, paired with that cooking appliance. */
+export function isWallBesideRangePanelAgainstCooking(panel: PlacedCabinet, appliance: PlacedCabinet): boolean {
+  if (panel.autoPlacedReason !== "wall-beside-range" || panel.placement !== "wall") return false;
+  if (appliance.placement !== "appliance") return false;
+  const code = (appliance.masterCode || "").toUpperCase();
+  const isHood = (/^HOOD(?:-|\b)/.test(code) || /\bhood\b/i.test(appliance.description || "")) && !/^RHF/.test(code);
+  return isHood || isRangeOrOven(appliance.masterCode, appliance.description);
+}
+
 export function conflictingUids(placed: PlacedCabinet[], room?: RoomData): Set<string> {
   const conflicts = new Set<string>();
   for (let i = 0; i < placed.length; i++) {
@@ -5270,6 +5279,10 @@ export function conflictingUids(placed: PlacedCabinet[], room?: RoomData): Set<s
       // EXEMPTION: a bridge (short) wall cabinet mounted over an over-range
       // microwave/hood is the intended layout, so it must never be flagged.
       if (isBridgeOverRange(a, b)) continue;
+      // EXEMPTION: the 3/4" end panel Auto-Design adds on the side of a wall cabinet that faces a range, oven or
+      // hood ("wall-beside-range") sits against the cooking appliance on purpose. Auto-Design's own placement check
+      // ignores the cooking appliance for that panel, so the warning rail must too, or it flags Auto-Design's output.
+      if (isWallBesideRangePanelAgainstCooking(a, b) || isWallBesideRangePanelAgainstCooking(b, a)) continue;
       // A floor refrigerator is tall enough to occupy the wall-cabinet band;
       // standard base appliances remain below it.
       if (!verticalEnvelopesOverlap(a, b)) continue;
