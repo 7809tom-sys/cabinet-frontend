@@ -81,8 +81,10 @@ const trpcClient = trpc.createClient({
     // kitchenRules.parameters is not on the live backend yet. Keep it out of
     // the Designer load batch so its NOT_FOUND (HTTP 207) cannot fail the
     // cabinets, prices, and scene queries that share that batch.
+    // pelican.createProduct is the same until cabinet-backend PR #68 is deployed:
+    // the catalog page probes it, and that NOT_FOUND must not fail the product list.
     splitLink({
-      condition: (op) => op.path === "kitchenRules.parameters",
+      condition: (op) => op.path === "kitchenRules.parameters" || op.path === "pelican.createProduct",
       true: httpLink(trpcHttpOptions),
       false: httpBatchLink(trpcHttpOptions),
     }),

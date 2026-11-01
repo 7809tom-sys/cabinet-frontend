@@ -284,7 +284,7 @@ export function VendorOtherProducts({ distributorId }: { distributorId?: number 
       <Badge variant="outline">{products.data?.items.length ?? 0} products</Badge>
       <div className="ml-auto flex flex-wrap gap-2">
         <Button variant="outline" onClick={() => setImportOpen(true)}><FileSpreadsheet className="mr-2 h-4 w-4" />Import spreadsheet</Button>
-        <Button onClick={() => setEditor(editorFrom())}><Plus className="mr-2 h-4 w-4" />Add product</Button>
+        <Button data-testid="other-products-add-item" onClick={() => setEditor({ ...editorFrom(), category: category === ALL ? "" : category })}><Plus className="mr-2 h-4 w-4" />Add item</Button>
       </div>
     </div>
 
