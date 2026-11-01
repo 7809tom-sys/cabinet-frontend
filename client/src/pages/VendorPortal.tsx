@@ -33,6 +33,7 @@ import {
 } from "@/lib/pelicanProductImageUpload";
 import { VendorRoomSceneLibrary } from "@/components/vendor/VendorRoomSceneLibrary";
 import { VendorAutoRoomSceneBadge } from "@/components/doorStyles/VendorAutoRoomSceneBadge";
+import { InheritedVendorOriginZips } from "@/components/doorStyles/InheritedVendorOriginZips";
 import { OpenDesignerLink } from "@/components/design/OpenDesignerLink";
 import { DoorStyleIdentity } from "@/components/doorStyles/DoorStyleIdentity";
 import { VENDOR_AUTO_ROOM_SCENE_COPY, type AutoRoomScene } from "@/lib/autoRoomScene";
@@ -44,6 +45,15 @@ import { getLoginUrl } from "@/const";
 import { toast } from "sonner";
 import { Label } from "@/components/ui/label";
 import { csvEscape } from "@shared/inventoryForecast";
+import {
+  addShippingOriginZip,
+  editableStyleOriginZips,
+  inheritedVendorZipsForEditor,
+  ownShippingOriginZips,
+  shippingOriginZipsForSave,
+  shippingOriginZipsForSaveList,
+  shippingRowInheritsVendorZips,
+} from "@shared/styleOriginInheritance";
 import { VendorOtherProducts } from "@/components/vendor/VendorOtherProducts";
 import { VendorSalesForecast } from "@/components/vendor/VendorSalesForecast";
 import { pelicanVendorCostLabel } from "@/lib/vendorCostLabel";
@@ -2463,6 +2473,14 @@ type VendorFeaturedStyle = {
   isFeatured: boolean;
   featuredRank: number;
 	  warehouseZips: string[] | null;
+	  /** Legacy primary. Present on featuredStyles so a legacy-only style is not treated as inherited. */
+	  warehouseZip?: string | null;
+	  /** Vendor cabinet warehouse coverage. Missing until cabinet-backend #66; treat as []. */
+	  distributorWarehouseZips?: string[] | null;
+	  /** Own origins when this style has any; otherwise distributorWarehouseZips. */
+	  effectiveWarehouseZips?: string[] | null;
+	  /** True when this style stores no origins of its own. */
+	  warehouseZipsInherited?: boolean | null;
 	  flatFreightFeeCents: number | null;
 	  railWidth: string | null;
 	  stileWidth: string | null;
@@ -2562,7 +2580,7 @@ function VendorFeaturedStyleEditor({
   const [color, setColor] = useState(style.color ?? "");
   const [finish, setFinish] = useState(style.finish ?? "");
   const [woodSpecies, setWoodSpecies] = useState(style.woodSpecies ?? "");
-  const [warehouseZips, setWarehouseZips] = useState<string[]>(style.warehouseZips ?? []);
+  const [warehouseZips, setWarehouseZips] = useState<string[]>(() => ownShippingOriginZips(style));
   const [newZip, setNewZip] = useState("");
   const [flatFreight, setFlatFreight] = useState(style.flatFreightFeeCents == null ? "" : (style.flatFreightFeeCents / 100).toFixed(2));
   const [railWidth, setRailWidth] = useState(style.railWidth ?? "");
@@ -2583,7 +2601,7 @@ function VendorFeaturedStyleEditor({
     if (!open) return;
     setFeaturedLabel(style.featuredLabel ?? ""); setAliasName(style.aliasName ?? "");
     setDoorStyle(style.doorStyle ?? ""); setColor(style.color ?? ""); setFinish(style.finish ?? ""); setWoodSpecies(style.woodSpecies ?? "");
-    setWarehouseZips(style.warehouseZips ?? []); setNewZip("");
+    setWarehouseZips(ownShippingOriginZips(style)); setNewZip("");
     setFlatFreight(style.flatFreightFeeCents == null ? "" : (style.flatFreightFeeCents / 100).toFixed(2));
     setRailWidth(style.railWidth ?? ""); setStileWidth(style.stileWidth ?? ""); setCenterRailWidth(style.centerRailWidth ?? "");
     setProfileNotes(style.profileNotes ?? ""); setProfileDescription(style.profileDescription ?? ""); setSourceSpecification(style.sourceSpecification ?? "");
@@ -2596,11 +2614,12 @@ function VendorFeaturedStyleEditor({
   const update = trpc.distributorPortal.updateFeaturedStyleMaterials.useMutation({ onSuccess: saved, onError: (error) => toast.error(error.message) });
   const upload = trpc.distributorPortal.updateDoorStyleImage.useMutation({ onSuccess: () => { toast.success("Style image uploaded"); onSaved(); }, onError: (error) => toast.error(error.message) });
 
+  const inheritedZips = inheritedVendorZipsForEditor(style, warehouseZips);
   const addZip = () => {
-    const zip = newZip.replace(/\D/g, "").slice(0, 5);
-    if (!/^\d{5}$/.test(zip)) { toast.error("Shipping origin ZIP must be exactly 5 digits"); return; }
-    if (warehouseZips.includes(zip)) { toast.message("This warehouse ZIP is already listed"); return; }
-    setWarehouseZips((current) => [...current, zip]); setNewZip("");
+    const result = addShippingOriginZip(warehouseZips, newZip);
+    if (result.status === "invalid") { toast.error("Shipping origin ZIP must be exactly 5 digits"); return; }
+    if (result.status === "duplicate") { toast.message("This warehouse ZIP is already listed"); setNewZip(""); return; }
+    setWarehouseZips(result.zips); setNewZip("");
   };
   const requestUpload = (target: typeof uploadTarget) => { setUploadTarget(target); requestAnimationFrame(() => fileInputRef.current?.click()); };
   const handleUpload = async (file: File) => {
@@ -2620,7 +2639,7 @@ function VendorFeaturedStyleEditor({
     update.mutate(withLine({
 	      styleId: style.id, featuredLabel: featuredLabel.trim() || null, aliasName: aliasName.trim() || null,
 	      doorStyle: doorStyle.trim() || null, color: color.trim() || null, finish: finish.trim() || null, woodSpecies: woodSpecies.trim() || null,
-	      warehouseZips: warehouseZips.length ? warehouseZips : null, flatFreightFeeCents: freight == null ? null : Math.round(freight * 100),
+	      warehouseZips: shippingOriginZipsForSave(warehouseZips), flatFreightFeeCents: freight == null ? null : Math.round(freight * 100),
 	      profileNotes: profileNotes.trim() || null, profileDescription: profileDescription.trim() || null,
       doorSampleImageUrl: doorSampleImageUrl.trim() || null, drawerSampleImageUrl: drawerSampleImageUrl.trim() || null, roomSceneImageUrl: roomSceneImageUrl.trim() || null,
       thumbnailImageUrl: thumbnailImageUrl.trim() || null, cornerSwatchImageUrl: cornerSwatchImageUrl.trim() || null,
@@ -2642,7 +2661,7 @@ function VendorFeaturedStyleEditor({
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto py-2 pr-2">
         <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3 space-y-3"><div><Label>Customer-facing names</Label><p className="text-xs text-muted-foreground">These names promote this vendor’s own cabinet line in the catalog, featured row, and Designer.</p></div><div className="grid gap-3 sm:grid-cols-2"><div className="space-y-1"><Label className="text-xs">Alias name</Label><Input value={aliasName} onChange={(event) => setAliasName(event.target.value)} placeholder={style.ourName} /></div><div className="space-y-1"><Label className="text-xs">Featured label</Label><Input value={featuredLabel} onChange={(event) => setFeaturedLabel(event.target.value)} placeholder={aliasName || style.ourName} /></div></div><p className="text-xs text-muted-foreground">Leave a field blank to use the vendor’s standard Door Style name.</p></div>
         <div className="grid gap-3 sm:grid-cols-2"><div className="space-y-1"><Label className="text-xs">Door style type</Label><Input value={doorStyle} onChange={(event) => setDoorStyle(event.target.value)} placeholder="e.g. Shaker" /></div><div className="space-y-1"><Label className="text-xs">Color</Label><Input value={color} onChange={(event) => setColor(event.target.value)} placeholder="e.g. White" /></div><div className="space-y-1"><Label className="text-xs">Finish</Label><Input value={finish} onChange={(event) => setFinish(event.target.value)} placeholder="e.g. Painted" /></div><div className="space-y-1"><Label className="text-xs">Wood species</Label><Input value={woodSpecies} onChange={(event) => setWoodSpecies(event.target.value)} placeholder="e.g. Maple" /></div></div>
-        <div className="rounded-lg border border-sky-200 bg-sky-50/50 p-3 space-y-3"><div><Label className="flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5 text-sky-700" />Shipping Origin ZIPs</Label><p className="text-xs text-muted-foreground">Same per-style origin controls as Featured Styles. Saved ZIPs become the style’s private freight origins.</p></div><div className="flex gap-2"><Input value={newZip} onChange={(event) => setNewZip(event.target.value.replace(/\D/g, "").slice(0, 5))} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addZip(); } }} inputMode="numeric" placeholder="5-digit warehouse ZIP" maxLength={5} /><Button type="button" variant="outline" onClick={addZip}><Plus className="mr-1 h-4 w-4" />Add</Button></div><div className="flex flex-wrap gap-2">{warehouseZips.map((zip) => <Badge key={zip} variant="secondary" className="gap-1 py-1 pl-2.5 pr-1">{zip}<button type="button" onClick={() => setWarehouseZips((current) => current.filter((item) => item !== zip))} aria-label={`Remove warehouse ZIP ${zip}`}><X className="h-3.5 w-3.5" /></button></Badge>)}</div><div className="space-y-1"><Label className="text-xs">Plan B fallback freight fee (optional)</Label><div className="flex items-center gap-2"><span>$</span><Input value={flatFreight} onChange={(event) => setFlatFreight(event.target.value)} inputMode="decimal" placeholder="Used only if live freight is unavailable" /></div></div></div>
+        <div className="rounded-lg border border-sky-200 bg-sky-50/50 p-3 space-y-3"><div><Label className="flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5 text-sky-700" />Shipping Origin ZIPs</Label><p className="text-xs text-muted-foreground">Same per-style origin controls as Featured Styles. Saved ZIPs become the style’s private freight origins. Leave this list empty to inherit the vendor cabinet warehouse coverage.</p></div><div className="flex gap-2"><Input value={newZip} onChange={(event) => setNewZip(event.target.value.replace(/\D/g, "").slice(0, 5))} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addZip(); } }} inputMode="numeric" placeholder="5-digit warehouse ZIP" maxLength={5} /><Button type="button" variant="outline" onClick={addZip}><Plus className="mr-1 h-4 w-4" />Add</Button></div>{warehouseZips.length > 0 ? <div className="flex flex-wrap gap-2" aria-label="Saved shipping origin ZIPs">{warehouseZips.map((zip) => <Badge key={zip} variant="secondary" className="gap-1 py-1 pl-2.5 pr-1">{zip}<button type="button" onClick={() => setWarehouseZips((current) => current.filter((item) => item !== zip))} aria-label={`Remove warehouse ZIP ${zip}`}><X className="h-3.5 w-3.5" /></button></Badge>)}</div> : <InheritedVendorOriginZips zips={inheritedZips} />}<Button type="button" variant="outline" data-testid="use-vendor-zips" onClick={() => setWarehouseZips([])} disabled={warehouseZips.length === 0 || inheritedVendorZipsForEditor(style, []).length === 0}>Use vendor zips</Button><div className="space-y-1"><Label className="text-xs">Plan B fallback freight fee (optional)</Label><div className="flex items-center gap-2"><span>$</span><Input value={flatFreight} onChange={(event) => setFlatFreight(event.target.value)} inputMode="decimal" placeholder="Used only if live freight is unavailable" /></div></div></div>
 	        <div className="rounded-lg border border-emerald-200 bg-emerald-50/40 p-3 space-y-3"><div><Label className="flex items-center gap-1.5"><Ruler className="h-3.5 w-3.5" />Verified frame profile</Label><p className="text-xs text-muted-foreground">Designer geometry is controlled by a submitted physical sample door and a CabinetDealz team measurement. Use <strong>Door Styles → Submit sample measurements</strong> to record the vendor source and select every style with the same profile.</p></div><div className="grid grid-cols-3 gap-3 text-sm"><div><p className="text-xs text-muted-foreground">Rail</p><p className="font-medium">{style.railWidth ?? "Pending"}</p></div><div><p className="text-xs text-muted-foreground">Stile</p><p className="font-medium">{style.stileWidth ?? "Pending"}</p></div><div><p className="text-xs text-muted-foreground">Center rail</p><p className="font-medium">{style.centerRailWidth ?? "—"}</p></div></div><p className="text-xs text-muted-foreground">{style.sourceSpecification ?? "No CabinetDealz-verified sample measurement yet — Designer uses a neutral face."}</p><div className="space-y-1"><Label className="text-xs">Profile notes</Label><Input value={profileNotes} onChange={(event) => setProfileNotes(event.target.value)} placeholder="e.g. Beaded inner edge" /></div><div className="space-y-1"><Label className="text-xs">Profile description</Label><textarea value={profileDescription} onChange={(event) => setProfileDescription(event.target.value)} rows={4} placeholder="Customer-facing educational description of this style" className="w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm" /></div></div>
         <div className="space-y-3"><div><Label>Image materials</Label><p className="text-xs text-muted-foreground">Upload or paste the exact verified image for this vendor’s Door Style. Saving updates only this vendor’s line.</p></div><div className="grid gap-3 sm:grid-cols-2">{imageField("Room scene photo", "Primary Featured Styles and cabinet-line scene.", roomSceneImageUrl, setRoomSceneImageUrl, "roomScene")}{imageField("Door sample photo", "Door panel material for the Designer and catalog.", doorSampleImageUrl, setDoorSampleImageUrl, "doorSample")}{imageField("Drawer sample photo", "Drawer-front material; blank falls back to the door sample.", drawerSampleImageUrl, setDrawerSampleImageUrl, "drawerSample")}{imageField("Corner swatch", "Angled profile/grain close-up for Featured Styles.", cornerSwatchImageUrl, setCornerSwatchImageUrl, "cornerSwatch")}{imageField("Thumbnail override", "Optional small-card thumbnail override.", thumbnailImageUrl, setThumbnailImageUrl, "thumbnail")}</div><VendorAutoRoomSceneBadge styleId={style.id} distributorId={adminDistId} snapshot={sampleVerification?.autoRoomScene ?? style.autoRoomScene ?? null} doorSampleVerified={sampleVerification?.doorSampleVerified ?? style.doorSampleVerified} drawerSampleVerified={sampleVerification?.drawerSampleVerified ?? style.drawerSampleVerified} showCopy live /></div>
         <VendorRoomSceneLibrary
@@ -2958,11 +2977,23 @@ type VendorShippingStyle = {
   originZips: string[];
   originMode: "style" | "line";
   allWarehousesCovered: boolean;
+  warehouseZip?: string | null;
+  warehouseZips?: string[] | null;
+  distributorWarehouseZips?: string[] | null;
+  effectiveWarehouseZips?: string[] | null;
+  warehouseZipsInherited?: boolean | null;
 };
 
 function VendorStyleOriginsEditor({ style, warehouseZips, open, onClose, onSaved }: { style: VendorShippingStyle; warehouseZips: string[]; open: boolean; onClose: () => void; onSaved: () => void }) {
   const adminDistId = useAdminDistributorId();
-  const [origins, setOrigins] = useState<string[]>(style.originMode === "style" ? style.originZips : []);
+  const inheritedZips = inheritedVendorZipsForEditor({
+    warehouseZips: style.originMode === "style" ? style.originZips : style.warehouseZips,
+    warehouseZip: style.warehouseZip,
+    distributorWarehouseZips: style.distributorWarehouseZips ?? warehouseZips,
+    effectiveWarehouseZips: style.effectiveWarehouseZips,
+    warehouseZipsInherited: typeof style.warehouseZipsInherited === "boolean" ? style.warehouseZipsInherited : style.originMode === "line",
+  }, [], warehouseZips);
+  const [origins, setOrigins] = useState<string[]>(() => editableStyleOriginZips(style));
   const [newZip, setNewZip] = useState("");
   const update = trpc.distributorPortal.updateFeaturedStyleMaterials.useMutation({
     onSuccess: () => { toast.success(`Shipping origins saved for ${style.ourName}`); onSaved(); onClose(); },
@@ -2970,34 +3001,34 @@ function VendorStyleOriginsEditor({ style, warehouseZips, open, onClose, onSaved
   });
   useEffect(() => {
     if (!open) return;
-    setOrigins(style.originMode === "style" ? style.originZips : []);
+    setOrigins(editableStyleOriginZips(style));
     setNewZip("");
   }, [open, style]);
   const addZip = () => {
-    const zip = newZip.replace(/\D/g, "").slice(0, 5);
-    if (!/^\d{5}$/.test(zip)) { toast.error("Shipping origin ZIP must be exactly 5 digits"); return; }
-    if (!origins.includes(zip)) setOrigins((current) => [...current, zip]);
+    const result = addShippingOriginZip(origins, newZip);
+    if (result.status === "invalid") { toast.error("Shipping origin ZIP must be exactly 5 digits"); return; }
+    if (result.status === "added") setOrigins(result.zips);
     setNewZip("");
   };
   const save = () => {
-    if (origins.length === 0 && warehouseZips.length === 0) {
+    if (origins.length === 0 && inheritedZips.length === 0) {
       toast.error("Add a shipping origin or configure a vendor warehouse origin first");
       return;
     }
-    update.mutate({ ...(adminDistId ? { distributorId: adminDistId } : {}), styleId: style.id, warehouseZips: origins });
+    update.mutate({ ...(adminDistId ? { distributorId: adminDistId } : {}), styleId: style.id, warehouseZips: shippingOriginZipsForSaveList(origins) });
   };
   return <Dialog open={open} onOpenChange={(value) => { if (!value) onClose(); }}>
     <DialogContent className="w-[min(32rem,calc(100vw-1rem))] p-5">
       <DialogHeader><DialogTitle className="flex items-center gap-2"><MapPin className="h-4 w-4 text-primary" />Edit shipping origins <span className="font-normal text-muted-foreground">— {style.ourName}</span></DialogTitle></DialogHeader>
       <div className="space-y-4 py-2">
         <div className="rounded-lg border border-sky-200 bg-sky-50/60 p-3 text-sm text-sky-950">
-          {style.originMode === "line"
+          {origins.length === 0
             ? "This cabinet line currently inherits every vendor warehouse origin. Add ZIPs below only when this style ships from a different subset of warehouses."
-            : "This cabinet line has its own shipping-origin assignment. Remove all ZIPs to inherit every vendor warehouse origin again."}
+            : "This cabinet line has its own shipping-origin assignment. Use vendor zips to inherit every vendor warehouse origin again."}
         </div>
         <div className="flex gap-2"><Input value={newZip} onChange={(event) => setNewZip(event.target.value.replace(/\D/g, "").slice(0, 5))} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addZip(); } }} inputMode="numeric" maxLength={5} placeholder="5-digit shipping origin ZIP" /><Button type="button" variant="outline" onClick={addZip}><Plus className="mr-1 h-4 w-4" />Add</Button></div>
-        {origins.length > 0 && <div className="flex flex-wrap gap-2">{origins.map((zip) => <Badge key={zip} variant="secondary" className="gap-1 py-1 pl-2.5 pr-1">{zip}<button type="button" onClick={() => setOrigins((current) => current.filter((item) => item !== zip))} aria-label={`Remove ${zip} from ${style.ourName} shipping origins`}><X className="h-3.5 w-3.5" /></button></Badge>)}</div>}
-        <Button type="button" variant="outline" className="w-full" onClick={() => setOrigins([])} disabled={origins.length === 0 || warehouseZips.length === 0}>Use all {warehouseZips.length || "vendor"} warehouse origin{warehouseZips.length === 1 ? "" : "s"}</Button>
+        {origins.length > 0 ? <div className="flex flex-wrap gap-2">{origins.map((zip) => <Badge key={zip} variant="secondary" className="gap-1 py-1 pl-2.5 pr-1">{zip}<button type="button" onClick={() => setOrigins((current) => current.filter((item) => item !== zip))} aria-label={`Remove ${zip} from ${style.ourName} shipping origins`}><X className="h-3.5 w-3.5" /></button></Badge>)}</div> : <InheritedVendorOriginZips zips={inheritedZips} />}
+        <Button type="button" variant="outline" className="w-full" data-testid="use-vendor-zips" onClick={() => setOrigins([])} disabled={origins.length === 0 || inheritedZips.length === 0}>Use vendor zips</Button>
       </div>
       <DialogFooter><Button variant="outline" onClick={onClose} disabled={update.isPending}>Cancel</Button><Button onClick={save} disabled={update.isPending}>{update.isPending ? "Saving…" : "Save origins"}</Button></DialogFooter>
     </DialogContent>
@@ -3029,6 +3060,7 @@ function AdminWarehouseTemplateCard() {
 }
 
 function VendorShippingPage() {
+  const utils = trpc.useUtils();
   const adminDistId = useAdminDistributorId();
 	  const { user } = useAuth();
 	  const [editingShipping, setEditingShipping] = useState(false);
@@ -3171,6 +3203,17 @@ function VendorShippingPage() {
                   {styles.map((style) => {
                     const image = style.roomSceneImageUrl || style.doorSampleImageUrl || style.thumbnailImageUrl;
                     const publishable = style.availableCount === style.catalogCount && style.publishedCount === style.catalogCount;
+                    const shippingStyle = style as VendorShippingStyle & typeof style;
+                    const inheritsVendor = shippingRowInheritsVendorZips(shippingStyle);
+                    const inheritedRowZips = inheritsVendor
+                      ? inheritedVendorZipsForEditor({
+                        warehouseZips: shippingStyle.warehouseZips,
+                        warehouseZip: shippingStyle.warehouseZip,
+                        distributorWarehouseZips: shippingStyle.distributorWarehouseZips ?? warehouses,
+                        effectiveWarehouseZips: shippingStyle.effectiveWarehouseZips,
+                        warehouseZipsInherited: shippingStyle.warehouseZipsInherited ?? true,
+                      }, [], warehouses)
+                      : [];
                     return (
                       <TableRow key={style.id}>
                         <TableCell>
@@ -3180,7 +3223,7 @@ function VendorShippingPage() {
                           </div>
                         </TableCell>
                         <TableCell><Badge variant="outline" aria-label={publishable ? `${style.ourName}: every cabinet SKU is available and published` : `${style.ourName}: availability or publishing review is needed`} title={publishable ? "All catalog SKUs are available and customer-published" : "One or more catalog SKUs are unavailable or not customer-published"} className={publishable ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-amber-300 bg-amber-50 text-amber-700"}>{style.availableCount}/{style.catalogCount} available · {style.publishedCount}/{style.catalogCount} published</Badge></TableCell>
-                        <TableCell><div className="flex min-w-48 flex-wrap items-center gap-1">{style.originZips.map((zip) => <Badge key={zip} variant="secondary" className="text-[10px]">{zip}</Badge>)}{style.originZips.length === 0 && <span className="text-xs text-amber-700">Origin needed</span>}<Button data-testid={`vendor-edit-style-origins-${style.id}`} size="sm" variant="outline" className="ml-1 h-7 gap-1 px-2 text-xs" onClick={() => setEditingStyleOrigins(style as VendorShippingStyle)}><Pencil className="h-3 w-3" />Edit</Button></div></TableCell>
+                        <TableCell><div className="flex min-w-48 flex-wrap items-center gap-1">{inheritsVendor ? (inheritedRowZips.length > 0 ? <InheritedVendorOriginZips zips={inheritedRowZips} compact /> : <span className="text-xs text-amber-700">Origin needed</span>) : <>{style.originZips.map((zip) => <Badge key={zip} variant="secondary" className="text-[10px]">{zip}</Badge>)}{style.originZips.length === 0 && <span className="text-xs text-amber-700">Origin needed</span>}</>}<Button data-testid={`vendor-edit-style-origins-${style.id}`} size="sm" variant="outline" className="ml-1 h-7 gap-1 px-2 text-xs" onClick={() => setEditingStyleOrigins(style as VendorShippingStyle)}><Pencil className="h-3 w-3" />Edit</Button></div></TableCell>
                         <TableCell className="text-right">{style.allWarehousesCovered ? <span className="inline-flex items-center gap-1 text-sm font-medium text-emerald-700"><CheckCircle2 className="h-4 w-4" /> Covered</span> : <Button size="sm" variant="outline" className="h-7 gap-1 border-amber-300 text-amber-800 hover:bg-amber-50" onClick={() => setEditingStyleOrigins(style as VendorShippingStyle)}><MapPin className="h-3.5 w-3.5" />Review &amp; edit</Button>}</TableCell>
                       </TableRow>
                     );
@@ -3191,8 +3234,8 @@ function VendorShippingPage() {
           )}
 	        </CardContent>
 	      </Card>
-	      <VendorShippingSettingsEditor line={line as VendorShippingLine} open={editingShipping} onClose={() => setEditingShipping(false)} onSaved={() => shipping.refetch()} />
-	      {editingStyleOrigins && <VendorStyleOriginsEditor style={editingStyleOrigins} warehouseZips={warehouses} open={Boolean(editingStyleOrigins)} onClose={() => setEditingStyleOrigins(null)} onSaved={() => shipping.refetch()} />}
+	      <VendorShippingSettingsEditor line={line as VendorShippingLine} open={editingShipping} onClose={() => setEditingShipping(false)} onSaved={() => { void shipping.refetch(); void utils.distributorPortal.featuredStyles.invalidate(); }} />
+	      {editingStyleOrigins && <VendorStyleOriginsEditor style={editingStyleOrigins} warehouseZips={warehouses} open={Boolean(editingStyleOrigins)} onClose={() => setEditingStyleOrigins(null)} onSaved={() => { void shipping.refetch(); void utils.distributorPortal.featuredStyles.invalidate(); }} />}
 	    </div>
 	  );
 }

@@ -1,6 +1,14 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import {
+  addShippingOriginZip,
+  distributorWarehouseZipsFromStyle,
+  inheritedVendorZipSummary,
+  inheritedVendorZipsForEditor,
+  ownShippingOriginZips,
+  shippingOriginZipsForSave,
+} from "@shared/styleOriginInheritance";
 
 const adminSource = readFileSync(
   resolve(process.cwd(), "client/src/components/admin/FeaturedStylesAdmin.tsx"),
@@ -91,4 +99,69 @@ describe("FeaturedStylesAdmin room-scene libraries", () => {
 		  expect(adminSource).toContain("setWarehouseZips(originZipList(s));");
 		  expect(adminSource).toContain("warehouseZips: warehouseZips.length > 0 ? warehouseZips : null");
 		});
+
+	it("shows inherited vendor warehouse ZIPs and never saves them as the style's own list", () => {
+	  expect(adminSource).toContain("distributorWarehouseZips?: string[] | null");
+	  expect(adminSource).toContain("effectiveWarehouseZips?: string[] | null");
+	  expect(adminSource).toContain("warehouseZipsInherited?: boolean | null");
+	  expect(adminSource).toContain("ownShippingOriginZips(style)");
+	  expect(adminSource).toContain("inheritedVendorZipsForEditor(style, warehouseZips)");
+	  expect(adminSource).toContain("InheritedVendorOriginZips");
+	  expect(adminSource).toContain("Use vendor zips");
+	  expect(adminSource).toContain("setWarehouseZips([])");
+	  const payload = adminSource.slice(adminSource.indexOf("const payload = {"), adminSource.indexOf("} as Parameters"));
+	  expect(payload).toContain("warehouseZips: warehouseZips.length > 0 ? warehouseZips : null");
+	  expect(payload).not.toContain("distributorWarehouseZips");
+	  expect(payload).not.toContain("effectiveWarehouseZips");
+	  expect(payload).not.toContain("vendorWarehouseZips");
+
+	  expect(distributorWarehouseZipsFromStyle(undefined)).toEqual([]);
+	  expect(distributorWarehouseZipsFromStyle({})).toEqual([]);
+	  const inheritedStyle = {
+	    warehouseZips: null,
+	    warehouseZip: null,
+	    distributorWarehouseZips: ["32256", "30301"],
+	    effectiveWarehouseZips: ["32256", "30301"],
+	    warehouseZipsInherited: true,
+	  };
+	  expect(ownShippingOriginZips(inheritedStyle)).toEqual([]);
+	  expect(inheritedVendorZipsForEditor(inheritedStyle, [])).toEqual(["32256", "30301"]);
+	  expect(inheritedVendorZipSummary(inheritedVendorZipsForEditor(inheritedStyle, []))).toBe("Inherited from vendor: 32256, 30301");
+	  expect(shippingOriginZipsForSave(ownShippingOriginZips(inheritedStyle))).toBeNull();
+	  expect(inheritedVendorZipsForEditor({
+	    warehouseZips: null,
+	    warehouseZip: null,
+	    distributorWarehouseZips: ["32256"],
+	    warehouseZipsInherited: true,
+	  }, [])).toEqual(["32256"]);
+	  expect(inheritedVendorZipsForEditor({ warehouseZipsInherited: true }, [])).toEqual([]);
+	  expect(inheritedVendorZipsForEditor({}, [])).toEqual([]);
+	  expect(ownShippingOriginZips({ warehouseZips: null, warehouseZip: "32256" })).toEqual(["32256"]);
+	  expect(inheritedVendorZipsForEditor({
+	    warehouseZips: null,
+	    warehouseZip: "32256",
+	    distributorWarehouseZips: ["30301"],
+	    effectiveWarehouseZips: ["32256"],
+	    warehouseZipsInherited: false,
+	  }, ["32256"])).toEqual([]);
+	  const ownZips = ownShippingOriginZips(inheritedStyle);
+	  const override = addShippingOriginZip(ownZips, "75001");
+	  expect(override).toEqual({ status: "added", zips: ["75001"] });
+	  expect(shippingOriginZipsForSave(override.zips)).toEqual(["75001"]);
+	  expect(shippingOriginZipsForSave([])).toBeNull();
+	  expect(ownShippingOriginZips({ warehouseZips: ["32256", "30301"], warehouseZipsInherited: true })).toEqual([]);
+	  expect(shippingOriginZipsForSave(ownShippingOriginZips({
+	    warehouseZips: ["32256", "30301"],
+	    warehouseZipsInherited: true,
+	  }))).toBeNull();
+	  expect(inheritedVendorZipsForEditor({
+	    warehouseZips: ["75001"],
+	    warehouseZip: "75001",
+	    distributorWarehouseZips: ["32256"],
+	    effectiveWarehouseZips: ["75001"],
+	    warehouseZipsInherited: false,
+	  }, [])).toEqual(["32256"]);
+	  expect(addShippingOriginZip(["75001"], "75001").status).toBe("duplicate");
+	  expect(addShippingOriginZip([], "322").status).toBe("invalid");
+	});
 });

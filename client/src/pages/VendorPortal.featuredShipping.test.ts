@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
+import {
+  editableStyleOriginZips,
+  inheritedVendorZipsForEditor,
+  shippingOriginZipsForSave,
+  shippingOriginZipsForSaveList,
+  shippingRowInheritsVendorZips,
+} from "@shared/styleOriginInheritance";
 
 const source = readFileSync(new URL("./VendorPortal.tsx", import.meta.url), "utf8");
 
@@ -77,7 +84,7 @@ describe("Vendor Portal Featured Styles and Shipping", () => {
 	    const editor = source.slice(source.indexOf("function VendorStyleOriginsEditor"), source.indexOf("function VendorShippingPage"));
 	    expect(editor).toContain("Edit shipping origins");
 	    expect(editor).toContain("updateFeaturedStyleMaterials.useMutation");
-	    expect(editor).toContain("Use all");
+	    expect(editor).toContain("Use vendor zips");
 	    expect(editor).toContain("Save origins");
 	  });
 
@@ -235,6 +242,59 @@ describe("Vendor Portal Featured Styles and Shipping", () => {
     expect(profileCatalog).not.toContain("setVisibility");
     expect(profileCatalog).not.toContain("updateImage");
   });
+
+	  it("shows inherited vendor warehouse ZIPs in both featured editors and does not save them as an override", () => {
+	    const featuredEditor = source.slice(source.indexOf("function VendorFeaturedStyleEditor"), source.indexOf("function VendorFeaturedStylesPage"));
+	    expect(featuredEditor).toContain("Shipping Origin ZIPs");
+	    expect(source).toContain("distributorWarehouseZips?: string[] | null");
+	    expect(source).toContain("effectiveWarehouseZips?: string[] | null");
+	    expect(source).toContain("warehouseZip?: string | null");
+	    expect(source).toContain("warehouseZipsInherited?: boolean | null");
+	    expect(featuredEditor).toContain("ownShippingOriginZips(style)");
+	    expect(featuredEditor).toContain("inheritedVendorZipsForEditor(style, warehouseZips)");
+	    expect(featuredEditor).toContain("InheritedVendorOriginZips");
+	    expect(featuredEditor).toContain("Use vendor zips");
+	    expect(featuredEditor).toContain("setWarehouseZips([])");
+	    expect(featuredEditor).toContain("shippingOriginZipsForSave(warehouseZips)");
+	    expect(featuredEditor).not.toContain("shippingOriginZipsForSave(inheritedZips)");
+	    expect(featuredEditor).not.toContain("shippingOriginZipsForSave(vendorWarehouseZips)");
+	    expect(featuredEditor).not.toContain("setWarehouseZips(style.distributorWarehouseZips");
+	    expect(featuredEditor).not.toContain("setWarehouseZips(style.effectiveWarehouseZips");
+
+	    const originsEditor = source.slice(source.indexOf("function VendorStyleOriginsEditor"), source.indexOf("function VendorShippingPage"));
+	    expect(originsEditor).toContain("editableStyleOriginZips(style)");
+	    expect(originsEditor).toContain("InheritedVendorOriginZips");
+	    expect(originsEditor).toContain("Use vendor zips");
+	    expect(originsEditor).toContain("setOrigins([])");
+	    expect(originsEditor).toContain("shippingOriginZipsForSaveList(origins)");
+	    expect(originsEditor).not.toContain("warehouseZips: inheritedZips");
+	    expect(originsEditor).not.toContain("warehouseZips: warehouseZips");
+
+	    const shippingPage = source.slice(source.indexOf("function VendorShippingPage"), source.indexOf("// ─── Promotions Page"));
+	    expect(shippingPage).toContain("shippingRowInheritsVendorZips(shippingStyle)");
+	    expect(shippingPage).toContain("effectiveWarehouseZips: shippingStyle.effectiveWarehouseZips");
+	    expect(shippingPage).toContain("<InheritedVendorOriginZips zips={inheritedRowZips} compact />");
+	    expect(shippingPage).toContain("distributorPortal.featuredStyles.invalidate");
+	    const featuredRow = {
+	      warehouseZips: null,
+	      warehouseZip: null,
+	      distributorWarehouseZips: ["32256", "30301"],
+	      effectiveWarehouseZips: ["32256", "30301"],
+	      warehouseZipsInherited: true,
+	    };
+	    expect(inheritedVendorZipsForEditor(featuredRow, [])).toEqual(["32256", "30301"]);
+	    expect(shippingOriginZipsForSave(editableStyleOriginZips({ originMode: "line", originZips: featuredRow.effectiveWarehouseZips, warehouseZipsInherited: true }))).toBeNull();
+
+	    const echoedVendorCoverage = { originMode: "line" as const, originZips: ["32256", "30301"] };
+	    expect(shippingRowInheritsVendorZips(echoedVendorCoverage)).toBe(true);
+	    expect(editableStyleOriginZips(echoedVendorCoverage)).toEqual([]);
+	    expect(shippingOriginZipsForSaveList(editableStyleOriginZips(echoedVendorCoverage))).toEqual([]);
+	    expect(shippingOriginZipsForSave(editableStyleOriginZips(echoedVendorCoverage))).toBeNull();
+	    const override = { originMode: "style" as const, originZips: ["75001"] };
+	    expect(shippingRowInheritsVendorZips(override)).toBe(false);
+	    expect(editableStyleOriginZips(override)).toEqual(["75001"]);
+	    expect(shippingOriginZipsForSaveList(editableStyleOriginZips(override))).toEqual(["75001"]);
+	  });
 
 	  it("adds a separate WooCommerce/Magento-style non-cabinet product import workspace", () => {
 	    expect(source).toContain('id: "other-products", label: "Other Products"');
