@@ -1,6 +1,6 @@
 import { AUTO_DESIGN_WALL_LABELS, wallLabelToEngineWallId, type AutoBuildCatalogCandidate, type AutoDesignLayoutType, type AutoDesignOriginCorner, type AutoDesignRunDirection, type WallLabel } from "./autoDesignAutoBuild";
 import { kitchenRuleNumber } from "./kitchenRuleParameters";
-import { isBaseEndCornerCabinet, isBlindCorner, isCornerCabinet, type RoomData } from "./design";
+import { isBaseEndCornerCabinet, isBlindCorner, isCornerCabinet, isPlainBaseCode, type RoomData } from "./design";
 
 /** A real room vertex that the admin may explicitly populate after all anchors are seated. */
 export type AutoDesignCornerSlot = {
@@ -219,7 +219,7 @@ export function autoBuildCornerCatalog<T extends AutoBuildCornerCandidate>(catal
     .filter((candidate) => (
       candidate.placement === "base"
       && candidate.isCornerCabinet !== false
-      && isCornerCabinet(candidate.masterCode, candidate.description ?? undefined)
+      && isCornerCabinet(candidate.masterCode, candidate.description ?? undefined, candidate.cornerType ?? null)
       && !isBaseEndCornerCabinet({
         masterCode: candidate.masterCode,
         description: candidate.description ?? "",
@@ -231,17 +231,19 @@ export function autoBuildCornerCatalog<T extends AutoBuildCornerCandidate>(catal
 
 export function isAutoDesignBlindCornerOption(candidate: Pick<AutoBuildCornerCandidate, "masterCode" | "description" | "placement" | "cornerType">): boolean {
   return candidate.placement === "base"
-    && (candidate.cornerType === "blind-corner" || isBlindCorner(candidate.masterCode, candidate.description ?? undefined));
+    && isBlindCorner(candidate.masterCode, candidate.description ?? undefined, candidate.cornerType ?? null);
 }
 
 export type AutoDesignCornerFamily = "diagonal" | "lazy-susan" | "blind" | "other";
 
 export function autoDesignCornerFamily(candidate: Pick<AutoBuildCornerCandidate, "masterCode" | "description" | "cornerType">): AutoDesignCornerFamily {
+  // Family comes from the model code prefix and the stored cornerType only, never from words in the description:
+  // a plain base (B42...) with "blind" or "corner" in its text is not a corner of any family.
   const code = (candidate.masterCode ?? "").toUpperCase();
-  const hay = `${candidate.cornerType ?? ""} ${candidate.description ?? ""} ${code}`.toLowerCase();
-  if (candidate.cornerType === "diagonal" || candidate.cornerType === "pie-cut" || /diagonal|pie[-\s]?cut/.test(hay) || /^(?:DCB|DCW|WDC)/.test(code)) return "diagonal";
-  if (candidate.cornerType === "lazy-susan" || /lazy\s*susan|easy\s*reach/.test(hay) || /^(?:LSB|LS|ERB|BER)/.test(code)) return "lazy-susan";
-  if (candidate.cornerType === "blind-corner" || /blind/.test(hay) || /^(?:BBC|WBC|BBL|BBR)/.test(code)) return "blind";
+  if (isPlainBaseCode(code)) return "other";
+  if (candidate.cornerType === "diagonal" || candidate.cornerType === "pie-cut" || /^(?:DCB|DCW|WDC)/.test(code)) return "diagonal";
+  if (candidate.cornerType === "lazy-susan" || candidate.cornerType === "easy-reach" || /^(?:LSB|LS|ERB|BER)/.test(code)) return "lazy-susan";
+  if (candidate.cornerType === "blind-corner" || /^(?:BBC|WBC|BBL|BBR)/.test(code)) return "blind";
   return "other";
 }
 

@@ -259,7 +259,10 @@ describe("owner U-shape: 150 inch walls, fridge center 131 on wall 3", () => {
       ],
     });
     expect(report.shiftIn).toBeCloseTo(-0.25, 5);
-    expect(report.cornerNotes.join(" ")).toMatch(/LSB36 does not fit/);
+    // LSB36/LSB33 are lazy Susans. Main used to classify them "diagonal" because the description said so, which
+    // produced "LSB36 does not fit ... LSB33 is placed instead"; by code they are lazy Susans, so the same
+    // LSB33 is reached by the lazy-Susan size reduction. The cabinets placed are unchanged.
+    expect(report.cornerNotes.join(" ")).toMatch(/Lazy Susan reduced to 33\.000" to fit \(LSB33\)/);
     expect(report.cornerNotes.join(" ")).toMatch(/LSB33/);
     expect(report.cornerFailures.join(" ")).toMatch(/Wall 2 and Wall 3/);
     expect(report.cornerFailures.join(" ")).toMatch(/12"/);

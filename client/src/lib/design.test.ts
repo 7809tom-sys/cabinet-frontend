@@ -930,9 +930,12 @@ describe("corner cabinet detection", () => {
     expect(isCornerCabinet("CSB-36")).toBe(true); // corner sink base
   });
 
-  it("detects corner cabinets by description when code is generic", () => {
-    expect(isCornerCabinet("X-99", "36in Lazy Susan corner")).toBe(true);
-    expect(isCornerCabinet("X-99", "Easy Reach corner base")).toBe(true);
+  it("does not detect corner cabinets by description words; the code or a stored cornerType decides (Tom, Oct 31)", () => {
+    expect(isCornerCabinet("X-99", "36in Lazy Susan corner")).toBe(false);
+    expect(isCornerCabinet("X-99", "Easy Reach corner base")).toBe(false);
+    expect(isCornerCabinet("X-99", "36in Lazy Susan corner", "lazy-susan")).toBe(true);
+    expect(isCornerCabinet("B42", "42in Blind Corner Base")).toBe(false);
+    expect(isCornerCabinet("B-42", "42in corner base", "l-shape")).toBe(false);
   });
 
   it("does not flag ordinary cabinets as corners", () => {
@@ -1389,8 +1392,11 @@ describe("blind corner fillers", () => {
     expect(isBlindCorner("B-24")).toBe(false);
   });
 
-  it("detects blind corner by description", () => {
-    expect(isBlindCorner("X-1", "36in Blind Corner Base")).toBe(true);
+  it("detects blind corner by code or stored cornerType, never by description words (Tom, Oct 31)", () => {
+    expect(isBlindCorner("X-1", "36in Blind Corner Base")).toBe(false);
+    expect(isBlindCorner("X-1", "36in Blind Corner Base", "blind-corner")).toBe(true);
+    expect(isBlindCorner("BBC-36", "")).toBe(true);
+    expect(isBlindCorner("B42", "42in Blind Corner Base")).toBe(false);
     expect(isBlindCorner("X-2", "Lazy Susan Corner")).toBe(false);
   });
 
@@ -3964,7 +3970,8 @@ describe("corner base palette classification", () => {
     expect(isCornerCabinet("LSB33")).toBe(true); // lazy susan base
     expect(isCornerCabinet("ERB-36")).toBe(true); // easy reach corner base
     expect(isCornerCabinet("CSB-36")).toBe(true); // diagonal corner sink base
-    expect(isCornerCabinet("CB-9", "Corner Base")).toBe(true); // corner base by desc
+    expect(isCornerCabinet("CDB36")).toBe(true); // corner drawer base
+    expect(isCornerCabinet("CB-9", "Corner Base")).toBe(false); // a description alone no longer makes a corner
   });
   it("excludes end cabinets, fillers, and ordinary bases from corner base", () => {
     expect(isCornerCabinet("BEC-24")).toBe(false); // base END cabinet
