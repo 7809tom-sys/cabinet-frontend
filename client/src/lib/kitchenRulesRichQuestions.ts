@@ -39,8 +39,8 @@ export const richQuestionSeeds: readonly KitchenRuleSeed[] = [
     "hood-bottom",
     "How high above the cooktop does the hood go",
     "Guideline 18: 24 inches minimum to a protected noncombustible surface, 30 inches to combustible material or metal cabinets, or 24 inches with an approved hood. Follow the manufacturer for over-range microwaves.",
-    "The owner rule says the hood bottom is 60 inches (24 inches over a 36 inch cooktop). Auto-Design applies 60 only to a 42 inch hood and places every other hood at 54 inches, 18 inches over the cooktop. The catalog hood entries say 66 inches. Gas hood manuals often say 30 inches.",
-    "Where do you hang a 30, 36 and 42 inch hood on gas and on electric? Does the bottom edge of the hood line up with the wall cabinet bottoms?",
+    "The owner rule says the hood bottom is 60 inches (24 inches over a 36 inch cooktop). Auto-Design applies 60 only to a 42 inch hood and places every other hood at 54 inches, 18 inches over the cooktop. The catalog hood entries say 66 inches. Gas hood manuals often say 30 inches. The 54 inch bottom is not arbitrary: the hood is 18 inches tall, so its top lands at 72 inches, exactly where the owner's 24 inch bridge cabinet starts. Raising the hood to meet NKBA means moving or shortening that bridge.",
+    "Where do you hang a 30, 36 and 42 inch hood on gas and on electric? How do you handle the cabinet above the hood when the hood is raised to 24 or 30 inches over the cooktop?",
   ),
   question(
     "wall-cab-beside-hood",
