@@ -13,7 +13,14 @@ describe("Designer plan-switch pricing compliance", () => {
   it("requires explicit alternatives and blocks a switch with no authorized priced replacement", () => {
     expect(source).toContain('item.status === "no_priced_alternative"');
     expect(source).toContain("Choose a priced alternative for every unpriced cabinet");
-    expect(source).toContain("Door and drawer configuration differences are shown");
+    expect(source).toContain("Door and drawer differences are shown below");
+  });
+
+  it("lets the reviewer set the found status for every applicable cabinet after a count confirmation", () => {
+    expect(source).toContain("AUTHORIZED_PRICE_ALTERNATIVE_FOUND_LABEL");
+    expect(source).toContain("authorized-price-alternative-confirm");
+    expect(source).toContain("confirmAuthorizedPriceAlternative");
+    expect(source).toContain("applicableAlternativeCabinets");
   });
 
   it("lets an unused color slot change directly instead of displaying an empty disabled review", () => {

@@ -260,6 +260,15 @@ import { MasterTracCorner3D, MasterTracCornerElevation } from "@/components/desi
 import { MasterTracRod3D, MasterTracRodElevation } from "@/components/design/MasterTracRodViews";
 import { defaultTowerConfig, isMasterTracCornerBoard, planMasterTracTower, towerCleatReferenceItems, towerConceptReferenceSubtotal, towerConceptStorageReferenceItems, towerConfigFromPlacements, towerCornerReferenceItems, towerRodHardwareTakeoff, type MasterTracTowerConfig } from "@/lib/masterTracTower";
 import { canCommitPlanStyleSwitchWithoutReview, planStyleReviewCandidates } from "@/lib/planStyleSwitch";
+import {
+  AUTHORIZED_PRICE_ALTERNATIVE_FOUND_LABEL,
+  AUTHORIZED_PRICE_ALTERNATIVE_FOUND_STATUS,
+  applicableAlternativeCabinets,
+  applyAuthorizedPriceAlternatives,
+  authorizedAlternativeConfirmText,
+  summarizeApplicableCodes,
+  topAlternativeChoices,
+} from "@/lib/planSwitchAlternativeStatus";
 import { autoFillSpan, makeFiller, type FillMode } from "@/lib/autofill";
 import { AUTO_DESIGN_FILLER_MAX_IN, fillAutoDesignLowerSeams, planAutoDesignBaseSegment } from "@/lib/autoDesignSeamFillers";
 import { SINK_SHIFT_LIMIT_IN, applyDesignerLayoutRules, applyAutoDesignWiggleRoom, type AutoDesignAnchorOrigin } from "@/lib/designerLayoutRules";
@@ -2610,6 +2619,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   } | null>(null);
   const [finishApplyScopePrompt, setFinishApplyScopePrompt] = useState<{ targetStyleId: number } | null>(null);
   const [planSwitchAlternativeChoices, setPlanSwitchAlternativeChoices] = useState<Record<string, number>>({});
+  const [alternativeStatusConfirm, setAlternativeStatusConfirm] = useState(false);
   // Distributor lock: once the base cabinet's finish is chosen the member can
   // "Lock" the design to that style's supply line. While locked, the palette
   // only offers cabinets from that distributor and the finish picker is scoped
@@ -12900,6 +12910,36 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     commitPlanStyleSwitch(pending.slot, pending.newStyleId, pending.requiresDistributorOverride);
   }, [pendingPlanStyleSwitch, planSwitchReviewCabinets, planSwitchPricingReview.data, planSwitchAlternativeChoices, commitPlanStyleSwitch]);
 
+  // One status action finishes every cabinet in this review that already has
+  // an authorized priced alternative. Cabinets with no alternative stay put.
+  const confirmAuthorizedPriceAlternative = useCallback(() => {
+    const pending = pendingPlanStyleSwitch;
+    const items = planSwitchPricingReview.data?.items ?? [];
+    const choices = topAlternativeChoices(items);
+    setAlternativeStatusConfirm(false);
+    if (!pending || choices.size === 0) {
+      toast.error("No cabinet in this review has an authorized price alternative to apply.");
+      return;
+    }
+    const unresolved = items.filter((item) => item.status === "no_priced_alternative");
+    const finishStyleId = unresolved.length > 0 ? pending.newStyleId : null;
+    setPlaced((previous) => {
+      const applied = applyAuthorizedPriceAlternatives(previous, choices, finishStyleId);
+      return applied.cabinets.map((cabinet) => (
+        choices.has(cabinet.uid) ? reseatOnWallRun(cabinet, roomRef.current) : cabinet
+      ));
+    });
+    const count = choices.size;
+    if (unresolved.length === 0) {
+      setPendingPlanStyleSwitch(null);
+      setPlanSwitchAlternativeChoices({});
+      commitPlanStyleSwitch(pending.slot, pending.newStyleId, pending.requiresDistributorOverride);
+      toast.success(`Updated ${count} cabinet${count === 1 ? "" : "s"} and changed the door style.`);
+      return;
+    }
+    toast.success(`Updated ${count} cabinet${count === 1 ? "" : "s"}. ${unresolved.length} still ${unresolved.length === 1 ? "has" : "have"} no authorized priced alternative and ${unresolved.length === 1 ? "was" : "were"} left unchanged.`);
+  }, [pendingPlanStyleSwitch, planSwitchPricingReview.data, commitPlanStyleSwitch]);
+
   // Assign a door style to a slot (from the picker). Existing cabinet boxes
   // first pass a server-enforced priced-alternative review; a plan never changes
   // silently into an unpriced configuration.
@@ -21465,6 +21505,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         if (!open) {
           setPendingPlanStyleSwitch(null);
           setPlanSwitchAlternativeChoices({});
+          setAlternativeStatusConfirm(false);
         }
       }}>
         <DialogContent className="max-h-[min(84vh,760px)] max-w-2xl overflow-hidden p-0">
@@ -21502,15 +21543,40 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
             ) : (
               planSwitchPricingReview.data?.items.map((item) => item.status === "priced" ? null : (
                 <div key={item.uid} className={cn("rounded-lg border p-3", item.status === "no_priced_alternative" ? "border-destructive/50 bg-destructive/5" : "border-amber-400/60 bg-amber-50/50")}>
+                  <p className="mb-1 font-mono text-sm font-semibold">{planSwitchReviewCabinets.find((cabinet) => cabinet.uid === item.uid)?.masterCode ?? item.uid}</p>
+                  <Label className="text-xs text-muted-foreground" htmlFor={`plan-switch-status-${item.uid}`}>Review status</Label>
+                  <Select
+                    value={alternativeStatusConfirm && item.status === AUTHORIZED_PRICE_ALTERNATIVE_FOUND_STATUS ? AUTHORIZED_PRICE_ALTERNATIVE_FOUND_STATUS : "pending"}
+                    onValueChange={(value) => {
+                      if (value === AUTHORIZED_PRICE_ALTERNATIVE_FOUND_STATUS) setAlternativeStatusConfirm(true);
+                    }}
+                    disabled={item.status !== AUTHORIZED_PRICE_ALTERNATIVE_FOUND_STATUS}
+                  >
+                    <SelectTrigger id={`plan-switch-status-${item.uid}`} data-testid="plan-switch-review-status" className="mt-1 h-auto min-h-10 text-left">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="pending">Needs review</SelectItem>
+                      <SelectItem value={AUTHORIZED_PRICE_ALTERNATIVE_FOUND_STATUS} disabled={item.status !== AUTHORIZED_PRICE_ALTERNATIVE_FOUND_STATUS}>
+                        {AUTHORIZED_PRICE_ALTERNATIVE_FOUND_LABEL}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
                   {item.status === "no_priced_alternative" ? (
-                    <p className="text-sm font-medium text-destructive">No authorized priced alternative was found for this cabinet. Keep the current plan or update this item manually before switching.</p>
+                    <p className="mt-2 text-sm font-medium text-destructive">No authorized priced alternative was found for this cabinet. Keep the current plan or update this item manually before switching.</p>
                   ) : (
                     <>
-                      <p className="text-sm font-semibold text-foreground">Choose a priced functional alternative</p>
-                      <p className="mt-1 text-xs text-muted-foreground">Door and drawer configuration differences are shown before you approve the change.</p>
-                      <Select value={String(planSwitchAlternativeChoices[item.uid] ?? "")} onValueChange={(value) => setPlanSwitchAlternativeChoices((current) => ({ ...current, [item.uid]: Number(value) }))}>
+                      <p className="mt-2 text-xs text-muted-foreground">Choosing this status updates every cabinet in this review that already has an authorized price alternative. Door and drawer differences are shown below if you want a different alternative for this cabinet only.</p>
+                      <Select
+                        value={planSwitchAlternativeChoices[item.uid] != null ? String(planSwitchAlternativeChoices[item.uid]) : "__choose__"}
+                        onValueChange={(value) => {
+                          if (value === "__choose__") return;
+                          setPlanSwitchAlternativeChoices((current) => ({ ...current, [item.uid]: Number(value) }));
+                        }}
+                      >
                         <SelectTrigger className="mt-2 h-auto min-h-10 text-left"><SelectValue placeholder="Choose an approved alternative" /></SelectTrigger>
                         <SelectContent>
+                          <SelectItem value="__choose__" disabled>Choose an approved alternative</SelectItem>
                           {item.alternatives.map((alternative) => (
                             <SelectItem key={alternative.cabinetId} value={String(alternative.cabinetId)}>
                               {alternative.masterCode} — {alternative.explanation} — ${alternative.customerPrice.toFixed(2)}
@@ -21525,13 +21591,33 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
             )}
           </div>
           <DialogFooter className="border-t px-5 py-4">
-            <Button variant="outline" onClick={() => { setPendingPlanStyleSwitch(null); setPlanSwitchAlternativeChoices({}); }}>Keep current plan</Button>
+            <Button variant="outline" onClick={() => { setPendingPlanStyleSwitch(null); setPlanSwitchAlternativeChoices({}); setAlternativeStatusConfirm(false); }}>Keep current plan</Button>
             <Button onClick={approvePlanSwitch} disabled={planSwitchPricingReview.isLoading || (planSwitchNeedsPricingReview && !planSwitchPricingReview.data)}>
               {planSwitchNeedsPricingReview ? "Apply reviewed plan change" : "Change door style"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={alternativeStatusConfirm} onOpenChange={(open) => { if (!open) setAlternativeStatusConfirm(false); }}>
+        <AlertDialogContent className="max-w-md" data-testid="authorized-price-alternative-confirm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>{authorizedAlternativeConfirmText(applicableAlternativeCabinets(planSwitchPricingReview.data?.items ?? []).length).title}</AlertDialogTitle>
+            <AlertDialogDescription>
+              This sets “{AUTHORIZED_PRICE_ALTERNATIVE_FOUND_LABEL}” on every cabinet in this door-style review that is still waiting on a price and already has an authorized priced alternative{(() => {
+                const codes = summarizeApplicableCodes(applicableAlternativeCabinets(planSwitchPricingReview.data?.items ?? []).map((item) => planSwitchReviewCabinets.find((cabinet) => cabinet.uid === item.uid)?.masterCode ?? item.uid));
+                return codes ? `: ${codes}` : "";
+              })()}. Each one uses its top-ranked alternative and finishes in the selected door style. Cabinets with no authorized alternative stay unchanged.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction data-testid="authorized-price-alternative-apply" onClick={confirmAuthorizedPriceAlternative}>
+              {authorizedAlternativeConfirmText(applicableAlternativeCabinets(planSwitchPricingReview.data?.items ?? []).length).action}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
 	      <AlertDialog open={!!rangeHoodReplacementRecommendation} onOpenChange={(open) => { if (!open) setRangeHoodReplacementRecommendation(null); }}>
 	        <AlertDialogContent>
