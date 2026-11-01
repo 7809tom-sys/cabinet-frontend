@@ -16,6 +16,7 @@ import {
   shouldAutoPlaceLeftoverFiller,
   type SmallGapFillerOpportunity,
 } from "@/lib/smallGapFiller";
+import { findOpenBaseGaps, formatGapInches } from "@/lib/openBaseGaps";
 import { reviewKitchenAdjacency, type AdjacencySkip } from "@/lib/kitchenAdjacency";
 import type { KitchenUsageProfile } from "@/lib/kitchenUsage";
 
@@ -150,6 +151,18 @@ export function buildPreSavePlanReview({
       description: "This item has an unresolved clearance, overlap, corner, opening, or ceiling check. Review its measured placement before saving.",
       actionLabel: "Review placement",
       action: { kind: "issue", cabinetUid },
+    });
+  }
+
+  for (const gap of findOpenBaseGaps(room, placed, openings)) {
+    const size = formatGapInches(gap.length);
+    findings.push({
+      id: `open-gap:${gap.wall}:${Math.round(gap.start * 8)}`,
+      severity: "attention",
+      title: `Open ${size}\u2033 between ${gap.beforeCode} and ${gap.afterCode}`,
+      description: `This base run has ${size}\u2033 of bare floor between two cabinets, wider than a 3\u2033 filler. Add a base cabinet or filler that closes it, or move a neighbor, before saving.`,
+      actionLabel: "Review placement",
+      action: { kind: "issue", cabinetUid: gap.beforeUid },
     });
   }
 
