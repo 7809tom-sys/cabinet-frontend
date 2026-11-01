@@ -2432,7 +2432,7 @@ function threeDDollhouseObjectCenter(node: THREE.Object3D, box: THREE.Box3, targ
  * everything else on that wall stay visible (owner request, 2026-10-28).
  */
 export function threeDDollhouseHidesWithWall(node: THREE.Object3D): boolean {
-  return node.userData.openingUid != null || node.userData.measuredBacksplash === true;
+  return node.userData.openingUid != null || node.userData.measuredBacksplash === true || node.userData.baseboard === true;
 }
 
 function setThreeDDollhouseHidden(node: THREE.Object3D, hide: boolean) {

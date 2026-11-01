@@ -142,6 +142,8 @@ import { CustomProfileFace, DoorFront, ElevationView, isBaseEndAngleCabinet, isR
 		      })),
 		    );
 		    expect(markup).toContain(`data-backsplash-image="${image}"`);
+		    // PR #162: Moonstone Hex is not an interlocking sheet, so it keeps repeating at its full sheet size (11.81 in. = 47.24px).
+		    // Only the interlocking products in lib/backsplashMosaic.ts repeat at their interlock pitch; see the Desert Clay test below.
 		    expect(markup).toContain('data-backsplash-module-in="11.81"');
 		    expect(markup).toContain(`background-image:url(&quot;${image}&quot;)`);
 		    expect(markup).toContain("background-size:47.24px 47.24px");

@@ -66,7 +66,9 @@ export const mosaicInterlockSpecForName = (name: string | null | undefined) => {
 
 /** The distance at which the sheet repeats, so the fingers of one sheet sit inside the next. */
 export function mosaicPitchIn(item: MosaicInterlockSpec) {
-  return { x: item.outerWidthIn - item.overhangXIn, y: item.outerHeightIn - item.overhangYIn };
+  // Rounded to 1/10000 in. so float noise (11.81 - 0.3125) never leaks into markup or texture math.
+  const round = (value: number) => Math.round(value * 10000) / 10000;
+  return { x: round(item.outerWidthIn - item.overhangXIn), y: round(item.outerHeightIn - item.overhangYIn) };
 }
 
 /**
