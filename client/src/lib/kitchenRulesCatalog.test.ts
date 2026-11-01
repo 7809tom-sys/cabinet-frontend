@@ -47,6 +47,20 @@ describe("kitchen rules catalog", () => {
     expect(KITCHEN_RULE_SEED.find((rule) => rule.ruleCode === "conflict-gas-hood-30")?.implementationStatus).toBe("reference");
   });
 
+  it("lists the hickory-frameless skin hard rule in Owner panels", () => {
+    const rule = KITCHEN_RULE_SEED.find((item) => item.ruleCode === "owner-hickory-frameless-skins-only");
+    expect(rule).toMatchObject({
+      category: "Owner panels",
+      enforcementKind: "auto",
+      implementationStatus: "implemented",
+      sourceText: "Owner",
+    });
+    expect(rule!.title).toBe("Only hickory frameless gets skins");
+    expect(rule!.ruleDescription).toContain("Hard rule");
+    expect(rule!.ruleDescription).toContain("only hickory frameless");
+    expect(rule!.notesText).toMatch(/Hard rule/);
+  });
+
   it("lists the all-mosaics hard rule as an implemented auto rule in the Backsplash category", () => {
     const rule = KITCHEN_RULE_SEED.find((item) => item.ruleCode === "owner-mosaic-interlock");
     expect(rule).toMatchObject({ category: "Backsplash", enforcementKind: "auto", implementationStatus: "implemented" });

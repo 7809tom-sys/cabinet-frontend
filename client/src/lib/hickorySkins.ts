@@ -1,9 +1,8 @@
 // ─── Hickory unfinished-end skin auto-suggest engine ────────────────────────
-// Business rule: Hickory cabinets ship with UNFINISHED exposed sides. Any cabinet
-// end that is visible (not buried against a wall and not abutted by a neighboring
-// cabinet) needs a matching Hickory finished-end "skin" panel so the run looks
-// finished. We auto-suggest one skin per exposed end, as a SEPARATE line item at
-// the same Hickory finish.
+// Hard rule: only hickory frameless cabinets get skins. skinsAreNeeded is the
+// only gate. A framed hickory line, a non-hickory frameless line, or a forced
+// skin flag does not get a suggestion. An exposed end of an eligible cabinet
+// gets one matching skin, as a separate line.
 //
 // IMPORTANT: the real skin SKU + pricing is PENDING catalog-book confirmation
 // from the owner. Until confirmed, suggestions are emitted with a placeholder
@@ -13,6 +12,7 @@
 // All math is in INCHES and pure/deterministic so it is unit-testable
 // independently of the canvas and the database.
 
+import { skinsAreNeeded, type SkinEligibilityStyle } from "@shared/canHaveSkins";
 import {
   type PlacedCabinet,
   type RoomData,
@@ -26,7 +26,7 @@ import {
 
 // Minimal shape of a door style we need to decide "is this Hickory?". The real
 // DoorStyle row has more fields; we only read the descriptive ones.
-export interface SkinStyleInfo {
+export interface SkinStyleInfo extends SkinEligibilityStyle {
   woodSpecies?: string | null;
   ourName?: string | null;
   distributorName?: string | null;
@@ -169,15 +169,15 @@ function placementLabel(p: Placement): string {
 
 /**
  * Build the list of auto-suggested Hickory skins for a design. Returns an empty
- * list when the selected style is not Hickory (the rule is Hickory-only). One
- * skin is suggested per exposed cabinet end, sized to that cabinet's bucket.
+ * list unless the style is hickory AND frameless. A forced skin flag cannot
+ * add skins to any other style. One skin is suggested per exposed cabinet end.
  */
 export function hickorySkinSuggestions(
   placed: PlacedCabinet[],
   room: RoomData,
   style: SkinStyleInfo | null | undefined,
 ): HickorySkinSuggestion[] {
-  if (!isHickoryStyle(style)) return [];
+  if (!skinsAreNeeded(style)) return [];
   const ends = exposedEnds(placed, room);
   return ends.map((e) => ({
     uid: e.uid,

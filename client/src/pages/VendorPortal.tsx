@@ -40,6 +40,7 @@ import { VendorAutoRoomSceneBadge } from "@/components/doorStyles/VendorAutoRoom
 import { InheritedVendorOriginZips } from "@/components/doorStyles/InheritedVendorOriginZips";
 import { OpenDesignerLink } from "@/components/design/OpenDesignerLink";
 import { DoorStyleIdentity } from "@/components/doorStyles/DoorStyleIdentity";
+import { DoorStyleNeedToggles } from "@/components/doorStyles/DoorStyleNeedToggles";
 import { VENDOR_AUTO_ROOM_SCENE_COPY, type AutoRoomScene } from "@/lib/autoRoomScene";
 import { PublicRoomSceneStrip } from "@/components/PublicRoomScenes";
 import { supabase } from "@/lib/supabase";
@@ -2595,6 +2596,12 @@ type VendorFeaturedStyle = {
   color: string | null;
   finish: string | null;
   woodSpecies: string | null;
+  boxConstruction?: string | null;
+  overlayType?: string | null;
+  supplierBrandName?: string | null;
+  supplierName?: string | null;
+  skinNeeded?: boolean | number | null;
+  finishedEndNeeded?: boolean | number | null;
   doorSampleImageUrl: string | null;
 	  drawerSampleImageUrl: string | null;
   roomSceneImageUrl: string | null;
@@ -2836,6 +2843,15 @@ function VendorFeaturedStylesPage() {
     },
     onError: (error) => toast.error(error.message),
   });
+  const saveNeeds = trpc.distributorPortal.updateFeaturedStyleMaterials.useMutation({
+    onSuccess: () => utils.distributorPortal.featuredStyles.invalidate(),
+    onError: (error) => toast.error(error.message),
+  });
+  const needInput = (styleId: number, patch: { skinNeeded?: boolean; finishedEndNeeded?: boolean }) => ({
+    styleId,
+    ...patch,
+    ...(adminDistId ? { distributorId: adminDistId } : {}),
+  });
   const reorder = trpc.distributorPortal.reorderFeaturedStyles.useMutation({
     onSuccess: () => utils.distributorPortal.featuredStyles.invalidate(),
     onError: (error) => toast.error(error.message),
@@ -2973,6 +2989,12 @@ function VendorFeaturedStylesPage() {
 	                        distributorName: style.distributorName,
 	                      }}
 	                    />
+	                    <DoorStyleNeedToggles
+	                      style={style}
+	                      pending={saveNeeds.isPending}
+	                      onSkinNeeded={(styleId, skinNeeded) => saveNeeds.mutate(needInput(styleId, { skinNeeded }) as never)}
+	                      onFinishedEndNeeded={(styleId, finishedEndNeeded) => saveNeeds.mutate(needInput(styleId, { finishedEndNeeded }) as never)}
+	                    />
 	                    <div className="mt-1 flex flex-wrap items-center gap-1.5">
 	                      <Badge variant="outline" className="border-blue-300 bg-blue-50 px-1.5 py-0 text-[10px] text-blue-700"><Package className="mr-0.5 h-2.5 w-2.5" /> {style.skuCount} cabinet SKU{style.skuCount === 1 ? "" : "s"}</Badge>
 	                      <Badge variant="outline" className="border-emerald-300 bg-emerald-50 px-1.5 py-0 text-[10px] text-emerald-700"><ImageIcon className="mr-0.5 h-2.5 w-2.5" /> Room scene ready</Badge>
@@ -3034,6 +3056,12 @@ function VendorFeaturedStylesPage() {
 	                        styleCode: style.styleCode,
 	                        distributorName: style.distributorName,
 	                      }}
+	                    />
+	                    <DoorStyleNeedToggles
+	                      style={style}
+	                      pending={saveNeeds.isPending}
+	                      onSkinNeeded={(styleId, skinNeeded) => saveNeeds.mutate(needInput(styleId, { skinNeeded }) as never)}
+	                      onFinishedEndNeeded={(styleId, finishedEndNeeded) => saveNeeds.mutate(needInput(styleId, { finishedEndNeeded }) as never)}
 	                    />
 	                    <p className="mt-0.5 break-words text-xs text-muted-foreground">{style.skuCount} cabinet SKU{style.skuCount === 1 ? "" : "s"} {[style.doorStyle, style.color].filter(Boolean).length > 0 ? `· ${[style.doorStyle, style.color].filter(Boolean).join(" · ")}` : ""}</p>
 	                    {hasActiveFilters && style.matchingCabinets.length > 0 && <p className="truncate text-[11px] text-primary">Matches: {style.matchingCabinets.map((cabinet) => cabinet.masterCode).join(", ")}{style.matchingCabinetCount > style.matchingCabinets.length ? ` +${style.matchingCabinetCount - style.matchingCabinets.length}` : ""}</p>}

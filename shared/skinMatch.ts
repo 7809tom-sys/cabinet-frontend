@@ -1,14 +1,14 @@
 // ─── Skin / decorative end-panel matching ──────────────────────────────────
 //
-// Rule (from the showroom): a cabinet with an EXPOSED visible side needs a
-// matching skin / end panel in the SAME door style so the exposed side reads as
-// finished cabinetry instead of raw box. This is especially mandatory for
-// Hickory lines (HS "Silver Shaker", RH "Forest Rust"), which ship unfinished on
-// the exterior — every exposed side must order a Hickory skin.
+// Hard rule: only hickory frameless cabinets get skins. canHaveSkins is the
+// only decision. A style code, a saved name such as Forest Rust, or a forced
+// flag cannot add a skin on its own.
 //
 // This module is PURE (no DB / React) so both the server (BOM resolver) and the
 // client (Design Tool recommendation) can share one source of truth, and it is
 // unit-tested in skinMatch.test.ts.
+
+import { skinsAreNeeded, type SkinEligibilityInput } from "./canHaveSkins";
 
 export type SkinPlacement = "base" | "wall" | "tall" | "island";
 
@@ -82,7 +82,10 @@ export function matchingSkinsForCabinet(args: {
   placement: SkinPlacement;
   exposed: ExposedSides;
   widthIn?: number;
+  /** Required. Skins are omitted unless this style is hickory frameless. */
+  style?: SkinEligibilityInput;
 }): SkinRequirement[] {
+  if (!skinsAreNeeded(args.style)) return [];
   const { placement, exposed } = args;
   const widthIn = args.widthIn ?? 0;
   const count = countExposedSides(exposed, placement);
@@ -125,47 +128,27 @@ export function matchingSkinsForCabinet(args: {
 }
 
 /**
- * Door-style codes that REQUIRE a matching skin on every exposed side because
- * the cabinet ships unfinished on the exterior. Today: the two Hickory lines.
+ * A style code alone is never enough. HS and RH used to force skins; they do
+ * not anymore. Pass the style into skinsAreNeeded.
  */
-export const UNFINISHED_EXTERIOR_STYLE_CODES = ["HS", "RH"] as const;
+export function requiresMandatorySkin(style: SkinEligibilityInput): boolean {
+  return skinsAreNeeded(style);
+}
 
-export function requiresMandatorySkin(styleCode: string | null | undefined): boolean {
-  if (!styleCode) return false;
-  return (UNFINISHED_EXTERIOR_STYLE_CODES as readonly string[]).includes(
-    styleCode.toUpperCase(),
-  );
+/** True only when the name itself is hickory and frameless. A bare "Forest Rust" is not. */
+export function isUnfinishedExteriorStyleName(styleName: string | null | undefined): boolean {
+  return skinsAreNeeded({ ourName: styleName });
 }
 
 /**
- * Name-based fallback when only the door-style display name is available (e.g.
- * the Order Review knows "Silver Shaker" / "Forest Rust" but not the styleCode).
- * The two Hickory lines ship unfinished on the exterior, so any exposed side
- * needs a matching Hickory skin.
+ * Order note for a hickory frameless style only. Returns null for every other
+ * style, including when a caller forces the old Hickory name list.
  */
-export function isUnfinishedExteriorStyleName(
-  styleName: string | null | undefined,
-): boolean {
-  if (!styleName) return false;
-  const s = styleName.toLowerCase();
-  return (
-    s.includes("hickory") ||
-    s.includes("silver shaker") ||
-    s.includes("forest rust") ||
-    // legacy names kept for backward compat with saved designs
-    s.includes("silva shaker") ||
-    s.includes("sylvan rust")
-  );
-}
-
-/**
- * A short, explicit order-note line reminding that exposed sides of an
- * unfinished-exterior (Hickory) order require matching skins as SEPARATE line
- * items in the same finish. Returns null when the style isn't unfinished-exterior.
- */
-export function unfinishedExteriorSkinNote(
-  styleName: string | null | undefined,
-): string | null {
-  if (!isUnfinishedExteriorStyleName(styleName)) return null;
-  return `FINISH NOTE (${styleName}): Hickory ships unfinished on all exposed exteriors. Every visible/exposed cabinet side must be ordered with a matching Hickory skin / end panel in the same finish, as a separate line item. Confirm exposed sides before production.`;
+export function unfinishedExteriorSkinNote(style: SkinEligibilityInput | string | null | undefined): string | null {
+  const input = typeof style === "string" ? { ourName: style } : style;
+  if (!skinsAreNeeded(input)) return null;
+  const name = typeof style === "string"
+    ? style
+    : (style && "ourName" in style ? style.ourName : null) ?? "this style";
+  return `FINISH NOTE (${name}): Only hickory frameless ships with skins. Every visible exposed side of this hickory frameless order must be ordered with a matching skin in the same finish, as a separate line item. Confirm exposed sides before production.`;
 }

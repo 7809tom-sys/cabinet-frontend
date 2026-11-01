@@ -461,6 +461,18 @@ const ownerSeeds: KitchenRuleSeed[] = [
     readsParameters: false,
     notesText: "Hard rule from the owner. Lives in lib/backsplashMosaic.ts; the per-product tests and the every-catalog-mosaic-has-a-spec test fail if any sheet gets a tint, an outline, or the wrong spacing or grout. Mosaics without a curated row get a generic seamless spec from their catalog size. Spacing, overlap and grout values are estimates until measured from the product photos.",
   },
+  {
+    ruleCode: "owner-hickory-frameless-skins-only",
+    category: "Owner panels",
+    title: "Only hickory frameless gets skins",
+    ruleDescription: "Hard rule: only hickory frameless cabinets get skins. No other cabinet type, door style, construction, or wood species may receive skins, regardless of any setting, default, catalog flag, saved design, Auto-Design output, or manual toggle. Hickory is the door-style species or a name that contains hickory. Frameless is the US Cabinet Depot / AltaEuro construction, or a box marked frameless. A saved design that has skins on any other cabinet drops those skins when it is opened. Finished ends are a separate choice and are not skins.",
+    parameters: {},
+    enforcementKind: "auto",
+    sourceText: "Owner",
+    implementationStatus: "implemented",
+    readsParameters: false,
+    notesText: "Hard rule from the owner. Enforced by canHaveSkins in shared/canHaveSkins.ts. It cannot be overridden.",
+  },
 ];
 
 export const KITCHEN_RULE_SEED: readonly KitchenRuleSeed[] = [...researchSeeds, ...ownerSeeds, ...richQuestionSeeds];
