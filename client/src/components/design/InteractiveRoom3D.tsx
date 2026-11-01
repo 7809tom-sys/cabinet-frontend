@@ -45,7 +45,7 @@ import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { searchCatalogItems } from "@shared/catalogCodeSearch";
 import { AEF_PRINTED_GEOMETRY_MARKER } from "@shared/aefFramelessGeometry";
-import { dlcFaceGrainRepeat, dlcFaceTextureWindow, dlcPhotoLightCompensation, type DlcFaceCrop } from "@shared/dlcFr26Textures";
+import { DLC_FRAME_DETAIL, dlcFaceGrainRepeat, dlcFaceTextureWindow, dlcFrameStrips, dlcPhotoLightCompensation, type DlcFaceCrop } from "@shared/dlcFr26Textures";
 import { DARK_STAIN_DOOR_LIGHTS, RESTORED_DOOR_LIGHTS, isVeryDarkCabinetStain } from "@shared/doorRenderLights";
 import { combinedSwatchTextureWindow, type FaceSourceKind, type FaceTextureWindow } from "@shared/doorFaceRecognition";
 import { RAISED_PANEL_BEVEL_DEPTH_IN, RAISED_PANEL_BEVEL_WIDTH_IN, resolveDoorProfile } from "@shared/doorStyleAppearance";
@@ -5048,7 +5048,10 @@ export function addCabinet(
 	      usesCuratedCabinetGrain ? 1 : doorFrame.repeatX,
 	      usesCuratedCabinetGrain ? 1 : doorFrame.repeatY,
 	    );
-	    doorTexture.offset.set(grainTransform?.offsetX ?? doorFrame.offsetX, grainTransform?.offsetY ?? doorFrame.offsetY);
+	    // DL grain faces: each cabinet starts its grain at a different phase, so neighbouring doors do not band
+	    // at the same spot (mirrored tiles make any offset seamless).
+	    const dlcStagger = dlcDoorGrain ? threeDCabinetGrainTransform(sku.placementUid, doorSampleUrl) : null;
+	    doorTexture.offset.set(grainTransform?.offsetX ?? dlcStagger?.offsetX ?? doorFrame.offsetX, grainTransform?.offsetY ?? dlcStagger?.offsetY ?? doorFrame.offsetY);
 	    doorTexture.userData = {
 	      ...doorTexture.userData,
 	      curatedCabinetFinish: usesCuratedCabinetGrain,
@@ -5095,9 +5098,10 @@ export function addCabinet(
       usesCuratedDrawerGrain ? 1 : drawerFrame.repeatX,
       usesCuratedDrawerGrain ? 1 : drawerFrame.repeatY,
     );
+    const dlcDrawerStagger = dlcDrawerGrain ? threeDCabinetGrainTransform(sku.placementUid, drawerSampleUrl) : null;
     drawerTexture.offset.set(
-      usesCuratedDrawerGrain ? 0 : drawerFrame.offsetX,
-      usesCuratedDrawerGrain ? 0 : drawerFrame.offsetY,
+      usesCuratedDrawerGrain ? 0 : dlcDrawerStagger?.offsetX ?? drawerFrame.offsetX,
+      usesCuratedDrawerGrain ? 0 : dlcDrawerStagger?.offsetY ?? drawerFrame.offsetY,
     );
     drawerTexture.userData = {
       ...drawerTexture.userData,
@@ -5120,6 +5124,7 @@ export function addCabinet(
       normal.wrapS = THREE.MirroredRepeatWrapping;
       normal.wrapT = THREE.MirroredRepeatWrapping;
       normal.repeat.set(dlcDrawerRepeat.repeatX, dlcDrawerRepeat.repeatY);
+      if (drawerTexture) normal.offset.copy(drawerTexture.offset);
       dlcDrawerNormal = normal;
       const apply = (node: THREE.Object3D) => {
         const mesh = node as THREE.Mesh;
@@ -5279,6 +5284,7 @@ export function addCabinet(
 	      normal.wrapS = THREE.MirroredRepeatWrapping;
 	      normal.wrapT = THREE.MirroredRepeatWrapping;
 	      normal.repeat.set(dlcDoorRepeat.repeatX, dlcDoorRepeat.repeatY);
+	      if (doorTexture) normal.offset.copy(doorTexture.offset); // relief stays aligned with the staggered grain
 	      for (const material of [faceMaterial, trimMaterial]) {
 	        material.normalMap = normal;
 	        material.normalScale.set(0.6, 0.6);
@@ -5530,8 +5536,10 @@ export function addCabinet(
       [stile, Math.max(0.02, faceHeight - rail * 2), faceWidth / 2 - stile / 2, 0, "stile" as const],
     ] as const;
     for (const [pieceWidth, pieceHeight, offsetX, offsetY, piece] of pieces) {
-      const railMesh = new THREE.Mesh(new THREE.BoxGeometry(pieceWidth, pieceHeight, 0.026), frameMaterialFor(piece));
-      railMesh.position.set(offsetX, offsetY, 0);
+      // DL styles: rails and stiles stand 20% proud, back plane unchanged, so the edge shading is stronger.
+      const railDepth = dlcDoorFinish ? DLC_FRAME_DETAIL.railDepth : DLC_FRAME_DETAIL.standardRailDepth;
+      const railMesh = new THREE.Mesh(new THREE.BoxGeometry(pieceWidth, pieceHeight, railDepth), frameMaterialFor(piece));
+      railMesh.position.set(offsetX, offsetY, dlcDoorFinish ? (railDepth - DLC_FRAME_DETAIL.standardRailDepth) / 2 : 0);
 	      railMesh.userData = { selectedStyleFace: forceGlassFrame ? "glass-door-frame" : raisedProfile ? "raised-panel" : "shaker", physicalRail: true, grainPiece: piece, ...(forceGlassFrame ? { glassDoorFrameRail: true, selectedFinishGlassFrame: true } : {}) };
       frameGroup.add(railMesh);
     }
@@ -5560,6 +5568,28 @@ export function addCabinet(
 	        centerMaterial: faceMaterial,
 	      });
 	    }
+    // DL shaker frames: soft shadow just inside the opening (top/left) and a thin highlight on the opposite
+    // edges. Semi-transparent strips on the panel, so the finish colour is not darkened.
+    if (dlcDoorFinish && !raisedProfile && !forceGlassFrame) {
+      for (const strip of dlcFrameStrips(faceWidth - stile * 2, faceHeight - rail * 2)) {
+        const mesh = new THREE.Mesh(
+          new THREE.BoxGeometry(strip.w, strip.h, DLC_FRAME_DETAIL.stripDepth),
+          new THREE.MeshBasicMaterial({
+            color: strip.kind === "shadow" ? "#000000" : "#ffffff",
+            transparent: true,
+            opacity: strip.opacity,
+            depthWrite: false,
+            toneMapped: false,
+            polygonOffset: true,
+            polygonOffsetFactor: -1,
+            polygonOffsetUnits: -1,
+          }),
+        );
+        mesh.position.set(strip.x, strip.y, DLC_FRAME_DETAIL.stripZ);
+        mesh.userData = { dlcFrameDetail: strip.kind, dimensionalCabinetDetail: true };
+        frameGroup.add(mesh);
+      }
+    }
     frontGroup.add(frameGroup);
   };
   const addDrawerReveal = (faceWidth: number, faceHeight: number, x: number, y: number, z = THREE_D_DRAWER_REVEAL_DEPTH) => {
