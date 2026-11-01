@@ -10,10 +10,14 @@ async function pixels() {
 }
 
 describe("rustic hickory grain texture", () => {
-  it("ships with the site and is what the Designer uses", () => {
+  it("ships with the site and is not substituted for a door style by name", () => {
     expect(existsSync(texture)).toBe(true);
     const source = readFileSync(new URL("../pages/DesignTool.tsx", import.meta.url), "utf8");
-    expect(source).toContain('const RUSTIC_HICKORY_GRAIN_URL = "/textures/rustic_hickory_vertical_grain_v2.webp";');
+    const facePlan = readFileSync(new URL("./designerFacePlan.ts", import.meta.url), "utf8");
+    expect(source).not.toContain("RUSTIC_HICKORY_GRAIN_URL");
+    expect(source).not.toContain("rustic_hickory_vertical_grain");
+    expect(facePlan).not.toContain("rustic_hickory_vertical_grain");
+    expect(facePlan).not.toContain("rustic hickory|forest rust");
   });
 
   it("tiles without a visible seam on either axis", async () => {
