@@ -81,7 +81,7 @@ export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading =
   const [sinkBaseKind, setSinkBaseKind] = useState<AutoDesignSinkBaseKind>("regular");
   const [wallCabinetHeight, setWallCabinetHeight] = useState<WallCabinetHeight>(30);
   const [dishwasherSide, setDishwasherSide] = useState<DishwasherSide>("right");
-  const refrigeratorWidth: RefrigeratorWidth = 36;
+  const [refrigeratorWidth, setRefrigeratorWidth] = useState<RefrigeratorWidth>(36);
   const [windowCenter, setWindowCenter] = useState("");
   const [kitchenUses, setKitchenUses] = useState<KitchenUseId[]>([]);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -317,7 +317,11 @@ export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading =
             <div className="rounded-lg border p-3" data-testid="auto-design-refrigerator-options">
               <div className="space-y-1.5">
                 <Label>Refrigerator bay</Label>
-                <p className="text-sm font-medium">36″ refrigerator · Two source-priced side panels · Matching source-priced 36″ cabinet above</p>
+                <Select value={String(refrigeratorWidth)} onValueChange={(value) => setRefrigeratorWidth(Number(value) as RefrigeratorWidth)}>
+                  <SelectTrigger id="auto-design-refrigerator-size" aria-label="Refrigerator size" className="sm:max-w-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>{([30, 33, 36, 42] as const).map((width) => <SelectItem key={width} value={String(width)}>{width}″ refrigerator</SelectItem>)}</SelectContent>
+                </Select>
+                <p className="text-sm font-medium">{refrigeratorWidth}″ refrigerator · Two source-priced side panels · Matching source-priced {refrigeratorWidth}″ cabinet above</p>
                 <p className="text-xs text-muted-foreground">Auto-Design creates this complete refrigerator bay before filling surrounding runs. A refrigerator bay never uses a filler.</p>
               </div>
             </div>
