@@ -63,6 +63,8 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { searchCatalogItems } from "@shared/catalogCodeSearch";
 import { AEF_PRINTED_GEOMETRY_MARKER } from "@shared/aefFramelessGeometry";
 import { DLC_FRAME_DETAIL, dlcFaceGrainRepeat, dlcFaceTextureWindow, dlcFrameStrips, dlcPhotoLightCompensation, type DlcFaceCrop } from "@shared/dlcFr26Textures";
+import { exposedSideSolidHex } from "@shared/exposedSideFinish";
+import { rememberDoorPanelHex } from "@/lib/doorPanelColor";
 import { DARK_STAIN_DOOR_LIGHTS, RESTORED_DOOR_LIGHTS, isVeryDarkCabinetStain, relativeLuminance } from "@shared/doorRenderLights";
 import { combinedSwatchTextureWindow, type FaceSourceKind, type FaceTextureWindow } from "@shared/doorFaceRecognition";
 import { RAISED_PANEL_BEVEL_DEPTH_IN, RAISED_PANEL_BEVEL_WIDTH_IN, resolveDoorProfile } from "@shared/doorStyleAppearance";
@@ -4625,9 +4627,12 @@ export function addCabinet(
 
 	  const cabinetPbr = threeDPhysicalSurfaceProfile("cabinet", Boolean(doorSampleUrl));
 	  const metalPbr = threeDPhysicalSurfaceProfile("metal");
+	  // The old #c6b9a7 placeholder was a pale cream that leaked onto sides of
+	  // every finish. Start from the active finish; the door photo replaces it
+	  // once that image is readable (see exposedSideSolidHex).
 	  const bodyMaterial = new THREE.MeshPhysicalMaterial(isRefrigeratorAppliance
 	    ? refrigeratorBodyMaterialParams(sku.applianceFinish)
-	    : { color: "#c6b9a7", ...cabinetPbr });
+	    : { color, ...cabinetPbr });
   const structuralFinishMaterials: THREE.MeshStandardMaterial[] = isRefrigeratorAppliance ? [] : [bodyMaterial];
   const flatExposedFinishMaterials: THREE.MeshStandardMaterial[] = [];
   let applyPlainStructuralFinish: ((finishColor: string, sampleTexture?: THREE.Texture | null) => void) | null = null;
@@ -5201,7 +5206,9 @@ export function addCabinet(
 	  // face meshes are built, which is when box skins receive the sample.
 	  let stampCabinetWoodGrain = () => {};
 	  const doorTexture = useDoorTexture && doorSampleUrl
-    ? new THREE.TextureLoader().load(doorSampleUrl, () => {
+    ? new THREE.TextureLoader().load(doorSampleUrl, (loaded) => {
+      // One path for every finish: the door photo's panel is the side color.
+      rememberDoorPanelHex(loaded);
       applyPlainStructuralFinish?.(color, null);
       stampCabinetWoodGrain();
       onDoorTextureState?.("loaded");
@@ -5445,9 +5452,18 @@ export function addCabinet(
       structuralSampleTexture = applied.texture;
       return;
     }
-    const applied = applyThreeDStructuralFinishMaterials(structuralFinishMaterials, finishColor, null);
+    // Catalog hexes (and the old cream placeholder) are not the door. The
+    // uploaded photo's panel color is, for every finish. DLC already passed
+    // its crop color in as `color`. USCD photo sides returned above.
+    const sideColor = exposedSideSolidHex({
+      catalogHex: finishColor,
+      doorPanelHex: typeof doorTexture?.userData?.doorPanelHex === "string" ? doorTexture.userData.doorPanelHex : null,
+      useDoorPhotoOnSides: false,
+      dlcSolidHex: dlcDoorFinish,
+    }) ?? finishColor;
+    const applied = applyThreeDStructuralFinishMaterials(structuralFinishMaterials, sideColor, null);
     for (const material of flatExposedFinishMaterials) {
-      material.color.set(applied.texture ? "#ffffff" : finishColor);
+      material.color.set(applied.texture ? "#ffffff" : sideColor);
       material.map = applied.texture;
       material.needsUpdate = true;
       material.userData = {
