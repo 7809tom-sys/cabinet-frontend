@@ -238,6 +238,21 @@ export const DLC_FRAME_DETAIL = {
   highlight: { width: 0.006, opacity: 0.12 },
 } as const;
 
+/**
+ * Pale finishes (Alabaster, Arctic, Glacier...) have almost no tonal room, so the standard edge shading reads
+ * as flat white slabs. Shadow strips get up to +DLC_FRAME_PALE_BOOST more opacity as the finish gets paler
+ * (ramp over relative luminance DLC_FRAME_PALE_RANGE), capped at DLC_FRAME_MAX_OPACITY. Darker finishes: 1x.
+ */
+export const DLC_FRAME_PALE_BOOST = 0.8;
+export const DLC_FRAME_PALE_RANGE = [0.4, 0.8] as const;
+export const DLC_FRAME_MAX_OPACITY = 0.45;
+
+export function dlcFrameShadowScale(finishLuminance: number | null | undefined): number {
+  if (finishLuminance == null || !Number.isFinite(finishLuminance)) return 1;
+  const [lo, hi] = DLC_FRAME_PALE_RANGE;
+  return 1 + DLC_FRAME_PALE_BOOST * Math.min(1, Math.max(0, (finishLuminance - lo) / (hi - lo)));
+}
+
 export interface DlcFrameStrip {
   /** Centre in the frame group's local space. */
   x: number;
@@ -250,10 +265,12 @@ export interface DlcFrameStrip {
 }
 
 /** Strip layout for the opening inside a frame. Pure so it can be tested; the renderer only draws it. */
-export function dlcFrameStrips(openingW: number, openingH: number): DlcFrameStrip[] {
+export function dlcFrameStrips(openingW: number, openingH: number, finishLuminance?: number | null): DlcFrameStrip[] {
   if (!(openingW > 0.04) || !(openingH > 0.04)) return [];
   const out: DlcFrameStrip[] = [];
-  for (const [width, opacity] of DLC_FRAME_DETAIL.shadow) {
+  const scale = dlcFrameShadowScale(finishLuminance);
+  for (const [width, base] of DLC_FRAME_DETAIL.shadow) {
+    const opacity = Math.min(DLC_FRAME_MAX_OPACITY, base * scale);
     const t = Math.min(width, openingW / 3, openingH / 3);
     out.push({ kind: "shadow", opacity, w: openingW, h: t, x: 0, y: openingH / 2 - t / 2 }); // top
     out.push({ kind: "shadow", opacity, w: t, h: openingH, x: -openingW / 2 + t / 2, y: 0 }); // left
