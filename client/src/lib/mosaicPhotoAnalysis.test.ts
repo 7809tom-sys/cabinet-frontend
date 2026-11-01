@@ -299,8 +299,12 @@ describe("designer uploads nest at the measured repeat", () => {
     expect(up).toBeLessThanOrEqual(11.81);
   }, 20000);
 
-  it("Polar Sea still nests the ragged strip ends", async () => {
+  it("Polar Sea nests the ragged strip ends inside the 11.81 in sheet", async () => {
     const { pixels, width, height } = await loadSheet(sheetFiles.polar);
+    expect(width).toBe(1600);
+    expect(height).toBe(1507);
+    expect(imageHasMeaningfulTransparency(pixels, width, height)).toBe(true);
+    expect(analyzeMosaicPhoto(pixels, width, height)?.background).toBe("transparent");
     trimTransparentEdgeSlivers(pixels, width, height);
     clearBakedSheetGrout(pixels, width, height);
     const repeat = measureTransparentSheetRepeat(pixels, width, height)!;
@@ -312,6 +316,11 @@ describe("designer uploads nest at the measured repeat", () => {
     expect(Math.abs(up - 11.81)).toBeLessThan(0.05);
     expect(offsetIn).toBeGreaterThan(0.45);
     expect(offsetIn).toBeLessThan(0.85);
+    expect(repeat.core.width).toBeLessThan(repeat.box.width - 40);
+    const spec = genericMosaicSheetSpec("polar sea", 11.81, 11.81);
+    expect(spec.groutIn).toBeGreaterThanOrEqual(1 / 16);
+    expect(spec.groutIn).toBeLessThanOrEqual(1 / 8);
+    expect(acceptTransparentRepeat(spec, repeat)).not.toBeNull();
   }, 20000);
 });
 
