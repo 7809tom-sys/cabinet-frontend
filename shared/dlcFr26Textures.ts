@@ -125,37 +125,63 @@ export function dlcFaceGrainRepeat(
   return { offsetX: 0, offsetY: 0, repeatX: Math.max(0.05, p.widthIn / tile[0]), repeatY: Math.max(0.05, p.heightIn / tile[1]) };
 }
 
-function srgbLuminanceLinear(hex: string): number {
+function hexToLinear(hex: string): [number, number, number] {
   const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
-  if (!m) return 1;
+  if (!m) return [1, 1, 1];
   const ch = (i: number) => {
     const c = Number.parseInt(m[1]!.slice(i, i + 2), 16) / 255;
     return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
   };
-  return 0.2126 * ch(0) + 0.7152 * ch(2) + 0.0722 * ch(4);
+  return [ch(0), ch(2), ch(4)];
+}
+
+/** Light finishes read near-white: the rig's environment light is not modelled, so pale finishes are cut. */
+export const DLC_PALE_BRIGHTNESS_CUT = 0.15;
+/** Relative luminance (linear) at which the cut starts and where it is complete. */
+export const DLC_PALE_CUT_RANGE = [0.15, 0.5] as const;
+
+/** 0 for dark and mid finishes, up to DLC_PALE_BRIGHTNESS_CUT for pale ones. */
+export function dlcPaleBrightnessCut(finishLuminance: number | null | undefined): number {
+  if (finishLuminance == null || !Number.isFinite(finishLuminance)) return 0;
+  const [lo, hi] = DLC_PALE_CUT_RANGE;
+  const t = Math.min(1, Math.max(0, (finishLuminance - lo) / (hi - lo)));
+  return DLC_PALE_BRIGHTNESS_CUT * t;
 }
 
 /**
- * DLC photo materials are rendered with tone mapping OFF (toneMapped = false). ACES compresses bright
- * colours, which flattened light finishes (grain contrast about a third of the photo's) and darkened
- * whites. Without tone mapping the rig only multiplies the albedo by its light sum on a front-facing
- * surface: hemisphere (average of sky and ground), key and fill. This returns the linear multiplier
- * (<= 1) that cancels that sum, so the render reproduces the sample photo with full grain contrast, and
- * the sRGB grey to use as the material colour (THREE.Color.set takes sRGB and converts to linear).
- * The environment map is not modelled, so treat the result as a first-order estimate.
+ * DLC photo materials are rendered with tone mapping OFF (toneMapped = false). Without it the rig only
+ * multiplies the albedo by its light sum on a front-facing surface: hemisphere (average of sky and ground),
+ * key and fill. This returns, per colour channel, the linear multiplier (<= 1) that cancels that sum, so the
+ * render reproduces the sample photo and a neutral grey stays exactly neutral (the key light is warm and the
+ * fill cool, so a single luminance multiplier left a slight cast). Pale finishes are cut a further
+ * DLC_PALE_BRIGHTNESS_CUT because the environment light, which is not modelled, pushed them toward white.
+ * Returns the mean linear multiplier and the sRGB hex for THREE.Color.set (which converts to linear).
  */
-export function dlcPhotoLightCompensation(rig: {
-  hemisphere: { sky: string; ground: string; intensity: number };
-  key: { intensity: number; position: readonly [number, number, number] };
-  fill: { intensity: number; position: readonly [number, number, number] };
-}): { linear: number; hex: string } {
+export function dlcPhotoLightCompensation(
+  rig: {
+    hemisphere: { sky: string; ground: string; intensity: number };
+    key: { color: string; intensity: number; position: readonly [number, number, number] };
+    fill: { color: string; intensity: number; position: readonly [number, number, number] };
+  },
+  finishLuminance?: number | null,
+): { linear: number; rgb: [number, number, number]; hex: string } {
   const cosZ = (p: readonly [number, number, number]) => p[2] / Math.hypot(p[0], p[1], p[2]);
-  const hemi = rig.hemisphere.intensity * (srgbLuminanceLinear(rig.hemisphere.sky) + srgbLuminanceLinear(rig.hemisphere.ground)) / 2;
-  const sum = hemi + rig.key.intensity * cosZ(rig.key.position) + rig.fill.intensity * cosZ(rig.fill.position);
-  const linear = Math.min(1, Math.max(0.4, sum > 0 ? 1 / sum : 1));
-  const srgb = linear <= 0.0031308 ? linear * 12.92 : 1.055 * linear ** (1 / 2.4) - 0.055;
-  const v = Math.round(Math.min(1, Math.max(0, srgb)) * 255).toString(16).padStart(2, "0");
-  return { linear, hex: `#${v}${v}${v}` };
+  const sky = hexToLinear(rig.hemisphere.sky);
+  const ground = hexToLinear(rig.hemisphere.ground);
+  const key = hexToLinear(rig.key.color);
+  const fill = hexToLinear(rig.fill.color);
+  const cut = 1 - dlcPaleBrightnessCut(finishLuminance);
+  const rgb = [0, 1, 2].map((i) => {
+    const sum = rig.hemisphere.intensity * (sky[i]! + ground[i]!) / 2
+      + rig.key.intensity * cosZ(rig.key.position) * key[i]!
+      + rig.fill.intensity * cosZ(rig.fill.position) * fill[i]!;
+    return Math.min(1, Math.max(0.35, sum > 0 ? cut / sum : 1));
+  }) as [number, number, number];
+  const toHex = (l: number) => {
+    const srgb = l <= 0.0031308 ? l * 12.92 : 1.055 * l ** (1 / 2.4) - 0.055;
+    return Math.round(Math.min(1, Math.max(0, srgb)) * 255).toString(16).padStart(2, "0");
+  };
+  return { linear: (rgb[0] + rgb[1] + rgb[2]) / 3, rgb, hex: `#${toHex(rgb[0])}${toHex(rgb[1])}${toHex(rgb[2])}` };
 }
 
 export const DLC_DRAWER_FRONT_HEIGHT_IN = 6;
