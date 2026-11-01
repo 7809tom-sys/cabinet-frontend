@@ -14714,7 +14714,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       mosaicFloorPattern={mosaicFloorView?.pattern ?? null}
       onMosaicFloorPatternChange={setMosaicFloorPattern}
       catalogFlooringCardImageUrl={activeFlooringSurface?.imageUrl ?? null}
+      catalogFlooringMaterialImageUrl={activeFlooringSurface?.materialImageUrl ?? null}
       catalogBacksplashImageUrl={backsplashEnabled ? threeDSurfaceTextureUrls.backsplash : null}
+      catalogBacksplashMaterialImageUrl={backsplashEnabled ? activeBacksplashSurface?.materialImageUrl ?? null : null}
       catalogBacksplashCardImageUrl={backsplashEnabled ? activeBacksplashSurface?.imageUrl ?? null : null}
       onPresentationChange={setInteractive3dPresentation}
       onRoomWallHeightChange={(ceilingHeight) => commitRoomWallTops({ ...room, ceilingHeight, wallCeilings: undefined })}
@@ -22655,7 +22657,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       mosaicFloorPattern={mosaicFloorView?.pattern ?? null}
       onMosaicFloorPatternChange={setMosaicFloorPattern}
 	                catalogFlooringCardImageUrl={activeFlooringSurface?.imageUrl ?? null}
+	                catalogFlooringMaterialImageUrl={activeFlooringSurface?.materialImageUrl ?? null}
 	                catalogBacksplashCardImageUrl={backsplashEnabled ? activeBacksplashSurface?.imageUrl ?? null : null}
+	                catalogBacksplashMaterialImageUrl={backsplashEnabled ? activeBacksplashSurface?.materialImageUrl ?? null : null}
 	                catalogBacksplashImageUrl={backsplashEnabled ? threeDSurfaceTextureUrls.backsplash : null}
                 onPresentationChange={setInteractive3dPresentation}
                 onRoomWallHeightChange={(ceilingHeight) => commitRoomWallTops({ ...room, ceilingHeight, wallCeilings: undefined })}

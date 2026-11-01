@@ -8,7 +8,8 @@ const elevation = read("../components/design/ElevationView.tsx");
 describe("the 3D and elevation renderers use the interlock helpers", () => {
   it("3D: interlocking sheets repeat at the pitch, are cropped to one unit with grout, and keep crisp filtering", () => {
     expect(viewer).toContain("interlockedMosaicUnitImage(");
-    expect(viewer).toContain("backsplashModuleIn: interlockSpec ? mosaicPitchIn(interlockSpec).x");
+    expect(viewer).toContain("interlockSpec ? mosaicPitchIn(interlockSpec).x");
+    expect(viewer).toContain("backsplashMeasuredModuleIn");
     expect(viewer).toContain("backsplashGroutJointIn: interlockSpec ? clampMosaicGroutIn(interlockSpec.groutIn)");
     expect(viewer).toContain("texture.generateMipmaps = true;");
     expect(viewer).toContain("texture.anisotropy = Math.min(anisotropyCap, renderer.capabilities.getMaxAnisotropy());");

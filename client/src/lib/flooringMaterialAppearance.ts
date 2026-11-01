@@ -64,25 +64,44 @@ export type ThreeDMosaicSheetMap = {
 };
 
 /**
+ * The uploaded Designer photo (`materialImageUrl`) is the mosaic texture.
+ * The catalog card (`imageUrl`) is not: Carbon Hex's card is a room photo, and
+ * guessing "candidate_" in the built-in filename used to swap that card in.
+ * An original URL is the designer photo only when it is not the catalog card.
+ */
+export function preferredDesignerMosaicUrl(
+  originalUrl: string | null | undefined,
+  cardImageUrl: string | null | undefined,
+  materialImageUrl?: string | null,
+): string {
+  const material = materialImageUrl?.trim() || "";
+  if (material && threeDTextureUrlIsColorMap(material)) return material;
+  const original = originalUrl?.trim() || "";
+  const card = cardImageUrl?.trim() || "";
+  if (original && original !== card && threeDTextureUrlIsColorMap(original)) return original;
+  return "";
+}
+
+/**
  * A candidate close-up repeats across the few inches it actually shows.
- * When the catalog card is a picture of the whole sheet, that card is the map
- * and it repeats at the printed sheet size.
+ * A Designer upload repeats at the printed sheet size. The catalog card is
+ * never substituted in here.
  */
 export function threeDMosaicSheetMap(
   curatedUrl: string,
   sheetWidthIn: number,
   sheetHeightIn: number,
-  cardImageUrl?: string | null,
+  designerMaterialUrl?: string | null,
 ): ThreeDMosaicSheetMap {
   const sheetWidth = sheetWidthIn > 0 ? sheetWidthIn : 12;
   const sheetHeight = sheetHeightIn > 0 ? sheetHeightIn : sheetWidth;
-  const card = cardImageUrl?.trim() || "";
-  if (threeDMosaicMapIsMacroCandidate(curatedUrl) && card && card !== curatedUrl && threeDTextureUrlIsColorMap(card)) {
+  const designer = designerMaterialUrl?.trim() || "";
+  if (designer && threeDTextureUrlIsColorMap(designer)) {
     return {
-      url: card,
+      url: designer,
       widthIn: sheetWidth,
       heightIn: sheetHeight,
-      cropRetailBackground: true,
+      cropRetailBackground: false,
       macroCandidate: false,
     };
   }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { analyzeMosaicPhoto, measuredMosaicOverhangIn } from "./mosaicPhotoAnalysis";
+import { analyzeMosaicPhoto, measureTransparentSheetRepeat, measuredMosaicOverhangIn, sampleSheetGroutHex } from "./mosaicPhotoAnalysis";
 
 type Rgba = [number, number, number, number];
 function photo(width: number, height: number, background: Rgba, draw: (x: number, y: number) => Rgba | null) {
@@ -72,5 +72,37 @@ describe("mosaic photo analysis: finds the real sheet and its flush repeat", () 
     const a = analyzeMosaicPhoto(photo(400, 400, [255, 255, 255, 255], (x, y) => (x >= 50 && x < 350 && y >= 50 && y < 350 ? chip(x, y) : null)), 400, 400)!;
     expect(measuredMosaicOverhangIn({ ...a, overhangXPx: 120 }, 12, 12)).toBeNull();
     expect(measuredMosaicOverhangIn(null, 12, 12)).toBeNull();
+  });
+});
+
+describe("transparent designer sheets nest at the stagger, not at the outer rectangle", () => {
+  it("a half-brick stagger repeats inside the outer size and does not keep the notches", () => {
+    const width = 120;
+    const height = 48;
+    const data = photo(width, height, [0, 0, 0, 0], (x, y) => {
+      const top = y >= 2 && y < 22 && x >= 0 && x < 96;
+      const bottom = y >= 24 && y < 46 && x >= 24 && x < 120;
+      const groutRow = y >= 22 && y < 24 && x >= 24 && x < 96;
+      if (!top && !bottom && !groutRow) return null;
+      if (top && x >= 46 && x < 50) return [90, 84, 78, 255];
+      if (bottom && x >= 70 && x < 74) return [90, 84, 78, 255];
+      if (groutRow) return [90, 84, 78, 255];
+      return [236, 236, 232, 255];
+    });
+    const repeat = measureTransparentSheetRepeat(data, width, height);
+    expect(repeat).not.toBeNull();
+    expect(repeat!.pitchFractionX).toBeGreaterThan(0.74);
+    expect(repeat!.pitchFractionX).toBeLessThan(0.92);
+    expect(repeat!.core.width).toBeLessThan(width - 8);
+    expect(repeat!.pitchFractionY).toBeGreaterThan(0.9);
+    const grout = sampleSheetGroutHex(data, width, height);
+    expect(grout).toMatch(/^#[0-9a-f]{6}$/);
+    // The notch fill must not be the neutral grey block color.
+    expect(grout).not.toBe("#8a8782");
+  });
+
+  it("an opaque photo is not given a fake transparent repeat", () => {
+    const data = photo(80, 80, [180, 170, 160, 255], () => [180, 170, 160, 255]);
+    expect(measureTransparentSheetRepeat(data, 80, 80)).toBeNull();
   });
 });

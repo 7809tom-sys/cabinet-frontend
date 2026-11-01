@@ -1495,8 +1495,14 @@ describe("interactive 3D room scene helpers", () => {
 				expect(threeDProductMaterialSource("backsplash", "Arctic Vail", null, {
 					cardImageUrl: "/manus-storage/pelican/47_105baf1c.png",
 				})).toMatchObject({
-					url: "/manus-storage/pelican/47_105baf1c.png",
-					cropRetailBackground: true,
+					url: "/manus-storage/arctic_vail_candidate_2_a8bed842.png",
+					physicalWidthIn: 4,
+				});
+				expect(threeDProductMaterialSource("backsplash", "Arctic Vail", null, {
+					materialImageUrl: "/manus-storage/pelican/products/47/sheet.webp",
+					cardImageUrl: "/manus-storage/pelican/47_105baf1c.png",
+				})).toMatchObject({
+					url: "/manus-storage/pelican/products/47/sheet.webp",
 					physicalWidthIn: 10.71,
 					physicalDepthIn: 10.55,
 					backsplashModuleIn: 10.71,
@@ -1507,13 +1513,54 @@ describe("interactive 3D room scene helpers", () => {
 						backsplashPatternKind: "interlocking-mosaic", backsplashModuleIn: 4, backsplashGroutJointIn: 1 / 16,
 					});
 				expect(threeDProductMaterialSource("backsplash", "Carbon Hex", null, {
-					cardImageUrl: "/manus-storage/pelican/142_0904bb42.png",
+					cardImageUrl: "/manus-storage/pelican/142_kitchen.jpg",
 					size: "12.80 x 11.10 x 8",
 				})).toMatchObject({
-					url: "/manus-storage/pelican/142_0904bb42.png",
-					cropRetailBackground: true,
+					url: "/manus-storage/carbon_hex_candidate_1_2af63616.png",
+					physicalWidthIn: 4,
+				});
+				expect(threeDProductMaterialSource("backsplash", "Carbon Hex", null, {
+					materialImageUrl: "/manus-storage/pelican/products/142/1793556207681-de516bbe_0314bfe8.webp",
+					cardImageUrl: "/manus-storage/pelican/142_kitchen.jpg",
+					size: "12.80 x 11.10 x 8",
+				})).toMatchObject({
+					url: "/manus-storage/pelican/products/142/1793556207681-de516bbe_0314bfe8.webp",
+					key: "carbon-hex-12.80in-marble-hex-mosaic",
 					physicalWidthIn: 12.8,
+					physicalDepthIn: 11.1,
 					backsplashModuleIn: 12.8,
+				});
+				expect(threeDProductMaterialSource("backsplash", "Icestone Flux", null, { productId: 286, cardImageUrl: "/thumb-200.jpg" })).toMatchObject({
+					key: "icestone-flux-10.35in-diamond-mosaic",
+					textureUnavailable: true,
+					url: "",
+				});
+				expect(threeDProductMaterialSource("backsplash", "Icestone Flux", "/thumb-200.jpg", {
+					productId: 286,
+					materialImageUrl: "/manus-storage/pelican/products/286/1793557355806-68c2eee3_d82a8ffe.webp",
+					cardImageUrl: "/thumb-200.jpg",
+					size: "10.35 x 11.73 x 8mm",
+				})).toMatchObject({
+					url: "/manus-storage/pelican/products/286/1793557355806-68c2eee3_d82a8ffe.webp",
+					physicalWidthIn: 10.35,
+					physicalDepthIn: 11.73,
+					backsplashPatternKind: "interlocking-mosaic",
+				});
+				expect(threeDProductMaterialSource("backsplash", "Thassos Subway", null, { productId: 1292 })).toMatchObject({
+					key: "thassos-subway-11.97in-staggered-mosaic",
+					textureUnavailable: true,
+				});
+				expect(threeDProductMaterialSource("flooring", "Thassos Subway", null, {
+					productId: 1292,
+					category: "Tile & Mosaic",
+					subCategory: "Mosaic",
+					materialImageUrl: "/manus-storage/pelican/products/1292/1793557806067-c68a817c_15620764.webp",
+					cardImageUrl: "/thassos-thumb.jpg",
+				})).toMatchObject({
+					url: "/manus-storage/pelican/products/1292/1793557806067-c68a817c_15620764.webp",
+					key: "thassos-subway-11.97in-staggered-mosaic",
+					physicalWidthIn: 11.97,
+					physicalDepthIn: 12.13,
 				});
 				expect(threeDProductMaterialSource("backsplash", "Carrara Subway", null)).toMatchObject({
 							url: "/manus-storage/carrara_subway_11_97x12_13_running_bond_f57029f6.webp", key: "carrara-subway-11.97in-running-bond-mosaic",

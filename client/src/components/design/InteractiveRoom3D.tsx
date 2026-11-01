@@ -91,6 +91,7 @@ import {
   threeDAverageMaterialHex,
   threeDCuratedIdentityMatches,
   threeDFlooringFallbackColor,
+  preferredDesignerMosaicUrl,
   threeDMosaicSheetMap,
   threeDRetailContentBounds,
   threeDTextureUrlIsColorMap,
@@ -964,8 +965,11 @@ interface Props {
   /** Catalog card photo used only to sample a floor color when no swatch exists. */
   catalogFlooringCardImageUrl?: string | null;
   catalogBacksplashImageUrl?: string | null;
-  /** Full-sheet mosaic photo used when the approved swatch is a close-up. */
+  /** Catalog card photo. Not a tile texture; a room photo must not be repeated as the sheet. */
   catalogBacksplashCardImageUrl?: string | null;
+  /** Uploaded Designer sheet (`materialImageUrl`). This is the mosaic texture when it exists. */
+  catalogBacksplashMaterialImageUrl?: string | null;
+  catalogFlooringMaterialImageUrl?: string | null;
   /** Catalog size string for the selected tile or mosaic sheet, when the product has one. */
   catalogBacksplashSize?: string | null;
   catalogBacksplashCategory?: string | null;
@@ -1189,10 +1193,11 @@ export function threeDProductMaterialSource(
 	role: ThreeDProductSurfaceRole,
 	productName: string | null | undefined,
 	originalUrl: string | null | undefined,
-	surfaceMetadata?: { productId?: number | null; category?: string | null; subCategory?: string | null; size?: string | null; cardImageUrl?: string | null; sampledColor?: string | null },
+	surfaceMetadata?: { productId?: number | null; category?: string | null; subCategory?: string | null; size?: string | null; cardImageUrl?: string | null; materialImageUrl?: string | null; sampledColor?: string | null },
 ): ThreeDProductMaterialSource | null {
 	const normalizedName = (productName ?? "").trim().toLowerCase();
 	const productId = surfaceMetadata?.productId ?? null;
+	const designerUpload = preferredDesignerMosaicUrl(originalUrl, surfaceMetadata?.cardImageUrl, surfaceMetadata?.materialImageUrl);
 	const mosaicOnFloor = role === "flooring" && isMosaicFloorProduct({
 	  name: productName,
 	  category: surfaceMetadata?.category,
@@ -1270,7 +1275,7 @@ export function threeDProductMaterialSource(
   }
 	if ((role === "backsplash" || mosaicOnFloor) && threeDCuratedIdentityMatches(productName, productId, "desert clay", 183)) {
 	  return {
-	    url: THREE_D_DESERT_CLAY_MOSAIC_URL,
+	    url: designerUpload || THREE_D_DESERT_CLAY_MOSAIC_URL,
       key: "desert-clay-11.81in-interlocking-mosaic",
       curated: true,
       proceduralFallback: false,
@@ -1287,7 +1292,7 @@ export function threeDProductMaterialSource(
 	  };
 	}
 	if ((role === "backsplash" || mosaicOnFloor) && threeDCuratedIdentityMatches(productName, productId, "arctic vail", 47)) {
-	  const sheet = threeDMosaicSheetMap(THREE_D_ARCTIC_VAIL_MOSAIC_URL, 10.71, 10.55, surfaceMetadata?.cardImageUrl);
+	  const sheet = threeDMosaicSheetMap(THREE_D_ARCTIC_VAIL_MOSAIC_URL, 10.71, 10.55, designerUpload);
 	  return {
 	    url: sheet.url,
 	    key: "arctic-vail-10.71in-interlocking-hex-mosaic",
@@ -1308,7 +1313,7 @@ export function threeDProductMaterialSource(
 	  };
 	}
 	if ((role === "backsplash" || mosaicOnFloor) && threeDCuratedIdentityMatches(productName, productId, "carbon hex", 142)) {
-	  const sheet = threeDMosaicSheetMap(THREE_D_CARBON_HEX_MOSAIC_URL, 12.8, 11.1, surfaceMetadata?.cardImageUrl);
+	  const sheet = threeDMosaicSheetMap(THREE_D_CARBON_HEX_MOSAIC_URL, 12.8, 11.1, designerUpload);
 	  return {
 	    url: sheet.url,
 	    key: "carbon-hex-12.80in-marble-hex-mosaic",
@@ -1345,7 +1350,7 @@ export function threeDProductMaterialSource(
   }
 	if ((role === "backsplash" || mosaicOnFloor) && threeDCuratedIdentityMatches(productName, productId, "carrara subway", 144)) {
 		return {
-			url: THREE_D_CARRARA_SUBWAY_MOSAIC_URL,
+			url: designerUpload || THREE_D_CARRARA_SUBWAY_MOSAIC_URL,
 			key: "carrara-subway-11.97in-running-bond-mosaic",
 			curated: true,
 			proceduralFallback: false,
@@ -1363,7 +1368,7 @@ export function threeDProductMaterialSource(
 	}
 	if ((role === "backsplash" || mosaicOnFloor) && threeDCuratedIdentityMatches(productName, productId, "cloudline marble", 149)) {
 		return {
-			url: THREE_D_CLOUDLINE_MARBLE_MOSAIC_URL,
+			url: designerUpload || THREE_D_CLOUDLINE_MARBLE_MOSAIC_URL,
 			key: "cloudline-marble-11.81in-staggered-glass-marble-mosaic",
 			curated: true,
 			proceduralFallback: false,
@@ -1381,7 +1386,7 @@ export function threeDProductMaterialSource(
 	}
 	if ((role === "backsplash" || mosaicOnFloor) && threeDCuratedIdentityMatches(productName, productId, "concord square", 164)) {
 		return {
-			url: THREE_D_CONCORD_SQUARE_MOSAIC_URL,
+			url: designerUpload || THREE_D_CONCORD_SQUARE_MOSAIC_URL,
 			key: "concord-square-11.81in-glass-marble-mosaic",
 			curated: true,
 			proceduralFallback: false,
@@ -1399,7 +1404,7 @@ export function threeDProductMaterialSource(
 	}
 	if ((role === "backsplash" || mosaicOnFloor) && threeDCuratedIdentityMatches(productName, productId, "glacier shift", 242)) {
 		return {
-			url: THREE_D_GLACIER_SHIFT_HERRINGBONE_URL,
+			url: designerUpload || THREE_D_GLACIER_SHIFT_HERRINGBONE_URL,
 			key: "glacier-shift-12.05in-recycled-glass-herringbone",
 			curated: true,
 			proceduralFallback: false,
@@ -1417,7 +1422,7 @@ export function threeDProductMaterialSource(
 	}
 	if ((role === "backsplash" || mosaicOnFloor) && threeDCuratedIdentityMatches(productName, productId, "golden trace", 244)) {
 		return {
-			url: THREE_D_GOLDEN_TRACE_MOSAIC_URL,
+			url: designerUpload || THREE_D_GOLDEN_TRACE_MOSAIC_URL,
 			key: "golden-trace-11.81in-marble-aluminum-mosaic",
 			curated: true,
 			proceduralFallback: false,
@@ -1433,8 +1438,48 @@ export function threeDProductMaterialSource(
 			backsplashGroutJointIn: 1 / 16,
 		};
 	}
+	if ((role === "backsplash" || mosaicOnFloor) && threeDCuratedIdentityMatches(productName, productId, "icestone flux", 286)) {
+	  return {
+	    url: designerUpload,
+	    key: "icestone-flux-10.35in-diamond-mosaic",
+	    curated: true,
+	    proceduralFallback: false,
+	    textureUnavailable: !designerUpload,
+	    physicalWidthIn: 10.35,
+	    physicalDepthIn: 11.73,
+	    sourceProductName: productName ?? null,
+	    flooringPatternKind: null,
+	    plankWidthIn: null,
+	    plankLengthIn: null,
+	    staggerOffsetsIn: null,
+	    backsplashPatternKind: "interlocking-mosaic",
+	    backsplashModuleIn: 10.35,
+	    backsplashModuleHeightIn: 11.73,
+	    backsplashGroutJointIn: 1 / 8,
+	  };
+	}
+	if ((role === "backsplash" || mosaicOnFloor) && threeDCuratedIdentityMatches(productName, productId, "thassos subway", 1292)) {
+	  return {
+	    url: designerUpload,
+	    key: "thassos-subway-11.97in-staggered-mosaic",
+	    curated: true,
+	    proceduralFallback: false,
+	    textureUnavailable: !designerUpload,
+	    physicalWidthIn: 11.97,
+	    physicalDepthIn: 12.13,
+	    sourceProductName: productName ?? null,
+	    flooringPatternKind: null,
+	    plankWidthIn: null,
+	    plankLengthIn: null,
+	    staggerOffsetsIn: null,
+	    backsplashPatternKind: "interlocking-mosaic",
+	    backsplashModuleIn: 11.97,
+	    backsplashModuleHeightIn: 12.13,
+	    backsplashGroutJointIn: 1 / 8,
+	  };
+	}
 	if (role === "backsplash" && threeDCuratedIdentityMatches(productName, productId, "misty coast", 335)) {
-	  const uploaded = originalUrl?.trim() && threeDTextureUrlIsColorMap(originalUrl) ? originalUrl.trim() : "";
+	  const uploaded = designerUpload;
 	  if (uploaded) {
 	    return {
 	      url: uploaded,
@@ -10251,6 +10296,49 @@ function addThreeDBaseboards(root: THREE.Group, placed: PlacedCabinet[], opening
   }
 }
 
+/** Rewrite baked mosaic UVs after the sheet photo has been measured. */
+function refreshThreeDMosaicFieldUvs(texture: THREE.Texture, moduleIn: number, moduleHeightIn: number) {
+  texture.userData.backsplashModuleIn = moduleIn;
+  texture.userData.backsplashModuleHeightIn = moduleHeightIn;
+  texture.userData.backsplashMeasuredModuleIn = moduleIn;
+  texture.userData.backsplashMeasuredModuleHeightIn = moduleHeightIn;
+  const meshes = texture.userData.mosaicMeshes as THREE.Mesh[] | undefined;
+  for (const mesh of meshes ?? []) {
+    const info = mesh.userData.mosaicUv as {
+      segment: ThreeDBacksplashSegment;
+      renderStart: number;
+      renderEnd: number;
+      phase?: { anchor: "start" | "end"; wallLengthIn: number };
+    } | undefined;
+    const geometry = mesh.geometry;
+    if (!info || !(geometry instanceof THREE.PlaneGeometry)) continue;
+    const positions = geometry.getAttribute("position");
+    const uv = geometry.getAttribute("uv");
+    if (!positions || !uv) continue;
+    const width = geometry.parameters.width;
+    const height = geometry.parameters.height;
+    for (let index = 0; index < uv.count; index += 1) {
+      const planeU = positions.getX(index) / width + 0.5;
+      const planeV = positions.getY(index) / height + 0.5;
+      const mapped = threeDBacksplashPlaneUv(info.segment, planeU, planeV, info.renderStart, info.renderEnd, moduleIn, moduleHeightIn, info.phase);
+      uv.setXY(index, mapped.u, mapped.v);
+    }
+    uv.needsUpdate = true;
+  }
+  const floor = texture.userData.mosaicFloorField as { geometry: THREE.BufferGeometry; pattern: ReturnType<typeof mosaicFloorPatternOrStraight> } | undefined;
+  if (floor?.geometry) {
+    const positions = floor.geometry.getAttribute("position");
+    const uv = floor.geometry.getAttribute("uv");
+    if (positions && uv) {
+      for (let index = 0; index < positions.count; index += 1) {
+        const mapped = mosaicFloorUv(positions.getX(index) / INCH, positions.getY(index) / INCH, moduleIn, moduleHeightIn, floor.pattern);
+        uv.setXY(index, mapped.u, mapped.v);
+      }
+      uv.needsUpdate = true;
+    }
+  }
+}
+
 function addThreeDBacksplash(
   root: THREE.Group,
   segments: ThreeDBacksplashSegment[],
@@ -10304,7 +10392,14 @@ function addThreeDBacksplash(
     mesh.position.set(transform.x * INCH, transform.y * INCH, transform.z * INCH);
     mesh.rotation.y = transform.rotation;
     mesh.receiveShadow = true;
-    mesh.userData = { measuredBacksplash: true, ...segment, tileModuleIn: moduleIn, groutJointIn, backsplashPatternKind: patternKind, continuousTileField: true, clippedAroundSavedPlan: true, cornerAnchor: anchor };
+    mesh.userData = {
+      measuredBacksplash: true, ...segment, tileModuleIn: moduleIn, groutJointIn, backsplashPatternKind: patternKind,
+      continuousTileField: true, clippedAroundSavedPlan: true, cornerAnchor: anchor,
+      mosaicUv: { segment, renderStart: render.start, renderEnd: render.end, phase },
+    };
+    const mosaicMeshes = (sourceTexture.userData.mosaicMeshes as THREE.Mesh[] | undefined) ?? [];
+    mosaicMeshes.push(mesh);
+    sourceTexture.userData.mosaicMeshes = mosaicMeshes;
     // A clean finished edge wherever the tile is cut free (above a window, beside a window, under a gap): never a bare chip edge.
     const ceilingIn = wallTopLimit(room as RoomData, segment.side as WallSide);
     const edges = sideLengthIn > 0 ? mosaicFinishedEdges(segment, segments, sideLengthIn, ceilingIn) : [];
@@ -11462,7 +11557,7 @@ function ThreeDFloorMaterialControl({
   return <FlooringRotationControl value={rotation} onChange={onRotationChange} testId={testId} />;
 }
 
-export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick = false, roomOverride, openings = [], sinks = [], potFillers = [], island = null, islandFocusRequest = null, furniture = [], selectedFurnitureUid = null, onSelectFurniture, onRemoveFurniture, onRotateFurniture, onOpenFurnitureAttributes, ponyWalls = [], orderSummary, orderLines = [], initialPresentation, catalogFinishOverride, renderExposure = null, colorDeltaEMax = null, doorRenderHex = null, cabinetFinishPreviewOptions = [], doorStyleChoices = [], selectedDoorStyleId = null, onDoorStyleChange, cabinetFinishOverrides, cabinetDoorProfiles, cabinetDoorSampleUrls, cabinetDrawerSampleUrls, cabinetFaceSourceKinds, cabinetFaceCrops, catalogFaceCrop, cabinetFrontVisuals, catalogDoorSampleUrl, catalogDrawerSampleUrl, catalogFaceSourceKind, catalogRoomSceneUrl, catalogDoorProfile, windowSceneKind = DEFAULT_WINDOW_SCENE_KIND, windowFrameStyle = "white", hardwareStyleId = "none", hardwareAccent, catalogFinishName, catalogFinishProductId, catalogIslandCabinetName, catalogIslandCabinetColor, catalogIslandCabinetProductId, catalogIslandDoorSampleUrl, catalogCountertopName, catalogCountertopProductId, catalogCountertopReferenceUrl, catalogIslandCountertopName, catalogIslandCountertopProductId, catalogIslandCountertopReferenceUrl, catalogFlooringName, catalogFlooringProductId, catalogFlooringReferenceUrl, catalogFlooringCategory, catalogFlooringSubCategory, catalogFlooringSize, catalogBacksplashName, catalogBacksplashProductId, catalogBacksplashReferenceUrl, catalogHardwareReferenceUrl, catalogHardwareName, savedDesignId, savedDesignRevision, canAffiliateGeminiImageTest = false, isCurrentPlanSaved = false, savedPlanFingerprintPayload = null, backsplashHeightMode = "standard", countertopBacksplashHeightIn = 0, catalogCountertopColor, catalogIslandCountertopColor, catalogCountertopImageUrl, catalogIslandCountertopImageUrl, catalogFlooringImageUrl, catalogFlooringCardImageUrl = null, flooringRotationDeg = 0, onFlooringRotationChange, mosaicFloorPattern = null, onMosaicFloorPatternChange, catalogBacksplashImageUrl, catalogBacksplashCardImageUrl = null, catalogBacksplashSize = null, catalogBacksplashCategory = null, catalogBacksplashSubCategory = null, shareContext, catalogItems = [], catalogDragItem = null, catalogDropWall, onAddCatalogItem, onAddRangeHood, onSaveToAccount, onSyncCart, onPresentationChange, onRoomWallHeightChange, onRoomWallHeightsChange, onMoveCabinet, onMoveCabinetTo, selectedCabinetUid, attributesTargetUid = null, missingPriceUids, onSelectCabinet, onOpenCabinetEditor, onSelectOpening, onOpenWindowEditor, onOpenDoorEditor, onRequestFiller, onSnapGlassCabinetToFront, onRotateCabinet, onRemoveCabinet, showWallLayer, onToggleWallLayer, temporaryPreviewMessage, onClearTemporaryPreview, temporaryPreviewCounter, temporaryPreviewTransitionKey, fillerInsertionTransition, cabinetConfigHref, embedded = false, cutawayRoomWalls = true, hybridPlanUnderlay = false, className, onGeometryRendered }: Props) {
+export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick = false, roomOverride, openings = [], sinks = [], potFillers = [], island = null, islandFocusRequest = null, furniture = [], selectedFurnitureUid = null, onSelectFurniture, onRemoveFurniture, onRotateFurniture, onOpenFurnitureAttributes, ponyWalls = [], orderSummary, orderLines = [], initialPresentation, catalogFinishOverride, renderExposure = null, colorDeltaEMax = null, doorRenderHex = null, cabinetFinishPreviewOptions = [], doorStyleChoices = [], selectedDoorStyleId = null, onDoorStyleChange, cabinetFinishOverrides, cabinetDoorProfiles, cabinetDoorSampleUrls, cabinetDrawerSampleUrls, cabinetFaceSourceKinds, cabinetFaceCrops, catalogFaceCrop, cabinetFrontVisuals, catalogDoorSampleUrl, catalogDrawerSampleUrl, catalogFaceSourceKind, catalogRoomSceneUrl, catalogDoorProfile, windowSceneKind = DEFAULT_WINDOW_SCENE_KIND, windowFrameStyle = "white", hardwareStyleId = "none", hardwareAccent, catalogFinishName, catalogFinishProductId, catalogIslandCabinetName, catalogIslandCabinetColor, catalogIslandCabinetProductId, catalogIslandDoorSampleUrl, catalogCountertopName, catalogCountertopProductId, catalogCountertopReferenceUrl, catalogIslandCountertopName, catalogIslandCountertopProductId, catalogIslandCountertopReferenceUrl, catalogFlooringName, catalogFlooringProductId, catalogFlooringReferenceUrl, catalogFlooringCategory, catalogFlooringSubCategory, catalogFlooringSize, catalogBacksplashName, catalogBacksplashProductId, catalogBacksplashReferenceUrl, catalogHardwareReferenceUrl, catalogHardwareName, savedDesignId, savedDesignRevision, canAffiliateGeminiImageTest = false, isCurrentPlanSaved = false, savedPlanFingerprintPayload = null, backsplashHeightMode = "standard", countertopBacksplashHeightIn = 0, catalogCountertopColor, catalogIslandCountertopColor, catalogCountertopImageUrl, catalogIslandCountertopImageUrl, catalogFlooringImageUrl, catalogFlooringCardImageUrl = null, flooringRotationDeg = 0, onFlooringRotationChange, mosaicFloorPattern = null, onMosaicFloorPatternChange, catalogBacksplashImageUrl, catalogBacksplashCardImageUrl = null, catalogBacksplashMaterialImageUrl = null, catalogFlooringMaterialImageUrl = null, catalogBacksplashSize = null, catalogBacksplashCategory = null, catalogBacksplashSubCategory = null, shareContext, catalogItems = [], catalogDragItem = null, catalogDropWall, onAddCatalogItem, onAddRangeHood, onSaveToAccount, onSyncCart, onPresentationChange, onRoomWallHeightChange, onRoomWallHeightsChange, onMoveCabinet, onMoveCabinetTo, selectedCabinetUid, attributesTargetUid = null, missingPriceUids, onSelectCabinet, onOpenCabinetEditor, onSelectOpening, onOpenWindowEditor, onOpenDoorEditor, onRequestFiller, onSnapGlassCabinetToFront, onRotateCabinet, onRemoveCabinet, showWallLayer, onToggleWallLayer, temporaryPreviewMessage, onClearTemporaryPreview, temporaryPreviewCounter, temporaryPreviewTransitionKey, fillerInsertionTransition, cabinetConfigHref, embedded = false, cutawayRoomWalls = true, hybridPlanUnderlay = false, className, onGeometryRendered }: Props) {
   const previewRootRef = useRef<HTMLElement>(null);
   const mountRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -12066,7 +12161,15 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 	          const unit = buildMosaicUnitImage(loadedTexture.image as HTMLImageElement, interlockSpec, renderQuality.tier === "mobile" ? 1024 : 2048);
 	          if (!unit) return false;
 	          (loadedTexture as THREE.Texture<HTMLImageElement | HTMLCanvasElement>).image = unit.image;
-	          loadedTexture.userData = { ...loadedTexture.userData, backsplashPhotoBorderCut: true, backsplashMeasuredOverhangIn: unit.measuredOverhangIn, backsplashFrameLineTrimmed: unit.analysis.frameLineTrimmed };
+	          loadedTexture.userData = {
+	            ...loadedTexture.userData,
+	            backsplashPhotoBorderCut: true,
+	            backsplashMeasuredOverhangIn: unit.measuredOverhangIn,
+	            backsplashFrameLineTrimmed: unit.analysis.frameLineTrimmed,
+	            backsplashMeasuredModuleIn: unit.measuredRepeatIn?.x ?? null,
+	            backsplashMeasuredModuleHeightIn: unit.measuredRepeatIn?.y ?? null,
+	          };
+	          if (unit.measuredRepeatIn) refreshThreeDMosaicFieldUvs(loadedTexture, unit.measuredRepeatIn.x, unit.measuredRepeatIn.y);
 	          return true;
 	        })()) {
 	          // unit built from the measured photo above
@@ -12146,8 +12249,11 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 	        staggerOffsetsIn: source.staggerOffsetsIn,
 	        backsplashPatternKind: source.backsplashPatternKind ?? null,
 	        // An interlocking sheet repeats at its interlock pitch, not at the photo's outer size.
-	        backsplashModuleIn: interlockSpec ? mosaicPitchIn(interlockSpec).x : (source.backsplashModuleIn ?? null),
-	        backsplashModuleHeightIn: interlockSpec ? mosaicPitchIn(interlockSpec).y : (source.backsplashModuleHeightIn ?? null),
+	        backsplashModuleIn: texture.userData?.backsplashMeasuredModuleIn ?? (interlockSpec ? mosaicPitchIn(interlockSpec).x : (source.backsplashModuleIn ?? null)),
+	        backsplashModuleHeightIn: texture.userData?.backsplashMeasuredModuleHeightIn ?? (interlockSpec ? mosaicPitchIn(interlockSpec).y : (source.backsplashModuleHeightIn ?? null)),
+	        // The pitch above is `interlockSpec ? mosaicPitchIn(interlockSpec).x` unless the loaded sheet measured a repeat.
+	        backsplashMeasuredModuleIn: texture.userData?.backsplashMeasuredModuleIn ?? null,
+	        backsplashMeasuredModuleHeightIn: texture.userData?.backsplashMeasuredModuleHeightIn ?? null,
 	        backsplashGroutJointIn: interlockSpec ? clampMosaicGroutIn(interlockSpec.groutIn) : (source.backsplashGroutJointIn ?? null),
 	        backsplashInterlockKey: interlockSpec?.key ?? null,
 	        backsplashMosaicSpec: interlockSpec ?? null,
@@ -12161,6 +12267,7 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 	      subCategory: catalogFlooringSubCategory,
 	      size: catalogFlooringSize,
 	      cardImageUrl: catalogFlooringCardImageUrl,
+	      materialImageUrl: catalogFlooringMaterialImageUrl,
 	    });
 		    const countertopSource = threeDProductMaterialSource("countertop", catalogCountertopName, catalogCountertopImageUrl);
 		    const islandCountertopSource = threeDProductMaterialSource(
@@ -12174,6 +12281,7 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 	      subCategory: catalogBacksplashSubCategory,
 	      size: catalogBacksplashSize,
 	      cardImageUrl: catalogBacksplashCardImageUrl,
+	      materialImageUrl: catalogBacksplashMaterialImageUrl,
 	    });
 	    setBacksplashTextureWarning(backsplashSource?.textureUnavailable
 	      ? backsplashTextureWarningMessage(backsplashSource.sourceProductName, "missing")
@@ -12214,6 +12322,7 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 	        }
 	        uvs.needsUpdate = true;
 	      }
+	      if (floorTexture) floorTexture.userData.mosaicFloorField = { geometry: floorGeometry, pattern };
 	    }
 	    const floorTint = floorSource?.proceduralFallback
 	      ? (floorSource.materialColor || THREE_D_NEUTRAL_FLOOR_COLOR)
@@ -12601,7 +12710,7 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
       if (controlsRef.current === controls) controlsRef.current = null;
       if (catalogRootRef.current === catalogRoot) catalogRootRef.current = null;
     };
-  }, [scene, validSuggestions, placed, crown, toeKick, roomOverride, openings, sinks, potFillers, island, furniture, selectedFurnitureUid, ponyWalls, renderExistingDesign, resetKey, cameraPreset, showRoomContext, showSolidFrontWalls, cutawayRoomWalls, hybridPlanUnderlay, wallHeightIn, wallHeights, resolvedCabinetFinish, studioLights, cabinetPreviewFinishId, cabinetFinishOverrides, cabinetDoorProfiles, cabinetDoorSampleUrls, cabinetDrawerSampleUrls, cabinetFaceSourceKinds, cabinetFaceCrops, catalogFaceCrop, cabinetFrontVisuals, catalogDrawerSampleUrl, catalogFaceSourceKind, countertopFinish, cabinetFinish, catalogDoorSampleUrl, catalogRoomSceneUrl, hardwareStyleId, hardwareAccent, catalogCountertopName, catalogCountertopProductId, catalogIslandCountertopName, catalogIslandCountertopProductId, catalogIslandCountertopColor, catalogFlooringName, catalogFlooringProductId, catalogFlooringCategory, catalogFlooringSubCategory, catalogFlooringSize, catalogBacksplashName, catalogBacksplashProductId, catalogBacksplashSize, catalogBacksplashCategory, catalogBacksplashSubCategory, backsplashHeightMode, countertopBacksplashHeightIn, catalogCountertopImageUrl, catalogIslandCountertopImageUrl, catalogFlooringImageUrl, catalogFlooringCardImageUrl, flooringRotationDeg, mosaicFloorPattern, catalogBacksplashImageUrl, catalogBacksplashCardImageUrl]);
+  }, [scene, validSuggestions, placed, crown, toeKick, roomOverride, openings, sinks, potFillers, island, furniture, selectedFurnitureUid, ponyWalls, renderExistingDesign, resetKey, cameraPreset, showRoomContext, showSolidFrontWalls, cutawayRoomWalls, hybridPlanUnderlay, wallHeightIn, wallHeights, resolvedCabinetFinish, studioLights, cabinetPreviewFinishId, cabinetFinishOverrides, cabinetDoorProfiles, cabinetDoorSampleUrls, cabinetDrawerSampleUrls, cabinetFaceSourceKinds, cabinetFaceCrops, catalogFaceCrop, cabinetFrontVisuals, catalogDrawerSampleUrl, catalogFaceSourceKind, countertopFinish, cabinetFinish, catalogDoorSampleUrl, catalogRoomSceneUrl, hardwareStyleId, hardwareAccent, catalogCountertopName, catalogCountertopProductId, catalogIslandCountertopName, catalogIslandCountertopProductId, catalogIslandCountertopColor, catalogFlooringName, catalogFlooringProductId, catalogFlooringCategory, catalogFlooringSubCategory, catalogFlooringSize, catalogBacksplashName, catalogBacksplashProductId, catalogBacksplashSize, catalogBacksplashCategory, catalogBacksplashSubCategory, backsplashHeightMode, countertopBacksplashHeightIn, catalogCountertopImageUrl, catalogIslandCountertopImageUrl, catalogFlooringImageUrl, catalogFlooringCardImageUrl, flooringRotationDeg, mosaicFloorPattern, catalogBacksplashImageUrl, catalogBacksplashCardImageUrl, catalogBacksplashMaterialImageUrl, catalogFlooringMaterialImageUrl]);
 	  // A catalog filler has already passed geometry/collision validation before this
 	  // cue runs. Animate only its visual group, so the final coordinates and the
 	  // saved plan remain authoritative while the user sees it settle into the seam.
