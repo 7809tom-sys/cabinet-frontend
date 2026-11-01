@@ -108,9 +108,10 @@ export const MOSAIC_SHEET_SPECS: readonly MosaicInterlockSpec[] = [
   // Straight-edge sheets: overlap 0, so the pitch is the sheet size.
   spec("carrara-subway-11.97in-running-bond-mosaic", "carrara subway", 11.97, 12.13, 0),
   spec("cloudline-marble-11.81in-staggered-glass-marble-mosaic", "cloudline marble", 11.81, 11.81, 0),
-  // Measured on the 1646×1330 designer sheet. Content box 1644×1328. Two bricks per row, alternate
-  // rows offset half a brick: the nest period is 1322×1326 px (vertical overhang is a hairline).
-  spec("thassos-subway-11.97in-staggered-mosaic", "thassos subway", 11.97, 12.13, 2.3446, 0.0183),
+  // Fallback when the transparent Designer upload is missing or will not nest. Content box of the
+  // 1646×1330 sheet is 1644×1328. Alternate rows are a quarter offset (~331 px, ~2.41 in across),
+  // not a half brick. Up overhang is 0. A live transparent upload is measured and wins over this.
+  spec("thassos-subway-11.97in-staggered-mosaic", "thassos subway", 11.97, 12.13, 2.41, 0),
 ].map((item) => {
   const measured = MEASURED_SHEET_NAMES.has(item.name);
   const groutIn = measured ? MOSAIC_GROUT_MAX_IN : item.groutIn;

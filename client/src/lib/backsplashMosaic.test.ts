@@ -22,8 +22,11 @@ describe("interlocking mosaics repeat at their interlock spacing", () => {
     for (const item of MOSAIC_INTERLOCK_SPECS) {
       const pitch = mosaicPitchIn(item);
       if (item.edge === "straight") { expect(pitch).toEqual({ x: item.outerWidthIn, y: item.outerHeightIn }); continue; }
-      expect(pitch.x).toBeLessThan(item.outerWidthIn);
-      expect(pitch.y).toBeLessThan(item.outerHeightIn);
+      // A staggered subway interlocks on one axis. The other axis repeats at the sheet size.
+      if (item.overhangXIn > 0) expect(pitch.x).toBeLessThan(item.outerWidthIn);
+      else expect(pitch.x).toBeCloseTo(item.outerWidthIn, 6);
+      if (item.overhangYIn > 0) expect(pitch.y).toBeLessThan(item.outerHeightIn);
+      else expect(pitch.y).toBeCloseTo(item.outerHeightIn, 6);
       // Hex fingers are a few percent. A linear strip sheet (Misty Coast) nests about a fifth of its width and still stays under a quarter.
       expect(pitch.x).toBeGreaterThan(item.outerWidthIn * 0.75);
     }
@@ -194,8 +197,9 @@ describe("hard rule: every mosaic shows no sheet edges", () => {
       it("repeats at the interlock spacing, flush sheet to sheet, in 3D and in the elevation", () => {
         const pitch = mosaicPitchIn(item);
         if (item.edge === "interlocking") {
-          expect(pitch.x).toBeLessThan(item.outerWidthIn);
-          expect(pitch.y).toBeLessThan(item.outerHeightIn);
+          expect(pitch.x).toBeLessThanOrEqual(item.outerWidthIn);
+          expect(pitch.y).toBeLessThanOrEqual(item.outerHeightIn);
+          expect(pitch.x < item.outerWidthIn || pitch.y < item.outerHeightIn).toBe(true);
         } else {
           // straight-edge sheet: overlap 0, the pitch is the sheet size
           expect(item.overhangXIn).toBe(0);

@@ -1,6 +1,34 @@
-import { GENERIC_MOSAIC_GROUT_COLOR, mosaicInterlockUnitPlan, mosaicPitchIn, type MosaicInterlockSpec } from "./backsplashMosaic";
-import { canvasWithoutBakedCheckerboard, drawableHasTransparency } from "./mosaicCheckerboard";
-import { analyzeMosaicPhoto, measureTransparentSheetRepeat, measuredMosaicOverhangIn, sampleSheetGroutHex, type MosaicPhotoAnalysis } from "./mosaicPhotoAnalysis";
+import { mosaicInterlockUnitPlan, mosaicPitchIn, type MosaicInterlockSpec } from "./backsplashMosaic";
+import { canvasWithoutBakedCheckerboard } from "./mosaicCheckerboard";
+import {
+  analyzeMosaicPhoto, bleedTransparentEdgeColor, clearBakedSheetGrout, imageHasMeaningfulTransparency, measureTransparentSheetRepeat,
+  measuredMosaicOverhangIn, sampleSheetTileHex, type MosaicPhotoAnalysis, type TransparentSheetRepeat,
+} from "./mosaicPhotoAnalysis";
+
+/** Hand-coded pitch is a sanity bound. A real stagger can sit inside a generic full-size spec. */
+const REPEAT_SANITY_FRACTION = 0.28;
+
+export function transparentRepeatInches(item: MosaicInterlockSpec, repeat: TransparentSheetRepeat) {
+  const round = (value: number) => Math.round(value * 10000) / 10000;
+  return {
+    x: round(item.outerWidthIn * (repeat.core.width / Math.max(1, repeat.box.width))),
+    y: round(item.outerHeightIn * (repeat.core.height / Math.max(1, repeat.box.height))),
+  };
+}
+
+/** A measured transparent period wins when it nests near the spec. Otherwise the spec stays the backup. */
+export function acceptTransparentRepeat(item: MosaicInterlockSpec, repeat: TransparentSheetRepeat | null): TransparentSheetRepeat | null {
+  if (!repeat || !(repeat.box.width > 0) || !(repeat.box.height > 0) || !(repeat.core.width > 0) || !(repeat.core.height > 0)) return null;
+  const measured = transparentRepeatInches(item, repeat);
+  const backup = mosaicPitchIn(item);
+  const axis = (value: number, expected: number, outer: number) =>
+    value > 0
+    && value <= outer * 1.02
+    && value >= outer * 0.7
+    && Math.abs(value - expected) <= Math.max(0.35, expected * REPEAT_SANITY_FRACTION);
+  if (!axis(measured.x, backup.x, item.outerWidthIn) || !axis(measured.y, backup.y, item.outerHeightIn)) return null;
+  return repeat;
+}
 
 export type MosaicUnitImage = {
   image: HTMLCanvasElement;
@@ -43,9 +71,9 @@ function drawNestedTransparentSheet(
 /**
  * Builds the one repeating unit of any mosaic straight from its product photo: the photo border is found and cut
  * away automatically, the flush repeat is measured from the sheet itself, and one even grout line is painted along
- * the unit's top and right edge. A transparent sheet is drawn over a grout fill instead, so the gaps read as grout.
- * Returns null (caller keeps its fallback) when the photo cannot be read or analysed, for example a cross-origin
- * image that taints the canvas.
+ * the unit's top and right edge. A transparent Designer upload is measured even when the coverage pass finds no
+ * flush core, and its notches are filled with chip colour rather than grey or the spec's grout. Returns null
+ * (caller keeps its fallback) when the photo cannot be read, for example a cross-origin image that taints the canvas.
  */
 export function buildMosaicUnitImage(
   source: HTMLImageElement | HTMLCanvasElement,
@@ -57,7 +85,6 @@ export function buildMosaicUnitImage(
   const width = (prepared as HTMLImageElement).naturalWidth || prepared.width;
   const height = (prepared as HTMLImageElement).naturalHeight || prepared.height;
   if (!width || !height) return null;
-  const transparentSheet = drawableHasTransparency(prepared);
   try {
     const probe = document.createElement("canvas");
     probe.width = width;
@@ -66,33 +93,39 @@ export function buildMosaicUnitImage(
     if (!probeContext) return null;
     probeContext.drawImage(prepared, 0, 0, width, height);
     const pixels = probeContext.getImageData(0, 0, width, height).data;
+    const transparentSheet = imageHasMeaningfulTransparency(pixels, width, height);
+    // Photo grout is a straight grey joint. Clearing it lets stepped ends slide together
+    // and keeps that grey from sitting under the Designer's own grout line. Opaque catalog
+    // photos are not transparent, so they skip this and keep the old crop.
+    if (transparentSheet) clearBakedSheetGrout(pixels, width, height);
     const analysis = analyzeMosaicPhoto(pixels, width, height);
-    if (!analysis) return null;
-    // A measured spec already knows the sheet period as a fraction of this photo's content box.
-    // The coverage rectangle is the overlap of staggered rows, which is smaller than that period
-    // and would double a row of chips if it were used as the repeat.
-    const photoRepeat = !item.measured && transparentSheet ? measureTransparentSheetRepeat(pixels, width, height) : null;
-    const repeatCore = item.measured
-      ? null
-      : photoRepeat
-        ? { x: photoRepeat.core.x - analysis.box.x, y: photoRepeat.core.y - analysis.box.y, width: photoRepeat.core.width, height: photoRepeat.core.height }
+    // Every transparent Designer upload is measured, including sheets whose hand-coded spec
+    // is already marked measured. The spec pitch is only the backup when this score is poor.
+    const photoRepeat = transparentSheet ? measureTransparentSheetRepeat(pixels, width, height) : null;
+    const accepted = transparentSheet ? acceptTransparentRepeat(item, photoRepeat) : null;
+    if (!analysis && !accepted) return null;
+    const sheetBox = accepted?.box ?? analysis?.box;
+    if (!sheetBox) return null;
+    const measured = !accepted && analysis && !item.measured
+      ? measuredMosaicOverhangIn(analysis, item.outerWidthIn, item.outerHeightIn)
+      : null;
+    const repeatCore = accepted
+      ? {
+          x: accepted.core.x - sheetBox.x,
+          y: accepted.core.y - sheetBox.y,
+          width: accepted.core.width,
+          height: accepted.core.height,
+        }
+      : measured && analysis
+        ? { x: analysis.core.x - analysis.box.x, y: analysis.core.y - analysis.box.y, width: analysis.core.width, height: analysis.core.height }
         : null;
-    const measured = item.measured || photoRepeat
-      ? null
-      : measuredMosaicOverhangIn(analysis, item.outerWidthIn, item.outerHeightIn);
-    // Plan inside the border-free box. A measured sheet or a nested transparent photo supplies the
-    // repeat rectangle. Otherwise a plausible coverage core wins, then the spec estimate.
     const plan = mosaicInterlockUnitPlan(
-      item, analysis.box.width, analysis.box.height, maxUnitPx,
-      repeatCore && repeatCore.width > 0 && repeatCore.height > 0
-        ? repeatCore
-        : measured
-          ? { x: analysis.core.x - analysis.box.x, y: analysis.core.y - analysis.box.y, width: analysis.core.width, height: analysis.core.height }
-          : null,
+      item, sheetBox.width, sheetBox.height, maxUnitPx,
+      repeatCore && repeatCore.width > 0 && repeatCore.height > 0 ? repeatCore : null,
     );
     const nestCore = {
-      x: analysis.box.x + plan.source.x,
-      y: analysis.box.y + plan.source.y,
+      x: sheetBox.x + plan.source.x,
+      y: sheetBox.y + plan.source.y,
       width: plan.source.width,
       height: plan.source.height,
     };
@@ -102,46 +135,58 @@ export function buildMosaicUnitImage(
     const context = canvas.getContext("2d");
     if (!context) return null;
     context.imageSmoothingQuality = "high";
-    // Generic sheets ship with a neutral grey. On a transparent upload that grey is the notch
-    // fill, so sample the sheet's own grout instead of painting grey blocks.
-    const sampledGrout = transparentSheet && (!item.groutColor || item.groutColor === GENERIC_MOSAIC_GROUT_COLOR)
-      ? sampleSheetGroutHex(pixels, width, height)
-      : null;
-    const groutFill = sampledGrout ?? item.groutColor ?? "#8a8782";
-    context.fillStyle = groutFill;
+    let drawSource: CanvasImageSource = prepared;
     if (transparentSheet) {
-      // Gaps in a transparent sheet are grout. Ragged ends are drawn into the neighbor's recesses
-      // so a linear interlock does not get a straight cut through every strip. The rectangle is the
-      // real repeat, not the coverage overlap, so a notch is filled by the next sheet's finger.
-      context.fillRect(0, 0, plan.width, plan.height);
-      drawNestedTransparentSheet(context, prepared, width, height, nestCore, plan.width, plan.height);
+      bleedTransparentEdgeColor(pixels, width, height);
+      probeContext.putImageData(new ImageData(pixels, width, height), 0, 0);
+      drawSource = probe;
+    }
+    const groutLine = item.groutColor ?? "#8a8782";
+    if (transparentSheet) {
+      // Notches are the next sheet's fingers. A leftover clear pixel takes the chip colour.
+      // Grey #8a8782 and a spec's dark grout are the joint line only, never the notch fill.
+      const tileFill = sampleSheetTileHex(pixels, width, height);
+      const blocked = tileFill?.toLowerCase() === "#8a8782" || tileFill?.toLowerCase() === (item.groutColor ?? "").toLowerCase();
+      if (tileFill && !blocked) {
+        context.fillStyle = tileFill;
+        context.fillRect(0, 0, plan.width, plan.height);
+      }
+      drawNestedTransparentSheet(context, drawSource, width, height, nestCore, plan.width, plan.height);
+      context.fillStyle = groutLine;
+      context.fillRect(0, 0, plan.width, plan.groutYPx);
+      context.fillRect(plan.width - plan.groutXPx, 0, plan.groutXPx, plan.height);
     } else {
       context.drawImage(
-        prepared,
+        drawSource,
         nestCore.x, nestCore.y, nestCore.width, nestCore.height,
         0, 0, plan.width, plan.height,
       );
-      context.fillStyle = groutFill;
+      context.fillStyle = groutLine;
       context.fillRect(0, 0, plan.width, plan.groutYPx);
       context.fillRect(plan.width - plan.groutXPx, 0, plan.groutXPx, plan.height);
     }
-    const repeatIn = item.measured
-      ? mosaicPitchIn(item)
-      : photoRepeat
-        ? {
-            x: Math.round(item.outerWidthIn * (photoRepeat.core.width / Math.max(1, photoRepeat.box.width)) * 10000) / 10000,
-            y: Math.round(item.outerHeightIn * (photoRepeat.core.height / Math.max(1, photoRepeat.box.height)) * 10000) / 10000,
-          }
+    const repeatIn = accepted
+      ? transparentRepeatInches(item, accepted)
+      : item.measured
+        ? mosaicPitchIn(item)
         : null;
-    const measuredOverhangIn = item.measured
-      ? { overhangXIn: item.overhangXIn, overhangYIn: item.overhangYIn }
-      : photoRepeat
-        ? {
-            overhangXIn: Math.round((item.outerWidthIn - (repeatIn?.x ?? item.outerWidthIn)) * 1000) / 1000,
-            overhangYIn: Math.round((item.outerHeightIn - (repeatIn?.y ?? item.outerHeightIn)) * 1000) / 1000,
-          }
+    const measuredOverhangIn = accepted
+      ? {
+          overhangXIn: Math.round((item.outerWidthIn - (repeatIn?.x ?? item.outerWidthIn)) * 1000) / 1000,
+          overhangYIn: Math.round((item.outerHeightIn - (repeatIn?.y ?? item.outerHeightIn)) * 1000) / 1000,
+        }
+      : item.measured
+        ? { overhangXIn: item.overhangXIn, overhangYIn: item.overhangYIn }
         : measured;
-    return { image: canvas, analysis, measuredOverhangIn, measuredRepeatIn: repeatIn };
+    const resolvedAnalysis: MosaicPhotoAnalysis = analysis ?? {
+      box: accepted!.box,
+      core: accepted!.core,
+      overhangXPx: Math.max(0, accepted!.box.width - accepted!.core.width),
+      overhangYPx: Math.max(0, accepted!.box.height - accepted!.core.height),
+      background: "transparent",
+      frameLineTrimmed: false,
+    };
+    return { image: canvas, analysis: resolvedAnalysis, measuredOverhangIn, measuredRepeatIn: repeatIn };
   } catch {
     return null;
   }
