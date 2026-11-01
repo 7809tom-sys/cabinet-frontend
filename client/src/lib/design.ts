@@ -5917,20 +5917,36 @@ function height_safe(roomDepth: number, _placement: Placement): number {
 // Corner cabinets (Lazy Susan, blind corner, diagonal corner, easy-reach corner)
 // occupy an L-shaped footprint in plan view, not a plain square. We detect them
 // by masterCode prefix so both placed packages and palette drops render correctly.
-export function isCornerCabinet(masterCode: string, description?: string): boolean {
+/**
+ * A plain straight base: B24, B36, B42, B-42, SB36, DB18, 3DB24... There is no B42 corner cabinet. Corner and blind
+ * status comes from the model code (or a stored cornerType), never from words in the description, so this code
+ * shape is a normal base cabinet whatever its description says (Tom, Oct 31). BBC/BLB/BER... do not match: the
+ * second character is a letter, not a digit.
+ */
+export function isPlainBaseCode(masterCode: string | null | undefined): boolean {
+  return /^(?:B|SB|DB|3DB)-?\d/.test((masterCode || "").toUpperCase());
+}
+
+/** cornerType values stored on a catalog row that mean a real corner cabinet. */
+const STORED_CORNER_TYPES = new Set(["blind-corner", "l-shape", "diagonal", "pie-cut", "lazy-susan", "easy-reach"]);
+
+export function isCornerCabinet(masterCode: string, description?: string, cornerType?: string | null): boolean {
   const code = (masterCode || "").toUpperCase();
-  const desc = (description || "").toLowerCase();
   // WAC/AW is an angled WALL-END cabinet. It finishes a normal wall run with a
   // 45° exposed face; it is not installed in or owned by a room corner.
   if (isWallAngleEndCabinet({ masterCode, description })) return false;
+  // A plain base code is a normal base, period. It beats any stored type and any description.
+  if (isPlainBaseCode(code)) return false;
   // ERB/BER are the easy-reach corner base codes (BER is the Skyline naming;
   // ERB is how the catalog stores the same cabinet). WER is the wall easy-reach.
   // LS## = Lazy Susan (e.g. LS3612, LS3312); LSB## = Lazy Susan Base (older naming)
   // BER## = Easy-Reach corner base (Skyline naming, e.g. BER33, BER36)
   // DCSB## = Diagonal Corner Sink Base (e.g. DCSB36). Sink fronts DCFF/DCSF stay out.
-  if (/^(BBC|WBC|BLB|LSB?|CSB|WLS|DCW|DCB|DCSB|ER|ERB|BER|WER|WDC|KWD|AG-|AG\d|CAG)/.test(code)) return true;
+  // CDB## = Corner Drawer Base.
+  if (/^(BBC|WBC|BLB|LSB?|CSB|WLS|DCW|DCB|DCSB|CDB|ER|ERB|BER|WER|WDC|KWD|AG-|AG\d|CAG)/.test(code)) return true;
   if (/-CNR|CORNER/.test(code)) return true;
-  return /corner|lazy susan|easy reach|blind|diagonal|angled (wall|corner)/.test(desc);
+  // No description-word fallback: "corner", "blind" or "diagonal" in a description does not make a corner.
+  return cornerType != null && STORED_CORNER_TYPES.has(String(cornerType));
 }
 
 // An ANGLED WALL-END cabinet (AW-*) has a 45° exposed end face on a normal wall
@@ -7228,12 +7244,14 @@ export function countertopArea(
 // filler is 3" wide.
 export const BLIND_CORNER_FILLER_WIDTH_IN = 3;
 
-export function isBlindCorner(masterCode: string, description?: string): boolean {
+export function isBlindCorner(masterCode: string, _description?: string, cornerType?: string | null): boolean {
   const code = (masterCode || "").toUpperCase();
+  // A plain base code (B24, B36, B42...) is never a blind corner, whatever its description or stored type says.
+  if (isPlainBaseCode(code)) return false;
   if (/^(BBC|WBC|BBL|BBR|WBL|WBR)/.test(code)) return true;
   if (/-BLIND|BLIND/.test(code)) return true;
-  const desc = (description || "").toLowerCase();
-  return /blind\s*corner/.test(desc);
+  // Blind status comes from the code or the stored cornerType, never from description words.
+  return cornerType === "blind-corner";
 }
 
 /**
@@ -7244,11 +7262,11 @@ export function isBlindCorner(masterCode: string, description?: string): boolean
  * BBC/WBC code prefix, so Cabinet Config remains the source of truth.
  */
 export function isBaseBlindCorner(
-  cabinet: Pick<DesignCabinet, "masterCode" | "description" | "placement">
-    | Pick<PlacedCabinet, "masterCode" | "description" | "placement">,
+  cabinet: Pick<DesignCabinet, "masterCode" | "description" | "placement" | "cornerType">
+    | Pick<PlacedCabinet, "masterCode" | "description" | "placement" | "cornerType">,
 ): boolean {
   return cabinet.placement === "base"
-    && isBlindCorner(cabinet.masterCode, cabinet.description ?? undefined);
+    && isBlindCorner(cabinet.masterCode, cabinet.description ?? undefined, cabinet.cornerType ?? null);
 }
 
 /**
