@@ -7,7 +7,7 @@ import { DLC_FR26_CATALOG } from "./dlcFr26Catalog.generated";
 import { findDlcFinishForStyle, normalizeFinishName } from "./dlcFr26Mapping";
 import { resolveDoorFinishHex } from "../client/src/lib/doorStyleAppearance";
 import { RESTORED_DOOR_LIGHTS, DARK_STAIN_DOOR_LIGHTS } from "./doorRenderLights";
-import { DLC_FRAME_DETAIL, dlcFrameStrips, dlcFaceGrainRepeat, dlcPhotoLightCompensation, dlcPaleBrightnessCut, dlcFaceProportions, dlcFaceTextureWindow } from "./dlcFr26Textures";
+import { DLC_FRAME_DETAIL, dlcFrameStrips, dlcFrameShadowScale, DLC_FRAME_MAX_OPACITY, dlcFaceGrainRepeat, dlcPhotoLightCompensation, dlcPaleBrightnessCut, dlcFaceProportions, dlcFaceTextureWindow } from "./dlcFr26Textures";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const dl = (ourName: string, styleCode: string | null = null, extra: Record<string, unknown> = {}) => ({
@@ -205,6 +205,17 @@ describe("sides carry the door's grain, and photo materials are not over-lit", (
     const plan = resolveCabinetFaceImages(dl("Dark Caramel", "DL-DC"), "base");
     expect(plan.dlcCrop?.solidColor).toBe("#6a4631");
     expect(plan.dlcCrop?.tintHex).toBe(e.faceTint);
+  });
+  it("pale finishes get stronger frame-edge shadows; mid and dark finishes keep the standard ones", () => {
+    const shadow = (y?: number | null) => dlcFrameStrips(1, 2, y).filter((x) => x.kind === "shadow").map((x) => x.opacity);
+    expect(shadow(0.1)).toEqual(shadow());
+    expect(shadow(0.4)).toEqual(shadow());
+    const pale = shadow(0.88);
+    expect(pale[0]).toBeGreaterThan(shadow()[0]!);
+    expect(Math.max(...pale)).toBeLessThanOrEqual(DLC_FRAME_MAX_OPACITY);
+    expect(dlcFrameShadowScale(0.88)).toBeCloseTo(1.8, 5);
+    expect(dlcFrameStrips(1, 2, 0.88).filter((x) => x.kind === "highlight")).toEqual(dlcFrameStrips(1, 2).filter((x) => x.kind === "highlight"));
+    expect(src()).toMatch(/dlcFrameStrips\(faceWidth - stile \* 2, faceHeight - rail \* 2, relativeLuminance\(dlcDoorFinish\)\)/);
   });
   it("light compensation cancels the rig's light sum per channel (tone mapping off) and stays in range", () => {
     const std = dlcPhotoLightCompensation(RESTORED_DOOR_LIGHTS);
