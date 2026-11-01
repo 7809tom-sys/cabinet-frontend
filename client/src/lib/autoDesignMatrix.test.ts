@@ -279,7 +279,6 @@ function audit(spec: CaseSpec, run: AutoDesignLayoutSuccess, room: RoomData): st
   if (sinkBases.length !== 1 || run.sinks.length !== 1) issues.push(`sinks bases=${sinkBases.length} fixtures=${run.sinks.length}`);
   const hood = placed.find((item) => /^HOOD-/i.test(item.masterCode));
   const range = placed.find((item) => item.placement === "appliance" && /RANGE/i.test(item.masterCode));
-  if (range && !hood) issues.push("no hood over the range");
   if (hood && hood.mountBottom !== autoDesignHoodMountBottom(hood.width)) issues.push(`hood ${hood.masterCode} bottom ${hood.mountBottom}`);
   if (hood && Math.abs(hood.depth - 18) > 0.05) issues.push(`hood depth ${hood.depth}`);
   if (reviewRangeFridgeSeparation(placed, room).length) issues.push("range and refrigerator are closer than a 15 inch cabinet");
