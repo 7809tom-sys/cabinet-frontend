@@ -1787,7 +1787,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const announceFaucetWindowNotes = useCallback((notes: readonly FaucetWindowClearanceNote[]) => {
     lastFaucetWindowNotesRef.current = [...notes];
     // Window rule: a window only changes as a last resort, so the person always sees it as a warning.
-    for (const note of notes) toast.warning(note.text, { duration: 15000 });
+    for (const note of notes) toast.warning(note.text, { duration: 8000 });
   }, []);
   layoutLockedRef.current = layoutLocked;
   const layoutHasRefrigerator = useMemo(() => placed.some(isRefrigeratorAppliance), [placed]);
@@ -3932,17 +3932,17 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     const announcedFaucetNotes = new Set(lastFaucetWindowNotesRef.current.map((note) => note.text));
     for (const note of run.notes) {
       if (preliminaryFaucetNotes.has(note) && announcedFaucetNotes.size > 0) continue;
-      if (preliminaryFaucetNotes.has(note)) { toast.warning(note, { duration: 15000 }); continue; }
-      toast.info(note, { duration: 15000 });
+      if (preliminaryFaucetNotes.has(note)) { toast.warning(note, { duration: 8000 }); continue; }
+      toast.info(note, { duration: 8000 });
     }
     for (const move of run.applianceMoves) {
-      toast.info(`Moved the ${move.label} ${formatInches(move.shiftIn)} away from the corner to fit the required corner cabinet. Its measured center is now ${formatInches(move.centerAlongIn)} along the wall.`, { duration: 12000 });
+      toast.info(`Moved the ${move.label} ${formatInches(move.shiftIn)} away from the corner to fit the required corner cabinet. Its measured center is now ${formatInches(move.centerAlongIn)} along the wall.`, { duration: 7000 });
     }
     if (run.heightUsedIn != null && Math.abs(run.heightUsedIn - run.requestedUpperIn) > 0.005) {
       toast.info(`This cabinet line sells its ${run.requestedUpperIn}″ class as ${formatInches(run.heightUsedIn)} wall cabinets, so those exact source SKUs were used.`);
     }
-    if (run.skippedUppers.length) toast.info(`Upper review: ${run.skippedUppers.join(" ")}`, { duration: 15000 });
-    for (const warning of run.warnings) toast.warning(warning, { duration: 12000 });
+    if (run.skippedUppers.length) toast.info(`Upper review: ${run.skippedUppers.join(" ")}`, { duration: 8000 });
+    for (const warning of run.warnings) toast.warning(warning, { duration: 7000 });
     if (run.sinkWindow) toast.info(`A ${formatInches(run.sinkWindow.width)} window was placed above the sink as entered; no wall cabinet goes over it.`);
     if (run.bareRangeUid) setAutoDesignRangeVentPrompt({ rangeUid: run.bareRangeUid });
     return { ok: true as const };
@@ -4211,18 +4211,18 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     setAutoDesignCornerStage(null);
     setViewMode("threeD");
     toast.success(`Placed ${selectedCornerCount} selected corners, ${surrounding.length} regular base-run pieces, ${seamResult.additions.length} filler pieces closing every gap, and ${upperResult.additions.length} aligned wall cabinets and fillers.`);
-    for (const note of [...seamResult.notes, ...rangeNeighborNotes]) toast.info(note, { duration: 15000 });
+    for (const note of [...seamResult.notes, ...rangeNeighborNotes]) toast.info(note, { duration: 8000 });
     for (const move of applianceMoves) {
-      toast.info(`Moved the ${move.label} ${formatInches(move.shiftIn)} away from the corner to fit the required corner cabinet. Its measured center is now ${formatInches(move.centerAlongIn)} along the wall.`, { duration: 12000 });
+      toast.info(`Moved the ${move.label} ${formatInches(move.shiftIn)} away from the corner to fit the required corner cabinet. Its measured center is now ${formatInches(move.centerAlongIn)} along the wall.`, { duration: 7000 });
     }
     const requestedUpperIn = stage.input.wallCabinetHeightIn ?? 30;
     if (upperResult.heightUsedIn != null && Math.abs(upperResult.heightUsedIn - requestedUpperIn) > 0.005) {
       toast.info(`This cabinet line sells its ${requestedUpperIn}″ class as ${formatInches(upperResult.heightUsedIn)} wall cabinets, so those exact source SKUs were used.`);
     }
-    if (upperResult.skipped.length) toast.info(`Upper review: ${upperResult.skipped.join(" ")}`, { duration: 15000 });
+    if (upperResult.skipped.length) toast.info(`Upper review: ${upperResult.skipped.join(" ")}`, { duration: 8000 });
     const shiftReview = reviewAfterShift({ placed: working, room, openings: stageOpenings, usage: stage.input.kitchenUsage });
     for (const entry of shiftReview.findings.filter((entry) => entry.severity === "attention")) {
-      toast.warning(entry.title, { description: entry.description, duration: 12000 });
+      toast.warning(entry.title, { description: entry.description, duration: 7000 });
     }
     if (stage.sinkWindow) {
       toast.info(`A ${formatInches(stage.sinkWindow.width)} window was placed above the sink as entered; no wall cabinet goes over it.`);
@@ -10062,7 +10062,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
               // open rather than cancelling the whole refrigerator assembly.
               const message = `No source-priced 3" wall filler is available for this door style, so the ${formatEighthInches(eachFillerWidth)} gap on each side of ${chosen.masterCode} was left open. The cabinet and panels were still added.`;
               setPlacementWarning(message);
-              toast.warning(message, { duration: 15000 });
+              toast.warning(message, { duration: 8000 });
             } else {
 	            const addCapFiller = (role: "bridge-left-filler" | "bridge-right-filler", along: number) => {
 	              // This is an optional, source-priced cap filler. It is placed as
@@ -10289,7 +10289,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       placedRef.current = committedPreview;
       setPlaced(() => committedPreview);
 	      if (cornerBay?.note) {
-	        toast.info(cornerBay.note, { duration: 12000 });
+	        toast.info(cornerBay.note, { duration: 7000 });
 	      } else if (Math.abs(appliedShift) > COLLISION_EPSILON_IN) {
 	        toast.info(
 	          `Refrigerator and selected parts moved ${formatEighthInches(Math.abs(appliedShift))} along the wall to fit the selected panels. Existing cabinets stayed in place.`,
