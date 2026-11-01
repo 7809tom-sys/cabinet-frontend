@@ -2,10 +2,10 @@
  * Fake transparency checkerboards on Designer sheet photos.
  *
  * A mosaic sheet exported from an editor often has the transparency grid baked
- * in as opaque gray/white squares. Repeating that photo paints a box around
- * every sheet. This module finds that grid when the file has no real alpha,
- * clears the border-connected squares, and trims to the opaque sheet.
- * Catalog photos and room scenes do not use it.
+ * in as opaque squares. Repeating that photo paints a box around every sheet.
+ * The two square colors are learned from the border and matched tightly, and a
+ * pixel counts only where that square period continues. Gray veins inside the
+ * sheet are not cleared. Catalog photos and room scenes do not use it.
  */
 
 export const MOSAIC_NO_TRANSPARENCY_WARNING =
@@ -29,9 +29,11 @@ export type CheckerboardCleanup = {
 
 type Rgb = { r: number; g: number; b: number };
 
-const NEUTRAL_SPREAD = 24;
-const LIGHT_MIN = 170;
-const COLOR_TOLERANCE = 30;
+/** A pixel must sit on one learned checker color, not merely be "light gray". */
+const COLOR_TOLERANCE = 12;
+/** It also has to be clearly nearer that color than the other one, so mid-gray marble veins do not qualify. */
+const COLOR_MARGIN = 8;
+const NEUTRAL_SPREAD = 18;
 const MIN_COLOR_GAP = 28;
 
 function luminance(r: number, g: number, b: number) {
@@ -108,6 +110,8 @@ function cellSizeFromLabels(labels: Array<"A" | "B" | null>): number | null {
 
 /**
  * Clears a baked-in transparency checkerboard.
+ * Only the two colors learned from the border count, and only where they form the
+ * square period. A gray vein inside the sheet is not that period, so it stays opaque.
  * A plain opaque photo is returned unchanged with `MOSAIC_NO_TRANSPARENCY_WARNING`.
  * An image that already has real alpha is returned unchanged and without a warning.
  */
@@ -119,12 +123,13 @@ export function removeBakedCheckerboard(image: RgbaImage): CheckerboardCleanup {
 
   const border: Array<[number, number, number]> = [];
   const borderCount = width * 2 + Math.max(0, height - 2) * 2;
-  const consider = (x: number, y: number) => {
+  const read = (x: number, y: number) => {
     const index = (y * width + x) * 4;
-    const r = data[index]!;
-    const g = data[index + 1]!;
-    const b = data[index + 2]!;
-    if (spread(r, g, b) <= NEUTRAL_SPREAD && luminance(r, g, b) >= LIGHT_MIN) border.push([r, g, b]);
+    return [data[index]!, data[index + 1]!, data[index + 2]!] as [number, number, number];
+  };
+  const consider = (x: number, y: number) => {
+    const [r, g, b] = read(x, y);
+    if (spread(r, g, b) <= 22) border.push([r, g, b]);
   };
   for (let x = 0; x < width; x += 1) {
     consider(x, 0);
@@ -154,26 +159,36 @@ export function removeBakedCheckerboard(image: RgbaImage): CheckerboardCleanup {
   if (luminance(light.r, light.g, light.b) - luminance(dark.r, dark.g, dark.b) < MIN_COLOR_GAP) {
     return untouched(image, MOSAIC_NO_TRANSPARENCY_WARNING);
   }
+  const darkLum = luminance(dark.r, dark.g, dark.b);
+  const lightLum = luminance(light.r, light.g, light.b);
 
-  const labelAt = (x: number, y: number): "A" | "B" | null => {
-    const index = (y * width + x) * 4;
-    const r = data[index]!;
-    const g = data[index + 1]!;
-    const b = data[index + 2]!;
-    if (spread(r, g, b) > NEUTRAL_SPREAD || luminance(r, g, b) < LIGHT_MIN) return null;
-    const toDark = channelDistance(r, g, b, dark);
-    const toLight = channelDistance(r, g, b, light);
-    if (Math.min(toDark, toLight) > COLOR_TOLERANCE) return null;
-    return toDark <= toLight ? "A" : "B";
+  // 0 = not a checker color, 1 = dark square, 2 = light square. Tight, and nearer one color than the other.
+  const labels = new Uint8Array(pixelCount);
+  const labelAt = (x: number, y: number) => {
+    if (x < 0 || y < 0 || x >= width || y >= height) return 0;
+    return labels[y * width + x] ?? 0;
   };
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const [r, g, b] = read(x, y);
+      if (spread(r, g, b) > NEUTRAL_SPREAD) continue;
+      const toDark = channelDistance(r, g, b, dark);
+      const toLight = channelDistance(r, g, b, light);
+      let label = 0;
+      if (toDark <= COLOR_TOLERANCE && toDark + COLOR_MARGIN <= toLight) label = 1;
+      else if (toLight <= COLOR_TOLERANCE && toLight + COLOR_MARGIN <= toDark) label = 2;
+      labels[y * width + x] = label;
+    }
+  }
 
   const edgeLabels = (along: "row" | "column", at: number) => {
     const count = along === "row" ? width : height;
-    const labels: Array<"A" | "B" | null> = [];
+    const row: Array<"A" | "B" | null> = [];
     for (let index = 0; index < count; index += 1) {
-      labels.push(along === "row" ? labelAt(index, at) : labelAt(at, index));
+      const label = along === "row" ? labelAt(index, at) : labelAt(at, index);
+      row.push(label === 1 ? "A" : label === 2 ? "B" : null);
     }
-    return labels;
+    return row;
   };
   const cellCandidates = [
     cellSizeFromLabels(edgeLabels("row", 0)),
@@ -185,87 +200,108 @@ export function removeBakedCheckerboard(image: RgbaImage): CheckerboardCleanup {
   cellCandidates.sort((a, b) => a - b);
   const cell = cellCandidates[Math.floor(cellCandidates.length / 2)]!;
   const distances = [cell - 1, cell, cell + 1].filter((distance) => distance >= 4);
+  if (distances.length === 0) return untouched(image, MOSAIC_NO_TRANSPARENCY_WARNING);
 
-  const flips = (x: number, y: number, axis: "x" | "y") => {
-    const label = labelAt(x, y);
-    if (!label) return false;
-    const other = label === "A" ? "B" : "A";
+  const oppositeOnAxis = (x: number, y: number, axis: "x" | "y", other: number) => {
     for (const distance of distances) {
       const steps = axis === "x" ? [[distance, 0], [-distance, 0]] : [[0, distance], [0, -distance]];
       for (const [dx, dy] of steps) {
-        const nextX = x + dx!;
-        const nextY = y + dy!;
-        if (nextX < 0 || nextY < 0 || nextX >= width || nextY >= height) continue;
-        if (labelAt(nextX, nextY) === other) return true;
+        if (labelAt(x + dx!, y + dy!) === other) return true;
       }
     }
     return false;
   };
 
-  const alternating = new Uint8Array(pixelCount);
-  let alternatingCount = 0;
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      if (labelAt(x, y) && flips(x, y, "x") && flips(x, y, "y")) {
-        alternating[y * width + x] = 1;
-        alternatingCount += 1;
+  const tooBright = (x: number, y: number) => {
+    const [r, g, b] = read(x, y);
+    return luminance(r, g, b) > lightLum + COLOR_TOLERANCE;
+  };
+  const radius = Math.max(2, Math.floor(cell / 2));
+  const besideTheSheet = (x: number, y: number) => {
+    let bright = 0;
+    let samples = 0;
+    for (let dy = -radius; dy <= radius; dy += 2) {
+      const nextY = y + dy;
+      if (nextY < 0 || nextY >= height) continue;
+      for (let dx = -radius; dx <= radius; dx += 2) {
+        const nextX = x + dx;
+        if (nextX < 0 || nextX >= width) continue;
+        samples += 1;
+        if (tooBright(nextX, nextY)) bright += 1;
       }
     }
-  }
-  if (alternatingCount < pixelCount * 0.01) return untouched(image, MOSAIC_NO_TRANSPARENCY_WARNING);
+    return samples > 0 && bright / samples > 0.08;
+  };
 
-  const mask = alternating.slice();
+  const checker = new Uint8Array(pixelCount);
+  let checkerCount = 0;
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
-      const offset = y * width + x;
-      if (mask[offset]) continue;
-      const index = offset * 4;
-      const r = data[index]!;
-      const g = data[index + 1]!;
-      const b = data[index + 2]!;
-      if (spread(r, g, b) > 22 || luminance(r, g, b) < 175) continue;
-      const nearGrid = labelAt(x, y) != null || Math.abs(luminance(r, g, b) - (luminance(dark.r, dark.g, dark.b) + luminance(light.r, light.g, light.b)) / 2) <= 40;
-      if (!nearGrid) continue;
-      if (
-        (x > 0 && alternating[offset - 1]) ||
-        (x + 1 < width && alternating[offset + 1]) ||
-        (y > 0 && alternating[offset - width]) ||
-        (y + 1 < height && alternating[offset + width])
-      ) mask[offset] = 1;
+      const label = labelAt(x, y);
+      if (!label) continue;
+      const other = label === 1 ? 2 : 1;
+      // Both axes have to show the other square. A vein that happens to match one color does not.
+      if (!oppositeOnAxis(x, y, "x", other) || !oppositeOnAxis(x, y, "y", other)) continue;
+      // White sheet pixels are brighter than the light square. Do not clear a match that is already in that sheet.
+      if (besideTheSheet(x, y)) continue;
+      checker[y * width + x] = 1;
+      checkerCount += 1;
     }
   }
+  if (checkerCount < pixelCount * 0.01) return untouched(image, MOSAIC_NO_TRANSPARENCY_WARNING);
 
-  const seed = new Uint8Array(pixelCount);
-  const onBorder = (x: number, y: number) => x <= 2 || y <= 2 || x >= width - 3 || y >= height - 3;
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      if (!onBorder(x, y) || labelAt(x, y) == null) continue;
-      const alongX = y <= 2 || y >= height - 3;
-      const alongY = x <= 2 || x >= width - 3;
-      if ((alongX && flips(x, y, "x")) || (alongY && flips(x, y, "y")) || alternating[y * width + x] || mask[y * width + x]) {
-        seed[y * width + x] = 1;
-        mask[y * width + x] = 1;
-      }
+  const nearestLabel = (x: number, y: number, dx: number, dy: number) => {
+    for (let step = 1; step <= 2; step += 1) {
+      const nextX = x + dx * step;
+      const nextY = y + dy * step;
+      if (nextX < 0 || nextY < 0 || nextX >= width || nextY >= height) return 0;
+      const found = labelAt(nextX, nextY);
+      if (found) return found;
+      if (tooBright(nextX, nextY)) return 0;
+      const [r, g, b] = read(nextX, nextY);
+      if (spread(r, g, b) > 24) return 0;
     }
-  }
+    return 0;
+  };
+  const seamBetweenSquares = (x: number, y: number) => {
+    if (checker[y * width + x] || labelAt(x, y) || tooBright(x, y)) return false;
+    const [r, g, b] = read(x, y);
+    if (spread(r, g, b) > 24) return false;
+    const tone = luminance(r, g, b);
+    if (tone < darkLum - 8 || tone > lightLum + 8) return false;
+    const horizontal = [nearestLabel(x, y, -1, 0), nearestLabel(x, y, 1, 0)];
+    const vertical = [nearestLabel(x, y, 0, -1), nearestLabel(x, y, 0, 1)];
+    const between = (pair: number[]) => (pair[0] === 1 && pair[1] === 2) || (pair[0] === 2 && pair[1] === 1);
+    return between(horizontal) || between(vertical);
+  };
 
   const removed = new Uint8Array(pixelCount);
   const queue: number[] = [];
   let head = 0;
-  const enqueue = (offset: number) => {
-    if (removed[offset] || !mask[offset]) return;
+  const enqueue = (x: number, y: number) => {
+    if (x < 0 || y < 0 || x >= width || y >= height) return;
+    const offset = y * width + x;
+    if (removed[offset]) return;
+    if (!checker[offset] && !seamBetweenSquares(x, y)) return;
     removed[offset] = 1;
     queue.push(offset);
   };
-  for (let offset = 0; offset < pixelCount; offset += 1) if (seed[offset]) enqueue(offset);
+  for (let x = 0; x < width; x += 1) {
+    enqueue(x, 0);
+    enqueue(x, height - 1);
+  }
+  for (let y = 1; y < height - 1; y += 1) {
+    enqueue(0, y);
+    enqueue(width - 1, y);
+  }
   while (head < queue.length) {
     const offset = queue[head++]!;
     const x = offset % width;
     const y = (offset - x) / width;
-    if (x > 0) enqueue(offset - 1);
-    if (x + 1 < width) enqueue(offset + 1);
-    if (y > 0) enqueue(offset - width);
-    if (y + 1 < height) enqueue(offset + width);
+    enqueue(x - 1, y);
+    enqueue(x + 1, y);
+    enqueue(x, y - 1);
+    enqueue(x, y + 1);
   }
 
   let borderHit = 0;
@@ -280,32 +316,6 @@ export function removeBakedCheckerboard(image: RgbaImage): CheckerboardCleanup {
   const removedCount = queue.length;
   if (borderHit < borderCount * 0.6 || removedCount < pixelCount * 0.02 || removedCount > pixelCount * 0.85) {
     return untouched(image, MOSAIC_NO_TRANSPARENCY_WARNING);
-  }
-
-  // One-pixel neutral specks left between squares (compression blends) follow the cleared grid.
-  for (let pass = 0; pass < 2; pass += 1) {
-    const extra: number[] = [];
-    for (let y = 0; y < height; y += 1) {
-      for (let x = 0; x < width; x += 1) {
-        const offset = y * width + x;
-        if (removed[offset]) continue;
-        const touches =
-          (x > 0 && removed[offset - 1]) ||
-          (x + 1 < width && removed[offset + 1]) ||
-          (y > 0 && removed[offset - width]) ||
-          (y + 1 < height && removed[offset + width]);
-        if (!touches) continue;
-        const index = offset * 4;
-        const r = data[index]!;
-        const g = data[index + 1]!;
-        const b = data[index + 2]!;
-        if (spread(r, g, b) > 16 || luminance(r, g, b) < 175) continue;
-        if (channelDistance(r, g, b, dark) <= COLOR_TOLERANCE + 4 || channelDistance(r, g, b, light) <= COLOR_TOLERANCE + 4) {
-          extra.push(offset);
-        }
-      }
-    }
-    for (const offset of extra) removed[offset] = 1;
   }
 
   let minX = width;
