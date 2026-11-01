@@ -6785,7 +6785,10 @@ export function isCrownEligibleCabinet(p: PlacedCabinet, room?: RoomData): boole
   // Island wall cabinets are floor/counter-height casework, never upper runs.
   // The explicit island marker remains authoritative for older saves whose
   // mountBottom may still contain a room-wall value.
-  if (usesRaisedFloorWallDoorPull(p)) return false;
+  // `usesRaisedFloorWallDoorPull` is true for every full-height cabinet (it decides door-pull position), so it can
+  // only exclude WALL-placed island / floor-seated casework here. Applying it to tall cabinets dropped every
+  // pantry and refrigerator end panel from crown, which left the neighbouring upper's crown running into them.
+  if (p.placement === "wall" && usesRaisedFloorWallDoorPull(p)) return false;
   // A wall cabinet deliberately dropped to a 4½-inch toe kick is floor-seated
   // casework. Use the rendered elevation bottom so restored plans, counter-height
   // variants, and explicit mountBottom values all follow the same physical rule.
@@ -6803,7 +6806,12 @@ export function isCrownEligibleCabinet(p: PlacedCabinet, room?: RoomData): boole
   // remain crown-bearing: the crown follows their actual top line, including
   // when that line is the ceiling line, so tall runs do not lose their wrap.
   const isCeilingFillingGlassStacker = isStacker(p) && isGlassDoorCabinet(p);
-  if (p.placement === "tall") return true;
+  // A tall cabinet (pantry, refrigerator end panel) carries crown only when it stops below the ceiling with room
+  // for the profile; one that fills the ceiling has no exposed top to crown (it still blocks neighbouring crown).
+  if (p.placement === "tall") {
+    const tallTop = box.bottom + box.height;
+    return room.ceilingHeight - tallTop >= CROWN_HEIGHT_IN - COLLISION_EPSILON_IN;
+  }
   if (!isCeilingFillingGlassStacker) return true;
   const ceiling = wallCabinetVerticalMoveLimit(p, room).ceiling;
   const top = box.bottom + box.height;
@@ -6820,7 +6828,8 @@ export function crownBlockingCabinets(placed: readonly PlacedCabinet[], room?: R
   const eligibleUids = new Set(crownEligibleCabinets(placed, room).map((cabinet) => cabinet.uid));
   return placed.filter((cabinet) => (
     eligibleUids.has(cabinet.uid)
-    || ((cabinet.placement === "tall" || cabinet.placement === "wall") && !usesRaisedFloorWallDoorPull(cabinet))
+    || cabinet.placement === "tall"
+    || (cabinet.placement === "wall" && !usesRaisedFloorWallDoorPull(cabinet))
   ));
 }
 

@@ -282,6 +282,40 @@ describe("continuous cabinet trim", () => {
 		  expect(root.children.every((rail) => rail.userData.exposedTopEdge === true)).toBe(true);
 		});
 
+		it("wraps the cabinet above a refrigerator and its two end panels as one continuous crown, whatever its depth", () => {
+	  const room = { width: 200, depth: 96, ceilingHeight: 96 };
+	  const panel = (uid: string, x: number) => ({ uid, cabinetId: 1, masterCode: "REPV", description: "Refrigerator end panel", placement: "tall", x, y: 0, width: 0.75, height: 84, depth: 24, rotation: 0, mountBottom: 0 });
+	  const upper = (uid: string, x: number, width: number, depth: number, height: number, mountBottom: number) => ({ uid, cabinetId: 1, masterCode: uid, description: uid, placement: "wall", x, y: 0, width, height, depth, rotation: 0, mountBottom });
+	  const bay = (capDepth: number, capHeight = 12) => [
+	    upper("left-upper", 0, 30, 12, 30, 54), panel("panel-left", 30), upper("cap", 30.75, 36, capDepth, capHeight, 72), panel("panel-right", 66.75), upper("right-upper", 67.5, 30, 12, 30, 54),
+	  ] as never[];
+	  const summary = (cabinets: never[]) => threeDCrownPerimeterSegments(cabinets, room).map((segment) => `${segment.ownerUid}:${segment.kind}:${Math.round(segment.length * 100) / 100}@${segment.top}`);
+
+	  // 24-inch cap flush with the 24-inch panels: the neighbours' returns stop at the panels, the 12-to-24 step wraps, one 36-inch front across the cap.
+	  expect(summary(bay(24))).toEqual([
+	    "left-upper:front:30@84", "left-upper:left-return:12@84",
+	    "panel-left:front:0.75@84", "panel-left:left-return:12@84",
+	    "cap:front:36@84",
+	    "panel-right:right-return:12@84", "panel-right:front:0.75@84",
+	    "right-upper:right-return:12@84", "right-upper:front:30@84",
+	  ]);
+	  // 12-inch cap set back to the neighbours' line: the panels wrap their own 12-inch step on both sides.
+	  expect(summary(bay(12))).toContain("panel-left:right-return:12@84");
+	  expect(summary(bay(12))).toContain("cap:front:36@84");
+	  // Pulled forward past the panels: only the 3-inch overhang is wrapped by the cap's own returns, no gap and no step.
+	  expect(summary(bay(27))).toEqual(expect.arrayContaining(["cap:left-return:3@84", "cap:right-return:3@84", "cap:front:36@84"]));
+	  // A taller cap keeps its own top and wraps its own full returns; the neighbours stay on theirs.
+	  expect(summary(bay(24, 18))).toEqual(expect.arrayContaining(["cap:left-return:24@90", "cap:right-return:24@90", "cap:front:36@90", "left-upper:front:30@84"]));
+	  // No crown segment in any of these bays runs through a panel body (panels are 30..30.75 and 66.75..67.5 at z 0..24).
+	  for (const depth of [12, 24, 27]) {
+	    for (const segment of threeDCrownPerimeterSegments(bay(depth), room)) {
+	      const mid = segment.center;
+	      const insidePanel = mid.z > 0.01 && mid.z < 23.99 && ((mid.x > 30.01 && mid.x < 30.74) || (mid.x > 66.76 && mid.x < 67.49));
+	      expect(insidePanel, `${segment.ownerUid} ${segment.kind}`).toBe(false);
+	    }
+	  }
+	});
+
 		it("follows the WDC42 pentagonal top with two 12-inch returns and its 17-inch diagonal front", () => {
 	  const segments = diagonalCornerCrownSegments(24, 24);
 	  expect(segments.map((segment) => segment.kind)).toEqual(["right-return", "diagonal-front", "left-return"]);
