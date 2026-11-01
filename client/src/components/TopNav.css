@@ -115,3 +115,27 @@
     min-height: 2.75rem;
   }
 }
+
+/* Designer: the site header is one slim row so the room gets the screen. */
+[data-designer-route="true"] [data-testid="site-toolbar-row"] {
+  min-height: 2.25rem;
+  padding-block: 0;
+  row-gap: 0;
+}
+
+[data-designer-route="true"] [data-testid="site-toolbar-logo"] > div {
+  height: 1.5rem;
+  width: 1.5rem;
+  font-size: 0.75rem;
+}
+
+[data-designer-route="true"] [data-testid="site-toolbar-logo"] > span {
+  font-size: 1rem;
+  line-height: 1.25rem;
+}
+
+[data-designer-route="true"] [data-testid="site-toolbar-actions"] button,
+[data-designer-route="true"] [data-testid="site-toolbar-actions"] a {
+  min-height: 2rem;
+  height: 2rem;
+}

@@ -203,7 +203,7 @@ export function TopNav() {
             )}
           </a>
         ) : (
-          <Link href="/" className="flex items-center gap-2 shrink-0">
+          <Link href="/" data-testid="site-toolbar-logo" className="flex items-center gap-2 shrink-0">
             <div className="flex h-8 w-8 items-center justify-center rounded bg-[var(--color-navy)] text-white font-bold text-sm">
               CD
             </div>
