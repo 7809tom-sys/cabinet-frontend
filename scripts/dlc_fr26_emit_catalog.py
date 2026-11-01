@@ -203,6 +203,22 @@ for _slug, (_hex, _cut) in WARM_TARGETS.items():
     _solid = _srgb(_tgt)
     _row.update({"solidColor": "#%02x%02x%02x" % tuple(_solid), "faceTint": "#%02x%02x%02x" % tuple(_srgb(_ratio))})
 
+# Tom (Oct 31, Glacier White): too blue; match Pearl White's antique white. Its catalog colour (#d7d8dd, patch mean about
+# #dadbe0) is darker than the target in red and green, and a tint can only darken, so the patch itself is shifted to the
+# target colour per channel (grain kept, faceTint stays null) and its speckle is pulled further toward the mean
+# (the patch is about 5x speckly-er than Pearl White's). No extra brightness cut. One entry per finish.
+SHIFT_TARGETS = {"glacier-white": ("#dfd9d9", 0.35)}  # (target, extra contrast kept)
+for _slug, (_hex, _keep) in SHIFT_TARGETS.items():
+    _row = next(r for r in rows if r["slug"] == _slug)
+    _tgt = np.array([int(_hex[i:i + 2], 16) for i in (1, 3, 5)], dtype=float)
+    for _name in (f"{_slug}.png", f"{_slug}-drawer.png"):
+        _a = np.asarray(Image.open(pub / "grain" / _name).convert("RGB"), dtype=float)
+        _m = _a.reshape(-1, 3).mean(axis=0)
+        _out = Image.fromarray(np.clip((_tgt + (_a - _m) * _keep).round(), 0, 255).astype("uint8"), "RGB")
+        _out.save(pub / "grain" / _name)
+        _out.save(data / "processed" / "grain" / _name)
+    _row.update({"solidColor": _hex, "faceTint": None})
+
 # European White Oak: the catalog ships a real 1024px vertical-grain texture with a normal map. Use it for
 # door, drawer and side faces. It is lighter than the finish photo, so a tint brings it to the sample colour.
 EWO = next(r for r in rows if r["slug"] == "ewo")
