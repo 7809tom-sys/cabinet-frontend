@@ -86,6 +86,14 @@ describe("Pelican Quartz material-map registry", () => {
       source: "static-map",
     });
     expect(resolvePelicanDesignerMaterial("Bedrock 3cm", "/textures/bedrock_normal.jpg")?.url).toBe(bedrock?.materialImageUrl);
+    const uploadedProduct = "/manus-storage/pelican/products/42/1710000000000-42_ab12cd34.webp";
+    expect(resolvePelicanDesignerMaterial("Bedrock 3cm", uploadedProduct)).toMatchObject({
+      url: uploadedProduct,
+      key: `pelican-quartz:bedrock-3cm:${uploadedProduct}`,
+      physicalWidthIn: bedrock?.physicalWidthIn,
+      physicalDepthIn: bedrock?.physicalDepthIn,
+      source: "uploaded",
+    });
     const custom = "/manus-storage/pelican/uploads/custom-limestone.png";
     expect(resolvePelicanDesignerMaterial("Custom Limestone", custom)).toEqual({
       url: custom,

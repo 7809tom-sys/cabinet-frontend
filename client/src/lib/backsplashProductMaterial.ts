@@ -155,3 +155,24 @@ export function resolveDesignerMaterialUrl(
   }
   return { url: raw, crossOrigin: null };
 }
+
+/**
+ * Manifest and approved-material references. Relative `/manus-storage/...`
+ * uploads, including `/manus-storage/pelican/products/<id>/<file>.webp`,
+ * resolve on the permanent asset host instead of a preview origin.
+ */
+export function absoluteApprovedMaterialUrl(
+  value: string | null | undefined,
+  pageOrigin?: string | null,
+): string | null {
+  const raw = trimmed(value);
+  if (!raw) return null;
+  try {
+    const origin = raw.startsWith("/manus-storage/")
+      ? CABINETDEALZ_ASSET_ORIGIN
+      : (pageOrigin?.trim() || CABINETDEALZ_ASSET_ORIGIN);
+    return new URL(raw, origin).toString();
+  } catch {
+    return null;
+  }
+}

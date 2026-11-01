@@ -27,6 +27,8 @@ export type UploadPelicanProductImageResult = {
   url: string;
   materialImageUrl: string | null;
   imageUrl: string | null;
+  width: number;
+  height: number;
 };
 
 export type PelicanProductImageFile = {
@@ -81,12 +83,65 @@ export function readPelicanProductImageBase64(file: Blob): Promise<string> {
   });
 }
 
-/** Pasted catalog URLs stay http(s). Uploads may also return a same-origin storage path. */
-export function pelicanCatalogImageUrlIsValid(value: string): boolean {
-  const imageUrl = value.trim();
-  if (!imageUrl) return true;
-  if (/^https?:\/\//i.test(imageUrl)) return true;
-  return imageUrl.startsWith("/") && !imageUrl.startsWith("//");
+const STORED_IMAGE_PREFIX = "/manus-storage/";
+
+export function isHttpImageUrl(value: string | null | undefined): boolean {
+  return /^https?:\/\//i.test((value ?? "").trim());
+}
+
+/** Stored upload keys look like `/manus-storage/pelican/products/<id>/<ts>-<id>_<hash>.webp`. */
+export function isStoredPelicanImagePath(value: string | null | undefined): boolean {
+  const path = (value ?? "").trim();
+  if (!path.startsWith(STORED_IMAGE_PREFIX)) return false;
+  const rest = path.slice(STORED_IMAGE_PREFIX.length);
+  return rest.length > 0 && !rest.includes("..") && !/[\s?#\\]/.test(rest);
+}
+
+export function httpImageUrlOrBlank(value: string | null | undefined): string {
+  const trimmed = (value ?? "").trim();
+  return isHttpImageUrl(trimmed) ? trimmed : "";
+}
+
+export type PelicanItemSavePhotos = {
+  /** Omit `imageUrl` when the catalog photo is a stored upload. `updateProduct.imageUrl` accepts only http(s). */
+  imageUrl?: string | null;
+  /** Optional. A stored Designer photo may be sent; leave it out to keep the current value. */
+  materialImageUrl?: string | null;
+  error?: string;
+};
+
+/**
+ * The pasted Image URL field is http(s) only. An uploaded `/manus-storage/...`
+ * catalog photo is not sent back through `updateProduct.imageUrl`. When that
+ * paste field was not edited, `imageUrl` is omitted so the save does not
+ * restore the previous catalog URL.
+ */
+export function pelicanItemSavePhotos(input: {
+  pastedImageUrl: string;
+  pastedImageUrlBaseline: string;
+  storedImageUrl: string | null;
+  storedMaterialImageUrl: string | null;
+}): PelicanItemSavePhotos {
+  const pasted = input.pastedImageUrl.trim();
+  const baseline = input.pastedImageUrlBaseline.trim();
+  if (pasted && !isHttpImageUrl(pasted)) {
+    return { error: "Image URL must start with http:// or https://." };
+  }
+  const storedImage = (input.storedImageUrl ?? "").trim();
+  const pasteChanged = pasted !== baseline;
+  let imageUrl: string | null | undefined;
+  if (pasteChanged) {
+    imageUrl = pasted || null;
+  } else if (isStoredPelicanImagePath(storedImage)) {
+    imageUrl = undefined;
+  } else if (isHttpImageUrl(storedImage)) {
+    imageUrl = storedImage;
+  } else {
+    imageUrl = pasted || null;
+  }
+  const material = (input.storedMaterialImageUrl ?? "").trim();
+  const materialImageUrl = isStoredPelicanImagePath(material) || isHttpImageUrl(material) ? material : undefined;
+  return { imageUrl, materialImageUrl };
 }
 
 /** Preview the saved, border-trimmed URL from the upload response. */

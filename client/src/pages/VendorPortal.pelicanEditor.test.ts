@@ -48,6 +48,11 @@ describe("Pelican vendor catalog editor", () => {
     expect(catalogSource).toContain('useAsDesignerPhoto: target === "designer"');
     expect(catalogSource).toContain('alsoSetCatalogImage: target === "catalog"');
     expect(catalogSource).toContain("trimmedPelicanPhotoUrl");
+    expect(catalogSource).toContain("catalogPhotoUrl");
+    expect(catalogSource).toContain("pelicanItemSavePhotos");
+    expect(catalogSource).toContain("productForVendorEdit.fetch");
+    expect(catalogSource).toContain("productForVendorEdit.invalidate");
+    expect(catalogSource).not.toContain("imageUrl: trimmedUrl");
     expect(catalogSource).toContain("White border trimmed automatically");
     expect(catalogSource).toContain("validatePelicanProductImageFile");
     expect(catalogSource).toContain("utils.pelican.adminList.invalidate()");

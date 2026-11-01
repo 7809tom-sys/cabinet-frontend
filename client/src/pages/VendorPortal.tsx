@@ -24,7 +24,9 @@ import {
 } from "@/components/ui/table";
 import { trpc } from "@/lib/trpc";
 import {
-  pelicanCatalogImageUrlIsValid,
+  httpImageUrlOrBlank,
+  isStoredPelicanImagePath,
+  pelicanItemSavePhotos,
   readPelicanProductImageBase64,
   trimmedPelicanPhotoUrl,
   useUploadPelicanProductImage,
@@ -167,7 +169,10 @@ function PelicanVendorCatalogPage({
   const [draft, setDraft] = useState({ name: "", description: "", imageUrl: "", yourCost: "", retailPrice: "" });
   const catalogPhotoInputRef = useRef<HTMLInputElement | null>(null);
   const designerPhotoInputRef = useRef<HTMLInputElement | null>(null);
+  const imageUrlBaselineRef = useRef("");
+  const [catalogPhotoUrl, setCatalogPhotoUrl] = useState("");
   const [designerPhotoUrl, setDesignerPhotoUrl] = useState("");
+  const [imageUrlBaseline, setImageUrlBaseline] = useState("");
   const [catalogPhotoTrimmed, setCatalogPhotoTrimmed] = useState(false);
   const [designerPhotoTrimmed, setDesignerPhotoTrimmed] = useState(false);
   const categoryFilter = selectedCatalogCategory(category);
@@ -211,10 +216,48 @@ function PelicanVendorCatalogPage({
     void utils.pelican.bySlug.invalidate();
   };
 
+  const rememberImageUrlBaseline = (value: string) => {
+    imageUrlBaselineRef.current = value;
+    setImageUrlBaseline(value);
+  };
+  const applyStoredPhotos = (imageUrl: string, materialImageUrl: string) => {
+    setCatalogPhotoUrl(imageUrl);
+    setDesignerPhotoUrl(materialImageUrl);
+    setEditingProduct((current: any) => current ? { ...current, imageUrl: imageUrl || null, materialImageUrl: materialImageUrl || null } : current);
+    setDraft((current) => {
+      const pasted = current.imageUrl.trim();
+      const baseline = imageUrlBaselineRef.current.trim();
+      if (isStoredPelicanImagePath(pasted) || (isStoredPelicanImagePath(imageUrl) && pasted === baseline)) {
+        return { ...current, imageUrl: "" };
+      }
+      return current;
+    });
+    if (isStoredPelicanImagePath(imageUrl)) rememberImageUrlBaseline("");
+  };
+  const refreshUploadedPelicanItem = async (
+    id: number,
+    uploaded: { imageUrl: string | null; materialImageUrl: string | null },
+  ) => {
+    refreshPhotoQueries();
+    try {
+      await utils.pelican.productForVendorEdit.invalidate({ id });
+      const fetched = await utils.pelican.productForVendorEdit.fetch({ id });
+      if (!fetched || fetched.id !== id) return;
+      const imageUrl = isStoredPelicanImagePath(fetched.imageUrl) ? (fetched.imageUrl ?? "") : (uploaded.imageUrl ?? "");
+      const materialImageUrl = isStoredPelicanImagePath(fetched.materialImageUrl) ? (fetched.materialImageUrl ?? "") : (uploaded.materialImageUrl ?? "");
+      applyStoredPhotos(imageUrl, materialImageUrl);
+    } catch {
+      // The upload response already updated the previews.
+    }
+  };
   const openEditor = (item: any) => {
+    const storedImage = item.imageUrl ?? "";
+    const paste = httpImageUrlOrBlank(storedImage);
     setEditingProduct(item);
-    setDraft({ name: item.name ?? "", description: item.description ?? "", imageUrl: item.imageUrl ?? "", yourCost: item.yourCost == null ? "" : String(item.yourCost), retailPrice: item.retailPrice == null ? "" : String(item.retailPrice) });
+    setDraft({ name: item.name ?? "", description: item.description ?? "", imageUrl: paste, yourCost: item.yourCost == null ? "" : String(item.yourCost), retailPrice: item.retailPrice == null ? "" : String(item.retailPrice) });
+    setCatalogPhotoUrl(storedImage);
     setDesignerPhotoUrl(item.materialImageUrl ?? "");
+    rememberImageUrlBaseline(paste);
     setCatalogPhotoTrimmed(false);
     setDesignerPhotoTrimmed(false);
   };
@@ -235,8 +278,22 @@ function PelicanVendorCatalogPage({
     const yourCost = parseMoney(draft.yourCost, "Our cost");
     const retailPrice = parseMoney(draft.retailPrice, "Retail price");
     if (yourCost === undefined || retailPrice === undefined) return;
-    if (!pelicanCatalogImageUrlIsValid(draft.imageUrl)) { toast.error("Image URL must start with http:// or https://."); return; }
-    updateProduct.mutate({ id: editingProduct.id, name: draft.name.trim(), description: draft.description.trim(), imageUrl: draft.imageUrl.trim() || null, yourCost, retailPrice });
+    const photos = pelicanItemSavePhotos({
+      pastedImageUrl: draft.imageUrl,
+      pastedImageUrlBaseline: imageUrlBaseline,
+      storedImageUrl: catalogPhotoUrl,
+      storedMaterialImageUrl: designerPhotoUrl,
+    });
+    if (photos.error) { toast.error(photos.error); return; }
+    updateProduct.mutate({
+      id: editingProduct.id,
+      name: draft.name.trim(),
+      description: draft.description.trim(),
+      yourCost,
+      retailPrice,
+      ...(photos.imageUrl !== undefined ? { imageUrl: photos.imageUrl } : {}),
+      ...(photos.materialImageUrl !== undefined ? { materialImageUrl: photos.materialImageUrl } : {}),
+    });
   };
   const uploadPelicanPhoto = async (file: File, target: Exclude<PelicanProductImageTarget, "both">) => {
     if (!editingProduct) return;
@@ -265,16 +322,12 @@ function PelicanVendorCatalogPage({
         toast.error("The photo uploaded, but no image URL was returned.");
         return;
       }
-      if (target === "catalog") {
-        setDraft((current) => ({ ...current, imageUrl: trimmedUrl }));
-        setCatalogPhotoTrimmed(true);
-        setEditingProduct((current: any) => current ? { ...current, imageUrl: result.imageUrl ?? trimmedUrl } : current);
-      } else {
-        setDesignerPhotoUrl(trimmedUrl);
-        setDesignerPhotoTrimmed(true);
-        setEditingProduct((current: any) => current ? { ...current, materialImageUrl: result.materialImageUrl ?? trimmedUrl } : current);
-      }
-      refreshPhotoQueries();
+      const nextImageUrl = target === "catalog" ? trimmedUrl : (result.imageUrl ?? catalogPhotoUrl);
+      const nextMaterialImageUrl = target === "designer" ? trimmedUrl : (result.materialImageUrl ?? designerPhotoUrl);
+      applyStoredPhotos(nextImageUrl, nextMaterialImageUrl);
+      if (target === "catalog") setCatalogPhotoTrimmed(true);
+      else setDesignerPhotoTrimmed(true);
+      await refreshUploadedPelicanItem(editingProduct.id, { imageUrl: nextImageUrl, materialImageUrl: nextMaterialImageUrl });
       toast.success(target === "catalog" ? "Catalog photo saved." : "Designer photo saved.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "The photo could not be uploaded.");
@@ -433,7 +486,7 @@ function PelicanVendorCatalogPage({
               <div className="grid gap-2">
                 <Label>Current catalog photo</Label>
                 <div data-testid="pelican-catalog-photo-preview" className="relative flex h-32 items-center justify-center overflow-hidden rounded-lg border bg-muted">
-                  {draft.imageUrl ? <img src={draft.imageUrl} alt="Current catalog photo" className="h-full w-full object-contain" /> : <ImageIcon className="h-6 w-6 text-muted-foreground" />}
+                  {catalogPhotoUrl ? <img src={catalogPhotoUrl} alt="Current catalog photo" className="h-full w-full object-contain" /> : <ImageIcon className="h-6 w-6 text-muted-foreground" />}
                   {uploadCatalogPhoto.isPending && <div className="absolute inset-0 flex items-center justify-center bg-background/70"><Loader2 className="h-5 w-5 animate-spin" /></div>}
                 </div>
                 {catalogPhotoTrimmed && <p data-testid="pelican-catalog-trim-note" className="text-xs text-muted-foreground">White border trimmed automatically</p>}
@@ -459,8 +512,8 @@ function PelicanVendorCatalogPage({
             </div>
             <div className="grid gap-2">
               <Label htmlFor="pelican-edit-image">Image URL</Label>
-              <Input id="pelican-edit-image" value={draft.imageUrl} placeholder="https://…" onChange={(e) => { setCatalogPhotoTrimmed(false); setDraft((d) => ({ ...d, imageUrl: e.target.value })); }} />
-              <p className="text-xs text-muted-foreground">Paste the approved product image URL. Leave blank to remove it.</p>
+              <Input id="pelican-edit-image" value={draft.imageUrl} placeholder="https://…" onChange={(e) => setDraft((d) => ({ ...d, imageUrl: e.target.value }))} />
+              <p className="text-xs text-muted-foreground">Paste an http(s) image URL to replace the catalog photo. An uploaded photo stays on the preview and is not pasted back into this field.</p>
             </div>
             <div className="grid gap-2">
               <Label htmlFor="pelican-edit-name">Product name</Label>

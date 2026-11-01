@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   PELICAN_PRODUCT_IMAGE_MAX_BYTES,
-  pelicanCatalogImageUrlIsValid,
+  pelicanItemSavePhotos,
   trimmedPelicanPhotoUrl,
   validatePelicanProductImageFile,
 } from "./pelicanProductImageUpload";
@@ -19,12 +19,39 @@ describe("Pelican product image upload", () => {
     expect(validatePelicanProductImageFile({ type: "image/png", size: 0, name: "slab.png" })).toMatchObject({ ok: false, message: "Choose a photo to upload." });
   });
 
-  it("keeps pasted http URLs and same-origin storage paths for the catalog field", () => {
-    expect(pelicanCatalogImageUrlIsValid("")).toBe(true);
-    expect(pelicanCatalogImageUrlIsValid("https://cdn.example/slab.jpg")).toBe(true);
-    expect(pelicanCatalogImageUrlIsValid("/manus-storage/pelican/uploads/trimmed.webp")).toBe(true);
-    expect(pelicanCatalogImageUrlIsValid("slab.jpg")).toBe(false);
-    expect(pelicanCatalogImageUrlIsValid("//cdn.example/slab.jpg")).toBe(false);
+  it("does not send a stored catalog upload back through updateProduct.imageUrl", () => {
+    const stored = "/manus-storage/pelican/products/42/1710000000000-42_ab12cd34.webp";
+    const designer = "/manus-storage/pelican/products/42/1710000000001-42_ff00aa11.webp";
+    expect(pelicanItemSavePhotos({
+      pastedImageUrl: "",
+      pastedImageUrlBaseline: "",
+      storedImageUrl: stored,
+      storedMaterialImageUrl: designer,
+    })).toEqual({ imageUrl: undefined, materialImageUrl: designer });
+    expect(pelicanItemSavePhotos({
+      pastedImageUrl: "https://old.example/catalog.jpg",
+      pastedImageUrlBaseline: "https://old.example/catalog.jpg",
+      storedImageUrl: stored,
+      storedMaterialImageUrl: designer,
+    })).toEqual({ imageUrl: undefined, materialImageUrl: designer });
+    expect(pelicanItemSavePhotos({
+      pastedImageUrl: "https://cdn.example/replacement.jpg",
+      pastedImageUrlBaseline: "",
+      storedImageUrl: stored,
+      storedMaterialImageUrl: null,
+    })).toEqual({ imageUrl: "https://cdn.example/replacement.jpg", materialImageUrl: undefined });
+    expect(pelicanItemSavePhotos({
+      pastedImageUrl: "",
+      pastedImageUrlBaseline: "https://old.example/catalog.jpg",
+      storedImageUrl: "https://old.example/catalog.jpg",
+      storedMaterialImageUrl: null,
+    })).toEqual({ imageUrl: null, materialImageUrl: undefined });
+    expect(pelicanItemSavePhotos({
+      pastedImageUrl: stored,
+      pastedImageUrlBaseline: "",
+      storedImageUrl: stored,
+      storedMaterialImageUrl: null,
+    })).toEqual({ error: "Image URL must start with http:// or https://." });
   });
 
   it("previews the returned trimmed URL for the uploaded slot", () => {
