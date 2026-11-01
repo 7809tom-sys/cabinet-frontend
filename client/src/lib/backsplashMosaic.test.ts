@@ -41,12 +41,16 @@ describe("interlocking mosaics repeat at their interlock spacing", () => {
   });
   it("the unit crop is one pitch wide and tall, centered inside the photo", () => {
     const item = mosaicInterlockSpecForKey("carbon-hex-12.80in-marble-hex-mosaic")!;
-    const plan = mosaicInterlockUnitPlan(item, 1280, 1110, 4096);
+    // Content box of the 1621×1351 designer sheet, not a hard-coded 1280×1110 stand-in.
+    const plan = mosaicInterlockUnitPlan(item, 1618, 1323, 4096);
     const pitch = mosaicPitchIn(item);
-    expect(plan.source.width / (1280 / item.outerWidthIn)).toBeCloseTo(pitch.x, 5);
-    expect(plan.source.height / (1110 / item.outerHeightIn)).toBeCloseTo(pitch.y, 5);
-    expect(plan.source.x * 2 + plan.source.width).toBeCloseTo(1280, 5);
-    expect(plan.source.y * 2 + plan.source.height).toBeCloseTo(1110, 5);
+    expect(item.measured).toBe(true);
+    expect(plan.source.width / (1618 / item.outerWidthIn)).toBeCloseTo(pitch.x, 5);
+    expect(plan.source.height / (1323 / item.outerHeightIn)).toBeCloseTo(pitch.y, 5);
+    expect(Math.round(plan.source.width)).toBe(1461);
+    expect(Math.round(plan.source.height)).toBe(1276);
+    expect(plan.source.x * 2 + plan.source.width).toBeCloseTo(1618, 0);
+    expect(plan.source.y * 2 + plan.source.height).toBeCloseTo(1323, 0);
   });
 });
 
@@ -141,7 +145,7 @@ describe("clean finished edges on cut tile", () => {
 const viewerSource = readFileSync(new URL("../components/design/InteractiveRoom3D.tsx", import.meta.url), "utf8");
 const elevationSource = readFileSync(new URL("../components/design/ElevationView.tsx", import.meta.url), "utf8");
 const libSource = readFileSync(new URL("./backsplashMosaic.ts", import.meta.url), "utf8");
-const PRODUCTS = ["Desert Clay", "Arctic Vail", "Carbon Hex", "Carrara Subway", "Cloudline Marble", "Concord Square", "Glacier Shift", "Golden Trace", "Misty Coast"] as const;
+const PRODUCTS = ["Desert Clay", "Arctic Vail", "Carbon Hex", "Carrara Subway", "Cloudline Marble", "Concord Square", "Glacier Shift", "Golden Trace", "Icestone Flux", "Misty Coast", "Thassos Subway"] as const;
 const backsplashBlock = viewerSource.slice(viewerSource.indexOf("function addThreeDBacksplash("), viewerSource.indexOf("function addThreeDCountertopUpstands"));
 
 describe("hard rule: every mosaic shows no sheet edges", () => {
@@ -206,8 +210,9 @@ describe("hard rule: every mosaic shows no sheet edges", () => {
         const plan = mosaicInterlockUnitPlan(item, 2000, 2000, 4096);
         expect(plan.pitchXIn).toBe(pitch.x);
         expect(plan.pitchYIn).toBe(pitch.y);
-        expect(viewerSource).toContain("backsplashModuleIn: interlockSpec ? mosaicPitchIn(interlockSpec).x");
-        expect(viewerSource).toContain("backsplashModuleHeightIn: interlockSpec ? mosaicPitchIn(interlockSpec).y");
+        expect(viewerSource).toContain("interlockSpec ? mosaicPitchIn(interlockSpec).x");
+        expect(viewerSource).toContain("interlockSpec ? mosaicPitchIn(interlockSpec).y");
+        expect(viewerSource).toContain("backsplashMeasuredModuleIn");
         expect(elevationSource).toContain("interlockPitch.x * ppi");
       });
     });

@@ -9,7 +9,8 @@ import {
  * "Every mosaic" means every product in the catalog that is a mosaic of any pattern: hex, square, picket,
  * herringbone, penny, linear, subway/staggered sheets, Moonstone Hex, and any mosaic added later. It is not a short
  * list of names. Curated sheets have their own row in `MOSAIC_SHEET_SPECS`: Desert Clay, Arctic Vail, Carbon Hex,
- * Carrara Subway, Cloudline Marble, Concord Square, Glacier Shift, Golden Trace, Misty Coast. Any other catalog mosaic gets a
+ * Carrara Subway, Cloudline Marble, Concord Square, Glacier Shift, Golden Trace, Icestone Flux, Misty Coast,
+ * Thassos Subway. Any other catalog mosaic gets a
  * `genericMosaicSheetSpec` built from its catalog size. There is no plain "tile with a border" path for a mosaic.
  * Only non-mosaics (field tile) use the plain fallback. Applies in the 3D view AND the elevation view.
  *
@@ -30,9 +31,10 @@ import {
  * inside each other, which is the jagged, uneven seam. Each sheet is instead repeated at its pitch: the photo is
  * cropped to one repeating unit, and one even grout line (1/16 to 1/8 inch) is drawn at every joint.
  *
- * ESTIMATE WARNING: every overhang, internal grout and grout color below is an ESTIMATE (`measured: false`), not a
- * measurement of the product photo. They live in this one table so a real measurement is a one-line change that
- * also flips `measured` to true.
+ * ESTIMATE WARNING: overhang, internal grout and grout color are ESTIMATES (`measured: false`) unless the row says
+ * `measured: true`. A measured row was read from that product's transparent Designer sheet (hex or diamond centers,
+ * or the staggered brick edges). The inches are the catalog sheet size; the repeat fraction comes from that photo's
+ * own pixel box, so a later upload of the same sheet at another resolution keeps the same pitch.
  */
 export const MOSAIC_GROUT_MIN_IN = 1 / 16;
 export const MOSAIC_GROUT_MAX_IN = 1 / 8;
@@ -72,22 +74,33 @@ const spec = (key: string, name: string, w: number, h: number, overhangX: number
 });
 /** Grout colors matched to each product's tone. ESTIMATES from the catalog names/photos, not measured. */
 const GROUT_COLOR_BY_NAME: Record<string, string> = {
-  "desert clay": "#8c7a68", "arctic vail": "#8f9496", "carbon hex": "#4a4a4c",
+  "desert clay": "#8c7a68", "arctic vail": "#8f9496",
+  // Measured from the white joints on the Carbon Hex designer sheet (median grout ~252).
+  "carbon hex": "#f4f4f4",
   "concord square": "#9a9a98", "glacier shift": "#8b9291", "golden trace": "#8a7f6e",
   "carrara subway": "#9b9a96", "cloudline marble": "#a09f9c",
   // Light joint in the gray/blue glass strips. Estimate, same as the other rows.
   "misty coast": "#c5c3be",
+  // Measured from the grout lines on the designer sheets (not the neutral grey fill).
+  "icestone flux": "#675b4e",
+  "thassos subway": "#5a534e",
 };
+/** Designer sheets whose pitch was measured from the uploaded photo. */
+const MEASURED_SHEET_NAMES = new Set(["carbon hex", "icestone flux", "thassos subway"]);
 /** Neutral grout for a catalog mosaic with no curated row (estimate). */
 export const GENERIC_MOSAIC_GROUT_COLOR = "#8a8782";
 
 export const MOSAIC_SHEET_SPECS: readonly MosaicInterlockSpec[] = [
   spec("desert-clay-11.81in-interlocking-mosaic", "desert clay", 11.81, 11.81, 0.3125),
   spec("arctic-vail-10.71in-interlocking-hex-mosaic", "arctic vail", 10.71, 10.55, 0.3125),
-  spec("carbon-hex-12.80in-marble-hex-mosaic", "carbon hex", 12.8, 11.1, 0.3125),
+  // Measured on the 1621×1351 designer sheet. Content box 1618×1323. Four columns at 365.25 px
+  // and four rows at 319 px: the nest period is 1461×1276 px, centered in that box.
+  spec("carbon-hex-12.80in-marble-hex-mosaic", "carbon hex", 12.8, 11.1, 1.2418, 0.3943),
   spec("concord-square-11.81in-glass-marble-mosaic", "concord square", 11.81, 11.81, 0.3125),
   spec("glacier-shift-12.05in-recycled-glass-herringbone", "glacier shift", 12.05, 12.05, 0.3125),
   spec("golden-trace-11.81in-marble-aluminum-mosaic", "golden trace", 11.81, 11.81, 0.3125),
+  // Measured on the 1625×1316 designer sheet. Content box 1570×1275. Diamond repeat 1410×1186 px.
+  spec("icestone-flux-10.35in-diamond-mosaic", "icestone flux", 10.35, 11.73, 1.0548, 0.8187),
   // Pelican lists Misty Coast as 11.81 x 11.81 (8mm is thickness). Horizontal overhang is the ragged
   // strip ends that nest into the next sheet, about 22% of that sheet, estimated from the product photo
   // (measured stays false). Vertical stagger is only a hairline. The repeat is that face width minus the overhang.
@@ -95,7 +108,20 @@ export const MOSAIC_SHEET_SPECS: readonly MosaicInterlockSpec[] = [
   // Straight-edge sheets: overlap 0, so the pitch is the sheet size.
   spec("carrara-subway-11.97in-running-bond-mosaic", "carrara subway", 11.97, 12.13, 0),
   spec("cloudline-marble-11.81in-staggered-glass-marble-mosaic", "cloudline marble", 11.81, 11.81, 0),
-].map((item) => ({ ...item, groutColor: GROUT_COLOR_BY_NAME[item.name] ?? null }));
+  // Measured on the 1646×1330 designer sheet. Content box 1644×1328. Two bricks per row, alternate
+  // rows offset half a brick: the nest period is 1322×1326 px (vertical overhang is a hairline).
+  spec("thassos-subway-11.97in-staggered-mosaic", "thassos subway", 11.97, 12.13, 2.3446, 0.0183),
+].map((item) => {
+  const measured = MEASURED_SHEET_NAMES.has(item.name);
+  const groutIn = measured ? MOSAIC_GROUT_MAX_IN : item.groutIn;
+  return {
+    ...item,
+    groutColor: GROUT_COLOR_BY_NAME[item.name] ?? null,
+    measured,
+    internalGroutIn: groutIn,
+    groutIn,
+  };
+});
 
 /** Back-compat name for the table; it now holds every curated mosaic, interlocking or straight-edge. */
 export const MOSAIC_INTERLOCK_SPECS = MOSAIC_SHEET_SPECS;

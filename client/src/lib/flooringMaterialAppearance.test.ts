@@ -5,6 +5,7 @@ import {
   threeDAverageMaterialHex,
   threeDCuratedIdentityMatches,
   threeDFlooringFallbackColor,
+  preferredDesignerMosaicUrl,
   threeDMosaicSheetMap,
   threeDRetailContentBounds,
   threeDTextureUrlIsColorMap,
@@ -68,7 +69,7 @@ describe("flooring material appearance", () => {
     expect(threeDTextureUrlIsColorMap("/manus-storage/pelican/95_belmont.png")).toBe(true);
   });
 
-  it("repeats a mosaic close-up across the chips it shows, and a sheet photo across the sheet", () => {
+  it("repeats a mosaic close-up across the chips it shows, and a Designer upload across the sheet", () => {
     const macro = threeDMosaicSheetMap(
       "/manus-storage/carbon_hex_candidate_1_2af63616.png",
       12.8,
@@ -81,13 +82,13 @@ describe("flooring material appearance", () => {
       "/manus-storage/carbon_hex_candidate_1_2af63616.png",
       12.8,
       11.1,
-      "/manus-storage/pelican/142_0904bb42.png",
+      "/manus-storage/pelican/products/142/1793556207681-de516bbe_0314bfe8.webp",
     );
     expect(sheet).toMatchObject({
-      url: "/manus-storage/pelican/142_0904bb42.png",
+      url: "/manus-storage/pelican/products/142/1793556207681-de516bbe_0314bfe8.webp",
       widthIn: 12.8,
       heightIn: 11.1,
-      cropRetailBackground: true,
+      cropRetailBackground: false,
       macroCandidate: false,
     });
     const fullSheet = threeDMosaicSheetMap(
@@ -96,5 +97,14 @@ describe("flooring material appearance", () => {
       11.81,
     );
     expect(fullSheet).toMatchObject({ widthIn: 11.81, heightIn: 11.81, macroCandidate: false });
+  });
+
+  it("uses the Designer slot and never the catalog card as a mosaic texture", () => {
+    const card = "/manus-storage/pelican/142_kitchen.jpg";
+    const designer = "/manus-storage/pelican/products/142/sheet.webp";
+    expect(preferredDesignerMosaicUrl(card, card, null)).toBe("");
+    expect(preferredDesignerMosaicUrl(card, card, designer)).toBe(designer);
+    expect(preferredDesignerMosaicUrl(designer, card, null)).toBe(designer);
+    expect(preferredDesignerMosaicUrl(null, card, null)).toBe("");
   });
 });
