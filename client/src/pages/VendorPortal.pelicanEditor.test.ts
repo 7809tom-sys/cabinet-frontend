@@ -4,7 +4,8 @@ import { resolve } from "node:path";
 
 describe("Pelican vendor catalog editor", () => {
   const source = readFileSync(resolve(process.cwd(), "client/src/pages/VendorPortal.tsx"), "utf8");
-  const catalogSource = source.slice(source.indexOf("function PelicanVendorCatalogPage"), source.indexOf("function PelicanVendorOverviewPage"));
+  const photoSource = readFileSync(resolve(process.cwd(), "client/src/components/vendor/VendorCatalogPhotoFields.tsx"), "utf8");
+  const catalogSource = source.slice(source.indexOf("function PelicanVendorCatalogPage"), source.indexOf("function PelicanVendorOverviewPage")) + photoSource;
 
   it("renders image, description, cost, and retail price editing fields", () => {
     expect(catalogSource).toContain('id="pelican-edit-image"');

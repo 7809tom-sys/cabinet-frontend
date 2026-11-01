@@ -61,7 +61,24 @@ import {
   shippingOriginZipsForSaveList,
   shippingRowInheritsVendorZips,
 } from "@shared/styleOriginInheritance";
+import { AddCatalogItemDialog } from "@/components/vendor/AddCatalogItemDialog";
+import { VendorCatalogPhotoFields } from "@/components/vendor/VendorCatalogPhotoFields";
 import { VendorOtherProducts } from "@/components/vendor/VendorOtherProducts";
+import {
+  buildCreatePelicanProductInput,
+  catalogBrowseLabel,
+  catalogEditorItemFromCreate,
+  catalogSubcategoryOptions,
+  categoryChoices,
+  createdCatalogItemId,
+  initialAddCatalogItemDraft,
+  isCatalogProcedureNotFound,
+  itemsMatchingSubcategory,
+  useCreatePelicanProduct,
+  usePelicanSubcategoryChoices,
+  type AddCatalogItemDraft,
+} from "@/lib/vendorCatalogAddItem";
+import { catalogCategoryValuesEqual } from "@shared/catalogCategorySpelling";
 import { VendorSalesForecast } from "@/components/vendor/VendorSalesForecast";
 import { pelicanVendorCostLabel } from "@/lib/vendorCostLabel";
 import { formatVendorCost } from "@shared/salesForecast";
@@ -180,11 +197,13 @@ function PelicanVendorCatalogPage({
     { enabled: Number.isInteger(editId) && editId > 0 },
   );
   const [catalogPage, setCatalogPage] = useState(0);
+  const [subCategory, setSubCategory] = useState<string>(ALL);
   const [editingProduct, setEditingProduct] = useState<any | null>(null);
+  const [createdItemId, setCreatedItemId] = useState<number | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const [addDraft, setAddDraft] = useState<AddCatalogItemDraft>(() => initialAddCatalogItemDraft({}));
+  const [createAvailability, setCreateAvailability] = useState<"unknown" | "ready" | "missing">("unknown");
   const [draft, setDraft] = useState({ name: "", description: "", imageUrl: "", yourCost: "", retailPrice: "" });
-  const catalogPhotoInputRef = useRef<HTMLInputElement | null>(null);
-  const designerPhotoInputRef = useRef<HTMLInputElement | null>(null);
-  const roomScenePhotoInputRef = useRef<HTMLInputElement | null>(null);
   const imageUrlBaselineRef = useRef("");
   const [catalogPhotoUrl, setCatalogPhotoUrl] = useState("");
   const [designerPhotoUrl, setDesignerPhotoUrl] = useState("");
@@ -198,6 +217,7 @@ function PelicanVendorCatalogPage({
   const [designerTransparencyWarning, setDesignerTransparencyWarning] = useState<string | null>(null);
   const [designerCleanedPreviewUrl, setDesignerCleanedPreviewUrl] = useState<string | null>(null);
   const categoryFilter = selectedCatalogCategory(category);
+  const subFilter = selectedCatalogCategory(subCategory);
   const input = useMemo(
     () => ({
       ...(categoryFilter ? { category: categoryFilter } : {}),
@@ -208,7 +228,15 @@ function PelicanVendorCatalogPage({
     [categoryFilter, search, catalogPage]
   );
   const categoryOptions = trpc.pelican.categories.useQuery({ scope: "admin" });
+  const browsedFamily = trpc.pelican.byCategory.useQuery(
+    { category: categoryFilter ?? "", scope: "all", limit: 1, offset: 0 },
+    { enabled: Boolean(categoryFilter) },
+  );
   const { data, isLoading, error } = trpc.pelican.adminList.useQuery(input);
+  const createProduct = useCreatePelicanProduct();
+  const probeCreate = useCreatePelicanProduct();
+  const probeCreateRef = useRef(probeCreate);
+  probeCreateRef.current = probeCreate;
   const refreshCatalog = () => {
     void utils.pelican.adminList.invalidate();
     void utils.pelican.categories.invalidate();
@@ -409,12 +437,78 @@ function PelicanVendorCatalogPage({
     }
     return options;
   }, [categoryOptions.data, categoryFilter]);
+  const subOptions = useMemo(() => catalogSubcategoryOptions({
+    category: categoryFilter,
+    serverSubs: [subFilter, ...(browsedFamily.data?.subCategories ?? [])],
+    items: data?.items,
+  }), [categoryFilter, subFilter, browsedFamily.data?.subCategories, data?.items]);
+  const addSubcategories = usePelicanSubcategoryChoices(addDraft.category, addOpen);
+  const addSubOptions = useMemo(() => catalogSubcategoryOptions({
+    category: addDraft.category,
+    serverSubs: addSubcategories.loading ? [addDraft.subCategory, ...addSubcategories.subcategories] : addSubcategories.subcategories,
+  }), [addDraft.category, addDraft.subCategory, addSubcategories.loading, addSubcategories.subcategories]);
+  const addCategories = categoryChoices(categories.map((option) => option.category), addDraft.category);
+  const visibleItems = useMemo(
+    () => itemsMatchingSubcategory(data?.items ?? [], subFilter),
+    [data?.items, subFilter],
+  );
   const total = data?.total ?? 0;
   const pageCount = Math.max(1, Math.ceil(total / CATALOG_PAGE_SIZE));
 
   useEffect(() => {
     setCatalogPage(0);
-  }, [categoryFilter, search]);
+  }, [categoryFilter, subFilter, search]);
+
+  useEffect(() => {
+    if (!addOpen || addSubcategories.loading || !addDraft.subCategory) return;
+    if (addSubOptions.some((sub) => catalogCategoryValuesEqual(sub, addDraft.subCategory))) return;
+    setAddDraft((current) => current.subCategory === addDraft.subCategory ? { ...current, subCategory: "" } : current);
+  }, [addOpen, addSubcategories.loading, addDraft.subCategory, addSubOptions]);
+
+  useEffect(() => {
+    let cancelled = false;
+    // Empty required fields fail validation when the procedure exists, and
+    // return NOT_FOUND when cabinet-backend PR #68 is not deployed yet.
+    void probeCreateRef.current.mutateAsync({ category: "", subCategory: "", name: "" }).then(
+      () => { if (!cancelled) setCreateAvailability("ready"); },
+      (probeError: unknown) => { if (!cancelled) setCreateAvailability(isCatalogProcedureNotFound(probeError) ? "missing" : "ready"); },
+    );
+    return () => { cancelled = true; };
+  }, []);
+
+  const openAddItem = () => {
+    setAddDraft(initialAddCatalogItemDraft({ category: categoryFilter, subCategory: subFilter }));
+    setAddOpen(true);
+  };
+  const submitAddItem = async () => {
+    const parsed = buildCreatePelicanProductInput(addDraft);
+    if (!parsed.ok) {
+      toast.error(parsed.message);
+      return;
+    }
+    try {
+      const result = await createProduct.mutateAsync(parsed.value);
+      const id = createdCatalogItemId(result);
+      if (!id) {
+        toast.error("The item was created, but no id was returned.");
+        refreshCatalog();
+        return;
+      }
+      setAddOpen(false);
+      setCreatedItemId(id);
+      openEditor(catalogEditorItemFromCreate(result));
+      refreshCatalog();
+      toast.success("Item created. Upload the catalog, Designer, and room scene photos.");
+    } catch (createError) {
+      if (isCatalogProcedureNotFound(createError)) {
+        setCreateAvailability("missing");
+        setAddOpen(false);
+        toast.error("Adding items is not available for this catalog yet.");
+        return;
+      }
+      toast.error(createError instanceof Error ? createError.message : "The item could not be created.");
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -422,6 +516,12 @@ function PelicanVendorCatalogPage({
         <h2 className="text-xl font-bold">Pelican Catalog</h2>
         <Badge variant="outline">{data?.total ?? 0} products</Badge>
         <div className="flex gap-2 ml-auto flex-wrap">
+          {createAvailability !== "missing" && (
+            <Button type="button" size="sm" className="h-9" data-testid="vendor-add-item" disabled={createAvailability !== "ready"} onClick={openAddItem}>
+              <Plus className="mr-2 h-4 w-4" />
+              Add item
+            </Button>
+          )}
           <div className="relative">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
@@ -431,7 +531,7 @@ function PelicanVendorCatalogPage({
               onChange={(e) => { setSearch(e.target.value); setCatalogPage(0); }}
             />
           </div>
-          <Select value={categoryFilter ?? ALL} onValueChange={(value) => { setCatalogPage(0); onCategoryChange(selectedCatalogCategory(value) ?? ALL); }}>
+          <Select value={categoryFilter ?? ALL} onValueChange={(value) => { setCatalogPage(0); setSubCategory(ALL); onCategoryChange(selectedCatalogCategory(value) ?? ALL); }}>
             <SelectTrigger className="h-9 w-56" aria-label="Pelican category">
               <SelectValue placeholder="All categories" />
             </SelectTrigger>
@@ -442,6 +542,19 @@ function PelicanVendorCatalogPage({
               ))}
             </SelectContent>
           </Select>
+          {categoryFilter && (
+            <Select value={subFilter ?? ALL} onValueChange={(value) => { setCatalogPage(0); setSubCategory(value); }}>
+              <SelectTrigger className="h-9 w-56" aria-label="Sub-category" data-testid="vendor-catalog-subcategory">
+                <SelectValue placeholder="All sub-categories" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>All sub-categories</SelectItem>
+                {subOptions.map((name) => (
+                  <SelectItem key={name} value={name}>{name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </div>
       </div>
       {categoryOptions.error && <p className="text-sm text-destructive">Could not load categories: {categoryOptions.error.message}</p>}
@@ -452,6 +565,8 @@ function PelicanVendorCatalogPage({
         <div className="text-destructive p-4">Could not load Pelican products: {error.message}</div>
       ) : !data?.items.length ? (
         <p className="py-6 text-center text-sm text-muted-foreground">No Pelican items match your filters.</p>
+      ) : visibleItems.length === 0 ? (
+        <p className="py-6 text-center text-sm text-muted-foreground">No items in this sub-category on this page.</p>
       ) : (
         <div className="overflow-x-auto">
           <Table>
@@ -467,11 +582,20 @@ function PelicanVendorCatalogPage({
                 <TableHead className="text-center">Designer</TableHead>
                 <TableHead className="text-center">Featured</TableHead>
                 <TableHead className="text-right">Sq ft/Box</TableHead>
-                <TableHead className="text-right">Edit</TableHead>
+                <TableHead className="text-right">
+                  <div className="flex items-center justify-end gap-2">
+                    {createAvailability !== "missing" && (
+                      <Button type="button" size="sm" variant="outline" className="h-8" data-testid="vendor-add-item-beside-edit" disabled={createAvailability !== "ready"} onClick={openAddItem}>
+                        Add item
+                      </Button>
+                    )}
+                    Edit
+                  </div>
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {data.items.map((it: any) => (
+              {visibleItems.map((it: any) => (
                 <TableRow key={it.id}>
                   <TableCell className="p-1.5">
                     {it.imageUrl ? (
@@ -543,73 +667,32 @@ function PelicanVendorCatalogPage({
           <Button variant="outline" size="sm" aria-label="Next page" disabled={(catalogPage + 1) * CATALOG_PAGE_SIZE >= total || isLoading} onClick={() => setCatalogPage((current) => current + 1)}>Next page</Button>
         </div>
       </div>}
-      <Dialog open={Boolean(editingProduct)} onOpenChange={(open) => !open && setEditingProduct(null)}>
+      <Dialog open={Boolean(editingProduct)} onOpenChange={(open) => { if (!open) { setEditingProduct(null); setCreatedItemId(null); } }}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Edit Pelican item</DialogTitle>
             <p className="text-sm text-muted-foreground">{editingProduct?.pelicanCode} · Changes apply to the shared catalog and Designer.</p>
+            {editingProduct?.id === createdItemId && (
+              <p data-testid="vendor-add-item-photos" className="text-sm text-muted-foreground">Upload the catalog, Designer, and room scene photos.</p>
+            )}
           </DialogHeader>
           <div className="grid gap-4 py-2">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="grid gap-2">
-                <Label>Current catalog photo</Label>
-                <div data-testid="pelican-catalog-photo-preview" className="relative flex h-32 items-center justify-center overflow-hidden rounded-lg border bg-muted">
-                  {catalogPhotoUrl ? <img src={catalogPhotoUrl} alt="Current catalog photo" className="h-full w-full object-contain" /> : <ImageIcon className="h-6 w-6 text-muted-foreground" />}
-                  {uploadCatalogPhoto.isPending && <div className="absolute inset-0 flex items-center justify-center bg-background/70"><Loader2 className="h-5 w-5 animate-spin" /></div>}
-                </div>
-                {catalogPhotoTrimmed && <p data-testid="pelican-catalog-trim-note" className="text-xs text-muted-foreground">White border trimmed automatically</p>}
-                <Button type="button" variant="outline" data-testid="pelican-upload-catalog-photo" disabled={uploadCatalogPhoto.isPending} onClick={() => catalogPhotoInputRef.current?.click()}>
-                  {uploadCatalogPhoto.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
-                  Upload regular photo
-                </Button>
-                <input ref={catalogPhotoInputRef} data-testid="pelican-catalog-photo-input" type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void uploadPelicanPhoto(file, "catalog"); }} />
-              </div>
-              <div className="grid gap-2">
-                <Label>Current Designer photo</Label>
-                <div data-testid="pelican-designer-photo-preview" className="relative flex h-32 items-center justify-center overflow-hidden rounded-lg border bg-muted">
-                  {designerPhotoUrl ? <img src={designerPhotoUrl} alt="Current Designer photo" className="h-full w-full object-contain" /> : <ImageIcon className="h-6 w-6 text-muted-foreground" />}
-                  {uploadDesignerPhoto.isPending && <div className="absolute inset-0 flex items-center justify-center bg-background/70"><Loader2 className="h-5 w-5 animate-spin" /></div>}
-                </div>
-                {designerPhotoTrimmed && <p data-testid="pelican-designer-trim-note" className="text-xs text-muted-foreground">White border trimmed automatically</p>}
-                {designerCleanedPreviewUrl && (
-                  <div data-testid="pelican-designer-cleaned-preview" className="flex items-center gap-2">
-                    <img
-                      src={designerCleanedPreviewUrl}
-                      alt="Cleaned Designer photo"
-                      className="h-16 w-16 rounded border object-contain"
-                      style={{
-                        backgroundColor: "#ffffff",
-                        backgroundImage: "linear-gradient(45deg, #d4d4d4 25%, transparent 25%), linear-gradient(-45deg, #d4d4d4 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #d4d4d4 75%), linear-gradient(-45deg, transparent 75%, #d4d4d4 75%)",
-                        backgroundSize: "12px 12px",
-                        backgroundPosition: "0 0, 0 6px, 6px -6px, -6px 0",
-                      }}
-                    />
-                    <p className="text-xs text-muted-foreground">Checkerboard removed. Transparent edges upload as PNG.</p>
-                  </div>
-                )}
-                {designerTransparencyWarning && (
-                  <p data-testid="pelican-designer-transparency-warning" className="rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-950">{designerTransparencyWarning}</p>
-                )}
-                <Button type="button" variant="outline" data-testid="pelican-upload-designer-photo" disabled={uploadDesignerPhoto.isPending} onClick={() => designerPhotoInputRef.current?.click()}>
-                  {uploadDesignerPhoto.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
-                  Upload Designer photo
-                </Button>
-                <input ref={designerPhotoInputRef} data-testid="pelican-designer-photo-input" type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void uploadPelicanPhoto(file, "designer"); }} />
-              </div>
-              <div className="grid gap-2">
-                <Label>Current room scene photo</Label>
-                <div data-testid="pelican-room-scene-photo-preview" className="relative flex h-32 items-center justify-center overflow-hidden rounded-lg border bg-muted">
-                  {roomScenePhotoUrl ? <img src={roomScenePhotoUrl} alt="Current room scene photo" className="h-full w-full object-contain" /> : <ImageIcon className="h-6 w-6 text-muted-foreground" />}
-                  {uploadRoomScenePhoto.isPending && <div className="absolute inset-0 flex items-center justify-center bg-background/70"><Loader2 className="h-5 w-5 animate-spin" /></div>}
-                </div>
-                {roomScenePhotoTrimmed && <p data-testid="pelican-room-scene-trim-note" className="text-xs text-muted-foreground">White border trimmed automatically</p>}
-                <Button type="button" variant="outline" data-testid="pelican-upload-room-scene-photo" disabled={uploadRoomScenePhoto.isPending} onClick={() => roomScenePhotoInputRef.current?.click()}>
-                  {uploadRoomScenePhoto.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
-                  Upload room scene photo
-                </Button>
-                <input ref={roomScenePhotoInputRef} data-testid="pelican-room-scene-photo-input" type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void uploadPelicanPhoto(file, "roomScene"); }} />
-              </div>
-            </div>
+            <VendorCatalogPhotoFields
+              catalogPhotoUrl={catalogPhotoUrl}
+              designerPhotoUrl={designerPhotoUrl}
+              roomScenePhotoUrl={roomScenePhotoUrl}
+              catalogPending={uploadCatalogPhoto.isPending}
+              designerPending={uploadDesignerPhoto.isPending}
+              roomScenePending={uploadRoomScenePhoto.isPending}
+              catalogTrimmed={catalogPhotoTrimmed}
+              designerTrimmed={designerPhotoTrimmed}
+              roomSceneTrimmed={roomScenePhotoTrimmed}
+              designerCleanedPreviewUrl={designerCleanedPreviewUrl}
+              designerTransparencyWarning={designerTransparencyWarning}
+              onCatalogFile={(file) => void uploadPelicanPhoto(file, "catalog")}
+              onDesignerFile={(file) => void uploadPelicanPhoto(file, "designer")}
+              onRoomSceneFile={(file) => void uploadPelicanPhoto(file, "roomScene")}
+            />
             {isMosaicCatalogItem(editingProduct) && (
               <div data-testid="pelican-mosaic-use-options" className="flex flex-col gap-3 rounded-lg border px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
@@ -657,7 +740,7 @@ function PelicanVendorCatalogPage({
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditingProduct(null)}>Cancel</Button>
+            <Button variant="outline" onClick={() => { setEditingProduct(null); setCreatedItemId(null); }}>Cancel</Button>
             <Button onClick={saveEditor} disabled={updateProduct.isPending || !draft.name.trim()}>
               {updateProduct.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Save item
@@ -665,6 +748,19 @@ function PelicanVendorCatalogPage({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AddCatalogItemDialog
+        open={addOpen}
+        pending={createProduct.isPending}
+        draft={addDraft}
+        categories={addCategories}
+        subcategories={addSubOptions}
+        subcategoriesLoading={addSubcategories.loading}
+        browseLabel={catalogBrowseLabel(addDraft.category, addDraft.subCategory)}
+        onDraft={setAddDraft}
+        onClose={() => setAddOpen(false)}
+        onSubmit={() => void submitAddItem()}
+      />
     </div>
   );
 }
@@ -1532,9 +1628,9 @@ function CatalogPage() {
             <FileSpreadsheet className="h-4 w-4 mr-2" />
             Spreadsheet Upload
           </Button>
-          <Button size="sm" onClick={() => setShowNewProduct(!showNewProduct)}>
+          <Button size="sm" data-testid="cabinet-add-item" onClick={() => setShowNewProduct(!showNewProduct)}>
             <PlusCircle className="h-4 w-4 mr-2" />
-            New Product
+            Add item
           </Button>
         </div>
       </div>
