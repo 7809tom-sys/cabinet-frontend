@@ -140,16 +140,25 @@ export function mosaicPitchIn(item: MosaicInterlockSpec) {
  * seam of two neighbouring sheets falls under the grout line, which is at least as wide as the cut allows.
  * `grout*Px` is the grout line drawn along the unit's top and right edge, so each joint carries exactly one line.
  */
-export function mosaicInterlockUnitPlan(item: MosaicInterlockSpec, imageWidthPx: number, imageHeightPx: number, maxUnitPx: number) {
+export function mosaicInterlockUnitPlan(
+  item: MosaicInterlockSpec,
+  imageWidthPx: number,
+  imageHeightPx: number,
+  maxUnitPx: number,
+  /** A repeat measured from the photo itself (pixels). Wins over the estimated overhang; the output period stays the spec pitch. */
+  measuredCore?: { x: number; y: number; width: number; height: number } | null,
+) {
   const pitch = mosaicPitchIn(item);
   const pxPerInX = imageWidthPx / item.outerWidthIn;
   const pxPerInY = imageHeightPx / item.outerHeightIn;
-  const source = {
-    x: (item.overhangXIn / 2) * pxPerInX,
-    y: (item.overhangYIn / 2) * pxPerInY,
-    width: pitch.x * pxPerInX,
-    height: pitch.y * pxPerInY,
-  };
+  const source = measuredCore && measuredCore.width > 0 && measuredCore.height > 0
+    ? { ...measuredCore }
+    : {
+        x: (item.overhangXIn / 2) * pxPerInX,
+        y: (item.overhangYIn / 2) * pxPerInY,
+        width: pitch.x * pxPerInX,
+        height: pitch.y * pxPerInY,
+      };
   const scale = Math.min(1, maxUnitPx / Math.max(source.width, source.height));
   const width = Math.max(1, Math.round(source.width * scale));
   const height = Math.max(1, Math.round(source.height * scale));

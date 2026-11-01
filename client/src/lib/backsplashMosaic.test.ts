@@ -258,3 +258,34 @@ describe("hard rule: no catalog mosaic is left without a spec", () => {
     expect(elevationSource).toContain("mosaicSheetSpecFor({ name: productName");
   });
 });
+
+describe("hard rule: the photo border is cut and the repeat is measured from the photo, for every mosaic", () => {
+  const unitLib = readFileSync(new URL("./mosaicUnitImage.ts", import.meta.url), "utf8");
+  it("a measured flush core overrides the estimated overhang in the unit crop, and the output period stays the spec pitch", () => {
+    const item = mosaicInterlockSpecForName("Desert Clay")!;
+    const estimated = mosaicInterlockUnitPlan(item, 2000, 2000, 4096);
+    const measured = mosaicInterlockUnitPlan(item, 2000, 2000, 4096, { x: 40, y: 60, width: 1900, height: 1880 });
+    expect(measured.source).toEqual({ x: 40, y: 60, width: 1900, height: 1880 });
+    expect(estimated.source.x).toBeCloseTo((item.overhangXIn / 2) * (2000 / item.outerWidthIn), 6);
+    expect(measured.pitchXIn).toBe(estimated.pitchXIn);
+    expect(measured.pitchYIn).toBe(estimated.pitchYIn);
+    // a null or empty measurement falls back to the estimate
+    expect(mosaicInterlockUnitPlan(item, 2000, 2000, 4096, null).source).toEqual(estimated.source);
+    expect(mosaicInterlockUnitPlan(item, 2000, 2000, 4096, { x: 0, y: 0, width: 0, height: 10 }).source).toEqual(estimated.source);
+  });
+
+  it("the 3D loader and the elevation both build the unit through the one photo-analysis builder", () => {
+    expect(viewerSource).toContain("buildMosaicUnitImage(loadedTexture.image");
+    expect(elevationSource).toContain("buildMosaicUnitImage(probe, mosaicUnitSpec");
+    expect(unitLib).toContain("analyzeMosaicPhoto(");
+    expect(unitLib).toContain("measuredMosaicOverhangIn(");
+    // the builder still paints exactly one grout line per joint and adds no tint
+    expect(unitLib).toContain('item.groutColor ?? "#8a8782"');
+    expect(unitLib).not.toMatch(/globalAlpha|globalCompositeOperation|filter\s*=/);
+  });
+
+  it("falls back to the estimate when the photo cannot be analysed (the old crop path stays for that case only)", () => {
+    expect(viewerSource).toContain("interlockedMosaicUnitImage(");
+    expect(unitLib).toContain("return null");
+  });
+});
