@@ -27,6 +27,15 @@ export type AutoDesignRefrigeratorBayResult =
       reservation: { wall: string; start: number; end: number };
       /** Material-list sentences for a substituted or pulled-forward cabinet above. */
       notes: string[];
+      /**
+       * The refrigerator itself, clamped to sit inside its two end panels (front, top). Callers must replace the
+       * placed refrigerator with this one; it is the input unchanged when it already fit.
+       */
+      refrigerator: PlacedCabinet;
+      /** Sentence for the material list when the refrigerator was clamped; null when it already fit. */
+      refrigeratorClampNote: string | null;
+      /** Things that could not be made to fit inside the panels. Shown to the user instead of letting them stick out. */
+      warnings: string[];
     }
   | { ok: false; message: string };
 
@@ -46,6 +55,9 @@ type Input = {
    */
   framelessLine?: boolean;
 };
+
+/** Tolerance when comparing a part's face to its end panels' faces. */
+export const PANEL_FIT_EPSILON_IN = 0.05;
 
 /** A refrigerator with end panels always gets the full-depth refrigerator box above it. */
 export const REFRIGERATOR_CAP_DEPTH_IN = 24;
@@ -252,6 +264,27 @@ export function buildMandatoryAutoDesignRefrigeratorBay({
     ...(capPick.substitutionNote ? [capPick.substitutionNote] : []),
     ...(pullForward ? [`Over-fridge ${cap.masterCode} pulled forward flush with the refrigerator face`] : []),
   ];
+  // The refrigerator must stay inside its surrounding panels (Tom, Oct 31): panels are capped at 24 in. deep, so a
+  // deeper refrigerator used to stick out past their faces and made the panel read as doubled. Seat it at the panel
+  // depth instead (same wall position, same width) and top it at the panel height. Anything that still cannot fit
+  // (a cabinet above deeper than the panels) is reported as a warning, never left sticking out silently.
+  const warnings: string[] = [];
+  let placedRefrigerator = refrigerator;
+  let clampNote: string | null = null;
+  const fridgeDepth = Number(refrigerator.depth) || 0;
+  const fridgeHeight = Number(refrigerator.height) || 0;
+  if (fridgeDepth > panelDepth + PANEL_FIT_EPSILON_IN) {
+    const reseat = wallPlacementAt(bay.refrigeratorStart, refrigerator.width, panelDepth, bay.side, room);
+    placedRefrigerator = { ...placedRefrigerator, ...reseat, depth: panelDepth, rotation: reseat.rotation };
+    clampNote = `Refrigerator set to ${panelDepth}" deep so it stays inside its end panels (was ${fridgeDepth}")`;
+  }
+  if (fridgeHeight > panelHeight + PANEL_FIT_EPSILON_IN) {
+    placedRefrigerator = { ...placedRefrigerator, height: panelHeight };
+    clampNote = [clampNote, `Refrigerator set to ${panelHeight}" high so it stays inside its end panels (was ${fridgeHeight}")`].filter(Boolean).join("; ");
+  }
+  if (capDepth > panelDepth + PANEL_FIT_EPSILON_IN) {
+    warnings.push(`${cap.masterCode} above the refrigerator is ${capDepth}" deep but the end panels are ${panelDepth}" deep, so it sticks out ${Math.round((capDepth - panelDepth) * 100) / 100}" past them. Pick a shallower cabinet above or a deeper panel.`);
+  }
   const leftPanelSpot = wallPlacementAtUnbounded(bay.openingStart - panelThickness, panelThickness, panelDepth, bay.side, room);
   const rightPanelSpot = wallPlacementAtUnbounded(bay.openingEnd, panelThickness, panelDepth, bay.side, room);
   const shared = { refrigeratorAssemblyId: refrigerator.uid, styleId };
@@ -316,6 +349,9 @@ export function buildMandatoryAutoDesignRefrigeratorBay({
       end: bay.openingEnd + panelThickness,
     },
     notes,
+    refrigerator: placedRefrigerator,
+    refrigeratorClampNote: clampNote,
+    warnings,
   };
 }
 
