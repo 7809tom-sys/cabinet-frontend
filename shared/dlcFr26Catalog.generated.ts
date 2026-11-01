@@ -157,7 +157,7 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       139,
       61
     ],
-    "solidColor": "#856b63",
+    "solidColor": "#6a4631",
     "grain": "/textures/dlc-fr26/grain/dark-caramel.png",
     "grainSize": [
       56,
@@ -175,8 +175,8 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       5.99
     ],
     "faceNormal": null,
-    "faceTint": null,
-    "grainSoftened": false,
+    "faceTint": "#cab18d",
+    "grainSoftened": true,
     "grainPaleSoftened": false
   },
   {

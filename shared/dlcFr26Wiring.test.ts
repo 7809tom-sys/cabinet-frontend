@@ -195,6 +195,17 @@ describe("sides carry the door's grain, and photo materials are not over-lit", (
     expect(plan.dlcCrop?.solidColor).toBe(DLC_FR26_CATALOG.find((e) => e.slug === "versa-shaker")!.solidColor);
     expect(resolveCabinetFaceImages(dl("Peccan", "DL-PC"), "base").dlcCrop?.grainUrl).toBeNull();
   });
+  it("Dark Caramel is warm walnut (Tom, Oct 31): walnut colour, a darkening tint on the catalog grain, same colour for sides", () => {
+    const e = DLC_FR26_CATALOG.find((x) => x.slug === "dark-caramel")!;
+    expect(e.solidColor).toBe("#6a4631");
+    expect(e.faceTint).toMatch(/^#[0-9a-f]{6}$/);
+    const ch = (h: string) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+    expect(ch(e.faceTint!).every((v) => v <= 255)).toBe(true);
+    expect(e.faceDoor).toBe("/textures/dlc-fr26/grain/dark-caramel.png"); // catalog photo grain, source not swapped
+    const plan = resolveCabinetFaceImages(dl("Dark Caramel", "DL-DC"), "base");
+    expect(plan.dlcCrop?.solidColor).toBe("#6a4631");
+    expect(plan.dlcCrop?.tintHex).toBe(e.faceTint);
+  });
   it("light compensation cancels the rig's light sum per channel (tone mapping off) and stays in range", () => {
     const std = dlcPhotoLightCompensation(RESTORED_DOOR_LIGHTS);
     expect(std.linear).toBeGreaterThan(0.45);
@@ -280,7 +291,7 @@ describe("grain faces: no photo frame lines on any face", () => {
 describe("Driftwood polish: softer grain, more defined frames", () => {
   const src = () => fs.readFileSync(path.join(repo, "client/src/components/design/InteractiveRoom3D.tsx"), "utf8");
   it("only Driftwood's grain is softened (the only finish with an unusually high light/dark swing)", () => {
-    expect(DLC_FR26_CATALOG.filter((e) => e.grainSoftened).map((e) => e.slug)).toEqual(["driftwood"]);
+    expect(DLC_FR26_CATALOG.filter((e) => e.grainSoftened).map((e) => e.slug).sort()).toEqual(["dark-caramel", "driftwood"]);
     // pale painted/neutral finishes get the mottling softening; natural wood, EWO and mid/dark finishes do not
     const pale = DLC_FR26_CATALOG.filter((e) => e.grainPaleSoftened).map((e) => e.slug).sort();
     expect(pale).toEqual(["arctic-white", "dove-gray", "glacier-white", "ivory-white", "pearl-white", "slim-shaker-alabaster", "white-shaker"]);
