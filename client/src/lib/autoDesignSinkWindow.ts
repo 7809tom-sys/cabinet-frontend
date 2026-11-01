@@ -1,7 +1,10 @@
 import {
-  OPENINGS, WALL_OPENING_CLEARANCE_IN, cabinetWall, clampOpening, wallRunOffset, wallRunSpan,
+  OPENINGS, WALL_OPENING_CLEARANCE_IN, cabinetWall, clampOpening, wallCeilingMin, wallRunOffset, wallRunSpan,
   type PlacedCabinet, type RoomData, type WallOpening,
 } from "./design";
+
+/** A new Auto-Design window head sits no more than this far below the wall top. */
+export const WINDOW_HEAD_MAX_BELOW_CEILING_IN = 10;
 
 /**
  * The measured window above the sink. Auto-Design already centers the sink on
@@ -14,10 +17,15 @@ export function autoDesignSinkWindow({ sink, room, uid }: { sink: PlacedCabinet;
   const def = OPENINGS.find((item) => item.key === "window-over-sink");
   if (!def) throw new Error("The over-sink window definition is missing from the opening catalog.");
   const wall = cabinetWall(sink, room);
-  return clampOpening({
-    uid, kind: "window", label: def.label, side: wall,
+  const placed = clampOpening({
+    uid, kind: "window", label: def.label, side: wall, autoPlaced: true,
     offset: wallRunOffset(sink, wall, room), width: wallRunSpan(sink, wall, room), height: def.height, sill: def.sill,
   }, room);
+  // Initial placement only. An existing window is never raised to meet this.
+  const ceiling = wallCeilingMin(room, placed.side);
+  const gap = ceiling - (placed.sill + placed.height);
+  if (gap <= WINDOW_HEAD_MAX_BELOW_CEILING_IN + 0.01) return placed;
+  return clampOpening({ ...placed, sill: placed.sill + (gap - WINDOW_HEAD_MAX_BELOW_CEILING_IN) }, room);
 }
 
 /** True when the window, plus the required clearance on each side, touches a reserved wall span. */

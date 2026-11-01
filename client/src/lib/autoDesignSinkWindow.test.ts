@@ -15,7 +15,7 @@ describe("Auto-Design sink window", () => {
     const placedSink = sink(36, 42);
     const window = autoDesignSinkWindow({ sink: placedSink, room: DEFAULT_ROOM, uid: "win-1" });
     const def = OPENINGS.find((item) => item.key === "window-over-sink")!;
-    expect(window).toMatchObject({ uid: "win-1", kind: "window", side: "top", width: 36, height: def.height, sill: def.sill });
+    expect(window).toMatchObject({ uid: "win-1", kind: "window", side: "top", width: 36, height: def.height, sill: def.sill, autoPlaced: true });
     expect(window.offset).toBeCloseTo(wallRunOffset(placedSink, "top", DEFAULT_ROOM), 5);
     expect(window.offset + window.width / 2).toBeCloseTo(42 + 18, 5);
   });
@@ -26,6 +26,14 @@ describe("Auto-Design sink window", () => {
       expect(window.width).toBe(width);
       expect(window.offset + window.width / 2).toBeCloseTo(40 + width / 2, 5);
     }
+  });
+
+  it("places a new window so its top is no more than 10 inches below a taller ceiling", () => {
+    const tall = { ...DEFAULT_ROOM, ceilingHeight: 120 };
+    const window = autoDesignSinkWindow({ sink: sink(36, 42), room: tall, uid: "tall" });
+    expect(window.sill + window.height).toBeCloseTo(110, 5);
+    expect(120 - (window.sill + window.height)).toBeLessThanOrEqual(10);
+    expect(window.autoPlaced).toBe(true);
   });
 
   it("detects a window that would overlap the refrigerator cabinet's wall span, including the 3-inch clearance", () => {

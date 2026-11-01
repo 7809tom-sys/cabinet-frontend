@@ -7,7 +7,7 @@ import { COUNTERTOP_DEPTH_IN, STD, WALL_LABELS, wallCeilingMin, type RoomData, t
  * match the meshes in `addWallOpening` (that code builds the frame in feet).
  */
 export const FAUCET_WINDOW_CONFLICT_MESSAGE =
-  "Faucet conflicts with window sill/frame; raise the window";
+  "Faucet conflicts with the window sill. Shorten the window by raising the sill; the top stays put.";
 
 /** CylinderGeometry(0.075, 0.095, 0.11) on the deck faucet, converted to inches. */
 export const FAUCET_BASE_RADIUS_IN = 0.095 * 12;
@@ -359,16 +359,19 @@ export function minimumFaucetClearSill(opening: Pick<WallOpening, "width">, fauc
 }
 
 /**
- * Window rule: Auto-Design never moves or raises a window to make room for a sink. The window sits
- * on the wall plane, outside the cabinet zone, so it does not conflict with the cabinets.
+ * Window rule: Auto-Design never moves a window sideways and never raises it.
+ * The only change allowed for a faucet is to shorten the window by lifting the
+ * sill, with the top held exactly where it is. A window that moved because its
+ * wall was raised is locked and is left alone. A window that cannot clear
+ * without moving the top is left alone.
  *
  * Order of resolution, and this is the ONLY place a window may change for a sink:
  *  1. `resolveDeckFaucetPlacement` first moves the faucet forward on the deck. If the faucet clears
  *     (no `conflict`), the window is left exactly as it is, the same object, no note.
  *  2. Only when the faucet still cannot clear any other way, and only the window(s) the faucet
- *     actually hits, the sill is raised the minimum half-inch that clears it (height shrinks from
- *     the bottom only if the top would pass the wall). A window that cannot clear the ceiling is
- *     left alone.
+ *     actually hits, the sill is raised the minimum half-inch that clears it and the height shrinks
+ *     by the same amount so the top does not move. A window that cannot clear without moving the
+ *     top, or that is locked to its wall, is left alone.
  * Every change, and every case where a change was needed but impossible, comes back as a
  * `severity: "warning"` note that callers must show visibly.
  * Every caller (Auto-Design engine, DesignTool stage, sink adoption, faucet pickers) goes through
@@ -403,40 +406,33 @@ export function raiseWindowsForDeckFaucet(input: {
     }
     for (const opening of targets) {
       const label = faucetWindowLabel(opening, input.room, input.wallLabels);
-      const requiredSill = roundSillUpToHalfInch(minimumFaucetClearSill(opening, heightIn));
-      const wallTop = wallCeilingMin(input.room, opening.side);
-      const nextSill = Math.max(opening.sill, requiredSill);
-      const roomForHeight = wallTop - nextSill;
-      if (roomForHeight < WINDOW_MIN_HEIGHT_IN - 1e-6) {
+      const refused = (text: string) => {
         unresolved = true;
-        const text = `Window on ${label} could not be raised enough for the faucet to clear the sill.`;
-        notes.push({ openingUid: opening.uid, text, severity: "warning" });
+        notes.push({ openingUid: opening.uid, text, severity: "warning" as const });
         openings = openings.map((item) => item.uid === opening.uid ? { ...item, faucetClearanceNote: text } : item);
+      };
+      if (opening.wallHeightLocked) {
+        refused(`Window on ${label} is locked to its wall, so it was not shortened for the faucet.`);
         continue;
       }
-      const nextHeight = Math.min(opening.height, roomForHeight);
-      const heightShrunk = nextHeight < opening.height - 1e-6;
-      const raised = nextSill > opening.sill + 1e-6;
-      if (!raised && !heightShrunk) {
-        unresolved = true;
-        const text = `Window on ${label} could not be raised enough for the faucet to clear the sill.`;
-        notes.push({ openingUid: opening.uid, text, severity: "warning" });
-        openings = openings.map((item) => item.uid === opening.uid ? { ...item, faucetClearanceNote: text } : item);
+      const requiredSill = roundSillUpToHalfInch(minimumFaucetClearSill(opening, heightIn));
+      const wallTop = wallCeilingMin(input.room, opening.side);
+      // Never lift the head. If the saved head is already above this wall, hold it at the wall.
+      const fixedTop = Math.min(opening.sill + opening.height, wallTop);
+      const nextSill = Math.max(opening.sill, requiredSill);
+      const nextHeight = fixedTop - nextSill;
+      if (nextSill <= opening.sill + 1e-6 || nextHeight < WINDOW_MIN_HEIGHT_IN - 1e-6) {
+        refused(`Window on ${label} was left where it is. The sill could not be raised enough for the faucet without moving the top.`);
         continue;
       }
       const candidate: WallOpening = { ...opening, sill: nextSill, height: nextHeight };
-      if (faucetHitsWindow(placement.centerFromWallIn, anchor.along, heightIn, candidate)) {
-        unresolved = true;
-        const text = `Window on ${label} could not be raised enough for the faucet to clear the sill.`;
-        notes.push({ openingUid: opening.uid, text, severity: "warning" });
-        openings = openings.map((item) => item.uid === opening.uid ? { ...item, faucetClearanceNote: text } : item);
+      if (Math.abs(candidate.sill + candidate.height - fixedTop) > 1e-6
+        || faucetHitsWindow(placement.centerFromWallIn, anchor.along, heightIn, candidate)) {
+        refused(`Window on ${label} was left where it is. The sill could not be raised enough for the faucet without moving the top.`);
         continue;
       }
       const delta = nextSill - opening.sill;
-      let text = `Window on ${label} raised ${formatRaiseInches(delta)} in. so the faucet clears the sill (new sill height ${formatRaiseInches(nextSill)} in.)`;
-      if (heightShrunk) {
-        text += ` Window height reduced to ${formatRaiseInches(nextHeight)} in. so the top stays at the wall.`;
-      }
+      const text = `Window on ${label}: sill raised ${formatRaiseInches(delta)} in. so the faucet clears it (new sill height ${formatRaiseInches(nextSill)} in.). The window was not raised or moved; the top stayed put. Window height is now ${formatRaiseInches(nextHeight)} in.`;
       notes.push({ openingUid: opening.uid, text, severity: "warning" });
       openings = openings.map((item) => item.uid === opening.uid ? { ...candidate, faucetClearanceNote: text } : item);
     }

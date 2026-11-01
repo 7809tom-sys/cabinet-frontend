@@ -157,7 +157,9 @@ describe("Auto-Design faucet catalog selection", () => {
     expect(second.openings[0]!.height).toBeLessThan(window.height);
     expect(resolveDeckFaucetPlacement(withTall, DEFAULT_ROOM, second.openings).conflict).toBeNull();
     expect(resolveDeckFaucetPlacement(withTall, DEFAULT_ROOM, second.openings).renderFaucet).toBe(true);
-    expect(second.notes[0]?.text).toMatch(/Window on Wall 1 raised .+ in\. so the faucet clears the sill \(new sill height .+ in\.\)/);
-    expect(second.notes[0]?.text).toMatch(/Window height reduced to .+ in\. so the top stays at the wall/);
+    expect(second.openings[0]!.sill + second.openings[0]!.height).toBeCloseTo(window.sill + window.height, 5);
+    expect(second.notes[0]?.text).toMatch(/sill raised .+ in\. so the faucet clears it \(new sill height .+ in\.\)/);
+    expect(second.notes[0]?.text).toMatch(/was not raised or moved; the top stayed put/);
+    expect(second.notes[0]?.text).toMatch(/Window height is now .+ in\./);
   });
 });

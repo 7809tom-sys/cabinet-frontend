@@ -54,7 +54,11 @@ describe("window rule: windows stay put for a sink", () => {
     expect(result.openings[0]!.sill).toBeGreaterThan(38);
     expect(result.notes).toHaveLength(1);
     expect(result.notes[0]!.severity).toBe("warning");
-    expect(result.notes[0]!.text).toMatch(/Window on Wall 1 raised/);
+    const originalTop = window.sill + window.height;
+    expect(result.openings[0]!.sill + result.openings[0]!.height).toBeCloseTo(originalTop, 5);
+    expect(result.openings[0]!.offset).toBe(window.offset);
+    expect(result.notes[0]!.text).toMatch(/sill raised/);
+    expect(result.notes[0]!.text).toMatch(/was not raised or moved/);
     expect(resolveDeckFaucetPlacement(sink(), room, result.openings).conflict).toBeNull();
   });
 
