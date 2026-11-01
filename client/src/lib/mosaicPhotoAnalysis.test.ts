@@ -3,7 +3,7 @@ import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 import { genericMosaicSheetSpec, mosaicInterlockSpecForName, mosaicPitchIn } from "./backsplashMosaic";
 import { acceptTransparentRepeat, transparentRepeatInches } from "./mosaicUnitImage";
-import { analyzeMosaicPhoto, clearBakedSheetGrout, imageHasMeaningfulTransparency, measureTransparentSheetRepeat, measuredMosaicOverhangIn, sampleSheetGroutHex, trimTransparentEdgeSlivers } from "./mosaicPhotoAnalysis";
+import { analyzeMosaicPhoto, clearBakedSheetGrout, imageHasMeaningfulTransparency, measureTransparentSheetRepeat, measuredMosaicOverhangIn, runningBondSeams, sampleSheetGroutHex, trimTransparentEdgeSlivers } from "./mosaicPhotoAnalysis";
 
 type Rgba = [number, number, number, number];
 function photo(width: number, height: number, background: Rgba, draw: (x: number, y: number) => Rgba | null) {
@@ -130,6 +130,15 @@ describe("baked grey grout is a straight joint, not a vein or a gold strip", () 
     expect(data[(41 * 100 + 10) * 4 + 3]).toBe(255);
   });
 
+  it("does not outline a transparent unit with a rectangle grout bar", () => {
+    const source = readFileSync(new URL("./mosaicUnitImage.ts", import.meta.url), "utf8");
+    const branch = source.slice(source.indexOf("if (transparentSheet) {"), source.indexOf("} else {"));
+    expect(branch).toContain("runningBondSeams");
+    expect(branch).toContain("trimTransparentEdgeSlivers");
+    expect(branch).not.toContain("plan.groutYPx");
+    expect(branch).not.toContain("plan.width - plan.groutXPx");
+  });
+
   it("drops a semi-transparent halo on the top and bottom edge only", () => {
     const data = photo(80, 40, [150, 120, 100, 255], (x, y) => {
       if (y === 0 || y === 39) return [220, 220, 220, 70];
@@ -172,6 +181,16 @@ function inches(outer: number, part: number, whole: number) {
   return outer * part / whole;
 }
 
+/** Distance between the even-row and odd-row joint, wrapped into one repeat. */
+function staggeredStep(values: number[], period: number) {
+  const even = values.filter((_, index) => index % 2 === 0);
+  const odd = values.filter((_, index) => index % 2 === 1);
+  const mid = (items: number[]) => [...items].sort((a, b) => a - b)[Math.floor(items.length / 2)] ?? 0;
+  let delta = Math.abs(mid(even) - mid(odd)) % period;
+  if (delta > period / 2) delta = period - delta;
+  return delta;
+}
+
 describe("designer uploads nest at the measured repeat", () => {
   it("Oat Stone is transparent and repeats at 10.24 x 11.81 in", async () => {
     const { pixels, width, height } = await loadSheet(sheetFiles.oat);
@@ -198,6 +217,16 @@ describe("designer uploads nest at the measured repeat", () => {
     const offsetIn = inches(11.97, repeat.box.width - repeat.core.width, repeat.box.width);
     expect(offsetIn).toBeGreaterThan(2.2);
     expect(offsetIn).toBeLessThan(2.6);
+    expect(pixels[(340 * width + 656) * 4 + 3]).toBeGreaterThan(200);
+    expect(pixels[(40 * width + 656) * 4 + 3]).toBeGreaterThan(200);
+    const seams = runningBondSeams(pixels, width, height)!;
+    expect(seams.length).toBeGreaterThanOrEqual(4);
+    const step = staggeredStep(seams.map((row) => row.jointX), width);
+    expect(step).toBeGreaterThan(250);
+    expect(step).toBeLessThan(450);
+    const seamStep = staggeredStep(seams.map((row) => ((row.seamX - repeat.core.x) % repeat.core.width + repeat.core.width) % repeat.core.width), repeat.core.width);
+    expect(seamStep).toBeGreaterThan(repeat.core.width * 0.15);
+    expect(seamStep).toBeLessThan(repeat.core.width * 0.45);
   }, 20000);
 
   it("Cloudline Marble nests inside the 11.81 in sheet", async () => {
@@ -214,14 +243,16 @@ describe("designer uploads nest at the measured repeat", () => {
     expect(up).toBeLessThanOrEqual(11.81);
   }, 20000);
 
-  it("Carrara Subway drops its grey joints and nests the running-bond step", async () => {
+  it("Carrara Subway keeps the half-brick joints and nests the step", async () => {
     const { pixels, width, height } = await loadSheet(sheetFiles.carrara);
     expect(analyzeMosaicPhoto(pixels, width, height)?.background).toBe("transparent");
     const marble = pixels[(200 * width + 400) * 4 + 3];
     trimTransparentEdgeSlivers(pixels, width, height);
-    expect(clearBakedSheetGrout(pixels, width, height)).toBeGreaterThan(1000);
-    expect(pixels[(322 * width + 800) * 4 + 3]).toBe(0);
-    expect(pixels[(150 * width + 627) * 4 + 3]).toBe(0);
+    const rowJoint = pixels[(322 * width + 800) * 4 + 3];
+    const brickJoint = pixels[(150 * width + 627) * 4 + 3];
+    expect(clearBakedSheetGrout(pixels, width, height)).toBe(0);
+    expect(pixels[(322 * width + 800) * 4 + 3]).toBe(rowJoint);
+    expect(pixels[(150 * width + 627) * 4 + 3]).toBe(brickJoint);
     expect(pixels[(200 * width + 400) * 4 + 3]).toBe(marble);
     const repeat = measureTransparentSheetRepeat(pixels, width, height)!;
     const across = inches(11.97, repeat.core.width, repeat.box.width);
@@ -230,6 +261,15 @@ describe("designer uploads nest at the measured repeat", () => {
     expect(across).toBeLessThan(10.1);
     expect(Math.abs(up - 12.13)).toBeLessThan(0.05);
     expect(repeat.core.width).toBeLessThan(width - 200);
+    const seams = runningBondSeams(pixels, width, height)!;
+    expect(seams.length).toBeGreaterThanOrEqual(4);
+    const jointStep = staggeredStep(seams.map((row) => row.jointX), width);
+    expect(jointStep).toBeGreaterThan(250);
+    expect(jointStep).toBeLessThan(450);
+    const seamLocal = seams.map((row) => ((row.seamX - repeat.core.x) % repeat.core.width + repeat.core.width) % repeat.core.width);
+    const seamStep = staggeredStep(seamLocal, repeat.core.width);
+    expect(seamStep).toBeGreaterThan(repeat.core.width * 0.15);
+    expect(seamStep).toBeLessThan(repeat.core.width * 0.45);
   }, 20000);
 
   it("Greystone Bloom nests the flower outline inside the sheet", async () => {

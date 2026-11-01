@@ -2,6 +2,7 @@ import { mosaicInterlockUnitPlan, mosaicPitchIn, type MosaicInterlockSpec } from
 import { canvasWithoutBakedCheckerboard } from "./mosaicCheckerboard";
 import {
   analyzeMosaicPhoto, bleedTransparentEdgeColor, clearBakedSheetGrout, imageHasMeaningfulTransparency, measureTransparentSheetRepeat,
+  runningBondSeams,
   trimTransparentEdgeSlivers,
   measuredMosaicOverhangIn, sampleSheetTileHex, type MosaicPhotoAnalysis, type TransparentSheetRepeat,
 } from "./mosaicPhotoAnalysis";
@@ -150,6 +151,7 @@ export function buildMosaicUnitImage(
     if (transparentSheet) {
       // Notches are the next sheet's fingers. A leftover clear pixel takes the chip colour.
       // Grey #8a8782 and a spec's dark grout are the joint line only, never the notch fill.
+      // The sheet seam is not a bar around the rectangle: on a running bond it follows each row's brick end.
       const tileFill = sampleSheetTileHex(pixels, width, height);
       const blocked = tileFill?.toLowerCase() === "#8a8782" || tileFill?.toLowerCase() === (item.groutColor ?? "").toLowerCase();
       if (tileFill && !blocked) {
@@ -157,9 +159,21 @@ export function buildMosaicUnitImage(
         context.fillRect(0, 0, plan.width, plan.height);
       }
       drawNestedTransparentSheet(context, drawSource, width, height, nestCore, plan.width, plan.height);
-      context.fillStyle = groutLine;
-      context.fillRect(0, 0, plan.width, plan.groutYPx);
-      context.fillRect(plan.width - plan.groutXPx, 0, plan.groutXPx, plan.height);
+      const seams = runningBondSeams(pixels, width, height);
+      if (seams && nestCore.width > 0) {
+        const scaleX = plan.width / nestCore.width;
+        const scaleY = plan.height / nestCore.height;
+        const thickness = Math.max(1, plan.groutXPx);
+        context.fillStyle = groutLine;
+        for (const row of seams) {
+          const wrapped = ((row.seamX - nestCore.x) % nestCore.width + nestCore.width) % nestCore.width;
+          const x = Math.round(wrapped * scaleX - thickness / 2);
+          const y0 = Math.max(0, Math.round((row.y0 - nestCore.y) * scaleY));
+          const y1 = Math.min(plan.height, Math.round((row.y1 + 1 - nestCore.y) * scaleY));
+          if (y1 <= y0) continue;
+          context.fillRect(Math.max(0, x), y0, thickness, y1 - y0);
+        }
+      }
     } else {
       context.drawImage(
         drawSource,
