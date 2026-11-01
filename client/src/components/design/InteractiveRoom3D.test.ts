@@ -2125,7 +2125,7 @@ describe("interactive 3D room scene helpers", () => {
     ]);
 
     const source = readFileSync(new URL("./InteractiveRoom3D.tsx", import.meta.url), "utf8");
-    expect(source).toContain('data-testid="three-d-filler-notice"');
+    expect(source).toContain('data-testid="three-d-filler-notice-chip"');
     expect(source).not.toContain('data-testid="three-d-filler-measurement-labels"');
     expect(source).not.toContain("Filler measurements</p>");
   });
