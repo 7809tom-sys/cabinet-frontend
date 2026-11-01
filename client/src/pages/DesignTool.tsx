@@ -207,6 +207,7 @@ import { automaticAngledWallFiller, measuredAngledWallTransition, repairMissingA
 import { resolveOverRangeMicrowavePlacement } from "./designToolMicrowavePlacement";
 import { resolveRangeHoodPlacement } from "./designToolRangeHoodPlacement";
 import { rangeCompanionProposal, repairLegacyWscMicrowaveBridges, type RangeCompanionProposal } from "@/lib/rangeCompanion";
+import { APPLIANCE_FINISH_CHOICES, applyApplianceFinish, type ApplianceFinish } from "@/lib/applianceFinish";
 import { isWscSpiceCabinet, wsc30UpperChoices, wsc30UpperPlacement } from "@/lib/spiceStack";
 import { commitThreeDCabinetCandidate, countertopMountedCabinet, threeDSeatedWallMoveTarget, threeDPlanMoveDelta } from "./designTool3DMovement";
 import {
@@ -3864,6 +3865,20 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     },
     [roomType]
   );
+  // Appliance package by color: switches every range to the same-style range in the chosen finish.
+  const applyAppliancePackageColor = useCallback((finish: ApplianceFinish) => {
+    const result = applyApplianceFinish(placedRef.current, appliancePalette, finish);
+    const label = APPLIANCE_FINISH_CHOICES.find((choice) => choice.finish === finish)?.label ?? finish;
+    if (result.changed === 0) {
+      toast.info(result.skipped > 0
+        ? `No ${label.toLowerCase()} range is available in the catalog for this layout. Nothing changed.`
+        : `Ranges are already ${label.toLowerCase()}, or this plan has no range.`);
+      return;
+    }
+    placedRef.current = result.placed;
+    setPlaced(() => result.placed);
+    toast.success(`${result.changed === 1 ? "Range" : `${result.changed} ranges`} switched to ${label.toLowerCase()}. Refrigerator, dishwasher and hood keep their current look.`);
+  }, [appliancePalette, setPlaced]);
   const buildAutoDesignLayout = useCallback((input: AutoDesignInputs) => {
     const fail = (message: string) => {
       toast.error(message);
@@ -15298,6 +15313,23 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                 <SheetTitle className="text-base">{t("dt_sh_more")}</SheetTitle>
               </SheetHeader>
               <div className="flex-1 overflow-y-auto overscroll-contain" style={{ WebkitOverflowScrolling: "touch" }}>
+
+                {/* Appliance package by color */}
+                <p className="px-3 pt-3 pb-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Appliance color</p>
+                <div data-testid="appliance-color-package" className="grid grid-cols-4 gap-1 px-3 pb-2">
+                  {APPLIANCE_FINISH_CHOICES.map((choice) => (
+                    <button
+                      key={choice.finish}
+                      type="button"
+                      data-testid={`appliance-color-${choice.finish}`}
+                      onClick={() => { applyAppliancePackageColor(choice.finish); setMoreSheetOpen(false); }}
+                      className="inline-flex flex-col items-center gap-1 rounded-lg bg-muted/60 py-1.5 text-[11px] font-semibold text-muted-foreground transition-colors hover:bg-muted"
+                    >
+                      <span className="h-4 w-4 rounded-full border border-black/20" style={{ backgroundColor: choice.swatch }} aria-hidden="true" />
+                      {choice.label}
+                    </button>
+                  ))}
+                </div>
 
                 {/* Active wall selector */}
                 <p className="px-3 pt-3 pb-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("dt_sh_active_wall")}</p>
