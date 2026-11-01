@@ -23,3 +23,33 @@ describe("Auto-Design's wall end panel beside a hood or range is not an applianc
     expect(conflictingUids([hood, cabinet], DEFAULT_ROOM).size).toBe(2);
   });
 });
+
+import { beforeEach } from "vitest";
+import { syncExposedSidePanels, type ExposedPanelStock } from "./exposedSidePanels";
+import { wallPlacementAt } from "./design";
+import { resetKitchenRuleParameters, setKitchenRuleParameters } from "./kitchenRuleParameters";
+
+describe("end to end: the panels Auto-Design adds beside a hood leave no warning", () => {
+  beforeEach(() => { resetKitchenRuleParameters(); setKitchenRuleParameters({ exposed_panels_enabled: 1 }); });
+  const stock: ExposedPanelStock[] = [
+    { id: 12, masterCode: "WEP1530", description: "Wall end panel", placement: "wall", stockFace: 15.25, stockHeight: 30.25, price: 42 },
+    { id: 11, masterCode: "BEP2535", description: "Base end panel", placement: "base", stockFace: 25.625, stockHeight: 35.25, price: 86 },
+  ];
+  const at = (uid: string, masterCode: string, placement: PlacedCabinet["placement"], offset: number, width: number, depth: number, height: number, extra: Partial<PlacedCabinet> = {}) => {
+    const spot = wallPlacementAt(offset, width, depth, "top", DEFAULT_ROOM);
+    return { uid, cabinetId: 1, masterCode, description: extra.description ?? masterCode, placement, ...spot, width, depth, height, wallId: spot.wallId ?? "top", wallOffset: spot.wallOffset ?? offset, constructionMethod: "frameless", ...extra } as PlacedCabinet;
+  };
+  it("W2130 | HOOD-30 over RANGE | W1212 gets panels on both facing sides and conflictingUids stays empty", () => {
+    const placed = [
+      at("range", "RANGE-30", "appliance", 45, 30, 26, 36, { description: "Range" }),
+      at("hood", "HOOD-30", "appliance", 45, 30, 18, 18, { description: '30" Glass Stainless Range Hood', mountBottom: 66 }),
+      at("w-left", "W2130", "wall", 24, 21, 12, 30, { mountBottom: 54 }),
+      at("w-right", "W1230", "wall", 75, 12, 12, 30, { mountBottom: 54 }),
+    ];
+    const framelessStyle = { styleCode: "LSA", ourName: "Luxe Classic LSA", color: "LSA", doorStyle: "Slab", finish: "Luxe Classic", boxConstruction: "18mm plywood composite cabinet box; standard altaeuro frameless box", distributorName: "Frameless" };
+    const result = syncExposedSidePanels({ placed, room: DEFAULT_ROOM, catalog: stock, qualifiedOnly: true, doorStyleFor: () => framelessStyle });
+    const beside = result.placed.filter((item) => item.autoPlacedReason === "wall-beside-range");
+    expect(beside.length).toBeGreaterThan(0);
+    expect([...conflictingUids(result.placed, DEFAULT_ROOM)]).toEqual([]);
+  });
+});
