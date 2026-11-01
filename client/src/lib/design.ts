@@ -6785,7 +6785,10 @@ export function isCrownEligibleCabinet(p: PlacedCabinet, room?: RoomData): boole
   // Island wall cabinets are floor/counter-height casework, never upper runs.
   // The explicit island marker remains authoritative for older saves whose
   // mountBottom may still contain a room-wall value.
-  if (usesRaisedFloorWallDoorPull(p)) return false;
+  // `usesRaisedFloorWallDoorPull` is true for every full-height cabinet (it decides door-pull position), so it can
+  // only exclude WALL-placed island / floor-seated casework here. Applying it to tall cabinets dropped every
+  // pantry and refrigerator end panel from crown, which left the neighbouring upper's crown running into them.
+  if (p.placement === "wall" && usesRaisedFloorWallDoorPull(p)) return false;
   // A wall cabinet deliberately dropped to a 4½-inch toe kick is floor-seated
   // casework. Use the rendered elevation bottom so restored plans, counter-height
   // variants, and explicit mountBottom values all follow the same physical rule.
@@ -6803,6 +6806,8 @@ export function isCrownEligibleCabinet(p: PlacedCabinet, room?: RoomData): boole
   // remain crown-bearing: the crown follows their actual top line, including
   // when that line is the ceiling line, so tall runs do not lose their wrap.
   const isCeilingFillingGlassStacker = isStacker(p) && isGlassDoorCabinet(p);
+  // A tall cabinet (pantry, refrigerator end panel) always carries crown on its own top line, including when
+  // that line is the ceiling (owner decision), and always blocks neighbouring crown.
   if (p.placement === "tall") return true;
   if (!isCeilingFillingGlassStacker) return true;
   const ceiling = wallCabinetVerticalMoveLimit(p, room).ceiling;
@@ -6820,7 +6825,8 @@ export function crownBlockingCabinets(placed: readonly PlacedCabinet[], room?: R
   const eligibleUids = new Set(crownEligibleCabinets(placed, room).map((cabinet) => cabinet.uid));
   return placed.filter((cabinet) => (
     eligibleUids.has(cabinet.uid)
-    || ((cabinet.placement === "tall" || cabinet.placement === "wall") && !usesRaisedFloorWallDoorPull(cabinet))
+    || cabinet.placement === "tall"
+    || (cabinet.placement === "wall" && !usesRaisedFloorWallDoorPull(cabinet))
   ));
 }
 
