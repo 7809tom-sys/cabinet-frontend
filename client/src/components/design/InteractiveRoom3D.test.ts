@@ -1540,6 +1540,16 @@ describe("interactive 3D room scene helpers", () => {
 						curated: true, proceduralFallback: false, physicalWidthIn: 11.81, physicalDepthIn: 11.81,
 						backsplashPatternKind: "interlocking-mosaic", backsplashModuleIn: 11.81, backsplashGroutJointIn: 1 / 16,
 					});
+					expect(threeDProductMaterialSource("backsplash", "Misty Coast", "/manus-storage/pelican/products/335/1793550435593-d4cfe4b8_dd25baec.webp", { productId: 335, category: "Tile & Mosaic", size: "11.81 x 11.81 x 8mm" })).toMatchObject({
+						url: "/manus-storage/pelican/products/335/1793550435593-d4cfe4b8_dd25baec.webp",
+						key: "misty-coast-11.81in-interlocking-linear-mosaic",
+						curated: true,
+						physicalWidthIn: 11.81,
+						physicalDepthIn: 11.81,
+						backsplashPatternKind: "interlocking-mosaic",
+						backsplashModuleIn: 11.81,
+						backsplashModuleHeightIn: 11.81,
+					});
 					const sourceIdentityCases = [
 						{ productId: 47, key: "arctic-vail-10.71in-interlocking-hex-mosaic", pattern: "interlocking-mosaic", moduleIn: 10.71 },
 						{ productId: 142, key: "carbon-hex-12.80in-marble-hex-mosaic", pattern: "interlocking-mosaic", moduleIn: 12.8 },

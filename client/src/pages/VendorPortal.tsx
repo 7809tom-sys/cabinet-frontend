@@ -34,6 +34,7 @@ import {
   validatePelicanProductImageFile,
   type PelicanProductImageTarget,
 } from "@/lib/pelicanProductImageUpload";
+import { isPelicanTileOrMosaicItem, prepareDesignerTileUpload } from "@/lib/mosaicCheckerboard";
 import { VendorRoomSceneLibrary } from "@/components/vendor/VendorRoomSceneLibrary";
 import { VendorAutoRoomSceneBadge } from "@/components/doorStyles/VendorAutoRoomSceneBadge";
 import { OpenDesignerLink } from "@/components/design/OpenDesignerLink";
@@ -180,6 +181,8 @@ function PelicanVendorCatalogPage({
   const [catalogPhotoTrimmed, setCatalogPhotoTrimmed] = useState(false);
   const [designerPhotoTrimmed, setDesignerPhotoTrimmed] = useState(false);
   const [roomScenePhotoTrimmed, setRoomScenePhotoTrimmed] = useState(false);
+  const [designerTransparencyWarning, setDesignerTransparencyWarning] = useState<string | null>(null);
+  const [designerCleanedPreviewUrl, setDesignerCleanedPreviewUrl] = useState<string | null>(null);
   const categoryFilter = selectedCatalogCategory(category);
   const input = useMemo(
     () => ({
@@ -276,6 +279,8 @@ function PelicanVendorCatalogPage({
     setCatalogPhotoTrimmed(false);
     setDesignerPhotoTrimmed(false);
     setRoomScenePhotoTrimmed(false);
+    setDesignerTransparencyWarning(null);
+    setDesignerCleanedPreviewUrl(null);
   };
   useEffect(() => {
     const product = productForEdit.data;
@@ -323,7 +328,23 @@ function PelicanVendorCatalogPage({
     }
     const mutation = target === "catalog" ? uploadCatalogPhoto : target === "designer" ? uploadDesignerPhoto : uploadRoomScenePhoto;
     try {
-      const dataBase64 = await readPelicanProductImageBase64(file);
+      let uploadBlob: Blob = file;
+      let contentType = validation.contentType;
+      if (target === "designer" && isPelicanTileOrMosaicItem(editingProduct)) {
+        const prepared = await prepareDesignerTileUpload(file);
+        setDesignerTransparencyWarning(prepared.warning);
+        setDesignerCleanedPreviewUrl(prepared.previewDataUrl);
+        if (prepared.pngBlob) {
+          const pngCheck = validatePelicanProductImageFile({ type: "image/png", size: prepared.pngBlob.size, name: "sheet.png" });
+          if (!pngCheck.ok) {
+            toast.error(pngCheck.message);
+            return;
+          }
+          uploadBlob = prepared.pngBlob;
+          contentType = "image/png";
+        }
+      }
+      const dataBase64 = await readPelicanProductImageBase64(uploadBlob);
       if (!dataBase64) {
         toast.error("The photo could not be read.");
         return;
@@ -331,7 +352,7 @@ function PelicanVendorCatalogPage({
       const result = await mutation.mutateAsync({
         id: editingProduct.id,
         dataBase64,
-        contentType: validation.contentType,
+        contentType,
         target,
         useAsDesignerPhoto: target === "designer",
         alsoSetCatalogImage: target === "catalog",
@@ -530,6 +551,25 @@ function PelicanVendorCatalogPage({
                   {uploadDesignerPhoto.isPending && <div className="absolute inset-0 flex items-center justify-center bg-background/70"><Loader2 className="h-5 w-5 animate-spin" /></div>}
                 </div>
                 {designerPhotoTrimmed && <p data-testid="pelican-designer-trim-note" className="text-xs text-muted-foreground">White border trimmed automatically</p>}
+                {designerCleanedPreviewUrl && (
+                  <div data-testid="pelican-designer-cleaned-preview" className="flex items-center gap-2">
+                    <img
+                      src={designerCleanedPreviewUrl}
+                      alt="Cleaned Designer photo"
+                      className="h-16 w-16 rounded border object-contain"
+                      style={{
+                        backgroundColor: "#ffffff",
+                        backgroundImage: "linear-gradient(45deg, #d4d4d4 25%, transparent 25%), linear-gradient(-45deg, #d4d4d4 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #d4d4d4 75%), linear-gradient(-45deg, transparent 75%, #d4d4d4 75%)",
+                        backgroundSize: "12px 12px",
+                        backgroundPosition: "0 0, 0 6px, 6px -6px, -6px 0",
+                      }}
+                    />
+                    <p className="text-xs text-muted-foreground">Checkerboard removed. Transparent edges upload as PNG.</p>
+                  </div>
+                )}
+                {designerTransparencyWarning && (
+                  <p data-testid="pelican-designer-transparency-warning" className="rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-950">{designerTransparencyWarning}</p>
+                )}
                 <Button type="button" variant="outline" data-testid="pelican-upload-designer-photo" disabled={uploadDesignerPhoto.isPending} onClick={() => designerPhotoInputRef.current?.click()}>
                   {uploadDesignerPhoto.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
                   Upload Designer photo

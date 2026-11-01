@@ -9,7 +9,7 @@ import {
  * "Every mosaic" means every product in the catalog that is a mosaic of any pattern: hex, square, picket,
  * herringbone, penny, linear, subway/staggered sheets, Moonstone Hex, and any mosaic added later. It is not a short
  * list of names. Curated sheets have their own row in `MOSAIC_SHEET_SPECS`: Desert Clay, Arctic Vail, Carbon Hex,
- * Carrara Subway, Cloudline Marble, Concord Square, Glacier Shift, Golden Trace. Any other catalog mosaic gets a
+ * Carrara Subway, Cloudline Marble, Concord Square, Glacier Shift, Golden Trace, Misty Coast. Any other catalog mosaic gets a
  * `genericMosaicSheetSpec` built from its catalog size. There is no plain "tile with a border" path for a mosaic.
  * Only non-mosaics (field tile) use the plain fallback. Applies in the 3D view AND the elevation view.
  *
@@ -65,16 +65,18 @@ export type MosaicInterlockSpec = {
   generic: boolean;
 };
 
-const spec = (key: string, name: string, w: number, h: number, overhang: number): MosaicInterlockSpec => ({
-  key, name, outerWidthIn: w, outerHeightIn: h, overhangXIn: overhang, overhangYIn: overhang,
+const spec = (key: string, name: string, w: number, h: number, overhangX: number, overhangY = overhangX): MosaicInterlockSpec => ({
+  key, name, outerWidthIn: w, outerHeightIn: h, overhangXIn: overhangX, overhangYIn: overhangY,
   internalGroutIn: MOSAIC_GROUT_DEFAULT_IN, groutIn: MOSAIC_GROUT_DEFAULT_IN, groutColor: null, measured: false,
-  edge: overhang > 0 ? "interlocking" : "straight", generic: false,
+  edge: overhangX > 0 || overhangY > 0 ? "interlocking" : "straight", generic: false,
 });
 /** Grout colors matched to each product's tone. ESTIMATES from the catalog names/photos, not measured. */
 const GROUT_COLOR_BY_NAME: Record<string, string> = {
   "desert clay": "#8c7a68", "arctic vail": "#8f9496", "carbon hex": "#4a4a4c",
   "concord square": "#9a9a98", "glacier shift": "#8b9291", "golden trace": "#8a7f6e",
   "carrara subway": "#9b9a96", "cloudline marble": "#a09f9c",
+  // Light joint in the gray/blue glass strips. Estimate, same as the other rows.
+  "misty coast": "#c5c3be",
 };
 /** Neutral grout for a catalog mosaic with no curated row (estimate). */
 export const GENERIC_MOSAIC_GROUT_COLOR = "#8a8782";
@@ -86,6 +88,10 @@ export const MOSAIC_SHEET_SPECS: readonly MosaicInterlockSpec[] = [
   spec("concord-square-11.81in-glass-marble-mosaic", "concord square", 11.81, 11.81, 0.3125),
   spec("glacier-shift-12.05in-recycled-glass-herringbone", "glacier shift", 12.05, 12.05, 0.3125),
   spec("golden-trace-11.81in-marble-aluminum-mosaic", "golden trace", 11.81, 11.81, 0.3125),
+  // Pelican lists Misty Coast as 11.81 x 11.81 (8mm is thickness). Horizontal overhang is the ragged
+  // strip ends that nest into the next sheet, about 22% of that sheet, estimated from the product photo
+  // (measured stays false). Vertical stagger is only a hairline. The repeat is that face width minus the overhang.
+  spec("misty-coast-11.81in-interlocking-linear-mosaic", "misty coast", 11.81, 11.81, 2.637, 0.266),
   // Straight-edge sheets: overlap 0, so the pitch is the sheet size.
   spec("carrara-subway-11.97in-running-bond-mosaic", "carrara subway", 11.97, 12.13, 0),
   spec("cloudline-marble-11.81in-staggered-glass-marble-mosaic", "cloudline marble", 11.81, 11.81, 0),

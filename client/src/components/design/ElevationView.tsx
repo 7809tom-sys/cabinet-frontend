@@ -1601,7 +1601,7 @@ export function ElevationView({
                     width: seg.width,
                     bottom: seg.bottom,
                     height: seg.height,
-                    background: missingProductImage ? "#f6e7c1" : bsMat.fill,
+                    background: missingProductImage ? "#f6e7c1" : (interlock && showProductImage ? (interlock.groutColor ?? bsMat.grout) : bsMat.fill),
                     backgroundImage: showProductImage
                       ? (interlock && interlockPitch && mosaicUnitUrl
                         ? `url("${mosaicUnitUrl}")`

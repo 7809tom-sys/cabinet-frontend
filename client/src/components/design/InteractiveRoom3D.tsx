@@ -50,6 +50,7 @@ import { doorHardwareOffsetFromFaceCenterIn, hardwareStyle, normalizeDoorHardwar
 import { ovenOpeningGeometry } from "@/lib/ovenOpening";
 import { trpc } from "@/lib/trpc";
 import { buildMosaicUnitImage } from "@/lib/mosaicUnitImage";
+import { canvasWithoutBakedCheckerboard, drawableHasTransparency } from "@/lib/mosaicCheckerboard";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { searchCatalogItems } from "@shared/catalogCodeSearch";
 import { AEF_PRINTED_GEOMETRY_MARKER } from "@shared/aefFramelessGeometry";
@@ -1417,6 +1418,28 @@ export function threeDProductMaterialSource(
 			backsplashGroutJointIn: 1 / 16,
 		};
 	}
+	if (role === "backsplash" && threeDCuratedIdentityMatches(productName, productId, "misty coast", 335)) {
+	  const uploaded = originalUrl?.trim() && threeDTextureUrlIsColorMap(originalUrl) ? originalUrl.trim() : "";
+	  if (uploaded) {
+	    return {
+	      url: uploaded,
+	      key: "misty-coast-11.81in-interlocking-linear-mosaic",
+	      curated: true,
+	      proceduralFallback: false,
+	      physicalWidthIn: 11.81,
+	      physicalDepthIn: 11.81,
+	      sourceProductName: productName ?? null,
+	      flooringPatternKind: null,
+	      plankWidthIn: null,
+	      plankLengthIn: null,
+	      staggerOffsetsIn: null,
+	      backsplashPatternKind: "interlocking-mosaic",
+	      backsplashModuleIn: 11.81,
+	      backsplashModuleHeightIn: 11.81,
+	      backsplashGroutJointIn: 3 / 32,
+	    };
+	  }
+	}
 	// Flooring and countertops still refuse an unapproved room photo and use a
 	// neutral preview. A selected backsplash uses its own picture; with no
 	// picture it stays unlabeled instead of becoming a generic tile.
@@ -1883,9 +1906,12 @@ function interlockedMosaicUnitImage(
   item: MosaicInterlockSpec,
   maxUnitPx: number,
 ): HTMLImageElement | HTMLCanvasElement {
-  const width = (source as HTMLImageElement).naturalWidth || source.width;
-  const height = (source as HTMLImageElement).naturalHeight || source.height;
-  if (!width || !height || typeof document === "undefined") return source;
+  if (typeof document === "undefined") return source;
+  const prepared = canvasWithoutBakedCheckerboard(source) ?? source;
+  const width = (prepared as HTMLImageElement).naturalWidth || prepared.width;
+  const height = (prepared as HTMLImageElement).naturalHeight || prepared.height;
+  if (!width || !height) return source;
+  const transparentSheet = drawableHasTransparency(prepared);
   const plan = mosaicInterlockUnitPlan(item, width, height, maxUnitPx);
   const canvas = document.createElement("canvas");
   canvas.width = plan.width;
@@ -1893,7 +1919,9 @@ function interlockedMosaicUnitImage(
   const context = canvas.getContext("2d");
   if (!context) return source;
   context.imageSmoothingQuality = "high";
-  context.drawImage(source, plan.source.x, plan.source.y, plan.source.width, plan.source.height, 0, 0, plan.width, plan.height);
+  context.fillStyle = item.groutColor ?? "#8a8782";
+  if (transparentSheet) context.fillRect(0, 0, plan.width, plan.height);
+  context.drawImage(prepared, plan.source.x, plan.source.y, plan.source.width, plan.source.height, 0, 0, plan.width, plan.height);
   context.fillStyle = item.groutColor ?? "#8a8782";
   context.fillRect(0, 0, plan.width, plan.groutYPx);
   context.fillRect(plan.width - plan.groutXPx, 0, plan.groutXPx, plan.height);
