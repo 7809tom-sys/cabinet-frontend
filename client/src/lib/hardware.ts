@@ -50,6 +50,12 @@ export type CatalogHardwareSelection = {
   imageUrl: string | null;
 };
 
+/**
+ * Regular Designer only. Other renderers retain their own unchanged defaults. This is the style a new design
+ * starts with and the fallback an older saved design uses when it has no brand-catalog pick.
+ */
+export const DEFAULT_DESIGNER_HARDWARE_STYLE_ID: HardwareStyleId = "bar-pull";
+
 /** Cabinet front product types the regular Designer can represent today. */
 export function catalogHardwareStyleId(productType: string | null | undefined): HardwareStyleId | null {
   const normalized = (productType ?? "").trim().toLocaleLowerCase();
@@ -59,6 +65,15 @@ export function catalogHardwareStyleId(productType: string | null | undefined): 
   // Appliance handles are source products, but they are not cabinet-door or
   // drawer hardware. Do not silently apply them to cabinets.
   return null;
+}
+
+/**
+ * Older saved designs only have a generic `hardwareStyleId` and no brand pick. That id is read back as the fallback
+ * style so the 3D, elevation and corner views keep rendering their hardware; the brand picker shows nothing selected
+ * until the customer picks one. An unknown or missing id falls back to the Designer default. No data is migrated.
+ */
+export function savedHardwareFallbackStyleId(saved: unknown): HardwareStyleId {
+  return HARDWARE_STYLES.some((style) => style.id === saved) ? saved as HardwareStyleId : DEFAULT_DESIGNER_HARDWARE_STYLE_ID;
 }
 
 export function isCatalogCabinetHardwareType(productType: string | null | undefined): boolean {

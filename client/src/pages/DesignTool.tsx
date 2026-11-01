@@ -214,12 +214,13 @@ import {
   HARDWARE_STYLES,
   catalogHardwareFinishAccent,
   catalogHardwareStyleId,
+  savedHardwareFallbackStyleId,
+  DEFAULT_DESIGNER_HARDWARE_STYLE_ID,
   hardwareSchedule,
   hardwarePlacementNote,
   normalizeCatalogHardwareSelection,
   type CatalogHardwareSelection,
 } from "@/lib/hardware";
-import { CabinetHandlesControl, DEFAULT_DESIGNER_HARDWARE_STYLE_ID } from "@/components/design/CabinetHandlesControl";
 import { HardwareCatalogPicker } from "@/components/design/HardwareCatalogPicker";
 import { isPanelPaletteItem } from "./designToolPanels";
 import { normalizePaletteSearch, matchesPaletteSearch, matchesPaletteTextOrSize } from "@/lib/paletteSearch";
@@ -2479,10 +2480,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // current public price is deliberately re-read below instead of persisted.
   const [hardwareStyleId, setHardwareStyleId] = useState<HardwareStyleId>(DEFAULT_DESIGNER_HARDWARE_STYLE_ID);
   const [catalogHardwareSelection, setCatalogHardwareSelection] = useState<CatalogHardwareSelection | null>(null);
-  const setGenericHardwareStyle = useCallback((style: HardwareStyleId) => {
-    setHardwareStyleId(style);
-    setCatalogHardwareSelection(null);
-  }, []);
   const selectCatalogHardware = useCallback((selection: CatalogHardwareSelection) => {
     const normalized = normalizeCatalogHardwareSelection(selection);
     const proxy = normalized ? catalogHardwareStyleId(normalized.productType) : null;
@@ -13478,7 +13475,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           const restoredCatalogHardware = normalizeCatalogHardwareSelection(d.catalogHardwareSelection);
           if (restoredCatalogHardware) selectCatalogHardware(restoredCatalogHardware);
           else {
-            if (typeof d.hardwareStyleId === "string") setHardwareStyleId(d.hardwareStyleId as HardwareStyleId);
+            // Older design with only a generic style: keep rendering it; the brand picker stays empty.
+            if (typeof d.hardwareStyleId === "string") setHardwareStyleId(savedHardwareFallbackStyleId(d.hardwareStyleId));
             setCatalogHardwareSelection(null);
           }
           if (d.wallCabHeight === 30 || d.wallCabHeight === 36 || d.wallCabHeight === 42) {
@@ -14561,7 +14559,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       cabinetDoorProfiles={threeDCabinetDoorProfiles}
 	      hardwareStyleId={hardwareStyleId}
                   hardwareAccent={catalogHardwareSelection ? catalogHardwareFinishAccent(catalogHardwareSelection.finish) : undefined}
-                  onHardwareStyleChange={setGenericHardwareStyle}
 	      cabinetDoorSampleUrls={threeDCabinetDoorSamples}
 	      cabinetDrawerSampleUrls={threeDCabinetDrawerSamples}
 	      cabinetFaceSourceKinds={threeDCabinetFaceKinds}
@@ -14787,7 +14784,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           </Button>
         </div>
 
-        <CabinetHandlesControl value={hardwareStyleId} onChange={setGenericHardwareStyle} tablet={isTabletWorkspace} />
         <ColorStyleQuickPicker
           styles={displayUniqueDoorStyles.map((style) => ({ id: style.id, name: affiliateStyleName(style) }))}
           value={styleId}
@@ -15681,9 +15677,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                   >
                     <Wrench className="h-4 w-4 text-muted-foreground shrink-0" />
                     <span className="flex-1 text-left text-sm font-medium">Handles &amp; knobs</span>
-                    {hardwareStyleId !== "none" && (
+                    {catalogHardwareSelection && (
                       <span className="text-[10px] text-muted-foreground mr-1">
-                        {HARDWARE_STYLES.find((h) => h.id === hardwareStyleId)?.label}
+                        {catalogHardwareSelection.sku}
                       </span>
                     )}
                     <ChevronRight className="h-4 w-4 text-muted-foreground" />
@@ -15808,7 +15804,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                 </div>
               </SheetHeader>
               <div className="flex-1 overflow-y-auto overscroll-contain p-3" style={{ WebkitOverflowScrolling: "touch" }}>
-                <p className="mb-3 text-xs text-muted-foreground">Choose a real catalog item for its matching finish and current material-list price, or use the generic handle styles.</p>
+                <p className="mb-3 text-xs text-muted-foreground">Choose a real catalog item for its matching finish and current material-list price.</p>
                 <div className="mb-3">
                   <HardwareCatalogPicker
                     value={catalogHardwareSelection}
@@ -15817,26 +15813,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                     affiliateSlug={affiliateSlug}
                     compact
                   />
-                </div>
-                <div className="space-y-2">
-                  {HARDWARE_STYLES.map((h) => (
-                    <button
-                      key={h.id}
-                      onClick={() => setGenericHardwareStyle(h.id)}
-                      className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left transition-colors ${
-                        hardwareStyleId === h.id
-                          ? "border-[#1a2744] bg-[#1a2744]/8"
-                          : "border-border hover:border-[#1a2744]/40 hover:bg-muted/40"
-                      }`}
-                    >
-                      <Wrench className={`h-5 w-5 shrink-0 ${hardwareStyleId === h.id ? "text-[#1a2744]" : "text-muted-foreground"}`} />
-                      <div className="flex-1 min-w-0">
-                        <div className={`text-sm font-semibold ${hardwareStyleId === h.id ? "text-[#1a2744]" : "text-foreground"}`}>{h.label}</div>
-                        <div className="text-[11px] text-muted-foreground leading-tight">{h.description}</div>
-                      </div>
-                      {hardwareStyleId === h.id && <Check className="h-4 w-4 shrink-0 text-[#1a2744]" />}
-                    </button>
-                  ))}
                 </div>
               </div>
             </SheetContent>
@@ -22415,7 +22391,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                cabinetDoorProfiles={threeDCabinetDoorProfiles}
 	                hardwareStyleId={hardwareStyleId}
                   hardwareAccent={catalogHardwareSelection ? catalogHardwareFinishAccent(catalogHardwareSelection.finish) : undefined}
-                  onHardwareStyleChange={setGenericHardwareStyle}
 	                cabinetDoorSampleUrls={threeDCabinetDoorSamples}
 	                cabinetDrawerSampleUrls={threeDCabinetDrawerSamples}
 	                cabinetFaceSourceKinds={threeDCabinetFaceKinds}

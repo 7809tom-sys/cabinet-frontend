@@ -120,7 +120,7 @@ export function HardwareCatalogPicker({ value, onSelect, onClear, affiliateSlug,
             {value && <Card className="flex flex-wrap items-center gap-3 border-[var(--color-gold)]/40 bg-[var(--color-gold)]/5 p-3 text-sm">
               {value.imageUrl && <img src={value.imageUrl} alt="" className="h-12 w-12 rounded border bg-white object-contain p-1" />}
               <div className="min-w-0 flex-1"><strong className="block truncate">Selected: {value.collection} · {value.finish}</strong><span className="text-xs text-muted-foreground">{value.productType} · {value.sku}</span></div>
-              <Button type="button" variant="outline" size="sm" onClick={onClear}>Use generic Handles instead</Button>
+              <Button type="button" variant="outline" size="sm" onClick={onClear}>Clear selection</Button>
             </Card>}
 
             {error ? <Card className="p-5 text-sm text-destructive">Could not load available hardware. {error.message}</Card>
