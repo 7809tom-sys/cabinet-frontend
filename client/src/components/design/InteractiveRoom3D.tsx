@@ -57,7 +57,8 @@ import { doorHardwareOffsetFromFaceCenterIn, hardwareStyle, normalizeDoorHardwar
 import { ovenOpeningGeometry } from "@/lib/ovenOpening";
 import { trpc } from "@/lib/trpc";
 import { buildMosaicUnitImage } from "@/lib/mosaicUnitImage";
-import { canvasWithoutBakedCheckerboard, drawableHasTransparency } from "@/lib/mosaicCheckerboard";
+import { imageHasMeaningfulTransparency, sampleSheetTileHex } from "@/lib/mosaicPhotoAnalysis";
+import { canvasWithoutBakedCheckerboard } from "@/lib/mosaicCheckerboard";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { searchCatalogItems } from "@shared/catalogCodeSearch";
 import { AEF_PRINTED_GEOMETRY_MARKER } from "@shared/aefFramelessGeometry";
@@ -1971,7 +1972,8 @@ function interlockedMosaicUnitImage(
   const width = (prepared as HTMLImageElement).naturalWidth || prepared.width;
   const height = (prepared as HTMLImageElement).naturalHeight || prepared.height;
   if (!width || !height) return source;
-  const transparentSheet = drawableHasTransparency(prepared);
+  const pixels = readImagePixels(prepared);
+  const transparentSheet = pixels ? imageHasMeaningfulTransparency(pixels.data, pixels.width, pixels.height) : false;
   const plan = mosaicInterlockUnitPlan(item, width, height, maxUnitPx);
   const canvas = document.createElement("canvas");
   canvas.width = plan.width;
@@ -1979,8 +1981,14 @@ function interlockedMosaicUnitImage(
   const context = canvas.getContext("2d");
   if (!context) return source;
   context.imageSmoothingQuality = "high";
-  context.fillStyle = item.groutColor ?? "#8a8782";
-  if (transparentSheet) context.fillRect(0, 0, plan.width, plan.height);
+  if (transparentSheet && pixels) {
+    const tileFill = sampleSheetTileHex(pixels.data, pixels.width, pixels.height);
+    const blocked = tileFill?.toLowerCase() === "#8a8782" || tileFill?.toLowerCase() === (item.groutColor ?? "").toLowerCase();
+    if (tileFill && !blocked) {
+      context.fillStyle = tileFill;
+      context.fillRect(0, 0, plan.width, plan.height);
+    }
+  }
   context.drawImage(prepared, plan.source.x, plan.source.y, plan.source.width, plan.source.height, 0, 0, plan.width, plan.height);
   context.fillStyle = item.groutColor ?? "#8a8782";
   context.fillRect(0, 0, plan.width, plan.groutYPx);
@@ -12196,6 +12204,9 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 	          loadedTexture.repeat.set(1, 1);
 	          loadedTexture.offset.set(0, 0);
 	        }
+	        // The unit canvas replaces the uploaded photo. Drop any mip chain built from the raw image.
+	        loadedTexture.generateMipmaps = true;
+	        loadedTexture.mipmaps.length = 0;
 	        loadedTexture.needsUpdate = true;
 	      }, undefined, () => {
 	        if (role === "flooring") {
