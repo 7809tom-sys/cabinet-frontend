@@ -126,6 +126,10 @@ export default function PriceShop() {
                         src={style.thumbnailImageUrl}
                         alt={style.name || ""}
                         className="w-14 h-14 rounded-md object-cover border"
+                        width={56}
+                        height={56}
+                        loading="lazy"
+                        decoding="async"
                       />
                     ) : (
                       <div className="w-14 h-14 rounded-md bg-muted flex items-center justify-center text-muted-foreground text-xs">
@@ -195,6 +199,10 @@ export default function PriceShop() {
                   src={selectedStyle.thumbnailImageUrl}
                   alt=""
                   className="w-10 h-10 rounded-md object-cover border"
+                  width={40}
+                  height={40}
+                  loading="lazy"
+                  decoding="async"
                 />
               )}
               <div>

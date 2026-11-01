@@ -135,7 +135,7 @@ export default function KitchenPlanningGuide() {
             <p className="mt-4 inline-flex items-center gap-2 text-sm text-slate-300"><Clock3 className="h-4 w-4 text-[var(--color-gold)]" /> First layouts commonly take about 10–15 minutes.</p>
           </div>
           <figure className="overflow-hidden rounded-2xl border border-white/15 bg-white/5 shadow-2xl">
-            <img src={KITCHEN_SCENES["shaker-white"]} alt="A finished kitchen with cabinets, island, and workspace" className="h-[240px] w-full object-cover sm:h-[320px] lg:h-[360px]" />
+            <img src={KITCHEN_SCENES["shaker-white"]} alt="A finished kitchen with cabinets, island, and workspace" className="h-[240px] w-full object-cover sm:h-[320px] lg:h-[360px]" fetchPriority="high" decoding="async" />
             <figcaption className="flex items-center gap-3 px-5 py-4 text-sm text-slate-200"><Sparkles className="h-4 w-4 shrink-0 text-[var(--color-gold)]" /> Make the room work first. Door style, surfaces, and price follow the layout.</figcaption>
           </figure>
         </div>

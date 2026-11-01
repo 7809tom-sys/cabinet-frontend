@@ -84,6 +84,7 @@ function FamilyCardImage({
         src={src as string}
         alt={alt}
         loading="lazy"
+        decoding="async"
         onError={() => setFailed(true)}
         className={imgClassName}
       />
@@ -448,7 +449,7 @@ function FamilyPicker({
                     className="group cursor-pointer overflow-hidden rounded-xl border border-border bg-card transition-shadow hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                   >
                     <div className="relative aspect-[4/3] bg-muted">
-                      {image ? <img src={image} alt={`${displayName} door sample`} loading="lazy" className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center px-3 text-center text-xs text-muted-foreground">No photo yet</div>}
+                      {image ? <img src={image} alt={`${displayName} door sample`} loading="lazy" decoding="async" className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center px-3 text-center text-xs text-muted-foreground">No photo yet</div>}
                       {family.featured && <Badge className="absolute left-2 top-2 border-0 text-white" style={{ backgroundColor: brand.accent }}>Featured</Badge>}
                       <button
                         type="button"
@@ -934,6 +935,7 @@ function CatalogCard({
               src={item.imageUrl || item.catalogImageUrl!}
               alt={item.description ?? item.masterCode}
               loading="lazy"
+              decoding="async"
               className="h-full w-full object-contain transition-transform duration-200 group-hover/details:scale-[1.02]"
             />
           </div>
@@ -1225,6 +1227,8 @@ export function DoorDetailModal({
               src={family.doorSampleImageUrl}
               alt={`${publicStyleName(family.name)} door sample`}
               className="h-full w-full object-cover"
+              loading="lazy"
+              decoding="async"
             />
           ) : (
             <div className="flex h-full w-full items-center justify-center px-4 text-center text-sm text-muted-foreground">No door sample photo yet</div>

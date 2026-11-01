@@ -1,4 +1,4 @@
-import { doorPanelKind, type DoorPanelKind } from "@/lib/design";
+import { doorPanelKind, type DoorPanelKind } from "@/lib/doorPanelKind";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Door-family hero photos

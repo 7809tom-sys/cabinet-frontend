@@ -140,7 +140,7 @@ export default function SurfacesProduct({ slug, affiliateSlug }: { slug: string;
         <Card className="overflow-hidden">
           <div className="relative aspect-[4/3] w-full">
             {data.imageUrl ? (
-              <img src={data.imageUrl} alt={displayName} className="h-full w-full object-cover" />
+              <img src={data.imageUrl} alt={displayName} className="h-full w-full object-cover" fetchPriority="high" decoding="async" />
             ) : (
               <div
                 className="flex h-full w-full items-center justify-center"
@@ -363,6 +363,7 @@ function CompleteThisLook({ slug, pairedType, affiliateSlug }: { slug: string; p
                       src={product.imageUrl}
                       alt={pelicanDisplayName(product)}
                       loading="lazy"
+                      decoding="async"
                       className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
                     />
                   ) : (

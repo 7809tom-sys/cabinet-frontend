@@ -258,6 +258,8 @@ function CategoryLanding({
           src={HERO_IMAGE}
           alt="Modern kitchen with full cabinetry — base, wall and tall cabinets"
           className="absolute inset-0 h-full w-full object-cover"
+          fetchPriority="high"
+          decoding="async"
         />
         <div className="absolute inset-0 bg-gradient-to-r from-[var(--color-navy)]/90 via-[var(--color-navy)]/70 to-transparent" />
         <div className="relative px-6 py-12 md:px-12 md:py-16 max-w-2xl">
@@ -322,6 +324,8 @@ function CategoryLanding({
               src={tile.image}
               alt={`${tile.label} kitchen room scene`}
               className="absolute inset-0 h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+              loading="lazy"
+              decoding="async"
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
             <div className="absolute bottom-0 left-0 right-0 p-5">
@@ -626,6 +630,8 @@ function CategoryView({
             src={tileFor(category).image}
             alt={`${category} cabinets`}
             className="absolute inset-0 h-full w-full object-cover"
+            fetchPriority="high"
+            decoding="async"
           />
           <div className="absolute inset-0 bg-gradient-to-r from-[var(--color-navy)]/90 to-transparent" />
           <div className="relative px-6 py-5">

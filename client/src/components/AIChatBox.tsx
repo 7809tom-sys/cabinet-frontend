@@ -3,8 +3,19 @@ import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { Loader2, Send, User, Sparkles } from "lucide-react";
-import { useState, useEffect, useRef } from "react";
-import { Streamdown } from "streamdown";
+import { lazy, Suspense, useState, useEffect, useRef } from "react";
+
+// Markdown highlighting (streamdown + shiki) is only needed once a reply exists.
+// Keep it off the storefront entry chunk.
+const Streamdown = lazy(() => import("streamdown").then((mod) => ({ default: mod.Streamdown })));
+
+function AssistantMarkdown({ content }: { content: string }) {
+  return (
+    <Suspense fallback={<p className="whitespace-pre-wrap text-sm">{content}</p>}>
+      <Streamdown>{content}</Streamdown>
+    </Suspense>
+  );
+}
 
 /**
  * Message type matching server-side LLM Message interface
@@ -262,7 +273,7 @@ export function AIChatBox({
                     >
                       {message.role === "assistant" ? (
                         <div className="prose prose-sm dark:prose-invert max-w-none">
-                          <Streamdown>{message.content}</Streamdown>
+                          <AssistantMarkdown content={message.content} />
                         </div>
                       ) : (
                         <p className="whitespace-pre-wrap text-sm">

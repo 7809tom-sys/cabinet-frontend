@@ -42,6 +42,20 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        // Only libraries that do not import React. Putting React-based
+        // packages (recharts, streamdown, jspdf wrappers) in a manual chunk
+        // makes Rollup hoist React into that chunk and preload it on every
+        // page. three / maplibre are pulled in only by the designer and maps.
+        manualChunks(id) {
+          const norm = id.replace(/\\/g, "/");
+          if (!norm.includes("/node_modules/")) return;
+          if (/\/node_modules\/(three|three-gpu-pathtracer|@react-three)\//.test(norm)) return "vendor-three";
+          if (/\/node_modules\/maplibre-gl\//.test(norm)) return "vendor-map";
+        },
+      },
+    },
   },
   server: {
     host: true,

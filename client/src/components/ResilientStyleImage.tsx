@@ -24,7 +24,7 @@ interface ResilientStyleImageProps {
   onFallback?: () => void;
 }
 
-export function ResilientStyleImage({ src, alt, style, className, loading, decoding, unavailableLabel, onFallback }: ResilientStyleImageProps) {
+export function ResilientStyleImage({ src, alt, style, className, loading = "lazy", decoding = "async", unavailableLabel, onFallback }: ResilientStyleImageProps) {
   const [failed, setFailed] = useState<{ src: string; attempts: number; nonce: string } | null>(null);
   const attempts = src && failed?.src === src ? failed.attempts : 0;
   const swatchStyle: DoorStyleLike = { ...style, thumbnailImageUrl: null, doorSampleImageUrl: null };
