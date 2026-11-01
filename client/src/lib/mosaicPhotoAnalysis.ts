@@ -446,15 +446,29 @@ export function measureTransparentSheetRepeat(
   };
 }
 
+export type RunningBondSeam = {
+  y0: number;
+  y1: number;
+  /** Image x of the vertical brick joint. It is part of the bond and is not erased. */
+  jointX: number;
+  /** Image x where this row's brick meets the neighbouring sheet. */
+  seamX: number;
+};
+
+type GroutRow = RunningBondSeam & { x0: number; x1: number };
+
+function medianNumber(values: number[]) {
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)] ?? 0;
+}
+
 /**
- * Drops straight, full-length grey grout that was baked into a sheet photo.
- * Marble veins are irregular and stay. Bright or warm metal strips (gold aluminum)
- * are not grey, so they stay too. Cleared pixels become transparent so the next
- * sheet's tiles can slide into the joint instead of stacking on a grey line.
- * Returns how many pixels were cleared.
+ * Grey joints baked into a sheet. A running-bond subway has one vertical joint per row
+ * and that joint's x alternates. Those joints, and the horizontal joints between the rows,
+ * are the brick pattern. Anything else full-length and dark is photo grout that can be cleared.
  */
-export function clearBakedSheetGrout(data: Uint8Array, width: number, height: number): number {
-  if (width < 24 || height < 24 || data.length < width * height * 4) return 0;
+function bakedGroutLayout(data: Uint8Array, width: number, height: number): { grey: Uint8Array; bands: Array<[number, number]>; rows: GroutRow[]; verticals: Array<{ y0: number; y1: number; x0: number; x1: number }>; runningBond: boolean } | null {
+  if (width < 24 || height < 24 || data.length < width * height * 4) return null;
   const count = width * height;
   const stride = Math.max(1, Math.floor(Math.min(width, height) / 180));
   const lums: number[] = [];
@@ -465,7 +479,7 @@ export function clearBakedSheetGrout(data: Uint8Array, width: number, height: nu
       lums.push((data[index]! + data[index + 1]! + data[index + 2]!) / 3);
     }
   }
-  if (lums.length < 24) return 0;
+  if (lums.length < 24) return null;
   lums.sort((a, b) => a - b);
   const tileLum = lums[Math.floor(lums.length / 2)] ?? 0;
   const grey = new Uint8Array(count);
@@ -501,6 +515,101 @@ export function clearBakedSheetGrout(data: Uint8Array, width: number, height: nu
     while (y < height && qual[y]) y += 1;
     if (y - start >= 2 && y - start <= maxThick) bands.push([start, y - 1]);
   }
+  const cuts = [0, height];
+  for (const [y0, y1] of bands) cuts.push(y0, y1 + 1);
+  cuts.sort((a, b) => a - b);
+  const rows: GroutRow[] = [];
+  const verticals: Array<{ y0: number; y1: number; x0: number; x1: number }> = [];
+  for (let cut = 0; cut < cuts.length - 1; cut += 1) {
+    const y0 = cuts[cut]!;
+    const y1 = cuts[cut + 1]!;
+    if (y1 - y0 < 24) continue;
+    const slabHeight = y1 - y0;
+    const opaqueCount = new Uint32Array(width);
+    const groutCount = new Uint32Array(width);
+    for (let rowY = y0; rowY < y1; rowY += 1) {
+      const row = rowY * width;
+      for (let x = 0; x < width; x += 1) {
+        if (data[(row + x) * 4 + 3]! >= 200) opaqueCount[x]! += 1;
+        groutCount[x]! += grey[row + x]!;
+      }
+    }
+    const groups: Array<{ x0: number; x1: number }> = [];
+    let x = 0;
+    while (x < width) {
+      const opaque = opaqueCount[x]!;
+      const isJoint = opaque >= slabHeight * 0.5 && groutCount[x]! >= opaque * 0.65;
+      if (!isJoint) { x += 1; continue; }
+      const start = x;
+      while (x < width) {
+        const nextOpaque = opaqueCount[x]!;
+        if (!(nextOpaque >= slabHeight * 0.5 && groutCount[x]! >= nextOpaque * 0.65)) break;
+        x += 1;
+      }
+      const thick = x - start;
+      if (thick >= 2 && thick <= 18) {
+        const span = { x0: start, x1: x - 1 };
+        groups.push(span);
+        verticals.push({ y0, y1: y1 - 1, ...span });
+      }
+    }
+    let left = -1;
+    let right = -1;
+    for (let col = 0; col < width; col += 1) {
+      if (opaqueCount[col]! < slabHeight * 0.35) continue;
+      if (left < 0) left = col;
+      right = col;
+    }
+    const interior = groups.filter((group) => {
+      const center = (group.x0 + group.x1) / 2;
+      return center > width * 0.08 && center < width * 0.92;
+    });
+    interior.sort((a, b) => (b.x1 - b.x0) - (a.x1 - a.x0));
+    const joint = interior[0];
+    if (!joint || left < 0 || right < 0) continue;
+    const stepOnLeft = left > width * 0.06;
+    const stepOnRight = right < width * 0.94;
+    const seamX = stepOnLeft ? left : stepOnRight ? right : Math.round((joint.x0 + joint.x1) / 2);
+    rows.push({
+      y0, y1: y1 - 1,
+      x0: joint.x0, x1: joint.x1,
+      jointX: Math.round((joint.x0 + joint.x1) / 2),
+      seamX,
+    });
+  }
+  const even = rows.filter((_, index) => index % 2 === 0).map((row) => row.jointX);
+  const odd = rows.filter((_, index) => index % 2 === 1).map((row) => row.jointX);
+  const evenX = medianNumber(even);
+  const oddX = medianNumber(odd);
+  const tolerance = Math.max(24, width * 0.04);
+  const runningBond = even.length >= 2 && odd.length >= 2
+    && Math.abs(evenX - oddX) > width * 0.12
+    && even.every((value) => Math.abs(value - evenX) <= tolerance)
+    && odd.every((value) => Math.abs(value - oddX) <= tolerance);
+  return { grey, bands, rows, verticals, runningBond };
+}
+
+/**
+ * Where each running-bond row meets the next sheet. Null when the sheet is not a
+ * two-phase brick bond. The x values alternate, so a grout stroke here continues the bond.
+ */
+export function runningBondSeams(data: Uint8Array, width: number, height: number): RunningBondSeam[] | null {
+  const layout = bakedGroutLayout(data, width, height);
+  if (!layout?.runningBond) return null;
+  return layout.rows.map((row) => ({ y0: row.y0, y1: row.y1, jointX: row.jointX, seamX: row.seamX }));
+}
+
+/**
+ * Drops straight, full-length grey grout that was baked into a sheet photo.
+ * A running-bond subway keeps its brick joints: a vertical joint whose x alternates
+ * from row to row, and the horizontal joints between those rows. Nesting closes the
+ * transparent step at the sheet ends. Marble veins and warm metal strips stay.
+ * Returns how many pixels were cleared.
+ */
+export function clearBakedSheetGrout(data: Uint8Array, width: number, height: number): number {
+  const layout = bakedGroutLayout(data, width, height);
+  if (!layout || layout.runningBond) return 0;
+  const { grey, bands } = layout;
   let cleared = 0;
   const clearAt = (pixel: number) => {
     if (!grey[pixel]) return;
@@ -516,40 +625,10 @@ export function clearBakedSheetGrout(data: Uint8Array, width: number, height: nu
       for (let x = 0; x < width; x += 1) clearAt(row + x);
     }
   }
-  const cuts = [0, height];
-  for (const [y0, y1] of bands) cuts.push(y0, y1 + 1);
-  cuts.sort((a, b) => a - b);
-  for (let cut = 0; cut < cuts.length - 1; cut += 1) {
-    const y0 = cuts[cut]!;
-    const y1 = cuts[cut + 1]!;
-    if (y0 === y1 || y1 - y0 < 24) continue;
-    const slabHeight = y1 - y0;
-    const opaqueCount = new Uint32Array(width);
-    const groutCount = new Uint32Array(width);
-    for (let rowY = y0; rowY < y1; rowY += 1) {
-      const row = rowY * width;
-      for (let x = 0; x < width; x += 1) {
-        if (data[(row + x) * 4 + 3]! < 200 && !grey[row + x]) continue;
-        if (data[(row + x) * 4 + 3]! >= 200) opaqueCount[x]! += 1;
-        groutCount[x]! += grey[row + x]!;
-      }
-    }
-    const column = new Uint8Array(width);
-    for (let x = 0; x < width; x += 1) {
-      const opaque = opaqueCount[x]!;
-      if (opaque >= slabHeight * 0.5 && groutCount[x]! >= opaque * 0.65) column[x] = 1;
-    }
-    let x = 0;
-    while (x < width) {
-      if (!column[x]) { x += 1; continue; }
-      const start = x;
-      while (x < width && column[x]) x += 1;
-      const thick = x - start;
-      if (thick < 2 || thick > 18) continue;
-      for (let rowY = y0; rowY < y1; rowY += 1) {
-        const row = rowY * width;
-        for (let col = start; col < x; col += 1) clearAt(row + col);
-      }
+  for (const span of layout.verticals) {
+    for (let rowY = span.y0; rowY <= span.y1; rowY += 1) {
+      const base = rowY * width;
+      for (let x = span.x0; x <= span.x1; x += 1) clearAt(base + x);
     }
   }
   return cleared;
