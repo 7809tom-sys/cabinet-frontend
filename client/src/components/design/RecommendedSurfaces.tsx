@@ -2,6 +2,8 @@ import { useCallback, useMemo, useState } from "react";
 import { groupPelicanConfigurations } from "@shared/pelicanConfigurationGrouping";
 import { flooringCartonFacts } from "@/lib/flooringCartonFacts";
 import { concatCatalogPages, isSelectableDesignerFlooringPlank, isSelectableDesignerTileMosaic, readDesignerRenderFlags } from "@/lib/designerTileMosaicCatalog";
+import { floorCapableMosaics, isMosaicCatalogItem } from "@/lib/mosaicFloorTile";
+import { surfaceRole } from "@/lib/pelican";
 import { PelicanConfigurationCard } from "./PelicanConfigurationCard";
 import { verifiedPelicanBathroomFixtureProfile, pelicanBathroomFixturePlacementText } from "@/lib/pelicanBathroomFixtureProfiles";
 import { trpc } from "@/lib/trpc";
@@ -35,7 +37,7 @@ export const RECOMMENDED_SECTIONS: {
   label: string;
   blurb: string;
 }[] = [
-  { role: "flooring", label: "Flooring", blurb: "Pelican planks & flooring" },
+  { role: "flooring", label: "Flooring", blurb: "Pelican planks and floor mosaics" },
   { role: "backsplash", label: "Backsplash", blurb: "Pelican tile & mosaic" },
   { role: "countertop", label: "Countertop", blurb: "Pelican quartz slabs" },
   { role: "sink", label: "Sink", blurb: "StoneCreek sinks" },
@@ -98,9 +100,10 @@ type RecItem = {
   isActive?: boolean | null;
   designerRenderReady?: boolean | null;
   hasSwatch?: boolean | null;
+  usableAsFloor?: boolean | number | null;
 };
 
-function toSurface(p: RecItem): SelectedSurface {
+function toSurface(p: RecItem, installedAs?: "flooring"): SelectedSurface {
   const facts = flooringCartonFacts(p);
   return {
     id: p.id,
@@ -117,6 +120,7 @@ function toSurface(p: RecItem): SelectedSurface {
     coverageSqFt: facts?.sqFtPerBox ?? null,
     piecesPerBox: facts?.piecesPerBox ?? null,
     ...readDesignerRenderFlags(p),
+    ...(installedAs ? { installedAs } : {}),
   };
 }
 
@@ -177,6 +181,27 @@ function RecommendedRow({
     { enabled: storefrontCatalog },
   );
   const catalogPage2Enabled = storefrontCatalog && (catalog.data?.total ?? 0) > (catalog.data?.items.length ?? 0);
+  const floorMosaicCatalog = trpc.pelican.byCategory.useQuery(
+    {
+      category: "Tile & Mosaic",
+      scope: "catalog",
+      affiliateSlug: affiliateSlug ?? undefined,
+      limit: 200,
+      offset: 0,
+    },
+    { enabled: fullFlooringPalette },
+  );
+  const floorMosaicPage2Enabled = fullFlooringPalette && (floorMosaicCatalog.data?.total ?? 0) > (floorMosaicCatalog.data?.items.length ?? 0);
+  const floorMosaicPage2 = trpc.pelican.byCategory.useQuery(
+    {
+      category: "Tile & Mosaic",
+      scope: "catalog",
+      affiliateSlug: affiliateSlug ?? undefined,
+      limit: 200,
+      offset: 200,
+    },
+    { enabled: floorMosaicPage2Enabled },
+  );
   const catalogPage2 = trpc.pelican.byCategory.useQuery(
     {
       category: "Tile & Mosaic",
@@ -190,7 +215,7 @@ function RecommendedRow({
   const isLoading = storefrontCatalog
     ? catalog.isLoading || (catalogPage2Enabled && catalogPage2.isLoading)
     : fullFlooringPalette
-      ? flooringRecommended.isLoading
+      ? flooringRecommended.isLoading || floorMosaicCatalog.isLoading || (floorMosaicPage2Enabled && floorMosaicPage2.isLoading)
       : recommended.isLoading;
   const configurations = useMemo(() => {
     const sourceRows = (storefrontCatalog
@@ -201,13 +226,19 @@ function RecommendedRow({
     const rows = role === "backsplash"
       ? sourceRows.filter((item) => isSelectableDesignerTileMosaic(item))
       : role === "flooring"
-        ? sourceRows.filter((item) => isSelectableDesignerFlooringPlank(item))
+        ? [
+            ...sourceRows.filter((item) => isSelectableDesignerFlooringPlank(item)),
+            ...floorCapableMosaics(concatCatalogPages<RecItem>([
+              floorMosaicCatalog.data?.items as RecItem[] | undefined,
+              floorMosaicPage2.data?.items as RecItem[] | undefined,
+            ])),
+          ]
         : sourceRows;
     return groupPelicanConfigurations(rows);
-  }, [catalog.data, catalogPage2.data, flooringRecommended.data, fullFlooringPalette, recommended.data, role, storefrontCatalog]);
+  }, [catalog.data, catalogPage2.data, floorMosaicCatalog.data, floorMosaicPage2.data, flooringRecommended.data, fullFlooringPalette, recommended.data, role, storefrontCatalog]);
   const visible = storefrontCatalog || fullFlooringPalette ? configurations : configurations.slice(0, limit);
   const useVariant = (variantItem: RecItem, configuration: (typeof configurations)[number]) => {
-    const item = toSurface(variantItem);
+    const item = toSurface(variantItem, role === "flooring" && isMosaicCatalogItem(variantItem) ? "flooring" : undefined);
     const tubFiller = role === "bathroom-faucet" && verifiedPelicanBathroomFixtureProfile(item.pelicanCode)?.kind === "floor-tub-filler";
     if ((role === "toilet-bidet" || role === "bathtub" || tubFiller) && onPlaceBathroomFixture) {
       onPlaceBathroomFixture(item);
@@ -314,6 +345,10 @@ export function RecommendedSurfaces({
   affiliateSlug?: string | null;
 }) {
   const selectedIds = useMemo(() => new Set(selected.map((s) => s.id)), [selected]);
+  const selectedIdsForRole = useCallback((role: RecommendedRole) => {
+    if (role !== "flooring" && role !== "backsplash") return selectedIds;
+    return new Set(selected.filter((surface) => surfaceRole(surface) === role).map((surface) => surface.id));
+  }, [selected, selectedIds]);
   const [openRoles, setOpenRoles] = useState<Set<RecommendedRole>>(() => new Set());
   const toggleRole = useCallback((role: RecommendedRole) => {
     setOpenRoles((current) => {
@@ -348,7 +383,7 @@ export function RecommendedSurfaces({
           limit={limit}
           open={openRoles.has(s.role)}
           onOpenChange={() => toggleRole(s.role)}
-          selectedIds={selectedIds}
+          selectedIds={selectedIdsForRole(s.role)}
           onToggle={onToggle}
           onBrowseAll={onBrowseAll}
           onPlaceBathroomFixture={onPlaceBathroomFixture}

@@ -1,0 +1,59 @@
+diff --git a/drizzle/pelicanSchema.ts b/drizzle/pelicanSchema.ts
+index 6ec1921..f91c8ba 100644
+--- a/drizzle/pelicanSchema.ts
++++ b/drizzle/pelicanSchema.ts
+@@ -54,6 +54,11 @@ export const pelicanProducts = mysqlTable("pelican_products", {
+   // Added by hand in docs/sql/0242_pelican_room_scene_image.tidb.sql. That SQL
+   // must run before deploy: list and detail queries select every column.
+   roomSceneImageUrl: varchar("roomSceneImageUrl", { length: 512 }),
++  // Mosaic sheets are wall backsplash only until a vendor checks this.
++  // Default false. Added by hand in docs/sql/0244_pelican_floor_tile.tidb.sql
++  // (frontend repo). That SQL must run before this schema is deployed:
++  // list and detail queries select every column.
++  usableAsFloor: boolean("usableAsFloor").default(false).notNull(),
+   showInDesigner: boolean("showInDesigner").default(true).notNull(),
+   showInCatalog: boolean("showInCatalog").default(true).notNull(),
+   isActive: boolean("isActive").default(true).notNull(),
+diff --git a/server/routers/pelican.ts b/server/routers/pelican.ts
+index f32b0fe..400b270 100644
+--- a/server/routers/pelican.ts
++++ b/server/routers/pelican.ts
+@@ -441,6 +441,8 @@ export const pelicanRouter = router({
+           : readyRows.filter((row) => row.isPopular).slice(0, 12);
+         const page = readyRows.slice(input.offset, input.offset + input.limit);
+         const subCategories = Array.from(new Set(readyRows.map((row) => row.subCategory).filter((value): value is string => Boolean(value))));
++        // byCategory selects the full row, so usableAsFloor is on every item
++        // after docs/sql/0244_pelican_floor_tile.tidb.sql has been applied.
+         return {
+           suggested: suggested.map((r) => withDesignerRenderFlags(withPricing(r, markupMap, affiliateBps(r.category)))),
+           items: page.map((r) => withDesignerRenderFlags(withPricing(r, markupMap, affiliateBps(r.category)))),
+@@ -477,6 +479,7 @@ export const pelicanRouter = router({
+           hasPriceData() as any,
+           eq(pelicanProducts.showInCatalog, true),
+         ));
++      // Catalog scope returns the same row, including usableAsFloor.
+       return {
+         suggested: suggestedRows.map((r) => withDesignerRenderFlags(withPricing(r, markupMap, affiliateBps(r.category)))),
+         items: itemRows.map((r) => withDesignerRenderFlags(withPricing(r, markupMap, affiliateBps(r.category)))),
+@@ -919,6 +922,11 @@ export const pelicanRouter = router({
+       roomSceneImageUrl: z.string().trim().max(512).nullable().optional(),
+       yourCost: z.number().nonnegative().nullable(),
+       retailPrice: z.number().nonnegative().nullable(),
++      /**
++       * Mosaic floor flag. Omit it to leave the stored value unchanged.
++       * False keeps the sheet as wall backsplash only.
++       */
++      usableAsFloor: z.boolean().optional(),
+     }))
+     .mutation(async ({ input, ctx }) => {
+       const db = await getDb();
+@@ -941,6 +949,9 @@ export const pelicanRouter = router({
+       if (input.roomSceneImageUrl !== undefined) {
+         patch.roomSceneImageUrl = storedImageReferenceOrThrow(input.roomSceneImageUrl, "Room scene image");
+       }
++      if (input.usableAsFloor !== undefined) {
++        patch.usableAsFloor = input.usableAsFloor;
++      }
+       if (positiveAuthorizedSurfaceBase({ listPrice: existing.listPrice, yourCost: input.yourCost == null ? null : String(input.yourCost) }) == null) {
+         patch.isActive = false;
+         patch.showInCatalog = false;
