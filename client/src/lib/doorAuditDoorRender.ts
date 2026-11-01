@@ -23,6 +23,7 @@ import {
   type DoorAuditDoorProfile,
   type DoorAuditRenderInput,
 } from "@/lib/doorRenderingAudit";
+import { attachSlopedRaisedPanel, effectiveRaisedBevelDepthIn } from "@/components/design/raisedPanelBevel";
 import { resolveDoorStyleAppearance } from "@/lib/doorStyleAppearance";
 import { RAISED_PANEL_BEVEL_DEPTH_IN, RAISED_PANEL_BEVEL_WIDTH_IN } from "@shared/doorStyleAppearance";
 import { ColorGateBlock, runColorGate } from "@shared/colorGate";
@@ -91,8 +92,11 @@ export function auditDoorConstruction(profile: DoorAuditDoorProfile | ThreeDDoor
       (widthFt - stileFt * 2) / 4,
       (heightFt - railFt * 2) / 4,
     ));
+    // Same depth rule as the Designer: a shallow catalog step is lifted to a readable depth.
     const bevelDepthFt = Math.max(0.012, Math.min(
-      Number.isFinite(requestedBevelDepth) && requestedBevelDepth > 0 ? requestedBevelDepth * INCH : RAISED_PANEL_BEVEL_DEPTH_IN * INCH,
+      effectiveRaisedBevelDepthIn(
+        Number.isFinite(requestedBevelDepth) && requestedBevelDepth > 0 ? requestedBevelDepth : RAISED_PANEL_BEVEL_DEPTH_IN,
+      ) * INCH,
       0.07,
     ));
     bevelWidthIn = bevelWidthFt / INCH;
@@ -337,20 +341,17 @@ export function buildAuditDoor(
     const bevelDepth = plan.bevelDepthIn * INCH;
     const bevelOuterWidth = Math.max(0.06, width - stile * 2);
     const bevelOuterHeight = Math.max(0.06, height - rail * 2);
-    const panelWidth = Math.max(0.04, bevelOuterWidth - bevelWidth * 2);
-    const panelHeight = Math.max(0.04, bevelOuterHeight - bevelWidth * 2);
-    const shadow = new THREE.MeshStandardMaterial({ color: "#1c1814", roughness: 0.78, metalness: 0.02, transparent: true, opacity: 0.52 });
-    const recessed = new THREE.Mesh(new THREE.BoxGeometry(bevelOuterWidth, bevelOuterHeight, 0.008), shadow);
-    recessed.position.z = -0.012;
-    recessed.userData = { raisedPanelRecess: true };
-    frame.add(recessed);
-    const bevel = new THREE.Mesh(
-      new THREE.BoxGeometry(bevelOuterWidth - 0.006, bevelOuterHeight - 0.006, Math.max(0.018, bevelDepth * 0.62)),
-      faceMaterial(color, faceTexture, profile.finishSheen, "panel", profile.grainDirection),
-    );
-    bevel.position.z = bevelDepth * 0.31;
-    bevel.userData = { raisedPanelBevel: true, insideEdgeProfile: profile.insideEdgeProfile ?? "bevel" };
-    frame.add(bevel);
+    // Same sloped bevel, groove, and raised center the Designer draws, so the audit judges the real profile.
+    attachSlopedRaisedPanel(frame, {
+      outerWidth: bevelOuterWidth,
+      outerHeight: bevelOuterHeight,
+      bevelWidth,
+      bevelDepth,
+      faceColor: color,
+      insideEdgeProfile: profile.insideEdgeProfile ?? "bevel",
+      drawerFrontType: null,
+      centerMaterial: faceMaterial(color, faceTexture, profile.finishSheen, "panel", profile.grainDirection),
+    });
     if (/ogee|bead/i.test(profile.insideEdgeProfile ?? "")) {
       const sticking = new THREE.Mesh(
         new THREE.BoxGeometry(
@@ -364,15 +365,6 @@ export function buildAuditDoor(
       sticking.userData = { profiledSticking: true, insideEdgeProfile: profile.insideEdgeProfile };
       frame.add(sticking);
     }
-    const center = new THREE.Mesh(
-      new THREE.BoxGeometry(panelWidth, panelHeight, Math.max(0.02, bevelDepth)),
-      faceMaterial(color, faceTexture, profile.finishSheen, "panel", profile.grainDirection),
-    );
-    center.position.z = bevelDepth;
-    center.castShadow = true;
-    center.receiveShadow = true;
-    center.userData = { raisedCenterPanel: true, panelConstruction: "raised" };
-    frame.add(center);
   }
 
   group.add(frame);
