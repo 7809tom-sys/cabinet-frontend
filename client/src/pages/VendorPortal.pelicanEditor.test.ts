@@ -44,10 +44,21 @@ describe("Pelican vendor catalog editor", () => {
     expect(catalogSource).toContain('accept="image/jpeg,image/png,image/webp"');
     expect(catalogSource).toContain('uploadPelicanPhoto(file, "catalog")');
     expect(catalogSource).toContain('uploadPelicanPhoto(file, "designer")');
+    expect(catalogSource).toContain('uploadPelicanPhoto(file, "roomScene")');
+    expect(catalogSource).toContain("Upload room scene photo");
+    expect(catalogSource).toContain('data-testid="pelican-room-scene-photo-preview"');
+    expect(catalogSource).toContain('alt="Current room scene photo"');
+    expect(catalogSource).toContain("pelicanRoomSceneImageUrl");
+    expect(catalogSource).toContain("roomSceneImageUrl: photos.roomSceneImageUrl");
     expect(catalogSource).toContain('target,');
     expect(catalogSource).toContain('useAsDesignerPhoto: target === "designer"');
     expect(catalogSource).toContain('alsoSetCatalogImage: target === "catalog"');
     expect(catalogSource).toContain("trimmedPelicanPhotoUrl");
+    expect(catalogSource).toContain("catalogPhotoUrl");
+    expect(catalogSource).toContain("pelicanItemSavePhotos");
+    expect(catalogSource).toContain("productForVendorEdit.fetch");
+    expect(catalogSource).toContain("productForVendorEdit.invalidate");
+    expect(catalogSource).not.toContain("imageUrl: trimmedUrl");
     expect(catalogSource).toContain("White border trimmed automatically");
     expect(catalogSource).toContain("validatePelicanProductImageFile");
     expect(catalogSource).toContain("utils.pelican.adminList.invalidate()");
@@ -59,6 +70,11 @@ describe("Pelican vendor catalog editor", () => {
     expect(catalogSource).not.toContain("gemini");
     expect(catalogSource).not.toContain("banana");
     expect(catalogSource).not.toContain("createObjectURL");
+  });
+
+  it("does not show the Pelican room scene photo on the public product page", () => {
+    const productPage = readFileSync(resolve(process.cwd(), "client/src/pages/SurfacesProduct.tsx"), "utf8");
+    expect(productPage).not.toContain("roomSceneImageUrl");
   });
 
   it("routes Pelican vendors to the shipping profile editor", () => {

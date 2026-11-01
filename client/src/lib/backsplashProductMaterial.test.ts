@@ -4,6 +4,7 @@ import { buildPhotorealPrompt } from "@shared/photorealPrompt";
 import {
   BACKSPLASH_ROOM_SCENE_FIDELITY,
   backsplashTextureWarningMessage,
+  absoluteApprovedMaterialUrl,
   mapBacksplashSelectionToMaterial,
   resolveDesignerMaterialUrl,
 } from "./backsplashProductMaterial";
@@ -129,6 +130,17 @@ describe("backsplash selection to material", () => {
       crossOrigin: "anonymous",
     });
     expect(resolveDesignerMaterialUrl("  ", "https://www.cabinetdealz.com")).toBeNull();
+    const uploaded = "/manus-storage/pelican/products/42/1710000000000-42_ab12cd34.webp";
+    expect(resolveDesignerMaterialUrl(uploaded, "https://preview.example")).toEqual({
+      url: `https://www.cabinetdealz.com${uploaded}`,
+      crossOrigin: "anonymous",
+    });
+    expect(resolveDesignerMaterialUrl(uploaded, "https://www.cabinetdealz.com")).toEqual({
+      url: uploaded,
+      crossOrigin: null,
+    });
+    expect(absoluteApprovedMaterialUrl(uploaded, "https://preview.example")).toBe(`https://www.cabinetdealz.com${uploaded}`);
+    expect(absoluteApprovedMaterialUrl("https://cdn.example/slab.jpg", "https://preview.example")).toBe("https://cdn.example/slab.jpg");
   });
 
   it("names the selected backsplash and its image in the room-scene prompt", () => {

@@ -75,6 +75,7 @@ import {
   BACKSPLASH_ROOM_SCENE_FIDELITY,
   backsplashTextureWarningMessage,
   parseBacksplashSheetInches,
+  absoluteApprovedMaterialUrl,
   resolveDesignerMaterialUrl,
 } from "@/lib/backsplashProductMaterial";
 import {
@@ -13510,21 +13511,8 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
       target: controls.target.toArray().map((value) => Number(value.toFixed(4))) as [number, number, number],
       zoom: Number(camera.zoom.toFixed(4)),
     };
-    const approvedMaterialUrl = (value: string | null | undefined) => {
-      if (!value) return null;
-      try {
-        // Project storage assets are emitted as relative paths.  Do not expand
-        // them against a temporary preview host (for example, `*.manus.space`),
-        // because the protected final-render API correctly treats that host as
-        // untrusted.  Use the permanent CabinetDealz material origin instead.
-        const origin = value.startsWith("/manus-storage/")
-          ? "https://www.cabinetdealz.com"
-          : window.location.origin;
-        return new URL(value, origin).toString();
-      } catch {
-        return null;
-      }
-    };
+    const approvedMaterialUrl = (value: string | null | undefined) =>
+      absoluteApprovedMaterialUrl(value, window.location.origin);
     const materialManifest: GeminiMaterialManifestEntry[] = [];
     // Missing swatches are resolved against the locked scene, not blockers.
     const missingMaterialInputs: string[] = [];

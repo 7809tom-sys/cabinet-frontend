@@ -9374,8 +9374,7 @@ describe("final high-resolution preview controls", () => {
     expect(source).toContain("sourceImageHash");
     expect(source).toContain('generationMethod: "manual-final-review-deterministic-webgl-v1"');
     expect(source).toContain("const approvedMaterialUrl = (value: string | null | undefined) =>");
-    expect(source).toContain('value.startsWith("/manus-storage/")');
-    expect(source).toContain('"https://www.cabinetdealz.com"');
+    expect(source).toContain("absoluteApprovedMaterialUrl(value, window.location.origin)");
     expect(source).toContain("sceneImageDataUrl: photoRenderDraft.sceneImageDataUrl");
     expect(source).toContain("provenance: photoRenderDraft.provenance");
     expect(source).toContain("if (!photoRenderDraft)");
