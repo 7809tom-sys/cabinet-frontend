@@ -39,6 +39,7 @@ import {
   type WallOpening,
   type WallSide,
 } from "./design";
+import { normalizeOverApplianceWallMounts } from "./overApplianceMount";
 import { planAutoDesignBaseSegment } from "./autoDesignSeamFillers";
 import { applyFramelessDoorClearanceFillers } from "./framelessDoorClearance";
 import {
@@ -867,7 +868,7 @@ export function applyDesignerLayoutRules(input: {
   sinks?: readonly SinkFixture[];
   trimPieces?: readonly TrimRunPiece[];
 }): DesignerLayoutRuleResult {
-  let placed = normalizeGlassStackersToParentFronts(
+  let placed = normalizeOverApplianceWallMounts(normalizeGlassStackersToParentFronts(
     normalizeStandardWallMounts(
       normalizeWd18CountertopMounts(
         normalizeOverSinkWallMounts([...input.placed], [...input.openings], input.room),
@@ -876,7 +877,7 @@ export function applyDesignerLayoutRules(input: {
       input.room,
     ),
     input.room,
-  );
+  ), input.room);
   placed = applyMissingBlindCornerFillers({
     placed, room: input.room, fillers: input.fillers, makeUid: input.makeUid, styleId: input.styleId,
   });

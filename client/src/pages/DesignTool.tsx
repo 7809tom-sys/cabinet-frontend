@@ -116,6 +116,7 @@ import { countertopToastVisible, COUNTERTOP_TOAST_TIMEOUT_MS, useDebouncedValue,
 import { ColorStyleQuickPicker } from "@/components/design/ColorStyleQuickPicker";
 import { ApproveDoorButton } from "@/components/admin/ApproveDoorButton";
 import { clampRefrigeratorAssemblyToPanels } from "@/lib/refrigeratorPanelClamp";
+import { overApplianceWallMount } from "@/lib/overApplianceMount";
 import { StyleSamplePreview } from "@/components/design/StyleSamplePreview";
 import type { SampleStyleImages } from "@/lib/sampleImageQa";
 import { attachedFillerLeftoverOptions, attachedFillerNeedsReview, attachedFillerPlanForCandidate, attachedFillerSizeIssues, type AttachedFillerChoice, type AttachedFillerLeftoverOptions, type AttachedFillerSizeIssue } from "@/lib/cabinetAttachedFillers";
@@ -7806,6 +7807,21 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	      const bridgeMountBottom = requestedIslandFace ? null : sinkMountBottom ?? bridgeMountBottomAboveWindow(finalCab, openings, room);
       if (bridgeMountBottom != null) {
         finalCab = { ...finalCab, mountBottom: bridgeMountBottom };
+      }
+      // Tom's rule (Nov 1): a 12-24 inch upper dropped over a fridge or range mounts at 72 inches (or above
+      // the fridge / over-the-range microwave when that is higher), so it never lands inside the appliance.
+      // A cabinet over a fridge joins that fridge's assembly. Hoods keep their own mounting.
+      const overApplianceMount = requestedIslandFace || bridgeMountBottom != null ? null : overApplianceWallMount(finalCab, prev, room);
+      if (overApplianceMount) {
+        finalCab = {
+          ...finalCab,
+          mountBottom: overApplianceMount.mountBottom,
+          ...(overApplianceMount.refrigeratorUid ? { refrigeratorAssemblyId: overApplianceMount.refrigeratorUid, refrigeratorAssemblyRole: "bridge" as const } : {}),
+        };
+        if (overApplianceMount.warning) {
+          setPlacementWarning(overApplianceMount.warning);
+          toast.warning(overApplianceMount.warning, { duration: 9000 });
+        }
       }
 	      // Do not top-align a short wall cabinet to an adjacent upper. The room
 	      // wall standard is a 54-inch cabinet bottom. `bridgeMountBottom` above
