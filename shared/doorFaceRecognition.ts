@@ -108,6 +108,10 @@ export type CabinetFacePlan = {
     solidColor: string;
     /** Frame-free grain patch for sides/end panels/skins, or null when no clean patch exists. */
     grainUrl: string | null;
+    faceTileIn?: [number, number];
+    faceTileDrawerIn?: [number, number];
+    normalUrl?: string | null;
+    tintHex?: string | null;
   };
 };
 
@@ -271,18 +275,24 @@ export function resolveCabinetFaceImages(
   // A DL style that maps to a DLC_FR26 finish uses the processed (cropped) door and drawer PNGs.
   const dlc = findDlcFinishForStyle(style);
   if (dlc) {
+    // Door and drawer faces use the finish's frame-free grain; the 3D rails and stiles supply the frame.
+    // The photo crops stay in the catalog but are never mapped onto a face (they carried frame lines).
     return {
-      sourceKind: dlc.drawer ? "split" : "legacy-door",
-      doorUrl: dlc.door,
-      drawerUrl: wall ? null : dlc.drawer,
-      sections: wall ? 1 : dlc.drawer ? 2 : 1,
-      drawerTextureApplied: !wall && Boolean(dlc.drawer),
+      sourceKind: "split",
+      doorUrl: dlc.faceDoor,
+      drawerUrl: wall ? null : dlc.faceDrawer,
+      sections: wall ? 1 : 2,
+      drawerTextureApplied: !wall,
       grainRotation: 0,
       dlcCrop: {
         slug: dlc.slug,
         doorSize: dlc.doorSize,
         drawerSize: dlc.drawerSize,
-        drawerSolidColor: dlc.drawer ? null : dlc.solidColor,
+        drawerSolidColor: null,
+        faceTileIn: dlc.faceTileIn,
+        faceTileDrawerIn: dlc.faceTileDrawerIn,
+        normalUrl: dlc.faceNormal,
+        tintHex: dlc.faceTint,
         solidColor: dlc.solidColor,
         grainUrl: dlc.grainFrameFree ? dlc.grain : null,
       },

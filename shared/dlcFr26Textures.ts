@@ -101,6 +101,28 @@ export interface DlcFaceCrop {
   solidColor: string;
   /** Frame-free grain patch for sides, end panels and skins; null = solid colour only. */
   grainUrl: string | null;
+  /** Face grain: physical tile size in inches for door and drawer faces. Present = faces use grain, not a photo. */
+  faceTileIn?: [number, number];
+  faceTileDrawerIn?: [number, number];
+  /** Normal map for grain depth (European White Oak). */
+  normalUrl?: string | null;
+  /** Multiplier colour that brings the grain texture to the sample colour. */
+  tintHex?: string | null;
+}
+
+/**
+ * Grain faces: tile the frame-free grain at its real physical size across the face (mirrored tiles, so
+ * no seams). No photo frame lines are ever on a face; the 3D rails and stiles supply the frame.
+ */
+export function dlcFaceGrainRepeat(
+  face: DlcFace,
+  crop: DlcFaceCrop,
+  cabinet: { widthIn: number; heightIn: number; isWall: boolean },
+): { offsetX: number; offsetY: number; repeatX: number; repeatY: number } | null {
+  const tile = face === "door" ? crop.faceTileIn : crop.faceTileDrawerIn ?? crop.faceTileIn;
+  if (!tile || !(tile[0] > 0) || !(tile[1] > 0)) return null;
+  const p = dlcFaceProportions(face, cabinet);
+  return { offsetX: 0, offsetY: 0, repeatX: Math.max(0.05, p.widthIn / tile[0]), repeatY: Math.max(0.05, p.heightIn / tile[1]) };
 }
 
 function srgbLuminanceLinear(hex: string): number {
