@@ -21,7 +21,7 @@ import { refrigeratorEndPanelCutDownNote } from "@/lib/refrigeratorEndPanelCut";
 import { roomWallRunFrames } from "@/lib/design";
 import {
   baseboardSpans, mosaicFinishedEdges, mosaicInterlockSpecForKey, mosaicInterlockUnitPlan, mosaicPhaseAnchorEdge, mosaicPitchIn,
-  mosaicSheetShade, clampMosaicGroutIn, type MosaicInterlockSpec,
+  clampMosaicGroutIn, type MosaicInterlockSpec,
 } from "@/lib/backsplashMosaic";
 import { flooringRotationRadians, type FlooringRotationDegrees } from "@/lib/flooringLayout";
 import { threeDLatticeRackLayout } from "@/lib/latticeRackLayout";
@@ -10154,57 +10154,6 @@ export function threeDBacksplashTransform(segment: ThreeDBacksplashSegment, room
 export const THREE_D_BACKSPLASH_EDGE_FACE_IN = 0.375;
 export const THREE_D_BACKSPLASH_EDGE_DEPTH_IN = 0.25;
 
-/**
- * One quad per sheet (cell boundaries fall on whole texture repeats), with vertex colours carrying a +/-2.5%
- * brightness lot shade. Positions are plane-local; UVs come from the same wall-inch mapping as a plain plane.
- */
-export function threeDBacksplashSheetGeometry(
-  widthIn: number,
-  heightIn: number,
-  uvAt: (planeU: number, planeV: number) => { u: number; v: number },
-  seed: number,
-): THREE.BufferGeometry {
-  const origin = uvAt(0, 0);
-  const du = uvAt(1, 0).u - origin.u;
-  const dv = uvAt(0, 1).v - origin.v;
-  const breaks = (start: number, delta: number) => {
-    const points = new Set<number>([0, 1]);
-    if (Math.abs(delta) > 1e-9) {
-      const lo = Math.min(start, start + delta);
-      const hi = Math.max(start, start + delta);
-      for (let k = Math.ceil(lo + 1e-6); k < hi - 1e-6; k += 1) points.add((k - start) / delta);
-    }
-    return Array.from(points).filter((value) => value >= 0 && value <= 1).sort((a, b) => a - b);
-  };
-  const us = breaks(origin.u, du);
-  const vs = breaks(origin.v, dv);
-  const positions: number[] = [];
-  const uvs: number[] = [];
-  const colors: number[] = [];
-  const corner = (pu: number, pv: number, shade: number) => {
-    const mapped = uvAt(pu, pv);
-    positions.push((pu - 0.5) * widthIn * INCH, (pv - 0.5) * heightIn * INCH, 0);
-    uvs.push(mapped.u, mapped.v);
-    colors.push(shade, shade, shade);
-  };
-  for (let i = 0; i < us.length - 1; i += 1) {
-    for (let j = 0; j < vs.length - 1; j += 1) {
-      const u0 = us[i]!; const u1 = us[i + 1]!; const v0 = vs[j]!; const v1 = vs[j + 1]!;
-      if (u1 - u0 < 1e-6 || v1 - v0 < 1e-6) continue;
-      const mid = uvAt((u0 + u1) / 2, (v0 + v1) / 2);
-      const shade = mosaicSheetShade(Math.floor(mid.u), Math.floor(mid.v), seed);
-      corner(u0, v0, shade); corner(u1, v0, shade); corner(u1, v1, shade);
-      corner(u0, v0, shade); corner(u1, v1, shade); corner(u0, v1, shade);
-    }
-  }
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-  geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
-  geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
-  geometry.setAttribute("normal", new THREE.Float32BufferAttribute(Array.from({ length: positions.length / 3 }, () => [0, 0, 1]).flat(), 3));
-  return geometry;
-}
-
 /** Baseboard height and projection (inches). Run only along exposed wall, never behind a toe kick. */
 export const THREE_D_BASEBOARD_HEIGHT_IN = 4;
 export const THREE_D_BASEBOARD_DEPTH_IN = 0.5;
@@ -10263,22 +10212,18 @@ function addThreeDBacksplash(
       color: "#ffffff",
       map: texture,
       side: THREE.FrontSide,
-      vertexColors: Boolean(interlockSpec),
       ...threeDPhysicalSurfaceProfile("backsplash", true),
     });
     material.userData = { selectedSurfaceRole: "backsplash", usesAuthoritativeProductImage: !sourceTexture.userData?.representativePreview, representativePreview: Boolean(sourceTexture.userData?.representativePreview), tileModuleIn: moduleIn, tileModuleHeightIn: moduleHeightIn, groutJointIn, backsplashPatternKind: patternKind, materialOnlyNoGeometryChange: true };
-    // Interlocking sheets are built sheet by sheet so each can carry its own tiny lot shade; other tiles stay one plane.
-    const geometry = interlockSpec
-      ? threeDBacksplashSheetGeometry(widthIn, heightIn, uvAt, segment.side.length * 7 + segment.side.charCodeAt(0))
-      : new THREE.PlaneGeometry(widthIn * INCH, heightIn * INCH);
-    if (!interlockSpec) {
-      const uv = geometry.getAttribute("uv");
-      for (let index = 0; index < uv.count; index += 1) {
-        const mapped = uvAt(uv.getX(index), uv.getY(index));
-        uv.setXY(index, mapped.u, mapped.v);
-      }
-      uv.needsUpdate = true;
+    // HARD RULE (lib/backsplashMosaic.ts): interlocking mosaics are ONE plane with ONE material. No per-sheet
+    // shading, vertex colors or borders; the only thing visible at a sheet joint is the even grout line in the texture.
+    const geometry = new THREE.PlaneGeometry(widthIn * INCH, heightIn * INCH);
+    const uv = geometry.getAttribute("uv");
+    for (let index = 0; index < uv.count; index += 1) {
+      const mapped = uvAt(uv.getX(index), uv.getY(index));
+      uv.setXY(index, mapped.u, mapped.v);
     }
+    uv.needsUpdate = true;
     const mesh = new THREE.Mesh(geometry, material);
     const transform = threeDBacksplashTransform({ ...segment, start: render.start, end: render.end }, room);
     mesh.position.set(transform.x * INCH, transform.y * INCH, transform.z * INCH);

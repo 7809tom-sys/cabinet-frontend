@@ -4,14 +4,27 @@ import {
 } from "./design";
 
 /**
- * Interlocking mosaic backsplash (3D and elevation).
+ * HARD RULE (owner, not a preference): INTERLOCKING MOSAICS HAVE NO VISIBLE SHEET EDGES.
+ *
+ * Applies to every interlocking mosaic product: Desert Clay, Arctic Vail, Carbon Hex, Concord Square,
+ * Glacier Shift and Golden Trace, in the 3D view AND the elevation view.
+ *
+ *  1. Each sheet sits at its real interlock spacing (the pitch), flush against the next, so the only thing
+ *     visible at any joint is one even grout line of 1/16 to 1/8 inch. The grout at a sheet edge is the same
+ *     width and color as the grout inside the sheet (the product's own chip joint, `internalGroutIn`).
+ *  2. No per-sheet brightness or tint change, no darker outline, no seam where sheets meet. The backsplash must
+ *     read as one continuous interlocking surface, never a grid of rectangles. Do not add per-sheet shading,
+ *     vertex colors, sheet borders or any sheet-by-sheet variation to these products.
+ *  3. Any change here must keep `backsplashMosaic.test.ts` (one test group per product) passing.
+ *
+ * Interlocking mosaic: repeat at the interlock pitch, not the photo's outer size.
  *
  * The catalog photos show a whole sheet including the fork-shaped fingers that stick out past the sheet's repeat
  * spacing (the "pitch"). Repeating that photo at its OUTER size leaves the fingers beside each other instead of
  * inside each other, which is the jagged, uneven seam. Each sheet is instead repeated at its interlock pitch: the
  * photo is cropped to one repeating unit, and one even grout line (1/16 to 1/8 inch) is drawn at every joint.
  *
- * ESTIMATE WARNING: the overhang values below (outer size minus pitch) are estimates, not measurements of the
+ * ESTIMATE WARNING: the overhang and internal grout values below are estimates, not measurements of the
  * product photos. They are kept in this one table so a real measurement is a one-line change.
  */
 export const MOSAIC_GROUT_MIN_IN = 1 / 16;
@@ -32,6 +45,9 @@ export type MosaicInterlockSpec = {
   /** How far the fingers stick out past the repeat spacing, per axis (estimate, see warning above). */
   overhangXIn: number;
   overhangYIn: number;
+  /** The product's own chip-to-chip joint inside the sheet (estimate). The sheet-edge grout is drawn at exactly this width. */
+  internalGroutIn: number;
+  /** Width of the grout line painted at every sheet joint. Always equal to `internalGroutIn`. */
   groutIn: number;
   /** Matched grout color. Null means "derive it from the photo" (darkened mean of the sheet). */
   groutColor: string | null;
@@ -40,7 +56,7 @@ export type MosaicInterlockSpec = {
 
 const spec = (key: string, name: string, w: number, h: number, overhang: number): MosaicInterlockSpec => ({
   key, name, outerWidthIn: w, outerHeightIn: h, overhangXIn: overhang, overhangYIn: overhang,
-  groutIn: MOSAIC_GROUT_DEFAULT_IN, groutColor: null, measured: false,
+  internalGroutIn: MOSAIC_GROUT_DEFAULT_IN, groutIn: MOSAIC_GROUT_DEFAULT_IN, groutColor: null, measured: false,
 });
 /** Grout colors matched to each product's tone. ESTIMATES from the catalog names/photos, not measured. */
 const GROUT_COLOR_BY_NAME: Record<string, string> = {
@@ -125,15 +141,6 @@ export function mosaicUvForPoint(coordIn: number, elevationIn: number, pitchXIn:
     u: mosaicAlongForTile(coordIn, wallLengthIn, anchor) / Math.max(0.125, pitchXIn),
     v: elevationIn / Math.max(0.125, pitchYIn),
   };
-}
-
-/** Deterministic per-sheet lot shade, +/-2.5% in brightness only (no hue shift), so a long run does not look stamped. */
-export function mosaicSheetShade(cellU: number, cellV: number, seed: number): number {
-  let h = (Math.imul(cellU | 0, 374761393) + Math.imul(cellV | 0, 668265263) + Math.imul(seed | 0, 2147483647)) | 0;
-  h = Math.imul(h ^ (h >>> 13), 1274126177);
-  h ^= h >>> 16;
-  const unit = ((h >>> 0) % 1000) / 999;
-  return 1 + (unit - 0.5) * 0.05;
 }
 
 export type WallInterval = { start: number; end: number };

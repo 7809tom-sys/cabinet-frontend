@@ -13,9 +13,9 @@ describe("the 3D and elevation renderers use the interlock helpers", () => {
     expect(viewer).toContain("texture.generateMipmaps = true;");
     expect(viewer).toContain("texture.anisotropy = Math.min(anisotropyCap, renderer.capabilities.getMaxAnisotropy());");
   });
-  it("3D: the inside corner is anchored, sheets get a lot shade, cut edges get a finished strip", () => {
+  it("3D: the inside corner is anchored and cut edges get a finished strip; sheets get no shading (hard rule)", () => {
     expect(viewer).toContain("mosaicPhaseAnchorEdge(touches.start, touches.end)");
-    expect(viewer).toContain("threeDBacksplashSheetGeometry(");
+    expect(viewer).not.toContain("threeDBacksplashSheetGeometry(");
     expect(viewer).toContain("mosaicFinishedEdges(segment, segments");
   });
   it("3D: baseboards come only from baseboardSpans (exposed wall), and the plank floor gets slight depth", () => {

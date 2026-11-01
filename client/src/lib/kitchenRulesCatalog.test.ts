@@ -47,6 +47,14 @@ describe("kitchen rules catalog", () => {
     expect(KITCHEN_RULE_SEED.find((rule) => rule.ruleCode === "conflict-gas-hood-30")?.implementationStatus).toBe("reference");
   });
 
+  it("lists the interlocking-mosaic hard rule as an implemented auto rule in the Backsplash category", () => {
+    const rule = KITCHEN_RULE_SEED.find((item) => item.ruleCode === "owner-mosaic-interlock");
+    expect(rule).toMatchObject({ category: "Backsplash", enforcementKind: "auto", implementationStatus: "implemented" });
+    for (const name of ["Desert Clay", "Arctic Vail", "Carbon Hex", "Concord Square", "Glacier Shift", "Golden Trace"]) {
+      expect(rule!.ruleDescription).toContain(name);
+    }
+  });
+
   it("keeps Kitchen Rules off the designer and sales-rep admin screens", () => {
     const designerBlock = adminPage.slice(adminPage.indexOf("if (isDesigner)"), adminPage.indexOf("return (", adminPage.indexOf("if (isDesigner)") + 20));
     const salesBlock = adminPage.slice(adminPage.indexOf("if (isSalesRep)"), adminPage.indexOf("if (isDesigner)"));

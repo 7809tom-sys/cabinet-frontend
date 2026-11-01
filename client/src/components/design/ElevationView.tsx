@@ -1586,8 +1586,9 @@ export function ElevationView({
                         : `${sheet.widthIn * ppi}px ${sheet.heightIn * ppi}px`)
                       : (realistic ? (bgSize ?? (bsMat.pattern === "hexagon" ? `${tileWPx}px ${tileHPx}px` : undefined)) : undefined),
                     backgroundRepeat: showProductImage ? "repeat" : undefined,
-                    borderTop: `1px solid ${missingProductImage ? "#b45309" : bsMat.grout}`,
-                    borderBottom: `1px solid ${missingProductImage ? "#b45309" : bsMat.grout}`,
+                    // Hard rule (lib/backsplashMosaic.ts): an interlocking mosaic draws no outline, only the even grout line.
+                    borderTop: interlock && showProductImage ? "none" : `1px solid ${missingProductImage ? "#b45309" : bsMat.grout}`,
+                    borderBottom: interlock && showProductImage ? "none" : `1px solid ${missingProductImage ? "#b45309" : bsMat.grout}`,
                     opacity: 0.85,
                     zIndex: 1,
                   }}
