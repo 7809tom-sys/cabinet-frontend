@@ -1785,7 +1785,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const lastFaucetWindowNotesRef = useRef<FaucetWindowClearanceNote[]>([]);
   const announceFaucetWindowNotes = useCallback((notes: readonly FaucetWindowClearanceNote[]) => {
     lastFaucetWindowNotesRef.current = [...notes];
-    for (const note of notes) toast.info(note.text, { duration: 12000 });
+    // Window rule: a window only changes as a last resort, so the person always sees it as a warning.
+    for (const note of notes) toast.warning(note.text, { duration: 15000 });
   }, []);
   layoutLockedRef.current = layoutLocked;
   const layoutHasRefrigerator = useMemo(() => placed.some(isRefrigeratorAppliance), [placed]);
@@ -3934,6 +3935,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     const announcedFaucetNotes = new Set(lastFaucetWindowNotesRef.current.map((note) => note.text));
     for (const note of run.notes) {
       if (preliminaryFaucetNotes.has(note) && announcedFaucetNotes.size > 0) continue;
+      if (preliminaryFaucetNotes.has(note)) { toast.warning(note, { duration: 15000 }); continue; }
       toast.info(note, { duration: 15000 });
     }
     for (const move of run.applianceMoves) {
