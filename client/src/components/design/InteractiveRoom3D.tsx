@@ -19,6 +19,10 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { APPLIANCES, BLIND_CORNER_FILLER_WIDTH_IN, COUNTERTOP_DEPTH_IN, FURNITURE_CATALOG, STD, applianceAppearanceImage, bearsCountertop, isBaseHeightAppliance, blindCornerRearCountertopExtensionIn, blindPullRange, cabinetWall, cabinetWallDragPreview, cornerLegRatioForPlaced, cornerRotationForPlaced, countertopRunFaceNormal, countertopSurfacePlanPolygon, countertopSurfaces, crownBlockingCabinets, crownEligibleCabinets, customWallCabinetSide, drywallPonyWallAppearance, DESK_TOP_HEIGHT_IN, elevationBox, formatEighthInches, formatInches, glassDoorShelfCount, isKneeDrawerItem, isAgainstWall, isBaseEndCornerCabinet, isCustomRoomWall, isFillerItem, fillerWidthRange, isGlassDoorCabinet, isMicrowaveOverRangePair, isRangeHoodPlacement, isRangeOrOven, isRefrigerator, isStacker, isWallRunDraggable, isWd18CountertopDrawerCabinet, kitchenCrestGenericOpenEndShelfCount, normalizeInstalledFillersToAdjacentCabinets, peninsulaCountertopPonyWallBackExtensionIn, peninsulaCountertopPonyWallBarOverhang, peninsulaCountertopSeatingOverhang, peninsulaCountertopWaterfallEnd, peninsulaLowerWorktopOppositeSideExtensionIn, peninsulaRunEndpoints, placedCornerGeometryKind, placedFootprint, ponyWallMiteredFootprint, ponyWallPlanFrame, potFillerMountedRange, rangeVisualAppearance, refrigeratorBayVerificationMetrics, resolveCabinetHardwarePosition, resolveSwing, roomWallAppearance, seatedWallRunFrame, wallRunFrame, wallAngleEndHandForPlacement, selectedLowerCabinetWallPlacement, sinkPlanDimensions, usesRaisedFloorWallDoorPull, wallCabinetFitMeasure, wallGapFitPreview, wallGapFreehandPreview, wallGaps, wallPlacementAt, wallRunOffset, wallRunSpan, wallSpanMeasure, wallLength, wd18CountertopFaceLayout, type CabinetWallDragPreview, type CountertopSurface, type IslandZone, type PlacedCabinet, type PlacedCornerGeometryKind, type PlacedFurniture, type PonyWall, type PotFillerFixture, rotatedSize, type RoomData, type SinkFixture, type WallCabinetFitMeasure, type WallGapFitPreview, type WallOpening, type WallSide, type WallSpanMeasure, wallTopLimit, } from "@/lib/design";
 import { refrigeratorEndPanelCutDownNote } from "@/lib/refrigeratorEndPanelCut";
 import { roomWallRunFrames } from "@/lib/design";
+import {
+  baseboardSpans, mosaicFinishedEdges, mosaicInterlockSpecForKey, mosaicInterlockUnitPlan, mosaicPhaseAnchorEdge, mosaicPitchIn,
+  mosaicSheetShade, clampMosaicGroutIn, type MosaicInterlockSpec,
+} from "@/lib/backsplashMosaic";
 import { flooringRotationRadians, type FlooringRotationDegrees } from "@/lib/flooringLayout";
 import { threeDLatticeRackLayout } from "@/lib/latticeRackLayout";
 import { PLATE_RACK_FRAME_IN, plateRackDividerLayout } from "@/lib/plateRackLayout";
@@ -1858,6 +1862,32 @@ function croppedThreeDRetailImage(
   const context = canvas.getContext("2d");
   if (!context) return source;
   context.drawImage(source, bounds.x, bounds.y, bounds.width, bounds.height, 0, 0, canvas.width, canvas.height);
+  return canvas;
+}
+
+/**
+ * One repeating unit of an interlocking mosaic: the photo cropped to the interlock pitch, with one even grout line
+ * along its top and right edge so every joint, including the joints between sheets, carries the same line.
+ */
+function interlockedMosaicUnitImage(
+  source: HTMLImageElement | HTMLCanvasElement,
+  item: MosaicInterlockSpec,
+  maxUnitPx: number,
+): HTMLImageElement | HTMLCanvasElement {
+  const width = (source as HTMLImageElement).naturalWidth || source.width;
+  const height = (source as HTMLImageElement).naturalHeight || source.height;
+  if (!width || !height || typeof document === "undefined") return source;
+  const plan = mosaicInterlockUnitPlan(item, width, height, maxUnitPx);
+  const canvas = document.createElement("canvas");
+  canvas.width = plan.width;
+  canvas.height = plan.height;
+  const context = canvas.getContext("2d");
+  if (!context) return source;
+  context.imageSmoothingQuality = "high";
+  context.drawImage(source, plan.source.x, plan.source.y, plan.source.width, plan.source.height, 0, 0, plan.width, plan.height);
+  context.fillStyle = item.groutColor ?? "#8a8782";
+  context.fillRect(0, 0, plan.width, plan.groutYPx);
+  context.fillRect(plan.width - plan.groutXPx, 0, plan.groutXPx, plan.height);
   return canvas;
 }
 
@@ -9865,6 +9895,8 @@ export function threeDBacksplashPlaneUv(
   renderEnd: number,
   moduleIn = THREE_D_BACKSPLASH_TILE_SIZE_IN,
   moduleHeightIn = moduleIn,
+  /** Set when the run's only inside corner is at its end: tiles are then counted from that corner. */
+  phase?: { anchor: "start" | "end"; wallLengthIn: number },
 ) {
   const safeModuleIn = Math.max(0.125, moduleIn);
   const safeModuleHeightIn = Math.max(0.125, moduleHeightIn);
@@ -9872,7 +9904,31 @@ export function threeDBacksplashPlaneUv(
   const reversed = segment.side === "left" || segment.side === "bottom";
   const along = reversed ? renderEnd - planeU * span : renderStart + planeU * span;
   const elevation = segment.bottom + planeV * (segment.top - segment.bottom);
-  return { u: along / safeModuleIn, v: elevation / safeModuleHeightIn };
+  const tileAlong = phase?.anchor === "end" ? phase.wallLengthIn - along : along;
+  return { u: tileAlong / safeModuleIn, v: elevation / safeModuleHeightIn };
+}
+
+/** Which ends of a backsplash run meet another backsplash plane at an inside corner. */
+export function threeDBacksplashCornerTouches(
+  segment: ThreeDBacksplashSegment,
+  room: Pick<RoomData, "width" | "depth">,
+  segments: ThreeDBacksplashSegment[],
+): { start: boolean; end: boolean } {
+  if (!threeDBacksplashSideIsCardinal(segment.side)) return { start: false, end: false };
+  const tolerance = 0.35;
+  const reaches = (other: ThreeDBacksplashSegment, at: number) => other.start <= at + tolerance && other.end >= at - tolerance;
+  if (segment.side === "top" || segment.side === "bottom") {
+    const cornerY = segment.side === "top" ? 0 : room.depth;
+    return {
+      start: segment.start <= tolerance && segments.some((other) => other.side === "left" && reaches(other, cornerY)),
+      end: segment.end >= room.width - tolerance && segments.some((other) => other.side === "right" && reaches(other, cornerY)),
+    };
+  }
+  const cornerX = segment.side === "left" ? 0 : room.width;
+  return {
+    start: segment.start <= tolerance && segments.some((other) => other.side === "top" && reaches(other, cornerX)),
+    end: segment.end >= room.depth - tolerance && segments.some((other) => other.side === "bottom" && reaches(other, cornerX)),
+  };
 }
 
 function threeDBacksplashSideIsCardinal(side: string): side is WallSide {
@@ -10094,6 +10150,83 @@ export function threeDBacksplashTransform(segment: ThreeDBacksplashSegment, room
   };
 }
 
+/** Face width and projection of the finished-edge strip on a cut backsplash edge (inches). */
+export const THREE_D_BACKSPLASH_EDGE_FACE_IN = 0.375;
+export const THREE_D_BACKSPLASH_EDGE_DEPTH_IN = 0.25;
+
+/**
+ * One quad per sheet (cell boundaries fall on whole texture repeats), with vertex colours carrying a +/-2.5%
+ * brightness lot shade. Positions are plane-local; UVs come from the same wall-inch mapping as a plain plane.
+ */
+export function threeDBacksplashSheetGeometry(
+  widthIn: number,
+  heightIn: number,
+  uvAt: (planeU: number, planeV: number) => { u: number; v: number },
+  seed: number,
+): THREE.BufferGeometry {
+  const origin = uvAt(0, 0);
+  const du = uvAt(1, 0).u - origin.u;
+  const dv = uvAt(0, 1).v - origin.v;
+  const breaks = (start: number, delta: number) => {
+    const points = new Set<number>([0, 1]);
+    if (Math.abs(delta) > 1e-9) {
+      const lo = Math.min(start, start + delta);
+      const hi = Math.max(start, start + delta);
+      for (let k = Math.ceil(lo + 1e-6); k < hi - 1e-6; k += 1) points.add((k - start) / delta);
+    }
+    return Array.from(points).filter((value) => value >= 0 && value <= 1).sort((a, b) => a - b);
+  };
+  const us = breaks(origin.u, du);
+  const vs = breaks(origin.v, dv);
+  const positions: number[] = [];
+  const uvs: number[] = [];
+  const colors: number[] = [];
+  const corner = (pu: number, pv: number, shade: number) => {
+    const mapped = uvAt(pu, pv);
+    positions.push((pu - 0.5) * widthIn * INCH, (pv - 0.5) * heightIn * INCH, 0);
+    uvs.push(mapped.u, mapped.v);
+    colors.push(shade, shade, shade);
+  };
+  for (let i = 0; i < us.length - 1; i += 1) {
+    for (let j = 0; j < vs.length - 1; j += 1) {
+      const u0 = us[i]!; const u1 = us[i + 1]!; const v0 = vs[j]!; const v1 = vs[j + 1]!;
+      if (u1 - u0 < 1e-6 || v1 - v0 < 1e-6) continue;
+      const mid = uvAt((u0 + u1) / 2, (v0 + v1) / 2);
+      const shade = mosaicSheetShade(Math.floor(mid.u), Math.floor(mid.v), seed);
+      corner(u0, v0, shade); corner(u1, v0, shade); corner(u1, v1, shade);
+      corner(u0, v0, shade); corner(u1, v1, shade); corner(u0, v1, shade);
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+  geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+  geometry.setAttribute("normal", new THREE.Float32BufferAttribute(Array.from({ length: positions.length / 3 }, () => [0, 0, 1]).flat(), 3));
+  return geometry;
+}
+
+/** Baseboard height and projection (inches). Run only along exposed wall, never behind a toe kick. */
+export const THREE_D_BASEBOARD_HEIGHT_IN = 4;
+export const THREE_D_BASEBOARD_DEPTH_IN = 0.5;
+
+function addThreeDBaseboards(root: THREE.Group, placed: PlacedCabinet[], openings: WallOpening[], room: RoomData) {
+  for (const side of ["top", "bottom", "left", "right"] as WallSide[]) {
+    for (const span of baseboardSpans(placed, openings, room, side)) {
+      const transform = threeDBacksplashTransform({ side, start: span.start, end: span.end, bottom: 0, top: THREE_D_BASEBOARD_HEIGHT_IN } as ThreeDBacksplashSegment, room);
+      const board = new THREE.Mesh(
+        new THREE.BoxGeometry((span.end - span.start) * INCH, THREE_D_BASEBOARD_HEIGHT_IN * INCH, THREE_D_BASEBOARD_DEPTH_IN * INCH),
+        new THREE.MeshStandardMaterial({ color: "#eee9df", roughness: 0.5, metalness: 0 }),
+      );
+      board.position.set(transform.x * INCH, transform.y * INCH, transform.z * INCH);
+      board.rotation.y = transform.rotation;
+      board.translateZ((THREE_D_BASEBOARD_DEPTH_IN / 2) * INCH);
+      board.receiveShadow = true;
+      board.userData = { baseboard: true, side, start: span.start, end: span.end };
+      root.add(board);
+    }
+  }
+}
+
 function addThreeDBacksplash(
   root: THREE.Group,
   segments: ThreeDBacksplashSegment[],
@@ -10118,27 +10251,63 @@ function addThreeDBacksplash(
     const moduleHeightIn = Number(sourceTexture.userData?.backsplashModuleHeightIn) || moduleIn;
     const groutJointIn = Number(sourceTexture.userData?.backsplashGroutJointIn) || null;
     const patternKind = sourceTexture.userData?.backsplashPatternKind ?? "field-tile";
+    const interlockSpec = patternKind === "interlocking-mosaic" ? mosaicInterlockSpecForKey(sourceTexture.userData?.backsplashInterlockKey) : null;
     texture.needsUpdate = true;
+    // Inside corner: both walls count tiles from the shared corner, so the joints meet there.
+    const sideLengthIn = threeDBacksplashSideIsCardinal(segment.side) ? wallLength(segment.side, room as RoomData) : 0;
+    const touches = threeDBacksplashCornerTouches(segment, room, segments);
+    const anchor = sideLengthIn > 0 ? mosaicPhaseAnchorEdge(touches.start, touches.end) : "start";
+    const phase = anchor === "end" ? { anchor, wallLengthIn: sideLengthIn } : undefined;
+    const uvAt = (planeU: number, planeV: number) => threeDBacksplashPlaneUv(segment, planeU, planeV, render.start, render.end, moduleIn, moduleHeightIn, phase);
     const material = new THREE.MeshPhysicalMaterial({
       color: "#ffffff",
       map: texture,
       side: THREE.FrontSide,
+      vertexColors: Boolean(interlockSpec),
       ...threeDPhysicalSurfaceProfile("backsplash", true),
     });
-    material.userData = { selectedSurfaceRole: "backsplash", usesAuthoritativeProductImage: !sourceTexture.userData?.representativePreview, representativePreview: Boolean(sourceTexture.userData?.representativePreview), tileModuleIn: moduleIn, tileModuleHeightIn: moduleHeightIn, groutJointIn, backsplashPatternKind: patternKind, continuousTileField: true, worldInchUv: true, materialOnlyNoGeometryChange: true };
-    const geometry = new THREE.PlaneGeometry(widthIn * INCH, heightIn * INCH);
-    const uv = geometry.getAttribute("uv");
-    for (let index = 0; index < uv.count; index += 1) {
-      const mapped = threeDBacksplashPlaneUv(segment, uv.getX(index), uv.getY(index), render.start, render.end, moduleIn, moduleHeightIn);
-      uv.setXY(index, mapped.u, mapped.v);
+    material.userData = { selectedSurfaceRole: "backsplash", usesAuthoritativeProductImage: !sourceTexture.userData?.representativePreview, representativePreview: Boolean(sourceTexture.userData?.representativePreview), tileModuleIn: moduleIn, tileModuleHeightIn: moduleHeightIn, groutJointIn, backsplashPatternKind: patternKind, materialOnlyNoGeometryChange: true };
+    // Interlocking sheets are built sheet by sheet so each can carry its own tiny lot shade; other tiles stay one plane.
+    const geometry = interlockSpec
+      ? threeDBacksplashSheetGeometry(widthIn, heightIn, uvAt, segment.side.length * 7 + segment.side.charCodeAt(0))
+      : new THREE.PlaneGeometry(widthIn * INCH, heightIn * INCH);
+    if (!interlockSpec) {
+      const uv = geometry.getAttribute("uv");
+      for (let index = 0; index < uv.count; index += 1) {
+        const mapped = uvAt(uv.getX(index), uv.getY(index));
+        uv.setXY(index, mapped.u, mapped.v);
+      }
+      uv.needsUpdate = true;
     }
-    uv.needsUpdate = true;
     const mesh = new THREE.Mesh(geometry, material);
     const transform = threeDBacksplashTransform({ ...segment, start: render.start, end: render.end }, room);
     mesh.position.set(transform.x * INCH, transform.y * INCH, transform.z * INCH);
     mesh.rotation.y = transform.rotation;
     mesh.receiveShadow = true;
-    mesh.userData = { measuredBacksplash: true, ...segment, tileModuleIn: moduleIn, groutJointIn, backsplashPatternKind: patternKind, continuousTileField: true, clippedAroundSavedPlan: true };
+    mesh.userData = { measuredBacksplash: true, ...segment, tileModuleIn: moduleIn, groutJointIn, backsplashPatternKind: patternKind, continuousTileField: true, clippedAroundSavedPlan: true, cornerAnchor: anchor };
+    // A clean finished edge wherever the tile is cut free (above a window, beside a window, under a gap): never a bare chip edge.
+    const ceilingIn = wallTopLimit(room as RoomData, segment.side as WallSide);
+    const edges = sideLengthIn > 0 ? mosaicFinishedEdges(segment, segments, sideLengthIn, ceilingIn) : [];
+    const reversedPlane = segment.side === "left" || segment.side === "bottom";
+    const edgeColor = interlockSpec?.groutColor ?? "#a8a39b";
+    for (const edge of edges) {
+      const horizontalEdge = edge === "top" || edge === "bottom";
+      const length = horizontalEdge ? widthIn : heightIn;
+      const trim = new THREE.Mesh(
+        new THREE.BoxGeometry((horizontalEdge ? length : THREE_D_BACKSPLASH_EDGE_FACE_IN) * INCH, (horizontalEdge ? THREE_D_BACKSPLASH_EDGE_FACE_IN : length) * INCH, THREE_D_BACKSPLASH_EDGE_DEPTH_IN * INCH),
+        new THREE.MeshStandardMaterial({ color: edgeColor, roughness: 0.55, metalness: 0 }),
+      );
+      const half = THREE_D_BACKSPLASH_EDGE_FACE_IN / 2;
+      const startSign = reversedPlane ? 1 : -1;
+      trim.position.set(
+        (horizontalEdge ? 0 : (edge === "start" ? startSign : -startSign) * (widthIn / 2 - half)) * INCH,
+        (horizontalEdge ? (edge === "top" ? 1 : -1) * (heightIn / 2 - half) : 0) * INCH,
+        (THREE_D_BACKSPLASH_EDGE_DEPTH_IN / 2) * INCH,
+      );
+      trim.userData = { backsplashFinishedEdge: edge };
+      trim.castShadow = false;
+      mesh.add(trim);
+    }
     root.add(mesh);
   }
 }
@@ -11830,6 +11999,9 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 	        : resolveDesignerMaterialUrl(source.url, typeof window !== "undefined" ? window.location.origin : null);
 	      if (!source.proceduralFallback && !resolvedAsset) return null;
 	      if (resolvedAsset?.crossOrigin) textureLoader.setCrossOrigin(resolvedAsset.crossOrigin);
+	      const interlockSpec = role === "backsplash" && source.backsplashPatternKind === "interlocking-mosaic"
+	        ? mosaicInterlockSpecForKey(source.key)
+	        : null;
 	      const texture = source.proceduralFallback
 	        ? threeDRepresentativeSurfaceTexture(role, source)
 	        : textureLoader.load(resolvedAsset!.url, (loadedTexture) => {
@@ -11849,6 +12021,13 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 	            loadedTexture.image,
 	            renderQuality.tier === "mobile" ? 768 : 1280,
 	          );
+	          if (interlockSpec) {
+	            (loadedTexture as THREE.Texture<HTMLImageElement | HTMLCanvasElement>).image = interlockedMosaicUnitImage(
+	              loadedTexture.image,
+	              interlockSpec,
+	              renderQuality.tier === "mobile" ? 1024 : 2048,
+	            );
+	          }
 	        } else if (!source.curated) {
 	          (loadedTexture as THREE.Texture<HTMLImageElement | HTMLCanvasElement>).image = normalizedThreeDSurfaceImage(
 	            loadedTexture.image,
@@ -11905,9 +12084,11 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 	        plankLengthIn: source.plankLengthIn,
 	        staggerOffsetsIn: source.staggerOffsetsIn,
 	        backsplashPatternKind: source.backsplashPatternKind ?? null,
-	        backsplashModuleIn: source.backsplashModuleIn ?? null,
-	        backsplashModuleHeightIn: source.backsplashModuleHeightIn ?? null,
-	        backsplashGroutJointIn: source.backsplashGroutJointIn ?? null,
+	        // An interlocking sheet repeats at its interlock pitch, not at the photo's outer size.
+	        backsplashModuleIn: interlockSpec ? mosaicPitchIn(interlockSpec).x : (source.backsplashModuleIn ?? null),
+	        backsplashModuleHeightIn: interlockSpec ? mosaicPitchIn(interlockSpec).y : (source.backsplashModuleHeightIn ?? null),
+	        backsplashGroutJointIn: interlockSpec ? clampMosaicGroutIn(interlockSpec.groutIn) : (source.backsplashGroutJointIn ?? null),
+	        backsplashInterlockKey: interlockSpec?.key ?? null,
 	        materialOnlyNoGeometryChange: true,
 	      };
 	      return texture;
@@ -11964,6 +12145,9 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 	    const floorSurfaceMaterial = new THREE.MeshPhysicalMaterial({
 	      color: floorTint,
 	      map: floorTexture,
+	      // Slight plank depth from the photo's own seams and grain; colour is untouched.
+	      bumpMap: floorTexture,
+	      bumpScale: floorTexture ? 0.02 : 0,
 	      polygonOffset: true,
 	      polygonOffsetFactor: 1,
 	      polygonOffsetUnits: 1,
@@ -12220,6 +12404,7 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 	    if (backsplashTexture && backsplashSegments.length > 0 && !backsplashImageFailed) {
 	      addThreeDBacksplash(catalogRoot, backsplashSegments, backsplashRoom, backsplashTexture);
 	    }
+	    if (renderExistingDesign && renderedPlaced.length > 0) addThreeDBaseboards(catalogRoot, renderedPlaced, openings, backsplashRoom);
 	    for (const opening of openings) {
 	      // The clear-view control must reveal the narrow reach-in behind its four
 	      // architectural leaves. Keep every ordinary kitchen/window opening intact.

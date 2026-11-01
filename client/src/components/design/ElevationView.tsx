@@ -1,4 +1,5 @@
 import { doorOpeningAppearance } from "@/lib/doorOpeningAppearance";
+import { clampMosaicGroutIn, mosaicInterlockSpecForName, mosaicPitchIn } from "@/lib/backsplashMosaic";
 import { threeDLatticeRackLayout } from "@/lib/latticeRackLayout";
 import { PLATE_RACK_FRAME_IN, plateRackDividerLayout } from "@/lib/plateRackLayout";
 import { baseAngleEndPlan } from "@/lib/baseAngleEndLayout";
@@ -1389,6 +1390,10 @@ export function ElevationView({
           const bsMat = backsplashMaterial(backsplashMaterialId);
           const productName = backsplashProductName?.trim() || "";
           const sheet = parseBacksplashSheetInches({ name: productName || bsMat.name, size: backsplashProductSize, subCategory: productName });
+          // Interlocking mosaic: repeat at the interlock pitch (not the photo's outer size) with the same 1/16-1/8 in. grout line.
+          const interlock = mosaicInterlockSpecForName(productName);
+          const interlockPitch = interlock ? mosaicPitchIn(interlock) : null;
+          const interlockGroutPx = interlock ? Math.max(1, clampMosaicGroutIn(interlock.groutIn) * ppi) : 0;
           const showProductImage = Boolean(productBacksplashImage) && !backsplashImageFailed;
           const missingProductImage = Boolean(productName) && !showProductImage;
           const BACKSPLASH_BOTTOM = STD.COUNTERTOP_HEIGHT; // 36" — sits on top of the countertop surface
@@ -1562,7 +1567,7 @@ export function ElevationView({
 	                  data-testid="elevation-backsplash-segment"
 	                  data-backsplash-field-coverage="supported"
 	                  data-backsplash-image={showProductImage ? productBacksplashImage : undefined}
-	                  data-backsplash-module-in={showProductImage ? String(sheet.widthIn) : undefined}
+	                  data-backsplash-module-in={showProductImage ? String(interlockPitch?.x ?? sheet.widthIn) : undefined}
 	                  className="absolute pointer-events-none"
                   style={{
                     left: seg.left,
@@ -1570,8 +1575,16 @@ export function ElevationView({
                     bottom: seg.bottom,
                     height: seg.height,
                     background: missingProductImage ? "#f6e7c1" : bsMat.fill,
-                    backgroundImage: showProductImage ? `url("${productBacksplashImage}")` : (realistic && !missingProductImage ? bgImage : undefined),
-                    backgroundSize: showProductImage ? `${sheet.widthIn * ppi}px ${sheet.heightIn * ppi}px` : (realistic ? (bgSize ?? (bsMat.pattern === "hexagon" ? `${tileWPx}px ${tileHPx}px` : undefined)) : undefined),
+                    backgroundImage: showProductImage
+                      ? (interlock && interlockPitch
+                        ? `linear-gradient(to top, ${interlock.groutColor ?? bsMat.grout} ${interlockGroutPx}px, transparent ${interlockGroutPx}px), linear-gradient(to left, ${interlock.groutColor ?? bsMat.grout} ${interlockGroutPx}px, transparent ${interlockGroutPx}px), url("${productBacksplashImage}")`
+                        : `url("${productBacksplashImage}")`)
+                      : (realistic && !missingProductImage ? bgImage : undefined),
+                    backgroundSize: showProductImage
+                      ? (interlockPitch
+                        ? `${interlockPitch.x * ppi}px ${interlockPitch.y * ppi}px, ${interlockPitch.x * ppi}px ${interlockPitch.y * ppi}px, ${interlockPitch.x * ppi}px ${interlockPitch.y * ppi}px`
+                        : `${sheet.widthIn * ppi}px ${sheet.heightIn * ppi}px`)
+                      : (realistic ? (bgSize ?? (bsMat.pattern === "hexagon" ? `${tileWPx}px ${tileHPx}px` : undefined)) : undefined),
                     backgroundRepeat: showProductImage ? "repeat" : undefined,
                     borderTop: `1px solid ${missingProductImage ? "#b45309" : bsMat.grout}`,
                     borderBottom: `1px solid ${missingProductImage ? "#b45309" : bsMat.grout}`,

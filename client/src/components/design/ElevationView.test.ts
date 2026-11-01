@@ -149,6 +149,29 @@ import { CustomProfileFace, DoorFront, ElevationView, isBaseEndAngleCabinet, isR
 		    expect(markup).not.toContain('data-testid="elevation-backsplash-image-warning"');
 		  });
 
+		  it("repeats an interlocking mosaic at its interlock pitch with an even grout line, not at the photo's outer size", () => {
+		    const image = "/manus-storage/desert_clay_11_81_interlocking_mosaic_0aa381c4.webp";
+		    const markup = renderToStaticMarkup(
+		      createElement(LanguageProvider, null, createElement(ElevationView, {
+		        room: { width: 120, depth: 96, ceilingHeight: 96 },
+		        cabinets: [{
+		          uid: "b24", cabinetId: 86, masterCode: "B24", description: '24" Base Cabinet',
+		          placement: "base", x: 0, y: 0, width: 24, height: 34.5, depth: 24, rotation: 0,
+		          numberOfDoors: 1, numberOfDrawers: 1,
+		        }],
+		        selectedUid: null, onSelect: () => undefined, wall: "back",
+		        backsplashMaterialId: "white-subway",
+		        backsplashImageUrl: image,
+		        backsplashProductName: "Desert Clay",
+		        backsplashProductSize: '11.81" x 11.81"',
+		      })),
+		    );
+		    // pitch = 11.81 - 0.3125 = 11.4975 in. at 4px/in
+		    expect(markup).toContain('data-backsplash-module-in="11.4975"');
+		    expect(markup).toContain("background-size:45.99px 45.99px");
+		    expect(markup).not.toContain("background-size:47.24px 47.24px");
+		  });
+
 		  it("warns instead of drawing a substitute tile when the selected backsplash has no picture", () => {
 		    const markup = renderToStaticMarkup(
 		      createElement(LanguageProvider, null, createElement(ElevationView, {
