@@ -2,6 +2,7 @@ import { mosaicInterlockUnitPlan, mosaicPitchIn, type MosaicInterlockSpec } from
 import { canvasWithoutBakedCheckerboard } from "./mosaicCheckerboard";
 import {
   analyzeMosaicPhoto, bleedTransparentEdgeColor, clearBakedSheetGrout, imageHasMeaningfulTransparency, measureTransparentSheetRepeat,
+  trimTransparentEdgeSlivers,
   measuredMosaicOverhangIn, sampleSheetTileHex, type MosaicPhotoAnalysis, type TransparentSheetRepeat,
 } from "./mosaicPhotoAnalysis";
 
@@ -97,7 +98,11 @@ export function buildMosaicUnitImage(
     // Photo grout is a straight grey joint. Clearing it lets stepped ends slide together
     // and keeps that grey from sitting under the Designer's own grout line. Opaque catalog
     // photos are not transparent, so they skip this and keep the old crop.
-    if (transparentSheet) clearBakedSheetGrout(pixels, width, height);
+    if (transparentSheet) {
+      // A 1px semi-transparent halo at the top or bottom repeats as a bright line.
+      trimTransparentEdgeSlivers(pixels, width, height);
+      clearBakedSheetGrout(pixels, width, height);
+    }
     const analysis = analyzeMosaicPhoto(pixels, width, height);
     // Every transparent Designer upload is measured, including sheets whose hand-coded spec
     // is already marked measured. The spec pitch is only the backup when this score is poor.

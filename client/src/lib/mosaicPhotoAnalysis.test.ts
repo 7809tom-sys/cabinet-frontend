@@ -3,7 +3,7 @@ import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 import { genericMosaicSheetSpec, mosaicInterlockSpecForName, mosaicPitchIn } from "./backsplashMosaic";
 import { acceptTransparentRepeat, transparentRepeatInches } from "./mosaicUnitImage";
-import { analyzeMosaicPhoto, clearBakedSheetGrout, imageHasMeaningfulTransparency, measureTransparentSheetRepeat, measuredMosaicOverhangIn, sampleSheetGroutHex } from "./mosaicPhotoAnalysis";
+import { analyzeMosaicPhoto, clearBakedSheetGrout, imageHasMeaningfulTransparency, measureTransparentSheetRepeat, measuredMosaicOverhangIn, sampleSheetGroutHex, trimTransparentEdgeSlivers } from "./mosaicPhotoAnalysis";
 
 type Rgba = [number, number, number, number];
 function photo(width: number, height: number, background: Rgba, draw: (x: number, y: number) => Rgba | null) {
@@ -130,6 +130,19 @@ describe("baked grey grout is a straight joint, not a vein or a gold strip", () 
     expect(data[(41 * 100 + 10) * 4 + 3]).toBe(255);
   });
 
+  it("drops a semi-transparent halo on the top and bottom edge only", () => {
+    const data = photo(80, 40, [150, 120, 100, 255], (x, y) => {
+      if (y === 0 || y === 39) return [220, 220, 220, 70];
+      if (x < 8) return [0, 0, 0, 0];
+      return null;
+    });
+    expect(trimTransparentEdgeSlivers(data, 80, 40)).toBe(2);
+    expect(data[3]).toBe(0);
+    expect(data[((39 * 80) + 20) * 4 + 3]).toBe(0);
+    expect(data[(1 * 80 + 20) * 4 + 3]).toBe(255);
+    expect(data[(20 * 80 + 20) * 4 + 3]).toBe(255);
+  });
+
   it("still treats a sheet as transparent when tile strips touch the border", () => {
     const tile: Rgba = [198, 203, 213, 255];
     const data = photo(120, 80, tile, (x, y) => (x >= 100 && Math.floor(y / 8) % 2 === 1 ? [0, 0, 0, 0] : null));
@@ -146,6 +159,8 @@ const sheetFiles = {
   carrara: new URL("./__fixtures__/mosaic-sheets/carrara-subway-144.webp", import.meta.url),
   greystone: new URL("./__fixtures__/mosaic-sheets/greystone-bloom-260.webp", import.meta.url),
   noble: new URL("./__fixtures__/mosaic-sheets/noble-row-380.webp", import.meta.url),
+  polar: new URL("./__fixtures__/mosaic-sheets/polar-sea-1135.webp", import.meta.url),
+  rustic: new URL("./__fixtures__/mosaic-sheets/rustic-umber-1172.webp", import.meta.url),
 } as const;
 
 async function loadSheet(url: URL) {
@@ -161,6 +176,7 @@ describe("designer uploads nest at the measured repeat", () => {
   it("Oat Stone is transparent and repeats at 10.24 x 11.81 in", async () => {
     const { pixels, width, height } = await loadSheet(sheetFiles.oat);
     expect(analyzeMosaicPhoto(pixels, width, height)?.background).toBe("transparent");
+    trimTransparentEdgeSlivers(pixels, width, height);
     clearBakedSheetGrout(pixels, width, height);
     const repeat = measureTransparentSheetRepeat(pixels, width, height)!;
     const across = inches(11.97, repeat.core.width, repeat.box.width);
@@ -172,6 +188,7 @@ describe("designer uploads nest at the measured repeat", () => {
   it("Thassos Subway is transparent and repeats at 9.56 x 12.13 in", async () => {
     const { pixels, width, height } = await loadSheet(sheetFiles.thassos);
     expect(analyzeMosaicPhoto(pixels, width, height)?.background).toBe("transparent");
+    trimTransparentEdgeSlivers(pixels, width, height);
     clearBakedSheetGrout(pixels, width, height);
     const repeat = measureTransparentSheetRepeat(pixels, width, height)!;
     const across = inches(11.97, repeat.core.width, repeat.box.width);
@@ -186,6 +203,7 @@ describe("designer uploads nest at the measured repeat", () => {
   it("Cloudline Marble nests inside the 11.81 in sheet", async () => {
     const { pixels, width, height } = await loadSheet(sheetFiles.cloud);
     expect(analyzeMosaicPhoto(pixels, width, height)?.background).toBe("transparent");
+    trimTransparentEdgeSlivers(pixels, width, height);
     clearBakedSheetGrout(pixels, width, height);
     const repeat = measureTransparentSheetRepeat(pixels, width, height)!;
     const across = inches(11.81, repeat.core.width, repeat.box.width);
@@ -200,6 +218,7 @@ describe("designer uploads nest at the measured repeat", () => {
     const { pixels, width, height } = await loadSheet(sheetFiles.carrara);
     expect(analyzeMosaicPhoto(pixels, width, height)?.background).toBe("transparent");
     const marble = pixels[(200 * width + 400) * 4 + 3];
+    trimTransparentEdgeSlivers(pixels, width, height);
     expect(clearBakedSheetGrout(pixels, width, height)).toBeGreaterThan(1000);
     expect(pixels[(322 * width + 800) * 4 + 3]).toBe(0);
     expect(pixels[(150 * width + 627) * 4 + 3]).toBe(0);
@@ -218,6 +237,7 @@ describe("designer uploads nest at the measured repeat", () => {
     // The flower outline has no flush rectangle, so the coverage pass may return null.
     // The sheet is still transparent and the repeat is measured from that alpha.
     expect(imageHasMeaningfulTransparency(pixels, width, height)).toBe(true);
+    trimTransparentEdgeSlivers(pixels, width, height);
     const repeat = measureTransparentSheetRepeat(pixels, width, height)!;
     const across = inches(10.04, repeat.core.width, repeat.box.width);
     const up = inches(9.13, repeat.core.height, repeat.box.height);
@@ -240,6 +260,7 @@ describe("designer uploads nest at the measured repeat", () => {
     }
     expect(goldIndex).toBeGreaterThan(0);
     const gold = pixels.slice(goldIndex, goldIndex + 4);
+    trimTransparentEdgeSlivers(pixels, width, height);
     clearBakedSheetGrout(pixels, width, height);
     expect(Array.from(pixels.slice(goldIndex, goldIndex + 4))).toEqual(Array.from(gold));
     const repeat = measureTransparentSheetRepeat(pixels, width, height)!;
@@ -248,6 +269,49 @@ describe("designer uploads nest at the measured repeat", () => {
     expect(across).toBeGreaterThan(10.4);
     expect(across).toBeLessThan(11.4);
     expect(Math.abs(up - 11.81)).toBeLessThan(0.05);
+  }, 20000);
+
+  it("Rustic Umber drops the light top and bottom halo and still nests the strip ends", async () => {
+    const { pixels, width, height } = await loadSheet(sheetFiles.rustic);
+    expect(width).toBe(1600);
+    expect(height).toBe(1534);
+    const top = (800) * 4;
+    const bottom = ((height - 1) * width + 800) * 4;
+    expect(pixels[top]).toBeGreaterThan(200);
+    expect(pixels[top + 3]).toBeLessThan(160);
+    expect(pixels[bottom + 3]).toBeLessThan(160);
+    const interior = pixels[(40 * width + 200) * 4 + 3];
+    expect(trimTransparentEdgeSlivers(pixels, width, height)).toBe(2);
+    expect(pixels[top + 3]).toBe(0);
+    expect(pixels[bottom + 3]).toBe(0);
+    expect(pixels[(1 * width + 200) * 4 + 3]).toBeGreaterThan(200);
+    expect(pixels[((height - 2) * width + 200) * 4 + 3]).toBeGreaterThan(200);
+    expect(pixels[(40 * width + 200) * 4 + 3]).toBe(interior);
+    clearBakedSheetGrout(pixels, width, height);
+    const repeat = measureTransparentSheetRepeat(pixels, width, height)!;
+    expect(repeat.box.y).toBeGreaterThan(0);
+    expect(repeat.box.y + repeat.box.height).toBeLessThan(height);
+    const across = inches(11.81, repeat.core.width, repeat.box.width);
+    const up = inches(11.81, repeat.core.height, repeat.box.height);
+    expect(across).toBeGreaterThan(10.4);
+    expect(across).toBeLessThan(11.6);
+    expect(up).toBeGreaterThan(11.4);
+    expect(up).toBeLessThanOrEqual(11.81);
+  }, 20000);
+
+  it("Polar Sea still nests the ragged strip ends", async () => {
+    const { pixels, width, height } = await loadSheet(sheetFiles.polar);
+    trimTransparentEdgeSlivers(pixels, width, height);
+    clearBakedSheetGrout(pixels, width, height);
+    const repeat = measureTransparentSheetRepeat(pixels, width, height)!;
+    const across = inches(11.81, repeat.core.width, repeat.box.width);
+    const up = inches(11.81, repeat.core.height, repeat.box.height);
+    const offsetIn = inches(11.81, repeat.box.width - repeat.core.width, repeat.box.width);
+    expect(across).toBeGreaterThan(10.9);
+    expect(across).toBeLessThan(11.5);
+    expect(Math.abs(up - 11.81)).toBeLessThan(0.05);
+    expect(offsetIn).toBeGreaterThan(0.45);
+    expect(offsetIn).toBeLessThan(0.85);
   }, 20000);
 });
 
