@@ -1,0 +1,467 @@
+From 8330796fc91ac7f7aed2b26f907d51dd27187d98 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Sun, 1 Nov 2026 17:46:54 +0000
+Subject: [PATCH] Store Skin needed and Finished end needed on door styles.
+
+Reads return null when the columns are not applied yet. Writes reject Skin needed on any style that is not hickory frameless, and the TiDB script adds the nullable columns.
+---
+ ...0243_door_style_skin_finished_end.tidb.sql |  19 +++
+ server/lib/doorStyleNeedFlags.test.ts         |  10 ++
+ server/lib/doorStyleNeedFlags.ts              | 110 ++++++++++++++++++
+ server/routers/catalog.ts                     |  17 ++-
+ server/routers/design.ts                      |  24 +++-
+ server/routers/distributorPortal.ts           |  23 +++-
+ shared/canHaveSkins.test.ts                   |  13 +++
+ shared/canHaveSkins.ts                        |  77 ++++++++++++
+ 8 files changed, 284 insertions(+), 9 deletions(-)
+ create mode 100644 docs/sql/0243_door_style_skin_finished_end.tidb.sql
+ create mode 100644 server/lib/doorStyleNeedFlags.test.ts
+ create mode 100644 server/lib/doorStyleNeedFlags.ts
+ create mode 100644 shared/canHaveSkins.test.ts
+ create mode 100644 shared/canHaveSkins.ts
+
+diff --git a/docs/sql/0243_door_style_skin_finished_end.tidb.sql b/docs/sql/0243_door_style_skin_finished_end.tidb.sql
+new file mode 100644
+index 0000000..f5610f6
+--- /dev/null
++++ b/docs/sql/0243_door_style_skin_finished_end.tidb.sql
+@@ -0,0 +1,19 @@
++-- TiDB SQL editor version. Numbered 0243. Run after 0242.
++-- Paste each numbered block on its own. One statement per block.
++-- Every table is cabinet_dealz.<table>.
++-- Nullable on purpose: an unset checkbox keeps the application default.
++-- Skin needed defaults to Yes only for hickory frameless. Finished end needed defaults to No.
++-- Do not run this from an application. The owner pastes it in the TiDB editor.
++-- Safe to re-run: ADD COLUMN IF NOT EXISTS.
++
++-- 1
++ALTER TABLE cabinet_dealz.door_styles ADD COLUMN IF NOT EXISTS skinNeeded TINYINT(1) NULL;
++
++-- 2
++ALTER TABLE cabinet_dealz.door_styles ADD COLUMN IF NOT EXISTS finishedEndNeeded TINYINT(1) NULL;
++
++-- 3
++COMMIT;
++
++-- 4
++SELECT 'COMMITTED';
+diff --git a/server/lib/doorStyleNeedFlags.test.ts b/server/lib/doorStyleNeedFlags.test.ts
+new file mode 100644
+index 0000000..7c6cfd6
+--- /dev/null
++++ b/server/lib/doorStyleNeedFlags.test.ts
+@@ -0,0 +1,10 @@
++import { describe, expect, it } from "vitest";
++import { isMissingDoorStyleNeedColumn } from "./doorStyleNeedFlags";
++
++describe("door style need column reads", () => {
++  it("treats a missing column as absent and leaves other errors alone", () => {
++    expect(isMissingDoorStyleNeedColumn({ code: "ER_BAD_FIELD_ERROR", sqlMessage: "Unknown column 'skinNeeded' in 'field list'" })).toBe(true);
++    expect(isMissingDoorStyleNeedColumn(new Error("Unknown column 'finishedEndNeeded'"))).toBe(true);
++    expect(isMissingDoorStyleNeedColumn(new Error("connection reset"))).toBe(false);
++  });
++});
+diff --git a/server/lib/doorStyleNeedFlags.ts b/server/lib/doorStyleNeedFlags.ts
+new file mode 100644
+index 0000000..dcb79bc
+--- /dev/null
++++ b/server/lib/doorStyleNeedFlags.ts
+@@ -0,0 +1,110 @@
++import { sql } from "drizzle-orm";
++import { TRPCError } from "@trpc/server";
++import { canHaveSkins, DOOR_STYLE_NEED_SQL_MESSAGE, type SkinEligibilityStyle } from "../../shared/canHaveSkins";
++
++const MISSING_COLUMN = /unknown column|ER_BAD_FIELD_ERROR|no such column|does not exist/i;
++
++type ExecuteDb = {
++  execute: (query: ReturnType<typeof sql>) => Promise<unknown>;
++};
++
++export function isMissingDoorStyleNeedColumn(error: unknown): boolean {
++  const parts: string[] = [];
++  const seen = new Set<unknown>();
++  let current: unknown = error;
++  while (current != null && typeof current === "object" && !seen.has(current)) {
++    seen.add(current);
++    const row = current as { message?: unknown; sqlMessage?: unknown; cause?: unknown };
++    if (typeof row.message === "string") parts.push(row.message);
++    if (typeof row.sqlMessage === "string") parts.push(row.sqlMessage);
++    current = row.cause;
++  }
++  if (typeof error === "string") parts.push(error);
++  return MISSING_COLUMN.test(parts.join(" "));
++}
++
++function rowsFrom(result: unknown): Array<Record<string, unknown>> {
++  if (Array.isArray(result)) {
++    const first = result[0];
++    if (Array.isArray(first)) return first as Array<Record<string, unknown>>;
++    if (first && typeof first === "object") return result as Array<Record<string, unknown>>;
++  }
++  if (result && typeof result === "object" && Array.isArray((result as { rows?: unknown }).rows)) {
++    return (result as { rows: Array<Record<string, unknown>> }).rows;
++  }
++  return [];
++}
++
++function storedFlag(value: unknown): boolean | null {
++  if (value === null || value === undefined) return null;
++  if (value === true || value === 1 || value === "1") return true;
++  if (value === false || value === 0 || value === "0") return false;
++  return null;
++}
++
++export type DoorStyleNeedFlags = {
++  skinNeeded: boolean | null;
++  finishedEndNeeded: boolean | null;
++};
++
++/** Reads return null for both flags when the columns are not applied yet. */
++export async function readDoorStyleNeedFlags(db: ExecuteDb, ids: readonly number[]): Promise<Map<number, DoorStyleNeedFlags>> {
++  const flags = new Map<number, DoorStyleNeedFlags>();
++  for (const id of ids) flags.set(id, { skinNeeded: null, finishedEndNeeded: null });
++  if (ids.length === 0) return flags;
++  try {
++    const result = await db.execute(sql`SELECT id, skinNeeded, finishedEndNeeded FROM door_styles WHERE id IN (${sql.join(ids.map((id) => sql`${id}`), sql`, `)})`);
++    for (const row of rowsFrom(result)) {
++      const id = Number(row.id);
++      if (!flags.has(id)) continue;
++      flags.set(id, {
++        skinNeeded: storedFlag(row.skinNeeded),
++        finishedEndNeeded: storedFlag(row.finishedEndNeeded),
++      });
++    }
++  } catch (error) {
++    if (isMissingDoorStyleNeedColumn(error)) return flags;
++    throw error;
++  }
++  return flags;
++}
++
++export function attachDoorStyleNeedFlags<T extends { id: number }>(rows: readonly T[], flags: Map<number, DoorStyleNeedFlags>): Array<T & DoorStyleNeedFlags> {
++  return rows.map((row) => ({
++    ...row,
++    ...(flags.get(row.id) ?? { skinNeeded: null, finishedEndNeeded: null }),
++  }));
++}
++
++/**
++ * Writes fail with a clear message until the SQL is applied. A Skin needed
++ * Yes is rejected unless the style is hickory frameless.
++ */
++export async function writeDoorStyleNeedFlags(
++  db: ExecuteDb,
++  id: number,
++  patch: { skinNeeded?: boolean; finishedEndNeeded?: boolean },
++): Promise<void> {
++  if (patch.skinNeeded === undefined && patch.finishedEndNeeded === undefined) return;
++  if (patch.skinNeeded === true) {
++    const result = await db.execute(sql`
++      SELECT styleCode, ourName, aliasName, distributorName, doorStyle, woodSpecies, finish, color, boxConstruction, overlayType
++      FROM door_styles WHERE id = ${id} LIMIT 1
++    `);
++    const row = rowsFrom(result)[0] as SkinEligibilityStyle | undefined;
++    if (!canHaveSkins(row ?? null)) {
++      throw new TRPCError({ code: "BAD_REQUEST", message: "Only hickory frameless gets skins" });
++    }
++  }
++  const statements: Array<ReturnType<typeof sql>> = [];
++  if (patch.skinNeeded !== undefined) statements.push(sql`UPDATE door_styles SET skinNeeded = ${patch.skinNeeded ? 1 : 0} WHERE id = ${id}`);
++  if (patch.finishedEndNeeded !== undefined) statements.push(sql`UPDATE door_styles SET finishedEndNeeded = ${patch.finishedEndNeeded ? 1 : 0} WHERE id = ${id}`);
++  try {
++    for (const statement of statements) await db.execute(statement);
++  } catch (error) {
++    if (isMissingDoorStyleNeedColumn(error)) {
++      throw new TRPCError({ code: "BAD_REQUEST", message: DOOR_STYLE_NEED_SQL_MESSAGE });
++    }
++    throw error;
++  }
++}
+diff --git a/server/routers/catalog.ts b/server/routers/catalog.ts
+index bde5f5f..a2df813 100644
+--- a/server/routers/catalog.ts
++++ b/server/routers/catalog.ts
+@@ -1,3 +1,4 @@
++import { attachDoorStyleNeedFlags, readDoorStyleNeedFlags, writeDoorStyleNeedFlags } from "../lib/doorStyleNeedFlags";
+ import { z } from "zod";
+ import { updateCabinetLogged } from "../lib/cabinetConfigHistory";
+ import { logCabinetConfigChanges, snapshotCabinetBeforeEdit } from "../lib/cabinetConfigHistory";
+@@ -283,10 +284,12 @@ export const doorStylesRouter = router({
+       // SCL (Syncron Slim Cava Rosales 3) is source-confirmed in the U.S.
+       // Cabinet Depot AltaEuro V8.2 book and is intentionally included once
+       // its published, verified AEF rows are available.
+-      return filterStylesByAvailability(rows, available).map(({ distributorIsActive, ...style }) => ({
++      const visible = filterStylesByAvailability(rows, available).map(({ distributorIsActive, ...style }) => ({
+         ...style,
+         isPreview: isPreviewSupplier({ isActive: distributorIsActive }),
+       }));
++      const flags = await readDoorStyleNeedFlags(db, visible.map((style) => style.id));
++      return attachDoorStyleNeedFlags(visible, flags);
+     }),
+ 
+   // Manufacturer specification references are intentionally separate from the
+@@ -576,11 +579,13 @@ export const doorStylesRouter = router({
+       updatedAt: doorStyleRoomSceneGenerations.updatedAt,
+     }).from(doorStyleRoomSceneGenerations).where(inArray(doorStyleRoomSceneGenerations.styleId, ids));
+     const jobsByStyle = new Map(jobs.map((job) => [job.styleId, job]));
+-    return rows.map((row) => ({
++    const listed = rows.map((row) => ({
+       ...withDoorStyleWarehouseCoverage(row),
+       roomScenes: scenes.filter((scene) => scene.styleId === row.id),
+       autoRoomScene: jobsByStyle.get(row.id) ?? null,
+     }));
++    const flags = await readDoorStyleNeedFlags(db, listed.map((row) => row.id));
++    return attachDoorStyleNeedFlags(listed, flags);
+   }),
+ 
+   // Admin: toggle a style into the featured homepage set. Each style has its own
+@@ -677,6 +682,8 @@ export const doorStylesRouter = router({
+         doorSampleVerified: z.boolean().optional(),
+         drawerSampleVerified: z.boolean().optional(),
+         isActive: z.boolean().optional(),
++        skinNeeded: z.boolean().optional(),
++        finishedEndNeeded: z.boolean().optional(),
+       })
+     )
+     .mutation(async ({ input }) => {
+@@ -733,6 +740,12 @@ export const doorStylesRouter = router({
+       if (drawerVerified !== undefined) patch.drawerSampleVerified = drawerVerified;
+       const submittedDoorSample = fields.doorSampleImageUrl?.trim() || currentImages[0]?.doorSampleImageUrl || null;
+       if (submittedDoorSample && !currentImages[0]?.thumbnailImageUrl && !fields.thumbnailImageUrl) patch.thumbnailImageUrl = submittedDoorSample;
++      if (fields.skinNeeded !== undefined || fields.finishedEndNeeded !== undefined) {
++        await writeDoorStyleNeedFlags(db, id, {
++          skinNeeded: fields.skinNeeded,
++          finishedEndNeeded: fields.finishedEndNeeded,
++        });
++      }
+       if (Object.keys(patch).length === 0) return { ok: true };
+       const needsCurrentStyle =
+         (fields.roomSceneImageUrl !== undefined && !fields.roomSceneImageUrl?.trim()) ||
+diff --git a/server/routers/design.ts b/server/routers/design.ts
+index e811c67..9372444 100644
+--- a/server/routers/design.ts
++++ b/server/routers/design.ts
+@@ -42,10 +42,11 @@ import {
+   type CrossSellCategory,
+   type CrossSellItem,
+ } from "../../shared/crossSell";
++import { skinsAreNeeded } from "../../shared/canHaveSkins";
++import { readDoorStyleNeedFlags } from "../lib/doorStyleNeedFlags";
+ import {
+   matchingSkinsForCabinet,
+   normalizeSkinPlacement,
+-  requiresMandatorySkin,
+   type ExposedSides,
+ } from "../../shared/skinMatch";
+ import { orderCabinetsByAliasRank, rankLoadedCabinetSearch } from "../lib/cabinetAliasSearch";
+@@ -3018,13 +3019,30 @@ Return an empty actions array ONLY if the user asked a pure question with no wal
+ 
+       const styleRow = (
+         await db
+-          .select({ id: doorStyles.id, styleCode: doorStyles.styleCode, ourName: doorStyles.ourName })
++          .select({
++            id: doorStyles.id,
++            styleCode: doorStyles.styleCode,
++            ourName: doorStyles.ourName,
++            aliasName: doorStyles.aliasName,
++            distributorName: doorStyles.distributorName,
++            doorStyle: doorStyles.doorStyle,
++            woodSpecies: doorStyles.woodSpecies,
++            finish: doorStyles.finish,
++            color: doorStyles.color,
++            boxConstruction: doorStyles.boxConstruction,
++            overlayType: doorStyles.overlayType,
++          })
+           .from(doorStyles)
+           .where(eq(doorStyles.id, input.styleId))
+           .limit(1)
+       )[0];
+       const styleCode = styleRow?.styleCode ?? null;
+-      const mandatory = requiresMandatorySkin(styleCode);
++      const needFlags = await readDoorStyleNeedFlags(db, styleRow ? [styleRow.id] : []);
++      const styleForSkins = styleRow
++        ? { ...styleRow, ...(needFlags.get(styleRow.id) ?? { skinNeeded: null, finishedEndNeeded: null }) }
++        : null;
++      const mandatory = skinsAreNeeded(styleForSkins);
++      if (!mandatory) return { mandatory: false, styleCode, lines: [] };
+ 
+       // Look up placement + width for the placed cabinets.
+       const cabIds = Array.from(new Set(input.items.map((i) => i.cabinetId)));
+diff --git a/server/routers/distributorPortal.ts b/server/routers/distributorPortal.ts
+index d9826aa..90d48c2 100644
+--- a/server/routers/distributorPortal.ts
++++ b/server/routers/distributorPortal.ts
+@@ -1,3 +1,4 @@
++import { attachDoorStyleNeedFlags, readDoorStyleNeedFlags, writeDoorStyleNeedFlags } from "../lib/doorStyleNeedFlags";
+ import { z } from "zod";
+ import { and, eq, inArray, desc, gte, lte, isNotNull, or, sql } from "drizzle-orm";
+ import { TRPCError } from "@trpc/server";
+@@ -763,6 +764,8 @@ export const distributorPortalRouter = router({
+ 	          color: doorStyles.color,
+ 	          finish: doorStyles.finish,
+ 	          woodSpecies: doorStyles.woodSpecies,
++	          boxConstruction: doorStyles.boxConstruction,
++	          overlayType: doorStyles.overlayType,
+ 	          doorSampleImageUrl: doorStyles.doorSampleImageUrl,
+ 	          drawerSampleImageUrl: doorStyles.drawerSampleImageUrl,
+ 	          roomSceneImageUrl: doorStyles.roomSceneImageUrl,
+@@ -790,6 +793,8 @@ export const distributorPortalRouter = router({
+ 	          profileDescription: doorStyles.profileDescription,
+ 	          sourceSpecification: doorStyles.sourceSpecification,
+ 	          isActive: doorStyles.isActive,
++	          supplierBrandName: distributors.brandName,
++	          supplierName: distributors.name,
+ 	        })
+ 	        .from(doorStyles)
+ 	        .leftJoin(distributors, eq(doorStyles.distributorId, distributors.id))
+@@ -863,9 +868,7 @@ export const distributorPortalRouter = router({
+ 	      updatedAt: doorStyleRoomSceneGenerations.updatedAt,
+ 	    }).from(doorStyleRoomSceneGenerations).where(inArray(doorStyleRoomSceneGenerations.styleId, styleIds));
+ 	    const autoJobsByStyle = new Map(autoJobs.map((job) => [job.styleId, job]));
+-    return {
+-	      categories,
+-	      styles: styles.map((rawStyle) => {
++    const mappedStyles = styles.map((rawStyle) => {
+ 	        const style = withDoorStyleWarehouseCoverage(rawStyle);
+ 	        const allCatalog = catalogByStyle.get(style.id) ?? [];
+ 	        const matchingCatalog = matchingByStyle.get(style.id) ?? [];
+@@ -916,7 +919,11 @@ export const distributorPortalRouter = router({
+ 	          designerNoncompliantCabinetCount: designerCabinets.filter((cabinet) => !cabinet.isCompliant).length,
+ 	          roomScenes: scenes.filter((scene) => scene.styleId === style.id),
+ 	        };
+-	      }),
++	      });
++    const flags = await readDoorStyleNeedFlags(db, mappedStyles.map((style) => style.id));
++    return {
++	      categories,
++	      styles: attachDoorStyleNeedFlags(mappedStyles, flags),
+ 	    };
+ 	  }),
+ 
+@@ -1018,6 +1025,8 @@ export const distributorPortalRouter = router({
+ 	    cornerSwatchImageUrl: z.string().max(512).nullable().optional(),
+ 	    ...doorProfileFieldsShape,
+ 	    profileDescription: z.string().nullable().optional(),
++	    skinNeeded: z.boolean().optional(),
++	    finishedEndNeeded: z.boolean().optional(),
+ 	  }))
+ 	  .mutation(async ({ ctx, input }) => {
+ 	    const db = await getDb();
+@@ -1099,6 +1108,12 @@ export const distributorPortalRouter = router({
+ 	        await db.insert(doorStyleRoomScenes).values({ styleId: input.styleId, imageUrl: submittedRoomScene, sortOrder: Number(maxRank) + 10, isVerified: true, isActive: true, sourceDistributorId: lineId, sourceNote: "Vendor-provided Featured Styles room scene" });
+ 	      }
+ 	    }
++		    if (fields.skinNeeded !== undefined || fields.finishedEndNeeded !== undefined) {
++		      await writeDoorStyleNeedFlags(db, input.styleId, {
++		        skinNeeded: fields.skinNeeded,
++		        finishedEndNeeded: fields.finishedEndNeeded,
++		      });
++		    }
+ 		    if (Object.keys(patch).length > 0) await db.update(doorStyles).set(patch).where(eq(doorStyles.id, input.styleId));
+ 		    if (fields.doorSampleImageUrl !== undefined || fields.drawerSampleImageUrl !== undefined) {
+ 		      scheduleDoorStyleRoomSceneGeneration(input.styleId);
+diff --git a/shared/canHaveSkins.test.ts b/shared/canHaveSkins.test.ts
+new file mode 100644
+index 0000000..692b2e3
+--- /dev/null
++++ b/shared/canHaveSkins.test.ts
+@@ -0,0 +1,13 @@
++import { describe, expect, it } from "vitest";
++import { canHaveSkins, skinsAreNeeded } from "./canHaveSkins";
++
++describe("canHaveSkins", () => {
++  it("is true only for hickory frameless and ignores a forced yes", () => {
++    expect(canHaveSkins({ woodSpecies: "Hickory", styleCode: "SSH", boxConstruction: "frameless" })).toBe(true);
++    expect(canHaveSkins({ woodSpecies: "Hickory", boxConstruction: "face frame", styleCode: "HS", skinNeeded: true })).toBe(false);
++    expect(skinsAreNeeded({ woodSpecies: "Maple", boxConstruction: "frameless", skinNeeded: true })).toBe(false);
++    expect(skinsAreNeeded({ ourName: "Forest Rust", styleCode: "RH", skinNeeded: 1 })).toBe(false);
++    expect(skinsAreNeeded({ woodSpecies: "Hickory", styleCode: "SSH" })).toBe(true);
++    expect(skinsAreNeeded({ woodSpecies: "Hickory", styleCode: "SSH", skinNeeded: false })).toBe(false);
++  });
++});
+diff --git a/shared/canHaveSkins.ts b/shared/canHaveSkins.ts
+new file mode 100644
+index 0000000..66d0086
+--- /dev/null
++++ b/shared/canHaveSkins.ts
+@@ -0,0 +1,77 @@
++/**
++ * Keep this in step with cabinet-frontend shared/canHaveSkins.ts.
++ * Only hickory frameless door styles get skins. A style code or a forced
++ * checkbox cannot override that.
++ */
++
++const HICKORY_WORD = /\bhickory\b/i;
++const FRAMELESS_TEXT = /frameless|altaeuro|alta euro|\baef\b|us cabinet depot/i;
++const USCD_STYLE_CODE = /^(TWP|TGW|TDW|PGW|ZS[A-Z]|ZC[A-Z]|SC[A-Z]|LS[A-Z]|SS[A-Z])$/i;
++const NAMED_AEF_STYLE_CODE = /\b(?:TWP|TGW|TDW|PGW|(?:LS|ZS|ZC|SS|SC)[A-Z])\b/;
++
++export type SkinEligibilityStyle = {
++  styleCode?: string | null;
++  ourName?: string | null;
++  name?: string | null;
++  aliasName?: string | null;
++  distributorName?: string | null;
++  supplierBrandName?: string | null;
++  supplierName?: string | null;
++  doorStyle?: string | null;
++  woodSpecies?: string | null;
++  finish?: string | null;
++  color?: string | null;
++  boxConstruction?: string | null;
++  overlayType?: string | null;
++  constructionMethod?: string | null;
++  isFrameless?: boolean | null;
++  frameless?: boolean | null;
++  skinNeeded?: boolean | number | null;
++  finishedEndNeeded?: boolean | number | null;
++};
++
++function text(parts: Array<string | null | undefined>): string {
++  return parts.filter((part) => part && String(part).trim()).join(" ");
++}
++
++function framelessCode(styleCode: string | null | undefined): boolean {
++  const code = (styleCode ?? "").trim();
++  if (!code) return false;
++  if (USCD_STYLE_CODE.test(code)) return true;
++  return /^(?:LS|ZS|ZC|SS|SC)[A-Z]$/i.test(code) || /^(?:TWP|TGW|TDW|PGW)$/i.test(code);
++}
++
++export function canHaveSkins(style: SkinEligibilityStyle | null | undefined): boolean {
++  if (!style) return false;
++  const hickory = HICKORY_WORD.test(text([
++    style.woodSpecies,
++    style.ourName,
++    style.name,
++    style.aliasName,
++    style.distributorName,
++    style.doorStyle,
++    style.finish,
++    style.color,
++  ]));
++  if (!hickory) return false;
++  if (style.isFrameless === true || style.frameless === true) return true;
++  const named = text([style.ourName, style.aliasName]).toUpperCase();
++  const namedCode = named.match(NAMED_AEF_STYLE_CODE)?.[0] ?? null;
++  if (framelessCode(style.styleCode) || framelessCode(namedCode)) return true;
++  return FRAMELESS_TEXT.test(text([
++    style.boxConstruction,
++    style.overlayType,
++    style.constructionMethod,
++    style.distributorName,
++    style.supplierBrandName,
++    style.supplierName,
++  ]));
++}
++
++export function skinsAreNeeded(style: SkinEligibilityStyle | null | undefined): boolean {
++  if (!canHaveSkins(style)) return false;
++  return style?.skinNeeded !== false && style?.skinNeeded !== 0;
++}
++
++export const DOOR_STYLE_NEED_SQL_MESSAGE =
++  "door_styles.skinNeeded and finishedEndNeeded are missing. Run docs/sql/0243_door_style_skin_finished_end.tidb.sql before saving these checkboxes.";
+-- 
+2.43.0
+
