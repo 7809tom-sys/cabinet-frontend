@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   PELICAN_PRODUCT_IMAGE_MAX_BYTES,
   pelicanItemSavePhotos,
+  pelicanRoomSceneImageUrl,
   trimmedPelicanPhotoUrl,
   validatePelicanProductImageFile,
 } from "./pelicanProductImageUpload";
@@ -54,6 +55,30 @@ describe("Pelican product image upload", () => {
     })).toEqual({ error: "Image URL must start with http:// or https://." });
   });
 
+  it("reads a missing room scene as null and sends roomSceneImageUrl only when it changed", () => {
+    const scene = "/manus-storage/pelican/products/42/1710000000002-42_roomscene.webp";
+    expect(pelicanRoomSceneImageUrl(undefined)).toBeNull();
+    expect(pelicanRoomSceneImageUrl(null)).toBeNull();
+    expect(pelicanRoomSceneImageUrl("  ")).toBeNull();
+    expect(pelicanRoomSceneImageUrl(scene)).toBe(scene);
+    expect(pelicanItemSavePhotos({
+      pastedImageUrl: "",
+      pastedImageUrlBaseline: "",
+      storedImageUrl: null,
+      storedMaterialImageUrl: null,
+      storedRoomSceneImageUrl: scene,
+      roomSceneImageUrlBaseline: scene,
+    })).toEqual({ imageUrl: null, materialImageUrl: undefined });
+    expect(pelicanItemSavePhotos({
+      pastedImageUrl: "",
+      pastedImageUrlBaseline: "",
+      storedImageUrl: null,
+      storedMaterialImageUrl: null,
+      storedRoomSceneImageUrl: scene,
+      roomSceneImageUrlBaseline: null,
+    })).toEqual({ imageUrl: null, materialImageUrl: undefined, roomSceneImageUrl: scene });
+  });
+
   it("previews the returned trimmed URL for the uploaded slot", () => {
     const result = {
       url: "/manus-storage/pelican/uploads/trimmed.webp",
@@ -63,6 +88,8 @@ describe("Pelican product image upload", () => {
     expect(trimmedPelicanPhotoUrl("catalog", result)).toBe(result.imageUrl);
     expect(trimmedPelicanPhotoUrl("designer", result)).toBe(result.materialImageUrl);
     expect(trimmedPelicanPhotoUrl("designer", { ...result, materialImageUrl: null })).toBe(result.url);
+    expect(trimmedPelicanPhotoUrl("roomScene", result)).toBe(result.url);
+    expect(trimmedPelicanPhotoUrl("roomScene", { ...result, roomSceneImageUrl: "/manus-storage/pelican/products/42/scene.webp" })).toBe("/manus-storage/pelican/products/42/scene.webp");
     expect(trimmedPelicanPhotoUrl("catalog", { url: "  ", imageUrl: null, materialImageUrl: result.materialImageUrl })).toBeNull();
   });
 

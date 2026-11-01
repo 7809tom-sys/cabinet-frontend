@@ -6,13 +6,13 @@ export const PELICAN_PRODUCT_IMAGE_CONTENT_TYPES = ["image/jpeg", "image/png", "
 
 export type PelicanProductImageContentType = (typeof PELICAN_PRODUCT_IMAGE_CONTENT_TYPES)[number];
 
-export type PelicanProductImageTarget = "catalog" | "designer" | "both";
+export type PelicanProductImageTarget = "catalog" | "designer" | "both" | "roomScene";
 
 export type UploadPelicanProductImageInput = {
   id: number;
   dataBase64: string;
   contentType: PelicanProductImageContentType;
-  /** `catalog` writes imageUrl, `designer` writes materialImageUrl, `both` writes both. */
+  /** `catalog` writes imageUrl, `designer` writes materialImageUrl, `roomScene` writes roomSceneImageUrl, `both` writes catalog and Designer. */
   target: PelicanProductImageTarget;
   /**
    * Sent with the same meaning as `target`. The paired backend still defaults
@@ -27,9 +27,18 @@ export type UploadPelicanProductImageResult = {
   url: string;
   materialImageUrl: string | null;
   imageUrl: string | null;
+  /** Absent until the backend follow-up that stores the room scene photo. */
+  roomSceneImageUrl?: string | null;
   width: number;
   height: number;
 };
+
+/** Missing `roomSceneImageUrl` is null. Non-strings from an older payload are null too. */
+export function pelicanRoomSceneImageUrl(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed || null;
+}
 
 export type PelicanProductImageFile = {
   type: string;
@@ -107,6 +116,8 @@ export type PelicanItemSavePhotos = {
   imageUrl?: string | null;
   /** Optional. A stored Designer photo may be sent; leave it out to keep the current value. */
   materialImageUrl?: string | null;
+  /** Sent only when the room scene photo changed. Omit to leave the stored value alone. */
+  roomSceneImageUrl?: string | null;
   error?: string;
 };
 
@@ -121,6 +132,8 @@ export function pelicanItemSavePhotos(input: {
   pastedImageUrlBaseline: string;
   storedImageUrl: string | null;
   storedMaterialImageUrl: string | null;
+  storedRoomSceneImageUrl?: string | null;
+  roomSceneImageUrlBaseline?: string | null;
 }): PelicanItemSavePhotos {
   const pasted = input.pastedImageUrl.trim();
   const baseline = input.pastedImageUrlBaseline.trim();
@@ -141,15 +154,26 @@ export function pelicanItemSavePhotos(input: {
   }
   const material = (input.storedMaterialImageUrl ?? "").trim();
   const materialImageUrl = isStoredPelicanImagePath(material) || isHttpImageUrl(material) ? material : undefined;
-  return { imageUrl, materialImageUrl };
+  const roomScene = pelicanRoomSceneImageUrl(input.storedRoomSceneImageUrl);
+  const roomSceneBaseline = pelicanRoomSceneImageUrl(input.roomSceneImageUrlBaseline);
+  const roomSceneImageUrl = roomScene === roomSceneBaseline ? undefined : roomScene;
+  return {
+    imageUrl,
+    materialImageUrl,
+    ...(roomSceneImageUrl !== undefined ? { roomSceneImageUrl } : {}),
+  };
 }
 
 /** Preview the saved, border-trimmed URL from the upload response. */
 export function trimmedPelicanPhotoUrl(
-  target: "catalog" | "designer",
-  result: Pick<UploadPelicanProductImageResult, "url" | "materialImageUrl" | "imageUrl">,
+  target: "catalog" | "designer" | "roomScene",
+  result: Pick<UploadPelicanProductImageResult, "url" | "materialImageUrl" | "imageUrl" | "roomSceneImageUrl">,
 ): string | null {
-  const specific = target === "catalog" ? result.imageUrl : result.materialImageUrl;
+  const specific = target === "catalog"
+    ? result.imageUrl
+    : target === "designer"
+      ? result.materialImageUrl
+      : result.roomSceneImageUrl;
   const value = (specific || result.url || "").trim();
   return value || null;
 }
