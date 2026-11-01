@@ -4,6 +4,10 @@ import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, 
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
+import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { GTAOPass } from "three/examples/jsm/postprocessing/GTAOPass.js";
+import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader.js";
 import { FullScreenQuad } from "three/examples/jsm/postprocessing/Pass.js";
@@ -12421,6 +12425,25 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 	    cameraRef.current = camera;
 	    setCameraReadyKey((current) => current + 1);
 
+	    // Ambient occlusion: the soft darkening in corners and under cabinets that the photo render has.
+	    // On by default only for the "high" quality tier; ?ao=1 forces it on, ?ao=0 forces it off.
+	    let composer: EffectComposer | null = null;
+	    try {
+	      const aoParam = new URLSearchParams(window.location.search).get("ao");
+	      const aoWanted = aoParam === "1" || (aoParam !== "0" && renderQuality.tier === "high");
+	      if (aoWanted) {
+	        composer = new EffectComposer(renderer);
+	        composer.setSize(canvasWidth, canvasHeight);
+	        composer.addPass(new RenderPass(threeScene, camera));
+	        const gtao = new GTAOPass(threeScene, camera, canvasWidth, canvasHeight);
+	        gtao.updateGtaoMaterial({ radius: 0.6, distanceExponent: 1.5, thickness: 1, scale: 1.1 });
+	        gtao.blendIntensity = 0.85;
+	        composer.addPass(gtao);
+	        composer.addPass(new OutputPass());
+	      }
+	    } catch {
+	      composer = null;
+	    }
 	    let frame = 0;
 	    let readyFrame = 0;
 	    let firstFramePainted = false;
@@ -12441,7 +12464,7 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 	          setThreeDDollhouseHidden(child, threeDDollhouseHidesWithWall(child) && mounted.some((side) => hiddenSides.has(side)));
 	        }
 	      }
-	      renderer.render(threeScene, camera);
+	      if (composer) composer.render(); else renderer.render(threeScene, camera);
 	      if (!firstFramePainted) {
 	        firstFramePainted = true;
 	        readyFrame = requestAnimationFrame(() => onGeometryRenderedRef.current?.());
@@ -12454,6 +12477,7 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
       renderer.setSize(width, height);
+      composer?.setSize(width, height);
     });
     resizeObserver.observe(mount);
 	    return () => {
@@ -12470,6 +12494,7 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
         zoom: camera.zoom,
       };
 	      controls.dispose();
+	      composer?.dispose();
 	      disposeObject(threeScene);
 	      environmentTarget.dispose();
 	      pmremGenerator.dispose();
