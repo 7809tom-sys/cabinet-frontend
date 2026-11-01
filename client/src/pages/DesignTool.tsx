@@ -231,6 +231,7 @@ import { clampSinkDragForFaucet, raiseWindowsForDeckFaucet, type FaucetWindowCle
 import { autoDesignSinkWindow, windowOverlapsReservation } from "@/lib/autoDesignSinkWindow";
 import { autoDesignRangeHood, autoDesignRangeNeedsVentilation } from "@/lib/autoDesignRangeHood";
 import { mergeAutoDesignRefrigeratorCaps, runAutoDesignLayout } from "@/lib/autoDesignLayout";
+import { ensureDrawerBase } from "@/lib/autoDesignDrawerRule";
 import { autoBuildCornerCatalog, autoDesignCornerSlotPoint, autoDesignCornerSlots, autoDesignExcludedEngineWallIds, autoDesignLayoutUsesWall, autoDesignRunWallIds, type AutoBuildCornerCandidate, type AutoDesignCornerChoice, type AutoDesignCornerSlot } from "@/lib/autoDesignCornerStage";
 import { evaluateAutoDesignCornerFit, type AutoDesignCornerFit } from "@/lib/cornerFit";
 import { useKitchenRuleParameterSync } from "@/lib/kitchenRulesApi";
@@ -1190,6 +1191,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     pool: DesignCabinet[];
     wallPool: DesignCabinet[];
     straightBaseCatalog: DesignCabinet[];
+    drawerBaseCatalog: DesignCabinet[];
     baseSource: DesignCabinet;
     refrigeratorReservation: { wall: string; start: number; end: number } | null;
     slots: AutoDesignCornerSlot[];
@@ -4128,7 +4130,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
             : segment.start + segment.length - wallRunOffset(other, wallId, room))) <= 0.05);
         const fill = planAutoDesignBaseSegment({
           length: segment.length, catalog: stage.straightBaseCatalog, rangeAtStart: beside("start"), rangeAtEnd: beside("end"),
-          heavyCookLanding: heavyCook, preferDrawerBesideRange: preferDrawers,
+          heavyCookLanding: heavyCook, preferDrawerBesideRange: preferDrawers, drawerCatalog: stage.drawerBaseCatalog,
         });
         if (fill.note) rangeNeighborNotes.push(fill.note);
         let along = segment.start;
@@ -4155,6 +4157,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       }
     }
 
+    // Every layout has at least one three-drawer base (Tom, Oct 31): convert the best-fitting base run when the
+    // planner's range split did not place one. A line with no drawer base only warns.
+    const drawerRule = ensureDrawerBase({ placed: working, room, catalog: [...stage.straightBaseCatalog, ...stage.drawerBaseCatalog], makeUid, styleId: styleIdRef.current ?? null });
+    working = drawerRule.placed;
+    if (drawerRule.note) rangeNeighborNotes.push(drawerRule.note);
+    if (drawerRule.warning) rangeNeighborNotes.push(drawerRule.warning);
     // Standard designer rules, including the small-gap filler, run on the seated
     // lowers before the wider seam helper closes anything they left behind.
     const baseRules = applyDesignerLayoutRules({

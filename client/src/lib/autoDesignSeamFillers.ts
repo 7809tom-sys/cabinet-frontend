@@ -13,7 +13,7 @@ import {
 } from "./design";
 import { installedFillerVerticalSpec } from "./smallGapFiller";
 import { guardHeavyCookRangeLanding } from "./kitchenAdjacency";
-import { preferDrawerBasesBesideRange } from "./kitchenUsage";
+import { preferDrawerBasesBesideRange, splitWideDoorBaseBesideRange } from "./kitchenUsage";
 
 /** A seam narrower than this is tape-measure noise, not a gap. */
 export const SEAM_MIN_IN = 0.125;
@@ -408,6 +408,8 @@ export function planAutoDesignBaseSegment(input: {
   heavyCookLanding?: boolean;
   /** Baking or everyday cooking: use a same-width drawer base against the range when the line sells one. */
   preferDrawerBesideRange?: boolean;
+  /** Three-drawer bases of the line (not part of `catalog`, which is door bases only). Enables the door + drawer split. */
+  drawerCatalog?: DesignCabinet[];
 }): { items: FillItem[]; note: string | null } {
   const widths = input.catalog.map((candidate) => dim(candidate.width, 0)).filter((width) => width > 0);
   const solved = searchFewestFillerOpening({ lengthIn: input.length, widthsIn: widths, layer: "base", movementLimitIn: 0 });
@@ -459,9 +461,12 @@ export function planAutoDesignBaseSegment(input: {
   return finish(arranged, `The run beside the range is only ${Math.round(input.length * 100) / 100}″, so its neighbor is narrower than ${RANGE_NEIGHBOR_MIN_WIDTH_IN}″.`);
 
   function finish(items: FillItem[], note: string | null): { items: FillItem[]; note: string | null } {
-    const preferred = input.preferDrawerBesideRange
+    const sameWidth = input.preferDrawerBesideRange
       ? preferDrawerBasesBesideRange(items, input.catalog, input.rangeAtStart, input.rangeAtEnd)
       : items;
+    // Every layout wants a drawer base (Tom, Oct 31): one wide door base against the range becomes a door base
+    // plus a three-drawer base of the same total width, drawer nearest the range.
+    const preferred = splitWideDoorBaseBesideRange(sameWidth, [...input.catalog, ...(input.drawerCatalog ?? [])], input.rangeAtStart, input.rangeAtEnd);
     if (!input.heavyCookLanding) return { items: preferred, note };
     const guarded = guardHeavyCookRangeLanding(preferred, input);
     return { items: guarded.items, note: guarded.note ?? note };

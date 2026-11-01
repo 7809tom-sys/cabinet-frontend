@@ -21,6 +21,8 @@ export type FillStrategy = SharedFillStrategy;
 
 export interface FillItem extends SharedFillItem {
   cabinet: DesignCabinet;
+  /** Set on the door base and drawer base of a door + drawer split beside a range: place them together, in order. */
+  drawerSplit?: boolean;
 }
 
 export interface FillResult extends SharedFillResult {
