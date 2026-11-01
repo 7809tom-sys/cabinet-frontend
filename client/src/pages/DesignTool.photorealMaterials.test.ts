@@ -1,20 +1,98 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { resolveSwatch } from "@/components/DoorStyleSwatch";
+import { designerApprovedFaceUrl, designerFacePlan } from "@/lib/designerFacePlan";
 
 const designToolSource = readFileSync(new URL("./DesignTool.tsx", import.meta.url), "utf8");
+const facePlanSource = readFileSync(new URL("../lib/designerFacePlan.ts", import.meta.url), "utf8");
 const rendererSource = readFileSync(new URL("../components/design/InteractiveRoom3D.tsx", import.meta.url), "utf8");
 const surfacesPickerSource = readFileSync(new URL("../components/design/SurfacesPickerDialog.tsx", import.meta.url), "utf8");
 
 describe("Designer programmed photoreal material wiring", () => {
-  it("uses Administration imagery as the cabinet source and the verified Rustic Hickory center grain as a material-only map", () => {
-    expect(designToolSource).toContain("function designerFacePlan(");
-    expect(designToolSource).toContain("const doorUrl = preferredDoorReferenceUrl(style);");
-    expect(designToolSource).toContain("const drawerReference = preferredDrawerReferenceUrl(style);");
-    expect(designToolSource).toContain("if (!approved && /rustic hickory|forest rust/i.test(`${style.ourName ?? \"\"} ${style.aliasName ?? \"\"}`))");
-    expect(designToolSource).toContain('const RUSTIC_HICKORY_GRAIN_URL = "/textures/rustic_hickory_vertical_grain_v2.webp";');
+  it("uses Administration imagery as the cabinet source and the uploaded sample as the face", () => {
     expect(designToolSource).toContain("return designerFacePlan(s, \"base\");");
+    expect(designToolSource).not.toContain("RUSTIC_HICKORY_GRAIN_URL");
+    expect(designToolSource).not.toContain("rustic hickory|forest rust");
+    expect(designToolSource).not.toContain("rustic_hickory_vertical_grain");
+    expect(facePlanSource).toContain("function designerFacePlan(");
+    expect(facePlanSource).toContain("export function designerApprovedFaceUrl(");
+    expect(facePlanSource).toContain("const doorUrl = preferredDoorReferenceUrl(style);");
+    expect(facePlanSource).toContain("const drawerReference = preferredDrawerReferenceUrl(style);");
+    expect(facePlanSource).not.toContain("rustic_hickory");
+    expect(facePlanSource).not.toContain("RUSTIC_HICKORY");
     expect(designToolSource).toContain("catalogDoorSampleUrl={active3DDoorSampleUrl}");
     expect(designToolSource).toContain("photoUrl={paletteFinishSwatch}");
+  });
+
+  it("treats an uploaded sample as the approved face and does not invent a grain texture", () => {
+    const forestRust = {
+      ourName: "Forest Rust",
+      aliasName: "Ashford",
+      styleCode: "RH",
+      distributorId: 210001,
+      approvedReferenceImageUrl: null,
+      doorSampleImageUrl: "/uploads/forest-rust-door.jpg",
+      drawerSampleImageUrl: "/uploads/forest-rust-drawer.jpg",
+      thumbnailImageUrl: "/uploads/forest-rust-thumb.jpg",
+    };
+    expect(designerApprovedFaceUrl(forestRust)).toBe("/uploads/forest-rust-door.jpg");
+    const withSample = designerFacePlan(forestRust, "base");
+    expect(withSample?.doorUrl).toBe("/uploads/forest-rust-door.jpg");
+    expect(withSample?.drawerUrl).toBe("/uploads/forest-rust-drawer.jpg");
+    expect(JSON.stringify(withSample)).not.toContain("rustic_hickory");
+
+    const thumbnailOnly = {
+      ...forestRust,
+      doorSampleImageUrl: "  ",
+      drawerSampleImageUrl: null,
+      thumbnailImageUrl: "/uploads/forest-rust-thumb.jpg",
+    };
+    expect(designerApprovedFaceUrl(thumbnailOnly)).toBe("/uploads/forest-rust-thumb.jpg");
+    expect(designerFacePlan(thumbnailOnly, "wall")?.doorUrl).toBe("/uploads/forest-rust-thumb.jpg");
+
+    const noSample = {
+      ourName: "Rustic Hickory",
+      aliasName: "Forest Rust",
+      approvedReferenceImageUrl: " ",
+      doorSampleImageUrl: "",
+      thumbnailImageUrl: null,
+    };
+    expect(designerApprovedFaceUrl(noSample)).toBeNull();
+    const empty = designerFacePlan(noSample, "base");
+    expect(empty?.doorUrl).toBeNull();
+    expect(empty?.drawerUrl).toBeNull();
+    expect(JSON.stringify(empty)).not.toContain("rustic_hickory");
+    expect(JSON.stringify(empty)).not.toContain("/textures/");
+
+    const alreadyApproved = {
+      ourName: "Forest Rust",
+      approvedReferenceImageUrl: "/approved/forest-rust.png",
+      doorSampleImageUrl: "/uploads/forest-rust-door.jpg",
+      drawerSampleImageUrl: "/uploads/forest-rust-drawer.jpg",
+    };
+    const approvedPlan = designerFacePlan(alreadyApproved, "base");
+    expect(designerApprovedFaceUrl(alreadyApproved)).toBe("/approved/forest-rust.png");
+    expect(approvedPlan?.doorUrl).toBe("/approved/forest-rust.png");
+    expect(approvedPlan?.drawerUrl).toBe("/approved/forest-rust.png");
+
+    const dlWithSample = {
+      distributorId: 450001,
+      ourName: "Cyber Grey",
+      styleCode: "DL-CG",
+      approvedReferenceImageUrl: null,
+      doorSampleImageUrl: "/uploads/cyber-grey-door.jpg",
+      thumbnailImageUrl: null,
+    };
+    expect(designerFacePlan(dlWithSample, "base")?.dlcCrop?.slug).toBe("cyber-grey");
+  });
+
+  it("paints a Forest Rust swatch rust and leaves forest green green", () => {
+    expect(resolveSwatch({ ourName: "Forest Rust" }).face.toLowerCase()).toBe("#b5603a");
+    expect(resolveSwatch({ ourName: "Sage Rust", color: "sage" }).face.toLowerCase()).toBe("#b5603a");
+    expect(resolveSwatch({ ourName: "forest green" }).face.toLowerCase()).toBe("#56685b");
+    expect(resolveSwatch({ ourName: "Rustic Hickory" }).face.toLowerCase()).toBe("#a07850");
+    expect(resolveSwatch({ ourName: "Forest Rust", swColor: "#112233" }).face.toLowerCase()).toBe("#112233");
+    expect(resolveSwatch({ ourName: "Forest Rust", color: "#abc" }).face.toLowerCase()).toBe("#aabbcc");
   });
 
 	  it("keeps all staged catalog imagery out of 3D texture props while providing verified Astoria, Bahia, and Acorn flooring maps", () => {

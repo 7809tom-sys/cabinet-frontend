@@ -55,6 +55,10 @@ const COLOR_BY_KEYWORD: { match: RegExp; hex: string; wood?: boolean }[] = [
   { match: /grizzle|peppercorn|iron ore|urbane bronze|graphite|slate|gris/, hex: "#5b5b58" },
   { match: /tricorn black|black magic|caviar|onyx|carbon|tricorn|cracked pepper|noir|velvet black|iron black|obsidian|midnight|\bblack\b/, hex: "#2a2a2c" },
   { match: /naval|indigo|sea serpent|navy|cobalt|blue/, hex: "#36465c" },
+  // "Rust" is a finish word and has to beat "forest" / "green". Forest Rust is
+  // the rust stain. "forest green" does not contain that word, so it stays green.
+  // "rustic" is not the word "rust", so it still reaches the hickory swatch.
+  { match: /\brust\b/, hex: "#b5603a", wood: true },
   { match: /evergreen|pewter green|rosemary|sage|forest|hunter|green|ivy/, hex: "#56685b" },
   { match: /harbor/, hex: "#9aa0a6" },
   { match: /unfinished/, hex: "#d8bb84", wood: true },
@@ -65,7 +69,7 @@ const COLOR_BY_KEYWORD: { match: RegExp; hex: string; wood?: boolean }[] = [
   { match: /gray|grey|stone|cinder|slate|vesper|nimbus|sterling|carbon/, hex: "#9aa0a6" },
   { match: /white|snow|arctic|pearl|dove|frost|blanc|nova|lumina|haven white|aura blanc|bloom blanc|edge blanc|dawn|air white|ice white|aura white|nimbus white|nova white|edge white|oxford white|casselberry white|white core|dual white|bloom white/, hex: "#f3f1ec" },
   { match: /cream|linen|sand|beige|tan|creme|ivoire|aura cream|terra|vellum crema|velvet cream|earth shaker/, hex: "#e6dcc6" },
-  { match: /rust|copper|sylvan|bloom umbra|forest rust|bloom shadow/, hex: "#b5603a", wood: true },
+  { match: /copper|sylvan|bloom umbra|bloom shadow/, hex: "#b5603a", wood: true },
   { match: /sage|zenith|zephyr|oxford sage/, hex: "#7a9e7e" },
   { match: /gold|brass|aurum|treasure/, hex: "#c9a84c" },
 ];

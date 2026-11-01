@@ -38,6 +38,12 @@ describe("resolveSwatch color resolution", () => {
     expect(sw.face.toLowerCase()).toBe("#c79a63");
   });
 
+  it("uses the rust stain for Forest Rust and keeps forest green green", () => {
+    expect(resolveSwatch({ ourName: "Forest Rust" }).face.toLowerCase()).toBe("#b5603a");
+    expect(resolveSwatch({ ourName: "forest green" }).face.toLowerCase()).toBe("#56685b");
+    expect(resolveSwatch({ ourName: "Forest Rust", color: "#112233" }).face.toLowerCase()).toBe("#112233");
+  });
+
   it("derives color from ourName/finish when color is null", () => {
     const sw = resolveSwatch({ color: null, ourName: "Aura Cream Shaker", finish: null });
     expect(sw.face.toLowerCase()).toBe("#e6dcc6"); // "cream" -> cream/linen/sand bucket
