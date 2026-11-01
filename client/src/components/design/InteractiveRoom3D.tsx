@@ -45,6 +45,7 @@ import { doorOpeningAppearance, roomDoorSwing } from "@/lib/doorOpeningAppearanc
 import { doorHardwareOffsetFromFaceCenterIn, hardwareStyle, normalizeDoorHardwareFramePosition, type HardwareStyleId } from "@/lib/hardware";
 import { ovenOpeningGeometry } from "@/lib/ovenOpening";
 import { trpc } from "@/lib/trpc";
+import { buildMosaicUnitImage } from "@/lib/mosaicUnitImage";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { searchCatalogItems } from "@shared/catalogCodeSearch";
 import { AEF_PRINTED_GEOMETRY_MARKER } from "@shared/aefFramelessGeometry";
@@ -11961,6 +11962,15 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 	            source.plankLengthIn,
 	            renderQuality.tier === "mobile" ? 768 : 1024,
 	          );
+	        } else if (role === "backsplash" && interlockSpec && (() => {
+	          // Hard rule (lib/backsplashMosaic.ts): the border is cut automatically and the repeat is measured from the photo.
+	          const unit = buildMosaicUnitImage(loadedTexture.image as HTMLImageElement, interlockSpec, renderQuality.tier === "mobile" ? 1024 : 2048);
+	          if (!unit) return false;
+	          (loadedTexture as THREE.Texture<HTMLImageElement | HTMLCanvasElement>).image = unit.image;
+	          loadedTexture.userData = { ...loadedTexture.userData, backsplashPhotoBorderCut: true, backsplashMeasuredOverhangIn: unit.measuredOverhangIn, backsplashFrameLineTrimmed: unit.analysis.frameLineTrimmed };
+	          return true;
+	        })()) {
+	          // unit built from the measured photo above
 	        } else if (role === "backsplash" || source.cropRetailBackground || (role === "flooring" && source.flooringPatternKind === "tile")) {
 	          (loadedTexture as THREE.Texture<HTMLImageElement | HTMLCanvasElement>).image = croppedThreeDRetailImage(
 	            loadedTexture.image,

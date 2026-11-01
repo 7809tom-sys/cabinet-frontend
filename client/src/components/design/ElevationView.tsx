@@ -1,5 +1,6 @@
 import { doorOpeningAppearance } from "@/lib/doorOpeningAppearance";
 import { clampMosaicGroutIn, mosaicSheetSpecFor, mosaicPitchIn } from "@/lib/backsplashMosaic";
+import { buildMosaicUnitImage } from "@/lib/mosaicUnitImage";
 import { threeDLatticeRackLayout } from "@/lib/latticeRackLayout";
 import { PLATE_RACK_FRAME_IN, plateRackDividerLayout } from "@/lib/plateRackLayout";
 import { baseAngleEndPlan } from "@/lib/baseAngleEndLayout";
@@ -289,6 +290,32 @@ export function ElevationView({
     probe.src = productBacksplashImage;
     return () => { cancelled = true; probe.onload = null; probe.onerror = null; };
   }, [productBacksplashImage]);
+  // Every mosaic: the photo border is cut and the repeat measured from the photo (same builder as the 3D view), with the
+  // grout baked into the unit. Falls back to the raw photo + CSS grout when the image cannot be read (cross-origin canvas).
+  const [mosaicUnitUrl, setMosaicUnitUrl] = useState<string | null>(null);
+  const mosaicProductName = backsplashProductName?.trim() || "";
+  const mosaicSheet = parseBacksplashSheetInches({ name: mosaicProductName, size: backsplashProductSize, subCategory: mosaicProductName });
+  const mosaicUnitSpec = mosaicProductName
+    ? mosaicSheetSpecFor({ name: mosaicProductName, widthIn: mosaicSheet.widthIn, heightIn: mosaicSheet.heightIn, patternKind: mosaicSheet.patternKind })
+    : null;
+  const mosaicUnitSpecKey = mosaicUnitSpec ? `${mosaicUnitSpec.key}|${mosaicUnitSpec.outerWidthIn}|${mosaicUnitSpec.outerHeightIn}` : "";
+  useEffect(() => {
+    setMosaicUnitUrl(null);
+    if (!mosaicUnitSpec || !productBacksplashImage || typeof Image === "undefined") return undefined;
+    let cancelled = false;
+    const probe = new Image();
+    probe.crossOrigin = "anonymous";
+    probe.onload = () => {
+      if (cancelled) return;
+      try {
+        const unit = buildMosaicUnitImage(probe, mosaicUnitSpec, 1024);
+        if (unit) setMosaicUnitUrl(unit.image.toDataURL("image/png"));
+      } catch { /* tainted canvas: keep the raw photo */ }
+    };
+    probe.src = productBacksplashImage;
+    return () => { cancelled = true; probe.onload = null; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [productBacksplashImage, mosaicUnitSpecKey]);
   // Counter-flip transform for text so labels read correctly when this whole
   // elevation sits inside a scaleX(-1) container.
   const textFlip: React.CSSProperties | undefined = mirror ? { transform: "scaleX(-1)" } : undefined;
@@ -1576,12 +1603,16 @@ export function ElevationView({
                     height: seg.height,
                     background: missingProductImage ? "#f6e7c1" : bsMat.fill,
                     backgroundImage: showProductImage
-                      ? (interlock && interlockPitch
+                      ? (interlock && interlockPitch && mosaicUnitUrl
+                        ? `url("${mosaicUnitUrl}")`
+                        : interlock && interlockPitch
                         ? `linear-gradient(to top, ${interlock.groutColor ?? bsMat.grout} ${interlockGroutPx}px, transparent ${interlockGroutPx}px), linear-gradient(to left, ${interlock.groutColor ?? bsMat.grout} ${interlockGroutPx}px, transparent ${interlockGroutPx}px), url("${productBacksplashImage}")`
                         : `url("${productBacksplashImage}")`)
                       : (realistic && !missingProductImage ? bgImage : undefined),
                     backgroundSize: showProductImage
-                      ? (interlockPitch
+                      ? (interlockPitch && mosaicUnitUrl
+                        ? `${interlockPitch.x * ppi}px ${interlockPitch.y * ppi}px`
+                        : interlockPitch
                         ? `${interlockPitch.x * ppi}px ${interlockPitch.y * ppi}px, ${interlockPitch.x * ppi}px ${interlockPitch.y * ppi}px, ${interlockPitch.x * ppi}px ${interlockPitch.y * ppi}px`
                         : `${sheet.widthIn * ppi}px ${sheet.heightIn * ppi}px`)
                       : (realistic ? (bgSize ?? (bsMat.pattern === "hexagon" ? `${tileWPx}px ${tileHPx}px` : undefined)) : undefined),
