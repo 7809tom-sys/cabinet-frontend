@@ -10,7 +10,7 @@ describe("Questions for Rich", () => {
   it("are in the Kitchen Rules catalog under their own category, with unique codes", () => {
     const mine = KITCHEN_RULE_SEED.filter((rule) => rule.category === RICH_QUESTIONS_CATEGORY);
     expect(mine.length).toBe(richQuestionSeeds.length);
-    expect(mine.length).toBeGreaterThanOrEqual(10);
+    expect(mine.length).toBeGreaterThanOrEqual(18);
     expect(new Set(KITCHEN_RULE_SEED.map((rule) => rule.ruleCode)).size).toBe(KITCHEN_RULE_SEED.length);
   });
 
