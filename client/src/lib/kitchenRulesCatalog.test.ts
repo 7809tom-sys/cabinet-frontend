@@ -47,6 +47,14 @@ describe("kitchen rules catalog", () => {
     expect(KITCHEN_RULE_SEED.find((rule) => rule.ruleCode === "conflict-gas-hood-30")?.implementationStatus).toBe("reference");
   });
 
+  it("lists the all-mosaics hard rule as an implemented auto rule in the Backsplash category", () => {
+    const rule = KITCHEN_RULE_SEED.find((item) => item.ruleCode === "owner-mosaic-interlock");
+    expect(rule).toMatchObject({ category: "Backsplash", enforcementKind: "auto", implementationStatus: "implemented" });
+    expect(rule!.title).toBe("All mosaics show no sheet edges");
+    expect(rule!.ruleDescription).toContain("Every mosaic in the catalog");
+    expect(rule!.ruleDescription).not.toContain("Golden Trace");
+  });
+
   it("keeps Kitchen Rules off the designer and sales-rep admin screens", () => {
     const designerBlock = adminPage.slice(adminPage.indexOf("if (isDesigner)"), adminPage.indexOf("return (", adminPage.indexOf("if (isDesigner)") + 20));
     const salesBlock = adminPage.slice(adminPage.indexOf("if (isSalesRep)"), adminPage.indexOf("if (isDesigner)"));

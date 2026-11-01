@@ -1471,6 +1471,9 @@ describe("interactive 3D room scene helpers", () => {
 			url: "/manus-storage/pelican/quartz/bedrock-3cm_source_slab_e61a47e8.webp", key: "pelican-quartz:bedrock-3cm",
 				curated: true, proceduralFallback: false, physicalWidthIn: 126, physicalDepthIn: 63,
 			});
+				// PR #162: these keep the product's OUTER sheet size (11.81 in. etc.) on purpose. The texture loader swaps in the
+				// interlock pitch (lib/backsplashMosaic.ts, outer size minus finger overhang) and the grout line when it builds the
+				// texture, so the source description is unchanged and only the rendered repeat spacing differs.
 				expect(threeDProductMaterialSource("backsplash", "Desert Clay", null)).toMatchObject({
 					url: "/manus-storage/desert_clay_11_81_interlocking_mosaic_0aa381c4.webp", key: "desert-clay-11.81in-interlocking-mosaic",
 					curated: true, proceduralFallback: false, physicalWidthIn: 11.81, physicalDepthIn: 11.81,

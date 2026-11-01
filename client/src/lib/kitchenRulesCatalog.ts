@@ -424,6 +424,18 @@ const ownerSeeds: KitchenRuleSeed[] = [
     readsParameters: true,
     notesText: "Auto-added: island end or island back.",
   },
+  {
+    ruleCode: "owner-mosaic-interlock",
+    category: "Backsplash",
+    title: "All mosaics show no sheet edges",
+    ruleDescription: "Every mosaic in the catalog (hex, square, picket, herringbone, penny, linear and every other mosaic, not a short list of names) sits at its real repeat spacing, flush against the next sheet, so the only thing visible at any joint is an even grout line of 1/16 to 1/8 inch. No brightness change from sheet to sheet, no darker outlines and no seams where sheets meet: the backsplash reads as one continuous surface, never a grid of rectangles. Same rule in 3D and in the elevation view.",
+    parameters: { mosaic_grout_min_in: 0.0625, mosaic_grout_max_in: 0.125 },
+    enforcementKind: "auto",
+    sourceText: "Owner",
+    implementationStatus: "implemented",
+    readsParameters: false,
+    notesText: "Hard rule from the owner. Lives in lib/backsplashMosaic.ts; the per-product tests and the every-catalog-mosaic-has-a-spec test fail if any sheet gets a tint, an outline, or the wrong spacing or grout. Mosaics without a curated row get a generic seamless spec from their catalog size. Spacing, overlap and grout values are estimates until measured from the product photos.",
+  },
 ];
 
 export const KITCHEN_RULE_SEED: readonly KitchenRuleSeed[] = [...researchSeeds, ...ownerSeeds];

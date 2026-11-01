@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import { DEFAULT_ROOM, wallPlacementAt, type PlacedCabinet, type WallOpening } from "./design";
 import {
   MOSAIC_GROUT_MAX_IN, MOSAIC_GROUT_MIN_IN, MOSAIC_INTERLOCK_SPECS, baseboardSpans, clampMosaicGroutIn,
   mosaicAlongForTile, mosaicInterlockSpecForKey, mosaicInterlockSpecForName, mosaicInterlockUnitPlan, mosaicPhaseAnchorEdge,
-  mosaicFinishedEdges, mosaicPitchIn, mosaicPlanGroutIn, mosaicSheetShade, mosaicUvForPoint,
+  mosaicFinishedEdges, mosaicPitchIn, mosaicPlanGroutIn, mosaicUvForPoint,
+  MOSAIC_SHEET_SPECS, genericMosaicSheetSpec, mosaicSheetSpecFor,
 } from "./backsplashMosaic";
+import { parseBacksplashSheetInches } from "./backsplashProductMaterial";
 
 const room = DEFAULT_ROOM;
 
@@ -15,9 +18,10 @@ describe("interlocking mosaics repeat at their interlock spacing", () => {
     }
     expect(mosaicInterlockSpecForName("Golden Trace Mosaic 11.81")?.key).toBe("golden-trace-11.81in-marble-aluminum-mosaic");
   });
-  it("the repeat spacing is smaller than the photo's outer size, so the fingers overlap into the next sheet", () => {
+  it("an interlocking sheet's repeat spacing is smaller than the photo's outer size (fingers overlap); a straight-edge sheet repeats at its size", () => {
     for (const item of MOSAIC_INTERLOCK_SPECS) {
       const pitch = mosaicPitchIn(item);
+      if (item.edge === "straight") { expect(pitch).toEqual({ x: item.outerWidthIn, y: item.outerHeightIn }); continue; }
       expect(pitch.x).toBeLessThan(item.outerWidthIn);
       expect(pitch.y).toBeLessThan(item.outerHeightIn);
       expect(pitch.x).toBeGreaterThan(item.outerWidthIn * 0.8);
@@ -86,16 +90,6 @@ describe("the pattern lines up at an inside corner", () => {
   });
 });
 
-describe("sheet shade variation", () => {
-  it("is deterministic and brightness-only within +/-2.5%", () => {
-    expect(mosaicSheetShade(3, 4, 1)).toBe(mosaicSheetShade(3, 4, 1));
-    const shades = Array.from({ length: 200 }, (_, i) => mosaicSheetShade(i, i % 7, 1));
-    expect(Math.min(...shades)).toBeGreaterThanOrEqual(0.974);
-    expect(Math.max(...shades)).toBeLessThanOrEqual(1.026);
-    expect(new Set(shades.map((s) => s.toFixed(3))).size).toBeGreaterThan(5);
-  });
-});
-
 describe("baseboards only along exposed walls", () => {
   const cab = (along: number, width: number, code = "B24"): PlacedCabinet => {
     const spot = wallPlacementAt(along, width, 24, "top", room)!;
@@ -139,5 +133,128 @@ describe("clean finished edges on cut tile", () => {
     const above = wall({ start: 30, end: 60, bottom: 60, top: 80 });
     expect(mosaicFinishedEdges(below, [below, above], 144, 96)).toContain("top");
     expect(mosaicFinishedEdges(above, [below, above], 144, 96)).toContain("bottom");
+  });
+});
+
+// HARD RULE tests (see the comment block at the top of lib/backsplashMosaic.ts): one group per interlocking product.
+const viewerSource = readFileSync(new URL("../components/design/InteractiveRoom3D.tsx", import.meta.url), "utf8");
+const elevationSource = readFileSync(new URL("../components/design/ElevationView.tsx", import.meta.url), "utf8");
+const libSource = readFileSync(new URL("./backsplashMosaic.ts", import.meta.url), "utf8");
+const PRODUCTS = ["Desert Clay", "Arctic Vail", "Carbon Hex", "Carrara Subway", "Cloudline Marble", "Concord Square", "Glacier Shift", "Golden Trace"] as const;
+const backsplashBlock = viewerSource.slice(viewerSource.indexOf("function addThreeDBacksplash("), viewerSource.indexOf("function addThreeDCountertopUpstands"));
+
+describe("hard rule: every mosaic shows no sheet edges", () => {
+  it("states the all-mosaics rule and names every curated sheet in the comment at the top of the lib", () => {
+    const header = libSource.slice(0, libSource.indexOf("export const MOSAIC_GROUT_MIN_IN"));
+    expect(header).toContain("HARD RULE");
+    expect(header).toContain("EVERY MOSAIC PRODUCT");
+    for (const name of PRODUCTS) expect(header, name).toContain(name);
+    expect(MOSAIC_SHEET_SPECS.map((item) => item.name).sort()).toEqual(PRODUCTS.map((name) => name.toLowerCase()).sort());
+  });
+
+  for (const name of PRODUCTS) {
+    describe(name, () => {
+      const item = mosaicInterlockSpecForName(name)!;
+
+      it("has no brightness or tint change from one sheet to the next (one plane, one material, no per-sheet color)", () => {
+        expect(item).not.toBeNull();
+        // The renderer builds every interlocking sheet in one plane with one white-tinted material.
+        expect(backsplashBlock).not.toMatch(/vertexColors|setAttribute\("color"|mosaicSheetShade|SheetGeometry|lot shade|Float32BufferAttribute\(colors/);
+        expect(backsplashBlock).toContain('color: "#ffffff"');
+        expect(libSource).not.toMatch(/export function mosaicSheetShade|mosaicSheetTint/);
+        // The elevation draws no sheet outline for these products and applies no per-sheet gradient or opacity step.
+        expect(elevationSource).toContain('interlock && showProductImage ? "none"');
+        expect(elevationSource).not.toMatch(/nth-child|mosaicSheetShade/);
+      });
+
+      it("paints grout at the sheet edge exactly as wide and as colored as the grout inside the sheet, within 1/16 to 1/8 inch", () => {
+        expect(item.internalGroutIn).toBeGreaterThanOrEqual(MOSAIC_GROUT_MIN_IN);
+        expect(item.internalGroutIn).toBeLessThanOrEqual(MOSAIC_GROUT_MAX_IN);
+        expect(item.groutIn).toBe(item.internalGroutIn);
+        const plan = mosaicInterlockUnitPlan(item, 2048, 2048, 2048);
+        const grout = mosaicPlanGroutIn(plan);
+        const slackX = plan.pitchXIn / plan.width;
+        const slackY = plan.pitchYIn / plan.height;
+        expect(Math.abs(grout.x - item.internalGroutIn)).toBeLessThanOrEqual(slackX);
+        expect(Math.abs(grout.y - item.internalGroutIn)).toBeLessThanOrEqual(slackY);
+        expect(grout.x).toBeGreaterThanOrEqual(MOSAIC_GROUT_MIN_IN - slackX);
+        expect(grout.x).toBeLessThanOrEqual(MOSAIC_GROUT_MAX_IN + slackX);
+        expect(grout.y).toBeGreaterThanOrEqual(MOSAIC_GROUT_MIN_IN - slackY);
+        expect(grout.y).toBeLessThanOrEqual(MOSAIC_GROUT_MAX_IN + slackY);
+        // one color for every joint: the sheet-edge line uses the product's grout color, never a darker outline
+        expect(item.groutColor).toMatch(/^#[0-9a-f]{6}$/i);
+        expect(viewerSource).toContain('context.fillStyle = item.groutColor ?? "#8a8782";');
+      });
+
+      it("repeats at the interlock spacing, flush sheet to sheet, in 3D and in the elevation", () => {
+        const pitch = mosaicPitchIn(item);
+        if (item.edge === "interlocking") {
+          expect(pitch.x).toBeLessThan(item.outerWidthIn);
+          expect(pitch.y).toBeLessThan(item.outerHeightIn);
+        } else {
+          // straight-edge sheet: overlap 0, the pitch is the sheet size
+          expect(item.overhangXIn).toBe(0);
+          expect(item.overhangYIn).toBe(0);
+          expect(pitch).toEqual({ x: item.outerWidthIn, y: item.outerHeightIn });
+        }
+        const a = mosaicUvForPoint(30, 40, pitch.x, pitch.y, 144, "start");
+        const b = mosaicUvForPoint(30 + pitch.x, 40 + pitch.y, pitch.x, pitch.y, 144, "start");
+        expect(b.u - a.u).toBeCloseTo(1, 9);
+        expect(b.v - a.v).toBeCloseTo(1, 9);
+        // the unit crop is exactly one pitch, so adjacent units touch with no gap and no overlap
+        const plan = mosaicInterlockUnitPlan(item, 2000, 2000, 4096);
+        expect(plan.pitchXIn).toBe(pitch.x);
+        expect(plan.pitchYIn).toBe(pitch.y);
+        expect(viewerSource).toContain("backsplashModuleIn: interlockSpec ? mosaicPitchIn(interlockSpec).x");
+        expect(viewerSource).toContain("backsplashModuleHeightIn: interlockSpec ? mosaicPitchIn(interlockSpec).y");
+        expect(elevationSource).toContain("interlockPitch.x * ppi");
+      });
+    });
+  }
+});
+
+describe("hard rule: no catalog mosaic is left without a spec", () => {
+  // Every curated mosaic source in InteractiveRoom3D.tsx (any entry whose pattern kind is a mosaic) must have a row.
+  const curatedMosaicKeys = [...viewerSource.matchAll(/key: "([^"]+)",[\s\S]{0,700}?backsplashPatternKind: "(?:interlocking|subway)-mosaic"/g)].map((m) => m[1]);
+
+  it("finds the curated mosaics in the 3D source (guards against this test matching nothing)", () => {
+    expect(curatedMosaicKeys.length).toBeGreaterThanOrEqual(PRODUCTS.length);
+  });
+
+  it("every curated mosaic source key has a spec with a repeat spacing, overlap, grout width and grout color", () => {
+    for (const key of curatedMosaicKeys) {
+      const item = mosaicInterlockSpecForKey(key);
+      expect(item, `no mosaic spec for ${key}`).not.toBeNull();
+      expect(item!.overhangXIn).toBeGreaterThanOrEqual(0);
+      expect(item!.groutIn).toBeGreaterThanOrEqual(MOSAIC_GROUT_MIN_IN);
+      expect(item!.groutIn).toBeLessThanOrEqual(MOSAIC_GROUT_MAX_IN);
+      expect(item!.groutColor).toMatch(/^#[0-9a-f]{6}$/i);
+      expect(typeof item!.measured).toBe("boolean");
+    }
+  });
+
+  it("every spec belongs to a curated source (no orphan rows)", () => {
+    for (const item of MOSAIC_SHEET_SPECS) expect(curatedMosaicKeys, item.key).toContain(item.key);
+  });
+
+  it("any other catalog mosaic (Moonstone Hex, penny, picket, linear...) gets a generic seamless spec; only field tile gets none", () => {
+    for (const name of ["Moonstone Hex Mosaic", "Penny Round Mosaic", "Picket Mosaic", "Linear Stack Mosaic", "Herringbone Mosaic"]) {
+      const sheet = parseBacksplashSheetInches({ name, size: "11.81 x 11.81", category: "Tile & Mosaic", subCategory: "Mosaic" });
+      const item = mosaicSheetSpecFor({ name, widthIn: sheet.widthIn, heightIn: sheet.heightIn, patternKind: sheet.patternKind });
+      expect(item, name).not.toBeNull();
+      expect(item!.generic).toBe(true);
+      expect(item!.measured).toBe(false);
+      expect(mosaicPitchIn(item!)).toEqual({ x: 11.81, y: 11.81 });
+      expect(item!.groutIn).toBeGreaterThanOrEqual(MOSAIC_GROUT_MIN_IN);
+      expect(item!.groutIn).toBeLessThanOrEqual(MOSAIC_GROUT_MAX_IN);
+    }
+    const field = parseBacksplashSheetInches({ name: "White Gloss Field Tile", size: "3 x 6", category: "Wall Tile", subCategory: "Wall Tile" });
+    expect(mosaicSheetSpecFor({ name: "White Gloss Field Tile", widthIn: field.widthIn, heightIn: field.heightIn, patternKind: field.patternKind })).toBeNull();
+    expect(genericMosaicSheetSpec("X", 10, 12).edge).toBe("straight");
+  });
+
+  it("the 3D loader and the elevation both resolve through the one lookup, with no plain fallback for a mosaic", () => {
+    expect(viewerSource).toContain("mosaicSheetSpecFor({ key: source.key");
+    expect(elevationSource).toContain("mosaicSheetSpecFor({ name: productName");
   });
 });
