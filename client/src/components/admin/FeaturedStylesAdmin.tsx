@@ -45,6 +45,12 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { InheritedVendorOriginZips } from "@/components/doorStyles/InheritedVendorOriginZips";
+import {
+  addShippingOriginZip,
+  inheritedVendorZipsForEditor,
+  ownShippingOriginZips,
+} from "@shared/styleOriginInheritance";
 
 const MAX_SCENES_PER_STYLE = 6;
 
@@ -77,6 +83,12 @@ interface AdminStyle {
   supplierName?: string | null;      // neutral internal label (e.g. "Line A") — admin only
   warehouseZip: string | null;
   warehouseZips?: string[] | null;
+  /** Vendor cabinet warehouse coverage from listForAdmin. Missing means []. First zip is primary. */
+  distributorWarehouseZips?: string[] | null;
+  /** Own origins when this style has any; otherwise distributorWarehouseZips. */
+  effectiveWarehouseZips?: string[] | null;
+  /** True when this style stores no origins of its own. */
+  warehouseZipsInherited?: boolean | null;
   flatFreightFeeCents: number | null;
   railWidth: string | null;
   stileWidth: string | null;
@@ -274,10 +286,8 @@ function thumb(s: AdminStyle): string | null {
   return s.roomSceneImageUrl || s.doorSampleImageUrl || s.thumbnailImageUrl || null;
 }
 
-function originZipList(style: Pick<AdminStyle, "warehouseZip" | "warehouseZips">): string[] {
-  return Array.from(new Set([...(style.warehouseZips ?? []), style.warehouseZip ?? ""]
-    .map((zip) => zip.replace(/\D/g, "").slice(0, 5))
-    .filter((zip) => /^\d{5}$/.test(zip))));
+function originZipList(style: Pick<AdminStyle, "warehouseZip" | "warehouseZips" | "warehouseZipsInherited">): string[] {
+  return ownShippingOriginZips(style);
 }
 
 function SourceAttribution({ style }: { style: AdminStyle }) {
@@ -499,6 +509,7 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
       const was = original?.trim() || null;
       return cur !== was ? cur : undefined; // undefined = omit from patch (server won't touch it)
     };
+    // Own ZIPs only. Empty (null) inherits; never write effectiveWarehouseZips back.
     const payload = {
       id: style.id,
       featuredLabel: featuredLabel.trim() || null,
@@ -583,18 +594,20 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
     }
   }
 
+  const inheritedZips = inheritedVendorZipsForEditor(style, warehouseZips);
+
   function addWarehouseZip() {
-    const normalizedZip = newWarehouseZip.replace(/\D/g, "").slice(0, 5);
-    if (!/^\d{5}$/.test(normalizedZip)) {
+    const result = addShippingOriginZip(warehouseZips, newWarehouseZip);
+    if (result.status === "invalid") {
       toast.error("Shipping origin ZIP must be exactly 5 digits");
       return;
     }
-    if (warehouseZips.includes(normalizedZip)) {
+    if (result.status === "duplicate") {
       toast.message("This shipping origin ZIP is already listed");
       setNewWarehouseZip("");
       return;
     }
-    setWarehouseZips((current) => [...current, normalizedZip]);
+    setWarehouseZips(result.zips);
     setNewWarehouseZip("");
   }
 
@@ -708,7 +721,7 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
                 <Plus className="mr-1.5 h-4 w-4" /> Add ZIP
               </Button>
             </div>
-            {warehouseZips.length > 0 && (
+            {warehouseZips.length > 0 ? (
               <div className="flex flex-wrap gap-2" aria-label="Saved shipping origin ZIPs">
                 {warehouseZips.map((zip) => (
                   <Badge key={zip} variant="secondary" className="gap-1 py-1 pl-2.5 pr-1">
@@ -724,9 +737,20 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
                   </Badge>
                 ))}
               </div>
+            ) : (
+              <InheritedVendorOriginZips zips={inheritedZips} />
             )}
+            <Button
+              type="button"
+              variant="outline"
+              data-testid="use-vendor-zips"
+              onClick={() => setWarehouseZips([])}
+              disabled={warehouseZips.length === 0 || inheritedVendorZipsForEditor(style, []).length === 0}
+            >
+              Use vendor zips
+            </Button>
             <p className="text-xs text-muted-foreground">
-              Add every verified warehouse ZIP for this Door Style. Live freight uses the saved origin nearest to the delivery ZIP; these private origins override the general distributor/global fallback for this style.
+              Add every verified warehouse ZIP for this Door Style. Live freight uses the saved origin nearest to the delivery ZIP; these private origins override the general distributor/global fallback for this style. Leave the list empty to inherit the vendor cabinet warehouse coverage. Inherited ZIPs are not copied onto this style.
             </p>
             <div className="space-y-1.5 pt-1">
               <Label htmlFor="ed-flat-freight">Plan B flat freight fee (optional)</Label>
