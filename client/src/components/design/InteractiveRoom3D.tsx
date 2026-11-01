@@ -69,7 +69,7 @@ import { masterTracProduct, masterTracFinishColor } from "@/lib/closet";
 import { geminiHardwareReference, type GeminiMaterialManifestEntry } from "@/lib/geminiHardwareReference";
 import { geminiMaterialReference, geminiInferredMaterialLabels } from "@/lib/geminiMaterialReference";
 import { GEMINI_MATERIAL_MANIFEST_WIRE_VERSION, geminiMaterialManifestWireValidationIssues, serializeGeminiImageTestProvenanceForWire, serializeGeminiMaterialManifestForWire } from "@shared/geminiMaterialManifest";
-import { pelicanQuartzMaterialMap } from "@/lib/pelicanQuartzMaterialMaps";
+import { resolvePelicanDesignerMaterial } from "@/lib/pelicanQuartzMaterialMaps";
 import { applyThreeDCabinetPieceGrain, threeDPieceGrainTransform } from "@/lib/woodGrainVariation";
 import {
   BACKSPLASH_ROOM_SCENE_FIDELITY,
@@ -1235,15 +1235,15 @@ export function threeDProductMaterialSource(
 	    staggerOffsetsIn: THREE_D_PLANK_STAGGER_FRACTIONS.map((fraction) => Math.round(60 * fraction * 8) / 8),
 	  };
 	}
-  const quartzMap = role === "countertop" ? pelicanQuartzMaterialMap(productName) : null;
-  if (quartzMap) {
+  const designerMaterial = role === "countertop" ? resolvePelicanDesignerMaterial(productName, originalUrl) : null;
+  if (designerMaterial) {
     return {
-      url: quartzMap.materialImageUrl,
-      key: `pelican-quartz:${quartzMap.handle}`,
+      url: designerMaterial.url,
+      key: designerMaterial.key,
       curated: true,
       proceduralFallback: false,
-      physicalWidthIn: quartzMap.physicalWidthIn,
-      physicalDepthIn: quartzMap.physicalDepthIn,
+      physicalWidthIn: designerMaterial.physicalWidthIn,
+      physicalDepthIn: designerMaterial.physicalDepthIn,
       sourceProductName: productName ?? null,
       flooringPatternKind: null,
       plankWidthIn: null,

@@ -1416,8 +1416,16 @@ describe("interactive 3D room scene helpers", () => {
 		      offsetY: 0,
 		      rotation: 0,
 		    });
-			const slab = threeDProductMaterialSource("countertop", "Calacatta Oro 3cm Super Jumbo", "/manus-storage/pelican/8_acb59792.png");
+			const uploadedSlab = "/manus-storage/pelican/8_acb59792.png";
+			const slab = threeDProductMaterialSource("countertop", "Calacatta Oro 3cm Super Jumbo", uploadedSlab);
 			expect(slab).toMatchObject({
+				url: uploadedSlab,
+				key: `pelican-quartz:full-moon-3cm-jumbo-1:${uploadedSlab}`,
+				curated: true,
+				physicalWidthIn: 138,
+				physicalDepthIn: 79,
+			});
+			expect(threeDProductMaterialSource("countertop", "Calacatta Oro 3cm Super Jumbo", null)).toMatchObject({
 				url: "/manus-storage/pelican/quartz/full-moon-3cm-jumbo-1_source_slab_4dd73868.webp",
 				key: "pelican-quartz:full-moon-3cm-jumbo-1",
 				curated: true,
@@ -1565,7 +1573,7 @@ describe("interactive 3D room scene helpers", () => {
 		  });
 
 		  it("assigns every source-qualified Pelican quartz slab to a physical world-slab coordinate system rather than a generic countertop crop", () => {
-		    const aurora = threeDProductMaterialSource("countertop", "Aurora 3cm", "/manus-storage/pelican-quartz/aurora.webp");
+		    const aurora = threeDProductMaterialSource("countertop", "Aurora 3cm", null);
 		    expect(aurora).toMatchObject({
 		      curated: true,
 		      proceduralFallback: false,
