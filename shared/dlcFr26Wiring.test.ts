@@ -7,7 +7,7 @@ import { DLC_FR26_CATALOG } from "./dlcFr26Catalog.generated";
 import { findDlcFinishForStyle, normalizeFinishName } from "./dlcFr26Mapping";
 import { resolveDoorFinishHex } from "../client/src/lib/doorStyleAppearance";
 import { RESTORED_DOOR_LIGHTS, DARK_STAIN_DOOR_LIGHTS } from "./doorRenderLights";
-import { DLC_FRAME_DETAIL, dlcFrameStrips, dlcFaceGrainRepeat, dlcPhotoLightCompensation, dlcFaceProportions, dlcFaceTextureWindow } from "./dlcFr26Textures";
+import { DLC_FRAME_DETAIL, dlcFrameStrips, dlcFaceGrainRepeat, dlcPhotoLightCompensation, dlcPaleBrightnessCut, dlcFaceProportions, dlcFaceTextureWindow } from "./dlcFr26Textures";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const dl = (ourName: string, styleCode: string | null = null, extra: Record<string, unknown> = {}) => ({
@@ -195,20 +195,42 @@ describe("sides carry the door's grain, and photo materials are not over-lit", (
     expect(plan.dlcCrop?.solidColor).toBe(DLC_FR26_CATALOG.find((e) => e.slug === "versa-shaker")!.solidColor);
     expect(resolveCabinetFaceImages(dl("Peccan", "DL-PC"), "base").dlcCrop?.grainUrl).toBeNull();
   });
-  it("light compensation cancels the rig's light sum (tone mapping off) and stays in range", () => {
+  it("light compensation cancels the rig's light sum per channel (tone mapping off) and stays in range", () => {
     const std = dlcPhotoLightCompensation(RESTORED_DOOR_LIGHTS);
     expect(std.linear).toBeGreaterThan(0.45);
-    expect(std.linear).toBeLessThan(0.6);
-    expect(std.hex).toMatch(/^#([0-9a-f]{2})\1\1$/);
+    expect(std.linear).toBeLessThan(0.65);
+    expect(std.hex).toMatch(/^#[0-9a-f]{6}$/);
     const dark = dlcPhotoLightCompensation(DARK_STAIN_DOOR_LIGHTS);
     expect(dark.linear).toBeGreaterThan(std.linear);
     expect(dark.linear).toBeLessThanOrEqual(1);
+  });
+  it("a neutral grey stays neutral: tint x rig light sum is equal in R, G and B (no blue, no warm cast)", () => {
+    for (const rig of [RESTORED_DOOR_LIGHTS, DARK_STAIN_DOOR_LIGHTS]) {
+      const c = dlcPhotoLightCompensation(rig, 0.2); // Dove Grey-ish finish, pale cut applies
+      const again = dlcPhotoLightCompensation(rig, 0.2);
+      expect(c.rgb).toEqual(again.rgb);
+      // the sum each channel is multiplied by is cut / rgb[i]; equal sums mean equal outputs for equal albedo
+      const sums = c.rgb.map((v) => 1 / v);
+      expect(Math.abs(sums[0]! - sums[2]!) / sums[0]!).toBeGreaterThan(0.01); // the rig itself is not neutral...
+      const out = [0, 1, 2].map((i) => c.rgb[i]! * sums[i]!);
+      expect(out[0]).toBeCloseTo(out[2]!, 6); // ...but the compensation cancels it exactly
+    }
+  });
+  it("pale finishes are cut up to 15% in brightness; mid and dark finishes are not", () => {
+    const flat = dlcPhotoLightCompensation(RESTORED_DOOR_LIGHTS, 0.05);
+    const dark = dlcPhotoLightCompensation(RESTORED_DOOR_LIGHTS, null);
+    const pale = dlcPhotoLightCompensation(RESTORED_DOOR_LIGHTS, 0.6);
+    expect(flat.rgb).toEqual(dark.rgb);
+    expect(pale.linear / dark.linear).toBeCloseTo(0.85, 2);
+    const dove = dlcPhotoLightCompensation(RESTORED_DOOR_LIGHTS, 0.58);
+    expect(dove.linear).toBeLessThan(dark.linear);
+    expect(dlcPaleBrightnessCut(0.58)).toBeLessThanOrEqual(0.15);
   });
   it("no tone mapping on DLC photo materials: faces, rails, drawers, and sides without a grain patch", () => {
     const s = src();
     expect((s.match(/toneMapped: false/g) ?? []).length).toBeGreaterThanOrEqual(3);
     expect(s).toMatch(/material\.toneMapped = false;/);
-    expect(s).toMatch(/material\.color\.multiplyScalar\(dlcPhotoComp\.linear\)/);
+    expect(s).toMatch(/material\.color\.multiply\(new THREE\.Color\(dlcPhotoComp\.hex\)\)/);
   });
   it("3D applies the grain to structural surfaces (mirrored, sRGB) and the tint to every photo material", () => {
     const s = src();
@@ -259,6 +281,10 @@ describe("Driftwood polish: softer grain, more defined frames", () => {
   const src = () => fs.readFileSync(path.join(repo, "client/src/components/design/InteractiveRoom3D.tsx"), "utf8");
   it("only Driftwood's grain is softened (the only finish with an unusually high light/dark swing)", () => {
     expect(DLC_FR26_CATALOG.filter((e) => e.grainSoftened).map((e) => e.slug)).toEqual(["driftwood"]);
+    // pale painted/neutral finishes get the mottling softening; natural wood, EWO and mid/dark finishes do not
+    const pale = DLC_FR26_CATALOG.filter((e) => e.grainPaleSoftened).map((e) => e.slug).sort();
+    expect(pale).toEqual(["arctic-white", "dove-gray", "glacier-white", "ivory-white", "pearl-white", "slim-shaker-alabaster", "white-shaker"]);
+    expect(DLC_FR26_CATALOG.find((e) => e.slug === "dove-gray")!.solidColor).toBe("#c9c9cb"); // catalog grey, no blue
   });
   it("frame strips: shadows on the top and left of the opening, highlights on the bottom and right, all inside it", () => {
     const strips = dlcFrameStrips(1.0, 2.0);

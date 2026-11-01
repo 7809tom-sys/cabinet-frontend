@@ -26,6 +26,8 @@ export interface DlcFr26CatalogEntry {
   faceTint: string | null;
   /** True when the grain patch was softened because its light/dark swing was unusually high. */
   grainSoftened: boolean;
+  /** True when the patch is a pale, near-neutral finish whose mottling was softened. */
+  grainPaleSoftened: boolean;
 }
 
 export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
@@ -63,7 +65,8 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
     ],
     "faceNormal": null,
     "faceTint": null,
-    "grainSoftened": false
+    "grainSoftened": false,
+    "grainPaleSoftened": true
   },
   {
     "slug": "chestnut",
@@ -99,7 +102,8 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
     ],
     "faceNormal": null,
     "faceTint": null,
-    "grainSoftened": false
+    "grainSoftened": false,
+    "grainPaleSoftened": false
   },
   {
     "slug": "cyber-grey",
@@ -135,7 +139,8 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
     ],
     "faceNormal": null,
     "faceTint": null,
-    "grainSoftened": false
+    "grainSoftened": false,
+    "grainPaleSoftened": false
   },
   {
     "slug": "dark-caramel",
@@ -171,7 +176,8 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
     ],
     "faceNormal": null,
     "faceTint": null,
-    "grainSoftened": false
+    "grainSoftened": false,
+    "grainPaleSoftened": false
   },
   {
     "slug": "dove-gray",
@@ -208,7 +214,8 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
     ],
     "faceNormal": null,
     "faceTint": null,
-    "grainSoftened": false
+    "grainSoftened": false,
+    "grainPaleSoftened": true
   },
   {
     "slug": "driftwood",
@@ -241,7 +248,8 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
     ],
     "faceNormal": null,
     "faceTint": null,
-    "grainSoftened": true
+    "grainSoftened": true,
+    "grainPaleSoftened": false
   },
   {
     "slug": "ewo",
@@ -278,7 +286,8 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
     ],
     "faceNormal": "/textures/dlc-fr26/grain/ewo-v-nm.png",
     "faceTint": "#c8cbb8",
-    "grainSoftened": false
+    "grainSoftened": false,
+    "grainPaleSoftened": false
   },
   {
     "slug": "expresso-shaker",
@@ -315,7 +324,8 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
     ],
     "faceNormal": null,
     "faceTint": null,
-    "grainSoftened": false
+    "grainSoftened": false,
+    "grainPaleSoftened": false
   },
   {
     "slug": "glacier-white",
@@ -351,7 +361,8 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
     ],
     "faceNormal": null,
     "faceTint": null,
-    "grainSoftened": false
+    "grainSoftened": false,
+    "grainPaleSoftened": true
   },
   {
     "slug": "grey-shaker",
@@ -387,7 +398,8 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
     ],
     "faceNormal": null,
     "faceTint": null,
-    "grainSoftened": false
+    "grainSoftened": false,
+    "grainPaleSoftened": false
   },
   {
     "slug": "ivory-white",
@@ -423,7 +435,8 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
     ],
     "faceNormal": null,
     "faceTint": null,
-    "grainSoftened": false
+    "grainSoftened": false,
+    "grainPaleSoftened": true
   },
   {
     "slug": "mc",
@@ -460,7 +473,8 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
     ],
     "faceNormal": null,
     "faceTint": null,
-    "grainSoftened": false
+    "grainSoftened": false,
+    "grainPaleSoftened": false
   },
   {
     "slug": "new-york-glaze",
@@ -496,7 +510,8 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
     ],
     "faceNormal": null,
     "faceTint": null,
-    "grainSoftened": false
+    "grainSoftened": false,
+    "grainPaleSoftened": false
   },
   {
     "slug": "pearl-white",
@@ -532,7 +547,8 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
     ],
     "faceNormal": null,
     "faceTint": null,
-    "grainSoftened": false
+    "grainSoftened": false,
+    "grainPaleSoftened": true
   },
   {
     "slug": "peccan",
@@ -569,7 +585,8 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
     ],
     "faceNormal": null,
     "faceTint": null,
-    "grainSoftened": false
+    "grainSoftened": false,
+    "grainPaleSoftened": false
   },
   {
     "slug": "port",
@@ -605,7 +622,8 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
     ],
     "faceNormal": null,
     "faceTint": null,
-    "grainSoftened": false
+    "grainSoftened": false,
+    "grainPaleSoftened": false
   },
   {
     "slug": "slim-shaker-alabaster",
@@ -641,7 +659,8 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
     ],
     "faceNormal": null,
     "faceTint": null,
-    "grainSoftened": false
+    "grainSoftened": false,
+    "grainPaleSoftened": true
   },
   {
     "slug": "slim-shaker-ebony",
@@ -677,7 +696,8 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
     ],
     "faceNormal": null,
     "faceTint": null,
-    "grainSoftened": false
+    "grainSoftened": false,
+    "grainPaleSoftened": false
   },
   {
     "slug": "versa-shaker",
@@ -713,7 +733,8 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
     ],
     "faceNormal": null,
     "faceTint": null,
-    "grainSoftened": false
+    "grainSoftened": false,
+    "grainPaleSoftened": false
   },
   {
     "slug": "white-shaker",
@@ -749,6 +770,7 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
     ],
     "faceNormal": null,
     "faceTint": null,
-    "grainSoftened": false
+    "grainSoftened": false,
+    "grainPaleSoftened": true
   }
 ];

@@ -46,7 +46,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { searchCatalogItems } from "@shared/catalogCodeSearch";
 import { AEF_PRINTED_GEOMETRY_MARKER } from "@shared/aefFramelessGeometry";
 import { DLC_FRAME_DETAIL, dlcFaceGrainRepeat, dlcFaceTextureWindow, dlcFrameStrips, dlcPhotoLightCompensation, type DlcFaceCrop } from "@shared/dlcFr26Textures";
-import { DARK_STAIN_DOOR_LIGHTS, RESTORED_DOOR_LIGHTS, isVeryDarkCabinetStain } from "@shared/doorRenderLights";
+import { DARK_STAIN_DOOR_LIGHTS, RESTORED_DOOR_LIGHTS, isVeryDarkCabinetStain, relativeLuminance } from "@shared/doorRenderLights";
 import { combinedSwatchTextureWindow, type FaceSourceKind, type FaceTextureWindow } from "@shared/doorFaceRecognition";
 import { RAISED_PANEL_BEVEL_DEPTH_IN, RAISED_PANEL_BEVEL_WIDTH_IN, resolveDoorProfile } from "@shared/doorStyleAppearance";
 import { attachSlopedRaisedPanel, effectiveRaisedBevelDepthIn, threeDFaceUsesRaisedPanelBevel } from "./raisedPanelBevel";
@@ -5148,7 +5148,7 @@ export function addCabinet(
         material.map = null;
         material.color.set(drawerSolidColor);
         if (dlcPhotoComp) {
-          material.color.multiplyScalar(dlcPhotoComp.linear);
+          material.color.multiply(new THREE.Color(dlcPhotoComp.hex));
           material.toneMapped = false;
         }
         material.needsUpdate = true;
@@ -5184,7 +5184,7 @@ export function addCabinet(
   // These materials are drawn with tone mapping off (see dlcPhotoLightCompensation): light finishes keep
   // their grain contrast and their true brightness.
   const dlcPhotoComp = dlcDoorFinish
-    ? dlcPhotoLightCompensation(isVeryDarkCabinetStain(dlcDoorFinish) ? DARK_STAIN_DOOR_LIGHTS : RESTORED_DOOR_LIGHTS)
+    ? dlcPhotoLightCompensation(isVeryDarkCabinetStain(dlcDoorFinish) ? DARK_STAIN_DOOR_LIGHTS : RESTORED_DOOR_LIGHTS, relativeLuminance(dlcDoorFinish))
     : null;
   const dlcPhotoTint = dlcPhotoComp
     ? (surfaceTextures?.faceCrop?.tintHex
@@ -5216,7 +5216,7 @@ export function addCabinet(
         material.color.set(dlcPhotoTint);
         material.userData = { ...material.userData, dlcSideGrain: true, usesDoorImage: false, framelessDoorFaceSide: false };
       } else {
-        material.color.multiplyScalar(dlcPhotoComp.linear);
+        material.color.multiply(new THREE.Color(dlcPhotoComp.hex));
       }
       material.needsUpdate = true;
     }
