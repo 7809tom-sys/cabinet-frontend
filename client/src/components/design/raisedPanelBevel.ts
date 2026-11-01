@@ -119,9 +119,9 @@ export function createSlopedRaisedPanelBevelGeometry(
   const positions: number[] = [];
   const colors: number[] = [];
   const top: RGB = [1, 1, 1];
-  const left: RGB = [0.88, 0.88, 0.88];
-  const right: RGB = [0.58, 0.58, 0.58];
-  const bottom: RGB = [0.42, 0.42, 0.42];
+  const left: RGB = [0.8, 0.8, 0.8];
+  const right: RGB = [0.46, 0.46, 0.46];
+  const bottom: RGB = [0.34, 0.34, 0.34];
 
   pushQuad(positions, colors, [-ow, oh, 0], [ow, oh, 0], [iw, ih, z1], [-iw, ih, z1], top);
   pushQuad(positions, colors, [-ow, -oh, 0], [ow, -oh, 0], [iw, -ih, z1], [-iw, -ih, z1], bottom);
