@@ -24,7 +24,8 @@ describe("interlocking mosaics repeat at their interlock spacing", () => {
       if (item.edge === "straight") { expect(pitch).toEqual({ x: item.outerWidthIn, y: item.outerHeightIn }); continue; }
       expect(pitch.x).toBeLessThan(item.outerWidthIn);
       expect(pitch.y).toBeLessThan(item.outerHeightIn);
-      expect(pitch.x).toBeGreaterThan(item.outerWidthIn * 0.8);
+      // Hex fingers are a few percent. A linear strip sheet (Misty Coast) nests about a fifth of its width and still stays under a quarter.
+      expect(pitch.x).toBeGreaterThan(item.outerWidthIn * 0.75);
     }
   });
   it("UVs advance exactly one texture repeat per interlock pitch, not per outer size", () => {
@@ -140,7 +141,7 @@ describe("clean finished edges on cut tile", () => {
 const viewerSource = readFileSync(new URL("../components/design/InteractiveRoom3D.tsx", import.meta.url), "utf8");
 const elevationSource = readFileSync(new URL("../components/design/ElevationView.tsx", import.meta.url), "utf8");
 const libSource = readFileSync(new URL("./backsplashMosaic.ts", import.meta.url), "utf8");
-const PRODUCTS = ["Desert Clay", "Arctic Vail", "Carbon Hex", "Carrara Subway", "Cloudline Marble", "Concord Square", "Glacier Shift", "Golden Trace"] as const;
+const PRODUCTS = ["Desert Clay", "Arctic Vail", "Carbon Hex", "Carrara Subway", "Cloudline Marble", "Concord Square", "Glacier Shift", "Golden Trace", "Misty Coast"] as const;
 const backsplashBlock = viewerSource.slice(viewerSource.indexOf("function addThreeDBacksplash("), viewerSource.indexOf("function addThreeDCountertopUpstands"));
 
 describe("hard rule: every mosaic shows no sheet edges", () => {
