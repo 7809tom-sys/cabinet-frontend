@@ -5092,7 +5092,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const active3DDrawerSampleUrl = activeFacePlan?.sourceKind === "split" ? activeFacePlan.drawerUrl : null;
   const activeFaceSourceKind: FaceSourceKind | undefined = activeFacePlan?.sourceKind;
   const activeFaceCrop = activeFacePlan?.dlcCrop
-    ? { doorSize: activeFacePlan.dlcCrop.doorSize, drawerSize: activeFacePlan.dlcCrop.drawerSize, drawerSolidColor: activeFacePlan.dlcCrop.drawerSolidColor, solidColor: activeFacePlan.dlcCrop.solidColor, grainUrl: activeFacePlan.dlcCrop.grainUrl, faceTileIn: activeFacePlan.dlcCrop.faceTileIn, faceTileDrawerIn: activeFacePlan.dlcCrop.faceTileDrawerIn, normalUrl: activeFacePlan.dlcCrop.normalUrl, tintHex: activeFacePlan.dlcCrop.tintHex }
+    ? { slug: activeFacePlan.dlcCrop.slug, doorSize: activeFacePlan.dlcCrop.doorSize, drawerSize: activeFacePlan.dlcCrop.drawerSize, drawerSolidColor: activeFacePlan.dlcCrop.drawerSolidColor, solidColor: activeFacePlan.dlcCrop.solidColor, grainUrl: activeFacePlan.dlcCrop.grainUrl, faceTileIn: activeFacePlan.dlcCrop.faceTileIn, faceTileDrawerIn: activeFacePlan.dlcCrop.faceTileDrawerIn, normalUrl: activeFacePlan.dlcCrop.normalUrl, tintHex: activeFacePlan.dlcCrop.tintHex }
     : null;
   const active3DRoomSceneReferenceUrl = useMemo(() => {
     const s = doorStyles?.find((d) => d.id === styleId) as { roomSceneImageUrl?: string | null } | undefined;
@@ -14422,7 +14422,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const threeDCabinetFaceCrops = useMemo(
     () => Object.fromEntries(threeDCabinetFaces.flatMap(([uid, plan]) => (
       plan.dlcCrop
-        ? [[uid, { doorSize: plan.dlcCrop.doorSize, drawerSize: plan.dlcCrop.drawerSize, drawerSolidColor: plan.dlcCrop.drawerSolidColor, solidColor: plan.dlcCrop.solidColor, grainUrl: plan.dlcCrop.grainUrl, faceTileIn: plan.dlcCrop.faceTileIn, faceTileDrawerIn: plan.dlcCrop.faceTileDrawerIn, normalUrl: plan.dlcCrop.normalUrl, tintHex: plan.dlcCrop.tintHex }]]
+        ? [[uid, { slug: plan.dlcCrop.slug, doorSize: plan.dlcCrop.doorSize, drawerSize: plan.dlcCrop.drawerSize, drawerSolidColor: plan.dlcCrop.drawerSolidColor, solidColor: plan.dlcCrop.solidColor, grainUrl: plan.dlcCrop.grainUrl, faceTileIn: plan.dlcCrop.faceTileIn, faceTileDrawerIn: plan.dlcCrop.faceTileDrawerIn, normalUrl: plan.dlcCrop.normalUrl, tintHex: plan.dlcCrop.tintHex }]]
         : []
     ))),
     [threeDCabinetFaces],
