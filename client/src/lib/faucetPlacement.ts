@@ -314,6 +314,11 @@ const WINDOW_MIN_HEIGHT_IN = 6;
 export type FaucetWindowClearanceNote = {
   openingUid: string;
   text: string;
+  /**
+   * Always "warning": a window is never changed for a sink unless it is the last resort, and
+   * the person must see it. Callers show these as warnings, never as quiet info.
+   */
+  severity: "warning";
 };
 
 export type FaucetWindowRaiseResult = {
@@ -354,10 +359,20 @@ export function minimumFaucetClearSill(opening: Pick<WallOpening, "width">, fauc
 }
 
 /**
- * Auto-Design's resolution for a deck faucet that hits a window: raise that
- * window's sill the minimum half-inch that clears the faucet. The height stays
- * the same unless the top would pass the wall, in which case the height shrinks
- * from the bottom. A window that cannot clear the ceiling is left alone.
+ * Window rule: Auto-Design never moves or raises a window to make room for a sink. The window sits
+ * on the wall plane, outside the cabinet zone, so it does not conflict with the cabinets.
+ *
+ * Order of resolution, and this is the ONLY place a window may change for a sink:
+ *  1. `resolveDeckFaucetPlacement` first moves the faucet forward on the deck. If the faucet clears
+ *     (no `conflict`), the window is left exactly as it is, the same object, no note.
+ *  2. Only when the faucet still cannot clear any other way, and only the window(s) the faucet
+ *     actually hits, the sill is raised the minimum half-inch that clears it (height shrinks from
+ *     the bottom only if the top would pass the wall). A window that cannot clear the ceiling is
+ *     left alone.
+ * Every change, and every case where a change was needed but impossible, comes back as a
+ * `severity: "warning"` note that callers must show visibly.
+ * Every caller (Auto-Design engine, DesignTool stage, sink adoption, faucet pickers) goes through
+ * this function, so the rule is enforced in one place.
  */
 export function raiseWindowsForDeckFaucet(input: {
   sinks: readonly SinkFixture[];
@@ -380,7 +395,8 @@ export function raiseWindowsForDeckFaucet(input: {
     if (!placement.conflict) continue;
     const hitting = windowsOnWall(anchor, anchor.along, openings)
       .filter((opening) => faucetHitsWindow(placement.centerFromWallIn, anchor.along, heightIn, opening));
-    const targets = hitting.length > 0 ? hitting : windowsOnWall(anchor, anchor.along, openings);
+    // Only a window the faucet actually hits may change; a neighbouring window that is clear stays put.
+    const targets = hitting;
     if (targets.length === 0) {
       unresolved = true;
       continue;
@@ -394,7 +410,7 @@ export function raiseWindowsForDeckFaucet(input: {
       if (roomForHeight < WINDOW_MIN_HEIGHT_IN - 1e-6) {
         unresolved = true;
         const text = `Window on ${label} could not be raised enough for the faucet to clear the sill.`;
-        notes.push({ openingUid: opening.uid, text });
+        notes.push({ openingUid: opening.uid, text, severity: "warning" });
         openings = openings.map((item) => item.uid === opening.uid ? { ...item, faucetClearanceNote: text } : item);
         continue;
       }
@@ -404,7 +420,7 @@ export function raiseWindowsForDeckFaucet(input: {
       if (!raised && !heightShrunk) {
         unresolved = true;
         const text = `Window on ${label} could not be raised enough for the faucet to clear the sill.`;
-        notes.push({ openingUid: opening.uid, text });
+        notes.push({ openingUid: opening.uid, text, severity: "warning" });
         openings = openings.map((item) => item.uid === opening.uid ? { ...item, faucetClearanceNote: text } : item);
         continue;
       }
@@ -412,7 +428,7 @@ export function raiseWindowsForDeckFaucet(input: {
       if (faucetHitsWindow(placement.centerFromWallIn, anchor.along, heightIn, candidate)) {
         unresolved = true;
         const text = `Window on ${label} could not be raised enough for the faucet to clear the sill.`;
-        notes.push({ openingUid: opening.uid, text });
+        notes.push({ openingUid: opening.uid, text, severity: "warning" });
         openings = openings.map((item) => item.uid === opening.uid ? { ...item, faucetClearanceNote: text } : item);
         continue;
       }
@@ -421,7 +437,7 @@ export function raiseWindowsForDeckFaucet(input: {
       if (heightShrunk) {
         text += ` Window height reduced to ${formatRaiseInches(nextHeight)} in. so the top stays at the wall.`;
       }
-      notes.push({ openingUid: opening.uid, text });
+      notes.push({ openingUid: opening.uid, text, severity: "warning" });
       openings = openings.map((item) => item.uid === opening.uid ? { ...candidate, faucetClearanceNote: text } : item);
     }
   }

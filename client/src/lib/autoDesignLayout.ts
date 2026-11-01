@@ -85,7 +85,7 @@ export type AutoDesignLayoutSuccess = {
   sinks: SinkFixture[];
   sinkWindow: WallOpening | null;
   openings: WallOpening[];
-  faucetWindowNotes: { openingUid: string; text: string }[];
+  faucetWindowNotes: { openingUid: string; text: string; severity: "warning" }[];
   notes: string[];
   warnings: string[];
   wiggleMoves: AutoDesignWiggleMove[];
