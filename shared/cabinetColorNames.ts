@@ -16,6 +16,8 @@ export const CABINET_NAME_COLORS = {
   black: "#34363a",
   navy: "#435b77",
   green: "#78826b",
+  /** Forest Rust stain. Same hex as the door swatch. Not a hickory grain. */
+  rust: "#b5603a",
   walnut: "#75523e",
   natural: "#d1ba8f",
   cream: "#ded5c1",
@@ -32,6 +34,10 @@ const PHRASES: ReadonlyArray<readonly [RegExp, string]> = [
 
 const WORDS: ReadonlyArray<readonly [RegExp, string]> = [
   [/\b(?:cherry|mahogany|cognac)\b/i, CABINET_NAME_COLORS.cherry],
+  // "Rust" beats "forest" and the hickory word so every Forest Rust face,
+  // including a side that also says hickory, is the rust stain. "rustic" is
+  // not the word rust, so it still reaches the hickory swatch below.
+  [/\brust\b/i, CABINET_NAME_COLORS.rust],
   [/\b(?:hickory|rustic|chestnut)\b/i, CABINET_NAME_COLORS.hickory],
   [/\b(?:smoke|ash)\b/i, CABINET_NAME_COLORS.smoke],
   [/\b(?:black|charcoal|obsidian|graphite)\b/i, CABINET_NAME_COLORS.black],

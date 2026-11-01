@@ -27,6 +27,13 @@ describe("cabinet color names", () => {
     expect(matchCabinetColorName("Ash")).toBe(CABINET_NAME_COLORS.smoke);
   });
 
+  it("paints Forest Rust rust on every name lookup and leaves forest green green", () => {
+    expect(matchCabinetColorName("Forest Rust")).toBe(CABINET_NAME_COLORS.rust);
+    expect(matchCabinetColorName("forest rust hickory")).toBe(CABINET_NAME_COLORS.rust);
+    expect(matchCabinetColorName("Forest Green")).toBe(CABINET_NAME_COLORS.green);
+    expect(matchCabinetColorName("Rustic")).toBe(CABINET_NAME_COLORS.hickory);
+  });
+
   it("does not match a color word inside another word", () => {
     expect(matchCabinetColorName("Painted Sage")).toBe(CABINET_NAME_COLORS.green);
     expect(matchCabinetColorName("flash")).toBeNull();

@@ -41,6 +41,7 @@ import { resolveDoorShapeDecision, resolveRenderHex, PROFILE_GUESSED_LABEL } fro
 import { designerFrameCompliance } from "@/lib/doorFrameMetrics";
 import { OpenDesignerLink } from "@/components/design/OpenDesignerLink";
 import { DoorStyleIdentity } from "@/components/doorStyles/DoorStyleIdentity";
+import { DoorStyleNeedToggles } from "@/components/doorStyles/DoorStyleNeedToggles";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -111,6 +112,8 @@ interface AdminStyle {
   cornerSwatchImageUrl?: string | null;
   styleCode?: string | null;
   styleVerified?: boolean | number | null;
+  skinNeeded?: boolean | number | null;
+  finishedEndNeeded?: boolean | number | null;
   styleVerifiedBy?: string | null;
   styleVerifiedAt?: string | null;
   styleSourceNote?: string | null;
@@ -1473,6 +1476,20 @@ export default function FeaturedStylesAdmin() {
       .sort((a, b) => a.ourName.localeCompare(b.ourName));
   }, [styles, search]);
 
+  const saveNeeds = trpc.doorStyles.adminUpdateDoorStyle.useMutation({
+    onSuccess: () => {
+      utils.doorStyles.listForAdmin.invalidate();
+      utils.doorStyles.list.invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const saveSkinNeeded = (id: number, skinNeeded: boolean) => {
+    saveNeeds.mutate({ id, skinNeeded } as never);
+  };
+  const saveFinishedEndNeeded = (id: number, finishedEndNeeded: boolean) => {
+    saveNeeds.mutate({ id, finishedEndNeeded } as never);
+  };
+
   const toggleActive = trpc.doorStyles.adminUpdateDoorStyle.useMutation({
     onSuccess: () => {
       utils.doorStyles.listForAdmin.invalidate();
@@ -1678,6 +1695,12 @@ export default function FeaturedStylesAdmin() {
                       )
                     )}
                   />
+                  <DoorStyleNeedToggles
+                    style={s}
+                    pending={saveNeeds.isPending}
+                    onSkinNeeded={saveSkinNeeded}
+                    onFinishedEndNeeded={saveFinishedEndNeeded}
+                  />
                   <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
                     <Badge variant="outline" className="border-emerald-300 bg-emerald-50 px-1.5 py-0 text-[10px] text-emerald-700">
                       <ImageIcon className="mr-0.5 h-2.5 w-2.5" /> Room scene ready
@@ -1841,6 +1864,12 @@ export default function FeaturedStylesAdmin() {
                   title="Edit this door style"
                 >
                   <DoorStyleIdentity style={s} />
+                  <DoorStyleNeedToggles
+                    style={s}
+                    pending={saveNeeds.isPending}
+                    onSkinNeeded={saveSkinNeeded}
+                    onFinishedEndNeeded={saveFinishedEndNeeded}
+                  />
                   {!isDoorStyleVerified(s) ? <Badge variant="outline" className="mt-1">Unverified</Badge> : null}
                   <p className="mt-0.5 break-words text-xs leading-snug text-muted-foreground">
                     {(s.roomScenes?.length ?? 0) > 0 ? `${s.roomScenes?.length}/${MAX_SCENES_PER_STYLE} room scenes` : "Room scene required"}
@@ -1933,6 +1962,12 @@ export default function FeaturedStylesAdmin() {
                 </div>
                 <div className="min-w-0 flex-1">
                   <DoorStyleIdentity style={s} nameClassName="text-muted-foreground line-through" />
+                  <DoorStyleNeedToggles
+                    style={s}
+                    pending={saveNeeds.isPending}
+                    onSkinNeeded={saveSkinNeeded}
+                    onFinishedEndNeeded={saveFinishedEndNeeded}
+                  />
                   <p className="mt-0.5 break-words text-xs leading-snug text-muted-foreground">
                     {[s.doorStyle, s.color].filter(Boolean).join(" · ")}
                     {" "}
