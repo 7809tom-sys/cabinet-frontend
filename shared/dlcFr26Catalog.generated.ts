@@ -640,7 +640,7 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       141,
       57
     ],
-    "solidColor": "#eff3f5",
+    "solidColor": "#e6e0e0",
     "grain": "/textures/dlc-fr26/grain/slim-shaker-alabaster.png",
     "grainSize": [
       56,
@@ -658,7 +658,7 @@ export const DLC_FR26_CATALOG: DlcFr26CatalogEntry[] = [
       6.13
     ],
     "faceNormal": null,
-    "faceTint": null,
+    "faceTint": "#f6ecea",
     "grainSoftened": false,
     "grainPaleSoftened": true
   },

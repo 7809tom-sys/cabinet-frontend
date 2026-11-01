@@ -186,6 +186,20 @@ for _slug, _hex in WALNUT_TARGETS.items():
     _ratio = np.clip(_lin(_tgt) / _lin(np.mean(_means, axis=0)), 0, 1)
     _row.update({"solidColor": _hex, "faceTint": "#%02x%02x%02x" % tuple(_srgb(_ratio)), "grainSoftened": True})
 
+# Tom (Oct 31, Slim Shaker Alabaster): the catalog photo is a cool #eff3f5 while the DL sample is a warm off-white,
+# about #ebe5e5. Keep the catalog grain, tint it to WARM_TARGETS, and take a further WARM_EXTRA_CUT (linear, on top
+# of the 15% pale cut applied at render time) so it stops reading flat white. The cut is baked into faceTint and
+# solidColor, so doors, drawers, sides, skins and end panels all get the same result. Alabaster only.
+WARM_TARGETS = {"slim-shaker-alabaster": ("#ebe5e5", 0.05)}
+for _slug, (_hex, _cut) in WARM_TARGETS.items():
+    _row = next(r for r in rows if r["slug"] == _slug)
+    _means = [np.asarray(Image.open(pub / "grain" / _n).convert("RGB"), dtype=float).reshape(-1, 3).mean(axis=0)
+              for _n in (f"{_slug}.png", f"{_slug}-drawer.png")]
+    _tgt = _lin(np.array([int(_hex[i:i + 2], 16) for i in (1, 3, 5)], dtype=float)) * (1 - _cut)
+    _ratio = np.clip(_tgt / _lin(np.mean(_means, axis=0)), 0, 1)
+    _solid = _srgb(_tgt)
+    _row.update({"solidColor": "#%02x%02x%02x" % tuple(_solid), "faceTint": "#%02x%02x%02x" % tuple(_srgb(_ratio))})
+
 # European White Oak: the catalog ships a real 1024px vertical-grain texture with a normal map. Use it for
 # door, drawer and side faces. It is lighter than the finish photo, so a tint brings it to the sample colour.
 EWO = next(r for r in rows if r["slug"] == "ewo")

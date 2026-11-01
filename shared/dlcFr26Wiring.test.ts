@@ -217,6 +217,22 @@ describe("sides carry the door's grain, and photo materials are not over-lit", (
     expect(dlcFrameStrips(1, 2, 0.88).filter((x) => x.kind === "highlight")).toEqual(dlcFrameStrips(1, 2).filter((x) => x.kind === "highlight"));
     expect(src()).toMatch(/dlcFrameStrips\(faceWidth - stile \* 2, faceHeight - rail \* 2, relativeLuminance\(dlcDoorFinish\)\)/);
   });
+  it("Slim Shaker Alabaster is warm off-white (Tom, Oct 31): warm tint and extra cut baked in, only this finish", () => {
+    const e = DLC_FR26_CATALOG.find((x) => x.slug === "slim-shaker-alabaster")!;
+    const ch = (h: string) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+    const [r, g, b] = ch(e.solidColor);
+    expect(r).toBeGreaterThanOrEqual(b); // warm: not bluer than red (catalog photo was #eff3f5)
+    expect(r! + g! + b!).toBeLessThan(0xeb + 0xe5 + 0xe5); // the extra 5% cut sits below the #ebe5e5 target
+    expect(e.faceTint).toMatch(/^#[0-9a-f]{6}$/);
+    expect(e.faceDoor).toBe("/textures/dlc-fr26/grain/slim-shaker-alabaster.png"); // catalog grain, source not swapped
+    const plan = resolveCabinetFaceImages(dl("Slim Shaker Alabaster", "DL-SA"), "base");
+    expect(plan.dlcCrop?.solidColor).toBe(e.solidColor);
+    expect(plan.dlcCrop?.tintHex).toBe(e.faceTint);
+    // other pale finishes untouched by this change
+    for (const slug of ["arctic-white", "glacier-white", "pearl-white", "white-shaker", "ivory-white", "dove-gray"]) {
+      expect(DLC_FR26_CATALOG.find((x) => x.slug === slug)!.faceTint).toBeNull();
+    }
+  });
   it("light compensation cancels the rig's light sum per channel (tone mapping off) and stays in range", () => {
     const std = dlcPhotoLightCompensation(RESTORED_DOOR_LIGHTS);
     expect(std.linear).toBeGreaterThan(0.45);
