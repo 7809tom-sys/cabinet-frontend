@@ -1,5 +1,5 @@
 import { doorOpeningAppearance } from "@/lib/doorOpeningAppearance";
-import { clampMosaicGroutIn, mosaicInterlockSpecForName, mosaicPitchIn } from "@/lib/backsplashMosaic";
+import { clampMosaicGroutIn, mosaicSheetSpecFor, mosaicPitchIn } from "@/lib/backsplashMosaic";
 import { threeDLatticeRackLayout } from "@/lib/latticeRackLayout";
 import { PLATE_RACK_FRAME_IN, plateRackDividerLayout } from "@/lib/plateRackLayout";
 import { baseAngleEndPlan } from "@/lib/baseAngleEndLayout";
@@ -1390,8 +1390,8 @@ export function ElevationView({
           const bsMat = backsplashMaterial(backsplashMaterialId);
           const productName = backsplashProductName?.trim() || "";
           const sheet = parseBacksplashSheetInches({ name: productName || bsMat.name, size: backsplashProductSize, subCategory: productName });
-          // Interlocking mosaic: repeat at the interlock pitch (not the photo's outer size) with the same 1/16-1/8 in. grout line.
-          const interlock = mosaicInterlockSpecForName(productName);
+          // Every mosaic (hard rule): repeat at the sheet pitch (not the photo's outer size) with the same 1/16-1/8 in. grout line.
+          const interlock = mosaicSheetSpecFor({ name: productName, widthIn: sheet.widthIn, heightIn: sheet.heightIn, patternKind: sheet.patternKind });
           const interlockPitch = interlock ? mosaicPitchIn(interlock) : null;
           const interlockGroutPx = interlock ? Math.max(1, clampMosaicGroutIn(interlock.groutIn) * ppi) : 0;
           const showProductImage = Boolean(productBacksplashImage) && !backsplashImageFailed;

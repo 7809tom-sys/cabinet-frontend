@@ -20,7 +20,7 @@ import { APPLIANCES, BLIND_CORNER_FILLER_WIDTH_IN, COUNTERTOP_DEPTH_IN, FURNITUR
 import { refrigeratorEndPanelCutDownNote } from "@/lib/refrigeratorEndPanelCut";
 import { roomWallRunFrames } from "@/lib/design";
 import {
-  baseboardSpans, mosaicFinishedEdges, mosaicInterlockSpecForKey, mosaicInterlockUnitPlan, mosaicPhaseAnchorEdge, mosaicPitchIn,
+  baseboardSpans, mosaicFinishedEdges, mosaicInterlockSpecForKey, mosaicSheetSpecFor, mosaicInterlockUnitPlan, mosaicPhaseAnchorEdge, mosaicPitchIn,
   clampMosaicGroutIn, type MosaicInterlockSpec,
 } from "@/lib/backsplashMosaic";
 import { flooringRotationRadians, type FlooringRotationDegrees } from "@/lib/flooringLayout";
@@ -10200,7 +10200,7 @@ function addThreeDBacksplash(
     const moduleHeightIn = Number(sourceTexture.userData?.backsplashModuleHeightIn) || moduleIn;
     const groutJointIn = Number(sourceTexture.userData?.backsplashGroutJointIn) || null;
     const patternKind = sourceTexture.userData?.backsplashPatternKind ?? "field-tile";
-    const interlockSpec = patternKind === "interlocking-mosaic" ? mosaicInterlockSpecForKey(sourceTexture.userData?.backsplashInterlockKey) : null;
+    const interlockSpec: MosaicInterlockSpec | null = (sourceTexture.userData?.backsplashMosaicSpec as MosaicInterlockSpec | null | undefined) ?? mosaicInterlockSpecForKey(sourceTexture.userData?.backsplashInterlockKey);
     texture.needsUpdate = true;
     // Inside corner: both walls count tiles from the shared corner, so the joints meet there.
     const sideLengthIn = threeDBacksplashSideIsCardinal(segment.side) ? wallLength(segment.side, room as RoomData) : 0;
@@ -11944,8 +11944,8 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 	        : resolveDesignerMaterialUrl(source.url, typeof window !== "undefined" ? window.location.origin : null);
 	      if (!source.proceduralFallback && !resolvedAsset) return null;
 	      if (resolvedAsset?.crossOrigin) textureLoader.setCrossOrigin(resolvedAsset.crossOrigin);
-	      const interlockSpec = role === "backsplash" && source.backsplashPatternKind === "interlocking-mosaic"
-	        ? mosaicInterlockSpecForKey(source.key)
+	      const interlockSpec = role === "backsplash"
+	        ? mosaicSheetSpecFor({ key: source.key, name: source.sourceProductName, widthIn: source.backsplashModuleIn ?? source.physicalWidthIn, heightIn: source.backsplashModuleHeightIn ?? source.physicalDepthIn, patternKind: source.backsplashPatternKind })
 	        : null;
 	      const texture = source.proceduralFallback
 	        ? threeDRepresentativeSurfaceTexture(role, source)
@@ -12034,6 +12034,7 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 	        backsplashModuleHeightIn: interlockSpec ? mosaicPitchIn(interlockSpec).y : (source.backsplashModuleHeightIn ?? null),
 	        backsplashGroutJointIn: interlockSpec ? clampMosaicGroutIn(interlockSpec.groutIn) : (source.backsplashGroutJointIn ?? null),
 	        backsplashInterlockKey: interlockSpec?.key ?? null,
+	        backsplashMosaicSpec: interlockSpec ?? null,
 	        materialOnlyNoGeometryChange: true,
 	      };
 	      return texture;

@@ -4,28 +4,35 @@ import {
 } from "./design";
 
 /**
- * HARD RULE (owner, not a preference): INTERLOCKING MOSAICS HAVE NO VISIBLE SHEET EDGES.
+ * HARD RULE (owner, not a preference): MOSAICS HAVE NO VISIBLE SHEET EDGES. THIS APPLIES TO EVERY MOSAIC PRODUCT.
  *
- * Applies to every interlocking mosaic product: Desert Clay, Arctic Vail, Carbon Hex, Concord Square,
- * Glacier Shift and Golden Trace, in the 3D view AND the elevation view.
+ * "Every mosaic" means every product in the catalog that is a mosaic of any pattern: hex, square, picket,
+ * herringbone, penny, linear, subway/staggered sheets, Moonstone Hex, and any mosaic added later. It is not a short
+ * list of names. Curated sheets have their own row in `MOSAIC_SHEET_SPECS`: Desert Clay, Arctic Vail, Carbon Hex,
+ * Carrara Subway, Cloudline Marble, Concord Square, Glacier Shift, Golden Trace. Any other catalog mosaic gets a
+ * `genericMosaicSheetSpec` built from its catalog size. There is no plain "tile with a border" path for a mosaic.
+ * Only non-mosaics (field tile) use the plain fallback. Applies in the 3D view AND the elevation view.
  *
- *  1. Each sheet sits at its real interlock spacing (the pitch), flush against the next, so the only thing
- *     visible at any joint is one even grout line of 1/16 to 1/8 inch. The grout at a sheet edge is the same
- *     width and color as the grout inside the sheet (the product's own chip joint, `internalGroutIn`).
+ *  1. Each sheet sits at its real repeat spacing (the pitch), flush against the next, so the only thing visible at
+ *     any joint is one even grout line of 1/16 to 1/8 inch. The grout at a sheet edge is the same width and color as
+ *     the grout inside the sheet (the product's own chip joint, `internalGroutIn`). Straight-edge sheets have
+ *     overlap 0 (pitch = sheet size); fork-edged interlocking sheets have an overhang that is subtracted.
  *  2. No per-sheet brightness or tint change, no darker outline, no seam where sheets meet. The backsplash must
- *     read as one continuous interlocking surface, never a grid of rectangles. Do not add per-sheet shading,
- *     vertex colors, sheet borders or any sheet-by-sheet variation to these products.
- *  3. Any change here must keep `backsplashMosaic.test.ts` (one test group per product) passing.
+ *     read as one continuous tiled surface, never a grid of rectangles. Do not add per-sheet shading, vertex
+ *     colors, sheet borders or any sheet-by-sheet variation to any mosaic.
+ *  3. Any change here must keep `backsplashMosaic.test.ts` passing, including the test that fails when a catalog
+ *     mosaic has no spec.
  *
  * Interlocking mosaic: repeat at the interlock pitch, not the photo's outer size.
  *
  * The catalog photos show a whole sheet including the fork-shaped fingers that stick out past the sheet's repeat
  * spacing (the "pitch"). Repeating that photo at its OUTER size leaves the fingers beside each other instead of
- * inside each other, which is the jagged, uneven seam. Each sheet is instead repeated at its interlock pitch: the
- * photo is cropped to one repeating unit, and one even grout line (1/16 to 1/8 inch) is drawn at every joint.
+ * inside each other, which is the jagged, uneven seam. Each sheet is instead repeated at its pitch: the photo is
+ * cropped to one repeating unit, and one even grout line (1/16 to 1/8 inch) is drawn at every joint.
  *
- * ESTIMATE WARNING: the overhang and internal grout values below are estimates, not measurements of the
- * product photos. They are kept in this one table so a real measurement is a one-line change.
+ * ESTIMATE WARNING: every overhang, internal grout and grout color below is an ESTIMATE (`measured: false`), not a
+ * measurement of the product photo. They live in this one table so a real measurement is a one-line change that
+ * also flips `measured` to true.
  */
 export const MOSAIC_GROUT_MIN_IN = 1 / 16;
 export const MOSAIC_GROUT_MAX_IN = 1 / 8;
@@ -52,33 +59,74 @@ export type MosaicInterlockSpec = {
   /** Matched grout color. Null means "derive it from the photo" (darkened mean of the sheet). */
   groutColor: string | null;
   measured: boolean;
+  /** "interlocking" = fork-edged sheet (overhang > 0); "straight" = straight-edge sheet (overlap 0). */
+  edge: "interlocking" | "straight";
+  /** True for a catalog mosaic with no curated row; spacing comes from the catalog size string. */
+  generic: boolean;
 };
 
 const spec = (key: string, name: string, w: number, h: number, overhang: number): MosaicInterlockSpec => ({
   key, name, outerWidthIn: w, outerHeightIn: h, overhangXIn: overhang, overhangYIn: overhang,
   internalGroutIn: MOSAIC_GROUT_DEFAULT_IN, groutIn: MOSAIC_GROUT_DEFAULT_IN, groutColor: null, measured: false,
+  edge: overhang > 0 ? "interlocking" : "straight", generic: false,
 });
 /** Grout colors matched to each product's tone. ESTIMATES from the catalog names/photos, not measured. */
 const GROUT_COLOR_BY_NAME: Record<string, string> = {
   "desert clay": "#8c7a68", "arctic vail": "#8f9496", "carbon hex": "#4a4a4c",
   "concord square": "#9a9a98", "glacier shift": "#8b9291", "golden trace": "#8a7f6e",
+  "carrara subway": "#9b9a96", "cloudline marble": "#a09f9c",
 };
+/** Neutral grout for a catalog mosaic with no curated row (estimate). */
+export const GENERIC_MOSAIC_GROUT_COLOR = "#8a8782";
 
-export const MOSAIC_INTERLOCK_SPECS: readonly MosaicInterlockSpec[] = [
+export const MOSAIC_SHEET_SPECS: readonly MosaicInterlockSpec[] = [
   spec("desert-clay-11.81in-interlocking-mosaic", "desert clay", 11.81, 11.81, 0.3125),
   spec("arctic-vail-10.71in-interlocking-hex-mosaic", "arctic vail", 10.71, 10.55, 0.3125),
   spec("carbon-hex-12.80in-marble-hex-mosaic", "carbon hex", 12.8, 11.1, 0.3125),
   spec("concord-square-11.81in-glass-marble-mosaic", "concord square", 11.81, 11.81, 0.3125),
   spec("glacier-shift-12.05in-recycled-glass-herringbone", "glacier shift", 12.05, 12.05, 0.3125),
   spec("golden-trace-11.81in-marble-aluminum-mosaic", "golden trace", 11.81, 11.81, 0.3125),
+  // Straight-edge sheets: overlap 0, so the pitch is the sheet size.
+  spec("carrara-subway-11.97in-running-bond-mosaic", "carrara subway", 11.97, 12.13, 0),
+  spec("cloudline-marble-11.81in-staggered-glass-marble-mosaic", "cloudline marble", 11.81, 11.81, 0),
 ].map((item) => ({ ...item, groutColor: GROUT_COLOR_BY_NAME[item.name] ?? null }));
 
+/** Back-compat name for the table; it now holds every curated mosaic, interlocking or straight-edge. */
+export const MOSAIC_INTERLOCK_SPECS = MOSAIC_SHEET_SPECS;
+
 export const mosaicInterlockSpecForKey = (key: string | null | undefined) =>
-  MOSAIC_INTERLOCK_SPECS.find((item) => item.key === key) ?? null;
+  MOSAIC_SHEET_SPECS.find((item) => item.key === key) ?? null;
 export const mosaicInterlockSpecForName = (name: string | null | undefined) => {
   const normalized = (name ?? "").trim().toLowerCase();
-  return normalized ? MOSAIC_INTERLOCK_SPECS.find((item) => normalized.includes(item.name)) ?? null : null;
+  return normalized ? MOSAIC_SHEET_SPECS.find((item) => normalized.includes(item.name)) ?? null : null;
 };
+
+export const MOSAIC_PATTERN_KINDS = ["interlocking-mosaic", "subway-mosaic"] as const;
+export const isMosaicPatternKind = (kind: string | null | undefined) => kind === "interlocking-mosaic" || kind === "subway-mosaic";
+
+/**
+ * Spec for a catalog mosaic that has no curated row (Moonstone Hex and any mosaic added later). Straight-edge,
+ * overlap 0, repeat = the catalog sheet size, default grout, neutral grout color. ESTIMATED (`measured: false`).
+ */
+export function genericMosaicSheetSpec(name: string, widthIn: number, heightIn: number): MosaicInterlockSpec {
+  const slug = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "mosaic";
+  return { ...spec(`catalog-mosaic:${slug}`, name.trim().toLowerCase(), widthIn, heightIn, 0), groutColor: GENERIC_MOSAIC_GROUT_COLOR, generic: true };
+}
+
+/**
+ * The one lookup every view uses. Any mosaic (by pattern kind) gets a spec: curated by key, then by name, then a
+ * generic one from its catalog size. Only a non-mosaic returns null and may use the plain tile fallback.
+ */
+export function mosaicSheetSpecFor(input: {
+  key?: string | null; name?: string | null; widthIn?: number | null; heightIn?: number | null; patternKind?: string | null;
+}): MosaicInterlockSpec | null {
+  const curated = mosaicInterlockSpecForKey(input.key) ?? mosaicInterlockSpecForName(input.name);
+  if (curated) return curated;
+  if (!isMosaicPatternKind(input.patternKind)) return null;
+  const w = Number(input.widthIn);
+  const h = Number(input.heightIn);
+  return genericMosaicSheetSpec(input.name?.trim() || "mosaic", w > 0 ? w : 12, h > 0 ? h : (w > 0 ? w : 12));
+}
 
 /** The distance at which the sheet repeats, so the fingers of one sheet sit inside the next. */
 export function mosaicPitchIn(item: MosaicInterlockSpec) {

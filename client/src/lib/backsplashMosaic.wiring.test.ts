@@ -24,7 +24,7 @@ describe("the 3D and elevation renderers use the interlock helpers", () => {
     expect(viewer).toContain("bumpMap: floorTexture");
   });
   it("elevation: interlocking mosaics use the pitch and the same grout width", () => {
-    expect(elevation).toContain("mosaicInterlockSpecForName(productName)");
+    expect(elevation).toContain("mosaicSheetSpecFor({ name: productName");
     expect(elevation).toContain("interlockGroutPx");
   });
 });
