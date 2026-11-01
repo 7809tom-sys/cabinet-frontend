@@ -114,6 +114,7 @@ import { isAefFramelessStyleCode } from "@shared/aefFramelessSpecs";
 import { catalogItemToExposedPanelStock, sameExposedPanelWarnings, syncExposedSidePanels, type ExposedPanelStock, type ExposedPanelWarning } from "@/lib/exposedSidePanels";
 import { countertopToastVisible, COUNTERTOP_TOAST_TIMEOUT_MS, useDebouncedValue, stablePricePairKey } from "@/lib/designerPricingStability";
 import { ColorStyleQuickPicker } from "@/components/design/ColorStyleQuickPicker";
+import { ApproveDoorButton } from "@/components/admin/ApproveDoorButton";
 import { StyleSamplePreview } from "@/components/design/StyleSamplePreview";
 import type { SampleStyleImages } from "@/lib/sampleImageQa";
 import { attachedFillerLeftoverOptions, attachedFillerNeedsReview, attachedFillerPlanForCandidate, attachedFillerSizeIssues, type AttachedFillerChoice, type AttachedFillerLeftoverOptions, type AttachedFillerSizeIssue } from "@/lib/cabinetAttachedFillers";
@@ -14799,6 +14800,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           disabled={cabinetsLocked}
           onChange={(id) => setSlotStyle(activeSlot, id)}
         />
+        {isAdmin && <ApproveDoorButton styleId={styleId} place="designer" compact />}
         <HardwareCatalogPicker
           value={catalogHardwareSelection}
           onSelect={selectCatalogHardware}

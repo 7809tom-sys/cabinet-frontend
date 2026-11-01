@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import { ApprovedDoorReferenceNotice } from "./ApprovedDoorReferenceNotice";
+import { ApproveDoorButton } from "./ApproveDoorButton";
 import DoorPhotoCorrectButton from "./DoorPhotoCorrectButton";
 import { AdminStyleRoomSceneControls } from "@/components/doorStyles/AdminDoorStyleRoomScene";
 import type { AutoRoomScene } from "@/lib/autoRoomScene";
@@ -1014,6 +1015,12 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
               doorSampleImageUrl={doorSampleImageUrl}
               drawerSampleImageUrl={drawerSampleImageUrl}
               approvedByName={style.approvedByName}
+            />
+            <ApproveDoorButton
+              styleId={style.id}
+              place="featured"
+              doorImageUrl={doorSampleImageUrl}
+              drawerImageUrl={drawerSampleImageUrl}
             />
             <p className="text-xs text-muted-foreground">
               The approved reference is not copied into these fields. If a featured photo does not match it, paste the approved image URL yourself. The Designer keeps using the approved reference until then.
