@@ -25,7 +25,7 @@ describe("pre-save plan review", () => {
   it("finds a measured filler opportunity, missing refrigerator upper, and unresolved placement without changing the plan", () => {
     const nearFullBase = cabinet({ uid: "base", masterCode: "B-32", placement: "base", width: 32.75 });
     const floorBlocker = cabinet({ uid: "blocker", masterCode: "DW-24", placement: "appliance", x: 36, width: 24 });
-    const refrigerator = cabinet({ uid: "fridge", masterCode: "FRIDGE-36", placement: "appliance", x: 72, width: 36, height: 70 });
+    const refrigerator = cabinet({ uid: "fridge", masterCode: "FRIDGE-36", placement: "appliance", x: 60, width: 36, height: 70 });
     const placed = [nearFullBase, floorBlocker, refrigerator];
 
     const review = buildPreSavePlanReview({
