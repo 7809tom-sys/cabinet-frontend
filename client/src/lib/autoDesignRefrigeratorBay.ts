@@ -5,6 +5,7 @@ import {
   cabinetWall,
   clampFillerExtensionIn,
   dim,
+  REFRIGERATOR_SIDE_CLEARANCE_IN,
   refrigeratorBayRunMetrics,
   refrigeratorEndPanelThickness,
   refrigeratorSurroundElevation,
@@ -36,6 +37,8 @@ export type AutoDesignRefrigeratorBayResult =
       refrigeratorClampNote: string | null;
       /** Things that could not be made to fit inside the panels. Shown to the user instead of letting them stick out. */
       warnings: string[];
+      /** Builds a source-priced end panel for one side of the given opening (used to add a missing panel back). */
+      panelFor: (side: "left-panel" | "right-panel", opening: { openingStart: number; openingEnd: number }) => PlacedCabinet;
     }
   | { ok: false; message: string };
 
@@ -61,6 +64,8 @@ export const PANEL_FIT_EPSILON_IN = 0.05;
 
 /** A refrigerator with end panels always gets the full-depth refrigerator box above it. */
 export const REFRIGERATOR_CAP_DEPTH_IN = 24;
+/** Refrigerator widths Auto-Design can build a bay for. */
+export const AUTO_DESIGN_REFRIGERATOR_WIDTHS_IN = [30, 33, 36, 42] as const;
 /** Standard upper-cabinet bottom datum. A bay's cabinet above tops out at this plus the selected upper height. */
 const UPPER_RUN_BOTTOM_IN = 54;
 /** A bridge taller than this is not the automatic over-fridge fallback. */
@@ -104,7 +109,13 @@ export function pickAutoDesignRefrigeratorCap(
   wallCabinetHeightIn: number,
   ceilingIn: number,
   framelessLine = true,
+  refrigeratorWidthIn = 36,
 ): RefrigeratorCapPick | null {
+  // The box above matches the refrigerator width (30, 33, 36 or 42). When that width is not in
+  // the line, the nearest narrower width that fits inside the panels is used instead, centered.
+  // An over-wide box is never used: it would poke past the end panels.
+  const openingIn = refrigeratorWidthIn + REFRIGERATOR_SIDE_CLEARANCE_IN * 2;
+  const exactWidth = (candidate: DesignCabinet) => Math.abs(dim(candidate.width, 0) - refrigeratorWidthIn) <= 0.01;
   const target = UPPER_RUN_BOTTOM_IN + wallCabinetHeightIn;
   const mountBottom = refrigeratorSurroundElevation(null, refrigeratorTop, 0).mountBottom;
   const fitsCeiling = (candidate: DesignCabinet) => mountBottom + dim(candidate.height, 0) <= ceilingIn + 0.01;
@@ -115,7 +126,7 @@ export function pickAutoDesignRefrigeratorCap(
   if (framelessCapHeight != null) {
     const match = caps
       .filter((candidate) => (
-        Math.abs(dim(candidate.width, 0) - 36) <= 0.01
+        exactWidth(candidate)
         && Math.abs(dim(candidate.depth, 0) - REFRIGERATOR_CAP_DEPTH_IN) <= 0.01
         && Math.abs(dim(candidate.height, 0) - framelessCapHeight) <= 0.05
         && fitsCeiling(candidate)
@@ -125,7 +136,7 @@ export function pickAutoDesignRefrigeratorCap(
   } else {
     const eligible = caps
       .filter((candidate) => (
-        Math.abs(dim(candidate.width, 0) - 36) <= 0.01
+        exactWidth(candidate)
         && Math.abs(dim(candidate.depth, 0) - REFRIGERATOR_CAP_DEPTH_IN) <= 0.01
         && dim(candidate.height, 0) > 0
         && fitsCeiling(candidate)
@@ -138,7 +149,8 @@ export function pickAutoDesignRefrigeratorCap(
     ));
     if (eligible[0]) return { cabinet: eligible[0].candidate, substitutionNote: null };
   }
-  return fallbackOverFridgeCap(caps, fitsCeiling);
+  const fitsOpening = (candidate: DesignCabinet) => dim(candidate.width, 0) > 0 && dim(candidate.width, 0) <= openingIn + 0.01;
+  return fallbackOverFridgeCap(caps, fitsCeiling, refrigeratorWidthIn, fitsOpening);
 }
 
 /**
@@ -149,14 +161,16 @@ export function pickAutoDesignRefrigeratorCap(
 function fallbackOverFridgeCap(
   caps: readonly DesignCabinet[],
   fitsCeiling: (candidate: DesignCabinet) => boolean,
+  refrigeratorWidthIn = 36,
+  fitsOpening: (candidate: DesignCabinet) => boolean = () => true,
 ): RefrigeratorCapPick | null {
   const underThirty = caps.filter((candidate) => {
     const size = capSize(candidate);
-    return size != null && size.height < OVER_FRIDGE_FALLBACK_MAX_HEIGHT_IN && fitsCeiling(candidate);
+    return size != null && size.height < OVER_FRIDGE_FALLBACK_MAX_HEIGHT_IN && fitsCeiling(candidate) && fitsOpening(candidate);
   });
   const preferredShape = pickClosestCatalogSize({
     candidates: underThirty,
-    wanted: { width: 36, depth: REFRIGERATOR_CAP_DEPTH_IN },
+    wanted: { width: refrigeratorWidthIn, depth: REFRIGERATOR_CAP_DEPTH_IN },
     read: capSize,
     require: ["width", "depth"],
     toleranceIn: 0.5,
@@ -164,7 +178,7 @@ function fallbackOverFridgeCap(
   });
   const closestDepth = preferredShape ?? pickClosestCatalogSize({
     candidates: underThirty,
-    wanted: { width: 36, depth: REFRIGERATOR_CAP_DEPTH_IN },
+    wanted: { width: refrigeratorWidthIn, depth: REFRIGERATOR_CAP_DEPTH_IN },
     read: capSize,
     rank: [
       { axis: "width", by: "closest" },
@@ -225,14 +239,15 @@ export function buildMandatoryAutoDesignRefrigeratorBay({
   wallCabinetHeightIn = 30,
   framelessLine = true,
 }: Input): AutoDesignRefrigeratorBayResult {
-  if (Math.abs(refrigerator.width - 36) > 0.01) {
-    return { ok: false, message: "Auto-Design refrigerator bays require the 36-inch refrigerator and matching 36-inch cabinet above." };
+  const fridgeWidthIn = Number(refrigerator.width) || 0;
+  if (!AUTO_DESIGN_REFRIGERATOR_WIDTHS_IN.some((width) => Math.abs(fridgeWidthIn - width) <= 0.01)) {
+    return { ok: false, message: "Auto-Design refrigerator bays take a 30, 33, 36 or 42-inch refrigerator with a matching cabinet above." };
   }
 
   const ceilingIn = Math.max(0, Number(room.ceilingHeight) || 96);
-  const capPick = pickAutoDesignRefrigeratorCap(caps, refrigerator.height ?? 70, wallCabinetHeightIn, ceilingIn, framelessLine);
+  const capPick = pickAutoDesignRefrigeratorCap(caps, refrigerator.height ?? 70, wallCabinetHeightIn, ceilingIn, framelessLine, fridgeWidthIn);
   if (!capPick) {
-    return { ok: false, message: "No source-priced 36-inch-wide, 24-inch-deep refrigerator cabinet above is available for the selected cabinet line, and the line has no bridge under 30 inches to use instead." };
+    return { ok: false, message: `No source-priced ${fridgeWidthIn}-inch-wide (or narrower, fitting inside the panels), 24-inch-deep refrigerator cabinet above is available for the selected cabinet line, and the line has no bridge under 30 inches to use instead.` };
   }
   const cap = capPick.cabinet;
   const panelEntry = endPanels
@@ -253,15 +268,19 @@ export function buildMandatoryAutoDesignRefrigeratorBay({
   const capDepth = Math.max(0, dim(cap.depth, 0)) || 24;
   const capHeight = Math.max(0, dim(cap.height, 0)) || 24;
   const panelHeight = refrigeratorSurroundElevation(room, refrigerator.height ?? 70, capHeight).top;
-  const capSpot = wallPlacementAt(bay.refrigeratorStart, 36, capDepth, bay.side, room);
+  const capWidth = Math.max(0, dim(cap.width, 0)) || fridgeWidthIn;
+  // Centered on the refrigerator, so a narrower substitute sits inside the opening with equal gaps.
+  const capSpot = wallPlacementAt(bay.refrigeratorCenter - capWidth / 2, capWidth, capDepth, bay.side, room);
   // A substituted box shallower than the finished enclosure is pulled forward
   // so its face meets the panel/refrigerator face. The preferred 24 inch box
   // stays on the wall, which is the placement existing kitchens already use.
   const enclosureFace = Math.min(panelDepth, Math.max(0, Number(refrigerator.depth) || panelDepth));
   const pullForward = capPick.substitutionNote != null && capDepth + 0.05 < enclosureFace;
   const flushSpot = pullForward ? pullWallCabinetFaceTo(capSpot, capDepth, enclosureFace, bay.side) : capSpot;
+  const widthSubstituted = Math.abs(capWidth - fridgeWidthIn) > 0.01;
   const notes = [
     ...(capPick.substitutionNote ? [capPick.substitutionNote] : []),
+    ...(widthSubstituted ? [`No ${fridgeWidthIn}" cabinet above this refrigerator in the line; used ${cap.masterCode} (${capWidth}" wide), centered, with a filler gap each side`] : []),
     ...(pullForward ? [`Over-fridge ${cap.masterCode} pulled forward flush with the refrigerator face`] : []),
   ];
   // The refrigerator must stay inside its surrounding panels (Tom, Oct 31): panels are capped at 24 in. deep, so a
@@ -298,7 +317,7 @@ export function buildMandatoryAutoDesignRefrigeratorBay({
     subCategory: cap.subCategory,
     placement: "wall",
     ...flushSpot,
-    width: 36,
+    width: capWidth,
     depth: capDepth,
     height: capHeight,
     rotation: flushSpot.rotation,
@@ -340,8 +359,13 @@ export function buildMandatoryAutoDesignRefrigeratorBay({
     ...shared,
   });
 
+  const panelFor = (side: "left-panel" | "right-panel", opening: { openingStart: number; openingEnd: number }) => makePanel(
+    side,
+    wallPlacementAtUnbounded(side === "left-panel" ? opening.openingStart - panelThickness : opening.openingEnd, panelThickness, panelDepth, bay.side, room),
+  );
   return {
     ok: true,
+    panelFor,
     additions: [bridge, makePanel("left-panel", leftPanelSpot), makePanel("right-panel", rightPanelSpot)],
     reservation: {
       wall: bay.side,

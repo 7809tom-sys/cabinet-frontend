@@ -115,6 +115,7 @@ import { catalogItemToExposedPanelStock, sameExposedPanelWarnings, syncExposedSi
 import { countertopToastVisible, COUNTERTOP_TOAST_TIMEOUT_MS, useDebouncedValue, stablePricePairKey } from "@/lib/designerPricingStability";
 import { ColorStyleQuickPicker } from "@/components/design/ColorStyleQuickPicker";
 import { ApproveDoorButton } from "@/components/admin/ApproveDoorButton";
+import { clampRefrigeratorAssemblyToPanels } from "@/lib/refrigeratorPanelClamp";
 import { StyleSamplePreview } from "@/components/design/StyleSamplePreview";
 import type { SampleStyleImages } from "@/lib/sampleImageQa";
 import { attachedFillerLeftoverOptions, attachedFillerNeedsReview, attachedFillerPlanForCandidate, attachedFillerSizeIssues, type AttachedFillerChoice, type AttachedFillerLeftoverOptions, type AttachedFillerSizeIssue } from "@/lib/cabinetAttachedFillers";
@@ -10303,9 +10304,18 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           .filter((item) => optionalCapFillerUids.has(item.uid))
           .map((item) => item.masterCode),
       ));
-      const committedPreview = previewResult.placed;
+      // Same containment pass as Auto-Design: the refrigerator and its cabinet above stay inside the end
+      // panels. The pop-up only warns about an open side; it never adds a panel the user did not choose.
+      const contained = clampRefrigeratorAssemblyToPanels({ placed: previewResult.placed, refrigeratorUid: fridge.uid, room });
+      const committedPreview = contained.placed;
       placedRef.current = committedPreview;
       setPlaced(() => committedPreview);
+      for (const note of contained.notes) toast.info(note, { duration: 7000 });
+      if (contained.warnings.length > 0) {
+        const warning = contained.warnings.join(" ");
+        setPlacementWarning(warning);
+        toast.warning(warning, { duration: 9000 });
+      }
 	      if (cornerBay?.note) {
 	        toast.info(cornerBay.note, { duration: 7000 });
 	      } else if (Math.abs(appliedShift) > COLLISION_EPSILON_IN) {

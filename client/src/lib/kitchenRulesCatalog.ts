@@ -78,6 +78,18 @@ const ownerSeeds: KitchenRuleSeed[] = [
     notesText: null,
   },
   {
+    ruleCode: "fridge-within-panels",
+    category: "Owner placement",
+    title: "Refrigerator stays inside its panels",
+    ruleDescription: "The refrigerator and its cabinet above stay inside the end panels in width, depth and height. A missing panel on an open side is added back or warned. The cabinet above matches the fridge width.",
+    parameters: {},
+    enforcementKind: "auto",
+    sourceText: "Owner",
+    implementationStatus: "implemented",
+    readsParameters: false,
+    notesText: "Shared clamp used by Auto-Design and the refrigerator options pop-up. A side closed by an adjoining wall needs no panel.",
+  },
+  {
     ruleCode: "owner-measured-fridge-corner-shift",
     category: "Owner placement",
     title: "Measured refrigerator corner slide",
