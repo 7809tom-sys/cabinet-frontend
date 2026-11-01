@@ -367,7 +367,56 @@ export type ThreeDDoorProfile = {
    * and end panels use the door-face sample and this profile's sheen.
    */
   exposedSidesMatchDoorFace?: boolean;
+  /** Catalog identity for per-style photo-face treatments. Not door geometry. */
+  styleId?: number | null;
+  styleCode?: string | null;
+  distributorId?: number | null;
 };
+
+/**
+ * Photo door faces whose mids ACES tone mapping lifts toward orange under the
+ * studio rig. Each entry matches by catalog id, or by style code plus
+ * distributor, so another style can be added without a special case.
+ * Forest Rust (Ashford) / Rustic Hickory is 330011, code RH, distributor 210001.
+ */
+export const PHOTO_FACE_TONE_MAP_OFF_STYLES: readonly {
+  id?: number;
+  styleCode?: string;
+  distributorId?: number;
+}[] = [
+  { id: 330011, styleCode: "RH", distributorId: 210001 },
+];
+
+export function photoFaceSkipsToneMapping(style: {
+  id?: number | null;
+  styleCode?: string | null;
+  distributorId?: number | null;
+} | null | undefined): boolean {
+  if (!style) return false;
+  const code = (style.styleCode ?? "").trim().toUpperCase();
+  const distributorId = style.distributorId ?? null;
+  const id = style.id ?? null;
+  return PHOTO_FACE_TONE_MAP_OFF_STYLES.some((entry) => {
+    if (entry.id != null && id === entry.id) return true;
+    if (!entry.styleCode || entry.distributorId == null) return false;
+    return code === entry.styleCode.trim().toUpperCase() && distributorId === entry.distributorId;
+  });
+}
+
+/** Copies catalog id, style code, and distributor onto the 3D door profile the renderer matches. */
+export function withCatalogDoorStyleIdentity<T extends object>(
+  style: { id: number; styleCode?: string | null; distributorId?: number | null } | null | undefined,
+  profile: T | null,
+): T | (T & { styleId: number; styleCode: string | null; distributorId: number | null }) | null {
+  if (!profile) return null;
+  if (!style) return profile;
+  return {
+    ...profile,
+    styleId: style.id,
+    styleCode: style.styleCode ?? null,
+    distributorId: style.distributorId ?? null,
+  };
+}
 
 export function resolvedThreeDVanityFaceLayout(layoutSpec: string | null | undefined): VanityFaceLayout | null {
   if (!layoutSpec) return null;
@@ -5138,6 +5187,11 @@ export function addCabinet(
     for (const material of textureMaterials) {
       material.map = fallback.map;
       material.color.set(fallback.color);
+      // A failed sample falls back to the solid finish, which stays on the scene tone map.
+      if (material.userData?.photoFaceToneMapOff) {
+        material.toneMapped = true;
+        material.userData = { ...material.userData, photoFaceToneMapOff: false };
+      }
       material.needsUpdate = true;
     }
   };
@@ -5300,6 +5354,7 @@ export function addCabinet(
       material.map = drawerTexture;
       material.color.set(dlcPhotoTint);
       if (dlcPhotoComp) material.toneMapped = false;
+      markPhotoFaceToneMapOff(material);
       if (dlcDrawerNormalUrl && dlcDrawerNormal) {
         material.normalMap = dlcDrawerNormal;
         material.normalScale.set(0.6, 0.6);
@@ -5324,6 +5379,23 @@ export function addCabinet(
       ? `#${new THREE.Color(dlcPhotoComp.hex).multiply(new THREE.Color(surfaceTextures.faceCrop.tintHex)).getHexString()}`
       : dlcPhotoComp.hex)
     : "#ffffff";
+  // Listed photo styles (Forest Rust / Rustic Hickory) use the same face compensation as DLC:
+  // tone mapping off, and the light-sum tint so the studio rig does not wash the photo out.
+  // Skins and the Driftwood shaker shadow strips are not part of this path.
+  const photoFaceComp = !dlcDoorFinish && Boolean(doorTexture || drawerTexture) && photoFaceSkipsToneMapping({
+    id: doorProfile?.styleId,
+    styleCode: doorProfile?.styleCode,
+    distributorId: doorProfile?.distributorId,
+  })
+    ? dlcPhotoLightCompensation(isVeryDarkCabinetStain(color) ? DARK_STAIN_DOOR_LIGHTS : RESTORED_DOOR_LIGHTS, relativeLuminance(color))
+    : null;
+  const markPhotoFaceToneMapOff = (material: THREE.MeshStandardMaterial) => {
+    if (!photoFaceComp || !material.map) return;
+    material.color.set(photoFaceComp.hex);
+    material.toneMapped = false;
+    material.userData = { ...material.userData, photoFaceToneMapOff: true };
+    material.needsUpdate = true;
+  };
   const faceColor = threeDFaceMaterialColor(color, Boolean(doorTexture)) === "#ffffff" ? dlcPhotoTint : threeDFaceMaterialColor(color, Boolean(doorTexture));
 	  const doorFinishSurface = threeDDoorFinishSurfaceProfile(doorProfile?.finishSheen, Boolean(doorTexture));
 	  const faceMaterial = new THREE.MeshPhysicalMaterial({
@@ -5332,6 +5404,7 @@ export function addCabinet(
 	    ...doorFinishSurface,
 	    ...(dlcPhotoComp ? { toneMapped: false } : {}),
 	  });
+  markPhotoFaceToneMapOff(faceMaterial);
   const structuralFinish = threeDStructuralFinish(color, Boolean(doorTexture));
   let plainStructuralColor = structuralFinish.color;
   let structuralSampleTexture: THREE.Texture | null = null;
@@ -5365,6 +5438,9 @@ export function addCabinet(
         doorTexture,
         doorProfile?.finishSheen,
       );
+      for (const material of [...structuralFinishMaterials, ...flatExposedFinishMaterials]) {
+        markPhotoFaceToneMapOff(material);
+      }
       plainStructuralColor = applied.color;
       structuralSampleTexture = applied.texture;
       return;
@@ -5403,6 +5479,7 @@ export function addCabinet(
     });
   }
 	  const trimMaterial = new THREE.MeshPhysicalMaterial({ color: faceColor, map: doorTexture, ...doorFinishSurface, ...(dlcPhotoComp ? { toneMapped: false } : {}) });
+  markPhotoFaceToneMapOff(trimMaterial);
 	  // A per-host Door Style sample can fail to load. Faces and their physical
 	  // rails must then fall back together to the chosen style color instead of
 	  // leaving the rails with an unresolved (black) texture map.
@@ -5436,7 +5513,8 @@ export function addCabinet(
 	    map.rotation = piece === "rail" ? Math.PI / 2 : 0;
 	    map.needsUpdate = true;
 	    const material = new THREE.MeshPhysicalMaterial({ color: dlcPhotoTint, map, ...doorFinishSurface, ...(dlcPhotoComp ? { toneMapped: false } : {}) });
-	    material.userData = { grainPiece: piece, grainDirection: doorProfile.grainDirection };
+	    markPhotoFaceToneMapOff(material);
+	    material.userData = { ...material.userData, grainPiece: piece, grainDirection: doorProfile.grainDirection };
 	    textureMaterials.push(material);
 	    return material;
 	  };

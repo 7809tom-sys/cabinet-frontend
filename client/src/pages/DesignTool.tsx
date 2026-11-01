@@ -312,7 +312,7 @@ import { buildMaterialsListRows, type MaterialsListSupplement } from "@/lib/desi
 import { RoomSizeControl, RoomSizeInline } from "@/components/design/RoomSizeControl";
 import { RoomLayoutStarter } from "@/components/design/RoomLayoutStarter";
 import type { WallBuilderDraft } from "@/components/design/WallBuilder";
-import { InteractiveRoom3D, threeDCrownPerimeterSegments, threeDBacksplashSegments, threeDWallFitGuideText, DEFAULT_WINDOW_SCENE_KIND, type InteractiveRoomCatalogItem, type InteractiveRoomOrderLine, type InteractiveRoomOrderSummary, type InteractiveRoomScene, type ThreeDCabinetMoveDirection, type ThreeDCabinetMoveResult, type WindowSceneKind, type WindowFrameStyle } from "@/components/design/InteractiveRoom3D";
+import { InteractiveRoom3D, threeDCrownPerimeterSegments, threeDBacksplashSegments, threeDWallFitGuideText, DEFAULT_WINDOW_SCENE_KIND, withCatalogDoorStyleIdentity, type InteractiveRoomCatalogItem, type InteractiveRoomOrderLine, type InteractiveRoomOrderSummary, type InteractiveRoomScene, type ThreeDCabinetMoveDirection, type ThreeDCabinetMoveResult, type WindowSceneKind, type WindowFrameStyle } from "@/components/design/InteractiveRoom3D";
 import { crownTakeoffFromExposedSegments } from "@/lib/crownTakeoff";
 import { hasDesignedRoomGeometry, initialDesignWorkspaceView, threeDLeftCatalogDragPayload } from "./designTool3DWorkspace";
 import { nearestFreeWallDropStart, targetedLowerCabinetForThreeDDrop, targetedSinkBaseForThreeDDrop, type ThreeDWallDropTarget } from "./designTool3DDropPlacement";
@@ -14413,15 +14413,18 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     });
   }, [activeFinish, finishById, placed, styleA, styleB, styleId, styleNameById]);
 
-  const activeCatalogDoorProfile = useMemo(
-    () => withFramelessExposedFinish(activeStyle, designerCatalogDoorProfile(activeStyle)),
-    [activeStyle],
-  );
+  const activeCatalogDoorProfile = useMemo(() => {
+    const profile = withFramelessExposedFinish(activeStyle, designerCatalogDoorProfile(activeStyle));
+    return withCatalogDoorStyleIdentity(activeStyle, profile);
+  }, [activeStyle]);
   const threeDCabinetDoorProfiles = useMemo(
     () => Object.fromEntries(placed.flatMap((cabinet) => {
       const assignedStyleId = effectiveStyleId(cabinet, styleId) ?? styleId;
       const assignedStyle = doorStyles?.find((style) => style.id === assignedStyleId) ?? null;
-      const profile = withFramelessExposedFinish(assignedStyle, designerCatalogDoorProfile(assignedStyle));
+      const profile = withCatalogDoorStyleIdentity(
+        assignedStyle,
+        withFramelessExposedFinish(assignedStyle, designerCatalogDoorProfile(assignedStyle)),
+      );
       return profile ? [[cabinet.uid, profile]] : [];
     })),
     [placed, styleId, doorStyles],
