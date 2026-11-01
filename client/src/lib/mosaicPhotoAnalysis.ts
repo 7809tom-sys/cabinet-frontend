@@ -462,6 +462,60 @@ function medianNumber(values: number[]) {
   return sorted[Math.floor(sorted.length / 2)] ?? 0;
 }
 
+const EDGE_SLIVER_ALPHA = 160;
+const EDGE_SLIVER_MAX_ROWS = 4;
+
+function rowEdgeAlpha(data: Uint8Array, width: number, y: number): number | null {
+  const samples: number[] = [];
+  const step = Math.max(1, Math.floor(width / 240));
+  let seen = 0;
+  for (let x = 0; x < width; x += step) {
+    const alpha = data[(y * width + x) * 4 + 3]!;
+    if (alpha < 16) continue;
+    seen += 1;
+    samples.push(alpha);
+  }
+  // A real tile row is mostly solid. A fringe row is the semi-transparent halo.
+  if (seen < Math.max(8, Math.floor(width / step) * 0.4)) return null;
+  samples.sort((a, b) => a - b);
+  return samples[Math.floor(samples.length / 2)] ?? null;
+}
+
+/**
+ * Drops a thin semi-transparent halo on the top or bottom edge of a transparent sheet.
+ * Rustic Umber's top row is RGB ~217 at alpha 69. An opaque material ignores that alpha
+ * and repeats the row as a bright line at every vertical seam. Interior joints are not rows
+ * at the outer edge, so they stay. Returns how many edge rows were removed.
+ */
+export function trimTransparentEdgeSlivers(data: Uint8Array, width: number, height: number): number {
+  if (width < 24 || height < 24 || data.length < width * height * 4) return 0;
+  const sliver = (y: number) => {
+    const alpha = rowEdgeAlpha(data, width, y);
+    return alpha != null && alpha < EDGE_SLIVER_ALPHA;
+  };
+  let top = 0;
+  while (top < EDGE_SLIVER_MAX_ROWS && top < height / 2 && sliver(top)) top += 1;
+  let bottom = 0;
+  while (bottom < EDGE_SLIVER_MAX_ROWS && bottom < height / 2 - top && sliver(height - 1 - bottom)) bottom += 1;
+  if (top === 0 && bottom === 0) return 0;
+  const clearRow = (y: number, sourceY: number) => {
+    for (let x = 0; x < width; x += 1) {
+      const dest = (y * width + x) * 4;
+      if (data[dest + 3]! >= EDGE_SLIVER_ALPHA) continue;
+      const src = (sourceY * width + x) * 4;
+      if (data[dest + 3]! >= 16) {
+        data[dest] = data[src]!;
+        data[dest + 1] = data[src + 1]!;
+        data[dest + 2] = data[src + 2]!;
+      }
+      data[dest + 3] = 0;
+    }
+  };
+  for (let y = 0; y < top; y += 1) clearRow(y, top);
+  for (let i = 0; i < bottom; i += 1) clearRow(height - 1 - i, height - 1 - bottom);
+  return top + bottom;
+}
+
 /**
  * Grey joints baked into a sheet. A running-bond subway has one vertical joint per row
  * and that joint's x alternates. Those joints, and the horizontal joints between the rows,
