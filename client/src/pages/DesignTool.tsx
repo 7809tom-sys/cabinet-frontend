@@ -4179,15 +4179,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       maxFillerIn: AUTO_DESIGN_FILLER_MAX_IN,
     });
     working = seamResult.placed;
-    const bareRangeForHood = working.find((item) => item.placement === "appliance" && isRangeOrOven(item.masterCode, item.description)
-      && autoDesignRangeNeedsVentilation(working, item));
-    if (bareRangeForHood) {
-      const builtHood = autoDesignRangeHood({ range: bareRangeForHood, room, palette: appliancePalette, uid: makeUid() });
-      if (builtHood.ok) {
-        const hooded = appendCollisionFreePlacements(working, [builtHood.hood], room);
-        if (hooded.rejected.length === 0) working = hooded.placed;
-      }
-    }
+    // The range is left open on purpose: the dialog after the build asks what goes above it.
     // Wall boxes are last. Match the completed lower projections, retaining
     // selected-line SKUs, height and opening clearances without moving anchors.
     const upperResult = buildAutoDesignWallCabinets({

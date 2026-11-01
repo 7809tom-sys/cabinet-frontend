@@ -32,7 +32,7 @@ import { bakesALot, cooksALot, normalizeKitchenUsage } from "./kitchenUsage";
 import { ensureDrawerBase } from "./autoDesignDrawerRule";
 import { reviewAfterShift, separateRangeAndRefrigerator } from "./kitchenAdjacency";
 import { AUTO_DESIGN_FILLER_MAX_IN, fillAutoDesignLowerSeams, planAutoDesignBaseSegment } from "./autoDesignSeamFillers";
-import { autoDesignRangeHood, autoDesignRangeNeedsVentilation } from "./autoDesignRangeHood";
+import { autoDesignRangeNeedsVentilation } from "./autoDesignRangeHood";
 import { AUTO_DESIGN_REFRIGERATOR_WALL_END_SHIFT_IN, buildMandatoryAutoDesignRefrigeratorBay } from "./autoDesignRefrigeratorBay";
 import { autoDesignSinkWindow, windowOverlapsReservation } from "./autoDesignSinkWindow";
 import { raiseWindowsForDeckFaucet } from "./faucetPlacement";
@@ -602,14 +602,7 @@ export function runAutoDesignLayout(args: {
   });
   working = absorbOpenBaseGaps(seamResult.placed, room, stage.straightBaseCatalog, runWalls, args.styleId, makeUid);
   notes.push(...seamResult.notes, ...separated.flags);
-  const bareRangeForHood = working.find((item) => item.placement === "appliance" && isRangeOrOven(item.masterCode, item.description) && autoDesignRangeNeedsVentilation(working, item));
-  if (bareRangeForHood) {
-    const builtHood = autoDesignRangeHood({ range: bareRangeForHood, room, palette: args.appliancePalette, uid: makeUid() });
-    if (builtHood.ok) {
-      const hooded = appendCollisionFreePlacements(working, [builtHood.hood], room);
-      if (hooded.rejected.length === 0) working = hooded.placed;
-    }
-  }
+  // The range is left open on purpose: the Designer asks what goes above it (hood, bridge + microwave, or nothing).
   const upperResult = buildAutoDesignWallCabinets({
     placed: working, room, openings: stageOpenings, catalog: stage.wallPool,
     wallCabinetHeightIn: stage.input.wallCabinetHeightIn ?? 30,
