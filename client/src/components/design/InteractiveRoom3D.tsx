@@ -12426,11 +12426,11 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 	    setCameraReadyKey((current) => current + 1);
 
 	    // Ambient occlusion: the soft darkening in corners and under cabinets that the photo render has.
-	    // On by default only for the "high" quality tier; ?ao=1 forces it on, ?ao=0 forces it off.
+	    // Opt-in for now: add ?ao=1 to the /design address to preview it.
 	    let composer: EffectComposer | null = null;
 	    try {
 	      const aoParam = new URLSearchParams(window.location.search).get("ao");
-	      const aoWanted = aoParam === "1" || (aoParam !== "0" && renderQuality.tier === "high");
+	      const aoWanted = aoParam === "1"; // opt-in until the look is approved; then default to renderQuality.tier === "high"
 	      if (aoWanted) {
 	        composer = new EffectComposer(renderer);
 	        composer.setSize(canvasWidth, canvasHeight);
