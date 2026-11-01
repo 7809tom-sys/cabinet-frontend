@@ -65,7 +65,7 @@ describe("stacked glass wall cabinet crown eligibility", () => {
     expect(crownEligibleCabinets([lower, glassStacker], tallRoom).map((cabinet) => cabinet.uid)).toEqual(["glass-stacker"]);
   });
 
-  it("skips a ceiling-height pantry but crowns the refrigerator bridge on its own top like every wall cabinet", () => {
+  it("crowns a ceiling-height pantry on its own top, and the refrigerator bridge on its own top like every wall cabinet", () => {
     const ceilingRoom: RoomData = { width: 144, depth: 120, ceilingHeight: 96 };
     const pantry: PlacedCabinet = {
       ...wallCabinet({ uid: "pantry", masterCode: "U249624", description: "96 inch Utility Pantry" }),
@@ -80,8 +80,8 @@ describe("stacked glass wall cabinet crown eligibility", () => {
     const ordinaryUpper = wallCabinet({ uid: "ordinary-upper", masterCode: "W2430", height: 30, mountBottom: 54 });
 
     expect(crownEligibleCabinets([pantry, refrigeratorBridge, ordinaryUpper], ceilingRoom).map((cabinet) => cabinet.uid))
-      .toEqual(["bridge", "ordinary-upper"]);
-    // The pantry still blocks neighbouring crown even though it receives none.
+      .toEqual(["pantry", "bridge", "ordinary-upper"]);
+    // Owner decision: tall cabinets, ceiling-height pantries included, carry crown and also block neighbouring crown.
     expect(crownBlockingCabinets([pantry, refrigeratorBridge, ordinaryUpper], ceilingRoom).map((cabinet) => cabinet.uid))
       .toEqual(["pantry", "bridge", "ordinary-upper"]);
   });

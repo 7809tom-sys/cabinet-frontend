@@ -6806,12 +6806,9 @@ export function isCrownEligibleCabinet(p: PlacedCabinet, room?: RoomData): boole
   // remain crown-bearing: the crown follows their actual top line, including
   // when that line is the ceiling line, so tall runs do not lose their wrap.
   const isCeilingFillingGlassStacker = isStacker(p) && isGlassDoorCabinet(p);
-  // A tall cabinet (pantry, refrigerator end panel) carries crown only when it stops below the ceiling with room
-  // for the profile; one that fills the ceiling has no exposed top to crown (it still blocks neighbouring crown).
-  if (p.placement === "tall") {
-    const tallTop = box.bottom + box.height;
-    return room.ceilingHeight - tallTop >= CROWN_HEIGHT_IN - COLLISION_EPSILON_IN;
-  }
+  // A tall cabinet (pantry, refrigerator end panel) always carries crown on its own top line, including when
+  // that line is the ceiling (owner decision), and always blocks neighbouring crown.
+  if (p.placement === "tall") return true;
   if (!isCeilingFillingGlassStacker) return true;
   const ceiling = wallCabinetVerticalMoveLimit(p, room).ceiling;
   const top = box.bottom + box.height;
