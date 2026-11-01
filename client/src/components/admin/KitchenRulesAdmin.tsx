@@ -8,6 +8,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { KITCHEN_RULE_SEED, type KitchenRuleSeed } from "@/lib/kitchenRulesCatalog";
+import { RICH_QUESTIONS_CATEGORY } from "@/lib/kitchenRulesRichQuestions";
 import {
   downloadTextFile,
   kitchenRulesToCsv,
@@ -117,7 +118,15 @@ export default function KitchenRulesAdmin() {
           <option value="all">All categories</option>
           {categories.map((item) => <option key={item} value={item}>{item}</option>)}
         </select>
+        <Button type="button" variant={category === RICH_QUESTIONS_CATEGORY ? "default" : "outline"} onClick={() => setCategory(category === RICH_QUESTIONS_CATEGORY ? "all" : RICH_QUESTIONS_CATEGORY)} data-testid="kitchen-rules-rich-filter">
+          Questions for Rich ({rules.filter((rule) => rule.category === RICH_QUESTIONS_CATEGORY).length})
+        </Button>
       </div>
+      {category === RICH_QUESTIONS_CATEGORY && (
+        <p className="rounded-md border border-sky-300 bg-sky-50 px-3 py-2 text-sm text-sky-950" data-testid="kitchen-rules-rich-help">
+          Rich: open a question, read what NKBA says and what Auto-Design does today, then type what you do on a real job in Notes and save. Your answers do not change the Designer until a developer turns one into a rule.
+        </p>
+      )}
       <div className="overflow-x-auto rounded-lg border">
         <table className="w-full min-w-[64rem] text-left text-sm">
           <thead className="bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground">

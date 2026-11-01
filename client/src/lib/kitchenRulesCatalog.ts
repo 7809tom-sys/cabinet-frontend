@@ -1,4 +1,5 @@
 import { KITCHEN_ADJACENCY_RULES } from "./kitchenAdjacencyRules";
+import { richQuestionSeeds } from "./kitchenRulesRichQuestions";
 
 export type KitchenRuleEnforcementKind = "auto" | "suggest" | "review" | "reference";
 export type KitchenRuleImplementationStatus = "implemented" | "pending" | "reference";
@@ -438,7 +439,7 @@ const ownerSeeds: KitchenRuleSeed[] = [
   },
 ];
 
-export const KITCHEN_RULE_SEED: readonly KitchenRuleSeed[] = [...researchSeeds, ...ownerSeeds];
+export const KITCHEN_RULE_SEED: readonly KitchenRuleSeed[] = [...researchSeeds, ...ownerSeeds, ...richQuestionSeeds];
 
 export function kitchenRuleSeedByCode(ruleCode: string): KitchenRuleSeed | undefined {
   return KITCHEN_RULE_SEED.find((rule) => rule.ruleCode === ruleCode);
