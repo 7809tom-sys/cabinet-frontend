@@ -1,20 +1,19 @@
 /**
  * HARD RULE (Tom, Nov 1 2026): ALL 2.75 in and 3 in shaker doors start from the DL Shaker
  * blueprint as the base template. Geometry (rail/stile frame, sharp square corners, flat
- * center slab, notch) is proven and must not be changed per style. Only texture/color varies;
- * any applied color must be from the brand palette (cream #fffdf9/#f6f3ed, green #244338,
- * gold #d7a46c), never outside blue/teal/off-brand green. Deviation requires Tom's explicit override.
+ * center slab, notch) is proven and must not be changed per style. Only texture/color varies.
  *
- * Brand colors go ON the door surface, not just UI tints. The painted surface of every
- * 2.75/3 inch shaker is snapped (CIEDE2000) to the nearest brand door color: the uploaded
- * Faircrest Classic Cream door sample (#dedac6, averaged from CC_classic-cream_1.jpeg door
- * faces), cream #fffdf9/#f6f3ed, green #244338, or gold #d7a46c. The style's own catalog
- * color only picks the closest DL reference grain and which brand color it snaps to.
- * Rail and stile WIDTH stay the style's own 2.75 or 3 inches. Depth, square corners,
- * the flat center slab, and the notch are the shared blueprint.
+ * Color (Tom, Nov 2 2026): the door keeps its own hex. Precedence is a hand-set renderHex,
+ * then the measured swatch table, then a WalzCraft ColorPatterns primary shade, then a
+ * name/photo estimate, then the pre-209 catalog hex or name. A nearest-brand snap
+ * (sample cream, cream, green, gold) is what turned Stone Gray into cream and Slate Rift
+ * into green. That snap is not applied. Paint is an opaque solid. Stain keeps the grain
+ * and a tint toward the door's own hex. Rail and stile WIDTH stay the style's own 2.75
+ * or 3 inches. Depth, square corners, the flat center slab, and the notch are shared.
  */
 import { CABINET_NAME_COLORS, matchCabinetColorName } from "./cabinetColorNames";
 import { deltaE2000Hex } from "./ciede2000";
+import { resolveDoorColor } from "./doorColorResolve";
 import { DLC_FR26_CATALOG, type DlcFr26CatalogEntry } from "./dlcFr26Catalog.generated";
 import { DLC_FRAME_DETAIL } from "./dlcFr26Textures";
 import { findDlcFinishForStyle, type DlcStyleInput } from "./dlcFr26Mapping";
@@ -26,10 +25,13 @@ export const SHAKER_BRAND_UI_PALETTE = ["#fffdf9", "#f6f3ed", "#244338", "#d7a46
 /** Door-surface color measured from the uploaded Faircrest Classic Cream door sample photo. */
 export const FAIRCREST_CLASSIC_CREAM_SAMPLE_HEX = "#dedac6";
 
-/** The only colors a 2.75/3 inch shaker door surface may render in. Sample first. */
+/** Old brand-surface list. Reported so a review can show the snap that is no longer applied. */
 export const SHAKER_BRAND_DOOR_SURFACE_PALETTE = [FAIRCREST_CLASSIC_CREAM_SAMPLE_HEX, ...SHAKER_BRAND_UI_PALETTE] as const;
 
-/** Snap a style's own color to the nearest brand door-surface color. */
+/**
+ * Nearest brand swatch. Not painted on a door. Stone Gray and other grays used to
+ * land on cream or green through this function.
+ */
 export function brandDoorSurfaceHex(ownColor: string): string {
   let best: string = SHAKER_BRAND_DOOR_SURFACE_PALETTE[0];
   let bestDelta = Number.POSITIVE_INFINITY;
@@ -68,6 +70,8 @@ export type ShakerStyleInput = {
   renderHex?: string | null;
   finish?: string | null;
   woodSpecies?: string | null;
+  distributorName?: string | null;
+  supplierBrandName?: string | null;
   railWidth?: string | number | null;
   stileWidth?: string | number | null;
 };
@@ -87,7 +91,7 @@ export type ShakerAdoption =
       adopted: true;
       reference: DlShakerReference;
       ownColor: string;
-      /** Brand/sample color actually rendered on the door surface. */
+      /** Hex actually rendered. Never a nearest brand swatch. */
       surfaceColor: string;
       family: ShakerFinishFamily;
       railIn: number;
@@ -165,16 +169,7 @@ export function styleOwnColor(style: ShakerStyleInput): string {
 }
 
 export function styleFinishFamily(style: ShakerStyleInput): ShakerFinishFamily {
-  const text = `${style.woodSpecies ?? ""} ${style.ourName ?? ""} ${style.aliasName ?? ""} ${style.finish ?? ""}`.toLowerCase();
-  if (/painted/.test(text)) return "painted";
-  if (/oak|hickory|birch|maple|walnut|rift|cherry|pecan|veneer|\bwood\b/.test(text)) return "wood";
-  const color = hexOf(style.renderHex) ?? hexOf(style.color);
-  if (color) {
-    const [r, g, b] = rgb(color);
-    const chroma = Math.max(r, g, b) - Math.min(r, g, b);
-    if (chroma > 40) return "wood";
-  }
-  return "painted";
+  return resolveDoorColor(style).usesGrain ? "wood" : "painted";
 }
 
 function referenceFamily(slug: DlShakerSlug): ShakerFinishFamily {
@@ -225,7 +220,8 @@ export function matchStandardShakerToDl(style: ShakerStyleInput): ShakerAdoption
   if (!isStandardShakerRail(railIn)) return { adopted: false, railIn, reason: `Rail ${railIn ?? "unset"} in is outside 2.75 and 3 inches.` };
 
   const ownColor = styleOwnColor(style);
-  const finishFamily = styleFinishFamily(style);
+  const decision = resolveDoorColor(style);
+  const finishFamily: ShakerFinishFamily = decision.usesGrain ? "wood" : "painted";
   const pool = standardDlShakerReferences().filter((reference) => reference.family === finishFamily);
   let best = pool[0]!;
   let bestDelta = Number.POSITIVE_INFINITY;
@@ -236,7 +232,7 @@ export function matchStandardShakerToDl(style: ShakerStyleInput): ShakerAdoption
       bestDelta = delta;
     }
   }
-  const surfaceColor = brandDoorSurfaceHex(ownColor);
+  const surfaceColor = decision.appliedHex;
   const tint = retintGrain(best.color, surfaceColor);
   const grainNote = best.grainPaleSoftened
     ? "near-flat painted grain"
@@ -255,7 +251,7 @@ export function matchStandardShakerToDl(style: ShakerStyleInput): ShakerAdoption
     tintHex: tint.tintHex,
     tintClamped: tint.clamped,
     grain: best.grain,
-    reason: `${finishFamily}, ΔE ${bestDelta.toFixed(1)} to ${best.name}; inherited ${grainNote} ${best.grain}; tint ${tint.tintHex} retargets ${best.color} to brand surface ${surfaceColor} (own ${ownColor}).${clampNote}`,
+    reason: `${finishFamily}, ΔE ${bestDelta.toFixed(1)} to ${best.name}; inherited ${grainNote} ${best.grain}; tint ${tint.tintHex} retargets ${best.color} to the door color ${surfaceColor} (${decision.appliedSource}; own ${ownColor}).${clampNote}`,
   };
 }
 
@@ -270,12 +266,13 @@ export function standardShakerDlFacePlan(
   if (!match.adopted) return null;
   const wall = (placement ?? "").toLowerCase() === "wall";
   const entry = match.reference.entry;
+  const paint = !matchUsesGrain(style);
   return {
     sourceKind: "split",
-    doorUrl: entry.faceDoor,
-    drawerUrl: wall ? null : entry.faceDrawer,
+    doorUrl: paint ? null : entry.faceDoor,
+    drawerUrl: paint || wall ? null : entry.faceDrawer,
     sections: wall ? 1 : 2,
-    drawerTextureApplied: !wall,
+    drawerTextureApplied: !paint && !wall,
     grainRotation: 0,
     dlcCrop: {
       slug: entry.slug,
@@ -283,11 +280,15 @@ export function standardShakerDlFacePlan(
       drawerSize: entry.drawerSize,
       drawerSolidColor: null,
       solidColor: match.surfaceColor,
-      grainUrl: entry.grainFrameFree ? entry.grain : null,
+      grainUrl: paint ? null : (entry.grainFrameFree ? entry.grain : null),
       faceTileIn: entry.faceTileIn,
       faceTileDrawerIn: entry.faceTileDrawerIn,
-      normalUrl: entry.faceNormal,
-      tintHex: match.tintHex,
+      normalUrl: paint ? null : entry.faceNormal,
+      tintHex: paint ? null : match.tintHex,
     },
   };
+}
+
+function matchUsesGrain(style: ShakerStyleInput): boolean {
+  return resolveDoorColor(style).usesGrain;
 }

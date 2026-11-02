@@ -15,13 +15,17 @@ const dl = (ourName: string, styleCode: string | null = null, extra: Record<stri
 });
 
 describe("DL style -> DLC_FR26 finish", () => {
-  it("Cyber Grey faces use the frame-free grain, door and drawer as different files, never a photo crop", () => {
+  it("Cyber Grey paint is an opaque gray, and its catalog grain is not a framed photo", () => {
+    const entry = DLC_FR26_CATALOG.find((item) => item.slug === "cyber-grey")!;
+    expect(entry.faceDoor).toBe("/textures/dlc-fr26/grain/cyber-grey.png");
+    expect(entry.faceDrawer).toBe("/textures/dlc-fr26/grain/cyber-grey-drawer.png");
+    expect(entry.faceDoor).not.toMatch(/\/(door|drawer)\//);
     const plan = resolveCabinetFaceImages(dl("Cyber Grey", "DL-CG"), "base");
-    expect(plan.doorUrl).toBe("/textures/dlc-fr26/grain/cyber-grey.png");
-    expect(plan.drawerUrl).toBe("/textures/dlc-fr26/grain/cyber-grey-drawer.png");
-    expect(plan.drawerUrl).not.toBe(plan.doorUrl);
-    expect(plan.doorUrl).not.toMatch(/\/(door|drawer)\//);
-    expect(plan.drawerUrl).not.toMatch(/\/(door|drawer)\//);
+    expect(plan.dlcCrop?.slug).toBe("cyber-grey");
+    expect(plan.dlcCrop?.solidColor).toBe("#8d8f92");
+    expect(plan.doorUrl).toBeNull();
+    expect(plan.drawerUrl).toBeNull();
+    expect(plan.dlcCrop?.grainUrl).toBeNull();
     expect(plan.sourceKind).toBe("split");
   });
 
@@ -156,11 +160,12 @@ describe("renderer and Designer are connected", () => {
 describe("DL sides, end panels and skins match the door finish", () => {
   const solid = (slug: string) => DLC_FR26_CATALOG.find((e) => e.slug === slug)!.solidColor;
   it("the finish colour used for sides/skins is the door colour, even when a stale light-grey hex is stored", () => {
-    for (const [name, code, slug] of [["Cyber Grey", "DL-CG", "cyber-grey"], ["Driftwood", "DL-DW", "driftwood"]] as const) {
-      const style = dl(name, code, { color: "#d9dde3", finish: "Painted" });
-      expect(resolveDoorFinishHex(style), name).toBe(solid(slug));
-      expect(resolveCabinetFaceImages(style, "base").dlcCrop?.solidColor, name).toBe(solid(slug));
-    }
+    const cyber = dl("Cyber Grey", "DL-CG", { color: "#d9dde3", finish: "Painted" });
+    expect(resolveDoorFinishHex(cyber)).toBe("#8d8f92");
+    expect(resolveCabinetFaceImages(cyber, "base").dlcCrop?.solidColor).toBe("#8d8f92");
+    const driftwood = dl("Driftwood", "DL-DW", { color: "#d9dde3", finish: "Painted" });
+    expect(resolveDoorFinishHex(driftwood)).toBe(solid("driftwood"));
+    expect(resolveCabinetFaceImages(driftwood, "base").dlcCrop?.solidColor).toBe(solid("driftwood"));
   });
   it("sides are never white, light grey or light blue for any mapped finish that is itself dark or coloured", () => {
     const lum = (h: string) => 0.2126 * parseInt(h.slice(1, 3), 16) + 0.7152 * parseInt(h.slice(3, 5), 16) + 0.0722 * parseInt(h.slice(5, 7), 16);
@@ -169,7 +174,8 @@ describe("DL sides, end panels and skins match the door finish", () => {
     expect(lum(solid("slim-shaker-ebony"))).toBeLessThan(60);
   });
   it("non-DL and unmapped styles keep their own colour", () => {
-    expect(resolveDoorFinishHex({ distributorId: 12, ourName: "Cyber Grey", color: "#336699" })).toBe("#336699");
+    expect(resolveDoorFinishHex({ distributorId: 12, ourName: "Custom Hex", color: "#336699" })).toBe("#336699");
+    expect(resolveDoorFinishHex({ distributorId: 12, ourName: "Cyber Grey", color: "#336699" })).toBe("#8d8f92");
     expect(resolveDoorFinishHex(dl("Champagne Mist", "DL-CM", { color: "#c9b99a" }))).toBe("#c9b99a");
   });
   it("3D: DLC cabinets use the door colour for every structural surface and never the door photo on ends or sides", () => {
@@ -226,8 +232,9 @@ describe("sides carry the door's grain, and photo materials are not over-lit", (
     expect(e.faceTint).toMatch(/^#[0-9a-f]{6}$/);
     expect(e.faceDoor).toBe("/textures/dlc-fr26/grain/slim-shaker-alabaster.png"); // catalog grain, source not swapped
     const plan = resolveCabinetFaceImages(dl("Slim Shaker Alabaster", "DL-SA"), "base");
-    expect(plan.dlcCrop?.solidColor).toBe(e.solidColor);
-    expect(plan.dlcCrop?.tintHex).toBe(e.faceTint);
+    expect(plan.dlcCrop?.slug).toBe("slim-shaker-alabaster");
+    expect(plan.dlcCrop?.solidColor).toBe("#f2f0ea");
+    expect(plan.dlcCrop?.grainUrl).toBeNull();
     // other pale finishes untouched by this change
     for (const slug of ["arctic-white", "white-shaker", "ivory-white", "dove-gray"]) {
       expect(DLC_FR26_CATALOG.find((x) => x.slug === slug)!.faceTint).toBeNull();
@@ -239,8 +246,9 @@ describe("sides carry the door's grain, and photo materials are not over-lit", (
     expect(e.faceTint).toMatch(/^#[0-9a-f]{6}$/);
     expect(e.faceDoor).toBe("/textures/dlc-fr26/grain/pearl-white.png");
     const plan = resolveCabinetFaceImages(dl("Pearl White", "DL-PW"), "base");
-    expect(plan.dlcCrop?.solidColor).toBe("#dfd9d9");
-    expect(plan.dlcCrop?.tintHex).toBe(e.faceTint);
+    expect(plan.dlcCrop?.slug).toBe("pearl-white");
+    expect(plan.dlcCrop?.solidColor).toBe("#f7f6f3");
+    expect(plan.dlcCrop?.grainUrl).toBeNull();
   });
   it("Glacier White matches Pearl White's antique white (Tom, Oct 31): #dfd9d9, grain shifted (no tint), same colour for sides", () => {
     const e = DLC_FR26_CATALOG.find((x) => x.slug === "glacier-white")!;
@@ -249,7 +257,9 @@ describe("sides carry the door's grain, and photo materials are not over-lit", (
     expect(e.faceTint).toBeNull(); // a tint cannot brighten red/green, so the grain patch itself carries the colour
     expect(e.faceDoor).toBe("/textures/dlc-fr26/grain/glacier-white.png");
     const plan = resolveCabinetFaceImages(dl("Glacier White", "DL-GW"), "base");
-    expect(plan.dlcCrop?.solidColor).toBe("#dfd9d9");
+    expect(plan.dlcCrop?.slug).toBe("glacier-white");
+    expect(plan.dlcCrop?.solidColor).toBe("#f7f6f3");
+    expect(plan.dlcCrop?.grainUrl).toBeNull();
   });
   it("light compensation cancels the rig's light sum per channel (tone mapping off) and stays in range", () => {
     const std = dlcPhotoLightCompensation(RESTORED_DOOR_LIGHTS);
@@ -305,8 +315,8 @@ describe("grain faces: no photo frame lines on any face", () => {
       for (const url of [e.faceDoor, e.faceDrawer]) expect(url, e.slug).not.toMatch(/\/textures\/dlc-fr26\/(door|drawer)\//);
       const plan = resolveCabinetFaceImages({ distributorId: 450001, ourName: e.names[0], styleCode: null }, "base");
       if (plan.dlcCrop) {
-        expect(plan.doorUrl, e.slug).not.toMatch(/\/(door|drawer)\//);
-        expect(plan.drawerUrl, e.slug).not.toMatch(/\/(door|drawer)\//);
+        if (plan.doorUrl) expect(plan.doorUrl, e.slug).not.toMatch(/\/(door|drawer)\//);
+        if (plan.drawerUrl) expect(plan.drawerUrl, e.slug).not.toMatch(/\/(door|drawer)\//);
       }
     }
   });

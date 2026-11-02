@@ -1,22 +1,18 @@
 /**
  * Designer-facing door appearance. Profile rules live in
- * `@shared/doorStyleAppearance`. Finish color uses the same keyword table as
- * the elevation and the swatches (`finishColors`), then the Aspen Charcoal
- * stain overrides that table so a color *name* never reaches WebGL.
+ * `@shared/doorStyleAppearance`. Finish color uses the door-color precedence
+ * (render hex, swatch table, WalzCraft shade, estimator, pre-209 color).
  */
 import { doorPanelKind, type DoorPanelKind } from "@/lib/doorPanelKind";
 import { finishColors, type FinishColors } from "@/lib/design";
 import { designerDoorFrameMetrics } from "@/lib/doorFrameMetrics";
 import {
-  ASPEN_CHARCOAL_STAIN,
-  exactDoorFinishHex,
   isAspenCharcoal,
   resolveDoorProfile,
   type DoorStyleAppearanceInput,
   type ResolvedDoorProfile,
 } from "@shared/doorStyleAppearance";
-import { resolveRenderHex } from "@shared/doorRenderIdentity";
-import { findDlcFinishForStyle } from "@shared/dlcFr26Mapping";
+import { resolveDoorColor } from "@shared/doorColorResolve";
 
 export {
   ASPEN_CHARCOAL_STAIN,
@@ -39,31 +35,15 @@ function identityOf(style: DoorStyleAppearanceInput | null | undefined): DoorSty
 }
 
 /**
- * Always a #rrggbb. Hex catalog values win. Aspen Charcoal is a stained birch,
- * not the light gray left behind when "Espresso Brown" is ignored. Every other
- * style uses the Designer keyword table, including styles whose color column
- * is empty — those used to fall back to a light gray slab.
+ * Always a #rrggbb. A hand-set render hex wins, then the measured swatch,
+ * then a WalzCraft shade, then the estimator, then the pre-209 color.
  */
 export function resolveDoorFinishHex(style: DoorStyleAppearanceInput | null | undefined): string {
   const identity = identityOf(style);
-  const override = exactDoorFinishHex(identity.renderHex);
-  if (override) return override;
-  // A DL style that maps to a DLC_FR26 finish: sides, ends and skins take the colour of the door
-  // the shopper sees (median of the processed door crop), not a keyword guess or a stale hex.
-  const dlc = findDlcFinishForStyle(identity as Parameters<typeof findDlcFinishForStyle>[0]);
-  if (dlc) return dlc.solidColor;
-  const supplied = exactDoorFinishHex(identity.color);
-  if (supplied) return supplied;
-  if (isAspenCharcoal(identity)) return ASPEN_CHARCOAL_STAIN;
-  const named = resolveRenderHex(identity);
-  if (named) return named;
-  return finishColors(
-    identity.ourName,
-    identity.name,
-    identity.color,
-    identity.finish,
-    identity.woodSpecies,
-  ).face;
+  // Same precedence as the door face: render hex, swatch table, WalzCraft shade,
+  // estimator, then the pre-209 color. A DL catalog solid is that pre-209 color
+  // when no higher layer agrees. It is not a brand snap.
+  return resolveDoorColor(identity).appliedHex;
 }
 
 export function resolveDoorStyleAppearance(style: DoorStyleAppearanceInput | null | undefined): DoorStyleAppearance {

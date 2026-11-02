@@ -46,6 +46,22 @@ describe("closet DL shaker fronts", () => {
     }
   });
 
+  it("paints Stone Gray and Slate Rift as gray, not brand green", () => {
+    for (const hex of ["#8d8f92", "#555553"]) {
+      const front = createClosetDlShakerFront(24, 30, hex, "door");
+      const boxes = front.children.filter((child): child is THREE.Mesh => child instanceof THREE.Mesh);
+      const rails = boxes.filter((mesh) => mesh.userData.physicalRail);
+      expect(rails.length).toBeGreaterThan(0);
+      for (const mesh of rails) {
+        expect((mesh.material as THREE.MeshStandardMaterial).color.getHexString()).toBe(hex.slice(1));
+        expect((mesh.material as THREE.MeshStandardMaterial).color.getHexString()).not.toBe("244338");
+        expect((mesh.material as THREE.MeshStandardMaterial).color.getHexString()).not.toBe("dedac6");
+      }
+      const center = boxes.find((mesh) => mesh.userData.dlShakerCenterSlab);
+      expect((center?.material as THREE.MeshStandardMaterial).color.getHexString()).not.toBe("244338");
+    }
+  });
+
   it("renders a short drawer as a plain flat slab", () => {
     expect(CLOSET_SLAB_BELOW_IN).toBe(7);
     expect(closetFrontIsSlab(24, 5)).toBe(true);

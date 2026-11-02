@@ -49,7 +49,8 @@ import {
   specValuesFromEditor,
 } from "./applyDoorStyleSpecs";
 import { isDoorStyleVerified, resolveCabinetFaceImages } from "@shared/doorFaceRecognition";
-import { resolveDoorShapeDecision, resolveRenderHex, PROFILE_GUESSED_LABEL } from "@shared/doorRenderIdentity";
+import { resolveDoorShapeDecision, PROFILE_GUESSED_LABEL } from "@shared/doorRenderIdentity";
+import { resolveDoorColor } from "@shared/doorColorResolve";
 import { designerFrameCompliance } from "@/lib/doorFrameMetrics";
 import { OpenDesignerLink } from "@/components/design/OpenDesignerLink";
 import { DoorStyleIdentity } from "@/components/doorStyles/DoorStyleIdentity";
@@ -413,6 +414,20 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
   const walzColorType = walzDoor ? colorTypeFor(walzDoor) : null;
   const isWoodGrain = walzColorType?.colorType === "woodGrain";
   const woodGrainLabel = walzColorType && isWoodGrain ? woodGrainBadge(walzColorType, style.grainDirection) : null;
+  const doorColor = resolveDoorColor({
+    id: style.id,
+    distributorId: style.distributorId,
+    distributorName: style.distributorName,
+    supplierBrandName: style.supplierBrandName,
+    ourName,
+    aliasName,
+    styleCode: style.styleCode,
+    doorStyle,
+    color,
+    finish,
+    woodSpecies,
+    renderHex,
+  });
   const woodGrainSwatch = isWoodGrain ? (approvedTilesFor(style.id)[0]?.dataUrl ?? style.doorSampleImageUrl ?? walzDoor?.photo ?? null) : null;
   const [bakeAfterSave, setBakeAfterSave] = useState(true);
   const walzFormValues: ProfileFormValues = {
@@ -884,14 +899,8 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
               color,
               renderHex,
             })}
-            resolvedHex={resolveRenderHex({
-              ourName,
-              styleCode: style.styleCode,
-              color,
-              finish,
-              woodSpecies,
-              renderHex,
-            })}
+            resolvedHex={doorColor.appliedHex}
+            colorReview={doorColor.review}
           />
 
           {/* WalzCraft match (read-only; approvals are localStorage only) */}
@@ -2145,6 +2154,7 @@ function DoorRenderOverrides({
   brochure,
   preview,
   resolvedHex,
+  colorReview,
 }: {
   brochure?: { src: string | null; label: string } | null;
   woodGrain?: { label: string; swatchUrl: string | null; horizontal: boolean } | null;
@@ -2159,13 +2169,21 @@ function DoorRenderOverrides({
   besideEyedropper?: import("react").ReactNode;
   preview: { shape: string; source: string };
   resolvedHex: string | null;
+  colorReview?: {
+    needsColorReview: boolean;
+    chosenHex: string;
+    chosenSource: string;
+    estimatorHex: string | null;
+    deltaE: number | null;
+    keptBecause: string;
+  } | null;
 }) {
   return (
     <div className="space-y-3 rounded-lg border border-border px-3 py-3">
       <div>
         <span className="text-xs font-semibold">Render color and door shape</span>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          Render hex wins over the name fallback. Door shape wins over a guess. Distributor phrases (raised, ogee, cathedral, arch, traditional, flat panel, recessed) still fill the shape when this is left on automatic. Aspen Charcoal and Aspen White stay raised until a shape is chosen.
+          A hand-set render hex wins. Otherwise the door uses its measured swatch, then a WalzCraft shade, then a name estimate, then the original color. Door shape wins over a guess. Distributor phrases (raised, ogee, cathedral, arch, traditional, flat panel, recessed) still fill the shape when this is left on automatic. Aspen Charcoal and Aspen White stay raised until a shape is chosen.
         </p>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
@@ -2181,6 +2199,12 @@ function DoorRenderOverrides({
             <input aria-label="Pick render hex" type="color" value={/^#[0-9a-f]{6}$/i.test(renderHex) ? renderHex : "#f2f0ea"} onChange={(event) => onRenderHex(event.target.value)} />
           </div>
           <p className="text-xs text-muted-foreground">Resolved for render: {resolvedHex ?? "name fallback"}</p>
+          {colorReview?.needsColorReview && (
+            <p data-testid="door-color-needs-review" className="text-xs text-amber-800">
+              Needs color review. Keeping {resolvedHex} ({colorReview.keptBecause}). The {colorReview.chosenSource} hex {colorReview.chosenHex} disagrees with the estimator {colorReview.estimatorHex ?? "none"}
+              {colorReview.deltaE != null ? ` (ΔE ${colorReview.deltaE.toFixed(1)})` : ""}.
+            </p>
+          )}
         </div>
             </details>
           </div>
@@ -2192,6 +2216,12 @@ function DoorRenderOverrides({
             <input aria-label="Pick render hex" type="color" value={/^#[0-9a-f]{6}$/i.test(renderHex) ? renderHex : "#f2f0ea"} onChange={(event) => onRenderHex(event.target.value)} />
           </div>
           <p className="text-xs text-muted-foreground">Resolved for render: {resolvedHex ?? "name fallback"}</p>
+          {colorReview?.needsColorReview && (
+            <p data-testid="door-color-needs-review" className="text-xs text-amber-800">
+              Needs color review. Keeping {resolvedHex} ({colorReview.keptBecause}). The {colorReview.chosenSource} hex {colorReview.chosenHex} disagrees with the estimator {colorReview.estimatorHex ?? "none"}
+              {colorReview.deltaE != null ? ` (ΔE ${colorReview.deltaE.toFixed(1)})` : ""}.
+            </p>
+          )}
         </div>
         )}
         <div className="space-y-1.5">
