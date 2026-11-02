@@ -6,6 +6,8 @@ import {
   candidateDoors,
   colorLabel,
   doorForStyle,
+  doorDisplayName,
+  groupDoorsByDistributor,
   featureConfidence,
   readApprovals,
   rowText,
@@ -45,8 +47,18 @@ describe("WalzCraft distributor matches (from *_vs_WalzCraft.csv)", () => {
     expect(candidateDoors({ doorType: "slab", templateId: null, shadeName: "Classic White" }).map((d) => d.id)).toEqual(["altaeuro-zsw", "altaeuro-pgw"]);
   });
   it("matches existing featured styles by distributor door name", () => {
-    expect(doorForStyle({ ourName: "Something", distributorName: "Aspen White" })?.id).toBe("faircrest-asp");
+    expect(doorForStyle({ ourName: "Something", distributorName: "Aspen White", supplierBrandName: "Faircrest" })?.id).toBe("faircrest-asp");
     expect(doorForStyle({ ourName: "Nope" })).toBeNull();
+  });
+  it("requires the distributor to match — no cross-distributor fallback", () => {
+    expect(doorForStyle({ ourName: "Aspen White", distributorName: "Aspen White" })).toBeNull();
+    expect(doorForStyle({ ourName: "Aspen White", distributorName: "Aspen White", supplierBrandName: "DL Cabinetry" })).toBeNull();
+  });
+  it("groups doors by distributor alphabetically, then by door name", () => {
+    const groups = groupDoorsByDistributor(WALZCRAFT_DISTRIBUTOR_DOORS);
+    const names = groups.map((g) => g.distributor);
+    expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b)));
+    for (const g of groups) { const d = g.doors.map((x) => doorDisplayName(x)); expect(d).toEqual([...d].sort((a, b) => a.localeCompare(b))); }
   });
   it("stores approvals in local storage only", () => {
     const st = memStore();

@@ -7,15 +7,16 @@ import { applyFill, planProfileFill, type FillPlan, type ProfileFormValues, type
  * Approve → preview (old → new) → Fill form → Undo. Only changes the in-dialog form state;
  * nothing persists until the admin presses the dialog's normal Save.
  */
-export function WalzCraftApplyPanel({ style, values, onApply }: {
-  style: { ourName: string; distributorName?: string | null; aliasName?: string | null };
+export function WalzCraftApplyPanel({ style, values, onApply, door: doorOverride }: {
+  door?: ReturnType<typeof doorForStyle>;
+  style: { ourName: string; distributorName?: string | null; aliasName?: string | null; supplierBrandName?: string | null; supplierName?: string | null; manufacturer?: string | null; distributor?: string | null };
   values: ProfileFormValues;
   onApply: (next: ProfileFormValues) => void;
 }) {
-  const door = useMemo(() => doorForStyle(style), [style]);
+  const door = useMemo(() => doorOverride ?? doorForStyle(style), [style, doorOverride]);
   const [plan, setPlan] = useState<FillPlan | null>(null);
   const [undo, setUndo] = useState<ProfileFormValues | null>(null);
-  if (!door) return null;
+  if (!door) return <p data-testid="walzcraft-apply-panel-empty" className="mt-2 text-xs text-[#244338]/70">Approve &amp; fill becomes available once this style has a WalzCraft distributor door (automatic match or chosen below).</p>;
   return (
     <div data-testid="walzcraft-apply-panel" className="mt-2 rounded-md border border-[#d7a46c] bg-[#fffdf9] p-2 text-xs text-[#244338]">
       <div className="flex flex-wrap items-center gap-2">
@@ -43,9 +44,12 @@ export function WalzCraftApplyPanel({ style, values, onApply }: {
             </table>
           )}
           {plan.missing.length > 0 && (
-            <ul data-testid="walzcraft-fill-missing" className="list-disc pl-4 text-muted-foreground">
-              {plan.missing.map((m) => <li key={m}>{m} (left unchanged)</li>)}
-            </ul>
+            <div data-testid="walzcraft-fill-missing-block" className="rounded border border-[#d7a46c] bg-[#d7a46c]/10 p-2">
+              <p className="font-semibold">Left blank ({plan.missing.length}) — not guessed, form value unchanged:</p>
+              <ul data-testid="walzcraft-fill-missing" className="list-disc pl-4">
+                {plan.missing.map((m) => <li key={m}>{m}</li>)}
+              </ul>
+            </div>
           )}
           <div className="flex gap-2">
             <Button type="button" size="sm" className="h-7 bg-[#d7a46c] text-[#244338] hover:bg-[#d7a46c]/90" data-testid="walzcraft-confirm-fill" disabled={plan.changes.length === 0}

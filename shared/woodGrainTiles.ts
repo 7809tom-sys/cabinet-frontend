@@ -89,7 +89,10 @@ type Store = Pick<Storage, "getItem" | "setItem">;
 const ls = (): Store | null => (typeof localStorage !== "undefined" ? localStorage : null);
 
 export function readTileSets(store: Store | null = ls()): Record<string, WoodGrainTileSet> {
-  try { return JSON.parse(store?.getItem(KEY) ?? "{}"); } catch { return {}; }
+  try {
+    const parsed = JSON.parse(store?.getItem(KEY) ?? "{}");
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch { return {}; }
 }
 export function saveTileSet(set: WoodGrainTileSet, store: Store | null = ls()) {
   if (!store) return;
@@ -102,7 +105,7 @@ export function approvedTilesFor(styleId: number | null | undefined, store: Stor
   if (styleId == null) return [];
   const set = readTileSets(store)[String(styleId)];
   if (!set?.approvedAt) return [];
-  return set.tiles.filter((t) => t.keep && !t.note);
+  return Array.isArray(set.tiles) ? set.tiles.filter((t) => t && t.keep && !t.note && typeof t.dataUrl === "string") : [];
 }
 /** Designer hook: the tile (and flip/offset) a front gets, or null to keep the single door photo. */
 /** Horizontal grain rotates every tile 90° (tiles are cut from vertical-grain panels). */

@@ -10,6 +10,8 @@ import {
   doorDisplayName,
   doorForStyle,
   featureConfidence,
+  groupDoorsByDistributor,
+  type StyleForMatch,
   readApprovals,
   rowText,
   writeApproval,
@@ -46,7 +48,7 @@ function Photo({ src, label, alt }: { src: string | null; label: string; alt: st
   );
 }
 
-export function WalzCraftMatchCard({ door, currentPhoto, catalogHex, catalogColorName, styleGrainDirection }: { door: DistributorDoorMatch; currentPhoto?: string | null; catalogHex?: string | null; catalogColorName?: string | null; styleGrainDirection?: string | null }) {
+export function WalzCraftMatchCard({ door, currentPhoto, catalogHex, catalogColorName, styleGrainDirection, hideBrochurePhoto = false }: { door: DistributorDoorMatch; currentPhoto?: string | null; catalogHex?: string | null; catalogColorName?: string | null; styleGrainDirection?: string | null; hideBrochurePhoto?: boolean }) {
   const isSlab = /slab/i.test(door.group);
   const colorRec = colorPatternFor(door);
   const grainBadge = woodGrainBadge(colorRec, styleGrainDirection);
@@ -54,7 +56,7 @@ export function WalzCraftMatchCard({ door, currentPhoto, catalogHex, catalogColo
   return (
     <div data-testid={`walz-match-${door.id}`} className="w-full rounded-lg border-2 border-[#d7a46c] bg-[#fffdf9] p-3 text-[#244338]">
       <div className="flex flex-wrap items-start gap-3">
-        <Photo src={door.photo} label="Distributor brochure" alt={`${door.distributor} ${doorDisplayName(door)} brochure door`} />
+        {!hideBrochurePhoto && <Photo src={door.photo} label="Distributor brochure" alt={`${door.distributor} ${doorDisplayName(door)} brochure door`} />}
         {currentPhoto !== undefined && <Photo src={currentPhoto} label="Current site photo" alt="Current site photo" />}
         {isSlab && colorRec.colorType !== "woodGrain" && <TintedSlab tint={resolveSlabTint({ catalogHex, catalogColorName, walzColorName: door.walzcraftColor })} />}
         <div className="min-w-[14rem] flex-1">
@@ -66,7 +68,7 @@ export function WalzCraftMatchCard({ door, currentPhoto, catalogHex, catalogColo
         </div>
       </div>
       <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-        {door.matches.map((m) => {
+        {(door.matches ?? []).map((m) => {
           const tpl = m.templateId ? WALZCRAFT_PROFILE_TEMPLATES.find((t) => t.id === m.templateId) : null;
           return (
             <div key={m.rank} className={`rounded border p-2 ${m.rank === 1 ? "border-[#d7a46c]" : "border-[#244338]/20"} bg-white`}>
@@ -91,8 +93,9 @@ export function WalzCraftMatchCard({ door, currentPhoto, catalogHex, catalogColo
           </li>
         ))}
       </ul>
-      <ColorSwatchPicker door={door} styleGrainDirection={styleGrainDirection} />
-      {door.unknowns.length > 0 && <p className="mt-1 text-xs text-[#244338]/70">Unknowns (CSV): {door.unknowns.join("; ")}</p>}
+      {/* In Edit Door the single render-color picker lives beside the sample + brochure doors. */}
+      {!hideBrochurePhoto && <ColorSwatchPicker door={door} styleGrainDirection={styleGrainDirection} />}
+      {(door.unknowns?.length ?? 0) > 0 && <p className="mt-1 text-xs text-[#244338]/70">Unknowns (CSV): {door.unknowns.join("; ")}</p>}
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <button type="button" data-testid={`walz-approve-${door.id}`} onClick={() => setApproval("approved")}
           className={`rounded px-3 py-1 text-sm font-semibold ${approval === "approved" ? "bg-[#244338] text-[#fffdf9]" : "border-2 border-[#244338] text-[#244338]"}`}>
@@ -108,24 +111,94 @@ export function WalzCraftMatchCard({ door, currentPhoto, catalogHex, catalogColo
   );
 }
 
-/** Block shown inside an existing featured style row when a CSV door matches it by name. */
-export function WalzCraftMatchForStyle({ style, currentPhoto }: { style: Parameters<typeof doorForStyle>[0] & { renderHex?: string | null; color?: string | null; grainDirection?: string | null }; currentPhoto: string | null }) {
-  const door = doorForStyle(style);
-  if (!door) return null;
-  return <WalzCraftMatchCard door={door} currentPhoto={currentPhoto} catalogHex={style.renderHex ?? null} catalogColorName={style.color ?? null} styleGrainDirection={style.grainDirection ?? null} />;
+export const MANUAL_PROFILE_KEY = "walzcraftManualProfile.v1";
+function readManual(): Record<string, string> {
+  try { const v = JSON.parse(localStorage.getItem(MANUAL_PROFILE_KEY) ?? "{}"); return v && typeof v === "object" && !Array.isArray(v) ? v : {}; } catch { return {}; }
+}
+
+type MatchStyle = StyleForMatch & { id?: number | null; renderHex?: string | null; color?: string | null; grainDirection?: string | null; doorShape?: string | null };
+
+/** Shown on every door style: the exact distributor match, or a clear "No WalzCraft match yet" state with a manual profile picker. */
+export const MANUAL_DOOR_KEY = "walzcraftManualDoor.v1";
+export function readManualDoorId(styleId: number | string | null | undefined): string | null {
+  try { const v = JSON.parse(localStorage.getItem(MANUAL_DOOR_KEY) ?? "{}"); return (v && v[String(styleId)]) || null; } catch { return null; }
+}
+export function writeManualDoorId(styleId: number | string, doorId: string | null) {
+  try { const v = JSON.parse(localStorage.getItem(MANUAL_DOOR_KEY) ?? "{}") || {}; if (doorId) v[String(styleId)] = doorId; else delete v[String(styleId)]; localStorage.setItem(MANUAL_DOOR_KEY, JSON.stringify(v)); } catch { /* storage unavailable */ }
+}
+/** Automatic distributor-scoped match, else the admin's manual pick for this style (browser-only). */
+export function resolveWalzDoor(style: MatchStyle & { id?: number | string | null }, manualId?: string | null) {
+  const auto = doorForStyle(style);
+  if (auto) return auto;
+  const id = manualId === undefined ? readManualDoorId(style.id ?? null) : manualId;
+  return id ? WALZCRAFT_DISTRIBUTOR_DOORS.find((d) => d.id === id) ?? null : null;
+}
+/** Manual distributor-door picker (grouped by distributor). Shown when no automatic match exists. */
+export function WalzCraftManualDoorPicker({ value, onChange }: { value: string | null; onChange: (id: string | null) => void }) {
+  return (
+    <label className="mt-2 flex flex-wrap items-center gap-2 text-xs text-[#244338]">
+      <span className="font-semibold">Choose the WalzCraft distributor door manually:</span>
+      <select data-testid="walzcraft-manual-door" className="rounded border border-[#244338]/30 bg-white px-2 py-1" value={value ?? ""} onChange={(e) => onChange(e.target.value || null)}>
+        <option value="">— none —</option>
+        {groupDoorsByDistributor(WALZCRAFT_DISTRIBUTOR_DOORS).map((g) => (
+          <optgroup key={g.distributor} label={g.distributor}>{g.doors.map((d) => <option key={d.id} value={d.id}>{doorDisplayName(d)} ({d.code})</option>)}</optgroup>
+        ))}
+      </select>
+      <span className="italic text-[#244338]/70">Saved in this browser only.</span>
+    </label>
+  );
+}
+
+export function WalzCraftMatchForStyle({ style, currentPhoto, hideBrochurePhoto, door: doorOverride }: { style: MatchStyle; currentPhoto: string | null; hideBrochurePhoto?: boolean; door?: ReturnType<typeof doorForStyle> }) {
+  const door = doorOverride ?? resolveWalzDoor(style as MatchStyle & { id?: number });
+  if (door) return <WalzCraftMatchCard door={door} currentPhoto={currentPhoto} catalogHex={style.renderHex ?? null} catalogColorName={style.color ?? null} styleGrainDirection={style.grainDirection ?? null} hideBrochurePhoto={hideBrochurePhoto} />;
+  return <WalzCraftNoMatch style={style} />;
+}
+
+function WalzCraftNoMatch({ style }: { style: MatchStyle }) {
+  const key = String(style.id ?? style.ourName ?? "");
+  const [manual, setManual] = useState(() => readManual()[key] ?? "");
+  const slab = style.doorShape === "slab" || /slab/i.test(style.doorStyle ?? "");
+  return (
+    <div data-testid="walzcraft-no-match" className="rounded-lg border border-dashed border-[#d7a46c] bg-[#fffdf9] p-3 text-sm text-[#244338]">
+      <p className="text-xs font-semibold uppercase tracking-wide text-[#244338]/70">WalzCraft match</p>
+      <p className="font-semibold">{slab ? "Slab · 100%" : "No WalzCraft match yet"}</p>
+      <p className="text-xs text-[#244338]/70">{slab ? "Slab doors have no frame profile to match." : "No distributor sheet row matches this door's distributor and name/code. Nothing is guessed."}</p>
+      {!slab && (
+        <label className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+          <span className="font-semibold">Choose a WalzCraft profile manually:</span>
+          <select data-testid="walzcraft-manual-profile" className="rounded border border-[#244338]/30 bg-white px-2 py-1" value={manual}
+            onChange={(e) => {
+              const v = e.target.value; setManual(v);
+              const all = readManual(); if (v) all[key] = v; else delete all[key];
+              try { localStorage.setItem(MANUAL_PROFILE_KEY, JSON.stringify(all)); } catch { /* storage full */ }
+            }}>
+            <option value="">— none —</option>
+            {WALZCRAFT_PROFILE_TEMPLATES.map((t) => <option key={t.id} value={t.id}>{t.id} {t.name}</option>)}
+          </select>
+          <span className="italic text-[#244338]/70">Saved in this browser only.</span>
+        </label>
+      )}
+    </div>
+  );
 }
 
 /** WalzCraft-only rows: CSV doors that match no existing style in the list. */
-export function WalzCraftOnlyMatches({ styles }: { styles: Array<Parameters<typeof doorForStyle>[0]> }) {
+export function WalzCraftOnlyMatches({ styles }: { styles: StyleForMatch[] }) {
   const matched = new Set(styles.map((s) => doorForStyle(s)?.id).filter(Boolean));
   const rest = WALZCRAFT_DISTRIBUTOR_DOORS.filter((d) => !matched.has(d.id));
   return (
     <section data-testid="walzcraft-only-matches" className="space-y-2">
       <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-        WalzCraft door matches without a featured style ({rest.length})
+        WalzCraft door matches without a door style ({rest.length})
       </h3>
       <p className="text-xs text-muted-foreground">From the Faircrest, Kitchen Crest, DL Cabinetry and AltaEuro vs WalzCraft matching sheets. Approvals are kept in this browser only — not saved to catalog yet.</p>
-      <ul className="space-y-2">{rest.map((d) => <li key={d.id}><WalzCraftMatchCard door={d} /></li>)}</ul>
+      {groupDoorsByDistributor(rest).map((g) => (
+        <div key={g.distributor} data-testid="walzcraft-distributor-group" className="space-y-2">
+          <h4 className="border-b border-[#d7a46c] pb-1 text-sm font-semibold text-[#244338]">{g.distributor} ({g.doors.length})</h4>
+          <ul className="space-y-2">{g.doors.map((d) => <li key={d.id}><WalzCraftMatchCard door={d} /></li>)}</ul>
+        </div>
+      ))}
     </section>
   );
 }
