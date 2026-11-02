@@ -1,15 +1,15 @@
 /**
  * HARD RULE (Tom, Nov 1 2026): ALL 2.75 in and 3 in shaker doors start from the DL Shaker
  * blueprint as the base template. Geometry (rail/stile frame, sharp square corners, flat
- * center slab, notch) is proven and must not be changed per style. Only texture/color varies;
- * any applied color must be from the brand palette (cream #fffdf9/#f6f3ed, green #244338,
- * gold #d7a46c), never outside blue/teal/off-brand green. Deviation requires Tom's explicit override.
+ * center slab, notch) is proven and must not be changed per style. Only texture/color varies.
  *
- * Brand colors go ON the door surface, not just UI tints. The painted surface of every
- * 2.75/3 inch shaker is snapped (CIEDE2000) to the nearest brand door color: the uploaded
- * Faircrest Classic Cream door sample (#dedac6, averaged from CC_classic-cream_1.jpeg door
- * faces), cream #fffdf9/#f6f3ed, green #244338, or gold #d7a46c. The style's own catalog
- * color only picks the closest DL reference grain and which brand color it snaps to.
+ * Color (Tom, Nov 2 2026): the door's own color paints the surface. A saved render hex wins,
+ * then a catalog color hex, then the color name. That color is not snapped to a brand swatch.
+ * Snapping every shaker to the nearest of sample cream #dedac6, cream #fffdf9/#f6f3ed,
+ * green #244338, or gold #d7a46c replaced real door colors (a sage became cream, a gray
+ * became green or gold) and is what made the Designer color wrong. Those swatches stay
+ * available as choices an admin can save. They do not replace a different saved color.
+ * The closest DL shaker grain is still retinted toward the door's own color.
  * Rail and stile WIDTH stay the style's own 2.75 or 3 inches. Depth, square corners,
  * the flat center slab, and the notch are the shared blueprint.
  */
@@ -29,7 +29,10 @@ export const FAIRCREST_CLASSIC_CREAM_SAMPLE_HEX = "#dedac6";
 /** The only colors a 2.75/3 inch shaker door surface may render in. Sample first. */
 export const SHAKER_BRAND_DOOR_SURFACE_PALETTE = [FAIRCREST_CLASSIC_CREAM_SAMPLE_HEX, ...SHAKER_BRAND_UI_PALETTE] as const;
 
-/** Snap a style's own color to the nearest brand door-surface color. */
+/**
+ * Nearest brand swatch. This is a suggestion list for the admin color chooser.
+ * It is not the color painted on a shaker. The door's own color is.
+ */
 export function brandDoorSurfaceHex(ownColor: string): string {
   let best: string = SHAKER_BRAND_DOOR_SURFACE_PALETTE[0];
   let bestDelta = Number.POSITIVE_INFINITY;
@@ -87,7 +90,7 @@ export type ShakerAdoption =
       adopted: true;
       reference: DlShakerReference;
       ownColor: string;
-      /** Brand/sample color actually rendered on the door surface. */
+      /** The style's own color, actually rendered on the door surface. */
       surfaceColor: string;
       family: ShakerFinishFamily;
       railIn: number;
@@ -168,12 +171,8 @@ export function styleFinishFamily(style: ShakerStyleInput): ShakerFinishFamily {
   const text = `${style.woodSpecies ?? ""} ${style.ourName ?? ""} ${style.aliasName ?? ""} ${style.finish ?? ""}`.toLowerCase();
   if (/painted/.test(text)) return "painted";
   if (/oak|hickory|birch|maple|walnut|rift|cherry|pecan|veneer|\bwood\b/.test(text)) return "wood";
-  const color = hexOf(style.renderHex) ?? hexOf(style.color);
-  if (color) {
-    const [r, g, b] = rgb(color);
-    const chroma = Math.max(r, g, b) - Math.min(r, g, b);
-    if (chroma > 40) return "wood";
-  }
+  // A chromatic paint (sage, gold, green) is still paint. Treating the hex as wood
+  // assigned a dark Versa or Espresso grain, and the tint clamp then hid the color.
   return "painted";
 }
 
@@ -236,7 +235,7 @@ export function matchStandardShakerToDl(style: ShakerStyleInput): ShakerAdoption
       bestDelta = delta;
     }
   }
-  const surfaceColor = brandDoorSurfaceHex(ownColor);
+  const surfaceColor = ownColor;
   const tint = retintGrain(best.color, surfaceColor);
   const grainNote = best.grainPaleSoftened
     ? "near-flat painted grain"
@@ -255,7 +254,7 @@ export function matchStandardShakerToDl(style: ShakerStyleInput): ShakerAdoption
     tintHex: tint.tintHex,
     tintClamped: tint.clamped,
     grain: best.grain,
-    reason: `${finishFamily}, ΔE ${bestDelta.toFixed(1)} to ${best.name}; inherited ${grainNote} ${best.grain}; tint ${tint.tintHex} retargets ${best.color} to brand surface ${surfaceColor} (own ${ownColor}).${clampNote}`,
+    reason: `${finishFamily}, ΔE ${bestDelta.toFixed(1)} to ${best.name}; inherited ${grainNote} ${best.grain}; tint ${tint.tintHex} retargets ${best.color} to the door color ${surfaceColor}.${clampNote}`,
   };
 }
 

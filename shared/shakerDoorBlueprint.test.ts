@@ -10,6 +10,7 @@ import {
   effectiveShakerRailIn,
   matchStandardShakerToDl,
   shakerDoorFamily,
+  styleFinishFamily,
   standardDlShakerReferences,
   standardShakerDlFacePlan,
   type ShakerStyleInput,
@@ -38,14 +39,15 @@ describe("DL shaker blueprint", () => {
     expect(references.find((reference) => reference.slug === "expresso-shaker")?.family).toBe("wood");
   });
 
-  it("fails if a 2.75 or 3 inch shaker bypasses the DL template or renders a door surface color outside the brand palette/sample", () => {
+  it("keeps the DL template and paints the door's own color, not a snapped brand swatch", () => {
     const source = readFileSync(new URL("./shakerDoorBlueprint.ts", import.meta.url), "utf8");
     const hexes = source.match(/#[0-9a-fA-F]{3,8}/g) ?? [];
-    const allowed = new Set<string>(SHAKER_BRAND_DOOR_SURFACE_PALETTE.map((hex) => hex.toLowerCase()));
+    const allowed = new Set<string>([...SHAKER_BRAND_DOOR_SURFACE_PALETTE.map((hex) => hex.toLowerCase())]);
     for (const hex of hexes) {
       expect(allowed.has(hex.toLowerCase()), hex).toBe(true);
     }
     expect(source).toContain("HARD RULE (Tom, Nov 1 2026)");
+    expect(source).not.toContain("const surfaceColor = brandDoorSurfaceHex");
 
     const brandSurface = new Set<string>(SHAKER_BRAND_DOOR_SURFACE_PALETTE.map((hex) => hex.toLowerCase()));
     expect(SHAKER_BRAND_UI_PALETTE.every((hex) => brandSurface.has(hex))).toBe(true);
@@ -67,8 +69,9 @@ describe("DL shaker blueprint", () => {
       if (!match.adopted) continue;
       expect(plan?.dlcCrop?.slug, style.ourName ?? "").toBe(match.reference.slug);
       const surface = plan?.dlcCrop?.solidColor?.toLowerCase() ?? "";
-      expect(brandSurface.has(surface), `${style.ourName}: ${surface}`).toBe(true);
-      expect(surface).toBe(match.surfaceColor);
+      expect(surface, style.ourName ?? "").toBe(match.ownColor.toLowerCase());
+      expect(surface).toBe(match.surfaceColor.toLowerCase());
+      expect(throughDesigner?.dlcCrop?.solidColor?.toLowerCase(), style.ourName ?? "").toBe(surface);
       expect(throughDesigner?.doorUrl, style.ourName ?? "").toBe(plan?.doorUrl);
     }
 
@@ -78,13 +81,19 @@ describe("DL shaker blueprint", () => {
     expect(standardShakerDlFacePlan({ doorStyle: "Shaker", railWidth: 2.25, color: "#f4f1ea" }, "base")).toBeNull();
     const cream = standardShakerDlFacePlan({ doorStyle: "Shaker", railWidth: 2.75, color: "#f2e8d0" }, "wall");
     expect(cream?.dlcCrop?.slug).toBeTruthy();
-    expect(brandSurface.has(cream?.dlcCrop?.solidColor ?? "")).toBe(true);
-    // Off-brand blue / teal never reach a door surface.
+    expect(cream?.dlcCrop?.solidColor).toBe("#f2e8d0");
+    // A saved render hex wins over the catalog color and is not snapped to cream, green, or gold.
+    const saved = standardShakerDlFacePlan({ doorStyle: "Shaker", railWidth: 3, color: "#f7f6f3", renderHex: "#8faf8a" }, "base");
+    expect(saved?.dlcCrop?.solidColor).toBe("#8faf8a");
+    // A real door color comes through, including colors outside the brand swatches.
     for (const color of ["#1f4e8c", "#2a8c8c", "#5a8f3a"]) {
       const plan = standardShakerDlFacePlan({ doorStyle: "Shaker", railWidth: 3, color }, "base");
-      expect(brandSurface.has(plan?.dlcCrop?.solidColor ?? ""), color).toBe(true);
+      expect(plan?.dlcCrop?.solidColor, color).toBe(color);
     }
-    // Classic Cream photo color snaps to the uploaded sample.
-    expect(standardShakerDlFacePlan({ doorStyle: "Shaker", railWidth: 3, color: "#dcd7c2" }, "base")?.dlcCrop?.solidColor).toBe("#dedac6");
+    // A near-cream catalog color stays that color. It is not replaced by the sample swatch.
+    expect(standardShakerDlFacePlan({ doorStyle: "Shaker", railWidth: 3, color: "#dcd7c2" }, "base")?.dlcCrop?.solidColor).toBe("#dcd7c2");
+    // Chromatic paint stays paint, so it inherits the pale grain that can actually reach the color.
+    expect(styleFinishFamily({ doorStyle: "Shaker", color: "#244338" })).toBe("painted");
+    expect(styleFinishFamily({ doorStyle: "Shaker", woodSpecies: "oak", color: "#244338" })).toBe("wood");
   });
 });

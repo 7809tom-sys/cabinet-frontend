@@ -75,6 +75,17 @@ describe("Edit Door: Skin needed? checkbox", () => {
   });
 });
 
+describe("Edit Door: door color source", () => {
+  it("tells where the paint comes from and a brand choice writes the render hex", () => {
+    render(<FeaturedStylesAdmin />);
+    fireEvent.click(screen.getAllByLabelText("Edit style")[0]);
+    expect(screen.getByTestId("door-color-source").textContent).toMatch(/guessed from the color name/);
+    expect(screen.getByTestId("door-color-source").textContent).toMatch(/not the paint|keeps this color/);
+    fireEvent.click(screen.getByTestId("brand-door-color-244338"));
+    expect((screen.getByLabelText("Render hex") as HTMLInputElement).value).toBe("#244338");
+  });
+});
+
 describe("Edit Door: one render-color picker", () => {
   it("has a single picker holding sample + brochure side by side, and no second swatch eyedropper", () => {
     render(<FeaturedStylesAdmin />);
