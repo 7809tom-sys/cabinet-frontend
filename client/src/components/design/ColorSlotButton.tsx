@@ -101,7 +101,7 @@ function matchesStyleType(name: string, filter: StyleTypeFilter): boolean {
 }
 
 // ─── Color filter ─────────────────────────────────────────────────────────────
-type ColorFilter = "all" | "white" | "grey" | "offwhite" | "tan" | "dark" | "lightstain" | "greystain" | "tanstain" | "darkstain";
+export type ColorFilter = "all" | "white" | "grey" | "offwhite" | "tan" | "dark" | "lightstain" | "greystain" | "tanstain" | "darkstain";
 const COLOR_FILTERS: { key: ColorFilter; label: string }[] = [
   { key: "all", label: "All Colors" },
   { key: "white", label: "White" },
@@ -115,7 +115,7 @@ const COLOR_FILTERS: { key: ColorFilter; label: string }[] = [
   { key: "darkstain", label: "Dark Stain" },
 ];
 
-function matchesColor(name: string, filter: ColorFilter): boolean {
+export function matchesColor(name: string, filter: ColorFilter): boolean {
   if (filter === "all") return true;
   const n = name.toLowerCase();
   if (filter === "white") return (n.includes("white") || n.includes("blanc")) && !n.includes("off white") && !n.includes("off-white");
