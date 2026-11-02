@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { doorPanelKind } from "@/lib/design";
+import { doorPanelKind } from "@/lib/doorPanelKind";
 import { catalogMediaRecoveryUrl, newCatalogMediaRetryNonce } from "@/lib/catalogMediaImage";
 
 // ─────────────────────────────────────────────────────────────────────────────

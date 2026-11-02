@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import type { StudioDesign, StudioKind, StudioWall } from "@/lib/vendorClosetStudio";
 import { STUDIO_CORNER_SHELF_THICKNESS_IN, STUDIO_ILLUSTRATIVE_SHOE_PITCH_DEG, studioBasketPlacementsForWall, studioBayCut, studioBays, studioCornerPlanningFootprint, studioCornerShelvesForWall, studioFixedBottom, studioFixedTop, studioPanelHeight, studioTowerFootprint, studioWidth } from "@/lib/vendorClosetStudio";
+import { frameClosetStudioCamera, type ClosetCameraView } from "./closetStudioCamera";
 
 const IN = 1 / 12;
 const MAT: Record<StudioDesign["finish"], { face: string; edge: string; grain: string }> = {
@@ -26,18 +27,24 @@ function woodTexture(finish: StudioDesign["finish"]) {
 }
 
 /** This scene is completely independent of InteractiveRoom3D and kitchen/Wall Builder geometry. */
-export function VendorClosetScene({ design, selectedBay, selectedCornerId = null, partToPlace, onSelectBay, onPlace, onError }: {
+export function VendorClosetScene({ design, selectedBay, selectedCornerId = null, partToPlace, basketToPlace = null, cameraView = "angle", onSelectBay, onPlace, onPlaceBasket, onError }: {
   design: StudioDesign;
   selectedBay: number;
   selectedCornerId?: string | null;
   partToPlace: StudioKind | null;
+  basketToPlace?: string | null;
+  cameraView?: ClosetCameraView;
   onSelectBay: (bayIndex: number) => void;
   onPlace: (bayIndex: number, bottomIn: number, kind: StudioKind) => void;
+  onPlaceBasket?: (bayIndex: number, bottomIn: number, sku: string) => void;
   onError: (message: string) => void;
 }) {
   const mount = useRef<HTMLDivElement>(null);
-  const handlers = useRef({ onSelectBay, onPlace, onError, partToPlace });
-  handlers.current = { onSelectBay, onPlace, onError, partToPlace };
+  const handlers = useRef({ onSelectBay, onPlace, onPlaceBasket, onError, partToPlace, basketToPlace });
+  handlers.current = { onSelectBay, onPlace, onPlaceBasket, onError, partToPlace, basketToPlace };
+  const viewRef = useRef(cameraView);
+  viewRef.current = cameraView;
+  const reframeRef = useRef<() => void>(() => {});
   useEffect(() => {
     const host = mount.current;
     if (!host) return;
@@ -46,17 +53,9 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
     const camera = new THREE.PerspectiveCamera(40, 1, 0.05, 130);
     const visibleCornerShelves = studioCornerShelvesForWall(design);
     const hasCornerPlanning = visibleCornerShelves.length > 0;
-    const cornerFocus = visibleCornerShelves.find((shelf) => shelf.id === selectedCornerId) ?? visibleCornerShelves[0] ?? null;
-    const cornerFocusFootprint = cornerFocus ? studioCornerPlanningFootprint(design, cornerFocus) : null;
     const towerWidth = studioWidth(design) * IN;
     const w = hasCornerPlanning ? design.wallWidthIn * IN : towerWidth;
-    const roomDepth = hasCornerPlanning ? design.roomDepthIn * IN : 12;
-    if (cornerFocusFootprint) {
-      const focusX = (cornerFocusFootprint.xMin + cornerFocusFootprint.xMax) / 2 * IN;
-      const focusZ = (cornerFocusFootprint.zMin + cornerFocusFootprint.zMax) / 2 * IN;
-      camera.position.set(w * 0.42, Math.max(9, Math.max(w, roomDepth) * 0.92), Math.max(roomDepth * 1.28, focusZ + 8));
-      camera.lookAt(focusX, (cornerFocus.elevationIn + 3) * IN, focusZ);
-    } else camera.position.set(w * 0.63, 5.7, Math.max(12, Math.max(w, roomDepth) * 2.3));
+    const roomDepth = hasCornerPlanning ? design.roomDepthIn * IN : Math.max(4, 14.5 * IN + 3);
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.shadowMap.enabled = true;
@@ -71,10 +70,10 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.maxPolarAngle = Math.PI * 0.52;
-    controls.minDistance = 4.3;
-    controls.maxDistance = 26;
-    controls.target.set(cornerFocusFootprint ? (cornerFocusFootprint.xMin + cornerFocusFootprint.xMax) / 2 * IN : w / 2, cornerFocus ? (cornerFocus.elevationIn + 3) * IN : 3.6, cornerFocusFootprint ? (cornerFocusFootprint.zMin + cornerFocusFootprint.zMax) / 2 * IN : hasCornerPlanning ? roomDepth / 2 : 0);
-    controls.update();
+    controls.minPolarAngle = 0.18;
+    controls.minDistance = 1.4;
+    controls.maxDistance = 40;
+    controls.target.set(w / 2, 3.6, 0.6);
 
     scene.add(new THREE.HemisphereLight(0xfff6e8, 0xa9a2a0, 2.1));
     const windowLight = new THREE.DirectionalLight(0xfff5df, 3.9);
@@ -89,16 +88,17 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
     fill.position.set(-2, 4, -5); scene.add(fill);
     const room = new THREE.Group(); scene.add(room);
     const oak = new THREE.MeshStandardMaterial({ color: 0xb69a77, roughness: 0.78 });
-    const floor = new THREE.Mesh(new THREE.BoxGeometry(Math.max(17, w + 9), 0.13, Math.max(12, roomDepth + 4)), oak);
-    floor.position.set(w / 2, -0.1, hasCornerPlanning ? roomDepth / 2 : 1.75); floor.receiveShadow = true; room.add(floor);
+    const floor = new THREE.Mesh(new THREE.BoxGeometry(Math.max(6, w + 2), 0.13, Math.max(5, roomDepth)), oak);
+    floor.position.set(w / 2, -0.1, 1.6); floor.receiveShadow = true; room.add(floor);
     const seamMaterial = new THREE.LineBasicMaterial({ color: 0x967d62, transparent: true, opacity: 0.35 });
-    for (let z = -4; z <= (hasCornerPlanning ? roomDepth + 4 : 7); z += 0.44) {
-      const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-9, -0.033, z), new THREE.Vector3(w + 9, -0.033, z)]), seamMaterial); room.add(line);
+    for (let z = -0.4; z <= 4.4; z += 0.44) {
+      const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-1, -0.033, z), new THREE.Vector3(w + 1, -0.033, z)]), seamMaterial); room.add(line);
     }
-    const wall = new THREE.Mesh(new THREE.BoxGeometry(Math.max(16, w + 4), 9, 0.14), new THREE.MeshStandardMaterial({ color: 0xf3eee5, roughness: 0.95 }));
-    wall.position.set(w / 2, 4.35, -0.13); wall.receiveShadow = true; room.add(wall);
-    const baseboard = new THREE.Mesh(new THREE.BoxGeometry(Math.max(16, w + 4), 0.23, 0.11), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.82 }));
-    baseboard.position.set(w / 2, 0.18, -0.02); baseboard.receiveShadow = true; room.add(baseboard);
+    const wallMaterial = new THREE.MeshStandardMaterial({ color: 0xf3eee5, roughness: 0.95, transparent: true, opacity: 1 });
+    const wall = new THREE.Mesh(new THREE.BoxGeometry(Math.max(4, w + 2), Math.max(6, studioPanelHeight(design) * IN + 1.1), 0.14), wallMaterial);
+    wall.position.set(w / 2, (studioPanelHeight(design) * IN + 1.1) / 2, -0.2); wall.receiveShadow = true; room.add(wall);
+    const baseboard = new THREE.Mesh(new THREE.BoxGeometry(Math.max(4, w + 2), 0.23, 0.11), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.82 }));
+    baseboard.position.set(w / 2, 0.12, -0.08); baseboard.receiveShadow = true; room.add(baseboard);
     const palette = MAT[design.finish];
     const texture = woodTexture(design.finish);
     const boardMat = new THREE.MeshPhysicalMaterial({ color: palette.face, map: texture, roughness: 0.65, metalness: 0.02, clearcoat: 0.09, clearcoatRoughness: 0.65 });
@@ -250,6 +250,45 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
         if (companionWall) renderCompanionTower(companionWall);
       }
     }
+    parts.updateMatrixWorld(true);
+    const cabinetBounds = new THREE.Box3().setFromObject(parts);
+    if (cabinetBounds.isEmpty() || !Number.isFinite(cabinetBounds.min.x)) {
+      const height = studioPanelHeight(design) * IN;
+      cabinetBounds.set(new THREE.Vector3(0, 0, 0), new THREE.Vector3(Math.max(w, 2), height, 14.5 * IN));
+    }
+    const centerX = (cabinetBounds.min.x + cabinetBounds.max.x) / 2;
+    const cabinetW = Math.max(cabinetBounds.max.x - cabinetBounds.min.x, 2);
+    const cabinetH = Math.max(cabinetBounds.max.y - Math.min(cabinetBounds.min.y, 0), 4);
+    const wallW = cabinetW + 2.2;
+    const wallH = cabinetH + 1.05;
+    wall.geometry.dispose();
+    wall.geometry = new THREE.BoxGeometry(wallW, wallH, 0.14);
+    wall.position.set(centerX, wallH / 2, -0.2);
+    baseboard.geometry.dispose();
+    baseboard.geometry = new THREE.BoxGeometry(wallW, 0.23, 0.11);
+    baseboard.position.set(centerX, 0.12, -0.08);
+    floor.geometry.dispose();
+    floor.geometry = new THREE.BoxGeometry(wallW + 1.2, 0.13, 5.4);
+    floor.position.set(centerX, -0.1, 1.5);
+    let userAimed = false;
+    const applyFrame = () => {
+      const width = Math.max(host.clientWidth, 1);
+      const height = Math.max(host.clientHeight, 1);
+      const frame = frameClosetStudioCamera({
+        minX: cabinetBounds.min.x, minY: Math.min(cabinetBounds.min.y, 0), minZ: cabinetBounds.min.z,
+        maxX: cabinetBounds.max.x, maxY: cabinetBounds.max.y, maxZ: cabinetBounds.max.z,
+      }, width / height, { view: viewRef.current });
+      camera.position.set(frame.position.x, frame.position.y, frame.position.z);
+      camera.near = frame.near;
+      camera.far = frame.far;
+      camera.lookAt(frame.target.x, frame.target.y, frame.target.z);
+      controls.target.set(frame.target.x, frame.target.y, frame.target.z);
+      controls.minDistance = frame.minDistance;
+      controls.maxDistance = frame.maxDistance;
+      controls.update();
+    };
+    controls.addEventListener("start", () => { userAimed = true; });
+    reframeRef.current = () => { userAimed = false; applyFrame(); camera.updateProjectionMatrix(); };
     const ray = new THREE.Raycaster();
     const point = new THREE.Vector2();
     const pick = (clientX: number, clientY: number) => {
@@ -263,6 +302,10 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
       const hit = pick(event.clientX, event.clientY);
       if (!hit) return;
       handlers.current.onSelectBay(hit.index);
+      if (handlers.current.basketToPlace && handlers.current.onPlaceBasket) {
+        handlers.current.onPlaceBasket(hit.index, hit.height, handlers.current.basketToPlace);
+        return;
+      }
       if (handlers.current.partToPlace) handlers.current.onPlace(hit.index, hit.height, handlers.current.partToPlace);
     };
     const onDragOver = (event: DragEvent) => {
@@ -271,23 +314,36 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
     };
     const onDrop = (event: DragEvent) => {
       const value = event.dataTransfer?.getData("application/x-vendor-closet-part");
-      if (!["shelf", "rod", "drawer", "shoe"].includes(value ?? "")) return;
+      const basketSku = value?.startsWith("basket:") ? value.slice("basket:".length) : "";
+      if (!basketSku && !["shelf", "rod", "drawer", "shoe"].includes(value ?? "")) return;
       event.preventDefault();
       const hit = pick(event.clientX, event.clientY);
       if (!hit) { handlers.current.onError("Drop inside an actual tower bay, not on an upright or the floor."); return; }
       handlers.current.onSelectBay(hit.index);
-      handlers.current.onPlace(hit.index, hit.height, value as StudioKind);
+      if (basketSku && handlers.current.onPlaceBasket) handlers.current.onPlaceBasket(hit.index, hit.height, basketSku);
+      else if (value) handlers.current.onPlace(hit.index, hit.height, value as StudioKind);
     };
     renderer.domElement.addEventListener("click", onClick);
     renderer.domElement.addEventListener("dragover", onDragOver);
     renderer.domElement.addEventListener("drop", onDrop);
     const resize = () => {
       const width = Math.max(host.clientWidth, 1), height = Math.max(host.clientHeight, 1);
-      camera.aspect = width / height; camera.updateProjectionMatrix(); renderer.setSize(width, height, false);
+      camera.aspect = width / height;
+      if (!userAimed) applyFrame();
+      camera.updateProjectionMatrix();
+      renderer.setSize(width, height, false);
     };
     const observer = new ResizeObserver(resize); observer.observe(host); resize();
     let running = true, frame = 0;
-    const tick = () => { if (!running) return; controls.update(); renderer.render(scene, camera); frame = requestAnimationFrame(tick); };
+    const tick = () => {
+      if (!running) return;
+      const blocking = camera.position.z < wall.position.z + 0.05;
+      wallMaterial.opacity = blocking ? 0.14 : 1;
+      wallMaterial.depthWrite = !blocking;
+      controls.update();
+      renderer.render(scene, camera);
+      frame = requestAnimationFrame(tick);
+    };
     tick();
     return () => {
       running = false; cancelAnimationFrame(frame); observer.disconnect(); controls.dispose();
@@ -303,5 +359,6 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
       texture.dispose(); renderer.dispose(); host.removeChild(renderer.domElement);
     };
   }, [design, selectedBay, selectedCornerId]);
+  useEffect(() => { reframeRef.current(); }, [cameraView]);
   return <div ref={mount} className="h-full min-h-0 w-full touch-none" role="group" aria-label="Vendor closet 3D design canvas" data-testid="vendor-closet-3d" />;
 }

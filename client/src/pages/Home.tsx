@@ -159,6 +159,10 @@ function Hero() {
                 src={KITCHEN_SCENES["shaker-white"]}
                 alt="Beautiful white shaker kitchen"
                 className="aspect-[4/3] w-full object-cover"
+                width={1200}
+                height={900}
+                fetchPriority="high"
+                decoding="async"
               />
             </div>
             <div className="absolute -bottom-6 -left-6 hidden w-40 overflow-hidden rounded-xl shadow-xl ring-4 ring-[var(--color-navy)] xl:block">
@@ -166,6 +170,10 @@ function Hero() {
                 src={`${CDN}/stonecreek-bath-hero-fCp9GA4H5XXQNmpgUdMiWg.webp`}
                 alt="StoneCreek bathroom fixtures"
                 className="aspect-square w-full object-cover"
+                width={160}
+                height={160}
+                loading="lazy"
+                decoding="async"
               />
             </div>
             <div className="absolute -right-5 -top-5 hidden w-32 overflow-hidden rounded-xl shadow-xl ring-4 ring-[var(--color-navy)] xl:block">
@@ -173,6 +181,10 @@ function Hero() {
                 src={KITCHEN_SCENES["raised-cherry"]}
                 alt="Cherry kitchen"
                 className="aspect-square w-full object-cover"
+                width={128}
+                height={128}
+                loading="lazy"
+                decoding="async"
               />
             </div>
           </div>
@@ -232,6 +244,10 @@ function AboutYourKitchen() {
               src={KITCHEN_SCENES["shaker-white"]}
               alt="Kitchen package preview"
               className="h-16 w-28 rounded-lg border border-border object-cover shadow-sm"
+              width={112}
+              height={64}
+              loading="lazy"
+              decoding="async"
             />
             <Link href="/bundles"><Button variant="outline" className="gap-2 bg-background">Browse Kitchen Packages <ArrowRight className="h-4 w-4" /></Button></Link>
           </div>
@@ -527,12 +543,18 @@ function FeaturedStyles() {
                       src={style.roomSceneImageUrl}
                       alt={`${displayName} finished kitchen cabinet display`}
                       className={`w-full object-cover transition-transform duration-500 group-hover:scale-105 ${isLead ? "h-60 md:h-full" : "h-48"}`}
+                      loading="lazy"
+                      decoding="async"
                     />
                     {style.cornerSwatchImageUrl && (
                       <img
                         src={style.cornerSwatchImageUrl}
                         alt={`${displayName} door sample`}
                         className="absolute left-3 top-3 h-14 w-14 rounded-lg border-2 border-white/50 object-cover shadow-lg ring-1 ring-black/10"
+                        width={56}
+                        height={56}
+                        loading="lazy"
+                        decoding="async"
                       />
                     )}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/25 to-transparent" />
@@ -629,6 +651,8 @@ function ProductShowcase() {
                 src={cat.image}
                 alt={cat.title}
                 className="h-56 w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                loading="lazy"
+                decoding="async"
               />
               <div className={`absolute inset-0 bg-gradient-to-t ${cat.accent} via-transparent to-transparent`} />
               <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
@@ -745,7 +769,7 @@ function StyleShowcase() {
         <div className="grid gap-6 md:grid-cols-2">
           {/* Feature the first look large */}
           <Link href={looks[0].href} className="group relative col-span-1 md:row-span-2 overflow-hidden rounded-2xl shadow-sm transition-shadow hover:shadow-lg">
-            <img src={looks[0].scene} alt={looks[0].name} className="h-64 w-full object-cover transition-transform duration-500 group-hover:scale-105 md:h-full" />
+            <img src={looks[0].scene} alt={looks[0].name} className="h-64 w-full object-cover transition-transform duration-500 group-hover:scale-105 md:h-full" loading="lazy" decoding="async" />
             <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
             <div className="absolute bottom-5 left-5 right-5 text-white">
               <div className="font-serif text-2xl font-bold">{looks[0].name}</div>
@@ -759,7 +783,7 @@ function StyleShowcase() {
           <div className="grid grid-cols-2 gap-6">
             {looks.slice(1).map((look) => (
               <Link key={look.name} href={look.href} className="group relative overflow-hidden rounded-2xl shadow-sm transition-shadow hover:shadow-lg">
-                <img src={look.scene} alt={look.name} className="h-40 w-full object-cover transition-transform duration-500 group-hover:scale-105 sm:h-48" />
+                <img src={look.scene} alt={look.name} className="h-40 w-full object-cover transition-transform duration-500 group-hover:scale-105 sm:h-48" loading="lazy" decoding="async" />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
                 <div className="absolute bottom-3 left-3 right-3 text-white">
                   <div className="font-serif text-base font-bold leading-tight">{look.name}</div>

@@ -150,6 +150,8 @@ export default function BundleDeals({ affiliateSlug }: { affiliateSlug?: string 
                           src={bundle.floorPlanImageUrl}
                           alt={`${bundle.name} floor plan`}
                           className="max-w-full max-h-full object-contain"
+                          loading="lazy"
+                          decoding="async"
                           onError={() => markFloorPlanUnavailable(bundle.id)}
                         />
                       </div>
@@ -158,6 +160,8 @@ export default function BundleDeals({ affiliateSlug }: { affiliateSlug?: string 
                         src={bundle.heroImageUrl}
                         alt={bundle.name}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        loading="lazy"
+                        decoding="async"
                       />
                     ) : (
                       <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-6 text-center text-muted-foreground">

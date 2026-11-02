@@ -230,7 +230,7 @@ export default function Storefront({ slug, previewData, focusShop = false }: { s
     <Link href={withRef(`/store/${data.slug}`)}>
       <div className="flex items-center gap-3 cursor-pointer">
         {data.logoUrl ? (
-          <img src={data.logoUrl} alt={data.storeName} className="h-9 w-auto max-w-[180px] object-contain" />
+          <img src={data.logoUrl} alt={data.storeName} className="h-9 w-auto max-w-[180px] object-contain" decoding="async" />
         ) : (
           <div
             className="flex h-9 w-9 items-center justify-center rounded font-bold text-white"
@@ -691,7 +691,7 @@ function ClassicHeader({ data, brand, t, withRef, headlineFont, LangToggle, Logo
             </div>
             <div className="relative hidden lg:block">
               <div className="overflow-hidden rounded-2xl shadow-2xl ring-1 ring-white/10">
-                <img src={heroImg} alt="Designed kitchen" className="aspect-[4/3] w-full object-cover" />
+                <img src={heroImg} alt="Designed kitchen" fetchPriority="high" decoding="async" className="aspect-[4/3] w-full object-cover" />
               </div>
               <div className="absolute -bottom-5 -left-5 rounded-xl bg-white/95 px-4 py-3 shadow-xl">
                 <div className="flex items-center gap-2 text-sm font-bold" style={{ color: brand.primary }}>
@@ -705,7 +705,7 @@ function ClassicHeader({ data, brand, t, withRef, headlineFont, LangToggle, Logo
         </div>
         <div className="relative container pb-16 lg:hidden">
           <div className="overflow-hidden rounded-2xl shadow-2xl ring-1 ring-white/10">
-            <img src={heroImg} alt="Designed kitchen" className="aspect-[16/10] w-full object-cover" />
+            <img src={heroImg} alt="Designed kitchen" fetchPriority="high" decoding="async" className="aspect-[16/10] w-full object-cover" />
           </div>
         </div>
       </section>
@@ -718,7 +718,7 @@ function ShowcaseHero({ data, brand, t, withRef, headlineFont, heroImg, LangTogg
   return (
     <header className="relative">
       <div className="absolute inset-0">
-        <img src={heroImg} alt="Designed kitchen" className="h-full w-full object-cover" />
+        <img src={heroImg} alt="Designed kitchen" fetchPriority="high" decoding="async" className="h-full w-full object-cover" />
         <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/45 to-black/55" />
       </div>
       <div className="relative">
@@ -818,7 +818,7 @@ function MinimalHero({ data, brand, t, withRef, headlineFont, heroImg, LangToggl
         </div>
         <div className="container pb-8">
           <div className="overflow-hidden rounded-xl border border-border">
-            <img src={heroImg} alt="Designed kitchen" className="aspect-[21/9] w-full object-cover" />
+            <img src={heroImg} alt="Designed kitchen" fetchPriority="high" decoding="async" className="aspect-[21/9] w-full object-cover" />
           </div>
         </div>
       </section>
@@ -930,7 +930,7 @@ function CoastalHero({ data, brand, t, withRef, headlineFont, heroImg, LangToggl
           </div>
           <div className="relative">
             <div className="absolute -right-8 -top-8 h-40 w-40 rounded-full opacity-25" style={{ backgroundColor: brand.accent }} />
-            <img src={heroImg} alt="Designed kitchen" className="relative aspect-[5/4] w-full rounded-[2rem] object-cover shadow-2xl" />
+            <img src={heroImg} alt="Designed kitchen" fetchPriority="high" decoding="async" className="relative aspect-[5/4] w-full rounded-[2rem] object-cover shadow-2xl" />
             <div className="absolute -bottom-5 left-6 rounded-2xl bg-white px-5 py-4 shadow-xl">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Designed around you</p>
               <p className="mt-1 text-sm font-bold" style={{ color: brand.primary }}>Cabinets, finishes &amp; a plan in one place</p>
@@ -972,7 +972,7 @@ function GalleryHero({ data, brand, t, withRef, headlineFont, heroImg, LangToggl
         </div>
         <div className="relative min-h-[350px] lg:min-h-0">
           <div className="absolute inset-0 translate-x-4 translate-y-4 rounded-[1.75rem] border border-white/20" style={{ borderColor: brand.accent }} />
-          <img src={heroImg} alt="Designed kitchen" className="relative h-full min-h-[350px] w-full rounded-[1.75rem] object-cover" />
+          <img src={heroImg} alt="Designed kitchen" fetchPriority="high" decoding="async" className="relative h-full min-h-[350px] w-full rounded-[1.75rem] object-cover" />
           <div className="absolute bottom-6 left-6 rounded-full border border-white/30 bg-black/40 px-4 py-2 text-xs font-semibold uppercase tracking-wider backdrop-blur">Project-ready cabinetry</div>
         </div>
       </section>
@@ -1010,7 +1010,7 @@ function StudioHero({ data, brand, t, withRef, headlineFont, heroImg, LangToggle
             </div>
           </div>
           <div className="relative min-h-[350px]">
-            <img src={heroImg} alt="Designed kitchen" className="absolute inset-0 h-full w-full object-cover" />
+            <img src={heroImg} alt="Designed kitchen" fetchPriority="high" decoding="async" className="absolute inset-0 h-full w-full object-cover" />
             <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-8 text-white">
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">Your vision, precisely planned</p>
             </div>
@@ -1050,7 +1050,7 @@ function HeritageHero({ data, brand, t, withRef, headlineFont, heroImg, LangTogg
               </div>
             </div>
             <div className="relative">
-              <img src={heroImg} alt="Designed kitchen" className="aspect-[4/3] w-full object-cover" />
+              <img src={heroImg} alt="Designed kitchen" fetchPriority="high" decoding="async" className="aspect-[4/3] w-full object-cover" />
               <div className="absolute -bottom-4 -left-4 border bg-[#fbf8f1] px-4 py-3 text-sm font-semibold shadow-lg" style={{ borderColor: brand.accent, color: brand.primary }}>Thoughtful details. Lasting value.</div>
             </div>
           </div>

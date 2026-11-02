@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { doorPanelKind, type DoorPanelKind } from "@/lib/design";
+import { doorPanelKind, type DoorPanelKind } from "@/lib/doorPanelKind";
 import { resolveSwatch, type DoorStyleLike } from "@/components/DoorStyleSwatch";
 
 // ─────────────────────────────────────────────────────────────────────────────

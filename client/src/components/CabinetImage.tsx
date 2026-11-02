@@ -14,6 +14,8 @@ interface CabinetImageProps {
    * changes the structural product identity.
    */
   overrideImageUrl?: string | null;
+  /** Product-detail photo above the fold. Catalog grids leave this off. */
+  priority?: boolean;
 }
 
 /**
@@ -23,7 +25,7 @@ interface CabinetImageProps {
  * remains the dependable fallback for a missing or failed catalog asset; it does
  * not replace approved product artwork.
  */
-export function CabinetImage({ cabinet, finishColor, className, overrideImageUrl }: CabinetImageProps) {
+export function CabinetImage({ cabinet, finishColor, className, overrideImageUrl, priority = false }: CabinetImageProps) {
   const url = overrideImageUrl?.trim() || cabinet.catalogImageUrl?.trim() || null;
   const [failed, setFailed] = useState<{ url: string; attempts: number; retryUrl: string | null } | null>(null);
   const attempts = url && failed?.url === url ? failed.attempts : 0;
@@ -36,7 +38,9 @@ export function CabinetImage({ cabinet, finishColor, className, overrideImageUrl
       src={attempts === 1 ? failed!.retryUrl ?? url : url}
       alt={cabinetAltText(cabinet)}
       className={className}
-      loading="lazy"
+      loading={priority ? "eager" : "lazy"}
+      decoding="async"
+      {...(priority ? { fetchPriority: "high" as const } : {})}
       onError={() => {
         if (attempts === 0) {
           const retryUrl = catalogMediaRecoveryUrl(url, newCatalogMediaRetryNonce());

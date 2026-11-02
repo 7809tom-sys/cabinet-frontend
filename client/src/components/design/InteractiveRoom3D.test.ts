@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
+import { dlcPhotoLightCompensation } from "@shared/dlcFr26Textures";
+import { DARK_STAIN_DOOR_LIGHTS, RESTORED_DOOR_LIGHTS, isVeryDarkCabinetStain, relativeLuminance } from "@shared/doorRenderLights";
 import { readFileSync } from "node:fs";
 import * as THREE from "three";
 import { baseAngleEndPlan } from "@/lib/baseAngleEndLayout";
 import { wallAngleEndPlan } from "@/lib/wallAngleEndLayout";
 import { canSyncThreeDOrderToCart, constrainedThreeDWallHeight, exactFittedFillerInches, filteredThreeDCatalogItems, hybridPlanUnderlayModel, resolvedPlacedCabinetDoorProfile, resolvedPlacedCabinetDoorSampleUrl, resolvedPlacedCabinetFinish, resolvedThreeDWallHeights, shouldShowThreeDCatalog, THREE_D_EMBEDDED_TOOLBAR_CLASS, THREE_D_WORKSPACE_ACTIONS, threeDCabinetHitFromObject, threeDDecorativeEndSides, threeDDrawerZoneHeight, threeDFillerMeasurementNoticeEntries, threeDFittedFillerWidthText, threeDFrontDatumSnapIndicators, threeDHasVerifiedDoorLayout, threeDOrderLineForSelectedCabinet, threeDPointerSelectsCabinet, threeDPreviewFadeAllowed, threeDSelectedCabinetDescription, threeDSelectedCabinetDockClass, threeDSelectionFromPlaced, threeDStructuralFinish, threeDTallPantryDoorsPerRow, threeDTemporaryPreviewCounterText, threeDTouchTapOpensWindow, threeDUpperCabinetWallMinimums, threeDUsesAuthoritativePlanScene, threeDUsesCatalogFrontVisual, threeDWallClearanceText, threeDWallFitGuideText, threeDWallSideForEdge, threeDWallSideForPolygonEdge, updatedThreeDWallHeights } from "./InteractiveRoom3D";
-import { addCabinet, addPotFillerFixture, addSinkFixture, addThreeDPeninsulaCountertops, addWallOpening, describedOvenSpecification, diagonalCornerFootprintVertices, diagonalCornerFrontWidth, dimensions, doorProfileKind, existingCabinetTransform, existingCabinetSku, freestandingRangeHeightProfile, hasPersistedTwoDScene, isEnclosedWallMicrowaveCabinet, isEqualHeightTwoDrawerBase, lCornerCarcassParts, openingTransform, potFillerWallMountTransform, quoteMaterialDetails, rangeCooktopLayout, rangeHoodFrontGeometry, rangeHoodGeometry, rangeHoodSceneStatus, rangeOvenFrontLayout, resolvedCatalogFinish, resolvedPlacedCabinetFrontVisual, resolvedThreeDCountertopFinish, resolvedThreeDDoorProfile, resolvedThreeDDoorSampleUrl, resolvedThreeDDrawerRows, resolvedThreeDFaceLayout, resolvedThreeDOvenLayout, resolvedThreeDSpecialtyProfile, savedRangeHoodTransform, sceneCabinetColor, shouldRenderCountertopOverSceneItem, shouldRenderPlacedDesign, shouldRenderSavedSceneCabinet, sinkFaucetTransform, sinkFixtureTransform, singleOvenTowerAssembly, threeDApplianceFrontVisualUrl, threeDBlindCornerFrontLayout, threeDCabinetFrontVisualUrl, threeDCameraDistanceLimits, threeDCountertopDepthIn, threeDDoorMaterialFallback, threeDFaceMaterialColor, threeDMaterialStatusText, threeDPhotoRenderDoorReferenceStatus, threeDPeninsulaCountertopGeometry, threeDPlacedWall, threeDPlanSyncText, threeDRoomFacingRotation, threeDSceneInputDiagnostics, threeDSceneRevisionKey, threeDSceneVisibilityContract, threeDShakerFramePose, threeDShakerRailThickness, threeDUsesDoorSampleTexture, threeDUsesExactDoorSampleMaterial, threeDUsesPhysicalShakerRails, threeDVisibleMaterialMode, triangleCornerFootprintVertices, triangleCornerFrontPose, triangleCornerFrontWidth, THREE_D_DRAWER_REVEAL_DEPTH, THREE_D_EXPORT_SIZE, THREE_D_ROOM_CONTEXT_DEFAULT, THREE_D_WALL_DEPTH_WRITE, THREE_D_WALL_OPACITY, type InteractiveRoomScene } from "./InteractiveRoom3D";
+import { addCabinet, addPotFillerFixture, addSinkFixture, addThreeDPeninsulaCountertops, addWallOpening, describedOvenSpecification, diagonalCornerFootprintVertices, diagonalCornerFrontWidth, dimensions, doorProfileKind, existingCabinetTransform, existingCabinetSku, freestandingRangeHeightProfile, hasPersistedTwoDScene, isEnclosedWallMicrowaveCabinet, isEqualHeightTwoDrawerBase, lCornerCarcassParts, openingTransform, photoFaceSkipsToneMapping, potFillerWallMountTransform, quoteMaterialDetails, rangeCooktopLayout, rangeHoodFrontGeometry, rangeHoodGeometry, rangeHoodSceneStatus, rangeOvenFrontLayout, resolvedCatalogFinish, resolvedPlacedCabinetFrontVisual, resolvedThreeDCountertopFinish, resolvedThreeDDoorProfile, resolvedThreeDDoorSampleUrl, resolvedThreeDDrawerRows, resolvedThreeDFaceLayout, resolvedThreeDOvenLayout, resolvedThreeDSpecialtyProfile, savedRangeHoodTransform, sceneCabinetColor, shouldRenderCountertopOverSceneItem, shouldRenderPlacedDesign, shouldRenderSavedSceneCabinet, sinkFaucetTransform, sinkFixtureTransform, singleOvenTowerAssembly, threeDApplianceFrontVisualUrl, threeDBlindCornerFrontLayout, threeDCabinetFrontVisualUrl, threeDCameraDistanceLimits, threeDCountertopDepthIn, threeDDoorMaterialFallback, threeDFaceMaterialColor, threeDMaterialStatusText, threeDPhotoRenderDoorReferenceStatus, threeDPeninsulaCountertopGeometry, threeDPlacedWall, threeDPlanSyncText, threeDRoomFacingRotation, threeDSceneInputDiagnostics, threeDSceneRevisionKey, threeDSceneVisibilityContract, threeDShakerFramePose, threeDShakerRailThickness, threeDUsesDoorSampleTexture, threeDUsesExactDoorSampleMaterial, threeDUsesPhysicalShakerRails, threeDVisibleMaterialMode, triangleCornerFootprintVertices, triangleCornerFrontPose, triangleCornerFrontWidth, THREE_D_DRAWER_REVEAL_DEPTH, THREE_D_EXPORT_SIZE, THREE_D_ROOM_CONTEXT_DEFAULT, THREE_D_WALL_DEPTH_WRITE, THREE_D_WALL_OPACITY, withCatalogDoorStyleIdentity, type InteractiveRoomScene } from "./InteractiveRoom3D";
 import { addFurniture, addIslandZone, furnitureTransform, islandZoneTransform, ponyWallTransform } from "./InteractiveRoom3D";
 import { threeDFurnitureHitFromIntersections, threeDFurnitureHitFromObject } from "./InteractiveRoom3D";
 import { threeDDesignParitySnapshot, threeDExactPlanGeometryLock } from "./InteractiveRoom3D";
@@ -9550,5 +9552,118 @@ describe("final high-resolution preview controls", () => {
 	    expect(source).toContain("setPhotoRenderUrl(latestCustomerReadyImageQuery.data!.imageUrl!)");
 	    expect(source).toContain("will notify you in the Designer and by email");
 	  });
+});
+
+describe("Forest Rust photo face tone mapping", () => {
+  const shaker = {
+    doorStyle: "Shaker",
+    doorPanelType: "shaker",
+    railWidth: 3,
+    stileWidth: 3,
+  };
+  const baseSku = {
+    distributorSkuId: 1,
+    cabinetId: 30,
+    placementUid: "forest-rust-base",
+    masterCode: "B30",
+    description: "30 inch Base Cabinet",
+    placementType: "base" as const,
+    width: 30,
+    height: 34.5,
+    depth: 24,
+    mountBottom: 0,
+    numberOfDoors: 2,
+    numberOfDrawers: 1,
+  };
+  const doorPhoto = "/manus-storage/forest-rust-door-1740x2496.webp";
+  const drawerPhoto = "/manus-storage/forest-rust-drawer.webp";
+
+  function compensationHex(finish: string) {
+    const rig = isVeryDarkCabinetStain(finish) ? DARK_STAIN_DOOR_LIGHTS : RESTORED_DOOR_LIGHTS;
+    return dlcPhotoLightCompensation(rig, relativeLuminance(finish)).hex.replace("#", "");
+  }
+
+  function renderCabinet(profile: typeof shaker & { styleId?: number; styleCode?: string | null; distributorId?: number | null; exposedSidesMatchDoorFace?: boolean }, finish = "#73482a", drawerSampleUrl: string | null = drawerPhoto) {
+    const root = new THREE.Group();
+    addCabinet(root, baseSku, null, {}, 144, 120, finish, "#d9d3cb", profile, undefined, doorPhoto, undefined, {
+      drawerSampleUrl,
+      hardwareStyleId: "bar-pull",
+    });
+    const photoFaces: THREE.MeshPhysicalMaterial[] = [];
+    const shadows: THREE.MeshStandardMaterial[] = [];
+    const skins: THREE.MeshStandardMaterial[] = [];
+    root.traverse((node) => {
+      if (!(node instanceof THREE.Mesh)) return;
+      const material = node.material as THREE.MeshStandardMaterial;
+      if (node.userData.cabinetFront || node.userData.physicalRail) photoFaces.push(material as THREE.MeshPhysicalMaterial);
+      if (node.userData.cabinetFaceShadowGap || node.userData.cabinetDrawerReveal) shadows.push(material);
+      if (node.userData.selectedFinishSideSkin || node.userData.selectedStyleSideSkin) skins.push(material);
+    });
+    return { photoFaces, shadows, skins };
+  }
+
+  it("matches Forest Rust by catalog id or by style code plus distributor", () => {
+    expect(photoFaceSkipsToneMapping({ id: 330011 })).toBe(true);
+    expect(photoFaceSkipsToneMapping({ styleCode: "rh", distributorId: 210001 })).toBe(true);
+    expect(photoFaceSkipsToneMapping({ id: 42, styleCode: "RH", distributorId: 210001 })).toBe(true);
+    expect(photoFaceSkipsToneMapping({ styleCode: "RH", distributorId: 180001 })).toBe(false);
+    expect(photoFaceSkipsToneMapping({ id: 330002, styleCode: "AW", distributorId: 210001 })).toBe(false);
+    expect(photoFaceSkipsToneMapping(null)).toBe(false);
+    expect(withCatalogDoorStyleIdentity({ id: 330011, styleCode: "RH", distributorId: 210001 }, { doorStyle: "Shaker" })).toMatchObject({
+      doorStyle: "Shaker",
+      styleId: 330011,
+      styleCode: "RH",
+      distributorId: 210001,
+    });
+  });
+
+  it("turns tone mapping off on Forest Rust door and drawer photos and leaves skins and shadow strips alone", () => {
+    const load = vi.spyOn(THREE.TextureLoader.prototype, "load").mockImplementation(((url, onLoad) => {
+      const texture = new THREE.Texture();
+      texture.name = String(url);
+      onLoad?.(texture);
+      return texture;
+    }) as THREE.TextureLoader["load"]);
+    try {
+      const finish = "#73482a";
+      const forest = renderCabinet({ ...shaker, styleId: 330011, styleCode: "RH", distributorId: 210001 }, finish);
+      const expected = compensationHex(finish);
+      expect(forest.photoFaces.length).toBeGreaterThan(0);
+      expect(forest.photoFaces.every((material) => material.map && material.toneMapped === false && material.color.getHexString() === expected)).toBe(true);
+      expect(forest.shadows.length).toBeGreaterThan(0);
+      expect(forest.shadows.every((material) => material.toneMapped === true && material.color.getHexString() === "1c1814" && material.map == null)).toBe(true);
+      expect(forest.skins.length).toBeGreaterThan(0);
+      expect(forest.skins.every((material) => material.toneMapped === true && material.map == null && material.color.getHexString() === "73482a")).toBe(true);
+
+      const byCode = renderCabinet({ ...shaker, styleCode: "RH", distributorId: 210001 }, finish, null);
+      expect(byCode.photoFaces.every((material) => material.toneMapped === false && material.color.getHexString() === expected)).toBe(true);
+
+      const white = renderCabinet({ ...shaker, styleId: 330002, styleCode: "WS", distributorId: 210001 }, "#f4f1ea");
+      expect(white.photoFaces.every((material) => material.toneMapped === true && material.color.getHexString() === "ffffff")).toBe(true);
+      expect(white.shadows.every((material) => material.toneMapped === true && material.color.getHexString() === "1c1814")).toBe(true);
+      expect(white.skins.every((material) => material.map == null && material.toneMapped === true)).toBe(true);
+    } finally {
+      load.mockRestore();
+    }
+  });
+
+  it("compensates photo sides for a listed style and leaves other photo sides on the scene tone map", () => {
+    const load = vi.spyOn(THREE.TextureLoader.prototype, "load").mockImplementation((() => new THREE.Texture()) as THREE.TextureLoader["load"]);
+    try {
+      const finish = "#73482a";
+      const expected = compensationHex(finish);
+      const forest = renderCabinet({ ...shaker, styleId: 330011, exposedSidesMatchDoorFace: true }, finish, null);
+      const photoSides = forest.skins.filter((material) => material.map);
+      expect(photoSides.length).toBeGreaterThan(0);
+      expect(photoSides.every((material) => material.toneMapped === false && material.color.getHexString() === expected && material.userData.photoFaceToneMapOff === true)).toBe(true);
+
+      const other = renderCabinet({ ...shaker, styleId: 12, styleCode: "LSA", exposedSidesMatchDoorFace: true }, "#c6b9a7", null);
+      const otherSides = other.skins.filter((material) => material.map);
+      expect(otherSides.length).toBeGreaterThan(0);
+      expect(otherSides.every((material) => material.toneMapped === true && material.color.getHexString() === "ffffff")).toBe(true);
+    } finally {
+      load.mockRestore();
+    }
+  });
 });
 

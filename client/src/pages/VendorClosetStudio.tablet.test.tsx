@@ -52,19 +52,20 @@ describe("Closet Studio tablet workspace", () => {
 
     const room = screen.getByRole("button", { name: "Room and wall settings" });
     const dock = screen.getByTestId("vendor-tablet-options-dock");
-    const reference = within(dock).getByRole("button", { name: "Material reference details" });
+    const blueprint = screen.getByTestId("vendor-blueprint-column");
+    const reference = within(blueprint).getByRole("button", { name: "Material reference details" });
     expect(room.getAttribute("aria-expanded")).toBe("false");
     expect(reference.getAttribute("aria-expanded")).toBe("false");
     expect(screen.getByTestId("mock-vendor-scene")).toBeTruthy();
     expect(within(dock).getByRole("button", { name: "Select Tower 2" })).toBeTruthy();
-    expect(within(dock).getByRole("combobox", { name: "More parts for selected tower" })).toBeTruthy();
+    expect(within(dock).getByTestId("vendor-accessory-shoe")).toBeTruthy();
 
     fireEvent.click(room);
     expect(room.getAttribute("aria-expanded")).toBe("true");
     expect(screen.getAllByRole("button", { name: "Close room settings" })).toHaveLength(2);
     fireEvent.click(reference);
     expect(reference.getAttribute("aria-expanded")).toBe("true");
-    expect(within(dock).getByTestId("vendor-tablet-material-list")).toBeTruthy();
+    expect(within(blueprint).getByTestId("vendor-tablet-material-list")).toBeTruthy();
     fireEvent.click(reference);
     expect(reference.getAttribute("aria-expanded")).toBe("false");
     expect(within(dock).getByRole("button", { name: "Select Tower 2" })).toBeTruthy();
@@ -73,13 +74,13 @@ describe("Closet Studio tablet workspace", () => {
   it("keeps the three-column layout for wide desktops but uses on-demand panels at tablet CSS widths", () => {
     window.history.replaceState(null, "", "/closet?demo=mixed");
     render(<VendorClosetStudio />);
-    expect(screen.getByTestId("vendor-controls").className).toContain("min-[1800px]:static");
+    expect(screen.getByTestId("vendor-workspace").className).toContain("minmax(320px,1fr)");
     const referencePanel = screen.getByTestId("vendor-reference-panel");
-    expect(referencePanel.parentElement?.parentElement?.className).toContain("min-[1800px]:block");
+    expect(referencePanel.closest("[data-testid='vendor-blueprint-column']")).toBeTruthy();
     expect(screen.queryByTestId("vendor-part-tray")).toBeNull();
-    const more = within(screen.getByTestId("vendor-tablet-options-dock")).getByRole("combobox", { name: "More parts for selected tower" });
-    expect(more.className).toContain("h-full");
-    expect(more.className).toContain("inset-0");
+    const shoe = within(screen.getByTestId("vendor-tablet-options-dock")).getByTestId("vendor-accessory-shoe");
+    expect(shoe.className).toContain("min-h-14");
+    expect(shoe.className).toContain("w-full");
     const scene = readFileSync(`${process.cwd()}/client/src/components/vendor/VendorClosetScene.tsx`, "utf8");
     expect(scene).toContain('className="h-full min-h-0 w-full touch-none"');
     expect(screen.getByTestId("mock-vendor-scene")).toBeTruthy();
@@ -90,7 +91,7 @@ describe("Closet Studio tablet workspace", () => {
     render(<VendorClosetStudio />);
 
     const dock = screen.getByTestId("vendor-tablet-options-dock");
-    const material = within(dock).getByTestId("vendor-tablet-material-disclosure");
+    const material = within(screen.getByTestId("vendor-blueprint-column")).getByTestId("vendor-tablet-material-disclosure");
     const toggle = within(material).getByRole("button", { name: "Material reference details" });
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
     // One copy of the controls only: the old wide-desktop bottom panels are gone, not CSS-hidden.
@@ -98,7 +99,7 @@ describe("Closet Studio tablet workspace", () => {
     expect(screen.queryByTestId("vendor-part-tray")).toBeNull();
     expect(screen.getAllByTestId("vendor-tablet-options-dock")).toHaveLength(1);
     expect(within(dock).getByRole("button", { name: "Select Tower 2" })).toBeTruthy();
-    expect(within(dock).getByRole("combobox", { name: "More parts for selected tower" })).toBeTruthy();
+    expect(within(dock).getByTestId("vendor-accessory-shoe")).toBeTruthy();
 
     fireEvent.click(toggle);
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
@@ -120,16 +121,16 @@ describe("Closet Studio tablet workspace", () => {
     const dock = screen.getByTestId("vendor-tablet-options-dock");
     expect(dock.className).not.toContain("fixed");
     expect(screen.getByTestId("vendor-scene-panel").className).toContain("flex-none");
-    expect(screen.getByTestId("vendor-scene-panel").className).not.toContain("flex-1");
+    expect(screen.getByTestId("vendor-scene-panel").className).toContain("min-[1024px]:flex-1");
     fireEvent.click(tower);
     expect(within(dock).getByRole("button", { name: "Select Tower 2" })).toBeTruthy();
     fireEvent.click(parts);
-    expect(within(dock).getByRole("combobox", { name: "More parts for selected tower" })).toBeTruthy();
+    expect(within(dock).getByTestId("vendor-accessory-shoe")).toBeTruthy();
     fireEvent.click(within(dock).getByRole("button", { name: /Adjustable shelf/ }));
     const source = readFileSync(`${process.cwd()}/client/src/pages/VendorClosetStudio.tsx`, "utf8");
-    expect(source).toContain('partToPlace && hasBay ? "top-24 sm:top-28" : "bottom-3 sm:bottom-5"');
+    expect(source).toContain("Drag to rotate · tap a tower to edit its parts");
     fireEvent.click(list);
-    expect(within(dock).getByTestId("vendor-tablet-material-list")).toBeTruthy();
+    expect(within(screen.getByTestId("vendor-blueprint-column")).getByTestId("vendor-tablet-material-list")).toBeTruthy();
   });
 
   it("lets a tablet user plan a sourced straight shelf cut in the right dock without exposing unverified accessory cuts", () => {
@@ -274,9 +275,9 @@ describe("Closet Studio tablet workspace", () => {
     window.history.replaceState(null, "", "/closet?demo=mixed");
     render(<VendorClosetStudio />);
 
-    const dock = screen.getByTestId("vendor-tablet-options-dock");
-    fireEvent.click(within(dock).getByRole("button", { name: "Material reference details" }));
-    const catalog = within(dock).getByTestId("vendor-source-catalog");
+    const blueprint = screen.getByTestId("vendor-blueprint-column");
+    fireEvent.click(within(blueprint).getByRole("button", { name: "Material reference details" }));
+    const catalog = within(blueprint).getByTestId("vendor-source-catalog");
     expect(catalog.textContent).toMatch(/454 public March 1, 2022 List records/i);
     expect(catalog.textContent).toMatch(/not a checkout quote or installation guide.*corner SKUs and baskets 432897.*restricted.*visual-planning.*never fit-verified/i);
 

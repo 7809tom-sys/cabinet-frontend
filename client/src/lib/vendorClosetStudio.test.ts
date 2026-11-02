@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  addStudioBay, addStudioBasketPlacement, addStudioBasketReference, addStudioConnectedCorner, addStudioCornerShelf, canStageStudioPart, changeStudioFinish, configureStudioBayCut, createStudioDesign, createStudioReviewDemo, MODE_RECOMMENDATIONS, moveStudioBasketPlacement, moveStudioCornerShelf, moveStudioItem, removeStudioBasketPlacement, removeStudioBasketReference, studioCornerShelfSku, studioTowerFootprint, updateStudioBasketPlacement,
+  addStudioBay, addStudioBasketPlacement, addStudioBasketReference, addStudioConnectedCorner, addStudioCornerShelf, canStageStudioPart, changeStudioFinish, configureStudioBayCut, createStudioDesign, createStudioReviewDemo, MODE_RECOMMENDATIONS, moveStudioBasketPlacement, moveStudioCornerShelf, moveStudioItem, removeStudioBasketPlacement, removeStudioBasketReference, snapStudioBasketPlacement, studioCornerShelfSku, studioTowerFootprint, updateStudioBasketPlacement,
   restoreStudioDesign, snapStudioPart, STUDIO_FINISHES, studioBayCut, studioBays, studioCollision, studioCornerShelvesForWall, studioPartReferences, studioTakeoff, studioWallOccupancy, studioWidth, switchStudioWall,
   autoBuildStudio, autoBuildStudioDesign, createKidsStudioDesign, kidsAgeBand, kidsGuidance, kidsRodHeightIn, KIDS_UPPER_ROD_IN, MODE_AUTO_BUILD_DEFAULTS, STUDIO_MODES, studioFixedTop, studioPanelHeight, studioTowerFootprint as towerFootprint, type StudioAutoBuildOptions, type StudioWall,
   STUDIO_BASKET_REFERENCE_OPTIONS, STUDIO_BASKET_VISUAL_DEPTH_IN, STUDIO_CORNER_SHELF_NOMINAL_FOOTPRINT_IN, STUDIO_CORNER_SHELF_GEOMETRY_REVISION, STUDIO_ILLUSTRATIVE_SHOE_PITCH_DEG, studioBasketPlacementsForWall, studioBasketReferences, studioCornerMeasuredGap, studioCornerPlanningFootprint, studioFitCapability, studioItemHeight,
@@ -170,6 +170,20 @@ describe("isolated vendor Closet Studio", () => {
     expect(moveStudioBasketPlacement(backAgain, "basket-back-11x24", 38).ok).toBe(false);
     expect(removeStudioBasketPlacement(backAgain, "basket-back-11x24").basketPlacements).toHaveLength(1);
     expect(restoreStudioDesign(JSON.stringify(backAgain))).toEqual(backAgain);
+  });
+
+  it("snaps a 17 in shoe basket down from the fixed top shelf into the nearest open inch", () => {
+    const design = createStudioDesign();
+    const top = studioFixedTop(design);
+    const snapped = snapStudioBasketPlacement(design, 0, "432902", top, "shoe-basket");
+    expect(snapped.ok).toBe(true);
+    if (!snapped.ok) return;
+    expect(snapped.placement.nominalHeightIn).toBe(17);
+    expect(snapped.placement.bottomIn + snapped.placement.nominalHeightIn).toBeLessThanOrEqual(top + 0.001);
+    expect(snapped.placement.bottomIn).toBeLessThan(top - 16);
+    const kept = snapStudioBasketPlacement(design, 0, "432901", 42, "kept-height");
+    expect(kept).toMatchObject({ ok: true, placement: { bottomIn: 42, nominalHeightIn: 11 } });
+    expect(snapStudioBasketPlacement(design, 0, "432905", 42, "too-wide").ok).toBe(false);
   });
 
   it("keeps every public MasterTrac source record discoverable as a non-placeable List reference without private workbook fields", () => {

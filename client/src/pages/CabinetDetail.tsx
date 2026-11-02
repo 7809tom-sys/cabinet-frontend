@@ -1198,7 +1198,7 @@ export default function CabinetDetail({ masterCode }: Props) {
             title="View pricing & specs"
           >
             <div className="h-14 w-12 rounded-lg overflow-hidden shrink-0 border border-border shadow-sm">
-              <img src={doorPhoto} alt={`${styleLabel} door`} className="h-full w-full object-cover" />
+              <img src={doorPhoto} alt={`${styleLabel} door`} className="h-full w-full object-cover" width={48} height={56} decoding="async" />
             </div>
             <div className="h-14 w-5 rounded shrink-0 border border-border/60" style={{ backgroundColor: finishFace }} title={swColorName ?? styleLabel} />
             <div className="flex-1 min-w-0">
@@ -1228,6 +1228,7 @@ export default function CabinetDetail({ masterCode }: Props) {
                 finishColor={finishFace}
                 className="h-full w-auto max-w-full"
                 overrideImageUrl={selectedRow?.distributorImageUrl ?? null}
+                priority
               />
             </div>
             <p className="text-[11px] text-muted-foreground mt-1.5 text-center">
@@ -1337,6 +1338,8 @@ export default function CabinetDetail({ masterCode }: Props) {
                       src={selectedRow.roomSceneImageUrl}
                       alt={`Kitchen with ${selectedRow.name} cabinets`}
                       className="w-full h-auto object-cover max-h-80"
+                      loading="lazy"
+                      decoding="async"
                     />
                   </div>
                   <p className="text-[11px] text-muted-foreground text-center">
@@ -1448,7 +1451,7 @@ export default function CabinetDetail({ masterCode }: Props) {
                 <div className="flex flex-col sm:flex-row gap-4 items-start">
                   {specImageUrl && (
                     <div className="shrink-0 rounded-lg border border-border bg-white p-2 flex items-center justify-center" style={{ width: 140, height: 140 }}>
-                      <img src={specImageUrl} alt="spec drawing" className="max-h-full max-w-full object-contain" />
+                      <img src={specImageUrl} alt="spec drawing" className="max-h-full max-w-full object-contain" width={140} height={140} loading="lazy" decoding="async" />
                     </div>
                   )}
                   {publicSpecNotes && (
@@ -2837,7 +2840,7 @@ function StyleCategoryNav({
             >
               <div className="h-10 w-10 rounded border border-border bg-muted/30 flex items-center justify-center shrink-0 overflow-hidden">
                 {item.catalogImageUrl ? (
-                  <img src={item.catalogImageUrl} alt="" className="h-full w-full object-contain" />
+                  <img src={item.catalogImageUrl} alt="" className="h-full w-full object-contain" width={40} height={40} loading="lazy" decoding="async" />
                 ) : (
                   <Package className="h-4 w-4 text-muted-foreground" />
                 )}
@@ -2950,6 +2953,8 @@ function Cabinet3dPreviewSection({
               src={previewUrl}
               alt={`Photorealistic ${masterCode} cabinet in ${styleName}`}
               className="w-full h-auto object-contain max-h-80"
+              loading="lazy"
+              decoding="async"
             />
           </div>
           <p className="text-[11px] text-muted-foreground text-center">
