@@ -1,13 +1,19 @@
 import { describe, it, expect } from "vitest";
 import {
   WALZCRAFT_PROFILE_TEMPLATES,
+  WALZCRAFT_SHADE_FAMILIES,
+  WALZCRAFT_SHADE_COLORS,
   rankProfiles,
   rankShades,
+  rankProfilesForShade,
+  shadesForProfile,
   buildProfileGeometry,
   GLAZE_OPTIONS,
   GLAZE_LINE_WIDTH_IN,
   stepsFor,
+  nextStep,
   drawerFrontFor,
+  drawerProfileOptions,
   type WalzProfileTemplate,
 } from "./walzcraftDoorTemplates";
 
@@ -75,12 +81,82 @@ describe("walzcraftDoorTemplates", () => {
     expect(ranked[0].confidence).toBe(99);
   });
 
-  it("rankShades returns 4 in descending confidence order", () => {
-    const ranked = rankShades();
-    expect(ranked).toHaveLength(4);
-    for (let i = 1; i < ranked.length; i++) {
-      expect(ranked[i - 1].confidence).toBeGreaterThanOrEqual(ranked[i].confidence);
+  it("every profile has exactly four shades", () => {
+    for (const t of WALZCRAFT_PROFILE_TEMPLATES) {
+      expect(shadesForProfile(t.id)).toHaveLength(4);
     }
+  });
+
+  it("no two profiles share a shade set or shade", () => {
+    const keys = WALZCRAFT_PROFILE_TEMPLATES.map((t) =>
+      shadesForProfile(t.id)
+        .map((s) => s.id)
+        .sort()
+        .join("|"),
+    );
+    expect(new Set(keys).size).toBe(keys.length);
+
+    const allShadeIds = WALZCRAFT_PROFILE_TEMPLATES.flatMap((t) =>
+      shadesForProfile(t.id).map((s) => s.id),
+    );
+    expect(new Set(allShadeIds).size).toBe(4 * WALZCRAFT_PROFILE_TEMPLATES.length);
+  });
+
+  it("every family has exactly 4 shades, all same familyId, valid hex, hexEstimated true", () => {
+    for (const family of WALZCRAFT_SHADE_FAMILIES) {
+      const shades = WALZCRAFT_SHADE_COLORS.filter((s) => s.familyId === family.id);
+      expect(shades).toHaveLength(4);
+      for (const s of shades) {
+        expect(s.familyId).toBe(family.id);
+        expect(s.hex).toMatch(/^#[0-9a-fA-F]{6}$/);
+        expect(s.hexEstimated).toBe(true);
+      }
+    }
+  });
+
+  it("rankShades(familyId) returns that family's 4; rankShades() returns one leader per family", () => {
+    for (const family of WALZCRAFT_SHADE_FAMILIES) {
+      const ranked = rankShades(family.id);
+      expect(ranked).toHaveLength(4);
+      for (const r of ranked) {
+        expect(r.shade.familyId).toBe(family.id);
+      }
+    }
+
+    const leaders = rankShades();
+    expect(leaders).toHaveLength(WALZCRAFT_SHADE_FAMILIES.length);
+    const familyIds = leaders.map((r) => r.shade.familyId);
+    expect(new Set(familyIds).size).toBe(familyIds.length);
+  });
+
+  it("rankProfilesForShade ranks agave and eggshell correctly", () => {
+    const agave = rankProfilesForShade("agave");
+    expect(agave.length).toBeGreaterThan(0);
+    expect(agave[0].template.id).toBe("S592");
+    expect(agave[0].confidence).toBe(99);
+
+    const eggshell = rankProfilesForShade("eggshell");
+    expect(eggshell.length).toBeGreaterThan(0);
+    expect(eggshell[0].template.id).toBe("S109");
+  });
+
+  it("drawerProfileOptions returns unique ids and correct options", () => {
+    const all = drawerProfileOptions();
+    const ids = all.map((o) => o.id);
+    expect(new Set(ids).size).toBe(ids.length);
+
+    const slab = drawerProfileOptions(null, "base", "slab");
+    expect(slab).toHaveLength(1);
+    expect(slab[0].id).toBe("slab");
+
+    const s109 = WALZCRAFT_PROFILE_TEMPLATES.find((t) => t.id === "S109");
+    expect(s109).toBeDefined();
+    if (!s109) return;
+    const five = drawerProfileOptions(s109, "base", "five-piece");
+    const fiveIds = five.map((o) => o.id);
+    expect(fiveIds).toContain("match");
+    expect(fiveIds).toContain("full");
+    expect(fiveIds).toContain("slab");
   });
 
   it("buildProfileGeometry produces finite, bounded geometry for every template", () => {
@@ -116,13 +192,17 @@ describe("walzcraftDoorTemplates", () => {
     expect(gold?.stroke).toBe("#d7a46c");
   });
 
-  it("stepsFor excludes profile and glaze for slab, includes all 6 for five-piece", () => {
-    const slab = stepsFor("slab");
-    expect(slab).not.toContain("profile");
-    expect(slab).not.toContain("glaze");
-    const five = stepsFor("five-piece");
-    expect(five).toHaveLength(6);
-    expect(five).toEqual(["type", "profile", "shade", "glaze", "drawers", "review"]);
+  it("stepsFor five-piece and slab sequences, and nextStep advances", () => {
+    expect(stepsFor("five-piece")).toEqual([
+      "color",
+      "type",
+      "profile",
+      "drawers",
+      "glaze",
+      "review",
+    ]);
+    expect(stepsFor("slab")).toEqual(["color", "type", "drawers", "review"]);
+    expect(nextStep("color", "five-piece")).toBe("type");
   });
 
   it("drawerFrontFor handles slab and base five-piece correctly", () => {

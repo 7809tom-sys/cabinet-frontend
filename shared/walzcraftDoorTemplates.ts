@@ -179,37 +179,157 @@ export interface ShadeColor {
   id: string;
   name: string;
   hex: string;
+  hexEstimated: boolean;
   finish: string;
   baseScore: number;
+  familyId: string;
 }
 
-export const WALZCRAFT_SHADE_COLORS: ShadeColor[] = [
-  { id: "charleston-white", name: "Charleston White", hex: "#f2efe6", finish: "SolidTone", baseScore: 70 },
-  { id: "aspen-charcoal", name: "Aspen Charcoal", hex: "#4a4a48", finish: "SolidTone", baseScore: 30 },
-  { id: "chocolate-frost", name: "Chocolate Frost", hex: "#5a4436", finish: "SolidTone", baseScore: 20 },
-  { id: "linen", name: "Linen", hex: "#e9e1d1", finish: "SolidTone", baseScore: 10 },
-  { id: "tan", name: "Tan", hex: "#c9b28f", finish: "SolidTone", baseScore: 8 },
-  { id: "honey", name: "Honey", hex: "#b9833f", finish: "SolidTone", baseScore: 6 },
-  { id: "nutmeg", name: "Nutmeg", hex: "#7b4a2b", finish: "SolidTone", baseScore: 5 },
-  { id: "medium-brown-walnut", name: "Medium Brown Walnut", hex: "#5e3b25", finish: "SolidTone", baseScore: 4 },
+export interface ShadeFamily {
+  id: string;
+  name: string;
+  profileId: string;
+  shades: ShadeColor[];
+}
+
+export const WALZCRAFT_SHADE_FAMILIES: ShadeFamily[] = [
+  {
+    id: "alabaster",
+    name: "Alabaster / Off-White",
+    profileId: "S109",
+    shades: [
+      { id: "classic-white", name: "Classic White", hex: "#f4f2ec", hexEstimated: true, finish: "SolidTone", baseScore: 70, familyId: "alabaster" },
+      { id: "eggshell", name: "Eggshell", hex: "#efe8d8", hexEstimated: true, finish: "SolidTone", baseScore: 30, familyId: "alabaster" },
+      { id: "dove-white", name: "Dove White", hex: "#ece9e0", hexEstimated: true, finish: "SolidTone", baseScore: 20, familyId: "alabaster" },
+      { id: "antique-white", name: "Antique White", hex: "#e8dfcc", hexEstimated: true, finish: "SolidTone", baseScore: 10, familyId: "alabaster" },
+    ],
+  },
+  {
+    id: "gray",
+    name: "Stone Gray",
+    profileId: "S102",
+    shades: [
+      { id: "stone-gray", name: "Stone Gray", hex: "#a8a59c", hexEstimated: true, finish: "SolidTone", baseScore: 70, familyId: "gray" },
+      { id: "city-gray", name: "City Gray", hex: "#8e8e88", hexEstimated: true, finish: "SolidTone", baseScore: 30, familyId: "gray" },
+      { id: "castle-gray", name: "Castle Gray", hex: "#6f6e69", hexEstimated: true, finish: "SolidTone", baseScore: 20, familyId: "gray" },
+      { id: "rain-cloud", name: "Rain Cloud", hex: "#b9bbb7", hexEstimated: true, finish: "SolidTone", baseScore: 10, familyId: "gray" },
+    ],
+  },
+  {
+    id: "midnight",
+    name: "Midnight Blue",
+    profileId: "S586",
+    shades: [
+      { id: "midnight-blue", name: "Midnight Blue", hex: "#2b3a55", hexEstimated: true, finish: "SolidTone", baseScore: 70, familyId: "midnight" },
+      { id: "nightfall-v4", name: "Nightfall V4", hex: "#2f3440", hexEstimated: true, finish: "SolidTone", baseScore: 30, familyId: "midnight" },
+      { id: "midnight", name: "Midnight", hex: "#1f2a3a", hexEstimated: true, finish: "SolidTone", baseScore: 20, familyId: "midnight" },
+      { id: "moonlight", name: "Moonlight", hex: "#5b6b82", hexEstimated: true, finish: "SolidTone", baseScore: 10, familyId: "midnight" },
+    ],
+  },
+  {
+    id: "forest",
+    name: "Forest Green",
+    profileId: "S592",
+    shades: [
+      { id: "hunter-green", name: "Hunter Green", hex: "#2f4a35", hexEstimated: true, finish: "SolidTone", baseScore: 70, familyId: "forest" },
+      { id: "spruce", name: "Spruce", hex: "#3e5a4a", hexEstimated: true, finish: "SolidTone", baseScore: 30, familyId: "forest" },
+      { id: "sage", name: "Sage", hex: "#9aa58a", hexEstimated: true, finish: "SolidTone", baseScore: 20, familyId: "forest" },
+      { id: "agave", name: "Agave", hex: "#7d8b77", hexEstimated: true, finish: "SolidTone", baseScore: 10, familyId: "forest" },
+    ],
+  },
+  {
+    id: "rust",
+    name: "Forest Rust / Rust Brown",
+    profileId: "S841",
+    shades: [
+      { id: "cordovan", name: "Cordovan", hex: "#5a2a22", hexEstimated: true, finish: "Stain", baseScore: 70, familyId: "rust" },
+      { id: "auburn-v4", name: "Auburn V4", hex: "#7a3b26", hexEstimated: true, finish: "Stain", baseScore: 30, familyId: "rust" },
+      { id: "cinnamon", name: "Cinnamon", hex: "#8b4a2b", hexEstimated: true, finish: "Stain", baseScore: 20, familyId: "rust" },
+      { id: "nutmeg", name: "Nutmeg", hex: "#7b4a2b", hexEstimated: true, finish: "Stain", baseScore: 10, familyId: "rust" },
+    ],
+  },
+  {
+    id: "honey",
+    name: "Honey Wood",
+    profileId: "S424",
+    shades: [
+      { id: "honey", name: "Honey", hex: "#b9833f", hexEstimated: true, finish: "Stain", baseScore: 70, familyId: "honey" },
+      { id: "dark-honey", name: "Dark Honey", hex: "#94622c", hexEstimated: true, finish: "Stain", baseScore: 30, familyId: "honey" },
+      { id: "english-oak-v4", name: "English Oak V4", hex: "#a87a4a", hexEstimated: true, finish: "Stain", baseScore: 20, familyId: "honey" },
+      { id: "golden-oak", name: "Golden Oak", hex: "#b98a4e", hexEstimated: true, finish: "Stain", baseScore: 10, familyId: "honey" },
+    ],
+  },
+  {
+    id: "charcoal",
+    name: "Charcoal / Black",
+    profileId: "S579",
+    shades: [
+      { id: "black", name: "Black", hex: "#1b1b1b", hexEstimated: true, finish: "SolidTone", baseScore: 70, familyId: "charcoal" },
+      { id: "ebony", name: "Ebony", hex: "#2a2522", hexEstimated: true, finish: "SolidTone", baseScore: 30, familyId: "charcoal" },
+      { id: "dark-gray", name: "Dark Gray", hex: "#4a4a48", hexEstimated: true, finish: "SolidTone", baseScore: 20, familyId: "charcoal" },
+      { id: "slate", name: "Slate", hex: "#5d636a", hexEstimated: true, finish: "SolidTone", baseScore: 10, familyId: "charcoal" },
+    ],
+  },
 ];
+
+export const WALZCRAFT_SHADE_COLORS: ShadeColor[] = WALZCRAFT_SHADE_FAMILIES.flatMap(
+  (family) => family.shades,
+);
+
+export function shadesForProfile(profileId: string): ShadeColor[] {
+  const family = WALZCRAFT_SHADE_FAMILIES.find((f) => f.profileId === profileId);
+  return family ? family.shades : [];
+}
+
+export function familyForShade(shadeId: string): ShadeFamily | null {
+  for (const family of WALZCRAFT_SHADE_FAMILIES) {
+    if (family.shades.some((shade) => shade.id === shadeId)) {
+      return family;
+    }
+  }
+  return null;
+}
 
 export interface RankedShade {
   shade: ShadeColor;
   confidence: number;
 }
 
-export function rankShades(limit = 4, _doorType?: DoorType): RankedShade[] {
-  const sorted = WALZCRAFT_SHADE_COLORS.map((shade, index) => ({ shade, index }))
-    .sort((a, b) => {
-      if (b.shade.baseScore !== a.shade.baseScore) {
-        return b.shade.baseScore - a.shade.baseScore;
-      }
-      return a.index - b.index;
-    })
-    .slice(0, Math.max(0, limit));
+export function rankShades(familyId?: string): RankedShade[] {
+  if (familyId !== undefined) {
+    const family = WALZCRAFT_SHADE_FAMILIES.find((f) => f.id === familyId);
+    if (!family) return [];
+    return family.shades.map((shade) => ({ shade, confidence: shade.baseScore }));
+  }
+  return WALZCRAFT_SHADE_FAMILIES.map((family) => {
+    const leader = family.shades[0];
+    return { shade: leader, confidence: leader.baseScore };
+  });
+}
 
-  return sorted.map(({ shade }) => ({ shade, confidence: shade.baseScore }));
+export function rankProfilesForShade(
+  shadeId: string | null,
+  limit = 4,
+): RankedProfile[] {
+  const family = shadeId ? familyForShade(shadeId) : null;
+  const ownerProfileId = family ? family.profileId : null;
+
+  const ordered: RankedProfile[] = [];
+
+  if (ownerProfileId) {
+    const owner = WALZCRAFT_PROFILE_TEMPLATES.find((t) => t.id === ownerProfileId);
+    if (owner) {
+      ordered.push({ template: owner, confidence: 99 });
+    }
+  }
+
+  const remaining = WALZCRAFT_PROFILE_TEMPLATES.filter(
+    (t) => t.id !== ownerProfileId,
+  );
+  const rankedRemaining = rankProfiles(remaining, remaining.length);
+  ordered.push(...rankedRemaining);
+
+  return ordered.slice(0, Math.max(0, limit));
 }
 
 export interface GlazeOptionDef {
@@ -384,7 +504,7 @@ export function buildProfileGeometry(t: WalzProfileTemplate): ProfileGeometry {
 
   const cleanOutline: [number, number][] = outline.map(([x, y]) => [
     round(clamp(x, 0, widthIn)),
-    round(y, 0, thicknessIn),
+    round(clamp(y, 0, thicknessIn)),
   ]);
 
   const recesses: [number, number][][] = recessIndices
@@ -459,23 +579,74 @@ export function drawerFrontFor(
   };
 }
 
+export interface DrawerProfileOption {
+  id: string;
+  label: string;
+  spec: DrawerFrontSpec;
+}
+
+export function drawerProfileOptions(
+  template: WalzProfileTemplate | null,
+  zone: CabinetZone,
+  doorType: DoorType,
+): DrawerProfileOption[] {
+  const options: DrawerProfileOption[] = [];
+
+  const match = drawerFrontFor(template, zone, doorType);
+  options.push(
+    match.style === "slab"
+      ? { id: "slab", label: "Slab", spec: match }
+      : { id: "match", label: "Match door", spec: match },
+  );
+
+  if (doorType === "five-piece" && template && template.frameProfile) {
+    const fullRail = template.frameProfile;
+    if (fullRail !== match.railProfile) {
+      options.push({
+        id: "full",
+        label: "Full-width rail",
+        spec: {
+          zone,
+          style: "five-piece",
+          railProfile: fullRail,
+          note: `Five-piece drawer front using the full-width door profile (${fullRail}).`,
+        },
+      });
+    }
+  }
+
+  if (match.style !== "slab") options.push({
+    id: "slab",
+    label: "Slab",
+    spec: {
+      zone,
+      style: "slab",
+      railProfile: null,
+      note: "Slab drawer front.",
+    },
+  });
+
+  return options.slice(0, 3);
+}
+
 export interface DoorSelection {
   doorType: DoorType;
   profileId: string | null;
   shadeId: string | null;
+  colorFamilyId: string | null;
   glaze: Record<string, GlazeOption>;
   drawer: {
-    wall: DrawerFrontSpec | null;
-    base: DrawerFrontSpec | null;
+    wall: string | null;
+    base: string | null;
   };
 }
 
-export const STEPS = ["type", "profile", "shade", "glaze", "drawers", "review"] as const;
+export const STEPS = ["color", "type", "profile", "drawers", "glaze", "review"] as const;
 export type Step = (typeof STEPS)[number];
 
 export function stepsFor(doorType: DoorType): Step[] {
   if (doorType === "slab") {
-    return ["type", "shade", "drawers", "review"];
+    return ["color", "type", "drawers", "review"];
   }
   return [...STEPS];
 }

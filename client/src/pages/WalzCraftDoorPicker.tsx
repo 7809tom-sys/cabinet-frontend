@@ -1,18 +1,21 @@
 import { useMemo, useState } from "react";
 import { WalzProfileSvg, formatInches } from "@/components/walzcraft/WalzProfileSvg";
 import {
-  rankProfiles,
+  rankProfilesForShade,
   rankShades,
+  shadesForProfile,
+  familyForShade,
   GLAZE_OPTIONS,
-  drawerFrontFor,
+  drawerProfileOptions,
   stepsFor,
   WALZCRAFT_PROFILE_TEMPLATES,
+  WALZCRAFT_SHADE_FAMILIES,
   type DoorType,
   type GlazeOption,
   type CabinetZone,
   type Step,
   type WalzProfileTemplate,
-  type DrawerFrontSpec,
+  type DoorSelection,
 } from "@shared/walzcraftDoorTemplates";
 
 // NOTE: Shaker doors use the separate DL Shaker blueprint
@@ -20,28 +23,23 @@ import {
 // This picker is WalzCraft raised-panel / five-piece only.
 
 const STEP_LABELS: Record<Step, string> = {
-  type: "Door type",
-  profile: "Profile",
-  shade: "Shade color",
+  color: "Color",
+  type: "Slab or five-piece",
+  profile: "Door profile",
+  drawers: "Drawer profile",
   glaze: "Glaze",
-  drawers: "Drawer fronts",
   review: "Review",
 };
 
-interface PickerState {
-  doorType: DoorType;
-  profileId: string | null;
-  shadeId: string | null;
-  glaze: Record<string, GlazeOption>;
-  drawerOverride: Record<CabinetZone, "match" | "slab">;
-}
+type PickerState = DoorSelection;
 
 const INITIAL_STATE: PickerState = {
   doorType: "five-piece",
   profileId: null,
   shadeId: null,
+  colorFamilyId: null,
   glaze: {},
-  drawerOverride: { wall: "match", base: "match" },
+  drawer: { wall: null, base: null },
 };
 
 function SlabIcon({ selected }: { selected: boolean }) {
@@ -95,25 +93,80 @@ function DoorElevation({
   );
 }
 
+function ToggleSwitch({
+  checked,
+  onClick,
+  testId,
+  label,
+}: {
+  checked: boolean;
+  onClick: () => void;
+  testId: string;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      data-testid={testId}
+      onClick={onClick}
+      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-colors ${
+        checked ? "border-[#244338] bg-[#244338]" : "border-[#244338]/30 bg-[#244338]/10"
+      }`}
+    >
+      <span
+        className={`inline-block h-4 w-4 transform rounded-full bg-[#fffdf9] shadow transition-transform ${
+          checked ? "translate-x-6" : "translate-x-1"
+        }`}
+      />
+    </button>
+  );
+}
+
 export default function WalzCraftDoorPicker() {
   const [state, setState] = useState<PickerState>(INITIAL_STATE);
   const [stepIndex, setStepIndex] = useState(0);
 
   const steps = useMemo(() => stepsFor(state.doorType), [state.doorType]);
-  const activeStep: Step = steps[Math.min(stepIndex, steps.length - 1)] ?? "type";
-
-  const rankedProfiles = useMemo(() => rankProfiles(WALZCRAFT_PROFILE_TEMPLATES, 4), []);
-  const rankedShades = useMemo(() => rankShades(4, state.doorType), [state.doorType]);
+  const activeStep: Step = steps[Math.min(stepIndex, steps.length - 1)] ?? "color";
 
   const selectedTemplate: WalzProfileTemplate | null = useMemo(() => {
     if (!state.profileId) return null;
     return WALZCRAFT_PROFILE_TEMPLATES.find((t) => t.id === state.profileId) ?? null;
   }, [state.profileId]);
 
+  // Family leaders (top-ranked shades across all families)
+  const familyLeaders = useMemo(() => rankShades(), []);
+
+  // The four shades of the chosen family
+  const familyShades = useMemo(() => {
+    if (!state.colorFamilyId) return [];
+    return rankShades(state.colorFamilyId);
+  }, [state.colorFamilyId]);
+
+  const selectedFamily = useMemo(() => {
+    if (!state.colorFamilyId) return null;
+    return WALZCRAFT_SHADE_FAMILIES.find((f) => f.id === state.colorFamilyId) ?? null;
+  }, [state.colorFamilyId]);
+
   const selectedShade = useMemo(() => {
     if (!state.shadeId) return null;
-    return rankedShades.find((r) => r.shade.id === state.shadeId)?.shade ?? null;
-  }, [state.shadeId, rankedShades]);
+    const fromFamily = familyShades.find((r) => r.shade.id === state.shadeId)?.shade;
+    if (fromFamily) return fromFamily;
+    // fall back to any family
+    for (const fam of WALZCRAFT_SHADE_FAMILIES) {
+      const found = rankShades(fam.id).find((r) => r.shade.id === state.shadeId)?.shade;
+      if (found) return found;
+    }
+    return null;
+  }, [state.shadeId, familyShades]);
+
+  const rankedProfiles = useMemo(
+    () => rankProfilesForShade(state.shadeId, 4),
+    [state.shadeId],
+  );
 
   const glazeFor = (id: string): GlazeOption => state.glaze[id] ?? "none";
 
@@ -122,21 +175,67 @@ export default function WalzCraftDoorPicker() {
       ...prev,
       doorType,
       profileId: doorType === "slab" ? null : prev.profileId,
+      drawer: { wall: null, base: null },
     }));
-    setStepIndex(0);
+    // Stay on the type step (index is the same in both step lists).
+    setStepIndex(stepsFor(doorType).indexOf("type"));
+  };
+
+  const selectFamily = (familyId: string) => {
+    setState((prev) => {
+      const shades = rankShades(familyId);
+      const keepShade = shades.some((r) => r.shade.id === prev.shadeId);
+      return {
+        ...prev,
+        colorFamilyId: familyId,
+        shadeId: keepShade ? prev.shadeId : null,
+      };
+    });
+  };
+
+  const cycleShade = (dir: 1 | -1) => {
+    if (familyShades.length === 0) return;
+    setState((prev) => {
+      const ids = familyShades.map((r) => r.shade.id);
+      const currentIdx = prev.shadeId ? ids.indexOf(prev.shadeId) : -1;
+      const nextIdx =
+        currentIdx === -1
+          ? dir === 1
+            ? 0
+            : ids.length - 1
+          : (currentIdx + dir + ids.length) % ids.length;
+      return { ...prev, shadeId: ids[nextIdx] };
+    });
+  };
+
+  const toggleProfile = (id: string) => {
+    setState((prev) => ({
+      ...prev,
+      profileId: prev.profileId === id ? null : id,
+    }));
+  };
+
+  const toggleDrawer = (zone: CabinetZone, optionId: string) => {
+    setState((prev) => ({
+      ...prev,
+      drawer: {
+        ...prev.drawer,
+        [zone]: prev.drawer[zone] === optionId ? null : optionId,
+      },
+    }));
   };
 
   const canContinue = (): boolean => {
     switch (activeStep) {
+      case "color":
+        return state.shadeId !== null;
       case "type":
         return true;
       case "profile":
         return state.profileId !== null;
-      case "shade":
-        return state.shadeId !== null;
-      case "glaze":
-        return true;
       case "drawers":
+        return state.drawer.wall !== null && state.drawer.base !== null;
+      case "glaze":
         return true;
       case "review":
         return true;
@@ -159,16 +258,35 @@ export default function WalzCraftDoorPicker() {
     setStepIndex(0);
   };
 
-  const drawerSpec = (zone: CabinetZone): DrawerFrontSpec => {
-    const override = state.drawerOverride[zone];
-    if (override === "slab") {
-      return drawerFrontFor(null, zone, "slab");
-    }
-    return drawerFrontFor(selectedTemplate, zone, state.doorType);
+  // Drawer options per zone
+  const wallDrawerOptions = useMemo(
+    () => drawerProfileOptions(selectedTemplate, "wall", state.doorType),
+    [selectedTemplate, state.doorType],
+  );
+  const baseDrawerOptions = useMemo(
+    () => drawerProfileOptions(selectedTemplate, "base", state.doorType),
+    [selectedTemplate, state.doorType],
+  );
+
+  const drawerOptionFor = (zone: CabinetZone, id: string | null) => {
+    if (!id) return null;
+    const opts = zone === "wall" ? wallDrawerOptions : baseDrawerOptions;
+    return opts.find((o) => o.id === id) ?? null;
   };
 
-  const wallDrawer = drawerSpec("wall");
-  const baseDrawer = drawerSpec("base");
+  const wallDrawer = drawerOptionFor("wall", state.drawer.wall);
+  const baseDrawer = drawerOptionFor("base", state.drawer.base);
+
+  // Profile family note
+  const profileFamilyNote = useMemo(() => {
+    if (!selectedTemplate) return null;
+    const shadeFamily = state.shadeId ? familyForShade(state.shadeId) : null;
+    const profileShades = shadesForProfile(selectedTemplate.id);
+    if (profileShades.length === 0) return null;
+    const profileFamilyId = profileShades[0].familyId;
+    if (shadeFamily && shadeFamily.id === profileFamilyId) return null;
+    return profileShades.map((s) => s.name).join(", ");
+  }, [selectedTemplate, state.shadeId]);
 
   return (
     <div className="min-h-screen bg-[#f6f3ed] px-4 py-10">
@@ -197,10 +315,130 @@ export default function WalzCraftDoorPicker() {
           })}
         </ol>
 
+        {/* Step: color */}
+        {activeStep === "color" && (
+          <section data-testid="step-color" className="space-y-6">
+            <h2 className="text-xl font-semibold text-[#244338]">Color</h2>
+
+            {/* Family leaders */}
+            <div>
+              <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-[#244338]/70">
+                Families
+              </h3>
+              <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
+                {familyLeaders.map(({ shade, confidence }) => {
+                  const family = WALZCRAFT_SHADE_FAMILIES.find((f) => f.id === shade.familyId);
+                  if (!family) return null;
+                  const selected = state.colorFamilyId === family.id;
+                  return (
+                    <button
+                      key={family.id}
+                      type="button"
+                      data-testid={`color-family-${family.id}`}
+                      onClick={() => selectFamily(family.id)}
+                      className={`flex items-center gap-3 rounded-lg border-2 bg-[#fffdf9] p-3 text-left transition-colors ${
+                        selected
+                          ? "border-[#d7a46c]"
+                          : "border-[#244338]/20 hover:border-[#244338]/40"
+                      }`}
+                    >
+                      <span
+                        className="h-10 w-10 shrink-0 rounded border border-[#244338]/30"
+                        style={{ backgroundColor: shade.hex }}
+                      />
+                      <span className="flex-1">
+                        <span className="block font-semibold text-[#244338]">{family.name}</span>
+                        <span className="block text-xs text-[#244338]/70">
+                          {shade.name} · {confidence}% match
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Four shades of chosen family */}
+            {selectedFamily && (
+              <div>
+                <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-[#244338]/70">
+                  Four {selectedFamily.name} shades
+                </h3>
+                <div className="grid gap-4 md:grid-cols-2">
+                  {familyShades.map(({ shade, confidence }) => {
+                    const selected = state.shadeId === shade.id;
+                    return (
+                      <button
+                        key={shade.id}
+                        type="button"
+                        data-testid={`shade-card-${shade.id}`}
+                        onClick={() => setState((prev) => ({ ...prev, shadeId: shade.id }))}
+                        className={`flex items-center gap-4 rounded-lg border-2 bg-[#fffdf9] p-4 text-left transition-colors ${
+                          selected
+                            ? "border-[#d7a46c]"
+                            : "border-[#244338]/20 hover:border-[#244338]/40"
+                        }`}
+                      >
+                        <span
+                          className="h-16 w-16 shrink-0 rounded border border-[#244338]/30"
+                          style={{ backgroundColor: shade.hex }}
+                        />
+                        <span className="flex-1">
+                          <span className="block font-semibold text-[#244338]">{shade.name}</span>
+                          <span className="block text-xs text-[#244338]/70">{shade.finish}</span>
+                          {shade.hexEstimated && (
+                            <span className="mt-1 block text-xs italic text-[#244338]/50">
+                              est. hex
+                            </span>
+                          )}
+                        </span>
+                        <span className="rounded bg-[#d7a46c] px-2 py-0.5 text-xs font-semibold text-[#244338]">
+                          {confidence}% match
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="mt-3 flex items-center gap-3">
+                  <button
+                    type="button"
+                    data-testid="shade-prev"
+                    onClick={() => cycleShade(-1)}
+                    className="rounded border-2 border-[#244338] bg-transparent px-3 py-1 text-sm font-semibold text-[#244338] hover:bg-[#244338]/5"
+                  >
+                    Prev shade
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="shade-next"
+                    onClick={() => cycleShade(1)}
+                    className="rounded border-2 border-[#244338] bg-transparent px-3 py-1 text-sm font-semibold text-[#244338] hover:bg-[#244338]/5"
+                  >
+                    Next shade
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Preview */}
+            <div className="flex items-center gap-6 rounded-lg border border-[#244338]/20 bg-[#fffdf9] p-4">
+              <DoorElevation
+                shadeHex={selectedShade?.hex ?? "#f2efe6"}
+                doorType={state.doorType}
+                className="h-40 w-auto"
+              />
+              <div className="text-sm text-[#244338]/80">
+                <div className="font-semibold text-[#244338]">Preview</div>
+                <div>{selectedShade ? selectedShade.name : "Select a shade"}</div>
+              </div>
+            </div>
+          </section>
+        )}
+
         {/* Step: type */}
         {activeStep === "type" && (
           <section data-testid="step-type" className="space-y-4">
-            <h2 className="text-xl font-semibold text-[#244338]">Door type</h2>
+            <h2 className="text-xl font-semibold text-[#244338]">Slab or five-piece</h2>
             <div className="grid gap-4 md:grid-cols-2">
               {(["slab", "five-piece"] as DoorType[]).map((t) => {
                 const selected = state.doorType === t;
@@ -208,6 +446,7 @@ export default function WalzCraftDoorPicker() {
                   <button
                     key={t}
                     type="button"
+                    data-testid={`door-type-${t}`}
                     onClick={() => setDoorType(t)}
                     className={`flex flex-col items-start gap-3 rounded-lg border-2 p-5 text-left transition-colors ${
                       selected
@@ -224,7 +463,7 @@ export default function WalzCraftDoorPicker() {
               })}
             </div>
             <p className="text-sm text-[#244338]/80">
-              Slab skips the profile step and goes straight to color.
+              Slab skips the profile step and goes straight to drawer profiles.
             </p>
             <p className="text-xs text-[#244338]/60">
               Shaker doors use the DL Shaker blueprint and are not part of this picker.
@@ -235,39 +474,42 @@ export default function WalzCraftDoorPicker() {
         {/* Step: profile */}
         {activeStep === "profile" && (
           <section data-testid="step-profile" className="space-y-4">
-            <h2 className="text-xl font-semibold text-[#244338]">Top 4 WalzCraft reference profiles</h2>
+            <h2 className="text-xl font-semibold text-[#244338]">
+              Best door profiles for this shade
+            </h2>
             <div className="grid gap-4 md:grid-cols-2">
               {rankedProfiles.map(({ template, confidence }) => {
                 const selected = state.profileId === template.id;
                 return (
-                  <button
+                  <div
                     key={template.id}
-                    type="button"
                     data-testid={`profile-card-${template.id}`}
-                    onClick={() =>
-                      setState((prev) => ({ ...prev, profileId: template.id }))
-                    }
-                    className={`flex flex-col gap-3 rounded-lg border-2 bg-[#fffdf9] p-4 text-left transition-colors ${
-                      selected ? "border-[#d7a46c]" : "border-[#244338]/20 hover:border-[#244338]/40"
+                    className={`flex flex-col gap-3 rounded-lg border-2 bg-[#fffdf9] p-4 transition-colors ${
+                      selected ? "border-[#d7a46c]" : "border-[#244338]/20"
                     }`}
                   >
                     <div className="rounded bg-white p-2">
                       <WalzProfileSvg template={template} glaze={glazeFor(template.id)} />
                     </div>
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-2">
                       <span className="font-semibold text-[#244338]">
                         {template.id} {template.name}
+                      </span>
+                      <ToggleSwitch
+                        checked={selected}
+                        onClick={() => toggleProfile(template.id)}
+                        testId={`profile-toggle-${template.id}`}
+                        label={`Select ${template.name}`}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-[#244338]/80">
+                        Frame: {template.frameProfile ?? "unpublished"} · Panel:{" "}
+                        {template.panelProfile ?? "unpublished"}
                       </span>
                       <span className="rounded bg-[#d7a46c] px-2 py-0.5 text-xs font-semibold text-[#244338]">
                         {confidence}% match
                       </span>
-                    </div>
-                    <div className="text-xs text-[#244338]/80">
-                      <div>
-                        Frame: {template.frameProfile ?? "unpublished"} · Panel:{" "}
-                        {template.panelProfile ?? "unpublished"}
-                      </div>
-                      <div>Corner: {template.corner}</div>
                     </div>
                     <div className="h-1.5 w-full overflow-hidden rounded bg-[#244338]/10">
                       <div
@@ -275,58 +517,67 @@ export default function WalzCraftDoorPicker() {
                         style={{ width: `${Math.min(100, Math.max(0, confidence))}%` }}
                       />
                     </div>
-                  </button>
+                  </div>
                 );
               })}
             </div>
+            {profileFamilyNote && (
+              <p className="rounded border border-[#d7a46c]/60 bg-[#d7a46c]/10 p-3 text-sm text-[#244338]">
+                This profile&apos;s own shades: {profileFamilyNote}
+              </p>
+            )}
             <p className="text-xs text-[#244338]/60">
               Values marked * are estimated where WalzCraft does not publish them.
             </p>
           </section>
         )}
 
-        {/* Step: shade */}
-        {activeStep === "shade" && (
-          <section data-testid="step-shade" className="space-y-4">
-            <h2 className="text-xl font-semibold text-[#244338]">Top 4 shade colors</h2>
+        {/* Step: drawers */}
+        {activeStep === "drawers" && (
+          <section data-testid="step-drawers" className="space-y-4">
+            <h2 className="text-xl font-semibold text-[#244338]">Drawer profile</h2>
             <div className="grid gap-4 md:grid-cols-2">
-              {rankedShades.map(({ shade, confidence }) => {
-                const selected = state.shadeId === shade.id;
+              {(["wall", "base"] as CabinetZone[]).map((zone) => {
+                const options = zone === "wall" ? wallDrawerOptions : baseDrawerOptions;
+                const selectedId = state.drawer[zone];
                 return (
-                  <button
-                    key={shade.id}
-                    type="button"
-                    data-testid={`shade-card-${shade.id}`}
-                    onClick={() => setState((prev) => ({ ...prev, shadeId: shade.id }))}
-                    className={`flex items-center gap-4 rounded-lg border-2 bg-[#fffdf9] p-4 text-left transition-colors ${
-                      selected ? "border-[#d7a46c]" : "border-[#244338]/20 hover:border-[#244338]/40"
-                    }`}
+                  <div
+                    key={zone}
+                    className="rounded-lg border border-[#244338]/20 bg-[#fffdf9] p-4"
                   >
-                    <span
-                      className="h-16 w-16 shrink-0 rounded border border-[#244338]/30"
-                      style={{ backgroundColor: shade.hex }}
-                    />
-                    <span className="flex-1">
-                      <span className="block font-semibold text-[#244338]">{shade.name}</span>
-                      <span className="block text-xs text-[#244338]/70">{shade.finish}</span>
-                    </span>
-                    <span className="rounded bg-[#d7a46c] px-2 py-0.5 text-xs font-semibold text-[#244338]">
-                      {confidence}% match
-                    </span>
-                  </button>
+                    <h3 className="mb-3 font-semibold text-[#244338]">
+                      {zone === "wall" ? "Wall cabinets" : "Base cabinets"}
+                    </h3>
+                    <div className="space-y-3">
+                      {options.map((opt) => {
+                        const checked = selectedId === opt.id;
+                        return (
+                          <div
+                            key={opt.id}
+                            className={`flex items-start gap-3 rounded border p-3 ${
+                              checked ? "border-[#d7a46c]" : "border-[#244338]/15"
+                            }`}
+                          >
+                            <div className="flex-1">
+                              <div className="font-medium text-[#244338]">{opt.label}</div>
+                              <div className="text-xs text-[#244338]/80">
+                                Rail: {opt.spec.railProfile ?? "—"}
+                              </div>
+                              <p className="mt-1 text-xs text-[#244338]/70">{opt.spec.note}</p>
+                            </div>
+                            <ToggleSwitch
+                              checked={checked}
+                              onClick={() => toggleDrawer(zone, opt.id)}
+                              testId={`drawer-toggle-${zone}-${opt.id}`}
+                              label={`Select ${opt.label} for ${zone}`}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
                 );
               })}
-            </div>
-            <div className="flex items-center gap-6 rounded-lg border border-[#244338]/20 bg-[#fffdf9] p-4">
-              <DoorElevation
-                shadeHex={selectedShade?.hex ?? "#f2efe6"}
-                doorType={state.doorType}
-                className="h-40 w-auto"
-              />
-              <div className="text-sm text-[#244338]/80">
-                <div className="font-semibold text-[#244338]">Preview</div>
-                <div>{selectedShade ? selectedShade.name : "Select a shade"}</div>
-              </div>
             </div>
           </section>
         )}
@@ -396,84 +647,30 @@ export default function WalzCraftDoorPicker() {
           </section>
         )}
 
-        {/* Step: drawers */}
-        {activeStep === "drawers" && (
-          <section data-testid="step-drawers" className="space-y-4">
-            <h2 className="text-xl font-semibold text-[#244338]">Drawer fronts</h2>
-            <div className="grid gap-4 md:grid-cols-2">
-              {(["wall", "base"] as CabinetZone[]).map((zone) => {
-                const spec = zone === "wall" ? wallDrawer : baseDrawer;
-                const override = state.drawerOverride[zone];
-                return (
-                  <div
-                    key={zone}
-                    className="rounded-lg border border-[#244338]/20 bg-[#fffdf9] p-4"
-                  >
-                    <h3 className="mb-2 font-semibold text-[#244338]">
-                      {zone === "wall" ? "Wall cabinets" : "Base cabinets"}
-                    </h3>
-                    <dl className="space-y-1 text-sm text-[#244338]/80">
-                      <div className="flex justify-between gap-2">
-                        <dt>Style</dt>
-                        <dd className="font-medium text-[#244338]">{spec.style}</dd>
-                      </div>
-                      <div className="flex justify-between gap-2">
-                        <dt>Rail profile</dt>
-                        <dd className="font-medium text-[#244338]">
-                          {spec.railProfile ?? "—"}
-                        </dd>
-                      </div>
-                    </dl>
-                    <p className="mt-2 text-xs text-[#244338]/70">{spec.note}</p>
-                    <div className="mt-3 inline-flex overflow-hidden rounded border border-[#244338]/30">
-                      <button
-                        type="button"
-                        data-testid={`drawer-${zone}-match`}
-                        onClick={() =>
-                          setState((prev) => ({
-                            ...prev,
-                            drawerOverride: { ...prev.drawerOverride, [zone]: "match" },
-                          }))
-                        }
-                        className={`px-3 py-1 text-sm font-medium ${
-                          override === "match"
-                            ? "bg-[#244338] text-[#fffdf9]"
-                            : "bg-[#fffdf9] text-[#244338] hover:bg-[#f6f3ed]"
-                        }`}
-                      >
-                        Match door
-                      </button>
-                      <button
-                        type="button"
-                        data-testid={`drawer-${zone}-slab`}
-                        onClick={() =>
-                          setState((prev) => ({
-                            ...prev,
-                            drawerOverride: { ...prev.drawerOverride, [zone]: "slab" },
-                          }))
-                        }
-                        className={`px-3 py-1 text-sm font-medium ${
-                          override === "slab"
-                            ? "bg-[#244338] text-[#fffdf9]"
-                            : "bg-[#fffdf9] text-[#244338] hover:bg-[#f6f3ed]"
-                        }`}
-                      >
-                        Slab
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-        )}
-
         {/* Step: review */}
         {activeStep === "review" && (
           <section data-testid="step-review" className="space-y-4">
             <h2 className="text-xl font-semibold text-[#244338]">Review</h2>
             <div className="grid gap-4 md:grid-cols-2">
               <dl className="space-y-2 rounded-lg border border-[#244338]/20 bg-[#fffdf9] p-4 text-sm">
+                <div className="flex justify-between gap-2">
+                  <dt className="text-[#244338]/70">Color family</dt>
+                  <dd className="font-medium text-[#244338]">
+                    {selectedFamily ? selectedFamily.name : "—"}
+                  </dd>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <dt className="text-[#244338]/70">Shade</dt>
+                  <dd className="flex items-center gap-2 font-medium text-[#244338]">
+                    {selectedShade && (
+                      <span
+                        className="inline-block h-4 w-4 rounded border border-[#244338]/30"
+                        style={{ backgroundColor: selectedShade.hex }}
+                      />
+                    )}
+                    {selectedShade ? selectedShade.name : "—"}
+                  </dd>
+                </div>
                 <div className="flex justify-between gap-2">
                   <dt className="text-[#244338]/70">Door type</dt>
                   <dd className="font-medium text-[#244338]">{state.doorType}</dd>
@@ -488,27 +685,6 @@ export default function WalzCraftDoorPicker() {
                 </div>
                 {selectedTemplate && (
                   <div className="flex justify-between gap-2">
-                    <dt className="text-[#244338]/70">Codes</dt>
-                    <dd className="text-right font-medium text-[#244338]">
-                      {selectedTemplate.frameProfile ?? "unpublished"} /{" "}
-                      {selectedTemplate.panelProfile ?? "unpublished"}
-                    </dd>
-                  </div>
-                )}
-                <div className="flex items-center justify-between gap-2">
-                  <dt className="text-[#244338]/70">Shade</dt>
-                  <dd className="flex items-center gap-2 font-medium text-[#244338]">
-                    {selectedShade && (
-                      <span
-                        className="inline-block h-4 w-4 rounded border border-[#244338]/30"
-                        style={{ backgroundColor: selectedShade.hex }}
-                      />
-                    )}
-                    {selectedShade ? selectedShade.name : "—"}
-                  </dd>
-                </div>
-                {selectedTemplate && (
-                  <div className="flex justify-between gap-2">
                     <dt className="text-[#244338]/70">Glaze</dt>
                     <dd className="font-medium text-[#244338]">
                       {glazeFor(selectedTemplate.id)}
@@ -518,15 +694,17 @@ export default function WalzCraftDoorPicker() {
                 <div className="flex justify-between gap-2">
                   <dt className="text-[#244338]/70">Wall drawer</dt>
                   <dd className="text-right font-medium text-[#244338]">
-                    {wallDrawer.style}
-                    {wallDrawer.railProfile ? ` · ${wallDrawer.railProfile}` : ""}
+                    {wallDrawer
+                      ? `${wallDrawer.label}${wallDrawer.spec.railProfile ? ` · ${wallDrawer.spec.railProfile}` : ""}`
+                      : "—"}
                   </dd>
                 </div>
                 <div className="flex justify-between gap-2">
                   <dt className="text-[#244338]/70">Base drawer</dt>
                   <dd className="text-right font-medium text-[#244338]">
-                    {baseDrawer.style}
-                    {baseDrawer.railProfile ? ` · ${baseDrawer.railProfile}` : ""}
+                    {baseDrawer
+                      ? `${baseDrawer.label}${baseDrawer.spec.railProfile ? ` · ${baseDrawer.spec.railProfile}` : ""}`
+                      : "—"}
                   </dd>
                 </div>
                 {selectedTemplate && (
@@ -573,6 +751,7 @@ export default function WalzCraftDoorPicker() {
           {activeStep !== "review" && (
             <button
               type="button"
+              data-testid="step-continue"
               onClick={goNext}
               disabled={!canContinue()}
               className="rounded bg-[#244338] px-4 py-2 text-sm font-semibold text-[#fffdf9] disabled:cursor-not-allowed disabled:opacity-40"
