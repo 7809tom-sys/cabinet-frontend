@@ -14,6 +14,8 @@ const PARTS: Record<StudioKind, { title: string; subtitle: string; filter: strin
   shoe: { title: "Shoe organizer", subtitle: "Shoe basket · 45° illustrative pitch, snaps to an open span", filter: "Shoes" },
 };
 
+const SHELF_HINT_KEY = "closetStudio.shelfHintDismissed";
+
 const FILTERS = ["All", "Shelves", "Rods", "Drawers", "Shoes", "Baskets", "Corners"] as const;
 type AccessoryFilter = (typeof FILTERS)[number];
 
@@ -39,6 +41,8 @@ export function ClosetStudioAccessories({ design, selectedBay, hasBay, partToPla
 }) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<AccessoryFilter>("All");
+  const [showShelfHint, setShowShelfHint] = useState(() => { try { return localStorage.getItem(SHELF_HINT_KEY) !== "1"; } catch { return true; } });
+  const dismissShelfHint = () => { setShowShelfHint(false); try { localStorage.setItem(SHELF_HINT_KEY, "1"); } catch { /* storage unavailable */ } };
   const bay = design.bays[selectedBay];
   const needle = query.trim().toLowerCase();
   const show = (haystack: string, group: AccessoryFilter) => (filter === "All" || filter === group) && (!needle || haystack.toLowerCase().includes(needle));
@@ -53,6 +57,16 @@ export function ClosetStudioAccessories({ design, selectedBay, hasBay, partToPla
   }, [design, hasBay, selectedBay]);
 
   return <div className="flex flex-col gap-3" data-testid="vendor-accessory-palette">
+    {showShelfHint && <div role="note" data-testid="vendor-shelf-hint" className="rounded-xl border border-[#d7a46c] bg-[#fffdf9] p-3 text-xs leading-5 text-[#244338]">
+      <button type="button" aria-label="Dismiss shelf tips" onClick={dismissShelfHint} className="float-right -mr-1 -mt-1 flex h-8 w-8 items-center justify-center rounded-md font-bold text-[#244338] hover:bg-[#f6f3ed]">✕</button>
+      <strong className="block text-[13px]">Add shelves in 3 steps</strong>
+      <ol className="mt-1 list-inside list-decimal space-y-0.5">
+        <li>Open Accessories (this panel).</li>
+        <li>Tap Shelf to add it to the selected tower.</li>
+        <li>Slide the height (drag or height slider) to move it up or down.</li>
+      </ol>
+      <p className="mt-1 text-[11px] text-[#5c564c]">Repeat to add more shelves.</p>
+    </div>}
     <label className="block text-[11px] font-semibold text-[#5c564c]">Search accessories
       <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Shelf, rod, shoe basket…" aria-label="Search accessories" className="mt-1 h-11 w-full rounded-lg border border-[#dfd8cc] bg-white px-3 text-sm font-normal text-[#2c3832] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d7a46c]" />
     </label>

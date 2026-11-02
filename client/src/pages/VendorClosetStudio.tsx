@@ -317,6 +317,8 @@ export default function VendorClosetStudio({ affiliateSlug }: { affiliateSlug?: 
   const [basketUndoDesign, setBasketUndoDesign] = useState<StudioDesign | null>(null);
   const [partToPlace, setPartToPlace] = useState<StudioKind | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [shelfToast, setShelfToast] = useState<string | null>(null);
+  useEffect(() => { if (!shelfToast) return; const timer = window.setTimeout(() => setShelfToast(null), 4000); return () => window.clearTimeout(timer); }, [shelfToast]);
   const [showReference, setShowReference] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [showRoom, setShowRoom] = useState(false);
@@ -370,6 +372,7 @@ export default function VendorClosetStudio({ affiliateSlug }: { affiliateSlug?: 
     const result = snapStudioPart(design, bayIndex, kind, bottomIn, crypto.randomUUID());
     if (!result.ok) { setNotice(result.reason); return; }
     updateDesign(result.design); setSelectedBay(bayIndex); setSelectedItem(result.item.id); setPartToPlace(null);
+    if (kind === "shelf") setShelfToast(`Shelf added at ${result.item.bottomIn} in — slide to move it`);
   };
   const changeElevation = (item: StudioItem, bottomIn: number) => {
     const result = moveStudioItem(design, selectedBay, item.id, bottomIn);
@@ -610,7 +613,8 @@ export default function VendorClosetStudio({ affiliateSlug }: { affiliateSlug?: 
         <div className="relative h-[46vh] min-h-[280px] w-full flex-none bg-[#e7e2d8] min-[1024px]:h-auto min-[1024px]:min-h-0 min-[1024px]:flex-1" data-testid="vendor-scene-panel">
           <div className={`absolute inset-0 ${activeTab === "3d" ? "" : "invisible pointer-events-none"}`}><VendorClosetScene design={design} selectedBay={selectedBay} selectedCornerId={selectedCornerId} partToPlace={partToPlace} cameraView={cameraView} fitToken={fitToken} onSelectBay={(index) => { setSelectedBay(index); setSelectedItem(null); setSelectedCornerId(null); setPartsPanelOpen(true); }} onPlace={place} onPlaceBasket={(index, bottom, sku) => placeBasketInBay(index, sku, bottom)} onError={setNotice} />
           {activeTab === "3d" && <button type="button" data-testid="vendor-fit-view" onClick={fitCloset} className="absolute bottom-3 right-3 z-20 min-h-11 rounded-md border border-[#d7a46c] bg-[#fffdf9] px-3 text-xs font-bold text-[#244338] shadow-md hover:bg-[#f6f3ed]">Fit</button>}
-          {showHelp && <div className="absolute right-3 top-3 z-20 max-w-[250px] rounded-xl border border-[#e1d7c6] bg-[#fffdf9] p-4 text-xs leading-5 shadow-xl"><button className="float-right font-semibold" aria-label="Close help" onClick={() => setShowHelp(false)}>✕</button><strong>Three simple moves</strong><ol className="mt-2 list-inside list-decimal space-y-1"><li>Choose a room mode and wall.</li><li>Choose an accessory on the left, or open Parts for the tower.</li><li>Slide the height until it locks clear of other parts.</li></ol></div>}
+          {shelfToast && <div role="status" data-testid="vendor-shelf-toast" className="pointer-events-none absolute left-1/2 top-3 z-20 -translate-x-1/2 whitespace-nowrap rounded-full border border-[#d7a46c] bg-[#244338] px-4 py-2 text-xs font-semibold text-[#fffdf9] shadow-lg">{shelfToast}</div>}
+          {showHelp && <div className="absolute right-3 top-3 z-20 max-w-[250px] rounded-xl border border-[#e1d7c6] bg-[#fffdf9] p-4 text-xs leading-5 shadow-xl"><button className="float-right font-semibold" aria-label="Close help" onClick={() => setShowHelp(false)}>✕</button><strong>Add shelves in 3 steps</strong><ol className="mt-2 list-inside list-decimal space-y-1"><li>Open Accessories.</li><li>Tap Shelf to add it to the selected tower.</li><li>Slide the height (drag or height slider) to move it up or down.</li></ol><p className="mt-1">Repeat to add more shelves.</p></div>}
           </div>
           {activeTab === "top" && <div className="absolute inset-0 z-10 flex items-center justify-center overflow-auto bg-[#f4f1ea] p-4" data-testid="vendor-top-view"><RoomOccupancyOverview design={design} onSelect={onChangeWall} large testId="vendor-top-room-overview" /></div>}
           {(activeTab === "back" || activeTab === "left" || activeTab === "right") && <div className="absolute inset-0 z-10 overflow-auto bg-[#f4f1ea] p-2" data-testid="vendor-elevation-view"><ClosetWallElevation design={design} wall={activeTab} /></div>}
