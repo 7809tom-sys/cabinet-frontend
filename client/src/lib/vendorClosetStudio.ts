@@ -436,6 +436,32 @@ export function addStudioBasketPlacement(design: StudioDesign, bayIndex: number,
   return { ok: true, placement, design: { ...design, version: 3, basketPlacements: [...studioBasketPlacements(design), placement] } };
 }
 
+/**
+ * The basket rule is unchanged: the nominal envelope must sit fully between the fixed shelves,
+ * must not overlap another part, and is never cut to the bay. A requested top elevation often
+ * fails that rule because the fixed top shelf leaves less than the basket height. This picks the
+ * nearest whole inch that does fit, preferring the bottom of the opening when no height was aimed.
+ */
+export function snapStudioBasketPlacement(design: StudioDesign, bayIndex: number, sku: string, preferredIn?: number, id = `basket-${Date.now()}`):
+  { ok: true; design: StudioDesign; placement: StudioBasketPlacement } | { ok: false; reason: string } {
+  const option = basketOption(sku);
+  const bay = studioBays(design)[bayIndex];
+  if (!bay || !option) return { ok: false, reason: "Choose a sourced basket and tower bay first." };
+  const min = Math.ceil(studioFixedBottom(design) + THICKNESS - EPS);
+  const max = Math.floor(studioFixedTop(design) - option.nominalHeightIn + EPS);
+  if (max < min) return { ok: false, reason: `This ${option.nominalHeightIn} in basket is taller than the open space between the fixed shelves.` };
+  const preferred = preferredIn == null || !Number.isFinite(preferredIn) ? min : Math.max(min, Math.min(max, Math.round(preferredIn)));
+  const candidates = Array.from({ length: max - min + 1 }, (_, index) => min + index);
+  candidates.sort((a, b) => Math.abs(a - preferred) - Math.abs(b - preferred) || a - b);
+  let reason = "There is no open span tall enough for this basket in the selected tower.";
+  for (const bottomIn of candidates) {
+    const result = addStudioBasketPlacement(design, bayIndex, sku, bottomIn, id);
+    if (result.ok) return result;
+    reason = result.reason;
+  }
+  return { ok: false, reason };
+}
+
 export function moveStudioBasketPlacement(design: StudioDesign, id: string, bottomIn: number): { ok: true; design: StudioDesign; placement: StudioBasketPlacement } | { ok: false; reason: string } {
   const current = studioBasketPlacements(design).find((placement) => placement.id === id && placement.wallId === design.wall);
   if (!current) return { ok: false, reason: "Choose a placed basket on this wall first." };
