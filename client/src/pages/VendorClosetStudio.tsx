@@ -256,20 +256,20 @@ function RoomOccupancyOverview({ design, onSelect, large = false, blueprint = fa
       : design.wall === "right"
         ? { top: "50%", left: "36%", rotate: 90 }
         : { top: "62%", left: "50%", rotate: 0 };
-  return <section className={blueprint ? "bg-[#1a4568] p-4 text-[#e7f2fb]" : large ? "w-full max-w-lg rounded-xl border border-[#d8d0c3] bg-[#fffdf9] p-4 shadow-lg" : "absolute right-3 top-3 z-10 w-36 rounded-xl border border-[#d8d0c3] bg-[#fffdf9]/95 p-2 shadow-lg backdrop-blur sm:right-5 sm:top-5"} data-testid={testId} aria-label="Room occupancy overview">
-    <p className={`font-bold uppercase tracking-[0.16em] ${blueprint ? "text-[11px] text-[#9fd0ea]" : "text-[8px] text-[#8e6946]"}`}>Room overview</p>
-    <div className={`relative mx-auto mt-2 rounded border ${blueprint ? "h-64 w-full border-[#9fd0ea] bg-[#163e5c]" : large ? "h-72 w-full border-[#cfc6b8] bg-[#f6f3ed]" : "mt-1 h-20 w-28 border-[#cfc6b8] bg-[#f6f3ed]"}`} role="group" aria-label="Select a wall from room overview">
+  return <section className={blueprint ? "bg-[#fffdf9] px-3 pb-2 pt-3 text-[#2c3832]" : large ? "w-full max-w-lg rounded-xl border border-[#d8d0c3] bg-[#fffdf9] p-4 shadow-lg" : "absolute right-3 top-3 z-10 w-36 rounded-xl border border-[#d8d0c3] bg-[#fffdf9]/95 p-2 shadow-lg backdrop-blur sm:right-5 sm:top-5"} data-testid={testId} aria-label="Room occupancy overview">
+    <p className={`font-bold uppercase tracking-[0.16em] ${blueprint ? "text-[11px] text-[#997851]" : "text-[8px] text-[#8e6946]"}`}>Room overview</p>
+    <div className={`relative mx-auto mt-2 rounded border ${blueprint ? "h-52 w-full border-[#c8b08f] bg-[#f6f3ed]" : large ? "h-72 w-full border-[#cfc6b8] bg-[#f6f3ed]" : "mt-1 h-20 w-28 border-[#cfc6b8] bg-[#f6f3ed]"}`} role="group" aria-label="Select a wall from room overview">
       {STUDIO_WALLS.map((wall) => {
         const state = occupancy[wall];
         return <button key={wall} type="button" aria-label={`${wallNames[wall]}: ${state.filled ? "filled" : "empty"}, ${state.usedSpanIn} of ${state.availableSpanIn} inches used`} aria-pressed={wall === design.wall} onClick={() => onSelect(wall)} className={`absolute rounded-sm border text-[7px] font-bold transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#b77c4b] ${position(wall)} ${wall === design.wall ? "border-[#754c2d] bg-[#d5a06a] text-[#30231a]" : state.filled ? "border-[#75917e] bg-[#b9d2bb] text-[#234332] hover:bg-[#cce0ca]" : "border-[#d5cec3] bg-white text-[#8c8478] hover:bg-[#f0ebe2]"}`}>{state.filled ? "●" : "○"}</button>;
       })}
-      <span className={`pointer-events-none absolute inset-0 flex items-center justify-center font-semibold tracking-[0.12em] ${blueprint ? "text-xs text-[#9fd0ea]" : "text-[8px] text-[#a59c8e]"}`}>ROOM</span>
+      <span className={`pointer-events-none absolute inset-0 flex items-center justify-center font-semibold tracking-[0.12em] ${blueprint ? "text-[11px] text-[#a59c8e]" : "text-[8px] text-[#a59c8e]"}`}>ROOM</span>
       {(blueprint || large) && <span data-testid={blueprint ? "vendor-camera-eye" : undefined} role="img" className="pointer-events-none absolute z-10" style={{ top: eye.top, left: eye.left, transform: `translate(-50%, -50%) rotate(${eye.rotate}deg)` }} aria-label={`Camera point inside the room, looking at the ${wallNames[design.wall].toLowerCase()}`}>
-        <svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3 L23 14 H9 Z" fill="#f2c14e" /><ellipse cx="16" cy="21" rx="9" ry="5.5" fill="#fff7df" /><circle cx="16" cy="21" r="2.3" fill="#1a3148" /></svg>
+        <svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3 L23 14 H9 Z" fill="#d7a46c" /><ellipse cx="16" cy="21" rx="9" ry="5.5" fill="#fffdf9" stroke="#244338" strokeWidth="1.2" /><circle cx="16" cy="21" r="2.3" fill="#244338" /></svg>
       </span>}
     </div>
-    <p className={`mt-2 text-center leading-4 ${blueprint ? "text-xs text-[#d5e8f6]" : "text-[9px] leading-3 text-[#655d53]"}`}><strong>{wallNames[design.wall]}</strong> · {active.usedSpanIn} / {active.availableSpanIn} in {active.filled ? "used" : "empty"}</p>
-    {blueprint && <p className="mt-1 text-center text-[11px] leading-4 text-[#b7d4ea]">The gold eye is the 3D camera, inside the room, looking at the active wall.</p>}
+    <p className={`mt-2 text-center leading-4 ${blueprint ? "text-[11px] text-[#5c564c]" : "text-[9px] leading-3 text-[#655d53]"}`}><strong>{wallNames[design.wall]}</strong> · {active.usedSpanIn} / {active.availableSpanIn} in {active.filled ? "used" : "empty"}</p>
+    {blueprint && <p className="mt-1 text-center text-[11px] leading-4 text-[#6d6255]">The gold eye is the 3D camera, inside the room, looking at the active wall.</p>}
   </section>;
 }
 function Reference({ design, onClose, hiddenSkus }: { design: StudioDesign; onClose: () => void; hiddenSkus?: ReadonlySet<string> }) {
@@ -562,8 +562,8 @@ export default function VendorClosetStudio({ affiliateSlug }: { affiliateSlug?: 
           <div className="mt-4 flex gap-2"><button type="button" onClick={rebuild} className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-md bg-[#243b32] px-3 text-xs font-bold text-white hover:bg-[#385348]"><WandSparkles className="h-4 w-4" />Rebuild</button>{buildUndoDesign && <button type="button" onClick={undoBuild} className="min-h-11 rounded-md border border-[#d6c3a6] bg-[#fff8ed] px-3 text-xs font-bold text-[#72563b]">Undo rebuild</button>}</div></section>
         <div className="mt-auto border-t border-[#e6e0d6] pt-4"><p className="text-[11px] leading-5 text-[#81776a]">Real catalog parts, rendered as an inviting room preview. Finish and dimensions are source-based; connections, accessories and lighting are illustrative.</p></div>
       </aside>
-      {/* Parts used to live in a flex-row dock (lg:w-[min(33vw,360px)] beside a flex-1 canvas, inside overflow-hidden). That column could shrink to a sliver. Desktop is three equal tracks that cannot go under 320px. */}
-      <div className="grid min-h-0 min-w-0 flex-1 grid-cols-1 overflow-y-auto min-[1024px]:grid-cols-[repeat(3,minmax(320px,1fr))] min-[1024px]:overflow-hidden" data-testid="vendor-workspace">
+      {/* Accessories stay at least 320px. The blueprint is a fixed 250px so it cannot cover the closet. The middle column takes every remaining pixel. */}
+      <div className="grid min-h-0 min-w-0 flex-1 grid-cols-1 overflow-x-hidden overflow-y-auto min-[1024px]:grid-cols-[minmax(320px,360px)_minmax(0,1fr)_250px] min-[1024px]:overflow-hidden" data-testid="vendor-workspace">
       <aside id="vendor-phone-options-dock" data-testid="vendor-tablet-options-dock" className="relative order-2 flex min-h-[28rem] w-full min-w-0 flex-col overflow-hidden border-t border-[#dfd8cc] bg-[#faf9f5] min-[1024px]:order-1 min-[1024px]:min-h-0 min-[1024px]:border-r min-[1024px]:border-t-0">
         <div className="flex items-center justify-between gap-2 border-b border-[#e6dfd4] px-3 py-2">
           <div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#997851]">Add accessories</p><p className="truncate text-xs text-[#5c564c]">Shelf, rod, drawer, shoe basket</p></div>
@@ -588,7 +588,7 @@ export default function VendorClosetStudio({ affiliateSlug }: { affiliateSlug?: 
           </div>
         </div>
       </aside>
-      <main className="order-1 flex min-h-[300px] min-w-0 flex-col bg-[#e9e5dc] min-[1024px]:order-2 min-[1024px]:min-h-0">
+      <main className="order-1 flex min-h-[300px] min-w-0 flex-col overflow-hidden bg-[#e9e5dc] min-[1024px]:order-2 min-[1024px]:min-h-0">
         <div role="tablist" aria-label="Studio view" className="flex shrink-0 items-center gap-1 border-b border-[#ded7cb] bg-[#faf9f5] px-3 py-1.5" data-testid="vendor-view-tabs">{viewTabs.map((tab) => <button key={tab.id} type="button" role="tab" aria-selected={activeTab === tab.id} onClick={() => setSceneTab(tab.id)} className={`min-h-9 rounded-md px-3 text-xs font-semibold ${activeTab === tab.id ? "bg-[#244338] text-white" : "border border-[#dfd8cc] bg-white text-[#5d665f]"}`}>{tab.label}</button>)}<span className="ml-auto truncate text-xs font-semibold text-[#5c564c]">{hasBay ? `Tower ${selectedBay + 1} of ${design.bays.length} · ${bay.widthIn} in` : `Empty ${wallNames[design.wall].toLowerCase()}`}</span></div>
         <p className="shrink-0 bg-[#faf9f5] px-3 py-1 text-[10px] font-medium text-[#5c564c]">{partToPlace && hasBay ? `Tap the ${bay.widthIn} in bay to place ${card[partToPlace].title.toLowerCase()}` : hasBay ? "Drag to rotate · tap a tower to edit its parts" : "This wall is empty · add a tower in Parts"}</p>
         <div className="relative h-[46vh] min-h-[280px] w-full flex-none bg-[#e7e2d8] min-[1024px]:h-auto min-[1024px]:min-h-0 min-[1024px]:flex-1" data-testid="vendor-scene-panel">
@@ -599,11 +599,11 @@ export default function VendorClosetStudio({ affiliateSlug }: { affiliateSlug?: 
           {(activeTab === "back" || activeTab === "left" || activeTab === "right") && <div className="absolute inset-0 z-10 overflow-auto bg-[#f4f1ea] p-2" data-testid="vendor-elevation-view"><ClosetWallElevation design={design} wall={activeTab} /></div>}
         </div>
       </main>
-      <aside data-testid="vendor-blueprint-column" className="order-3 flex min-h-[28rem] w-full min-w-0 flex-col overflow-y-auto border-t border-[#dfd8cc] bg-[#f7f4ee] min-[1024px]:min-h-0 min-[1024px]:border-l min-[1024px]:border-t-0">
-        <div className="min-h-0">
+      <aside data-testid="vendor-blueprint-column" className="order-3 flex min-h-[28rem] w-full min-w-0 max-w-full flex-col overflow-x-hidden overflow-y-auto border-t border-[#dfd8cc] bg-[#faf9f5] min-[1024px]:w-[250px] min-[1024px]:max-w-[250px] min-[1024px]:min-h-0 min-[1024px]:border-l min-[1024px]:border-t-0">
+        <div className="min-h-0 min-w-0">
           <RoomOccupancyOverview design={design} onSelect={onChangeWall} blueprint />
-          <div role="group" aria-label="Closet camera" className="grid grid-cols-3 gap-2 bg-[#1a4568] px-4 pb-4">
-            {([["angle", "Angle"], ["front", "Front"], ["overhead", "Overhead"]] as const).map(([id, label]) => <button key={id} type="button" aria-pressed={cameraView === id} onClick={() => setCameraView(id)} className={`min-h-11 rounded-md text-xs font-bold ${cameraView === id ? "bg-[#f2c14e] text-[#1a3148]" : "border border-[#9fd0ea] text-[#e7f2fb]"}`}>{label}</button>)}
+          <div role="group" aria-label="Closet camera" className="grid grid-cols-3 gap-1 bg-[#fffdf9] px-3 pb-3">
+            {([["angle", "Angle"], ["front", "Front"], ["overhead", "Overhead"]] as const).map(([id, label]) => <button key={id} type="button" aria-pressed={cameraView === id} onClick={() => setCameraView(id)} className={`min-h-11 min-w-0 rounded-md px-1 text-[11px] font-bold ${cameraView === id ? "bg-[#244338] text-white" : "border border-[#dfd8cc] bg-white text-[#244338]"}`}>{label}</button>)}
           </div>
         </div>
         <div id="vendor-section-material" data-testid="vendor-reference-panel" className="border-t border-[#dfd8cc] p-3">
