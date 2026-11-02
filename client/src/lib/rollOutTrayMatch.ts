@@ -92,50 +92,6 @@ export function targetWidth(c: TrayTarget): number {
   return live;
 }
 
-export type RolloutHost = TrayTarget & {
-  uid: string;
-  styleId?: number | null;
-  distributorId?: number | null;
-  rolloutQty?: number | null;
-};
-
-/**
- * Install one roll-out into a host from the same door-style line. Exact width
- * wins. A selected cabinet is used when it fits; otherwise the first exact
- * match is used. A same-size cabinet from another line is refused.
- */
-export function attachRolloutToHost<T extends RolloutHost>(
-  placed: readonly T[],
-  request: { width: number; styleId: number | null; distributorId: number | null; selectedUid?: string | null },
-): { ok: true; placed: T[]; hostUid: string; hostCode: string; qty: number } | { ok: false; reason: string } {
-  const sameLine = (host: T) => {
-    if (request.styleId != null && host.styleId != null && host.styleId !== request.styleId) return false;
-    if (request.distributorId != null && host.distributorId != null && host.distributorId !== request.distributorId) return false;
-    return true;
-  };
-  const exactWidth = (host: T) => Math.abs(targetWidth(host) - request.width) <= 0.25;
-  const eligible = placed.filter((host) => isRollOutEligible(host));
-  const pool = eligible.filter((host) => sameLine(host) && exactWidth(host));
-  if (pool.length === 0) {
-    const otherLine = eligible.some((host) => exactWidth(host) && !sameLine(host));
-    return {
-      ok: false,
-      reason: otherLine
-        ? `A ${request.width}" cabinet is already in the room, but it belongs to a different distributor line. This roll-out only installs in a cabinet from the same line.`
-        : `Place a ${request.width}" base or pantry from this line before adding this roll-out.`,
-    };
-  }
-  const host = pool.find((item) => item.uid === request.selectedUid) ?? pool[0]!;
-  const qty = Math.min(MAX_ROLLOUT_TRAYS_PER_CABINET, normalizedRollOutTrayQty(host.rolloutQty) + 1);
-  return {
-    ok: true,
-    hostUid: host.uid,
-    hostCode: host.masterCode ?? "cabinet",
-    qty,
-    placed: placed.map((item) => item.uid === host.uid ? { ...item, rolloutQty: qty } : item),
-  };
-}
-
 /**
  * Pick the best roll-out shelf for a cabinet from the shelves available IN ITS
  * OWN LINE (the caller filters by styleId before calling). Returns the largest

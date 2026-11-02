@@ -4809,17 +4809,14 @@ describe("accessory placement (item 5: accessories into the drawing)", () => {
     expect(isPlaceableAccessory({ masterCode: "AG-24", description: "Appliance Garage 24" })).toBe(true);
   });
 
-  it("offers moldings and fridge panels, and keeps roll-outs and hardware off the floor plan", () => {
-    expect(isPlaceableAccessory({ masterCode: "CM-8", description: "Crown Molding 8ft", subCategory: "Trim & Molding" })).toBe(true);
-    expect(isPlaceableAccessory({ masterCode: "CM-8", description: "Crown Moulding 8ft", subCategory: "Trim & Moulding" })).toBe(true);
-    expect(isPlaceableAccessory({ masterCode: "LR-8", description: "Light Rail Molding" })).toBe(true);
-    expect(isPlaceableAccessory({ masterCode: "LRM-8", description: "Light Rail Moulding", subCategory: "Light Rail Moulding" })).toBe(true);
-    expect(isPlaceableAccessory({ masterCode: "TEP3096", description: "Tall End Panel for Refrigerator Bridge Cabinet", subCategory: "Refrigerator End Panel" })).toBe(true);
-    expect(isPlaceableAccessory({ masterCode: "UOC3390(O339024)", description: "33 x 90 Oven Pantry Cabinet", category: "Tall", width: 33, height: 90, depth: 24 })).toBe(true);
-    expect(accessoryPlacement({ masterCode: "UOC3390(O339024)", description: "33 x 90 Oven Pantry Cabinet", category: "Tall", width: 33, height: 90, depth: 24 })).toBe("tall");
+  it("keeps loose by-the-foot trim and hardware as BOM-only (not placeable)", () => {
+    expect(isPlaceableAccessory({ masterCode: "CM-8", description: "Crown Molding 8ft", subCategory: "Trim & Molding" })).toBe(false);
+    expect(isPlaceableAccessory({ masterCode: "CM-8", description: "Crown Moulding 8ft", subCategory: "Trim & Moulding" })).toBe(false);
+    expect(isPlaceableAccessory({ masterCode: "LR-8", description: "Light Rail Molding" })).toBe(false);
+    expect(isPlaceableAccessory({ masterCode: "LRM-8", description: "Light Rail Moulding", subCategory: "Light Rail Moulding" })).toBe(false);
     expect(isPlaceableAccessory({ masterCode: "ROT-21", description: "Roll-Out Tray 21", subCategory: "Roll-Out Trays" })).toBe(false);
     expect(isPlaceableAccessory({ masterCode: "PULL-5", description: "Bar Pull Hardware" })).toBe(false);
-    expect(isPlaceableAccessory({ masterCode: "SPRAYPAINT", description: "Spray Paint Touch-Up" })).toBe(false);
+    expect(isPlaceableAccessory({ masterCode: "TEP3096", description: "Tall End Panel for Refrigerator Bridge Cabinet", subCategory: "Refrigerator End Panel" })).toBe(false);
   });
 
   it("isLooseTrimItem flags molding/hardware/trays", () => {

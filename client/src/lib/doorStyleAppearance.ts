@@ -6,7 +6,6 @@
  */
 import { doorPanelKind, type DoorPanelKind } from "@/lib/doorPanelKind";
 import { finishColors, type FinishColors } from "@/lib/design";
-import { styleFinishSearchText } from "@shared/styleFinishColor";
 import { designerDoorFrameMetrics } from "@/lib/doorFrameMetrics";
 import {
   ASPEN_CHARCOAL_STAIN,
@@ -58,7 +57,13 @@ export function resolveDoorFinishHex(style: DoorStyleAppearanceInput | null | un
   if (isAspenCharcoal(identity)) return ASPEN_CHARCOAL_STAIN;
   const named = resolveRenderHex(identity);
   if (named) return named;
-  return finishColors(styleFinishSearchText(identity)).face;
+  return finishColors(
+    identity.ourName,
+    identity.name,
+    identity.color,
+    identity.finish,
+    identity.woodSpecies,
+  ).face;
 }
 
 export function resolveDoorStyleAppearance(style: DoorStyleAppearanceInput | null | undefined): DoorStyleAppearance {
@@ -81,7 +86,7 @@ export function resolveDoorProfilePanelKind(style: DoorStyleAppearanceInput | nu
 /** Elevation / canvas finish, with the resolved hex when the keyword table is not enough. */
 export function doorStyleFinishColors(style: DoorStyleAppearanceInput | null | undefined): FinishColors {
   const identity = identityOf(style);
-  const base = finishColors(identity.renderHex, styleFinishSearchText(identity));
+  const base = finishColors(identity.ourName, identity.name, identity.color, identity.finish, identity.woodSpecies);
   const hex = resolveDoorFinishHex(identity);
   if (hex.toLowerCase() === base.face.toLowerCase()) return base;
   return finishColors(hex);

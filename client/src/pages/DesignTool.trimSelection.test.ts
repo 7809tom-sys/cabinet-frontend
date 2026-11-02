@@ -5,11 +5,10 @@ import path from "node:path";
 const source = fs.readFileSync(path.resolve(__dirname, "DesignTool.tsx"), "utf8");
 
 describe("DesignTool decorative trim selection", () => {
-  it("turns crown on for wall and tall runs unless the shopper turned it off", () => {
-    expect(source).toContain("Crown follows wall and tall runs unless the shopper turned it off.");
-    expect(source).toContain("if (trimOverride.current.crown) return;");
-    expect(source).toContain('if (placed.some((item) => item.placement === "wall" || item.placement === "tall")) setCrown(true);');
+  it("keeps crown opt-in instead of adding it when a wall cabinet exists", () => {
+    expect(source).toContain("Crown, batten, and valances remain opt-in");
     expect(source).not.toContain("if (!o.crown && hasWallCab && !crown) setCrown(true);");
+    expect(source).not.toMatch(/setCrown\(true\)/);
   });
 
   it("does not restore crown from legacy automatic drafts", () => {

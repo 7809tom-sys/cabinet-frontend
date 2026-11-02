@@ -38,8 +38,7 @@ describe("DesignTool cabinet catalog organization", () => {
 
   it("filters the already-scoped supplier/style catalog and forces the selected group open", () => {
     expect(source).toContain("filterCatalogByHeight(filteredPalette, paletteType, selectedPaletteHeight, isCornerBase)");
-    expect(source).toContain("const open = searching || selectedPaletteHeight != null || openCatalogGroups.has(groupKey)");
-    expect(source).toContain("designer-catalog-open-groups");
+    expect(source).toContain("const open = searching || selectedPaletteHeight != null || !collapsedGroups.has(groupKey)");
     expect(source).toContain("for (const c of heightFilteredPalette) buckets[baseSubGroup(c)].push(c)");
   });
 

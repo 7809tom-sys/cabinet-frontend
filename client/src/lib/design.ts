@@ -15,17 +15,6 @@ import {
 import { VERIFIED_PELICAN_BATHROOM_FIXTURE_PROFILES, verifiedPelicanBathroomFixtureProfile } from "./pelicanBathroomFixtureProfiles";
 import { aefPrintedGeometryForSku, FRAMELESS_DEEP_WALL_DEPTH_IN, FRAMELESS_STANDARD_WALL_DEPTH_IN, hasAefPrintedGeometry, isFramelessDeepWallCabinet } from "@shared/aefFramelessGeometry";
 import { standardBaseDoorCount } from "@shared/genericCabinetDrawerReference";
-import {
-  designerMoldingKind,
-  designerPaletteAction,
-  isDesignerFiller,
-  isDesignerFlutedFiller,
-  isDesignerPanel,
-  isDesignerToeKick,
-  isDesignerUtilityOrOvenBox,
-  isDesignerValance,
-} from "@shared/designerEligibility";
-export { designerPaletteAction, isDesignerFlutedFiller as isFlutedFillerItem, isDesignerUtilityOrOvenBox };
 export { isGlassPolicyNomenclature } from "./glassPolicy";
 
 export const STD = {
@@ -144,21 +133,23 @@ export function isPlaceableAccessory(c: {
   description?: string | null;
   masterCode?: string | null;
   subCategory?: string | null;
-  category?: string | null;
-  width?: number | string | null;
-  height?: number | string | null;
-  depth?: number | string | null;
 }): boolean {
-  if (isDesignerUtilityOrOvenBox(c)) return true;
-  const action = designerPaletteAction(c);
-  if (action.type === "attach-rollout" || action.type === "order") return false;
-  if (action.type === "enable-trim") return true;
+  // TEP3096 is a stock panel selected only by Refrigerator Options. The workflow
+  // installs it as a cut-to-fit refrigerator side skin beside a bridge cabinet;
+  // it must not be offered as a free-standing panel in the ordinary palette.
+  if ((c.masterCode ?? "").replace(/[^a-z0-9]/gi, "").toUpperCase() === "TEP3096") return false;
   const hay = `${c.subCategory ?? ""} ${c.description ?? ""} ${c.masterCode ?? ""}`.toLowerCase();
-  if (isDesignerFiller(c) || isDesignerValance(c) || isDesignerPanel(c) || isDesignerToeKick(c) || designerMoldingKind(c)) return true;
+  // Fillers and floating shelves are physical pieces that belong on the plan.
+  // They must be considered before the loose-trim exclusion because some vendor
+  // catalogs file them under a broad Trim & Molding category.
+  if (/\bf(?:ill)?[-_]?\d|\bfiller\b/.test(hay)) return true;
   if (isFloatingShelfItem(c) || isWallOpenShelfCabinet(c)) return true;
   if (isLooseTrimItem(c)) return false;
-  if (isPanelItem(c)) return true;
+  if (isPanelItem(c)) return true; // end panels / skins / decorative panels
+  // Appliance garages sit on the counter as a real box.
   if (/appliance garage|\bag-?\d/.test(hay)) return true;
+  // A knee drawer is a real shallow cabinet box that fits in a seated work
+  // area. It must appear in the plan rather than becoming a loose BOM line.
   if (isKneeDrawerItem(c)) return true;
   return false;
 }
@@ -534,42 +525,17 @@ export function fillerWidthRange(c: {
 // Which placement a placeable accessory should take when dropped. Panels/skins
 // and appliance garages mounted high read as wall items; everything else sits
 // on the floor as a base-zone object.
-export function fillerRunPlacement(c: {
-  description?: string | null;
-  masterCode?: string | null;
-  subCategory?: string | null;
-  height?: number | string | null;
-}): Placement {
-  const compact = `${c.masterCode ?? ""}`.toUpperCase().replace(/[^A-Z0-9]/g, "");
-  const hay = `${c.subCategory ?? ""} ${c.description ?? ""}`.toLowerCase();
-  if (/\bwall\b/.test(hay) || /^(?:WF|WFF)/.test(compact)) return "wall";
-  if (/\btall\b/.test(hay) || /^(?:TF|TFF)/.test(compact)) return "tall";
-  const height = Number(c.height);
-  if (Number.isFinite(height) && height >= 70) return "tall";
-  if (Number.isFinite(height) && height >= 36) return "wall";
-  return "base";
-}
-
 export function accessoryPlacement(c: {
   description?: string | null;
   masterCode?: string | null;
   subCategory?: string | null;
-  category?: string | null;
-  height?: number | string | null;
-  width?: number | string | null;
-  depth?: number | string | null;
 }): Placement {
   const hay = `${c.subCategory ?? ""} ${c.description ?? ""} ${c.masterCode ?? ""}`.toLowerCase();
-  if (isDesignerUtilityOrOvenBox(c)) return "tall";
-  if (isDesignerValance(c)) return "wall";
-  const molding = designerMoldingKind(c);
-  if (molding === "crown" || molding === "rope" || molding === "dentil" || molding === "lightRail") return "wall";
-  if (isDesignerFiller(c)) return fillerRunPlacement(c);
   if (isKneeDrawerItem(c)) return "baseTop";
-  if (isDishwasherPanel(c) || isDesignerToeKick(c)) return "base";
+  if (isDishwasherPanel(c)) return "base";
   if (/appliance garage|\bag-?\d/.test(hay)) return "wall";
   if (isFloatingShelfItem(c) || isWallOpenShelfCabinet(c)) return "wall";
-  if (/wall ?skin|\bws\b|wall panel|refrigerator panel/.test(hay) || (isDesignerPanel(c) && /\bwall\b|\brefrigerator\b/.test(hay))) return "wall";
+  if (/wall ?skin|\bws\b|wall panel|refrigerator panel/.test(hay)) return "wall";
   return "base";
 }
 
@@ -6537,8 +6503,6 @@ export interface FinishColors {
 // (images.sherwin-williams.com/content_images/sw-pdf-sherwin-williams-colorc.pdf)
 // for the most common cabinet paint colors, giving precise color accuracy.
 const FINISH_BY_KEYWORD: { match: RegExp; face: string; edge: string; label: string; swName?: string }[] = [
-  // Stone Gray is a warm gray. It must beat "cobalt"/"abyss" and the generic gray bucket.
-  { match: /stone\s*gr[ae]y/, face: "#a8a59c", edge: "#8a877f", label: "#1f1e1c", swName: "Stone Gray" },
   // ── SPECIFIC SW CABINET COLORS (matched before generic families) ──────────
   // SW 7006 Extra White — LRV 86, crisp cool white
   { match: /extra white|sw\s*7006|sw7006/, face: "#eeefea", edge: "#d0d1cc", label: "#2a2a2a", swName: "Extra White SW 7006" },

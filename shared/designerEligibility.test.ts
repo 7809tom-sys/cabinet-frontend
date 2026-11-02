@@ -1,10 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import {
   cabinetCanBeRenderedOrPlacedIn3d,
   designerEligibilityDecision,
-  designerPaletteAction,
-  isDesignerFlutedFiller,
-  isDesignerUtilityOrOvenBox,
 } from "./designerEligibility";
 
 const base = {
@@ -34,10 +33,15 @@ describe("3D Designer eligibility", () => {
     });
   });
 
-  it("keeps a priced cabinet in the designer even when a dimension or the not-a-cabinet flag is incomplete", () => {
-    expect(designerEligibilityDecision({ ...base, depth: null }, true).eligible).toBe(true);
-    expect(designerEligibilityDecision({ ...base, isNotCabinet: true }, true).eligible).toBe(true);
-    expect(cabinetCanBeRenderedOrPlacedIn3d({ masterCode: "", description: "" })).toBe(false);
+  it("rejects a cabinet the Designer cannot build a box for", () => {
+    expect(designerEligibilityDecision({ ...base, depth: null }, true)).toMatchObject({
+      eligible: false,
+      reason: "missing width, height, or depth",
+    });
+    expect(designerEligibilityDecision({ ...base, isNotCabinet: true }, true)).toMatchObject({
+      eligible: false,
+      reason: "marked as not a cabinet",
+    });
   });
 
   it("includes physical accessories the Designer can drop on the plan", () => {
@@ -70,24 +74,15 @@ describe("3D Designer eligibility", () => {
     })).toBe(true);
   });
 
-  it("offers oven pantries, fluted fillers, moldings, panels, and roll-outs", () => {
-    const oven = { masterCode: "UOC3390(O339024)", description: "33\" x 90\" Oven Pantry Cabinet", category: "Tall", subCategory: "Oven Tower", width: 33, height: 90, depth: 24 };
-    expect(isDesignerUtilityOrOvenBox(oven)).toBe(true);
-    expect(designerPaletteAction(oven)).toEqual({ type: "place" });
-    expect(designerEligibilityDecision(oven, true).eligible).toBe(true);
-    const fluted = { masterCode: "BFF3", description: "3\" x 34.5\" Fluted Base Filler", category: "Filler", width: 3, height: 34.5, depth: null, isNotCabinet: true };
-    expect(isDesignerFlutedFiller(fluted)).toBe(true);
-    expect(designerPaletteAction(fluted)).toEqual({ type: "place" });
-    expect(designerPaletteAction({ masterCode: "VA48", description: "Arched Valance - 48\"W", category: "Accessory", subCategory: "Valance", width: 48, height: 6, depth: null, isNotCabinet: true })).toEqual({ type: "enable-trim", kind: "valance" });
-    expect(designerPaletteAction({ masterCode: "CM8", description: "Crown Molding - 96\"", category: "Molding", width: 96, height: 3, depth: 2 })).toEqual({ type: "enable-trim", kind: "crown" });
-    expect(designerPaletteAction({ masterCode: "ROPE", description: "Rope Moulding — 96\" L", category: "Molding", width: 96, height: 0.75, depth: 0.75 })).toEqual({ type: "enable-trim", kind: "rope" });
-    expect(designerPaletteAction({ masterCode: "DMTIS", description: "Dentil moulding - 96\"", category: "Molding", width: 96, height: 1, depth: 0.75 })).toEqual({ type: "enable-trim", kind: "dentil" });
-    expect(designerPaletteAction({ masterCode: "SM8", description: "Scribe Moulding - 96\"", category: "Molding", width: 96, height: 0.75, depth: 0.75 })).toEqual({ type: "enable-trim", kind: "scribe" });
-    expect(designerPaletteAction({ masterCode: "TK8(TKC)", description: "Toe Kick 8' Plywood - 96\"", width: 96, height: 4.5, depth: 0.75 })).toEqual({ type: "enable-trim", kind: "toeKick" });
-    expect(designerPaletteAction({ masterCode: "TEP3096", description: "Tall end panel for refrigerator bridge cabinet", category: "Panels", width: 0.75, height: 96, depth: 30 })).toEqual({ type: "place" });
-    expect(designerPaletteAction({ masterCode: "UNIV-ROT30", description: "Universal rollout tray for 30-inch cabinet", category: "Accessory", width: 30, height: 2.25, depth: 21 })).toEqual({ type: "attach-rollout", width: 30 });
-    expect(designerPaletteAction({ masterCode: "U1884244RS", description: "18\" x 84\" Four Rollout Shelf Utility Cabinet Kit", category: "Accessory", subCategory: "Rollout Tray", width: 18, height: 84, depth: 24 })).toEqual({ type: "place" });
-    expect(designerPaletteAction({ masterCode: "SPRAYPAINT", description: "Spray Paint Touch-Up", category: "Accessory", width: 1, height: 8, depth: 1 }).type).toBe("order");
-    expect(designerEligibilityDecision({ masterCode: "UNIV-ROT27", description: "Universal rollout tray", width: 27, height: 2.25, depth: 21 }, true).eligible).toBe(true);
+  it("excludes bill-of-materials lines the Designer lists but does not place", () => {
+    for (const item of [
+      { masterCode: "CM-8", description: "Crown molding 8 ft", category: "Trim and Molding", subCategory: "Crown", width: 96, height: 3, depth: 0.75 },
+      { masterCode: "ROT-21", description: "Roll-out tray 21", category: "Accessory", subCategory: "Roll-Out Tray", width: 21, height: 2, depth: 21 },
+      { masterCode: "PULL-5", description: "Bar pull hardware", category: "Accessory", width: 5, height: 1, depth: 1 },
+      { masterCode: "PGWDC42", description: "Glass door sold separately for WDC42", category: "Accessory", width: 24, height: 30, depth: 0.75 },
+      { masterCode: "TEP3096", description: "Tall end panel for refrigerator bridge cabinet", category: "Filler's and Panels", subCategory: "Refrigerator End Panel", width: 0.75, height: 96, depth: 30 },
+    ]) {
+      expect(designerEligibilityDecision(item, true).eligible, item.masterCode).toBe(false);
+    }
   });
 });

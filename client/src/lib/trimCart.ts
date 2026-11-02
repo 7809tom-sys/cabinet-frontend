@@ -12,7 +12,7 @@
 // resolve to null and are left as quote-only lines rather than blocking the cart
 // or inventing a price.
 
-export type TrimKind = "toeKick" | "lightRail" | "batten" | "crown" | "valance" | "rope" | "dentil" | "scribe";
+export type TrimKind = "toeKick" | "lightRail" | "batten" | "crown" | "valance";
 
 // Map each auto-trim to the master code that carries its per-style priced SKU.
 // Ashford carries its standard 96-inch crown as LCM8 in every active finish.
@@ -22,9 +22,6 @@ export const TRIM_MASTER_CODES: Record<TrimKind, string | null> = {
   batten: "BAM",
   crown: "LCM8",
   valance: "VA-48", // Arched valance (only VA-48 exists in catalog; trimmed to fit on site)
-  rope: "ROPE",
-  dentil: "DMTIS",
-  scribe: "SM8",
 };
 
 // A few supplier catalogs preserve the product-family suffix inside the actual
@@ -33,9 +30,6 @@ export const TRIM_MASTER_CODES: Record<TrimKind, string | null> = {
 // real source masterCode; this list only makes the lookup resilient.
 export const TRIM_MASTER_CODE_ALIASES: Partial<Record<TrimKind, readonly string[]>> = {
   toeKick: ["TK8(TKC)", "TK-8(TKC)", "TKC"],
-  crown: ["CM8", "ACM8", "BCM8(DCM)", "RCM4S(LCM)"],
-  scribe: ["SM-8", "SCR"],
-  dentil: ["DMT"],
 };
 
 /**

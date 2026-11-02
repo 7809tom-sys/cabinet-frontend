@@ -40,8 +40,6 @@ export type CartItem = {
   catalogImageUrl?: string | null;
   /** Product category (e.g. "Sinks & Faucets", "Flooring") — used for display grouping */
   category?: string | null;
-  /** Selected door-finish color for a finish-matched accessory such as spray paint. */
-  finishHex?: string | null;
   /** Purchased catalog filler board width; separate from its field-cut installed width. */
   fillerStockWidthIn?: number | null;
   /** Exact installed filler width represented by this cart line. */
