@@ -63,6 +63,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { searchCatalogItems } from "@shared/catalogCodeSearch";
 import { AEF_PRINTED_GEOMETRY_MARKER } from "@shared/aefFramelessGeometry";
 import { DLC_FRAME_DETAIL, dlcFaceGrainRepeat, dlcFaceTextureWindow, dlcFrameStrips, dlcPhotoLightCompensation, type DlcFaceCrop } from "@shared/dlcFr26Textures";
+import { SHAKER_NOTCH_THICKNESS, shakerNotchMaterial, shakerNotchPieces } from "./shakerNotch";
 import { exposedSideSolidHex } from "@shared/exposedSideFinish";
 import { rememberDoorPanelHex } from "@/lib/doorPanelColor";
 import { DARK_STAIN_DOOR_LIGHTS, RESTORED_DOOR_LIGHTS, isVeryDarkCabinetStain, relativeLuminance } from "@shared/doorRenderLights";
@@ -5731,6 +5732,8 @@ export function addCabinet(
   const profileFrameWidthIn = Number.isFinite(requestedProfileStile) && requestedProfileStile > 0
     ? requestedProfileStile
     : 3;
+	  // 2.75 and 3 inch shakers are built only by standardShakerDlFacePlan (shared/shakerDoorBlueprint.ts).
+	  // Do not give those styles a different frame, corner, slab, or notch.
 	  const addShakerFrame = (faceWidth: number, faceHeight: number, x: number, y: number, z = 0.036, rotationY = 0, forceGlassFrame = false, faceRole: "door" | "drawer" = "door") => {
 	    const raisedProfile = threeDFaceUsesRaisedPanelBevel({
 	      profileKind,
@@ -5769,6 +5772,25 @@ export function addCabinet(
       railMesh.position.set(offsetX, offsetY, dlcDoorFinish ? (railDepth - DLC_FRAME_DETAIL.standardRailDepth) / 2 : 0);
 	      railMesh.userData = { selectedStyleFace: forceGlassFrame ? "glass-door-frame" : raisedProfile ? "raised-panel" : "shaker", physicalRail: true, grainPiece: piece, ...(forceGlassFrame ? { glassDoorFrameRail: true, selectedFinishGlassFrame: true } : {}) };
       frameGroup.add(railMesh);
+    }
+    // The rail boxes stand proud of the slab, but a front-on camera sees that step
+    // edge-on. On a pale door only the top and left inner edges catch a shadow, so
+    // the recess reads as half a notch. A closed shoulder on all four sides keeps
+    // the step visible. Driftwood's separate shadow strips stay finish-gated below.
+    if (!raisedProfile && !forceGlassFrame) {
+      const openingW = Math.max(0, faceWidth - stile * 2);
+      const openingH = Math.max(0, faceHeight - rail * 2);
+      const railDepthForNotch = dlcDoorFinish ? DLC_FRAME_DETAIL.railDepth : DLC_FRAME_DETAIL.standardRailDepth;
+      const railLocalZ = dlcDoorFinish ? (railDepthForNotch - DLC_FRAME_DETAIL.standardRailDepth) / 2 : 0;
+      const notchZ = railLocalZ + railDepthForNotch / 2 - 0.016 - SHAKER_NOTCH_THICKNESS / 2;
+      for (const piece of shakerNotchPieces(openingW, openingH)) {
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(piece.w, piece.h, SHAKER_NOTCH_THICKNESS), shakerNotchMaterial(color, piece.band));
+        mesh.position.set(piece.x, piece.y, notchZ);
+        mesh.castShadow = false;
+        mesh.receiveShadow = true;
+        mesh.userData = { shakerNotch: true, shakerNotchSide: piece.side, shakerNotchBand: piece.band, dimensionalCabinetDetail: true };
+        frameGroup.add(mesh);
+      }
     }
 	    if (raisedProfile) {
 	      const requestedBevelWidth = Number(doorProfile?.bevelWidth);
