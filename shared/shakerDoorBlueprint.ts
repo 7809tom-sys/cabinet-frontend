@@ -15,6 +15,7 @@
  */
 import { CABINET_NAME_COLORS, matchCabinetColorName } from "./cabinetColorNames";
 import { deltaE2000Hex } from "./ciede2000";
+import { keepsOwnWoodGrainPhoto, styleHasFivePieceSlabLabel } from "./doorFrontStyle";
 import { DLC_FR26_CATALOG, type DlcFr26CatalogEntry } from "./dlcFr26Catalog.generated";
 import { DLC_FRAME_DETAIL } from "./dlcFr26Textures";
 import { findDlcFinishForStyle, type DlcStyleInput } from "./dlcFr26Mapping";
@@ -43,6 +44,12 @@ export function brandDoorSurfaceHex(ownColor: string): string {
 /** Designer default when a plain Shaker record does not store a rail width. */
 export const STANDARD_SHAKER_RAIL_IN = 3;
 
+/**
+ * Two 2.75 or 3 inch rails plus a visible center need about 7 inches.
+ * A drawer front shorter or narrower than this is one plain slab in the door color.
+ */
+export const SHAKER_PLAIN_SLAB_BELOW_IN = 7;
+
 export const DL_SHAKER_GEOMETRY = {
   corners: "square",
   center: "flat-slab",
@@ -70,6 +77,9 @@ export type ShakerStyleInput = {
   woodSpecies?: string | null;
   railWidth?: string | number | null;
   stileWidth?: string | number | null;
+  doorPanelType?: string | null;
+  profileDescription?: string | null;
+  profileNotes?: string | null;
 };
 
 export type DlShakerReference = {
@@ -219,6 +229,8 @@ export function retintGrain(referenceHex: string, targetHex: string): { tintHex:
 export function matchStandardShakerToDl(style: ShakerStyleInput): ShakerAdoption {
   const family = shakerDoorFamily(style.doorStyle);
   const railIn = effectiveShakerRailIn(style);
+  if (styleHasFivePieceSlabLabel(style)) return { adopted: false, railIn, reason: "A five-piece slab label is its own front, not the DL shaker blueprint." };
+  if (keepsOwnWoodGrainPhoto(style)) return { adopted: false, railIn, reason: "Hickory keeps its own wood-grain photo. The shaker frame geometry is unchanged." };
   if (family === "slim-shaker") return { adopted: false, railIn, reason: "Slim Shaker keeps its own narrow frame and is not the 2.75/3 inch blueprint." };
   if (family === "double-shaker") return { adopted: false, railIn, reason: "Double Shaker is two panels, not the DL flat center slab." };
   if (family !== "shaker") return { adopted: false, railIn, reason: "Not a shaker door style." };

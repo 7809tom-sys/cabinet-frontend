@@ -178,6 +178,7 @@ export function resolveDoorProfile(input: DoorStyleAppearanceInput | null | unde
   const decision = resolveDoorShapeDecision({ ...input, ...source });
   const glass = decision.shape === "glass";
   const raised = decision.shape === "raised";
+  const fivePieceSlab = decision.shape === "five-piece-slab";
   const slab = decision.shape === "slab";
   const doorStyleText = `${text(source.doorStyle)} ${text(source.doorPanelType)}`.toLowerCase();
   const raisedByText = /raised|bevel|cathedral|\bogee\b|\barch(?:ed)?\b|traditional/.test(doorStyleText);
@@ -189,6 +190,9 @@ export function resolveDoorProfile(input: DoorStyleAppearanceInput | null | unde
   if (raised && !raisedByText) {
     doorStyle = "Raised Panel";
     doorPanelType = doorPanelType ?? "Raised Panel";
+  } else if (fivePieceSlab) {
+    doorStyle = "Five-Piece Slab";
+    doorPanelType = "Five-Piece Slab";
   } else if (decision.shape === "recessed-shaker") {
     if (!doorStyle || /\bslab\b|flat[\s-]?panel|\bflat\b/.test(doorStyle.toLowerCase())) doorStyle = "Shaker";
     if (doorPanelType && /flat[\s-]?panel|\bslab\b/.test(doorPanelType.toLowerCase())) doorPanelType = "Recessed Panel";
@@ -216,7 +220,7 @@ export function resolveDoorProfile(input: DoorStyleAppearanceInput | null | unde
     doorPanelType,
     railWidth: positiveInches(source.railWidth) ?? (text(source.railWidth) || null),
     stileWidth: positiveInches(source.stileWidth) ?? (text(source.stileWidth) || null),
-    panelConstruction: glass ? "glass" : raised ? "raised" : slab ? "slab" : "flat",
+    panelConstruction: glass ? "glass" : raised ? "raised" : fivePieceSlab ? "flat" : slab ? "slab" : "flat",
     bevelWidth: raised ? (storedBevelWidth ?? RAISED_PANEL_BEVEL_WIDTH_IN) : (storedBevelWidth ?? (text(source.bevelWidth) || null)),
     bevelDepth: raised ? (storedBevelDepth ?? RAISED_PANEL_BEVEL_DEPTH_IN) : (storedBevelDepth ?? (text(source.bevelDepth) || null)),
     insideEdgeProfile: raised ? (storedEdge || (aspenFamily ? ASPEN_RAISED_EDGE : "bevel")) : storedEdge,

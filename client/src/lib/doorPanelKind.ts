@@ -1,10 +1,14 @@
 // Door-panel treatment derived from the door-style family name.
 // Kept out of design.ts so storefront swatches and scene photos can use it
 // without downloading the kitchen geometry engine on first visit.
-export type DoorPanelKind = "shaker" | "slim-shaker" | "raised" | "slab" | "beaded" | "inset" | "double-shaker";
+import { isFivePieceSlabLabel } from "@shared/doorFrontStyle";
+
+export type DoorPanelKind = "shaker" | "slim-shaker" | "raised" | "slab" | "beaded" | "inset" | "double-shaker" | "five-piece-slab";
 
 export function doorPanelKind(doorStyle?: string | null): DoorPanelKind {
   const s = (doorStyle ?? "").toLowerCase();
+  // Five-piece slab is a framed flat center, not the one-piece slab and not a shaker.
+  if (isFivePieceSlabLabel(s)) return "five-piece-slab";
   if (/double/.test(s)) return "double-shaker";
   // Slim / narrow Shaker: a Shaker door built with a narrow ~1/2" rail & stile
   // instead of the standard ~2.25". Detect it before the generic shaker so the

@@ -1,6 +1,8 @@
 import * as THREE from "three";
 import { DLC_FRAME_DETAIL } from "@shared/dlcFr26Textures";
+import { SHAKER_PLAIN_SLAB_BELOW_IN, brandDoorSurfaceHex } from "@shared/shakerDoorBlueprint";
 import { threeDShakerRailThickness } from "@/lib/shakerRail";
+import { SHAKER_NOTCH_THICKNESS, shakerNotchMaterial, shakerNotchPieces } from "@/components/design/shakerNotch";
 
 const IN = 1 / 12;
 
@@ -15,7 +17,7 @@ export const CLOSET_DL_SHAKER_FRAME_IN = 2.75;
  * Two 2.75in rails plus a 1.5in center need 7in (Tom, Nov 1 2026). A front
  * shorter or narrower than this renders as a plain flat slab instead.
  */
-export const CLOSET_SLAB_BELOW_IN = 7;
+export const CLOSET_SLAB_BELOW_IN = SHAKER_PLAIN_SLAB_BELOW_IN;
 
 /**
  * Reveal taken off each side of a slab front so stacked slabs (e.g. drawer
@@ -60,6 +62,7 @@ export function closetDlShakerMembers(widthIn: number, heightIn: number) {
  * rails, stiles between them, DL rail depth standing proud of the panel).
  */
 export function createClosetDlShakerFront(widthIn: number, heightIn: number, finishHex: string, role: ClosetShakerRole) {
+  const surfaceHex = brandDoorSurfaceHex(finishHex);
   const width = widthIn * IN;
   const height = heightIn * IN;
   const members = closetDlShakerMembers(widthIn, heightIn);
@@ -67,7 +70,7 @@ export function createClosetDlShakerFront(widthIn: number, heightIn: number, fin
   const railZ = (railDepth - DLC_FRAME_DETAIL.standardRailDepth) / 2;
   if (members.slab) {
     // Too small for a 2.75in frame: one plain flat slab in the same finish.
-    const slabMaterial = new THREE.MeshStandardMaterial({ color: finishHex, roughness: 0.55, metalness: 0.02 });
+    const slabMaterial = new THREE.MeshStandardMaterial({ color: surfaceHex, roughness: 0.55, metalness: 0.02 });
     slabMaterial.toneMapped = false;
     const group = new THREE.Group();
     group.name = "dl-slab-front";
@@ -97,13 +100,11 @@ export function createClosetDlShakerFront(widthIn: number, heightIn: number, fin
   const rail = members.railIn * IN;
   const stile = members.stileIn * IN;
   const panelDepth = 0.012;
-  // Same finish as the rails. The center sits behind them, so it is shaded a
-  // step darker. That is the recess the kitchen gets from rail depth; this
-  // closet rig otherwise washes a same-color step flat. No glass, no photo.
-  const panelMaterial = new THREE.MeshStandardMaterial({ color: finishHex, roughness: 0.85, metalness: 0 });
-  panelMaterial.color.multiplyScalar(0.8);
+  // Same door color as the rails. The shared shaker notch, not a darker panel,
+  // is what makes the recess read. No glass, no photo.
+  const panelMaterial = new THREE.MeshStandardMaterial({ color: surfaceHex, roughness: 0.55, metalness: 0.02 });
   panelMaterial.toneMapped = false;
-  const railMaterial = new THREE.MeshStandardMaterial({ color: finishHex, roughness: 0.55, metalness: 0.02 });
+  const railMaterial = new THREE.MeshStandardMaterial({ color: surfaceHex, roughness: 0.55, metalness: 0.02 });
   railMaterial.toneMapped = false;
   const group = new THREE.Group();
   group.name = "dl-shaker-front";
@@ -129,52 +130,19 @@ export function createClosetDlShakerFront(widthIn: number, heightIn: number, fin
   center.userData = { dlShakerCenterSlab: true, flatRecessedPanel: true, squareCorner: true };
   group.add(center);
 
-  // Crisp shadow line inside the opening: thin unlit strips just in front of
-  // the center slab. They read as the recess the rail depth gives the kitchen.
+  // Same four-sided notch the kitchen Designer uses for the DL shaker blueprint.
   const openingWidth = Math.max(0.01, width - stile * 2);
   const openingHeight = Math.max(0.01, height - rail * 2);
-  const stripZ = center.position.z + panelDepth / 2 + 0.0015;
-  const stripDepth = 0.002;
-  const maxStrip = Math.min(openingWidth, openingHeight) / 3;
-  const addStrip = (
-    kind: "shadow" | "highlight",
-    stripWidth: number,
-    stripHeight: number,
-    x: number,
-    y: number,
-    opacity: number,
-  ) => {
-    const material = new THREE.MeshBasicMaterial({
-      color: kind === "shadow" ? 0x000000 : 0xffffff,
-      transparent: true,
-      opacity,
-      depthWrite: false,
-      toneMapped: false,
-      polygonOffset: true,
-      polygonOffsetFactor: -1,
-      polygonOffsetUnits: -1,
-    });
-    const strip = new THREE.Mesh(new THREE.BoxGeometry(stripWidth, stripHeight, stripDepth), material);
-    strip.position.set(x, y, stripZ);
-    strip.userData = { closetShadowLine: kind };
-    group.add(strip);
-  };
-  const topEdge = openingHeight / 2;
-  const bottomEdge = -openingHeight / 2;
-  const leftEdge = -openingWidth / 2;
-  const rightEdge = openingWidth / 2;
-  const hardThickness = Math.min(0.35 * IN, maxStrip);
-  const softThickness = Math.min(0.8 * IN, maxStrip);
-  const highlightThickness = Math.min(0.12 * IN, maxStrip);
-  // Hard shadow: top and left.
-  addStrip("shadow", openingWidth, hardThickness, 0, topEdge - hardThickness / 2, 0.45);
-  addStrip("shadow", hardThickness, openingHeight, leftEdge + hardThickness / 2, 0, 0.45);
-  // Softer shadow: top and left.
-  addStrip("shadow", openingWidth, softThickness, 0, topEdge - softThickness / 2, 0.18);
-  addStrip("shadow", softThickness, openingHeight, leftEdge + softThickness / 2, 0, 0.18);
-  // Highlight: bottom and right.
-  addStrip("highlight", openingWidth, highlightThickness, 0, bottomEdge + highlightThickness / 2, 0.14);
-  addStrip("highlight", highlightThickness, openingHeight, rightEdge - highlightThickness / 2, 0, 0.14);
+  const notchZ = center.position.z + panelDepth / 2 + SHAKER_NOTCH_THICKNESS / 2;
+  for (const piece of shakerNotchPieces(openingWidth, openingHeight)) {
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(piece.w, piece.h, SHAKER_NOTCH_THICKNESS),
+      shakerNotchMaterial(surfaceHex, piece.band),
+    );
+    mesh.position.set(piece.x, piece.y, notchZ);
+    mesh.userData = { shakerNotch: true, shakerNotchSide: piece.side, shakerNotchBand: piece.band };
+    group.add(mesh);
+  }
 
   const pieces = [
     [width, rail, 0, height / 2 - rail / 2],

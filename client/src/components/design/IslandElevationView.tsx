@@ -226,6 +226,12 @@ function DoorFront({
           <RecessedPanel inset={frameInsetPx ?? 4} face={face} edge={edge} doorSampleUrl={doorSampleUrl} />
         </div>
       );
+    case "five-piece-slab":
+      return (
+        <div className="absolute inset-0" style={{ backgroundColor: face, boxShadow: `inset 0 0 0 1px ${edge}55` }}>
+          <div className="absolute" style={{ left: "12%", right: "12%", top: "12%", bottom: "12%", backgroundColor: face, boxShadow: `inset 0 0 0 1px ${edge}88` }} />
+        </div>
+      );
     case "shaker":
     default:
       return (

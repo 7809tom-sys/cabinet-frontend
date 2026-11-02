@@ -5674,6 +5674,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     (cab: PlacedCabinet): string | null => {
       const plan = facePlanForCab(cab);
       if (!plan) return activeDoorSampleUrl;
+      // Blueprint crops and five-piece slabs stay procedural. The catalog photo
+      // carries a frame and the old door's imperfections.
+      if (plan.suppressCatalogPhoto || plan.dlcCrop) return null;
       if (plan.sourceKind === "combined") return null;
       return plan.doorUrl || activeDoorSampleUrl;
     },
@@ -5688,8 +5691,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       if (sid == null) return DEFAULT_DRAWER_SAMPLE_URL;
       const plan = facePlanForCab(cab);
       if (!plan || plan.sourceKind === "combined") return null;
-      // Processed DLC crops: the drawer has its own crop or none (solid colour); never the door photo.
-      if (plan.dlcCrop) return plan.drawerUrl;
+      if (plan.suppressCatalogPhoto || plan.dlcCrop) return null;
       if (plan.sourceKind === "split") return plan.drawerUrl;
       return plan.doorUrl;
     },

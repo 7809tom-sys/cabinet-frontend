@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
+import { brandDoorSurfaceHex } from "@shared/shakerDoorBlueprint";
 import {
   CLOSET_DL_SHAKER_FRAME_IN,
   CLOSET_SLAB_BELOW_IN,
@@ -36,11 +37,14 @@ describe("closet DL shaker fronts", () => {
     expect(rails).toHaveLength(4);
     expect(center!.position.z).toBeLessThan(rails[0]!.position.z);
 
-    const shadows = boxes.filter((mesh) => mesh.userData.closetShadowLine === "shadow");
-    const highlights = boxes.filter((mesh) => mesh.userData.closetShadowLine === "highlight");
-    expect(shadows.length).toBeGreaterThanOrEqual(2);
-    expect(highlights.length).toBeGreaterThanOrEqual(2);
-    for (const strip of [...shadows, ...highlights]) {
+    const notches = boxes.filter((mesh) => mesh.userData.shakerNotch);
+    expect(notches.length).toBe(8);
+    const surface = brandDoorSurfaceHex("#774d3a").replace("#", "");
+    for (const mesh of pieces) {
+      const material = mesh.material as THREE.MeshStandardMaterial;
+      expect(material.color.getHexString()).toBe(surface);
+    }
+    for (const strip of notches) {
       expect(strip.userData.squareCorner).toBeUndefined();
       expect(strip.userData.physicalRail).toBeUndefined();
     }
