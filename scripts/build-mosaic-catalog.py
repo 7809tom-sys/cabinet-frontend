@@ -88,6 +88,15 @@ GEOMETRY = {
     "clover": "Squares with rounded clover corners",
 }
 
+# Plausible equivalent-square-side of one chip, in inches, per pattern. These bound the
+# photo-derived module: a mosaic chip is never smaller than a penny or bigger than a 4x4.
+CHIP_SIDE_IN = {
+    "hex": (0.7, 3.2), "square": (0.4, 2.2), "subway": (1.2, 3.2), "brick": (0.5, 1.6),
+    "linear": (0.3, 2.0), "picket": (1.0, 2.6), "diamond": (0.7, 2.2), "chevron": (0.8, 2.2),
+    "framed-square": (1.2, 2.6), "bloom": (0.8, 2.4), "lantern": (1.2, 3.0),
+    "floral": (0.6, 1.6), "lattice": (0.5, 1.6), "clover": (1.2, 2.6),
+}
+
 FINISH_OVERRIDE = {
     "Glacier Shift": "polished", "Pearled Hex": "iridescent", "Shell Radiance": "iridescent",
     "Arctic Vail": "satin", "Greystone Bloom": "honed", "Ivory Bloom": "honed",
@@ -332,7 +341,7 @@ def choose_photo(paths: list[str], sheet_in: tuple[float, float]) -> Candidate |
     return min(sheets, key=lambda c: abs(c.aspect - target) / target)
 
 
-def bake_texture(photo: Candidate, slug: str, sheet_in: tuple[float, float]) -> dict:
+def bake_texture(photo: Candidate, slug: str, sheet_in: tuple[float, float], entry_pattern: str) -> dict:
     rgb = load_rgb(photo.path)
     h, w = rgb.shape[:2]
     scale = min(1.0, MAX_SRC / max(w, h))
@@ -374,6 +383,22 @@ def bake_texture(photo: Candidate, slug: str, sheet_in: tuple[float, float]) -> 
     if module_h > sheet_in[1]:
         module_h = sheet_in[1]
         module_w = module_h * fw / fh
+
+    # The photo's own chip count is an independent size check. If the derived module puts a chip
+    # outside the plausible band for its pattern, scale the module until the chip lands on the
+    # nearest edge of that band. This only corrects a mis-read joint; it never invents a size the
+    # photo does not already show, and it never changes the chip shapes.
+    band_note = ""
+    chip_side = chip_area_side(face_rgb, sheet_in)
+    band = CHIP_SIDE_IN.get(entry_pattern)
+    if chip_side and band:
+        low, high = band
+        target = min(high, max(low, chip_side))
+        if abs(target - chip_side) > 1e-6:
+            factor_scale = target / chip_side
+            module_w = min(module_w * factor_scale, sheet_in[0])
+            module_h = min(module_h * factor_scale, sheet_in[1])
+            band_note = "chip-bounded"
 
     factor = TARGET_PX / max(fw, fh)
     out_w, out_h = max(64, round(fw * factor)), max(64, round(fh * factor))
@@ -619,7 +644,7 @@ def main() -> int:
             print(f"  {name}: no readable photo -> unresolved")
             continue
 
-        baked = bake_texture(photo, slug, sheet_in)
+        baked = bake_texture(photo, slug, sheet_in, PATTERN[name])
         pal = baked["palette"]
         entries.append({
             "sku": row["pelicanCode"],

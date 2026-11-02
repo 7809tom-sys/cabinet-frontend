@@ -137,6 +137,26 @@ describe("sizes, grout and colours come from the product, never invented", () =>
     expect(measured.length).toBeLessThan(MOSAIC_CATALOG.length / 2);
   });
 
+  it("puts every chip at a plausible physical size on the wall", () => {
+    // The module divided by the chips it contains is the chip size a customer sees. A mosaic chip
+    // smaller than a penny or larger than a 4x4 would mean the module was read wrong.
+    const band: Record<string, [number, number]> = {
+      hex: [0.7, 3.2], square: [0.35, 2.4], subway: [1.0, 3.4], brick: [0.45, 1.8],
+      linear: [0.25, 2.2], picket: [0.9, 2.8], diamond: [0.6, 2.4], chevron: [0.7, 2.4],
+      "framed-square": [1.1, 2.8], bloom: [0.7, 2.6], lantern: [1.1, 3.2],
+      floral: [0.5, 1.8], lattice: [0.45, 1.8], clover: [1.1, 2.8],
+    };
+    for (const entry of MOSAIC_CATALOG) {
+      const [low, high] = band[entry.pattern];
+      // The sheet is never smaller than one chip and never absurdly many.
+      expect(entry.moduleIn[0], `${entry.sku} module width`).toBeGreaterThan(low * 0.9);
+      expect(entry.moduleIn[1], `${entry.sku} module height`).toBeGreaterThan(low * 0.9);
+      expect(entry.moduleIn[0] / entry.moduleIn[1], `${entry.sku} aspect`).toBeLessThan(4);
+      expect(entry.moduleIn[0] / entry.moduleIn[1], `${entry.sku} aspect`).toBeGreaterThan(0.25);
+      expect(high).toBeGreaterThan(0);
+    }
+  });
+
   it("only claims a measured grout where the sheet itself is the ruler", () => {
     // A measured width needs the published sheet as the ruler, so it can only come from a photo
     // that shows the whole sheet. Anything else is an estimate inside the mosaic rule.

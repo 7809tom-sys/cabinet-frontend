@@ -351,6 +351,7 @@ import {
   type SurfaceRole,
 } from "@/lib/surfaceSelection";
 import { selectedBacksplashTextureUrl } from "@/lib/backsplashProductMaterial";
+import { mosaicCatalogFor } from "@/lib/mosaicCatalog";
 import {
   isMosaicFloorPattern,
   isMosaicFloorProduct,
@@ -14523,14 +14524,39 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       if (role === "flooring") {
         // A mosaic marked Use as floor tile uses the same picture as its wall
         // backsplash. Planks still refuse a staged room or catalog photo.
-        if (isMosaicFloorProduct(selected)) return selectedBacksplashTextureUrl(selected).url;
+        if (isMosaicFloorProduct(selected)) {
+          const mosaicFloorEntry = mosaicCatalogFor({
+            name: selected?.name,
+            pelicanCode: selected?.pelicanCode,
+            category: selected?.category,
+            subCategory: selected?.subCategory,
+            size: selected?.size,
+          });
+          if (mosaicFloorEntry) return selected?.materialImageUrl?.trim() || mosaicFloorEntry.texture;
+          return selectedBacksplashTextureUrl(selected).url;
+        }
         // Never let a staged room/card image tile across a floor. An explicit
         // designerRenderReady or hasSwatch flag wins; otherwise materialImageUrl
         // is the approved swatch. Known product maps stay available. Any other
         // selected floor receives the renderer's labeled neutral floor.
         return flooringSceneTextureUrl(selected, approvedFlooringSwatchByProductId);
       }
-      if (role === "backsplash") return selectedBacksplashTextureUrl(selected).url;
+      if (role === "backsplash") {
+        // A verified catalog mosaic renders from its own baked texture (lib/mosaicCatalog.ts).
+        // Its catalog card is often a staged room photo, which must never tile across a wall.
+        // An approved Designer swatch the vendor uploaded still wins.
+        const swatch = selected?.materialImageUrl?.trim();
+        if (swatch) return swatch;
+        const mosaic = mosaicCatalogFor({
+          name: selected?.name,
+          pelicanCode: selected?.pelicanCode,
+          category: selected?.category,
+          subCategory: selected?.subCategory,
+          size: selected?.size,
+        });
+        if (mosaic) return mosaic.texture;
+        return selectedBacksplashTextureUrl(selected).url;
+      }
       return selected?.materialImageUrl ?? null;
     };
     return {

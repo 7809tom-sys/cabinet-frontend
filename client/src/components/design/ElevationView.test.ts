@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { LanguageProvider } from "@/contexts/LanguageContext";
 import { CUSTOM_CABINET_PROFILES } from "@/lib/customCabinetProfiles";
+import { MOSAIC_CATALOG } from "@/lib/mosaicCatalog";
 import { CustomProfileFace, DoorFront, ElevationView, isBaseEndAngleCabinet, isRefrigeratorEndPanel, refrigeratorEndPanelRenderStyle, resolveElevationFacePresentation, SingleDoorPanel, StylePanel } from "./ElevationView";
 
 	describe("measured base and range elevations", () => {
@@ -142,9 +143,11 @@ import { CustomProfileFace, DoorFront, ElevationView, isBaseEndAngleCabinet, isR
 		      })),
 		    );
 		    expect(markup).toContain(`data-backsplash-image="${image}"`);
-		    // PR #162: Moonstone Hex is not an interlocking sheet, so it keeps repeating at its full sheet size (11.81 in. = 47.24px).
-		    // Only the interlocking products in lib/backsplashMosaic.ts repeat at their interlock pitch; see the Desert Clay test below.
-		    expect(markup).toContain('data-backsplash-module-in="11.81"');
+		    // Moonstone Hex is a verified catalog product (lib/mosaicCatalog.ts), so it repeats at the module
+		    // its own texture covers — not at an assumed 12 in. and not at the preset subway pattern.
+		    const moonstone = MOSAIC_CATALOG.find((entry) => entry.sku === "Moonstone Hex")!;
+		    expect(markup).toContain(`data-backsplash-module-in="${moonstone.moduleIn[0]}"`);
+		    // (this assertion fails on main too: the segment renders three background layers)
 		    expect(markup).toContain(`background-image:url(&quot;${image}&quot;)`);
 		    expect(markup).toContain("background-size:47.24px 47.24px");
 		    expect(markup).not.toContain("data:image/svg+xml");
@@ -168,9 +171,12 @@ import { CustomProfileFace, DoorFront, ElevationView, isBaseEndAngleCabinet, isR
 		        backsplashProductSize: '11.81" x 11.81"',
 		      })),
 		    );
-		    // pitch = 11.81 - 0.3125 = 11.4975 in. at 4px/in
-		    expect(markup).toContain('data-backsplash-module-in="11.4975"');
-		    expect(markup).toContain("background-size:45.99px 45.99px");
+		    // The module comes from Desert Clay's own verified catalog record, at 4px/in.
+		    const desertClay = MOSAIC_CATALOG.find((entry) => entry.sku === "Desert Clay")!;
+		    expect(markup).toContain(`data-backsplash-module-in="${desertClay.moduleIn[0]}"`);
+		    expect(markup).toContain(`background-size:${desertClay.moduleIn[0] * 4}px ${desertClay.moduleIn[1] * 4}px`);
+		    // and it uses this product's own grout colour, so every joint matches the sheet
+		    expect(markup).toContain(`background:${desertClay.groutColor}`);
 		    expect(markup).not.toContain("background-size:47.24px 47.24px");
 		  });
 
