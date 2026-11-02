@@ -45,14 +45,14 @@ const known = (v: string | undefined | null) => !!v && v.trim() !== "" && !/^unk
 
 /** Parses an inch value like `1 1/2"` or `3"` — only when the CSV states one. */
 export function parseInches(text: string): number | null {
-  const m = text.match(/(\d+)(?:\s+(\d+)\/(\d+))?\s*"/) ?? text.match(/^(\d+)\/(\d+)\s*"/);
+  const m = text.match(/(\d+)(?:(?:\s+|-)(\d+)\/(\d+))?\s*"/) ?? text.match(/^(\d+)\/(\d+)\s*"/);
   if (!m) return null;
   if (m.length === 3) return Number(m[1]) / Number(m[2]);
   return Number(m[1]) + (m[2] ? Number(m[2]) / Number(m[3]) : 0);
 }
 
 export function catalogForDoor(door: DistributorDoorMatch): { code: string | null; row: WalzCraftCatalogProfile | null } {
-  const top = door.matches[0];
+  const top = door.matches?.[0];
   if (!top) return { code: null, row: null };
   const code = top.walzcraft.match(/^(S\d+)\b/)?.[1] ?? top.templateId ?? null;
   return { code, row: code ? WALZCRAFT_CATALOG_PROFILES[code] ?? null : null };
@@ -67,19 +67,23 @@ export function planProfileFill(door: DistributorDoorMatch, current: ProfileForm
   const proposed: Partial<Record<ProfileField, { to: string; source: string }>> = {};
   const missing: string[] = [];
   const src = (col: string) => `walzcraft_door_catalog.csv ${row?.style ?? code} · ${col}`;
+  const cited = (col: "frame_width" | "bevel_reveal" | "thickness", value: string) => row?.sources?.[col] ?? src(`${col} "${value}"`);
+  const noRow = row ? null : code ? `no WalzCraft catalog row for ${code}` : "no WalzCraft style matched";
+  const why = (label: string, reason: string) => `${label} — left blank: ${noRow ?? reason}`;
   const slab = isSlabDoor(door);
 
   // Frame width → rail/stile.
   const fw = row?.frame_width ?? "";
   const inches = known(fw) ? parseInches(fw) : null;
   if (inches != null && /stile/i.test(fw)) {
-    proposed.stileWidth = { to: String(inches), source: src(`frame_width "${fw}"`) };
-    missing.push(PROFILE_FIELD_LABELS.railWidth);
+    proposed.stileWidth = { to: String(inches), source: cited("frame_width", fw) };
+    missing.push(why(PROFILE_FIELD_LABELS.railWidth, "source states stile width only"));
   } else if (inches != null) {
-    proposed.railWidth = { to: String(inches), source: src(`frame_width "${fw}"`) };
-    proposed.stileWidth = { to: String(inches), source: src(`frame_width "${fw}"`) };
+    proposed.railWidth = { to: String(inches), source: cited("frame_width", fw) };
+    proposed.stileWidth = { to: String(inches), source: cited("frame_width", fw) };
   } else if (!slab) {
-    missing.push(PROFILE_FIELD_LABELS.railWidth, PROFILE_FIELD_LABELS.stileWidth);
+    const r = `WalzCraft publishes no frame width for ${row?.style ?? code} (frame_width unknown; profile "${row?.stile_rail_profile ?? "unknown"}" states no width)`;
+    missing.push(why(PROFILE_FIELD_LABELS.railWidth, r), why(PROFILE_FIELD_LABELS.stileWidth, r));
   }
 
   // Panel construction + door front type.
@@ -90,53 +94,53 @@ export function planProfileFill(door: DistributorDoorMatch, current: ProfileForm
     const pt = row?.panel_type ?? "";
     if (/^raised panel$/i.test(pt)) proposed.panelConstruction = { to: "raised", source: src(`panel_type "${pt}"`) };
     else if (/^flat\/recessed$/i.test(pt)) proposed.panelConstruction = { to: "flat", source: src(`panel_type "${pt}"`) };
-    else missing.push(PROFILE_FIELD_LABELS.panelConstruction);
-    missing.push(PROFILE_FIELD_LABELS.drawerFrontType);
+    else missing.push(why(PROFILE_FIELD_LABELS.panelConstruction, `panel_type "${pt || "unknown"}" is not raised or flat/recessed`));
+    missing.push(why(PROFILE_FIELD_LABELS.drawerFrontType, "WalzCraft data does not state the drawer front type"));
   }
 
   // Bevel (bevel_reveal) — only when the CSV states inches.
   const br = row?.bevel_reveal ?? "";
   const bevel = known(br) ? parseInches(br) : null;
-  if (bevel != null) proposed.bevelWidth = { to: String(bevel), source: src(`bevel_reveal "${br}"`) };
-  else if (!slab) missing.push(PROFILE_FIELD_LABELS.bevelWidth);
-  if (!slab) missing.push(PROFILE_FIELD_LABELS.bevelDepth);
+  if (bevel != null) proposed.bevelWidth = { to: String(bevel), source: cited("bevel_reveal", br) };
+  else if (!slab) missing.push(why(PROFILE_FIELD_LABELS.bevelWidth, "bevel_reveal not published"));
+  if (!slab) missing.push(why(PROFILE_FIELD_LABELS.bevelDepth, "WalzCraft does not dimension bevel depth"));
 
   // Inside edge profile + profile notes: verbatim profile names.
   const sr = row?.stile_rail_profile ?? "";
   const pp = row?.panel_profile ?? "";
   if (known(sr)) proposed.insideEdgeProfile = { to: sr, source: src("stile_rail_profile") };
-  else if (!slab) missing.push(PROFILE_FIELD_LABELS.insideEdgeProfile);
+  else if (!slab) missing.push(why(PROFILE_FIELD_LABELS.insideEdgeProfile, "stile/rail profile code not published"));
   const names = [known(sr) ? `Stile/rail profile: ${sr}` : null, known(pp) ? `Panel profile: ${pp}` : null, row && known(row.thickness) ? `Thickness: ${row.thickness}` : null].filter(Boolean);
   if (names.length) proposed.profileNotes = { to: `WalzCraft ${row!.style} — ${names.join("; ")}`, source: src("stile_rail_profile / panel_profile / thickness") };
-  else missing.push(PROFILE_FIELD_LABELS.profileNotes);
+  else missing.push(why(PROFILE_FIELD_LABELS.profileNotes, "no profile names or thickness published"));
 
   // Finish sheen: only an explicit matte / satin / gloss word in the finish column.
-  const sheen = row?.finish.match(/\b(matte|satin|gloss)\b/i)?.[1]?.toLowerCase();
+  const sheen = row?.finish?.match(/\b(matte|satin|gloss)\b/i)?.[1]?.toLowerCase();
   if (sheen) proposed.finishSheen = { to: sheen, source: src(`finish "${row!.finish}"`) };
-  else missing.push(PROFILE_FIELD_LABELS.finishSheen);
+  else missing.push(why(PROFILE_FIELD_LABELS.finishSheen, "finish text names no matte/satin/gloss"));
 
   // Frame source citation: distributor name + WalzCraft drawing.
   if (door.distributor && code) {
     proposed.sourceSpecification = { to: `${door.distributor} · WalzCraft ${code} (published profile drawing)`, source: `distributor + WalzCraft ${code}` };
   } else if (door.distributor) {
     proposed.sourceSpecification = { to: door.distributor, source: "distributor" };
-  } else missing.push(`${PROFILE_FIELD_LABELS.sourceSpecification} (distributor missing)`);
+  } else missing.push(why(PROFILE_FIELD_LABELS.sourceSpecification, "distributor missing"));
 
   // Glaze: distributor color text, then catalog finish "Glaze Color X".
   const colorText = door.walzcraftColor ?? "";
-  const glazeColorText = row?.finish.match(/Glaze Color\s+([A-Za-z]+)/)?.[1] ?? null;
+  const glazeColorText = row?.finish?.match(/Glaze Color\s+([A-Za-z]+)/)?.[1] ?? null;
   if (/no glaze/i.test(colorText)) proposed.glazed = { to: "no", source: `${door.distributor} CSV color "${colorText}"` };
   else if (/glaze/i.test(colorText)) proposed.glazed = { to: "yes", source: `${door.distributor} CSV color "${colorText}"` };
-  else missing.push(PROFILE_FIELD_LABELS.glazed);
+  else missing.push(why(PROFILE_FIELD_LABELS.glazed, "distributor color does not mention glaze"));
   const glazeWord = (colorText.match(/\b(gold|black)\s+glaze/i)?.[1] ?? (proposed.glazed?.to === "yes" ? glazeColorText : null))?.toLowerCase();
   if (glazeWord === "gold" || glazeWord === "black") proposed.glazeColor = { to: glazeWord, source: "match data" };
-  else missing.push(glazeWord ? `${PROFILE_FIELD_LABELS.glazeColor} (source says "${glazeWord}", only Gold/Black are auto-filled)` : PROFILE_FIELD_LABELS.glazeColor);
+  else missing.push(why(PROFILE_FIELD_LABELS.glazeColor, glazeWord ? `source says "${glazeWord}", only Gold/Black are auto-filled` : "no glaze color in source"));
 
   const changes: FillChange[] = [];
   for (const [field, p] of Object.entries(proposed) as [ProfileField, { to: string; source: string }][]) {
     if (current[field] !== p.to) changes.push({ field, label: PROFILE_FIELD_LABELS[field], from: current[field], to: p.to, source: p.source });
   }
-  return { changes, missing: missing.map((m) => `${m}: not in WalzCraft data`), catalog: row, styleCode: code };
+  return { changes, missing, catalog: row, styleCode: code };
 }
 
 export function applyFill(current: ProfileFormValues, plan: FillPlan): ProfileFormValues {

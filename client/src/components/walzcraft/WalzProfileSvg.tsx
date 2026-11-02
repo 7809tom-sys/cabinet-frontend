@@ -52,7 +52,7 @@ export function WalzProfileSvg({
   const vbX = -PADDING_IN;
   const vbY = -PADDING_IN;
   const vbW = widthIn + PADDING_IN * 2;
-  const vbH = thicknessIn + PADDING_IN + 0.5; // extra bottom room for labels + footnote
+  const vbH = thicknessIn + PADDING_IN + 0.8; // extra bottom room for labels + footnote
 
   // Flip y so face (y=thickness) is at top of the drawing.
   const flip = (y: number) => thicknessIn - y;
@@ -83,19 +83,19 @@ export function WalzProfileSvg({
 
   // Frame label position: centered under the frame region (x from 0..frameWidth)
   const frameLabelX = Math.min(frameWidth.value, widthIn) / 2;
-  const frameLabelY = thicknessIn + 0.18;
+  const frameLabelY = thicknessIn + 0.32;
 
   // Reveal label position: under the panel bevel region
   const revealStartX = Math.min(frameWidth.value + 0.125, widthIn);
   const revealEndX = Math.min(revealStartX + reveal.value, widthIn);
   const revealLabelX = (revealStartX + revealEndX) / 2;
-  const revealLabelY = thicknessIn + 0.18;
+  const revealLabelY = thicknessIn + 0.32;
 
   // Bevel angle label: near the frame face, above the drawing
   const bevelLabelX = Math.min(frameWidth.value * 0.5, widthIn);
-  const bevelLabelY = -0.08;
+  const bevelLabelY = -0.1;
 
-  const fontSize = 0.16;
+  const fontSize = 0.3; // large enough to tell 2 1/4" from 3/4" in the editor
 
   return (
     <svg
@@ -166,6 +166,7 @@ export function WalzProfileSvg({
       <g
         fill="#000000"
         fontFamily="sans-serif"
+        fontWeight={600}
         fontSize={fontSize}
         textAnchor="middle"
       >
@@ -183,7 +184,7 @@ export function WalzProfileSvg({
         {anyEstimated && (
           <text
             x={widthIn / 2}
-            y={thicknessIn + 0.36}
+            y={thicknessIn + 0.62}
             fontSize={fontSize * 0.85}
             fill="#555555"
           >

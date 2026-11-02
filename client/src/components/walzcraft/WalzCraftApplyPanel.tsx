@@ -43,9 +43,12 @@ export function WalzCraftApplyPanel({ style, values, onApply }: {
             </table>
           )}
           {plan.missing.length > 0 && (
-            <ul data-testid="walzcraft-fill-missing" className="list-disc pl-4 text-muted-foreground">
-              {plan.missing.map((m) => <li key={m}>{m} (left unchanged)</li>)}
-            </ul>
+            <div data-testid="walzcraft-fill-missing-block" className="rounded border border-[#d7a46c] bg-[#d7a46c]/10 p-2">
+              <p className="font-semibold">Left blank ({plan.missing.length}) — not guessed, form value unchanged:</p>
+              <ul data-testid="walzcraft-fill-missing" className="list-disc pl-4">
+                {plan.missing.map((m) => <li key={m}>{m}</li>)}
+              </ul>
+            </div>
           )}
           <div className="flex gap-2">
             <Button type="button" size="sm" className="h-7 bg-[#d7a46c] text-[#244338] hover:bg-[#d7a46c]/90" data-testid="walzcraft-confirm-fill" disabled={plan.changes.length === 0}

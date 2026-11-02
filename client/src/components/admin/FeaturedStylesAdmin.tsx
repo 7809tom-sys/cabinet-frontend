@@ -36,6 +36,7 @@ import { WoodGrainTileTool } from "@/components/walzcraft/WoodGrainTileTool";
 import { doorForStyle, colorLabel } from "@shared/walzcraftDistributorMatches";
 import { colorTypeFor, woodGrainBadge } from "@shared/walzcraftColorPatterns";
 import { WalzCraftApplyPanel, GlazingControl } from "@/components/walzcraft/WalzCraftApplyPanel";
+import { WalzCraftErrorBoundary } from "@/components/walzcraft/WalzCraftErrorBoundary";
 import { readGlazing, saveGlazing, type ProfileFormValues, type Glazing } from "@shared/walzcraftProfileFill";
 import { designerWorkspaceHref } from "@/lib/designerFreshStart";
 import { ApplySpecsToOtherStyles, type ApplySpecsHandle } from "./ApplySpecsToOtherStyles";
@@ -842,7 +843,7 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
             const door = walzDoor;
             if (!door || !isWoodGrain) return null;
             const scenes = [style.roomSceneImageUrl, ...(style.roomScenes ?? []).map((r) => r.imageUrl)].filter((u): u is string => !!u);
-            return <WoodGrainTileTool styleId={style.id} colorName={colorLabel(door)} sceneUrls={Array.from(new Set(scenes))} />;
+            return <WalzCraftErrorBoundary label="Wood grain tiles"><WoodGrainTileTool styleId={style.id} colorName={colorLabel(door)} sceneUrls={Array.from(new Set(scenes))} /></WalzCraftErrorBoundary>;
           })()}
 
           <DoorRenderOverrides
@@ -852,6 +853,7 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
             doorShape={doorShape}
             onDoorShape={setDoorShape}
             sampleImageUrl={doorSampleImageUrl || style.doorSampleImageUrl || ""}
+            brochure={walzDoor ? { src: walzDoor.photo ?? null, label: `${walzDoor.distributor ?? "Distributor"} brochure` } : null}
             preview={resolveDoorShapeDecision({
               ourName,
               styleCode: style.styleCode,
@@ -876,8 +878,10 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
 
           {/* WalzCraft match (read-only; approvals are localStorage only) */}
           <div data-testid="edit-dialog-walzcraft-match">
-            <WalzCraftMatchForStyle style={style} currentPhoto={thumb(style)} />
-            <WalzCraftApplyPanel style={style} values={walzFormValues} onApply={applyWalzFormValues} />
+            <WalzCraftErrorBoundary>
+              <WalzCraftMatchForStyle style={style} currentPhoto={thumb(style)} hideBrochurePhoto />
+              <WalzCraftApplyPanel style={style} values={walzFormValues} onApply={applyWalzFormValues} />
+            </WalzCraftErrorBoundary>
           </div>
 
           {/* Frame Profile Measurements */}
@@ -1762,7 +1766,7 @@ export default function FeaturedStylesAdmin() {
                     onSkinNeeded={saveSkinNeeded}
                     onFinishedEndNeeded={saveFinishedEndNeeded}
                   />
-                  <div className="mt-2"><WalzCraftMatchForStyle style={s} currentPhoto={thumb(s)} /></div>
+                  <div className="mt-2"><WalzCraftErrorBoundary><WalzCraftMatchForStyle style={s} currentPhoto={thumb(s)} /></WalzCraftErrorBoundary></div>
                   <details data-testid="featured-style-measurements" className="mt-2 rounded border border-border p-2">
                     <summary className="cursor-pointer text-xs font-semibold text-muted-foreground">Measurements (frame profile, Designer compliance, citation) — edit in the pencil dialog</summary>
                   <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
@@ -1859,7 +1863,7 @@ export default function FeaturedStylesAdmin() {
         )}
       </div>
 
-      <WalzCraftOnlyMatches styles={featured} />
+      <WalzCraftErrorBoundary label="WalzCraft-only matches"><WalzCraftOnlyMatches styles={featured} /></WalzCraftErrorBoundary>
 
       {/* All other styles — edit any of them, or feature them */}
       <div>
@@ -1931,12 +1935,6 @@ export default function FeaturedStylesAdmin() {
                   title="Edit this door style"
                 >
                   <DoorStyleIdentity style={s} />
-                  <DoorStyleNeedToggles
-                    style={s}
-                    pending={saveNeeds.isPending}
-                    onSkinNeeded={saveSkinNeeded}
-                    onFinishedEndNeeded={saveFinishedEndNeeded}
-                  />
                   {!isDoorStyleVerified(s) ? <Badge variant="outline" className="mt-1">Unverified</Badge> : null}
                   <p className="mt-0.5 break-words text-xs leading-snug text-muted-foreground">
                     {(s.roomScenes?.length ?? 0) > 0 ? `${s.roomScenes?.length}/${MAX_SCENES_PER_STYLE} room scenes` : "Room scene required"}
@@ -1947,6 +1945,14 @@ export default function FeaturedStylesAdmin() {
                   </p>
                   <span className="mt-1 block min-w-0"><SourceAttribution style={s} /></span>
                 </button>
+                <div className="w-full basis-full" onClick={(e) => e.stopPropagation()}>
+                  <DoorStyleNeedToggles
+                    style={s}
+                    pending={saveNeeds.isPending}
+                    onSkinNeeded={saveSkinNeeded}
+                    onFinishedEndNeeded={saveFinishedEndNeeded}
+                  />
+                </div>
                 <div className="flex w-full flex-wrap items-center gap-1">
                   <OpenDesignerLink
                     doorStyleId={s.id}
@@ -2153,9 +2159,11 @@ function DoorRenderOverrides({
   doorShape,
   onDoorShape,
   sampleImageUrl,
+  brochure,
   preview,
   resolvedHex,
 }: {
+  brochure?: { src: string | null; label: string } | null;
   woodGrain?: { label: string; swatchUrl: string | null; horizontal: boolean } | null;
   renderHex: string;
   onRenderHex: (value: string) => void;
@@ -2216,17 +2224,34 @@ function DoorRenderOverrides({
           </p>
         </div>
       </div>
-      <SampleEyedropper imageUrl={sampleImageUrl} onPick={onRenderHex} />
+      {/* One picker: click either door to set the render color. */}
+      <SampleEyedropper
+        images={[{ url: sampleImageUrl, label: "Sample door" }, ...(brochure ? [{ url: brochure.src ?? "", label: brochure.label }] : [])]}
+        onPick={onRenderHex}
+      />
     </div>
   );
 }
 
-function SampleEyedropper({ imageUrl, onPick }: { imageUrl: string; onPick: (hex: string) => void }) {
+function SampleEyedropper({ images, onPick }: { images: { url: string; label: string }[]; onPick: (hex: string) => void }) {
+  const [note, setNote] = useState("Click either door to set Render hex.");
+  return (
+    <div data-testid="render-color-picker" className="space-y-1">
+      <div data-testid="sample-vs-brochure" className="flex flex-col gap-3 sm:flex-row sm:items-start">
+        {images.map((img, i) => (
+          <PickCanvas key={i} testId={i === 0 ? "edit-dialog-sample-photo" : "edit-dialog-brochure-photo"} {...img} onPick={(hex) => { onPick(hex); setNote(`Picked ${hex} from ${img.label} for Render hex.`); }} onNote={setNote} />
+        ))}
+      </div>
+      <p className="text-xs text-muted-foreground">{note}</p>
+    </div>
+  );
+}
+
+function PickCanvas({ url, label, testId, onPick, onNote }: { url: string; label: string; testId: string; onPick: (hex: string) => void; onNote: (n: string) => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [note, setNote] = useState("");
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || !imageUrl) return;
+    if (!canvas || !url) return;
     const image = new Image();
     image.crossOrigin = "anonymous";
     image.onload = () => {
@@ -2235,35 +2260,36 @@ function SampleEyedropper({ imageUrl, onPick }: { imageUrl: string; onPick: (hex
       const context = canvas.getContext("2d");
       if (!context) return;
       context.drawImage(image, 0, 0, canvas.width, canvas.height);
-      setNote("Click the sample photo to set Render hex.");
     };
-    image.onerror = () => setNote("This sample could not be loaded for the eyedropper. Paste a render hex instead.");
-    image.src = imageUrl;
-  }, [imageUrl]);
-  if (!imageUrl) return <p className="text-xs text-muted-foreground">Add a door sample photo to set Render hex from it.</p>;
+    image.onerror = () => onNote(`${label} could not be loaded for the picker. Paste a render hex instead.`);
+    image.src = url;
+  }, [url]);
   return (
-    <div className="space-y-1">
-      <canvas
-        ref={canvasRef}
-        className="h-40 w-28 cursor-crosshair rounded border bg-muted"
-        onClick={(event) => {
-          const canvas = canvasRef.current;
-          const context = canvas?.getContext("2d");
-          if (!canvas || !context) return;
-          const rect = canvas.getBoundingClientRect();
-          const x = Math.round((event.clientX - rect.left) * (canvas.width / rect.width));
-          const y = Math.round((event.clientY - rect.top) * (canvas.height / rect.height));
-          try {
-            const pixel = context.getImageData(x, y, 1, 1).data;
-            const hex = `#${[pixel[0], pixel[1], pixel[2]].map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
-            onPick(hex);
-            setNote(`Picked ${hex} for Render hex.`);
-          } catch {
-            setNote("The browser blocked reading this photo. Paste the render hex instead.");
-          }
-        }}
-      />
-      {note ? <p className="text-xs text-muted-foreground">{note}</p> : null}
-    </div>
+    <figure data-testid={testId} className="space-y-1">
+      <figcaption className="text-[11px] font-semibold uppercase tracking-wide text-[#244338]/70">{label}</figcaption>
+      {url ? (
+        <canvas
+          ref={canvasRef}
+          aria-label={`${label} — click to pick render color`}
+          className="h-40 w-28 cursor-crosshair rounded border border-[#244338]/20 bg-white"
+          onClick={(event) => {
+            const canvas = canvasRef.current;
+            const context = canvas?.getContext("2d");
+            if (!canvas || !context) return;
+            const rect = canvas.getBoundingClientRect();
+            const x = Math.round((event.clientX - rect.left) * (canvas.width / rect.width));
+            const y = Math.round((event.clientY - rect.top) * (canvas.height / rect.height));
+            try {
+              const pixel = context.getImageData(x, y, 1, 1).data;
+              onPick(`#${[pixel[0], pixel[1], pixel[2]].map((c) => c.toString(16).padStart(2, "0")).join("")}`);
+            } catch {
+              onNote("The browser blocked reading this photo. Paste the render hex instead.");
+            }
+          }}
+        />
+      ) : (
+        <div className="flex h-40 w-28 items-center justify-center rounded border border-dashed border-[#244338]/30 bg-[#fffdf9] p-2 text-center text-xs text-[#244338]/70">No photo found</div>
+      )}
+    </figure>
   );
 }

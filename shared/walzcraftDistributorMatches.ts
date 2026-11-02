@@ -16,8 +16,9 @@ export function colorLabel(d: DistributorDoorMatch): string {
 }
 
 export function rowText(d: DistributorDoorMatch): string {
-  const top = d.matches[0];
-  return `${d.distributor} · ${doorDisplayName(d)} → WalzCraft ${top.walzcraft} · ${top.confidencePct}% profile match · ${colorLabel(d)}`;
+  const top = d.matches?.[0];
+  const profile = top ? `WalzCraft ${top.walzcraft} · ${top.confidencePct}% profile match` : "no WalzCraft profile match in source";
+  return `${d.distributor} · ${doorDisplayName(d)} → ${profile} · ${colorLabel(d)}`;
 }
 
 export type FeatureKey = "frame width" | "edge/bevel" | "panel";
@@ -30,7 +31,7 @@ const FEATURE_RE: Record<FeatureKey, RegExp> = {
 /** The CSVs carry no per-feature %, so pct is null; a feature listed in "unknowns" is flagged unpublished. */
 export function featureConfidence(d: DistributorDoorMatch): FeatureConfidence[] {
   return (Object.keys(FEATURE_RE) as FeatureKey[]).map((feature) => {
-    const hit = d.unknowns.find((u) => FEATURE_RE[feature].test(u));
+    const hit = (d.unknowns ?? []).find((u) => FEATURE_RE[feature].test(u));
     return { feature, pct: null, note: hit ? `unknown in source: ${hit}` : "not scored in source" };
   });
 }
