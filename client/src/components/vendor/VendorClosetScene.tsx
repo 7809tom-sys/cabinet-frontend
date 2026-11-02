@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import type { StudioDesign, StudioKind, StudioWall } from "@/lib/vendorClosetStudio";
-import { STUDIO_BASKET_FRAME_HEX, STUDIO_BASKET_LINER_PLACEHOLDER_HEX, STUDIO_CORNER_SHELF_THICKNESS_IN, STUDIO_ILLUSTRATIVE_SHOE_PITCH_DEG, studioBasketPlacementsForWall, studioBasketSurface, studioBayCut, studioBays, studioCornerPlanningFootprint, studioCornerShelvesForWall, studioFixedBottom, studioFixedTop, studioPanelHeight, studioTowerFootprint, studioWidth } from "@/lib/vendorClosetStudio";
+import { STUDIO_BASKET_FRAME_HEX, STUDIO_BASKET_LINER_PLACEHOLDER_HEX, STUDIO_CORNER_SHELF_THICKNESS_IN, STUDIO_ILLUSTRATIVE_SHOE_PITCH_DEG, studioBasketPlacementsForWall, studioBasketSurface, studioBayCut, studioBays, studioCornerPlanningFootprint, studioCornerShelvesForWall, studioFixedBottom, studioFixedTop, studioPanelHeight, studioTowerFootprint, studioWidth, studioLaundryWall, STUDIO_LAUNDRY_APPLIANCE_IN } from "@/lib/vendorClosetStudio";
 import { CLOSET_FRAME_PADDING, closetFitDistance, frameClosetStudioCamera, type ClosetAabb, type ClosetCameraView } from "./closetStudioCamera";
 import { createClosetDlShakerFront } from "./closetShakerFront";
 
@@ -273,6 +273,26 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
         const companionWall = shelf.wallIds.find((wall) => wall !== design.wall);
         if (companionWall) renderCompanionTower(companionWall);
       }
+    }
+    if (studioLaundryWall(design) === design.wall) {
+      // Illustrative washer & dryer reservation only: a labelled block, not a product, SKU, or appliance dimension.
+      const { widthIn, heightIn, depthIn } = STUDIO_LAUNDRY_APPLIANCE_IN;
+      const c = document.createElement("canvas"); c.width = 512; c.height = 366;
+      const g = c.getContext("2d");
+      if (g) {
+        g.fillStyle = "#fffdf9"; g.fillRect(0, 0, 512, 366);
+        g.strokeStyle = "#d7a46c"; g.lineWidth = 10; g.strokeRect(5, 5, 502, 356);
+        g.fillStyle = "#244338"; g.textAlign = "center"; g.font = "bold 46px sans-serif"; g.fillText("Washer & dryer", 256, 150);
+        g.font = "bold 34px sans-serif"; g.fillText("reserved", 256, 200);
+        g.fillStyle = "#8a6a45"; g.font = "24px sans-serif"; g.fillText(`Illustrative ${widthIn}″ W × ${heightIn}″ H × ${depthIn}″ D`, 256, 260);
+      }
+      const label = new THREE.CanvasTexture(c); label.colorSpace = THREE.SRGBColorSpace;
+      const sideMat = new THREE.MeshStandardMaterial({ color: 0xfffdf9, roughness: 0.9 });
+      const faceMat = new THREE.MeshStandardMaterial({ map: label, roughness: 0.9 });
+      const startX = design.bays.length ? studioWidth(design) + 2 : 0;
+      const block = worldBox(widthIn, heightIn, depthIn, startX + widthIn / 2, heightIn / 2, depthIn / 2, sideMat);
+      (block as unknown as THREE.Mesh<THREE.BoxGeometry, THREE.Material[]>).material = [sideMat, sideMat, sideMat, sideMat, faceMat, sideMat];
+      block.userData = { laundryApplianceReserved: true, illustrative: true };
     }
     parts.updateMatrixWorld(true);
     const cabinetBounds = new THREE.Box3().setFromObject(parts);

@@ -23,8 +23,8 @@ describe("Closet Studio kids' mode, room size, auto-build and wall views", () =>
   it("offers four room modes in the intro grid", () => {
     render(<VendorClosetStudio />);
     const gate = screen.getByTestId("vendor-mode-gate");
-    for (const name of [/Closet/, /Pantry/, /Mudroom/, /Kids' closet/]) expect(within(gate).getAllByRole("button", { name }).length).toBeGreaterThan(0);
-    expect(within(gate).getAllByRole("button").filter((button) => button.hasAttribute("aria-pressed"))).toHaveLength(4);
+    for (const name of [/Closet/, /Pantry/, /Mudroom/, /Kids' closet/, /Laundry room/]) expect(within(gate).getAllByRole("button", { name }).length).toBeGreaterThan(0);
+    expect(within(gate).getAllByRole("button").filter((button) => button.hasAttribute("aria-pressed"))).toHaveLength(5);
     expect(screen.queryByTestId("vendor-kids-step")).toBeNull();
   });
 

@@ -375,7 +375,7 @@ const room = (mode: "closet" | "pantry" | "mudroom" | "kids", wallWidthIn: numbe
 
 describe("Closet Studio kids' closet mode", () => {
   it("adds kids as a fourth mode with rod, shelf and drawer recommendations", () => {
-    expect(STUDIO_MODES).toEqual(["closet", "pantry", "mudroom", "kids"]);
+    expect(STUDIO_MODES).toEqual(["closet", "pantry", "mudroom", "kids", "laundry"]);
     expect(MODE_RECOMMENDATIONS.kids).toEqual(["rod", "shelf", "drawer"]);
   });
 
@@ -577,7 +577,7 @@ describe("Closet Studio room height and auto-build", () => {
     expect(counts({ rods: 0, shelves: 4, drawers: 0, shoes: 0 }).shelves).toBe(4);
     expect(counts({ rods: 0, shelves: 0, drawers: 0, shoes: 0 })).toEqual({ rods: 0, shelves: 0, drawers: 0, shoes: 0 });
     expect(counts({ rods: 4, shelves: 0, drawers: 0, shoes: 0 }).rods).toBeGreaterThan(counts({ rods: 2, shelves: 0, drawers: 0, shoes: 0 }).rods);
-    expect(Object.keys(MODE_AUTO_BUILD_DEFAULTS).sort()).toEqual(["closet", "kids", "mudroom", "pantry"]);
+    expect(Object.keys(MODE_AUTO_BUILD_DEFAULTS).sort()).toEqual(["closet", "kids", "laundry", "mudroom", "pantry"]);
     const clamped = room("closet", 120, 24, { options: { rods: 99, shelves: -4, drawers: 0, shoes: Number.NaN } }).design;
     expect(countKind(clamped, "rod")).toBeLessThanOrEqual(8);
     expect(countKind(clamped, "shelf")).toBe(0);

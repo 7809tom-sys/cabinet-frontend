@@ -1,7 +1,7 @@
 import { CLOSET_PARTS, masterTracProduct, type MasterTracProduct } from "./closet";
 import { towerStorageSkuReferences } from "./masterTracTower";
 
-export type StudioMode = "closet" | "pantry" | "mudroom" | "kids";
+export type StudioMode = "closet" | "pantry" | "mudroom" | "kids" | "laundry";
 export type StudioMount = "floor" | "hanging";
 export type StudioWall = "back" | "left" | "right" | "front";
 export type StudioKind = "shelf" | "rod" | "drawer" | "shoe";
@@ -72,6 +72,8 @@ export type StudioDesign = {
   basketPlacements?: StudioBasketPlacement[];
   /** Kids' closet only: the child the rod and reach guidance are planned around. Kept when the mode is switched away so switching back needs no re-entry. */
   kids?: { ageYears: number; heightIn: number };
+  /** Laundry room only: the wall reserved for the washer and dryer. No towers are auto-built there. */
+  laundry?: { applianceWall: StudioLaundryWall };
   /** Finished ceiling height. Optional so older drafts restore; unset behaves as the 96 in default. */
   roomHeightIn?: number;
 };
@@ -136,7 +138,12 @@ export const STUDIO_BASKET_REFERENCE_OPTIONS: readonly StudioBasketReferenceOpti
   { sku: "432902", nominalHeightIn: 17, nominalWidthIn: 24, finish: "Chrome", sourceRevision: "floor-579554-p13-historical-reference-v1" },
   { sku: "432905", nominalHeightIn: 17, nominalWidthIn: 30, finish: "Chrome", sourceRevision: "floor-579554-p13-historical-reference-v1" },
 ];
-export const STUDIO_MODES: StudioMode[] = ["closet", "pantry", "mudroom", "kids"];
+export const STUDIO_MODES: StudioMode[] = ["closet", "pantry", "mudroom", "kids", "laundry"];
+export type StudioLaundryWall = "back" | "left" | "right";
+export const STUDIO_LAUNDRY_WALLS: StudioLaundryWall[] = ["back", "left", "right"];
+/** Illustrative side-by-side washer + dryer envelope only: not a product, SKU, price, or appliance specification. */
+export const STUDIO_LAUNDRY_APPLIANCE_IN = { widthIn: 56, heightIn: 40, depthIn: 30 } as const;
+export const studioLaundryWall = (design: StudioDesign): StudioLaundryWall | null => design.mode === "laundry" ? design.laundry?.applianceWall ?? "back" : null;
 export const STUDIO_PART_KINDS: StudioKind[] = ["shelf", "rod", "drawer", "shoe"];
 export const STUDIO_WALLS: StudioWall[] = ["back", "left", "right", "front"];
 export const STUDIO_CORNER_IDS: StudioCornerId[] = ["back-left", "back-right", "front-left", "front-right"];
@@ -148,7 +155,7 @@ const STUDIO_ILLUSTRATIVE_SHOE_PITCH_RAD = STUDIO_ILLUSTRATIVE_SHOE_PITCH_DEG * 
 const STUDIO_ILLUSTRATIVE_SHOE_ENVELOPE_HEIGHT_IN = STUDIO_SHOE_SHELF_DEPTH_IN * Math.sin(STUDIO_ILLUSTRATIVE_SHOE_PITCH_RAD)
   + (THICKNESS + STUDIO_SHOE_FENCE_HEIGHT_IN) * Math.cos(STUDIO_ILLUSTRATIVE_SHOE_PITCH_RAD);
 export const MODE_RECOMMENDATIONS: Record<StudioMode, StudioKind[]> = {
-  closet: ["shelf", "rod", "shoe"], pantry: ["shelf", "drawer"], mudroom: ["shoe", "rod", "shelf"], kids: ["rod", "shelf", "drawer"],
+  closet: ["shelf", "rod", "shoe"], pantry: ["shelf", "drawer"], mudroom: ["shoe", "rod", "shelf"], kids: ["rod", "shelf", "drawer"], laundry: ["shelf", "rod"],
 };
 
 const blankWallLayouts = (): Record<StudioWall, StudioWallLayout> => ({
@@ -784,12 +791,14 @@ export const MODE_AUTO_BUILD_DEFAULTS: Record<StudioMode, StudioAutoBuildOptions
   pantry: { rods: 0, shelves: 8, drawers: 3, shoes: 0 },
   mudroom: { rods: 2, shelves: 2, drawers: 0, shoes: 4 },
   kids: { rods: 2, shelves: 3, drawers: 3, shoes: 0 },
+  laundry: { rods: 2, shelves: 5, drawers: 0, shoes: 0 },
 };
 export const STUDIO_AUTO_BUILD_MAX_COUNT = 8;
 export type StudioAutoBuildInput = {
   mode: StudioMode; mount: StudioMount; finish: StudioDesign["finish"];
   wallWidthIn: number; roomDepthIn: number; roomHeightIn: number;
   kids?: StudioDesign["kids"]; options?: StudioAutoBuildOptions;
+  laundry?: StudioDesign["laundry"];
 };
 export type StudioAutoBuildResult = { design: StudioDesign; notices: string[] };
 
@@ -829,7 +838,7 @@ function planAutoBays(design: StudioDesign, mode: StudioMode, options: StudioAut
       plans.push({ specs: [...drawersLow(drawers, limitIn), ...shelvesFrom(startIn, take("shelves", shelvesPerBay), limitIn)] });
     }
   };
-  if (mode === "closet") { hang(); shoes(4); shelfDrawer(5); }
+  if (mode === "closet" || mode === "laundry") { hang(); shoes(4); shelfDrawer(5); }
   else if (mode === "pantry") { shelfDrawer(6); hang(); shoes(4); }
   else if (mode === "mudroom") {
     while (left.shoes > 0 || left.rods > 0) {
@@ -865,13 +874,14 @@ export function autoBuildStudio(input: StudioAutoBuildInput): StudioAutoBuildRes
   const mode = input.mode;
   let kids = input.kids;
   if (mode === "kids" && !validKids(kids)) { kids = { ageYears: 8, heightIn: 48 }; notices.push("No child age or height was given, so the kids' closet is planned for age 8 and 48 in."); }
+  const applianceWall: StudioLaundryWall | null = mode === "laundry" ? (STUDIO_LAUNDRY_WALLS.includes(input.laundry?.applianceWall as StudioLaundryWall) ? input.laundry!.applianceWall : "back") : null;
   const requested = input.options ?? MODE_AUTO_BUILD_DEFAULTS[mode];
   const count = (value: number) => Math.max(0, Math.min(STUDIO_AUTO_BUILD_MAX_COUNT, Math.round(Number.isFinite(value) ? value : 0)));
   const options: StudioAutoBuildOptions = { rods: count(requested.rods), shelves: count(requested.shelves), drawers: count(requested.drawers), shoes: count(requested.shoes) };
   const layouts = blankWallLayouts();
   let design: StudioDesign = {
     version: 2, mode, mount: input.mount, finish: input.finish, wall: "back", wallWidthIn: input.wallWidthIn, roomDepthIn: input.roomDepthIn, roomHeightIn: input.roomHeightIn,
-    ...(mode === "kids" ? { kids } : {}), wallLayouts: layouts, bays: layouts.back.bays,
+    ...(mode === "kids" ? { kids } : {}), ...(mode === "laundry" ? { laundry: { applianceWall: applianceWall! } } : {}), wallLayouts: layouts, bays: layouts.back.bays,
   };
   if (design.mount === "floor" && input.roomHeightIn < 87 + STUDIO_CEILING_CLEARANCE_IN) notices.push(`A ${input.roomHeightIn} in ceiling leaves less than ${STUDIO_CEILING_CLEARANCE_IN} in above the shortest 87 in floor upright; confirm the ceiling clearance before ordering.`);
 
@@ -880,12 +890,19 @@ export function autoBuildStudio(input: StudioAutoBuildInput): StudioAutoBuildRes
   const sides: StudioWall[] = [];
   if (walkIn && design.mount === "hanging") notices.push("Hanging mount is planned on the back wall only; side-wall corners are floor-mounted.");
   else if (walkIn) for (const side of ["left", "right"] as const) {
-    if (input.wallWidthIn - (sides.length + 1) * AUTO_TOWER_DEPTH_IN >= AUTO_WALKWAY_IN) sides.push(side);
+    if (input.wallWidthIn - (sides.length + 1) * AUTO_TOWER_DEPTH_IN - (applianceWall && applianceWall !== side && applianceWall !== "back" ? STUDIO_LAUNDRY_APPLIANCE_IN.depthIn - AUTO_TOWER_DEPTH_IN : 0) >= AUTO_WALKWAY_IN) sides.push(side);
     else notices.push(`The ${side} wall is skipped: towers there would leave less than a ${AUTO_WALKWAY_IN} in walkway.`);
   }
   const cornerIn = STUDIO_CORNER_SHELF_NOMINAL_FOOTPRINT_IN;
   const availableIn = (wall: StudioWall) => wall === "back" ? input.wallWidthIn - sides.length * cornerIn : input.roomDepthIn - cornerIn;
-  const walls: StudioWall[] = ["back", ...sides];
+  let walls: StudioWall[] = ["back", ...sides];
+  if (applianceWall) {
+    walls = walls.filter((wall) => wall !== applianceWall);
+    const w = STUDIO_LAUNDRY_APPLIANCE_IN;
+    notices.push(`The ${applianceWall} wall is reserved for the washer & dryer (illustrative ${w.widthIn} in W × ${w.heightIn} in H × ${w.depthIn} in D block); no towers are built there.`);
+    notices.push("No shelf is planned above the washer & dryer: every sourced Studio shelf mounts inside a tower, and there is no verified wall-hung shelf part for that span.");
+    if (!walls.length) notices.push("No other wall can take towers in this room size; widen or deepen the room for laundry storage.");
+  }
   const capacity = new Map<StudioWall, { stock: number; remainderIn: number }>();
   for (const wall of walls) {
     const widths: number[] = [];
@@ -951,6 +968,7 @@ export function autoBuildStudio(input: StudioAutoBuildInput): StudioAutoBuildRes
   if (design.mount === "floor") for (const side of sides) {
     const cornerId: StudioCornerId = side === "left" ? "back-left" : "back-right";
     if (!studioBays(design, side).length) continue;
+    if (applianceWall && CORNER_WALL_IDS[cornerId].includes(applianceWall)) continue;
     const connected = addStudioConnectedCorner(design, cornerId, "fixed", AUTO_CORNER_ELEVATION_IN, `auto-corner-${cornerId}`);
     if (connected.ok) design = connected.design;
     else {
@@ -1079,7 +1097,8 @@ export function restoreStudioDesign(raw: string | null): StudioDesign | null {
       || (v.basketReferences != null && !Array.isArray(v.basketReferences))
       || (v.basketPlacements != null && !Array.isArray(v.basketPlacements))
       || (v.roomHeightIn != null && (!Number.isFinite(v.roomHeightIn) || v.roomHeightIn < 72 || v.roomHeightIn > 120))
-      || (v.kids != null && !validKids(v.kids)) || (v.mode === "kids" && !validKids(v.kids))) return null;
+      || (v.kids != null && !validKids(v.kids)) || (v.mode === "kids" && !validKids(v.kids))
+      || (v.laundry != null && (typeof v.laundry !== "object" || !STUDIO_LAUNDRY_WALLS.includes(v.laundry.applianceWall)))) return null;
     const validBays = (bays: unknown, wallId: StudioWall, requireIdentity: boolean): bays is StudioBay[] => Array.isArray(bays) && bays.length <= 4 && bays.every((bay: StudioBay) => !!bay && typeof bay.id === "string" && Number.isFinite(bay.widthIn)
       && bay.widthIn >= CUT_PLANNING_MIN_IN && bay.widthIn <= 30
       && (!requireIdentity || bay.wallId === wallId)
