@@ -76,6 +76,14 @@ import {
   visibleDoorSelectorStyles,
   type DoorSelectorSort,
 } from "./doorSelectorDistributorTabs";
+import {
+  doorStyleSearchFields,
+  doorStyleSearchSummary,
+  matchDoorStyle,
+  normalizeDoorStyleSearchText,
+  whiteLabelMatchNote,
+  type DoorStyleSearchMatch,
+} from "./doorStyleNameSearch";
 
 const MAX_SCENES_PER_STYLE = 6;
 
@@ -319,6 +327,21 @@ function CatalogPreviewModal({
 
 function thumb(s: AdminStyle): string | null {
   return s.roomSceneImageUrl || s.doorSampleImageUrl || s.thumbnailImageUrl || null;
+}
+
+/** Tells the admin which white label the current search matched. */
+function WhiteLabelMatchNote({ match }: { match: DoorStyleSearchMatch | null | undefined }) {
+  const note = whiteLabelMatchNote(match);
+  if (!note) return null;
+  return (
+    <p
+      data-testid="door-style-white-label-match"
+      className="mt-1 inline-flex max-w-full flex-wrap items-center gap-1 rounded border border-sky-300 bg-sky-50 px-1.5 py-0.5 text-[11px] font-medium text-sky-800"
+    >
+      <Search className="h-2.5 w-2.5 shrink-0" />
+      <span className="break-words">{note}</span>
+    </p>
+  );
 }
 
 function originZipList(style: Pick<AdminStyle, "warehouseZip" | "warehouseZips" | "warehouseZipsInherited">): string[] {
@@ -1489,11 +1512,27 @@ export default function FeaturedStylesAdmin() {
     return map;
   }, [skuCounts]);
 
+  const featuredStyles = useMemo(() => styles.filter((s) => s.isFeatured), [styles]);
+
+  // One search box for the whole page: matches the real door name, the white
+  // label, or descriptive details, ignoring case and spacing.
+  const searchMatches = useMemo(() => {
+    const map = new Map<number, DoorStyleSearchMatch>();
+    if (!normalizeDoorStyleSearchText(search)) return map;
+    for (const style of styles) {
+      const match = matchDoorStyle(doorStyleSearchFields(style), search);
+      if (match) map.set(style.id, match);
+    }
+    return map;
+  }, [styles, search]);
+
+  const searchActive = normalizeDoorStyleSearchText(search).length > 0;
+
   const featured = useMemo(() => {
-    const rows = styles.filter((s) => s.isFeatured);
-    if (distributorSort === "manual") return rows.sort(featuredRank);
+    const rows = featuredStyles.filter((s) => (searchActive ? searchMatches.has(s.id) : true));
+    if (distributorSort === "manual") return rows.slice().sort(featuredRank);
     return sortDoorStylesByDistributor(rows, distributorSort, featuredRank);
-  }, [styles, distributorSort]);
+  }, [featuredStyles, searchActive, searchMatches, distributorSort]);
 
   // Distinct distributors present in the catalog, for the filter dropdown.
   const distributorOptions = useMemo(() => {
@@ -1544,38 +1583,24 @@ export default function FeaturedStylesAdmin() {
   }, [distributorTab, distributorTabOptions]);
 
   const available = useMemo(() => {
-    const q = search.trim().toLowerCase();
     const rows = visibleDoorSelectorStyles(
       styles.filter((s) => s.isActive && !s.isFeatured),
       distributorTab,
       isDistributorOn,
-    ).filter((s) =>
-      q
-        ? `${s.ourName} ${s.doorStyle ?? ""} ${s.color ?? ""} ${s.finish ?? ""} ${s.distributorName ?? ""} ${s.supplierBrandName ?? ""} ${s.supplierName ?? ""}`
-            .toLowerCase()
-            .includes(q)
-        : true,
-    );
+    ).filter((s) => (searchActive ? searchMatches.has(s.id) : true));
     // The tab's own sort wins; the page-level distributor view then groups the same rows.
     const tabSorted = sortDoorSelectorStyles(rows, tabSort);
     if (distributorSort === "manual") return tabSorted;
     return sortDoorStylesByDistributor(tabSorted, distributorSort, doorSelectorComparator(tabSort));
-  }, [styles, search, distributorTab, isDistributorOn, tabSort, distributorSort]);
+  }, [styles, searchActive, searchMatches, distributorTab, isDistributorOn, tabSort, distributorSort]);
 
   const inactive = useMemo(() => {
-    const q = search.trim().toLowerCase();
     const rows = styles
       .filter((s) => !s.isActive)
-      .filter((s) =>
-        q
-          ? `${s.ourName} ${s.doorStyle ?? ""} ${s.color ?? ""} ${s.finish ?? ""}`
-              .toLowerCase()
-              .includes(q)
-          : true,
-      );
+      .filter((s) => (searchActive ? searchMatches.has(s.id) : true));
     if (distributorSort === "manual") return rows.sort(byStyleName);
     return sortDoorStylesByDistributor(rows, distributorSort, byStyleName);
-  }, [styles, search, distributorSort]);
+  }, [styles, searchActive, searchMatches, distributorSort]);
 
   const saveNeeds = trpc.doorStyles.adminUpdateDoorStyle.useMutation({
     onSuccess: () => {
@@ -1666,7 +1691,7 @@ export default function FeaturedStylesAdmin() {
     setFeatured.mutate({ id: s.id, featured: false });
   }
   function move(index: number, dir: -1 | 1) {
-    if (distributorSort !== "manual") return;
+    if (distributorSort !== "manual" || searchActive) return;
     const next = [...featured];
     const target = index + dir;
     if (target < 0 || target >= next.length) return;
@@ -1755,6 +1780,40 @@ export default function FeaturedStylesAdmin() {
         </div>
 	      </div>
 
+      {/* One search box for every door on this page — real name or white label */}
+      <div className="rounded-lg border border-border bg-card p-2.5">
+        <Label htmlFor="door-style-search" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Find a door style
+        </Label>
+        <div className="relative mt-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            id="door-style-search"
+            data-testid="door-style-search"
+            aria-label="Search all door styles by real name or white label"
+            placeholder="Search all doors — real name (Umber Shaker) or white label (Aurum Vault)"
+            className="h-9 pl-9 pr-9"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          {search ? (
+            <button
+              type="button"
+              data-testid="door-style-search-clear"
+              aria-label="Clear door style search"
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+              onClick={() => setSearch("")}
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          ) : null}
+        </div>
+        <p data-testid="door-style-search-summary" className="mt-1 text-xs text-muted-foreground">
+          {searchActive
+            ? doorStyleSearchSummary(searchMatches.size, styles.length, search)
+            : "Matches the real door name or its white label. Case and spaces are ignored, and partial names work."}
+        </p>
+      </div>
 
 	      {/* Featured list */}
       <div>
@@ -1790,7 +1849,9 @@ export default function FeaturedStylesAdmin() {
         )}
         {featured.length === 0 ? (
           <div className="rounded-lg border border-dashed border-border p-8 text-center text-muted-foreground">
-            No curated homepage scenes yet. Add a room-scene-ready style from the list below.
+            {searchActive
+              ? "No featured door style matches that name."
+              : "No curated homepage scenes yet. Add a room-scene-ready style from the list below."}
           </div>
 	        ) : (
 	          <ul className="space-y-2" data-testid="featured-door-style-list">
@@ -1834,6 +1895,7 @@ export default function FeaturedStylesAdmin() {
                       )
                     )}
                   />
+                  <WhiteLabelMatchNote match={searchMatches.get(s.id)} />
                   <DoorStyleNeedToggles
                     style={s}
                     pending={saveNeeds.isPending}
@@ -1903,10 +1965,10 @@ export default function FeaturedStylesAdmin() {
                     size="icon"
                     variant="ghost"
                     className="h-8 w-8"
-                    disabled={distributorSort !== "manual" || i === 0 || reorder.isPending}
+                    disabled={distributorSort !== "manual" || searchActive || i === 0 || reorder.isPending}
                     onClick={() => move(i, -1)}
                     aria-label="Move up"
-                    title={distributorSort !== "manual" ? "Switch back to manual order to reorder" : "Move up"}
+                    title={searchActive ? "Clear the search to reorder featured styles" : distributorSort !== "manual" ? "Switch back to manual order to reorder" : "Move up"}
                   >
                     <ArrowUp className="h-4 w-4" />
                   </Button>
@@ -1914,10 +1976,10 @@ export default function FeaturedStylesAdmin() {
                     size="icon"
                     variant="ghost"
                     className="h-8 w-8"
-                    disabled={distributorSort !== "manual" || i === featured.length - 1 || reorder.isPending}
+                    disabled={distributorSort !== "manual" || searchActive || i === featured.length - 1 || reorder.isPending}
                     onClick={() => move(i, 1)}
                     aria-label="Move down"
-                    title={distributorSort !== "manual" ? "Switch back to manual order to reorder" : "Move down"}
+                    title={searchActive ? "Clear the search to reorder featured styles" : distributorSort !== "manual" ? "Switch back to manual order to reorder" : "Move down"}
                   >
                     <ArrowDown className="h-4 w-4" />
                   </Button>
@@ -1948,15 +2010,6 @@ export default function FeaturedStylesAdmin() {
               ({available.length})
             </span>
           </h3>
-          <div className="relative w-full sm:w-64">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search door styles…"
-              className="pl-9 h-9"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
         </div>
 
         {/* Distributor tabs — built from the distributors on the loaded doors, so a new line appears on its own. */}
@@ -2045,7 +2098,9 @@ export default function FeaturedStylesAdmin() {
           <p className="text-sm text-muted-foreground" data-testid="door-style-tab-empty">
             {activeDistributorTab && !isDistributorOn(activeDistributorTab.id)
               ? `${activeDistributorTab.name} is switched off. Turn it back on to show its doors.`
-              : "No matching styles."}
+              : searchActive
+                ? "No door style on this page matches that name."
+                : "No matching styles."}
           </p>
         ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2.5" data-testid="all-door-style-list">
@@ -2080,6 +2135,7 @@ export default function FeaturedStylesAdmin() {
                   title="Edit this door style"
                 >
                   <DoorStyleIdentity style={s} />
+                  <WhiteLabelMatchNote match={searchMatches.get(s.id)} />
                   {!isDoorStyleVerified(s) ? <Badge variant="outline" className="mt-1">Unverified</Badge> : null}
                   <p className="mt-0.5 break-words text-xs leading-snug text-muted-foreground">
                     {(s.roomScenes?.length ?? 0) > 0 ? `${s.roomScenes?.length}/${MAX_SCENES_PER_STYLE} room scenes` : "Room scene required"}
@@ -2181,6 +2237,7 @@ export default function FeaturedStylesAdmin() {
                 </div>
                 <div className="min-w-0 flex-1">
                   <DoorStyleIdentity style={s} nameClassName="text-muted-foreground line-through" />
+                  <WhiteLabelMatchNote match={searchMatches.get(s.id)} />
                   <DoorStyleNeedToggles
                     style={s}
                     pending={saveNeeds.isPending}
