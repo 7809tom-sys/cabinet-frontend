@@ -1153,3 +1153,23 @@ export function restoreStudioDesign(raw: string | null): StudioDesign | null {
     return design;
   } catch { return null; }
 }
+
+/**
+ * Remove one tower (bay) from the selected wall together with every part on it and every basket
+ * placement tied to it. A connected ("visualAligned") corner shelf is also removed when its wall
+ * would be left with no tower to align to, so the remaining design stays valid. Returns the next
+ * tower index to select (the neighbour that slides into place, the previous one, or -1 when empty).
+ */
+export function removeStudioBay(design: StudioDesign, bayIndex: number):
+  { ok: true; design: StudioDesign; nextSelectedBay: number; removedCornerIds: string[]; removedBasketIds: string[] } | { ok: false; reason: string } {
+  const bay = design.bays[bayIndex];
+  if (!bay) return { ok: false, reason: "Choose a tower to remove first." };
+  const remaining = design.bays.filter((_, index) => index !== bayIndex);
+  let next = replaceStudioWallBays(design, design.wall, remaining);
+  const removedBasketIds = studioBasketPlacements(design).filter((placement) => placement.bayId === bay.id).map((placement) => placement.id);
+  if (removedBasketIds.length) next = { ...next, basketPlacements: studioBasketPlacements(design).filter((placement) => placement.bayId !== bay.id) };
+  const removedCornerIds = remaining.length ? [] : studioCornerShelves(design).filter((shelf) => shelf.towerConnection === "visualAligned" && shelf.wallIds.includes(design.wall)).map((shelf) => shelf.id);
+  if (removedCornerIds.length) next = { ...next, cornerShelves: studioCornerShelves(design).filter((shelf) => !removedCornerIds.includes(shelf.id)) };
+  const nextSelectedBay = remaining.length ? Math.min(bayIndex, remaining.length - 1) : -1;
+  return { ok: true, design: next, nextSelectedBay, removedCornerIds, removedBasketIds };
+}
