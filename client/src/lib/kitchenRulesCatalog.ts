@@ -90,6 +90,18 @@ const ownerSeeds: KitchenRuleSeed[] = [
     notesText: "Shared clamp used by Auto-Design and the refrigerator options pop-up. A side closed by an adjoining wall needs no panel.",
   },
   {
+    ruleCode: "owner-nothing-past-fridge-panel",
+    category: "Owner panels",
+    title: "Nothing extends past the refrigerator end panel",
+    ruleDescription: "Hard rule: nothing may extend past a refrigerator end panel. No filler, trim, cabinet, countertop, or any other piece may cross the panel's outer face or stick out past its front, not even by a fraction of an inch. A layout that would cross shortens the piece to the face. A filler or trim that would only remain as a sliver is dropped.",
+    parameters: {},
+    enforcementKind: "auto",
+    sourceText: "Owner",
+    implementationStatus: "implemented",
+    readsParameters: false,
+    notesText: "Hard rule from the owner. Enforced by clampPlacedToRefrigeratorPanels in lib/design.ts, used by the layout rules, auto-fill, seam fillers, trim runs, countertops, and wall-run seating. It cannot be overridden.",
+  },
+  {
     ruleCode: "owner-measured-fridge-corner-shift",
     category: "Owner placement",
     title: "Measured refrigerator corner slide",

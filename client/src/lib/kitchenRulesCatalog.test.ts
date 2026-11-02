@@ -24,6 +24,7 @@ describe("kitchen rules catalog", () => {
       "owner-filler-cut-2-5",
       "owner-molding-extra-stick",
       "owner-fridge-panel-24",
+      "owner-nothing-past-fridge-panel",
       "owner-over-fridge-24",
       "owner-u-shape-two-corners",
       "owner-blind-door-open-run",

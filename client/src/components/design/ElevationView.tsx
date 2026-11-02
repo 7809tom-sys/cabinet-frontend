@@ -1341,15 +1341,26 @@ export function ElevationView({
               runs.push({ start: s.start, end: s.end });
             }
           }
+          // Side nosing stops at a refrigerator end panel. It may meet the outer
+          // face and must not cross into the panel, not even by a fraction.
+          const overhangCrossesPanel = (edge: number, direction: -1 | 1) => {
+            const far = edge + direction * OVERHANG_IN;
+            const lo = Math.min(edge, far);
+            const hi = Math.max(edge, far);
+            return refrigeratorPanels.some((panel) => lo < panel.end - 1e-6 && hi > panel.start + 1e-6);
+          };
           return (
             <>
-              {runs.map((r, i) => (
+              {runs.map((r, i) => {
+                const leftOverhang = overhangCrossesPanel(r.start, -1) ? 0 : OVERHANG_IN;
+                const rightOverhang = overhangCrossesPanel(r.end, 1) ? 0 : OVERHANG_IN;
+                return (
                 <div
                   key={`ct${i}`}
                   className="absolute z-20 pointer-events-none rounded-[1px]"
                   style={{
-                    left: (r.start - (refrigeratorPanels.some((panel) => Math.abs(panel.end - r.start) <= TOL) ? 0 : OVERHANG_IN)) * ppi,
-                    width: (r.end - r.start + (refrigeratorPanels.some((panel) => Math.abs(panel.end - r.start) <= TOL) ? 0 : OVERHANG_IN) + (refrigeratorPanels.some((panel) => Math.abs(panel.start - r.end) <= TOL) ? 0 : OVERHANG_IN)) * ppi,
+                    left: (r.start - leftOverhang) * ppi,
+                    width: (r.end - r.start + leftOverhang + rightOverhang) * ppi,
                     bottom: Math.ceil(STD.BASE_HEIGHT * ppi),
                     height: THICKNESS_IN * ppi,
                     ...(realistic ? {
@@ -1370,7 +1381,7 @@ export function ElevationView({
                   }}
                   title={t("dt_ev_countertop", { material: mat.name })}
                 />
-              ))}
+              );})}
             </>
           );
         })()}

@@ -7,7 +7,7 @@ import {
 } from "./catalogFiller";
 import {
   COLLISION_EPSILON_IN, MAX_FILLER_RUN_WIDTH_IN, STD, WALL_OPENING_CLEARANCE_IN, appendCollisionFreePlacements,
-  cabinetPlacementCollisionDetail, cabinetWall, dim, freeSegmentsOnWall, isRangeOrOven, isRefrigerator,
+  cabinetPlacementCollisionDetail, cabinetWall, clampPlacedToRefrigeratorPanels, dim, freeSegmentsOnWall, isRangeOrOven, isRefrigerator,
   isSinkBaseCabinet, matchInstalledFillerToCabinet, wallPlacementAt, wallRunFrame, wallRunOffset, wallRunSpan,
   type DesignCabinet, type PlacedCabinet, type RoomData, type WallOpening,
 } from "./design";
@@ -360,7 +360,17 @@ export function fillAutoDesignLowerSeams(input: {
     working = accepted.placed;
     additions.push(...result.pieces);
   }
-  return { placed: working, additions, notes };
+  const limited = clampPlacedToRefrigeratorPanels(working, input.room);
+  const dropped = new Set(limited.droppedUids);
+  return {
+    placed: limited.placed,
+    additions: additions.flatMap((item) => {
+      if (dropped.has(item.uid)) return [];
+      const next = limited.placed.find((placed) => placed.uid === item.uid);
+      return next ? [next] : [];
+    }),
+    notes: [...notes, ...limited.notes],
+  };
 }
 
 /**

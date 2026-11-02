@@ -90,6 +90,7 @@ describe("designer rule registry", () => {
       "filler-adjoining-finish",
       "nine-inch-tray-base",
       "trim-single-supplier",
+      "nothing-past-refrigerator-panel",
       "crown-miter-allowance",
       "faucet-on-counter",
     ]));

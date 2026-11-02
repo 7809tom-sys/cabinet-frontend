@@ -1,8 +1,8 @@
 import {
   REFRIGERATOR_SIDE_CLEARANCE_IN,
   cabinetWall,
-  elevationBox,
   refrigeratorBayRunMetrics,
+  clampPlacedToRefrigeratorPanels,
   wallPlacementAt,
   wallRunFrame,
   wallRunOffset,
@@ -157,17 +157,7 @@ export function clampRefrigeratorAssemblyToPanels(input: {
           const spot = wallPlacementAt(center - width / 2, width, Number(next.depth) || 0, side, room);
           next = { ...next, ...spot, rotation: spot.rotation };
           notes.push(`${item.masterCode} above the refrigerator centered so it stays inside the end panels`);
-        } else {
-          warnings.push(`${item.masterCode} above the refrigerator is ${fmt(width)}″ wide but the end panels are ${fmt(outerEnd - outerStart)}″ apart, so it sticks out`);
         }
-      }
-      const depth = Number(next.depth) || 0;
-      if (panelDepth > 0 && depth > panelDepth + FIT_EPSILON_IN) {
-        warnings.push(`${item.masterCode} above the refrigerator is ${fmt(depth)}" deep but the end panels are ${fmt(panelDepth)}" deep, so it sticks out ${fmt(depth - panelDepth)}" past them`);
-      }
-      const box = elevationBox(next, room);
-      if (panelHeight > 0 && box.bottom + box.height > panelHeight + FIT_EPSILON_IN) {
-        warnings.push(`${item.masterCode} above the refrigerator reaches ${fmt(box.bottom + box.height)}" but the end panels stop at ${fmt(panelHeight)}"`);
       }
       return next;
     });
@@ -175,5 +165,6 @@ export function clampRefrigeratorAssemblyToPanels(input: {
     placed = placed.map((item) => (item.uid === placedFridge.uid ? placedFridge : item));
   }
 
-  return { placed, notes, warnings };
+  const limited = clampPlacedToRefrigeratorPanels(placed, room);
+  return { placed: limited.placed, notes: [...notes, ...limited.notes], warnings };
 }

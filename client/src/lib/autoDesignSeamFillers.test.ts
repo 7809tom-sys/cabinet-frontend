@@ -51,7 +51,9 @@ describe("Auto-Design: no gaps anywhere — the user's real built kitchen", () =
 
   it("closes every opening between anchors, panels, corner and runs with real catalog filler", () => {
     const result = lowerResult();
-    expect(result.notes).toEqual([]);
+    expect(result.notes).toEqual([
+      "FRIDGE-36 held to 24\" so it does not extend past the refrigerator end panel",
+    ]);
     expect(findAutoDesignSeams({ layer: "base", placed: result.placed, room, openings, corners: [TOP_RIGHT] })).toEqual([]);
     // What remains free is only deliberate: the refrigerator assembly's own 1/2-inch clearances and the blind corner's pocket.
     // Bottom and left are empty walls in this kitchen (no cabinets), so they are free by design.

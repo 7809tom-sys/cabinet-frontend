@@ -32,6 +32,8 @@ import {
   wallRunFrame,
   wallRunOffset,
   wallRunSpan,
+  clampPlacedToRefrigeratorPanels,
+  refrigeratorPanelOuterStops,
   type DesignCabinet,
   type PlacedCabinet,
   type RoomData,
@@ -48,6 +50,7 @@ import {
   type SmallGapFillerOpportunity,
 } from "./smallGapFiller";
 import { kitchenRuleNumber } from "./kitchenRuleParameters";
+import { clampTrimRunSpans } from "./refrigeratorPanelLimit";
 
 /**
  * The most a user-placed Auto-Design appliance may slide along its own wall
@@ -231,6 +234,12 @@ export const DESIGNER_LAYOUT_RULES: readonly DesignerLayoutRule[] = [
     summary: "Moulding, light rail, shoe, crown, toe-kick, and batten on one project come from one supplier.",
   },
   {
+    id: "nothing-past-refrigerator-panel",
+    name: "nothing past the refrigerator panel",
+    phase: "shared-pipeline",
+    summary: "No filler, trim, cabinet, countertop, or other piece may extend past a refrigerator end panel's outer face or front, not even by a fraction of an inch. A filler or trim that would cross is shortened, or dropped when nothing measurable would remain.",
+  },
+  {
     id: "crown-miter-allowance",
     name: "crown miter allowance",
     phase: "invariant",
@@ -304,6 +313,10 @@ export type TrimRunPiece = {
   kind: TrimRunKind;
   supplierId: string;
   wallId: string;
+  /** Along-wall start, inches. Absent on supplier-only records. */
+  startIn?: number;
+  /** Along-wall end, inches. Absent on supplier-only records. */
+  endIn?: number;
 };
 
 type WiggleGroup = {
@@ -891,8 +904,18 @@ export function applyDesignerLayoutRules(input: {
   });
   placed = normalizeInstalledFillersToAdjacentCabinets(placed, input.room);
   placed = applyNineInchTrayBases(placed);
+  placed = clampPlacedToRefrigeratorPanels(placed, input.room).placed;
   const sinks = normalizeSinkFixturesToBases([...(input.sinks ?? [])], placed, input.room);
-  const trimPieces = enforceTrimSupplierContinuity(input.trimPieces ?? []);
+  const panelStops = refrigeratorPanelOuterStops(placed, input.room);
+  const trimPieces = enforceTrimSupplierContinuity(input.trimPieces ?? []).flatMap((piece) => {
+    if (piece.startIn == null || piece.endIn == null) return [piece];
+    const [clamped] = clampTrimRunSpans(
+      [{ id: piece.id, wallId: piece.wallId, start: piece.startIn, end: piece.endIn }],
+      panelStops,
+    );
+    if (!clamped) return [];
+    return [{ ...piece, startIn: clamped.start, endIn: clamped.end }];
+  });
   return {
     placed,
     sinks,
