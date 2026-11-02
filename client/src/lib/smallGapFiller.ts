@@ -2,7 +2,8 @@ import { kitchenRuleNumber } from "./kitchenRuleParameters";
 import {
 	STD,
 	PENINSULA_INSIDE_CORNER_CLEARANCE_IN,
-	appendCollisionFreePlacements,
+  appendCollisionFreePlacements,
+  clampPlacedToRefrigeratorPanels,
 	cabinetWall,
 	isFillerItem,
 	peninsulaRunById,
@@ -487,7 +488,9 @@ export function appendSmallGapFillerPlacement(
   room?: RoomData,
 ) {
   const preserved = placed.map((item) => item.uid === movedCabinet.uid ? movedCabinet : item);
-  return appendCollisionFreePlacements(preserved, [...pieces], room);
+  const accepted = appendCollisionFreePlacements(preserved, [...pieces], room);
+  if (!room) return accepted;
+  return { ...accepted, placed: clampPlacedToRefrigeratorPanels(accepted.placed, room).placed };
 }
 
 /**

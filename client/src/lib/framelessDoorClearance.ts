@@ -2,6 +2,7 @@ import { catalogFillerForGap, fittedCatalogFillerDescription, type CatalogFiller
 import {
   BLIND_CORNER_FILLER_WIDTH_IN,
   appendCollisionFreePlacements,
+  clampPlacedToRefrigeratorPanels,
   cabinetWall,
   elevationBox,
   isFillerItem,
@@ -196,5 +197,15 @@ export function applyFramelessDoorClearanceFillers(input: {
     working = accepted.placed;
     added.push(filler);
   }
-  return added.length > 0 ? { placed: working, added } : { placed: input.placed, added: [] };
+  if (!added.length) return { placed: input.placed, added: [] };
+  const limited = clampPlacedToRefrigeratorPanels(working, input.room);
+  const dropped = new Set(limited.droppedUids);
+  return {
+    placed: limited.placed,
+    added: added.flatMap((item) => {
+      if (dropped.has(item.uid)) return [];
+      const next = limited.placed.find((placedItem) => placedItem.uid === item.uid);
+      return next ? [next] : [];
+    }),
+  };
 }

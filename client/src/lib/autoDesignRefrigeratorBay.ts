@@ -1,4 +1,5 @@
 import { framelessAboveFridgeHeight } from "./aefAboveFridge";
+import { REFRIGERATOR_PANEL_LIMIT_EPSILON_IN } from "./refrigeratorPanelLimit";
 import { catalogSizeFromNumbers, pickClosestCatalogSize } from "./closestCatalogSize";
 import { refrigeratorEndPanelInstalledDepth } from "./refrigeratorEndPanelCut";
 import {
@@ -269,8 +270,12 @@ export function buildMandatoryAutoDesignRefrigeratorBay({
   const capHeight = Math.max(0, dim(cap.height, 0)) || 24;
   const panelHeight = refrigeratorSurroundElevation(room, refrigerator.height ?? 70, capHeight).top;
   const capWidth = Math.max(0, dim(cap.width, 0)) || fridgeWidthIn;
+  // A deeper box would stick out past the panel face. Cut it back to the panel
+  // before it is seated. Nothing is left overhanging.
+  const capPastPanel = capDepth > panelDepth + REFRIGERATOR_PANEL_LIMIT_EPSILON_IN;
+  const installedCapDepth = capPastPanel ? panelDepth : capDepth;
   // Centered on the refrigerator, so a narrower substitute sits inside the opening with equal gaps.
-  const capSpot = wallPlacementAt(bay.refrigeratorCenter - capWidth / 2, capWidth, capDepth, bay.side, room);
+  const capSpot = wallPlacementAt(bay.refrigeratorCenter - capWidth / 2, capWidth, installedCapDepth, bay.side, room);
   // A substituted box shallower than the finished enclosure is pulled forward
   // so its face meets the panel/refrigerator face. The preferred 24 inch box
   // stays on the wall, which is the placement existing kitchens already use.
@@ -282,11 +287,12 @@ export function buildMandatoryAutoDesignRefrigeratorBay({
     ...(capPick.substitutionNote ? [capPick.substitutionNote] : []),
     ...(widthSubstituted ? [`No ${fridgeWidthIn}" cabinet above this refrigerator in the line; used ${cap.masterCode} (${capWidth}" wide), centered, with a filler gap each side`] : []),
     ...(pullForward ? [`Over-fridge ${cap.masterCode} pulled forward flush with the refrigerator face`] : []),
+    ...(capPastPanel ? [`${cap.masterCode} above the refrigerator set to ${panelDepth}" deep so it does not extend past the refrigerator end panel (was ${capDepth}")`] : []),
   ];
   // The refrigerator must stay inside its surrounding panels (Tom, Oct 31): panels are capped at 24 in. deep, so a
   // deeper refrigerator used to stick out past their faces and made the panel read as doubled. Seat it at the panel
-  // depth instead (same wall position, same width) and top it at the panel height. Anything that still cannot fit
-  // (a cabinet above deeper than the panels) is reported as a warning, never left sticking out silently.
+  // depth instead (same wall position, same width) and top it at the panel height. A cabinet above that is deeper
+  // than the panels is cut back to the panel face before it is placed.
   const warnings: string[] = [];
   let placedRefrigerator = refrigerator;
   let clampNote: string | null = null;
@@ -300,9 +306,6 @@ export function buildMandatoryAutoDesignRefrigeratorBay({
   if (fridgeHeight > panelHeight + PANEL_FIT_EPSILON_IN) {
     placedRefrigerator = { ...placedRefrigerator, height: panelHeight };
     clampNote = [clampNote, `Refrigerator set to ${panelHeight}" high so it stays inside its end panels (was ${fridgeHeight}")`].filter(Boolean).join("; ");
-  }
-  if (capDepth > panelDepth + PANEL_FIT_EPSILON_IN) {
-    warnings.push(`${cap.masterCode} above the refrigerator is ${capDepth}" deep but the end panels are ${panelDepth}" deep, so it sticks out ${Math.round((capDepth - panelDepth) * 100) / 100}" past them. Pick a shallower cabinet above or a deeper panel.`);
   }
   const leftPanelSpot = wallPlacementAtUnbounded(bay.openingStart - panelThickness, panelThickness, panelDepth, bay.side, room);
   const rightPanelSpot = wallPlacementAtUnbounded(bay.openingEnd, panelThickness, panelDepth, bay.side, room);
@@ -318,7 +321,7 @@ export function buildMandatoryAutoDesignRefrigeratorBay({
     placement: "wall",
     ...flushSpot,
     width: capWidth,
-    depth: capDepth,
+    depth: installedCapDepth,
     height: capHeight,
     rotation: flushSpot.rotation,
     wallId: flushSpot.wallId,

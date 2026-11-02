@@ -5,6 +5,15 @@ import { isWallAngleEndCabinet, wallAngleEndHandFromRun, type WallAngleEndHand }
 import { freestandingCountertopSurfaces, isFreestandingBase } from "@/lib/freestandingRun";
 import { kitchenRuleNumber } from "@/lib/kitchenRuleParameters";
 import {
+  REFRIGERATOR_PANEL_LIMIT_EPSILON_IN,
+  clipCountertopSpan,
+  panelOuterStops,
+  planRefrigeratorPanelLimit,
+  type PanelLimitPiece,
+  type PanelOuterStop,
+  type PanelStopInput,
+} from "@/lib/refrigeratorPanelLimit";
+import {
   closestWall as closestPolygonWall,
   isLocked45Wall,
   pointInPolygon,
@@ -4344,6 +4353,181 @@ export function refrigeratorEndPanelConflict(
   refrigeratorUid?: string | null,
 ): PlacedCabinet | null {
   return refrigeratorEndPanelConflictDetail(panel, existing, refrigeratorUid)?.cabinet ?? null;
+}
+
+/**
+ * Outer faces of every refrigerator end panel on the plan. A side that is not
+ * marked and has no refrigerator to compare against treats both faces as stops,
+ * so a neighbor still cannot pass through the panel.
+ */
+export function refrigeratorPanelOuterStops(placed: readonly PlacedCabinet[], room: RoomData): PanelOuterStop[] {
+  const inputs: PanelStopInput[] = [];
+  for (const panel of placed) {
+    if (!isRefrigeratorEndPanel(panel) || panel.islandFace) continue;
+    const wallId = (panel.wallId ?? cabinetWall(panel, room)) as string;
+    const start = wallRunOffset(panel, wallId, room);
+    const end = start + wallRunSpan(panel, wallId, room);
+    if (!(end > start)) continue;
+    const role = panel.refrigeratorAssemblyRole;
+    let side: "left" | "right" | null = role === "left-panel" ? "left" : role === "right-panel" ? "right" : null;
+    if (!side) {
+      const fridge = placed.find((item) => item.uid === panel.refrigeratorAssemblyId && isRefrigerator(item))
+        ?? placed.find((item) => isRefrigerator(item) && (item.wallId ?? cabinetWall(item, room)) === wallId);
+      if (fridge && (fridge.wallId ?? cabinetWall(fridge, room)) === wallId) {
+        const fridgeStart = wallRunOffset(fridge, wallId, room);
+        const fridgeCenter = fridgeStart + wallRunSpan(fridge, wallId, room) / 2;
+        side = (start + end) / 2 < fridgeCenter ? "left" : "right";
+      }
+    }
+    const box = elevationBox(panel, room);
+    inputs.push({
+      panelUid: panel.uid,
+      refrigeratorUid: panel.refrigeratorAssemblyId ?? null,
+      wallId,
+      start,
+      end,
+      faceDepth: Math.max(0, Number(panel.depth) || 0),
+      top: box.bottom + box.height,
+      side,
+    });
+  }
+  return panelOuterStops(inputs);
+}
+
+function panelLimitKind(item: PlacedCabinet): PanelLimitPiece["kind"] {
+  if (isRefrigeratorEndPanel(item)) return "panel";
+  if (isRefrigerator(item)) return "refrigerator";
+  if (isFillerItem(item)) return "filler";
+  if (isLooseTrimItem(item)) return "trim";
+  return "cabinet";
+}
+
+/** Distance from the wall plane to the piece's front face. */
+function refrigeratorPanelFrontIn(item: PlacedCabinet, wallId: string, room: RoomData): number {
+  const depth = Math.max(0, Number(item.depth) || 0);
+  const frame = wallRunFrame(wallId, room);
+  if (!frame) return depth;
+  const center = placedPlanCenter(item);
+  const across = (center.x - frame.start.x) * frame.inward.x + (center.y - frame.start.y) * frame.inward.y;
+  return across + depth / 2;
+}
+
+function seatAgainstRefrigeratorPanel(
+  item: PlacedCabinet,
+  wallId: string,
+  room: RoomData,
+  start: number,
+  width: number,
+  depth: number,
+  front: number | null,
+): PlacedCabinet {
+  const spot = wallPlacementAt(start, width, depth, wallId as WallSide, room, item.peninsulaSide);
+  let next: PlacedCabinet = {
+    ...item,
+    ...spot,
+    width,
+    depth,
+    rotation: spot.rotation,
+    wallId: spot.wallId ?? item.wallId ?? wallId,
+    wallOffset: spot.wallOffset ?? start,
+    mountBottom: item.mountBottom,
+    height: item.height,
+  };
+  const inset = front != null ? Math.max(0, front - depth) : 0;
+  if (inset <= REFRIGERATOR_PANEL_LIMIT_EPSILON_IN) return next;
+  if (wallId === "top") return { ...next, y: next.y + inset };
+  if (wallId === "bottom") return { ...next, y: next.y - inset };
+  if (wallId === "left") return { ...next, x: next.x + inset };
+  if (wallId === "right") return { ...next, x: Math.max(0, next.x - inset) };
+  const frame = wallRunFrame(wallId, room);
+  if (!frame) return next;
+  return { ...next, x: next.x + frame.inward.x * inset, y: next.y + frame.inward.y * inset };
+}
+
+export type RefrigeratorPanelLimitResult = {
+  placed: PlacedCabinet[];
+  droppedUids: string[];
+  notes: string[];
+};
+
+/**
+ * Hard rule. Nothing — filler, trim, cabinet, or any other placed piece — may
+ * cross a refrigerator end panel's outer face or stick out past its front.
+ * Fillers and trim that would only remain as a sliver are dropped. A measured
+ * refrigerator keeps its width; its depth and height still stop at the panels.
+ */
+export function clampPlacedToRefrigeratorPanels(
+  placed: readonly PlacedCabinet[],
+  room: RoomData,
+  options?: { onlyUids?: ReadonlySet<string> },
+): RefrigeratorPanelLimitResult {
+  const stops = refrigeratorPanelOuterStops(placed, room);
+  if (!stops.length) return { placed: [...placed], droppedUids: [], notes: [] };
+  const only = options?.onlyUids;
+  const pieces: PanelLimitPiece[] = placed.map((item) => {
+    const wallId = (item.wallId ?? cabinetWall(item, room)) as string;
+    const start = wallRunOffset(item, wallId, room);
+    const end = start + wallRunSpan(item, wallId, room);
+    const box = elevationBox(item, room);
+    return {
+      uid: item.uid,
+      wallId,
+      start,
+      end,
+      depth: Math.max(0, Number(item.depth) || 0),
+      front: refrigeratorPanelFrontIn(item, wallId, room),
+      bottom: box.bottom,
+      top: box.bottom + box.height,
+      kind: panelLimitKind(item),
+    };
+  });
+  const edits = new Map(planRefrigeratorPanelLimit(pieces, stops).map((edit) => [edit.uid, edit]));
+  const droppedUids: string[] = [];
+  const notes: string[] = [];
+  let changed = false;
+  const next: PlacedCabinet[] = [];
+  for (const item of placed) {
+    const edit = edits.get(item.uid);
+    if (!edit || !edit.changed || (only && !only.has(item.uid))) {
+      next.push(item);
+      continue;
+    }
+    changed = true;
+    const label = item.masterCode || item.description || "Piece";
+    if (edit.drop) {
+      droppedUids.push(item.uid);
+      notes.push(`${label} removed so it does not extend past the refrigerator end panel`);
+      continue;
+    }
+    const wallId = (item.wallId ?? cabinetWall(item, room)) as string;
+    const width = edit.end - edit.start;
+    const previousFront = refrigeratorPanelFrontIn(item, wallId, room);
+    const preserveFront = edit.maxFront == null && previousFront > (Number(item.depth) || 0) + REFRIGERATOR_PANEL_LIMIT_EPSILON_IN
+      ? previousFront
+      : edit.maxFront;
+    let seated = seatAgainstRefrigeratorPanel(item, wallId, room, edit.start, width, edit.depth, preserveFront);
+    if (edit.top != null) {
+      const bottom = elevationBox(item, room).bottom;
+      seated = { ...seated, height: Math.max(0, edit.top - bottom), mountBottom: item.mountBottom };
+    }
+    const original = pieces.find((piece) => piece.uid === item.uid)!;
+    if (Math.abs(edit.start - original.start) > REFRIGERATOR_PANEL_LIMIT_EPSILON_IN
+      || Math.abs(edit.end - original.end) > REFRIGERATOR_PANEL_LIMIT_EPSILON_IN) {
+      notes.push(`${label} shortened so it stops at the refrigerator end panel`);
+    } else if (edit.maxFront != null) {
+      notes.push(`${label} held to ${trimInches(edit.maxFront)}" so it does not extend past the refrigerator end panel`);
+    } else if (edit.top != null) {
+      notes.push(`${label} shortened so it does not rise past the refrigerator end panel`);
+    }
+    next.push(seated);
+  }
+  if (!changed) return { placed: [...placed], droppedUids: [], notes: [] };
+  return { placed: next, droppedUids, notes };
+}
+
+function trimInches(value: number): string {
+  const rounded = Math.round(value * 1000) / 1000;
+  return Number.isInteger(rounded) ? String(rounded) : String(rounded);
 }
 
 export interface RefrigeratorEnclosurePlacementResult extends CollisionResolution {
@@ -9250,8 +9434,17 @@ export function cabinetWallMovePreview(
     const spot = wallPlacementAt(start, width, depth, frame!.id, room, cabinet.peninsulaSide);
     return { ...cabinet, ...spot, rotation: spot.rotation, wallId: spot.wallId ?? frame!.id, wallOffset: spot.wallOffset ?? start };
   };
+  // Wall runs stop at a refrigerator end panel. A filler that would only remain
+  // as a sliver is dropped; every other piece is shortened to the outer face.
+  const stopAtRefrigeratorPanel = (candidate: PlacedCabinet): PlacedCabinet | null => {
+    const others = peers.filter((item) => item.uid !== candidate.uid);
+    const limited = clampPlacedToRefrigeratorPanels([candidate, ...others], room, { onlyUids: new Set([candidate.uid]) });
+    return limited.placed.find((item) => item.uid === candidate.uid) ?? null;
+  };
   if (!magnet) {
-    return { candidate: seat(clampedStart), wall: frame.id, frame, requestedStart, snapped: false, failure: null };
+    const candidate = stopAtRefrigeratorPanel(seat(clampedStart));
+    if (!candidate) return { candidate: null, wall: frame.id, frame, requestedStart, snapped: false, failure: "no-clear-position" };
+    return { candidate, wall: frame.id, frame, requestedStart, snapped: false, failure: null };
   }
   const segments = freeSegmentsOnWall(frame.id, room, peers, openings, 0.5, 0, cabinet.placement, false, cabinet, depth);
   // Work in exposed-envelope coordinates.  For a refrigerator with a selected
@@ -9283,8 +9476,10 @@ export function cabinetWallMovePreview(
   const candidate = seamed === seated
     ? seated
     : { ...seamed, wallOffset: roundToEighth(wallRunAlongAtPoint(frame, placedPlanCenter(seamed)) - width / 2) };
-  const snapped = Math.abs((candidate.wallOffset ?? magnetStart) - clampedStart) > COLLISION_EPSILON_IN;
-  return { candidate, wall: frame.id, frame, requestedStart, snapped, failure: null };
+  const limited = stopAtRefrigeratorPanel(candidate);
+  if (!limited) return { candidate: null, wall: frame.id, frame, requestedStart, snapped: false, failure: "no-clear-position" };
+  const snapped = Math.abs((limited.wallOffset ?? magnetStart) - clampedStart) > COLLISION_EPSILON_IN;
+  return { candidate: limited, wall: frame.id, frame, requestedStart, snapped, failure: null };
 }
 
 /**
@@ -13670,6 +13865,7 @@ function mergeContiguousBaseCountertopRuns(
     entries.push({ index, surface, start, span, thickness });
     groups.set(key, entries);
   });
+  const panelStops = refrigeratorPanelOuterStops(placed, room);
   groups.forEach((entries, key) => {
     entries.sort((left, right) => left.start - right.start || left.index - right.index);
     const blockers = wallBlockers(key);
@@ -13694,35 +13890,43 @@ function mergeContiguousBaseCountertopRuns(
         cursor += 1;
       }
       members.forEach(({ index }) => consumed.add(index));
-      const span = end - start;
-      const runId = `${key}:${Math.round(start * 16) / 16}-${Math.round(end * 16) / 16}`;
       const customWallId = first.surface.customWallId;
-      if (customWallId) {
-        const spot = wallPlacementAt(start, span, depth, customWallId as WallSide, room);
-        const radians = spot.rotation * Math.PI / 180;
-        const aabbWidth = Math.abs(span * Math.cos(radians)) + Math.abs(depth * Math.sin(radians));
-        const aabbDepth = Math.abs(span * Math.sin(radians)) + Math.abs(depth * Math.cos(radians));
-        const centerX = spot.x + aabbWidth / 2;
-        const centerY = spot.y + aabbDepth / 2;
-        merged.push({
-          ...first.surface,
-          x: centerX - span / 2,
-          y: centerY - depth / 2,
-          width: span,
-          depth,
-          rotation: spot.rotation,
-          customWallRunStartIn: start,
-          linearInches: span,
-          areaInches: span * depth,
-          cabinetRunId: runId,
-        });
-        continue;
+      const wallId = customWallId ?? key.slice("wall:".length);
+      // A countertop may meet a refrigerator end panel. It may not cross the
+      // panel's outer face, even by a fraction of an inch, and it may not
+      // bridge the bay between the two panels.
+      const pieces = clipCountertopSpan(start, end, panelStops.filter((stop) => stop.wallId === wallId));
+      for (const piece of pieces) {
+        const pieceStart = piece.start;
+        const span = piece.end - pieceStart;
+        const runId = `${key}:${Math.round(pieceStart * 16) / 16}-${Math.round(piece.end * 16) / 16}`;
+        if (customWallId) {
+          const spot = wallPlacementAt(pieceStart, span, depth, customWallId as WallSide, room);
+          const radians = spot.rotation * Math.PI / 180;
+          const aabbWidth = Math.abs(span * Math.cos(radians)) + Math.abs(depth * Math.sin(radians));
+          const aabbDepth = Math.abs(span * Math.sin(radians)) + Math.abs(depth * Math.cos(radians));
+          const centerX = spot.x + aabbWidth / 2;
+          const centerY = spot.y + aabbDepth / 2;
+          merged.push({
+            ...first.surface,
+            x: centerX - span / 2,
+            y: centerY - depth / 2,
+            width: span,
+            depth,
+            rotation: spot.rotation,
+            customWallRunStartIn: pieceStart,
+            linearInches: span,
+            areaInches: span * depth,
+            cabinetRunId: runId,
+          });
+          continue;
+        }
+        const side = wallId as WallSide;
+        if (side === "top") merged.push({ ...first.surface, x: pieceStart, y: 0, width: span, depth, linearInches: span, areaInches: span * depth, cabinetRunId: runId });
+        else if (side === "bottom") merged.push({ ...first.surface, x: pieceStart, y: room.depth - depth, width: span, depth, linearInches: span, areaInches: span * depth, cabinetRunId: runId });
+        else if (side === "left") merged.push({ ...first.surface, x: 0, y: pieceStart, width: depth, depth: span, linearInches: span, areaInches: span * depth, cabinetRunId: runId });
+        else merged.push({ ...first.surface, x: room.width - depth, y: pieceStart, width: depth, depth: span, linearInches: span, areaInches: span * depth, cabinetRunId: runId });
       }
-      const side = key.slice("wall:".length) as WallSide;
-      if (side === "top") merged.push({ ...first.surface, x: start, y: 0, width: span, depth, linearInches: span, areaInches: span * depth, cabinetRunId: runId });
-      else if (side === "bottom") merged.push({ ...first.surface, x: start, y: room.depth - depth, width: span, depth, linearInches: span, areaInches: span * depth, cabinetRunId: runId });
-      else if (side === "left") merged.push({ ...first.surface, x: 0, y: start, width: depth, depth: span, linearInches: span, areaInches: span * depth, cabinetRunId: runId });
-      else merged.push({ ...first.surface, x: room.width - depth, y: start, width: depth, depth: span, linearInches: span, areaInches: span * depth, cabinetRunId: runId });
     }
   });
   return [...surfaces.filter((_, index) => !consumed.has(index)), ...merged];

@@ -407,11 +407,12 @@ describe("Auto-Design refrigerator stays inside its end panels (Tom, Oct 31)", (
     expect(cap.depth + (cap.y ?? 0)).toBeCloseTo(result.refrigerator.depth, 2);
   });
 
-  it("warns, instead of letting it stick out, when the cabinet above is deeper than the panels", () => {
+  it("cuts a cabinet above that is deeper than the panels back to the panel face", () => {
     const result = build(fridge(24), source({ id: 200, depth: "26" }), panel("24"));
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.warnings).toHaveLength(1);
-    expect(result.warnings[0]).toMatch(/sticks out/);
+    expect(result.additions[0].depth).toBe(24);
+    expect(result.warnings).toEqual([]);
+    expect(result.notes.join(" ")).toMatch(/does not extend past the refrigerator end panel/);
   });
 });
