@@ -27,7 +27,7 @@ import DoorPhotoCorrectButton from "./DoorPhotoCorrectButton";
 import { AdminStyleRoomSceneControls } from "@/components/doorStyles/AdminDoorStyleRoomScene";
 import type { AutoRoomScene } from "@/lib/autoRoomScene";
 import { MediaPicker } from "./MediaPicker";
-import { WalzCraftMatchForStyle, WalzCraftOnlyMatches } from "@/components/walzcraft/WalzCraftMatchCard";
+import { WalzCraftMatchForStyle, WalzCraftOnlyMatches, WalzCraftManualDoorPicker, resolveWalzDoor, readManualDoorId, writeManualDoorId } from "@/components/walzcraft/WalzCraftMatchCard";
 import { WoodGrainColorDisplay, DoorSkinField } from "@/components/walzcraft/ColorFinishExtras";
 import { readDoorSkin, saveDoorSkin, doorSkinError, type DoorSkin } from "@shared/doorSkin";
 import { approvedTilesFor } from "@shared/woodGrainTiles";
@@ -397,7 +397,10 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
   // Glazing has no door_styles column yet: browser-only (localStorage), labeled "not saved yet".
   const [glazing, setGlazing] = useState<Glazing>(() => readGlazing(style.id));
   const [doorSkin, setDoorSkin] = useState<DoorSkin>(() => readDoorSkin(style.id, style.skinNeeded));
-  const walzDoor = doorForStyle(style);
+  // Same editor for every style (featured only means "shown on the website front"); nothing here is gated by isFeatured/isActive.
+  const autoWalzDoor = doorForStyle(style);
+  const [manualDoorId, setManualDoorId] = useState<string | null>(() => readManualDoorId(style.id));
+  const walzDoor = resolveWalzDoor(style, manualDoorId);
   const walzColorType = walzDoor ? colorTypeFor(walzDoor) : null;
   const isWoodGrain = walzColorType?.colorType === "woodGrain";
   const woodGrainLabel = walzColorType && isWoodGrain ? woodGrainBadge(walzColorType, style.grainDirection) : null;
@@ -883,8 +886,9 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
           {/* WalzCraft match (read-only; approvals are localStorage only) */}
           <div data-testid="edit-dialog-walzcraft-match">
             <WalzCraftErrorBoundary>
-              <WalzCraftMatchForStyle style={style} currentPhoto={thumb(style)} hideBrochurePhoto />
-              <WalzCraftApplyPanel style={style} values={walzFormValues} onApply={applyWalzFormValues} />
+              <WalzCraftMatchForStyle style={style} door={walzDoor} currentPhoto={thumb(style)} hideBrochurePhoto />
+              {!autoWalzDoor && <WalzCraftManualDoorPicker value={manualDoorId} onChange={(id) => { setManualDoorId(id); writeManualDoorId(style.id, id); }} />}
+              <WalzCraftApplyPanel style={style} door={walzDoor} values={walzFormValues} onApply={applyWalzFormValues} />
             </WalzCraftErrorBoundary>
           </div>
 

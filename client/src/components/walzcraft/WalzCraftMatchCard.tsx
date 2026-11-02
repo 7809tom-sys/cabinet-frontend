@@ -119,8 +119,38 @@ function readManual(): Record<string, string> {
 type MatchStyle = StyleForMatch & { id?: number | null; renderHex?: string | null; color?: string | null; grainDirection?: string | null; doorShape?: string | null };
 
 /** Shown on every door style: the exact distributor match, or a clear "No WalzCraft match yet" state with a manual profile picker. */
-export function WalzCraftMatchForStyle({ style, currentPhoto, hideBrochurePhoto }: { style: MatchStyle; currentPhoto: string | null; hideBrochurePhoto?: boolean }) {
-  const door = doorForStyle(style);
+export const MANUAL_DOOR_KEY = "walzcraftManualDoor.v1";
+export function readManualDoorId(styleId: number | string | null | undefined): string | null {
+  try { const v = JSON.parse(localStorage.getItem(MANUAL_DOOR_KEY) ?? "{}"); return (v && v[String(styleId)]) || null; } catch { return null; }
+}
+export function writeManualDoorId(styleId: number | string, doorId: string | null) {
+  try { const v = JSON.parse(localStorage.getItem(MANUAL_DOOR_KEY) ?? "{}") || {}; if (doorId) v[String(styleId)] = doorId; else delete v[String(styleId)]; localStorage.setItem(MANUAL_DOOR_KEY, JSON.stringify(v)); } catch { /* storage unavailable */ }
+}
+/** Automatic distributor-scoped match, else the admin's manual pick for this style (browser-only). */
+export function resolveWalzDoor(style: MatchStyle & { id?: number | string | null }, manualId?: string | null) {
+  const auto = doorForStyle(style);
+  if (auto) return auto;
+  const id = manualId === undefined ? readManualDoorId(style.id ?? null) : manualId;
+  return id ? WALZCRAFT_DISTRIBUTOR_DOORS.find((d) => d.id === id) ?? null : null;
+}
+/** Manual distributor-door picker (grouped by distributor). Shown when no automatic match exists. */
+export function WalzCraftManualDoorPicker({ value, onChange }: { value: string | null; onChange: (id: string | null) => void }) {
+  return (
+    <label className="mt-2 flex flex-wrap items-center gap-2 text-xs text-[#244338]">
+      <span className="font-semibold">Choose the WalzCraft distributor door manually:</span>
+      <select data-testid="walzcraft-manual-door" className="rounded border border-[#244338]/30 bg-white px-2 py-1" value={value ?? ""} onChange={(e) => onChange(e.target.value || null)}>
+        <option value="">— none —</option>
+        {groupDoorsByDistributor(WALZCRAFT_DISTRIBUTOR_DOORS).map((g) => (
+          <optgroup key={g.distributor} label={g.distributor}>{g.doors.map((d) => <option key={d.id} value={d.id}>{doorDisplayName(d)} ({d.code})</option>)}</optgroup>
+        ))}
+      </select>
+      <span className="italic text-[#244338]/70">Saved in this browser only.</span>
+    </label>
+  );
+}
+
+export function WalzCraftMatchForStyle({ style, currentPhoto, hideBrochurePhoto, door: doorOverride }: { style: MatchStyle; currentPhoto: string | null; hideBrochurePhoto?: boolean; door?: ReturnType<typeof doorForStyle> }) {
+  const door = doorOverride ?? resolveWalzDoor(style as MatchStyle & { id?: number });
   if (door) return <WalzCraftMatchCard door={door} currentPhoto={currentPhoto} catalogHex={style.renderHex ?? null} catalogColorName={style.color ?? null} styleGrainDirection={style.grainDirection ?? null} hideBrochurePhoto={hideBrochurePhoto} />;
   return <WalzCraftNoMatch style={style} />;
 }

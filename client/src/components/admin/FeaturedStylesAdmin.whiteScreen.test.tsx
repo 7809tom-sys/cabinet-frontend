@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const styles: Record<string, unknown>[] = [
   { id: 1, ourName: "White Shaker", distributorName: null, supplierBrandName: "Faircrest", aliasName: null, isFeatured: true, featuredRank: 1, isActive: true, distributorId: 1, roomScenes: null, grainDirection: null, color: null, renderHex: null },
-  { id: 2, ourName: "Fresh Sage", isFeatured: false, featuredRank: 0, isActive: true, distributorId: 2 },
+  { id: 2, ourName: "Fresh Sage", isFeatured: false, supplierBrandName: "Faircrest", featuredRank: 0, isActive: true, distributorId: 2 },
   { id: 4, ourName: "Hickory Shaker", isFeatured: true, featuredRank: 3, isActive: true, distributorId: 1, roomScenes: null, roomSceneImageUrl: null },
   { id: 5, ourName: "Torino Dark Wood", isFeatured: false, featuredRank: 0, isActive: true, distributorId: 3, grainDirection: "horizontal" },
   { id: 3, ourName: "Natural Oak", isFeatured: true, featuredRank: 2, isActive: true, distributorId: 1 },
@@ -135,5 +135,35 @@ describe("Vendor update badge", () => {
     fireEvent.click(screen.getByTestId("vendor-update-reject"));
     expect(calls[0]).toMatchObject({ id: 9, approve: false });
     pendingRef.list = [];
+  });
+});
+
+describe("Edit Door: non-featured styles use the same editor with the full WalzCraft section", () => {
+  const openEditFor = (name: string) => {
+    for (const btn of screen.getAllByLabelText("Edit style")) {
+      fireEvent.click(btn);
+      if (screen.queryByRole("dialog")?.querySelector("h2")?.textContent?.includes(name)) return;
+      fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+    }
+    throw new Error(`no edit dialog for ${name}`);
+  };
+  it("non-featured Fresh Sage shows match, sample+brochure, Approve fill, skin and glazing", () => {
+    render(<FeaturedStylesAdmin />);
+    openEditFor("Fresh Sage");
+    expect(screen.getByTestId("edit-dialog-walzcraft-match")).toBeTruthy();
+    expect(screen.getByTestId("sample-vs-brochure")).toBeTruthy();
+    expect(screen.getByTestId("edit-dialog-brochure-photo")).toBeTruthy();
+    expect(screen.getByTestId("walzcraft-approve-fill")).toBeTruthy();
+    expect(screen.getByTestId("skin-needed")).toBeTruthy();
+  });
+  it("non-featured style without an automatic match still shows the section and a manual door pick enables Approve fill", () => {
+    render(<FeaturedStylesAdmin />);
+    openEditFor("Torino Dark Wood");
+    expect(screen.getByTestId("edit-dialog-walzcraft-match")).toBeTruthy();
+    expect(screen.getByRole("dialog").querySelector('[data-testid="walzcraft-no-match"]')).toBeTruthy();
+    fireEvent.change(screen.getByTestId("walzcraft-manual-door"), { target: { value: "altaeuro-tdw" } });
+    expect(screen.getByTestId("walzcraft-approve-fill")).toBeTruthy();
+    expect(screen.getByTestId("edit-dialog-brochure-photo")).toBeTruthy();
+    localStorage.clear();
   });
 });
