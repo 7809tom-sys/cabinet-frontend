@@ -14938,7 +14938,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           </Button>
         </div>
 
-        <PlanWalzCraftWizardButton onShade={applyPlanDoorColor} />
         <ColorStyleQuickPicker
           styles={displayUniqueDoorStyles.map((style) => ({ id: style.id, name: affiliateStyleName(style) }))}
           value={styleId}
@@ -18305,6 +18304,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
               />
             </div>
           )}
+	          {viewMode === "plan" && (
+	            <div className="absolute left-3 top-14 z-40">
+	              <PlanWalzCraftWizardButton onShade={applyPlanDoorColor} />
+	            </div>
+	          )}
 	          {viewMode === "plan" && (
 	            <PlanCanvas onPreviewGap={previewSmartGap}
 	              room={room}

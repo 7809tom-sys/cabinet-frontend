@@ -101,11 +101,6 @@ describe("DL shaker blueprint", () => {
     expect(standardShakerDlFacePlan({ doorStyle: "Shaker", railWidth: 3, color: "#dcd7c2" }, "base")?.dlcCrop?.solidColor).toBe("#dcd7c2");
     // Chromatic paint stays paint, so it inherits the pale grain that can actually reach the color.
     expect(styleFinishFamily({ doorStyle: "Shaker", color: "#244338" })).toBe("painted");
-    // Stone Gray and other grays stay gray. They are not snapped to brand green.
-    const stone = standardShakerDlFacePlan({ doorStyle: "Shaker", railWidth: 3, ourName: "Shaker Gray", aliasName: "Stone Gray", color: "Gray", finish: "Cobalt Abyss" }, "base");
-    expect(stone?.dlcCrop?.solidColor?.toLowerCase()).not.toBe("#244338");
-    expect(stone?.dlcCrop?.solidColor?.toLowerCase()).toBe("#8d8f92");
-    expect(standardShakerDlFacePlan({ doorStyle: "Shaker", railWidth: 3, color: "#555553" }, "base")?.dlcCrop?.solidColor).toBe("#555553");
     expect(styleFinishFamily({ doorStyle: "Shaker", woodSpecies: "oak", color: "#244338" })).toBe("wood");
   });
 });

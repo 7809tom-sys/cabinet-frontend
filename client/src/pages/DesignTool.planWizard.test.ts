@@ -1,17 +1,14 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-describe("designer WalzCraft color button", () => {
-  it("sits in the designer toolbar for every view, including the floor plan, and is not admin-only", () => {
+describe("plan page WalzCraft color wizard", () => {
+  it("puts the wizard button on the floor plan and saves the chosen shade as the render hex", () => {
     const source = readFileSync(new URL("./DesignTool.tsx", import.meta.url), "utf8");
-    const lines = source.split("\n");
-    const hits = lines.filter((line) => line.includes("<PlanWalzCraftWizardButton"));
-    expect(hits).toEqual(["        <PlanWalzCraftWizardButton onShade={applyPlanDoorColor} />"]);
-    const index = lines.findIndex((line) => line.includes("<PlanWalzCraftWizardButton"));
-    expect(lines[index - 1]).not.toContain("viewMode");
-    expect(lines[index - 1]).not.toContain("isAdmin");
-    expect(source).toContain('data-testid="designer-toolbar"');
-    expect(source.slice(0, source.indexOf("<PlanWalzCraftWizardButton"))).toContain('data-testid="designer-toolbar"');
+    const marker = source.indexOf("<PlanWalzCraftWizardButton onShade={applyPlanDoorColor} />");
+    expect(marker).toBeGreaterThan(0);
+    const around = source.slice(Math.max(0, marker - 180), marker);
+    expect(around).toContain('viewMode === "plan"');
     expect(source).toContain("renderHex: shade.hex");
+    expect(source).toContain("adminUpdateDoorStyle");
   });
 });
