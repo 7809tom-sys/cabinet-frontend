@@ -38,7 +38,6 @@ import WalzCraftDoorPicker from "@/pages/WalzCraftDoorPicker";
 import { WalzCraftApplyPanel, GlazingControl } from "@/components/walzcraft/WalzCraftApplyPanel";
 import { VendorUpdateBadge } from "./VendorMeasurementUpdate";
 import { WalzCraftErrorBoundary } from "@/components/walzcraft/WalzCraftErrorBoundary";
-import { DoorColorChooser, familyShadesForDoor } from "@/components/walzcraft/DoorColorChooser";
 import { readGlazing, saveGlazing, type ProfileFormValues, type Glazing } from "@shared/walzcraftProfileFill";
 import { designerWorkspaceHref } from "@/lib/designerFreshStart";
 import { ApplySpecsToOtherStyles, type ApplySpecsHandle } from "./ApplySpecsToOtherStyles";
@@ -863,12 +862,6 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
             return <WalzCraftErrorBoundary label="Wood grain tiles"><WoodGrainTileTool styleId={style.id} colorName={colorLabel(door)} sceneUrls={Array.from(new Set(scenes))} /></WalzCraftErrorBoundary>;
           })()}
 
-          <DoorColorChooser
-            style={{ ourName, aliasName, doorStyle, color, renderHex, finish, woodSpecies, sheetColor: walzDoor?.walzcraftColor ?? null }}
-            shades={familyShadesForDoor(walzDoor)}
-            onChoose={(hex, name) => { setRenderHex(hex); setColor(name); }}
-          />
-
           <DoorRenderOverrides
             woodGrain={woodGrainLabel ? { label: woodGrainLabel, swatchUrl: woodGrainSwatch, horizontal: woodGrainLabel.endsWith("Horizontal") } : null}
             renderHex={renderHex}
@@ -913,7 +906,7 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
           {/* WalzCraft door picker (same as /walzcraft-doors), loaded inline as soon as Edit door style opens, for every style. */}
           <div data-testid="edit-dialog-walzcraft-picker">
             <WalzCraftErrorBoundary label="WalzCraft door picker">
-              <WalzCraftDoorPicker embedded onShadeChosen={(shade) => { setRenderHex(shade.hex); setColor(shade.name); }} />
+              <WalzCraftDoorPicker embedded />
             </WalzCraftErrorBoundary>
           </div>
 
