@@ -14,9 +14,14 @@ export type ClosetCameraFrame = {
   minDistance: number;
   maxDistance: number;
   distance: number;
+  /** OrbitControls polar angle (radians from +Y) that keeps this framing. */
+  polarAngle: number;
 };
 
 type Vec3 = { x: number; y: number; z: number };
+
+/** Screen padding, as a fraction of NDC half-extent. Top and bottom stay equal. */
+export const CLOSET_FRAME_PADDING = 0.12;
 
 const add = (a: Vec3, b: Vec3): Vec3 => ({ x: a.x + b.x, y: a.y + b.y, z: a.z + b.z });
 const sub = (a: Vec3, b: Vec3): Vec3 => ({ x: a.x - b.x, y: a.y - b.y, z: a.z - b.z });
@@ -32,12 +37,105 @@ const norm = (a: Vec3): Vec3 => {
   const span = length(a) || 1;
   return mul(a, 1 / span);
 };
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+
+const centerOf = (box: ClosetAabb): Vec3 => ({
+  x: (box.minX + box.maxX) / 2,
+  y: (box.minY + box.maxY) / 2,
+  z: (box.minZ + box.maxZ) / 2,
+});
+
+/** Azimuth 0 looks from +Z (the open side). Elevation is radians above horizontal. */
+function directionFromAngles(azimuth: number, elevation: number): Vec3 {
+  const horizontal = Math.cos(elevation);
+  return {
+    x: Math.sin(azimuth) * horizontal,
+    y: Math.sin(elevation),
+    z: Math.cos(azimuth) * horizontal,
+  };
+}
+
+type Silhouette = {
+  minX: number; maxX: number; minY: number; maxY: number; minDepth: number;
+  topGap: number; bottomGap: number; leftGap: number; rightGap: number;
+};
+
+function silhouetteOf(
+  box: ClosetAabb,
+  aspect: number,
+  direction: Vec3,
+  distance: number,
+  fovDeg: number,
+  target: Vec3,
+): Silhouette {
+  const frame: ClosetCameraFrame = {
+    position: add(target, mul(norm(direction), distance)),
+    target,
+    near: 0.05,
+    far: 500,
+    minDistance: distance,
+    maxDistance: distance,
+    distance,
+    polarAngle: 0,
+  };
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minDepth = Infinity;
+  for (const corner of closetCabinetCorners(box)) {
+    const point = projectClosetPoint(corner, frame, aspect, fovDeg);
+    minX = Math.min(minX, point.x);
+    maxX = Math.max(maxX, point.x);
+    minY = Math.min(minY, point.y);
+    maxY = Math.max(maxY, point.y);
+    minDepth = Math.min(minDepth, point.depth);
+  }
+  return {
+    minX, maxX, minY, maxY, minDepth,
+    topGap: 1 - maxY,
+    bottomGap: minY + 1,
+    leftGap: minX + 1,
+    rightGap: 1 - maxX,
+  };
+}
 
 /**
- * Places the closet camera on the room-interior side of the cabinet (+Z, in front
- * of the back wall) and dollies until the cabinet box — not the wall — fits the
- * canvas, with padding. A narrow middle column (small aspect) pushes the camera
- * back so the towers are not cropped; a wide canvas does not leave them tiny.
+ * Smallest distance along `direction` (from the tower center toward the camera)
+ * that keeps every cabinet corner inside the padding. Zoom must not go closer.
+ */
+export function closetFitDistance(
+  box: ClosetAabb,
+  aspect: number,
+  direction: Vec3,
+  options?: { padding?: number; fovDeg?: number; target?: Vec3 },
+): number {
+  const padding = options?.padding ?? CLOSET_FRAME_PADDING;
+  const fovDeg = options?.fovDeg ?? 40;
+  const safeAspect = Math.min(3.2, Math.max(0.35, Number.isFinite(aspect) && aspect > 0 ? aspect : 1));
+  const margin = Math.max(0.06, Math.min(0.28, padding));
+  const target = options?.target ?? centerOf(box);
+  const halfD = Math.max(0.25, (box.maxZ - box.minZ) / 2);
+  const inside = (distance: number) => {
+    const silhouette = silhouetteOf(box, safeAspect, direction, distance, fovDeg, target);
+    return silhouette.minDepth > 0.2
+      && silhouette.leftGap >= margin - 1e-3
+      && silhouette.rightGap >= margin - 1e-3
+      && silhouette.topGap >= margin - 1e-3
+      && silhouette.bottomGap >= margin - 1e-3;
+  };
+  let low = Math.max(halfD + 0.8, 1.5);
+  let high = low;
+  for (let guard = 0; guard < 28 && !inside(high); guard += 1) high *= 1.32;
+  for (let step = 0; step < 22; step += 1) {
+    const mid = (low + high) / 2;
+    if (inside(mid)) high = mid;
+    else low = mid;
+  }
+  return high;
+}
+
+/**
+ * Places the closet camera on the room-interior side of the cabinet (+Z) and
+ * dollies until the cabinet box — floor included — fits. The look-at target
+ * stays the bounding-box center. Pitch is chosen so the on-screen padding
+ * above the tower equals the padding below it.
  */
 export function frameClosetStudioCamera(
   box: ClosetAabb,
@@ -45,59 +143,47 @@ export function frameClosetStudioCamera(
   options?: { view?: ClosetCameraView; padding?: number; fovDeg?: number },
 ): ClosetCameraFrame {
   const view = options?.view ?? "angle";
-  const padding = options?.padding ?? 0.18;
+  const padding = options?.padding ?? CLOSET_FRAME_PADDING;
+  const fovDeg = options?.fovDeg ?? 40;
   const safeAspect = Math.min(3.2, Math.max(0.35, Number.isFinite(aspect) && aspect > 0 ? aspect : 1));
-  const center = {
-    x: (box.minX + box.maxX) / 2,
-    y: (box.minY + box.maxY) / 2,
-    z: (box.minZ + box.maxZ) / 2,
+  const center = centerOf(box);
+  const azimuth = view === "front" ? 0.035 : view === "overhead" ? 0.2 : 0.5;
+  // Overhead stays high enough to look down on the tower. A steep plan view
+  // magnifies the near top, so its padding cannot match a level front view.
+  const [elevLo, elevHi] = view === "overhead" ? [0.62, 1.02] : [0.05, 0.48];
+  let bestDirection = directionFromAngles(azimuth, (elevLo + elevHi) / 2);
+  let bestDistance = closetFitDistance(box, safeAspect, bestDirection, { padding, fovDeg, target: center });
+  let bestScore = Number.POSITIVE_INFINITY;
+  const consider = (elevation: number) => {
+    const direction = directionFromAngles(azimuth, elevation);
+    const distance = closetFitDistance(box, safeAspect, direction, { padding, fovDeg, target: center });
+    const silhouette = silhouetteOf(box, safeAspect, direction, distance, fovDeg, center);
+    const score = Math.abs(silhouette.topGap - silhouette.bottomGap) + Math.abs(silhouette.leftGap - silhouette.rightGap) * 0.35;
+    if (score < bestScore) {
+      bestScore = score;
+      bestDirection = direction;
+      bestDistance = distance;
+    }
   };
-  const halfD = Math.max(0.25, (box.maxZ - box.minZ) / 2);
-  // +Z is the open side of the closet. Overhead stays far enough off vertical
-  // that OrbitControls' polar limit does not shove the camera back to the horizon.
-  const raw = view === "front"
-    ? { x: 0.04, y: 0.16, z: 1 }
-    : view === "overhead"
-      ? { x: 0.08, y: 1, z: 0.28 }
-      : { x: 0.46, y: 0.2, z: 1 };
-  const towardCamera = norm(raw);
-  const margin = Math.max(0.08, Math.min(0.35, padding));
-  const inside = (distance: number) => {
-    const trial: ClosetCameraFrame = {
-      position: add(center, mul(towardCamera, distance)),
-      target: center,
-      near: 0.05,
-      far: 500,
-      minDistance: 1,
-      maxDistance: 500,
-      distance,
-    };
-    return closetCabinetCorners(box).every((corner) => {
-      const point = projectClosetPoint(corner, trial, safeAspect, options?.fovDeg ?? 40);
-      return point.depth > 0.2 && Math.abs(point.x) <= 1 - margin && Math.abs(point.y) <= 1 - margin;
-    });
-  };
-  let low = Math.max(halfD + 1.2, 2);
-  let high = low;
-  for (let guard = 0; guard < 24 && !inside(high); guard += 1) high *= 1.35;
-  for (let step = 0; step < 20; step += 1) {
-    const mid = (low + high) / 2;
-    if (inside(mid)) high = mid;
-    else low = mid;
-  }
-  const distance = high;
-  const position = add(center, mul(towardCamera, distance));
-  const near = 0.05;
-  const minDistance = Math.min(Math.max(1.35, halfD + 0.45), distance * 0.72);
-  const maxDistance = Math.max(36, distance * 3.2);
+  const samples = 16;
+  for (let index = 0; index <= samples; index += 1) consider(elevLo + (elevHi - elevLo) * (index / samples));
+  const winner = Math.asin(clamp(bestDirection.y, -1, 1));
+  const step = (elevHi - elevLo) / samples;
+  for (let index = 0; index <= 8; index += 1) consider(clamp(winner - step + (2 * step * index) / 8, elevLo, elevHi));
+
+  const distance = bestDistance;
+  const position = add(center, mul(bestDirection, distance));
+  const polarAngle = Math.acos(clamp(bestDirection.y, -1, 1));
   return {
     position,
     target: center,
-    near,
+    near: 0.05,
     far: Math.max(90, distance * 10),
-    minDistance,
-    maxDistance,
+    // Full tower always fits: zoom cannot move inside this distance.
+    minDistance: distance,
+    maxDistance: Math.max(36, distance * 3.2),
     distance,
+    polarAngle,
   };
 }
 
@@ -113,7 +199,7 @@ export function projectClosetPoint(
   const halfFovH = Math.atan(Math.tan(halfFovV) * safeAspect);
   const back = norm(sub(frame.position, frame.target));
   let right = norm(cross({ x: 0, y: 1, z: 0 }, back));
-  if (length(right) < 1e-6) right = { x: 1, y: 0, z: 0 };
+  if (length(cross({ x: 0, y: 1, z: 0 }, back)) < 1e-6) right = { x: 1, y: 0, z: 0 };
   const up = cross(back, right);
   const rel = sub(point, frame.position);
   const camX = dot(rel, right);

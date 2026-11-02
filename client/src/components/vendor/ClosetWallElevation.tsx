@@ -1,3 +1,4 @@
+import { closetDlShakerMembers } from "@/components/vendor/closetShakerFront";
 import {
   STUDIO_BASKET_FRAME_HEX, STUDIO_BASKET_LINER_PLACEHOLDER_HEX, STUDIO_ROOM_HEIGHT_DEFAULT_IN, studioBasketPlacementsForWall, studioBays, studioCornerShelvesForWall, studioFixedBottom, studioFixedTop, studioItemHeight,
   studioPanelHeight, studioTowerFootprint, studioWallLength, studioWidthForWall,
@@ -75,7 +76,21 @@ export function ClosetWallElevation({ design, wall }: { design: StudioDesign; wa
             <circle cx={x(left) + 4} cy={y(item.bottomIn)} r="2.5" fill="#6f7378" /><circle cx={x(left + bay.widthIn) - 4} cy={y(item.bottomIn)} r="2.5" fill="#6f7378" />{label}
           </g>;
           if (item.kind === "shelf") return <g key={item.id} data-item={item.kind}><rect x={x(left)} y={y(item.bottomIn + itemHeight)} width={bay.widthIn * SCALE} height={Math.max(2.5, itemHeight * SCALE)} fill={fill} stroke="#8e8576" strokeWidth="0.8" />{label}</g>;
-          if (item.kind === "drawer") return <g key={item.id} data-item={item.kind}><rect x={x(left) + 1} y={y(item.bottomIn + itemHeight)} width={bay.widthIn * SCALE - 2} height={itemHeight * SCALE} fill={fill} stroke="#6f6659" strokeWidth="1" /><line x1={x(left + bay.widthIn / 2) - 10} x2={x(left + bay.widthIn / 2) + 10} y1={y(item.bottomIn + itemHeight) + 5} y2={y(item.bottomIn + itemHeight) + 5} stroke="#6f6659" strokeWidth="2" strokeLinecap="round" />{label}</g>;
+          if (item.kind === "drawer") {
+            const faceWidth = bay.widthIn - 0.3;
+            const frame = closetDlShakerMembers(faceWidth, itemHeight);
+            const outerX = x(left) + 1;
+            const outerY = y(item.bottomIn + itemHeight);
+            const outerW = bay.widthIn * SCALE - 2;
+            const outerH = itemHeight * SCALE;
+            const insetX = frame.stileIn * SCALE;
+            const insetY = frame.railIn * SCALE;
+            return <g key={item.id} data-item={item.kind} data-shaker-frame={frame.railIn}>
+              <rect x={outerX} y={outerY} width={outerW} height={outerH} fill={fill} stroke="#4c291f" strokeWidth="1" strokeLinejoin="miter" />
+              <rect x={outerX + insetX} y={outerY + insetY} width={Math.max(1, outerW - insetX * 2)} height={Math.max(1, outerH - insetY * 2)} fill="#5c382c" stroke="#4c291f" strokeWidth="0.6" strokeLinejoin="miter" />
+              {label}
+            </g>;
+          }
           return <g key={item.id} data-item={item.kind}><rect x={x(left) + 1} y={y(item.bottomIn + itemHeight)} width={bay.widthIn * SCALE - 2} height={itemHeight * SCALE} fill="#e9dcc7" fillOpacity="0.7" stroke="#8e8576" strokeDasharray="4 3" strokeWidth="1" /><line x1={x(left) + 1} x2={x(left + bay.widthIn) - 1} y1={y(item.bottomIn)} y2={y(item.bottomIn + itemHeight)} stroke="#8e8576" strokeWidth="1.2" />{label}</g>;
         })}
         {placements.filter((placement) => placement.bayId === bay.id).map((placement) => <g key={placement.id} data-item="basket"><rect x={x(left) + 2} y={y(placement.bottomIn + placement.nominalHeightIn)} width={bay.widthIn * SCALE - 4} height={placement.nominalHeightIn * SCALE} fill={STUDIO_BASKET_LINER_PLACEHOLDER_HEX} fillOpacity="1" stroke={STUDIO_BASKET_FRAME_HEX} strokeWidth="1.6" /><text x={x(left + bay.widthIn / 2)} y={y(placement.bottomIn + placement.nominalHeightIn) - 3} textAnchor="middle" fontSize="10" fontWeight="600" fill="#3d362d" style={halo}>{inches(placement.bottomIn)}</text></g>)}

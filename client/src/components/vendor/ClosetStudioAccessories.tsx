@@ -54,7 +54,7 @@ export function ClosetStudioAccessories({ design, selectedBay, hasBay, partToPla
 
   return <div className="flex flex-col gap-3" data-testid="vendor-accessory-palette">
     <label className="block text-[11px] font-semibold text-[#5c564c]">Search accessories
-      <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Shelf, rod, shoe basket…" aria-label="Search accessories" className="mt-1 h-11 w-full rounded-lg border border-[#dfd8cc] bg-white px-3 text-sm font-normal text-[#2c3832]" />
+      <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Shelf, rod, shoe basket…" aria-label="Search accessories" className="mt-1 h-11 w-full rounded-lg border border-[#dfd8cc] bg-white px-3 text-sm font-normal text-[#2c3832] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d7a46c]" />
     </label>
     <div role="group" aria-label="Accessory categories" className="flex flex-wrap gap-1.5">
       {FILTERS.map((entry) => <button key={entry} type="button" aria-pressed={filter === entry} onClick={() => setFilter(entry)} className={`min-h-11 rounded-full px-3 text-xs font-semibold ${filter === entry ? "bg-[#244338] text-white" : "border border-[#dfd8cc] bg-white text-[#4d5852]"}`}>{entry}</button>)}
@@ -80,7 +80,7 @@ export function ClosetStudioAccessories({ design, selectedBay, hasBay, partToPla
         const tooWide = Boolean(bay) && entry.nominalWidthIn > bay.widthIn;
         const error = !hasBay ? "Add a tower on this wall before placing a basket." : tooWide ? `SKU ${entry.sku} is ${entry.nominalWidthIn} in wide and this bay is ${bay.widthIn} in. Baskets are never cut to fit.` : null;
         return <button key={entry.sku} type="button" data-testid={`vendor-accessory-basket-${entry.sku}`} draggable={!error} onDragStart={(event) => { if (error) { event.preventDefault(); return; } event.dataTransfer.setData("application/x-vendor-closet-part", `basket:${entry.sku}`); event.dataTransfer.effectAllowed = "copy"; }} disabled={Boolean(error)} title={error ?? `Place this basket in the first open span of Tower ${selectedBay + 1}`} onClick={() => onPlaceBasket(entry.sku)} className="flex min-h-14 w-full items-center gap-3 rounded-xl border border-[#e2ddd3] bg-white px-3 py-2 text-left hover:border-[#bc9b74] disabled:opacity-45">
-          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-[#e7f0f0]"><Thumbnail kind="basket" /></span>
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-[#f6f3ed]"><Thumbnail kind="basket" /></span>
           <span className="min-w-0 flex-1"><span className="block text-sm font-semibold text-[#2c3832]">{entry.nominalHeightIn}″ × {entry.nominalWidthIn}″ pull-out basket</span><span className="block text-xs leading-snug text-[#6e655c]">Shoe and storage basket · SKU {entry.sku} · snaps between the fixed shelves</span></span>
           {product && <span className="shrink-0 text-xs font-semibold tabular-nums text-[#3e4a44]">{money(product.listEachUsd)}</span>}
         </button>;

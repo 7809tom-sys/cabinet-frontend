@@ -3855,17 +3855,8 @@ export function doorProfileKind(doorStyle: string | null | undefined, doorPanelT
   return "flat" as const;
 }
 
-/** Three-inch physical Shaker rail/stile, reduced only when a very narrow face cannot accommodate it. */
-export function threeDShakerRailThickness(faceWidth: number, faceHeight: number, verifiedInches?: string | number | null) {
-  const requested = Number(verifiedInches);
-  const thickness = Number.isFinite(requested) && requested > 0 ? requested * INCH : 3 * INCH;
-  return Math.max(0, Math.min(thickness, faceWidth / 2 - 0.01, faceHeight / 2 - 0.01));
-}
-
-/** The physical Shaker frame must share the exact pose of its door face. */
-export function threeDShakerFramePose(x: number, y: number, z: number, rotationY = 0) {
-  return { x, y, z, rotationY };
-}
+import { threeDShakerFramePose, threeDShakerRailThickness } from "@/lib/shakerRail";
+export { threeDShakerFramePose, threeDShakerRailThickness };
 
 function roomPolygon(geometryTemplate: unknown, width: number, depth: number) {
   const geometry = geometryTemplate && typeof geometryTemplate === "object" && !Array.isArray(geometryTemplate)
