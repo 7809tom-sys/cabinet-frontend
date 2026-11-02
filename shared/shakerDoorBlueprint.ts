@@ -217,6 +217,9 @@ export function matchStandardShakerToDl(style: ShakerStyleInput): ShakerAdoption
   if (family === "slim-shaker") return { adopted: false, railIn, reason: "Slim Shaker keeps its own narrow frame and is not the 2.75/3 inch blueprint." };
   if (family === "double-shaker") return { adopted: false, railIn, reason: "Double Shaker is two panels, not the DL flat center slab." };
   if (family !== "shaker") return { adopted: false, railIn, reason: "Not a shaker door style." };
+  if (isHickoryDoor(style)) {
+    return { adopted: false, railIn, reason: "Hickory keeps its catalog door photo. A substitute grain, a flat swatch, and a guessed tint are not used." };
+  }
   if (!isStandardShakerRail(railIn)) return { adopted: false, railIn, reason: `Rail ${railIn ?? "unset"} in is outside 2.75 and 3 inches.` };
 
   const ownColor = styleOwnColor(style);
@@ -291,4 +294,10 @@ export function standardShakerDlFacePlan(
 
 function matchUsesGrain(style: ShakerStyleInput): boolean {
   return resolveDoorColor(style).usesGrain;
+}
+
+/** Hickory has no measured grain of its own in the DL set, so a versa/espresso tint would be a guess. */
+export function isHickoryDoor(style: ShakerStyleInput | null | undefined): boolean {
+  const text = `${style?.woodSpecies ?? ""} ${style?.ourName ?? ""} ${style?.aliasName ?? ""} ${style?.finish ?? ""}`;
+  return /\bhickory\b/i.test(text);
 }

@@ -9,6 +9,7 @@ import {
   STANDARD_DL_SHAKER_SLUGS,
   brandDoorSurfaceHex,
   effectiveShakerRailIn,
+  isHickoryDoor,
   matchStandardShakerToDl,
   shakerDoorFamily,
   standardDlShakerReferences,
@@ -50,6 +51,12 @@ describe("DL shaker blueprint", () => {
       expect(effectiveShakerRailIn(style)).toBe(3);
       const native = findDlcFinishForStyle(style);
       const throughDesigner = designerFacePlan({ ...style, doorSampleImageUrl: "/uploads/framed-door.jpg" }, "base");
+      if (isHickoryDoor(style)) {
+        expect(matchStandardShakerToDl(style).adopted, style.ourName ?? "").toBe(false);
+        expect(throughDesigner?.doorUrl, style.ourName ?? "").toBe("/uploads/framed-door.jpg");
+        expect(throughDesigner?.dlcCrop, style.ourName ?? "").toBeUndefined();
+        continue;
+      }
       expect(throughDesigner?.doorUrl, style.ourName ?? "").not.toBe("/uploads/framed-door.jpg");
       if (native) {
         expect(standardShakerDlFacePlan(style, "base")).toBeNull();
