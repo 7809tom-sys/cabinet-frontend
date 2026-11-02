@@ -156,14 +156,37 @@ describe("Edit Door: non-featured styles use the same editor with the full WalzC
     expect(screen.getByTestId("walzcraft-approve-fill")).toBeTruthy();
     expect(screen.getByTestId("skin-needed")).toBeTruthy();
   });
-  it("non-featured style without an automatic match still shows the section and a manual door pick enables Approve fill", () => {
+  it("non-featured style without an automatic match shows the best candidate door (not a dropdown-only state), and the override still works", () => {
     render(<FeaturedStylesAdmin />);
     openEditFor("Torino Dark Wood");
     expect(screen.getByTestId("edit-dialog-walzcraft-match")).toBeTruthy();
-    expect(screen.getByRole("dialog").querySelector('[data-testid="walzcraft-no-match"]')).toBeTruthy();
+    expect(screen.getByRole("dialog").querySelector('[data-testid="walzcraft-no-match"]')).toBeNull();
+    expect(screen.getByRole("dialog").querySelector('[data-testid="walzcraft-candidate-note"]')).toBeTruthy();
     fireEvent.change(screen.getByTestId("walzcraft-manual-door"), { target: { value: "altaeuro-tdw" } });
     expect(screen.getByTestId("walzcraft-approve-fill")).toBeTruthy();
     expect(screen.getByTestId("edit-dialog-brochure-photo")).toBeTruthy();
     localStorage.clear();
+  });
+});
+
+describe("Edit Door: WalzCraft loads on open for every style (featured or not)", () => {
+  it("shows the WalzCraft match + inline door picker, and the edited door beside the sample door, for every style including non-featured", () => {
+    render(<FeaturedStylesAdmin />);
+    const n = screen.getAllByLabelText("Edit style").length;
+    const seen: string[] = [];
+    for (let i = 0; i < n; i++) {
+      fireEvent.click(screen.getAllByLabelText("Edit style")[i]);
+      const dialog = screen.getByRole("dialog");
+      const title = dialog.querySelector("h2")?.textContent ?? "";
+      const name = styles.find((s) => title.includes(String(s.ourName)))?.ourName;
+      if (name) seen.push(String(name));
+      expect(dialog.querySelector('[data-testid="edit-dialog-walzcraft-match"]')).toBeTruthy();
+      expect(dialog.querySelector('[data-testid="walzcraft-door-picker-embedded"]')).toBeTruthy();
+      const pair = dialog.querySelector('[data-testid="sample-vs-brochure"]')!;
+      const kids = Array.from(pair.children).map((c) => c.getAttribute("data-testid"));
+      expect(kids.slice(0, 2)).toEqual(["edit-dialog-edited-door", "edit-dialog-sample-photo"]);
+      fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+    }
+    expect(seen).toEqual(expect.arrayContaining(["Fresh Sage", "Torino Dark Wood"]));
   });
 });

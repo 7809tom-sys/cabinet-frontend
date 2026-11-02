@@ -9,6 +9,7 @@ import {
   colorLabel,
   doorDisplayName,
   doorForStyle,
+  bestCandidateDoor,
   featureConfidence,
   groupDoorsByDistributor,
   type StyleForMatch,
@@ -131,15 +132,17 @@ export function resolveWalzDoor(style: MatchStyle & { id?: number | string | nul
   const auto = doorForStyle(style);
   if (auto) return auto;
   const id = manualId === undefined ? readManualDoorId(style.id ?? null) : manualId;
-  return id ? WALZCRAFT_DISTRIBUTOR_DOORS.find((d) => d.id === id) ?? null : null;
+  const manual = id ? WALZCRAFT_DISTRIBUTOR_DOORS.find((d) => d.id === id) ?? null : null;
+  // No exact or manual door: show the best-ranked candidate so every style gets the same display.
+  return manual ?? bestCandidateDoor(style)?.door ?? null;
 }
 /** Manual distributor-door picker (grouped by distributor). Shown when no automatic match exists. */
 export function WalzCraftManualDoorPicker({ value, onChange }: { value: string | null; onChange: (id: string | null) => void }) {
   return (
     <label className="mt-2 flex flex-wrap items-center gap-2 text-xs text-[#244338]">
-      <span className="font-semibold">Choose the WalzCraft distributor door manually:</span>
+      <span className="font-semibold">Override shown door (optional):</span>
       <select data-testid="walzcraft-manual-door" className="rounded border border-[#244338]/30 bg-white px-2 py-1" value={value ?? ""} onChange={(e) => onChange(e.target.value || null)}>
-        <option value="">— none —</option>
+        <option value="">— best candidate (default) —</option>
         {groupDoorsByDistributor(WALZCRAFT_DISTRIBUTOR_DOORS).map((g) => (
           <optgroup key={g.distributor} label={g.distributor}>{g.doors.map((d) => <option key={d.id} value={d.id}>{doorDisplayName(d)} ({d.code})</option>)}</optgroup>
         ))}
@@ -149,9 +152,10 @@ export function WalzCraftManualDoorPicker({ value, onChange }: { value: string |
   );
 }
 
-export function WalzCraftMatchForStyle({ style, currentPhoto, hideBrochurePhoto, door: doorOverride }: { style: MatchStyle; currentPhoto: string | null; hideBrochurePhoto?: boolean; door?: ReturnType<typeof doorForStyle> }) {
+export function WalzCraftMatchForStyle({ style, currentPhoto, hideBrochurePhoto, door: doorOverride, candidate }: { style: MatchStyle; currentPhoto?: string | null; hideBrochurePhoto?: boolean; door?: ReturnType<typeof doorForStyle>; candidate?: boolean }) {
   const door = doorOverride ?? resolveWalzDoor(style as MatchStyle & { id?: number });
-  if (door) return <WalzCraftMatchCard door={door} currentPhoto={currentPhoto} catalogHex={style.renderHex ?? null} catalogColorName={style.color ?? null} styleGrainDirection={style.grainDirection ?? null} hideBrochurePhoto={hideBrochurePhoto} />;
+  const isCandidate = candidate ?? (!!door && !doorForStyle(style));
+  if (door) return <>{isCandidate && <p data-testid="walzcraft-candidate-note" className="mb-1 text-xs italic text-[#244338]/70">Closest sheet row for this style — no exact distributor + name/code match, so treat it as a candidate until approved.</p>}<WalzCraftMatchCard door={door} currentPhoto={currentPhoto} catalogHex={style.renderHex ?? null} catalogColorName={style.color ?? null} styleGrainDirection={style.grainDirection ?? null} hideBrochurePhoto={hideBrochurePhoto} /></>;
   return <WalzCraftNoMatch style={style} />;
 }
 

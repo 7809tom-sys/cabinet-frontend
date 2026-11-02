@@ -125,3 +125,26 @@ export function writeApproval(id: string, state: ApprovalState | null, storage: 
   storage?.setItem(APPROVAL_STORAGE_KEY, JSON.stringify(all));
   return all;
 }
+
+/**
+ * Default door to display when doorForStyle finds no exact match: the best-ranked CSV door,
+ * scoped to the style's distributor when it is one of the four sheets (else all, grouped by
+ * distributor A→Z). Ranked by shared name words (door name / code / color vs the style's
+ * names), then by the door's top WalzCraft profile confidence. Nothing is invented: it is a
+ * real sheet row, flagged `exact: false` so the UI labels it as a candidate.
+ */
+export function bestCandidateDoor(style: StyleForMatch): { door: DistributorDoorMatch; exact: boolean } | null {
+  const exact = doorForStyle(style);
+  if (exact) return { door: exact, exact: true };
+  const dist = [style.supplierBrandName, style.manufacturer, style.distributor, style.supplierName].map(distributorKey).find(Boolean) ?? null;
+  const scoped = dist ? WALZCRAFT_DISTRIBUTOR_DOORS.filter((d) => d.distributor === dist) : [];
+  const pool = groupDoorsByDistributor(scoped.length ? scoped : WALZCRAFT_DISTRIBUTOR_DOORS).flatMap((g) => g.doors);
+  if (!pool.length) return null;
+  const words = (v: string | null | undefined) => String(v ?? "").toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 1);
+  const styleWords = new Set([style.distributorName, style.ourName, style.aliasName, style.doorStyle, style.sku].flatMap(words));
+  const top = (d: DistributorDoorMatch) => Math.max(0, ...(d.matches ?? []).map((m) => m.confidencePct ?? 0));
+  const score = (d: DistributorDoorMatch) => new Set([...words(d.doorName), ...words(d.code), ...words(d.walzcraftColor)].filter((w) => styleWords.has(w))).size;
+  let best = pool[0];
+  for (const d of pool) if (score(d) > score(best) || (score(d) === score(best) && top(d) > top(best))) best = d;
+  return { door: best, exact: false };
+}
