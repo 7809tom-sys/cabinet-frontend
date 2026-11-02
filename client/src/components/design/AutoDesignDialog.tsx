@@ -80,6 +80,7 @@ export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading =
   const [sinkBaseWidth, setSinkBaseWidth] = useState<SinkBaseWidth>(36);
   const [sinkBaseKind, setSinkBaseKind] = useState<AutoDesignSinkBaseKind>("regular");
   const [wallCabinetHeight, setWallCabinetHeight] = useState<WallCabinetHeight>(30);
+  const [overRangeAnswer, setOverRangeAnswer] = useState<"hood" | "microwave-bridge" | "open">("hood");
   const [dishwasherSide, setDishwasherSide] = useState<DishwasherSide>("right");
   const [refrigeratorWidth, setRefrigeratorWidth] = useState<RefrigeratorWidth>(36);
   const [windowCenter, setWindowCenter] = useState("");
@@ -155,6 +156,7 @@ export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading =
       sinkWindowCenter: windowCenter.trim()
         ? { wallLabel: values.sink.wallLabel, centerOffsetIn: Number(windowCenter) }
         : null,
+      overRangeAnswer,
       kitchenUsage: kitchenUses.length
         ? { uses: kitchenUses, skipped: false, acceptedSuggestionIds: [] }
         : { uses: [], skipped: true, acceptedSuggestionIds: [] },
@@ -333,6 +335,18 @@ export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading =
             <p className="text-xs text-muted-foreground" data-testid="auto-design-window-help">
               The sink is centered on this measurement and a window as wide as the sink base is placed above it. No wall cabinet goes above the sink, and the next cabinets start 3 inches past the window. Leave blank for nothing above the sink.
             </p>
+          </div>
+          <div className="space-y-1.5 rounded-lg border p-3" data-testid="auto-design-over-range">
+            <Label htmlFor="auto-design-over-range-answer">What goes above the range?</Label>
+            <Select value={overRangeAnswer} onValueChange={(value) => setOverRangeAnswer(value as "hood" | "microwave-bridge" | "open")}>
+              <SelectTrigger id="auto-design-over-range-answer" aria-label="What goes above the range"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="hood">Range hood</SelectItem>
+                <SelectItem value="microwave-bridge">Microwave and bridge cabinet</SelectItem>
+                <SelectItem value="open">Leave it open</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">Choosing a microwave and bridge places both now, centered over the range, instead of asking again after the build.</p>
           </div>
           <fieldset className="space-y-2 rounded-lg border p-3" data-testid="auto-design-kitchen-use">
             <legend className="px-1 text-sm font-medium">How do you use this kitchen?</legend>

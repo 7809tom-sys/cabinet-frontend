@@ -240,6 +240,8 @@ import { useTransientNotice } from "@/components/design/useTransientNotice";
 import { autoDesignSinkWindow, windowOverlapsReservation } from "@/lib/autoDesignSinkWindow";
 import { autoDesignRangeHood, autoDesignRangeNeedsVentilation } from "@/lib/autoDesignRangeHood";
 import { mergeAutoDesignRefrigeratorCaps, runAutoDesignLayout } from "@/lib/autoDesignLayout";
+import { designerFillerDeletionSet, isDesignerPlacedFiller, moveDesignerFiller } from "@/lib/designerFillerActions";
+import { designerReviewLines, type DesignerReviewFinding } from "@/lib/designerReviewFindings";
 import { ensureDrawerBase } from "@/lib/autoDesignDrawerRule";
 import { autoBuildCornerCatalog, autoDesignCornerSlotPoint, autoDesignCornerSlots, autoDesignExcludedEngineWallIds, autoDesignLayoutUsesWall, autoDesignRunWallIds, type AutoBuildCornerCandidate, type AutoDesignCornerChoice, type AutoDesignCornerSlot } from "@/lib/autoDesignCornerStage";
 import { evaluateAutoDesignCornerFit, type AutoDesignCornerFit } from "@/lib/cornerFit";
@@ -1771,6 +1773,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const [layoutLocked, setLayoutLocked] = useState(false);
   const [dishwasherSidePreference, setDishwasherSidePreference] = useState<DishwasherSide | null>(null);
   const [autoDesignLayoutNotes, setAutoDesignLayoutNotes] = useState<string[]>([]);
+  /** Rule 14: named warnings for design questions the build could not honor. */
+  const [autoDesignReviewFindings, setAutoDesignReviewFindings] = useState<DesignerReviewFinding[]>([]);
   const autoDesignWallLabelsRef = useRef<Record<string, string>>({});
   const lastFaucetWindowNotesRef = useRef<FaucetWindowClearanceNote[]>([]);
   const announceFaucetWindowNotes = useCallback((notes: readonly FaucetWindowClearanceNote[]) => {
@@ -3956,6 +3960,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     }
     if (run.skippedUppers.length) toast.info(`Upper review: ${run.skippedUppers.join(" ")}`, { duration: 8000 });
     for (const warning of run.warnings) toast.warning(warning, { duration: 7000 });
+    // Rule 14: anything the design questions could not honor stays on a reviewable list.
+    if (run.reviewFindings.length) {
+      setAutoDesignReviewFindings(run.reviewFindings);
+      const named = run.reviewFindings.filter((finding) => finding.severity === "warning");
+      if (named.length) toast.warning(`${named.length} design question${named.length === 1 ? "" : "s"} need review`, { description: named.map((finding) => finding.title).join(" · "), duration: 10000 });
+    }
     if (run.sinkWindow) toast.info(`A ${formatInches(run.sinkWindow.width)} window was placed above the sink as entered; no wall cabinet goes over it.`);
     if (run.bareRangeUid) setAutoDesignRangeVentPrompt({ rangeUid: run.bareRangeUid });
     return { ok: true as const };
@@ -11604,6 +11614,15 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	    }
 	    const cabinet = placedRef.current.find((item) => item.uid === uid);
 	    if (!cabinet || cabinet.islandFace) return;
+	    // Rule 13: a Designer filler moves along its run like any other cabinet, keeping its
+	    // width, finish and purchase group.
+	    if (isDesignerPlacedFiller(cabinet)) {
+	      const moved = moveDesignerFiller({ placed: placedRef.current, uid, requestedOffsetIn, room });
+	      if (!moved.ok) { toast.error(moved.reason); return; }
+	      placedRef.current = moved.placed;
+	      setPlaced(moved.placed);
+	      return;
+	    }
 	    if (cabinet.locked) { toast.info(`${cabinet.masterCode} is locked — unlock it before moving.`); return; }
     if (isProtectedCornerCabinet(cabinet.masterCode, cabinet.description)
       && !isBlindCorner(cabinet.masterCode, cabinet.description)
@@ -11686,6 +11705,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const removeCabinetsAndReleaseVoid = useCallback((uids: string[], removeSharedFillerGroups = false) => {
     const uidSet = new Set(uids);
     const committed = placedRef.current;
+    // Rule 13: a Designer filler is always deletable. Asking for it expands to every board cut
+    // from the same purchase, so a two-piece group can never leave half a filler on the plan.
+    for (const uid of [...uidSet]) {
+      for (const fillerUid of designerFillerDeletionSet(committed, uid)) uidSet.add(fillerUid);
+    }
     const removed = committed.filter((cabinet) => uidSet.has(cabinet.uid));
     removed.forEach((cabinet) => deleteAttachedSinkFixtures(cabinet));
     const fillerGroups = new Set(
@@ -18083,6 +18107,19 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                  </ul>
 	                  <button type="button" onClick={layoutNotice.dismiss} className="shrink-0 rounded p-0.5 text-amber-800 hover:bg-amber-100" aria-label="Dismiss notice">Close</button>
 	                </div>
+	              </div>
+	            </div>
+	          )}
+	          {autoDesignReviewFindings.length > 0 && (
+	            <div className="absolute bottom-3 right-3 z-40 max-w-md" data-testid="designer-review-list">
+	              <div role="alert" className="rounded-lg border border-rose-400 bg-rose-50 px-3 py-2 text-sm text-rose-950 shadow-md">
+	                <p className="font-semibold">Design questions needing review</p>
+	                <ul className="mt-1 space-y-1">
+	                  {designerReviewLines({ findings: autoDesignReviewFindings, allHonored: false }).map((line) => (
+	                    <li key={line} data-testid="designer-review-finding">{line}</li>
+	                  ))}
+	                </ul>
+	                <button type="button" onClick={() => setAutoDesignReviewFindings([])} className="mt-1 rounded p-0.5 text-xs font-semibold text-rose-800 hover:bg-rose-100" aria-label="Dismiss review list">Dismiss</button>
 	              </div>
 	            </div>
 	          )}

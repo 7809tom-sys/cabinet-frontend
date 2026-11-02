@@ -91,11 +91,13 @@ describe("Auto-Design appliance-first corner stage", () => {
     }).length).toBeGreaterThanOrEqual(0);
   });
 
-  it("deduplicates the declared L corner and retains both back corners of a U", () => {
+  it("deduplicates the declared L corner and never adds a Wall 4 corner to an open U", () => {
     const measured = { wallIds: ["top", "right"], room: DEFAULT_ROOM, originCorner: "left" as const, runDirection: "right" as const };
     expect(autoDesignCornerSlots("l-shape", measured)).toHaveLength(1);
+    // Only two walls were measured, so Wall 4 is not part of this kitchen: an open U has exactly
+    // its two real corners and never a phantom one on a fourth wall.
     expect(autoDesignCornerSlots("u-shape", measured).map((slot) => slot.id)).toEqual([
-      "wall-1-wall-2", "wall-1-wall-4", "wall-2-wall-3", "wall-3-wall-4",
+      "wall-1-wall-2", "wall-2-wall-3",
     ]);
   });
 

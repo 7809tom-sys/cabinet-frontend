@@ -22,6 +22,7 @@ import {
   wallSegmentLength as polygonWallSegmentLength,
 } from "./polygonRoom";
 import { VERIFIED_PELICAN_BATHROOM_FIXTURE_PROFILES, verifiedPelicanBathroomFixtureProfile } from "./pelicanBathroomFixtureProfiles";
+import { isPlainBaseCode as isPlainBaseCodeRule } from "./plainBaseCode";
 import { aefPrintedGeometryForSku, FRAMELESS_DEEP_WALL_DEPTH_IN, FRAMELESS_STANDARD_WALL_DEPTH_IN, hasAefPrintedGeometry, isFramelessDeepWallCabinet } from "@shared/aefFramelessGeometry";
 import { standardBaseDoorCount } from "@shared/genericCabinetDrawerReference";
 export { isGlassPolicyNomenclature } from "./glassPolicy";
@@ -997,6 +998,11 @@ export interface PlacedCabinet {
 	fillerNeedsReview?: boolean | null;
 	/** Refrigerator-side fillers align to the appliance's complete bottom-to-top envelope. */
 	fillerMatchesFullOwnerEnvelope?: boolean | null;
+	/**
+	 * Set when the board is the one continuous floor-to-top vertical filler (rule 4). Its stored
+	 * height is read as-is, including a glass stacker or topper above the cabinet it finishes.
+	 */
+	fillerContinuousVertical?: boolean | null;
 	/**
 	 * Cut angle on this individual fitted filler board. Legacy records retain a
 	 * 45° single cut; a pair that changes the run by 45° uses two 22.5° cuts.
@@ -6132,10 +6138,11 @@ function height_safe(roomDepth: number, _placement: Placement): number {
  * status comes from the model code (or a stored cornerType), never from words in the description, so this code
  * shape is a normal base cabinet whatever its description says (Tom, Oct 31). BBC/BLB/BER... do not match: the
  * second character is a letter, not a digit.
+ *
+ * The predicate itself lives in `plainBaseCode.ts` so the drawing helpers can read the same rule without
+ * importing this module; it is re-exported here for every existing caller.
  */
-export function isPlainBaseCode(masterCode: string | null | undefined): boolean {
-  return /^(?:B|SB|DB|3DB)-?\d/.test((masterCode || "").toUpperCase());
-}
+export { isPlainBaseCode } from "./plainBaseCode";
 
 /** cornerType values stored on a catalog row that mean a real corner cabinet. */
 const STORED_CORNER_TYPES = new Set(["blind-corner", "l-shape", "diagonal", "pie-cut", "lazy-susan", "easy-reach"]);
@@ -6146,7 +6153,7 @@ export function isCornerCabinet(masterCode: string, description?: string, corner
   // 45° exposed face; it is not installed in or owned by a room corner.
   if (isWallAngleEndCabinet({ masterCode, description })) return false;
   // A plain base code is a normal base, period. It beats any stored type and any description.
-  if (isPlainBaseCode(code)) return false;
+  if (isPlainBaseCodeRule(code)) return false;
   // ERB/BER are the easy-reach corner base codes (BER is the Skyline naming;
   // ERB is how the catalog stores the same cabinet). WER is the wall easy-reach.
   // LS## = Lazy Susan (e.g. LS3612, LS3312); LSB## = Lazy Susan Base (older naming)
@@ -7453,7 +7460,7 @@ export const BLIND_CORNER_FILLER_WIDTH_IN = 3;
 export function isBlindCorner(masterCode: string, _description?: string, cornerType?: string | null): boolean {
   const code = (masterCode || "").toUpperCase();
   // A plain base code (B24, B36, B42...) is never a blind corner, whatever its description or stored type says.
-  if (isPlainBaseCode(code)) return false;
+  if (isPlainBaseCodeRule(code)) return false;
   if (/^(BBC|WBC|BBL|BBR|WBL|WBR)/.test(code)) return true;
   if (/-BLIND|BLIND/.test(code)) return true;
   // Blind status comes from the code or the stored cornerType, never from description words.
@@ -15354,8 +15361,18 @@ export function cabinetWallDragPreview(
 	    const withinSnapRange = options.disableSnapping
 	      ? cornerDistance <= COLLISION_EPSILON_IN
 	      : cornerDistance <= RIGHT_DRAG_SNAP_THRESHOLD_IN + COLLISION_EPSILON_IN;
-    const cornerSpot = wallPlacementAt(nearestCornerStart, requiredSpan, Number(moving.depth) || requiredSpan, wall, room);
-    const unrotatedCornerCandidate = { ...moving, ...cornerSpot };
+    // A true corner body (diagnonal / L / corner drawer) owns a SQUARE plan envelope on both
+    // runs, so the origin must be computed with that same side — not with the catalog depth.
+    // Computing the origin with 24" and then quarter-turning a 36" square shifted the body 18"
+    // past its wall (36 - 24 = 12 in the origin plus the 6" difference in span).
+    const cornerBodySpan = placedFootprint({ ...moving, rotation: 0 });
+    const cornerSeatWidth = Math.max(
+      requiredSpan,
+      placedCornerGeometryKind(moving) === "standard" ? 0 : Math.max(cornerBodySpan.w, cornerBodySpan.d),
+    );
+    const cornerSeatDepth = Math.max(Number(moving.depth) || 0, cornerSeatWidth);
+    const cornerSpot = wallPlacementAt(nearestCornerStart, cornerSeatWidth, cornerSeatDepth, wall, room);
+    const unrotatedCornerCandidate = { ...moving, ...cornerSpot, width: cornerSeatWidth, depth: cornerSeatDepth };
     const cornerCandidate = {
       ...unrotatedCornerCandidate,
       rotation: cornerRotationForPlaced(unrotatedCornerCandidate, room),
