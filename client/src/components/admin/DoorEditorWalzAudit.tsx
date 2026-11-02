@@ -1,128 +1,169 @@
-import { useState } from "react";
-import { auditWalzcraftDoor, type AuditStyle, type PercentNote } from "@shared/walzcraftDoorAudit";
-import { resolveDoorColor } from "@shared/doorColorResolve";
-import { isSlabDoor, SLAB_GRAIN_OPTIONS, slabGrainColorPlan, writeSlabGrainChoice, type SlabGrainId } from "@shared/slabGrainApply";
-import { readApprovals, writeApproval, type ApprovalState } from "@shared/walzcraftDistributorMatches";
-
-const STEPS = ["Profile", "Color and features", "Approve"] as const;
-
-function PercentLine({ item }: { item: PercentNote }) {
-  return (
-    <li className="rounded border border-border bg-white px-2 py-1 text-xs">
-      <span className="font-semibold">{item.label}:</span>{" "}
-      {item.pct == null ? "not scored" : `${item.pct}%`}
-      {item.estimated ? " estimated" : ""}
-      <span className="mt-0.5 block text-muted-foreground">{item.note}</span>
-    </li>
-  );
-}
+import { useMemo, useState } from "react";
+import {
+  framelessGrains,
+  grainEnds,
+  matchSavePatch,
+  previewRotationDegrees,
+  sortDoorsForReplicate,
+  suggestWizardMatch,
+  type FramelessGrain,
+  type GrainOrientation,
+  type MatchSavePatch,
+  type ReplicateDoor,
+} from "@shared/wizardDoorMatch";
+import type { AuditStyle } from "@shared/walzcraftDoorAudit";
 
 /**
- * Audit a new door against WalzCraft. Render this only on the door editor.
- * The designer, the wall section, and the closet do not mount it.
+ * One comparison card. The owner picks the hex and the grain.
+ * Nothing is selected or applied until he does.
  */
-export function DoorEditorWalzAudit({ style }: { style: AuditStyle & { id?: number | null } }) {
-  const report = auditWalzcraftDoor(style);
-  const [step, setStep] = useState(0);
-  const [picked, setPicked] = useState(0);
-  const [approval, setApproval] = useState<ApprovalState | null>(() => {
-    if (!report.door) return null;
-    return readApprovals()[report.door.id] ?? null;
+export function DoorEditorWalzAudit({
+  style,
+  sampleUrl,
+  others = [],
+  onApply,
+  onReplicate,
+}: {
+  style: AuditStyle & { id?: number | null; distributorId?: number | null; grainDirection?: string | null; doorSampleImageUrl?: string | null };
+  sampleUrl?: string | null;
+  others?: ReplicateDoor[];
+  onApply?: (patch: MatchSavePatch) => void;
+  onReplicate?: (ids: number[], patch: MatchSavePatch) => void;
+}) {
+  const suggestion = suggestWizardMatch(style);
+  const grains = useMemo(() => framelessGrains(), []);
+  const [grainCode, setGrainCode] = useState<string | null>(null);
+  const [hex, setHex] = useState("");
+  const [orientation, setOrientation] = useState<GrainOrientation | null>(null);
+  const [query, setQuery] = useState("");
+  const [pickedIds, setPickedIds] = useState<number[]>([]);
+  const [saved, setSaved] = useState<MatchSavePatch | null>(null);
+  const grain = grains.find((item) => item.code === grainCode) ?? null;
+  const photo = sampleUrl || style.doorSampleImageUrl || "";
+  const ends = /^#[0-9a-f]{6}$/i.test(hex) ? grainEnds(hex) : null;
+  const rotation = previewRotationDegrees(grain?.orientation ?? null, orientation);
+  const doors = sortDoorsForReplicate(others, style.id ?? -1, style.distributorId).filter((door) => {
+    const text = `${door.ourName ?? ""} ${door.styleCode ?? ""}`.toLowerCase();
+    return query.trim() === "" || text.includes(query.trim().toLowerCase());
   });
-  const profile = report.profiles[picked] ?? report.profiles[0] ?? null;
-  const slab = isSlabDoor(style);
-  const [grainId, setGrainId] = useState<SlabGrainId>("versa-shaker");
-  const [grainHex, setGrainHex] = useState(() => resolveDoorColor(style).appliedHex);
-  const [appliedNote, setAppliedNote] = useState<string | null>(null);
 
-  const approve = (next: ApprovalState) => {
-    if (!report.door) return;
-    const value = approval === next ? null : next;
-    writeApproval(report.door.id, value);
-    setApproval(value);
+  const chooseGrain = (item: FramelessGrain) => {
+    setGrainCode(item.code);
+    setOrientation(item.orientation);
+    setSaved(null);
+  };
+
+  const sampleHex = (event: React.MouseEvent<HTMLImageElement>) => {
+    const image = event.currentTarget;
+    const canvas = document.createElement("canvas");
+    canvas.width = image.naturalWidth || 1;
+    canvas.height = image.naturalHeight || 1;
+    const context = canvas.getContext("2d");
+    if (!context) return;
+    try {
+      context.drawImage(image, 0, 0);
+      const rect = image.getBoundingClientRect();
+      const x = Math.min(canvas.width - 1, Math.max(0, Math.round(((event.clientX - rect.left) / rect.width) * canvas.width)));
+      const y = Math.min(canvas.height - 1, Math.max(0, Math.round(((event.clientY - rect.top) / rect.height) * canvas.height)));
+      const pixel = context.getImageData(x, y, 1, 1).data;
+      setHex(`#${[pixel[0], pixel[1], pixel[2]].map((channel) => channel!.toString(16).padStart(2, "0")).join("")}`);
+      setSaved(null);
+    } catch {
+      /* The photo can be cross-origin. The hex box still works. */
+    }
+  };
+
+  const apply = () => {
+    if (!grain || !orientation && grain.hasGrain) return;
+    const patch = matchSavePatch({ hex, grainCode: grain.code, orientation: orientation ?? "vertical" });
+    if (!patch) return;
+    setSaved(patch);
+    onApply?.(patch);
   };
 
   return (
-    <section data-testid="door-editor-walzcraft-audit" className="space-y-2 rounded-lg border border-[#d7a46c] bg-[#fffdf9] px-3 py-3 text-[#244338]">
+    <section data-testid="door-editor-walzcraft-audit" className="space-y-3 rounded-lg border border-[#d7a46c] bg-[#fffdf9] px-3 py-3 text-[#244338]">
       <div>
-        <h3 className="text-xs font-semibold uppercase tracking-wide">WalzCraft audit</h3>
-        <p className="text-xs text-muted-foreground">Match a new door to a WalzCraft profile, check the color and features, then approve. This stays on the door editor.</p>
+        <h3 className="text-xs font-semibold uppercase tracking-wide">Match this door</h3>
+        <p className="text-xs text-muted-foreground">Compare the real photo with the working door. Nothing is chosen until you pick a grain and a hex.</p>
       </div>
-      {slab && (
-        <div data-testid="walz-audit-slab-grain" className="space-y-1 rounded border border-[#244338]/20 bg-white p-2">
-          <p className="text-xs font-semibold">Slab grain and color</p>
-          <p className="text-xs text-muted-foreground">Repeats a grain tile across the whole slab and tints it with this color. The catalog photo is not cropped. Use this for frameless doors such as White Pine and Grey Wood.</p>
-          <div className="flex flex-wrap gap-1">
-            {SLAB_GRAIN_OPTIONS.map((option) => (
-              <button key={option.id} type="button" data-testid={`slab-grain-${option.id}`} onClick={() => setGrainId(option.id)} className={`rounded border px-2 py-1 text-xs ${grainId === option.id ? "border-[#d7a46c] bg-[#d7a46c]/20" : "border-[#244338]/30"}`}>
-                {option.label}
-              </button>
-            ))}
-          </div>
-          <label className="flex items-center gap-2 text-xs">
-            Color
-            <input data-testid="slab-grain-hex" value={grainHex} onChange={(event) => setGrainHex(event.target.value)} className="rounded border px-1 py-0.5" />
-          </label>
-          <button
-            type="button"
-            data-testid="slab-grain-apply"
-            className="rounded bg-[#244338] px-2 py-1 text-xs font-semibold text-[#fffdf9]"
-            onClick={() => {
-              if (style.id == null) return;
-              const plan = slabGrainColorPlan(style, { grainId, hex: grainHex });
-              writeSlabGrainChoice(style.id, { grainId, hex: plan.dlcCrop?.solidColor ?? grainHex });
-              setAppliedNote(`Applied ${grainId} at ${plan.dlcCrop?.solidColor}. No photo crop.`);
+      <div className="flex flex-wrap gap-3" data-testid="wizard-compare">
+        <figure className="space-y-1">
+          <figcaption className="text-[11px] font-semibold uppercase tracking-wide">Real door</figcaption>
+          {photo ? (
+            <img src={photo} alt="Real door" data-testid="wizard-real-door" className="h-40 w-28 rounded border bg-white object-contain" onClick={sampleHex} />
+          ) : (
+            <div className="flex h-40 w-28 items-center justify-center rounded border border-dashed text-xs">No photo</div>
+          )}
+        </figure>
+        <figure className="space-y-1">
+          <figcaption className="text-[11px] font-semibold uppercase tracking-wide">Working door</figcaption>
+          <div
+            data-testid="wizard-working-door"
+            className="flex h-40 w-28 items-end overflow-hidden rounded border bg-white"
+            style={{
+              backgroundColor: /^#[0-9a-f]{6}$/i.test(hex) ? hex : "transparent",
+              backgroundImage: grain?.photoUrl ? `url(${grain.photoUrl})` : undefined,
+              backgroundSize: "cover",
+              transform: rotation ? `rotate(${rotation}deg)` : undefined,
             }}
+          />
+        </figure>
+      </div>
+      <p data-testid="wizard-suggestion" className="text-xs italic">{suggestion.note}{suggestion.needsColorReview ? " Flagged for review." : ""}</p>
+      <label className="flex items-center gap-2 text-xs">
+        Hex
+        <input data-testid="wizard-hex" value={hex} onChange={(event) => { setHex(event.target.value); setSaved(null); }} placeholder="#8d8f92" className="rounded border px-1 py-0.5" />
+        {ends && <span data-testid="wizard-grain-ends">light {ends.light} dark {ends.dark}</span>}
+      </label>
+      <div className="flex gap-2 text-xs">
+        <button type="button" data-testid="wizard-orientation-horizontal" onClick={() => setOrientation("horizontal")} className={`rounded border px-2 py-1 ${orientation === "horizontal" ? "border-[#d7a46c]" : ""}`}>Horizontal</button>
+        <button type="button" data-testid="wizard-orientation-vertical" onClick={() => setOrientation("vertical")} className={`rounded border px-2 py-1 ${orientation === "vertical" ? "border-[#d7a46c]" : ""}`}>Vertical</button>
+      </div>
+      <div data-testid="wizard-grains" className="grid max-h-64 grid-cols-3 gap-2 overflow-y-auto sm:grid-cols-4">
+        {grains.map((item) => (
+          <button
+            key={item.code}
+            type="button"
+            data-testid={`grain-tile-${item.code}`}
+            aria-pressed={grainCode === item.code}
+            onClick={() => chooseGrain(item)}
+            className={`rounded border p-1 text-left text-[10px] ${grainCode === item.code ? "border-[#d7a46c]" : "border-[#244338]/20"}`}
           >
-            Apply grain and color
+            {item.photoUrl ? <img src={item.photoUrl} alt="" className="mb-1 h-16 w-full object-cover" /> : <span className="mb-1 block h-16 bg-[#f6f3ed]" />}
+            <span className="block font-semibold">{item.code} {item.name}</span>
+            <span>{item.hasGrain ? item.orientation : "no grain"}</span>
           </button>
-          {appliedNote && <p data-testid="slab-grain-applied" className="text-xs">{appliedNote}</p>}
-        </div>
-      )}
-      <ol className="flex gap-2 text-[11px] font-semibold">
-        {STEPS.map((label, index) => (
-          <li key={label} className={index === step ? "text-[#244338]" : "text-[#244338]/50"}>{index + 1}. {label}</li>
         ))}
-      </ol>
-      {step === 0 && (
-        <div data-testid="walz-audit-profiles" className="space-y-1">
-          {!report.door && <p className="text-xs">No WalzCraft door matches this distributor and name yet.</p>}
-          {report.door && !report.exact && <p className="text-xs italic">Closest sheet row. It is a candidate until you approve it.</p>}
-          {report.profiles.map((item, index) => (
-            <button
-              key={`${item.rank}-${item.name}`}
-              type="button"
-              data-testid={`walz-audit-profile-${item.rank}`}
-              onClick={() => setPicked(index)}
-              className={`flex w-full items-center justify-between rounded border px-2 py-1 text-left text-xs ${index === picked ? "border-[#d7a46c] bg-white" : "border-[#244338]/20"}`}
-            >
-              <span>{item.name}{item.code ? ` · ${item.code}` : ""}</span>
-              <span>{item.pct}% profile match</span>
-            </button>
+      </div>
+      <button type="button" data-testid="wizard-apply" className="rounded bg-[#244338] px-2 py-1 text-xs font-semibold text-[#fffdf9]" onClick={apply}>Apply</button>
+      {saved && <p data-testid="wizard-applied" className="text-xs">Saved {saved.renderHex} · {saved.woodSpecies ?? "no grain"} · {saved.grainDirection}</p>}
+      <div data-testid="wizard-replicate" className="space-y-1">
+        <p className="text-xs font-semibold">Apply to other doors</p>
+        <input data-testid="wizard-replicate-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search doors" className="w-full rounded border px-1 py-0.5 text-xs" />
+        <ul className="max-h-40 space-y-1 overflow-y-auto">
+          {doors.map((door) => (
+            <li key={door.id}>
+              <label className="flex items-center gap-2 text-xs">
+                <input
+                  type="checkbox"
+                  data-testid={`wizard-replicate-${door.id}`}
+                  checked={pickedIds.includes(door.id)}
+                  onChange={() => setPickedIds((current) => current.includes(door.id) ? current.filter((id) => id !== door.id) : [...current, door.id])}
+                />
+                {door.ourName}
+              </label>
+            </li>
           ))}
-        </div>
-      )}
-      {step === 1 && (
-        <ul data-testid="walz-audit-probabilities" className="space-y-1">
-          <PercentLine item={report.color} />
-          {report.features.map((item) => <PercentLine key={item.label} item={item} />)}
-          {profile && <li className="text-xs">Selected profile {profile.name}: {profile.pct}% from the sheet.</li>}
         </ul>
-      )}
-      {step === 2 && (
-        <div data-testid="walz-audit-approve" className="flex flex-wrap items-center gap-2">
-          <button type="button" data-testid="walz-audit-approve-button" onClick={() => approve("approved")} className={`rounded px-3 py-1 text-sm font-semibold ${approval === "approved" ? "bg-[#244338] text-[#fffdf9]" : "border-2 border-[#244338]"}`}>
-            {approval === "approved" ? "Approved" : "Approve"}
-          </button>
-          <button type="button" data-testid="walz-audit-reject-button" onClick={() => approve("rejected")} className={`rounded px-3 py-1 text-sm font-semibold ${approval === "rejected" ? "bg-[#d7a46c]" : "border-2 border-[#d7a46c]"}`}>
-            {approval === "rejected" ? "Rejected" : "Reject"}
-          </button>
-          <span className="text-xs italic text-[#244338]/70">Saved in this browser only.</span>
-        </div>
-      )}
-      <div className="flex gap-2">
-        {step > 0 && <button type="button" className="rounded border px-2 py-1 text-xs" onClick={() => setStep((value) => value - 1)}>Back</button>}
-        {step < 2 && <button type="button" data-testid="walz-audit-next" className="rounded border border-[#244338] px-2 py-1 text-xs font-semibold" onClick={() => setStep((value) => value + 1)}>Next</button>}
+        <button
+          type="button"
+          data-testid="wizard-replicate-apply"
+          className="rounded border px-2 py-1 text-xs font-semibold"
+          onClick={() => { if (saved) onReplicate?.(pickedIds, saved); }}
+        >
+          Apply to other doors
+        </button>
       </div>
     </section>
   );

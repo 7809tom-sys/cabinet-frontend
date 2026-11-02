@@ -8,6 +8,7 @@ describe("slab grain and color", () => {
     const greyWood = { id: 540002, ourName: "Grey Wood", styleCode: "TGW", doorStyle: "Slab", color: "#8d8f92" };
     expect(isSlabDoor(whitePine)).toBe(true);
     expect(isSlabDoor(greyWood)).toBe(true);
+    expect(isSlabDoor({ ourName: "Dark Wood", styleCode: "TDW", doorStyle: "Slab" })).toBe(true);
     const pine = slabGrainColorPlan(whitePine, { grainId: "versa-shaker", hex: "#e7d7b8" });
     const grey = slabGrainColorPlan(greyWood, { grainId: "grey-shaker", hex: "#8d8f92" });
     for (const plan of [pine, grey]) {

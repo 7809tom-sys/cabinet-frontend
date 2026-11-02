@@ -34,7 +34,7 @@ function exactHex(value: string | null | undefined): string | null {
 export function isSlabDoor(style: { doorStyle?: string | null; ourName?: string | null; aliasName?: string | null; styleCode?: string | null } | null | undefined): boolean {
   const text = `${style?.doorStyle ?? ""} ${style?.ourName ?? ""} ${style?.aliasName ?? ""} ${style?.styleCode ?? ""}`.toLowerCase();
   if (/\bslab\b/.test(text)) return true;
-  return /\b(?:white pine|grey wood|gray wood)\b/.test(text) || /^(?:twp|tgw)$/.test((style?.styleCode ?? "").trim().toLowerCase());
+  return /\b(?:white pine|grey wood|gray wood|dark wood)\b/.test(text) || /^(?:twp|tgw|tdw)$/.test((style?.styleCode ?? "").trim().toLowerCase());
 }
 
 export function slabGrainColorPlan(style: DoorColorInput, choice: SlabGrainChoice): CabinetFacePlan {
