@@ -5732,6 +5732,8 @@ export function addCabinet(
   const profileFrameWidthIn = Number.isFinite(requestedProfileStile) && requestedProfileStile > 0
     ? requestedProfileStile
     : 3;
+	  // 2.75 and 3 inch shakers are built only by standardShakerDlFacePlan (shared/shakerDoorBlueprint.ts).
+	  // Do not give those styles a different frame, corner, slab, or notch.
 	  const addShakerFrame = (faceWidth: number, faceHeight: number, x: number, y: number, z = 0.036, rotationY = 0, forceGlassFrame = false, faceRole: "door" | "drawer" = "door") => {
 	    const raisedProfile = threeDFaceUsesRaisedPanelBevel({
 	      profileKind,
