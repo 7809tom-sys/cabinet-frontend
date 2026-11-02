@@ -147,10 +147,13 @@ export function frameClosetStudioCamera(
   const fovDeg = options?.fovDeg ?? 40;
   const safeAspect = Math.min(3.2, Math.max(0.35, Number.isFinite(aspect) && aspect > 0 ? aspect : 1));
   const center = centerOf(box);
-  const azimuth = view === "front" ? 0.035 : view === "overhead" ? 0.2 : 0.5;
+  const azimuth = view === "front" ? 0.035 : view === "overhead" ? 0.12 : 0.5;
   // Overhead stays high enough to look down on the tower. A steep plan view
   // magnifies the near top, so its padding cannot match a level front view.
-  const [elevLo, elevHi] = view === "overhead" ? [0.62, 1.02] : [0.05, 0.48];
+  const [elevLo, elevHi] = view === "overhead" ? [1.0, 1.2] : [0.05, 0.48];
+  // A steep look-down foreshortens the tower, so top/bottom balance matters
+  // far less than keeping the tower horizontally centered.
+  const verticalWeight = view === "overhead" ? 0.25 : 1;
   let bestDirection = directionFromAngles(azimuth, (elevLo + elevHi) / 2);
   let bestDistance = closetFitDistance(box, safeAspect, bestDirection, { padding, fovDeg, target: center });
   let bestScore = Number.POSITIVE_INFINITY;
@@ -158,7 +161,8 @@ export function frameClosetStudioCamera(
     const direction = directionFromAngles(azimuth, elevation);
     const distance = closetFitDistance(box, safeAspect, direction, { padding, fovDeg, target: center });
     const silhouette = silhouetteOf(box, safeAspect, direction, distance, fovDeg, center);
-    const score = Math.abs(silhouette.topGap - silhouette.bottomGap) + Math.abs(silhouette.leftGap - silhouette.rightGap) * 0.35;
+    const score = Math.abs(silhouette.topGap - silhouette.bottomGap) * verticalWeight
+      + Math.abs(silhouette.leftGap - silhouette.rightGap) * 0.35;
     if (score < bestScore) {
       bestScore = score;
       bestDirection = direction;

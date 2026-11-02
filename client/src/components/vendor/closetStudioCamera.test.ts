@@ -20,7 +20,7 @@ function expectCabinetInFrame(aspect: number, view: "angle" | "front" | "overhea
   const xs = projected.map((point) => point.x);
   const topGap = 1 - Math.max(...ys);
   const bottomGap = Math.min(...ys) + 1;
-  expect(Math.abs(topGap - bottomGap)).toBeLessThan(view === "overhead" ? 0.22 : 0.05);
+  expect(Math.abs(topGap - bottomGap)).toBeLessThan(view === "overhead" ? 0.35 : 0.05);
   expect(Math.abs((Math.min(...xs) + Math.max(...xs)) / 2)).toBeLessThan(0.08);
   const center = projectClosetPoint(
     { x: 2.095, y: 3.625, z: 0.6 },
@@ -51,5 +51,20 @@ describe("closet studio camera", () => {
     }
     const overhead = frameClosetStudioCamera(cabinet, 1.2, { view: "overhead" });
     expect(overhead.position.y).toBeGreaterThan(cabinet.maxY);
+  });
+
+  it("looks down on the tower from overhead, steeper than the angle view", () => {
+    const elevationOf = (frame: ReturnType<typeof frameClosetStudioCamera>) => {
+      const dx = frame.position.x - frame.target.x;
+      const dy = frame.position.y - frame.target.y;
+      const dz = frame.position.z - frame.target.z;
+      const span = Math.hypot(dx, dy, dz) || 1;
+      return Math.asin(dy / span);
+    };
+    const overhead = frameClosetStudioCamera(cabinet, 1.4, { view: "overhead" });
+    const angle = frameClosetStudioCamera(cabinet, 1.4, { view: "angle" });
+    const overheadElevation = elevationOf(overhead);
+    expect(overheadElevation).toBeGreaterThanOrEqual(0.98);
+    expect(overheadElevation - elevationOf(angle)).toBeGreaterThanOrEqual(0.4);
   });
 });
