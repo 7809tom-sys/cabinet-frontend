@@ -12,12 +12,12 @@ INSERT IGNORE INTO cabinet_dealz.kitchen_rules (
   'owner-dl-shaker-blueprint',
   'Owner doors',
   '2.75 and 3 inch shaker doors use the DL shaker blueprint',
-  'HARD RULE (Tom, Nov 1 2026): ALL 2.75 in and 3 in shaker doors start from the DL Shaker blueprint as the base template. Geometry (rail/stile frame, sharp square corners, flat center slab, notch) is proven and must not be changed per style. Only texture/color varies; any applied color must be from the brand palette (cream #fffdf9/#f6f3ed, green #244338, gold #d7a46c), never outside blue/teal/off-brand green. Deviation requires Tom''s explicit override. Each of those doors keeps its own finish color and is matched to the closest standard DL shaker (White, Grey, Versa, or Espresso) by paint versus wood and by color. Slim Shaker and Double Shaker are not this template.',
+  'HARD RULE (Tom, Nov 1 2026): ALL 2.75 in and 3 in shaker doors start from the DL Shaker blueprint as the base template. Geometry (rail/stile frame, sharp square corners, flat center slab, notch) is proven and must not be changed per style. Only texture/color varies. Brand colors go ON the shaker door surfaces, not just UI tints: every door surface renders in the uploaded door sample color (Faircrest Classic Cream, #dedac6) or the brand palette (cream #fffdf9/#f6f3ed, green #244338, gold #d7a46c), never outside blue/teal/off-brand green. Deviation requires Tom''s explicit override. Each door's own catalog color picks the closest standard DL shaker grain (White, Grey, Versa, or Espresso) and is then snapped to the nearest brand/sample door color for the surface. Slim Shaker and Double Shaker are not this template.',
   '{}',
   'auto',
   'Owner',
   'implemented',
   1,
-  'Enforced by standardShakerDlFacePlan in shared/shakerDoorBlueprint.ts. The test "fails if a 2.75 or 3 inch shaker bypasses the DL template or uses a non-brand UI tint" fails if a 2.75 or 3 inch shaker skips the template or the module uses an off-brand UI tint. Door finish colors are the style''s own color, not the brand palette.',
+  'Enforced by standardShakerDlFacePlan in shared/shakerDoorBlueprint.ts. The test "fails if a 2.75 or 3 inch shaker bypasses the DL template or renders a door surface color outside the brand palette/sample" fails if a shaker skips the template or its door surface is not #dedac6, #fffdf9, #f6f3ed, #244338, or #d7a46c.',
   0
 );

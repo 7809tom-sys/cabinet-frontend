@@ -4,6 +4,7 @@ import catalog from "./fixtures/doorStyleSideCatalog.json";
 import { designerFacePlan } from "../client/src/lib/designerFacePlan";
 import { findDlcFinishForStyle } from "./dlcFr26Mapping";
 import {
+  SHAKER_BRAND_DOOR_SURFACE_PALETTE,
   SHAKER_BRAND_UI_PALETTE,
   STANDARD_DL_SHAKER_SLUGS,
   effectiveShakerRailIn,
@@ -37,15 +38,17 @@ describe("DL shaker blueprint", () => {
     expect(references.find((reference) => reference.slug === "expresso-shaker")?.family).toBe("wood");
   });
 
-  it("fails if a 2.75 or 3 inch shaker bypasses the DL template or uses a non-brand UI tint", () => {
+  it("fails if a 2.75 or 3 inch shaker bypasses the DL template or renders a door surface color outside the brand palette/sample", () => {
     const source = readFileSync(new URL("./shakerDoorBlueprint.ts", import.meta.url), "utf8");
     const hexes = source.match(/#[0-9a-fA-F]{3,8}/g) ?? [];
-    const allowed = new Set<string>(SHAKER_BRAND_UI_PALETTE.map((hex) => hex.toLowerCase()));
+    const allowed = new Set<string>(SHAKER_BRAND_DOOR_SURFACE_PALETTE.map((hex) => hex.toLowerCase()));
     for (const hex of hexes) {
       expect(allowed.has(hex.toLowerCase()), hex).toBe(true);
     }
     expect(source).toContain("HARD RULE (Tom, Nov 1 2026)");
 
+    const brandSurface = new Set<string>(SHAKER_BRAND_DOOR_SURFACE_PALETTE.map((hex) => hex.toLowerCase()));
+    expect(SHAKER_BRAND_UI_PALETTE.every((hex) => brandSurface.has(hex))).toBe(true);
     const standard = styles.filter((style) => shakerDoorFamily(style.doorStyle) === "shaker");
     expect(standard.length).toBeGreaterThan(0);
     for (const style of standard) {
@@ -63,7 +66,9 @@ describe("DL shaker blueprint", () => {
       expect(match.adopted, style.ourName ?? "").toBe(true);
       if (!match.adopted) continue;
       expect(plan?.dlcCrop?.slug, style.ourName ?? "").toBe(match.reference.slug);
-      expect(plan?.dlcCrop?.solidColor?.toLowerCase()).toBe(match.ownColor);
+      const surface = plan?.dlcCrop?.solidColor?.toLowerCase() ?? "";
+      expect(brandSurface.has(surface), `${style.ourName}: ${surface}`).toBe(true);
+      expect(surface).toBe(match.surfaceColor);
       expect(throughDesigner?.doorUrl, style.ourName ?? "").toBe(plan?.doorUrl);
     }
 
@@ -71,6 +76,15 @@ describe("DL shaker blueprint", () => {
       expect(standardShakerDlFacePlan(style, "base"), style.ourName ?? "").toBeNull();
     }
     expect(standardShakerDlFacePlan({ doorStyle: "Shaker", railWidth: 2.25, color: "#f4f1ea" }, "base")).toBeNull();
-    expect(standardShakerDlFacePlan({ doorStyle: "Shaker", railWidth: 2.75, color: "#f2e8d0" }, "wall")?.dlcCrop?.slug).toBeTruthy();
+    const cream = standardShakerDlFacePlan({ doorStyle: "Shaker", railWidth: 2.75, color: "#f2e8d0" }, "wall");
+    expect(cream?.dlcCrop?.slug).toBeTruthy();
+    expect(brandSurface.has(cream?.dlcCrop?.solidColor ?? "")).toBe(true);
+    // Off-brand blue / teal never reach a door surface.
+    for (const color of ["#1f4e8c", "#2a8c8c", "#5a8f3a"]) {
+      const plan = standardShakerDlFacePlan({ doorStyle: "Shaker", railWidth: 3, color }, "base");
+      expect(brandSurface.has(plan?.dlcCrop?.solidColor ?? ""), color).toBe(true);
+    }
+    // Classic Cream photo color snaps to the uploaded sample.
+    expect(standardShakerDlFacePlan({ doorStyle: "Shaker", railWidth: 3, color: "#dcd7c2" }, "base")?.dlcCrop?.solidColor).toBe("#dedac6");
   });
 });

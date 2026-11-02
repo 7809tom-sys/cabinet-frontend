@@ -5,8 +5,11 @@
  * any applied color must be from the brand palette (cream #fffdf9/#f6f3ed, green #244338,
  * gold #d7a46c), never outside blue/teal/off-brand green. Deviation requires Tom's explicit override.
  *
- * Door finish color is the style's own catalog or photo color, retinted onto the closest
- * standard DL shaker's grain. The palette above is the only UI tint this module may use.
+ * Brand colors go ON the door surface, not just UI tints. The painted surface of every
+ * 2.75/3 inch shaker is snapped (CIEDE2000) to the nearest brand door color: the uploaded
+ * Faircrest Classic Cream door sample (#dedac6, averaged from CC_classic-cream_1.jpeg door
+ * faces), cream #fffdf9/#f6f3ed, green #244338, or gold #d7a46c. The style's own catalog
+ * color only picks the closest DL reference grain and which brand color it snaps to.
  * Rail and stile WIDTH stay the style's own 2.75 or 3 inches. Depth, square corners,
  * the flat center slab, and the notch are the shared blueprint.
  */
@@ -17,8 +20,25 @@ import { DLC_FRAME_DETAIL } from "./dlcFr26Textures";
 import { findDlcFinishForStyle, type DlcStyleInput } from "./dlcFr26Mapping";
 import type { CabinetFacePlan } from "./doorFaceRecognition";
 
-/** UI tints allowed in this module. Not door-finish colors. */
+/** Brand palette. Used for UI tints AND on shaker door surfaces. */
 export const SHAKER_BRAND_UI_PALETTE = ["#fffdf9", "#f6f3ed", "#244338", "#d7a46c"] as const;
+
+/** Door-surface color measured from the uploaded Faircrest Classic Cream door sample photo. */
+export const FAIRCREST_CLASSIC_CREAM_SAMPLE_HEX = "#dedac6";
+
+/** The only colors a 2.75/3 inch shaker door surface may render in. Sample first. */
+export const SHAKER_BRAND_DOOR_SURFACE_PALETTE = [FAIRCREST_CLASSIC_CREAM_SAMPLE_HEX, ...SHAKER_BRAND_UI_PALETTE] as const;
+
+/** Snap a style's own color to the nearest brand door-surface color. */
+export function brandDoorSurfaceHex(ownColor: string): string {
+  let best: string = SHAKER_BRAND_DOOR_SURFACE_PALETTE[0];
+  let bestDelta = Number.POSITIVE_INFINITY;
+  for (const hex of SHAKER_BRAND_DOOR_SURFACE_PALETTE) {
+    const delta = deltaE2000Hex(ownColor, hex) ?? Number.POSITIVE_INFINITY;
+    if (delta < bestDelta) { best = hex; bestDelta = delta; }
+  }
+  return best;
+}
 
 /** Designer default when a plain Shaker record does not store a rail width. */
 export const STANDARD_SHAKER_RAIL_IN = 3;
@@ -67,6 +87,8 @@ export type ShakerAdoption =
       adopted: true;
       reference: DlShakerReference;
       ownColor: string;
+      /** Brand/sample color actually rendered on the door surface. */
+      surfaceColor: string;
       family: ShakerFinishFamily;
       railIn: number;
       deltaE: number;
@@ -214,7 +236,8 @@ export function matchStandardShakerToDl(style: ShakerStyleInput): ShakerAdoption
       bestDelta = delta;
     }
   }
-  const tint = retintGrain(best.color, ownColor);
+  const surfaceColor = brandDoorSurfaceHex(ownColor);
+  const tint = retintGrain(best.color, surfaceColor);
   const grainNote = best.grainPaleSoftened
     ? "near-flat painted grain"
     : finishFamily === "painted"
@@ -225,13 +248,14 @@ export function matchStandardShakerToDl(style: ShakerStyleInput): ShakerAdoption
     adopted: true,
     reference: best,
     ownColor,
+    surfaceColor,
     family: finishFamily,
     railIn: railIn!,
     deltaE: bestDelta,
     tintHex: tint.tintHex,
     tintClamped: tint.clamped,
     grain: best.grain,
-    reason: `${finishFamily}, ΔE ${bestDelta.toFixed(1)} to ${best.name}; inherited ${grainNote} ${best.grain}; tint ${tint.tintHex} retargets ${best.color} to ${ownColor}.${clampNote}`,
+    reason: `${finishFamily}, ΔE ${bestDelta.toFixed(1)} to ${best.name}; inherited ${grainNote} ${best.grain}; tint ${tint.tintHex} retargets ${best.color} to brand surface ${surfaceColor} (own ${ownColor}).${clampNote}`,
   };
 }
 
@@ -258,7 +282,7 @@ export function standardShakerDlFacePlan(
       doorSize: entry.doorSize,
       drawerSize: entry.drawerSize,
       drawerSolidColor: null,
-      solidColor: match.ownColor,
+      solidColor: match.surfaceColor,
       grainUrl: entry.grainFrameFree ? entry.grain : null,
       faceTileIn: entry.faceTileIn,
       faceTileDrawerIn: entry.faceTileDrawerIn,

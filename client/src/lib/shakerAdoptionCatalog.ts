@@ -23,6 +23,6 @@ export function doorsForDlReference(slug: string) {
     if (!match.adopted || match.reference.slug !== slug) return [];
     const plan = standardShakerDlFacePlan(style, "wall");
     if (!plan) return [];
-    return [{ name: style.aliasName || style.ourName || slug, color: match.ownColor, plan }];
+    return [{ name: style.aliasName || style.ourName || slug, color: match.surfaceColor, plan }];
   });
 }
