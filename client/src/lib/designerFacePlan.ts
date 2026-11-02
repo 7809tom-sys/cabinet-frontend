@@ -1,5 +1,7 @@
 import { preferredDoorReferenceUrl, preferredDrawerReferenceUrl } from "@/lib/approvedDoorReference";
 import { resolveCabinetFaceImages, type CabinetFacePlan, type DoorStyleFaceInput } from "@shared/doorFaceRecognition";
+import { findDlcFinishForStyle } from "@shared/dlcFr26Mapping";
+import { standardShakerDlFacePlan } from "@shared/shakerDoorBlueprint";
 
 export type DesignerFaceStyle = DoorStyleFaceInput & { approvedReferenceImageUrl?: string | null };
 
@@ -38,6 +40,11 @@ export function designerFacePlan(
   placement: string | null | undefined,
 ): CabinetFacePlan | null {
   if (!style) return null;
+  // A real DL finish keeps its own grain and color. Other 2.75/3 inch shakers
+  // still use that blueprint, and do not paint a framed catalog photo on the slab.
+  if (findDlcFinishForStyle(style)) return resolveCabinetFaceImages(style, placement);
+  const adopted = standardShakerDlFacePlan(style, placement);
+  if (adopted) return adopted;
   const explicitApproved = trimmedImageUrl(style.approvedReferenceImageUrl);
   if (!explicitApproved) return resolveCabinetFaceImages(style, placement);
 
