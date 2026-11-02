@@ -2,7 +2,6 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import catalog from "./fixtures/doorStyleSideCatalog.json";
 import { designerFacePlan } from "../client/src/lib/designerFacePlan";
-import { keepsOwnWoodGrainPhoto } from "./doorFrontStyle";
 import { findDlcFinishForStyle } from "./dlcFr26Mapping";
 import {
   SHAKER_BRAND_DOOR_SURFACE_PALETTE,
@@ -58,12 +57,6 @@ describe("DL shaker blueprint", () => {
       expect(effectiveShakerRailIn(style)).toBe(3);
       const native = findDlcFinishForStyle(style);
       const throughDesigner = designerFacePlan({ ...style, doorSampleImageUrl: "/uploads/framed-door.jpg" }, "base");
-      if (keepsOwnWoodGrainPhoto(style)) {
-        expect(standardShakerDlFacePlan(style, "base"), style.ourName ?? "").toBeNull();
-        expect(throughDesigner?.doorUrl, style.ourName ?? "").toBe("/uploads/framed-door.jpg");
-        expect(throughDesigner?.dlcCrop, style.ourName ?? "").toBeUndefined();
-        continue;
-      }
       expect(throughDesigner?.doorUrl, style.ourName ?? "").not.toBe("/uploads/framed-door.jpg");
       if (native) {
         expect(standardShakerDlFacePlan(style, "base")).toBeNull();

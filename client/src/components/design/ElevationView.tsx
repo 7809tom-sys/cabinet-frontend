@@ -4062,24 +4062,6 @@ export function SingleDoorPanel({ kind, edge, face, stroke, doorSampleUrl, isWal
           <RecessedPanel inset={resolvedInset(3)} face={face} edge={edge} doorSampleUrl={doorSampleUrl} isWall={isWall} />
         </div>
       );
-    case "five-piece-slab":
-      // Clean five-piece slab: rails, stiles, and a flat center in the door color.
-      // No catalog photo and no shaker reveal shadow.
-      return (
-        <div className="absolute inset-0" style={{ backgroundColor: face, boxShadow: `inset 0 0 0 1px ${edge}55` }}>
-          <div
-            className="absolute"
-            style={{
-              left: `${shakerGeometry.horizontalInsetPercent}%`,
-              right: `${shakerGeometry.horizontalInsetPercent}%`,
-              top: `${shakerGeometry.verticalInsetPercent}%`,
-              bottom: `${shakerGeometry.verticalInsetPercent}%`,
-              backgroundColor: face,
-              boxShadow: `inset 0 0 0 1px ${edge}88`,
-            }}
-          />
-        </div>
-      );
     case "shaker":
     default:
       // Keep the actual measured five-piece Shaker geometry while carrying the

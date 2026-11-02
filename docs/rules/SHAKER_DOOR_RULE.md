@@ -4,9 +4,7 @@ HARD RULE (Tom, Nov 1 2026): ALL 2.75 in and 3 in shaker doors start from the DL
 
 ## What this means in the Designer
 
-The shared builder is `standardShakerDlFacePlan` in `shared/shakerDoorBlueprint.ts`. Every 2.75 inch and 3 inch shaker face goes through it. Slim Shaker, Double Shaker, raised panels, slabs, and a door front labeled five-piece slab do not. Hickory (Hickory Shaker, Rustic Hickory / Forest Rust) keeps its own wood-grain photo. The shaker frame and notch still build; the blueprint does not replace that photo with a DL grain tile or a brand-palette tint.
-
-Closet fronts shorter or narrower than 7 inches stay a plain slab in the door color, because two 2.75 inch rails do not leave a center. Kitchen and vanity drawer fronts keep the shaker frame and notch.
+The shared builder is `standardShakerDlFacePlan` in `shared/shakerDoorBlueprint.ts`. Every 2.75 inch and 3 inch shaker face goes through it. Slim Shaker, Double Shaker, raised panels, and slabs do not.
 
 Geometry that stays the same for every one of those doors:
 
