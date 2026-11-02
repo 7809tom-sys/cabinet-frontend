@@ -14,6 +14,7 @@ describe("cabinet color names", () => {
     expect(matchCabinetColorName("Greige")).toBe(CABINET_NAME_COLORS.gray);
     expect(matchCabinetColorName("slate")).toBe(CABINET_NAME_COLORS.gray);
     expect(matchCabinetColorName("Stone")).toBe(CABINET_NAME_COLORS.gray);
+    expect(matchCabinetColorName("Stone Gray (Preston)")).toBe("#a8a59c");
     expect(matchCabinetColorName("Pebble")).toBe(CABINET_NAME_COLORS.gray);
     expect(matchCabinetColorName("Cherry")).toBe(CABINET_NAME_COLORS.cherry);
     expect(matchCabinetColorName("Mahogany")).toBe(CABINET_NAME_COLORS.cherry);

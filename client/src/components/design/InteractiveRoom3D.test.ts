@@ -2521,6 +2521,9 @@ describe("interactive 3D room scene helpers", () => {
     expect(source).toContain('overflow-x-auto overflow-y-hidden');
     expect(source).toContain('className={`h-8 shrink-0 rounded-md');
     expect(source).toContain('key={`${item.category}-${item.id}-${item.masterCode}-${index}`}');
+    expect(source).toContain("designer-3d-catalog-open-groups");
+    expect(source).toContain("const open = searching || openCatalogSections.has(label)");
+    expect(source).toContain("Sections stay closed until you open them.");
   });
 
   it("resolves independently persisted back, left, right, and front wall heights", () => {

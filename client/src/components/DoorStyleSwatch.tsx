@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { doorPanelKind } from "@/lib/doorPanelKind";
 import { catalogMediaRecoveryUrl, newCatalogMediaRetryNonce } from "@/lib/catalogMediaImage";
+import { STONE_GRAY_HEX, styleFinishSearchText } from "@shared/styleFinishColor";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DoorStyleSwatch
@@ -22,6 +23,7 @@ export interface DoorStyleLike {
   doorStyle?: string | null;
   color?: string | null;
   swColor?: string | null;
+  renderHex?: string | null;
   finish?: string | null;
   woodSpecies?: string | null;
   /** Real door photo thumbnail — shown instead of SVG when present */
@@ -45,6 +47,7 @@ export interface Swatch {
 }
 
 const COLOR_BY_KEYWORD: { match: RegExp; hex: string; wood?: boolean }[] = [
+  { match: /stone\s*gr[ae]y/, hex: STONE_GRAY_HEX },
   { match: /snowbound|extra white|pure white|high reflective|marshmallow|alabaster|greek villa/, hex: "#f4f2ec" },
   { match: /cashmere/, hex: "#e3dacd" },
   { match: /creamy|antique white|natural choice|shoji|ivory|biscuit|almond|manila/, hex: "#ece2cf" },
@@ -115,8 +118,8 @@ function luminance(hex: string): number {
 }
 
 export function resolveSwatch(style: DoorStyleLike): Swatch {
-  const haystack = `${style.color ?? ""} ${style.swColor ?? ""} ${style.ourName ?? ""} ${style.aliasName ?? ""} ${style.name ?? ""} ${style.finish ?? ""} ${style.woodSpecies ?? ""}`.toLowerCase();
-  const suppliedHex = exactStyleHex(style.color, style.swColor);
+  const haystack = `${styleFinishSearchText(style)} ${style.swColor ?? ""}`.toLowerCase();
+  const suppliedHex = exactStyleHex(style.renderHex, style.color, style.swColor);
   let face = suppliedHex ?? DEFAULT_HEX;
   let isWood = false;
   let isGlass = false;

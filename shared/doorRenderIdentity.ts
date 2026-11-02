@@ -18,6 +18,7 @@
  * the name map. The name map wins over the off-white default.
  */
 import { CABINET_NAME_COLORS, matchCabinetColorName } from "./cabinetColorNames";
+import { styleFinishSearchText } from "./styleFinishColor";
 import { DEFAULT_CABINET_HEX } from "./doorRenderLights";
 
 export const PROFILE_GUESSED_LABEL = "Profile guessed (Shaker default)";
@@ -109,7 +110,7 @@ export function resolveRenderHex(input: DoorIdentityInput | null | undefined): s
   const supplied = exactHex(input?.color);
   if (supplied) return supplied;
   if (isAspenCharcoalIdentity(input)) return "#2a211c";
-  const named = matchCabinetColorName([input?.ourName, input?.name, input?.color, input?.finish, input?.woodSpecies].map(text).join(" "));
+  const named = matchCabinetColorName(styleFinishSearchText(input));
   return named;
 }
 
