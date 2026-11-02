@@ -1,15 +1,17 @@
-import { woodGrainBadge } from "@shared/walzcraftColorPatterns";
 import { useRef, useState } from "react";
-import { WALZCRAFT_SHADE_COLORS } from "@shared/walzcraftDoorTemplates";
 import {
   colorPatternFor,
+  grainDirectionLabel,
   nearestShade,
   readColorSelections,
   saveColorSelection,
   type ColorSelection,
 } from "@shared/walzcraftColorPatterns";
+import { woodGrainBadge } from "@shared/walzcraftColorPatterns";
 import type { DistributorDoorMatch } from "@shared/walzcraftDistributorMatches";
 import { SLAB_REFERENCE_SRC } from "@/components/walzcraft/TintedSlab";
+import { nearestPaintColor, paintLabel } from "@shared/sherwinWilliamsPaint";
+import { nearestStain, stainLabel } from "@shared/sherwinWilliamsStain";
 
 type Swatch = { name: string; hex: string; matchPct: number | "estimated" };
 
@@ -17,15 +19,21 @@ function toHex(r: number, g: number, b: number) {
   return "#" + [r, g, b].map((v) => v.toString(16).padStart(2, "0")).join("");
 }
 
+/**
+ * Stain and paint stay separate.
+ *
+ * A stain door offers stain colors only and keeps its grain; a paint door offers paint
+ * only and is an opaque solid. There is no preloaded gallery of door swatches here: the
+ * door-editor wizard's Sherwin-Williams stain and paint wheels are the way to browse, and
+ * this picker reports which of the two a door is so those wheels open on the right one.
+ */
 export function ColorSwatchPicker({ door, styleGrainDirection }: { door: DistributorDoorMatch; styleGrainDirection?: string | null }) {
   const record = colorPatternFor(door);
   const matched: Swatch[] = record.candidates.filter((c) => c.hex).map((c) => ({ name: c.name, hex: c.hex!, matchPct: c.matchPct }));
-  const matchedNames = new Set(matched.map((m) => m.name));
   const woodGrain = record.colorType === "woodGrain";
   const grainLabel = woodGrainBadge(record, styleGrainDirection);
   const grainHorizontal = grainLabel?.endsWith("Horizontal") ?? false;
-  // Stain / wood-grain doors browse stain swatches only (no paint-only colors).
-  const browse: Swatch[] = WALZCRAFT_SHADE_COLORS.filter((s) => !matchedNames.has(s.name) && (record.colorType === "paint" || /stain/i.test(s.finish ?? ""))).map((s) => ({ name: s.name, hex: s.hex, matchPct: "estimated" }));
+  const stainDoor = woodGrain || record.colorType === "stain";
   const [selected, setSelected] = useState<ColorSelection | null>(() => {
     const saved = readColorSelections()[door.id];
     if (saved) return saved;
@@ -43,6 +51,18 @@ export function ColorSwatchPicker({ door, styleGrainDirection }: { door: Distrib
     setSelected(sel);
   };
   const fromHex = (hex: string) => {
+    if (stainDoor) {
+      const hit = nearestStain(hex);
+      if (hit) {
+        choose({ shadeName: stainLabel(hit.stain), hex: hit.stain.hex, matchPct: "estimated", pickedHex: hex });
+        return;
+      }
+    }
+    const paint = nearestPaintColor(hex);
+    if (paint) {
+      choose({ shadeName: paintLabel(paint), hex: paint.hex, matchPct: "estimated", pickedHex: hex });
+      return;
+    }
     const { shade, matchPct } = nearestShade(hex);
     choose({ shadeName: shade.name, hex: shade.hex, matchPct, pickedHex: hex });
   };
@@ -64,9 +84,8 @@ export function ColorSwatchPicker({ door, styleGrainDirection }: { door: Distrib
     const x = Math.floor(((e.clientX - rect.left) / rect.width) * img.naturalWidth);
     const y = Math.floor(((e.clientY - rect.top) / rect.height) * img.naturalHeight);
     const px = ctx.getImageData(x, y, 1, 1).data;
-    const r = px[0], g = px[1], b = px[2];
     setSampling(false);
-    fromHex(toHex(r, g, b));
+    fromHex(toHex(px[0]!, px[1]!, px[2]!));
   };
 
   const SwatchBtn = ({ s, tag }: { s: Swatch; tag?: string }) => {
@@ -94,22 +113,23 @@ export function ColorSwatchPicker({ door, styleGrainDirection }: { door: Distrib
           </div>
           <figcaption data-testid={`swatch-preview-${door.id}`} className="mt-1 max-w-[6rem] text-[11px] text-[#244338]">
             {woodGrain ? <span data-testid={`color-type-${door.id}`}>{grainLabel}</span> : <>{preview ? <>{preview.shadeName}<br />{preview.hex}</> : "No match yet"}
-            <br /><span data-testid={`color-type-${door.id}`}>{record.colorType === "stain" ? "Stain" : "Paint"}</span></>}
+            <br /><span data-testid={`color-type-${door.id}`}>{stainDoor ? "Stain" : "Paint"}</span></>}
           </figcaption>
         </figure>
         <div className="min-w-[12rem] flex-1">
+          <div className="text-xs font-semibold uppercase tracking-wide text-[#244338]" data-testid={`color-finish-${door.id}`}>
+            {stainDoor ? "Stain · keeps the wood grain" : "Paint · opaque solid"}
+          </div>
           {matched.length > 0 ? (
-            <>
-              <div className="text-xs font-semibold uppercase tracking-wide text-[#244338]">Matched</div>
-              <div className="flex flex-wrap gap-1">{matched.map((s, i) => <SwatchBtn key={s.name} s={s} tag={i === 0 ? "Matched · top" : "Matched"} />)}</div>
-            </>
+            <div className="mt-1 flex flex-wrap gap-1">{matched.map((s, i) => <SwatchBtn key={s.name} s={s} tag={i === 0 ? "Matched · top" : "Matched"} />)}</div>
           ) : (
-            <div className="text-xs font-semibold text-[#244338]">No match yet</div>
+            <div className="mt-1 text-xs font-semibold text-[#244338]">No match yet</div>
           )}
-          <details className="mt-2">
-            <summary className="cursor-pointer text-xs font-semibold text-[#244338]">Browse more</summary>
-            <div className="mt-1 flex flex-wrap gap-1">{browse.map((s) => <SwatchBtn key={s.name} s={s} />)}</div>
-          </details>
+          <p data-testid={`swatch-wheels-${door.id}`} className="mt-2 text-xs text-[#244338]/70">
+            {stainDoor
+              ? "Browse the Sherwin-Williams stain wheel in the WalzCraft wizard. Stain keeps this door's grain and tints it."
+              : "Browse the Sherwin-Williams paint wheel in the WalzCraft wizard. Paint is an opaque solid."}
+          </p>
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-[#244338]">
             <button type="button" data-testid={`eyedropper-${door.id}`} onClick={eyedropper} className="rounded border-2 border-[#244338] px-2 py-0.5 font-semibold">
               {sampling ? "Click a pixel on the door photo" : "Eyedropper"}
