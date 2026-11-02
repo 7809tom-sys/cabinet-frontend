@@ -85,9 +85,9 @@ export function ClosetWallElevation({ design, wall }: { design: StudioDesign; wa
             const outerH = itemHeight * SCALE;
             const insetX = frame.stileIn * SCALE;
             const insetY = frame.railIn * SCALE;
-            return <g key={item.id} data-item={item.kind} data-shaker-frame={frame.railIn}>
+            return <g key={item.id} data-item={item.kind} data-shaker-frame={frame.railIn} data-slab-front={frame.slab ? "true" : undefined}>
               <rect x={outerX} y={outerY} width={outerW} height={outerH} fill={fill} stroke="#4c291f" strokeWidth="1" strokeLinejoin="miter" />
-              <rect x={outerX + insetX} y={outerY + insetY} width={Math.max(1, outerW - insetX * 2)} height={Math.max(1, outerH - insetY * 2)} fill="#5c382c" stroke="#4c291f" strokeWidth="0.6" strokeLinejoin="miter" />
+              {!frame.slab && <rect x={outerX + insetX} y={outerY + insetY} width={Math.max(1, outerW - insetX * 2)} height={Math.max(1, outerH - insetY * 2)} fill="#5c382c" stroke="#4c291f" strokeWidth="0.6" strokeLinejoin="miter" />}
               {label}
             </g>;
           }
