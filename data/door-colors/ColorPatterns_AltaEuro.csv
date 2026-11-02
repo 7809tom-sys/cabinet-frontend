@@ -1,0 +1,13 @@
+distributor,code,door_name,slab,glaze,sample_photo,color_type,wood_species,grain_direction,color1_name,color1_hex,color1_match,color1_source,color2_name,color2_hex,color2_match,color2_source,color3_name,color3_hex,color3_match,color3_source,color4_name,color4_hex,color4_match,color4_source
+AltaEuro,ZSW,Zenit Blanco,Slab · 100%,none,/walzcraft/doors/altaeuro-zsw.webp,paint,,,Classic White,#f4f2ec (estimated),estimated,csv closest_finish,Eggshell,#efe8d8 (estimated),estimated,same WalzCraft family,Dove White,#ece9e0 (estimated),estimated,same WalzCraft family,Antique White,#e8dfcc (estimated),estimated,same WalzCraft family
+AltaEuro,ZSI,Zenit Azul Indigo,Slab · 100%,none,/walzcraft/doors/altaeuro-zsi.webp,paint,,,Midnight Blue,#2b3a55 (estimated),estimated,csv closest_finish,Nightfall V4,#2f3440 (estimated),estimated,same WalzCraft family,Midnight,#1f2a3a (estimated),estimated,same WalzCraft family,Moonlight,#5b6b82 (estimated),estimated,same WalzCraft family
+AltaEuro,PGW,Palermo Gloss White,Slab · 100%,none,/walzcraft/doors/altaeuro-pgw.webp,paint,,,Classic White,#f4f2ec (estimated),estimated,csv closest_finish,Eggshell,#efe8d8 (estimated),estimated,same WalzCraft family,Dove White,#ece9e0 (estimated),estimated,same WalzCraft family,Antique White,#e8dfcc (estimated),estimated,same WalzCraft family
+AltaEuro,LSA,Luxe Agua Marina,Slab · 100%,unknown,/walzcraft/doors/altaeuro-lsa.webp,paint,,,,,,,,,,,,,,,,,,
+AltaEuro,LSC,Luxe Cashmere,Slab · 100%,none,/walzcraft/doors/altaeuro-lsc.webp,paint,,,Tan,,estimated,csv closest_finish,,,,,,,,,,,,
+AltaEuro,TGW,Torino Grey Wood,Slab · 100%,none,/walzcraft/doors/altaeuro-tgw.webp,woodGrain,,,Flagstone,,estimated,csv closest_finish,,,,,,,,,,,,
+AltaEuro,TDW,Torino Dark Wood,Slab · 100%,unknown,/walzcraft/doors/altaeuro-tdw.webp,woodGrain,,,,,,,,,,,,,,,,,,
+AltaEuro,SSN,Syncron Nocce 01,Slab · 100%,unknown,/walzcraft/doors/altaeuro-ssn.webp,woodGrain,,,,,,,,,,,,,,,,,,
+AltaEuro,LSP,Luxe Picasso 01,Slab · 100%,unknown,/walzcraft/doors/altaeuro-lsp.webp,woodGrain,,,,,,,,,,,,,,,,,,
+AltaEuro,ZCK,Slim Cava Black,,none,/walzcraft/doors/altaeuro-zck.webp,paint,,,Black,#1b1b1b (estimated),estimated,csv closest_finish,Ebony,#2a2522 (estimated),estimated,same WalzCraft family,Dark Gray,#4a4a48 (estimated),estimated,same WalzCraft family,Slate,#5d636a (estimated),estimated,same WalzCraft family
+AltaEuro,ZCC,Slim Cava Cashmere,,none,/walzcraft/doors/altaeuro-zcc.webp,paint,,,Tan,,estimated,csv closest_finish,,,,,,,,,,,,
+AltaEuro,SCR,Syncron Slim Cava Rosales 1,,unknown,/walzcraft/doors/altaeuro-scr.webp,paint,,,,,,,,,,,,,,,,,,

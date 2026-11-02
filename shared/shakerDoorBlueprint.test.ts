@@ -3,10 +3,11 @@ import { describe, expect, it } from "vitest";
 import catalog from "./fixtures/doorStyleSideCatalog.json";
 import { designerFacePlan } from "../client/src/lib/designerFacePlan";
 import { findDlcFinishForStyle } from "./dlcFr26Mapping";
+import { resolveDoorColor } from "./doorColorResolve";
 import {
   SHAKER_BRAND_DOOR_SURFACE_PALETTE,
-  SHAKER_BRAND_UI_PALETTE,
   STANDARD_DL_SHAKER_SLUGS,
+  brandDoorSurfaceHex,
   effectiveShakerRailIn,
   matchStandardShakerToDl,
   shakerDoorFamily,
@@ -38,17 +39,11 @@ describe("DL shaker blueprint", () => {
     expect(references.find((reference) => reference.slug === "expresso-shaker")?.family).toBe("wood");
   });
 
-  it("fails if a 2.75 or 3 inch shaker bypasses the DL template or renders a door surface color outside the brand palette/sample", () => {
+  it("keeps the DL template and paints the door's own color, not a snapped brand swatch", () => {
     const source = readFileSync(new URL("./shakerDoorBlueprint.ts", import.meta.url), "utf8");
-    const hexes = source.match(/#[0-9a-fA-F]{3,8}/g) ?? [];
-    const allowed = new Set<string>(SHAKER_BRAND_DOOR_SURFACE_PALETTE.map((hex) => hex.toLowerCase()));
-    for (const hex of hexes) {
-      expect(allowed.has(hex.toLowerCase()), hex).toBe(true);
-    }
     expect(source).toContain("HARD RULE (Tom, Nov 1 2026)");
-
+    expect(source).not.toContain("const surfaceColor = brandDoorSurfaceHex");
     const brandSurface = new Set<string>(SHAKER_BRAND_DOOR_SURFACE_PALETTE.map((hex) => hex.toLowerCase()));
-    expect(SHAKER_BRAND_UI_PALETTE.every((hex) => brandSurface.has(hex))).toBe(true);
     const standard = styles.filter((style) => shakerDoorFamily(style.doorStyle) === "shaker");
     expect(standard.length).toBeGreaterThan(0);
     for (const style of standard) {
@@ -63,28 +58,45 @@ describe("DL shaker blueprint", () => {
       }
       const plan = standardShakerDlFacePlan(style, "base");
       const match = matchStandardShakerToDl(style);
+      const decision = resolveDoorColor(style);
       expect(match.adopted, style.ourName ?? "").toBe(true);
       if (!match.adopted) continue;
       expect(plan?.dlcCrop?.slug, style.ourName ?? "").toBe(match.reference.slug);
       const surface = plan?.dlcCrop?.solidColor?.toLowerCase() ?? "";
-      expect(brandSurface.has(surface), `${style.ourName}: ${surface}`).toBe(true);
-      expect(surface).toBe(match.surfaceColor);
+      expect(surface, style.ourName ?? "").toBe(decision.appliedHex);
+      expect(surface).toBe(match.surfaceColor.toLowerCase());
+      expect(throughDesigner?.dlcCrop?.solidColor?.toLowerCase(), style.ourName ?? "").toBe(surface);
       expect(throughDesigner?.doorUrl, style.ourName ?? "").toBe(plan?.doorUrl);
+      const snapped = brandDoorSurfaceHex(surface);
+      if (!brandSurface.has(surface)) expect(surface).not.toBe(snapped);
     }
 
     for (const style of styles.filter((item) => shakerDoorFamily(item.doorStyle) === "slim-shaker" || shakerDoorFamily(item.doorStyle) === "double-shaker")) {
       expect(standardShakerDlFacePlan(style, "base"), style.ourName ?? "").toBeNull();
     }
     expect(standardShakerDlFacePlan({ doorStyle: "Shaker", railWidth: 2.25, color: "#f4f1ea" }, "base")).toBeNull();
-    const cream = standardShakerDlFacePlan({ doorStyle: "Shaker", railWidth: 2.75, color: "#f2e8d0" }, "wall");
-    expect(cream?.dlcCrop?.slug).toBeTruthy();
-    expect(brandSurface.has(cream?.dlcCrop?.solidColor ?? "")).toBe(true);
-    // Off-brand blue / teal never reach a door surface.
+    const stone = styles.find((style) => style.id === 360001);
+    expect(stone).toBeTruthy();
+    expect(standardShakerDlFacePlan(stone, "base")?.dlcCrop?.solidColor).toBe("#8d8f92");
+    expect(brandDoorSurfaceHex("#8d8f92")).not.toBe("#8d8f92");
+    // A stored gray hex with no gray name stays that hex. Slate Rift's name
+    // estimates gray and must not become brand green.
+    expect(standardShakerDlFacePlan({ doorStyle: "Shaker", railWidth: 3, ourName: "Stored Hex", color: "#555553" }, "base")?.dlcCrop?.solidColor).toBe("#555553");
+    const slate = standardShakerDlFacePlan({ doorStyle: "Shaker", railWidth: 3, ourName: "Slate Rift", color: "#555553" }, "base");
+    expect(slate?.dlcCrop?.solidColor).not.toBe("#244338");
+    expect(["#555553", "#8d8f92"]).toContain(slate?.dlcCrop?.solidColor);
+    // Switching door styles changes the painted color.
+    const sage = styles.find((style) => style.id === 330005);
+    expect(standardShakerDlFacePlan(sage, "base")?.dlcCrop?.solidColor).not.toBe(
+      standardShakerDlFacePlan(stone, "base")?.dlcCrop?.solidColor,
+    );
+    // The door editor's render hex wins over the swatch and is not snapped.
+    const edited = standardShakerDlFacePlan({ ...stone, renderHex: "#555553" }, "base");
+    expect(edited?.dlcCrop?.solidColor).toBe("#555553");
     for (const color of ["#1f4e8c", "#2a8c8c", "#5a8f3a"]) {
-      const plan = standardShakerDlFacePlan({ doorStyle: "Shaker", railWidth: 3, color }, "base");
-      expect(brandSurface.has(plan?.dlcCrop?.solidColor ?? ""), color).toBe(true);
+      const plan = standardShakerDlFacePlan({ doorStyle: "Shaker", railWidth: 3, ourName: "Off Brand", color }, "base");
+      expect(plan?.dlcCrop?.solidColor, color).toBe(color);
+      expect(brandSurface.has(plan?.dlcCrop?.solidColor ?? "")).toBe(false);
     }
-    // Classic Cream photo color snaps to the uploaded sample.
-    expect(standardShakerDlFacePlan({ doorStyle: "Shaker", railWidth: 3, color: "#dcd7c2" }, "base")?.dlcCrop?.solidColor).toBe("#dedac6");
   });
 });

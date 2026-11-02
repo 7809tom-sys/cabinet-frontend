@@ -1,0 +1,863 @@
+[
+  {
+    "id": 330002,
+    "style": "Aura Cream (Ashford)",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#eae5d6"
+  },
+  {
+    "id": 330003,
+    "style": "Terra Shaker (Ashford)",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#c8a882"
+  },
+  {
+    "id": 330004,
+    "style": "Natura Maple (Ashford)",
+    "category": "stain",
+    "treatment": "wood grain + stain tint",
+    "hex": "#d4b896"
+  },
+  {
+    "id": 330005,
+    "style": "Zenith Sage (Ashford)",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#c1d5b4"
+  },
+  {
+    "id": 330006,
+    "style": "Villa Blanc (Ashford)",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#e8e0d0"
+  },
+  {
+    "id": 330007,
+    "style": "Silva Shaker (Ashford)",
+    "category": "stain",
+    "treatment": "wood grain + stain tint",
+    "hex": "#8b6914"
+  },
+  {
+    "id": 330008,
+    "style": "Onyx Shadow (Ashford)",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#1a1a1a"
+  },
+  {
+    "id": 330009,
+    "style": "Slate Echo (Ashford)",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#8a9ba8"
+  },
+  {
+    "id": 330010,
+    "style": "Sterling Pulse (Ashford)",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#c8c8c8"
+  },
+  {
+    "id": 330011,
+    "style": "Forest Rust (Ashford)",
+    "category": "stain",
+    "treatment": "wood grain + stain tint",
+    "hex": "#73482a"
+  },
+  {
+    "id": 330012,
+    "style": "Nimbus Grey (Ashford)",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#9aa8b0"
+  },
+  {
+    "id": 330013,
+    "style": "Nova White (Ashford)",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#ffffff"
+  },
+  {
+    "id": 330014,
+    "style": "Nova Blanc (Madison)",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f5f5f5"
+  },
+  {
+    "id": 330015,
+    "style": "Aura Blanc (Madison)",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f0ead6"
+  },
+  {
+    "id": 330016,
+    "style": "Slate Core (Madison)",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#9e9e9e"
+  },
+  {
+    "id": 330017,
+    "style": "Nimbus Blanc (Madison)",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#d8d0c8"
+  },
+  {
+    "id": 330018,
+    "style": "Ivy Core (Madison)",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#4f584c"
+  },
+  {
+    "id": 330019,
+    "style": "Navy Core (Madison)",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#1a2f4a"
+  },
+  {
+    "id": 330020,
+    "style": "Onyx Core (Madison)",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#1a1a1a"
+  },
+  {
+    "id": 330021,
+    "style": "Honey Core (Madison)",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#c8a040"
+  },
+  {
+    "id": 330022,
+    "style": "Cinder Core (Madison)",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#5a5a5a"
+  },
+  {
+    "id": 330023,
+    "style": "Edge Blanc (Madison)",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#fafafa"
+  },
+  {
+    "id": 330024,
+    "style": "Oxford Blanc (Madison)",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f0f0f0"
+  },
+  {
+    "id": 330025,
+    "style": "Sage Haven (Madison)",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#7a9a7a"
+  },
+  {
+    "id": 330026,
+    "style": "Casselberry Blanc (Madison)",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#ede0c8"
+  },
+  {
+    "id": 330027,
+    "style": "Walnut Haven (Madison)",
+    "category": "stain",
+    "treatment": "wood grain + stain tint",
+    "hex": "#8b6040"
+  },
+  {
+    "id": 330028,
+    "style": "Iroy Dune (Madison)",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#d4c4a0"
+  },
+  {
+    "id": 330029,
+    "style": "Slate Gray (Madison)",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#b8c8d0"
+  },
+  {
+    "id": 330030,
+    "style": "Warm Toffee (Madison)",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#a07850"
+  },
+  {
+    "id": 330031,
+    "style": "Warm Mocha (Madison)",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#c86040"
+  },
+  {
+    "id": 330032,
+    "style": "Rift Oak (Madison)",
+    "category": "stain",
+    "treatment": "wood grain + stain tint",
+    "hex": "#c8a060"
+  },
+  {
+    "id": 360001,
+    "style": "Stone Gray (Preston)",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#8d8f92"
+  },
+  {
+    "id": 390001,
+    "style": "Blanc Core (Preston)",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f7f6f3"
+  },
+  {
+    "id": 390002,
+    "style": "Umbra Shaker (Preston)",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#75523e"
+  },
+  {
+    "id": 390003,
+    "style": "Cobalt Abyss (Preston)",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#2d333f"
+  },
+  {
+    "id": 390004,
+    "style": "Virid Echo (Preston)",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#4f5549"
+  },
+  {
+    "id": 390005,
+    "style": "Obsidian Forge (Preston)",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#34363a"
+  },
+  {
+    "id": 390006,
+    "style": "Vesper Ash (Preston)",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#6f6d6a"
+  },
+  {
+    "id": 390007,
+    "style": "Selene Gray (Preston)",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#8d8f92"
+  },
+  {
+    "id": 390008,
+    "style": "Zephyr Sage (Preston)",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#868d7b"
+  },
+  {
+    "id": 390009,
+    "style": "Aurum Vault (Preston)",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 390010,
+    "style": "Sylvan Rust (Preston)",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#b08968"
+  },
+  {
+    "id": 390011,
+    "style": "Lumina White (Ashford)",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f7f6f3"
+  },
+  {
+    "id": 390012,
+    "style": "Carbon Frost",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#34363a"
+  },
+  {
+    "id": 390013,
+    "style": "Dual Vesper (Preston)",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#8d8f92"
+  },
+  {
+    "id": 390014,
+    "style": "Dual Blanc (Preston)",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f7f6f3"
+  },
+  {
+    "id": 390016,
+    "style": "Aero Blanc (Preston)",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f7f6f3"
+  },
+  {
+    "id": 390017,
+    "style": "Aero Sage (Preston)",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#4f5549"
+  },
+  {
+    "id": 390018,
+    "style": "Aero Obsidian (Preston)",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#34363a"
+  },
+  {
+    "id": 390019,
+    "style": "Aero Solstice (Preston)",
+    "category": "stain",
+    "treatment": "wood grain + stain tint",
+    "hex": "#d1ba8f"
+  },
+  {
+    "id": 390020,
+    "style": "Air Dawn (Preston)",
+    "category": "stain",
+    "treatment": "wood grain + stain tint",
+    "hex": "#d1ba8f"
+  },
+  {
+    "id": 390021,
+    "style": "Glace Blanc (Preston)",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f7f6f3"
+  },
+  {
+    "id": 390022,
+    "style": "Glace Cinder (Preston)",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#8d8f92"
+  },
+  {
+    "id": 390023,
+    "style": "Vellum Noir (Preston)",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#34363a"
+  },
+  {
+    "id": 390024,
+    "style": "Vellum Cream (Preston)",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#ded5c1"
+  },
+  {
+    "id": 390025,
+    "style": "Solis Oak (Preston)",
+    "category": "stain",
+    "treatment": "wood grain + stain tint",
+    "hex": "#d1ba8f"
+  },
+  {
+    "id": 390026,
+    "style": "Umbra Oak (Preston)",
+    "category": "stain",
+    "treatment": "wood grain + stain tint",
+    "hex": "#d1ba8f"
+  },
+  {
+    "id": 390027,
+    "style": "Drism Clear (Preston)",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 390028,
+    "style": "Nocturne Glass (Preston)",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 510001,
+    "style": "Natural Maple (Madison)",
+    "category": "stain",
+    "treatment": "wood grain + stain tint",
+    "hex": "#d1ba8f"
+  },
+  {
+    "id": 510002,
+    "style": "Warm Cashmere (Madison)",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 510003,
+    "style": "Serene Sage (Madison)",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#78826b"
+  },
+  {
+    "id": 510004,
+    "style": "Serene Harbor (Madison)",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#435b77"
+  },
+  {
+    "id": 540001,
+    "style": "Torino TWP",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 540002,
+    "style": "Torino TGW",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 540003,
+    "style": "Torino TDW",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 540004,
+    "style": "Palermo PGW",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 540005,
+    "style": "Luxe Classic LSA",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 540006,
+    "style": "Luxe Classic LSN",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 540007,
+    "style": "Luxe Classic LSC",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 540008,
+    "style": "Zenit Classic ZSA",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 540009,
+    "style": "Zenit Classic ZSU",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 540010,
+    "style": "Zenit Classic ZSL",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 540011,
+    "style": "Zenit Classic ZSN",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 540012,
+    "style": "Zenit Classic ZSI",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 540013,
+    "style": "Zenit Classic ZSM",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 540014,
+    "style": "Zenit Classic ZSB",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 540015,
+    "style": "Zenit Classic ZSK",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 540016,
+    "style": "Zenit Classic ZSW",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 540017,
+    "style": "Zenit Classic ZSC",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 540018,
+    "style": "Zenit Classic ZSO",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 540019,
+    "style": "Zenit Classic ZSP",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 540020,
+    "style": "Zenit Classic ZSV",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 540021,
+    "style": "Luxe Select LSP",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 540022,
+    "style": "Luxe Select LSR",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 540023,
+    "style": "Syncron Select SSH",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 540024,
+    "style": "Syncron Select SSJ",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 540025,
+    "style": "Syncron Select SSK",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 540026,
+    "style": "Syncron Select SSO",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 540027,
+    "style": "Syncron Select SSM",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 540028,
+    "style": "Syncron Select SSN",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 540029,
+    "style": "Syncron Select SSE",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 540030,
+    "style": "Syncron Select SSP",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 540031,
+    "style": "Syncron Select SSQ",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 540032,
+    "style": "Syncron Select SSS",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 540033,
+    "style": "Syncron Select SSR",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 540034,
+    "style": "Syncron Select SSA",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 540035,
+    "style": "Syncron Select SSL",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 540036,
+    "style": "Syncron Select SSD",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 540037,
+    "style": "Syncron Select SSV",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 540038,
+    "style": "Syncron Select SSZ",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 540039,
+    "style": "Syncron Select SSX",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 540040,
+    "style": "Zenit Slim Cava ZCC",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 540041,
+    "style": "Zenit Slim Cava ZCN",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 540042,
+    "style": "Zenit Slim Cava ZCK",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 540043,
+    "style": "Syncron Slim Cava SCM",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 540044,
+    "style": "Syncron Slim Cava SCN",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 540045,
+    "style": "Syncron Slim Cava SCQ",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 540046,
+    "style": "Syncron Slim Cava SCR",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 540047,
+    "style": "Syncron Slim Cava SCA",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 540048,
+    "style": "Syncron Slim Cava SCL",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 540049,
+    "style": "Syncron Slim Cava SCZ",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 600001,
+    "style": "White Shaker",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f7f6f3"
+  },
+  {
+    "id": 600002,
+    "style": "Slim Shaker Alabaster",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 600004,
+    "style": "Versa Shaker",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 600005,
+    "style": "Pearl White",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f7f6f3"
+  },
+  {
+    "id": 600006,
+    "style": "Glacier White",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f7f6f3"
+  },
+  {
+    "id": 600007,
+    "style": "European White Oak",
+    "category": "stain",
+    "treatment": "wood grain + stain tint",
+    "hex": "#d1ba8f"
+  },
+  {
+    "id": 600008,
+    "style": "Driftwood",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 600009,
+    "style": "Dove Grey",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#8d8f92"
+  },
+  {
+    "id": 600010,
+    "style": "Dark Caramel",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  },
+  {
+    "id": 600011,
+    "style": "Cyber Grey",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#8d8f92"
+  },
+  {
+    "id": 600014,
+    "style": "Slim Shaker Ebony",
+    "category": "paint",
+    "treatment": "opaque solid",
+    "hex": "#f2f0ea"
+  }
+]

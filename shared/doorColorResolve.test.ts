@@ -1,0 +1,112 @@
+import { readFileSync } from "node:fs";
+import { describe, expect, it } from "vitest";
+import catalog from "./fixtures/doorStyleSideCatalog.json";
+import { brandDoorSurfaceHex } from "./shakerDoorBlueprint";
+import {
+  DOOR_COLOR_AGREE_DELTA_E,
+  hueFamily,
+  resolveDoorColor,
+  summarizeDoorColors,
+  type DoorColorInput,
+} from "./doorColorResolve";
+
+const styles = catalog as DoorColorInput[];
+
+describe("door color precedence", () => {
+  it("keeps Stone Gray #8d8f92 and does not brand-snap it", () => {
+    const stone = styles.find((style) => style.id === 360001)!;
+    const decision = resolveDoorColor(stone);
+    expect(decision.appliedHex).toBe("#8d8f92");
+    expect(decision.candidateSource).toBe("swatch-table");
+    expect(decision.appliedCategory).toBe("paint");
+    expect(decision.usesGrain).toBe(false);
+    expect(decision.appliedHex).not.toBe(brandDoorSurfaceHex("#8d8f92"));
+    expect(hueFamily(decision.appliedHex)).toBe("neutral");
+  });
+
+  it("keeps a stored Slate Rift hex gray", () => {
+    const named = resolveDoorColor({ ourName: "Slate Rift", color: "#555553", doorStyle: "Shaker" });
+    expect(named.appliedHex).not.toBe("#244338");
+    expect(named.appliedHex).not.toBe("#dedac6");
+    expect(hueFamily(named.appliedHex)).toBe("neutral");
+    const stored = resolveDoorColor({ ourName: "Stored Hex", color: "#555553", doorStyle: "Shaker" });
+    expect(stored.appliedHex).toBe("#555553");
+    expect(stored.appliedSource).toBe("pre-209");
+  });
+
+  it("lets a hand-set render hex win, and a style switch changes the color", () => {
+    const stone = styles.find((style) => style.id === 360001)!;
+    const sage = styles.find((style) => style.id === 330005)!;
+    expect(resolveDoorColor(stone).appliedHex).not.toBe(resolveDoorColor(sage).appliedHex);
+    const edited = resolveDoorColor({ ...stone, renderHex: "#555553" });
+    expect(edited.appliedHex).toBe("#555553");
+    expect(edited.appliedSource).toBe("render-hex");
+    expect(edited.candidateSource).toBe("render-hex");
+    const cleared = resolveDoorColor({ ...stone, renderHex: null });
+    expect(cleared.appliedHex).toBe("#8d8f92");
+  });
+
+  it("uses a WalzCraft primary shade only when no render hex or swatch exists", () => {
+    const decision = resolveDoorColor({
+      id: 999001,
+      distributorId: 210001,
+      supplierBrandName: "Faircrest",
+      styleCode: "NG",
+      ourName: "Unlisted Winchester",
+      doorStyle: "Shaker",
+    });
+    expect(decision.layers.swatch).toBeNull();
+    expect(decision.candidateSource).toBe("walzcraft");
+    expect(decision.candidateHex).toBe("#8e8e88");
+    expect(hueFamily(decision.appliedHex)).toBe("neutral");
+    expect(decision.appliedHex).not.toBe("#244338");
+  });
+
+  it("falls back to the pre-209 catalog hex when higher layers are silent", () => {
+    const decision = resolveDoorColor({
+      id: 999002,
+      ourName: "No Sheet",
+      color: "#336699",
+      doorStyle: "Shaker",
+    });
+    expect(decision.candidateSource).toBe("pre-209");
+    expect(decision.appliedHex).toBe("#336699");
+    expect(decision.appliedHex).not.toBe(brandDoorSurfaceHex("#336699"));
+  });
+
+  it("flags a swatch the estimator rejects and keeps the pre-209 color", () => {
+    const versa = styles.find((style) => style.id === 600004)!;
+    const decision = resolveDoorColor(versa);
+    expect(decision.candidateSource).toBe("swatch-table");
+    expect(decision.review.needsColorReview).toBe(true);
+    expect(decision.review.keptBecause).toBe("estimator-disagreed");
+    expect(decision.appliedSource).toBe("pre-209");
+    expect(decision.appliedHex).toBe(decision.pre209Hex);
+    expect(decision.review.deltaE).toBeGreaterThan(DOOR_COLOR_AGREE_DELTA_E);
+  });
+
+  it("covers every catalog door and never paints the brand snap", () => {
+    const summary = summarizeDoorColors(styles);
+    expect(summary.doors).toBe(styles.length);
+    expect(summary.swatchTableRows).toBe(123);
+    expect(summary.agreed + summary.flagged + summary.noSecondOpinion).toBe(summary.doors);
+    const brand = new Set(["#dedac6", "#fffdf9", "#f6f3ed", "#244338", "#d7a46c"]);
+    for (const style of styles) {
+      const decision = resolveDoorColor(style);
+      const snapped = brandDoorSurfaceHex(decision.candidateHex);
+      if (decision.candidateHex !== snapped) {
+        expect(decision.appliedHex, style.ourName ?? "").not.toBe(snapped);
+      }
+      expect(brand.has(decision.appliedHex) && decision.candidateHex !== decision.appliedHex).toBe(false);
+    }
+  });
+
+  it("reads the committed ColorPatterns files as the WalzCraft source", () => {
+    const csv = readFileSync(new URL("../data/door-colors/ColorPatterns_Faircrest.csv", import.meta.url), "utf8");
+    expect(csv).toContain("color1_hex");
+    expect(csv).toContain("Winchester Grey");
+    const table = readFileSync(new URL("../data/door-colors/swatch-hex.json", import.meta.url), "utf8");
+    expect(table).toContain("360001");
+    expect(table).toContain("#8d8f92");
+  });
+});

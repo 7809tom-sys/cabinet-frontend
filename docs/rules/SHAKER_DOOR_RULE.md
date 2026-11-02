@@ -1,6 +1,6 @@
 # Shaker door rule
 
-HARD RULE (Tom, Nov 1 2026): ALL 2.75 in and 3 in shaker doors start from the DL Shaker blueprint as the base template. Geometry (rail/stile frame, sharp square corners, flat center slab, notch) is proven and must not be changed per style. Only texture/color varies. Brand colors go ON the shaker door surfaces, not just UI tints: every door surface renders in the uploaded door sample color (Faircrest Classic Cream, #dedac6) or the brand palette (cream #fffdf9/#f6f3ed, green #244338, gold #d7a46c), never outside blue/teal/off-brand green. Deviation requires Tom's explicit override.
+HARD RULE (Tom, Nov 1 2026): ALL 2.75 in and 3 in shaker doors start from the DL Shaker blueprint as the base template. Geometry (rail/stile frame, sharp square corners, flat center slab, notch) is proven and must not be changed per style. Only texture/color varies. The door's own color paints the surface. It is not replaced by the nearest brand swatch.
 
 ## What this means in the Designer
 
@@ -13,32 +13,18 @@ Geometry that stays the same for every one of those doors:
 - The center is a flat slab. The catalog door photo is not pasted onto the slab, because those photos carry a frame.
 - The notch is the shared four-sided shaker notch. It is not restyled per finish.
 
-Color on the door surface (brand colors go ON the door, not just UI tints):
+Color on the door surface:
 
-- The color source is the uploaded door sample, the Faircrest Classic Cream photo (`CC_classic-cream_1.jpeg`). Its door faces average to `#dedac6`.
-- Allowed door-surface colors: sample `#dedac6`, cream `#fffdf9` / `#f6f3ed`, green `#244338`, gold `#d7a46c`. Nothing else.
-- The style's own catalog color still picks the DL reference grain, then is snapped (CIEDE2000) to the nearest allowed color. That brand color is what the slab, rails, and stiles render in (`brandDoorSurfaceHex`).
-- The DL grain is retinted toward that brand color.
-- `shared/shakerDoorBlueprint.test.ts` fails if any 2.75/3 inch shaker door surface color is not in that list.
+- Precedence, highest first: a hand-set render hex, the measured swatch table from cabinet-backend PR 72 (`data/door-colors/swatch-hex.json`, 123 styles), a WalzCraft ColorPatterns primary shade (`data/door-colors/ColorPatterns_*.csv`, matched by distributor plus code or door name), a name or DL-photo estimate, then the pre-209 color (DL finish solid, otherwise catalog hex, then the name table).
+- That color is not snapped to sample cream `#dedac6`, cream `#fffdf9` / `#f6f3ed`, green `#244338`, or gold `#d7a46c`. Those swatches are what the old nearest-match used. `brandDoorSurfaceHex` still names that old snap and is not applied.
+- An independent estimator concurs after the pick. Agreement needs CIEDE2000 at most 10, the same paint-versus-stain category, and the same hue family. A disagreement keeps the pre-209 color and flags the door (`needsColorReview`). A hand-set render hex still wins, and is flagged rather than replaced.
+- Paint renders as an opaque solid of that hex. Stain keeps the DL grain and a tint toward the hex.
+- `shared/shakerDoorBlueprint.test.ts` and `shared/doorColorResolve.test.ts` fail if a 2.75/3 inch shaker bypasses the blueprint or if Stone Gray `#8d8f92` or Slate Rift `#555553` is replaced by brand green or cream.
 
 ## DL references
 
 DL Cabinetry has 11 door-style rows (distributor 450001). They are not all shakers.
 
-| DL style | Stored door style | Used as a standard shaker reference? |
-| --- | --- | --- |
-| White Shaker | Shaker | Yes. Painted reference `white-shaker`. |
-| Versa Shaker | Shaker | Yes. Wood reference `versa-shaker`. |
-| Slim Shaker Alabaster | Slim Shaker | No. Narrow frame. |
-| Slim Shaker Ebony | Slim Shaker | No. Narrow frame. |
-| Pearl White | Raised Panel | No. |
-| Dark Caramel | Raised Panel | No. |
-| European White Oak | Traditional Panel | No. |
-| Glacier White | not stored | No. The row does not say shaker. |
-| Driftwood | not stored | No. The row does not say shaker. |
-| Dove Grey | not stored | No. The row does not say shaker. |
-| Cyber Grey | not stored | No. The row does not say shaker. |
+Two more standard shakers exist as DLC finish photos and are references even though they are not among those 11 style rows: Grey Shaker (`grey-shaker`, painted) and Espresso Shaker (`expresso-shaker`, wood). The code does not invent a light/medium/dark split. DL does not define those three buckets. Each other 2.75 or 3 inch shaker is matched to the closest of these four by paint-versus-stain and by color distance.
 
-Two more standard shakers exist as DLC finish photos and are references even though they are not among those 11 style rows: Grey Shaker (`grey-shaker`, painted) and Espresso Shaker (`expresso-shaker`, wood). The code does not invent a light/medium/dark split. DL does not define those three buckets. Each other 2.75 or 3 inch shaker is matched to the closest of these four by paint-versus-wood and by color distance.
-
-Painted doors inherit a painted reference grain (White Shaker's grain is the pale, near-flat one). Wood doors inherit Versa or Espresso grain. The grain is then tinted toward the brand door-surface color.
+Painted doors inherit a painted reference only as a template id. The face itself is the opaque hex. Wood doors inherit Versa or Espresso grain. The grain is then tinted toward the door's own color.

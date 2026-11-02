@@ -38,6 +38,9 @@ export type DoorGrainDirection = "vertical-stiles-horizontal-rails" | "vertical"
 export type DoorFinishSheen = "satin" | "matte" | "gloss";
 
 export type DoorStyleAppearanceInput = {
+  id?: number | null;
+  distributorId?: number | null;
+  supplierBrandName?: string | null;
   ourName?: string | null;
   aliasName?: string | null;
   name?: string | null;

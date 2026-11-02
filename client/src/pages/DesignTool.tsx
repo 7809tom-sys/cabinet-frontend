@@ -5675,6 +5675,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       const plan = facePlanForCab(cab);
       if (!plan) return activeDoorSampleUrl;
       if (plan.sourceKind === "combined") return null;
+      // A blueprint or DL crop with no door image is an opaque paint. The stock
+      // sample photo would cover that color.
+      if (plan.dlcCrop) return plan.doorUrl;
       return plan.doorUrl || activeDoorSampleUrl;
     },
     [facePlanForCab, activeDoorSampleUrl]
