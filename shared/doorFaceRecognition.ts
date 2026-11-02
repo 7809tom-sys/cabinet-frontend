@@ -1,5 +1,6 @@
 import { isAefFramelessStyleCode } from "./aefFramelessSpecs";
 import { findDlcFinishForStyle } from "./dlcFr26Mapping";
+import { standardShakerDlFacePlan, type ShakerStyleInput } from "./shakerDoorBlueprint";
 
 /**
  * Door face vs drawer front.
@@ -86,6 +87,13 @@ export type DoorStyleFaceInput = {
   styleVerified?: boolean | number | null;
   grainDirection?: string | null;
   distributorId?: number | null;
+  doorStyle?: string | null;
+  color?: string | null;
+  renderHex?: string | null;
+  finish?: string | null;
+  woodSpecies?: string | null;
+  railWidth?: string | number | null;
+  stileWidth?: string | number | null;
 };
 
 export type CabinetFacePlan = {
@@ -298,6 +306,9 @@ export function resolveCabinetFaceImages(
       },
     };
   }
+  // 2.75 and 3 inch shakers that are not themselves a DL finish still use the DL blueprint.
+  const adopted = standardShakerDlFacePlan(style as ShakerStyleInput, placement);
+  if (adopted) return adopted;
   const sourceKind = classifyFaceSource(style);
   const door = trimUrl(style?.doorSampleImageUrl) ?? trimUrl(style?.thumbnailImageUrl);
   const drawer = trimUrl(style?.drawerSampleImageUrl);
