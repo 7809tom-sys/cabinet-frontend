@@ -106,6 +106,24 @@ export const STUDIO_FIT_CAPABILITY_REGISTRY: readonly StudioFitCapability[] = [
   ...Object.values(STUDIO_CORNER_SHELF_SKUS).flatMap((variants) => Object.values(variants).map((sku) => ({ sku, family: "cornerShelf" as const, status: "visualPlanning" as const, source: "MasterTrac Spec Book NP 2026 p. 13", reason: "29.5 in nominal envelope accepted for visual planning; curved profile, supports, and connections remain unverified." }))),
   ...["432897", "432898", "432899", "432900", "432901", "432902", "432903", "432904", "432905"].map((sku) => ({ sku, family: "basket" as const, status: "visualPlanning" as const, source: "Floor Mount 579554 p. 13 / MasterTrac Spec Book NP 2026 p. 46", reason: "Visual envelope is limited to sourced nominal width/height and Studio bay depth; rails, mounting offsets, travel, doors, and clearances are not source-verified." })),
 ];
+/**
+ * The 2022 list records these baskets as Chrome only. The product type has no
+ * liner color, swatch, or photo, so the fabric below is a solid placeholder,
+ * not a catalog color. Chrome stays on the rim.
+ */
+export const STUDIO_BASKET_LINER_PLACEHOLDER_HEX = "#d7cfc3";
+export const STUDIO_BASKET_FRAME_HEX = "#b4b9b7";
+export function studioBasketSurface(sku: string): { fabricHex: string; frameHex: string; placeholder: true; reason: string } {
+  const product = masterTracProduct(sku);
+  return {
+    fabricHex: STUDIO_BASKET_LINER_PLACEHOLDER_HEX,
+    frameHex: STUDIO_BASKET_FRAME_HEX,
+    placeholder: true,
+    reason: product
+      ? `${product.sku} (${product.description}) is listed as ${product.finish} and has no liner color or product photo, so the fabric is a solid neutral placeholder.`
+      : "This basket has no catalog record, so the fabric is a solid neutral placeholder.",
+  };
+}
 /** Historical 2022 basket identification only. The 2026 446807–446815 family is deliberately not substituted here. */
 export const STUDIO_BASKET_REFERENCE_OPTIONS: readonly StudioBasketReferenceOption[] = [
   { sku: "432897", nominalHeightIn: 6, nominalWidthIn: 18, finish: "Chrome", sourceRevision: "floor-579554-p13-historical-reference-v1" },
