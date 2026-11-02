@@ -269,7 +269,10 @@ describe("Closet Studio tablet workspace", () => {
 
     const scene = readFileSync(`${process.cwd()}/client/src/components/vendor/VendorClosetScene.tsx`, "utf8");
     expect(scene).toContain("basketVisualPlanningEnvelope: true");
-    expect(scene).toContain("decorativeWireLook: true");
+    expect(scene).toContain("opaqueLiner: true");
+    expect(scene).toContain("linerPlaceholder: true");
+    expect(scene).toContain("transparent: false");
+    expect(scene).not.toContain("decorativeWireLook: true");
     expect(scene).toContain("supplierRailAndClearanceToVerify: true");
   });
 

@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { masterTracProduct } from "@/lib/closet";
 import {
-  STUDIO_BASKET_REFERENCE_OPTIONS, STUDIO_PART_KINDS, canStageStudioPart, studioPartReferences,
+  STUDIO_BASKET_FRAME_HEX, STUDIO_BASKET_LINER_PLACEHOLDER_HEX, STUDIO_BASKET_REFERENCE_OPTIONS, STUDIO_PART_KINDS, canStageStudioPart, studioPartReferences,
   type StudioDesign, type StudioKind,
 } from "@/lib/vendorClosetStudio";
 
@@ -22,7 +22,7 @@ function Thumbnail({ kind }: { kind: "shelf" | "rod" | "drawer" | "shoe" | "bask
   if (kind === "rod") return <svg {...common}><rect x="4" y="16" width="28" height="4" rx="2" fill="#8d9390" /><circle cx="6" cy="18" r="3" fill="#b7b1a6" /><circle cx="30" cy="18" r="3" fill="#b7b1a6" /></svg>;
   if (kind === "drawer") return <svg {...common}><rect x="6" y="8" width="24" height="20" rx="2" fill="#c4a27a" stroke="#6d4b2c" /><rect x="14" y="16" width="8" height="2" rx="1" fill="#f4efe6" /></svg>;
   if (kind === "shoe") return <svg {...common}><path d="M6 24 L28 12" stroke="#6d4b2c" strokeWidth="4" strokeLinecap="round" /><path d="M8 26 L30 16" stroke="#8d9390" strokeWidth="2" /></svg>;
-  if (kind === "basket") return <svg {...common}><rect x="7" y="10" width="22" height="16" rx="2" fill="none" stroke="#547173" strokeWidth="2" /><path d="M7 16 H29 M12 10 V26 M18 10 V26 M24 10 V26" stroke="#547173" strokeWidth="1.2" /></svg>;
+  if (kind === "basket") return <svg {...common}><rect x="7" y="10" width="22" height="16" rx="2" fill={STUDIO_BASKET_LINER_PLACEHOLDER_HEX} stroke={STUDIO_BASKET_FRAME_HEX} strokeWidth="2.4" /><rect x="8" y="11" width="20" height="3" fill={STUDIO_BASKET_FRAME_HEX} /></svg>;
   if (kind === "corner") return <svg {...common}><path d="M8 8 H28 A20 20 0 0 1 8 28 Z" fill="#e9c38e" stroke="#92623c" strokeWidth="1.5" /></svg>;
   return <svg {...common}><rect x="6" y="15" width="24" height="4" rx="1" fill="#c4a27a" /><rect x="8" y="8" width="3" height="20" fill="#8a735c" /><rect x="25" y="8" width="3" height="20" fill="#8a735c" /></svg>;
 }
