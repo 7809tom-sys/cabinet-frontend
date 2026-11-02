@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { masterTracProduct } from "@/lib/closet";
 import {
-  STUDIO_BASKET_REFERENCE_OPTIONS, STUDIO_PART_KINDS, canStageStudioPart, studioPartReferences,
+  STUDIO_BASKET_FRAME_HEX, STUDIO_BASKET_LINER_PLACEHOLDER_HEX, STUDIO_BASKET_REFERENCE_OPTIONS, STUDIO_PART_KINDS, canStageStudioPart, studioPartReferences,
   type StudioDesign, type StudioKind,
 } from "@/lib/vendorClosetStudio";
 
@@ -22,7 +22,7 @@ function Thumbnail({ kind }: { kind: "shelf" | "rod" | "drawer" | "shoe" | "bask
   if (kind === "rod") return <svg {...common}><rect x="4" y="16" width="28" height="4" rx="2" fill="#8d9390" /><circle cx="6" cy="18" r="3" fill="#b7b1a6" /><circle cx="30" cy="18" r="3" fill="#b7b1a6" /></svg>;
   if (kind === "drawer") return <svg {...common}><rect x="6" y="8" width="24" height="20" rx="2" fill="#c4a27a" stroke="#6d4b2c" /><rect x="14" y="16" width="8" height="2" rx="1" fill="#f4efe6" /></svg>;
   if (kind === "shoe") return <svg {...common}><path d="M6 24 L28 12" stroke="#6d4b2c" strokeWidth="4" strokeLinecap="round" /><path d="M8 26 L30 16" stroke="#8d9390" strokeWidth="2" /></svg>;
-  if (kind === "basket") return <svg {...common}><rect x="7" y="10" width="22" height="16" rx="2" fill="none" stroke="#547173" strokeWidth="2" /><path d="M7 16 H29 M12 10 V26 M18 10 V26 M24 10 V26" stroke="#547173" strokeWidth="1.2" /></svg>;
+  if (kind === "basket") return <svg {...common}><rect x="7" y="10" width="22" height="16" rx="2" fill={STUDIO_BASKET_LINER_PLACEHOLDER_HEX} stroke={STUDIO_BASKET_FRAME_HEX} strokeWidth="2.4" /><rect x="8" y="11" width="20" height="3" fill={STUDIO_BASKET_FRAME_HEX} /></svg>;
   if (kind === "corner") return <svg {...common}><path d="M8 8 H28 A20 20 0 0 1 8 28 Z" fill="#e9c38e" stroke="#92623c" strokeWidth="1.5" /></svg>;
   return <svg {...common}><rect x="6" y="15" width="24" height="4" rx="1" fill="#c4a27a" /><rect x="8" y="8" width="3" height="20" fill="#8a735c" /><rect x="25" y="8" width="3" height="20" fill="#8a735c" /></svg>;
 }
@@ -54,7 +54,7 @@ export function ClosetStudioAccessories({ design, selectedBay, hasBay, partToPla
 
   return <div className="flex flex-col gap-3" data-testid="vendor-accessory-palette">
     <label className="block text-[11px] font-semibold text-[#5c564c]">Search accessories
-      <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Shelf, rod, shoe basket…" aria-label="Search accessories" className="mt-1 h-11 w-full rounded-lg border border-[#dfd8cc] bg-white px-3 text-sm font-normal text-[#2c3832]" />
+      <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Shelf, rod, shoe basket…" aria-label="Search accessories" className="mt-1 h-11 w-full rounded-lg border border-[#dfd8cc] bg-white px-3 text-sm font-normal text-[#2c3832] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d7a46c]" />
     </label>
     <div role="group" aria-label="Accessory categories" className="flex flex-wrap gap-1.5">
       {FILTERS.map((entry) => <button key={entry} type="button" aria-pressed={filter === entry} onClick={() => setFilter(entry)} className={`min-h-11 rounded-full px-3 text-xs font-semibold ${filter === entry ? "bg-[#244338] text-white" : "border border-[#dfd8cc] bg-white text-[#4d5852]"}`}>{entry}</button>)}
@@ -80,7 +80,7 @@ export function ClosetStudioAccessories({ design, selectedBay, hasBay, partToPla
         const tooWide = Boolean(bay) && entry.nominalWidthIn > bay.widthIn;
         const error = !hasBay ? "Add a tower on this wall before placing a basket." : tooWide ? `SKU ${entry.sku} is ${entry.nominalWidthIn} in wide and this bay is ${bay.widthIn} in. Baskets are never cut to fit.` : null;
         return <button key={entry.sku} type="button" data-testid={`vendor-accessory-basket-${entry.sku}`} draggable={!error} onDragStart={(event) => { if (error) { event.preventDefault(); return; } event.dataTransfer.setData("application/x-vendor-closet-part", `basket:${entry.sku}`); event.dataTransfer.effectAllowed = "copy"; }} disabled={Boolean(error)} title={error ?? `Place this basket in the first open span of Tower ${selectedBay + 1}`} onClick={() => onPlaceBasket(entry.sku)} className="flex min-h-14 w-full items-center gap-3 rounded-xl border border-[#e2ddd3] bg-white px-3 py-2 text-left hover:border-[#bc9b74] disabled:opacity-45">
-          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-[#e7f0f0]"><Thumbnail kind="basket" /></span>
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-[#f6f3ed]"><Thumbnail kind="basket" /></span>
           <span className="min-w-0 flex-1"><span className="block text-sm font-semibold text-[#2c3832]">{entry.nominalHeightIn}″ × {entry.nominalWidthIn}″ pull-out basket</span><span className="block text-xs leading-snug text-[#6e655c]">Shoe and storage basket · SKU {entry.sku} · snaps between the fixed shelves</span></span>
           {product && <span className="shrink-0 text-xs font-semibold tabular-nums text-[#3e4a44]">{money(product.listEachUsd)}</span>}
         </button>;

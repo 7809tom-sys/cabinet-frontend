@@ -74,7 +74,9 @@ describe("Closet Studio tablet workspace", () => {
   it("keeps the three-column layout for wide desktops but uses on-demand panels at tablet CSS widths", () => {
     window.history.replaceState(null, "", "/closet?demo=mixed");
     render(<VendorClosetStudio />);
-    expect(screen.getByTestId("vendor-workspace").className).toContain("minmax(320px,1fr)");
+    expect(screen.getByTestId("vendor-workspace").className).toContain("minmax(320px,360px)_minmax(0,1fr)_250px");
+    expect(screen.getByTestId("vendor-blueprint-column").className).toContain("min-[1024px]:w-[250px]");
+    expect(screen.getByTestId("vendor-blueprint-column").className).not.toContain("1a4568");
     const referencePanel = screen.getByTestId("vendor-reference-panel");
     expect(referencePanel.closest("[data-testid='vendor-blueprint-column']")).toBeTruthy();
     expect(screen.queryByTestId("vendor-part-tray")).toBeNull();
@@ -267,7 +269,10 @@ describe("Closet Studio tablet workspace", () => {
 
     const scene = readFileSync(`${process.cwd()}/client/src/components/vendor/VendorClosetScene.tsx`, "utf8");
     expect(scene).toContain("basketVisualPlanningEnvelope: true");
-    expect(scene).toContain("decorativeWireLook: true");
+    expect(scene).toContain("opaqueLiner: true");
+    expect(scene).toContain("linerPlaceholder: true");
+    expect(scene).toContain("transparent: false");
+    expect(scene).not.toContain("decorativeWireLook: true");
     expect(scene).toContain("supplierRailAndClearanceToVerify: true");
   });
 

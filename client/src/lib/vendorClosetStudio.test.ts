@@ -3,10 +3,10 @@ import {
   addStudioBay, addStudioBasketPlacement, addStudioBasketReference, addStudioConnectedCorner, addStudioCornerShelf, canStageStudioPart, changeStudioFinish, configureStudioBayCut, createStudioDesign, createStudioReviewDemo, MODE_RECOMMENDATIONS, moveStudioBasketPlacement, moveStudioCornerShelf, moveStudioItem, removeStudioBasketPlacement, removeStudioBasketReference, snapStudioBasketPlacement, studioCornerShelfSku, studioTowerFootprint, updateStudioBasketPlacement,
   restoreStudioDesign, snapStudioPart, STUDIO_FINISHES, studioBayCut, studioBays, studioCollision, studioCornerShelvesForWall, studioPartReferences, studioTakeoff, studioWallOccupancy, studioWidth, switchStudioWall,
   autoBuildStudio, autoBuildStudioDesign, createKidsStudioDesign, kidsAgeBand, kidsGuidance, kidsRodHeightIn, KIDS_UPPER_ROD_IN, MODE_AUTO_BUILD_DEFAULTS, STUDIO_MODES, studioFixedTop, studioPanelHeight, studioTowerFootprint as towerFootprint, type StudioAutoBuildOptions, type StudioWall,
-  STUDIO_BASKET_REFERENCE_OPTIONS, STUDIO_BASKET_VISUAL_DEPTH_IN, STUDIO_CORNER_SHELF_NOMINAL_FOOTPRINT_IN, STUDIO_CORNER_SHELF_GEOMETRY_REVISION, STUDIO_ILLUSTRATIVE_SHOE_PITCH_DEG, studioBasketPlacementsForWall, studioBasketReferences, studioCornerMeasuredGap, studioCornerPlanningFootprint, studioFitCapability, studioItemHeight,
+  STUDIO_BASKET_REFERENCE_OPTIONS, STUDIO_BASKET_VISUAL_DEPTH_IN, STUDIO_CORNER_SHELF_NOMINAL_FOOTPRINT_IN, STUDIO_CORNER_SHELF_GEOMETRY_REVISION, STUDIO_ILLUSTRATIVE_SHOE_PITCH_DEG, studioBasketPlacementsForWall, studioBasketReferences, studioBasketSurface, studioCornerMeasuredGap, studioCornerPlanningFootprint, studioFitCapability, studioItemHeight,
   type StudioDesign,
 } from "./vendorClosetStudio";
-import { CLOSET_PARTS, masterTracPublicReferenceCatalog } from "./closet";
+import { CLOSET_PARTS, masterTracProduct, masterTracPublicReferenceCatalog } from "./closet";
 
 describe("isolated vendor Closet Studio", () => {
   it("keeps each wall's towers and parts independent while preserving all walls, one shared corner identity, and legacy drafts", () => {
@@ -184,6 +184,15 @@ describe("isolated vendor Closet Studio", () => {
     const kept = snapStudioBasketPlacement(design, 0, "432901", 42, "kept-height");
     expect(kept).toMatchObject({ ok: true, placement: { bottomIn: 42, nominalHeightIn: 11 } });
     expect(snapStudioBasketPlacement(design, 0, "432905", 42, "too-wide").ok).toBe(false);
+  });
+
+  it("uses a solid placeholder liner because basket SKUs have a Chrome finish and no photo or liner color", () => {
+    const surface = studioBasketSurface("432902");
+    expect(surface.placeholder).toBe(true);
+    expect(surface.fabricHex).toBe("#d7cfc3");
+    expect(surface.frameHex).toBe("#b4b9b7");
+    expect(surface.reason).toMatch(/432902.*Chrome.*no liner color or product photo/i);
+    expect(masterTracProduct("432902")).toMatchObject({ description: "17 in. x 24 in. Basket", finish: "Chrome" });
   });
 
   it("keeps every public MasterTrac source record discoverable as a non-placeable List reference without private workbook fields", () => {
