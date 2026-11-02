@@ -67,6 +67,15 @@ import {
   ownShippingOriginZips,
 } from "@shared/styleOriginInheritance";
 import { sortDoorStylesByDistributor, type DoorStyleDistributorSort } from "./doorSelectorDistributorSort";
+import { Switch } from "@/components/ui/switch";
+import {
+  buildDistributorTabs,
+  distributorLabel,
+  doorSelectorComparator,
+  sortDoorSelectorStyles,
+  visibleDoorSelectorStyles,
+  type DoorSelectorSort,
+} from "./doorSelectorDistributorTabs";
 
 const MAX_SCENES_PER_STYLE = 6;
 
@@ -1449,8 +1458,10 @@ function CreateDialog({ open, onClose, onCreated, distributorOptions }: CreateDi
 
 export default function FeaturedStylesAdmin() {
   const [search, setSearch] = useState("");
-  const [distributorFilter, setDistributorFilter] = useState<string>("all");
   const [distributorSort, setDistributorSort] = useState<DoorStyleDistributorSort>("manual");
+  /** Distributor tab above the door list. "all" shows every distributor that is switched on. */
+  const [distributorTab, setDistributorTab] = useState<number | "all">("all");
+  const [tabSort, setTabSort] = useState<DoorSelectorSort>("name");
   const [editingStyle, setEditingStyle] = useState<AdminStyle | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<AdminStyle | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
@@ -1458,6 +1469,8 @@ export default function FeaturedStylesAdmin() {
   const utils = trpc.useUtils();
   const { data, isLoading } = trpc.doorStyles.listForAdmin.useQuery();
   const { data: skuCounts } = trpc.doorStyles.skuCountsByStyle.useQuery();
+  // Which lines are switched on. Same admin list + same mutation as the Line Branding editor.
+  const { data: distributorLines } = trpc.distributorAdmin.adminList.useQuery();
 
   const styles = useMemo(() => (data ?? []) as unknown as AdminStyle[], [data]);
 
@@ -1486,34 +1499,68 @@ export default function FeaturedStylesAdmin() {
   const distributorOptions = useMemo(() => {
     const map = new Map<number, string>();
     for (const s of styles) {
-      if (!map.has(s.distributorId)) {
-        map.set(
-          s.distributorId,
-          s.supplierBrandName?.trim() || s.supplierName?.trim() || `Distributor #${s.distributorId}`,
-        );
-      }
+      if (!map.has(s.distributorId)) map.set(s.distributorId, distributorLabel(s));
     }
     return Array.from(map.entries())
       .map(([id, name]) => ({ id, name }))
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [styles]);
 
+  const distributorTabOptions = useMemo(() => buildDistributorTabs(styles), [styles]);
+
+  /** A line with no admin record yet (or still loading) counts as on, so nothing silently disappears. */
+  const isDistributorOn = useMemo(() => {
+    const byId = new Map<number, boolean>();
+    for (const line of distributorLines ?? []) byId.set(line.id, line.isActive !== false);
+    return (distributorId: number) => byId.get(distributorId) ?? true;
+  }, [distributorLines]);
+
+  /** "All" first, then one tab per distributor on the loaded doors. Counts follow the on/off state. */
+  const distributorTabList = useMemo(() => {
+    const counts = new Map<number, number>();
+    let onCount = 0;
+    for (const style of styles.filter((s) => s.isActive && !s.isFeatured)) {
+      if (!isDistributorOn(style.distributorId)) continue;
+      onCount += 1;
+      counts.set(style.distributorId, (counts.get(style.distributorId) ?? 0) + 1);
+    }
+    return [
+      { key: "all" as const, tab: "all" as const, distributorId: null, label: "All", count: onCount },
+      ...distributorTabOptions.map((tab) => ({
+        key: String(tab.id),
+        tab: tab.id,
+        distributorId: tab.id,
+        label: tab.name,
+        count: counts.get(tab.id) ?? 0,
+      })),
+    ];
+  }, [styles, distributorTabOptions, isDistributorOn]);
+
+  const distributorTabKey = distributorTab === "all" ? "all" : String(distributorTab);
+  const activeDistributorTab = useMemo(() => {
+    if (distributorTab === "all") return null;
+    const match = distributorTabOptions.find((tab) => tab.id === distributorTab);
+    return match ?? { id: distributorTab, name: `Distributor #${distributorTab}` };
+  }, [distributorTab, distributorTabOptions]);
+
   const available = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const distId = distributorFilter === "all" ? null : Number(distributorFilter);
-    const rows = styles
-      .filter((s) => s.isActive && !s.isFeatured)
-      .filter((s) => (distId === null ? true : s.distributorId === distId))
-      .filter((s) =>
-        q
-          ? `${s.ourName} ${s.doorStyle ?? ""} ${s.color ?? ""} ${s.finish ?? ""} ${s.distributorName ?? ""} ${s.supplierBrandName ?? ""} ${s.supplierName ?? ""}`
-              .toLowerCase()
-              .includes(q)
-          : true,
-      );
-    if (distributorSort === "manual") return rows.sort(byStyleName);
-    return sortDoorStylesByDistributor(rows, distributorSort, byStyleName);
-  }, [styles, search, distributorFilter, distributorSort]);
+    const rows = visibleDoorSelectorStyles(
+      styles.filter((s) => s.isActive && !s.isFeatured),
+      distributorTab,
+      isDistributorOn,
+    ).filter((s) =>
+      q
+        ? `${s.ourName} ${s.doorStyle ?? ""} ${s.color ?? ""} ${s.finish ?? ""} ${s.distributorName ?? ""} ${s.supplierBrandName ?? ""} ${s.supplierName ?? ""}`
+            .toLowerCase()
+            .includes(q)
+        : true,
+    );
+    // The tab's own sort wins; the page-level distributor view then groups the same rows.
+    const tabSorted = sortDoorSelectorStyles(rows, tabSort);
+    if (distributorSort === "manual") return tabSorted;
+    return sortDoorStylesByDistributor(tabSorted, distributorSort, doorSelectorComparator(tabSort));
+  }, [styles, search, distributorTab, isDistributorOn, tabSort, distributorSort]);
 
   const inactive = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -1567,6 +1614,18 @@ export default function FeaturedStylesAdmin() {
       utils.doorStyles.featured.invalidate();
     },
     onError: (e) => toast.error(e.message),
+  });
+
+  // Existing admin mutation (client/src/components/admin/LineBrandingEditor.tsx uses the same one).
+  // Turning a line off hides all of its door styles from the selector.
+  const setDistributorActive = trpc.distributorAdmin.setActive.useMutation({
+    onSuccess: (res) => {
+      toast.success(res.isActive ? "Distributor is now ON — its doors are back." : "Distributor is now OFF — its doors are hidden.");
+      utils.distributorAdmin.adminList.invalidate();
+      utils.doorStyles.listForAdmin.invalidate();
+      utils.doorStyles.list.invalidate();
+    },
+    onError: (e) => toast.error(e.message || "Could not update distributor status"),
   });
 
   const reorder = trpc.doorStyles.reorderFeatured.useMutation({
@@ -1889,34 +1948,105 @@ export default function FeaturedStylesAdmin() {
               ({available.length})
             </span>
           </h3>
-          <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-            {/* Filter by distributor (supply line) */}
-            <Select value={distributorFilter} onValueChange={setDistributorFilter}>
-              <SelectTrigger className="h-9 w-full sm:w-56">
-                <SelectValue placeholder="All distributors" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All distributors</SelectItem>
-                {distributorOptions.map((d) => (
-                  <SelectItem key={d.id} value={String(d.id)}>
-                    {d.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <div className="relative w-full sm:w-64">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search door styles…"
-                className="pl-9 h-9"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-            </div>
+          <div className="relative w-full sm:w-64">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search door styles…"
+              className="pl-9 h-9"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
           </div>
         </div>
+
+        {/* Distributor tabs — built from the distributors on the loaded doors, so a new line appears on its own. */}
+        <div
+          role="tablist"
+          aria-label="Distributor"
+          data-testid="door-style-distributor-tabs"
+          className="mb-3 flex items-center gap-1 overflow-x-auto border-b border-border pb-2"
+        >
+          {distributorTabList.map((tab) => {
+            const selected = distributorTab === tab.tab;
+            const off = tab.distributorId !== null && !isDistributorOn(tab.distributorId);
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                role="tab"
+                id={`door-style-tab-${tab.key}`}
+                aria-selected={selected}
+                aria-controls="door-style-tab-panel"
+                data-testid={`door-style-distributor-tab-${tab.key}`}
+                onClick={() => setDistributorTab(tab.tab)}
+                className={`flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm transition-colors ${
+                  selected
+                    ? "bg-primary text-primary-foreground font-medium"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                } ${off ? "opacity-60" : ""}`}
+              >
+                {tab.label}
+                <span className={`text-xs ${selected ? "text-primary-foreground/80" : "text-muted-foreground/70"}`}>
+                  {tab.count}
+                </span>
+                {off && (
+                  <Badge variant="outline" className="px-1 py-0 text-[10px] font-normal">
+                    Off
+                  </Badge>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Inside the chosen tab: sort on the left, the admin on/off switch for that line on the right. */}
+        <div
+          id="door-style-tab-panel"
+          role="tabpanel"
+          aria-labelledby={`door-style-tab-${distributorTabKey}`}
+          data-testid="door-style-tab-toolbar"
+          className="mb-3 flex flex-wrap items-center justify-between gap-2"
+        >
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Sort</span>
+            <Select value={tabSort} onValueChange={(value) => setTabSort(value as DoorSelectorSort)}>
+              <SelectTrigger
+                className="h-8 w-40"
+                aria-label="Sort doors in this tab"
+                data-testid="door-style-tab-sort"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="name">Door name</SelectItem>
+                <SelectItem value="doorStyle">Door style</SelectItem>
+                <SelectItem value="color">Color</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {activeDistributorTab && (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <span>{isDistributorOn(activeDistributorTab.id) ? "Doors shown" : "Doors hidden"}</span>
+              {/* Admin-only editor: this switch calls distributorAdmin.setActive, the same mutation the Line Branding editor uses. */}
+              <Switch
+                checked={isDistributorOn(activeDistributorTab.id)}
+                disabled={setDistributorActive.isPending}
+                data-testid="door-style-distributor-switch"
+                aria-label={`Show ${activeDistributorTab.name} doors`}
+                onCheckedChange={(checked) =>
+                  setDistributorActive.mutate({ distributorId: activeDistributorTab.id, isActive: checked })
+                }
+              />
+            </div>
+          )}
+        </div>
+
         {available.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No matching styles.</p>
+          <p className="text-sm text-muted-foreground" data-testid="door-style-tab-empty">
+            {activeDistributorTab && !isDistributorOn(activeDistributorTab.id)
+              ? `${activeDistributorTab.name} is switched off. Turn it back on to show its doors.`
+              : "No matching styles."}
+          </p>
         ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2.5" data-testid="all-door-style-list">
             {available.map((s) => (
