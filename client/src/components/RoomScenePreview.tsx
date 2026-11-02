@@ -75,6 +75,13 @@ function Door({
         </g>
       );
     }
+    case "five-piece-slab":
+      return (
+        <g>
+          {common}
+          <rect x={x + inset} y={y + inset} width={w - inset * 2} height={h - inset * 2} fill={face} stroke={edge} strokeWidth={0.8} />
+        </g>
+      );
     case "shaker":
     default:
       return (

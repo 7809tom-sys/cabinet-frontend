@@ -1,4 +1,5 @@
 import { isAefFramelessStyleCode } from "./aefFramelessSpecs";
+import { styleHasFivePieceSlabLabel } from "./doorFrontStyle";
 import { findDlcFinishForStyle } from "./dlcFr26Mapping";
 import { standardShakerDlFacePlan, type ShakerStyleInput } from "./shakerDoorBlueprint";
 
@@ -94,6 +95,9 @@ export type DoorStyleFaceInput = {
   woodSpecies?: string | null;
   railWidth?: string | number | null;
   stileWidth?: string | number | null;
+  doorPanelType?: string | null;
+  profileDescription?: string | null;
+  profileNotes?: string | null;
 };
 
 export type CabinetFacePlan = {
@@ -105,6 +109,11 @@ export type CabinetFacePlan = {
   drawerTextureApplied: boolean;
   /** Torino horizontal grain stays at 0. This plan never rotates a face texture. */
   grainRotation: 0;
+  /**
+   * Procedural face. Elevation and the 3D scene must not paste a catalog photo,
+   * because those photos carry another door style and its imperfections.
+   */
+  suppressCatalogPhoto?: boolean;
   /** Set when the textures are processed DLC_FR26 crops (already cropped; fit, never tile). */
   dlcCrop?: {
     slug: string;
@@ -275,11 +284,25 @@ export function classifyFaceSource(style: DoorStyleFaceInput | null | undefined)
   return "none";
 }
 
+/** Five-piece slab and any other face that must stay a solid color, with no catalog photo. */
+export function proceduralSolidFacePlan(): CabinetFacePlan {
+  return {
+    sourceKind: "none",
+    doorUrl: null,
+    drawerUrl: null,
+    sections: 1,
+    drawerTextureApplied: false,
+    grainRotation: 0,
+    suppressCatalogPhoto: true,
+  };
+}
+
 export function resolveCabinetFaceImages(
   style: DoorStyleFaceInput | null | undefined,
   placement: string | null | undefined,
 ): CabinetFacePlan {
   const wall = (placement ?? "").toLowerCase() === "wall";
+  if (styleHasFivePieceSlabLabel(style)) return proceduralSolidFacePlan();
   // A DL style that maps to a DLC_FR26 finish uses the processed (cropped) door and drawer PNGs.
   const dlc = findDlcFinishForStyle(style);
   if (dlc) {
