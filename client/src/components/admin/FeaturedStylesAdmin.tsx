@@ -5,6 +5,7 @@ import {
 	  Trash2, Plus, Package, Building2, DollarSign, MapPin, Ruler, ClipboardCheck,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
+import { readFileAsDataUrl, useMediaLibraryUpload } from "@/lib/walzcraftProfileUpload";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -522,6 +523,22 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
     onError: (e) => toast.error(e.message),
   });
   const applySiblingSpecs = trpc.doorStyles.adminUpdateDoorStyle.useMutation();
+  const mediaUpload = useMediaLibraryUpload();
+  /** Existing media library endpoint. The wizard uses it for the profile image; no new API. */
+  const uploadWizardImage = async (file: File): Promise<string | null> => {
+    const dataBase64 = await readFileAsDataUrl(file);
+    if (!dataBase64) return null;
+    try {
+      const result = await mediaUpload.mutateAsync({
+        label: file.name.replace(/\.[^.]+$/, "").replace(/[_-]/g, " "),
+        dataBase64,
+        contentType: file.type || "image/jpeg",
+      });
+      return result?.url ?? null;
+    } catch {
+      return null;
+    }
+  };
   const specBatchRef = useRef<ApplySpecsHandle>(null);
   const saveLock = useRef(false);
   const [savePhase, setSavePhase] = useState<"idle" | "confirming" | "saving">("idle");
@@ -953,6 +970,8 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
               grainDirection,
               railWidth: style.railWidth,
               doorSampleImageUrl: doorSampleImageUrl || style.doorSampleImageUrl,
+              thumbnailImageUrl: thumbnailImageUrl || style.thumbnailImageUrl,
+              profileImageUrl: style.doorSampleImageUrl,
             }}
             sampleUrl={doorSampleImageUrl || style.doorSampleImageUrl || ""}
             others={catalogStyles.map((item) => ({ id: item.id, distributorId: item.distributorId, ourName: item.ourName, styleCode: item.styleCode }))}
@@ -962,6 +981,12 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
               setGrainDirection(patch.grainDirection);
               update.mutate({ id: style.id, renderHex: patch.renderHex, woodSpecies: patch.woodSpecies, grainDirection: patch.grainDirection } as Parameters<typeof update.mutate>[0]);
             }}
+            onProfileImage={(image) => {
+              if (!image) return;
+              setDoorSampleImageUrl(image.url);
+              update.mutate({ id: style.id, doorSampleImageUrl: image.url } as Parameters<typeof update.mutate>[0]);
+            }}
+            uploadImage={uploadWizardImage}
             onReplicate={(ids, patch) => {
               for (const id of ids) {
                 applySiblingSpecs.mutate({ id, renderHex: patch.renderHex, woodSpecies: patch.woodSpecies, grainDirection: patch.grainDirection } as Parameters<typeof applySiblingSpecs.mutate>[0]);

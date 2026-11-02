@@ -3,6 +3,7 @@ import { resolveCabinetFaceImages, type CabinetFacePlan, type DoorStyleFaceInput
 import { findDlcFinishForStyle } from "@shared/dlcFr26Mapping";
 import { standardShakerDlFacePlan } from "@shared/shakerDoorBlueprint";
 import { appliedSlabGrainPlan } from "@shared/slabGrainApply";
+import { wizardDoorFacePlan } from "@shared/walzcraftDesignerPickup";
 
 export type DesignerFaceStyle = DoorStyleFaceInput & { approvedReferenceImageUrl?: string | null };
 
@@ -30,6 +31,9 @@ export function designerApprovedFaceUrl(style: DesignerFaceStyle | null | undefi
 /**
  * Face plan for one cabinet.
  *
+ * A door the WalzCraft wizard made or saved is resolved first, by the wizard's own
+ * shared module; the Designer shows it without any wizard UI.
+ *
  * An explicit approved render is the door texture, unchanged.
  * With no explicit render, the uploaded sample is the face. Recognition still
  * applies that sample, including a separate drawer photo, a combined swatch,
@@ -41,6 +45,10 @@ export function designerFacePlan(
   placement: string | null | undefined,
 ): CabinetFacePlan | null {
   if (!style) return null;
+  // A door made or saved through the WalzCraft wizard renders its own profile, grain and
+  // color. A door the wizard never touched returns null here and takes the normal path.
+  const wizard = wizardDoorFacePlan(style, placement);
+  if (wizard) return wizard;
   const slabGrain = appliedSlabGrainPlan(style);
   if (slabGrain) return slabGrain;
   // A real DL finish keeps its own grain and color. Other 2.75/3 inch shakers

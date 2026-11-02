@@ -1,0 +1,2945 @@
+{
+  "source": {
+    "publisher": "Sherwin-Williams",
+    "documents": [
+      "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/interior-stains/",
+      "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/exterior-stains/"
+    ],
+    "swatchHost": "sherwin.scene7.com (the swatch image each published stain page serves)",
+    "method": "Each published stain swatch image was sampled at the median of its inner 50% box. The stain hex in this file is that measured swatch color.",
+    "note": "Code, name, and page URL are copied verbatim from the published stain listing pages. Sherwin-Williams does not publish a hex for a stain, so no hex is quoted as published.",
+    "retrieved": "2026-11-02"
+  },
+  "stains": [
+    {
+      "code": "DB2100",
+      "name": "Weathered Gray",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2100-weathered-gray",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707c_WeatheredGray_DB2100",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#c2b7a5"
+    },
+    {
+      "code": "DB2101",
+      "name": "Seashell",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2101-seashell",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707c_Seashell_DB2101",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#bbb4a2"
+    },
+    {
+      "code": "DB2102",
+      "name": "Beige Gray",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2102-beige-gray",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707c_BeigeGray_DB2102",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#bca788"
+    },
+    {
+      "code": "DB2103",
+      "name": "Silver Fur",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2103-silver-fur",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707c_SilverFur_DB2103",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#b89f79"
+    },
+    {
+      "code": "DB2104",
+      "name": "Cape Cod Gray",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2104-cape-cod-gray",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707c_CapeCodGray_DB2104",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#b7ad90"
+    },
+    {
+      "code": "DB2105",
+      "name": "Coastal",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2105-coastal",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707c_Coastal_DB2105",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#baab9b"
+    },
+    {
+      "code": "DB2106",
+      "name": "Nantucket",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2106-nantucket",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707c_Nantucket_DB2106",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#9f927e"
+    },
+    {
+      "code": "DB2107",
+      "name": "Driftwood",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2107-driftwood",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707c_Driftwood_DB2107",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#cbbda0"
+    },
+    {
+      "code": "DB2108",
+      "name": "Newport Bay",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2108-newport-bay",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707c_NewportBay_DB2108",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#c7ad7e"
+    },
+    {
+      "code": "DB2109",
+      "name": "River Rock",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2109-river-rock",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707c_RiverRock_DB2109",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#938773"
+    },
+    {
+      "code": "DB2110",
+      "name": "Gray Pine",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2110-gray-pine",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707c_GrayPine_DB2110",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#a08976"
+    },
+    {
+      "code": "DB2111",
+      "name": "Harbor Gray",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2111-harbor-gray",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707c_HarborGray_DB2111",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#989085"
+    },
+    {
+      "code": "DB2112",
+      "name": "Seattle",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2112-seattle",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707c_Seattle_DB2112",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#c4a789"
+    },
+    {
+      "code": "DB2113",
+      "name": "Granite",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2113-granite",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707c_Granite_DB2113",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#928472"
+    },
+    {
+      "code": "DB2114",
+      "name": "Coastal Gray",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2114-coastal-gray",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707c_CoastalGray_DB2114",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#777a77"
+    },
+    {
+      "code": "DB2115",
+      "name": "Gray Sky",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2115-gray-sky",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707c_GraySky_DB2115",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#bcab99"
+    },
+    {
+      "code": "DB2116",
+      "name": "Blue Spruce",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2116-blue-spruce",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707c_BlueSpruce_DB2116",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#9e9a93"
+    },
+    {
+      "code": "DB2117",
+      "name": "Blue Oak",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2117-blue-oak",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707c_BlueOak_DB2117",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#ae9f8c"
+    },
+    {
+      "code": "DB2118",
+      "name": "Beachwood",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2118-beachwood",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707c_Beachwood_DB2118",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#978a7b"
+    },
+    {
+      "code": "DB2119",
+      "name": "Blue Gum",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2119-blue-gum",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707c_BlueGum_DB2119",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#a4a4a1"
+    },
+    {
+      "code": "DB2120",
+      "name": "Faded Denim",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2120-faded-denim",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707c_FadedDenim_DB2120",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#908d8b"
+    },
+    {
+      "code": "DB2200",
+      "name": "Cedar",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2200-cedar",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707d_Cedar_DB2200",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#be8a3d"
+    },
+    {
+      "code": "DB2201",
+      "name": "White Pine",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2201-white-pine",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707d_WhitePine_DB2201",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#aa7938"
+    },
+    {
+      "code": "DB2202",
+      "name": "Sugar Pine",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2202-sugar-pine",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707d_SugarPine_DB2202",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#cd833b"
+    },
+    {
+      "code": "DB2203",
+      "name": "Bamboo",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2203-bamboo",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707d_Bamboo_DB2203",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#c5934e"
+    },
+    {
+      "code": "DB2204",
+      "name": "Tan Oak",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2204-tan-oak",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707d_TanOak_DB2204",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#a5783e"
+    },
+    {
+      "code": "DB2205",
+      "name": "Hickory",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2205-hickory",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707d_Hickory_DB2205",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#c5873b"
+    },
+    {
+      "code": "DB2206",
+      "name": "Douglas Fir",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2206-douglas-fir",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707d_DouglasFir_DB2206",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#986337"
+    },
+    {
+      "code": "DB2207",
+      "name": "Birch",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2207-birch",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707d_Birch_DB2207",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#b98840"
+    },
+    {
+      "code": "DB2208",
+      "name": "Dark Cedar",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2208-dark-cedar",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707d_DarkCedar_DB2208",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#d28c3e"
+    },
+    {
+      "code": "DB2209",
+      "name": "Sandalwood",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2209-sandalwood",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707d_Sandalwood_DB2209",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#b17f3e"
+    },
+    {
+      "code": "DB2210",
+      "name": "Rich Maple",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2210-rich-maple",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707d_RichMaple_DB2210",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#c97b31"
+    },
+    {
+      "code": "DB2211",
+      "name": "Hazelnut",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2211-hazelnut",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707d_Hazelnut_DB2211",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#cb8236"
+    },
+    {
+      "code": "DB2212",
+      "name": "Pacific Dogwood",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2212-pacific-dogwood",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707d_PacificDogwood_DB2212",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#c07c38"
+    },
+    {
+      "code": "DB2213",
+      "name": "Pecan",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2213-pecan",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707d_Pecan_DB2213",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#ba7e39"
+    },
+    {
+      "code": "DB2214",
+      "name": "Sycamore",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2214-sycamore",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707d_Sycamore_DB2214",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#927039"
+    },
+    {
+      "code": "DB2215",
+      "name": "Limewood",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2215-limewood",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707d_Limewood_DB2215",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#b99047"
+    },
+    {
+      "code": "DB2216",
+      "name": "Pistachio",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2216-pistachio",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707d_Pistachio_DB2216",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#91793f"
+    },
+    {
+      "code": "DB2217",
+      "name": "Green Apple",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2217-green-apple",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707d_GreenApple_DB2217",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#8a7539"
+    },
+    {
+      "code": "DB2218",
+      "name": "Avocado",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2218-avocado",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707d_Avocado_DB2218",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#826e3d"
+    },
+    {
+      "code": "DB2219",
+      "name": "Olive",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2219-olive",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707d_Olive_DB2219",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#78683f"
+    },
+    {
+      "code": "DB2220",
+      "name": "Pacific Pine",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2220-pacific-pine",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707d_PacificPine_DB2220",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#595a38"
+    },
+    {
+      "code": "DB2300",
+      "name": "Redwood (Db)",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2300-redwood-db",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707e_Redwood_DB2300",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#b66a37"
+    },
+    {
+      "code": "DB2301",
+      "name": "Coast Redwood",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2301-coast-redwood",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707e_CoastRedwood_DB2301",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#a14c38"
+    },
+    {
+      "code": "DB2302",
+      "name": "Red Cedar",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2302-red-cedar",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707e_RedCedar_DB2302",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#b86541"
+    },
+    {
+      "code": "DB2303",
+      "name": "Spanish Cedar",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2303-spanish-cedar",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707e_SpanishCedar_DB2303",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#c4743e"
+    },
+    {
+      "code": "DB2304",
+      "name": "Manzanita",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2304-manzanita",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707e_Manzanita_DB2304",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#b96242"
+    },
+    {
+      "code": "DB2305",
+      "name": "Red Meranti",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2305-red-meranti",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707e_RedMeranti_DB2305",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#bb743e"
+    },
+    {
+      "code": "DB2306",
+      "name": "Rosewood",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2306-rosewood",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707e_Rosewood_DB2306",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#cc6c40"
+    },
+    {
+      "code": "DB2307",
+      "name": "Redheart",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2307-redheart",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707e_Redheart_DB2307",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#aa633b"
+    },
+    {
+      "code": "DB2308",
+      "name": "Classic Barn",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2308-classic-barn",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707e_ClassicBarn_DB2308",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#a95636"
+    },
+    {
+      "code": "DB2309",
+      "name": "New Barn Red",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2309-new-barn-red",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707e_NewBarnRed_DB2309",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#b54b36"
+    },
+    {
+      "code": "DB2310",
+      "name": "Purpleheart",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2310-purpleheart",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707e_PurpleHeart_DB2310",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#7c492a"
+    },
+    {
+      "code": "DB2311",
+      "name": "Basswood",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2311-basswood",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707e_Basswood_DB2311",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#c2723a"
+    },
+    {
+      "code": "DB2312",
+      "name": "Mesquite",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2312-mesquite",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707e_Mesquite_DB2312",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#b16a33"
+    },
+    {
+      "code": "DB2313",
+      "name": "Corkwood",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2313-corkwood",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707e_Corkwood_DB2313",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#b45a3a"
+    },
+    {
+      "code": "DB2314",
+      "name": "Mahogany",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2314-mahogany",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707e_Mahogany_DB2314",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#8f6340"
+    },
+    {
+      "code": "DB2315",
+      "name": "Tavern Oak",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2315-tavern-oak",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707e_TavernOak_DB2315",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#a66339"
+    },
+    {
+      "code": "DB2316",
+      "name": "Chestnut",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2316-chestnut",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707e_Chestnut_DB2316",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#a26e4a"
+    },
+    {
+      "code": "DB2317",
+      "name": "Fig",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2317-fig",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707e_Fig_DB2317",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#966642"
+    },
+    {
+      "code": "DB2318",
+      "name": "Teak",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2318-teak",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707e_Teak_DB2318",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#824b30"
+    },
+    {
+      "code": "DB2319",
+      "name": "English Walnut",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2319-english-walnut",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707e_EnglishWalnut_DB2319",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#7d533e"
+    },
+    {
+      "code": "DB2320",
+      "name": "Cape Blackwood",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB2320-cape-blackwood",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707e_CapeBlackwood_DB2320",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#493727"
+    },
+    {
+      "code": "DB7100",
+      "name": "Amber Hue",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB7100-amber-hue",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707g_AmberHue_DB7100",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#f1bf53"
+    },
+    {
+      "code": "DB7101",
+      "name": "Creekstone Gray",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB7101-creekstone-gray",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707g_CreekstoneGray_DB7101",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#b08243"
+    },
+    {
+      "code": "DB7102",
+      "name": "Cloud Gray",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB7102-cloud-gray",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707g_CloudGray_DB7102",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#948460"
+    },
+    {
+      "code": "DB7103",
+      "name": "Mahogany",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB7103-mahogany",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707g_Mahogany_DB7103",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#88462e"
+    },
+    {
+      "code": "DB7200",
+      "name": "Golden Honey",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB7200-golden-honey",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707h_GoldenHoney_DB7200",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#f4ba50"
+    },
+    {
+      "code": "DB7201",
+      "name": "Pecan",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB7201-pecan",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707h_Pecan_DB7201",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#d48b41"
+    },
+    {
+      "code": "DB7202",
+      "name": "Evergreen",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB7202-evergreen",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707h_Evergreen_DB7202",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#6b6237"
+    },
+    {
+      "code": "DB7203",
+      "name": "Teak",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB7203-teak",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707h_Teak_DB7203",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#9d4d2d"
+    },
+    {
+      "code": "DB7300",
+      "name": "Autumn Brown",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB7300-autumn-brown",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707i_AutumnBrown_DB7300",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#d59842"
+    },
+    {
+      "code": "DB7301",
+      "name": "Blonde Oak",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB7301-blonde-oak",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707i_BlondeOak_DB7301",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#d79340"
+    },
+    {
+      "code": "DB7302",
+      "name": "Walnut Brown",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB7302-walnut-brown",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707i_WalnutBrown_DB7302",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#7f3c22"
+    },
+    {
+      "code": "DB7303",
+      "name": "Deep Forest",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DB7303-deep-forest",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/67707i_DeepForest_DB7303",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#563a28"
+    },
+    {
+      "code": "DD3101",
+      "name": "White",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DD3101-white",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3101white_dd",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#f9f7eb"
+    },
+    {
+      "code": "DD3102",
+      "name": "Adobe",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DD3102-adobe",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3102adobe_dd",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#908070"
+    },
+    {
+      "code": "DD3103",
+      "name": "Red",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DD3103-red",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3103red_dd",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#7f2b29"
+    },
+    {
+      "code": "DD3104",
+      "name": "Brown",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DD3104-brown",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3104brown_dd",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#795233"
+    },
+    {
+      "code": "DD3107",
+      "name": "Burgundy",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DD3107-burgundy",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3107burgundy_dd",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#6b3130"
+    },
+    {
+      "code": "DD3108",
+      "name": "Burlywood",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DD3108-burlywood",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3108burlywood_dd",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#857053"
+    },
+    {
+      "code": "DD3111",
+      "name": "Charcoal",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DD3111-charcoal",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3111charcoal_dd",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#64615a"
+    },
+    {
+      "code": "DD3113",
+      "name": "Chocolate",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DD3113-chocolate",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3113chocolate_dd",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#814e31"
+    },
+    {
+      "code": "DD3114",
+      "name": "Coffee",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DD3114-coffee",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3114coffee_dd",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#534431"
+    },
+    {
+      "code": "DD3116",
+      "name": "Desert Sand",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DD3116-desert-sand",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3116desertsand_dd",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#a68c71"
+    },
+    {
+      "code": "DD3117",
+      "name": "Dusky Green",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DD3117-dusky-green",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3117duskygreen_dd",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#6d755e"
+    },
+    {
+      "code": "DD3118",
+      "name": "Fallow",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DD3118-fallow",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3118fallow_dd",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#8b6c4f"
+    },
+    {
+      "code": "DD3120",
+      "name": "Forest Brown",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DD3120-forest-brown",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3120forestbrown_dd",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#826756"
+    },
+    {
+      "code": "DD3123",
+      "name": "Granite",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DD3123-granite",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3123granite_dd",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#847965"
+    },
+    {
+      "code": "DD3124",
+      "name": "Gray Stone",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DD3124-gray-stone",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3124graystone_dd",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#b5af9f"
+    },
+    {
+      "code": "DD3128",
+      "name": "Light Slate",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DD3128-light-slate",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3128lightslate_dd",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#b4b5af"
+    },
+    {
+      "code": "DD3133",
+      "name": "Olive",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DD3133-olive",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3133olive_dd",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#8e7a55"
+    },
+    {
+      "code": "DD3136",
+      "name": "Platinum",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DD3136-platinum",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3136platinum_dd",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#c7cabf"
+    },
+    {
+      "code": "DD3138",
+      "name": "Quartz",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DD3138-quartz",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3138quartz_dd",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#817c68"
+    },
+    {
+      "code": "DD3146",
+      "name": "Sea Shell",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DD3146-sea-shell",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3146seashell_dd",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#b6b8a1"
+    },
+    {
+      "code": "DD3147",
+      "name": "Silver",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DD3147-silver",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3147silver_dd",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#d6dada"
+    },
+    {
+      "code": "DD3150",
+      "name": "Steel Blue",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DD3150-steel-blue",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3150steelblue_dd",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#5c6e6e"
+    },
+    {
+      "code": "DD3152",
+      "name": "Stonehedge",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DD3152-stonehedge",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3152stonehedge_dd",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#5e6a66"
+    },
+    {
+      "code": "DD3153",
+      "name": "Taupe Gray",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/DD3153-taupe-gray",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3153taupegray_dd",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#848170"
+    },
+    {
+      "code": "MW210B",
+      "name": "Golden Oak",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/golden-oak-mw210b",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/Golden_Oak_MW210B",
+      "usage": [
+        "Interior"
+      ],
+      "hex": "#b78d68"
+    },
+    {
+      "code": "MW211",
+      "name": "Provincial",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/provincial-mw211",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/Provincial_MW211",
+      "usage": [
+        "Interior"
+      ],
+      "hex": "#946b50"
+    },
+    {
+      "code": "MW224",
+      "name": "Special Walnut",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/special-walnut-mw224",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/Special_Walnut_MW224",
+      "usage": [
+        "Interior"
+      ],
+      "hex": "#906c4f"
+    },
+    {
+      "code": "MW225",
+      "name": "Red Mahogany",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/red-mahogany-mw225",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/Red_Mahogany_MW225",
+      "usage": [
+        "Interior"
+      ],
+      "hex": "#6d4c3d"
+    },
+    {
+      "code": "MW230",
+      "name": "Early American",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/early-american-mw230",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/Early_American_MW230",
+      "usage": [
+        "Interior"
+      ],
+      "hex": "#9a6e51"
+    },
+    {
+      "code": "MW232",
+      "name": "Red Chestnut",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/red-chestnut-mw232",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/RedChestnut_MW232",
+      "usage": [
+        "Interior"
+      ],
+      "hex": "#8f5940"
+    },
+    {
+      "code": "MW233",
+      "name": "English Chestnut",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/english-chestnut-mw233",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/English_Chestnut_MW233",
+      "usage": [
+        "Interior"
+      ],
+      "hex": "#7f583e"
+    },
+    {
+      "code": "MW271",
+      "name": "Classic Gray",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/classic-gray-mw271",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/ClassicGray_MW271",
+      "usage": [
+        "Interior"
+      ],
+      "hex": "#907561"
+    },
+    {
+      "code": "MW2716",
+      "name": "Dark Walnut",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/dark-walnut-mw2716",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/Dark_Walnut_MW2716",
+      "usage": [
+        "Interior"
+      ],
+      "hex": "#604735"
+    },
+    {
+      "code": "MW2718",
+      "name": "Ebony Color",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/ebony-color-mw2718",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/Ebony_Color2718",
+      "usage": [
+        "Interior"
+      ],
+      "hex": "#504235"
+    },
+    {
+      "code": "MW273",
+      "name": "Espresso",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/espresso-mw273",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/Espresso_MW273",
+      "usage": [
+        "Interior"
+      ],
+      "hex": "#52392d"
+    },
+    {
+      "code": "MW401",
+      "name": "Grey Elm",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/grey-elm-mw401",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/Grey_Elm_MW401",
+      "usage": [
+        "Interior"
+      ],
+      "hex": "#c0a48f"
+    },
+    {
+      "code": "MW403",
+      "name": "Shipboard",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/shipboard-mw403",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/Shipboard_MW403",
+      "usage": [
+        "Interior"
+      ],
+      "hex": "#9b7f6c"
+    },
+    {
+      "code": "MW405",
+      "name": "Toasted Barrell",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/toasted-barrell-mw405",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/Toasted_Barrell_405",
+      "usage": [
+        "Interior"
+      ],
+      "hex": "#776557"
+    },
+    {
+      "code": "MW407",
+      "name": "Smokewood",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/smokewood-mw407",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/Smokewood_MW407",
+      "usage": [
+        "Interior"
+      ],
+      "hex": "#786557"
+    },
+    {
+      "code": "MW409",
+      "name": "Carbon",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/carbon-mw409",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/Carbon_MW409",
+      "usage": [
+        "Interior"
+      ],
+      "hex": "#4d3f32"
+    },
+    {
+      "code": "MW411",
+      "name": "Birchbark",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/birchbark-mw411",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/Birchbark_MW411",
+      "usage": [
+        "Interior"
+      ],
+      "hex": "#c8ab8f"
+    },
+    {
+      "code": "MW413",
+      "name": "Greenwood",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/greenwood-mw413",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/Greenwood_MW413",
+      "usage": [
+        "Interior"
+      ],
+      "hex": "#7b6c59"
+    },
+    {
+      "code": "MW415",
+      "name": "Tidal Wood",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/tidal-wood-mw415",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/Tidal_Wood_MW415",
+      "usage": [
+        "Interior"
+      ],
+      "hex": "#998066"
+    },
+    {
+      "code": "MW417",
+      "name": "Alluvium",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/alluvium-mw417",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/Alluvium_MW417",
+      "usage": [
+        "Interior"
+      ],
+      "hex": "#594f41"
+    },
+    {
+      "code": "MW419",
+      "name": "Cooper Brown",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/cooper-brown-mw419",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/Cooper_Brown_MW419",
+      "usage": [
+        "Interior"
+      ],
+      "hex": "#725a4b"
+    },
+    {
+      "code": "MW421",
+      "name": "Forrester",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/forrester-mw421",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/Forrester_MW421",
+      "usage": [
+        "Interior"
+      ],
+      "hex": "#5a4636"
+    },
+    {
+      "code": "MW423",
+      "name": "Whitewash",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/whitewash-mw423",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/Whitewash_MW423",
+      "usage": [
+        "Interior"
+      ],
+      "hex": "#c9a98e"
+    },
+    {
+      "code": "MW425",
+      "name": "Fallen Cypress",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/fallen-cypress-mw425",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/Fallen_Cypress_MW425",
+      "usage": [
+        "Interior"
+      ],
+      "hex": "#a9815e"
+    },
+    {
+      "code": "MW427",
+      "name": "Habitat",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/habitat-mw427",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/Habitat_MW427",
+      "usage": [
+        "Interior"
+      ],
+      "hex": "#9c846a"
+    },
+    {
+      "code": "MW429",
+      "name": "Sawyer",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/sawyer-mw429",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/Sawyer_MW429",
+      "usage": [
+        "Interior"
+      ],
+      "hex": "#7b5f4a"
+    },
+    {
+      "code": "MW431",
+      "name": "Willowbend",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/willowbend-mw431",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/Willowbend_MW431",
+      "usage": [
+        "Interior"
+      ],
+      "hex": "#725644"
+    },
+    {
+      "code": "MW433",
+      "name": "Amber Pine",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/amber-pine-mw433",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/Amber_Pine_MW433",
+      "usage": [
+        "Interior"
+      ],
+      "hex": "#b69673"
+    },
+    {
+      "code": "MW435",
+      "name": "Oakwood Color",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/oakwood-color-mw435",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/Oakwood_Color435",
+      "usage": [
+        "Interior"
+      ],
+      "hex": "#8e6745"
+    },
+    {
+      "code": "MW437",
+      "name": "Country Pine",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/country-pine-mw437",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/Country_Pine_MW437",
+      "usage": [
+        "Interior"
+      ],
+      "hex": "#81644b"
+    },
+    {
+      "code": "MW439",
+      "name": "Walnut",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/walnut-mw439",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/Walnut_MW439",
+      "usage": [
+        "Interior"
+      ],
+      "hex": "#674839"
+    },
+    {
+      "code": "MW441",
+      "name": "Heirloom Oak",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/heirloom-oak-mw441",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/Heirloom_Oak_MW441",
+      "usage": [
+        "Interior"
+      ],
+      "hex": "#a78767"
+    },
+    {
+      "code": "MW443",
+      "name": "Hedgewood",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/hedgewood-mw443",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/Hedgewood_MW443",
+      "usage": [
+        "Interior"
+      ],
+      "hex": "#7a523c"
+    },
+    {
+      "code": "MW445",
+      "name": "Woodshed",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/woodshed-mw445",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/Woodshed_MW445",
+      "usage": [
+        "Interior"
+      ],
+      "hex": "#76533b"
+    },
+    {
+      "code": "MW447",
+      "name": "Mahogany",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/mahogany-mw447",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/Mahogany_MW447",
+      "usage": [
+        "Interior"
+      ],
+      "hex": "#6a4737"
+    },
+    {
+      "code": "MW449",
+      "name": "Hornbeam",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/hornbeam-mw449",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/Hornbeam_MW449",
+      "usage": [
+        "Interior"
+      ],
+      "hex": "#ba834a"
+    },
+    {
+      "code": "MW451",
+      "name": "Candlewood",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/candlewood-mw451",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/Candlewood_MW451",
+      "usage": [
+        "Interior"
+      ],
+      "hex": "#ae754f"
+    },
+    {
+      "code": "MW453",
+      "name": "Honeymade",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/honeymade-mw453",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/Honeymeade_453",
+      "usage": [
+        "Interior"
+      ],
+      "hex": "#b17e53"
+    },
+    {
+      "code": "MW455",
+      "name": "Pine Ridge",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/pine-ridge-mw455",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/PineRidge_MW455",
+      "usage": [
+        "Interior"
+      ],
+      "hex": "#996945"
+    },
+    {
+      "code": "MW457",
+      "name": "Samara",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/samara-mw457",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/Samara_MW457",
+      "usage": [
+        "Interior"
+      ],
+      "hex": "#974b3b"
+    },
+    {
+      "code": "MW459",
+      "name": "Sagamore",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/sagamore-mw459",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/Sagamore_459",
+      "usage": [
+        "Interior"
+      ],
+      "hex": "#834e3d"
+    },
+    {
+      "code": "MW461",
+      "name": "Mesquite",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/mesquite-mw461",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/Mesquite_MW461",
+      "usage": [
+        "Interior"
+      ],
+      "hex": "#845742"
+    },
+    {
+      "code": "MW463",
+      "name": "Amaranth",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/amaranth-mw463",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/Amaranth_MW463",
+      "usage": [
+        "Interior"
+      ],
+      "hex": "#7d5649"
+    },
+    {
+      "code": "MW465",
+      "name": "Currant",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/currant-mw465",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/Currant_MW465",
+      "usage": [
+        "Interior"
+      ],
+      "hex": "#884c3e"
+    },
+    {
+      "code": "MW467",
+      "name": "Yellow Steppe",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/yellow-steppe-mw467",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/Yellow_Steppe_MW467",
+      "usage": [
+        "Interior"
+      ],
+      "hex": "#c79057"
+    },
+    {
+      "code": "MW469",
+      "name": "Evergreen",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/evergreen-mw469",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/Evergreen_MW469",
+      "usage": [
+        "Interior"
+      ],
+      "hex": "#374d3c"
+    },
+    {
+      "code": "MW471",
+      "name": "Navy",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/navy-mw471",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/Navy_MW471",
+      "usage": [
+        "Interior"
+      ],
+      "hex": "#5c6466"
+    },
+    {
+      "code": "MW473",
+      "name": "Mulberry",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/mulberry-mw473",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/Mulberry_MW473",
+      "usage": [
+        "Interior"
+      ],
+      "hex": "#62473b"
+    },
+    {
+      "code": "SW3001",
+      "name": "Shagbark",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3001-shagbark",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/clr_10640613_shagbark_stain_color",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#574c46"
+    },
+    {
+      "code": "SW3002",
+      "name": "Belvedere Tan",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3002-belvedere-tan",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/clr_10640652_belvedere_tan_stain_color",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#ab9d90"
+    },
+    {
+      "code": "SW3003",
+      "name": "Buckthorn",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3003-buckthorn",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/clr_10640598_buckthorn_stain_color",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#786858"
+    },
+    {
+      "code": "SW3004",
+      "name": "Summerhouse Beige",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3004-summerhouse-beige",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/clr_10640599_summerhouse_beige_stain_color",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#c1b19a"
+    },
+    {
+      "code": "SW3006",
+      "name": "Sand Castle",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3006-sand-castle",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/clr_10640614_sand_castle_stain_color",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#ac9b89"
+    },
+    {
+      "code": "SW3007",
+      "name": "Lodge Brown",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3007-lodge-brown",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/clr_10640641_lodge_brown_stain_color",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#675446"
+    },
+    {
+      "code": "SW3008",
+      "name": "Blue Spruce",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3008-blue-spruce",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/clr_10640653_blue_spruce_stain_color",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#75857a"
+    },
+    {
+      "code": "SW3009",
+      "name": "Pineneedle",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3009-pineneedle",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/clr_10640630_pine_needle_stain_color",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#526257"
+    },
+    {
+      "code": "SW3010",
+      "name": "Woodsmoke Gray",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3010-woodsmoke-gray",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/clr_10640685_woodsmoke_gray_stain_color",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#a19f93"
+    },
+    {
+      "code": "SW3011",
+      "name": "Acadia Blue",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3011-acadia-blue",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/clr_10640582_acadia_blue_stain_color",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#606664"
+    },
+    {
+      "code": "SW3012",
+      "name": "Meadowbrook",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3012-meadowbrook",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/clr_10640631_meadowbrook_stain_color",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#798787"
+    },
+    {
+      "code": "SW3013",
+      "name": "Gray Birch",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3013-gray-birch",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/clr_10640642_gray_birch_stain_color",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#a0a6a6"
+    },
+    {
+      "code": "SW3014",
+      "name": "Juniper Blue",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3014-juniper-blue",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/clr_10640654_juniper_blue_stain_color",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#6c7f86"
+    },
+    {
+      "code": "SW3015",
+      "name": "Sequoia",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3015-sequoia",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/clr_10640600_sequoia_stain_color",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#79473c"
+    },
+    {
+      "code": "SW3016",
+      "name": "Rock Rose",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3016-rock-rose",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/clr_10640655_rock_rose_stain_color",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#aa9286"
+    },
+    {
+      "code": "SW3017",
+      "name": "Pepperidge",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3017-pepperidge",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/clr_10640615_pepperidge_stain_color",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#917a6c"
+    },
+    {
+      "code": "SW3018",
+      "name": "Salem Red",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3018-salem-red",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/clr_10640583_salem_red_stain_color",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#62453f"
+    },
+    {
+      "code": "SW3019",
+      "name": "Smoke Tree",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3019-smoke-tree",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/clr_10640584_smoke_tree_stain_color",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#968e83"
+    },
+    {
+      "code": "SW3020",
+      "name": "Cape Cod Red",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3020-cape-cod-red",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/clr_10640670_cape_cod_red_stain_color",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#934f44"
+    },
+    {
+      "code": "SW3021",
+      "name": "Spicewood",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3021-spicewood",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/clr_10640656_spicewood_stain_color",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#5d4e47"
+    },
+    {
+      "code": "SW3022",
+      "name": "Black Alder",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3022-black-alder",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/clr_10640601_black_alder_stain_color",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#544f49"
+    },
+    {
+      "code": "SW3023",
+      "name": "Flagstone",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3023-flagstone",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/clr_10640686_flagstone_stain_color",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#706b65"
+    },
+    {
+      "code": "SW3024",
+      "name": "River Birch",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3024-river-birch",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/clr_10640643_river_birch_stain_color",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#928b81"
+    },
+    {
+      "code": "SW3025",
+      "name": "Caribou",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3025-caribou",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/clr_10640671_caribou_stain_color",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#71685f"
+    },
+    {
+      "code": "SW3026",
+      "name": "King's Canyon",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3026-kings-canyon",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/clr_10640585_kings_canyon_stain_color",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#7c7c7c"
+    },
+    {
+      "code": "SW3027",
+      "name": "Driftwood",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3027-driftwood",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/clr_10640657_driftwood_stain_color",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#b7b6b4"
+    },
+    {
+      "code": "SW3029",
+      "name": "Ember",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3029-ember",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/clr_10640602_ember_stain_color",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#aa7450"
+    },
+    {
+      "code": "SW3030",
+      "name": "Desert Wood",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3030-desert-wood",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/clr_10640616_desert_wood_stain_color",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#ba987c"
+    },
+    {
+      "code": "SW3031",
+      "name": "Cabin Brown",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3031-cabin-brown",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/clr_10640617_cabin_brown_stain_color",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#826857"
+    },
+    {
+      "code": "SW3034",
+      "name": "Cedar",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3034-cedar",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/clr_10640658_cedar_stain_color",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#a77b58"
+    },
+    {
+      "code": "SW3035",
+      "name": "Woodbriar",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3035-woodbriar",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/clr_10640672_woodbriar_stain_color",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#917357"
+    },
+    {
+      "code": "SW3036",
+      "name": "Orchard",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3036-orchard",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/clr_10640618_orchard_stain_color",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#918d74"
+    },
+    {
+      "code": "SW3037",
+      "name": "Shade Tree",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3037-shade-tree",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/clr_10640632_shade_tree_stain_color",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#5a5c51"
+    },
+    {
+      "code": "SW3038",
+      "name": "Palmetto",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3038-palmetto",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/clr_10640687_palmetto_stain_color",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#b1a389"
+    },
+    {
+      "code": "SW3039",
+      "name": "Tobacco",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3039-tobacco",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/clr_10640603_tobacco_stain_color",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#6d6153"
+    },
+    {
+      "code": "SW3040",
+      "name": "Cottonwood",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3040-cottonwood",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/clr_10640604_cottonwood_stain_color",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#c3bcaa"
+    },
+    {
+      "code": "SW3041",
+      "name": "Cypress Moss",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3041-cypress-moss",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/clr_10640673_cypress_moss_stain_color",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#999383"
+    },
+    {
+      "code": "SW3042",
+      "name": "Woodland",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3042-woodland",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/clr_10640674_woodland_stain_color",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#716d62"
+    },
+    {
+      "code": "SW3043",
+      "name": "Cheyenne Red",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3043-cheyenne-red",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/clr_10640644_cheyenne_red_stain_color",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#68403c"
+    },
+    {
+      "code": "SW3044",
+      "name": "Ranchero Red",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3044-ranchero-red",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/clr_10640619_ranchero_red_stain_color",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#7e564c"
+    },
+    {
+      "code": "SW3045",
+      "name": "Russet Brown",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3045-russet-brown",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/clr_10640645_russet_brown_stain_color",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#845042"
+    },
+    {
+      "code": "SW3046",
+      "name": "Pine Cone",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3046-pine-cone",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/clr_10640633_pine_cone_stain_color",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#715240"
+    },
+    {
+      "code": "SW3047",
+      "name": "Almond Tree",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3047-almond-tree",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/clr_10640659_almond_tree_stain_color",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#c5ac8e"
+    },
+    {
+      "code": "SW3048",
+      "name": "Yosemite Gold",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3048-yosemite-gold",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/clr_10640605_yosemite_gold_stain_color",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#ba9872"
+    },
+    {
+      "code": "SW3049",
+      "name": "Monterey Tan",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3049-monterey-tan",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/clr_10640586_monterey_tan_stain_color",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#99846b"
+    },
+    {
+      "code": "SW3050",
+      "name": "Greenbriar",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3050-greenbriar",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/clr_10640606_greenbriar_stain_color",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#6c6656"
+    },
+    {
+      "code": "SW3051",
+      "name": "Chesapeake",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3051-chesapeake",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/clr_10640660_chesapeake_stain_color",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#656e77"
+    },
+    {
+      "code": "SW3060",
+      "name": "Antique Gray",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3060-antique-gray",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3060antiquegray_s",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#aeb0a3"
+    },
+    {
+      "code": "SW3061",
+      "name": "Brick",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3061-brick",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3061brick_s",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#802b24"
+    },
+    {
+      "code": "SW3062",
+      "name": "Canyon",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3062-canyon",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3062canyon_s",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#846054"
+    },
+    {
+      "code": "SW3063",
+      "name": "Charcoal",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3063-charcoal",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3063charcoal_s",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#444945"
+    },
+    {
+      "code": "SW3064",
+      "name": "Espresso",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3064-espresso",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3064espresso_s",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#634430"
+    },
+    {
+      "code": "SW3065",
+      "name": "Fawn",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3065-fawn",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3065fawn_s",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#8b725e"
+    },
+    {
+      "code": "SW3066",
+      "name": "Forest Dew",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3066-forest-dew",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3066forestdew_s",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#516065"
+    },
+    {
+      "code": "SW3067",
+      "name": "Hudson Gray",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3067-hudson-gray",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3067hudsongray_s",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#556968"
+    },
+    {
+      "code": "SW3068",
+      "name": "Leather",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3068-leather",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3068leather_s",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#887056"
+    },
+    {
+      "code": "SW3069",
+      "name": "Lichen",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3069-lichen",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3069lichen_s",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#7f8368"
+    },
+    {
+      "code": "SW3070",
+      "name": "Mallard Green",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3070-mallard-green",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3070mallardgreen_s",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#4d5b4a"
+    },
+    {
+      "code": "SW3071",
+      "name": "Mercury",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3071-mercury",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3071mercury_s",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#62625a"
+    },
+    {
+      "code": "SW3072",
+      "name": "Mission Brown",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3072-mission-brown",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3072missionbrown_s",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#643b29"
+    },
+    {
+      "code": "SW3073",
+      "name": "Misty Mauve",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3073-misty-mauve",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3073mistymauve_s",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#b3a99f"
+    },
+    {
+      "code": "SW3074",
+      "name": "Mushroom",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3074-mushroom",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3074mushroom_s",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#aaa68b"
+    },
+    {
+      "code": "SW3075",
+      "name": "River Rock",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3075-river-rock",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3075riverrock_s",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#9fa897"
+    },
+    {
+      "code": "SW3076",
+      "name": "Sahara",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3076-sahara",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3076sahara_s",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#97856d"
+    },
+    {
+      "code": "SW3077",
+      "name": "Shagbark Brown",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3077-shagbark-brown",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3077shagbarkbrown_s",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#765544"
+    },
+    {
+      "code": "SW3078",
+      "name": "Shale",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3078-shale",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3078shale_s",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#5a6b72"
+    },
+    {
+      "code": "SW3079",
+      "name": "Stone",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3079-stone",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3079stone_s",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#aaa69a"
+    },
+    {
+      "code": "SW3080",
+      "name": "Traditional Mahogany",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3080-traditional-mahogany",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3080tradmahogany_s",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#4c362b"
+    },
+    {
+      "code": "SW3081",
+      "name": "Traditional Stone Hedge",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3081-traditional-stone-hedge",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3081tradstonehedge_s",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#869089"
+    },
+    {
+      "code": "SW3082",
+      "name": "Wave Crest",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3082-wave-crest",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3082wavecrest_s",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#899486"
+    },
+    {
+      "code": "SW3083",
+      "name": "Wet Clay",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3083-wet-clay",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3083wetclay_s",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#7e7973"
+    },
+    {
+      "code": "SW3501",
+      "name": "Redwood",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3501-redwood",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/stain_exterior_ws_SW3501",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#943d28"
+    },
+    {
+      "code": "SW3501SS",
+      "name": "Redwood",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3501SS-redwood",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/stain_exterior_ws_SW3501",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#943d28"
+    },
+    {
+      "code": "SW3502",
+      "name": "Mission Wall",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3502-mission-wall",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/stain_exterior_ws_SW3502",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#c86531"
+    },
+    {
+      "code": "SW3502SS",
+      "name": "Mission Wall",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3502SS-mission-wall",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/stain_exterior_ws_SW3502",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#c86531"
+    },
+    {
+      "code": "SW3503",
+      "name": "White Birch",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3503-white-birch",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/stain_exterior_ws_SW3503",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#e7be82"
+    },
+    {
+      "code": "SW3503SS",
+      "name": "White Birch",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3503SS-white-birch",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/stain_exterior_ws_SW3503",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#e7be82"
+    },
+    {
+      "code": "SW3504",
+      "name": "Woodridge",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3504-woodridge",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/stain_exterior_ws_SW3504",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#aa7343"
+    },
+    {
+      "code": "SW3504SS",
+      "name": "Woodridge",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3504SS-woodridge",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/stain_exterior_ws_SW3504",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#aa7343"
+    },
+    {
+      "code": "SW3505",
+      "name": "Yankee Barn",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3505-yankee-barn",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/stain_exterior_ws_SW3505",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#8f4527"
+    },
+    {
+      "code": "SW3505SS",
+      "name": "Yankee Barn",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3505SS-yankee-barn",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/stain_exterior_ws_SW3505",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#8f4527"
+    },
+    {
+      "code": "SW3507",
+      "name": "Riverwood",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3507-riverwood",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/stain_exterior_ws_SW3507",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#784931"
+    },
+    {
+      "code": "SW3507SS",
+      "name": "Riverwood",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3507SS-riverwood",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/stain_exterior_ws_SW3507",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#784931"
+    },
+    {
+      "code": "SW3508",
+      "name": "Covered Bridge",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3508-covered-bridge",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/stain_exterior_ws_SW3508",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#b16938"
+    },
+    {
+      "code": "SW3508SS",
+      "name": "Covered Bridge",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3508SS-covered-bridge",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/stain_exterior_ws_SW3508",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#b16938"
+    },
+    {
+      "code": "SW3509",
+      "name": "Baja Beige",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3509-baja-beige",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/stain_exterior_ws_SW3509",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#ca8649"
+    },
+    {
+      "code": "SW3509SS",
+      "name": "Baja Beige",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3509SS-baja-beige",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/stain_exterior_ws_SW3509",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#ca8649"
+    },
+    {
+      "code": "SW3511",
+      "name": "Cedar Bark",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3511-cedar-bark",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/stain_exterior_ws_SW3511",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#b05f2e"
+    },
+    {
+      "code": "SW3511SS",
+      "name": "Cedar Bark",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3511SS-cedar-bark",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/stain_exterior_ws_SW3511",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#b05f2e"
+    },
+    {
+      "code": "SW3512",
+      "name": "Cider Mill",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3512-cider-mill",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/stain_exterior_ws_SW3512",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#b96536"
+    },
+    {
+      "code": "SW3512SS",
+      "name": "Cider Mill",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3512SS-cider-mill",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/stain_exterior_ws_SW3512",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#b96536"
+    },
+    {
+      "code": "SW3513",
+      "name": "Spice Chest",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3513-spice-chest",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/stain_exterior_ws_SW3513",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#bb793d"
+    },
+    {
+      "code": "SW3513SS",
+      "name": "Spice Chest",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3513SS-spice-chest",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/stain_exterior_ws_SW3513",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#bb793d"
+    },
+    {
+      "code": "SW3518",
+      "name": "Hawthorne",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3518-hawthorne",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/stain_exterior_ws_SW3518",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#5c3a26"
+    },
+    {
+      "code": "SW3518SS",
+      "name": "Hawthorne",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3518SS-hawthorne",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/stain_exterior_ws_SW3518",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#5c3a26"
+    },
+    {
+      "code": "SW3520",
+      "name": "Ficus",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3520-ficus",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/stain_exterior_ws_SW3520",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#624b25"
+    },
+    {
+      "code": "SW3520SS",
+      "name": "Ficus",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3520SS-ficus",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/stain_exterior_ws_SW3520",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#624b25"
+    },
+    {
+      "code": "SW3521",
+      "name": "Crossroads",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3521-crossroads",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/stain_exterior_ws_SW3521",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#be8b5c"
+    },
+    {
+      "code": "SW3521SS",
+      "name": "Crossroads",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3521SS-crossroads",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/stain_exterior_ws_SW3521",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#be8b5c"
+    },
+    {
+      "code": "SW3522",
+      "name": "Banyan Brown",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3522-banyan-brown",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/stain_exterior_ws_SW3522",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#9a652d"
+    },
+    {
+      "code": "SW3522SS",
+      "name": "Banyan Brown",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3522SS-banyan-brown",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/stain_exterior_ws_SW3522",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#9a652d"
+    },
+    {
+      "code": "SW3524",
+      "name": "Chestnut",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3524-chestnut",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/stain_exterior_ws_SW3524",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#533a28"
+    },
+    {
+      "code": "SW3524SS",
+      "name": "Chestnut",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3524SS-chestnut",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/stain_exterior_ws_SW3524",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#533a28"
+    },
+    {
+      "code": "SW3530",
+      "name": "Moss Olive",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3530-moss-olive",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/stain_exterior_ws_SW3530",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#817b68"
+    },
+    {
+      "code": "SW3530SS",
+      "name": "Moss Olive",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3530SS-moss-olive",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/stain_exterior_ws_SW3530",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#817b68"
+    },
+    {
+      "code": "SW3531",
+      "name": "Blue Shadow",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3531-blue-shadow",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/stain_exterior_ws_SW3531",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#6f5f50"
+    },
+    {
+      "code": "SW3531SS",
+      "name": "Blue Shadow",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3531SS-blue-shadow",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/stain_exterior_ws_SW3531",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#6f5f50"
+    },
+    {
+      "code": "SW3532",
+      "name": "Hill Country",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3532-hill-country",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/stain_exterior_ws_SW3532",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#554330"
+    },
+    {
+      "code": "SW3532SS",
+      "name": "Hill Country",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3532SS-hill-country",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/stain_exterior_ws_SW3532",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#554330"
+    },
+    {
+      "code": "SW3533",
+      "name": "Leeward",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3533-leeward",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/stain_exterior_ws_SW3533",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#726346"
+    },
+    {
+      "code": "SW3533SS",
+      "name": "Leeward",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3533SS-leeward",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/stain_exterior_ws_SW3533",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#726346"
+    },
+    {
+      "code": "SW3535",
+      "name": "Foliage",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3535-foliage",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/stain_exterior_ws_SW3535",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#655631"
+    },
+    {
+      "code": "SW3535SS",
+      "name": "Foliage",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3535SS-foliage",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/stain_exterior_ws_SW3535",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#655631"
+    },
+    {
+      "code": "SW3540",
+      "name": "Mountain Ash",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3540-mountain-ash",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/stain_exterior_ws_SW3540",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#9d7148"
+    },
+    {
+      "code": "SW3540SS",
+      "name": "Mountain Ash",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3540SS-mountain-ash",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/stain_exterior_ws_SW3540",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#9d7148"
+    },
+    {
+      "code": "SW3541",
+      "name": "Harbor Mist",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3541-harbor-mist",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/stain_exterior_ws_SW3541",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#665644"
+    },
+    {
+      "code": "SW3541SS",
+      "name": "Harbor Mist",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3541SS-harbor-mist",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/stain_exterior_ws_SW3541",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#665644"
+    },
+    {
+      "code": "SW3542",
+      "name": "Charwood",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3542-charwood",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/stain_exterior_ws_SW3542",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#43352e"
+    },
+    {
+      "code": "SW3542SS",
+      "name": "Charwood",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3542SS-charwood",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/stain_exterior_ws_SW3542",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#43352e"
+    },
+    {
+      "code": "SW3560",
+      "name": "Gray Pine",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3560-gray-pine",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/graypine_3560",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#a48975"
+    },
+    {
+      "code": "SW3560SS",
+      "name": "Gray Pine",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3560SS-gray-pine",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3560graypine_ss",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#958270"
+    },
+    {
+      "code": "SW3561",
+      "name": "Cedar",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3561-cedar",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/cedar_3561",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#cd933c"
+    },
+    {
+      "code": "SW3562",
+      "name": "Blue Spruce",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3562-blue-spruce",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/bluesprucev2_3562",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#989897"
+    },
+    {
+      "code": "SW3562SS",
+      "name": "Blue Spruce",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3562SS-blue-spruce",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3562bluespruce_ss",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#8a8d91"
+    },
+    {
+      "code": "SW3563",
+      "name": "Redwood (Superdeck)",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3563-redwood-superdeck",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/redwood_3563",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#b36837"
+    },
+    {
+      "code": "SW3564",
+      "name": "Faded Denim",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3564-faded-denim",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/fadeddenim_3564",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#96949b"
+    },
+    {
+      "code": "SW3564SS",
+      "name": "Faded Denim",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3564SS-faded-denim",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3564fadeddenim_ss",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#8e909c"
+    },
+    {
+      "code": "SW3565",
+      "name": "Bamboo",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3565-bamboo",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/bamboo_3565",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#bf8c4f"
+    },
+    {
+      "code": "SW3565SS",
+      "name": "Bamboo",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3565SS-bamboo",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3565bamboo_ss",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#b68548"
+    },
+    {
+      "code": "SW3566",
+      "name": "Douglas Fir",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3566-douglas-fir",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/douglasfir_3566",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#9e633e"
+    },
+    {
+      "code": "SW3566SS",
+      "name": "Douglas Fir",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3566SS-douglas-fir",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3566douglasfir_ss",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#a05e2e"
+    },
+    {
+      "code": "SW3567",
+      "name": "Limewood",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3567-limewood",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/limewood_3567",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#c09245"
+    },
+    {
+      "code": "SW3567SS",
+      "name": "Limewood",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3567SS-limewood",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3567limewood_ss",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#b98638"
+    },
+    {
+      "code": "SW3568",
+      "name": "Weathered Gray",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3568-weathered-gray",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/weatheredgray_3568",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#bfb5a7"
+    },
+    {
+      "code": "SW3569",
+      "name": "Olive",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3569-olive",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/olive_3569",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#665c39"
+    },
+    {
+      "code": "SW3569SS",
+      "name": "Olive",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3569SS-olive",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3569olive_ss",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#625535"
+    },
+    {
+      "code": "SW3570",
+      "name": "Pacific Pine",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3570-pacific-pine",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/pacificpine_3570",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#4a4e2f"
+    },
+    {
+      "code": "SW3570SS",
+      "name": "Pacific Pine",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3570SS-pacific-pine",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3570pacificpine_ss",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#495431"
+    },
+    {
+      "code": "SW3571",
+      "name": "Classic Barn Red",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3571-classic-barn-red",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/classicbarnred_3571",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#a84f2d"
+    },
+    {
+      "code": "SW3571SS",
+      "name": "Classic Barn Red",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3571SS-classic-barn-red",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3571classicbarnred_ss",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#8d3c2b"
+    },
+    {
+      "code": "SW3572",
+      "name": "New Barn Red",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3572-new-barn-red",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/newbarnred_3572",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#b42f1c"
+    },
+    {
+      "code": "SW3572SS",
+      "name": "New Barn Red",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3572SS-new-barn-red",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3572newbarnred_ss",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#ac3d2b"
+    },
+    {
+      "code": "SW3573",
+      "name": "Tavern Oak",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3573-tavern-oak",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/tavernoak_3573",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#a16136"
+    },
+    {
+      "code": "SW3573SS",
+      "name": "Tavern Oak",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3573SS-tavern-oak",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3573tavernoak_ss",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#8f5636"
+    },
+    {
+      "code": "SW3574",
+      "name": "English Walnut",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3574-english-walnut",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/englishwalnut_3574",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#7e4c2e"
+    },
+    {
+      "code": "SW3574SS",
+      "name": "English Walnut",
+      "page": "https://www.sherwin-williams.com/homeowners/color/find-and-explore-colors/stain-colors/SW3574SS-english-walnut",
+      "swatch": "https://sherwin.scene7.com/is/image/sw/db3574englishwalnut_ss",
+      "usage": [
+        "Exterior"
+      ],
+      "hex": "#6d3923"
+    }
+  ]
+}
