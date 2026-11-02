@@ -25,4 +25,14 @@ describe("door editor WalzCraft audit", () => {
     expect(readApprovals()["faircrest-cc"]).toBe("approved");
     expect(screen.getByTestId("walz-audit-approve-button").textContent).toBe("Approved");
   });
+
+  it("applies a grain and color to a Grey Wood slab without cropping a photo", () => {
+    render(<DoorEditorWalzAudit style={{ id: 540002, ourName: "Grey Wood", styleCode: "TGW", doorStyle: "Slab", color: "#8d8f92" }} />);
+    fireEvent.click(screen.getByTestId("slab-grain-grey-shaker"));
+    fireEvent.click(screen.getByTestId("slab-grain-apply"));
+    const note = screen.getByTestId("slab-grain-applied").textContent ?? "";
+    expect(note).toMatch(/grey-shaker/);
+    expect(note).toMatch(/No photo crop/);
+    expect(note).not.toMatch(/#244338/);
+  });
 });

@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { auditWalzcraftDoor, type AuditStyle, type PercentNote } from "@shared/walzcraftDoorAudit";
+import { resolveDoorColor } from "@shared/doorColorResolve";
+import { isSlabDoor, SLAB_GRAIN_OPTIONS, slabGrainColorPlan, writeSlabGrainChoice, type SlabGrainId } from "@shared/slabGrainApply";
 import { readApprovals, writeApproval, type ApprovalState } from "@shared/walzcraftDistributorMatches";
 
 const STEPS = ["Profile", "Color and features", "Approve"] as const;
@@ -28,6 +30,10 @@ export function DoorEditorWalzAudit({ style }: { style: AuditStyle & { id?: numb
     return readApprovals()[report.door.id] ?? null;
   });
   const profile = report.profiles[picked] ?? report.profiles[0] ?? null;
+  const slab = isSlabDoor(style);
+  const [grainId, setGrainId] = useState<SlabGrainId>("versa-shaker");
+  const [grainHex, setGrainHex] = useState(() => resolveDoorColor(style).appliedHex);
+  const [appliedNote, setAppliedNote] = useState<string | null>(null);
 
   const approve = (next: ApprovalState) => {
     if (!report.door) return;
@@ -42,6 +48,37 @@ export function DoorEditorWalzAudit({ style }: { style: AuditStyle & { id?: numb
         <h3 className="text-xs font-semibold uppercase tracking-wide">WalzCraft audit</h3>
         <p className="text-xs text-muted-foreground">Match a new door to a WalzCraft profile, check the color and features, then approve. This stays on the door editor.</p>
       </div>
+      {slab && (
+        <div data-testid="walz-audit-slab-grain" className="space-y-1 rounded border border-[#244338]/20 bg-white p-2">
+          <p className="text-xs font-semibold">Slab grain and color</p>
+          <p className="text-xs text-muted-foreground">Repeats a grain tile across the whole slab and tints it with this color. The catalog photo is not cropped. Use this for frameless doors such as White Pine and Grey Wood.</p>
+          <div className="flex flex-wrap gap-1">
+            {SLAB_GRAIN_OPTIONS.map((option) => (
+              <button key={option.id} type="button" data-testid={`slab-grain-${option.id}`} onClick={() => setGrainId(option.id)} className={`rounded border px-2 py-1 text-xs ${grainId === option.id ? "border-[#d7a46c] bg-[#d7a46c]/20" : "border-[#244338]/30"}`}>
+                {option.label}
+              </button>
+            ))}
+          </div>
+          <label className="flex items-center gap-2 text-xs">
+            Color
+            <input data-testid="slab-grain-hex" value={grainHex} onChange={(event) => setGrainHex(event.target.value)} className="rounded border px-1 py-0.5" />
+          </label>
+          <button
+            type="button"
+            data-testid="slab-grain-apply"
+            className="rounded bg-[#244338] px-2 py-1 text-xs font-semibold text-[#fffdf9]"
+            onClick={() => {
+              if (style.id == null) return;
+              const plan = slabGrainColorPlan(style, { grainId, hex: grainHex });
+              writeSlabGrainChoice(style.id, { grainId, hex: plan.dlcCrop?.solidColor ?? grainHex });
+              setAppliedNote(`Applied ${grainId} at ${plan.dlcCrop?.solidColor}. No photo crop.`);
+            }}
+          >
+            Apply grain and color
+          </button>
+          {appliedNote && <p data-testid="slab-grain-applied" className="text-xs">{appliedNote}</p>}
+        </div>
+      )}
       <ol className="flex gap-2 text-[11px] font-semibold">
         {STEPS.map((label, index) => (
           <li key={label} className={index === step ? "text-[#244338]" : "text-[#244338]/50"}>{index + 1}. {label}</li>
