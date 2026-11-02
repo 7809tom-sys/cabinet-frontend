@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
-import { brandDoorSurfaceHex } from "@shared/shakerDoorBlueprint";
 import {
   CLOSET_DL_SHAKER_FRAME_IN,
   CLOSET_SLAB_BELOW_IN,
@@ -39,14 +38,23 @@ describe("closet DL shaker fronts", () => {
 
     const notches = boxes.filter((mesh) => mesh.userData.shakerNotch);
     expect(notches.length).toBe(8);
-    const surface = brandDoorSurfaceHex("#774d3a").replace("#", "");
     for (const mesh of pieces) {
       const material = mesh.material as THREE.MeshStandardMaterial;
-      expect(material.color.getHexString()).toBe(surface);
+      expect(material.color.getHexString()).toBe("774d3a");
     }
     for (const strip of notches) {
       expect(strip.userData.squareCorner).toBeUndefined();
       expect(strip.userData.physicalRail).toBeUndefined();
+    }
+  });
+
+  it("paints Slate Rift gray as gray, not brand green", () => {
+    const front = createClosetDlShakerFront(24, 30, "#555553", "door");
+    const boxes = front.children.filter((child): child is THREE.Mesh => child instanceof THREE.Mesh);
+    const pieces = boxes.filter((mesh) => mesh.userData.physicalRail || mesh.userData.dlShakerCenterSlab);
+    for (const mesh of pieces) {
+      expect((mesh.material as THREE.MeshStandardMaterial).color.getHexString()).toBe("555553");
+      expect((mesh.material as THREE.MeshStandardMaterial).color.getHexString()).not.toBe("244338");
     }
   });
 
