@@ -92,6 +92,7 @@ const KitchenPlanningGuide = lazy(() => import("@/pages/KitchenPlanningGuide"));
 const DesignerWalkthrough = lazy(() => import("@/pages/DesignerWalkthrough"));
 const ARMeasure = lazy(() => import("@/pages/ARMeasure"));
 const About = lazy(() => import("@/pages/About"));
+const WalzCraftDoorPicker = lazy(() => import("@/pages/WalzCraftDoorPicker"));
 const Contact = lazy(() => import("@/pages/Contact"));
 const ShippingPolicy = lazy(() => import("@/pages/ShippingPolicy"));
 const ReturnPolicy = lazy(() => import("@/pages/ReturnPolicy"));
@@ -961,6 +962,14 @@ export default function App() {
           <AppLayout>
             <Suspense fallback={<PageLoader />}>
               <Contact />
+            </Suspense>
+          </AppLayout>
+        </Route>
+
+        <Route path="/walzcraft-doors">
+          <AppLayout>
+            <Suspense fallback={<PageLoader />}>
+              <WalzCraftDoorPicker />
             </Suspense>
           </AppLayout>
         </Route>
