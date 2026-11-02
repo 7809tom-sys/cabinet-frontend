@@ -67,6 +67,10 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.6;
     renderer.domElement.dataset.testid = "vendor-closet-canvas";
+    // setSize(..., false) leaves CSS sizing to us; without this the canvas lays out at pixelRatio-scaled size and shows only a zoomed top-left corner on HiDPI screens.
+    renderer.domElement.style.width = "100%";
+    renderer.domElement.style.height = "100%";
+    renderer.domElement.style.display = "block";
     renderer.domElement.setAttribute("aria-label", "Interactive vendor closet scene: drag a part into a tower, or choose a part and tap a tower");
     renderer.domElement.tabIndex = 0;
     host.appendChild(renderer.domElement);
