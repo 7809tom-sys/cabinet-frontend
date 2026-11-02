@@ -9,7 +9,7 @@ afterEach(cleanup);
 const blank: ProfileFormValues = { railWidth: "", stileWidth: "", panelConstruction: "flat", bevelWidth: "", bevelDepth: "", insideEdgeProfile: "", drawerFrontType: "slab", finishSheen: "satin", profileNotes: "", sourceSpecification: "", glazed: "", glazeColor: "", glazeColorOther: "" };
 function Harness({ start = blank }: { start?: ProfileFormValues }) {
   const [v, setV] = useState(start);
-  return <><WalzCraftApplyPanel style={{ ourName: "Shaker White", distributorName: "Shaker White" }} values={v} onApply={setV} /><output data-testid="edge">{v.insideEdgeProfile}</output><output data-testid="widths">{v.railWidth}|{v.stileWidth}</output></>;
+  return <><WalzCraftApplyPanel style={{ ourName: "Shaker White", distributorName: "Shaker White", supplierBrandName: "Kitchen Crest" }} values={v} onApply={setV} /><output data-testid="edge">{v.insideEdgeProfile}</output><output data-testid="widths">{v.railWidth}|{v.stileWidth}</output></>;
 }
 
 describe("WalzCraftApplyPanel", () => {

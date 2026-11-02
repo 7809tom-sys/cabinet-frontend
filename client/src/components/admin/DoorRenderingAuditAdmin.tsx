@@ -580,13 +580,19 @@ function DoorRenderingAuditScreen() {
   const colorDeltaEMax = clampColorDeltaE((renderSettings.data as { colorMatchDeltaE?: unknown } | undefined)?.colorMatchDeltaE);
   const utils = api.useUtils();
   const [filter, setFilter] = useState<DoorAuditFilter>("all");
-  const [search, setSearch] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
+  // ?auditSearch=&auditStyleId= is set by Edit Door after Save to focus that style.
+  const focus = useMemo(() => {
+    const params = new URLSearchParams(window.location.search);
+    const id = Number(params.get("auditStyleId"));
+    return { search: params.get("auditSearch") ?? "", styleId: Number.isFinite(id) && id > 0 ? id : null };
+  }, []);
+  const [search, setSearch] = useState(focus.search);
+  const [debouncedSearch, setDebouncedSearch] = useState(focus.search);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [runId, setRunId] = useState<number | null>(null);
   const [localProgress, setLocalProgress] = useState<LocalProgress | null>(null);
   const [capturing, setCapturing] = useState(false);
-  const [historyStyleId, setHistoryStyleId] = useState<number | null>(null);
+  const [historyStyleId, setHistoryStyleId] = useState<number | null>(focus.styleId);
   const [runsOpen, setRunsOpen] = useState(false);
   const [suppressedRunId, setSuppressedRunId] = useState<number | null>(null);
   const announced = useRef<number | null>(null);

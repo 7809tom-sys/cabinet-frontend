@@ -33,12 +33,16 @@ describe("vendor sample-door measurement workflow", () => {
     expect(editor).not.toContain("sourceSpecification: sourceSpecification.trim()");
   });
 
-  it("requires the administrator to confirm a physical sample and team-measured rail and stile before Designer approval", () => {
-    expect(reviewSource).toContain("function DoorMeasurementReviewQueue");
-    expect(reviewSource).toContain("CabinetDealz measured the physical sample door.");
-    expect(reviewSource).toContain("Team-measured rail (in)");
-    expect(reviewSource).toContain("Team-measured stile (in)");
-    expect(reviewSource).toContain("Approve for Designer");
-    expect(reviewSource).toContain("will update {target.appliesToStyleIds.length} checked Designer profile");
+  it("replaces the amber admin review panel with a per-style Vendor update badge that keeps the physical-sample approval flow", () => {
+    const badge = readFileSync(new URL("../components/admin/VendorMeasurementUpdate.tsx", import.meta.url), "utf8");
+    expect(reviewSource).not.toContain("Physical sample-door measurement review");
+    expect(reviewSource).toContain("<VendorUpdateBadge style={style} />");
+    expect(badge).toContain("listDoorMeasurementSubmissions.useQuery({ status: \"pending\"");
+    expect(badge).toContain("reviewDoorMeasurementSubmission.useMutation");
+    expect(badge).toContain("CabinetDealz measured the physical sample door.");
+    expect(badge).toContain("Team-measured rail (in)");
+    expect(badge).toContain("Team-measured stile (in)");
+    expect(badge).toContain("Approve for Designer");
+    expect(badge).toContain("!physicalSampleMeasured || !rail || !stile");
   });
 });

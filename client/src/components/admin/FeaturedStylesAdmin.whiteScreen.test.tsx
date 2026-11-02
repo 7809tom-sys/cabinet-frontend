@@ -3,15 +3,16 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const styles: Record<string, unknown>[] = [
-  { id: 1, ourName: "White Shaker", distributorName: null, aliasName: null, isFeatured: true, featuredRank: 1, isActive: true, distributorId: 1, roomScenes: null, grainDirection: null, color: null, renderHex: null },
+  { id: 1, ourName: "White Shaker", distributorName: null, supplierBrandName: "Faircrest", aliasName: null, isFeatured: true, featuredRank: 1, isActive: true, distributorId: 1, roomScenes: null, grainDirection: null, color: null, renderHex: null },
   { id: 2, ourName: "Fresh Sage", isFeatured: false, featuredRank: 0, isActive: true, distributorId: 2 },
   { id: 4, ourName: "Hickory Shaker", isFeatured: true, featuredRank: 3, isActive: true, distributorId: 1, roomScenes: null, roomSceneImageUrl: null },
   { id: 5, ourName: "Torino Dark Wood", isFeatured: false, featuredRank: 0, isActive: true, distributorId: 3, grainDirection: "horizontal" },
   { id: 3, ourName: "Natural Oak", isFeatured: true, featuredRank: 2, isActive: true, distributorId: 1 },
 ];
+const pendingRef = vi.hoisted(() => ({ list: [] as unknown[], mutate: (() => {}) as (x: unknown) => void }));
 vi.mock("@/lib/trpc", () => {
-  const mut = () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false });
-  const q = (path: string) => () => ({ data: path.includes("listForAdmin") ? styles : path.includes("skuCounts") ? [] : undefined, isLoading: false });
+  const mut = () => ({ mutate: (x: unknown) => pendingRef.mutate(x), mutateAsync: vi.fn(), isPending: false });
+  const q = (path: string) => () => ({ data: path.includes("listForAdmin") ? styles : path.includes("skuCounts") ? [] : path.includes("listDoorMeasurementSubmissions") ? pendingRef.list : undefined, isLoading: false });
   const make = (path: string): unknown => new Proxy(() => {}, {
     get: (_t, k: string) => {
       if (k === "useQuery") return q(path);
@@ -94,5 +95,45 @@ describe("Edit Door: one render-color picker", () => {
       fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
     }
     expect(sawBrochure).toBe(true);
+  });
+});
+
+describe("Edit Door: after Save", () => {
+  it("opens the bake window first, then switches to the Door Rendering Audit tab for that style", async () => {
+    const order: string[] = [];
+    const open = vi.spyOn(window, "open").mockImplementation(() => { order.push("bake"); return null; });
+    const onTab = (e: Event) => order.push(`tab:${(e as CustomEvent).detail.tab}`);
+    window.addEventListener("admin:select-tab", onTab);
+    render(<FeaturedStylesAdmin />);
+    fireEvent.click(screen.getAllByLabelText("Edit style")[0]);
+    fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+    await vi.waitFor(() => expect(order).toContain("tab:door-rendering-audit"));
+    expect(order).toEqual(["bake", "tab:door-rendering-audit"]);
+    const params = new URLSearchParams(window.location.search);
+    expect(params.get("tab")).toBe("door-rendering-audit");
+    expect(params.get("auditStyleId")).toBe("1");
+    expect(params.get("auditSearch")).toBe("White Shaker");
+    window.removeEventListener("admin:select-tab", onTab);
+    open.mockRestore();
+  });
+});
+
+describe("Vendor update badge", () => {
+  it("shows only on affected styles and opens a current → vendor diff with Approve/Reject", () => {
+    const calls: unknown[] = [];
+    pendingRef.mutate = (x) => calls.push(x);
+    pendingRef.list = [{ id: 9, vendorLineName: "Faircrest", vendorStyleCode: "WS", vendorStyleName: "White Shaker", appliesToStyleIds: [1, 3], measuredBy: "Ann", measuredOn: "2026-10-30", citation: "spec sheet p2", measurementData: { topRailWidth: 2.25, bottomRailWidth: 2.25, leftStileWidth: 2.25, rightStileWidth: 2.25, centerRailWidth: 3 }, submittedAt: new Date() }];
+    render(<FeaturedStylesAdmin />);
+    expect(screen.queryByText("Physical sample-door measurement review")).toBeNull();
+    expect(screen.getAllByTestId("vendor-update-badge").length).toBe(2);
+    fireEvent.click(screen.getAllByTestId("vendor-update-badge")[0]);
+    const diff = screen.getByTestId("vendor-update-diff");
+    expect(diff.querySelector('[data-testid="vendor-diff-topRailWidth"]')!.textContent).toMatch(/Top rail.*→2\.25″/);
+    expect(diff.querySelector('[data-testid="vendor-diff-centerRailWidth"]')!.textContent).toMatch(/Center rail.*→3″/);
+    expect(screen.getByTestId("vendor-update-applies").textContent).toContain("2 styles");
+    expect((screen.getByTestId("vendor-update-approve") as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByTestId("vendor-update-reject"));
+    expect(calls[0]).toMatchObject({ id: 9, approve: false });
+    pendingRef.list = [];
   });
 });

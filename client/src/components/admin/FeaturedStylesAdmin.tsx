@@ -27,7 +27,6 @@ import DoorPhotoCorrectButton from "./DoorPhotoCorrectButton";
 import { AdminStyleRoomSceneControls } from "@/components/doorStyles/AdminDoorStyleRoomScene";
 import type { AutoRoomScene } from "@/lib/autoRoomScene";
 import { MediaPicker } from "./MediaPicker";
-import { FramelessFaceAdmin } from "./FramelessFaceAdmin";
 import { WalzCraftMatchForStyle, WalzCraftOnlyMatches } from "@/components/walzcraft/WalzCraftMatchCard";
 import { WoodGrainColorDisplay, DoorSkinField } from "@/components/walzcraft/ColorFinishExtras";
 import { readDoorSkin, saveDoorSkin, doorSkinError, type DoorSkin } from "@shared/doorSkin";
@@ -36,6 +35,7 @@ import { WoodGrainTileTool } from "@/components/walzcraft/WoodGrainTileTool";
 import { doorForStyle, colorLabel } from "@shared/walzcraftDistributorMatches";
 import { colorTypeFor, woodGrainBadge } from "@shared/walzcraftColorPatterns";
 import { WalzCraftApplyPanel, GlazingControl } from "@/components/walzcraft/WalzCraftApplyPanel";
+import { VendorUpdateBadge } from "./VendorMeasurementUpdate";
 import { WalzCraftErrorBoundary } from "@/components/walzcraft/WalzCraftErrorBoundary";
 import { readGlazing, saveGlazing, type ProfileFormValues, type Glazing } from "@shared/walzcraftProfileFill";
 import { designerWorkspaceHref } from "@/lib/designerFreshStart";
@@ -631,6 +631,9 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
       }
       onSaved();
       onClose();
+      // After the bake window has opened (separate tab, not cancelled by this), go to the
+      // existing style audit screen (Admin → Door Rendering Audit) focused on this style.
+      openStyleAudit(style.id, style.ourName ?? "");
     } catch {
       // The current-style mutation reports its own toast.
     } finally {
@@ -667,6 +670,7 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
           <DialogTitle className="flex items-center gap-2">
             <Pencil className="h-4 w-4 text-amber-600" />
             Edit Door Style
+            <VendorUpdateBadge style={style} />
             <span className="font-mono text-xs font-normal text-muted-foreground ml-1">{style.ourName}</span>
           </DialogTitle>
         </DialogHeader>
@@ -1382,80 +1386,6 @@ function CreateDialog({ open, onClose, onCreated, distributorOptions }: CreateDi
   );
 }
 
-type PendingMeasurement = {
-  id: number;
-  vendorLineName: string;
-  vendorStyleCode: string;
-  vendorStyleName: string;
-  appliesToStyleIds: number[];
-  measuredBy: string;
-  measuredOn: string;
-  citation: string;
-  measurementData: Record<string, unknown>;
-  submittedAt: Date;
-};
-
-function DoorMeasurementReviewQueue() {
-  const utils = trpc.useUtils();
-  const { data, isLoading } = trpc.distributorPortal.listDoorMeasurementSubmissions.useQuery({ status: "pending", limit: 100 });
-  const [target, setTarget] = useState<PendingMeasurement | null>(null);
-  const [rail, setRail] = useState("");
-  const [stile, setStile] = useState("");
-  const [centerRail, setCenterRail] = useState("");
-  const [physicalSampleMeasured, setPhysicalSampleMeasured] = useState(false);
-  const [reviewNote, setReviewNote] = useState("");
-  const review = trpc.distributorPortal.reviewDoorMeasurementSubmission.useMutation({
-    onSuccess: (result) => {
-      utils.distributorPortal.listDoorMeasurementSubmissions.invalidate();
-      utils.doorStyles.listForAdmin.invalidate();
-      toast.success(result.approved ? "Designer profile approved from the physical sample." : "Vendor measurement submission rejected.");
-      setTarget(null);
-    },
-    onError: (error) => toast.error(error.message),
-  });
-  const openReview = (submission: PendingMeasurement) => {
-    setTarget(submission);
-    setRail(""); setStile(""); setCenterRail(""); setPhysicalSampleMeasured(false); setReviewNote("");
-  };
-  const measured = target?.measurementData ?? {};
-  const applicantValue = (key: string) => {
-    const value = measured[key];
-    return value == null || value === "" ? "—" : String(value);
-  };
-  const approve = (approved: boolean) => {
-    if (!target) return;
-    const asNumber = (value: string) => value.trim() ? Number(value) : null;
-    review.mutate({
-      id: target.id,
-      approve: approved,
-      physicalSampleMeasured,
-      railWidth: approved ? asNumber(rail) : undefined,
-      stileWidth: approved ? asNumber(stile) : undefined,
-      centerRailWidth: approved ? asNumber(centerRail) : undefined,
-      reviewNote: reviewNote.trim() || undefined,
-    });
-  };
-  if (isLoading || !data?.length) return null;
-  const pending = data as PendingMeasurement[];
-  return <>
-    <section data-testid="door-measurement-review-queue" className="rounded-xl border border-amber-200 bg-amber-50/50 p-4 shadow-sm">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <div><h2 className="flex items-center gap-2 font-semibold text-amber-950"><Ruler className="h-4 w-4" />Physical sample-door measurement review</h2><p className="mt-1 max-w-3xl text-sm text-amber-900/80">Vendor submissions are official first-party source records. They remain pending until CabinetDealz measures the delivered sample once. Approval writes the team-measured frame profile and citation into every style the vendor checked as the same profile.</p></div>
-        <Badge className="w-fit border-amber-300 bg-background text-amber-900" variant="outline">{pending.length} pending</Badge>
-      </div>
-      <div className="mt-3 space-y-2">
-        {pending.map((submission) => <div key={submission.id} className="flex flex-col gap-2 rounded-lg border border-amber-100 bg-background p-3 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><p className="font-medium">{submission.vendorLineName} · {submission.vendorStyleName} <span className="font-mono text-sm">{submission.vendorStyleCode}</span></p><p className="text-xs text-muted-foreground">Measured by {submission.measuredBy} on {submission.measuredOn} · applies to {submission.appliesToStyleIds.length} checked style{submission.appliesToStyleIds.length === 1 ? "" : "s"}</p><p className="mt-1 truncate text-xs text-muted-foreground" title={submission.citation}>{submission.citation}</p></div><Button size="sm" variant="outline" onClick={() => openReview(submission)}><ClipboardCheck className="mr-1.5 h-3.5 w-3.5" />Review physical sample</Button></div>)}
-      </div>
-    </section>
-    <Dialog open={Boolean(target)} onOpenChange={(open) => { if (!open) setTarget(null); }}>
-      <DialogContent className="max-w-2xl">
-        <DialogHeader><DialogTitle className="flex items-center gap-2"><ClipboardCheck className="h-5 w-5 text-amber-600" />Confirm physical sample measurements</DialogTitle></DialogHeader>
-        {target && <div className="space-y-4"><div className="rounded-lg border border-muted bg-muted/30 p-3 text-sm"><p className="font-semibold">Vendor source: {target.vendorLineName} · {target.vendorStyleName} · {target.vendorStyleCode}</p><p className="mt-1 text-muted-foreground">Vendor-entered values: top rail {applicantValue("topRailWidth")}″ · bottom rail {applicantValue("bottomRailWidth")}″ · left stile {applicantValue("leftStileWidth")}″ · right stile {applicantValue("rightStileWidth")}″.</p><p className="mt-1 text-muted-foreground">Approval will update {target.appliesToStyleIds.length} checked Designer profile{target.appliesToStyleIds.length === 1 ? "" : "s"}.</p></div><label className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm"><input type="checkbox" checked={physicalSampleMeasured} onChange={(event) => setPhysicalSampleMeasured(event.target.checked)} /><span><strong>CabinetDealz measured the physical sample door.</strong><br /><span className="text-muted-foreground">Required before these values may render in Designer.</span></span></label><div className="grid gap-3 sm:grid-cols-3"><div className="space-y-1"><Label>Team-measured rail (in)</Label><Input type="number" step="0.0625" min="0.01" value={rail} onChange={(event) => setRail(event.target.value)} /></div><div className="space-y-1"><Label>Team-measured stile (in)</Label><Input type="number" step="0.0625" min="0.01" value={stile} onChange={(event) => setStile(event.target.value)} /></div><div className="space-y-1"><Label>Center rail (in)</Label><Input type="number" step="0.0625" min="0.01" value={centerRail} onChange={(event) => setCenterRail(event.target.value)} /></div></div><div className="space-y-1"><Label>Review note (optional)</Label><Input value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} placeholder="e.g. matches the delivered sample" /></div></div>}
-        <DialogFooter><Button variant="outline" onClick={() => setTarget(null)} disabled={review.isPending}>Cancel</Button><Button variant="destructive" onClick={() => approve(false)} disabled={review.isPending}>Reject</Button><Button className="bg-emerald-700 text-white hover:bg-emerald-800" onClick={() => approve(true)} disabled={review.isPending || !physicalSampleMeasured || !rail || !stile}>{review.isPending ? "Saving…" : "Approve for Designer"}</Button></DialogFooter>
-      </DialogContent>
-    </Dialog>
-  </>;
-}
 
 // ── Main component ────────────────────────────────────────────────────────────
 
@@ -1706,8 +1636,6 @@ export default function FeaturedStylesAdmin() {
         </div>
 	      </div>
 
-	      <DoorMeasurementReviewQueue />
-        <FramelessFaceAdmin styles={styles} onApplied={() => utils.doorStyles.listForAdmin.invalidate()} />
 
 	      {/* Featured list */}
       <div>
@@ -1766,7 +1694,7 @@ export default function FeaturedStylesAdmin() {
                     onSkinNeeded={saveSkinNeeded}
                     onFinishedEndNeeded={saveFinishedEndNeeded}
                   />
-                  <div className="mt-2"><WalzCraftErrorBoundary><WalzCraftMatchForStyle style={s} currentPhoto={thumb(s)} /></WalzCraftErrorBoundary></div>
+                  <VendorUpdateBadge style={s} /><div className="mt-2"><WalzCraftErrorBoundary><WalzCraftMatchForStyle style={s} currentPhoto={thumb(s)} /></WalzCraftErrorBoundary></div>
                   <details data-testid="featured-style-measurements" className="mt-2 rounded border border-border p-2">
                     <summary className="cursor-pointer text-xs font-semibold text-muted-foreground">Measurements (frame profile, Designer compliance, citation) — edit in the pencil dialog</summary>
                   <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
@@ -1863,7 +1791,7 @@ export default function FeaturedStylesAdmin() {
         )}
       </div>
 
-      <WalzCraftErrorBoundary label="WalzCraft-only matches"><WalzCraftOnlyMatches styles={featured} /></WalzCraftErrorBoundary>
+      <WalzCraftErrorBoundary label="WalzCraft-only matches"><WalzCraftOnlyMatches styles={styles} /></WalzCraftErrorBoundary>
 
       {/* All other styles — edit any of them, or feature them */}
       <div>
@@ -1952,6 +1880,7 @@ export default function FeaturedStylesAdmin() {
                     onSkinNeeded={saveSkinNeeded}
                     onFinishedEndNeeded={saveFinishedEndNeeded}
                   />
+                  <VendorUpdateBadge style={s} /><div className="mt-2"><WalzCraftErrorBoundary><WalzCraftMatchForStyle style={s} currentPhoto={thumb(s)} /></WalzCraftErrorBoundary></div>
                 </div>
                 <div className="flex w-full flex-wrap items-center gap-1">
                   <OpenDesignerLink
@@ -2041,6 +1970,7 @@ export default function FeaturedStylesAdmin() {
                     onSkinNeeded={saveSkinNeeded}
                     onFinishedEndNeeded={saveFinishedEndNeeded}
                   />
+                  <VendorUpdateBadge style={s} /><div className="mt-2"><WalzCraftErrorBoundary><WalzCraftMatchForStyle style={s} currentPhoto={thumb(s)} /></WalzCraftErrorBoundary></div>
                   <p className="mt-0.5 break-words text-xs leading-snug text-muted-foreground">
                     {[s.doorStyle, s.color].filter(Boolean).join(" · ")}
                     {" "}
@@ -2231,6 +2161,16 @@ function DoorRenderOverrides({
       />
     </div>
   );
+}
+
+export const ADMIN_TAB_EVENT = "admin:select-tab";
+export function openStyleAudit(styleId: number, styleName: string) {
+  const url = new URL(window.location.href);
+  url.searchParams.set("tab", "door-rendering-audit");
+  url.searchParams.set("auditStyleId", String(styleId));
+  if (styleName) url.searchParams.set("auditSearch", styleName);
+  window.history.pushState({}, "", url.toString());
+  window.dispatchEvent(new CustomEvent(ADMIN_TAB_EVENT, { detail: { tab: "door-rendering-audit" } }));
 }
 
 function SampleEyedropper({ images, onPick }: { images: { url: string; label: string }[]; onPick: (hex: string) => void }) {

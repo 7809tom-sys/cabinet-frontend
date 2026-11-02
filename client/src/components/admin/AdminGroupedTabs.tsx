@@ -514,6 +514,19 @@ export default function AdminGroupedTabs() {
     window.history.replaceState({}, "", url.toString());
   }, []);
 
+  // Other editors (e.g. Edit Door after Save) can jump to a tab in-app.
+  useEffect(() => {
+    const onSelectTab = (event: Event) => {
+      const tab = (event as CustomEvent<{ tab?: string }>).detail?.tab;
+      if (!tab) return;
+      const next = canonicalAdminTab(tab);
+      setActiveGroup(TAB_TO_GROUP[next] || activeGroup);
+      setActiveTab(next);
+    };
+    window.addEventListener("admin:select-tab", onSelectTab);
+    return () => window.removeEventListener("admin:select-tab", onSelectTab);
+  }, [activeGroup]);
+
   const handleGroupChange = (groupId: string) => {
     setActiveGroup(groupId);
     const group = GROUPS.find((g) => g.id === groupId)!;

@@ -8,7 +8,7 @@ import { applyFill, planProfileFill, type FillPlan, type ProfileFormValues, type
  * nothing persists until the admin presses the dialog's normal Save.
  */
 export function WalzCraftApplyPanel({ style, values, onApply }: {
-  style: { ourName: string; distributorName?: string | null; aliasName?: string | null };
+  style: { ourName: string; distributorName?: string | null; aliasName?: string | null; supplierBrandName?: string | null; supplierName?: string | null; manufacturer?: string | null; distributor?: string | null };
   values: ProfileFormValues;
   onApply: (next: ProfileFormValues) => void;
 }) {

@@ -71,10 +71,47 @@ export function candidateDoors(opts: { doorType: "slab" | "five-piece"; template
   return pool;
 }
 
-/** Match a CSV door to an existing featured style by distributor door name (no DB ids needed). */
-export function doorForStyle(style: { ourName?: string | null; distributorName?: string | null; aliasName?: string | null }): DistributorDoorMatch | null {
-  const names = [style.distributorName, style.ourName, style.aliasName].map(norm).filter(Boolean);
-  return WALZCRAFT_DISTRIBUTOR_DOORS.find((d) => d.doorName && names.includes(norm(d.doorName))) ?? null;
+/** Canonical distributor key for a style's manufacturer/distributor label, or null when it is none of the four sheets. */
+export function distributorKey(label: string | null | undefined): string | null {
+  const n = norm(label);
+  if (!n) return null;
+  if (n.startsWith("faircrest")) return "Faircrest";
+  if (n.startsWith("kitchencrest")) return "Kitchen Crest";
+  if (n === "dl" || n.startsWith("dlcabinetry") || n.startsWith("dlcabinet")) return "DL Cabinetry";
+  if (n.startsWith("altaeuro")) return "AltaEuro";
+  return null;
+}
+
+export type StyleForMatch = {
+  ourName?: string | null; distributorName?: string | null; aliasName?: string | null;
+  supplierBrandName?: string | null; supplierName?: string | null; manufacturer?: string | null; distributor?: string | null;
+  doorStyle?: string | null; sku?: string | null;
+};
+
+/**
+ * Match a CSV door to a style: the distributor must match (from the style's supplier brand /
+ * manufacturer / distributor field) AND the door name or code must match exactly. No
+ * cross-distributor fallback — a shared color name like "Shaker White" never pulls another
+ * distributor's door. Returns null ("No WalzCraft match yet") otherwise.
+ */
+export function doorForStyle(style: StyleForMatch): DistributorDoorMatch | null {
+  const dist = [style.supplierBrandName, style.manufacturer, style.distributor, style.supplierName].map(distributorKey).find(Boolean) ?? null;
+  if (!dist) return null;
+  const names = [style.distributorName, style.ourName, style.aliasName, style.doorStyle, style.sku].map(norm).filter(Boolean);
+  const pool = WALZCRAFT_DISTRIBUTOR_DOORS.filter((d) => d.distributor === dist);
+  return pool.find((d) => d.doorName && names.includes(norm(d.doorName)))
+    ?? pool.find((d) => names.includes(norm(d.code)))
+    ?? null;
+}
+
+/** CSV doors sorted by distributor (A→Z), then door name, grouped with a heading per distributor. */
+export function groupDoorsByDistributor(doors: DistributorDoorMatch[]): Array<{ distributor: string; doors: DistributorDoorMatch[] }> {
+  const by = new Map<string, DistributorDoorMatch[]>();
+  for (const d of doors) by.set(d.distributor, [...(by.get(d.distributor) ?? []), d]);
+  return Array.from(by.keys()).sort((a, b) => a.localeCompare(b)).map((distributor) => ({
+    distributor,
+    doors: by.get(distributor)!.slice().sort((a, b) => doorDisplayName(a).localeCompare(doorDisplayName(b))),
+  }));
 }
 
 export type ApprovalState = "approved" | "rejected";
