@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { TintedSlab } from "@/components/walzcraft/TintedSlab";
 import { WalzProfileSvg, formatInches } from "@/components/walzcraft/WalzProfileSvg";
 import {
   rankProfilesForShade,
@@ -17,6 +18,15 @@ import {
   type WalzProfileTemplate,
   type DoorSelection,
 } from "@shared/walzcraftDoorTemplates";
+import {
+  candidateDoors,
+  doorDisplayName,
+  doorsForShade,
+  doorsForTemplate,
+  profileConfidenceFor,
+  type DistributorDoorMatch,
+} from "@shared/walzcraftDistributorMatches";
+
 
 // NOTE: Shaker doors use the separate DL Shaker blueprint
 // (docs/rules/SHAKER_DOOR_RULE.md + shared/shakerDoorBlueprint.ts).
@@ -125,6 +135,83 @@ function ToggleSwitch({
   );
 }
 
+function continueHint(step: Step): string {
+  switch (step) {
+    case "color": return "Pick a color family to continue";
+    case "profile": return "Turn on a door profile to continue";
+    case "drawers": return "Choose a wall and a base drawer profile to continue";
+    default: return "";
+  }
+}
+
+function SeenAt({ doors, templateId, templateName }: { doors: DistributorDoorMatch[]; templateId?: string; templateName?: string }) {
+  if (doors.length === 0) return null;
+  return (
+    <span data-testid="seen-at" className="mt-1 block text-xs text-[#244338]">
+      {doors.slice(0, 3).map((d) => {
+        const pct = templateId ? profileConfidenceFor(d, templateId, templateName) : null;
+        return (
+          <span key={d.id} className="block">
+            Seen at: {d.distributor} {doorDisplayName(d)}{pct != null ? ` · ${pct}%` : ""}
+          </span>
+        );
+      })}
+      {doors.length > 3 && <span className="block text-[#244338]/60">+{doors.length - 3} more distributor doors</span>}
+    </span>
+  );
+}
+
+export function buildingTitle(door: DistributorDoorMatch | null): string {
+  return door ? `Building: ${doorDisplayName(door)}` : "Building: choose a door";
+}
+
+function BuildingBanner({
+  door,
+  candidates,
+  onChoose,
+  large,
+  detail,
+}: {
+  door: DistributorDoorMatch | null;
+  candidates: DistributorDoorMatch[];
+  onChoose: (id: string | null) => void;
+  large: boolean;
+  detail: string;
+}) {
+  return (
+    <div data-testid="building-banner" className="sticky top-0 z-20 mb-6 flex flex-wrap items-center gap-4 rounded-lg border-2 border-[#d7a46c] bg-[#fffdf9] p-3 shadow-sm">
+      {door?.photo ? (
+        <img src={door.photo} alt={`${doorDisplayName(door)} brochure door`} className="h-16 w-12 rounded border border-[#244338]/20 object-contain" />
+      ) : (
+        <div className="h-16 w-12 rounded border border-dashed border-[#244338]/30" aria-hidden="true" />
+      )}
+      <div className="min-w-0 flex-1">
+        <div data-testid="building-title" className={`font-serif font-semibold text-[#244338] ${large ? "text-3xl" : "text-xl"}`}>
+          {buildingTitle(door)}
+        </div>
+        {door && <div className="text-xs text-[#244338]/70">from {door.distributor}</div>}
+        {detail && <div className="text-xs text-[#244338]/70">{detail}</div>}
+      </div>
+      {candidates.length > 1 && (
+        <label className="text-xs text-[#244338]">
+          <span className="mb-1 block font-semibold">Which distributor door are you building?</span>
+          <select
+            data-testid="building-door-select"
+            value={door?.id ?? ""}
+            onChange={(e) => onChoose(e.target.value || null)}
+            className="rounded border border-[#244338]/40 bg-[#fffdf9] px-2 py-1 text-sm text-[#244338]"
+          >
+            <option value="">Choose a door…</option>
+            {candidates.map((c) => (
+              <option key={c.id} value={c.id}>{c.distributor} · {doorDisplayName(c)}</option>
+            ))}
+          </select>
+        </label>
+      )}
+    </div>
+  );
+}
+
 export default function WalzCraftDoorPicker() {
   const [state, setState] = useState<PickerState>(INITIAL_STATE);
   const [stepIndex, setStepIndex] = useState(0);
@@ -168,6 +255,24 @@ export default function WalzCraftDoorPicker() {
     [state.shadeId],
   );
 
+  const [chosenDoorId, setChosenDoorId] = useState<string | null>(null);
+  const doorCandidates = useMemo(
+    () =>
+      candidateDoors({
+        doorType: state.doorType,
+        templateId: state.profileId,
+        templateName: selectedTemplate?.name ?? null,
+        shadeName: selectedShade?.name ?? null,
+      }),
+    [state.doorType, state.profileId, selectedTemplate, selectedShade],
+  );
+  const buildingDoor: DistributorDoorMatch | null =
+    doorCandidates.find((d) => d.id === chosenDoorId) ?? (doorCandidates.length === 1 ? doorCandidates[0] : null);
+  const shadesRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (state.colorFamilyId) shadesRef.current?.scrollIntoView?.({ behavior: "smooth", block: "nearest" });
+  }, [state.colorFamilyId]);
+
   const glazeFor = (id: string): GlazeOption => state.glaze[id] ?? "none";
 
   const setDoorType = (doorType: DoorType) => {
@@ -185,10 +290,12 @@ export default function WalzCraftDoorPicker() {
     setState((prev) => {
       const shades = rankShades(familyId);
       const keepShade = shades.some((r) => r.shade.id === prev.shadeId);
+      // Picking a family selects its top shade so Continue enables immediately
+      // (previously Continue stayed disabled until a second, below-the-fold shade click).
       return {
         ...prev,
         colorFamilyId: familyId,
-        shadeId: keepShade ? prev.shadeId : null,
+        shadeId: keepShade ? prev.shadeId : (shades[0]?.shade.id ?? null),
       };
     });
   };
@@ -256,6 +363,7 @@ export default function WalzCraftDoorPicker() {
   const startOver = () => {
     setState(INITIAL_STATE);
     setStepIndex(0);
+    setChosenDoorId(null);
   };
 
   // Drawer options per zone
@@ -295,6 +403,14 @@ export default function WalzCraftDoorPicker() {
           WalzCraft door picker
         </h1>
 
+        <BuildingBanner
+          door={buildingDoor}
+          candidates={doorCandidates}
+          onChoose={setChosenDoorId}
+          large={activeStep === "review"}
+          detail={[selectedShade?.name, state.doorType === "slab" ? "Slab" : "Five-piece"].filter(Boolean).join(" · ")}
+        />
+
         {/* Stepper */}
         <ol className="mb-8 flex flex-wrap items-center gap-2">
           {steps.map((s, i) => {
@@ -308,8 +424,16 @@ export default function WalzCraftDoorPicker() {
                 ? "bg-[#d7a46c] text-[#244338] border-[#d7a46c]"
                 : "bg-transparent text-[#244338] border-[#244338]/30";
             return (
-              <li key={s} className={`${base} ${cls}`}>
-                {STEP_LABELS[s]}
+              <li key={s}>
+                <button
+                  type="button"
+                  data-testid={`step-pill-${s}`}
+                  disabled={!isDone && !isActive}
+                  onClick={() => isDone && setStepIndex(i)}
+                  className={`${base} ${cls} disabled:cursor-default`}
+                >
+                  {STEP_LABELS[s]}
+                </button>
               </li>
             );
           })}
@@ -349,8 +473,9 @@ export default function WalzCraftDoorPicker() {
                       <span className="flex-1">
                         <span className="block font-semibold text-[#244338]">{family.name}</span>
                         <span className="block text-xs text-[#244338]/70">
-                          {shade.name} · {confidence}% match
+                          {shade.name}, WalzCraft color (estimated match)
                         </span>
+                        <SeenAt doors={doorsForShade(shade.name)} />
                       </span>
                     </button>
                   );
@@ -360,7 +485,7 @@ export default function WalzCraftDoorPicker() {
 
             {/* Four shades of chosen family */}
             {selectedFamily && (
-              <div>
+              <div ref={shadesRef}>
                 <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-[#244338]/70">
                   Four {selectedFamily.name} shades
                 </h3>
@@ -386,6 +511,7 @@ export default function WalzCraftDoorPicker() {
                         <span className="flex-1">
                           <span className="block font-semibold text-[#244338]">{shade.name}</span>
                           <span className="block text-xs text-[#244338]/70">{shade.finish}</span>
+                          <SeenAt doors={doorsForShade(shade.name)} />
                           {shade.hexEstimated && (
                             <span className="mt-1 block text-xs italic text-[#244338]/50">
                               est. hex
@@ -393,7 +519,7 @@ export default function WalzCraftDoorPicker() {
                           )}
                         </span>
                         <span className="rounded bg-[#d7a46c] px-2 py-0.5 text-xs font-semibold text-[#244338]">
-                          {confidence}% match
+                          WalzCraft color (estimated match)
                         </span>
                       </button>
                     );
@@ -454,7 +580,12 @@ export default function WalzCraftDoorPicker() {
                         : "border-[#244338]/20 bg-[#fffdf9]/60 hover:border-[#244338]/40"
                     }`}
                   >
-                    {t === "slab" ? <SlabIcon selected={selected} /> : <FivePieceIcon selected={selected} />}
+                    {t === "slab" ? (
+                      <span className="flex items-center gap-3">
+                        <SlabIcon selected={selected} />
+                        <TintedSlab className="h-28 w-14" tint={{ hex: selectedShade?.hex ?? null, colorName: selectedShade ? `${selectedShade.name}, WalzCraft color` : "choose a color", estimated: selectedShade?.hexEstimated ?? true }} />
+                      </span>
+                    ) : <FivePieceIcon selected={selected} />}
                     <span className="text-lg font-semibold text-[#244338]">
                       {t === "slab" ? "Slab" : "Five-piece"}
                     </span>
@@ -493,7 +624,7 @@ export default function WalzCraftDoorPicker() {
                     </div>
                     <div className="flex items-center justify-between gap-2">
                       <span className="font-semibold text-[#244338]">
-                        {template.id} {template.name}
+                        {template.name}
                       </span>
                       <ToggleSwitch
                         checked={selected}
@@ -508,9 +639,10 @@ export default function WalzCraftDoorPicker() {
                         {template.panelProfile ?? "unpublished"}
                       </span>
                       <span className="rounded bg-[#d7a46c] px-2 py-0.5 text-xs font-semibold text-[#244338]">
-                        {confidence}% match
+                        {confidence}% profile match (estimated)
                       </span>
                     </div>
+                    <SeenAt doors={doorsForTemplate(template.id, template.name)} templateId={template.id} templateName={template.name} />
                     <div className="h-1.5 w-full overflow-hidden rounded bg-[#244338]/10">
                       <div
                         className="h-full bg-[#244338]"
@@ -606,7 +738,7 @@ export default function WalzCraftDoorPicker() {
                     <div className="flex-1">
                       <div className="mb-2 flex items-center gap-2">
                         <span className="font-semibold text-[#244338]">
-                          {template.id} {template.name}
+                          {template.name}
                         </span>
                         {isSelected && (
                           <span className="rounded bg-[#244338] px-2 py-0.5 text-xs font-semibold text-[#fffdf9]">
@@ -679,7 +811,7 @@ export default function WalzCraftDoorPicker() {
                   <dt className="text-[#244338]/70">Profile</dt>
                   <dd className="text-right font-medium text-[#244338]">
                     {selectedTemplate
-                      ? `${selectedTemplate.id} ${selectedTemplate.name}`
+                      ? selectedTemplate.name
                       : "—"}
                   </dd>
                 </div>
@@ -754,6 +886,7 @@ export default function WalzCraftDoorPicker() {
               data-testid="step-continue"
               onClick={goNext}
               disabled={!canContinue()}
+              title={canContinue() ? undefined : continueHint(activeStep)}
               className="rounded bg-[#244338] px-4 py-2 text-sm font-semibold text-[#fffdf9] disabled:cursor-not-allowed disabled:opacity-40"
             >
               Continue
