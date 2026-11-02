@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { DLC_FRAME_DETAIL } from "@shared/dlcFr26Textures";
-import { SHAKER_PLAIN_SLAB_BELOW_IN, brandDoorSurfaceHex } from "@shared/shakerDoorBlueprint";
+import { SHAKER_PLAIN_SLAB_BELOW_IN } from "@shared/shakerDoorBlueprint";
 import { threeDShakerRailThickness } from "@/lib/shakerRail";
 import { SHAKER_NOTCH_THICKNESS, shakerNotchMaterial, shakerNotchPieces } from "@/components/design/shakerNotch";
 
@@ -62,7 +62,9 @@ export function closetDlShakerMembers(widthIn: number, heightIn: number) {
  * rails, stiles between them, DL rail depth standing proud of the panel).
  */
 export function createClosetDlShakerFront(widthIn: number, heightIn: number, finishHex: string, role: ClosetShakerRole) {
-  const surfaceHex = brandDoorSurfaceHex(finishHex);
+  // Paint the finish that was asked for. The brand-swatch snap turned Slate
+  // Rift (#555553) and other grays into brand green #244338.
+  const surfaceHex = finishHex;
   const width = widthIn * IN;
   const height = heightIn * IN;
   const members = closetDlShakerMembers(widthIn, heightIn);
