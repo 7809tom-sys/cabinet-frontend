@@ -5,7 +5,6 @@
  * stain overrides that table so a color *name* never reaches WebGL.
  */
 import { doorPanelKind, type DoorPanelKind } from "@/lib/doorPanelKind";
-import { isFivePieceSlabLabel } from "@shared/doorFrontStyle";
 import { finishColors, type FinishColors } from "@/lib/design";
 import { styleFinishSearchText } from "@shared/styleFinishColor";
 import { designerDoorFrameMetrics } from "@/lib/doorFrameMetrics";
@@ -75,9 +74,6 @@ export function resolveDoorStyleAppearance(style: DoorStyleAppearanceInput | nul
 /** Elevation panel treatment. Aspen White is stored as "Shaker" but builds as raised. */
 export function resolveDoorProfilePanelKind(style: DoorStyleAppearanceInput | null | undefined): DoorPanelKind {
   if (!style) return doorPanelKind(null);
-  if ([style.doorStyle, style.doorPanelType, style.profileDescription, style.profileNotes].some(isFivePieceSlabLabel)) {
-    return "five-piece-slab";
-  }
   const profile = resolveDoorStyleAppearance(style).profile;
   return doorPanelKind(profile.doorStyle ?? style.ourName ?? style.name);
 }

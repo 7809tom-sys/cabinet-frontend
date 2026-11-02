@@ -1,6 +1,5 @@
 import { preferredDoorReferenceUrl, preferredDrawerReferenceUrl } from "@/lib/approvedDoorReference";
-import { proceduralSolidFacePlan, resolveCabinetFaceImages, type CabinetFacePlan, type DoorStyleFaceInput } from "@shared/doorFaceRecognition";
-import { styleHasFivePieceSlabLabel } from "@shared/doorFrontStyle";
+import { resolveCabinetFaceImages, type CabinetFacePlan, type DoorStyleFaceInput } from "@shared/doorFaceRecognition";
 import { findDlcFinishForStyle } from "@shared/dlcFr26Mapping";
 import { standardShakerDlFacePlan } from "@shared/shakerDoorBlueprint";
 
@@ -41,9 +40,6 @@ export function designerFacePlan(
   placement: string | null | undefined,
 ): CabinetFacePlan | null {
   if (!style) return null;
-  // A five-piece slab label is a clean framed slab. It does not inherit a shaker
-  // photo or the DL shaker blueprint, even when doorStyle still says Shaker.
-  if (styleHasFivePieceSlabLabel(style)) return proceduralSolidFacePlan();
   // A real DL finish keeps its own grain and color. Other 2.75/3 inch shakers
   // still use that blueprint, and do not paint a framed catalog photo on the slab.
   if (findDlcFinishForStyle(style)) return resolveCabinetFaceImages(style, placement);
