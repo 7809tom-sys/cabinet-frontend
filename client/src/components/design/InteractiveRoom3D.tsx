@@ -1,3 +1,4 @@
+import { woodGrainTileForFront } from "@shared/woodGrainTiles";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTabletWorkspace } from "@/hooks/useTabletWorkspace";
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
@@ -4402,6 +4403,10 @@ export function addCabinet(
   // Depot frameless lines get separate skins, and they do not go through this path.
   const dlcDoorFinish = surfaceTextures?.faceCrop?.solidColor ?? null;
   if (dlcDoorFinish) color = dlcDoorFinish;
+  // Wood grain tile set (approved in the door style editor, browser draft only): each front gets a tile
+  // picked deterministically from its uid, with flip + small UV offset. No set → the single door photo.
+  const woodGrainTile = woodGrainTileForFront(doorProfile?.styleId ?? null, sku.placementUid ?? `${sku.masterCode}@${transform?.x ?? 0},${transform?.z ?? 0}`, undefined, { horizontal: doorProfile?.grainDirection === "horizontal" });
+  if (woodGrainTile) doorSampleUrl = woodGrainTile.url;
   const placement = (sku.placementType ?? "base").toLowerCase();
   const isKneeDrawer = isKneeDrawerItem(sku);
   const isWall = placement === "wall";
@@ -5237,6 +5242,14 @@ export function addCabinet(
 	    // at the same spot (mirrored tiles make any offset seamless).
 	    const dlcStagger = dlcDoorGrain ? threeDCabinetGrainTransform(sku.placementUid, doorSampleUrl) : null;
 	    doorTexture.offset.set(grainTransform?.offsetX ?? dlcStagger?.offsetX ?? doorFrame.offsetX, grainTransform?.offsetY ?? dlcStagger?.offsetY ?? doorFrame.offsetY);
+	    if (woodGrainTile) {
+	      doorTexture.wrapS = THREE.RepeatWrapping;
+	      doorTexture.wrapT = THREE.RepeatWrapping;
+	      doorTexture.repeat.set(woodGrainTile.flipX ? -1 : 1, woodGrainTile.flipY ? -1 : 1);
+	      doorTexture.offset.set((woodGrainTile.flipX ? 1 : 0) + woodGrainTile.offsetU, (woodGrainTile.flipY ? 1 : 0) + woodGrainTile.offsetV);
+	      doorTexture.center.set(0.5, 0.5);
+	      doorTexture.rotation = woodGrainTile.rotation;
+	    }
 	    doorTexture.userData = {
 	      ...doorTexture.userData,
 	      curatedCabinetFinish: usesCuratedCabinetGrain,
@@ -13967,6 +13980,18 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
     }
     setPhotoRenderOpen(true);
   };
+
+  // Admin "Bake room scene now" deep link (?bakeRoomScene=1 from the door style editor): open the EXISTING
+  // Final preview flow once the plan can render. It only opens the dialog; every confirmation/approval step stays manual
+  // and the Gemini path is never started automatically.
+  const bakeRoomSceneStartedRef = useRef(false);
+  useEffect(() => {
+    if (bakeRoomSceneStartedRef.current || typeof window === "undefined") return;
+    if (new URLSearchParams(window.location.search).get("bakeRoomScene") !== "1") return;
+    if (!renderExistingDesign || (!savedDesignId && !isPhotoQualityTest) || !colorGate) return;
+    bakeRoomSceneStartedRef.current = true;
+    void openPhotoRenderDialog();
+  });
 
   const saveCurrentPlanForGoogleTest = () => {
     if (!onSaveToAccount) {
