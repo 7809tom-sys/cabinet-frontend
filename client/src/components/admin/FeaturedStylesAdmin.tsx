@@ -27,7 +27,7 @@ import DoorPhotoCorrectButton from "./DoorPhotoCorrectButton";
 import { AdminStyleRoomSceneControls } from "@/components/doorStyles/AdminDoorStyleRoomScene";
 import type { AutoRoomScene } from "@/lib/autoRoomScene";
 import { MediaPicker } from "./MediaPicker";
-import { WalzCraftMatchForStyle, WalzCraftOnlyMatches, WalzCraftManualDoorPicker, resolveWalzDoor, readManualDoorId, writeManualDoorId } from "@/components/walzcraft/WalzCraftMatchCard";
+import { WalzCraftMatchForStyle, WalzCraftManualDoorPicker, resolveWalzDoor, readManualDoorId, writeManualDoorId } from "@/components/walzcraft/WalzCraftMatchCard";
 import { WoodGrainColorDisplay, DoorSkinField } from "@/components/walzcraft/ColorFinishExtras";
 import { readDoorSkin, saveDoorSkin, doorSkinError, type DoorSkin } from "@shared/doorSkin";
 import { approvedTilesFor } from "@shared/woodGrainTiles";
@@ -64,8 +64,17 @@ import {
   inheritedVendorZipsForEditor,
   ownShippingOriginZips,
 } from "@shared/styleOriginInheritance";
+import { sortDoorStylesByDistributor, type DoorStyleDistributorSort } from "./doorSelectorDistributorSort";
 
 const MAX_SCENES_PER_STYLE = 6;
+
+function featuredRank(a: AdminStyle, b: AdminStyle) {
+  return a.featuredRank - b.featuredRank || a.ourName.localeCompare(b.ourName);
+}
+
+function byStyleName(a: AdminStyle, b: AdminStyle) {
+  return a.ourName.localeCompare(b.ourName);
+}
 
 interface AdminStyle {
   id: number;
@@ -1405,6 +1414,7 @@ function CreateDialog({ open, onClose, onCreated, distributorOptions }: CreateDi
 export default function FeaturedStylesAdmin() {
   const [search, setSearch] = useState("");
   const [distributorFilter, setDistributorFilter] = useState<string>("all");
+  const [distributorSort, setDistributorSort] = useState<DoorStyleDistributorSort>("manual");
   const [editingStyle, setEditingStyle] = useState<AdminStyle | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<AdminStyle | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
@@ -1430,13 +1440,11 @@ export default function FeaturedStylesAdmin() {
     return map;
   }, [skuCounts]);
 
-  const featured = useMemo(
-    () =>
-      styles
-        .filter((s) => s.isFeatured)
-        .sort((a, b) => a.featuredRank - b.featuredRank || a.ourName.localeCompare(b.ourName)),
-    [styles],
-  );
+  const featured = useMemo(() => {
+    const rows = styles.filter((s) => s.isFeatured);
+    if (distributorSort === "manual") return rows.sort(featuredRank);
+    return sortDoorStylesByDistributor(rows, distributorSort, featuredRank);
+  }, [styles, distributorSort]);
 
   // Distinct distributors present in the catalog, for the filter dropdown.
   const distributorOptions = useMemo(() => {
@@ -1457,7 +1465,7 @@ export default function FeaturedStylesAdmin() {
   const available = useMemo(() => {
     const q = search.trim().toLowerCase();
     const distId = distributorFilter === "all" ? null : Number(distributorFilter);
-    return styles
+    const rows = styles
       .filter((s) => s.isActive && !s.isFeatured)
       .filter((s) => (distId === null ? true : s.distributorId === distId))
       .filter((s) =>
@@ -1466,13 +1474,14 @@ export default function FeaturedStylesAdmin() {
               .toLowerCase()
               .includes(q)
           : true,
-      )
-      .sort((a, b) => a.ourName.localeCompare(b.ourName));
-  }, [styles, search, distributorFilter]);
+      );
+    if (distributorSort === "manual") return rows.sort(byStyleName);
+    return sortDoorStylesByDistributor(rows, distributorSort, byStyleName);
+  }, [styles, search, distributorFilter, distributorSort]);
 
   const inactive = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return styles
+    const rows = styles
       .filter((s) => !s.isActive)
       .filter((s) =>
         q
@@ -1480,9 +1489,10 @@ export default function FeaturedStylesAdmin() {
               .toLowerCase()
               .includes(q)
           : true,
-      )
-      .sort((a, b) => a.ourName.localeCompare(b.ourName));
-  }, [styles, search]);
+      );
+    if (distributorSort === "manual") return rows.sort(byStyleName);
+    return sortDoorStylesByDistributor(rows, distributorSort, byStyleName);
+  }, [styles, search, distributorSort]);
 
   const saveNeeds = trpc.doorStyles.adminUpdateDoorStyle.useMutation({
     onSuccess: () => {
@@ -1561,6 +1571,7 @@ export default function FeaturedStylesAdmin() {
     setFeatured.mutate({ id: s.id, featured: false });
   }
   function move(index: number, dir: -1 | 1) {
+    if (distributorSort !== "manual") return;
     const next = [...featured];
     const target = index + dir;
     if (target < 0 || target >= next.length) return;
@@ -1652,15 +1663,42 @@ export default function FeaturedStylesAdmin() {
 
 	      {/* Featured list */}
       <div>
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground mb-3">
-          Featured Door Styles ({featured.length})
-        </h3>
+        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            Featured Door Styles ({featured.length})
+          </h3>
+          <div role="group" aria-label="Sort displayed door styles" data-testid="door-style-distributor-sort" className="flex flex-wrap items-center gap-1.5">
+            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Sort</span>
+            {([
+              ["manual", "Manual order"],
+              ["az", "Distributor A-Z"],
+              ["za", "Distributor Z-A"],
+            ] as const).map(([value, label]) => (
+              <Button
+                key={value}
+                type="button"
+                size="sm"
+                variant={distributorSort === value ? "default" : "outline"}
+                className="h-8"
+                aria-pressed={distributorSort === value}
+                onClick={() => setDistributorSort(value)}
+              >
+                {label}
+              </Button>
+            ))}
+          </div>
+        </div>
+        {distributorSort !== "manual" && (
+          <p data-testid="distributor-sort-reorder-hint" className="mb-3 text-xs text-muted-foreground">
+            Distributor sort is a view of the door styles on this page. Styles with no distributor stay last. Switch back to manual order to move featured styles up or down.
+          </p>
+        )}
         {featured.length === 0 ? (
           <div className="rounded-lg border border-dashed border-border p-8 text-center text-muted-foreground">
             No curated homepage scenes yet. Add a room-scene-ready style from the list below.
           </div>
 	        ) : (
-	          <ul className="space-y-2">
+	          <ul className="space-y-2" data-testid="featured-door-style-list">
 	            {featured.map((s, i) => {
 	              const designerCompliance = designerFrameCompliance(s);
 	              const cabinetHoldCount = countMap.get(s.id)?.designerNoncompliantCabinetCount ?? 0;
@@ -1707,7 +1745,7 @@ export default function FeaturedStylesAdmin() {
                     onSkinNeeded={saveSkinNeeded}
                     onFinishedEndNeeded={saveFinishedEndNeeded}
                   />
-                  <VendorUpdateBadge style={s} /><div className="mt-2"><WalzCraftErrorBoundary><WalzCraftMatchForStyle style={s} currentPhoto={thumb(s)} /></WalzCraftErrorBoundary></div>
+                  <VendorUpdateBadge style={s} />
                   <details data-testid="featured-style-measurements" className="mt-2 rounded border border-border p-2">
                     <summary className="cursor-pointer text-xs font-semibold text-muted-foreground">Measurements (frame profile, Designer compliance, citation) — edit in the pencil dialog</summary>
                   <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
@@ -1770,9 +1808,10 @@ export default function FeaturedStylesAdmin() {
                     size="icon"
                     variant="ghost"
                     className="h-8 w-8"
-                    disabled={i === 0 || reorder.isPending}
+                    disabled={distributorSort !== "manual" || i === 0 || reorder.isPending}
                     onClick={() => move(i, -1)}
                     aria-label="Move up"
+                    title={distributorSort !== "manual" ? "Switch back to manual order to reorder" : "Move up"}
                   >
                     <ArrowUp className="h-4 w-4" />
                   </Button>
@@ -1780,9 +1819,10 @@ export default function FeaturedStylesAdmin() {
                     size="icon"
                     variant="ghost"
                     className="h-8 w-8"
-                    disabled={i === featured.length - 1 || reorder.isPending}
+                    disabled={distributorSort !== "manual" || i === featured.length - 1 || reorder.isPending}
                     onClick={() => move(i, 1)}
                     aria-label="Move down"
+                    title={distributorSort !== "manual" ? "Switch back to manual order to reorder" : "Move down"}
                   >
                     <ArrowDown className="h-4 w-4" />
                   </Button>
@@ -1803,8 +1843,6 @@ export default function FeaturedStylesAdmin() {
           </ul>
         )}
       </div>
-
-      <WalzCraftErrorBoundary label="WalzCraft-only matches"><WalzCraftOnlyMatches styles={styles} /></WalzCraftErrorBoundary>
 
       {/* All other styles — edit any of them, or feature them */}
       <div>
@@ -1844,7 +1882,7 @@ export default function FeaturedStylesAdmin() {
         {available.length === 0 ? (
           <p className="text-sm text-muted-foreground">No matching styles.</p>
         ) : (
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2.5" data-testid="all-door-style-list">
             {available.map((s) => (
               <div
                 key={s.id}
@@ -1893,7 +1931,7 @@ export default function FeaturedStylesAdmin() {
                     onSkinNeeded={saveSkinNeeded}
                     onFinishedEndNeeded={saveFinishedEndNeeded}
                   />
-                  <VendorUpdateBadge style={s} /><div className="mt-2"><WalzCraftErrorBoundary><WalzCraftMatchForStyle style={s} currentPhoto={thumb(s)} /></WalzCraftErrorBoundary></div>
+                  <VendorUpdateBadge style={s} />
                 </div>
                 <div className="flex w-full flex-wrap items-center gap-1">
                   <OpenDesignerLink
@@ -1955,7 +1993,7 @@ export default function FeaturedStylesAdmin() {
             Inactive styles{" "}
             <span className="text-muted-foreground/60 normal-case font-normal">({inactive.length} hidden from storefront)</span>
           </h3>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2.5" data-testid="inactive-door-style-list">
             {inactive.map((s) => (
               <div
                 key={s.id}
@@ -1983,7 +2021,7 @@ export default function FeaturedStylesAdmin() {
                     onSkinNeeded={saveSkinNeeded}
                     onFinishedEndNeeded={saveFinishedEndNeeded}
                   />
-                  <VendorUpdateBadge style={s} /><div className="mt-2"><WalzCraftErrorBoundary><WalzCraftMatchForStyle style={s} currentPhoto={thumb(s)} /></WalzCraftErrorBoundary></div>
+                  <VendorUpdateBadge style={s} />
                   <p className="mt-0.5 break-words text-xs leading-snug text-muted-foreground">
                     {[s.doorStyle, s.color].filter(Boolean).join(" · ")}
                     {" "}

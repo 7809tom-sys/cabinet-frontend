@@ -119,7 +119,7 @@ function readManual(): Record<string, string> {
 
 type MatchStyle = StyleForMatch & { id?: number | null; renderHex?: string | null; color?: string | null; grainDirection?: string | null; doorShape?: string | null };
 
-/** Shown on every door style: the exact distributor match, or a clear "No WalzCraft match yet" state with a manual profile picker. */
+/** Shown on the door-style edit screen: the exact distributor match, or a clear "No WalzCraft match yet" state with a manual profile picker. */
 export const MANUAL_DOOR_KEY = "walzcraftManualDoor.v1";
 export function readManualDoorId(styleId: number | string | null | undefined): string | null {
   try { const v = JSON.parse(localStorage.getItem(MANUAL_DOOR_KEY) ?? "{}"); return (v && v[String(styleId)]) || null; } catch { return null; }
