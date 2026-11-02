@@ -266,7 +266,15 @@ describe("owner U-shape: 150 inch walls, fridge center 131 on wall 3", () => {
     expect(report.cornerNotes.join(" ")).toMatch(/LSB33/);
     expect(report.cornerFailures.join(" ")).toMatch(/Wall 2 and Wall 3/);
     expect(report.cornerFailures.join(" ")).toMatch(/12"/);
-    expect(report.twoFour.map((item) => item.masterCode).sort()).toEqual(["DCW2442", "DCW2442", "DCW2442"]);
+    // Only ONE real corner seats here (Wall 2/Wall 3 is refused because the measured
+    // refrigerator cannot slide far enough), so exactly one diagonal corner upper exists.
+    // The old expectation of three DCW2442s came from the phantom fourth-wall run: an open U
+    // measured on three walls must never grow a corner (or a run) on Wall 4.
+    expect(report.twoFour.filter((item) => item.masterCode === "DCW2442")).toHaveLength(1);
+    expect(report.twoFour.every((item) => item.along[0] >= 0 && item.along[1] <= 150)).toBe(true);
+    // The span the phantom corner used to occupy is now finished by a straight upper of the
+    // same selected line, which is what a three-wall U actually has room for.
+    expect(report.twoFour.some((item) => item.masterCode === "W2442")).toBe(true);
     const rightPanel = report.panels.find((item) => item.role === "right-panel")!;
     expect(rightPanel.along[1]).toBeCloseTo(150, 2);
     expect(rightPanel.top).toBeCloseTo(96, 2);

@@ -216,6 +216,14 @@ export type AutoDesignInputs = {
   sinkWindowCenter?: AutoDesignMeasurement | null;
   /** Optional. An empty or skipped answer does not block the build or a later save. */
   kitchenUsage?: KitchenUsageProfile | null;
+  /**
+   * What goes above the range, answered in the design questions. `microwave-bridge` makes the
+   * build place the microwave and its bridge cabinet itself (rule: microwave-bridge-in-build).
+   */
+  overRangeAnswer?: "hood" | "microwave-bridge" | "open" | null;
+  /** Door style chosen in the wizard / design questions. Applies to every cabinet (rule 8). */
+  designQuestionDoorStyleId?: number | null;
+  designQuestionDoorStyleName?: string | null;
 };
 
 export type AutoDesignPlacement = AutoDesignMeasurement & {

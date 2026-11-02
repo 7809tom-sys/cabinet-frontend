@@ -77,7 +77,7 @@ describe("automatic corner placement", () => {
     ...extra,
   });
 
-  it("places a diagonal corner on an L and on both U corners when the line sells one", () => {
+  it("places a diagonal corner on an L and on the two real corners of an open U", () => {
     const options = [dcb, lsb36, bbc36];
     const lSlots = autoDesignCornerSlots("l-shape", {
       wallIds: ["top", "right"], room: DEFAULT_ROOM, originCorner: "left", runDirection: "right",
@@ -90,10 +90,14 @@ describe("automatic corner placement", () => {
     expect(lSeated.source.masterCode).toBe("DCB36");
     expect(lSeated.fallbackNote).toBeNull();
 
+    // DEFAULT_ROOM is a closed rectangle, so its U legitimately has four corners. The seeded
+    // U here is an OPEN U measured on three walls: Wall 4 is not part of the kitchen, so it must
+    // never grow a run or a corner (owner rule: no run on a fourth wall).
     const uSlots = autoDesignCornerSlots("u-shape", {
-      wallIds: ["top", "right", "bottom", "left"], room: DEFAULT_ROOM, originCorner: "left", runDirection: "right",
+      wallIds: ["top", "right", "bottom"], room: DEFAULT_ROOM, originCorner: "left", runDirection: "right",
     });
     expect(uSlots.map((slot) => slot.id)).toEqual(["wall-1-wall-2", "wall-2-wall-3"]);
+    expect(uSlots.some((slot) => slot.firstWall === "Wall 4" || slot.secondWall === "Wall 4")).toBe(false);
     let working: PlacedCabinet[] = [];
     for (const slot of uSlots) {
       const point = autoDesignCornerSlotPoint(slot, DEFAULT_ROOM, "left", "right");

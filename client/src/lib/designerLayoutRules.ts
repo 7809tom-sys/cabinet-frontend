@@ -51,6 +51,8 @@ import {
 } from "./smallGapFiller";
 import { kitchenRuleNumber } from "./kitchenRuleParameters";
 import { clampTrimRunSpans } from "./refrigeratorPanelLimit";
+import { normalizeContinuousVerticalFillers } from "./verticalFiller";
+import { normalizeUpperHeights } from "./designerFaceRules";
 
 /**
  * The most a user-placed Auto-Design appliance may slide along its own wall
@@ -89,7 +91,7 @@ export function measuredRefrigeratorCornerShiftLimitIn(): number {
 const WIGGLE_STEP_IN = 1 / 8;
 const UNDERSIZED_CABINET_IN = 12;
 
-export type DesignerRulePhase = "wiggle" | "shared-pipeline" | "auto-design-stage" | "invariant";
+export type DesignerRulePhase = "wiggle" | "corner-first" | "shared-pipeline" | "auto-design-stage" | "invariant";
 
 export type DesignerLayoutRule = {
   id: string;
@@ -247,9 +249,106 @@ export const DESIGNER_LAYOUT_RULES: readonly DesignerLayoutRule[] = [
   },
   {
     id: "faucet-on-counter",
-    name: "faucet on the counter",
+    name: "the faucet on the counter",
     phase: "invariant",
     summary: "A default sink is created with its faucet on, and a non-apron sink keeps that faucet on the rear deck.",
+  },
+  // ── Owner kitchen rules (rules 1–14) ─────────────────────────────────────
+  {
+    id: "appliance-anchors-first",
+    name: "appliances are anchors first",
+    phase: "auto-design-stage",
+    summary: "The range, sink and refrigerator are seated as fixed anchors before any cabinet is chosen. Each may slide at most 3 inches from its measured center, the refrigerator bay slides as one assembly, and nothing ever extends past the refrigerator end panel.",
+  },
+  {
+    id: "corner-first-least-waste",
+    name: "corner-first, least waste",
+    phase: "corner-first",
+    summary: "The corner is planned against the anchors before any other cabinet: a blind corner at its pull, a blind corner pulled further to fill the leg, and a straight base are compared, and the least waste wins. A blind corner that fits beats a straight base, and a real corner cabinet is seated flush in the corner.",
+  },
+  {
+    id: "leftover-real-cabinets-first",
+    name: "real cabinets before filler",
+    phase: "auto-design-stage",
+    summary: "A leftover opening is closed with a real cabinet first: the adjoining cabinet grows to a wider SKU of the same family (an 18 drawer base becomes a 27), or a real narrow cabinet plus a small filler takes the last inch. Filler is the last resort, and a bare 1 to 1½ inch gap is left at a finished end.",
+  },
+  {
+    id: "nothing-past-wall-or-room",
+    name: "nothing past a wall or room bound",
+    phase: "shared-pipeline",
+    summary: "No cabinet, filler or panel may extend past the end of the wall it was measured on or outside the drawn room. A U-shape never adds a run on a fourth wall that is not part of the kitchen.",
+  },
+  {
+    id: "continuous-vertical-filler",
+    name: "one continuous vertical filler",
+    phase: "shared-pipeline",
+    summary: "A vertical filler is a single piece from the floor to the top of the highest cabinet it stands beside, including a glass stacker or topper. It never has a seam at the base or upper line.",
+  },
+  {
+    id: "two-drawer-side-by-side",
+    name: "two drawers side by side",
+    phase: "shared-pipeline",
+    summary: "A two-drawer base draws its two drawer fronts side by side in one row, never stacked one above the other.",
+  },
+  {
+    id: "single-door-base-required",
+    name: "at least one single-door base",
+    phase: "auto-design-stage",
+    summary: "Every kitchen has at least one single-door base cabinet. When the plan has none, a same-width double-door base becomes a single-door base; a line that sells none produces a named warning.",
+  },
+  {
+    id: "paired-handles-at-seam",
+    name: "handles meet at the shared seam",
+    phase: "shared-pipeline",
+    summary: "Adjacent single-door cabinets default to a mirrored pair so both handles meet at their shared seam. The user can still choose either hinge side, and that choice always wins.",
+  },
+  {
+    id: "design-question-door-spec",
+    name: "the design-question door spec on every cabinet",
+    phase: "auto-design-stage",
+    summary: "The door style chosen in the design questions applies to every cabinet. A wizard-chosen door wins over the design default, applied through the former-default rebase so a stale override cannot re-spec one cabinet.",
+  },
+  {
+    id: "window-fixed-faucet-in-wall",
+    name: "windows fixed, faucets inside the wall",
+    phase: "invariant",
+    summary: "A window keeps its measured height and never moves. A faucet whose position is outside the wall is ignored.",
+  },
+  {
+    id: "exposed-panel-three-quarter",
+    name: "3/4 inch panel on every visible side",
+    phase: "auto-design-stage",
+    summary: "Every visible side gets a 3/4 inch finished panel: an open run end, beside the refrigerator, beside the dishwasher, and a tall run end. A covered side is never double-stocked.",
+  },
+  {
+    id: "upper-54-84-90-96",
+    name: "uppers at 54, tops at 84/90/96",
+    phase: "shared-pipeline",
+    summary: "Uppers hang at a 54 inch bottom line, and their tops land on 84 inches for 30 inch uppers, 90 for 36, and 96 for 42.",
+  },
+  {
+    id: "glass-topper-all-matching",
+    name: "one glass-topper prompt, every matching cabinet",
+    phase: "auto-design-stage",
+    summary: "One glass-topper prompt populates every wall cabinet of the matching width. A cabinet that cannot take it is named on the review list.",
+  },
+  {
+    id: "designer-filler-editable",
+    name: "Designer fillers can be deleted and moved",
+    phase: "shared-pipeline",
+    summary: "A filler the Designer placed can be right-click deleted or moved. Deleting it removes every board cut from the same purchase, and moving it keeps its width, finish and group.",
+  },
+  {
+    id: "design-questions-honored",
+    name: "design questions honored 100%",
+    phase: "invariant",
+    summary: "Every design question is honored. Anything that cannot be honored is reported as a named warning on a reviewable list instead of being silently substituted.",
+  },
+  {
+    id: "microwave-bridge-in-build",
+    name: "microwave and bridge during the build",
+    phase: "auto-design-stage",
+    summary: "When the design questions ask for an over-range microwave with a bridge, the build places both itself, centered over the range, instead of waiting for a post-build dialog.",
   },
 ];
 
@@ -904,6 +1003,10 @@ export function applyDesignerLayoutRules(input: {
   });
   placed = normalizeInstalledFillersToAdjacentCabinets(placed, input.room);
   placed = applyNineInchTrayBases(placed);
+  // Rule 4: one continuous floor-to-top board per filler, never a base sliver plus an upper sliver.
+  placed = normalizeContinuousVerticalFillers(placed, input.room).placed;
+  // Rule 11: uppers hang at 54 and top out on the 84/90/96 line.
+  placed = normalizeUpperHeights(placed);
   placed = clampPlacedToRefrigeratorPanels(placed, input.room).placed;
   const sinks = normalizeSinkFixturesToBases([...(input.sinks ?? [])], placed, input.room);
   const panelStops = refrigeratorPanelOuterStops(placed, input.room);

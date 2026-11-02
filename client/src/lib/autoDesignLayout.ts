@@ -27,7 +27,7 @@ import {
 } from "./autoDesignCornerStage";
 import { evaluateAutoDesignCornerFit } from "./cornerFit";
 import { catalogFillerForGap, fittedCatalogFillerDescription, type CatalogFillerCandidate } from "./catalogFiller";
-import { activeAutoDesignWiggleMoves, applyAutoDesignWiggleRoom, applyDesignerLayoutRules, type AutoDesignAnchorOrigin, type AutoDesignWiggleMove } from "./designerLayoutRules";
+import { activeAutoDesignWiggleMoves, applyAutoDesignWiggleRoom, applyDesignerLayoutRules, AUTO_DESIGN_WIGGLE_ROOM_IN, type AutoDesignAnchorOrigin, type AutoDesignWiggleMove } from "./designerLayoutRules";
 import { bakesALot, cooksALot, normalizeKitchenUsage } from "./kitchenUsage";
 import { ensureDrawerBase } from "./autoDesignDrawerRule";
 import { reviewAfterShift, separateRangeAndRefrigerator } from "./kitchenAdjacency";
@@ -38,14 +38,26 @@ import { clampRefrigeratorAssemblyToPanels } from "./refrigeratorPanelClamp";
 import { autoDesignSinkWindow, windowOverlapsReservation } from "./autoDesignSinkWindow";
 import { raiseWindowsForDeckFaucet } from "./faucetPlacement";
 import { buildAutoDesignWallCabinets, resolveWallHeightClass, type AutoDesignUpperCorner } from "./autoDesignWallCabinets";
+import { answerWantsMicrowaveBridge, overRangeCompanionPlacements, planOverRangeCompanions } from "./overRangeCompanion";
+import { boundedWallPlacementAt, cabinetInsideBounds, uShapeRunWallLabels } from "./designerBounds";
+import { ensureSingleDoorBase, pairAdjacentSingleDoorHandles, normalizeUpperHeights } from "./designerFaceRules";
+import { buildDesignerReviewList, type DesignerReviewFinding } from "./designerReviewFindings";
+import { applyDesignQuestionDoorSpec, verifyDesignQuestionDoorSpec, type DesignQuestionDoorSpec } from "./designQuestionDoorSpec";
+import { exposedPanelFindings, exposedPanelRequirements } from "./exposedPanelRule";
+import { cornerFirstWasPulled, describeCornerFirst, pickCornerFirst } from "./cornerFirst";
+import { neighborAtGapEdge, refrigeratorPanelAtEdge, resolveLeftoverGap, leftoverGapIsActionable } from "./autoDesignLeftover";
+import { refrigeratorLimitIn } from "./autoDesignAnchors";
+import { normalizeContinuousVerticalFillers } from "./verticalFiller";
 import {
   autoDesignPeninsulaAttachment,
   buildAutoDesignPeninsula,
   type AutoDesignPeninsulaRequest,
   type AutoDesignPeninsulaSummary,
-} from "./autoDesignPeninsula";
-import {
+} from "./autoDesignPeninsula";import {
   COLLISION_EPSILON_IN,
+  STD,
+  formatEighthInches,
+  wallRunFrame,
   appendCollisionFreePlacements,
   appendRefrigeratorEnclosurePlacements,
   dim,
@@ -104,6 +116,12 @@ export type AutoDesignLayoutSuccess = {
   peninsula: AutoDesignPeninsulaSummary | null;
   peninsulaRuns: import("./design").PeninsulaRun[];
   furniture: PlacedFurniture[];
+  /**
+   * Rule 14: every design question the build could NOT honor, as a named, reviewable finding.
+   * Empty means all questions were honored.
+   */
+  reviewFindings: DesignerReviewFinding[];
+  reviewAllHonored: boolean;
 };
 
 export type AutoDesignLayoutResult = AutoDesignLayoutSuccess | { ok: false; message: string };
@@ -193,9 +211,120 @@ function absorbOpenBaseGaps(
   return working;
 }
 
+/**
+ * Rule 3: close a leftover opening with real cabinets before using filler.
+ *
+ * For every opening on the build's walls that is wider than a 3" filler, this grows the adjoining
+ * cabinet to a wider SKU of the same family (an 18" drawer base becomes a 27") or seats a real
+ * narrow cabinet plus a small filler. Filler alone is the last resort, and an opening no real
+ * cabinet can close is named on the review list instead of being silently left open.
+ */
+function resolveLeftoverOpenings(input: {
+  placed: PlacedCabinet[];
+  room: RoomData;
+  catalog: readonly DesignCabinet[];
+  walls: readonly WallSide[];
+  styleId: number | null;
+  makeUid: () => string;
+  reviewFindings: DesignerReviewFinding[];
+}): { placed: PlacedCabinet[]; notes: string[] } {
+  let working = [...input.placed];
+  const notes: string[] = [];
+  for (const wallId of input.walls) {
+    const reservations = refrigeratorLimitIn({ placed: working, room: input.room, wallId });
+    const gaps = freeSegmentsOnWall(wallId, input.room, working, [], AUTO_DESIGN_FILLER_MAX_IN + 0.05, 0, "base", false, undefined, STD.BASE_DEPTH);
+    for (const gap of gaps) {
+      const gapStart = gap.start;
+      const gapEnd = gap.start + gap.length;
+      if (!leftoverGapIsActionable(gap.length)) continue;
+      const neighbor = neighborAtGapEdge({ placed: working, room: input.room, wallId, edgeIn: gapStart, side: "start" })
+        ?? neighborAtGapEdge({ placed: working, room: input.room, wallId, edgeIn: gapEnd, side: "end" });
+      const cappedByRefrigeratorPanel = refrigeratorPanelAtEdge({ placed: working, room: input.room, wallId, edgeIn: gapStart })
+        || refrigeratorPanelAtEdge({ placed: working, room: input.room, wallId, edgeIn: gapEnd });
+      const resolution = resolveLeftoverGap({
+        gapIn: gap.length,
+        startIn: gapStart,
+        neighbor,
+        catalog: [...input.catalog],
+        room: input.room,
+        cappedByRefrigeratorPanel,
+        atSkin: gapStart <= 0.06 || gapEnd >= (wallRunFrame(wallId, input.room)?.length ?? 0) - 0.06,
+        fillerMaxIn: AUTO_DESIGN_FILLER_MAX_IN,
+        });
+
+      if (resolution.kind === "widen-neighbor") {
+        const depth = footprintDepth(resolution.replacement);
+        const spot = boundedWallPlacementAt(resolution.startIn, resolution.widthIn, depth, wallId, input.room);
+        if (!spot) continue;
+        const replacement: PlacedCabinet = {
+          ...resolution.neighbor,
+          uid: input.makeUid(),
+          cabinetId: resolution.replacement.id,
+          masterCode: resolution.replacement.masterCode,
+          description: resolution.replacement.description,
+          category: resolution.replacement.category,
+          subCategory: resolution.replacement.subCategory,
+          width: resolution.widthIn,
+          depth,
+          ...spot,
+          styleId: resolution.neighbor.styleId ?? input.styleId,
+        };
+        const without = working.filter((item) => item.uid !== resolution.neighbor.uid);
+        const accepted = appendCollisionFreePlacements(without, [replacement], input.room);
+        if (accepted.rejected.length === 0) {
+          working = accepted.placed;
+          notes.push(`${resolution.neighbor.masterCode} became ${resolution.replacement.masterCode} to close a ${formatEighthInches(gap.length)} opening on ${wallId}.`);
+        }
+        continue;
+      }
+      if (resolution.kind === "narrow-cabinet") {
+        const depth = footprintDepth(resolution.source);
+        const spot = boundedWallPlacementAt(resolution.startIn, resolution.widthIn, depth, wallId, input.room);
+        if (!spot) continue;
+        const piece: PlacedCabinet = {
+          uid: input.makeUid(),
+          cabinetId: resolution.source.id,
+          masterCode: resolution.source.masterCode,
+          description: resolution.source.description,
+          category: resolution.source.category,
+          subCategory: resolution.source.subCategory,
+          placement: "base",
+          width: resolution.widthIn,
+          depth,
+          ...spot,
+          height: dim(resolution.source.height, standardHeight("base")),
+          numberOfDoors: resolution.source.numberOfDoors,
+          numberOfDrawers: resolution.source.numberOfDrawers,
+          catalogImageUrl: resolution.source.catalogImageUrl ?? null,
+          styleId: input.styleId,
+        };
+        const accepted = appendCollisionFreePlacements(working, [piece], input.room);
+        if (accepted.rejected.length === 0) {
+          working = accepted.placed;
+          notes.push(`${resolution.source.masterCode} closes the ${formatEighthInches(gap.length)} opening on ${wallId}${resolution.fillerIn > 0 ? ` with ${formatEighthInches(resolution.fillerIn)} of filler` : ""}.`);
+        }
+        continue;
+      }
+      if (resolution.kind === "leave-bare" && resolution.widthIn > AUTO_DESIGN_FILLER_MAX_IN + 0.05) {
+        // The reservation check above already proved this opening is not a filler's job.
+        void reservations;
+        input.reviewFindings.push({
+          ruleId: "leftover-real-cabinets-first",
+          code: "leftover-left-open",
+          severity: "warning",
+          title: `${formatEighthInches(resolution.widthIn)} opening left open on ${wallId}`,
+          detail: `${resolution.reason}. Choose a cabinet that closes it, or adjust the run.`,
+          cabinetUid: neighbor?.uid ?? null,
+          cabinetCode: neighbor?.masterCode ?? null,
+        });
+      }
+    }
+  }
+  return { placed: working, notes };
+}
+
 /** Auto-Design never installs a filler board wider than 3 inches. A wider catalog filler is cut to 3 instead of being flagged over its maximum. */
-export function capAutoDesignFillerWidth(placed: PlacedCabinet[]): PlacedCabinet[] {
-  return placed.map((item) => {
+export function capAutoDesignFillerWidth(placed: PlacedCabinet[]): PlacedCabinet[] {  return placed.map((item) => {
     const text = `${item.masterCode} ${item.description ?? ""} ${item.subCategory ?? ""}`;
     const filler = Boolean(item.fillerPieceGroupId) || /filler|scribe|^OF\d|^FOL/i.test(text);
     const installed = item.fillerTotalWidth ?? item.width;
@@ -312,6 +441,7 @@ export function runAutoDesignLayout(args: {
   const notes: string[] = [];
   const refrigeratorBayWarnings: string[] = [];
   const drawerRuleWarnings: string[] = [];
+  const reviewFindings: DesignerReviewFinding[] = [];
   const refrigerator = anchorsByKind.get("refrigerator");
   let refrigeratorReservation: { wall: string; start: number; end: number } | null = null;
   if (refrigerator) {
@@ -452,21 +582,43 @@ export function runAutoDesignLayout(args: {
       openings: stageOpenings,
     });
     if (fit.fallbackNote) notes.push(fit.fallbackNote);
+    // Rule 2: plan the corner against the anchors before any other cabinet on these runs.
+    // Blind corner (at its pull and pulled further), straight base, and the 3" wiggle are costed
+    // by dead corner inches; the least waste wins and a fitting blind corner beats a straight base.
+    const cornerPlan = pickCornerFirst({
+      cornerOptions: stage.pool.filter((row) => stage.cornerOptions.some((option) => option.id === row.id)),
+      straightBaseCatalog: stage.straightBaseCatalog,
+      room,
+      cornerWallIds: [firstWall.engineWallId, secondWall.engineWallId],
+      corner: point,
+      placed: working,
+      wiggleLimitIn: AUTO_DESIGN_WIGGLE_ROOM_IN,
+    });
+    if (cornerPlan) notes.push(`${slot.label}: ${describeCornerFirst(cornerPlan)}`);
+    // A blind corner the planner chose overrides the generic widest-first order.
+    const plannedBlind = cornerPlan && (cornerPlan.kind === "blind" || cornerPlan.kind === "blind-pulled")
+      ? stage.cornerOptions.find((candidate) => candidate.id === cornerPlan.source.id) ?? null
+      : null;
     const seated = seatAutoDesignCornerFromCatalog({
       slot,
       options: stage.cornerOptions,
       pool: stage.pool,
+      preferred: plannedBlind,
       target: point,
       cornerWallIds: [firstWall.engineWallId, secondWall.engineWallId],
       working,
       room,
       openings: stageOpenings,
       measuredApplianceUids: stage.anchorOrigins.filter((entry) => entry.kind === "refrigerator").map((entry) => entry.uid),
+      blindPullIn: plannedBlind && cornerPlan ? Math.round(cornerPlan.pullIn * 8) / 8 : undefined,
       catalogFillers,
       makeUid,
       styleId: args.styleId,
       excludedWallIds,
     });
+    if (cornerPlan && cornerFirstWasPulled(cornerPlan) && !seated.ok) {
+      notes.push(`${slot.label}: ${cornerPlan.source.masterCode} could not be pulled to fill the leg, so the standard corner order was used.`);
+    }
     if (!seated.ok) {
       // Keep the measured kitchen. A corner that cannot seat (a refrigerator
       // already in it, or a range closer than the slide limit) must not wipe
@@ -541,7 +693,9 @@ export function runAutoDesignLayout(args: {
             if (entry.isFiller) { cursor += entry.width; continue; }
             const source = entry.cabinet;
             const depth = footprintDepth(source);
-            const spot = wallPlacementAt(cursor, entry.width, depth, wallId, room);
+            // Rule: nothing past the wall end. wallPlacementAt clamps the start, so it would
+            // happily hang a wide box off the run; boundedWallPlacementAt refuses that.
+            const spot = boundedWallPlacementAt(cursor, entry.width, depth, wallId, room);
             if (!spot) { allPlaced = false; break; }
             const piece: PlacedCabinet = {
               uid: makeUid(), cabinetId: source.id, masterCode: source.masterCode, description: source.description,
@@ -572,7 +726,7 @@ export function runAutoDesignLayout(args: {
           const source = item?.cabinet ?? stage.straightBaseCatalog.find((row) => Math.abs(dim(row.width, 0) - width) <= 0.05);
           if (!source) continue;
           const depth = footprintDepth(source);
-          const spot = wallPlacementAt(along, width, depth, wallId, room);
+          const spot = boundedWallPlacementAt(along, width, depth, wallId, room);
           if (!spot) continue;
           const candidate: PlacedCabinet = {
             uid: makeUid(), cabinetId: source.id, masterCode: source.masterCode, description: source.description,
@@ -613,9 +767,23 @@ export function runAutoDesignLayout(args: {
   });
   working = absorbOpenBaseGaps(seamResult.placed, room, stage.straightBaseCatalog, runWalls, args.styleId, makeUid);
   notes.push(...seamResult.notes, ...separated.flags);
+  // Rule 3: a 9–12 inch hole beside the range is closed with a REAL cabinet — the adjoining
+  // cabinet grows to a wider SKU of the same family, or a real narrow cabinet plus a small filler
+  // takes the last inch. Filler alone was why these openings stayed open.
+  const leftover = resolveLeftoverOpenings({
+    placed: working,
+    room,
+    catalog: stage.straightBaseCatalog,
+    walls: runWalls,
+    styleId: args.styleId,
+    makeUid,
+    reviewFindings,
+  });
+  working = leftover.placed;
+  notes.push(...leftover.notes);
   // The range is left open on purpose: the Designer asks what goes above it (hood, bridge + microwave, or nothing).
   const upperResult = buildAutoDesignWallCabinets({
-    placed: working, room, openings: stageOpenings, catalog: stage.wallPool,
+    placed: working, room, openings: stageOpenings, catalog: [...stage.wallPool],
     wallCabinetHeightIn: stage.input.wallCabinetHeightIn ?? 30,
     styleId: args.styleId, makeUid, corners: upperCorners, catalogFillers, closeSeams: true,
   });
@@ -624,6 +792,94 @@ export function runAutoDesignLayout(args: {
     placed: working, room, openings: stageOpenings, fillers: catalogFillers, makeUid, styleId: args.styleId,
   });
   working = capAutoDesignFillerWidth(finishedRules.placed);
+  // Rule: when the design questions ask for an over-range microwave with a bridge, the build
+  // places both itself instead of waiting for the post-build dialog.
+  if (answerWantsMicrowaveBridge(stage.input.overRangeAnswer)) {
+    const companions = planOverRangeCompanions({
+      answer: stage.input.overRangeAnswer,
+      placed: working,
+      room,
+      appliancePalette: args.appliancePalette,
+      wallCatalog: args.wallCatalog,
+      wallCabinetHeightIn: stage.input.wallCabinetHeightIn ?? 30,
+    });
+    if (companions.ok) {
+      const drafts = overRangeCompanionPlacements(companions.plan, { makeUid, styleId: args.styleId });
+      const accepted = appendCollisionFreePlacements(working, drafts, room);
+      if (accepted.rejected.length === 0) {
+        working = accepted.placed;
+        notes.push(`${companions.plan.bridge.masterCode} and ${companions.plan.microwave.masterCode} were placed above ${companions.plan.rangeCode} as the design questions asked.`);
+      } else {
+        reviewFindings.push({
+          ruleId: "microwave-bridge-in-build",
+          code: "microwave-bridge-blocked",
+          severity: "warning",
+          title: "The microwave and bridge did not fit",
+          detail: `The design questions asked for an over-range microwave. The ${companions.plan.bridge.masterCode} bridge or the ${companions.plan.microwave.masterCode} microwave overlapped an existing cabinet, so nothing was added.`,
+          cabinetUid: companions.plan.rangeUid,
+          cabinetCode: companions.plan.rangeCode,
+        });
+      }
+    } else {
+      reviewFindings.push(...companions.findings);
+    }
+  }
+  // Rule 6: every kitchen has at least one single-door base.
+  const singleDoor = ensureSingleDoorBase({
+    placed: working,
+    room,
+    catalog: stage.straightBaseCatalog,
+    makeUid,
+    styleId: args.styleId,
+  });
+  working = singleDoor.placed;
+  if (singleDoor.added) notes.push(`${singleDoor.added.masterCode} gives this kitchen its single-door base.`);
+  if (singleDoor.warning) {
+    reviewFindings.push({
+      ruleId: "single-door-base-required",
+      code: "no-single-door-base",
+      severity: "warning",
+      title: "No single-door base",
+      detail: singleDoor.warning,
+    });
+  }
+  // Rule 7: adjacent single doors meet their handles at the shared seam unless the user chose a side.
+  const explicitHingeUids = working.filter((item) => item.swing === "left" || item.swing === "right").map((item) => item.uid);
+  working = pairAdjacentSingleDoorHandles({ placed: working, room, explicitHingeUids }).placed;
+  // Rule 11: the 54 / 84-90-96 upper datum, and rule 4's one continuous board per filler.
+  working = normalizeUpperHeights(working);
+  working = normalizeContinuousVerticalFillers(working, room).placed;
+  // Rule 10: 3/4" stock on every visible side. A side the selected line cannot finish is named.
+  const panelRequirements = exposedPanelRequirements({ placed: working, room, buildWallIds: runWalls });
+  reviewFindings.push(...exposedPanelFindings(panelRequirements, new Set()));
+  // Rule 8: the design-question door spec applies to every cabinet.
+  const doorSpec: DesignQuestionDoorSpec | null = stage.input.designQuestionDoorStyleId == null
+    ? null
+    : {
+      styleId: stage.input.designQuestionDoorStyleId,
+      styleName: stage.input.designQuestionDoorStyleName ?? null,
+      twoTone: false,
+    };
+  if (doorSpec) {
+    working = applyDesignQuestionDoorSpec({
+      cabinets: working,
+      formerDefaultStyleId: args.styleId,
+      spec: doorSpec,
+    }).cabinets;
+    reviewFindings.push(...verifyDesignQuestionDoorSpec({ cabinets: working, spec: doorSpec }));
+  }
+  // Rule: nothing may leave its wall run or the drawn room shell.
+  const escaped = working.filter((item) => !cabinetInsideBounds(item, room));
+  if (escaped.length) {
+    reviewFindings.push({
+      ruleId: "nothing-past-wall-or-room",
+      code: "piece-outside-bounds",
+      severity: "warning",
+      title: `${escaped.length} piece${escaped.length === 1 ? "" : "s"} left the room bounds`,
+      detail: `These pieces extend past their wall end or outside the drawn room: ${escaped.map((item) => item.masterCode).join(", ")}.`,
+    });
+    working = working.filter((item) => cabinetInsideBounds(item, room));
+  }
   let peninsulaSummary: AutoDesignPeninsulaSummary | null = null;
   let peninsulaRuns: import("./design").PeninsulaRun[] = [];
   let furniture: PlacedFurniture[] = [];
@@ -684,5 +940,7 @@ export function runAutoDesignLayout(args: {
     peninsula: peninsulaSummary,
     peninsulaRuns,
     furniture,
+    reviewFindings: buildDesignerReviewList(reviewFindings).findings,
+    reviewAllHonored: buildDesignerReviewList(reviewFindings).allHonored,
   };
 }

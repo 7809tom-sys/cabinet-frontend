@@ -137,7 +137,20 @@ export function autoDesignLayoutUsesWall(layoutType: AutoDesignLayoutType, label
 }
 
 function uShapeHasWall4(measured: AutoDesignCornerMeasurement): boolean {
-  return wallLabelToEngineWallId("Wall 4", measured.room, measured.originCorner, measured.runDirection) != null;
+  const wall = wallLabelToEngineWallId("Wall 4", measured.room, measured.originCorner, measured.runDirection);
+  if (!wall) return false;
+  // A U-shape grows a fourth run only when the kitchen was actually measured on that wall and
+  // it is a different physical wall from Wall 1–3. An open U measured on three walls must never
+  // gain a run or a phantom corner on a fourth.
+  if (measured.wallIds.length > 0 && !measured.wallIds.includes(wall.engineWallId)) return false;
+  const runStart = wall.frame.runStart ?? 0;
+  const runEnd = wall.frame.runEnd ?? wall.frame.length;
+  if (!(runEnd - runStart > 0.01)) return false;
+  for (const label of AUTO_DESIGN_U_SHAPE_WALLS) {
+    const existing = wallLabelToEngineWallId(label, measured.room, measured.originCorner, measured.runDirection);
+    if (existing && existing.engineWallId === wall.engineWallId) return false;
+  }
+  return true;
 }
 
 /** Engine walls a U-shape must not receive any cabinet, filler, panel, or corner. */

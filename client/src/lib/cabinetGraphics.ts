@@ -3,6 +3,7 @@
 import { parseCatalogNomenclature } from "@shared/catalogNomenclature";
 import { standardBaseFaceReference } from "@shared/genericCabinetDrawerReference";
 import { isBaseAngleEndCabinet } from "./baseAngleEndLayout";
+import { isPlainBaseCode } from "./plainBaseCode";
 import { isWallAngleEndCabinet } from "./wallAngleEndLayout";
 
 export type CabinetDrawingType =
@@ -140,6 +141,21 @@ export function isEqualHeightTwoDrawerBase(
   const code = String(cabinet.masterCode ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
   const drawerCount = Math.max(0, Number(cabinet.numberOfDrawers) || fallbackCount);
   return /^2DB\d/.test(code) && drawerCount === 2;
+}
+
+/**
+ * Rule 5: a two-drawer base shows its drawers SIDE BY SIDE in one full-height row,
+ * never stacked one above the other. This is the shared row contract for the
+ * elevation, the schematic and the 3D front, so all three agree.
+ */
+export function twoDrawerBaseSideBySideRows(
+  cabinet: Pick<CabinetLike, "masterCode" | "numberOfDrawers">,
+  availableFaceHeightIn: number,
+  fallbackCount = 0,
+): Array<{ count: number; height: number }> | null {
+  if (!isEqualHeightTwoDrawerBase(cabinet, fallbackCount)) return null;
+  const height = Number(availableFaceHeightIn);
+  return [{ count: 2, height: Number.isFinite(height) && height > 0 ? height : 30 }];
 }
 
 /** WBC is a wall blind corner. Door side is the placement's swing, not a second SKU. */
@@ -325,6 +341,11 @@ export function cabinetDrawingType(cab: CabinetLike): CabinetDrawingType {
   const graphic = lc(cab.graphicType);
   const hay = `${sub} ${desc} ${code}`;
   const nomenclature = parseCatalogNomenclature(cab.masterCode ?? "");
+  // A plain straight base (B42, SB36, DB18...) is never a corner of any family,
+  // whatever its description, sub-category or saved corner flag says. Without
+  // this guard a 42" base whose text mentions "corner" was drawn — and therefore
+  // pooled — as a blind corner.
+  const plainBaseCode = isPlainBaseCode(cab.masterCode);
 
   // Chrome Tray 33/36 are shelf-mounted lazy-Susan inserts for matching ERB
   // easy-reach corner cabinets. The normalized code defines the compatibility,
@@ -451,39 +472,44 @@ export function cabinetDrawingType(cab: CabinetLike): CabinetDrawingType {
 
   // Cabinet Config is the source of truth for intentionally configured corner
   // geometry. These settings must work even when a supplier uses a neutral SKU
-  // or description that does not carry the usual corner prefix.
-  if (cab.cornerType === "diagonal" || cab.cornerType === "pie-cut") return "diagonal-corner";
-  if (cab.cornerType === "blind-corner") return "blind-corner";
-  if (cab.cornerType === "l-shape" || cab.cornerType === "lazy-susan") {
-    return "l-corner";
+  // or description that does not carry the usual corner prefix — except on a
+  // plain straight base, which is never a corner.
+  if (!plainBaseCode) {
+    if (cab.cornerType === "diagonal" || cab.cornerType === "pie-cut") return "diagonal-corner";
+    if (cab.cornerType === "blind-corner") return "blind-corner";
+    if (cab.cornerType === "l-shape" || cab.cornerType === "lazy-susan") {
+      return "l-corner";
+    }
   }
 
   // Triangle corner cabinets: right-triangle footprint, single door on hypotenuse face (WTC/BTC)
   // Must be detected BEFORE diagonal-corner and l-corner checks.
-  if (cab.cornerType === "triangle" || /^(wtc|btc)/.test(code)) {
+  if (cab.cornerType === "triangle" || (!plainBaseCode && /^(wtc|btc)/.test(code))) {
     return "triangle-corner";
   }
 
   // Diagonal corner cabinets: 45° angled front face (DCW, WDC, KWD, DCB, DCFF, AW, AG, CAG).
-  if (/^(dcw|wdc|kwd|dcb|dcff|aw[-\d]|ag[-\d]|cag)/.test(code) || code.includes("dcw") || code.includes("wdc") || /diagonal|angled (wall|corner)|appliance garage/.test(hay)) {
+  // A plain B/SB/DB/3DB code never reaches this family, even when its description
+  // says "corner" or "diagonal".
+  if (!plainBaseCode && (/^(dcw|wdc|kwd|dcb|dcff|aw[-\d]|ag[-\d]|cag)/.test(code) || code.includes("dcw") || code.includes("wdc") || /diagonal|angled (wall|corner)|appliance garage/.test(hay))) {
     return "diagonal-corner";
   }
 
   // LS lazy-Susan cabinets use the confirmed two-leg L-corner form: 36-inch
   // wall sides with one 12-inch return front on each exposed side. Easy-reach
   // cabinets use the same L-corner elevation contract.
-  const isBlind = /^(bbc|wbc|bbl|bbr|wbl|wbr)/.test(code) || /-blind|blind/.test(code) || /blind\s*corner/.test(hay);
+  const isBlind = !plainBaseCode && (/^(bbc|wbc|bbl|bbr|wbl|wbr)/.test(code) || /-blind|blind/.test(code) || /blind\s*corner/.test(hay));
   // Explicit code-prefix detection for LS## (e.g. LS3612, LS3312), BER## (e.g. BER33, BER36),
   // and ERB## (e.g. ERB33, ERB36). These may not have isCornerCabinet=true in the DB.
-  const isLazySusan = /^(lsb?)\d/.test(code) || /lazy\s*susan/.test(hay);
+  const isLazySusan = !plainBaseCode && (/^(lsb?)\d/.test(code) || /lazy\s*susan/.test(hay));
   if (isLazySusan) return "l-corner";
-  const isBerOrErb = /^(ber|erb)\d/.test(code);
-  if (!isBlind && (isBerOrErb || cab.isCornerCabinet || /corner|easy reach/.test(hay))) {
+  const isBerOrErb = !plainBaseCode && /^(ber|erb)\d/.test(code);
+  if (!isBlind && (isBerOrErb || (!plainBaseCode && cab.isCornerCabinet) || (!plainBaseCode && /corner|easy reach/.test(hay)))) {
     return "l-corner";
   }
 
   // Blind corner cabinets: standard rectangular footprint with hidden portion
-  if (isBlind || /blind corner/.test(hay)) {
+  if (isBlind || (!plainBaseCode && /blind corner/.test(hay))) {
     return "blind-corner";
   }
 
@@ -615,7 +641,11 @@ export function baseSubGroup(cab: CabinetLike): BaseSubGroup {
 
   // 3) Specialty bases: corners that fall on the Base tab, appliance bases
   //    (microwave/oven/trash/waste), spice pull-outs, blind/lazy-susan, ADA,
-  //    end/wine/desk and other non-standard boxes.
+  //    end/wine/desk and other non-standard boxes. A plain straight base is
+  //    never specialty on the strength of words in its description: a B42 whose
+  //    text says "corner" or "blind" stays in the ordinary base bucket so the
+  //    straight-base pool keeps it and Auto-Design cannot substitute a corner.
+  const plainBaseCode = isPlainBaseCode(cab.masterCode);
   if (
     type === "blind-corner" ||
     type === "diagonal-corner" ||
@@ -623,8 +653,8 @@ export function baseSubGroup(cab: CabinetLike): BaseSubGroup {
     type === "corner-drawer-base" ||
     type === "appliance-garage" ||
     type === "ada" ||
-    cab.isCornerCabinet ||
-    /blind|lazy susan|easy reach|diagonal|corner/.test(hay) ||
+    (!plainBaseCode && cab.isCornerCabinet) ||
+    (!plainBaseCode && /blind|lazy susan|easy reach|diagonal|corner/.test(hay)) ||
     /microwave|\boven\b|trash|waste|recycl/.test(hay) ||
     /spice|pull[- ]?out|pullout|roll[- ]?out|tray base/.test(hay) ||
     /\bada\b/.test(hay) ||

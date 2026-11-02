@@ -48,7 +48,7 @@ import { farmhouseSinkBaseFaceLayout } from "@/lib/farmhouseSinkBaseFace";
 import { angledWallTransitionFootprint } from "@/lib/angledWallFiller";
 import { miteredWallOutlinesFromInteriorFaces, ROOM_WALL_THICKNESS_IN, wallAngle as polygonWallAngle } from "@/lib/polygonRoom";
 import { deckFaucetWindowWarning, resolveDeckFaucetPlacement, type DeckFaucetPlacement } from "@/lib/faucetPlacement";
-import { cabinetDrawingType, isEqualHeightTwoDrawerBase as isEqualHeightTwoDrawerBaseFamily, isWallBlindCornerCabinet, resolveDoorDrawerCounts, resolvedVanityComboFaceLayout, standardDoorCountForFaceWidth, threeDrawerBaseRowHeights } from "@/lib/cabinetGraphics";
+import { cabinetDrawingType, isEqualHeightTwoDrawerBase as isEqualHeightTwoDrawerBaseFamily, isWallBlindCornerCabinet, resolveDoorDrawerCounts, resolvedVanityComboFaceLayout, standardDoorCountForFaceWidth, threeDrawerBaseRowHeights, twoDrawerBaseSideBySideRows } from "@/lib/cabinetGraphics";
 import { standardBaseFaceReference } from "@/lib/genericCabinetDrawerReference";
 import { verifiedPelicanBathroomFixtureProfile, type VerifiedPelicanBathroomFixtureProfile } from "@/lib/pelicanBathroomFixtureProfiles";
 import { makePelicanTubFillerGroup } from "@/lib/pelicanTubFillerMesh";
@@ -3126,7 +3126,9 @@ export function resolvedThreeDDrawerRows(
 ) {
   const count = Math.max(0, fallbackCount);
   if (isEqualHeightTwoDrawerBase(sku, fallbackCount)) {
-    return Array.from({ length: 2 }, () => ({ count: 1, height: availableHeight / 2 }));
+    // Rule 5: a two-drawer base shows its two drawers side by side, never stacked.
+    return twoDrawerBaseSideBySideRows(sku, availableHeight, fallbackCount)
+      ?? [{ count: 2, height: availableHeight }];
   }
   try {
     const parsed = JSON.parse(sku.drawerLayout ?? "null");
