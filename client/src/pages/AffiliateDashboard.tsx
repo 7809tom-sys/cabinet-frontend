@@ -22,6 +22,7 @@ import { AffiliatePluginsPanel } from "@/components/affiliate/AffiliatePluginsPa
 import { AffiliateAppointmentsPanel } from "@/components/affiliate/AffiliateAppointmentsPanel";
 import { ReferVendorForm } from "@/components/affiliate/ReferVendorForm";
 import { AddContractorPanel } from "@/components/affiliate/AddContractorPanel";
+import { AffiliateEmailSettingsPanel } from "@/components/affiliate/AffiliateEmailSettingsPanel";
 import { InstallationEstimatesPanel } from "@/components/affiliate/InstallationEstimatesPanel";
 import { SampleOrderDesk } from "@/components/samples/SampleOrderDesk";
 import { PortalSignInChooser } from "@/components/auth/PortalSignInChooser";
@@ -48,7 +49,7 @@ import {
   LinkIcon, Save, Loader2, PencilRuler, Globe, Users,
   ArrowRight, Sparkles, Star, TrendingUp, Shield, Palette, Truck,
   Wand2, Send, ChevronRight, ImageIcon, FileText, AlertCircle, Upload, Eye, EyeOff,
-  ShoppingBag, BarChart2, BookOpen, Tag, Megaphone, Wrench, Share2, Facebook, Linkedin, Info, HardHat,
+  ShoppingBag, BarChart2, BookOpen, Tag, Megaphone, Wrench, Share2, Facebook, Linkedin, Info, HardHat, Mail,
 } from "lucide-react";
 import { CrmBoard } from "@/components/crm/CrmBoard";
 import { MyCustomersPanel } from "@/components/affiliate/MyCustomersPanel";
@@ -399,6 +400,7 @@ export default function AffiliateDashboard() {
     "tax",
     "team",
     "contractors",
+    "email",
     "settings",
   ] as const;
   const sectionParam = params.get("section");
@@ -459,7 +461,7 @@ export default function AffiliateDashboard() {
 
   useEffect(() => {
     const canViewAppointments = access.isOwner || access.accessCrm || access.accessDesigner;
-    if (((section === "crm" || section === "customers") && !access.accessCrm) || (section === "design" && !access.accessDesigner) || (section === "team" && !access.isOwner) || (section === "appointments" && !canViewAppointments)) {
+    if (((section === "crm" || section === "customers") && !access.accessCrm) || (section === "design" && !access.accessDesigner) || (section === "team" && !access.isOwner) || (section === "email" && !access.isOwner) || (section === "appointments" && !canViewAppointments)) {
       setSection("overview");
     }
   }, [access.accessCrm, access.accessDesigner, access.isOwner, section]);
@@ -684,6 +686,7 @@ export default function AffiliateDashboard() {
                 { label: "Marketing Hub", section: "marketing" as AffiliateSection, icon: Megaphone },
                 { label: "Installation", section: "installation" as AffiliateSection, icon: Wrench },
                 { label: "Add a contractor", section: "contractors" as AffiliateSection, icon: HardHat },
+                { label: "Email settings", section: "email" as AffiliateSection, icon: Mail },
               ] as const).map((item) => (
                 <button
                   key={`${item.section}-${item.label}`}
@@ -852,6 +855,14 @@ export default function AffiliateDashboard() {
         return <AffiliateTeamPanel affiliateId={affiliate.id} />;
       case "contractors":
         return <AddContractorPanel affiliateId={affiliate.id} />;
+      case "email":
+        return (
+          <AffiliateEmailSettingsPanel
+            affiliateId={affiliate.id}
+            canEdit={access.isOwner}
+            storeName={affiliate.storeName}
+          />
+        );
       case "settings":
         return (
           <div className="space-y-6 max-w-4xl">

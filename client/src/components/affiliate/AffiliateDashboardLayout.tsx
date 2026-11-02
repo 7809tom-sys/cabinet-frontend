@@ -33,7 +33,7 @@ import {
   LayoutDashboard, LogOut, PanelLeft, ShoppingBag, DollarSign,
   Palette, FileText, BarChart2, Megaphone, Tag, BookOpen, ExternalLink,
   Calendar, Gift, Users, Puzzle, Wrench, PackageOpen, ImageIcon, Boxes,
-  Settings, ChevronDown, Layers, Store, HardHat,
+  Settings, ChevronDown, Layers, Store, HardHat, Mail,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
@@ -64,6 +64,7 @@ export type AffiliateSection =
   | "team"
   | "contractors"
   | "settings"
+  | "email"
   | "bundles";
 
 const NAV_ITEMS: { icon: React.ElementType; label: string; section: AffiliateSection }[] = [
@@ -89,6 +90,7 @@ const NAV_ITEMS: { icon: React.ElementType; label: string; section: AffiliateSec
   { icon: FileText, label: "Tax Info (W-9)", section: "tax" },
   { icon: Users, label: "My Team", section: "team" },
   { icon: HardHat, label: "Add a contractor", section: "contractors" },
+  { icon: Mail, label: "Email", section: "email" },
   { icon: Settings, label: "Domain Setup", section: "settings" },
 ];
 
@@ -194,9 +196,13 @@ function SidebarInner({
   const designerUrl = affiliateDesignerPath(storeSlug);
   const quoteUrl = affiliateOrderPath(storeSlug);
   const isAdmin = user?.role === "admin";
-  const visibleNavItems = NAV_ITEMS.filter((item) =>
-    isAffiliateOwner || isAdmin || item.section === "overview" || item.section === "contractors" || ((item.section === "crm" || item.section === "customers") && canAccessCrm) || (item.section === "design" && canAccessDesigner) || (item.section === "appointments" && (canAccessCrm || canAccessDesigner)),
-  );
+  const canOpenEmail = Boolean(isAffiliateOwner || isAdmin);
+  const visibleNavItems = NAV_ITEMS.filter((item) => {
+    // Email settings belong to the store owner or a platform admin only.
+    // Another affiliate's team member must not see this entry at all.
+    if (item.section === "email") return canOpenEmail;
+    return isAffiliateOwner || isAdmin || item.section === "overview" || item.section === "contractors" || ((item.section === "crm" || item.section === "customers") && canAccessCrm) || (item.section === "design" && canAccessDesigner) || (item.section === "appointments" && (canAccessCrm || canAccessDesigner));
+  });
   const ordersRank = NAV_ITEMS.findIndex((item) => item.section === "orders");
   const rankOf = (item: { section: AffiliateSection }) => NAV_ITEMS.findIndex((entry) => entry.section === item.section);
   const headItems = visibleNavItems.filter((item) => rankOf(item) <= ordersRank);
