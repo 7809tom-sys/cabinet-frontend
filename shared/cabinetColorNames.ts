@@ -25,6 +25,7 @@ export const CABINET_NAME_COLORS = {
 } as const;
 
 const PHRASES: ReadonlyArray<readonly [RegExp, string]> = [
+  [/stone[\s-]*gr[ae]y/i, "#a8a59c"],
   [/\b(?:aero[\s-]+sage|aston[\s-]+green)\b/i, CABINET_NAME_COLORS.aeroSage],
   [/\bblue[\s-]+gr[ae]y\b/i, CABINET_NAME_COLORS.gray],
   [/\blight[\s-]+gr[ae]y\b/i, CABINET_NAME_COLORS.lightGray],

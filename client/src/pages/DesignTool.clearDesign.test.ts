@@ -122,7 +122,7 @@ describe("DesignTool authoritative Clear Design transaction", () => {
 
   it("resets the active cabinet or parts catalog back to condensed category headings", () => {
     const block = clearDesignBlock();
-    expect(block).toContain("setCollapsedGroups(new Set());");
+    expect(block).toContain("setOpenCatalogGroups(new Set());");
     expect(block).toContain("setCatalogCollapseRequest(COLLAPSIBLE_CATALOG_TABS.has(paletteType) ? paletteType : null);");
   });
 

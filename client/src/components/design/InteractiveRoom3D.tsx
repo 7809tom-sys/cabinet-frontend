@@ -28,7 +28,7 @@ import { ColorStyleQuickPicker } from "./ColorStyleQuickPicker";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { APPLIANCES, BLIND_CORNER_FILLER_WIDTH_IN, COUNTERTOP_DEPTH_IN, FURNITURE_CATALOG, STD, applianceAppearanceImage, bearsCountertop, isBaseHeightAppliance, blindCornerRearCountertopExtensionIn, blindPullRange, cabinetWall, cabinetWallDragPreview, cornerLegRatioForPlaced, cornerRotationForPlaced, countertopRunFaceNormal, countertopSurfacePlanPolygon, countertopSurfaces, crownBlockingCabinets, crownEligibleCabinets, customWallCabinetSide, drywallPonyWallAppearance, DESK_TOP_HEIGHT_IN, elevationBox, formatEighthInches, formatInches, glassDoorShelfCount, isKneeDrawerItem, isAgainstWall, isBaseEndCornerCabinet, isCustomRoomWall, isFillerItem, fillerWidthRange, isGlassDoorCabinet, isMicrowaveOverRangePair, isRangeHoodPlacement, isRangeOrOven, isRefrigerator, isStacker, isWallRunDraggable, isWd18CountertopDrawerCabinet, kitchenCrestGenericOpenEndShelfCount, normalizeInstalledFillersToAdjacentCabinets, peninsulaCountertopPonyWallBackExtensionIn, peninsulaCountertopPonyWallBarOverhang, peninsulaCountertopSeatingOverhang, peninsulaCountertopWaterfallEnd, peninsulaLowerWorktopOppositeSideExtensionIn, peninsulaRunEndpoints, placedCornerGeometryKind, placedFootprint, ponyWallMiteredFootprint, ponyWallPlanFrame, potFillerMountedRange, rangeVisualAppearance, refrigeratorBayVerificationMetrics, resolveCabinetHardwarePosition, resolveSwing, roomWallAppearance, seatedWallRunFrame, wallRunFrame, wallAngleEndHandForPlacement, selectedLowerCabinetWallPlacement, sinkPlanDimensions, usesRaisedFloorWallDoorPull, wallCabinetFitMeasure, wallGapFitPreview, wallGapFreehandPreview, wallGaps, wallPlacementAt, wallRunOffset, wallRunSpan, wallSpanMeasure, wallLength, wd18CountertopFaceLayout, type CabinetWallDragPreview, type CountertopSurface, type IslandZone, type PlacedCabinet, type PlacedCornerGeometryKind, type PlacedFurniture, type PonyWall, type PotFillerFixture, rotatedSize, type RoomData, type SinkFixture, type WallCabinetFitMeasure, type WallGapFitPreview, type WallOpening, type WallSide, type WallSpanMeasure, wallTopLimit, } from "@/lib/design";
+import { APPLIANCES, BLIND_CORNER_FILLER_WIDTH_IN, COUNTERTOP_DEPTH_IN, FURNITURE_CATALOG, STD, applianceAppearanceImage, bearsCountertop, isBaseHeightAppliance, blindCornerRearCountertopExtensionIn, blindPullRange, cabinetWall, cabinetWallDragPreview, cornerLegRatioForPlaced, cornerRotationForPlaced, countertopRunFaceNormal, countertopSurfacePlanPolygon, countertopSurfaces, crownBlockingCabinets, crownEligibleCabinets, customWallCabinetSide, drywallPonyWallAppearance, DESK_TOP_HEIGHT_IN, elevationBox, formatEighthInches, formatInches, glassDoorShelfCount, isKneeDrawerItem, isAgainstWall, isBaseEndCornerCabinet, isCustomRoomWall, isFillerItem, isFlutedFillerItem, fillerWidthRange, isGlassDoorCabinet, isMicrowaveOverRangePair, isRangeHoodPlacement, isRangeOrOven, isRefrigerator, isStacker, isWallRunDraggable, isWd18CountertopDrawerCabinet, kitchenCrestGenericOpenEndShelfCount, normalizeInstalledFillersToAdjacentCabinets, peninsulaCountertopPonyWallBackExtensionIn, peninsulaCountertopPonyWallBarOverhang, peninsulaCountertopSeatingOverhang, peninsulaCountertopWaterfallEnd, peninsulaLowerWorktopOppositeSideExtensionIn, peninsulaRunEndpoints, placedCornerGeometryKind, placedFootprint, ponyWallMiteredFootprint, ponyWallPlanFrame, potFillerMountedRange, rangeVisualAppearance, refrigeratorBayVerificationMetrics, resolveCabinetHardwarePosition, resolveSwing, roomWallAppearance, seatedWallRunFrame, wallRunFrame, wallAngleEndHandForPlacement, selectedLowerCabinetWallPlacement, sinkPlanDimensions, usesRaisedFloorWallDoorPull, wallCabinetFitMeasure, wallGapFitPreview, wallGapFreehandPreview, wallGaps, wallPlacementAt, wallRunOffset, wallRunSpan, wallSpanMeasure, wallLength, wd18CountertopFaceLayout, type CabinetWallDragPreview, type CountertopSurface, type IslandZone, type PlacedCabinet, type PlacedCornerGeometryKind, type PlacedFurniture, type PonyWall, type PotFillerFixture, rotatedSize, type RoomData, type SinkFixture, type WallCabinetFitMeasure, type WallGapFitPreview, type WallOpening, type WallSide, type WallSpanMeasure, wallTopLimit, } from "@/lib/design";
 import { refrigeratorEndPanelCutDownNote } from "@/lib/refrigeratorEndPanelCut";
 import { roomWallRunFrames } from "@/lib/design";
 import {
@@ -511,6 +511,18 @@ export function threeDCatalogDragFitText(item: Pick<InteractiveRoomCatalogItem, 
 }
 
 export const THREE_D_CATALOG_GROUPS = ["All", "Base", "Corner", "Wall", "Tall", "Appliances", "Accessories"] as const;
+const THREE_D_CATALOG_OPEN_KEY = "designer-3d-catalog-open-groups";
+
+function readSessionStringSet(key: string): Set<string> {
+  if (typeof window === "undefined") return new Set();
+  try {
+    const raw = window.sessionStorage.getItem(key);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(parsed) ? parsed.filter((item) => typeof item === "string") : []);
+  } catch {
+    return new Set();
+  }
+}
 export type ThreeDCatalogGroup = (typeof THREE_D_CATALOG_GROUPS)[number];
 
 export function filteredThreeDCatalogItems(items: InteractiveRoomCatalogItem[], group: ThreeDCatalogGroup, search: string): InteractiveRoomCatalogItem[] {
@@ -887,6 +899,14 @@ interface Props {
   placed?: PlacedCabinet[];
   /** Draw crown rails around the exposed tops of upper cabinets. */
   crown?: boolean;
+  /** Arched valance across a window that already has wall cabinets. */
+  valance?: boolean;
+  /** Rope molding seated in the 3/4-inch groove on top of the crown. */
+  ropeMolding?: boolean;
+  /** Dentil molding seated in the 3/4-inch groove on top of the crown. */
+  dentilMolding?: boolean;
+  /** Scribe strips at cabinet-to-wall gaps. */
+  scribe?: boolean;
   /** Apply the selected finished toe-kick skin to every eligible floor cabinet. */
   toeKick?: boolean;
   roomOverride?: RoomData;
@@ -5185,6 +5205,24 @@ export function addCabinet(
 		    };
     cabinet.add(body);
     bodyMeshes.push(body);
+    if (isFlutedFillerItem({ masterCode: sku.masterCode, description: sku.description, category: sku.category, subCategory: sku.subCategory })) {
+      const grooves = 5;
+      const grooveWidth = Math.min(0.045, Math.max(0.012, bodyWidth * 0.08));
+      const span = Math.max(grooveWidth, bodyWidth * 0.72);
+      for (let index = 0; index < grooves; index += 1) {
+        const groove = new THREE.Mesh(
+          new THREE.BoxGeometry(grooveWidth, bodyHeight * 0.9, 0.03),
+          new THREE.MeshStandardMaterial({ color, roughness: 0.62 }),
+        );
+        groove.position.set(
+          -span / 2 + (span * index) / (grooves - 1),
+          0,
+          (isFrontFlushFillerBoard ? installedFillerFrontOffset : 0) + fillerBodyDepth / 2 + 0.01,
+        );
+        groove.userData = { flutedFillerGroove: true, selectedFinishStructuralSurface: true };
+        cabinet.add(groove);
+      }
+    }
   }
 
 	  const textureMaterials: THREE.MeshStandardMaterial[] = [];
@@ -8905,6 +8943,133 @@ export function addThreeDCrownMolding(
   }
 }
 
+const CROWN_PROFILE_RISE_IN = 3;
+const CROWN_GROOVE_IN = 0.75;
+
+/** Rope or dentil sits in the 3/4-inch groove along the top of the crown. */
+export function addThreeDCrownGrooveMolding(
+  root: THREE.Group,
+  placed: PlacedCabinet[],
+  room: RoomData,
+  kind: "rope" | "dentil",
+  fallbackColor: string,
+) {
+  const segments = threeDCrownPerimeterSegments(placed, room);
+  for (const segment of segments) {
+    if (segment.length < 0.5) continue;
+    const directionX = (segment.end.x - segment.start.x) / segment.length;
+    const directionZ = (segment.end.z - segment.start.z) / segment.length;
+    const outwardX = directionZ;
+    const outwardZ = -directionX;
+    const inset = CROWN_PROFILE_RISE_IN - CROWN_GROOVE_IN / 2;
+    const midX = ((segment.start.x + segment.end.x) / 2 + outwardX * inset) * INCH;
+    const midZ = ((segment.start.z + segment.end.z) / 2 + outwardZ * inset) * INCH;
+    const midY = (segment.top + CROWN_PROFILE_RISE_IN - CROWN_GROOVE_IN / 2) * INCH;
+    const material = new THREE.MeshStandardMaterial({ color: fallbackColor, roughness: kind === "rope" ? 0.45 : 0.62 });
+    if (kind === "rope") {
+      const rope = new THREE.Mesh(new THREE.BoxGeometry(segment.length * INCH, CROWN_GROOVE_IN * INCH, CROWN_GROOVE_IN * INCH), material);
+      rope.position.set(midX, midY, midZ);
+      rope.rotation.y = segment.rotation;
+      rope.userData = { ropeMolding: true, crownGrooveMolding: true, grooveInches: CROWN_GROOVE_IN };
+      root.add(rope);
+      continue;
+    }
+    const block = 0.75;
+    const gap = 0.5;
+    const count = Math.max(1, Math.floor(segment.length / (block + gap)));
+    for (let index = 0; index < count; index += 1) {
+      const along = ((index + 0.5) / count - 0.5) * segment.length;
+      const tooth = new THREE.Mesh(new THREE.BoxGeometry(block * INCH, CROWN_GROOVE_IN * INCH, CROWN_GROOVE_IN * INCH), material);
+      tooth.position.set(midX + directionX * along * INCH, midY, midZ + directionZ * along * INCH);
+      tooth.rotation.y = segment.rotation;
+      tooth.userData = { dentilMolding: true, crownGrooveMolding: true, grooveInches: CROWN_GROOVE_IN };
+      root.add(tooth);
+    }
+  }
+}
+
+/** A short arched face across a window, with its top on the wall-cabinet crown line. */
+export function addThreeDValances(
+  root: THREE.Group,
+  placed: PlacedCabinet[],
+  openings: WallOpening[],
+  room: RoomData,
+  fallbackColor: string,
+) {
+  const wallsWithUppers = new Set<WallSide>();
+  for (const cabinet of placed) {
+    if (cabinet.placement === "wall") wallsWithUppers.add(cabinetWall(cabinet, room));
+  }
+  const material = new THREE.MeshStandardMaterial({ color: fallbackColor, roughness: 0.55 });
+  for (const opening of openings) {
+    if (opening.kind !== "window" || !wallsWithUppers.has(opening.side)) continue;
+    const width = Math.max(6, opening.width);
+    const height = 6;
+    const top = STD.WALL_MOUNT_BOTTOM + STD.WALL_HEIGHT;
+    const shape = new THREE.Shape();
+    const half = (width * INCH) / 2;
+    const full = height * INCH;
+    const dip = full * 0.45;
+    shape.moveTo(-half, full / 2);
+    shape.lineTo(half, full / 2);
+    shape.lineTo(half, -full / 2 + dip);
+    shape.quadraticCurveTo(0, -full / 2 - dip * 0.2, -half, -full / 2 + dip);
+    shape.closePath();
+    const mesh = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth: 0.75 * INCH, bevelEnabled: false }), material);
+    const y = (top - height / 2) * INCH;
+    const depth = STD.WALL_DEPTH * INCH;
+    if (opening.side === "top") mesh.position.set((opening.offset + width / 2) * INCH, y, depth / 2);
+    else if (opening.side === "bottom") {
+      mesh.position.set((opening.offset + width / 2) * INCH, y, room.depth * INCH - depth / 2);
+      mesh.rotation.y = Math.PI;
+    } else if (opening.side === "left") {
+      mesh.position.set(depth / 2, y, (opening.offset + width / 2) * INCH);
+      mesh.rotation.y = Math.PI / 2;
+    } else {
+      mesh.position.set(room.width * INCH - depth / 2, y, (opening.offset + width / 2) * INCH);
+      mesh.rotation.y = -Math.PI / 2;
+    }
+    mesh.userData = { archedValance: true, aboveSinkOrWindow: true, betweenWallCabinets: true };
+    root.add(mesh);
+  }
+}
+
+/** Thin scribe where a cabinet end is against the wall. */
+export function addThreeDScribe(
+  root: THREE.Group,
+  placed: PlacedCabinet[],
+  room: RoomData,
+  fallbackColor: string,
+) {
+  const material = new THREE.MeshStandardMaterial({ color: fallbackColor, roughness: 0.6 });
+  for (const cabinet of placed) {
+    if (cabinet.placement !== "base" && cabinet.placement !== "wall" && cabinet.placement !== "tall") continue;
+    const wall = cabinetWall(cabinet, room);
+    const start = wallRunOffset(cabinet, wall, room);
+    const span = wallRunSpan(cabinet, wall, room);
+    const wallLengthIn = wall === "top" || wall === "bottom" ? room.width : room.depth;
+    const gaps = [
+      start <= 1.5 ? start : 0,
+      wallLengthIn - (start + span) <= 1.5 ? wallLengthIn - (start + span) : 0,
+    ];
+    gaps.forEach((gap, index) => {
+      if (gap <= 0.05) return;
+      const height = cabinet.height || (cabinet.placement === "wall" ? STD.WALL_HEIGHT : cabinet.placement === "tall" ? STD.TALL_HEIGHT : STD.BASE_HEIGHT);
+      const bottom = cabinet.placement === "wall" ? (cabinet.mountBottom ?? STD.WALL_MOUNT_BOTTOM) : 0;
+      const strip = new THREE.Mesh(new THREE.BoxGeometry(Math.max(0.25, gap) * INCH, height * INCH, 0.75 * INCH), material);
+      const along = index === 0 ? gap / 2 : start + span + gap / 2;
+      const y = (bottom + height / 2) * INCH;
+      const depth = (cabinet.placement === "wall" ? STD.WALL_DEPTH : STD.BASE_DEPTH) * INCH;
+      if (wall === "top") strip.position.set(along * INCH, y, depth / 2);
+      else if (wall === "bottom") strip.position.set(along * INCH, y, room.depth * INCH - depth / 2);
+      else if (wall === "left") strip.position.set(depth / 2, y, along * INCH);
+      else strip.position.set(room.width * INCH - depth / 2, y, along * INCH);
+      strip.userData = { scribeMolding: true, cabinetToWallGap: true };
+      root.add(strip);
+    });
+  }
+}
+
 export type ThreeDContinuousToeKickSegment = {
   wallId: string;
   start: number;
@@ -11729,7 +11894,7 @@ function ThreeDFloorMaterialControl({
   return <FlooringRotationControl value={rotation} onChange={onRotationChange} testId={testId} />;
 }
 
-export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick = false, roomOverride, openings = [], sinks = [], potFillers = [], island = null, islandFocusRequest = null, furniture = [], selectedFurnitureUid = null, onSelectFurniture, onRemoveFurniture, onRotateFurniture, onOpenFurnitureAttributes, ponyWalls = [], orderSummary, orderLines = [], initialPresentation, catalogFinishOverride, renderExposure = null, colorDeltaEMax = null, doorRenderHex = null, cabinetFinishPreviewOptions = [], doorStyleChoices = [], selectedDoorStyleId = null, onDoorStyleChange, cabinetFinishOverrides, cabinetDoorProfiles, cabinetDoorSampleUrls, cabinetDrawerSampleUrls, cabinetFaceSourceKinds, cabinetFaceCrops, catalogFaceCrop, cabinetFrontVisuals, catalogDoorSampleUrl, catalogDrawerSampleUrl, catalogFaceSourceKind, catalogRoomSceneUrl, catalogDoorProfile, windowSceneKind = DEFAULT_WINDOW_SCENE_KIND, windowFrameStyle = "white", hardwareStyleId = "none", hardwareAccent, catalogFinishName, catalogFinishProductId, catalogIslandCabinetName, catalogIslandCabinetColor, catalogIslandCabinetProductId, catalogIslandDoorSampleUrl, catalogCountertopName, catalogCountertopProductId, catalogCountertopReferenceUrl, catalogIslandCountertopName, catalogIslandCountertopProductId, catalogIslandCountertopReferenceUrl, catalogFlooringName, catalogFlooringProductId, catalogFlooringReferenceUrl, catalogFlooringCategory, catalogFlooringSubCategory, catalogFlooringSize, catalogBacksplashName, catalogBacksplashProductId, catalogBacksplashReferenceUrl, catalogHardwareReferenceUrl, catalogHardwareName, savedDesignId, savedDesignRevision, canAffiliateGeminiImageTest = false, isCurrentPlanSaved = false, savedPlanFingerprintPayload = null, backsplashHeightMode = "standard", countertopBacksplashHeightIn = 0, catalogCountertopColor, catalogIslandCountertopColor, catalogCountertopImageUrl, catalogIslandCountertopImageUrl, catalogFlooringImageUrl, catalogFlooringCardImageUrl = null, flooringRotationDeg = 0, onFlooringRotationChange, mosaicFloorPattern = null, onMosaicFloorPatternChange, catalogBacksplashImageUrl, catalogBacksplashCardImageUrl = null, catalogBacksplashMaterialImageUrl = null, catalogFlooringMaterialImageUrl = null, catalogBacksplashSize = null, catalogBacksplashCategory = null, catalogBacksplashSubCategory = null, shareContext, catalogItems = [], catalogDragItem = null, catalogDropWall, onAddCatalogItem, onAddRangeHood, onSaveToAccount, onSyncCart, onPresentationChange, onRoomWallHeightChange, onRoomWallHeightsChange, onMoveCabinet, onMoveCabinetTo, selectedCabinetUid, attributesTargetUid = null, missingPriceUids, onSelectCabinet, onOpenCabinetEditor, onSelectOpening, onOpenWindowEditor, onOpenDoorEditor, onRequestFiller, onSnapGlassCabinetToFront, onRotateCabinet, onRemoveCabinet, showWallLayer, onToggleWallLayer, temporaryPreviewMessage, onClearTemporaryPreview, temporaryPreviewCounter, temporaryPreviewTransitionKey, fillerInsertionTransition, cabinetConfigHref, embedded = false, cutawayRoomWalls = true, hybridPlanUnderlay = false, className, onGeometryRendered }: Props) {
+export function InteractiveRoom3D({ scene, placed = [], crown = false, valance = false, ropeMolding = false, dentilMolding = false, scribe = false, toeKick = false, roomOverride, openings = [], sinks = [], potFillers = [], island = null, islandFocusRequest = null, furniture = [], selectedFurnitureUid = null, onSelectFurniture, onRemoveFurniture, onRotateFurniture, onOpenFurnitureAttributes, ponyWalls = [], orderSummary, orderLines = [], initialPresentation, catalogFinishOverride, renderExposure = null, colorDeltaEMax = null, doorRenderHex = null, cabinetFinishPreviewOptions = [], doorStyleChoices = [], selectedDoorStyleId = null, onDoorStyleChange, cabinetFinishOverrides, cabinetDoorProfiles, cabinetDoorSampleUrls, cabinetDrawerSampleUrls, cabinetFaceSourceKinds, cabinetFaceCrops, catalogFaceCrop, cabinetFrontVisuals, catalogDoorSampleUrl, catalogDrawerSampleUrl, catalogFaceSourceKind, catalogRoomSceneUrl, catalogDoorProfile, windowSceneKind = DEFAULT_WINDOW_SCENE_KIND, windowFrameStyle = "white", hardwareStyleId = "none", hardwareAccent, catalogFinishName, catalogFinishProductId, catalogIslandCabinetName, catalogIslandCabinetColor, catalogIslandCabinetProductId, catalogIslandDoorSampleUrl, catalogCountertopName, catalogCountertopProductId, catalogCountertopReferenceUrl, catalogIslandCountertopName, catalogIslandCountertopProductId, catalogIslandCountertopReferenceUrl, catalogFlooringName, catalogFlooringProductId, catalogFlooringReferenceUrl, catalogFlooringCategory, catalogFlooringSubCategory, catalogFlooringSize, catalogBacksplashName, catalogBacksplashProductId, catalogBacksplashReferenceUrl, catalogHardwareReferenceUrl, catalogHardwareName, savedDesignId, savedDesignRevision, canAffiliateGeminiImageTest = false, isCurrentPlanSaved = false, savedPlanFingerprintPayload = null, backsplashHeightMode = "standard", countertopBacksplashHeightIn = 0, catalogCountertopColor, catalogIslandCountertopColor, catalogCountertopImageUrl, catalogIslandCountertopImageUrl, catalogFlooringImageUrl, catalogFlooringCardImageUrl = null, flooringRotationDeg = 0, onFlooringRotationChange, mosaicFloorPattern = null, onMosaicFloorPatternChange, catalogBacksplashImageUrl, catalogBacksplashCardImageUrl = null, catalogBacksplashMaterialImageUrl = null, catalogFlooringMaterialImageUrl = null, catalogBacksplashSize = null, catalogBacksplashCategory = null, catalogBacksplashSubCategory = null, shareContext, catalogItems = [], catalogDragItem = null, catalogDropWall, onAddCatalogItem, onAddRangeHood, onSaveToAccount, onSyncCart, onPresentationChange, onRoomWallHeightChange, onRoomWallHeightsChange, onMoveCabinet, onMoveCabinetTo, selectedCabinetUid, attributesTargetUid = null, missingPriceUids, onSelectCabinet, onOpenCabinetEditor, onSelectOpening, onOpenWindowEditor, onOpenDoorEditor, onRequestFiller, onSnapGlassCabinetToFront, onRotateCabinet, onRemoveCabinet, showWallLayer, onToggleWallLayer, temporaryPreviewMessage, onClearTemporaryPreview, temporaryPreviewCounter, temporaryPreviewTransitionKey, fillerInsertionTransition, cabinetConfigHref, embedded = false, cutawayRoomWalls = true, hybridPlanUnderlay = false, className, onGeometryRendered }: Props) {
   const previewRootRef = useRef<HTMLElement>(null);
   const mountRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -11893,6 +12058,10 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
   }, [fillerChipOpen]);
   const [catalogSearch, setCatalogSearch] = useState("");
   const [catalogGroup, setCatalogGroup] = useState<ThreeDCatalogGroup>("All");
+  const [openCatalogSections, setOpenCatalogSections] = useState<Set<string>>(() => readSessionStringSet(THREE_D_CATALOG_OPEN_KEY));
+  useEffect(() => {
+    window.sessionStorage.setItem(THREE_D_CATALOG_OPEN_KEY, JSON.stringify(Array.from(openCatalogSections)));
+  }, [openCatalogSections]);
   const [draggedCatalogId, setDraggedCatalogId] = useState<string | null>(null);
 	  const [catalogDragMeasurement, setCatalogDragMeasurement] = useState<{ item: InteractiveRoomCatalogItem; fit: WallGapFitPreview; wall: WallSide; freehand?: boolean } | null>(null);
   const [cabinetDragMeasurement, setCabinetDragMeasurement] = useState<{ cabinet: PlacedCabinet; preview: CabinetWallDragPreview } | null>(null);
@@ -12752,6 +12921,10 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 	      }
 	      addThreeDGlassStackerRearSupports(catalogRoot, renderedPlaced, room, visibleCabinetFinishOverrides, finish);
 	      if (crown) addThreeDCrownMolding(catalogRoot, renderedPlaced, room, visibleCabinetFinishOverrides, finish);
+	      if (crown && ropeMolding) addThreeDCrownGrooveMolding(catalogRoot, renderedPlaced, room, "rope", finish);
+	      if (crown && dentilMolding && !ropeMolding) addThreeDCrownGrooveMolding(catalogRoot, renderedPlaced, room, "dentil", finish);
+	      if (valance) addThreeDValances(catalogRoot, renderedPlaced, openings, room, finish);
+	      if (scribe) addThreeDScribe(catalogRoot, renderedPlaced, room, finish);
 	    } else {
       for (const suggestion of validSuggestions) {
         if (!suggestion.sku) continue;
@@ -12885,7 +13058,7 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
       if (controlsRef.current === controls) controlsRef.current = null;
       if (catalogRootRef.current === catalogRoot) catalogRootRef.current = null;
     };
-  }, [scene, validSuggestions, placed, crown, toeKick, roomOverride, openings, sinks, potFillers, island, furniture, selectedFurnitureUid, ponyWalls, renderExistingDesign, resetKey, cameraPreset, showRoomContext, showSolidFrontWalls, cutawayRoomWalls, hybridPlanUnderlay, wallHeightIn, wallHeights, resolvedCabinetFinish, studioLights, cabinetPreviewFinishId, cabinetFinishOverrides, cabinetDoorProfiles, cabinetDoorSampleUrls, cabinetDrawerSampleUrls, cabinetFaceSourceKinds, cabinetFaceCrops, catalogFaceCrop, cabinetFrontVisuals, catalogDrawerSampleUrl, catalogFaceSourceKind, countertopFinish, cabinetFinish, catalogDoorSampleUrl, catalogRoomSceneUrl, hardwareStyleId, hardwareAccent, catalogCountertopName, catalogCountertopProductId, catalogIslandCountertopName, catalogIslandCountertopProductId, catalogIslandCountertopColor, catalogFlooringName, catalogFlooringProductId, catalogFlooringCategory, catalogFlooringSubCategory, catalogFlooringSize, catalogBacksplashName, catalogBacksplashProductId, catalogBacksplashSize, catalogBacksplashCategory, catalogBacksplashSubCategory, backsplashHeightMode, countertopBacksplashHeightIn, catalogCountertopImageUrl, catalogIslandCountertopImageUrl, catalogFlooringImageUrl, catalogFlooringCardImageUrl, flooringRotationDeg, mosaicFloorPattern, catalogBacksplashImageUrl, catalogBacksplashCardImageUrl, catalogBacksplashMaterialImageUrl, catalogFlooringMaterialImageUrl]);
+  }, [scene, validSuggestions, placed, crown, valance, ropeMolding, dentilMolding, scribe, toeKick, roomOverride, openings, sinks, potFillers, island, furniture, selectedFurnitureUid, ponyWalls, renderExistingDesign, resetKey, cameraPreset, showRoomContext, showSolidFrontWalls, cutawayRoomWalls, hybridPlanUnderlay, wallHeightIn, wallHeights, resolvedCabinetFinish, studioLights, cabinetPreviewFinishId, cabinetFinishOverrides, cabinetDoorProfiles, cabinetDoorSampleUrls, cabinetDrawerSampleUrls, cabinetFaceSourceKinds, cabinetFaceCrops, catalogFaceCrop, cabinetFrontVisuals, catalogDrawerSampleUrl, catalogFaceSourceKind, countertopFinish, cabinetFinish, catalogDoorSampleUrl, catalogRoomSceneUrl, hardwareStyleId, hardwareAccent, catalogCountertopName, catalogCountertopProductId, catalogIslandCountertopName, catalogIslandCountertopProductId, catalogIslandCountertopColor, catalogFlooringName, catalogFlooringProductId, catalogFlooringCategory, catalogFlooringSubCategory, catalogFlooringSize, catalogBacksplashName, catalogBacksplashProductId, catalogBacksplashSize, catalogBacksplashCategory, catalogBacksplashSubCategory, backsplashHeightMode, countertopBacksplashHeightIn, catalogCountertopImageUrl, catalogIslandCountertopImageUrl, catalogFlooringImageUrl, catalogFlooringCardImageUrl, flooringRotationDeg, mosaicFloorPattern, catalogBacksplashImageUrl, catalogBacksplashCardImageUrl, catalogBacksplashMaterialImageUrl, catalogFlooringMaterialImageUrl]);
 	  // A catalog filler has already passed geometry/collision validation before this
 	  // cue runs. Animate only its visual group, so the final coordinates and the
 	  // saved plan remain authoritative while the user sees it settle into the seam.
@@ -14614,11 +14787,48 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
             <p className="mt-2 text-sm text-muted-foreground">Browse the complete active cabinet catalog, then add an item to the active wall. It immediately joins this 3D room and the saved 2D plan.</p>
             <div data-testid="three-d-catalog-category-row" className="mt-4 flex h-10 min-h-10 shrink-0 items-center gap-1 overflow-x-auto overflow-y-hidden rounded-lg border bg-muted/30 p-1" aria-label="3D catalog categories">{THREE_D_CATALOG_GROUPS.map((group) => <button key={group} type="button" onClick={() => setCatalogGroup(group)} className={`h-8 shrink-0 rounded-md px-3 text-xs font-semibold leading-none transition-colors ${catalogGroup === group ? "bg-[#1a2744] text-white" : "text-muted-foreground hover:bg-background hover:text-foreground"}`}>{group}</button>)}</div>
             <Input value={catalogSearch} onChange={(event) => setCatalogSearch(event.target.value)} placeholder="Search cabinet name or code" className="mt-4" aria-label="Search 3D catalog" />
-            <p className="mt-2 text-xs text-muted-foreground">{visibleCatalogItems.length} matching items</p>
-            <div className="mt-3 grid gap-2 sm:grid-cols-2">
-              {visibleCatalogItems.map((item, index) => <button key={`${item.category}-${item.id}-${item.masterCode}-${index}`} type="button" draggable onDragStart={(event) => { const key = `${item.category}:${item.id}`; event.dataTransfer.effectAllowed = "copy"; event.dataTransfer.setData("text/plain", key); setDraggedCatalogId(key); }} onDragEnd={() => setDraggedCatalogId(null)} onClick={() => { onAddCatalogItem?.(item); setWorkspacePanel(null); }} className="rounded-xl border bg-card p-3 text-left transition hover:border-[#a87f33] hover:bg-[#fffaf1]">
-                <span className="block font-semibold">{item.masterCode}</span><span className="mt-0.5 block text-xs text-muted-foreground">{item.description ?? item.category}</span><span className="mt-2 block text-[10px] font-semibold uppercase tracking-wide text-[#a87f33]">Add {item.category}</span>
-              </button>) || <p className="col-span-full rounded-xl border border-dashed p-5 text-center text-sm text-muted-foreground">No matching catalog items.</p>}
+            <p className="mt-2 text-xs text-muted-foreground">{visibleCatalogItems.length} matching items. Sections stay closed until you open them.</p>
+            <div className="mt-3 space-y-2">
+              {(() => {
+                const sections = new Map<string, InteractiveRoomCatalogItem[]>();
+                for (const item of visibleCatalogItems) {
+                  const label = item.catalogGroup ?? item.category ?? "Other";
+                  const list = sections.get(label) ?? [];
+                  list.push(item);
+                  sections.set(label, list);
+                }
+                if (sections.size === 0) return <p className="rounded-xl border border-dashed p-5 text-center text-sm text-muted-foreground">No matching catalog items.</p>;
+                const searching = catalogSearch.trim().length > 0;
+                return Array.from(sections.entries()).map(([label, items]) => {
+                  const open = searching || openCatalogSections.has(label);
+                  return (
+                    <section key={label}>
+                      <button
+                        type="button"
+                        aria-expanded={open}
+                        onClick={() => setOpenCatalogSections((current) => {
+                          const next = new Set(current);
+                          if (next.has(label)) next.delete(label);
+                          else next.add(label);
+                          return next;
+                        })}
+                        className="flex w-full items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide"
+                      >
+                        <span className={`inline-block transition-transform ${open ? "rotate-90" : ""}`}>▸</span>
+                        <span className="flex-1">{label}</span>
+                        <span className="font-normal normal-case text-muted-foreground">{items.length}</span>
+                      </button>
+                      {open && (
+                        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                          {items.map((item, index) => <button key={`${item.category}-${item.id}-${item.masterCode}-${index}`} type="button" draggable onDragStart={(event) => { const key = `${item.category}:${item.id}`; event.dataTransfer.effectAllowed = "copy"; event.dataTransfer.setData("text/plain", key); setDraggedCatalogId(key); }} onDragEnd={() => setDraggedCatalogId(null)} onClick={() => { onAddCatalogItem?.(item); setWorkspacePanel(null); }} className="rounded-xl border bg-card p-3 text-left transition hover:border-[#a87f33] hover:bg-[#fffaf1]">
+                            <span className="block font-semibold">{item.masterCode}</span><span className="mt-0.5 block text-xs text-muted-foreground">{item.description ?? item.category}</span><span className="mt-2 block text-[10px] font-semibold uppercase tracking-wide text-[#a87f33]">Add {item.category}</span>
+                          </button>)}
+                        </div>
+                      )}
+                    </section>
+                  );
+                });
+              })()}
             </div>
           </>}
           {workspacePanel === "view" && <>

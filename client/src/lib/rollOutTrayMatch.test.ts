@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  attachRolloutToHost,
   isRollOutEligible,
   MAX_ROLLOUT_TRAYS_PER_CABINET,
   matchRollOutTray,
@@ -321,5 +322,28 @@ describe("rollOutTrayCartItems", () => {
       qty: 5,
     }]);
     expect(items.reduce((total, item) => total + item.unitPrice * item.qty, 0)).toBe(320);
+  });
+});
+
+describe("attachRolloutToHost", () => {
+  const host = {
+    ...base({ nominalWidth: 24, width: 24, masterCode: "B24" }),
+    uid: "host",
+    styleId: 4,
+    distributorId: 9,
+    rolloutQty: 0,
+  };
+  it("installs inside a same-width cabinet from the same line", () => {
+    const result = attachRolloutToHost([host], { width: 24, styleId: 4, distributorId: 9, selectedUid: "host" });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.hostCode).toBe("B24");
+      expect(result.qty).toBe(1);
+      expect(result.placed[0]?.rolloutQty).toBe(1);
+    }
+  });
+  it("refuses a same-size cabinet from another distributor line", () => {
+    const result = attachRolloutToHost([host], { width: 24, styleId: 8, distributorId: 9 });
+    expect(result.ok).toBe(false);
   });
 });
