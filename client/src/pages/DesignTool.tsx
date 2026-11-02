@@ -116,7 +116,6 @@ import { catalogItemToExposedPanelStock, sameExposedPanelWarnings, syncExposedSi
 import { countertopToastVisible, COUNTERTOP_TOAST_TIMEOUT_MS, useDebouncedValue, stablePricePairKey } from "@/lib/designerPricingStability";
 import { ColorStyleQuickPicker } from "@/components/design/ColorStyleQuickPicker";
 import { ApproveDoorButton } from "@/components/admin/ApproveDoorButton";
-import { PlanWalzCraftWizardButton } from "@/components/walzcraft/PlanWalzCraftWizard";
 import { clampRefrigeratorAssemblyToPanels } from "@/lib/refrigeratorPanelClamp";
 import { overApplianceWallMount } from "@/lib/overApplianceMount";
 import { StyleSamplePreview } from "@/components/design/StyleSamplePreview";
@@ -515,14 +514,6 @@ function wallNameFor(side: string | null | undefined, room: RoomData): string {
   if (standard) return standard;
   const custom = room.customWalls?.find((wall) => wall.id === side);
   return custom?.label ?? "drawn";
-}
-
-function withSavedDoorColor<T extends { id?: number }>(
-  style: T | null | undefined,
-  override: { styleId: number; renderHex: string; color: string } | null,
-): T | null | undefined {
-  if (!style || !override || style.id !== override.styleId) return style;
-  return { ...style, renderHex: override.renderHex, color: override.color };
 }
 
 export default function DesignTool(props: { affiliateSlug?: string }) {
@@ -5076,33 +5067,16 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     const s = doorStyles?.find((d) => d.id === styleId) as { ourName?: string | null; aliasName?: string | null } | undefined;
     return s ? (affiliateStyleName({ ...s, id: styleId ?? 0 }) || null) : null;
   }, [affiliateStyleName, doorStyles, styleId]);
-  const [doorColorOverride, setDoorColorOverride] = useState<{ styleId: number; renderHex: string; color: string } | null>(null);
-  const saveDoorColor = trpc.doorStyles.adminUpdateDoorStyle.useMutation({
-    onSuccess: () => {
-      toast.success("Door color saved");
-      void trpcUtils.doorStyles.list.invalidate();
-    },
-    onError: (error) => toast.error(error.message),
-  });
-  const applyPlanDoorColor = useCallback((shade: { hex: string; name: string }) => {
-    if (styleId == null) {
-      toast.error("Choose a door style on the plan first.");
-      return;
-    }
-    setDoorColorOverride({ styleId, renderHex: shade.hex, color: shade.name });
-    if (isAdmin) saveDoorColor.mutate({ id: styleId, renderHex: shade.hex, color: shade.name });
-    else toast.message("Door color updated on this plan.");
-  }, [isAdmin, saveDoorColor, styleId]);
   const activeFinish = useMemo(() => {
-    const s = withSavedDoorColor(doorStyles?.find((d) => d.id === styleId) as
-      | { id?: number; ourName?: string | null; color?: string | null; finish?: string | null; woodSpecies?: string | null; renderHex?: string | null }
-      | undefined, doorColorOverride);
+    const s = doorStyles?.find((d) => d.id === styleId) as
+      | { ourName?: string | null; color?: string | null; finish?: string | null; woodSpecies?: string | null }
+      | undefined;
     return doorStyleFinishColors(s);
-  }, [doorColorOverride, doorStyles, styleId]);
+  }, [doorStyles, styleId]);
   const activeFacePlan = useMemo(() => {
-    const s = withSavedDoorColor(doorStyles?.find((d) => d.id === styleId) as DesignerFaceStyle | undefined, doorColorOverride);
+    const s = doorStyles?.find((d) => d.id === styleId) as DesignerFaceStyle | undefined;
     return designerFacePlan(s, "base");
-  }, [doorColorOverride, doorStyles, styleId]);
+  }, [doorStyles, styleId]);
   const active3DDoorSampleUrl = activeFacePlan?.doorUrl ?? null;
   const active3DDrawerSampleUrl = activeFacePlan?.sourceKind === "split" ? activeFacePlan.drawerUrl : null;
   const activeFaceSourceKind: FaceSourceKind | undefined = activeFacePlan?.sourceKind;
@@ -5118,8 +5092,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // unfinished-end skin rule. Hickory cabinets ship with unfinished exposed
   // sides, so any exposed end needs a matching Hickory skin panel.
   const activeStyle = useMemo(
-    () => withSavedDoorColor(doorStyles?.find((s) => s.id === styleId) ?? null, doorColorOverride) ?? null,
-    [doorColorOverride, doorStyles, styleId]
+    () => doorStyles?.find((s) => s.id === styleId) ?? null,
+    [doorStyles, styleId]
   );
   const activeStyleRef = useRef(activeStyle);
   activeStyleRef.current = activeStyle;
@@ -5616,12 +5590,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const finishById = useMemo(() => {
     const m = new Map<number, ReturnType<typeof finishColors>>();
     doorStyles?.forEach((d) => {
-      const s = withSavedDoorColor(d as { id: number; ourName?: string | null; color?: string | null; finish?: string | null; woodSpecies?: string | null; renderHex?: string | null }, doorColorOverride);
-      if (!s) return;
+      const s = d as { id: number; ourName?: string | null; color?: string | null; finish?: string | null; woodSpecies?: string | null };
       m.set(s.id, doorStyleFinishColors(s));
     });
     return m;
-  }, [doorColorOverride, doorStyles]);
+  }, [doorStyles]);
   const panelKindById = useMemo(() => {
     const m = new Map<number, ReturnType<typeof doorPanelKind>>();
     doorStyles?.forEach((d) => {
@@ -5692,18 +5665,15 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const facePlanForCab = useCallback(
     (cab: PlacedCabinet) => {
       const sid = displayStyleIdForCab(cab);
-      const style = sid != null ? withSavedDoorColor(doorStyles?.find((d) => d.id === sid) as DesignerFaceStyle | undefined, doorColorOverride) : undefined;
+      const style = sid != null ? doorStyles?.find((d) => d.id === sid) as DesignerFaceStyle | undefined : undefined;
       return designerFacePlan(style, cab.placement);
     },
-    [displayStyleIdForCab, doorColorOverride, doorStyles],
+    [displayStyleIdForCab, doorStyles],
   );
   const doorSampleForCab = useCallback(
     (cab: PlacedCabinet): string | null => {
       const plan = facePlanForCab(cab);
       if (!plan) return activeDoorSampleUrl;
-      // Blueprint crops and five-piece slabs stay procedural. The catalog photo
-      // carries a frame and the old door's imperfections.
-      if (plan.suppressCatalogPhoto || plan.dlcCrop) return null;
       if (plan.sourceKind === "combined") return null;
       return plan.doorUrl || activeDoorSampleUrl;
     },
@@ -5718,7 +5688,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       if (sid == null) return DEFAULT_DRAWER_SAMPLE_URL;
       const plan = facePlanForCab(cab);
       if (!plan || plan.sourceKind === "combined") return null;
-      if (plan.suppressCatalogPhoto || plan.dlcCrop) return null;
+      // Processed DLC crops: the drawer has its own crop or none (solid colour); never the door photo.
+      if (plan.dlcCrop) return plan.drawerUrl;
       if (plan.sourceKind === "split") return plan.drawerUrl;
       return plan.doorUrl;
     },
@@ -14462,12 +14433,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const threeDCabinetFaces = useMemo(
     () => placed.flatMap((cabinet) => {
       const assignedStyleId = effectiveStyleId(cabinet, styleId) ?? styleId;
-      const assignedStyle = assignedStyleId != null ? withSavedDoorColor(doorStyles?.find((style) => style.id === assignedStyleId) as DesignerFaceStyle | undefined, doorColorOverride) : undefined;
+      const assignedStyle = assignedStyleId != null ? doorStyles?.find((style) => style.id === assignedStyleId) as DesignerFaceStyle | undefined : undefined;
       if (!assignedStyle) return [];
       const plan = designerFacePlan(assignedStyle, cabinet.placement);
       return [[cabinet.uid, plan] as const];
     }),
-    [doorColorOverride, placed, styleId, doorStyles],
+    [placed, styleId, doorStyles],
   );
   const threeDCabinetDoorSamples = useMemo(
     () => Object.fromEntries(threeDCabinetFaces.flatMap(([uid, plan]) => (
@@ -14938,7 +14909,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           </Button>
         </div>
 
-        <PlanWalzCraftWizardButton onShade={applyPlanDoorColor} />
         <ColorStyleQuickPicker
           styles={displayUniqueDoorStyles.map((style) => ({ id: style.id, name: affiliateStyleName(style) }))}
           value={styleId}

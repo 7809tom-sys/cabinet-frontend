@@ -213,7 +213,7 @@ function BuildingBanner({
 }
 
 /** `embedded` renders the same picker inline (e.g. in the admin Edit Door Style dialog) without full-page chrome. */
-export default function WalzCraftDoorPicker({ embedded = false, onShadeChosen }: { embedded?: boolean; onShadeChosen?: (shade: { id: string; name: string; hex: string }) => void } = {}) {
+export default function WalzCraftDoorPicker({ embedded = false }: { embedded?: boolean } = {}) {
   const [state, setState] = useState<PickerState>(INITIAL_STATE);
   const [stepIndex, setStepIndex] = useState(0);
 
@@ -288,15 +288,17 @@ export default function WalzCraftDoorPicker({ embedded = false, onShadeChosen }:
   };
 
   const selectFamily = (familyId: string) => {
-    const shades = rankShades(familyId);
-    const kept = shades.find((row) => row.shade.id === state.shadeId)?.shade ?? shades[0]?.shade ?? null;
-    if (kept) onShadeChosen?.(kept);
-    setState((prev) => ({
-      ...prev,
-      colorFamilyId: familyId,
-      // Picking a family selects its top shade so Continue enables immediately.
-      shadeId: shades.some((row) => row.shade.id === prev.shadeId) ? prev.shadeId : (shades[0]?.shade.id ?? null),
-    }));
+    setState((prev) => {
+      const shades = rankShades(familyId);
+      const keepShade = shades.some((r) => r.shade.id === prev.shadeId);
+      // Picking a family selects its top shade so Continue enables immediately
+      // (previously Continue stayed disabled until a second, below-the-fold shade click).
+      return {
+        ...prev,
+        colorFamilyId: familyId,
+        shadeId: keepShade ? prev.shadeId : (shades[0]?.shade.id ?? null),
+      };
+    });
   };
 
   const cycleShade = (dir: 1 | -1) => {
@@ -496,7 +498,7 @@ export default function WalzCraftDoorPicker({ embedded = false, onShadeChosen }:
                         key={shade.id}
                         type="button"
                         data-testid={`shade-card-${shade.id}`}
-                        onClick={() => { setState((prev) => ({ ...prev, shadeId: shade.id })); onShadeChosen?.(shade); }}
+                        onClick={() => setState((prev) => ({ ...prev, shadeId: shade.id }))}
                         className={`flex items-center gap-4 rounded-lg border-2 bg-[#fffdf9] p-4 text-left transition-colors ${
                           selected
                             ? "border-[#d7a46c]"
@@ -554,8 +556,7 @@ export default function WalzCraftDoorPicker({ embedded = false, onShadeChosen }:
               />
               <div className="text-sm text-[#244338]/80">
                 <div className="font-semibold text-[#244338]">Preview</div>
-                <div>{selectedShade ? `${selectedShade.name} ${selectedShade.hex}` : "Select a shade"}</div>
-                <div className="text-xs text-[#244338]/70">This hex is the WalzCraft shade. Choosing it sets the door color. It is not the sheet’s color name.</div>
+                <div>{selectedShade ? selectedShade.name : "Select a shade"}</div>
               </div>
             </div>
           </section>

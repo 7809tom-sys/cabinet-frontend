@@ -18,12 +18,11 @@
  * the name map. The name map wins over the off-white default.
  */
 import { CABINET_NAME_COLORS, matchCabinetColorName } from "./cabinetColorNames";
-import { isFivePieceSlabLabel } from "./doorFrontStyle";
 import { DEFAULT_CABINET_HEX } from "./doorRenderLights";
 
 export const PROFILE_GUESSED_LABEL = "Profile guessed (Shaker default)";
 
-export const DOOR_SHAPES = ["raised", "recessed-shaker", "slab", "glass", "five-piece-slab"] as const;
+export const DOOR_SHAPES = ["raised", "recessed-shaker", "slab", "glass"] as const;
 export type DoorShape = (typeof DOOR_SHAPES)[number];
 export type DoorProfileSource = "explicit" | "distributor" | "aspen-default" | "guessed";
 
@@ -73,11 +72,10 @@ export function isAspenCharcoalIdentity(style: DoorIdentityInput | null | undefi
   return code === "AC" && /\b(?:aspen|charcoal)\b/.test(name);
 }
 
-/** Distributor phrases. "Flat panel" and "recessed" are shaker, not slab. The bare word "flat" is not slab. A five-piece slab is its own front, checked before the bare word slab. */
+/** Distributor phrases. "Flat panel" and "recessed" are shaker, not slab. The bare word "flat" is not slab. */
 export function parseDistributorDoorShape(description: string): DoorShape | null {
   const source = description.toLowerCase();
   if (!source.trim()) return null;
-  if (isFivePieceSlabLabel(source)) return "five-piece-slab";
   if (/\bglass\b/.test(source)) return "glass";
   if (/flat[\s-]?panel|\brecessed\b/.test(source)) return "recessed-shaker";
   if (/\braised\b|\bogee\b|\bcathedral\b|\barch(?:ed)?\b|\btraditional\b/.test(source)) return "raised";
@@ -86,11 +84,6 @@ export function parseDistributorDoorShape(description: string): DoorShape | null
 }
 
 export function resolveDoorShapeDecision(input: DoorIdentityInput | null | undefined): DoorShapeDecision {
-  // A five-piece slab label on the door front wins over a stored Shaker/Slab
-  // shape. Those older values were sending this front out as the wrong door.
-  if ([input?.doorStyle, input?.doorPanelType, input?.profileDescription, input?.profileNotes].some(isFivePieceSlabLabel)) {
-    return { shape: "five-piece-slab", source: "distributor" };
-  }
   const explicit = text(input?.doorShape).toLowerCase();
   if ((DOOR_SHAPES as readonly string[]).includes(explicit)) {
     return { shape: explicit as DoorShape, source: "explicit" };

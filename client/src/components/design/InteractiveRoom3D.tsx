@@ -65,7 +65,6 @@ import { searchCatalogItems } from "@shared/catalogCodeSearch";
 import { AEF_PRINTED_GEOMETRY_MARKER } from "@shared/aefFramelessGeometry";
 import { DLC_FRAME_DETAIL, dlcFaceGrainRepeat, dlcFaceTextureWindow, dlcFrameStrips, dlcPhotoLightCompensation, type DlcFaceCrop } from "@shared/dlcFr26Textures";
 import { SHAKER_NOTCH_THICKNESS, shakerNotchMaterial, shakerNotchPieces } from "./shakerNotch";
-import { isFivePieceSlabLabel } from "@shared/doorFrontStyle";
 import { exposedSideSolidHex } from "@shared/exposedSideFinish";
 import { rememberDoorPanelHex } from "@/lib/doorPanelColor";
 import { DARK_STAIN_DOOR_LIGHTS, RESTORED_DOOR_LIGHTS, isVeryDarkCabinetStain, relativeLuminance } from "@shared/doorRenderLights";
@@ -3011,7 +3010,7 @@ export function threeDUsesPhysicalShakerRails(profileKind: string, hasSuppliedDo
   // A supplied sample changes only the material map, never the frame geometry.
   // Raised is checked before shaker so a raised panel is not dropped as a slab.
   void hasSuppliedDoorSample;
-  if (profileKind === "raised" || profileKind === "five-piece-slab") return true;
+  if (profileKind === "raised") return true;
   return profileKind === "shaker";
 }
 
@@ -3851,9 +3850,6 @@ export function quoteMaterialDetails(input: {
 
 export function doorProfileKind(doorStyle: string | null | undefined, doorPanelType: string | null | undefined) {
   const profile = `${doorStyle ?? ""} ${doorPanelType ?? ""}`.toLowerCase();
-  // Five-piece slab is checked before shaker and before the bare word slab.
-  // "Flat panel" and "recessed" stay shaker. A one-piece slab has no "piece".
-  if (isFivePieceSlabLabel(doorStyle) || isFivePieceSlabLabel(doorPanelType)) return "five-piece-slab" as const;
   // Raised is checked before shaker. "Flat panel" and "recessed" are shaker, not a slab.
   if (/raised|bevel|cathedral|\bogee\b|\barch(?:ed)?\b|traditional/.test(profile)) return "raised" as const;
   if (/flat[\s-]?panel|recessed|shaker|\bframe\b/.test(profile)) return "shaker" as const;
@@ -5742,29 +5738,6 @@ export function addCabinet(
     : 3;
 	  // 2.75 and 3 inch shakers are built only by standardShakerDlFacePlan (shared/shakerDoorBlueprint.ts).
 	  // Do not give those styles a different frame, corner, slab, or notch.
-    const fivePieceSlabMaterial = () => {
-      const material = new THREE.MeshPhysicalMaterial({ color, roughness: 0.5, metalness: 0.02 });
-      textureMaterials.push(material);
-      return material;
-    };
-    const paintFrontSolid = (faceX: number, faceY: number, hex: string, role: "slab" | "five-piece-slab") => {
-      const material = new THREE.MeshPhysicalMaterial({ color: hex, roughness: 0.55, metalness: 0.02 });
-      textureMaterials.push(material);
-      frontGroup.traverse((node) => {
-        if (!(node instanceof THREE.Mesh)) return;
-        if (Math.abs(node.position.x - faceX) > 0.04 || Math.abs(node.position.y - faceY) > 0.04) return;
-        if (node.userData.physicalRail || node.userData.shakerNotch || node.userData.cabinetFaceShadowGap || node.userData.cabinetDrawerReveal) return;
-        if (!node.userData.cabinetFront && !node.userData.cabinetDrawerFront) return;
-        node.material = material;
-        node.userData = {
-          ...node.userData,
-          selectedStyleFace: role,
-          usesDoorImage: false,
-          plainDoorColor: true,
-          ...(role === "slab" ? { plainSlabDrawer: true, slabFront: true } : { fivePieceSlabCenter: true, squareCorner: true }),
-        };
-      });
-    };
 	  const addShakerFrame = (faceWidth: number, faceHeight: number, x: number, y: number, z = 0.036, rotationY = 0, forceGlassFrame = false, faceRole: "door" | "drawer" = "door") => {
 	    const raisedProfile = threeDFaceUsesRaisedPanelBevel({
 	      profileKind,
@@ -5775,17 +5748,15 @@ export function addCabinet(
 	    });
 	    const framedProfile = forceGlassFrame || raisedProfile || threeDUsesPhysicalShakerRails(profileKind, Boolean(doorTexture));
 	    if (!framedProfile) return;
-    const cleanFivePieceSlab = profileKind === "five-piece-slab" && !raisedProfile && !forceGlassFrame;
     const rail = threeDShakerRailThickness(faceWidth, faceHeight, doorProfile?.railWidth);
     const stile = threeDShakerRailThickness(faceWidth, faceHeight, doorProfile?.stileWidth);
     if (!rail || !stile) return;
-    if (cleanFivePieceSlab) paintFrontSolid(x, y, color, "five-piece-slab");
     const frameGroup = new THREE.Group();
     const pose = threeDShakerFramePose(x, y, z, rotationY);
     frameGroup.position.set(pose.x, pose.y, pose.z);
     frameGroup.rotation.y = pose.rotationY;
 	    frameGroup.userData = {
-	      selectedStyleFace: forceGlassFrame ? "glass-door-frame" : raisedProfile ? "raised-panel" : cleanFivePieceSlab ? "five-piece-slab" : "shaker",
+	      selectedStyleFace: forceGlassFrame ? "glass-door-frame" : raisedProfile ? "raised-panel" : "shaker",
 	      physicalRails: true,
 	      faceRole,
 	      panelConstruction: raisedProfile ? "raised" : doorProfile?.panelConstruction ?? "flat",
@@ -5801,17 +5772,16 @@ export function addCabinet(
     for (const [pieceWidth, pieceHeight, offsetX, offsetY, piece] of pieces) {
       // DL styles: rails and stiles stand 20% proud, back plane unchanged, so the edge shading is stronger.
       const railDepth = dlcDoorFinish ? DLC_FRAME_DETAIL.railDepth : DLC_FRAME_DETAIL.standardRailDepth;
-      const railMaterial = cleanFivePieceSlab ? fivePieceSlabMaterial() : frameMaterialFor(piece);
-      const railMesh = new THREE.Mesh(new THREE.BoxGeometry(pieceWidth, pieceHeight, railDepth), railMaterial);
+      const railMesh = new THREE.Mesh(new THREE.BoxGeometry(pieceWidth, pieceHeight, railDepth), frameMaterialFor(piece));
       railMesh.position.set(offsetX, offsetY, dlcDoorFinish ? (railDepth - DLC_FRAME_DETAIL.standardRailDepth) / 2 : 0);
-	      railMesh.userData = { selectedStyleFace: forceGlassFrame ? "glass-door-frame" : raisedProfile ? "raised-panel" : cleanFivePieceSlab ? "five-piece-slab" : "shaker", physicalRail: true, squareCorner: cleanFivePieceSlab, grainPiece: piece, ...(forceGlassFrame ? { glassDoorFrameRail: true, selectedFinishGlassFrame: true } : {}), ...(cleanFivePieceSlab ? { fivePieceSlab: true, usesDoorImage: false } : {}) };
+	      railMesh.userData = { selectedStyleFace: forceGlassFrame ? "glass-door-frame" : raisedProfile ? "raised-panel" : "shaker", physicalRail: true, grainPiece: piece, ...(forceGlassFrame ? { glassDoorFrameRail: true, selectedFinishGlassFrame: true } : {}) };
       frameGroup.add(railMesh);
     }
     // The rail boxes stand proud of the slab, but a front-on camera sees that step
     // edge-on. On a pale door only the top and left inner edges catch a shadow, so
     // the recess reads as half a notch. A closed shoulder on all four sides keeps
     // the step visible. Driftwood's separate shadow strips stay finish-gated below.
-    if (!raisedProfile && !forceGlassFrame && !cleanFivePieceSlab) {
+    if (!raisedProfile && !forceGlassFrame) {
       const openingW = Math.max(0, faceWidth - stile * 2);
       const openingH = Math.max(0, faceHeight - rail * 2);
       const railDepthForNotch = dlcDoorFinish ? DLC_FRAME_DETAIL.railDepth : DLC_FRAME_DETAIL.standardRailDepth;
@@ -6042,12 +6012,8 @@ export function addCabinet(
       const rail = threeDShakerRailThickness(hoodFront.doorWidth, hoodFront.doorHeight, doorProfile?.railWidth);
       const stile = threeDShakerRailThickness(hoodFront.doorWidth, hoodFront.doorHeight, doorProfile?.stileWidth);
       if (rail && stile && threeDUsesPhysicalShakerRails(profileKind, Boolean(doorTexture))) {
-        const cleanHoodSlab = profileKind === "five-piece-slab";
-        const frameMaterial = cleanHoodSlab
-          ? fivePieceSlabMaterial()
-          : new THREE.MeshPhysicalMaterial({ color: faceColor, map: doorTexture, ...threeDPhysicalSurfaceProfile("cabinet", Boolean(doorTexture)) });
-        if (!cleanHoodSlab) textureMaterials.push(frameMaterial);
-        if (cleanHoodSlab) door.material = frameMaterial;
+        const frameMaterial = new THREE.MeshPhysicalMaterial({ color: faceColor, map: doorTexture, ...threeDPhysicalSurfaceProfile("cabinet", Boolean(doorTexture)) });
+        textureMaterials.push(frameMaterial);
         for (const [frameWidth, frameHeight, x, y] of [
           [hoodFront.doorWidth - 0.035, rail, 0, hoodFront.doorHeight / 2 - rail / 2],
           [hoodFront.doorWidth - 0.035, rail, 0, -hoodFront.doorHeight / 2 + rail / 2],
@@ -6056,18 +6022,8 @@ export function addCabinet(
         ] as const) {
           const frame = new THREE.Mesh(new THREE.BoxGeometry(frameWidth, Math.max(0.02, frameHeight), 0.058), frameMaterial);
           frame.position.set(x, y, 0.032);
-          frame.userData = { specialtyProfile: "range-hood-front", rangeHoodFrontDoorFrame: true, selectedStyleFace: cleanHoodSlab ? "five-piece-slab" : "shaker", physicalRails: true, ...(cleanHoodSlab ? { fivePieceSlab: true, usesDoorImage: false } : {}) };
+          frame.userData = { specialtyProfile: "range-hood-front", rangeHoodFrontDoorFrame: true, selectedStyleFace: "shaker", physicalRails: true };
           doorGroup.add(frame);
-        }
-        if (profileKind === "shaker") {
-          const openingW = Math.max(0, hoodFront.doorWidth - stile * 2);
-          const openingH = Math.max(0, hoodFront.doorHeight - rail * 2);
-          for (const piece of shakerNotchPieces(openingW, openingH)) {
-            const mesh = new THREE.Mesh(new THREE.BoxGeometry(piece.w, piece.h, SHAKER_NOTCH_THICKNESS), shakerNotchMaterial(color, piece.band));
-            mesh.position.set(piece.x, piece.y, 0.05);
-            mesh.userData = { shakerNotch: true, shakerNotchSide: piece.side, shakerNotchBand: piece.band, rangeHoodFrontDoorNotch: true };
-            doorGroup.add(mesh);
-          }
         }
       }
       frontGroup.add(doorGroup);
@@ -7153,7 +7109,7 @@ export function addCabinet(
       };
       frontGroup.add(door);
       addFaceShadow(farmhouseDoorColumns.columnWidth, farmhouseDoorHeight, door.position.x, door.position.y);
-      if (profileKind === "raised" || doorProfile?.panelConstruction === "raised" || profileKind === "shaker" || profileKind === "five-piece-slab") {
+      if (profileKind === "raised" || doorProfile?.panelConstruction === "raised" || profileKind === "shaker") {
         addShakerFrame(farmhouseDoorColumns.columnWidth, farmhouseDoorHeight, door.position.x, door.position.y);
       }
       addPull(
@@ -7261,7 +7217,7 @@ export function addCabinet(
       door.position.set(-centerFaceWidth / 2 + centerDoorWidth * (index + 0.5), -faceHeight / 2 + lowerFaceHeight / 2, 0);
       door.userData = { cabinetFront: true, vanityComboCenterDoor: index + 1, flushPhysicalFace: true };
       frontGroup.add(door);
-      if (profileKind === "raised" || doorProfile?.panelConstruction === "raised" || profileKind === "shaker" || profileKind === "five-piece-slab") addShakerFrame(centerDoorWidth, lowerFaceHeight - 0.025, door.position.x, door.position.y);
+      if (profileKind === "raised" || doorProfile?.panelConstruction === "raised" || profileKind === "shaker") addShakerFrame(centerDoorWidth, lowerFaceHeight - 0.025, door.position.x, door.position.y);
       addFaceShadow(centerDoorWidth, lowerFaceHeight - 0.025, door.position.x, door.position.y);
       addPull(centerDoorWidth, lowerFaceHeight - 0.025, door.position.x, door.position.y, false, 0.086, "lower", index === 0 ? "right" : "left");
     }
@@ -7291,7 +7247,7 @@ export function addCabinet(
     door.position.set(doorX, 0, 0);
     door.userData = { cabinetFront: true, vanityDoorFront: true, drawerSide: vanityFaceLayout.drawerSide, flushPhysicalFace: true };
     frontGroup.add(door);
-    if (profileKind === "raised" || doorProfile?.panelConstruction === "raised" || profileKind === "shaker" || profileKind === "five-piece-slab") addShakerFrame(doorWidth - 0.03, faceHeight, door.position.x, door.position.y);
+    if (profileKind === "raised" || doorProfile?.panelConstruction === "raised" || profileKind === "shaker") addShakerFrame(doorWidth - 0.03, faceHeight, door.position.x, door.position.y);
     addFaceShadow(doorWidth - 0.03, faceHeight, door.position.x, door.position.y);
     addPull(doorWidth - 0.03, faceHeight, door.position.x, door.position.y, false, 0.086, "lower", singleDoorHinge);
   } else {
@@ -7339,7 +7295,7 @@ export function addCabinet(
 		    addPull(doorWidth, doorHeight, door.position.x, door.position.y, false, 0.086, standardDoorZone, doorCount === 1 ? singleDoorHinge : null);
 	    if (!sku.glassDoor && (profileKind === "raised" || doorProfile?.panelConstruction === "raised")) {
 	      addShakerFrame(doorWidth, doorHeight, door.position.x, door.position.y);
-	    } else if (sku.glassDoor || profileKind === "shaker" || profileKind === "five-piece-slab") {
+	    } else if (sku.glassDoor || profileKind === "shaker") {
 	      addShakerFrame(doorWidth, doorHeight, door.position.x, door.position.y, 0.036, 0, Boolean(sku.glassDoor));
 	    }
 	  }
