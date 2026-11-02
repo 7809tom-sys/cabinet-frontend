@@ -28,6 +28,16 @@ import { AdminStyleRoomSceneControls } from "@/components/doorStyles/AdminDoorSt
 import type { AutoRoomScene } from "@/lib/autoRoomScene";
 import { MediaPicker } from "./MediaPicker";
 import { FramelessFaceAdmin } from "./FramelessFaceAdmin";
+import { WalzCraftMatchForStyle, WalzCraftOnlyMatches } from "@/components/walzcraft/WalzCraftMatchCard";
+import { WoodGrainColorDisplay, DoorSkinField } from "@/components/walzcraft/ColorFinishExtras";
+import { readDoorSkin, saveDoorSkin, doorSkinError, type DoorSkin } from "@shared/doorSkin";
+import { approvedTilesFor } from "@shared/woodGrainTiles";
+import { WoodGrainTileTool } from "@/components/walzcraft/WoodGrainTileTool";
+import { doorForStyle, colorLabel } from "@shared/walzcraftDistributorMatches";
+import { colorTypeFor, woodGrainBadge } from "@shared/walzcraftColorPatterns";
+import { WalzCraftApplyPanel, GlazingControl } from "@/components/walzcraft/WalzCraftApplyPanel";
+import { readGlazing, saveGlazing, type ProfileFormValues, type Glazing } from "@shared/walzcraftProfileFill";
+import { designerWorkspaceHref } from "@/lib/designerFreshStart";
 import { ApplySpecsToOtherStyles, type ApplySpecsHandle } from "./ApplySpecsToOtherStyles";
 import {
   applySpecPatchToStyles,
@@ -383,6 +393,28 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
   const [cornerSwatchImageUrl, setCornerSwatchImageUrl] = useState(style.cornerSwatchImageUrl ?? "");
   const [styleVerified, setStyleVerified] = useState(style.styleVerified !== false && style.styleVerified !== 0);
   const [styleSourceNote, setStyleSourceNote] = useState(style.styleSourceNote ?? "");
+  // Glazing has no door_styles column yet: browser-only (localStorage), labeled "not saved yet".
+  const [glazing, setGlazing] = useState<Glazing>(() => readGlazing(style.id));
+  const [doorSkin, setDoorSkin] = useState<DoorSkin>(() => readDoorSkin(style.id, style.skinNeeded));
+  const walzDoor = doorForStyle(style);
+  const walzColorType = walzDoor ? colorTypeFor(walzDoor) : null;
+  const isWoodGrain = walzColorType?.colorType === "woodGrain";
+  const woodGrainLabel = walzColorType && isWoodGrain ? woodGrainBadge(walzColorType, style.grainDirection) : null;
+  const woodGrainSwatch = isWoodGrain ? (approvedTilesFor(style.id)[0]?.dataUrl ?? style.doorSampleImageUrl ?? walzDoor?.photo ?? null) : null;
+  const [bakeAfterSave, setBakeAfterSave] = useState(true);
+  const walzFormValues: ProfileFormValues = {
+    railWidth, stileWidth, panelConstruction, bevelWidth, bevelDepth, insideEdgeProfile, drawerFrontType, finishSheen,
+    profileNotes, sourceSpecification, glazed: glazing.glazed, glazeColor: glazing.glazeColor, glazeColorOther: glazing.glazeColorOther,
+  };
+  const applyWalzFormValues = (v: ProfileFormValues) => {
+    setRailWidth(v.railWidth); setStileWidth(v.stileWidth);
+    setPanelConstruction(v.panelConstruction as NonNullable<AdminStyle["panelConstruction"]>);
+    setBevelWidth(v.bevelWidth); setBevelDepth(v.bevelDepth); setInsideEdgeProfile(v.insideEdgeProfile);
+    setDrawerFrontType(v.drawerFrontType as NonNullable<AdminStyle["drawerFrontType"]>);
+    setFinishSheen(v.finishSheen as NonNullable<AdminStyle["finishSheen"]>);
+    setProfileNotes(v.profileNotes); setSourceSpecification(v.sourceSpecification);
+    setGlazing({ glazed: v.glazed, glazeColor: v.glazeColor, glazeColorOther: v.glazeColorOther });
+  };
   const frameSourceRef = useRef<HTMLInputElement>(null);
   const [newSceneUrl, setNewSceneUrl] = useState("");
   const [newSceneSourceNote, setNewSceneSourceNote] = useState("");
@@ -481,6 +513,8 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
   }
 
   async function handleSave() {
+    const skinErr = doorSkinError(doorSkin);
+    if (skinErr) { toast.error(skinErr); return; }
     if (saveLock.current) return;
     if (!ourName.trim()) {
       toast.error("Internal name is required");
@@ -586,6 +620,13 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
         else toast.error(notice.message);
       } else {
         toast.success("Style updated");
+      }
+      saveGlazing(style.id, glazing);
+      saveDoorSkin(style.id, doorSkin);
+      if (bakeAfterSave) {
+        // Reuse the existing Designer "Final preview" room-scene flow (InteractiveRoom3D openPhotoRenderDialog);
+        // it keeps its own confirmations and never starts the Gemini path automatically.
+        window.open(`${designerWorkspaceHref({ doorStyleId: style.id, distributorId: style.distributorId })}&bakeRoomScene=1`, "_blank", "noopener,noreferrer");
       }
       onSaved();
       onClose();
@@ -795,7 +836,17 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
             </div>
           </div>
 
+          <GlazingControl {...glazing} onChange={setGlazing} />
+          <DoorSkinField value={doorSkin} onChange={setDoorSkin} woodGrain={isWoodGrain} />
+          {(() => {
+            const door = walzDoor;
+            if (!door || !isWoodGrain) return null;
+            const scenes = [style.roomSceneImageUrl, ...(style.roomScenes ?? []).map((r) => r.imageUrl)].filter((u): u is string => !!u);
+            return <WoodGrainTileTool styleId={style.id} colorName={colorLabel(door)} sceneUrls={Array.from(new Set(scenes))} />;
+          })()}
+
           <DoorRenderOverrides
+            woodGrain={woodGrainLabel ? { label: woodGrainLabel, swatchUrl: woodGrainSwatch, horizontal: woodGrainLabel.endsWith("Horizontal") } : null}
             renderHex={renderHex}
             onRenderHex={setRenderHex}
             doorShape={doorShape}
@@ -822,6 +873,12 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
               renderHex,
             })}
           />
+
+          {/* WalzCraft match (read-only; approvals are localStorage only) */}
+          <div data-testid="edit-dialog-walzcraft-match">
+            <WalzCraftMatchForStyle style={style} currentPhoto={thumb(style)} />
+            <WalzCraftApplyPanel style={style} values={walzFormValues} onApply={applyWalzFormValues} />
+          </div>
 
           {/* Frame Profile Measurements */}
           <div className="rounded-lg border border-emerald-200 bg-emerald-50/40 px-3 py-3 space-y-3">
@@ -1121,6 +1178,10 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
             distributorId={style.distributorId}
             ariaLabel={`Open Designer for ${style.ourName}`}
           />
+          <label className="flex items-center gap-1.5 text-xs" data-testid="bake-room-scene-after-save">
+            <input type="checkbox" checked={bakeAfterSave} onChange={(e) => setBakeAfterSave(e.target.checked)} />
+            Bake room scene now (opens Designer Final preview after Save)
+          </label>
           <Button variant="outline" onClick={onClose} disabled={savePhase === "saving"}>
             Cancel
           </Button>
@@ -1701,6 +1762,9 @@ export default function FeaturedStylesAdmin() {
                     onSkinNeeded={saveSkinNeeded}
                     onFinishedEndNeeded={saveFinishedEndNeeded}
                   />
+                  <div className="mt-2"><WalzCraftMatchForStyle style={s} currentPhoto={thumb(s)} /></div>
+                  <details data-testid="featured-style-measurements" className="mt-2 rounded border border-border p-2">
+                    <summary className="cursor-pointer text-xs font-semibold text-muted-foreground">Measurements (frame profile, Designer compliance, citation) — edit in the pencil dialog</summary>
                   <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
                     <Badge variant="outline" className="border-emerald-300 bg-emerald-50 px-1.5 py-0 text-[10px] text-emerald-700">
                       <ImageIcon className="mr-0.5 h-2.5 w-2.5" /> Room scene ready
@@ -1737,6 +1801,7 @@ export default function FeaturedStylesAdmin() {
                     />
                   </div>
                   <AdminStyleRoomSceneControls style={s} />
+                  </details>
                 </div>
                 <div className="flex w-full flex-wrap items-center gap-1 sm:w-auto sm:shrink-0">
                   <OpenDesignerLink
@@ -1793,6 +1858,8 @@ export default function FeaturedStylesAdmin() {
           </ul>
         )}
       </div>
+
+      <WalzCraftOnlyMatches styles={featured} />
 
       {/* All other styles — edit any of them, or feature them */}
       <div>
@@ -2080,6 +2147,7 @@ export default function FeaturedStylesAdmin() {
 }
 
 function DoorRenderOverrides({
+  woodGrain,
   renderHex,
   onRenderHex,
   doorShape,
@@ -2088,6 +2156,7 @@ function DoorRenderOverrides({
   preview,
   resolvedHex,
 }: {
+  woodGrain?: { label: string; swatchUrl: string | null; horizontal: boolean } | null;
   renderHex: string;
   onRenderHex: (value: string) => void;
   doorShape: string;
@@ -2105,6 +2174,11 @@ function DoorRenderOverrides({
         </p>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
+{woodGrain ? (
+          <div className="space-y-1.5">
+            <WoodGrainColorDisplay label={woodGrain.label} swatchUrl={woodGrain.swatchUrl} horizontal={woodGrain.horizontal} />
+            <details data-testid="fallback-tint">
+              <summary className="cursor-pointer text-xs text-muted-foreground">Fallback tint (used only when no grain texture loads)</summary>
         <div className="space-y-1.5">
           <Label htmlFor="ed-render-hex">Render hex</Label>
           <div className="flex items-center gap-2">
@@ -2113,6 +2187,18 @@ function DoorRenderOverrides({
           </div>
           <p className="text-xs text-muted-foreground">Resolved for render: {resolvedHex ?? "name fallback"}</p>
         </div>
+            </details>
+          </div>
+        ) : (
+        <div className="space-y-1.5">
+          <Label htmlFor="ed-render-hex">Render hex</Label>
+          <div className="flex items-center gap-2">
+            <Input id="ed-render-hex" value={renderHex} onChange={(event) => onRenderHex(event.target.value)} placeholder="#2a211c" />
+            <input aria-label="Pick render hex" type="color" value={/^#[0-9a-f]{6}$/i.test(renderHex) ? renderHex : "#f2f0ea"} onChange={(event) => onRenderHex(event.target.value)} />
+          </div>
+          <p className="text-xs text-muted-foreground">Resolved for render: {resolvedHex ?? "name fallback"}</p>
+        </div>
+        )}
         <div className="space-y-1.5">
           <Label>Door shape</Label>
           <Select value={doorShape || "auto"} onValueChange={(value) => onDoorShape(value === "auto" ? "" : value)}>
