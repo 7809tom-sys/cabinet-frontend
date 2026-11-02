@@ -212,7 +212,8 @@ function BuildingBanner({
   );
 }
 
-export default function WalzCraftDoorPicker() {
+/** `embedded` renders the same picker inline (e.g. in the admin Edit Door Style dialog) without full-page chrome. */
+export default function WalzCraftDoorPicker({ embedded = false }: { embedded?: boolean } = {}) {
   const [state, setState] = useState<PickerState>(INITIAL_STATE);
   const [stepIndex, setStepIndex] = useState(0);
 
@@ -397,7 +398,7 @@ export default function WalzCraftDoorPicker() {
   }, [selectedTemplate, state.shadeId]);
 
   return (
-    <div className="min-h-screen bg-[#f6f3ed] px-4 py-10">
+    <div data-testid={embedded ? "walzcraft-door-picker-embedded" : undefined} className={embedded ? "rounded-lg bg-[#f6f3ed] px-2 py-4" : "min-h-screen bg-[#f6f3ed] px-4 py-10"}>
       <div className="mx-auto max-w-5xl">
         <h1 className="mb-6 font-serif text-3xl font-semibold text-[#244338]">
           WalzCraft door picker

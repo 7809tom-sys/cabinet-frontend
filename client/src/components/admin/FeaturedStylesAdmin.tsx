@@ -34,6 +34,7 @@ import { approvedTilesFor } from "@shared/woodGrainTiles";
 import { WoodGrainTileTool } from "@/components/walzcraft/WoodGrainTileTool";
 import { doorForStyle, colorLabel } from "@shared/walzcraftDistributorMatches";
 import { colorTypeFor, woodGrainBadge } from "@shared/walzcraftColorPatterns";
+import WalzCraftDoorPicker from "@/pages/WalzCraftDoorPicker";
 import { WalzCraftApplyPanel, GlazingControl } from "@/components/walzcraft/WalzCraftApplyPanel";
 import { VendorUpdateBadge } from "./VendorMeasurementUpdate";
 import { WalzCraftErrorBoundary } from "@/components/walzcraft/WalzCraftErrorBoundary";
@@ -398,7 +399,6 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
   const [glazing, setGlazing] = useState<Glazing>(() => readGlazing(style.id));
   const [doorSkin, setDoorSkin] = useState<DoorSkin>(() => readDoorSkin(style.id, style.skinNeeded));
   // Same editor for every style (featured only means "shown on the website front"); nothing here is gated by isFeatured/isActive.
-  const autoWalzDoor = doorForStyle(style);
   const [manualDoorId, setManualDoorId] = useState<string | null>(() => readManualDoorId(style.id));
   const walzDoor = resolveWalzDoor(style, manualDoorId);
   const walzColorType = walzDoor ? colorTypeFor(walzDoor) : null;
@@ -860,6 +860,8 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
             doorShape={doorShape}
             onDoorShape={setDoorShape}
             sampleImageUrl={doorSampleImageUrl || style.doorSampleImageUrl || ""}
+            editedDoorUrl={thumb(style)}
+            besideEyedropper={<WalzCraftManualDoorPicker value={manualDoorId} onChange={(id) => { setManualDoorId(id); writeManualDoorId(style.id, id); }} />}
             brochure={walzDoor ? { src: walzDoor.photo ?? null, label: `${walzDoor.distributor ?? "Distributor"} brochure` } : null}
             preview={resolveDoorShapeDecision({
               ourName,
@@ -886,9 +888,16 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
           {/* WalzCraft match (read-only; approvals are localStorage only) */}
           <div data-testid="edit-dialog-walzcraft-match">
             <WalzCraftErrorBoundary>
-              <WalzCraftMatchForStyle style={style} door={walzDoor} currentPhoto={thumb(style)} hideBrochurePhoto />
-              {!autoWalzDoor && <WalzCraftManualDoorPicker value={manualDoorId} onChange={(id) => { setManualDoorId(id); writeManualDoorId(style.id, id); }} />}
+              {/* Current door photo now sits beside the eyedropper (see DoorRenderOverrides). */}
+              <WalzCraftMatchForStyle style={style} door={walzDoor} hideBrochurePhoto />
               <WalzCraftApplyPanel style={style} door={walzDoor} values={walzFormValues} onApply={applyWalzFormValues} />
+            </WalzCraftErrorBoundary>
+          </div>
+
+          {/* WalzCraft door picker (same as /walzcraft-doors), loaded inline as soon as Edit door style opens, for every style. */}
+          <div data-testid="edit-dialog-walzcraft-picker">
+            <WalzCraftErrorBoundary label="WalzCraft door picker">
+              <WalzCraftDoorPicker embedded />
             </WalzCraftErrorBoundary>
           </div>
 
@@ -2093,6 +2102,8 @@ function DoorRenderOverrides({
   doorShape,
   onDoorShape,
   sampleImageUrl,
+  editedDoorUrl,
+  besideEyedropper,
   brochure,
   preview,
   resolvedHex,
@@ -2104,6 +2115,10 @@ function DoorRenderOverrides({
   doorShape: string;
   onDoorShape: (value: string) => void;
   sampleImageUrl: string;
+  /** Photo of the door style being edited; shown directly beside the sample door. */
+  editedDoorUrl?: string | null;
+  /** Distributor-door selector, rendered right next to the eyedropper. */
+  besideEyedropper?: import("react").ReactNode;
   preview: { shape: string; source: string };
   resolvedHex: string | null;
 }) {
@@ -2162,7 +2177,9 @@ function DoorRenderOverrides({
       <SampleEyedropper
         images={[{ url: sampleImageUrl, label: "Sample door" }, ...(brochure ? [{ url: brochure.src ?? "", label: brochure.label }] : [])]}
         onPick={onRenderHex}
+        editedDoor={editedDoorUrl ?? null}
       />
+      {besideEyedropper ? <div data-testid="eyedropper-distributor-selector">{besideEyedropper}</div> : null}
     </div>
   );
 }
@@ -2177,11 +2194,20 @@ export function openStyleAudit(styleId: number, styleName: string) {
   window.dispatchEvent(new CustomEvent(ADMIN_TAB_EVENT, { detail: { tab: "door-rendering-audit" } }));
 }
 
-function SampleEyedropper({ images, onPick }: { images: { url: string; label: string }[]; onPick: (hex: string) => void }) {
+function SampleEyedropper({ images, onPick, editedDoor }: { images: { url: string; label: string }[]; onPick: (hex: string) => void; editedDoor?: string | null }) {
   const [note, setNote] = useState("Click either door to set Render hex.");
   return (
     <div data-testid="render-color-picker" className="space-y-1">
       <div data-testid="sample-vs-brochure" className="flex flex-col gap-3 sm:flex-row sm:items-start">
+        {/* Side-by-side comparison: the door under edit sits right next to the sample door. */}
+        <figure data-testid="edit-dialog-edited-door" className="space-y-1">
+          <figcaption className="text-[11px] font-semibold uppercase tracking-wide text-[#244338]/70">Door being edited</figcaption>
+          {editedDoor ? (
+            <img src={editedDoor} alt="Door being edited" className="h-40 w-28 rounded border border-[#244338]/20 bg-white object-contain" />
+          ) : (
+            <div className="flex h-40 w-28 items-center justify-center rounded border border-dashed border-[#244338]/30 bg-[#fffdf9] p-2 text-center text-xs text-[#244338]/70">No photo found</div>
+          )}
+        </figure>
         {images.map((img, i) => (
           <PickCanvas key={i} testId={i === 0 ? "edit-dialog-sample-photo" : "edit-dialog-brochure-photo"} {...img} onPick={(hex) => { onPick(hex); setNote(`Picked ${hex} from ${img.label} for Render hex.`); }} onNote={setNote} />
         ))}
