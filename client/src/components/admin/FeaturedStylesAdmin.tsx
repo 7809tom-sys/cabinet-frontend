@@ -28,6 +28,7 @@ import { AdminStyleRoomSceneControls } from "@/components/doorStyles/AdminDoorSt
 import type { AutoRoomScene } from "@/lib/autoRoomScene";
 import { MediaPicker } from "./MediaPicker";
 import { WalzCraftMatchForStyle, WalzCraftManualDoorPicker, resolveWalzDoor, readManualDoorId, writeManualDoorId } from "@/components/walzcraft/WalzCraftMatchCard";
+import { DoorEditorWalzAudit } from "@/components/admin/DoorEditorWalzAudit";
 import { WoodGrainColorDisplay, DoorSkinField } from "@/components/walzcraft/ColorFinishExtras";
 import { readDoorSkin, saveDoorSkin, doorSkinError, type DoorSkin } from "@shared/doorSkin";
 import { approvedTilesFor } from "@shared/woodGrainTiles";
@@ -901,6 +902,23 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
             })}
             resolvedHex={doorColor.appliedHex}
             colorReview={doorColor.review}
+          />
+
+          <DoorEditorWalzAudit
+            style={{
+              id: style.id,
+              ourName,
+              aliasName,
+              distributorName: style.distributorName,
+              supplierBrandName: style.supplierBrandName,
+              styleCode: style.styleCode,
+              doorStyle,
+              color,
+              finish,
+              woodSpecies,
+              renderHex,
+              railWidth: style.railWidth,
+            }}
           />
 
           {/* WalzCraft match (read-only; approvals are localStorage only) */}
