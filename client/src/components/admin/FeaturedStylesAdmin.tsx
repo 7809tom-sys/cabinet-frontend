@@ -29,13 +29,13 @@ import type { AutoRoomScene } from "@/lib/autoRoomScene";
 import { MediaPicker } from "./MediaPicker";
 import { WalzCraftMatchForStyle, WalzCraftManualDoorPicker, resolveWalzDoor, readManualDoorId, writeManualDoorId } from "@/components/walzcraft/WalzCraftMatchCard";
 import { DoorEditorWalzAudit } from "@/components/admin/DoorEditorWalzAudit";
+import type { MatchSavePatch } from "@shared/wizardDoorMatch";
 import { WoodGrainColorDisplay, DoorSkinField } from "@/components/walzcraft/ColorFinishExtras";
 import { readDoorSkin, saveDoorSkin, doorSkinError, type DoorSkin } from "@shared/doorSkin";
 import { approvedTilesFor } from "@shared/woodGrainTiles";
 import { WoodGrainTileTool } from "@/components/walzcraft/WoodGrainTileTool";
 import { doorForStyle, colorLabel } from "@shared/walzcraftDistributorMatches";
 import { colorTypeFor, woodGrainBadge } from "@shared/walzcraftColorPatterns";
-import WalzCraftDoorPicker from "@/pages/WalzCraftDoorPicker";
 import { WalzCraftApplyPanel, GlazingControl } from "@/components/walzcraft/WalzCraftApplyPanel";
 import { VendorUpdateBadge } from "./VendorMeasurementUpdate";
 import { WalzCraftErrorBoundary } from "@/components/walzcraft/WalzCraftErrorBoundary";
@@ -907,6 +907,7 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
           <DoorEditorWalzAudit
             style={{
               id: style.id,
+              distributorId: style.distributorId,
               ourName,
               aliasName,
               distributorName: style.distributorName,
@@ -917,7 +918,22 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
               finish,
               woodSpecies,
               renderHex,
+              grainDirection,
               railWidth: style.railWidth,
+              doorSampleImageUrl: doorSampleImageUrl || style.doorSampleImageUrl,
+            }}
+            sampleUrl={doorSampleImageUrl || style.doorSampleImageUrl || ""}
+            others={catalogStyles.map((item) => ({ id: item.id, distributorId: item.distributorId, ourName: item.ourName, styleCode: item.styleCode }))}
+            onApply={(patch: MatchSavePatch) => {
+              setRenderHex(patch.renderHex);
+              setWoodSpecies(patch.woodSpecies ?? "");
+              setGrainDirection(patch.grainDirection);
+              update.mutate({ id: style.id, renderHex: patch.renderHex, woodSpecies: patch.woodSpecies, grainDirection: patch.grainDirection } as Parameters<typeof update.mutate>[0]);
+            }}
+            onReplicate={(ids, patch) => {
+              for (const id of ids) {
+                applySiblingSpecs.mutate({ id, renderHex: patch.renderHex, woodSpecies: patch.woodSpecies, grainDirection: patch.grainDirection } as Parameters<typeof applySiblingSpecs.mutate>[0]);
+              }
             }}
           />
 
@@ -927,13 +943,6 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
               {/* Current door photo now sits beside the eyedropper (see DoorRenderOverrides). */}
               <WalzCraftMatchForStyle style={style} door={walzDoor} hideBrochurePhoto />
               <WalzCraftApplyPanel style={style} door={walzDoor} values={walzFormValues} onApply={applyWalzFormValues} />
-            </WalzCraftErrorBoundary>
-          </div>
-
-          {/* WalzCraft door picker (same as /walzcraft-doors), loaded inline as soon as Edit door style opens, for every style. */}
-          <div data-testid="edit-dialog-walzcraft-picker">
-            <WalzCraftErrorBoundary label="WalzCraft door picker">
-              <WalzCraftDoorPicker embedded />
             </WalzCraftErrorBoundary>
           </div>
 

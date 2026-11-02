@@ -181,7 +181,9 @@ describe("Edit Door: WalzCraft loads on open for every style (featured or not)",
       const name = styles.find((s) => title.includes(String(s.ourName)))?.ourName;
       if (name) seen.push(String(name));
       expect(dialog.querySelector('[data-testid="edit-dialog-walzcraft-match"]')).toBeTruthy();
-      expect(dialog.querySelector('[data-testid="walzcraft-door-picker-embedded"]')).toBeTruthy();
+      expect(dialog.querySelector('[data-testid="door-editor-walzcraft-audit"]')).toBeTruthy();
+      expect(dialog.querySelector('[data-testid="walzcraft-door-picker-embedded"]')).toBeNull();
+      expect(dialog.querySelector('[data-testid="color-family-gray"]')).toBeNull();
       const pair = dialog.querySelector('[data-testid="sample-vs-brochure"]')!;
       const kids = Array.from(pair.children).map((c) => c.getAttribute("data-testid"));
       expect(kids.slice(0, 2)).toEqual(["edit-dialog-edited-door", "edit-dialog-sample-photo"]);
