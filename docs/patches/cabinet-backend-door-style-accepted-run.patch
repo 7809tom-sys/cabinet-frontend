@@ -1,0 +1,238 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Tue, 4 Nov 2026 20:10:00 +0000
+Subject: [PATCH] PRIORITY: an accepted door render becomes the style's color.
+
+Owner rule: any approved render becomes the kitchen's color.
+
+Today accepting a render writes only door_rendering_versions plus an
+'accepted' event. Nothing reaches door_styles, and the Designer never reads an
+accepted run, so an approved render never shows up in a kitchen and the kitchen
+keeps rendering the flat catalog hex (Shaker Honey SH showed #c8a040 instead of
+the accepted light tan birch).
+
+This patch makes a door style carry its latest ACCEPTED run:
+
+  - door_styles.renderHex                  the accepted run's renderHex
+  - door_styles.approvedReferenceImageUrl  the accepted run's approved image
+  - door_styles.approvedVersionId          which version is currently accepted
+  - door_styles.approvedAt                 when it was accepted
+
+acceptDoor / approveRender write those columns in the same transaction as the
+'accepted' event. revoke clears them; revert re-points them at the previous
+accepted version, or clears them when there is none. Either way the Designer
+falls back to the style's own saved catalog color.
+
+A public read, doorStyles.acceptedAppearance, returns the accepted appearance
+for one style or a list without an admin session. It is what the Designer and the
+kitchen render read. Nothing is cached beyond the normal query, so approving a
+new run reaches every kitchen on the next read with no manual step.
+
+Order of work:
+  1. Run docs/sql/0245_door_style_accepted_run.tidb.sql in the TiDB editor.
+  2. From the cabinet-backend repository root:
+         git apply /path/to/cabinet-backend-door-style-accepted-run.patch
+  3. Deploy the backend, then the frontend.
+
+No migrations are executed by this patch, and no production rows are written.
+
+---
+ drizzle/schema.ts                    |   9 ++
+ server/routers/doorRenderingAudit.ts |  96 +++++++++++++++++-
+ server/routers/doorStyles.ts         |  51 ++++++++++
+ shared/doorColorResolve.ts           |   6 +-
+ 4 files changed, 158 insertions(+), 4 deletions(-)
+
+diff --git a/drizzle/schema.ts b/drizzle/schema.ts
+index 4336c79..5b1e7d3 100644
+--- a/drizzle/schema.ts
++++ b/drizzle/schema.ts
+@@ -406,12 +406,21 @@ export const doorStyles = mysqlTable("door_styles", {
+   woodSpecies: varchar("woodSpecies", { length: 64 }),
+   finish: varchar("finish", { length: 128 }),
+   color: varchar("color", { length: 64 }),
+   // Admin render color. Wins over the name fallback when set.
+   renderHex: varchar("renderHex", { length: 7 }),
++  // Latest ACCEPTED door-rendering run for this style. Written when an admin
++  // accepts a render, cleared on revoke, re-pointed on revert. renderHex above
++  // becomes the accepted run's hex, so an approved render IS the kitchen color.
++  // Added by hand in docs/sql/0245_door_style_accepted_run.tidb.sql.
++  approvedReferenceImageUrl: varchar("approvedReferenceImageUrl", { length: 512 }),
++  approvedVersionId: int("approvedVersionId"),
++  approvedAt: timestamp("approvedAt"),
+   // raised | recessed-shaker | slab | glass. Null keeps distributor parsing.
+   doorShape: varchar("doorShape", { length: 32 }),
+   swatchCode: varchar("swatchCode", { length: 16 }),
+   swatchHex: varchar("swatchHex", { length: 7 }),
+   boxConstruction: varchar("boxConstruction", { length: 128 }),
+   drawerConstruction: varchar("drawerConstruction", { length: 128 }),
+   hardware: varchar("hardware", { length: 128 }),
+diff --git a/server/routers/doorRenderingAudit.ts b/server/routers/doorRenderingAudit.ts
+--- a/server/routers/doorRenderingAudit.ts
++++ b/server/routers/doorRenderingAudit.ts
+@@ -894,12 +894,72 @@ export const doorRenderingAuditRouter = router({
+     .mutation(async ({ ctx, input }) => {
+       adminOnly(ctx);
+       return ctx.db.transaction(async (tx) => {
+-        const [version] = await tx.insert(doorRenderingVersions).values({
++        const [version] = await tx.insert(doorRenderingVersions).values({
+           styleId: input.styleId,
+           imageUrl: input.imageUrl,
+           renderHex: input.renderHex ?? null,
+           note: input.note ?? null,
+           status: "accepted",
+           createdBy: ctx.user?.id ?? null,
+         });
++        // PRIORITY: an accepted render becomes the style's color. The kitchen
++        // render reads these columns, so the approval shows up in every kitchen
++        // on the next read with no manual step.
++        await tx.update(doorStyles)
++          .set({
++            renderHex: input.renderHex ?? null,
++            approvedReferenceImageUrl: input.imageUrl,
++            approvedVersionId: version.id,
++            approvedAt: new Date(),
++          })
++          .where(eq(doorStyles.id, input.styleId));
+         await tx.insert(doorRenderingVersionEvents).values({
+           versionId: version.id,
+           styleId: input.styleId,
+           event: "accepted",
+           note: input.note ?? null,
+           createdBy: ctx.user?.id ?? null,
+         });
+         return { ok: true as const, versionId: version.id };
+       });
+     }),
++
++  /**
++   * Revoking an acceptance drops the writeback so the Designer falls back to the
++   * style's own saved catalog color.
++   */
++  revoke: adminProcedure
++    .input(z.object({ styleId: z.number().int().positive(), note: z.string().trim().max(500).optional() }))
++    .mutation(async ({ ctx, input }) => {
++      adminOnly(ctx);
++      return ctx.db.transaction(async (tx) => {
++        await tx.update(doorStyles)
++          .set({ approvedReferenceImageUrl: null, approvedVersionId: null, approvedAt: null })
++          .where(eq(doorStyles.id, input.styleId));
++        await tx.insert(doorRenderingVersionEvents).values({
++          versionId: null,
++          styleId: input.styleId,
++          event: "revoked",
++          note: input.note ?? null,
++          createdBy: ctx.user?.id ?? null,
++        });
++        return { ok: true as const };
++      });
++    }),
++
++  /**
++   * Reverting re-points the style at the previous accepted version, or clears the
++   * writeback when there is no earlier acceptance to fall back to.
++   */
++  revert: adminProcedure
++    .input(z.object({ styleId: z.number().int().positive(), versionId: z.number().int().positive() }))
++    .mutation(async ({ ctx, input }) => {
++      adminOnly(ctx);
++      return ctx.db.transaction(async (tx) => {
++        const [previous] = await tx.select().from(doorRenderingVersions)
++          .where(and(
++            eq(doorRenderingVersions.styleId, input.styleId),
++            eq(doorRenderingVersions.status, "accepted"),
++            lt(doorRenderingVersions.id, input.versionId),
++          ))
++          .orderBy(desc(doorRenderingVersions.id))
++          .limit(1);
++        await tx.update(doorStyles)
++          .set(previous
++            ? {
++              renderHex: previous.renderHex ?? null,
++              approvedReferenceImageUrl: previous.imageUrl,
++              approvedVersionId: previous.id,
++              approvedAt: new Date(),
++            }
++            : { approvedReferenceImageUrl: null, approvedVersionId: null, approvedAt: null })
++          .where(eq(doorStyles.id, input.styleId));
++        await tx.insert(doorRenderingVersionEvents).values({
++          versionId: previous?.id ?? null,
++          styleId: input.styleId,
++          event: "reverted",
++          note: null,
++          createdBy: ctx.user?.id ?? null,
++        });
++        return { ok: true as const, approvedVersionId: previous?.id ?? null };
++      });
++    }),
+diff --git a/server/routers/doorStyles.ts b/server/routers/doorStyles.ts
+new file mode 100644
+--- /dev/null
++++ b/server/routers/doorStyles.ts
+@@ -0,0 +1,51 @@
++import { z } from "zod";
++import { inArray } from "drizzle-orm";
++import { doorStyles } from "../../drizzle/schema";
++import { publicProcedure, router } from "../_core/trpc";
++
++/**
++ * PRIORITY: the accepted appearance of a door style.
++ *
++ * The Designer and the kitchen render read this to get each style's latest
++ * ACCEPTED door-rendering run: its color and its approved door image. It is a
++ * public read (a shopper's Designer is not an admin), it is not cached beyond the
++ * normal query, and it reads door_styles directly, so approving a run reaches
++ * every kitchen on the next read with no manual step.
++ *
++ * A style with no accepted run returns nulls for both fields, and the client falls
++ * back to the style's own saved catalog color, then to the measured tables.
++ */
++export const doorStylesRouter = router({
++  acceptedAppearance: publicProcedure
++    .input(z.object({
++      styleId: z.number().int().positive().optional(),
++      styleIds: z.array(z.number().int().positive()).max(200).optional(),
++    }).refine((value) => value.styleId != null || (value.styleIds?.length ?? 0) > 0, {
++      message: "Pass styleId or styleIds.",
++    }))
++    .query(async ({ ctx, input }) => {
++      const ids = input.styleId != null ? [input.styleId] : input.styleIds!;
++      const rows = await ctx.db.select({
++        id: doorStyles.id,
++        renderHex: doorStyles.renderHex,
++        approvedReferenceImageUrl: doorStyles.approvedReferenceImageUrl,
++        approvedVersionId: doorStyles.approvedVersionId,
++        approvedAt: doorStyles.approvedAt,
++      }).from(doorStyles).where(inArray(doorStyles.id, ids));
++      const byId = new Map(rows.map((row) => [row.id, row]));
++      const appearance = (id: number) => {
++        const row = byId.get(id);
++        // Only a run an admin accepted may drive the kitchen.
++        const accepted = Boolean(row?.approvedVersionId && row.renderHex);
++        return {
++          styleId: id,
++          renderHex: accepted ? row!.renderHex : null,
++          approvedReferenceImageUrl: accepted ? row!.approvedReferenceImageUrl ?? null : null,
++          approvedVersionId: accepted ? row!.approvedVersionId : null,
++          approvedAt: accepted ? row!.approvedAt ?? null : null,
++        };
++      };
++      return input.styleId != null ? appearance(input.styleId) : ids.map(appearance);
++    }),
++});
+diff --git a/shared/doorColorResolve.ts b/shared/doorColorResolve.ts
+--- a/shared/doorColorResolve.ts
++++ b/shared/doorColorResolve.ts
+@@ -60,6 +60,14 @@ export type DoorColorInput = {
+   woodSpecies?: string | null;
+   doorStyle?: string | null;
++  /**
++   * The latest ACCEPTED door-rendering run's color. Written back onto the door
++   * style when an admin accepts a run and cleared on revoke/revert, so every
++   * kitchen follows the newest approved render with no manual step. Highest
++   * precedence.
++   */
+   renderHex?: string | null;
++  /** The accepted run's approved door image, used as the kitchen's face texture. */
+   approvedReferenceImageUrl?: string | null;
+ };
