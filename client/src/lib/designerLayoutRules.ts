@@ -83,6 +83,26 @@ export function autoDesignShiftLimitIn(kind: string): number {
   return kitchenRuleNumber("jog_max_in");
 }
 
+/**
+ * Owner rule: the range, the refrigerator, and the SINK BASE may slide during the
+ * wiggle pass, but each by at most 2 inches from where it was measured. A sink
+ * base stays centered on the window within that 2 inch cap. Everything else that
+ * is not an anchor uses the normal wiggle allowance.
+ *
+ * Before this cap, each anchor took the full jog (3 inches), which moved a
+ * measured sink further off its window than the owner allows.
+ */
+export const ANCHOR_WIGGLE_CAP_IN = 2;
+
+/** Anchor kinds that may slide, and the cap they slide within. */
+export function anchorWiggleLimitIn(kind: string): number {
+  const normalized = (kind ?? "").toLowerCase();
+  if (normalized === "sink" || normalized === "stove" || normalized === "range" || normalized === "refrigerator") {
+    return Math.min(ANCHOR_WIGGLE_CAP_IN, autoDesignShiftLimitIn(kind));
+  }
+  return autoDesignShiftLimitIn(kind);
+}
+
 /** Corner-seating cap for a refrigerator the user placed by center measurement. */
 export function measuredRefrigeratorCornerShiftLimitIn(): number {
   return kitchenRuleNumber("measured_fridge_corner_shift_in");
@@ -746,7 +766,9 @@ export function applyAutoDesignWiggleRoom(input: {
       if (!group) continue;
       const initialStart = alongStart(item, group.wallId, input.room);
       const entryStart = entryStarts.get(origin.uid) ?? initialStart;
-      const shiftLimit = autoDesignShiftLimitIn(origin.kind);
+      // The range, refrigerator, and sink base slide at most 2 inches from the
+      // measured position; every other piece uses the normal wiggle allowance.
+      const shiftLimit = anchorWiggleLimitIn(origin.kind);
       const currentScore = layoutPenalty(placed, input.room, input.openings, input.catalog, cache);
       let bestScore = Number.POSITIVE_INFINITY;
       let bestDeltaFromOriginal = 0;
@@ -979,6 +1001,13 @@ export function applyDesignerLayoutRules(input: {
   styleId: number | null;
   sinks?: readonly SinkFixture[];
   trimPieces?: readonly TrimRunPiece[];
+  /**
+   * Place small-gap and seam filler automatically. Owner rule: filler is the last
+   * resort and never automatic at a run end, so the measured build passes false
+   * and runs the shared real-cabinet pass first. A person asking for a filler, or
+   * a caller that has already exhausted real cabinets, may pass true.
+   */
+  allowAutoFillers?: boolean;
 }): DesignerLayoutRuleResult {
   let placed = normalizeOverApplianceWallMounts(normalizeGlassStackersToParentFronts(
     normalizeStandardWallMounts(
@@ -998,9 +1027,13 @@ export function applyDesignerLayoutRules(input: {
   placed = applyFramelessDoorClearanceFillers({
     placed, room: input.room, fillers: input.fillers, makeUid: input.makeUid, styleId: input.styleId,
   }).placed;
-  placed = applyStandardSmallGapFillers({
-    placed, room: input.room, openings: input.openings, fillers: input.fillers, makeUid: input.makeUid, styleId: input.styleId,
-  });
+  // Owner rule: filler is the last resort, never automatic at a run end. The
+  // measured build turns this off and runs the shared real-cabinet pass instead.
+  if (input.allowAutoFillers !== false) {
+    placed = applyStandardSmallGapFillers({
+      placed, room: input.room, openings: input.openings, fillers: input.fillers, makeUid: input.makeUid, styleId: input.styleId,
+    });
+  }
   placed = normalizeInstalledFillersToAdjacentCabinets(placed, input.room);
   placed = applyNineInchTrayBases(placed);
   // Rule 4: one continuous floor-to-top board per filler, never a base sliver plus an upper sliver.

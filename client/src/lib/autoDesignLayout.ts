@@ -27,7 +27,8 @@ import {
 } from "./autoDesignCornerStage";
 import { evaluateAutoDesignCornerFit } from "./cornerFit";
 import { catalogFillerForGap, fittedCatalogFillerDescription, type CatalogFillerCandidate } from "./catalogFiller";
-import { activeAutoDesignWiggleMoves, applyAutoDesignWiggleRoom, applyDesignerLayoutRules, AUTO_DESIGN_WIGGLE_ROOM_IN, type AutoDesignAnchorOrigin, type AutoDesignWiggleMove } from "./designerLayoutRules";
+import { activeAutoDesignWiggleMoves, applyAutoDesignWiggleRoom, applyDesignerLayoutRules, ANCHOR_WIGGLE_CAP_IN, AUTO_DESIGN_WIGGLE_ROOM_IN, type AutoDesignAnchorOrigin, type AutoDesignWiggleMove } from "./designerLayoutRules";
+import { applyRealCabinetsBeforeFiller, isFillerLastResort } from "./autoDesignRealCabinets";
 import { bakesALot, cooksALot, normalizeKitchenUsage } from "./kitchenUsage";
 import { ensureDrawerBase } from "./autoDesignDrawerRule";
 import { reviewAfterShift, separateRangeAndRefrigerator } from "./kitchenAdjacency";
@@ -64,6 +65,7 @@ import {
 } from "./autoDesignPeninsula";import {
   COLLISION_EPSILON_IN,
   STD,
+  clampPlacedToRefrigeratorPanels,
   formatEighthInches,
   wallRunFrame,
   appendCollisionFreePlacements,
@@ -362,6 +364,12 @@ export function runAutoDesignLayout(args: {
   makeUid: () => string;
   stoveMasterCode?: string;
   peninsula?: AutoDesignPeninsulaRequest | null;
+  /**
+   * Placements already in the room before the build (a pushed sink base and its
+   * fixture, for example). They are not anchors and the build never seats a
+   * cabinet on top of them, but their presence must not stop the build.
+   */
+  preExistingPlacements?: readonly PlacedCabinet[];
 }): AutoDesignLayoutResult {
   const { input, room, makeUid } = args;
   const openings = [...args.openings];
@@ -416,9 +424,15 @@ export function runAutoDesignLayout(args: {
     return fail("The selected line’s source-priced 36-inch refrigerator cabinet and two end panels are still loading or unavailable. The measured build was not changed.");
   }
 
-  let working: PlacedCabinet[] = [];
-  const anchorsByKind = new Map<string, PlacedCabinet>();
-  const anchorOrigins: AutoDesignAnchorOrigin[] = [];
+  // A pushed sink (or any other pre-existing fixture) must not stop the build.
+  // The measured build owns the sink base — it seats the source-priced base of
+  // the requested width and then asks which basin goes in it — so a sink base
+  // already on the plan is dropped rather than treated as an obstacle. Anything
+  // else that is pre-existing stays a real obstacle.
+  const preExisting = [...(args.preExistingPlacements ?? [])].filter((item) => !isSinkBaseCabinet(item));
+
+  let working: PlacedCabinet[] = [...preExisting];
+  const anchorsByKind = new Map<string, PlacedCabinet>();  const anchorOrigins: AutoDesignAnchorOrigin[] = [];
   const selectedWalls: WallSide[] = [];
   for (const anchor of plan.plan.anchors) {
     const source = anchor.kind === "sink" ? sinkBaseSource : applianceByKind[anchor.kind]!;
@@ -863,8 +877,49 @@ export function runAutoDesignLayout(args: {
   if (drawerRule.warning) drawerRuleWarnings.push(drawerRule.warning);
   const baseRules = applyDesignerLayoutRules({
     placed: working, room, openings: stageOpenings, fillers: catalogFillers, makeUid, styleId: args.styleId,
+    // Owner rule: filler is the last resort, never automatic. Real cabinets first
+    // (shared pass below), and no end-of-run filler at all.
+    allowAutoFillers: false,
   });
   working = baseRules.placed;
+  // The shared "real cabinets before filler" pass runs on EVERY wall and both
+  // layers: slide within the wiggle room, widen a neighbor, or seat a real narrow
+  // cabinet before any sliver is called unusable.
+  const realCabinets = applyRealCabinetsBeforeFiller({
+    placed: working,
+    room,
+    openings: stageOpenings,
+    catalog: [...stage.straightBaseCatalog, ...stage.drawerBaseCatalog, ...stage.wallPool],
+    makeUid,
+    styleId: args.styleId,
+    wallIds: runWalls,
+    // Anchors (range, refrigerator, sink base) move at most 2 inches; every other
+    // cabinet may use the normal allowance.
+    slideLimitFor: (item) => (isSinkBaseCabinet(item)
+      || (item.placement === "appliance" && (isRangeOrOven(item.masterCode, item.description) || isRefrigerator(item)))
+      ? ANCHOR_WIGGLE_CAP_IN
+      : AUTO_DESIGN_FILLER_MAX_IN),
+  });
+  working = realCabinets.placed;
+  notes.push(...realCabinets.notes);
+  // Filler is the last resort, and only for a sliver no real cabinet can take —
+  // never at a run end that lands on its wall.
+  for (const gap of realCabinets.unfilled) {
+    const sliver = isFillerLastResort({
+      gapIn: gap.widthIn,
+      catalog: [...stage.straightBaseCatalog, ...stage.wallPool],
+      layer: gap.layer,
+    });
+    if (!sliver) {
+      reviewFindings.push({
+        ruleId: "real-cabinets-before-filler",
+        code: "opening-needs-a-cabinet",
+        severity: "warning",
+        title: `${formatEighthInches(gap.widthIn)} opening on ${gap.wallId}`,
+        detail: "No cabinet in this line fits that space, and nothing could legally slide to open one.",
+      });
+    }
+  }
   const seamResult = fillAutoDesignLowerSeams({
     placed: working, room, openings: stageOpenings, fillers: catalogFillers, makeUid,
     styleId: args.styleId, corners: upperCorners.map((entry) => entry.point),
@@ -893,6 +948,11 @@ export function runAutoDesignLayout(args: {
     styleId: args.styleId, makeUid, corners: upperCorners, catalogFillers, closeSeams: true,
   });
   working = upperResult.placed;
+  // The refrigerator end panels are a hard stop for the UPPER layer too. The
+  // floor layer is clamped inside `applyDesignerLayoutRules`, but the wall
+  // cabinets and their fillers are tiled after that, which is how a 24" upper
+  // plus a 1-1/4" filler ended up running through the tall panel in 3D.
+  working = clampPlacedToRefrigeratorPanels(working, room).placed;
   const finishedRules = applyDesignerLayoutRules({
     placed: working, room, openings: stageOpenings, fillers: catalogFillers, makeUid, styleId: args.styleId,
   });
@@ -1023,7 +1083,7 @@ export function runAutoDesignLayout(args: {
   const bareRange = working.find((item) => item.placement === "appliance" && isRangeOrOven(item.masterCode, item.description) && autoDesignRangeNeedsVentilation(working, item));
   return {
     ok: true,
-    placed: working,
+    placed: working.filter((item) => !preExisting.some((kept) => kept.uid === item.uid)),
     sinks,
     sinkWindow,
     openings: workingOpenings,

@@ -20,9 +20,13 @@ describe("auto-designer fixture pop-ups", () => {
     expect(source).toContain("onOpenTallPicker={() => setAutoDesignTallOpen(true)}");
   });
 
-  it("carries the picked sink and tall cabinet into the measured build", () => {
+  it("carries the picked tall cabinet into the measured build, and NOT a sink", () => {
     expect(source).toContain("tallCabinets: autoDesignTallPicks.map");
-    expect(source).toContain("sinkProducts: autoDesignSinkPicks.map");
+    // A sink is never auto-placed by the build: it is asked about after the
+    // layout is built, then the faucet step follows.
+    expect(source).toContain("sinkProducts: null");
+    expect(source).not.toContain("sinkProducts: autoDesignSinkPicks.map");
+    expect(source).toContain("promptAutoDesignSinkAfterBuild(");
   });
 
   it("reads sinks from the same Pelican catalog the faucet picker uses", () => {

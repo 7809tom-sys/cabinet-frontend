@@ -3,6 +3,7 @@ import { readFileSync, existsSync } from "node:fs";
 import path from "node:path";
 import {
   WALZCRAFT_DISTRIBUTOR_DOORS,
+  bestCandidateDoor,
   candidateDoors,
   colorLabel,
   doorForStyle,
@@ -84,5 +85,39 @@ describe("WalzCraft color patterns", () => {
     saveColorSelection("x", { shadeName: "Black", hex: "#1b1b1b", matchPct: 97 }, st);
     expect(readColorSelections(st).x.shadeName).toBe("Black");
     expect(colorPatternsCsv(WALZCRAFT_COLOR_PATTERNS).split("\n")[0]).toContain("color4_match");
+  });
+});
+
+describe("no cross-distributor brochure fallback", () => {
+  it("returns null for a style whose distributor is not one of the four WalzCraft lines", () => {
+    // Madison Shaker Honey: distributor SH is not Faircrest / Kitchen Crest / DL /
+    // AltaEuro, so there is no source to know from. Tom's rule: leave it out.
+    for (const style of [
+      { ourName: "Madison Shaker Honey", sku: "SH", distributorName: "Madison", doorStyle: "Shaker Honey" },
+      { ourName: "Ashford Rustic Hickory", sku: "RH", distributorName: "Ashford" },
+      { ourName: "Preston Shaker White", sku: "PS", distributorName: "Preston" },
+      { ourName: "Skyline Shaker White", sku: "SW", supplierBrandName: "Skyline" },
+    ]) {
+      expect(bestCandidateDoor(style)).toBeNull();
+    }
+  });
+
+  it("returns null when there is no distributor at all", () => {
+    expect(bestCandidateDoor({ ourName: "Shaker White" })).toBeNull();
+  });
+
+  it("still finds a same-distributor door by loose word overlap", () => {
+    const style = { ourName: "Shaker White", distributorName: "Faircrest", supplierBrandName: "Faircrest" };
+    const found = bestCandidateDoor(style);
+    expect(found).not.toBeNull();
+    expect(found!.door.distributor).toBe("Faircrest");
+  });
+
+  it("never returns a door from a different distributor than the style's own", () => {
+    for (const [distributor, label] of [["Faircrest", "Faircrest"], ["Kitchen Crest", "Kitchen Crest"], ["DL Cabinetry", "DL Cabinetry"], ["AltaEuro", "AltaEuro"]] as const) {
+      const style = { ourName: "Shaker White", distributorName: label, supplierBrandName: label, doorStyle: "Shaker" };
+      const found = bestCandidateDoor(style);
+      if (found) expect(found.door.distributor).toBe(distributor);
+    }
   });
 });

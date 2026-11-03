@@ -135,8 +135,10 @@ describe("range and refrigerator spacing", () => {
 });
 
 describe("post-shift checks", () => {
-  it("lets a sink slide up to 3 inches and then suggests recentering it on the window", () => {
-    const room = { ...DEFAULT_ROOM, width: 120 };
+  it("lets a sink slide up to the 2 inch anchor cap and then suggests recentering it on the window", () => {
+    // 122 wide: a half inch slide lets the run close exactly, which is inside the
+    // owner's 2 inch anchor cap and still leaves the sink off its window.
+    const room = { ...DEFAULT_ROOM, width: 122 };
     const spot = wallPlacementAt(45, 36, 24, "bottom", room);
     const sink = {
       uid: "sink-1",
@@ -175,8 +177,9 @@ describe("post-shift checks", () => {
       origins: [origin],
     });
     const start = wallRunOffset(shifted.placed[0]!, "bottom", room);
-    expect(Math.abs(start - 45)).toBeLessThanOrEqual(3);
-    expect(shifted.moves[0]?.kind).toBe("sink");
+    // The owner's 2 inch anchor cap: a measured sink never leaves its window by more.
+    expect(Math.abs(start - 45)).toBeLessThanOrEqual(2 + 1e-6);
+    for (const move of shifted.moves) expect(move.kind).toBe("sink");
     const review = reviewAfterShift({
       placed: shifted.placed,
       room,

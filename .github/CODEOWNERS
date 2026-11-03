@@ -1,0 +1,56 @@
+# Ownership for the door-color pipeline.
+#
+# A color bug here shows up as "the same cabinet renders in two shades" or "an
+# approved render never reached the kitchen", and it is expensive to chase. These
+# paths decide what color every cabinet surface renders, so they need an owner who
+# can approve a change instead of it landing silently.
+#
+# Color resolution and precedence:
+/shared/doorColorResolve.ts
+/shared/doorColorResolve.test.ts
+/shared/doorColorAcceptedRender.test.ts
+/shared/exposedSideFinish.ts
+/shared/doorRenderLights.ts
+
+# The Designer's view of a style's appearance:
+/client/src/lib/doorStyleAppearance.ts
+/client/src/lib/acceptedDoorAppearance.ts
+/client/src/lib/acceptedDoorAppearance.test.ts
+/client/src/lib/doorStyleCacheInvalidation.ts
+/client/src/lib/colorTrace.ts
+/client/src/lib/brewersColorTest.ts
+
+# Measured color data. A wrong hex here silently beats nothing and loses to
+# nothing, which is exactly why it needs a second pair of eyes.
+/data/door-colors/**
+
+# WalzCraft color patterns and the shade tables built from them:
+/shared/walzcraftColorPatterns.ts
+/shared/walzcraftDistributorMatches.ts
+/shared/walzcraftDistributorMatchesData.ts
+/shared/walzcraftDistributorMatchTypes.ts
+/data/door-colors/walzcraft-color-patterns.json
+
+# 3D material application: fronts, box, sides, skins, toe kick.
+/client/src/components/design/InteractiveRoom3D.tsx
+/client/src/components/design/ElevationView.tsx
+
+# Everything above is owned by Tom until someone else is named.
+/shared/doorColorResolve.ts @7809tom-sys
+/shared/doorColorResolve.test.ts @7809tom-sys
+/shared/doorColorAcceptedRender.test.ts @7809tom-sys
+/shared/exposedSideFinish.ts @7809tom-sys
+/shared/doorRenderLights.ts @7809tom-sys
+/client/src/lib/doorStyleAppearance.ts @7809tom-sys
+/client/src/lib/acceptedDoorAppearance.ts @7809tom-sys
+/client/src/lib/acceptedDoorAppearance.test.ts @7809tom-sys
+/client/src/lib/doorStyleCacheInvalidation.ts @7809tom-sys
+/client/src/lib/colorTrace.ts @7809tom-sys
+/client/src/lib/brewersColorTest.ts @7809tom-sys
+/data/door-colors/** @7809tom-sys
+/shared/walzcraftColorPatterns.ts @7809tom-sys
+/shared/walzcraftDistributorMatches.ts @7809tom-sys
+/shared/walzcraftDistributorMatchesData.ts @7809tom-sys
+/shared/walzcraftDistributorMatchTypes.ts @7809tom-sys
+/client/src/components/design/InteractiveRoom3D.tsx @7809tom-sys
+/client/src/components/design/ElevationView.tsx @7809tom-sys

@@ -26,6 +26,7 @@ import { ApprovedDoorReferenceNotice } from "./ApprovedDoorReferenceNotice";
 import { ApproveDoorButton } from "./ApproveDoorButton";
 import DoorPhotoCorrectButton from "./DoorPhotoCorrectButton";
 import { AdminStyleRoomSceneControls } from "@/components/doorStyles/AdminDoorStyleRoomScene";
+import { invalidateDoorStyleCaches } from "@/lib/doorStyleCacheInvalidation";
 import type { AutoRoomScene } from "@/lib/autoRoomScene";
 import { MediaPicker } from "./MediaPicker";
 import { WalzCraftMatchForStyle, WalzCraftManualDoorPicker, resolveWalzDoor, readManualDoorId, writeManualDoorId } from "@/components/walzcraft/WalzCraftMatchCard";
@@ -1725,9 +1726,10 @@ export default function FeaturedStylesAdmin() {
   }
 
   function invalidateAll() {
-    utils.doorStyles.listForAdmin.invalidate();
-    utils.doorStyles.featured.invalidate();
-    utils.doorStyles.skuCountsByStyle.invalidate();
+    // PRIORITY: a save can change a style's appearance, so the KITCHEN's own
+    // queries must be cleared too, not just the admin lists. Otherwise an admin
+    // saves a color or approves a render and every open Designer keeps the old one.
+    invalidateDoorStyleCaches(utils as never);
   }
 
   const editingStyleLive = useMemo(() => {

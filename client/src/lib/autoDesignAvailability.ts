@@ -57,9 +57,28 @@ export type AutoDesignControl = {
   refrigeratorNote: string | null;
 };
 
+/**
+ * A pushed Pelican sink is a sink base plus one fixture on it. It is a fixture
+ * choice, not hand-placed cabinet work, so Auto-Design can still run over it.
+ * This is the bug owner hit: pushing a sink auto-placed its base, `placed.length`
+ * went to 1, and Auto-Design grayed itself out and refused to build.
+ */
+export type AutoDesignPlacedLike = RefrigeratorLike & { uid?: string };
+
+const SINK_BASE_CODE = /^(?:ADA-)?F?SB[-_ ]?\d|^CSB[-_ ]?\d|^(?:UV-)?SBF[-_ ]?\d|^(?:ADA-)?VSD?[-_ ]?\d/i;
+
+export function isSinkBasePlacement(item: AutoDesignPlacedLike): boolean {
+  const text = `${item.subCategory ?? ""} ${item.description ?? ""}`.toLowerCase();
+  if (item.placement === "appliance") return false;
+  if (/\bsink\s*base\b|\bvanity\s*sink\b|\bsink\s*(?:floor|front)\b/.test(text)) return true;
+  if (/\b(?:farm(?:house)?|apron)\b[^.]*\bsink\b/.test(text)) return true;
+  return SINK_BASE_CODE.test((item.masterCode ?? "").trim());
+}
+
 export function autoDesignControlState(input: {
   audienceAllowed: boolean;
   layoutLocked: boolean;
+  /** Placements other than a pushed sink base, so a sink never locks Auto-Design out. */
   placedCount: number;
   hasRefrigerator: boolean;
 }): AutoDesignControl {

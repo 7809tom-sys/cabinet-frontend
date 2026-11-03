@@ -1,0 +1,312 @@
+From d170c3536b42987987278b44392091c17d803c98 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Tue, 3 Nov 2026 20:29:28 +0000
+Subject: [PATCH 1/2] PRIORITY: an accepted door render becomes the kitchen's
+ color
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Owner rule: any approved render becomes the kitchen's color.
+
+Accepting a door-rendering run only ever inserted a version row and an 'accepted'
+event. Nothing reached door_styles and the Designer had no way to read an accepted
+run, so a kitchen never saw an approved render and kept drawing the flat catalog
+hex — Shaker Honey (SH, Madison) rendered #c8a040 instead of the accepted light
+tan birch that scored 10.0.
+
+door_styles now carries its latest accepted run: renderHex, the approved door
+image, the approved version id, and when it was accepted.
+
+The writeback lives in recordDecision, the one function every acceptance,
+revocation, and revert already goes through, so there is no second path to keep in
+sync:
+
+  - accept  -> the run's renderHex and approved image are written;
+  - revoke  -> they are cleared, and the style's saved color takes over;
+  - revert  -> they follow the version it reverted to, or clear if none is left.
+
+A writeback failure is logged and never fails the approval itself: the version and
+its event are already stored.
+
+doorStyles.acceptedAppearance is a PUBLIC read of one style's (or a list's)
+accepted appearance. Public because a shopper's Designer reads it too, and it is
+what the kitchen renders from. It is not cached beyond the normal query, so
+approving a run reaches every kitchen on the next read with no manual step. Only a
+row with an approvedVersionId counts as approved, so a renderHex typed into the
+style editor without accepting a run never drives a kitchen. No database returns
+"nothing approved" rather than throwing.
+
+Columns are nullable and added by docs/sql/0245_door_style_accepted_run.tidb.sql.
+That file only adds columns; it inserts, updates, and deletes nothing.
+---
+ .../sql/0245_door_style_accepted_run.tidb.sql | 60 +++++++++++++++++++
+ drizzle/schema.ts                             | 11 ++++
+ server/routers/catalog.ts                     | 58 ++++++++++++++++++
+ server/routers/doorRenderingAudit.ts          | 44 ++++++++++++++
+ 4 files changed, 173 insertions(+)
+ create mode 100644 docs/sql/0245_door_style_accepted_run.tidb.sql
+
+diff --git a/docs/sql/0245_door_style_accepted_run.tidb.sql b/docs/sql/0245_door_style_accepted_run.tidb.sql
+new file mode 100644
+index 0000000..3fbed1f
+--- /dev/null
++++ b/docs/sql/0245_door_style_accepted_run.tidb.sql
+@@ -0,0 +1,60 @@
++-- TiDB SQL editor version. Numbered 0245. Run after 0244.
++-- Paste each numbered block on its own. One statement per block.
++-- Every table is cabinet_dealz.<table>. No reserved-word aliases.
++-- This file only adds columns. It inserts nothing, updates no rows, and deletes
++-- nothing. Run it BEFORE deploying cabinet-backend-door-style-accepted-run.patch:
++-- doorStyles queries select every column, so they error until these exist.
++--
++-- Why: an approved door render must become the kitchen's color. Accepting an audit
++-- run writes the run's renderHex and approved image onto the door style, and the
++-- Designer reads them. A revoked or reverted acceptance clears or re-points them,
++-- and the style's own saved catalog color takes over again.
++
++-- 1. Read-only: how many styles already carry an accepted run, and which ones.
++--    Safe to run twice. Nothing is changed.
++SELECT
++  accepted_style.id AS styleId,
++  accepted_style.styleCode,
++  accepted_style.ourName,
++  accepted_style.renderHex,
++  accepted_style.approvedVersionId,
++  accepted_style.approvedAt
++FROM cabinet_dealz.door_styles AS accepted_style
++WHERE accepted_style.approvedVersionId IS NOT NULL
++ORDER BY accepted_style.approvedAt DESC
++LIMIT 50;
++
++-- 2. The accepted run's color. Nullable: null means "no accepted run", and the
++--    Designer falls back to the style's own saved catalog color.
++ALTER TABLE cabinet_dealz.door_styles
++  ADD COLUMN IF NOT EXISTS renderHex VARCHAR(7) NULL;
++
++-- 3. The accepted run's approved door image, used as the kitchen's face texture.
++ALTER TABLE cabinet_dealz.door_styles
++  ADD COLUMN IF NOT EXISTS approvedReferenceImageUrl VARCHAR(512) NULL;
++
++-- 4. Which door_rendering_versions row is currently accepted. Non-null is the
++--    signal that the two columns above may drive a kitchen.
++ALTER TABLE cabinet_dealz.door_styles
++  ADD COLUMN IF NOT EXISTS approvedVersionId INT NULL;
++
++-- 5. When that version was accepted. Ordering aid; the version id is authority.
++ALTER TABLE cabinet_dealz.door_styles
++  ADD COLUMN IF NOT EXISTS approvedAt TIMESTAMP NULL;
++
++-- 6. Read-only check: confirm the four columns exist on door_styles.
++SELECT
++  column_name AS addedColumn,
++  data_type AS columnType,
++  is_nullable AS nullable
++FROM information_schema.columns
++WHERE table_schema = 'cabinet_dealz'
++  AND table_name = 'door_styles'
++  AND column_name IN ('renderHex', 'approvedReferenceImageUrl', 'approvedVersionId', 'approvedAt')
++ORDER BY column_name;
++
++-- Note: renderHex may already exist from 0233_door_render_controls. Block 2 is
++-- IF NOT EXISTS, so running it over an existing column changes nothing. Its
++-- meaning widens: it used to be an admin hand-set color and is now also the
++-- accepted run's color. Both are the same source of truth, so no data migration
++-- is needed, and no existing value is cleared by this file.
+diff --git a/drizzle/schema.ts b/drizzle/schema.ts
+index 9e55b57..df76aa3 100644
+--- a/drizzle/schema.ts
++++ b/drizzle/schema.ts
+@@ -422,7 +422,18 @@ export const doorStyles = mysqlTable("door_styles", {
+   finish: varchar("finish", { length: 128 }),
+   color: varchar("color", { length: 64 }),
+   // The door's own render color. Wins over the name fallback. Not snapped to a brand palette.
++  // PRIORITY: this is also the latest ACCEPTED door-rendering run's color. Accepting a
++  // run writes it here, so an approved render becomes every kitchen's color; a revoke
++  // clears it and a revert re-points it, and the style's saved `color` takes over.
+   renderHex: varchar("renderHex", { length: 7 }),
++  // The latest ACCEPTED run's approved door image, used as the kitchen's face texture.
++  // Written with renderHex above and cleared on revoke. Added by hand in
++  // docs/sql/0245_door_style_accepted_run.tidb.sql (frontend repo).
++  approvedReferenceImageUrl: varchar("approvedReferenceImageUrl", { length: 512 }),
++  // Which door_rendering_versions row is accepted. Non-null is the signal that the
++  // two columns above may drive a kitchen.
++  approvedVersionId: int("approvedVersionId"),
++  approvedAt: timestamp("approvedAt"),
+   // paint = opaque tint on painted grain. stain = translucent tint over wood grain.
+   // Null until a swatch reading is saved. Hickory still renders on real wood grain.
+   finishCategory: varchar("finishCategory", { length: 16 }),
+diff --git a/server/routers/catalog.ts b/server/routers/catalog.ts
+index 2741409..2041cd9 100644
+--- a/server/routers/catalog.ts
++++ b/server/routers/catalog.ts
+@@ -211,6 +211,64 @@ async function availableStyleIds(
+ }
+ 
+ export const doorStylesRouter = router({
++  /**
++   * PRIORITY: the accepted appearance of a door style.
++   *
++   * Owner rule: any approved render becomes the kitchen's color.
++   *
++   * Accepting a door-rendering run writes that run's color and approved door image
++   * onto `door_styles` (`syncAcceptedAppearanceToStyle` in
++   * `doorRenderingAudit.ts`). This is the read the Designer and the kitchen use to
++   * see them. It is PUBLIC on purpose: a shopper's Designer is not an admin, and
++   * the same approved appearance must reach every kitchen.
++   *
++   * Deliberately uncached beyond the normal query, so approving a new run reaches
++   * every kitchen on the next read with no cache to clear and no manual step. A
++   * saved design stores a style id rather than a snapshot, so it follows a new
++   * acceptance too.
++   *
++   * Only a row with an `approvedVersionId` counts as approved. A `renderHex` typed
++   * into the style editor without accepting a run never drives a kitchen.
++   */
++  acceptedAppearance: publicProcedure
++    .input(z.object({
++      styleId: z.number().int().positive().optional(),
++      styleIds: z.array(z.number().int().positive()).max(300).optional(),
++    }).refine(
++      (value) => value.styleId != null || (value.styleIds?.length ?? 0) > 0,
++      { message: "Pass styleId or styleIds." },
++    ))
++    .query(async ({ input }) => {
++      const ids = Array.from(new Set(input.styleId != null ? [input.styleId] : input.styleIds!));
++      const db = await getDb();
++      const appearance = (
++        row: { id: number; renderHex: string | null; approvedReferenceImageUrl: string | null; approvedVersionId: number | null; approvedAt: Date | null } | undefined,
++        styleId: number,
++      ) => {
++        const accepted = Boolean(row?.approvedVersionId);
++        return {
++          styleId,
++          renderHex: accepted ? row!.renderHex ?? null : null,
++          approvedReferenceImageUrl: accepted ? row!.approvedReferenceImageUrl ?? null : null,
++          approvedVersionId: accepted ? row!.approvedVersionId : null,
++          approvedAt: accepted ? row!.approvedAt ?? null : null,
++        };
++      };
++      // No database in this environment: report "nothing approved" so a Designer
++      // still renders on the catalog color instead of throwing.
++      if (!db) return input.styleId != null ? appearance(undefined, input.styleId) : ids.map((id) => appearance(undefined, id));
++      const rows = await db.select({
++        id: doorStyles.id,
++        renderHex: doorStyles.renderHex,
++        approvedReferenceImageUrl: doorStyles.approvedReferenceImageUrl,
++        approvedVersionId: doorStyles.approvedVersionId,
++        approvedAt: doorStyles.approvedAt,
++      }).from(doorStyles).where(inArray(doorStyles.id, ids));
++      const byId = new Map(rows.map((row) => [row.id, row]));
++      const list = ids.map((id) => appearance(byId.get(id), id));
++      return input.styleId != null ? list[0]! : list;
++    }),
++
+   list: publicProcedure
+     .input(z.object({ distributorId: z.number().optional() }).optional())
+     .query(async (opts) => {
+diff --git a/server/routers/doorRenderingAudit.ts b/server/routers/doorRenderingAudit.ts
+index d595dc1..650ce9c 100644
+--- a/server/routers/doorRenderingAudit.ts
++++ b/server/routers/doorRenderingAudit.ts
+@@ -497,6 +497,45 @@ async function createRun(
+   };
+ }
+ 
++/**
++ * PRIORITY: write the accepted run onto its door style.
++ *
++ * An approved render becomes the kitchen's color. `renderHex` and
++ * `approvedReferenceImageUrl` are what the Designer reads, so accepting a run
++ * writes them in the same request. A revocation clears them, and a revert points
++ * them at the version it reverted to, or clears them when there is nothing left to
++ * point at — the style's own saved `color` then takes over.
++ *
++ * Only the columns this feature owns are touched. Prices, catalog flags, and the
++ * sample photos are never written here.
++ */
++async function syncAcceptedAppearanceToStyle(
++  db: Database,
++  styleId: number,
++  accepted: typeof doorRenderingVersions.$inferSelect | null,
++): Promise<void> {
++  try {
++    await ensureDoorRenderingApprovalColumns(db);
++    const approvedImage = accepted
++      ? (accepted.approvedDoorImageUrl ?? accepted.renderImageUrl ?? null)
++      : null;
++    await db.update(doorStyles)
++      .set(accepted
++        ? {
++          renderHex: accepted.renderHex ?? null,
++          approvedReferenceImageUrl: approvedImage,
++          approvedVersionId: accepted.id,
++          approvedAt: new Date(),
++        }
++        : { approvedReferenceImageUrl: null, approvedVersionId: null, approvedAt: null })
++      .where(eq(doorStyles.id, styleId));
++  } catch (error) {
++    // A style that cannot be written must never fail the approval itself; the
++    // version row and the event are already stored. The operator sees a log line.
++    console.error("[door-rendering-audit] accepted appearance writeback failed:", databaseErrorDetail(error));
++  }
++}
++
+ async function recordDecision(
+   db: Database,
+   actorUserId: number,
+@@ -533,6 +572,11 @@ async function recordDecision(
+   const accepted = plan.nextAcceptedVersionId == null
+     ? null
+     : versionRows.find((row) => row.id === plan.nextAcceptedVersionId) ?? null;
++  // PRIORITY: an accepted render becomes the style's color. `recordDecision` is the
++  // one path every acceptance, revocation, and revert goes through, so the door
++  // style writeback happens here and nowhere else. A kitchen reads these columns,
++  // so an approval reaches every kitchen on the next read with no manual step.
++  await syncAcceptedAppearanceToStyle(db, plan.styleId, accepted);
+   const priorLatestEvent = latestEventForVersion(eventRows, latest.id);
+   const latestEventAction = versionId === latest.id ? action : priorLatestEvent?.action ?? null;
+   const flagStatus = liveFlagStatus({
+-- 
+2.43.0
+
+
+From d2178a75f241ed84c1e77a9f82fe6892704f10e7 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Tue, 3 Nov 2026 20:36:53 +0000
+Subject: [PATCH 2/2] PRIORITY: list also returns the accepted appearance
+
+The Designer reads its styles from doorStyles.list, so that projection has to
+carry the accepted run's image and the accepted-version marker as well as the
+color. Without them the client cannot tell an approved render from a color typed
+into the style editor.
+
+approvedVersionId is the marker: non-null only when an admin actually accepted a
+run. That lets the client ignore a hand-typed renderHex instead of treating it as
+approved.
+---
+ server/routers/catalog.ts | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/server/routers/catalog.ts b/server/routers/catalog.ts
+index 2041cd9..bd8d7d8 100644
+--- a/server/routers/catalog.ts
++++ b/server/routers/catalog.ts
+@@ -290,7 +290,14 @@ export const doorStylesRouter = router({
+         woodSpecies: doorStyles.woodSpecies,
+         finish: doorStyles.finish,
+         color: doorStyles.color,
++        // PRIORITY: renderHex is the latest ACCEPTED run's color once a run is
++        // approved, and approvedReferenceImageUrl is that run's door image. The
++        // Designer reads both, so an approval reaches every kitchen on the next
++        // list read. approvedVersionId is non-null only when a run is accepted.
+         renderHex: doorStyles.renderHex,
++        approvedReferenceImageUrl: doorStyles.approvedReferenceImageUrl,
++        approvedVersionId: doorStyles.approvedVersionId,
++        approvedAt: doorStyles.approvedAt,
+         finishCategory: doorStyles.finishCategory,
+         grainLightHex: doorStyles.grainLightHex,
+         grainDarkHex: doorStyles.grainDarkHex,
+-- 
+2.43.0
+

@@ -269,7 +269,7 @@ describe("buildAutoDesignWallCabinets", () => {
     expect(result.skipped).toContainEqual(expect.stringContaining("B36: no source-sized 30″ wall cabinet matches its 36″ run."));
   });
 
-  it("never adds an ordinary upper above a range or refrigerator and leaves an existing fridge bay untouched", () => {
+  it("never adds an ordinary upper above a range (the microwave + bridge rule owns that span) or above a refrigerator", () => {
     const range = onTopWall(ROOM, {
       uid: "range", masterCode: "RANGE-30", placement: "appliance", width: 30, depth: 25, height: 36,
       description: "30 inch Gas Range",
@@ -290,8 +290,10 @@ describe("buildAutoDesignWallCabinets", () => {
       ],
     });
 
-    expect(result.additions.map((cabinet) => cabinet.masterCode)).toEqual(["W3030"]);
-    expect(result.additions[0]?.wallOffset).toBeCloseTo(12, 3);
+    // Nothing goes over the range from the wall run: the build places an
+    // over-the-range microwave with a bridge cabinet above it instead. The only
+    // other lower is the refrigerator, which is also left open.
+    expect(result.additions.map((cabinet) => cabinet.masterCode)).toEqual([]);
     expect(result.placed.filter((cabinet) => cabinet.uid === "fridge-bridge")).toHaveLength(1);
     expect(result.additions.some((cabinet) => cabinet.masterCode === "W3630" && Math.abs((cabinet.wallOffset ?? 0) - 54) < 1)).toBe(false);
   });

@@ -9,6 +9,7 @@ import { autoDesignWallWidthRows } from "@/lib/autoDesignAutoBuild";
 import { autoDesignSelectableWallLabels } from "@/lib/autoDesignCornerStage";
 import { Checkbox } from "@/components/ui/checkbox";
 import { KITCHEN_USE_OPTIONS, type KitchenUseId } from "@/lib/kitchenUsage";
+import { DEFAULT_OVER_RANGE_ANSWER } from "@/lib/overRangeCompanion";
 import type { RoomData } from "@/lib/design";
 import type {
   DishwasherSide,
@@ -96,7 +97,7 @@ export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading =
   const [sinkBaseWidth, setSinkBaseWidth] = useState<SinkBaseWidth>(36);
   const [sinkBaseKind, setSinkBaseKind] = useState<AutoDesignSinkBaseKind>("regular");
   const [wallCabinetHeight, setWallCabinetHeight] = useState<WallCabinetHeight>(30);
-  const [overRangeAnswer, setOverRangeAnswer] = useState<"hood" | "microwave-bridge" | "open">("hood");
+  const [overRangeAnswer, setOverRangeAnswer] = useState<"hood" | "microwave-bridge" | "open">(DEFAULT_OVER_RANGE_ANSWER);
   const [dishwasherSide, setDishwasherSide] = useState<DishwasherSide>("right");
   const [refrigeratorWidth, setRefrigeratorWidth] = useState<RefrigeratorWidth>(36);
   const [windowCenter, setWindowCenter] = useState("");
@@ -356,11 +357,13 @@ export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading =
                   <Droplets className="mr-1.5 h-3.5 w-3.5" /> Choose a sink
                 </Button>
                 <span className="min-w-0 text-xs text-muted-foreground" data-testid="auto-design-sink-selection">
-                  {selectedSinkName ?? "No Pelican sink picked — the build seats a generic basin."}
+                  {selectedSinkName ?? "Asked after the build, right before the faucet step."}
                 </span>
               </div>
               <p className="text-xs text-muted-foreground">
-                Opens the sink pop-up beside the faucet step. A pick is placed automatically in the sink base, centered in the opening. A farmhouse sink switches the build to its matching farmhouse base.
+                Auto-Design does not place a sink during the build. When the layout is built it asks which Pelican sink goes in
+                the sink base, then asks for the faucet — the same timing as the faucet step. A farmhouse sink switches the build
+                to its matching farmhouse base.
               </p>
             </div>
             <div className="space-y-1.5 sm:col-span-2" data-testid="auto-design-tall-option">

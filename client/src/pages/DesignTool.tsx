@@ -25,6 +25,10 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { kitchenAcceptedFaceImage, resolveKitchenDoorColor } from "@/lib/acceptedDoorAppearance";
+import { colorTraceEnabled, createColorTraceRecorder, type ColorTrace } from "@/lib/colorTrace";
+import { brewersTestDecision, brewersTestEnabled } from "@/lib/brewersColorTest";
+import { ColorTracePanel, logColorTrace } from "@/components/design/ColorTracePanel";
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle,
 } from "@/components/ui/sheet";
@@ -232,7 +236,7 @@ import { isPanelPaletteItem } from "./designToolPanels";
 import { normalizePaletteSearch, matchesPaletteSearch, matchesPaletteTextOrSize } from "@/lib/paletteSearch";
 import { searchCatalogItems } from "@shared/catalogCodeSearch";
 import { adjacentDishwasherCenterIn, anchorAlongStartIn, autoBuildStraightBaseCatalog, autoDesignWallNameByEngineId, buildAutoDesignWallGuides, canRunAutoDesign, closestDishwasherStart, isAutoBuildStraightSinkBaseCandidate, makeAutoDesignSixWallTrainingRoom, keepSingleAutoDesignSink, pickAutoDesignSinkBase, planAutoDesignAutoBuild, resolveDishwasherSide, subtractAnchorRunReservations, wallLabelToEngineWallId, type AutoDesignInputs, type AutoDesignOriginCorner, type AutoDesignRunDirection, type DishwasherSide } from "@/lib/autoDesignAutoBuild";
-import { AUTO_DESIGN_REFRIGERATOR_NOTE, autoDesignControlState, autoDesignShouldTurnOffForRefrigerator, isRefrigeratorAppliance, refrigeratorBlocksAutoDesign } from "@/lib/autoDesignAvailability";
+import { AUTO_DESIGN_REFRIGERATOR_NOTE, autoDesignControlState, autoDesignShouldTurnOffForRefrigerator, isRefrigeratorAppliance, isSinkBasePlacement, refrigeratorBlocksAutoDesign } from "@/lib/autoDesignAvailability";
 import { applyChosenAutoDesignFaucet, catalogFaucetSurface, defaultAutoDesignFaucet, ensureAutoDesignFaucet, isCatalogFaucet, type AutoDesignFaucetProduct } from "@/lib/autoDesignFaucet";
 import { clampSinkDragForFaucet, raiseWindowsForDeckFaucet, type FaucetWindowClearanceNote } from "@/lib/faucetPlacement";
 import { dropDuplicateAutoWindows, moveWindowsWithWallTops } from "@/lib/windowOpenings";
@@ -301,6 +305,8 @@ import { CsvImportDialog } from "@/components/design/CsvImportDialog";
 import { PlanImageImportDialog, type ReviewedPlan } from "@/components/design/PlanImageImportDialog";
 import { AutoDesignDialog, type AutoDesignSubmitResult } from "@/components/design/AutoDesignDialog";
 import { AutoDesignFaucetDialog } from "@/components/design/AutoDesignFaucetDialog";
+import { AutoDesignCornerDialog } from "@/components/design/AutoDesignCornerDialog";
+import { cornerCatalogForLayer } from "@/lib/autoDesignCornerChoice";
 import { AutoDesignSinkDialog } from "@/components/design/AutoDesignSinkDialog";
 import { AutoDesignTallDialog } from "@/components/design/AutoDesignTallDialog";
 import { AutoDesignRangeDialog } from "@/components/design/AutoDesignRangeDialog";
@@ -1196,13 +1202,41 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   autoDesignSessionRef.current = autoDesignOpen || autoDesignCornerStage != null;
   const [autoDesignFaucetPrompt, setAutoDesignFaucetPrompt] = useState<{ sinkUid: string; queue: string[] } | null>(null);
   /**
+   * Cancels the required corner choice. The staged build is transactional, so
+   * cancelling leaves no auto-created appliance, sink, filler, or cabinet behind.
+   */
+  const cancelAutoDesignCornerStage = useCallback(() => {
+    placedRef.current = [];
+    setPlaced([]);
+    setSinks([]);
+    setSelectedSinkUid(null);
+    setAutoDesignCornerStage(null);
+    toast.info("The measured build was cancelled. The Designer is empty again.");
+  }, [setPlaced]);
+  /**
+   * Runs after a measured build commits. The sink question comes first — the
+   * layout is already built, and picking a sink is what decides the basin and,
+   * for an apron-front sink, the matching farmhouse base. The faucet step then
+   * follows on the sink this places.
+   */
+  const promptAutoDesignSinkAfterBuild = useCallback((builtSinkBaseUid: string | null) => {
+    if (!builtSinkBaseUid) return;
+    if (autoDesignSinkPromptedRef.current.has(builtSinkBaseUid)) return;
+    autoDesignSinkPromptedRef.current.add(builtSinkBaseUid);
+    setAutoDesignSinkPrompt({ mode: "replace", sinkUid: builtSinkBaseUid });
+  }, []);
+  /**
    * Sink pop-up. The auto-designer offers the catalog's sinks next to the faucet
    * option; a pick auto-places the basin in the sink base (or seats its own base
    * for a second sink). Never an inline row in the run.
    */
   const [autoDesignSinkPrompt, setAutoDesignSinkPrompt] = useState<{ mode: "replace" | "add"; sinkUid: string | null } | null>(null);
-  /** Sinks picked in the pop-up, carried into the measured build and the cart. */
+  /** The sink the post-build question placed, shown so the setup view can state it. */
   const [autoDesignSinkPicks, setAutoDesignSinkPicks] = useState<AutoDesignSinkProduct[]>([]);
+  /** Sink bases the post-build sink question has already been asked about. */
+  const autoDesignSinkPromptedRef = useRef(new Set<string>());
+  /** The faucet prompt queued behind the sink question, applied once the sink is settled. */
+  const autoDesignFaucetQueueAfterSinkRef = useRef<{ sinkUid: string; queue: string[] } | null>(null);
   /**
    * Tall oven / pantry pop-up. Picked in the setup dialog and auto-placed by the
    * build, so nobody has to drag a floor-to-ceiling box into a run.
@@ -1811,12 +1845,19 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   }, []);
   layoutLockedRef.current = layoutLocked;
   const layoutHasRefrigerator = useMemo(() => placed.some(isRefrigeratorAppliance), [placed]);
+  // A pushed Pelican sink seats a sink base and a fixture. That is a fixture
+  // choice, not hand-placed cabinet work, so it must not gray Auto-Design out —
+  // otherwise pushing a sink made the whole auto-designer stop working.
+  const autoDesignBlockingPlacements = useMemo(
+    () => placed.filter((item) => !isSinkBasePlacement(item)),
+    [placed],
+  );
   const autoDesignControl = useMemo(() => autoDesignControlState({
     audienceAllowed: autoDesignAvailable,
     layoutLocked,
-    placedCount: placed.length,
+    placedCount: autoDesignBlockingPlacements.length,
     hasRefrigerator: layoutHasRefrigerator,
-  }), [autoDesignAvailable, layoutHasRefrigerator, layoutLocked, placed.length]);
+  }), [autoDesignAvailable, autoDesignBlockingPlacements.length, layoutHasRefrigerator, layoutLocked]);
   const autoDesignSessionAnchorUids = useMemo(() => {
     const anchors = autoDesignCornerStage?.anchors;
     if (!anchors) return new Set<string>();
@@ -2687,7 +2728,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // it is resolved server-side and never shown.
   const { data: doorStylesRaw, isError: doorStylesError } = trpc.doorStyles.list.useQuery();
   const selectedStyleMissingFromPicker =
-    styleId != null && !(doorStylesRaw ?? []).some((style) => style.id === styleId);
+    styleId != null && !((doorStylesRaw ?? []) as Array<{ id: number }>).some((style) => style.id === styleId);
   const { data: persistedSelectedStyle, isFetching: persistedStyleFetching } = trpc.doorStyles.byId.useQuery(
     { id: styleId ?? 0 },
     { enabled: selectedStyleMissingFromPicker },
@@ -3919,7 +3960,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     if (placedRef.current.some(isRefrigeratorAppliance)) {
       return fail(AUTO_DESIGN_REFRIGERATOR_NOTE);
     }
-    if (!canRunAutoDesign(autoDesignAvailable, placedRef.current.length > 0)) {
+    if (!canRunAutoDesign(autoDesignAvailable, autoDesignBlockingPlacements.length > 0)) {
       return fail("The auto-design build only runs on an empty Designer.");
     }
     if (autoFillCabinetsLoading || wallCabPoolLoading) {
@@ -3927,6 +3968,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     }
     const pool = (autoFillCabinets as DesignCabinet[] | undefined) ?? [];
     const wallPool = (wallCabPool as DesignCabinet[] | undefined) ?? [];
+    // A sink pushed before the build keeps its exact position. The build works
+    // around it and never drags it onto a run of its own choosing.
+    const preExistingPlacements = placedRef.current;
     // Tall oven / pantry boxes this line sells, resolved from the same pools the
     // palette uses. A pop-up pick is matched here and auto-placed by the build.
     const tallById = new Map<number, DesignCabinet>();
@@ -3956,14 +4000,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           widthIn: product.widthIn,
           heightIn: product.heightIn,
         })),
-        sinkProducts: autoDesignSinkPicks.map((product) => ({
-          productId: product.id,
-          pelicanCode: product.pelicanCode ?? null,
-          name: product.name,
-          imageUrl: product.imageUrl ?? null,
-          size: product.size ?? null,
-          sellPrice: product.sellPrice ?? null,
-        })),
+        // A sink is NOT auto-placed by the build. The build seats the measured
+        // sink base with a neutral basin, and the sink pop-up asks which sink
+        // after the layout is built — the same timing as the faucet step.
+        sinkProducts: null,
       },
       room,
       openings,
@@ -3975,6 +4015,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       refrigeratorEndPanels: fridgeParts?.endPanels ?? [],
       tallCatalog,
       stoveMasterCode: autoDesignRangePick?.masterCode ?? undefined,
+      preExistingPlacements,
       styleId: styleIdRef.current ?? null,
       makeUid,
     });
@@ -3984,28 +4025,16 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       setSinks(keepSingleAutoDesignSink([remembered], remembered.cabinetUid ?? run.sinks[0].cabinetUid ?? ""));
       setSelectedSinkUid(remembered.uid);
       if (!autoDesignSessionRef.current) setOpenings(run.openings);
-      // A real Pelican basin chosen in the sink pop-up has to reach the cart, so
-      // it is recorded as a selected surface the same way the faucet is.
-      const pickedSink = autoDesignSinkPicks[0] ?? null;
-      if (pickedSink && remembered.pelicanProductId === pickedSink.id) {
-        const surface = {
-          id: pickedSink.id,
-          pelicanCode: pickedSink.pelicanCode ?? null,
-          slug: pickedSink.name,
-          name: pickedSink.name,
-          category: pickedSink.category ?? "Sinks & Faucets",
-          subCategory: pickedSink.subCategory ?? "Sinks",
-          size: pickedSink.size ?? null,
-          imageUrl: pickedSink.imageUrl ?? null,
-          sellPrice: pickedSink.sellPrice ?? null,
-        };
-        setSelectedSurfaces((previous) => previous.some((entry) => entry.id === surface.id) ? previous : [...previous, surface]);
-      }
     } else {
       setOpenings(run.openings);
     }
     placedRef.current = run.placed;
-    setPlaced(run.placed);
+    // The measured build owns the sink base, so a pushed sink base is replaced by
+    // the one it seats; any other pre-existing placement is kept exactly as it is.
+    setPlaced((current) => [
+      ...current.filter((item) => !isSinkBasePlacement(item) && !run.placed.some((built) => built.uid === item.uid)),
+      ...run.placed,
+    ]);
     setRoom((current) => ({ ...current, kitchenUsage: normalizeKitchenUsage(input.kitchenUsage) }));
     const selectedWallCabinetHeight = input.wallCabinetHeightIn ?? 30;
     setWallCabHeight(selectedWallCabinetHeight);
@@ -4041,8 +4070,16 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     }
     if (run.sinkWindow) toast.info(`A ${formatInches(run.sinkWindow.width)} window was placed above the sink as entered; no wall cabinet goes over it.`);
     if (run.bareRangeUid) setAutoDesignRangeVentPrompt({ rangeUid: run.bareRangeUid });
+    // The layout is built. Now ask which sink, then the faucet on it. The build
+    // itself never auto-places a sink, so pushing one before the build cannot
+    // change the plan or switch Auto-Design off.
+    const builtSinkBase = run.sinks[0]?.cabinetUid ?? null;
+    if (builtSinkBase) {
+      autoDesignFaucetQueueAfterSinkRef.current = autoDesignFaucetPrompt;
+      promptAutoDesignSinkAfterBuild(builtSinkBase);
+    }
     return { ok: true as const };
-    }, [appliancePalette, autoDesignSinkPicks, autoDesignTallPicks, autoFillCabinets, autoFillCabinetsLoading, autoDesignAvailable, catalogFillers, dishwasherSidePreference, liveMasterCabinets, openings, placedRef, refrigeratorSurroundCatalog, room, setCountertop, setOpenings, setPlaced, setRoom, tallCabPool, wallCabPool, wallCabPoolLoading]);
+    }, [appliancePalette, autoDesignTallPicks, autoFillCabinets, autoFillCabinetsLoading, autoDesignAvailable, autoDesignBlockingPlacements.length, catalogFillers, dishwasherSidePreference, liveMasterCabinets, openings, placedRef, promptAutoDesignSinkAfterBuild, refrigeratorSurroundCatalog, room, setCountertop, setOpenings, setPlaced, setRoom, tallCabPool, wallCabPool, wallCabPoolLoading]);
 
   /**
    * The second half of an Auto-Design build. Measured appliances are already
@@ -4263,6 +4300,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     const baseRules = applyDesignerLayoutRules({
       placed: working, room, openings: stageOpenings, fillers: catalogFillers,
       makeUid, styleId: styleIdRef.current ?? null,
+      // Filler is the last resort and never automatic at a run end.
+      allowAutoFillers: false,
     });
     working = baseRules.placed;
     // No gap is left anywhere: every opening between the measured anchors, panels, corner
@@ -5187,11 +5226,30 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const doorRenderSettings = trpc.siteSettings.getPublicSettings.useQuery(undefined, { staleTime: 60_000 });
   const doorRenderExposure = clampRenderExposure((doorRenderSettings.data as { renderExposure?: number | string | null } | undefined)?.renderExposure);
   const doorColorDeltaE = clampColorDeltaE((doorRenderSettings.data as { colorMatchDeltaE?: number | string | null } | undefined)?.colorMatchDeltaE);
-  const activeDoorRenderHex = (activeStyle as { renderHex?: string | null } | null)?.renderHex ?? null;
+  // PRIORITY: the kitchen's color is the latest ACCEPTED door-rendering run for
+  // this style. `renderHex` alone is not proof of an acceptance (an admin can type
+  // a color without accepting a run), so only an accepted run may drive it; the
+  // resolver otherwise falls back to the style's own saved catalog color.
+  // Admin debugging for the color pipeline: `?colorTrace=1` records every layer,
+  // and `?colorTest=brewers` pretends SH's accepted render is Brewers navy. Both
+  // are admin-only, preview-only, and write nothing.
+  const colorTraceOn = useMemo(() => colorTraceEnabled({ search, isAdmin }), [search, isAdmin]);
+  const brewersTestOn = useMemo(() => brewersTestEnabled({ search, isAdmin }), [search, isAdmin]);
+  const activeKitchenDoorColor = useMemo(() => {
+    const decision = resolveKitchenDoorColor(activeStyle as never);
+    return brewersTestOn ? brewersTestDecision(decision) : decision;
+  }, [activeStyle, brewersTestOn]);
+  const activeDoorRenderHex = activeKitchenDoorColor.candidateSource === "render-hex"
+    ? activeKitchenDoorColor.candidateHex
+    : null;
   // Small finish swatch shown on each palette tile so the chosen finish is
   // visible while browsing cabinets. Empty until a door style is selected.
   const paletteFinishSwatch = useMemo<string | null>(
-    () => preferredDoorReferenceUrl(activeStyle as { approvedReferenceImageUrl?: string | null; doorSampleImageUrl?: string | null; thumbnailImageUrl?: string | null } | null),
+    // The accepted run's approved render, then the style's own sample photo. The
+    // approved image only counts when a run was actually accepted, so a stale
+    // reference cannot outrank a real sample.
+    () => kitchenAcceptedFaceImage(activeStyle as never)
+      ?? preferredDoorReferenceUrl(activeStyle as { approvedReferenceImageUrl?: string | null; doorSampleImageUrl?: string | null; thumbnailImageUrl?: string | null } | null),
     [activeStyle]
   );
   const activeStyleDistributorName = useMemo(() => {
@@ -9942,6 +10000,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   }, [autoDesignAvailable]);
   const keepAutoDesignSinkDefault = useCallback(() => {
     setAutoDesignSinkPrompt(null);
+    // Keeping the neutral basin still needs a faucet behind it.
+    setAutoDesignFaucetPrompt((current) => current ?? autoDesignFaucetQueueAfterSinkRef.current);
+    autoDesignFaucetQueueAfterSinkRef.current = null;
   }, []);
   /**
    * Auto-place the picked sink. There is no manual placement step, including for
@@ -10040,9 +10101,15 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     };
     setSelectedSurfaces((previous) => previous.some((entry) => entry.id === surface.id) ? previous : [...previous, surface]);
     setAutoDesignSinkPrompt(null);
-    // The faucet still has to sit on the countertop behind this basin.
-    if (!sinks.some((sink) => sink.faucet)) {
-      setAutoDesignFaucetPrompt((current) => current);
+    // The faucet step follows the sink, on the basin this placed: the pop-up for
+    // the sink that now carries the auto faucet.
+    const placedSink = sinks.find((sink) => sink.uid === autoDesignFaucetQueueAfterSinkRef.current?.sinkUid)
+      ?? null;
+    if (autoDesignFaucetQueueAfterSinkRef.current) {
+      setAutoDesignFaucetPrompt(autoDesignFaucetQueueAfterSinkRef.current);
+      autoDesignFaucetQueueAfterSinkRef.current = null;
+    } else if (placedSink?.autoDesignFaucet) {
+      setAutoDesignFaucetPrompt({ sinkUid: placedSink.uid, queue: [] });
     }
   }, [autoDesignSinkPrompt, autoDesignWallIds, liveMasterCabinets, openings, room, sinks, styleId]);
   // Tall oven / pantry boxes the selected line sells, for the tall-cabinet
@@ -14692,6 +14759,58 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     () => Object.fromEntries(placed.map((cabinet) => [cabinet.uid, finishForCab(cabinet).face])),
     [placed, finishForCab],
   );
+
+  /**
+   * Admin color debugging. The recorder captures the resolver's decision and the
+   * final surface hex for every placed cabinet that uses the active style, then the
+   * panel and the console show it. Nothing is written and nothing renders unless
+   * `?colorTrace=1` is in the URL.
+   */
+  const [colorTrace, setColorTrace] = useState<ColorTrace | null>(null);
+  const [colorTraceOpen, setColorTraceOpen] = useState(true);
+  useEffect(() => {
+    if (!colorTraceOn) {
+      setColorTrace(null);
+      return;
+    }
+    const recorder = createColorTraceRecorder();
+    const traced = new Map<string, { cabinetUid: string; masterCode: string; styleId: number | null; styleCode: string | null }>();
+    for (const cabinet of placed) {
+      const cabinetStyle = cabinet.styleId != null
+        ? (doorStyles ?? []).find((style) => style.id === cabinet.styleId) ?? activeStyle
+        : activeStyle;
+      const identity = {
+        cabinetUid: cabinet.uid,
+        masterCode: cabinet.masterCode,
+        styleId: cabinet.styleId ?? styleId ?? null,
+        styleCode: (cabinetStyle as { styleCode?: string | null } | null)?.styleCode ?? null,
+      };
+      traced.set(cabinet.uid, identity);
+      const decision = cabinetStyle
+        ? resolveKitchenDoorColor(cabinetStyle as never)
+        : activeKitchenDoorColor;
+      recorder.recordResolver(identity, decision);
+      const override = threeDCabinetFinishOverrides?.[cabinet.uid];
+      if (override) {
+        recorder.override(identity, {
+          key: "override.savedDesign",
+          detail: `saved design cabinetFinish ${override} overrides the style color ${decision.appliedHex}`,
+          hex: override,
+          source: "saved-design",
+        });
+      }
+      // Every surface is drawn from the one resolved color unless an override
+      // replaced it, so recording both is what exposes a real disagreement.
+      const applied = override ?? decision.appliedHex;
+      for (const surface of ["front", "box", "sides", "skin", "toeKick"] as const) {
+        recorder.surface(identity, surface, applied);
+      }
+    }
+    const finished = recorder.finish();
+    setColorTrace(finished);
+    logColorTrace(finished);
+  }, [activeKitchenDoorColor, activeStyle, colorTraceOn, doorStyles, placed, styleId, threeDCabinetFinishOverrides]);
+  const colorTracePanelState = colorTraceOn && colorTrace && colorTraceOpen ? colorTrace : null;
 
   const threeDCabinetFinishPreviewOptions = useMemo(() => {
     const ids = Array.from(new Set([
@@ -20859,6 +20978,17 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	          onChoose={chooseAutoDesignFaucet}
 	        />
 	      )}
+	      {autoDesignAvailable && autoDesignCornerStage && (
+	        <AutoDesignCornerDialog
+	          open
+	          slots={autoDesignCornerStage.slots}
+	          options={autoDesignCornerStage.cornerOptions}
+	          wallOptions={cornerCatalogForLayer(autoDesignCornerStage.wallPool, "wall") as never}
+	          fitBySlot={autoDesignCornerStage.cornerFit}
+	          onCancel={cancelAutoDesignCornerStage}
+	          onConfirm={completeAutoDesignLayout}
+	        />
+	      )}
 	      {autoDesignAvailable && (
 	        <AutoDesignSinkDialog
 	          open={autoDesignSinkPrompt != null}
@@ -23048,6 +23178,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                onClearTemporaryPreview={smartGapPreview.length > 0 ? () => { smartGapPreviewSessionRef.current = null; setSmartGapPreviewPosition(null); setSmartGapPreview([]); } : undefined}
 	                temporaryPreviewTransitionKey={smartGapPreview[0]?.uid ?? null}
 	                fillerInsertionTransition={fillerInsertionTransition}
+	                colorTrace={colorTracePanelState}
 	              />
             ) : (
               <div className="flex h-[360px] items-center justify-center rounded-xl border border-dashed px-6 text-center text-sm text-muted-foreground">Choose an active door style and add a cabinet, or choose a starter room layout, to load the 3D preview.</div>

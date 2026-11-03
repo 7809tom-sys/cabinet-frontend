@@ -242,7 +242,52 @@ export function overRangeCompanionPlacements(
   return [bridge, microwave];
 }
 
+/**
+ * Owner rule (kitchen rules: "Bridge cabinets over the range", owner-bridge-cabinets):
+ * above the range the auto-designer places an OVER-THE-RANGE MICROWAVE with a BRIDGE
+ * cabinet above it. Nothing else goes there by default. The bridge is a short solid
+ * wall cabinet whose height comes from the upper line so its top lands on the same
+ * run line (bridgeHeightForWallHeight: 30" uppers -> 12" bridge, 42" -> 24"), and
+ * whose width matches the range.
+ *
+ * This is the default answer, so the old behavior — a full-height 30" wall cabinet
+ * sitting over the range — no longer happens.
+ */
+export const DEFAULT_OVER_RANGE_ANSWER = "microwave-bridge" as const;
+
 /** True when the answer asks the build to place a microwave and bridge itself. */
 export function answerWantsMicrowaveBridge(answer: OverRangeAnswer): boolean {
-  return answer === "microwave-bridge";
+  return (answer ?? DEFAULT_OVER_RANGE_ANSWER) === "microwave-bridge";
+}
+
+/**
+ * For WIDTH and FIT purposes a bridge + over-the-range microwave stack above a
+ * range behaves exactly like a plain wall cabinet of the same width: the bridge is
+ * the same 30" span a W30xx occupies, and the microwave sits inside that span
+ * below it. So a 30" range that accepts a 30" wall cabinet must accept a 30"
+ * microwave + 30" bridge in the same place. Only the heights differ: the stack's
+ * top is the upper run's top line.
+ *
+ * A fit check must therefore never reject the stack on width or span. This helper
+ * is the one place that decides it, so the build and the review both use it.
+ */
+export function bridgeStackFitsLikeWallCabinet(input: {
+  /** Free span above the range along the wall. */
+  availableSpanIn: number;
+  /** Width of the wall cabinet the same spot would take. */
+  wallCabinetWidthIn: number;
+  bridgeWidthIn: number;
+  microwaveWidthIn: number;
+}): { fits: boolean; requiredSpanIn: number; reason: string | null } {
+  const requiredSpanIn = Math.max(input.bridgeWidthIn, input.microwaveWidthIn, 0);
+  // The stack never requires more room than the wall cabinet it replaces.
+  const comparedSpanIn = Math.min(requiredSpanIn, input.wallCabinetWidthIn);
+  const fits = input.availableSpanIn + 0.01 >= comparedSpanIn;
+  return {
+    fits,
+    requiredSpanIn: comparedSpanIn,
+    reason: fits
+      ? null
+      : `A ${comparedSpanIn}″ cabinet goes here, and this space is ${Math.max(0, Math.round(input.availableSpanIn * 8) / 8)}″ wide.`,
+  };
 }

@@ -48,6 +48,8 @@ import { farmhouseSinkBaseFaceLayout } from "@/lib/farmhouseSinkBaseFace";
 import { angledWallTransitionFootprint } from "@/lib/angledWallFiller";
 import { miteredWallOutlinesFromInteriorFaces, ROOM_WALL_THICKNESS_IN, wallAngle as polygonWallAngle } from "@/lib/polygonRoom";
 import { deckFaucetWindowWarning, resolveDeckFaucetPlacement, type DeckFaucetPlacement } from "@/lib/faucetPlacement";
+import { ColorTracePanel } from "./ColorTracePanel";
+import { colorTraceToText } from "@/lib/colorTrace";
 import { cabinetDrawingType, isEqualHeightTwoDrawerBase as isEqualHeightTwoDrawerBaseFamily, isWallBlindCornerCabinet, resolveDoorDrawerCounts, resolvedVanityComboFaceLayout, standardDoorCountForFaceWidth, threeDrawerBaseRowHeights, twoDrawerBaseSideBySideRows } from "@/lib/cabinetGraphics";
 import { standardBaseFaceReference } from "@/lib/genericCabinetDrawerReference";
 import { verifiedPelicanBathroomFixtureProfile, type VerifiedPelicanBathroomFixtureProfile } from "@/lib/pelicanBathroomFixtureProfiles";
@@ -1086,6 +1088,11 @@ interface Props {
   temporaryPreviewTransitionKey?: string | null;
   /** One-shot visual cue for catalog fillers safely inserted into a measured seam. */
   fillerInsertionTransition?: { uids: string[]; key: number } | null;
+  /**
+   * Admin color debug (`?colorTrace=1`): the recorded pipeline for this scene.
+   * Drawn as a small read-only panel beside the view. Null keeps it off entirely.
+   */
+  colorTrace?: import("@/lib/colorTrace").ColorTrace | null;
   /** Renders directly inside the main designer canvas rather than a standalone preview shell. */
   embedded?: boolean;
   /** Hides each room wall, and everything mounted on it, while the camera is outside that wall. */
@@ -5423,6 +5430,7 @@ export function addCabinet(
   let plainStructuralColor = structuralFinish.color;
   let structuralSampleTexture: THREE.Texture | null = null;
   const exposedSidesMatchDoorFace = doorProfile?.exposedSidesMatchDoorFace === true && Boolean(doorTexture) && !dlcDoorFinish;
+  void exposedSidesMatchDoorFace;
   // DLC styles: sides, end panels, skins and carcass carry the door's grain (a frame-free patch, tiled
   // mirrored so seams do not show) in the door's colour. Never the door photo with its frame lines.
   let dlcGrainTexture: THREE.Texture | null = null;
@@ -5446,7 +5454,13 @@ export function addCabinet(
     applyDlcGrain();
   };
   const applyStructuralFinishBase = (finishColor: string, _sampleTexture: THREE.Texture | null = null) => {
-    if (exposedSidesMatchDoorFace && doorTexture) {
+    // ONE color source for every visible surface of a cabinet: the selected door
+    // color. When the door has an image (a sample photo or the approved accepted
+    // render), the box, sides, panels and toe kick use that same image and tint as
+    // the fronts, so a cabinet can never show two shades. The old code sampled the
+    // door photo's panel color for the sides while the front used the resolved
+    // color, which is exactly the "same cabinet, two yellows" report.
+    if (doorTexture) {
       const applied = applyThreeDDoorFaceStructuralFinish(
         [...structuralFinishMaterials, ...flatExposedFinishMaterials],
         doorTexture,
@@ -5459,12 +5473,10 @@ export function addCabinet(
       structuralSampleTexture = applied.texture;
       return;
     }
-    // Catalog hexes (and the old cream placeholder) are not the door. The
-    // uploaded photo's panel color is, for every finish. DLC already passed
-    // its crop color in as `color`. USCD photo sides returned above.
+    // No door image: every structural surface takes the resolved color itself.
     const sideColor = exposedSideSolidHex({
       catalogHex: finishColor,
-      doorPanelHex: typeof doorTexture?.userData?.doorPanelHex === "string" ? doorTexture.userData.doorPanelHex : null,
+      doorPanelHex: null,
       useDoorPhotoOnSides: false,
       dlcSolidHex: dlcDoorFinish,
     }) ?? finishColor;
@@ -9279,6 +9291,29 @@ function sinkInteriorStencilMaterial<T extends THREE.Material>(material: T, sten
   return material;
 }
 
+/**
+ * How far the apron slab sits from the sink's plan center, measured on the axis
+ * that runs into the room.
+ *
+ * A farmhouse sink's apron is its FRONT face: the same face that looks into the
+ * room as the cabinet doors below it. The wall-normal axis on the plan is depth
+ * for a top/bottom wall and width for a left/right wall, and the apron's own
+ * thickness lies on that axis. Using the lateral span here (the old code) pushed
+ * the slab out by half the sink's width, which is the "apron stands 6 inches
+ * proud" bug.
+ */
+export function farmhouseApronEdgeInsetIn(input: {
+  planWidthIn: number;
+  planDepthIn: number;
+  apronThicknessIn: number;
+  side: string;
+}): number {
+  const lateralSpanIn = input.side === "left" || input.side === "right" ? input.planWidthIn : input.planDepthIn;
+  return Math.max(0, lateralSpanIn / 2 - input.apronThicknessIn / 2);
+}
+
+const apronEdgeInset = farmhouseApronEdgeInsetIn;
+
 export function addSinkFixture(root: THREE.Group, sink: SinkFixture, faucetPlacement?: DeckFaucetPlacement) {
   const width = sink.width * INCH;
   const depth = sink.depth * INCH;
@@ -9512,7 +9547,12 @@ export function addSinkFixture(root: THREE.Group, sink: SinkFixture, faucetPlace
       ),
       apronMaterial,
     );
-    const edgeInset = Math.max(0, (side === "left" || side === "right" ? depth : width) / 2 - apronThickness / 2);
+    const edgeInset = apronEdgeInset({
+      planWidthIn: width / INCH,
+      planDepthIn: depth / INCH,
+      apronThicknessIn: apronThickness / INCH,
+      side,
+    }) * INCH;
     // A sink against the top/left wall faces into the room (positive Z/X); a
     // sink against the bottom/right wall faces in the negative direction.
     const direction = side === "bottom" ? -1 : side === "left" || side === "right" ? 0 : 1;
@@ -11687,7 +11727,7 @@ function ThreeDFloorMaterialControl({
   return <FlooringRotationControl value={rotation} onChange={onRotationChange} testId={testId} />;
 }
 
-export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick = false, roomOverride, openings = [], sinks = [], potFillers = [], island = null, islandFocusRequest = null, furniture = [], selectedFurnitureUid = null, onSelectFurniture, onRemoveFurniture, onRotateFurniture, onOpenFurnitureAttributes, ponyWalls = [], orderSummary, orderLines = [], initialPresentation, catalogFinishOverride, renderExposure = null, colorDeltaEMax = null, doorRenderHex = null, cabinetFinishPreviewOptions = [], doorStyleChoices = [], selectedDoorStyleId = null, onDoorStyleChange, cabinetFinishOverrides, cabinetDoorProfiles, cabinetDoorSampleUrls, cabinetDrawerSampleUrls, cabinetFaceSourceKinds, cabinetFaceCrops, catalogFaceCrop, cabinetFrontVisuals, catalogDoorSampleUrl, catalogDrawerSampleUrl, catalogFaceSourceKind, catalogRoomSceneUrl, catalogDoorProfile, windowSceneKind = DEFAULT_WINDOW_SCENE_KIND, windowFrameStyle = "white", hardwareStyleId = "none", hardwareAccent, catalogFinishName, catalogFinishProductId, catalogIslandCabinetName, catalogIslandCabinetColor, catalogIslandCabinetProductId, catalogIslandDoorSampleUrl, catalogCountertopName, catalogCountertopProductId, catalogCountertopReferenceUrl, catalogIslandCountertopName, catalogIslandCountertopProductId, catalogIslandCountertopReferenceUrl, catalogFlooringName, catalogFlooringProductId, catalogFlooringReferenceUrl, catalogFlooringCategory, catalogFlooringSubCategory, catalogFlooringSize, catalogBacksplashName, catalogBacksplashProductId, catalogBacksplashReferenceUrl, catalogHardwareReferenceUrl, catalogHardwareName, savedDesignId, savedDesignRevision, canAffiliateGeminiImageTest = false, isCurrentPlanSaved = false, savedPlanFingerprintPayload = null, backsplashHeightMode = "standard", countertopBacksplashHeightIn = 0, catalogCountertopColor, catalogIslandCountertopColor, catalogCountertopImageUrl, catalogIslandCountertopImageUrl, catalogFlooringImageUrl, catalogFlooringCardImageUrl = null, flooringRotationDeg = 0, onFlooringRotationChange, mosaicFloorPattern = null, onMosaicFloorPatternChange, catalogBacksplashImageUrl, catalogBacksplashCardImageUrl = null, catalogBacksplashMaterialImageUrl = null, catalogFlooringMaterialImageUrl = null, catalogBacksplashSize = null, catalogBacksplashCategory = null, catalogBacksplashSubCategory = null, shareContext, catalogItems = [], catalogDragItem = null, catalogDropWall, onAddCatalogItem, onAddRangeHood, onSaveToAccount, onSyncCart, onPresentationChange, onRoomWallHeightChange, onRoomWallHeightsChange, onMoveCabinet, onMoveCabinetTo, selectedCabinetUid, attributesTargetUid = null, missingPriceUids, onSelectCabinet, onOpenCabinetEditor, onSelectOpening, onOpenWindowEditor, onOpenDoorEditor, onRequestFiller, onSnapGlassCabinetToFront, onRotateCabinet, onRemoveCabinet, showWallLayer, onToggleWallLayer, temporaryPreviewMessage, onClearTemporaryPreview, temporaryPreviewCounter, temporaryPreviewTransitionKey, fillerInsertionTransition, cabinetConfigHref, embedded = false, cutawayRoomWalls = true, hybridPlanUnderlay = false, className, onGeometryRendered }: Props) {
+export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick = false, roomOverride, openings = [], sinks = [], potFillers = [], island = null, islandFocusRequest = null, furniture = [], selectedFurnitureUid = null, onSelectFurniture, onRemoveFurniture, onRotateFurniture, onOpenFurnitureAttributes, ponyWalls = [], orderSummary, orderLines = [], initialPresentation, catalogFinishOverride, renderExposure = null, colorDeltaEMax = null, doorRenderHex = null, cabinetFinishPreviewOptions = [], doorStyleChoices = [], selectedDoorStyleId = null, onDoorStyleChange, cabinetFinishOverrides, cabinetDoorProfiles, cabinetDoorSampleUrls, cabinetDrawerSampleUrls, cabinetFaceSourceKinds, cabinetFaceCrops, catalogFaceCrop, cabinetFrontVisuals, catalogDoorSampleUrl, catalogDrawerSampleUrl, catalogFaceSourceKind, catalogRoomSceneUrl, catalogDoorProfile, windowSceneKind = DEFAULT_WINDOW_SCENE_KIND, windowFrameStyle = "white", hardwareStyleId = "none", hardwareAccent, catalogFinishName, catalogFinishProductId, catalogIslandCabinetName, catalogIslandCabinetColor, catalogIslandCabinetProductId, catalogIslandDoorSampleUrl, catalogCountertopName, catalogCountertopProductId, catalogCountertopReferenceUrl, catalogIslandCountertopName, catalogIslandCountertopProductId, catalogIslandCountertopReferenceUrl, catalogFlooringName, catalogFlooringProductId, catalogFlooringReferenceUrl, catalogFlooringCategory, catalogFlooringSubCategory, catalogFlooringSize, catalogBacksplashName, catalogBacksplashProductId, catalogBacksplashReferenceUrl, catalogHardwareReferenceUrl, catalogHardwareName, savedDesignId, savedDesignRevision, canAffiliateGeminiImageTest = false, isCurrentPlanSaved = false, savedPlanFingerprintPayload = null, backsplashHeightMode = "standard", countertopBacksplashHeightIn = 0, catalogCountertopColor, catalogIslandCountertopColor, catalogCountertopImageUrl, catalogIslandCountertopImageUrl, catalogFlooringImageUrl, catalogFlooringCardImageUrl = null, flooringRotationDeg = 0, onFlooringRotationChange, mosaicFloorPattern = null, onMosaicFloorPatternChange, catalogBacksplashImageUrl, catalogBacksplashCardImageUrl = null, catalogBacksplashMaterialImageUrl = null, catalogFlooringMaterialImageUrl = null, catalogBacksplashSize = null, catalogBacksplashCategory = null, catalogBacksplashSubCategory = null, shareContext, catalogItems = [], catalogDragItem = null, catalogDropWall, onAddCatalogItem, onAddRangeHood, onSaveToAccount, onSyncCart, onPresentationChange, onRoomWallHeightChange, onRoomWallHeightsChange, onMoveCabinet, onMoveCabinetTo, selectedCabinetUid, attributesTargetUid = null, missingPriceUids, onSelectCabinet, onOpenCabinetEditor, onSelectOpening, onOpenWindowEditor, onOpenDoorEditor, onRequestFiller, onSnapGlassCabinetToFront, onRotateCabinet, onRemoveCabinet, showWallLayer, onToggleWallLayer, temporaryPreviewMessage, onClearTemporaryPreview, temporaryPreviewCounter, temporaryPreviewTransitionKey, fillerInsertionTransition, colorTrace = null, cabinetConfigHref, embedded = false, cutawayRoomWalls = true, hybridPlanUnderlay = false, className, onGeometryRendered }: Props) {
   const previewRootRef = useRef<HTMLElement>(null);
   const mountRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -14315,10 +14355,21 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
     openings,
   );
 
+  const [colorTraceDismissed, setColorTraceDismissed] = useState(false);
   return (
     <section ref={previewRootRef} onDragOver={(event) => event.preventDefault()} className={`relative ${embedded ? "flex h-full min-h-0 flex-col" : ""} ${isFullscreen ? "h-screen w-screen overflow-y-auto bg-background p-3 sm:p-5" : ""} ${className ?? ""}`} aria-label="Interactive three-dimensional room preview">
 	  {backsplashTextureWarning && <div role="alert" data-testid="backsplash-texture-warning" className="absolute left-1/2 top-3 z-40 max-w-[min(36rem,calc(100%-1.5rem))] -translate-x-1/2 rounded-lg border border-amber-600 bg-amber-50 px-3 py-2 text-center text-xs font-semibold text-amber-950 shadow-lg">{backsplashTextureWarning}</div>}
 	  {temporaryPreviewMessage && <div data-testid="three-d-temporary-preview" className="absolute left-3 top-3 z-30 flex max-w-[calc(100%-1.5rem)] items-center gap-2 rounded-lg border border-amber-300 bg-amber-50/95 px-3 py-2 text-xs font-semibold text-amber-900 shadow-sm backdrop-blur"><span>{temporaryPreviewMessage}</span>{temporaryPreviewCounterText && <span data-testid="three-d-temporary-preview-counter" className="shrink-0 rounded-full border border-amber-400 bg-white px-2 py-1 text-[11px] font-bold text-amber-900">{temporaryPreviewCounterText}</span>}{onClearTemporaryPreview && <button type="button" onClick={onClearTemporaryPreview} className="rounded border border-amber-400 bg-white px-2 py-1 text-[11px] font-bold text-amber-900 active:scale-95">Clear preview</button>}</div>}
+      {/* Admin color debug (`?colorTrace=1`). Read-only, and only when a trace was
+          recorded: it shows the accepted run, the winning layer, any override, and
+          the hex every surface ended up with. */}
+      {colorTrace && !colorTraceDismissed && (
+        <ColorTracePanel
+          trace={colorTrace}
+          onClose={() => setColorTraceDismissed(true)}
+          onCopy={() => { void navigator.clipboard?.writeText(colorTraceToText(colorTrace)); }}
+        />
+      )}
       {!embedded && <div className="sticky top-0 z-30 mb-2 flex items-center justify-between gap-3 border-b bg-background/95 py-2 backdrop-blur">
         <div className="min-w-0"><p className="text-sm font-semibold">3D Designer</p><p className="truncate text-[11px] text-muted-foreground">{renderExistingDesign ? `${placed.length} cabinets · synchronized with your plan` : "Start placing catalog cabinets"}</p></div>
         <div className="flex shrink-0 gap-1"><Button type="button" size="sm" variant="ghost" className="h-8 px-2 text-xs" onClick={toggleFullscreen}>{isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}</Button><Button type="button" size="sm" variant="ghost" className="h-8 px-2 text-xs" onClick={() => setResetKey((current) => current + 1)}><Camera className="h-4 w-4" /></Button></div>
