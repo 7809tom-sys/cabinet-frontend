@@ -319,6 +319,58 @@ function tallPlacement(
   } as PlacedCabinet;
 }
 
+/** One appliance the auto-designer can seat at a measured center. */
+export type AutoDesignApplianceChoice = {
+  /** The appliance palette's master code; the build matches the row by it. */
+  masterCode: string;
+  /** Palette key, stable per visual even when two rows share a master code. */
+  key: string;
+  label: string;
+  widthIn: number;
+  imageUrl?: string | null;
+  kind: "range" | "refrigerator" | "dishwasher";
+};
+
+/**
+ * The range choices the auto-designer offers in a pop-up.
+ *
+ * `RANGE-30` is the synthetic appliance code the measured build already searches
+ * for, so every 30" range visual shares it; the palette key keeps the finishes
+ * apart. A 36" and a 42" range carry their own codes because the build seats the
+ * measured anchor at the code's width.
+ */
+export function autoDesignRangeChoices(palette: readonly DesignCabinet[]): AutoDesignApplianceChoice[] {
+  const seen = new Set<string>();
+  const choices: AutoDesignApplianceChoice[] = [];
+  for (const row of palette) {
+    const code = (row.masterCode ?? "").toUpperCase();
+    if (row.placement !== "appliance") continue;
+    // A range proper: the RANGE code the build searches for. Hoods, microwaves,
+    // and refrigerators also say "range" in their copy and must stay out.
+    if (!/^RANGE-?\d/.test(code)) continue;
+    if (/hood|microwave|fridge|refrigerator|dishwasher/i.test(`${code} ${row.description ?? ""}`)) continue;
+    const width = Number(row.width);
+    if (!Number.isFinite(width) || width <= 0) continue;
+    const key = `${code}|${row.description ?? ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    choices.push({
+      masterCode: row.masterCode,
+      key,
+      label: row.description ?? row.masterCode,
+      widthIn: width,
+      imageUrl: row.catalogImageUrl ?? null,
+      kind: "range",
+    });
+  }
+  return choices.sort((left, right) => left.widthIn - right.widthIn || left.label.localeCompare(right.label));
+}
+
+/** The range the build seats when nothing was picked: the classic 30-inch row. */
+export function defaultAutoDesignRange(choices: readonly AutoDesignApplianceChoice[]): AutoDesignApplianceChoice | null {
+  return choices.find((choice) => choice.masterCode === "RANGE-30") ?? choices[0] ?? null;
+}
+
 /** Walls the auto-designer owns, in run order: every perimeter wall, never a peninsula. */
 export function autoDesignKitchenWallIds(room: RoomData): string[] {
   return roomWallRunFrames(room).filter((frame) => frame.kind !== "peninsula").map((frame) => frame.id);

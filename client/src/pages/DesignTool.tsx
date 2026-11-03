@@ -239,7 +239,7 @@ import { dropDuplicateAutoWindows, moveWindowsWithWallTops } from "@/lib/windowO
 import { useTransientNotice } from "@/components/design/useTransientNotice";
 import { autoDesignSinkWindow, windowOverlapsReservation } from "@/lib/autoDesignSinkWindow";
 import { catalogSinkInstallation, isAutoDesignSinkProduct, planAutoDesignSinkPlacement, sinkBasePairing, type AutoDesignSinkProduct } from "@/lib/autoDesignSink";
-import { autoDesignTallProducts, autoDesignKitchenWallIds, type AutoDesignTallProduct } from "@/lib/autoDesignTallCabinets";
+import { autoDesignTallProducts, autoDesignKitchenWallIds, defaultAutoDesignRange, autoDesignRangeChoices, type AutoDesignApplianceChoice, type AutoDesignTallProduct } from "@/lib/autoDesignTallCabinets";
 import { autoDesignRangeHood, autoDesignRangeNeedsVentilation } from "@/lib/autoDesignRangeHood";
 import { mergeAutoDesignRefrigeratorCaps, runAutoDesignLayout } from "@/lib/autoDesignLayout";
 import { designerFillerDeletionSet, isDesignerPlacedFiller, moveDesignerFiller } from "@/lib/designerFillerActions";
@@ -303,6 +303,7 @@ import { AutoDesignDialog, type AutoDesignSubmitResult } from "@/components/desi
 import { AutoDesignFaucetDialog } from "@/components/design/AutoDesignFaucetDialog";
 import { AutoDesignSinkDialog } from "@/components/design/AutoDesignSinkDialog";
 import { AutoDesignTallDialog } from "@/components/design/AutoDesignTallDialog";
+import { AutoDesignRangeDialog } from "@/components/design/AutoDesignRangeDialog";
 import { findClosestPlanCabinet } from "@/lib/planImportMapper";
 import { EmailGate, type LeadContact } from "@/components/design/EmailGate";
 import { OptionalContactNudge } from "@/components/design/OptionalContactNudge";
@@ -1208,6 +1209,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
    */
   const [autoDesignTallOpen, setAutoDesignTallOpen] = useState(false);
   const [autoDesignTallPicks, setAutoDesignTallPicks] = useState<AutoDesignTallProduct[]>([]);
+  /**
+   * Range pop-up. The measured build already seats a range at the measured
+   * center; without a pick it silently used the first RANGE-30 row, so the
+   * appliance finish was never a choice. A pick sets the range Auto-Design seats
+   * and the auto-placed corner boxes then follow that real width.
+   */
+  const [autoDesignRangeOpen, setAutoDesignRangeOpen] = useState(false);
+  const [autoDesignRangePick, setAutoDesignRangePick] = useState<AutoDesignApplianceChoice | null>(null);
   const queueAutoDesignFaucetPrompt = useCallback((sinkUid: string) => {
     setAutoDesignFaucetPrompt((current) => {
       if (!current) return { sinkUid, queue: [] };
@@ -3965,6 +3974,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       refrigeratorCaps: mergeAutoDesignRefrigeratorCaps(wallPool, fridgeParts?.deepAbove ?? []),
       refrigeratorEndPanels: fridgeParts?.endPanels ?? [],
       tallCatalog,
+      stoveMasterCode: autoDesignRangePick?.masterCode ?? undefined,
       styleId: styleIdRef.current ?? null,
       makeUid,
     });
@@ -10047,7 +10057,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       byId.set(row.id, row);
     }
     return autoDesignTallProducts(Array.from(byId.values()));
-  }, [liveMasterCabinets, tallCabPool]);  const { data: potFillerProducts } = trpc.surfaces.recommended.useQuery(
+  }, [liveMasterCabinets, tallCabPool]);
+  const autoDesignRangeChoicesList = useMemo(() => autoDesignRangeChoices(appliancePalette), [appliancePalette]);
+  const autoDesignRangeSelection = autoDesignRangePick ?? defaultAutoDesignRange(autoDesignRangeChoicesList);  const { data: potFillerProducts } = trpc.surfaces.recommended.useQuery(
     { role: "pot-filler", limit: 8 },
     { enabled: !!potFillerDialog },
   );
@@ -20827,6 +20839,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	          room={room}
 	          onOpenSinkPicker={() => openAutoDesignSinkPicker("replace")}
 	          selectedSinkName={autoDesignSinkPicks[0]?.name ?? null}
+	          onOpenRangePicker={() => setAutoDesignRangeOpen(true)}
+	          selectedRangeLabel={autoDesignRangePick ? `${autoDesignRangePick.label} (${autoDesignRangePick.widthIn}″)` : null}
 	          onOpenTallPicker={() => setAutoDesignTallOpen(true)}
 	          selectedTallSummary={autoDesignTallPicks.length > 0
 	            ? `${autoDesignTallPicks.map((product) => product.masterCode).join(", ")} — placed automatically in a free span.`
@@ -20866,6 +20880,18 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	          onAdd={(product) => setAutoDesignTallPicks((current) => current.some((entry) => entry.id === product.id) ? current : [...current, product])}
 	          onRemove={(productId) => setAutoDesignTallPicks((current) => current.filter((entry) => entry.id !== productId))}
 	          onDone={() => setAutoDesignTallOpen(false)}
+	        />
+	      )}
+	      {autoDesignAvailable && (
+	        <AutoDesignRangeDialog
+	          open={autoDesignRangeOpen}
+	          choices={autoDesignRangeChoicesList}
+	          selected={autoDesignRangeSelection}
+	          onKeepDefault={() => setAutoDesignRangeOpen(false)}
+	          onChoose={(choice) => {
+	            setAutoDesignRangePick(choice);
+	            setAutoDesignRangeOpen(false);
+	          }}
 	        />
 	      )}
       <SurfacesPickerDialog

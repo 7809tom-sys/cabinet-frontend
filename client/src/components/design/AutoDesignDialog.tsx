@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Boxes, Droplets } from "lucide-react";
+import { Boxes, Droplets, Flame } from "lucide-react";
 import { autoDesignWallWidthRows } from "@/lib/autoDesignAutoBuild";
 import { autoDesignSelectableWallLabels } from "@/lib/autoDesignCornerStage";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -49,6 +49,9 @@ type Props = {
    */
   onOpenTallPicker?: () => void;
   selectedTallSummary?: string | null;
+  /** Opens the range pop-up. The pick is auto-placed at the measured range center. */
+  onOpenRangePicker?: () => void;
+  selectedRangeLabel?: string | null;
 };
 type PointField = "sink" | "stove" | "dishwasher" | "refrigerator";
 type SinkBaseWidth = 30 | 33 | 36 | 42;
@@ -75,7 +78,7 @@ const omissionLabels: Record<(typeof applianceFields)[number], string> = {
 };
 type FieldValue = { wallLabel: WallLabel; centerOffsetIn: string };
 
-export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading = false, wallCount = 4, room, onWallGuideChange, onLoadSixWallTrainingRoom, dishwasherSide: dishwasherSidePreference = null, onDishwasherSideChange, onOpenSinkPicker, selectedSinkName = null, onOpenTallPicker, selectedTallSummary = null }: Props) {
+export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading = false, wallCount = 4, room, onWallGuideChange, onLoadSixWallTrainingRoom, dishwasherSide: dishwasherSidePreference = null, onDishwasherSideChange, onOpenSinkPicker, selectedSinkName = null, onOpenTallPicker, selectedTallSummary = null, onOpenRangePicker, selectedRangeLabel = null }: Props) {
   const [layoutType, setLayoutType] = useState<AutoDesignLayoutType>("single-wall");
   const [originCorner, setOriginCorner] = useState<AutoDesignOriginCorner>("left");
   const [runDirection, setRunDirection] = useState<AutoDesignRunDirection>("right");
@@ -317,6 +320,27 @@ export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading =
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">A regular sink base is used unless you choose farmhouse here.</p>
+            </div>
+            <div className="space-y-1.5 sm:col-span-2" data-testid="auto-design-range-option">
+              <Label>Range</Label>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  data-testid="auto-design-open-range-picker"
+                  onClick={onOpenRangePicker}
+                  disabled={!onOpenRangePicker}
+                >
+                  <Flame className="mr-1.5 h-3.5 w-3.5" /> Choose a range
+                </Button>
+                <span className="min-w-0 text-xs text-muted-foreground" data-testid="auto-design-range-selection">
+                  {selectedRangeLabel ?? "No range picked — the build seats the standard 30″ range."}
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Opens the range pop-up. The pick is placed automatically at the range center above, and the corner cabinets on that wall are planned around its real width.
+              </p>
             </div>
             <div className="space-y-1.5 sm:col-span-2" data-testid="auto-design-sink-option">
               <Label>Sink</Label>

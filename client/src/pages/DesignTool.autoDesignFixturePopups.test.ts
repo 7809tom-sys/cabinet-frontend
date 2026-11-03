@@ -35,4 +35,10 @@ describe("auto-designer fixture pop-ups", () => {
     expect(source).toContain("planAutoDesignSinkPlacement({");
     expect(source).toContain('"swap-base"');
   });
+
+  it("opens the range pop-up and seats that exact range code", () => {
+    expect(source).toContain("<AutoDesignRangeDialog");
+    expect(source).toContain("onOpenRangePicker={() => setAutoDesignRangeOpen(true)}");
+    expect(source).toContain("stoveMasterCode: autoDesignRangePick?.masterCode ?? undefined");
+  });
 });
