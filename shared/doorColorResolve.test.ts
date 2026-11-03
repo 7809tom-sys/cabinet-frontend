@@ -31,7 +31,9 @@ describe("door color precedence", () => {
     expect(hueFamily(named.appliedHex)).toBe("neutral");
     const stored = resolveDoorColor({ ourName: "Stored Hex", color: "#555553", doorStyle: "Shaker" });
     expect(stored.appliedHex).toBe("#555553");
-    expect(stored.appliedSource).toBe("pre-209");
+    // A color an admin actually saved on the style outranks the hardcoded swatch
+    // and WalzCraft tables. Those exist only for a style with nothing saved.
+    expect(stored.appliedSource).toBe("catalog-color");
   });
 
   it("lets a hand-set render hex win, and a style switch changes the color", () => {
@@ -62,16 +64,23 @@ describe("door color precedence", () => {
     expect(decision.appliedHex).not.toBe("#244338");
   });
 
-  it("falls back to the pre-209 catalog hex when higher layers are silent", () => {
+  it("uses the saved catalog color ahead of the hardcoded tables", () => {
     const decision = resolveDoorColor({
       id: 999002,
       ourName: "No Sheet",
       color: "#336699",
       doorStyle: "Shaker",
     });
-    expect(decision.candidateSource).toBe("pre-209");
+    expect(decision.candidateSource).toBe("catalog-color");
     expect(decision.appliedHex).toBe("#336699");
     expect(decision.appliedHex).not.toBe(brandDoorSurfaceHex("#336699"));
+  });
+
+  it("falls back to the pre-209 estimate only when nothing at all is saved", () => {
+    const decision = resolveDoorColor({ id: 999003, ourName: "No Sheet", doorStyle: "Shaker" });
+    expect(decision.layers.catalogColor).toBeNull();
+    expect(["pre-209", "estimator", "swatch-table", "walzcraft"]).toContain(decision.candidateSource);
+    expect(decision.appliedHex).toMatch(/^#[0-9a-f]{6}$/);
   });
 
   it("flags a swatch the estimator rejects and keeps the pre-209 color", () => {

@@ -1,21 +1,25 @@
 /**
  * Door color, without brand snapping.
  *
- * Precedence, highest first:
- * 0. A hand-set renderHex always wins.
- * 1. Measured swatch hex from cabinet-backend PR 72 (data/door-colors/swatch-hex.json).
- * 2. WalzCraft ColorPatterns primary shade (data/door-colors/ColorPatterns_*.csv),
+ * Precedence, highest first (owner rule: any approved render becomes the
+ * kitchen's color):
+ * 0. The latest ACCEPTED door-rendering run for this style — its renderHex, and
+ *    its approved door image/texture. This is the source of truth: an admin
+ *    approving a render changes every kitchen on the next read.
+ * 1. The style's own saved catalog color (the color an admin saved on the style).
+ * 2. Measured swatch hex from cabinet-backend PR 72 (data/door-colors/swatch-hex.json).
+ * 3. WalzCraft ColorPatterns primary shade (data/door-colors/ColorPatterns_*.csv),
  *    matched by distributor plus style code or door name.
- * 3. A hex estimator (name / color type, or the DL door-photo solid when the name
- *    is silent). A guide only. It never overrides layers 0–2.
- * 4. The color the door rendered with before PR 209: a DL finish solid, otherwise
+ * 4. A hex estimator (name / color type, or the DL door-photo solid when the name
+ *    is silent). A guide only. It never overrides layers 0–3.
+ * 5. The color the door rendered with before PR 209: a DL finish solid, otherwise
  *    the catalog hex, then the name table (main at 8df3a43, resolveDoorFinishHex).
  *
- * After a layer picks a hex, an independent estimator concurs or objects.
- * Agreement needs CIEDE2000 ≤ 10, the same paint-vs-stain category, and the same
- * hue family. A disagreement does not replace a hand-set renderHex. Every other
- * disagreement keeps the pre-209 color and sets needsColorReview. Nothing is
- * snapped to cream, green, or gold.
+ * Layers 2–5 exist only for a style with nothing saved and no accepted run, so a
+ * hardcoded table can never beat a real decision. After a layer picks a hex, an
+ * independent estimator concurs or objects. A disagreement never replaces an
+ * accepted render or a saved color; every other disagreement keeps the pre-209
+ * color and sets needsColorReview. Nothing is snapped to cream, green, or gold.
  *
  * Geometry is not decided here.
  */
@@ -32,7 +36,7 @@ export const DOOR_COLOR_AGREE_DELTA_E = 10;
 const ASPEN_CHARCOAL_STAIN = "#2a211c";
 
 export type FinishCategory = "paint" | "stain";
-export type DoorColorSource = "render-hex" | "swatch-table" | "walzcraft" | "estimator" | "pre-209";
+export type DoorColorSource = "accepted-render" | "render-hex" | "catalog-color" | "swatch-table" | "walzcraft" | "estimator" | "pre-209";
 export type HueFamily = "neutral" | "red" | "orange" | "yellow" | "green" | "blue" | "purple" | "brown";
 
 export type DoorColorInput = {
@@ -49,7 +53,15 @@ export type DoorColorInput = {
   finish?: string | null;
   woodSpecies?: string | null;
   doorStyle?: string | null;
+  /**
+   * The latest ACCEPTED door-rendering run's color for this style. Written back
+   * onto the door style when an admin accepts a run, and cleared on revoke or
+   * revert, so every kitchen follows the newest approved render with no manual
+   * step. This is the highest-precedence source.
+   */
   renderHex?: string | null;
+  /** The accepted run's approved door image, used as the kitchen's face texture. */
+  approvedReferenceImageUrl?: string | null;
 };
 
 type SwatchRow = { id: number; style: string; category: FinishCategory; hex: string };
@@ -78,7 +90,7 @@ export type DoorColorReview = {
   deltaE: number | null;
   hueChosen: HueFamily | null;
   hueEstimator: HueFamily | null;
-  keptBecause: "agreed" | "hand-set-render-hex" | "estimator-disagreed" | "no-second-opinion";
+  keptBecause: "agreed" | "hand-set-render-hex" | "saved-catalog-color" | "estimator-disagreed" | "no-second-opinion";
 };
 
 export type DoorColorDecision = {
@@ -95,6 +107,8 @@ export type DoorColorDecision = {
   review: DoorColorReview;
   layers: {
     renderHex: string | null;
+    /** The style's own saved catalog color, when it has one. */
+    catalogColor: LayerHit | null;
     swatch: LayerHit | null;
     walzcraft: LayerHit | null;
     estimator: LayerHit | null;
@@ -301,16 +315,27 @@ function colorsAgree(chosen: LayerHit, estimate: LayerHit): { agree: boolean; de
   return { agree, deltaE };
 }
 
+/** The style's own saved catalog color: what an admin saved on the style itself. */
+function savedCatalogColor(style: DoorColorInput): LayerHit | null {
+  const hex = exactHex(style.color);
+  if (!hex) return null;
+  return { hex, category: finishCategoryFromNames(style), source: "catalog-color", via: "saved" };
+}
+
 export function resolveDoorColor(style: DoorColorInput | null | undefined): DoorColorDecision {
   const input = style ?? {};
+  // A hand-set or accepted renderHex is the source of truth. Approving a door
+  // render writes this value onto the style, so an approved render IS the
+  // kitchen's color with no further step.
   const renderHex = exactHex(input.renderHex);
+  const saved = savedCatalogColor(input);
   const swatch = lookupSwatch(input);
   const walzcraft = lookupWalz(input);
   const estimator = estimateDoorHex(input);
   const pre209 = pre209DoorColor(input);
   const candidate = renderHex
     ? { hex: renderHex, category: "paint" as FinishCategory, source: "render-hex" as DoorColorSource }
-    : swatch ?? walzcraft ?? estimator ?? pre209;
+    : saved ?? swatch ?? walzcraft ?? estimator ?? pre209;
   const chosen: LayerHit = { ...candidate, category: candidateCategory(input, candidate) };
   const opinion = secondOpinion(input, chosen);
   const compared = opinion ? colorsAgree(chosen, opinion) : null;
@@ -322,8 +347,13 @@ export function resolveDoorColor(style: DoorColorInput | null | undefined): Door
     keptBecause = "no-second-opinion";
   } else if (!compared?.agree) {
     needsColorReview = true;
+    // A render hex or the style's own saved catalog color is a decision, not a
+    // guess: the estimator never overrides it. Only a guessed layer can be
+    // replaced by the pre-209 color.
     if (chosen.source === "render-hex") {
       keptBecause = "hand-set-render-hex";
+    } else if (chosen.source === "catalog-color") {
+      keptBecause = "saved-catalog-color";
     } else {
       applied = pre209;
       keptBecause = "estimator-disagreed";
@@ -355,7 +385,7 @@ export function resolveDoorColor(style: DoorColorInput | null | undefined): Door
       hueEstimator: opinion ? hueFamily(opinion.hex) : null,
       keptBecause,
     },
-    layers: { renderHex, swatch, walzcraft, estimator, pre209 },
+    layers: { renderHex, catalogColor: saved, swatch, walzcraft, estimator, pre209 },
   };
 }
 
@@ -363,7 +393,7 @@ export type DoorColorCoverage = {
   doors: number;
   candidate: Record<DoorColorSource, number>;
   applied: Record<DoorColorSource, number>;
-  layerPresent: Record<Exclude<DoorColorSource, "pre-209"> | "pre-209", number>;
+  layerPresent: Record<Exclude<DoorColorSource, "accepted-render">, number>;
   agreed: number;
   flagged: number;
   flaggedKeptRenderHex: number;
@@ -375,9 +405,11 @@ export type DoorColorCoverage = {
 };
 
 export function summarizeDoorColors(styles: readonly DoorColorInput[]): DoorColorCoverage {
-  const candidate: Record<DoorColorSource, number> = { "render-hex": 0, "swatch-table": 0, walzcraft: 0, estimator: 0, "pre-209": 0 };
+  const candidate: Record<DoorColorSource, number> = { "accepted-render": 0, "render-hex": 0, "catalog-color": 0, "swatch-table": 0, walzcraft: 0, estimator: 0, "pre-209": 0 };
   const applied: Record<DoorColorSource, number> = { ...candidate };
-  const layerPresent = { "render-hex": 0, "swatch-table": 0, walzcraft: 0, estimator: 0, "pre-209": 0 };
+  const layerPresent: Record<Exclude<DoorColorSource, "accepted-render">, number> = {
+    "render-hex": 0, "catalog-color": 0, "swatch-table": 0, walzcraft: 0, estimator: 0, "pre-209": 0,
+  };
   let agreed = 0;
   let flagged = 0;
   let flaggedKeptRenderHex = 0;
@@ -388,13 +420,14 @@ export function summarizeDoorColors(styles: readonly DoorColorInput[]): DoorColo
     candidate[decision.candidateSource] += 1;
     applied[decision.appliedSource] += 1;
     if (decision.layers.renderHex) layerPresent["render-hex"] += 1;
+    if (decision.layers.catalogColor) layerPresent["catalog-color"] += 1;
     if (decision.layers.swatch) layerPresent["swatch-table"] += 1;
     if (decision.layers.walzcraft) layerPresent.walzcraft += 1;
     if (decision.layers.estimator) layerPresent.estimator += 1;
     layerPresent["pre-209"] += 1;
     if (decision.review.needsColorReview) {
       flagged += 1;
-      if (decision.review.keptBecause === "hand-set-render-hex") flaggedKeptRenderHex += 1;
+      if (decision.review.keptBecause === "hand-set-render-hex" || decision.review.keptBecause === "saved-catalog-color") flaggedKeptRenderHex += 1;
       if (decision.review.keptBecause === "estimator-disagreed") flaggedKeptPre209 += 1;
     } else if (decision.review.keptBecause === "no-second-opinion") noSecondOpinion += 1;
     else agreed += 1;

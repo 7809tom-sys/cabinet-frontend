@@ -5423,6 +5423,7 @@ export function addCabinet(
   let plainStructuralColor = structuralFinish.color;
   let structuralSampleTexture: THREE.Texture | null = null;
   const exposedSidesMatchDoorFace = doorProfile?.exposedSidesMatchDoorFace === true && Boolean(doorTexture) && !dlcDoorFinish;
+  void exposedSidesMatchDoorFace;
   // DLC styles: sides, end panels, skins and carcass carry the door's grain (a frame-free patch, tiled
   // mirrored so seams do not show) in the door's colour. Never the door photo with its frame lines.
   let dlcGrainTexture: THREE.Texture | null = null;
@@ -5446,7 +5447,13 @@ export function addCabinet(
     applyDlcGrain();
   };
   const applyStructuralFinishBase = (finishColor: string, _sampleTexture: THREE.Texture | null = null) => {
-    if (exposedSidesMatchDoorFace && doorTexture) {
+    // ONE color source for every visible surface of a cabinet: the selected door
+    // color. When the door has an image (a sample photo or the approved accepted
+    // render), the box, sides, panels and toe kick use that same image and tint as
+    // the fronts, so a cabinet can never show two shades. The old code sampled the
+    // door photo's panel color for the sides while the front used the resolved
+    // color, which is exactly the "same cabinet, two yellows" report.
+    if (doorTexture) {
       const applied = applyThreeDDoorFaceStructuralFinish(
         [...structuralFinishMaterials, ...flatExposedFinishMaterials],
         doorTexture,
@@ -5459,12 +5466,10 @@ export function addCabinet(
       structuralSampleTexture = applied.texture;
       return;
     }
-    // Catalog hexes (and the old cream placeholder) are not the door. The
-    // uploaded photo's panel color is, for every finish. DLC already passed
-    // its crop color in as `color`. USCD photo sides returned above.
+    // No door image: every structural surface takes the resolved color itself.
     const sideColor = exposedSideSolidHex({
       catalogHex: finishColor,
-      doorPanelHex: typeof doorTexture?.userData?.doorPanelHex === "string" ? doorTexture.userData.doorPanelHex : null,
+      doorPanelHex: null,
       useDoorPhotoOnSides: false,
       dlcSolidHex: dlcDoorFinish,
     }) ?? finishColor;
