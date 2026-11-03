@@ -62,6 +62,13 @@ function normalizedCode(code: string | null | undefined): string {
 /** Same specialty-upper exclusion the wall-run planner applies. */
 const NOT_A_STRAIGHT_UPPER = /glass|open shelf|plate rack|wine|microwave|refrigerator|hood|garage|stacker/i;
 
+/** Sample, display, and temporary checkout test rows are never real catalog boxes. */
+export function isNonSellableTestRow(row: DesignCabinet): boolean {
+  const text = `${row.masterCode ?? ""} ${row.description ?? ""} ${row.subCategory ?? ""}`;
+  return /\btest[-_ ]?only\b|\btest item\b|checkout test|\bsample\b|\bdisplay\b|\bkiosk\b/i.test(text)
+    || /^TEST[-_]/i.test((row.masterCode ?? "").trim());
+}
+
 /** A tall oven/pantry tower, the family the tall pop-up auto-places. */
 export function isTallOvenPantryBox(row: DesignCabinet): boolean {
   if (row.placement !== "tall") return false;
@@ -170,9 +177,10 @@ export function threeDDesignerCanDraw(row: DesignCabinet): boolean {
  * belongs to, so the same SKU sold by two lines appears twice.
  */
 export function boxCoverageRow(row: DesignCabinet, style: string): BoxCoverageRow {
-  const accessory = isDesignerAccessoryItem(row) && !isSinkBaseCabinet(row);
-  const draws = threeDDesignerCanDraw(row);
-  const path = autoBuilderPath(row);
+  const testRow = isNonSellableTestRow(row);
+  const accessory = testRow || (isDesignerAccessoryItem(row) && !isSinkBaseCabinet(row));
+  const draws = testRow ? false : threeDDesignerCanDraw(row);
+  const path = testRow ? null : autoBuilderPath(row);
   const status: BoxCoverageStatus = accessory ? "accessory" : path != null && draws ? "available" : "missing";
   return {
     style,
@@ -191,7 +199,7 @@ export function boxCoverageRow(row: DesignCabinet, style: string): BoxCoverageRo
     reason: status === "available"
       ? null
       : status === "accessory"
-        ? accessoryReason(row)
+        ? testRow ? "Sample, display, or temporary checkout test row — not a sellable cabinet box." : accessoryReason(row)
         : !draws
           ? "The 3D Designer cannot draw this row: it has no complete width, height, and depth."
           : boxMissingReason(row),

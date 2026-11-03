@@ -17,9 +17,9 @@ never auto-built as cabinet boxes, and are listed separately at the end.
 | Measure | Count |
 | --- | --- |
 | Cabinet rows audited | 1717 |
-| Available in the auto builder **and** 3D Designer | 1427 |
+| Available in the auto builder **and** 3D Designer | 1425 |
 | Missing | 200 |
-| Accessories (not boxes) | 90 |
+| Accessories (not boxes) | 92 |
 
 ## Oven pantry status
 
@@ -79,7 +79,6 @@ never auto-built as cabinet boxes, and are listed separately at the end.
 | LSB36 | Classic Cream | base | 36″ × 34.5″ × 24″ | yes | yes | available |  |
 | SB33 | Classic Cream | base | 33″ × 34.5″ × 24″ | yes | yes | available |  |
 | SB36 | Classic Cream | base | 36″ × 34.5″ × 24″ | yes | yes | available |  |
-| TEST-ONE-DOLLAR-1789756227567 | Classic Cream | base | 12″ × 34.5″ × 24″ | yes | yes | available |  |
 | AG2418 | Classic Cream | wall | 24″ × 18″ × 12″ | yes | yes | available |  |
 | AW1230 | Classic Cream | wall | 12″ × 30″ × 12″ | yes | yes | available |  |
 | AW1236 | Classic Cream | wall | 12″ × 36″ × 12″ | yes | yes | available |  |
@@ -90,7 +89,6 @@ never auto-built as cabinet boxes, and are listed separately at the end.
 | MW3030 | Classic Cream | wall | 30″ × 30″ × 18″ | yes | yes | available |  |
 | MW3036 | Classic Cream | wall | 30″ × 36″ × 18″ | yes | yes | available |  |
 | MW3042 | Classic Cream | wall | 30″ × 42″ × 18″ | yes | yes | available |  |
-| PR3015 | Classic Cream | wall | 30″ × 15″ × 12″ | yes | yes | available |  |
 | W-15-30 | Classic Cream | wall | 15″ × 30″ × 12″ | yes | yes | available |  |
 | W-39-30 | Classic Cream | wall | 39″ × 30″ × 12″ | yes | yes | available |  |
 | W-3024 | Classic Cream | wall | 30″ × 24″ × 12″ | yes | yes | available |  |
@@ -1888,6 +1886,8 @@ and are never auto-built into a run.
 | SKU | Line | Sub-category | Size | Why it is not a box |
 | --- | --- | --- | --- | --- |
 | WS1542 | Classic Cream | Standard Wall | 15″ × 42″ × 12″ | Panel / skin: add-on accessory that finishes an exposed side, not a box. |
+| TEST-ONE-DOLLAR-1789756227567 | Classic Cream | Checkout Test Item | 12″ × 34.5″ × 24″ | Sample, display, or temporary checkout test row — not a sellable cabinet box. |
+| PR3015 | Classic Cream | Plate Rack / Open Display | 30″ × 15″ × 12″ | Sample, display, or temporary checkout test row — not a sellable cabinet box. |
 | BAM | Ashford (RH, 330011) | Batten Moulding | 96″ × 0.75″ × 0.19″ | Molding / trim: add-on accessory by the linear foot, not a box. |
 | BEP | Ashford (RH, 330011) | Dishwasher Return Panel | 3″ × 34.5″ × 24″ | Panel / skin: add-on accessory that finishes an exposed side, not a box. |
 | BF6 | Ashford (RH, 330011) | Filler | 6″ × 34.5″ × 24″ | Filler: add-on accessory that closes a gap, not a box. |
@@ -1904,7 +1904,7 @@ and are never auto-built into a run.
 | F396 | Ashford (RH, 330011) | Filler | 3″ × 96″ × ?″ | Filler: add-on accessory that closes a gap, not a box. |
 | F642 | Ashford (RH, 330011) | Filler | 6″ × 42″ × ?″ | Filler: add-on accessory that closes a gap, not a box. |
 | IS3696 | Ashford (RH, 330011) | Tall Panels | 36″ × 96″ × ?″ | Panel / skin: add-on accessory that finishes an exposed side, not a box. |
-| KIOSK-DA | Ashford (RH, 330011) | Samples & Display | ?″ × 34.5″ × 24″ | Sample or display item, not a sellable box. |
+| KIOSK-DA | Ashford (RH, 330011) | Samples & Display | ?″ × 34.5″ × 24″ | Sample, display, or temporary checkout test row — not a sellable cabinet box. |
 | LCM8 | Ashford (RH, 330011) | Crown Moulding | 96″ × 3″ × 24″ | Molding / trim: add-on accessory by the linear foot, not a box. |
 | LRM8 | Ashford (RH, 330011) | Light Rail | 96″ × ?″ × ?″ | Molding / trim: add-on accessory by the linear foot, not a box. |
 | OCM | Ashford (RH, 330011) | Outside Corner Moulding | 96″ × 0.75″ × 0.75″ | Molding / trim: add-on accessory by the linear foot, not a box. |
@@ -1913,7 +1913,7 @@ and are never auto-built into a run.
 | PGWDC42 | Ashford (RH, 330011) | Glass Door (door only) | 15″ × 42″ × 12″ | Add-on accessory, not a cabinet box. |
 | PLYEB42 | Ashford (RH, 330011) | Plywood Edge-Banded Board | 42″ × 96″ × ?″ | Add-on accessory, not a cabinet box. |
 | REPV2496 | Ashford (RH, 330011) | Wall Refrigerator End Panel | 1.5″ × 96″ × 24″ | Panel / skin: add-on accessory that finishes an exposed side, not a box. |
-| Sample Door | Ashford (RH, 330011) | Samples & Display | 11″ × 15″ × 0.75″ | Sample or display item, not a sellable box. |
+| Sample Door | Ashford (RH, 330011) | Samples & Display | 11″ × 15″ × 0.75″ | Sample, display, or temporary checkout test row — not a sellable cabinet box. |
 | SCDL | Ashford (RH, 330011) | Decorative Leg | 3″ × 34.5″ × ?″ | Add-on accessory, not a cabinet box. |
 | SGH30 | Ashford (RH, 330011) | Accessory | 30″ × 1.5″ × 12″ | Add-on accessory, not a cabinet box. |
 | SHM | Ashford (RH, 330011) | Shoe Moulding | 96″ × 0.56″ × 0.81″ | Molding / trim: add-on accessory by the linear foot, not a box. |
