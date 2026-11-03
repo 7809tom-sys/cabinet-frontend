@@ -26,6 +26,8 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { kitchenAcceptedFaceImage, resolveKitchenDoorColor } from "@/lib/acceptedDoorAppearance";
+import { DoorStyleEditButton } from "@/components/design/DoorStyleEditButton";
+import { doorStyleEditUrl } from "@/lib/doorStyleEditLink";
 import { colorTraceEnabled, createColorTraceRecorder, type ColorTrace } from "@/lib/colorTrace";
 import { brewersTestDecision, brewersTestEnabled } from "@/lib/brewersColorTest";
 import { ColorTracePanel, logColorTrace } from "@/components/design/ColorTracePanel";
@@ -899,6 +901,23 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   useEffect(() => {
     placedRef.current = placed;
   }, [placed]);
+
+  /**
+   * Coming back from the door style editor after an Edit: reselect the cabinet the
+   * person was on, so they land back on the same spot instead of the top of the
+   * plan. Runs once per requested uid.
+   */
+  const returnSelectRef = useRef<string | null>(null);
+  useEffect(() => {
+    const uid = new URLSearchParams(search).get("selectCabinet");
+    if (!uid || returnSelectRef.current === uid) return;
+    if (!placed.some((cabinet) => cabinet.uid === uid)) return;
+    returnSelectRef.current = uid;
+    setSelectedUid(uid);
+    setSelectedSinkUid(null);
+    setSelectedOpeningUid(null);
+    setViewMode("threeD");
+  }, [placed, search]);
   useEffect(() => {
     if (!isMobile) return;
     publishDesignerMobileCartCount(placed.length);
@@ -14811,6 +14830,20 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     logColorTrace(finished);
   }, [activeKitchenDoorColor, activeStyle, colorTraceOn, doorStyles, placed, styleId, threeDCabinetFinishOverrides]);
   const colorTracePanelState = colorTraceOn && colorTrace && colorTraceOpen ? colorTrace : null;
+  /**
+   * Where the door style editor should send the person back to: this exact design,
+   * its query included. Only a same-origin path is ever emitted, so the link can
+   * never bounce somebody off the site.
+   */
+  const designerEditReturnUrl = useMemo(() => {
+    const path = typeof window !== "undefined" ? window.location.pathname : "/design";
+    const query = search ? (search.startsWith("?") ? search : `?${search}`) : "";
+    // Drop the return marker itself so a round trip does not nest.
+    const params = new URLSearchParams(query.replace(/^\?/, ""));
+    params.delete("selectCabinet");
+    const cleaned = params.toString();
+    return cleaned ? `${path}?${cleaned}` : path;
+  }, [search]);
 
   const threeDCabinetFinishPreviewOptions = useMemo(() => {
     const ids = Array.from(new Set([
@@ -16955,6 +16988,21 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 		                {t("dt_cx_selected")} <span className="font-mono font-semibold text-foreground">{selectedCab.masterCode}</span>
 		                <span className="ml-1 hidden sm:inline text-foreground/70">— {selectedCabDisplayDescription}</span>
 		              </span>
+		              {/* Edit jumps straight to the door style coloring this cabinet
+		                  (its color and its style) and comes back to this exact
+		                  cabinet after saving. Admin only; nothing for a shopper. */}
+		              <DoorStyleEditButton
+		                isAdmin={isAdmin}
+		                styleId={pricingStyleIdFor(selectedCab) ?? styleId}
+		                styleCode={(doorStyles ?? []).find((entry: { id: number; styleCode?: string | null }) => entry.id === (pricingStyleIdFor(selectedCab) ?? styleId))?.styleCode ?? null}
+		                styleName={styleNameById.get(pricingStyleIdFor(selectedCab) ?? styleId ?? -1) ?? null}
+		                cabinetUid={selectedCab.uid}
+		                cabinetCode={selectedCab.masterCode}
+		                returnTo={designerEditReturnUrl}
+		                hrefFor={doorStyleEditUrl}
+		                variant="button"
+		                testId="selected-cabinet-edit-door-style"
+		              />
 		              <InventoryStockBadge
 		                notice={inventory.noticeFor(selectedCab.uid)}
 		                disabled={cabinetsLocked}

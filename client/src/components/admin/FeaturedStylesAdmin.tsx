@@ -27,6 +27,7 @@ import { ApproveDoorButton } from "./ApproveDoorButton";
 import DoorPhotoCorrectButton from "./DoorPhotoCorrectButton";
 import { AdminStyleRoomSceneControls } from "@/components/doorStyles/AdminDoorStyleRoomScene";
 import { invalidateDoorStyleCaches } from "@/lib/doorStyleCacheInvalidation";
+import { designReturnUrl, readDoorStyleEditRequest } from "@/lib/doorStyleEditLink";
 import type { AutoRoomScene } from "@/lib/autoRoomScene";
 import { MediaPicker } from "./MediaPicker";
 import { WalzCraftMatchForStyle, WalzCraftManualDoorPicker, resolveWalzDoor, readManualDoorId, writeManualDoorId } from "@/components/walzcraft/WalzCraftMatchCard";
@@ -709,6 +710,16 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
       }
       onSaved();
       onClose();
+      // Deep link from the design view: Save returns the person to the same spot in
+      // the design, on the same cabinet, instead of dropping them in the admin tab.
+      // The design's own URL was carried through; we only use a same-origin path.
+      const deepLinkReturn = readDoorStyleEditRequest(
+        typeof window === "undefined" ? null : window.location.search,
+      )?.returnTo ?? null;
+      if (deepLinkReturn) {
+        window.location.assign(designReturnUrl({ returnTo: deepLinkReturn }));
+        return;
+      }
       // After the bake window has opened (separate tab, not cancelled by this), go to the
       // existing style audit screen (Admin → Door Rendering Audit) focused on this style.
       openStyleAudit(style.id, style.ourName ?? "");
@@ -1223,6 +1234,12 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
               doorSampleImageUrl={doorSampleImageUrl}
               drawerSampleImageUrl={drawerSampleImageUrl}
               approvedByName={style.approvedByName}
+              // We are already IN this style's editor, so Edit re-opens the same
+              // dialog rather than navigating: the approval control is right below.
+              isAdmin={false}
+              styleId={style.id}
+              styleCode={style.styleCode}
+              styleName={style.ourName}
             />
             <ApproveDoorButton
               styleId={style.id}
@@ -1736,6 +1753,27 @@ export default function FeaturedStylesAdmin() {
     if (!editingStyle) return null;
     return styles.find((style) => style.id === editingStyle.id) ?? editingStyle;
   }, [editingStyle, styles]);
+
+  /**
+   * Deep link from a cabinet in the 3D design view: `?tab=featured&editStyle=<id>`.
+   *
+   * Opens exactly that style in this editor, once, when the list has loaded. The
+   * design's return path is handed to the editor so Save can send the person back
+   * to the same cabinet. It runs once per requested id, so closing the dialog does
+   * not immediately reopen it.
+   */
+  const deepLinkedStyleRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (styles.length === 0) return;
+    const request = readDoorStyleEditRequest(
+      typeof window === "undefined" ? null : window.location.search,
+    );
+    if (!request || deepLinkedStyleRef.current === request.styleId) return;
+    const target = styles.find((style) => style.id === request.styleId);
+    if (!target) return;
+    deepLinkedStyleRef.current = request.styleId;
+    setEditingStyle(target);
+  }, [styles]);
 
   // SKU count badge helper — clickable to open the catalog preview modal
 	  function SkuBadge({ style: s }: { style: AdminStyle }) {
