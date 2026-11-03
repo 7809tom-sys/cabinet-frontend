@@ -230,6 +230,81 @@ function unchanged(piece: PanelLimitPiece): PanelLimitEdit {
  * piece is cut back to the outer face, and anything in the bay is held to the
  * panel's front face and top.
  */
+/**
+ * True when a trimmed span has ended up sitting in the refrigerator bay itself,
+ * between the two end panels, rather than in a cabinet run beside it. The bay is
+ * reserved for the refrigerator: a cabinet trimmed into it would overlap the
+ * appliance, so the caller drops it instead.
+ */
+export function spanSitsInsideRefrigeratorBay(
+  start: number,
+  end: number,
+  stops: readonly PanelOuterStop[],
+): boolean {
+  const EPS = REFRIGERATOR_PANEL_LIMIT_EPSILON_IN;
+  const left = stops.filter((stop) => stop.outside === "below");
+  const right = stops.filter((stop) => stop.outside === "above");
+  if (!left.length || !right.length) return false;
+  const bayStart = Math.max(...left.map((stop) => stop.edge));
+  const bayEnd = Math.min(...right.map((stop) => stop.edge));
+  if (!(bayEnd > bayStart + EPS)) return false;
+  return start >= bayStart - EPS && end <= bayEnd + EPS;
+}
+
+/**
+ * True when the span crosses both refrigerator end panel faces, which is the
+ * cabinet above the refrigerator (it is meant to span the bay). A span crossing
+ * only one face is an ordinary run piece.
+ */
+function crossesBothPanelFaces(
+  start: number,
+  end: number,
+  stops: readonly PanelOuterStop[],
+): boolean {
+  const EPS = REFRIGERATOR_PANEL_LIMIT_EPSILON_IN;
+  const left = stops.filter((stop) => stop.outside === "below");
+  const right = stops.filter((stop) => stop.outside === "above");
+  if (!left.length || !right.length) return false;
+  const leftFace = Math.max(...left.map((stop) => stop.edge));
+  const rightFace = Math.min(...right.map((stop) => stop.edge));
+  return start < leftFace - EPS && end > rightFace + EPS;
+}
+
+/**
+ * Trim a span so it stays on the cabinet-run side of the refrigerator end
+ * panels.
+ *
+ * The bay between the two panels is reserved for the refrigerator, so a cabinet
+ * that straddles a panel face belongs to the larger OUTSIDE portion, never the
+ * portion inside the bay. The old code kept whichever half held the span's
+ * center, which for a 30" upper starting before the left panel kept the piece
+ * inside the bay — that is exactly the "uppers run through the tall panel"
+ * report. A run piece too small to be a real cabinet after the cut is dropped.
+ */
+function trimToCabinetRun(
+  start: number,
+  end: number,
+  stops: readonly PanelOuterStop[],
+  minimumWidthIn: number,
+): { start: number; end: number } | null {
+  const EPS = REFRIGERATOR_PANEL_LIMIT_EPSILON_IN;
+  const leftEdges = stops.filter((stop) => stop.outside === "below").map((stop) => stop.edge);
+  const rightEdges = stops.filter((stop) => stop.outside === "above").map((stop) => stop.edge);
+  const outsidePieces: Array<{ start: number; end: number }> = [];
+  // Outside the bay on the low side, up to the nearest left panel face.
+  const leftLimit = leftEdges.length ? Math.max(...leftEdges) : Number.POSITIVE_INFINITY;
+  if (start < leftLimit - EPS) outsidePieces.push({ start, end: Math.min(end, leftLimit) });
+  // Outside the bay on the high side, from the nearest right panel face.
+  const rightLimit = rightEdges.length ? Math.min(...rightEdges) : Number.NEGATIVE_INFINITY;
+  if (end > rightLimit + EPS) outsidePieces.push({ start: Math.max(start, rightLimit), end });
+  const best = outsidePieces
+    .map((piece) => ({ ...piece, width: piece.end - piece.start }))
+    .filter((piece) => piece.width > EPS)
+    .sort((a, b) => b.width - a.width)[0];
+  if (!best || best.width < minimumWidthIn - EPS) return null;
+  return { start: best.start, end: best.end };
+}
+
 export function planRefrigeratorPanelLimit(
   pieces: readonly PanelLimitPiece[],
   stops: readonly PanelOuterStop[],
@@ -245,12 +320,27 @@ export function planRefrigeratorPanelLimit(
       const minKeep = piece.kind === "filler" || piece.kind === "trim"
         ? REFRIGERATOR_PANEL_FILLER_MIN_IN
         : EPS;
-      const clamped = clampSpanToPanelOuterFaces(start, end, wallStops, minKeep);
-      if (!clamped) {
-        return { uid: piece.uid, drop: true, changed: true, start, end, depth: piece.depth, maxFront: null };
+      // A piece that crosses BOTH panel faces is the cabinet above the
+      // refrigerator: it is clipped into the bay (as wide as the opening) and
+      // held to the panels' depth. A piece that crosses only ONE face is an
+      // ordinary run piece and is trimmed out onto the cabinet run.
+      const crossesBothFaces = crossesBothPanelFaces(start, end, wallStops);
+      if (crossesBothFaces) {
+        const clamped = clampSpanToPanelOuterFaces(start, end, wallStops, minKeep);
+        if (!clamped) {
+          return { uid: piece.uid, drop: true, changed: true, start, end, depth: piece.depth, maxFront: null };
+        }
+        start = clamped.start;
+        end = clamped.end;
+      } else {
+        const clamped = clampSpanToPanelOuterFaces(start, end, wallStops, minKeep);
+        const trimmed = clamped ? trimToCabinetRun(clamped.start, clamped.end, wallStops, minKeep) : null;
+        if (!trimmed) {
+          return { uid: piece.uid, drop: true, changed: true, start, end, depth: piece.depth, maxFront: null };
+        }
+        start = trimmed.start;
+        end = trimmed.end;
       }
-      start = clamped.start;
-      end = clamped.end;
     }
     const limit = faceLimitForSpan(start, end, wallStops);
     const maxFront = limit && piece.front > limit.faceDepth + EPS ? limit.faceDepth : null;

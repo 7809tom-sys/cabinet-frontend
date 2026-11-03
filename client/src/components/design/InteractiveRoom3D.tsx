@@ -9279,6 +9279,29 @@ function sinkInteriorStencilMaterial<T extends THREE.Material>(material: T, sten
   return material;
 }
 
+/**
+ * How far the apron slab sits from the sink's plan center, measured on the axis
+ * that runs into the room.
+ *
+ * A farmhouse sink's apron is its FRONT face: the same face that looks into the
+ * room as the cabinet doors below it. The wall-normal axis on the plan is depth
+ * for a top/bottom wall and width for a left/right wall, and the apron's own
+ * thickness lies on that axis. Using the lateral span here (the old code) pushed
+ * the slab out by half the sink's width, which is the "apron stands 6 inches
+ * proud" bug.
+ */
+export function farmhouseApronEdgeInsetIn(input: {
+  planWidthIn: number;
+  planDepthIn: number;
+  apronThicknessIn: number;
+  side: string;
+}): number {
+  const lateralSpanIn = input.side === "left" || input.side === "right" ? input.planWidthIn : input.planDepthIn;
+  return Math.max(0, lateralSpanIn / 2 - input.apronThicknessIn / 2);
+}
+
+const apronEdgeInset = farmhouseApronEdgeInsetIn;
+
 export function addSinkFixture(root: THREE.Group, sink: SinkFixture, faucetPlacement?: DeckFaucetPlacement) {
   const width = sink.width * INCH;
   const depth = sink.depth * INCH;
@@ -9512,7 +9535,12 @@ export function addSinkFixture(root: THREE.Group, sink: SinkFixture, faucetPlace
       ),
       apronMaterial,
     );
-    const edgeInset = Math.max(0, (side === "left" || side === "right" ? depth : width) / 2 - apronThickness / 2);
+    const edgeInset = apronEdgeInset({
+      planWidthIn: width / INCH,
+      planDepthIn: depth / INCH,
+      apronThicknessIn: apronThickness / INCH,
+      side,
+    }) * INCH;
     // A sink against the top/left wall faces into the room (positive Z/X); a
     // sink against the bottom/right wall faces in the negative direction.
     const direction = side === "bottom" ? -1 : side === "left" || side === "right" ? 0 : 1;

@@ -4,8 +4,15 @@ import {
   autoDesignControlState,
   autoDesignShouldTurnOffForRefrigerator,
   isRefrigeratorAppliance,
+  isSinkBasePlacement,
   refrigeratorBlocksAutoDesign,
+  type AutoDesignPlacedLike,
 } from "./autoDesignAvailability";
+
+/** Mirrors the Designer: only non-sink placements count as hand-placed work. */
+function blockingCount(items: readonly AutoDesignPlacedLike[]): number {
+  return items.filter((item) => !isSinkBasePlacement(item)).length;
+}
 
 describe("Auto-Design refrigerator gate", () => {
   it("treats panel-ready and built-in refrigerators as the appliance", () => {
@@ -72,5 +79,47 @@ describe("Auto-Design refrigerator gate", () => {
       dialogOpen: true,
       cornerStageActive: true,
     })).toBe(false);
+  });
+});
+
+describe("a pushed sink must not break Auto-Design", () => {
+  const pushedSinkBase = { uid: "sink-base-1", masterCode: "SB36", description: '36" Sink Base', subCategory: "Sink Base", placement: "base" };
+  const farmBase = { uid: "farm-base-1", masterCode: "FSB36", description: '36" Farm Sink Base', subCategory: "Sink Base", placement: "base" };
+
+  it("recognizes a sink base in every shape the catalog uses", () => {
+    expect(isSinkBasePlacement(pushedSinkBase)).toBe(true);
+    expect(isSinkBasePlacement(farmBase)).toBe(true);
+    expect(isSinkBasePlacement({ masterCode: "SB30FH", description: "Sink Base", placement: "base" })).toBe(true);
+    expect(isSinkBasePlacement({ masterCode: "CSB36", description: "Corner Sink Base", placement: "base" })).toBe(true);
+    expect(isSinkBasePlacement({ masterCode: "B36", description: '36" Base Cabinet', placement: "base" })).toBe(false);
+    expect(isSinkBasePlacement({ masterCode: "W3630", description: '36" Wall Cabinet', placement: "wall" })).toBe(false);
+  });
+
+  it("leaves Auto-Design enabled when the only thing on the plan is the pushed sink", () => {
+    const onPlan = [pushedSinkBase];
+    const control = autoDesignControlState({
+      audienceAllowed: true,
+      layoutLocked: false,
+      placedCount: blockingCount(onPlan),
+      hasRefrigerator: false,
+    });
+    expect(control.enabled).toBe(true);
+    // The old behavior is what broke: counting the sink base grayed the control out.
+    expect(autoDesignControlState({
+      audienceAllowed: true,
+      layoutLocked: false,
+      placedCount: onPlan.length,
+      hasRefrigerator: false,
+    }).enabled).toBe(false);
+  });
+
+  it("still stops for real hand-placed cabinet work beside a pushed sink", () => {
+    const onPlan = [pushedSinkBase, { uid: "b-1", masterCode: "B24", description: '24" Base Cabinet', placement: "base" }];
+    expect(autoDesignControlState({
+      audienceAllowed: true,
+      layoutLocked: false,
+      placedCount: blockingCount(onPlan),
+      hasRefrigerator: false,
+    }).enabled).toBe(false);
   });
 });

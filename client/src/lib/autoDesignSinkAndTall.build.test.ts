@@ -193,3 +193,57 @@ describe("Auto-Design auto-places a tall oven pantry picked in the pop-up", () =
     expect(finding!.detail).toMatch(/ceiling/i);
   });
 });
+
+describe("a sink already on the plan must not break the measured build", () => {
+  it("completes and seats exactly one sink base even when a pushed sink sits in the room", () => {
+    // This is the owner's break: push a Pelican sink, its base lands in the
+    // Designer, and then Auto-Design must still build. The build must ignore the
+    // pushed sink as a host and seat its own measured sink base, and it must not
+    // auto-place a Pelican basin either — the sink question comes after the build.
+    const pushedBase: PlacedCabinet = {
+      uid: "pushed-sink-base",
+      cabinetId: 1,
+      masterCode: "SB36",
+      description: '36" Sink Base',
+      category: "Base",
+      subCategory: "Sink Base",
+      placement: "base",
+      x: 0,
+      y: 0,
+      width: 36,
+      depth: 24,
+      height: 34.5,
+      rotation: 0,
+      wallId: "bottom",
+      wallOffset: 12,
+    } as PlacedCabinet;
+    uid = 0;
+    const result = runAutoDesignLayout({
+      input: inputs({ skipDishwasher: true }),
+      room: room(),
+      openings: [],
+      baseCatalog: BASES,
+      wallCatalog: WALLS,
+      fillers: FILLERS,
+      appliancePalette: [
+        { id: 0, masterCode: "RANGE-30", description: '30" Range', category: "Appliance", subCategory: "Appliance", width: "30", height: "36", depth: "25", placement: "appliance" } as DesignCabinet,
+      ],
+      refrigeratorCaps: [],
+      refrigeratorEndPanels: [],
+      tallCatalog: TALL,
+      styleId: 330011,
+      makeUid: () => `uid-${++uid}`,
+      // The pushed sink base is a pre-existing placement, not an anchor.
+      preExistingPlacements: [pushedBase],
+    });
+    expect(result.ok, result.ok ? "" : result.message).toBe(true);
+    if (!result.ok) return;
+    const sinkBases = result.placed.filter((item) => /^(?:SB|FSB)/.test(item.masterCode));
+    expect(sinkBases).toHaveLength(1);
+    // The build seats its own source-priced base; the pushed one is replaced, not stacked.
+    expect(sinkBases[0]!.uid).not.toBe(pushedBase.uid);
+    expect(pushedBase.uid).not.toBe("");
+    // A neutral basin is seated for the post-build question; no Pelican product yet.
+    expect(result.sinks[0]!.pelicanProductId).toBeUndefined();
+  });
+});
