@@ -238,6 +238,8 @@ import { clampSinkDragForFaucet, raiseWindowsForDeckFaucet, type FaucetWindowCle
 import { dropDuplicateAutoWindows, moveWindowsWithWallTops } from "@/lib/windowOpenings";
 import { useTransientNotice } from "@/components/design/useTransientNotice";
 import { autoDesignSinkWindow, windowOverlapsReservation } from "@/lib/autoDesignSinkWindow";
+import { catalogSinkInstallation, isAutoDesignSinkProduct, planAutoDesignSinkPlacement, sinkBasePairing, type AutoDesignSinkProduct } from "@/lib/autoDesignSink";
+import { autoDesignTallProducts, autoDesignKitchenWallIds, defaultAutoDesignRange, autoDesignRangeChoices, type AutoDesignApplianceChoice, type AutoDesignTallProduct } from "@/lib/autoDesignTallCabinets";
 import { autoDesignRangeHood, autoDesignRangeNeedsVentilation } from "@/lib/autoDesignRangeHood";
 import { mergeAutoDesignRefrigeratorCaps, runAutoDesignLayout } from "@/lib/autoDesignLayout";
 import { designerFillerDeletionSet, isDesignerPlacedFiller, moveDesignerFiller } from "@/lib/designerFillerActions";
@@ -299,6 +301,9 @@ import { CsvImportDialog } from "@/components/design/CsvImportDialog";
 import { PlanImageImportDialog, type ReviewedPlan } from "@/components/design/PlanImageImportDialog";
 import { AutoDesignDialog, type AutoDesignSubmitResult } from "@/components/design/AutoDesignDialog";
 import { AutoDesignFaucetDialog } from "@/components/design/AutoDesignFaucetDialog";
+import { AutoDesignSinkDialog } from "@/components/design/AutoDesignSinkDialog";
+import { AutoDesignTallDialog } from "@/components/design/AutoDesignTallDialog";
+import { AutoDesignRangeDialog } from "@/components/design/AutoDesignRangeDialog";
 import { findClosestPlanCabinet } from "@/lib/planImportMapper";
 import { EmailGate, type LeadContact } from "@/components/design/EmailGate";
 import { OptionalContactNudge } from "@/components/design/OptionalContactNudge";
@@ -1190,6 +1195,28 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   ) => { ok: true } | { ok: false; message: string }) | null>(null);
   autoDesignSessionRef.current = autoDesignOpen || autoDesignCornerStage != null;
   const [autoDesignFaucetPrompt, setAutoDesignFaucetPrompt] = useState<{ sinkUid: string; queue: string[] } | null>(null);
+  /**
+   * Sink pop-up. The auto-designer offers the catalog's sinks next to the faucet
+   * option; a pick auto-places the basin in the sink base (or seats its own base
+   * for a second sink). Never an inline row in the run.
+   */
+  const [autoDesignSinkPrompt, setAutoDesignSinkPrompt] = useState<{ mode: "replace" | "add"; sinkUid: string | null } | null>(null);
+  /** Sinks picked in the pop-up, carried into the measured build and the cart. */
+  const [autoDesignSinkPicks, setAutoDesignSinkPicks] = useState<AutoDesignSinkProduct[]>([]);
+  /**
+   * Tall oven / pantry pop-up. Picked in the setup dialog and auto-placed by the
+   * build, so nobody has to drag a floor-to-ceiling box into a run.
+   */
+  const [autoDesignTallOpen, setAutoDesignTallOpen] = useState(false);
+  const [autoDesignTallPicks, setAutoDesignTallPicks] = useState<AutoDesignTallProduct[]>([]);
+  /**
+   * Range pop-up. The measured build already seats a range at the measured
+   * center; without a pick it silently used the first RANGE-30 row, so the
+   * appliance finish was never a choice. A pick sets the range Auto-Design seats
+   * and the auto-placed corner boxes then follow that real width.
+   */
+  const [autoDesignRangeOpen, setAutoDesignRangeOpen] = useState(false);
+  const [autoDesignRangePick, setAutoDesignRangePick] = useState<AutoDesignApplianceChoice | null>(null);
   const queueAutoDesignFaucetPrompt = useCallback((sinkUid: string) => {
     setAutoDesignFaucetPrompt((current) => {
       if (!current) return { sinkUid, queue: [] };
@@ -3900,6 +3927,17 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     }
     const pool = (autoFillCabinets as DesignCabinet[] | undefined) ?? [];
     const wallPool = (wallCabPool as DesignCabinet[] | undefined) ?? [];
+    // Tall oven / pantry boxes this line sells, resolved from the same pools the
+    // palette uses. A pop-up pick is matched here and auto-placed by the build.
+    const tallById = new Map<number, DesignCabinet>();
+    for (const row of [
+      ...((tallCabPool as DesignCabinet[] | undefined) ?? []),
+      ...((liveMasterCabinets as DesignCabinet[] | undefined) ?? []),
+    ]) {
+      if (!row || row.placement !== "tall") continue;
+      tallById.set(row.id, row);
+    }
+    const tallCatalog = Array.from(tallById.values());
     const fridgeParts = refrigeratorSurroundCatalog as
       | { deepAbove?: DesignCabinet[]; endPanels?: DesignCabinet[] }
       | undefined;
@@ -3910,7 +3948,23 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     lastFaucetWindowNotesRef.current = [];
     autoDesignWallLabelsRef.current = autoDesignWallNameByEngineId(room, input.originCorner, input.runDirection);
     const run = runAutoDesignLayout({
-      input,
+      input: {
+        ...input,
+        tallCabinets: autoDesignTallPicks.map((product) => ({
+          cabinetId: product.id,
+          masterCode: product.masterCode,
+          widthIn: product.widthIn,
+          heightIn: product.heightIn,
+        })),
+        sinkProducts: autoDesignSinkPicks.map((product) => ({
+          productId: product.id,
+          pelicanCode: product.pelicanCode ?? null,
+          name: product.name,
+          imageUrl: product.imageUrl ?? null,
+          size: product.size ?? null,
+          sellPrice: product.sellPrice ?? null,
+        })),
+      },
       room,
       openings,
       baseCatalog: pool,
@@ -3919,6 +3973,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       appliancePalette,
       refrigeratorCaps: mergeAutoDesignRefrigeratorCaps(wallPool, fridgeParts?.deepAbove ?? []),
       refrigeratorEndPanels: fridgeParts?.endPanels ?? [],
+      tallCatalog,
+      stoveMasterCode: autoDesignRangePick?.masterCode ?? undefined,
       styleId: styleIdRef.current ?? null,
       makeUid,
     });
@@ -3928,6 +3984,23 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       setSinks(keepSingleAutoDesignSink([remembered], remembered.cabinetUid ?? run.sinks[0].cabinetUid ?? ""));
       setSelectedSinkUid(remembered.uid);
       if (!autoDesignSessionRef.current) setOpenings(run.openings);
+      // A real Pelican basin chosen in the sink pop-up has to reach the cart, so
+      // it is recorded as a selected surface the same way the faucet is.
+      const pickedSink = autoDesignSinkPicks[0] ?? null;
+      if (pickedSink && remembered.pelicanProductId === pickedSink.id) {
+        const surface = {
+          id: pickedSink.id,
+          pelicanCode: pickedSink.pelicanCode ?? null,
+          slug: pickedSink.name,
+          name: pickedSink.name,
+          category: pickedSink.category ?? "Sinks & Faucets",
+          subCategory: pickedSink.subCategory ?? "Sinks",
+          size: pickedSink.size ?? null,
+          imageUrl: pickedSink.imageUrl ?? null,
+          sellPrice: pickedSink.sellPrice ?? null,
+        };
+        setSelectedSurfaces((previous) => previous.some((entry) => entry.id === surface.id) ? previous : [...previous, surface]);
+      }
     } else {
       setOpenings(run.openings);
     }
@@ -3969,7 +4042,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     if (run.sinkWindow) toast.info(`A ${formatInches(run.sinkWindow.width)} window was placed above the sink as entered; no wall cabinet goes over it.`);
     if (run.bareRangeUid) setAutoDesignRangeVentPrompt({ rangeUid: run.bareRangeUid });
     return { ok: true as const };
-    }, [appliancePalette, autoFillCabinets, autoFillCabinetsLoading, autoDesignAvailable, catalogFillers, dishwasherSidePreference, openings, placedRef, refrigeratorSurroundCatalog, room, setCountertop, setOpenings, setPlaced, setRoom, wallCabPool, wallCabPoolLoading]);
+    }, [appliancePalette, autoDesignSinkPicks, autoDesignTallPicks, autoFillCabinets, autoFillCabinetsLoading, autoDesignAvailable, catalogFillers, dishwasherSidePreference, liveMasterCabinets, openings, placedRef, refrigeratorSurroundCatalog, room, setCountertop, setOpenings, setPlaced, setRoom, tallCabPool, wallCabPool, wallCabPoolLoading]);
 
   /**
    * The second half of an Auto-Design build. Measured appliances are already
@@ -9790,7 +9863,203 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     sinks.filter((sink) => sink.autoDesignFaucet).length,
     autoDesignFaucetPrompt ? autoDesignFaucetPrompt.queue.length + 1 : 0,
   );
-  const { data: potFillerProducts } = trpc.surfaces.recommended.useQuery(
+  // Sink catalog for the auto-designer pop-up. Same Pelican source the Products
+  // page and the sink-base chooser already read: pelican.byCategory
+  // (Sinks & Faucets / Sinks) plus the recommended sink role. No local list.
+  const autoDesignSinkCatalogEnabled = autoDesignAvailable && (
+    autoDesignOpen
+    || autoDesignCornerStage != null
+    || autoDesignSinkPrompt != null
+  );
+  const {
+    data: pelicanSinkCatalog,
+    isLoading: pelicanSinkCatalogLoading,
+    isError: pelicanSinkCatalogError,
+  } = trpc.pelican.byCategory.useQuery(
+    {
+      category: "Sinks & Faucets" as never,
+      scope: "designer",
+      subCategory: "Sinks",
+      limit: 200,
+      offset: 0,
+    },
+    { enabled: autoDesignSinkCatalogEnabled, staleTime: 60_000 },
+  );
+  const {
+    data: recommendedSinkCatalog,
+    isLoading: recommendedSinkCatalogLoading,
+    isError: recommendedSinkCatalogError,
+  } = trpc.surfaces.recommended.useQuery(
+    { role: "sink", limit: 200 },
+    { enabled: autoDesignSinkCatalogEnabled, staleTime: 60_000 },
+  );
+  const autoDesignSinkProducts = useMemo(() => {
+    const merged = new Map<number, AutoDesignSinkProduct>();
+    const add = (item: {
+      id?: number;
+      name?: string | null;
+      pelicanCode?: string | null;
+      description?: string | null;
+      category?: string | null;
+      subCategory?: string | null;
+      imageUrl?: string | null;
+      sellPrice?: number | null;
+      size?: string | null;
+    } | null | undefined, trustSinkRole: boolean) => {
+      if (!item?.id || !item.name) return;
+      const product: AutoDesignSinkProduct = {
+        id: item.id,
+        pelicanCode: item.pelicanCode ?? null,
+        name: item.name,
+        description: item.description ?? null,
+        category: item.category ?? (trustSinkRole ? "Sinks & Faucets" : null),
+        subCategory: item.subCategory ?? (trustSinkRole ? "Sinks" : null),
+        imageUrl: item.imageUrl ?? null,
+        sellPrice: item.sellPrice ?? null,
+        size: item.size ?? null,
+      };
+      if (!isAutoDesignSinkProduct(product) || merged.has(product.id)) return;
+      merged.set(product.id, product);
+    };
+    for (const item of pelicanSinkCatalog?.items ?? []) add(item, false);
+    for (const item of recommendedSinkCatalog ?? []) add(item, true);
+    return Array.from(merged.values()).sort((left, right) => left.name.localeCompare(right.name) || left.id - right.id);
+  }, [pelicanSinkCatalog, recommendedSinkCatalog]);
+  const autoDesignSinkCatalogLoading = autoDesignSinkCatalogEnabled && (pelicanSinkCatalogLoading || recommendedSinkCatalogLoading);
+  const autoDesignSinkCatalogUnavailable = autoDesignSinkCatalogEnabled
+    && !autoDesignSinkCatalogLoading
+    && autoDesignSinkProducts.length === 0
+    && (pelicanSinkCatalogError || recommendedSinkCatalogError || pelicanSinkCatalog != null || recommendedSinkCatalog != null);
+  const autoDesignSinkBaseCabinet = useMemo(() => {
+    const anchor = placed.find((cabinet) => isSinkBaseCabinet(cabinet));
+    return anchor ?? null;
+  }, [placed]);
+  const autoDesignSinkDialogLabel = autoDesignSinkBaseCabinet?.masterCode ?? "the measured sink base";
+  const autoDesignWallIds = useMemo(() => autoDesignKitchenWallIds(room), [room]);
+  const openAutoDesignSinkPicker = useCallback((mode: "replace" | "add", sinkUid: string | null = null) => {
+    if (!autoDesignAvailable) return;
+    setAutoDesignSinkPrompt({ mode, sinkUid });
+  }, [autoDesignAvailable]);
+  const keepAutoDesignSinkDefault = useCallback(() => {
+    setAutoDesignSinkPrompt(null);
+  }, []);
+  /**
+   * Auto-place the picked sink. There is no manual placement step, including for
+   * a second sink: the base is reused, swapped to its matching farmhouse base, or
+   * a new base is seated in the next free span. The faucet is then re-seated on
+   * the countertop behind the basin, never inside it.
+   */
+  const chooseAutoDesignSink = useCallback((product: AutoDesignSinkProduct, applyToAllSinks: boolean) => {
+    const prompt = autoDesignSinkPrompt;
+    setAutoDesignSinkPicks((previous) => previous.some((entry) => entry.id === product.id) ? previous : [...previous, product]);
+    // The pop-up is opened either from the auto-designer setup (replace the
+    // measured base's basin) or from a row's own "Sink" button (that base first).
+    const preferredHostUid = prompt?.sinkUid ?? null;
+    const plan = planAutoDesignSinkPlacement({
+      product,
+      mode: prompt?.mode === "add" || applyToAllSinks ? "add" : "replace",
+      room: room,
+      placed: preferredHostUid
+        ? [...placedRef.current].sort((left, right) => (left.uid === preferredHostUid ? -1 : right.uid === preferredHostUid ? 1 : 0))
+        : placedRef.current,
+      sinks,
+      openings,
+      baseCatalog: ((liveMasterCabinets ?? []) as DesignCabinet[]),
+      wallIds: autoDesignWallIds,
+    });
+    if (plan.kind === "blocked") {
+      toast.error(plan.reason);
+      setAutoDesignSinkPrompt(null);
+      return;
+    }
+    if (plan.kind === "reuse") {
+      const fixture = adoptAutoDesignSinkRef.current(plan.sink);
+      setSinks((current) => [...current.filter((sink) => sink.cabinetUid !== plan.hostUid), fixture]);
+      setSelectedSinkUid(fixture.uid);
+    } else if (plan.kind === "swap-base") {
+      setPlaced((current) => current.map((cabinet) => cabinet.uid === plan.hostUid ? plan.cabinet : cabinet));
+      placedRef.current = placedRef.current.map((cabinet) => cabinet.uid === plan.hostUid ? plan.cabinet : cabinet);
+      const fixture = adoptAutoDesignSinkRef.current(plan.sink);
+      setSinks((current) => [
+        ...current.filter((sink) => !plan.removedSinkUids.includes(sink.uid) && sink.cabinetUid !== plan.hostUid),
+        fixture,
+      ]);
+      setSelectedSinkUid(fixture.uid);
+      toast.success(`${plan.fromCode} was replaced with ${plan.toCode} so ${product.name} has its matching farmhouse base.`);
+    } else {
+      const catalogRow = plan.cabinet;
+      const widthIn = Number(catalogRow.width) || 0;
+      const depthIn = Number(catalogRow.depth) || STD.BASE_DEPTH;
+      const host: PlacedCabinet = {
+        uid: `auto-design-sink-base-${Date.now()}-${Math.round(Math.random() * 1e6)}`,
+        cabinetId: catalogRow.id,
+        masterCode: catalogRow.masterCode,
+        description: catalogRow.description,
+        category: catalogRow.category ?? null,
+        subCategory: catalogRow.subCategory ?? null,
+        placement: "base",
+        x: 0,
+        y: 0,
+        width: widthIn,
+        depth: depthIn,
+        height: Number(catalogRow.height) || STD.BASE_HEIGHT,
+        rotation: 0,
+        wallId: plan.wallId,
+        wallOffset: plan.alongIn,
+        catalogImageUrl: catalogRow.catalogImageUrl ?? null,
+        numberOfDoors: catalogRow.numberOfDoors,
+        numberOfDrawers: catalogRow.numberOfDrawers,
+        styleId: styleId ?? null,
+      } as PlacedCabinet;
+      const spot = wallPlacementAt(plan.alongIn, widthIn, depthIn, plan.wallId as WallSide, room);
+      const seated: PlacedCabinet = { ...host, ...spot, wallId: spot.wallId ?? plan.wallId, wallOffset: spot.wallOffset ?? plan.alongIn };
+      setPlaced((current) => [...current, seated]);
+      placedRef.current = [...placedRef.current, seated];
+      const fixture = adoptAutoDesignSinkRef.current(buildPelicanSinkOnCabinet({
+        id: product.id,
+        pelicanCode: product.pelicanCode ?? null,
+        name: product.name,
+        imageUrl: product.imageUrl ?? null,
+        size: product.size ?? null,
+      }, seated, room));
+      setSinks((current) => [...current.filter((sink) => sink.cabinetUid !== seated.uid), fixture]);
+      setSelectedSinkUid(fixture.uid);
+      toast.success(`${product.name} placed in ${seated.masterCode}, centered in the base.`);
+    }
+    setCountertop(true);
+    const surface = {
+      id: product.id,
+      pelicanCode: product.pelicanCode ?? null,
+      slug: product.name,
+      name: product.name,
+      category: product.category ?? "Sinks & Faucets",
+      subCategory: product.subCategory ?? "Sinks",
+      size: product.size ?? null,
+      imageUrl: product.imageUrl ?? null,
+      sellPrice: product.sellPrice ?? null,
+    };
+    setSelectedSurfaces((previous) => previous.some((entry) => entry.id === surface.id) ? previous : [...previous, surface]);
+    setAutoDesignSinkPrompt(null);
+    // The faucet still has to sit on the countertop behind this basin.
+    if (!sinks.some((sink) => sink.faucet)) {
+      setAutoDesignFaucetPrompt((current) => current);
+    }
+  }, [autoDesignSinkPrompt, autoDesignWallIds, liveMasterCabinets, openings, room, sinks, styleId]);
+  // Tall oven / pantry boxes the selected line sells, for the tall-cabinet
+  // pop-up. Same catalog the palette reads; nothing is invented locally.
+  const autoDesignTallProductsList = useMemo(() => {
+    const byId = new Map<number, DesignCabinet>();
+    for (const row of [
+      ...((tallCabPool as DesignCabinet[] | undefined) ?? []),
+      ...((liveMasterCabinets as DesignCabinet[] | undefined) ?? []),
+    ]) {
+      if (!row || row.placement !== "tall") continue;
+      byId.set(row.id, row);
+    }
+    return autoDesignTallProducts(Array.from(byId.values()));
+  }, [liveMasterCabinets, tallCabPool]);
+  const autoDesignRangeChoicesList = useMemo(() => autoDesignRangeChoices(appliancePalette), [appliancePalette]);
+  const autoDesignRangeSelection = autoDesignRangePick ?? defaultAutoDesignRange(autoDesignRangeChoicesList);  const { data: potFillerProducts } = trpc.surfaces.recommended.useQuery(
     { role: "pot-filler", limit: 8 },
     { enabled: !!potFillerDialog },
   );
@@ -20344,6 +20613,16 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                             Choose
                           </button>
                         )}
+                        {autoDesignAvailable && (
+                          <button
+                            type="button"
+                            className="text-[#1a2744] underline"
+                            data-testid={`auto-design-sink-reopen-${s.uid}`}
+                            onClick={() => openAutoDesignSinkPicker("replace", s.uid)}
+                          >
+                            Sink
+                          </button>
+                        )}
                         <button className="text-destructive" title={t("dt_bs_remove")} onClick={() => deleteSink(s.uid)}>
                           <X className="h-3.5 w-3.5" />
                         </button>
@@ -20558,6 +20837,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	          catalogLoading={autoFillCabinetsLoading || wallCabPoolLoading}
 	          wallCount={Math.min(6, Math.max(1, room.customWalls?.length ?? 4))}
 	          room={room}
+	          onOpenSinkPicker={() => openAutoDesignSinkPicker("replace")}
+	          selectedSinkName={autoDesignSinkPicks[0]?.name ?? null}
+	          onOpenRangePicker={() => setAutoDesignRangeOpen(true)}
+	          selectedRangeLabel={autoDesignRangePick ? `${autoDesignRangePick.label} (${autoDesignRangePick.widthIn}″)` : null}
+	          onOpenTallPicker={() => setAutoDesignTallOpen(true)}
+	          selectedTallSummary={autoDesignTallPicks.length > 0
+	            ? `${autoDesignTallPicks.map((product) => product.masterCode).join(", ")} — placed automatically in a free span.`
+	            : null}
 	        />
 	      )}
 	      {autoDesignAvailable && (
@@ -20570,6 +20857,41 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	          catalogUnavailable={autoDesignFaucetCatalogUnavailable}
 	          onKeepDefault={keepAutoDesignFaucetDefault}
 	          onChoose={chooseAutoDesignFaucet}
+	        />
+	      )}
+	      {autoDesignAvailable && (
+	        <AutoDesignSinkDialog
+	          open={autoDesignSinkPrompt != null}
+	          sinkBaseLabel={autoDesignSinkDialogLabel}
+	          products={autoDesignSinkProducts}
+	          loading={autoDesignSinkCatalogLoading}
+	          catalogUnavailable={autoDesignSinkCatalogUnavailable}
+	          placedSinkCount={sinks.length}
+	          onKeepDefault={keepAutoDesignSinkDefault}
+	          onChoose={chooseAutoDesignSink}
+	        />
+	      )}
+	      {autoDesignAvailable && (
+	        <AutoDesignTallDialog
+	          open={autoDesignTallOpen}
+	          products={autoDesignTallProductsList}
+	          picked={autoDesignTallPicks}
+	          onCancel={() => setAutoDesignTallOpen(false)}
+	          onAdd={(product) => setAutoDesignTallPicks((current) => current.some((entry) => entry.id === product.id) ? current : [...current, product])}
+	          onRemove={(productId) => setAutoDesignTallPicks((current) => current.filter((entry) => entry.id !== productId))}
+	          onDone={() => setAutoDesignTallOpen(false)}
+	        />
+	      )}
+	      {autoDesignAvailable && (
+	        <AutoDesignRangeDialog
+	          open={autoDesignRangeOpen}
+	          choices={autoDesignRangeChoicesList}
+	          selected={autoDesignRangeSelection}
+	          onKeepDefault={() => setAutoDesignRangeOpen(false)}
+	          onChoose={(choice) => {
+	            setAutoDesignRangePick(choice);
+	            setAutoDesignRangeOpen(false);
+	          }}
 	        />
 	      )}
       <SurfacesPickerDialog
