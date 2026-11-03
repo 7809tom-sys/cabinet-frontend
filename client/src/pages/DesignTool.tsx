@@ -26,6 +26,9 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { kitchenAcceptedFaceImage, resolveKitchenDoorColor } from "@/lib/acceptedDoorAppearance";
+import { colorTraceEnabled, createColorTraceRecorder, type ColorTrace } from "@/lib/colorTrace";
+import { brewersTestDecision, brewersTestEnabled } from "@/lib/brewersColorTest";
+import { ColorTracePanel, logColorTrace } from "@/components/design/ColorTracePanel";
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle,
 } from "@/components/ui/sheet";
@@ -2725,7 +2728,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // it is resolved server-side and never shown.
   const { data: doorStylesRaw, isError: doorStylesError } = trpc.doorStyles.list.useQuery();
   const selectedStyleMissingFromPicker =
-    styleId != null && !(doorStylesRaw ?? []).some((style) => style.id === styleId);
+    styleId != null && !((doorStylesRaw ?? []) as Array<{ id: number }>).some((style) => style.id === styleId);
   const { data: persistedSelectedStyle, isFetching: persistedStyleFetching } = trpc.doorStyles.byId.useQuery(
     { id: styleId ?? 0 },
     { enabled: selectedStyleMissingFromPicker },
@@ -5227,10 +5230,15 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // this style. `renderHex` alone is not proof of an acceptance (an admin can type
   // a color without accepting a run), so only an accepted run may drive it; the
   // resolver otherwise falls back to the style's own saved catalog color.
-  const activeKitchenDoorColor = useMemo(
-    () => resolveKitchenDoorColor(activeStyle as never),
-    [activeStyle],
-  );
+  // Admin debugging for the color pipeline: `?colorTrace=1` records every layer,
+  // and `?colorTest=brewers` pretends SH's accepted render is Brewers navy. Both
+  // are admin-only, preview-only, and write nothing.
+  const colorTraceOn = useMemo(() => colorTraceEnabled({ search, isAdmin }), [search, isAdmin]);
+  const brewersTestOn = useMemo(() => brewersTestEnabled({ search, isAdmin }), [search, isAdmin]);
+  const activeKitchenDoorColor = useMemo(() => {
+    const decision = resolveKitchenDoorColor(activeStyle as never);
+    return brewersTestOn ? brewersTestDecision(decision) : decision;
+  }, [activeStyle, brewersTestOn]);
   const activeDoorRenderHex = activeKitchenDoorColor.candidateSource === "render-hex"
     ? activeKitchenDoorColor.candidateHex
     : null;
@@ -14752,6 +14760,58 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     [placed, finishForCab],
   );
 
+  /**
+   * Admin color debugging. The recorder captures the resolver's decision and the
+   * final surface hex for every placed cabinet that uses the active style, then the
+   * panel and the console show it. Nothing is written and nothing renders unless
+   * `?colorTrace=1` is in the URL.
+   */
+  const [colorTrace, setColorTrace] = useState<ColorTrace | null>(null);
+  const [colorTraceOpen, setColorTraceOpen] = useState(true);
+  useEffect(() => {
+    if (!colorTraceOn) {
+      setColorTrace(null);
+      return;
+    }
+    const recorder = createColorTraceRecorder();
+    const traced = new Map<string, { cabinetUid: string; masterCode: string; styleId: number | null; styleCode: string | null }>();
+    for (const cabinet of placed) {
+      const cabinetStyle = cabinet.styleId != null
+        ? (doorStyles ?? []).find((style) => style.id === cabinet.styleId) ?? activeStyle
+        : activeStyle;
+      const identity = {
+        cabinetUid: cabinet.uid,
+        masterCode: cabinet.masterCode,
+        styleId: cabinet.styleId ?? styleId ?? null,
+        styleCode: (cabinetStyle as { styleCode?: string | null } | null)?.styleCode ?? null,
+      };
+      traced.set(cabinet.uid, identity);
+      const decision = cabinetStyle
+        ? resolveKitchenDoorColor(cabinetStyle as never)
+        : activeKitchenDoorColor;
+      recorder.recordResolver(identity, decision);
+      const override = threeDCabinetFinishOverrides?.[cabinet.uid];
+      if (override) {
+        recorder.override(identity, {
+          key: "override.savedDesign",
+          detail: `saved design cabinetFinish ${override} overrides the style color ${decision.appliedHex}`,
+          hex: override,
+          source: "saved-design",
+        });
+      }
+      // Every surface is drawn from the one resolved color unless an override
+      // replaced it, so recording both is what exposes a real disagreement.
+      const applied = override ?? decision.appliedHex;
+      for (const surface of ["front", "box", "sides", "skin", "toeKick"] as const) {
+        recorder.surface(identity, surface, applied);
+      }
+    }
+    const finished = recorder.finish();
+    setColorTrace(finished);
+    logColorTrace(finished);
+  }, [activeKitchenDoorColor, activeStyle, colorTraceOn, doorStyles, placed, styleId, threeDCabinetFinishOverrides]);
+  const colorTracePanelState = colorTraceOn && colorTrace && colorTraceOpen ? colorTrace : null;
+
   const threeDCabinetFinishPreviewOptions = useMemo(() => {
     const ids = Array.from(new Set([
       styleA ?? styleId,
@@ -23118,6 +23178,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                onClearTemporaryPreview={smartGapPreview.length > 0 ? () => { smartGapPreviewSessionRef.current = null; setSmartGapPreviewPosition(null); setSmartGapPreview([]); } : undefined}
 	                temporaryPreviewTransitionKey={smartGapPreview[0]?.uid ?? null}
 	                fillerInsertionTransition={fillerInsertionTransition}
+	                colorTrace={colorTracePanelState}
 	              />
             ) : (
               <div className="flex h-[360px] items-center justify-center rounded-xl border border-dashed px-6 text-center text-sm text-muted-foreground">Choose an active door style and add a cabinet, or choose a starter room layout, to load the 3D preview.</div>
