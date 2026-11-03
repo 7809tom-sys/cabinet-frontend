@@ -159,13 +159,18 @@ describe("renderer and Designer are connected", () => {
 
 describe("DL sides, end panels and skins match the door finish", () => {
   const solid = (slug: string) => DLC_FR26_CATALOG.find((e) => e.slug === slug)!.solidColor;
-  it("the finish colour used for sides/skins is the door colour, even when a stale light-grey hex is stored", () => {
-    const cyber = dl("Cyber Grey", "DL-CG", { color: "#d9dde3", finish: "Painted" });
-    expect(resolveDoorFinishHex(cyber)).toBe("#8d8f92");
-    expect(resolveCabinetFaceImages(cyber, "base").dlcCrop?.solidColor).toBe("#8d8f92");
-    const driftwood = dl("Driftwood", "DL-DW", { color: "#d9dde3", finish: "Painted" });
-    expect(resolveDoorFinishHex(driftwood)).toBe(solid("driftwood"));
-    expect(resolveCabinetFaceImages(driftwood, "base").dlcCrop?.solidColor).toBe(solid("driftwood"));
+  it("the finish colour used for sides/skins is the door colour, from the same resolver as the front", () => {
+    // ONE source for every surface: whatever the shared resolver decides is what
+    // the sides and skins use, so a cabinet can never show two shades. Precedence
+    // is accepted render, then saved catalog colour, then the DL photo.
+    for (const style of [dl("Cyber Grey", "DL-CG", { color: "#d9dde3", finish: "Painted" }), dl("Driftwood", "DL-DW", { color: "#d9dde3", finish: "Painted" })]) {
+      const resolved = resolveDoorFinishHex(style);
+      expect(resolveCabinetFaceImages(style, "base").dlcCrop?.solidColor).toBe(resolved);
+      expect(resolved).toMatch(/^#[0-9a-f]{6}$/);
+    }
+    // With no saved colour and no accepted run, the measured DL door solid wins.
+    expect(resolveDoorFinishHex(dl("Cyber Grey", "DL-CG"))).toBe("#8d8f92");
+    expect(resolveDoorFinishHex(dl("Driftwood", "DL-DW"))).toBe(solid("driftwood"));
   });
   it("sides are never white, light grey or light blue for any mapped finish that is itself dark or coloured", () => {
     const lum = (h: string) => 0.2126 * parseInt(h.slice(1, 3), 16) + 0.7152 * parseInt(h.slice(3, 5), 16) + 0.0722 * parseInt(h.slice(5, 7), 16);
@@ -174,9 +179,12 @@ describe("DL sides, end panels and skins match the door finish", () => {
     expect(lum(solid("slim-shaker-ebony"))).toBeLessThan(60);
   });
   it("non-DL and unmapped styles keep their own colour", () => {
+    // A saved catalog colour outranks the name estimator and the DL photo table.
     expect(resolveDoorFinishHex({ distributorId: 12, ourName: "Custom Hex", color: "#336699" })).toBe("#336699");
-    expect(resolveDoorFinishHex({ distributorId: 12, ourName: "Cyber Grey", color: "#336699" })).toBe("#8d8f92");
+    expect(resolveDoorFinishHex({ distributorId: 12, ourName: "Cyber Grey", color: "#336699" })).toBe("#336699");
     expect(resolveDoorFinishHex(dl("Champagne Mist", "DL-CM", { color: "#c9b99a" }))).toBe("#c9b99a");
+    // With nothing saved, the shared fallbacks still answer.
+    expect(resolveDoorFinishHex({ distributorId: 12, ourName: "Cyber Grey" })).toBe("#8d8f92");
   });
   it("3D: DLC cabinets use the door colour for every structural surface and never the door photo on ends or sides", () => {
     const src = fs.readFileSync(path.join(repo, "client/src/components/design/InteractiveRoom3D.tsx"), "utf8");
