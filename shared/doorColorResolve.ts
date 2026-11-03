@@ -1,13 +1,13 @@
 /**
  * Door color, without brand snapping.
  *
- * Precedence, highest first (owner rule: any approved render becomes the
- * kitchen's color):
- * 0. The latest ACCEPTED door-rendering run for this style — its renderHex, and
- *    its approved door image/texture. This is the source of truth: an admin
- *    approving a render changes every kitchen on the next read.
- * 1. The style's own saved catalog color (the color an admin saved on the style).
- * 2. Measured swatch hex from cabinet-backend PR 72 (data/door-colors/swatch-hex.json).
+ * Precedence, highest first (owner rule: the accepted render is the source of
+ * truth for a door's color):
+ * 0. The latest ACCEPTED door-rendering run for this style — its derived color
+ *    and its approved door image/texture. An admin approving a render changes
+ *    every kitchen on the next read.
+ * 1. A hand-set render hex on the style (an explicit correction).
+ * 2. The style's own saved catalog color (the color an admin saved on the style).
  * 3. WalzCraft ColorPatterns primary shade (data/door-colors/ColorPatterns_*.csv),
  *    matched by distributor plus style code or door name.
  * 4. A hex estimator (name / color type, or the DL door-photo solid when the name
@@ -15,11 +15,16 @@
  * 5. The color the door rendered with before PR 209: a DL finish solid, otherwise
  *    the catalog hex, then the name table (main at 8df3a43, resolveDoorFinishHex).
  *
- * Layers 2–5 exist only for a style with nothing saved and no accepted run, so a
- * hardcoded table can never beat a real decision. After a layer picks a hex, an
- * independent estimator concurs or objects. A disagreement never replaces an
- * accepted render or a saved color; every other disagreement keeps the pre-209
- * color and sets needsColorReview. Nothing is snapped to cream, green, or gold.
+ * The measured swatch table (cabinet-backend PR 72, data/door-colors/swatch-hex.json)
+ * sits at layer 2, but a row an operator marks `demoted` is never a candidate. Tom
+ * found that the Shaker Honey row was a nearest paint-chip match (#c8a040), not the
+ * door's original color, and that a paint match was painting doors instead of the
+ * door itself. A demoted row is reported for review and never applied.
+ *
+ * After a layer picks a hex, an independent estimator concurs or objects. A
+ * disagreement never replaces an accepted render, a hand-set hex, or a saved
+ * color; every other disagreement keeps the pre-209 color and sets
+ * needsColorReview. Nothing is snapped to cream, green, or gold.
  *
  * Geometry is not decided here.
  */
@@ -35,9 +40,42 @@ export const DOOR_COLOR_AGREE_DELTA_E = 10;
 /** Aspen Charcoal stain. Same value resolveDoorFinishHex used before PR 209. */
 const ASPEN_CHARCOAL_STAIN = "#2a211c";
 
+/**
+ * Colors a style rendered in before the Nov 2 2026 paint match, for the styles
+ * whose saved catalog color that patch overwrote with a nearest paint-chip match.
+ *
+ * These are what the kitchen falls back to when no accepted render exists yet, and
+ * what the resolver uses in place of a paint-matched saved color.
+ *
+ * Shaker Honey (330021, SH, Madison) is the case that exposed this. The door is a
+ * solid birch shaker with a clear stained finish (`finish: "Stained"` in the
+ * Madison catalog), so it is a grain, not an opaque paint. Before the paint match
+ * it rendered the name table's `honey -> natural` tone `#d1ba8f`; the paint match
+ * replaced that with the flat golden `#c8a040`, which is not a color this door was
+ * ever measured in and which the name estimator still rejects (ΔE 12.3).
+ */
+export const PRE_PAINT_MATCH_ORIGINALS: Readonly<Record<number, { hex: string; category: FinishCategory }>> = {
+  330021: { hex: "#d1ba8f", category: "stain" },
+};
+
 export type FinishCategory = "paint" | "stain";
 export type DoorColorSource = "accepted-render" | "render-hex" | "catalog-color" | "swatch-table" | "walzcraft" | "estimator" | "pre-209";
 export type HueFamily = "neutral" | "red" | "orange" | "yellow" | "green" | "blue" | "purple" | "brown";
+
+/**
+ * What the audit accepted for a style: the run's derived color and the approved
+ * render an operator signed off on. `doorStyles.acceptedAppearance` returns this
+ * shape, and it is the one source allowed to outrank everything else.
+ *
+ * The client's concrete row type is `AcceptedAppearanceRow` in
+ * `client/src/lib/acceptedDoorAppearance.ts`; this is the shared contract.
+ */
+export type AcceptedDoorAppearance = {
+  colorHex?: string | null;
+  /** The accepted render itself, used as the door's texture. */
+  textureUrl?: string | null;
+  approvedVersionId?: number | null;
+};
 
 export type DoorColorInput = {
   id?: number | null;
@@ -62,9 +100,22 @@ export type DoorColorInput = {
   renderHex?: string | null;
   /** The accepted run's approved door image, used as the kitchen's face texture. */
   approvedReferenceImageUrl?: string | null;
+  /** Non-null only when an admin actually accepted a run for this style. */
+  approvedVersionId?: number | null;
 };
 
-type SwatchRow = { id: number; style: string; category: FinishCategory; hex: string };
+type SwatchRow = {
+  id: number;
+  style: string;
+  category: FinishCategory;
+  hex: string;
+  /**
+   * True when this row is a nearest paint-chip match rather than a measurement
+   * of a real door. A demoted row is never applied to a door, whatever layer it
+   * would otherwise occupy.
+   */
+  demoted?: boolean;
+};
 type WalzRow = {
   distributor: string;
   code: string;
@@ -90,7 +141,7 @@ export type DoorColorReview = {
   deltaE: number | null;
   hueChosen: HueFamily | null;
   hueEstimator: HueFamily | null;
-  keptBecause: "agreed" | "hand-set-render-hex" | "saved-catalog-color" | "estimator-disagreed" | "no-second-opinion";
+  keptBecause: "agreed" | "accepted-render" | "hand-set-render-hex" | "saved-catalog-color" | "estimator-disagreed" | "no-second-opinion";
 };
 
 export type DoorColorDecision = {
@@ -106,6 +157,8 @@ export type DoorColorDecision = {
   pre209Category: FinishCategory;
   review: DoorColorReview;
   layers: {
+    /** The accepted run's color, when this style has one. */
+    acceptedRender: LayerHit | null;
     renderHex: string | null;
     /** The style's own saved catalog color, when it has one. */
     catalogColor: LayerHit | null;
@@ -162,6 +215,12 @@ function textOf(style: DoorColorInput): string {
 
 /** Paint words win. A named wood (oak, hickory, walnut, and the rest) is a stain. */
 export function finishCategoryFromNames(style: DoorColorInput): FinishCategory {
+  // A style whose pre-paint-match original is stated also has its finish category
+  // stated there, so the name guess cannot contradict it. Shaker Honey is a stained
+  // birch shaker; reading its species text as "paint" flagged the door against
+  // itself at ΔE 0.
+  const known = style.id != null ? PRE_PAINT_MATCH_ORIGINALS[style.id] : undefined;
+  if (known) return known.category;
   const name = `${style.ourName ?? ""} ${style.aliasName ?? ""} ${style.name ?? ""} ${style.finish ?? ""} ${style.color ?? ""}`.toLowerCase();
   const species = (style.woodSpecies ?? "").toLowerCase();
   if (/\bhickory\b/.test(name) || /\bhickory\b/.test(species)) return "stain";
@@ -229,8 +288,49 @@ function lookupSwatch(style: DoorColorInput): LayerHit | null {
   const byAlias = swatchByName.get(normalizeName(style.aliasName));
   const byName = swatchByName.get(normalizeName(style.name));
   const row = byId ?? byOur ?? byAlias ?? byName;
-  if (!row) return null;
+  // A demoted row is a paint match, not a measurement. It is never a candidate.
+  if (!row || row.demoted) return null;
   return { hex: row.hex, category: row.category, source: "swatch-table", label: `${row.id} ${row.style}` };
+}
+
+/** A demoted swatch row for this style, reported for review only. Never applied. */
+export function demotedSwatchRow(style: DoorColorInput): LayerHit | null {
+  const byId = style.id != null ? swatchById.get(style.id) : undefined;
+  const byOur = swatchByName.get(normalizeName(style.ourName));
+  const row = byId ?? byOur;
+  if (!row?.demoted) return null;
+  return { hex: row.hex, category: row.category, source: "swatch-table", via: "demoted-paint-match", label: `${row.id} ${row.style}` };
+}
+
+/**
+ * The color a door rendered in before the paint match, when its saved color was
+ * overwritten by a nearest paint-chip match. Null for every other style, so the
+ * ordinary layers decide.
+ */
+export function prePaintMatchOriginal(style: DoorColorInput): LayerHit | null {
+  const original = style.id != null ? PRE_PAINT_MATCH_ORIGINALS[style.id] : undefined;
+  if (!original) return null;
+  return {
+    hex: original.hex,
+    category: original.category,
+    source: "catalog-color",
+    via: "pre-paint-match",
+    label: "color before the paint match",
+  };
+}
+
+/**
+ * True when this style's saved catalog color is the paint-match value itself.
+ * Its own saved color is then a paint match rather than a decision, so a higher
+ * layer (or the pre-paint-match original) must win.
+ */
+export function savedColorIsPaintMatch(style: DoorColorInput): boolean {
+  const original = style.id != null ? PRE_PAINT_MATCH_ORIGINALS[style.id] : undefined;
+  const saved = exactHex(style.color);
+  const demoted = demotedSwatchRow(style);
+  if (!original || !saved) return false;
+  const paintMatchValues = new Set([demoted?.hex.toLowerCase()].filter(Boolean));
+  return saved !== original.hex && paintMatchValues.has(saved);
 }
 
 /**
@@ -275,8 +375,14 @@ function lookupWalz(style: DoorColorInput): LayerHit | null {
  * DL finishes rendered their catalog finish solid (resolveDoorFinishHex at 8df3a43
  * preferred that over a stale color column). Everyone else used a catalog hex,
  * then the name table, then the off-white default. Never a nearest brand swatch.
+ *
+ * A style whose saved color was overwritten by a nearest paint-chip match reports
+ * its pre-paint-match value first, so a paint match can never stand in for the
+ * door's own color again.
  */
 export function pre209DoorColor(style: DoorColorInput): LayerHit {
+  const original = prePaintMatchOriginal(style);
+  if (original) return { ...original, source: "pre-209", via: "pre-paint-match" };
   const photo = dlcPhotoEstimate(style);
   if (photo) return { ...photo, source: "pre-209", via: "dlc-photo" };
   const aspen = isAspenCharcoalIdentity(style);
@@ -291,7 +397,7 @@ export function pre209DoorColor(style: DoorColorInput): LayerHit {
 }
 
 function candidateCategory(style: DoorColorInput, hit: LayerHit): FinishCategory {
-  if (hit.source === "render-hex") {
+  if (hit.source === "render-hex" || hit.source === "accepted-render") {
     return lookupSwatch(style)?.category ?? lookupWalz(style)?.category ?? finishCategoryFromNames(style);
   }
   if (/\bhickory\b/i.test(textOf(style))) return "stain";
@@ -319,23 +425,56 @@ function colorsAgree(chosen: LayerHit, estimate: LayerHit): { agree: boolean; de
 function savedCatalogColor(style: DoorColorInput): LayerHit | null {
   const hex = exactHex(style.color);
   if (!hex) return null;
+  // A saved color that IS the paint match is not a decision: it is what the
+  // paint-match patch wrote. The pre-paint-match original speaks instead.
+  if (savedColorIsPaintMatch(style)) return null;
   return { hex, category: finishCategoryFromNames(style), source: "catalog-color", via: "saved" };
+}
+
+/**
+ * True when an admin actually accepted a door-rendering run for this style.
+ * A `renderHex` alone is not proof: an admin can type a color into the style
+ * editor without ever accepting a run, and that must not be called accepted.
+ */
+export function hasAcceptedRun(style: DoorColorInput | null | undefined): boolean {
+  return Boolean(style && style.approvedVersionId != null);
+}
+
+/**
+ * The accepted run's color: the color derived from the accepted render, which is
+ * what the audit signed off on. Null when no run was accepted, so a hand-typed
+ * hex never masquerades as one.
+ */
+function acceptedRenderColor(style: DoorColorInput): LayerHit | null {
+  if (!hasAcceptedRun(style)) return null;
+  const hex = exactHex(style.renderHex);
+  if (!hex) return null;
+  return { hex, category: finishCategoryFromNames(style), source: "accepted-render", via: "accepted-run", label: "accepted render" };
 }
 
 export function resolveDoorColor(style: DoorColorInput | null | undefined): DoorColorDecision {
   const input = style ?? {};
-  // A hand-set or accepted renderHex is the source of truth. Approving a door
-  // render writes this value onto the style, so an approved render IS the
-  // kitchen's color with no further step.
+  // The accepted render is the source of truth for a door's color. Approving a
+  // run writes its color and image onto the style, so an accepted render IS the
+  // kitchen's color with no further step. A hand-set render hex is the next layer.
+  const acceptedRender = acceptedRenderColor(input);
   const renderHex = exactHex(input.renderHex);
+  const handSetRender = !acceptedRender && renderHex
+    ? { hex: renderHex, category: "paint" as FinishCategory, source: "render-hex" as DoorColorSource }
+    : null;
   const saved = savedCatalogColor(input);
+  // The pre-paint-match original is stated knowledge about this door, so it is a
+  // candidate in its own right: it sits above the guessed tables but below any
+  // saved color or accepted render.
+  const original = prePaintMatchOriginal(input);
   const swatch = lookupSwatch(input);
   const walzcraft = lookupWalz(input);
   const estimator = estimateDoorHex(input);
   const pre209 = pre209DoorColor(input);
-  const candidate = renderHex
-    ? { hex: renderHex, category: "paint" as FinishCategory, source: "render-hex" as DoorColorSource }
-    : saved ?? swatch ?? walzcraft ?? estimator ?? pre209;
+  // The measured swatch table is still consulted, but a row marked `demoted` is a
+  // nearest paint-chip match rather than a measurement of a door, so `lookupSwatch`
+  // never returns it. Shaker Honey's `#c8a040` is exactly that case.
+  const candidate = acceptedRender ?? handSetRender ?? saved ?? original ?? swatch ?? walzcraft ?? estimator ?? pre209;
   const chosen: LayerHit = { ...candidate, category: candidateCategory(input, candidate) };
   const opinion = secondOpinion(input, chosen);
   const compared = opinion ? colorsAgree(chosen, opinion) : null;
@@ -347,10 +486,12 @@ export function resolveDoorColor(style: DoorColorInput | null | undefined): Door
     keptBecause = "no-second-opinion";
   } else if (!compared?.agree) {
     needsColorReview = true;
-    // A render hex or the style's own saved catalog color is a decision, not a
-    // guess: the estimator never overrides it. Only a guessed layer can be
-    // replaced by the pre-209 color.
-    if (chosen.source === "render-hex") {
+    // An accepted render, a hand-set render hex, or the style's own saved catalog
+    // color is a decision, not a guess: the estimator never overrides it. Only a
+    // guessed layer can be replaced by the pre-209 color.
+    if (chosen.source === "accepted-render") {
+      keptBecause = "accepted-render";
+    } else if (chosen.source === "render-hex") {
       keptBecause = "hand-set-render-hex";
     } else if (chosen.source === "catalog-color") {
       keptBecause = "saved-catalog-color";
@@ -385,7 +526,7 @@ export function resolveDoorColor(style: DoorColorInput | null | undefined): Door
       hueEstimator: opinion ? hueFamily(opinion.hex) : null,
       keptBecause,
     },
-    layers: { renderHex, catalogColor: saved, swatch, walzcraft, estimator, pre209 },
+    layers: { acceptedRender, renderHex, catalogColor: saved, swatch, walzcraft, estimator, pre209 },
   };
 }
 
@@ -393,10 +534,11 @@ export type DoorColorCoverage = {
   doors: number;
   candidate: Record<DoorColorSource, number>;
   applied: Record<DoorColorSource, number>;
-  layerPresent: Record<Exclude<DoorColorSource, "accepted-render">, number>;
+  layerPresent: Record<DoorColorSource, number>;
   agreed: number;
   flagged: number;
   flaggedKeptRenderHex: number;
+  flaggedKeptAcceptedRender: number;
   flaggedKeptPre209: number;
   noSecondOpinion: number;
   swatchTableRows: number;
@@ -407,18 +549,20 @@ export type DoorColorCoverage = {
 export function summarizeDoorColors(styles: readonly DoorColorInput[]): DoorColorCoverage {
   const candidate: Record<DoorColorSource, number> = { "accepted-render": 0, "render-hex": 0, "catalog-color": 0, "swatch-table": 0, walzcraft: 0, estimator: 0, "pre-209": 0 };
   const applied: Record<DoorColorSource, number> = { ...candidate };
-  const layerPresent: Record<Exclude<DoorColorSource, "accepted-render">, number> = {
-    "render-hex": 0, "catalog-color": 0, "swatch-table": 0, walzcraft: 0, estimator: 0, "pre-209": 0,
+  const layerPresent: Record<DoorColorSource, number> = {
+    "accepted-render": 0, "render-hex": 0, "catalog-color": 0, "swatch-table": 0, walzcraft: 0, estimator: 0, "pre-209": 0,
   };
   let agreed = 0;
   let flagged = 0;
   let flaggedKeptRenderHex = 0;
+  let flaggedKeptAcceptedRender = 0;
   let flaggedKeptPre209 = 0;
   let noSecondOpinion = 0;
   for (const style of styles) {
     const decision = resolveDoorColor(style);
     candidate[decision.candidateSource] += 1;
     applied[decision.appliedSource] += 1;
+    if (decision.layers.acceptedRender) layerPresent["accepted-render"] += 1;
     if (decision.layers.renderHex) layerPresent["render-hex"] += 1;
     if (decision.layers.catalogColor) layerPresent["catalog-color"] += 1;
     if (decision.layers.swatch) layerPresent["swatch-table"] += 1;
@@ -427,6 +571,7 @@ export function summarizeDoorColors(styles: readonly DoorColorInput[]): DoorColo
     layerPresent["pre-209"] += 1;
     if (decision.review.needsColorReview) {
       flagged += 1;
+      if (decision.review.keptBecause === "accepted-render") flaggedKeptAcceptedRender += 1;
       if (decision.review.keptBecause === "hand-set-render-hex" || decision.review.keptBecause === "saved-catalog-color") flaggedKeptRenderHex += 1;
       if (decision.review.keptBecause === "estimator-disagreed") flaggedKeptPre209 += 1;
     } else if (decision.review.keptBecause === "no-second-opinion") noSecondOpinion += 1;
@@ -440,6 +585,7 @@ export function summarizeDoorColors(styles: readonly DoorColorInput[]): DoorColo
     agreed,
     flagged,
     flaggedKeptRenderHex,
+    flaggedKeptAcceptedRender,
     flaggedKeptPre209,
     noSecondOpinion,
     swatchTableRows: swatches.length,

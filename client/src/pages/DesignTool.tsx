@@ -25,7 +25,8 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { kitchenAcceptedFaceImage, resolveKitchenDoorColor } from "@/lib/acceptedDoorAppearance";
+import { designStyleIds, kitchenAcceptedFaceImage, resolveKitchenDoorColor, withAcceptedAppearance, type AcceptedAppearanceRow } from "@/lib/acceptedDoorAppearance";
+import { useAcceptedDoorAppearance } from "@/lib/acceptedAppearanceQuery";
 import { colorTraceEnabled, createColorTraceRecorder, type ColorTrace } from "@/lib/colorTrace";
 import { brewersTestDecision, brewersTestEnabled } from "@/lib/brewersColorTest";
 import { ColorTracePanel, logColorTrace } from "@/components/design/ColorTracePanel";
@@ -5189,16 +5190,48 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     const s = doorStyles?.find((d) => d.id === styleId) as { ourName?: string | null; aliasName?: string | null } | undefined;
     return s ? (affiliateStyleName({ ...s, id: styleId ?? 0 }) || null) : null;
   }, [affiliateStyleName, doorStyles, styleId]);
-  const activeFinish = useMemo(() => {
-    const s = doorStyles?.find((d) => d.id === styleId) as
-      | { ourName?: string | null; color?: string | null; finish?: string | null; woodSpecies?: string | null }
-      | undefined;
-    return doorStyleFinishColors(s);
-  }, [doorStyles, styleId]);
+  // Full active door style (with woodSpecies) so we can apply the Hickory-only
+  // unfinished-end skin rule. Hickory cabinets ship with unfinished exposed
+  // sides, so any exposed end needs a matching Hickory skin panel.
+  const catalogActiveStyle = useMemo(
+    () => doorStyles?.find((s) => s.id === styleId) ?? null,
+    [doorStyles, styleId]
+  );
+  // PRIORITY: the accepted render is the source of truth for the door's color and
+  // texture. It comes from `doorStyles.acceptedAppearance` (a separate
+  // cabinet-backend PR). While that endpoint is missing it answers NOT_FOUND, and
+  // `useAcceptedDoorAppearance` reports `unavailable` instead of failing: the door
+  // then renders its pre-paint-match original, never the paint match #c8a040.
+  const acceptedAppearanceIds = useMemo(() => designStyleIds({
+    designStyleId: styleId,
+    cabinetStyleIds: placed.map((cabinet) => cabinet.styleId),
+  }), [placed, styleId]);
+  const acceptedAppearance = useAcceptedDoorAppearance(acceptedAppearanceIds);
+  const acceptedAppearanceById = useMemo(
+    () => new Map<number, AcceptedAppearanceRow>(
+      acceptedAppearance.rows
+        .filter((row): row is AcceptedAppearanceRow & { styleId: number } => row.styleId != null)
+        .map((row) => [row.styleId, row] as const),
+    ),
+    [acceptedAppearance.rows],
+  );
+  /** Merge the accepted render onto a style row, or leave it alone when none exists. */
+  const withAccepted = useCallback(
+    <T extends { id?: number | null }>(style: T | null | undefined): T | null | undefined => {
+      if (!style || style.id == null) return style;
+      return withAcceptedAppearance(style as never, acceptedAppearanceById.get(style.id)) as T;
+    },
+    [acceptedAppearanceById],
+  );
+  const activeStyle = useMemo(
+    () => withAccepted(catalogActiveStyle) ?? null,
+    [catalogActiveStyle, withAccepted],
+  );
+  const activeFinish = useMemo(() => doorStyleFinishColors(activeStyle as never), [activeStyle]);
   const activeFacePlan = useMemo(() => {
-    const s = doorStyles?.find((d) => d.id === styleId) as DesignerFaceStyle | undefined;
+    const s = activeStyle as DesignerFaceStyle | null;
     return designerFacePlan(s, "base");
-  }, [doorStyles, styleId]);
+  }, [activeStyle]);
   const active3DDoorSampleUrl = activeFacePlan?.doorUrl ?? null;
   const active3DDrawerSampleUrl = activeFacePlan?.sourceKind === "split" ? activeFacePlan.drawerUrl : null;
   const activeFaceSourceKind: FaceSourceKind | undefined = activeFacePlan?.sourceKind;
@@ -5209,14 +5242,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     const s = doorStyles?.find((d) => d.id === styleId) as { roomSceneImageUrl?: string | null } | undefined;
     return s?.roomSceneImageUrl ?? null;
   }, [doorStyles, styleId]);
-
-  // Full active door style (with woodSpecies) so we can apply the Hickory-only
-  // unfinished-end skin rule. Hickory cabinets ship with unfinished exposed
-  // sides, so any exposed end needs a matching Hickory skin panel.
-  const activeStyle = useMemo(
-    () => doorStyles?.find((s) => s.id === styleId) ?? null,
-    [doorStyles, styleId]
-  );
   const activeStyleRef = useRef(activeStyle);
   activeStyleRef.current = activeStyle;
   useEffect(() => {
@@ -5229,7 +5254,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // PRIORITY: the kitchen's color is the latest ACCEPTED door-rendering run for
   // this style. `renderHex` alone is not proof of an acceptance (an admin can type
   // a color without accepting a run), so only an accepted run may drive it; the
-  // resolver otherwise falls back to the style's own saved catalog color.
+  // resolver otherwise falls back to the pre-paint-match original, then the style's
+  // own saved catalog color. A paint match is never applied.
   // Admin debugging for the color pipeline: `?colorTrace=1` records every layer,
   // and `?colorTest=brewers` pretends SH's accepted render is Brewers navy. Both
   // are admin-only, preview-only, and write nothing.
@@ -5239,7 +5265,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     const decision = resolveKitchenDoorColor(activeStyle as never);
     return brewersTestOn ? brewersTestDecision(decision) : decision;
   }, [activeStyle, brewersTestOn]);
-  const activeDoorRenderHex = activeKitchenDoorColor.candidateSource === "render-hex"
+  const activeDoorRenderHex = activeKitchenDoorColor.candidateSource === "accepted-render"
+    || activeKitchenDoorColor.candidateSource === "render-hex"
     ? activeKitchenDoorColor.candidateHex
     : null;
   // Small finish swatch shown on each palette tile so the chosen finish is
@@ -5731,11 +5758,13 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const finishById = useMemo(() => {
     const m = new Map<number, ReturnType<typeof finishColors>>();
     doorStyles?.forEach((d) => {
-      const s = d as { id: number; ourName?: string | null; color?: string | null; finish?: string | null; woodSpecies?: string | null };
-      m.set(s.id, doorStyleFinishColors(s));
+      // Merge the accepted render first, so a non-active style with an approved
+      // render paints in that approved color too.
+      const merged = withAccepted(d as { id: number }) ?? d;
+      m.set(merged.id, doorStyleFinishColors(merged as never));
     });
     return m;
-  }, [doorStyles]);
+  }, [doorStyles, withAccepted]);
   const panelKindById = useMemo(() => {
     const m = new Map<number, ReturnType<typeof doorPanelKind>>();
     doorStyles?.forEach((d) => {

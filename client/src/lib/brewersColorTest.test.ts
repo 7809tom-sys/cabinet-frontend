@@ -68,7 +68,7 @@ describe("every surface of an SH cabinet renders Brewers navy", () => {
     const decision = resolveKitchenDoorColor(SH_WITH_BREWERS);
     // The resolver normalizes hexes to lower case; the color is the same.
     expect(decision.appliedHex.toLowerCase()).toBe(BREWERS_NAVY.toLowerCase());
-    expect(decision.appliedSource).toBe("render-hex");
+    expect(decision.appliedSource).toBe("accepted-render");
     // The flat catalog gold must not win anywhere.
     expect(decision.appliedHex).not.toBe("#c8a040");
   });
@@ -95,7 +95,9 @@ describe("every surface of an SH cabinet renders Brewers navy", () => {
 
   it("forwards the navy as the accepted render in test mode, whatever the style said", () => {
     const plain = resolveDoorColor({ ...SH_WITH_BREWERS, renderHex: null, approvedVersionId: null });
-    expect(plain.appliedHex).toBe("#c8a040");
+    // With no accepted run the door takes its pre-paint-match color, never the
+    // paint match #c8a040.
+    expect(plain.appliedHex).toBe("#d1ba8f");
     const forced = brewersTestDecision(plain);
     expect(forced.appliedHex.toLowerCase()).toBe(BREWERS_NAVY.toLowerCase());
     expect(forced.appliedSource).toBe("render-hex");
@@ -108,6 +110,6 @@ describe("every surface of an SH cabinet renders Brewers navy", () => {
     const withTest = brewersTestDecision(resolveDoorColor(SH_WITH_BREWERS));
     const without = resolveDoorColor({ ...SH_WITH_BREWERS, renderHex: null, approvedVersionId: null });
     expect(withTest.appliedHex.toLowerCase()).toBe(BREWERS_NAVY.toLowerCase());
-    expect(without.appliedHex).toBe("#c8a040");
+    expect(without.appliedHex).toBe("#d1ba8f");
   });
 });
