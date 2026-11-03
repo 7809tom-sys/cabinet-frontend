@@ -9,6 +9,7 @@ import { autoDesignWallWidthRows } from "@/lib/autoDesignAutoBuild";
 import { autoDesignSelectableWallLabels } from "@/lib/autoDesignCornerStage";
 import { Checkbox } from "@/components/ui/checkbox";
 import { KITCHEN_USE_OPTIONS, type KitchenUseId } from "@/lib/kitchenUsage";
+import { DEFAULT_OVER_RANGE_ANSWER } from "@/lib/overRangeCompanion";
 import type { RoomData } from "@/lib/design";
 import type {
   DishwasherSide,
@@ -96,7 +97,7 @@ export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading =
   const [sinkBaseWidth, setSinkBaseWidth] = useState<SinkBaseWidth>(36);
   const [sinkBaseKind, setSinkBaseKind] = useState<AutoDesignSinkBaseKind>("regular");
   const [wallCabinetHeight, setWallCabinetHeight] = useState<WallCabinetHeight>(30);
-  const [overRangeAnswer, setOverRangeAnswer] = useState<"hood" | "microwave-bridge" | "open">("hood");
+  const [overRangeAnswer, setOverRangeAnswer] = useState<"hood" | "microwave-bridge" | "open">(DEFAULT_OVER_RANGE_ANSWER);
   const [dishwasherSide, setDishwasherSide] = useState<DishwasherSide>("right");
   const [refrigeratorWidth, setRefrigeratorWidth] = useState<RefrigeratorWidth>(36);
   const [windowCenter, setWindowCenter] = useState("");

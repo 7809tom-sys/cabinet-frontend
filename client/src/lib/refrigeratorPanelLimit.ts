@@ -252,22 +252,27 @@ export function spanSitsInsideRefrigeratorBay(
 }
 
 /**
- * True when the span crosses both refrigerator end panel faces, which is the
- * cabinet above the refrigerator (it is meant to span the bay). A span crossing
- * only one face is an ordinary run piece.
+ * How a span relates to the refrigerator bay: entirely inside it (between the
+ * two panel faces), straddling one face, spanning the whole bay, or outside it.
  */
-function crossesBothPanelFaces(
+export type BayRelation = "inside" | "straddles-one" | "spans-both" | "outside";
+
+export function bayRelation(
   start: number,
   end: number,
   stops: readonly PanelOuterStop[],
-): boolean {
+): BayRelation {
   const EPS = REFRIGERATOR_PANEL_LIMIT_EPSILON_IN;
-  const left = stops.filter((stop) => stop.outside === "below");
-  const right = stops.filter((stop) => stop.outside === "above");
-  if (!left.length || !right.length) return false;
-  const leftFace = Math.max(...left.map((stop) => stop.edge));
-  const rightFace = Math.min(...right.map((stop) => stop.edge));
-  return start < leftFace - EPS && end > rightFace + EPS;
+  const leftEdges = stops.filter((stop) => stop.outside === "below").map((stop) => stop.edge);
+  const rightEdges = stops.filter((stop) => stop.outside === "above").map((stop) => stop.edge);
+  if (!leftEdges.length && !rightEdges.length) return "outside";
+  const bayStart = leftEdges.length ? Math.max(...leftEdges) : Number.NEGATIVE_INFINITY;
+  const bayEnd = rightEdges.length ? Math.min(...rightEdges) : Number.POSITIVE_INFINITY;
+  if (start >= bayStart - EPS && end <= bayEnd + EPS) return "inside";
+  if (start < bayStart - EPS && end > bayEnd + EPS) return "spans-both";
+  const crossesLeft = start < bayStart - EPS && end > bayStart + EPS;
+  const crossesRight = start < bayEnd - EPS && end > bayEnd + EPS;
+  return crossesLeft || crossesRight ? "straddles-one" : "outside";
 }
 
 /**
@@ -320,19 +325,14 @@ export function planRefrigeratorPanelLimit(
       const minKeep = piece.kind === "filler" || piece.kind === "trim"
         ? REFRIGERATOR_PANEL_FILLER_MIN_IN
         : EPS;
-      // A piece that crosses BOTH panel faces is the cabinet above the
-      // refrigerator: it is clipped into the bay (as wide as the opening) and
-      // held to the panels' depth. A piece that crosses only ONE face is an
-      // ordinary run piece and is trimmed out onto the cabinet run.
-      const crossesBothFaces = crossesBothPanelFaces(start, end, wallStops);
-      if (crossesBothFaces) {
-        const clamped = clampSpanToPanelOuterFaces(start, end, wallStops, minKeep);
-        if (!clamped) {
-          return { uid: piece.uid, drop: true, changed: true, start, end, depth: piece.depth, maxFront: null };
-        }
-        start = clamped.start;
-        end = clamped.end;
-      } else {
+      const relation = bayRelation(start, end, wallStops);
+      // Inside the bay is where the refrigerator and its own cabinet above live.
+      // A piece that is entirely in there keeps its span (its depth and top are
+      // still held below); a piece that spans the whole bay is the cabinet above
+      // the refrigerator and is clipped into the bay. Only a piece that straddles
+      // ONE panel face is a run piece to trim outward — trimming that into the bay
+      // is what left an upper running through the tall panel.
+      if (relation === "straddles-one") {
         const clamped = clampSpanToPanelOuterFaces(start, end, wallStops, minKeep);
         const trimmed = clamped ? trimToCabinetRun(clamped.start, clamped.end, wallStops, minKeep) : null;
         if (!trimmed) {
@@ -340,6 +340,13 @@ export function planRefrigeratorPanelLimit(
         }
         start = trimmed.start;
         end = trimmed.end;
+      } else if (relation === "spans-both") {
+        const clamped = clampSpanToPanelOuterFaces(start, end, wallStops, minKeep);
+        if (!clamped) {
+          return { uid: piece.uid, drop: true, changed: true, start, end, depth: piece.depth, maxFront: null };
+        }
+        start = clamped.start;
+        end = clamped.end;
       }
     }
     const limit = faceLimitForSpan(start, end, wallStops);

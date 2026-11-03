@@ -83,9 +83,9 @@ describe("admin auto-design Designer wiring", () => {
   it("collects a selected sink base and documents the selected refrigerator enclosure instead of using generic floor appliances", () => {
     expect(dialogSource).toContain("Sink base size");
     expect(dialogSource).toContain("SB{width}");
-    expect(dialogSource).toContain("36″ refrigerator");
+    expect(dialogSource).toContain("{refrigeratorWidth}″ refrigerator");
     expect(dialogSource).toContain("Two source-priced side panels");
-    expect(dialogSource).toContain("Matching source-priced 36″ cabinet above");
+    expect(dialogSource).toContain("Matching source-priced {refrigeratorWidth}″ cabinet above");
     expect(layoutSource).toContain("No source-priced SB${sinkBaseWidth} sink base");
     expect(layoutSource).toContain("makeDefaultSinkForCabinet(sinkBase");
     expect(layoutSource).toContain("buildMandatoryAutoDesignRefrigeratorBay");
@@ -129,7 +129,9 @@ describe("admin auto-design Designer wiring", () => {
     expect(layoutSource).toContain("wallIds: selectedWalls, room, originCorner: input.originCorner, runDirection: input.runDirection");
     expect(pageSource).toContain("finishAutoDesignLayoutRef.current");
     expect(pageSource).toContain("completeAutoDesignLayout");
-    expect(pageSource).not.toContain("AutoDesignCornerDialog");
+    // The corner CHOICE is the homeowner's (type, then size), so the chooser must
+    // be rendered. PR #114 removed it once; this pins it back in place.
+    expect(pageSource).toContain("<AutoDesignCornerDialog");
     expect(pageSource).toContain("autoDesignRunWallIds");
   });
 

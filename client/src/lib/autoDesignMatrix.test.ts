@@ -15,6 +15,8 @@ import {
   cabinetPlacementCollisionDetail,
   cabinetWall,
   freeSegmentsOnWall,
+  wallRunOffset,
+  wallRunSpan,
   wallPlacementAt,
   isCornerCabinet,
   isRefrigerator,
@@ -322,17 +324,37 @@ function audit(spec: CaseSpec, run: AutoDesignLayoutSuccess, room: RoomData): st
       } as PlacedCabinet;
       return cabinetPlacementCollisionDetail(probe, placed, room) != null;
     };
+    // An INTERIOR opening is one with a real cabinet on both sides: that is the
+    // leftover a real cabinet must fill. Open wall beyond where the measured
+    // kitchen stops is the end of the run, not an opening — and the owner rule is
+    // that a run end never gets a filler either.
+    const hasCabinetAt = (along: number) => placed.some((item) => {
+      if (item.placement !== "base" && item.placement !== "appliance") return false;
+      if (cabinetWall(item, room) !== wall) return false;
+      const start = wallRunOffset(item, wall, room);
+      const end = start + wallRunSpan(item, wall, room);
+      return Math.abs(start - along) <= 0.75 || Math.abs(end - along) <= 0.75;
+    });
     const baseGaps = freeSegmentsOnWall(wall, room, placed, run.sinkWindow ? [run.sinkWindow] : [], 3.05, 0, "base", false);
     for (const gap of baseGaps) {
       const reserved = peninsulaHold && wall === "bottom" && gap.start < peninsulaHold.reserveEnd && gap.start + gap.length > peninsulaHold.reserveStart;
-      if (!reserved && gap.length > 3.05 && !coveredByCabinet(gap.start + gap.length / 2) && !probeBlocked(gap.start, gap.length, "base", 24)) {
+      const interior = hasCabinetAt(gap.start) && hasCabinetAt(gap.start + gap.length);
+      if (!reserved && interior && gap.length > 3.05 && !coveredByCabinet(gap.start + gap.length / 2) && !probeBlocked(gap.start, gap.length, "base", 24)) {
         issues.push(`base gap ${gap.length.toFixed(2)}" on ${wall}`);
       }
     }
+    const hasUpperAt = (along: number) => placed.some((item) => {
+      if (item.placement !== "wall" && item.placement !== "tall") return false;
+      if (cabinetWall(item, room) !== wall) return false;
+      const start = wallRunOffset(item, wall, room);
+      const end = start + wallRunSpan(item, wall, room);
+      return Math.abs(start - along) <= 0.75 || Math.abs(end - along) <= 0.75;
+    });
     const upperGaps = freeSegmentsOnWall(wall, room, placed, run.sinkWindow ? [run.sinkWindow] : [], 3.05, 3, "wall", true);
     for (const gap of upperGaps) {
       const upperReserved = peninsulaHold && wall === "bottom" && gap.start < peninsulaHold.reserveEnd && gap.start + gap.length > peninsulaHold.reserveStart;
-      if (!upperReserved && gap.length > 3.05 && !coveredByCabinet(gap.start + gap.length / 2) && !probeBlocked(gap.start, gap.length, "wall", 13.5)) {
+      const interior = hasUpperAt(gap.start) && hasUpperAt(gap.start + gap.length);
+      if (!upperReserved && interior && gap.length > 3.05 && !coveredByCabinet(gap.start + gap.length / 2) && !probeBlocked(gap.start, gap.length, "wall", 13.5)) {
         issues.push(`upper gap ${gap.length.toFixed(2)}" on ${wall}`);
       }
     }

@@ -39,7 +39,9 @@ describe("Auto-Design in the More sheet (tablet and phone)", () => {
     expect(pageSource).toContain("const autoDesignAvailable = isAdmin || Boolean(affiliateSlug);");
     expect(pageSource).toMatch(/\{autoDesignAvailable && \(\s*<AutoDesignDialog/);
     expect(pageSource).toContain("seatAutoDesignCornerFromCatalog");
-    expect(pageSource).not.toContain("<AutoDesignCornerDialog");
+    // The corner chooser is part of Auto-Design and sits behind the same audience
+    // gate. It must be rendered there (PR #114 removed it once), never ungated.
+    expect(pageSource).toMatch(/\{autoDesignAvailable && autoDesignCornerStage && \(\s*<AutoDesignCornerDialog/);
   });
 
   it("does not expose the row outside the audience guard anywhere else in the sheet", () => {

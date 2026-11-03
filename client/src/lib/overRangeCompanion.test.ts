@@ -114,7 +114,10 @@ describe("microwave and bridge are placed during the build", () => {
   });
 
   it("does nothing unless the design questions asked for it", () => {
-    for (const answer of ["hood", "open", null, undefined] as const) {
+    // `null`/`undefined` now mean "no explicit answer", which the build treats as
+    // the owner default (microwave + bridge). An explicit hood or open answer
+    // still places nothing here.
+    for (const answer of ["hood", "open"] as const) {
       expect(answerWantsMicrowaveBridge(answer)).toBe(false);
       const result = planOverRangeCompanions({
         answer,

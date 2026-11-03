@@ -133,18 +133,33 @@ export function writeApproval(id: string, state: ApprovalState | null, storage: 
  * names), then by the door's top WalzCraft profile confidence. Nothing is invented: it is a
  * real sheet row, flagged `exact: false` so the UI labels it as a candidate.
  */
+/**
+ * The best brochure candidate for this style, scoped to its OWN distributor.
+ *
+ * `doorForStyle` above matches this style's exact door name inside its own
+ * distributor's doors. This is the looser second pass: same distributor only, best
+ * word overlap wins. There is deliberately NO fallback to other distributors'
+ * doors — an unmatched style must show "No WalzCraft match yet" rather than
+ * another line's brochure (Tom's rule: don't put something in if you don't know).
+ */
 export function bestCandidateDoor(style: StyleForMatch): { door: DistributorDoorMatch; exact: boolean } | null {
   const exact = doorForStyle(style);
   if (exact) return { door: exact, exact: true };
   const dist = [style.supplierBrandName, style.manufacturer, style.distributor, style.supplierName].map(distributorKey).find(Boolean) ?? null;
-  const scoped = dist ? WALZCRAFT_DISTRIBUTOR_DOORS.filter((d) => d.distributor === dist) : [];
-  const pool = groupDoorsByDistributor(scoped.length ? scoped : WALZCRAFT_DISTRIBUTOR_DOORS).flatMap((g) => g.doors);
+  if (!dist) return null;
+  const scoped = WALZCRAFT_DISTRIBUTOR_DOORS.filter((d) => d.distributor === dist);
+  const pool = groupDoorsByDistributor(scoped).flatMap((g) => g.doors);
   if (!pool.length) return null;
   const words = (v: string | null | undefined) => String(v ?? "").toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 1);
   const styleWords = new Set([style.distributorName, style.ourName, style.aliasName, style.doorStyle, style.sku].flatMap(words));
   const top = (d: DistributorDoorMatch) => Math.max(0, ...(d.matches ?? []).map((m) => m.confidencePct ?? 0));
   const score = (d: DistributorDoorMatch) => new Set([...words(d.doorName), ...words(d.code), ...words(d.walzcraftColor)].filter((w) => styleWords.has(w))).size;
-  let best = pool[0];
-  for (const d of pool) if (score(d) > score(best) || (score(d) === score(best) && top(d) > top(best))) best = d;
-  return { door: best, exact: false };
+  // Only a real word overlap is a match at all. No shared word means we do not know.
+  const scored = pool.map((door) => ({ door, score: score(door) })).filter((entry) => entry.score > 0);
+  if (!scored.length) return null;
+  let best = scored[0]!;
+  for (const entry of scored) {
+    if (entry.score > best.score || (entry.score === best.score && top(entry.door) > top(best.door))) best = entry;
+  }
+  return { door: best.door, exact: false };
 }

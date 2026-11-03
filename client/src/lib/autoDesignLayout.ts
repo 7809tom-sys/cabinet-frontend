@@ -27,7 +27,8 @@ import {
 } from "./autoDesignCornerStage";
 import { evaluateAutoDesignCornerFit } from "./cornerFit";
 import { catalogFillerForGap, fittedCatalogFillerDescription, type CatalogFillerCandidate } from "./catalogFiller";
-import { activeAutoDesignWiggleMoves, applyAutoDesignWiggleRoom, applyDesignerLayoutRules, AUTO_DESIGN_WIGGLE_ROOM_IN, type AutoDesignAnchorOrigin, type AutoDesignWiggleMove } from "./designerLayoutRules";
+import { activeAutoDesignWiggleMoves, applyAutoDesignWiggleRoom, applyDesignerLayoutRules, ANCHOR_WIGGLE_CAP_IN, AUTO_DESIGN_WIGGLE_ROOM_IN, type AutoDesignAnchorOrigin, type AutoDesignWiggleMove } from "./designerLayoutRules";
+import { applyRealCabinetsBeforeFiller, isFillerLastResort } from "./autoDesignRealCabinets";
 import { bakesALot, cooksALot, normalizeKitchenUsage } from "./kitchenUsage";
 import { ensureDrawerBase } from "./autoDesignDrawerRule";
 import { reviewAfterShift, separateRangeAndRefrigerator } from "./kitchenAdjacency";
@@ -876,8 +877,49 @@ export function runAutoDesignLayout(args: {
   if (drawerRule.warning) drawerRuleWarnings.push(drawerRule.warning);
   const baseRules = applyDesignerLayoutRules({
     placed: working, room, openings: stageOpenings, fillers: catalogFillers, makeUid, styleId: args.styleId,
+    // Owner rule: filler is the last resort, never automatic. Real cabinets first
+    // (shared pass below), and no end-of-run filler at all.
+    allowAutoFillers: false,
   });
   working = baseRules.placed;
+  // The shared "real cabinets before filler" pass runs on EVERY wall and both
+  // layers: slide within the wiggle room, widen a neighbor, or seat a real narrow
+  // cabinet before any sliver is called unusable.
+  const realCabinets = applyRealCabinetsBeforeFiller({
+    placed: working,
+    room,
+    openings: stageOpenings,
+    catalog: [...stage.straightBaseCatalog, ...stage.drawerBaseCatalog, ...stage.wallPool],
+    makeUid,
+    styleId: args.styleId,
+    wallIds: runWalls,
+    // Anchors (range, refrigerator, sink base) move at most 2 inches; every other
+    // cabinet may use the normal allowance.
+    slideLimitFor: (item) => (isSinkBaseCabinet(item)
+      || (item.placement === "appliance" && (isRangeOrOven(item.masterCode, item.description) || isRefrigerator(item)))
+      ? ANCHOR_WIGGLE_CAP_IN
+      : AUTO_DESIGN_FILLER_MAX_IN),
+  });
+  working = realCabinets.placed;
+  notes.push(...realCabinets.notes);
+  // Filler is the last resort, and only for a sliver no real cabinet can take —
+  // never at a run end that lands on its wall.
+  for (const gap of realCabinets.unfilled) {
+    const sliver = isFillerLastResort({
+      gapIn: gap.widthIn,
+      catalog: [...stage.straightBaseCatalog, ...stage.wallPool],
+      layer: gap.layer,
+    });
+    if (!sliver) {
+      reviewFindings.push({
+        ruleId: "real-cabinets-before-filler",
+        code: "opening-needs-a-cabinet",
+        severity: "warning",
+        title: `${formatEighthInches(gap.widthIn)} opening on ${gap.wallId}`,
+        detail: "No cabinet in this line fits that space, and nothing could legally slide to open one.",
+      });
+    }
+  }
   const seamResult = fillAutoDesignLowerSeams({
     placed: working, room, openings: stageOpenings, fillers: catalogFillers, makeUid,
     styleId: args.styleId, corners: upperCorners.map((entry) => entry.point),

@@ -142,6 +142,13 @@ export function buildAutoDesignWallCabinets(input: {
    * or the refrigerator assembly. Off by default so standalone callers keep exact behavior.
    */
   closeSeams?: boolean;
+  /**
+   * Fill leftover slivers with filler. Owner rule: filler is the LAST resort and
+   * never automatic at a run end, so the measured build leaves this off and uses
+   * the shared real-cabinet pass instead. A caller that places real cabinets
+   * first may turn it back on for a genuinely unusable sliver.
+   */
+  allowFiller?: boolean;
 }): {
   placed: PlacedCabinet[];
   additions: PlacedCabinet[];
@@ -321,9 +328,12 @@ export function buildAutoDesignWallCabinets(input: {
       skipped.push(`Left open above ${lower.masterCode}: a window is over the sink.`);
       continue;
     }
-    const rangeCovered = isRangeOrOven(lower.masterCode, lower.description)
-      && working.some((item) => /hood/i.test(item.masterCode ?? "") && cabinetWall(item, room) === cabinetWall(lower, room));
-    if (isRefrigerator(lower) || rangeCovered
+    // Above the range the owner rule governs: an over-the-range microwave with a
+    // bridge cabinet above it, never an ordinary full-height wall cabinet. The
+    // bridge + microwave are placed by `planOverRangeCompanions` in the build, so
+    // the wall run must leave this span alone whether or not a hood is there.
+    const isRangeLower = isRangeOrOven(lower.masterCode, lower.description);
+    if (isRefrigerator(lower) || isRangeLower
       || isCornerCabinet(lower.masterCode, lower.description) || isPanelItem(lower)
       || /filler|scribe/i.test(`${lower.masterCode} ${lower.description} ${lower.subCategory ?? ""}`)) continue;
     if (lower.placement === "appliance" && !/^DW[-_]?/i.test(lower.masterCode) && !isRangeOrOven(lower.masterCode, lower.description)) continue;
@@ -384,6 +394,9 @@ export function buildAutoDesignWallCabinets(input: {
   }
   if (input.closeSeams) {
     const reserved = upperReservedZones(input.placed, room);
+    // Real wall cabinets always close what they can. Filler is gated: the measured
+    // build only places filler when a person asks for it or as a true last resort.
+    const allowFiller = input.allowFiller === true;
     const seams = findAutoDesignSeams({
       layer: "wall", placed: working, room, openings, corners: (input.corners ?? []).map((entry) => entry.point), reservedZones: reserved,
     });
@@ -424,7 +437,7 @@ export function buildAutoDesignWallCabinets(input: {
           }
           remainder = Math.max(0, region.end - along);
         }
-        if (remainder >= SEAM_MIN_IN && remainder <= AUTO_DESIGN_FILLER_MAX_IN + COLLISION_EPSILON_IN) {
+        if (remainder >= SEAM_MIN_IN && remainder <= AUTO_DESIGN_FILLER_MAX_IN + COLLISION_EPSILON_IN && allowFiller) {
           const fromRight = leftNeighbor == null && rightNeighbor != null && placedHere.length > 0;
           const start = placedHere.length ? (fromRight ? region.start : along) : region.start;
           const end = start + remainder;

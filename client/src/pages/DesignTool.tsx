@@ -4296,6 +4296,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     const baseRules = applyDesignerLayoutRules({
       placed: working, room, openings: stageOpenings, fillers: catalogFillers,
       makeUid, styleId: styleIdRef.current ?? null,
+      // Filler is the last resort and never automatic at a run end.
+      allowAutoFillers: false,
     });
     working = baseRules.placed;
     // No gap is left anywhere: every opening between the measured anchors, panels, corner

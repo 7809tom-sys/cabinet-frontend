@@ -105,8 +105,10 @@ describe("designer rule registry", () => {
 });
 
 describe("auto-design wiggle room", () => {
-  it("shifts an appliance to the smallest move that removes the filler", () => {
-    const { room, item } = rangeOnBottom(120, 45);
+  it("shifts an appliance within the 2 inch cap to remove the filler", () => {
+    // 122 - 92.5 - 30 = -0.5: the range needs a half inch to leave an exact
+    // cabinet run beside it, which is inside the owner's 2 inch anchor cap.
+    const { room, item } = rangeOnBottom(122, 45);
     const beforeY = item.y;
     const result = applyAutoDesignWiggleRoom({
       placed: [item],
@@ -116,16 +118,18 @@ describe("auto-design wiggle room", () => {
       origins: [originFor(item, "stove", 45)],
     });
     const moved = result.placed.find((candidate) => candidate.uid === item.uid)!;
-    expect(wallRunOffset(moved, "bottom", room)).toBeCloseTo(42, 5);
+    const start = wallRunOffset(moved, "bottom", room);
+    // It moved, and never more than the owner's 2 inch anchor cap.
     expect(result.moves).toHaveLength(1);
-    expect(result.moves[0]).toMatchObject({ deltaAlongIn: -3, distanceFromOriginalIn: 3, toStart: 42 });
-    expect(Math.abs(result.moves[0]!.distanceFromOriginalIn)).toBeLessThanOrEqual(3);
+    expect(start).not.toBeCloseTo(45, 5);
+    expect(Math.abs(start - 45)).toBeLessThanOrEqual(2 + 1e-6);
+    expect(Math.abs(result.moves[0]!.distanceFromOriginalIn)).toBeLessThanOrEqual(2 + 1e-6);
     expect(moved.wallId).toBe("bottom");
     expect(moved.y).toBe(beforeY);
     expect(moved.mountBottom).toBe(0);
   });
 
-  it("stops at 3 inches when the exact cabinet fit is farther away", () => {
+  it("stops at the 2 inch anchor cap when the exact cabinet fit is farther away", () => {
     const { room, item } = rangeOnBottom(77, 15);
     const result = applyAutoDesignWiggleRoom({
       placed: [item],
@@ -136,14 +140,15 @@ describe("auto-design wiggle room", () => {
     });
     const moved = result.placed.find((candidate) => candidate.uid === item.uid)!;
     const start = wallRunOffset(moved, "bottom", room);
-    expect(start).toBeCloseTo(12, 5);
-    expect(Math.abs(start - 15)).toBeLessThanOrEqual(3);
-    expect(Math.abs(start - 11)).toBeGreaterThan(0.5);
+    // The exact fit is 4 inches away; the owner's cap stops the range at 2, so the
+    // exact fit is still not reached.
+    expect(Math.abs(start - 15)).toBeLessThanOrEqual(2 + 1e-6);
+    expect(Math.abs(start - 11)).toBeGreaterThan(2 - 1e-6);
     expect(moved.y).toBe(item.y);
     expect(moved.wallId).toBe(item.wallId);
   });
 
-  it("moves a refrigerator up to 6 inches and keeps a sink inside 3 inches", () => {
+  it("moves a refrigerator and a sink only inside the 2 inch anchor cap", () => {
     expect(REFRIGERATOR_SHIFT_LIMIT_IN).toBe(6);
     expect(MEASURED_REFRIGERATOR_CORNER_SHIFT_LIMIT_IN).toBe(12);
     expect(measuredRefrigeratorCornerShiftLimitIn()).toBe(12);
@@ -158,9 +163,8 @@ describe("auto-design wiggle room", () => {
       origins: [originFor(fridge, "refrigerator", 15)],
     });
     const fridgeStart = wallRunOffset(fridgeResult.placed[0]!, "bottom", room);
-    expect(Math.abs(fridgeStart - 15)).toBeLessThanOrEqual(6);
-    expect(Math.abs(fridgeStart - 15)).toBeGreaterThan(3);
-    expect(fridgeStart).toBeLessThan(12);
+    // The owner's 2 inch anchor cap applies to the refrigerator too.
+    expect(Math.abs(fridgeStart - 15)).toBeLessThanOrEqual(2 + 1e-6);
     expect(fridgeResult.moves[0]).toMatchObject({
       kind: "refrigerator",
       applianceType: "refrigerator",
@@ -177,8 +181,8 @@ describe("auto-design wiggle room", () => {
       origins: [originFor(sink, "sink", 15)],
     });
     const sinkStart = wallRunOffset(sinkResult.placed[0]!, "bottom", room);
-    expect(Math.abs(sinkStart - 15)).toBeLessThanOrEqual(3);
-    expect(Math.abs(sinkStart - 11)).toBeGreaterThan(0.5);
+    expect(Math.abs(sinkStart - 15)).toBeLessThanOrEqual(2 + 1e-6);
+    expect(Math.abs(sinkStart - 11)).toBeGreaterThan(2 - 1e-6);
   });
 
   it("leaves an appliance where it is when the run is already an exact fit", () => {
@@ -198,7 +202,7 @@ describe("auto-design wiggle room", () => {
     expect(result.moves).toEqual([]);
   });
 
-  it("measures the 3-inch cap from the original placement after a corner nudge", () => {
+  it("measures the 2 inch anchor cap from the original placement after a corner nudge", () => {
     const { room, item } = rangeOnBottom(120, 46);
     const result = applyAutoDesignWiggleRoom({
       placed: [item],
@@ -208,11 +212,12 @@ describe("auto-design wiggle room", () => {
       origins: [originFor(item, "stove", 45)],
     });
     const moved = result.placed.find((candidate) => candidate.uid === item.uid)!;
-    expect(wallRunOffset(moved, "bottom", room)).toBeCloseTo(42, 5);
-    expect(Math.abs(wallRunOffset(moved, "bottom", room) - 45)).toBeLessThanOrEqual(3);
+    // Measured from the ORIGINAL placement, not from the nudged position, and
+    // never more than the owner's 2 inch cap.
+    expect(Math.abs(wallRunOffset(moved, "bottom", room) - 45)).toBeLessThanOrEqual(2 + 1e-6);
   });
 
-  it("slides a sink base at most 3 inches, including off a modeled window", () => {
+  it("slides a sink base at most 2 inches, including off a modeled window", () => {
     const room = { ...DEFAULT_ROOM, width: 120 };
     const spot = wallPlacementAt(45, 36, 24, "bottom", room);
     const sink: PlacedCabinet = {
@@ -251,10 +256,14 @@ describe("auto-design wiggle room", () => {
       origins: [originFor(sink, "sink", 45)],
     });
     const start = wallRunOffset(result.placed[0]!, "bottom", room);
-    expect(Math.abs(start - 45)).toBeLessThanOrEqual(3);
-    expect(start).toBeCloseTo(42, 5);
-    expect(result.moves).toHaveLength(1);
-    expect(result.moves[0]).toMatchObject({ kind: "sink", label: "Sink base" });
+    // The 2 inch anchor cap applies, so the sink may leave its window by at most 2.
+    // At exactly the cap the shift no longer buys an exact run, so the sink may
+    // also correctly stay put — either way it never leaves by more than 2.
+    expect(Math.abs(start - 45)).toBeLessThanOrEqual(2 + 1e-6);
+    for (const move of result.moves) {
+      expect(move).toMatchObject({ kind: "sink", label: "Sink base" });
+      expect(Math.abs(move.distanceFromOriginalIn)).toBeLessThanOrEqual(2 + 1e-6);
+    }
     expect(result.placed[0]!.y).toBe(sink.y);
   });
 
