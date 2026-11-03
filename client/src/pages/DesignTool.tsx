@@ -15363,7 +15363,23 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           disabled={cabinetsLocked}
           onChange={(id) => setSlotStyle(activeSlot, id)}
         />
-        {isAdmin && <ApproveDoorButton styleId={styleId} place="designer" compact />}
+        {/* One Edit action, not two approve controls. It opens this design's door
+            style in the style editor (color and style) and comes back here. */}
+        {isAdmin && (
+          <ApproveDoorButton
+            styleId={styleId}
+            place="designer"
+            compact
+            styleName={
+              placed.find((cabinet) => cabinet.uid === selectedUid) != null
+                ? styleNameById.get(pricingStyleIdFor(placed.find((cabinet) => cabinet.uid === selectedUid)!) ?? styleId ?? -1) ?? null
+                : styleId != null ? styleNameById.get(styleId) ?? null : null
+            }
+            cabinetUid={selectedCab?.uid ?? null}
+            cabinetCode={selectedCab?.masterCode ?? null}
+            returnTo={designerEditReturnUrl}
+          />
+        )}
         <HardwareCatalogPicker
           value={catalogHardwareSelection}
           onSelect={selectCatalogHardware}

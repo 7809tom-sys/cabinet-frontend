@@ -74,7 +74,6 @@ describe("ApprovedDoorReferenceNotice", () => {
         isAdmin
         styleId={330021}
         styleCode="SH"
-        hrefFor={doorStyleEditUrl as never}
         returnTo="/design"
       />,
     );
@@ -94,7 +93,6 @@ describe("ApprovedDoorReferenceNotice", () => {
         doorSampleImageUrl="/samples/wrong-door.png"
         isAdmin
         styleId={330021}
-        hrefFor={doorStyleEditUrl as never}
         returnTo="/admin?tab=door-rendering-audit"
       />,
     );
@@ -112,7 +110,6 @@ describe("ApprovedDoorReferenceNotice", () => {
         approvedByName="Tom"
         isAdmin
         styleId={330021}
-        hrefFor={doorStyleEditUrl as never}
       />,
     );
     expect(screen.getByTestId("approved-reference-badge")).toBeTruthy();
@@ -127,7 +124,6 @@ describe("ApprovedDoorReferenceNotice", () => {
         doorSampleImageUrl="/samples/sh-door.png"
         isAdmin={false}
         styleId={330021}
-        hrefFor={doorStyleEditUrl as never}
       />,
     );
     expect(screen.queryByTestId("no-approved-source-edit")).toBeNull();
