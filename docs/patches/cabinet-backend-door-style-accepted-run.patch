@@ -1,7 +1,8 @@
 From d170c3536b42987987278b44392091c17d803c98 Mon Sep 17 00:00:00 2001
 From: Cursor Agent <cursoragent@cursor.com>
 Date: Tue, 3 Nov 2026 20:29:28 +0000
-Subject: [PATCH] PRIORITY: an accepted door render becomes the kitchen's color
+Subject: [PATCH 1/2] PRIORITY: an accepted door render becomes the kitchen's
+ color
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
@@ -266,6 +267,46 @@ index d595dc1..650ce9c 100644
    const priorLatestEvent = latestEventForVersion(eventRows, latest.id);
    const latestEventAction = versionId === latest.id ? action : priorLatestEvent?.action ?? null;
    const flagStatus = liveFlagStatus({
+-- 
+2.43.0
+
+
+From d2178a75f241ed84c1e77a9f82fe6892704f10e7 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Tue, 3 Nov 2026 20:36:53 +0000
+Subject: [PATCH 2/2] PRIORITY: list also returns the accepted appearance
+
+The Designer reads its styles from doorStyles.list, so that projection has to
+carry the accepted run's image and the accepted-version marker as well as the
+color. Without them the client cannot tell an approved render from a color typed
+into the style editor.
+
+approvedVersionId is the marker: non-null only when an admin actually accepted a
+run. That lets the client ignore a hand-typed renderHex instead of treating it as
+approved.
+---
+ server/routers/catalog.ts | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/server/routers/catalog.ts b/server/routers/catalog.ts
+index 2041cd9..bd8d7d8 100644
+--- a/server/routers/catalog.ts
++++ b/server/routers/catalog.ts
+@@ -290,7 +290,14 @@ export const doorStylesRouter = router({
+         woodSpecies: doorStyles.woodSpecies,
+         finish: doorStyles.finish,
+         color: doorStyles.color,
++        // PRIORITY: renderHex is the latest ACCEPTED run's color once a run is
++        // approved, and approvedReferenceImageUrl is that run's door image. The
++        // Designer reads both, so an approval reaches every kitchen on the next
++        // list read. approvedVersionId is non-null only when a run is accepted.
+         renderHex: doorStyles.renderHex,
++        approvedReferenceImageUrl: doorStyles.approvedReferenceImageUrl,
++        approvedVersionId: doorStyles.approvedVersionId,
++        approvedAt: doorStyles.approvedAt,
+         finishCategory: doorStyles.finishCategory,
+         grainLightHex: doorStyles.grainLightHex,
+         grainDarkHex: doorStyles.grainDarkHex,
 -- 
 2.43.0
 

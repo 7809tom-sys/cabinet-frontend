@@ -25,6 +25,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { kitchenAcceptedFaceImage, resolveKitchenDoorColor } from "@/lib/acceptedDoorAppearance";
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle,
 } from "@/components/ui/sheet";
@@ -5222,11 +5223,25 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const doorRenderSettings = trpc.siteSettings.getPublicSettings.useQuery(undefined, { staleTime: 60_000 });
   const doorRenderExposure = clampRenderExposure((doorRenderSettings.data as { renderExposure?: number | string | null } | undefined)?.renderExposure);
   const doorColorDeltaE = clampColorDeltaE((doorRenderSettings.data as { colorMatchDeltaE?: number | string | null } | undefined)?.colorMatchDeltaE);
-  const activeDoorRenderHex = (activeStyle as { renderHex?: string | null } | null)?.renderHex ?? null;
+  // PRIORITY: the kitchen's color is the latest ACCEPTED door-rendering run for
+  // this style. `renderHex` alone is not proof of an acceptance (an admin can type
+  // a color without accepting a run), so only an accepted run may drive it; the
+  // resolver otherwise falls back to the style's own saved catalog color.
+  const activeKitchenDoorColor = useMemo(
+    () => resolveKitchenDoorColor(activeStyle as never),
+    [activeStyle],
+  );
+  const activeDoorRenderHex = activeKitchenDoorColor.candidateSource === "render-hex"
+    ? activeKitchenDoorColor.candidateHex
+    : null;
   // Small finish swatch shown on each palette tile so the chosen finish is
   // visible while browsing cabinets. Empty until a door style is selected.
   const paletteFinishSwatch = useMemo<string | null>(
-    () => preferredDoorReferenceUrl(activeStyle as { approvedReferenceImageUrl?: string | null; doorSampleImageUrl?: string | null; thumbnailImageUrl?: string | null } | null),
+    // The accepted run's approved render, then the style's own sample photo. The
+    // approved image only counts when a run was actually accepted, so a stale
+    // reference cannot outrank a real sample.
+    () => kitchenAcceptedFaceImage(activeStyle as never)
+      ?? preferredDoorReferenceUrl(activeStyle as { approvedReferenceImageUrl?: string | null; doorSampleImageUrl?: string | null; thumbnailImageUrl?: string | null } | null),
     [activeStyle]
   );
   const activeStyleDistributorName = useMemo(() => {
