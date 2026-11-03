@@ -1978,6 +1978,21 @@ and are never auto-built into a run.
 | WEP1535 | Luxe Classic LSA (540005) | Wall End Panel | 15.25″ × 35.25″ × 0.75″ | Panel / skin: add-on accessory that finishes an exposed side, not a box. |
 | WEP1542 | Luxe Classic LSA (540005) | Wall End Panel | 15.25″ × 41.75″ × 0.75″ | Panel / skin: add-on accessory that finishes an exposed side, not a box. |
 
+## Auto-designer pop-ups, and what each one auto-places
+
+Every one of these is a pop-up beside the sink-base options in the Auto-Design setup. Each pick is placed by
+the build; none of them asks for a drag or a manual drop.
+
+| Pop-up | Catalog source | What a pick does |
+| --- | --- | --- |
+| Choose a sink | `pelican.byCategory` (`Sinks & Faucets` / `Sinks`) plus `surfaces.recommended` (`role: "sink"`) | Seats the real Pelican basin in the sink base, centered in the opening. An apron-front sink switches the build to its matching farmhouse `FSB` base. A second sink gets its own base. |
+| Choose a tall cabinet | the line's `placement: "tall"` oven pantries, pantries, and utility towers | Seats the tall box as a run anchor before the base runs tile, so it reserves its span. Still cannot pass a wall end, the refrigerator end panels, or the ceiling. |
+| Choose a range | the appliance palette's `RANGE-*` rows | Seats that range at the measured range center, and plans the corners around its real width. |
+| Choose a faucet | `pelican.byCategory` (`Sinks & Faucets` / `Faucets`) plus `surfaces.recommended` (`role: "faucet"`) | Mounts the deck faucet on the countertop behind the basin's rear rim, never inside it. Wall-mounted faucets and pot fillers stay off the deck. |
+
+Sink-to-base pairings are produced by `sinkBasePairing` / `sinkBaseForProduct` in
+`client/src/lib/autoDesignSink.ts`; `npx tsx scripts/pelican-sink-pairings.ts` prints the full table.
+
 ## How a box is decided
 
 - Auto-builder path: `client/src/lib/pelicanBoxCoverage.ts` (`autoBuilderPath`), which mirrors what `runAutoDesignLayout` seats.
