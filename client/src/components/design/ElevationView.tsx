@@ -3199,22 +3199,34 @@ export function DoorFront({ kind, edge, face, doors, drawers, isWall, doorSample
   }
 
   // ─── SPECIALTY TYPE: SINK BASE ─────────────────────────────────────────
-  // Sink bases have a narrow false tilt-out panel at the top (for the tip-out
-  // tray) and two doors below. The false front is thinner than a normal drawer.
+  // Sink bases keep standard base-cabinet face proportions: a top drawer /
+  // tilt-out row and a door region below. How MANY drawer fronts and how many
+  // doors is the Cabinet Config's answer, never this branch's: SB30 is configured
+  // 2 doors + 1 drawer and SB36 on a line that authors two drawer rows is 2 doors
+  // + 2 drawers. The old code hardcoded ONE false front and ignored the count,
+  // which is why a configured top drawer never appeared.
   if (cabinetType === "sink-base") {
-    // Sink bases retain standard base-cabinet face proportions: a 20% top
-    // drawer/tilt-out row and 80% door region. The sink changes hardware, not
-    // the height of the doors.
+    const drawerRowCount = Math.max(0, drawers ?? 0);
     const falseFrontPct = 20;
     const cols = Math.max(1, doorCount || 2);
     const colW = 100 / cols;
+    // A single drawer (or the historic false tilt-out front) keeps the full 20%
+    // row. More rows split that same band so the door region is unchanged.
+    const rowPct = drawerRowCount > 1 ? falseFrontPct / drawerRowCount : falseFrontPct;
     return withFace(
       <>
-        {/* false front (tilt-out tray) */}
-        <div data-sink-base-false-front="true" className="absolute left-0 right-0 top-0" style={{ height: `${falseFrontPct}%` }}>
-          <StylePanel kind={kind} edge={edge} face={face} drawer doorSampleUrl={doorSampleUrl} drawerSampleUrl={drawerSampleUrl} frameInsetPx={frameInsetPx} faceWidthIn={cabinetWidthIn ?? 24} faceHeightIn={(cabinetHeightIn ?? 34.5) * (falseFrontPct / 100)} />
-        </div>
-        {/* rail between false front and doors */}
+        {drawerRowCount > 0 && Array.from({ length: drawerRowCount }).map((_, row) => (
+          <div
+            key={`sink-drawer-${row}`}
+            data-sink-base-false-front={drawerRowCount === 1 ? "true" : undefined}
+            data-sink-base-drawer-row={row + 1}
+            className="absolute left-0 right-0"
+            style={{ top: `${rowPct * row}%`, height: `${rowPct}%` }}
+          >
+            <StylePanel kind={kind} edge={edge} face={face} drawer doorSampleUrl={doorSampleUrl} drawerSampleUrl={drawerSampleUrl} frameInsetPx={frameInsetPx} faceWidthIn={cabinetWidthIn ?? 24} faceHeightIn={(cabinetHeightIn ?? 34.5) * (rowPct / 100)} />
+          </div>
+        ))}
+        {/* rail between the drawer row(s) and the doors */}
         <div className="absolute left-0 right-0" style={{ top: `${falseFrontPct}%`, height: 2, background: stroke }} />
         {/* door region: N side-by-side doors */}
         {Array.from({ length: cols }).map((_, i) => (

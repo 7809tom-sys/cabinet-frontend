@@ -1,7 +1,7 @@
 // Pure helpers that map a cabinet record to a 2D drawing type, an SEO-friendly
 // image slug, and descriptive alt text. Kept framework-free so it is unit-testable.
 import { parseCatalogNomenclature } from "@shared/catalogNomenclature";
-import { standardBaseFaceReference } from "@shared/genericCabinetDrawerReference";
+import { parsedDrawerLayoutRows, standardBaseFaceReference } from "@shared/genericCabinetDrawerReference";
 import { isBaseAngleEndCabinet } from "./baseAngleEndLayout";
 import { isPlainBaseCode } from "./plainBaseCode";
 import { isWallAngleEndCabinet } from "./wallAngleEndLayout";
@@ -199,7 +199,25 @@ const WORD_NUM: Record<string, number> = {
  * "Single Door"), so the human-readable DESCRIPTION is treated as the source of
  * truth, with numeric fields and width as fallbacks.
  */
-export function resolveDoorDrawerCounts(cab: CabinetLike): {
+/**
+ * Door and drawer counts for a cabinet, from the Cabinet Config first.
+ *
+ * Owner rule: the per-cabinet door/drawer settings in the cabinet edit config are
+ * the single source of truth. The 3D view and the elevation must read the count
+ * straight from it for EVERY cabinet and never infer one from a SKU, a name, or a
+ * hardcoded type. SB30 is configured 2 doors + 1 drawer, so it renders 2 doors and
+ * 1 drawer.
+ *
+ * A configured value wins whenever the catalog actually authored one. The type
+ * rules below stay as the fallback for the rows that carry no authored count, so
+ * nothing that already renders correctly changes: they are reached only when the
+ * config is silent.
+ *
+ * `cabinetConfigAuthored` is how a caller says "this row came from a configured
+ * source". It is optional because a placed cabinet that merely carries the
+ * numbers is authoritative on its own.
+ */
+export function resolveDoorDrawerCounts(cab: CabinetLike & { cabinetConfigAuthored?: boolean | null }): {
   doors: number;
   drawers: number;
 } {
@@ -211,6 +229,36 @@ export function resolveDoorDrawerCounts(cab: CabinetLike): {
   const sub = lc(cab.subCategory);
   const code = lc(cab.masterCode);
   const w = toNum(cab.width);
+
+  // ONE authority: the cabinet edit config, but only where the config actually
+  // authored the face. A stale supplier count on a plain B-18 (numberOfDrawers 2
+  // on a one-drawer base) is not an authored face, and neither is a bare BEC24
+  // row — the code's own contract owns those. `cabinetConfigAuthored` is the
+  // explicit signal; the authored-face field set below is the implicit one.
+  const configuredDoors = cab.numberOfDoors == null ? null : Math.max(0, cab.numberOfDoors);
+  const configuredDrawers = cab.numberOfDrawers == null ? null : Math.max(0, cab.numberOfDrawers);
+  const hasAuthoredFaceConfig = cab.cabinetConfigAuthored === true
+    || cab.openingType != null
+    || cab.graphicType != null
+    || cab.cornerType != null
+    || cab.facePattern != null
+    || cab.drawerLayout != null
+    || cab.doorHeight != null
+    || cab.drawerHeight != null
+    || cab.doorOrientation != null
+    || cab.doorsPerRow != null;
+  // A quarter-octagon end cabinet and the RS-suffixed roll-out families keep their
+  // coded contract even when the config carries numbers.
+  const codeOwnsFace = isBaseAngleEndCabinet(cab)
+    || (nomenclature.family === "base" && nomenclature.rollOutShelfCount != null)
+    || standardBaseFaceReference(cab.masterCode) != null;
+  if (hasAuthoredFaceConfig && !codeOwnsFace) {
+    const layoutRows = parsedDrawerLayoutRows(cab.drawerLayout ?? null);
+    return {
+      doors: configuredDoors ?? 0,
+      drawers: layoutRows ? layoutRows.reduce((sum, row) => sum + row.count, 0) : configuredDrawers ?? 0,
+    };
+  }
 
   // BA-24 / BEC24 / BAC24 is a quarter-octagon end cabinet: two doors on the
   // angled faces, no drawer. Stale one-door Config metadata does not change that.
@@ -249,26 +297,6 @@ export function resolveDoorDrawerCounts(cab: CabinetLike): {
     return {
       doors: standardFace.doors,
       drawers: standardFace.drawerRows.reduce((sum, row) => sum + row.count, 0),
-    };
-  }
-
-  // 0) Authored Cabinet Config is authoritative. Legacy supplier counts exist on
-  // older rows too, so only a configuration signal promotes those values above
-  // the legacy description parser. A configured zero then intentionally
-  // suppresses all inferred panels.
-  const hasAuthoredFaceConfig = cab.openingType != null
-    || cab.graphicType != null
-    || cab.cornerType != null
-    || cab.facePattern != null
-    || cab.drawerLayout != null
-    || cab.doorHeight != null
-    || cab.drawerHeight != null
-    || cab.doorOrientation != null
-    || cab.doorsPerRow != null;
-  if (hasAuthoredFaceConfig) {
-    return {
-      doors: Math.max(0, cab.numberOfDoors ?? 0),
-      drawers: Math.max(0, cab.numberOfDrawers ?? 0),
     };
   }
 
