@@ -83,10 +83,22 @@ describe("the trace records the whole pipeline for a cabinet", () => {
     recorder.override(identity, { key: "override.cabinetFinish", detail: "saved design forced #000000", hex: "#000000" });
     const trace = recorder.finish();
     const won = trace.cabinets[0]!.steps.find((step) => step.key === "layer.won")!;
-    expect(won.detail).toContain("render-hex");
+    // `style` carries an approvedVersionId, so this is the accepted render.
+    expect(won.detail).toContain("accepted-render");
     expect(won.hex).toBe("#d9c9a3");
+    const accepted = trace.cabinets[0]!.steps.find((step) => step.key === "style.accepted")!;
+    expect(accepted.detail).toContain("#d9c9a3");
+    expect(accepted.source).toBe("accepted-render");
     const override = trace.cabinets[0]!.steps.find((step) => step.key === "override.cabinetFinish")!;
     expect(override.hex).toBe("#000000");
+  });
+
+  it("names a hand-set render hex as such when no run was accepted", () => {
+    const recorder = createColorTraceRecorder();
+    recorder.recordResolver(identity, resolveDoorColor({ ...style, approvedVersionId: null }));
+    const won = recorder.finish().cabinets[0]!.steps.find((step) => step.key === "layer.won")!;
+    expect(won.detail).toContain("render-hex");
+    expect(won.hex).toBe("#d9c9a3");
   });
 
   it("handles a style with no accepted run", () => {

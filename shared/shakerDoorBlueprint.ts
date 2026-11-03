@@ -3,13 +3,15 @@
  * blueprint as the base template. Geometry (rail/stile frame, sharp square corners, flat
  * center slab, notch) is proven and must not be changed per style. Only texture/color varies.
  *
- * Color (Tom, Nov 2 2026): the door keeps its own hex. Precedence is a hand-set renderHex,
- * then the measured swatch table, then a WalzCraft ColorPatterns primary shade, then a
- * name/photo estimate, then the pre-209 catalog hex or name. A nearest-brand snap
- * (sample cream, cream, green, gold) is what turned Stone Gray into cream and Slate Rift
- * into green. That snap is not applied. Paint is an opaque solid. Stain keeps the grain
- * and a tint toward the door's own hex. Rail and stile WIDTH stay the style's own 2.75
- * or 3 inches. Depth, square corners, the flat center slab, and the notch are shared.
+ * Color (Tom, Nov 2 2026): the door keeps its own hex. Precedence is the latest ACCEPTED
+ * render, then a hand-set renderHex, then the style's saved catalog color, then a
+ * WalzCraft ColorPatterns primary shade, then a name/photo estimate, then the pre-209
+ * catalog hex or name. A nearest-brand snap (sample cream, cream, green, gold) is what
+ * turned Stone Gray into cream and Slate Rift into green, and a nearest paint-chip match
+ * is what painted Shaker Honey #c8a040. Neither is applied. Paint is an opaque solid.
+ * Stain keeps the grain and a tint toward the door's own hex. Rail and stile WIDTH stay
+ * the style's own 2.75 or 3 inches. Depth, square corners, the flat center slab, and the
+ * notch are shared.
  */
 import { CABINET_NAME_COLORS, matchCabinetColorName } from "./cabinetColorNames";
 import { deltaE2000Hex } from "./ciede2000";

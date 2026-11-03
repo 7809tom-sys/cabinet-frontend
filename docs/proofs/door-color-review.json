@@ -2,30 +2,37 @@
   "summary": {
     "doors": 123,
     "candidate": {
+      "accepted-render": 0,
       "render-hex": 5,
-      "swatch-table": 118,
+      "catalog-color": 29,
+      "swatch-table": 89,
       "walzcraft": 0,
       "estimator": 0,
       "pre-209": 0
     },
     "applied": {
+      "accepted-render": 0,
       "render-hex": 5,
-      "swatch-table": 103,
+      "catalog-color": 29,
+      "swatch-table": 83,
       "walzcraft": 0,
       "estimator": 0,
-      "pre-209": 15
+      "pre-209": 6
     },
     "layerPresent": {
+      "accepted-render": 0,
       "render-hex": 5,
-      "swatch-table": 123,
+      "catalog-color": 32,
+      "swatch-table": 122,
       "walzcraft": 24,
       "estimator": 62,
       "pre-209": 123
     },
-    "agreed": 43,
-    "flagged": 19,
-    "flaggedKeptRenderHex": 4,
-    "flaggedKeptPre209": 15,
+    "agreed": 44,
+    "flagged": 18,
+    "flaggedKeptRenderHex": 12,
+    "flaggedKeptAcceptedRender": 0,
+    "flaggedKeptPre209": 6,
     "noSecondOpinion": 61,
     "swatchTableRows": 123,
     "walzRows": 45,
@@ -53,15 +60,16 @@
       "swatch": "#eae5d6",
       "walzcraft": "Faircrest CC Classic Cream",
       "walzHex": "#efe8d8",
+      "acceptedRender": null,
       "brandSnapAvoided": "#dedac6"
     },
     {
       "id": 330003,
       "name": "Carmel Shaker",
-      "candidateSource": "swatch-table",
+      "candidateSource": "catalog-color",
       "candidateHex": "#c8a882",
       "candidateCategory": "paint",
-      "appliedSource": "swatch-table",
+      "appliedSource": "catalog-color",
       "appliedHex": "#c8a882",
       "appliedCategory": "paint",
       "usesGrain": false,
@@ -76,15 +84,16 @@
       "swatch": "#c8a882",
       "walzcraft": "Faircrest CS Carmel Shaker",
       "walzHex": "#b9833f",
+      "acceptedRender": null,
       "brandSnapAvoided": "#d7a46c"
     },
     {
       "id": 330004,
       "name": "Designer Natural",
-      "candidateSource": "swatch-table",
+      "candidateSource": "catalog-color",
       "candidateHex": "#d4b896",
       "candidateCategory": "stain",
-      "appliedSource": "swatch-table",
+      "appliedSource": "catalog-color",
       "appliedHex": "#d4b896",
       "appliedCategory": "stain",
       "usesGrain": true,
@@ -99,6 +108,7 @@
       "swatch": "#d4b896",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#d7a46c"
     },
     {
@@ -122,15 +132,16 @@
       "swatch": "#c1d5b4",
       "walzcraft": "Faircrest FS Fresh Sage",
       "walzHex": "#7d8b77",
+      "acceptedRender": null,
       "brandSnapAvoided": "#dedac6"
     },
     {
       "id": 330006,
       "name": "Greek Villa",
-      "candidateSource": "swatch-table",
+      "candidateSource": "catalog-color",
       "candidateHex": "#e8e0d0",
       "candidateCategory": "paint",
-      "appliedSource": "swatch-table",
+      "appliedSource": "catalog-color",
       "appliedHex": "#e8e0d0",
       "appliedCategory": "paint",
       "usesGrain": false,
@@ -145,21 +156,22 @@
       "swatch": "#e8e0d0",
       "walzcraft": "Faircrest GV Greek Villa",
       "walzHex": "#efe8d8",
+      "acceptedRender": null,
       "brandSnapAvoided": "#dedac6"
     },
     {
       "id": 330007,
       "name": "Hickory Shaker",
-      "candidateSource": "swatch-table",
+      "candidateSource": "catalog-color",
       "candidateHex": "#8b6914",
       "candidateCategory": "stain",
-      "appliedSource": "pre-209",
+      "appliedSource": "catalog-color",
       "appliedHex": "#8b6914",
       "appliedCategory": "stain",
       "usesGrain": true,
       "pre209Hex": "#8b6914",
       "needsColorReview": true,
-      "keptBecause": "estimator-disagreed",
+      "keptBecause": "saved-catalog-color",
       "estimatorHex": "#b08968",
       "estimatorSource": "name",
       "deltaE": 17.67619673622624,
@@ -168,15 +180,16 @@
       "swatch": "#8b6914",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#d7a46c"
     },
     {
       "id": 330008,
       "name": "Midnight Black Shaker",
-      "candidateSource": "swatch-table",
+      "candidateSource": "catalog-color",
       "candidateHex": "#1a1a1a",
       "candidateCategory": "paint",
-      "appliedSource": "swatch-table",
+      "appliedSource": "catalog-color",
       "appliedHex": "#1a1a1a",
       "appliedCategory": "paint",
       "usesGrain": false,
@@ -191,21 +204,22 @@
       "swatch": "#1a1a1a",
       "walzcraft": "Faircrest MBS Midnight Black Shaker",
       "walzHex": "#1b1b1b",
+      "acceptedRender": null,
       "brandSnapAvoided": "#244338"
     },
     {
       "id": 330009,
       "name": "Winchester Grey",
-      "candidateSource": "swatch-table",
+      "candidateSource": "catalog-color",
       "candidateHex": "#8a9ba8",
       "candidateCategory": "paint",
-      "appliedSource": "pre-209",
+      "appliedSource": "catalog-color",
       "appliedHex": "#8a9ba8",
       "appliedCategory": "paint",
       "usesGrain": false,
       "pre209Hex": "#8a9ba8",
       "needsColorReview": true,
-      "keptBecause": "estimator-disagreed",
+      "keptBecause": "saved-catalog-color",
       "estimatorHex": "#8d8f92",
       "estimatorSource": "name",
       "deltaE": 7.361224238679618,
@@ -214,15 +228,16 @@
       "swatch": "#8a9ba8",
       "walzcraft": "Faircrest NG Winchester Grey",
       "walzHex": "#8e8e88",
+      "acceptedRender": null,
       "brandSnapAvoided": "#dedac6"
     },
     {
       "id": 330010,
       "name": "Platinum Shaker",
-      "candidateSource": "swatch-table",
+      "candidateSource": "catalog-color",
       "candidateHex": "#c8c8c8",
       "candidateCategory": "paint",
-      "appliedSource": "swatch-table",
+      "appliedSource": "catalog-color",
       "appliedHex": "#c8c8c8",
       "appliedCategory": "paint",
       "usesGrain": false,
@@ -237,6 +252,7 @@
       "swatch": "#c8c8c8",
       "walzcraft": "Faircrest PS Platinum Shaker",
       "walzHex": "#a8a59c",
+      "acceptedRender": null,
       "brandSnapAvoided": "#dedac6"
     },
     {
@@ -260,21 +276,22 @@
       "swatch": "#73482a",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#244338"
     },
     {
       "id": 330012,
       "name": "West Point Grey",
-      "candidateSource": "swatch-table",
+      "candidateSource": "catalog-color",
       "candidateHex": "#9aa8b0",
       "candidateCategory": "paint",
-      "appliedSource": "pre-209",
+      "appliedSource": "catalog-color",
       "appliedHex": "#9aa8b0",
       "appliedCategory": "paint",
       "usesGrain": false,
       "pre209Hex": "#9aa8b0",
       "needsColorReview": true,
-      "keptBecause": "estimator-disagreed",
+      "keptBecause": "saved-catalog-color",
       "estimatorHex": "#8d8f92",
       "estimatorSource": "name",
       "deltaE": 8.895259071591077,
@@ -283,15 +300,16 @@
       "swatch": "#9aa8b0",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#dedac6"
     },
     {
       "id": 330013,
       "name": "White Shaker (Clark and Son)",
-      "candidateSource": "swatch-table",
+      "candidateSource": "catalog-color",
       "candidateHex": "#ffffff",
       "candidateCategory": "paint",
-      "appliedSource": "swatch-table",
+      "appliedSource": "catalog-color",
       "appliedHex": "#ffffff",
       "appliedCategory": "paint",
       "usesGrain": false,
@@ -306,15 +324,16 @@
       "swatch": "#ffffff",
       "walzcraft": "Faircrest WS White Shaker",
       "walzHex": "#f4f2ec",
+      "acceptedRender": null,
       "brandSnapAvoided": "#fffdf9"
     },
     {
       "id": 330014,
       "name": "Shaker White",
-      "candidateSource": "swatch-table",
+      "candidateSource": "catalog-color",
       "candidateHex": "#f5f5f5",
       "candidateCategory": "paint",
-      "appliedSource": "swatch-table",
+      "appliedSource": "catalog-color",
       "appliedHex": "#f5f5f5",
       "appliedCategory": "paint",
       "usesGrain": false,
@@ -329,21 +348,22 @@
       "swatch": "#f5f5f5",
       "walzcraft": "Kitchen Crest SW Shaker White",
       "walzHex": "#f4f2ec",
+      "acceptedRender": null,
       "brandSnapAvoided": "#fffdf9"
     },
     {
       "id": 330015,
       "name": "Shaker Antique White",
-      "candidateSource": "swatch-table",
+      "candidateSource": "catalog-color",
       "candidateHex": "#f0ead6",
       "candidateCategory": "paint",
-      "appliedSource": "pre-209",
+      "appliedSource": "catalog-color",
       "appliedHex": "#f0ead6",
       "appliedCategory": "paint",
       "usesGrain": false,
       "pre209Hex": "#f0ead6",
       "needsColorReview": true,
-      "keptBecause": "estimator-disagreed",
+      "keptBecause": "saved-catalog-color",
       "estimatorHex": "#f7f6f3",
       "estimatorSource": "name",
       "deltaE": 7.524871127313836,
@@ -352,15 +372,16 @@
       "swatch": "#f0ead6",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#dedac6"
     },
     {
       "id": 330016,
       "name": "Shaker Grey",
-      "candidateSource": "swatch-table",
+      "candidateSource": "catalog-color",
       "candidateHex": "#9e9e9e",
       "candidateCategory": "paint",
-      "appliedSource": "swatch-table",
+      "appliedSource": "catalog-color",
       "appliedHex": "#9e9e9e",
       "appliedCategory": "paint",
       "usesGrain": false,
@@ -375,15 +396,16 @@
       "swatch": "#9e9e9e",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#dedac6"
     },
     {
       "id": 330017,
       "name": "Shaker Dove",
-      "candidateSource": "swatch-table",
+      "candidateSource": "catalog-color",
       "candidateHex": "#d8d0c8",
       "candidateCategory": "paint",
-      "appliedSource": "swatch-table",
+      "appliedSource": "catalog-color",
       "appliedHex": "#d8d0c8",
       "appliedCategory": "paint",
       "usesGrain": false,
@@ -398,15 +420,16 @@
       "swatch": "#d8d0c8",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#dedac6"
     },
     {
       "id": 330018,
       "name": "Shaker Ivy",
-      "candidateSource": "swatch-table",
+      "candidateSource": "catalog-color",
       "candidateHex": "#4f584c",
       "candidateCategory": "paint",
-      "appliedSource": "swatch-table",
+      "appliedSource": "catalog-color",
       "appliedHex": "#4f584c",
       "appliedCategory": "paint",
       "usesGrain": false,
@@ -421,21 +444,22 @@
       "swatch": "#4f584c",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#244338"
     },
     {
       "id": 330019,
       "name": "Shaker Navy",
-      "candidateSource": "swatch-table",
+      "candidateSource": "catalog-color",
       "candidateHex": "#1a2f4a",
       "candidateCategory": "paint",
-      "appliedSource": "pre-209",
+      "appliedSource": "catalog-color",
       "appliedHex": "#1a2f4a",
       "appliedCategory": "paint",
       "usesGrain": false,
       "pre209Hex": "#1a2f4a",
       "needsColorReview": true,
-      "keptBecause": "estimator-disagreed",
+      "keptBecause": "saved-catalog-color",
       "estimatorHex": "#435b77",
       "estimatorSource": "name",
       "deltaE": 14.529060775745558,
@@ -444,15 +468,16 @@
       "swatch": "#1a2f4a",
       "walzcraft": "Kitchen Crest SN Shaker Navy",
       "walzHex": "#2b3a55",
+      "acceptedRender": null,
       "brandSnapAvoided": "#244338"
     },
     {
       "id": 330020,
       "name": "Shaker Black",
-      "candidateSource": "swatch-table",
+      "candidateSource": "catalog-color",
       "candidateHex": "#1a1a1a",
       "candidateCategory": "paint",
-      "appliedSource": "swatch-table",
+      "appliedSource": "catalog-color",
       "appliedHex": "#1a1a1a",
       "appliedCategory": "paint",
       "usesGrain": false,
@@ -467,38 +492,40 @@
       "swatch": "#1a1a1a",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#244338"
     },
     {
       "id": 330021,
       "name": "Shaker Honey",
-      "candidateSource": "swatch-table",
-      "candidateHex": "#c8a040",
-      "candidateCategory": "paint",
-      "appliedSource": "pre-209",
-      "appliedHex": "#c8a040",
-      "appliedCategory": "paint",
-      "usesGrain": false,
-      "pre209Hex": "#c8a040",
-      "needsColorReview": true,
-      "keptBecause": "estimator-disagreed",
+      "candidateSource": "catalog-color",
+      "candidateHex": "#d1ba8f",
+      "candidateCategory": "stain",
+      "appliedSource": "catalog-color",
+      "appliedHex": "#d1ba8f",
+      "appliedCategory": "stain",
+      "usesGrain": true,
+      "pre209Hex": "#d1ba8f",
+      "needsColorReview": false,
+      "keptBecause": "agreed",
       "estimatorHex": "#d1ba8f",
       "estimatorSource": "name",
-      "deltaE": 12.341411031711651,
+      "deltaE": 0,
       "hueChosen": "orange",
       "hueEstimator": "orange",
-      "swatch": "#c8a040",
+      "swatch": null,
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#d7a46c"
     },
     {
       "id": 330022,
       "name": "Shaker Cinder",
-      "candidateSource": "swatch-table",
+      "candidateSource": "catalog-color",
       "candidateHex": "#5a5a5a",
       "candidateCategory": "paint",
-      "appliedSource": "swatch-table",
+      "appliedSource": "catalog-color",
       "appliedHex": "#5a5a5a",
       "appliedCategory": "paint",
       "usesGrain": false,
@@ -513,15 +540,16 @@
       "swatch": "#5a5a5a",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#244338"
     },
     {
       "id": 330023,
       "name": "Edgeline White",
-      "candidateSource": "swatch-table",
+      "candidateSource": "catalog-color",
       "candidateHex": "#fafafa",
       "candidateCategory": "paint",
-      "appliedSource": "swatch-table",
+      "appliedSource": "catalog-color",
       "appliedHex": "#fafafa",
       "appliedCategory": "paint",
       "usesGrain": false,
@@ -536,15 +564,16 @@
       "swatch": "#fafafa",
       "walzcraft": "Kitchen Crest EW Estate White",
       "walzHex": "#ece9e0",
+      "acceptedRender": null,
       "brandSnapAvoided": "#fffdf9"
     },
     {
       "id": 330024,
       "name": "Oxford White",
-      "candidateSource": "swatch-table",
+      "candidateSource": "catalog-color",
       "candidateHex": "#f0f0f0",
       "candidateCategory": "paint",
-      "appliedSource": "swatch-table",
+      "appliedSource": "catalog-color",
       "appliedHex": "#f0f0f0",
       "appliedCategory": "paint",
       "usesGrain": false,
@@ -559,15 +588,16 @@
       "swatch": "#f0f0f0",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
       "id": 330025,
       "name": "Oxford Sage",
-      "candidateSource": "swatch-table",
+      "candidateSource": "catalog-color",
       "candidateHex": "#7a9a7a",
       "candidateCategory": "paint",
-      "appliedSource": "swatch-table",
+      "appliedSource": "catalog-color",
       "appliedHex": "#7a9a7a",
       "appliedCategory": "paint",
       "usesGrain": false,
@@ -582,21 +612,22 @@
       "swatch": "#7a9a7a",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#dedac6"
     },
     {
       "id": 330026,
       "name": "Casselberry Antique White",
-      "candidateSource": "swatch-table",
+      "candidateSource": "catalog-color",
       "candidateHex": "#ede0c8",
       "candidateCategory": "paint",
-      "appliedSource": "pre-209",
+      "appliedSource": "catalog-color",
       "appliedHex": "#ede0c8",
       "appliedCategory": "paint",
       "usesGrain": false,
       "pre209Hex": "#ede0c8",
       "needsColorReview": true,
-      "keptBecause": "estimator-disagreed",
+      "keptBecause": "saved-catalog-color",
       "estimatorHex": "#f7f6f3",
       "estimatorSource": "name",
       "deltaE": 9.92021866965457,
@@ -605,15 +636,16 @@
       "swatch": "#ede0c8",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#dedac6"
     },
     {
       "id": 330027,
       "name": "Casselberry Saddle",
-      "candidateSource": "swatch-table",
+      "candidateSource": "catalog-color",
       "candidateHex": "#8b6040",
       "candidateCategory": "stain",
-      "appliedSource": "swatch-table",
+      "appliedSource": "catalog-color",
       "appliedHex": "#8b6040",
       "appliedCategory": "stain",
       "usesGrain": true,
@@ -628,15 +660,16 @@
       "swatch": "#8b6040",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#d7a46c"
     },
     {
       "id": 330028,
       "name": "Haven Dune",
-      "candidateSource": "swatch-table",
+      "candidateSource": "catalog-color",
       "candidateHex": "#d4c4a0",
       "candidateCategory": "paint",
-      "appliedSource": "swatch-table",
+      "appliedSource": "catalog-color",
       "appliedHex": "#d4c4a0",
       "appliedCategory": "paint",
       "usesGrain": false,
@@ -651,21 +684,22 @@
       "swatch": "#d4c4a0",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#dedac6"
     },
     {
       "id": 330029,
       "name": "Oxford Mist",
-      "candidateSource": "swatch-table",
+      "candidateSource": "catalog-color",
       "candidateHex": "#b8c8d0",
       "candidateCategory": "paint",
-      "appliedSource": "pre-209",
+      "appliedSource": "catalog-color",
       "appliedHex": "#b8c8d0",
       "appliedCategory": "paint",
       "usesGrain": false,
       "pre209Hex": "#b8c8d0",
       "needsColorReview": true,
-      "keptBecause": "estimator-disagreed",
+      "keptBecause": "saved-catalog-color",
       "estimatorHex": "#8d8f92",
       "estimatorSource": "name",
       "deltaE": 16.794242909880435,
@@ -674,15 +708,16 @@
       "swatch": "#b8c8d0",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
       "id": 330030,
       "name": "Oxford Toffee",
-      "candidateSource": "swatch-table",
+      "candidateSource": "catalog-color",
       "candidateHex": "#a07850",
       "candidateCategory": "paint",
-      "appliedSource": "swatch-table",
+      "appliedSource": "catalog-color",
       "appliedHex": "#a07850",
       "appliedCategory": "paint",
       "usesGrain": false,
@@ -697,21 +732,22 @@
       "swatch": "#a07850",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#d7a46c"
     },
     {
       "id": 330031,
       "name": "Haven Ember",
-      "candidateSource": "swatch-table",
+      "candidateSource": "catalog-color",
       "candidateHex": "#c86040",
       "candidateCategory": "paint",
-      "appliedSource": "pre-209",
+      "appliedSource": "catalog-color",
       "appliedHex": "#c86040",
       "appliedCategory": "paint",
       "usesGrain": false,
       "pre209Hex": "#c86040",
       "needsColorReview": true,
-      "keptBecause": "estimator-disagreed",
+      "keptBecause": "saved-catalog-color",
       "estimatorHex": "#75523e",
       "estimatorSource": "name",
       "deltaE": 19.43389475593621,
@@ -720,15 +756,16 @@
       "swatch": "#c86040",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#d7a46c"
     },
     {
       "id": 330032,
       "name": "Shaker Essence Oak",
-      "candidateSource": "swatch-table",
+      "candidateSource": "catalog-color",
       "candidateHex": "#c8a060",
       "candidateCategory": "stain",
-      "appliedSource": "swatch-table",
+      "appliedSource": "catalog-color",
       "appliedHex": "#c8a060",
       "appliedCategory": "stain",
       "usesGrain": true,
@@ -743,6 +780,7 @@
       "swatch": "#c8a060",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#d7a46c"
     },
     {
@@ -766,6 +804,7 @@
       "swatch": "#8d8f92",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#dedac6"
     },
     {
@@ -789,6 +828,7 @@
       "swatch": "#f7f6f3",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#fffdf9"
     },
     {
@@ -812,6 +852,7 @@
       "swatch": "#75523e",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#244338"
     },
     {
@@ -835,6 +876,7 @@
       "swatch": "#2d333f",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#244338"
     },
     {
@@ -858,6 +900,7 @@
       "swatch": "#4f5549",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#244338"
     },
     {
@@ -881,6 +924,7 @@
       "swatch": "#34363a",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#244338"
     },
     {
@@ -904,6 +948,7 @@
       "swatch": "#6f6d6a",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#244338"
     },
     {
@@ -927,6 +972,7 @@
       "swatch": "#8d8f92",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#dedac6"
     },
     {
@@ -950,6 +996,7 @@
       "swatch": "#868d7b",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#dedac6"
     },
     {
@@ -973,6 +1020,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -996,6 +1044,7 @@
       "swatch": "#b08968",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#d7a46c"
     },
     {
@@ -1019,6 +1068,7 @@
       "swatch": "#f7f6f3",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#fffdf9"
     },
     {
@@ -1042,6 +1092,7 @@
       "swatch": "#34363a",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#244338"
     },
     {
@@ -1065,6 +1116,7 @@
       "swatch": "#8d8f92",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#dedac6"
     },
     {
@@ -1088,6 +1140,7 @@
       "swatch": "#f7f6f3",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#fffdf9"
     },
     {
@@ -1111,15 +1164,16 @@
       "swatch": "#f7f6f3",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#fffdf9"
     },
     {
       "id": 390017,
       "name": "Slim Aston Green",
-      "candidateSource": "swatch-table",
+      "candidateSource": "catalog-color",
       "candidateHex": "#4f5549",
       "candidateCategory": "paint",
-      "appliedSource": "swatch-table",
+      "appliedSource": "catalog-color",
       "appliedHex": "#4f5549",
       "appliedCategory": "paint",
       "usesGrain": false,
@@ -1134,6 +1188,7 @@
       "swatch": "#4f5549",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#244338"
     },
     {
@@ -1157,6 +1212,7 @@
       "swatch": "#34363a",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#244338"
     },
     {
@@ -1180,6 +1236,7 @@
       "swatch": "#d1ba8f",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#d7a46c"
     },
     {
@@ -1203,6 +1260,7 @@
       "swatch": "#d1ba8f",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#d7a46c"
     },
     {
@@ -1226,6 +1284,7 @@
       "swatch": "#f7f6f3",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#fffdf9"
     },
     {
@@ -1249,6 +1308,7 @@
       "swatch": "#8d8f92",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#dedac6"
     },
     {
@@ -1272,6 +1332,7 @@
       "swatch": "#34363a",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#244338"
     },
     {
@@ -1295,6 +1356,7 @@
       "swatch": "#ded5c1",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#dedac6"
     },
     {
@@ -1318,6 +1380,7 @@
       "swatch": "#d1ba8f",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#d7a46c"
     },
     {
@@ -1341,6 +1404,7 @@
       "swatch": "#d1ba8f",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#d7a46c"
     },
     {
@@ -1364,6 +1428,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -1387,6 +1452,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -1410,6 +1476,7 @@
       "swatch": "#d1ba8f",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#d7a46c"
     },
     {
@@ -1433,6 +1500,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -1456,6 +1524,7 @@
       "swatch": "#78826b",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#244338"
     },
     {
@@ -1479,6 +1548,7 @@
       "swatch": "#435b77",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#244338"
     },
     {
@@ -1502,6 +1572,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -1525,6 +1596,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -1548,6 +1620,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -1571,6 +1644,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": "AltaEuro PGW Palermo Gloss White",
       "walzHex": "#f4f2ec",
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -1594,6 +1668,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -1617,6 +1692,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -1640,6 +1716,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -1663,6 +1740,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -1686,6 +1764,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -1709,6 +1788,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -1732,6 +1812,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -1755,6 +1836,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": "AltaEuro ZSI Zenit Azul Indigo",
       "walzHex": "#2b3a55",
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -1778,6 +1860,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -1801,6 +1884,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -1824,6 +1908,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -1847,6 +1932,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": "AltaEuro ZSW Zenit Blanco",
       "walzHex": "#f4f2ec",
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -1870,6 +1956,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -1893,6 +1980,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -1916,6 +2004,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -1939,6 +2028,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -1962,6 +2052,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -1985,6 +2076,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -2008,6 +2100,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -2031,6 +2124,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -2054,6 +2148,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -2077,6 +2172,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -2100,6 +2196,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -2123,6 +2220,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -2146,6 +2244,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -2169,6 +2268,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -2192,6 +2292,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -2215,6 +2316,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -2238,6 +2340,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -2261,6 +2364,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -2284,6 +2388,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -2307,6 +2412,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -2330,6 +2436,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -2353,6 +2460,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -2376,6 +2484,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -2399,6 +2508,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -2422,6 +2532,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -2445,6 +2556,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": "AltaEuro ZCK Slim Cava Black",
       "walzHex": "#1b1b1b",
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -2468,6 +2580,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -2491,6 +2604,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -2514,6 +2628,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -2537,6 +2652,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -2560,6 +2676,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -2583,6 +2700,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -2606,6 +2724,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -2629,6 +2748,7 @@
       "swatch": "#f7f6f3",
       "walzcraft": "DL Cabinetry WS White Shaker",
       "walzHex": "#f4f2ec",
+      "acceptedRender": null,
       "brandSnapAvoided": "#fffdf9"
     },
     {
@@ -2652,6 +2772,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": "DL Cabinetry SSA Slim Shaker Alabaster",
       "walzHex": "#ece9e0",
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -2675,6 +2796,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -2698,6 +2820,7 @@
       "swatch": "#f7f6f3",
       "walzcraft": "DL Cabinetry PW Pearl White",
       "walzHex": "#f4f2ec",
+      "acceptedRender": null,
       "brandSnapAvoided": "#fffdf9"
     },
     {
@@ -2721,6 +2844,7 @@
       "swatch": "#f7f6f3",
       "walzcraft": "DL Cabinetry GW Glacier White",
       "walzHex": "#f4f2ec",
+      "acceptedRender": null,
       "brandSnapAvoided": "#fffdf9"
     },
     {
@@ -2744,6 +2868,7 @@
       "swatch": "#d1ba8f",
       "walzcraft": "DL Cabinetry EWO (name not in source)",
       "walzHex": "#a87a4a",
+      "acceptedRender": null,
       "brandSnapAvoided": "#d7a46c"
     },
     {
@@ -2767,6 +2892,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": null,
       "walzHex": null,
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -2790,6 +2916,7 @@
       "swatch": "#8d8f92",
       "walzcraft": "DL Cabinetry DG Dove Grey",
       "walzHex": "#a8a59c",
+      "acceptedRender": null,
       "brandSnapAvoided": "#dedac6"
     },
     {
@@ -2813,6 +2940,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": "DL Cabinetry DC (name not in source)",
       "walzHex": "#5a2a22",
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     },
     {
@@ -2836,6 +2964,7 @@
       "swatch": "#8d8f92",
       "walzcraft": "DL Cabinetry CG Cyber Grey",
       "walzHex": "#2b3a55",
+      "acceptedRender": null,
       "brandSnapAvoided": "#dedac6"
     },
     {
@@ -2859,6 +2988,7 @@
       "swatch": "#f2f0ea",
       "walzcraft": "DL Cabinetry SSE Slim Shaker Ebony",
       "walzHex": "#1b1b1b",
+      "acceptedRender": null,
       "brandSnapAvoided": "#f6f3ed"
     }
   ]

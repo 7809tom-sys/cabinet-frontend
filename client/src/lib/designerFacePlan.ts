@@ -1,14 +1,46 @@
 import { preferredDoorReferenceUrl, preferredDrawerReferenceUrl } from "@/lib/approvedDoorReference";
 import { resolveCabinetFaceImages, type CabinetFacePlan, type DoorStyleFaceInput } from "@shared/doorFaceRecognition";
 import { findDlcFinishForStyle } from "@shared/dlcFr26Mapping";
+import { resolveDoorColor } from "@shared/doorColorResolve";
 import { standardShakerDlFacePlan } from "@shared/shakerDoorBlueprint";
 import { appliedSlabGrainPlan } from "@shared/slabGrainApply";
 import { wizardDoorFacePlan } from "@shared/walzcraftDesignerPickup";
 
-export type DesignerFaceStyle = DoorStyleFaceInput & { approvedReferenceImageUrl?: string | null };
+export type DesignerFaceStyle = DoorStyleFaceInput & {
+  approvedReferenceImageUrl?: string | null;
+  approvedVersionId?: number | null;
+  id?: number | null;
+};
 
 function trimmedImageUrl(value: string | null | undefined): string {
   return value?.trim() ?? "";
+}
+
+/**
+ * The accepted render as a face plan: the signed-off texture on the door, and the
+ * color derived from that render. Null unless a run was actually accepted, so a
+ * photo that merely sits on the style cannot claim to be an accepted appearance.
+ *
+ * A wall cabinet shows one door and no drawer, matching the other plans.
+ */
+export function acceptedRenderFacePlan(
+  style: DesignerFaceStyle | null | undefined,
+  placement: string | null | undefined,
+): CabinetFacePlan | null {
+  if (!style || style.approvedVersionId == null) return null;
+  const textureUrl = trimmedImageUrl(style.approvedReferenceImageUrl);
+  if (!textureUrl) return null;
+  const decision = resolveDoorColor({ ...style, approvedVersionId: style.approvedVersionId });
+  const wall = (placement ?? "").toLowerCase() === "wall";
+  return {
+    sourceKind: "legacy-door",
+    doorUrl: textureUrl,
+    drawerUrl: wall ? null : textureUrl,
+    sections: 1,
+    drawerTextureApplied: !wall,
+    grainRotation: 0,
+    acceptedColorHex: decision.appliedHex,
+  } as CabinetFacePlan;
 }
 
 /**
@@ -49,6 +81,11 @@ export function designerFacePlan(
   // color. A door the wizard never touched returns null here and takes the normal path.
   const wizard = wizardDoorFacePlan(style, placement);
   if (wizard) return wizard;
+  // Tom's accepted render is the source of truth for the door's appearance: its
+  // texture and its derived color. It outranks the DL blueprint, a slab grain, and
+  // any catalog photo, because it is the appearance an operator signed off on.
+  const accepted = acceptedRenderFacePlan(style, placement);
+  if (accepted) return accepted;
   const slabGrain = appliedSlabGrainPlan(style);
   if (slabGrain) return slabGrain;
   // A real DL finish keeps its own grain and color. Other 2.75/3 inch shakers

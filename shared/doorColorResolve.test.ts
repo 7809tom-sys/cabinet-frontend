@@ -4,6 +4,8 @@ import catalog from "./fixtures/doorStyleSideCatalog.json";
 import { brandDoorSurfaceHex } from "./shakerDoorBlueprint";
 import {
   DOOR_COLOR_AGREE_DELTA_E,
+  PRE_PAINT_MATCH_ORIGINALS,
+  demotedSwatchRow,
   hueFamily,
   resolveDoorColor,
   summarizeDoorColors,
@@ -117,5 +119,42 @@ describe("door color precedence", () => {
     const table = readFileSync(new URL("../data/door-colors/swatch-hex.json", import.meta.url), "utf8");
     expect(table).toContain("360001");
     expect(table).toContain("#8d8f92");
+  });
+
+  it("never applies the demoted paint-match row for Shaker Honey", () => {
+    // Tom: #c8a040 was a nearest paint-chip match, not the door's color. The row is
+    // demoted in swatch-hex.json and must never be a candidate or an applied value.
+    const honey = styles.find((style) => style.id === 330021)!;
+    expect(demotedSwatchRow(honey)?.hex).toBe("#c8a040");
+    for (const input of [
+      honey,
+      { ...honey, color: null },
+      { ...honey, color: undefined },
+      { id: 330021, styleCode: "SH", ourName: "Shaker Honey", doorStyle: "Shaker" },
+    ]) {
+      const decision = resolveDoorColor(input as DoorColorInput);
+      expect(decision.layers.swatch, JSON.stringify(input)).toBeNull();
+      expect(decision.appliedHex, JSON.stringify(input)).not.toBe("#c8a040");
+    }
+  });
+
+  it("keeps the paint match out of every other style's decision too", () => {
+    // Sweep the catalog: no door may apply a demoted row's hex through the table.
+    for (const style of styles) {
+      const decision = resolveDoorColor(style);
+      const demoted = demotedSwatchRow(style);
+      if (!demoted) continue;
+      expect(decision.appliedHex, style.ourName ?? "").not.toBe(demoted.hex);
+    }
+  });
+
+  it("states the pre-paint-match original for the styles the paint match overwrote", () => {
+    for (const [id, original] of Object.entries(PRE_PAINT_MATCH_ORIGINALS)) {
+      const style = styles.find((item) => item.id === Number(id));
+      if (!style) continue;
+      const decision = resolveDoorColor({ ...style, renderHex: null });
+      expect(decision.appliedHex, style.ourName ?? "").toBe(original.hex);
+      expect(decision.appliedCategory, style.ourName ?? "").toBe(original.category);
+    }
   });
 });

@@ -118,11 +118,19 @@ export function createColorTraceRecorder(now: () => number = () => Date.now()) {
       const push = (step: Omit<ColorTraceStep, "atMs">) => record.steps.push({ atMs: now() - startedAtMs, ...step });
       push({
         key: "style.accepted",
-        detail: decision.layers.renderHex
-          ? `Accepted run color ${decision.layers.renderHex}${acceptedFetchedAt ? ` (fetched ${acceptedFetchedAt})` : ""}`
+        detail: decision.layers.acceptedRender
+          ? `Accepted render color ${decision.layers.acceptedRender.hex}${acceptedFetchedAt ? ` (fetched ${acceptedFetchedAt})` : ""}`
           : "No accepted door-rendering run for this style",
+        hex: decision.layers.acceptedRender?.hex ?? null,
+        source: decision.layers.acceptedRender ? "accepted-render" : null,
+      });
+      push({
+        key: "style.renderHex",
+        detail: decision.layers.renderHex
+          ? `Hand-set render hex ${decision.layers.renderHex}`
+          : "No render hex on this style",
         hex: decision.layers.renderHex,
-        source: decision.layers.renderHex ? "accepted-render" : null,
+        source: decision.layers.renderHex ? "render-hex" : null,
       });
       push({
         key: "style.saved",
@@ -135,7 +143,7 @@ export function createColorTraceRecorder(now: () => number = () => Date.now()) {
       push({
         key: "candidates.fallback",
         detail: [
-          decision.layers.swatch ? `swatch ${decision.layers.swatch.hex}` : null,
+          decision.layers.swatch ? `swatch ${decision.layers.swatch.hex}` : "swatch demoted/none",
           decision.layers.walzcraft ? `walz ${decision.layers.walzcraft.hex}` : null,
           decision.layers.estimator ? `estimate ${decision.layers.estimator.hex}` : null,
           decision.layers.pre209 ? `pre-209 ${decision.layers.pre209.hex}` : null,

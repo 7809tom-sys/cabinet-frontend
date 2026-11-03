@@ -26,33 +26,42 @@ const MADISON = {
   ourName: "Shaker Honey",
   aliasName: "Honey Core (Madison)",
   doorStyle: "Shaker",
+  // The paint-match hex still stored on the row. It is never the door's color.
   color: "#c8a040",
   doorSampleImageUrl: "/manus-storage/sh-sample.jpg",
 };
+
+/** What Shaker Honey rendered in before the paint match overwrote its saved color. */
+const PRE_PAINT_MATCH = "#d1ba8f";
 
 describe("only an accepted run drives the kitchen", () => {
   it("uses the accepted run's color and image", () => {
     const style = { ...MADISON, renderHex: "#d9c9a3", approvedVersionId: 42, approvedReferenceImageUrl: "/audit/sh-approved.png" };
     expect(hasAcceptedDoorAppearance(style)).toBe(true);
     expect(resolveKitchenDoorColor(style).appliedHex).toBe("#d9c9a3");
+    expect(resolveKitchenDoorColor(style).appliedSource).toBe("accepted-render");
     expect(kitchenAcceptedFaceImage(style)).toBe("/audit/sh-approved.png");
   });
 
   it("ignores a renderHex typed into the editor with no accepted run", () => {
     // An admin can type a color without ever accepting a render. That must not
-    // claim to be approved, or a hand edit would silently outrank the catalog.
+    // claim to be approved, so the accepted layer stays empty and the guard drops
+    // the typed hex before the resolver sees it.
     const style = { ...MADISON, renderHex: "#d9c9a3", approvedVersionId: null };
     expect(hasAcceptedDoorAppearance(style)).toBe(false);
     expect(doorColorInputFor(style).renderHex).toBeNull();
-    expect(resolveKitchenDoorColor(style).appliedHex).toBe("#c8a040");
+    expect(resolveKitchenDoorColor(style).layers.acceptedRender).toBeNull();
+    expect(resolveKitchenDoorColor(style).appliedHex).not.toBe("#d9c9a3");
+    expect(resolveKitchenDoorColor(style).appliedHex).not.toBe("#c8a040");
     expect(kitchenAcceptedFaceImage(style)).toBeNull();
   });
 
-  it("falls back to the style's saved color and its own sample photo after a revoke", () => {
+  it("falls back to the pre-paint-match original and the style's own sample photo after a revoke", () => {
     const revoked = { ...MADISON, renderHex: null, approvedVersionId: null, approvedReferenceImageUrl: null };
     const decision = resolveKitchenDoorColor(revoked);
-    expect(decision.appliedHex).toBe("#c8a040");
-    expect(decision.candidateSource).toBe("catalog-color");
+    // Never #c8a040: that was the paint match, not the door.
+    expect(decision.appliedHex).toBe(PRE_PAINT_MATCH);
+    expect(decision.appliedHex).not.toBe("#c8a040");
     // No approved image, so the caller keeps the sample photo.
     expect(kitchenAcceptedFaceImage(revoked)).toBeNull();
     expect(styleSampleFaceImage(revoked)).toBe("/manus-storage/sh-sample.jpg");
@@ -61,7 +70,8 @@ describe("only an accepted run drives the kitchen", () => {
   it("rejects a malformed render hex even when a version is approved", () => {
     const broken = { ...MADISON, renderHex: "light tan", approvedVersionId: 7 };
     expect(hasAcceptedDoorAppearance(broken)).toBe(false);
-    expect(resolveKitchenDoorColor(broken).appliedHex).toBe("#c8a040");
+    expect(resolveKitchenDoorColor(broken).appliedHex).toBe(PRE_PAINT_MATCH);
+    expect(resolveKitchenDoorColor(broken).appliedHex).not.toBe("#c8a040");
   });
 
   it("never snaps an accepted tone to the palette", () => {
