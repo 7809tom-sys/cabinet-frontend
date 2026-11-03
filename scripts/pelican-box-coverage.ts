@@ -31,9 +31,8 @@ const rows: BoxCoverageRow[] = [];
 const styleNames: Record<string, string> = {};
 
 function addStyle(styleId: string, pack: StylePack | undefined, fallbackName: string) {
-  const label = pack?.name ?? fallbackName;
-  styleNames[styleId] = label;
-  for (const tag of ["base", "wall", "accessory"] as const) {
+  const label = pack?.name ?? styleNames[styleId] ?? fallbackName;
+  styleNames[styleId] = label;  for (const tag of ["base", "wall", "accessory"] as const) {
     for (const entry of (pack?.[tag] ?? []) as DesignCabinet[]) {
       if (!entry || typeof entry !== "object" || !entry.masterCode) continue;
       rows.push(boxCoverageRow(entry, styleId));
@@ -42,16 +41,22 @@ function addStyle(styleId: string, pack: StylePack | undefined, fallbackName: st
 }
 
 for (const [styleId, pack] of Object.entries(real)) addStyle(styleId, pack, `Line ${styleId}`);
+// A line's fixture pack carries its display name; keep those labels readable in
+// the report instead of raw style ids.
 for (const [styleId, pack] of Object.entries(matrix)) {
-  if (styleNames[styleId]) continue;
+  if (styleNames[styleId] && !/^Line \d+$/.test(styleNames[styleId]!)) continue;
   addStyle(styleId, pack, `Line ${styleId}`);
 }
+// Fixture style ids whose pack carries no display name still get a readable label.
+styleNames["330011"] = "Ashford (RH, 330011)";
+styleNames["540005"] = "Luxe Classic LSA (540005)";
 // Tall oven / pantry rows come from their own fixture because the real-catalog
 // pull is base/wall/accessory only.
 for (const entry of tall) {
   if (!entry?.masterCode) continue;
-  rows.push(boxCoverageRow(entry as DesignCabinet, String(entry.styleId)));
-  if (!styleNames[String(entry.styleId)]) styleNames[String(entry.styleId)] = `Line ${entry.styleId}`;
+  const styleId = String(entry.styleId);
+  rows.push(boxCoverageRow(entry as DesignCabinet, styleId));
+  if (!styleNames[styleId]) styleNames[styleId] = `Line ${styleId}`;
 }
 
 // One row per (style, SKU): a catalog can repeat a code across placements.
@@ -149,8 +154,7 @@ for (const row of summary.accessories) {
   lines.push(`| ${cell(displayTallSku(row.masterCode))} | ${cell(styleNames[row.style] ?? row.style)} | ${cell(row.subCategory)} | ${dims(row)} | ${cell(row.reason ?? "")} |`);
 }
 lines.push("");
-lines.push("## How a box is decided");
-lines.push("");
+lines.push("## How a box is decided");lines.push("");
 lines.push("- Auto-builder path: `client/src/lib/pelicanBoxCoverage.ts` (`autoBuilderPath`), which mirrors what `runAutoDesignLayout` seats.");
 lines.push("- 3D Designer: `client/src/lib/pelicanBoxCoverage.ts` (`threeDDesignerCanDraw`) with the shared accessory split in `shared/designerEligibility.ts`.");
 lines.push("- Tall oven/pantry auto-placement: `client/src/lib/autoDesignTallCabinets.ts`.");

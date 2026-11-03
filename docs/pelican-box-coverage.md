@@ -16,8 +16,8 @@ never auto-built as cabinet boxes, and are listed separately at the end.
 
 | Measure | Count |
 | --- | --- |
-| Cabinet rows audited | 1713 |
-| Available in the auto builder **and** 3D Designer | 1423 |
+| Cabinet rows audited | 1717 |
+| Available in the auto builder **and** 3D Designer | 1427 |
 | Missing | 200 |
 | Accessories (not boxes) | 90 |
 
@@ -27,21 +27,21 @@ never auto-built as cabinet boxes, and are listed separately at the end.
 
 | SKU | Line | Size | Auto builder | 3D Designer | Status |
 | --- | --- | --- | --- | --- | --- |
-| O338424 | Line 330011 | 33″ × 84″ × 24″ | yes | yes | available |
-| O339624 | Line 330011 | 33″ × 96″ × 24″ | yes | yes | available |
-| UOC3390 | Line 330011 | 33″ × 90″ × 24″ | yes | yes | available |
-| TOD3084 | Line 540005 | 30″ × 84″ × 24″ | yes | yes | available |
-| TOD3089 | Line 540005 | 30″ × 89″ × 24″ | yes | yes | available |
-| TOD3094 | Line 540005 | 30″ × 94″ × 24″ | yes | yes | available |
-| TOS2DB3084 | Line 540005 | 30″ × 84″ × 24″ | yes | yes | available |
-| TOS2DB3089 | Line 540005 | 30″ × 89″ × 24″ | yes | yes | available |
-| TOS2DB3094 | Line 540005 | 30″ × 94″ × 24″ | yes | yes | available |
-| TOS2DBID3084 | Line 540005 | 30″ × 84″ × 24″ | yes | yes | available |
-| TOS2DBID3089 | Line 540005 | 30″ × 89″ × 24″ | yes | yes | available |
-| TOS2DBID3094 | Line 540005 | 30″ × 94″ × 24″ | yes | yes | available |
-| TOS3DB3084 | Line 540005 | 30″ × 84″ × 24″ | yes | yes | available |
-| TOS3DB3089 | Line 540005 | 30″ × 89″ × 24″ | yes | yes | available |
-| TOS3DB3094 | Line 540005 | 30″ × 94″ × 24″ | yes | yes | available |
+| O338424 | Ashford (RH, 330011) | 33″ × 84″ × 24″ | yes | yes | available |
+| O339624 | Ashford (RH, 330011) | 33″ × 96″ × 24″ | yes | yes | available |
+| UOC3390 | Ashford (RH, 330011) | 33″ × 90″ × 24″ | yes | yes | available |
+| TOD3084 | Luxe Classic LSA (540005) | 30″ × 84″ × 24″ | yes | yes | available |
+| TOD3089 | Luxe Classic LSA (540005) | 30″ × 89″ × 24″ | yes | yes | available |
+| TOD3094 | Luxe Classic LSA (540005) | 30″ × 94″ × 24″ | yes | yes | available |
+| TOS2DB3084 | Luxe Classic LSA (540005) | 30″ × 84″ × 24″ | yes | yes | available |
+| TOS2DB3089 | Luxe Classic LSA (540005) | 30″ × 89″ × 24″ | yes | yes | available |
+| TOS2DB3094 | Luxe Classic LSA (540005) | 30″ × 94″ × 24″ | yes | yes | available |
+| TOS2DBID3084 | Luxe Classic LSA (540005) | 30″ × 84″ × 24″ | yes | yes | available |
+| TOS2DBID3089 | Luxe Classic LSA (540005) | 30″ × 89″ × 24″ | yes | yes | available |
+| TOS2DBID3094 | Luxe Classic LSA (540005) | 30″ × 94″ × 24″ | yes | yes | available |
+| TOS3DB3084 | Luxe Classic LSA (540005) | 30″ × 84″ × 24″ | yes | yes | available |
+| TOS3DB3089 | Luxe Classic LSA (540005) | 30″ × 89″ × 24″ | yes | yes | available |
+| TOS3DB3094 | Luxe Classic LSA (540005) | 30″ × 94″ × 24″ | yes | yes | available |
 
 ## Every cabinet box
 
@@ -164,166 +164,166 @@ never auto-built as cabinet boxes, and are listed separately at the end.
 | WR3621 | Classic Cream | wall | 36″ × 21″ × 24″ | yes | yes | available |  |
 | WRC3015 | Classic Cream | wall | 30″ × 15″ × 12″ | yes | yes | available |  |
 | WSC30 | Classic Cream | wall | 30″ × 6″ × 12″ | yes | yes | available |  |
-| 3VDB12 | Classic Cream | base | 12″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB15 | Classic Cream | base | 15″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB18 | Classic Cream | base | 18″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB21 | Classic Cream | base | 21″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB24 | Classic Cream | base | 24″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V2121 | Classic Cream | base | 21″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V2421DL | Classic Cream | base | 24″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V2421DR | Classic Cream | base | 24″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V3021DL | Classic Cream | base | 30″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V3021DR | Classic Cream | base | 30″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V3621DL | Classic Cream | base | 36″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V3621DR | Classic Cream | base | 36″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V6021DD | Classic Cream | base | 60″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VDDB48 | Classic Cream | base | 48″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS24 | Classic Cream | base | 24″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS27 | Classic Cream | base | 27″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS30 | Classic Cream | base | 30″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS36 | Classic Cream | base | 36″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSDB60 | Classic Cream | base | 60″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3DB12 | Line 330011 | base | 12″ × 34.5″ × 24″ | yes | yes | available |  |
-| 3DB15 | Line 330011 | base | 15″ × 34.5″ × 24″ | yes | yes | available |  |
-| 3DB18 | Line 330011 | base | 18″ × 34.5″ × 24″ | yes | yes | available |  |
-| 3DB21 | Line 330011 | base | 21″ × 34.5″ × 24″ | yes | yes | available |  |
-| 3DB24 | Line 330011 | base | 24″ × 34.5″ × 24″ | yes | yes | available |  |
-| 3DB30 | Line 330011 | base | 30″ × 34.5″ × 24″ | yes | yes | available |  |
-| 3DB36 | Line 330011 | base | 36″ × 34.5″ × 24″ | yes | yes | available |  |
-| B12 | Line 330011 | base | 12″ × 34.5″ × 24″ | yes | yes | available |  |
-| B15 | Line 330011 | base | 15″ × 34.5″ × 24″ | yes | yes | available |  |
-| B18 | Line 330011 | base | 18″ × 34.5″ × 24″ | yes | yes | available |  |
-| B21 | Line 330011 | base | 21″ × 34.5″ × 24″ | yes | yes | available |  |
-| B24 | Line 330011 | base | 24″ × 34.5″ × 24″ | yes | yes | available |  |
-| B27 | Line 330011 | base | 27″ × 34.5″ × 24″ | yes | yes | available |  |
-| B30 | Line 330011 | base | 30″ × 34.5″ × 24″ | yes | yes | available |  |
-| B33 | Line 330011 | base | 33″ × 34.5″ × 24″ | yes | yes | available |  |
-| B36 | Line 330011 | base | 36″ × 34.5″ × 24″ | yes | yes | available |  |
-| B39 | Line 330011 | base | 39″ × 34.5″ × 24″ | yes | yes | available |  |
-| B42 | Line 330011 | base | 42″ × 34.5″ × 24″ | yes | yes | available |  |
-| B48 | Line 330011 | base | 48″ × 34.5″ × 24″ | yes | yes | available |  |
-| BA-24 | Line 330011 | base | 24″ × 34.5″ × 24″ | yes | yes | available |  |
-| BBC36 | Line 330011 | base | 36″ × 34.5″ × 24″ | yes | yes | available |  |
-| BMC27 | Line 330011 | base | 27″ × 34.5″ × 24″ | yes | yes | available |  |
-| BSD6 | Line 330011 | base | 6″ × 34.5″ × 24″ | yes | yes | available |  |
-| BT9 | Line 330011 | base | 9″ × 34.5″ × 24″ | yes | yes | available |  |
-| CDB36 | Line 330011 | base | 36″ × 34.5″ × 24″ | yes | yes | available |  |
-| CSB36 | Line 330011 | base | 36″ × 34.5″ × 24″ | yes | yes | available |  |
-| DKD30 | Line 330011 | base | 30″ × 5.25″ × 21″ | yes | yes | available |  |
-| FSB36 | Line 330011 | base | 36″ × 34.5″ × 24″ | yes | yes | available |  |
-| LSB33 | Line 330011 | base | 33″ × 34.5″ × 24″ | yes | yes | available |  |
-| LSB36 | Line 330011 | base | 36″ × 34.5″ × 24″ | yes | yes | available |  |
-| MB30 | Line 330011 | base | 30″ × 34.5″ × 24″ | yes | yes | available |  |
-| SB33 | Line 330011 | base | 33″ × 34.5″ × 24″ | yes | yes | available |  |
-| SB36 | Line 330011 | base | 36″ × 34.5″ × 24″ | yes | yes | available |  |
-| UCD36 | Line 330011 | base | 36″ × 6″ × 21″ | yes | yes | available |  |
-| O338424 | Line 330011 | tall | 33″ × 84″ × 24″ | yes | yes | available |  |
-| O339624 | Line 330011 | tall | 33″ × 96″ × 24″ | yes | yes | available |  |
-| UOC3390 | Line 330011 | tall | 33″ × 90″ × 24″ | yes | yes | available |  |
-| AG2418 | Line 330011 | wall | 24″ × 18″ × 12″ | yes | yes | available |  |
-| AW1230 | Line 330011 | wall | 12″ × 30″ × 12″ | yes | yes | available |  |
-| AW1236 | Line 330011 | wall | 12″ × 36″ × 12″ | yes | yes | available |  |
-| AW1242 | Line 330011 | wall | 12″ × 42″ × 12″ | yes | yes | available |  |
-| DCW2430 | Line 330011 | wall | 24″ × 30″ × 12″ | yes | yes | available |  |
-| DCW2436 | Line 330011 | wall | 24″ × 36″ × 12″ | yes | yes | available |  |
-| DCW2442 | Line 330011 | wall | 24″ × 42″ × 12″ | yes | yes | available |  |
-| MW3030 | Line 330011 | wall | 30″ × 30″ × 18″ | yes | yes | available |  |
-| MW3036 | Line 330011 | wall | 30″ × 36″ × 18″ | yes | yes | available |  |
-| MW3042 | Line 330011 | wall | 30″ × 42″ × 18″ | yes | yes | available |  |
-| PR3015 | Line 330011 | wall | 30″ × 15″ × 12″ | yes | yes | available |  |
-| RHF30 | Line 330011 | wall | 30″ × 23.5″ × 9″ | yes | yes | available |  |
-| RHF36 | Line 330011 | wall | 36″ × 23.5″ × 12″ | yes | yes | available |  |
-| W-15-30 | Line 330011 | wall | 15″ × 30″ × 12″ | yes | yes | available |  |
-| W-39-30 | Line 330011 | wall | 39″ × 30″ × 12″ | yes | yes | available |  |
-| W0930 | Line 330011 | wall | 9″ × 30″ × 12″ | yes | yes | available |  |
-| W0936 | Line 330011 | wall | 9″ × 36″ × 12″ | yes | yes | available |  |
-| W0942 | Line 330011 | wall | 9″ × 42″ × 12″ | yes | yes | available |  |
-| W1212PG | Line 330011 | wall | 12″ × 12″ × 12″ | yes | yes | available |  |
-| W1230 | Line 330011 | wall | 12″ × 30″ × 12″ | yes | yes | available |  |
-| W1236 | Line 330011 | wall | 12″ × 36″ × 12″ | yes | yes | available |  |
-| W1242 | Line 330011 | wall | 12″ × 42″ × 12″ | yes | yes | available |  |
-| W1512PG | Line 330011 | wall | 15″ × 12″ × 12″ | yes | yes | available |  |
-| W1536 | Line 330011 | wall | 15″ × 36″ × 12″ | yes | yes | available |  |
-| W1542 | Line 330011 | wall | 15″ × 42″ × 12″ | yes | yes | available |  |
-| W1812PG | Line 330011 | wall | 18″ × 12″ × 12″ | yes | yes | available |  |
-| W1830 | Line 330011 | wall | 18″ × 30″ × 12″ | yes | yes | available |  |
-| W1836 | Line 330011 | wall | 18″ × 36″ × 12″ | yes | yes | available |  |
-| W1842 | Line 330011 | wall | 18″ × 42″ × 12″ | yes | yes | available |  |
-| W2112PG | Line 330011 | wall | 21″ × 12″ × 12″ | yes | yes | available |  |
-| W2130 | Line 330011 | wall | 21″ × 30″ × 12″ | yes | yes | available |  |
-| W2136 | Line 330011 | wall | 21″ × 36″ × 12″ | yes | yes | available |  |
-| W2142 | Line 330011 | wall | 21″ × 42″ × 12″ | yes | yes | available |  |
-| W2412PG | Line 330011 | wall | 24″ × 12″ × 12″ | yes | yes | available |  |
-| W2430 | Line 330011 | wall | 24″ × 30″ × 12″ | yes | yes | available |  |
-| W2436 | Line 330011 | wall | 24″ × 36″ × 12″ | yes | yes | available |  |
-| W2442 | Line 330011 | wall | 24″ × 42″ × 12″ | yes | yes | available |  |
-| W2712PG | Line 330011 | wall | 27″ × 12″ × 12″ | yes | yes | available |  |
-| W2730 | Line 330011 | wall | 27″ × 30″ × 12″ | yes | yes | available |  |
-| W2736 | Line 330011 | wall | 27″ × 36″ × 12″ | yes | yes | available |  |
-| W2742 | Line 330011 | wall | 27″ × 42″ × 12″ | yes | yes | available |  |
-| W3012 | Line 330011 | wall | 30″ × 12″ × 12″ | yes | yes | available |  |
-| W3012PG | Line 330011 | wall | 30″ × 12″ × 12″ | yes | yes | available |  |
-| W3015 | Line 330011 | wall | 30″ × 15″ × 12″ | yes | yes | available |  |
-| W3018 | Line 330011 | wall | 30″ × 18″ × 12″ | yes | yes | available |  |
-| W3021 | Line 330011 | wall | 30″ × 21″ × 12″ | yes | yes | available |  |
-| W3024 | Line 330011 | wall | 30″ × 24″ × 12″ | yes | yes | available |  |
-| W3030 | Line 330011 | wall | 30″ × 30″ × 12″ | yes | yes | available |  |
-| W3036 | Line 330011 | wall | 30″ × 36″ × 12″ | yes | yes | available |  |
-| W3042 | Line 330011 | wall | 30″ × 42″ × 12″ | yes | yes | available |  |
-| W3312 | Line 330011 | wall | 33″ × 12″ × 12″ | yes | yes | available |  |
-| W3312PG | Line 330011 | wall | 33″ × 12″ × 12″ | yes | yes | available |  |
-| W3315 | Line 330011 | wall | 33″ × 15″ × 12″ | yes | yes | available |  |
-| W3318 | Line 330011 | wall | 33″ × 18″ × 12″ | yes | yes | available |  |
-| W3321 | Line 330011 | wall | 33″ × 21″ × 12″ | yes | yes | available |  |
-| W3324 | Line 330011 | wall | 33″ × 24″ × 12″ | yes | yes | available |  |
-| W3330 | Line 330011 | wall | 33″ × 30″ × 12″ | yes | yes | available |  |
-| W3336 | Line 330011 | wall | 33″ × 36″ × 12″ | yes | yes | available |  |
-| W3342 | Line 330011 | wall | 33″ × 42″ × 12″ | yes | yes | available |  |
-| W3612 | Line 330011 | wall | 36″ × 12″ × 12″ | yes | yes | available |  |
-| W3612PG | Line 330011 | wall | 36″ × 12″ × 12″ | yes | yes | available |  |
-| W3615 | Line 330011 | wall | 36″ × 15″ × 12″ | yes | yes | available |  |
-| W3618 | Line 330011 | wall | 36″ × 18″ × 12″ | yes | yes | available |  |
-| W3621 | Line 330011 | wall | 36″ × 21″ × 12″ | yes | yes | available |  |
-| W3624 | Line 330011 | wall | 36″ × 24″ × 12″ | yes | yes | available |  |
-| W3630 | Line 330011 | wall | 36″ × 30″ × 12″ | yes | yes | available |  |
-| W3636 | Line 330011 | wall | 36″ × 36″ × 12″ | yes | yes | available |  |
-| W3642 | Line 330011 | wall | 36″ × 42″ × 12″ | yes | yes | available |  |
-| W3936 | Line 330011 | wall | 39″ × 36″ × 12″ | yes | yes | available |  |
-| W3942 | Line 330011 | wall | 39″ × 42″ × 12″ | yes | yes | available |  |
-| W4230 | Line 330011 | wall | 42″ × 30″ × 12″ | yes | yes | available |  |
-| W4236 | Line 330011 | wall | 42″ × 36″ × 12″ | yes | yes | available |  |
-| W4242 | Line 330011 | wall | 42″ × 42″ × 12″ | yes | yes | available |  |
-| W331524 | Line 330011 | wall | 33″ × 15″ × 24″ | yes | yes | available |  |
-| W332424 | Line 330011 | wall | 33″ × 24″ × 24″ | yes | yes | available |  |
-| W361224 | Line 330011 | wall | 36″ × 12″ × 24″ | yes | yes | available |  |
-| W361524 | Line 330011 | wall | 36″ × 15″ × 24″ | yes | yes | available |  |
-| W361824 | Line 330011 | wall | 36″ × 18″ × 24″ | yes | yes | available |  |
-| W362424 | Line 330011 | wall | 36″ × 24″ × 24″ | yes | yes | available |  |
-| WBC2730 | Line 330011 | wall | 27″ × 30″ × 12″ | yes | yes | available |  |
-| WBC2736 | Line 330011 | wall | 27″ × 36″ × 12″ | yes | yes | available |  |
-| WBC2742 | Line 330011 | wall | 27″ × 42″ × 12″ | yes | yes | available |  |
-| WDC42PG | Line 330011 | wall | 24″ × 42″ × 12″ | yes | yes | available |  |
-| WR3621 | Line 330011 | wall | 36″ × 21″ × 24″ | yes | yes | available |  |
-| WSC30 | Line 330011 | wall | 30″ × 6″ × 12″ | yes | yes | available |  |
-| 3VDB12 | Line 330011 | base | 12″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB15 | Line 330011 | base | 15″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB18 | Line 330011 | base | 18″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB21 | Line 330011 | base | 21″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB24 | Line 330011 | base | 24″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V2121 | Line 330011 | base | 21″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V2421DL | Line 330011 | base | 24″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V2421DR | Line 330011 | base | 24″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V3021DL | Line 330011 | base | 30″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V3021DR | Line 330011 | base | 30″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V3621DL | Line 330011 | base | 36″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V3621DR | Line 330011 | base | 36″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V6021DD | Line 330011 | base | 60″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VDDB48 | Line 330011 | base | 48″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS24 | Line 330011 | base | 24″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS27 | Line 330011 | base | 27″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS30 | Line 330011 | base | 30″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS36 | Line 330011 | base | 36″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSDB60 | Line 330011 | base | 60″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
+| 3VDB12 | Classic Cream | base | 12″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB15 | Classic Cream | base | 15″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB18 | Classic Cream | base | 18″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB21 | Classic Cream | base | 21″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB24 | Classic Cream | base | 24″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V2121 | Classic Cream | base | 21″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V2421DL | Classic Cream | base | 24″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V2421DR | Classic Cream | base | 24″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V3021DL | Classic Cream | base | 30″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V3021DR | Classic Cream | base | 30″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V3621DL | Classic Cream | base | 36″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V3621DR | Classic Cream | base | 36″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V6021DD | Classic Cream | base | 60″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VDDB48 | Classic Cream | base | 48″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS24 | Classic Cream | base | 24″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS27 | Classic Cream | base | 27″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS30 | Classic Cream | base | 30″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS36 | Classic Cream | base | 36″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSDB60 | Classic Cream | base | 60″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3DB12 | Ashford (RH, 330011) | base | 12″ × 34.5″ × 24″ | yes | yes | available |  |
+| 3DB15 | Ashford (RH, 330011) | base | 15″ × 34.5″ × 24″ | yes | yes | available |  |
+| 3DB18 | Ashford (RH, 330011) | base | 18″ × 34.5″ × 24″ | yes | yes | available |  |
+| 3DB21 | Ashford (RH, 330011) | base | 21″ × 34.5″ × 24″ | yes | yes | available |  |
+| 3DB24 | Ashford (RH, 330011) | base | 24″ × 34.5″ × 24″ | yes | yes | available |  |
+| 3DB30 | Ashford (RH, 330011) | base | 30″ × 34.5″ × 24″ | yes | yes | available |  |
+| 3DB36 | Ashford (RH, 330011) | base | 36″ × 34.5″ × 24″ | yes | yes | available |  |
+| B12 | Ashford (RH, 330011) | base | 12″ × 34.5″ × 24″ | yes | yes | available |  |
+| B15 | Ashford (RH, 330011) | base | 15″ × 34.5″ × 24″ | yes | yes | available |  |
+| B18 | Ashford (RH, 330011) | base | 18″ × 34.5″ × 24″ | yes | yes | available |  |
+| B21 | Ashford (RH, 330011) | base | 21″ × 34.5″ × 24″ | yes | yes | available |  |
+| B24 | Ashford (RH, 330011) | base | 24″ × 34.5″ × 24″ | yes | yes | available |  |
+| B27 | Ashford (RH, 330011) | base | 27″ × 34.5″ × 24″ | yes | yes | available |  |
+| B30 | Ashford (RH, 330011) | base | 30″ × 34.5″ × 24″ | yes | yes | available |  |
+| B33 | Ashford (RH, 330011) | base | 33″ × 34.5″ × 24″ | yes | yes | available |  |
+| B36 | Ashford (RH, 330011) | base | 36″ × 34.5″ × 24″ | yes | yes | available |  |
+| B39 | Ashford (RH, 330011) | base | 39″ × 34.5″ × 24″ | yes | yes | available |  |
+| B42 | Ashford (RH, 330011) | base | 42″ × 34.5″ × 24″ | yes | yes | available |  |
+| B48 | Ashford (RH, 330011) | base | 48″ × 34.5″ × 24″ | yes | yes | available |  |
+| BA-24 | Ashford (RH, 330011) | base | 24″ × 34.5″ × 24″ | yes | yes | available |  |
+| BBC36 | Ashford (RH, 330011) | base | 36″ × 34.5″ × 24″ | yes | yes | available |  |
+| BMC27 | Ashford (RH, 330011) | base | 27″ × 34.5″ × 24″ | yes | yes | available |  |
+| BSD6 | Ashford (RH, 330011) | base | 6″ × 34.5″ × 24″ | yes | yes | available |  |
+| BT9 | Ashford (RH, 330011) | base | 9″ × 34.5″ × 24″ | yes | yes | available |  |
+| CDB36 | Ashford (RH, 330011) | base | 36″ × 34.5″ × 24″ | yes | yes | available |  |
+| CSB36 | Ashford (RH, 330011) | base | 36″ × 34.5″ × 24″ | yes | yes | available |  |
+| DKD30 | Ashford (RH, 330011) | base | 30″ × 5.25″ × 21″ | yes | yes | available |  |
+| FSB36 | Ashford (RH, 330011) | base | 36″ × 34.5″ × 24″ | yes | yes | available |  |
+| LSB33 | Ashford (RH, 330011) | base | 33″ × 34.5″ × 24″ | yes | yes | available |  |
+| LSB36 | Ashford (RH, 330011) | base | 36″ × 34.5″ × 24″ | yes | yes | available |  |
+| MB30 | Ashford (RH, 330011) | base | 30″ × 34.5″ × 24″ | yes | yes | available |  |
+| SB33 | Ashford (RH, 330011) | base | 33″ × 34.5″ × 24″ | yes | yes | available |  |
+| SB36 | Ashford (RH, 330011) | base | 36″ × 34.5″ × 24″ | yes | yes | available |  |
+| UCD36 | Ashford (RH, 330011) | base | 36″ × 6″ × 21″ | yes | yes | available |  |
+| O338424 | Ashford (RH, 330011) | tall | 33″ × 84″ × 24″ | yes | yes | available |  |
+| O339624 | Ashford (RH, 330011) | tall | 33″ × 96″ × 24″ | yes | yes | available |  |
+| UOC3390 | Ashford (RH, 330011) | tall | 33″ × 90″ × 24″ | yes | yes | available |  |
+| AG2418 | Ashford (RH, 330011) | wall | 24″ × 18″ × 12″ | yes | yes | available |  |
+| AW1230 | Ashford (RH, 330011) | wall | 12″ × 30″ × 12″ | yes | yes | available |  |
+| AW1236 | Ashford (RH, 330011) | wall | 12″ × 36″ × 12″ | yes | yes | available |  |
+| AW1242 | Ashford (RH, 330011) | wall | 12″ × 42″ × 12″ | yes | yes | available |  |
+| DCW2430 | Ashford (RH, 330011) | wall | 24″ × 30″ × 12″ | yes | yes | available |  |
+| DCW2436 | Ashford (RH, 330011) | wall | 24″ × 36″ × 12″ | yes | yes | available |  |
+| DCW2442 | Ashford (RH, 330011) | wall | 24″ × 42″ × 12″ | yes | yes | available |  |
+| MW3030 | Ashford (RH, 330011) | wall | 30″ × 30″ × 18″ | yes | yes | available |  |
+| MW3036 | Ashford (RH, 330011) | wall | 30″ × 36″ × 18″ | yes | yes | available |  |
+| MW3042 | Ashford (RH, 330011) | wall | 30″ × 42″ × 18″ | yes | yes | available |  |
+| PR3015 | Ashford (RH, 330011) | wall | 30″ × 15″ × 12″ | yes | yes | available |  |
+| RHF30 | Ashford (RH, 330011) | wall | 30″ × 23.5″ × 9″ | yes | yes | available |  |
+| RHF36 | Ashford (RH, 330011) | wall | 36″ × 23.5″ × 12″ | yes | yes | available |  |
+| W-15-30 | Ashford (RH, 330011) | wall | 15″ × 30″ × 12″ | yes | yes | available |  |
+| W-39-30 | Ashford (RH, 330011) | wall | 39″ × 30″ × 12″ | yes | yes | available |  |
+| W0930 | Ashford (RH, 330011) | wall | 9″ × 30″ × 12″ | yes | yes | available |  |
+| W0936 | Ashford (RH, 330011) | wall | 9″ × 36″ × 12″ | yes | yes | available |  |
+| W0942 | Ashford (RH, 330011) | wall | 9″ × 42″ × 12″ | yes | yes | available |  |
+| W1212PG | Ashford (RH, 330011) | wall | 12″ × 12″ × 12″ | yes | yes | available |  |
+| W1230 | Ashford (RH, 330011) | wall | 12″ × 30″ × 12″ | yes | yes | available |  |
+| W1236 | Ashford (RH, 330011) | wall | 12″ × 36″ × 12″ | yes | yes | available |  |
+| W1242 | Ashford (RH, 330011) | wall | 12″ × 42″ × 12″ | yes | yes | available |  |
+| W1512PG | Ashford (RH, 330011) | wall | 15″ × 12″ × 12″ | yes | yes | available |  |
+| W1536 | Ashford (RH, 330011) | wall | 15″ × 36″ × 12″ | yes | yes | available |  |
+| W1542 | Ashford (RH, 330011) | wall | 15″ × 42″ × 12″ | yes | yes | available |  |
+| W1812PG | Ashford (RH, 330011) | wall | 18″ × 12″ × 12″ | yes | yes | available |  |
+| W1830 | Ashford (RH, 330011) | wall | 18″ × 30″ × 12″ | yes | yes | available |  |
+| W1836 | Ashford (RH, 330011) | wall | 18″ × 36″ × 12″ | yes | yes | available |  |
+| W1842 | Ashford (RH, 330011) | wall | 18″ × 42″ × 12″ | yes | yes | available |  |
+| W2112PG | Ashford (RH, 330011) | wall | 21″ × 12″ × 12″ | yes | yes | available |  |
+| W2130 | Ashford (RH, 330011) | wall | 21″ × 30″ × 12″ | yes | yes | available |  |
+| W2136 | Ashford (RH, 330011) | wall | 21″ × 36″ × 12″ | yes | yes | available |  |
+| W2142 | Ashford (RH, 330011) | wall | 21″ × 42″ × 12″ | yes | yes | available |  |
+| W2412PG | Ashford (RH, 330011) | wall | 24″ × 12″ × 12″ | yes | yes | available |  |
+| W2430 | Ashford (RH, 330011) | wall | 24″ × 30″ × 12″ | yes | yes | available |  |
+| W2436 | Ashford (RH, 330011) | wall | 24″ × 36″ × 12″ | yes | yes | available |  |
+| W2442 | Ashford (RH, 330011) | wall | 24″ × 42″ × 12″ | yes | yes | available |  |
+| W2712PG | Ashford (RH, 330011) | wall | 27″ × 12″ × 12″ | yes | yes | available |  |
+| W2730 | Ashford (RH, 330011) | wall | 27″ × 30″ × 12″ | yes | yes | available |  |
+| W2736 | Ashford (RH, 330011) | wall | 27″ × 36″ × 12″ | yes | yes | available |  |
+| W2742 | Ashford (RH, 330011) | wall | 27″ × 42″ × 12″ | yes | yes | available |  |
+| W3012 | Ashford (RH, 330011) | wall | 30″ × 12″ × 12″ | yes | yes | available |  |
+| W3012PG | Ashford (RH, 330011) | wall | 30″ × 12″ × 12″ | yes | yes | available |  |
+| W3015 | Ashford (RH, 330011) | wall | 30″ × 15″ × 12″ | yes | yes | available |  |
+| W3018 | Ashford (RH, 330011) | wall | 30″ × 18″ × 12″ | yes | yes | available |  |
+| W3021 | Ashford (RH, 330011) | wall | 30″ × 21″ × 12″ | yes | yes | available |  |
+| W3024 | Ashford (RH, 330011) | wall | 30″ × 24″ × 12″ | yes | yes | available |  |
+| W3030 | Ashford (RH, 330011) | wall | 30″ × 30″ × 12″ | yes | yes | available |  |
+| W3036 | Ashford (RH, 330011) | wall | 30″ × 36″ × 12″ | yes | yes | available |  |
+| W3042 | Ashford (RH, 330011) | wall | 30″ × 42″ × 12″ | yes | yes | available |  |
+| W3312 | Ashford (RH, 330011) | wall | 33″ × 12″ × 12″ | yes | yes | available |  |
+| W3312PG | Ashford (RH, 330011) | wall | 33″ × 12″ × 12″ | yes | yes | available |  |
+| W3315 | Ashford (RH, 330011) | wall | 33″ × 15″ × 12″ | yes | yes | available |  |
+| W3318 | Ashford (RH, 330011) | wall | 33″ × 18″ × 12″ | yes | yes | available |  |
+| W3321 | Ashford (RH, 330011) | wall | 33″ × 21″ × 12″ | yes | yes | available |  |
+| W3324 | Ashford (RH, 330011) | wall | 33″ × 24″ × 12″ | yes | yes | available |  |
+| W3330 | Ashford (RH, 330011) | wall | 33″ × 30″ × 12″ | yes | yes | available |  |
+| W3336 | Ashford (RH, 330011) | wall | 33″ × 36″ × 12″ | yes | yes | available |  |
+| W3342 | Ashford (RH, 330011) | wall | 33″ × 42″ × 12″ | yes | yes | available |  |
+| W3612 | Ashford (RH, 330011) | wall | 36″ × 12″ × 12″ | yes | yes | available |  |
+| W3612PG | Ashford (RH, 330011) | wall | 36″ × 12″ × 12″ | yes | yes | available |  |
+| W3615 | Ashford (RH, 330011) | wall | 36″ × 15″ × 12″ | yes | yes | available |  |
+| W3618 | Ashford (RH, 330011) | wall | 36″ × 18″ × 12″ | yes | yes | available |  |
+| W3621 | Ashford (RH, 330011) | wall | 36″ × 21″ × 12″ | yes | yes | available |  |
+| W3624 | Ashford (RH, 330011) | wall | 36″ × 24″ × 12″ | yes | yes | available |  |
+| W3630 | Ashford (RH, 330011) | wall | 36″ × 30″ × 12″ | yes | yes | available |  |
+| W3636 | Ashford (RH, 330011) | wall | 36″ × 36″ × 12″ | yes | yes | available |  |
+| W3642 | Ashford (RH, 330011) | wall | 36″ × 42″ × 12″ | yes | yes | available |  |
+| W3936 | Ashford (RH, 330011) | wall | 39″ × 36″ × 12″ | yes | yes | available |  |
+| W3942 | Ashford (RH, 330011) | wall | 39″ × 42″ × 12″ | yes | yes | available |  |
+| W4230 | Ashford (RH, 330011) | wall | 42″ × 30″ × 12″ | yes | yes | available |  |
+| W4236 | Ashford (RH, 330011) | wall | 42″ × 36″ × 12″ | yes | yes | available |  |
+| W4242 | Ashford (RH, 330011) | wall | 42″ × 42″ × 12″ | yes | yes | available |  |
+| W331524 | Ashford (RH, 330011) | wall | 33″ × 15″ × 24″ | yes | yes | available |  |
+| W332424 | Ashford (RH, 330011) | wall | 33″ × 24″ × 24″ | yes | yes | available |  |
+| W361224 | Ashford (RH, 330011) | wall | 36″ × 12″ × 24″ | yes | yes | available |  |
+| W361524 | Ashford (RH, 330011) | wall | 36″ × 15″ × 24″ | yes | yes | available |  |
+| W361824 | Ashford (RH, 330011) | wall | 36″ × 18″ × 24″ | yes | yes | available |  |
+| W362424 | Ashford (RH, 330011) | wall | 36″ × 24″ × 24″ | yes | yes | available |  |
+| WBC2730 | Ashford (RH, 330011) | wall | 27″ × 30″ × 12″ | yes | yes | available |  |
+| WBC2736 | Ashford (RH, 330011) | wall | 27″ × 36″ × 12″ | yes | yes | available |  |
+| WBC2742 | Ashford (RH, 330011) | wall | 27″ × 42″ × 12″ | yes | yes | available |  |
+| WDC42PG | Ashford (RH, 330011) | wall | 24″ × 42″ × 12″ | yes | yes | available |  |
+| WR3621 | Ashford (RH, 330011) | wall | 36″ × 21″ × 24″ | yes | yes | available |  |
+| WSC30 | Ashford (RH, 330011) | wall | 30″ × 6″ × 12″ | yes | yes | available |  |
+| 3VDB12 | Ashford (RH, 330011) | base | 12″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB15 | Ashford (RH, 330011) | base | 15″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB18 | Ashford (RH, 330011) | base | 18″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB21 | Ashford (RH, 330011) | base | 21″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB24 | Ashford (RH, 330011) | base | 24″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V2121 | Ashford (RH, 330011) | base | 21″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V2421DL | Ashford (RH, 330011) | base | 24″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V2421DR | Ashford (RH, 330011) | base | 24″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V3021DL | Ashford (RH, 330011) | base | 30″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V3021DR | Ashford (RH, 330011) | base | 30″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V3621DL | Ashford (RH, 330011) | base | 36″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V3621DR | Ashford (RH, 330011) | base | 36″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V6021DD | Ashford (RH, 330011) | base | 60″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VDDB48 | Ashford (RH, 330011) | base | 48″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS24 | Ashford (RH, 330011) | base | 24″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS27 | Ashford (RH, 330011) | base | 27″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS30 | Ashford (RH, 330011) | base | 30″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS36 | Ashford (RH, 330011) | base | 36″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSDB60 | Ashford (RH, 330011) | base | 60″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
 | 2DB24 | Shaker White | base | 24″ × 34.5″ × 24″ | yes | yes | available |  |
 | 2DB30 | Shaker White | base | 30″ × 34.5″ × 24″ | yes | yes | available |  |
 | 2DB36 | Shaker White | base | 36″ × 34.5″ × 24″ | yes | yes | available |  |
@@ -544,33 +544,33 @@ never auto-built as cabinet boxes, and are listed separately at the end.
 | WWC630 | Shaker White | wall | 30″ × 6″ × 12″ | yes | yes | available |  |
 | WXR3018 | Shaker White | wall | 30″ × 18″ × 12″ | yes | yes | available |  |
 | WXRSHELF | Shaker White | wall | 26.5″ × 14.5″ × 11″ | yes | yes | available |  |
-| 3VDB12 | Shaker White | base | 12″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB15 | Shaker White | base | 15″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB15ADA | Shaker White | base | 15″ × 32.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB18 | Shaker White | base | 18″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB24 | Shaker White | base | 24″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V3021DL | Shaker White | base | 30″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V3021DR | Shaker White | base | 30″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V3621DL | Shaker White | base | 36″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V3621DR | Shaker White | base | 36″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VDB42 | Shaker White | base | 42″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VDB48 | Shaker White | base | 48″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VDDB42 | Shaker White | base | 42″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VDDB48 | Shaker White | base | 48″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS24 | Shaker White | base | 24″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS24FH | Shaker White | base | 24″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS27 | Shaker White | base | 27″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS27FH | Shaker White | base | 27″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS30FH | Shaker White | base | 30″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS30S | Shaker White | base | 30″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS33 | Shaker White | base | 33″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS33FH | Shaker White | base | 33″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS36 | Shaker White | base | 36″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS36ADA | Shaker White | base | 36″ × 32.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS36FH | Shaker White | base | 36″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSD36 | Shaker White | base | 36″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSD42 | Shaker White | base | 42″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSD48 | Shaker White | base | 48″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
+| 3VDB12 | Shaker White | base | 12″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB15 | Shaker White | base | 15″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB15ADA | Shaker White | base | 15″ × 32.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB18 | Shaker White | base | 18″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB24 | Shaker White | base | 24″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V3021DL | Shaker White | base | 30″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V3021DR | Shaker White | base | 30″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V3621DL | Shaker White | base | 36″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V3621DR | Shaker White | base | 36″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VDB42 | Shaker White | base | 42″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VDB48 | Shaker White | base | 48″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VDDB42 | Shaker White | base | 42″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VDDB48 | Shaker White | base | 48″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS24 | Shaker White | base | 24″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS24FH | Shaker White | base | 24″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS27 | Shaker White | base | 27″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS27FH | Shaker White | base | 27″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS30FH | Shaker White | base | 30″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS30S | Shaker White | base | 30″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS33 | Shaker White | base | 33″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS33FH | Shaker White | base | 33″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS36 | Shaker White | base | 36″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS36ADA | Shaker White | base | 36″ × 32.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS36FH | Shaker White | base | 36″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSD36 | Shaker White | base | 36″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSD42 | Shaker White | base | 42″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSD48 | Shaker White | base | 48″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
 | 2DB24 | Shaker Black | base | 24″ × 34.5″ × 24″ | yes | yes | available |  |
 | 2DB30 | Shaker Black | base | 30″ × 34.5″ × 24″ | yes | yes | available |  |
 | 2DB36 | Shaker Black | base | 36″ × 34.5″ × 24″ | yes | yes | available |  |
@@ -765,31 +765,31 @@ never auto-built as cabinet boxes, and are listed separately at the end.
 | WWC630 | Shaker Black | wall | 30″ × 6″ × 12″ | yes | yes | available |  |
 | WXR3018 | Shaker Black | wall | 30″ × 18″ × 12″ | yes | yes | available |  |
 | WXRSHELF | Shaker Black | wall | 26.5″ × 14.5″ × 11″ | yes | yes | available |  |
-| 3VDB12 | Shaker Black | base | 12″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB15 | Shaker Black | base | 15″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB18 | Shaker Black | base | 18″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB24 | Shaker Black | base | 24″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V3021DL | Shaker Black | base | 30″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V3021DR | Shaker Black | base | 30″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V3621DL | Shaker Black | base | 36″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V3621DR | Shaker Black | base | 36″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VDB42 | Shaker Black | base | 42″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VDB48 | Shaker Black | base | 48″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VDDB42 | Shaker Black | base | 42″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VDDB48 | Shaker Black | base | 48″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS24 | Shaker Black | base | 24″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS24FH | Shaker Black | base | 24″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS27 | Shaker Black | base | 27″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS27FH | Shaker Black | base | 27″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS30FH | Shaker Black | base | 30″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS30S | Shaker Black | base | 30″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS33 | Shaker Black | base | 33″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS33FH | Shaker Black | base | 33″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS36 | Shaker Black | base | 36″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS36FH | Shaker Black | base | 36″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSD36 | Shaker Black | base | 36″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSD42 | Shaker Black | base | 42″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSD48 | Shaker Black | base | 48″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
+| 3VDB12 | Shaker Black | base | 12″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB15 | Shaker Black | base | 15″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB18 | Shaker Black | base | 18″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB24 | Shaker Black | base | 24″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V3021DL | Shaker Black | base | 30″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V3021DR | Shaker Black | base | 30″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V3621DL | Shaker Black | base | 36″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V3621DR | Shaker Black | base | 36″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VDB42 | Shaker Black | base | 42″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VDB48 | Shaker Black | base | 48″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VDDB42 | Shaker Black | base | 42″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VDDB48 | Shaker Black | base | 48″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS24 | Shaker Black | base | 24″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS24FH | Shaker Black | base | 24″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS27 | Shaker Black | base | 27″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS27FH | Shaker Black | base | 27″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS30FH | Shaker Black | base | 30″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS30S | Shaker Black | base | 30″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS33 | Shaker Black | base | 33″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS33FH | Shaker Black | base | 33″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS36 | Shaker Black | base | 36″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS36FH | Shaker Black | base | 36″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSD36 | Shaker Black | base | 36″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSD42 | Shaker Black | base | 42″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSD48 | Shaker Black | base | 48″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
 | 2DB24 | Haven Harbor | base | 24″ × 34.5″ × 24″ | yes | yes | available |  |
 | 2DB30 | Haven Harbor | base | 30″ × 34.5″ × 24″ | yes | yes | available |  |
 | 2DB36 | Haven Harbor | base | 36″ × 34.5″ × 24″ | yes | yes | available |  |
@@ -996,256 +996,260 @@ never auto-built as cabinet boxes, and are listed separately at the end.
 | WWC630 | Haven Harbor | wall | 30″ × 6″ × 12″ | yes | yes | available |  |
 | WXR3018 | Haven Harbor | wall | 30″ × 18″ × 12″ | yes | yes | available |  |
 | WXRSHELF | Haven Harbor | wall | 26.5″ × 14.5″ × 11″ | yes | yes | available |  |
-| 3VDB12 | Haven Harbor | base | 12″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB15 | Haven Harbor | base | 15″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB18 | Haven Harbor | base | 18″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB24 | Haven Harbor | base | 24″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V3021DL | Haven Harbor | base | 30″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V3021DR | Haven Harbor | base | 30″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V3621DL | Haven Harbor | base | 36″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V3621DR | Haven Harbor | base | 36″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VDDB42 | Haven Harbor | base | 42″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VDDB48 | Haven Harbor | base | 48″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS24 | Haven Harbor | base | 24″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS24FH | Haven Harbor | base | 24″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS27 | Haven Harbor | base | 27″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS27FH | Haven Harbor | base | 27″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS30FH | Haven Harbor | base | 30″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS30S | Haven Harbor | base | 30″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS33 | Haven Harbor | base | 33″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS33FH | Haven Harbor | base | 33″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS36 | Haven Harbor | base | 36″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS36FH | Haven Harbor | base | 36″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSD36 | Haven Harbor | base | 36″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSD42 | Haven Harbor | base | 42″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSD48 | Haven Harbor | base | 48″ × 34.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2DB12 | Line 540005 | base | 12″ × 34.75″ × 24″ | yes | yes | available |  |
-| 2DB15 | Line 540005 | base | 15″ × 34.75″ × 24″ | yes | yes | available |  |
-| 2DB18 | Line 540005 | base | 18″ × 34.75″ × 24″ | yes | yes | available |  |
-| 2DB21 | Line 540005 | base | 21″ × 34.75″ × 24″ | yes | yes | available |  |
-| 2DB24 | Line 540005 | base | 24″ × 34.75″ × 24″ | yes | yes | available |  |
-| 2DB27 | Line 540005 | base | 27″ × 34.75″ × 24″ | yes | yes | available |  |
-| 2DB30 | Line 540005 | base | 30″ × 34.75″ × 24″ | yes | yes | available |  |
-| 2DB33 | Line 540005 | base | 33″ × 34.75″ × 24″ | yes | yes | available |  |
-| 2DB36 | Line 540005 | base | 36″ × 34.75″ × 24″ | yes | yes | available |  |
-| 2DBID12 | Line 540005 | base | 12″ × 34.75″ × 24″ | yes | yes | available |  |
-| 2DBID15 | Line 540005 | base | 15″ × 34.75″ × 24″ | yes | yes | available |  |
-| 2DBID18 | Line 540005 | base | 18″ × 34.75″ × 24″ | yes | yes | available |  |
-| 2DBID21 | Line 540005 | base | 21″ × 34.75″ × 24″ | yes | yes | available |  |
-| 2DBID24 | Line 540005 | base | 24″ × 34.75″ × 24″ | yes | yes | available |  |
-| 2DBID27 | Line 540005 | base | 27″ × 34.75″ × 24″ | yes | yes | available |  |
-| 2DBID30 | Line 540005 | base | 30″ × 34.75″ × 24″ | yes | yes | available |  |
-| 2DBID33 | Line 540005 | base | 33″ × 34.75″ × 24″ | yes | yes | available |  |
-| 2DBID36 | Line 540005 | base | 36″ × 34.75″ × 24″ | yes | yes | available |  |
-| 3DB12 | Line 540005 | base | 12″ × 34.75″ × 24″ | yes | yes | available |  |
-| 3DB15 | Line 540005 | base | 15″ × 34.75″ × 24″ | yes | yes | available |  |
-| 3DB18 | Line 540005 | base | 18″ × 34.75″ × 24″ | yes | yes | available |  |
-| 3DB21 | Line 540005 | base | 21″ × 34.75″ × 24″ | yes | yes | available |  |
-| 3DB24 | Line 540005 | base | 24″ × 34.75″ × 24″ | yes | yes | available |  |
-| 3DB27 | Line 540005 | base | 27″ × 34.75″ × 24″ | yes | yes | available |  |
-| 3DB30 | Line 540005 | base | 30″ × 34.75″ × 24″ | yes | yes | available |  |
-| 3DB33 | Line 540005 | base | 33″ × 34.75″ × 24″ | yes | yes | available |  |
-| 3DB36 | Line 540005 | base | 36″ × 34.75″ × 24″ | yes | yes | available |  |
-| B12 | Line 540005 | base | 12″ × 34.75″ × 24″ | yes | yes | available |  |
-| B12FH | Line 540005 | base | 12″ × 34.75″ × 24″ | yes | yes | available |  |
-| B15 | Line 540005 | base | 15″ × 34.75″ × 24″ | yes | yes | available |  |
-| B15FH | Line 540005 | base | 15″ × 34.75″ × 24″ | yes | yes | available |  |
-| B15FHTCPO | Line 540005 | base | 15″ × 34.75″ × 24″ | yes | yes | available |  |
-| B15TCPO | Line 540005 | base | 15″ × 34.75″ × 24″ | yes | yes | available |  |
-| B18 | Line 540005 | base | 18″ × 34.75″ × 24″ | yes | yes | available |  |
-| B18FH | Line 540005 | base | 18″ × 34.75″ × 24″ | yes | yes | available |  |
-| B18FHTCPO | Line 540005 | base | 18″ × 34.75″ × 24″ | yes | yes | available |  |
-| B18TCPO | Line 540005 | base | 18″ × 34.75″ × 24″ | yes | yes | available |  |
-| B21 | Line 540005 | base | 21″ × 34.75″ × 24″ | yes | yes | available |  |
-| B21FH | Line 540005 | base | 21″ × 34.75″ × 24″ | yes | yes | available |  |
-| B21FHTCPO | Line 540005 | base | 21″ × 34.75″ × 24″ | yes | yes | available |  |
-| B21TCPO | Line 540005 | base | 21″ × 34.75″ × 24″ | yes | yes | available |  |
-| B24 | Line 540005 | base | 24″ × 34.75″ × 24″ | yes | yes | available |  |
-| B24S | Line 540005 | base | 24″ × 34.75″ × 24″ | yes | yes | available |  |
-| B24SFH | Line 540005 | base | 24″ × 34.75″ × 24″ | yes | yes | available |  |
-| B27 | Line 540005 | base | 27″ × 34.75″ × 24″ | yes | yes | available |  |
-| B27FH | Line 540005 | base | 27″ × 34.75″ × 24″ | yes | yes | available |  |
-| B30 | Line 540005 | base | 30″ × 34.75″ × 24″ | yes | yes | available |  |
-| B30FH | Line 540005 | base | 30″ × 34.75″ × 24″ | yes | yes | available |  |
-| B33 | Line 540005 | base | 33″ × 34.75″ × 24″ | yes | yes | available |  |
-| B33FH | Line 540005 | base | 33″ × 34.75″ × 24″ | yes | yes | available |  |
-| B36 | Line 540005 | base | 36″ × 34.75″ × 24″ | yes | yes | available |  |
-| B36FH | Line 540005 | base | 36″ × 34.75″ × 24″ | yes | yes | available |  |
-| B42FH | Line 540005 | base | 42″ × 34.75″ × 24″ | yes | yes | available |  |
-| BBC37/40FH | Line 540005 | base | 30″ × 34.75″ × 24″ | yes | yes | available |  |
-| BBC40/43FH | Line 540005 | base | 33″ × 34.75″ × 24″ | yes | yes | available |  |
-| BBC43/46FH | Line 540005 | base | 36″ × 34.75″ × 24″ | yes | yes | available |  |
-| BBC46/49FH | Line 540005 | base | 36″ × 34.75″ × 24″ | yes | yes | available |  |
-| BBC49/52FH | Line 540005 | base | 42″ × 34.75″ × 24″ | yes | yes | available |  |
-| BBC49/52SFH | Line 540005 | base | 42″ × 34.75″ × 24″ | yes | yes | available |  |
-| BBC52/55FH | Line 540005 | base | 42″ × 34.75″ × 24″ | yes | yes | available |  |
-| BFH24 | Line 540005 | base | 24″ × 34.75″ × 24″ | yes | yes | available |  |
-| BPO6FH | Line 540005 | base | 6″ × 34.75″ × 24″ | yes | yes | available |  |
-| BPO9FH | Line 540005 | base | 9″ × 34.75″ × 24″ | yes | yes | available |  |
-| BPO12FH | Line 540005 | base | 12″ × 34.75″ × 24″ | yes | yes | available |  |
-| BT9FH | Line 540005 | base | 9″ × 34.75″ × 24″ | yes | yes | available |  |
-| ERB33 | Line 540005 | base | 33″ × 34.75″ × 24″ | yes | yes | available |  |
-| ERB36 | Line 540005 | base | 36″ × 34.75″ × 24″ | yes | yes | available |  |
-| FSB30 | Line 540005 | base | 30″ × 34.75″ × 24″ | yes | yes | available |  |
-| FSB36 | Line 540005 | base | 36″ × 34.75″ × 24″ | yes | yes | available |  |
-| LSB33 | Line 540005 | base | 33″ × 34.75″ × 24″ | yes | yes | available |  |
-| LSB36 | Line 540005 | base | 36″ × 34.75″ × 24″ | yes | yes | available |  |
-| MB30 | Line 540005 | base | 30″ × 34.75″ × 24″ | yes | yes | available |  |
-| RB2DB24 | Line 540005 | base | 24″ × 34.75″ × 24″ | yes | yes | available |  |
-| RB2DB27 | Line 540005 | base | 27″ × 34.75″ × 24″ | yes | yes | available |  |
-| RB2DB30 | Line 540005 | base | 30″ × 34.75″ × 24″ | yes | yes | available |  |
-| RB2DB33 | Line 540005 | base | 33″ × 34.75″ × 24″ | yes | yes | available |  |
-| RB2DB36 | Line 540005 | base | 36″ × 34.75″ × 24″ | yes | yes | available |  |
-| RB3DB24 | Line 540005 | base | 24″ × 34.75″ × 24″ | yes | yes | available |  |
-| RB3DB27 | Line 540005 | base | 27″ × 34.75″ × 24″ | yes | yes | available |  |
-| RB3DB30 | Line 540005 | base | 30″ × 34.75″ × 24″ | yes | yes | available |  |
-| RB3DB33 | Line 540005 | base | 33″ × 34.75″ × 24″ | yes | yes | available |  |
-| RB3DB36 | Line 540005 | base | 36″ × 34.75″ × 24″ | yes | yes | available |  |
-| SB24 | Line 540005 | base | 24″ × 34.75″ × 24″ | yes | yes | available |  |
-| SB24FH | Line 540005 | base | 24″ × 34.75″ × 24″ | yes | yes | available |  |
-| SB24S | Line 540005 | base | 24″ × 34.75″ × 24″ | yes | yes | available |  |
-| SB24SFH | Line 540005 | base | 24″ × 34.75″ × 24″ | yes | yes | available |  |
-| SB27 | Line 540005 | base | 27″ × 34.75″ × 24″ | yes | yes | available |  |
-| SB27FH | Line 540005 | base | 27″ × 34.75″ × 24″ | yes | yes | available |  |
-| SB30 | Line 540005 | base | 30″ × 34.75″ × 24″ | yes | yes | available |  |
-| SB30FH | Line 540005 | base | 30″ × 34.75″ × 24″ | yes | yes | available |  |
-| SB33 | Line 540005 | base | 33″ × 34.75″ × 24″ | yes | yes | available |  |
-| SB33FH | Line 540005 | base | 33″ × 34.75″ × 24″ | yes | yes | available |  |
-| SB36 | Line 540005 | base | 36″ × 34.75″ × 24″ | yes | yes | available |  |
-| SB36FH | Line 540005 | base | 36″ × 34.75″ × 24″ | yes | yes | available |  |
-| TOD3084 | Line 540005 | tall | 30″ × 84″ × 24″ | yes | yes | available |  |
-| TOD3089 | Line 540005 | tall | 30″ × 89″ × 24″ | yes | yes | available |  |
-| TOD3094 | Line 540005 | tall | 30″ × 94″ × 24″ | yes | yes | available |  |
-| TOS2DB3084 | Line 540005 | tall | 30″ × 84″ × 24″ | yes | yes | available |  |
-| TOS2DB3089 | Line 540005 | tall | 30″ × 89″ × 24″ | yes | yes | available |  |
-| TOS2DB3094 | Line 540005 | tall | 30″ × 94″ × 24″ | yes | yes | available |  |
-| TOS2DBID3084 | Line 540005 | tall | 30″ × 84″ × 24″ | yes | yes | available |  |
-| TOS2DBID3089 | Line 540005 | tall | 30″ × 89″ × 24″ | yes | yes | available |  |
-| TOS2DBID3094 | Line 540005 | tall | 30″ × 94″ × 24″ | yes | yes | available |  |
-| TOS3DB3084 | Line 540005 | tall | 30″ × 84″ × 24″ | yes | yes | available |  |
-| TOS3DB3089 | Line 540005 | tall | 30″ × 89″ × 24″ | yes | yes | available |  |
-| TOS3DB3094 | Line 540005 | tall | 30″ × 94″ × 24″ | yes | yes | available |  |
-| W0930 | Line 540005 | wall | 9″ × 30.25″ × 13.5″ | yes | yes | available |  |
-| W0935 | Line 540005 | wall | 9″ × 35.25″ × 13.5″ | yes | yes | available |  |
-| W0940 | Line 540005 | wall | 9″ × 40.25″ × 13.5″ | yes | yes | available |  |
-| W1230 | Line 540005 | wall | 12″ × 30.25″ × 13.5″ | yes | yes | available |  |
-| W1235 | Line 540005 | wall | 12″ × 35.25″ × 13.5″ | yes | yes | available |  |
-| W1240 | Line 540005 | wall | 12″ × 40.25″ × 13.5″ | yes | yes | available |  |
-| W1530 | Line 540005 | wall | 15″ × 30.25″ × 13.5″ | yes | yes | available |  |
-| W1535 | Line 540005 | wall | 15″ × 35.25″ × 13.5″ | yes | yes | available |  |
-| W1540 | Line 540005 | wall | 15″ × 40.25″ × 13.5″ | yes | yes | available |  |
-| W1830 | Line 540005 | wall | 18″ × 30.25″ × 13.5″ | yes | yes | available |  |
-| W1835 | Line 540005 | wall | 18″ × 35.25″ × 13.5″ | yes | yes | available |  |
-| W1840 | Line 540005 | wall | 18″ × 40.25″ × 13.5″ | yes | yes | available |  |
-| W2130 | Line 540005 | wall | 21″ × 30.25″ × 13.5″ | yes | yes | available |  |
-| W2135 | Line 540005 | wall | 21″ × 35.25″ × 13.5″ | yes | yes | available |  |
-| W2140 | Line 540005 | wall | 21″ × 40.25″ × 13.5″ | yes | yes | available |  |
-| W2415 | Line 540005 | wall | 24″ × 15.13″ × 13.5″ | yes | yes | available |  |
-| W2418 | Line 540005 | wall | 24″ × 17.63″ × 13.5″ | yes | yes | available |  |
-| W2423 | Line 540005 | wall | 24″ × 22.63″ × 13.5″ | yes | yes | available |  |
-| W2430 | Line 540005 | wall | 24″ × 30.25″ × 13.5″ | yes | yes | available |  |
-| W2430S | Line 540005 | wall | 24″ × 30.25″ × 13.5″ | yes | yes | available |  |
-| W2435 | Line 540005 | wall | 24″ × 35.25″ × 13.5″ | yes | yes | available |  |
-| W2440 | Line 540005 | wall | 24″ × 40.25″ × 13.5″ | yes | yes | available |  |
-| W2723 | Line 540005 | wall | 27″ × 22.63″ × 13.5″ | yes | yes | available |  |
-| W2730 | Line 540005 | wall | 27″ × 30.25″ × 13.5″ | yes | yes | available |  |
-| W2735 | Line 540005 | wall | 27″ × 35.25″ × 13.5″ | yes | yes | available |  |
-| W2740 | Line 540005 | wall | 27″ × 40.25″ × 13.5″ | yes | yes | available |  |
-| W3012 | Line 540005 | wall | 30″ × 12″ × 12″ | yes | yes | available |  |
-| W3015 | Line 540005 | wall | 30″ × 15.13″ × 13.5″ | yes | yes | available |  |
-| W3018 | Line 540005 | wall | 30″ × 17.63″ × 13.5″ | yes | yes | available |  |
-| W3023 | Line 540005 | wall | 30″ × 22.63″ × 13.5″ | yes | yes | available |  |
-| W3030 | Line 540005 | wall | 30″ × 30.25″ × 13.5″ | yes | yes | available |  |
-| W3035 | Line 540005 | wall | 30″ × 35.25″ × 13.5″ | yes | yes | available |  |
-| W3040 | Line 540005 | wall | 30″ × 40.25″ × 13.5″ | yes | yes | available |  |
-| W3312 | Line 540005 | wall | 33″ × 12.63″ × 13.5″ | yes | yes | available |  |
-| W3315 | Line 540005 | wall | 33″ × 15.13″ × 13.5″ | yes | yes | available |  |
-| W3318 | Line 540005 | wall | 33″ × 17.63″ × 13.5″ | yes | yes | available |  |
-| W3323 | Line 540005 | wall | 33″ × 22.63″ × 13.5″ | yes | yes | available |  |
-| W3330 | Line 540005 | wall | 33″ × 30.25″ × 13.5″ | yes | yes | available |  |
-| W3335 | Line 540005 | wall | 33″ × 35.25″ × 13.5″ | yes | yes | available |  |
-| W3340 | Line 540005 | wall | 33″ × 40.25″ × 13.5″ | yes | yes | available |  |
-| W3612 | Line 540005 | wall | 36″ × 12.63″ × 13.5″ | yes | yes | available |  |
-| W3615 | Line 540005 | wall | 36″ × 15.13″ × 13.5″ | yes | yes | available |  |
-| W3618 | Line 540005 | wall | 36″ × 17.63″ × 13.5″ | yes | yes | available |  |
-| W3623 | Line 540005 | wall | 36″ × 22.63″ × 13.5″ | yes | yes | available |  |
-| W3630 | Line 540005 | wall | 36″ × 30.25″ × 13.5″ | yes | yes | available |  |
-| W3635 | Line 540005 | wall | 36″ × 35.25″ × 13.5″ | yes | yes | available |  |
-| W3640 | Line 540005 | wall | 36″ × 40.25″ × 13.5″ | yes | yes | available |  |
-| W241824 | Line 540005 | wall | 24″ × 17.63″ × 24″ | yes | yes | available |  |
-| W242324 | Line 540005 | wall | 24″ × 22.63″ × 24″ | yes | yes | available |  |
-| W301224 | Line 540005 | wall | 30″ × 12.63″ × 24″ | yes | yes | available |  |
-| W301824 | Line 540005 | wall | 30″ × 17.63″ × 24″ | yes | yes | available |  |
-| W302324 | Line 540005 | wall | 30″ × 22.63″ × 24″ | yes | yes | available |  |
-| W331224 | Line 540005 | wall | 33″ × 12.63″ × 24″ | yes | yes | available |  |
-| W331824 | Line 540005 | wall | 33″ × 17.63″ × 24″ | yes | yes | available |  |
-| W332324 | Line 540005 | wall | 33″ × 22.63″ × 24″ | yes | yes | available |  |
-| W361224 | Line 540005 | wall | 36″ × 12.63″ × 24″ | yes | yes | available |  |
-| W361524 | Line 540005 | wall | 36″ × 15.13″ × 24″ | yes | yes | available |  |
-| W361824 | Line 540005 | wall | 36″ × 17.63″ × 24″ | yes | yes | available |  |
-| W362324 | Line 540005 | wall | 36″ × 22.63″ × 24″ | yes | yes | available |  |
-| WBC24/2730 | Line 540005 | wall | 24″ × 30.25″ × 13.5″ | yes | yes | available |  |
-| WBC24/2735 | Line 540005 | wall | 24″ × 35.25″ × 13.5″ | yes | yes | available |  |
-| WBC24/2740 | Line 540005 | wall | 24″ × 40.25″ × 13.5″ | yes | yes | available |  |
-| WBC27/3030 | Line 540005 | wall | 27″ × 30.25″ × 13.5″ | yes | yes | available |  |
-| WBC27/3035 | Line 540005 | wall | 27″ × 35.25″ × 13.5″ | yes | yes | available |  |
-| WBC27/3040 | Line 540005 | wall | 27″ × 40.25″ × 13.5″ | yes | yes | available |  |
-| WBC30/3330 | Line 540005 | wall | 30″ × 30.25″ × 13.5″ | yes | yes | available |  |
-| WBC30/3335 | Line 540005 | wall | 30″ × 35.25″ × 13.5″ | yes | yes | available |  |
-| WBC30/3340 | Line 540005 | wall | 30″ × 40.25″ × 13.5″ | yes | yes | available |  |
-| WBC33/3630 | Line 540005 | wall | 33″ × 30.25″ × 13.5″ | yes | yes | available |  |
-| WBC33/3635 | Line 540005 | wall | 33″ × 35.25″ × 13.5″ | yes | yes | available |  |
-| WBC33/3640 | Line 540005 | wall | 33″ × 40.25″ × 13.5″ | yes | yes | available |  |
-| WBC36/3930 | Line 540005 | wall | 36″ × 30.25″ × 13.5″ | yes | yes | available |  |
-| WBC36/3935 | Line 540005 | wall | 36″ × 35.25″ × 13.5″ | yes | yes | available |  |
-| WBC36/3940 | Line 540005 | wall | 36″ × 40.25″ × 13.5″ | yes | yes | available |  |
-| WER2430 | Line 540005 | wall | 24″ × 30.25″ × 13.5″ | yes | yes | available |  |
-| WER2435 | Line 540005 | wall | 24″ × 35.25″ × 13.5″ | yes | yes | available |  |
-| WER2440 | Line 540005 | wall | 24″ × 40.25″ × 13.5″ | yes | yes | available |  |
-| WFD2415-BLUM | Line 540005 | wall | 24″ × 15.125″ × 13.5″ | yes | yes | available |  |
-| WFD2418-BLUM | Line 540005 | wall | 24″ × 17.625″ × 13.5″ | yes | yes | available |  |
-| WFD3015-BLUM | Line 540005 | wall | 30″ × 15.125″ × 13.5″ | yes | yes | available |  |
-| WFD3018-BLUM | Line 540005 | wall | 30″ × 17.625″ × 13.5″ | yes | yes | available |  |
-| WFD3315-BLUM | Line 540005 | wall | 33″ × 15.125″ × 13.5″ | yes | yes | available |  |
-| WFD3318-BLUM | Line 540005 | wall | 33″ × 17.625″ × 13.5″ | yes | yes | available |  |
-| WFD3615-BLUM | Line 540005 | wall | 36″ × 15.125″ × 13.5″ | yes | yes | available |  |
-| WFD3618-BLUM | Line 540005 | wall | 36″ × 17.625″ × 13.5″ | yes | yes | available |  |
-| WFD241824-BLUM | Line 540005 | wall | 24″ × 17.625″ × 24″ | yes | yes | available |  |
-| WFD301824-BLUM | Line 540005 | wall | 30″ × 17.625″ × 24″ | yes | yes | available |  |
-| WFD331824-BLUM | Line 540005 | wall | 33″ × 17.625″ × 24″ | yes | yes | available |  |
-| WFD361524-BLUM | Line 540005 | wall | 36″ × 15.125″ × 24″ | yes | yes | available |  |
-| WFD361824-BLUM | Line 540005 | wall | 36″ × 17.625″ × 24″ | yes | yes | available |  |
-| 2VDB12 | Line 540005 | base | 12″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDB15 | Line 540005 | base | 15″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDB18 | Line 540005 | base | 18″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDB24 | Line 540005 | base | 24″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDB30 | Line 540005 | base | 30″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDBID12 | Line 540005 | base | 12″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDBID15 | Line 540005 | base | 15″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDBID18 | Line 540005 | base | 18″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDBID24 | Line 540005 | base | 24″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDBID30 | Line 540005 | base | 30″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB12 | Line 540005 | base | 12″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB15 | Line 540005 | base | 15″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB18 | Line 540005 | base | 18″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB24 | Line 540005 | base | 24″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB30 | Line 540005 | base | 30″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VKD27 | Line 540005 | base | 27″ × 7.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VKD30 | Line 540005 | base | 30″ × 7.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VKD36 | Line 540005 | base | 36″ × 7.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB24 | Line 540005 | base | 24″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB24FH | Line 540005 | base | 24″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB24S | Line 540005 | base | 24″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB24SFH | Line 540005 | base | 24″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB27 | Line 540005 | base | 27″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB27FH | Line 540005 | base | 27″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB30 | Line 540005 | base | 30″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB30FH | Line 540005 | base | 30″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB33 | Line 540005 | base | 33″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB33FH | Line 540005 | base | 33″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB36 | Line 540005 | base | 36″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB36FH | Line 540005 | base | 36″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VT1884 | Line 540005 | base | 18″ × 79.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
+| 3VDB12 | Haven Harbor | base | 12″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB15 | Haven Harbor | base | 15″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB18 | Haven Harbor | base | 18″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB24 | Haven Harbor | base | 24″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V3021DL | Haven Harbor | base | 30″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V3021DR | Haven Harbor | base | 30″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V3621DL | Haven Harbor | base | 36″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V3621DR | Haven Harbor | base | 36″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VDDB42 | Haven Harbor | base | 42″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VDDB48 | Haven Harbor | base | 48″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS24 | Haven Harbor | base | 24″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS24FH | Haven Harbor | base | 24″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS27 | Haven Harbor | base | 27″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS27FH | Haven Harbor | base | 27″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS30FH | Haven Harbor | base | 30″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS30S | Haven Harbor | base | 30″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS33 | Haven Harbor | base | 33″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS33FH | Haven Harbor | base | 33″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS36 | Haven Harbor | base | 36″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS36FH | Haven Harbor | base | 36″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSD36 | Haven Harbor | base | 36″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSD42 | Haven Harbor | base | 42″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSD48 | Haven Harbor | base | 48″ × 34.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2DB12 | Luxe Classic LSA (540005) | base | 12″ × 34.75″ × 24″ | yes | yes | available |  |
+| 2DB15 | Luxe Classic LSA (540005) | base | 15″ × 34.75″ × 24″ | yes | yes | available |  |
+| 2DB18 | Luxe Classic LSA (540005) | base | 18″ × 34.75″ × 24″ | yes | yes | available |  |
+| 2DB21 | Luxe Classic LSA (540005) | base | 21″ × 34.75″ × 24″ | yes | yes | available |  |
+| 2DB24 | Luxe Classic LSA (540005) | base | 24″ × 34.75″ × 24″ | yes | yes | available |  |
+| 2DB27 | Luxe Classic LSA (540005) | base | 27″ × 34.75″ × 24″ | yes | yes | available |  |
+| 2DB30 | Luxe Classic LSA (540005) | base | 30″ × 34.75″ × 24″ | yes | yes | available |  |
+| 2DB33 | Luxe Classic LSA (540005) | base | 33″ × 34.75″ × 24″ | yes | yes | available |  |
+| 2DB36 | Luxe Classic LSA (540005) | base | 36″ × 34.75″ × 24″ | yes | yes | available |  |
+| 2DBID12 | Luxe Classic LSA (540005) | base | 12″ × 34.75″ × 24″ | yes | yes | available |  |
+| 2DBID15 | Luxe Classic LSA (540005) | base | 15″ × 34.75″ × 24″ | yes | yes | available |  |
+| 2DBID18 | Luxe Classic LSA (540005) | base | 18″ × 34.75″ × 24″ | yes | yes | available |  |
+| 2DBID21 | Luxe Classic LSA (540005) | base | 21″ × 34.75″ × 24″ | yes | yes | available |  |
+| 2DBID24 | Luxe Classic LSA (540005) | base | 24″ × 34.75″ × 24″ | yes | yes | available |  |
+| 2DBID27 | Luxe Classic LSA (540005) | base | 27″ × 34.75″ × 24″ | yes | yes | available |  |
+| 2DBID30 | Luxe Classic LSA (540005) | base | 30″ × 34.75″ × 24″ | yes | yes | available |  |
+| 2DBID33 | Luxe Classic LSA (540005) | base | 33″ × 34.75″ × 24″ | yes | yes | available |  |
+| 2DBID36 | Luxe Classic LSA (540005) | base | 36″ × 34.75″ × 24″ | yes | yes | available |  |
+| 3DB12 | Luxe Classic LSA (540005) | base | 12″ × 34.75″ × 24″ | yes | yes | available |  |
+| 3DB15 | Luxe Classic LSA (540005) | base | 15″ × 34.75″ × 24″ | yes | yes | available |  |
+| 3DB18 | Luxe Classic LSA (540005) | base | 18″ × 34.75″ × 24″ | yes | yes | available |  |
+| 3DB21 | Luxe Classic LSA (540005) | base | 21″ × 34.75″ × 24″ | yes | yes | available |  |
+| 3DB24 | Luxe Classic LSA (540005) | base | 24″ × 34.75″ × 24″ | yes | yes | available |  |
+| 3DB27 | Luxe Classic LSA (540005) | base | 27″ × 34.75″ × 24″ | yes | yes | available |  |
+| 3DB30 | Luxe Classic LSA (540005) | base | 30″ × 34.75″ × 24″ | yes | yes | available |  |
+| 3DB33 | Luxe Classic LSA (540005) | base | 33″ × 34.75″ × 24″ | yes | yes | available |  |
+| 3DB36 | Luxe Classic LSA (540005) | base | 36″ × 34.75″ × 24″ | yes | yes | available |  |
+| B12 | Luxe Classic LSA (540005) | base | 12″ × 34.75″ × 24″ | yes | yes | available |  |
+| B12FH | Luxe Classic LSA (540005) | base | 12″ × 34.75″ × 24″ | yes | yes | available |  |
+| B15 | Luxe Classic LSA (540005) | base | 15″ × 34.75″ × 24″ | yes | yes | available |  |
+| B15FH | Luxe Classic LSA (540005) | base | 15″ × 34.75″ × 24″ | yes | yes | available |  |
+| B15FHTCPO | Luxe Classic LSA (540005) | base | 15″ × 34.75″ × 24″ | yes | yes | available |  |
+| B15TCPO | Luxe Classic LSA (540005) | base | 15″ × 34.75″ × 24″ | yes | yes | available |  |
+| B18 | Luxe Classic LSA (540005) | base | 18″ × 34.75″ × 24″ | yes | yes | available |  |
+| B18FH | Luxe Classic LSA (540005) | base | 18″ × 34.75″ × 24″ | yes | yes | available |  |
+| B18FHTCPO | Luxe Classic LSA (540005) | base | 18″ × 34.75″ × 24″ | yes | yes | available |  |
+| B18TCPO | Luxe Classic LSA (540005) | base | 18″ × 34.75″ × 24″ | yes | yes | available |  |
+| B21 | Luxe Classic LSA (540005) | base | 21″ × 34.75″ × 24″ | yes | yes | available |  |
+| B21FH | Luxe Classic LSA (540005) | base | 21″ × 34.75″ × 24″ | yes | yes | available |  |
+| B21FHTCPO | Luxe Classic LSA (540005) | base | 21″ × 34.75″ × 24″ | yes | yes | available |  |
+| B21TCPO | Luxe Classic LSA (540005) | base | 21″ × 34.75″ × 24″ | yes | yes | available |  |
+| B24 | Luxe Classic LSA (540005) | base | 24″ × 34.75″ × 24″ | yes | yes | available |  |
+| B24FH | Luxe Classic LSA (540005) | base | 24″ × 34.75″ × 24″ | yes | yes | available |  |
+| B24S | Luxe Classic LSA (540005) | base | 24″ × 34.75″ × 24″ | yes | yes | available |  |
+| B24SFH | Luxe Classic LSA (540005) | base | 24″ × 34.75″ × 24″ | yes | yes | available |  |
+| B27 | Luxe Classic LSA (540005) | base | 27″ × 34.75″ × 24″ | yes | yes | available |  |
+| B27FH | Luxe Classic LSA (540005) | base | 27″ × 34.75″ × 24″ | yes | yes | available |  |
+| B30 | Luxe Classic LSA (540005) | base | 30″ × 34.75″ × 24″ | yes | yes | available |  |
+| B30FH | Luxe Classic LSA (540005) | base | 30″ × 34.75″ × 24″ | yes | yes | available |  |
+| B33 | Luxe Classic LSA (540005) | base | 33″ × 34.75″ × 24″ | yes | yes | available |  |
+| B33FH | Luxe Classic LSA (540005) | base | 33″ × 34.75″ × 24″ | yes | yes | available |  |
+| B36 | Luxe Classic LSA (540005) | base | 36″ × 34.75″ × 24″ | yes | yes | available |  |
+| B36FH | Luxe Classic LSA (540005) | base | 36″ × 34.75″ × 24″ | yes | yes | available |  |
+| B42FH | Luxe Classic LSA (540005) | base | 42″ × 34.75″ × 24″ | yes | yes | available |  |
+| BBC37/40FH | Luxe Classic LSA (540005) | base | 30″ × 34.75″ × 24″ | yes | yes | available |  |
+| BBC40/43FH | Luxe Classic LSA (540005) | base | 33″ × 34.75″ × 24″ | yes | yes | available |  |
+| BBC43/46FH | Luxe Classic LSA (540005) | base | 36″ × 34.75″ × 24″ | yes | yes | available |  |
+| BBC46/49FH | Luxe Classic LSA (540005) | base | 36″ × 34.75″ × 24″ | yes | yes | available |  |
+| BBC49/52FH | Luxe Classic LSA (540005) | base | 42″ × 34.75″ × 24″ | yes | yes | available |  |
+| BBC49/52SFH | Luxe Classic LSA (540005) | base | 42″ × 34.75″ × 24″ | yes | yes | available |  |
+| BBC52/55FH | Luxe Classic LSA (540005) | base | 42″ × 34.75″ × 24″ | yes | yes | available |  |
+| BER33 | Luxe Classic LSA (540005) | base | 33″ × 34.75″ × 24″ | yes | yes | available |  |
+| BER36 | Luxe Classic LSA (540005) | base | 36″ × 34.75″ × 24″ | yes | yes | available |  |
+| BFH24 | Luxe Classic LSA (540005) | base | 24″ × 34.75″ × 24″ | yes | yes | available |  |
+| BMW30 | Luxe Classic LSA (540005) | base | 30″ × 34.75″ × 24″ | yes | yes | available |  |
+| BPO6FH | Luxe Classic LSA (540005) | base | 6″ × 34.75″ × 24″ | yes | yes | available |  |
+| BPO9FH | Luxe Classic LSA (540005) | base | 9″ × 34.75″ × 24″ | yes | yes | available |  |
+| BPO12FH | Luxe Classic LSA (540005) | base | 12″ × 34.75″ × 24″ | yes | yes | available |  |
+| BT9FH | Luxe Classic LSA (540005) | base | 9″ × 34.75″ × 24″ | yes | yes | available |  |
+| ERB33 | Luxe Classic LSA (540005) | base | 33″ × 34.75″ × 24″ | yes | yes | available |  |
+| ERB36 | Luxe Classic LSA (540005) | base | 36″ × 34.75″ × 24″ | yes | yes | available |  |
+| FSB30 | Luxe Classic LSA (540005) | base | 30″ × 34.75″ × 24″ | yes | yes | available |  |
+| FSB36 | Luxe Classic LSA (540005) | base | 36″ × 34.75″ × 24″ | yes | yes | available |  |
+| LSB33 | Luxe Classic LSA (540005) | base | 33″ × 34.75″ × 24″ | yes | yes | available |  |
+| LSB36 | Luxe Classic LSA (540005) | base | 36″ × 34.75″ × 24″ | yes | yes | available |  |
+| MB30 | Luxe Classic LSA (540005) | base | 30″ × 34.75″ × 24″ | yes | yes | available |  |
+| RB2DB24 | Luxe Classic LSA (540005) | base | 24″ × 34.75″ × 24″ | yes | yes | available |  |
+| RB2DB27 | Luxe Classic LSA (540005) | base | 27″ × 34.75″ × 24″ | yes | yes | available |  |
+| RB2DB30 | Luxe Classic LSA (540005) | base | 30″ × 34.75″ × 24″ | yes | yes | available |  |
+| RB2DB33 | Luxe Classic LSA (540005) | base | 33″ × 34.75″ × 24″ | yes | yes | available |  |
+| RB2DB36 | Luxe Classic LSA (540005) | base | 36″ × 34.75″ × 24″ | yes | yes | available |  |
+| RB3DB24 | Luxe Classic LSA (540005) | base | 24″ × 34.75″ × 24″ | yes | yes | available |  |
+| RB3DB27 | Luxe Classic LSA (540005) | base | 27″ × 34.75″ × 24″ | yes | yes | available |  |
+| RB3DB30 | Luxe Classic LSA (540005) | base | 30″ × 34.75″ × 24″ | yes | yes | available |  |
+| RB3DB33 | Luxe Classic LSA (540005) | base | 33″ × 34.75″ × 24″ | yes | yes | available |  |
+| RB3DB36 | Luxe Classic LSA (540005) | base | 36″ × 34.75″ × 24″ | yes | yes | available |  |
+| SB24 | Luxe Classic LSA (540005) | base | 24″ × 34.75″ × 24″ | yes | yes | available |  |
+| SB24FH | Luxe Classic LSA (540005) | base | 24″ × 34.75″ × 24″ | yes | yes | available |  |
+| SB24S | Luxe Classic LSA (540005) | base | 24″ × 34.75″ × 24″ | yes | yes | available |  |
+| SB24SFH | Luxe Classic LSA (540005) | base | 24″ × 34.75″ × 24″ | yes | yes | available |  |
+| SB27 | Luxe Classic LSA (540005) | base | 27″ × 34.75″ × 24″ | yes | yes | available |  |
+| SB27FH | Luxe Classic LSA (540005) | base | 27″ × 34.75″ × 24″ | yes | yes | available |  |
+| SB30 | Luxe Classic LSA (540005) | base | 30″ × 34.75″ × 24″ | yes | yes | available |  |
+| SB30FH | Luxe Classic LSA (540005) | base | 30″ × 34.75″ × 24″ | yes | yes | available |  |
+| SB33 | Luxe Classic LSA (540005) | base | 33″ × 34.75″ × 24″ | yes | yes | available |  |
+| SB33FH | Luxe Classic LSA (540005) | base | 33″ × 34.75″ × 24″ | yes | yes | available |  |
+| SB36 | Luxe Classic LSA (540005) | base | 36″ × 34.75″ × 24″ | yes | yes | available |  |
+| SB36FH | Luxe Classic LSA (540005) | base | 36″ × 34.75″ × 24″ | yes | yes | available |  |
+| TOD3084 | Luxe Classic LSA (540005) | tall | 30″ × 84″ × 24″ | yes | yes | available |  |
+| TOD3089 | Luxe Classic LSA (540005) | tall | 30″ × 89″ × 24″ | yes | yes | available |  |
+| TOD3094 | Luxe Classic LSA (540005) | tall | 30″ × 94″ × 24″ | yes | yes | available |  |
+| TOS2DB3084 | Luxe Classic LSA (540005) | tall | 30″ × 84″ × 24″ | yes | yes | available |  |
+| TOS2DB3089 | Luxe Classic LSA (540005) | tall | 30″ × 89″ × 24″ | yes | yes | available |  |
+| TOS2DB3094 | Luxe Classic LSA (540005) | tall | 30″ × 94″ × 24″ | yes | yes | available |  |
+| TOS2DBID3084 | Luxe Classic LSA (540005) | tall | 30″ × 84″ × 24″ | yes | yes | available |  |
+| TOS2DBID3089 | Luxe Classic LSA (540005) | tall | 30″ × 89″ × 24″ | yes | yes | available |  |
+| TOS2DBID3094 | Luxe Classic LSA (540005) | tall | 30″ × 94″ × 24″ | yes | yes | available |  |
+| TOS3DB3084 | Luxe Classic LSA (540005) | tall | 30″ × 84″ × 24″ | yes | yes | available |  |
+| TOS3DB3089 | Luxe Classic LSA (540005) | tall | 30″ × 89″ × 24″ | yes | yes | available |  |
+| TOS3DB3094 | Luxe Classic LSA (540005) | tall | 30″ × 94″ × 24″ | yes | yes | available |  |
+| W0930 | Luxe Classic LSA (540005) | wall | 9″ × 30.25″ × 13.5″ | yes | yes | available |  |
+| W0935 | Luxe Classic LSA (540005) | wall | 9″ × 35.25″ × 13.5″ | yes | yes | available |  |
+| W0940 | Luxe Classic LSA (540005) | wall | 9″ × 40.25″ × 13.5″ | yes | yes | available |  |
+| W1230 | Luxe Classic LSA (540005) | wall | 12″ × 30.25″ × 13.5″ | yes | yes | available |  |
+| W1235 | Luxe Classic LSA (540005) | wall | 12″ × 35.25″ × 13.5″ | yes | yes | available |  |
+| W1240 | Luxe Classic LSA (540005) | wall | 12″ × 40.25″ × 13.5″ | yes | yes | available |  |
+| W1530 | Luxe Classic LSA (540005) | wall | 15″ × 30.25″ × 13.5″ | yes | yes | available |  |
+| W1535 | Luxe Classic LSA (540005) | wall | 15″ × 35.25″ × 13.5″ | yes | yes | available |  |
+| W1540 | Luxe Classic LSA (540005) | wall | 15″ × 40.25″ × 13.5″ | yes | yes | available |  |
+| W1830 | Luxe Classic LSA (540005) | wall | 18″ × 30.25″ × 13.5″ | yes | yes | available |  |
+| W1835 | Luxe Classic LSA (540005) | wall | 18″ × 35.25″ × 13.5″ | yes | yes | available |  |
+| W1840 | Luxe Classic LSA (540005) | wall | 18″ × 40.25″ × 13.5″ | yes | yes | available |  |
+| W2130 | Luxe Classic LSA (540005) | wall | 21″ × 30.25″ × 13.5″ | yes | yes | available |  |
+| W2135 | Luxe Classic LSA (540005) | wall | 21″ × 35.25″ × 13.5″ | yes | yes | available |  |
+| W2140 | Luxe Classic LSA (540005) | wall | 21″ × 40.25″ × 13.5″ | yes | yes | available |  |
+| W2415 | Luxe Classic LSA (540005) | wall | 24″ × 15.13″ × 13.5″ | yes | yes | available |  |
+| W2418 | Luxe Classic LSA (540005) | wall | 24″ × 17.63″ × 13.5″ | yes | yes | available |  |
+| W2423 | Luxe Classic LSA (540005) | wall | 24″ × 22.63″ × 13.5″ | yes | yes | available |  |
+| W2430 | Luxe Classic LSA (540005) | wall | 24″ × 30.25″ × 13.5″ | yes | yes | available |  |
+| W2430S | Luxe Classic LSA (540005) | wall | 24″ × 30.25″ × 13.5″ | yes | yes | available |  |
+| W2435 | Luxe Classic LSA (540005) | wall | 24″ × 35.25″ × 13.5″ | yes | yes | available |  |
+| W2440 | Luxe Classic LSA (540005) | wall | 24″ × 40.25″ × 13.5″ | yes | yes | available |  |
+| W2723 | Luxe Classic LSA (540005) | wall | 27″ × 22.63″ × 13.5″ | yes | yes | available |  |
+| W2730 | Luxe Classic LSA (540005) | wall | 27″ × 30.25″ × 13.5″ | yes | yes | available |  |
+| W2735 | Luxe Classic LSA (540005) | wall | 27″ × 35.25″ × 13.5″ | yes | yes | available |  |
+| W2740 | Luxe Classic LSA (540005) | wall | 27″ × 40.25″ × 13.5″ | yes | yes | available |  |
+| W3012 | Luxe Classic LSA (540005) | wall | 30″ × 12″ × 12″ | yes | yes | available |  |
+| W3015 | Luxe Classic LSA (540005) | wall | 30″ × 15.13″ × 13.5″ | yes | yes | available |  |
+| W3018 | Luxe Classic LSA (540005) | wall | 30″ × 17.63″ × 13.5″ | yes | yes | available |  |
+| W3023 | Luxe Classic LSA (540005) | wall | 30″ × 22.63″ × 13.5″ | yes | yes | available |  |
+| W3030 | Luxe Classic LSA (540005) | wall | 30″ × 30.25″ × 13.5″ | yes | yes | available |  |
+| W3035 | Luxe Classic LSA (540005) | wall | 30″ × 35.25″ × 13.5″ | yes | yes | available |  |
+| W3040 | Luxe Classic LSA (540005) | wall | 30″ × 40.25″ × 13.5″ | yes | yes | available |  |
+| W3312 | Luxe Classic LSA (540005) | wall | 33″ × 12.63″ × 13.5″ | yes | yes | available |  |
+| W3315 | Luxe Classic LSA (540005) | wall | 33″ × 15.13″ × 13.5″ | yes | yes | available |  |
+| W3318 | Luxe Classic LSA (540005) | wall | 33″ × 17.63″ × 13.5″ | yes | yes | available |  |
+| W3323 | Luxe Classic LSA (540005) | wall | 33″ × 22.63″ × 13.5″ | yes | yes | available |  |
+| W3330 | Luxe Classic LSA (540005) | wall | 33″ × 30.25″ × 13.5″ | yes | yes | available |  |
+| W3335 | Luxe Classic LSA (540005) | wall | 33″ × 35.25″ × 13.5″ | yes | yes | available |  |
+| W3340 | Luxe Classic LSA (540005) | wall | 33″ × 40.25″ × 13.5″ | yes | yes | available |  |
+| W3612 | Luxe Classic LSA (540005) | wall | 36″ × 12.63″ × 13.5″ | yes | yes | available |  |
+| W3615 | Luxe Classic LSA (540005) | wall | 36″ × 15.13″ × 13.5″ | yes | yes | available |  |
+| W3618 | Luxe Classic LSA (540005) | wall | 36″ × 17.63″ × 13.5″ | yes | yes | available |  |
+| W3623 | Luxe Classic LSA (540005) | wall | 36″ × 22.63″ × 13.5″ | yes | yes | available |  |
+| W3630 | Luxe Classic LSA (540005) | wall | 36″ × 30.25″ × 13.5″ | yes | yes | available |  |
+| W3635 | Luxe Classic LSA (540005) | wall | 36″ × 35.25″ × 13.5″ | yes | yes | available |  |
+| W3640 | Luxe Classic LSA (540005) | wall | 36″ × 40.25″ × 13.5″ | yes | yes | available |  |
+| W241824 | Luxe Classic LSA (540005) | wall | 24″ × 17.63″ × 24″ | yes | yes | available |  |
+| W242324 | Luxe Classic LSA (540005) | wall | 24″ × 22.63″ × 24″ | yes | yes | available |  |
+| W301224 | Luxe Classic LSA (540005) | wall | 30″ × 12.63″ × 24″ | yes | yes | available |  |
+| W301824 | Luxe Classic LSA (540005) | wall | 30″ × 17.63″ × 24″ | yes | yes | available |  |
+| W302324 | Luxe Classic LSA (540005) | wall | 30″ × 22.63″ × 24″ | yes | yes | available |  |
+| W331224 | Luxe Classic LSA (540005) | wall | 33″ × 12.63″ × 24″ | yes | yes | available |  |
+| W331824 | Luxe Classic LSA (540005) | wall | 33″ × 17.63″ × 24″ | yes | yes | available |  |
+| W332324 | Luxe Classic LSA (540005) | wall | 33″ × 22.63″ × 24″ | yes | yes | available |  |
+| W361224 | Luxe Classic LSA (540005) | wall | 36″ × 12.63″ × 24″ | yes | yes | available |  |
+| W361524 | Luxe Classic LSA (540005) | wall | 36″ × 15.13″ × 24″ | yes | yes | available |  |
+| W361824 | Luxe Classic LSA (540005) | wall | 36″ × 17.63″ × 24″ | yes | yes | available |  |
+| W362324 | Luxe Classic LSA (540005) | wall | 36″ × 22.63″ × 24″ | yes | yes | available |  |
+| WBC24/2730 | Luxe Classic LSA (540005) | wall | 24″ × 30.25″ × 13.5″ | yes | yes | available |  |
+| WBC24/2735 | Luxe Classic LSA (540005) | wall | 24″ × 35.25″ × 13.5″ | yes | yes | available |  |
+| WBC24/2740 | Luxe Classic LSA (540005) | wall | 24″ × 40.25″ × 13.5″ | yes | yes | available |  |
+| WBC27/3030 | Luxe Classic LSA (540005) | wall | 27″ × 30.25″ × 13.5″ | yes | yes | available |  |
+| WBC27/3035 | Luxe Classic LSA (540005) | wall | 27″ × 35.25″ × 13.5″ | yes | yes | available |  |
+| WBC27/3040 | Luxe Classic LSA (540005) | wall | 27″ × 40.25″ × 13.5″ | yes | yes | available |  |
+| WBC30/3330 | Luxe Classic LSA (540005) | wall | 30″ × 30.25″ × 13.5″ | yes | yes | available |  |
+| WBC30/3335 | Luxe Classic LSA (540005) | wall | 30″ × 35.25″ × 13.5″ | yes | yes | available |  |
+| WBC30/3340 | Luxe Classic LSA (540005) | wall | 30″ × 40.25″ × 13.5″ | yes | yes | available |  |
+| WBC33/3630 | Luxe Classic LSA (540005) | wall | 33″ × 30.25″ × 13.5″ | yes | yes | available |  |
+| WBC33/3635 | Luxe Classic LSA (540005) | wall | 33″ × 35.25″ × 13.5″ | yes | yes | available |  |
+| WBC33/3640 | Luxe Classic LSA (540005) | wall | 33″ × 40.25″ × 13.5″ | yes | yes | available |  |
+| WBC36/3930 | Luxe Classic LSA (540005) | wall | 36″ × 30.25″ × 13.5″ | yes | yes | available |  |
+| WBC36/3935 | Luxe Classic LSA (540005) | wall | 36″ × 35.25″ × 13.5″ | yes | yes | available |  |
+| WBC36/3940 | Luxe Classic LSA (540005) | wall | 36″ × 40.25″ × 13.5″ | yes | yes | available |  |
+| WER2430 | Luxe Classic LSA (540005) | wall | 24″ × 30.25″ × 13.5″ | yes | yes | available |  |
+| WER2435 | Luxe Classic LSA (540005) | wall | 24″ × 35.25″ × 13.5″ | yes | yes | available |  |
+| WER2440 | Luxe Classic LSA (540005) | wall | 24″ × 40.25″ × 13.5″ | yes | yes | available |  |
+| WFD2415-BLUM | Luxe Classic LSA (540005) | wall | 24″ × 15.125″ × 13.5″ | yes | yes | available |  |
+| WFD2418-BLUM | Luxe Classic LSA (540005) | wall | 24″ × 17.625″ × 13.5″ | yes | yes | available |  |
+| WFD3015-BLUM | Luxe Classic LSA (540005) | wall | 30″ × 15.125″ × 13.5″ | yes | yes | available |  |
+| WFD3018-BLUM | Luxe Classic LSA (540005) | wall | 30″ × 17.625″ × 13.5″ | yes | yes | available |  |
+| WFD3315-BLUM | Luxe Classic LSA (540005) | wall | 33″ × 15.125″ × 13.5″ | yes | yes | available |  |
+| WFD3318-BLUM | Luxe Classic LSA (540005) | wall | 33″ × 17.625″ × 13.5″ | yes | yes | available |  |
+| WFD3615-BLUM | Luxe Classic LSA (540005) | wall | 36″ × 15.125″ × 13.5″ | yes | yes | available |  |
+| WFD3618-BLUM | Luxe Classic LSA (540005) | wall | 36″ × 17.625″ × 13.5″ | yes | yes | available |  |
+| WFD241824-BLUM | Luxe Classic LSA (540005) | wall | 24″ × 17.625″ × 24″ | yes | yes | available |  |
+| WFD301824-BLUM | Luxe Classic LSA (540005) | wall | 30″ × 17.625″ × 24″ | yes | yes | available |  |
+| WFD331824-BLUM | Luxe Classic LSA (540005) | wall | 33″ × 17.625″ × 24″ | yes | yes | available |  |
+| WFD361524-BLUM | Luxe Classic LSA (540005) | wall | 36″ × 15.125″ × 24″ | yes | yes | available |  |
+| WFD361824-BLUM | Luxe Classic LSA (540005) | wall | 36″ × 17.625″ × 24″ | yes | yes | available |  |
+| 2VDB12 | Luxe Classic LSA (540005) | base | 12″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDB15 | Luxe Classic LSA (540005) | base | 15″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDB18 | Luxe Classic LSA (540005) | base | 18″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDB24 | Luxe Classic LSA (540005) | base | 24″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDB30 | Luxe Classic LSA (540005) | base | 30″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDBID12 | Luxe Classic LSA (540005) | base | 12″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDBID15 | Luxe Classic LSA (540005) | base | 15″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDBID18 | Luxe Classic LSA (540005) | base | 18″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDBID24 | Luxe Classic LSA (540005) | base | 24″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDBID30 | Luxe Classic LSA (540005) | base | 30″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB12 | Luxe Classic LSA (540005) | base | 12″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB15 | Luxe Classic LSA (540005) | base | 15″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB18 | Luxe Classic LSA (540005) | base | 18″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB24 | Luxe Classic LSA (540005) | base | 24″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB30 | Luxe Classic LSA (540005) | base | 30″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VKD27 | Luxe Classic LSA (540005) | base | 27″ × 7.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VKD30 | Luxe Classic LSA (540005) | base | 30″ × 7.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VKD36 | Luxe Classic LSA (540005) | base | 36″ × 7.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB24 | Luxe Classic LSA (540005) | base | 24″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB24FH | Luxe Classic LSA (540005) | base | 24″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB24S | Luxe Classic LSA (540005) | base | 24″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB24SFH | Luxe Classic LSA (540005) | base | 24″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB27 | Luxe Classic LSA (540005) | base | 27″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB27FH | Luxe Classic LSA (540005) | base | 27″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB30 | Luxe Classic LSA (540005) | base | 30″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB30FH | Luxe Classic LSA (540005) | base | 30″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB33 | Luxe Classic LSA (540005) | base | 33″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB33FH | Luxe Classic LSA (540005) | base | 33″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB36 | Luxe Classic LSA (540005) | base | 36″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB36FH | Luxe Classic LSA (540005) | base | 36″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VT1884 | Luxe Classic LSA (540005) | base | 18″ × 79.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
 | 2DB12 | Luxe Classic LSC | base | 12″ × 34.75″ × 24″ | yes | yes | available |  |
 | 2DB15 | Luxe Classic LSC | base | 15″ × 34.75″ × 24″ | yes | yes | available |  |
 | 2DB18 | Luxe Classic LSC | base | 18″ × 34.75″ × 24″ | yes | yes | available |  |
@@ -1430,34 +1434,34 @@ never auto-built as cabinet boxes, and are listed separately at the end.
 | WFD331824-BLUM | Luxe Classic LSC | wall | 33″ × 17.625″ × 24″ | yes | yes | available |  |
 | WFD361524-BLUM | Luxe Classic LSC | wall | 36″ × 15.125″ × 24″ | yes | yes | available |  |
 | WFD361824-BLUM | Luxe Classic LSC | wall | 36″ × 17.625″ × 24″ | yes | yes | available |  |
-| 2VDB12 | Luxe Classic LSC | base | 12″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDB15 | Luxe Classic LSC | base | 15″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDB18 | Luxe Classic LSC | base | 18″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDB24 | Luxe Classic LSC | base | 24″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDB30 | Luxe Classic LSC | base | 30″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDBID12 | Luxe Classic LSC | base | 12″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDBID15 | Luxe Classic LSC | base | 15″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDBID18 | Luxe Classic LSC | base | 18″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDBID24 | Luxe Classic LSC | base | 24″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDBID30 | Luxe Classic LSC | base | 30″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB12 | Luxe Classic LSC | base | 12″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB15 | Luxe Classic LSC | base | 15″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB18 | Luxe Classic LSC | base | 18″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB24 | Luxe Classic LSC | base | 24″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB30 | Luxe Classic LSC | base | 30″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB24 | Luxe Classic LSC | base | 24″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB24FH | Luxe Classic LSC | base | 24″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB24S | Luxe Classic LSC | base | 24″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB24SFH | Luxe Classic LSC | base | 24″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB27 | Luxe Classic LSC | base | 27″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB27FH | Luxe Classic LSC | base | 27″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB30 | Luxe Classic LSC | base | 30″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB30FH | Luxe Classic LSC | base | 30″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB33 | Luxe Classic LSC | base | 33″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB33FH | Luxe Classic LSC | base | 33″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB36 | Luxe Classic LSC | base | 36″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB36FH | Luxe Classic LSC | base | 36″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VT1884 | Luxe Classic LSC | base | 18″ × 79.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
+| 2VDB12 | Luxe Classic LSC | base | 12″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDB15 | Luxe Classic LSC | base | 15″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDB18 | Luxe Classic LSC | base | 18″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDB24 | Luxe Classic LSC | base | 24″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDB30 | Luxe Classic LSC | base | 30″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDBID12 | Luxe Classic LSC | base | 12″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDBID15 | Luxe Classic LSC | base | 15″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDBID18 | Luxe Classic LSC | base | 18″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDBID24 | Luxe Classic LSC | base | 24″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDBID30 | Luxe Classic LSC | base | 30″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB12 | Luxe Classic LSC | base | 12″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB15 | Luxe Classic LSC | base | 15″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB18 | Luxe Classic LSC | base | 18″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB24 | Luxe Classic LSC | base | 24″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB30 | Luxe Classic LSC | base | 30″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB24 | Luxe Classic LSC | base | 24″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB24FH | Luxe Classic LSC | base | 24″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB24S | Luxe Classic LSC | base | 24″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB24SFH | Luxe Classic LSC | base | 24″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB27 | Luxe Classic LSC | base | 27″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB27FH | Luxe Classic LSC | base | 27″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB30 | Luxe Classic LSC | base | 30″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB30FH | Luxe Classic LSC | base | 30″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB33 | Luxe Classic LSC | base | 33″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB33FH | Luxe Classic LSC | base | 33″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB36 | Luxe Classic LSC | base | 36″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB36FH | Luxe Classic LSC | base | 36″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VT1884 | Luxe Classic LSC | base | 18″ × 79.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
 | 2DB12 | Syncron Select SSE | base | 12″ × 34.75″ × 24″ | yes | yes | available |  |
 | 2DB15 | Syncron Select SSE | base | 15″ × 34.75″ × 24″ | yes | yes | available |  |
 | 2DB18 | Syncron Select SSE | base | 18″ × 34.75″ × 24″ | yes | yes | available |  |
@@ -1642,239 +1646,239 @@ never auto-built as cabinet boxes, and are listed separately at the end.
 | WFD331824-BLUM | Syncron Select SSE | wall | 33″ × 17.625″ × 24″ | yes | yes | available |  |
 | WFD361524-BLUM | Syncron Select SSE | wall | 36″ × 15.125″ × 24″ | yes | yes | available |  |
 | WFD361824-BLUM | Syncron Select SSE | wall | 36″ × 17.625″ × 24″ | yes | yes | available |  |
-| 2VDB12 | Syncron Select SSE | base | 12″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDB15 | Syncron Select SSE | base | 15″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDB18 | Syncron Select SSE | base | 18″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDB24 | Syncron Select SSE | base | 24″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDB30 | Syncron Select SSE | base | 30″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDBID12 | Syncron Select SSE | base | 12″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDBID15 | Syncron Select SSE | base | 15″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDBID18 | Syncron Select SSE | base | 18″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDBID24 | Syncron Select SSE | base | 24″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDBID30 | Syncron Select SSE | base | 30″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB12 | Syncron Select SSE | base | 12″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB15 | Syncron Select SSE | base | 15″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB18 | Syncron Select SSE | base | 18″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB24 | Syncron Select SSE | base | 24″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB30 | Syncron Select SSE | base | 30″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB24 | Syncron Select SSE | base | 24″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB24FH | Syncron Select SSE | base | 24″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB24S | Syncron Select SSE | base | 24″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB24SFH | Syncron Select SSE | base | 24″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB27 | Syncron Select SSE | base | 27″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB27FH | Syncron Select SSE | base | 27″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB30 | Syncron Select SSE | base | 30″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB30FH | Syncron Select SSE | base | 30″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB33 | Syncron Select SSE | base | 33″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB33FH | Syncron Select SSE | base | 33″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB36 | Syncron Select SSE | base | 36″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB36FH | Syncron Select SSE | base | 36″ × 34.75″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VT1884 | Syncron Select SSE | base | 18″ × 79.5″ × 21″ | no | yes | missing | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
+| 2VDB12 | Syncron Select SSE | base | 12″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDB15 | Syncron Select SSE | base | 15″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDB18 | Syncron Select SSE | base | 18″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDB24 | Syncron Select SSE | base | 24″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDB30 | Syncron Select SSE | base | 30″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDBID12 | Syncron Select SSE | base | 12″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDBID15 | Syncron Select SSE | base | 15″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDBID18 | Syncron Select SSE | base | 18″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDBID24 | Syncron Select SSE | base | 24″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDBID30 | Syncron Select SSE | base | 30″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB12 | Syncron Select SSE | base | 12″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB15 | Syncron Select SSE | base | 15″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB18 | Syncron Select SSE | base | 18″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB24 | Syncron Select SSE | base | 24″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB30 | Syncron Select SSE | base | 30″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB24 | Syncron Select SSE | base | 24″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB24FH | Syncron Select SSE | base | 24″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB24S | Syncron Select SSE | base | 24″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB24SFH | Syncron Select SSE | base | 24″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB27 | Syncron Select SSE | base | 27″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB27FH | Syncron Select SSE | base | 27″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB30 | Syncron Select SSE | base | 30″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB30FH | Syncron Select SSE | base | 30″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB33 | Syncron Select SSE | base | 33″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB33FH | Syncron Select SSE | base | 33″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB36 | Syncron Select SSE | base | 36″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB36FH | Syncron Select SSE | base | 36″ × 34.75″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VT1884 | Syncron Select SSE | base | 18″ × 79.5″ × 21″ | no | yes | missing | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
 
 ## Missing boxes
 
 | SKU | Line | Placement | Size | Reason missing |
 | --- | --- | --- | --- | --- |
-| 3VDB12 | Classic Cream | base | 12″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB15 | Classic Cream | base | 15″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB18 | Classic Cream | base | 18″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB21 | Classic Cream | base | 21″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB24 | Classic Cream | base | 24″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V2121 | Classic Cream | base | 21″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V2421DL | Classic Cream | base | 24″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V2421DR | Classic Cream | base | 24″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V3021DL | Classic Cream | base | 30″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V3021DR | Classic Cream | base | 30″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V3621DL | Classic Cream | base | 36″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V3621DR | Classic Cream | base | 36″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V6021DD | Classic Cream | base | 60″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VDDB48 | Classic Cream | base | 48″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS24 | Classic Cream | base | 24″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS27 | Classic Cream | base | 27″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS30 | Classic Cream | base | 30″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS36 | Classic Cream | base | 36″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSDB60 | Classic Cream | base | 60″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB12 | Line 330011 | base | 12″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB15 | Line 330011 | base | 15″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB18 | Line 330011 | base | 18″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB21 | Line 330011 | base | 21″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB24 | Line 330011 | base | 24″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V2121 | Line 330011 | base | 21″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V2421DL | Line 330011 | base | 24″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V2421DR | Line 330011 | base | 24″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V3021DL | Line 330011 | base | 30″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V3021DR | Line 330011 | base | 30″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V3621DL | Line 330011 | base | 36″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V3621DR | Line 330011 | base | 36″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V6021DD | Line 330011 | base | 60″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VDDB48 | Line 330011 | base | 48″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS24 | Line 330011 | base | 24″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS27 | Line 330011 | base | 27″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS30 | Line 330011 | base | 30″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS36 | Line 330011 | base | 36″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSDB60 | Line 330011 | base | 60″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB12 | Shaker White | base | 12″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB15 | Shaker White | base | 15″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB15ADA | Shaker White | base | 15″ × 32.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB18 | Shaker White | base | 18″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB24 | Shaker White | base | 24″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V3021DL | Shaker White | base | 30″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V3021DR | Shaker White | base | 30″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V3621DL | Shaker White | base | 36″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V3621DR | Shaker White | base | 36″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VDB42 | Shaker White | base | 42″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VDB48 | Shaker White | base | 48″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VDDB42 | Shaker White | base | 42″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VDDB48 | Shaker White | base | 48″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS24 | Shaker White | base | 24″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS24FH | Shaker White | base | 24″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS27 | Shaker White | base | 27″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS27FH | Shaker White | base | 27″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS30FH | Shaker White | base | 30″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS30S | Shaker White | base | 30″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS33 | Shaker White | base | 33″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS33FH | Shaker White | base | 33″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS36 | Shaker White | base | 36″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS36ADA | Shaker White | base | 36″ × 32.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS36FH | Shaker White | base | 36″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSD36 | Shaker White | base | 36″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSD42 | Shaker White | base | 42″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSD48 | Shaker White | base | 48″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB12 | Shaker Black | base | 12″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB15 | Shaker Black | base | 15″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB18 | Shaker Black | base | 18″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB24 | Shaker Black | base | 24″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V3021DL | Shaker Black | base | 30″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V3021DR | Shaker Black | base | 30″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V3621DL | Shaker Black | base | 36″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V3621DR | Shaker Black | base | 36″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VDB42 | Shaker Black | base | 42″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VDB48 | Shaker Black | base | 48″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VDDB42 | Shaker Black | base | 42″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VDDB48 | Shaker Black | base | 48″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS24 | Shaker Black | base | 24″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS24FH | Shaker Black | base | 24″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS27 | Shaker Black | base | 27″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS27FH | Shaker Black | base | 27″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS30FH | Shaker Black | base | 30″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS30S | Shaker Black | base | 30″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS33 | Shaker Black | base | 33″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS33FH | Shaker Black | base | 33″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS36 | Shaker Black | base | 36″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS36FH | Shaker Black | base | 36″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSD36 | Shaker Black | base | 36″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSD42 | Shaker Black | base | 42″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSD48 | Shaker Black | base | 48″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB12 | Haven Harbor | base | 12″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB15 | Haven Harbor | base | 15″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB18 | Haven Harbor | base | 18″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB24 | Haven Harbor | base | 24″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V3021DL | Haven Harbor | base | 30″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V3021DR | Haven Harbor | base | 30″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V3621DL | Haven Harbor | base | 36″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| V3621DR | Haven Harbor | base | 36″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VDDB42 | Haven Harbor | base | 42″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VDDB48 | Haven Harbor | base | 48″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS24 | Haven Harbor | base | 24″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS24FH | Haven Harbor | base | 24″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS27 | Haven Harbor | base | 27″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS27FH | Haven Harbor | base | 27″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS30FH | Haven Harbor | base | 30″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS30S | Haven Harbor | base | 30″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS33 | Haven Harbor | base | 33″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS33FH | Haven Harbor | base | 33″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS36 | Haven Harbor | base | 36″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VS36FH | Haven Harbor | base | 36″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSD36 | Haven Harbor | base | 36″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSD42 | Haven Harbor | base | 42″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSD48 | Haven Harbor | base | 48″ × 34.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDB12 | Line 540005 | base | 12″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDB15 | Line 540005 | base | 15″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDB18 | Line 540005 | base | 18″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDB24 | Line 540005 | base | 24″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDB30 | Line 540005 | base | 30″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDBID12 | Line 540005 | base | 12″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDBID15 | Line 540005 | base | 15″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDBID18 | Line 540005 | base | 18″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDBID24 | Line 540005 | base | 24″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDBID30 | Line 540005 | base | 30″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB12 | Line 540005 | base | 12″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB15 | Line 540005 | base | 15″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB18 | Line 540005 | base | 18″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB24 | Line 540005 | base | 24″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB30 | Line 540005 | base | 30″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VKD27 | Line 540005 | base | 27″ × 7.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VKD30 | Line 540005 | base | 30″ × 7.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VKD36 | Line 540005 | base | 36″ × 7.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB24 | Line 540005 | base | 24″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB24FH | Line 540005 | base | 24″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB24S | Line 540005 | base | 24″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB24SFH | Line 540005 | base | 24″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB27 | Line 540005 | base | 27″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB27FH | Line 540005 | base | 27″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB30 | Line 540005 | base | 30″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB30FH | Line 540005 | base | 30″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB33 | Line 540005 | base | 33″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB33FH | Line 540005 | base | 33″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB36 | Line 540005 | base | 36″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB36FH | Line 540005 | base | 36″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VT1884 | Line 540005 | base | 18″ × 79.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDB12 | Luxe Classic LSC | base | 12″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDB15 | Luxe Classic LSC | base | 15″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDB18 | Luxe Classic LSC | base | 18″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDB24 | Luxe Classic LSC | base | 24″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDB30 | Luxe Classic LSC | base | 30″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDBID12 | Luxe Classic LSC | base | 12″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDBID15 | Luxe Classic LSC | base | 15″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDBID18 | Luxe Classic LSC | base | 18″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDBID24 | Luxe Classic LSC | base | 24″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDBID30 | Luxe Classic LSC | base | 30″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB12 | Luxe Classic LSC | base | 12″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB15 | Luxe Classic LSC | base | 15″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB18 | Luxe Classic LSC | base | 18″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB24 | Luxe Classic LSC | base | 24″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB30 | Luxe Classic LSC | base | 30″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB24 | Luxe Classic LSC | base | 24″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB24FH | Luxe Classic LSC | base | 24″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB24S | Luxe Classic LSC | base | 24″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB24SFH | Luxe Classic LSC | base | 24″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB27 | Luxe Classic LSC | base | 27″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB27FH | Luxe Classic LSC | base | 27″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB30 | Luxe Classic LSC | base | 30″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB30FH | Luxe Classic LSC | base | 30″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB33 | Luxe Classic LSC | base | 33″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB33FH | Luxe Classic LSC | base | 33″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB36 | Luxe Classic LSC | base | 36″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB36FH | Luxe Classic LSC | base | 36″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VT1884 | Luxe Classic LSC | base | 18″ × 79.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDB12 | Syncron Select SSE | base | 12″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDB15 | Syncron Select SSE | base | 15″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDB18 | Syncron Select SSE | base | 18″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDB24 | Syncron Select SSE | base | 24″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDB30 | Syncron Select SSE | base | 30″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDBID12 | Syncron Select SSE | base | 12″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDBID15 | Syncron Select SSE | base | 15″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDBID18 | Syncron Select SSE | base | 18″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDBID24 | Syncron Select SSE | base | 24″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 2VDBID30 | Syncron Select SSE | base | 30″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB12 | Syncron Select SSE | base | 12″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB15 | Syncron Select SSE | base | 15″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB18 | Syncron Select SSE | base | 18″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB24 | Syncron Select SSE | base | 24″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| 3VDB30 | Syncron Select SSE | base | 30″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB24 | Syncron Select SSE | base | 24″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB24FH | Syncron Select SSE | base | 24″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB24S | Syncron Select SSE | base | 24″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB24SFH | Syncron Select SSE | base | 24″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB27 | Syncron Select SSE | base | 27″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB27FH | Syncron Select SSE | base | 27″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB30 | Syncron Select SSE | base | 30″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB30FH | Syncron Select SSE | base | 30″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB33 | Syncron Select SSE | base | 33″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB33FH | Syncron Select SSE | base | 33″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB36 | Syncron Select SSE | base | 36″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VSB36FH | Syncron Select SSE | base | 36″ × 34.75″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
-| VT1884 | Syncron Select SSE | base | 18″ × 79.5″ × 21″ | Vanity box: the kitchen auto build does not run the bathroom vanity workflow. |
+| 3VDB12 | Classic Cream | base | 12″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB15 | Classic Cream | base | 15″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB18 | Classic Cream | base | 18″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB21 | Classic Cream | base | 21″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB24 | Classic Cream | base | 24″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V2121 | Classic Cream | base | 21″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V2421DL | Classic Cream | base | 24″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V2421DR | Classic Cream | base | 24″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V3021DL | Classic Cream | base | 30″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V3021DR | Classic Cream | base | 30″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V3621DL | Classic Cream | base | 36″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V3621DR | Classic Cream | base | 36″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V6021DD | Classic Cream | base | 60″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VDDB48 | Classic Cream | base | 48″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS24 | Classic Cream | base | 24″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS27 | Classic Cream | base | 27″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS30 | Classic Cream | base | 30″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS36 | Classic Cream | base | 36″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSDB60 | Classic Cream | base | 60″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB12 | Ashford (RH, 330011) | base | 12″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB15 | Ashford (RH, 330011) | base | 15″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB18 | Ashford (RH, 330011) | base | 18″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB21 | Ashford (RH, 330011) | base | 21″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB24 | Ashford (RH, 330011) | base | 24″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V2121 | Ashford (RH, 330011) | base | 21″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V2421DL | Ashford (RH, 330011) | base | 24″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V2421DR | Ashford (RH, 330011) | base | 24″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V3021DL | Ashford (RH, 330011) | base | 30″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V3021DR | Ashford (RH, 330011) | base | 30″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V3621DL | Ashford (RH, 330011) | base | 36″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V3621DR | Ashford (RH, 330011) | base | 36″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V6021DD | Ashford (RH, 330011) | base | 60″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VDDB48 | Ashford (RH, 330011) | base | 48″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS24 | Ashford (RH, 330011) | base | 24″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS27 | Ashford (RH, 330011) | base | 27″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS30 | Ashford (RH, 330011) | base | 30″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS36 | Ashford (RH, 330011) | base | 36″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSDB60 | Ashford (RH, 330011) | base | 60″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB12 | Shaker White | base | 12″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB15 | Shaker White | base | 15″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB15ADA | Shaker White | base | 15″ × 32.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB18 | Shaker White | base | 18″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB24 | Shaker White | base | 24″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V3021DL | Shaker White | base | 30″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V3021DR | Shaker White | base | 30″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V3621DL | Shaker White | base | 36″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V3621DR | Shaker White | base | 36″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VDB42 | Shaker White | base | 42″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VDB48 | Shaker White | base | 48″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VDDB42 | Shaker White | base | 42″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VDDB48 | Shaker White | base | 48″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS24 | Shaker White | base | 24″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS24FH | Shaker White | base | 24″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS27 | Shaker White | base | 27″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS27FH | Shaker White | base | 27″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS30FH | Shaker White | base | 30″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS30S | Shaker White | base | 30″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS33 | Shaker White | base | 33″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS33FH | Shaker White | base | 33″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS36 | Shaker White | base | 36″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS36ADA | Shaker White | base | 36″ × 32.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS36FH | Shaker White | base | 36″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSD36 | Shaker White | base | 36″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSD42 | Shaker White | base | 42″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSD48 | Shaker White | base | 48″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB12 | Shaker Black | base | 12″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB15 | Shaker Black | base | 15″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB18 | Shaker Black | base | 18″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB24 | Shaker Black | base | 24″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V3021DL | Shaker Black | base | 30″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V3021DR | Shaker Black | base | 30″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V3621DL | Shaker Black | base | 36″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V3621DR | Shaker Black | base | 36″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VDB42 | Shaker Black | base | 42″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VDB48 | Shaker Black | base | 48″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VDDB42 | Shaker Black | base | 42″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VDDB48 | Shaker Black | base | 48″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS24 | Shaker Black | base | 24″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS24FH | Shaker Black | base | 24″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS27 | Shaker Black | base | 27″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS27FH | Shaker Black | base | 27″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS30FH | Shaker Black | base | 30″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS30S | Shaker Black | base | 30″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS33 | Shaker Black | base | 33″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS33FH | Shaker Black | base | 33″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS36 | Shaker Black | base | 36″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS36FH | Shaker Black | base | 36″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSD36 | Shaker Black | base | 36″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSD42 | Shaker Black | base | 42″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSD48 | Shaker Black | base | 48″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB12 | Haven Harbor | base | 12″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB15 | Haven Harbor | base | 15″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB18 | Haven Harbor | base | 18″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB24 | Haven Harbor | base | 24″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V3021DL | Haven Harbor | base | 30″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V3021DR | Haven Harbor | base | 30″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V3621DL | Haven Harbor | base | 36″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| V3621DR | Haven Harbor | base | 36″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VDDB42 | Haven Harbor | base | 42″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VDDB48 | Haven Harbor | base | 48″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS24 | Haven Harbor | base | 24″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS24FH | Haven Harbor | base | 24″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS27 | Haven Harbor | base | 27″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS27FH | Haven Harbor | base | 27″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS30FH | Haven Harbor | base | 30″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS30S | Haven Harbor | base | 30″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS33 | Haven Harbor | base | 33″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS33FH | Haven Harbor | base | 33″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS36 | Haven Harbor | base | 36″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VS36FH | Haven Harbor | base | 36″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSD36 | Haven Harbor | base | 36″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSD42 | Haven Harbor | base | 42″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSD48 | Haven Harbor | base | 48″ × 34.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDB12 | Luxe Classic LSA (540005) | base | 12″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDB15 | Luxe Classic LSA (540005) | base | 15″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDB18 | Luxe Classic LSA (540005) | base | 18″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDB24 | Luxe Classic LSA (540005) | base | 24″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDB30 | Luxe Classic LSA (540005) | base | 30″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDBID12 | Luxe Classic LSA (540005) | base | 12″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDBID15 | Luxe Classic LSA (540005) | base | 15″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDBID18 | Luxe Classic LSA (540005) | base | 18″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDBID24 | Luxe Classic LSA (540005) | base | 24″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDBID30 | Luxe Classic LSA (540005) | base | 30″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB12 | Luxe Classic LSA (540005) | base | 12″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB15 | Luxe Classic LSA (540005) | base | 15″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB18 | Luxe Classic LSA (540005) | base | 18″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB24 | Luxe Classic LSA (540005) | base | 24″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB30 | Luxe Classic LSA (540005) | base | 30″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VKD27 | Luxe Classic LSA (540005) | base | 27″ × 7.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VKD30 | Luxe Classic LSA (540005) | base | 30″ × 7.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VKD36 | Luxe Classic LSA (540005) | base | 36″ × 7.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB24 | Luxe Classic LSA (540005) | base | 24″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB24FH | Luxe Classic LSA (540005) | base | 24″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB24S | Luxe Classic LSA (540005) | base | 24″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB24SFH | Luxe Classic LSA (540005) | base | 24″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB27 | Luxe Classic LSA (540005) | base | 27″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB27FH | Luxe Classic LSA (540005) | base | 27″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB30 | Luxe Classic LSA (540005) | base | 30″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB30FH | Luxe Classic LSA (540005) | base | 30″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB33 | Luxe Classic LSA (540005) | base | 33″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB33FH | Luxe Classic LSA (540005) | base | 33″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB36 | Luxe Classic LSA (540005) | base | 36″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB36FH | Luxe Classic LSA (540005) | base | 36″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VT1884 | Luxe Classic LSA (540005) | base | 18″ × 79.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDB12 | Luxe Classic LSC | base | 12″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDB15 | Luxe Classic LSC | base | 15″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDB18 | Luxe Classic LSC | base | 18″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDB24 | Luxe Classic LSC | base | 24″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDB30 | Luxe Classic LSC | base | 30″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDBID12 | Luxe Classic LSC | base | 12″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDBID15 | Luxe Classic LSC | base | 15″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDBID18 | Luxe Classic LSC | base | 18″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDBID24 | Luxe Classic LSC | base | 24″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDBID30 | Luxe Classic LSC | base | 30″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB12 | Luxe Classic LSC | base | 12″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB15 | Luxe Classic LSC | base | 15″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB18 | Luxe Classic LSC | base | 18″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB24 | Luxe Classic LSC | base | 24″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB30 | Luxe Classic LSC | base | 30″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB24 | Luxe Classic LSC | base | 24″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB24FH | Luxe Classic LSC | base | 24″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB24S | Luxe Classic LSC | base | 24″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB24SFH | Luxe Classic LSC | base | 24″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB27 | Luxe Classic LSC | base | 27″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB27FH | Luxe Classic LSC | base | 27″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB30 | Luxe Classic LSC | base | 30″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB30FH | Luxe Classic LSC | base | 30″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB33 | Luxe Classic LSC | base | 33″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB33FH | Luxe Classic LSC | base | 33″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB36 | Luxe Classic LSC | base | 36″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB36FH | Luxe Classic LSC | base | 36″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VT1884 | Luxe Classic LSC | base | 18″ × 79.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDB12 | Syncron Select SSE | base | 12″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDB15 | Syncron Select SSE | base | 15″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDB18 | Syncron Select SSE | base | 18″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDB24 | Syncron Select SSE | base | 24″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDB30 | Syncron Select SSE | base | 30″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDBID12 | Syncron Select SSE | base | 12″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDBID15 | Syncron Select SSE | base | 15″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDBID18 | Syncron Select SSE | base | 18″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDBID24 | Syncron Select SSE | base | 24″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 2VDBID30 | Syncron Select SSE | base | 30″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB12 | Syncron Select SSE | base | 12″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB15 | Syncron Select SSE | base | 15″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB18 | Syncron Select SSE | base | 18″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB24 | Syncron Select SSE | base | 24″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| 3VDB30 | Syncron Select SSE | base | 30″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB24 | Syncron Select SSE | base | 24″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB24FH | Syncron Select SSE | base | 24″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB24S | Syncron Select SSE | base | 24″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB24SFH | Syncron Select SSE | base | 24″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB27 | Syncron Select SSE | base | 27″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB27FH | Syncron Select SSE | base | 27″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB30 | Syncron Select SSE | base | 30″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB30FH | Syncron Select SSE | base | 30″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB33 | Syncron Select SSE | base | 33″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB33FH | Syncron Select SSE | base | 33″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB36 | Syncron Select SSE | base | 36″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VSB36FH | Syncron Select SSE | base | 36″ × 34.75″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
+| VT1884 | Syncron Select SSE | base | 18″ × 79.5″ × 21″ | Vanity box: it places and renders in the 3D Designer, but the auto builder is the kitchen build and does not run the bathroom vanity workflow. |
 
 ## Accessories, not boxes
 
@@ -1884,54 +1888,54 @@ and are never auto-built into a run.
 | SKU | Line | Sub-category | Size | Why it is not a box |
 | --- | --- | --- | --- | --- |
 | WS1542 | Classic Cream | Standard Wall | 15″ × 42″ × 12″ | Panel / skin: add-on accessory that finishes an exposed side, not a box. |
-| BAM | Line 330011 | Batten Moulding | 96″ × 0.75″ × 0.19″ | Molding / trim: add-on accessory by the linear foot, not a box. |
-| BEP | Line 330011 | Dishwasher Return Panel | 3″ × 34.5″ × 24″ | Panel / skin: add-on accessory that finishes an exposed side, not a box. |
-| BF6 | Line 330011 | Filler | 6″ × 34.5″ × 24″ | Filler: add-on accessory that closes a gap, not a box. |
-| BFF3 | Line 330011 | Filler | 3″ × 34.5″ × ?″ | Filler: add-on accessory that closes a gap, not a box. |
-| BFF6 | Line 330011 | Filler | 6″ × 34.5″ × ?″ | Filler: add-on accessory that closes a gap, not a box. |
-| CBLPN2 | Line 330011 | Decorative Hardware | 5″ × 4.75″ × 9″ | Add-on accessory, not a cabinet box. |
-| CBLPN3 | Line 330011 | Decorative Hardware | 6.25″ × 13.25″ × ?″ | Add-on accessory, not a cabinet box. |
-| DEC004 | Line 330011 | Molding | 96″ × 4.5″ × ?″ | Molding / trim: add-on accessory by the linear foot, not a box. |
-| DP1230 | Line 330011 | End Panel / Skin | 12″ × 30″ × ?″ | Panel / skin: add-on accessory that finishes an exposed side, not a box. |
-| DP1236 | Line 330011 | End Panel / Skin | 12″ × 36″ × ?″ | Panel / skin: add-on accessory that finishes an exposed side, not a box. |
-| DP1242 | Line 330011 | End Panel / Skin | 12″ × 42″ × ?″ | Panel / skin: add-on accessory that finishes an exposed side, not a box. |
-| DP2430 | Line 330011 | End Panel / Skin | 24″ × 34.5″ × ?″ | Panel / skin: add-on accessory that finishes an exposed side, not a box. |
-| F342 | Line 330011 | Filler | 3″ × 42″ × ?″ | Filler: add-on accessory that closes a gap, not a box. |
-| F396 | Line 330011 | Filler | 3″ × 96″ × ?″ | Filler: add-on accessory that closes a gap, not a box. |
-| F642 | Line 330011 | Filler | 6″ × 42″ × ?″ | Filler: add-on accessory that closes a gap, not a box. |
-| IS3696 | Line 330011 | Tall Panels | 36″ × 96″ × ?″ | Panel / skin: add-on accessory that finishes an exposed side, not a box. |
-| KIOSK-DA | Line 330011 | Samples & Display | ?″ × 34.5″ × 24″ | Sample or display item, not a sellable box. |
-| LCM8 | Line 330011 | Crown Moulding | 96″ × 3″ × 24″ | Molding / trim: add-on accessory by the linear foot, not a box. |
-| LRM8 | Line 330011 | Light Rail | 96″ × ?″ × ?″ | Molding / trim: add-on accessory by the linear foot, not a box. |
-| OCM | Line 330011 | Outside Corner Moulding | 96″ × 0.75″ × 0.75″ | Molding / trim: add-on accessory by the linear foot, not a box. |
-| PGWDC30 | Line 330011 | Glass Door (door only) | 15″ × 30″ × 12″ | Add-on accessory, not a cabinet box. |
-| PGWDC36 | Line 330011 | Glass Door (door only) | 15″ × 36″ × 12″ | Add-on accessory, not a cabinet box. |
-| PGWDC42 | Line 330011 | Glass Door (door only) | 15″ × 42″ × 12″ | Add-on accessory, not a cabinet box. |
-| PLYEB42 | Line 330011 | Plywood Edge-Banded Board | 42″ × 96″ × ?″ | Add-on accessory, not a cabinet box. |
-| REPV2496 | Line 330011 | Wall Refrigerator End Panel | 1.5″ × 96″ × 24″ | Panel / skin: add-on accessory that finishes an exposed side, not a box. |
-| Sample Door | Line 330011 | Samples & Display | 11″ × 15″ × 0.75″ | Sample or display item, not a sellable box. |
-| SCDL | Line 330011 | Decorative Leg | 3″ × 34.5″ × ?″ | Add-on accessory, not a cabinet box. |
-| SGH30 | Line 330011 | Accessory | 30″ × 1.5″ × 12″ | Add-on accessory, not a cabinet box. |
-| SHM | Line 330011 | Shoe Moulding | 96″ × 0.56″ × 0.81″ | Molding / trim: add-on accessory by the linear foot, not a box. |
-| SM8 | Line 330011 | Base Moulding | 96″ × 0.75″ × 24″ | Filler: add-on accessory that closes a gap, not a box. |
-| SPW | Line 330011 | Tall Panels | 36″ × 96″ × 12″ | Panel / skin: add-on accessory that finishes an exposed side, not a box. |
-| TFF396 | Line 330011 | Filler | 3″ × 96″ × ?″ | Filler: add-on accessory that closes a gap, not a box. |
-| TK8 | Line 330011 |  | 96″ × 4.5″ × 24″ | Molding / trim: add-on accessory by the linear foot, not a box. |
-| TUK | Line 330011 | General | ?″ × ?″ × ?″ | Add-on accessory, not a cabinet box. |
-| UNIV-ROT15 | Line 330011 | Rollout Tray | 15″ × 2.25″ × 21″ | Roll-out / pull-out tray: add-on accessory inside another cabinet, not a box. |
-| UNIV-ROT18 | Line 330011 | Rollout Tray | 18″ × 2.25″ × 21″ | Roll-out / pull-out tray: add-on accessory inside another cabinet, not a box. |
-| UNIV-ROT21 | Line 330011 | Rollout Tray | 21″ × 2.25″ × 21″ | Roll-out / pull-out tray: add-on accessory inside another cabinet, not a box. |
-| UNIV-ROT24 | Line 330011 | Rollout Tray | 24″ × 2.25″ × 21″ | Roll-out / pull-out tray: add-on accessory inside another cabinet, not a box. |
-| UNIV-ROT27 | Line 330011 | Rollout Tray | 27″ × 2.25″ × 21″ | Roll-out / pull-out tray: add-on accessory inside another cabinet, not a box. |
-| UNIV-ROT30 | Line 330011 | Rollout Tray | 30″ × 2.25″ × 21″ | Roll-out / pull-out tray: add-on accessory inside another cabinet, not a box. |
-| UNIV-ROT33 | Line 330011 | Rollout Tray | 33″ × 2.25″ × 21″ | Roll-out / pull-out tray: add-on accessory inside another cabinet, not a box. |
-| UNIV-ROT36 | Line 330011 | Rollout Tray | 36″ × 2.25″ × 21″ | Roll-out / pull-out tray: add-on accessory inside another cabinet, not a box. |
-| VA48 | Line 330011 | Valance | 48″ × 6″ × ?″ | Valance: add-on accessory above a window, not a cabinet box. |
-| WEP1542 | Line 330011 | Standard Wall | 15″ × 42″ × 12″ | Panel / skin: add-on accessory that finishes an exposed side, not a box. |
-| WFF342 | Line 330011 | Filler | 3″ × 42″ × 12″ | Filler: add-on accessory that closes a gap, not a box. |
-| WFF396 | Line 330011 | Filler | 3″ × 96″ × ?″ | Filler: add-on accessory that closes a gap, not a box. |
-| WFF642 | Line 330011 | Filler | 6″ × 42″ × 12″ | Filler: add-on accessory that closes a gap, not a box. |
-| WS1542 | Line 330011 | Standard Wall | 15″ × 42″ × 12″ | Panel / skin: add-on accessory that finishes an exposed side, not a box. |
+| BAM | Ashford (RH, 330011) | Batten Moulding | 96″ × 0.75″ × 0.19″ | Molding / trim: add-on accessory by the linear foot, not a box. |
+| BEP | Ashford (RH, 330011) | Dishwasher Return Panel | 3″ × 34.5″ × 24″ | Panel / skin: add-on accessory that finishes an exposed side, not a box. |
+| BF6 | Ashford (RH, 330011) | Filler | 6″ × 34.5″ × 24″ | Filler: add-on accessory that closes a gap, not a box. |
+| BFF3 | Ashford (RH, 330011) | Filler | 3″ × 34.5″ × ?″ | Filler: add-on accessory that closes a gap, not a box. |
+| BFF6 | Ashford (RH, 330011) | Filler | 6″ × 34.5″ × ?″ | Filler: add-on accessory that closes a gap, not a box. |
+| CBLPN2 | Ashford (RH, 330011) | Decorative Hardware | 5″ × 4.75″ × 9″ | Add-on accessory, not a cabinet box. |
+| CBLPN3 | Ashford (RH, 330011) | Decorative Hardware | 6.25″ × 13.25″ × ?″ | Add-on accessory, not a cabinet box. |
+| DEC004 | Ashford (RH, 330011) | Molding | 96″ × 4.5″ × ?″ | Molding / trim: add-on accessory by the linear foot, not a box. |
+| DP1230 | Ashford (RH, 330011) | End Panel / Skin | 12″ × 30″ × ?″ | Panel / skin: add-on accessory that finishes an exposed side, not a box. |
+| DP1236 | Ashford (RH, 330011) | End Panel / Skin | 12″ × 36″ × ?″ | Panel / skin: add-on accessory that finishes an exposed side, not a box. |
+| DP1242 | Ashford (RH, 330011) | End Panel / Skin | 12″ × 42″ × ?″ | Panel / skin: add-on accessory that finishes an exposed side, not a box. |
+| DP2430 | Ashford (RH, 330011) | End Panel / Skin | 24″ × 34.5″ × ?″ | Panel / skin: add-on accessory that finishes an exposed side, not a box. |
+| F342 | Ashford (RH, 330011) | Filler | 3″ × 42″ × ?″ | Filler: add-on accessory that closes a gap, not a box. |
+| F396 | Ashford (RH, 330011) | Filler | 3″ × 96″ × ?″ | Filler: add-on accessory that closes a gap, not a box. |
+| F642 | Ashford (RH, 330011) | Filler | 6″ × 42″ × ?″ | Filler: add-on accessory that closes a gap, not a box. |
+| IS3696 | Ashford (RH, 330011) | Tall Panels | 36″ × 96″ × ?″ | Panel / skin: add-on accessory that finishes an exposed side, not a box. |
+| KIOSK-DA | Ashford (RH, 330011) | Samples & Display | ?″ × 34.5″ × 24″ | Sample or display item, not a sellable box. |
+| LCM8 | Ashford (RH, 330011) | Crown Moulding | 96″ × 3″ × 24″ | Molding / trim: add-on accessory by the linear foot, not a box. |
+| LRM8 | Ashford (RH, 330011) | Light Rail | 96″ × ?″ × ?″ | Molding / trim: add-on accessory by the linear foot, not a box. |
+| OCM | Ashford (RH, 330011) | Outside Corner Moulding | 96″ × 0.75″ × 0.75″ | Molding / trim: add-on accessory by the linear foot, not a box. |
+| PGWDC30 | Ashford (RH, 330011) | Glass Door (door only) | 15″ × 30″ × 12″ | Add-on accessory, not a cabinet box. |
+| PGWDC36 | Ashford (RH, 330011) | Glass Door (door only) | 15″ × 36″ × 12″ | Add-on accessory, not a cabinet box. |
+| PGWDC42 | Ashford (RH, 330011) | Glass Door (door only) | 15″ × 42″ × 12″ | Add-on accessory, not a cabinet box. |
+| PLYEB42 | Ashford (RH, 330011) | Plywood Edge-Banded Board | 42″ × 96″ × ?″ | Add-on accessory, not a cabinet box. |
+| REPV2496 | Ashford (RH, 330011) | Wall Refrigerator End Panel | 1.5″ × 96″ × 24″ | Panel / skin: add-on accessory that finishes an exposed side, not a box. |
+| Sample Door | Ashford (RH, 330011) | Samples & Display | 11″ × 15″ × 0.75″ | Sample or display item, not a sellable box. |
+| SCDL | Ashford (RH, 330011) | Decorative Leg | 3″ × 34.5″ × ?″ | Add-on accessory, not a cabinet box. |
+| SGH30 | Ashford (RH, 330011) | Accessory | 30″ × 1.5″ × 12″ | Add-on accessory, not a cabinet box. |
+| SHM | Ashford (RH, 330011) | Shoe Moulding | 96″ × 0.56″ × 0.81″ | Molding / trim: add-on accessory by the linear foot, not a box. |
+| SM8 | Ashford (RH, 330011) | Base Moulding | 96″ × 0.75″ × 24″ | Filler: add-on accessory that closes a gap, not a box. |
+| SPW | Ashford (RH, 330011) | Tall Panels | 36″ × 96″ × 12″ | Panel / skin: add-on accessory that finishes an exposed side, not a box. |
+| TFF396 | Ashford (RH, 330011) | Filler | 3″ × 96″ × ?″ | Filler: add-on accessory that closes a gap, not a box. |
+| TK8 | Ashford (RH, 330011) |  | 96″ × 4.5″ × 24″ | Molding / trim: add-on accessory by the linear foot, not a box. |
+| TUK | Ashford (RH, 330011) | General | ?″ × ?″ × ?″ | Add-on accessory, not a cabinet box. |
+| UNIV-ROT15 | Ashford (RH, 330011) | Rollout Tray | 15″ × 2.25″ × 21″ | Roll-out / pull-out tray: add-on accessory inside another cabinet, not a box. |
+| UNIV-ROT18 | Ashford (RH, 330011) | Rollout Tray | 18″ × 2.25″ × 21″ | Roll-out / pull-out tray: add-on accessory inside another cabinet, not a box. |
+| UNIV-ROT21 | Ashford (RH, 330011) | Rollout Tray | 21″ × 2.25″ × 21″ | Roll-out / pull-out tray: add-on accessory inside another cabinet, not a box. |
+| UNIV-ROT24 | Ashford (RH, 330011) | Rollout Tray | 24″ × 2.25″ × 21″ | Roll-out / pull-out tray: add-on accessory inside another cabinet, not a box. |
+| UNIV-ROT27 | Ashford (RH, 330011) | Rollout Tray | 27″ × 2.25″ × 21″ | Roll-out / pull-out tray: add-on accessory inside another cabinet, not a box. |
+| UNIV-ROT30 | Ashford (RH, 330011) | Rollout Tray | 30″ × 2.25″ × 21″ | Roll-out / pull-out tray: add-on accessory inside another cabinet, not a box. |
+| UNIV-ROT33 | Ashford (RH, 330011) | Rollout Tray | 33″ × 2.25″ × 21″ | Roll-out / pull-out tray: add-on accessory inside another cabinet, not a box. |
+| UNIV-ROT36 | Ashford (RH, 330011) | Rollout Tray | 36″ × 2.25″ × 21″ | Roll-out / pull-out tray: add-on accessory inside another cabinet, not a box. |
+| VA48 | Ashford (RH, 330011) | Valance | 48″ × 6″ × ?″ | Valance: add-on accessory above a window, not a cabinet box. |
+| WEP1542 | Ashford (RH, 330011) | Standard Wall | 15″ × 42″ × 12″ | Panel / skin: add-on accessory that finishes an exposed side, not a box. |
+| WFF342 | Ashford (RH, 330011) | Filler | 3″ × 42″ × 12″ | Filler: add-on accessory that closes a gap, not a box. |
+| WFF396 | Ashford (RH, 330011) | Filler | 3″ × 96″ × ?″ | Filler: add-on accessory that closes a gap, not a box. |
+| WFF642 | Ashford (RH, 330011) | Filler | 6″ × 42″ × 12″ | Filler: add-on accessory that closes a gap, not a box. |
+| WS1542 | Ashford (RH, 330011) | Standard Wall | 15″ × 42″ × 12″ | Panel / skin: add-on accessory that finishes an exposed side, not a box. |
 | FOL630 | Shaker White | Filler | 6″ × 30″ × 24″ | Filler: add-on accessory that closes a gap, not a box. |
 | FOL636 | Shaker White | Filler | 6″ × 36″ × 24″ | Filler: add-on accessory that closes a gap, not a box. |
 | FOL642 | Shaker White | Filler | 6″ × 42″ × 24″ | Filler: add-on accessory that closes a gap, not a box. |
@@ -1953,26 +1957,26 @@ and are never auto-built into a run.
 | WDEP1212 | Haven Harbor | Standard Wall | 11.5″ × 11″ × 0.75″ | Panel / skin: add-on accessory that finishes an exposed side, not a box. |
 | WDEP1215 | Haven Harbor | Standard Wall | 11.5″ × 14″ × 0.75″ | Panel / skin: add-on accessory that finishes an exposed side, not a box. |
 | WDEP1218 | Haven Harbor | Standard Wall | 11.5″ × 17″ × 0.75″ | Panel / skin: add-on accessory that finishes an exposed side, not a box. |
-| AF3006 | Line 540005 | Filler | 29.875″ × 5.875″ × 0.75″ | Filler: add-on accessory that closes a gap, not a box. |
-| BEP2535 | Line 540005 | Base End Panel | 25.625″ × 35.25″ × 0.75″ | Panel / skin: add-on accessory that finishes an exposed side, not a box. |
-| OF323 | Line 540005 | Filler | 2.875″ × 22.5″ × 0.75″ | Filler: add-on accessory that closes a gap, not a box. |
-| OF330 | Line 540005 | Filler | 2.875″ × 30.125″ × 0.75″ | Filler: add-on accessory that closes a gap, not a box. |
-| OF335 | Line 540005 | Filler | 2.875″ × 35.125″ × 0.75″ | Filler: add-on accessory that closes a gap, not a box. |
-| OF340 | Line 540005 | Filler | 2.875″ × 40.125″ × 0.75″ | Filler: add-on accessory that closes a gap, not a box. |
-| OF384 | Line 540005 | Filler | 2.875″ × 83.75″ × 0.75″ | Filler: add-on accessory that closes a gap, not a box. |
-| OF389 | Line 540005 | Filler | 2.875″ × 88.75″ × 0.75″ | Filler: add-on accessory that closes a gap, not a box. |
-| OF394 | Line 540005 | Filler | 2.875″ × 93.75″ × 0.75″ | Filler: add-on accessory that closes a gap, not a box. |
-| OF630 | Line 540005 | Filler | 5.875″ × 30.125″ × 0.75″ | Filler: add-on accessory that closes a gap, not a box. |
-| OF635 | Line 540005 | Filler | 5.875″ × 35.125″ × 0.75″ | Filler: add-on accessory that closes a gap, not a box. |
-| OF640 | Line 540005 | Filler | 5.875″ × 40.125″ × 0.75″ | Filler: add-on accessory that closes a gap, not a box. |
-| OF684 | Line 540005 | Filler | 5.875″ × 83.75″ × 0.75″ | Filler: add-on accessory that closes a gap, not a box. |
-| OF689 | Line 540005 | Filler | 5.875″ × 88.75″ × 0.75″ | Filler: add-on accessory that closes a gap, not a box. |
-| OF694 | Line 540005 | Filler | 5.875″ × 93.75″ × 0.75″ | Filler: add-on accessory that closes a gap, not a box. |
-| TK8 | Line 540005 |  | 96″ × 4.5″ × 24″ | Molding / trim: add-on accessory by the linear foot, not a box. |
-| WEP1523 | Line 540005 | Wall End Panel | 15.25″ × 22.625″ × 0.75″ | Panel / skin: add-on accessory that finishes an exposed side, not a box. |
-| WEP1530 | Line 540005 | Wall End Panel | 15.25″ × 30.25″ × 0.75″ | Panel / skin: add-on accessory that finishes an exposed side, not a box. |
-| WEP1535 | Line 540005 | Wall End Panel | 15.25″ × 35.25″ × 0.75″ | Panel / skin: add-on accessory that finishes an exposed side, not a box. |
-| WEP1542 | Line 540005 | Wall End Panel | 15.25″ × 41.75″ × 0.75″ | Panel / skin: add-on accessory that finishes an exposed side, not a box. |
+| AF3006 | Luxe Classic LSA (540005) | Filler | 29.875″ × 5.875″ × 0.75″ | Filler: add-on accessory that closes a gap, not a box. |
+| BEP2535 | Luxe Classic LSA (540005) | Base End Panel | 25.625″ × 35.25″ × 0.75″ | Panel / skin: add-on accessory that finishes an exposed side, not a box. |
+| OF323 | Luxe Classic LSA (540005) | Filler | 2.875″ × 22.5″ × 0.75″ | Filler: add-on accessory that closes a gap, not a box. |
+| OF330 | Luxe Classic LSA (540005) | Filler | 2.875″ × 30.125″ × 0.75″ | Filler: add-on accessory that closes a gap, not a box. |
+| OF335 | Luxe Classic LSA (540005) | Filler | 2.875″ × 35.125″ × 0.75″ | Filler: add-on accessory that closes a gap, not a box. |
+| OF340 | Luxe Classic LSA (540005) | Filler | 2.875″ × 40.125″ × 0.75″ | Filler: add-on accessory that closes a gap, not a box. |
+| OF384 | Luxe Classic LSA (540005) | Filler | 2.875″ × 83.75″ × 0.75″ | Filler: add-on accessory that closes a gap, not a box. |
+| OF389 | Luxe Classic LSA (540005) | Filler | 2.875″ × 88.75″ × 0.75″ | Filler: add-on accessory that closes a gap, not a box. |
+| OF394 | Luxe Classic LSA (540005) | Filler | 2.875″ × 93.75″ × 0.75″ | Filler: add-on accessory that closes a gap, not a box. |
+| OF630 | Luxe Classic LSA (540005) | Filler | 5.875″ × 30.125″ × 0.75″ | Filler: add-on accessory that closes a gap, not a box. |
+| OF635 | Luxe Classic LSA (540005) | Filler | 5.875″ × 35.125″ × 0.75″ | Filler: add-on accessory that closes a gap, not a box. |
+| OF640 | Luxe Classic LSA (540005) | Filler | 5.875″ × 40.125″ × 0.75″ | Filler: add-on accessory that closes a gap, not a box. |
+| OF684 | Luxe Classic LSA (540005) | Filler | 5.875″ × 83.75″ × 0.75″ | Filler: add-on accessory that closes a gap, not a box. |
+| OF689 | Luxe Classic LSA (540005) | Filler | 5.875″ × 88.75″ × 0.75″ | Filler: add-on accessory that closes a gap, not a box. |
+| OF694 | Luxe Classic LSA (540005) | Filler | 5.875″ × 93.75″ × 0.75″ | Filler: add-on accessory that closes a gap, not a box. |
+| TK8 | Luxe Classic LSA (540005) |  | 96″ × 4.5″ × 24″ | Molding / trim: add-on accessory by the linear foot, not a box. |
+| WEP1523 | Luxe Classic LSA (540005) | Wall End Panel | 15.25″ × 22.625″ × 0.75″ | Panel / skin: add-on accessory that finishes an exposed side, not a box. |
+| WEP1530 | Luxe Classic LSA (540005) | Wall End Panel | 15.25″ × 30.25″ × 0.75″ | Panel / skin: add-on accessory that finishes an exposed side, not a box. |
+| WEP1535 | Luxe Classic LSA (540005) | Wall End Panel | 15.25″ × 35.25″ × 0.75″ | Panel / skin: add-on accessory that finishes an exposed side, not a box. |
+| WEP1542 | Luxe Classic LSA (540005) | Wall End Panel | 15.25″ × 41.75″ × 0.75″ | Panel / skin: add-on accessory that finishes an exposed side, not a box. |
 
 ## How a box is decided
 
