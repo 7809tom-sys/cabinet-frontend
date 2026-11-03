@@ -42,7 +42,8 @@ import {
   verifiedPelicanSinkProfile,
 } from "./pelicanFixtureProfiles";
 
-const SINK_BASE_WIDTHS = [21, 24, 27, 30, 33, 36, 39, 42, 45, 48] as const;
+export const AUTO_DESIGN_SINK_BASE_WIDTHS = [21, 24, 27, 30, 33, 36, 39, 42, 45, 48] as const;
+const SINK_BASE_WIDTHS = AUTO_DESIGN_SINK_BASE_WIDTHS;
 const ISLAND_FACES: IslandFace[] = ["front", "back", "left", "right"];
 
 export type OpenSinkBasePlacement = {

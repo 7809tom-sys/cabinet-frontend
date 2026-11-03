@@ -36,6 +36,14 @@ import { autoDesignRangeNeedsVentilation } from "./autoDesignRangeHood";
 import { AUTO_DESIGN_REFRIGERATOR_WALL_END_SHIFT_IN, buildMandatoryAutoDesignRefrigeratorBay } from "./autoDesignRefrigeratorBay";
 import { clampRefrigeratorAssemblyToPanels } from "./refrigeratorPanelClamp";
 import { autoDesignSinkWindow, windowOverlapsReservation } from "./autoDesignSinkWindow";
+import { resolveAutoDesignSinkBase } from "./autoDesignSink";
+import { buildPelicanSinkOnCabinet } from "./pelicanAutoPlace";
+import {
+  autoDesignTallProducts,
+  planAutoDesignTallFit,
+  resolveTallPick,
+  tallCabinetPlacement,
+} from "./autoDesignTallCabinets";
 import { raiseWindowsForDeckFaucet } from "./faucetPlacement";
 import { buildAutoDesignWallCabinets, resolveWallHeightClass, type AutoDesignUpperCorner } from "./autoDesignWallCabinets";
 import { answerWantsMicrowaveBridge, overRangeCompanionPlacements, planOverRangeCompanions } from "./overRangeCompanion";
@@ -348,6 +356,8 @@ export function runAutoDesignLayout(args: {
   appliancePalette: readonly DesignCabinet[];
   refrigeratorCaps: readonly DesignCabinet[];
   refrigeratorEndPanels: readonly DesignCabinet[];
+  /** The line's tall oven/pantry boxes, so a pop-up pick resolves to its catalog row. */
+  tallCatalog?: readonly DesignCabinet[];
   styleId: number | null;
   makeUid: () => string;
   stoveMasterCode?: string;
@@ -358,18 +368,37 @@ export function runAutoDesignLayout(args: {
   const fail = (message: string): AutoDesignLayoutResult => ({ ok: false, message });
   const plan = planAutoDesignAutoBuild(input);
   if (!plan.ok) return fail(`Missing required measurement: ${plan.missing.join(", ")}.`);
-  const sinkBaseWidth = input.sinkBaseWidthIn ?? 36;
-  const refrigeratorWidth = input.refrigeratorWidthIn ?? 36;
   const pool = args.baseCatalog;
   const straightBaseCatalog = autoBuildStraightBaseCatalog(pool);
   const drawerBaseCatalog = autoBuildDrawerBaseCatalog(pool);
-  const sinkBaseKind = input.sinkBaseKind ?? "regular";
+  // The sink picked in the sink pop-up decides the base it pairs with: an
+  // apron-front sink switches to its farmhouse base, a wider sink widens the
+  // measured base to the smallest source-priced one that fits. Nothing narrows.
+  const pickedSinkProducts = (input.sinkProducts ?? []).filter((product) => product?.productId);
+  const primaryPickedSink = pickedSinkProducts[0] ?? null;
+  const resolvedSinkBase = resolveAutoDesignSinkBase({
+    product: primaryPickedSink
+      ? {
+        id: primaryPickedSink.productId,
+        pelicanCode: primaryPickedSink.pelicanCode,
+        name: primaryPickedSink.name,
+        size: primaryPickedSink.size,
+        imageUrl: primaryPickedSink.imageUrl,
+      }
+      : null,
+    measuredWidthIn: input.sinkBaseWidthIn ?? 36,
+    measuredKind: input.sinkBaseKind ?? "regular",
+    baseCatalog: pool,
+  });
+  const sinkBaseWidth = resolvedSinkBase.widthIn;
+  const sinkBaseKind = resolvedSinkBase.kind;
   const sinkBaseSource = pickAutoDesignSinkBase(pool, sinkBaseWidth, sinkBaseKind);
   if (!sinkBaseSource) {
     return fail(sinkBaseKind === "farmhouse"
       ? `No source-priced ${sinkBaseWidth}″ farmhouse sink base is available for the selected line. Choose the regular sink base or another door style, then try again.`
       : `No source-priced SB${sinkBaseWidth} sink base is available for the selected line. Choose a door style with a priced sink base, then try again.`);
   }
+  const refrigeratorWidth = input.refrigeratorWidthIn ?? 36;
   const stoveCode = args.stoveMasterCode ?? "RANGE-30";
   const applianceByKind: Record<string, DesignCabinet | undefined> = {
     stove: args.appliancePalette.find((item) => item.masterCode === stoveCode),
@@ -491,8 +520,25 @@ export function runAutoDesignLayout(args: {
   const sinkBase = anchorsByKind.get("sink");
   let sinks: SinkFixture[] = [];
   if (sinkBase) {
-    const defaultSinkType = isFarmSinkBasePaletteItem(sinkBase) ? "farmhouse" : sinkBase.width >= 33 ? "double" : "single";
-    sinks = keepSingleAutoDesignSink([makeDefaultSinkForCabinet(sinkBase, room, defaultSinkType)], sinkBase.uid);
+    // A sink picked in the sink pop-up is seated in the sink base the build
+    // actually placed, so the pairing decided above is what gets a basin.
+    const pickedSink = pickedSinkProducts[0];
+    const pelicanSink = pickedSink && sinkBase
+      ? buildPelicanSinkOnCabinet({
+        id: pickedSink.productId,
+        pelicanCode: pickedSink.pelicanCode ?? null,
+        name: pickedSink.name,
+        imageUrl: pickedSink.imageUrl ?? null,
+        size: pickedSink.size ?? null,
+      }, sinkBase, room)
+      : null;
+    if (pelicanSink) {
+      sinks = keepSingleAutoDesignSink([pelicanSink], sinkBase.uid);
+      if (resolvedSinkBase.note) notes.push(resolvedSinkBase.note);
+    } else {
+      const defaultSinkType = isFarmSinkBasePaletteItem(sinkBase) ? "farmhouse" : sinkBase.width >= 33 ? "double" : "single";
+      sinks = keepSingleAutoDesignSink([makeDefaultSinkForCabinet(sinkBase, room, defaultSinkType)], sinkBase.uid);
+    }
   }
   let sinkWindow: WallOpening | null = null;
   if (input.sinkWindowCenter && sinkBase) {
@@ -658,6 +704,65 @@ export function runAutoDesignLayout(args: {
   const usage = normalizeKitchenUsage(stage.input.kitchenUsage);
   const heavyCook = cooksALot(usage);
   const preferDrawers = heavyCook || bakesALot(usage);
+  // Tall oven / pantry cabinets are picked in the tall pop-up and never dropped
+  // into a run unasked. They are seated as run anchors BEFORE the base runs tile
+  // the walls, so a pantry reserves its span the same way a measured appliance
+  // does instead of being refused by a wall that just got filled. The wall ends,
+  // the refrigerator panel limit, the ceiling, and every cabinet already seated
+  // all still apply; a pick that cannot seat is named, not moved.
+  for (const pick of input.tallCabinets ?? []) {
+    const source = resolveTallPick(args.tallCatalog ?? [], pick);
+    const product = source ? autoDesignTallProducts([source])[0] : undefined;
+    if (!source || !product) {
+      reviewFindings.push({
+        ruleId: "tall-cabinet-popup",
+        code: "tall-cabinet-unavailable",
+        severity: "warning",
+        title: `${pick.masterCode} is not in this line's catalog`,
+        detail: "The tall cabinet picked in the pop-up is no longer a source-priced tall box, so it was not placed.",
+      });
+      continue;
+    }
+    const fit = planAutoDesignTallFit({
+      product,
+      room,
+      placed: working,
+      openings: stageOpenings,
+      wallIds: stage.selectedWalls,
+    });
+    if (!fit.ok) {
+      reviewFindings.push({
+        ruleId: "tall-cabinet-popup",
+        code: "tall-cabinet-blocked",
+        severity: "warning",
+        title: `${product.masterCode} was not placed`,
+        detail: fit.reason,
+      });
+      continue;
+    }
+    const placedTall = tallCabinetPlacement({
+      product,
+      source,
+      wallId: fit.wallId,
+      spot: fit.placement,
+      alongIn: fit.alongIn,
+      uid: makeUid(),
+      styleId: args.styleId,
+    });
+    const accepted = appendCollisionFreePlacements(working, [placedTall], room);
+    if (accepted.rejected.length > 0) {
+      reviewFindings.push({
+        ruleId: "tall-cabinet-popup",
+        code: "tall-cabinet-blocked",
+        severity: "warning",
+        title: `${product.masterCode} was not placed`,
+        detail: "The tall box overlapped a cabinet already seated, so it was left off the plan.",
+      });
+      continue;
+    }
+    working = accepted.placed;
+    notes.push(`${product.masterCode} placed as a ${product.widthIn}″ × ${product.heightIn}″ tall cabinet.`);
+  }
   let basePieceCount = 0;
   for (const wallId of runWalls) {
     const rawSegments = freeSegmentsOnWall(wallId, room, working, stageOpenings, 9, 0, "base", false, undefined, footprintDepth(stage.baseSource));

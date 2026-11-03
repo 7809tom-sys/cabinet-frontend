@@ -189,6 +189,15 @@ export function makeAutoDesignSixWallTrainingRoom(): RoomData {
   };
 }
 
+export type AutoDesignTallRequest = {
+  /** Catalog row id the person picked in the tall-cabinet pop-up. */
+  cabinetId: number;
+  masterCode: string;
+  /** Nominal base width of the auto-placed box, so the run keeps its measured plan. */
+  widthIn?: number | null;
+  heightIn?: number | null;
+};
+
 export type AutoDesignInputs = {
   layoutType: AutoDesignLayoutType;
   originCorner: AutoDesignOriginCorner;
@@ -224,6 +233,31 @@ export type AutoDesignInputs = {
   /** Door style chosen in the wizard / design questions. Applies to every cabinet (rule 8). */
   designQuestionDoorStyleId?: number | null;
   designQuestionDoorStyleName?: string | null;
+  /**
+   * Tall oven / pantry cabinets picked in the tall-cabinet pop-up. Each is
+   * auto-placed in a free span during the build; nothing is dragged.
+   */
+  tallCabinets?: readonly AutoDesignTallRequest[] | null;
+  /**
+   * Pelican sinks picked in the sink pop-up. The build seats the source-priced
+   * sink base that pairs with each sink and centers the basin in it.
+   */
+  sinkProducts?: readonly AutoDesignSinkRequest[] | null;
+};
+
+export type AutoDesignSinkRequest = {
+  /** Pelican catalog row id. */
+  productId: number;
+  pelicanCode?: string | null;
+  name: string;
+  imageUrl?: string | null;
+  size?: string | null;
+  sellPrice?: number | null;
+  /**
+   * A farmhouse sink may switch the measured sink base to its matching FSB.
+   * False leaves the base exactly as measured and only seats the basin.
+   */
+  pairBase?: boolean;
 };
 
 export type AutoDesignPlacement = AutoDesignMeasurement & {

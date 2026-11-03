@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Boxes, Droplets } from "lucide-react";
 import { autoDesignWallWidthRows } from "@/lib/autoDesignAutoBuild";
 import { autoDesignSelectableWallLabels } from "@/lib/autoDesignCornerStage";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -36,6 +37,18 @@ type Props = {
   onWallGuideChange?: (selection: { originCorner: AutoDesignOriginCorner; runDirection: AutoDesignRunDirection }) => void;
   /** Replaces only an empty admin Designer room with the blank six-wall training shell. */
   onLoadSixWallTrainingRoom?: () => AutoDesignSubmitResult;
+  /**
+   * Opens the sink pop-up beside the faucet option. The pick auto-places a
+   * Pelican basin in the measured sink base during the build.
+   */
+  onOpenSinkPicker?: () => void;
+  selectedSinkName?: string | null;
+  /**
+   * Opens the tall oven/pantry pop-up. A pick is auto-placed by the build, so a
+   * floor-to-ceiling box is never dragged into a run.
+   */
+  onOpenTallPicker?: () => void;
+  selectedTallSummary?: string | null;
 };
 type PointField = "sink" | "stove" | "dishwasher" | "refrigerator";
 type SinkBaseWidth = 30 | 33 | 36 | 42;
@@ -62,7 +75,7 @@ const omissionLabels: Record<(typeof applianceFields)[number], string> = {
 };
 type FieldValue = { wallLabel: WallLabel; centerOffsetIn: string };
 
-export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading = false, wallCount = 4, room, onWallGuideChange, onLoadSixWallTrainingRoom, dishwasherSide: dishwasherSidePreference = null, onDishwasherSideChange }: Props) {
+export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading = false, wallCount = 4, room, onWallGuideChange, onLoadSixWallTrainingRoom, dishwasherSide: dishwasherSidePreference = null, onDishwasherSideChange, onOpenSinkPicker, selectedSinkName = null, onOpenTallPicker, selectedTallSummary = null }: Props) {
   const [layoutType, setLayoutType] = useState<AutoDesignLayoutType>("single-wall");
   const [originCorner, setOriginCorner] = useState<AutoDesignOriginCorner>("left");
   const [runDirection, setRunDirection] = useState<AutoDesignRunDirection>("right");
@@ -304,6 +317,48 @@ export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading =
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">A regular sink base is used unless you choose farmhouse here.</p>
+            </div>
+            <div className="space-y-1.5 sm:col-span-2" data-testid="auto-design-sink-option">
+              <Label>Sink</Label>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  data-testid="auto-design-open-sink-picker"
+                  onClick={onOpenSinkPicker}
+                  disabled={!onOpenSinkPicker}
+                >
+                  <Droplets className="mr-1.5 h-3.5 w-3.5" /> Choose a sink
+                </Button>
+                <span className="min-w-0 text-xs text-muted-foreground" data-testid="auto-design-sink-selection">
+                  {selectedSinkName ?? "No Pelican sink picked — the build seats a generic basin."}
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Opens the sink pop-up beside the faucet step. A pick is placed automatically in the sink base, centered in the opening. A farmhouse sink switches the build to its matching farmhouse base.
+              </p>
+            </div>
+            <div className="space-y-1.5 sm:col-span-2" data-testid="auto-design-tall-option">
+              <Label>Tall oven or pantry cabinet</Label>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  data-testid="auto-design-open-tall-picker"
+                  onClick={onOpenTallPicker}
+                  disabled={!onOpenTallPicker}
+                >
+                  <Boxes className="mr-1.5 h-3.5 w-3.5" /> Choose a tall cabinet
+                </Button>
+                <span className="min-w-0 text-xs text-muted-foreground" data-testid="auto-design-tall-selection">
+                  {selectedTallSummary ?? "No tall cabinet — the runs stay at counter height."}
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Opens the tall-cabinet pop-up. A pick is placed automatically in the first free span that clears the wall ends, the refrigerator panels, and this room's ceiling.
+              </p>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="auto-design-dishwasher-side">Dishwasher side</Label>
