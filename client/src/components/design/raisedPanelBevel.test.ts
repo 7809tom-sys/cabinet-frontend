@@ -53,6 +53,24 @@ describe("raised panel bevel", () => {
     })).toBe(false);
   });
 
+  it("keeps the raised profile on door and drawer fronts and off every other cabinet surface", () => {
+    for (const faceRole of ["side", "left", "right", "top", "bottom", "back", "end-panel", "end-skin", "carcass", "face-frame", "toe-kick", "shelf", "interior"]) {
+      expect(threeDFaceUsesRaisedPanelBevel({
+        profileKind: "raised",
+        panelConstruction: "raised",
+        drawerFrontType: "five-piece-raised",
+        faceRole,
+      }), faceRole).toBe(false);
+    }
+    for (const faceRole of ["door", "drawer"] as const) {
+      expect(threeDFaceUsesRaisedPanelBevel({
+        profileKind: "raised",
+        panelConstruction: "raised",
+        faceRole,
+      }), faceRole).toBe(true);
+    }
+  });
+
   it("builds sloped trapezoid faces with a darker bottom slope", () => {
     const geometry = createSlopedRaisedPanelBevelGeometry(0.8, 1.4, 0.06, RAISED_PANEL_READABLE_BEVEL_DEPTH_IN / 12);
     const normals = geometry.getAttribute("normal");
@@ -106,6 +124,7 @@ describe("raised panel bevel", () => {
       insideEdgeProfile: "bevel",
       drawerFrontType: "five-piece-raised",
       centerMaterial: center,
+      faceRole: "door",
     });
     const bevels: THREE.Object3D[] = [];
     const grooves: THREE.Object3D[] = [];
@@ -119,6 +138,40 @@ describe("raised panel bevel", () => {
     const grooveMaterial = (grooves[0] as THREE.Mesh).material as THREE.MeshStandardMaterial;
     expect(grooveMaterial.color.getHexString()).toBe("0b0908");
     expect(grooveMaterial.opacity).toBeGreaterThan(0.9);
+    center.dispose();
+  });
+
+  it("attaches nothing when the surface is a cabinet side, top, bottom, or end skin", () => {
+    const center = new THREE.MeshStandardMaterial({ color: "#f4f1ea" });
+    for (const faceRole of ["side", "top", "bottom", "end-panel", "carcass", "face-frame"]) {
+      const parent = new THREE.Group();
+      attachSlopedRaisedPanel(parent, {
+        outerWidth: 0.7,
+        outerHeight: 1.2,
+        bevelWidth: 0.06,
+        bevelDepth: 0.45 / 12,
+        faceColor: "#f7f4ef",
+        insideEdgeProfile: "bevel",
+        centerMaterial: center,
+        faceRole,
+      });
+      expect(parent.children, faceRole).toHaveLength(0);
+    }
+    // The same call on a door front still builds the full raised treatment.
+    const door = new THREE.Group();
+    attachSlopedRaisedPanel(door, {
+      outerWidth: 0.7,
+      outerHeight: 1.2,
+      bevelWidth: 0.06,
+      bevelDepth: 0.45 / 12,
+      faceColor: "#f7f4ef",
+      insideEdgeProfile: "bevel",
+      centerMaterial: center,
+      faceRole: "door",
+    });
+    expect(door.children.length).toBeGreaterThan(0);
+    expect(door.children.some((node) => node.userData.raisedPanelBevel === true)).toBe(true);
+    expect(door.children.some((node) => node.userData.raisedCenterPanel === true)).toBe(true);
     center.dispose();
   });
 });

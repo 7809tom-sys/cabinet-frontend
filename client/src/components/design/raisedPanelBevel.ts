@@ -10,6 +10,7 @@
  * Geometries and bevel materials are cached. Callers must not dispose them.
  */
 import * as THREE from "three";
+import { raisedPanelFaceRoleAllowed } from "@shared/raisedPanelDoorBlueprint";
 
 const INCH = 1 / 12;
 
@@ -20,13 +21,18 @@ export const RAISED_PANEL_GROOVE_IN = 0.18;
 
 const SHARED_RESOURCE = { sharedRaisedPanelBevel: true };
 
-export type RaisedPanelFaceRole = "door" | "drawer";
+/** Any surface a cabinet has; only door and drawer fronts may carry the profile. */
+export type RaisedPanelFaceRole = "door" | "drawer" | (string & {});
 
 /**
  * Raised treatment follows the resolved profile only.
  * Doors use a raised profile or raised panel construction.
  * Drawers use a five-piece raised front, or the raised door profile unless
  * the drawer front is explicitly flat or slab. Names and style ids are ignored.
+ *
+ * Door and drawer fronts are the only surfaces: a cabinet side, top, bottom,
+ * end skin, or carcass is a flat finished surface even when the style is raised.
+ * See `shared/raisedPanelDoorBlueprint.ts`.
  */
 export function threeDFaceUsesRaisedPanelBevel(input: {
   profileKind: string;
@@ -35,6 +41,7 @@ export function threeDFaceUsesRaisedPanelBevel(input: {
   faceRole: RaisedPanelFaceRole;
   forceGlassFrame?: boolean;
 }): boolean {
+  if (!raisedPanelFaceRoleAllowed(input.faceRole)) return false;
   if (input.forceGlassFrame) return false;
   const profileRaised = input.profileKind === "raised" || input.panelConstruction === "raised";
   if (input.faceRole === "drawer") {
@@ -214,8 +221,15 @@ export function attachSlopedRaisedPanel(
     insideEdgeProfile: string;
     drawerFrontType?: string | null;
     centerMaterial: THREE.Material;
+    /**
+     * The surface this panel is being built on. Only door and drawer fronts may
+     * carry the raised profile; any other value is a no-op so a cabinet side, top,
+     * bottom, end skin, or carcass can never receive it.
+     */
+    faceRole?: RaisedPanelFaceRole;
   },
 ) {
+  if (input.faceRole != null && !raisedPanelFaceRoleAllowed(input.faceRole)) return;
   const groove = Math.min(
     RAISED_PANEL_GROOVE_IN * INCH,
     input.outerWidth * 0.12,
@@ -266,6 +280,7 @@ export function attachSlopedRaisedPanel(
     panelConstruction: "raised",
     drawerFrontType: input.drawerFrontType ?? null,
     grainPiece: "panel",
+    faceRole: input.faceRole ?? "door",
   };
   parent.add(centerPanel);
 }

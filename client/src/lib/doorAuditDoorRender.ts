@@ -351,6 +351,8 @@ export function buildAuditDoor(
       insideEdgeProfile: profile.insideEdgeProfile ?? "bevel",
       drawerFrontType: null,
       centerMaterial: faceMaterial(color, faceTexture, profile.finishSheen, "panel", profile.grainDirection),
+      // The audit renders one door front, never a cabinet side or end.
+      faceRole: "door",
     });
     if (/ogee|bead/i.test(profile.insideEdgeProfile ?? "")) {
       const sticking = new THREE.Mesh(
