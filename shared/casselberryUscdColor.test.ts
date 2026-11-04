@@ -1,7 +1,7 @@
 /**
  * U.S. Cabinet Depot "Casselberry" (Warm Ivory), added by
  * docs/sql/0246_add_casselberry_uscd.tidb.sql. The fixture is the row that
- * script inserts; its id and styleCode are not known until Tom runs it.
+ * script inserts; its id is not known until Tom runs it.
  *
  * Until Tom accepts a door render, the door is its own saved color #EEEADF.
  * The measured swatch table, WalzCraft sheets, paint chips, and the name
@@ -26,6 +26,7 @@ const GUESSED_SOURCES = ["swatch-table", "walzcraft", "estimator", "pre-209"] as
 describe("USCD Casselberry Warm Ivory with no accepted render", () => {
   it("is the fixture the SQL inserts", () => {
     expect(CASSELBERRY.distributorId).toBe(USCD);
+    expect(CASSELBERRY.styleCode).toBe("Casselberry");
     expect(CASSELBERRY.approvedVersionId).toBeNull();
     expect(CASSELBERRY.renderHex).toBeNull();
     expect(CASSELBERRY.color).toBe("#EEEADF");

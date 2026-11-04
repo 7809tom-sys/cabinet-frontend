@@ -25,8 +25,10 @@
 
 -- 1. Read-only: every USCD Casselberry row that already exists.
 --    Expect exactly two rows: 330026 CW Casselberry Antique White and
---    330027 CS Casselberry Saddle. If a third row named "Casselberry", or any
---    USCD row with color #EEEADF, is listed, it is already added: do NOT run block 2.
+--    330027 CS Casselberry Saddle. If any row with styleCode 'Casselberry', a
+--    third row named "Casselberry", or any USCD row with color #EEEADF is listed,
+--    it is already added: do NOT run block 2. (The admin create flow also rejects
+--    a second row with the same distributorId + styleCode.)
 SELECT
   uscd_style.id AS styleId,
   uscd_style.styleCode,
@@ -40,21 +42,18 @@ SELECT
 FROM cabinet_dealz.door_styles AS uscd_style
 WHERE uscd_style.distributorId = 210002
   AND (
-    uscd_style.ourName LIKE '%Casselberry%'
+    uscd_style.styleCode = 'Casselberry'
+    OR uscd_style.ourName LIKE '%Casselberry%'
     OR uscd_style.doorStyle = 'Casselberry'
     OR UPPER(uscd_style.color) = '#EEEADF'
   )
 ORDER BY uscd_style.id;
 
 -- 2. Insert the one new row.
---    TODO(Tom): styleCode. USCD's own code for this door was not found. The
---    Capital Specification Book V8 notes (cabinet-backend
---    docs/capital-door-style-source-facts.md) list only CW and CS for
---    Casselberry, and no catalog file in either repo has a code for a Warm Ivory
---    Casselberry. Replace NULL on the styleCode line with USCD's code before
---    running. It must not be CW or CS (those are 330026 / 330027).
---    Until you replace it, this block fails with error 1048 "Column 'styleCode'
---    cannot be null" and writes nothing. That failure is deliberate.
+--    styleCode is 'Casselberry', the full word, as Tom gave it from the source
+--    data. It is 11 characters; the column is varchar(32) NOT NULL (cabinet-backend
+--    drizzle/0001_equal_stick.sql and drizzle/schema.ts), so it fits unchanged.
+--    It does not collide with CW or CS (330026 / 330027).
 --
 --    distributorName is NOT NULL. USCD's own name for this door is unknown, so
 --    it is 'Casselberry', the same default the admin Create dialog uses
@@ -92,7 +91,7 @@ INSERT INTO cabinet_dealz.door_styles (
   isActive
 ) VALUES (
   210002,
-  NULL, -- TODO(Tom): USCD style code goes here, quoted, for example 'XX'.
+  'Casselberry',
   'Casselberry',
   NULL,
   'Casselberry',
@@ -120,7 +119,7 @@ INSERT INTO cabinet_dealz.door_styles (
 );
 
 -- 3. Read-only check: the new row exists once, under USCD, with the read's values.
---    Expect exactly one row: ourName Casselberry, the styleCode you entered,
+--    Expect exactly one row: styleCode Casselberry, ourName Casselberry,
 --    doorStyle Raised Panel, finish Painted, color #EEEADF, insideEdgeProfile bevel,
 --    isActive 1, isFeatured 0, and NULL for woodSpecies, finishSheen, renderHex,
 --    grain hexes, and rail/stile widths.
@@ -146,5 +145,6 @@ SELECT
   new_style.isFeatured
 FROM cabinet_dealz.door_styles AS new_style
 WHERE new_style.distributorId = 210002
+  AND new_style.styleCode = 'Casselberry'
   AND new_style.ourName = 'Casselberry'
 ORDER BY new_style.id;
