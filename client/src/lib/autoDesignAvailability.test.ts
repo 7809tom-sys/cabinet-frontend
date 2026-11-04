@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  AUTO_DESIGN_EMPTY_PLAN_NOTE,
   AUTO_DESIGN_REFRIGERATOR_NOTE,
   autoDesignControlState,
   autoDesignShouldTurnOffForRefrigerator,
@@ -42,6 +43,7 @@ describe("Auto-Design refrigerator gate", () => {
     expect(blocked.enabled).toBe(false);
     expect(blocked.shown).toBe(true);
     expect(blocked.refrigeratorNote).toBe(AUTO_DESIGN_REFRIGERATOR_NOTE);
+    expect(blocked.blockedNote).toBe(AUTO_DESIGN_REFRIGERATOR_NOTE);
 
     const cleared = autoDesignControlState({
       audienceAllowed: true,
@@ -52,6 +54,9 @@ describe("Auto-Design refrigerator gate", () => {
     expect(cleared.enabled).toBe(false);
     expect(cleared.refrigeratorNote).toBeNull();
     expect(cleared.title).toContain("empty Designer");
+    // The visible reason is the shared empty-plan sentence, so no surface has to
+    // invent its own copy of why the control is grayed out.
+    expect(cleared.blockedNote).toBe(AUTO_DESIGN_EMPTY_PLAN_NOTE);
 
     const ready = autoDesignControlState({
       audienceAllowed: true,
@@ -60,6 +65,7 @@ describe("Auto-Design refrigerator gate", () => {
       hasRefrigerator: false,
     });
     expect(ready.enabled).toBe(true);
+    expect(ready.blockedNote).toBeNull();
   });
 
   it("turns an open session off for a user refrigerator and leaves the Auto-Design anchor refrigerator in place", () => {
