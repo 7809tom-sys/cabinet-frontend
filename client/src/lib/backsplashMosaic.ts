@@ -1,3 +1,4 @@
+import { mosaicCatalogFor, mosaicCatalogForKey, mosaicCatalogSheetSpec } from "./mosaicCatalog";
 import {
   cabinetWall, wallLength, wallRunOffset, wallRunSpan, elevationBox,
   type PlacedCabinet, type RoomData, type WallOpening,
@@ -153,6 +154,15 @@ export function genericMosaicSheetSpec(name: string, widthIn: number, heightIn: 
 export function mosaicSheetSpecFor(input: {
   key?: string | null; name?: string | null; widthIn?: number | null; heightIn?: number | null; patternKind?: string | null;
 }): MosaicInterlockSpec | null {
+  // A verified catalog mosaic uses its own distributor-published sheet size, grout width and
+  // grout colour (lib/mosaicCatalog.ts). This wins over any name-based generic estimate, and it
+  // is the only path that carries the product's real values.
+  const catalogEntry = mosaicCatalogForKey(input.key) ?? mosaicCatalogFor({
+    sku: input.name,
+    pelicanCode: input.name,
+    name: input.name,
+  });
+  if (catalogEntry) return mosaicCatalogSheetSpec(catalogEntry);
   const curated = mosaicInterlockSpecForKey(input.key) ?? mosaicInterlockSpecForName(input.name);
   if (curated) return curated;
   if (!isMosaicPatternKind(input.patternKind)) return null;

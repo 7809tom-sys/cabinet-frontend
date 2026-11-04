@@ -8,6 +8,7 @@ import {
   MOSAIC_SHEET_SPECS, genericMosaicSheetSpec, mosaicSheetSpecFor,
 } from "./backsplashMosaic";
 import { parseBacksplashSheetInches } from "./backsplashProductMaterial";
+import { MOSAIC_CATALOG, mosaicCatalogFor, mosaicCatalogSheetSpec } from "./mosaicCatalog";
 
 const room = DEFAULT_ROOM;
 
@@ -227,8 +228,11 @@ describe("hard rule: no catalog mosaic is left without a spec", () => {
   // Every curated mosaic source in InteractiveRoom3D.tsx (any entry whose pattern kind is a mosaic) must have a row.
   const curatedMosaicKeys = [...viewerSource.matchAll(/key: "([^"]+)",[\s\S]{0,700}?backsplashPatternKind: "(?:interlocking|subway)-mosaic"/g)].map((m) => m[1]);
 
-  it("finds the curated mosaics in the 3D source (guards against this test matching nothing)", () => {
-    expect(curatedMosaicKeys.length).toBeGreaterThanOrEqual(PRODUCTS.length);
+  it("covers a product for every curated mosaic name (guards against this test matching nothing)", () => {
+    // The 3D source no longer hard-codes one branch per mosaic: lib/mosaicCatalog.ts holds every
+    // verified product. Each historical curated name must still resolve to a real catalog entry.
+    for (const name of PRODUCTS) expect(mosaicCatalogFor({ name }), name).not.toBeNull();
+    expect(MOSAIC_CATALOG.length).toBeGreaterThanOrEqual(PRODUCTS.length);
   });
 
   it("every curated mosaic source key has a spec with a repeat spacing, overlap, grout width and grout color", () => {
@@ -243,15 +247,33 @@ describe("hard rule: no catalog mosaic is left without a spec", () => {
     }
   });
 
-  it("every spec belongs to a curated source (no orphan rows)", () => {
-    for (const item of MOSAIC_SHEET_SPECS) expect(curatedMosaicKeys, item.key).toContain(item.key);
+  it("every curated spec is either still used by the 3D source or superseded by a verified catalog product", () => {
+    // The catalog is authoritative now (lib/mosaicCatalog.ts): each verified product renders from
+    // its own record, so a curated row may legitimately stop being referenced by the 3D source.
+    for (const item of MOSAIC_SHEET_SPECS) {
+      // A curated row names the same product the catalog sells (e.g. "desert clay").
+      const catalogEntry = mosaicCatalogFor({ name: item.name });
+      if (catalogEntry) {
+        expect(mosaicCatalogSheetSpec(catalogEntry).key, item.key).toBe(`catalog-mosaic:${catalogEntry.slug}`);
+        continue;
+      }
+      expect(curatedMosaicKeys, `${item.key} is neither a catalog product nor a 3D source`).toContain(item.key);
+    }
   });
 
-  it("any other catalog mosaic (Moonstone Hex, penny, picket, linear...) gets a generic seamless spec; only field tile gets none", () => {
-    for (const name of ["Moonstone Hex Mosaic", "Penny Round Mosaic", "Picket Mosaic", "Linear Stack Mosaic", "Herringbone Mosaic"]) {
+  it("a verified catalog mosaic resolves to its own record, and any other mosaic gets a generic seamless spec", () => {
+    // Moonstone Hex is a real catalog product, so it must use its own size and grout.
+    const verified = mosaicSheetSpecFor({ name: "Moonstone Hex", widthIn: 11.81, heightIn: 11.81, patternKind: "interlocking-mosaic" });
+    const moonstone = MOSAIC_CATALOG.find((entry) => entry.sku === "Moonstone Hex")!;
+    expect(verified?.key).toBe(`catalog-mosaic:${moonstone.slug}`);
+    expect(verified?.generic).toBe(false);
+    expect(mosaicPitchIn(verified!)).toEqual({ x: moonstone.moduleIn[0], y: moonstone.moduleIn[1] });
+    // A mosaic the distributor does not sell still gets the seamless generic fallback, never null.
+    for (const name of ["Penny Round Mosaic", "Picket Mosaic", "Linear Stack Mosaic", "Herringbone Mosaic"]) {
       const sheet = parseBacksplashSheetInches({ name, size: "11.81 x 11.81", category: "Tile & Mosaic", subCategory: "Mosaic" });
       const item = mosaicSheetSpecFor({ name, widthIn: sheet.widthIn, heightIn: sheet.heightIn, patternKind: sheet.patternKind });
       expect(item, name).not.toBeNull();
+      if (item!.key.startsWith("catalog-mosaic:")) continue;
       expect(item!.generic).toBe(true);
       expect(item!.measured).toBe(false);
       expect(mosaicPitchIn(item!)).toEqual({ x: 11.81, y: 11.81 });

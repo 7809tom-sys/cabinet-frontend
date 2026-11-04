@@ -16,7 +16,11 @@ describe("Designer mosaic floor pattern", () => {
   });
 
   it("uses the mosaic picture for a floor mosaic and keeps plank photos off the floor", () => {
-    expect(source).toContain("if (isMosaicFloorProduct(selected)) return selectedBacksplashTextureUrl(selected).url;");
+    // A mosaic marked "use as floor" renders from its verified catalog texture (lib/mosaicCatalog.ts),
+    // falling back to its own backsplash picture when it is not a catalog product.
+    expect(source).toContain("if (isMosaicFloorProduct(selected)) {");
+    expect(source).toContain("if (mosaicFloorEntry) return selected?.materialImageUrl?.trim() || mosaicFloorEntry.texture;");
+    expect(source).toContain("return selectedBacksplashTextureUrl(selected).url;");
     expect(source).toContain("flooringSceneTextureUrl(selected, approvedFlooringSwatchByProductId)");
     expect(source).not.toContain("activeFlooringSurface?.materialImageUrl ?? activeFlooringSurface?.imageUrl");
   });

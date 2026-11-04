@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { threeDProductMaterialSource } from "@/components/design/InteractiveRoom3D";
+import { MOSAIC_CATALOG, mosaicCatalogFor, nonMosaicTileRowFor } from "./mosaicCatalog";
 import { buildPhotorealPrompt } from "@shared/photorealPrompt";
 import {
   BACKSPLASH_ROOM_SCENE_FIDELITY,
@@ -22,7 +23,7 @@ const moonstone = {
 };
 
 describe("backsplash selection to material", () => {
-  it("maps a catalog mosaic with only a product picture onto that picture at sheet size", () => {
+  it("maps a catalog mosaic with only a product picture onto its verified catalog record", () => {
     const mapped = mapBacksplashSelectionToMaterial(moonstone);
     expect(mapped).toEqual({
       productId: 364,
@@ -43,19 +44,21 @@ describe("backsplash selection to material", () => {
       subCategory: moonstone.subCategory,
       size: moonstone.size,
     });
+    // Moonstone Hex is a verified catalog product: its own baked texture and the module that
+    // texture covers, not the catalog card photo stretched at an assumed 12 in.
     expect(source).toMatchObject({
-      url: "/manus-storage/pelican/364_moonstone.png",
-      key: "catalog-backsplash:364",
-      curated: false,
+      url: "/textures/mosaics/moonstone-hex.webp",
+      key: "catalog-mosaic:moonstone-hex",
+      curated: true,
       proceduralFallback: false,
-      textureUnavailable: false,
-      physicalWidthIn: 11.81,
-      physicalDepthIn: 11.81,
       backsplashPatternKind: "interlocking-mosaic",
-      backsplashModuleIn: 11.81,
-      backsplashModuleHeightIn: 11.81,
       sourceProductName: "Moonstone Hex",
     });
+    const moonstoneEntry = MOSAIC_CATALOG.find((entry) => entry.sku === "Moonstone Hex")!;
+    expect(source?.physicalWidthIn).toBe(moonstoneEntry.moduleIn[0]);
+    expect(source?.physicalDepthIn).toBe(moonstoneEntry.moduleIn[1]);
+    expect(source?.backsplashModuleIn).toBe(moonstoneEntry.moduleIn[0]);
+    expect(source?.backsplashModuleHeightIn).toBe(moonstoneEntry.moduleIn[1]);
     expect(source?.key).not.toBe("representative-backsplash");
   });
 
@@ -72,18 +75,32 @@ describe("backsplash selection to material", () => {
     expect(mapped.heightIn).toBe(11.81);
   });
 
-  it("keeps a known curated mosaic on its measured map even when a card photo is also present", () => {
-    const source = threeDProductMaterialSource("backsplash", "Desert Clay", "/manus-storage/pelican/183_55da5bcf.png", {
+  it("ignores a catalog card photo and uses the product's verified texture and module", () => {
+    const source = threeDProductMaterialSource("backsplash", "Desert Clay", "/manus-storage/pelican/183_55da5bcf.png");
+    expect(source).toMatchObject({
+      url: "/textures/mosaics/desert-clay.webp",
+      key: "catalog-mosaic:desert-clay",
+      curated: true,
+      proceduralFallback: false,
+    });
+    // The card photo is a staged room scene; it must never become the wall texture.
+    expect(source?.url).not.toContain("183_55da5bcf");
+  });
+
+  it("still lets a vendor-approved Designer swatch win over the baked texture, at sheet size", () => {
+    const source = threeDProductMaterialSource("backsplash", "Desert Clay", null, {
       productId: 183,
       category: "Tile & Mosaic",
       subCategory: "Mosaic",
       size: "11.81 x 11.81 x 8",
+      materialImageUrl: "/manus-storage/pelican/products/183/approved-swatch.webp",
     });
     expect(source).toMatchObject({
-      url: "/manus-storage/desert_clay_11_81_interlocking_mosaic_0aa381c4.webp",
+      url: "/manus-storage/pelican/products/183/approved-swatch.webp",
+      key: "catalog-mosaic:desert-clay",
       curated: true,
-      proceduralFallback: false,
-      backsplashModuleIn: 11.81,
+      physicalWidthIn: 11.81,
+      physicalDepthIn: 11.81,
     });
   });
 
@@ -102,7 +119,10 @@ describe("backsplash selection to material", () => {
     expect(mapped.imageSource).toBe("missing");
     expect(mapped.widthIn).toBe(12);
     expect(mapped.heightIn).toBe(12);
-    expect(mapped.patternKind).toBe("field-tile");
+    // A vanity top sits in the Tile & Mosaic category but is not a mosaic sheet.
+    expect(mapped.patternKind).toBe("interlocking-mosaic");
+    expect(nonMosaicTileRowFor({ name: mapped.name })?.subCategory).toBe("Tile");
+    expect(mosaicCatalogFor({ name: mapped.name, pelicanCode: mapped.sku })).toBeNull();
     expect(mapped.warning).toBe(backsplashTextureWarningMessage("PL-O2519WBS", "missing"));
     expect(mapped.proceduralFallback).toBe(false);
 
