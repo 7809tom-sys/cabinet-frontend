@@ -9572,7 +9572,15 @@ describe("Forest Rust photo face tone mapping", () => {
       expect(forest.shadows.length).toBeGreaterThan(0);
       expect(forest.shadows.every((material) => material.toneMapped === true && material.color.getHexString() === "1c1814" && material.map == null)).toBe(true);
       expect(forest.skins.length).toBeGreaterThan(0);
-      expect(forest.skins.every((material) => material.toneMapped === true && material.map == null && material.color.getHexString() === "73482a")).toBe(true);
+      // Box and side surfaces are the SAME visible surface as the fronts, so they
+      // take the same door image and the same light handling. Before the one-color
+      // change they kept the raw catalog hex with the scene tone map on, which is
+      // exactly the "same cabinet renders two shades" report. The contract now: the
+      // same map and tone-mapping state as the photo faces.
+      expect(forest.skins.every((material) => material.map != null && material.toneMapped === false)).toBe(true);
+      expect(new Set(forest.skins.map((material) => material.color.getHexString()))).toEqual(
+        new Set(forest.photoFaces.map((material) => material.color.getHexString())),
+      );
 
       const byCode = renderCabinet({ ...shaker, styleCode: "RH", distributorId: 210001 }, finish, null);
       expect(byCode.photoFaces.every((material) => material.toneMapped === false && material.color.getHexString() === expected)).toBe(true);
@@ -9580,7 +9588,12 @@ describe("Forest Rust photo face tone mapping", () => {
       const white = renderCabinet({ ...shaker, styleId: 330002, styleCode: "WS", distributorId: 210001 }, "#f4f1ea");
       expect(white.photoFaces.every((material) => material.toneMapped === true && material.color.getHexString() === "ffffff")).toBe(true);
       expect(white.shadows.every((material) => material.toneMapped === true && material.color.getHexString() === "1c1814")).toBe(true);
-      expect(white.skins.every((material) => material.map == null && material.toneMapped === true)).toBe(true);
+      // Same contract for a non-Forest style: box and sides carry the same door
+      // image the fronts do, so a cabinet never renders in two shades.
+      expect(white.skins.every((material) => material.map != null)).toBe(true);
+      expect(new Set(white.skins.map((material) => material.color.getHexString()))).toEqual(
+        new Set(white.photoFaces.map((material) => material.color.getHexString())),
+      );
     } finally {
       load.mockRestore();
     }

@@ -13,9 +13,18 @@ describe("bestCandidateDoor", () => {
     expect(r.door.distributor).toBe("Kitchen Crest");
     expect(WALZCRAFT_DISTRIBUTOR_DOORS).toContain(r.door);
   });
-  it("still returns a sheet row when the style has no recognised distributor", () => {
-    const r = bestCandidateDoor({ ourName: "Torino TWP" })!;
-    expect(r.exact).toBe(false);
-    expect(WALZCRAFT_DISTRIBUTOR_DOORS).toContain(r.door);
+  it("returns nothing when the style has no recognised distributor", () => {
+    // Tom's rule: don't put something in if you don't know. With no distributor
+    // there is no same-distributor door to compare against, so the card shows
+    // "No WalzCraft match yet" and an administrator picks by hand. It must never
+    // inherit another line's brochure.
+    expect(bestCandidateDoor({ ourName: "Torino TWP" })).toBeNull();
+  });
+
+  it("still returns a sheet row for a style with a recognised distributor", () => {
+    const r = bestCandidateDoor({ ourName: "Shaker White", distributorName: "Faircrest", supplierBrandName: "Faircrest" });
+    expect(r?.exact).toBe(false);
+    expect(WALZCRAFT_DISTRIBUTOR_DOORS).toContain(r!.door);
+    expect(r!.door.distributor).toBe("Faircrest");
   });
 });

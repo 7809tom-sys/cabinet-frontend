@@ -4,6 +4,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc";
 import { normalizeDoorAuditList } from "@/lib/doorRenderingAudit";
+import { DoorStyleEditButton } from "@/components/design/DoorStyleEditButton";
+import { doorStyleEditUrl } from "@/lib/doorStyleEditLink";
 import {
   approvalSummary,
   approveDoorInput,
@@ -32,12 +34,25 @@ export function ApproveDoorButton({
   doorImageUrl,
   drawerImageUrl,
   compact = false,
+  styleName,
+  cabinetUid,
+  cabinetCode,
+  returnTo,
 }: {
   styleId: number | null;
+  /**
+   * "designer" renders the single Edit action (the old approve chip + button read
+   * as two approve buttons); "featured" keeps the real approval control inside the
+   * door style editor, which is where an approval belongs.
+   */
   place: "designer" | "featured";
   doorImageUrl?: string | null;
   drawerImageUrl?: string | null;
   compact?: boolean;
+  styleName?: string | null;
+  cabinetUid?: string | null;
+  cabinetCode?: string | null;
+  returnTo?: string | null;
 }) {
   const api = trpc as unknown as Raw;
   const utils = api.useUtils();
@@ -83,12 +98,36 @@ export function ApproveDoorButton({
 
   return (
     <div className={compact ? "inline-flex items-center gap-2" : "flex items-center gap-2"} data-testid={`approve-door-${place}`}>
-      <Badge variant={current ? "default" : "outline"} className="text-[11px]" data-testid="approve-door-status">
-        {approvalSummary(current)}
-      </Badge>
-      <Button type="button" size="sm" variant="outline" disabled={busy || approve.isPending} onClick={() => void run()}>
-        {busy ? "Approving..." : current ? "Approve again" : "Approve this door"}
-      </Button>
+      {/*
+        In the Designer this is NOT an approve control any more. A status chip plus
+        an "Approve this door" button read as two approve buttons sitting next to
+        each other, and approving from the 3D view was the wrong place to do it:
+        the door's color and style live in the door style editor. The 3D control is
+        one Edit action that opens that style and comes back.
+      */}
+      {place === "designer" ? (
+        <DoorStyleEditButton
+          isAdmin
+          styleId={styleId}
+          styleName={styleName}
+          cabinetUid={cabinetUid}
+          cabinetCode={cabinetCode}
+          returnTo={returnTo}
+          hrefFor={doorStyleEditUrl}
+          variant="button"
+          label="Edit door"
+          testId="designer-edit-door-style"
+        />
+      ) : (
+        <>
+          <Badge variant={current ? "default" : "outline"} className="text-[11px]" data-testid="approve-door-status">
+            {approvalSummary(current)}
+          </Badge>
+          <Button type="button" size="sm" variant="outline" disabled={busy || approve.isPending} onClick={() => void run()}>
+            {busy ? "Approving..." : current ? "Approve again" : "Approve this door"}
+          </Button>
+        </>
+      )}
     </div>
   );
 }

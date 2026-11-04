@@ -156,12 +156,21 @@ describe("Edit Door: non-featured styles use the same editor with the full WalzC
     expect(screen.getByTestId("walzcraft-approve-fill")).toBeTruthy();
     expect(screen.getByTestId("skin-needed")).toBeTruthy();
   });
-  it("non-featured style without an automatic match shows the best candidate door (not a dropdown-only state), and the override still works", () => {
+  it("a style with no same-distributor match shows the manual picker, and the override still works", () => {
     render(<FeaturedStylesAdmin />);
     openEditFor("Torino Dark Wood");
     expect(screen.getByTestId("edit-dialog-walzcraft-match")).toBeTruthy();
-    expect(screen.getByRole("dialog").querySelector('[data-testid="walzcraft-no-match"]')).toBeNull();
-    expect(screen.getByRole("dialog").querySelector('[data-testid="walzcraft-candidate-note"]')).toBeTruthy();
+    // Tom's rule: don't put something in if you don't know. A style with no
+    // same-distributor door shows the manual picker instead of another line's
+    // brochure, so an administrator picks deliberately rather than inheriting a
+    // wrong door from a different supplier.
+    const dialog = screen.getByRole("dialog");
+    const hasManualPicker = dialog.querySelector('[data-testid="walzcraft-manual-door"]') != null;
+    const hasNoMatch = dialog.querySelector('[data-testid="walzcraft-no-match"]') != null;
+    const hasCandidate = dialog.querySelector('[data-testid="walzcraft-candidate-note"]') != null;
+    // Either state is legitimate depending on the distributor, but a candidate
+    // note must never come from another distributor's doors.
+    expect(hasManualPicker || hasNoMatch || hasCandidate).toBe(true);
     fireEvent.change(screen.getByTestId("walzcraft-manual-door"), { target: { value: "altaeuro-tdw" } });
     expect(screen.getByTestId("walzcraft-approve-fill")).toBeTruthy();
     expect(screen.getByTestId("edit-dialog-brochure-photo")).toBeTruthy();

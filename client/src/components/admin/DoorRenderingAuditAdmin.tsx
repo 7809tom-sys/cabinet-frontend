@@ -393,6 +393,13 @@ export function DoorRenderingAuditView({
                         doorSampleImageUrl={style.samplePhotoUrl}
                         drawerSampleImageUrl={style.drawerSampleImageUrl}
                         approvedByName={style.approvedReference?.approvedByName}
+                        // A wrong door here is exactly the case that needs a way
+                        // out: Edit opens this style's editor on its color and style.
+                        isAdmin
+                        styleId={style.styleId}
+                        styleCode={style.code}
+                        styleName={style.name}
+                        returnTo={typeof window !== "undefined" ? `${window.location.pathname}${window.location.search}` : null}
                       />
                     </div>
                   </div>

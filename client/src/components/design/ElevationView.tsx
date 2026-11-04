@@ -723,7 +723,7 @@ export function ElevationView({
 	              placementType={p.placement}
 	              description={p.description}
 	              numberOfDoors={displayCounts.doors}
-	              numberOfDrawers={displayCounts.drawers}
+	              numberOfDrawers={p.numberOfDrawers ?? null}
               facePattern={p.facePattern ?? null}
 	              shelfCount={visibleGlassShelfCount}
 	              glassDoor={isGlassDoor}
@@ -3206,7 +3206,14 @@ export function DoorFront({ kind, edge, face, doors, drawers, isWall, doorSample
   // + 2 drawers. The old code hardcoded ONE false front and ignored the count,
   // which is why a configured top drawer never appeared.
   if (cabinetType === "sink-base") {
-    const drawerRowCount = Math.max(0, drawers ?? 0);
+    // The configured drawer count is authoritative. When the config authored no
+    // count at all (no `numberOfDrawers`, no saved `drawerLayout`), keep the
+    // historic single false tilt-out front so an unconfigured sink base looks
+    // exactly as it always did.
+    const authoredDrawerCount = numberOfDrawers != null || drawerLayout != null;
+    const drawerRowCount = authoredDrawerCount
+      ? Math.max(0, drawers ?? numberOfDrawers ?? 0)
+      : 1;
     const falseFrontPct = 20;
     const cols = Math.max(1, doorCount || 2);
     const colW = 100 / cols;
