@@ -32,9 +32,13 @@ import type { AutoRoomScene } from "@/lib/autoRoomScene";
 import { MediaPicker } from "./MediaPicker";
 import { WalzCraftMatchForStyle, WalzCraftManualDoorPicker, resolveWalzDoor, readManualDoorId, writeManualDoorId } from "@/components/walzcraft/WalzCraftMatchCard";
 import { DoorEditorWalzAudit } from "@/components/admin/DoorEditorWalzAudit";
+import { AiDoorDescriptionCompare } from "@/components/admin/AiDoorDescriptionCompare";
+import { DoorColorDescriptionField } from "@/components/admin/DoorColorDescriptionField";
+import { officialRecordAsStylePatch, type AiDoorOfficialRecord } from "@shared/aiDoorDescription";
 import type { MatchSavePatch } from "@shared/wizardDoorMatch";
 import { WoodGrainColorDisplay, DoorSkinField } from "@/components/walzcraft/ColorFinishExtras";
 import { readDoorSkin, saveDoorSkin, doorSkinError, type DoorSkin } from "@shared/doorSkin";
+import { readDoorColorDescription, saveDoorColorDescription } from "@shared/aiDoorDescriptionStore";
 import { approvedTilesFor } from "@shared/woodGrainTiles";
 import { WoodGrainTileTool } from "@/components/walzcraft/WoodGrainTileTool";
 import { doorForStyle, colorLabel } from "@shared/walzcraftDistributorMatches";
@@ -437,6 +441,11 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
   const [finishSheen, setFinishSheen] = useState<NonNullable<AdminStyle["finishSheen"]>>(style.finishSheen ?? "satin");
   const [profileNotes, setProfileNotes] = useState(style.profileNotes ?? "");
   const [profileDescription, setProfileDescription] = useState((style as AdminStyle & { profileDescription?: string | null }).profileDescription ?? "");
+  /**
+   * Plain-text color description. Browser-draft storage today (like doorSkin and
+   * glazing); the SQL file under docs/sql holds the column that will replace it.
+   */
+  const [colorDescription, setColorDescription] = useState<string>(() => readDoorColorDescription(style.id));
   const [sourceSpecification, setSourceSpecification] = useState(style.sourceSpecification ?? "");
   const [cornerSwatchImageUrl, setCornerSwatchImageUrl] = useState(style.cornerSwatchImageUrl ?? "");
   const [styleVerified, setStyleVerified] = useState(style.styleVerified !== false && style.styleVerified !== 0);
@@ -515,6 +524,7 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
     setFinishSheen(s.finishSheen ?? "satin");
     setProfileNotes(s.profileNotes ?? "");
     setProfileDescription((s as AdminStyle & { profileDescription?: string | null }).profileDescription ?? "");
+    setColorDescription(readDoorColorDescription(s.id));
     setSourceSpecification(s.sourceSpecification ?? "");
     setCornerSwatchImageUrl(s.cornerSwatchImageUrl ?? "");
     setStyleVerified(s.styleVerified !== false && s.styleVerified !== 0);
@@ -524,6 +534,25 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
   const update = trpc.doorStyles.adminUpdateDoorStyle.useMutation({
     onError: (e) => toast.error(e.message),
   });
+
+  /**
+   * Choosing an AI description as official writes the winner's own values into the
+   * door style. It fills only what the description stated, so an unstated dimension
+   * keeps the library default instead of being invented here. Nothing is saved
+   * until the operator presses Save, like every other field in this dialog.
+   */
+  const handleChooseOfficialDescription = (record: AiDoorOfficialRecord) => {
+    const patch = officialRecordAsStylePatch(record);
+    setProfileDescription(patch.profileDescription);
+    if (patch.railWidth != null) setRailWidth(String(patch.railWidth));
+    if (patch.stileWidth != null) setStileWidth(String(patch.stileWidth));
+    if (patch.bevelWidth != null) setBevelWidth(String(patch.bevelWidth));
+    if (patch.bevelDepth != null) setBevelDepth(String(patch.bevelDepth));
+    if (patch.panelConstruction) setPanelConstruction(patch.panelConstruction);
+    if (patch.insideEdgeProfile) setInsideEdgeProfile(patch.insideEdgeProfile);
+    if (patch.finishSheen) setFinishSheen(patch.finishSheen);
+    if (patch.colorDescription) setColorDescription(patch.colorDescription);
+  };
   const applySiblingSpecs = trpc.doorStyles.adminUpdateDoorStyle.useMutation();
   const mediaUpload = useMediaLibraryUpload();
   /** Existing media library endpoint. The wizard uses it for the profile image; no new API. */
@@ -703,6 +732,7 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
       }
       saveGlazing(style.id, glazing);
       saveDoorSkin(style.id, doorSkin);
+      saveDoorColorDescription(style.id, colorDescription);
       if (bakeAfterSave) {
         // Reuse the existing Designer "Final preview" room-scene flow (InteractiveRoom3D openPhotoRenderDialog);
         // it keeps its own confirmations and never starts the Gemini path automatically.
@@ -1162,6 +1192,28 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
             />
             <p className="text-xs text-muted-foreground">Shown in the style detail popup and the Door Styles education guide.</p>
           </div>
+
+          {/* AI door-description comparison (door editor only; nothing runs until started) */}
+          <AiDoorDescriptionCompare
+            style={{
+              id: style.id,
+              doorStyle,
+              color,
+              renderHex,
+              finish,
+              woodSpecies,
+              panelConstruction,
+            }}
+            sampleUrl={doorSampleImageUrl || style.doorSampleImageUrl || null}
+            onChooseOfficial={handleChooseOfficialDescription}
+          />
+
+          {/* Plain-text color description: sheen, undertone, and the finish beyond a hex. */}
+          <DoorColorDescriptionField
+            styleId={style.id}
+            onChange={setColorDescription}
+            onSave={setColorDescription}
+          />
 
           {/* Finish + Wood species */}
           <div className="grid grid-cols-2 gap-3">
