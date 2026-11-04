@@ -15,7 +15,8 @@
  */
 import { CABINET_NAME_COLORS, matchCabinetColorName } from "./cabinetColorNames";
 import { deltaE2000Hex } from "./ciede2000";
-import { resolveDoorColor } from "./doorColorResolve";
+import { resolveDoorColor, type DoorColorInput } from "./doorColorResolve";
+import { doorProfileConstructionText, doorProfileIsSlabOrGlass, doorProfileNameText, type DoorProfileIdentityInput } from "./doorProfileIdentity";
 import { DLC_FR26_CATALOG, type DlcFr26CatalogEntry } from "./dlcFr26Catalog.generated";
 import { DLC_FRAME_DETAIL } from "./dlcFr26Textures";
 import { findDlcFinishForStyle, type DlcStyleInput } from "./dlcFr26Mapping";
@@ -60,14 +61,10 @@ export const STANDARD_DL_SHAKER_SLUGS = ["white-shaker", "grey-shaker", "versa-s
 export type DlShakerSlug = (typeof STANDARD_DL_SHAKER_SLUGS)[number];
 export type ShakerFinishFamily = "painted" | "wood";
 
-export type ShakerStyleInput = {
-  id?: number | null;
-  distributorId?: number | null;
-  styleCode?: string | null;
-  ourName?: string | null;
-  aliasName?: string | null;
-  name?: string | null;
-  doorStyle?: string | null;
+export type ShakerStyleInput = DoorColorInput & {
+  doorPanelType?: string | null;
+  profileDescription?: string | null;
+  profileNotes?: string | null;
   color?: string | null;
   renderHex?: string | null;
   finish?: string | null;
@@ -137,12 +134,38 @@ export function distributorLabel(id: number | null | undefined): string {
   return DISTRIBUTOR_NAMES[id] ?? `Distributor ${id}`;
 }
 
-export function shakerDoorFamily(doorStyle: string | null | undefined): "shaker" | "slim-shaker" | "double-shaker" | "other" {
-  const text = (doorStyle ?? "").toLowerCase();
-  if (!text.includes("shaker")) return "other";
-  if (text.includes("slim")) return "slim-shaker";
-  if (text.includes("double")) return "double-shaker";
-  return "shaker";
+/**
+ * The shaker family of a door style, case-insensitively.
+ *
+ * The construction fields (`doorStyle`, `doorPanelType`, profile notes) decide
+ * first. Only when they never mention shaker does the style's own name decide, so
+ * "Shaker Honey" with a blank `doorStyle` is a shaker, "SHAKER" and "shaker" are
+ * the same style, and a name never overrules an explicit build.
+ *
+ * A style whose construction says slab or glass is never a shaker. Pass the whole
+ * record where you have it; the bare `doorStyle` string still works for callers
+ * that only hold that field.
+ */
+export function shakerDoorFamily(
+  style: string | ShakerStyleInput | null | undefined,
+): "shaker" | "slim-shaker" | "double-shaker" | "other" {
+  const input: DoorProfileIdentityInput | null | undefined = typeof style === "string" || style == null
+    ? { doorStyle: (style as string | null | undefined) ?? null }
+    : style;
+  const construction = doorProfileConstructionText(input);
+  // The words that classify a shaker build, in the order they matter.
+  const classify = (text: string): "shaker" | "slim-shaker" | "double-shaker" | "other" | null => {
+    if (!/shaker/.test(text)) return null;
+    if (/\b(?:slim|narrow|skinny|thin[\s-]?frame)\b/.test(text)) return "slim-shaker";
+    if (/\bdouble\b/.test(text)) return "double-shaker";
+    return "shaker";
+  };
+  const byConstruction = classify(construction);
+  if (byConstruction) return byConstruction;
+  // The construction fields spoke and did not say shaker: they win.
+  if (construction) return "other";
+  if (doorProfileIsSlabOrGlass(input)) return "other";
+  return classify(doorProfileNameText(input)) ?? "other";
 }
 
 export function isStandardShakerRail(inches: number | null | undefined): boolean {
@@ -160,7 +183,7 @@ function parsedInches(value: string | number | null | undefined): number | null 
 export function effectiveShakerRailIn(style: ShakerStyleInput): number | null {
   const stored = parsedInches(style.railWidth) ?? parsedInches(style.stileWidth);
   if (stored != null) return stored;
-  return shakerDoorFamily(style.doorStyle) === "shaker" ? STANDARD_SHAKER_RAIL_IN : null;
+  return shakerDoorFamily(style) === "shaker" ? STANDARD_SHAKER_RAIL_IN : null;
 }
 
 export function styleOwnColor(style: ShakerStyleInput): string {
@@ -212,10 +235,21 @@ export function retintGrain(referenceHex: string, targetHex: string): { tintHex:
 /**
  * Single entry point for a 2.75 or 3 inch shaker face.
  * Returns null when the style is not that family, so slim, double, raised, and slab stay on their own paths.
+ *
+ * `wizardProfile: true` means the WalzCraft wizard saved a profile for this style
+ * (the wizard lives only in the door editor). The wizard's own face then wins as
+ * the caller would expect: this blueprint is the DEFAULT for a shaker with no
+ * wizard record, never an override of one.
  */
-export function matchStandardShakerToDl(style: ShakerStyleInput): ShakerAdoption {
-  const family = shakerDoorFamily(style.doorStyle);
+export function matchStandardShakerToDl(
+  style: ShakerStyleInput,
+  options: { wizardProfile?: boolean } = {},
+): ShakerAdoption {
+  const family = shakerDoorFamily(style);
   const railIn = effectiveShakerRailIn(style);
+  if (options.wizardProfile) {
+    return { adopted: false, railIn, reason: "The WalzCraft wizard saved a profile for this style, so the wizard profile wins over the shaker blueprint." };
+  }
   if (family === "slim-shaker") return { adopted: false, railIn, reason: "Slim Shaker keeps its own narrow frame and is not the 2.75/3 inch blueprint." };
   if (family === "double-shaker") return { adopted: false, railIn, reason: "Double Shaker is two panels, not the DL flat center slab." };
   if (family !== "shaker") return { adopted: false, railIn, reason: "Not a shaker door style." };
@@ -264,10 +298,11 @@ export function matchStandardShakerToDl(style: ShakerStyleInput): ShakerAdoption
 export function standardShakerDlFacePlan(
   style: ShakerStyleInput | null | undefined,
   placement: string | null | undefined,
+  options: { wizardProfile?: boolean } = {},
 ): CabinetFacePlan | null {
   if (!style) return null;
   if (findDlcFinishForStyle(style as DlcStyleInput)) return null;
-  const match = matchStandardShakerToDl(style);
+  const match = matchStandardShakerToDl(style, options);
   if (!match.adopted) return null;
   const wall = (placement ?? "").toLowerCase() === "wall";
   const entry = match.reference.entry;
