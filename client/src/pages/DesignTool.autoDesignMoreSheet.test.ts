@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const pageSource = readFileSync(resolve(process.cwd(), "client/src/pages/DesignTool.tsx"), "utf8");
+const availabilitySource = readFileSync(resolve(process.cwd(), "client/src/lib/autoDesignAvailability.ts"), "utf8");
 
 /** The More sheet is the only toolbar surface a phone or tablet can reach. */
 function moreSheetSource(): string {
@@ -30,7 +31,10 @@ describe("Auto-Design in the More sheet (tablet and phone)", () => {
     expect(row).toContain("setTimeout(openAutoDesign, 120)");
     expect(row).toContain("setMoreSheetOpen(false)");
     expect(row).toContain("!autoDesignControl.enabled");
-    expect(row).toContain("Needs an empty plan");
+    // The row prints the one shared disabled reason instead of its own copy, so
+    // the sheet, the desktop toolbar, and the phone top actions cannot drift.
+    expect(row).toContain("autoDesignBlockedNote");
+    expect(availabilitySource).toContain('AUTO_DESIGN_EMPTY_PLAN_NOTE = "Needs an empty plan"');
     expect(row).toContain("Auto-Design");
   });
 

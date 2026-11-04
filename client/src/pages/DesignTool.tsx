@@ -882,7 +882,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const isPolygonRoom = Boolean(room.vertices?.length && room.vertices.length >= 2 && room.customWalls?.length);
   const [placed, setPlacedState] = useState<PlacedCabinet[]>([]);
   const placedRef = useRef<PlacedCabinet[]>(placed);
-  const layoutLockedRef = useRef(false);
+  /** Mirrors `autoDesignControl.enabled` so the early-declared opener shares the button's rule. */
+  const autoDesignControlEnabledRef = useRef(false);
   const autoDesignSessionRef = useRef(false);
   const adoptAutoDesignSinkRef = useRef<(sink: SinkFixture) => SinkFixture>((sink) => sink);
   const defaultAutoDesignFaucetRef = useRef<AutoDesignFaucetProduct | null>(null);
@@ -1185,10 +1186,16 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	  if (!autoDesignOpen || !autoDesignWallGuideSelection) return [];
 	  return buildAutoDesignWallGuides(room, autoDesignWallGuideSelection.originCorner, autoDesignWallGuideSelection.runDirection);
 	}, [autoDesignOpen, autoDesignWallGuideSelection, room]);
+	/**
+	 * The button's disabled state, the Auto-Design build check, and this opener
+	 * share one rule (`autoDesignControlState`). Reading the same memoized control
+	 * through a ref keeps the opener from drifting again: a pushed Pelican sink
+	 * base is a fixture choice, not hand-placed cabinet work, so it must not leave
+	 * the button enabled while the opener still refuses to open.
+	 */
 	const openAutoDesign = useCallback(() => {
-	  // A refrigerator, a populated plan, or a locked layout keeps Auto-Design off.
 	  // Opening it does not move anything already on the plan.
-	  if (layoutLockedRef.current || placedRef.current.length > 0 || placedRef.current.some(isRefrigeratorAppliance)) return;
+	  if (!autoDesignControlEnabledRef.current) return;
 	  // The colored numbered wall guide is meaningful only in the 2D Floor Plan.
 	  // This does not modify the plan; it simply opens the measured-kitchen workflow.
 	  setViewMode("plan");
@@ -1864,7 +1871,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     // Window rule: a window only changes as a last resort, so the person always sees it as a warning.
     for (const note of notes) toast.warning(note.text, { duration: 8000 });
   }, []);
-  layoutLockedRef.current = layoutLocked;
   const layoutHasRefrigerator = useMemo(() => placed.some(isRefrigeratorAppliance), [placed]);
   // A pushed Pelican sink seats a sink base and a fixture. That is a fixture
   // choice, not hand-placed cabinet work, so it must not gray Auto-Design out —
@@ -1879,6 +1885,15 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     placedCount: autoDesignBlockingPlacements.length,
     hasRefrigerator: layoutHasRefrigerator,
   }), [autoDesignAvailable, autoDesignBlockingPlacements.length, layoutHasRefrigerator, layoutLocked]);
+  // `openAutoDesign` is declared above this memo, so it reads the shared control
+  // through a ref instead of duplicating the hand-placed rule.
+  autoDesignControlEnabledRef.current = autoDesignControl.enabled;
+  /**
+   * The visible reason a grayed Auto-Design control is unavailable. Every surface
+   * prints this same string, so a phone never shows a bare disabled button where
+   * the desktop explains "needs an empty plan".
+   */
+  const autoDesignBlockedNote = autoDesignControl.blockedNote;
   const autoDesignSessionAnchorUids = useMemo(() => {
     const anchors = autoDesignCornerStage?.anchors;
     if (!anchors) return new Set<string>();
@@ -15555,6 +15570,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
             Tablet preview
           </Button>
         )}
+        {/* Auto-Design trigger, dishwasher-side picker, and the blocked note for the
+            1024px+ toolbar. The phone/tablet top-actions cluster below renders the
+            same trio from the same `autoDesignControl`, so no width loses a
+            feature or its disabled reason. */}
         {autoDesignAvailable && (
           <>
             <Button
@@ -15564,12 +15583,13 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
               onClick={openAutoDesign}
               disabled={!autoDesignControl.enabled}
               data-testid="admin-auto-design-auto-build"
+              data-auto-design-surface="desktop"
               title={autoDesignControl.title}
               aria-label="Auto-Design"
             >
               <Ruler className="mr-1.5 h-3.5 w-3.5" /> Auto-Design
             </Button>
-            <label className="hidden items-center gap-1 text-[11px] text-[#765416] lg:inline-flex" data-testid="dishwasher-side-control">
+            <label className="hidden items-center gap-1 text-[11px] text-[#765416] lg:inline-flex" data-testid="dishwasher-side-control" data-auto-design-surface="desktop">
               Dishwasher side
               <select
                 aria-label="Dishwasher side"
@@ -15581,9 +15601,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                 <option value="right">Right of sink</option>
               </select>
             </label>
-            {autoDesignControl.refrigeratorNote && (
-              <span data-testid="auto-design-refrigerator-note" className="hidden max-w-[14rem] text-[11px] leading-snug text-muted-foreground lg:inline">
-                {autoDesignControl.refrigeratorNote}
+            {autoDesignBlockedNote && (
+              <span data-testid="auto-design-blocked-note" data-auto-design-surface="desktop" className="hidden max-w-[14rem] text-[11px] leading-snug text-muted-foreground lg:inline">
+                {autoDesignBlockedNote}
               </span>
             )}
           </>
@@ -15856,8 +15876,51 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         >
           <FileText className="h-3.5 w-3.5" />
         </button>
-	        {/* Mobile: icon-only compact buttons in top bar */}
-	        <div data-testid="mobile-designer-top-actions" className="ml-auto flex items-center gap-1 lg:hidden">
+	        {/* Mobile: icon-only compact buttons in top bar. The Auto-Design trio comes
+	            first so a phone or tablet gets the same trigger, dishwasher-side
+	            picker, and blocked note the desktop toolbar has at 1024px+. Its row
+	            takes the full basis at 375px and folds back into the icon row at
+	            768px, so the two never overflow sideways. */}
+	        <div data-testid="mobile-designer-top-actions" className="ml-auto flex min-w-0 max-w-full flex-wrap items-center justify-end gap-1 lg:hidden">
+          {autoDesignAvailable && (
+            <div data-testid="mobile-auto-design-controls" data-auto-design-surface="mobile" className="flex min-w-0 basis-full flex-wrap items-center justify-end gap-1 md:basis-auto">
+              <button
+                type="button"
+                data-testid="mobile-auto-design-auto-build"
+                data-auto-design-trigger="true"
+                onClick={openAutoDesign}
+                disabled={!autoDesignControl.enabled}
+                title={autoDesignControl.title}
+                aria-label="Auto-Design"
+                className="inline-flex h-8 min-w-0 shrink-0 items-center gap-1 rounded-md border border-[#d4a75a] px-2 text-[11px] font-semibold text-[#765416] transition-colors hover:bg-[#fff8e8] disabled:opacity-60"
+              >
+                <Ruler className="h-4 w-4 shrink-0" />
+                <span className="truncate">Auto-Design</span>
+              </button>
+              <label className="inline-flex min-w-0 items-center gap-1 text-[11px] text-[#765416]" data-testid="mobile-dishwasher-side-control" data-auto-design-dishwasher-side="true">
+                <span className="truncate">Dishwasher side</span>
+                <select
+                  aria-label="Dishwasher side"
+                  className="h-8 min-w-0 max-w-[7.5rem] rounded-md border border-[#d4a75a] bg-white px-1 text-[11px] text-[#1a2744]"
+                  value={dishwasherSidePreference ?? resolveDishwasherSide({ preference: null, originCorner: "left" })}
+                  onChange={(event) => setDishwasherSidePreference(event.target.value === "left" ? "left" : "right")}
+                >
+                  <option value="left">Left of sink</option>
+                  <option value="right">Right of sink</option>
+                </select>
+              </label>
+              {autoDesignBlockedNote && (
+                <span
+                  data-testid="mobile-auto-design-blocked-note"
+                  data-auto-design-blocked-note="true"
+                  aria-live="polite"
+                  className="w-full text-[11px] leading-snug text-muted-foreground"
+                >
+                  {autoDesignBlockedNote}
+                </span>
+              )}
+            </div>
+          )}
           <button
             title="Doors & Windows"
             onClick={() => {
@@ -16159,10 +16222,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                       <Ruler className="h-4 w-4 text-muted-foreground shrink-0" />
                       <span className="flex-1 text-left">
                         Auto-Design
-                        {autoDesignControl.refrigeratorNote ? (
-                          <span className="block text-[11px] font-normal text-muted-foreground">{autoDesignControl.refrigeratorNote}</span>
-                        ) : placed.length > 0 && (
-                          <span className="block text-[11px] font-normal text-muted-foreground">Needs an empty plan</span>
+                        {autoDesignBlockedNote && (
+                          <span className="block text-[11px] font-normal text-muted-foreground">{autoDesignBlockedNote}</span>
                         )}
                       </span>
                       <Badge variant="secondary" className="text-[10px]">measured</Badge>

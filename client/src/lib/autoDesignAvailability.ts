@@ -7,6 +7,13 @@
 export const AUTO_DESIGN_REFRIGERATOR_NOTE =
   "Auto-Design isn't available with a refrigerator in the layout.";
 
+/**
+ * Visible explanation for the other grayed-out case. Every surface prints this
+ * same sentence for the same reason, so a phone never shows a bare disabled
+ * control where the desktop explains why.
+ */
+export const AUTO_DESIGN_EMPTY_PLAN_NOTE = "Needs an empty plan";
+
 export type RefrigeratorLike = {
   uid?: string;
   masterCode?: string | null;
@@ -55,6 +62,12 @@ export type AutoDesignControl = {
   title: string;
   /** Visible explanation while the control is grayed out because of a refrigerator. */
   refrigeratorNote: string | null;
+  /**
+   * The single visible sentence every surface (desktop toolbar, phone/tablet top
+   * actions, More sheet) prints while the control is disabled. `null` when the
+   * control is enabled or hidden, so no width invents a different reason.
+   */
+  blockedNote: string | null;
 };
 
 /**
@@ -83,7 +96,7 @@ export function autoDesignControlState(input: {
   hasRefrigerator: boolean;
 }): AutoDesignControl {
   if (!input.audienceAllowed) {
-    return { shown: false, enabled: false, title: "", refrigeratorNote: null };
+    return { shown: false, enabled: false, title: "", refrigeratorNote: null, blockedNote: null };
   }
   if (input.hasRefrigerator) {
     return {
@@ -91,6 +104,7 @@ export function autoDesignControlState(input: {
       enabled: false,
       title: AUTO_DESIGN_REFRIGERATOR_NOTE,
       refrigeratorNote: AUTO_DESIGN_REFRIGERATOR_NOTE,
+      blockedNote: AUTO_DESIGN_REFRIGERATOR_NOTE,
     };
   }
   if (input.layoutLocked || input.placedCount > 0) {
@@ -99,6 +113,7 @@ export function autoDesignControlState(input: {
       enabled: false,
       title: "Start Auto-Design from an empty Designer",
       refrigeratorNote: null,
+      blockedNote: AUTO_DESIGN_EMPTY_PLAN_NOTE,
     };
   }
   return {
@@ -106,6 +121,7 @@ export function autoDesignControlState(input: {
     enabled: true,
     title: "Auto-Design a kitchen from four fixed fixture anchors",
     refrigeratorNote: null,
+    blockedNote: null,
   };
 }
 
