@@ -40,6 +40,8 @@ Door and drawer counts come from each cabinet's edit config; the entry never inv
 
 `designerCatalogDoorProfile` puts the result on every cabinet's profile as `raisedPanelSource`, next to the resolved geometry.
 
+Any distributor gets this default, not only DL Cabinetry. `shared/doorLibraryProfiles.ts` picks the entry; it contains no distributor check. See `docs/rules/SHAKER_DOOR_RULE.md` for the shared rule.
+
 ## Painted finishes
 
 `shared/paintedFinish.ts` says a finish is paint when `finishCategory` is `painted`, or `woodSpecies` / `finish` names paint, HDF, or MDF. For a painted style:
@@ -53,5 +55,6 @@ Stained wood keeps its grain, tinted toward the door's own color.
 ## Tests
 
 - `shared/raisedPanelDoorBlueprint.test.ts` — selecting the entry, the front-only role gate, the painted-solid contract, wizard precedence, and the face arithmetic.
+- `shared/doorLibraryProfiles.test.ts` — the automatic default for any distributor: shaker without a wizard record, case-insensitive and name-variant matching, the wizard winning when a record exists, and the front-only / painted-solid / no-brand-snap rules.
 - `client/src/lib/doorStyleAppearance.raisedPanel.test.ts` — the profile the Designer hands the renderer, including the wizard case.
 - `client/src/components/design/InteractiveRoom3D.raisedPanelFronts.test.ts` — meshes the live renderer builds: raised geometry on fronts only, end treatments only when checked, painted fronts solid, stain keeping grain, and no grain stamp on paint.

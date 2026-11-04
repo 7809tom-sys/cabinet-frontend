@@ -4,6 +4,7 @@ import { findDlcFinishForStyle } from "@shared/dlcFr26Mapping";
 import { resolveDoorColor } from "@shared/doorColorResolve";
 import { standardShakerDlFacePlan } from "@shared/shakerDoorBlueprint";
 import { appliedSlabGrainPlan } from "@shared/slabGrainApply";
+import { libraryDoorFacePlan, type DoorLibraryStyleInput } from "@shared/doorLibraryProfiles";
 import { wizardDoorFacePlan } from "@shared/walzcraftDesignerPickup";
 
 export type DesignerFaceStyle = DoorStyleFaceInput & {
@@ -93,6 +94,12 @@ export function designerFacePlan(
   if (findDlcFinishForStyle(style)) return resolveCabinetFaceImages(style, placement);
   const adopted = standardShakerDlFacePlan(style, placement);
   if (adopted) return adopted;
+  // Any distributor, any account: a shaker or raised style with no WalzCraft
+  // wizard record (the wizard path returned above) defaults onto the saved library
+  // entries. There is no DL-only gate here; DL photo crops are a separate layer
+  // that already ran.
+  const library = libraryDoorFacePlan(style as DoorLibraryStyleInput, placement);
+  if (library) return library;
   const explicitApproved = trimmedImageUrl(style.approvedReferenceImageUrl);
   if (!explicitApproved) return resolveCabinetFaceImages(style, placement);
 

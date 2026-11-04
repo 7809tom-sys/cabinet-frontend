@@ -6,6 +6,18 @@ HARD RULE (Tom, Nov 1 2026): ALL 2.75 in and 3 in shaker doors start from the DL
 
 The shared builder is `standardShakerDlFacePlan` in `shared/shakerDoorBlueprint.ts`. Every 2.75 inch and 3 inch shaker face goes through it. Slim Shaker, Double Shaker, raised panels, and slabs do not.
 
+## Any distributor, not only DL (Tom, Nov 4 2026)
+
+The shaker blueprint is the automatic default for **every** distributor and account, not just DL Cabinetry. `shared/doorLibraryProfiles.ts` decides it, and nothing in that file reads a distributor id or a `DL-` style code.
+
+- A style whose construction says shaker gets the shaker library entry (`dl-shaker-frame`). A style whose construction says raised panel gets `raised-panel-five-piece-bevel` from `shared/raisedPanelDoorBlueprint.ts`. The two are exclusive: a "Traditional Shaker" is a shaker, not a raised panel.
+- Matching is case-insensitive, so `Shaker`, `shaker`, `SHAKER`, and `sHaKeR` are the same style.
+- The construction fields (`doorStyle`, `doorPanelType`, profile notes) decide first. Only when they never mention a family does the style's own name decide, so `Shaker Honey` with a blank `doorStyle` is a shaker. A name never overrules an explicit slab or glass build.
+- A WalzCraft wizard record for the style still wins. The wizard lives only in the door editor; nothing here shows wizard UI, and `wizardDoorFacePlan` runs before the library lookup.
+- Slim Shaker and Double Shaker keep their own frames and are not the 2.75/3 inch entry. Hickory keeps its own catalog photo rather than a substituted grain.
+
+`findDlcFinishForStyle` and `DL_DISTRIBUTOR_ID` still exist, but they only decide whether DL's own photo crops are available. They never gated this default.
+
 Geometry that stays the same for every one of those doors:
 
 - Square rail and stile boxes. The width is that style's own 2.75 or 3 inches. A plain Shaker record with no stored rail uses 3 inches, which is the Designer default.

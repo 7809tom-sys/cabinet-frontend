@@ -28,6 +28,12 @@
  * a photo, not dimensions.
  */
 import { resolveDoorColor, type DoorColorInput } from "./doorColorResolve";
+import {
+  doorProfileConstructionText,
+  doorProfileIsSlabOrGlass,
+  doorProfileMatches,
+  doorProfileNameText,
+} from "./doorProfileIdentity";
 import { isPaintedFinish, type PaintedFinishInput } from "./paintedFinish";
 
 /** Rendered raised faces today: the five-piece frame, bevel, and center panel. */
@@ -141,13 +147,25 @@ export type RaisedPanelStyleInput = DoorColorInput & PaintedFinishInput & {
 
 const RAISED_TEXT = /raised|bevel|cathedral|\bogee\b|\barch(?:ed)?\b|traditional/i;
 
-/** Raised by catalog text, a stored construction, or an explicit admin door shape. */
+/**
+ * Raised by the construction fields, or by the style's own name when the
+ * construction fields say nothing. Matching is case-insensitive, so "RAISED
+ * PANEL" and "Raised Panel" are the same style.
+ *
+ * A name is only consulted when `doorStyle` / `doorPanelType` / the profile notes
+ * are all blank, and never for a style whose construction says slab, glass, or
+ * shaker — a "Traditional Shaker" is a shaker, not a raised panel.
+ */
 export function isRaisedPanelStyle(style: RaisedPanelStyleInput | null | undefined): boolean {
   if (!style) return false;
-  const stored = `${style.doorStyle ?? ""} ${style.doorPanelType ?? ""} ${style.profileDescription ?? ""} ${style.profileNotes ?? ""}`;
-  if (RAISED_TEXT.test(stored)) return true;
+  const construction = doorProfileConstructionText(style);
+  if (RAISED_TEXT.test(construction)) return true;
   if ((style.panelConstruction ?? "").trim().toLowerCase() === "raised") return true;
-  return (style.doorShape ?? "").trim().toLowerCase() === "raised";
+  if ((style.doorShape ?? "").trim().toLowerCase() === "raised") return true;
+  // The construction fields above already spoke; a name only fills a blank.
+  if (construction) return false;
+  if (doorProfileIsSlabOrGlass(style) || doorProfileMatches(style, /shaker/)) return false;
+  return RAISED_TEXT.test(doorProfileNameText(style));
 }
 
 /** Re-exported so a raised style and a plain cabinet read paint the same way. */
