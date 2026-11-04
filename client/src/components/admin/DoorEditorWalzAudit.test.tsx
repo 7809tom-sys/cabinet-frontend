@@ -141,20 +141,41 @@ describe("door editor wizard: Sherwin-Williams stain and paint", () => {
     expect(onApply).not.toHaveBeenCalled();
   });
 
-  it("shows the pick on both previews as it is made", () => {
+  it("clicking a swatch changes the canvas door and leaves the sample door alone", () => {
     render(<DoorEditorWalzAudit style={style} sampleUrl="/uploads/stone-gray.jpg" />);
+    const sampleDoor = () => screen.getByTestId("wizard-real-door") as HTMLImageElement;
+    const sampleFrame = () => sampleDoor().parentElement as HTMLElement;
+    const before = { src: sampleDoor().getAttribute("src"), style: sampleDoor().getAttribute("style"), frameStyle: sampleFrame().getAttribute("style") };
     expect(screen.queryByTestId("wizard-sample-finish")).toBeNull();
-    fireEvent.change(screen.getByTestId("wizard-paint-code"), { target: { value: "SW 7005" } });
+
+    // Tom's report: SW 7669 Summit Gray from the paint wheel.
+    fireEvent.change(screen.getByTestId("wizard-paint-code"), { target: { value: "SW 7669" } });
     fireEvent.click(screen.getByTestId("wizard-paint-code-apply"));
-    // Sample door and canvas door both take the chip.
-    const sampleFinish = screen.getByTestId("wizard-sample-finish");
-    expect(sampleFinish.dataset.finish).toBe("paint");
-    expect((sampleFinish as HTMLElement).style.backgroundColor).toMatch(/237, 236, 230|#edece6/i);
-    const canvas = screen.getByTestId("wizard-working-door");
+
+    const canvas = screen.getByTestId("wizard-working-door") as HTMLElement;
     expect(canvas.dataset.finish).toBe("paint");
-    expect(canvas.dataset.hex).toBe("#edece6");
-    // The sample photo itself is never replaced.
-    expect((screen.getByTestId("wizard-real-door") as HTMLImageElement).getAttribute("src")).toBe("/uploads/stone-gray.jpg");
+    expect(canvas.dataset.hex).toBe("#959491");
+    expect(canvas.style.backgroundColor).toBe("rgb(149, 148, 145)");
+
+    // The sample door is the untouched reference for the side-by-side comparison.
+    expect(screen.queryByTestId("wizard-sample-finish")).toBeNull();
+    expect(sampleDoor().getAttribute("src")).toBe(before.src);
+    expect(sampleDoor().getAttribute("style")).toBe(before.style);
+    expect(sampleFrame().getAttribute("style")).toBe(before.frameStyle);
+    expect(sampleFrame().querySelectorAll("[data-finish]")).toHaveLength(0);
+  });
+
+  it("leaves the sample door alone when a stain is picked from the wheel", () => {
+    render(<DoorEditorWalzAudit style={style} sampleUrl="/uploads/stone-gray.jpg" />);
+    const srcBefore = (screen.getByTestId("wizard-real-door") as HTMLImageElement).getAttribute("src");
+    selectGrain("TGW");
+    fireEvent.change(screen.getByTestId("wizard-stain-slider"), { target: { value: "1000" } });
+    expect((screen.getByTestId("wizard-working-door") as HTMLElement).dataset.finish).toBe("stain");
+    // No tint is laid over the sample door photo; it stays the untouched reference.
+    expect(screen.queryByTestId("wizard-sample-finish")).toBeNull();
+    const sampleFrame = (screen.getByTestId("wizard-real-door") as HTMLImageElement).parentElement as HTMLElement;
+    expect(sampleFrame.querySelectorAll("[data-finish]")).toHaveLength(0);
+    expect((screen.getByTestId("wizard-real-door") as HTMLImageElement).getAttribute("src")).toBe(srcBefore);
   });
 
   it("keeps the grain photo under a stain and drops it for paint", () => {
