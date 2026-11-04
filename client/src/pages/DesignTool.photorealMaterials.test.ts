@@ -170,7 +170,12 @@ describe("Designer programmed photoreal material wiring", () => {
 
   it("tiles the selected backsplash product image and sends that image with the room scene", () => {
     expect(designToolSource).toContain("selectedBacksplashTextureUrl");
-    expect(designToolSource).toContain('if (role === "backsplash") return selectedBacksplashTextureUrl(selected).url;');
+    // A verified catalog mosaic sends its own baked texture; an approved swatch still wins, and
+    // any other backsplash falls back to its own product picture.
+    expect(designToolSource).toContain('if (role === "backsplash") {');
+    expect(designToolSource).toContain("const swatch = selected?.materialImageUrl?.trim();");
+    expect(designToolSource).toContain("if (mosaic) return mosaic.texture;");
+    expect(designToolSource).toContain("return selectedBacksplashTextureUrl(selected).url;");
     expect(designToolSource).toContain("catalogBacksplashReferenceUrl={backsplashEnabled ? threeDSurfaceTextureUrls.backsplash : null}");
     expect(designToolSource).toContain("catalogBacksplashSize={backsplashEnabled ? activeBacksplashSurface?.size ?? null : null}");
     expect(designToolSource).toContain("backsplashImageUrl: selectedBacksplashTextureUrl(backsplashSurf).url || undefined");

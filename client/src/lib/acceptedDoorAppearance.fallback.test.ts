@@ -28,11 +28,15 @@ const UNPATCHED_STYLE = {
   styleCode: "SH",
   ourName: "Shaker Honey",
   doorStyle: "Shaker",
+  // The paint-match hex still stored on the row. It is never the door's color.
   color: "#c8a040",
   doorSampleImageUrl: "/manus-storage/sh-sample.jpg",
   // Note: approvedVersionId, renderHex and approvedReferenceImageUrl are ABSENT,
   // not null. That is what a query selecting only the old columns returns.
 };
+
+/** What Shaker Honey rendered in before the paint match overwrote its saved color. */
+const PRE_PAINT_MATCH = "#d1ba8f";
 
 describe("no acceptedAppearance writeback yet: fall back, never error", () => {
   it("treats missing accepted fields as 'no accepted run' and does not throw", () => {
@@ -41,9 +45,11 @@ describe("no acceptedAppearance writeback yet: fall back, never error", () => {
     expect(doorColorInputFor(UNPATCHED_STYLE).renderHex).toBeNull();
   });
 
-  it("resolves the style's own saved catalog color, exactly as before the feature", () => {
+  it("resolves the style's own saved color, never the deprecated paint match", () => {
     const decision = resolveKitchenDoorColor(UNPATCHED_STYLE);
-    expect(decision.appliedHex).toBe("#c8a040");
+    // Never #c8a040: that was a nearest paint-chip match, not the door's color.
+    expect(decision.appliedHex).toBe(PRE_PAINT_MATCH);
+    expect(decision.appliedHex).not.toBe(UNPATCHED_STYLE.color);
     expect(decision.candidateSource).toBe("catalog-color");
     // No accepted image, so the style's own sample photo is used.
     expect(kitchenAcceptedFaceImage(UNPATCHED_STYLE)).toBeNull();
@@ -53,7 +59,7 @@ describe("no acceptedAppearance writeback yet: fall back, never error", () => {
   it("also survives explicit nulls, which a patched-but-empty backend returns", () => {
     const nulls = { ...UNPATCHED_STYLE, renderHex: null, approvedVersionId: null, approvedReferenceImageUrl: null };
     expect(hasAcceptedDoorAppearance(nulls)).toBe(false);
-    expect(resolveKitchenDoorColor(nulls).appliedHex).toBe("#c8a040");
+    expect(resolveKitchenDoorColor(nulls).appliedHex).toBe(PRE_PAINT_MATCH);
   });
 
   it("survives a backend that returns the fields on some rows but not others", () => {

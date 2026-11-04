@@ -123,6 +123,12 @@ export type CabinetFacePlan = {
     normalUrl?: string | null;
     tintHex?: string | null;
   };
+  /**
+   * The color derived from the accepted render, when this face comes from one.
+   * It is the same value the door-color resolver applies, so every surface of the
+   * cabinet can take the approved color and the approved texture together.
+   */
+  acceptedColorHex?: string | null;
 };
 
 export type RevealDetection =

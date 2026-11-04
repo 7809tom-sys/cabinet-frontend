@@ -137,7 +137,9 @@
     "style": "Honey Core (Madison)",
     "category": "paint",
     "treatment": "opaque solid",
-    "hex": "#c8a040"
+    "hex": "#c8a040",
+    "demoted": true,
+    "demotionReason": "Nearest paint-chip match (Nov 2 2026), not a measurement of this door. Shaker Honey is a clear-finished solid birch shaker; the accepted render is the source of truth. Never paint this value on a door."
   },
   {
     "id": 330022,

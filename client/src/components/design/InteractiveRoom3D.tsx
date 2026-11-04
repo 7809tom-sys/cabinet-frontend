@@ -99,10 +99,16 @@ import {
   threeDCuratedIdentityMatches,
   threeDFlooringFallbackColor,
   preferredDesignerMosaicUrl,
-  threeDMosaicSheetMap,
   threeDRetailContentBounds,
   threeDTextureUrlIsColorMap,
 } from "@/lib/flooringMaterialAppearance";
+import {
+  mosaicCatalogFor,
+  mosaicCatalogSheetSpec,
+  mosaicFinishProfile,
+  nonMosaicTileRowFor,
+  type MosaicSurfaceFinish,
+} from "@/lib/mosaicCatalog";
 
 export { applyThreeDCabinetPieceGrain, threeDPieceGrainTransform };
 
@@ -1132,6 +1138,28 @@ export function threeDPhysicalSurfaceProfile(role: ThreeDPhysicalSurfaceRole, ha
   return profiles[role];
 }
 
+/**
+ * Mosaic sheen comes from the distributor's own finish word for that product (polished,
+ * honed marble; gloss glass; pearlescent shell), so a honed Carrara never renders with the
+ * mirror highlight of polished glass. `mosaicFinishProfile` owns the numbers.
+ */
+export function threeDMosaicSurfaceProfile(
+  finish: "polished" | "honed" | "satin" | "gloss" | "iridescent" | null | undefined,
+  hasTexture = true,
+) {
+  const base = threeDPhysicalSurfaceProfile("backsplash", hasTexture);
+  const profile = mosaicFinishProfile(finish ?? "polished");
+  return {
+    ...base,
+    roughness: profile.roughness,
+    metalness: profile.metalness,
+    clearcoat: profile.clearcoat,
+    clearcoatRoughness: profile.clearcoatRoughness,
+    // A glossy glass or pearlescent sheet picks up more of the room than honed stone.
+    envMapIntensity: finish === "gloss" || finish === "iridescent" ? 0.86 : base.envMapIntensity,
+  };
+}
+
 /** Door sheen is catalog data, not an assumed glossy or glass-like reflection. */
 export function threeDDoorFinishSurfaceProfile(
   finishSheen: ThreeDDoorProfile["finishSheen"] | undefined,
@@ -1196,6 +1224,10 @@ export type ThreeDProductMaterialSource = {
   materialColor?: string | null;
   /** Drop the white retail field so mosaic chips fill the sheet. */
   cropRetailBackground?: boolean;
+  /** Verified catalog mosaic key, so the loader finds this product's own sheet spec. */
+  backsplashMosaicKey?: string | null;
+  /** Surface finish from the distributor's product record; drives roughness and sheen. */
+  mosaicFinish?: MosaicSurfaceFinish | null;
 };
 
 export type ThreeDFlooringPatternKind = "plank" | "tile" | "sheet" | "unknown";
@@ -1236,14 +1268,6 @@ const THREE_D_AVELINE_20MIL_FLOOR_URL = "/manus-storage/aveline_20mil_7x48_stagg
 const THREE_D_BAHIA_12MIL_FLOOR_URL = "/manus-storage/bahia_12mil_7x48_staggered_floor_551c6d5b.webp";
 const THREE_D_ACORN_20MIL_FLOOR_URL = "/manus-storage/acorn_20mil_7_5x48_staggered_floor_3dbd212f.webp";
 const THREE_D_ASTORIA_22MIL_FLOOR_URL = "/manus-storage/astoria_22mil_9x60_staggered_floor_cd0a1cf7.webp";
-const THREE_D_DESERT_CLAY_MOSAIC_URL = "/manus-storage/desert_clay_11_81_interlocking_mosaic_0aa381c4.webp";
-const THREE_D_ARCTIC_VAIL_MOSAIC_URL = "/manus-storage/arctic_vail_candidate_2_a8bed842.png";
-const THREE_D_CARBON_HEX_MOSAIC_URL = "/manus-storage/carbon_hex_candidate_1_2af63616.png";
-const THREE_D_CARRARA_SUBWAY_MOSAIC_URL = "/manus-storage/carrara_subway_11_97x12_13_running_bond_f57029f6.webp";
-const THREE_D_CLOUDLINE_MARBLE_MOSAIC_URL = "/manus-storage/cloudline_marble_11_81x11_81_staggered_mosaic_32c5408e.webp";
-const THREE_D_CONCORD_SQUARE_MOSAIC_URL = "/manus-storage/concord_square_11_81x11_81_glass_marble_mosaic_8ffff52d.webp";
-const THREE_D_GLACIER_SHIFT_HERRINGBONE_URL = "/manus-storage/glacier_shift_12_05x12_05_recycled_glass_herringbone_3f2c6eb9.webp";
-const THREE_D_GOLDEN_TRACE_MOSAIC_URL = "/manus-storage/golden_trace_11_81x11_81_marble_aluminum_mosaic_8ce14587.webp";
 
 /**
  * Exact selected products may provide retail thumbnails that are unsuitable as
@@ -1334,73 +1358,13 @@ export function threeDProductMaterialSource(
       staggerOffsetsIn: null,
     };
   }
-	if ((role === "backsplash" || mosaicOnFloor) && threeDCuratedIdentityMatches(productName, productId, "desert clay", 183)) {
-	  return {
-	    url: designerUpload || THREE_D_DESERT_CLAY_MOSAIC_URL,
-      key: "desert-clay-11.81in-interlocking-mosaic",
+	if (role === "flooring" && threeDCuratedIdentityMatches(productName, productId, "aveline 20mil vinyl flooring", 73)) {
+    return {
+      url: THREE_D_AVELINE_20MIL_FLOOR_URL,
+      key: "aveline-20mil-7x48",
       curated: true,
       proceduralFallback: false,
-      physicalWidthIn: 11.81,
-      physicalDepthIn: 11.81,
-      sourceProductName: productName ?? null,
-      flooringPatternKind: null,
-      plankWidthIn: null,
-      plankLengthIn: null,
-      staggerOffsetsIn: null,
-      backsplashPatternKind: "interlocking-mosaic",
-      backsplashModuleIn: 11.81,
-	    backsplashGroutJointIn: 1 / 16,
-	  };
-	}
-	if ((role === "backsplash" || mosaicOnFloor) && threeDCuratedIdentityMatches(productName, productId, "arctic vail", 47)) {
-	  const sheet = threeDMosaicSheetMap(THREE_D_ARCTIC_VAIL_MOSAIC_URL, 10.71, 10.55, designerUpload);
-	  return {
-	    url: sheet.url,
-	    key: "arctic-vail-10.71in-interlocking-hex-mosaic",
-	    curated: true,
-	    proceduralFallback: false,
-	    cropRetailBackground: sheet.cropRetailBackground,
-	    physicalWidthIn: sheet.widthIn,
-	    physicalDepthIn: sheet.heightIn,
-	    sourceProductName: productName ?? null,
-	    flooringPatternKind: null,
-	    plankWidthIn: null,
-	    plankLengthIn: null,
-	    staggerOffsetsIn: null,
-	    backsplashPatternKind: "interlocking-mosaic",
-	    backsplashModuleIn: sheet.widthIn,
-	    backsplashModuleHeightIn: sheet.heightIn,
-	    backsplashGroutJointIn: 1 / 16,
-	  };
-	}
-	if ((role === "backsplash" || mosaicOnFloor) && threeDCuratedIdentityMatches(productName, productId, "carbon hex", 142)) {
-	  const sheet = threeDMosaicSheetMap(THREE_D_CARBON_HEX_MOSAIC_URL, 12.8, 11.1, designerUpload);
-	  return {
-	    url: sheet.url,
-	    key: "carbon-hex-12.80in-marble-hex-mosaic",
-	    curated: true,
-	    proceduralFallback: false,
-	    cropRetailBackground: sheet.cropRetailBackground,
-	    physicalWidthIn: sheet.widthIn,
-	    physicalDepthIn: sheet.heightIn,
-	    sourceProductName: productName ?? null,
-	    flooringPatternKind: null,
-	    plankWidthIn: null,
-	    plankLengthIn: null,
-	    staggerOffsetsIn: null,
-	    backsplashPatternKind: "interlocking-mosaic",
-	    backsplashModuleIn: sheet.widthIn,
-	    backsplashModuleHeightIn: sheet.heightIn,
-	    backsplashGroutJointIn: 1 / 16,
-	  };
-	}
-		if (role === "flooring" && threeDCuratedIdentityMatches(productName, productId, "aveline 20mil vinyl flooring", 73)) {
-    return {
-	      url: THREE_D_AVELINE_20MIL_FLOOR_URL,
-	      key: "aveline-20mil-7x48",
-	      curated: true,
-	      proceduralFallback: false,
-	      physicalWidthIn: 192,
+      physicalWidthIn: 192,
       physicalDepthIn: 84,
       sourceProductName: productName ?? null,
       flooringPatternKind: "plank",
@@ -1409,155 +1373,47 @@ export function threeDProductMaterialSource(
       staggerOffsetsIn: THREE_D_PLANK_STAGGER_FRACTIONS.map((fraction) => Math.round(48 * fraction * 8) / 8),
     };
   }
-	if ((role === "backsplash" || mosaicOnFloor) && threeDCuratedIdentityMatches(productName, productId, "carrara subway", 144)) {
-		return {
-			url: designerUpload || THREE_D_CARRARA_SUBWAY_MOSAIC_URL,
-			key: "carrara-subway-11.97in-running-bond-mosaic",
-			curated: true,
-			proceduralFallback: false,
-			physicalWidthIn: 11.97,
-			physicalDepthIn: 12.13,
-			sourceProductName: productName ?? null,
-			flooringPatternKind: null,
-			plankWidthIn: null,
-			plankLengthIn: null,
-			staggerOffsetsIn: null,
-			backsplashPatternKind: "subway-mosaic",
-			backsplashModuleIn: 11.97,
-			backsplashGroutJointIn: 1 / 16,
-		};
-	}
-	if ((role === "backsplash" || mosaicOnFloor) && threeDCuratedIdentityMatches(productName, productId, "cloudline marble", 149)) {
-		return {
-			url: designerUpload || THREE_D_CLOUDLINE_MARBLE_MOSAIC_URL,
-			key: "cloudline-marble-11.81in-staggered-glass-marble-mosaic",
-			curated: true,
-			proceduralFallback: false,
-			physicalWidthIn: 11.81,
-			physicalDepthIn: 11.81,
-			sourceProductName: productName ?? null,
-			flooringPatternKind: null,
-			plankWidthIn: null,
-			plankLengthIn: null,
-			staggerOffsetsIn: null,
-			backsplashPatternKind: "subway-mosaic",
-			backsplashModuleIn: 11.81,
-			backsplashGroutJointIn: 1 / 16,
-		};
-	}
-	if ((role === "backsplash" || mosaicOnFloor) && threeDCuratedIdentityMatches(productName, productId, "concord square", 164)) {
-		return {
-			url: designerUpload || THREE_D_CONCORD_SQUARE_MOSAIC_URL,
-			key: "concord-square-11.81in-glass-marble-mosaic",
-			curated: true,
-			proceduralFallback: false,
-			physicalWidthIn: 11.81,
-			physicalDepthIn: 11.81,
-			sourceProductName: productName ?? null,
-			flooringPatternKind: null,
-			plankWidthIn: null,
-			plankLengthIn: null,
-			staggerOffsetsIn: null,
-			backsplashPatternKind: "interlocking-mosaic",
-			backsplashModuleIn: 11.81,
-			backsplashGroutJointIn: 1 / 16,
-		};
-	}
-	if ((role === "backsplash" || mosaicOnFloor) && threeDCuratedIdentityMatches(productName, productId, "glacier shift", 242)) {
-		return {
-			url: designerUpload || THREE_D_GLACIER_SHIFT_HERRINGBONE_URL,
-			key: "glacier-shift-12.05in-recycled-glass-herringbone",
-			curated: true,
-			proceduralFallback: false,
-			physicalWidthIn: 12.05,
-			physicalDepthIn: 12.05,
-			sourceProductName: productName ?? null,
-			flooringPatternKind: null,
-			plankWidthIn: null,
-			plankLengthIn: null,
-			staggerOffsetsIn: null,
-			backsplashPatternKind: "interlocking-mosaic",
-			backsplashModuleIn: 12.05,
-			backsplashGroutJointIn: 1 / 16,
-		};
-	}
-	if ((role === "backsplash" || mosaicOnFloor) && threeDCuratedIdentityMatches(productName, productId, "golden trace", 244)) {
-		return {
-			url: designerUpload || THREE_D_GOLDEN_TRACE_MOSAIC_URL,
-			key: "golden-trace-11.81in-marble-aluminum-mosaic",
-			curated: true,
-			proceduralFallback: false,
-			physicalWidthIn: 11.81,
-			physicalDepthIn: 11.81,
-			sourceProductName: productName ?? null,
-			flooringPatternKind: null,
-			plankWidthIn: null,
-			plankLengthIn: null,
-			staggerOffsetsIn: null,
-			backsplashPatternKind: "interlocking-mosaic",
-			backsplashModuleIn: 11.81,
-			backsplashGroutJointIn: 1 / 16,
-		};
-	}
-	if ((role === "backsplash" || mosaicOnFloor) && threeDCuratedIdentityMatches(productName, productId, "icestone flux", 286)) {
-	  return {
-	    url: designerUpload,
-	    key: "icestone-flux-10.35in-diamond-mosaic",
-	    curated: true,
-	    proceduralFallback: false,
-	    textureUnavailable: !designerUpload,
-	    physicalWidthIn: 10.35,
-	    physicalDepthIn: 11.73,
-	    sourceProductName: productName ?? null,
-	    flooringPatternKind: null,
-	    plankWidthIn: null,
-	    plankLengthIn: null,
-	    staggerOffsetsIn: null,
-	    backsplashPatternKind: "interlocking-mosaic",
-	    backsplashModuleIn: 10.35,
-	    backsplashModuleHeightIn: 11.73,
-	    backsplashGroutJointIn: 1 / 8,
-	  };
-	}
-	if ((role === "backsplash" || mosaicOnFloor) && threeDCuratedIdentityMatches(productName, productId, "thassos subway", 1292)) {
-	  return {
-	    url: designerUpload,
-	    key: "thassos-subway-11.97in-staggered-mosaic",
-	    curated: true,
-	    proceduralFallback: false,
-	    textureUnavailable: !designerUpload,
-	    physicalWidthIn: 11.97,
-	    physicalDepthIn: 12.13,
-	    sourceProductName: productName ?? null,
-	    flooringPatternKind: null,
-	    plankWidthIn: null,
-	    plankLengthIn: null,
-	    staggerOffsetsIn: null,
-	    backsplashPatternKind: "interlocking-mosaic",
-	    backsplashModuleIn: 11.97,
-	    backsplashModuleHeightIn: 12.13,
-	    backsplashGroutJointIn: 1 / 8,
-	  };
-	}
-	if (role === "backsplash" && threeDCuratedIdentityMatches(productName, productId, "misty coast", 335)) {
-	  const uploaded = designerUpload;
-	  if (uploaded) {
+	// Every Designer Tile & Mosaic sheet that the distributor actually publishes renders from its
+	// own product record (lib/mosaicCatalog.ts): the sheet size, pattern, grout and chip colours
+	// come from that product's storefront data and its own product photo. One branch for all of
+	// them, so a newly listed mosaic renders correctly without another hand-coded case.
+	if (role === "backsplash" || mosaicOnFloor) {
+	  const catalogMosaic = mosaicCatalogFor({
+	    name: productName,
+	    pelicanCode: productName,
+	    category: surfaceMetadata?.category,
+	    subCategory: surfaceMetadata?.subCategory,
+	    size: surfaceMetadata?.size,
+	  });
+	  // A Tile & Mosaic row that is not a mosaic sheet (vanity top, prefab slab) must never
+	  // pick up a mosaic texture, even though it sits in the same category.
+	  const nonMosaicTileRow = nonMosaicTileRowFor({ name: productName, sku: productName });
+	  if (catalogMosaic && !nonMosaicTileRow) {
+	    const spec = mosaicCatalogSheetSpec(catalogMosaic);
+	    // A vendor-approved Designer swatch (materialImageUrl) still wins, and keeps its own
+	    // photo-derived scale. Otherwise the product's own baked texture is the only source: a
+	    // catalog card is often a staged room photo and must never tile across a wall.
+	    const approvedSwatch = (surfaceMetadata?.materialImageUrl ?? "").trim();
+	    const usingApprovedSwatch = Boolean(approvedSwatch) && threeDTextureUrlIsColorMap(approvedSwatch);
+	    const textureUrl = usingApprovedSwatch ? approvedSwatch : catalogMosaic.texture;
 	    return {
-	      url: uploaded,
-	      key: "misty-coast-11.81in-interlocking-linear-mosaic",
+	      url: textureUrl,
+	      key: spec.key,
 	      curated: true,
 	      proceduralFallback: false,
-	      physicalWidthIn: 11.81,
-	      physicalDepthIn: 11.81,
+	      physicalWidthIn: usingApprovedSwatch ? (surfaceMetadata?.size ? catalogMosaic.sizeIn[0] : catalogMosaic.moduleIn[0]) : catalogMosaic.moduleIn[0],
+	      physicalDepthIn: usingApprovedSwatch ? (surfaceMetadata?.size ? catalogMosaic.sizeIn[1] : catalogMosaic.moduleIn[1]) : catalogMosaic.moduleIn[1],
 	      sourceProductName: productName ?? null,
 	      flooringPatternKind: null,
 	      plankWidthIn: null,
 	      plankLengthIn: null,
 	      staggerOffsetsIn: null,
 	      backsplashPatternKind: "interlocking-mosaic",
-	      backsplashModuleIn: 11.81,
-	      backsplashModuleHeightIn: 11.81,
-	      backsplashGroutJointIn: 3 / 32,
+	      backsplashModuleIn: catalogMosaic.moduleIn[0],
+	      backsplashModuleHeightIn: catalogMosaic.moduleIn[1],
+	      backsplashGroutJointIn: spec.groutIn,
+	      backsplashMosaicKey: spec.key,
+	      mosaicFinish: catalogMosaic.finish,
 	    };
 	  }
 	}
@@ -10534,6 +10390,7 @@ function addThreeDBacksplash(
     const groutJointIn = Number(sourceTexture.userData?.backsplashGroutJointIn) || null;
     const patternKind = sourceTexture.userData?.backsplashPatternKind ?? "field-tile";
     const interlockSpec: MosaicInterlockSpec | null = (sourceTexture.userData?.backsplashMosaicSpec as MosaicInterlockSpec | null | undefined) ?? mosaicInterlockSpecForKey(sourceTexture.userData?.backsplashInterlockKey);
+    const mosaicFinish = (sourceTexture.userData?.mosaicFinish as MosaicSurfaceFinish | null | undefined) ?? null;
     texture.needsUpdate = true;
     // Inside corner: both walls count tiles from the shared corner, so the joints meet there.
     const sideLengthIn = threeDBacksplashSideIsCardinal(segment.side) ? wallLength(segment.side, room as RoomData) : 0;
@@ -10545,7 +10402,7 @@ function addThreeDBacksplash(
       color: "#ffffff",
       map: texture,
       side: THREE.FrontSide,
-      ...threeDPhysicalSurfaceProfile("backsplash", true),
+      ...threeDMosaicSurfaceProfile(mosaicFinish as MosaicSurfaceFinish | null, true),
     });
     material.userData = { selectedSurfaceRole: "backsplash", usesAuthoritativeProductImage: !sourceTexture.userData?.representativePreview, representativePreview: Boolean(sourceTexture.userData?.representativePreview), tileModuleIn: moduleIn, tileModuleHeightIn: moduleHeightIn, groutJointIn, backsplashPatternKind: patternKind, materialOnlyNoGeometryChange: true };
     // HARD RULE (lib/backsplashMosaic.ts): interlocking mosaics are ONE plane with ONE material. No per-sheet
@@ -12430,6 +12287,7 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 	        backsplashGroutJointIn: interlockSpec ? clampMosaicGroutIn(interlockSpec.groutIn) : (source.backsplashGroutJointIn ?? null),
 	        backsplashInterlockKey: interlockSpec?.key ?? null,
 	        backsplashMosaicSpec: interlockSpec ?? null,
+	        mosaicFinish: source.mosaicFinish ?? null,
 	        materialOnlyNoGeometryChange: true,
 	      };
 	      return texture;

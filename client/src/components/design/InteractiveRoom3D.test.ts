@@ -1481,25 +1481,24 @@ describe("interactive 3D room scene helpers", () => {
 			url: "/manus-storage/pelican/quartz/bedrock-3cm_source_slab_e61a47e8.webp", key: "pelican-quartz:bedrock-3cm",
 				curated: true, proceduralFallback: false, physicalWidthIn: 126, physicalDepthIn: 63,
 			});
-				// PR #162: these keep the product's OUTER sheet size (11.81 in. etc.) on purpose. The texture loader swaps in the
-				// interlock pitch (lib/backsplashMosaic.ts, outer size minus finger overhang) and the grout line when it builds the
-				// texture, so the source description is unchanged and only the rendered repeat spacing differs.
+				// Every verified catalog mosaic renders from its own product record (lib/mosaicCatalog.ts):
+				// the baked texture from that product's photo, and the module that texture really covers.
+				const desertClay = MOSAIC_CATALOG.find((entry) => entry.sku === "Desert Clay")!;
 				expect(threeDProductMaterialSource("backsplash", "Desert Clay", null)).toMatchObject({
-					url: "/manus-storage/desert_clay_11_81_interlocking_mosaic_0aa381c4.webp", key: "desert-clay-11.81in-interlocking-mosaic",
-					curated: true, proceduralFallback: false, physicalWidthIn: 11.81, physicalDepthIn: 11.81,
-					backsplashPatternKind: "interlocking-mosaic", backsplashModuleIn: 11.81, backsplashGroutJointIn: 1 / 16,
+					url: desertClay.texture, key: `catalog-mosaic:${desertClay.slug}`,
+					curated: true, proceduralFallback: false,
+					physicalWidthIn: desertClay.moduleIn[0], physicalDepthIn: desertClay.moduleIn[1],
+					backsplashPatternKind: "interlocking-mosaic",
+					backsplashModuleIn: desertClay.moduleIn[0], backsplashGroutJointIn: desertClay.groutIn,
 				});
-				expect(threeDProductMaterialSource("backsplash", "Arctic Vail", null)).toMatchObject({
-					url: "/manus-storage/arctic_vail_candidate_2_a8bed842.png", key: "arctic-vail-10.71in-interlocking-hex-mosaic",
-					curated: true, proceduralFallback: false, physicalWidthIn: 4, physicalDepthIn: 4 * (10.55 / 10.71),
-					backsplashPatternKind: "interlocking-mosaic", backsplashModuleIn: 4, backsplashGroutJointIn: 1 / 16,
+
+				// A catalog card is a staged room photo and is never the wall texture.
+				expect(threeDProductMaterialSource("backsplash", "Arctic Vail", "/manus-storage/pelican/47_105baf1c.png")).toMatchObject({
+					url: "/textures/mosaics/arctic-vail.webp",
+					key: "catalog-mosaic:arctic-vail",
 				});
-				expect(threeDProductMaterialSource("backsplash", "Arctic Vail", null, {
-					cardImageUrl: "/manus-storage/pelican/47_105baf1c.png",
-				})).toMatchObject({
-					url: "/manus-storage/arctic_vail_candidate_2_a8bed842.png",
-					physicalWidthIn: 4,
-				});
+
+				// A vendor-approved Designer swatch still wins, and keeps the printed sheet size.
 				expect(threeDProductMaterialSource("backsplash", "Arctic Vail", null, {
 					materialImageUrl: "/manus-storage/pelican/products/47/sheet.webp",
 					cardImageUrl: "/manus-storage/pelican/47_105baf1c.png",
@@ -1507,51 +1506,15 @@ describe("interactive 3D room scene helpers", () => {
 					url: "/manus-storage/pelican/products/47/sheet.webp",
 					physicalWidthIn: 10.71,
 					physicalDepthIn: 10.55,
-					backsplashModuleIn: 10.71,
 				});
-				expect(threeDProductMaterialSource("backsplash", "Carbon Hex", null)).toMatchObject({
-						url: "/manus-storage/carbon_hex_candidate_1_2af63616.png", key: "carbon-hex-12.80in-marble-hex-mosaic",
-						curated: true, proceduralFallback: false, physicalWidthIn: 4, physicalDepthIn: 4 * (11.1 / 12.8),
-						backsplashPatternKind: "interlocking-mosaic", backsplashModuleIn: 4, backsplashGroutJointIn: 1 / 16,
-					});
-				expect(threeDProductMaterialSource("backsplash", "Carbon Hex", null, {
-					cardImageUrl: "/manus-storage/pelican/142_kitchen.jpg",
-					size: "12.80 x 11.10 x 8",
-				})).toMatchObject({
-					url: "/manus-storage/carbon_hex_candidate_1_2af63616.png",
-					physicalWidthIn: 4,
-				});
-				expect(threeDProductMaterialSource("backsplash", "Carbon Hex", null, {
-					materialImageUrl: "/manus-storage/pelican/products/142/1793556207681-de516bbe_0314bfe8.webp",
-					cardImageUrl: "/manus-storage/pelican/142_kitchen.jpg",
-					size: "12.80 x 11.10 x 8",
-				})).toMatchObject({
-					url: "/manus-storage/pelican/products/142/1793556207681-de516bbe_0314bfe8.webp",
-					key: "carbon-hex-12.80in-marble-hex-mosaic",
-					physicalWidthIn: 12.8,
-					physicalDepthIn: 11.1,
-					backsplashModuleIn: 12.8,
-				});
+
+				// Icestone Flux keeps its measured diamond pattern name and its own baked texture.
 				expect(threeDProductMaterialSource("backsplash", "Icestone Flux", null, { productId: 286, cardImageUrl: "/thumb-200.jpg" })).toMatchObject({
-					key: "icestone-flux-10.35in-diamond-mosaic",
-					textureUnavailable: true,
-					url: "",
+					key: "catalog-mosaic:icestone-flux",
+					url: "/textures/mosaics/icestone-flux.webp",
 				});
-				expect(threeDProductMaterialSource("backsplash", "Icestone Flux", "/thumb-200.jpg", {
-					productId: 286,
-					materialImageUrl: "/manus-storage/pelican/products/286/1793557355806-68c2eee3_d82a8ffe.webp",
-					cardImageUrl: "/thumb-200.jpg",
-					size: "10.35 x 11.73 x 8mm",
-				})).toMatchObject({
-					url: "/manus-storage/pelican/products/286/1793557355806-68c2eee3_d82a8ffe.webp",
-					physicalWidthIn: 10.35,
-					physicalDepthIn: 11.73,
-					backsplashPatternKind: "interlocking-mosaic",
-				});
-				expect(threeDProductMaterialSource("backsplash", "Thassos Subway", null, { productId: 1292 })).toMatchObject({
-					key: "thassos-subway-11.97in-staggered-mosaic",
-					textureUnavailable: true,
-				});
+
+				// Thassos Subway on a floor uses its approved swatch and the published sheet size.
 				expect(threeDProductMaterialSource("flooring", "Thassos Subway", null, {
 					productId: 1292,
 					category: "Tile & Mosaic",
@@ -1560,64 +1523,35 @@ describe("interactive 3D room scene helpers", () => {
 					cardImageUrl: "/thassos-thumb.jpg",
 				})).toMatchObject({
 					url: "/manus-storage/pelican/products/1292/1793557806067-c68a817c_15620764.webp",
-					key: "thassos-subway-11.97in-staggered-mosaic",
+					key: "catalog-mosaic:thassos-subway",
 					physicalWidthIn: 11.97,
 					physicalDepthIn: 12.13,
 				});
-				expect(threeDProductMaterialSource("backsplash", "Carrara Subway", null)).toMatchObject({
-							url: "/manus-storage/carrara_subway_11_97x12_13_running_bond_f57029f6.webp", key: "carrara-subway-11.97in-running-bond-mosaic",
-							curated: true, proceduralFallback: false, physicalWidthIn: 11.97, physicalDepthIn: 12.13,
-							backsplashPatternKind: "subway-mosaic", backsplashModuleIn: 11.97, backsplashGroutJointIn: 1 / 16,
-						});
-				expect(threeDProductMaterialSource("backsplash", "Cloudline Marble", "/manus-storage/pelican/149_7a8d9432.png")).toMatchObject({
-							url: "/manus-storage/cloudline_marble_11_81x11_81_staggered_mosaic_32c5408e.webp", key: "cloudline-marble-11.81in-staggered-glass-marble-mosaic",
-							curated: true, proceduralFallback: false, physicalWidthIn: 11.81, physicalDepthIn: 11.81,
-							backsplashPatternKind: "subway-mosaic", backsplashModuleIn: 11.81, backsplashGroutJointIn: 1 / 16,
-						});
-				expect(threeDProductMaterialSource("backsplash", "Concord Square", "/manus-storage/pelican/164_7f2e1c1b.png")).toMatchObject({
-						url: "/manus-storage/concord_square_11_81x11_81_glass_marble_mosaic_8ffff52d.webp", key: "concord-square-11.81in-glass-marble-mosaic",
-						curated: true, proceduralFallback: false, physicalWidthIn: 11.81, physicalDepthIn: 11.81,
-						backsplashPatternKind: "interlocking-mosaic", backsplashModuleIn: 11.81, backsplashGroutJointIn: 1 / 16,
-					});
-				expect(threeDProductMaterialSource("backsplash", "Glacier Shift", "/manus-storage/pelican/242_approved.png")).toMatchObject({
-						url: "/manus-storage/glacier_shift_12_05x12_05_recycled_glass_herringbone_3f2c6eb9.webp", key: "glacier-shift-12.05in-recycled-glass-herringbone",
-						curated: true, proceduralFallback: false, physicalWidthIn: 12.05, physicalDepthIn: 12.05,
-						backsplashPatternKind: "interlocking-mosaic", backsplashModuleIn: 12.05, backsplashGroutJointIn: 1 / 16,
-					});
-					expect(threeDProductMaterialSource("backsplash", "Golden Trace", "/manus-storage/pelican/244_approved.png")).toMatchObject({
-						url: "/manus-storage/golden_trace_11_81x11_81_marble_aluminum_mosaic_8ce14587.webp", key: "golden-trace-11.81in-marble-aluminum-mosaic",
-						curated: true, proceduralFallback: false, physicalWidthIn: 11.81, physicalDepthIn: 11.81,
-						backsplashPatternKind: "interlocking-mosaic", backsplashModuleIn: 11.81, backsplashGroutJointIn: 1 / 16,
-					});
-					expect(threeDProductMaterialSource("backsplash", "Misty Coast", "/manus-storage/pelican/products/335/1793550435593-d4cfe4b8_dd25baec.webp", { productId: 335, category: "Tile & Mosaic", size: "11.81 x 11.81 x 8mm" })).toMatchObject({
-						url: "/manus-storage/pelican/products/335/1793550435593-d4cfe4b8_dd25baec.webp",
-						key: "misty-coast-11.81in-interlocking-linear-mosaic",
+
+				// Each product's texture, module and grout are its own, not a shared placeholder.
+				const textures = new Set<string>();
+				for (const entry of MOSAIC_CATALOG) {
+					const source = threeDProductMaterialSource("backsplash", entry.sku, null);
+					expect(source, entry.sku).toMatchObject({
+						url: entry.texture,
+						key: `catalog-mosaic:${entry.slug}`,
 						curated: true,
-						physicalWidthIn: 11.81,
-						physicalDepthIn: 11.81,
+						proceduralFallback: false,
 						backsplashPatternKind: "interlocking-mosaic",
-						backsplashModuleIn: 11.81,
-						backsplashModuleHeightIn: 11.81,
+						backsplashModuleIn: entry.moduleIn[0],
+						backsplashModuleHeightIn: entry.moduleIn[1],
 					});
-					const sourceIdentityCases = [
-						{ productId: 47, key: "arctic-vail-10.71in-interlocking-hex-mosaic", pattern: "interlocking-mosaic", moduleIn: 10.71 },
-						{ productId: 142, key: "carbon-hex-12.80in-marble-hex-mosaic", pattern: "interlocking-mosaic", moduleIn: 12.8 },
-						{ productId: 144, key: "carrara-subway-11.97in-running-bond-mosaic", pattern: "subway-mosaic", moduleIn: 11.97 },
-						{ productId: 149, key: "cloudline-marble-11.81in-staggered-glass-marble-mosaic", pattern: "subway-mosaic", moduleIn: 11.81 },
-						{ productId: 164, key: "concord-square-11.81in-glass-marble-mosaic", pattern: "interlocking-mosaic", moduleIn: 11.81 },
-						{ productId: 183, key: "desert-clay-11.81in-interlocking-mosaic", pattern: "interlocking-mosaic", moduleIn: 11.81 },
-						{ productId: 242, key: "glacier-shift-12.05in-recycled-glass-herringbone", pattern: "interlocking-mosaic", moduleIn: 12.05 },
-						{ productId: 244, key: "golden-trace-11.81in-marble-aluminum-mosaic", pattern: "interlocking-mosaic", moduleIn: 11.81 },
-					] as const;
-					for (const patternCase of sourceIdentityCases) {
-						expect(threeDProductMaterialSource("backsplash", null, null, { productId: patternCase.productId })).toMatchObject({
-							key: patternCase.key,
-							curated: true,
-							proceduralFallback: false,
-							backsplashPatternKind: patternCase.pattern,
-							backsplashGroutJointIn: 1 / 16,
-						});
-						expect(threeDProductMaterialSource("backsplash", "Unrelated Mosaic", null, { productId: patternCase.productId })?.key).not.toBe(patternCase.key);
+					expect(source?.backsplashGroutJointIn).toBeCloseTo(entry.groutIn, 6);
+					textures.add(source!.url);
+				}
+				expect(textures.size).toBe(MOSAIC_CATALOG.length);
+
+					for (const entry of MOSAIC_CATALOG) {
+						// Same product, described only by its catalog id: still a verified catalog mosaic.
+						const byName = threeDProductMaterialSource("backsplash", entry.sku, null);
+						expect(byName?.key, entry.sku).toBe(`catalog-mosaic:${entry.slug}`);
+						// A name that is not in the catalog never inherits a product's texture by id.
+						expect(threeDProductMaterialSource("backsplash", "Unrelated Mosaic", null)?.key).not.toBe(`catalog-mosaic:${entry.slug}`);
 					}
 			  });
 

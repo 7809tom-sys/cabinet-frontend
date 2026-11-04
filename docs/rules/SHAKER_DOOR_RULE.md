@@ -15,10 +15,11 @@ Geometry that stays the same for every one of those doors:
 
 Color on the door surface:
 
-- Precedence, highest first: a hand-set render hex, the measured swatch table from cabinet-backend PR 72 (`data/door-colors/swatch-hex.json`, 123 styles), a WalzCraft ColorPatterns primary shade (`data/door-colors/ColorPatterns_*.csv`, matched by distributor plus code or door name), a name or DL-photo estimate, then the pre-209 color (DL finish solid, otherwise catalog hex, then the name table).
+- Precedence, highest first: the latest **accepted render** from `doorStyles.acceptedAppearance` (its texture and the color derived from it), a hand-set render hex, the style's own saved catalog color, the measured swatch table from cabinet-backend PR 72 (`data/door-colors/swatch-hex.json`), a WalzCraft ColorPatterns primary shade (`data/door-colors/ColorPatterns_*.csv`, matched by distributor plus code or door name), a name or DL-photo estimate, then the pre-209 color (DL finish solid, otherwise catalog hex, then the name table).
+- **A nearest paint-chip match is never a door's color.** The Shaker Honey row of the swatch table (`#c8a040`) was a nearest paint match, not a measurement, and it painted the door flat gold with no grain. That row is marked `demoted` in `swatch-hex.json` and is never applied. When the accepted-appearance endpoint is not deployed yet it answers NOT_FOUND, and the door falls back to `PRE_PAINT_MATCH_ORIGINALS` in `shared/doorColorResolve.ts` — for Shaker Honey `#d1ba8f`, the name table's honey tone — never to `#c8a040`.
 - That color is not snapped to sample cream `#dedac6`, cream `#fffdf9` / `#f6f3ed`, green `#244338`, or gold `#d7a46c`. Those swatches are what the old nearest-match used. `brandDoorSurfaceHex` still names that old snap and is not applied.
-- An independent estimator concurs after the pick. Agreement needs CIEDE2000 at most 10, the same paint-versus-stain category, and the same hue family. A disagreement keeps the pre-209 color and flags the door (`needsColorReview`). A hand-set render hex still wins, and is flagged rather than replaced.
-- Paint renders as an opaque solid of that hex. Stain keeps the DL grain and a tint toward the hex.
+- An independent estimator concurs after the pick. Agreement needs CIEDE2000 at most 10, the same paint-versus-stain category, and the same hue family. A disagreement keeps the pre-209 color and flags the door (`needsColorReview`). An accepted render, a hand-set render hex, and a saved catalog color still win, and are flagged rather than replaced.
+- Paint renders as an opaque solid of that hex. Stain keeps the grain and a tint toward the hex.
 - `shared/shakerDoorBlueprint.test.ts` and `shared/doorColorResolve.test.ts` fail if a 2.75/3 inch shaker bypasses the blueprint or if Stone Gray `#8d8f92` or Slate Rift `#555553` is replaced by brand green or cream.
 
 ## DL references
