@@ -72,6 +72,8 @@ import { rememberDoorPanelHex } from "@/lib/doorPanelColor";
 import { DARK_STAIN_DOOR_LIGHTS, RESTORED_DOOR_LIGHTS, isVeryDarkCabinetStain, relativeLuminance } from "@shared/doorRenderLights";
 import { combinedSwatchTextureWindow, type FaceSourceKind, type FaceTextureWindow } from "@shared/doorFaceRecognition";
 import { RAISED_PANEL_BEVEL_DEPTH_IN, RAISED_PANEL_BEVEL_WIDTH_IN, resolveDoorProfile } from "@shared/doorStyleAppearance";
+import { isRaisedPanelFrontSurface, raisedPanelApplicationForStyle } from "@shared/raisedPanelDoorBlueprint";
+import { isPaintedFinish } from "@shared/paintedFinish";
 import { attachSlopedRaisedPanel, effectiveRaisedBevelDepthIn, threeDFaceUsesRaisedPanelBevel } from "./raisedPanelBevel";
 import { loadApplianceFrontTexture, refrigeratorBodyMaterialParams } from "./applianceFinishTint";
 import { matchCabinetColorName } from "@shared/cabinetColorNames";
@@ -383,6 +385,19 @@ export type ThreeDDoorProfile = {
   styleId?: number | null;
   styleCode?: string | null;
   distributorId?: number | null;
+  /**
+   * Painted / HDF / MDF finish. A painted face is a solid of the resolved color:
+   * no door photo, no grain tile, no per-piece wood grain. See
+   * `shared/paintedFinish.ts`.
+   */
+  paintedFinish?: boolean;
+  /**
+   * Which raised-panel profile is in force, from
+   * `raisedPanelApplicationForStyle`. "library" is the default for a raised style
+   * the WalzCraft wizard never dressed; "wizard" means the wizard's own profile
+   * wins and the library entry is not applied.
+   */
+  raisedPanelSource?: "wizard" | "library" | "none";
 };
 
 /**
@@ -3687,14 +3702,23 @@ export function resolvedThreeDDoorProfile(
   const fallback = scene.materials?.cabinet ?? null;
   const source = selectedProfile ? catalogDoorProfile : fallback;
   if (!source) return null;
-  const resolved = resolveDoorProfile({
+  const merged = {
     ...source,
     ourName: scene.materials?.cabinet.name ?? null,
     name: scene.materials?.cabinet.publicName ?? scene.materials?.cabinet.name ?? null,
     color: scene.materials?.cabinet.color ?? null,
     finish: scene.materials?.cabinet.finish ?? null,
-  });
-  return { ...source, ...resolved };
+  };
+  const resolved = resolveDoorProfile(merged);
+  // Carry the two renderer facts even when the caller did not already put them on
+  // the profile: a painted finish renders solid, and the raised-panel source names
+  // whether the WalzCraft wizard's profile or the shared library entry is in force.
+  return {
+    ...source,
+    ...resolved,
+    paintedFinish: catalogDoorProfile?.paintedFinish ?? isPaintedFinish(merged),
+    raisedPanelSource: catalogDoorProfile?.raisedPanelSource ?? raisedPanelApplicationForStyle(merged).source,
+  };
 }
 
 export function shouldRenderPlacedDesign(placed: PlacedCabinet[]) {
@@ -4269,10 +4293,16 @@ export function addCabinet(
   // Depot frameless lines get separate skins, and they do not go through this path.
   const dlcDoorFinish = surfaceTextures?.faceCrop?.solidColor ?? null;
   if (dlcDoorFinish) color = dlcDoorFinish;
+  // Painted / HDF / MDF finishes render solid in the resolved door color: no door
+  // photo, no grain tile, and no per-piece wood grain. Stained wood keeps its grain.
+  // The flag comes from the door style (`shared/paintedFinish.ts`); the renderer
+  // never guesses paint from a color.
+  const paintedFinish = doorProfile?.paintedFinish === true;
   // Wood grain tile set (approved in the door style editor, browser draft only): each front gets a tile
   // picked deterministically from its uid, with flip + small UV offset. No set → the single door photo.
-  const woodGrainTile = woodGrainTileForFront(doorProfile?.styleId ?? null, sku.placementUid ?? `${sku.masterCode}@${transform?.x ?? 0},${transform?.z ?? 0}`, undefined, { horizontal: doorProfile?.grainDirection === "horizontal" });
+  const woodGrainTile = paintedFinish ? null : woodGrainTileForFront(doorProfile?.styleId ?? null, sku.placementUid ?? `${sku.masterCode}@${transform?.x ?? 0},${transform?.z ?? 0}`, undefined, { horizontal: doorProfile?.grainDirection === "horizontal" });
   if (woodGrainTile) doorSampleUrl = woodGrainTile.url;
+  if (paintedFinish) doorSampleUrl = null;
   const placement = (sku.placementType ?? "base").toLowerCase();
   const isKneeDrawer = isKneeDrawerItem(sku);
   const isWall = placement === "wall";
@@ -5062,8 +5092,11 @@ export function addCabinet(
       material.needsUpdate = true;
     }
   };
-	  const useDoorTexture = threeDUsesDoorSampleTexture(doorSampleUrl);
-	  const usesCuratedCabinetGrain = /rustic_hickory_vertical_grain/i.test(doorSampleUrl ?? "");
+	  // Tom's paint rule: a painted / HDF / MDF face is a solid of the resolved color.
+	  // No door photo, no grain tile, and no per-piece wood-grain crop. Stained wood
+	  // keeps its grain. `doorSampleUrl` is already cleared for a painted style above.
+	  const useDoorTexture = !paintedFinish && threeDUsesDoorSampleTexture(doorSampleUrl);
+	  const usesCuratedCabinetGrain = !paintedFinish && /rustic_hickory_vertical_grain/i.test(doorSampleUrl ?? "");
 	  // Assigned once the texture exists. The loader callback runs after the
 	  // face meshes are built, which is when box skins receive the sample.
 	  let stampCabinetWoodGrain = () => {};
@@ -5125,6 +5158,8 @@ export function addCabinet(
 	    };
 	  }
 	  stampCabinetWoodGrain = () => {
+	    // A painted face is solid: no per-piece grain window is stamped onto it.
+	    if (paintedFinish) return;
 	    applyThreeDCabinetPieceGrain(cabinet, {
 	      placementUid: sku.placementUid,
 	      sampleUrl: doorSampleUrl,
@@ -5135,15 +5170,16 @@ export function addCabinet(
 	  };
   // Door faces use the door sample. Drawer meshes (cabinetDrawerFront) get the
   // drawer-front sample below. A wall cabinet never receives that drawer texture.
-  const drawerSampleUrl = !isWall ? surfaceTextures?.drawerSampleUrl?.trim() || null : null;
-  const useDrawerTexture = threeDUsesSeparateDrawerTexture({
+  // A painted drawer front is solid, so it gets neither sample.
+  const drawerSampleUrl = !isWall && !paintedFinish ? surfaceTextures?.drawerSampleUrl?.trim() || null : null;
+  const useDrawerTexture = !paintedFinish && threeDUsesSeparateDrawerTexture({
     isWall,
     doorSampleUrl,
     drawerSampleUrl,
     faceSourceKind: surfaceTextures?.faceSourceKind,
     separateFace: Boolean(surfaceTextures?.faceCrop?.faceTileDrawerIn),
   });
-  const usesCuratedDrawerGrain = /rustic_hickory_vertical_grain/i.test(drawerSampleUrl ?? "");
+  const usesCuratedDrawerGrain = !paintedFinish && /rustic_hickory_vertical_grain/i.test(drawerSampleUrl ?? "");
   const drawerTexture = useDrawerTexture && drawerSampleUrl
     ? new THREE.TextureLoader().load(drawerSampleUrl)
     : null;
@@ -5285,8 +5321,9 @@ export function addCabinet(
   const structuralFinish = threeDStructuralFinish(color, Boolean(doorTexture));
   let plainStructuralColor = structuralFinish.color;
   let structuralSampleTexture: THREE.Texture | null = null;
+  // Frameless AltaEuro lines project the door photograph onto their own exposed
+  // sides; that is the only style family allowed to do it, and it sets this flag.
   const exposedSidesMatchDoorFace = doorProfile?.exposedSidesMatchDoorFace === true && Boolean(doorTexture) && !dlcDoorFinish;
-  void exposedSidesMatchDoorFace;
   // DLC styles: sides, end panels, skins and carcass carry the door's grain (a frame-free patch, tiled
   // mirrored so seams do not show) in the door's colour. Never the door photo with its frame lines.
   let dlcGrainTexture: THREE.Texture | null = null;
@@ -5312,11 +5349,14 @@ export function addCabinet(
   const applyStructuralFinishBase = (finishColor: string, _sampleTexture: THREE.Texture | null = null) => {
     // ONE color source for every visible surface of a cabinet: the selected door
     // color. When the door has an image (a sample photo or the approved accepted
-    // render), the box, sides, panels and toe kick use that same image and tint as
-    // the fronts, so a cabinet can never show two shades. The old code sampled the
-    // door photo's panel color for the sides while the front used the resolved
-    // color, which is exactly the "same cabinet, two yellows" report.
-    if (doorTexture) {
+    // render), the box, sides, panels and toe kick are painted again below so they
+    // can never show two shades beside the fronts.
+    //
+    // The door photograph stays on the fronts. Only the frameless family whose
+    // catalog says so (AltaEuro Luxe/Zenit) projects it onto an exposed side; a
+    // framed style never does. This is what kept the raised-panel door profile and
+    // its photo off cabinet sides, tops, bottoms, and end skins.
+    if (doorTexture && exposedSidesMatchDoorFace) {
       const applied = applyThreeDDoorFaceStructuralFinish(
         [...structuralFinishMaterials, ...flatExposedFinishMaterials],
         doorTexture,
@@ -5329,7 +5369,8 @@ export function addCabinet(
       structuralSampleTexture = applied.texture;
       return;
     }
-    // No door image: every structural surface takes the resolved color itself.
+    // No door image on these surfaces: every structural surface takes the resolved
+    // color itself, and its map is cleared so nothing from a front leaks across.
     const sideColor = exposedSideSolidHex({
       catalogHex: finishColor,
       doorPanelHex: null,
@@ -5615,7 +5656,7 @@ export function addCabinet(
 	      drawerFrontType: doorProfile?.drawerFrontType,
 	      faceRole,
 	      forceGlassFrame,
-	    });
+	    }) && isRaisedPanelFrontSurface(faceRole);
 	    const framedProfile = forceGlassFrame || raisedProfile || threeDUsesPhysicalShakerRails(profileKind, Boolean(doorTexture));
 	    if (!framedProfile) return;
     const rail = threeDShakerRailThickness(faceWidth, faceHeight, doorProfile?.railWidth);
@@ -5689,6 +5730,7 @@ export function addCabinet(
 	        insideEdgeProfile: doorProfile?.insideEdgeProfile ?? "bevel",
 	        drawerFrontType: doorProfile?.drawerFrontType ?? null,
 	        centerMaterial: faceMaterial,
+	        faceRole,
 	      });
 	    }
     // DL shaker frames: soft shadow just inside the opening (top/left) and a thin highlight on the opposite

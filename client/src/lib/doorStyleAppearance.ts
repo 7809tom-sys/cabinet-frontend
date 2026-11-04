@@ -13,6 +13,9 @@ import {
   type ResolvedDoorProfile,
 } from "@shared/doorStyleAppearance";
 import { resolveDoorColor } from "@shared/doorColorResolve";
+import { isPaintedFinish } from "@shared/paintedFinish";
+import { raisedPanelApplicationForStyle } from "@shared/raisedPanelDoorBlueprint";
+import { isWizardSavedDoor } from "@shared/walzcraftDesignerPickup";
 
 export {
   ASPEN_CHARCOAL_STAIN,
@@ -75,8 +78,17 @@ export function doorStyleFinishColors(style: DoorStyleAppearanceInput | null | u
 /**
  * Profile passed into the 3D Designer. Rail and stile stay on the verified
  * frame measurement; bevel, edge, and raised-panel family come from the mapping.
+ *
+ * Two facts ride along for the renderer:
+ * - `paintedFinish`: the style states paint / HDF / MDF, so its fronts are solid.
+ * - `raisedPanelSource`: "library" when the raised-panel entry in
+ *   `shared/raisedPanelDoorBlueprint.ts` is the default profile (a raised style the
+ *   WalzCraft wizard never dressed), "wizard" when the wizard's profile wins.
  */
-export function designerCatalogDoorProfile(style: DoorStyleAppearanceInput | null | undefined): ResolvedDoorProfile | null {
+export function designerCatalogDoorProfile(
+  style: DoorStyleAppearanceInput | null | undefined,
+  options: { wizardProfile?: boolean } = {},
+): DesignerCatalogDoorProfile | null {
   if (!style) return null;
   const frame = designerDoorFrameMetrics(style);
   const appearance = resolveDoorStyleAppearance({
@@ -84,5 +96,17 @@ export function designerCatalogDoorProfile(style: DoorStyleAppearanceInput | nul
     railWidth: frame?.railWidth ?? style.railWidth ?? style.doorProfile?.railWidth ?? null,
     stileWidth: frame?.stileWidth ?? style.stileWidth ?? style.doorProfile?.stileWidth ?? null,
   });
-  return appearance.profile;
+  // A profile the WalzCraft wizard saved for this style wins over the library entry.
+  const wizardProfile = options.wizardProfile ?? isWizardSavedDoor(style as never);
+  const raisedPanel = raisedPanelApplicationForStyle(style, { wizardProfile });
+  return {
+    ...appearance.profile,
+    paintedFinish: isPaintedFinish(style),
+    raisedPanelSource: raisedPanel.source,
+  };
 }
+
+export type DesignerCatalogDoorProfile = ResolvedDoorProfile & {
+  paintedFinish: boolean;
+  raisedPanelSource: "wizard" | "library" | "none";
+};
