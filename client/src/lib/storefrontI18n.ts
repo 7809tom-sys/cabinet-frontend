@@ -3,6 +3,12 @@
 // customer's language choice survives navigation within the storefront.
 
 import { useCallback, useEffect, useState } from "react";
+import {
+  GOOGLE_REVIEWS_EMPTY_NOTICE,
+  GOOGLE_REVIEWS_ORDER_NOTICE,
+  GOOGLE_REVIEWS_VERIFICATION_NOTICE,
+  GOOGLE_REVIEW_TRANSLATED_NOTICE,
+} from "@shared/googleReviews";
 
 export type Lang = "en" | "es" | "zh";
 
@@ -16,6 +22,7 @@ export const STOREFRONT_STRINGS = {
     nav_packages: "Packages",
     nav_design: "3D Designer",
     nav_quote: "Get a Quote",
+    nav_reviews: "Reviews",
     // hero
     hero_badge_years: "Serving customers for {years}+ years",
     hero_browse: "Browse Cabinets",
@@ -97,6 +104,24 @@ export const STOREFRONT_STRINGS = {
     footer_rights: "All rights reserved.",
     footer_powered: "Powered by our platform",
     btn_add_to_cart: "Add to Cart",
+    // google reviews
+    reviews_eyebrow: "Verified on Google",
+    reviews_title: "What customers say on Google",
+    reviews_avg: "{rating} out of 5",
+    reviews_count: "{count} Google reviews",
+    reviews_see_all: "See all reviews on Google",
+    reviews_write: "Write a review",
+    reviews_map_title: "Find us on Google Maps",
+    reviews_order_notice: GOOGLE_REVIEWS_ORDER_NOTICE,
+    reviews_verified_notice: GOOGLE_REVIEWS_VERIFICATION_NOTICE,
+    reviews_translated: GOOGLE_REVIEW_TRANSLATED_NOTICE,
+    reviews_original: "Read the original",
+    reviews_empty: GOOGLE_REVIEWS_EMPTY_NOTICE,
+    reviews_source: "Review on Google Maps",
+    reviews_report: "Report this review",
+    reviews_visited: "Visited {month}",
+    reviews_loading: "Loading Google reviews…",
+    reviews_error: "Google reviews couldn't be loaded just now. Open them on Google Maps.",
   },
   es: {
     nav_catalog: "Catálogo",
@@ -104,6 +129,7 @@ export const STOREFRONT_STRINGS = {
     nav_packages: "Paquetes",
     nav_design: "Diseñador 3D",
     nav_quote: "Pedir Cotización",
+    nav_reviews: "Reseñas",
     hero_badge_years: "Sirviendo a clientes por más de {years} años",
     hero_browse: "Ver Gabinetes",
     hero_design: "Diseña Tu Cocina",
@@ -172,6 +198,24 @@ export const STOREFRONT_STRINGS = {
     footer_rights: "Todos los derechos reservados.",
     footer_powered: "Desarrollado por nuestra plataforma",
     btn_add_to_cart: "Agregar al Carrito",
+    // google reviews
+    reviews_eyebrow: "Verificado en Google",
+    reviews_title: "Lo que dicen los clientes en Google",
+    reviews_avg: "{rating} de 5",
+    reviews_count: "{count} reseñas de Google",
+    reviews_see_all: "Ver todas las reseñas en Google",
+    reviews_write: "Escribir una reseña",
+    reviews_map_title: "Encuéntranos en Google Maps",
+    reviews_order_notice: "Se muestran en el orden en que Google las devolvió (primero las más relevantes). No se filtran, editan ni reordenan.",
+    reviews_verified_notice: "Google no verifica las reseñas, pero detecta y elimina el contenido falso cuando lo identifica.",
+    reviews_translated: "Traducido por Google",
+    reviews_original: "Leer el original",
+    reviews_empty: "Google aún no tiene reseñas para este negocio. Léelas todas en Google Maps.",
+    reviews_source: "Reseña en Google Maps",
+    reviews_report: "Reportar esta reseña",
+    reviews_visited: "Visitó en {month}",
+    reviews_loading: "Cargando reseñas de Google…",
+    reviews_error: "No se pudieron cargar las reseñas de Google ahora. Ábrelas en Google Maps.",
   },
   zh: {
     nav_catalog: "目录",
@@ -179,6 +223,7 @@ export const STOREFRONT_STRINGS = {
     nav_packages: "套餐",
     nav_design: "3D设计器",
     nav_quote: "获取报价",
+    nav_reviews: "评价",
     hero_badge_years: "为客户服务超过 {years}+ 年",
     hero_browse: "浏览橱柜",
     hero_design: "设计您的厨房",
@@ -247,6 +292,24 @@ export const STOREFRONT_STRINGS = {
     footer_rights: "版权所有。",
     footer_powered: "由我们的平台提供支持",
     btn_add_to_cart: "加入购物车",
+    // google reviews
+    reviews_eyebrow: "在 Google 上已验证",
+    reviews_title: "客户在 Google 上的评价",
+    reviews_avg: "5 分中的 {rating} 分",
+    reviews_count: "{count} 条 Google 评价",
+    reviews_see_all: "在 Google 上查看全部评价",
+    reviews_write: "撰写评价",
+    reviews_map_title: "在 Google 地图上找到我们",
+    reviews_order_notice: "按 Google 返回的顺序显示（最相关的在前）。评价不会被筛选、编辑或重新排序。",
+    reviews_verified_notice: "Google 不会验证评价，但会识别并移除虚假内容。",
+    reviews_translated: "由 Google 翻译",
+    reviews_original: "阅读原文",
+    reviews_empty: "Google 目前还没有这家商家的评价。请在 Google 地图上查看全部评价。",
+    reviews_source: "Google 地图上的评价",
+    reviews_report: "举报此评价",
+    reviews_visited: "于 {month} 到访",
+    reviews_loading: "正在加载 Google 评价…",
+    reviews_error: "暂时无法加载 Google 评价。请在 Google 地图上查看。",
   },
 } as const;
 

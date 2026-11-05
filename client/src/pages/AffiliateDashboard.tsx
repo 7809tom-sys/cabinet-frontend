@@ -19,6 +19,7 @@ import { AffiliateImageCabinet } from "@/components/affiliate/AffiliateImageCabi
 import AffiliateMarketingHub from "@/components/affiliate/AffiliateMarketingHub";
 import AffiliatePromotionsPanel from "@/components/affiliate/AffiliatePromotionsPanel";
 import { AffiliatePluginsPanel } from "@/components/affiliate/AffiliatePluginsPanel";
+import { AffiliateGoogleReviewsPanel } from "@/components/affiliate/AffiliateGoogleReviewsPanel";
 import { AffiliateAppointmentsPanel } from "@/components/affiliate/AffiliateAppointmentsPanel";
 import { ReferVendorForm } from "@/components/affiliate/ReferVendorForm";
 import { AddContractorPanel } from "@/components/affiliate/AddContractorPanel";
@@ -817,14 +818,23 @@ export default function AffiliateDashboard() {
       );
       case "plugins":
         return (
-          <AffiliatePluginsPanel
-            affiliateId={affiliate.id}
-            isAdmin={isAdmin}
-            embedCodeDraft={affiliate.embedCodeDraft}
-            embedEnabled={Boolean(affiliate.embedEnabled)}
-            storeName={affiliate.storeName}
-            onSaved={() => { activeQuery.refetch(); setPreviewKey((k) => k + 1); }}
-          />
+          <div className="max-w-4xl space-y-6">
+            <AffiliateGoogleReviewsPanel
+              affiliateId={affiliate.id}
+              slug={affiliate.slug}
+              googlePlaceId={(affiliate as { googlePlaceId?: string | null }).googlePlaceId ?? null}
+              isAdmin={isAdmin}
+              onSaved={() => { activeQuery.refetch(); setPreviewKey((k) => k + 1); }}
+            />
+            <AffiliatePluginsPanel
+              affiliateId={affiliate.id}
+              isAdmin={isAdmin}
+              embedCodeDraft={affiliate.embedCodeDraft}
+              embedEnabled={Boolean(affiliate.embedEnabled)}
+              storeName={affiliate.storeName}
+              onSaved={() => { activeQuery.refetch(); setPreviewKey((k) => k + 1); }}
+            />
+          </div>
         );
       case "promotions":
         return (
