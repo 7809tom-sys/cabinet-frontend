@@ -57,7 +57,7 @@ import { trpc } from "@/lib/trpc";
 import { preferredDoorReferenceUrl } from "@/lib/approvedDoorReference";
 import { designerFacePlan, type DesignerFaceStyle } from "@/lib/designerFacePlan";
 import { designerThreeDAssignments, type DesignerStyleRow } from "@/lib/designerThreeDStyles";
-import { fillOverRangeAnswer, overRangeAnswerToPersist, overRangeIsOccupied, rangesInPlan, readOverRangeAnswer } from "@/lib/overRangeFill";
+import { fillOverRangeAnswer, overRangeAnswerToPersist, overRangeFullyDressed, placeMandatoryOverRangeBridges, rangesInPlan, readOverRangeAnswer } from "@/lib/overRangeFill";
 import {
   affiliateSlugForStoreScope,
   cartPathForStoreScope,
@@ -4388,7 +4388,26 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       maxFillerIn: AUTO_DESIGN_FILLER_MAX_IN,
     });
     working = seamResult.placed;
-    // The range is left open on purpose: the dialog after the build asks what goes above it.
+    // HARD RULE (owner, Nov 5 2026): a real bridge above the range on EVERY build,
+    // seated BEFORE the upper run tiles. That makes the bridge an occupied upper, so
+    // the wall run never lays a cabinet over the range or leaves a sliver beside the
+    // bridge. It is mandatory: no popup answer and no fallback chain can skip it, and
+    // nothing is ever deleted or moved.
+    const mandatoryBridge = placeMandatoryOverRangeBridges({
+      placed: working,
+      room,
+      wallCatalog: stage.wallPool,
+      wallCabinetHeightIn: stage.input.wallCabinetHeightIn ?? 30,
+      styleId: styleIdRef.current ?? null,
+      makeUid,
+    });
+    if (mandatoryBridge.added) working = mandatoryBridge.placed;
+    for (const note of mandatoryBridge.notes) toast.info(note, { duration: 8000 });
+    // A bridge that could not seat is a blocking finding on the review list, never a
+    // silent skip.
+    if (mandatoryBridge.findings.length) setAutoDesignReviewFindings((current) => [...current, ...mandatoryBridge.findings]);
+    // The range is otherwise left open to the design question; the microwave and hood
+    // follow the add-only logic once the run is tiled.
     // Wall boxes are last. Match the completed lower projections, retaining
     // selected-line SKUs, height and opening clearances without moving anchors.
     const upperResult = buildAutoDesignWallCabinets({
@@ -4495,9 +4514,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     if (placed.length === 0) return;
     const ranges = rangesInPlan(placed);
     if (ranges.length === 0) return;
-    // A plan whose ranges are all already dressed needs no pass, and the guard
-    // stops the effect from re-planning on every unrelated render.
-    if (ranges.every((range) => overRangeIsOccupied(placed, range, room))) return;
+    // A plan whose ranges all have their mandatory bridge AND a microwave or hood
+    // needs no pass, and the guard stops the effect from re-planning on every
+    // unrelated render. The pass itself is idempotent.
+    if (ranges.every((range) => overRangeFullyDressed(placed, range, room))) return;
     const fillKey = [
       overRangeEpoch,
       room.overRangeAnswer ?? "none",

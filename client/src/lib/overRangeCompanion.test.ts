@@ -54,8 +54,29 @@ describe("microwave and bridge are placed during the build", () => {
     expect(bridge?.masterCode).toBe("W3012");
   });
 
-  it("returns no bridge for a range that is not 30 inches", () => {
-    expect(overRangeBridgeFor({ rangeWidthIn: 36, wallCabinetHeightIn: 30, wallCatalog: wallRows("330011") })).toBeNull();
+  it("matches the bridge to the RANGE width, not a fixed 30 inches", () => {
+    // Owner rule: the bridge spans the range. A 36" range takes the 36" bridge in
+    // its own line; a 30" range takes the 30" one.
+    const wide = overRangeBridgeFor({ rangeWidthIn: 36, wallCabinetHeightIn: 30, wallCatalog: wallRows("330011") });
+    expect(wide?.masterCode).toBe("W3612");
+    expect(Number(wide?.width)).toBeCloseTo(36, 3);
+    const standard = overRangeBridgeFor({ rangeWidthIn: 30, wallCabinetHeightIn: 30, wallCatalog: wallRows("330011") });
+    expect(standard?.masterCode).toBe("W3012");
+  });
+
+  it("uses the nearest stock bridge width when the line sells no exact match", () => {
+    // 330002 sells 30", 33" and 36" bridges and no 24", so a 24" range takes the
+    // nearest one rather than failing.
+    const bridge = overRangeBridgeFor({ rangeWidthIn: 24, wallCabinetHeightIn: 30, wallCatalog: wallRows("330011") });
+    expect(bridge).not.toBeNull();
+    expect(Number(bridge!.width)).toBeCloseTo(30, 3);
+  });
+
+  it("picks a shorter bridge that still clears a low ceiling", () => {
+    // 72" datum + 24" = 96"; an 88" ceiling cannot take a 24" bridge but can take a 12".
+    const bridge = overRangeBridgeFor({ rangeWidthIn: 30, wallCabinetHeightIn: 42, wallCatalog: wallRows("330011"), ceilingIn: 88 });
+    expect(bridge).not.toBeNull();
+    expect(Number(bridge!.height)).toBeLessThanOrEqual(16);
   });
 
   it("finds the over-range microwave for the range width", () => {
@@ -98,19 +119,21 @@ describe("microwave and bridge are placed during the build", () => {
     expect(bridge.mountBottom).toBe(72);
   });
 
-  it("reports a named warning instead of silently leaving the range bare", () => {
+  it("reports a named warning when the line sells no bridge at all", () => {
     const result = planOverRangeCompanions({
       answer: "microwave-bridge",
       placed: [range(60, 36)],
       room: DEFAULT_ROOM,
       appliancePalette,
-      wallCatalog: wallRows("540005"),
+      // A line with only full-height uppers and no short bridge family.
+      wallCatalog: wallRows("540005").filter((row) => !/^W\d{2}(?:12|15|18|21|24)$/i.test((row.masterCode ?? "").toUpperCase().replace(/[^A-Z0-9]/g, ""))),
       wallCabinetHeightIn: 30,
     });
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.findings.some((finding) => finding.code === "no-matching-bridge")).toBe(true);
     expect(result.findings.every((finding) => finding.severity === "warning")).toBe(true);
+    expect(result.findings.find((finding) => finding.code === "no-matching-bridge")!.detail).toMatch(/36″ range/);
   });
 
   it("does nothing unless the design questions asked for it", () => {

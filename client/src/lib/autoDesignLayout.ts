@@ -47,7 +47,7 @@ import {
 } from "./autoDesignTallCabinets";
 import { raiseWindowsForDeckFaucet } from "./faucetPlacement";
 import { buildAutoDesignWallCabinets, resolveWallHeightClass, type AutoDesignUpperCorner } from "./autoDesignWallCabinets";
-import { answerWantsMicrowaveBridge, overRangeCompanionPlacements, planOverRangeCompanions } from "./overRangeCompanion";
+import { fillOverRangeAnswer, placeMandatoryOverRangeBridges } from "./overRangeFill";
 import { boundedWallPlacementAt, cabinetInsideBounds, uShapeRunWallLabels } from "./designerBounds";
 import { ensureSingleDoorBase, pairAdjacentSingleDoorHandles, normalizeUpperHeights } from "./designerFaceRules";
 import { buildDesignerReviewList, type DesignerReviewFinding } from "./designerReviewFindings";
@@ -948,7 +948,26 @@ export function runAutoDesignLayout(args: {
   });
   working = leftover.placed;
   notes.push(...leftover.notes);
-  // The range is left open on purpose: the Designer asks what goes above it (hood, bridge + microwave, or nothing).
+  // HARD RULE (owner, Nov 5 2026): a real bridge wall cabinet is placed above the
+  // range on EVERY build, and it goes in BEFORE the upper run tiles. Seating it
+  // first makes the bridge an occupied upper, so the wall run never lays an
+  // ordinary cabinet over the range and never leaves a sliver beside the bridge.
+  // It is mandatory: no popup answer and no fallback chain can skip it.
+  const bridgeResult = placeMandatoryOverRangeBridges({
+    placed: working,
+    room,
+    wallCatalog: args.wallCatalog,
+    wallCabinetHeightIn: stage.input.wallCabinetHeightIn ?? 30,
+    styleId: args.styleId,
+    makeUid,
+  });
+  if (bridgeResult.added) {
+    working = bridgeResult.placed;
+    notes.push(...bridgeResult.notes);
+  }
+  reviewFindings.push(...bridgeResult.findings);
+  // The range is otherwise left open to the design question: the microwave and hood
+  // follow the add-only logic after the run is tiled.
   const upperResult = buildAutoDesignWallCabinets({
     placed: working, room, openings: stageOpenings, catalog: [...stage.wallPool],
     wallCabinetHeightIn: stage.input.wallCabinetHeightIn ?? 30,
@@ -964,38 +983,27 @@ export function runAutoDesignLayout(args: {
     placed: working, room, openings: stageOpenings, fillers: catalogFillers, makeUid, styleId: args.styleId,
   });
   working = capAutoDesignFillerWidth(finishedRules.placed);
-  // Rule: when the design questions ask for an over-range microwave with a bridge, the build
-  // places both itself instead of waiting for the post-build dialog.
-  if (answerWantsMicrowaveBridge(stage.input.overRangeAnswer)) {
-    const companions = planOverRangeCompanions({
-      answer: stage.input.overRangeAnswer,
-      placed: working,
-      room,
-      appliancePalette: args.appliancePalette,
-      wallCatalog: args.wallCatalog,
-      wallCabinetHeightIn: stage.input.wallCabinetHeightIn ?? 30,
-    });
-    if (companions.ok) {
-      const drafts = overRangeCompanionPlacements(companions.plan, { makeUid, styleId: args.styleId });
-      const accepted = appendCollisionFreePlacements(working, drafts, room);
-      if (accepted.rejected.length === 0) {
-        working = accepted.placed;
-        notes.push(`${companions.plan.bridge.masterCode} and ${companions.plan.microwave.masterCode} were placed above ${companions.plan.rangeCode} as the design questions asked.`);
-      } else {
-        reviewFindings.push({
-          ruleId: "microwave-bridge-in-build",
-          code: "microwave-bridge-blocked",
-          severity: "warning",
-          title: "The microwave and bridge did not fit",
-          detail: `The design questions asked for an over-range microwave. The ${companions.plan.bridge.masterCode} bridge or the ${companions.plan.microwave.masterCode} microwave overlapped an existing cabinet, so nothing was added.`,
-          cabinetUid: companions.plan.rangeUid,
-          cabinetCode: companions.plan.rangeCode,
-        });
-      }
-    } else {
-      reviewFindings.push(...companions.findings);
-    }
+  // HARD RULE (owner, Nov 5 2026): the bridge above the range is mandatory and is
+  // already seated before the upper run tiled. What follows is the existing
+  // add-only logic for the MICROWAVE and HOOD on top of that bridge: the popup
+  // answer decides those, and a fallback chain decides them when there is no
+  // answer. Nothing here can remove the bridge, and nothing is ever deleted or
+  // moved. A bridge that could not seat was reported above, with its reason.
+  const overRunCompanions = fillOverRangeAnswer({
+    placed: working,
+    room,
+    answer: stage.input.overRangeAnswer,
+    appliancePalette: args.appliancePalette,
+    wallCatalog: args.wallCatalog,
+    wallCabinetHeightIn: stage.input.wallCabinetHeightIn ?? 30,
+    styleId: args.styleId,
+    makeUid,
+  });
+  if (overRunCompanions.added) {
+    working = overRunCompanions.placed;
+    notes.push(...overRunCompanions.notes);
   }
+  reviewFindings.push(...overRunCompanions.findings);
   // Rule 6: every kitchen has at least one single-door base.
   const singleDoor = ensureSingleDoorBase({
     placed: working,

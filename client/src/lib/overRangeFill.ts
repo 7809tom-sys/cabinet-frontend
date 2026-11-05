@@ -1,26 +1,25 @@
 /**
- * The over-range answer the kitchen asks once and then keeps.
+ * Above the range: the BRIDGE is mandatory, the rest is add-only.
  *
- * The design questions ask what goes above the range — a hood, a bridge with an
- * over-range microwave, or nothing. PR 174 removed the in-build hood fallback so
- * the question could decide, and left the range open. That is right during the
- * build, but it left the answer in a transient dialog: nothing remembered it, and
- * a plan loaded later sat with a bare range because `planOverRangeCompanions`
- * only ever ran inside `autoDesignLayout.ts`.
+ * Owner HARD RULE (Nov 5 2026): every auto-design build places a real bridge wall
+ * cabinet above the range. It is not optional and not skippable by the pop-up
+ * answer or by any fallback chain. The bridge goes in FIRST; a microwave and a hood
+ * are then added by the existing add-only logic.
  *
- * The rule this module holds:
+ * Order of work, per range, on every build and every layout load:
  *
- *   1. The answer the person gave is persisted with the layout and is used first,
- *      every time the plan is built or loaded.
- *   2. With no answer, the fallback chain runs ONLY when there is nothing above
- *      the range: a W30xx bridge (height from the upper line) plus the over-range
- *      microwave that matches the range width, else a `HOOD-` item.
- *   3. It is ADD-ONLY. An existing bridge or microwave is never deleted or moved,
- *      and nothing here edits a placement.
+ *   1. MANDATORY BRIDGE. If a bridge is already over the range it is kept exactly
+ *      as it is. Otherwise a real bridge box (`W30xx`/`W36xx`, 12–24" tall) matched
+ *      to the range width is placed at the 72" datum, centered on the range.
+ *      Nothing is ever deleted, replaced, or moved.
+ *   2. MICROWAVE + HOOD, add-only, driven by the saved answer (or the fallback
+ *      chain when there is no answer).
  *
- * The microwave code stays `MW-…` because `isMicrowaveOverRangePair`
- * (`client/src/lib/design.ts`) recognises an over-range appliance only by that
- * prefix; the W30 bridge is a `wall` cabinet flagged `overRangeMicrowaveBridge`.
+ * No wall run tiles over the range (`upperReservedZones` in
+ * `autoDesignSeamFillers.ts`), so the bridge always has its span.
+ *
+ * A bridge that genuinely cannot be seated is reported as a blocking finding with
+ * the reason, never silently skipped.
  */
 import {
   appendCollisionFreePlacements,
@@ -33,12 +32,17 @@ import {
   type RoomData,
   type WallSide,
 } from "./design";
+import type { DesignerReviewFinding } from "./designerReviewFindings";
 import {
+  isBridgeOverRangeCabinet,
   overRangeBridgeFor,
+  overRangeBridgePlacement,
+  overRangeBridgePlanFor,
   overRangeCompanionPlacements,
   overRangeCompanionPlanFor,
   overRangeMicrowaveFor,
   planOverRangeCompanions,
+  rangeWallCeiling,
   type OverRangeAnswer,
 } from "./overRangeCompanion";
 import { autoDesignRangeHood, autoDesignRangeNeedsVentilation } from "./autoDesignRangeHood";
@@ -46,17 +50,35 @@ import { autoDesignRangeHood, autoDesignRangeNeedsVentilation } from "./autoDesi
 export type OverRangeAnswerValue = NonNullable<OverRangeAnswer>;
 export const OVER_RANGE_ANSWERS: readonly OverRangeAnswerValue[] = ["microwave-bridge", "hood", "open"] as const;
 
-/** Where the answer came from on this pass. */
-export type OverRangeSource = "answer" | "fallback-bridge" | "fallback-hood" | "none";
+/**
+ * Where the over-range state came from on this pass.
+ * `mandatory-bridge` is the bridge placed by the hard rule; `answer` and
+ * `fallback-*` describe what was added on top of it.
+ */
+export type OverRangeSource =
+  | "mandatory-bridge"
+  | "mandatory-bridge-answer"
+  | "mandatory-bridge-fallback"
+  | "answer"
+  | "fallback-bridge"
+  | "fallback-hood"
+  | "none";
 
 export type OverRangeFillResult = {
   /** The placed cabinets, with anything added. Identical when nothing was added. */
   placed: PlacedCabinet[];
   source: OverRangeSource;
-  /** Plain-language notes for the toast/review list. Empty when nothing happened. */
+  /** Plain-language notes for the toast. Empty when nothing happened. */
   notes: string[];
   /** True when at least one cabinet was added. */
   added: boolean;
+  /**
+   * Blocking reasons for a bridge that could not be seated. These go on the
+   * Designer's review list so a missing bridge is always explained, never silent.
+   */
+  findings: DesignerReviewFinding[];
+  /** True when every range in the plan now has a bridge above it. */
+  everyRangeBridged: boolean;
 };
 
 /** True when the value really is one of the three answers people can give. */
@@ -69,18 +91,30 @@ export function readOverRangeAnswer(value: unknown): OverRangeAnswerValue | null
   return isOverRangeAnswer(value) ? value : null;
 }
 
-/** True when something already sits above this range: a hood, a bridge, or a microwave. */
-export function overRangeIsOccupied(
+/**
+ * Every real range in the plan, in placement order.
+ *
+ * A microwave and a hood must be excluded: their own descriptions say "over-range"
+ * and "range hood", so `isRangeOrOven` alone would read them as ranges and this
+ * module would try to hang a bridge above a microwave.
+ */
+export function rangesInPlan(placed: readonly PlacedCabinet[]): PlacedCabinet[] {
+  return placed.filter((item) => (
+    item.placement === "appliance"
+    && isRangeOrOven(item.masterCode, item.description)
+    && !isOverRangeMicrowave(item)
+    && !/^HOOD[-_]/i.test(item.masterCode ?? "")
+    && !/\bhood\b/i.test(item.description ?? "")
+  ));
+}
+
+/** The bridge already over this range, if any. Never deleted or moved by this module. */
+export function existingOverRangeBridge(
   placed: readonly PlacedCabinet[],
   range: PlacedCabinet,
   room: RoomData,
-): boolean {
-  return !autoDesignRangeNeedsVentilation(placed, range);
-}
-
-/** Every range in the plan, in placement order. */
-export function rangesInPlan(placed: readonly PlacedCabinet[]): PlacedCabinet[] {
-  return placed.filter((item) => item.placement === "appliance" && isRangeOrOven(item.masterCode, item.description));
+): PlacedCabinet | null {
+  return placed.find((item) => isBridgeOverRangeCabinet(item, range, room)) ?? null;
 }
 
 /** The over-range microwave already mounted on this range, if any. */
@@ -99,19 +133,178 @@ export function existingOverRangeHood(
   return placed.find((item) => item.uid !== range.uid && isHoodOverRangePair(item, range)) ?? null;
 }
 
+/**
+ * True when something already sits above this range: a bridge, a hood, or a
+ * microwave. A bridge alone counts — the mandatory bridge is what the range is
+ * dressed with, and the microwave/hood question is decided separately.
+ */
+export function overRangeIsOccupied(
+  placed: readonly PlacedCabinet[],
+  range: PlacedCabinet,
+  room: RoomData,
+): boolean {
+  return overRangeHasBridge(placed, range, room) || !autoDesignRangeNeedsVentilation(placed, range);
+}
+
+/**
+ * True when this range needs nothing more: it has its mandatory bridge AND a
+ * microwave or hood above it. Used to skip a redundant pass; the pass itself is
+ * idempotent, so a false answer only costs one cheap re-check.
+ */
+export function overRangeFullyDressed(
+  placed: readonly PlacedCabinet[],
+  range: PlacedCabinet,
+  room: RoomData,
+): boolean {
+  return overRangeHasBridge(placed, range, room)
+    && (existingOverRangeMicrowave(placed, range) != null || existingOverRangeHood(placed, range) != null);
+}
+
+/** True when this range has its mandatory bridge. */
+export function overRangeHasBridge(
+  placed: readonly PlacedCabinet[],
+  range: PlacedCabinet,
+  room: RoomData,
+): boolean {
+  return existingOverRangeBridge(placed, range, room) != null;
+}
+
 /** A WallSide for the range's wall, or null when it is not on a room wall. */
 function rangeWall(range: PlacedCabinet): WallSide | null {
   const wall = range.wallId;
   return wall === "top" || wall === "bottom" || wall === "left" || wall === "right" ? wall : null;
 }
 
+const BRIDGE_RULE_ID = "bridge-above-range";
+
+/** One blocking finding, named and specific, for a bridge that could not seat. */
+function bridgeBlockedFinding(range: PlacedCabinet, detail: string): DesignerReviewFinding {
+  return {
+    ruleId: BRIDGE_RULE_ID,
+    code: "range-bridge-blocked",
+    severity: "warning",
+    title: `No bridge cabinet above ${range.masterCode}`,
+    detail,
+    cabinetUid: range.uid,
+    cabinetCode: range.masterCode,
+  };
+}
+
 /**
- * Add the answer's companions, or run the add-only fallback chain.
+ * Seat the mandatory bridge over one range. Never deletes, replaces, or moves
+ * anything: an existing bridge is returned untouched, and the new box goes through
+ * the shared collision gate.
+ */
+function seatMandatoryBridge(input: {
+  placed: PlacedCabinet[];
+  range: PlacedCabinet;
+  room: RoomData;
+  wallCatalog: readonly DesignCabinet[];
+  wallCabinetHeightIn: number;
+  styleId: number | null;
+  makeUid: () => string;
+}): { placed: PlacedCabinet[]; added: PlacedCabinet | null; finding: DesignerReviewFinding | null } {
+  const { placed, range, room, wallCatalog, wallCabinetHeightIn } = input;
+  if (existingOverRangeBridge(placed, range, room)) {
+    return { placed, added: null, finding: null };
+  }
+  const wall = rangeWall(range);
+  if (!wall) {
+    return {
+      placed,
+      added: null,
+      finding: bridgeBlockedFinding(range, `${range.masterCode} is not on a room wall, so there is nowhere to hang a bridge cabinet.`),
+    };
+  }
+  const ceilingIn = rangeWallCeiling(range, room);
+  const bridge = overRangeBridgeFor({
+    rangeWidthIn: Number(range.width) || 0,
+    wallCabinetHeightIn,
+    wallCatalog,
+    ceilingIn,
+  });
+  if (!bridge) {
+    const sellsBridge = wallCatalog.some((row) => /^W\d{2}(?:12|15|18|21|24)$/i.test((row.masterCode ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "")));
+    return {
+      placed,
+      added: null,
+      finding: bridgeBlockedFinding(range, sellsBridge
+        ? `The ${range.masterCode} wall's ${ceilingIn}″ ceiling leaves no room for a 12″–24″ bridge at the 72″ datum, so no bridge could be hung above the range.`
+        : `The selected line sells no solid bridge cabinet (a 12″–24″ wall box) for a ${Number(range.width) || 0}″ range, so nothing could be placed above it.`),
+    };
+  }
+  // A frameless line's 12" bridge is a 12" tall box; other lines sell 13½" deep
+  // uppers. Neither is a reason to skip the mandatory bridge, so its own catalog
+  // depth and height are placed exactly as the line stores them.
+  const plan = overRangeBridgePlanFor({ range, room, bridge });
+  const draft = overRangeBridgePlacement(plan, { makeUid: input.makeUid, styleId: input.styleId });
+  const accepted = appendCollisionFreePlacements(placed, [draft], room);
+  if (accepted.rejected.length > 0 || !accepted.placed.some((item) => item.uid === draft.uid)) {
+    return {
+      placed,
+      added: null,
+      finding: bridgeBlockedFinding(range, `The ${bridge.masterCode} bridge needs ${Number(bridge.width) || 30}″ of clear upper wall centered above ${range.masterCode}, and that span is already occupied. Nothing was moved or removed to make room.`),
+    };
+  }
+  return { placed: accepted.placed, added: draft, finding: null };
+}
+
+/**
+ * Seat the mandatory bridge over every range. Call this BEFORE the wall-cabinet run
+ * tiles, so the run treats the bridge as an occupied upper and never lays an
+ * ordinary wall cabinet over the range or leaves a sliver beside it.
  *
- * Call it after every DesignTool build and on layout load. It never removes,
- * replaces, or moves a placement: every addition goes through
- * `appendCollisionFreePlacements`, and anything that does not fit is reported
- * instead of forced.
+ * Never deletes, replaces, or moves anything: an existing bridge is kept as it is.
+ */
+export function placeMandatoryOverRangeBridges(input: {
+  placed: readonly PlacedCabinet[];
+  room: RoomData;
+  wallCatalog: readonly DesignCabinet[];
+  wallCabinetHeightIn: number;
+  styleId: number | null;
+  makeUid: () => string;
+}): OverRangeFillResult {
+  const initial = [...input.placed];
+  const notes: string[] = [];
+  const findings: DesignerReviewFinding[] = [];
+  let working = initial;
+  let addedAny = false;
+
+  for (const range of rangesInPlan(working)) {
+    const seated = seatMandatoryBridge({
+      placed: working,
+      range,
+      room: input.room,
+      wallCatalog: input.wallCatalog,
+      wallCabinetHeightIn: input.wallCabinetHeightIn,
+      styleId: input.styleId,
+      makeUid: input.makeUid,
+    });
+    if (seated.placed !== working) {
+      working = seated.placed;
+      addedAny = true;
+      notes.push(`${seated.added!.masterCode} bridge was placed above ${range.masterCode}.`);
+    }
+    if (seated.finding) findings.push(seated.finding);
+  }
+
+  const finalRanges = rangesInPlan(working);
+  return {
+    placed: working,
+    source: addedAny ? "mandatory-bridge" : "none",
+    notes,
+    added: addedAny,
+    findings,
+    everyRangeBridged: finalRanges.every((range) => overRangeHasBridge(working, range, input.room)),
+  };
+}
+
+/**
+ * Place the mandatory bridge, then let the existing add-only logic dress the rest of
+ * the range.
+ *
+ * Call it after every build and on every layout load. It is idempotent: a second
+ * pass sees the bridge and adds nothing.
  */
 export function fillOverRangeAnswer(input: {
   placed: readonly PlacedCabinet[];
@@ -124,23 +317,51 @@ export function fillOverRangeAnswer(input: {
   styleId: number | null;
   makeUid: () => string;
 }): OverRangeFillResult {
-  const placed = [...input.placed];
+  const initial = [...input.placed];
   const answer = readOverRangeAnswer(input.answer);
-  const ranges = rangesInPlan(placed);
-  if (ranges.length === 0) return { placed, source: "none", notes: [], added: false };
+  const ranges = rangesInPlan(initial);
+  if (ranges.length === 0) {
+    return { placed: initial, source: "none", notes: [], added: false, findings: [], everyRangeBridged: true };
+  }
 
   const notes: string[] = [];
-  let working = placed;
-  let source: OverRangeSource = "none";
-  let added = false;
+  const findings: DesignerReviewFinding[] = [];
+  let working = initial;
+  let addedAny = false;
+  let bridgePlaced = false;
 
-  for (const range of ranges) {
-    // Nothing to do when something is already above this range. This is what makes
-    // the pass add-only and idempotent: an existing bridge or microwave is kept.
-    if (overRangeIsOccupied(working, range, input.room)) continue;
+  // ── 1. The mandatory bridge, first, for every range ──────────────────────────
+  for (const range of rangesInPlan(working)) {
+    const seated = seatMandatoryBridge({
+      placed: working,
+      range,
+      room: input.room,
+      wallCatalog: input.wallCatalog,
+      wallCabinetHeightIn: input.wallCabinetHeightIn,
+      styleId: input.styleId,
+      makeUid: input.makeUid,
+    });
+    if (seated.placed !== working) {
+      working = seated.placed;
+      addedAny = true;
+      bridgePlaced = true;
+      notes.push(`${seated.added!.masterCode} bridge was placed above ${range.masterCode}.`);
+    }
+    if (seated.finding) findings.push(seated.finding);
+  }
+
+  // ── 2. Microwave / hood: the existing add-only logic ─────────────────────────
+  let source: OverRangeSource = bridgePlaced ? "mandatory-bridge" : "none";
+  let addedByAnswerOrFallback = false;
+
+  for (const range of rangesInPlan(working)) {
+    // A bridge alone is not "ventilation": the microwave/hood question is separate.
+    const hasMicrowave = existingOverRangeMicrowave(working, range) != null;
+    const hasHood = existingOverRangeHood(working, range) != null;
+    if (hasMicrowave || hasHood) continue;
 
     if (answer === "open") {
-      notes.push(`Range ${range.masterCode} is left open above, as answered.`);
+      notes.push(`Range ${range.masterCode} keeps its bridge and no microwave or hood, as answered.`);
       continue;
     }
 
@@ -154,21 +375,25 @@ export function fillOverRangeAnswer(input: {
         wallCabinetHeightIn: input.wallCabinetHeightIn,
       });
       if (companions.ok) {
-        const drafts = overRangeCompanionPlacements(companions.plan, { makeUid: input.makeUid, styleId: input.styleId });
+        // The bridge is already seated; add only the microwave. An existing bridge
+        // is never replaced by a different one.
+        const drafts = overRangeCompanionPlacements(companions.plan, { makeUid: input.makeUid, styleId: input.styleId })
+          .filter((draft) => draft.placement === "appliance");
+        if (drafts.length === 0) continue;
         const accepted = appendCollisionFreePlacements(working, drafts, input.room);
         if (accepted.rejected.length === 0) {
           working = accepted.placed;
-          source = "answer";
-          added = true;
-          notes.push(`${companions.plan.bridge.masterCode} and ${companions.plan.microwave.masterCode} were placed above ${companions.plan.rangeCode} as answered.`);
+          addedAny = true;
+          addedByAnswerOrFallback = true;
+          source = bridgePlaced ? "mandatory-bridge-answer" : "answer";
+          notes.push(`${companions.plan.microwave.masterCode} was placed above ${companions.plan.rangeCode} as answered.`);
           continue;
         }
-        notes.push(`The ${companions.plan.bridge.masterCode} bridge or the ${companions.plan.microwave.masterCode} microwave did not fit above ${range.masterCode}; nothing was added.`);
+        notes.push(`The ${companions.plan.microwave.masterCode} microwave did not fit above ${range.masterCode}; the bridge was kept and nothing else was added.`);
       } else {
+        // A missing microwave is not a missing bridge: report the microwave only.
         notes.push(...companions.findings.map((finding) => finding.detail));
       }
-      // The answer could not be honored, so fall through to the fallback chain
-      // rather than leaving the range bare.
     }
 
     if (answer === "hood") {
@@ -179,33 +404,42 @@ export function fillOverRangeAnswer(input: {
       }
       const accepted = appendCollisionFreePlacements(working, [hood.hood], input.room);
       if (accepted.rejected.length > 0 || !accepted.placed.some((item) => item.uid === hood.hood.uid)) {
-        notes.push(`The hood needs a clear upper-wall span above ${range.masterCode}; existing cabinets were left unchanged.`);
+        notes.push(`The hood needs a clear upper-wall span above ${range.masterCode}; the bridge was kept and nothing else was added.`);
         continue;
       }
       working = accepted.placed;
-      source = "answer";
-      added = true;
+      addedAny = true;
+      addedByAnswerOrFallback = true;
+      source = bridgePlaced ? "mandatory-bridge-answer" : "answer";
       notes.push(`${hood.hood.masterCode} was centered above ${range.masterCode} as answered.`);
       continue;
     }
 
-    // Fallback chain: W30xx bridge + matching microwave, else a HOOD- item.
+    // No answer (or the answer could not be honored): the existing fallback chain.
+    // The bridge is already seated, so only the microwave is left to add; its
+    // geometry is centered on that same bridge.
     const mic = overRangeMicrowaveFor(Number(range.width) || 0, input.appliancePalette);
-    const bridge = overRangeBridgeFor({
-      rangeWidthIn: Number(range.width) || 0,
-      wallCabinetHeightIn: input.wallCabinetHeightIn,
-      wallCatalog: input.wallCatalog,
-    });
-    if (mic && bridge) {
-      const plan = overRangeCompanionPlanFor({ range, room: input.room, microwave: mic, bridge });
-      const bridgeDraft = overRangeCompanionPlacements(plan, { makeUid: input.makeUid, styleId: input.styleId });
-      const accepted = appendCollisionFreePlacements(working, bridgeDraft, input.room);
-      if (accepted.rejected.length === 0) {
-        working = accepted.placed;
-        source = "fallback-bridge";
-        added = true;
-        notes.push(`${bridge.masterCode} and ${mic.masterCode} were added above ${range.masterCode}: nothing was above the range and no answer was saved.`);
-        continue;
+    const seatedBridge = existingOverRangeBridge(working, range, input.room);
+    if (mic && seatedBridge) {
+      // Reuse the seated bridge's own catalog row so the microwave centers exactly
+      // on the box already on the plan, whatever width it is.
+      const bridgeSource = input.wallCatalog.find((row) => (
+        row.masterCode === seatedBridge.masterCode
+        && Math.abs((Number(row.width) || 0) - (Number(seatedBridge.width) || 0)) <= 0.05
+      )) ?? null;
+      if (bridgeSource) {
+        const plan = overRangeCompanionPlanFor({ range, room: input.room, microwave: mic, bridge: bridgeSource });
+        const microwaveDraft = overRangeCompanionPlacements(plan, { makeUid: input.makeUid, styleId: input.styleId })
+          .filter((draft) => draft.placement === "appliance");
+        const accepted = appendCollisionFreePlacements(working, microwaveDraft, input.room);
+        if (accepted.rejected.length === 0) {
+          working = accepted.placed;
+          addedAny = true;
+          addedByAnswerOrFallback = true;
+          source = bridgePlaced ? "mandatory-bridge-fallback" : "fallback-bridge";
+          notes.push(`${mic.masterCode} was added above the bridge on ${range.masterCode}: no answer was saved.`);
+          continue;
+        }
       }
     }
     const hood = autoDesignRangeHood({ range, room: input.room, palette: input.appliancePalette, uid: input.makeUid() });
@@ -213,19 +447,30 @@ export function fillOverRangeAnswer(input: {
       const accepted = appendCollisionFreePlacements(working, [hood.hood], input.room);
       if (accepted.rejected.length === 0 && accepted.placed.some((item) => item.uid === hood.hood.uid)) {
         working = accepted.placed;
-        source = "fallback-hood";
-        added = true;
-        notes.push(`${hood.hood.masterCode} was centered above ${range.masterCode}: nothing was above the range and no bridge could be seated.`);
+        addedAny = true;
+        addedByAnswerOrFallback = true;
+        source = bridgePlaced ? "mandatory-bridge-fallback" : "fallback-hood";
+        notes.push(`${hood.hood.masterCode} was centered above ${range.masterCode}: no answer was saved and no microwave was available.`);
         continue;
       }
     }
-    const wall = rangeWall(range);
-    notes.push(wall
-      ? `Nothing could be added above ${range.masterCode}: no bridge fit and no hood could reach a clear span.`
-      : `Nothing could be added above ${range.masterCode}: the range is not on a room wall.`);
+    if (!bridgePlaced) {
+      notes.push(`Nothing could be added above ${range.masterCode}.`);
+    }
   }
 
-  return { placed: working, source, notes, added };
+  // A bridge-only pass still counts as a change.
+  if (!addedByAnswerOrFallback && bridgePlaced) source = "mandatory-bridge";
+
+  const finalRanges = rangesInPlan(working);
+  return {
+    placed: working,
+    source,
+    notes,
+    added: addedAny,
+    findings,
+    everyRangeBridged: finalRanges.every((range) => overRangeHasBridge(working, range, input.room)),
+  };
 }
 
 /**
@@ -233,6 +478,8 @@ export function fillOverRangeAnswer(input: {
  * is never overwritten by a fallback: an "open" range stays open, and a range the
  * fallback dressed keeps "no answer" so the next load re-runs the same chain
  * instead of claiming the person chose something.
+ *
+ * The mandatory bridge is independent of this: it is placed whatever the answer is.
  */
 export function overRangeAnswerToPersist(previous: unknown, chosen: unknown): OverRangeAnswerValue | null {
   const chosenAnswer = readOverRangeAnswer(chosen);

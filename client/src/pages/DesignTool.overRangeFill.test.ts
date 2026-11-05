@@ -29,7 +29,11 @@ describe("the add-only over-range pass", () => {
     expect(designTool).toContain("fillOverRangeAnswer({");
     const pass = between(designTool, "const overRangeFillRanRef = useRef", "// Actual MasterTrac material numbers");
     expect(pass).toContain("rangesInPlan(placed)");
-    expect(pass).toContain("overRangeIsOccupied(placed, range, room)");
+    expect(pass).toContain("overRangeFullyDressed(placed, range, room)");
+    // The pass itself fills whatever the build left (bridge + microwave/hood), so a
+    // restored design that predates the rule is dressed on load.
+    expect(pass).toContain("fillOverRangeAnswer({");
+    expect(pass).toContain("answer: room.overRangeAnswer");
     expect(pass).toContain("answer: room.overRangeAnswer");
     expect(pass).toContain("wallCatalog: wallCabPoolRef.current");
     expect(pass).toContain("setPlaced(() => result.placed)");
@@ -39,6 +43,25 @@ describe("the add-only over-range pass", () => {
     expect(deps).toContain("room");
   });
 
+  it("seats the mandatory bridge BEFORE the upper run tiles, in both build paths", () => {
+    // The bridge must go in first so the wall run treats it as an occupied upper and
+    // never lays a cabinet over the range or leaves a sliver beside the bridge.
+    expect(designTool).toContain("placeMandatoryOverRangeBridges({");
+    const complete = between(designTool, "const seamResult = fillAutoDesignLowerSeams({", "const upperResult = buildAutoDesignWallCabinets({");
+    expect(complete).toContain("placeMandatoryOverRangeBridges({");
+    expect(complete).toContain("if (mandatoryBridge.added) working = mandatoryBridge.placed;");
+
+    const layoutSource = readFileSync(new URL("../lib/autoDesignLayout.ts", import.meta.url), "utf8");
+    const buildPath = between(layoutSource, "const bridgeResult = placeMandatoryOverRangeBridges({", "const upperResult = buildAutoDesignWallCabinets({");
+    expect(buildPath).toContain("placeMandatoryOverRangeBridges({");
+    expect(buildPath).toContain("reviewFindings.push(...bridgeResult.findings)");
+  });
+
+  it("surfaces a blocked bridge on the review list instead of skipping it", () => {
+    expect(designTool).toContain("setAutoDesignReviewFindings((current) => [...current, ...mandatoryBridge.findings])");
+    expect(designTool).toContain("const overRangeFillRanRef = useRef");
+  });
+
   it("never deletes, replaces, or moves an existing bridge or microwave", () => {
     // Everything the pass adds goes through the shared collision gate, and the
     // module is add-only by construction.
@@ -46,7 +69,8 @@ describe("the add-only over-range pass", () => {
     expect(fillModule).toContain("appendCollisionFreePlacements(");
     expect(fillModule).not.toMatch(/\.filter\(\(item\) => item\.uid !==/);
     expect(fillModule).not.toContain("splice(");
-    expect(fillModule).toContain("overRangeIsOccupied(working, range, input.room)");
+    expect(fillModule).toContain("existingOverRangeBridge(placed, range, room)");
+    expect(fillModule).toContain("everyRangeBridged");
   });
 
   it("persists the popup answer with the layout, including 'leave it open'", () => {

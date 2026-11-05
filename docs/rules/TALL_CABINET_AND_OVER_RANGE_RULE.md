@@ -43,33 +43,55 @@ A successful fit adds a layout note saying it seated `at the end of the run` (or
 - `client/src/lib/autoDesignTallCabinets.test.ts` — run-end seating on an empty wall, closing a run that stops short of the wall end, the interior-span case, several talls in turn, the ceiling and no-span codes.
 - `client/src/lib/autoDesignSinkAndTall.build.test.ts` — the measured build: the tower closes the run at the far wall end with nothing beyond it, two picks both seat without overlapping, and every dropped pick is named with a reason.
 
-# Above the range (Nov 5 2026)
+# Above the range (HARD RULE, Nov 5 2026)
 
-The design questions ask what goes above the range: a **hood**, a **bridge + over-range microwave**, or **nothing**. PR 174 removed the in-build hood so that question could decide, and left the range open — which is correct during the build, but the answer was never saved and `planOverRangeCompanions` only ever ran inside `autoDesignLayout.ts`. A loaded plan therefore sat with a bare range.
+**A bridge wall cabinet is always placed above the range.** It is not optional, not skippable by the pop-up answer, and not skippable by any fallback chain. It goes in **first** — before any microwave or hood — on every build and on every layout load, in both build paths (`runAutoDesignLayout` and the DesignTool builder).
 
-`client/src/lib/overRangeFill.ts` closes the loop.
+`client/src/lib/overRangeFill.ts` owns the rule.
 
-## The chain
+## 1. The mandatory bridge
 
-1. **The saved answer wins.** It lives on the room as `overRangeAnswer` and is persisted with the layout, so a reload re-uses it and nobody is asked twice.
-2. **No answer → the fallback chain runs, add-only:**
-   - a `W30xx` bridge (height from the upper line via `bridgeHeightForWallHeight`) plus the `MW-` microwave that matches the range width;
-   - else a `HOOD-` item.
-3. **Nothing above the range → nothing to do.** The pass skips a range that already has a hood, a bridge, or a microwave.
+`placeMandatoryOverRangeBridges` seats a real bridge box over every range before the upper run tiles, so the wall run treats it as an occupied upper and **never lays an ordinary cabinet over the range** (nor leaves a sliver beside the bridge).
+
+Bridge selection (`overRangeBridgeFor` in `overRangeCompanion.ts`), in order:
+
+1. the width that matches the **range width** — a 36″ range takes the 36″ bridge;
+2. else the nearest stock bridge width the line sells;
+3. the height that lands the bridge top on the upper run line (`bridgeHeightForWallHeight`), else the nearest real height that still **clears the wall's ceiling**.
+
+The bridge family is a real solid wall box 12″–24″ tall, matched from the line's own catalog (`W30xx`, `W36xx`, …). Spice (`WSC30`), glass, open-box and refrigerator boxes are never a bridge. It hangs at the fixed **72″** datum, centered on the range, and is flagged `overRangeMicrowaveBridge: true`.
+
+## 2. Microwave and hood, add-only
+
+With the bridge in place, the pop-up answer decides what sits on top of it:
+
+- `microwave-bridge` → the `MW-` microwave matching the range width;
+- `hood` → a `HOOD-` item;
+- `open` → neither (the bridge is still there);
+- no answer → the fallback chain: the `MW-` microwave, else a `HOOD-` item.
+
+The answer lives on the room as `overRangeAnswer`, is persisted with the layout, and is re-used on every load so nobody is asked twice.
 
 ## Rules
 
-- **Add-only.** It never deletes, replaces, or moves a placement. Every addition goes through `appendCollisionFreePlacements`; anything that does not fit is reported instead.
-- **Never deletes an existing bridge or microwave.** A manually placed `MW-` is left exactly where it is.
-- **Microwave codes stay `MW-…`.** `isMicrowaveOverRangePair` in `client/src/lib/design.ts` recognises an over-range appliance only by that prefix, so the fallback places a real `MW-` row.
-- The pass runs **after every build** and **on every layout load**, keyed off a plan epoch so a cabinet the person deleted is not silently re-added.
+- **Never deletes, replaces, or moves anything.** Every addition goes through `appendCollisionFreePlacements`. An existing bridge — flagged or a bridge-family box hung at the 72″ datum — is kept exactly as it is, and a manually placed `MW-` is left where it is.
+- **A bridge that genuinely cannot fit is reported**, never silently skipped. `overRangeFill` returns a `range-bridge-blocked` finding naming the range and the reason (no bridge in the line, ceiling too low for a 12″ box at the 72″ datum, or the span is occupied). The Designer puts it on the review list; the build adds it to `reviewFindings`.
+- **Microwave codes stay `MW-…`.** `isMicrowaveOverRangePair` in `client/src/lib/design.ts` recognises an over-range appliance only by that prefix.
+- **Ordinary wall runs never tile over the range.** `upperReservedZones` (`autoDesignSeamFillers.ts`) always returns the range span as reserved.
+- The pass is **idempotent** and runs **after every build** and **on every layout load**, keyed off a plan epoch so a cabinet the person deleted is not silently re-added.
 
 ## Persistence
 
-`setOverRangeAnswer` is the single writer. `overRangeAnswerToPersist` never overwrites a saved answer with a fallback: an `open` range stays open, and a range the fallback dressed keeps "no answer" so the next load re-runs the same chain instead of claiming the person chose something.
+`setOverRangeAnswer` is the single writer. `overRangeAnswerToPersist` never overwrites a saved answer with a fallback: an `open` range stays open above its bridge, and a range the fallback dressed keeps "no answer" so the next load re-runs the same chain instead of claiming the person chose something. The mandatory bridge is independent of the answer.
 
 ## Tests
 
-- `client/src/lib/overRangeFill.test.ts` — answer precedence, the bridge chain, the hood fallback, the no-delete rule, the manual-microwave rule, the no-range no-op, and the honest "nothing could be added" note.
-- `client/src/pages/DesignTool.overRangeFill.test.ts` — the Designer wiring: the pass after build and load, every answer persisting (including "leave it open"), the design-question seed, the load restore, and the `MW-` compatibility.
-- `client/src/lib/autoDesignMatrix.test.ts` — the coverage PR 174 removed, restored against the add-only pass: every bare range in the matrix must end up dressed.
+- `client/src/lib/overRangeBridgeMatrix.test.ts` — **the matrix**: six cabinet lines, every layout shape, range widths 30/36/42, with and without a microwave, all four answers, and saved layouts. Every case asserts a bridge is present, centered, at the 72″ datum, under the ceiling, collision-free, and matched to the range width; also that no ordinary upper tiles over the range and no sub-filler sliver is left beside the bridge.
+- `client/src/lib/overRangeFill.test.ts` — the bridge is mandatory whatever the answer; idempotency; width matching; ceiling-aware height; the no-delete and manual-microwave rules; the blocking findings.
+- `client/src/lib/overRangeCompanion.test.ts` — bridge selection: range-width match, nearest stock width, spice/glass exclusion, low-ceiling fallback.
+- `client/src/pages/DesignTool.overRangeFill.test.ts` — the Designer wiring: the bridge seated **before** the upper run tiles in both build paths, the blocked finding on the review list, the pass after build and load, every answer persisting, the load restore, and the `MW-` compatibility.
+- `client/src/lib/autoDesignMatrix.test.ts` — the whole auto-design matrix now also asserts a bridge above every range.
+
+## Screenshot
+
+`e2e/auto-design-bridge-screenshot.spec.ts` builds a real kitchen with `runAutoDesignLayout` and renders it with the real 3D engine (`client/dev/bridge-shot.html` + `client/src/bridgeScreenshotHarness.ts`), then captures `/opt/cursor/artifacts/auto-design-bridge.png`. The bridge is tinted green and the caption names the SKU, the datum, and the width.
