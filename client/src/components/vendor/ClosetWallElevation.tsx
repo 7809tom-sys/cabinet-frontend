@@ -4,7 +4,7 @@ import {
   studioPanelHeight, studioTowerFootprint, studioWallLength, studioWidthForWall,
   type StudioDesign, type StudioWall,
 } from "@/lib/vendorClosetStudio";
-import { STUDIO_DECOR_FABRIC_HEX, STUDIO_DECOR_SHOE_HEX, studioWallDecor, type StudioDecorBay } from "@/lib/vendorClosetDecor";
+import { STUDIO_DECOR_FABRIC_HEX, STUDIO_DECOR_SHOE_BOARD_IN, STUDIO_DECOR_SHOE_HEX, studioWallDecor, type StudioDecorBay } from "@/lib/vendorClosetDecor";
 
 const SCALE = 6; // px per inch
 const MARGIN = { left: 76, right: 56, top: 34, bottom: 78 };
@@ -70,9 +70,12 @@ function DecorElevation({ bayLeftIn, decor, x, y }: { bayLeftIn: number; decor: 
       const left = bayLeftIn + shoe.leftIn;
       const base = STUDIO_DECOR_SHOE_HEX[shoe.hueIndex % STUDIO_DECOR_SHOE_HEX.length];
       // A shoe board is drawn at its illustrative pitch: the pair reads as a tapered side profile.
-      return <g key={`shoe-${index}`} data-decor="shoe">
+      // The pair rests on its own board, so its foot sits at the shelf's elevation plus the sourced
+      // board thickness — never at a height of its own.
+      const footIn = shoe.shelfBottomIn + STUDIO_DECOR_SHOE_BOARD_IN;
+      return <g key={`shoe-${index}`} data-decor="shoe" data-shelf-bottom={shoe.shelfBottomIn}>
         {[0, 1].map((pair) => <path key={pair}
-          d={`M${x(left + pair * shoe.widthIn * 0.52)} ${y(shoe.heightIn)} l${shoe.widthIn * SCALE * 0.44} 0 l0 ${-shoe.heightIn * SCALE * 0.55} l${-shoe.widthIn * SCALE * 0.22} 0 Z`}
+          d={`M${x(left + pair * shoe.widthIn * 0.52)} ${y(footIn)} l${shoe.widthIn * SCALE * 0.44} 0 l0 ${-shoe.heightIn * SCALE * 0.55} l${-shoe.widthIn * SCALE * 0.22} 0 Z`}
           fill={base} stroke="#3d362d" strokeWidth="0.5" strokeLinejoin="round" />)}
       </g>;
     })}

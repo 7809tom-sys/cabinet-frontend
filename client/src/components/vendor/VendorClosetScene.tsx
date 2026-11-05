@@ -5,7 +5,7 @@ import type { StudioDesign, StudioKind, StudioWall } from "@/lib/vendorClosetStu
 import { STUDIO_BASKET_FRAME_HEX, STUDIO_BASKET_LINER_PLACEHOLDER_HEX, STUDIO_CORNER_SHELF_THICKNESS_IN, STUDIO_ILLUSTRATIVE_SHOE_PITCH_DEG, studioBasketPlacementsForWall, studioBasketSurface, studioBayCut, studioBays, studioCornerPlanningFootprint, studioCornerShelvesForWall, studioFixedBottom, studioFixedTop, studioPanelHeight, studioTowerFootprint, studioWidth } from "@/lib/vendorClosetStudio";
 import { CLOSET_FRAME_PADDING, closetFitDistance, frameClosetStudioCamera, type ClosetAabb, type ClosetCameraView } from "./closetStudioCamera";
 import { createClosetDlShakerFront } from "./closetShakerFront";
-import { STUDIO_DECOR_FABRIC_HEX, STUDIO_DECOR_SHOE_HEX, studioWallDecor, type StudioDecorBay } from "@/lib/vendorClosetDecor";
+import { STUDIO_DECOR_FABRIC_HEX, STUDIO_DECOR_SHOE_DEPTH_IN, STUDIO_DECOR_SHOE_HEX, studioDecorShoeRest, studioWallDecor, type StudioDecorBay } from "@/lib/vendorClosetDecor";
 
 const IN = 1 / 12;
 const MAT: Record<StudioDesign["finish"], { face: string; edge: string; grain: string }> = {
@@ -187,8 +187,13 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
     const hangerHookGeometry = new THREE.CylinderGeometry(0.012, 0.012, 1, 6);
     const decorMaterialList = [...decorFabric, ...decorShoe];
     const hangingOffsetIn = design.mount === "hanging" ? 6 : 0;
+    /**
+     * The shoe-shelf group built for each bay, keyed by bay id, in bay order. Decor shoes are added
+     * *inside* the matching group so they inherit that shelf's elevation, mount offset and pitch.
+     */
+    const shoeShelfGroups = new Map<string, { bottomIn: number; group: THREE.Group; decorGroup?: THREE.Group }[]>();
     /** Clothes, folded stacks and shoes for one bay: presentation only, never a part or a price. */
-    const renderBayDecor = (bayId: string, bayIndex: number, bayLeftIn: number) => {
+    const renderBayDecor = (bayId: string, bayIndex: number, bayLeftIn: number, bayWidthIn: number) => {
       const decorBay: StudioDecorBay | undefined = decorByBay.get(bayId);
       if (!decorBay) return;
       const group = new THREE.Group();
@@ -228,13 +233,28 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
         }
       }
       for (const shoe of decorBay.shoes) {
+        // Shoes ride the shelf that was built for them: the shelf group already sits at the
+        // organizer's own elevation, is pitched to the illustrative board angle, and carries the
+        // hanging-mount offset. Parenting here means the pair follows the shelf for any position,
+        // and inherits the board's tilt, instead of floating at a height of its own.
+        const shelf = shoeShelfGroups.get(bayId)?.find((candidate) => Math.abs(candidate.bottomIn - shoe.shelfBottomIn) < 0.001);
+        if (!shelf) continue;
+        if (!shelf.decorGroup) {
+          const decorGroup = new THREE.Group();
+          decorGroup.userData = { decorOnly: true, notInMaterialReference: true, bayId, decorKind: "shoe" };
+          decorGroup.visible = decorVisible;
+          shelf.group.add(decorGroup);
+          shelf.decorGroup = decorGroup;
+          decorGroups.push(decorGroup);
+        }
         for (const pair of [0, 1]) {
+          const rest = studioDecorShoeRest(shoe, bayWidthIn, pair);
           const piece = new THREE.Mesh(hangerBarGeometry, decorShoe[shoe.hueIndex % decorShoe.length]);
-          piece.scale.set(shoe.widthIn * 0.46 * IN, 2.4 * IN, 8.5 * IN);
-          piece.position.set((bayLeftIn + shoe.leftIn + pair * shoe.widthIn * 0.52 + shoe.widthIn * 0.23) * IN, (shoe.heightIn + hangingOffsetIn) * IN, 7.4 * IN);
+          piece.scale.set(shoe.widthIn * 0.46 * IN, shoe.heightIn * IN, STUDIO_DECOR_SHOE_DEPTH_IN * IN);
+          piece.position.set(rest.offsetFromBayCenterIn * IN, rest.aboveShelfBottomIn * IN, -rest.behindFrontEdgeIn * IN);
           piece.castShadow = true; piece.receiveShadow = true;
-          piece.userData = { decorKind: "shoe" };
-          group.add(piece);
+          piece.userData = { decorKind: "shoe", decorOnly: true, shelfBottomIn: shoe.shelfBottomIn, illustrativePitchDeg: rest.pitchDeg, restsOnShoeShelf: true };
+          shelf.decorGroup.add(piece);
         }
       }
       activeTowerParts.add(group);
@@ -280,6 +300,10 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
           shoeFence.userData = { illustrativePitchDeg: STUDIO_ILLUSTRATIVE_SHOE_PITCH_DEG, fenceGeometryIllustrative: true };
           shoeGroup.add(shoeFence);
           activeTowerParts.add(shoeGroup);
+          // Registered so this bay's decor shoes can ride the very shelf they belong to.
+          const shelves = shoeShelfGroups.get(bay.id) ?? [];
+          shelves.push({ bottomIn: item.bottomIn, group: shoeGroup });
+          shoeShelfGroups.set(bay.id, shelves);
         } else if (item.kind === "drawer") {
           const faceWidth = bay.widthIn - 0.3;
           const faceHeight = 5;
@@ -299,7 +323,7 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
           rod.userData = { illustrativeDiameter: true }; activeTowerParts.add(rod);
         }
       }
-      renderBayDecor(bay.id, index, cursor + 0.75);
+      renderBayDecor(bay.id, index, cursor + 0.75, bay.widthIn);
       for (const placement of studioBasketPlacementsForWall(design).filter((basket) => basket.bayId === bay.id)) {
         // Solid fabric liner. The catalog has no liner photo or color (Chrome is the frame finish only). This box is still the conservative visual envelope, not sourced rail, slide, travel, door, or mounting geometry.
         const surface = studioBasketSurface(placement.sku);
