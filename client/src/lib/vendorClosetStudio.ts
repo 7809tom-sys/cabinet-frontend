@@ -786,10 +786,138 @@ export const MODE_AUTO_BUILD_DEFAULTS: Record<StudioMode, StudioAutoBuildOptions
   kids: { rods: 2, shelves: 3, drawers: 3, shoes: 0 },
 };
 export const STUDIO_AUTO_BUILD_MAX_COUNT = 8;
+
+/**
+ * The guided flow's four plain-language questions. Every answer is a small named enum so the
+ * UI, the tests, and this planner all speak the same vocabulary instead of raw part counts.
+ */
+export type StudioGuidedClosetType = "reachIn" | "walkIn";
+export type StudioGuidedStorageMix = "mostlyHanging" | "balanced" | "mostlyShelving";
+export type StudioGuidedYesNo = "yes" | "no";
+export type StudioGuidedAmount = "none" | "some" | "lots";
+export type StudioGuidedAnswers = {
+  closetType: StudioGuidedClosetType;
+  storageMix: StudioGuidedStorageMix;
+  longHang: StudioGuidedYesNo;
+  drawers: StudioGuidedAmount;
+  shoes: StudioGuidedAmount;
+};
+
+export const STUDIO_GUIDED_DEFAULTS: StudioGuidedAnswers = {
+  closetType: "reachIn", storageMix: "balanced", longHang: "yes", drawers: "some", shoes: "some",
+};
+
+const GUIDED_AMOUNT_COUNT: Record<StudioGuidedAmount, number> = { none: 0, some: 2, lots: 4 };
+/** Shelves per dedicated shelving bay. Kept low so the answers still fit a normal room. */
+const GUIDED_SHELVES_PER_SHELVING_BAY = 3;
+
+/**
+ * How many bays each storage mix spends on hanging versus shelves. Kept deliberately modest so
+ * a typical room can hold everything the answers ask for: a guided build that over-asks would
+ * silently drop parts, and then the summary would describe a closet the user did not choose.
+ */
+const GUIDED_MIX_UNITS: Record<StudioGuidedStorageMix, { hangingUnits: number; shelvingUnits: number }> = {
+  mostlyHanging: { hangingUnits: 2, shelvingUnits: 0 },
+  balanced: { hangingUnits: 1, shelvingUnits: 1 },
+  mostlyShelving: { hangingUnits: 1, shelvingUnits: 2 },
+};
+
+/**
+ * Turns the guided answers into the rod/shelf/drawer/shoe counts that `autoBuildStudio` already
+ * consumes. Pure and deterministic: the same answers always produce the same counts, and the
+ * builder below still runs every fit and collision rule, so nothing is forced into the room.
+ *
+ * Rods: a normally hung bay gets a double hanging run (2 rods). Answering "yes" to long hanging
+ *        turns one of those bays into a single high rod, so dresses and coats hang straight.
+ * Shelves: each shelving bay gets 4 shelves; each hanging bay gets the shelf above its upper rod,
+ *          plus the extra shelving the storage mix asked for.
+ * Drawers/shoes: none/some/lots map to 0/2/4 of that part.
+ */
+export function studioGuidedPartCounts(answers: StudioGuidedAnswers): StudioAutoBuildOptions {
+  const mix = GUIDED_MIX_UNITS[answers.storageMix] ?? GUIDED_MIX_UNITS.balanced;
+  const hangingUnits = Math.max(1, mix.hangingUnits);
+  const shelvingUnits = mix.shelvingUnits;
+  // One bay becomes the long-hang bay when asked for, which removes one rod from the total.
+  const rods = hangingUnits * 2 - (answers.longHang === "yes" ? 1 : 0);
+  const shelves = shelvingUnits * GUIDED_SHELVES_PER_SHELVING_BAY + hangingUnits;
+
+  return {
+    rods: Math.min(rods, STUDIO_AUTO_BUILD_MAX_COUNT),
+    shelves: Math.min(shelves, STUDIO_AUTO_BUILD_MAX_COUNT),
+    drawers: GUIDED_AMOUNT_COUNT[answers.drawers],
+    shoes: GUIDED_AMOUNT_COUNT[answers.shoes],
+  };
+}
+
+/**
+ * Sensible starting room sizes, in inches. These are the sizes where the whole guided answer set
+ * reliably fits: a narrow walk-in leaves no room for the corner envelopes the builder reserves, so
+ * the default walk-in starts at 8 ft wide instead of the smallest preset. Users can still type any
+ * size, and the presets below them are one tap away.
+ */
+export const STUDIO_GUIDED_ROOM_DEFAULTS: Record<StudioGuidedClosetType, { wallWidthIn: number; roomDepthIn: number; roomHeightIn: number }> = {
+  // The "Roomy bedroom reach-in" preset: still an ordinary bedroom closet, but wide and deep
+  // enough that the guided answers (drawers included) actually fit.
+  reachIn: { wallWidthIn: 78, roomDepthIn: 30, roomHeightIn: STUDIO_ROOM_HEIGHT_DEFAULT_IN },
+  walkIn: { wallWidthIn: 120, roomDepthIn: 108, roomHeightIn: STUDIO_ROOM_HEIGHT_DEFAULT_IN },
+};
+
+/** The whole guided build, so the page and the tests share one entry point. */
+export function autoBuildStudioFromAnswers(input: {
+  answers: StudioGuidedAnswers;
+  mount: StudioMount;
+  finish: StudioDesign["finish"];
+  room: { wallWidthIn: number; roomDepthIn: number; roomHeightIn: number };
+  mode?: StudioMode;
+  kids?: StudioDesign["kids"];
+}): StudioAutoBuildResult & { options: StudioAutoBuildOptions } {
+  const options = studioGuidedPartCounts(input.answers);
+  const result = autoBuildStudio({
+    mode: input.mode ?? "closet",
+    mount: input.mount,
+    finish: input.finish,
+    ...input.room,
+    kids: input.kids,
+    options,
+    longHangBay: input.answers.longHang === "yes",
+  });
+  return { ...result, options };
+}
+
+/**
+ * Plain-language summary of a finished guided build. Counts come from the design itself (not the
+ * requested options), so a part the fit rules skipped is never claimed in the sales copy.
+ */
+export function studioGuidedSummaryLines(design: StudioDesign, answers: StudioGuidedAnswers): string[] {
+  const bays = STUDIO_WALLS.flatMap((wall) => studioBays(design, wall));
+  const items = bays.flatMap((bay) => bay.items);
+  const count = (kind: StudioKind) => items.filter((item) => item.kind === kind).length;
+  const rods = count("rod");
+  const shelves = count("shelf");
+  const drawers = count("drawer");
+  const shoes = count("shoe");
+  const hangingBays = bays.filter((bay) => bay.items.some((item) => item.kind === "rod")).length;
+
+  const lines: string[] = [];
+  lines.push(answers.closetType === "walkIn" ? "A walk-in closet: shelves and hanging space on more than one wall." : "A reach-in closet: one wall of shelves and hanging space.");
+  if (rods) lines.push(hangingBays === 1 ? "Hanging space in one tower, with room for clothes on hangers." : `Hanging space in ${hangingBays} towers, with room for clothes on hangers.`);
+  if (answers.longHang === "yes" && rods) lines.push("One hanging area is kept high and clear for long dresses and coats.");
+  if (shelves) lines.push(shelves === 1 ? "A shelf for folded clothes, bins, and baskets." : `${shelves} shelves for folded clothes, bins, and baskets.`);
+  if (drawers) lines.push(`${drawers} drawer${drawers === 1 ? "" : "s"} for smaller things you would rather not see.`);
+  else if (answers.drawers !== "none") lines.push("No drawers fit in this room, so everything is open shelving and hanging.");
+  if (shoes) lines.push(shoes === 1 ? "A shoe shelf to keep pairs together on the floor." : `${shoes} shoe shelves to keep pairs together on the floor.`);
+  else if (answers.shoes !== "none") lines.push("No separate shoe shelf fit, so shoes go on the lowest shelf.");
+  const totalBays = bays.length;
+  lines.push(`${totalBays} tall tower${totalBays === 1 ? "" : "s"} in the ${design.finish} finish. You can change any of this below.`);
+  return lines;
+}
+
 export type StudioAutoBuildInput = {
   mode: StudioMode; mount: StudioMount; finish: StudioDesign["finish"];
   wallWidthIn: number; roomDepthIn: number; roomHeightIn: number;
   kids?: StudioDesign["kids"]; options?: StudioAutoBuildOptions;
+  /** Guided flow only: put one bay's hanging on a single high rod for long dresses and coats. */
+  longHangBay?: boolean;
 };
 export type StudioAutoBuildResult = { design: StudioDesign; notices: string[] };
 
@@ -800,13 +928,15 @@ const AUTO_BAY_IN = 24;
 const AUTO_MAX_BAYS_PER_WALL = 4;
 const AUTO_CORNER_ELEVATION_IN = 36;
 const AUTO_SHELF_STEP_IN = 12;
+/** High enough that a long dress or coat clears the floor under a single rod (the double-hang lower rod sits at 40 in). */
+const AUTO_LONG_HANG_ROD_IN = 72;
 type AutoSpec = { kind: StudioKind; at: number };
 type AutoPlan = { specs: AutoSpec[] };
 const runWidthIn = (widths: number[]) => widths.length ? widths.reduce((sum, width) => sum + width, 0) + THICKNESS * (widths.length + 1) : 0;
 const roundIn = (value: number) => Math.round(value * 100) / 100;
 
 /** Bay-by-bay part plans for a mode. Each count is consumed as parts are assigned, so the totals placed match the options unless a wall runs out of room. */
-function planAutoBays(design: StudioDesign, mode: StudioMode, options: StudioAutoBuildOptions, kids?: StudioDesign["kids"]): AutoPlan[] {
+function planAutoBays(design: StudioDesign, mode: StudioMode, options: StudioAutoBuildOptions, kids?: StudioDesign["kids"], longHangBay = false): AutoPlan[] {
   const left = { ...options };
   const plans: AutoPlan[] = [];
   const lowestIn = studioFixedBottom(design) + THICKNESS;
@@ -821,6 +951,18 @@ function planAutoBays(design: StudioDesign, mode: StudioMode, options: StudioAut
     while (left.rods >= 2) { take("rods", 2); const specs: AutoSpec[] = [{ kind: "rod", at: KIDS_ADULT_ROD_IN }, { kind: "rod", at: upperRodIn }]; if (take("shelves", 1)) specs.push({ kind: "shelf", at: upperRodIn + KIDS_UPPER_SHELF_CLEARANCE_IN }); plans.push({ specs }); }
     if (left.rods === 1) { take("rods", 1); const specs: AutoSpec[] = [{ kind: "rod", at: 66 }]; if (take("shelves", 1)) specs.push({ kind: "shelf", at: 70 }); plans.push({ specs }); }
   };
+  /**
+   * A long-hang bay is one high rod with clear space beneath it, so dresses and coats hang
+   * straight instead of folding over a second rod. That is the difference between the guided
+   * flow's "yes" and "no" to long hanging.
+   */
+  const longHang = (): void => {
+    if (left.rods < 1) return;
+    take("rods", 1);
+    const specs: AutoSpec[] = [{ kind: "rod", at: AUTO_LONG_HANG_ROD_IN }];
+    if (take("shelves", 1)) specs.push({ kind: "shelf", at: upperRodIn + KIDS_UPPER_SHELF_CLEARANCE_IN });
+    plans.push({ specs });
+  };
   const shoes = (perBay: number, limitIn?: number): void => { while (left.shoes > 0) plans.push({ specs: shoesLow(take("shoes", perBay), limitIn) }); };
   const shelfDrawer = (shelvesPerBay: number, limitIn?: number): void => {
     while (left.drawers > 0 || left.shelves > 0) {
@@ -829,7 +971,7 @@ function planAutoBays(design: StudioDesign, mode: StudioMode, options: StudioAut
       plans.push({ specs: [...drawersLow(drawers, limitIn), ...shelvesFrom(startIn, take("shelves", shelvesPerBay), limitIn)] });
     }
   };
-  if (mode === "closet") { hang(); shoes(4); shelfDrawer(5); }
+  if (mode === "closet") { if (longHangBay) longHang(); hang(); shoes(4); shelfDrawer(5); }
   else if (mode === "pantry") { shelfDrawer(6); hang(); shoes(4); }
   else if (mode === "mudroom") {
     while (left.shoes > 0 || left.rods > 0) {
@@ -895,7 +1037,7 @@ export function autoBuildStudio(input: StudioAutoBuildInput): StudioAutoBuildRes
   }
 
   // Assign part plans round-robin across the walls, one tower per plan.
-  const plans = planAutoBays(design, mode, options, kids);
+  const plans = planAutoBays(design, mode, options, kids, input.longHangBay);
   const assigned = new Map<StudioWall, AutoPlan[]>(walls.map((wall) => [wall, []]));
   const droppedPlans: AutoPlan[] = [];
   plans.forEach((plan, index) => {

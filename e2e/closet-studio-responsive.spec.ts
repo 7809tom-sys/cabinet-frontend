@@ -9,7 +9,7 @@ import { expect, test, type Page } from "@playwright/test";
  */
 
 const VIEWPORTS = [
-  { name: "desktop-1440x900", width: 1440, height: 900, minCanvasShare: 0.45, panelsClosedByDefault: false },
+  { name: "desktop-1440x900", width: 1440, height: 900, minCanvasShare: 0.6, panelsClosedByDefault: false },
   { name: "tablet-768x1024", width: 768, height: 1024, minCanvasShare: 0.6, panelsClosedByDefault: true },
   { name: "tablet-1024x768", width: 1024, height: 768, minCanvasShare: 0.6, panelsClosedByDefault: true },
   { name: "phone-390x844", width: 390, height: 844, minCanvasShare: 0.6, panelsClosedByDefault: true },
@@ -18,7 +18,8 @@ const VIEWPORTS = [
 
 async function enterStudio(page: Page) {
   await page.goto("/closet", { waitUntil: "networkidle" });
-  await page.getByRole("button", { name: "Start with one tower" }).click();
+  // The simple start's blank-tower entry, so this spec keeps testing the workspace itself.
+  await page.getByTestId("guided-start-blank").click();
   await expect(page.getByTestId("vendor-closet-studio")).toBeVisible();
   await expect(page.locator('canvas[data-testid="vendor-closet-canvas"]')).toBeVisible();
   // Give the renderer's ResizeObserver a frame at the real viewport size.
@@ -109,7 +110,7 @@ for (const viewport of VIEWPORTS) {
       await enterStudio(page);
       await page.getByTestId("vendor-delete-plan").click();
       await page.getByTestId("vendor-delete-plan-confirm").click();
-      await expect(page.getByTestId("vendor-mode-gate")).toBeVisible();
+      await expect(page.getByTestId("guided-gate")).toBeVisible();
       await expect(page.getByTestId("vendor-closet-studio")).toHaveCount(0);
       expect(await page.evaluate(() => Object.keys(localStorage).some((key) => key.startsWith("vendor-closet-studio")))).toBe(false);
       await page.screenshot({ path: `test-artifacts/closet-studio/${viewport.name}/06-back-to-start.png` });

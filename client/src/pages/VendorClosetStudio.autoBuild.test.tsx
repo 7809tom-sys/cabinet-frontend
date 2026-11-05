@@ -20,17 +20,18 @@ describe("Closet Studio kids' mode, room size, auto-build and wall views", () =>
     vi.restoreAllMocks();
   });
 
-  it("offers four room modes in the intro grid", () => {
+  it("offers the four kinds of space in the guided start", () => {
     render(<VendorClosetStudio />);
-    const gate = screen.getByTestId("vendor-mode-gate");
-    for (const name of [/Closet/, /Pantry/, /Mudroom/, /Kids' closet/]) expect(within(gate).getAllByRole("button", { name }).length).toBeGreaterThan(0);
-    expect(within(gate).getAllByRole("button").filter((button) => button.hasAttribute("aria-pressed"))).toHaveLength(4);
+    const gate = screen.getByTestId("guided-gate");
+    const space = within(gate).getByTestId("guided-space");
+    for (const name of ["A closet", "A pantry", "A mudroom", "A kids' closet"]) expect(within(space).getByRole("button", { name: new RegExp(name) })).toBeTruthy();
+    expect(within(space).getAllByRole("button").filter((button) => button.hasAttribute("aria-pressed"))).toHaveLength(4);
     expect(screen.queryByTestId("vendor-kids-step")).toBeNull();
   });
 
   it("asks a kids' closet for age and height with inline errors, then builds the kids' starter closet", () => {
     render(<VendorClosetStudio />);
-    fireEvent.click(screen.getByRole("button", { name: /Kids' closet/ }));
+    fireEvent.click(screen.getByTestId("guided-space-kids"));
     expect(screen.getByText(/How old is the child\?/)).toBeTruthy();
     expect(screen.getByText(/How tall\?/)).toBeTruthy();
     expect(screen.getByText("Rod goes at about the child's height")).toBeTruthy();
@@ -64,7 +65,7 @@ describe("Closet Studio kids' mode, room size, auto-build and wall views", () =>
 
   it("sends a design with no child on file to the age and height step when it is switched to kids", () => {
     render(<VendorClosetStudio />);
-    fireEvent.click(screen.getByRole("button", { name: "Start with one tower" }));
+    fireEvent.click(screen.getByTestId("guided-start-blank"));
     fireEvent.click(screen.getAllByRole("button", { name: "Kids' closet" })[0]);
     expect(screen.getByTestId("vendor-mode-gate")).toBeTruthy();
     expect(screen.getByTestId("vendor-kids-step")).toBeTruthy();
@@ -75,6 +76,7 @@ describe("Closet Studio kids' mode, room size, auto-build and wall views", () =>
 
   it("validates the room size inline before building", () => {
     render(<VendorClosetStudio />);
+    fireEvent.click(screen.getByTestId("guided-other-setups"));
     type(/^Width \(in\)/, "20");
     type(/^Depth \(in\)/, "500");
     type(/^Height \(in\)/, "60");
@@ -88,6 +90,7 @@ describe("Closet Studio kids' mode, room size, auto-build and wall views", () =>
   it("auto-builds a walk-in, keeps one copy of the controls, and rebuilds and undoes only after confirming", () => {
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
     render(<VendorClosetStudio />);
+    fireEvent.click(screen.getByTestId("guided-other-setups"));
     fireEvent.click(screen.getByRole("button", { name: "Auto-build my closet" }));
     expect(screen.getByTestId("vendor-closet-studio")).toBeTruthy();
     expect(screen.getAllByTestId("vendor-tablet-options-dock")).toHaveLength(1);
@@ -110,6 +113,7 @@ describe("Closet Studio kids' mode, room size, auto-build and wall views", () =>
 
   it("explains a room size that is smaller than what is already used instead of silently reverting", () => {
     render(<VendorClosetStudio />);
+    fireEvent.click(screen.getByTestId("guided-other-setups"));
     fireEvent.click(screen.getByRole("button", { name: "Auto-build my closet" }));
     type(/Room width \(in\)/, "40");
     const error = screen.getByTestId("vendor-room-error");
@@ -121,6 +125,7 @@ describe("Closet Studio kids' mode, room size, auto-build and wall views", () =>
 
   it("switches between 3D, wall elevations and the top view without remounting the 3D scene", () => {
     render(<VendorClosetStudio />);
+    fireEvent.click(screen.getByTestId("guided-other-setups"));
     fireEvent.click(screen.getByRole("button", { name: "Auto-build my closet" }));
     const tabs = within(screen.getByTestId("vendor-view-tabs"));
     expect(tabs.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["3D", "Back", "Left", "Right", "Top"]);

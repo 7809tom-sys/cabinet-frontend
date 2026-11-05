@@ -127,3 +127,6 @@ manus storage/
 # Generated screenshot/baseline output (screenshots are attached to PRs, not committed)
 /test-artifacts/closet-studio/
 /test-results/
+
+# Guided-flow screenshots (attached to PRs, not committed)
+/test-artifacts/closet-guided/

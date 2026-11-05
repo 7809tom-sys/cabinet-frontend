@@ -26,7 +26,10 @@ describe("Closet Studio responsive layout", () => {
 
   it("gives the drawing the flexible middle column and keeps it scroll-safe", () => {
     expect(studio).toContain('className="relative min-h-0 w-full flex-1 bg-[#e7e2d8]" data-testid="vendor-scene-panel"');
-    expect(studio).toContain('className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden');
+    expect(studio).toContain('className={`relative flex min-h-0 min-w-0 flex-1 overflow-hidden min-[1280px]:grid');
+    // With the dock closed the desktop grid drops its first column, so the drawing keeps >60%.
+    expect(studio).toContain("min-[1280px]:grid-cols-[minmax(320px,360px)_minmax(0,1fr)_250px]");
+    expect(studio).toContain("min-[1280px]:grid-cols-[minmax(0,1fr)_250px]");
     expect(studio).not.toContain("h-[46vh]");
     // The scene mount stays a full-height flex child so ResizeObserver sees real changes.
     expect(scene).toContain('className="h-full min-h-0 w-full touch-none"');
