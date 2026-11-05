@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { ClosetWallElevation } from "./ClosetWallElevation";
-import { addStudioBasketPlacement, addStudioBay, addStudioCornerShelf, createStudioDesign, snapStudioPart, switchStudioWall, type StudioDesign } from "@/lib/vendorClosetStudio";
+import { addStudioBasketPlacement, addStudioBay, addStudioCornerShelf, autoBuildStudio, createStudioDesign, snapStudioPart, studioTakeoff, switchStudioWall, type StudioDesign } from "@/lib/vendorClosetStudio";
 
 afterEach(cleanup);
 
@@ -69,5 +69,38 @@ describe("ClosetWallElevation", () => {
     const cutDesign: StudioDesign = { ...base, bays: [{ ...base.bays[0], widthIn: 22.5, stockWidthIn: 24 }], wallLayouts: { ...base.wallLayouts, back: { wallId: "back", bays: [{ ...base.bays[0], widthIn: 22.5, stockWidthIn: 24 }] } } };
     render(<ClosetWallElevation design={cutDesign} wall="back" />);
     expect(screen.getByTestId("closet-wall-elevation").textContent).toContain("22.5″ (cut from 24″)");
+  });
+
+  it("draws hanging clothes, folded stacks and shoes for the elevation, and nothing when decor is off", () => {
+    // A real auto-build has a high rod (long enough for a shirt), shelves and a shoe board.
+    const design = autoBuildStudio({ mode: "closet", mount: "floor", finish: "Glacier White", wallWidthIn: 120, roomDepthIn: 24, roomHeightIn: 96 }).design;
+    render(<ClosetWallElevation design={design} wall="back" decor />);
+    const groups = Array.from(screen.getByTestId("closet-wall-elevation").querySelectorAll("[data-testid='elevation-decor']"));
+    const total = (name: string) => groups.reduce((sum, group) => sum + Number(group.getAttribute(name) ?? 0), 0);
+    expect(groups.length).toBeGreaterThan(0);
+    expect(total("data-decor-hangers")).toBeGreaterThan(0);
+    expect(total("data-decor-folded")).toBeGreaterThan(0);
+    expect(total("data-decor-shoes")).toBeGreaterThan(0);
+    expect(screen.getByTestId("closet-wall-elevation").querySelectorAll("[data-decor='hanger']").length).toBeGreaterThan(0);
+    expect(screen.getByTestId("closet-wall-elevation").querySelectorAll("[data-decor='folded']").length).toBeGreaterThan(0);
+    expect(screen.getByTestId("closet-wall-elevation").querySelectorAll("[data-decor='shoe']").length).toBeGreaterThan(0);
+    cleanup();
+
+    render(<ClosetWallElevation design={design} wall="back" />);
+    expect(screen.getByTestId("closet-wall-elevation").querySelector("[data-testid='elevation-decor']")).toBeNull();
+  });
+
+  it("does not hang a garment on a rod without the drop for it", () => {
+    // mixedDesign's rod sits at 64 in under a fixed top shelf at 93.25 in: only 29.25 in of drop.
+    render(<ClosetWallElevation design={mixedDesign()} wall="back" decor />);
+    const decor = screen.getByTestId("closet-wall-elevation").querySelector("[data-testid='elevation-decor']");
+    expect(decor!.getAttribute("data-decor-hangers")).toBe("0");
+  });
+
+  it("keeps decor out of the parts list: the elevation's decor changes nothing a takeoff sees", () => {
+    const design = mixedDesign();
+    const withDecor = studioTakeoff(design);
+    render(<ClosetWallElevation design={design} wall="back" decor />);
+    expect(studioTakeoff(design)).toEqual(withDecor);
   });
 });

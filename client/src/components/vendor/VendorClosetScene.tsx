@@ -5,6 +5,7 @@ import type { StudioDesign, StudioKind, StudioWall } from "@/lib/vendorClosetStu
 import { STUDIO_BASKET_FRAME_HEX, STUDIO_BASKET_LINER_PLACEHOLDER_HEX, STUDIO_CORNER_SHELF_THICKNESS_IN, STUDIO_ILLUSTRATIVE_SHOE_PITCH_DEG, studioBasketPlacementsForWall, studioBasketSurface, studioBayCut, studioBays, studioCornerPlanningFootprint, studioCornerShelvesForWall, studioFixedBottom, studioFixedTop, studioPanelHeight, studioTowerFootprint, studioWidth } from "@/lib/vendorClosetStudio";
 import { CLOSET_FRAME_PADDING, closetFitDistance, frameClosetStudioCamera, type ClosetAabb, type ClosetCameraView } from "./closetStudioCamera";
 import { createClosetDlShakerFront } from "./closetShakerFront";
+import { STUDIO_DECOR_FABRIC_HEX, STUDIO_DECOR_SHOE_HEX, studioWallDecor, type StudioDecorBay } from "@/lib/vendorClosetDecor";
 
 const IN = 1 / 12;
 const MAT: Record<StudioDesign["finish"], { face: string; edge: string; grain: string }> = {
@@ -28,13 +29,15 @@ function woodTexture(finish: StudioDesign["finish"]) {
 }
 
 /** This scene is completely independent of InteractiveRoom3D and kitchen/Wall Builder geometry. */
-export function VendorClosetScene({ design, selectedBay, selectedCornerId = null, partToPlace, basketToPlace = null, cameraView = "angle", fitToken = 0, onSelectBay, onPlace, onPlaceBasket, onError }: {
+export function VendorClosetScene({ design, selectedBay, selectedCornerId = null, partToPlace, basketToPlace = null, cameraView = "angle", fitToken = 0, decor = true, onSelectBay, onPlace, onPlaceBasket, onError }: {
   design: StudioDesign;
   selectedBay: number;
   selectedCornerId?: string | null;
   partToPlace: StudioKind | null;
   basketToPlace?: string | null;
   cameraView?: ClosetCameraView;
+  /** Presentation-only clothes and shoes; never parts, so never in the material reference. */
+  decor?: boolean;
   /** Bump to refit the tower after a view change or a Fit click. */
   fitToken?: number;
   onSelectBay: (bayIndex: number) => void;
@@ -47,6 +50,11 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
   handlers.current = { onSelectBay, onPlace, onPlaceBasket, onError, partToPlace, basketToPlace };
   const viewRef = useRef(cameraView);
   viewRef.current = cameraView;
+  /** Decor visibility is a live ref so the toggle never re-runs the scene effect (no rebuild). */
+  const decorRef = useRef(decor);
+  decorRef.current = decor;
+  const decorGroupsRef = useRef<THREE.Group[]>([]);
+  const decorVisible = decorRef.current;
   const reframeRef = useRef<() => void>(() => {});
   useEffect(() => {
     const host = mount.current;
@@ -137,6 +145,105 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
     const fixedBottom = studioFixedBottom(design);
     const fixedTop = studioFixedTop(design);
     const depth = 14.5;
+    // Decoration is built from a handful of shared geometries and materials, created once per scene
+    // render, so adding clothes never allocates a material per garment and never rebuilds the scene.
+    const decorFabric = STUDIO_DECOR_FABRIC_HEX.map((hex) => new THREE.MeshStandardMaterial({ color: hex, roughness: 0.94, metalness: 0 }));
+    const decorShoe = STUDIO_DECOR_SHOE_HEX.map((hex) => new THREE.MeshStandardMaterial({ color: hex, roughness: 0.7, metalness: 0.04 }));
+    /**
+     * One silhouette per garment type, built once per scene and reused by every hanger. The outline
+     * includes sleeve bumps and a tapered body, which reads as clothing from the front and from an
+     * angle, unlike a plain box. Because the geometry is shared, thirty garments cost four shapes.
+     */
+    const garmentGeometry = (kind: "shirt" | "dress" | "coat" | "trouser") => {
+      const shape = new THREE.Shape();
+      if (kind === "trouser") {
+        // Waistband plus two legs with a gap; one unit tall, one unit wide.
+        shape.moveTo(-0.42, 1); shape.lineTo(0.42, 1); shape.lineTo(0.42, 0.93);
+        shape.lineTo(0.15, 0.93); shape.lineTo(0.11, 0); shape.lineTo(-0.11, 0);
+        shape.lineTo(-0.15, 0.93); shape.lineTo(-0.42, 0.93); shape.lineTo(-0.42, 1);
+        return new THREE.ExtrudeGeometry(shape, { depth: 0.16, bevelEnabled: false, curveSegments: 4 });
+      }
+      // Shoulder line, a sleeve bump out to each side, then a body that flares for a dress/coat.
+      const flare = kind === "shirt" ? 0.42 : 0.5;
+      shape.moveTo(-0.26, 1);
+      shape.lineTo(0.26, 1);          // neckline / shoulders
+      shape.lineTo(0.5, 0.9);         // right shoulder point
+      shape.lineTo(0.72, 0.62);       // right sleeve
+      shape.lineTo(0.56, 0.56);
+      shape.lineTo(flare, 0.8);       // body under the arm
+      shape.lineTo(flare, 0);         // hem
+      shape.lineTo(-flare, 0);
+      shape.lineTo(-flare, 0.8);
+      shape.lineTo(-0.56, 0.56);
+      shape.lineTo(-0.72, 0.62);      // left sleeve
+      shape.lineTo(-0.5, 0.9);
+      shape.lineTo(-0.26, 1);
+      return new THREE.ExtrudeGeometry(shape, { depth: 0.16, bevelEnabled: false, curveSegments: 4 });
+    };
+    const garmentGeometries: Record<"shirt" | "dress" | "coat" | "trouser", THREE.BufferGeometry> = {
+      shirt: garmentGeometry("shirt"), dress: garmentGeometry("dress"), coat: garmentGeometry("coat"), trouser: garmentGeometry("trouser"),
+    };
+    const hangerBarGeometry = new THREE.BoxGeometry(1, 1, 1);
+    const hangerHookGeometry = new THREE.CylinderGeometry(0.012, 0.012, 1, 6);
+    const decorMaterialList = [...decorFabric, ...decorShoe];
+    const hangingOffsetIn = design.mount === "hanging" ? 6 : 0;
+    /** Clothes, folded stacks and shoes for one bay: presentation only, never a part or a price. */
+    const renderBayDecor = (bayId: string, bayIndex: number, bayLeftIn: number) => {
+      const decorBay: StudioDecorBay | undefined = decorByBay.get(bayId);
+      if (!decorBay) return;
+      const group = new THREE.Group();
+      group.userData = { decorOnly: true, notInMaterialReference: true, bayId };
+      group.visible = decorVisible;
+      decorBay.hangers.forEach((hanger, hangerIndex) => {
+        const dropIn = hanger.kind === "dress" ? 50 : hanger.kind === "coat" ? 44 : hanger.kind === "trouser" ? 34 : 28;
+        // Hanging clothes overlap on the rod, exactly like a real closet, so each garment is drawn
+        // wider than its pitch. That is what turns a row of ribbons into a rail of clothes. A small
+        // deterministic hem variation stops neighbouring pieces merging into one block.
+        const bodyWidth = hanger.kind === "dress" || hanger.kind === "coat" ? 10 : hanger.kind === "trouser" ? 6 : 8;
+        const hemVarianceIn = ((hangerIndex * 7) % 5) - 2;
+        const body = new THREE.Mesh(garmentGeometries[hanger.kind], decorFabric[(bayIndex + hanger.kind.length) % decorFabric.length]);
+        body.scale.set(bodyWidth * IN, (dropIn + hemVarianceIn) * IN, 1);
+        body.position.set((bayLeftIn + hanger.leftIn + hanger.widthIn / 2) * IN, (hanger.rodBottomIn + hangingOffsetIn - dropIn) * IN, depth * 0.58 * IN - (hangerIndex % 3) * 0.02);
+        body.castShadow = true; body.receiveShadow = true;
+        body.userData = { decorKind: "hanger", hangerKind: hanger.kind, silhouette: true };
+        group.add(body);
+        // Hanger bar and hook, so the garment reads as hanging rather than floating.
+        const bar = new THREE.Mesh(hangerBarGeometry, metalMat);
+        bar.scale.set(Math.min(bodyWidth, 12) * IN, 0.05, 0.05);
+        bar.position.set((bayLeftIn + hanger.leftIn + hanger.widthIn / 2) * IN, (hanger.rodBottomIn + hangingOffsetIn - 0.15) * IN, depth * 0.58 * IN);
+        group.add(bar);
+        const hook = new THREE.Mesh(hangerHookGeometry, metalMat);
+        hook.scale.set(1, 1.1 * IN, 1);
+        hook.position.set((bayLeftIn + hanger.leftIn + hanger.widthIn / 2) * IN, (hanger.rodBottomIn + hangingOffsetIn + 0.45) * IN, depth * 0.58 * IN);
+        group.add(hook);
+      });
+      for (const stack of decorBay.folded) {
+        for (let layer = 0; layer < stack.stackIn; layer += 1) {
+          const piece = new THREE.Mesh(hangerBarGeometry, decorFabric[(stack.hueIndex + layer) % decorFabric.length]);
+          piece.scale.set(stack.widthIn * IN, 1.1 * IN, 9 * IN);
+          piece.position.set((bayLeftIn + stack.leftIn + stack.widthIn / 2) * IN, (stack.shelfBottomIn + 0.75 + 1.1 * (layer + 0.5) + layer * 0.12 + hangingOffsetIn) * IN, 7.6 * IN);
+          piece.castShadow = true; piece.receiveShadow = true;
+          piece.userData = { decorKind: "folded" };
+          group.add(piece);
+        }
+      }
+      for (const shoe of decorBay.shoes) {
+        for (const pair of [0, 1]) {
+          const piece = new THREE.Mesh(hangerBarGeometry, decorShoe[shoe.hueIndex % decorShoe.length]);
+          piece.scale.set(shoe.widthIn * 0.46 * IN, 2.4 * IN, 8.5 * IN);
+          piece.position.set((bayLeftIn + shoe.leftIn + pair * shoe.widthIn * 0.52 + shoe.widthIn * 0.23) * IN, (shoe.heightIn + hangingOffsetIn) * IN, 7.4 * IN);
+          piece.castShadow = true; piece.receiveShadow = true;
+          piece.userData = { decorKind: "shoe" };
+          group.add(piece);
+        }
+      }
+      activeTowerParts.add(group);
+      decorGroups.push(group);
+    };
+    const decorByBay = new Map<string, StudioDecorBay>(studioWallDecor(design, design.wall).map((bay) => [bay.bayId, bay]));
+    /** Decor groups this scene built; the toggle effect below only flips their visibility. */
+    const decorGroups: THREE.Group[] = [];
+    decorGroupsRef.current = decorGroups;
     let cursor = 0;
     for (let index = 0; index < design.bays.length; index++) {
       const bay = design.bays[index];
@@ -192,6 +299,7 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
           rod.userData = { illustrativeDiameter: true }; activeTowerParts.add(rod);
         }
       }
+      renderBayDecor(bay.id, index, cursor + 0.75);
       for (const placement of studioBasketPlacementsForWall(design).filter((basket) => basket.bayId === bay.id)) {
         // Solid fabric liner. The catalog has no liner photo or color (Chrome is the frame finish only). This box is still the conservative visual envelope, not sourced rail, slide, travel, door, or mounting geometry.
         const surface = studioBasketSurface(placement.sku);
@@ -396,12 +504,17 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
       scene.traverse((object) => {
         if (object instanceof THREE.Mesh || object instanceof THREE.Line) object.geometry.dispose();
       });
-      for (const material of [oak, seamMaterial, wall.material, baseboard.material, boardMat, edgeMat, metalMat, shoeMat, brass, basketLinerMat, basketFrameMat, hintMat, hitMat, ...shakerMaterials]) {
+      for (const material of [oak, seamMaterial, wall.material, baseboard.material, boardMat, edgeMat, metalMat, shoeMat, brass, basketLinerMat, basketFrameMat, hintMat, hitMat, ...decorMaterialList, ...shakerMaterials]) {
         if (Array.isArray(material)) material.forEach((mat) => mat.dispose()); else material.dispose();
       }
       texture.dispose(); renderer.dispose(); host.removeChild(renderer.domElement);
     };
   }, [design, selectedBay, selectedCornerId]);
+  useEffect(() => {
+    // Presentation toggle only: flip visibility of the decor groups already in the scene. Rebuilding
+    // here would leak the whole WebGL scene on every toggle click.
+    for (const group of decorGroupsRef.current) group.visible = decor;
+  }, [decor]);
   useEffect(() => { reframeRef.current(); }, [cameraView, fitToken]);
   return <div ref={mount} className="h-full min-h-0 w-full touch-none" role="group" aria-label="Vendor closet 3D design canvas" data-testid="vendor-closet-3d" />;
 }
