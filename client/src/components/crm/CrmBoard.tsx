@@ -772,10 +772,6 @@ function DealDrawer({ dealId, lang, summary, onClose, onCompose }: { dealId: num
   const remove = trpc.crm.remove.useMutation({
     onSuccess: () => { toast.success(lang === "es" ? "Trato eliminado" : "Deal removed"); utils.crm.board.invalidate(); onClose(); },
   });
-  const updateDeal = trpc.crm.update.useMutation({
-    onSuccess: () => { utils.crm.deal.invalidate({ id: dealId! }); utils.crm.board.invalidate(); },
-    onError: () => toast.error("Update failed"),
-  });
   const setLaborEstimate = trpc.crm.setLaborEstimate.useMutation({
     onSuccess: () => {
       utils.crm.deal.invalidate({ id: dealId! });
@@ -1033,45 +1029,6 @@ function DealDrawer({ dealId, lang, summary, onClose, onCompose }: { dealId: num
               <Button variant="ghost" className="text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => remove.mutate({ id: deal.id })} disabled={remove.isPending}>
                 <Trash2 className="h-4 w-4 mr-1" />{lang === "es" ? "Eliminar trato" : "Delete deal"}
               </Button>
-
-              <div className="space-y-2" role="group" aria-label={lang === "es" ? "Tipos de ayuda necesarios" : "Help needed"}>
-                <p className="text-xs font-semibold text-muted-foreground">{lang === "es" ? "Ayuda necesaria" : "Help needed"}</p>
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    variant={deal.needsHelpClosing ? "default" : "outline"}
-                    className={deal.needsHelpClosing ? "bg-red-600 hover:bg-red-700 text-white" : "border-red-200 text-red-600 hover:bg-red-50"}
-                    onClick={() => updateDeal.mutate({ id: deal.id, needsHelpClosing: !deal.needsHelpClosing })}
-                    disabled={updateDeal.isPending}
-                    aria-pressed={Boolean(deal.needsHelpClosing)}
-                  >
-                    {deal.needsHelpClosing
-                      ? (lang === "es" ? "Ayuda para cerrar solicitada" : "Closing Help Requested")
-                      : (lang === "es" ? "Solicitar ayuda para cerrar" : "Request Help Closing")}
-                  </Button>
-                  <Button
-                    variant={deal.needsHelpDesigning ? "default" : "outline"}
-                    className={deal.needsHelpDesigning ? "bg-indigo-600 hover:bg-indigo-700 text-white" : "border-indigo-200 text-indigo-700 hover:bg-indigo-50"}
-                    onClick={() => updateDeal.mutate({ id: deal.id, needsHelpDesigning: !deal.needsHelpDesigning })}
-                    disabled={updateDeal.isPending}
-                    aria-pressed={Boolean(deal.needsHelpDesigning)}
-                  >
-                    {deal.needsHelpDesigning
-                      ? (lang === "es" ? "Ayuda de diseño solicitada" : "Design Help Requested")
-                      : (lang === "es" ? "Solicitar ayuda de diseño" : "Request Design Help")}
-                  </Button>
-                  <Button
-                    variant={deal.needsHelpShipping ? "default" : "outline"}
-                    className={deal.needsHelpShipping ? "bg-amber-600 hover:bg-amber-700 text-white" : "border-amber-200 text-amber-800 hover:bg-amber-50"}
-                    onClick={() => updateDeal.mutate({ id: deal.id, needsHelpShipping: !deal.needsHelpShipping })}
-                    disabled={updateDeal.isPending}
-                    aria-pressed={Boolean(deal.needsHelpShipping)}
-                  >
-                    {deal.needsHelpShipping
-                      ? (lang === "es" ? "Ayuda de costos de envío solicitada" : "Shipping Cost Help Requested")
-                      : (lang === "es" ? "Solicitar ayuda de costos de envío" : "Request Shipping Cost Help")}
-                  </Button>
-                </div>
-              </div>
             </div>
           </>
         ) : (
