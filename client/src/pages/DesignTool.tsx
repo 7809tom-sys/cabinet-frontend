@@ -4091,10 +4091,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     wallCabHeightPromptedRef.current = true;
     setCountertop(true);
     setAutoDesignOpen(false);
-    setViewMode("plan");
+    // The generated plan, the workspace mode, and the selection land in the same
+    // React commit, so the 3D view rebuilds once for the finished result instead
+    // of repainting between the plan swap and the view switch. There is no
+    // intermediate "plan" mode here: switching away and straight back would be a
+    // no-op in the same commit and misleading to read.
+    setViewMode("threeD");
     setSelectedUid(null);
     setAutoDesignCornerStage(null);
-    setViewMode("threeD");
     toast.success(`Placed ${run.cornerCount} selected corners, ${run.basePieceCount} regular base-run pieces, ${run.fillerCount} filler pieces closing every gap, and ${run.upperCount} aligned wall cabinets and fillers.`);
     const preliminaryFaucetNotes = new Set(run.faucetWindowNotes.map((note) => note.text));
     const announcedFaucetNotes = new Set(lastFaucetWindowNotesRef.current.map((note) => note.text));
@@ -15122,6 +15126,15 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	    };
 	  }, [activeBacksplashSurface, activeFlooringSurface, perimeterCountertopSurface]);
 
+  // The 3D canvas remounts only when the selected surface products (stable ids)
+  // change. Texture URLs are frequently null/undefined while a Generate run is
+  // still resolving them, so keying on those remounted the WebGL view mid-plan;
+  // InteractiveRoom3D now re-renders new material images on the same canvas.
+  const threeDSurfaceViewKey = useMemo(() => [
+    threeDSurfaceProductIds.flooring ?? "none",
+    backsplashEnabled ? threeDSurfaceProductIds.backsplash ?? "none" : "off",
+  ].join("-"), [backsplashEnabled, threeDSurfaceProductIds.backsplash, threeDSurfaceProductIds.flooring]);
+
 	const threeDIslandCabinet = useMemo(() => {
 	  if (!island) return { name: null, color: null, productId: null, doorSampleUrl: null };
 	  const islandStyleId = resolvedIslandCabinetStyleId(placed, island, styleId) ?? styleId;
@@ -15157,7 +15170,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       ? <div className="flex h-full min-h-[360px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed px-6 text-center text-sm text-muted-foreground"><strong className="text-foreground">Start your MasterTrac closet</strong><p>Open the measured floor plan to position boards, or choose a connected layout part in the right panel. No kitchen door style is needed.</p><Button type="button" variant="outline" onClick={() => setViewMode("plan")}>Open floor plan</Button></div>
       : <div className="flex h-full min-h-[360px] items-center justify-center rounded-xl border border-dashed px-6 text-center text-sm text-muted-foreground">Choose an active door style and add a cabinet, or choose a starter room layout, to load the synchronized 3D canvas.</div>;
 	    return <InteractiveRoom3D
-		      key={`active-surfaces-${threeDSurfaceProductIds.flooring ?? "none"}-${threeDSurfaceTextureUrls.flooring ?? "pending"}-${backsplashEnabled ? threeDSurfaceProductIds.backsplash ?? "none" : "off"}-${backsplashEnabled ? threeDSurfaceTextureUrls.backsplash ?? "pending" : "off"}`}
+		      key={`active-surfaces-${threeDSurfaceViewKey}`}
 		      embedded
 		      cutawayRoomWalls
 		      hybridPlanUnderlay={hybridPlanUnderlay}
@@ -23267,7 +23280,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
               <div className="flex h-[360px] items-center justify-center text-sm text-muted-foreground">Loading real catalog geometry…</div>
             ) : resolvedInteractive3dScene ? (
               <InteractiveRoom3D
-			      key={`active-surfaces-full-${threeDSurfaceProductIds.flooring ?? "none"}-${threeDSurfaceTextureUrls.flooring ?? "pending"}-${backsplashEnabled ? threeDSurfaceProductIds.backsplash ?? "none" : "off"}-${backsplashEnabled ? threeDSurfaceTextureUrls.backsplash ?? "pending" : "off"}`}
+			      key={`active-surfaces-full-${threeDSurfaceViewKey}`}
                 scene={resolvedInteractive3dScene}
                 placed={threeDPlaced}
                 crown={crown}

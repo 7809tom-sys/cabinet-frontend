@@ -11,6 +11,7 @@ import { GTAOPass } from "three/examples/jsm/postprocessing/GTAOPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader.js";
+import { ThreeDRendererHost, sizeThreeDRenderer } from "./threeDRendererHost";
 import { FullScreenQuad } from "three/examples/jsm/postprocessing/Pass.js";
 import { DenoiseMaterial, WebGLPathTracer } from "three-gpu-pathtracer";
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Camera, CheckCircle2, ChevronDown, Download, Eye, FileDown, Info, LoaderCircle, Magnet, Mail, Maximize2, Minimize2, Minus, Move3D, Palette, PanelTop, Plus, Printer, RefreshCw, Rotate3D, Save, Share2, Sparkles, Trash2 } from "lucide-react";
@@ -3947,6 +3948,14 @@ function disposeObject(root: THREE.Object3D) {
   const sharedRaisedPanelResource = (resource: { userData?: { sharedRaisedPanelBevel?: boolean } } | null | undefined) =>
     resource?.userData?.sharedRaisedPanelBevel === true;
   root.traverse((child) => {
+    // The renderer outlives every rebuild, so a discarded light's shadow map is
+    // not freed by a lost context any more. Release it with the light itself.
+    const shadowMap = (child as THREE.Light).shadow?.map;
+    if (shadowMap) {
+      shadowMap.depthTexture?.dispose();
+      shadowMap.dispose();
+      (child as THREE.Light).shadow.map = null;
+    }
     const mesh = child as THREE.Mesh;
     if (mesh.geometry && !sharedRaisedPanelResource(mesh.geometry)) mesh.geometry.dispose?.();
     const material = mesh.material;
@@ -11630,6 +11639,9 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
   const previewRootRef = useRef<HTMLElement>(null);
   const mountRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+  // One WebGL renderer and canvas per mount. Scene rebuilds reuse both, so the
+  // last painted frame stays visible until the new scene renders.
+  const rendererHostRef = useRef<ThreeDRendererHost | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   // Keep the callback fresh without rebuilding the WebGL scene on every parent render.
   const onGeometryRenderedRef = useRef(onGeometryRendered);
@@ -11672,6 +11684,9 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
     if (!webglUnavailable || webglAutoRetriesRef.current >= 2) return;
     const timer = window.setTimeout(() => {
       webglAutoRetriesRef.current += 1;
+      // Drop the failed host so the next attempt asks the browser for a fresh context.
+      rendererHostRef.current?.dispose();
+      rendererHostRef.current = null;
       setWebglUnavailable(false);
     }, 1200);
     return () => window.clearTimeout(timer);
@@ -12073,6 +12088,18 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
   };
 
   useEffect(() => {
+    const host = new ThreeDRendererHost();
+    rendererHostRef.current = host;
+    // Only this effect releases the WebGL context. Cleanup runs in declaration
+    // order, and this effect is declared first, so the scene effect below tears
+    // its contents down first and the canvas is detached last.
+    return () => {
+      host.dispose();
+      if (rendererHostRef.current === host) rendererHostRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
     const mount = mountRef.current;
     if (!mount || (!scene.roomShape && !roomOverride)) return;
 	    const room = roomOverride
@@ -12095,34 +12122,21 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 	      deviceMemoryGb: navigatorCapabilities?.deviceMemory ?? null,
 	    });
 	    let renderer: THREE.WebGLRenderer;
-    try {
-      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, stencil: true, powerPreference: "high-performance", preserveDrawingBuffer: true });
-	    } catch {
-	      // Some browsers refuse the first request (another tab or an earlier test may still
-	      // hold graphics contexts). Retry with plainer settings before giving up.
-	      try {
-	        renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true, preserveDrawingBuffer: true });
-	      } catch {
-	        // Last resort for Chrome with a restricted GPU: default options only.
-	        try {
-	          renderer = new THREE.WebGLRenderer({ preserveDrawingBuffer: true });
-	        } catch (error) {
-	          console.warn("[3D] WebGL could not start", error);
-	          setWebglUnavailable(true);
-	          onGeometryRenderedRef.current?.();
-	          return;
-	        }
-	      }
-	    }
-	    renderer.setPixelRatio(Math.min(window.devicePixelRatio, renderQuality.pixelRatioCap));
-	    renderer.setSize(canvasWidth, canvasHeight);
+    if (!rendererHostRef.current) rendererHostRef.current = new ThreeDRendererHost();
+    const hostRenderer = rendererHostRef.current.ensureMounted(mount);
+    if (!hostRenderer) {
+      setWebglUnavailable(true);
+      onGeometryRenderedRef.current?.();
+      return;
+    }
+    renderer = hostRenderer;
+    sizeThreeDRenderer(renderer, canvasWidth, canvasHeight, Math.min(window.devicePixelRatio, renderQuality.pixelRatioCap));
 	    renderer.domElement.dataset.renderQuality = renderQuality.tier;
     renderer.shadowMap.enabled = true;
 	    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 	    renderer.outputColorSpace = THREE.SRGBColorSpace;
 	    renderer.toneMapping = THREE.ACESFilmicToneMapping;
 	    renderer.toneMappingExposure = studioLights.exposure;
-	    mount.replaceChildren(renderer.domElement);
 
 	    const threeScene = new THREE.Scene();
 	    threeScene.background = new THREE.Color(studioLights.background);
@@ -12750,8 +12764,9 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
       const height = Math.max(280, mount.clientHeight || 420);
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
-      renderer.setSize(width, height);
-      composer?.setSize(width, height);
+      if (sizeThreeDRenderer(renderer, width, height, Math.min(window.devicePixelRatio, renderQuality.pixelRatioCap))) {
+        composer?.setSize(width, height);
+      }
     });
     resizeObserver.observe(mount);
 	    return () => {
@@ -12767,24 +12782,21 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
         target: controls.target.clone(),
         zoom: camera.zoom,
       };
+      // Only the scene contents and per-build helpers go away here. The renderer,
+      // its canvas, and the WebGL context are owned by the mount-only effect below,
+      // so the frame on screen survives until the rebuilt scene paints over it.
 	      controls.dispose();
 	      composer?.dispose();
 	      disposeObject(threeScene);
 	      environmentTarget.dispose();
 	      pmremGenerator.dispose();
-	      renderer.dispose();
-      // dispose() alone leaves the browser's WebGL context alive; Chrome caps live contexts, so after
-      // many edits it refuses new ones ("device cannot start the 3D view"). Release it explicitly.
-      try { renderer.forceContextLoss(); } catch { /* already lost */ }
-      renderer.domElement.remove();
       if (rendererRef.current === renderer) rendererRef.current = null;
       if (sceneRef.current === threeScene) sceneRef.current = null;
       if (cameraRef.current === camera) cameraRef.current = null;
       if (controlsRef.current === controls) controlsRef.current = null;
       if (catalogRootRef.current === catalogRoot) catalogRootRef.current = null;
     };
-  }, [scene, validSuggestions, placed, crown, toeKick, roomOverride, openings, sinks, potFillers, island, furniture, selectedFurnitureUid, ponyWalls, renderExistingDesign, resetKey, cameraPreset, showRoomContext, showSolidFrontWalls, cutawayRoomWalls, hybridPlanUnderlay, wallHeightIn, wallHeights, resolvedCabinetFinish, studioLights, cabinetPreviewFinishId, cabinetFinishOverrides, cabinetDoorProfiles, cabinetDoorSampleUrls, cabinetDrawerSampleUrls, cabinetFaceSourceKinds, cabinetFaceCrops, catalogFaceCrop, cabinetFrontVisuals, catalogDrawerSampleUrl, catalogFaceSourceKind, countertopFinish, cabinetFinish, catalogDoorSampleUrl, catalogRoomSceneUrl, hardwareStyleId, hardwareAccent, catalogCountertopName, catalogCountertopProductId, catalogIslandCountertopName, catalogIslandCountertopProductId, catalogIslandCountertopColor, catalogFlooringName, catalogFlooringProductId, catalogFlooringCategory, catalogFlooringSubCategory, catalogFlooringSize, catalogBacksplashName, catalogBacksplashProductId, catalogBacksplashSize, catalogBacksplashCategory, catalogBacksplashSubCategory, backsplashHeightMode, countertopBacksplashHeightIn, catalogCountertopImageUrl, catalogIslandCountertopImageUrl, catalogFlooringImageUrl, catalogFlooringCardImageUrl, flooringRotationDeg, mosaicFloorPattern, catalogBacksplashImageUrl, catalogBacksplashCardImageUrl, catalogBacksplashMaterialImageUrl, catalogFlooringMaterialImageUrl]);
-	  // A catalog filler has already passed geometry/collision validation before this
+  }, [webglUnavailable, scene, validSuggestions, placed, crown, toeKick, roomOverride, openings, sinks, potFillers, island, furniture, selectedFurnitureUid, ponyWalls, renderExistingDesign, resetKey, cameraPreset, showRoomContext, showSolidFrontWalls, cutawayRoomWalls, hybridPlanUnderlay, wallHeightIn, wallHeights, resolvedCabinetFinish, studioLights, cabinetPreviewFinishId, cabinetFinishOverrides, cabinetDoorProfiles, cabinetDoorSampleUrls, cabinetDrawerSampleUrls, cabinetFaceSourceKinds, cabinetFaceCrops, catalogFaceCrop, cabinetFrontVisuals, catalogDrawerSampleUrl, catalogFaceSourceKind, countertopFinish, cabinetFinish, catalogDoorSampleUrl, catalogRoomSceneUrl, hardwareStyleId, hardwareAccent, catalogCountertopName, catalogCountertopProductId, catalogIslandCountertopName, catalogIslandCountertopProductId, catalogIslandCountertopColor, catalogFlooringName, catalogFlooringProductId, catalogFlooringCategory, catalogFlooringSubCategory, catalogFlooringSize, catalogBacksplashName, catalogBacksplashProductId, catalogBacksplashSize, catalogBacksplashCategory, catalogBacksplashSubCategory, backsplashHeightMode, countertopBacksplashHeightIn, catalogCountertopImageUrl, catalogIslandCountertopImageUrl, catalogFlooringImageUrl, catalogFlooringCardImageUrl, flooringRotationDeg, mosaicFloorPattern, catalogBacksplashImageUrl, catalogBacksplashCardImageUrl, catalogBacksplashMaterialImageUrl, catalogFlooringMaterialImageUrl]);	  // A catalog filler has already passed geometry/collision validation before this
 	  // cue runs. Animate only its visual group, so the final coordinates and the
 	  // saved plan remain authoritative while the user sees it settle into the seam.
 	  useEffect(() => {
@@ -14241,7 +14253,7 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
     return <div className="flex min-h-[320px] items-center justify-center rounded-xl border border-dashed bg-muted/30 px-6 text-center text-sm text-muted-foreground">Choose a room layout or open a saved design to generate the deterministic 3D preview.</div>;
   }
   if (webglUnavailable) {
-    return <div data-testid="webgl-unavailable" className="flex min-h-[320px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed bg-muted/30 px-6 text-center text-sm text-muted-foreground"><p>{webglAutoRetriesRef.current < 2 ? "Starting the interactive 3D view…" : "The interactive 3D view could not start. Close other 3D tabs, then press Retry. Your 2D plan and elevation preview remain available."}</p><button type="button" className="rounded-md border bg-background px-3 py-1.5 text-sm font-semibold text-foreground" onClick={() => { webglAutoRetriesRef.current = 0; setWebglUnavailable(false); }}>Retry 3D view</button></div>;
+    return <div data-testid="webgl-unavailable" className="flex min-h-[320px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed bg-muted/30 px-6 text-center text-sm text-muted-foreground"><p>{webglAutoRetriesRef.current < 2 ? "Starting the interactive 3D view…" : "The interactive 3D view could not start. Close other 3D tabs, then press Retry. Your 2D plan and elevation preview remain available."}</p><button type="button" className="rounded-md border bg-background px-3 py-1.5 text-sm font-semibold text-foreground" onClick={() => { webglAutoRetriesRef.current = 0; rendererHostRef.current?.dispose(); rendererHostRef.current = null; setWebglUnavailable(false); }}>Retry 3D view</button></div>;
   }
   const fillerNoticeEntries = threeDFillerMeasurementNoticeEntries(placed);
   const fillerNoticePieceCount = fillerNoticeEntries.reduce((total, entry) => total + entry.quantity, 0);
