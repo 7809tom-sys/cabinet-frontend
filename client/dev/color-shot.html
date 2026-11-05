@@ -1,0 +1,42 @@
+<!doctype html>
+<!--
+  Before/after harness for the restored "structural surfaces follow the door
+  appearance" behaviour.
+
+  It renders one cabinet twice with the SAME code: once with the restored shared
+  appearance, once with the old split behaviour forced locally (a test-only switch
+  passed into the harness, never into the app). So the two images differ only by
+  the change being reviewed.
+
+  Served by the Vite dev server at /dev/color-shot.html; used only by
+  e2e/structural-color-screenshot.spec.ts.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Structural colour check</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #eef1f4; font-family: system-ui, sans-serif; }
+      #root { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 8px; height: 100vh; box-sizing: border-box; }
+      .pane { position: relative; border-radius: 10px; overflow: hidden; background: #fff; }
+      .pane canvas { display: block; width: 100%; height: 100%; }
+      .tag {
+        position: absolute; left: 10px; top: 10px; padding: 6px 10px; border-radius: 8px;
+        font-size: 12px; font-weight: 600; background: rgba(255,255,255,0.95);
+        box-shadow: 0 4px 14px rgba(15,23,42,0.16);
+      }
+      .tag.bad { color: #9f1239; }
+      .tag.good { color: #047857; }
+      .swatches { position: absolute; left: 10px; bottom: 10px; font-size: 11px; line-height: 1.5;
+        background: rgba(255,255,255,0.95); padding: 6px 9px; border-radius: 8px; box-shadow: 0 4px 14px rgba(15,23,42,0.16); }
+      .swatches span { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: middle; }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <div class="pane" id="pane-before"><div class="tag bad" id="tag-before">Before (PR #123 split)</div></div>
+      <div class="pane" id="pane-after"><div class="tag good" id="tag-after">After (restored)</div></div>
+    </div>
+    <script type="module" src="/src/structuralColorHarness.ts"></script>
+  </body>
+</html>

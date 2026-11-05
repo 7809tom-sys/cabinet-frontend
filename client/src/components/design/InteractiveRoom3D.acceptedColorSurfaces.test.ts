@@ -14,7 +14,7 @@
  */
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
-import { addCabinet, threeDStructuralFinish } from "./InteractiveRoom3D";
+import { addCabinet, threeDFaceMaterialColor, threeDStructuralFinish } from "./InteractiveRoom3D";
 import { designerCatalogDoorProfile, doorStyleFinishColors } from "@/lib/doorStyleAppearance";
 import { styleWithAccepted, acceptedAppearanceRowMap, type DesignerStyleRow } from "@/lib/designerThreeDStyles";
 import { withFramelessExposedFinish } from "@/lib/framelessExposedFinish";
@@ -123,10 +123,18 @@ describe("the accepted render paints the cabinet box, sides, and toe kick", () =
     expect(visible).not.toContain(LINEN_KEYWORD_FACE);
   });
 
-  it("reports the structural finish as exactly the accepted color, and never a name", () => {
-    const finish = threeDStructuralFinish(ACCEPTED_HEX, true);
+  it("reports the structural finish as exactly the accepted color when there is no sample, and never a name", () => {
+    const finish = threeDStructuralFinish(ACCEPTED_HEX, false);
     expect(finish.color).toBe(ACCEPTED_HEX);
     expect(finish.usesDoorSample).toBe(false);
+  });
+
+  it("follows the accepted appearance when one exists, like the fronts", () => {
+    // Restoration (Nov 5 2026): with a sample the structural surfaces carry that
+    // appearance — white tint over the image — so they cannot show a second shade.
+    const finish = threeDStructuralFinish(ACCEPTED_HEX, true);
+    expect(finish.color).toBe(threeDFaceMaterialColor(ACCEPTED_HEX, true));
+    expect(finish.usesDoorSample).toBe(true);
   });
 });
 
