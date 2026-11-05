@@ -1,4 +1,7 @@
+import { AFFILIATE_GUIDE_ROOT } from "./affiliateGuides";
+
 const PRODUCTION_ORIGIN = "https://www.cabinetdealz.com";
+
 function affiliatePublicOrigin(origin?: string): string {
   const base = (origin || (typeof window !== "undefined" ? window.location.origin : PRODUCTION_ORIGIN)).replace(/\/+$/, "");
   return base;
@@ -26,6 +29,16 @@ export function affiliateOrderPath(slug: string): string {
   return `${affiliateStorefrontPath(slug)}/order`;
 }
 
+/**
+ * Legacy digital business-card address. Nothing ever rendered it, so it is kept
+ * only as a redirect source for links already printed on cards and QR codes.
+ */
+export const AFFILIATE_CARD_ROOT = "/card";
+
+export function affiliateCardPath(slug: string): string {
+  return `${AFFILIATE_CARD_ROOT}/${encodeURIComponent(slug.trim().toLowerCase())}`;
+}
+
 /** The canonical administrative dashboard address for one affiliate record. */
 export function affiliateDashboardPath(affiliateId: number): string {
   return `/affiliate?viewAs=${encodeURIComponent(String(affiliateId))}`;
@@ -49,6 +62,10 @@ export function affiliateOwnerScopeDestination({
 }): string | null {
   const storefrontRoot = affiliateStorefrontPath(slug);
   if (pathname === storefrontRoot || pathname.startsWith(`${storefrontRoot}/`)) return null;
+
+  // Training guides are published reference material, not affiliate
+  // management, so an owner opening a bookmarked guide stays on the guide.
+  if (pathname === AFFILIATE_GUIDE_ROOT || pathname.startsWith(`${AFFILIATE_GUIDE_ROOT}/`)) return null;
 
   const dashboard = affiliateDashboardPath(affiliateId);
   if (pathname !== "/affiliate") return dashboard;
