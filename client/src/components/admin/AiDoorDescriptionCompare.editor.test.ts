@@ -73,11 +73,12 @@ describe("the comparison is a door-editor tool", () => {
   it("does no work until the operator starts it", () => {
     // The collapsed branch renders before any parsing or storage read.
     const collapsedIndex = compareSource.indexOf("ai-door-compare-closed");
-    const parseIndex = compareSource.indexOf("parseAiDoorComparison(fields)");
+    const parseIndex = compareSource.indexOf("parseAiDoorComparison(fields, style)");
     expect(collapsedIndex).toBeGreaterThan(-1);
     expect(parseIndex).toBeGreaterThan(-1);
-    // Parsing is gated behind the open flag and the start handler.
-    expect(compareSource).toContain("open ? parseAiDoorComparison(fields) : null");
+    // Parsing is gated behind the open flag and the start handler. The style is
+    // passed so a documented USCD family can be read from the style name.
+    expect(compareSource).toContain("open ? parseAiDoorComparison(fields, style) : null");
     expect(compareSource).toContain("readAiDoorComparison(style.id)");
     // The storage read lives in the start handler, not in a mount effect.
     const startHandler = compareSource.slice(

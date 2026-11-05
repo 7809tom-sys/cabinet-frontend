@@ -56,6 +56,7 @@ const OrderBuilder = lazy(() => import("@/pages/OrderBuilder"));
 const CheckoutSuccess = lazy(() => import("@/pages/CheckoutSuccess"));
 const CheckoutCancelled = lazy(() => import("@/pages/CheckoutCancelled"));
 const Admin = lazy(() => import("@/pages/Admin"));
+const AdminOrderPage = lazy(() => import("@/pages/AdminOrderPage"));
 const AdminCatalogImport = lazy(() => import("@/pages/AdminCatalogImport"));
 const Storefront = lazy(() => import("@/pages/Storefront"));
 const StorefrontPreview = lazy(() => import("@/pages/StorefrontPreview"));
@@ -759,6 +760,19 @@ export default function App() {
               <Admin />
             </Suspense>
           </AppLayout>
+        </Route>
+
+        {/* One incoming order, full page. The list's View action links here so the
+            whole order (breakdown, line items, actions, shipment) is readable at
+            once instead of inside a quarter-page dialog. */}
+        <Route path="/admin/orders/:id">
+          {(params) => (
+            <AppLayout>
+              <Suspense fallback={<PageLoader />}>
+                <AdminOrderPage orderId={Number(params.id)} />
+              </Suspense>
+            </AppLayout>
+          )}
         </Route>
 
         <Route path="/admin/catalog-import">

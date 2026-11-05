@@ -4,6 +4,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import AdminOrderStripeBreakdown, { AdminOrderListIdentity, AdminOrderListTotal } from "./AdminOrderStripeBreakdown";
 
 const adminList = vi.hoisted(() => vi.fn());
+const navigate = vi.hoisted(() => vi.fn());
+
+vi.mock("wouter", () => ({
+  useLocation: () => ["/admin?tab=orders", navigate],
+}));
 
 vi.mock("@/lib/trpc", () => ({
   trpc: {
@@ -74,6 +79,7 @@ function ownerOrder(overrides: Record<string, unknown> = {}) {
 afterEach(() => {
   cleanup();
   adminList.mockReset();
+  navigate.mockReset();
 });
 
 function text(element: Element | null | undefined): string {
@@ -185,15 +191,14 @@ describe("incoming orders list", () => {
     expect(text(screen.getByTestId("admin-order-list-total"))).not.toContain("$449.00");
   });
 
-  it("opens the detail breakdown with the same $520 reconciliation", () => {
+  it("opens the full-page order route with the same $520 reconciliation", () => {
     adminList.mockReturnValue({ data: [ownerOrder()], isLoading: false, error: null, refetch: vi.fn() });
     render(<IncomingOrdersAdmin />);
     fireEvent.click(screen.getByRole("button", { name: "View" }));
-    const detail = screen.getByTestId("admin-order-stripe-breakdown");
-    expect(text(within(detail).getByTestId("admin-order-total"))).toContain("$520.00");
-    expect(text(within(detail).getByTestId("admin-order-detail-shipping"))).toContain("$47.00 · UPS");
-    expect(within(detail).getByText("3DB18")).toBeTruthy();
-    expect(text(within(detail).getByTestId("admin-stripe-reconciled"))).toContain("Reconciled with Stripe");
+    // The order no longer opens in a quarter-page dialog: View goes to the
+    // dedicated full-page route and carries the list tab for the Back button.
+    expect(navigate).toHaveBeenCalledWith("/admin/orders/18?tab=orders");
+    expect(screen.queryByTestId("admin-order-stripe-breakdown")).toBeNull();
   });
 });
 

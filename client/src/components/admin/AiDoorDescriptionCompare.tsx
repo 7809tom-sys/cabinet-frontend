@@ -27,6 +27,7 @@ import {
   AI_DOOR_MODELS,
   AI_DOOR_MODEL_LABELS,
   AI_DOOR_PROMPTS,
+  aiDoorUnstatedSentence,
   chooseOfficialAiDescription,
   parseAiDoorComparison,
   type AiDoorModel,
@@ -50,6 +51,12 @@ import {
 } from "@shared/aiDoorChosenProfile";
 import { aiDoorPreviewEntryLabel, aiDoorPreviewGeometry, previewFaceHex } from "@/lib/aiDoorPreview";
 import { useAiDoorDescribe } from "@/lib/aiDoorDescribeClient";
+import {
+  aiDoorImageSourceLabel,
+  aiDoorPreviewSource,
+  aiDoorSampleSource,
+  type AiDoorImageSource,
+} from "@/lib/aiDoorImageSource";
 import { announceChosenDoorProfile } from "@/lib/useChosenDoorProfiles";
 
 export type AiDoorCompareStyle = {
@@ -102,6 +109,30 @@ const EMPTY_PARAMS: AiDoorParseResult["params"] = {
   colorText: null,
 };
 
+/**
+ * Says where the picture it sits on really came from. Only rendered for a
+ * source that exists, so there is no "AI generated" badge until an AI image
+ * call actually makes one.
+ */
+function SourceBadge({ source }: { source: AiDoorImageSource | null }) {
+  const label = aiDoorImageSourceLabel(source);
+  if (!label) return null;
+  const tone = label.kind === "door-sample"
+    ? "bg-slate-800/85 text-white"
+    : label.kind === "ai-generated"
+      ? "bg-violet-700/90 text-white"
+      : "bg-amber-100/95 text-amber-900 ring-1 ring-amber-300";
+  return (
+    <span
+      data-testid={label.testId}
+      data-source={label.kind}
+      className={`pointer-events-none absolute left-1 top-1 z-10 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${tone}`}
+    >
+      {label.label}
+    </span>
+  );
+}
+
 function DoorPreview({ params, colorSeed }: {
   params: AiDoorParseResult["params"];
   colorSeed: AiDoorCompareStyle;
@@ -111,10 +142,14 @@ function DoorPreview({ params, colorSeed }: {
   const edge = `color-mix(in srgb, ${face} 78%, black)` as string;
   const panel = `color-mix(in srgb, ${face} 92%, black)` as string;
   return (
-    <svg
-      viewBox="0 0 100 200"
-      role="img"
-      aria-label="Door preview from this description"
+    <div className="relative">
+      {/* This drawing is the library default profile rendered locally. It is not a
+          photo of the door and it is not an AI image, so it says so on the picture. */}
+      <SourceBadge source={aiDoorPreviewSource()} />
+      <svg
+        viewBox="0 0 100 200"
+        role="img"
+        aria-label="Door preview from this description"
       className="h-40 w-full rounded-md border bg-muted/20"
       data-testid="ai-door-preview-svg"
       data-entry={params.entryId ?? "none"}
@@ -176,6 +211,7 @@ function DoorPreview({ params, colorSeed }: {
         </>
       )}
     </svg>
+    </div>
   );
 }
 
@@ -198,8 +234,8 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial }:
   const describe = useAiDoorDescribe();
 
   const parsed = useMemo(
-    () => (open ? parseAiDoorComparison(fields) : null),
-    [open, fields],
+    () => (open ? parseAiDoorComparison(fields, style) : null),
+    [open, fields, style],
   );
 
   function startComparison() {
@@ -330,12 +366,16 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial }:
           </p>
         </div>
         {sampleUrl && (
-          <img
-            src={sampleUrl}
-            alt="Door photo being described"
-            className="h-16 w-16 rounded border object-cover"
-            data-testid="ai-door-compare-sample"
-          />
+          <figure className="relative shrink-0" data-testid="ai-door-compare-sample-figure">
+            <img
+              src={sampleUrl}
+              alt="Door photo being described"
+              className="h-16 w-16 rounded border object-cover"
+              data-testid="ai-door-compare-sample"
+            />
+            {/* The photo is the style's own saved sample, not an AI image. */}
+            <SourceBadge source={aiDoorSampleSource(sampleUrl)} />
+          </figure>
         )}
       </div>
 
@@ -429,11 +469,11 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial }:
                   {result && (
                     <div className="space-y-1" data-testid={`ai-door-unstated-${model}`}>
                       {result.unstated.length > 0 ? (
-                        <p className="text-[10px] text-amber-800">
-                          Left at the library default: {result.unstated.join(", ")}
+                        <p className="text-[10px] text-amber-800" data-testid={`ai-door-unstated-sentence-${model}`}>
+                          {aiDoorUnstatedSentence(result.unstated)}
                         </p>
                       ) : (
-                        <p className="text-[10px] text-emerald-800">Every compared parameter was stated in this description.</p>
+                        <p className="text-[10px] text-emerald-800">Every compared detail was stated in this description.</p>
                       )}
                       {result.params.colorText && (
                         <p className="text-[10px] text-muted-foreground">Color, as described: {result.params.colorText}</p>

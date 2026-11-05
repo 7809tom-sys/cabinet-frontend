@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -6,7 +7,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,81 +22,23 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { ChevronDown, ChevronRight, Copy, Package, Trash2, Send, Building2, Palette, CheckCircle2, Truck, MapPin, Download, BookOpen } from "lucide-react";
+import { ChevronDown, ChevronRight, Copy, Package, Trash2, ExternalLink, BookOpen, Download } from "lucide-react";
 import AdminOrderStripeBreakdown, { AdminOrderListIdentity, AdminOrderListTotal } from "@/components/admin/AdminOrderStripeBreakdown";
 import OrderFulfillmentTrail from "@/components/admin/OrderFulfillmentTrail";
-import { describeAdminOrderList, type AdminOrderLineInput, type AdminOrderMoneyInput } from "@/lib/adminOrderReconciliation";
+import {
+  ADMIN_ORDER_STATUS_COLORS,
+  adminOrderShipment,
+  adminOrderVerified,
+  type AdminOrderLine,
+  type AdminOrderRow,
+  type AdminOrderStatus,
+} from "@/lib/adminOrderRow";
 
-type Status = "draft" | "submitted" | "confirmed" | "cancelled";
+type Status = AdminOrderStatus;
+type EnrichedLine = AdminOrderLine;
+type OrderRow = AdminOrderRow;
 
-type EnrichedLine = AdminOrderLineInput & {
-  cabinetId: number | null;
-  masterCode: string;
-  rawCode?: string;
-  description: string;
-  qty: number;
-  unitPrice: number | null;
-  linePrice: number | null;
-  doorStyle?: string | null;
-  styleId?: number | null;
-  tier?: string | null;
-  matched: boolean;
-  poSku: string | null;
-  distributorName?: string | null;
-  colorFinish?: string | null;
-};
-
-type OrderRow = Omit<AdminOrderMoneyInput, "lineItems" | "originatorName" | "originatorEmail" | "deliveryMethod"> & {
-  id: number;
-  requestNumber: string;
-  originatorName: string | null;
-  originatorEmail: string | null;
-  originatorPhone: string | null;
-  status: Status;
-  tier: string;
-  styleName: string | null;
-  taxState?: string | null;
-  taxRate?: string | null;
-  itemCount: number;
-  notes: string | null;
-  lineItems: EnrichedLine[];
-  createdAt: Date;
-  distributorId?: number | null;
-  distributorName?: string | null;
-  deliveryMethod?: "ship" | "pickup";
-  sentToDistributorAt?: Date | null;
-  sentToDistributorEmail?: string | null;
-  distributorEmailStatus?: string | null;
-  distributorEmailSentAt?: string | Date | null;
-  distributorEmailTo?: string | null;
-  distributorEmailError?: string | null;
-  orderVerifiedAt?: string | Date | null;
-  orderVerifiedBy?: string | null;
-  orderShippedAt?: string | Date | null;
-  orderShippedBy?: string | null;
-  shipmentCarrier?: string | null;
-  shipmentTracking?: string | null;
-  orderSignedAt?: string | Date | null;
-  orderSignedBy?: string | null;
-  signerName?: string | null;
-  crmSyncStatus?: string | null;
-  crmSyncError?: string | null;
-  paidAt?: string | Date | null;
-  imageGeneratedCount?: number | null;
-  lastImageGeneratedAt?: string | Date | null;
-  shipments?: Array<{ status?: string | null; shippedAt?: string | Date | null; carrier?: string | null; trackingNumber?: string | null }>;
-  qboInvoiceId?: string | null;
-  qboSyncedAt?: Date | null;
-  orderKind?: string | null;
-  projectLabel?: string | null;
-};
-
-const STATUS_COLORS: Record<Status, string> = {
-  draft: "bg-muted text-muted-foreground",
-  submitted: "bg-amber-500/20 text-amber-600 dark:text-amber-400",
-  confirmed: "bg-green-500/20 text-green-700 dark:text-green-400",
-  cancelled: "bg-destructive/20 text-destructive",
-};
+const STATUS_COLORS = ADMIN_ORDER_STATUS_COLORS;
 
 function copyPoSkus(lines: EnrichedLine[]) {
   const text = lines
@@ -106,268 +48,11 @@ function copyPoSkus(lines: EnrichedLine[]) {
   navigator.clipboard.writeText(text).then(() => toast.success("PO SKUs copied to clipboard"));
 }
 
-function OrderDetailDialog({
-  order,
-  open,
-  onClose,
-}: {
-  order: OrderRow;
-  open: boolean;
-  onClose: () => void;
-}) {
-  const utils = trpc.useUtils();
-  const syncToQbo = trpc.qbo.syncOrder.useMutation({
-    onSuccess: (data) => {
-      toast.success(`Synced to QuickBooks — Invoice #${data.invoiceId}`);
-      utils.orders.adminListWithPoSkus.invalidate();
-    },
-    onError: (e) => toast.error(e.message || "QBO sync failed"),
-  });
-  const confirm = trpc.orders.confirm.useMutation({
-    onSuccess: () => {
-      toast.success("Order confirmed");
-      onClose();
-    },
-    onError: (e) => toast.error(e.message),
-  });
-  const sendToDistributor = trpc.orders.resendDistributorEmail.useMutation({
-    onSuccess: (res) => {
-      if (res.status === "sent") toast.success(`Email sent to ${res.sentTo}`);
-      else if (res.status === "no_email") toast.error(res.error || "No order email set");
-      else toast.error(res.error || "Distributor email was not sent");
-      utils.orders.adminListWithPoSkus.invalidate();
-    },
-    onError: (e) => toast.error(e.message),
-  });
-  const markVerified = trpc.orders.markVerified.useMutation({
-    onSuccess: () => { toast.success("Order verified"); utils.orders.adminListWithPoSkus.invalidate(); },
-    onError: (e) => toast.error(e.message),
-  });
-  const markShipped = trpc.orders.markShipped.useMutation({
-    onSuccess: () => { toast.success("Order marked shipped"); utils.orders.adminListWithPoSkus.invalidate(); },
-    onError: (e) => toast.error(e.message),
-  });
-  const markSigned = trpc.orders.markSigned.useMutation({
-    onSuccess: () => { toast.success("Order marked signed"); utils.orders.adminListWithPoSkus.invalidate(); },
-    onError: (e) => toast.error(e.message),
-  });
-  const markPaid = trpc.orders.adminMarkPaid.useMutation({
-    onSuccess: () => { toast.success("Order marked paid. The CRM deal moves to New Sale."); utils.orders.adminListWithPoSkus.invalidate(); },
-    onError: (e) => toast.error(e.message),
-  });
-
-  // Color/finish per line, de-duplicated, for the build-sheet summary.
-  const colorFinishes = Array.from(
-    new Set(order.lineItems.map((l) => l.colorFinish).filter((v): v is string => !!v))
-  );
-  const customer = describeAdminOrderList(order);
-
-  return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-3">
-            <Package className="h-5 w-5 text-primary" />
-            Order {order.requestNumber}
-            <Badge className={STATUS_COLORS[order.status]}>{order.status}</Badge>
-          </DialogTitle>
-          <DialogDescription>
-            Invoice breakdown for {customer.customerName || order.requestNumber}, including shipping and the Stripe charge.
-          </DialogDescription>
-        </DialogHeader>
-
-        {/* Customer info */}
-        <div className="grid grid-cols-2 gap-4 text-sm border rounded-lg p-4 bg-muted/30">
-          <div>
-            <p className="text-muted-foreground text-xs uppercase tracking-wide mb-1">Customer</p>
-            <p className="font-medium">{customer.customerName || order.originatorName || "—"}</p>
-            <p className="text-muted-foreground">{order.originatorEmail || ""}</p>
-            <p className="text-muted-foreground">{order.originatorPhone || ""}</p>
-          </div>
-          <div>
-            <p className="text-muted-foreground text-xs uppercase tracking-wide mb-1">Order Info</p>
-            <p><span className="text-muted-foreground">Style:</span> {order.styleName || "—"}</p>
-            <p><span className="text-muted-foreground">Tier:</span> {order.tier}</p>
-            <p><span className="text-muted-foreground">Ship to:</span> {customer.shippingLocation || "Shipping location not recorded"}</p>
-            <p><span className="text-muted-foreground">Date:</span> {new Date(order.createdAt).toLocaleDateString()}</p>
-          </div>
-        </div>
-
-        {/* Fulfillment / distributor build-sheet block (admin-only) */}
-        <div className="grid grid-cols-2 gap-4 text-sm border rounded-lg p-4 bg-primary/5 border-primary/20">
-          <div>
-            <p className="text-muted-foreground text-xs uppercase tracking-wide mb-1 flex items-center gap-1.5">
-              <Building2 className="h-3.5 w-3.5" /> Distributor
-            </p>
-            <p className="font-medium">{order.distributorName || "— (no matched SKUs)"}</p>
-            <p className="text-muted-foreground flex items-center gap-1.5 mt-1">
-              {order.deliveryMethod === "pickup" ? (
-                <><MapPin className="h-3.5 w-3.5" /> Local pickup</>
-              ) : (
-                <><Truck className="h-3.5 w-3.5" /> Ship</>
-              )}
-            </p>
-          </div>
-          <div>
-            <p className="text-muted-foreground text-xs uppercase tracking-wide mb-1 flex items-center gap-1.5">
-              <Palette className="h-3.5 w-3.5" /> Cabinet Color / Finish
-            </p>
-            {colorFinishes.length ? (
-              colorFinishes.map((c, i) => <p key={i} className="font-medium">{c}</p>)
-            ) : (
-              <p className="text-muted-foreground">—</p>
-            )}
-          </div>
-          {order.sentToDistributorAt && !order.distributorEmailSentAt && (
-            <div className="col-span-2 text-xs text-green-700 dark:text-green-400 flex items-center gap-1.5">
-              <CheckCircle2 className="h-3.5 w-3.5" />
-              Sent {new Date(order.sentToDistributorAt).toLocaleString()} to {order.sentToDistributorEmail}
-            </div>
-          )}
-        </div>
-
-        <OrderFulfillmentTrail order={order} />
-
-        {order.notes && (
-          <div className="text-sm border rounded-lg p-3 bg-amber-500/5 border-amber-500/20">
-            <p className="text-muted-foreground text-xs uppercase tracking-wide mb-1">Notes</p>
-            <p>{order.notes}</p>
-          </div>
-        )}
-
-        <AdminOrderStripeBreakdown order={order} />
-
-        {/* PO SKU table */}
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="text-sm font-semibold">Line Items — PO SKUs</h3>
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-1.5 text-xs"
-              onClick={() => copyPoSkus(order.lineItems)}
-            >
-              <Copy className="h-3.5 w-3.5" />
-              Copy PO SKUs
-            </Button>
-          </div>
-          <div className="rounded-lg border overflow-hidden">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-muted/50">
-                  <TableHead className="w-12 text-center">Qty</TableHead>
-                  <TableHead>PO SKU</TableHead>
-                  <TableHead>Description</TableHead>
-                  <TableHead className="text-right">Unit</TableHead>
-                  <TableHead className="text-right">Line Total</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {order.lineItems.map((l, i) => (
-                  <TableRow key={i} className={!l.matched ? "opacity-60" : ""}>
-                    <TableCell className="text-center font-mono font-semibold">{l.qty}</TableCell>
-                    <TableCell>
-                      {l.poSku ? (
-                        <span className="font-mono text-sm font-semibold text-primary bg-primary/10 px-2 py-0.5 rounded">
-                          {l.poSku}
-                        </span>
-                      ) : (
-                        <span className="font-mono text-xs text-muted-foreground italic">
-                          {l.masterCode || l.rawCode || "—"}
-                        </span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-sm">
-                      {l.description}
-                      {!l.matched && (
-                        <Badge variant="destructive" className="ml-2 text-xs">unmatched</Badge>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right font-mono text-sm">
-                      {l.unitPrice != null ? `$${l.unitPrice.toFixed(2)}` : "—"}
-                    </TableCell>
-                    <TableCell className="text-right font-mono text-sm font-medium">
-                      {l.linePrice != null ? `$${l.linePrice.toFixed(2)}` : "—"}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-          {order.lineItems.some((l) => !l.poSku) && (
-            <p className="text-xs text-muted-foreground mt-2">
-              * Lines without a PO SKU are unmatched or missing a door style assignment.
-            </p>
-          )}
-        </div>
-
-        {/* Actions */}
-        <div className="flex justify-end gap-2 pt-2 border-t flex-wrap">
-          {/* QBO sync */}
-          {order.qboInvoiceId ? (
-            <div className="flex items-center gap-1.5 text-xs text-green-700 dark:text-green-400 mr-auto">
-              <CheckCircle2 className="h-3.5 w-3.5" />
-              QBO Invoice #{order.qboInvoiceId}
-              {order.qboSyncedAt && <span className="text-muted-foreground">· {new Date(order.qboSyncedAt).toLocaleDateString()}</span>}
-            </div>
-          ) : (
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-1.5 text-green-700 border-green-300 hover:bg-green-50 dark:text-green-400 dark:border-green-800 dark:hover:bg-green-950 mr-auto"
-              onClick={() => syncToQbo.mutate({ orderId: order.id })}
-              disabled={syncToQbo.isPending}
-            >
-              {syncToQbo.isPending ? <Spinner className="h-3.5 w-3.5" /> : <BookOpen className="h-3.5 w-3.5" />}
-              Sync to QuickBooks
-            </Button>
-          )}
-          {order.status === "submitted" && (
-            <Button
-              variant="outline"
-              onClick={() => confirm.mutate({ id: order.id })}
-              disabled={confirm.isPending}
-              className="gap-2"
-            >
-              {confirm.isPending && <Spinner className="h-4 w-4" />}
-              Confirm Order
-            </Button>
-          )}
-          {!order.paidAt && (
-            <Button variant="outline" onClick={() => markPaid.mutate({ id: order.id })} disabled={markPaid.isPending}>
-              Mark paid
-            </Button>
-          )}
-          <Button variant="outline" onClick={() => markVerified.mutate({ id: order.id })} disabled={markVerified.isPending}>
-            Mark verified
-          </Button>
-          <Button variant="outline" onClick={() => markShipped.mutate({ id: order.id, carrier: order.shipmentCarrier ?? undefined, tracking: order.shipmentTracking ?? undefined })} disabled={markShipped.isPending}>
-            Mark shipped
-          </Button>
-          <Button variant="outline" onClick={() => markSigned.mutate({ id: order.id, signerName: order.signerName ?? undefined })} disabled={markSigned.isPending}>
-            Mark signed
-          </Button>
-          {(order.status === "submitted" || order.status === "confirmed") && (
-            <Button
-              onClick={() => sendToDistributor.mutate({ id: order.id })}
-              disabled={sendToDistributor.isPending}
-              className="gap-2"
-            >
-              {sendToDistributor.isPending ? <Spinner className="h-4 w-4" /> : <Send className="h-4 w-4" />}
-              {order.distributorEmailStatus === "sent" || order.sentToDistributorAt ? "Resend" : "Send to Distributor"}
-            </Button>
-          )}
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 export default function IncomingOrdersAdmin() {
+  const [, navigate] = useLocation();
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [kindFilter, setKindFilter] = useState<string>("all");
   const [expandedId, setExpandedId] = useState<number | null>(null);
-  const [detailOrder, setDetailOrder] = useState<OrderRow | null>(null);
   const [qboOpen, setQboOpen] = useState(false);
   const [qboFromDate, setQboFromDate] = useState("");
   const [qboToDate, setQboToDate] = useState("");
@@ -458,6 +143,14 @@ export default function IncomingOrdersAdmin() {
 
   const rows = (orders ?? []) as OrderRow[];
   const visibleRows = rows.filter((order) => kindFilter === "all" || (order.orderKind ?? "standard") === kindFilter);
+
+  // The order itself opens on its own page. The list tab is remembered in the
+  // URL so Back from the order returns to this exact tab.
+  const openOrder = (id: number) => {
+    const params = new URLSearchParams(window.location.search);
+    params.set("tab", "orders");
+    navigate(`/admin/orders/${id}?${params.toString()}`);
+  };
 
   return (
     <div className="space-y-4">
@@ -620,6 +313,8 @@ export default function IncomingOrdersAdmin() {
         <div className="space-y-2">
           {visibleRows.map((order) => {
             const isExpanded = expandedId === order.id;
+            const verified = adminOrderVerified(order);
+            const shipment = adminOrderShipment(order);
             return (
               <Card key={order.id} className="overflow-hidden">
                 {/* Order summary row */}
@@ -627,71 +322,144 @@ export default function IncomingOrdersAdmin() {
                   className="py-3 px-4 cursor-pointer hover:bg-muted/40 transition-colors"
                   onClick={() => setExpandedId(isExpanded ? null : order.id)}
                 >
-                  <div className="flex w-full min-w-0 items-center gap-3">
-                    {isExpanded ? (
-                      <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
-                    ) : (
-                      <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
-                    )}
-                    <CardTitle className="shrink-0 text-sm font-mono font-semibold">
-                      {order.requestNumber}
-                      {order.orderKind === "sample" && <Badge variant="secondary" className="ml-2">Sample</Badge>}
-                    </CardTitle>
-                    <AdminOrderListIdentity order={order} />
-                    <Badge className={`text-xs ${STATUS_COLORS[order.status]}`}>
-                      {order.status}
-                    </Badge>
-                    {(order.imageGeneratedCount ?? 0) > 0 && (
-                      <Badge variant="outline" className="text-xs" data-testid="order-list-image-generated">
-                        Image generated · {order.imageGeneratedCount}
-                        {order.lastImageGeneratedAt ? ` · ${new Date(order.lastImageGeneratedAt).toLocaleString()}` : ""}
-                      </Badge>
-                    )}
-                    <AdminOrderListTotal order={order} />
-                    <span className="text-xs text-muted-foreground">
-                      {new Date(order.createdAt).toLocaleDateString()}
-                    </span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="text-xs ml-2"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setDetailOrder(order);
-                      }}
-                    >
-                      View
-                    </Button>
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                          aria-label={`Delete order ${order.requestNumber}`}
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent onClick={(e) => e.stopPropagation()}>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>Delete order {order.requestNumber}?</AlertDialogTitle>
-                          <AlertDialogDescription>
-                            This permanently removes the order and all of its line items. This cannot be undone.
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>Cancel</AlertDialogCancel>
-                          <AlertDialogAction
-                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                            onClick={() => deleteOrder.mutate({ ids: [order.id] })}
+                  <div className="flex w-full min-w-0 flex-col gap-2">
+                    <div className="flex w-full min-w-0 items-center gap-3">
+                      {isExpanded ? (
+                        <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+                      ) : (
+                        <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                      )}
+                      <CardTitle className="shrink-0 text-sm font-mono font-semibold">
+                        {order.requestNumber}
+                        {order.orderKind === "sample" && <Badge variant="secondary" className="ml-2">Sample</Badge>}
+                      </CardTitle>
+                      <AdminOrderListIdentity order={order} />
+                      {(order.imageGeneratedCount ?? 0) > 0 && (
+                        <Badge variant="outline" className="text-xs" data-testid="order-list-image-generated">
+                          Image generated · {order.imageGeneratedCount}
+                          {order.lastImageGeneratedAt ? ` · ${new Date(order.lastImageGeneratedAt).toLocaleString()}` : ""}
+                        </Badge>
+                      )}
+                      <AdminOrderListTotal order={order} />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-xs ml-2"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openOrder(order.id);
+                        }}
+                      >
+                        View
+                      </Button>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                            aria-label={`Delete order ${order.requestNumber}`}
+                            onClick={(e) => e.stopPropagation()}
                           >
-                            Delete
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent onClick={(e) => e.stopPropagation()}>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Delete order {order.requestNumber}?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              This permanently removes the order and all of its line items. This cannot be undone.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction
+                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              onClick={() => deleteOrder.mutate({ ids: [order.id] })}
+                            >
+                              Delete
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </div>
+
+                    {/* Status / fulfillment columns. These were always in the data;
+                        they now carry their own labels instead of relying on the
+                        single flex line that used to clip them out of view. */}
+                    <div
+                      className="grid w-full min-w-0 gap-x-4 gap-y-1 pl-7 text-xs sm:grid-cols-2 lg:grid-cols-4"
+                      data-testid={`order-list-status-row-${order.id}`}
+                    >
+                      <div className="min-w-0" data-testid="order-list-status">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Status</p>
+                        <Badge className={`mt-0.5 text-xs ${STATUS_COLORS[order.status]}`}>{order.status}</Badge>
+                        {order.orderRailStatus && (
+                          <p className="mt-0.5 truncate text-[11px] text-muted-foreground" title={order.orderRailStatus}>
+                            {order.orderRailStatus.replaceAll("_", " ")}
+                          </p>
+                        )}
+                      </div>
+                      <div className="min-w-0" data-testid="order-list-progress">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Verified / Paid</p>
+                        <div className="mt-0.5 flex flex-wrap items-center gap-1">
+                          <Badge
+                            variant="outline"
+                            className={verified ? "border-emerald-300 text-emerald-700" : "text-muted-foreground"}
+                            data-testid="order-list-verified"
+                          >
+                            {verified ? "Verified" : "Not verified"}
+                          </Badge>
+                          <Badge
+                            variant="outline"
+                            className={order.paidAt ? "border-emerald-300 text-emerald-700" : "text-muted-foreground"}
+                            data-testid="order-list-paid"
+                          >
+                            {order.paidAt ? "Paid" : "Not paid"}
+                          </Badge>
+                        </div>
+                      </div>
+                      <div className="min-w-0" data-testid="order-list-shipment">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Shipped · carrier / tracking</p>
+                        <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                          <Badge
+                            variant="outline"
+                            className={shipment.shipped ? "border-emerald-300 text-emerald-700" : "text-muted-foreground"}
+                            data-testid="order-list-shipped"
+                          >
+                            {shipment.shipped ? "Shipped" : "Not shipped"}
+                          </Badge>
+                          <span className="text-muted-foreground" data-testid="order-list-carrier">
+                            {shipment.carrier ?? "No carrier"}
+                          </span>
+                          {shipment.tracking ? (
+                            shipment.trackingUrl ? (
+                              <a
+                                href={shipment.trackingUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-1 font-mono text-primary underline-offset-2 hover:underline"
+                                data-testid="order-list-tracking"
+                                title={shipment.tracking}
+                              >
+                                {shipment.tracking}
+                                <ExternalLink className="h-2.5 w-2.5" />
+                              </a>
+                            ) : (
+                              <span className="truncate font-mono" data-testid="order-list-tracking" title={shipment.tracking}>
+                                {shipment.tracking}
+                              </span>
+                            )
+                          ) : (
+                            <span className="text-muted-foreground" data-testid="order-list-tracking">No tracking</span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="min-w-0" data-testid="order-list-ordered">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Ordered</p>
+                        <p className="mt-0.5 text-muted-foreground">{new Date(order.createdAt).toLocaleDateString()}</p>
+                      </div>
+                    </div>
                   </div>
                 </CardHeader>
 
@@ -759,15 +527,6 @@ export default function IncomingOrdersAdmin() {
             );
           })}
         </div>
-      )}
-
-      {/* Detail dialog */}
-      {detailOrder && (
-        <OrderDetailDialog
-          order={detailOrder}
-          open={!!detailOrder}
-          onClose={() => setDetailOrder(null)}
-        />
       )}
     </div>
   );

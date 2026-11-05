@@ -49,12 +49,18 @@ export function AdminAutoRoomSceneActions({
   snapshot,
   watchGeneration,
   showIdleHint = false,
+  selectedColorHex = null,
+  doorSetup = null,
 }: {
   styleId: number;
   snapshot: AutoRoomScene | null;
   /** Bumps after a verify action so polling starts before the job row is visible on the list. */
   watchGeneration: number;
   showIdleHint?: boolean;
+  /** The color of record the editor is showing, so the prompt never describes a stale color. */
+  selectedColorHex?: string | null;
+  /** The live door/drawer setup in the form, so the reference matches the selected profile. */
+  doorSetup?: { doorStyle?: string | null; panelConstruction?: string | null; doorSampleImageUrl?: string | null; drawerSampleImageUrl?: string | null } | null;
 }) {
   const api = useAutoRoomSceneProcedures();
   const utils = trpc.useUtils();
@@ -144,21 +150,27 @@ export function AdminAutoRoomSceneActions({
   });
 
   return (
-    <AutoRoomSceneStatusView
-      scene={scene}
-      canManage
-      showIdleHint={showIdleHint}
-      retryPending={retry.isPending}
-      publishPending={publish.isPending}
-      onRetry={() => retry.mutate({ styleId })}
-      onPublish={(sceneId) => publish.mutate({ id: sceneId, isVerified: true })}
-    />
+    <div data-testid="admin-style-room-scene-controls-live" data-selected-color={selectedColorHex ?? undefined}>
+      <AutoRoomSceneStatusView
+        scene={scene}
+        canManage
+        showIdleHint={showIdleHint}
+        retryPending={retry.isPending}
+        publishPending={publish.isPending}
+        selectedColorHex={selectedColorHex}
+        doorSetup={doorSetup}
+        onRetry={() => retry.mutate({ styleId })}
+        onPublish={(sceneId) => publish.mutate({ id: sceneId, isVerified: true })}
+      />
+    </div>
   );
 }
 
 export function AdminStyleRoomSceneControls({
   style,
   showIdleHint = false,
+  selectedColorHex = null,
+  doorSetup = null,
 }: {
   style: {
     id: number;
@@ -169,6 +181,14 @@ export function AdminStyleRoomSceneControls({
     autoRoomScene?: AutoRoomScene | null;
   };
   showIdleHint?: boolean;
+  /**
+   * The color the editor is showing right now (the render hex of record), and
+   * the door/drawer setup in the form. Passed through so the room-scene prompt
+   * and its reference describe the selected finish instead of whatever the last
+   * saved row held.
+   */
+  selectedColorHex?: string | null;
+  doorSetup?: { doorStyle?: string | null; panelConstruction?: string | null; doorSampleImageUrl?: string | null; drawerSampleImageUrl?: string | null } | null;
 }) {
   const [watchGeneration, setWatchGeneration] = useState(0);
   const watchForScene = () => setWatchGeneration((current) => current + 1);
@@ -195,6 +215,8 @@ export function AdminStyleRoomSceneControls({
         snapshot={style.autoRoomScene ?? null}
         watchGeneration={watchGeneration}
         showIdleHint={showIdleHint}
+        selectedColorHex={selectedColorHex}
+        doorSetup={doorSetup}
       />
     </div>
   );

@@ -14,6 +14,7 @@
  */
 import { raisedPanelFrameGeometry, RAISED_PANEL_BLUEPRINT_ID } from "@shared/raisedPanelDoorBlueprint";
 import { DOOR_LIBRARY_ENTRY_IDS } from "@shared/doorLibraryProfiles";
+import { USCD_FRAMED_FAMILIES, type UscdFramedFamily } from "@shared/uscdFramedFamilies";
 import { resolveDoorColor } from "@shared/doorColorResolve";
 import type { AiDoorProfileParams } from "@shared/aiDoorDescription";
 
@@ -82,6 +83,9 @@ export type AiDoorPreviewGeometry = {
 export function aiDoorPreviewGeometry(params: AiDoorProfileParams): AiDoorPreviewGeometry {
   const faceWidthFt = AI_DOOR_PREVIEW_FACE.widthIn / 12;
   const faceHeightFt = AI_DOOR_PREVIEW_FACE.heightIn / 12;
+  // A documented USCD family sets its own center panel even when the pasted text
+  // said nothing; the family entry is the authority there.
+  const uscd = uscdFramedFamilyById(params.entryId);
   const shipped = raisedPanelFrameGeometry({
     faceWidth: faceWidthFt,
     faceHeight: faceHeightFt,
@@ -103,7 +107,9 @@ export function aiDoorPreviewGeometry(params: AiDoorProfileParams): AiDoorPrevie
   const openingWidth = VIEW_WIDTH - openingX * 2;
   const openingHeight = VIEW_HEIGHT - openingY * 2;
 
-  const raised = params.panelConstruction === "raised" || params.family === "raised-panel";
+  const raised = uscd
+    ? uscd.centerPanel === "raised"
+    : params.panelConstruction === "raised" || params.family === "raised-panel";
   const bevelBand = raised ? Math.max(3, Math.min(12, shipped.slopeBevelWidth * perFootX)) : 0;
 
   return {
@@ -127,8 +133,16 @@ export function aiDoorPreviewGeometry(params: AiDoorProfileParams): AiDoorPrevie
 
 /** Which library entry the preview draws with, for the caption. */
 export function aiDoorPreviewEntryLabel(params: AiDoorProfileParams): string {
+  const uscd = uscdFramedFamilyById(params.entryId);
+  if (uscd) return `US Cabinet Depot ${uscd.name} library entry (${uscd.citation})`;
   if (params.entryId === RAISED_PANEL_BLUEPRINT_ID) return "raised-panel library entry";
   if (params.entryId === DOOR_LIBRARY_ENTRY_IDS.shaker) return "shaker library entry";
   if (params.family === "slab") return "slab front (no library entry)";
   return "no library entry (family not stated)";
+}
+
+/** The USCD framed family an entry id names, when it names one. */
+export function uscdFramedFamilyById(entryId: string | null | undefined): UscdFramedFamily | null {
+  if (!entryId) return null;
+  return USCD_FRAMED_FAMILIES.find((family) => family.id === entryId) ?? null;
 }

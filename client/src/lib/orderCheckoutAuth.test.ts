@@ -65,7 +65,9 @@ describe("customer checkout calls against locked confirm and charge", () => {
   });
 
   it("lets an admin confirm without a guest token", () => {
-    const admin = source("client/src/components/admin/IncomingOrdersAdmin.tsx");
+    // Confirm moved with the rest of the order actions from the list's dialog to
+    // the full-page order view. It still sends only the order id.
+    const admin = source("client/src/components/admin/AdminOrderDetailPage.tsx");
     expect(admin).toContain("confirm.mutate({ id: order.id })");
   });
 });
