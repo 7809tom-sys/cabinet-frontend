@@ -89,14 +89,17 @@ describe("KBIS 2027 booth SQL the owner runs", () => {
   });
 
   it("keeps one statement per numbered block and ends with a semicolon", () => {
-    const blocks = sql.split(/\n-- \d+\./).slice(1);
-    expect(blocks.length).toBe(19);
+    const blocks = sql.split(/\n-- \d+\. [^\n]*\n/).slice(1);
+    expect(blocks.length).toBe(18);
     for (const block of blocks) {
       const statements = block
         .split(";")
         .map((part) => part.replace(/--[^\n]*/g, "").trim())
         .filter(Boolean);
       expect(statements).toHaveLength(1);
+      // "One statement per line": the statement itself must not be wrapped.
+      const body = block.replace(/--[^\n]*/g, "").trim();
+      expect(body.split("\n").filter((line) => line.trim())).toHaveLength(1);
     }
     expect(sql.trimEnd().endsWith(";")).toBe(true);
   });
@@ -128,6 +131,41 @@ describe("KBIS 2027 booth SQL the owner runs", () => {
 
   it("sets no settings, credentials, or DNS rows", () => {
     expect(sql).not.toMatch(/password|secret|api_?key|token|dns|nameserver/i);
+  });
+
+  it("names only columns those tables actually have, with one value per column", () => {
+    // The column lists come from cabinet-backend: drizzle/0097_mean_ogun.sql and
+    // drizzle/0218_affiliate_marketing_hub.sql, which is what TiDB already has.
+    const known: Record<string, string[]> = {
+      media_images: ["folder", "label", "url", "fileKey", "mimeType", "sizeBytes"],
+      affiliate_resources: [
+        "type", "title", "body", "url", "category", "metaJson", "sortOrder", "isPublished", "featured",
+      ],
+    };
+    const inserts = [...sql.matchAll(/INSERT INTO cabinet_dealz\.(\w+) \(([^)]*)\) SELECT (.*?) FROM DUAL/g)];
+    expect(inserts).toHaveLength(13);
+    for (const [, table, columnList, values] of inserts) {
+      const columns = columnList.split(",").map((column) => column.trim());
+      expect(columns.every((column) => known[table].includes(column))).toBe(true);
+      // Count top-level commas: quoted strings may not split the value list.
+      let depth = 0;
+      let inString = false;
+      let valueCount = 1;
+      for (const char of values) {
+        if (char === "'") inString = !inString;
+        else if (inString) continue;
+        else if (char === "(") depth += 1;
+        else if (char === ")") depth -= 1;
+        else if (char === "," && depth === 0) valueCount += 1;
+      }
+      expect(valueCount).toBe(columns.length);
+    }
+  });
+
+  it("uses a value the enum accepts for type", () => {
+    // affiliate_resources.type is enum('script','guide','video','pdf','social','link').
+    const types = [...sql.matchAll(/INSERT INTO cabinet_dealz\.affiliate_resources[^;]*?SELECT '(\w+)'/g)].map((m) => m[1]);
+    expect(new Set(types)).toEqual(new Set(["link"]));
   });
 });
 
