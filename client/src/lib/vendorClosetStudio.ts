@@ -298,6 +298,76 @@ export function studioCanonicalTowerFootprint(design: StudioDesign, wall: Studio
   };
 }
 
+/**
+ * The only transform the active wall's tower needs. Every wall's boards are built from `x = 0` with
+ * their back edge at `z = 0` — that is already the viewer frame — so the run only offsets to where
+ * it starts. Applying `studioWallFrame`'s rotation and translation on top of it transforms the tower
+ * twice and floats it away from the wall slab at `z = -0.2`.
+ */
+export function studioCanonicalTowerOffset(design: StudioDesign, wall: StudioWall = design.wall): { x: number; z: number } {
+  const run = studioCanonicalTowerFootprint(design, wall);
+  return { x: run.xMin, z: run.zMin };
+}
+
+/** A room-space point in the viewer frame: the same rotation and translation `studioCanonicalTowerFootprint` uses. */
+export function studioCanonicalPoint(design: StudioDesign, point: { x: number; z: number }, wall: StudioWall = design.wall): { x: number; z: number } {
+  const frame = studioWallFrame(design, wall);
+  const cos = Math.cos(frame.rotationY);
+  const sin = Math.sin(frame.rotationY);
+  return { x: point.x * cos + point.z * sin + frame.x, z: -point.x * sin + point.z * cos + frame.z };
+}
+
+/** A room-space rectangle in the viewer frame. */
+export function studioCanonicalFootprint(design: StudioDesign, footprint: StudioFootprint, wall: StudioWall = design.wall): StudioFootprint {
+  const points = [
+    { x: footprint.xMin, z: footprint.zMin }, { x: footprint.xMax, z: footprint.zMin },
+    { x: footprint.xMin, z: footprint.zMax }, { x: footprint.xMax, z: footprint.zMax },
+  ].map((point) => studioCanonicalPoint(design, point, wall));
+  return {
+    xMin: Math.min(...points.map((point) => point.x)), xMax: Math.max(...points.map((point) => point.x)),
+    zMin: Math.min(...points.map((point) => point.z)), zMax: Math.max(...points.map((point) => point.z)),
+  };
+}
+
+/**
+ * The illustrative corner-shelf pie in the viewer frame. It is drawn in room space, so unlike a
+ * tower run it does need the wall transform — but in the room-to-viewer direction, and its two
+ * curved-edge signs have to be recomputed after mapping. Multiplying the room-space signs by a
+ * per-wall constant mirrors the pie in the wrong frame, which is what put the board on the far side
+ * of the room once nothing else rotated.
+ */
+export function studioCanonicalCornerShelf(design: StudioDesign, shelf: Pick<StudioCornerShelf, "cornerId" | "nominalFootprintIn">, wall: StudioWall = design.wall): { x: number; z: number; scaleX: 1 | -1; scaleZ: 1 | -1 } {
+  const footprint = studioCornerPlanningFootprint(design, shelf);
+  const box = studioCanonicalFootprint(design, footprint, wall);
+  const corner = studioCanonicalPoint(design, {
+    x: shelf.cornerId.endsWith("left") ? footprint.xMin : footprint.xMax,
+    z: shelf.cornerId.startsWith("back") ? footprint.zMin : footprint.zMax,
+  }, wall);
+  // The pie always grows from its corner, so each sign follows the side of its box the corner is on.
+  const scaleX = Math.abs(corner.x - box.xMin) < EPS ? 1 : -1;
+  const scaleZ = Math.abs(corner.z - box.zMin) < EPS ? 1 : -1;
+  return { x: corner.x, z: corner.z, scaleX, scaleZ };
+}
+
+/**
+ * Where the active wall's view puts a tower on a neighbouring wall. The neighbour's boards are drawn
+ * in its own canonical frame, so this adds only the rotation between the two frames plus the offset
+ * that lands the neighbour's canonical origin in the active view. For an adjacent wall that turns
+ * the corner exactly as the room does, instead of stacking a rotation onto already-rotated boards.
+ */
+export function studioCompanionTowerTransform(design: StudioDesign, wall: StudioWall, activeWall: StudioWall = design.wall): { rotationY: number; x: number; z: number } {
+  const active = studioWallFrame(design, activeWall);
+  const neighbour = studioWallFrame(design, wall);
+  const rotationY = active.rotationY - neighbour.rotationY;
+  const cos = Math.cos(rotationY);
+  const sin = Math.sin(rotationY);
+  return {
+    rotationY,
+    x: active.x - (neighbour.x * cos + neighbour.z * sin),
+    z: active.z - (-neighbour.x * sin + neighbour.z * cos),
+  };
+}
+
 /** Conservative 29.5-inch occupancy, not the unprovided curved board outline, radius, edge profile, or connector layout. */
 export function studioCornerPlanningFootprint(design: StudioDesign, shelf: Pick<StudioCornerShelf, "cornerId" | "nominalFootprintIn">): StudioFootprint {
   const span = shelf.nominalFootprintIn;

@@ -2,13 +2,23 @@ import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import type { StudioDesign, StudioKind, StudioWall } from "@/lib/vendorClosetStudio";
-import { STUDIO_BASKET_FRAME_HEX, STUDIO_BASKET_LINER_PLACEHOLDER_HEX, STUDIO_CORNER_SHELF_THICKNESS_IN, STUDIO_ILLUSTRATIVE_SHOE_PITCH_DEG, studioBasketPlacementsForWall, studioBasketSurface, studioBayCut, studioBays, studioCanonicalTowerFootprint, studioCornerPlanningFootprint, studioCornerShelvesForWall, studioFixedBottom, studioFixedTop, studioPanelHeight, studioSnapShelfHeight, studioTowerFootprint, studioWallFrame, studioWidth } from "@/lib/vendorClosetStudio";
+import { STUDIO_BASKET_FRAME_HEX, STUDIO_BASKET_LINER_PLACEHOLDER_HEX, STUDIO_CORNER_SHELF_THICKNESS_IN, STUDIO_ILLUSTRATIVE_SHOE_PITCH_DEG, studioBasketPlacementsForWall, studioBasketSurface, studioBayCut, studioBays, studioCanonicalCornerShelf, studioCanonicalTowerFootprint, studioCanonicalTowerOffset, studioCompanionTowerTransform, studioCornerShelvesForWall, studioFixedBottom, studioFixedTop, studioPanelHeight, studioSnapShelfHeight, studioWidth } from "@/lib/vendorClosetStudio";
 import { CLOSET_FRAME_PADDING, closetCabinetCorners, closetFitDistance, frameClosetStudioCamera, projectClosetPoint, type ClosetAabb, type ClosetCameraFrame, type ClosetCameraView } from "./closetStudioCamera";
 import { createClosetDlShakerFront } from "./closetShakerFront";
 import { STUDIO_DECOR_FABRIC_HEX, STUDIO_DECOR_SHOE_HEX, studioWallDecor, type StudioDecorBay } from "@/lib/vendorClosetDecor";
 
 const IN = 1 / 12;
 const THICKNESS = 0.75;
+/** Feet. The wall slab's thickness and centre, which the scene has always used. */
+export const CLOSET_WALL_SLAB_THICKNESS_FT = 0.14;
+export const CLOSET_WALL_SLAB_CENTER_FT = -0.2;
+/**
+ * Feet. The z a tower's back edge must sit at on every wall. This is the back wall's own value, so
+ * the invariant the bug broke is "no wall may float the tower further out than the back wall does".
+ */
+export const CLOSET_TOWER_BACK_FT = 0;
+/** Feet. Tolerance for "against the wall": far under one board thickness. */
+export const CLOSET_WALL_GAP_TOLERANCE_FT = 0.02;
 const MAT: Record<StudioDesign["finish"], { face: string; edge: string; grain: string }> = {
   "Glacier White": { face: "#f1f0eb", edge: "#c4c0b8", grain: "#c8c4bc" },
   "Slate Rift": { face: "#555553", edge: "#343434", grain: "#797874" },
@@ -137,8 +147,8 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
       const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-1, -0.033, z), new THREE.Vector3(w + 1, -0.033, z)]), seamMaterial); room.add(line);
     }
     const wallMaterial = new THREE.MeshStandardMaterial({ color: 0xf3eee5, roughness: 0.95, transparent: true, opacity: 1 });
-    const wall = new THREE.Mesh(new THREE.BoxGeometry(Math.max(4, w + 2), Math.max(6, studioPanelHeight(design) * IN + 1.1), 0.14), wallMaterial);
-    wall.position.set(w / 2, (studioPanelHeight(design) * IN + 1.1) / 2, -0.2); wall.receiveShadow = true; room.add(wall);
+    const wall = new THREE.Mesh(new THREE.BoxGeometry(Math.max(4, w + 2), Math.max(6, studioPanelHeight(design) * IN + 1.1), CLOSET_WALL_SLAB_THICKNESS_FT), wallMaterial);
+    wall.position.set(w / 2, (studioPanelHeight(design) * IN + 1.1) / 2, CLOSET_WALL_SLAB_CENTER_FT); wall.receiveShadow = true; room.add(wall);
     const baseboard = new THREE.Mesh(new THREE.BoxGeometry(Math.max(4, w + 2), 0.23, 0.11), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.82 }));
     baseboard.position.set(w / 2, 0.12, -0.08); baseboard.receiveShadow = true; room.add(baseboard);
     const palette = MAT[design.finish];
@@ -356,10 +366,13 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
     const renderCompanionTower = (wallId: StudioWall) => {
       const bays = studioBays(design, wallId);
       if (!bays.length) return;
-      const frame = studioWallFrame(design, wallId);
       const run = studioCanonicalTowerFootprint(design, wallId);
-      // Every wall draws the identical canonical tower run and is then placed by one rotation, so a
-      // side wall is never a different render path from the back wall.
+      // The neighbour's boards are built in its own canonical frame, already in room coordinates, so
+      // this only brings that frame into the active wall's view. Rotating it with `studioWallFrame`
+      // again would transform it twice and lift it off the wall.
+      const transform = studioCompanionTowerTransform(design, wallId, design.wall);
+      companion.position.set(transform.x * IN, 0, transform.z * IN);
+      companion.rotation.y = transform.rotationY;
       let cursorIn = run.xMin;
       const panelY = panelHeight / 2 + (design.mount === "hanging" ? 6 : 0);
       const shelfY = (value: number) => value + 0.375 + (design.mount === "hanging" ? 6 : 0);
@@ -370,32 +383,23 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
         worldBox(bay.widthIn, 0.75, depth, mid, shelfY(fixedBottom), depth / 2, boardMat);
         worldBox(bay.widthIn, 0.75, depth, mid, shelfY(fixedTop), depth / 2, boardMat);
         cursorIn += bay.widthIn + 0.75;
-        upright(cursorIn - 0.75);
       }
-      companion.position.set(frame.x * IN, 0, frame.z * IN);
-      companion.rotation.y = frame.rotationY;
+      // The trailing upright closes the run at the same width the active tower has. Placing it one
+      // bay-pitch short drew it over the last bay's edge and left the run 0.75 in narrow.
+      upright(cursorIn);
     };
-    // The active run is drawn in the canonical frame for every wall; the wall frame only rotates and
-    // translates it into the room, so a side wall is never a different render path from the back wall.
-    const activeFrame = studioWallFrame(design, design.wall);
+    // The active run is drawn in the canonical frame for every wall, so it is never rotated into the
+    // room here: `studioCanonicalTowerFootprint` already places it in room coordinates. Only offset
+    // to where the run starts, which keeps the tower back against the wall slab.
     const activeRun = studioCanonicalTowerFootprint(design, design.wall);
-    if (visibleCornerShelves.length || design.wall !== "back") {
-      activeTowerParts.position.set(activeFrame.x * IN, 0, activeFrame.z * IN);
-      activeTowerParts.rotation.y = activeFrame.rotationY;
-    }
+    const activeOffset = studioCanonicalTowerOffset(design, design.wall);
+    activeTowerParts.position.set(activeOffset.x * IN, 0, activeOffset.z * IN);
     // The visible board is a deliberately illustrative pie; the conservative 29.5-in collision envelope remains model-only.
     for (const shelf of visibleCornerShelves) {
-      // Corner shells are drawn in room space, then brought into this wall's canonical frame.
-      const footprint = studioCornerPlanningFootprint(design, shelf);
-      const originX = (shelf.cornerId.endsWith("left") ? footprint.xMin : footprint.xMax) - activeFrame.x;
-      const originZ = (shelf.cornerId.startsWith("back") ? footprint.zMin : footprint.zMax) - activeFrame.z;
-      const cos = Math.cos(-activeFrame.rotationY);
-      const sin = Math.sin(-activeFrame.rotationY);
-      const localX = originX * cos + originZ * sin;
-      const localZ = -originX * sin + originZ * cos;
-      // The pie's orientation is a mirror pair; recompute it in the canonical frame.
-      const sx = (shelf.cornerId.endsWith("left") ? 1 : -1) * (design.wall === "left" ? -1 : 1);
-      const sz = (shelf.cornerId.startsWith("back") ? 1 : -1) * (design.wall === "front" ? -1 : 1);
+      // A corner shelf is planned in room space, so unlike the tower runs it is mapped into the
+      // viewer frame here. The helper recomputes the pie's curved-edge signs after mapping, so the
+      // board lands on the corner it was planned on instead of being mirrored across the room.
+      const cornerShelf = studioCanonicalCornerShelf(design, shelf, design.wall);
       const pie = new THREE.Shape();
       const r = shelf.nominalFootprintIn * IN;
       pie.moveTo(0, 0); pie.lineTo(r, 0);
@@ -403,8 +407,8 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
       pie.lineTo(0, 0);
       const mesh = new THREE.Mesh(new THREE.ExtrudeGeometry(pie, { depth: STUDIO_CORNER_SHELF_THICKNESS_IN * IN, bevelEnabled: false, curveSegments: 28 }), boardMat);
       mesh.rotation.x = Math.PI / 2;
-      mesh.scale.set(sx, sz, 1);
-      mesh.position.set(localX * IN, (shelf.elevationIn + STUDIO_CORNER_SHELF_THICKNESS_IN) * IN, localZ * IN);
+      mesh.scale.set(cornerShelf.scaleX, cornerShelf.scaleZ, 1);
+      mesh.position.set(cornerShelf.x * IN, (shelf.elevationIn + STUDIO_CORNER_SHELF_THICKNESS_IN) * IN, cornerShelf.z * IN);
       mesh.castShadow = true; mesh.receiveShadow = true;
       mesh.userData = { cornerShelfPlanningEnvelope: true, illustrativePieShelf: true, finish: design.finish, sku: shelf.sku, cornerId: shelf.cornerId, mount: shelf.mount, geometryRevision: shelf.geometryRevision, nominalFootprintIn: shelf.nominalFootprintIn, profileIllustrative: true, installationFitToVerify: true };
       parts.add(mesh);
@@ -417,7 +421,29 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
     const cabinetBounds = new THREE.Box3().setFromObject(activeTowerParts);
     if (cabinetBounds.isEmpty() || !Number.isFinite(cabinetBounds.min.x)) {
       const height = studioPanelHeight(design) * IN;
-      cabinetBounds.set(new THREE.Vector3(0, 0, 0), new THREE.Vector3(Math.max(activeRun.xMax - activeRun.xMin, 2), height, 14.5 * IN));
+      cabinetBounds.set(new THREE.Vector3(activeRun.xMin, 0, activeRun.zMin), new THREE.Vector3(Math.max(activeRun.xMax, activeRun.xMin + 2), height, activeRun.zMax));
+    }
+    /**
+     * Where the active run and the companion actually land, in feet. The wall slab's inner face is the
+     * back wall's own value, so a run back edge of 0 means "against the wall" on every wall. Tests read
+     * this instead of comparing WebGL pixels, exactly like the camera bounds readout.
+     */
+    const companionBounds = new THREE.Box3().setFromObject(companion);
+    const hasCompanion = !companionBounds.isEmpty();
+    const round = (value: number) => Math.round(value * 1000) / 1000;
+    const dataset = renderer.domElement.dataset;
+    dataset.designWall = design.wall;
+    dataset.runBackFt = String(round(activeRun.zMin * IN));
+    dataset.runDepthFt = String(round((activeRun.zMax - activeRun.zMin) * IN));
+    dataset.activeTowerRotation = String(round(activeTowerParts.rotation.y));
+    dataset.activeBoxBackFt = String(round(cabinetBounds.min.z));
+    /** How far the frontmost board edge reaches into the room; a rotated tower would shrink this. */
+    dataset.activeBoxDepthFt = String(round(cabinetBounds.max.z - cabinetBounds.min.z));
+    dataset.hasCompanion = String(hasCompanion);
+    dataset.companionRotation = String(round(companion.rotation.y));
+    if (hasCompanion) {
+      dataset.companionBackFt = String(round(companionBounds.min.z));
+      dataset.companionFrontFt = String(round(companionBounds.max.z));
     }
     const centerX = (cabinetBounds.min.x + cabinetBounds.max.x) / 2;
     const cabinetW = Math.max(cabinetBounds.max.x - cabinetBounds.min.x, 2);
@@ -425,8 +451,8 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
     const wallW = cabinetW + 2.2;
     const wallH = cabinetH + 1.05;
     wall.geometry.dispose();
-    wall.geometry = new THREE.BoxGeometry(wallW, wallH, 0.14);
-    wall.position.set(centerX, wallH / 2, -0.2);
+    wall.geometry = new THREE.BoxGeometry(wallW, wallH, CLOSET_WALL_SLAB_THICKNESS_FT);
+    wall.position.set(centerX, wallH / 2, CLOSET_WALL_SLAB_CENTER_FT);
     baseboard.geometry.dispose();
     baseboard.geometry = new THREE.BoxGeometry(wallW, 0.23, 0.11);
     baseboard.position.set(centerX, 0.12, -0.08);
