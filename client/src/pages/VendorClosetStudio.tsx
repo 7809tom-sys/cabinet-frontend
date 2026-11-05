@@ -651,7 +651,9 @@ export default function VendorClosetStudio({ affiliateSlug }: { affiliateSlug?: 
   };
   const rebuild = () => {
     if (designHasParts(design) && !confirm("Rebuild replaces your current parts. Continue?")) return;
-    const result = autoBuildStudio({ mode: design.mode, mount: design.mount, finish: design.finish, wallWidthIn: design.wallWidthIn, roomDepthIn: design.roomDepthIn, roomHeightIn: design.roomHeightIn ?? STUDIO_ROOM_HEIGHT_DEFAULT_IN, kids: design.kids, options: autoOptions });
+    // Keep the customer's corner choice across a slider rebuild: dropping it silently would be a
+    // design change they did not ask for. The builder still refuses it where it is not offered.
+    const result = autoBuildStudio({ mode: design.mode, mount: design.mount, finish: design.finish, wallWidthIn: design.wallWidthIn, roomDepthIn: design.roomDepthIn, roomHeightIn: design.roomHeightIn ?? STUDIO_ROOM_HEIGHT_DEFAULT_IN, kids: design.kids, options: autoOptions, cornerShelves: studioCornerShelves(design).length > 0 });
     const previous = design;
     updateDesign(result.design); setBuildUndoDesign(previous); setSelectedBay(0); setSelectedItem(null); setPartToPlace(null); setSelectedCornerId(null); setCornerUndoDesign(null); setBasketUndoDesign(null);
     setNotice(result.notices.length ? result.notices.join(" ") : "Auto-build complete. Every part can still be moved or removed.");
