@@ -343,6 +343,8 @@ import { OpeningSizeEditor } from "@/components/design/OpeningSizeEditor";
 import { DoorAttributesDialog } from "@/components/design/DoorAttributesDialog";
 import { DesignHelp } from "@/components/design/DesignHelp";
 import { CountertopQuoteDialog } from "@/components/design/CountertopQuoteDialog";
+import { CountertopFabricationSheetActions } from "@/components/design/CountertopFabricationSheetActions";
+import type { CountertopFabricationInput } from "@/lib/countertopFabricationSheet";
 import { SurfacesPickerDialog, type SelectedSurface } from "@/components/design/SurfacesPickerDialog";
 import { FlooringCartonFacts } from "@/components/design/FlooringCartonFacts";
 import { FlooringLayoutPicker } from "@/components/design/FlooringLayoutPicker";
@@ -6483,6 +6485,41 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	    () => (countertop ? countertopArea(placed, island, island ? [...islandCountertopVisibleRects(island, placed), ...islandRaisedBarRects(island, placed)] : null, room) : null),
 	    [countertop, placed, island, room]
   );
+
+  // Countertop fabrication sheet: everything the shop needs, read from the live
+  // design. Only offered while the design actually bears a countertop; the panel
+  // itself reports any field the design does not hold instead of inventing one.
+  const fabricationSheetInput = useMemo<CountertopFabricationInput | null>(() => {
+    if (!countertop || !counter || counter.squareFeet <= 0) return null;
+    return {
+      room,
+      placed,
+      island,
+      sinks,
+      ponyWalls,
+      selectedSurfaces,
+      edgeProfileId,
+      backsplash: countertopBacksplashHeightIn > 0
+        ? { heightIn: countertopBacksplashHeightIn }
+        : backsplashHeightMode === "full-height" && backsplashEnabled
+          ? { fullHeight: true }
+          : null,
+      job: {
+        designId: activeSavedDesignId ?? loadDesignId ?? null,
+        designName: (savedDesign as { name?: string | null } | undefined)?.name ?? null,
+        projectName: (savedDesign as { projectName?: string | null } | undefined)?.projectName ?? null,
+        roomLabel: (savedDesign as { roomLabel?: string | null } | undefined)?.roomLabel ?? null,
+        roomType,
+        customerName: verifiedName || null,
+        customerEmail: verifiedEmail || null,
+        customerPhone: verifiedPhone || null,
+      },
+    };
+  }, [
+    backsplashEnabled, backsplashHeightMode, counter, countertop, countertopBacksplashHeightIn,
+    edgeProfileId, island, loadDesignId, placed, ponyWalls, room, roomType, savedDesign,
+    selectedSurfaces, sinks, activeSavedDesignId, verifiedEmail, verifiedName, verifiedPhone,
+  ]);
 
   // Conflicts: an appliance physically running into a cabinet. Highlighted red
   // on the canvas, badged in the BOM, and warned about before export.
@@ -16419,6 +16456,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                       <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
                       <span className="flex-1 text-left">Export Floor Plan PDF</span>
                     </button>
+                    {fabricationSheetInput && (
+                      <div className="px-3 pb-2" data-testid="tablet-more-fabrication-sheet">
+                        <p className="pb-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("dt_fab_title")}</p>
+                        <CountertopFabricationSheetActions input={fabricationSheetInput} brandName={affiliateBrand?.storeName} />
+                      </div>
+                    )}
                     <p className="px-3 pt-3 pb-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Selected cabinet</p>
                     <div className="grid grid-cols-3 gap-2 px-3 pb-2" data-testid="tablet-more-selected-actions">
                       <Button type="button" variant="outline" className="h-11" disabled={!selectedUid || measureMode} onClick={() => { rotateSelected(); }}>
@@ -20721,6 +20764,19 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                       </div>
                     </div>
                     <span className="font-semibold shrink-0 text-amber-600">{t("dt_bs_quote")}</span>
+                  </div>
+                )}
+                {/* Granite/quartz fabrication sheet: download or email the shop. */}
+                {countertop && counter && counter.squareFeet > 0 && (
+                  <div className="rounded-lg border border-[#a87f33]/40 bg-[#a87f33]/5 p-2" data-testid="fabrication-sheet-panel">
+                    <div className="mb-1.5 flex items-center gap-1.5">
+                      <FileText className="h-3.5 w-3.5 text-[#a87f33]" />
+                      <span className="text-[11px] font-semibold">{t("dt_fab_title")}</span>
+                    </div>
+                    <CountertopFabricationSheetActions
+                      input={fabricationSheetInput}
+                      brandName={affiliateBrand?.storeName}
+                    />
                   </div>
                 )}
                 {/* Backsplash & flooring area summary */}
