@@ -2,11 +2,12 @@ import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import type { StudioDesign, StudioKind, StudioWall } from "@/lib/vendorClosetStudio";
-import { STUDIO_BASKET_FRAME_HEX, STUDIO_BASKET_LINER_PLACEHOLDER_HEX, STUDIO_CORNER_SHELF_THICKNESS_IN, STUDIO_ILLUSTRATIVE_SHOE_PITCH_DEG, studioBasketPlacementsForWall, studioBasketSurface, studioBayCut, studioBays, studioCornerPlanningFootprint, studioCornerShelvesForWall, studioFixedBottom, studioFixedTop, studioPanelHeight, studioTowerFootprint, studioWidth } from "@/lib/vendorClosetStudio";
-import { CLOSET_FRAME_PADDING, closetFitDistance, frameClosetStudioCamera, type ClosetAabb, type ClosetCameraView } from "./closetStudioCamera";
+import { STUDIO_BASKET_FRAME_HEX, STUDIO_BASKET_LINER_PLACEHOLDER_HEX, STUDIO_CORNER_SHELF_THICKNESS_IN, STUDIO_ILLUSTRATIVE_SHOE_PITCH_DEG, studioBasketPlacementsForWall, studioBasketSurface, studioBayCut, studioBays, studioCanonicalTowerFootprint, studioCornerPlanningFootprint, studioCornerShelvesForWall, studioFixedBottom, studioFixedTop, studioPanelHeight, studioSnapShelfHeight, studioTowerFootprint, studioWallFrame, studioWidth } from "@/lib/vendorClosetStudio";
+import { CLOSET_FRAME_PADDING, closetCabinetCorners, closetFitDistance, frameClosetStudioCamera, projectClosetPoint, type ClosetAabb, type ClosetCameraFrame, type ClosetCameraView } from "./closetStudioCamera";
 import { createClosetDlShakerFront } from "./closetShakerFront";
 
 const IN = 1 / 12;
+const THICKNESS = 0.75;
 const MAT: Record<StudioDesign["finish"], { face: string; edge: string; grain: string }> = {
   "Glacier White": { face: "#f1f0eb", edge: "#c4c0b8", grain: "#c8c4bc" },
   "Slate Rift": { face: "#555553", edge: "#343434", grain: "#797874" },
@@ -27,8 +28,29 @@ function woodTexture(finish: StudioDesign["finish"]) {
   texture.anisotropy = 4; return texture;
 }
 
+/**
+ * Writes where the cabinet actually lands in normalized device coordinates, straight from the live
+ * camera and the cabinet box. Tests read these to prove the model stays centered in every wall view
+ * without relying on brittle pixel comparisons of a WebGL canvas.
+ */
+function publishModelBounds(canvas: HTMLCanvasElement, box: ClosetAabb, frame: ClosetCameraFrame, aspect: number) {
+  const projected = closetCabinetCorners(box).map((corner) => projectClosetPoint(corner, frame, aspect));
+  const xs = projected.map((point) => point.x);
+  const ys = projected.map((point) => point.y);
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const minY = Math.min(...ys), maxY = Math.max(...ys);
+  const round = (value: number) => Math.round(value * 1000) / 1000;
+  canvas.dataset.modelCenterX = String(round((minX + maxX) / 2));
+  canvas.dataset.modelCenterY = String(round((minY + maxY) / 2));
+  canvas.dataset.modelWidth = String(round(maxX - minX));
+  canvas.dataset.modelHeight = String(round(maxY - minY));
+  canvas.dataset.modelMarginLeft = String(round(minX + 1));
+  canvas.dataset.modelMarginRight = String(round(1 - maxX));
+  canvas.dataset.cameraDistance = String(round(frame.distance));
+}
+
 /** This scene is completely independent of InteractiveRoom3D and kitchen/Wall Builder geometry. */
-export function VendorClosetScene({ design, selectedBay, selectedCornerId = null, partToPlace, basketToPlace = null, cameraView = "angle", fitToken = 0, onSelectBay, onPlace, onPlaceBasket, onError }: {
+export function VendorClosetScene({ design, selectedBay, selectedCornerId = null, partToPlace, basketToPlace = null, cameraView = "angle", fitToken = 0, onSelectBay, onPlace, onPlaceBasket, onMoveShelf, onError }: {
   design: StudioDesign;
   selectedBay: number;
   selectedCornerId?: string | null;
@@ -40,14 +62,17 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
   onSelectBay: (bayIndex: number) => void;
   onPlace: (bayIndex: number, bottomIn: number, kind: StudioKind) => void;
   onPlaceBasket?: (bayIndex: number, bottomIn: number, sku: string) => void;
+  /** Dragging a shelf in the drawing reports its new ¼-in height. */
+  onMoveShelf?: (bayIndex: number, itemId: string, bottomIn: number) => void;
   onError: (message: string) => void;
 }) {
   const mount = useRef<HTMLDivElement>(null);
-  const handlers = useRef({ onSelectBay, onPlace, onPlaceBasket, onError, partToPlace, basketToPlace });
-  handlers.current = { onSelectBay, onPlace, onPlaceBasket, onError, partToPlace, basketToPlace };
+  const handlers = useRef({ onSelectBay, onPlace, onPlaceBasket, onMoveShelf, onError, partToPlace, basketToPlace });
+  handlers.current = { onSelectBay, onPlace, onPlaceBasket, onMoveShelf, onError, partToPlace, basketToPlace };
   const viewRef = useRef(cameraView);
   viewRef.current = cameraView;
   const reframeRef = useRef<() => void>(() => {});
+  const readoutRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const host = mount.current;
     if (!host) return;
@@ -121,7 +146,11 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
     const hintMat = new THREE.MeshBasicMaterial({ color: 0xb19056, transparent: true, opacity: 0.14, depthWrite: false, side: THREE.DoubleSide });
     const hitMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide });
     const parts = new THREE.Group(); scene.add(parts);
+    // Every wall is built in the same canonical frame: the run lies along +X with its board face
+    // toward the camera. `activeTowerParts` is the active wall; `companion` holds the neighbouring
+    // wall towers that a corner shelf brings into view.
     const activeTowerParts = new THREE.Group(); parts.add(activeTowerParts);
+    const companion = new THREE.Group(); parts.add(companion);
     const targets: THREE.Mesh[] = [];
     const box = (width: number, height: number, depth: number, x: number, y: number, z: number, mat: THREE.Material, shadow = true) => {
       const mesh = new THREE.Mesh(new THREE.BoxGeometry(width * IN, height * IN, depth * IN), mat);
@@ -131,7 +160,7 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
     const worldBox = (width: number, height: number, depth: number, x: number, y: number, z: number, mat: THREE.Material, shadow = true) => {
       const mesh = new THREE.Mesh(new THREE.BoxGeometry(width * IN, height * IN, depth * IN), mat);
       mesh.position.set(x * IN, y * IN, z * IN);
-      mesh.castShadow = shadow; mesh.receiveShadow = true; parts.add(mesh); return mesh;
+      mesh.castShadow = shadow; mesh.receiveShadow = true; companion.add(mesh); return mesh;
     };
     const panelHeight = studioPanelHeight(design);
     const fixedBottom = studioFixedBottom(design);
@@ -219,53 +248,55 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
     const renderCompanionTower = (wallId: StudioWall) => {
       const bays = studioBays(design, wallId);
       if (!bays.length) return;
-      const footprint = studioTowerFootprint(design, wallId);
-      const runsAcrossX = wallId === "back" || wallId === "front";
-      const fixedAxis = runsAcrossX ? (footprint.zMin + footprint.zMax) / 2 : (footprint.xMin + footprint.xMax) / 2;
-      let run = runsAcrossX ? footprint.xMin : footprint.zMin;
+      const frame = studioWallFrame(design, wallId);
+      const run = studioCanonicalTowerFootprint(design, wallId);
+      // Every wall draws the identical canonical tower run and is then placed by one rotation, so a
+      // side wall is never a different render path from the back wall.
+      let cursorIn = run.xMin;
       const panelY = panelHeight / 2 + (design.mount === "hanging" ? 6 : 0);
       const shelfY = (value: number) => value + 0.375 + (design.mount === "hanging" ? 6 : 0);
-      const upright = (position: number) => runsAcrossX
-        ? worldBox(0.75, panelHeight, depth, position + 0.375, panelY, fixedAxis, boardMat)
-        : worldBox(depth, panelHeight, 0.75, fixedAxis, panelY, position + 0.375, boardMat);
-      upright(run);
+      const upright = (position: number) => worldBox(0.75, panelHeight, depth, position + 0.375, panelY, depth / 2, boardMat);
+      upright(cursorIn);
       for (const bay of bays) {
-        const mid = run + 0.75 + bay.widthIn / 2;
-        if (runsAcrossX) {
-          worldBox(bay.widthIn, 0.75, depth, mid, shelfY(fixedBottom), fixedAxis, boardMat);
-          worldBox(bay.widthIn, 0.75, depth, mid, shelfY(fixedTop), fixedAxis, boardMat);
-        } else {
-          worldBox(depth, 0.75, bay.widthIn, fixedAxis, shelfY(fixedBottom), mid, boardMat);
-          worldBox(depth, 0.75, bay.widthIn, fixedAxis, shelfY(fixedTop), mid, boardMat);
-        }
-        run += bay.widthIn + 0.75;
-        upright(run - 0.75);
+        const mid = cursorIn + 0.75 + bay.widthIn / 2;
+        worldBox(bay.widthIn, 0.75, depth, mid, shelfY(fixedBottom), depth / 2, boardMat);
+        worldBox(bay.widthIn, 0.75, depth, mid, shelfY(fixedTop), depth / 2, boardMat);
+        cursorIn += bay.widthIn + 0.75;
+        upright(cursorIn - 0.75);
       }
+      companion.position.set(frame.x * IN, 0, frame.z * IN);
+      companion.rotation.y = frame.rotationY;
     };
-    const connectedActiveShelf = visibleCornerShelves.find((shelf) => shelf.towerConnection === "visualAligned" && shelf.wallIds.includes(design.wall));
-    if (connectedActiveShelf) {
-      const footprint = studioTowerFootprint(design, design.wall);
-      if (design.wall === "back") activeTowerParts.position.set(footprint.xMin * IN, 0, footprint.zMin * IN);
-      else if (design.wall === "right") { activeTowerParts.rotation.y = -Math.PI / 2; activeTowerParts.position.set(footprint.xMax * IN, 0, footprint.zMin * IN); }
-      else if (design.wall === "left") { activeTowerParts.rotation.y = Math.PI / 2; activeTowerParts.position.set(footprint.xMin * IN, 0, footprint.zMax * IN); }
-      else { activeTowerParts.rotation.y = Math.PI; activeTowerParts.position.set(footprint.xMax * IN, 0, footprint.zMax * IN); }
+    // The active run is drawn in the canonical frame for every wall; the wall frame only rotates and
+    // translates it into the room, so a side wall is never a different render path from the back wall.
+    const activeFrame = studioWallFrame(design, design.wall);
+    const activeRun = studioCanonicalTowerFootprint(design, design.wall);
+    if (visibleCornerShelves.length || design.wall !== "back") {
+      activeTowerParts.position.set(activeFrame.x * IN, 0, activeFrame.z * IN);
+      activeTowerParts.rotation.y = activeFrame.rotationY;
     }
     // The visible board is a deliberately illustrative pie; the conservative 29.5-in collision envelope remains model-only.
     for (const shelf of visibleCornerShelves) {
+      // Corner shells are drawn in room space, then brought into this wall's canonical frame.
       const footprint = studioCornerPlanningFootprint(design, shelf);
-      const r = shelf.nominalFootprintIn * IN;
-      const originX = (shelf.cornerId.endsWith("left") ? footprint.xMin : footprint.xMax) * IN;
-      const originZ = (shelf.cornerId.startsWith("back") ? footprint.zMin : footprint.zMax) * IN;
-      const sx = shelf.cornerId.endsWith("left") ? 1 : -1;
-      const sz = shelf.cornerId.startsWith("back") ? 1 : -1;
+      const originX = (shelf.cornerId.endsWith("left") ? footprint.xMin : footprint.xMax) - activeFrame.x;
+      const originZ = (shelf.cornerId.startsWith("back") ? footprint.zMin : footprint.zMax) - activeFrame.z;
+      const cos = Math.cos(-activeFrame.rotationY);
+      const sin = Math.sin(-activeFrame.rotationY);
+      const localX = originX * cos + originZ * sin;
+      const localZ = -originX * sin + originZ * cos;
+      // The pie's orientation is a mirror pair; recompute it in the canonical frame.
+      const sx = (shelf.cornerId.endsWith("left") ? 1 : -1) * (design.wall === "left" ? -1 : 1);
+      const sz = (shelf.cornerId.startsWith("back") ? 1 : -1) * (design.wall === "front" ? -1 : 1);
       const pie = new THREE.Shape();
+      const r = shelf.nominalFootprintIn * IN;
       pie.moveTo(0, 0); pie.lineTo(r, 0);
       pie.bezierCurveTo(r, r * 0.5523, r * 0.5523, r, 0, r);
       pie.lineTo(0, 0);
       const mesh = new THREE.Mesh(new THREE.ExtrudeGeometry(pie, { depth: STUDIO_CORNER_SHELF_THICKNESS_IN * IN, bevelEnabled: false, curveSegments: 28 }), boardMat);
       mesh.rotation.x = Math.PI / 2;
       mesh.scale.set(sx, sz, 1);
-      mesh.position.set(originX, (shelf.elevationIn + STUDIO_CORNER_SHELF_THICKNESS_IN) * IN, originZ);
+      mesh.position.set(localX * IN, (shelf.elevationIn + STUDIO_CORNER_SHELF_THICKNESS_IN) * IN, localZ * IN);
       mesh.castShadow = true; mesh.receiveShadow = true;
       mesh.userData = { cornerShelfPlanningEnvelope: true, illustrativePieShelf: true, finish: design.finish, sku: shelf.sku, cornerId: shelf.cornerId, mount: shelf.mount, geometryRevision: shelf.geometryRevision, nominalFootprintIn: shelf.nominalFootprintIn, profileIllustrative: true, installationFitToVerify: true };
       parts.add(mesh);
@@ -275,10 +306,10 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
       }
     }
     parts.updateMatrixWorld(true);
-    const cabinetBounds = new THREE.Box3().setFromObject(parts);
+    const cabinetBounds = new THREE.Box3().setFromObject(activeTowerParts);
     if (cabinetBounds.isEmpty() || !Number.isFinite(cabinetBounds.min.x)) {
       const height = studioPanelHeight(design) * IN;
-      cabinetBounds.set(new THREE.Vector3(0, 0, 0), new THREE.Vector3(Math.max(w, 2), height, 14.5 * IN));
+      cabinetBounds.set(new THREE.Vector3(0, 0, 0), new THREE.Vector3(Math.max(activeRun.xMax - activeRun.xMin, 2), height, 14.5 * IN));
     }
     const centerX = (cabinetBounds.min.x + cabinetBounds.max.x) / 2;
     const cabinetW = Math.max(cabinetBounds.max.x - cabinetBounds.min.x, 2);
@@ -311,9 +342,11 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
       controls.target.set(frame.target.x, frame.target.y, frame.target.z);
       controls.minDistance = frame.minDistance;
       controls.maxDistance = frame.maxDistance;
-      controls.minPolarAngle = frame.polarAngle;
-      controls.maxPolarAngle = frame.polarAngle;
+      // Every wall view keeps the same tilt and zoom range, so switching walls never changes the format.
+      controls.minPolarAngle = Math.min(0.35, frame.polarAngle);
+      controls.maxPolarAngle = Math.max(Math.PI * 0.48, frame.polarAngle);
       controls.update();
+      publishModelBounds(renderer.domElement, cabinetAabb, frame, width / height);
     };
     const keepTowerInFrame = () => {
       if (enforcingFit) return;
@@ -342,6 +375,8 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
       return hit ? { index: hit.object.userData.bayIndex as number, height: hit.point.y / IN - (design.mount === "hanging" ? 6 : 0) } : null;
     };
     const onClick = (event: MouseEvent) => {
+      // A drag ends with a click event; it must not also drop a new part.
+      if (draggedShelf) { draggedShelf = null; return; }
       const hit = pick(event.clientX, event.clientY);
       if (!hit) return;
       handlers.current.onSelectBay(hit.index);
@@ -351,6 +386,63 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
       }
       if (handlers.current.partToPlace) handlers.current.onPlace(hit.index, hit.height, handlers.current.partToPlace);
     };
+    /**
+     * Precise shelf dragging with a live inch readout. The pointer is resolved onto the active wall
+     * plane, snapped to ¼ in, and the readout follows the shelf so the user can place it exactly.
+     */
+    let draggedShelf: { index: number; id: string } | null = null;
+    /** Where the pointer lands on the active wall plane, snapped to a placeable ¼ in. */
+    const shelfAt = (clientX: number, clientY: number) => {
+      const hit = pick(clientX, clientY);
+      if (!hit) return null;
+      const r = renderer.domElement.getBoundingClientRect();
+      const ndc = new THREE.Vector3(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1, 0).unproject(camera);
+      const direction = ndc.sub(camera.position).normalize();
+      // The tower sits in the canonical frame, so its board face is always at +Z.
+      const planeZ = depth * 0.58 * IN;
+      const travel = (planeZ - camera.position.z) / (direction.z || 1e-6);
+      if (!Number.isFinite(travel) || travel <= 0) return null;
+      const worldY = camera.position.y + direction.y * travel;
+      const rawIn = worldY / IN - (design.mount === "hanging" ? 6 : 0) - THICKNESS;
+      return { index: hit.index, bottomIn: studioSnapShelfHeight(design, rawIn) };
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.button !== 0) return;
+      const hit = pick(event.clientX, event.clientY);
+      if (!hit) return;
+      const item = design.bays[hit.index]?.items.find((candidate) => candidate.kind === "shelf" && Math.abs(candidate.bottomIn + 0.375 - hit.height) <= 1.2);
+      if (!item) return;
+      draggedShelf = { index: hit.index, id: item.id };
+      controls.enabled = false;
+      renderer.domElement.setPointerCapture(event.pointerId);
+      showShelfReadout(item.bottomIn, event);
+    };
+    const onPointerMove = (event: PointerEvent) => {
+      if (!draggedShelf) return;
+      const at = shelfAt(event.clientX, event.clientY);
+      if (!at) return;
+      showShelfReadout(at.bottomIn, event);
+    };
+    const onPointerUp = (event: PointerEvent) => {
+      if (!draggedShelf) return;
+      const at = shelfAt(event.clientX, event.clientY);
+      const target = draggedShelf;
+      draggedShelf = null;
+      controls.enabled = true;
+      if (renderer.domElement.hasPointerCapture(event.pointerId)) renderer.domElement.releasePointerCapture(event.pointerId);
+      hideShelfReadout();
+      if (at) handlers.current.onMoveShelf?.(target.index, target.id, at.bottomIn);
+    };
+    const showShelfReadout = (bottomIn: number, event: PointerEvent) => {
+      const readout = readoutRef.current;
+      if (!readout) return;
+      const hostRect = host.getBoundingClientRect();
+      readout.textContent = `${bottomIn} in`;
+      readout.style.left = `${Math.round(event.clientX - hostRect.left)}px`;
+      readout.style.top = `${Math.round(event.clientY - hostRect.top)}px`;
+      readout.style.opacity = "1";
+    };
+    const hideShelfReadout = () => { if (readoutRef.current) readoutRef.current.style.opacity = "0"; };
     const onDragOver = (event: DragEvent) => {
       if (!event.dataTransfer?.types.includes("application/x-vendor-closet-part")) return;
       event.preventDefault(); event.dataTransfer.dropEffect = pick(event.clientX, event.clientY) ? "copy" : "none";
@@ -367,12 +459,18 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
       else if (value) handlers.current.onPlace(hit.index, hit.height, value as StudioKind);
     };
     renderer.domElement.addEventListener("click", onClick);
+    renderer.domElement.addEventListener("pointerdown", onPointerDown);
+    renderer.domElement.addEventListener("pointermove", onPointerMove);
+    renderer.domElement.addEventListener("pointerup", onPointerUp);
+    renderer.domElement.addEventListener("pointercancel", onPointerUp);
     renderer.domElement.addEventListener("dragover", onDragOver);
     renderer.domElement.addEventListener("drop", onDrop);
     const resize = () => {
       const width = Math.max(host.clientWidth, 1), height = Math.max(host.clientHeight, 1);
       camera.aspect = width / height;
-      if (!userAimed) applyFrame();
+      // Every design change rebuilds the scene, so the frame is always recomputed from the new
+      // cabinet box; that is what keeps the model centered after adding towers or switching walls.
+      applyFrame();
       camera.updateProjectionMatrix();
       renderer.setSize(width, height, false);
     };
@@ -391,6 +489,10 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
     return () => {
       running = false; cancelAnimationFrame(frame); observer.disconnect(); controls.dispose();
       renderer.domElement.removeEventListener("click", onClick);
+      renderer.domElement.removeEventListener("pointerdown", onPointerDown);
+      renderer.domElement.removeEventListener("pointermove", onPointerMove);
+      renderer.domElement.removeEventListener("pointerup", onPointerUp);
+      renderer.domElement.removeEventListener("pointercancel", onPointerUp);
       renderer.domElement.removeEventListener("dragover", onDragOver);
       renderer.domElement.removeEventListener("drop", onDrop);
       scene.traverse((object) => {
@@ -403,5 +505,9 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
     };
   }, [design, selectedBay, selectedCornerId]);
   useEffect(() => { reframeRef.current(); }, [cameraView, fitToken]);
-  return <div ref={mount} className="h-full min-h-0 w-full touch-none" role="group" aria-label="Vendor closet 3D design canvas" data-testid="vendor-closet-3d" />;
+  return <div className="relative h-full min-h-0 w-full touch-none">
+    <div ref={mount} className="h-full min-h-0 w-full touch-none" role="group" aria-label="Vendor closet 3D design canvas" data-testid="vendor-closet-3d" />
+    {/* Live inch readout while a shelf is dragged; the value it reports is the exact height that will be applied. */}
+    <div ref={readoutRef} data-testid="vendor-shelf-drag-readout" aria-live="polite" className="pointer-events-none absolute z-20 -translate-x-1/2 -translate-y-full rounded-md bg-[#244338] px-2 py-1 text-[11px] font-bold tabular-nums text-white opacity-0 shadow-md transition-opacity">0 in</div>
+  </div>;
 }

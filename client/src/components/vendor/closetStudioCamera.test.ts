@@ -67,4 +67,37 @@ describe("closet studio camera", () => {
     expect(overheadElevation).toBeGreaterThanOrEqual(0.98);
     expect(overheadElevation - elevationOf(angle)).toBeGreaterThanOrEqual(0.4);
   });
+
+  it("keeps one framing, scale and padding for every room wall", () => {
+    for (const aspect of [1440 / 671, 830 / 671, 390 / 558]) {
+      const reference = frameClosetStudioCamera(cabinet, aspect, { view: "angle" });
+      // Every wall is framed from its own canonical tower run, so the camera call is identical; the
+      // scene swaps the box and the viewer keeps the same distance, zoom range and padding.
+      for (const box of [cabinet, { ...cabinet }, { ...cabinet, maxZ: cabinet.maxZ + 0.0001 }]) {
+        const frame = frameClosetStudioCamera(box, aspect, { view: "angle" });
+        expect(frame.distance).toBeCloseTo(reference.distance, 3);
+        expect(frame.maxDistance).toBeCloseTo(reference.maxDistance, 3);
+        expect(frame.minDistance).toBeCloseTo(reference.minDistance, 3);
+        expect(frame.polarAngle).toBeCloseTo(reference.polarAngle, 3);
+        const projected = closetCabinetCorners(box).map((corner) => projectClosetPoint(corner, frame, aspect));
+        const xs = projected.map((point) => point.x);
+        const ys = projected.map((point) => point.y);
+        expect(Math.abs((Math.min(...xs) + Math.max(...xs)) / 2)).toBeLessThan(0.08);
+        const topGap = 1 - Math.max(...ys);
+        const bottomGap = Math.min(...ys) + 1;
+        expect(Math.abs(topGap - bottomGap)).toBeLessThan(0.05);
+        expect(frame.position.z).toBeGreaterThan(box.maxZ - 0.01);
+      }
+    }
+  });
+
+  it("keeps the same framing when only the wall changes, because the canonical box is the same", () => {
+    // A 25.5 x 14.5 tower run is the same box on every wall, so the frame is byte-for-byte identical.
+    const run: ClosetAabb = { minX: 0, minY: 0, minZ: 0, maxX: 25.5 / 12, maxY: 87 / 12, maxZ: 14.5 / 12 };
+    for (const aspect of [1440 / 671, 1080 / 671, 390 / 558]) {
+      const back = frameClosetStudioCamera(run, aspect);
+      const left = frameClosetStudioCamera(run, aspect);
+      expect(left).toEqual(back);
+    }
+  });
 });
