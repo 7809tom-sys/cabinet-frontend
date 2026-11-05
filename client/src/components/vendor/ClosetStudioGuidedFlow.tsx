@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { ArrowLeft, ArrowRight, Check, Ruler, Sparkles, WandSparkles } from "lucide-react";
 import { REACH_IN_CLOSET_PRESETS, WALK_IN_CLOSET_PRESETS } from "@/lib/closetRoomPresets";
 import {
-  STUDIO_GUIDED_DEFAULTS, STUDIO_GUIDED_ROOM_DEFAULTS,
+  STUDIO_GUIDED_DEFAULTS, STUDIO_GUIDED_ROOM_DEFAULTS, studioCornerOption,
   type StudioGuidedAmount, type StudioGuidedAnswers, type StudioGuidedClosetType, type StudioGuidedStorageMix, type StudioGuidedYesNo,
 } from "@/lib/vendorClosetStudio";
 
@@ -127,6 +127,15 @@ export function ClosetStudioGuidedFlow({
     setAnswers((current) => ({ ...current, [key]: value }));
   };
 
+  /**
+   * The corner shelf question is a customer option on walk-ins only. A reach-in is never offered it:
+   * it is one wall, so a corner shelf would only shorten the run the customer already has. The
+   * `studioCornerOption` rule is shared with the builder, so the question and the build agree.
+   */
+  const cornerOption = useMemo(() => studioCornerOption({
+    closetType, wallWidthIn: Number(room.width) || 0, roomDepthIn: Number(room.depth) || 0,
+  }), [closetType, room.width, room.depth]);
+
   return <div className={`flex h-full min-h-0 flex-col overflow-y-auto overscroll-contain bg-[#f5f2ec] text-[#25332c] ${FOCUS}`} data-testid={id("gate")} data-guided-step={step}>
     <header className="flex shrink-0 items-center justify-between gap-3 border-b border-[#e2dcd0] bg-[#fbfaf7] px-4 py-3 sm:px-8">
       <a href="/" aria-label="CabinetDealz home" className="flex min-w-0 items-center gap-2.5">
@@ -226,6 +235,13 @@ export function ClosetStudioGuidedFlow({
             <CompactChoice label="Lots of shoes" selected={answers.shoes === "lots"} onSelect={() => set("shoes", "lots" as StudioGuidedAmount)} testId={id("shoes-lots")} />
           </div>
         </Question>
+
+        {cornerOption.offered && <Question legend="Would you like a corner shelf in the corner?" help="A curved 29.5 in shelf that fills the corner where the two walls meet — a good spot for folded clothes or display. It takes a little wall from each side." testId={id("corner-shelf")}>
+          <div className="grid grid-cols-2 gap-1.5 sm:gap-2">
+            <CompactChoice label="Yes, add corner shelves" hint="One in each back corner." selected={answers.cornerShelves === "yes"} onSelect={() => set("cornerShelves", "yes" as StudioGuidedYesNo)} testId={id("corner-shelf-yes")} />
+            <CompactChoice label="No, just towers" hint="Towers run wall to wall." selected={answers.cornerShelves !== "yes"} onSelect={() => set("cornerShelves", "no" as StudioGuidedYesNo)} testId={id("corner-shelf-no")} />
+          </div>
+        </Question>}
 
         {error && <p role="alert" className="mt-3 rounded-lg border border-[#e5c9a2] bg-[#fff6e5] px-3 py-2 text-[12px] text-[#7a5734]">{error}</p>}
 

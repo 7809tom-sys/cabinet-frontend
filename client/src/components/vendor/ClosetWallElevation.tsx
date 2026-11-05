@@ -109,6 +109,8 @@ export function ClosetWallElevation({ design, wall, decor = false }: { design: S
   });
   const placements = studioBasketPlacementsForWall(design, wall);
   const corners = studioCornerShelvesForWall(design, wall);
+  /** Corner shelves occupy real inches of this wall, so the "used" line and any leftover both see them. */
+  const cornerSpanIn = Math.round(corners.reduce((sum, shelf) => sum + shelf.nominalFootprintIn, 0) * 100) / 100;
   const wallDecor: StudioDecorBay[] = decor ? studioWallDecor(design, wall) : [];
   const dimY = y(0) + 18;
   const totalY = y(0) + 44;
@@ -176,17 +178,19 @@ export function ClosetWallElevation({ design, wall, decor = false }: { design: S
         return <g key={shelf.id} data-item="corner-shelf"><rect x={x(from)} y={y(shelf.elevationIn + 0.75)} width={shelf.nominalFootprintIn * SCALE} height={Math.max(2.5, 0.75 * SCALE)} fill={fill} fillOpacity="0.7" stroke="#8e8576" strokeDasharray="5 3" />
           <text x={x(from + shelf.nominalFootprintIn / 2)} y={y(shelf.elevationIn + 0.75) - 3} textAnchor="middle" fontSize="10" fontWeight="600" fill="#3d362d" style={halo}>corner {inches(shelf.elevationIn)}</text></g>;
       })}
-      {/* Total used vs wall length. The run starts at `startIn`, so a side wall's corner zone is
-          accounted for separately rather than being reported as a planning gap. */}
+      {/* Total used vs wall length. A side run starts at `startIn`, and the shared-corner offset and
+          the corner shelves are accounted for separately rather than reported as planning gaps. */}
       <line x1={x(startIn)} x2={x(startIn + usedIn)} y1={totalY} y2={totalY} stroke="#4b4338" />
       <line x1={x(startIn)} x2={x(startIn)} y1={totalY - 5} y2={totalY + 5} stroke="#4b4338" /><line x1={x(startIn + usedIn)} x2={x(startIn + usedIn)} y1={totalY - 5} y2={totalY + 5} stroke="#4b4338" />
-      <text x={x(startIn + usedIn / 2)} y={totalY + 16} textAnchor="middle" fontSize="11" fontWeight="700" fill="#3d362d">{inches(usedIn)} of towers · {inches(lengthIn)} wall{startIn > 0 ? ` · ${inches(startIn)} corner` : ""}</text>
-      {/* An unused span is stated, never left to look like a drawing mistake. On a side wall the
-          corner zone is not unused: the back run's bay depth occupies it. */}
+      <text x={x(startIn + usedIn / 2)} y={totalY + 16} textAnchor="middle" fontSize="11" fontWeight="700" fill="#3d362d">{inches(usedIn)} of towers · {inches(lengthIn)} wall{cornerSpanIn > 0 ? ` · ${inches(cornerSpanIn)} corner shelf` : startIn > 0 ? ` · ${inches(startIn)} shared corner` : ""}</text>
+      {/* An unused span is stated, never left to look like a drawing mistake. The corner end of a
+          wall is either closed by a 29.5 in corner shelf or by the shared geometry the back run
+          occupies — never both — so it is counted once, alongside the tower run itself. */}
       {(() => {
-        const unusedIn = Math.round((lengthIn - (startIn + usedIn)) * 100) / 100;
+        const cornerEndIn = Math.max(startIn, cornerSpanIn);
+        const unusedIn = Math.round((lengthIn - cornerEndIn - usedIn) * 100) / 100;
         if (unusedIn <= UPRIGHT_IN + 0.01) return null;
-        return <text x={x(startIn + usedIn + unusedIn / 2)} y={totalY + 29} textAnchor="middle" fontSize="10" fill="#8a5a2b" data-testid="elevation-leftover">{inches(unusedIn)} unused: no further sourced width fits</text>;
+        return <text x={x(lengthIn - unusedIn / 2)} y={totalY + 29} textAnchor="middle" fontSize="10" fill="#8a5a2b" data-testid="elevation-leftover">{inches(unusedIn)} unused: no further sourced width fits</text>;
       })()}
     </>}
   </svg>;

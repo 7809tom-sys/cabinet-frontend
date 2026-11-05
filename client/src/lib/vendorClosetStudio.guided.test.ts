@@ -48,10 +48,18 @@ describe("guided answers → part counts", () => {
     expect(shelves.shelves).toBeGreaterThan(hanging.shelves);
   });
 
-  it("drops one rod when long hanging is needed, so one bay hangs high and clear", () => {
-    const withLong = studioGuidedPartCounts(answers({ longHang: "yes" }));
-    const withoutLong = studioGuidedPartCounts(answers({ longHang: "no" }));
-    expect(withLong.rods).toBe(withoutLong.rods - 1);
+  it("drops one rod for long hanging, and keeps a double hang on a reach-in", () => {
+    // A walk-in spreads hanging over side walls, so "yes" simply removes one rod.
+    const walkInWithLong = studioGuidedPartCounts(answers({ closetType: "walkIn", longHang: "yes" }));
+    const walkInWithoutLong = studioGuidedPartCounts(answers({ closetType: "walkIn", longHang: "no" }));
+    expect(walkInWithLong.rods).toBe(walkInWithoutLong.rods - 1);
+
+    // A reach-in must stay "mostly double hang with one long-hang bay" (owner brief), so the floor
+    // guarantees a long-hang bay plus a real double hang rather than one lone rod.
+    const reachInWithLong = studioGuidedPartCounts(answers({ closetType: "reachIn", longHang: "yes" }));
+    expect(reachInWithLong.rods).toBeGreaterThanOrEqual(3);
+    const reachInWithoutLong = studioGuidedPartCounts(answers({ closetType: "reachIn", longHang: "no" }));
+    expect(reachInWithoutLong.rods).toBe(2);
   });
 
   it("maps none/some/lots to 0/2/4 of each part", () => {

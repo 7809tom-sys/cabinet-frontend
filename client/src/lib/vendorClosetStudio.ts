@@ -55,7 +55,7 @@ export type StudioBasketPlacement = {
 /** New v2 tower groups retain their wall identity; it is optional only while v1 drafts are migrated on restore. */
 export type StudioBay = { id: string; widthIn: number; stockWidthIn?: StudioStockWidth; wallId?: StudioWall; items: StudioItem[] };
 export type StudioWallLayout = { wallId: StudioWall; bays: StudioBay[] };
-export type StudioWallOccupancy = { wallId: StudioWall; usedSpanIn: number; availableSpanIn: number; bayCount: number; itemCount: number; cornerCount: number; filled: boolean };
+export type StudioWallOccupancy = { wallId: StudioWall; usedSpanIn: number; availableSpanIn: number; bayCount: number; itemCount: number; cornerCount: number; cornerSpanIn: number; filled: boolean };
 export type StudioDesign = {
   version: 1 | 2 | 3;
   mode: StudioMode;
@@ -197,8 +197,14 @@ export const studioWallStartIn = (design: StudioDesign, wall: StudioWall = desig
 export const studioWallOccupancy = (design: StudioDesign): Record<StudioWall, StudioWallOccupancy> => Object.fromEntries(STUDIO_WALLS.map((wallId) => {
   const bays = studioBays(design, wallId);
   const corners = studioCornerShelvesForWall(design, wallId);
-  const usedSpanIn = studioWidthForWall(design, wallId);
-  return [wallId, { wallId, usedSpanIn, availableSpanIn: studioWallLength(design, wallId), bayCount: bays.length, itemCount: bays.reduce((sum, bay) => sum + bay.items.length, 0), cornerCount: corners.length, filled: bays.length > 0 || corners.length > 0 }];
+  /**
+   * A corner shelf is a floor-mounted 29.5 in board that occupies that much of every wall it touches,
+   * so it counts as used wall. Reporting only tower width made a wall with two corner shelves read
+   * as "19.5 of 84 in used", which looked like a planning gap that was not there.
+   */
+  const cornerSpanIn = Math.round(corners.reduce((sum, shelf) => sum + shelf.nominalFootprintIn, 0) * 100) / 100;
+  const usedSpanIn = Math.round((studioWidthForWall(design, wallId) + cornerSpanIn) * 100) / 100;
+  return [wallId, { wallId, usedSpanIn, availableSpanIn: studioWallLength(design, wallId), bayCount: bays.length, itemCount: bays.reduce((sum, bay) => sum + bay.items.length, 0), cornerCount: corners.length, cornerSpanIn, filled: bays.length > 0 || corners.length > 0 }];
 })) as Record<StudioWall, StudioWallOccupancy>;
 
 export function createStudioDesign(): StudioDesign {
@@ -811,10 +817,15 @@ export type StudioGuidedAnswers = {
   longHang: StudioGuidedYesNo;
   drawers: StudioGuidedAmount;
   shoes: StudioGuidedAmount;
+  /**
+   * Corner shelf choice. Only meaningful for a walk-in big enough for `studioCornerOption`; the
+   * question is not shown at all otherwise, and the builder ignores the flag in that case.
+   */
+  cornerShelves?: StudioGuidedYesNo;
 };
 
 export const STUDIO_GUIDED_DEFAULTS: StudioGuidedAnswers = {
-  closetType: "reachIn", storageMix: "balanced", longHang: "yes", drawers: "some", shoes: "some",
+  closetType: "reachIn", storageMix: "balanced", longHang: "yes", drawers: "some", shoes: "some", cornerShelves: "no",
 };
 
 const GUIDED_AMOUNT_COUNT: Record<StudioGuidedAmount, number> = { none: 0, some: 2, lots: 4 };
@@ -847,8 +858,18 @@ export function studioGuidedPartCounts(answers: StudioGuidedAnswers): StudioAuto
   const mix = GUIDED_MIX_UNITS[answers.storageMix] ?? GUIDED_MIX_UNITS.balanced;
   const hangingUnits = Math.max(1, mix.hangingUnits);
   const shelvingUnits = mix.shelvingUnits;
-  // One bay becomes the long-hang bay when asked for, which removes one rod from the total.
-  const rods = hangingUnits * 2 - (answers.longHang === "yes" ? 1 : 0);
+  /**
+   * One bay becomes the long-hang bay when long hanging is asked for, which removes one rod.
+   *
+   * A reach-in then needs a floor. The owner's brief calls for a reach-in to be *mostly double hang
+   * with one long-hang bay*, but the mix answer can ask for a single hanging bay — and once one rod
+   * becomes the long hang there is no double hang left at all. Three rods guarantees one long-hang
+   * bay plus a real double-hang bay. The floor is reach-in only; a walk-in spreads hanging across
+   * side walls and needs no padding. Applied after the subtraction, so the floor is a guarantee of
+   * double hang rather than a reshuffle of the count.
+   */
+  let rods = hangingUnits * 2 - (answers.longHang === "yes" ? 1 : 0);
+  if (answers.closetType === "reachIn" && answers.longHang === "yes") rods = Math.max(rods, 3);
   const shelves = shelvingUnits * GUIDED_SHELVES_PER_SHELVING_BAY + hangingUnits;
 
   return {
@@ -890,6 +911,7 @@ export function autoBuildStudioFromAnswers(input: {
     kids: input.kids,
     options,
     longHangBay: input.answers.longHang === "yes",
+    cornerShelves: input.answers.cornerShelves === "yes",
   });
   return { ...result, options };
 }
@@ -917,6 +939,8 @@ export function studioGuidedSummaryLines(design: StudioDesign, answers: StudioGu
   else if (answers.drawers !== "none") lines.push("No drawers fit in this room, so everything is open shelving and hanging.");
   if (shoes) lines.push(shoes === 1 ? "A shoe shelf to keep pairs together on the floor." : `${shoes} shoe shelves to keep pairs together on the floor.`);
   else if (answers.shoes !== "none") lines.push("No separate shoe shelf fit, so shoes go on the lowest shelf.");
+  const cornerShelves = studioCornerShelves(design);
+  if (cornerShelves.length) lines.push(`${cornerShelves.length === 1 ? "A curved corner shelf" : `${cornerShelves.length} curved corner shelves`} fill the corner${cornerShelves.length === 1 ? "" : "s"} where the walls meet.`);
   const totalBays = bays.length;
   lines.push(`${totalBays} tall tower${totalBays === 1 ? "" : "s"} in the ${design.finish} finish. You can change any of this below.`);
   return lines;
@@ -928,6 +952,12 @@ export type StudioAutoBuildInput = {
   kids?: StudioDesign["kids"]; options?: StudioAutoBuildOptions;
   /** Guided flow only: put one bay's hanging on a single high rod for long dresses and coats. */
   longHangBay?: boolean;
+  /**
+   * Guided flow only: the customer asked for the 29.5 in MasterTrac corner shelf. Honoured only where
+   * `studioCornerOption` offers it; reach-ins and small walk-ins fall back to shared-geometry corners
+   * so their walls still fill, and the build says so in its notices.
+   */
+  cornerShelves?: boolean;
 };
 export type StudioAutoBuildResult = { design: StudioDesign; notices: string[] };
 
@@ -945,10 +975,108 @@ const AUTO_SHELF_STEP_IN = 12;
 const AUTO_FILL_BAY_PENALTY_IN = 1.5;
 /** Drawer boxes and shoe shelves are only sourced at 18, 24 and 30 in, so a wider bay hosts hanging and shelving only. */
 const AUTO_STORAGE_WIDTHS = [18, 24, 30] as const;
-/** High enough that a long dress or coat clears the floor under a single rod (the double-hang lower rod sits at 40 in). */
-const AUTO_LONG_HANG_ROD_IN = 72;
+
+/* ----------------------------------------------------------------------------------------------
+ * General closet-design rules (Owner brief, Tom, Nov 2026). These come from standard closet
+ * planning guides, NOT from a MasterTrac specification, so every one of them is applied through
+ * the same sourced-part fit rules. Where a guide figure conflicts with what MasterTrac actually
+ * sells or with the 14.5 in board depth, the sourced geometry wins and `AUTO_GUIDE_CONFLICTS`
+ * records the difference so the UI can state it instead of silently pretending they agree.
+ * ---------------------------------------------------------------------------------------------- */
+
+/** A 29.5 in corner bay is treated as a double-hang anchor section, with rods at about 40 and 82 in. */
+export const AUTO_ANCHOR_LOWER_ROD_IN = 40;
+export const AUTO_ANCHOR_UPPER_ROD_IN = 82;
+/**
+ * Long hang (dresses and coats) needs a clear drop. Guides ask for 8–13 in of *extra* width beyond
+ * a normal bay, with an 18 in floor. MasterTrac's narrowest stocked bay is 18 in, so the floor and
+ * the guide's own minimum agree; the extra width is applied to whichever bay hosts the long hang.
+ */
+export const AUTO_LONG_HANG_MIN_BAY_IN = 18;
+export const AUTO_LONG_HANG_EXTRA_IN = 13;
+/**
+ * Rod clearance is the source conflict. A guide's 82 in upper rod cannot also leave the 72 in of
+ * clear drop this planner requires for a dress, because MasterTrac floor uprights are 87 or 94 in
+ * tall and a rod needs to clear the fixed top shelf. The planner therefore puts a long-hang rod at
+ * the stocked height that still leaves a real dress drop, and reports the guide's 82 in figure as
+ * unavailable in this panel height. Same idea for the 40 in lower rod: it is used exactly as the
+ * guide asks wherever the geometry allows it.
+ */
+export const AUTO_GUIDE_CONFLICTS = [
+  "A guide's 82 in upper rod is not usable in this closet: MasterTrac floor uprights are 87 or 94 in tall, so an 82 in rod cannot leave the clear drop a long dress needs above the floor.",
+  "Guide dimensions are general closet-planning guidance, not MasterTrac specifications. Every part, width and elevation here still resolves to the sourced March 2022 catalog.",
+] as const;
+
+/** Shelf openings a tighter middle filler bay gets: folded clothes, shoes, boots. */
+export const AUTO_FILLER_SHELF_GAPS = { foldedIn: 13, shoesIn: 9, bootsIn: 17 } as const;
+/** A filler bay this narrow is a middle bay between hanging sections; above it the bay gets normal shelves. */
+const AUTO_FILLER_BAY_MAX_IN = 14;
+/** A side-wall section starts this far forward from the back wall, bridged by the corner shelf. */
+export const AUTO_SIDE_SECTION_START_IN = 24;
+/** The corner shelf must bridge at least this much, and may not exceed the guide's upper bound. */
+export const AUTO_SIDE_SECTION_MAX_IN = 30;
+/**
+ * The source reconciliation for that rule. The guide asks for side-wall sections to start 24–30 in
+ * from the back wall, "bridged by a corner shelf". MasterTrac's only real corner shelf is a 29.5 in
+ * board, and it occupies exactly that much of both incident walls — so the side run starts at
+ * 29.5 in and the guide's own range is satisfied by the sourced dimension, not approximated to it.
+ * Checked here once so the two numbers cannot drift apart silently.
+ */
+export const AUTO_SIDE_SECTION_BRIDGES_GUIDE_RANGE =
+  STUDIO_CORNER_SHELF_NOMINAL_FOOTPRINT_IN >= AUTO_SIDE_SECTION_START_IN - 0.000001
+  && STUDIO_CORNER_SHELF_NOMINAL_FOOTPRINT_IN <= AUTO_SIDE_SECTION_MAX_IN + 0.000001;
+/** How far a drawer bank stays clear of a reach-in door swing, measured from the entry end. */
+export const AUTO_DOOR_SWING_CLEARANCE_IN = 30;
+
+/**
+ * When a closet may be offered the 29.5 in MasterTrac corner shelf.
+ *
+ * Tom's rule: every **walk-in** is offered it, because a corner shelf is a real layout choice that
+ * adds shelf spots, and **reach-ins never are** — a reach-in is one wall, so a corner shelf there
+ * would only shorten the single run the customer has. Reach-in corners therefore always stay shared
+ * geometry so the wall fills end to end.
+ *
+ * "Walk-in" is not a new idea here: it is the same test `autoBuildStudio` already uses to decide
+ * whether side walls are worth planning at all —
+ *
+ *     depth ≥ 24 in hanging + 36 in walkway = 60 in
+ *
+ * A corner shelf still has to be *usable*, though: it occupies 29.5 in of both incident walls, so
+ * every wall must keep at least one real 18 in tower beside it. `studioCornerOption` proves that
+ * with the same fill math the builder uses instead of trusting a hardcoded size, and reports the
+ * inches involved so the UI can explain it. That keeps the threshold in one place and makes it
+ * impossible for the offer to drift away from what the builder can actually place.
+ */
+export const STUDIO_CORNER_MIN_WALKWAY_IN = 36;
+export const STUDIO_CORNER_MIN_HANG_DEPTH_IN = 24;
+/** A walk-in needs hanging depth plus a walkway before it has a usable room corner. */
+export const STUDIO_CORNER_WALK_IN_MIN_DEPTH_IN = STUDIO_CORNER_MIN_HANG_DEPTH_IN + STUDIO_CORNER_MIN_WALKWAY_IN;
+
+export type StudioCornerOption = {
+  /** True for every walk-in whose walls can still hold a real tower beside a corner shelf. */
+  offered: boolean;
+  /** Plain-language reason, used by the guided flow and by the build notices. */
+  reason: string;
+};
+
+/** Single source of truth for "may this closet be offered a corner shelf?". Used by the UI and the planner. */
+export function studioCornerOption(room: { closetType: StudioGuidedClosetType; wallWidthIn: number; roomDepthIn: number; mount?: StudioMount }): StudioCornerOption {
+  if (room.closetType === "reachIn") return { offered: false, reason: "A reach-in is one wall, so a corner shelf would only shorten the run you already have." };
+  if (room.mount === "hanging") return { offered: false, reason: "Corner shelves are floor-mounted, so they are not offered on a hanging closet." };
+  const cornerIn = STUDIO_CORNER_SHELF_NOMINAL_FOOTPRINT_IN;
+  const sideSpanIn = room.roomDepthIn - cornerIn;
+  const backSpanIn = room.wallWidthIn - 2 * cornerIn;
+  if (!studioWallFill(sideSpanIn).widths.length) return { offered: false, reason: `A corner shelf needs ${cornerIn} in of the side wall and still one ${STUDIO_STOCK_WIDTHS[0]} in tower; this room is too shallow for that.` };
+  if (!studioWallFill(backSpanIn).widths.length) return { offered: false, reason: `Two corner shelves need ${2 * cornerIn} in of the back wall and still one ${STUDIO_STOCK_WIDTHS[0]} in tower; this back wall is too short for that.` };
+  return { offered: true, reason: "This walk-in can keep a real tower on every wall beside the corner shelves." };
+}
 type AutoSpec = { kind: StudioKind; at: number };
-type AutoPlan = { specs: AutoSpec[] };
+/**
+ * What a planned bay is *for*. The wall rules below need this: hanging belongs on short walls,
+ * drawers centred on the back wall, shoes by the door, and only one long hang per closet.
+ */
+export type AutoPlanRole = "longHang" | "anchor" | "filler" | "drawer" | "shoe" | "storage";
+type AutoPlan = { specs: AutoSpec[]; role?: AutoPlanRole; /** A narrow middle bay that takes closely spaced shelves instead of hanging. */ filler?: boolean; /** Long-hang bays are kept off the back wall in a walk-in. */ preferSideWall?: boolean };
 const runWidthIn = (widths: number[]) => widths.length ? widths.reduce((sum, width) => sum + width, 0) + THICKNESS * (widths.length + 1) : 0;
 const roundIn = (value: number) => Math.round(value * 100) / 100;
 
@@ -1011,40 +1139,78 @@ function spareTowerSpecs(design: StudioDesign, mode: StudioMode, kids?: StudioDe
     .filter((spec) => spec.at + THICKNESS <= topIn);
 }
 
+/**
+ * Shelves for a tight middle filler bay, spaced the way the owner's guide asks: close together for
+ * folded clothes, tighter for shoes, wider for boots. The guide's 12–14 in folded spacing is the
+ * one the sourced 0.75 in boards actually reach; the shoe and boot openings apply the guide's own
+ * ranges and are clamped so every shelf stays under the fixed top.
+ */
+export function fillerTowerSpecs(design: StudioDesign, kids?: StudioDesign["kids"]): AutoSpec[] {
+  const lowestIn = studioFixedBottom(design) + THICKNESS;
+  const topIn = kids ? Math.min(studioFixedTop(design) - THICKNESS, kidsAgeBand(kids.ageYears).maxReachIn) : studioFixedTop(design) - THICKNESS;
+  const specs: AutoSpec[] = [];
+  // Boot opening first at the bottom, then shoes, then folded clothes above: the guide's ordering.
+  let at = lowestIn;
+  for (const gapIn of [AUTO_FILLER_SHELF_GAPS.bootsIn, AUTO_FILLER_SHELF_GAPS.shoesIn, AUTO_FILLER_SHELF_GAPS.foldedIn, AUTO_FILLER_SHELF_GAPS.foldedIn]) {
+    if (at + THICKNESS > topIn) break;
+    specs.push({ kind: "shelf", at });
+    at += THICKNESS + gapIn;
+  }
+  return specs;
+}
+
+/**
+ * A reach-in's full-width top shelf, the guide's other named reach-in feature. It sits in the same
+ * place the anchor bay already wants a shelf above its upper rod, so the whole run shares one shelf
+ * elevation and the two never stack on each other.
+ */
+function reachInTopShelfIn(design: StudioDesign): number {
+  const upperRodIn = Math.min(AUTO_ANCHOR_UPPER_ROD_IN, Math.floor(studioFixedTop(design) - KIDS_UPPER_SHELF_CLEARANCE_IN - THICKNESS));
+  return Math.min(upperRodIn + KIDS_UPPER_SHELF_CLEARANCE_IN, studioFixedTop(design) - THICKNESS);
+}
+
 /** Bay-by-bay part plans for a mode. Each count is consumed as parts are assigned, so the totals placed match the options unless a wall runs out of room. */
 function planAutoBays(design: StudioDesign, mode: StudioMode, options: StudioAutoBuildOptions, kids?: StudioDesign["kids"], longHangBay = false): AutoPlan[] {
   const left = { ...options };
   const plans: AutoPlan[] = [];
   const lowestIn = studioFixedBottom(design) + THICKNESS;
   const maxTopIn = studioFixedTop(design);
-  const upperRodIn = Math.min(KIDS_UPPER_ROD_IN, Math.floor(maxTopIn - 1));
+  /**
+   * The anchor upper rod. The guide asks for about 82 in; that is only reachable in the taller 94 in
+   * upright, because the shelf over the rod still has to fit under the fixed top shelf. `upperRodIn`
+   * is therefore the guide figure clamped to real panel geometry, and the caller reports the gap.
+   */
+  const upperRodIn = Math.min(AUTO_ANCHOR_UPPER_ROD_IN, Math.floor(maxTopIn - KIDS_UPPER_SHELF_CLEARANCE_IN - THICKNESS));
   const band = kids ? kidsAgeBand(kids.ageYears) : null;
   const take = (key: keyof StudioAutoBuildOptions, count: number) => { const n = Math.min(left[key], count); left[key] -= n; return n; };
   const shelvesFrom = (startIn: number, count: number, limitIn = Infinity): AutoSpec[] => Array.from({ length: count }, (_, i) => ({ kind: "shelf" as const, at: startIn + i * AUTO_SHELF_STEP_IN })).filter((spec) => spec.at + THICKNESS <= limitIn);
   const drawersLow = (count: number, limitIn = Infinity): AutoSpec[] => Array.from({ length: count }, (_, i) => ({ kind: "drawer" as const, at: lowestIn + i * studioItemHeight("drawer") })).filter((spec) => spec.at + studioItemHeight("drawer") <= limitIn);
   const shoesLow = (count: number, limitIn = Infinity): AutoSpec[] => Array.from({ length: count }, (_, i) => ({ kind: "shoe" as const, at: lowestIn + i * (studioItemHeight("shoe") + 0.25) })).filter((spec) => spec.at + studioItemHeight("shoe") <= limitIn);
+  /** Double hang: the guide's ~40 in lower rod under the anchor upper rod, with a shelf above the top rod. */
   const hang = (): void => {
-    while (left.rods >= 2) { take("rods", 2); const specs: AutoSpec[] = [{ kind: "rod", at: KIDS_ADULT_ROD_IN }, { kind: "rod", at: upperRodIn }]; if (take("shelves", 1)) specs.push({ kind: "shelf", at: upperRodIn + KIDS_UPPER_SHELF_CLEARANCE_IN }); plans.push({ specs }); }
-    if (left.rods === 1) { take("rods", 1); const specs: AutoSpec[] = [{ kind: "rod", at: 66 }]; if (take("shelves", 1)) specs.push({ kind: "shelf", at: 70 }); plans.push({ specs }); }
+    while (left.rods >= 2) { take("rods", 2); const specs: AutoSpec[] = [{ kind: "rod", at: AUTO_ANCHOR_LOWER_ROD_IN }, { kind: "rod", at: upperRodIn }]; if (take("shelves", 1)) specs.push({ kind: "shelf", at: upperRodIn + KIDS_UPPER_SHELF_CLEARANCE_IN }); plans.push({ specs, role: "anchor" }); }
+    if (left.rods === 1) { take("rods", 1); const specs: AutoSpec[] = [{ kind: "rod", at: 66 }]; if (take("shelves", 1)) specs.push({ kind: "shelf", at: 70 }); plans.push({ specs, role: "anchor" }); }
   };
   /**
    * A long-hang bay is one high rod with clear space beneath it, so dresses and coats hang
-   * straight instead of folding over a second rod. That is the difference between the guided
-   * flow's "yes" and "no" to long hanging.
+   * straight instead of folding over a second rod. It uses the highest rod the panel allows, which
+   * is the guide's own "hang long things high" intent; `AUTO_GUIDE_CONFLICTS` records that the
+   * guide's 82 in figure is not always reachable. A walk-in keeps it off the back wall because a
+   * corner must not carry double hang on both of its walls.
    */
   const longHang = (): void => {
     if (left.rods < 1) return;
     take("rods", 1);
-    const specs: AutoSpec[] = [{ kind: "rod", at: AUTO_LONG_HANG_ROD_IN }];
+    const specs: AutoSpec[] = [{ kind: "rod", at: upperRodIn }];
     if (take("shelves", 1)) specs.push({ kind: "shelf", at: upperRodIn + KIDS_UPPER_SHELF_CLEARANCE_IN });
-    plans.push({ specs });
+    plans.push({ specs, role: "longHang", preferSideWall: true });
   };
-  const shoes = (perBay: number, limitIn?: number): void => { while (left.shoes > 0) plans.push({ specs: shoesLow(take("shoes", perBay), limitIn) }); };
+  const shoes = (perBay: number, limitIn?: number): void => { while (left.shoes > 0) plans.push({ specs: shoesLow(take("shoes", perBay), limitIn), role: "shoe" }); };
   const shelfDrawer = (shelvesPerBay: number, limitIn?: number): void => {
     while (left.drawers > 0 || left.shelves > 0) {
       const drawers = take("drawers", 3);
       const startIn = drawers ? lowestIn + drawers * studioItemHeight("drawer") + 1.25 : lowestIn + AUTO_SHELF_STEP_IN - 1.5;
-      plans.push({ specs: [...drawersLow(drawers, limitIn), ...shelvesFrom(startIn, take("shelves", shelvesPerBay), limitIn)] });
+      plans.push({ specs: [...drawersLow(drawers, limitIn), ...shelvesFrom(startIn, take("shelves", shelvesPerBay), limitIn)], role: drawers ? "drawer" : "storage" });
     }
   };
   if (mode === "closet") { if (longHangBay) longHang(); hang(); shoes(4); shelfDrawer(5); }
@@ -1059,13 +1225,16 @@ function planAutoBays(design: StudioDesign, mode: StudioMode, options: StudioAut
     shelfDrawer(5);
   } else if (band && kids) {
     const reachIn = band.maxReachIn;
+    // Kids' closets keep their own documented 80 in off-season rod (`KIDS_UPPER_ROD_IN`), clamped to
+    // the panel; the adult anchor heights above do not apply to them.
+    const kidUpperRodIn = Math.min(KIDS_UPPER_ROD_IN, Math.floor(maxTopIn - KIDS_UPPER_SHELF_CLEARANCE_IN - THICKNESS));
     while (left.rods > 0) {
       const rods = take("rods", 2);
       const specs: AutoSpec[] = [{ kind: "rod", at: kidsRodHeightIn(kids.ageYears, kids.heightIn) }];
-      if (rods === 2) specs.push({ kind: "rod", at: upperRodIn });
-      if (rods === 2 && take("shelves", 1)) specs.push({ kind: "shelf", at: upperRodIn + KIDS_UPPER_SHELF_CLEARANCE_IN });
+      if (rods === 2) specs.push({ kind: "rod", at: kidUpperRodIn });
+      if (rods === 2 && take("shelves", 1)) specs.push({ kind: "shelf", at: kidUpperRodIn + KIDS_UPPER_SHELF_CLEARANCE_IN });
       if (take("shelves", 1)) specs.push({ kind: "shelf", at: lowestIn }); // toy-bin zone, low enough for hanging clothes above it
-      plans.push({ specs });
+      plans.push({ specs, role: "anchor" });
     }
     shoes(2, reachIn);
     shelfDrawer(2, reachIn);
@@ -1107,23 +1276,33 @@ export function autoBuildStudio(input: StudioAutoBuildInput): StudioAutoBuildRes
   const plans = planAutoBays(design, mode, options, kids, input.longHangBay);
   const needsStorage = (plan: AutoPlan) => plan.specs.some((spec) => spec.kind === "drawer" || spec.kind === "shoe");
   const storagePlanCount = plans.filter(needsStorage).length;
+  /**
+   * A bay hosts exactly one hanging plan. A 36 in bay does not become "two hanging bays", so a fill
+   * with fewer bays than hanging plans would silently drop requested rods — which is what made a
+   * 78 in reach-in lose its double hang. Prefer fills with enough bays for the hanging asked for,
+   * falling back to the widest fill only when the wall genuinely cannot hold that many towers.
+   */
+  const hangingPlanCount = plans.filter((plan) => plan.specs.some((spec) => spec.kind === "rod")).length;
 
   /* ---------------------------------------------------------------- wall fill */
   /**
-   * A side wall that shares a corner can be planned two ways:
-   *  - "cornerShelf": reserve the 29.5 in visual corner envelope, build both runs outside it;
-   *  - "shared": no corner product, so the back run owns the bay depth at that corner and the side
-   *    run starts past it. This is what lets a back wall use its own span end to end.
-   * Both are enumerated per side and scored against every real back-wall fill. Ties keep a visual
-   * corner shelf, and extra towers are discounted because each costs an upright and a cleat.
+   * The corner shelf is a customer layout decision, not something the fill search quietly wins or
+   * loses. Reach-ins are never offered it (see `studioCornerOption`), and a walk-in only gets it when
+   * the customer asked for it *and* the room is big enough to keep a real tower beside every corner.
+   * Both corners are planned consistently: a corner shelf on one side means a corner shelf on the
+   * other, so a walk-in never ends up with one bare corner and one filled with a shelf.
    */
-  type SidePlan = { side: StudioWall; withCornerShelf: boolean; widths: StudioStockWidth[]; availableIn: number; usedIn: number; leftoverIn: number };
-  type RoomPlan = { back: StudioWallFill; sides: SidePlan[]; score: number; cornerShelves: number; storageBays: number };
-  const roomPlans: RoomPlan[] = [];
+  const cornerOption = studioCornerOption({ closetType: walkIn ? "walkIn" : "reachIn", wallWidthIn: input.wallWidthIn, roomDepthIn: input.roomDepthIn, mount: design.mount });
+  const wantsCorners = Boolean(input.cornerShelves) && sides.length > 0 && cornerOption.offered;
+  // Say why a requested corner shelf is not there, whatever the reason (reach-in, small room, mount).
+  if (input.cornerShelves && !wantsCorners) notices.push(`Corner shelves were not added: ${cornerOption.reason}`);
   /** One bit per side: true plans a 29.5 in visual corner shelf, false closes that corner with shared geometry only. */
-  const cornerChoices = Array.from({ length: 2 ** sides.length }, (_, mask) => sides.map((side, index) => ({
-    side, withCornerShelf: Boolean(mask & (1 << index)),
-  })));
+  const cornerChoices = wantsCorners
+    ? [sides.map((side) => ({ side, withCornerShelf: true }))]
+    : [sides.map((side) => ({ side, withCornerShelf: false }))];
+  type SidePlan = { side: StudioWall; withCornerShelf: boolean; widths: StudioStockWidth[]; availableIn: number; usedIn: number; leftoverIn: number };
+  type RoomPlan = { back: StudioWallFill; sides: SidePlan[]; score: number; storageBays: number; bayCount: number };
+  const roomPlans: RoomPlan[] = [];
   for (const choice of cornerChoices) {
     const reservedIn = choice.filter((entry) => entry.withCornerShelf).length * STUDIO_CORNER_SHELF_NOMINAL_FOOTPRINT_IN;
     for (const backOption of studioWallFillOptions(input.wallWidthIn - reservedIn)) {
@@ -1139,21 +1318,28 @@ export function autoBuildStudio(input: StudioAutoBuildInput): StudioAutoBuildRes
       const coveredIn = all.reduce((sum, fill) => sum + fill.usedIn, 0);
       const towers = all.reduce((sum, fill) => sum + fill.widths.length, 0);
       const storageBays = all.reduce((sum, fill) => sum + fill.widths.filter((width) => (AUTO_STORAGE_WIDTHS as readonly number[]).includes(width)).length, 0);
-      roomPlans.push({ back, sides: sidesForThisChoice, score: coveredIn - AUTO_FILL_BAY_PENALTY_IN * towers, cornerShelves: sidesForThisChoice.filter((plan) => plan.withCornerShelf && plan.widths.length).length, storageBays });
+      roomPlans.push({ back, sides: sidesForThisChoice, score: coveredIn - AUTO_FILL_BAY_PENALTY_IN * towers, storageBays, bayCount: towers });
     }
   }
-  const rankPlans = (plans: RoomPlan[]) => [...plans].sort((a, b) => b.score - a.score || b.cornerShelves - a.cornerShelves || b.back.usedIn - a.back.usedIn);
-  // A drawer box or shoe shelf only exists at 18/24/30 in, so a layout without enough of those bays
-  // would have to drop a part the owner asked for. Prefer plans that can host them all.
-  const feasiblePlans = roomPlans.filter((plan) => plan.storageBays >= storagePlanCount);
-  const candidates = feasiblePlans.length ? feasiblePlans : roomPlans;
+  const rankPlans = (plans: RoomPlan[]) => [...plans].sort((a, b) => b.score - a.score || b.back.usedIn - a.back.usedIn);
   /**
-   * Filling the wall is the goal. A 29.5 in corner envelope occupies that much of *both* incident
-   * walls, so reserving one at each end of an 84 in back wall left the single lonely tower the
-   * owner reported. The score therefore counts wall actually covered, discounted by the extra tower
-   * each layout needs. Corner shelves survive wherever they do not cost coverage (a large room), and
-   * the corner planner remains the explicit way to place one anywhere.
+   * Two feasibility rules, both about not silently dropping a part the owner asked for:
+   *  - enough 18/24/30 in bays for the drawer and shoe plans; and
+   *  - enough bays for the hanging plans. In a reach-in every plan lands on the one wall, so this is
+   *    the back wall's own bay count; in a walk-in the side walls take hanging too.
    */
+  const fitsStorage = roomPlans.filter((plan) => plan.storageBays >= storagePlanCount);
+  const pool = fitsStorage.length ? fitsStorage : roomPlans;
+  const bayPool = (plan: RoomPlan) => walkIn ? plan.bayCount : plan.back.widths.length;
+  const fitsHanging = pool.filter((plan) => bayPool(plan) >= Math.min(hangingPlanCount, AUTO_MAX_BAYS_PER_WALL));
+  /**
+   * Drawer/shoe bays and hanging bays are different bays, so the wall must have room for both groups
+   * at once. A fill that satisfied the storage plans by leaving no bay for hanging is what dropped a
+   * 78 in reach-in's double hang.
+   */
+  const combined = fitsHanging.filter((plan) => bayPool(plan) >= Math.min(storagePlanCount + hangingPlanCount, AUTO_MAX_BAYS_PER_WALL));
+  const candidates = combined.length ? combined : (fitsHanging.length ? fitsHanging : pool);
+  /** Filling the wall is the goal: most wall covered, discounted by the extra tower each layout needs. */
   const ranked = rankPlans(candidates);
   const bestScore = ranked[0]?.score ?? 0;
   const bestPlan = ranked.find((plan) => plan.score >= bestScore - AUTO_FILL_BAY_PENALTY_IN / 2) ?? ranked[0];
@@ -1172,28 +1358,113 @@ export function autoBuildStudio(input: StudioAutoBuildInput): StudioAutoBuildRes
   for (const wall of walls) if (!fills.get(wall)!.widths.length) notices.push(`The ${wall} wall has no room for the narrowest ${STUDIO_STOCK_WIDTHS[0]} in sourced tower.`);
 
   /* ------------------------------------------------------------ tower planning */
-  // One template plan per tower the owner asked for; any extra tower the fill adds gets a real
-  // shelf stack. Drawer boxes and shoe shelves are only listed at 18/24/30 in, so a plan carrying
-  // one claims a bay that sells it. The back wall is the wall the Studio shows first, so it takes
-  // plans before the side walls do; otherwise the first thing a customer sees is shelving only.
-  const openBays = new Map<StudioWall, StudioStockWidth[]>(walls.map((wall) => [wall, [...fills.get(wall)!.widths]]));
+  /**
+   * Bays are fixed *slots* on a wall, in order from the corner outward, so a role can be placed at
+   * "the bay by the door" and stay there. Building from an ordered list of pushes instead made the
+   * shoe bay land at the corner, which is the opposite of what the brief asks for.
+   *
+   * Wall roles from the owner's brief:
+   *
+   *  Walk-in — hanging goes on the shorter walls, the drawer bank is centred on the back wall, the
+   *    shoe shelving sits by the door (the free end of each side run, away from the corner), and
+   *    long hang is kept off the back wall so no corner carries double hang on both of its walls.
+   *    A tight middle bay between hanging sections takes closely spaced shelves instead.
+   *  Reach-in — mostly double hang with exactly one long-hang bay, a full-width top shelf, and the
+   *    drawer bank kept clear of the door swing at the entry end.
+   */
+  const slotPlans = new Map<StudioWall, (AutoPlan | null)[]>(walls.map((wall) => [wall, fills.get(wall)!.widths.map(() => null)]));
+  const wallLength = (wall: StudioWall) => wall === "back" ? input.wallWidthIn : input.roomDepthIn;
+  /** "Hanging on short walls": shortest wall first, so a deep narrow walk-in hangs on its sides. */
+  const shortestFirst = [...walls].sort((a, b) => wallLength(a) - wallLength(b));
   const droppedPlans: AutoPlan[] = [];
-  const towers: { wall: StudioWall; widthIn: StudioStockWidth; plan: AutoPlan }[] = [];
-  const queue = [...plans.filter(needsStorage), ...plans.filter((plan) => !needsStorage(plan))];
-  queue.forEach((plan) => {
-    for (const wall of walls) {
-      const list = openBays.get(wall) ?? [];
-      const at = needsStorage(plan) ? list.findIndex((width) => (AUTO_STORAGE_WIDTHS as readonly number[]).includes(width)) : list.length ? 0 : -1;
-      if (at < 0) continue;
-      towers.push({ wall, widthIn: list[at], plan });
-      list.splice(at, 1);
-      return;
+  /** Index of the bay furthest from the shared corner: that end is by the door. */
+  const doorEnds = (wall: StudioWall) => [...(slotPlans.get(wall) ?? [])].map((_, index) => index).reverse();
+  const emptySlots = (wall: StudioWall) => (slotPlans.get(wall) ?? []).map((plan, index) => plan ? -1 : index).filter((index) => index >= 0);
+  const storageSlots = (wall: StudioWall) => emptySlots(wall).filter((index) => (AUTO_STORAGE_WIDTHS as readonly number[]).includes(fills.get(wall)!.widths[index]));
+  const put = (wall: StudioWall, index: number, plan: AutoPlan) => { slotPlans.get(wall)![index] = plan; };
+  /**
+   * Placement order matters now that roles claim specific slots: shoes need the door-end bay, and
+   * drawers need the middle of the back wall, before hanging fills those bays. Storage-bearing
+   * plans go first, then shoes-by-the-door, then drawers, then hanging, then shelves.
+   */
+  const roleOrder: Record<string, number> = { drawer: 0, shoe: 1, longHang: 2, anchor: 3, storage: 4, filler: 5 };
+  const queue = [...plans].sort((a, b) => (roleOrder[a.role ?? "storage"] ?? 9) - (roleOrder[b.role ?? "storage"] ?? 9));
+  for (const plan of queue) {
+    const wantsStorage = needsStorage(plan);
+    const candidates = (wall: StudioWall) => wantsStorage ? storageSlots(wall) : emptySlots(wall);
+    let placed = false;
+    if (plan.role === "shoe") {
+      // Shoe shelving by the door: the last bay of each side run, then the entry end of the back
+      // wall, and only then whatever is left. Never the bay tucked into a corner.
+      for (const side of sides) {
+        const valid = new Set(candidates(side));
+        for (const index of doorEnds(side)) if (valid.has(index)) { put(side, index, plan); placed = true; break; }
+        if (placed) break;
+      }
+      if (!placed) {
+        const backSlots = candidates("back");
+        const pool = [...backSlots].reverse();
+        if (pool.length) { put("back", pool[0], plan); placed = true; }
+      }
+    } else if (plan.role === "drawer") {
+      /**
+       * Drawers centred on the back wall. The "no double hang on both sides of a corner" rule is
+       * about hanging, not drawers, so a drawer bank may sit in a corner-adjacent bay when the back
+       * wall has only two: the nearest-to-centre bay wins. In a reach-in it additionally stays clear
+       * of the door swing at the entry end.
+       */
+      const backCount = fills.get("back")!.widths.length;
+      const usable = candidates("back").filter((index) => {
+        if (walkIn || backCount <= 1) return true;
+        // A reach-in's door swing is at the entry end of the run: keep the drawer bank out of it.
+        // The bay has to end at least the clearance distance from that end to be usable.
+        const widths = fills.get("back")!.widths;
+        const fromEntryIn = widths.slice(index + 1).reduce((sum, width) => sum + width + THICKNESS, 0);
+        return fromEntryIn >= AUTO_DOOR_SWING_CLEARANCE_IN - EPS;
+      });
+      const centre = backCount / 2;
+      const index = usable.sort((a, b) => Math.abs(a + 0.5 - centre) - Math.abs(b + 0.5 - centre))[0];
+      if (index != null) { put("back", index, plan); placed = true; }
     }
-    droppedPlans.push(plan);
-  });
-  // Remaining bays are built too: a filled wall is the whole point. Each gets a real shelf stack.
-  const spareTowers = walls.reduce((sum, wall) => sum + (openBays.get(wall)?.length ?? 0), 0);
-  for (const wall of walls) for (const widthIn of openBays.get(wall) ?? []) towers.push({ wall, widthIn, plan: { specs: spareTowerSpecs(design, mode, kids) } });
+    if (!placed) {
+      /**
+       * Fallbacks. A drawer bank that could not take a usable back-wall bay goes to a side wall
+       * rather than blocking a corner; hanging prefers the shortest wall; anything else fills in
+       * wall order.
+       */
+      const order = plan.role === "drawer" ? [...sides, "back" as StudioWall]
+        : plan.role === "longHang" || plan.role === "anchor" ? [...shortestFirst, ...walls] : walls;
+      for (const wall of order) {
+        const [index] = candidates(wall);
+        if (index != null) { put(wall, index, plan); placed = true; break; }
+      }
+    }
+    if (!placed) droppedPlans.push(plan);
+  }
+  // Remaining slots are built too: a filled wall is the whole point. A tight middle bay between
+  // hanging sections gets the guide's filler spacing; anything else gets a real shelf stack.
+  const spareTowers = walls.reduce((sum, wall) => sum + emptySlots(wall).length, 0);
+  for (const wall of walls) {
+    for (const index of emptySlots(wall)) {
+      const widthIn = fills.get(wall)!.widths[index];
+      const betweenHanging = (slotPlans.get(wall) ?? []).some((plan) => plan?.role === "anchor" || plan?.role === "longHang");
+      put(wall, index, widthIn <= AUTO_FILLER_BAY_MAX_IN && betweenHanging
+        ? { specs: fillerTowerSpecs(design, kids), role: "filler", filler: true }
+        : { specs: spareTowerSpecs(design, mode, kids), role: "storage" });
+    }
+  }
+  const towers: { wall: StudioWall; widthIn: StudioStockWidth; plan: AutoPlan }[] = [];
+  for (const wall of walls) (slotPlans.get(wall) ?? []).forEach((plan, index) => { if (plan) towers.push({ wall, widthIn: fills.get(wall)!.widths[index], plan }); });
+  // A reach-in's full-width top shelf: every bay on the run shares one shelf elevation, and a bay
+  // that already has a shelf at that height is left alone rather than getting a duplicate.
+  if (!walkIn && mode === "closet") {
+    const topIn = reachInTopShelfIn(design);
+    for (const tower of towers) {
+      if (tower.wall !== "back" || tower.plan.role === "filler") continue;
+      if (tower.plan.specs.some((spec) => spec.kind === "shelf" && Math.abs(spec.at - topIn) < THICKNESS)) continue;
+      tower.plan = { ...tower.plan, specs: [...tower.plan.specs, { kind: "shelf", at: topIn }] };
+    }
+  }
 
   /* ------------------------------------------------------------------- build */
   const slots: { wall: StudioWall; index: number; plan: AutoPlan }[] = [];
@@ -1215,25 +1486,33 @@ export function autoBuildStudio(input: StudioAutoBuildInput): StudioAutoBuildRes
   let cutShelves = droppedPlans.reduce((sum, plan) => sum + plan.specs.filter((spec) => spec.kind === "shelf").length, 0);
   for (const wall of walls) {
     const fill = fills.get(wall)!;
+    if (!fill.widths.length) continue;
     const builtCount = studioBays(design, wall).length;
-    if (!fill.widths.length || builtCount < fill.widths.length || builtCount >= AUTO_MAX_BAYS_PER_WALL) continue;
-    const installedIn = roundIn(fill.leftoverIn - THICKNESS * (builtCount ? 1 : 2));
-    if (installedIn < CUT_PLANNING_MIN_IN) {
-      if (fill.leftoverIn > THICKNESS) notices.push(`The ${wall} wall has ${fill.leftoverIn} in left over, too narrow for another sourced tower (12 in minimum); it stays empty.`);
-      continue;
+    /**
+     * Real leftover is what the fill could not cover *plus* any planned bay that could not be built,
+     * so a wall stopped at the four-bay Studio limit still reports the span it left bare. Reporting
+     * only the planned leftover silently dropped the notice whenever every planned bay was built.
+     */
+    const unbuiltIn = fill.widths.slice(builtCount).reduce((sum, width) => sum + width + THICKNESS, 0);
+    const leftoverIn = roundIn(fill.leftoverIn + unbuiltIn);
+    if (leftoverIn <= THICKNESS) continue;
+    const installedIn = roundIn(leftoverIn - THICKNESS * (builtCount ? 1 : 2));
+    if (builtCount >= AUTO_MAX_BAYS_PER_WALL) notices.push(`The ${wall} wall has ${leftoverIn} in left over after four towers (the Studio limit); it stays empty.`);
+    else if (installedIn < CUT_PLANNING_MIN_IN) notices.push(`The ${wall} wall has ${leftoverIn} in left over, too narrow for another sourced tower (${CUT_PLANNING_MIN_IN} in minimum); it stays empty.`);
+    else if (cutShelves <= 0) notices.push(`The ${wall} wall has ${leftoverIn} in left over after its sourced towers; it stays empty.`);
+    else {
+      design = switchStudioWall(design, wall);
+      const stockIn = STUDIO_STOCK_WIDTHS.find((width) => width >= installedIn) ?? STUDIO_STOCK_WIDTHS[STUDIO_STOCK_WIDTHS.length - 1];
+      const cutIndex = studioBays(design, wall).length;
+      const withTower = replaceStudioWallBays(design, wall, [...studioBays(design, wall), { id: `${wall}-bay-${cutIndex + 1}`, wallId: wall, widthIn: stockIn, items: [] }]);
+      const cut = configureStudioBayCut(withTower, cutIndex, stockIn, installedIn);
+      if (!cut.ok) { notices.push(`The ${wall} wall's last ${installedIn} in stays empty: ${cut.reason}`); continue; }
+      design = cut.design;
+      const shelves = Math.min(cutShelves, 5);
+      cutShelves -= shelves;
+      slots.push({ wall, index: cutIndex, plan: { specs: Array.from({ length: shelves }, (_, i) => ({ kind: "shelf" as const, at: 18 + i * AUTO_SHELF_STEP_IN })) } });
+      notices.push(`The ${wall} wall ends in a ${installedIn} in field-cut shelf tower cut from ${stockIn} in stock; it holds shelves only because drawer, rod and shoe fit is not verified in a cut tower.`);
     }
-    if (cutShelves <= 0) { notices.push(`The ${wall} wall has ${fill.leftoverIn} in left over after its sourced towers; it stays empty.`); continue; }
-    design = switchStudioWall(design, wall);
-    const stockIn = STUDIO_STOCK_WIDTHS.find((width) => width >= installedIn) ?? STUDIO_STOCK_WIDTHS[STUDIO_STOCK_WIDTHS.length - 1];
-    const cutIndex = studioBays(design, wall).length;
-    const withTower = replaceStudioWallBays(design, wall, [...studioBays(design, wall), { id: `${wall}-bay-${cutIndex + 1}`, wallId: wall, widthIn: stockIn, items: [] }]);
-    const cut = configureStudioBayCut(withTower, cutIndex, stockIn, installedIn);
-    if (!cut.ok) { notices.push(`The ${wall} wall's last ${installedIn} in stays empty: ${cut.reason}`); continue; }
-    design = cut.design;
-    const shelves = Math.min(cutShelves, 5);
-    cutShelves -= shelves;
-    slots.push({ wall, index: cutIndex, plan: { specs: Array.from({ length: shelves }, (_, i) => ({ kind: "shelf" as const, at: 18 + i * AUTO_SHELF_STEP_IN })) } });
-    notices.push(`The ${wall} wall ends in a ${installedIn} in field-cut shelf tower cut from ${stockIn} in stock; it holds shelves only because drawer, rod and shoe fit is not verified in a cut tower.`);
   }
   const dropped = droppedPlans.reduce((sum, plan) => sum + plan.specs.length, 0) - (droppedPlans.reduce((sum, plan) => sum + plan.specs.filter((spec) => spec.kind === "shelf").length, 0) - cutShelves);
   if (dropped > 0) notices.push(`${dropped} part${dropped === 1 ? "" : "s"} did not fit in the available wall space and ${dropped === 1 ? "was" : "were"} left out.`);

@@ -555,16 +555,20 @@ describe("Closet Studio room height and auto-build", () => {
     // Every bay width is still a real stock SKU (a field cut keeps its stock width too).
     for (const bay of studioBays(tight.design, "back")) expect(STUDIO_STOCK_WIDTHS).toContain(studioStockWidth(bay));
 
-    const narrow = room("closet", 80, 24);
-    expect(narrow.notices.some((line) => /too narrow.*stays empty/i.test(line))).toBe(true);
+    // A wall that cannot be covered outright reports the gap; it never invents a part to absorb it.
+    for (const width of [80, 84]) {
+      const short = room("closet", width, 24);
+      expect(short.notices.some((line) => /left over.*stays empty/i.test(line)), `a ${width} in wall should report its leftover`).toBe(true);
+    }
   });
 
   it("places each mode's own template parts", () => {
     // A 120 in wall is covered by sourced towers, so spare shelving towers add shelves beyond the
     // template counts; every other part count still matches the mode's plan exactly.
     const closet = room("closet", 120, 24).design;
+    // A 96 in ceiling uses the 87 in upright, so the anchor upper rod clamps just under 82 in.
     const closetRods = placedItems(closet).filter(({ item }) => item.kind === "rod").map(({ item }) => item.bottomIn).sort((a, b) => a - b);
-    expect(closetRods).toEqual([40, 66, 80]);
+    expect(closetRods).toEqual([40, 66, 81]);
     expect(countKind(closet, "drawer")).toBe(3);
     expect(countKind(closet, "shoe")).toBe(2);
     expect(countKind(closet, "shelf")).toBeGreaterThanOrEqual(4);
@@ -613,15 +617,22 @@ describe("Closet Studio room height and auto-build", () => {
     expect(countKind(room("closet", 120, 24, { options: { rods: 0, shelves: 0, drawers: 2.4, shoes: 0 } }).design, "drawer")).toBe(2);
   });
 
-  it("skips a part the fit rules reject instead of forcing it, and leaves its input untouched", () => {
+  it("adapts rod heights to the panel instead of forcing a part the fit rules would reject", () => {
+    // A hanging mount uses the 80 in panel, where an 80 in upper rod would leave no drop at all.
+    // Rods are therefore derived from the panel and the part is placed, never forced: nothing is
+    // silently dropped and the input object is untouched.
     const input = { mode: "closet" as const, mount: "hanging" as const, finish: "Slate Rift" as const, wallWidthIn: 120, roomDepthIn: 96, roomHeightIn: 96 };
     const before = JSON.stringify(input);
     const result = autoBuildStudio(input);
     expect(JSON.stringify(input)).toBe(before);
     expect(collisionErrors(result.design)).toEqual([]);
     expect(placedItems(result.design).every(({ item }) => item.bottomIn <= studioFixedTop(result.design))).toBe(true);
+    // Hanging mount plans the back wall only; side walls stay floor-mounted.
     expect(studioBays(result.design, "left")).toEqual([]);
-    expect(result.notices.some((line) => /could not be placed/i.test(line))).toBe(true);
+    // Every rod fits inside the 80 in panel and leaves a real drop below the fixed top.
+    const rods = placedItems(result.design).filter(({ item }) => item.kind === "rod");
+    expect(rods.length).toBeGreaterThan(0);
+    for (const { item } of rods) expect(item.bottomIn).toBeLessThanOrEqual(studioFixedTop(result.design));
     expect(autoBuildStudioDesign(input)).toEqual(result.design);
     expect(restoreStudioDesign(JSON.stringify(result.design))).toEqual(result.design);
 
@@ -630,6 +641,14 @@ describe("Closet Studio room height and auto-build", () => {
     expect(collisionErrors(tall)).toEqual([]);
     const ids = placedItems(room("closet", 120, 96).design).map(({ item }) => item.id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("skips a part the fit rules reject when the wall genuinely runs out of room", () => {
+    // Narrow reach-in: the template asks for more parts than the wall can hold, and the builder
+    // reports what it left out rather than forcing it into a collision.
+    const result = room("closet", 40, 24);
+    expect(collisionErrors(result.design)).toEqual([]);
+    expect(result.notices.some((line) => /could not be placed|left out/i.test(line))).toBe(true);
   });
 });
 
