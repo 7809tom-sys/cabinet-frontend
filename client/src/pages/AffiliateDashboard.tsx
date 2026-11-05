@@ -23,6 +23,7 @@ import { AffiliateGoogleReviewsPanel } from "@/components/affiliate/AffiliateGoo
 import { AffiliateAppointmentsPanel } from "@/components/affiliate/AffiliateAppointmentsPanel";
 import { ReferVendorForm } from "@/components/affiliate/ReferVendorForm";
 import { AddContractorPanel } from "@/components/affiliate/AddContractorPanel";
+import { ContractorPreviewCard } from "@/components/affiliate/ContractorPreviewCard";
 import { AffiliateEmailSettingsPanel } from "@/components/affiliate/AffiliateEmailSettingsPanel";
 import { InstallationEstimatesPanel } from "@/components/affiliate/InstallationEstimatesPanel";
 import { SampleOrderDesk } from "@/components/samples/SampleOrderDesk";
@@ -629,6 +630,7 @@ export default function AffiliateDashboard() {
               </p>
             </div>
             <AffiliateTierCard tier={(activeQuery.data as { pricingTier?: AffiliateTierDashboard | null }).pricingTier} />
+            {access.isOwner && <ContractorPreviewCard role={user?.role} storeSlug={affiliate.slug} />}
             {/* KPI cards */}
             <div className="grid gap-4 sm:grid-cols-3">
               {[
@@ -870,7 +872,12 @@ export default function AffiliateDashboard() {
       case "team":
         return <AffiliateTeamPanel affiliateId={affiliate.id} />;
       case "contractors":
-        return <AddContractorPanel affiliateId={affiliate.id} />;
+        return (
+          <div className="max-w-4xl space-y-6">
+            {access.isOwner && <ContractorPreviewCard role={user?.role} storeSlug={affiliate.slug} />}
+            <AddContractorPanel affiliateId={affiliate.id} />
+          </div>
+        );
       case "email":
         return (
           <AffiliateEmailSettingsPanel

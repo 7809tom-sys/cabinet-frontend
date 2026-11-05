@@ -67,6 +67,29 @@ export function staffDashboardPath(role: string): "/admin" | "/affiliate" | "/di
   return "/admin";
 }
 
+/**
+ * Link from the affiliate dashboard to the view-only contractor portal.
+ *
+ * Affiliate accounts sign in as `partner`, which already resolves to
+ * staff-preview, so the yellow banner shows and no `preview` flag is needed.
+ * A login whose role would fall through to the applicant form (an affiliate
+ * team member, for example) gets `?preview=1` instead, which renders the same
+ * portal with sample data. Either way the portal is read-only.
+ */
+export function contractorPreviewHref(role: string | null | undefined, storeSlug?: string | null): string {
+  const params = new URLSearchParams();
+  if (!isStaffPreviewRole(role ?? "")) params.set("preview", "1");
+  const slug = (storeSlug ?? "").trim();
+  if (slug) params.set("store", slug);
+  const query = params.toString();
+  return query ? `/contractor?${query}` : "/contractor";
+}
+
+/** True when this login's role opens the real staff-preview instead of sample data. */
+export function contractorPreviewUsesStaffMode(role: string | null | undefined): boolean {
+  return isStaffPreviewRole(role ?? "");
+}
+
 export const STAFF_PREVIEW_ACTION_TITLE = "Preview mode can't change contractor data.";
 
 export type StaffPreviewSection = "customers" | "designs" | "crm" | "labor" | "orders";
