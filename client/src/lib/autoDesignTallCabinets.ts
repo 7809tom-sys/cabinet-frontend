@@ -26,6 +26,7 @@ import {
   resolvedDesignCabinetDimensions,
   roomWallRunFrames,
   wallCeilingMin,
+  wallRunJoinAt,
   wallPlacementAt,
   type DesignCabinet,
   type PlacedCabinet,
@@ -199,6 +200,62 @@ export type AutoDesignTallFit =
  */
 export type AutoDesignTallSeat = "end" | "start" | "free";
 
+/** Where a tall box would sit relative to the run's ends. */
+export type AutoDesignTallCornerCheck =
+  | { atInsideCorner: false }
+  | {
+    atInsideCorner: true;
+    /** The adjoining wall that turns into this one. */
+    adjoiningWallId: string;
+    /** True when the adjoining run already has floor cabinets at that corner. */
+    adjoiningRunOccupied: boolean;
+  };
+
+/**
+ * True when a tall box seated here would stand in an INSIDE CORNER shared with
+ * another run. A tall box is a 24-inch-deep full-height body; where two runs meet at
+ * an inside corner, the adjoining run's own cabinets occupy that corner square. A
+ * pantry parked there reads as wedged into the corner instead of ending a run — the
+ * defect the owner reported (screenshot, Nov 5 2026).
+ *
+ * Two independent signals, because a tall box is seated BEFORE the base runs tile:
+ *
+ *  - `runWallIds`: the walls this build will fill. A corner shared with one of them
+ *    is a corner that is going to be occupied, so a tall must not take it first and
+ *    force the corner cabinet somewhere else.
+ *  - `placed`: anything already seated on the adjoining wall (a corner cabinet, a
+ *    base, a tall) is a hard signal the corner is taken.
+ */
+export function tallSeatInsideCorner(input: {
+  wallId: string;
+  alongIn: number;
+  widthIn: number;
+  room: RoomData;
+  placed: readonly PlacedCabinet[];
+  runWallIds?: readonly string[];
+}): AutoDesignTallCornerCheck {
+  const frame = roomWallRunFrames(input.room).find((candidate) => candidate.id === input.wallId);
+  if (!frame) return { atInsideCorner: false };
+  // Which end of the run is this box touching?
+  const touchesStart = Math.abs(input.alongIn - frame.runStart) <= 0.5;
+  const touchesEnd = Math.abs(input.alongIn + input.widthIn - frame.runEnd) <= 0.5;
+  if (!touchesStart && !touchesEnd) return { atInsideCorner: false };
+  const join = wallRunJoinAt(frame, touchesStart ? "start" : "end", input.room);
+  if (!join) return { atInsideCorner: false };
+  const onPlacedRun = input.placed.some((item) => (
+    item.placement !== "appliance"
+    && !item.islandFace
+    && cabinetWall(item, input.room) === join.frame.id
+  ));
+  const runWalls = input.runWallIds ?? [];
+  const willCarryARun = runWalls.includes(join.frame.id);
+  return {
+    atInsideCorner: true,
+    adjoiningWallId: join.frame.id,
+    adjoiningRunOccupied: onPlacedRun || willCarryARun,
+  };
+}
+
 export type AutoDesignTallFitInput = {
   product: AutoDesignTallProduct;
   room: RoomData;
@@ -206,6 +263,12 @@ export type AutoDesignTallFitInput = {
   openings: readonly WallOpening[];
   /** Walls the measured build owns, in run order. */
   wallIds: readonly string[];
+  /**
+   * Every wall this build will fill. A corner shared with one of these is going to
+   * be occupied, so a tall box must not claim it before the base runs tile.
+   * Defaults to `wallIds`.
+   */
+  runWallIds?: readonly string[];
   /**
    * True when this is one of several tall boxes in the same build. The caller
    * seats them one at a time and re-reads `placed` between calls, so each box
@@ -243,6 +306,9 @@ export function planAutoDesignTallFit(input: AutoDesignTallFitInput): AutoDesign
     : roomWallRunFrames(room).filter((frame) => frame.kind !== "peninsula").map((frame) => frame.id);
   let ceilingBlocked = false;
   let panelBlocked = false;
+  // True when the only run ends left for this box are inside corners another run
+  // already occupies. Reported specifically, so a "not placed" tall is explained.
+  let insideCornerBlocked = false;
   // Best candidate seen so far, so a blocked span does not hide a later fit.
   let best: { wallId: string; alongIn: number; seat: AutoDesignTallSeat; spot: ReturnType<typeof wallPlacementAt>; score: number } | null = null;
   for (const wallId of walls) {
@@ -277,14 +343,52 @@ export function planAutoDesignTallFit(input: AutoDesignTallFitInput): AutoDesign
       // where a tall box belongs. An interior span is only a fallback.
       const buttsRunEnd = Math.abs(spanEnd - runEnd) <= COLLISION_EPSILON_IN;
       const buttsRunStart = Math.abs(spanStart - runStart) <= COLLISION_EPSILON_IN;
+      // Score a seat by how much it reads as a TRUE END OF THE RUN (owner rule,
+      // Nov 5 2026: a pantry closes a run, it does not sit in a corner):
+      //   0  a run end that meets no other wall at all — the clearest end of a run
+      //   1  a run end whose neighbour is another wall with no kitchen run on it
+      //   2  a run end that IS an inside corner shared with another kitchen run
+      //   3+ an interior span end (only when no run end is free)
+      // An occupied inside corner is pushed to the back so any real run end wins.
+      const runEndFrame = frame;
+      const joins = {
+        start: wallRunJoinAt(runEndFrame, "start", room),
+        end: wallRunJoinAt(runEndFrame, "end", room),
+      };
+      const plannedRunWalls = input.runWallIds ?? input.wallIds;
+      const wallHasFloorRun = (wallId: string) => plannedRunWalls.includes(wallId) || input.placed.some((item) => (
+        item.placement !== "appliance" && !item.islandFace && cabinetWall(item, room) === wallId
+      ));
+      const endScore = (at: "start" | "end", base: number) => {
+        const join = joins[at];
+        if (!join) return base;
+        return wallHasFloorRun(join.frame.id) ? base + 2 : base + 1;
+      };
+      // A run end always beats an interior span, and an unshared run end beats a
+      // shared corner. The bands keep those two priorities from interfering.
       const candidates: Array<{ along: number; seat: AutoDesignTallSeat; score: number }> = [];
-      if (buttsRunEnd) candidates.push({ along: spanEnd - product.widthIn, seat: "end", score: 0 });
-      if (buttsRunStart) candidates.push({ along: spanStart, seat: "start", score: 1 });
-      if (!buttsRunEnd) candidates.push({ along: spanEnd - product.widthIn, seat: "free", score: 2 });
-      if (!buttsRunStart) candidates.push({ along: spanStart, seat: "free", score: 3 });
+      if (buttsRunEnd) candidates.push({ along: spanEnd - product.widthIn, seat: "end", score: endScore("end", 0) });
+      if (buttsRunStart) candidates.push({ along: spanStart, seat: "start", score: endScore("start", 0) });
+      if (!buttsRunEnd) candidates.push({ along: spanEnd - product.widthIn, seat: "free", score: 20 });
+      if (!buttsRunStart) candidates.push({ along: spanStart, seat: "free", score: 21 });
       for (const candidate of candidates) {
         const along = roundTallOffset(candidate.along);
         if (along < spanStart - COLLISION_EPSILON_IN || along + product.widthIn > spanEnd + COLLISION_EPSILON_IN) continue;
+        // A seat in an occupied inside corner is a last resort; if it is the only
+        // option the drop is explained in those terms below.
+        const corner = tallSeatInsideCorner({
+          wallId,
+          alongIn: along,
+          widthIn: product.widthIn,
+          room,
+          placed: input.placed,
+          runWallIds: input.runWallIds ?? input.wallIds,
+        });
+        // An occupied inside corner is pushed behind every unshared run end. It is
+        // still usable as a last resort, and flagged so a drop can be explained.
+        const cornerPenalty = corner.atInsideCorner && corner.adjoiningRunOccupied ? 10 : 0;
+        if (cornerPenalty > 0) insideCornerBlocked = true;
+        const score = candidate.score + cornerPenalty;
         if (limit && along < limit.endIn - COLLISION_EPSILON_IN && along + product.widthIn > limit.startIn + COLLISION_EPSILON_IN) {
           panelBlocked = true;
           continue;
@@ -298,10 +402,12 @@ export function planAutoDesignTallFit(input: AutoDesignTallFitInput): AutoDesign
         }
         const probe = tallPlacement(product, wallId, spot, seatAlong);
         if (appendCollisionFreePlacements([...input.placed], [probe], room).rejected.length > 0) continue;
-        if (!best || candidate.score < best.score) {
-          best = { wallId, alongIn: seatAlong, seat: candidate.seat, spot, score: candidate.score };
+        // Keep the best-scoring seat across every candidate: a lower-scoring end can
+        // follow a higher-scoring one in this list, so the first accepted candidate
+        // is not necessarily the right one.
+        if (!best || score < best.score) {
+          best = { wallId, alongIn: seatAlong, seat: candidate.seat, spot, score };
         }
-        break;
       }
     }
   }
@@ -320,6 +426,13 @@ export function planAutoDesignTallFit(input: AutoDesignTallFitInput): AutoDesign
       ok: false,
       code: "tall-cabinet-blocked",
       reason: `No free span wide enough for ${product.masterCode} (${product.widthIn}″) that also stays clear of the refrigerator end panels.`,
+    };
+  }
+  if (insideCornerBlocked) {
+    return {
+      ok: false,
+      code: "tall-cabinet-blocked",
+      reason: `The only free ${product.widthIn}″ span for ${product.masterCode} is an inside corner another run already occupies, and a tall box closes a run rather than a shared corner. Shorten a run so a run end is free; nothing was placed.`,
     };
   }
   return {

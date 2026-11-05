@@ -1,10 +1,12 @@
 <!doctype html>
 <!--
-  Screenshot harness for the mandatory above-range bridge.
+  Screenshot harness for the two mandatory fixtures: the above-range bridge and
+  the faucet at the sink.
 
   It builds a real kitchen with the real auto-designer and renders it with the
-  real 3D engine (`addCabinet` from InteractiveRoom3D), so the bridge in the
-  screenshot is the box the Designer actually places. Not a mock.
+  real 3D engine (`addCabinet` + `addSinkFixture` from InteractiveRoom3D), so both
+  the bridge and the faucet in the screenshot are what the Designer actually
+  places. Not a mock.
 
   Served by the Vite dev server at /__bridge-shot; used only by
   e2e/auto-design-bridge-screenshot.spec.ts.
@@ -23,6 +25,8 @@
         box-shadow: 0 8px 24px rgba(15,23,42,0.16); color: #0f172a; font-size: 13px; line-height: 1.5;
       }
       #caption strong { font-size: 15px; }
+      #caption .dim { color: #475569; font-size: 12px; }
+      #caption .rule { display: inline-block; margin-top: 4px; font-weight: 600; color: #0f172a; }
       #caption .ok { color: #047857; font-weight: 600; }
       #legend {
         position: absolute; right: 24px; bottom: 20px; padding: 10px 14px;
@@ -37,6 +41,7 @@
       <div id="caption">Building the kitchen…</div>
       <div id="legend">
         <div><span style="background:#2f6b4f"></span>Bridge wall cabinet (72″ datum)</div>
+        <div><span style="background:#c8892b"></span>Faucet at the sink</div>
         <div><span style="background:#4a4f57"></span>Range</div>
         <div><span style="background:#c9ccd1"></span>Over-range microwave</div>
       </div>

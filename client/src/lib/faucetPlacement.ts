@@ -7,7 +7,7 @@ import { COUNTERTOP_DEPTH_IN, STD, WALL_LABELS, wallCeilingMin, type RoomData, t
  * match the meshes in `addWallOpening` (that code builds the frame in feet).
  */
 export const FAUCET_WINDOW_CONFLICT_MESSAGE =
-  "Faucet conflicts with the window sill. Shorten the window by raising the sill; the top stays put.";
+  "The faucet stands in front of the window. That is expected: the window is not moved or resized for a faucet.";
 
 /** CylinderGeometry(0.075, 0.095, 0.11) on the deck faucet, converted to inches. */
 export const FAUCET_BASE_RADIUS_IN = 0.095 * 12;
@@ -33,6 +33,22 @@ const WINDOW_SILL_CENTER_IN = 0.12 * 12;
 const AGAINST_WALL_IN = COUNTERTOP_DEPTH_IN + 3;
 const EPS = 0.05;
 
+export type FaucetWindowClearanceNote = {
+  openingUid: string;
+  text: string;
+  severity: "warning";
+};
+
+export type FaucetWindowRaiseResult = {
+  /** The openings, unchanged. A faucet never moves, raises, or resizes a window. */
+  openings: WallOpening[];
+  notes: FaucetWindowClearanceNote[];
+  /** Never true now: nothing about a faucet is unresolved for a window. */
+  unresolved: boolean;
+  /** True when at least one sink's faucet stands in front of a window (expected). */
+  inFrontOfWindow: boolean;
+};
+
 export type FaucetCountertop = {
   x: number;
   y: number;
@@ -44,7 +60,13 @@ export type FaucetCountertop = {
 };
 
 export type DeckFaucetPlacement = {
-  /** False when drawing the faucet would put it inside a wall or window frame. */
+  /**
+   * True when the faucet should be drawn. The mandatory rule (owner, Nov 5 2026) is
+   * that a faucet in front of a window IS drawn: a sink under glazing is the normal
+   * kitchen, so overlapping the window aperture is expected and never a reason to
+   * hide or omit the faucet. Only a position that would sit inside the solid wall,
+   * or off the counter, is not drawn.
+   */
   renderFaucet: boolean;
   /** True when mountX/mountY are the deck anchor the 3D mesh should use. */
   anchored: boolean;
@@ -56,8 +78,15 @@ export type DeckFaucetPlacement = {
   onCountertop: boolean;
   clearOfWall: boolean;
   againstWall: boolean;
+  /**
+   * Kept for diagnostics only. A sink under a window reports `"window-frame"` to say
+   * "this faucet stands in front of glazing", which is expected. It never suppresses
+   * the faucet and never changes the window.
+   */
   conflict: "window-frame" | null;
   warning: string | null;
+  /** True when the faucet stands in front of a window. Expected, not an error. */
+  inFrontOfWindow: boolean;
 };
 
 export type SinkDragClamp = {
@@ -214,14 +243,29 @@ function emptyPlacement(sink: SinkFixture, warning: string | null = null): DeckF
     againstWall: false,
     conflict: warning ? "window-frame" : null,
     warning,
+    inFrontOfWindow: false,
   };
 }
 
 /**
  * Places a deck faucet on the counter behind the sink, inset from the wall.
- * When the spout or base would pass through a window frame, sill, or apron, the
- * faucet moves forward on that deck (a smaller rear offset). A faucet that
- * still cannot clear is not given a position inside the wall.
+ *
+ * Owner clarification (Nov 5 2026): **the faucet is at the sink, in front of the
+ * window. The window never moves.** A sink under glazing is the normal kitchen, so
+ * the faucet standing in front of the window aperture is EXPECTED. It is never
+ * omitted for that reason, and no window coordinate changes for a faucet.
+ *
+ * Resolution order:
+ *  1. Start at the sink's rear-deck datum, held off the backsplash plane.
+ *  2. If a window is on that wall, move the faucet forward on the deck as far as the
+ *     deck allows, so the spout clears the sill where it can. The window is not
+ *     touched.
+ *  3. If the deck runs out, keep the forward-most point that is still on the deck,
+ *     behind the basin. `conflict` reports `"window-frame"` and `inFrontOfWindow` is
+ *     true — diagnostics that the faucet stands in front of the glazing. The faucet
+ *     is STILL DRAWN.
+ *
+ * Only a spot inside the solid wall, or off the counter, stops the draw.
  */
 export function resolveDeckFaucetPlacement(
   sink: SinkFixture,
@@ -256,6 +300,7 @@ export function resolveDeckFaucetPlacement(
       againstWall: anchor.againstWall,
       conflict: null,
       warning: null,
+      inFrontOfWindow: false,
     };
   }
 
@@ -270,16 +315,24 @@ export function resolveDeckFaucetPlacement(
   }
   center = Math.min(center, Math.max(anchor.rearEdge, 0));
 
+  // A window on this wall. The faucet may move forward on the deck to clear the sill;
+  // the window itself is never read into a change.
   const hitting = anchor.againstWall ? windowsOnWall(anchor, anchor.along, openings) : [];
+  let inFrontOfWindow = hitting.length > 0;
   let conflict: "window-frame" | null = null;
   if (hitting.length > 0 && hitting.some((opening) => faucetHitsWindow(center, anchor.along, heightIn, opening))) {
     const needed = clearanceCenter(heightIn, hitting);
     if (needed <= anchor.rearEdge + EPS) {
+      // The deck is deep enough: forward enough to clear the sill, window untouched.
       center = Math.max(center, needed);
+      inFrontOfWindow = hitting.some((opening) => faucetHitsWindow(center, anchor.along, heightIn, opening));
     } else {
-      // The forward-most point still on the deck, behind the basin.
+      // The deck cannot clear the sill. Keep the forward-most point that is still on
+      // the deck behind the basin and draw the faucet in front of the glazing — which
+      // is what the owner asked for. The window does not move.
       center = Math.max(anchor.rearEdge, 0);
       conflict = "window-frame";
+      inFrontOfWindow = true;
     }
   }
 
@@ -291,7 +344,9 @@ export function resolveDeckFaucetPlacement(
   const onCountertop = countertops.length > 0
     ? onMeasuredCounter(mount.x, mount.y, countertops)
     : !anchor.againstWall || onWallBand(anchor, room, center);
-  const renderFaucet = !conflict && clearOfWall;
+  // A faucet in front of a window is DRAWN. Only a position inside the solid wall or
+  // off the counter stops the draw.
+  const renderFaucet = clearOfWall && (anchor.againstWall ? onWallBand(anchor, room, center) || onCountertop : onCountertop);
   const offsetIn = anchor.rearEdge - center;
   return {
     renderFaucet,
@@ -304,78 +359,33 @@ export function resolveDeckFaucetPlacement(
     clearOfWall,
     againstWall: anchor.againstWall,
     conflict,
-    warning: conflict ? FAUCET_WINDOW_CONFLICT_MESSAGE : null,
+    warning: null,
+    inFrontOfWindow,
   };
 }
 
-/** Same floor used by `clampOpening` so a raised window stays a real opening. */
-const WINDOW_MIN_HEIGHT_IN = 6;
-
-export type FaucetWindowClearanceNote = {
-  openingUid: string;
-  text: string;
-  /**
-   * Always "warning": a window is never changed for a sink unless it is the last resort, and
-   * the person must see it. Callers show these as warnings, never as quiet info.
-   */
-  severity: "warning";
-};
-
-export type FaucetWindowRaiseResult = {
-  openings: WallOpening[];
-  notes: FaucetWindowClearanceNote[];
-  /** True when a conflicting window could not be lifted clear of the ceiling. */
-  unresolved: boolean;
-};
-
-function roundSillUpToHalfInch(value: number): number {
-  const halves = value * 2;
-  const nearest = Math.round(halves);
-  if (Math.abs(halves - nearest) <= 1e-6) return nearest / 2;
-  return Math.ceil(halves - 1e-9) / 2;
-}
 
 function formatRaiseInches(value: number): string {
   const rounded = Math.round(value * 2) / 2;
   return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
 }
 
-function faucetWindowLabel(opening: WallOpening, room: RoomData, wallLabels?: Readonly<Record<string, string>>): string {
-  const custom = room.customWalls?.find((wall) => wall.id === opening.side)?.label?.trim();
-  if (custom) return custom;
-  const numbered = wallLabels?.[opening.side]?.trim();
-  if (numbered) return numbered;
-  const standard = (WALL_LABELS as Record<string, string | undefined>)[opening.side];
-  return standard ? `${standard} wall` : opening.side;
-}
+
 
 /**
- * Minimum sill so the faucet top, plus the frame gap, sits below the sill,
- * casing, and apron. The apron hangs `trim * 1.6` below the sill.
- */
-export function minimumFaucetClearSill(opening: Pick<WallOpening, "width">, faucetHeightIn: number): number {
-  const apronBelowSill = windowTrimWidthIn(opening.width) * 1.6;
-  return STD.COUNTERTOP_HEIGHT + faucetHeightIn + FAUCET_FRAME_GAP_IN + apronBelowSill;
-}
-
-/**
- * Window rule: Auto-Design never moves a window sideways and never raises it.
- * The only change allowed for a faucet is to shorten the window by lifting the
- * sill, with the top held exactly where it is. A window that moved because its
- * wall was raised is locked and is left alone. A window that cannot clear
- * without moving the top is left alone.
+ * Window rule (owner clarification, Nov 5 2026): **a window never moves for a
+ * faucet.** No coordinate and no dimension — offset, width, sill, height — is
+ * changed by a faucet, ever.
  *
- * Order of resolution, and this is the ONLY place a window may change for a sink:
- *  1. `resolveDeckFaucetPlacement` first moves the faucet forward on the deck. If the faucet clears
- *     (no `conflict`), the window is left exactly as it is, the same object, no note.
- *  2. Only when the faucet still cannot clear any other way, and only the window(s) the faucet
- *     actually hits, the sill is raised the minimum half-inch that clears it and the height shrinks
- *     by the same amount so the top does not move. A window that cannot clear without moving the
- *     top, or that is locked to its wall, is left alone.
- * Every change, and every case where a change was needed but impossible, comes back as a
- * `severity: "warning"` note that callers must show visibly.
- * Every caller (Auto-Design engine, DesignTool stage, sink adoption, faucet pickers) goes through
- * this function, so the rule is enforced in one place.
+ * The faucet is required to be at the sink, **in front of the window**. A sink under
+ * glazing is the normal kitchen: the faucet standing in front of the window aperture
+ * is expected, not a conflict to resolve. `resolveDeckFaucetPlacement` still moves the
+ * faucet forward on the deck where it can, but when the deck cannot clear the sill the
+ * faucet is drawn in front of the glazing rather than omitted or the window resized.
+ *
+ * This function is kept because every caller already routes through it, and it is
+ * the single place that could have changed a window. It now returns the openings
+ * untouched, always, and reports which sinks stand in front of a window.
  */
 export function raiseWindowsForDeckFaucet(input: {
   sinks: readonly SinkFixture[];
@@ -384,80 +394,41 @@ export function raiseWindowsForDeckFaucet(input: {
   countertops?: readonly FaucetCountertop[];
   wallLabels?: Readonly<Record<string, string>>;
 }): FaucetWindowRaiseResult {
-  let openings = [...input.openings];
-  const notes: FaucetWindowClearanceNote[] = [];
-  let unresolved = false;
+  // The openings are returned as the SAME objects, in the same order, unchanged. A
+  // window is never shortened, raised, or moved for a faucet.
   const countertops = input.countertops ?? [];
-
+  let inFrontOfWindow = false;
   for (const sink of input.sinks) {
     if (!sink.faucet || sink.faucetForm === "wall-mounted-bridge") continue;
-    const anchor = sinkAnchor(sink, input.room);
-    if (!anchor) continue;
-    const heightIn = sink.faucetOverallHeight ?? DEFAULT_DECK_FAUCET_HEIGHT_IN;
-    const placement = resolveDeckFaucetPlacement(sink, input.room, openings, countertops);
-    if (!placement.conflict) continue;
-    const hitting = windowsOnWall(anchor, anchor.along, openings)
-      .filter((opening) => faucetHitsWindow(placement.centerFromWallIn, anchor.along, heightIn, opening));
-    // Only a window the faucet actually hits may change; a neighbouring window that is clear stays put.
-    const targets = hitting;
-    if (targets.length === 0) {
-      unresolved = true;
-      continue;
-    }
-    for (const opening of targets) {
-      const label = faucetWindowLabel(opening, input.room, input.wallLabels);
-      const refused = (text: string) => {
-        unresolved = true;
-        notes.push({ openingUid: opening.uid, text, severity: "warning" as const });
-        openings = openings.map((item) => item.uid === opening.uid ? { ...item, faucetClearanceNote: text } : item);
-      };
-      if (opening.wallHeightLocked) {
-        refused(`Window on ${label} is locked to its wall, so it was not shortened for the faucet.`);
-        continue;
-      }
-      const requiredSill = roundSillUpToHalfInch(minimumFaucetClearSill(opening, heightIn));
-      const wallTop = wallCeilingMin(input.room, opening.side);
-      // Never lift the head. If the saved head is already above this wall, hold it at the wall.
-      const fixedTop = Math.min(opening.sill + opening.height, wallTop);
-      const nextSill = Math.max(opening.sill, requiredSill);
-      const nextHeight = fixedTop - nextSill;
-      if (nextSill <= opening.sill + 1e-6 || nextHeight < WINDOW_MIN_HEIGHT_IN - 1e-6) {
-        refused(`Window on ${label} was left where it is. The sill could not be raised enough for the faucet without moving the top.`);
-        continue;
-      }
-      const candidate: WallOpening = { ...opening, sill: nextSill, height: nextHeight };
-      if (Math.abs(candidate.sill + candidate.height - fixedTop) > 1e-6
-        || faucetHitsWindow(placement.centerFromWallIn, anchor.along, heightIn, candidate)) {
-        refused(`Window on ${label} was left where it is. The sill could not be raised enough for the faucet without moving the top.`);
-        continue;
-      }
-      const delta = nextSill - opening.sill;
-      const text = `Window on ${label}: sill raised ${formatRaiseInches(delta)} in. so the faucet clears it (new sill height ${formatRaiseInches(nextSill)} in.). The window was not raised or moved; the top stayed put. Window height is now ${formatRaiseInches(nextHeight)} in.`;
-      notes.push({ openingUid: opening.uid, text, severity: "warning" });
-      openings = openings.map((item) => item.uid === opening.uid ? { ...candidate, faucetClearanceNote: text } : item);
+    if (resolveDeckFaucetPlacement(sink, input.room, input.openings, countertops).inFrontOfWindow) {
+      inFrontOfWindow = true;
     }
   }
-
-  return { openings: notes.length === 0 ? input.openings as WallOpening[] : openings, notes, unresolved };
+  return {
+    openings: input.openings as WallOpening[],
+    notes: [],
+    unresolved: false,
+    inFrontOfWindow,
+  };
 }
 
+/**
+ * No warning is raised for a faucet in front of a window: that is the required
+ * arrangement, not a conflict. Kept so existing callers compile; always returns null.
+ */
 export function deckFaucetWindowWarning(
-  sinks: readonly SinkFixture[],
-  room: RoomData,
-  openings: readonly WallOpening[] = [],
-  countertops: readonly FaucetCountertop[] = [],
+  _sinks: readonly SinkFixture[],
+  _room: RoomData,
+  _openings: readonly WallOpening[] = [],
+  _countertops: readonly FaucetCountertop[] = [],
 ): string | null {
-  for (const sink of sinks) {
-    const warning = resolveDeckFaucetPlacement(sink, room, openings, countertops).warning;
-    if (warning) return warning;
-  }
   return null;
 }
 
 /**
- * Keeps a dragged sink — and the faucet mounted on it — on the countertop and
- * out of the wall and window frame. A move that cannot be made valid stays at
- * the sink's current position.
+ * Keeps a dragged sink — and the faucet mounted on it — on the countertop and out
+ * of the solid wall. Standing in front of a window does NOT block a move: a sink
+ * under glazing is normal, and the window never moves.
  */
 export function clampSinkDragForFaucet(
   sink: SinkFixture,
@@ -475,14 +446,8 @@ export function clampSinkDragForFaucet(
   const next = resolveDeckFaucetPlacement({ ...sink, x, y }, room, openings, countertops);
   const leavesCounter = current.onCountertop && !next.onCountertop;
   const entersWall = next.againstWall && !next.clearOfWall;
-  const entersWindow = next.conflict != null;
-  if (leavesCounter || entersWall || entersWindow) {
-    return {
-      x: sink.x,
-      y: sink.y,
-      blocked: true,
-      warning: entersWindow ? FAUCET_WINDOW_CONFLICT_MESSAGE : null,
-    };
+  if (leavesCounter || entersWall) {
+    return { x: sink.x, y: sink.y, blocked: true, warning: null };
   }
   return { x, y, blocked: false, warning: null };
 }
