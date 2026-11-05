@@ -148,7 +148,8 @@ describe("Closet Studio tablet workspace", () => {
     expect(screen.getByTestId("vendor-scene-panel").closest("main")?.className).toContain("min-[1280px]:order-2");
     // The material summary is a floating card in the viewer's top-right corner, not a third column.
     expect(screen.getByTestId("vendor-blueprint-column").className).toContain("min-[1280px]:right-3");
-    expect(screen.getByTestId("vendor-blueprint-column").className).toContain("min-[1280px]:top-3");
+    // Below the view-tab row, so it never covers the Decor toggle that lives there.
+    expect(screen.getByTestId("vendor-blueprint-column").className).toContain("min-[1280px]:top-16");
     expect(screen.getByTestId("vendor-workspace").className).not.toContain("_250px");
     const referencePanel = screen.getByTestId("vendor-reference-panel");
     expect(referencePanel.closest("[data-testid='vendor-blueprint-column']")).toBeTruthy();

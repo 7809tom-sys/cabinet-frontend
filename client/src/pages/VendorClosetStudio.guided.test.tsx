@@ -202,3 +202,58 @@ describe("Closet Studio guided flow", () => {
     expect(screen.getByTestId("vendor-closet-studio")).toBeTruthy();
   });
 });
+
+describe("corner shelf option in the guided flow", () => {
+  afterEach(() => {
+    cleanup();
+    window.localStorage.clear();
+    window.history.replaceState(null, "", "/closet");
+    vi.restoreAllMocks();
+  });
+
+  it("never offers a corner shelf on a reach-in", () => {
+    render(<VendorClosetStudio />);
+    choose("guided-type-reach-in");
+    choose("guided-next");
+    expect(screen.queryByTestId("guided-corner-shelf")).toBeNull();
+    // The two answer tiles are absent too, not just the heading.
+    expect(screen.queryByTestId("guided-corner-shelf-yes")).toBeNull();
+    expect(screen.queryByTestId("guided-corner-shelf-no")).toBeNull();
+  });
+
+  it("offers it on a walk-in and builds the real corner shelves when chosen", () => {
+    render(<VendorClosetStudio />);
+    choose("guided-type-walk-in");
+    choose("guided-next");
+    const question = screen.getByTestId("guided-corner-shelf");
+    expect(within(question).getByText(/corner shelf/i)).toBeTruthy();
+    // The copy states the sourced dimension rather than a generic corner.
+    expect(question.textContent).toMatch(/29\.5 in shelf/);
+
+    choose("guided-corner-shelf-yes");
+    choose("guided-mix-balanced");
+    choose("guided-long-hang-yes");
+    choose("guided-drawers-some");
+    choose("guided-shoes-some");
+    choose("guided-build");
+
+    const raw = window.localStorage.getItem("vendor-closet-studio:v1") ?? "";
+    expect(raw).toMatch(/cornerShelves/);
+    expect(raw).toMatch(/432556/);
+  });
+
+  it("does not add a corner shelf when the walk-in answer is no", () => {
+    render(<VendorClosetStudio />);
+    choose("guided-type-walk-in");
+    choose("guided-next");
+    choose("guided-corner-shelf-no");
+    choose("guided-mix-balanced");
+    choose("guided-long-hang-yes");
+    choose("guided-drawers-some");
+    choose("guided-shoes-some");
+    choose("guided-build");
+
+    const raw = window.localStorage.getItem("vendor-closet-studio:v1") ?? "";
+    expect(raw).not.toMatch(/432556/);
+  });
+});

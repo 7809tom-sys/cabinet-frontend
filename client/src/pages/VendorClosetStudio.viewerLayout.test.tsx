@@ -130,7 +130,9 @@ describe("Closet Studio viewer stays centered and at the top of the page", () =>
   });
 
   it("keeps the viewer centered after deleting a plan and starting over", () => {
-    enterStudio({ width: 120, depth: 108, height: 96 });
+    // A blank draft: the guided build now fills the back wall, so use the empty-tower entry.
+    render(<VendorClosetStudio />);
+    fireEvent.click(screen.getByTestId("guided-start-blank"));
     openParts();
     fireEvent.click(within(dock()).getByRole("button", { name: "Add" }));
     expect(scene().getAttribute("data-selected-bay")).toBe("1");
@@ -149,10 +151,19 @@ describe("Closet Studio viewer stays centered and at the top of the page", () =>
     enterStudio({ width: 120, depth: 108, height: 96 });
     const blueprint = screen.getByTestId("vendor-blueprint-column");
     expect(blueprint.className).toContain("min-[1280px]:right-3");
-    expect(blueprint.className).toContain("min-[1280px]:top-3");
+    expect(blueprint.className).toContain("min-[1280px]:top-16");
     // It floats over the viewer panel, so the drawing keeps the full row width.
     expect(screen.getByTestId("vendor-workspace").className).not.toContain("_250px");
     const reference = within(blueprint).getByTestId("vendor-reference-panel");
     expect(reference.textContent).toMatch(/2022 List|Material reference/i);
+  });
+
+  it("never covers the Decor toggle that shares the view-tab row", () => {
+    enterStudio({ width: 120, depth: 108, height: 96 });
+    // The toggle lives in the tab strip; the price card must start below that row, not over it.
+    expect(screen.getByTestId("vendor-decor-toggle")).toBeTruthy();
+    const blueprint = screen.getByTestId("vendor-blueprint-column");
+    expect(blueprint.className).toContain("min-[1280px]:top-16");
+    expect(blueprint.className).not.toContain("min-[1280px]:top-3");
   });
 });

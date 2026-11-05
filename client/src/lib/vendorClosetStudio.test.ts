@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   addStudioBay, addStudioBasketPlacement, addStudioBasketReference, addStudioConnectedCorner, addStudioCornerShelf, canStageStudioPart, changeStudioFinish, configureStudioBayCut, createStudioDesign, createStudioReviewDemo, MODE_RECOMMENDATIONS, moveStudioBasketPlacement, moveStudioCornerShelf, moveStudioItem, removeStudioBasketPlacement, removeStudioBasketReference, snapStudioBasketPlacement, studioCornerShelfSku, studioTowerFootprint, updateStudioBasketPlacement,
-  restoreStudioDesign, snapStudioPart, STUDIO_FINISHES, studioBayCut, studioBays, studioCollision, studioCornerShelvesForWall, studioPartReferences, studioTakeoff, studioWallOccupancy, studioWidth, switchStudioWall,
+  restoreStudioDesign, snapStudioPart, STUDIO_FINISHES, studioBayCut, studioBays, studioCollision, studioCornerShelvesForWall, studioPartReferences, studioStockWidth, STUDIO_STOCK_WIDTHS, studioTakeoff, studioWallLength, studioWallOccupancy, studioWidthForWall, studioWidth, switchStudioWall,
   autoBuildStudio, autoBuildStudioDesign, createKidsStudioDesign, kidsAgeBand, kidsGuidance, kidsRodHeightIn, KIDS_UPPER_ROD_IN, MODE_AUTO_BUILD_DEFAULTS, STUDIO_MODES, studioFixedTop, studioPanelHeight, studioTowerFootprint as towerFootprint, type StudioAutoBuildOptions, type StudioWall,
   STUDIO_BASKET_REFERENCE_OPTIONS, STUDIO_BASKET_VISUAL_DEPTH_IN, STUDIO_CORNER_SHELF_NOMINAL_FOOTPRINT_IN, STUDIO_CORNER_SHELF_GEOMETRY_REVISION, STUDIO_ILLUSTRATIVE_SHOE_PITCH_DEG, studioBasketPlacementsForWall, studioBasketReferences, studioBasketSurface, studioCornerMeasuredGap, studioCornerPlanningFootprint, studioFitCapability, studioItemHeight,
   type StudioDesign,
@@ -497,56 +497,87 @@ describe("Closet Studio room height and auto-build", () => {
     expect(design.cornerShelves ?? []).toEqual([]);
     expect(collisionErrors(design)).toEqual([]);
     expect(studioTakeoff(design).lines.length).toBeGreaterThan(0);
-    expect(notices.some((line) => /left over/i.test(line))).toBe(true);
+    // A 120 in wall is covered outright by real widths, so nothing is reported left over.
+    expect(studioWidth(design) / 120).toBeGreaterThan(0.95);
     expect(design.version).toBe(2);
     expect(design.roomHeightIn).toBe(96);
     expect(restoreStudioDesign(JSON.stringify(design))).toEqual(design);
   });
 
-  it("builds a walk-in with side walls and connected corner shelves, and keeps a 36-inch walkway", () => {
-    const { design } = room("closet", 120, 96);
+  it("fills the back wall with real sourced tower widths instead of one 24 in tower", () => {
+    // The owner's report: an 84 in back wall got a single 24 in tower and 60 in of bare wall.
+    const { design, notices } = room("closet", 84, 24);
+    const bays = studioBays(design, "back");
+    expect(bays.length).toBeGreaterThan(1);
+    // Every bay is a real MasterTrac stock width, never an invented one.
+    for (const bay of bays) {
+      expect(STUDIO_STOCK_WIDTHS).toContain(bay.widthIn);
+      expect(studioPartReferences(design, bays.indexOf(bay), "fixedShelf")).toBeTruthy();
+    }
+    expect(studioWidth(design) / 84).toBeGreaterThan(0.9);
+    expect(notices.join(" ")).not.toMatch(/no room for/i);
+    expect(collisionErrors(design)).toEqual([]);
+    expect(restoreStudioDesign(JSON.stringify(design))).toEqual(design);
+  });
+
+  it("fills a walk-in's back and side walls, keeping a 36-inch walkway and real corner clearance", () => {
+    const { design } = room("closet", 84, 108);
     expect(studioBays(design, "back").length).toBeGreaterThan(0);
     expect(studioBays(design, "left").length).toBeGreaterThan(0);
     expect(studioBays(design, "right").length).toBeGreaterThan(0);
-    expect(design.cornerShelves?.map((shelf) => shelf.cornerId).sort()).toEqual(["back-left", "back-right"]);
-    expect(design.cornerShelves?.every((shelf) => shelf.towerConnection === "visualAligned")).toBe(true);
+    for (const wall of ["back", "left", "right"] as const) {
+      // The owner's second complaint: side walls stopped short and left a gap by the corner.
+      expect(studioWidthForWall(design, wall) / studioWallLength(design, wall)).toBeGreaterThan(0.75);
+    }
     const walkway = towerFootprint(design, "right").xMin - towerFootprint(design, "left").xMax;
     expect(walkway).toBeGreaterThanOrEqual(36);
+    // A side run starts past the back run's bay depth, so the two never interpenetrate at the corner.
+    expect(towerFootprint(design, "left").zMin).toBeGreaterThanOrEqual(towerFootprint(design, "back").zMax);
+    expect(towerFootprint(design, "right").zMin).toBeGreaterThanOrEqual(towerFootprint(design, "back").zMax);
     expect(collisionErrors(design)).toEqual([]);
     expect(restoreStudioDesign(JSON.stringify(design))).toEqual(design);
 
-    const narrow = room("closet", 70, 96).design;
+    const narrow = room("closet", 52, 96).design;
     expect(studioBays(narrow, "left").length > 0 && studioBays(narrow, "right").length > 0).toBe(false);
     const skipped = room("closet", 60, 96);
     expect(skipped.notices.some((line) => /walkway/i.test(line))).toBe(true);
     expect(towerFootprint(skipped.design, "left").xMax + 36).toBeLessThanOrEqual(60);
   });
 
-  it("puts a leftover run into a field-cut shelf tower, and says when a gap is too narrow to use", () => {
-    const cut = room("closet", 90, 24, { options: { rods: 8, shelves: 8, drawers: 3, shoes: 0 } });
-    const cutBay = studioBays(cut.design, "back").find((bay) => studioBayCut(bay));
-    expect(cutBay).toBeTruthy();
-    expect(cutBay?.items.every((item) => item.kind === "shelf")).toBe(true);
-    expect(studioWidth(cut.design)).toBeLessThanOrEqual(90);
-    expect(restoreStudioDesign(JSON.stringify(cut.design))).toEqual(cut.design);
+  it("only reports a leftover gap, and never invents a cut tower just to absorb it", () => {
+    // With 18–42 in stock widths a wall is normally covered outright; a remaining gap is reported
+    // rather than filled with an invented part.
+    const tight = room("closet", 86, 24, { options: { rods: 8, shelves: 8, drawers: 3, shoes: 0 } });
+    const leftoverBays = studioBays(tight.design, "back").filter((bay) => studioBayCut(bay));
+    for (const bay of leftoverBays) expect(bay.items.every((item) => item.kind === "shelf")).toBe(true);
+    expect(studioWidth(tight.design)).toBeLessThanOrEqual(86);
+    expect(restoreStudioDesign(JSON.stringify(tight.design))).toEqual(tight.design);
+    // Every bay width is still a real stock SKU (a field cut keeps its stock width too).
+    for (const bay of studioBays(tight.design, "back")) expect(STUDIO_STOCK_WIDTHS).toContain(studioStockWidth(bay));
 
-    const narrow = room("closet", 80, 24);
-    expect(studioBays(narrow.design, "back").some((bay) => studioBayCut(bay))).toBe(false);
-    expect(narrow.notices.some((line) => /too narrow.*stays empty/i.test(line))).toBe(true);
+    // A wall that cannot be covered outright reports the gap; it never invents a part to absorb it.
+    for (const width of [80, 84]) {
+      const short = room("closet", width, 24);
+      expect(short.notices.some((line) => /left over.*stays empty/i.test(line)), `a ${width} in wall should report its leftover`).toBe(true);
+    }
   });
 
   it("places each mode's own template parts", () => {
+    // A 120 in wall is covered by sourced towers, so spare shelving towers add shelves beyond the
+    // template counts; every other part count still matches the mode's plan exactly.
     const closet = room("closet", 120, 24).design;
+    // A 96 in ceiling uses the 87 in upright, so the anchor upper rod clamps just under 82 in.
     const closetRods = placedItems(closet).filter(({ item }) => item.kind === "rod").map(({ item }) => item.bottomIn).sort((a, b) => a - b);
-    expect(closetRods).toEqual([40, 66, 80]);
+    expect(closetRods).toEqual([40, 66, 81]);
     expect(countKind(closet, "drawer")).toBe(3);
     expect(countKind(closet, "shoe")).toBe(2);
+    expect(countKind(closet, "shelf")).toBeGreaterThanOrEqual(4);
     expect(placedItems(closet).filter(({ item }) => item.kind === "drawer").map(({ item }) => item.bottomIn).sort((a, b) => a - b)[0]).toBeLessThan(10);
 
     const pantry = room("pantry", 120, 24).design;
     expect(countKind(pantry, "rod")).toBe(0);
     expect(countKind(pantry, "drawer")).toBe(3);
-    expect(countKind(pantry, "shelf")).toBe(8);
+    expect(countKind(pantry, "shelf")).toBeGreaterThanOrEqual(8);
 
     const mudroom = room("mudroom", 120, 24).design;
     expect(countKind(mudroom, "shoe")).toBe(4);
@@ -566,34 +597,42 @@ describe("Closet Studio room height and auto-build", () => {
   });
 
   it("changes the part counts with the options", () => {
+    // Rods, drawers and shoes are exactly what was asked for; shelves can only grow, because a
+    // spare tower the wall fill adds is a real shelving tower rather than an empty frame.
     const counts = (options: StudioAutoBuildOptions) => {
-      const design = room("closet", 120, 24, { options }).design;
+      const design = room("closet", 60, 24, { options }).design;
       return { rods: countKind(design, "rod"), shelves: countKind(design, "shelf"), drawers: countKind(design, "drawer"), shoes: countKind(design, "shoe") };
     };
-    expect(counts({ rods: 1, shelves: 0, drawers: 0, shoes: 0 })).toEqual({ rods: 1, shelves: 0, drawers: 0, shoes: 0 });
+    expect(counts({ rods: 1, shelves: 0, drawers: 0, shoes: 0 })).toMatchObject({ rods: 1, drawers: 0, shoes: 0 });
     expect(counts({ rods: 2, shelves: 0, drawers: 0, shoes: 0 }).rods).toBe(2);
     expect(counts({ rods: 0, shelves: 0, drawers: 3, shoes: 0 }).drawers).toBe(3);
     expect(counts({ rods: 0, shelves: 0, drawers: 0, shoes: 3 }).shoes).toBe(3);
-    expect(counts({ rods: 0, shelves: 4, drawers: 0, shoes: 0 }).shelves).toBe(4);
-    expect(counts({ rods: 0, shelves: 0, drawers: 0, shoes: 0 })).toEqual({ rods: 0, shelves: 0, drawers: 0, shoes: 0 });
+    expect(counts({ rods: 0, shelves: 4, drawers: 0, shoes: 0 }).shelves).toBeGreaterThanOrEqual(4);
+    expect(counts({ rods: 0, shelves: 0, drawers: 0, shoes: 0 })).toMatchObject({ rods: 0, drawers: 0, shoes: 0 });
     expect(counts({ rods: 4, shelves: 0, drawers: 0, shoes: 0 }).rods).toBeGreaterThan(counts({ rods: 2, shelves: 0, drawers: 0, shoes: 0 }).rods);
     expect(Object.keys(MODE_AUTO_BUILD_DEFAULTS).sort()).toEqual(["closet", "kids", "mudroom", "pantry"]);
     const clamped = room("closet", 120, 24, { options: { rods: 99, shelves: -4, drawers: 0, shoes: Number.NaN } }).design;
     expect(countKind(clamped, "rod")).toBeLessThanOrEqual(8);
-    expect(countKind(clamped, "shelf")).toBe(0);
     expect(countKind(clamped, "shoe")).toBe(0);
     expect(countKind(room("closet", 120, 24, { options: { rods: 0, shelves: 0, drawers: 2.4, shoes: 0 } }).design, "drawer")).toBe(2);
   });
 
-  it("skips a part the fit rules reject instead of forcing it, and leaves its input untouched", () => {
+  it("adapts rod heights to the panel instead of forcing a part the fit rules would reject", () => {
+    // A hanging mount uses the 80 in panel, where an 80 in upper rod would leave no drop at all.
+    // Rods are therefore derived from the panel and the part is placed, never forced: nothing is
+    // silently dropped and the input object is untouched.
     const input = { mode: "closet" as const, mount: "hanging" as const, finish: "Slate Rift" as const, wallWidthIn: 120, roomDepthIn: 96, roomHeightIn: 96 };
     const before = JSON.stringify(input);
     const result = autoBuildStudio(input);
     expect(JSON.stringify(input)).toBe(before);
     expect(collisionErrors(result.design)).toEqual([]);
     expect(placedItems(result.design).every(({ item }) => item.bottomIn <= studioFixedTop(result.design))).toBe(true);
+    // Hanging mount plans the back wall only; side walls stay floor-mounted.
     expect(studioBays(result.design, "left")).toEqual([]);
-    expect(result.notices.some((line) => /could not be placed/i.test(line))).toBe(true);
+    // Every rod fits inside the 80 in panel and leaves a real drop below the fixed top.
+    const rods = placedItems(result.design).filter(({ item }) => item.kind === "rod");
+    expect(rods.length).toBeGreaterThan(0);
+    for (const { item } of rods) expect(item.bottomIn).toBeLessThanOrEqual(studioFixedTop(result.design));
     expect(autoBuildStudioDesign(input)).toEqual(result.design);
     expect(restoreStudioDesign(JSON.stringify(result.design))).toEqual(result.design);
 
@@ -602,6 +641,14 @@ describe("Closet Studio room height and auto-build", () => {
     expect(collisionErrors(tall)).toEqual([]);
     const ids = placedItems(room("closet", 120, 96).design).map(({ item }) => item.id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("skips a part the fit rules reject when the wall genuinely runs out of room", () => {
+    // Narrow reach-in: the template asks for more parts than the wall can hold, and the builder
+    // reports what it left out rather than forcing it into a collision.
+    const result = room("closet", 40, 24);
+    expect(collisionErrors(result.design)).toEqual([]);
+    expect(result.notices.some((line) => /could not be placed|left out/i.test(line))).toBe(true);
   });
 });
 

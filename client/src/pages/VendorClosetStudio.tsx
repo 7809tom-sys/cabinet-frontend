@@ -17,6 +17,8 @@ import {
 } from "@/lib/vendorClosetStudio";
 
 const STORAGE_KEY = "vendor-closet-studio:v1";
+/** Separate from the design draft: this is a view preference, never part of a saved closet. */
+const DECOR_PREF_KEY = "vendor-closet-studio:decor";
 const card: Record<StudioKind, { title: string; subtitle: string; icon: string }> = {
   shelf: { title: "Adjustable shelf", subtitle: "An easy place for anything", icon: "▰" },
   rod: { title: "Hanging rod", subtitle: "Hang what you reach for", icon: "─" },
@@ -421,10 +423,21 @@ export default function VendorClosetStudio({ affiliateSlug }: { affiliateSlug?: 
    * it instead of leaving the model off to one side of the panel.
    */
   const [focusBayId, setFocusBayId] = useState<string | null>(null);
+  /**
+   * Decorative clothes, folded stacks and shoes in the previews. Presentation only, so it is a
+   * view preference rather than design state: it is persisted on its own key, never inside the
+   * saved design, and toggling it cannot change a part, the material reference or a price.
+   */
+  const [showDecor, setShowDecor] = useState(() => typeof window === "undefined" || localStorage.getItem(DECOR_PREF_KEY) !== "off");
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [roomMapOpen, setRoomMapOpen] = useState(true);
   const skipPersistRef = useRef(false);
   const fitCloset = () => setFitToken((token) => token + 1);
+  const toggleDecor = () => setShowDecor((current) => {
+    const next = !current;
+    try { localStorage.setItem(DECOR_PREF_KEY, next ? "on" : "off"); } catch { /* storage can be unavailable in private modes */ }
+    return next;
+  });
   useEffect(() => { setAutoOptions(MODE_AUTO_BUILD_DEFAULTS[design.mode]); }, [design.mode]);
   const kidsNotes = useMemo(() => kidsGuidance(design), [design]);
   const occupancy = useMemo(() => studioWallOccupancy(design), [design]);
@@ -716,7 +729,9 @@ export default function VendorClosetStudio({ affiliateSlug }: { affiliateSlug?: 
   };
   const rebuild = () => {
     if (designHasParts(design) && !confirm("Rebuild replaces your current parts. Continue?")) return;
-    const result = autoBuildStudio({ mode: design.mode, mount: design.mount, finish: design.finish, wallWidthIn: design.wallWidthIn, roomDepthIn: design.roomDepthIn, roomHeightIn: design.roomHeightIn ?? STUDIO_ROOM_HEIGHT_DEFAULT_IN, kids: design.kids, options: autoOptions });
+    // Keep the customer's corner choice across a slider rebuild: dropping it silently would be a
+    // design change they did not ask for. The builder still refuses it where it is not offered.
+    const result = autoBuildStudio({ mode: design.mode, mount: design.mount, finish: design.finish, wallWidthIn: design.wallWidthIn, roomDepthIn: design.roomDepthIn, roomHeightIn: design.roomHeightIn ?? STUDIO_ROOM_HEIGHT_DEFAULT_IN, kids: design.kids, options: autoOptions, cornerShelves: studioCornerShelves(design).length > 0 });
     const previous = design;
     updateDesign(result.design); setBuildUndoDesign(previous); setSelectedBay(0); setSelectedItem(null); setPartToPlace(null); setSelectedCornerId(null); setCornerUndoDesign(null); setBasketUndoDesign(null);
     setNotice(result.notices.length ? result.notices.join(" ") : "Auto-build complete. Every part can still be moved or removed.");
@@ -818,10 +833,10 @@ export default function VendorClosetStudio({ affiliateSlug }: { affiliateSlug?: 
       {/* The viewer is the first grid cell, so it always starts at the top-left of the workspace and the
           model is centered inside it. The controls sidebar comes after it and only ever sits beside it. */}
       <main className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#e9e5dc] min-[1280px]:order-2">
-        <div role="tablist" aria-label="Studio view" className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-[#ded7cb] bg-[#faf9f5] px-3 py-1.5" data-testid="vendor-view-tabs">{viewTabs.map((tab) => <button key={tab.id} type="button" role="tab" aria-selected={activeTab === tab.id} onClick={() => { setSceneTab(tab.id); if (tab.id === "3d") fitCloset(); }} className={`min-h-11 shrink-0 rounded-md px-3 text-xs font-semibold ${activeTab === tab.id ? "bg-[#244338] text-white" : "border border-[#dfd8cc] bg-white text-[#5d665f]"}`}>{tab.label}</button>)}<span className="ml-auto hidden truncate pl-2 text-xs font-semibold text-[#5c564c] sm:inline">{hasBay ? `Tower ${selectedBay + 1} of ${design.bays.length} · ${bay.widthIn} in` : `Empty ${wallNames[design.wall].toLowerCase()}`}</span></div>
+        <div role="tablist" aria-label="Studio view" className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-[#ded7cb] bg-[#faf9f5] px-3 py-1.5" data-testid="vendor-view-tabs">{viewTabs.map((tab) => <button key={tab.id} type="button" role="tab" aria-selected={activeTab === tab.id} onClick={() => { setSceneTab(tab.id); if (tab.id === "3d") fitCloset(); }} className={`min-h-11 shrink-0 rounded-md px-3 text-xs font-semibold ${activeTab === tab.id ? "bg-[#244338] text-white" : "border border-[#dfd8cc] bg-white text-[#5d665f]"}`}>{tab.label}</button>)}<span className="ml-auto hidden truncate pl-2 text-xs font-semibold text-[#5c564c] sm:inline">{hasBay ? `Tower ${selectedBay + 1} of ${design.bays.length} · ${bay.widthIn} in` : `Empty ${wallNames[design.wall].toLowerCase()}`}</span><button type="button" aria-pressed={showDecor} onClick={toggleDecor} data-testid="vendor-decor-toggle" title="Show clothes and shoes in the preview. They are not parts and never change the material reference." className={`ml-1 flex min-h-9 shrink-0 items-center gap-1.5 rounded-md border px-2 text-[11px] font-semibold ${showDecor ? "border-[#7d9a86] bg-[#eef3ee] text-[#2f4b3b]" : "border-[#dfd8cc] bg-white text-[#7d7469]"}`}><span aria-hidden="true">{showDecor ? "◉" : "○"}</span>Clothes</button></div>
         <p className="shrink-0 bg-[#faf9f5] px-3 py-1 text-[10px] font-medium text-[#5c564c]">{partToPlace && hasBay ? `Tap the ${bay.widthIn} in bay to place ${card[partToPlace].title.toLowerCase()}` : hasBay ? "Drag to rotate · tap a tower to edit its parts" : "This wall is empty · add a tower in Parts"}</p>
         <div className="relative min-h-0 w-full flex-1 bg-[#e7e2d8]" data-testid="vendor-scene-panel">
-          <div className={`absolute inset-0 ${activeTab === "3d" ? "" : "invisible pointer-events-none"}`}><VendorClosetScene design={design} selectedBay={studioCenteredBayIndex(design, selectedBay, focusBayId)} selectedCornerId={selectedCornerId} partToPlace={partToPlace} cameraView={cameraView} fitToken={fitToken} onSelectBay={(index) => { setSelectedBay(index); setSelectedItem(null); setSelectedCornerId(null); setPartsPanelOpen(true); }} onPlace={place} onPlaceBasket={(index, bottom, sku) => placeBasketInBay(index, sku, bottom)} onMoveShelf={(index, itemId, bottomIn) => { const result = moveStudioItem(design, index, itemId, Math.round(bottomIn * 4) / 4); if (!result.ok) setNotice(result.reason); else updateDesign(result.design); }} onError={setNotice} /></div>
+          <div className={`absolute inset-0 ${activeTab === "3d" ? "" : "invisible pointer-events-none"}`}><VendorClosetScene design={design} selectedBay={studioCenteredBayIndex(design, selectedBay, focusBayId)} selectedCornerId={selectedCornerId} partToPlace={partToPlace} cameraView={cameraView} fitToken={fitToken} decor={showDecor} onSelectBay={(index) => { setSelectedBay(index); setSelectedItem(null); setSelectedCornerId(null); setPartsPanelOpen(true); }} onPlace={place} onPlaceBasket={(index, bottom, sku) => placeBasketInBay(index, sku, bottom)} onMoveShelf={(index, itemId, bottomIn) => { const result = moveStudioItem(design, index, itemId, Math.round(bottomIn * 4) / 4); if (!result.ok) setNotice(result.reason); else updateDesign(result.design); }} onError={setNotice} /></div>
           {activeTab === "3d" && <div className="pointer-events-auto absolute bottom-2 left-2 z-20 sm:bottom-3 sm:left-3" data-testid="vendor-room-minimap">
             {roomMapOpen
               ? <div className="w-[116px] rounded-lg border border-[#d8d0c3] bg-[#fffdf9]/95 p-1.5 shadow-md backdrop-blur">
@@ -836,7 +851,7 @@ export default function VendorClosetStudio({ affiliateSlug }: { affiliateSlug?: 
             <ClosetStudioGuidedSummary lines={guidedLines} onChangeAnswers={changeGuidedAnswers} onMoreOptions={openAdvanced} />
           </div>}
           {activeTab === "top" && <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 overflow-auto bg-[#f4f1ea] p-3" data-testid="vendor-top-view"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#997851]">Room map · tap a wall</p><div className="w-full max-w-[280px] rounded-xl border border-[#d8d0c3] bg-[#fffdf9] p-2.5 shadow-sm"><RoomOccupancyOverview design={design} onSelect={onChangeWall} large testId="vendor-top-room-overview" /></div><p className="max-w-[280px] text-center text-[10px] leading-4 text-[#6d6255]">The gold eye is the 3D camera, inside the room, looking at the active wall.</p></div>}
-          {(activeTab === "back" || activeTab === "left" || activeTab === "right") && <div className="absolute inset-0 z-10 overflow-auto bg-[#f4f1ea] p-2" data-testid="vendor-elevation-view"><ClosetWallElevation design={design} wall={activeTab} /></div>}
+          {(activeTab === "back" || activeTab === "left" || activeTab === "right") && <div className="absolute inset-0 z-10 overflow-auto bg-[#f4f1ea] p-2" data-testid="vendor-elevation-view"><ClosetWallElevation design={design} wall={activeTab} decor={showDecor} /></div>}
         </div>
       </main>
       <aside id="vendor-phone-options-dock" data-testid="vendor-tablet-options-dock" data-open={partsPanelOpen ? "true" : "false"} className={`${partsPanelOpen ? "flex" : "hidden"} absolute inset-x-0 bottom-0 top-auto z-40 max-h-[55%] min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-t-2xl border-[#dfd8cc] bg-[#faf9f5] shadow-[0_-18px_50px_-20px_rgba(38,51,45,0.45)] min-[1280px]:relative min-[1280px]:inset-auto min-[1280px]:z-auto min-[1280px]:order-1 min-[1280px]:max-h-none min-[1280px]:min-h-0 min-[1280px]:rounded-none min-[1280px]:border-r min-[1280px]:shadow-none`} aria-label="Parts panel">
@@ -876,8 +891,9 @@ export default function VendorClosetStudio({ affiliateSlug }: { affiliateSlug?: 
         </div>
       </aside>
       {/* On desktop the material list is a summary card in the viewer's top-right corner, so the drawing
-          keeps the rest of the panel and the total price is always visible without a sidebar on the right. */}
-      <aside data-testid="vendor-blueprint-column" className={`${showTabletMaterial || phonePanel === "material" ? "flex" : "hidden"} absolute inset-x-0 bottom-0 top-11 z-40 min-h-0 w-full min-w-0 max-w-full flex-col overflow-x-hidden overflow-y-auto border-t border-[#dfd8cc] bg-[#faf9f5] shadow-2xl min-[1280px]:absolute min-[1280px]:inset-auto min-[1280px]:right-3 min-[1280px]:top-3 min-[1280px]:z-30 min-[1280px]:flex min-[1280px]:max-h-[calc(100%-1.5rem)] min-[1280px]:w-[250px] min-[1280px]:max-w-[250px] min-[1280px]:rounded-xl min-[1280px]:border min-[1280px]:border-[#dfd8cc] min-[1280px]:shadow-lg`}>
+          keeps the rest of the panel and the total price is always visible without a sidebar on the right.
+          It starts below the view-tab strip so it can never cover the Decor toggle that lives in that row. */}
+      <aside data-testid="vendor-blueprint-column" className={`${showTabletMaterial || phonePanel === "material" ? "flex" : "hidden"} absolute inset-x-0 bottom-0 top-11 z-40 min-h-0 w-full min-w-0 max-w-full flex-col overflow-x-hidden overflow-y-auto border-t border-[#dfd8cc] bg-[#faf9f5] shadow-2xl min-[1280px]:absolute min-[1280px]:inset-auto min-[1280px]:right-3 min-[1280px]:top-16 min-[1280px]:z-30 min-[1280px]:flex min-[1280px]:max-h-[calc(100%-4.5rem)] min-[1280px]:w-[250px] min-[1280px]:max-w-[250px] min-[1280px]:rounded-xl min-[1280px]:border min-[1280px]:border-[#dfd8cc] min-[1280px]:shadow-lg`}>
         <button type="button" onClick={() => { setShowTabletMaterial(false); setPhonePanel(null); }} className="min-h-11 shrink-0 border-b border-[#e6dfd4] bg-white px-3 text-left text-xs font-bold text-[#244338] min-[1280px]:hidden">Close material list</button>
         <div className="min-h-0 min-w-0 px-3 pt-3">
           <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#997851]">Closet camera</p>
