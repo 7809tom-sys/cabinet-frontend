@@ -148,4 +148,29 @@ describe("Closet Studio kids' mode, room size, auto-build and wall views", () =>
     expect(screen.queryByTestId("vendor-top-view")).toBeNull();
     expect(screen.getByTestId("mock-vendor-scene")).toBe(scene);
   });
+
+  it("toggles the decorative clothes on by default, off on request, and never as part of the draft", () => {
+    render(<VendorClosetStudio />);
+    fireEvent.click(screen.getByTestId("guided-other-setups"));
+    fireEvent.click(screen.getByRole("button", { name: "Auto-build my closet" }));
+    const toggle = screen.getByTestId("vendor-decor-toggle");
+    // Default on, because a bare tower reads as an unfinished closet.
+    expect(toggle.getAttribute("aria-pressed")).toBe("true");
+
+    const tabs = within(screen.getByTestId("vendor-view-tabs"));
+    fireEvent.click(tabs.getByRole("tab", { name: "Back" }));
+    expect(screen.getByTestId("closet-wall-elevation").querySelector("[data-testid='elevation-decor']")).toBeTruthy();
+
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+    expect(screen.getByTestId("closet-wall-elevation").querySelector("[data-testid='elevation-decor']")).toBeNull();
+    // The preference persists on its own key, never inside the saved design.
+    expect(window.localStorage.getItem("vendor-closet-studio:decor")).toBe("off");
+    const draft = window.localStorage.getItem("vendor-closet-studio:v1") ?? "";
+    expect(draft).not.toMatch(/decor|hanger|folded/i);
+
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-pressed")).toBe("true");
+    expect(window.localStorage.getItem("vendor-closet-studio:decor")).toBe("on");
+  });
 });

@@ -53,7 +53,7 @@ export type StudioBasketPlacement = {
 };
 /** `widthIn` is the measured installed clear width; `stockWidthIn` retains the purchased shelf SKU width when field-cut. */
 /** New v2 tower groups retain their wall identity; it is optional only while v1 drafts are migrated on restore. */
-export type StudioBay = { id: string; widthIn: number; stockWidthIn?: 18 | 24 | 30; wallId?: StudioWall; items: StudioItem[] };
+export type StudioBay = { id: string; widthIn: number; stockWidthIn?: StudioStockWidth; wallId?: StudioWall; items: StudioItem[] };
 export type StudioWallLayout = { wallId: StudioWall; bays: StudioBay[] };
 export type StudioWallOccupancy = { wallId: StudioWall; usedSpanIn: number; availableSpanIn: number; bayCount: number; itemCount: number; cornerCount: number; filled: boolean };
 export type StudioDesign = {
@@ -75,12 +75,15 @@ export type StudioDesign = {
   /** Finished ceiling height. Optional so older drafts restore; unset behaves as the 96 in default. */
   roomHeightIn?: number;
 };
-export type StudioShelfCut = { stockWidthIn: 18 | 24 | 30; installedWidthIn: number; offcutIn: number };
+/** Every straight shelf/cleat stock width the March 2022 sheet actually sells for a 14.5 in floor tower. */
+export const STUDIO_STOCK_WIDTHS = [18, 24, 30, 36, 42] as const;
+export type StudioStockWidth = typeof STUDIO_STOCK_WIDTHS[number];
+export type StudioShelfCut = { stockWidthIn: StudioStockWidth; installedWidthIn: number; offcutIn: number };
 export type ReferenceLine = { sku: string; label: string; qty: number; unitUsd: number; section: "cleat" | "panel" | "shelf" | "accessory" | "hardware"; packNote?: string; stockWidthIn?: number; installedWidthIn?: number; offcutIn?: number };
 export type StudioTakeoff = { lines: ReferenceLine[]; subtotalUsd: number; missing: string[] };
 
 const THICKNESS = 0.75;
-const WIDTHS = [18, 24, 30] as const;
+const WIDTHS = STUDIO_STOCK_WIDTHS;
 const CUT_PLANNING_MIN_IN = 12;
 const EPS = 0.000001;
 const STUDIO_SHOE_SHELF_DEPTH_IN = 14.5;
@@ -184,6 +187,13 @@ export function switchStudioWall(design: StudioDesign, wall: StudioWall): Studio
 export const studioCornerShelvesForWall = (design: StudioDesign, wall: StudioWall = design.wall) => studioCornerShelves(design).filter((shelf) => shelf.wallIds.includes(wall));
 export const studioCornerIdsForWall = (wall: StudioWall) => STUDIO_CORNER_IDS.filter((cornerId) => CORNER_WALL_IDS[cornerId].includes(wall));
 export const studioWidthForWall = (design: StudioDesign, wall: StudioWall = design.wall) => studioBays(design, wall).reduce((sum, bay) => sum + bay.widthIn, 0) + (studioBays(design, wall).length ? THICKNESS * (studioBays(design, wall).length + 1) : 0);
+/** Where along its own wall a tower run begins: past the corner shelf, else past the back run's bay depth so the two runs never interpenetrate. */
+const AUTO_SIDE_CLEAR_IN = 14.5;
+export const studioWallStartIn = (design: StudioDesign, wall: StudioWall = design.wall): number => {
+  if (wall !== "left" && wall !== "right") return 0;
+  const connected = studioCornerShelves(design).find((shelf) => shelf.towerConnection === "visualAligned" && shelf.wallIds.includes(wall));
+  return connected ? STUDIO_CORNER_SHELF_NOMINAL_FOOTPRINT_IN : studioBays(design, "back").length ? AUTO_SIDE_CLEAR_IN : 0;
+};
 export const studioWallOccupancy = (design: StudioDesign): Record<StudioWall, StudioWallOccupancy> => Object.fromEntries(STUDIO_WALLS.map((wallId) => {
   const bays = studioBays(design, wallId);
   const corners = studioCornerShelvesForWall(design, wallId);
@@ -236,8 +246,8 @@ export const studioTowerFootprint = (design: StudioDesign, wall: StudioWall = de
       : { xMin: footprint.xMax - depth, xMax: footprint.xMax, zMin: footprint.zMin - span, zMax: footprint.zMin };
   }
   if (wall === "front") return { xMin: 0, xMax: span, zMin: design.roomDepthIn - 14.5, zMax: design.roomDepthIn };
-  if (wall === "left") return { xMin: 0, xMax: 14.5, zMin: 0, zMax: span };
-  if (wall === "right") return { xMin: design.wallWidthIn - 14.5, xMax: design.wallWidthIn, zMin: 0, zMax: span };
+  if (wall === "left") return { xMin: 0, xMax: 14.5, zMin: studioWallStartIn(design, "left"), zMax: studioWallStartIn(design, "left") + span };
+  if (wall === "right") return { xMin: design.wallWidthIn - 14.5, xMax: design.wallWidthIn, zMin: studioWallStartIn(design, "right"), zMax: studioWallStartIn(design, "right") + span };
   return { xMin: 0, xMax: span, zMin: 0, zMax: 14.5 };
 };
 const intervalsOverlap = (aMin: number, aMax: number, bMin: number, bMax: number) => aMin < bMax - EPS && bMin < aMax - EPS;
@@ -578,13 +588,13 @@ export function studioPartReferences(design: StudioDesign, bayIndex: number, kin
 }
 
 /** Plans a measured straight-shelf cut; this is not a cutting, drilling, or installation instruction. */
-export function configureStudioBayCut(design: StudioDesign, bayIndex: number, stockWidthIn: 18 | 24 | 30, installedWidthIn: number):
+export function configureStudioBayCut(design: StudioDesign, bayIndex: number, stockWidthIn: StudioStockWidth, installedWidthIn: number):
   { ok: true; design: StudioDesign } | { ok: false; reason: string } {
   const bays = studioBays(design);
   const bay = bays[bayIndex];
   if (!bay) return { ok: false, reason: "Choose a tower bay." };
   if (design.mount !== "floor") return { ok: false, reason: "Cut-to-fit planning is documented here only for floor-mounted straight shelves." };
-  if (!WIDTHS.includes(stockWidthIn)) return { ok: false, reason: "Choose a sourced 18, 24, or 30 inch stock shelf." };
+  if (!WIDTHS.includes(stockWidthIn)) return { ok: false, reason: `Choose a sourced ${STUDIO_STOCK_WIDTHS.join(", ").replace(/, ([^,]*)$/, " or $1")} inch stock shelf.` };
   if (!Number.isFinite(installedWidthIn) || installedWidthIn < CUT_PLANNING_MIN_IN || installedWidthIn > stockWidthIn + EPS)
     return { ok: false, reason: `Installed width must be ${CUT_PLANNING_MIN_IN}–${stockWidthIn} in for this planning tool.` };
   const normalizedInstalled = Math.round(installedWidthIn * 1000) / 1000;
@@ -641,7 +651,7 @@ export function moveStudioItem(design: StudioDesign, bayIndex: number, itemId: s
   return { ok: true, design: replaceStudioWallBays(design, design.wall, studioBays(design).map((bay, i) => i === bayIndex
     ? { ...bay, items: bay.items.map((existing) => existing.id === itemId ? next : existing) } : bay)) };
 }
-export function addStudioBay(design: StudioDesign, widthIn: 18 | 24 | 30 = 24):
+export function addStudioBay(design: StudioDesign, widthIn: StudioStockWidth = 24):
   { ok: true; design: StudioDesign } | { ok: false; reason: string } {
   const bays = studioBays(design);
   if (!WIDTHS.includes(widthIn) || bays.length >= 4) return { ok: false, reason: "Choose up to four sourced tower bays." };
@@ -924,16 +934,82 @@ export type StudioAutoBuildResult = { design: StudioDesign; notices: string[] };
 const AUTO_HANG_DEPTH_IN = 24;
 const AUTO_WALKWAY_IN = 36;
 const AUTO_TOWER_DEPTH_IN = 14.5;
-const AUTO_BAY_IN = 24;
 const AUTO_MAX_BAYS_PER_WALL = 4;
 const AUTO_CORNER_ELEVATION_IN = 36;
 const AUTO_SHELF_STEP_IN = 12;
+/**
+ * A layout may not add a whole extra tower to gain less than this much filled wall. Without it the
+ * search would answer an 84 in wall with four 18–24 in bays instead of three 24–30 in bays that
+ * cover the same span with two fewer uprights and one fewer cleat.
+ */
+const AUTO_FILL_BAY_PENALTY_IN = 1.5;
+/** Drawer boxes and shoe shelves are only sourced at 18, 24 and 30 in, so a wider bay hosts hanging and shelving only. */
+const AUTO_STORAGE_WIDTHS = [18, 24, 30] as const;
 /** High enough that a long dress or coat clears the floor under a single rod (the double-hang lower rod sits at 40 in). */
 const AUTO_LONG_HANG_ROD_IN = 72;
 type AutoSpec = { kind: StudioKind; at: number };
 type AutoPlan = { specs: AutoSpec[] };
 const runWidthIn = (widths: number[]) => widths.length ? widths.reduce((sum, width) => sum + width, 0) + THICKNESS * (widths.length + 1) : 0;
 const roundIn = (value: number) => Math.round(value * 100) / 100;
+
+/** The real 18–42 in towers a wall can be covered with, and what that leaves unused. */
+export type StudioWallFill = { wallId: StudioWall; widths: StudioStockWidth[]; availableIn: number; usedIn: number; leftoverIn: number };
+
+/** Widest first, so every width multiset is generated exactly once and wider bays win a same-span tie. */
+const AUTO_WIDTHS_WIDEST_FIRST = [...STUDIO_STOCK_WIDTHS].sort((a, b) => b - a) as StudioStockWidth[];
+
+/** Every run of real stock towers that fits the span. The search space is tiny (≤ 70 width multisets), so it is exhaustive. */
+function studioWallFillOptions(availableIn: number, minTowers = 1): { widths: StudioStockWidth[]; usedIn: number }[] {
+  const options: { widths: StudioStockWidth[]; usedIn: number }[] = [];
+  const walk = (widths: StudioStockWidth[]) => {
+    const usedIn = runWidthIn(widths);
+    if (widths.length >= minTowers && widths.length && usedIn <= availableIn + EPS) options.push({ widths, usedIn });
+    if (widths.length >= AUTO_MAX_BAYS_PER_WALL) return;
+    for (const width of AUTO_WIDTHS_WIDEST_FIRST) {
+      if (widths.length && width > widths[widths.length - 1]) continue;
+      walk([...widths, width]);
+    }
+  };
+  walk([]);
+  return options;
+}
+
+/**
+ * The tower run that fills one wall using only real MasterTrac stock widths: most wall covered,
+ * then the fewest towers, then the widest bays. `minTowers` keeps a tower for each part plan the
+ * caller still has to place, so filling the wall never costs the room a requested drawer or shoe
+ * shelf. `leftoverIn` is either the gap that no sourced width can cover or, when nothing fits at
+ * all, the whole span. No SKU is ever invented or cut here; a field-cut tower is a separate,
+ * explicitly reported step.
+ */
+export function studioWallFill(availableIn: number, wallId: StudioWall = "back", planned?: { widths: StudioStockWidth[]; usedIn: number }, minTowers = 1): StudioWallFill {
+  const span = Math.max(0, roundIn(availableIn));
+  const options = planned ? [planned] : studioWallFillOptions(span, minTowers);
+  const bestUsedIn = options.reduce((top, option) => Math.max(top, option.usedIn), 0);
+  const chosen = options
+    .filter((option) => option.usedIn >= bestUsedIn - AUTO_FILL_BAY_PENALTY_IN - EPS)
+    .sort((a, b) => a.widths.length - b.widths.length || b.usedIn - a.usedIn || a.widths.join(",").localeCompare(b.widths.join(",")))[0];
+  return { wallId, widths: chosen?.widths ?? [], availableIn: span, usedIn: roundIn(chosen?.usedIn ?? 0), leftoverIn: roundIn(span - (chosen?.usedIn ?? 0)) };
+}
+
+/**
+ * Extra towers the wall fill adds are real shelving towers, not empty frames: a pantry or a
+ * closet's spare span is shelving in practice, and an empty frame is exactly the unfinished look
+ * the owner reported. Shelves are the one part whose fit is verified in any stock width, so they
+ * are the only thing an unplanned tower ever gets. `autoBuildStudio` still places every one
+ * through `snapStudioPart`, so a rule that refuses one skips it rather than forcing it.
+ *
+ * A kids' closet only gets shelves inside the child's reach: an auto-build must never quietly add
+ * storage a child cannot use and then warn about it.
+ */
+function spareTowerSpecs(design: StudioDesign, mode: StudioMode, kids?: StudioDesign["kids"]): AutoSpec[] {
+  const lowestIn = studioFixedBottom(design) + THICKNESS;
+  const topIn = kids ? Math.min(studioFixedTop(design) - THICKNESS, kidsAgeBand(kids.ageYears).maxReachIn) : studioFixedTop(design) - THICKNESS;
+  const stepIn = mode === "pantry" ? AUTO_SHELF_STEP_IN : AUTO_SHELF_STEP_IN * 1.5;
+  const count = mode === "pantry" ? 6 : 4;
+  return Array.from({ length: count }, (_, index) => ({ kind: "shelf" as const, at: lowestIn + index * stepIn }))
+    .filter((spec) => spec.at + THICKNESS <= topIn);
+}
 
 /** Bay-by-bay part plans for a mode. Each count is consumed as parts are assigned, so the totals placed match the options unless a wall runs out of room. */
 function planAutoBays(design: StudioDesign, mode: StudioMode, options: StudioAutoBuildOptions, kids?: StudioDesign["kids"], longHangBay = false): AutoPlan[] {
@@ -1025,72 +1101,148 @@ export function autoBuildStudio(input: StudioAutoBuildInput): StudioAutoBuildRes
     if (input.wallWidthIn - (sides.length + 1) * AUTO_TOWER_DEPTH_IN >= AUTO_WALKWAY_IN) sides.push(side);
     else notices.push(`The ${side} wall is skipped: towers there would leave less than a ${AUTO_WALKWAY_IN} in walkway.`);
   }
-  const cornerIn = STUDIO_CORNER_SHELF_NOMINAL_FOOTPRINT_IN;
-  const availableIn = (wall: StudioWall) => wall === "back" ? input.wallWidthIn - sides.length * cornerIn : input.roomDepthIn - cornerIn;
   const walls: StudioWall[] = ["back", ...sides];
-  const capacity = new Map<StudioWall, { stock: number; remainderIn: number }>();
-  for (const wall of walls) {
-    const widths: number[] = [];
-    while (widths.length < AUTO_MAX_BAYS_PER_WALL && runWidthIn([...widths, AUTO_BAY_IN]) <= availableIn(wall) + EPS) widths.push(AUTO_BAY_IN);
-    capacity.set(wall, { stock: widths.length, remainderIn: roundIn(availableIn(wall) - runWidthIn(widths)) });
-    if (!widths.length) notices.push(`The ${wall} wall has no room for a 24 in tower.`);
-  }
-
-  // Assign part plans round-robin across the walls, one tower per plan.
+  // Template plans are what the owner asked for; those carrying a drawer or a shoe shelf need a bay
+  // width that actually sells one, so the room search below requires enough such bays.
   const plans = planAutoBays(design, mode, options, kids, input.longHangBay);
-  const assigned = new Map<StudioWall, AutoPlan[]>(walls.map((wall) => [wall, []]));
+  const needsStorage = (plan: AutoPlan) => plan.specs.some((spec) => spec.kind === "drawer" || spec.kind === "shoe");
+  const storagePlanCount = plans.filter(needsStorage).length;
+
+  /* ---------------------------------------------------------------- wall fill */
+  /**
+   * A side wall that shares a corner can be planned two ways:
+   *  - "cornerShelf": reserve the 29.5 in visual corner envelope, build both runs outside it;
+   *  - "shared": no corner product, so the back run owns the bay depth at that corner and the side
+   *    run starts past it. This is what lets a back wall use its own span end to end.
+   * Both are enumerated per side and scored against every real back-wall fill. Ties keep a visual
+   * corner shelf, and extra towers are discounted because each costs an upright and a cleat.
+   */
+  type SidePlan = { side: StudioWall; withCornerShelf: boolean; widths: StudioStockWidth[]; availableIn: number; usedIn: number; leftoverIn: number };
+  type RoomPlan = { back: StudioWallFill; sides: SidePlan[]; score: number; cornerShelves: number; storageBays: number };
+  const roomPlans: RoomPlan[] = [];
+  /** One bit per side: true plans a 29.5 in visual corner shelf, false closes that corner with shared geometry only. */
+  const cornerChoices = Array.from({ length: 2 ** sides.length }, (_, mask) => sides.map((side, index) => ({
+    side, withCornerShelf: Boolean(mask & (1 << index)),
+  })));
+  for (const choice of cornerChoices) {
+    const reservedIn = choice.filter((entry) => entry.withCornerShelf).length * STUDIO_CORNER_SHELF_NOMINAL_FOOTPRINT_IN;
+    for (const backOption of studioWallFillOptions(input.wallWidthIn - reservedIn)) {
+      const back = studioWallFill(input.wallWidthIn - reservedIn, "back", backOption);
+      // A shared corner reserves the back run's bay depth on the side wall; a corner shelf reserves
+      // its 29.5 in envelope. `studioWallStartIn` reports the same offset, so the drawn run and the
+      // planned run always start at the same place.
+      const sidesForThisChoice = choice.map(({ side, withCornerShelf }): SidePlan => {
+        const span = input.roomDepthIn - (withCornerShelf ? STUDIO_CORNER_SHELF_NOMINAL_FOOTPRINT_IN : AUTO_SIDE_CLEAR_IN);
+        return { side, withCornerShelf, ...studioWallFill(span, side) };
+      });
+      const all = [back, ...sidesForThisChoice];
+      const coveredIn = all.reduce((sum, fill) => sum + fill.usedIn, 0);
+      const towers = all.reduce((sum, fill) => sum + fill.widths.length, 0);
+      const storageBays = all.reduce((sum, fill) => sum + fill.widths.filter((width) => (AUTO_STORAGE_WIDTHS as readonly number[]).includes(width)).length, 0);
+      roomPlans.push({ back, sides: sidesForThisChoice, score: coveredIn - AUTO_FILL_BAY_PENALTY_IN * towers, cornerShelves: sidesForThisChoice.filter((plan) => plan.withCornerShelf && plan.widths.length).length, storageBays });
+    }
+  }
+  const rankPlans = (plans: RoomPlan[]) => [...plans].sort((a, b) => b.score - a.score || b.cornerShelves - a.cornerShelves || b.back.usedIn - a.back.usedIn);
+  // A drawer box or shoe shelf only exists at 18/24/30 in, so a layout without enough of those bays
+  // would have to drop a part the owner asked for. Prefer plans that can host them all.
+  const feasiblePlans = roomPlans.filter((plan) => plan.storageBays >= storagePlanCount);
+  const candidates = feasiblePlans.length ? feasiblePlans : roomPlans;
+  /**
+   * Filling the wall is the goal. A 29.5 in corner envelope occupies that much of *both* incident
+   * walls, so reserving one at each end of an 84 in back wall left the single lonely tower the
+   * owner reported. The score therefore counts wall actually covered, discounted by the extra tower
+   * each layout needs. Corner shelves survive wherever they do not cost coverage (a large room), and
+   * the corner planner remains the explicit way to place one anywhere.
+   */
+  const ranked = rankPlans(candidates);
+  const bestScore = ranked[0]?.score ?? 0;
+  const bestPlan = ranked.find((plan) => plan.score >= bestScore - AUTO_FILL_BAY_PENALTY_IN / 2) ?? ranked[0];
+  // Prefer a plan whose every wall has at least one real tower: an empty wall beside a filled one
+  // looks unfinished, and that was the owner's second observation about the same screenshot.
+  const sameScore = ranked.filter((plan) => plan.score >= bestScore - AUTO_FILL_BAY_PENALTY_IN / 2);
+  const finalPlan = sameScore.find((plan) => plan.sides.every((side) => side.widths.length) && plan.back.widths.length)
+    ?? sameScore.find((plan) => plan.back.widths.length) ?? bestPlan;
+  const fills = new Map<StudioWall, StudioWallFill>(walls.map((wall): [StudioWall, StudioWallFill] => {
+    if (wall === "back") return [wall, finalPlan?.back ?? studioWallFill(input.wallWidthIn, "back")];
+    const side = finalPlan?.sides.find((plan) => plan.side === wall);
+    return [wall, side ? { wallId: wall, widths: side.widths, availableIn: side.availableIn, usedIn: side.usedIn, leftoverIn: side.leftoverIn } : studioWallFill(input.roomDepthIn, wall)];
+  }));
+  /** Sides whose corner is closed by shared geometry instead of a 29.5 in visual corner shelf. */
+  const sharedSides = new Set((finalPlan?.sides ?? []).filter((plan) => !plan.withCornerShelf).map((plan) => plan.side));
+  for (const wall of walls) if (!fills.get(wall)!.widths.length) notices.push(`The ${wall} wall has no room for the narrowest ${STUDIO_STOCK_WIDTHS[0]} in sourced tower.`);
+
+  /* ------------------------------------------------------------ tower planning */
+  // One template plan per tower the owner asked for; any extra tower the fill adds gets a real
+  // shelf stack. Drawer boxes and shoe shelves are only listed at 18/24/30 in, so a plan carrying
+  // one claims a bay that sells it. The back wall is the wall the Studio shows first, so it takes
+  // plans before the side walls do; otherwise the first thing a customer sees is shelving only.
+  const openBays = new Map<StudioWall, StudioStockWidth[]>(walls.map((wall) => [wall, [...fills.get(wall)!.widths]]));
   const droppedPlans: AutoPlan[] = [];
-  plans.forEach((plan, index) => {
-    for (let step = 0; step < walls.length; step++) {
-      const wall = walls[(index + step) % walls.length];
-      if ((assigned.get(wall)?.length ?? 0) < (capacity.get(wall)?.stock ?? 0)) { assigned.get(wall)!.push(plan); return; }
+  const towers: { wall: StudioWall; widthIn: StudioStockWidth; plan: AutoPlan }[] = [];
+  const queue = [...plans.filter(needsStorage), ...plans.filter((plan) => !needsStorage(plan))];
+  queue.forEach((plan) => {
+    for (const wall of walls) {
+      const list = openBays.get(wall) ?? [];
+      const at = needsStorage(plan) ? list.findIndex((width) => (AUTO_STORAGE_WIDTHS as readonly number[]).includes(width)) : list.length ? 0 : -1;
+      if (at < 0) continue;
+      towers.push({ wall, widthIn: list[at], plan });
+      list.splice(at, 1);
+      return;
     }
     droppedPlans.push(plan);
   });
+  // Remaining bays are built too: a filled wall is the whole point. Each gets a real shelf stack.
+  const spareTowers = walls.reduce((sum, wall) => sum + (openBays.get(wall)?.length ?? 0), 0);
+  for (const wall of walls) for (const widthIn of openBays.get(wall) ?? []) towers.push({ wall, widthIn, plan: { specs: spareTowerSpecs(design, mode, kids) } });
 
-  // Build each wall: stock towers, then one cut tower (shelves only) from a saturated wall's remainder when shelves are left over.
-  const droppedShelves = droppedPlans.reduce((sum, plan) => sum + plan.specs.filter((spec) => spec.kind === "shelf").length, 0);
-  let cutShelves = droppedShelves;
+  /* ------------------------------------------------------------------- build */
   const slots: { wall: StudioWall; index: number; plan: AutoPlan }[] = [];
   for (const wall of walls) {
+    // Build in wall order so bay numbering stays predictable for the elevations and the tests.
+    const mine = towers.filter((tower) => tower.wall === wall);
     design = switchStudioWall(design, wall);
-    const mine = assigned.get(wall) ?? [];
-    for (let i = 0; i < mine.length; i++) {
-      const added = addStudioBay(design, AUTO_BAY_IN);
-      if (!added.ok) { notices.push(`The ${wall} wall stopped at ${i} tower${i === 1 ? "" : "s"}: ${added.reason}`); break; }
-      design = replaceStudioWallBays(added.design, wall, studioBays(added.design, wall).map((bay, index) => index === i ? { ...bay, id: `${wall}-bay-${i + 1}` } : bay));
-      slots.push({ wall, index: i, plan: mine[i] });
-    }
-    const cap = capacity.get(wall)!;
-    const built = studioBays(design, wall).length;
-    const saturated = mine.length >= cap.stock && built === cap.stock;
-    const installedIn = roundIn(cap.remainderIn - (built ? THICKNESS : THICKNESS * 2));
-    if (saturated && built < AUTO_MAX_BAYS_PER_WALL && installedIn >= CUT_PLANNING_MIN_IN) {
-      if (cutShelves > 0) {
-        const stockIn = installedIn <= 18 ? 18 : installedIn <= 24 ? 24 : 30;
-        const cutIndex = built;
-        const withTower = replaceStudioWallBays(design, wall, [...studioBays(design, wall), { id: `${wall}-bay-${cutIndex + 1}`, wallId: wall, widthIn: 18, items: [] }]);
-        const cut = configureStudioBayCut(withTower, cutIndex, stockIn, installedIn);
-        if (cut.ok) {
-          design = cut.design;
-          const shelves = Math.min(cutShelves, 5);
-          cutShelves -= shelves;
-          slots.push({ wall, index: cutIndex, plan: { specs: Array.from({ length: shelves }, (_, i) => ({ kind: "shelf" as const, at: 18 + i * AUTO_SHELF_STEP_IN })) } });
-          notices.push(`The ${wall} wall ends in a ${installedIn} in field-cut shelf tower cut from ${stockIn} in stock; it holds shelves only because drawer, rod and shoe fit is not verified in a cut tower.`);
-        } else notices.push(`The ${wall} wall's last ${installedIn} in stays empty: ${cut.reason}`);
-      } else notices.push(`The ${wall} wall has ${installedIn} in left over after its towers; it stays empty.`);
-    } else if (saturated && cap.remainderIn > THICKNESS && installedIn < CUT_PLANNING_MIN_IN) {
-      notices.push(`The ${wall} wall has ${cap.remainderIn} in left over, too narrow for another tower (12 in minimum); it stays empty.`);
-    } else if (saturated && built >= AUTO_MAX_BAYS_PER_WALL && cap.remainderIn > THICKNESS) {
-      notices.push(`The ${wall} wall has ${cap.remainderIn} in left over after four towers (the Studio limit); it stays empty.`);
-    }
+    mine.forEach((tower, index) => {
+      const added = addStudioBay(design, tower.widthIn);
+      if (!added.ok) { notices.push(`The ${wall} wall stopped at ${index} tower${index === 1 ? "" : "s"}: ${added.reason}`); return; }
+      design = replaceStudioWallBays(added.design, wall, studioBays(added.design, wall).map((bay, at) => at === index ? { ...bay, id: `${wall}-bay-${index + 1}` } : bay));
+      slots.push({ wall, index, plan: tower.plan });
+    });
   }
 
-  const dropped = droppedPlans.reduce((sum, plan) => sum + plan.specs.length, 0) - (droppedShelves - cutShelves);
+  /* ------------------------------------------------------ leftover field cut */
+  // Cut-to-fit planning is only documented for straight fixed/adjustable shelves, so a leftover
+  // span becomes one shelf-only cut tower and never absorbs a rod, drawer or shoe plan.
+  let cutShelves = droppedPlans.reduce((sum, plan) => sum + plan.specs.filter((spec) => spec.kind === "shelf").length, 0);
+  for (const wall of walls) {
+    const fill = fills.get(wall)!;
+    const builtCount = studioBays(design, wall).length;
+    if (!fill.widths.length || builtCount < fill.widths.length || builtCount >= AUTO_MAX_BAYS_PER_WALL) continue;
+    const installedIn = roundIn(fill.leftoverIn - THICKNESS * (builtCount ? 1 : 2));
+    if (installedIn < CUT_PLANNING_MIN_IN) {
+      if (fill.leftoverIn > THICKNESS) notices.push(`The ${wall} wall has ${fill.leftoverIn} in left over, too narrow for another sourced tower (12 in minimum); it stays empty.`);
+      continue;
+    }
+    if (cutShelves <= 0) { notices.push(`The ${wall} wall has ${fill.leftoverIn} in left over after its sourced towers; it stays empty.`); continue; }
+    design = switchStudioWall(design, wall);
+    const stockIn = STUDIO_STOCK_WIDTHS.find((width) => width >= installedIn) ?? STUDIO_STOCK_WIDTHS[STUDIO_STOCK_WIDTHS.length - 1];
+    const cutIndex = studioBays(design, wall).length;
+    const withTower = replaceStudioWallBays(design, wall, [...studioBays(design, wall), { id: `${wall}-bay-${cutIndex + 1}`, wallId: wall, widthIn: stockIn, items: [] }]);
+    const cut = configureStudioBayCut(withTower, cutIndex, stockIn, installedIn);
+    if (!cut.ok) { notices.push(`The ${wall} wall's last ${installedIn} in stays empty: ${cut.reason}`); continue; }
+    design = cut.design;
+    const shelves = Math.min(cutShelves, 5);
+    cutShelves -= shelves;
+    slots.push({ wall, index: cutIndex, plan: { specs: Array.from({ length: shelves }, (_, i) => ({ kind: "shelf" as const, at: 18 + i * AUTO_SHELF_STEP_IN })) } });
+    notices.push(`The ${wall} wall ends in a ${installedIn} in field-cut shelf tower cut from ${stockIn} in stock; it holds shelves only because drawer, rod and shoe fit is not verified in a cut tower.`);
+  }
+  const dropped = droppedPlans.reduce((sum, plan) => sum + plan.specs.length, 0) - (droppedPlans.reduce((sum, plan) => sum + plan.specs.filter((spec) => spec.kind === "shelf").length, 0) - cutShelves);
   if (dropped > 0) notices.push(`${dropped} part${dropped === 1 ? "" : "s"} did not fit in the available wall space and ${dropped === 1 ? "was" : "were"} left out.`);
 
-  // Connect the two walls at each side corner with the existing visual corner shelf; if one is refused, drop that side wall.
+  /* ------------------------------------------------------- corner connection */
+  // Only sides planned around a 29.5 in envelope get one. A shared-corner side was filled edge to
+  // edge on purpose, so adding the envelope there would undo the fill.
   if (design.mount === "floor") for (const side of sides) {
+    if (sharedSides.has(side)) continue;
     const cornerId: StudioCornerId = side === "left" ? "back-left" : "back-right";
     if (!studioBays(design, side).length) continue;
     const connected = addStudioConnectedCorner(design, cornerId, "fixed", AUTO_CORNER_ELEVATION_IN, `auto-corner-${cornerId}`);
@@ -1102,7 +1254,8 @@ export function autoBuildStudio(input: StudioAutoBuildInput): StudioAutoBuildRes
     }
   }
 
-  // Place parts only through snapStudioPart; a refused or displaced part is skipped.
+  /* ---------------------------------------------------------------- parts in */
+  // Parts go in only through snapStudioPart; a refused or displaced part is skipped, never forced.
   let skipped = 0;
   for (const slot of slots) {
     design = switchStudioWall(design, slot.wall);
@@ -1112,6 +1265,8 @@ export function autoBuildStudio(input: StudioAutoBuildInput): StudioAutoBuildRes
     });
   }
   if (skipped) notices.push(`${skipped} part${skipped === 1 ? "" : "s"} could not be placed without breaking a fit or spacing rule and ${skipped === 1 ? "was" : "were"} skipped.`);
+  // Filling the wall costs real shelves, so say so: the reference total is not just the slider counts.
+  if (spareTowers) notices.push(`${spareTowers} extra tower${spareTowers === 1 ? "" : "s"} filled the rest of the wall as open shelving; ${spareTowers === 1 ? "it is" : "they are"} in the material reference.`);
   return { design: switchStudioWall(design, "back"), notices };
 }
 
@@ -1223,7 +1378,7 @@ export function restoreStudioDesign(raw: string | null): StudioDesign | null {
       || (v.roomHeightIn != null && (!Number.isFinite(v.roomHeightIn) || v.roomHeightIn < 72 || v.roomHeightIn > 120))
       || (v.kids != null && !validKids(v.kids)) || (v.mode === "kids" && !validKids(v.kids))) return null;
     const validBays = (bays: unknown, wallId: StudioWall, requireIdentity: boolean): bays is StudioBay[] => Array.isArray(bays) && bays.length <= 4 && bays.every((bay: StudioBay) => !!bay && typeof bay.id === "string" && Number.isFinite(bay.widthIn)
-      && bay.widthIn >= CUT_PLANNING_MIN_IN && bay.widthIn <= 30
+      && bay.widthIn >= CUT_PLANNING_MIN_IN && bay.widthIn <= STUDIO_STOCK_WIDTHS[STUDIO_STOCK_WIDTHS.length - 1]
       && (!requireIdentity || bay.wallId === wallId)
       && (bay.stockWidthIn == null || (WIDTHS.includes(bay.stockWidthIn) && bay.widthIn <= bay.stockWidthIn + EPS))
       && (bay.stockWidthIn != null || WIDTHS.includes(bay.widthIn as 18 | 24 | 30))
