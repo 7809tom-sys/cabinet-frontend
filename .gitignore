@@ -130,3 +130,6 @@ manus storage/
 
 # Guided-flow screenshots (attached to PRs, not committed)
 /test-artifacts/closet-guided/
+
+# KBIS booth panel screenshots (attached to PRs, not committed)
+/test-artifacts/kbis-booth/
