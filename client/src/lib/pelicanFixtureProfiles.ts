@@ -667,6 +667,23 @@ export function verifiedPelicanFaucetProfile(code: string | null | undefined): V
   return VERIFIED_PELICAN_FAUCETS[normalized] ?? null;
 }
 
+/**
+ * The default kitchen faucet the Designer draws when the selected line sells no
+ * faucet row of its own.
+ *
+ * This is not invented geometry: it is a real Pelican part whose published
+ * specification sheet supplies every number the 3D assembly uses — a single-hole
+ * deck-mount, 12 13/16" overall height, 7 1/16" spout reach, 8 3/8" spout height,
+ * standard-arc form, brushed nickel. Auto-Design reports it as the default fixture
+ * rather than pretending the catalog supplied it (see `autoDesignFaucet.ts`).
+ */
+export const DEFAULT_PELICAN_KITCHEN_FAUCET: VerifiedPelicanFaucetProfile = VERIFIED_PELICAN_FAUCETS["PL-8237 BN"]!;
+
+/** The verified profile for the default fixture. */
+export function defaultPelicanKitchenFaucetProfile(): VerifiedPelicanFaucetProfile {
+  return DEFAULT_PELICAN_KITCHEN_FAUCET;
+}
+
 export function verifiedPelicanPotFillerProfile(code: string | null | undefined): VerifiedPelicanPotFillerProfile | null {
   const normalized = (code ?? "").trim().toUpperCase();
   return VERIFIED_PELICAN_POT_FILLERS[normalized] ?? null;

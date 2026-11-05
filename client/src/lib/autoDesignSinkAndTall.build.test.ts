@@ -109,16 +109,20 @@ describe("Auto-Design places a Pelican sink picked in the pop-up", () => {
       }],
     });
     const sink = result.sinks[0]!;
-    // The measured build leaves the fixture without a faucet; the Designer then
-    // attaches one with ensureAutoDesignFaucet, on the deck behind the basin.
-    expect(sink.faucet).toBe(false);
-    const withFaucet = ensureAutoDesignFaucet(sink, null).sink;
-    expect(withFaucet.faucet).toBe(true);
-    const rearDeck = withFaucet.faucetRearDeckOffsetIn ?? 1.25;
+    // HARD RULE (Nov 5 2026): the build itself places the faucet. It is mandatory,
+    // so the measured build no longer hands back a bare fixture for the Designer to
+    // dress in a second step.
+    expect(sink.faucet).toBe(true);
+    expect(result.everySinkHasFaucet).toBe(true);
+    expect(sink.faucetForm).toBeTruthy();
+    const rearDeck = sink.faucetRearDeckOffsetIn ?? 1.25;
     expect(rearDeck).toBeGreaterThan(0);
     // Behind the rear rim means offset = half the basin depth + the deck setback,
     // so the mounting point is outside the basin, toward the wall.
-    expect((withFaucet.sourceDepth ?? withFaucet.depth) / 2 + rearDeck).toBeGreaterThan((withFaucet.sourceDepth ?? withFaucet.depth) / 2);
+    expect((sink.sourceDepth ?? sink.depth) / 2 + rearDeck).toBeGreaterThan((sink.sourceDepth ?? sink.depth) / 2);
+    // The second step is still safe: an existing faucet is never replaced.
+    const again = ensureAutoDesignFaucet(sink, null).sink;
+    expect(again).toBe(sink);
   });
 
   it("switches to the matching farmhouse base when an apron-front sink is picked", () => {

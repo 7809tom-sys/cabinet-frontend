@@ -2,7 +2,11 @@
  * Screenshot harness: build a real kitchen with the real auto-designer, then render
  * it with the real 3D engine.
  *
- * Loaded only by `__bridge-shot.html` during the screenshot run
+ * Both owner HARD RULES are visible in the result: the mandatory bridge above the
+ * range, and the mandatory faucet at the sink. Both are the boxes/meshes the engine
+ * actually produced — nothing here is drawn by hand.
+ *
+ * Loaded only by `dev/bridge-shot.html` during the screenshot run
  * (`e2e/auto-design-bridge-screenshot.spec.ts`). It is not part of the app bundle:
  * nothing imports it, and no route points at it.
  */
@@ -14,7 +18,7 @@ import {
   type AutoDesignLayoutSuccess,
 } from "@/lib/autoDesignLayout";
 import type { AutoDesignInputs } from "@/lib/autoDesignAutoBuild";
-import { DEFAULT_ROOM, isRangeOrOven, type DesignCabinet, type PlacedCabinet, type RoomData } from "@/lib/design";
+import { DEFAULT_ROOM, isRangeOrOven, type DesignCabinet, type PlacedCabinet, type RoomData, type SinkFixture } from "@/lib/design";
 import {
   existingOverRangeBridge,
   overRangeHasBridge,
@@ -22,10 +26,14 @@ import {
 } from "@/lib/overRangeFill";
 import {
   addCabinet,
+  addSinkFixture,
   existingCabinetSku,
   existingCabinetTransform,
 } from "@/components/design/InteractiveRoom3D";
 import { designerCatalogDoorProfile, doorStyleFinishColors } from "@/lib/doorStyleAppearance";
+import { resolveDeckFaucetPlacement } from "@/lib/faucetPlacement";
+import { DEFAULT_PELICAN_KITCHEN_FAUCET } from "@/lib/pelicanFixtureProfiles";
+import { existingOverRangeMicrowave } from "@/lib/overRangeFill";
 
 type StylePack = { name: string; base: DesignCabinet[]; wall: DesignCabinet[]; accessory: DesignCabinet[] };
 const catalog = matrixCatalog as unknown as Record<string, StylePack>;
@@ -37,6 +45,18 @@ const APPLIANCE_PALETTE = [
   { id: 0, masterCode: "RANGE-30", description: '30" Range', category: "Appliance", subCategory: "Appliance", width: "30", depth: "25", height: "36", placement: "appliance" },
   { id: 5, masterCode: "MW-30", description: 'Over-Range Microwave 30"', category: "Appliance", subCategory: "Appliance", width: "30", depth: "15", height: "16", placement: "appliance" },
 ] as DesignCabinet[];
+
+/**
+ * The faucet rows the line sells. Deliberately a real Pelican kitchen faucet, so the
+ * faucet in the screenshot is the catalog pick the rule prefers.
+ */
+const FAUCET_CATALOG = [{
+  id: 8203,
+  pelicanCode: "PL-8203",
+  name: "PL-8203 Fountain Series Pull-Down Kitchen Faucet",
+  category: "Sinks & Faucets",
+  subCategory: "Faucets",
+}];
 
 function inputs(): AutoDesignInputs {
   return {
@@ -68,6 +88,7 @@ function buildKitchen(): { run: AutoDesignLayoutSuccess; room: RoomData } {
     fillers: pack.accessory,
     appliancePalette: APPLIANCE_PALETTE,
     refrigeratorCaps: mergeAutoDesignRefrigeratorCaps(pack.wall, []),
+    faucetCatalog: FAUCET_CATALOG,
     refrigeratorEndPanels: [],
     styleId: Number(STYLE_ID),
     makeUid: () => `shot-${++uid}`,
@@ -94,7 +115,7 @@ function stylePack() {
   };
 }
 
-function mount(container: HTMLElement, placed: PlacedCabinet[], room: RoomData) {
+function mount(container: HTMLElement, placed: PlacedCabinet[], room: RoomData, sinks: readonly SinkFixture[]) {
   const width = container.clientWidth;
   const height = container.clientHeight;
   const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
@@ -186,6 +207,26 @@ function mount(container: HTMLElement, placed: PlacedCabinet[], room: RoomData) 
     );
   }
 
+  // Sinks and their mandatory faucets, from the same build. `addSinkFixture` builds
+  // the faucet assembly from the sink record's published dimensions.
+  for (const sink of sinks) {
+    addSinkFixture(root, sink, resolveDeckFaucetPlacement(sink, room, [], []));
+  }
+  // Tint the faucet so it reads at a glance in the capture.
+  root.traverse((node) => {
+    const mesh = node as THREE.Mesh & { userData: Record<string, unknown> };
+    if (!mesh.isMesh) return;
+    if (mesh.userData.sinkFaucet !== true && mesh.userData.sinkFaucetSpout !== true) return;
+    const material = (Array.isArray(mesh.material) ? mesh.material[0] : mesh.material) as THREE.MeshStandardMaterial | null;
+    if (!material || !("color" in material)) return;
+    const clone = material.clone();
+    clone.color.set("#c8892b");
+    clone.metalness = 0.55;
+    clone.roughness = 0.3;
+    mesh.material = clone;
+    mesh.userData.highlightedFaucet = true;
+  });
+
   // Frame the whole run from the bounding box of what was just built, biased toward
   // the range so the bridge is unmistakably the subject.
   const bounds = new THREE.Box3().setFromObject(root);
@@ -236,13 +277,21 @@ async function run() {
     const bridge = existingOverRangeBridge(built.placed, range, room);
     if (!bridge || !overRangeHasBridge(built.placed, range, room)) throw new Error("No bridge above the range");
 
-    const view = mount(root, built.placed, room);
+    const sink = built.sinks[0];
+    if (!sink || !sink.faucet) throw new Error("No faucet at the sink");
+    const faucetPlacement = resolveDeckFaucetPlacement(sink, room, [], []);
+    if (!faucetPlacement.renderFaucet || !faucetPlacement.onCountertop) throw new Error("Faucet is not seated on the countertop");
+    const faucetLabel = sink.pelicanFaucetProductName
+      ?? (sink.defaultFaucet ? `${DEFAULT_PELICAN_KITCHEN_FAUCET.pelicanCode} (default fixture)` : "Faucet");
+
+    const view = mount(root, built.placed, room, built.sinks);
     caption.innerHTML = `
       <strong>Auto-Design build &middot; ${catalog[STYLE_ID]!.name}</strong><br />
       Bridge <strong>${bridge.masterCode}</strong> above <strong>${range.masterCode}</strong>
       <span class="ok">&#10003; present</span><br />
-      ${Number(bridge.width)}″ wide &middot; ${Number(bridge.height)}″ tall &middot; bottom at ${bridge.mountBottom}″
-      &middot; centered on the range
+      <span class="dim">${Number(bridge.width)}″ wide &middot; ${Number(bridge.height)}″ tall &middot; bottom at ${bridge.mountBottom}″ &middot; centered on the range</span><br />
+      <span class="rule">Faucet at the sink</span> <span class="ok">&#10003; present</span><br />
+      <span class="dim"><strong>${faucetLabel}</strong> &middot; centered on the sink base &middot; on the countertop &middot; ${sink.faucetForm}</span>
     `;
     (window as unknown as { __bridgeShot?: string }).__bridgeShot = "ok";
     // Keep rendering a few frames so the shadow map settles before the capture.

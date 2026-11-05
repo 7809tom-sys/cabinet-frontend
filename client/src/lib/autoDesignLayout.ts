@@ -48,6 +48,7 @@ import {
 import { raiseWindowsForDeckFaucet } from "./faucetPlacement";
 import { buildAutoDesignWallCabinets, resolveWallHeightClass, type AutoDesignUpperCorner } from "./autoDesignWallCabinets";
 import { fillOverRangeAnswer, placeMandatoryOverRangeBridges } from "./overRangeFill";
+import { ensureMandatorySinkFaucets, type AutoDesignFaucetProduct } from "./autoDesignFaucet";
 import { boundedWallPlacementAt, cabinetInsideBounds, uShapeRunWallLabels } from "./designerBounds";
 import { ensureSingleDoorBase, pairAdjacentSingleDoorHandles, normalizeUpperHeights } from "./designerFaceRules";
 import { buildDesignerReviewList, type DesignerReviewFinding } from "./designerReviewFindings";
@@ -126,6 +127,13 @@ export type AutoDesignLayoutSuccess = {
   peninsula: AutoDesignPeninsulaSummary | null;
   peninsulaRuns: import("./design").PeninsulaRun[];
   furniture: PlacedFurniture[];
+  /**
+   * True when every sink fixture in the finished plan carries a faucet. The
+   * faucet is mandatory, so this is reported rather than assumed.
+   */
+  everySinkHasFaucet: boolean;
+  /** True when the built-in default fixture was used (the line sells no faucet row). */
+  usedDefaultFaucet: boolean;
   /**
    * Rule 14: every design question the build could NOT honor, as a named, reviewable finding.
    * Empty means all questions were honored.
@@ -360,6 +368,11 @@ export function runAutoDesignLayout(args: {
   refrigeratorEndPanels: readonly DesignCabinet[];
   /** The line's tall oven/pantry boxes, so a pop-up pick resolves to its catalog row. */
   tallCatalog?: readonly DesignCabinet[];
+  /**
+   * The faucet rows the selected line sells. The build always places a faucet at
+   * the sink; with no usable row here it uses the built-in default fixture.
+   */
+  faucetCatalog?: readonly AutoDesignFaucetProduct[];
   styleId: number | null;
   makeUid: () => string;
   stoveMasterCode?: string;
@@ -1094,6 +1107,29 @@ export function runAutoDesignLayout(args: {
   }
   const reportedWiggleMoves = activeAutoDesignWiggleMoves(wiggle.moves, working, room);
   const shiftReview = reviewAfterShift({ placed: working, room, openings: stageOpenings, usage: stage.input.kitchenUsage });
+  // HARD RULE (owner, Nov 5 2026): a faucet at the sink on every build, mandatory
+  // like the over-range bridge. One deck-mounted faucet per sink fixture, centered
+  // on the sink base, on the countertop, drawn in 3D. Add-only: an existing faucet
+  // is never replaced; with no catalog faucet row the built-in default fixture is
+  // used and reported.
+  const mandatoryFaucet = ensureMandatorySinkFaucets(sinks, args.faucetCatalog ?? []);
+  if (mandatoryFaucet.attachedUids.length > 0) {
+    sinks = mandatoryFaucet.sinks;
+    notes.push(...mandatoryFaucet.notes);
+    // A taller faucet can need a window shortened (never moved). Same one rule as
+    // every other faucet, so the rule stays in `raiseWindowsForDeckFaucet`.
+    const raisedForFaucet = raiseWindowsForDeckFaucet({ sinks, room, openings: workingOpenings, wallLabels });
+    workingOpenings = raisedForFaucet.openings;
+    if (sinkWindow) sinkWindow = workingOpenings.find((opening) => opening.uid === sinkWindow!.uid) ?? sinkWindow;
+    if (raisedForFaucet.notes.length) {
+      const replaced = new Set(raisedForFaucet.notes.map((note) => note.openingUid));
+      faucetWindowNotes = [
+        ...faucetWindowNotes.filter((note) => !replaced.has(note.openingUid)),
+        ...raisedForFaucet.notes,
+      ];
+      notes.push(...raisedForFaucet.notes.map((note) => note.text));
+    }
+  }
   const warnings = [...refrigeratorBayWarnings, ...drawerRuleWarnings, ...shiftReview.findings.filter((entry) => entry.severity === "attention").map((entry) => `${entry.title}: ${entry.description}`)];
   const bareRange = working.find((item) => item.placement === "appliance" && isRangeOrOven(item.masterCode, item.description) && autoDesignRangeNeedsVentilation(working, item));
   return {
@@ -1120,6 +1156,8 @@ export function runAutoDesignLayout(args: {
     peninsula: peninsulaSummary,
     peninsulaRuns,
     furniture,
+    everySinkHasFaucet: mandatoryFaucet.sinks.every((sink) => sink.faucet),
+    usedDefaultFaucet: mandatoryFaucet.usedDefault,
     reviewFindings: buildDesignerReviewList(reviewFindings).findings,
     reviewAllHonored: buildDesignerReviewList(reviewFindings).allHonored,
   };

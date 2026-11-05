@@ -244,7 +244,7 @@ import { normalizePaletteSearch, matchesPaletteSearch, matchesPaletteTextOrSize 
 import { searchCatalogItems } from "@shared/catalogCodeSearch";
 import { adjacentDishwasherCenterIn, anchorAlongStartIn, autoBuildStraightBaseCatalog, autoDesignWallNameByEngineId, buildAutoDesignWallGuides, canRunAutoDesign, closestDishwasherStart, isAutoBuildStraightSinkBaseCandidate, makeAutoDesignSixWallTrainingRoom, keepSingleAutoDesignSink, pickAutoDesignSinkBase, planAutoDesignAutoBuild, resolveDishwasherSide, subtractAnchorRunReservations, wallLabelToEngineWallId, type AutoDesignInputs, type AutoDesignOriginCorner, type AutoDesignRunDirection, type DishwasherSide } from "@/lib/autoDesignAutoBuild";
 import { AUTO_DESIGN_REFRIGERATOR_NOTE, autoDesignControlState, autoDesignShouldTurnOffForRefrigerator, isRefrigeratorAppliance, isSinkBasePlacement, refrigeratorBlocksAutoDesign } from "@/lib/autoDesignAvailability";
-import { applyChosenAutoDesignFaucet, catalogFaucetSurface, defaultAutoDesignFaucet, ensureAutoDesignFaucet, isCatalogFaucet, type AutoDesignFaucetProduct } from "@/lib/autoDesignFaucet";
+import { applyChosenAutoDesignFaucet, catalogFaucetSurface, defaultAutoDesignFaucet, ensureAutoDesignFaucet, ensureMandatorySinkFaucets, everySinkHasFaucet, isCatalogFaucet, type AutoDesignFaucetProduct } from "@/lib/autoDesignFaucet";
 import { clampSinkDragForFaucet, raiseWindowsForDeckFaucet, type FaucetWindowClearanceNote } from "@/lib/faucetPlacement";
 import { dropDuplicateAutoWindows, moveWindowsWithWallTops } from "@/lib/windowOpenings";
 import { useTransientNotice } from "@/components/design/useTransientNotice";
@@ -891,6 +891,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const autoDesignSessionRef = useRef(false);
   const adoptAutoDesignSinkRef = useRef<(sink: SinkFixture) => SinkFixture>((sink) => sink);
   const defaultAutoDesignFaucetRef = useRef<AutoDesignFaucetProduct | null>(null);
+  /**
+   * The faucet rows the selected line sells. Held in a ref because the Auto-Design
+   * build callback is declared above the catalog query, and the mandatory faucet
+   * rule needs the rows at build time (never at render time).
+   */
+  const autoDesignFaucetProductsRef = useRef<AutoDesignFaucetProduct[]>([]);
   const autoDesignFaucetPromptedRef = useRef(new Set<string>());
   const autoDesignOwnedFaucetIdsRef = useRef(new Set<number>());
   roomRef.current = room;
@@ -1301,6 +1307,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
    * silently put back by a later render.
    */
   const [overRangeEpoch, setOverRangeEpoch] = useState(0);
+  /**
+   * Bumped on every build and every layout load, so the mandatory faucet pass runs
+   * once per plan instead of on every unrelated render.
+   */
+  const [faucetEpoch, setFaucetEpoch] = useState(0);
   const setOverRangeAnswer = useCallback((answer: "hood" | "microwave-bridge" | "open") => {
     setRoom((current) => ({ ...current, overRangeAnswer: overRangeAnswerToPersist(current.overRangeAnswer, answer) }));
     setOverRangeEpoch((epoch) => epoch + 1);
@@ -4079,6 +4090,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       refrigeratorEndPanels: fridgeParts?.endPanels ?? [],
       tallCatalog,
       stoveMasterCode: autoDesignRangePick?.masterCode ?? undefined,
+      // HARD RULE: the sink always gets a faucet. The catalog rows feed the real
+      // pick; with none the build uses the built-in default fixture and says so.
+      faucetCatalog: autoDesignFaucetProductsRef.current,
       preExistingPlacements,
       styleId: styleIdRef.current ?? null,
       makeUid,
@@ -4107,6 +4121,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       overRangeAnswer: overRangeAnswerToPersist(current.overRangeAnswer, input.overRangeAnswer),
     }));
     setOverRangeEpoch((epoch) => epoch + 1);
+    // A freshly built plan gets its mandatory faucet in the same pass.
+    setFaucetEpoch((epoch) => epoch + 1);
     const selectedWallCabinetHeight = input.wallCabinetHeightIn ?? 30;
     setWallCabHeight(selectedWallCabinetHeight);
     wallCabHeightRef.current = selectedWallCabinetHeight;
@@ -5520,8 +5536,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       // same decision instead of asking again. An older plan has none, which means
       // "never asked" and lets the add-only fallback chain decide.
       setRoom({ ...(d.room ?? DEFAULT_ROOM), overRangeAnswer: readOverRangeAnswer(d.room?.overRangeAnswer) });
-      // A freshly loaded plan is a new pass: the saved answer is applied once.
+      // A freshly loaded plan is a new pass: the saved answer is applied once, and
+      // an older saved plan without a faucet gets its mandatory one.
       setOverRangeEpoch((epoch) => epoch + 1);
+      setFaucetEpoch((epoch) => epoch + 1);
       const persisted = d.room?.persistedEntities;
 	      const restoredOpenings = Array.isArray(persisted?.openings) ? persisted.openings : [];
 	      setOpenings(restoredOpenings);
@@ -10048,11 +10066,48 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     merged.forEach((product) => products.push(product));
     return products;
   }, [pelicanFaucetCatalog, recommendedFaucetCatalog]);
+  useEffect(() => { autoDesignFaucetProductsRef.current = autoDesignFaucetProducts; }, [autoDesignFaucetProducts]);
   const autoDesignFaucetCatalogLoading = autoDesignFaucetCatalogEnabled && (pelicanFaucetCatalogLoading || recommendedFaucetCatalogLoading);
   const autoDesignFaucetCatalogUnavailable = autoDesignFaucetCatalogEnabled
     && !autoDesignFaucetCatalogLoading
     && autoDesignFaucetProducts.length === 0
     && (pelicanFaucetCatalogError || recommendedFaucetCatalogError || pelicanFaucetCatalog != null || recommendedFaucetCatalog != null);
+  /**
+   * HARD RULE: every sink carries a faucet, on every build and every layout load.
+   *
+   * Mandatory like the over-range bridge. One deck-mounted faucet per sink fixture,
+   * centered on the sink base, on the countertop, drawn in 3D. Add-only: an existing
+   * faucet — a chosen catalog row, a previously auto-placed one, or the default
+   * fixture — is never replaced or removed. With no catalog faucet row the built-in
+   * default fixture is used and reported.
+   */
+  const faucetFillRanRef = useRef(new Set<string>());
+  useEffect(() => {
+    if (sinks.length === 0) return;
+    if (everySinkHasFaucet(sinks)) return;
+    const fillKey = [faucetEpoch, autoDesignFaucetProducts.map((product) => product.id).join(","), sinks.map((sink) => sink.uid).sort().join(",")].join("|");
+    if (faucetFillRanRef.current.has(fillKey)) return;
+    faucetFillRanRef.current = new Set([fillKey]);
+    const result = ensureMandatorySinkFaucets(sinks, autoDesignFaucetProducts);
+    if (result.attachedUids.length === 0) return;
+    setSinks(result.sinks);
+    if (result.source === "catalog") {
+      for (const uid of result.attachedUids) {
+        const sink = result.sinks.find((item) => item.uid === uid);
+        if (sink?.pelicanFaucetProductId == null) continue;
+        autoDesignOwnedFaucetIdsRef.current.add(sink.pelicanFaucetProductId);
+        const product = autoDesignFaucetProducts.find((item) => item.id === sink.pelicanFaucetProductId);
+        if (!product) continue;
+        const surface = catalogFaucetSurface(product);
+        setSelectedSurfaces((previous) => previous.some((item) => item.id === surface.id) ? previous : [...previous, surface]);
+      }
+    }
+    const raised = raiseWindowsForDeckFaucet({ sinks: result.sinks, room, openings, wallLabels: autoDesignWallLabelsRef.current });
+    if (raised.notes.length > 0 || raised.openings !== openings) setOpenings(raised.openings);
+    announceFaucetWindowNotes(raised.notes);
+    for (const note of result.notes) toast.info(note, { duration: 8000 });
+  }, [announceFaucetWindowNotes, autoDesignFaucetProducts, faucetEpoch, openings, room, setOpenings, setSinks, sinks]);
+
   useEffect(() => {
     const product = defaultAutoDesignFaucet(autoDesignFaucetProducts);
     defaultAutoDesignFaucetRef.current = product;
