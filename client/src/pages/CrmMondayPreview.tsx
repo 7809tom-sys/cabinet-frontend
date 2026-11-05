@@ -3,6 +3,13 @@ import { CrmStageBoard } from "@/components/crm/monday/CrmStageBoard";
 import { CrmTableView, type TableDeal } from "@/components/crm/monday/CrmTableView";
 import { CrmPipelineTotals } from "@/components/crm/monday/CrmPipelineTotals";
 import { CrmEmailWorkspaceView, type EmailConnectionRow, type EmailContact, type MailboxRow } from "@/components/crm/monday/CrmEmailWorkspace";
+import {
+  ADMIN_CRM_SENDER_PROFILE,
+  affiliateCrmSenderProfile,
+  contractorCrmSenderProfile,
+  type CrmFormLetterRole,
+  type CrmSenderProfile,
+} from "@shared/crmFormLetters";
 import { CrmDueBanner } from "@/components/crm/monday/CrmDealExtras";
 import { summarizeAffiliatePipelines, type MondayDeal } from "@shared/crmMailbox";
 import type { CrmPriority, CrmStage } from "@shared/crm";
@@ -37,9 +44,23 @@ const connections: EmailConnectionRow[] = [
   { affiliateId: 8, storeName: "Harbor Cabinets", publicEmail: "sales@harbor.example", connected: false, provider: null, fromName: "", replyTo: "sales@harbor.example", smtpUser: "", enabled: false, hasPassword: false, lastTestOk: null },
 ];
 
+// Demo identities so all three form-letter sets can be previewed without a
+// signed-in account. The real CRM resolves these from the account record.
+const DEMO_SENDERS: Record<CrmFormLetterRole, CrmSenderProfile> = {
+  admin: ADMIN_CRM_SENDER_PROFILE,
+  affiliate: affiliateCrmSenderProfile({
+    storeName: "Reaves Way Cabinet Shop",
+    publicAddress: "1200 Main St, Sarasota, FL",
+    publicPhone: "941-555-0100",
+    publicEmail: "hello@reavesway.example",
+  }),
+  contractor: contractorCrmSenderProfile({ businessName: "Hale Builds", phone: "941-555-0177" }),
+};
+
 export default function CrmMondayPreview() {
   const [view, setView] = useState<"board" | "table" | "panel" | "email">("board");
   const [rows, setRows] = useState(deals);
+  const [letterRole, setLetterRole] = useState<CrmFormLetterRole>("affiliate");
   return (
     <main className="min-h-screen bg-slate-100 p-6">
       <header className="mb-4">
@@ -105,6 +126,19 @@ export default function CrmMondayPreview() {
         </aside>
       )}
       {view === "email" && (
+        <>
+        <div className="mb-3 flex flex-wrap items-center gap-2" data-testid="preview-letter-role">
+          <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Form letters as</span>
+          {(["admin", "affiliate", "contractor"] as const).map((item) => (
+            <button
+              key={item}
+              className={`rounded-full px-3 py-1 text-sm ${letterRole === item ? "bg-[#1a2b4a] text-white" : "bg-white"}`}
+              onClick={() => setLetterRole(item)}
+            >
+              {item}
+            </button>
+          ))}
+        </div>
         <CrmEmailWorkspaceView
           audience="affiliate"
           contacts={contacts}
@@ -113,7 +147,9 @@ export default function CrmMondayPreview() {
           settings={null}
           connections={connections}
           setupInitiallyOpen
-          prefill={{ dealId: 2, to: "ana@example.com", contactName: "Ana Ruiz", dealTitle: "Osprey bath quote", designLink: "https://cabinetdealz.com/design/12", quoteLink: "https://cabinetdealz.com/design/12" }}
+          senderRole={letterRole}
+          senderProfile={DEMO_SENDERS[letterRole]}
+          prefill={{ dealId: 2, to: "ana@example.com", contactName: "Ana Ruiz", dealTitle: "Osprey bath quote", estimatedValue: "9200", designLink: "https://cabinetdealz.com/design/12", quoteLink: "https://cabinetdealz.com/design/12" }}
           onSend={async () => undefined}
           onSaveDraft={async () => undefined}
           onDeleteDraft={async () => undefined}
@@ -122,6 +158,7 @@ export default function CrmMondayPreview() {
           onSaveTemplate={async () => undefined}
           onDeleteTemplate={async () => undefined}
         />
+        </>
       )}
     </main>
   );
