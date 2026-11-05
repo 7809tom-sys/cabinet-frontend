@@ -109,14 +109,18 @@ describe("Designer programmed photoreal material wiring", () => {
 	    expect(designToolSource).toContain("const activeBacksplashSurface = useMemo(");
 	    expect(designToolSource).toContain("activeThreeDSurface(selectedSurfaces.filter((surface) => surfaceRole(surface) === \"backsplash\"))");
 	    expect(designToolSource).toContain("role === \"flooring\" ? activeFlooringSurface : activeBacksplashSurface");
-	    expect(designToolSource).toContain("key={`active-surfaces-${threeDSurfaceProductIds.flooring ?? \"none\"}");
+	    expect(designToolSource).toContain("key={`active-surfaces-${threeDSurfaceViewKey}`}");
 	    expect(designToolSource).toContain("threeDSurfaceProductIds.backsplash");
 	    expect(designToolSource).toContain("82: \"/manus-storage/bahia_12mil_7x48_staggered_floor_551c6d5b.webp\"");
 	    expect(designToolSource).toContain("40: \"/manus-storage/acorn_20mil_7_5x48_staggered_floor_3dbd212f.webp\"");
 	    expect(designToolSource).toContain("54: \"/manus-storage/astoria_22mil_9x60_staggered_floor_cd0a1cf7.webp\"");
 	    expect(designToolSource).not.toContain("?? selected.imageUrl");
-    expect(designToolSource).toContain('key={`active-surfaces-${threeDSurfaceProductIds.flooring ?? "none"}-${threeDSurfaceTextureUrls.flooring ?? "pending"}-${backsplashEnabled ? threeDSurfaceProductIds.backsplash ?? "none" : "off"}-${backsplashEnabled ? threeDSurfaceTextureUrls.backsplash ?? "pending" : "off"}`}');
-    expect(designToolSource).toContain('key={`active-surfaces-full-${threeDSurfaceProductIds.flooring ?? "none"}-${threeDSurfaceTextureUrls.flooring ?? "pending"}-${backsplashEnabled ? threeDSurfaceProductIds.backsplash ?? "none" : "off"}-${backsplashEnabled ? threeDSurfaceTextureUrls.backsplash ?? "pending" : "off"}`}');
+    expect(designToolSource).toContain('key={`active-surfaces-${threeDSurfaceViewKey}`}');
+    expect(designToolSource).toContain('key={`active-surfaces-full-${threeDSurfaceViewKey}`}');
+    // Texture URLs resolve after the product ids during Generate; they must never
+    // remount the WebGL view, so the remount key carries stable product ids only.
+    expect(designToolSource).not.toContain("threeDSurfaceTextureUrls.flooring ?? \"pending\"");
+    expect(designToolSource).not.toContain("threeDSurfaceTextureUrls.backsplash ?? \"pending\"");
 	    expect(designToolSource).toContain("Catalog product cards can be staged-room or retail photographs");
     expect(designToolSource).toContain("catalogCountertopImageUrl={threeDSurfaceTextureUrls.countertop}");
     expect(designToolSource).toContain("catalogFlooringImageUrl={threeDSurfaceTextureUrls.flooring}");
