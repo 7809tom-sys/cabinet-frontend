@@ -761,6 +761,9 @@ export function runAutoDesignLayout(args: {
       placed: working,
       openings: stageOpenings,
       wallIds: stage.selectedWalls,
+      // Every wall this build will fill, so a tall box never claims an inside corner
+      // that another run is about to occupy.
+      runWallIds: runWalls,
       allowMultiple: tallPicks.length > 1,
     });
     if (!fit.ok) {

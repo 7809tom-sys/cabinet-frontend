@@ -47,7 +47,7 @@ import {
   type RoomData,
   type SinkFixture,
 } from "./design";
-import { resolveDeckFaucetPlacement } from "./faucetPlacement";
+import { raiseWindowsForDeckFaucet, resolveDeckFaucetPlacement } from "./faucetPlacement";
 
 type StylePack = { name: string; base: DesignCabinet[]; wall: DesignCabinet[]; accessory: DesignCabinet[] };
 const catalog = matrixCatalog as unknown as Record<string, StylePack>;
@@ -399,12 +399,41 @@ describe("the build path reports the faucet honestly", () => {
     expect(result.usedDefaultFaucet).toBe(false);
   });
 
-  it("keeps a faucet even when the sink window is raised for clearance", () => {
-    // A window over the sink forces a sill raise; the faucet must survive it.
+  it("keeps the faucet in front of the sink window, and never moves the window", () => {
+    // Owner clarification (Nov 5 2026): the faucet is at the sink, IN FRONT OF THE
+    // WINDOW. The window position never moves. A sink under glazing is the normal
+    // kitchen, so the faucet is required there — not omitted.
     const room = { ...DEFAULT_ROOM, width: 168, depth: 132, ceilingHeight: 96 };
     const result = build("540005", { sinkWindowCenter: { wallLabel: "Wall 1", centerOffsetIn: 30 } }, room, [CATALOG_FAUCET]);
-    expect(result.ok).toBe(true);
+    expect(result.ok, result.ok ? "" : result.message).toBe(true);
     if (!result.ok) return;
+    const window = result.sinkWindow;
+    if (window) {
+      // The window the build made is exactly the geometry it asked for: untouched by
+      // the faucet. No sill raise, no height shrink, no note.
+      const created = result.openings.find((opening) => opening.uid === window.uid)!;
+      expect(created.sill).toBe(window.sill);
+      expect(created.height).toBe(window.height);
+      expect(created.offset).toBe(window.offset);
+      expect(created.width).toBe(window.width);
+      expect(created.faucetClearanceNote).toBeFalsy();
+      expect(result.faucetWindowNotes).toEqual([]);
+      // The faucet stands in front of it, and is drawn.
+      const sink = result.sinks[0]!;
+      const placement = resolveDeckFaucetPlacement(sink, room, result.openings, []);
+      expect(placement.inFrontOfWindow).toBe(true);
+      expect(placement.renderFaucet).toBe(true);
+    }
     expectFaucetAtSink(result, room, "with window");
+  });
+
+  it("keeps the window coordinates identical through a re-applied faucet pass", () => {
+    // A second pass (the load path) must not touch the window either.
+    const room = { ...DEFAULT_ROOM, width: 168, depth: 132, ceilingHeight: 96 };
+    const result = build("540005", { sinkWindowCenter: { wallLabel: "Wall 1", centerOffsetIn: 30 } }, room, [CATALOG_FAUCET]);
+    if (!result.ok) return;
+    const again = raiseWindowsForDeckFaucet({ sinks: result.sinks, room, openings: result.openings });
+    expect(again.openings).toEqual(result.openings);
+    expect(again.notes).toEqual([]);
   });
 });

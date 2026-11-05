@@ -9,6 +9,7 @@ import {
   groupTallProducts,
   isAutoDesignTallBox,
   planAutoDesignTallFit,
+  tallSeatInsideCorner,
   resolveTallPick,
   tallCabinetPlacement,
 } from "./autoDesignTallCabinets";
@@ -192,5 +193,102 @@ describe("auto-placing a tall pick", () => {
   it("strips the distributor alias for display only", () => {
     expect(displayTallSku("UOC3390(O339024)")).toBe("UOC3390");
     expect(displayTallSku("TOD3084")).toBe("TOD3084");
+  });
+});
+
+describe("a tall box closes a run, never an occupied inside corner", () => {
+  /** A room whose top and right walls meet in a square inside corner. */
+  function cornerRoom(): RoomData {
+    return { width: 144, depth: 120, ceilingHeight: 96 } as RoomData;
+  }
+
+  function wallBase(code: string, width: number, wallId: string, offset: number): PlacedCabinet {
+    return {
+      uid: `${code}-${wallId}`,
+      cabinetId: 1,
+      masterCode: code,
+      description: code,
+      placement: "base",
+      x: 0,
+      y: 0,
+      width,
+      depth: 24,
+      height: 34.5,
+      rotation: 0,
+      wallId,
+      wallOffset: offset,
+    } as PlacedCabinet;
+  }
+
+  it("recognises a seat at a shared inside corner when the adjoining run is occupied", () => {
+    const room = cornerRoom();
+    // Bases on the right wall mean the top/right corner is already claimed by that run.
+    const placed = [wallBase("B24", 24, "right", 0)];
+    const check = tallSeatInsideCorner({ wallId: "top", alongIn: 114, widthIn: 30, room, placed });
+    expect(check.atInsideCorner).toBe(true);
+    if (!check.atInsideCorner) return;
+    expect(check.adjoiningWallId).toBe("right");
+    expect(check.adjoiningRunOccupied).toBe(true);
+  });
+
+  it("counts a corner shared with a wall this build WILL fill, even before that run tiles", () => {
+    // A tall box is seated before the base runs tile, so `placed` is still empty.
+    // The planned run walls are what say the corner is going to be occupied.
+    const room = cornerRoom();
+    const check = tallSeatInsideCorner({ wallId: "top", alongIn: 114, widthIn: 30, room, placed: [], runWallIds: ["top", "right"] });
+    expect(check.atInsideCorner).toBe(true);
+    if (!check.atInsideCorner) return;
+    expect(check.adjoiningRunOccupied).toBe(true);
+  });
+
+  it("does not treat a bare corner as occupied when the adjoining run is empty", () => {
+    const room = cornerRoom();
+    const check = tallSeatInsideCorner({ wallId: "top", alongIn: 0, widthIn: 33, room, placed: [] });
+    expect(check.atInsideCorner).toBe(true);
+    if (!check.atInsideCorner) return;
+    expect(check.adjoiningRunOccupied).toBe(false);
+  });
+
+  it("ignores an interior seat, which is not a run end at all", () => {
+    const room = cornerRoom();
+    const check = tallSeatInsideCorner({ wallId: "top", alongIn: 50, widthIn: 33, room, placed: [] });
+    expect(check.atInsideCorner).toBe(false);
+  });
+
+  it("prefers a genuine open run end over a seat in an occupied inside corner", () => {
+    // The build will fill the top and right walls, so the top/right corner is going
+    // to be occupied by that run. The top/left corner stays free. The box must take
+    // the FREE end, not the shared corner.
+    const room = cornerRoom();
+    const placed: PlacedCabinet[] = [];
+    const product = autoDesignTallProducts(tall).find((entry) => entry.masterCode === "TOD3084")!;
+    const fit = planAutoDesignTallFit({ product, room, placed, openings: [], wallIds: ["top"], runWallIds: ["top", "right"] });
+    expect(fit.ok).toBe(true);
+    if (!fit.ok) return;
+    // The left end of the 144-inch top wall — the end no other run shares.
+    expect(fit.alongIn).toBeCloseTo(0, 3);
+    const corner = tallSeatInsideCorner({
+      wallId: fit.wallId,
+      alongIn: fit.alongIn,
+      widthIn: product.widthIn,
+      room,
+      placed,
+      runWallIds: ["top", "right"],
+    });
+    expect(corner.atInsideCorner && corner.adjoiningRunOccupied).toBe(false);
+  });
+
+  it("still seats the box when the only free end IS an occupied inside corner, and reports why if it cannot", () => {
+    // Left wall is fully taken, so the top wall's only free seat is the corner it
+    // shares with the right-wall run. A placed pantry beats a dropped one.
+    const room = cornerRoom();
+    const placed = [wallBase("B24", 24, "right", 0), wallBase("B120", 120, "top", 0)];
+    const product = autoDesignTallProducts(tall).find((entry) => entry.masterCode === "TOD3084")!;
+    const fit = planAutoDesignTallFit({ product, room, placed, openings: [], wallIds: ["top"] });
+    // 120 taken of 144 leaves 24 — too narrow for a 30" box on that wall.
+    expect(fit.ok).toBe(false);
+    if (fit.ok) return;
+    expect(fit.code).toBe("tall-cabinet-blocked");
+    expect(fit.reason.length).toBeGreaterThan(20);
   });
 });

@@ -1,16 +1,12 @@
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
 import { addSinkFixture, sinkFaucetTransform } from "@/components/design/InteractiveRoom3D";
-import { DEFAULT_ROOM, STD, makeSinkForCabinet, wallPlacementAt, type PlacedCabinet, type SinkFixture, type WallOpening } from "./design";
+import { DEFAULT_ROOM, makeSinkForCabinet, wallPlacementAt, type PlacedCabinet, type SinkFixture, type WallOpening } from "./design";
 import {
-  FAUCET_FRAME_GAP_IN,
-  FAUCET_WINDOW_CONFLICT_MESSAGE,
   clampSinkDragForFaucet,
-  minimumFaucetClearSill,
   raiseWindowsForDeckFaucet,
   resolveDeckFaucetPlacement,
   windowFrameObstacle,
-  windowTrimWidthIn,
 } from "./faucetPlacement";
 
 const room = DEFAULT_ROOM;
@@ -53,15 +49,20 @@ function lowSillWindow(overrides: Partial<WallOpening> = {}): WallOpening {
 const counter = [{ x: 0, y: 0, width: 144, depth: 25.5 }];
 
 describe("deck faucet placement around windows", () => {
-  it("does not put a faucet through a low window sill when the rear deck cannot clear the frame", () => {
+  it("draws a faucet in front of a low window sill instead of omitting it", () => {
+    // Owner rule (Nov 5 2026): the faucet is at the sink, in front of the window. A
+    // sink under glazing is the normal kitchen, so this is drawn, not hidden.
     const placement = resolveDeckFaucetPlacement(sink(), room, [lowSillWindow()], counter);
     const frame = windowFrameObstacle(lowSillWindow());
-
     expect(frame).not.toBeNull();
+
+    expect(placement.renderFaucet).toBe(true);
+    expect(placement.anchored).toBe(true);
+    expect(placement.inFrontOfWindow).toBe(true);
     expect(placement.conflict).toBe("window-frame");
-    expect(placement.warning).toBe(FAUCET_WINDOW_CONFLICT_MESSAGE);
-    expect(placement.renderFaucet).toBe(false);
+    // Kept on the deck behind the basin, never pushed into the wall.
     expect(placement.centerFromWallIn).toBeLessThanOrEqual(2.5);
+    expect(placement.centerFromWallIn).toBeGreaterThan(0);
     expect(placement.mountY).toBeGreaterThanOrEqual(0);
     expect(placement.mountY).toBeLessThanOrEqual(placement.centerFromWallIn);
 
@@ -73,7 +74,8 @@ describe("deck faucet placement around windows", () => {
         faucetParts.push(String(node.userData.sinkFaucet ? "sinkFaucet" : node.userData.sinkFaucetBase ? "base" : "spout"));
       }
     });
-    expect(faucetParts).toEqual([]);
+    expect(faucetParts.length).toBeGreaterThan(0);
+    expect(faucetParts).toContain("sinkFaucet");
   });
 
   it("keeps a faucet on the counter behind the sink and clear of the wall when no window is in the way", () => {
@@ -128,23 +130,32 @@ describe("deck faucet placement around windows", () => {
     expect(placement.mountX).toBeGreaterThan(0.375);
     expect(placement.onCountertop).toBe(true);
 
+    // A window on this wall does not block the faucet: standing in front of glazing
+    // is expected, and the window never moves.
     const window = lowSillWindow({ side: "left", offset: 30, width: 36, sill: 38 });
-    const blocked = clampSinkDragForFaucet(placed, { x: 0.3, y: placed.y }, room, [window], [{ x: 0, y: 30, width: 25.5, depth: 48 }]);
-    expect(blocked.blocked).toBe(true);
-    expect(blocked.x).toBe(placed.x);
-    expect(blocked.warning).toBe(FAUCET_WINDOW_CONFLICT_MESSAGE);
+    const overWindow = clampSinkDragForFaucet(placed, { x: 3.0, y: placed.y }, room, [window], [{ x: 0, y: 30, width: 25.5, depth: 48 }]);
+    expect(overWindow.blocked).toBe(false);
+    expect(overWindow.warning).toBeNull();
+    expect(resolveDeckFaucetPlacement({ ...placed, x: 3.0 }, room, [window], [{ x: 0, y: 30, width: 25.5, depth: 48 }]).inFrontOfWindow).toBe(true);
+    // Pushing the sink into the wall is still refused.
+    const intoWall = clampSinkDragForFaucet(placed, { x: -6, y: placed.y }, room, [window], [{ x: 0, y: 30, width: 25.5, depth: 48 }]);
+    expect(intoWall.blocked).toBe(true);
+    expect(intoWall.x).toBe(placed.x);
   });
 
-  it("refuses a manual drag into a window frame or off the countertop", () => {
+  it("allows a drag in front of a window but still refuses one off the countertop", () => {
     const placed = sink({ type: "single", x: 36, y: 4.5, width: 30, depth: 18, sourceDepth: 18 });
     const window = lowSillWindow({ offset: 24, width: 48, sill: 32, height: 40 });
 
-    const intoWindow = clampSinkDragForFaucet(placed, { x: placed.x, y: 0.4 }, room, [window], counter);
-    expect(intoWindow.blocked).toBe(true);
-    expect(intoWindow.x).toBe(placed.x);
-    expect(intoWindow.y).toBe(placed.y);
-    expect(intoWindow.warning).toBe(FAUCET_WINDOW_CONFLICT_MESSAGE);
+    // Toward the window, while still on the deck and clear of the wall: allowed. The
+    // faucet stands in front of the glazing.
+    const towardWindow = clampSinkDragForFaucet(placed, { x: placed.x, y: 3.0 }, room, [window], counter);
+    expect(towardWindow.blocked).toBe(false);
+    expect(towardWindow.y).toBe(3.0);
+    expect(towardWindow.warning).toBeNull();
+    expect(resolveDeckFaucetPlacement({ ...placed, y: 3.0 }, room, [window], counter).inFrontOfWindow).toBe(true);
 
+    // Off the measured countertop: still refused.
     const offCounter = clampSinkDragForFaucet(placed, { x: placed.x, y: 80 }, room, [window], counter);
     expect(offCounter.blocked).toBe(true);
     expect(offCounter.x).toBe(placed.x);
@@ -156,13 +167,6 @@ describe("deck faucet placement around windows", () => {
     expect(alongCounter.y).toBe(placed.y);
   });
 });
-
-function roundSillUp(value: number): number {
-  const halves = value * 2;
-  const nearest = Math.round(halves);
-  if (Math.abs(halves - nearest) <= 1e-6) return nearest / 2;
-  return Math.ceil(halves - 1e-9) / 2;
-}
 
 /** Farmhouse apron sink centered under a window, with no rear-deck offset. */
 function farmhouseUnderWindow(faucetHeightIn: number, sill = 42, height = 36) {
@@ -211,21 +215,17 @@ function farmhouseUnderWindow(faucetHeightIn: number, sill = 42, height = 36) {
   return { fixture, window };
 }
 
-describe("Auto-Design raises a window instead of hiding the faucet", () => {
-  it("raises a low sill the minimum half inch and then draws the faucet", () => {
+describe("a faucet in front of a window is drawn, and the window never moves", () => {
+  it("leaves a low sill exactly as it is and draws the faucet in front of the glazing", () => {
     const { fixture, window } = farmhouseUnderWindow(15.75);
     expect(fixture.faucetRearDeckOffsetIn).toBeUndefined();
     expect(fixture.type).toBe("farmhouse");
-    const before = resolveDeckFaucetPlacement(fixture, room, [window], counter);
-    expect(before.conflict).toBe("window-frame");
-    expect(before.renderFaucet).toBe(false);
 
-    const rawSill = minimumFaucetClearSill(window, 15.75);
-    const expectedSill = roundSillUp(rawSill);
-    expect(expectedSill).toBeGreaterThan(window.sill);
-    expect(expectedSill * 2).toBe(Math.round(expectedSill * 2));
-    const apron = windowTrimWidthIn(window.width) * 1.6;
-    expect(expectedSill - apron).toBeGreaterThanOrEqual(STD.COUNTERTOP_HEIGHT + 15.75 + FAUCET_FRAME_GAP_IN - 1e-6);
+    const placement = resolveDeckFaucetPlacement(fixture, room, [window], counter);
+    // Standing in front of the window is expected, and is reported as such.
+    expect(placement.inFrontOfWindow).toBe(true);
+    expect(placement.renderFaucet).toBe(true);
+    expect(placement.anchored).toBe(true);
 
     const raised = raiseWindowsForDeckFaucet({
       sinks: [fixture],
@@ -234,44 +234,39 @@ describe("Auto-Design raises a window instead of hiding the faucet", () => {
       countertops: counter,
       wallLabels: { top: "Wall 1" },
     });
-    const opening = raised.openings[0]!;
-    const fixedTop = window.sill + window.height;
-    expect(opening.sill).toBe(expectedSill);
-    expect(opening.sill + opening.height).toBeCloseTo(fixedTop, 5);
-    expect(opening.height).toBeCloseTo(fixedTop - expectedSill, 5);
-    expect(opening.offset).toBe(window.offset);
-    expect(opening.side).toBe(window.side);
+    // The window is the SAME object, with every coordinate and dimension intact.
+    expect(raised.openings[0]).toBe(window);
+    expect(raised.openings[0]!.sill).toBe(window.sill);
+    expect(raised.openings[0]!.height).toBe(window.height);
+    expect(raised.openings[0]!.offset).toBe(window.offset);
+    expect(raised.openings[0]!.width).toBe(window.width);
+    expect(raised.notes).toEqual([]);
     expect(raised.unresolved).toBe(false);
-    expect(raised.notes[0]?.text).toMatch(/sill raised/);
-    expect(raised.notes[0]?.text).toMatch(/was not raised or moved/);
-    expect(raised.notes[0]?.text).not.toMatch(/Window on Wall 1 raised/);
+    expect(raised.inFrontOfWindow).toBe(true);
 
-    const after = resolveDeckFaucetPlacement(fixture, room, raised.openings, counter);
-    expect(after.conflict).toBeNull();
-    expect(after.warning).toBeNull();
-    expect(after.renderFaucet).toBe(true);
+    // And the faucet really is built as meshes.
     const root = new THREE.Group();
-    addSinkFixture(root, fixture, after);
+    addSinkFixture(root, fixture, placement);
     const faucetParts: string[] = [];
     root.traverse((node) => {
-      if (node.userData.sinkFaucet || node.userData.sinkFaucetBase || node.userData.sinkFaucetSpout) {
-        faucetParts.push("faucet");
-      }
+      if (node.userData.sinkFaucet || node.userData.sinkFaucetBase || node.userData.sinkFaucetSpout) faucetParts.push("faucet");
     });
     expect(faucetParts.length).toBeGreaterThan(0);
   });
 
-  it("leaves a window that already clears the faucet where it is", () => {
-    const { fixture, window } = farmhouseUnderWindow(15.75, 72, 18);
-    const before = resolveDeckFaucetPlacement(fixture, room, [window], counter);
-    expect(before.conflict).toBeNull();
-    const raised = raiseWindowsForDeckFaucet({ sinks: [fixture], room, openings: [window], countertops: counter });
+  it("moves the faucet forward on the deck where it can, without touching the window", () => {
+    const placed = sink({ type: "single", x: 36, y: 6, width: 25, depth: 18, sourceDepth: 18, faucetOverallHeight: 15.75 });
+    const window = lowSillWindow({ offset: 24, width: 48 });
+    const placement = resolveDeckFaucetPlacement(placed, room, [window], counter);
+    expect(placement.renderFaucet).toBe(true);
+    // It stayed on the deck, behind the basin.
+    expect(placement.centerFromWallIn).toBeLessThanOrEqual(placed.y);
+    expect(placement.centerFromWallIn).toBeGreaterThan(0);
+    const raised = raiseWindowsForDeckFaucet({ sinks: [placed], room, openings: [window], countertops: counter });
     expect(raised.openings[0]).toBe(window);
-    expect(raised.notes).toEqual([]);
-    expect(raised.unresolved).toBe(false);
   });
 
-  it("keeps the hidden-faucet warning when the wall is too low to raise the sill", () => {
+  it("draws the faucet even when the wall is too low to raise any sill", () => {
     const { fixture, window } = farmhouseUnderWindow(15.75);
     const lowRoom = {
       ...room,
@@ -284,19 +279,15 @@ describe("Auto-Design raises a window instead of hiding the faucet", () => {
       countertops: counter,
       wallLabels: { top: "Wall 1" },
     });
-    expect(raised.unresolved).toBe(true);
-    expect(raised.openings[0]?.sill).toBe(window.sill);
-    expect(raised.openings[0]?.height).toBe(window.height);
-    expect(raised.notes[0]?.text).toBe("Window on Wall 1 was left where it is. The sill could not be raised enough for the faucet without moving the top.");
-    const stillBlocked = resolveDeckFaucetPlacement(fixture, lowRoom, raised.openings, counter);
-    expect(stillBlocked.renderFaucet).toBe(false);
-    expect(stillBlocked.warning).toBe(FAUCET_WINDOW_CONFLICT_MESSAGE);
-    expect(FAUCET_WINDOW_CONFLICT_MESSAGE).not.toMatch(/lower faucet/i);
-    expect(FAUCET_WINDOW_CONFLICT_MESSAGE).toMatch(/raising the sill/i);
-    expect(FAUCET_WINDOW_CONFLICT_MESSAGE).toMatch(/top stays put/i);
+    expect(raised.openings[0]).toBe(window);
+    expect(raised.notes).toEqual([]);
+    expect(raised.unresolved).toBe(false);
+    const placement = resolveDeckFaucetPlacement(fixture, lowRoom, raised.openings, counter);
+    expect(placement.renderFaucet).toBe(true);
+    expect(placement.inFrontOfWindow).toBe(true);
   });
 
-  it("raises the window again when a taller faucet replaces the first one", () => {
+  it("keeps a taller faucet in front of the same untouched window", () => {
     const short = farmhouseUnderWindow(8);
     const first = raiseWindowsForDeckFaucet({
       sinks: [short.fixture],
@@ -305,6 +296,7 @@ describe("Auto-Design raises a window instead of hiding the faucet", () => {
       countertops: counter,
       wallLabels: { top: "Wall 1" },
     });
+    expect(first.openings[0]).toBe(short.window);
     const tallFixture = { ...short.fixture, faucetOverallHeight: 15.75 };
     const second = raiseWindowsForDeckFaucet({
       sinks: [tallFixture],
@@ -313,11 +305,19 @@ describe("Auto-Design raises a window instead of hiding the faucet", () => {
       countertops: counter,
       wallLabels: { top: "Wall 1" },
     });
-    expect(second.openings[0]!.sill).toBeGreaterThan(first.openings[0]!.sill);
-    expect(resolveDeckFaucetPlacement(tallFixture, room, second.openings, counter).renderFaucet).toBe(true);
-    expect(resolveDeckFaucetPlacement(tallFixture, room, second.openings, counter).conflict).toBeNull();
-    expect(second.openings[0]!.sill + second.openings[0]!.height).toBeCloseTo(short.window.sill + short.window.height, 5);
-    expect(second.notes[0]?.text).toMatch(/sill raised .+ in\. so the faucet clears it/);
-    expect(second.notes[0]?.text).toMatch(/was not raised or moved/);
+    expect(second.openings[0]).toBe(short.window);
+    expect(second.openings[0]!.sill).toBe(short.window.sill);
+    expect(second.openings[0]!.height).toBe(short.window.height);
+    const placement = resolveDeckFaucetPlacement(tallFixture, room, second.openings, counter);
+    expect(placement.renderFaucet).toBe(true);
+    expect(placement.inFrontOfWindow).toBe(true);
+  });
+
+  it("keeps a window that already clears the faucet exactly as it is", () => {
+    const { fixture, window } = farmhouseUnderWindow(15.75, 72, 18);
+    const raised = raiseWindowsForDeckFaucet({ sinks: [fixture], room, openings: [window], countertops: counter });
+    expect(raised.openings[0]).toBe(window);
+    expect(raised.notes).toEqual([]);
+    expect(raised.unresolved).toBe(false);
   });
 });

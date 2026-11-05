@@ -67,7 +67,7 @@ describe("a raised wall carries its windows and then locks them", () => {
     expect(left.wallHeightLocked).toBeUndefined();
   });
 
-  it("does not shorten a window that is locked to its wall", () => {
+  it("never touches a window for a faucet, locked to its wall or not", () => {
     const locked: WallOpening = {
       uid: "window-1", kind: "window", label: "Over sink", side: "top", offset: 30, width: 36, height: 36, sill: 38,
       wallHeightLocked: true,
@@ -80,9 +80,14 @@ describe("a raised wall carries its windows and then locks them", () => {
     const result = raiseWindowsForDeckFaucet({
       sinks: [sink], room: DEFAULT_ROOM, openings: [locked], wallLabels: { top: "Wall 1" },
     });
+    // Owner clarification (Nov 5 2026): the window NEVER moves for a faucet. The
+    // same object comes back with every coordinate and dimension intact, and no
+    // warning is raised — the faucet simply stands in front of the glazing.
+    expect(result.openings[0]).toBe(locked);
     expect(result.openings[0]).toMatchObject({ sill: 38, height: 36, offset: 30 });
     expect(result.openings[0]!.sill + result.openings[0]!.height).toBe(74);
-    expect(result.notes[0]?.text).toMatch(/locked to its wall/);
-    expect(result.unresolved).toBe(true);
+    expect(result.notes).toEqual([]);
+    expect(result.unresolved).toBe(false);
+    expect(result.inFrontOfWindow).toBe(true);
   });
 });

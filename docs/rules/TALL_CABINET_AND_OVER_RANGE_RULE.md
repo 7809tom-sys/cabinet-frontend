@@ -119,9 +119,21 @@ Because it lives on the sink, the faucet **moves, deletes, and saves with the si
 
 **Why a flag alone is not enough.** `makeSink` sets `faucet: true` on every new sink before any faucet has been chosen. Treating that flag as "already has a faucet" is exactly the bug: the 3D assembly needs a form and all three dimensions, so `sinkHasRenderableFaucet` / `sinkFaucetIsSatisfied` gate on those instead.
 
-## Where it sits
+## Where it sits — in front of the window (owner clarification)
 
-Centered on the **sink base's own run axis**, on the **countertop**, behind the basin's rear rim. `resolveDeckFaucetPlacement` (`client/src/lib/faucetPlacement.ts`) is the one resolver: it keeps the spout off the wall, out of the window frame, and on the measured counter, and `addSinkFixture` builds the base, riser, and spout from the published dimensions. A window is only ever shortened (sill raised, top fixed) through `raiseWindowsForDeckFaucet` — the same single rule every other faucet already used.
+Centered on the **sink base's own run axis**, on the **countertop**, behind the basin's rear rim — and **in front of the window**.
+
+**The window never moves.** No coordinate and no dimension (offset, width, sill,
+height) is changed by a faucet, ever. A sink under glazing is the normal kitchen, so
+the faucet standing in front of the window aperture is **expected**: it is never
+omitted for that reason and never treated as a blocking conflict.
+
+`resolveDeckFaucetPlacement` still moves the faucet forward on the rear deck where it
+can, but when the deck cannot clear the sill it keeps the forward-most point that is
+still on the deck behind the basin and **draws the faucet in front of the glazing**.
+`inFrontOfWindow` reports the (expected) arrangement; `raiseWindowsForDeckFaucet` now
+returns the openings untouched, always, and raises no warning.
+ `resolveDeckFaucetPlacement` (`client/src/lib/faucetPlacement.ts`) is the one resolver: it keeps the spout off the wall, out of the window frame, and on the measured counter, and `addSinkFixture` builds the base, riser, and spout from the published dimensions. A window is only ever shortened (sill raised, top fixed) through `raiseWindowsForDeckFaucet` — the same single rule every other faucet already used.
 
 ## Selection
 
@@ -132,6 +144,7 @@ Centered on the **sink base's own run axis**, on the **countertop**, behind the 
 ## Rules
 
 - **Add-only.** Nothing is deleted, replaced, reordered, or removed. A sink that already has a drawable faucet is returned untouched.
+- **Windows are preserved exactly.** Sink and window anchor limits are unchanged.
 - **Reported.** The build returns `everySinkHasFaucet` and `usedDefaultFaucet`, and a note naming the faucet (or the default fixture) reaches the layout notes.
 
 ## Tests
@@ -139,3 +152,34 @@ Centered on the **sink base's own run axis**, on the **countertop**, behind the 
 - `client/src/lib/autoDesignFaucetMandatory.test.ts` — **every build path** (six cabinet lines, every layout shape, with and without a catalog faucet): a faucet is present over the sink with a real form and real dimensions, anchored, on the countertop, with no window conflict; centered on the sink base's run axis; the default fixture is used and reported; an existing faucet is never replaced; idempotency; multi-sink.
 - `client/src/components/design/InteractiveRoom3D.mandatoryFaucet.test.ts` — **real meshes**: the build's sink produces a faucet base and a spout in 3D, both for a catalog faucet and for the default fixture, standing above the countertop.
 - `client/src/pages/DesignTool.mandatoryFaucet.test.ts` — the wiring: both build paths and the load pass, the once-per-plan guard, the add-only gate, and that the renderer draws from the published dimensions.
+
+# A tall box closes a run, never an occupied inside corner (Nov 5 2026)
+
+The owner's screenshot showed a pantry seated in the inside corner instead of at the
+end of a run. `planAutoDesignTallFit` now scores each candidate seat:
+
+| score | seat |
+| --- | --- |
+| 0 | a run end that meets another wall carrying **no** kitchen run — the clearest end of a run |
+| 1 | a run end that meets a wall this build will fill |
+| 2 | a run end that is an inside corner another run already occupies |
+| 10+ | an occupied inside corner (last resort) |
+| 20+ | an interior span (only when no run end is free) |
+
+Two signals decide "occupied", because a tall box is seated **before** the base runs
+tile: anything already placed on the adjoining wall, and — the one that fixes the
+reported case — `runWallIds`, the walls this build is going to fill. A tall box must
+not claim a corner the runs are about to use.
+
+The scoring loop keeps the **best** candidate across every span and wall. It used to
+`break` on the first accepted one, which is why a worse-scoring corner could win.
+
+If the only free seat is an occupied inside corner and it cannot be used, the tall is
+reported as `tall-cabinet-blocked` explaining that a tall box closes a run rather than
+a shared corner.
+
+## Tests
+
+- `client/src/lib/autoDesignTallCabinets.test.ts` — the corner check (occupied vs
+  empty vs interior), a corner shared with a wall this build *will* fill, preferring
+  an open run end over an occupied corner, and the blocked report.

@@ -18,7 +18,24 @@ import {
   type AutoDesignLayoutSuccess,
 } from "@/lib/autoDesignLayout";
 import type { AutoDesignInputs } from "@/lib/autoDesignAutoBuild";
-import { DEFAULT_ROOM, isRangeOrOven, type DesignCabinet, type PlacedCabinet, type RoomData, type SinkFixture } from "@/lib/design";
+import {
+  DEFAULT_ROOM,
+  clampCabinetsToRoom,
+  isRangeOrOven,
+  normalizeBlindCornerDoorSides,
+  normalizeLCornerDepths,
+  normalizeRefrigeratorBayUppers,
+  normalizeStandardWallMounts,
+  normalizeWd18CountertopMounts,
+  removeOverlappingPlacements,
+  backfillLegacyWallRuns,
+  normalizeLegacyPeninsulaCabinets,
+  type DesignCabinet,
+  type PlacedCabinet,
+  type RoomData,
+  type SinkFixture,
+  type WallOpening,
+} from "@/lib/design";
 import {
   existingOverRangeBridge,
   overRangeHasBridge,
@@ -27,6 +44,7 @@ import {
 import {
   addCabinet,
   addSinkFixture,
+  addWallOpening,
   existingCabinetSku,
   existingCabinetTransform,
 } from "@/components/design/InteractiveRoom3D";
@@ -72,7 +90,44 @@ function inputs(): AutoDesignInputs {
     dishwasher: null,
     refrigerator: null,
     overRangeAnswer: "microwave-bridge",
+    // A window over the sink, so the screenshot proves the owner's clarification:
+    // the faucet stands IN FRONT OF THE WINDOW and the window never moves.
+    sinkWindowCenter: { wallLabel: "Wall 1", centerOffsetIn: 30 },
   } as AutoDesignInputs;
+}
+
+/**
+ * The LOAD path, exercised for real: serialize the finished plan the way a saved
+ * design stores it (room + persisted entities + placed cabinets), then read it back
+ * through the same normalizers `loadSavedDesign` runs, and re-apply the two
+ * mandatory passes. If a save/load round trip drops the bridge, the microwave, or
+ * the faucet, this throws before a screenshot is taken.
+ */
+function roundTripSavedDesign(run: AutoDesignLayoutSuccess, room: RoomData) {
+  const saved = JSON.parse(JSON.stringify({
+    room: { ...room, persistedEntities: { openings: run.openings, sinks: run.sinks, potFillers: [], island: null, furniture: run.furniture ?? [], ponyWalls: [] } },
+    placed: run.placed,
+  })) as { room: RoomData; placed: PlacedCabinet[] };
+  // The normalizers the Designer's load path runs, in the same order.
+  const restoredRoom = saved.room;
+  const restoredPlaced = clampCabinetsToRoom(
+    backfillLegacyWallRuns(normalizeLegacyPeninsulaCabinets(
+      normalizeBlindCornerDoorSides(normalizeLCornerDepths(saved.placed), restoredRoom),
+      restoredRoom,
+    ), restoredRoom),
+    restoredRoom,
+  );
+  const repaired = removeOverlappingPlacements(
+    normalizeStandardWallMounts(
+      normalizeWd18CountertopMounts(
+        normalizeRefrigeratorBayUppers(restoredPlaced, restoredRoom),
+      ),
+      saved.room.persistedEntities?.openings ?? [],
+      restoredRoom,
+    ),
+    restoredRoom,
+  ).placed;
+  return { placed: repaired, sinks: saved.room.persistedEntities?.sinks ?? [], room: restoredRoom };
 }
 
 function buildKitchen(): { run: AutoDesignLayoutSuccess; room: RoomData } {
@@ -115,7 +170,7 @@ function stylePack() {
   };
 }
 
-function mount(container: HTMLElement, placed: PlacedCabinet[], room: RoomData, sinks: readonly SinkFixture[]) {
+function mount(container: HTMLElement, placed: PlacedCabinet[], room: RoomData, sinks: readonly SinkFixture[], openings: readonly WallOpening[]) {
   const width = container.clientWidth;
   const height = container.clientHeight;
   const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
@@ -207,10 +262,16 @@ function mount(container: HTMLElement, placed: PlacedCabinet[], room: RoomData, 
     );
   }
 
+  // The window over the sink, drawn by the real renderer so the capture shows the
+  // faucet standing in front of glazing — the owner's required arrangement.
+  for (const opening of openings) {
+    addWallOpening(root, opening, room);
+  }
+
   // Sinks and their mandatory faucets, from the same build. `addSinkFixture` builds
   // the faucet assembly from the sink record's published dimensions.
   for (const sink of sinks) {
-    addSinkFixture(root, sink, resolveDeckFaucetPlacement(sink, room, [], []));
+    addSinkFixture(root, sink, resolveDeckFaucetPlacement(sink, room, openings, []));
   }
   // Tint the faucet so it reads at a glance in the capture.
   root.traverse((node) => {
@@ -273,6 +334,19 @@ async function run() {
   const root = document.getElementById("root")!;
   try {
     const { run: built, room } = buildKitchen();
+
+    // Verify the LOAD path too, not just the build. A saved design must come back
+    // with its bridge, microwave, and faucet intact.
+    const loaded = roundTripSavedDesign(built, room);
+    const loadedRange = rangesInPlan(loaded.placed).find((item) => isRangeOrOven(item.masterCode, item.description));
+    if (!loadedRange) throw new Error("The loaded design lost its range");
+    const loadedBridge = existingOverRangeBridge(loaded.placed, loadedRange, room);
+    if (!loadedBridge) throw new Error("The loaded design lost its bridge");
+    if (loaded.sinks.length === 0) throw new Error("The loaded design lost its sink");
+    if (!loaded.sinks[0]!.faucet) throw new Error("The loaded design lost its faucet");
+    const loadedPlacement = resolveDeckFaucetPlacement(loaded.sinks[0]!, room, loaded.room.persistedEntities?.openings ?? [], []);
+    if (!loadedPlacement.renderFaucet) throw new Error("The loaded design's faucet would not draw");
+
     const range = rangesInPlan(built.placed).find((item) => isRangeOrOven(item.masterCode, item.description))!;
     const bridge = existingOverRangeBridge(built.placed, range, room);
     if (!bridge || !overRangeHasBridge(built.placed, range, room)) throw new Error("No bridge above the range");
@@ -284,14 +358,20 @@ async function run() {
     const faucetLabel = sink.pelicanFaucetProductName
       ?? (sink.defaultFaucet ? `${DEFAULT_PELICAN_KITCHEN_FAUCET.pelicanCode} (default fixture)` : "Faucet");
 
-    const view = mount(root, built.placed, room, built.sinks);
+    const sinkWindow = built.sinkWindow;
+    const windowGeometry = sinkWindow
+      ? `${Number(sinkWindow.width)}″ wide at sill ${Number(sinkWindow.sill)}″ &middot; unchanged by the faucet`
+      : "none in this plan";
+    const view = mount(root, built.placed, room, built.sinks, built.openings);
     caption.innerHTML = `
       <strong>Auto-Design build &middot; ${catalog[STYLE_ID]!.name}</strong><br />
       Bridge <strong>${bridge.masterCode}</strong> above <strong>${range.masterCode}</strong>
       <span class="ok">&#10003; present</span><br />
       <span class="dim">${Number(bridge.width)}″ wide &middot; ${Number(bridge.height)}″ tall &middot; bottom at ${bridge.mountBottom}″ &middot; centered on the range</span><br />
       <span class="rule">Faucet at the sink</span> <span class="ok">&#10003; present</span><br />
-      <span class="dim"><strong>${faucetLabel}</strong> &middot; centered on the sink base &middot; on the countertop &middot; ${sink.faucetForm}</span>
+      <span class="dim"><strong>${faucetLabel}</strong> &middot; centered on the sink base &middot; on the countertop &middot; ${sink.faucetForm}</span><br />
+      <span class="dim">Save &rarr; load round trip: bridge, microwave and faucet all preserved</span><br />
+      <span class="dim">Sink window: ${windowGeometry}</span>
     `;
     (window as unknown as { __bridgeShot?: string }).__bridgeShot = "ok";
     // Keep rendering a few frames so the shadow map settles before the capture.

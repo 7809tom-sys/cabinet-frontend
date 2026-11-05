@@ -138,12 +138,17 @@ describe("Auto-Design faucet catalog selection", () => {
       height: 36,
       sill: 42,
     };
+    // Owner clarification (Nov 5 2026): the window never moves for a faucet. A taller
+    // faucet still stands in front of the same untouched window, and is drawn.
     const first = raiseWindowsForDeckFaucet({
       sinks: [withShort],
       room: DEFAULT_ROOM,
       openings: [window],
       wallLabels: { top: "Wall 1" },
     });
+    expect(first.openings[0]).toBe(window);
+    expect(first.notes).toEqual([]);
+
     const withTall = applyChosenAutoDesignFaucet(withShort, taller);
     expect(withTall.faucetOverallHeight!).toBeGreaterThan(withShort.faucetOverallHeight!);
     const second = raiseWindowsForDeckFaucet({
@@ -152,14 +157,15 @@ describe("Auto-Design faucet catalog selection", () => {
       openings: first.openings,
       wallLabels: { top: "Wall 1" },
     });
-    expect(second.openings[0]!.sill).toBeGreaterThan(first.openings[0]!.sill);
-    expect(second.openings[0]!.sill + second.openings[0]!.height).toBeLessThanOrEqual(96);
-    expect(second.openings[0]!.height).toBeLessThan(window.height);
-    expect(resolveDeckFaucetPlacement(withTall, DEFAULT_ROOM, second.openings).conflict).toBeNull();
-    expect(resolveDeckFaucetPlacement(withTall, DEFAULT_ROOM, second.openings).renderFaucet).toBe(true);
-    expect(second.openings[0]!.sill + second.openings[0]!.height).toBeCloseTo(window.sill + window.height, 5);
-    expect(second.notes[0]?.text).toMatch(/sill raised .+ in\. so the faucet clears it \(new sill height .+ in\.\)/);
-    expect(second.notes[0]?.text).toMatch(/was not raised or moved; the top stayed put/);
-    expect(second.notes[0]?.text).toMatch(/Window height is now .+ in\./);
+    // Identical window, no coordinate or dimension changed, no note.
+    expect(second.openings[0]).toBe(window);
+    expect(second.openings[0]!.sill).toBe(window.sill);
+    expect(second.openings[0]!.height).toBe(window.height);
+    expect(second.openings[0]!.offset).toBe(window.offset);
+    expect(second.openings[0]!.width).toBe(window.width);
+    expect(second.notes).toEqual([]);
+    const placement = resolveDeckFaucetPlacement(withTall, DEFAULT_ROOM, second.openings);
+    expect(placement.renderFaucet).toBe(true);
+    expect(placement.inFrontOfWindow).toBe(true);
   });
 });
