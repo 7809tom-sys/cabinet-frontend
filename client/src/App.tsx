@@ -30,7 +30,7 @@ import {
 } from "@/lib/affiliateContext";
 import { ShoppingCart } from "lucide-react";
 import { PreferredProductsProvider } from "@/contexts/PreferredProductsContext";
-import { affiliateCatalogPath, affiliateDesignerPath, affiliateOrderPath, affiliateOwnerScopeDestination } from "@/lib/affiliateStorefrontUrl";
+import { affiliateCatalogPath, affiliateDesignerPath, affiliateOrderPath, affiliateOwnerScopeDestination, affiliateStorefrontPath } from "@/lib/affiliateStorefrontUrl";
 import { affiliateStylesPath } from "@/lib/affiliateBrowse";
 import { DEFAULT_SECTION_LABELS, storefrontCssVars } from "@shared/affiliateStorefrontControls";
 
@@ -103,6 +103,7 @@ const Terms = lazy(() => import("@/pages/Terms"));
 const CrmMondayPreview = lazy(() => import("@/pages/CrmMondayPreview"));
 const InstallationEstimateDocument = lazy(() => import("@/pages/InstallationEstimateDocument"));
 const Hardware = lazy(() => import("@/pages/Hardware"));
+const AffiliateGuide = lazy(() => import("@/pages/AffiliateGuide"));
 
 function PageLoader() {
   return (
@@ -267,6 +268,20 @@ function AffiliateManagementAliasRedirect({ target }: { target: "/affiliate" | "
 	  }, [target]);
 
 	  return <PageLoader />;
+}
+
+/**
+ * Legacy digital business-card links were distributed as `/card/<slug>` before
+ * this client ever shipped a card page. They now canonicalize to the branded
+ * storefront that the card was meant to advertise, so printed cards and QR
+ * codes keep working.
+ */
+function AffiliateCardRedirect({ slug }: { slug: string }) {
+  useEffect(() => {
+    window.location.replace(affiliateStorefrontPath(slug));
+  }, [slug]);
+
+  return <PageLoader />;
 }
 
 /**
@@ -816,6 +831,25 @@ export default function App() {
           </Suspense>
         </Route>
 
+        {/* Bookmarks and printed links from the original Marketing Hub still
+            point at these guide files, so keep the published guides routed
+            instead of falling through to the platform 404. */}
+        <Route path="/affiliate/guide/:slug">
+          {(params) => (
+            <AppLayout>
+              <Suspense fallback={<PageLoader />}>
+                <AffiliateGuide />
+              </Suspense>
+            </AppLayout>
+          )}
+        </Route>
+
+        {/* Digital business cards were never routed; send that legacy address
+            to the storefront the card advertises. */}
+        <Route path="/card/:slug">
+          {(params) => <AffiliateCardRedirect slug={params.slug} />}
+        </Route>
+	
         <Route path="/contractor/login">
           <AppLayout>
             <Suspense fallback={<PageLoader />}>

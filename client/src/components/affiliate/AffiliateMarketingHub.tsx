@@ -6,7 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { affiliateStorefrontUrl } from "@/lib/affiliateStorefrontUrl";
+import { affiliateDashboardLinks, affiliateStorefrontUrl } from "@/lib/affiliateStorefrontUrl";
+import { affiliateGuidePath, affiliateGuidesMatchingQuery } from "@/lib/affiliateGuides";
 import { CredentialsPanel } from "@/components/affiliate/CredentialsPanel";
 import { AffiliateResourceBrowser, type EducationResource } from "@/components/affiliate/AffiliateResourcesHub";
 import { AffiliateSocialLinksPanel } from "@/components/affiliate/AffiliateSocialLinksPanel";
@@ -92,8 +93,7 @@ export default function AffiliateMarketingHub({ affiliate }: { affiliate: Market
     onSuccess: () => utils.affiliateResources.myProgress.invalidate(),
     onError: (error) => toast.error(error.message),
   });
-  const storefrontUrl = affiliateStorefrontUrl(affiliate.slug);
-  const referralUrl = `${window.location.origin}?ref=${affiliate.referralCode}`;
+  const { storefrontUrl, referralUrl } = affiliateDashboardLinks(affiliate);
   const qrDataUrl = useQRCode(storefrontUrl);
   const items = (resources.data ?? []) as EducationResource[];
 
@@ -127,7 +127,7 @@ export default function AffiliateMarketingHub({ affiliate }: { affiliate: Market
           <TabsTrigger value="share" className="gap-1.5"><QrCode className="h-3.5 w-3.5" /> Share & Promote</TabsTrigger>
           <TabsTrigger value="my-social" className="gap-1.5">My Social Links</TabsTrigger>
         </TabsList>
-        {(["start", "scripts", "guides", "videos", "printed", "social", "tips"] as const).map((section) => (
+        {(["start", "scripts", "videos", "printed", "social", "tips"] as const).map((section) => (
           <TabsContent key={section} value={section} className="pt-4">
             <AffiliateResourceBrowser
               section={section}
@@ -144,6 +144,44 @@ export default function AffiliateMarketingHub({ affiliate }: { affiliate: Market
             />
           </TabsContent>
         ))}
+        <TabsContent value="guides" className="pt-4">
+          <div className="grid gap-4 sm:grid-cols-2" data-testid="training-guides">
+            {affiliateGuidesMatchingQuery(query).map((guide) => (
+              <Card key={guide.slug} className="transition-colors hover:border-primary/50">
+                <CardContent className="space-y-2 p-4">
+                  <p className="flex items-center gap-2 text-sm font-semibold">
+                    <BookOpen className="h-4 w-4 text-primary" /> {guide.title}
+                  </p>
+                  <p className="text-xs text-muted-foreground">{guide.description}</p>
+                  <a
+                    href={affiliateGuidePath(guide.slug)}
+                    className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline"
+                  >
+                    Read guide
+                  </a>
+                </CardContent>
+              </Card>
+            ))}
+            {!affiliateGuidesMatchingQuery(query).length ? (
+              <p className="rounded-lg border border-dashed border-border p-6 text-sm text-muted-foreground">
+                No published guide matches that search.
+              </p>
+            ) : null}
+          </div>
+          <AffiliateResourceBrowser
+            section="guides"
+            items={items}
+            literature={literature.data ?? []}
+            progress={progress.data ?? []}
+            query={query}
+            storeName={affiliate.storeName}
+            logoUrl={affiliate.logoUrl ?? null}
+            storefrontUrl={storefrontUrl}
+            onToggleComplete={(resource, completed) => saveProgress.mutate({ resourceId: resource.id, completed, progressPercent: completed ? 100 : 0 })}
+            onVideoProgress={(resource, progressPercent, completed) => saveProgress.mutate({ resourceId: resource.id, completed, progressPercent })}
+            onRequestFile={openFile}
+          />
+        </TabsContent>
         <TabsContent value="share" className="space-y-6 pt-4">
           <CredentialsPanel
             affiliate={affiliate}

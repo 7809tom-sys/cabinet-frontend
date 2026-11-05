@@ -23,7 +23,8 @@ import {
 } from "recharts";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { affiliateStorefrontPath, affiliateStorefrontUrl, copyAffiliateStorefrontLink } from "@/lib/affiliateStorefrontUrl";
+import { affiliateDashboardLinks, affiliateStorefrontPath, affiliateStorefrontUrl, copyAffiliateStorefrontLink } from "@/lib/affiliateStorefrontUrl";
+import { affiliateGuidePath } from "@/lib/affiliateGuides";
 import { affiliateAdminRowLinks } from "@/lib/affiliateAdminRowLinks";
 import {
   AFFILIATE_STOREFRONT_TEMPLATES,
@@ -1116,7 +1117,7 @@ function useQRCode(url: string) {
 
 function AffiliateMarketingAdmin({ affiliate: a, origin }: { affiliate: AffiliateItem; origin: string }) {
   const storefrontUrl = affiliateStorefrontUrl(a.slug, origin);
-  const referralUrl = `${origin}?ref=${a.referralCode}`;
+  const { referralUrl } = affiliateDashboardLinks(a, origin);
   const qrDataUrl = useQRCode(storefrontUrl);
 
   const SCRIPTS = [
@@ -1192,18 +1193,24 @@ function AffiliateMarketingAdmin({ affiliate: a, origin }: { affiliate: Affiliat
 
         <TabsContent value="training" className="space-y-3 pt-3">
           {[
-            { icon: "🎯", title: "10 Steps to a Sale", desc: "Complete sales playbook from prospect to referral." },
-            { icon: "📐", title: "Kitchen Design Fundamentals", desc: "Measurements, standard sizes, work triangle, and layouts." },
-            { icon: "📊", title: "How to Use Your CRM", desc: "Turn your pipeline into predictable sales." },
-            { icon: "✉️", title: "Marketing Scripts & Templates", desc: "Ready-to-use text, email, and social media templates." },
+            { icon: "🎯", slug: "10-steps-to-a-sale", title: "10 Steps to a Sale", desc: "Complete sales playbook from prospect to referral." },
+            { icon: "📐", slug: "kitchen-design-fundamentals", title: "Kitchen Design Fundamentals", desc: "Measurements, standard sizes, work triangle, and layouts." },
+            { icon: "📊", slug: "how-to-use-your-crm", title: "How to Use Your CRM", desc: "Turn your pipeline into predictable sales." },
+            { icon: "✉️", slug: "marketing-scripts-and-templates", title: "Marketing Scripts & Templates", desc: "Ready-to-use text, email, and social media templates." },
           ].map((g) => (
-            <div key={g.title} className="flex items-start gap-3 rounded-lg border border-border bg-card p-3">
+            <a
+              key={g.title}
+              href={affiliateGuidePath(g.slug)}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-start gap-3 rounded-lg border border-border bg-card p-3 hover:border-primary transition-colors"
+            >
               <span className="text-2xl">{g.icon}</span>
               <div>
                 <p className="font-semibold text-sm">{g.title}</p>
                 <p className="text-xs text-muted-foreground mt-0.5">{g.desc}</p>
               </div>
-            </div>
+            </a>
           ))}
           <div className="rounded-lg border border-border bg-card p-3">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">YouTube Resources</p>
