@@ -14,11 +14,13 @@
  * sent exactly as published (paint) or exactly as measured from the published swatch (stain).
  */
 import { type GrainOrientation, type MatchSavePatch } from "./wizardDoorMatch";
+import { colorNamePosition, positionForHex } from "./colorNamePosition";
 import {
   SHERWIN_WILLIAMS_PAINT_COLORS,
   SHERWIN_WILLIAMS_PAINT_SOURCE,
   exactPaintHex,
   normalizePaintCode,
+  nearestPaintColor,
   paintAtPosition,
   paintColorByCode,
   paintLabel,
@@ -33,6 +35,7 @@ import {
   STAIN_FINISH,
   STAIN_WHEEL_ENDS,
   normalizeStainCode,
+  nearestStain,
   stainAtPosition,
   stainByCode,
   stainLabel,
@@ -132,14 +135,34 @@ export function wizardColorByCode(value: string | null | undefined): WizardColor
   return wizardColorByStainCode(value) ?? wizardColorByPaintCode(value);
 }
 
+/**
+ * Where a chosen color sits on its wheel, 0..1.
+ *
+ * A published chip code is exact. A brand color has no chip code, so this used to
+ * return the start of the wheel and the marker jumped to an extreme. It now falls
+ * back to the color's own hex (the nearest published chip) and finally to a
+ * position inferred from its name. The color itself is never changed.
+ */
 export function wizardColorPosition(color: WizardColor | null): number {
   if (!color) return 0;
   if (color.finish === STAIN_FINISH) {
     const stain = stainByCode(color.code);
-    return stain ? stainPositionOf(stain) : 0;
+    if (stain) return stainPositionOf(stain);
+    const byHex = positionForHex(color.hex, (hex) => {
+      const hit = nearestStain(hex);
+      return hit ? stainPositionOf(hit.stain) : null;
+    });
+    if (byHex != null) return byHex;
+    return colorNamePosition(color.name, "stain") ?? 0.5;
   }
   const paint = paintColorByCode(color.code);
-  return paint ? paintPositionOf(paint) : 0;
+  if (paint) return paintPositionOf(paint);
+  const byHex = positionForHex(color.hex, (hex) => {
+    const hit = nearestPaintColor(hex);
+    return hit ? paintPositionOf(hit) : null;
+  });
+  if (byHex != null) return byHex;
+  return colorNamePosition(color.name, "paint") ?? 0.5;
 }
 
 export function wizardColorLightness(color: WizardColor): number {

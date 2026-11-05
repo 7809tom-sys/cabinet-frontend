@@ -361,9 +361,10 @@ describe("previews update from pasted text", () => {
       target: { value: "Style family: raised panel. Painted warm white." },
     });
     const unstated = screen.getByTestId("ai-door-unstated-gpt");
-    expect(unstated.textContent).toContain("Left at the library default");
-    expect(unstated.textContent).toContain("railIn");
-    expect(unstated.textContent).toContain("stileIn");
+    // Plain words, never raw field names.
+    expect(unstated.textContent).toContain("Using library defaults for: rail width, stile width");
+    expect(unstated.textContent).not.toContain("railIn");
+    expect(unstated.textContent).not.toContain("stileIn");
   });
 });
 

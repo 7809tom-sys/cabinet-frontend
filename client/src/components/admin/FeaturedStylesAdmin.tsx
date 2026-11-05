@@ -1334,19 +1334,41 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
               </label>
               {!styleVerified ? <Badge variant="outline">Unverified</Badge> : null}
               {style.styleVerifiedBy ? <p className="text-xs text-muted-foreground">Verified by {style.styleVerifiedBy}{style.styleVerifiedAt ? ` · ${new Date(style.styleVerifiedAt).toLocaleString()}` : ""}</p> : null}
-              <Input value={styleSourceNote} onChange={(event) => setStyleSourceNote(event.target.value)} placeholder="Source note, such as vendor photo or USCD Spec Manual V8.2, page 2" className="h-8 text-xs" />
+              <Input
+                value={styleSourceNote}
+                onChange={(event) => setStyleSourceNote(event.target.value)}
+                placeholder="Optional: where these specs came from"
+                aria-label="Optional: where these specs came from"
+                className="h-8 text-xs"
+              />
               <div
                 className="h-20 w-14 rounded border border-border"
+                data-testid="wall-cabinet-preview"
+                data-preview-hex={doorColor.appliedHex}
                 style={(() => {
                   const plan = resolveCabinetFaceImages({ ...style, doorSampleImageUrl, drawerSampleImageUrl }, "wall");
+                  // Same color of record the top of this page shows: the live
+                  // render hex when one is set, otherwise the resolver's applied
+                  // color. Never the raw saved name field, which CSS reads as a
+                  // named color (a saved "Blue" would paint pure #0000FF).
                   return plan.doorUrl
                     ? { backgroundImage: `url(${plan.doorUrl})`, backgroundSize: "cover", backgroundPosition: "center" }
-                    : { background: style.color || "#d8d2c8" };
+                    : { background: doorColor.appliedHex };
                 })()}
-                aria-label="Wall cabinet preview, one solid face"
+                aria-label="Wall cabinet preview in the selected color"
               />
-              <p className="text-xs text-muted-foreground">Wall preview. A combined base swatch is not painted onto the wall.</p>
-              <AdminStyleRoomSceneControls style={style} showIdleHint />
+              <p className="text-xs text-muted-foreground">Wall cabinet preview in the selected color.</p>
+              <AdminStyleRoomSceneControls
+                style={style}
+                showIdleHint
+                selectedColorHex={doorColor.appliedHex}
+                doorSetup={{
+                  doorStyle,
+                  panelConstruction,
+                  doorSampleImageUrl,
+                  drawerSampleImageUrl,
+                }}
+              />
             </div>
             {/* Corner Swatch */}
             <div className="rounded-lg border border-amber-200 bg-amber-50/40 px-3 py-3 space-y-3">

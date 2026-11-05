@@ -72,6 +72,20 @@ export function walzCraftCatalogCodes(): string[] {
   return Object.keys(WALZCRAFT_CATALOG_PROFILES).sort((left, right) => left.localeCompare(right, "en", { numeric: true }));
 }
 
+/**
+ * Real WalzCraft catalog profiles, in catalog-code order.
+ *
+ * Used to fill the door editor's suggested-profile slots when the sheet ranks
+ * fewer than four. Each entry is a published catalog row, so a filled slot is a
+ * real library default and never an invented profile.
+ */
+export function walzCraftCatalogProfiles(): Array<{ name: string; code: string }> {
+  return walzCraftCatalogCodes()
+    .map((code) => WALZCRAFT_CATALOG_PROFILES[code])
+    .filter((row): row is NonNullable<typeof row> => Boolean(row))
+    .map((row) => ({ name: row.style, code: row.style.split(" ")[0] ?? row.style }));
+}
+
 /** The model number a file name carries, if any: `S592-Barrington.jpg` -> S592. */
 export function modelNumberInFileName(fileName: string): string | null {
   const base = fileName.split("/").pop() ?? fileName;

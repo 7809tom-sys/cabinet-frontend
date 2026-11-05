@@ -21,6 +21,8 @@ export function AutoRoomSceneStatus({
   showIdleHint = false,
   retryPending = false,
   publishPending = false,
+  selectedColorHex = null,
+  doorSetup = null,
   onRetry,
   onPublish,
 }: {
@@ -31,6 +33,10 @@ export function AutoRoomSceneStatus({
   showIdleHint?: boolean;
   retryPending?: boolean;
   publishPending?: boolean;
+  /** The color of record the editor is showing, so the copy never names a stale color. */
+  selectedColorHex?: string | null;
+  /** The live door/drawer setup, so the copy describes the selected profile. */
+  doorSetup?: { doorStyle?: string | null; panelConstruction?: string | null } | null;
   onRetry?: () => void;
   onPublish?: (sceneId: number) => void;
 }) {
@@ -41,8 +47,17 @@ export function AutoRoomSceneStatus({
         <p className="text-xs text-muted-foreground">{VENDOR_AUTO_ROOM_SCENE_COPY}</p>
       )}
       {canManage && showIdleHint && !scene && (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-muted-foreground" data-testid="auto-room-scene-idle-hint">
           A draft room scene is generated after the door photo and the drawer front are both verified.
+        </p>
+      )}
+      {/* Says which finish the scene will be drawn in, read from the editor's live
+          selection rather than the last saved row. */}
+      {canManage && (selectedColorHex || doorSetup?.doorStyle) && (
+        <p className="text-xs text-muted-foreground" data-testid="auto-room-scene-selected-finish">
+          Room scene uses the selected finish
+          {selectedColorHex ? ` ${selectedColorHex}` : ""}
+          {doorSetup?.doorStyle ? ` · ${doorSetup.doorStyle}` : ""}.
         </p>
       )}
       {scene && (

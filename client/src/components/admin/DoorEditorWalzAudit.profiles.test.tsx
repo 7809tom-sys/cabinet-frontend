@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { auditWalzcraftDoor } from "@shared/walzcraftDoorAudit";
+import { walzCraftCatalogProfiles } from "@shared/walzcraftProfileImage";
 import { DoorEditorWalzAudit } from "./DoorEditorWalzAudit";
 
 afterEach(cleanup);
@@ -19,71 +20,84 @@ const style = {
 };
 
 describe("door editor wizard: WalzCraft profile choices", () => {
-  it("lists the ranked profile matches from the audit sheet, top four", () => {
-    const expected = auditWalzcraftDoor(style).profiles;
-    expect(expected.length).toBeGreaterThan(1);
-
+  it("always shows four suggested profile slots", () => {
     render(<DoorEditorWalzAudit style={style} sampleUrl="/uploads/stone-gray.jpg" />);
     const list = screen.getByTestId("walz-audit-profiles");
     expect(list).toBeTruthy();
+    // Four slots, always, whatever the sheet ranked.
+    expect(within(list).getAllByRole("button")).toHaveLength(4);
+  });
 
-    const buttons = within(list).getAllByRole("button");
-    expect(buttons).toHaveLength(Math.min(4, expected.length));
+  it("lists the ranked profile matches from the audit sheet first", () => {
+    const expected = auditWalzcraftDoor(style).profiles;
+    render(<DoorEditorWalzAudit style={style} sampleUrl="/uploads/stone-gray.jpg" />);
 
     expected.slice(0, 4).forEach((profile) => {
       const button = screen.getByTestId(`walz-audit-profile-${profile.rank}`);
+      expect(button.getAttribute("data-profile-source")).toBe("match");
       expect(button.textContent).toContain(profile.name);
       expect(button.textContent).toContain(`${profile.pct}% profile match`);
     });
   });
 
-  it("marks the picked profile and keeps the choice visible", () => {
-    const profiles = auditWalzcraftDoor(style).profiles;
+  it("fills spare slots from real WalzCraft catalog defaults, labelled as such", () => {
     render(<DoorEditorWalzAudit style={style} sampleUrl="/uploads/stone-gray.jpg" />);
+    const fills = [1, 2, 3, 4]
+      .map((rank) => screen.getByTestId(`walz-audit-profile-${rank}`))
+      .filter((button) => button.getAttribute("data-profile-source") === "library-default");
+    for (const button of fills) {
+      // A real catalog name, and no invented match percentage.
+      expect(button.textContent).toContain("Library default");
+      expect(button.textContent).not.toContain("% profile match");
+    }
+    // Every filled slot names a profile that is really in the catalog data.
+    const catalogNames = walzCraftCatalogProfiles().map((entry) => entry.name);
+    for (const button of fills) {
+      const label = (button.textContent ?? "").split(" · ")[0] ?? "";
+      expect(catalogNames).toContain(label);
+    }
+  });
 
-    // The top match starts picked.
-    expect(screen.getByTestId(`walz-audit-profile-${profiles[0]!.rank}`).getAttribute("aria-pressed")).toBe("true");
+  it("shows four slots even when the door has no sheet row at all", () => {
+    render(<DoorEditorWalzAudit style={{ id: 1, ourName: "Not a real door", distributorId: 999999 }} />);
+    const list = screen.getByTestId("walz-audit-profiles");
+    const buttons = within(list).getAllByRole("button");
+    expect(buttons).toHaveLength(4);
+    // With no sheet row, every slot is a catalog default rather than a claimed match.
+    expect(buttons.every((button) => button.getAttribute("data-profile-source") === "library-default")).toBe(true);
+  });
 
-    const second = profiles[1];
-    if (!second) return;
-    fireEvent.click(screen.getByTestId(`walz-audit-profile-${second.rank}`));
-    expect(screen.getByTestId(`walz-audit-profile-${second.rank}`).getAttribute("aria-pressed")).toBe("true");
-    expect(screen.getByTestId(`walz-audit-profile-${profiles[0]!.rank}`).getAttribute("aria-pressed")).toBe("false");
-    expect(screen.getByTestId("wizard-profile-picked").textContent).toContain(second.name);
-    expect(screen.getByTestId("wizard-profile-picked").textContent).toContain(`${second.pct}% profile match`);
+  it("marks the picked profile and keeps the choice visible", () => {
+    render(<DoorEditorWalzAudit style={style} sampleUrl="/uploads/stone-gray.jpg" />);
+    const first = screen.getByTestId("walz-audit-profile-1");
+    const second = screen.getByTestId("walz-audit-profile-2");
+    expect(first.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(second);
+    expect(second.getAttribute("aria-pressed")).toBe("true");
+    expect(first.getAttribute("aria-pressed")).toBe("false");
+    expect(screen.getByTestId("wizard-profile-picked").textContent).toContain((second.textContent ?? "").split(" · ")[0] ?? "");
   });
 
   it("keeps the upload option beside the profile list, so a custom profile is still possible", () => {
     render(<DoorEditorWalzAudit style={style} sampleUrl="/uploads/stone-gray.jpg" />);
     const block = screen.getByTestId("wizard-profile-image");
-    // Both ways in live in the same block.
     expect(within(block).getByTestId("walz-audit-profiles")).toBeTruthy();
     expect(within(block).getByTestId("wizard-folder-button").textContent).toBe("Choose folder");
     expect(within(block).getByTestId("wizard-files-button").textContent).toBe("Choose files");
   });
 
   it("reports the picked profile in the saved line without changing the saved color", () => {
-    const profiles = auditWalzcraftDoor(style).profiles;
     render(<DoorEditorWalzAudit style={style} sampleUrl="/uploads/stone-gray.jpg" />);
-
-    // Pick an explicit color first, then the second profile.
     fireEvent.change(screen.getByTestId("wizard-paint-code"), { target: { value: "SW 7005" } });
     fireEvent.click(screen.getByTestId("wizard-paint-code-apply"));
-    const second = profiles[1];
-    if (second) fireEvent.click(screen.getByTestId(`walz-audit-profile-${second.rank}`));
+    const second = screen.getByTestId("walz-audit-profile-2");
+    fireEvent.click(second);
 
     fireEvent.click(screen.getByTestId("wizard-apply"));
     const savedLine = screen.getByTestId("wizard-applied").textContent ?? "";
     // The color save is untouched: still the exact SW chip that was chosen.
     expect(savedLine).toContain("#edece6");
     expect(savedLine).toContain("SW 7005 Pure White");
-    if (second) expect(savedLine).toContain(`${second.pct}% profile match`);
-  });
-
-  it("says so when the door has no sheet row to rank", () => {
-    render(<DoorEditorWalzAudit style={{ id: 1, ourName: "Not a real door", distributorId: 999999 }} />);
-    const list = screen.getByTestId("walz-audit-profiles");
-    expect(list.textContent).toMatch(/No WalzCraft door matches this distributor and name yet|no ranked profiles/);
-    expect(within(list).queryAllByRole("button")).toHaveLength(0);
+    expect(savedLine).toContain((second.textContent ?? "").split(" · ")[0] ?? "");
   });
 });

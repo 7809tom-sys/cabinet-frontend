@@ -27,6 +27,7 @@ import {
   AI_DOOR_MODELS,
   AI_DOOR_MODEL_LABELS,
   AI_DOOR_PROMPTS,
+  aiDoorUnstatedSentence,
   chooseOfficialAiDescription,
   parseAiDoorComparison,
   type AiDoorModel,
@@ -233,8 +234,8 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial }:
   const describe = useAiDoorDescribe();
 
   const parsed = useMemo(
-    () => (open ? parseAiDoorComparison(fields) : null),
-    [open, fields],
+    () => (open ? parseAiDoorComparison(fields, style) : null),
+    [open, fields, style],
   );
 
   function startComparison() {
@@ -468,11 +469,11 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial }:
                   {result && (
                     <div className="space-y-1" data-testid={`ai-door-unstated-${model}`}>
                       {result.unstated.length > 0 ? (
-                        <p className="text-[10px] text-amber-800">
-                          Left at the library default: {result.unstated.join(", ")}
+                        <p className="text-[10px] text-amber-800" data-testid={`ai-door-unstated-sentence-${model}`}>
+                          {aiDoorUnstatedSentence(result.unstated)}
                         </p>
                       ) : (
-                        <p className="text-[10px] text-emerald-800">Every compared parameter was stated in this description.</p>
+                        <p className="text-[10px] text-emerald-800">Every compared detail was stated in this description.</p>
                       )}
                       {result.params.colorText && (
                         <p className="text-[10px] text-muted-foreground">Color, as described: {result.params.colorText}</p>

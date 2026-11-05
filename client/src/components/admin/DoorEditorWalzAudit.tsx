@@ -11,7 +11,7 @@ import {
   type ReplicateDoor,
 } from "@shared/wizardDoorMatch";
 import type { AuditStyle } from "@shared/walzcraftDoorAudit";
-import { auditWalzcraftDoor } from "@shared/walzcraftDoorAudit";
+import { auditProfileSlots, auditWalzcraftDoor } from "@shared/walzcraftDoorAudit";
 import { writeWizardDoorFinish, type WizardDoorFinish } from "@shared/walzcraftDesignerPickup";
 import {
   PAINT_FINISH,
@@ -40,6 +40,7 @@ import {
   resolveDoorProfileImage,
   selectFromSelection,
   walzCraftCatalogCodes,
+  walzCraftCatalogProfiles,
   writeProfileImage,
   type WalzCraftProfileImage,
 } from "@shared/walzcraftProfileImage";
@@ -100,11 +101,14 @@ export function DoorEditorWalzAudit({
   uploadImage?: (file: File) => Promise<string | null>;
 }) {
   const suggestion = suggestWizardMatch(style);
-  // Ranked WalzCraft profile candidates from the audit sheet. The admin can pick
-  // one of the top four, or upload their own profile photo below.
+  // Always four suggested profiles: the sheet's ranked matches first, then real
+  // WalzCraft catalog defaults for any slot the sheet could not fill.
   const audit = useMemo(() => auditWalzcraftDoor(style), [style]);
-  const profileChoices = useMemo(() => audit.profiles.slice(0, 4), [audit]);
-  const [profileRank, setProfileRank] = useState<number | null>(profileChoices[0]?.rank ?? null);
+  const profileSlots = useMemo(
+    () => auditProfileSlots(audit, walzCraftCatalogProfiles()),
+    [audit],
+  );
+  const [profileRank, setProfileRank] = useState<number | null>(profileSlots[0]?.rank ?? null);
   const grains = useMemo(() => framelessGrains(), []);
   const [grainCode, setGrainCode] = useState<string | null>(null);
   const [orientation, setOrientation] = useState<GrainOrientation | null>(null);
@@ -234,8 +238,8 @@ export function DoorEditorWalzAudit({
     onApply?.(patch);
   };
 
-  /** The profile the admin picked from the four ranked matches, if any. */
-  const selectedProfile = profileChoices.find((item) => item.rank === profileRank) ?? null;
+  /** The profile the admin picked from the four suggested slots, if any. */
+  const selectedProfile = profileSlots.find((slot) => slot.rank === profileRank) ?? null;
 
   /** Hands the finish to the editor, which saves it and writes the record the Designer reads. */
   const commitWizardFinish = (color: WizardColor, patch: MatchSavePatch) => {
@@ -456,25 +460,33 @@ export function DoorEditorWalzAudit({
 
         {/* Ranked WalzCraft profile matches. Pick one of the top four, or upload a
             custom profile photo below. Nothing is chosen until the admin clicks. */}
+        {/* Always four suggested profiles. Sheet-ranked matches first, then real
+            WalzCraft catalog defaults, then empty slots. This section never
+            disappears: it is not tied to a match report or a wizard step. */}
         <div data-testid="walz-audit-profiles" className="space-y-1 pt-1">
-          <p className="text-[11px] font-semibold">WalzCraft profiles</p>
-          {!audit.door && (
-            <p className="text-[11px] text-muted-foreground">No WalzCraft door matches this distributor and name yet.</p>
+          <p className="text-[11px] font-semibold">Suggested door profiles</p>
+          {profileSlots.length === 0 && (
+            <p className="text-[11px] text-muted-foreground">No WalzCraft profiles are available.</p>
           )}
-          {audit.door && profileChoices.length === 0 && (
-            <p className="text-[11px] text-muted-foreground">This door's sheet row has no ranked profiles.</p>
-          )}
-          {profileChoices.map((item) => (
+          {profileSlots.map((slot) => (
             <button
-              key={`${item.rank}-${item.name}`}
+              key={`${slot.rank}-${slot.name}`}
               type="button"
-              data-testid={`walz-audit-profile-${item.rank}`}
-              aria-pressed={profileRank === item.rank}
-              onClick={() => setProfileRank(item.rank)}
-              className={`flex w-full items-center justify-between rounded border px-2 py-1 text-left text-[11px] ${profileRank === item.rank ? "border-[#d7a46c] bg-white font-semibold" : "border-[#244338]/20"}`}
+              data-testid={`walz-audit-profile-${slot.rank}`}
+              data-profile-source={slot.kind}
+              aria-pressed={profileRank === slot.rank}
+              onClick={() => setProfileRank(slot.rank)}
+              className={`flex w-full items-center justify-between gap-2 rounded border px-2 py-1 text-left text-[11px] ${profileRank === slot.rank ? "border-[#d7a46c] bg-white font-semibold" : "border-[#244338]/20"}`}
             >
-              <span>{item.name}{item.code ? ` · ${item.code}` : ""}</span>
-              <span data-testid={`walz-audit-profile-pct-${item.rank}`}>{item.pct}% profile match</span>
+              <span className="min-w-0 truncate">
+                {slot.name}
+                {slot.code ? ` · ${slot.code}` : ""}
+              </span>
+              {slot.kind === "match" ? (
+                <span className="shrink-0" data-testid={`walz-audit-profile-pct-${slot.rank}`}>{slot.pct}% profile match</span>
+              ) : (
+                <span className="shrink-0 text-[#244338]/70" data-testid={`walz-audit-profile-default-${slot.rank}`}>Library default</span>
+              )}
             </button>
           ))}
           {audit.door && !audit.exact && (
@@ -536,13 +548,14 @@ export function DoorEditorWalzAudit({
         <p data-testid="wizard-applied" className="text-xs">
           Saved {saved.renderHex} · {saved.woodSpecies ?? "no grain"} · {saved.grainDirection}
           {savedColor ? ` · ${savedColor.label}` : ""}
-          {selectedProfile ? ` · ${selectedProfile.name} (${selectedProfile.pct}% profile match)` : ""}
+          {selectedProfile ? ` · ${selectedProfile.name}${selectedProfile.kind === "match" ? ` (${selectedProfile.pct}% profile match)` : " (library default)"}` : ""}
         </p>
       )}
       {selectedProfile && (
         <p data-testid="wizard-profile-picked" className="text-xs">
           Profile: {selectedProfile.name}
-          {selectedProfile.code ? ` · ${selectedProfile.code}` : ""} · {selectedProfile.pct}% profile match
+          {selectedProfile.code ? ` · ${selectedProfile.code}` : ""}
+          {selectedProfile.kind === "match" ? ` · ${selectedProfile.pct}% profile match` : " · library default"}
         </p>
       )}
       <div data-testid="wizard-replicate" className="space-y-1">

@@ -46,6 +46,62 @@ export type WalzcraftDoorAudit = {
   features: PercentNote[];
 };
 
+/** How many profile suggestions the door editor always shows. */
+export const WALZ_AUDIT_PROFILE_SLOTS = 4 as const;
+
+/**
+ * One slot in the door editor's suggested-profiles list.
+ *
+ * `library-default` means the sheet did not rank enough profiles for this door,
+ * so the slot is filled from the WalzCraft catalog data. It is still a real
+ * catalog profile with its published name and code; nothing is invented and no
+ * match percentage is claimed for it.
+ */
+export type ProfileSlot =
+  | { kind: "match"; rank: number; name: string; code: string | null; pct: number }
+  | { kind: "library-default"; rank: number; name: string; code: string; pct: null };
+
+/**
+ * The four slots the door editor always renders.
+ *
+ * Sheet-ranked matches come first, in rank order. Any remaining slot is filled
+ * from `catalogDefaults`, a caller-supplied list of real WalzCraft catalog
+ * profiles. The same profile is never listed twice, and a caller that supplies
+ * too few catalog profiles gets empty slots rather than invented ones.
+ */
+export function auditProfileSlots(
+  audit: Pick<WalzcraftDoorAudit, "profiles">,
+  catalogDefaults: ReadonlyArray<{ name: string; code: string }>,
+): ProfileSlot[] {
+  const slots: ProfileSlot[] = [];
+  const seen = new Set<string>();
+  const key = (name: string, code: string | null) => `${name.trim().toLowerCase()}|${(code ?? "").trim().toLowerCase()}`;
+
+  for (const match of audit.profiles) {
+    if (slots.length >= WALZ_AUDIT_PROFILE_SLOTS) break;
+    const identity = key(match.name, match.code);
+    if (seen.has(identity)) continue;
+    seen.add(identity);
+    slots.push({ kind: "match", rank: match.rank, name: match.name, code: match.code, pct: match.pct });
+  }
+
+  for (const entry of catalogDefaults) {
+    if (slots.length >= WALZ_AUDIT_PROFILE_SLOTS) break;
+    const identity = key(entry.name, entry.code);
+    if (seen.has(identity)) continue;
+    seen.add(identity);
+    slots.push({
+      kind: "library-default",
+      rank: slots.length + 1,
+      name: entry.name,
+      code: entry.code,
+      pct: null,
+    });
+  }
+
+  return slots;
+}
+
 function parsedInches(value: string | number | null | undefined): number | null {
   if (value == null || value === "") return null;
   const parsed = typeof value === "number" ? value : Number.parseFloat(String(value));

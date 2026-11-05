@@ -24,6 +24,11 @@ import {
 } from "./raisedPanelDoorBlueprint";
 import { isPaintedFinish } from "./paintedFinish";
 import { DOOR_LIBRARY_ENTRY_IDS } from "./doorLibraryProfiles";
+import {
+  uscdFramedFamilyForStyle,
+  uscdFramedLibraryFamily,
+  type UscdFramedFamily,
+} from "./uscdFramedFamilies";
 import { AI_DOOR_MODELS, type AiDoorModel } from "./aiDoorPrompts";
 
 // The models, their labels, and the prompts live in `aiDoorPrompts.ts`, which has
@@ -89,6 +94,40 @@ export const AI_DOOR_PARAM_FIELDS = [
   "colorText",
 ] as const;
 export type AiDoorParamField = (typeof AI_DOOR_PARAM_FIELDS)[number];
+
+/**
+ * Plain words for each compared field, so the preview says what stayed at the
+ * library default instead of listing raw camelCase keys at the operator.
+ */
+export const AI_DOOR_PARAM_LABELS: Record<AiDoorParamField, string> = {
+  family: "style family",
+  railIn: "rail width",
+  stileIn: "stile width",
+  panelConstruction: "panel construction",
+  insideEdgeProfile: "inside edge profile",
+  cornerJoint: "corner joint",
+  bevelWidthIn: "bevel width",
+  molding: "molding",
+  painted: "paint or stain",
+  grainDirection: "grain direction",
+  sheen: "sheen",
+  undertone: "undertone",
+  colorText: "color",
+};
+
+/**
+ * One short sentence for the fields that stayed at the library default.
+ *
+ * `["railIn", "sheen"]` becomes
+ * "Using library defaults for: rail width, sheen." No raw field names.
+ */
+export function aiDoorUnstatedSentence(unstated: readonly string[]): string {
+  const words = unstated
+    .map((field) => AI_DOOR_PARAM_LABELS[field as AiDoorParamField] ?? field)
+    .filter(Boolean);
+  if (words.length === 0) return "Every compared detail was stated in this description.";
+  return `Using library defaults for: ${words.join(", ")}.`;
+}
 
 const EMPTY_PARAMS: AiDoorProfileParams = {
   entryId: null,
@@ -274,6 +313,81 @@ export function parseAiDoorDescription(
   model: AiDoorModel,
   description: string,
 ): AiDoorParseResult {
+  return parseAiDoorDescriptionForStyle(model, description, null);
+}
+
+/**
+ * Parse one model's description, using the door style to fill what the text does
+ * not state.
+ *
+ * A style such as "Haven Harbor" belongs to a US Cabinet Depot framed family the
+ * manual documents. When the pasted text names no family, the style's own name
+ * and frame widths supply it, and the fields the manual states are marked as
+ * stated instead of "left at the library default". Fields the manual does not
+ * state (sheen, undertone, molding, painted) stay null and are still listed.
+ */
+export function parseAiDoorDescriptionForStyle(
+  model: AiDoorModel,
+  description: string,
+  style: {
+    ourName?: string | null;
+    aliasName?: string | null;
+    name?: string | null;
+    doorStyle?: string | null;
+    styleCode?: string | null;
+    code?: string | null;
+    railWidth?: string | number | null;
+    stileWidth?: string | number | null;
+  } | null | undefined,
+): AiDoorParseResult {
+  const parsed = parseAiDoorDescriptionFromText(model, description);
+  const family = uscdFramedFamilyForStyle(style);
+  // Only fill a family the text did not state. Stated text always wins.
+  if (!family || parsed.params.family !== "unknown") return parsed;
+  return applyUscdFamily(parsed, family, style);
+}
+
+/**
+ * Merge a documented USCD family onto a parse result.
+ *
+ * Every value written here is either from the manual entry or from the style's
+ * own saved rail/stile. Nothing else is added: sheen, undertone, molding and
+ * painted stay exactly as the text left them.
+ */
+function applyUscdFamily(
+  parsed: AiDoorParseResult,
+  family: UscdFramedFamily,
+  style: { railWidth?: string | number | null; stileWidth?: string | number | null } | null | undefined,
+): AiDoorParseResult {
+  const styleRail = parseInchesFromText(style?.railWidth == null ? null : String(style.railWidth));
+  const styleStile = parseInchesFromText(style?.stileWidth == null ? null : String(style.stileWidth));
+  const params: AiDoorProfileParams = {
+    ...parsed.params,
+    entryId: family.id,
+    family: uscdFramedLibraryFamily(family),
+    railIn: styleRail ?? family.railIn,
+    stileIn: styleStile ?? family.stileIn,
+    panelConstruction: family.centerPanel === "raised" ? "raised" : "recessed",
+    insideEdgeProfile: family.insideEdgeLabel,
+    cornerJoint: family.frameJoint === "mitered" ? "mitered" : "cope-and-stick",
+  };
+  const unstated = AI_DOOR_PARAM_FIELDS.filter((field) => params[field] == null || params[field] === "unknown");
+  return {
+    ...parsed,
+    params,
+    unstated: [...unstated],
+    notes: [
+      `Family read from the door style name: US Cabinet Depot ${family.name} (${family.citation}).`,
+      ...parsed.notes.filter((note) => !/does not name a style family/i.test(note) && !/Rail width was not stated/i.test(note)),
+    ],
+  };
+}
+
+/** The text-only parse. Every unstated value stays null. */
+function parseAiDoorDescriptionFromText(
+  model: AiDoorModel,
+  description: string,
+): AiDoorParseResult {
   const text = (description ?? "").trim();
   if (!text) {
     return {
@@ -345,9 +459,10 @@ export function parseAiDoorDescription(
 /** Parse all three fields at once. Order matches `AI_DOOR_MODELS`. */
 export function parseAiDoorComparison(
   fields: Partial<Record<AiDoorModel, string>>,
+  style?: Parameters<typeof parseAiDoorDescriptionForStyle>[2],
 ): Record<AiDoorModel, AiDoorParseResult> {
   return AI_DOOR_MODELS.reduce((accumulator, model) => {
-    accumulator[model] = parseAiDoorDescription(model, fields[model] ?? "");
+    accumulator[model] = parseAiDoorDescriptionForStyle(model, fields[model] ?? "", style);
     return accumulator;
   }, {} as Record<AiDoorModel, AiDoorParseResult>);
 }

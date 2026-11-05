@@ -15,7 +15,8 @@ describe("FeaturedStylesAdmin automatic room scenes", () => {
   it("shows separate door and drawer-front verification on the door-style editor and lists", () => {
     expect(adminSource).toContain("drawerSampleVerified?: boolean");
     expect(adminSource).toContain("autoRoomScene?: AutoRoomScene | null");
-    expect(adminSource).toContain("<AdminStyleRoomSceneControls style={style} showIdleHint />");
+    expect(adminSource).toContain("<AdminStyleRoomSceneControls");
+    expect(adminSource).toContain("selectedColorHex={doorColor.appliedHex}");
     expect(adminSource.match(/<AdminStyleRoomSceneControls style=\{s\} \/>/g)?.length).toBe(3);
     expect(controlsSource).toContain('image="door"');
     expect(controlsSource).toContain('image="drawer"');
