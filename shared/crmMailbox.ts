@@ -50,6 +50,23 @@ export const CRM_EMAIL_MERGE_FIELDS = [
 
 export type CrmEmailMergeField = (typeof CRM_EMAIL_MERGE_FIELDS)[number];
 
+/**
+ * Who the note is from. Filled from the signed-in account (house brand,
+ * affiliate store, or contractor business) so a form letter introduces the
+ * right company. Kept out of CRM_EMAIL_MERGE_FIELDS so the compose toolbar
+ * still offers only the per-deal tokens.
+ */
+export const CRM_SENDER_MERGE_FIELDS = [
+  "senderCompany",
+  "senderLocation",
+  "senderPhone",
+  "senderEmail",
+] as const;
+
+export type CrmSenderMergeField = (typeof CRM_SENDER_MERGE_FIELDS)[number];
+
+export type CrmMergeFieldValue = Partial<Record<CrmEmailMergeField | CrmSenderMergeField, string>>;
+
 export const CRM_BUILTIN_EMAIL_TEMPLATES = [
   {
     key: "follow_up",
@@ -225,10 +242,15 @@ export function resolveCrmOutbound(input: {
   };
 }
 
-export function applyCrmMergeFields(template: string, fields: Partial<Record<CrmEmailMergeField, string>>): string {
+export function applyCrmMergeFields(template: string, fields: CrmMergeFieldValue): string {
   return template.replace(/\{\{\s*([a-zA-Z]+)\s*\}\}/g, (match, key: string) => {
-    if (!CRM_EMAIL_MERGE_FIELDS.includes(key as CrmEmailMergeField)) return match;
-    return fields[key as CrmEmailMergeField] ?? "";
+    if (CRM_EMAIL_MERGE_FIELDS.includes(key as CrmEmailMergeField)) {
+      return fields[key as CrmEmailMergeField] ?? "";
+    }
+    if (CRM_SENDER_MERGE_FIELDS.includes(key as CrmSenderMergeField)) {
+      return fields[key as CrmSenderMergeField] ?? "";
+    }
+    return match;
   });
 }
 
