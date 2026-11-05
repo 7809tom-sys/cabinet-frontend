@@ -4,6 +4,7 @@ import { ThemeProvider } from "@/contexts/ThemeContext";
 import { TopNav } from "@/components/TopNav";
 import { SiteFooter } from "@/components/SiteFooter";
 import { AdminEditModeBar } from "@/components/admin/AdminEditModeBar";
+import { hideAdminEditModeBarForRoute } from "@/lib/adminChrome";
 import ChatWidget from "@/components/ChatWidget";
 import { useWhiteLabelHead } from "@/hooks/useWhiteLabelHead";
 import { StorefrontEmbed } from "@/components/storefront/StorefrontEmbed";
@@ -111,9 +112,17 @@ function PageLoader() {
 }
 
 function AppLayout({ children }: { children: React.ReactNode }) {
+  const [location] = useLocation();
+  // The sales CRM and incoming-orders views already name the workspace at the
+  // top of the page, so the purple admin strip (and its "Admin Panel" link back
+  // to where you already are) is redundant there.
+  const showAdminEditModeBar = !hideAdminEditModeBarForRoute(
+    location || window.location.pathname,
+    window.location.search,
+  );
   return (
     <div className="min-h-screen flex flex-col">
-      <AdminEditModeBar />
+      {showAdminEditModeBar && <AdminEditModeBar />}
       <TopNav />
       <main className="flex-1">
         {children}

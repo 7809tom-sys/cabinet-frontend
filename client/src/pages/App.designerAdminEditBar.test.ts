@@ -12,6 +12,8 @@ describe("Designer admin edit notice", () => {
     expect(source).toContain('<AffiliateShell slug={params.slug} fullHeight hideAdminEditModeBar>');
     const directDesigner = source.slice(source.indexOf("function DesignerRoute"), source.indexOf("function DistributorPortalRedirect"));
     expect(directDesigner).not.toContain("<AdminEditModeBar />");
-    expect(source).toContain("<AdminEditModeBar />\n      <TopNav />");
+    // The shared page shell still renders the bar, now behind the route rule
+    // that drops it on the CRM and order views.
+    expect(source).toContain("{showAdminEditModeBar && <AdminEditModeBar />}\n      <TopNav />");
   });
 });
