@@ -118,6 +118,7 @@ import { catalogFillerForGap, catalogFillerPricingId, fittedCatalogFillerDescrip
 import { requiresAutoEndPanels, type DoorStyleEndPanelInput } from "@/lib/autoEndPanels";
 import { AEF_SPEC_END_PANEL_CODES, aefSpecPanelCabinet } from "@/lib/aefSpecPanelCatalog";
 import { withFramelessExposedFinish } from "@/lib/framelessExposedFinish";
+import { withChosenProfiles, useChosenDoorProfiles } from "@/lib/useChosenDoorProfiles";
 import { isAefFramelessStyleCode } from "@shared/aefFramelessSpecs";
 import { catalogItemToExposedPanelStock, sameExposedPanelWarnings, syncExposedSidePanels, type ExposedPanelStock, type ExposedPanelWarning } from "@/lib/exposedSidePanels";
 import { countertopToastVisible, COUNTERTOP_TOAST_TIMEOUT_MS, useDebouncedValue, stablePricePairKey } from "@/lib/designerPricingStability";
@@ -2772,12 +2773,23 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // A saved design may refer to an otherwise unavailable historic style. Its
   // loaded 2D and 3D plan must retain that exact catalog sample even if the
   // style is omitted from the current new-design picker.
-  const doorStyles = useMemo(
+  const catalogDoorStyles = useMemo(
     () =>
       persistedSelectedStyle && !(doorStylesRaw ?? []).some((style) => style.id === persistedSelectedStyle.id)
         ? [...(doorStylesRaw ?? []), persistedSelectedStyle]
         : (doorStylesRaw ?? []),
     [doorStylesRaw, persistedSelectedStyle],
+  );
+  /**
+   * A profile the operator just chose as official in the door editor. The editor
+   * writes it to a draft; this puts it on the style rows before the next Save, so
+   * the 3D door and the elevation redraw from the choice straight away. Only
+   * values the description stated are added, and color precedence is untouched.
+   */
+  const chosenProfileFor = useChosenDoorProfiles();
+  const doorStyles = useMemo(
+    () => withChosenProfiles<(typeof catalogDoorStyles)[number]>(catalogDoorStyles, chosenProfileFor),
+    [catalogDoorStyles, chosenProfileFor],
   );
   const freshOpenedStyleId = latchedFreshStart.fresh ? latchedFreshStart.doorStyleId : null;
   const freshOpenedStyleUsable = freshOpenedStyleId != null && (
