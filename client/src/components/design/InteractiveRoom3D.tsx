@@ -3950,11 +3950,12 @@ function disposeObject(root: THREE.Object3D) {
   root.traverse((child) => {
     // The renderer outlives every rebuild, so a discarded light's shadow map is
     // not freed by a lost context any more. Release it with the light itself.
-    const shadowMap = (child as THREE.Light).shadow?.map;
-    if (shadowMap) {
+    const lightShadow = (child as { shadow?: THREE.LightShadow }).shadow;
+    const shadowMap = lightShadow?.map;
+    if (lightShadow && shadowMap) {
       shadowMap.depthTexture?.dispose();
       shadowMap.dispose();
-      (child as THREE.Light).shadow.map = null;
+      lightShadow.map = null;
     }
     const mesh = child as THREE.Mesh;
     if (mesh.geometry && !sharedRaisedPanelResource(mesh.geometry)) mesh.geometry.dispose?.();
@@ -12783,7 +12784,7 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
         zoom: camera.zoom,
       };
       // Only the scene contents and per-build helpers go away here. The renderer,
-      // its canvas, and the WebGL context are owned by the mount-only effect below,
+      // its canvas, and the WebGL context are owned by the mount-only effect above,
       // so the frame on screen survives until the rebuilt scene paints over it.
 	      controls.dispose();
 	      composer?.dispose();
@@ -12796,7 +12797,9 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
       if (controlsRef.current === controls) controlsRef.current = null;
       if (catalogRootRef.current === catalogRoot) catalogRootRef.current = null;
     };
-  }, [webglUnavailable, scene, validSuggestions, placed, crown, toeKick, roomOverride, openings, sinks, potFillers, island, furniture, selectedFurnitureUid, ponyWalls, renderExistingDesign, resetKey, cameraPreset, showRoomContext, showSolidFrontWalls, cutawayRoomWalls, hybridPlanUnderlay, wallHeightIn, wallHeights, resolvedCabinetFinish, studioLights, cabinetPreviewFinishId, cabinetFinishOverrides, cabinetDoorProfiles, cabinetDoorSampleUrls, cabinetDrawerSampleUrls, cabinetFaceSourceKinds, cabinetFaceCrops, catalogFaceCrop, cabinetFrontVisuals, catalogDrawerSampleUrl, catalogFaceSourceKind, countertopFinish, cabinetFinish, catalogDoorSampleUrl, catalogRoomSceneUrl, hardwareStyleId, hardwareAccent, catalogCountertopName, catalogCountertopProductId, catalogIslandCountertopName, catalogIslandCountertopProductId, catalogIslandCountertopColor, catalogFlooringName, catalogFlooringProductId, catalogFlooringCategory, catalogFlooringSubCategory, catalogFlooringSize, catalogBacksplashName, catalogBacksplashProductId, catalogBacksplashSize, catalogBacksplashCategory, catalogBacksplashSubCategory, backsplashHeightMode, countertopBacksplashHeightIn, catalogCountertopImageUrl, catalogIslandCountertopImageUrl, catalogFlooringImageUrl, catalogFlooringCardImageUrl, flooringRotationDeg, mosaicFloorPattern, catalogBacksplashImageUrl, catalogBacksplashCardImageUrl, catalogBacksplashMaterialImageUrl, catalogFlooringMaterialImageUrl]);	  // A catalog filler has already passed geometry/collision validation before this
+  }, [webglUnavailable, scene, validSuggestions, placed, crown, toeKick, roomOverride, openings, sinks, potFillers, island, furniture, selectedFurnitureUid, ponyWalls, renderExistingDesign, resetKey, cameraPreset, showRoomContext, showSolidFrontWalls, cutawayRoomWalls, hybridPlanUnderlay, wallHeightIn, wallHeights, resolvedCabinetFinish, studioLights, cabinetPreviewFinishId, cabinetFinishOverrides, cabinetDoorProfiles, cabinetDoorSampleUrls, cabinetDrawerSampleUrls, cabinetFaceSourceKinds, cabinetFaceCrops, catalogFaceCrop, cabinetFrontVisuals, catalogDrawerSampleUrl, catalogFaceSourceKind, countertopFinish, cabinetFinish, catalogDoorSampleUrl, catalogRoomSceneUrl, hardwareStyleId, hardwareAccent, catalogCountertopName, catalogCountertopProductId, catalogIslandCountertopName, catalogIslandCountertopProductId, catalogIslandCountertopColor, catalogFlooringName, catalogFlooringProductId, catalogFlooringCategory, catalogFlooringSubCategory, catalogFlooringSize, catalogBacksplashName, catalogBacksplashProductId, catalogBacksplashSize, catalogBacksplashCategory, catalogBacksplashSubCategory, backsplashHeightMode, countertopBacksplashHeightIn, catalogCountertopImageUrl, catalogIslandCountertopImageUrl, catalogFlooringImageUrl, catalogFlooringCardImageUrl, flooringRotationDeg, mosaicFloorPattern, catalogBacksplashImageUrl, catalogBacksplashCardImageUrl, catalogBacksplashMaterialImageUrl, catalogFlooringMaterialImageUrl]);
+
+  // A catalog filler has already passed geometry/collision validation before this
 	  // cue runs. Animate only its visual group, so the final coordinates and the
 	  // saved plan remain authoritative while the user sees it settle into the seam.
 	  useEffect(() => {

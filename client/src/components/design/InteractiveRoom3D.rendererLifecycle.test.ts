@@ -157,9 +157,9 @@ describe("InteractiveRoom3D renderer lifecycle wiring", () => {
     const end = disposeBody.indexOf("textures.forEach((texture) => texture.dispose());");
     expect(end).toBeGreaterThan(0);
     const body = disposeBody.slice(0, end);
-    expect(body).toContain("shadow?.map");
+    expect(body).toContain("lightShadow?.map");
     expect(body).toContain("shadowMap.dispose();");
-    expect(body).toContain(".shadow.map = null;");
+    expect(body).toContain("lightShadow.map = null;");
   });
 });
 
