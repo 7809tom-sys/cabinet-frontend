@@ -1203,6 +1203,13 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
               finish,
               woodSpecies,
               panelConstruction,
+              railWidth,
+              stileWidth,
+              bevelWidth,
+              bevelDepth,
+              insideEdgeProfile,
+              finishSheen,
+              grainDirection,
             }}
             sampleUrl={doorSampleImageUrl || style.doorSampleImageUrl || null}
             onChooseOfficial={handleChooseOfficialDescription}
