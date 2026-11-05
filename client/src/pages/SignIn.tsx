@@ -356,7 +356,7 @@ export default function SignIn({ portal: portalProp }: { portal?: PortalChoice }
                 type="button"
                 variant="outline"
                 className="mt-3 w-full bg-background"
-                onClick={() => { void supabase.auth.signOut(); }}
+                onClick={() => { void supabase.auth.signOut({ scope: "local" }); }}
               >
                 Sign out
               </Button>

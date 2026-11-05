@@ -28,7 +28,11 @@ export function useAuth(options?: UseAuthOptions) {
   const logout = useCallback(async () => {
     try {
       window.sessionStorage.removeItem("cd.testAccountToken");
-      await supabase.auth.signOut();
+      // Scope is explicit: the supabase-js default is 'global', which revokes
+      // every refresh token this user has and signs them out of the main site,
+      // affiliate /store/:slug stores, admin, and contractor portals at once.
+      // 'local' ends only this browser's session on this origin.
+      await supabase.auth.signOut({ scope: "local" });
       // Also clears any legacy session cookie.
       await logoutMutation.mutateAsync();
     } catch (error: unknown) {
