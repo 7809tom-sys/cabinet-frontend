@@ -721,10 +721,15 @@ export function runAutoDesignLayout(args: {
   // Tall oven / pantry cabinets are picked in the tall pop-up and never dropped
   // into a run unasked. They are seated as run anchors BEFORE the base runs tile
   // the walls, so a pantry reserves its span the same way a measured appliance
-  // does instead of being refused by a wall that just got filled. The wall ends,
-  // the refrigerator panel limit, the ceiling, and every cabinet already seated
-  // all still apply; a pick that cannot seat is named, not moved.
-  for (const pick of input.tallCabinets ?? []) {
+  // does instead of being refused by a wall that just got filled. A tall box goes
+  // at the END of a run, never the start of the first free span, and several
+  // picks are allowed: each one is seated in turn and re-reads the plan, so a
+  // second pantry closes the run next to the first. The wall ends, the
+  // refrigerator panel limit, the ceiling, and every cabinet already seated all
+  // still apply; nothing moves a range, sink, or refrigerator, and windows never
+  // move. A pick that cannot seat is named with the reason it was dropped.
+  const tallPicks = input.tallCabinets ?? [];
+  for (const pick of tallPicks) {
     const source = resolveTallPick(args.tallCatalog ?? [], pick);
     const product = source ? autoDesignTallProducts([source])[0] : undefined;
     if (!source || !product) {
@@ -743,11 +748,12 @@ export function runAutoDesignLayout(args: {
       placed: working,
       openings: stageOpenings,
       wallIds: stage.selectedWalls,
+      allowMultiple: tallPicks.length > 1,
     });
     if (!fit.ok) {
       reviewFindings.push({
         ruleId: "tall-cabinet-popup",
-        code: "tall-cabinet-blocked",
+        code: fit.code,
         severity: "warning",
         title: `${product.masterCode} was not placed`,
         detail: fit.reason,
@@ -775,7 +781,8 @@ export function runAutoDesignLayout(args: {
       continue;
     }
     working = accepted.placed;
-    notes.push(`${product.masterCode} placed as a ${product.widthIn}″ × ${product.heightIn}″ tall cabinet.`);
+    const seatText = fit.seat === "end" ? " at the end of the run" : fit.seat === "start" ? " at the start of the run" : "";
+    notes.push(`${product.masterCode} placed as a ${product.widthIn}″ × ${product.heightIn}″ tall cabinet${seatText}.`);
   }
   let basePieceCount = 0;
   for (const wallId of runWalls) {

@@ -3,6 +3,7 @@ import realCatalog from "./__fixtures__/autoDesignRealCatalog.json";
 import ovenRows from "./__fixtures__/ovenCabinetRows.json";
 import pelicanRows from "./__fixtures__/pelicanCatalogRows.json";
 import type { DesignCabinet, PlacedCabinet, RoomData } from "./design";
+import { cabinetPlacementCollisionDetail, cabinetWall, wallRunFrame, wallRunOffset, wallRunSpan } from "./design";
 import { runAutoDesignLayout, type AutoDesignLayoutSuccess } from "./autoDesignLayout";
 import type { AutoDesignInputs } from "./autoDesignAutoBuild";
 import { ensureAutoDesignFaucet } from "./autoDesignFaucet";
@@ -164,6 +165,55 @@ describe("Auto-Design auto-places a tall oven pantry picked in the pop-up", () =
 
   it("places nothing when no tall cabinet was picked", () => {
     expect(build().placed.some((cabinet) => cabinet.placement === "tall")).toBe(false);
+  });
+
+  it("seats the tall box at the END of a run, not the start of the first free span", () => {
+    const uoc = TALL.find((row) => row.masterCode === "UOC3390(O339024)")!;
+    const result = build({ tallCabinets: [{ cabinetId: uoc.id ?? 0, masterCode: "UOC3390" }] });
+    const tall = result.placed.find((cabinet) => cabinet.placement === "tall")!;
+    expect(tall).toBeDefined();
+    const wall = cabinetWall(tall, room());
+    const tallStart = wallRunOffset(tall, wall, room());
+    const tallEnd = tallStart + wallRunSpan(tall, wall, room());
+    const wallLengthIn = wallRunFrame(wall, room())!.runEnd;
+    // The tower closes the run at the far wall end. Nothing sits beyond it, and it
+    // does not sit in the middle of the run with cabinets on both sides.
+    expect(wallLengthIn - tallEnd).toBeLessThanOrEqual(0.05);
+    const beyond = result.placed.filter((cabinet) => {
+      if (cabinet.uid === tall.uid || cabinetWall(cabinet, room()) !== wall) return false;
+      const start = wallRunOffset(cabinet, wall, room());
+      return start >= tallEnd - 0.05 && !/filler|panel/i.test(`${cabinet.masterCode} ${cabinet.description ?? ""}`);
+    });
+    expect(beyond.map((cabinet) => cabinet.masterCode)).toEqual([]);
+    expect(result.notes.some((note) => /end of the run/i.test(note))).toBe(true);
+  });
+
+  it("seats several tall boxes, each finishing the run in turn", () => {
+    const uoc = TALL.find((row) => row.masterCode === "UOC3390(O339024)")!;
+    const second = TALL.find((row) => /^TOD3084/i.test(row.masterCode ?? "") && row.placement === "tall")
+      ?? TALL.filter((row) => row.placement === "tall" && row.id !== uoc.id)[0]!;
+    const result = build({
+      tallCabinets: [
+        { cabinetId: uoc.id ?? 0, masterCode: "UOC3390" },
+        { cabinetId: second.id ?? 0, masterCode: second.masterCode.split("(")[0]!.trim() },
+      ],
+    });
+    const talls = result.placed.filter((cabinet) => cabinet.placement === "tall");
+    expect(talls.length).toBeGreaterThanOrEqual(2);
+    // Each is a real, non-overlapping box: two talls never share a span.
+    for (const left of talls) {
+      for (const right of talls) {
+        if (left.uid >= right.uid) continue;
+        expect(cabinetPlacementCollisionDetail(left, [right], room())).toBeNull();
+      }
+    }
+    // No dropped tall is silent: every pick either placed or was named.
+    const dropped = result.reviewFindings.filter((finding) => /tall-cabinet-(blocked|unavailable)/.test(finding.code));
+    expect(talls.length + dropped.length).toBe(2);
+    for (const finding of dropped) {
+      expect(finding.detail.trim().length).toBeGreaterThan(10);
+      expect(finding.severity).toBe("warning");
+    }
   });
 
   it("names a picked tall box that cannot fit instead of moving it", () => {

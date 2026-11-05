@@ -164,31 +164,43 @@ export function planOverRangeCompanions(input: {
   }
   if (!microwave || !bridge) return { ok: false, findings };
 
+  return { ok: true, plan: overRangeCompanionPlanFor({ range, room: input.room, microwave, bridge }) };
+}
+
+/**
+ * The geometry for one chosen microwave and bridge over one range.
+ *
+ * Split out of `planOverRangeCompanions` so a caller that already has the real
+ * microwave and bridge rows (the add-only fallback chain) does not have to
+ * rediscover them through the catalog. The datum math is the same code.
+ */
+export function overRangeCompanionPlanFor(input: {
+  range: PlacedCabinet;
+  room: RoomData;
+  microwave: DesignCabinet;
+  bridge: DesignCabinet;
+}): OverRangeCompanionPlan {
+  const { range, room, microwave, bridge } = input;
   const microwaveHeight = numberOrZero(microwave.height);
-  const microwaveBottom = OVER_RANGE_MICROWAVE_BRIDGE_MOUNT_BOTTOM - microwaveHeight;
   const microwaveSpot = mountedMicrowaveOverRangeSpot(
     { width: numberOrZero(microwave.width), depth: numberOrZero(microwave.depth) },
     range,
-    input.room,
+    room,
   );
-  const side = cabinetWall(range, input.room);
-  const rangeStart = wallRunOffset(range, side, input.room);
+  const side = cabinetWall(range, room);
+  const rangeStart = wallRunOffset(range, side, room);
   const bridgeWidth = numberOrZero(bridge.width);
   const bridgeDepth = numberOrZero(bridge.depth);
-  const bridgeStart = rangeStart + wallRunSpan(range, side, input.room) / 2 - bridgeWidth / 2;
-  const bridgeSpot = wallPlacementAt(bridgeStart, bridgeWidth, bridgeDepth, side, input.room);
+  const bridgeStart = rangeStart + wallRunSpan(range, side, room) / 2 - bridgeWidth / 2;
   return {
-    ok: true,
-    plan: {
-      microwave,
-      bridge,
-      microwaveSpot,
-      bridgeSpot,
-      microwaveMountBottom: microwaveBottom,
-      bridgeMountBottom: OVER_RANGE_MICROWAVE_BRIDGE_MOUNT_BOTTOM,
-      rangeUid: range.uid,
-      rangeCode: range.masterCode,
-    },
+    microwave,
+    bridge,
+    microwaveSpot,
+    bridgeSpot: wallPlacementAt(bridgeStart, bridgeWidth, bridgeDepth, side, room),
+    microwaveMountBottom: OVER_RANGE_MICROWAVE_BRIDGE_MOUNT_BOTTOM - microwaveHeight,
+    bridgeMountBottom: OVER_RANGE_MICROWAVE_BRIDGE_MOUNT_BOTTOM,
+    rangeUid: range.uid,
+    rangeCode: range.masterCode,
   };
 }
 

@@ -76,21 +76,74 @@ describe("tall oven / pantry products in the auto-designer pop-up", () => {
 });
 
 describe("auto-placing a tall pick", () => {
-  it("seats the box in the first free span and keeps it inside the wall end", () => {
+  it("seats the box at the END of a run, not the start of the first free span", () => {
     const product = autoDesignTallProducts(tall).find((entry) => entry.masterCode === "TOD3084")!;
     const fit = planAutoDesignTallFit({ product, room: room(), placed: [], openings: [], wallIds: ["top"] });
     expect(fit.ok).toBe(true);
     if (!fit.ok) return;
+    // An empty 144-inch wall is one span that reaches both wall ends. A tall box
+    // closes the run, so it sits against the far wall end.
+    expect(fit.seat).toBe("end");
+    expect(fit.alongIn).toBeCloseTo(144 - product.widthIn, 5);
     expect(fit.alongIn).toBeGreaterThanOrEqual(0);
     expect(fit.alongIn + product.widthIn).toBeLessThanOrEqual(144 + 0.001);
   });
 
-  it("refuses a box taller than the room's lowest ceiling", () => {
+  it("closes a run that stops short of the wall end, instead of opening a gap beside the corner", () => {
+    const product = autoDesignTallProducts(tall).find((entry) => entry.masterCode === "TOD3084")!;
+    // 60 inches of base sit at the wall start, leaving 84 clear inches to the far
+    // wall end. The old behavior seated the tall box at 60 (span start), leaving
+    // the run open past it; the tall box must instead finish the run at 114.
+    const placed = [base("B60", 60, 0)];
+    const fit = planAutoDesignTallFit({ product, room: room(), placed, openings: [], wallIds: ["top"] });
+    expect(fit.ok).toBe(true);
+    if (!fit.ok) return;
+    expect(fit.seat).toBe("end");
+    expect(fit.alongIn).toBeCloseTo(144 - product.widthIn, 5);
+    expect(fit.alongIn).toBeGreaterThanOrEqual(60);
+  });
+
+  it("seats the box at the end of an interior span when no wall end is free", () => {
+    const product = autoDesignTallProducts(tall).find((entry) => entry.masterCode === "TOD3084")!;
+    // Bases at both wall ends leave an interior 40-inch span between 60 and 100.
+    const placed = [base("B60", 60, 0), base("B44", 44, 100)];
+    const fit = planAutoDesignTallFit({ product, room: room(), placed, openings: [], wallIds: ["top"] });
+    expect(fit.ok).toBe(true);
+    if (!fit.ok) return;
+    // The box still finishes the span rather than butting the base that opens it.
+    expect(fit.alongIn).toBeCloseTo(100 - product.widthIn, 5);
+  });
+
+  it("allows several tall boxes in one build, each finishing the run in turn", () => {
+    const products = autoDesignTallProducts(tall);
+    const first = products.find((entry) => entry.masterCode === "TOD3084")!;
+    const second = products.find((entry) => entry.masterCode === "TOS2DB3084")!;
+    let placed: PlacedCabinet[] = [];
+    const fits = [first, second].map((product) => {
+      const fit = planAutoDesignTallFit({ product, room: room(), placed, openings: [], wallIds: ["top"], allowMultiple: true });
+      if (fit.ok) {
+        placed = [
+          ...placed,
+          { ...tallCabinetPlacement({ product, source: tall.find((row) => row.masterCode === product.masterCode)! ?? tall[0]!, wallId: fit.wallId, spot: fit.placement, alongIn: fit.alongIn, uid: `t-${product.id}`, styleId: null }) },
+        ];
+      }
+      return fit;
+    });
+    const [firstFit, secondFit] = fits;
+    expect(firstFit?.ok && secondFit?.ok).toBe(true);
+    if (!secondFit?.ok || !firstFit?.ok) return;
+    // Two boxes cannot occupy one spot: the second finishes the run the first left.
+    expect(secondFit.alongIn).toBeLessThan(firstFit.alongIn);
+    expect(secondFit.alongIn + second.widthIn).toBeLessThanOrEqual(firstFit.alongIn + 0.001);
+  });
+
+  it("refuses a box taller than the room's lowest ceiling and names it blocked", () => {
     const product = autoDesignTallProducts(tall).find((entry) => entry.masterCode === "UOC3390")!;
     const lowRoom = { ...room(), ceilingHeight: 84 } as RoomData;
     const fit = planAutoDesignTallFit({ product, room: lowRoom, placed: [], openings: [], wallIds: ["top"] });
     expect(fit.ok).toBe(false);
     if (fit.ok) return;
+    expect(fit.code).toBe("tall-cabinet-blocked");
     expect(fit.reason).toMatch(/ceiling/i);
   });
 
@@ -100,6 +153,9 @@ describe("auto-placing a tall pick", () => {
     const placed = [base("B70A", 70, 0), base("B70B", 70, 70)];
     const fit = planAutoDesignTallFit({ product, room: room(), placed, openings: [], wallIds: ["top"] });
     expect(fit.ok).toBe(false);
+    if (fit.ok) return;
+    expect(fit.code).toBe("tall-cabinet-blocked");
+    expect(fit.reason).toMatch(/span/i);
   });
 
   it("places the real catalog record with its own SKU and dimensions", () => {

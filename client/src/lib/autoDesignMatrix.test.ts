@@ -9,7 +9,8 @@ import { wallLabelToEngineWallId, type AutoDesignInputs, type AutoDesignLayoutTy
 import { mergeAutoDesignRefrigeratorCaps, runAutoDesignLayout, type AutoDesignLayoutSuccess } from "./autoDesignLayout";
 import { AUTO_DESIGN_PENINSULA_AISLE_IN, autoDesignPeninsulaAttachment, type AutoDesignPeninsulaRequest } from "./autoDesignPeninsula";
 import { reviewRangeFridgeSeparation } from "./kitchenAdjacency";
-import { autoDesignHoodMountBottom } from "./autoDesignRangeHood";
+import { autoDesignHoodMountBottom, autoDesignRangeNeedsVentilation } from "./autoDesignRangeHood";
+import { fillOverRangeAnswer } from "./overRangeFill";
 import { kitchenRuleNumber, resetKitchenRuleParameters } from "./kitchenRuleParameters";
 import {
   cabinetPlacementCollisionDetail,
@@ -281,6 +282,26 @@ function audit(spec: CaseSpec, run: AutoDesignLayoutSuccess, room: RoomData): st
   if (sinkBases.length !== 1 || run.sinks.length !== 1) issues.push(`sinks bases=${sinkBases.length} fixtures=${run.sinks.length}`);
   const hood = placed.find((item) => /^HOOD-/i.test(item.masterCode));
   const range = placed.find((item) => item.placement === "appliance" && /RANGE/i.test(item.masterCode));
+  // PR 174 removed the in-build hood so the design question could decide what goes
+  // above the range. The build still leaves it open, so this audit cannot require a
+  // hood here. What it CAN require is that the add-only over-range pass (the one
+  // DesignTool runs after every build and on load) dresses every bare range: a
+  // bridge + microwave, or a hood. Reinstated in place of the old "no hood over the
+  // range" assertion so a bare range cannot silently ship again.
+  if (range && autoDesignRangeNeedsVentilation(placed, range)) {
+    const filled = fillOverRangeAnswer({
+      placed,
+      room,
+      appliancePalette: palette,
+      wallCatalog: catalog[spec.styleId]!.wall,
+      wallCabinetHeightIn: 30,
+      styleId: Number(spec.styleId),
+      makeUid: (() => { let n = 0; return () => `matrix-over-range-${++n}`; })(),
+    });
+    if (!filled.added) issues.push(`no over-range companion for ${range.masterCode}: ${filled.notes.join(" / ")}`);
+    const rangeAfter = filled.placed.find((item) => item.uid === range.uid)!;
+    if (autoDesignRangeNeedsVentilation(filled.placed, rangeAfter)) issues.push(`bare range ${range.masterCode} after the over-range pass`);
+  }
   if (hood && hood.mountBottom !== autoDesignHoodMountBottom(hood.width)) issues.push(`hood ${hood.masterCode} bottom ${hood.mountBottom}`);
   if (hood && Math.abs(hood.depth - 18) > 0.05) issues.push(`hood depth ${hood.depth}`);
   if (reviewRangeFridgeSeparation(placed, room).length) issues.push("range and refrigerator are closer than a 15 inch cabinet");

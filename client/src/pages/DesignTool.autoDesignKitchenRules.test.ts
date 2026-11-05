@@ -41,6 +41,9 @@ describe("Auto-Design kitchen rules wiring", () => {
 
   it("asks what goes above a bare range after the build, offering a hood or a bridge cabinet with microwave", () => {
     expect(complete).toContain("autoDesignRangeNeedsVentilation(working, item)");
+    // The question is asked only while no answer is saved with the layout; with an
+    // answer, the add-only over-range pass applies it instead of asking again.
+    expect(complete).toContain("readOverRangeAnswer(stage.input.overRangeAnswer) == null");
     expect(complete).toContain("setAutoDesignRangeVentPrompt({ rangeUid: bareRange.uid })");
     expect(designTool).toContain("What goes above the range?");
     expect(designTool).toContain("Add a range hood");
