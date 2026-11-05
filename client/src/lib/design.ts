@@ -90,6 +90,10 @@ export function isDishwasherPanel(c: {
 
 export const DISHWASHER_PANEL_MAX_MOUNT_BOTTOM_IN = 1 / 3;
 
+/** Auto-placed dishwasher-panel reasons (see lib/dishwasherPanelRule.ts). */
+export const DISHWASHER_RUN_END_PANEL_REASON = "dw-run-end-panel";
+export const DISHWASHER_FORTY_FIVE_PANEL_REASON = "dw-forty-five-turn-panel";
+
 /** Enforce the physical installation envelope on new and restored DW panels. */
 export function normalizeDishwasherPanelPlacement<T extends {
   placement: Placement;
@@ -12707,8 +12711,14 @@ export function bearsCountertop(p: {
 	  fillerTotalWidth?: number | null;
 	  fillerPlacementMode?: "left" | "right" | "split" | null;
 	  fillerTransitionKind?: "angled-wedge" | "corner-provisional" | "front-miter-pair" | null;
+	  autoPlacedReason?: string | null;
 }): boolean {
 	  if (p.placement !== "base" && !isBaseHeightAppliance(p)) return false;
+  // The owner's dishwasher return panel (lib/dishwasherPanelRule.ts) continues
+  // the run past a dishwasher's finished end, so the top runs over it and ends
+  // at the finished end of the run exactly as it would past a cabinet. Only the
+  // auto-placed DWR is counter-bearing; a user-chosen decorative panel is not.
+  if (p.autoPlacedReason === DISHWASHER_RUN_END_PANEL_REASON) return true;
   // A knee drawer hangs in open knee space. It is not a cabinet box the
   // desktop can bear, and it must not close that opening with a slab.
   if (isKneeDrawerItem(p)) return false;
@@ -13402,7 +13412,13 @@ function measuredWallCountertopEndpointCabinet(
 ): PlacedCabinet | null {
   const length = wallLength(wallId as WallSide, room);
   return placed
-    .filter((cabinet) => cabinet.placement === "base" && cabinet.wallId === wallId && bearsCountertop(cabinet))
+    // A dishwasher is a floor-level, counter-bearing appliance, so an angled
+    // run that ends on one must be mitered and closed exactly like a base
+    // cabinet end. Skipping appliances here left the two slabs untrimmed
+    // rectangles that overlapped at the 45° vertex instead of sharing one seam.
+    .filter((cabinet) => (cabinet.placement === "base" || isBaseHeightAppliance(cabinet))
+      && cabinet.wallId === wallId
+      && bearsCountertop(cabinet))
     .map((cabinet) => {
       const start = wallRunOffset(cabinet, wallId, room);
       const end = start + wallRunSpan(cabinet, wallId, room);

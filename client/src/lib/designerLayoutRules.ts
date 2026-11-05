@@ -341,6 +341,12 @@ export const DESIGNER_LAYOUT_RULES: readonly DesignerLayoutRule[] = [
     summary: "Every visible side gets a 3/4 inch finished panel: an open run end, beside the refrigerator, beside the dishwasher, and a tall run end. A covered side is never double-stocked.",
   },
   {
+    id: "dishwasher-panel-run-end-or-turn",
+    name: "DWR dishwasher panel at a run end or 45 degree turn",
+    phase: "shared-pipeline",
+    summary: "A dishwasher that ends a run, or a run that turns at 45 degrees on the dishwasher, gets a DWR dishwasher panel (a panel item, not an accessory). The countertop runs over the angled dishwasher and continues from one cabinet to the next as it would across any base cabinet: one real mitered seam at the angle, no gap and no break.",
+  },
+  {
     id: "upper-54-84-90-96",
     name: "uppers at 54, tops at 84/90/96",
     phase: "shared-pipeline",

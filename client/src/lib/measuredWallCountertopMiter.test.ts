@@ -47,6 +47,34 @@ function baseCabinet(uid: string, wallId: string, offset: number, width = 24): P
   };
 }
 
+/**
+ * A floor dishwasher is a counter-bearing appliance, not a cabinet box, so it
+ * is placed through the same wall seat with its appliance identity intact.
+ */
+function dishwasherCabinet(uid: string, wallId: string, offset: number, width = 24): PlacedCabinet {
+  const spot = wallPlacementAt(offset, width, 24, wallId as any, room);
+  return {
+    uid,
+    cabinetId: 24,
+    masterCode: "DW-24",
+    description: '24" Built-In Dishwasher',
+    category: "Appliance",
+    subCategory: null,
+    placement: "appliance",
+    x: spot.x,
+    y: spot.y,
+    width,
+    depth: 24,
+    height: 34.5,
+    rotation: spot.rotation,
+    wallId,
+    wallOffset: spot.wallOffset,
+    mountBottom: 0,
+    numberOfDoors: 0,
+    numberOfDrawers: 0,
+  };
+}
+
 describe("measuredWallCountertopMiterSurfaces", () => {
   it("keeps a 45-degree measured-wall slab centered on the exact rotated cabinet run", () => {
     const diagonalBase = baseCabinet("diagonal-base", "diagonal", 12, 30);
@@ -256,5 +284,60 @@ describe("measuredWallCountertopMiterSurfaces", () => {
     // A full common edge proves this is a physical flush square seam, not two
     // untrimmed rotated rectangles that overlap or leave a triangular void.
     expect(matchingEdge).toBe(true);
+  });
+
+  it("mitres the same 45-degree join when the run ends on a dishwasher", () => {
+    // Owner rule: an angled dishwasher is treated like a cabinet, so the top
+    // runs over it and continues from one cabinet to the next with one real
+    // seam — no gap and no break at the angle.
+    const diagonalLength = Math.hypot(60, 60);
+    const angledDishwasher = dishwasherCabinet("diagonal-dw", "diagonal", diagonalLength - 24);
+    const straightBase = baseCabinet("straight-base", "straight", 0);
+
+    expect(measuredWallCountertopMiterSurfaces([angledDishwasher, straightBase], room)).toEqual([
+      expect.objectContaining({
+        customWallMiterWallIds: ["diagonal", "straight"],
+        customWallMiterVertexId: "v2",
+        miteredStart: true,
+        miteredEnd: true,
+      }),
+    ]);
+
+    const surfaces = countertopSurfaces([angledDishwasher, straightBase], room);
+    expect(surfaces).toHaveLength(2);
+    const diagonal = surfaces.find((surface) => surface.customWallId === "diagonal")!;
+    const straight = surfaces.find((surface) => surface.customWallId === "straight")!;
+    expect(diagonal).toMatchObject({ customWallMiterVertexId: "v2", miteredEnd: true });
+    expect(straight).toMatchObject({ customWallMiterVertexId: "v2", miteredStart: true });
+
+    // The two mitred slabs share one exact edge: the seam is continuous, not
+    // two overlapping (or gapped) rectangles.
+    const first = countertopSurfacePlanPolygon(diagonal);
+    const second = countertopSurfacePlanPolygon(straight);
+    const sharedEdge = first.some((start, index) => {
+      const end = first[(index + 1) % first.length]!;
+      return second.some((otherStart, otherIndex) => {
+        const otherEnd = second[(otherIndex + 1) % second.length]!;
+        return Math.hypot(start.x - otherEnd.x, start.y - otherEnd.y) < 1e-6
+          && Math.hypot(end.x - otherStart.x, end.y - otherStart.y) < 1e-6;
+      });
+    });
+    expect(sharedEdge).toBe(true);
+  });
+
+  it("leaves a dishwasher-seated 45-degree countertop untouched when it is a plain base cabinet", () => {
+    // Same geometry with a base box in the dishwasher's place: the countertop
+    // built for the dishwasher must be exactly what any cabinet gets.
+    const diagonalLength = Math.hypot(60, 60);
+    const asCabinet = countertopSurfaces([
+      baseCabinet("diagonal-base", "diagonal", diagonalLength - 24),
+      baseCabinet("straight-base", "straight", 0),
+    ], room).map((surface) => ({ ...surface, customWallId: surface.customWallId }));
+    const asDishwasher = countertopSurfaces([
+      dishwasherCabinet("diagonal-dw", "diagonal", diagonalLength - 24),
+      baseCabinet("straight-base", "straight", 0),
+    ], room);
+    expect(asDishwasher.map(countertopSurfacePlanPolygon))
+      .toEqual(asCabinet.map(countertopSurfacePlanPolygon));
   });
 });

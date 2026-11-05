@@ -49,6 +49,8 @@ export const KITCHEN_RULE_PARAMETER_DEFAULTS = {
   window_filler_max_in: 3,
   /** 1 also panels framed wall cabinets beside a window. 0 is filler only. */
   window_framed_panel: 0,
+  /** Owner rule: 1 auto-places a DWR dishwasher panel where a dishwasher ends a run or the run turns 45° on it. */
+  dishwasher_panel_enabled: 1,
 } as const;
 
 export type KitchenRuleParameterKey = keyof typeof KITCHEN_RULE_PARAMETER_DEFAULTS;
