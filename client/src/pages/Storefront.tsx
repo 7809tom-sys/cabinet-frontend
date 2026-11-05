@@ -17,6 +17,8 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { useWhiteLabelHead } from "@/hooks/useWhiteLabelHead";
 import { StorefrontEmbed } from "@/components/storefront/StorefrontEmbed";
 import { StorefrontSocialIcons } from "@/components/storefront/StorefrontSocialIcons";
+import { StorefrontGoogleReviews } from "@/components/storefront/StorefrontGoogleReviews";
+import { readStoredGooglePlaceId } from "@shared/googleReviews";
 import { StoreCornerMenu } from "@/components/storefront/StoreCornerMenu";
 import type { PublicAffiliateSocialLink } from "@shared/affiliateSocialLinks";
 import type { AffiliateStorefrontTemplate } from "@shared/affiliateStorefrontTemplates";
@@ -193,6 +195,15 @@ export default function Storefront({ slug, previewData, focusShop = false }: { s
   const storefrontEmail = data.showPublicEmail ? data.publicEmail : null;
   const storefrontLocation = data.showPublicAddress ? data.publicAddress : data.serviceArea;
 
+  // The Google reviews tab only exists for a store that saved a place ID. The
+  // public projection carries the place ID (never a key), so the section and the
+  // nav link appear together or not at all. The cast keeps this build compiling
+  // until the API projection in cabinet-backend ships `googlePlaceId`.
+  const googlePlaceId = readStoredGooglePlaceId(
+    (data as { googlePlaceId?: string | null }).googlePlaceId ?? null,
+  );
+  const hasGoogleReviews = Boolean(googlePlaceId);
+
   const valueProps = [
     { icon: Ruler, title: t("value_free_design"), sub: t("value_free_design_sub") },
     { icon: ShieldCheck, title: t("value_all_plywood"), sub: t("value_all_plywood_sub") },
@@ -253,28 +264,28 @@ export default function Storefront({ slug, previewData, focusShop = false }: { s
     <div className="min-h-screen flex flex-col bg-background" style={{ ...storefrontCssVars(data), background: "var(--sf-bg, transparent)", color: "var(--sf-text, inherit)", fontFamily: "var(--sf-font-body, inherit)" }}>
       {/* ─── Header + Hero (varies by template) ──────────────────────────── */}
       {template === "classic" && (
-        <ClassicHeader {...{ data: localizedData, brand, t, withRef, headlineFont, LangToggle, Logo }} />
+        <ClassicHeader {...{ data: localizedData, brand, t, withRef, headlineFont, LangToggle, Logo, hasGoogleReviews }} />
       )}
       {template === "showcase" && (
-        <ShowcaseHero {...{ data: localizedData, brand, t, withRef, headlineFont, heroImg, LangToggle, Logo }} />
+        <ShowcaseHero {...{ data: localizedData, brand, t, withRef, headlineFont, heroImg, LangToggle, Logo, hasGoogleReviews }} />
       )}
       {template === "minimal" && (
-        <MinimalHero {...{ data: localizedData, brand, t, withRef, headlineFont, heroImg, LangToggle, Logo }} />
+        <MinimalHero {...{ data: localizedData, brand, t, withRef, headlineFont, heroImg, LangToggle, Logo, hasGoogleReviews }} />
       )}
       {template === "craftsman" && (
-        <CraftsmanHero {...{ data: localizedData, brand, t, withRef, headlineFont, LangToggle, Logo }} />
+        <CraftsmanHero {...{ data: localizedData, brand, t, withRef, headlineFont, LangToggle, Logo, hasGoogleReviews }} />
       )}
       {template === "coastal" && (
-        <CoastalHero {...{ data: localizedData, brand, t, withRef, headlineFont, heroImg, LangToggle, Logo }} />
+        <CoastalHero {...{ data: localizedData, brand, t, withRef, headlineFont, heroImg, LangToggle, Logo, hasGoogleReviews }} />
       )}
       {template === "gallery" && (
-        <GalleryHero {...{ data: localizedData, brand, t, withRef, headlineFont, heroImg, LangToggle, Logo }} />
+        <GalleryHero {...{ data: localizedData, brand, t, withRef, headlineFont, heroImg, LangToggle, Logo, hasGoogleReviews }} />
       )}
       {template === "studio" && (
-        <StudioHero {...{ data: localizedData, brand, t, withRef, headlineFont, heroImg, LangToggle, Logo }} />
+        <StudioHero {...{ data: localizedData, brand, t, withRef, headlineFont, heroImg, LangToggle, Logo, hasGoogleReviews }} />
       )}
       {template === "heritage" && (
-        <HeritageHero {...{ data: localizedData, brand, t, withRef, headlineFont, heroImg, LangToggle, Logo }} />
+        <HeritageHero {...{ data: localizedData, brand, t, withRef, headlineFont, heroImg, LangToggle, Logo, hasGoogleReviews }} />
       )}
 
       <main className="flex-1">
@@ -297,6 +308,17 @@ export default function Storefront({ slug, previewData, focusShop = false }: { s
             ))}
           </div>
         </section>
+
+        {/* ─── Google reviews (only when the store saved a place ID) ────── */}
+        {googlePlaceId ? (
+          <StorefrontGoogleReviews
+            placeId={googlePlaceId}
+            storeName={data.storeName}
+            brand={brand}
+            t={t}
+            lang={lang}
+          />
+        ) : null}
 
         {data.testimonials.length > 0 && (
           <section aria-labelledby="storefront-testimonials" className="border-b border-border bg-muted/30 py-14 md:py-16">
@@ -538,6 +560,7 @@ type HeaderProps = {
   heroImg?: string;
   LangToggle: React.ReactNode;
   Logo: (props: { light?: boolean }) => React.ReactElement;
+  hasGoogleReviews?: boolean;
 };
 
 function FeaturedKitchenPackages({ affiliateId, slug, withRef }: { affiliateId: number; slug: string; withRef: (path: string) => string }) {
@@ -564,6 +587,7 @@ function NavLinks({
   slug,
   storeId,
   socialLinks,
+  hasGoogleReviews = false,
 }: {
   t: TFn;
   withRef: HeaderProps["withRef"];
@@ -571,6 +595,7 @@ function NavLinks({
   slug: string;
   storeId: number | null | undefined;
   socialLinks: PublicAffiliateSocialLink[];
+  hasGoogleReviews?: boolean;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const cls = variant === "light" ? "text-white hover:bg-white/15" : "";
@@ -585,6 +610,11 @@ function NavLinks({
       <a href="#shop" className="hidden sm:block">
         <Button variant="ghost" size="sm" className={cls}>{t("cat_shop")}</Button>
       </a>
+      {hasGoogleReviews ? (
+        <a href="#google-reviews" className="hidden sm:block">
+          <Button variant="ghost" size="sm" className={cls}>{t("nav_reviews")}</Button>
+        </a>
+      ) : null}
       <Link href={withRef(`/store/${slug}/kitchens`)} className="hidden sm:block">
         <Button variant="ghost" size="sm" className={cls}>Plan Your Kitchen</Button>
       </Link>
@@ -622,6 +652,9 @@ function NavLinks({
           <div className="flex flex-col gap-3 text-sm">
             <Link href={withRef(`/store/${slug}/styles`)} onClick={() => setMenuOpen(false)}>{t("nav_styles")}</Link>
             <a href="#shop" onClick={() => setMenuOpen(false)}>{t("cat_shop")}</a>
+            {hasGoogleReviews ? (
+              <a href="#google-reviews" onClick={() => setMenuOpen(false)}>{t("nav_reviews")}</a>
+            ) : null}
             <Link href={withRef(`/store/${slug}/kitchens`)} onClick={() => setMenuOpen(false)}>Plan Your Kitchen</Link>
             <Link href={withRef(`/design?affiliate=${slug}`)} onClick={() => setMenuOpen(false)}>{t("nav_design")}</Link>
             <Link href={withRef(`/store/${slug}/order`)} onClick={() => setMenuOpen(false)}>{t("nav_quote")}</Link>
@@ -635,7 +668,7 @@ function NavLinks({
 }
 
 // ─── Classic: navy split hero with lifestyle photo ───────────────────────────
-function ClassicHeader({ data, brand, t, withRef, headlineFont, LangToggle, Logo }: HeaderProps) {
+function ClassicHeader({ data, brand, t, withRef, headlineFont, LangToggle, Logo, hasGoogleReviews }: HeaderProps) {
   const heroImg = data.heroImageUrl || KITCHEN_SCENES["shaker-white"];
   return (
     <>
@@ -643,7 +676,7 @@ function ClassicHeader({ data, brand, t, withRef, headlineFont, LangToggle, Logo
         <div className="container flex items-center justify-between h-16">
           <Logo />
           <div className="flex items-center gap-2">
-            <NavLinks socialLinks={data.socialLinks ?? []} t={t} withRef={withRef} variant="dark" slug={data.slug} storeId={data.id} />
+            <NavLinks socialLinks={data.socialLinks ?? []} t={t} withRef={withRef} variant="dark" slug={data.slug} storeId={data.id} hasGoogleReviews={hasGoogleReviews} />
             {LangToggle}
             <Link href={withRef(`/store/${data.slug}/order`)}>
               <Button size="sm" className="font-semibold text-white" style={{ backgroundColor: brand.accent }}>
@@ -714,7 +747,7 @@ function ClassicHeader({ data, brand, t, withRef, headlineFont, LangToggle, Logo
 }
 
 // ─── Showcase: full-bleed hero photo with overlaid copy ──────────────────────
-function ShowcaseHero({ data, brand, t, withRef, headlineFont, heroImg, LangToggle, Logo }: HeaderProps) {
+function ShowcaseHero({ data, brand, t, withRef, headlineFont, heroImg, LangToggle, Logo, hasGoogleReviews }: HeaderProps) {
   return (
     <header className="relative">
       <div className="absolute inset-0">
@@ -725,7 +758,7 @@ function ShowcaseHero({ data, brand, t, withRef, headlineFont, heroImg, LangTogg
         <div className="container flex items-center justify-between h-16">
           <Logo light />
           <div className="flex items-center gap-2 text-white">
-            <NavLinks socialLinks={data.socialLinks ?? []} t={t} withRef={withRef} variant="light" slug={data.slug} storeId={data.id} />
+            <NavLinks socialLinks={data.socialLinks ?? []} t={t} withRef={withRef} variant="light" slug={data.slug} storeId={data.id} hasGoogleReviews={hasGoogleReviews} />
             {LangToggle}
             <Link href={withRef(`/store/${data.slug}/order`)}>
               <Button size="sm" className="font-semibold text-white" style={{ backgroundColor: brand.accent }}>
@@ -769,14 +802,14 @@ function ShowcaseHero({ data, brand, t, withRef, headlineFont, heroImg, LangTogg
 }
 
 // ─── Minimal: light, airy, thin rules ────────────────────────────────────────
-function MinimalHero({ data, brand, t, withRef, headlineFont, heroImg, LangToggle, Logo }: HeaderProps) {
+function MinimalHero({ data, brand, t, withRef, headlineFont, heroImg, LangToggle, Logo, hasGoogleReviews }: HeaderProps) {
   return (
     <>
       <header className="sticky top-0 z-40 border-b border-border bg-background/90 backdrop-blur">
         <div className="container flex items-center justify-between h-16">
           <Logo />
           <div className="flex items-center gap-2">
-            <NavLinks socialLinks={data.socialLinks ?? []} t={t} withRef={withRef} variant="dark" slug={data.slug} storeId={data.id} />
+            <NavLinks socialLinks={data.socialLinks ?? []} t={t} withRef={withRef} variant="dark" slug={data.slug} storeId={data.id} hasGoogleReviews={hasGoogleReviews} />
             {LangToggle}
             <Link href={withRef(`/store/${data.slug}/order`)}>
               <Button size="sm" variant="outline" className="font-semibold" style={{ borderColor: brand.primary, color: brand.primary }}>
@@ -827,14 +860,14 @@ function MinimalHero({ data, brand, t, withRef, headlineFont, heroImg, LangToggl
 }
 
 // ─── Craftsman: warm bold type on an accent block, no photo ──────────────────
-function CraftsmanHero({ data, brand, t, withRef, headlineFont, LangToggle, Logo }: HeaderProps) {
+function CraftsmanHero({ data, brand, t, withRef, headlineFont, LangToggle, Logo, hasGoogleReviews }: HeaderProps) {
   return (
     <>
       <header className="sticky top-0 z-40 border-b-2 bg-card" style={{ borderColor: brand.accent }}>
         <div className="container flex items-center justify-between h-16">
           <Logo />
           <div className="flex items-center gap-2">
-            <NavLinks socialLinks={data.socialLinks ?? []} t={t} withRef={withRef} variant="dark" slug={data.slug} storeId={data.id} />
+            <NavLinks socialLinks={data.socialLinks ?? []} t={t} withRef={withRef} variant="dark" slug={data.slug} storeId={data.id} hasGoogleReviews={hasGoogleReviews} />
             {LangToggle}
             <Link href={withRef(`/store/${data.slug}/order`)}>
               <Button size="sm" className="font-semibold text-white" style={{ backgroundColor: brand.primary }}>
@@ -898,14 +931,14 @@ function CraftsmanHero({ data, brand, t, withRef, headlineFont, LangToggle, Logo
 }
 
 // ─── Coastal: sunlit, welcoming editorial split ──────────────────────────────
-function CoastalHero({ data, brand, t, withRef, headlineFont, heroImg, LangToggle, Logo }: HeaderProps) {
+function CoastalHero({ data, brand, t, withRef, headlineFont, heroImg, LangToggle, Logo, hasGoogleReviews }: HeaderProps) {
   return (
     <>
       <header className="sticky top-0 z-40 border-b border-stone-200 bg-[#fffdf8]/95 backdrop-blur">
         <div className="container flex h-16 items-center justify-between">
           <Logo />
           <div className="flex items-center gap-2">
-            <NavLinks socialLinks={data.socialLinks ?? []} t={t} withRef={withRef} variant="dark" slug={data.slug} storeId={data.id} />
+            <NavLinks socialLinks={data.socialLinks ?? []} t={t} withRef={withRef} variant="dark" slug={data.slug} storeId={data.id} hasGoogleReviews={hasGoogleReviews} />
             {LangToggle}
             <Link href={withRef(`/store/${data.slug}/order`)}>
               <Button size="sm" className="font-semibold text-white" style={{ backgroundColor: brand.primary }}>{t("nav_quote")}</Button>
@@ -943,13 +976,13 @@ function CoastalHero({ data, brand, t, withRef, headlineFont, heroImg, LangToggl
 }
 
 // ─── Gallery: dark architectural feature-wall presentation ───────────────────
-function GalleryHero({ data, brand, t, withRef, headlineFont, heroImg, LangToggle, Logo }: HeaderProps) {
+function GalleryHero({ data, brand, t, withRef, headlineFont, heroImg, LangToggle, Logo, hasGoogleReviews }: HeaderProps) {
   return (
     <header className="overflow-hidden bg-slate-950 text-white">
       <div className="container flex h-16 items-center justify-between border-b border-white/15">
         <Logo light />
         <div className="flex items-center gap-2">
-          <NavLinks socialLinks={data.socialLinks ?? []} t={t} withRef={withRef} variant="light" slug={data.slug} storeId={data.id} />
+          <NavLinks socialLinks={data.socialLinks ?? []} t={t} withRef={withRef} variant="light" slug={data.slug} storeId={data.id} hasGoogleReviews={hasGoogleReviews} />
           {LangToggle}
           <Link href={withRef(`/store/${data.slug}/order`)}><Button size="sm" className="font-semibold text-white" style={{ backgroundColor: brand.accent }}>{t("nav_quote")}</Button></Link>
         </div>
@@ -981,14 +1014,14 @@ function GalleryHero({ data, brand, t, withRef, headlineFont, heroImg, LangToggl
 }
 
 // ─── Studio: crisp color block for design-forward showrooms ──────────────────
-function StudioHero({ data, brand, t, withRef, headlineFont, heroImg, LangToggle, Logo }: HeaderProps) {
+function StudioHero({ data, brand, t, withRef, headlineFont, heroImg, LangToggle, Logo, hasGoogleReviews }: HeaderProps) {
   return (
     <>
       <header className="sticky top-0 z-40 bg-card shadow-sm">
         <div className="container flex h-16 items-center justify-between">
           <Logo />
           <div className="flex items-center gap-2">
-            <NavLinks socialLinks={data.socialLinks ?? []} t={t} withRef={withRef} variant="dark" slug={data.slug} storeId={data.id} />
+            <NavLinks socialLinks={data.socialLinks ?? []} t={t} withRef={withRef} variant="dark" slug={data.slug} storeId={data.id} hasGoogleReviews={hasGoogleReviews} />
             {LangToggle}
             <Link href={withRef(`/store/${data.slug}/order`)}><Button size="sm" className="font-semibold text-white" style={{ backgroundColor: brand.primary }}>{t("nav_quote")}</Button></Link>
           </div>
@@ -1022,14 +1055,14 @@ function StudioHero({ data, brand, t, withRef, headlineFont, heroImg, LangToggle
 }
 
 // ─── Heritage: framed, traditional presentation with refined detail ──────────
-function HeritageHero({ data, brand, t, withRef, headlineFont, heroImg, LangToggle, Logo }: HeaderProps) {
+function HeritageHero({ data, brand, t, withRef, headlineFont, heroImg, LangToggle, Logo, hasGoogleReviews }: HeaderProps) {
   return (
     <>
       <header className="sticky top-0 z-40 border-b-4 bg-[#fbf8f1]" style={{ borderColor: brand.accent }}>
         <div className="container flex h-16 items-center justify-between">
           <Logo />
           <div className="flex items-center gap-2">
-            <NavLinks socialLinks={data.socialLinks ?? []} t={t} withRef={withRef} variant="dark" slug={data.slug} storeId={data.id} />
+            <NavLinks socialLinks={data.socialLinks ?? []} t={t} withRef={withRef} variant="dark" slug={data.slug} storeId={data.id} hasGoogleReviews={hasGoogleReviews} />
             {LangToggle}
             <Link href={withRef(`/store/${data.slug}/order`)}><Button size="sm" className="font-semibold text-white" style={{ backgroundColor: brand.primary }}>{t("nav_quote")}</Button></Link>
           </div>
