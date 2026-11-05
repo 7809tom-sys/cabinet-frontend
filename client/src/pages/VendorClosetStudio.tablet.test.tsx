@@ -134,17 +134,23 @@ describe("Closet Studio tablet workspace", () => {
     expect(within(toolbar).queryByRole("button", { name: "Add 29.5-inch corner shelf" })).toBeNull();
   });
 
-  it("keeps the three-column layout for wide desktops but uses on-demand panels at tablet CSS widths", () => {
+  it("keeps the viewer centered with the controls sidebar beside it on wide desktops, and on-demand panels at tablet widths", () => {
     window.history.replaceState(null, "", "/closet?demo=mixed");
     render(<VendorClosetStudio />);
-    // Closed by default, so the desktop grid drops its dock column and the drawing keeps the space.
+    // Closed by default, so the desktop grid is a single full-width drawing column.
     expect(screen.getByTestId("vendor-workspace").getAttribute("data-dock")).toBe("closed");
-    expect(screen.getByTestId("vendor-workspace").className).toContain("min-[1280px]:grid-cols-[minmax(0,1fr)_250px]");
+    expect(screen.getByTestId("vendor-workspace").className).toContain("min-[1280px]:grid-cols-[minmax(0,1fr)]");
     openParts();
-    expect(screen.getByTestId("vendor-workspace").className).toContain("min-[1280px]:grid-cols-[minmax(320px,360px)_minmax(0,1fr)_250px]");
+    // Open, the sidebar is one column on the LEFT and the viewer keeps the rest, still centered.
+    expect(screen.getByTestId("vendor-workspace").className).toContain("min-[1280px]:grid-cols-[minmax(320px,360px)_minmax(0,1fr)]");
     expect(screen.getByTestId("vendor-workspace").getAttribute("data-dock")).toBe("open");
-    expect(screen.getByTestId("vendor-blueprint-column").className).toContain("min-[1280px]:w-[250px]");
-    expect(screen.getByTestId("vendor-blueprint-column").className).not.toContain("1a4568");
+    expect(dock().className).toContain("min-[1280px]:order-1");
+    expect(screen.getByTestId("vendor-scene-panel").closest("main")?.className).toContain("min-[1280px]:order-2");
+    // The material summary is a floating card in the viewer's top-right corner, not a third column.
+    expect(screen.getByTestId("vendor-blueprint-column").className).toContain("min-[1280px]:right-3");
+    // Below the view-tab row, so it never covers the Decor toggle that lives there.
+    expect(screen.getByTestId("vendor-blueprint-column").className).toContain("min-[1280px]:top-16");
+    expect(screen.getByTestId("vendor-workspace").className).not.toContain("_250px");
     const referencePanel = screen.getByTestId("vendor-reference-panel");
     expect(referencePanel.closest("[data-testid='vendor-blueprint-column']")).toBeTruthy();
     expect(screen.queryByTestId("vendor-part-tray")).toBeNull();

@@ -136,6 +136,10 @@ export function closetFitDistance(
  * dollies until the cabinet box — floor included — fits. The look-at target
  * stays the bounding-box center. Pitch is chosen so the on-screen padding
  * above the tower equals the padding below it.
+ *
+ * The box passed in is always the wall's canonical tower run, so a back, side
+ * or front wall gets the same distance, scale and padding: the viewer always
+ * faces the active wall head-on.
  */
 export function frameClosetStudioCamera(
   box: ClosetAabb,

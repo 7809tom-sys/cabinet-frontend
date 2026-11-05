@@ -259,6 +259,45 @@ export const studioTowerFootprint = (design: StudioDesign, wall: StudioWall = de
 const intervalsOverlap = (aMin: number, aMax: number, bMin: number, bMax: number) => aMin < bMax - EPS && bMin < aMax - EPS;
 const footprintsOverlap = (a: StudioFootprint, b: StudioFootprint) => intervalsOverlap(a.xMin, a.xMax, b.xMin, b.xMax) && intervalsOverlap(a.zMin, a.zMax, b.zMin, b.zMax);
 
+/**
+ * The viewer presents every wall in one canonical frame: the active run always lies along +X with
+ * its board face toward the camera (+Z), so back, left, right and front walls share one framing,
+ * one scale and one set of annotations instead of a per-wall render path.
+ */
+export type StudioWallFrame = { yaw: number; rotationY: number; x: number; z: number };
+
+/** `yaw` is the camera azimuth that looks at this wall from inside the room; the rest places a canonical tower on it. */
+export function studioWallFrame(design: StudioDesign, wall: StudioWall = design.wall): StudioWallFrame {
+  const footprint = studioTowerFootprint(design, wall);
+  const frame = (rotationY: number, x: number, z: number): StudioWallFrame => ({ rotationY, yaw: -rotationY, x, z });
+  if (wall === "left") return frame(-Math.PI / 2, footprint.zMax, -footprint.xMin);
+  if (wall === "right") return frame(Math.PI / 2, -footprint.zMin, footprint.xMax);
+  if (wall === "front") return frame(Math.PI, footprint.xMax, footprint.zMax);
+  return frame(0, -footprint.xMin, -footprint.zMin);
+}
+
+/**
+ * Where the active wall's tower run lands once the wall frame is applied. This is the same for every
+ * wall, which is what lets one framing call serve a back, side or front view.
+ */
+export function studioCanonicalTowerFootprint(design: StudioDesign, wall: StudioWall = design.wall): StudioFootprint {
+  const footprint = studioTowerFootprint(design, wall);
+  const frame = studioWallFrame(design, wall);
+  const cos = Math.cos(frame.rotationY);
+  const sin = Math.sin(frame.rotationY);
+  const points = [
+    { x: footprint.xMin, z: footprint.zMin }, { x: footprint.xMax, z: footprint.zMin },
+    { x: footprint.xMin, z: footprint.zMax }, { x: footprint.xMax, z: footprint.zMax },
+  ].map((point) => ({
+    x: point.x * cos + point.z * sin + frame.x,
+    z: -point.x * sin + point.z * cos + frame.z,
+  }));
+  return {
+    xMin: Math.min(...points.map((point) => point.x)), xMax: Math.max(...points.map((point) => point.x)),
+    zMin: Math.min(...points.map((point) => point.z)), zMax: Math.max(...points.map((point) => point.z)),
+  };
+}
+
 /** Conservative 29.5-inch occupancy, not the unprovided curved board outline, radius, edge profile, or connector layout. */
 export function studioCornerPlanningFootprint(design: StudioDesign, shelf: Pick<StudioCornerShelf, "cornerId" | "nominalFootprintIn">): StudioFootprint {
   const span = shelf.nominalFootprintIn;
@@ -657,18 +696,126 @@ export function moveStudioItem(design: StudioDesign, bayIndex: number, itemId: s
   return { ok: true, design: replaceStudioWallBays(design, design.wall, studioBays(design).map((bay, i) => i === bayIndex
     ? { ...bay, items: bay.items.map((existing) => existing.id === itemId ? next : existing) } : bay)) };
 }
-export function addStudioBay(design: StudioDesign, widthIn: StudioStockWidth = 24):
-  { ok: true; design: StudioDesign } | { ok: false; reason: string } {
+/**
+ * Adds a tower and reports where it landed. A new tower is inserted at `insertIndex` (end by default),
+ * so every tower before it keeps its parts and only its on-wall position moves over.
+ */
+export function insertStudioBay(design: StudioDesign, widthIn: StudioStockWidth = 24, insertIndex?: number, id = `bay-${Date.now()}`):
+  { ok: true; design: StudioDesign; index: number } | { ok: false; reason: string } {
   const bays = studioBays(design);
   if (!WIDTHS.includes(widthIn) || bays.length >= 4) return { ok: false, reason: "Choose up to four sourced tower bays." };
-  const candidate = replaceStudioWallBays(design, design.wall, [...bays, { id: `bay-${Date.now()}`, wallId: design.wall, widthIn, items: [] }]);
+  const index = Math.max(0, Math.min(bays.length, Math.round(Number.isFinite(insertIndex ?? NaN) ? insertIndex! : bays.length)));
+  const inserted: StudioBay = { id, wallId: design.wall, widthIn, items: [] };
+  const candidate = replaceStudioWallBays(design, design.wall, [...bays.slice(0, index), inserted, ...bays.slice(index)]);
   if (studioWidth(candidate) > studioWallLength(candidate)) return { ok: false, reason: "No wall space for a neighboring tower. Choose another wall or a narrower bay." };
   const cornerError = studioCornerDesignError(candidate);
   if (cornerError) return { ok: false, reason: cornerError };
   const basketError = studioBasketDesignError(candidate);
   if (basketError) return { ok: false, reason: basketError };
-  return { ok: true, design: candidate };
+  return { ok: true, design: candidate, index };
 }
+
+export function addStudioBay(design: StudioDesign, widthIn: StudioStockWidth = 24):
+  { ok: true; design: StudioDesign } | { ok: false; reason: string } {
+  const result = insertStudioBay(design, widthIn);
+  return result.ok ? { ok: true, design: result.design } : result;
+}
+
+/**
+ * The tower the viewer should keep in the middle of the panel: a brand-new tower is the one the user
+ * just created, and any other design change keeps the already-selected tower.
+ */
+export const studioCenteredBayIndex = (design: StudioDesign, selectedBay: number, focusId?: string | null): number => {
+  const bays = studioBays(design);
+  if (!bays.length) return 0;
+  if (focusId) {
+    const found = bays.findIndex((bay) => bay.id === focusId);
+    if (found >= 0) return found;
+  }
+  return Math.max(0, Math.min(bays.length - 1, selectedBay));
+};
+
+/** First shelf height: the owner's 4.5-in mark above the floor, never inside the fixed bottom shelf. */
+export const STUDIO_SHELF_LADDER_START_IN = 4.5;
+export const STUDIO_SHELF_LADDER_SPACING_IN = 10;
+export const STUDIO_SHELF_LADDER_MAX_COUNT = 12;
+
+export type StudioShelfLadderResult = { ok: true; design: StudioDesign; placed: StudioItem[]; skipped: number[]; spacings: number[] } | { ok: false; reason: string };
+
+/**
+ * Places shelves from the bottom up at a fixed spacing. The first shelf sits at the 4.5-in mark
+ * (raised only as far as the fixed bottom shelf requires), then every `spacingIn` above it. Each
+ * shelf still goes through snapStudioPart, so the fixed top, collisions and sourced SKUs are
+ * enforced; shelf numbers that cannot fit are reported rather than forced.
+ */
+export function placeStudioShelfLadder(design: StudioDesign, bayIndex: number, count: number, spacingIn = STUDIO_SHELF_LADDER_SPACING_IN):
+  StudioShelfLadderResult {
+  const bay = studioBays(design)[bayIndex];
+  if (!bay) return { ok: false, reason: "Choose a tower before adding a shelf run." };
+  const total = Math.round(Number.isFinite(count) ? count : 0);
+  if (total < 1) return { ok: false, reason: "Enter at least one shelf." };
+  if (total > STUDIO_SHELF_LADDER_MAX_COUNT) return { ok: false, reason: `A shelf run is limited to ${STUDIO_SHELF_LADDER_MAX_COUNT} shelves at a time.` };
+  const spacing = Math.round((Number.isFinite(spacingIn) ? spacingIn : STUDIO_SHELF_LADDER_SPACING_IN) * 100) / 100;
+  if (!(spacing >= 2)) return { ok: false, reason: "Enter a shelf spacing of at least 2 in." };
+  const startIn = Math.max(STUDIO_SHELF_LADDER_START_IN, studioFixedBottom(design) + THICKNESS);
+  let next = design;
+  const placed: StudioItem[] = [];
+  const skipped: number[] = [];
+  const spacings: number[] = [];
+  for (let index = 0; index < total; index++) {
+    const target = Math.round((startIn + index * spacing) * 4) / 4;
+    // Placement is validated at the quarter-inch the user asked for, not silently rounded to an inch,
+    // so the 4.5-in start and a 10-in pitch land where the tool says they will.
+    const moved = stageShelfAt(next, bayIndex, target, `shelf-ladder-${index + 1}-${Date.now()}`);
+    if (moved) {
+      next = moved.design;
+      placed.push(moved.item);
+      spacings.push(Math.round((moved.item.bottomIn - startIn) * 100) / 100);
+    } else skipped.push(index + 1);
+  }
+  if (!placed.length) return { ok: false, reason: "No shelf in this run fits between the fixed shelves. Remove a part or use a wider spacing." };
+  return { ok: true, design: next, placed, skipped, spacings };
+}
+
+/** One shelf at one exact quarter-inch height, through the same sourced-SKU and collision rules as a drop. */
+function stageShelfAt(design: StudioDesign, bayIndex: number, bottomIn: number, id: string):
+  { design: StudioDesign; item: StudioItem } | null {
+  const bay = studioBays(design)[bayIndex];
+  if (!bay) return null;
+  if (!studioPartReferences(design, bayIndex, "shelf")) return null;
+  const candidate: StudioItem = { id, kind: "shelf", bottomIn, wallId: design.wall };
+  if (studioCollision(design, bayIndex, candidate)) return null;
+  return { design: replaceStudioWallBays(design, design.wall, studioBays(design).map((current, index) => index === bayIndex ? { ...current, items: [...current.items, candidate] } : current)), item: candidate };
+}
+
+/**
+ * Sets one shelf to an exact bottom height. The value is validated by the same collision and
+ * fixed-top rules as a drag, so a typed height can never force an overlap.
+ */
+export function setStudioShelfHeight(design: StudioDesign, bayIndex: number, itemId: string, bottomIn: number):
+  { ok: true; design: StudioDesign; item: StudioItem } | { ok: false; reason: string } {
+  const item = studioBays(design)[bayIndex]?.items.find((candidate) => candidate.id === itemId);
+  if (!item) return { ok: false, reason: "Choose a placed shelf first." };
+  if (!Number.isFinite(bottomIn)) return { ok: false, reason: "Enter a shelf height in inches." };
+  const snapped = studioSnapShelfHeight(design, bottomIn);
+  if (Math.abs(snapped - bottomIn) > 0.001) return { ok: false, reason: `A shelf height must be between ${studioSnapShelfHeight(design, 0)} and ${studioSnapShelfHeight(design, studioFixedTop(design))} in, in ¼-in steps.` };
+  const error = studioCollision(design, bayIndex, { ...item, bottomIn: snapped }, itemId);
+  if (error) return { ok: false, reason: error };
+  return {
+    ok: true,
+    item: { ...item, bottomIn: snapped },
+    design: replaceStudioWallBays(design, design.wall, studioBays(design).map((bay, index) => index === bayIndex
+      ? { ...bay, items: bay.items.map((existing) => existing.id === itemId ? { ...existing, bottomIn: snapped } : existing) } : bay)),
+  };
+}
+
+/** Quarter-inch drag heights, clamped to the opening so the live inch readout is always placeable. */
+export const studioSnapShelfHeight = (design: StudioDesign, bottomIn: number) => {
+  const min = studioFixedBottom(design) + THICKNESS;
+  const max = Math.max(min, studioFixedTop(design) - THICKNESS);
+  const clamped = Math.max(min, Math.min(max, bottomIn));
+  return Math.round(clamped * 4) / 4;
+};
 
 /** Shareable, isolated sample. Never substitute this for a customer's saved draft. */
 export function createStudioReviewDemo(): StudioDesign {

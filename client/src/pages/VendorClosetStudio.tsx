@@ -9,7 +9,7 @@ import type { ClosetCameraView } from "@/components/vendor/closetStudioCamera";
 import { ClosetWallElevation } from "@/components/vendor/ClosetWallElevation";
 import { MASTERTRAC_PRICE_DATE, masterTracProduct, masterTracPublicReferenceCatalog, type MasterTracPublicReference } from "@/lib/closet";
 import {
-  addStudioBay, addStudioConnectedCorner, autoBuildStudio, autoBuildStudioFromAnswers, createKidsStudioDesign, kidsGuidance, KIDS_MAX_AGE, KIDS_MAX_HEIGHT_IN, KIDS_MIN_AGE, KIDS_MIN_HEIGHT_IN, MODE_AUTO_BUILD_DEFAULTS, STUDIO_AUTO_BUILD_MAX_COUNT, STUDIO_ROOM_HEIGHT_DEFAULT_IN, addStudioCornerShelf, changeStudioFinish, configureStudioBayCut, createStudioDesign, createStudioReviewDemo, moveStudioBasketPlacement, moveStudioCornerShelf, moveStudioItem, removeStudioBasketPlacement, removeStudioCornerShelf, studioBays, studioCornerShelfSku, updateStudioBasketPlacement,
+  addStudioBay, addStudioConnectedCorner, autoBuildStudio, autoBuildStudioFromAnswers, createKidsStudioDesign, kidsGuidance, KIDS_MAX_AGE, KIDS_MAX_HEIGHT_IN, KIDS_MIN_AGE, KIDS_MIN_HEIGHT_IN, MODE_AUTO_BUILD_DEFAULTS, STUDIO_AUTO_BUILD_MAX_COUNT, STUDIO_ROOM_HEIGHT_DEFAULT_IN, STUDIO_SHELF_LADDER_MAX_COUNT, STUDIO_SHELF_LADDER_SPACING_IN, STUDIO_SHELF_LADDER_START_IN, addStudioCornerShelf, changeStudioFinish, configureStudioBayCut, createStudioDesign, createStudioReviewDemo, insertStudioBay, placeStudioShelfLadder, moveStudioBasketPlacement, moveStudioCornerShelf, moveStudioItem, removeStudioBasketPlacement, removeStudioCornerShelf, setStudioShelfHeight, studioBays, studioCenteredBayIndex, studioCornerShelfSku, studioSnapShelfHeight, updateStudioBasketPlacement,
   restoreStudioDesign, snapStudioBasketPlacement, snapStudioPart, STUDIO_FINISHES, STUDIO_ILLUSTRATIVE_SHOE_PITCH_DEG, STUDIO_MODES, STUDIO_WALLS,
   STUDIO_BASKET_REFERENCE_OPTIONS, STUDIO_CORNER_IDS, STUDIO_FIT_CAPABILITY_REGISTRY, replaceStudioWallBays, studioBayCut, studioBasketDesignError, studioBasketPlacementsForWall, studioCollision, studioCornerIdsForWall, studioCornerMeasuredGap, studioCornerShelves, studioCornerDesignError, studioFixedBottom, studioFixedTop, studioItemHeight, studioPartReferences, studioStockWidth, studioTakeoff, studioWallLength, studioWallOccupancy, studioWidth, switchStudioWall,
   STUDIO_GUIDED_DEFAULTS, STUDIO_GUIDED_ROOM_DEFAULTS, studioGuidedSummaryLines,
@@ -237,6 +237,54 @@ function CornerPlanningControls({ plannerId, design, selectedCornerId, onSelect,
   </section>;
 }
 
+/** Types an exact shelf height. The value runs through the same fit rules as a drag, so it can never overlap. */
+function ExactHeightField({ item, design, onCommit }: { item: StudioItem; design: StudioDesign; onCommit: (bottomIn: number) => void }) {
+  const min = studioFixedBottom(design) + 0.75;
+  const max = studioFixedTop(design) - studioItemHeight(item.kind);
+  const [value, setValue] = useState(String(item.bottomIn));
+  useEffect(() => { setValue(String(item.bottomIn)); }, [item.id, item.bottomIn]);
+  const commit = () => {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) onCommit(parsed);
+    else setValue(String(item.bottomIn));
+  };
+  return <div className="mt-2 flex items-end gap-2" data-testid="vendor-exact-height">
+    <label className="min-w-0 flex-1 text-[10px] text-[#766f65]">Exact height from the floor (in)
+      <input aria-label="Exact item height from the floor in inches" type="number" inputMode="decimal" min={min} max={max} step="0.25" value={value} onChange={(event) => setValue(event.target.value)} onBlur={commit} onKeyDown={(event) => { if (event.key === "Enter") commit(); }} className="mt-1 h-10 w-full rounded-md border border-[#dfd8cc] bg-white px-2 text-xs text-[#39443f]" />
+    </label>
+    <button type="button" onClick={commit} className="min-h-10 shrink-0 rounded-md border border-[#b78151] bg-[#fff7ed] px-3 text-[11px] font-semibold text-[#6d4b2c]">Set height</button>
+  </div>;
+}
+
+/**
+ * Shelf placement tool: the user picks how many shelves, and the run starts at the 4.5-in mark then
+ * steps by the spacing (10 in by default, editable). Every shelf still goes through the same fit and
+ * collision rules, so a shelf that cannot fit is reported instead of forced.
+ */
+function ShelfRunControls({ design, hasBay, bay, onPlace }: { design: StudioDesign; hasBay: boolean; bay: StudioBay; onPlace: (count: number, spacingIn: number) => void }) {
+  const [count, setCount] = useState("5");
+  const [spacing, setSpacing] = useState(String(STUDIO_SHELF_LADDER_SPACING_IN));
+  const shelves = bay.items.filter((item) => item.kind === "shelf");
+  if (!hasBay) return null;
+  const parsedCount = Number(count);
+  const parsedSpacing = Number(spacing);
+  const valid = Number.isFinite(parsedCount) && parsedCount >= 1 && parsedCount <= STUDIO_SHELF_LADDER_MAX_COUNT && Number.isFinite(parsedSpacing) && parsedSpacing >= 2;
+  return <section className="rounded-xl border border-[#e1d8ca] bg-white p-3" data-testid="vendor-shelf-run">
+    <div className="flex items-start justify-between gap-3">
+      <div>
+        <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#997851]">Shelf spacing tool</p>
+        <p className="mt-1 text-[10px] leading-relaxed text-[#766f65]">Enter how many shelves. The first goes at the {STUDIO_SHELF_LADDER_START_IN} in mark, then every {STUDIO_SHELF_LADDER_SPACING_IN} in by default.</p>
+      </div>
+    </div>
+    <div className="mt-2 grid grid-cols-2 gap-2">
+      <label className="text-[10px] text-[#766f65]">Shelves<input aria-label="Number of shelves to add" type="number" inputMode="numeric" min={1} max={STUDIO_SHELF_LADDER_MAX_COUNT} step="1" value={count} onChange={(event) => setCount(event.target.value)} className="mt-1 h-10 w-full rounded-md border border-[#dfd8cc] bg-white px-2 text-xs text-[#39443f]" /></label>
+      <label className="text-[10px] text-[#766f65]">Spacing (in)<input aria-label="Shelf spacing in inches" type="number" inputMode="decimal" min={2} max={60} step="0.5" value={spacing} onChange={(event) => setSpacing(event.target.value)} className="mt-1 h-10 w-full rounded-md border border-[#dfd8cc] bg-white px-2 text-xs text-[#39443f]" /></label>
+    </div>
+    <button type="button" onClick={() => { if (valid) onPlace(Math.round(parsedCount), parsedSpacing); }} disabled={!valid} className="mt-2 min-h-11 w-full rounded-md bg-[#244338] px-3 text-xs font-bold text-white hover:bg-[#315444] disabled:opacity-40">{valid ? `Add ${Math.round(parsedCount)} shelves from the bottom` : "Add shelves from the bottom"}</button>
+    <p className="mt-2 text-[10px] leading-relaxed text-[#766f65]">{shelves.length ? `${shelves.length} shelf${shelves.length === 1 ? "" : "s"} in Tower ${design.bays.indexOf(bay) + 1}: ${shelves.map((item) => `${item.bottomIn} in`).join(", ")}.` : "No shelves in this tower yet."} Drag any shelf in the drawing, or type an exact height below, to fine-tune it.</p>
+  </section>;
+}
+
 function BasketPlanFigure({ basket, bayIndex, testId }: { basket: { id: string; sku: string; nominalWidthIn: number; nominalHeightIn: number; bottomIn: number }; bayIndex: number; testId?: string }) {
   return <div className="mt-3 grid grid-cols-[88px_1fr] items-center gap-3 rounded-md border border-[#e4d7c5] bg-[#fffdf9] p-2" data-testid={testId}>
     <svg viewBox="0 0 88 64" role="img" aria-label={`Plan envelope for basket ${basket.sku}`} className="h-16 w-[88px]">
@@ -371,6 +419,11 @@ export default function VendorClosetStudio({ affiliateSlug }: { affiliateSlug?: 
   const [cameraView, setCameraView] = useState<ClosetCameraView>("angle");
   const [fitToken, setFitToken] = useState(0);
   /**
+   * The tower the viewer keeps centered. A brand-new tower sets this, so adding a tower re-centers on
+   * it instead of leaving the model off to one side of the panel.
+   */
+  const [focusBayId, setFocusBayId] = useState<string | null>(null);
+  /**
    * Decorative clothes, folded stacks and shoes in the previews. Presentation only, so it is a
    * view preference rather than design state: it is persisted on its own key, never inside the
    * saved design, and toggling it cannot change a part, the material reference or a price.
@@ -464,6 +517,22 @@ export default function VendorClosetStudio({ affiliateSlug }: { affiliateSlug?: 
     if (!result.ok) { setNotice(result.reason); return; }
     updateDesign(result.design);
   };
+  /** Exact typed height for one shelf; the same collision rules as a drag, so nothing can overlap. */
+  const setShelfHeight = (item: StudioItem, bottomIn: number) => {
+    const result = setStudioShelfHeight(design, selectedBay, item.id, bottomIn);
+    if (!result.ok) { setNotice(result.reason); return; }
+    updateDesign(result.design); setSelectedItem(item.id);
+  };
+  /** How many shelves to add and how far apart; the first lands at the 4.5-in mark, then every spacing. */
+  const addShelfRun = (count: number, spacingIn: number) => {
+    const result = placeStudioShelfLadder(design, selectedBay, count, spacingIn);
+    if (!result.ok) { setNotice(result.reason); return; }
+    updateDesign(result.design); setSelectedItem(result.placed[result.placed.length - 1]?.id ?? null);
+    const placed = result.placed.map((item) => `${item.bottomIn} in`).join(", ");
+    setNotice(result.skipped.length
+      ? `Added ${result.placed.length} ${result.placed.length === 1 ? "shelf" : "shelves"} at ${placed}. Shelf ${result.skipped.join(", ")} did not fit under the fixed top shelf and ${result.skipped.length === 1 ? "was" : "were"} left out.`
+      : `Added ${result.placed.length} ${result.placed.length === 1 ? "shelf" : "shelves"} at ${placed}. Drag any shelf to fine-tune it.`);
+  };
   const removeItem = (item: StudioItem) => { updateDesign(replaceStudioWallBays(design, design.wall, design.bays.map((b, index) => index === selectedBay ? { ...b, items: b.items.filter((part) => part.id !== item.id) } : b))); setSelectedItem(null); };
   const addCornerShelf = (cornerId: StudioCornerId, mount: StudioCornerShelfMount, elevationIn: number) => {
     const result = addStudioCornerShelf(design, cornerId, mount, elevationIn, crypto.randomUUID());
@@ -500,10 +569,19 @@ export default function VendorClosetStudio({ affiliateSlug }: { affiliateSlug?: 
   };
   const removeBasket = (id: string) => { setBasketUndoDesign(design); updateDesign(removeStudioBasketPlacement(design, id)); setSelectedBasketId(null); };
   const undoBasket = () => { if (!basketUndoDesign) return; setDesign(basketUndoDesign); setBasketUndoDesign(null); setNotice("Basket visual-planning change undone."); setSelectedBasketId(null); };
+  /**
+   * A new tower is inserted after the selected tower, so it lands beside what the user was looking at
+   * and everything to its left keeps its parts (only its on-wall position moves over). The scene
+   * re-centers on the new tower, which keeps the model centered in the viewer.
+   */
   const addNeighbor = () => {
-    const result = addStudioBay(design);
+    const result = insertStudioBay(design, 24, hasBay ? selectedBay + 1 : undefined, crypto.randomUUID());
     if (!result.ok) { setNotice(result.reason); return; }
-    updateDesign(result.design); setSelectedBay(result.design.bays.length - 1); setSelectedItem(null);
+    updateDesign(result.design); setSelectedBay(result.index); setSelectedItem(null);
+    setFocusBayId(result.design.bays[result.index]?.id ?? null);
+    setNotice(result.index === 0
+      ? "Added Tower 1 at the left edge of this wall. Everything to its right moved over one panel."
+      : `Added Tower ${result.index + 1}. Towers to its left kept their parts and moved over one panel.`);
   };
   const pickPart = (kind: StudioKind) => { if (!hasBay) { setNotice("Add a tower to this wall before choosing a part."); return; } setPartToPlace(kind); setSelectedItem(null); setPhonePanel(null); setNotice(`Now tap Tower ${selectedBay + 1} in 3D, or drag the part into any tower bay. Its height will snap to a free position.`); };
   const openCornerShelfPlanner = () => {
@@ -748,44 +826,17 @@ export default function VendorClosetStudio({ affiliateSlug }: { affiliateSlug?: 
           <div className="mt-4 flex gap-2"><button type="button" onClick={rebuild} className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-md bg-[#244338] px-3 text-xs font-bold text-white hover:bg-[#315444]"><WandSparkles className="h-4 w-4" />Rebuild</button>{buildUndoDesign && <button type="button" onClick={undoBuild} className="min-h-11 rounded-md border border-[#d6c3a6] bg-[#fff8ed] px-3 text-xs font-bold text-[#72563b]">Undo rebuild</button>}</div></section>
         <div className="mt-auto border-t border-[#e6e0d6] pt-4"><p className="text-[11px] leading-5 text-[#81776a]">Real catalog parts, rendered as an inviting room preview. Finish and dimensions are source-based; connections, accessories and lighting are illustrative.</p></div>
       </aside>
-      {/* Desktop keeps three columns. Tablet and phone use the canvas as the primary surface, with
-          the dock, room panel and Material List as closed-by-default sheets the user explicitly opens. */}
-      <div ref={workspaceRef} data-dock={partsPanelOpen ? "open" : "closed"} className={`relative flex min-h-0 min-w-0 flex-1 overflow-hidden min-[1280px]:grid ${partsPanelOpen ? "min-[1280px]:grid-cols-[minmax(320px,360px)_minmax(0,1fr)_250px]" : "min-[1280px]:grid-cols-[minmax(0,1fr)_250px]"}`} data-testid="vendor-workspace">
-      <aside id="vendor-phone-options-dock" data-testid="vendor-tablet-options-dock" data-open={partsPanelOpen ? "true" : "false"} className={`${partsPanelOpen ? "flex" : "hidden"} absolute inset-x-0 bottom-0 top-auto z-40 max-h-[55%] min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-t-2xl border-[#dfd8cc] bg-[#faf9f5] shadow-[0_-18px_50px_-20px_rgba(38,51,45,0.45)] min-[1280px]:static min-[1280px]:z-auto min-[1280px]:order-1 min-[1280px]:max-h-none min-[1280px]:min-h-0 min-[1280px]:rounded-none min-[1280px]:border-l-0 min-[1280px]:border-r min-[1280px]:shadow-none`} aria-label="Parts panel">
-        <div className="flex items-center justify-between gap-2 border-b border-[#e6dfd4] px-3 py-1.5">
-          <div className="flex min-w-0 items-center gap-2">
-            <span aria-hidden="true" className="h-1 w-8 shrink-0 rounded-full bg-[#d8d0c3] min-[1280px]:hidden" />
-            <div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#997851]">Add accessories</p><p className="truncate text-xs text-[#5c564c]">Shelf, rod, drawer, shoe basket</p></div>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <button type="button" onClick={() => { setDockView("tower"); setPhonePanel("tower"); }} className="min-h-11 rounded-md bg-[#244338] px-3 text-xs font-bold text-white hover:bg-[#315444]">Parts</button>
-            <button type="button" aria-label="Close accessories panel" onClick={() => { setPartsPanelOpen(false); setPhonePanel(null); setDockView("accessories"); }} className="min-h-11 rounded-md border border-[#dfd8cc] bg-white px-3 text-xs font-bold text-[#244338] min-[1280px]:hidden">Close</button>
-          </div>
-        </div>
-        <div id="vendor-section-parts" className={`min-h-0 flex-1 overflow-y-auto overscroll-contain p-3 ${dockView === "tower" ? "hidden" : ""}`}>
-          <ClosetStudioAccessories design={design} selectedBay={selectedBay} hasBay={hasBay} partToPlace={partToPlace} onPlaceKind={(kind) => place(selectedBay, kind === "rod" ? 64 : kind === "shoe" ? 24 : kind === "drawer" ? 20 : 42, kind)} onPlaceBasket={(sku) => placeBasketInBay(selectedBay, sku)} onOpenCorner={openCornerShelfPlanner} />
-          <p className="mt-3 rounded-md bg-[#fff6e7] px-2 py-2 text-[10px] leading-relaxed text-[#76563a]" data-testid="vendor-shoe-pitch-caveat">{SHOE_PITCH_CAVEAT}</p>
-          <p className="mt-2 text-[10px] leading-relaxed text-[#6d6255]">A pull-out basket keeps its listed width and height. It is placed in the nearest open inch between the fixed shelves, never cut down and never forced into the top if the fixed top shelf is too close.</p>
-          {notice && <div role="status" className="mt-3 rounded-lg border border-[#eacb9a] bg-[#fff6e5] px-3 py-2 text-xs text-[#73543a]">{notice}<button type="button" aria-label="Dismiss message" onClick={() => setNotice(null)} className="float-right font-bold">✕</button></div>}
-          {kidsNotes.length > 0 && <div role="note" className="mt-3 rounded-lg border border-[#eacb9a] bg-[#fff6e5] px-3 py-2 text-xs text-[#73543a]" data-testid="vendor-kids-guidance"><ul className="list-disc space-y-1 pl-4">{kidsNotes.map((line) => <li key={line}>{line}</li>)}</ul></div>}
-        </div>
-        {partsPanelOpen && <button type="button" aria-label="Close tower parts" onClick={() => { setPartsPanelOpen(false); setPhonePanel(null); }} className="absolute inset-0 z-20 bg-black/20 min-[1280px]:hidden" />}
-        <div data-testid="vendor-part-selector" className={`${dockView === "tower" ? "flex" : "hidden"} absolute inset-0 z-30 flex-col bg-[#faf9f5]`}>
-          <div className="flex items-center gap-2 border-b border-[#e4ddd2] px-3 py-2">
-            <button type="button" onClick={() => { setDockView("accessories"); setPhonePanel("parts"); }} className="min-h-11 rounded-md border border-[#dfd8cc] bg-white px-3 text-xs font-bold text-[#244338]">Back to accessories</button>
-            <strong className="text-sm text-[#2c3832]">Tower parts</strong>
-          </div>
-          <div id="vendor-section-tower-panel" className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3">
-            <section id="vendor-section-tower" className="rounded-xl border border-[#e1d8ca] bg-white p-3"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#997851]">Tower & size</p>{hasBay ? <CutToFitControls key={`${bay.id}:${bay.widthIn}:${studioStockWidth(bay)}`} design={design} bay={bay} onApply={changeCutToFit} /> : <p className="mt-2 rounded-md bg-[#f7f2e9] px-2 py-2 text-[11px] leading-relaxed text-[#6d6255]">This wall is empty. Add its first 24 in tower below; other walls remain unchanged.</p>}<div className="mt-2 flex flex-wrap gap-2" role="group" aria-label="Select a tower">{design.bays.map((b, index) => <button type="button" key={b.id} onClick={() => { if (partToPlace) place(index, partToPlace === "rod" ? 64 : partToPlace === "shoe" ? 24 : partToPlace === "drawer" ? 20 : 42, partToPlace); else { setSelectedBay(index); setSelectedItem(null); } }} aria-label={partToPlace ? `Place ${card[partToPlace].title.toLowerCase()} in Tower ${index + 1}` : `Select Tower ${index + 1}`} aria-pressed={selectedBay === index} className={`min-h-11 rounded-md px-3 text-xs font-semibold ${selectedBay === index ? "bg-[#244338] text-white" : "border border-[#dfd8cc] bg-white"}`}>Tower {index + 1}</button>)}</div><div className="mt-3 flex items-center gap-2">{hasBay && <><label className="sr-only" htmlFor="vendor-bay-width-dock">Selected tower clear width</label><select id="vendor-bay-width-dock" aria-label="Selected tower clear width" value={bay.widthIn} onChange={(event) => selectedWidth(Number(event.target.value) as 18 | 24 | 30)} className="min-h-11 flex-1 rounded-md border border-[#dfd8cc] bg-white px-2 text-xs"><option value="18">18 in</option><option value="24">24 in</option><option value="30">30 in</option></select></>}<button type="button" onClick={addNeighbor} disabled={design.bays.length >= 4} className="flex min-h-11 shrink-0 items-center gap-1 rounded-md border border-[#d6c3a6] bg-[#fff8ed] px-3 text-[11px] font-semibold text-[#72563b] disabled:opacity-40"><Plus className="h-4 w-4" /> {hasBay ? "Add" : "Add first tower"}</button></div><p className="mt-2 text-[10px] text-[#766f65]"><Ruler className="mr-1 inline h-3 w-3" /> {studioWidth(design)} of {studioWallLength(design)} in on {wallNames[design.wall].toLowerCase()}</p>{bay.items.length > 0 && <div className="mt-3 border-t border-[#e8e0d6] pt-3"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#997851]">Placed items</p><div className="mt-2 flex flex-wrap gap-2">{bay.items.map((item) => <button type="button" key={item.id} onClick={() => { setSelectedItem(item.id); setPartToPlace(null); }} aria-pressed={selectedItem === item.id} className={`min-h-10 rounded-md px-3 text-[11px] font-semibold ${selectedItem === item.id ? "bg-[#ede0c8] text-[#4f3a22]" : "border border-[#e5ded4] bg-white text-[#6f655a]"}`}>{card[item.kind].title} · {item.bottomIn} in</button>)}</div></div>}{currentItem && <div className="mt-3 border-t border-[#e8e0d6] pt-3" data-testid="vendor-tablet-height-control"><div className="flex items-center gap-2"><Move3D className="h-4 w-4 text-[#94734c]" /><strong className="text-xs">Adjust {card[currentItem.kind].title.toLowerCase()}</strong></div><div className="mt-3 flex items-center gap-2"><button aria-label="Lower selected item one inch" onClick={() => changeElevation(currentItem, currentItem.bottomIn - 1)} className="h-11 w-11 rounded-md border border-[#dfd5c5] bg-white">−</button><input aria-label="Selected item bottom height in inches" type="range" min={studioFixedBottom(design) + 1} max={studioFixedTop(design) - studioItemHeight(currentItem.kind)} step="1" value={currentItem.bottomIn} onChange={(event) => changeElevation(currentItem, Number(event.target.value))} className="min-w-0 flex-1 accent-[#9b6b3e]" /><button aria-label="Raise selected item one inch" onClick={() => changeElevation(currentItem, currentItem.bottomIn + 1)} className="h-11 w-11 rounded-md border border-[#dfd5c5] bg-white">+</button><span className="w-12 text-center text-xs font-bold tabular-nums">{currentItem.bottomIn} in</span><button type="button" aria-label={`Remove ${card[currentItem.kind].title.toLowerCase()}`} onClick={() => removeItem(currentItem)} className="flex h-11 w-11 items-center justify-center rounded text-[#9b674d] hover:bg-[#fff6e7]"><Trash2 className="h-4 w-4" /></button></div></div>}<CornerPlanningControls plannerId="vendor-corner-shelf-planner-dock" design={design} selectedCornerId={selectedCornerId} onSelect={setSelectedCornerId} onAdd={addCornerShelf} onBuild={buildConnectedCorner} onMove={moveCornerShelf} onRemove={removeCornerShelf} canUndo={Boolean(cornerUndoDesign)} onUndo={undoCorner} /></section>
-            <BasketPlanningControls design={design} selectedBay={selectedBay} selectedBasketId={selectedBasketId} onSelect={setSelectedBasketId} onAdd={addBasket} onMove={moveBasket} onUpdate={updateBasket} onRemove={removeBasket} canUndo={Boolean(basketUndoDesign)} onUndo={undoBasket} />
-          </div>
-        </div>
-      </aside>
+      {/* Desktop: one controls sidebar on the LEFT, viewer centered in the remaining space.
+          Tablet and phone use the canvas as the primary surface, with the dock, room panel and
+          Material List as closed-by-default sheets the user explicitly opens. */}
+      <div ref={workspaceRef} data-dock={partsPanelOpen ? "open" : "closed"} className={`relative flex min-h-0 min-w-0 flex-1 overflow-hidden min-[1280px]:grid ${partsPanelOpen ? "min-[1280px]:grid-cols-[minmax(320px,360px)_minmax(0,1fr)]" : "min-[1280px]:grid-cols-[minmax(0,1fr)]"}`} data-testid="vendor-workspace">
+      {/* The viewer is the first grid cell, so it always starts at the top-left of the workspace and the
+          model is centered inside it. The controls sidebar comes after it and only ever sits beside it. */}
       <main className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#e9e5dc] min-[1280px]:order-2">
         <div role="tablist" aria-label="Studio view" className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-[#ded7cb] bg-[#faf9f5] px-3 py-1.5" data-testid="vendor-view-tabs">{viewTabs.map((tab) => <button key={tab.id} type="button" role="tab" aria-selected={activeTab === tab.id} onClick={() => { setSceneTab(tab.id); if (tab.id === "3d") fitCloset(); }} className={`min-h-11 shrink-0 rounded-md px-3 text-xs font-semibold ${activeTab === tab.id ? "bg-[#244338] text-white" : "border border-[#dfd8cc] bg-white text-[#5d665f]"}`}>{tab.label}</button>)}<span className="ml-auto hidden truncate pl-2 text-xs font-semibold text-[#5c564c] sm:inline">{hasBay ? `Tower ${selectedBay + 1} of ${design.bays.length} · ${bay.widthIn} in` : `Empty ${wallNames[design.wall].toLowerCase()}`}</span><button type="button" aria-pressed={showDecor} onClick={toggleDecor} data-testid="vendor-decor-toggle" title="Show clothes and shoes in the preview. They are not parts and never change the material reference." className={`ml-1 flex min-h-9 shrink-0 items-center gap-1.5 rounded-md border px-2 text-[11px] font-semibold ${showDecor ? "border-[#7d9a86] bg-[#eef3ee] text-[#2f4b3b]" : "border-[#dfd8cc] bg-white text-[#7d7469]"}`}><span aria-hidden="true">{showDecor ? "◉" : "○"}</span>Clothes</button></div>
         <p className="shrink-0 bg-[#faf9f5] px-3 py-1 text-[10px] font-medium text-[#5c564c]">{partToPlace && hasBay ? `Tap the ${bay.widthIn} in bay to place ${card[partToPlace].title.toLowerCase()}` : hasBay ? "Drag to rotate · tap a tower to edit its parts" : "This wall is empty · add a tower in Parts"}</p>
         <div className="relative min-h-0 w-full flex-1 bg-[#e7e2d8]" data-testid="vendor-scene-panel">
-          <div className={`absolute inset-0 ${activeTab === "3d" ? "" : "invisible pointer-events-none"}`}><VendorClosetScene design={design} selectedBay={selectedBay} selectedCornerId={selectedCornerId} partToPlace={partToPlace} cameraView={cameraView} fitToken={fitToken} decor={showDecor} onSelectBay={(index) => { setSelectedBay(index); setSelectedItem(null); setSelectedCornerId(null); setPartsPanelOpen(true); }} onPlace={place} onPlaceBasket={(index, bottom, sku) => placeBasketInBay(index, sku, bottom)} onError={setNotice} /></div>
+          <div className={`absolute inset-0 ${activeTab === "3d" ? "" : "invisible pointer-events-none"}`}><VendorClosetScene design={design} selectedBay={studioCenteredBayIndex(design, selectedBay, focusBayId)} selectedCornerId={selectedCornerId} partToPlace={partToPlace} cameraView={cameraView} fitToken={fitToken} decor={showDecor} onSelectBay={(index) => { setSelectedBay(index); setSelectedItem(null); setSelectedCornerId(null); setPartsPanelOpen(true); }} onPlace={place} onPlaceBasket={(index, bottom, sku) => placeBasketInBay(index, sku, bottom)} onMoveShelf={(index, itemId, bottomIn) => { const result = moveStudioItem(design, index, itemId, Math.round(bottomIn * 4) / 4); if (!result.ok) setNotice(result.reason); else updateDesign(result.design); }} onError={setNotice} /></div>
           {activeTab === "3d" && <div className="pointer-events-auto absolute bottom-2 left-2 z-20 sm:bottom-3 sm:left-3" data-testid="vendor-room-minimap">
             {roomMapOpen
               ? <div className="w-[116px] rounded-lg border border-[#d8d0c3] bg-[#fffdf9]/95 p-1.5 shadow-md backdrop-blur">
@@ -803,7 +854,46 @@ export default function VendorClosetStudio({ affiliateSlug }: { affiliateSlug?: 
           {(activeTab === "back" || activeTab === "left" || activeTab === "right") && <div className="absolute inset-0 z-10 overflow-auto bg-[#f4f1ea] p-2" data-testid="vendor-elevation-view"><ClosetWallElevation design={design} wall={activeTab} decor={showDecor} /></div>}
         </div>
       </main>
-      <aside data-testid="vendor-blueprint-column" className={`${showTabletMaterial || phonePanel === "material" ? "flex" : "hidden"} absolute inset-x-0 bottom-0 top-11 z-40 min-h-0 w-full min-w-0 max-w-full flex-col overflow-x-hidden overflow-y-auto border-t border-[#dfd8cc] bg-[#faf9f5] shadow-2xl min-[1280px]:static min-[1280px]:z-auto min-[1280px]:order-3 min-[1280px]:flex min-[1280px]:w-[250px] min-[1280px]:max-w-[250px] min-[1280px]:border-l min-[1280px]:shadow-none`}>
+      <aside id="vendor-phone-options-dock" data-testid="vendor-tablet-options-dock" data-open={partsPanelOpen ? "true" : "false"} className={`${partsPanelOpen ? "flex" : "hidden"} absolute inset-x-0 bottom-0 top-auto z-40 max-h-[55%] min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-t-2xl border-[#dfd8cc] bg-[#faf9f5] shadow-[0_-18px_50px_-20px_rgba(38,51,45,0.45)] min-[1280px]:relative min-[1280px]:inset-auto min-[1280px]:z-auto min-[1280px]:order-1 min-[1280px]:max-h-none min-[1280px]:min-h-0 min-[1280px]:rounded-none min-[1280px]:border-r min-[1280px]:shadow-none`} aria-label="Parts panel">
+        <div className="flex items-center justify-between gap-2 border-b border-[#e6dfd4] px-3 py-1.5">
+          <div className="flex min-w-0 items-center gap-2">
+            <span aria-hidden="true" className="h-1 w-8 shrink-0 rounded-full bg-[#d8d0c3] min-[1280px]:hidden" />
+            <div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#997851]">Add accessories</p><p className="truncate text-xs text-[#5c564c]">Shelf, rod, drawer, shoe basket</p></div>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <button type="button" onClick={() => { setDockView("tower"); setPhonePanel("tower"); }} className="min-h-11 rounded-md bg-[#244338] px-3 text-xs font-bold text-white hover:bg-[#315444]">Parts</button>
+            <button type="button" aria-label="Close accessories panel" onClick={() => { setPartsPanelOpen(false); setPhonePanel(null); setDockView("accessories"); }} className="min-h-11 rounded-md border border-[#dfd8cc] bg-white px-3 text-xs font-bold text-[#244338] min-[1280px]:hidden">Close</button>
+          </div>
+        </div>
+        {/* One live region for the whole sidebar, so a shelf-run result is announced once whichever sheet is open. */}
+        {notice && <div role="status" data-testid="vendor-studio-notice" className="shrink-0 border-b border-[#eacb9a] bg-[#fff6e5] px-3 py-2 text-xs text-[#73543a]">{notice}<button type="button" aria-label="Dismiss message" onClick={() => setNotice(null)} className="float-right font-bold">✕</button></div>}
+        <div id="vendor-section-parts" className={`min-h-0 flex-1 overflow-y-auto overscroll-contain p-3 ${dockView === "tower" ? "hidden" : ""}`}>
+          <ClosetStudioAccessories design={design} selectedBay={selectedBay} hasBay={hasBay} partToPlace={partToPlace} onPlaceKind={(kind) => place(selectedBay, kind === "rod" ? 64 : kind === "shoe" ? 24 : kind === "drawer" ? 20 : 42, kind)} onPlaceBasket={(sku) => placeBasketInBay(selectedBay, sku)} onOpenCorner={openCornerShelfPlanner} />
+          <p className="mt-3 rounded-md bg-[#fff6e7] px-2 py-2 text-[10px] leading-relaxed text-[#76563a]" data-testid="vendor-shoe-pitch-caveat">{SHOE_PITCH_CAVEAT}</p>
+          <p className="mt-2 text-[10px] leading-relaxed text-[#6d6255]">A pull-out basket keeps its listed width and height. It is placed in the nearest open inch between the fixed shelves, never cut down and never forced into the top if the fixed top shelf is too close.</p>
+          {kidsNotes.length > 0 && <div role="note" className="mt-3 rounded-lg border border-[#eacb9a] bg-[#fff6e5] px-3 py-2 text-xs text-[#73543a]" data-testid="vendor-kids-guidance"><ul className="list-disc space-y-1 pl-4">{kidsNotes.map((line) => <li key={line}>{line}</li>)}</ul></div>}
+        </div>
+        {partsPanelOpen && <button type="button" aria-label="Close tower parts" onClick={() => { setPartsPanelOpen(false); setPhonePanel(null); }} className="absolute inset-0 z-20 bg-black/20 min-[1280px]:hidden" />}
+        {/* Scoped to the sidebar itself. This used to be inset-0 on the whole workspace, so on desktop it
+            covered the drawing and the viewer looked like it had disappeared after adding a tower. */}
+        <div data-testid="vendor-part-selector" className={`${dockView === "tower" ? "flex" : "hidden"} absolute inset-0 z-30 flex-col bg-[#faf9f5] min-[1280px]:static min-[1280px]:z-auto`}>
+          <div className="flex items-center gap-2 border-b border-[#e4ddd2] px-3 py-2">
+            <button type="button" onClick={() => { setDockView("accessories"); setPhonePanel("parts"); }} className="min-h-11 rounded-md border border-[#dfd8cc] bg-white px-3 text-xs font-bold text-[#244338]">Back to accessories</button>
+            <strong className="text-sm text-[#2c3832]">Tower parts</strong>
+          </div>
+          <div id="vendor-section-tower-panel" className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3">
+            <ShelfRunControls design={design} hasBay={hasBay} bay={bay} onPlace={addShelfRun} />
+            <section id="vendor-section-tower" className="mt-3 rounded-xl border border-[#e1d8ca] bg-white p-3"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#997851]">Tower & size</p>{hasBay ? <CutToFitControls key={`${bay.id}:${bay.widthIn}:${studioStockWidth(bay)}`} design={design} bay={bay} onApply={changeCutToFit} /> : <p className="mt-2 rounded-md bg-[#f7f2e9] px-2 py-2 text-[11px] leading-relaxed text-[#6d6255]">This wall is empty. Add its first 24 in tower below; other walls remain unchanged.</p>}<div className="mt-2 flex flex-wrap gap-2" role="group" aria-label="Select a tower">{design.bays.map((b, index) => <button type="button" key={b.id} onClick={() => { if (partToPlace) place(index, partToPlace === "rod" ? 64 : partToPlace === "shoe" ? 24 : partToPlace === "drawer" ? 20 : 42, partToPlace); else { setSelectedBay(index); setSelectedItem(null); } }} aria-label={partToPlace ? `Place ${card[partToPlace].title.toLowerCase()} in Tower ${index + 1}` : `Select Tower ${index + 1}`} aria-pressed={selectedBay === index} className={`min-h-11 rounded-md px-3 text-xs font-semibold ${selectedBay === index ? "bg-[#244338] text-white" : "border border-[#dfd8cc] bg-white"}`}>Tower {index + 1}</button>)}</div><div className="mt-3 flex items-center gap-2">{hasBay && <><label className="sr-only" htmlFor="vendor-bay-width-dock">Selected tower clear width</label><select id="vendor-bay-width-dock" aria-label="Selected tower clear width" value={bay.widthIn} onChange={(event) => selectedWidth(Number(event.target.value) as 18 | 24 | 30)} className="min-h-11 flex-1 rounded-md border border-[#dfd8cc] bg-white px-2 text-xs"><option value="18">18 in</option><option value="24">24 in</option><option value="30">30 in</option></select></>}<button type="button" onClick={addNeighbor} disabled={design.bays.length >= 4} className="flex min-h-11 shrink-0 items-center gap-1 rounded-md border border-[#d6c3a6] bg-[#fff8ed] px-3 text-[11px] font-semibold text-[#72563b] disabled:opacity-40"><Plus className="h-4 w-4" /> {hasBay ? "Add" : "Add first tower"}</button></div><p className="mt-2 text-[10px] text-[#766f65]"><Ruler className="mr-1 inline h-3 w-3" /> {studioWidth(design)} of {studioWallLength(design)} in on {wallNames[design.wall].toLowerCase()}</p>{bay.items.length > 0 && <div className="mt-3 border-t border-[#e8e0d6] pt-3"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#997851]">Placed items</p><div className="mt-2 flex flex-wrap gap-2">{bay.items.map((item) => <button type="button" key={item.id} onClick={() => { setSelectedItem(item.id); setPartToPlace(null); }} aria-pressed={selectedItem === item.id} className={`min-h-10 rounded-md px-3 text-[11px] font-semibold ${selectedItem === item.id ? "bg-[#ede0c8] text-[#4f3a22]" : "border border-[#e5ded4] bg-white text-[#6f655a]"}`}>{card[item.kind].title} · {item.bottomIn} in</button>)}</div></div>}{currentItem && <div className="mt-3 border-t border-[#e8e0d6] pt-3" data-testid="vendor-tablet-height-control"><div className="flex items-center gap-2"><Move3D className="h-4 w-4 text-[#94734c]" /><strong className="text-xs">Adjust {card[currentItem.kind].title.toLowerCase()}</strong></div><div className="mt-3 flex items-center gap-2"><button aria-label="Lower selected item one inch" onClick={() => changeElevation(currentItem, currentItem.bottomIn - 1)} className="h-11 w-11 rounded-md border border-[#dfd5c5] bg-white">−</button><input aria-label="Selected item bottom height in inches" type="range" min={studioFixedBottom(design) + 1} max={studioFixedTop(design) - studioItemHeight(currentItem.kind)} step="1" value={currentItem.bottomIn} onChange={(event) => changeElevation(currentItem, Number(event.target.value))} className="min-w-0 flex-1 accent-[#9b6b3e]" /><button aria-label="Raise selected item one inch" onClick={() => changeElevation(currentItem, currentItem.bottomIn + 1)} className="h-11 w-11 rounded-md border border-[#dfd5c5] bg-white">+</button><span className="w-12 text-center text-xs font-bold tabular-nums">{currentItem.bottomIn} in</span><button type="button" aria-label={`Remove ${card[currentItem.kind].title.toLowerCase()}`} onClick={() => removeItem(currentItem)} className="flex h-11 w-11 items-center justify-center rounded text-[#9b674d] hover:bg-[#fff6e7]"><Trash2 className="h-4 w-4" /></button></div>
+            <ExactHeightField item={currentItem} design={design} onCommit={(bottomIn) => setShelfHeight(currentItem, bottomIn)} />
+          </div>}<CornerPlanningControls plannerId="vendor-corner-shelf-planner-dock" design={design} selectedCornerId={selectedCornerId} onSelect={setSelectedCornerId} onAdd={addCornerShelf} onBuild={buildConnectedCorner} onMove={moveCornerShelf} onRemove={removeCornerShelf} canUndo={Boolean(cornerUndoDesign)} onUndo={undoCorner} /></section>
+            <BasketPlanningControls design={design} selectedBay={selectedBay} selectedBasketId={selectedBasketId} onSelect={setSelectedBasketId} onAdd={addBasket} onMove={moveBasket} onUpdate={updateBasket} onRemove={removeBasket} canUndo={Boolean(basketUndoDesign)} onUndo={undoBasket} />
+          </div>
+        </div>
+      </aside>
+      {/* On desktop the material list is a summary card in the viewer's top-right corner, so the drawing
+          keeps the rest of the panel and the total price is always visible without a sidebar on the right.
+          It starts below the view-tab strip so it can never cover the Decor toggle that lives in that row. */}
+      <aside data-testid="vendor-blueprint-column" className={`${showTabletMaterial || phonePanel === "material" ? "flex" : "hidden"} absolute inset-x-0 bottom-0 top-11 z-40 min-h-0 w-full min-w-0 max-w-full flex-col overflow-x-hidden overflow-y-auto border-t border-[#dfd8cc] bg-[#faf9f5] shadow-2xl min-[1280px]:absolute min-[1280px]:inset-auto min-[1280px]:right-3 min-[1280px]:top-16 min-[1280px]:z-30 min-[1280px]:flex min-[1280px]:max-h-[calc(100%-4.5rem)] min-[1280px]:w-[250px] min-[1280px]:max-w-[250px] min-[1280px]:rounded-xl min-[1280px]:border min-[1280px]:border-[#dfd8cc] min-[1280px]:shadow-lg`}>
         <button type="button" onClick={() => { setShowTabletMaterial(false); setPhonePanel(null); }} className="min-h-11 shrink-0 border-b border-[#e6dfd4] bg-white px-3 text-left text-xs font-bold text-[#244338] min-[1280px]:hidden">Close material list</button>
         <div className="min-h-0 min-w-0 px-3 pt-3">
           <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#997851]">Closet camera</p>
