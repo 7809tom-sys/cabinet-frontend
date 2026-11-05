@@ -9484,7 +9484,12 @@ export function addSinkFixture(root: THREE.Group, sink: SinkFixture, faucetPlace
     divider.userData = { sinkBowlDivider: true, visibleInsideSinkCutout: true, fixtureDetail: true };
     addFixtureNode(divider);
   }
-  if (!sink.faucet || !sink.pelicanFaucetProfileId || sink.faucetOverallHeight == null || sink.faucetSpoutLength == null || sink.faucetSpoutHeight == null || !sink.faucetForm) return;
+  // A faucet is drawn from its measured dimensions. The profile id names which
+  // source fixture it is; the built-in default carries a real Pelican profile id
+  // too, so a default faucet renders exactly like a catalog one. Missing
+  // dimensions mean there is no geometry to build.
+  if (!sink.faucet) return;
+  if (sink.faucetOverallHeight == null || sink.faucetSpoutLength == null || sink.faucetSpoutHeight == null || !sink.faucetForm) return;
   // A deck faucet that still intersects a window frame stays off the mesh.
   // Drawing it would put the spout through the sill, casing, or wall opening.
   if (faucetPlacement && !faucetPlacement.renderFaucet) return;

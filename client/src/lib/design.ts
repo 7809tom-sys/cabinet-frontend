@@ -14580,6 +14580,13 @@ export interface SinkFixture {
    * it moves and deletes with the sink. Clicking it reopens the faucet picker.
    */
   autoDesignFaucet?: boolean;
+  /**
+   * True when the faucet is the Designer's built-in default fixture because the
+   * selected line sells no faucet row. Its dimensions come from a real published
+   * Pelican spec sheet (`DEFAULT_PELICAN_KITCHEN_FAUCET`), so it is drawn like any
+   * other verified faucet. A later catalog pick replaces it.
+   */
+  defaultFaucet?: boolean;
   /** Selected Pelican faucet identity and source-verified parametric profile, when present. */
   pelicanFaucetProductId?: number;
   pelicanFaucetProductName?: string;
@@ -15005,6 +15012,7 @@ export function normalizeSinkFixturesToBases(
       apronFront: sink.apronFront,
       surfaceFinish: sink.surfaceFinish,
       autoDesignFaucet: sink.autoDesignFaucet,
+      defaultFaucet: sink.defaultFaucet,
       pelicanFaucetProductId: sink.pelicanFaucetProductId,
       pelicanFaucetProductName: sink.pelicanFaucetProductName,
       pelicanFaucetProductImage: sink.pelicanFaucetProductImage,

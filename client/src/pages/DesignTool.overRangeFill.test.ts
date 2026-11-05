@@ -27,7 +27,7 @@ describe("the add-only over-range pass", () => {
     // build and for a restored design alike. It is not wired into
     // autoDesignLayout.ts: the build still leaves the range open on purpose.
     expect(designTool).toContain("fillOverRangeAnswer({");
-    const pass = between(designTool, "const overRangeFillRanRef = useRef", "// Actual MasterTrac material numbers");
+    const pass = between(designTool, "const overRangeFillRanRef = useRef", "const faucetFillRanRef = useRef");
     expect(pass).toContain("rangesInPlan(placed)");
     expect(pass).toContain("overRangeFullyDressed(placed, range, room)");
     // The pass itself fills whatever the build left (bridge + microwave/hood), so a
@@ -38,7 +38,8 @@ describe("the add-only over-range pass", () => {
     expect(pass).toContain("wallCatalog: wallCabPoolRef.current");
     expect(pass).toContain("setPlaced(() => result.placed)");
     // The effect's dependency list must include the saved answer's carrier.
-    const deps = pass.slice(pass.lastIndexOf("}, ["));
+    // The pass's own dependency list sits on its closing "}, [...]" line.
+    const deps = pass.slice(pass.indexOf("}, [appliancePalette, overRangeEpoch"));
     expect(deps).toContain("placed");
     expect(deps).toContain("room");
   });

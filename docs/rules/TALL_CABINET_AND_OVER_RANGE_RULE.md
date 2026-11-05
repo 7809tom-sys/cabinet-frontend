@@ -95,3 +95,47 @@ The answer lives on the room as `overRangeAnswer`, is persisted with the layout,
 ## Screenshot
 
 `e2e/auto-design-bridge-screenshot.spec.ts` builds a real kitchen with `runAutoDesignLayout` and renders it with the real 3D engine (`client/dev/bridge-shot.html` + `client/src/bridgeScreenshotHarness.ts`), then captures `/opt/cursor/artifacts/auto-design-bridge.png`. The bridge is tinted green and the caption names the SKU, the datum, and the width.
+
+# A faucet is always placed at the sink (HARD RULE, Nov 5 2026)
+
+**Every build places a faucet at the sink.** Mandatory, like the bridge above the range: not optional, not skippable. It is placed on every build — `runAutoDesignLayout` and the DesignTool builder — and on every layout load, so an older saved plan without one gets one.
+
+## How a faucet is modelled
+
+A faucet is **not** a cabinet and not a separate entity. It is a property of the `SinkFixture` record:
+
+| Field | Meaning |
+| --- | --- |
+| `faucet` | the flag |
+| `pelicanFaucetProductId` / `…Name` / `…Image` | the chosen catalog row (absent when the default fixture is used) |
+| `pelicanFaucetProfileId` | the verified Pelican profile identity |
+| `faucetForm` | `pull-down` \| `standard-arc` \| `pull-out` \| `articulated-swing` \| `wall-mounted-bridge` |
+| `faucetOverallHeight` / `faucetSpoutLength` / `faucetSpoutHeight` | published inches — the only numbers the 3D assembly is built from |
+| `faucetFinish` | `brushed-nickel` \| `matte-black` \| `brushed-gold` \| `chrome` \| `oil-rubbed-bronze` |
+| `faucetRearDeckOffsetIn` | the rear-deck datum (1.25″; absent for a farmhouse apron front) |
+| `defaultFaucet` | true when this is the built-in default fixture, not a catalog pick |
+
+Because it lives on the sink, the faucet **moves, deletes, and saves with the sink** — no separate entity to keep in sync.
+
+**Why a flag alone is not enough.** `makeSink` sets `faucet: true` on every new sink before any faucet has been chosen. Treating that flag as "already has a faucet" is exactly the bug: the 3D assembly needs a form and all three dimensions, so `sinkHasRenderableFaucet` / `sinkFaucetIsSatisfied` gate on those instead.
+
+## Where it sits
+
+Centered on the **sink base's own run axis**, on the **countertop**, behind the basin's rear rim. `resolveDeckFaucetPlacement` (`client/src/lib/faucetPlacement.ts`) is the one resolver: it keeps the spout off the wall, out of the window frame, and on the measured counter, and `addSinkFixture` builds the base, riser, and spout from the published dimensions. A window is only ever shortened (sill raised, top fixed) through `raiseWindowsForDeckFaucet` — the same single rule every other faucet already used.
+
+## Selection
+
+1. The chosen catalog faucet, if the sink already has a drawable one — **kept exactly as it is**.
+2. Otherwise a source-verified single-hole kitchen faucet from the selected line's catalog (`defaultAutoDesignFaucet`).
+3. Otherwise the **built-in default fixture**, `DEFAULT_PELICAN_KITCHEN_FAUCET` — a real Pelican part (`PL-8237 BN`) whose published spec sheet supplies every dimension the 3D assembly uses. It is **reported**, never silently substituted: the build note names it and `usedDefaultFaucet` is set.
+
+## Rules
+
+- **Add-only.** Nothing is deleted, replaced, reordered, or removed. A sink that already has a drawable faucet is returned untouched.
+- **Reported.** The build returns `everySinkHasFaucet` and `usedDefaultFaucet`, and a note naming the faucet (or the default fixture) reaches the layout notes.
+
+## Tests
+
+- `client/src/lib/autoDesignFaucetMandatory.test.ts` — **every build path** (six cabinet lines, every layout shape, with and without a catalog faucet): a faucet is present over the sink with a real form and real dimensions, anchored, on the countertop, with no window conflict; centered on the sink base's run axis; the default fixture is used and reported; an existing faucet is never replaced; idempotency; multi-sink.
+- `client/src/components/design/InteractiveRoom3D.mandatoryFaucet.test.ts` — **real meshes**: the build's sink produces a faucet base and a spout in 3D, both for a catalog faucet and for the default fixture, standing above the countertop.
+- `client/src/pages/DesignTool.mandatoryFaucet.test.ts` — the wiring: both build paths and the load pass, the once-per-plan guard, the add-only gate, and that the renderer draws from the published dimensions.
