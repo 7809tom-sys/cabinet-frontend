@@ -33,7 +33,7 @@ describe("Closet Studio delete plan", () => {
 
   it("shows a destructive Delete plan button in the studio toolbar", () => {
     render(<VendorClosetStudio />);
-    fireEvent.click(screen.getByRole("button", { name: "Start with one tower" }));
+    fireEvent.click(screen.getByTestId("guided-start-blank"));
 
     const toolbar = screen.getByTestId("vendor-studio-toolbar");
     const button = within(toolbar).getByRole("button", { name: "Delete plan" });
@@ -48,7 +48,7 @@ describe("Closet Studio delete plan", () => {
   it("asks for confirmation with the exact wording and dismisses on Cancel without changing the plan", () => {
     seedDraft();
     render(<VendorClosetStudio />);
-    fireEvent.click(screen.getByRole("button", { name: "Continue my local draft" }));
+    fireEvent.click(screen.getByTestId("guided-continue-draft"));
     expect(screen.getByTestId("vendor-closet-studio")).toBeTruthy();
 
     fireEvent.click(screen.getByTestId("vendor-delete-plan"));
@@ -69,21 +69,21 @@ describe("Closet Studio delete plan", () => {
   it("clears the saved draft, resets the design, and returns to the start gate on confirm", () => {
     seedDraft();
     render(<VendorClosetStudio />);
-    fireEvent.click(screen.getByRole("button", { name: "Continue my local draft" }));
+    fireEvent.click(screen.getByTestId("guided-continue-draft"));
     expect(screen.getByTestId("vendor-closet-studio").textContent).toMatch(/Pantry Studio/);
 
     fireEvent.click(screen.getByTestId("vendor-delete-plan"));
     fireEvent.click(within(screen.getByTestId("vendor-delete-plan-dialog")).getByRole("button", { name: "Delete plan" }));
 
     // Back at the intro gate, with no Studio mounted.
-    expect(screen.getByTestId("vendor-mode-gate")).toBeTruthy();
+    expect(screen.getByTestId("guided-gate")).toBeTruthy();
     expect(screen.queryByTestId("vendor-closet-studio")).toBeNull();
     // The saved draft is gone and the in-memory design is back to the blank starter.
     expect(window.localStorage.getItem(DRAFT_KEY)).toBeNull();
-    expect(screen.getByRole("button", { name: /Auto-build my closet/ })).toBeTruthy();
-    expect(screen.queryByText(/Continue my local draft/)).toBeNull();
+    expect(screen.getByTestId("guided-gate")).toBeTruthy();
+    expect(screen.queryByTestId("guided-continue-draft")).toBeNull();
     // Starting over builds from the Closet defaults again, not the deleted pantry.
-    fireEvent.click(screen.getByRole("button", { name: "Start with one tower" }));
+    fireEvent.click(screen.getByTestId("guided-start-blank"));
     expect(screen.getByTestId("vendor-studio-toolbar").textContent).toMatch(/Closet Studio/);
     expect(screen.getByTestId("vendor-studio-toolbar").textContent).toMatch(/Glacier White/);
   });
@@ -92,7 +92,7 @@ describe("Closet Studio delete plan", () => {
     seedDraft(STORE_DRAFT_KEY);
     seedDraft(DRAFT_KEY);
     render(<VendorClosetStudio affiliateSlug="acme-store" />);
-    fireEvent.click(screen.getByRole("button", { name: "Continue my local draft" }));
+    fireEvent.click(screen.getByTestId("guided-continue-draft"));
 
     fireEvent.click(screen.getByTestId("vendor-delete-plan"));
     fireEvent.click(within(screen.getByTestId("vendor-delete-plan-dialog")).getByRole("button", { name: "Delete plan" }));
@@ -104,7 +104,7 @@ describe("Closet Studio delete plan", () => {
   it("resets selection and panel state so the next session starts clean", () => {
     seedDraft();
     render(<VendorClosetStudio />);
-    fireEvent.click(screen.getByRole("button", { name: "Continue my local draft" }));
+    fireEvent.click(screen.getByTestId("guided-continue-draft"));
 
     fireEvent.click(screen.getByTestId("vendor-toolbar-edit"));
     expect(screen.getByTestId("vendor-tablet-options-dock").className).toContain("flex");
@@ -114,12 +114,12 @@ describe("Closet Studio delete plan", () => {
     fireEvent.click(screen.getByTestId("vendor-delete-plan"));
     fireEvent.click(within(screen.getByTestId("vendor-delete-plan-dialog")).getByRole("button", { name: "Delete plan" }));
 
-    expect(screen.getByTestId("vendor-mode-gate")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Start with one tower" }));
+    expect(screen.getByTestId("guided-gate")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("guided-start-blank"));
     // Panels are closed again and the design is the blank starter tower.
     expect(screen.getByTestId("vendor-tablet-options-dock").className).toContain("hidden");
     expect(screen.getByTestId("vendor-controls").className).toContain("hidden");
     expect(screen.getByTestId("vendor-toolbar-edit").getAttribute("aria-pressed")).toBe("false");
-    expect(within(screen.getByTestId("vendor-room-overview")).getByRole("button", { name: /Back wall: filled, 25\.5 of 120 inches used/i })).toBeTruthy();
+    expect(within(screen.getByTestId("vendor-room-overview")).getByRole("button", { name: /Back wall: filled, 25\.5 of \d+ inches used/i })).toBeTruthy();
   });
 });

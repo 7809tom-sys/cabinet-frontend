@@ -3,15 +3,17 @@ import { trpc } from "@/lib/trpc";
 import { ArrowLeft, ArrowRight, Check, ChevronDown, CircleHelp, Download, FileText, Layers3, Map as MapIcon, Maximize2, Move3D, Plus, Ruler, ShoppingBag, Trash2, Undo2, WandSparkles } from "lucide-react";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { ClosetStudioAccessories } from "@/components/vendor/ClosetStudioAccessories";
+import { ClosetStudioGuidedFlow, ClosetStudioGuidedSummary, type GuidedRoom } from "@/components/vendor/ClosetStudioGuidedFlow";
 import { VendorClosetScene } from "@/components/vendor/VendorClosetScene";
 import type { ClosetCameraView } from "@/components/vendor/closetStudioCamera";
 import { ClosetWallElevation } from "@/components/vendor/ClosetWallElevation";
 import { MASTERTRAC_PRICE_DATE, masterTracProduct, masterTracPublicReferenceCatalog, type MasterTracPublicReference } from "@/lib/closet";
 import {
-  addStudioBay, addStudioConnectedCorner, autoBuildStudio, createKidsStudioDesign, kidsGuidance, KIDS_MAX_AGE, KIDS_MAX_HEIGHT_IN, KIDS_MIN_AGE, KIDS_MIN_HEIGHT_IN, MODE_AUTO_BUILD_DEFAULTS, STUDIO_AUTO_BUILD_MAX_COUNT, STUDIO_ROOM_HEIGHT_DEFAULT_IN, addStudioCornerShelf, changeStudioFinish, configureStudioBayCut, createStudioDesign, createStudioReviewDemo, moveStudioBasketPlacement, moveStudioCornerShelf, moveStudioItem, removeStudioBasketPlacement, removeStudioCornerShelf, studioBays, studioCornerShelfSku, updateStudioBasketPlacement,
+  addStudioBay, addStudioConnectedCorner, autoBuildStudio, autoBuildStudioFromAnswers, createKidsStudioDesign, kidsGuidance, KIDS_MAX_AGE, KIDS_MAX_HEIGHT_IN, KIDS_MIN_AGE, KIDS_MIN_HEIGHT_IN, MODE_AUTO_BUILD_DEFAULTS, STUDIO_AUTO_BUILD_MAX_COUNT, STUDIO_ROOM_HEIGHT_DEFAULT_IN, addStudioCornerShelf, changeStudioFinish, configureStudioBayCut, createStudioDesign, createStudioReviewDemo, moveStudioBasketPlacement, moveStudioCornerShelf, moveStudioItem, removeStudioBasketPlacement, removeStudioCornerShelf, studioBays, studioCornerShelfSku, updateStudioBasketPlacement,
   restoreStudioDesign, snapStudioBasketPlacement, snapStudioPart, STUDIO_FINISHES, STUDIO_ILLUSTRATIVE_SHOE_PITCH_DEG, STUDIO_MODES, STUDIO_WALLS,
   STUDIO_BASKET_REFERENCE_OPTIONS, STUDIO_CORNER_IDS, STUDIO_FIT_CAPABILITY_REGISTRY, replaceStudioWallBays, studioBayCut, studioBasketDesignError, studioBasketPlacementsForWall, studioCollision, studioCornerIdsForWall, studioCornerMeasuredGap, studioCornerShelves, studioCornerDesignError, studioFixedBottom, studioFixedTop, studioItemHeight, studioPartReferences, studioStockWidth, studioTakeoff, studioWallLength, studioWallOccupancy, studioWidth, switchStudioWall,
-  type StudioAutoBuildOptions, type StudioBay, type StudioCornerId, type StudioCornerShelfMount, type StudioDesign, type StudioItem, type StudioKind, type StudioMode, type StudioWall,
+  STUDIO_GUIDED_DEFAULTS, STUDIO_GUIDED_ROOM_DEFAULTS, studioGuidedSummaryLines,
+  type StudioAutoBuildOptions, type StudioBay, type StudioCornerId, type StudioCornerShelfMount, type StudioDesign, type StudioGuidedAnswers, type StudioItem, type StudioKind, type StudioMode, type StudioWall,
 } from "@/lib/vendorClosetStudio";
 
 const STORAGE_KEY = "vendor-closet-studio:v1";
@@ -332,7 +334,7 @@ export default function VendorClosetStudio({ affiliateSlug }: { affiliateSlug?: 
   const [isReviewDemo] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("demo") === "mixed");
   const [design, setDesign] = useState<StudioDesign>(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("demo") === "mixed"
     ? createStudioReviewDemo() : restoreStudioDesign(typeof window !== "undefined" ? localStorage.getItem(storageKey) : null) ?? createStudioDesign());
-  const [step, setStep] = useState<"start" | "studio">(isReviewDemo ? "studio" : "start");
+  const [step, setStep] = useState<"start" | "start-advanced" | "studio">(isReviewDemo ? "studio" : "start");
   const [selectedBay, setSelectedBay] = useState(isReviewDemo ? 1 : 0);
   const [selectedItem, setSelectedItem] = useState<string | null>(null);
   const [selectedCornerId, setSelectedCornerId] = useState<string | null>(null);
@@ -351,7 +353,12 @@ export default function VendorClosetStudio({ affiliateSlug }: { affiliateSlug?: 
   const [introMode, setIntroMode] = useState<StudioMode>(design.mode);
   const [introForm, setIntroForm] = useState<IntroForm>(() => ({ width: String(design.wallWidthIn), depth: String(design.roomDepthIn), height: String(design.roomHeightIn ?? STUDIO_ROOM_HEIGHT_DEFAULT_IN), age: design.kids ? String(design.kids.ageYears) : "", kidsHeight: design.kids ? String(design.kids.heightIn) : "" }));
   const [introErrors, setIntroErrors] = useState<Partial<Record<keyof IntroForm, string>>>({});
-  const [introFromStudio, setIntroFromStudio] = useState(false);
+  /** The beginner flow's answers, kept after the build so "Change answers" can resume where it left off. */
+  const [guidedAnswers, setGuidedAnswers] = useState<StudioGuidedAnswers>(() => ({ ...STUDIO_GUIDED_DEFAULTS }));
+  /** Where the guided flow resumes: 1 after a delete, 2 after "Change answers". */
+  const [guidedStartStep, setGuidedStartStep] = useState<1 | 2>(1);
+  const [showGuidedSummary, setShowGuidedSummary] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);  const [introFromStudio, setIntroFromStudio] = useState(false);
   const [roomError, setRoomError] = useState<string | null>(null);
   const [autoOptions, setAutoOptions] = useState<StudioAutoBuildOptions>(() => MODE_AUTO_BUILD_DEFAULTS[design.mode]);
   const [buildUndoDesign, setBuildUndoDesign] = useState<StudioDesign | null>(null);
@@ -418,6 +425,7 @@ export default function VendorClosetStudio({ affiliateSlug }: { affiliateSlug?: 
     setIntroFromStudio(false);
     setAutoOptions(MODE_AUTO_BUILD_DEFAULTS[fresh.mode]);
     setDeleteOpen(false);
+    setGuidedStartStep(1);
     setStep("start");
     scrollSnapshotRef.current = 0;
     workspaceRef.current?.scrollTo?.({ top: 0 });
@@ -548,7 +556,8 @@ export default function VendorClosetStudio({ affiliateSlug }: { affiliateSlug?: 
   };
   /** Header and mobile mode buttons. A design with no child on file is sent to the age and height step first. */
   const selectMode = (mode: StudioMode) => {
-    if (mode === "kids" && !design.kids) { openIntro(true, "kids"); return; }
+    // A kids' closet needs the child's age and height, which the simple start does not ask for.
+    if (mode === "kids" && !design.kids) { openAdvancedStart("kids"); return; }
     updateDesign({ ...design, mode });
   };
   const chooseIntroMode = (mode: StudioMode) => { setIntroMode(mode); setIntroErrors({}); if (mode !== "kids") updateDesign({ ...design, mode }); };
@@ -590,6 +599,43 @@ export default function VendorClosetStudio({ affiliateSlug }: { affiliateSlug?: 
     if (!applied.ok) { setIntroErrors({ width: applied.reason }); return; }
     enterStudio(applied.design);
   };
+  /** The beginner flow's finish line: answers in, a built closet plus a plain-language summary out. */
+  const startGuided = (answers: StudioGuidedAnswers, room: GuidedRoom) => {
+    const result = autoBuildStudioFromAnswers({ answers, mount: design.mount, finish: design.finish, room });
+    setGuidedAnswers(answers);
+    enterStudio(result.design, []);
+    setShowGuidedSummary(true);
+    setAdvancedOpen(false);
+    if (result.notices.length) setNotice(result.notices.join(" "));
+  };
+  /** "Start with an empty tower instead" keeps the old blank-draft entry point, without the jargon. */
+  const startBlank = (room: GuidedRoom) => {
+    const applied = applyRoomSize({ ...design, mode: "closet", kids: undefined }, room);
+    enterStudio(applied.ok ? applied.design : { ...design, ...room });
+  };
+  /** Pantry, mudroom and kids closets keep their original setup screen, one click from the guided flow. */
+  const openAdvancedStart = (mode: StudioMode = introMode) => {
+    setIntroMode(mode);
+    setIntroFromStudio(true);
+    setIntroErrors({});
+    setIntroForm({ width: String(design.wallWidthIn), depth: String(design.roomDepthIn), height: String(design.roomHeightIn ?? STUDIO_ROOM_HEIGHT_DEFAULT_IN), age: design.kids ? String(design.kids.ageYears) : "", kidsHeight: design.kids ? String(design.kids.heightIn) : "" });
+    setStep("start-advanced");
+  };
+  const changeGuidedAnswers = () => {
+    setShowGuidedSummary(false);
+    setAdvancedOpen(false);
+    setGuidedStartStep(2);
+    setStep("start");
+  };
+  const guidedLines = useMemo(() => studioGuidedSummaryLines(design, guidedAnswers), [design, guidedAnswers]);
+  /** The room the guided flow opens with: typed sizes from the last build, else the type's default. */
+  const guidedRoom = useMemo<GuidedRoom>(() => {
+    const source = guidedAnswers.closetType === "walkIn" && design.mode !== "closet" ? STUDIO_GUIDED_ROOM_DEFAULTS.walkIn : STUDIO_GUIDED_ROOM_DEFAULTS[guidedAnswers.closetType];
+    return { wallWidthIn: source.wallWidthIn, roomDepthIn: source.roomDepthIn, roomHeightIn: source.roomHeightIn };
+  }, [guidedAnswers.closetType, design.mode]);
+  const openAdvanced = () => {
+    setShowGuidedSummary(false);
+  };
   const rebuild = () => {
     if (designHasParts(design) && !confirm("Rebuild replaces your current parts. Continue?")) return;
     const result = autoBuildStudio({ mode: design.mode, mount: design.mount, finish: design.finish, wallWidthIn: design.wallWidthIn, roomDepthIn: design.roomDepthIn, roomHeightIn: design.roomHeightIn ?? STUDIO_ROOM_HEIGHT_DEFAULT_IN, kids: design.kids, options: autoOptions });
@@ -599,7 +645,26 @@ export default function VendorClosetStudio({ affiliateSlug }: { affiliateSlug?: 
   };
   const undoBuild = () => { if (!buildUndoDesign) return; setDesign(buildUndoDesign); setBuildUndoDesign(null); setNotice("Auto-build undone."); setSelectedBay(0); setSelectedItem(null); setSelectedCornerId(null); };
 
-  if (step === "start") return <div className={`flex h-full min-h-0 flex-col overflow-y-auto overscroll-contain bg-[#f2f0ea] text-[#26332d] ${studioFocus}`} data-testid="vendor-mode-gate" data-studio-release={STUDIO_RELEASE_TRACE}>
+  if (step === "start") return <div data-studio-release={STUDIO_RELEASE_TRACE} className="contents">
+    <ClosetStudioGuidedFlow
+      initialAnswers={guidedAnswers}
+      initialRoom={guidedRoom}
+      savedDraft={savedDraft}
+      onStartGuided={startGuided}
+      onStartBlank={startBlank}
+      onContinueDraft={() => { enterStudio(design); }}
+      onMoreSetups={() => openAdvancedStart(introMode)}
+      introMode={introMode}
+      onChooseMode={chooseIntroMode}
+      onChooseKids={() => openAdvancedStart("kids")}
+      initialStep={guidedStartStep}
+      onCancelStart={introFromStudio ? () => { setIntroFromStudio(false); setIntroMode(design.mode); setStep("studio"); } : undefined}
+    />
+  </div>;
+  if (step === "start-advanced") return <div className={`flex h-full min-h-0 flex-col overflow-y-auto overscroll-contain bg-[#f2f0ea] text-[#26332d] ${studioFocus}`} data-testid="vendor-mode-gate" data-studio-release={STUDIO_RELEASE_TRACE}>
+    <div className="border-b border-[#e2dcd0] bg-[#fbfaf7] px-5 py-2 sm:px-9">
+      <button type="button" onClick={() => setStep("start")} data-testid="vendor-back-to-guided" className={`flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-sm font-semibold text-[#5f665f] hover:bg-[#f0ede6] ${studioFocus}`}><ArrowLeft className="h-4 w-4" />Back to the simple start</button>
+    </div>
     <header className="flex items-center justify-between gap-2 border-b border-[#dfded6] bg-[#fbfaf7] px-5 py-4 sm:px-9"><a href="/" aria-label="CabinetDealz home" className="flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#244338] text-lg font-semibold text-[#f2e3c3]">M</span><span><strong className="block font-serif text-lg leading-none">MasterTrac Studio</strong><span className="text-[10px] uppercase tracking-[0.21em] text-[#8a8276]">CabinetDealz closet program</span></span></a><a href="/design" data-testid="closet-to-kitchen" aria-label="Kitchen Designer" className="flex h-11 shrink-0 items-center rounded-lg border border-[#d7d0c5] bg-white px-3 text-xs font-bold text-[#244338] hover:bg-[#f0ede6] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#244338]">Kitchen<span className="hidden sm:inline"> Designer</span></a></header>
     <main className="mx-auto grid max-w-6xl items-center gap-10 px-5 py-10 lg:grid-cols-[1fr_0.92fr] lg:px-12">
       <div><div className="mb-8 inline-flex items-center gap-2 rounded-full border border-[#d7c8ae] bg-[#f9f4e9] px-4 py-2 text-[11px] font-bold uppercase tracking-[0.18em] text-[#97734a]"><WandSparkles className="h-4 w-4" /> Make room for real life</div><h1 className="max-w-xl font-serif text-5xl leading-[1.08] text-[#253c32] sm:text-6xl">Your space. <em className="font-normal text-[#b88151]">Your way.</em></h1><p className="mt-6 max-w-lg text-base leading-7 text-[#716e64]">Build a beautiful closet one tower at a time. Choose what the room is for; then place shelves, rods, drawers, and shoe organizers right where you want them.</p>
@@ -629,6 +694,7 @@ export default function VendorClosetStudio({ affiliateSlug }: { affiliateSlug?: 
       <div className="flex min-w-0 flex-1 items-center gap-1.5 sm:gap-2"><button type="button" aria-label="Back to room choice" title="Back to room choice" onClick={() => openIntro()} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg hover:bg-[#f0ede6]"><ArrowLeft className="h-5 w-5" /></button><a href="/" aria-label="CabinetDealz home" className="hidden h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#244338] text-[#f2e3c3] sm:flex">M</a><div className="min-w-0"><strong className="block truncate font-serif text-sm leading-none sm:text-base min-[1280px]:text-lg">{modeNames[design.mode]} Studio</strong><span className="mt-1 block truncate text-[10px] text-[#897f73]"><span className="min-[1280px]:hidden">{design.finish} · </span>One tower at a time<span className="hidden min-[1280px]:inline"> · {design.finish}</span></span></div></div>
       <div className="hidden shrink-0 items-center gap-1 rounded-full bg-[#eeeae1] p-1 min-[1280px]:flex">{STUDIO_MODES.map((mode) => <button type="button" key={mode} aria-pressed={mode === design.mode} onClick={() => selectMode(mode)} className={`rounded-full px-3 py-2 text-xs font-semibold ${mode === design.mode ? "bg-white text-[#314739] shadow-sm" : "text-[#81766a]"}`}>{modeNames[mode]}</button>)}</div>
       <div className="flex shrink-0 items-center gap-1">
+        <button type="button" onClick={changeGuidedAnswers} aria-label="Change answers" title="Go back to the questions" data-testid="vendor-change-answers" className="flex h-11 items-center gap-1 rounded-lg border border-[#c3a882] bg-white px-2.5 text-xs font-bold text-[#6b4c2c] hover:bg-[#fff8ed]"><ArrowLeft className="h-4 w-4" /><span className="hidden sm:inline">Change answers</span></button>
         <button type="button" onClick={() => setDeleteOpen(true)} aria-label="Delete plan" title="Delete this closet plan" data-testid="vendor-delete-plan" className="flex h-11 items-center gap-1.5 rounded-lg border border-[#c25b48] bg-[#fff4f1] px-2.5 text-xs font-bold text-[#9c3524] hover:bg-[#ffe7e1] active:bg-[#ffd9d0] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#9c3524]"><Trash2 className="h-4 w-4" />Delete plan</button>
         {buildUndoDesign && <button type="button" onClick={undoBuild} aria-label="Undo auto-build" title="Undo auto-build" className="flex h-11 w-11 items-center justify-center rounded-lg hover:bg-[#eeeae1]"><Undo2 className="h-5 w-5" /></button>}
         <button type="button" onClick={fitCloset} aria-label="Zoom to fit the closet" title="Zoom to fit" data-testid="vendor-toolbar-fit" className="flex h-11 w-11 items-center justify-center rounded-lg hover:bg-[#eeeae1]"><Maximize2 className="h-5 w-5" /></button>
@@ -637,8 +703,24 @@ export default function VendorClosetStudio({ affiliateSlug }: { affiliateSlug?: 
       </div>
     </header>
     <nav aria-label="Designer navigation" className="flex min-h-10 shrink-0 items-center gap-2 border-b border-[#ded8cd] bg-[#fbfaf7] px-3 text-xs sm:px-5"><label className="flex min-w-0 flex-1 items-center gap-2 text-[#766f65]"><span className="hidden shrink-0 font-semibold min-[520px]:inline">Finish</span><select aria-label="Available MasterTrac finish" value={design.finish} onChange={(event) => changeFinish(event.target.value as StudioDesign["finish"])} className="h-9 min-w-0 w-full max-w-52 rounded-md border border-[#d8cdbc] bg-white px-2 text-xs font-semibold text-[#39443f]" data-testid="vendor-finish-picker">{STUDIO_FINISHES.map((finish) => <option key={finish} value={finish}>{finish}</option>)}</select></label><button type="button" onClick={() => { setPartsPanelOpen(false); setShowTabletMaterial(false); setShowRoom(true); }} aria-label="Room and wall settings" aria-expanded={showRoom} aria-controls="vendor-room-panel" className="hidden h-9 shrink-0 items-center gap-1 rounded-lg px-2 font-semibold hover:bg-[#eeeae1] min-[1280px]:flex"><Ruler className="h-4 w-4" /><span>Room</span></button><span className="hidden min-w-0 truncate text-[#766f65] min-[900px]:inline">Building a kitchen instead?</span><a href="/design" data-testid="closet-to-kitchen" className="flex h-9 shrink-0 items-center rounded-lg px-3 font-bold text-[#244338] underline underline-offset-2 hover:bg-[#f0ede6] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#244338]">Kitchen<span className="hidden sm:inline"> Designer</span> <ArrowRight className="ml-1 h-3.5 w-3.5" /></a></nav>
+    {/* Everything fiddly lives here, collapsed by default, so the simple path stays the whole screen. */}
+    <div className="shrink-0 border-b border-[#e5dfd5] bg-[#fbfaf7] px-3 sm:px-5" data-testid="vendor-more-options">
+      <button type="button" onClick={() => setAdvancedOpen((open) => !open)} aria-expanded={advancedOpen} aria-controls="vendor-advanced-options" data-testid="vendor-more-options-toggle" className={`flex min-h-11 w-full items-center gap-2 text-left text-[12px] font-semibold text-[#5f665f] hover:text-[#244338] ${studioFocus}`}>
+        <ChevronDown className={`h-4 w-4 shrink-0 text-[#997851] transition-transform ${advancedOpen ? "rotate-180" : ""}`} />
+        <span>More options</span>
+        <span className="hidden truncate font-normal text-[#8d857a] sm:inline">Design it yourself: pick each part, move towers, plan corners</span>
+      </button>
+      {advancedOpen && <div id="vendor-advanced-options" data-testid="vendor-advanced-options" className="grid gap-2 pb-3 sm:grid-cols-2 min-[1280px]:grid-cols-4">
+        <button type="button" onClick={() => { setShowGuidedSummary(false); setPartsPanelOpen(true); setDockView("tower"); setPhonePanel("tower"); }} className={`flex min-h-11 items-center gap-2 rounded-lg border border-[#dfd8cc] bg-white px-3 text-left text-[12px] font-semibold text-[#39443f] hover:border-[#c3a882] ${studioFocus}`}><Layers3 className="h-4 w-4 shrink-0 text-[#997851]" />Towers, sizes and shelves</button>
+        <button type="button" onClick={() => { setShowGuidedSummary(false); setPartsPanelOpen(true); setDockView("accessories"); setPhonePanel("parts"); }} className={`flex min-h-11 items-center gap-2 rounded-lg border border-[#dfd8cc] bg-white px-3 text-left text-[12px] font-semibold text-[#39443f] hover:border-[#c3a882] ${studioFocus}`}><ShoppingBag className="h-4 w-4 shrink-0 text-[#997851]" />Add a part yourself</button>
+        <button type="button" onClick={() => { setShowGuidedSummary(false); openCornerShelfPlanner(); }} className={`flex min-h-11 items-center gap-2 rounded-lg border border-[#dfd8cc] bg-white px-3 text-left text-[12px] font-semibold text-[#39443f] hover:border-[#c3a882] ${studioFocus}`}><Maximize2 className="h-4 w-4 shrink-0 text-[#997851]" />Plan a corner</button>
+        <button type="button" onClick={() => { setShowGuidedSummary(false); setPartsPanelOpen(false); setShowTabletMaterial(false); setShowRoom(true); }} className={`flex min-h-11 items-center gap-2 rounded-lg border border-[#dfd8cc] bg-white px-3 text-left text-[12px] font-semibold text-[#39443f] hover:border-[#c3a882] ${studioFocus}`}><Ruler className="h-4 w-4 shrink-0 text-[#997851]" />Exact room sizes</button>
+        <button type="button" onClick={() => setShowGuidedSummary(true)} className={`flex min-h-11 items-center gap-2 rounded-lg border border-[#dfd8cc] bg-white px-3 text-left text-[12px] font-semibold text-[#39443f] hover:border-[#c3a882] sm:col-span-2 min-[1280px]:col-span-4 ${studioFocus}`}><FileText className="h-4 w-4 shrink-0 text-[#997851]" />Show my plain-language summary again</button>
+      </div>}
+    </div>
     {isReviewDemo && <div className="z-20 flex min-h-9 shrink-0 items-center justify-between gap-2 border-b border-[#d5c5a8] bg-[#fff3dc] px-3 py-1 text-[11px] font-semibold text-[#6d4d27] sm:px-5" data-testid="vendor-review-demo-banner"><span>Review example · 2 towers · matching MasterTrac small slab front · not your saved design</span><a href="/closet" className="shrink-0 underline underline-offset-2">Start my own</a></div>}
-    <div className="relative flex min-h-0 flex-1 overflow-hidden pb-16 min-[1280px]:pb-0">      {showRoom && <button type="button" aria-label="Close room settings" onClick={() => setShowRoom(false)} className="fixed inset-0 z-30 bg-black/30 min-[1280px]:absolute min-[1800px]:hidden" />}
+    <div className="relative flex min-h-0 flex-1 overflow-hidden pb-16 min-[1280px]:pb-0">
+      {showRoom && <button type="button" aria-label="Close room settings" onClick={() => setShowRoom(false)} className="fixed inset-0 z-30 bg-black/30 min-[1280px]:absolute min-[1800px]:hidden" />}
       <aside id="vendor-room-panel" className={`${showRoom ? "flex" : "hidden"} absolute inset-x-0 bottom-0 top-11 z-40 max-h-none flex-col overflow-y-auto rounded-t-2xl border-r border-[#dfd8cc] bg-[#faf9f5] p-4 shadow-2xl min-[1280px]:static min-[1280px]:inset-auto min-[1280px]:z-auto min-[1280px]:max-h-none min-[1280px]:rounded-none min-[1280px]:shadow-none`} data-testid="vendor-controls">
         <button type="button" onClick={() => setShowRoom(false)} className="mb-3 min-h-11 self-end rounded-md border border-[#ded8cd] px-3 text-xs min-[1800px]:hidden">Close room settings</button>
         <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#ad784d]">01 / Set the room</p><h2 className="mt-2 font-serif text-2xl">A place for everything.</h2><p className="mb-5 mt-2 text-xs leading-5 text-[#82796c]">Pick a wall, then build one tower. The shared side appears automatically when you add the next one.</p>
@@ -653,8 +735,8 @@ export default function VendorClosetStudio({ affiliateSlug }: { affiliateSlug?: 
       </aside>
       {/* Desktop keeps three columns. Tablet and phone use the canvas as the primary surface, with
           the dock, room panel and Material List as closed-by-default sheets the user explicitly opens. */}
-      <div ref={workspaceRef} className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden min-[1280px]:grid min-[1280px]:grid-cols-[minmax(320px,360px)_minmax(0,1fr)_250px]" data-testid="vendor-workspace">
-      <aside id="vendor-phone-options-dock" data-testid="vendor-tablet-options-dock" data-open={partsPanelOpen ? "true" : "false"} className={`${partsPanelOpen ? "flex" : "hidden"} absolute inset-x-0 bottom-0 top-auto z-40 max-h-[55%] min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-t-2xl border-[#dfd8cc] bg-[#faf9f5] shadow-[0_-18px_50px_-20px_rgba(38,51,45,0.45)] min-[1280px]:static min-[1280px]:z-auto min-[1280px]:order-1 min-[1280px]:max-h-none min-[1280px]:flex min-[1280px]:min-h-0 min-[1280px]:rounded-none min-[1280px]:border-l-0 min-[1280px]:border-r min-[1280px]:shadow-none`} aria-label="Parts panel">
+      <div ref={workspaceRef} data-dock={partsPanelOpen ? "open" : "closed"} className={`relative flex min-h-0 min-w-0 flex-1 overflow-hidden min-[1280px]:grid ${partsPanelOpen ? "min-[1280px]:grid-cols-[minmax(320px,360px)_minmax(0,1fr)_250px]" : "min-[1280px]:grid-cols-[minmax(0,1fr)_250px]"}`} data-testid="vendor-workspace">
+      <aside id="vendor-phone-options-dock" data-testid="vendor-tablet-options-dock" data-open={partsPanelOpen ? "true" : "false"} className={`${partsPanelOpen ? "flex" : "hidden"} absolute inset-x-0 bottom-0 top-auto z-40 max-h-[55%] min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-t-2xl border-[#dfd8cc] bg-[#faf9f5] shadow-[0_-18px_50px_-20px_rgba(38,51,45,0.45)] min-[1280px]:static min-[1280px]:z-auto min-[1280px]:order-1 min-[1280px]:max-h-none min-[1280px]:min-h-0 min-[1280px]:rounded-none min-[1280px]:border-l-0 min-[1280px]:border-r min-[1280px]:shadow-none`} aria-label="Parts panel">
         <div className="flex items-center justify-between gap-2 border-b border-[#e6dfd4] px-3 py-1.5">
           <div className="flex min-w-0 items-center gap-2">
             <span aria-hidden="true" className="h-1 w-8 shrink-0 rounded-full bg-[#d8d0c3] min-[1280px]:hidden" />
@@ -699,6 +781,9 @@ export default function VendorClosetStudio({ affiliateSlug }: { affiliateSlug?: 
           </div>}
           {activeTab === "3d" && <button type="button" data-testid="vendor-fit-view" onClick={fitCloset} className="absolute bottom-3 right-3 z-20 min-h-11 rounded-md border border-[#d7a46c] bg-[#fffdf9] px-3 text-xs font-bold text-[#244338] shadow-md hover:bg-[#f6f3ed]">Fit</button>}
           {showHelp && <div className="absolute right-3 top-3 z-20 max-w-[250px] rounded-xl border border-[#e1d7c6] bg-[#fffdf9] p-4 text-xs leading-5 shadow-xl"><button className="float-right font-semibold" aria-label="Close help" onClick={() => setShowHelp(false)}>✕</button><strong>Three simple moves</strong><ol className="mt-2 list-inside list-decimal space-y-1"><li>Choose a room mode and wall.</li><li>Choose an accessory on the left, or open Parts for the tower.</li><li>Slide the height until it locks clear of other parts.</li></ol></div>}
+          {showGuidedSummary && <div className="pointer-events-none absolute inset-0 z-30 flex items-end justify-center p-2 sm:items-center sm:p-4" data-testid="guided-summary-layer">
+            <ClosetStudioGuidedSummary lines={guidedLines} onChangeAnswers={changeGuidedAnswers} onMoreOptions={openAdvanced} />
+          </div>}
           {activeTab === "top" && <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 overflow-auto bg-[#f4f1ea] p-3" data-testid="vendor-top-view"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#997851]">Room map · tap a wall</p><div className="w-full max-w-[280px] rounded-xl border border-[#d8d0c3] bg-[#fffdf9] p-2.5 shadow-sm"><RoomOccupancyOverview design={design} onSelect={onChangeWall} large testId="vendor-top-room-overview" /></div><p className="max-w-[280px] text-center text-[10px] leading-4 text-[#6d6255]">The gold eye is the 3D camera, inside the room, looking at the active wall.</p></div>}
           {(activeTab === "back" || activeTab === "left" || activeTab === "right") && <div className="absolute inset-0 z-10 overflow-auto bg-[#f4f1ea] p-2" data-testid="vendor-elevation-view"><ClosetWallElevation design={design} wall={activeTab} /></div>}
         </div>

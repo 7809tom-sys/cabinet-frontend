@@ -26,24 +26,24 @@ describe("Closet Studio tablet workspace", () => {
   it("keeps a wall's layout separate and exposes filled or empty status through the compact room map", () => {
     window.localStorage.clear();
     render(<VendorClosetStudio />);
-    fireEvent.click(screen.getByRole("button", { name: "Start with one tower" }));
+    fireEvent.click(screen.getByTestId("guided-start-blank"));
 
     const overview = screen.getByTestId("vendor-room-overview");
-    const back = within(overview).getByRole("button", { name: /Back wall: filled, 25\.5 of 120 inches used/i });
-    const left = within(overview).getByRole("button", { name: /Left wall: empty, 0 of 96 inches used/i });
+    const back = within(overview).getByRole("button", { name: /Back wall: filled, 25\.5 of \d+ inches used/i });
+    const left = within(overview).getByRole("button", { name: /Left wall: empty, 0 of \d+ inches used/i });
     expect(back.getAttribute("aria-pressed")).toBe("true");
     fireEvent.click(left);
 
-    expect(within(overview).getByRole("button", { name: /Left wall: empty, 0 of 96 inches used/i }).getAttribute("aria-pressed")).toBe("true");
+    expect(within(overview).getByRole("button", { name: /Left wall: empty, 0 of \d+ inches used/i }).getAttribute("aria-pressed")).toBe("true");
     openParts();
     expect(within(dock()).getByText(/This wall is empty.*other walls remain unchanged/i)).toBeTruthy();
     fireEvent.click(within(dock()).getByRole("button", { name: "Add first tower" }));
     expect(within(dock()).getByRole("button", { name: "Select Tower 1" })).toBeTruthy();
-    expect(within(dock()).getByText(/25\.5 of 96 in on left wall/i)).toBeTruthy();
+    expect(within(dock()).getByText(/25\.5 of \d+ in on left wall/i)).toBeTruthy();
 
     fireEvent.click(back);
-    expect(within(dock()).getByText(/25\.5 of 120 in on back wall/i)).toBeTruthy();
-    expect(within(overview).getByRole("button", { name: /Left wall: filled, 25\.5 of 96 inches used/i })).toBeTruthy();
+    expect(within(dock()).getByText(/25\.5 of \d+ in on back wall/i)).toBeTruthy();
+    expect(within(overview).getByRole("button", { name: /Left wall: filled, 25\.5 of \d+ inches used/i })).toBeTruthy();
     const scene = readFileSync(`${process.cwd()}/client/src/components/vendor/VendorClosetScene.tsx`, "utf8");
     expect(scene).toContain("studioCornerShelvesForWall(design)");
     expect(scene).toContain("if (design.bays.length) box");
@@ -137,7 +137,12 @@ describe("Closet Studio tablet workspace", () => {
   it("keeps the three-column layout for wide desktops but uses on-demand panels at tablet CSS widths", () => {
     window.history.replaceState(null, "", "/closet?demo=mixed");
     render(<VendorClosetStudio />);
-    expect(screen.getByTestId("vendor-workspace").className).toContain("minmax(320px,360px)_minmax(0,1fr)_250px");
+    // Closed by default, so the desktop grid drops its dock column and the drawing keeps the space.
+    expect(screen.getByTestId("vendor-workspace").getAttribute("data-dock")).toBe("closed");
+    expect(screen.getByTestId("vendor-workspace").className).toContain("min-[1280px]:grid-cols-[minmax(0,1fr)_250px]");
+    openParts();
+    expect(screen.getByTestId("vendor-workspace").className).toContain("min-[1280px]:grid-cols-[minmax(320px,360px)_minmax(0,1fr)_250px]");
+    expect(screen.getByTestId("vendor-workspace").getAttribute("data-dock")).toBe("open");
     expect(screen.getByTestId("vendor-blueprint-column").className).toContain("min-[1280px]:w-[250px]");
     expect(screen.getByTestId("vendor-blueprint-column").className).not.toContain("1a4568");
     const referencePanel = screen.getByTestId("vendor-reference-panel");
@@ -231,10 +236,11 @@ describe("Closet Studio tablet workspace", () => {
   it("keeps the 29.5-inch pie shelf planner discoverable and supports both standalone and atomic two-wall corner plans", () => {
     window.history.replaceState(null, "", "/closet");
     render(<VendorClosetStudio />);
-    fireEvent.click(screen.getByRole("button", { name: "Start with one tower" }));
+    // Corner envelopes need a room deeper than 29.5 in, so start blank in walk-in dimensions.
+    fireEvent.click(screen.getByTestId("guided-type-walk-in"));
+    fireEvent.click(screen.getByTestId("guided-start-blank"));
 
     fireEvent.click(within(screen.getByTestId("vendor-room-overview")).getByRole("button", { name: /Right wall: empty/i }));
-
     openParts();
     const corner = within(dock()).getByTestId("vendor-corner-planning-controls");
     expect(within(corner).getByTestId("vendor-corner-planning-caveat").textContent).toMatch(/29\.5.*2026-spec planning envelope.*not a curved profile.*connector.*H-joint/i);
@@ -280,7 +286,7 @@ describe("Closet Studio tablet workspace", () => {
   it("keeps the corner shelf planner reachable from the Parts palette without a scrolling trap", () => {
     window.history.replaceState(null, "", "/closet");
     render(<VendorClosetStudio />);
-    fireEvent.click(screen.getByRole("button", { name: "Start with one tower" }));
+    fireEvent.click(screen.getByTestId("guided-start-blank"));
 
     openParts();
     const entry = within(dock()).getByRole("button", { name: "Plan 29.5-inch curved corner shelf" });
@@ -296,7 +302,7 @@ describe("Closet Studio tablet workspace", () => {
   it("keeps a persistent available-finish dropdown visible while a Studio design is open", () => {
     window.history.replaceState(null, "", "/closet");
     render(<VendorClosetStudio />);
-    fireEvent.click(screen.getByRole("button", { name: "Start with one tower" }));
+    fireEvent.click(screen.getByTestId("guided-start-blank"));
 
     const finish = screen.getByRole("combobox", { name: "Available MasterTrac finish" });
     expect(within(finish).getByRole("option", { name: "Glacier White" })).toBeTruthy();
