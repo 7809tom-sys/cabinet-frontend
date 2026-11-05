@@ -10,9 +10,11 @@
  * the app, and reachable at no route.
  */
 import { createRoot } from "react-dom/client";
+import type React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createTRPCReact } from "@trpc/react-query";
 import { httpBatchLink } from "@trpc/client";
+import type { AnyRouter } from "@trpc/server";
 import superjson from "superjson";
 import { LanguageProvider } from "@/contexts/LanguageContext";
 import "@/index.css";
@@ -103,11 +105,20 @@ const sheet: CountertopFabricationSheet = buildCountertopFabricationSheet(sheetI
  * the screenshot never sends mail, and the dialog is opened only to show its
  * fields. The mutation itself is what would reach the backend.
  *
- * The router type is left out on purpose — this repository has no `server/`
- * directory, and only mounting is needed here.
+ * The app's `AppRouter` type lives in the backend repository, and tRPC's
+ * `createTRPCReact` only accepts a real router type, so the created hooks object
+ * is cast for this dev-only harness.
  */
+type HarnessTrpc = {
+  Provider: React.ComponentType<{
+    client: unknown;
+    queryClient: QueryClient;
+    children: React.ReactNode;
+  }>;
+  createClient: (options: { links: unknown[] }) => unknown;
+};
 const harnessQueryClient = new QueryClient();
-const trpcLoose = createTRPCReact<Record<string, unknown>>();
+const trpcLoose = createTRPCReact<AnyRouter>() as unknown as HarnessTrpc;
 const harnessClient = trpcLoose.createClient({
   links: [httpBatchLink({ url: "/api/trpc", transformer: superjson })],
 });
@@ -156,16 +167,25 @@ createRoot(document.getElementById("panel-sidebar")!).render(
   </trpcLoose.Provider>,
 );
 
-const JsPdf = await ensureJsPdf();
-const pdf = buildFabricationSheetPdf(sheet, "CabinetDealz", JsPdf);
-const arrayBuffer = pdf.output("arraybuffer") as ArrayBuffer;
-const bytes = new Uint8Array(arrayBuffer);
-let binary = "";
-for (let index = 0; index < bytes.length; index += 1) binary += String.fromCharCode(bytes[index]!);
+// Build the PDF the panel would download, so the spec can save it as an artifact.
+void (async () => {
+  const JsPdf = await ensureJsPdf();
+  const pdf = buildFabricationSheetPdf(sheet, "CabinetDealz", JsPdf);
+  const bytes = new Uint8Array(pdf.output("arraybuffer") as ArrayBuffer);
+  let binary = "";
+  for (let index = 0; index < bytes.length; index += 1) binary += String.fromCharCode(bytes[index]!);
 
-window.__fabricationSheet = {
-  status: "ok",
-  sheet,
-  email: fabricationSheetEmailBody(sheet, { brandName: "CabinetDealz" }),
-  pdfBase64: btoa(binary),
-};
+  window.__fabricationSheet = {
+    status: "ok",
+    sheet,
+    email: fabricationSheetEmailBody(sheet, { brandName: "CabinetDealz" }),
+    pdfBase64: btoa(binary),
+  };
+})().catch((error: unknown) => {
+  window.__fabricationSheet = {
+    status: "error",
+    sheet,
+    email: fabricationSheetEmailBody(sheet, { brandName: "CabinetDealz" }),
+    error: error instanceof Error ? error.message : String(error),
+  };
+});

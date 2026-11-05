@@ -874,7 +874,6 @@ function describeUnknowns(input: CountertopFabricationInput, runs: readonly Fabr
 export function fabricationSheetHasCutouts(sheet: CountertopFabricationSheet): boolean {
   return sheet.runs.some((run) => run.cutouts.length > 0) || sheet.unmatchedCutouts.length > 0;
 }
-
 /** Stable, filesystem-safe file name for the generated PDF. */
 export function fabricationSheetFileName(sheet: CountertopFabricationSheet, brandName?: string | null): string {
   const slug = (value: string | null | undefined) =>
@@ -900,14 +899,4 @@ export function fabricationSheetSummaryLines(sheet: CountertopFabricationSheet):
     }
   }
   return lines;
-}
-
-/** Depth the Designer gives a wall run: base box plus the finished front overhang. */
-export const FABRICATION_STANDARD_DEPTH_IN = COUNTERTOP_DEPTH_IN;
-/** Overhang past the cabinet face on a wall run. */
-export const FABRICATION_STANDARD_FRONT_OVERHANG_IN = COUNTERTOP_DEPTH_IN - STD.BASE_DEPTH;
-
-/** The island's configured reveal, read straight from the island record. */
-export function fabricationIslandOverhangIn(island: IslandZone): number {
-  return islandCountertopOverhangIn(island);
 }
