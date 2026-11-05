@@ -2629,14 +2629,25 @@ export function threeDFaceMaterialColor(color: string, hasProvidedDoorSample: bo
 }
 
 /**
- * Carcass, toe kick, crown, and end skins use the selected finish color.
- * The door photograph stays on door and drawer fronts, so a sample must not
- * turn these surfaces white or carry the framed-door image.
+ * Carcass, toe kick, crown, and end skins follow the SAME door appearance the
+ * fronts use.
+ *
+ * Restored (owner-approved, Nov 5 2026): before PR #123 (`dc65100`, Oct 30 2026)
+ * this returned the door sample and `#ffffff` tint exactly like
+ * `threeDFaceMaterialColor`, so box, sides, and toe kick were shaded from the
+ * same authoritative door appearance as the fronts. PR #123 deliberately split
+ * them — structural surfaces got the flat catalog hex while fronts kept the
+ * photo — which is the "same cabinet, two colours" report. This restores the
+ * matched behaviour without reverting any other PR #123 change.
+ *
+ * The colour source itself is unchanged and still resolved by `applyStructuralFinishBase`
+ * (accepted render -> record image -> saved catalog colour). Nothing is snapped
+ * to a brand palette.
  */
-export function threeDStructuralFinish(color: string, _hasProvidedDoorSample: boolean) {
+export function threeDStructuralFinish(color: string, hasProvidedDoorSample: boolean) {
   return {
-    color,
-    usesDoorSample: false,
+    color: hasProvidedDoorSample ? "#ffffff" : color,
+    usesDoorSample: hasProvidedDoorSample,
   };
 }
 
@@ -2670,22 +2681,29 @@ export function threeDStructuralSampleTexture(texture: THREE.Texture) {
 export function applyThreeDStructuralFinishMaterials(
   materials: THREE.MeshStandardMaterial[],
   finishColor: string,
-  _sampleTexture: THREE.Texture | null = null,
+  sampleTexture: THREE.Texture | null = null,
 ) {
+  // Restored matched behaviour: when the cabinet has a door appearance (an
+  // approved accepted render or the record's own door image), every structural
+  // surface is shaded from that same appearance, exactly as the fronts are —
+  // `#ffffff` tint over the shared sample, so no second solid colour appears.
+  // A neutral crop offset keeps the framed-door photo off flat box/side faces;
+  // the fronts keep the full photo.
+  const structuralTexture = sampleTexture ? threeDStructuralSampleTexture(sampleTexture) : null;
   for (const material of materials) {
-    material.color.set(finishColor);
-    material.map = null;
-    material.roughness = 0.5;
+    material.color.set(structuralTexture ? "#ffffff" : finishColor);
+    material.map = structuralTexture;
+    material.roughness = structuralTexture ? 0.48 : 0.5;
     material.needsUpdate = true;
     material.userData = {
       ...material.userData,
       selectedFinishStructuralSurface: true,
-      usesDoorSample: false,
-      usesDoorImage: false,
+      usesDoorSample: Boolean(structuralTexture),
+      usesDoorImage: Boolean(structuralTexture),
       framelessDoorFaceSide: false,
     };
   }
-  return { color: finishColor, texture: null as THREE.Texture | null };
+  return { color: structuralTexture ? "#ffffff" : finishColor, texture: structuralTexture };
 }
 
 /**
@@ -5112,12 +5130,16 @@ export function addCabinet(
 	  let stampCabinetWoodGrain = () => {};
 	  const doorTexture = useDoorTexture && doorSampleUrl
     ? new THREE.TextureLoader().load(doorSampleUrl, (loaded) => {
-      // One path for every finish: the door photo's panel is the side color.
+      // One appearance for every finish: the loaded door image is what the fronts
+      // and the structural surfaces both shade from, so a cabinet cannot show two
+      // shades. The fronts take the photo directly; the box, sides and toe kick
+      // take it through the shared structural pass below.
       rememberDoorPanelHex(loaded);
-      applyPlainStructuralFinish?.(color, null);
+      applyPlainStructuralFinish?.(color, loaded);
       stampCabinetWoodGrain();
       onDoorTextureState?.("loaded");
     }, undefined, () => {
+      // A failed sample falls back to the resolved solid finish everywhere.
       applyDoorTextureFallback();
       applyPlainStructuralFinish?.(color, null);
       onDoorTextureState?.("failed");
@@ -5356,16 +5378,19 @@ export function addCabinet(
     applyStructuralFinishBase(finishColor, _sampleTexture);
     applyDlcGrain();
   };
-  const applyStructuralFinishBase = (finishColor: string, _sampleTexture: THREE.Texture | null = null) => {
-    // ONE color source for every visible surface of a cabinet: the selected door
-    // color. When the door has an image (a sample photo or the approved accepted
-    // render), the box, sides, panels and toe kick are painted again below so they
-    // can never show two shades beside the fronts.
+  const applyStructuralFinishBase = (finishColor: string, sampleTexture: THREE.Texture | null = null) => {
+    // ONE authoritative door appearance for every visible surface of a cabinet.
+    // When the door has an image — an approved accepted render, or, with no
+    // approval, the record's own door photo — the box, sides, panels and toe kick
+    // are shaded from that same appearance, so they cannot show a second shade
+    // beside the fronts. The resolved colour behind it is still whichever layer
+    // won: accepted render -> record image -> saved catalog colour. Nothing is
+    // snapped to a brand palette.
     //
-    // The door photograph stays on the fronts. Only the frameless family whose
-    // catalog says so (AltaEuro Luxe/Zenit) projects it onto an exposed side; a
-    // framed style never does. This is what kept the raised-panel door profile and
-    // its photo off cabinet sides, tops, bottoms, and end skins.
+    // Only the frameless family whose catalog says so (AltaEuro Luxe/Zenit)
+    // projects the photo itself onto an exposed side; every other style shades
+    // its structural surfaces from the shared sample at a neutral crop, so the
+    // framed-door photo and its raised profile stay on the front faces.
     if (doorTexture && exposedSidesMatchDoorFace) {
       const applied = applyThreeDDoorFaceStructuralFinish(
         [...structuralFinishMaterials, ...flatExposedFinishMaterials],
@@ -5379,15 +5404,22 @@ export function addCabinet(
       structuralSampleTexture = applied.texture;
       return;
     }
-    // No door image on these surfaces: every structural surface takes the resolved
-    // color itself, and its map is cleared so nothing from a front leaks across.
+    // The shared door appearance to shade structural surfaces from, when there is
+    // one. `sampleTexture` is the loaded door image the fronts use.
+    const sharedAppearance = sampleTexture ?? doorTexture;
+    // When there is no usable sample, the structural surfaces still prefer the
+    // door record's own panel colour over an unrelated catalog/keyword value. PR
+    // #234 hardcoded this to `null`, which silently dropped that layer.
+    const doorPanelHex = typeof sharedAppearance?.userData?.doorPanelHex === "string"
+      ? sharedAppearance.userData.doorPanelHex
+      : null;
     const sideColor = exposedSideSolidHex({
       catalogHex: finishColor,
-      doorPanelHex: null,
+      doorPanelHex,
       useDoorPhotoOnSides: false,
       dlcSolidHex: dlcDoorFinish,
     }) ?? finishColor;
-    const applied = applyThreeDStructuralFinishMaterials(structuralFinishMaterials, sideColor, null);
+    const applied = applyThreeDStructuralFinishMaterials(structuralFinishMaterials, sideColor, sharedAppearance);
     for (const material of flatExposedFinishMaterials) {
       material.color.set(applied.texture ? "#ffffff" : sideColor);
       material.map = applied.texture;
@@ -5404,7 +5436,7 @@ export function addCabinet(
     structuralSampleTexture = applied.texture;
   };
   applyPlainStructuralFinish = applyStructuralFinish;
-  applyStructuralFinish(color, null);
+  applyStructuralFinish(color, doorTexture);
   if (dlcDoorFinish && surfaceTextures?.faceCrop?.grainUrl) {
     new THREE.TextureLoader().load(surfaceTextures.faceCrop.grainUrl, (texture) => {
       texture.colorSpace = THREE.SRGBColorSpace;
@@ -5417,7 +5449,7 @@ export function addCabinet(
       if (tile && tile[0] > 0 && tile[1] > 0) texture.repeat.set(Math.max(0.1, 24 / tile[0]), Math.max(0.1, heightIn / tile[1]));
       else texture.repeat.set(2, 1.5);
       dlcGrainTexture = texture;
-      applyStructuralFinish(color, null);
+      applyStructuralFinish(color, doorTexture);
     });
   }
 	  const trimMaterial = new THREE.MeshPhysicalMaterial({ color: faceColor, map: doorTexture, ...doorFinishSurface, ...(dlcPhotoComp ? { toneMapped: false } : {}) });
@@ -5630,9 +5662,9 @@ export function addCabinet(
   };
   structuralFinishMaterials.push(decorativeEndSkin);
   // End skins, the face frame, and the carcass are registered above. Paint them
-  // again so an AltaEuro door-face side is on every exposed surface, not only
-  // the box that existed at the first pass.
-  applyStructuralFinish(color, null);
+  // again from the same door appearance the fronts use, so a late-registered end
+  // skin cannot fall back to a second solid colour.
+  applyStructuralFinish(color, doorTexture);
   for (const side of threeDDecorativeEndSides(sku.decorativeEnd)) {
     const endPanel = new THREE.Mesh(
       new THREE.BoxGeometry(0.042, Math.max(0.12, bodyHeight - 0.05), Math.max(0.12, bodyDepth - 0.05)),

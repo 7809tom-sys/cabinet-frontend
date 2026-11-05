@@ -13,7 +13,7 @@
  */
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
-import { addCabinet, threeDStructuralFinish } from "./InteractiveRoom3D";
+import { addCabinet, threeDFaceMaterialColor, threeDStructuralFinish } from "./InteractiveRoom3D";
 
 type Mesh = THREE.Mesh & { userData: Record<string, unknown> };
 
@@ -110,11 +110,21 @@ describe("a cabinet's surfaces share one color", () => {
     expect(colors.length).toBeGreaterThan(0);
   });
 
-  it("reports the structural finish as exactly the color it was given", () => {
+  it("reports the structural finish as exactly the color it was given when there is no door sample", () => {
     for (const hex of ["#c8a040", "#d9c9a3", "#2a211c"]) {
-      const finish = threeDStructuralFinish(hex, true);
+      const finish = threeDStructuralFinish(hex, false);
       expect(finish.color).toBe(hex);
       expect(finish.usesDoorSample).toBe(false);
+    }
+  });
+
+  it("follows the door sample exactly as the fronts do when one exists", () => {
+    // Restoration (Nov 5 2026): structural surfaces share the front's appearance, so
+    // the box, sides and toe kick can never show a second shade beside the fronts.
+    for (const hex of ["#c8a040", "#d9c9a3", "#2a211c"]) {
+      const finish = threeDStructuralFinish(hex, true);
+      expect(finish.color).toBe(threeDFaceMaterialColor(hex, true));
+      expect(finish.usesDoorSample).toBe(true);
     }
   });
 });

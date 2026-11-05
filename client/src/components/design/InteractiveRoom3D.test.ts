@@ -2132,11 +2132,15 @@ describe("interactive 3D room scene helpers", () => {
   });
 
   it("uses every selected cabinet finish on structural surfaces, including texture-backed styles", () => {
+    // No door sample: structural surfaces take the resolved solid finish.
     expect(threeDStructuralFinish("#4f5549", false)).toEqual({ color: "#4f5549", usesDoorSample: false });
-    expect(threeDStructuralFinish("#C8A040", true)).toEqual({ color: "#C8A040", usesDoorSample: false });
+    // With a door sample they follow the SAME appearance as the fronts (restored
+    // Nov 5 2026), instead of dropping to a second solid colour.
+    expect(threeDStructuralFinish("#C8A040", true)).toEqual({ color: threeDFaceMaterialColor("#C8A040", true), usesDoorSample: true });
+    expect(threeDStructuralFinish("#C8A040", true).color).toBe("#ffffff");
   });
 
-  it("keeps door photographs off cabinet boxes, toe kicks, and end skins", () => {
+  it("shades cabinet boxes, toe kicks, and end skins from the door sample, like the fronts", () => {
     const selectedSample = new THREE.Texture();
     const side = new THREE.MeshStandardMaterial({ color: "#C8A040" });
     const toeKick = new THREE.MeshStandardMaterial({ color: "#C8A040" });
@@ -2144,14 +2148,17 @@ describe("interactive 3D room scene helpers", () => {
     toeKick.userData = { baseToeKick: true };
 
     const result = applyThreeDStructuralFinishMaterials([side, toeKick], "#C8A040", selectedSample);
-    expect(result.color).toBe("#C8A040");
-    expect(result.texture).toBeNull();
-    expect(side.map).toBeNull();
-    expect(toeKick.map).toBeNull();
-    expect(side.color.getHexString()).toBe("c8a040");
-    expect(toeKick.color.getHexString()).toBe("c8a040");
-    expect(side.userData).toMatchObject({ selectedFinishSideSkin: true, selectedFinishStructuralSurface: true, usesDoorSample: false, usesDoorImage: false });
-    expect(toeKick.userData).toMatchObject({ baseToeKick: true, selectedFinishStructuralSurface: true, usesDoorSample: false, usesDoorImage: false });
+    // One appearance: a white tint over the shared door sample, never a second
+    // solid colour beside a photographed front.
+    expect(result.color).toBe("#ffffff");
+    expect(result.texture).not.toBeNull();
+    expect(side.map).not.toBeNull();
+    expect(toeKick.map).not.toBeNull();
+    expect(side.color.getHexString()).toBe("ffffff");
+    expect(toeKick.color.getHexString()).toBe("ffffff");
+    expect(side.userData).toMatchObject({ selectedFinishSideSkin: true, selectedFinishStructuralSurface: true, usesDoorSample: true, usesDoorImage: true });
+    expect(toeKick.userData).toMatchObject({ baseToeKick: true, selectedFinishStructuralSurface: true, usesDoorSample: true, usesDoorImage: true });
+    // The structural crop is a neutral offset, not the framed photofront.
     expect(selectedSample.repeat.toArray()).toEqual([1, 1]);
     expect(threeDDecorativeEndIsDoor({})).toBe(false);
     expect(threeDDecorativeEndIsDoor({ decorativeEndIsDoor: true })).toBe(true);

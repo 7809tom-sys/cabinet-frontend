@@ -256,7 +256,7 @@ describe("painted finishes render solid", () => {
 });
 
 describe("the door photo does not leak onto carcass surfaces", () => {
-  it("keeps sides, tops, bottoms, and end skins on the solid finish color", () => {
+  it("keeps sides, tops, bottoms, and end skins on the same door appearance as the fronts", () => {
     const load = vi.spyOn(THREE.TextureLoader.prototype, "load").mockImplementation((((url: string) => {
       const texture = new THREE.Texture();
       texture.name = String(url);
@@ -277,8 +277,10 @@ describe("the door photo does not leak onto carcass surfaces", () => {
       for (const skin of skins) {
         const material = frontMaterial(skin);
         if (!material) continue;
-        expect(material.map, String(skin.userData.decorativeEndSide ?? "skin")).toBeNull();
-        expect(`#${material.color.getHexString()}`, String(skin.userData.decorativeEndSide ?? "skin")).toBe("#8b6040");
+        // Restoration (Nov 5 2026): structural surfaces share the door appearance,
+        // so they carry the sample and a white tint instead of a second solid hex.
+        expect(material.map, String(skin.userData.decorativeEndSide ?? "skin")).not.toBeNull();
+        expect(`#${material.color.getHexString()}`, String(skin.userData.decorativeEndSide ?? "skin")).toBe("#ffffff");
         expect(skin.userData.raisedPanelBevel).toBeUndefined();
         expect(skin.userData.raisedCenterPanel).toBeUndefined();
       }
