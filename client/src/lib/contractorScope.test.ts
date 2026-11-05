@@ -3,6 +3,8 @@ import {
   affiliateMarkupQuery,
   contractorEstimateScope,
   contractorPortalScope,
+  contractorPreviewHref,
+  contractorPreviewUsesStaffMode,
   crmBoardScope,
   isAdminRole,
   parseContractorUserId,
@@ -85,5 +87,41 @@ describe("contractor scope", () => {
     expect(affiliateMarkupQuery(9)).toEqual({ affiliateUserId: 9 });
     expect(setAffiliateMarkupInput(12.5)).toEqual({ markupPercent: 12.5 });
     expect(setAffiliateMarkupInput(null, 9)).toEqual({ markupPercent: null, affiliateUserId: 9 });
+  });
+
+  it("links the affiliate dashboard to a read-only contractor preview", () => {
+    // An affiliate signs in as `partner`, which already resolves to staff-preview.
+    expect(resolveContractorDashboardView({ role: "partner", requestedContractorUserId: null })).toEqual({
+      mode: "staff-preview",
+      role: "partner",
+    });
+    expect(contractorPreviewUsesStaffMode("partner")).toBe(true);
+    expect(contractorPreviewUsesStaffMode("admin")).toBe(true);
+    expect(contractorPreviewUsesStaffMode("distributor")).toBe(true);
+    expect(contractorPreviewHref("partner", "reaves-way-cabinet-shop")).toBe(
+      "/contractor?store=reaves-way-cabinet-shop",
+    );
+
+    // Admin View As reaches the same staff-preview banner.
+    expect(contractorPreviewHref("admin", "reaves-way-cabinet-shop")).toBe(
+      "/contractor?store=reaves-way-cabinet-shop",
+    );
+
+    // No role that resolves to staff-preview may receive the sample-data flag.
+    for (const role of ["admin", "partner", "distributor"] as const) {
+      expect(contractorPreviewHref(role, null)).not.toContain("preview=1");
+    }
+  });
+
+  it("falls back to sample data when the role would land on the applicant form", () => {
+    for (const role of ["user", "affiliate", "designer", "sales_rep", "contractor", "", null, undefined] as const) {
+      expect(contractorPreviewUsesStaffMode(role)).toBe(false);
+      expect(contractorPreviewHref(role, null)).toBe("/contractor?preview=1");
+      expect(resolveContractorDashboardView({ role: role ?? "user", requestedContractorUserId: null }).mode).not.toBe("staff-preview");
+    }
+    expect(contractorPreviewHref("user", "reaves-way-cabinet-shop")).toBe(
+      "/contractor?preview=1&store=reaves-way-cabinet-shop",
+    );
+    expect(contractorPreviewHref("user", "   ")).toBe("/contractor?preview=1");
   });
 });

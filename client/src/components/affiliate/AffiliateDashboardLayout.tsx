@@ -40,6 +40,7 @@ import { trpc } from "@/lib/trpc";
 import { affiliateCatalogPath, affiliateDesignerPath, affiliateOrderPath, affiliateStorefrontUrl } from "@/lib/affiliateStorefrontUrl";
 import { AffiliateStoreSwitcher } from "./AffiliateStoreSwitcher";
 import { buildAffiliateCatalogVendors, customerLinkVisibility } from "@shared/affiliateStorefrontControls";
+import { contractorPreviewHref } from "@/lib/contractorScope";
 
 export type AffiliateSection =
   | "overview"
@@ -197,6 +198,8 @@ function SidebarInner({
   const quoteUrl = affiliateOrderPath(storeSlug);
   const isAdmin = user?.role === "admin";
   const canOpenEmail = Boolean(isAffiliateOwner || isAdmin);
+  // Affiliates/partners own the store; admins reach the same link in View As.
+  const canPreviewContractor = Boolean(isAffiliateOwner || isAdmin);
   const visibleNavItems = NAV_ITEMS.filter((item) => {
     // Email settings belong to the store owner or a platform admin only.
     // Another affiliate's team member must not see this entry at all.
@@ -287,6 +290,21 @@ function SidebarInner({
           </SidebarHeader>
 
           <SidebarContent className="min-h-0 gap-0 overflow-x-hidden overflow-y-auto overscroll-y-contain [&>*]:shrink-0">
+            {canPreviewContractor && (
+              <div className="shrink-0 px-2 pt-2">
+                <a
+                  href={contractorPreviewHref(user?.role, storeSlug)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="Open the view-only contractor portal preview"
+                  data-testid="sidebar-contractor-preview"
+                  className="flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-950 transition-colors hover:bg-amber-100 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
+                >
+                  <HardHat className="h-4 w-4 shrink-0" />
+                  <span className="truncate group-data-[collapsible=icon]:hidden">Preview contractor page</span>
+                </a>
+              </div>
+            )}
             <SidebarMenu className="shrink-0 px-2 py-1">
               {headItems.map((item) => {
                 const isActive = item.section === section;
