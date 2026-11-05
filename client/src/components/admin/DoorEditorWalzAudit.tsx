@@ -297,6 +297,8 @@ export function DoorEditorWalzAudit({
       </div>
 
       <div className="flex flex-wrap gap-3" data-testid="wizard-compare">
+        {/* The sample door is the untouched reference: a S-W pick never tints or replaces it,
+            so the canvas door beside it can be compared against the real sample. */}
         <figure className="space-y-1">
           <figcaption className="text-[11px] font-semibold uppercase tracking-wide">Sample door</figcaption>
           {photo ? (
@@ -309,20 +311,6 @@ export function DoorEditorWalzAudit({
                 onClick={sampleHex}
                 style={rotation ? { transform: `rotate(${rotation}deg)` } : undefined}
               />
-              {/* The pick lands on the sample door as it is made, without replacing the photo. */}
-              {hex && (
-                <span
-                  aria-hidden="true"
-                  data-testid="wizard-sample-finish"
-                  data-finish={active?.finish ?? "none"}
-                  className="pointer-events-none absolute inset-0"
-                  style={{
-                    backgroundColor: hex,
-                    opacity: active?.finish === PAINT_FINISH ? 0.85 : 0.45,
-                    mixBlendMode: active?.finish === PAINT_FINISH ? "normal" : "multiply",
-                  }}
-                />
-              )}
             </div>
           ) : (
             <div className="flex h-40 w-28 items-center justify-center rounded border border-dashed text-xs">No photo</div>
