@@ -638,9 +638,11 @@ export default function App() {
         {/* The public Closet program is separate from the kitchen Designer.
             Keep the existing /design route for saved legacy plans. */}
         <Route path="/closet">
-          <Suspense fallback={<PageLoader />}>
-            <VendorClosetStudio />
-          </Suspense>
+          <div className="flex h-[100dvh] flex-col overflow-hidden">
+            <Suspense fallback={<PageLoader />}>
+              <VendorClosetStudio />
+            </Suspense>
+          </div>
         </Route>
 
         <Route path="/designer-guide">
@@ -774,9 +776,11 @@ export default function App() {
         </Route>
 
         <Route path="/vendor/closet-studio">
-          <Suspense fallback={<PageLoader />}>
-            <VendorClosetStudio />
-          </Suspense>
+          <div className="flex h-[100dvh] flex-col overflow-hidden">
+            <Suspense fallback={<PageLoader />}>
+              <VendorClosetStudio />
+            </Suspense>
+          </div>
         </Route>
 
         <Route path="/vendor">

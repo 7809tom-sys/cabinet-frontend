@@ -123,3 +123,7 @@ manus storage/
 
 # Weekly CRM price check output
 .crm-price-check/
+
+# Generated screenshot/baseline output (screenshots are attached to PRs, not committed)
+/test-artifacts/closet-studio/
+/test-results/
