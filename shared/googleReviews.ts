@@ -397,7 +397,12 @@ export type GoogleReviewsResult =
       links: GoogleReviewsLinks;
       /** When the API answered. For diagnostics only; nothing is stored. */
       fetchedAt: string;
-      /** Referrer-restricted key for the Embed API iframe, or null. */
+      /**
+       * The referrer-restricted Maps Embed key, so the iframe can load. This is
+       * the one key value that reaches a browser, and only into the iframe `src`
+       * that Google's Embed API requires. It is never rendered as text, never
+       * shown in the portal, and never stored client-side.
+       */
       embedApiKey: string | null;
     }
   | { status: "not-configured"; message: string }
@@ -429,3 +434,163 @@ export function isGoogleReviewsUnavailableCode(
 ): value is Extract<GoogleReviewsResult, { status: "unavailable" }>["code"] {
   return typeof value === "string" && value in UNAVAILABLE_COPY;
 }
+
+// ─── The affiliate's own Google credentials ──────────────────────────────────
+//
+// Reviews are read with the AFFILIATE's Google Cloud project, not the platform's.
+// The affiliate brings their own Place ID and their own API key(s); the platform
+// key is only a fallback for a store that has connected nothing.
+//
+// Keys are WRITE-ONLY in every direction that touches the browser:
+//
+//   browser → server   the affiliate types a key once and it is sent over tRPC.
+//   server → browser   never. The status read answers booleans only; there is no
+//                      procedure, field, or log that returns a key value.
+//
+// They are also never stored client-side: no localStorage, sessionStorage,
+// cookie, or query param. `GooglePlaceCredentialsStatus` is the entire shape the
+// client is allowed to see, and `GooglePlaceCredentialsInput` is the entire shape
+// the client may send.
+
+/** What the affiliate may send. A key value only ever travels in this direction. */
+export type GooglePlaceCredentialsInput = {
+  affiliateId?: number;
+  placeId?: string | null;
+  /** Places API (New) key for this affiliate's own Google Cloud project. */
+  placesApiKey?: string | null;
+  /** Optional Maps Embed API key. Falls back to the Places key when omitted. */
+  mapsEmbedApiKey?: string | null;
+  /** True to delete the stored Places key. The key value is never read back. */
+  clearPlacesApiKey?: boolean;
+  /** True to delete the stored Embed key. */
+  clearMapsEmbedApiKey?: boolean;
+};
+
+/**
+ * What the affiliate may read back.
+ *
+ * No key value, no key fragment, no last-four, no hash. Booleans and the place ID
+ * only — enough to render "Key saved" and a Replace/Remove control, and nothing
+ * that could reconstruct a key.
+ */
+export type GooglePlaceCredentialsStatus = {
+  placeId: string | null;
+  hasPlacesApiKey: boolean;
+  hasMapsEmbedApiKey: boolean;
+  /** ISO timestamp of the last key write, for the "Key saved" line. */
+  placesApiKeyUpdatedAt: string | null;
+  mapsEmbedApiKeyUpdatedAt: string | null;
+  /**
+   * Which project the next review fetch will actually use. `affiliate` when this
+   * store has its own Places key; `platform` when it is falling back to the
+   * platform key; `none` when neither exists.
+   */
+  credentialsSource: "affiliate" | "platform" | "none";
+};
+
+export const GOOGLE_CREDENTIALS_GET_PROCEDURE = "googleReviews.credentials" as const;
+export const GOOGLE_CREDENTIALS_SAVE_PROCEDURE = "googleReviews.saveCredentials" as const;
+
+export const GOOGLE_PLACES_KEY_COLUMN = "affiliates.googlePlacesApiKeyEnc" as const;
+export const GOOGLE_MAPS_EMBED_KEY_COLUMN = "affiliates.googleMapsEmbedApiKeyEnc" as const;
+
+/** Google Cloud API key format. Used to reject typos before they are stored. */
+export const GOOGLE_API_KEY_PATTERN = /^AIza[0-9A-Za-z_-]{35}$/;
+
+/**
+ * Google keys all start with `AIza` and are 39 characters. The check is a shape
+ * check only — it can never prove a key works, and the server is authoritative.
+ */
+export function isGoogleApiKeyShaped(raw: string | null | undefined): boolean {
+  return GOOGLE_API_KEY_PATTERN.test((raw ?? "").trim());
+}
+
+export type GoogleApiKeyValidation =
+  | { ok: true; key: string }
+  | { ok: false; message: string };
+
+/**
+ * Validate a key the affiliate typed. An empty value means "leave the saved key
+ * alone" (or "not provided"), and is reported as such so the caller never
+ * mistakes it for a replacement.
+ */
+export function validateGoogleApiKeyInput(
+  raw: string | null | undefined,
+  label: string,
+): GoogleApiKeyValidation {
+  const key = (raw ?? "").trim();
+  if (!key) return { ok: true, key: "" };
+  if (/\s/.test(key)) {
+    return { ok: false, message: `${label} must not contain spaces. Paste it exactly as Google shows it.` };
+  }
+  if (!isGoogleApiKeyShaped(key)) {
+    return {
+      ok: false,
+      message: `${label} should start with “AIza” and be 39 characters. Copy it again from Google Cloud → APIs & Services → Credentials.`,
+    };
+  }
+  return { ok: true, key };
+}
+
+/** True when the affiliate typed a key that still needs to be sent. */
+export function googleApiKeyShouldBeSent(raw: string | null | undefined): boolean {
+  return (raw ?? "").trim().length > 0;
+}
+
+/** Which project the next fetch uses, in plain language for the status line. */
+export function googleCredentialsSourceLabel(
+  source: GooglePlaceCredentialsStatus["credentialsSource"],
+): string {
+  switch (source) {
+    case "affiliate":
+      return "Using your own Google Cloud project.";
+    case "platform":
+      return "No key saved yet, so this store is using the platform's Google project as a fallback.";
+    default:
+      return "No Google key is available yet, so reviews cannot load.";
+  }
+}
+
+/** Plain-language, ordered steps for the affiliate's own Google Cloud project. */
+export const GOOGLE_CREDENTIALS_HELP = {
+  placesApiKey: {
+    title: "Your Places API key",
+    steps: [
+      "Open Google Cloud Console (console.cloud.google.com) and sign in with the Google account that owns your business listing.",
+      "Create a project for your store, or pick the one you already use, at the top of the page.",
+      "Go to APIs & Services → Library, search for “Places API (New)”, open it, and press Enable.",
+      "Go to APIs & Services → Credentials → Create credentials → API key. Copy the key that appears.",
+      "Press Edit on that key: under API restrictions choose “Places API (New)”. Under Application restrictions choose “None” — this key is used by our server, never by a browser.",
+      "Paste it above. Google may ask you to enable billing on the project before the key works.",
+    ],
+  },
+  mapsEmbedApiKey: {
+    title: "Your Maps Embed key (optional)",
+    steps: [
+      "In the same Google Cloud project, go to APIs & Services → Library, search for “Maps Embed API”, open it, and press Enable.",
+      "Go to APIs & Services → Credentials → Create credentials → API key. Copy it.",
+      "Press Edit on that key: under API restrictions choose “Maps Embed API”. Under Application restrictions choose “HTTP referrers”, and add your storefront address plus *.cabinetdealz.com.",
+      "Paste it above. This one is used by the map on your page, so it must be locked to your storefront's web address.",
+      "If you skip this, your map will use your Places key's browser access, which is usually blocked — you would see review cards without the map.",
+    ],
+  },
+  placeId: {
+    title: "Your Place ID",
+    steps: [
+      "Open the Place ID Finder in Google's developer docs (linked below).",
+      "Type your business name and city, then pick your business from the list.",
+      "Copy the ID shown, which starts with “ChIJ”, and paste it above.",
+    ],
+  },
+} as const;
+
+/** Every step's link, so the panel and docs cannot disagree. */
+export const GOOGLE_CREDENTIALS_LINKS = {
+  cloudConsole: "https://console.cloud.google.com/",
+  apiLibrary: "https://console.cloud.google.com/apis/library",
+  credentials: "https://console.cloud.google.com/apis/credentials",
+  placesApiNew: "https://console.cloud.google.com/apis/library/places.googleapis.com",
+  mapsEmbedApi: "https://console.cloud.google.com/apis/library/maps-embed-backend.googleapis.com",
+  placeIdFinder: "https://developers.google.com/maps/documentation/places/web-service/place-id",
+  billing: "https://console.cloud.google.com/billing",
+} as const;

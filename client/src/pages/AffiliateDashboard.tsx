@@ -823,6 +823,12 @@ export default function AffiliateDashboard() {
               affiliateId={affiliate.id}
               slug={affiliate.slug}
               googlePlaceId={(affiliate as { googlePlaceId?: string | null }).googlePlaceId ?? null}
+              credentialHints={{
+                // Booleans only. The key itself is never in the affiliate record
+                // the dashboard reads, and never comes back from the server.
+                hasPlacesApiKey: Boolean((affiliate as { hasGooglePlacesApiKey?: boolean | null }).hasGooglePlacesApiKey),
+                hasMapsEmbedApiKey: Boolean((affiliate as { hasGoogleMapsEmbedApiKey?: boolean | null }).hasGoogleMapsEmbedApiKey),
+              }}
               isAdmin={isAdmin}
               onSaved={() => { activeQuery.refetch(); setPreviewKey((k) => k + 1); }}
             />

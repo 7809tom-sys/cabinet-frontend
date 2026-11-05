@@ -1,7 +1,20 @@
 import { describe, expect, it } from "vitest";
 import {
+  GOOGLE_CREDENTIALS_GET_PROCEDURE,
+  GOOGLE_CREDENTIALS_LINKS,
+  GOOGLE_CREDENTIALS_SAVE_PROCEDURE,
+  GOOGLE_CREDENTIALS_HELP,
+  GOOGLE_MAPS_EMBED_KEY_COLUMN,
+  GOOGLE_MAPS_EMBED_KEY_ENV,
+  GOOGLE_PLACES_KEY_COLUMN,
+  GOOGLE_PLACES_KEY_ENV,
   GOOGLE_REVIEWS_MAX_RETURNED,
   GOOGLE_PLACES_FIELD_MASK,
+  googleApiKeyShouldBeSent,
+  googleCredentialsSourceLabel,
+  isGoogleApiKeyShaped,
+  validateGoogleApiKeyInput,
+  type GooglePlaceCredentialsStatus,
   googleMapEmbedUrl,
   googleReadReviewsUrl,
   googleWriteReviewUrl,
@@ -184,5 +197,107 @@ describe("Places API contract", () => {
     for (const field of ["id", "displayName", "rating", "userRatingCount", "googleMapsLinks", "reviews"]) {
       expect(fields).toContain(field);
     }
+  });
+});
+
+describe("the affiliate's own Google credentials", () => {
+  const KEY = `AIza${"A".repeat(35)}`;
+
+  it("recognises a Google-shaped key and nothing else", () => {
+    expect(isGoogleApiKeyShaped(KEY)).toBe(true);
+    expect(isGoogleApiKeyShaped(`  ${KEY}  `)).toBe(true);
+    expect(isGoogleApiKeyShaped("sk-live-abc")).toBe(false);
+    expect(isGoogleApiKeyShaped(`AIza${"A".repeat(20)}`)).toBe(false);
+    expect(isGoogleApiKeyShaped(`AIza${"A".repeat(40)}`)).toBe(false);
+    expect(isGoogleApiKeyShaped("")).toBe(false);
+    expect(isGoogleApiKeyShaped(null)).toBe(false);
+  });
+
+  it("treats an empty key as 'leave the saved one alone', never as a replacement", () => {
+    const result = validateGoogleApiKeyInput("   ", "Your Places API key");
+    expect(result).toEqual({ ok: true, key: "" });
+    expect(googleApiKeyShouldBeSent("   ")).toBe(false);
+    expect(googleApiKeyShouldBeSent(KEY)).toBe(true);
+  });
+
+  it("explains a bad key instead of storing it", () => {
+    const spaces = validateGoogleApiKeyInput(`AIza AAA ${"A".repeat(28)}`, "Your Places API key");
+    expect(spaces.ok).toBe(false);
+    expect(spaces.ok === false && spaces.message).toContain("must not contain spaces");
+
+    const wrongShape = validateGoogleApiKeyInput("not-a-key", "Your Maps Embed key");
+    expect(wrongShape.ok).toBe(false);
+    expect(wrongShape.ok === false && wrongShape.message).toContain("AIza");
+    expect(wrongShape.ok === false && wrongShape.message).toContain("Your Maps Embed key");
+  });
+
+  it("names the server-only environment variables and never a VITE_ one", () => {
+    expect(GOOGLE_PLACES_KEY_ENV).toBe("GOOGLE_PLACES_API_KEY");
+    expect(GOOGLE_MAPS_EMBED_KEY_ENV).toBe("GOOGLE_MAPS_EMBED_API_KEY");
+    for (const name of [GOOGLE_PLACES_KEY_ENV, GOOGLE_MAPS_EMBED_KEY_ENV]) {
+      expect(name.startsWith("VITE_")).toBe(false);
+    }
+  });
+
+  it("names the encrypted columns the backend stores keys in", () => {
+    expect(GOOGLE_PLACES_KEY_COLUMN).toContain("googlePlacesApiKeyEnc");
+    expect(GOOGLE_MAPS_EMBED_KEY_COLUMN).toContain("googleMapsEmbedApiKeyEnc");
+  });
+
+  it("publishes the credential procedures under the googleReviews router", () => {
+    expect(GOOGLE_CREDENTIALS_GET_PROCEDURE).toBe("googleReviews.credentials");
+    expect(GOOGLE_CREDENTIALS_SAVE_PROCEDURE).toBe("googleReviews.saveCredentials");
+  });
+
+  it("gives ordered, plain-language help for each value", () => {
+    for (const help of [
+      GOOGLE_CREDENTIALS_HELP.placeId,
+      GOOGLE_CREDENTIALS_HELP.placesApiKey,
+      GOOGLE_CREDENTIALS_HELP.mapsEmbedApiKey,
+    ]) {
+      expect(help.title.length).toBeGreaterThan(0);
+      expect(help.steps.length).toBeGreaterThanOrEqual(3);
+      for (const step of help.steps) expect(step.length).toBeGreaterThan(10);
+    }
+    const places = GOOGLE_CREDENTIALS_HELP.placesApiKey.steps.join(" ");
+    expect(places).toContain("Places API (New)");
+    expect(places).toContain("Credentials");
+    expect(places).toContain("Enable");
+    const embed = GOOGLE_CREDENTIALS_HELP.mapsEmbedApiKey.steps.join(" ");
+    expect(embed).toContain("Maps Embed API");
+    expect(embed).toContain("HTTP referrers");
+    // Every link the help mentions exists.
+    for (const url of Object.values(GOOGLE_CREDENTIALS_LINKS)) {
+      expect(url.startsWith("https://")).toBe(true);
+    }
+  });
+
+  it("describes the fallback source in plain language", () => {
+    expect(googleCredentialsSourceLabel("affiliate")).toContain("your own Google Cloud project");
+    expect(googleCredentialsSourceLabel("platform")).toContain("fallback");
+    expect(googleCredentialsSourceLabel("none")).toContain("cannot load");
+  });
+
+  it("declares no key value in the read-back status shape", () => {
+    // A compile-time assertion: the only fields are the place ID, booleans,
+    // timestamps, and the source. If a key field is ever added, this fails.
+    const status: GooglePlaceCredentialsStatus = {
+      placeId: PLACE_ID,
+      hasPlacesApiKey: true,
+      hasMapsEmbedApiKey: false,
+      placesApiKeyUpdatedAt: "2026-11-05T03:00:00Z",
+      mapsEmbedApiKeyUpdatedAt: null,
+      credentialsSource: "affiliate",
+    };
+    const keys = Object.keys(status).sort();
+    expect(keys).toEqual([
+      "credentialsSource",
+      "hasMapsEmbedApiKey",
+      "hasPlacesApiKey",
+      "mapsEmbedApiKeyUpdatedAt",
+      "placeId",
+      "placesApiKeyUpdatedAt",
+    ]);
+    expect(JSON.stringify(status)).not.toContain("AIza");
   });
 });

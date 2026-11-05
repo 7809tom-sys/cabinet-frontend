@@ -4,9 +4,15 @@ The storefront can show a store's real Google reviews. This file records what
 Google's rules actually require, where each rule comes from, and what this repo
 does — and does not — do to meet it.
 
-**No API key lives in this repository.** The browser never holds one, and no key
-is entered by an affiliate. The two server-side variables are named in
-`shared/googleReviews.ts` and in the backend section below.
+**Each affiliate connects their own Google account.** Reviews are read with the
+affiliate's own Google Cloud project — their Place ID and their own Places API
+key — not with the platform's. The platform's server-side keys are only a
+fallback for a store that has connected nothing.
+
+**No API key lives in this repository, in a `VITE_` variable, or in browser
+storage.** An affiliate's key is typed once, sent to the API server over tRPC,
+encrypted at rest, and never returned to a browser. The variables and the
+encrypted columns are named in `shared/googleReviews.ts` and in section 4.
 
 ---
 
@@ -149,16 +155,56 @@ control, no "only show 4+ stars" option, and no editable review text anywhere.
 
 ---
 
-## 2. What the affiliate does
+## 2. What the affiliate does — connect their own Google account
 
-In **Affiliate portal → Plugins & Add-ons → Google reviews**:
+In **Affiliate portal → Plugins & Add-ons → Google reviews** the affiliate
+supplies three things from their own Google account. Each input has a collapsed
+"where do I find this?" step list in plain language (the text lives in
+`GOOGLE_CREDENTIALS_HELP`, so the UI and this document cannot drift).
 
-1. Paste a Google Place ID (`ChIJ…`) or a Google Maps link that already contains
-   `query_place_id`. Anything else is rejected with instructions, because
-   resolving a shortened or `cid=` link requires a server-side API lookup.
-2. Save. The storefront picks it up on the next visit.
+1. **Their Place ID** (`ChIJ…`), or a Google Maps link that already contains
+   `query_place_id`. Anything else is rejected with instructions: resolving a
+   shortened or `cid=` link needs an API lookup.
+2. **Their Places API key** (required for reviews). Steps shown in the panel:
+   sign in to Google Cloud Console with the account that owns the business
+   listing → create/pick a project → **APIs & Services → Library** → enable
+   **Places API (New)** → **Credentials → Create credentials → API key** →
+   edit the key: API restriction **Places API (New)**, application restriction
+   **None** (this key is used server-side, never by a browser) → paste. Google
+   may require billing on the project.
+3. **Their Maps Embed key** (optional, for the map). Enable **Maps Embed API** in
+   the same project, create a key, restrict it to **Maps Embed API** and to
+   **HTTP referrers** (their storefront address plus `*.cabinetdealz.com`), paste.
+   Without it the map falls back to the Places key, and if that key is not
+   referrer-restricted the section renders the link card instead of a broken
+   iframe.
 
-No key, business name, or review text is collected. There is no field for a key.
+On save the storefront populates itself on the next visit. Nothing is written to
+`localStorage`, `sessionStorage`, a cookie, or the URL, and no key is ever read
+back.
+
+### Keys are write-only
+
+| Direction | What happens |
+|---|---|
+| browser → server | The typed key is sent once over tRPC (`googleReviews.saveCredentials`), then the input is cleared. |
+| server → browser | Never. `googleReviews.credentials` returns booleans and timestamps only (`GooglePlaceCredentialsStatus`), which is what renders **Key saved**, **Replace**, and **Remove**. |
+| server at rest | The key is encrypted by the application and stored as ciphertext in `affiliates.googlePlacesApiKeyEnc` / `googleMapsEmbedApiKeyEnc`. Only the server's decrypt path reads it. |
+| build | Never. No module reads a `VITE_` variable for a key; a `VITE_` value is compiled into the bundle and would be public. |
+
+There is no "show key", no reveal, no masked preview, no last-four. The tests
+assert that a saved key cannot appear in the DOM and that the status payload
+contains no key field.
+
+### Fallback order
+
+1. The affiliate's own Places key, decrypted server-side, for Place Details.
+2. The affiliate's own Embed key (or their Places key) for the iframe.
+3. Only when the affiliate has neither: the platform's `GOOGLE_PLACES_API_KEY` /
+   `GOOGLE_MAPS_EMBED_API_KEY` from the API server environment.
+
+The portal states which one is in use (`credentialsSource`), so an affiliate is
+never told their key is in use when the platform's is.
 
 ---
 
@@ -167,8 +213,7 @@ No key, business name, or review text is collected. There is no field for a key.
 Order of what appears, top to bottom, inside one section:
 
 1. Heading, average rating and total review count when Google returns them.
-2. **Maps Embed iframe** for the place (only when the API server supplied the
-   referrer-restricted embed key).
+2. **Maps Embed iframe** for the place (only when an embed key is available).
 3. **See all reviews on Google** and **Write a review** links.
 4. **Google Maps** attribution, then up to five review cards in Google's order,
    each with author avatar, name, profile link, stars, relative date, the review
@@ -188,70 +233,118 @@ is the single gate.
 ## 4. Backend work this needs (`cabinet-backend`)
 
 The API lives in the separate `cabinet-backend` repository. This frontend PR
-carries the contract in `shared/googleReviews.ts` and **does not invent a server
+carries the contract in `shared/googleReviews.ts` and
+`client/src/lib/googleReviewsCredentials.ts`, and **does not invent a server
 implementation**. Nothing here works end-to-end until the following exists.
 
-### 4.1 Columns
+### 4.1 Encrypted columns
 
-`docs/sql/0248_affiliate_google_reviews.tidb.sql` adds two nullable columns to
-`cabinet_dealz.affiliates`:
+`docs/sql/0248_affiliate_google_reviews.tidb.sql` adds six nullable columns to
+`cabinet_dealz.affiliates`. No backfill; nothing else is touched.
 
 | Column | Type | Purpose |
 |---|---|---|
 | `googlePlaceId` | `VARCHAR(255) NULL` | The stored place ID. The one Places value we may keep. |
 | `googlePlaceIdRefreshedAt` | `TIMESTAMP NULL` | When the place ID was last refreshed (Google: refresh after 12 months). |
+| `googlePlacesApiKeyEnc` | `TEXT NULL` | **Ciphertext** of the affiliate's own Places API key. |
+| `googlePlacesApiKeyUpdatedAt` | `TIMESTAMP NULL` | When that key was last written or cleared. |
+| `googleMapsEmbedApiKeyEnc` | `TEXT NULL` | **Ciphertext** of the affiliate's own Maps Embed key. |
+| `googleMapsEmbedApiKeyUpdatedAt` | `TIMESTAMP NULL` | When that key was last written or cleared. |
 
-### 4.2 Environment variables
+Encryption requirements for the server:
 
-Add on **cabinet-backend on Railway**, never in Vercel and never with a `VITE_`
-prefix:
+- **AES-256-GCM** (authenticated), a fresh 12-byte IV per write, the tag stored
+  with the ciphertext (e.g. `v1.<iv>.<tag>.<ciphertext>`, all base64). Never
+  deterministic encryption: identical keys across affiliates must not produce
+  identical ciphertext.
+- Key material in a **new** server environment variable, e.g.
+  `GOOGLE_CREDENTIAL_ENCRYPTION_KEY` (32 random bytes, base64 or hex), set on
+  cabinet-backend only. Rotating it requires re-encrypting existing rows; a
+  `v1` prefix in the envelope makes that a future migration rather than a guess.
+- Never log the plaintext, the ciphertext, or a decrypted key. Never include a
+  key in an error message, a tRPC error, or a Sentry breadcrumb.
+- A decrypt failure must be treated as "no key of the affiliate's", fall back to
+  the platform key, and record only a boolean failure flag — never the value.
+
+### 4.2 Environment variables (platform fallback only)
+
+Set on **cabinet-backend on Railway**, never in Vercel and never with a `VITE_`
+prefix. These are the fallback for a store whose affiliate has no key:
 
 | Variable | Scope | Restriction |
 |---|---|---|
-| `GOOGLE_PLACES_API_KEY` | Server only. Used for Place Details (New). | Restrict the key to the Places API (New) API only. It must never be sent to a browser. |
-| `GOOGLE_MAPS_EMBED_API_KEY` | Server reads it and returns it to the storefront so the iframe can load. | Must be **HTTP-referrer restricted** to the storefront domains (`https://*.cabinetdealz.com/*`, `https://www.cabinetdealz.com/*`, plus the Vercel preview domain). Enable the Maps Embed API for it. |
+| `GOOGLE_PLACES_API_KEY` | Server only. Used for Place Details (New) when the affiliate has no key. | Restrict to Places API (New). Must never be sent to a browser. |
+| `GOOGLE_MAPS_EMBED_API_KEY` | Server reads it and returns it so the iframe can load. | **HTTP-referrer restricted** to the storefront domains. Enable Maps Embed API. |
+| `GOOGLE_CREDENTIAL_ENCRYPTION_KEY` | Server only. Encrypts/decrypts affiliate keys. | 32 random bytes. Never rotated casually; re-encrypt rows when it is. |
 
-Both may be the same Google Cloud key only when one key can carry both the
-Places API (New) and Maps Embed API restrictions and the referrer restriction
-does not break server-side Places calls. Two keys is the safe default.
+Both Google keys may be one Google Cloud key only when it can carry both API
+restrictions and the referrer restriction does not break server-side calls. Two
+keys is the safe default.
 
-### 4.3 Procedure
+### 4.3 Procedures
 
-`googleReviews.bySlug({ slug })` → `GoogleReviewsResult` (see
-`shared/googleReviews.ts`). Public, unauthenticated, keyed by the store slug.
+**Read** — `googleReviews.credentials({ affiliateId? })` →
+`GooglePlaceCredentialsStatus`. Owner/admin only for that affiliate (same rule
+`updateMyStorefront` already uses). Returns `placeId`, `hasPlacesApiKey`,
+`hasMapsEmbedApiKey`, the two `*UpdatedAt` timestamps, and `credentialsSource`.
+**Never returns a key, a fragment, a hash, or a length.**
 
-Server behaviour:
+**Write** — `googleReviews.saveCredentials(GooglePlaceCredentialsInput)` →
+`GooglePlaceCredentialsStatus`. Owner/admin only. Accepts `placeId`,
+`placesApiKey`, `mapsEmbedApiKey`, `clearPlacesApiKey`, `clearMapsEmbedApiKey`.
 
-1. Resolve the affiliate by slug; read `googlePlaceId`. No place → return
-   `{ status: "not-configured" }` (the storefront renders nothing anyway).
-2. Call Place Details (New):
-   `GET https://places.googleapis.com/v1/places/{placeId}` with
-   `X-Goog-Api-Key: GOOGLE_PLACES_API_KEY` and
+Rules the server must enforce, not just the UI:
+
+1. Validate `placeId` with `parseGooglePlaceInput`; store the parsed ID only.
+2. Validate each key with `isGoogleApiKeyShaped` (39 chars, `AIza` prefix) and a
+   length cap before encrypting. Reject anything else with a plain message.
+3. An **omitted or empty** key means "leave the stored key alone". Only an
+   explicit `clear…ApiKey: true` deletes one. A save must never blank a key by
+   accident.
+4. Encrypt before write; set the matching `*UpdatedAt`; on clear, set both the
+   ciphertext and the timestamp to null.
+5. Return the same status shape as the read, so the panel can re-render without
+   a second round trip.
+6. Rate-limit saves per affiliate. Never include a key in a log line or a
+   tRPC error.
+
+**Fetch** — `googleReviews.bySlug({ slug })` → `GoogleReviewsResult`. Public,
+unauthenticated, keyed by slug.
+
+1. Resolve the affiliate; read `googlePlaceId`. No place → `not-configured`.
+2. Pick the Places key: **the affiliate's decrypted key if present**, else
+   `process.env.GOOGLE_PLACES_API_KEY`. Neither → `unavailable/not-connected`.
+3. Call `GET https://places.googleapis.com/v1/places/{placeId}` with
+   `X-Goog-Api-Key: <that key>` and
    `X-Goog-FieldMask: id,displayName,rating,userRatingCount,googleMapsLinks,reviews`.
-3. Return Google's reviews array **unmodified and in Google's order**. Do not
+4. Return Google's reviews array **unmodified and in Google's order**. Do not
    sort, filter, truncate by rating, or re-word. Cap at five only if Google ever
    returns more (`GOOGLE_REVIEWS_MAX_RETURNED`).
-4. Map `INVALID_REQUEST` / `NOT_FOUND` → `{ status: "unavailable", code:
-   "invalid-place" }`; `429` → `"rate-limited"`; anything else → `"upstream-error"`.
-5. Include `embedApiKey: process.env.GOOGLE_MAPS_EMBED_API_KEY ?? null`.
-6. **Do not cache the response** beyond an in-flight request dedupe of a few
-   seconds. Review text is Google Maps content; it may not be stored.
-7. Optionally refresh a place ID older than 12 months with a free
-   `fields=id` request and update `googlePlaceIdRefreshedAt`.
+5. `INVALID_REQUEST` / `NOT_FOUND` → `invalid-place`; `429` → `rate-limited`;
+   `403`/`401` from a bad affiliate key → `not-connected` with a message telling
+   the affiliate to replace their key. Anything else → `upstream-error`.
+6. `embedApiKey`: the affiliate's decrypted Embed key, else their Places key,
+   else the platform Embed key, else `null`.
+7. **Do not cache review content** beyond an in-flight dedupe of a few seconds.
+8. Optionally refresh a place ID older than 12 months with a free `fields=id`
+   request and update `googlePlaceIdRefreshedAt`.
 
 ### 4.4 The storefront's own payload
 
-`affiliates.bySlug` (public projection) must include `googlePlaceId` (the place
-ID only — no reviews, no key). `affiliates.updateMyStorefront` must accept
-`googlePlaceId: string | null`, validate it with `parseGooglePlaceInput` from
-`shared/googleReviews.ts`, and store only the parsed ID. Both procedures are
-owner/admin-gated exactly as they are today.
+`affiliates.bySlug` public projection must include:
+`googlePlaceId`, and the booleans `hasGooglePlacesApiKey` /
+`hasGoogleMapsEmbedApiKey` (booleans only — the panel uses them as the pre-save
+hint). It must **never** include a ciphertext or a key.
+
+`affiliates.updateMyStorefront` may still accept `googlePlaceId` for backward
+compatibility, but keys are written only through `googleReviews.saveCredentials`
+so they cannot leak into a general-purpose update payload.
 
 ### 4.5 Until that ships
 
-`client/src/lib/googleReviewsProcedures.ts` and
-`client/src/components/affiliate/AffiliateGoogleReviewsPanel.tsx` cast the tRPC
-client, so this frontend build compiles and runs without the new router keys. The
-storefront then renders the heading, the two link buttons, and the empty notice
-with the link to Google — with no iframe and no review cards. The affiliate panel
-says which key is still missing instead of failing silently.
+`client/src/lib/googleReviewsProcedures.ts`,
+`client/src/lib/googleReviewsCredentials.ts`, and the panel cast the tRPC client,
+so this frontend build compiles and runs without the new router keys. The
+storefront then renders the heading, the two link buttons, and the empty notice;
+the panel still shows the inputs, the help steps, and a clear "needs the API
+server update; nothing was sent" message instead of failing silently.
