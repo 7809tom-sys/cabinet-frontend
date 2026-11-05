@@ -6499,11 +6499,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       ponyWalls,
       selectedSurfaces,
       edgeProfileId,
-      backsplash: countertopBacksplashHeightIn > 0
-        ? { heightIn: countertopBacksplashHeightIn }
-        : backsplashHeightMode === "full-height" && backsplashEnabled
-          ? { fullHeight: true }
-          : null,
+      // Only the countertop rear upstand is a fabrication item. A full-height
+      // tile wall is the tile installer's scope, so it is deliberately not
+      // reported as a countertop backsplash here.
+      backsplash: countertopBacksplashHeightIn > 0 ? { heightIn: countertopBacksplashHeightIn } : null,
       job: {
         designId: activeSavedDesignId ?? loadDesignId ?? null,
         designName: (savedDesign as { name?: string | null } | undefined)?.name ?? null,
@@ -6516,7 +6515,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       },
     };
   }, [
-    backsplashEnabled, backsplashHeightMode, counter, countertop, countertopBacksplashHeightIn,
+    counter, countertop, countertopBacksplashHeightIn,
     edgeProfileId, island, loadDesignId, placed, ponyWalls, room, roomType, savedDesign,
     selectedSurfaces, sinks, activeSavedDesignId, verifiedEmail, verifiedName, verifiedPhone,
   ]);
