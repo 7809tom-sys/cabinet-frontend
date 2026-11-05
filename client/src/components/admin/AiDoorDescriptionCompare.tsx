@@ -1,14 +1,23 @@
 /**
  * AI door-description comparison — door editor only.
  *
- * Three columns, one per model. Each column is a tailored prompt the operator
- * copies, a paste-back field for that model's answer, and a mini door preview
- * drawn from that answer. The previews update as text is pasted, and one can be
- * chosen official; the other two are kept as reference.
+ * Three columns, one per model. Each column holds a tailored prompt, a Generate
+ * button that runs that prompt, a paste-back field for the answer, and a mini door
+ * preview drawn from that answer. The previews update as text arrives, and one
+ * can be chosen official; the other two are kept as reference.
  *
- * Nothing runs automatically. There are no AI calls: this is a paste-back
- * workflow, and the prompts are copied by the operator into whichever model they
- * use. The component only parses text the operator pasted.
+ * Nothing runs automatically. The panel mounts collapsed; opening it reads the
+ * saved drafts and nothing else. No model is called until the operator presses
+ * Generate in that column, and no call is made on mount, on open, or on typing.
+ *
+ * Generate runs server-side only: the button sends the prompt and the door
+ * photo's URL to `doorStyles.describeWithAi` on the API server, which holds the
+ * provider keys. No key is ever in this file, in the bundle, or in the request.
+ * When a key is missing the column says so in plain words.
+ *
+ * A column's preview does not exist until that column has real text. There is no
+ * placeholder door outline: an empty column shows its prompt controls and an
+ * empty field.
  */
 import { useMemo, useState } from "react";
 import { Check, Copy, Loader2, Sparkles } from "lucide-react";
@@ -22,6 +31,7 @@ import {
   parseAiDoorComparison,
   type AiDoorModel,
   type AiDoorOfficialRecord,
+  type AiDoorParseResult,
 } from "@shared/aiDoorDescription";
 import {
   readAiDoorComparison,
@@ -29,7 +39,18 @@ import {
   chooseOfficialAiDoorDescription,
   type StoredAiDoorComparison,
 } from "@shared/aiDoorDescriptionStore";
+import { aiDoorDescribeInput } from "@shared/aiDoorDescribe";
+import {
+  chosenProfileFromRecord,
+  readChosenDoorProfile,
+  saveChosenDoorProfile,
+  clearChosenDoorProfile,
+  chosenProfileAlreadySaved,
+  withChosenDoorProfile,
+} from "@shared/aiDoorChosenProfile";
 import { aiDoorPreviewEntryLabel, aiDoorPreviewGeometry, previewFaceHex } from "@/lib/aiDoorPreview";
+import { useAiDoorDescribe } from "@/lib/aiDoorDescribeClient";
+import { announceChosenDoorProfile } from "@/lib/useChosenDoorProfiles";
 
 export type AiDoorCompareStyle = {
   id: number;
@@ -39,11 +60,18 @@ export type AiDoorCompareStyle = {
   finish?: string | null;
   woodSpecies?: string | null;
   panelConstruction?: "raised" | "flat" | "slab" | "glass" | null;
+  railWidth?: string | number | null;
+  stileWidth?: string | number | null;
+  bevelWidth?: string | number | null;
+  bevelDepth?: string | null | number;
+  insideEdgeProfile?: string | null;
+  finishSheen?: "matte" | "satin" | "gloss" | null;
+  grainDirection?: string | null;
 };
 
 export type AiDoorDescriptionCompareProps = {
   style: AiDoorCompareStyle;
-  /** Door photo the operator is describing. Only used for the reference strip. */
+  /** Door photo the operator is describing. Shown for reference, and sent with Generate. */
   sampleUrl?: string | null;
   /**
    * Called when the operator chooses an official description. The door editor
@@ -53,9 +81,29 @@ export type AiDoorDescriptionCompareProps = {
 };
 
 type CopyState = Partial<Record<AiDoorModel, "idle" | "copied" | "failed">>;
+/** Per-column Generate state: idle, running, or the plain message to show. */
+type GenerateState = Partial<Record<AiDoorModel, { status: "idle" | "loading" | "error" | "not-connected"; message: string | null }>>;
+
+const EMPTY_PARAMS: AiDoorParseResult["params"] = {
+  entryId: null,
+  family: "unknown",
+  railIn: null,
+  stileIn: null,
+  bevelWidthIn: null,
+  bevelDepthIn: null,
+  panelConstruction: null,
+  insideEdgeProfile: null,
+  cornerJoint: null,
+  molding: null,
+  painted: null,
+  grainDirection: null,
+  sheen: null,
+  undertone: null,
+  colorText: null,
+};
 
 function DoorPreview({ params, colorSeed }: {
-  params: ReturnType<typeof parseAiDoorComparison>[AiDoorModel]["params"];
+  params: AiDoorParseResult["params"];
   colorSeed: AiDoorCompareStyle;
 }) {
   const geometry = aiDoorPreviewGeometry(params);
@@ -142,8 +190,12 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial }:
   const [stored, setStored] = useState<StoredAiDoorComparison>({ fields: {}, chosen: null, reference: {} });
   const [fields, setFields] = useState<Partial<Record<AiDoorModel, string>>>({});
   const [copyState, setCopyState] = useState<CopyState>({});
+  const [generated, setGenerated] = useState<GenerateState>({});
   const [savedNote, setSavedNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /** Bumped on every choice so the Designer-facing draft is re-read. */
+  const [choiceVersion, setChoiceVersion] = useState(0);
+  const describe = useAiDoorDescribe();
 
   const parsed = useMemo(
     () => (open ? parseAiDoorComparison(fields) : null),
@@ -154,6 +206,8 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial }:
     const loaded = readAiDoorComparison(style.id);
     setStored(loaded);
     setFields(loaded.fields);
+    setGenerated({});
+    setChoiceVersion((current) => current + 1);
     setSavedNote(null);
     setOpen(true);
   }
@@ -176,6 +230,33 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial }:
     setFields((current) => ({ ...current, [model]: value }));
   }
 
+  /**
+   * Ask this column's model for a description, on the button press only.
+   *
+   * The prompt and the door photo's URL go to the API server, which holds the
+   * provider key. The answer is pasted into this column's own box and nowhere
+   * else, so generating one column never rewrites another.
+   */
+  async function generate(model: AiDoorModel) {
+    setGenerated((current) => ({ ...current, [model]: { status: "loading", message: null } }));
+    const result = await describe.generate(model, aiDoorDescribeInput({
+      model,
+      prompt: AI_DOOR_PROMPTS[model],
+      imageUrl: sampleUrl ?? null,
+      doorName: [style.doorStyle, style.finish].map((part) => part ?? "").join(" ").trim() || null,
+      styleId: style.id,
+    }));
+    if (result.description) {
+      updateField(model, result.description);
+      setGenerated((current) => ({ ...current, [model]: { status: "idle", message: null } }));
+      return;
+    }
+    setGenerated((current) => ({
+      ...current,
+      [model]: { status: result.notConnected ? "not-connected" : "error", message: result.message },
+    }));
+  }
+
   function saveComparison() {
     const next = saveAiDoorComparison(style.id, { ...stored, fields });
     setStored(next);
@@ -190,12 +271,32 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial }:
     try {
       const next = chooseOfficialAiDoorDescription(style.id, { ...stored, fields }, model);
       setStored(next);
+      // Hand the choice to the Designer straight away: the door redraws from the
+      // chosen profile on its next frame, before Save, and the editor's normal
+      // Save still writes the real record.
+      const profile = chosenProfileFromRecord(record);
+      if (!chosenProfileAlreadySaved(profile, style)) saveChosenDoorProfile(style.id, profile);
+      else clearChosenDoorProfile(style.id);
+      announceChosenDoorProfile(style.id);
+      setChoiceVersion((current) => current + 1);
       onChooseOfficial?.(record);
       setSavedNote(`${AI_DOOR_MODEL_LABELS[model]}'s description is now this door's official profile. The other two are kept as reference.`);
     } finally {
       setBusy(false);
     }
   }
+
+  /**
+   * True when the operator chose a profile earlier and the saved row has not
+   * caught up with it, so the Designer is drawing from the draft right now.
+   */
+  const pendingProfile = useMemo(
+    () => (open ? readChosenDoorProfile(style.id) : null),
+    // Re-read after a choice and when the style row changes, not on every keystroke.
+    [open, style.id, choiceVersion],
+  );
+  const profileIsLive = pendingProfile && !chosenProfileAlreadySaved(pendingProfile, style);
+  const previewSeed = withChosenDoorProfile(style, profileIsLive ? pendingProfile : null) ?? style;
 
   if (!open) {
     return (
@@ -223,8 +324,9 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial }:
         <div>
           <span className="text-xs font-semibold text-slate-800">AI door-description comparison</span>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Copy each prompt into that model, then paste its description back. The preview under each field draws what that
-            description actually says; anything it does not state stays at the library default and is listed.
+            Press Generate to have that model describe this door, or copy the prompt and paste its answer back. The preview
+            under each field draws what that description actually says; anything it does not state stays at the library
+            default and is listed.
           </p>
         </div>
         {sampleUrl && (
@@ -241,6 +343,10 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial }:
         {AI_DOOR_MODELS.map((model) => {
           const result = parsed?.[model];
           const isChosen = stored.chosen === model;
+          const state = generated[model] ?? { status: "idle" as const, message: null };
+          const isLoading = state.status === "loading";
+          const text = (fields[model] ?? "").trim();
+          const hasText = text.length > 0;
           return (
             <div
               key={model}
@@ -262,6 +368,17 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial }:
                 <Button
                   type="button"
                   size="sm"
+                  className="h-7 flex-1 text-xs"
+                  onClick={() => void generate(model)}
+                  disabled={isLoading}
+                  data-testid={`ai-door-generate-${model}`}
+                >
+                  {isLoading ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Sparkles className="mr-1 h-3 w-3" />}
+                  {isLoading ? "Generating…" : "Generate"}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
                   variant="outline"
                   className="h-7 flex-1 text-xs"
                   onClick={() => void copyPrompt(model)}
@@ -280,6 +397,15 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial }:
                   data-testid={`ai-door-prompt-fallback-${model}`}
                 />
               )}
+              {state.message && (
+                <p
+                  role={state.status === "not-connected" ? "status" : "alert"}
+                  className={`text-[10px] font-medium ${state.status === "not-connected" ? "text-amber-800" : "text-red-700"}`}
+                  data-testid={`ai-door-generate-message-${model}`}
+                >
+                  {state.message}
+                </p>
+              )}
 
               <textarea
                 id={`ai-door-${model}`}
@@ -291,25 +417,30 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial }:
                 data-testid={`ai-door-field-${model}`}
               />
 
-              <DoorPreview params={result?.params ?? { entryId: null, family: "unknown", railIn: null, stileIn: null, bevelWidthIn: null, bevelDepthIn: null, panelConstruction: null, insideEdgeProfile: null, cornerJoint: null, molding: null, painted: null, grainDirection: null, sheen: null, undertone: null, colorText: null }} colorSeed={style} />
+              {/* No text, no door: an empty column shows no preview at all. */}
+              {hasText && (
+                <>
+                  <DoorPreview params={result?.params ?? EMPTY_PARAMS} colorSeed={previewSeed} />
 
-              <p className="text-[10px] text-muted-foreground" data-testid={`ai-door-entry-${model}`}>
-                {aiDoorPreviewEntryLabel(result?.params ?? { entryId: null, family: "unknown" } as never)}
-              </p>
+                  <p className="text-[10px] text-muted-foreground" data-testid={`ai-door-entry-${model}`}>
+                    {aiDoorPreviewEntryLabel(result?.params ?? EMPTY_PARAMS)}
+                  </p>
 
-              {result && result.description && (
-                <div className="space-y-1" data-testid={`ai-door-unstated-${model}`}>
-                  {result.unstated.length > 0 ? (
-                    <p className="text-[10px] text-amber-800">
-                      Left at the library default: {result.unstated.join(", ")}
-                    </p>
-                  ) : (
-                    <p className="text-[10px] text-emerald-800">Every compared parameter was stated in this description.</p>
+                  {result && (
+                    <div className="space-y-1" data-testid={`ai-door-unstated-${model}`}>
+                      {result.unstated.length > 0 ? (
+                        <p className="text-[10px] text-amber-800">
+                          Left at the library default: {result.unstated.join(", ")}
+                        </p>
+                      ) : (
+                        <p className="text-[10px] text-emerald-800">Every compared parameter was stated in this description.</p>
+                      )}
+                      {result.params.colorText && (
+                        <p className="text-[10px] text-muted-foreground">Color, as described: {result.params.colorText}</p>
+                      )}
+                    </div>
                   )}
-                  {result.params.colorText && (
-                    <p className="text-[10px] text-muted-foreground">Color, as described: {result.params.colorText}</p>
-                  )}
-                </div>
+                </>
               )}
 
               <Button
@@ -317,7 +448,7 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial }:
                 size="sm"
                 className="h-7 w-full text-xs"
                 variant={isChosen ? "secondary" : "outline"}
-                disabled={busy || !result?.description}
+                disabled={busy || !hasText}
                 onClick={() => choose(model)}
                 data-testid={`ai-door-choose-${model}`}
               >

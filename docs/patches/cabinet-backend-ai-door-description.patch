@@ -1,0 +1,975 @@
+From ad4e255ce4bb4cbb925213ee71d8f3a1e004b89e Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Thu, 5 Nov 2026 00:43:19 +0000
+Subject: [PATCH] Describe a door with GPT, Claude, or Gemini for the door
+ editor's comparison tool.
+
+Server-side generation for the AI door-description comparison. One admin-only
+procedure, aiDoorDescription.describeWithAi, sends a column's own prompt and the
+door's sample photo to that column's provider and returns the description text.
+Provider keys stay on the server: OPENAI_API_KEY, ANTHROPIC_API_KEY, and
+GEMINI_API_KEY are read here and never returned or bundled.
+
+A missing key answers { status: "not-connected" } with the plain sentence the
+column shows, so the button says "Claude isn't connected yet" instead of failing
+silently. The prompt is capped and only the three known models are accepted, so
+the endpoint cannot be used as a general-purpose model proxy.
+
+Shared with the frontend: shared/aiDoorPrompts.ts (the same prompts the UI shows)
+and shared/aiDoorDescribe.ts (the contract).
+---
+ server/lib/aiDoorDescribe.test.ts   | 266 ++++++++++++++++++++++
+ server/lib/aiDoorDescribe.ts        | 342 ++++++++++++++++++++++++++++
+ server/routers.ts                   |   2 +
+ server/routers/aiDoorDescription.ts |  69 ++++++
+ shared/aiDoorDescribe.ts            | 140 ++++++++++++
+ shared/aiDoorPrompts.ts             |  72 ++++++
+ 6 files changed, 891 insertions(+)
+ create mode 100644 server/lib/aiDoorDescribe.test.ts
+ create mode 100644 server/lib/aiDoorDescribe.ts
+ create mode 100644 server/routers/aiDoorDescription.ts
+ create mode 100644 shared/aiDoorDescribe.ts
+ create mode 100644 shared/aiDoorPrompts.ts
+
+diff --git a/server/lib/aiDoorDescribe.test.ts b/server/lib/aiDoorDescribe.test.ts
+new file mode 100644
+index 0000000..49287c6
+--- /dev/null
++++ b/server/lib/aiDoorDescribe.test.ts
+@@ -0,0 +1,266 @@
++/**
++ * Generate: one provider call per column, keys server-side only.
++ *
++ * What must hold:
++ * - a missing key answers `not-connected` with the plain sentence the column shows;
++ * - a set key sends the column's own prompt to that column's provider;
++ * - the returned text is read out of each provider's own response shape;
++ * - a provider failure becomes a plain sentence, never a provider payload;
++ * - the three column prompts come from the shared constant the UI shows.
++ */
++import { describe, expect, it, vi } from "vitest";
++import {
++  AI_DOOR_DESCRIPTION_MAX_CHARS,
++  AI_DOOR_PROMPT_MAX_CHARS,
++  aiDoorDescriptionFromResponse,
++  aiDoorModelConnected,
++  aiDoorProviderRequest,
++  aiDoorUserContent,
++  describeDoorWithAi,
++  loadDoorPhotoDataUrl,
++} from "./aiDoorDescribe";
++import { AI_DOOR_MODELS, AI_DOOR_PROMPTS } from "../../shared/aiDoorPrompts";
++import {
++  AI_DOOR_DESCRIBE_PROCEDURE,
++  AI_DOOR_MODEL_ENV_KEYS,
++  AI_DOOR_NOT_CONNECTED_MESSAGE,
++} from "../../shared/aiDoorDescribe";
++
++const FULL_ENV = {
++  openaiApiKey: "sk-test-openai",
++  anthropicApiKey: "sk-test-anthropic",
++  geminiApiKey: "test-gemini",
++  openaiModel: "gpt-test",
++  anthropicModel: "claude-test",
++  geminiModel: "gemini-test",
++};
++
++function okResponse(payload: unknown): Response {
++  return new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } });
++}
++
++describe("which columns are connected", () => {
++  it("is decided by each column's own key", () => {
++    expect(aiDoorModelConnected("gpt", { openaiApiKey: "x" })).toBe(true);
++    expect(aiDoorModelConnected("gpt", { anthropicApiKey: "x", geminiApiKey: "y" })).toBe(false);
++    expect(aiDoorModelConnected("claude", { anthropicApiKey: "x" })).toBe(true);
++    expect(aiDoorModelConnected("gemini", { geminiApiKey: "x" })).toBe(true);
++  });
++
++  it("names the variable each column reads", () => {
++    expect(AI_DOOR_MODEL_ENV_KEYS).toEqual({
++      gpt: "OPENAI_API_KEY",
++      claude: "ANTHROPIC_API_KEY",
++      gemini: "GEMINI_API_KEY",
++    });
++  });
++
++  it("answers not-connected, with the plain sentence, instead of calling out", async () => {
++    const fetchImpl = vi.fn();
++    const result = await describeDoorWithAi({
++      model: "claude",
++      prompt: AI_DOOR_PROMPTS.claude,
++      env: { openaiApiKey: "only-gpt" },
++      fetchImpl: fetchImpl as unknown as typeof fetch,
++    });
++    expect(result).toEqual({
++      status: "not-connected",
++      model: "claude",
++      message: AI_DOOR_NOT_CONNECTED_MESSAGE.claude,
++    });
++    expect(fetchImpl).not.toHaveBeenCalled();
++    // The sentence Tom asked for, in plain words.
++    expect(AI_DOOR_NOT_CONNECTED_MESSAGE.claude).toContain("Claude isn't connected yet");
++  });
++});
++
++describe("each column calls its own provider with its own prompt", () => {
++  it("sends GPT's prompt to OpenAI", async () => {
++    let seen: { url: string; init: RequestInit } | null = null;
++    const fetchImpl = vi.fn(async (url: string, init: RequestInit) => {
++      seen = { url, init };
++      return okResponse({ choices: [{ message: { content: "Style family: shaker." } }] });
++    });
++    const result = await describeDoorWithAi({
++      model: "gpt",
++      prompt: AI_DOOR_PROMPTS.gpt,
++      env: FULL_ENV,
++      fetchImpl: fetchImpl as unknown as typeof fetch,
++      loadPhoto: async () => null,
++    });
++    expect(seen!.url).toBe("https://api.openai.com/v1/chat/completions");
++    expect(new Headers(seen!.init.headers).get("authorization")).toBe("Bearer sk-test-openai");
++    const body = JSON.parse(String(seen!.init.body)) as { model: string; messages: { content: { text?: string }[] }[] };
++    expect(body.model).toBe("gpt-test");
++    expect(body.messages[0]!.content[0]!.text).toBe(AI_DOOR_PROMPTS.gpt);
++    expect(result).toEqual({
++      status: "ok",
++      model: "gpt",
++      description: "Style family: shaker.",
++      providerModel: "gpt-test",
++    });
++  });
++
++  it("sends Claude's prompt to Anthropic's Messages API", async () => {
++    let seen: { url: string; init: RequestInit } | null = null;
++    const fetchImpl = vi.fn(async (url: string, init: RequestInit) => {
++      seen = { url, init };
++      return okResponse({ content: [{ type: "text", text: "Style family: raised panel." }] });
++    });
++    const result = await describeDoorWithAi({
++      model: "claude",
++      prompt: AI_DOOR_PROMPTS.claude,
++      env: FULL_ENV,
++      fetchImpl: fetchImpl as unknown as typeof fetch,
++      loadPhoto: async () => null,
++    });
++    expect(seen!.url).toBe("https://api.anthropic.com/v1/messages");
++    const headers = new Headers(seen!.init.headers);
++    expect(headers.get("x-api-key")).toBe("sk-test-anthropic");
++    expect(headers.get("anthropic-version")).toBe("2023-06-01");
++    const body = JSON.parse(String(seen!.init.body)) as { model: string; messages: { content: { type: string; text?: string }[] }[] };
++    expect(body.model).toBe("claude-test");
++    expect(body.messages[0]!.content[0]).toEqual({ type: "text", text: AI_DOOR_PROMPTS.claude });
++    expect(result).toMatchObject({ status: "ok", description: "Style family: raised panel." });
++  });
++
++  it("sends Gemini's prompt through the OpenAI-compatible endpoint with the Gemini key", async () => {
++    let seen: { url: string; init: RequestInit } | null = null;
++    const fetchImpl = vi.fn(async (url: string, init: RequestInit) => {
++      seen = { url, init };
++      return okResponse({ choices: [{ message: { content: "Style: shaker." } }] });
++    });
++    await describeDoorWithAi({
++      model: "gemini",
++      prompt: AI_DOOR_PROMPTS.gemini,
++      env: FULL_ENV,
++      fetchImpl: fetchImpl as unknown as typeof fetch,
++      loadPhoto: async () => null,
++    });
++    expect(seen!.url).toBe("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions");
++    expect(new Headers(seen!.init.headers).get("authorization")).toBe("Bearer test-gemini");
++    const body = JSON.parse(String(seen!.init.body)) as { model: string };
++    expect(body.model).toBe("gemini-test");
++  });
++
++  it("only ever accepts the three known models", () => {
++    expect(AI_DOOR_MODELS).toEqual(["gpt", "claude", "gemini"]);
++  });
++
++  it("pins the procedure path the client calls", () => {
++    expect(AI_DOOR_DESCRIBE_PROCEDURE).toBe("aiDoorDescription.describeWithAi");
++  });
++});
++
++describe("the door photo rides along when the prompt is image-based", () => {
++  it("adds the photo to the GPT content when one is available", () => {
++    const content = aiDoorUserContent("describe this", "data:image/jpeg;base64,AAAA");
++    expect(content).toHaveLength(2);
++    expect(content[1]).toEqual({ type: "image_url", image_url: { url: "data:image/jpeg;base64,AAAA", detail: "high" } });
++  });
++
++  it("asks for 'not visible' instead of guessing when there is no photo", () => {
++    const content = aiDoorUserContent("describe this", null);
++    expect(content).toHaveLength(2);
++    const last = content[1] as { type: string; text: string };
++    expect(last.type).toBe("text");
++    expect(last.text).toContain("not visible");
++  });
++
++  it("sends an Anthropic image block rather than an image_url", () => {
++    const request = aiDoorProviderRequest({
++      model: "claude",
++      prompt: "describe this",
++      photoDataUrl: "data:image/png;base64,BBBB",
++      image: { url: "/manus-storage/door.png" },
++      env: FULL_ENV,
++    });
++    const messages = request.body.messages as { content: { type: string; source?: { media_type: string; data: string } }[] }[];
++    const image = messages[0]!.content.find((part) => part.type === "image");
++    expect(image?.source).toEqual({ type: "base64", media_type: "image/png", data: "BBBB" });
++  });
++
++  it("reads a stored door photo through the service-role storage helper", async () => {
++    const fetchObject = vi.fn(async () => new Response(Buffer.from([1, 2, 3]), {
++      status: 200,
++      headers: { "content-type": "image/jpeg" },
++    }));
++    const dataUrl = await loadDoorPhotoDataUrl({ url: "/manus-storage/door-styles/sample.jpg" }, fetchObject as never, vi.fn() as never);
++    expect(fetchObject).toHaveBeenCalledWith("door-styles/sample.jpg");
++    expect(dataUrl).toBe("data:image/jpeg;base64,AQID");
++  });
++
++  it("keeps an inline data URL as it is", async () => {
++    const dataUrl = "data:image/png;base64,CCCC";
++    expect(await loadDoorPhotoDataUrl({ url: dataUrl }, vi.fn() as never, vi.fn() as never)).toBe(dataUrl);
++  });
++
++  it("falls back to no photo when the stored file cannot be read", async () => {
++    const fetchObject = vi.fn(async () => new Response("", { status: 404 }));
++    expect(await loadDoorPhotoDataUrl({ url: "/manus-storage/missing.jpg" }, fetchObject as never, vi.fn() as never)).toBeNull();
++    expect(await loadDoorPhotoDataUrl(null, fetchObject as never, vi.fn() as never)).toBeNull();
++  });
++});
++
++describe("a failure becomes a plain sentence", () => {
++  it("reports a rate limit as busy, not as a provider payload", async () => {
++    const fetchImpl = vi.fn(async () => new Response("{\"error\":\"slow down\"}", { status: 429 }));
++    const result = await describeDoorWithAi({
++      model: "gpt",
++      prompt: AI_DOOR_PROMPTS.gpt,
++      env: FULL_ENV,
++      fetchImpl: fetchImpl as unknown as typeof fetch,
++      loadPhoto: async () => null,
++    });
++    expect(result).toMatchObject({ status: "error", code: "rate-limited" });
++    if (result.status === "error") {
++      expect(result.message).toContain("GPT is busy");
++      expect(result.message).not.toContain("slow down");
++    }
++  });
++
++  it("reports a network failure without throwing", async () => {
++    const fetchImpl = vi.fn(async () => { throw new Error("socket hang up"); });
++    const result = await describeDoorWithAi({
++      model: "claude",
++      prompt: AI_DOOR_PROMPTS.claude,
++      env: FULL_ENV,
++      fetchImpl: fetchImpl as unknown as typeof fetch,
++      loadPhoto: async () => null,
++    });
++    expect(result).toMatchObject({ status: "error", code: "provider-error" });
++  });
++
++  it("reports an empty answer rather than pasting nothing", async () => {
++    const fetchImpl = vi.fn(async () => okResponse({ choices: [{ message: { content: "   " } }] }));
++    const result = await describeDoorWithAi({
++      model: "gemini",
++      prompt: AI_DOOR_PROMPTS.gemini,
++      env: FULL_ENV,
++      fetchImpl: fetchImpl as unknown as typeof fetch,
++      loadPhoto: async () => null,
++    });
++    expect(result).toMatchObject({ status: "error" });
++    if (result.status === "error") expect(result.message).toContain("answered with nothing");
++  });
++
++  it("refuses an over-long prompt instead of forwarding it", async () => {
++    const fetchImpl = vi.fn();
++    const result = await describeDoorWithAi({
++      model: "gpt",
++      prompt: "x".repeat(AI_DOOR_PROMPT_MAX_CHARS + 1),
++      env: FULL_ENV,
++      fetchImpl: fetchImpl as unknown as typeof fetch,
++      loadPhoto: async () => null,
++    });
++    expect(result).toMatchObject({ status: "error" });
++    expect(fetchImpl).not.toHaveBeenCalled();
++  });
++
++  it("caps a runaway description", () => {
++    const description = aiDoorDescriptionFromResponse("gpt", {
++      choices: [{ message: { content: "a".repeat(AI_DOOR_DESCRIPTION_MAX_CHARS + 500) } }],
++    });
++    expect(description).toHaveLength(AI_DOOR_DESCRIPTION_MAX_CHARS);
++  });
++});
+diff --git a/server/lib/aiDoorDescribe.ts b/server/lib/aiDoorDescribe.ts
+new file mode 100644
+index 0000000..08e59a3
+--- /dev/null
++++ b/server/lib/aiDoorDescribe.ts
+@@ -0,0 +1,342 @@
++/**
++ * Describe one cabinet door with a chosen AI provider.
++ *
++ * The door editor's comparison tool has three columns (GPT, Claude, Gemini). Each
++ * one sends its own prompt here, plus the door's sample photo, and gets back the
++ * model's plain-text description. That text is pasted into the column and parsed
++ * by `shared/aiDoorDescription.ts` exactly as a hand-pasted answer is, so the
++ * generated path and the paste-back path produce the same record.
++ *
++ * Provider keys stay on this server. They are read from the environment here and
++ * nowhere else:
++ *
++ *   OPENAI_API_KEY     GPT
++ *   ANTHROPIC_API_KEY  Claude
++ *   GEMINI_API_KEY     Gemini
++ *
++ * A missing key is not an error. Each call reports `not-connected` with the plain
++ * sentence the column shows, so the button can say "Claude isn't connected yet"
++ * instead of failing silently or leaking a provider message.
++ *
++ * The prompt text is the same constant the door editor shows and copies
++ * (`shared/aiDoorPrompts.ts`); the caller passes it through so the UI and the call
++ * cannot drift. Only the three known models are accepted, and the prompt length is
++ * capped, so this procedure cannot be used as a general-purpose LLM proxy.
++ */
++import {
++  AI_DOOR_MODEL_ENV_KEYS,
++  AI_DOOR_NOT_CONNECTED_MESSAGE,
++  AI_DOOR_GENERATE_FAILED_MESSAGE,
++  type AiDoorDescribeImage,
++  type AiDoorDescribeResult,
++} from "../../shared/aiDoorDescribe";
++import type { AiDoorModel } from "../../shared/aiDoorPrompts";
++import { ENV } from "../_core/env";
++import { invokeLLM, type MessageContent } from "../_core/llm";
++import { storageFetchObject } from "../storage";
++
++/** Longest prompt this endpoint will forward. The shipped prompts are ~1.2 KB. */
++export const AI_DOOR_PROMPT_MAX_CHARS = 6_000;
++/** Longest single description this endpoint will return. */
++export const AI_DOOR_DESCRIPTION_MAX_CHARS = 8_000;
++/** A door photo larger than this is not sent; the description is asked for without it. */
++export const AI_DOOR_IMAGE_MAX_BYTES = 8 * 1024 * 1024;
++/** The models that answer each column. Overridable so a rollout does not need a deploy. */
++export const AI_DOOR_PROVIDER_MODELS: Record<AiDoorModel, { env: string; fallback: string }> = {
++  gpt: { env: "OPENAI_DOOR_DESCRIPTION_MODEL", fallback: "gpt-4.1-mini" },
++  claude: { env: "ANTHROPIC_DOOR_DESCRIPTION_MODEL", fallback: "claude-sonnet-4-5" },
++  gemini: { env: "GEMINI_DOOR_DESCRIPTION_MODEL", fallback: "gemini-3-flash-preview" },
++};
++
++/** Which key each column reads, exported so a test and the docs agree with the code. */
++export const AI_DOOR_MODEL_KEYS = AI_DOOR_MODEL_ENV_KEYS;
++
++type ProviderEnv = {
++  openaiApiKey?: string;
++  anthropicApiKey?: string;
++  geminiApiKey?: string;
++  openaiModel?: string;
++  anthropicModel?: string;
++  geminiModel?: string;
++};
++
++function providerEnv(): ProviderEnv {
++  const read = (key: string) => (process.env[key] ?? "").trim();
++  return {
++    openaiApiKey: read("OPENAI_API_KEY"),
++    anthropicApiKey: read("ANTHROPIC_API_KEY"),
++    geminiApiKey: ENV.geminiApiKey.trim() || read("GEMINI_API_KEY"),
++    openaiModel: read(AI_DOOR_PROVIDER_MODELS.gpt.env) || AI_DOOR_PROVIDER_MODELS.gpt.fallback,
++    anthropicModel: read(AI_DOOR_PROVIDER_MODELS.claude.env) || AI_DOOR_PROVIDER_MODELS.claude.fallback,
++    geminiModel: read(AI_DOOR_PROVIDER_MODELS.gemini.env) || AI_DOOR_PROVIDER_MODELS.gemini.fallback,
++  };
++}
++
++/** True when this model's provider key is set on this server. Never returns the key. */
++export function aiDoorModelConnected(model: AiDoorModel, env: ProviderEnv = providerEnv()): boolean {
++  if (model === "gpt") return Boolean(env.openaiApiKey);
++  if (model === "claude") return Boolean(env.anthropicApiKey);
++  return Boolean(env.geminiApiKey);
++}
++
++/** The `{ status: "not-connected" }` answer for a model whose key is missing. */
++export function aiDoorNotConnected(model: AiDoorModel): AiDoorDescribeResult {
++  return { status: "not-connected", model, message: AI_DOOR_NOT_CONNECTED_MESSAGE[model] };
++}
++
++/** The plain sentence for a provider failure. Never a provider payload. */
++export function aiDoorFailureMessage(model: AiDoorModel, reason: "rate-limited" | "timeout" | "provider-error"): string {
++  if (reason === "rate-limited") return `${modelLabel(model)} is busy right now. Try Generate again in a moment.`;
++  if (reason === "timeout") return `${modelLabel(model)} took too long to answer. Try Generate again.`;
++  return `${AI_DOOR_GENERATE_FAILED_MESSAGE} (${modelLabel(model)})`;
++}
++
++function modelLabel(model: AiDoorModel): string {
++  return model === "gpt" ? "GPT" : model === "claude" ? "Claude" : "Gemini";
++}
++
++/**
++ * Read a door photo into an inline data URL the provider can see.
++ *
++ * Accepts a `data:image/…` URL as-is, a stored `/manus-storage/…` key (fetched
++ * with the service-role key), or an http(s) URL. Anything that cannot be read
++ * returns null: the door is then described from its name alone, with the prompt's
++ * own "not visible" rule keeping the model honest.
++ */
++export async function loadDoorPhotoDataUrl(
++  image: AiDoorDescribeImage | null | undefined,
++  fetchObject: (key: string) => Promise<Response> = storageFetchObject,
++  fetchHttp: typeof fetch = globalThis.fetch,
++): Promise<string | null> {
++  const url = image?.url?.trim() ?? "";
++  if (!url) return null;
++  if (/^data:image\/[a-z+]+;base64,/i.test(url)) {
++    return url.length > 0 ? url : null;
++  }
++  try {
++    let response: Response;
++    const stored = /^\/?manus-storage\/(.+)$/.exec(url.split("?")[0]);
++    if (stored) {
++      response = await fetchObject(decodeURIComponent(stored[1]));
++    } else if (/^https?:\/\//i.test(url)) {
++      response = await fetchHttp(url, { signal: AbortSignal.timeout(30_000) });
++    } else {
++      return null;
++    }
++    if (!response.ok) return null;
++    const bytes = Buffer.from(await response.arrayBuffer());
++    if (!bytes.length || bytes.length > AI_DOOR_IMAGE_MAX_BYTES) return null;
++    const header = response.headers.get("content-type")?.split(";")[0].trim().toLowerCase() ?? "";
++    const mime = header.startsWith("image/") ? header : guessImageMime(url);
++    return `data:${mime};base64,${bytes.toString("base64")}`;
++  } catch {
++    return null;
++  }
++}
++
++function guessImageMime(url: string): string {
++  const path = url.split("?")[0].toLowerCase();
++  if (path.endsWith(".png")) return "image/png";
++  if (path.endsWith(".webp")) return "image/webp";
++  if (path.endsWith(".gif")) return "image/gif";
++  return "image/jpeg";
++}
++
++/** The user turn: the prompt, then the photo when there is one. */
++export function aiDoorUserContent(prompt: string, photoDataUrl: string | null): MessageContent[] {
++  const parts: MessageContent[] = [{ type: "text", text: prompt }];
++  if (photoDataUrl) {
++    parts.push({ type: "image_url", image_url: { url: photoDataUrl, detail: "high" } });
++  } else {
++    parts.push({
++      type: "text",
++      text: "No photo was supplied for this door. Say \"not visible\" for anything the description would need the photo to see.",
++    });
++  }
++  return parts;
++}
++
++/** Whatever a provider returned, read as plain text. */
++function textOfContent(content: unknown): string {
++  if (typeof content === "string") return content;
++  if (Array.isArray(content)) {
++    return content
++      .map((part) => (part && typeof part === "object" && "text" in part ? String((part as { text?: unknown }).text ?? "") : ""))
++      .join("");
++  }
++  return "";
++}
++
++type ProviderRequest = {
++  url: string;
++  headers: Record<string, string>;
++  body: Record<string, unknown>;
++};
++
++/**
++ * The request body each provider needs for the same question.
++ *
++ * OpenAI and Gemini share the chat-completions shape (Gemini through its
++ * OpenAI-compatible endpoint); Anthropic uses the Messages API, where the image
++ * is a `source` block rather than an `image_url`.
++ */
++export function aiDoorProviderRequest(args: {
++  model: AiDoorModel;
++  prompt: string;
++  photoDataUrl: string | null;
++  image: AiDoorDescribeImage | null;
++  env?: ProviderEnv;
++}): ProviderRequest {
++  const env = args.env ?? providerEnv();
++  const text = args.prompt.trim();
++  const dataUrl = args.photoDataUrl;
++  if (args.model === "claude") {
++    const content: Record<string, unknown>[] = [{ type: "text", text }];
++    if (dataUrl) {
++      const match = /^data:(image\/[a-z+]+);base64,(.+)$/i.exec(dataUrl);
++      if (match) {
++        content.push({
++          type: "image",
++          source: { type: "base64", media_type: match[1], data: match[2] },
++        });
++      }
++    }
++    if (!dataUrl) {
++      content.push({
++        type: "text",
++        text: "No photo was supplied for this door. Say \"not visible\" for anything the description would need the photo to see.",
++      });
++    }
++    return {
++      url: "https://api.anthropic.com/v1/messages",
++      headers: {
++        "content-type": "application/json",
++        "x-api-key": env.anthropicApiKey ?? "",
++        "anthropic-version": "2023-06-01",
++      },
++      body: {
++        model: env.anthropicModel ?? AI_DOOR_PROVIDER_MODELS.claude.fallback,
++        max_tokens: 1_024,
++        messages: [{ role: "user", content }],
++      },
++    };
++  }
++  if (args.model === "gpt") {
++    return {
++      url: "https://api.openai.com/v1/chat/completions",
++      headers: {
++        "content-type": "application/json",
++        authorization: `Bearer ${env.openaiApiKey ?? ""}`,
++      },
++      body: {
++        model: env.openaiModel ?? AI_DOOR_PROVIDER_MODELS.gpt.fallback,
++        max_completion_tokens: 1_024,
++        messages: [{ role: "user", content: aiDoorUserContent(text, dataUrl) }],
++      },
++    };
++  }
++  return {
++    url: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
++    headers: {
++      "content-type": "application/json",
++      authorization: `Bearer ${env.geminiApiKey ?? ""}`,
++    },
++    body: {
++      model: env.geminiModel ?? AI_DOOR_PROVIDER_MODELS.gemini.fallback,
++      max_tokens: 1_024,
++      messages: [{ role: "user", content: aiDoorUserContent(text, dataUrl) }],
++    },
++  };
++}
++
++/** Read a provider response into the description text, or null when it said nothing. */
++export function aiDoorDescriptionFromResponse(model: AiDoorModel, payload: unknown): string | null {
++  if (!payload || typeof payload !== "object") return null;
++  const body = payload as Record<string, unknown>;
++  if (model === "claude") {
++    const text = textOfContent(body.content).trim();
++    return text ? text.slice(0, AI_DOOR_DESCRIPTION_MAX_CHARS) : null;
++  }
++  const choices = body.choices;
++  if (!Array.isArray(choices) || choices.length === 0) return null;
++  const first = choices[0] as Record<string, unknown> | undefined;
++  const message = first?.message as Record<string, unknown> | undefined;
++  const text = textOfContent(message?.content).trim();
++  return text ? text.slice(0, AI_DOOR_DESCRIPTION_MAX_CHARS) : null;
++}
++
++function failureCodeForStatus(status: number): "rate-limited" | "timeout" | "provider-error" {
++  if (status === 429) return "rate-limited";
++  if (status === 408 || status === 504) return "timeout";
++  return "provider-error";
++}
++
++/**
++ * Ask one model to describe the door. Always resolves to a `AiDoorDescribeResult`,
++ * never throws, so the column always has something plain to show.
++ *
++ * `fetchImpl` and `env` are injectable so a test can exercise every branch without
++ * a network call or a real key.
++ */
++export async function describeDoorWithAi(args: {
++  model: AiDoorModel;
++  prompt: string;
++  image?: AiDoorDescribeImage | null;
++  env?: ProviderEnv;
++  fetchImpl?: typeof fetch;
++  loadPhoto?: (image: AiDoorDescribeImage | null | undefined) => Promise<string | null>;
++}): Promise<AiDoorDescribeResult> {
++  const env = args.env ?? providerEnv();
++  const { model } = args;
++  if (!aiDoorModelConnected(model, env)) return aiDoorNotConnected(model);
++
++  const prompt = args.prompt.trim();
++  if (!prompt) {
++    return { status: "error", model, code: "provider-error", message: AI_DOOR_GENERATE_FAILED_MESSAGE };
++  }
++  if (prompt.length > AI_DOOR_PROMPT_MAX_CHARS) {
++    return {
++      status: "error",
++      model,
++      code: "provider-error",
++      message: `That prompt is too long to send. Keep it under ${AI_DOOR_PROMPT_MAX_CHARS} characters.`,
++    };
++  }
++
++  const photo = await (args.loadPhoto ?? loadDoorPhotoDataUrl)(args.image ?? null);
++  const request = aiDoorProviderRequest({ model, prompt, photoDataUrl: photo, image: args.image ?? null, env });
++  const fetchImpl = args.fetchImpl ?? globalThis.fetch;
++
++  try {
++    const response = await fetchImpl(request.url, {
++      method: "POST",
++      headers: request.headers,
++      body: JSON.stringify(request.body),
++      signal: AbortSignal.timeout(60_000),
++    });
++    if (!response.ok) {
++      const reason = failureCodeForStatus(response.status);
++      return { status: "error", model, code: reason, message: aiDoorFailureMessage(model, reason) };
++    }
++    const payload = await response.json();
++    const description = aiDoorDescriptionFromResponse(model, payload);
++    if (!description) {
++      return {
++        status: "error",
++        model,
++        code: "provider-error",
++        message: `${modelLabel(model)} answered with nothing. Try Generate again.`,
++      };
++    }
++    return { status: "ok", model, description, providerModel: providerModelOf(model, request.body) };
++  } catch (error) {
++    const timedOut = error instanceof Error && /timeout|abort/i.test(error.message);
++    const code = timedOut ? "timeout" : "provider-error";
++    return { status: "error", model, code, message: aiDoorFailureMessage(model, code) };
++  }
++}
++
++function providerModelOf(model: AiDoorModel, body: Record<string, unknown>): string | null {
++  const value = body.model;
++  return typeof value === "string" && value.trim() ? value.trim() : null;
++}
+diff --git a/server/routers.ts b/server/routers.ts
+index 3dda2c5..42574f2 100644
+--- a/server/routers.ts
++++ b/server/routers.ts
+@@ -103,6 +103,7 @@ import { doorRenderingAuditRouter } from "./routers/doorRenderingAudit";
+ import { contractorPortalRouter } from "./routers/contractorPortal";
+ import { contractorAccessRouter } from "./routers/contractorAccess";
+ import { orderTrackingRouter } from "./routers/orderTracking";
++import { aiDoorDescriptionRouter } from "./routers/aiDoorDescription";
+ import { loginTestAccount } from "./lib/loginTestAccount";
+ import { testAccountsEnabled } from "./lib/testAccounts";
+ 
+@@ -258,6 +259,7 @@ export const appRouter = router({
+   contractorPortal: contractorPortalRouter,
+   contractorAccess: contractorAccessRouter,
+   orderTracking: orderTrackingRouter,
++  aiDoorDescription: aiDoorDescriptionRouter,
+ });
+ 
+ export type AppRouter = typeof appRouter;
+diff --git a/server/routers/aiDoorDescription.ts b/server/routers/aiDoorDescription.ts
+new file mode 100644
+index 0000000..85e54f3
+--- /dev/null
++++ b/server/routers/aiDoorDescription.ts
+@@ -0,0 +1,69 @@
++/**
++ * Generate button for the door editor's AI description comparison.
++ *
++ * One procedure, `describeWithAi`. It takes the prompt a column already holds and
++ * the door's sample photo, sends them to that column's provider, and returns the
++ * description text. Provider keys never leave this server.
++ *
++ * The contract lives in `shared/aiDoorDescribe.ts` and the provider calls in
++ * `server/lib/aiDoorDescribe.ts`; this file is only the tRPC boundary.
++ *
++ * It is admin-only because it is a door-editor tool, and the prompt is capped so
++ * it cannot be used as a general-purpose model proxy.
++ */
++import { z } from "zod";
++import { adminProcedure, router } from "../_core/trpc";
++import { AI_DOOR_MODELS } from "../../shared/aiDoorPrompts";
++import {
++  AI_DOOR_DESCRIBE_PROCEDURE,
++  AI_DOOR_MODEL_ENV_KEYS,
++  type AiDoorDescribeResult,
++} from "../../shared/aiDoorDescribe";
++import {
++  AI_DOOR_PROMPT_MAX_CHARS,
++  aiDoorModelConnected,
++  describeDoorWithAi,
++} from "../lib/aiDoorDescribe";
++
++const describeInput = z.object({
++  model: z.enum(AI_DOOR_MODELS),
++  prompt: z.string().min(1).max(AI_DOOR_PROMPT_MAX_CHARS),
++  image: z.object({ url: z.string().min(1).max(4_000) }).nullable().optional(),
++  doorName: z.string().max(300).nullable().optional(),
++  styleId: z.number().int().positive().nullable().optional(),
++});
++
++export const aiDoorDescriptionRouter = router({
++  /**
++   * Which columns have a key on this server, so an admin screen could say so
++   * without a failed call. Reports booleans only, never a key or its length.
++   */
++  providerStatus: adminProcedure.query(() => {
++    return {
++      gpt: aiDoorModelConnected("gpt"),
++      claude: aiDoorModelConnected("claude"),
++      gemini: aiDoorModelConnected("gemini"),
++      /** The variable each column reads, so the panel can name it. */
++      keys: AI_DOOR_MODEL_ENV_KEYS,
++    };
++  }),
++
++  /**
++   * Describe the door with one model.
++   *
++   * A missing key answers `{ status: "not-connected" }` with the plain sentence
++   * the column shows, so nothing has to be caught or guessed on the client.
++   */
++  describeWithAi: adminProcedure
++    .input(describeInput)
++    .mutation(async ({ input }): Promise<AiDoorDescribeResult> => {
++      return describeDoorWithAi({
++        model: input.model,
++        prompt: input.prompt,
++        image: input.image ?? null,
++      });
++    }),
++});
++
++/** The procedure path, re-exported so a test can pin it against the contract. */
++export const AI_DOOR_DESCRIBE_PATH = AI_DOOR_DESCRIBE_PROCEDURE;
+diff --git a/shared/aiDoorDescribe.ts b/shared/aiDoorDescribe.ts
+new file mode 100644
+index 0000000..522fca2
+--- /dev/null
++++ b/shared/aiDoorDescribe.ts
+@@ -0,0 +1,140 @@
++/**
++ * The Generate button's contract, shared by the door editor and the API server.
++ *
++ * The API lives in the separate `cabinet-backend` repo (Railway). This file is
++ * the agreement between the two: the procedure path, the input and output
++ * shapes, and the plain-language message each failure produces. Both sides read
++ * it, so a missing key can never fail silently and the wording is written once.
++ *
++ * Two rules the server side must keep:
++ *
++ * - The provider keys are read from the server environment only. Nothing here
++ *   ever carries a key, and the browser never sees one.
++ * - A missing key is DATA, not an exception. The procedure answers
++ *   `{ status: "not-connected" }` so the column can say "Claude isn't
++ *   connected yet" instead of showing a stack trace.
++ */
++import { AI_DOOR_MODELS, type AiDoorModel } from "./aiDoorPrompts";
++
++/** The procedure the door editor calls. Its router is `server/routers/aiDoorDescription.ts`. */
++export const AI_DOOR_DESCRIBE_PROCEDURE = "aiDoorDescription.describeWithAi" as const;
++/** The key-presence read beside it. Booleans only; never a key. */
++export const AI_DOOR_STATUS_PROCEDURE = "aiDoorDescription.providerStatus" as const;
++
++/** The environment variable each model needs on the API server. */
++export const AI_DOOR_MODEL_ENV_KEYS: Record<AiDoorModel, string> = {
++  gpt: "OPENAI_API_KEY",
++  claude: "ANTHROPIC_API_KEY",
++  gemini: "GEMINI_API_KEY",
++};
++
++/** The service that must carry each key. Named so docs and code cannot disagree. */
++export const AI_DOOR_KEY_SERVICE = "cabinet-backend (Railway: cabinet-backend-production)" as const;
++
++/** Plain sentence a column shows when its provider is not connected. */
++export const AI_DOOR_NOT_CONNECTED_MESSAGE: Record<AiDoorModel, string> = {
++  gpt: "GPT isn't connected yet. Add OPENAI_API_KEY on the API server.",
++  claude: "Claude isn't connected yet. Add ANTHROPIC_API_KEY on the API server.",
++  gemini: "Gemini isn't connected yet. Add GEMINI_API_KEY on the API server.",
++};
++
++/** The photo a prompt is written about. Sent as a URL or a data URL. */
++export type AiDoorDescribeImage = {
++  /** `https://…`, a site-relative `/manus-storage/…` path, or a `data:image/…` URL. */
++  url: string;
++};
++
++export type AiDoorDescribeInput = {
++  model: AiDoorModel;
++  /** The prompt for this column, verbatim from `AI_DOOR_PROMPTS`. */
++  prompt: string;
++  /**
++   * The door's sample photo. Omitted when the style has none, which is allowed:
++   * a text-only prompt still asks the model to say "not visible" rather than
++   * guess, so the description just comes back without the photo-backed detail.
++   */
++  image?: AiDoorDescribeImage | null;
++  /** Optional door identity so the prompt can be read with the right context. */
++  doorName?: string | null;
++  /** The door style this description is for. Recorded by the server, never used for auth. */
++  styleId?: number | null;
++};
++
++export type AiDoorDescribeFailureCode =
++  | "not-connected"
++  | "rate-limited"
++  | "provider-error"
++  | "timeout";
++
++export type AiDoorDescribeResult =
++  | {
++    status: "ok";
++    model: AiDoorModel;
++    /** The model's answer, exactly as returned. The column pastes this in. */
++    description: string;
++    /** Which provider model answered, for the audit line. */
++    providerModel: string | null;
++  }
++  | {
++    status: "not-connected";
++    model: AiDoorModel;
++    /** Plain sentence for the column: "Claude isn't connected yet." */
++    message: string;
++  }
++  | {
++    status: "error";
++    model: AiDoorModel;
++    code: AiDoorDescribeFailureCode;
++    /** Plain sentence for the column. Never a stack trace or a provider payload. */
++    message: string;
++  };
++
++/** Plain sentence for a failure the server could not classify. */
++export const AI_DOOR_GENERATE_FAILED_MESSAGE = "That description could not be generated. Try again.";
++
++/** True when the model name is one this feature knows. */
++export function isAiDoorModel(value: unknown): value is AiDoorModel {
++  return (AI_DOOR_MODELS as readonly string[]).includes(String(value));
++}
++
++/**
++ * The input the door editor sends. Kept as one function so a test can assert the
++ * exact shape the backend must accept, and so the browser can never add a key.
++ */
++export function aiDoorDescribeInput(args: {
++  model: AiDoorModel;
++  prompt: string;
++  imageUrl?: string | null;
++  doorName?: string | null;
++  styleId?: number | null;
++}): AiDoorDescribeInput {
++  const image = args.imageUrl?.trim();
++  return {
++    model: args.model,
++    prompt: args.prompt,
++    image: image ? { url: image } : null,
++    doorName: args.doorName?.trim() || null,
++    styleId: args.styleId ?? null,
++  };
++}
++
++/**
++ * Read a procedure result into the three things a column needs to render:
++ * the text (or null), a plain message (or null), and whether it is missing a key.
++ */
++export function readAiDoorDescribeResult(
++  model: AiDoorModel,
++  result: AiDoorDescribeResult | null | undefined,
++): { description: string | null; message: string | null; notConnected: boolean } {
++  if (!result) return { description: null, message: AI_DOOR_GENERATE_FAILED_MESSAGE, notConnected: false };
++  if (result.status === "ok") {
++    const description = result.description.trim();
++    return description
++      ? { description, message: null, notConnected: false }
++      : { description: null, message: "That model answered with nothing. Try again.", notConnected: false };
++  }
++  if (result.status === "not-connected") {
++    return { description: null, message: result.message || AI_DOOR_NOT_CONNECTED_MESSAGE[model], notConnected: true };
++  }
++  return { description: null, message: result.message || AI_DOOR_GENERATE_FAILED_MESSAGE, notConnected: false };
++}
+diff --git a/shared/aiDoorPrompts.ts b/shared/aiDoorPrompts.ts
+new file mode 100644
+index 0000000..85ecb2e
+--- /dev/null
++++ b/shared/aiDoorPrompts.ts
+@@ -0,0 +1,72 @@
++/**
++ * The three models, their labels, and the prompt each one is asked for.
++ *
++ * Kept in its own module, with no blueprint or browser imports, because both
++ * sides of the feature read it: the door editor shows and copies these prompts,
++ * and the API server sends the same text to the provider when the operator
++ * presses Generate. One copy of the text means the pasted path and the generated
++ * path can never drift apart.
++ */
++
++/** The three models this tool compares, in the order they render side by side. */
++export const AI_DOOR_MODELS = ["gpt", "claude", "gemini"] as const;
++export type AiDoorModel = (typeof AI_DOOR_MODELS)[number];
++
++export const AI_DOOR_MODEL_LABELS: Record<AiDoorModel, string> = {
++  gpt: "GPT",
++  claude: "Claude",
++  gemini: "Gemini",
++};
++
++/**
++ * What each model is asked to describe. Tailored per model, but every prompt asks
++ * for the same fields so the three descriptions are comparable, and every prompt
++ * tells the model to say "not visible" rather than guess.
++ */
++export const AI_DOOR_PROMPTS: Record<AiDoorModel, string> = {
++  gpt: [
++    "You are describing a single cabinet door from a photograph so a renderer can draw it.",
++    "Answer in short labelled lines, in this exact order. If something is not visible, write \"not visible\" — never guess.",
++    "1. Profile / style family (for example shaker, raised panel, slab, beaded).",
++    "2. Frame: does it have one, and are the corners mitered (45° joints) or cope-and-stick (butted stiles and rails)?",
++    "3. Rail and stile width, in inches, if you can judge it against the door size.",
++    "4. Panel type: flat, raised, or recessed.",
++    "5. Edge / bevel: square, bevel, ogee, cove, or other, and roughly how wide the bevel is.",
++    "6. Any molding or sticking profile, described plainly.",
++    "7. Grain or painted: is the wood grain visible, and in which direction?",
++    "8. Sheen: matte, satin, semi-gloss, or gloss.",
++    "9. Undertone: warm, cool, or neutral.",
++    "10. Color, in your own words (a name, not a hex code).",
++    "Do not describe the room, cabinetry layout, or hardware.",
++  ].join("\n"),
++  claude: [
++    "Look at the photographed cabinet door and describe its construction and finish so it can be rebuilt.",
++    "Use one line per item, in this order. Where the photo does not show something, say \"not visible\" instead of inferring it.",
++    "• Style family — shaker, raised panel, slab, beaded, inset, or other.",
++    "• Frame construction — mitered corners, or cope-and-stick (interlocking stiles and rails).",
++    "• Rail and stile width in inches, if the proportions allow an estimate.",
++    "• Center panel — flat, raised, or recessed.",
++    "• Inside edge — square, single bevel, ogee, cove, or a stepped molding.",
++    "• Bevel width, roughly, if a bevel is visible.",
++    "• Surface — visible wood grain (note the direction) or an opaque painted finish.",
++    "• Sheen — matte, satin, semi-gloss, or gloss.",
++    "• Undertone — warm, cool, or neutral.",
++    "• Color, described in words rather than a hex value.",
++    "Keep it to the door itself; ignore the room and the cabinets around it.",
++  ].join("\n"),
++  gemini: [
++    "Describe this cabinet door so it can be drawn again from your description.",
++    "Give each item on its own line, in this order, and write \"not visible\" when the photo does not show it. Do not guess.",
++    "1) Style: shaker / raised panel / slab / beaded / other.",
++    "2) Frame: present? corners mitered or cope-and-stick?",
++    "3) Rail width and stile width, in inches, if they can be judged.",
++    "4) Panel: flat, raised, or recessed.",
++    "5) Edge and bevel: profile name and approximate bevel width.",
++    "6) Molding: any sticking or applied molding, in plain words.",
++    "7) Grain or paint: visible grain (say which direction) or solid paint.",
++    "8) Sheen: matte, satin, semi-gloss, gloss.",
++    "9) Undertone: warm, cool, neutral.",
++    "10) Color: a name or short phrase, not a hex code.",
++    "Describe only the door.",
++  ].join("\n"),
++};
+-- 
+2.43.0
+
