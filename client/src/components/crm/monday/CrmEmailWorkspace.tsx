@@ -1,15 +1,25 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  CRM_BUILTIN_EMAIL_TEMPLATES,
   CRM_EMAIL_MERGE_FIELDS,
   CRM_SMTP_PRESETS,
   applyCrmMergeFields,
   type CrmEmailProvider,
   type PublicAffiliateEmailSettings,
 } from "@shared/crmMailbox";
+import {
+  ADMIN_CRM_SENDER_PROFILE,
+  crmFormLetterMergeFields,
+  crmFormLettersForRole,
+  fillCrmFormLetter,
+  composeHasTypedText,
+  type CrmFormLetter,
+  type CrmFormLetterRole,
+  type CrmSenderProfile,
+} from "@shared/crmFormLetters";
 import { CRM_STAGES, CRM_STAGE_LABELS, type CrmStage } from "@shared/crm";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useCrmFormLetterContext } from "@/lib/crmFormLetterContext";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 
@@ -98,6 +108,8 @@ export function CrmEmailWorkspaceView({
   connections,
   prefill,
   setupInitiallyOpen = false,
+  senderRole,
+  senderProfile,
   onSend,
   onSaveDraft,
   onDeleteDraft,
@@ -114,6 +126,10 @@ export function CrmEmailWorkspaceView({
   connections: EmailConnectionRow[];
   prefill: EmailPrefill | null;
   setupInitiallyOpen?: boolean;
+  /** Picks which form-letter set the one-click picker offers. */
+  senderRole?: CrmFormLetterRole;
+  /** Company, location, and contact details the letter introduces. */
+  senderProfile?: CrmSenderProfile | null;
   onSend: (input: { dealId: number; to: string; subject: string; body: string; html: string; draftId?: number }) => Promise<void>;
   onSaveDraft: (input: { id?: number; dealId: number | null; toEmail: string; subject: string; bodyHtml: string }) => Promise<void>;
   onDeleteDraft: (id: number) => Promise<void>;
@@ -135,7 +151,14 @@ export function CrmEmailWorkspaceView({
   const [testTo, setTestTo] = useState("");
   const [templateName, setTemplateName] = useState("");
   const [editingTemplateId, setEditingTemplateId] = useState<number | undefined>();
+  const [pendingFill, setPendingFill] = useState<{ name: string; apply: () => void } | null>(null);
+  const [letterPickerOpen, setLetterPickerOpen] = useState(false);
   const editorRef = useRef<HTMLDivElement>(null);
+  // The body as it was last written programmatically (greeting, saved draft, or
+  // a letter). Text equal to this is nothing to lose, so replacing it does not
+  // need a confirmation.
+  const baselineBodyRef = useRef("");
+  const role: CrmFormLetterRole = senderRole ?? (audience === "affiliate" ? "affiliate" : "admin");
 
   useEffect(() => {
     if (!settings) return;
@@ -159,7 +182,10 @@ export function CrmEmailWorkspaceView({
     setDealId(prefill.dealId);
     setTo(prefill.to ?? "");
     setSubject("");
-    if (editorRef.current) editorRef.current.innerHTML = `<p>Hi ${prefill.contactName || ""},</p>`;
+    if (editorRef.current) {
+      editorRef.current.innerHTML = prefill.contactName ? `<p>Hi ${prefill.contactName},</p>` : "";
+    }
+    baselineBodyRef.current = editorRef.current?.innerText ?? "";
   }, [prefill]);
 
   const selected = contacts.find((contact) => contact.id === dealId);
@@ -174,6 +200,12 @@ export function CrmEmailWorkspaceView({
     quoteLink: prefill?.quoteLink || "",
     signature: setup.signatureHtml,
   };
+  const formLetters = crmFormLettersForRole(role);
+  const letterMergeFields = crmFormLetterMergeFields({
+    role,
+    profile: senderProfile ?? (role === "admin" ? ADMIN_CRM_SENDER_PROFILE : null),
+    deal: mergeFields,
+  });
 
   const visibleMail = useMemo(() => mailbox.filter((row) => {
     if (status !== "all" && row.kind !== status) return false;
@@ -191,9 +223,41 @@ export function CrmEmailWorkspaceView({
     document.execCommand("insertHTML", false, snippet);
   }
 
-  function applyTemplate(subjectTemplate: string, bodyTemplate: string) {
+  function writeTemplate(subjectTemplate: string, bodyTemplate: string) {
     setSubject(applyCrmMergeFields(subjectTemplate, mergeFields));
     if (editorRef.current) editorRef.current.innerHTML = applyCrmMergeFields(bodyTemplate, mergeFields);
+    baselineBodyRef.current = editorRef.current?.innerText ?? "";
+    setPendingFill(null);
+  }
+
+  /** Saved templates replace the subject and body too, so they confirm the same way. */
+  function applyTemplate(name: string, subjectTemplate: string, bodyTemplate: string) {
+    if (!composeHasTypedText({ subject, bodyText: editorRef.current?.innerText ?? "", baselineBodyText: baselineBodyRef.current })) {
+      writeTemplate(subjectTemplate, bodyTemplate);
+      return;
+    }
+    setPendingFill({ name, apply: () => writeTemplate(subjectTemplate, bodyTemplate) });
+  }
+
+  function writeFormLetter(letter: CrmFormLetter) {
+    const filled = fillCrmFormLetter(letter, letterMergeFields);
+    setSubject(filled.subject);
+    if (editorRef.current) editorRef.current.innerHTML = filled.bodyHtml;
+    baselineBodyRef.current = editorRef.current?.innerText ?? "";
+    setLetterPickerOpen(false);
+    setPendingFill(null);
+  }
+
+  /**
+   * A picked letter replaces the subject and body. If the user already typed
+   * something, ask first. Nothing is ever sent from here.
+   */
+  function chooseFormLetter(letter: CrmFormLetter) {
+    if (!composeHasTypedText({ subject, bodyText: editorRef.current?.innerText ?? "", baselineBodyText: baselineBodyRef.current })) {
+      writeFormLetter(letter);
+      return;
+    }
+    setPendingFill({ name: letter.name, apply: () => writeFormLetter(letter) });
   }
 
   return (
@@ -302,6 +366,8 @@ export function CrmEmailWorkspaceView({
                       setTo(row.toEmail);
                       setSubject(row.subject);
                       if (editorRef.current) editorRef.current.innerHTML = row.body;
+                      baselineBodyRef.current = editorRef.current?.innerText ?? "";
+                      setPendingFill(null);
                     }
                   }}
                 >
@@ -337,6 +403,37 @@ export function CrmEmailWorkspaceView({
             <Input className="max-w-xs" placeholder="Or type an email" value={to} onChange={(event) => setTo(event.target.value)} aria-label="Recipient email" />
           </div>
           <Input placeholder="Subject" value={subject} onChange={(event) => setSubject(event.target.value)} aria-label="Subject" />
+          <section className="rounded-lg border border-amber-200 bg-amber-50/60 p-2" aria-label="Ready-made form letters">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-[#1a2b4a]">
+                Form letters · {role === "admin" ? "Cabinet Dealz" : role === "affiliate" ? "your store" : "your business"}
+              </span>
+              <Button type="button" size="sm" variant="outline" aria-expanded={letterPickerOpen} onClick={() => setLetterPickerOpen((open) => !open)}>
+                {letterPickerOpen ? "Hide form letters" : "Insert a form letter"}
+              </Button>
+            </div>
+            {letterPickerOpen && (
+              <div className="mt-2 flex flex-wrap gap-1" role="group" aria-label="Form letters">
+                {formLetters.map((letter) => (
+                  <Button key={letter.key} type="button" size="sm" variant="outline" className="h-auto whitespace-normal py-1 text-left" data-testid={`crm-form-letter-${letter.key}`} onClick={() => chooseFormLetter(letter)}>
+                    {letter.name}
+                  </Button>
+                ))}
+              </div>
+            )}
+            {pendingFill && (
+              <div className="mt-2 rounded-md border border-amber-300 bg-white p-2 text-xs" role="alertdialog" aria-label="Replace the current email">
+                <p className="text-slate-700">
+                  Replace the subject and body with “{pendingFill.name}”? Your current text will be replaced. Nothing is sent until you press Send.
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <Button type="button" size="sm" onClick={() => pendingFill.apply()}>Replace text</Button>
+                  <Button type="button" size="sm" variant="ghost" onClick={() => setPendingFill(null)}>Keep my text</Button>
+                </div>
+              </div>
+            )}
+            <p className="mt-1 text-[11px] text-slate-500">Fills the subject and body for you to edit. [Brackets] are details only you know — fill them in before sending.</p>
+          </section>
           <div className="flex flex-wrap gap-1">
             <EditorButton label="Bold" onClick={() => document.execCommand("bold")} />
             <EditorButton label="Italic" onClick={() => document.execCommand("italic")} />
@@ -355,14 +452,14 @@ export function CrmEmailWorkspaceView({
             <EditorButton label="Quote link" onClick={() => insertHtml(prefill?.quoteLink || "{{quoteLink}}")} />
             <EditorButton label="Signature" onClick={() => insertHtml(setup.signatureHtml || "{{signature}}")} />
           </div>
-          <div className="flex flex-wrap gap-1">
-            {CRM_BUILTIN_EMAIL_TEMPLATES.map((template) => (
-              <Button key={template.key} type="button" size="sm" variant="outline" onClick={() => applyTemplate(template.subject, template.bodyHtml)}>{template.name}</Button>
-            ))}
-            {templates.map((template) => (
-              <Button key={template.id} type="button" size="sm" variant="outline" onClick={() => applyTemplate(template.subject, template.bodyHtml)}>{template.name}</Button>
-            ))}
-          </div>
+          {templates.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Saved templates</span>
+              {templates.map((template) => (
+                <Button key={template.id} type="button" size="sm" variant="outline" data-testid={`crm-saved-template-${template.id}`} onClick={() => applyTemplate(template.name, template.subject, template.bodyHtml)}>{template.name}</Button>
+              ))}
+            </div>
+          )}
           <div
             ref={editorRef}
             className="min-h-40 rounded-md border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#c9a227]"
@@ -400,7 +497,7 @@ export function CrmEmailWorkspaceView({
             <ul className="space-y-1">
               {templates.map((template) => (
                 <li key={template.id} className="flex items-center justify-between gap-2 text-sm">
-                  <button type="button" className="text-left hover:underline" onClick={() => { setEditingTemplateId(template.id); setTemplateName(template.name); applyTemplate(template.subject, template.bodyHtml); }}>{template.name}</button>
+                  <button type="button" className="text-left hover:underline" onClick={() => { setEditingTemplateId(template.id); setTemplateName(template.name); applyTemplate(template.name, template.subject, template.bodyHtml); }}>{template.name}</button>
                   <button type="button" className="text-xs text-red-600" onClick={() => onDeleteTemplate(template.id)}>Delete</button>
                 </li>
               ))}
@@ -430,6 +527,7 @@ export function CrmEmailWorkspace({
   prefill: EmailPrefill | null;
 }) {
   const utils = trpc.useUtils();
+  const sender = useCrmFormLetterContext(audience);
   const contacts = trpc.crm.emailContacts.useQuery();
   const mailbox = trpc.crm.emailMailbox.list.useQuery();
   const templates = trpc.crm.emailTemplates.list.useQuery();
@@ -461,6 +559,8 @@ export function CrmEmailWorkspace({
       settings={setup.data?.settings ?? null}
       connections={(connections.data ?? []) as EmailConnectionRow[]}
       prefill={prefill}
+      senderRole={sender.role}
+      senderProfile={sender.profile}
       onSend={async (input) => {
         await send.mutateAsync(input);
         toast.success("Email sent");
