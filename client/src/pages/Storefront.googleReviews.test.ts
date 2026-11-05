@@ -44,23 +44,53 @@ describe("storefront Google reviews tab", () => {
 });
 
 describe("affiliate portal Google reviews setting", () => {
-  it("is reachable from the portal and saves with the storefront update", () => {
+  it("is reachable from the portal and saves through the credential procedure", () => {
     expect(dashboard).toContain("<AffiliateGoogleReviewsPanel");
-    expect(panel).toContain("updateMyStorefront");
+    expect(panel).toContain("saveCredentials");
     expect(panel).toContain("googlePlaceId");
+    expect(panel).toContain("placesApiKey");
+    expect(panel).toContain("mapsEmbedApiKey");
   });
 
-  it("collects only a Place ID — no API key field anywhere", () => {
-    const textInputs = panel.match(/<Input[\s\S]*?\/>/g) ?? [];
-    expect(textInputs.length).toBeGreaterThan(0);
-    for (const input of textInputs) {
-      expect(input).not.toMatch(/key/i);
-    }
-    expect(panel).toContain("Place ID");
+  it("collects both keys write-only through masked inputs", () => {
+    // Both key fields render through the one write-only field component, and the
+    // only place a key can be typed is a masked input with autofill disabled.
+    expect(panel).toContain("WriteOnlyKeyField");
+    expect(panel).toContain('type="password"');
+    expect(panel).toContain('autoComplete="off"');
+    expect(panel).toContain('data-lpignore="true"');
+    // Two key fields are wired to it.
+    expect(panel.match(/<WriteOnlyKeyField/g) ?? []).toHaveLength(2);
     for (const file of [panel, section, storefront]) {
-      // A key is never typed in, stored, or embedded by the frontend.
       expect(file).not.toMatch(/AIza[0-9A-Za-z_-]{20,}/);
     }
+  });
+
+  it("never reads a key from a VITE_ environment variable", async () => {
+    const credentialModule = readFileSync(
+      new URL("../lib/googleReviewsCredentials.ts", import.meta.url),
+      "utf8",
+    );
+    for (const file of [panel, credentialModule]) {
+      // A VITE_ value is compiled into the bundle, so it could never hold a key:
+      // these modules must not read the build environment at all.
+      expect(file).not.toMatch(/import\.meta\.env/);
+      expect(file).not.toMatch(/process\.env/);
+    }
+    // The env names the code refers to are server-only by construction.
+    const shared = await import("@shared/googleReviews");
+    for (const name of [shared.GOOGLE_PLACES_KEY_ENV, shared.GOOGLE_MAPS_EMBED_KEY_ENV]) {
+      expect(name.startsWith("VITE_")).toBe(false);
+    }
+  });
+
+  it("shows Key saved with Replace and Remove, and never a masked key value", () => {
+    expect(panel).toContain("Key saved");
+    expect(panel).toContain("onStartReplace");
+    expect(panel).toContain("onRemove");
+    expect(panel).not.toContain("onShowKey");
+    // No bullet-masked preview of a stored key.
+    expect(panel).not.toContain("••••");
   });
 
   it("states the Google and FTC rules the affiliate has to follow", () => {

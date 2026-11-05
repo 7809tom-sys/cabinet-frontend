@@ -2,6 +2,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import type { GoogleReviewsResult } from "@shared/googleReviews";
+import { StorefrontGoogleReviews } from "./StorefrontGoogleReviews";
+import { makeStorefrontT } from "@/lib/storefrontI18n";
 
 const PLACE_ID = "ChIJj61dQgK6j4AR4GeTYWZsKWw";
 
@@ -18,9 +20,6 @@ const { queryState } = vi.hoisted(() => ({
 vi.mock("@/lib/googleReviewsProcedures", () => ({
   useGoogleReviewsQuery: () => queryState.current,
 }));
-
-const { StorefrontGoogleReviews } = await import("./StorefrontGoogleReviews");
-const { makeStorefrontT } = await import("@/lib/storefrontI18n");
 
 const brand = { primary: "#1a2b4a", accent: "#c9a227" };
 const t = makeStorefrontT("en");
