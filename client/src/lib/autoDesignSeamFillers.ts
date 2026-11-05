@@ -374,9 +374,15 @@ export function fillAutoDesignLowerSeams(input: {
 }
 
 /**
- * Spans that stay empty in the upper layer: the refrigerator assembly, and a
- * range only while a hood already covers it. A sink is covered by a wall
- * cabinet unless a window is there; the window clearance is handled separately.
+ * Spans that stay empty in the upper layer: the refrigerator assembly, and the
+ * range. The wall above a range is deliberately left open — the Designer asks
+ * what goes there (hood, bridge + microwave, or nothing) and the add-only
+ * over-range pass places it (`client/src/lib/overRangeFill.ts`). Tiling an
+ * ordinary W30xx over the range both contradicted that question and blocked the
+ * bridge/microwave that belongs there.
+ *
+ * A sink is covered by a wall cabinet unless a window is there; the window
+ * clearance is handled separately.
  */
 export function upperReservedZones(placed: readonly PlacedCabinet[], room: RoomData): (wall: string) => SeamPiece[] {
   return (wall: string) => {
@@ -385,10 +391,9 @@ export function upperReservedZones(placed: readonly PlacedCabinet[], room: RoomD
     for (const item of placed) {
       if (item.islandFace || wallOf(item, room) !== wall) continue;
       const span = { start: startOf(item, wall, room), end: endOf(item, wall, room) };
-      if (item.placement === "appliance" && isRangeOrOven(item.masterCode, item.description)) {
-        const hooded = placed.some((other) => /hood/i.test(other.masterCode ?? "") && wallOf(other, room) === wall);
-        if (hooded) zones.push(span);
-      }
+      // Always: nothing from the wall run goes above a range. A hood or a
+      // microwave bridge is placed by the over-range pass, never tiled here.
+      if (item.placement === "appliance" && isRangeOrOven(item.masterCode, item.description)) zones.push(span);
       if (assemblyKey(item) && item.placement !== "wall") fridge.push(span);
     }
     if (fridge.length) zones.push({ start: Math.min(...fridge.map((z) => z.start)), end: Math.max(...fridge.map((z) => z.end)) });

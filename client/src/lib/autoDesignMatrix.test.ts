@@ -10,6 +10,7 @@ import { mergeAutoDesignRefrigeratorCaps, runAutoDesignLayout, type AutoDesignLa
 import { AUTO_DESIGN_PENINSULA_AISLE_IN, autoDesignPeninsulaAttachment, type AutoDesignPeninsulaRequest } from "./autoDesignPeninsula";
 import { reviewRangeFridgeSeparation } from "./kitchenAdjacency";
 import { autoDesignHoodMountBottom } from "./autoDesignRangeHood";
+import { overRangeHasBridge } from "./overRangeFill";
 import { kitchenRuleNumber, resetKitchenRuleParameters } from "./kitchenRuleParameters";
 import {
   cabinetPlacementCollisionDetail,
@@ -272,15 +273,24 @@ function audit(spec: CaseSpec, run: AutoDesignLayoutSuccess, room: RoomData): st
   }
   for (const item of placed.filter((entry) => entry.placement === "wall")) {
     const overFridge = item.refrigeratorAssemblyRole === "bridge";
-    if (item.depth >= 20 && !overFridge && !isCornerCabinet(item.masterCode, item.description) && !item.cornerType) {
+    // The mandatory over-range bridge is a real short wall box; a line may sell it
+    // at 12" deep while its standard uppers are 13½". It is the catalog row, so the
+    // frameless 13½-inch depth invariant does not apply to it.
+    const overRangeBridge = item.overRangeMicrowaveBridge === true;
+    if (item.depth >= 20 && !overFridge && !overRangeBridge && !isCornerCabinet(item.masterCode, item.description) && !item.cornerType) {
       issues.push(`${item.masterCode} is ${item.depth}" deep outside the refrigerator`);
     }
-    if (frameless && !overFridge && Math.abs(item.depth - 13.5) > 0.25 && item.depth < 20) issues.push(`${item.masterCode} depth ${item.depth} is not 13.5`);
+    if (frameless && !overFridge && !overRangeBridge && Math.abs(item.depth - 13.5) > 0.25 && item.depth < 20) issues.push(`${item.masterCode} depth ${item.depth} is not 13.5`);
   }
   const sinkBases = placed.filter((item) => item.placement === "base" && isSinkBaseCabinet(item));
   if (sinkBases.length !== 1 || run.sinks.length !== 1) issues.push(`sinks bases=${sinkBases.length} fixtures=${run.sinks.length}`);
   const hood = placed.find((item) => /^HOOD-/i.test(item.masterCode));
   const range = placed.find((item) => item.placement === "appliance" && /RANGE/i.test(item.masterCode));
+  // HARD RULE (owner, Nov 5 2026): a real bridge wall cabinet is always above the
+  // range. The build seats it before the upper run tiles, so a build that reaches
+  // here without one fails. (The dedicated `overRangeBridgeMatrix.test.ts` asserts
+  // the geometry: centered, at the 72" datum, matched to the range width.)
+  if (range && !overRangeHasBridge(placed, range, room)) issues.push(`no bridge above ${range.masterCode}`);
   if (hood && hood.mountBottom !== autoDesignHoodMountBottom(hood.width)) issues.push(`hood ${hood.masterCode} bottom ${hood.mountBottom}`);
   if (hood && Math.abs(hood.depth - 18) > 0.05) issues.push(`hood depth ${hood.depth}`);
   if (reviewRangeFridgeSeparation(placed, room).length) issues.push("range and refrigerator are closer than a 15 inch cabinet");

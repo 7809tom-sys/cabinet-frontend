@@ -1907,6 +1907,13 @@ export interface RoomData {
     skipped: boolean;
     acceptedSuggestionIds?: string[];
   };
+  /**
+   * What goes above the range, as answered in the Designer's "What goes above the
+   * range?" question. Saved with the layout so a reload uses the same decision
+   * instead of asking again or leaving the range bare. Absent means "never
+   * asked": the add-only fallback chain decides (`client/src/lib/overRangeFill.ts`).
+   */
+  overRangeAnswer?: "hood" | "microwave-bridge" | "open" | null;
 }
 
 export type PeninsulaTurn = 45 | 90;

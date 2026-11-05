@@ -56,6 +56,8 @@ import { usePersistFn } from "@/hooks/usePersistFn";
 import { trpc } from "@/lib/trpc";
 import { preferredDoorReferenceUrl } from "@/lib/approvedDoorReference";
 import { designerFacePlan, type DesignerFaceStyle } from "@/lib/designerFacePlan";
+import { designerThreeDAssignments, type DesignerStyleRow } from "@/lib/designerThreeDStyles";
+import { fillOverRangeAnswer, overRangeAnswerToPersist, overRangeFullyDressed, placeMandatoryOverRangeBridges, rangesInPlan, readOverRangeAnswer } from "@/lib/overRangeFill";
 import {
   affiliateSlugForStoreScope,
   cartPathForStoreScope,
@@ -1289,7 +1291,20 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     });
   }, []);
   // After a measured build, a range with nothing above it asks what goes there.
+  // The answer is remembered on the room (`overRangeAnswer`) and saved with the
+  // layout, so a reload re-uses the person's decision instead of asking again.
   const [autoDesignRangeVentPrompt, setAutoDesignRangeVentPrompt] = useState<{ rangeUid: string } | null>(null);
+  /**
+   * Bumped whenever a plan is built or loaded, and whenever the question is
+   * answered. The over-range pass keys off this instead of the placed list, so an
+   * answer reaches the plan immediately, and a cabinet the person deleted is not
+   * silently put back by a later render.
+   */
+  const [overRangeEpoch, setOverRangeEpoch] = useState(0);
+  const setOverRangeAnswer = useCallback((answer: "hood" | "microwave-bridge" | "open") => {
+    setRoom((current) => ({ ...current, overRangeAnswer: overRangeAnswerToPersist(current.overRangeAnswer, answer) }));
+    setOverRangeEpoch((epoch) => epoch + 1);
+  }, []);
   const [islandSeatingOverhangPrompt, setIslandSeatingOverhangPrompt] = useState<{
     cabinetCode: string;
     face: IslandFace;
@@ -4084,7 +4099,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       ...current.filter((item) => !isSinkBasePlacement(item) && !run.placed.some((built) => built.uid === item.uid)),
       ...run.placed,
     ]);
-    setRoom((current) => ({ ...current, kitchenUsage: normalizeKitchenUsage(input.kitchenUsage) }));
+    setRoom((current) => ({
+      ...current,
+      kitchenUsage: normalizeKitchenUsage(input.kitchenUsage),
+      // The answer given in the design questions is saved with the layout, and the
+      // add-only over-range pass applies it once the plan is committed.
+      overRangeAnswer: overRangeAnswerToPersist(current.overRangeAnswer, input.overRangeAnswer),
+    }));
+    setOverRangeEpoch((epoch) => epoch + 1);
     const selectedWallCabinetHeight = input.wallCabinetHeightIn ?? 30;
     setWallCabHeight(selectedWallCabinetHeight);
     wallCabHeightRef.current = selectedWallCabinetHeight;
@@ -4122,7 +4144,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       if (named.length) toast.warning(`${named.length} design question${named.length === 1 ? "" : "s"} need review`, { description: named.map((finding) => finding.title).join(" · "), duration: 10000 });
     }
     if (run.sinkWindow) toast.info(`A ${formatInches(run.sinkWindow.width)} window was placed above the sink as entered; no wall cabinet goes over it.`);
-    if (run.bareRangeUid) setAutoDesignRangeVentPrompt({ rangeUid: run.bareRangeUid });
+    // Ask only when the kitchen has no answer to remember. The answer given in the
+    // design questions is saved with the layout, and the add-only over-range pass
+    // (below, and on every load) applies it, so nobody is asked twice.
+    if (run.bareRangeUid && readOverRangeAnswer(input.overRangeAnswer) == null) setAutoDesignRangeVentPrompt({ rangeUid: run.bareRangeUid });
     // The layout is built. Now ask which sink, then the faucet on it. The build
     // itself never auto-places a sink, so pushing one before the build cannot
     // change the plan or switch Auto-Design off.
@@ -4367,7 +4392,26 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       maxFillerIn: AUTO_DESIGN_FILLER_MAX_IN,
     });
     working = seamResult.placed;
-    // The range is left open on purpose: the dialog after the build asks what goes above it.
+    // HARD RULE (owner, Nov 5 2026): a real bridge above the range on EVERY build,
+    // seated BEFORE the upper run tiles. That makes the bridge an occupied upper, so
+    // the wall run never lays a cabinet over the range or leaves a sliver beside the
+    // bridge. It is mandatory: no popup answer and no fallback chain can skip it, and
+    // nothing is ever deleted or moved.
+    const mandatoryBridge = placeMandatoryOverRangeBridges({
+      placed: working,
+      room,
+      wallCatalog: stage.wallPool,
+      wallCabinetHeightIn: stage.input.wallCabinetHeightIn ?? 30,
+      styleId: styleIdRef.current ?? null,
+      makeUid,
+    });
+    if (mandatoryBridge.added) working = mandatoryBridge.placed;
+    for (const note of mandatoryBridge.notes) toast.info(note, { duration: 8000 });
+    // A bridge that could not seat is a blocking finding on the review list, never a
+    // silent skip.
+    if (mandatoryBridge.findings.length) setAutoDesignReviewFindings((current) => [...current, ...mandatoryBridge.findings]);
+    // The range is otherwise left open to the design question; the microwave and hood
+    // follow the add-only logic once the run is tiled.
     // Wall boxes are last. Match the completed lower projections, retaining
     // selected-line SKUs, height and opening clearances without moving anchors.
     const upperResult = buildAutoDesignWallCabinets({
@@ -4415,10 +4459,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     if (stage.sinkWindow) {
       toast.info(`A ${formatInches(stage.sinkWindow.width)} window was placed above the sink as entered; no wall cabinet goes over it.`);
     }
-    // A range with nothing above it asks what belongs there: hood, bridge + microwave, or nothing.
+    // A range with nothing above it asks what belongs there: hood, bridge + microwave,
+    // or nothing — but only while no answer is saved with the layout. With an answer,
+    // the add-only over-range pass applies it instead of asking again.
     const bareRange = working.find((item) => item.placement === "appliance" && isRangeOrOven(item.masterCode, item.description)
       && autoDesignRangeNeedsVentilation(working, item));
-    if (bareRange) setAutoDesignRangeVentPrompt({ rangeUid: bareRange.uid });
+    if (bareRange && readOverRangeAnswer(stage.input.overRangeAnswer) == null) setAutoDesignRangeVentPrompt({ rangeUid: bareRange.uid });
     return { ok: true as const };
   }, [announceFaucetWindowNotes, appliancePalette, catalogFillers, autoDesignCornerStage, openings, room, setPlaced, setOpenings, sinks]);
   finishAutoDesignLayoutRef.current = completeAutoDesignLayout;
@@ -4451,6 +4497,55 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     placedRef.current = clearance.placed;
     setPlaced(clearance.placed);
   }, [catalogFillers, placed, room, styleId]);
+
+  /**
+   * The add-only over-range pass. Runs after every build and on a layout load, and
+   * is safe to run any number of times:
+   *
+   *  - the answer saved with the layout is used first (hood, bridge + microwave,
+   *    or open);
+   *  - with no answer, the chain is W30xx bridge + the MW matching the range
+   *    width, else a HOOD- item;
+   *  - an existing bridge or microwave is never deleted, replaced, or moved, and
+   *    nothing that does not fit is forced.
+   *
+   * It is deliberately not wired into `autoDesignLayout.ts`: the measured build
+   * still leaves the range open so the question can decide, and this pass is what
+   * makes the answer stick.
+   */
+  const overRangeFillRanRef = useRef(new Set<string>());
+  useEffect(() => {
+    if (placed.length === 0) return;
+    const ranges = rangesInPlan(placed);
+    if (ranges.length === 0) return;
+    // A plan whose ranges all have their mandatory bridge AND a microwave or hood
+    // needs no pass, and the guard stops the effect from re-planning on every
+    // unrelated render. The pass itself is idempotent.
+    if (ranges.every((range) => overRangeFullyDressed(placed, range, room))) return;
+    const fillKey = [
+      overRangeEpoch,
+      room.overRangeAnswer ?? "none",
+      roomType,
+      styleId ?? "no-style",
+      wallCabHeight,
+    ].join("|");
+    if (overRangeFillRanRef.current.has(fillKey)) return;
+    overRangeFillRanRef.current = new Set([fillKey]);
+    const result = fillOverRangeAnswer({
+      placed,
+      room,
+      answer: room.overRangeAnswer,
+      appliancePalette,
+      wallCatalog: wallCabPoolRef.current,
+      wallCabinetHeightIn: wallCabHeightRef.current,
+      styleId: styleIdRef.current ?? null,
+      makeUid,
+    });
+    if (!result.added) return;
+    placedRef.current = result.placed;
+    setPlaced(() => result.placed);
+    for (const note of result.notes) toast.info(note, { duration: 8000 });
+  }, [appliancePalette, overRangeEpoch, placed, room, roomType, setPlaced, styleId, wallCabHeight]);
 
   // Actual MasterTrac material numbers grouped by their worksheet categories.
   const closetGroups = useMemo(() => closetPaletteByCategory(), []);
@@ -5421,7 +5516,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     }) => {
 	    historyRebaseRequestedRef.current = true;
 	    lastPushedRef.current = null;
-      setRoom(d.room ?? DEFAULT_ROOM);
+      // A saved room carries the over-range answer with it, so a reload uses the
+      // same decision instead of asking again. An older plan has none, which means
+      // "never asked" and lets the add-only fallback chain decide.
+      setRoom({ ...(d.room ?? DEFAULT_ROOM), overRangeAnswer: readOverRangeAnswer(d.room?.overRangeAnswer) });
+      // A freshly loaded plan is a new pass: the saved answer is applied once.
+      setOverRangeEpoch((epoch) => epoch + 1);
       const persisted = d.room?.persistedEntities;
 	      const restoredOpenings = Array.isArray(persisted?.openings) ? persisted.openings : [];
 	      setOpenings(restoredOpenings);
@@ -5831,10 +5931,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     && selectedPricedHardware.unitPriceCents > 0,
   );
   // Panel treatment for the placed cabinets' door fronts in the elevation view.
+  // Reads the accepted-merged active style: a raised style stays raised, and a
+  // style whose approved render changed its identity does not fall back to the
+  // raw catalog text.
   const activePanelKind = useMemo(() => {
-    const s = doorStyles?.find((d) => d.id === styleId) as { doorStyle?: string | null; ourName?: string | null } | undefined;
-    return s ? resolveDoorProfilePanelKind(s) : doorPanelKind(activeStyleName);
-  }, [doorStyles, styleId, activeStyleName]);
+    return activeStyle ? resolveDoorProfilePanelKind(activeStyle as never) : doorPanelKind(activeStyleName);
+  }, [activeStyle, activeStyleName]);
 
 
   // ─── TWO-TONE per-cabinet finish + door-panel resolvers ─────────────────────
@@ -5854,11 +5956,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const panelKindById = useMemo(() => {
     const m = new Map<number, ReturnType<typeof doorPanelKind>>();
     doorStyles?.forEach((d) => {
-      const s = d as { id: number; doorStyle?: string | null; ourName?: string | null };
+      // Accept the render first, exactly as the finish map does, so panel
+      // treatment and finish come from one merged row.
+      const merged = withAccepted(d as { id: number }) ?? d;
+      const s = merged as { id: number; doorStyle?: string | null; ourName?: string | null };
       m.set(s.id, resolveDoorProfilePanelKind(s));
     });
     return m;
-  }, [doorStyles]);
+  }, [doorStyles, withAccepted]);
   const displayStyleIdForCab = useCallback(
     (cab: PlacedCabinet) => effectiveStyleId(cab, styleId),
     [styleId],
@@ -5921,10 +6026,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const facePlanForCab = useCallback(
     (cab: PlacedCabinet) => {
       const sid = displayStyleIdForCab(cab);
-      const style = sid != null ? doorStyles?.find((d) => d.id === sid) as DesignerFaceStyle | undefined : undefined;
-      return designerFacePlan(style, cab.placement);
+      // The 2D face plan takes the accepted render too, so the elevation and the
+      // 3D door show the same approved image.
+      const style = withAccepted(
+        sid != null ? doorStyles?.find((d) => d.id === sid) as DesignerFaceStyle | undefined : undefined,
+      );
+      return designerFacePlan(style as DesignerFaceStyle | null | undefined, cab.placement);
     },
-    [displayStyleIdForCab, doorStyles],
+    [displayStyleIdForCab, doorStyles, withAccepted],
   );
   const doorSampleForCab = useCallback(
     (cab: PlacedCabinet): string | null => {
@@ -8780,15 +8889,19 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	    setPlacementWarning(null);
 	    setFailedWallFit(null);
 	    setRangeCompanionPrompt(null);
+	    // The person confirmed this answer, so it is saved with the layout.
+	    setOverRangeAnswer("microwave-bridge");
 	    justPlacedRef.current = true;
 	    toast.success(existingMicrowave
 	      ? `${bridge.masterCode} was added above the existing ${microwave.masterCode}.`
 	      : `${bridge.masterCode} and ${microwave.masterCode} were centered above ${range.masterCode}.`);
-	  }, [appliancePalette, rangeCompanionPrompt, room]);
+	  }, [appliancePalette, rangeCompanionPrompt, room, setOverRangeAnswer]);
 	  // Auto-Design leaves a range with nothing above it and asks what belongs there.
+	  // The answer is saved with the layout, so a reload re-uses it.
   const addAutoDesignRangeHood = useCallback(() => {
     const prompt = autoDesignRangeVentPrompt;
     setAutoDesignRangeVentPrompt(null);
+    setOverRangeAnswer("hood");
     if (!prompt) return;
     const range = placedRef.current.find((cabinet) => cabinet.uid === prompt.rangeUid);
     if (!range) { toast.error("The range changed before the hood was added. Nothing was added."); return; }
@@ -8803,10 +8916,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     setPlaced(() => resolution.placed);
     setSelectedUid(built.hood.uid);
     toast.success(`${built.hood.masterCode} was centered above ${range.masterCode}.`);
-  }, [appliancePalette, autoDesignRangeVentPrompt, room]);
+  }, [appliancePalette, autoDesignRangeVentPrompt, room, setOverRangeAnswer]);
   const offerAutoDesignBridgeAndMicrowave = useCallback(() => {
     const prompt = autoDesignRangeVentPrompt;
     setAutoDesignRangeVentPrompt(null);
+    setOverRangeAnswer("microwave-bridge");
     if (!prompt) return;
     const range = placedRef.current.find((cabinet) => cabinet.uid === prompt.rangeUid);
     if (!range) { toast.error("The range changed before the bridge cabinet was offered. Nothing was added."); return; }
@@ -8819,7 +8933,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       ? { ...proposal, bridge: bridgeSource, bridgeMountBottom: bridgeSpec.bottomIn }
       : proposal;
     setRangeCompanionPrompt({ rangeUid: range.uid, proposal: aligned, microwaveAlreadyPlaced: false });
-  }, [appliancePalette, autoDesignRangeVentPrompt, room]);
+  }, [appliancePalette, autoDesignRangeVentPrompt, room, setOverRangeAnswer]);
   const addWscSpiceStackUpper = useCallback((cabinetId: number) => {
 	    const prompt = spiceStackPrompt;
 	    if (!prompt) return;
@@ -14891,9 +15005,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     const recorder = createColorTraceRecorder();
     const traced = new Map<string, { cabinetUid: string; masterCode: string; styleId: number | null; styleCode: string | null }>();
     for (const cabinet of placed) {
-      const cabinetStyle = cabinet.styleId != null
-        ? (doorStyles ?? []).find((style) => style.id === cabinet.styleId) ?? activeStyle
-        : activeStyle;
+      const cabinetStyle = withAccepted(
+        (cabinet.styleId != null ? (doorStyles ?? []).find((style) => style.id === cabinet.styleId) : null) ?? catalogActiveStyle,
+      ) ?? activeStyle;
       const identity = {
         cabinetUid: cabinet.uid,
         masterCode: cabinet.masterCode,
@@ -14924,7 +15038,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     const finished = recorder.finish();
     setColorTrace(finished);
     logColorTrace(finished);
-  }, [activeKitchenDoorColor, activeStyle, colorTraceOn, doorStyles, placed, styleId, threeDCabinetFinishOverrides]);
+  }, [activeKitchenDoorColor, activeStyle, colorTraceOn, doorStyles, placed, styleId, threeDCabinetFinishOverrides, withAccepted]);
   const colorTracePanelState = colorTraceOn && colorTrace && colorTraceOpen ? colorTrace : null;
   /**
    * Where the door style editor should send the person back to: this exact design,
@@ -14961,28 +15075,33 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     const profile = withFramelessExposedFinish(activeStyle, designerCatalogDoorProfile(activeStyle));
     return withCatalogDoorStyleIdentity(activeStyle, profile);
   }, [activeStyle]);
+  // Every 3D surface reads the SAME accepted-merged style row: the accepted
+  // render drives the door/drawer image, the finish color, and the raised-vs-
+  // shaker profile. A raw `doorStyles.find` here would fall back to a catalog
+  // color (or a name-keyword swatch) while the selected style bar already shows
+  // the approved door.
+  const threeDStyleAssignments = useMemo(
+    () => designerThreeDAssignments({
+      placed,
+      defaultStyleId: styleId ?? null,
+      doorStyles: (doorStyles ?? null) as DesignerStyleRow[] | null,
+      acceptedRows: acceptedAppearance.rows,
+    }),
+    [acceptedAppearance.rows, doorStyles, placed, styleId],
+  );
   const threeDCabinetDoorProfiles = useMemo(
-    () => Object.fromEntries(placed.flatMap((cabinet) => {
-      const assignedStyleId = effectiveStyleId(cabinet, styleId) ?? styleId;
-      const assignedStyle = doorStyles?.find((style) => style.id === assignedStyleId) ?? null;
-      const profile = withCatalogDoorStyleIdentity(
-        assignedStyle,
-        withFramelessExposedFinish(assignedStyle, designerCatalogDoorProfile(assignedStyle)),
-      );
-      return profile ? [[cabinet.uid, profile]] : [];
+    () => Object.fromEntries(threeDStyleAssignments.flatMap((assignment) => {
+      const profile = withCatalogDoorStyleIdentity(assignment.style, assignment.profile);
+      return profile ? [[assignment.uid, profile]] : [];
     })),
-    [placed, styleId, doorStyles],
+    [threeDStyleAssignments],
   );
 
   const threeDCabinetFaces = useMemo(
-    () => placed.flatMap((cabinet) => {
-      const assignedStyleId = effectiveStyleId(cabinet, styleId) ?? styleId;
-      const assignedStyle = assignedStyleId != null ? doorStyles?.find((style) => style.id === assignedStyleId) as DesignerFaceStyle | undefined : undefined;
-      if (!assignedStyle) return [];
-      const plan = designerFacePlan(assignedStyle, cabinet.placement);
-      return [[cabinet.uid, plan] as const];
-    }),
-    [placed, styleId, doorStyles],
+    () => threeDStyleAssignments.flatMap((assignment) => (
+      assignment.facePlan ? [[assignment.uid, assignment.facePlan] as const] : []
+    )),
+    [threeDStyleAssignments],
   );
   const threeDCabinetDoorSamples = useMemo(
     () => Object.fromEntries(threeDCabinetFaces.flatMap(([uid, plan]) => (
@@ -15138,14 +15257,18 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	const threeDIslandCabinet = useMemo(() => {
 	  if (!island) return { name: null, color: null, productId: null, doorSampleUrl: null };
 	  const islandStyleId = resolvedIslandCabinetStyleId(placed, island, styleId) ?? styleId;
-	  const islandStyle = islandStyleId != null ? doorStyles?.find((style) => style.id === islandStyleId) : null;
+	  // Accepted render first: the island's 3D finish and door image must match the
+	  // approved door, never a raw catalog row.
+	  const islandStyle = withAccepted(
+	    islandStyleId != null ? doorStyles?.find((style) => style.id === islandStyleId) as DesignerFaceStyle | null : null,
+	  ) ?? null;
 	  return {
 	    name: islandStyleId != null ? styleNameById.get(islandStyleId) ?? islandStyle?.ourName ?? islandStyle?.aliasName ?? `Style #${islandStyleId}` : null,
 	    color: islandStyleId != null ? (finishById.get(islandStyleId) ?? activeFinish).face : null,
 	    productId: islandStyleId ?? null,
-	    doorSampleUrl: islandStyle ? designerFacePlan(islandStyle as DesignerFaceStyle, "base")?.doorUrl ?? null : null,
+	    doorSampleUrl: islandStyle ? designerFacePlan(islandStyle, "base")?.doorUrl ?? null : null,
 	  };
-	}, [activeFinish, doorStyles, finishById, island, placed, styleId, styleNameById]);
+	}, [activeFinish, doorStyles, finishById, island, placed, styleId, styleNameById, withAccepted]);
 	const threeDIslandCountertop = {
 	  name: islandCountertopSurface?.name ?? (island ? countertopMaterial(island.countertopMaterialId ?? countertopMaterialId).name : null),
 	  productId: islandCountertopSurface?.id ?? null,
@@ -22515,7 +22638,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           <AlertDialogFooter className="sm:flex-col sm:space-x-0 gap-2">
             <AlertDialogAction onClick={addAutoDesignRangeHood} data-testid="auto-design-range-hood">Add a range hood</AlertDialogAction>
             <AlertDialogAction onClick={offerAutoDesignBridgeAndMicrowave} data-testid="auto-design-range-bridge">Add a bridge cabinet and microwave</AlertDialogAction>
-            <AlertDialogCancel data-testid="auto-design-range-leave-open">Leave it open</AlertDialogCancel>
+            <AlertDialogCancel data-testid="auto-design-range-leave-open" onClick={() => { setAutoDesignRangeVentPrompt(null); setOverRangeAnswer("open"); }}>Leave it open</AlertDialogCancel>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

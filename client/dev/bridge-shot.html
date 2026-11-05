@@ -1,0 +1,46 @@
+<!doctype html>
+<!--
+  Screenshot harness for the mandatory above-range bridge.
+
+  It builds a real kitchen with the real auto-designer and renders it with the
+  real 3D engine (`addCabinet` from InteractiveRoom3D), so the bridge in the
+  screenshot is the box the Designer actually places. Not a mock.
+
+  Served by the Vite dev server at /__bridge-shot; used only by
+  e2e/auto-design-bridge-screenshot.spec.ts.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Auto-Design bridge check</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #eef1f4; font-family: system-ui, sans-serif; }
+      #root { position: relative; width: 100vw; height: 100vh; }
+      #root canvas { display: block; }
+      #caption {
+        position: absolute; left: 24px; top: 20px; padding: 12px 16px;
+        background: rgba(255,255,255,0.94); border-radius: 10px;
+        box-shadow: 0 8px 24px rgba(15,23,42,0.16); color: #0f172a; font-size: 13px; line-height: 1.5;
+      }
+      #caption strong { font-size: 15px; }
+      #caption .ok { color: #047857; font-weight: 600; }
+      #legend {
+        position: absolute; right: 24px; bottom: 20px; padding: 10px 14px;
+        background: rgba(255,255,255,0.94); border-radius: 10px;
+        box-shadow: 0 8px 24px rgba(15,23,42,0.16); color: #0f172a; font-size: 12px; line-height: 1.6;
+      }
+      #legend span { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <div id="caption">Building the kitchen…</div>
+      <div id="legend">
+        <div><span style="background:#2f6b4f"></span>Bridge wall cabinet (72″ datum)</div>
+        <div><span style="background:#4a4f57"></span>Range</div>
+        <div><span style="background:#c9ccd1"></span>Over-range microwave</div>
+      </div>
+    </div>
+    <script type="module" src="/src/bridgeScreenshotHarness.ts"></script>
+  </body>
+</html>

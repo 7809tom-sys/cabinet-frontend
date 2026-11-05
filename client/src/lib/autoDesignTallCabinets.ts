@@ -177,32 +177,74 @@ export function groupTallProducts(products: readonly AutoDesignTallProduct[]): A
 }
 
 export type AutoDesignTallFit =
-  | { ok: true; wallId: string; alongIn: number; placement: ReturnType<typeof wallPlacementAt> & { wallId?: string; wallOffset?: number } }
-  | { ok: false; reason: string };
+  | {
+    ok: true;
+    wallId: string;
+    alongIn: number;
+    /** "end" when the box closes a run, "start" when it opens one, "free" for a lone span. */
+    seat: AutoDesignTallSeat;
+    placement: ReturnType<typeof wallPlacementAt> & { wallId?: string; wallOffset?: number };
+  }
+  | {
+    ok: false;
+    /** Stable code for the review list and the toast: unavailable vs blocked. */
+    code: "tall-cabinet-unavailable" | "tall-cabinet-blocked";
+    reason: string;
+  };
 
 /**
- * Seats one tall box in the first free span of the kitchen's own walls.
- *
- * Rules kept from the rest of the Designer:
- * - never past a wall end (`boundedWallPlacementAt`),
- * - never across the refrigerator's panel limit,
- * - never through an opening, a corner clearance, or another cabinet,
- * - the box's real height must clear that wall's lowest ceiling.
+ * Where a tall box landed in its run. A tall box is a run TERMINATOR: pantry and
+ * oven towers sit at the end of a run of lowers and uppers, never in the middle
+ * of it with cabinets on both sides.
  */
-export function planAutoDesignTallFit(input: {
+export type AutoDesignTallSeat = "end" | "start" | "free";
+
+export type AutoDesignTallFitInput = {
   product: AutoDesignTallProduct;
   room: RoomData;
   placed: readonly PlacedCabinet[];
   openings: readonly WallOpening[];
   /** Walls the measured build owns, in run order. */
   wallIds: readonly string[];
-}): AutoDesignTallFit {
+  /**
+   * True when this is one of several tall boxes in the same build. The caller
+   * seats them one at a time and re-reads `placed` between calls, so each box
+   * still gets a real free span.
+   */
+  allowMultiple?: boolean;
+};
+
+/**
+ * Seats one tall box at the END of a run on the kitchen's own walls.
+ *
+ * Owner rule: a tall cabinet (oven tower, pantry) goes at the end of a run — the
+ * end of a wall run, or the end of the free span that closes a run — never in
+ * the middle of the first gap that happens to fit. The old behavior measured the
+ * first free span and dropped the box at the span's START, so a pantry landed
+ * between the corner base and the sink instead of closing the run.
+ *
+ * Order of preference, per wall (run order), then per free span:
+ *   1. the span's far/run END, when the box butts the wall end there;
+ *   2. the span's near/run START, when the box butts the wall end there;
+ *   3. the span's end, then start, when the box closes an interior gap.
+ *
+ * Rules kept from the rest of the Designer:
+ * - never past a wall end (`boundedWallPlacementAt`),
+ * - never across the refrigerator's panel limit,
+ * - never through an opening, a corner clearance, or another cabinet,
+ * - the box's real height must clear that wall's lowest ceiling,
+ * - a range / sink / refrigerator anchor is never moved to make room; the box
+ *   is reported as blocked instead.
+ */
+export function planAutoDesignTallFit(input: AutoDesignTallFitInput): AutoDesignTallFit {
   const { product, room } = input;
   const walls = input.wallIds.length > 0
     ? [...input.wallIds]
     : roomWallRunFrames(room).filter((frame) => frame.kind !== "peninsula").map((frame) => frame.id);
   let ceilingBlocked = false;
   let panelBlocked = false;
+  // Best candidate seen so far, so a blocked span does not hide a later fit.
+  let best: { wallId: string; alongIn: number; seat: AutoDesignTallSeat; spot: ReturnType<typeof wallPlacementAt>; score: number } | null = null;
   for (const wallId of walls) {
     const ceiling = wallCeilingMin(room, wallId as WallSide);
     if (Number.isFinite(ceiling) && ceiling > 0 && ceiling + COLLISION_EPSILON_IN < product.heightIn) {
@@ -224,41 +266,73 @@ export function planAutoDesignTallFit(input: {
       undefined,
       product.depthIn,
     );
+    const runStart = frame.runStart;
+    const runEnd = frame.runEnd;
     for (const segment of segments) {
       if (segment.length + COLLISION_EPSILON_IN < product.widthIn) continue;
-      const start = Math.max(segment.start, frame.runStart);
-      if (limit && start < limit.endIn - COLLISION_EPSILON_IN && start + product.widthIn > limit.startIn + COLLISION_EPSILON_IN) {
-        panelBlocked = true;
-        continue;
+      const spanStart = Math.max(segment.start, runStart);
+      const spanEnd = Math.min(segment.start + segment.length, runEnd);
+      if (spanEnd - spanStart + COLLISION_EPSILON_IN < product.widthIn) continue;
+      // A span that reaches a wall end closes (or opens) the run there; that is
+      // where a tall box belongs. An interior span is only a fallback.
+      const buttsRunEnd = Math.abs(spanEnd - runEnd) <= COLLISION_EPSILON_IN;
+      const buttsRunStart = Math.abs(spanStart - runStart) <= COLLISION_EPSILON_IN;
+      const candidates: Array<{ along: number; seat: AutoDesignTallSeat; score: number }> = [];
+      if (buttsRunEnd) candidates.push({ along: spanEnd - product.widthIn, seat: "end", score: 0 });
+      if (buttsRunStart) candidates.push({ along: spanStart, seat: "start", score: 1 });
+      if (!buttsRunEnd) candidates.push({ along: spanEnd - product.widthIn, seat: "free", score: 2 });
+      if (!buttsRunStart) candidates.push({ along: spanStart, seat: "free", score: 3 });
+      for (const candidate of candidates) {
+        const along = roundTallOffset(candidate.along);
+        if (along < spanStart - COLLISION_EPSILON_IN || along + product.widthIn > spanEnd + COLLISION_EPSILON_IN) continue;
+        if (limit && along < limit.endIn - COLLISION_EPSILON_IN && along + product.widthIn > limit.startIn + COLLISION_EPSILON_IN) {
+          panelBlocked = true;
+          continue;
+        }
+        const spot = boundedWallPlacementAt(along, product.widthIn, product.depthIn, wallId, room);
+        if (!spot) continue;
+        const seatAlong = startOf(spot, along);
+        if (limit && seatAlong < limit.endIn - COLLISION_EPSILON_IN && seatAlong + product.widthIn > limit.startIn + COLLISION_EPSILON_IN) {
+          panelBlocked = true;
+          continue;
+        }
+        const probe = tallPlacement(product, wallId, spot, seatAlong);
+        if (appendCollisionFreePlacements([...input.placed], [probe], room).rejected.length > 0) continue;
+        if (!best || candidate.score < best.score) {
+          best = { wallId, alongIn: seatAlong, seat: candidate.seat, spot, score: candidate.score };
+        }
+        break;
       }
-      const spot = boundedWallPlacementAt(start, product.widthIn, product.depthIn, wallId, room);
-      if (!spot) continue;
-      const seat = startOf(spot, start);
-      if (limit && seat < limit.endIn - COLLISION_EPSILON_IN && seat + product.widthIn > limit.startIn + COLLISION_EPSILON_IN) {
-        panelBlocked = true;
-        continue;
-      }
-      const probe = tallPlacement(product, wallId, spot, seat);
-      if (appendCollisionFreePlacements([...input.placed], [probe], room).rejected.length > 0) continue;
-      return { ok: true, wallId, alongIn: seat, placement: spot };
     }
+  }
+  if (best) {
+    return { ok: true, wallId: best.wallId, alongIn: best.alongIn, seat: best.seat, placement: best.spot };
   }
   if (ceilingBlocked) {
     return {
       ok: false,
+      code: "tall-cabinet-blocked",
       reason: `${product.masterCode} is ${product.heightIn}″ tall and does not clear this room's ceiling on any kitchen wall.`,
     };
   }
   if (panelBlocked) {
     return {
       ok: false,
+      code: "tall-cabinet-blocked",
       reason: `No free span wide enough for ${product.masterCode} (${product.widthIn}″) that also stays clear of the refrigerator end panels.`,
     };
   }
   return {
     ok: false,
-    reason: `No free ${product.widthIn}″ span on the kitchen walls for ${product.masterCode}. Shorten a run or remove a cabinet to make room; nothing was placed.`,
+    code: "tall-cabinet-blocked",
+    reason: `No free ${product.widthIn}″ span on the kitchen walls for ${product.masterCode}. A tall box goes at the end of a run, and no run has a clear end that wide. Shorten a run or remove a cabinet to make room; nothing was placed.`,
   };
+}
+
+/** Placement rides the 1/8-inch grid, so a span end is compared on that grid too. */
+function roundTallOffset(value: number): number {
+  const numeric = Number.isFinite(value) ? value : 0;
+  return Math.round(numeric * 8) / 8;
 }
 
 function startOf(spot: { wallOffset?: number }, fallback: number): number {

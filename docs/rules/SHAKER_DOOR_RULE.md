@@ -34,6 +34,15 @@ Color on the door surface:
 - Paint renders as an opaque solid of that hex. Stain keeps the grain and a tint toward the hex.
 - `shared/shakerDoorBlueprint.test.ts` and `shared/doorColorResolve.test.ts` fail if a 2.75/3 inch shaker bypasses the blueprint or if Stone Gray `#8d8f92` or Slate Rift `#555553` is replaced by brand green or cream.
 
+## The same row drives every 3D surface (Nov 5 2026)
+
+The color above is not only the door front's. `client/src/lib/designerThreeDStyles.ts` is the one place the Designer resolves a placed cabinet's style for the 3D view, and it merges the accepted render before anything reads it.
+
+- `designerThreeDAssignments` returns, per placed cabinet, the accepted-merged style, its catalog door profile (frameless sheen applied), and its door/drawer face plan. `threeDCabinetDoorProfiles`, `threeDCabinetFaces`, the elevation face plan, the panel-kind map, the color trace, and the island cabinet all read it.
+- Raised vs shaker comes from `isRaisedPanelStyle` on that same merged row, so an approved raised style is never drawn as a shaker.
+- A 3D surface must never read a raw `doorStyles.find(...)`. The approval arrives in the separate `doorStyles.acceptedAppearance` read, so a raw row falls back to a catalog color or to a name-keyword swatch — the linen bucket `#e6dcc6` — while the selected style bar shows the approved door. Carbon Frost (Preston / Skyline `AC`, approved `#34363a`) was the case that exposed it.
+- `client/src/lib/designerThreeDStyles.test.ts` holds the precedence, the no-linen rule, the two-tone override, and the designer wiring. `client/src/components/design/InteractiveRoom3D.acceptedColorSurfaces.test.ts` reads the materials actually built for a cabinet: box, sides, and toe kick (which goes through `threeDStructuralFinish`) all carry the approved hex.
+
 ## DL references
 
 DL Cabinetry has 11 door-style rows (distributor 450001). They are not all shakers.
