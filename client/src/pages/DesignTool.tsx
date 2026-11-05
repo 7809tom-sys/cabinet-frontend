@@ -121,6 +121,7 @@ import { withFramelessExposedFinish } from "@/lib/framelessExposedFinish";
 import { withChosenProfiles, useChosenDoorProfiles } from "@/lib/useChosenDoorProfiles";
 import { isAefFramelessStyleCode } from "@shared/aefFramelessSpecs";
 import { catalogItemToExposedPanelStock, sameExposedPanelWarnings, syncExposedSidePanels, type ExposedPanelStock, type ExposedPanelWarning } from "@/lib/exposedSidePanels";
+import { syncDishwasherPanels, type DishwasherPanelStock, type DishwasherPanelWarning } from "@/lib/dishwasherPanelRule";
 import { countertopToastVisible, COUNTERTOP_TOAST_TIMEOUT_MS, useDebouncedValue, stablePricePairKey } from "@/lib/designerPricingStability";
 import { ColorStyleQuickPicker } from "@/components/design/ColorStyleQuickPicker";
 import { ApproveDoorButton } from "@/components/admin/ApproveDoorButton";
@@ -4921,6 +4922,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // panel only when the customer chooses one. Prices are read from the catalog
   // after the stable price query settles so placing a panel cannot refetch.
   const [exposedPanelWarnings, setExposedPanelWarnings] = useState<ExposedPanelWarning[]>([]);
+  /** Design-check warnings from the dishwasher-panel owner rule. */
+  const [dishwasherPanelWarnings, setDishwasherPanelWarnings] = useState<DishwasherPanelWarning[]>([]);
   const exposedPanelStock = useMemo<ExposedPanelStock[]>(() => autoPanelCatalog.flatMap((item) => {
     const stock = catalogItemToExposedPanelStock(item, styleId != null ? priceMap.get(`${item.id}:${styleId}`) ?? null : null);
     return stock ? [stock] : [];
@@ -4952,6 +4955,38 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     }
     setExposedPanelWarnings((prev) => sameExposedPanelWarnings(prev, plan.warnings) ? prev : plan.warnings);
   }, [aefSpecPanelsLoading, catalogFillersLoading, doorStyles, exposedPanelStock, openings, placed, priceMap, priceRowsFetched, pricingStyleIdFor, setPlaced, styleId]);
+  // Owner rule: a dishwasher that ends a run, or a run that turns at 45° on it,
+  // carries a DWR dishwasher panel. This runs after the exposed-side pass so the
+  // dishwasher's measured run end is final, and it is idempotent: a settled plan
+  // is returned by reference, so it can never start a placement loop.
+  const dishwasherPanelStockCatalog = useMemo<DishwasherPanelStock[]>(() => autoPanelCatalog.map((item) => ({
+    id: item.id,
+    masterCode: item.masterCode,
+    description: item.description,
+    category: item.category ?? null,
+    subCategory: item.subCategory ?? null,
+    width: item.width,
+    height: item.height,
+    depth: item.depth,
+    price: styleId != null ? priceMap.get(`${item.id}:${styleId}`) ?? null : null,
+  })), [autoPanelCatalog, priceMap, styleId]);
+  useEffect(() => {
+    const current = placedRef.current;
+    const plan = syncDishwasherPanels({
+      placed: current,
+      room: roomRef.current,
+      catalog: dishwasherPanelStockCatalog,
+    });
+    if (plan.placed !== current) {
+      placedRef.current = plan.placed;
+      setPlaced(plan.placed);
+    }
+    setDishwasherPanelWarnings((prev) => {
+      if (prev.length === plan.warnings.length
+        && prev.every((warning, index) => warning.id === plan.warnings[index]?.id && warning.message === plan.warnings[index]?.message)) return prev;
+      return plan.warnings;
+    });
+  }, [dishwasherPanelStockCatalog, placed, setPlaced]);
 
   // ── Part 1: every placed cabinet remains visible ─────────────────────────
   // Evaluate the active line as soon as its price query settles. Flags drive
@@ -15277,7 +15312,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     8000,
   );
   const designCheckNotice = useTransientNotice(
-    exposedPanelWarnings.map((warning) => warning.id).join("|"),
+    [...exposedPanelWarnings, ...dishwasherPanelWarnings].map((warning) => warning.id).join("|"),
     8000,
   );
   const automaticSaveNotice = useTransientNotice(automaticSaveAt == null ? "" : String(automaticSaveAt), 5000);
@@ -15306,12 +15341,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 
   return (
       <div className="flex flex-col h-full min-h-0">
-      {designCheckNotice.visible && exposedPanelWarnings.length > 0 && (
+      {designCheckNotice.visible && exposedPanelWarnings.length + dishwasherPanelWarnings.length > 0 && (
         <div data-testid="design-check-panel" role="status" className="flex items-start justify-between gap-3 border-b border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-950">
           <div>
-            <p className="font-semibold">Design check ({exposedPanelWarnings.length})</p>
+            <p className="font-semibold">Design check ({exposedPanelWarnings.length + dishwasherPanelWarnings.length})</p>
             <ul className="mt-1 list-disc pl-5">
-              {exposedPanelWarnings.map((warning) => (
+              {[...exposedPanelWarnings, ...dishwasherPanelWarnings].map((warning) => (
                 <li key={warning.id}>{warning.message}</li>
               ))}
             </ul>
