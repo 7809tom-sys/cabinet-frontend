@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
-import { ArrowLeft, ArrowRight, Check, ChevronDown, CircleHelp, Download, FileText, Layers3, Move3D, Plus, RotateCcw, Ruler, ShoppingBag, Trash2, WandSparkles } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, ChevronDown, CircleHelp, Download, FileText, Layers3, Map as MapIcon, Maximize2, Move3D, Plus, Ruler, ShoppingBag, Trash2, Undo2, WandSparkles } from "lucide-react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { ClosetStudioAccessories } from "@/components/vendor/ClosetStudioAccessories";
 import { VendorClosetScene } from "@/components/vendor/VendorClosetScene";
 import type { ClosetCameraView } from "@/components/vendor/closetStudioCamera";
@@ -37,6 +38,28 @@ type IntroForm = { width: string; depth: string; height: string; age: string; ki
 type SceneTab = "3d" | "back" | "left" | "right" | "top";
 const AUTO_BUILD_KINDS: { key: keyof StudioAutoBuildOptions; label: string }[] = [{ key: "rods", label: "Rods" }, { key: "shelves", label: "Shelves" }, { key: "drawers", label: "Drawers" }, { key: "shoes", label: "Shoes" }];
 const designHasParts = (design: StudioDesign) => STUDIO_WALLS.some((wall) => studioBays(design, wall).some((bay) => bay.items.length)) || Boolean(design.cornerShelves?.length) || Boolean(design.basketPlacements?.length);
+
+/**
+ * Scrolls the nearest scrollable ancestor only. `scrollIntoView` walks every ancestor,
+ * including the document, so using it inside the Studio's dock scrolled the whole page
+ * back to the top and made the lower controls unreachable.
+ */
+function scrollWithinScroller(element: HTMLElement, block: "start" | "center" = "start") {
+  let container: HTMLElement | null = element.parentElement;
+  while (container && container !== document.body && container !== document.documentElement) {
+    const style = window.getComputedStyle(container);
+    if (/(auto|scroll)/.test(style.overflowY) && container.scrollHeight > container.clientHeight + 1) break;
+    container = container.parentElement;
+  }
+  if (!container || container === document.body || container === document.documentElement) {
+    element.scrollIntoView?.({ block, behavior: "smooth" });
+    return;
+  }
+  const offset = element.getBoundingClientRect().top - container.getBoundingClientRect().top + container.scrollTop;
+  const top = block === "center" ? Math.max(0, offset - (container.clientHeight - element.offsetHeight) / 2) : offset;
+  if (typeof container.scrollTo === "function") container.scrollTo({ top, behavior: "smooth" });
+  else container.scrollTop = top;
+}
 
 /** Applies new room dimensions only if everything already placed still fits; otherwise says exactly what no longer fits. */
 function applyRoomSize(design: StudioDesign, room: { wallWidthIn: number; roomDepthIn: number; roomHeightIn?: number }): { ok: true; design: StudioDesign } | { ok: false; reason: string } {
@@ -258,11 +281,13 @@ function WallPicker({ value, onChange }: { value: StudioWall; onChange: (wall: S
   </div>;
 }
 
-/** Compact room map: wall state comes from persisted wall layouts, never the selected-wall label alone. */
-function RoomOccupancyOverview({ design, onSelect, large = false, blueprint = false, testId = "vendor-room-overview" }: { design: StudioDesign; onSelect: (wall: StudioWall) => void; large?: boolean; blueprint?: boolean; testId?: string }) {
+/** Compact room map: wall state comes from persisted wall layouts, never the selected-wall label alone.
+ *  Tom's brief: this is a thumbnail-style room map inset over the drawing, never a large picture.
+ *  The closet drawing keeps priority space. */
+function RoomOccupancyOverview({ design, onSelect, large = false, compact = false, testId = "vendor-room-overview" }: { design: StudioDesign; onSelect: (wall: StudioWall) => void; large?: boolean; compact?: boolean; testId?: string }) {
   const occupancy = studioWallOccupancy(design);
   const active = occupancy[design.wall];
-  const position = (wall: StudioWall) => wall === "back" ? "left-5 right-5 top-1 h-5" : wall === "front" ? "bottom-1 left-5 right-5 h-5" : wall === "left" ? "left-1 top-5 bottom-5 w-5" : "right-1 top-5 bottom-5 w-5";
+  const position = (wall: StudioWall) => wall === "back" ? "left-3 right-3 top-1 h-4" : wall === "front" ? "bottom-1 left-3 right-3 h-4" : wall === "left" ? "left-1 top-3 bottom-3 w-4" : "right-1 top-3 bottom-3 w-4";
   const eye = design.wall === "front"
     ? { top: "30%", left: "50%", rotate: 180 }
     : design.wall === "left"
@@ -270,20 +295,19 @@ function RoomOccupancyOverview({ design, onSelect, large = false, blueprint = fa
       : design.wall === "right"
         ? { top: "50%", left: "36%", rotate: 90 }
         : { top: "62%", left: "50%", rotate: 0 };
-  return <section className={blueprint ? "bg-[#fffdf9] px-3 pb-2 pt-3 text-[#2c3832]" : large ? "w-full max-w-lg rounded-xl border border-[#d8d0c3] bg-[#fffdf9] p-4 shadow-lg" : "absolute right-3 top-3 z-10 w-36 rounded-xl border border-[#d8d0c3] bg-[#fffdf9]/95 p-2 shadow-lg backdrop-blur sm:right-5 sm:top-5"} data-testid={testId} aria-label="Room occupancy overview">
-    <p className={`font-bold uppercase tracking-[0.16em] ${blueprint ? "text-[11px] text-[#997851]" : "text-[8px] text-[#8e6946]"}`}>Room overview</p>
-    <div className={`relative mx-auto mt-2 rounded border ${blueprint ? "h-52 w-full border-[#c8b08f] bg-[#f6f3ed]" : large ? "h-72 w-full border-[#cfc6b8] bg-[#f6f3ed]" : "mt-1 h-20 w-28 border-[#cfc6b8] bg-[#f6f3ed]"}`} role="group" aria-label="Select a wall from room overview">
+  return <section className="w-full bg-transparent text-[#2c3832]" data-testid={testId} aria-label="Room occupancy overview">
+    {!compact && <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-[#997851]">Room map</p>}
+    <div className={`relative mx-auto rounded border border-[#cfc6b8] bg-[#f6f3ed] ${large ? "h-24 w-full" : compact ? "mt-1 h-[62px] w-full" : "mt-1.5 h-20 w-full"}`} role="group" aria-label="Select a wall from room overview">
       {STUDIO_WALLS.map((wall) => {
         const state = occupancy[wall];
         return <button key={wall} type="button" aria-label={`${wallNames[wall]}: ${state.filled ? "filled" : "empty"}, ${state.usedSpanIn} of ${state.availableSpanIn} inches used`} aria-pressed={wall === design.wall} onClick={() => onSelect(wall)} className={`absolute rounded-sm border text-[7px] font-bold transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#b77c4b] ${position(wall)} ${wall === design.wall ? "border-[#754c2d] bg-[#d5a06a] text-[#30231a]" : state.filled ? "border-[#d7a46c] bg-[#f6f3ed] text-[#244338] hover:bg-[#fffdf9]" : "border-[#d5cec3] bg-white text-[#8c8478] hover:bg-[#f0ebe2]"}`}>{state.filled ? "●" : "○"}</button>;
       })}
-      <span className={`pointer-events-none absolute inset-0 flex items-center justify-center font-semibold tracking-[0.12em] ${blueprint ? "text-[11px] text-[#a59c8e]" : "text-[8px] text-[#a59c8e]"}`}>ROOM</span>
-      {(blueprint || large) && <span data-testid={blueprint ? "vendor-camera-eye" : undefined} role="img" className="pointer-events-none absolute z-10" style={{ top: eye.top, left: eye.left, transform: `translate(-50%, -50%) rotate(${eye.rotate}deg)` }} aria-label={`Camera point inside the room, looking at the ${wallNames[design.wall].toLowerCase()}`}>
-        <svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3 L23 14 H9 Z" fill="#d7a46c" /><ellipse cx="16" cy="21" rx="9" ry="5.5" fill="#fffdf9" stroke="#244338" strokeWidth="1.2" /><circle cx="16" cy="21" r="2.3" fill="#244338" /></svg>
-      </span>}
+      <span className="pointer-events-none absolute inset-0 flex items-center justify-center text-[8px] font-semibold tracking-[0.12em] text-[#a59c8e]">ROOM</span>
+      <span role="img" className="pointer-events-none absolute z-10" style={{ top: eye.top, left: eye.left, transform: `translate(-50%, -50%) rotate(${eye.rotate}deg)` }} aria-label={`Camera point inside the room, looking at the ${wallNames[design.wall].toLowerCase()}`}>
+        <svg width="20" height="20" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3 L23 14 H9 Z" fill="#d7a46c" /><ellipse cx="16" cy="21" rx="9" ry="5.5" fill="#fffdf9" stroke="#244338" strokeWidth="1.2" /><circle cx="16" cy="21" r="2.3" fill="#244338" /></svg>
+      </span>
     </div>
-    <p className={`mt-2 text-center leading-4 ${blueprint ? "text-[11px] text-[#5c564c]" : "text-[9px] leading-3 text-[#655d53]"}`}><strong>{wallNames[design.wall]}</strong> · {active.usedSpanIn} / {active.availableSpanIn} in {active.filled ? "used" : "empty"}</p>
-    {blueprint && <p className="mt-1 text-center text-[11px] leading-4 text-[#6d6255]">The gold eye is the 3D camera, inside the room, looking at the active wall.</p>}
+    <p className="mt-1.5 text-center text-[9px] leading-3 text-[#655d53]"><strong>{wallNames[design.wall]}</strong> · {active.usedSpanIn} / {active.availableSpanIn} in {active.filled ? "used" : "empty"}</p>
   </section>;
 }
 function Reference({ design, onClose, hiddenSkus }: { design: StudioDesign; onClose: () => void; hiddenSkus?: ReadonlySet<string> }) {
@@ -317,14 +341,13 @@ export default function VendorClosetStudio({ affiliateSlug }: { affiliateSlug?: 
   const [basketUndoDesign, setBasketUndoDesign] = useState<StudioDesign | null>(null);
   const [partToPlace, setPartToPlace] = useState<StudioKind | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [showReference, setShowReference] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [showRoom, setShowRoom] = useState(false);
   const [showTabletMaterial, setShowTabletMaterial] = useState(false);
   const [phonePanel, setPhonePanel] = useState<"tower" | "parts" | "material" | null>(null);
   const [cornerPlannerRequested, setCornerPlannerRequested] = useState(false);
   const [extraPart, setExtraPart] = useState<StudioKind | "">("");
-  const [savedDraft] = useState(() => typeof window !== "undefined" && Boolean(restoreStudioDesign(localStorage.getItem(storageKey))));
+  const [savedDraft, setSavedDraft] = useState(() => typeof window !== "undefined" && Boolean(restoreStudioDesign(localStorage.getItem(storageKey))));
   const [introMode, setIntroMode] = useState<StudioMode>(design.mode);
   const [introForm, setIntroForm] = useState<IntroForm>(() => ({ width: String(design.wallWidthIn), depth: String(design.roomDepthIn), height: String(design.roomHeightIn ?? STUDIO_ROOM_HEIGHT_DEFAULT_IN), age: design.kids ? String(design.kids.ageYears) : "", kidsHeight: design.kids ? String(design.kids.heightIn) : "" }));
   const [introErrors, setIntroErrors] = useState<Partial<Record<keyof IntroForm, string>>>({});
@@ -334,15 +357,24 @@ export default function VendorClosetStudio({ affiliateSlug }: { affiliateSlug?: 
   const [buildUndoDesign, setBuildUndoDesign] = useState<StudioDesign | null>(null);
   const [sceneTab, setSceneTab] = useState<SceneTab>("3d");
   const [partsPanelOpen, setPartsPanelOpen] = useState(false);
+  /** Which sheet the parts dock shows. Accessories first, so "Edit" lands on something to add. */
+  const [dockView, setDockView] = useState<"accessories" | "tower">("accessories");
   const [cameraView, setCameraView] = useState<ClosetCameraView>("angle");
   const [fitToken, setFitToken] = useState(0);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [roomMapOpen, setRoomMapOpen] = useState(true);
+  const skipPersistRef = useRef(false);
   const fitCloset = () => setFitToken((token) => token + 1);
   useEffect(() => { setAutoOptions(MODE_AUTO_BUILD_DEFAULTS[design.mode]); }, [design.mode]);
   const kidsNotes = useMemo(() => kidsGuidance(design), [design]);
   const occupancy = useMemo(() => studioWallOccupancy(design), [design]);
   const viewTabs: { id: SceneTab; label: string }[] = [{ id: "3d", label: "3D" }, ...(["back", "left", "right"] as const).filter((wall) => occupancy[wall].filled).map((wall) => ({ id: wall, label: wallNames[wall].replace(" wall", "") })), { id: "top", label: "Top" }];
   const activeTab: SceneTab = viewTabs.some((tab) => tab.id === sceneTab) ? sceneTab : "3d";
-  useEffect(() => { if (!isReviewDemo) localStorage.setItem(storageKey, JSON.stringify(design)); }, [design, isReviewDemo, storageKey]);
+  useEffect(() => {
+    if (isReviewDemo) return;
+    if (skipPersistRef.current) { skipPersistRef.current = false; return; }
+    localStorage.setItem(storageKey, JSON.stringify(design));
+  }, [design, isReviewDemo, storageKey]);
   useEffect(() => {
     if (!cornerPlannerRequested) return;
     const timer = window.setTimeout(() => {
@@ -351,11 +383,46 @@ export default function VendorClosetStudio({ affiliateSlug }: { affiliateSlug?: 
         const { width, height } = planner.getBoundingClientRect();
         return width > 0 && height > 0;
       }) ?? planners[0];
-      visiblePlanner?.scrollIntoView?.({ block: "center", behavior: "smooth" });
+      if (visiblePlanner) scrollWithinScroller(visiblePlanner, "center");
       setCornerPlannerRequested(false);
     }, 0);
     return () => window.clearTimeout(timer);
   }, [cornerPlannerRequested, phonePanel]);
+  // Keep the scroll container's position when the design re-renders; a remount of the
+  // scrollable dock used to reset it to the top and hide the lower controls.
+  const workspaceRef = useRef<HTMLDivElement>(null);
+  const scrollSnapshotRef = useRef(0);
+  useEffect(() => {
+    const node = workspaceRef.current;
+    if (!node) return;
+    const record = () => { scrollSnapshotRef.current = node.scrollTop; };
+    node.addEventListener("scroll", record, { passive: true });
+    return () => node.removeEventListener("scroll", record);
+  }, []);
+  const deletePlan = () => {
+    try { localStorage.removeItem(storageKey); } catch { /* storage can be unavailable in private modes */ }
+    const fresh = createStudioDesign();
+    // Skip the persist effect for this transition so it cannot immediately rewrite the draft
+    // that was just deleted; persistence resumes on the next real design change.
+    skipPersistRef.current = true;
+    setSavedDraft(false);
+    setDesign(fresh);
+    setSelectedBay(0); setSelectedItem(null); setSelectedCornerId(null); setSelectedBasketId(null);
+    setCornerUndoDesign(null); setBasketUndoDesign(null); setBuildUndoDesign(null);
+    setPartToPlace(null); setNotice(null); setRoomError(null); setIntroErrors({});
+    setShowRoom(false); setShowHelp(false); setPartsPanelOpen(false);
+    setShowTabletMaterial(false); setPhonePanel(null); setCornerPlannerRequested(false);
+    setSceneTab("3d"); setPhonePanel(null);
+    setIntroMode(fresh.mode);
+    setIntroForm({ width: String(fresh.wallWidthIn), depth: String(fresh.roomDepthIn), height: String(fresh.roomHeightIn ?? STUDIO_ROOM_HEIGHT_DEFAULT_IN), age: "", kidsHeight: "" });
+    setIntroFromStudio(false);
+    setAutoOptions(MODE_AUTO_BUILD_DEFAULTS[fresh.mode]);
+    setDeleteOpen(false);
+    setStep("start");
+    scrollSnapshotRef.current = 0;
+    workspaceRef.current?.scrollTo?.({ top: 0 });
+    window.scrollTo?.({ top: 0 });
+  };
   const hasBay = Boolean(design.bays[selectedBay]);
   const bay = design.bays[selectedBay] ?? { id: "empty-wall", widthIn: 24, items: [] as StudioItem[] };
   const currentItem = bay.items.find((item) => item.id === selectedItem) ?? null;
@@ -419,7 +486,7 @@ export default function VendorClosetStudio({ affiliateSlug }: { affiliateSlug?: 
   };
   const pickPart = (kind: StudioKind) => { if (!hasBay) { setNotice("Add a tower to this wall before choosing a part."); return; } setPartToPlace(kind); setSelectedItem(null); setPhonePanel(null); setNotice(`Now tap Tower ${selectedBay + 1} in 3D, or drag the part into any tower bay. Its height will snap to a free position.`); };
   const openCornerShelfPlanner = () => {
-    setPartToPlace(null); setSelectedItem(null); setPhonePanel("tower"); setPartsPanelOpen(true); setCornerPlannerRequested(true);
+    setPartToPlace(null); setSelectedItem(null); setPhonePanel("tower"); setDockView("tower"); setPartsPanelOpen(true); setCornerPlannerRequested(true);
   };
   const placeBasketInBay = (bayIndex: number, sku: string, bottomIn?: number) => {
     if (!design.bays[bayIndex]) { setNotice("Add a tower to this wall before placing a basket."); return; }
@@ -473,13 +540,12 @@ export default function VendorClosetStudio({ affiliateSlug }: { affiliateSlug?: 
     if (!result.ok) { setRoomError(`${label} stays at ${design[field]} in. ${result.reason}`); return; }
     setRoomError(null); updateDesign(result.design);
   };
-  const scrollToSection = (id: string) => { document.getElementById(id)?.scrollIntoView?.({ block: "start", behavior: "smooth" }); };
+  const scrollToSection = (id: string) => { const target = document.getElementById(id); if (target) scrollWithinScroller(target, "start"); };
   const openIntro = (fromStudio = false, mode: StudioMode = design.mode) => {
     setIntroMode(mode); setIntroFromStudio(fromStudio); setIntroErrors({});
     setIntroForm({ width: String(design.wallWidthIn), depth: String(design.roomDepthIn), height: String(design.roomHeightIn ?? STUDIO_ROOM_HEIGHT_DEFAULT_IN), age: design.kids ? String(design.kids.ageYears) : "", kidsHeight: design.kids ? String(design.kids.heightIn) : "" });
     setStep("start");
   };
-  const reset = () => { if (confirm("Start a new local Closet Studio draft? This replaces only this browser's Studio draft, not any saved CabinetDealz Designer plan.")) { updateDesign(createStudioDesign()); setIntroMode("closet"); setRoomError(null); setBuildUndoDesign(null); setStep("start"); setSelectedBay(0); setSelectedItem(null); setPartToPlace(null); } };
   /** Header and mobile mode buttons. A design with no child on file is sent to the age and height step first. */
   const selectMode = (mode: StudioMode) => {
     if (mode === "kids" && !design.kids) { openIntro(true, "kids"); return; }
@@ -533,9 +599,9 @@ export default function VendorClosetStudio({ affiliateSlug }: { affiliateSlug?: 
   };
   const undoBuild = () => { if (!buildUndoDesign) return; setDesign(buildUndoDesign); setBuildUndoDesign(null); setNotice("Auto-build undone."); setSelectedBay(0); setSelectedItem(null); setSelectedCornerId(null); };
 
-  if (step === "start") return <div className={`min-h-screen bg-[#f2f0ea] text-[#26332d] ${studioFocus}`} data-testid="vendor-mode-gate" data-studio-release={STUDIO_RELEASE_TRACE}>
-    <header className="flex items-center justify-between gap-2 border-b border-[#dfded6] bg-[#fbfaf7] px-5 py-4 sm:px-9"><a href="/" aria-label="CabinetDealz home" className="flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#244338] text-lg font-semibold text-[#f2e3c3]">M</span><span><strong className="block font-serif text-lg leading-none">MasterTrac Studio</strong><span className="text-[10px] uppercase tracking-[0.21em] text-[#8a8276]">CabinetDealz closet program</span></span></a><a href="/design" data-testid="closet-to-kitchen" aria-label="Kitchen Designer" className="flex h-10 shrink-0 items-center rounded-lg border border-[#d7d0c5] bg-white px-3 text-xs font-bold text-[#244338] hover:bg-[#f0ede6] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#244338]">Kitchen<span className="hidden sm:inline"> Designer</span></a></header>
-    <main className="mx-auto grid min-h-[calc(100vh-75px)] max-w-6xl items-center gap-10 px-5 py-12 lg:grid-cols-[1fr_0.92fr] lg:px-12">
+  if (step === "start") return <div className={`flex h-full min-h-0 flex-col overflow-y-auto overscroll-contain bg-[#f2f0ea] text-[#26332d] ${studioFocus}`} data-testid="vendor-mode-gate" data-studio-release={STUDIO_RELEASE_TRACE}>
+    <header className="flex items-center justify-between gap-2 border-b border-[#dfded6] bg-[#fbfaf7] px-5 py-4 sm:px-9"><a href="/" aria-label="CabinetDealz home" className="flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#244338] text-lg font-semibold text-[#f2e3c3]">M</span><span><strong className="block font-serif text-lg leading-none">MasterTrac Studio</strong><span className="text-[10px] uppercase tracking-[0.21em] text-[#8a8276]">CabinetDealz closet program</span></span></a><a href="/design" data-testid="closet-to-kitchen" aria-label="Kitchen Designer" className="flex h-11 shrink-0 items-center rounded-lg border border-[#d7d0c5] bg-white px-3 text-xs font-bold text-[#244338] hover:bg-[#f0ede6] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#244338]">Kitchen<span className="hidden sm:inline"> Designer</span></a></header>
+    <main className="mx-auto grid max-w-6xl items-center gap-10 px-5 py-10 lg:grid-cols-[1fr_0.92fr] lg:px-12">
       <div><div className="mb-8 inline-flex items-center gap-2 rounded-full border border-[#d7c8ae] bg-[#f9f4e9] px-4 py-2 text-[11px] font-bold uppercase tracking-[0.18em] text-[#97734a]"><WandSparkles className="h-4 w-4" /> Make room for real life</div><h1 className="max-w-xl font-serif text-5xl leading-[1.08] text-[#253c32] sm:text-6xl">Your space. <em className="font-normal text-[#b88151]">Your way.</em></h1><p className="mt-6 max-w-lg text-base leading-7 text-[#716e64]">Build a beautiful closet one tower at a time. Choose what the room is for; then place shelves, rods, drawers, and shoe organizers right where you want them.</p>
       <h2 className="mb-3 mt-10 text-xs font-bold uppercase tracking-[0.2em] text-[#60594e]">First, what are we designing?</h2><div className="grid max-w-lg grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">{STUDIO_MODES.map((mode) => <button key={mode} type="button" onClick={() => chooseIntroMode(mode)} aria-pressed={introMode === mode} className={`min-h-24 rounded-xl border p-3 text-left transition-transform active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#ba8351] ${introMode === mode ? "border-[#ba8351] bg-[#fffbf4] shadow-md" : "border-[#d9d5cb] bg-[#f9f8f4] hover:bg-white"}`}><span className="block text-lg">{mode === "closet" ? "◧" : mode === "pantry" ? "▧" : mode === "kids" ? "◨" : "⌂"}</span><strong className="mt-2 block text-xs sm:text-sm">{modeNames[mode]}</strong>{introMode === mode && <Check className="float-right mt-[-18px] h-4 w-4 text-[#9e683a]" />}</button>)}</div>
         <form noValidate onSubmit={(event) => { event.preventDefault(); startIntro(true); }} className="mt-6 max-w-lg" data-testid="vendor-room-size-step">
@@ -557,16 +623,23 @@ export default function VendorClosetStudio({ affiliateSlug }: { affiliateSlug?: 
       </div>
     </main>
   </div>;
-  return <div className={`flex h-[100dvh] min-h-[580px] flex-col overflow-hidden bg-[#e9e5dc] text-[#29352f] ${studioFocus}`} data-testid="vendor-closet-studio" data-studio-release={STUDIO_RELEASE_TRACE}>
-    <header className="z-30 flex h-16 shrink-0 items-center justify-between gap-2 border-b border-[#ded8cd] bg-[#fbfaf7] px-3 sm:px-5"><div className="flex min-w-0 items-center gap-2"><button type="button" aria-label="Back to room choice" title="Back to room choice" onClick={() => openIntro()} className="flex h-10 w-10 items-center justify-center rounded-lg hover:bg-[#f0ede6]"><ArrowLeft className="h-5 w-5" /></button><a href="/" aria-label="CabinetDealz home" className="hidden h-8 w-8 items-center justify-center rounded-lg bg-[#244338] text-[#f2e3c3] sm:flex">M</a><div className="min-w-0"><strong className="block truncate font-serif text-base leading-none sm:text-lg">{modeNames[design.mode]} Studio</strong><span className="mt-1 block truncate text-[10px] text-[#897f73]">One tower at a time · {design.finish}</span></div></div>
-      <div className="hidden items-center gap-1 rounded-full bg-[#eeeae1] p-1 md:flex">{STUDIO_MODES.map((mode) => <button type="button" key={mode} aria-pressed={mode === design.mode} onClick={() => selectMode(mode)} className={`rounded-full px-3 py-2 text-xs font-semibold ${mode === design.mode ? "bg-white text-[#314739] shadow-sm" : "text-[#81766a]"}`}>{modeNames[mode]}</button>)}</div>
-      <div className="flex items-center gap-1"><button type="button" onClick={openCornerShelfPlanner} title="Add a 29.5-inch curved corner shelf" aria-label="Add 29.5-inch corner shelf" className="flex h-10 items-center gap-1 rounded-lg border border-[#c8b08f] bg-[#fff8ed] px-2 text-xs font-bold text-[#60462e] hover:border-[#a97946] hover:bg-[#fff2df]"><span aria-hidden="true" className="text-base">◔</span><span className="hidden min-[360px]:inline">Corner shelf</span></button><button type="button" onClick={() => { setShowRoom((open) => !open); setShowReference(false); setPhonePanel(null); }} aria-label="Room and wall settings" aria-expanded={showRoom} aria-controls="vendor-room-panel" className="hidden h-10 items-center gap-1 rounded-lg px-2 text-xs font-semibold hover:bg-[#eeeae1] min-[1024px]:flex"><Ruler className="h-4 w-4" /><span>Room</span></button><button type="button" onClick={() => setShowHelp(!showHelp)} title="How to use the Studio" aria-label="How to use the Studio" className="flex h-10 w-10 items-center justify-center rounded-lg hover:bg-[#eeeae1]"><CircleHelp className="h-5 w-5" /></button><button type="button" onClick={reset} title="Start a new local draft" aria-label="Start a new local draft" className="hidden h-10 w-10 items-center justify-center rounded-lg hover:bg-[#eeeae1] sm:flex"><RotateCcw className="h-4 w-4" /></button></div>
+  return <div className={`flex h-full min-h-0 flex-col overflow-hidden bg-[#e9e5dc] text-[#29352f] ${studioFocus}`} data-testid="vendor-closet-studio" data-studio-release={STUDIO_RELEASE_TRACE}>
+    {/* Essentials only: back, title, delete plan, undo, fit/zoom, one edit toggle, help. Secondary tools live in the drawers/tabs. */}
+    <header data-testid="vendor-studio-toolbar" className="z-30 flex min-h-14 shrink-0 flex-wrap items-center gap-1 border-b border-[#ded8cd] bg-[#fbfaf7] px-2 py-1.5 sm:h-16 sm:flex-nowrap sm:gap-2 sm:px-3 min-[1280px]:px-5">
+      <div className="flex min-w-0 flex-1 items-center gap-1.5 sm:gap-2"><button type="button" aria-label="Back to room choice" title="Back to room choice" onClick={() => openIntro()} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg hover:bg-[#f0ede6]"><ArrowLeft className="h-5 w-5" /></button><a href="/" aria-label="CabinetDealz home" className="hidden h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#244338] text-[#f2e3c3] sm:flex">M</a><div className="min-w-0"><strong className="block truncate font-serif text-sm leading-none sm:text-base min-[1280px]:text-lg">{modeNames[design.mode]} Studio</strong><span className="mt-1 block truncate text-[10px] text-[#897f73]"><span className="min-[1280px]:hidden">{design.finish} · </span>One tower at a time<span className="hidden min-[1280px]:inline"> · {design.finish}</span></span></div></div>
+      <div className="hidden shrink-0 items-center gap-1 rounded-full bg-[#eeeae1] p-1 min-[1280px]:flex">{STUDIO_MODES.map((mode) => <button type="button" key={mode} aria-pressed={mode === design.mode} onClick={() => selectMode(mode)} className={`rounded-full px-3 py-2 text-xs font-semibold ${mode === design.mode ? "bg-white text-[#314739] shadow-sm" : "text-[#81766a]"}`}>{modeNames[mode]}</button>)}</div>
+      <div className="flex shrink-0 items-center gap-1">
+        <button type="button" onClick={() => setDeleteOpen(true)} aria-label="Delete plan" title="Delete this closet plan" data-testid="vendor-delete-plan" className="flex h-11 items-center gap-1.5 rounded-lg border border-[#c25b48] bg-[#fff4f1] px-2.5 text-xs font-bold text-[#9c3524] hover:bg-[#ffe7e1] active:bg-[#ffd9d0] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#9c3524]"><Trash2 className="h-4 w-4" />Delete plan</button>
+        {buildUndoDesign && <button type="button" onClick={undoBuild} aria-label="Undo auto-build" title="Undo auto-build" className="flex h-11 w-11 items-center justify-center rounded-lg hover:bg-[#eeeae1]"><Undo2 className="h-5 w-5" /></button>}
+        <button type="button" onClick={fitCloset} aria-label="Zoom to fit the closet" title="Zoom to fit" data-testid="vendor-toolbar-fit" className="flex h-11 w-11 items-center justify-center rounded-lg hover:bg-[#eeeae1]"><Maximize2 className="h-5 w-5" /></button>
+        <button type="button" onClick={() => { setShowRoom(false); setShowTabletMaterial(false); setPartsPanelOpen(true); setDockView("accessories"); setPhonePanel("parts"); }} aria-label="Edit parts" aria-pressed={partsPanelOpen} aria-controls="vendor-phone-options-dock" data-testid="vendor-toolbar-edit" className="flex h-11 items-center gap-1 rounded-lg bg-[#244338] px-3 text-xs font-bold text-white hover:bg-[#315444]"><Plus className="h-4 w-4" />Edit</button>
+        <button type="button" onClick={() => setShowHelp(!showHelp)} aria-label="How to use the Studio" title="How to use the Studio" className="hidden h-11 w-11 items-center justify-center rounded-lg hover:bg-[#eeeae1] sm:flex"><CircleHelp className="h-5 w-5" /></button>
+      </div>
     </header>
-    <nav aria-label="Designer navigation" className="flex min-h-10 shrink-0 items-center gap-2 border-b border-[#ded8cd] bg-[#fbfaf7] px-3 text-xs sm:px-5"><label className="flex min-w-0 flex-1 items-center gap-2 text-[#766f65]"><span className="hidden shrink-0 font-semibold min-[520px]:inline">Finish</span><select aria-label="Available MasterTrac finish" value={design.finish} onChange={(event) => changeFinish(event.target.value as StudioDesign["finish"])} className="h-8 min-w-0 w-full max-w-52 rounded-md border border-[#d8cdbc] bg-white px-2 text-xs font-semibold text-[#39443f]" data-testid="vendor-finish-picker">{STUDIO_FINISHES.map((finish) => <option key={finish} value={finish}>{finish}</option>)}</select></label><span className="hidden min-w-0 truncate text-[#766f65] min-[700px]:inline">Building a kitchen instead?</span><a href="/design" data-testid="closet-to-kitchen" className="flex h-9 shrink-0 items-center rounded-lg px-3 font-bold text-[#244338] underline underline-offset-2 hover:bg-[#f0ede6] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#244338]">Kitchen<span className="hidden sm:inline"> Designer</span> <ArrowRight className="ml-1 h-3.5 w-3.5" /></a></nav>
+    <nav aria-label="Designer navigation" className="flex min-h-10 shrink-0 items-center gap-2 border-b border-[#ded8cd] bg-[#fbfaf7] px-3 text-xs sm:px-5"><label className="flex min-w-0 flex-1 items-center gap-2 text-[#766f65]"><span className="hidden shrink-0 font-semibold min-[520px]:inline">Finish</span><select aria-label="Available MasterTrac finish" value={design.finish} onChange={(event) => changeFinish(event.target.value as StudioDesign["finish"])} className="h-9 min-w-0 w-full max-w-52 rounded-md border border-[#d8cdbc] bg-white px-2 text-xs font-semibold text-[#39443f]" data-testid="vendor-finish-picker">{STUDIO_FINISHES.map((finish) => <option key={finish} value={finish}>{finish}</option>)}</select></label><button type="button" onClick={() => { setPartsPanelOpen(false); setShowTabletMaterial(false); setShowRoom(true); }} aria-label="Room and wall settings" aria-expanded={showRoom} aria-controls="vendor-room-panel" className="hidden h-9 shrink-0 items-center gap-1 rounded-lg px-2 font-semibold hover:bg-[#eeeae1] min-[1280px]:flex"><Ruler className="h-4 w-4" /><span>Room</span></button><span className="hidden min-w-0 truncate text-[#766f65] min-[900px]:inline">Building a kitchen instead?</span><a href="/design" data-testid="closet-to-kitchen" className="flex h-9 shrink-0 items-center rounded-lg px-3 font-bold text-[#244338] underline underline-offset-2 hover:bg-[#f0ede6] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#244338]">Kitchen<span className="hidden sm:inline"> Designer</span> <ArrowRight className="ml-1 h-3.5 w-3.5" /></a></nav>
     {isReviewDemo && <div className="z-20 flex min-h-9 shrink-0 items-center justify-between gap-2 border-b border-[#d5c5a8] bg-[#fff3dc] px-3 py-1 text-[11px] font-semibold text-[#6d4d27] sm:px-5" data-testid="vendor-review-demo-banner"><span>Review example · 2 towers · matching MasterTrac small slab front · not your saved design</span><a href="/closet" className="shrink-0 underline underline-offset-2">Start my own</a></div>}
-    <div className="relative flex min-h-0 flex-1 overflow-hidden pb-16 min-[1024px]:pb-0">
-      {showRoom && <button type="button" aria-label="Close room settings" onClick={() => setShowRoom(false)} className="fixed inset-0 z-30 bg-black/30 min-[1024px]:absolute min-[1800px]:hidden" />}
-      <aside id="vendor-room-panel" className={`${showRoom ? "fixed inset-x-0 bottom-0 z-40 flex max-h-[78dvh] flex-col rounded-t-2xl shadow-2xl min-[1024px]:absolute min-[1024px]:inset-y-0 min-[1024px]:left-0 min-[1024px]:max-h-none min-[1024px]:w-[min(88vw,360px)] min-[1024px]:rounded-none" : "hidden"} overflow-y-auto border-r border-[#dfd8cc] bg-[#faf9f5] p-4`} data-testid="vendor-controls">
+    <div className="relative flex min-h-0 flex-1 overflow-hidden pb-16 min-[1280px]:pb-0">      {showRoom && <button type="button" aria-label="Close room settings" onClick={() => setShowRoom(false)} className="fixed inset-0 z-30 bg-black/30 min-[1280px]:absolute min-[1800px]:hidden" />}
+      <aside id="vendor-room-panel" className={`${showRoom ? "flex" : "hidden"} absolute inset-x-0 bottom-0 top-11 z-40 max-h-none flex-col overflow-y-auto rounded-t-2xl border-r border-[#dfd8cc] bg-[#faf9f5] p-4 shadow-2xl min-[1280px]:static min-[1280px]:inset-auto min-[1280px]:z-auto min-[1280px]:max-h-none min-[1280px]:rounded-none min-[1280px]:shadow-none`} data-testid="vendor-controls">
         <button type="button" onClick={() => setShowRoom(false)} className="mb-3 min-h-11 self-end rounded-md border border-[#ded8cd] px-3 text-xs min-[1800px]:hidden">Close room settings</button>
         <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#ad784d]">01 / Set the room</p><h2 className="mt-2 font-serif text-2xl">A place for everything.</h2><p className="mb-5 mt-2 text-xs leading-5 text-[#82796c]">Pick a wall, then build one tower. The shared side appears automatically when you add the next one.</p>
         <div className="mb-5 grid grid-cols-4 gap-1 rounded-lg bg-[#eeeae1] p-1 md:hidden" role="group" aria-label="Room mode">{STUDIO_MODES.map((mode) => <button type="button" key={mode} aria-pressed={mode === design.mode} onClick={() => selectMode(mode)} className={`h-10 rounded-md text-[11px] font-semibold ${mode === design.mode ? "bg-white text-[#314739] shadow-sm" : "text-[#81766a]"}`}>{modeNames[mode]}</button>)}</div>
@@ -578,62 +651,90 @@ export default function VendorClosetStudio({ affiliateSlug }: { affiliateSlug?: 
           <div className="mt-4 flex gap-2"><button type="button" onClick={rebuild} className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-md bg-[#244338] px-3 text-xs font-bold text-white hover:bg-[#315444]"><WandSparkles className="h-4 w-4" />Rebuild</button>{buildUndoDesign && <button type="button" onClick={undoBuild} className="min-h-11 rounded-md border border-[#d6c3a6] bg-[#fff8ed] px-3 text-xs font-bold text-[#72563b]">Undo rebuild</button>}</div></section>
         <div className="mt-auto border-t border-[#e6e0d6] pt-4"><p className="text-[11px] leading-5 text-[#81776a]">Real catalog parts, rendered as an inviting room preview. Finish and dimensions are source-based; connections, accessories and lighting are illustrative.</p></div>
       </aside>
-      {/* Accessories stay at least 320px. The blueprint is a fixed 250px so it cannot cover the closet. The middle column takes every remaining pixel. */}
-      <div className="grid min-h-0 min-w-0 flex-1 grid-cols-1 overflow-x-hidden overflow-y-auto min-[1024px]:grid-cols-[minmax(320px,360px)_minmax(0,1fr)_250px] min-[1024px]:overflow-hidden" data-testid="vendor-workspace">
-      <aside id="vendor-phone-options-dock" data-testid="vendor-tablet-options-dock" className="relative order-2 flex min-h-[28rem] w-full min-w-0 flex-col overflow-hidden border-t border-[#dfd8cc] bg-[#faf9f5] min-[1024px]:order-1 min-[1024px]:min-h-0 min-[1024px]:border-r min-[1024px]:border-t-0">
-        <div className="flex items-center justify-between gap-2 border-b border-[#e6dfd4] px-3 py-2">
-          <div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#997851]">Add accessories</p><p className="truncate text-xs text-[#5c564c]">Shelf, rod, drawer, shoe basket</p></div>
-          <button type="button" onClick={() => setPartsPanelOpen(true)} className="min-h-11 shrink-0 rounded-md bg-[#244338] px-3 text-xs font-bold text-white hover:bg-[#315444]">Parts</button>
+      {/* Desktop keeps three columns. Tablet and phone use the canvas as the primary surface, with
+          the dock, room panel and Material List as closed-by-default sheets the user explicitly opens. */}
+      <div ref={workspaceRef} className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden min-[1280px]:grid min-[1280px]:grid-cols-[minmax(320px,360px)_minmax(0,1fr)_250px]" data-testid="vendor-workspace">
+      <aside id="vendor-phone-options-dock" data-testid="vendor-tablet-options-dock" data-open={partsPanelOpen ? "true" : "false"} className={`${partsPanelOpen ? "flex" : "hidden"} absolute inset-x-0 bottom-0 top-auto z-40 max-h-[55%] min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-t-2xl border-[#dfd8cc] bg-[#faf9f5] shadow-[0_-18px_50px_-20px_rgba(38,51,45,0.45)] min-[1280px]:static min-[1280px]:z-auto min-[1280px]:order-1 min-[1280px]:max-h-none min-[1280px]:flex min-[1280px]:min-h-0 min-[1280px]:rounded-none min-[1280px]:border-l-0 min-[1280px]:border-r min-[1280px]:shadow-none`} aria-label="Parts panel">
+        <div className="flex items-center justify-between gap-2 border-b border-[#e6dfd4] px-3 py-1.5">
+          <div className="flex min-w-0 items-center gap-2">
+            <span aria-hidden="true" className="h-1 w-8 shrink-0 rounded-full bg-[#d8d0c3] min-[1280px]:hidden" />
+            <div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#997851]">Add accessories</p><p className="truncate text-xs text-[#5c564c]">Shelf, rod, drawer, shoe basket</p></div>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <button type="button" onClick={() => { setDockView("tower"); setPhonePanel("tower"); }} className="min-h-11 rounded-md bg-[#244338] px-3 text-xs font-bold text-white hover:bg-[#315444]">Parts</button>
+            <button type="button" aria-label="Close accessories panel" onClick={() => { setPartsPanelOpen(false); setPhonePanel(null); setDockView("accessories"); }} className="min-h-11 rounded-md border border-[#dfd8cc] bg-white px-3 text-xs font-bold text-[#244338] min-[1280px]:hidden">Close</button>
+          </div>
         </div>
-        <div id="vendor-section-parts" className="min-h-0 flex-1 overflow-y-auto p-3">
+        <div id="vendor-section-parts" className={`min-h-0 flex-1 overflow-y-auto overscroll-contain p-3 ${dockView === "tower" ? "hidden" : ""}`}>
           <ClosetStudioAccessories design={design} selectedBay={selectedBay} hasBay={hasBay} partToPlace={partToPlace} onPlaceKind={(kind) => place(selectedBay, kind === "rod" ? 64 : kind === "shoe" ? 24 : kind === "drawer" ? 20 : 42, kind)} onPlaceBasket={(sku) => placeBasketInBay(selectedBay, sku)} onOpenCorner={openCornerShelfPlanner} />
           <p className="mt-3 rounded-md bg-[#fff6e7] px-2 py-2 text-[10px] leading-relaxed text-[#76563a]" data-testid="vendor-shoe-pitch-caveat">{SHOE_PITCH_CAVEAT}</p>
           <p className="mt-2 text-[10px] leading-relaxed text-[#6d6255]">A pull-out basket keeps its listed width and height. It is placed in the nearest open inch between the fixed shelves, never cut down and never forced into the top if the fixed top shelf is too close.</p>
           {notice && <div role="status" className="mt-3 rounded-lg border border-[#eacb9a] bg-[#fff6e5] px-3 py-2 text-xs text-[#73543a]">{notice}<button type="button" aria-label="Dismiss message" onClick={() => setNotice(null)} className="float-right font-bold">✕</button></div>}
           {kidsNotes.length > 0 && <div role="note" className="mt-3 rounded-lg border border-[#eacb9a] bg-[#fff6e5] px-3 py-2 text-xs text-[#73543a]" data-testid="vendor-kids-guidance"><ul className="list-disc space-y-1 pl-4">{kidsNotes.map((line) => <li key={line}>{line}</li>)}</ul></div>}
         </div>
-        {partsPanelOpen && <button type="button" aria-label="Close tower parts" onClick={() => setPartsPanelOpen(false)} className="fixed inset-0 z-40 bg-black/40 min-[1024px]:hidden" />}
-        <div data-testid="vendor-part-selector" className={`${partsPanelOpen ? "flex" : "hidden"} absolute inset-0 z-30 flex-col bg-[#faf9f5] max-[1023px]:fixed max-[1023px]:inset-x-0 max-[1023px]:bottom-0 max-[1023px]:top-16 max-[1023px]:z-50 max-[1023px]:shadow-2xl`}>
+        {partsPanelOpen && <button type="button" aria-label="Close tower parts" onClick={() => { setPartsPanelOpen(false); setPhonePanel(null); }} className="absolute inset-0 z-20 bg-black/20 min-[1280px]:hidden" />}
+        <div data-testid="vendor-part-selector" className={`${dockView === "tower" ? "flex" : "hidden"} absolute inset-0 z-30 flex-col bg-[#faf9f5]`}>
           <div className="flex items-center gap-2 border-b border-[#e4ddd2] px-3 py-2">
-            <button type="button" onClick={() => setPartsPanelOpen(false)} className="min-h-11 rounded-md border border-[#dfd8cc] bg-white px-3 text-xs font-bold text-[#244338]">Back to accessories</button>
+            <button type="button" onClick={() => { setDockView("accessories"); setPhonePanel("parts"); }} className="min-h-11 rounded-md border border-[#dfd8cc] bg-white px-3 text-xs font-bold text-[#244338]">Back to accessories</button>
             <strong className="text-sm text-[#2c3832]">Tower parts</strong>
           </div>
-          <div id="vendor-section-tower-panel" className="min-h-0 flex-1 overflow-y-auto p-3">
+          <div id="vendor-section-tower-panel" className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3">
             <section id="vendor-section-tower" className="rounded-xl border border-[#e1d8ca] bg-white p-3"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#997851]">Tower & size</p>{hasBay ? <CutToFitControls key={`${bay.id}:${bay.widthIn}:${studioStockWidth(bay)}`} design={design} bay={bay} onApply={changeCutToFit} /> : <p className="mt-2 rounded-md bg-[#f7f2e9] px-2 py-2 text-[11px] leading-relaxed text-[#6d6255]">This wall is empty. Add its first 24 in tower below; other walls remain unchanged.</p>}<div className="mt-2 flex flex-wrap gap-2" role="group" aria-label="Select a tower">{design.bays.map((b, index) => <button type="button" key={b.id} onClick={() => { if (partToPlace) place(index, partToPlace === "rod" ? 64 : partToPlace === "shoe" ? 24 : partToPlace === "drawer" ? 20 : 42, partToPlace); else { setSelectedBay(index); setSelectedItem(null); } }} aria-label={partToPlace ? `Place ${card[partToPlace].title.toLowerCase()} in Tower ${index + 1}` : `Select Tower ${index + 1}`} aria-pressed={selectedBay === index} className={`min-h-11 rounded-md px-3 text-xs font-semibold ${selectedBay === index ? "bg-[#244338] text-white" : "border border-[#dfd8cc] bg-white"}`}>Tower {index + 1}</button>)}</div><div className="mt-3 flex items-center gap-2">{hasBay && <><label className="sr-only" htmlFor="vendor-bay-width-dock">Selected tower clear width</label><select id="vendor-bay-width-dock" aria-label="Selected tower clear width" value={bay.widthIn} onChange={(event) => selectedWidth(Number(event.target.value) as 18 | 24 | 30)} className="min-h-11 flex-1 rounded-md border border-[#dfd8cc] bg-white px-2 text-xs"><option value="18">18 in</option><option value="24">24 in</option><option value="30">30 in</option></select></>}<button type="button" onClick={addNeighbor} disabled={design.bays.length >= 4} className="flex min-h-11 shrink-0 items-center gap-1 rounded-md border border-[#d6c3a6] bg-[#fff8ed] px-3 text-[11px] font-semibold text-[#72563b] disabled:opacity-40"><Plus className="h-4 w-4" /> {hasBay ? "Add" : "Add first tower"}</button></div><p className="mt-2 text-[10px] text-[#766f65]"><Ruler className="mr-1 inline h-3 w-3" /> {studioWidth(design)} of {studioWallLength(design)} in on {wallNames[design.wall].toLowerCase()}</p>{bay.items.length > 0 && <div className="mt-3 border-t border-[#e8e0d6] pt-3"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#997851]">Placed items</p><div className="mt-2 flex flex-wrap gap-2">{bay.items.map((item) => <button type="button" key={item.id} onClick={() => { setSelectedItem(item.id); setPartToPlace(null); }} aria-pressed={selectedItem === item.id} className={`min-h-10 rounded-md px-3 text-[11px] font-semibold ${selectedItem === item.id ? "bg-[#ede0c8] text-[#4f3a22]" : "border border-[#e5ded4] bg-white text-[#6f655a]"}`}>{card[item.kind].title} · {item.bottomIn} in</button>)}</div></div>}{currentItem && <div className="mt-3 border-t border-[#e8e0d6] pt-3" data-testid="vendor-tablet-height-control"><div className="flex items-center gap-2"><Move3D className="h-4 w-4 text-[#94734c]" /><strong className="text-xs">Adjust {card[currentItem.kind].title.toLowerCase()}</strong></div><div className="mt-3 flex items-center gap-2"><button aria-label="Lower selected item one inch" onClick={() => changeElevation(currentItem, currentItem.bottomIn - 1)} className="h-11 w-11 rounded-md border border-[#dfd5c5] bg-white">−</button><input aria-label="Selected item bottom height in inches" type="range" min={studioFixedBottom(design) + 1} max={studioFixedTop(design) - studioItemHeight(currentItem.kind)} step="1" value={currentItem.bottomIn} onChange={(event) => changeElevation(currentItem, Number(event.target.value))} className="min-w-0 flex-1 accent-[#9b6b3e]" /><button aria-label="Raise selected item one inch" onClick={() => changeElevation(currentItem, currentItem.bottomIn + 1)} className="h-11 w-11 rounded-md border border-[#dfd5c5] bg-white">+</button><span className="w-12 text-center text-xs font-bold tabular-nums">{currentItem.bottomIn} in</span><button type="button" aria-label={`Remove ${card[currentItem.kind].title.toLowerCase()}`} onClick={() => removeItem(currentItem)} className="flex h-11 w-11 items-center justify-center rounded text-[#9b674d] hover:bg-[#fff6e7]"><Trash2 className="h-4 w-4" /></button></div></div>}<CornerPlanningControls plannerId="vendor-corner-shelf-planner-dock" design={design} selectedCornerId={selectedCornerId} onSelect={setSelectedCornerId} onAdd={addCornerShelf} onBuild={buildConnectedCorner} onMove={moveCornerShelf} onRemove={removeCornerShelf} canUndo={Boolean(cornerUndoDesign)} onUndo={undoCorner} /></section>
             <BasketPlanningControls design={design} selectedBay={selectedBay} selectedBasketId={selectedBasketId} onSelect={setSelectedBasketId} onAdd={addBasket} onMove={moveBasket} onUpdate={updateBasket} onRemove={removeBasket} canUndo={Boolean(basketUndoDesign)} onUndo={undoBasket} />
           </div>
         </div>
       </aside>
-      <main className="order-1 flex min-h-[300px] min-w-0 flex-col overflow-hidden bg-[#e9e5dc] min-[1024px]:order-2 min-[1024px]:min-h-0">
-        <div role="tablist" aria-label="Studio view" className="flex shrink-0 items-center gap-1 border-b border-[#ded7cb] bg-[#faf9f5] px-3 py-1.5" data-testid="vendor-view-tabs">{viewTabs.map((tab) => <button key={tab.id} type="button" role="tab" aria-selected={activeTab === tab.id} onClick={() => { setSceneTab(tab.id); if (tab.id === "3d") fitCloset(); }} className={`min-h-9 rounded-md px-3 text-xs font-semibold ${activeTab === tab.id ? "bg-[#244338] text-white" : "border border-[#dfd8cc] bg-white text-[#5d665f]"}`}>{tab.label}</button>)}<span className="ml-auto truncate text-xs font-semibold text-[#5c564c]">{hasBay ? `Tower ${selectedBay + 1} of ${design.bays.length} · ${bay.widthIn} in` : `Empty ${wallNames[design.wall].toLowerCase()}`}</span></div>
+      <main className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#e9e5dc] min-[1280px]:order-2">
+        <div role="tablist" aria-label="Studio view" className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-[#ded7cb] bg-[#faf9f5] px-3 py-1.5" data-testid="vendor-view-tabs">{viewTabs.map((tab) => <button key={tab.id} type="button" role="tab" aria-selected={activeTab === tab.id} onClick={() => { setSceneTab(tab.id); if (tab.id === "3d") fitCloset(); }} className={`min-h-11 shrink-0 rounded-md px-3 text-xs font-semibold ${activeTab === tab.id ? "bg-[#244338] text-white" : "border border-[#dfd8cc] bg-white text-[#5d665f]"}`}>{tab.label}</button>)}<span className="ml-auto hidden truncate pl-2 text-xs font-semibold text-[#5c564c] sm:inline">{hasBay ? `Tower ${selectedBay + 1} of ${design.bays.length} · ${bay.widthIn} in` : `Empty ${wallNames[design.wall].toLowerCase()}`}</span></div>
         <p className="shrink-0 bg-[#faf9f5] px-3 py-1 text-[10px] font-medium text-[#5c564c]">{partToPlace && hasBay ? `Tap the ${bay.widthIn} in bay to place ${card[partToPlace].title.toLowerCase()}` : hasBay ? "Drag to rotate · tap a tower to edit its parts" : "This wall is empty · add a tower in Parts"}</p>
-        <div className="relative h-[46vh] min-h-[280px] w-full flex-none bg-[#e7e2d8] min-[1024px]:h-auto min-[1024px]:min-h-0 min-[1024px]:flex-1" data-testid="vendor-scene-panel">
-          <div className={`absolute inset-0 ${activeTab === "3d" ? "" : "invisible pointer-events-none"}`}><VendorClosetScene design={design} selectedBay={selectedBay} selectedCornerId={selectedCornerId} partToPlace={partToPlace} cameraView={cameraView} fitToken={fitToken} onSelectBay={(index) => { setSelectedBay(index); setSelectedItem(null); setSelectedCornerId(null); setPartsPanelOpen(true); }} onPlace={place} onPlaceBasket={(index, bottom, sku) => placeBasketInBay(index, sku, bottom)} onError={setNotice} />
+        <div className="relative min-h-0 w-full flex-1 bg-[#e7e2d8]" data-testid="vendor-scene-panel">
+          <div className={`absolute inset-0 ${activeTab === "3d" ? "" : "invisible pointer-events-none"}`}><VendorClosetScene design={design} selectedBay={selectedBay} selectedCornerId={selectedCornerId} partToPlace={partToPlace} cameraView={cameraView} fitToken={fitToken} onSelectBay={(index) => { setSelectedBay(index); setSelectedItem(null); setSelectedCornerId(null); setPartsPanelOpen(true); }} onPlace={place} onPlaceBasket={(index, bottom, sku) => placeBasketInBay(index, sku, bottom)} onError={setNotice} /></div>
+          {activeTab === "3d" && <div className="pointer-events-auto absolute bottom-2 left-2 z-20 sm:bottom-3 sm:left-3" data-testid="vendor-room-minimap">
+            {roomMapOpen
+              ? <div className="w-[116px] rounded-lg border border-[#d8d0c3] bg-[#fffdf9]/95 p-1.5 shadow-md backdrop-blur">
+                <div className="flex items-center justify-between gap-1"><span className="text-[8px] font-bold uppercase tracking-[0.14em] text-[#997851]">Room</span><button type="button" aria-label="Collapse room map" aria-expanded="true" onClick={() => setRoomMapOpen(false)} className="flex h-7 w-7 items-center justify-center rounded text-[#8a8276] hover:bg-[#f0ede6]"><ChevronDown className="h-3.5 w-3.5" /></button></div>
+                <RoomOccupancyOverview design={design} onSelect={onChangeWall} compact testId="vendor-room-overview" />
+              </div>
+              : <button type="button" aria-label="Show room map" aria-expanded="false" onClick={() => setRoomMapOpen(true)} className="flex min-h-11 items-center gap-1.5 rounded-lg border border-[#d8d0c3] bg-[#fffdf9]/95 px-2.5 text-[10px] font-bold text-[#5c564c] shadow-md backdrop-blur hover:bg-white"><MapIcon className="h-3.5 w-3.5" />Room</button>}
+          </div>}
           {activeTab === "3d" && <button type="button" data-testid="vendor-fit-view" onClick={fitCloset} className="absolute bottom-3 right-3 z-20 min-h-11 rounded-md border border-[#d7a46c] bg-[#fffdf9] px-3 text-xs font-bold text-[#244338] shadow-md hover:bg-[#f6f3ed]">Fit</button>}
           {showHelp && <div className="absolute right-3 top-3 z-20 max-w-[250px] rounded-xl border border-[#e1d7c6] bg-[#fffdf9] p-4 text-xs leading-5 shadow-xl"><button className="float-right font-semibold" aria-label="Close help" onClick={() => setShowHelp(false)}>✕</button><strong>Three simple moves</strong><ol className="mt-2 list-inside list-decimal space-y-1"><li>Choose a room mode and wall.</li><li>Choose an accessory on the left, or open Parts for the tower.</li><li>Slide the height until it locks clear of other parts.</li></ol></div>}
-          </div>
-          {activeTab === "top" && <div className="absolute inset-0 z-10 flex items-center justify-center overflow-auto bg-[#f4f1ea] p-4" data-testid="vendor-top-view"><RoomOccupancyOverview design={design} onSelect={onChangeWall} large testId="vendor-top-room-overview" /></div>}
+          {activeTab === "top" && <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 overflow-auto bg-[#f4f1ea] p-3" data-testid="vendor-top-view"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#997851]">Room map · tap a wall</p><div className="w-full max-w-[280px] rounded-xl border border-[#d8d0c3] bg-[#fffdf9] p-2.5 shadow-sm"><RoomOccupancyOverview design={design} onSelect={onChangeWall} large testId="vendor-top-room-overview" /></div><p className="max-w-[280px] text-center text-[10px] leading-4 text-[#6d6255]">The gold eye is the 3D camera, inside the room, looking at the active wall.</p></div>}
           {(activeTab === "back" || activeTab === "left" || activeTab === "right") && <div className="absolute inset-0 z-10 overflow-auto bg-[#f4f1ea] p-2" data-testid="vendor-elevation-view"><ClosetWallElevation design={design} wall={activeTab} /></div>}
         </div>
       </main>
-      <aside data-testid="vendor-blueprint-column" className="order-3 flex min-h-[28rem] w-full min-w-0 max-w-full flex-col overflow-x-hidden overflow-y-auto border-t border-[#dfd8cc] bg-[#faf9f5] min-[1024px]:w-[250px] min-[1024px]:max-w-[250px] min-[1024px]:min-h-0 min-[1024px]:border-l min-[1024px]:border-t-0">
-        <div className="min-h-0 min-w-0">
-          <RoomOccupancyOverview design={design} onSelect={onChangeWall} blueprint />
-          <div role="group" aria-label="Closet camera" className="grid grid-cols-3 gap-1 bg-[#fffdf9] px-3 pb-3">
-            {([["angle", "Angle"], ["front", "Front"], ["overhead", "Overhead"]] as const).map(([id, label]) => <button key={id} type="button" aria-pressed={cameraView === id} onClick={() => { setCameraView(id); setSceneTab("3d"); fitCloset(); }} className={`min-h-11 min-w-0 rounded-md px-1 text-[11px] font-bold ${cameraView === id ? "bg-[#244338] text-white" : "border border-[#dfd8cc] bg-white text-[#244338]"}`}>{label}</button>)}
-          </div>
+      <aside data-testid="vendor-blueprint-column" className={`${showTabletMaterial || phonePanel === "material" ? "flex" : "hidden"} absolute inset-x-0 bottom-0 top-11 z-40 min-h-0 w-full min-w-0 max-w-full flex-col overflow-x-hidden overflow-y-auto border-t border-[#dfd8cc] bg-[#faf9f5] shadow-2xl min-[1280px]:static min-[1280px]:z-auto min-[1280px]:order-3 min-[1280px]:flex min-[1280px]:w-[250px] min-[1280px]:max-w-[250px] min-[1280px]:border-l min-[1280px]:shadow-none`}>
+        <button type="button" onClick={() => { setShowTabletMaterial(false); setPhonePanel(null); }} className="min-h-11 shrink-0 border-b border-[#e6dfd4] bg-white px-3 text-left text-xs font-bold text-[#244338] min-[1280px]:hidden">Close material list</button>
+        <div className="min-h-0 min-w-0 px-3 pt-3">
+          <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#997851]">Closet camera</p>
+          <p className="mt-1 text-[10px] leading-relaxed text-[#766f65]">The room map stays a small inset on the drawing so the closet keeps the space.</p>
+        </div>
+        <div role="group" aria-label="Closet camera" className="mt-2 grid grid-cols-3 gap-1 bg-[#fffdf9] px-3 pb-3">
+          {([["angle", "Angle"], ["front", "Front"], ["overhead", "Overhead"]] as const).map(([id, label]) => <button key={id} type="button" aria-pressed={cameraView === id} onClick={() => { setCameraView(id); setSceneTab("3d"); fitCloset(); }} className={`min-h-11 min-w-0 rounded-md px-1 text-[11px] font-bold ${cameraView === id ? "bg-[#244338] text-white" : "border border-[#dfd8cc] bg-white text-[#244338]"}`}>{label}</button>)}
         </div>
         <div id="vendor-section-material" data-testid="vendor-reference-panel" className="border-t border-[#dfd8cc] p-3">
           <TabletMaterialDisclosure design={design} expanded={showTabletMaterial || phonePanel === "material"} onToggle={() => setShowTabletMaterial((open) => !open)} hiddenSkus={hiddenClosetSkus} />
         </div>
       </aside>
       </div>
-      <nav aria-label="Closet Studio phone actions" className="fixed inset-x-0 bottom-0 z-40 flex h-16 items-stretch border-t border-[#ded7cb] bg-[#fcfaf6]/95 px-1 pb-[env(safe-area-inset-bottom,0px)] backdrop-blur min-[1024px]:hidden" data-testid="vendor-phone-action-strip">
-        <button type="button" onClick={() => { setShowRoom(true); setPhonePanel(null); }} aria-label="Room settings" className={`flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 text-[10px] font-semibold ${showRoom ? "text-[#a16d3f]" : "text-[#3f4a43]"}`}><Ruler className="h-5 w-5" />Room</button>
-        <button type="button" onClick={() => { setPartsPanelOpen(true); setPhonePanel("tower"); setShowRoom(false); scrollToSection("vendor-section-tower"); }} aria-label="Tower controls" className={`flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 text-[10px] font-semibold ${phonePanel === "tower" ? "text-[#a16d3f]" : "text-[#3f4a43]"}`}><Layers3 className="h-5 w-5" />Tower</button>
-        <button type="button" onClick={() => { setPartsPanelOpen(true); setPhonePanel("parts"); setShowRoom(false); scrollToSection("vendor-section-parts"); }} aria-label="Add closet parts" className={`flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 text-[10px] font-semibold ${phonePanel === "parts" ? "text-[#a16d3f]" : "text-[#3f4a43]"}`}><ShoppingBag className="h-5 w-5" />Parts</button>
-        <button type="button" onClick={() => { setPhonePanel("material"); setShowRoom(false); setShowTabletMaterial(true); scrollToSection("vendor-section-material"); }} aria-label="Material reference" className={`flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 text-[10px] font-semibold ${phonePanel === "material" ? "text-[#a16d3f]" : "text-[#3f4a43]"}`}><FileText className="h-5 w-5" />List</button>
+      <nav aria-label="Closet Studio action strip" className="fixed inset-x-0 bottom-0 z-40 flex h-16 items-stretch border-t border-[#ded7cb] bg-[#fcfaf6]/95 px-1 pb-[env(safe-area-inset-bottom,0px)] backdrop-blur min-[1280px]:hidden" data-testid="vendor-phone-action-strip">
+        <button type="button" onClick={() => { setPartsPanelOpen(false); setShowTabletMaterial(false); setShowRoom(true); setPhonePanel(null); }} aria-label="Room settings" className={`flex min-h-12 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 text-[10px] font-semibold ${showRoom ? "text-[#a16d3f]" : "text-[#3f4a43]"}`}><Ruler className="h-5 w-5" />Room</button>
+        <button type="button" onClick={() => { setPartsPanelOpen(true); setDockView("tower"); setPhonePanel("tower"); setShowRoom(false); setShowTabletMaterial(false); scrollToSection("vendor-section-tower"); }} aria-label="Tower controls" className={`flex min-h-12 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 text-[10px] font-semibold ${phonePanel === "tower" ? "text-[#a16d3f]" : "text-[#3f4a43]"}`}><Layers3 className="h-5 w-5" />Tower</button>
+        <button type="button" onClick={() => { setPartsPanelOpen(true); setDockView("accessories"); setPhonePanel("parts"); setShowRoom(false); setShowTabletMaterial(false); scrollToSection("vendor-section-parts"); }} aria-label="Add closet parts" className={`flex min-h-12 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 text-[10px] font-semibold ${phonePanel === "parts" ? "text-[#a16d3f]" : "text-[#3f4a43]"}`}><ShoppingBag className="h-5 w-5" />Parts</button>
+        <button type="button" onClick={() => { setPhonePanel("material"); setShowRoom(false); setPartsPanelOpen(false); setShowTabletMaterial(true); scrollToSection("vendor-section-material"); }} aria-label="Material reference" className={`flex min-h-12 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 text-[10px] font-semibold ${phonePanel === "material" ? "text-[#a16d3f]" : "text-[#3f4a43]"}`}><FileText className="h-5 w-5" />List</button>
       </nav>
     </div>
+    <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+      <AlertDialogContent data-testid="vendor-delete-plan-dialog" className="max-w-md">
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete plan</AlertDialogTitle>
+          <AlertDialogDescription>Delete this closet plan and start over? This can&apos;t be undone.</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel data-testid="vendor-delete-plan-cancel">Cancel</AlertDialogCancel>
+          <AlertDialogAction onClick={deletePlan} data-testid="vendor-delete-plan-confirm" className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Delete plan</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   </div>;
 }

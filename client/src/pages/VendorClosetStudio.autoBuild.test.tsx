@@ -125,7 +125,9 @@ describe("Closet Studio kids' mode, room size, auto-build and wall views", () =>
     const tabs = within(screen.getByTestId("vendor-view-tabs"));
     expect(tabs.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["3D", "Back", "Left", "Right", "Top"]);
     const scene = screen.getByTestId("mock-vendor-scene");
-    expect(screen.getByTestId("vendor-scene-panel").className).toContain("flex-none");
+    // The canvas surface is the flexible middle column, never a fixed-height band that leaves
+    // the drawing squeezed or overlapped on tablet.
+    expect(screen.getByTestId("vendor-scene-panel").className).toContain("flex-1");
 
     fireEvent.click(tabs.getByRole("tab", { name: "Back" }));
     expect(screen.getByTestId("closet-wall-elevation").getAttribute("data-wall")).toBe("back");

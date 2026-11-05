@@ -13,6 +13,9 @@ vi.mock("@/components/vendor/VendorClosetScene", () => ({
   VendorClosetScene: () => <div data-testid="mock-vendor-scene">3D scene</div>,
 }));
 
+const openParts = () => fireEvent.click(screen.getByTestId("vendor-toolbar-edit"));
+const dock = () => screen.getByTestId("vendor-tablet-options-dock");
+
 describe("Closet Studio tablet workspace", () => {
   afterEach(() => {
     cleanup();
@@ -20,7 +23,7 @@ describe("Closet Studio tablet workspace", () => {
     window.history.replaceState(null, "", "/closet");
   });
 
-  it("keeps a wall's layout separate and exposes filled or empty status through the upper-right bird's-eye overview", () => {
+  it("keeps a wall's layout separate and exposes filled or empty status through the compact room map", () => {
     window.localStorage.clear();
     render(<VendorClosetStudio />);
     fireEvent.click(screen.getByRole("button", { name: "Start with one tower" }));
@@ -32,55 +35,116 @@ describe("Closet Studio tablet workspace", () => {
     fireEvent.click(left);
 
     expect(within(overview).getByRole("button", { name: /Left wall: empty, 0 of 96 inches used/i }).getAttribute("aria-pressed")).toBe("true");
-    const dock = screen.getByTestId("vendor-tablet-options-dock");
-    expect(within(dock).getByText(/This wall is empty.*other walls remain unchanged/i)).toBeTruthy();
-    fireEvent.click(within(dock).getByRole("button", { name: "Add first tower" }));
-    expect(within(dock).getByRole("button", { name: "Select Tower 1" })).toBeTruthy();
-    expect(within(dock).getByText(/25\.5 of 96 in on left wall/i)).toBeTruthy();
+    openParts();
+    expect(within(dock()).getByText(/This wall is empty.*other walls remain unchanged/i)).toBeTruthy();
+    fireEvent.click(within(dock()).getByRole("button", { name: "Add first tower" }));
+    expect(within(dock()).getByRole("button", { name: "Select Tower 1" })).toBeTruthy();
+    expect(within(dock()).getByText(/25\.5 of 96 in on left wall/i)).toBeTruthy();
 
     fireEvent.click(back);
-    expect(within(dock).getByText(/25\.5 of 120 in on back wall/i)).toBeTruthy();
+    expect(within(dock()).getByText(/25\.5 of 120 in on back wall/i)).toBeTruthy();
     expect(within(overview).getByRole("button", { name: /Left wall: filled, 25\.5 of 96 inches used/i })).toBeTruthy();
     const scene = readFileSync(`${process.cwd()}/client/src/components/vendor/VendorClosetScene.tsx`, "utf8");
     expect(scene).toContain("studioCornerShelvesForWall(design)");
     expect(scene).toContain("if (design.bays.length) box");
   });
 
-  it("keeps Room reversible while the tablet Material List stays a compact right-dock disclosure with tower and part controls", () => {
+  it("keeps the room map a small collapsible inset over the canvas instead of a large picture", () => {
+    window.history.replaceState(null, "", "/closet?demo=mixed");
+    render(<VendorClosetStudio />);
+
+    // The room map lives inside the scene panel as a thumbnail, and the closet drawing keeps the space.
+    const minimap = screen.getByTestId("vendor-room-minimap");
+    expect(minimap.closest("[data-testid='vendor-scene-panel']")).toBeTruthy();
+    // Thumbnail-sized inset card, not a large picture.
+    expect(minimap.querySelector("div")?.className).toContain("w-[116px]");
+    const collapse = within(minimap).getByRole("button", { name: "Collapse room map" });
+    expect(collapse.getAttribute("aria-expanded")).toBe("true");
+
+    fireEvent.click(collapse);
+    const expand = within(minimap).getByRole("button", { name: "Show room map" });
+    expect(expand.getAttribute("aria-expanded")).toBe("false");
+    expect(expand.textContent).toMatch(/Room/);
+    expect(within(minimap).queryByTestId("vendor-room-overview")).toBeNull();
+
+    fireEvent.click(expand);
+    expect(within(minimap).getByTestId("vendor-room-overview")).toBeTruthy();
+  });
+
+  it("keeps secondary panels closed by default and opens them from the single Edit control", () => {
+    window.history.replaceState(null, "", "/closet?demo=mixed");
+    render(<VendorClosetStudio />);
+
+    // Nothing covers the canvas on load: the dock, room panel and material list are closed.
+    expect(dock().className).toContain("hidden");
+    expect(screen.getByTestId("vendor-blueprint-column").className).toContain("hidden");
+    expect(screen.getByTestId("vendor-controls").className).toContain("hidden");
+    expect(screen.getByTestId("mock-vendor-scene")).toBeTruthy();
+
+    const edit = screen.getByTestId("vendor-toolbar-edit");
+    expect(edit.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(edit);
+    expect(edit.getAttribute("aria-pressed")).toBe("true");
+    expect(dock().className).toContain("flex");
+    expect(within(dock()).getByRole("button", { name: "Select Tower 2" })).toBeTruthy();
+
+    // One explicit close puts the canvas back on its own.
+    fireEvent.click(within(dock()).getByRole("button", { name: "Close accessories panel" }));
+    expect(dock().className).toContain("hidden");
+    expect(edit.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("keeps Room and the Material List reversible without taking the canvas away", () => {
     window.history.replaceState(null, "", "/closet?demo=mixed");
     render(<VendorClosetStudio />);
 
     const room = screen.getByRole("button", { name: "Room and wall settings" });
-    const dock = screen.getByTestId("vendor-tablet-options-dock");
     const blueprint = screen.getByTestId("vendor-blueprint-column");
-    const reference = within(blueprint).getByRole("button", { name: "Material reference details" });
     expect(room.getAttribute("aria-expanded")).toBe("false");
-    expect(reference.getAttribute("aria-expanded")).toBe("false");
-    expect(screen.getByTestId("mock-vendor-scene")).toBeTruthy();
-    expect(within(dock).getByRole("button", { name: "Select Tower 2" })).toBeTruthy();
-    expect(within(dock).getByTestId("vendor-accessory-shoe")).toBeTruthy();
 
     fireEvent.click(room);
     expect(room.getAttribute("aria-expanded")).toBe("true");
-    expect(screen.getAllByRole("button", { name: "Close room settings" })).toHaveLength(2);
+    expect(screen.getByTestId("vendor-controls").className).toContain("flex");
+    fireEvent.click(screen.getAllByRole("button", { name: "Close room settings" })[0]);
+    expect(room.getAttribute("aria-expanded")).toBe("false");
+
+    fireEvent.click(within(screen.getByTestId("vendor-phone-action-strip")).getByRole("button", { name: "Material reference" }));
+    expect(blueprint.className).toContain("flex");
+    const reference = within(blueprint).getByRole("button", { name: "Material reference details" });
     fireEvent.click(reference);
     expect(reference.getAttribute("aria-expanded")).toBe("true");
     expect(within(blueprint).getByTestId("vendor-tablet-material-list")).toBeTruthy();
-    fireEvent.click(reference);
-    expect(reference.getAttribute("aria-expanded")).toBe("false");
-    expect(within(dock).getByRole("button", { name: "Select Tower 2" })).toBeTruthy();
+    fireEvent.click(within(blueprint).getByRole("button", { name: "Close material list" }));
+    expect(blueprint.className).toContain("hidden");
+  });
+
+  it("pins the essential toolbar controls, including Delete plan, and keeps them 44px tall", () => {
+    window.history.replaceState(null, "", "/closet?demo=mixed");
+    render(<VendorClosetStudio />);
+
+    const toolbar = screen.getByTestId("vendor-studio-toolbar");
+    for (const name of ["Back to room choice", "Delete plan", "Zoom to fit the closet", "Edit parts"]) {
+      const button = within(toolbar).getByRole("button", { name });
+      expect(button.className).toMatch(/h-11|min-h-11/);
+    }
+    const remove = within(toolbar).getByRole("button", { name: "Delete plan" });
+    expect(remove.className).toContain("border-[#c25b48]");
+    expect(remove.className).toContain("text-[#9c3524]");
+    // Secondary tools are not in the header; they live in the drawers/tabs.
+    expect(within(toolbar).queryByRole("button", { name: "Add 29.5-inch corner shelf" })).toBeNull();
   });
 
   it("keeps the three-column layout for wide desktops but uses on-demand panels at tablet CSS widths", () => {
     window.history.replaceState(null, "", "/closet?demo=mixed");
     render(<VendorClosetStudio />);
     expect(screen.getByTestId("vendor-workspace").className).toContain("minmax(320px,360px)_minmax(0,1fr)_250px");
-    expect(screen.getByTestId("vendor-blueprint-column").className).toContain("min-[1024px]:w-[250px]");
+    expect(screen.getByTestId("vendor-blueprint-column").className).toContain("min-[1280px]:w-[250px]");
     expect(screen.getByTestId("vendor-blueprint-column").className).not.toContain("1a4568");
     const referencePanel = screen.getByTestId("vendor-reference-panel");
     expect(referencePanel.closest("[data-testid='vendor-blueprint-column']")).toBeTruthy();
     expect(screen.queryByTestId("vendor-part-tray")).toBeNull();
-    const shoe = within(screen.getByTestId("vendor-tablet-options-dock")).getByTestId("vendor-accessory-shoe");
+    openParts();
+    const shoe = within(dock()).getByTestId("vendor-accessory-shoe");
     expect(shoe.className).toContain("min-h-14");
     expect(shoe.className).toContain("w-full");
     const scene = readFileSync(`${process.cwd()}/client/src/components/vendor/VendorClosetScene.tsx`, "utf8");
@@ -88,28 +152,19 @@ describe("Closet Studio tablet workspace", () => {
     expect(screen.getByTestId("mock-vendor-scene")).toBeTruthy();
   });
 
-  it("moves every tablet design option into the right dock and keeps the dated material list as a compact dropdown", () => {
+  it("gives the canvas the space and never overlaps it until a panel is opened", () => {
     window.history.replaceState(null, "", "/closet?demo=mixed");
     render(<VendorClosetStudio />);
 
-    const dock = screen.getByTestId("vendor-tablet-options-dock");
-    const material = within(screen.getByTestId("vendor-blueprint-column")).getByTestId("vendor-tablet-material-disclosure");
-    const toggle = within(material).getByRole("button", { name: "Material reference details" });
-    expect(toggle.getAttribute("aria-expanded")).toBe("false");
-    // One copy of the controls only: the old wide-desktop bottom panels are gone, not CSS-hidden.
-    expect(screen.queryByTestId("vendor-tower-controls")).toBeNull();
-    expect(screen.queryByTestId("vendor-part-tray")).toBeNull();
-    expect(screen.getAllByTestId("vendor-tablet-options-dock")).toHaveLength(1);
-    expect(within(dock).getByRole("button", { name: "Select Tower 2" })).toBeTruthy();
-    expect(within(dock).getByTestId("vendor-accessory-shoe")).toBeTruthy();
-
-    fireEvent.click(toggle);
-    expect(toggle.getAttribute("aria-expanded")).toBe("true");
-    expect(within(material).getByTestId("vendor-tablet-material-list").textContent).toMatch(/March 1, 2022 customer List/i);
-    expect(within(material).getByTestId("vendor-reference-total")).toBeTruthy();
+    // The canvas column is the flex-1 surface; panels are absolute sheets with the hidden attribute.
+    const scenePanel = screen.getByTestId("vendor-scene-panel");
+    expect(scenePanel.className).toContain("flex-1");
+    expect(scenePanel.className).not.toContain("46vh");
+    expect(screen.getByTestId("vendor-workspace").className).toContain("overflow-hidden");
+    expect(dock().getAttribute("data-open")).toBe("false");
   });
 
-  it("uses the Kitchen-style phone action strip to jump to the Tower, Parts, and List controls that scroll below the fixed 3D panel", () => {
+  it("uses the Kitchen-style phone action strip to reach the Tower, Parts, and List controls", () => {
     window.history.replaceState(null, "", "/closet?demo=mixed");
     render(<VendorClosetStudio />);
 
@@ -120,34 +175,36 @@ describe("Closet Studio tablet workspace", () => {
     const list = within(strip).getByRole("button", { name: "Material reference" });
     expect(screen.queryByTestId("vendor-tower-controls")).toBeNull();
 
-    const dock = screen.getByTestId("vendor-tablet-options-dock");
-    expect(dock.className).not.toContain("fixed");
-    expect(screen.getByTestId("vendor-scene-panel").className).toContain("flex-none");
-    expect(screen.getByTestId("vendor-scene-panel").className).toContain("min-[1024px]:flex-1");
+    expect(dock().className).not.toMatch(/\bfixed\b/);
     fireEvent.click(tower);
-    expect(within(dock).getByRole("button", { name: "Select Tower 2" })).toBeTruthy();
+    expect(within(dock()).getByRole("button", { name: "Select Tower 2" })).toBeTruthy();
     fireEvent.click(parts);
-    expect(within(dock).getByTestId("vendor-accessory-shoe")).toBeTruthy();
-    fireEvent.click(within(dock).getByRole("button", { name: /Adjustable shelf/ }));
+    expect(within(dock()).getByTestId("vendor-accessory-shoe")).toBeTruthy();
+    fireEvent.click(within(dock()).getByRole("button", { name: /Adjustable shelf/ }));
     const source = readFileSync(`${process.cwd()}/client/src/pages/VendorClosetStudio.tsx`, "utf8");
     expect(source).toContain("Drag to rotate · tap a tower to edit its parts");
+    expect(source).toContain("scrollWithinScroller");
+    // Neither the intro jump nor the section jump may use the document-wide scrollIntoView that
+    // used to pull the whole page back to the top.
+    expect(source).not.toContain("visiblePlanner?.scrollIntoView");
+    expect(source).not.toContain("getElementById(id)?.scrollIntoView");
     fireEvent.click(list);
     expect(within(screen.getByTestId("vendor-blueprint-column")).getByTestId("vendor-tablet-material-list")).toBeTruthy();
   });
 
-  it("lets a tablet user plan a sourced straight shelf cut in the right dock without exposing unverified accessory cuts", () => {
+  it("lets a tablet user plan a sourced straight shelf cut in the dock without exposing unverified accessory cuts", () => {
     window.history.replaceState(null, "", "/closet?demo=mixed");
     render(<VendorClosetStudio />);
+    openParts();
 
-    const dock = screen.getByTestId("vendor-tablet-options-dock");
-    fireEvent.click(within(dock).getByRole("button", { name: "Select Tower 1" }));
-    const cut = within(dock).getByTestId("vendor-cut-to-fit");
+    fireEvent.click(within(dock()).getByRole("button", { name: "Select Tower 1" }));
+    const cut = within(dock()).getByTestId("vendor-cut-to-fit");
     expect(within(cut).getByRole("combobox", { name: "Cut-to-fit stock shelf width" })).toBeTruthy();
     const measured = within(cut).getByRole("spinbutton", { name: "Installed clear shelf width in inches" });
     fireEvent.change(measured, { target: { value: "22.5" } });
     fireEvent.click(within(cut).getByRole("button", { name: "Apply measured width" }));
-    expect(within(dock).getByText("Cut planned")).toBeTruthy();
-    const updatedCut = within(dock).getByTestId("vendor-cut-to-fit");
+    expect(within(dock()).getByText("Cut planned")).toBeTruthy();
+    const updatedCut = within(dock()).getByTestId("vendor-cut-to-fit");
     expect(updatedCut.textContent).toMatch(/planning difference.*1\.5/i);
     expect(within(updatedCut).getByRole("button", { name: "Full stock" })).toBeTruthy();
     const scene = readFileSync(`${process.cwd()}/client/src/components/vendor/VendorClosetScene.tsx`, "utf8");
@@ -158,10 +215,10 @@ describe("Closet Studio tablet workspace", () => {
     window.history.replaceState(null, "", "/closet?demo=mixed");
     render(<VendorClosetStudio />);
 
-    const dock = screen.getByTestId("vendor-tablet-options-dock");
-    expect(within(dock).getByTestId("vendor-shoe-pitch-caveat").textContent).toMatch(/45° illustrative shoe pitch.*supplier fit and attachment/i);
+    openParts();
+    expect(within(dock()).getByTestId("vendor-shoe-pitch-caveat").textContent).toMatch(/45° illustrative shoe pitch.*supplier fit and attachment/i);
     fireEvent.click(within(screen.getByTestId("vendor-phone-action-strip")).getByRole("button", { name: "Add closet parts" }));
-    expect(within(dock).getByTestId("vendor-shoe-pitch-caveat").textContent).toMatch(/45° illustrative shoe pitch/i);
+    expect(within(dock()).getByTestId("vendor-shoe-pitch-caveat").textContent).toMatch(/45° illustrative shoe pitch/i);
 
     const scene = readFileSync(`${process.cwd()}/client/src/components/vendor/VendorClosetScene.tsx`, "utf8");
     expect(scene).toContain("STUDIO_ILLUSTRATIVE_SHOE_PITCH_DEG");
@@ -178,8 +235,8 @@ describe("Closet Studio tablet workspace", () => {
 
     fireEvent.click(within(screen.getByTestId("vendor-room-overview")).getByRole("button", { name: /Right wall: empty/i }));
 
-    const dock = screen.getByTestId("vendor-tablet-options-dock");
-    const corner = within(dock).getByTestId("vendor-corner-planning-controls");
+    openParts();
+    const corner = within(dock()).getByTestId("vendor-corner-planning-controls");
     expect(within(corner).getByTestId("vendor-corner-planning-caveat").textContent).toMatch(/29\.5.*2026-spec planning envelope.*not a curved profile.*connector.*H-joint/i);
     const frontRight = within(corner).getByRole("button", { name: "Highlight Front-right 90-degree corner" });
     fireEvent.click(frontRight);
@@ -203,7 +260,7 @@ describe("Closet Studio tablet workspace", () => {
     expect(within(screen.getByTestId("vendor-room-overview")).getByRole("button", { name: /Right wall: filled/i })).toBeTruthy();
 
     fireEvent.click(within(screen.getByTestId("vendor-phone-action-strip")).getByRole("button", { name: "Add closet parts" }));
-    expect(within(dock).getByRole("button", { name: "Plan 29.5-inch curved corner shelf" })).toBeTruthy();
+    expect(within(dock()).getByRole("button", { name: "Plan 29.5-inch curved corner shelf" })).toBeTruthy();
 
     const scene = readFileSync(`${process.cwd()}/client/src/components/vendor/VendorClosetScene.tsx`, "utf8");
     expect(scene).toContain("cornerShelfPlanningEnvelope: true");
@@ -220,12 +277,13 @@ describe("Closet Studio tablet workspace", () => {
     expect(scene).toContain("finish: design.finish");
   });
 
-  it("keeps an always-visible Corner shelf action targeted at the actual planner rather than requiring dock scrolling", () => {
+  it("keeps the corner shelf planner reachable from the Parts palette without a scrolling trap", () => {
     window.history.replaceState(null, "", "/closet");
     render(<VendorClosetStudio />);
     fireEvent.click(screen.getByRole("button", { name: "Start with one tower" }));
 
-    const entry = screen.getByRole("button", { name: "Add 29.5-inch corner shelf" });
+    openParts();
+    const entry = within(dock()).getByRole("button", { name: "Plan 29.5-inch curved corner shelf" });
     expect(entry.textContent).toMatch(/corner/i);
     fireEvent.click(entry);
 
@@ -246,15 +304,15 @@ describe("Closet Studio tablet workspace", () => {
     expect(within(finish).getByRole("option", { name: "Spiced Mahogany" })).toBeTruthy();
     fireEvent.change(finish, { target: { value: "Slate Rift" } });
     expect((finish as HTMLSelectElement).value).toBe("Slate Rift");
-    expect(screen.getByText(/One tower at a time · Slate Rift/i)).toBeTruthy();
+    expect(screen.getByTestId("vendor-studio-toolbar").textContent).toMatch(/Slate Rift/);
   });
 
   it("places sourced baskets as editable visual-planning envelopes in Parts without substituting 2026 SKUs or claiming rail fit", () => {
     window.history.replaceState(null, "", "/closet?demo=mixed");
     render(<VendorClosetStudio />);
+    openParts();
 
-    const dock = screen.getByTestId("vendor-tablet-options-dock");
-    const basket = within(dock).getByTestId("vendor-basket-planning-controls");
+    const basket = within(dock()).getByTestId("vendor-basket-planning-controls");
     expect(within(basket).getByTestId("vendor-basket-planning-caveat").textContent).toMatch(/visual planning only.*supplier rail and clearance verification.*14\.5.*outer basket.*rail.*mounting offsets.*travel.*446807.*446815.*not substituted/i);
     const source = within(basket).getByRole("combobox", { name: "Basket visual-planning source SKU" });
     fireEvent.change(source, { target: { value: "432902" } });
@@ -280,6 +338,7 @@ describe("Closet Studio tablet workspace", () => {
     window.history.replaceState(null, "", "/closet?demo=mixed");
     render(<VendorClosetStudio />);
 
+    fireEvent.click(within(screen.getByTestId("vendor-phone-action-strip")).getByRole("button", { name: "Material reference" }));
     const blueprint = screen.getByTestId("vendor-blueprint-column");
     fireEvent.click(within(blueprint).getByRole("button", { name: "Material reference details" }));
     const catalog = within(blueprint).getByTestId("vendor-source-catalog");
