@@ -11,6 +11,7 @@ import {
   type ReplicateDoor,
 } from "@shared/wizardDoorMatch";
 import type { AuditStyle } from "@shared/walzcraftDoorAudit";
+import { auditWalzcraftDoor } from "@shared/walzcraftDoorAudit";
 import { writeWizardDoorFinish, type WizardDoorFinish } from "@shared/walzcraftDesignerPickup";
 import {
   PAINT_FINISH,
@@ -99,6 +100,11 @@ export function DoorEditorWalzAudit({
   uploadImage?: (file: File) => Promise<string | null>;
 }) {
   const suggestion = suggestWizardMatch(style);
+  // Ranked WalzCraft profile candidates from the audit sheet. The admin can pick
+  // one of the top four, or upload their own profile photo below.
+  const audit = useMemo(() => auditWalzcraftDoor(style), [style]);
+  const profileChoices = useMemo(() => audit.profiles.slice(0, 4), [audit]);
+  const [profileRank, setProfileRank] = useState<number | null>(profileChoices[0]?.rank ?? null);
   const grains = useMemo(() => framelessGrains(), []);
   const [grainCode, setGrainCode] = useState<string | null>(null);
   const [orientation, setOrientation] = useState<GrainOrientation | null>(null);
@@ -227,6 +233,9 @@ export function DoorEditorWalzAudit({
     commitWizardFinish(active, patch);
     onApply?.(patch);
   };
+
+  /** The profile the admin picked from the four ranked matches, if any. */
+  const selectedProfile = profileChoices.find((item) => item.rank === profileRank) ?? null;
 
   /** Hands the finish to the editor, which saves it and writes the record the Designer reads. */
   const commitWizardFinish = (color: WizardColor, patch: MatchSavePatch) => {
@@ -444,6 +453,35 @@ export function DoorEditorWalzAudit({
         <p className="text-[11px] text-muted-foreground">
           Choose a folder of door photos (for example a Skyline color folder) or several files, then type the WalzCraft model number. The file whose name carries that number is picked for you.
         </p>
+
+        {/* Ranked WalzCraft profile matches. Pick one of the top four, or upload a
+            custom profile photo below. Nothing is chosen until the admin clicks. */}
+        <div data-testid="walz-audit-profiles" className="space-y-1 pt-1">
+          <p className="text-[11px] font-semibold">WalzCraft profiles</p>
+          {!audit.door && (
+            <p className="text-[11px] text-muted-foreground">No WalzCraft door matches this distributor and name yet.</p>
+          )}
+          {audit.door && profileChoices.length === 0 && (
+            <p className="text-[11px] text-muted-foreground">This door's sheet row has no ranked profiles.</p>
+          )}
+          {profileChoices.map((item) => (
+            <button
+              key={`${item.rank}-${item.name}`}
+              type="button"
+              data-testid={`walz-audit-profile-${item.rank}`}
+              aria-pressed={profileRank === item.rank}
+              onClick={() => setProfileRank(item.rank)}
+              className={`flex w-full items-center justify-between rounded border px-2 py-1 text-left text-[11px] ${profileRank === item.rank ? "border-[#d7a46c] bg-white font-semibold" : "border-[#244338]/20"}`}
+            >
+              <span>{item.name}{item.code ? ` · ${item.code}` : ""}</span>
+              <span data-testid={`walz-audit-profile-pct-${item.rank}`}>{item.pct}% profile match</span>
+            </button>
+          ))}
+          {audit.door && !audit.exact && (
+            <p className="text-[10px] italic text-[#244338]/70">Closest sheet row. It stays a candidate until you approve it.</p>
+          )}
+        </div>
+
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <input
             data-testid="wizard-model-number"
@@ -494,7 +532,19 @@ export function DoorEditorWalzAudit({
       </div>
 
       <button type="button" data-testid="wizard-apply" className="rounded bg-[#244338] px-2 py-1 text-xs font-semibold text-[#fffdf9]" onClick={apply}>Apply</button>
-      {saved && <p data-testid="wizard-applied" className="text-xs">Saved {saved.renderHex} · {saved.woodSpecies ?? "no grain"} · {saved.grainDirection}{savedColor ? ` · ${savedColor.label}` : ""}</p>}
+      {saved && (
+        <p data-testid="wizard-applied" className="text-xs">
+          Saved {saved.renderHex} · {saved.woodSpecies ?? "no grain"} · {saved.grainDirection}
+          {savedColor ? ` · ${savedColor.label}` : ""}
+          {selectedProfile ? ` · ${selectedProfile.name} (${selectedProfile.pct}% profile match)` : ""}
+        </p>
+      )}
+      {selectedProfile && (
+        <p data-testid="wizard-profile-picked" className="text-xs">
+          Profile: {selectedProfile.name}
+          {selectedProfile.code ? ` · ${selectedProfile.code}` : ""} · {selectedProfile.pct}% profile match
+        </p>
+      )}
       <div data-testid="wizard-replicate" className="space-y-1">
         <p className="text-xs font-semibold">Apply to other doors</p>
         <input data-testid="wizard-replicate-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search doors" className="w-full rounded border px-1 py-0.5 text-xs" />
