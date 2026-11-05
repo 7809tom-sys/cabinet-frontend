@@ -1,5 +1,5 @@
 import {
-  studioBasketPlacementsForWall, studioBays, studioFixedBottom, studioFixedTop, studioItemHeight, studioStockWidth,
+  STUDIO_ILLUSTRATIVE_SHOE_PITCH_DEG, studioBasketPlacementsForWall, studioBays, studioFixedBottom, studioFixedTop, studioItemHeight, studioStockWidth,
   type StudioBay, type StudioDesign, type StudioItem, type StudioWall,
 } from "./vendorClosetStudio";
 
@@ -20,7 +20,12 @@ import {
 export type DecorHanger = { kind: "shirt" | "dress" | "coat" | "trouser"; leftIn: number; widthIn: number };
 /** Folded stacks rest on an adjustable shelf; `leftIn` positions the stack in the bay. */
 export type DecorFolded = { leftIn: number; stackIn: number; hueIndex: number; widthIn: number };
-export type DecorShoe = { leftIn: number; widthIn: number; hueIndex: number; heightIn: number };
+/**
+ * A pair standing on a shoe organizer. `shelfBottomIn` is that organizer's own elevation, so the
+ * pair rests on the shelf it belongs to wherever the shelf sits (and in either mount mode) instead
+ * of at a height of its own.
+ */
+export type DecorShoe = { leftIn: number; widthIn: number; hueIndex: number; heightIn: number; shelfBottomIn: number };
 
 export type StudioDecorBay = {
   bayId: string;
@@ -41,6 +46,40 @@ const HANGER_PITCH_IN = 4;
 const FOLDED_STACK_HEIGHT_IN = 6;
 /** A pair of shoes on the illustrative 45° board. */
 const SHOE_PAIR_WIDTH_IN = 4.6;
+/** The pair's own height, in inches; placement comes from the shelf, never from this number. */
+const SHOE_PAIR_HEIGHT_IN = 2.4;
+/** Sourced shoe-board thickness; a pair rests on this board, not at a height of its own. */
+export const STUDIO_DECOR_SHOE_BOARD_IN = 0.75;
+/** Depth of an illustrative pair along the board, in inches. */
+export const STUDIO_DECOR_SHOE_DEPTH_IN = 8.5;
+/** How far back from the board's front edge a pair's centre rests, clear of the illustrative fence. */
+export const STUDIO_DECOR_SHOE_REST_BACK_IN = 5;
+
+/**
+ * Where one pair sits inside its own shoe shelf's group. That group is the one the scene places at
+ * the shelf's `bottomIn` and tilts to `STUDIO_ILLUSTRATIVE_SHOE_PITCH_DEG`, with the board's front
+ * low edge on the group origin — so these numbers are relative to the shelf, never to the floor.
+ *
+ * The board's top face is the plane at `STUDIO_DECOR_SHOE_BOARD_IN`, so a pair's centre is half its
+ * own height above that face and it inherits the board's pitch instead of standing upright.
+ */
+export function studioDecorShoeRest(shoe: DecorShoe, bayWidthIn: number, pairIndex = 0): {
+  /** Pair centre across the bay, in inches from the bay's centre line. */
+  offsetFromBayCenterIn: number;
+  /** Pair centre above the shelf's own bottom face, in inches. */
+  aboveShelfBottomIn: number;
+  /** Pair centre behind the shelf's front edge, in inches (positive goes back into the tower). */
+  behindFrontEdgeIn: number;
+  /** Pitch the pair inherits from the board, in degrees. */
+  pitchDeg: number;
+} {
+  return {
+    offsetFromBayCenterIn: shoe.leftIn + pairIndex * shoe.widthIn * 0.52 + shoe.widthIn * 0.23 - bayWidthIn / 2,
+    aboveShelfBottomIn: STUDIO_DECOR_SHOE_BOARD_IN + shoe.heightIn / 2,
+    behindFrontEdgeIn: STUDIO_DECOR_SHOE_REST_BACK_IN,
+    pitchDeg: STUDIO_ILLUSTRATIVE_SHOE_PITCH_DEG,
+  };
+}
 
 /**
  * Small deterministic PRNG (mulberry32). Seeded from the ids so the same design always draws the
@@ -146,7 +185,10 @@ export function studioBayDecor(design: StudioDesign, bay: StudioBay, wallId: Stu
       shoes.push({
         leftIn: marginIn + index * pairWidthIn + pairWidthIn * 0.18,
         widthIn: pairWidthIn * 0.64,
-        heightIn: 3.6,
+        heightIn: SHOE_PAIR_HEIGHT_IN,
+        // The pair belongs to this shelf: it rides that elevation, not a fixed one, so the shoes
+        // follow the shelf wherever the customer puts it and in either mount mode.
+        shelfBottomIn: item.bottomIn,
         hueIndex: Math.floor(random() * 6),
       });
     }

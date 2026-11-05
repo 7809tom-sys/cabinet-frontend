@@ -97,6 +97,26 @@ describe("ClosetWallElevation", () => {
     expect(decor!.getAttribute("data-decor-hangers")).toBe("0");
   });
 
+  it("draws shoe decor resting on its own shoe shelf, not near the floor", () => {
+    const design = mixedDesign();
+    render(<ClosetWallElevation design={design} wall="back" decor />);
+    const svg = screen.getByTestId("closet-wall-elevation");
+    const shoeShelf = design.bays[1].items.find((item) => item.kind === "shoe")!;
+    const groups = Array.from(svg.querySelectorAll("[data-decor='shoe']"));
+    expect(groups.length).toBeGreaterThan(0);
+    // The decor pair is tagged with the shelf elevation it stands on, which is the shelf really placed.
+    for (const group of groups) expect(group.getAttribute("data-shelf-bottom")).toBe(String(shoeShelf.bottomIn));
+    // Its foot is the shelf's bottom plus the sourced board, nowhere near the floor.
+    const firstPath = groups[0].querySelector("path")!;
+    const footY = Number(firstPath.getAttribute("d")!.split(" ")[1]);
+    const SCALE = 6;
+    const roomIn = 100;
+    const MARGIN_TOP = 34;
+    const expectedY = MARGIN_TOP + (roomIn - (shoeShelf.bottomIn + 0.75)) * SCALE;
+    expect(footY).toBeCloseTo(expectedY, 6);
+    expect(footY).toBeLessThan(MARGIN_TOP + roomIn * SCALE * 0.8);
+  });
+
   it("keeps decor out of the parts list: the elevation's decor changes nothing a takeoff sees", () => {
     const design = mixedDesign();
     const withDecor = studioTakeoff(design);
