@@ -11,6 +11,7 @@ import {
   guessCountertopMaterialId,
   activeThreeDSurface,
   normalizeFinalMaterialSelections,
+  mergeVerifiedSurfacePriceRecords,
   refreshVerifiedSurfaceSelections,
   setActiveThreeDSurface,
   setCountertopSurfaceForScope,
@@ -439,5 +440,59 @@ describe("material mapping heuristics", () => {
   it("returns null for undefined picks", () => {
     expect(guessFlooringMaterialId(undefined)).toBeNull();
     expect(guessCountertopMaterialId(undefined)).toBeNull();
+  });
+});
+
+describe("placed bathroom fixture pricing", () => {
+  const placedToilet = {
+    id: 560,
+    pelicanCode: "PL-12011 MB",
+    name: "PL-12011 MB",
+    category: "Toilets & Bidets",
+    subCategory: "Toilets & Bidets",
+    size: null,
+    imageUrl: "/manus-storage/pelican/560_686ffaf3.png",
+    sellPrice: 984.06,
+  };
+
+  it("keeps a placed toilet's real sell price when the drawable palette omits it", () => {
+    // surfaces.designSelectionByIds is drawability-gated and never returns a
+    // toilet; surfaces.byIds returns the same active, priced catalog row.
+    const merged = mergeVerifiedSurfacePriceRecords(
+      [{ id: 1, name: "Apollo 3cm", category: "Quartz Slabs (Countertops)", sellPrice: 1439.98 }],
+      [placedToilet],
+    );
+    const [refreshed] = refreshVerifiedSurfaceSelections([placedToilet], merged);
+    expect(refreshed).toMatchObject({
+      id: 560,
+      pelicanCode: "PL-12011 MB",
+      sellPrice: 984.06,
+    });
+  });
+
+  it("still clears a saved price when neither catalog read returns the row", () => {
+    const merged = mergeVerifiedSurfacePriceRecords([], []);
+    const [refreshed] = refreshVerifiedSurfaceSelections([placedToilet], merged);
+    expect(refreshed!.sellPrice).toBeNull();
+  });
+
+  it("lets the drawable record win for a row both reads return", () => {
+    const merged = mergeVerifiedSurfacePriceRecords(
+      [{ id: 1, name: "Apollo 3cm", category: "Quartz Slabs (Countertops)", sellPrice: 1439.98 }],
+      [{ id: 1, name: "Apollo 3cm", category: "Quartz Slabs (Countertops)", sellPrice: 1200 }],
+    );
+    expect(merged).toEqual([
+      { id: 1, name: "Apollo 3cm", category: "Quartz Slabs (Countertops)", sellPrice: 1439.98 },
+    ]);
+  });
+
+  it("never revives a price for an inactive or unpublished catalog row", () => {
+    // surfaces.byIds still returns rows the storefront has withdrawn.
+    const merged = mergeVerifiedSurfacePriceRecords([], [
+      { ...placedToilet, isActive: false },
+      { ...placedToilet, id: 561, isActive: true, showInCatalog: false },
+      { ...placedToilet, id: 562, isActive: true, showInCatalog: true },
+    ]);
+    expect(merged.map((record) => record.id)).toEqual([562]);
   });
 });

@@ -368,9 +368,11 @@ import {
   guessCountertopMaterialId,
   activeThreeDSurface,
   normalizeFinalMaterialSelections,
+  mergeVerifiedSurfacePriceRecords,
   refreshVerifiedSurfaceSelections,
   setCountertopSurfaceForScope,
   type SurfaceRole,
+  type VerifiedSurfaceSelectionRecord,
 } from "@/lib/surfaceSelection";
 import { selectedBacksplashTextureUrl } from "@/lib/backsplashProductMaterial";
 import { mosaicCatalogFor } from "@/lib/mosaicCatalog";
@@ -1472,13 +1474,30 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     { ids: selectedSurfaceIdsForMaterialRefresh },
     { enabled: selectedSurfaceIdsForMaterialRefresh.length > 0 },
   );
+  // designSelectionByIds deliberately keeps only rows the kitchen palette can
+  // draw exactly, so a sourced toilet, bidet, tub, or enclosure never comes
+  // back from it. Reading only that list cleared a placed bathroom fixture's
+  // real sell price to null and the fixture then reached Materials and the
+  // cart at $0.00. byIds is the same active, catalog-visible, source-priced
+  // record without the 3D-drawability gate, so it supplies the price and
+  // source identity those fixtures legitimately have. Rows absent from both
+  // lists are still treated as stale and lose the saved amount.
+  const { data: catalogSelectedSurfaceRecords, isSuccess: catalogSelectedSurfacesLoaded } = trpc.surfaces.byIds.useQuery(
+    { ids: selectedSurfaceIdsForMaterialRefresh },
+    { enabled: selectedSurfaceIdsForMaterialRefresh.length > 0 },
+  );
+  const selectedSurfacePriceRecords = useMemo<VerifiedSurfaceSelectionRecord[]>(
+    () => mergeVerifiedSurfacePriceRecords(verifiedSelectedSurfaceRecords, catalogSelectedSurfaceRecords),
+    [catalogSelectedSurfaceRecords, verifiedSelectedSurfaceRecords],
+  );
+  const selectedSurfacePriceRecordsLoaded = verifiedSelectedSurfacesLoaded && catalogSelectedSurfacesLoaded;
   useEffect(() => {
-    if (!verifiedSelectedSurfacesLoaded || !verifiedSelectedSurfaceRecords) return;
+    if (!selectedSurfacePriceRecordsLoaded) return;
     setSelectedSurfaces((current) => {
-      const refreshed = refreshVerifiedSurfaceSelections(current, verifiedSelectedSurfaceRecords);
+      const refreshed = refreshVerifiedSurfaceSelections(current, selectedSurfacePriceRecords);
       return refreshed.some((surface, index) => surface !== current[index]) ? refreshed : current;
     });
-  }, [verifiedSelectedSurfaceRecords, verifiedSelectedSurfacesLoaded]);
+  }, [selectedSurfacePriceRecords, selectedSurfacePriceRecordsLoaded]);
   const { data: recommendedCountertopProducts } = trpc.surfaces.recommended.useQuery({ role: "countertop", limit: 200 });
   const countertopProductChoices = useMemo<SelectedSurface[]>(() => {
     const byId = new Map<number, SelectedSurface>();
