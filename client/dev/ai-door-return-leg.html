@@ -1,0 +1,25 @@
+<!doctype html>
+<!--
+  Dev-only capture page for the AI door-description return leg.
+
+  ?state=saved | waiting | failed | not-connected | empty  the Edit Door Style
+  panel with the mocked model answer in each state.
+  ?state=door  the door the 3D Designer builds from that description.
+
+  The "AI" answer is mocked in the page: no provider key is available here and
+  no live model is called. Loaded at /dev/ai-door-return-leg.html by
+  e2e/ai-door-description-return-leg.spec.ts; imported by nothing in the app.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>AI door description return leg</title>
+    <style>
+      html, body { margin: 0; background: #eef1f4; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/aiDoorReturnLegHarness.tsx"></script>
+  </body>
+</html>
