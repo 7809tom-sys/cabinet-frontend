@@ -112,6 +112,7 @@ import {
 } from "@/lib/designerFreshStart";
 import { defaultPaletteTabForRoom, requestedDesignerRoom } from "@/lib/designerRoomEntry";
 import { DESIGNER_CANVAS_CONTAINER_CLASS } from "@/lib/designerLayout";
+import { exitDesignerFullscreen, requestDesignerFullscreen, shouldIgnoreFocusExitKey } from "@/lib/designerFocus3D";
 import { rotateCustomPlanClockwise } from "@/lib/rotatePlan";
 import { canShowCompactWorkspaceMoveControl } from "@/lib/compactWorkspaceMove";
 import {
@@ -913,6 +914,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const showTabletPreviewToggle = (isAdmin || import.meta.env.DEV) && !insideTabletPreview && !isMobile && !isTabletWorkspace;
   const [designerImmersive] = useDesignerImmersive();
   const tabletImmersiveHeader = isTabletWorkspace && designerImmersive;
+  // Focus 3D: the 3D viewer takes the whole screen. Both Designer toolbars, the
+  // selected-cabinet bar, and the side panels are hidden; the canvas keeps its
+  // own navigation pad. Leaving fullscreen (Esc, browser chrome) also exits, so
+  // the chrome always comes back with the browser.
+  const [focus3DActive, setFocus3DActive] = useState(false);
+  const focus3DRootRef = useRef<HTMLDivElement>(null);
+  const focus3DActiveRef = useRef(false);
+  focus3DActiveRef.current = focus3DActive;
   const [, navigate] = useLocation();
   const { sourceDesignId: cartSourceDesignId, clear: clearCart, replaceWithDesignItems, lockedStyleLabel: cartLockedStyleLabel } = useCart();
   const [mobilePanel, setMobilePanel] = useState<null | "catalog" | "cart" | "style" | "room">(() => {
@@ -1211,6 +1220,56 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
     return initialDesignWorkspaceView(window.location.search);
   });
+
+  // The canvas keeps its own frame, so Focus 3D asks the browser for fullscreen
+  // on the Designer root when the browser supports it. Whether or not the
+  // request is granted, the toolbars still hide: the layout change never depends
+  // on a permission the browser can refuse.
+  const exitFocus3D = useCallback(() => {
+    setFocus3DActive(false);
+    void exitDesignerFullscreen();
+  }, []);
+  const toggleFocus3D = useCallback(() => {
+    if (focus3DActiveRef.current) {
+      exitFocus3D();
+      return;
+    }
+    setFocus3DActive(true);
+    void requestDesignerFullscreen(focus3DRootRef.current);
+  }, [exitFocus3D]);
+  // Esc restores the Designer. Dialogs, pickers, and text fields keep their own
+  // Escape handling because they are on top of the canvas, not part of it.
+  // Capture phase, so the Designer's own Escape shortcut (clear the selection)
+  // does not also fire: leaving focus keeps the cabinet the user was viewing.
+  useEffect(() => {
+    if (!focus3DActive) return undefined;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (shouldIgnoreFocusExitKey(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      exitFocus3D();
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [focus3DActive, exitFocus3D]);
+  // Leaving fullscreen by any other route (browser chrome, F11, another tab
+  // taking over) also returns the toolbars, so the two states never disagree.
+  useEffect(() => {
+    if (!focus3DActive) return undefined;
+    const onFullscreenChange = () => {
+      if (typeof document !== "undefined" && !document.fullscreenElement) setFocus3DActive(false);
+    };
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
+  }, [focus3DActive]);
+  // Focus 3D is a 3D-only workspace: switching to Plan, Elevation, or another
+  // 2D view restores the chrome instead of leaving an empty shell on screen.
+  useEffect(() => {
+    if (!focus3DActive) return;
+    if (viewMode !== "threeD" && viewMode !== "hybrid") exitFocus3D();
+  }, [viewMode, focus3DActive, exitFocus3D]);
+  useEffect(() => () => { void exitDesignerFullscreen(); }, []);
+
   const renderFloorPlanImage = useCallback(async () => {
     if (viewMode !== "plan") {
       setViewMode("plan");
@@ -15576,6 +15635,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 		      hybridPlanUnderlay={hybridPlanUnderlay}
 		      catalogDragItem={interactive3dCatalogDragItem}
 	      className="h-full min-h-0"
+	      focus3DActive={focus3DActive}
+	      onToggleFocus3D={toggleFocus3D}
 	      scene={resolvedInteractive3dScene}
 	      placed={deferredCountertopGeometry.threeDPlaced}
 	      onGeometryRendered={() => setPaintedCountertopGeometry(deferredCountertopGeometry)}
@@ -15747,8 +15808,13 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   }
 
   return (
-      <div className="flex flex-col h-full min-h-0">
-      {designCheckNotice.visible && exposedPanelWarnings.length + dishwasherPanelWarnings.length > 0 && (
+      <div
+        ref={focus3DRootRef}
+        data-testid="designer-workspace"
+        data-focus-3d={focus3DActive ? "true" : undefined}
+        className={`flex flex-col h-full min-h-0 ${focus3DActive ? "bg-background" : ""}`}
+      >
+      {designCheckNotice.visible && exposedPanelWarnings.length + dishwasherPanelWarnings.length > 0 && !focus3DActive && (
         <div data-testid="design-check-panel" role="status" className="flex items-start justify-between gap-3 border-b border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-950">
           <div>
             <p className="font-semibold">Design check ({exposedPanelWarnings.length + dishwasherPanelWarnings.length})</p>
@@ -15800,7 +15866,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           setReadjustOptions([]);
         }}
       />
+      {!focus3DActive && (
+      <>
       {/* Toolbar */}
+      {/* Focus 3D hides this toolbar (both of its visual rows) and the
+          selected-cabinet bar under it. */}
       <div data-testid="designer-toolbar" data-tablet-workspace={isTabletWorkspace ? "true" : undefined} className={`designer-top-toolbar border-b border-border bg-card px-2 py-1 flex flex-wrap items-center gap-1 shrink-0 overflow-visible ${isTabletWorkspace ? `${isTabletPortrait ? "order-last border-b-0 border-t" : tabletImmersiveHeader ? "pl-16" : ""}` : ""}`} style={affiliateBrand ? { borderTop: `3px solid ${affiliateAccent}` } : undefined}>
         {/* Title + badge — desktop only */}
         <div className={`designer-toolbar-title ${isCompactWorkspace ? "hidden" : "hidden lg:flex"} items-center gap-2`}>
@@ -17548,8 +17618,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           <DesignHelp />
         </div>
       </div>
+      </>
+      )}
 
-      {showOptionalContactNudge && !verifiedName && !verifiedPhone && (
+      {showOptionalContactNudge && !verifiedName && !verifiedPhone && !focus3DActive && (
         <OptionalContactNudge
           onAdd={addOptionalContact}
           onDismiss={() => {
@@ -17561,9 +17633,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       )}
 
       {/* Contextual row: keep desktop cabinet editing inline, but free up mobile
-          canvas space by moving cabinet editing into a bottom sheet. */}
-      {((!isMobile && selectedCab) || selectedOpening || drawMode) && !measureMode && (
-        <div className="border-b border-border bg-[#f7f5f0] px-4 py-1.5 flex items-center gap-3 flex-wrap shrink-0 max-h-[120px] overflow-y-auto lg:flex-nowrap lg:overflow-x-auto lg:overflow-y-hidden lg:scrollbar-none lg:[&>*]:shrink-0">
+          canvas space by moving cabinet editing into a bottom sheet. Focus 3D
+          hides this selected-cabinet bar; the viewer's own inspector still works. */}
+      {((!isMobile && selectedCab) || selectedOpening || drawMode) && !measureMode && !focus3DActive && (
+        <div data-testid="designer-selected-cabinet-bar" className="border-b border-border bg-[#f7f5f0] px-4 py-1.5 flex items-center gap-3 flex-wrap shrink-0 max-h-[120px] overflow-y-auto lg:flex-nowrap lg:overflow-x-auto lg:overflow-y-hidden lg:scrollbar-none lg:[&>*]:shrink-0">
           {selectedCab && !drawMode && !isMobile && (
             <>
               {/* Cabinet image — click to open the Door & Drawer Layout popover */}
@@ -17934,7 +18007,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         </div>
       )}
 
-      {canShowCompactMoveControl && compactMoveControlsOpen && (
+      {canShowCompactMoveControl && compactMoveControlsOpen && !focus3DActive && (
         <section
           id="compact-workspace-move-controls"
           data-testid="compact-workspace-move-controls"
@@ -18452,7 +18525,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* Left palette — inline column on desktop; slide-in drawer on mobile.
             Mobile wraps the SAME body in a left Sheet; desktop renders it as a
-            fixed-width column. The body markup below is shared (no duplication). */}
+            fixed-width column. The body markup below is shared (no duplication).
+            Focus 3D hides the column entirely: only the 3D canvas is left. */}
+        {!focus3DActive && (
         <PaletteShell
           isMobile={panelDrawerMode}
           compact={isCompactWorkspace}
@@ -19069,9 +19144,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	              : t("dt_pl_foot_default")}
           </div>
         </PaletteShell>
+        )}
 
 	        {/* Canvas */}
-	        <div ref={canvasExportRef} className={DESIGNER_CANVAS_CONTAINER_CLASS}>
+	        <div ref={canvasExportRef} data-testid="designer-canvas" data-focus-3d={focus3DActive ? "true" : undefined} className={focus3DActive ? "relative flex flex-1 min-w-0 min-h-0 flex-col overflow-hidden bg-background" : DESIGNER_CANVAS_CONTAINER_CLASS}>
 	          {showCountertopToast && !((cornerTowerBoard || rodTowerBoard) && (viewMode === "threeD" || viewMode === "hybrid")) && ((viewMode === "plan" && countertop)
 	            || ((viewMode === "threeD" || viewMode === "hybrid") && !!resolvedInteractive3dScene)) && (
 	            <div data-testid="countertop-geometry-loading" role="status" aria-live="polite"
@@ -20384,7 +20460,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	          </AlertDialog>
 	        </div>
 
-        {/* Right: pricing + BOM — inline column on desktop; bottom drawer on mobile */}
+        {/* Right: pricing + BOM — inline column on desktop; bottom drawer on mobile.
+            Focus 3D hides it too, so the canvas is the only column left. */}
+        {!focus3DActive && (
         <PricingShell
           isMobile={panelDrawerMode}
           compact={isCompactWorkspace}
@@ -21458,10 +21536,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           </div>
           </div>{/* end flex-col wrapper */}
         </PricingShell>
+        )}
       </div>
 
       {/* Mobile bottom toolbar — core actions; side panels open as drawers. */}
-      {isMobile && (
+      {isMobile && !focus3DActive && (
         <div className="fixed bottom-0 inset-x-0 z-40 border-t border-border bg-card/95 backdrop-blur lg:hidden">
           <div
             data-testid="mobile-designer-action-strip"
