@@ -7088,6 +7088,20 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       toast.success("Suggestion kept with this design. Nothing on the plan was moved.");
       return;
     }
+    if (finding.action.kind === "guidance") {
+      // A guidance rule has nothing to apply: it is a sentence an admin wrote.
+      // Acknowledging it records that the person read it, and nothing on the
+      // plan is moved. Reusing the accepted-suggestion list keeps it dismissed
+      // with the rest of the review items, so it does not nag on every save.
+      setRoom((current) => {
+        const usage = normalizeKitchenUsage(current.kitchenUsage);
+        const accepted = new Set(usage.acceptedSuggestionIds ?? []);
+        accepted.add(finding.id);
+        return { ...current, kitchenUsage: { ...usage, acceptedSuggestionIds: Array.from(accepted) } };
+      });
+      toast.success("Read and acknowledged. Nothing on the plan was moved.");
+      return;
+    }
     setSelectedUid(finding.action.cabinetUid);
     setSelectedOpeningUid(null);
     setPlacementWarning("Review this placement or clearance item before saving.");
