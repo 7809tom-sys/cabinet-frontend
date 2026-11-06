@@ -6,27 +6,67 @@
  * exists, so a missing seed is a real defect. And a seed row that drifts from
  * the code default would quietly mislead whoever reads the table.
  */
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { KITCHEN_RULE_DEFINITIONS } from "./kitchenRuleRegistry";
 
-const sql = readFileSync(resolve(process.cwd(), "docs/sql/0250_kitchen_rule_settings.tidb.sql"), "utf8");
+const sql = readFileSync(resolve(process.cwd(), "docs/sql/0254_kitchen_rule_settings.tidb.sql"), "utf8");
 const patch = readFileSync(
   resolve(process.cwd(), "docs/patches/cabinet-backend-kitchen-rule-settings.patch"),
   "utf8",
 );
 
-/** Every seed row as [settingKey, defaultValueText, locked]. */
+/**
+ * Every seed row as key, default value and lock state.
+ *
+ * The rows are read from the tuple list inside the one INSERT, not from lines:
+ * the statement is a single physical line, so splitting on newlines would find
+ * nothing and a silent empty list would make every other assertion vacuous.
+ */
 function seedRows(): Array<{ key: string; defaultValue: string; locked: boolean }> {
+  const insertAt = sql.indexOf("INSERT IGNORE INTO cabinet_dealz.kitchen_rule_settings");
+  const body = sql.slice(insertAt).slice(sql.slice(insertAt).indexOf("VALUES") + "VALUES".length);
+  // Each row is one parenthesised tuple; text fields may contain commas, and an
+  // escaped quote is written as ''.
+  const tuple = /\((?:[^()']|'(?:[^']|'')*')*\)/g;
+  const field = /^\(([^,]+), ((?:'(?:[^']|'')*')|[^,]+), ((?:'(?:[^']|'')*')|[^,]+), ((?:'(?:[^']|'')*')|[^,]+), ((?:'(?:[^']|'')*')|[^,]+), (NULL|'(?:[^']|'')*'), ((?:'(?:[^']|'')*')|[^,]+), ([^,]+), ([^,]+), ([^,]+)\)$/;
+  const unquote = (raw: string) => raw.trim().replace(/^'/, "").replace(/'$/, "").replace(/''/g, "'");
   const rows: Array<{ key: string; defaultValue: string; locked: boolean }> = [];
-  for (const line of sql.split("\n")) {
-    // The last row ends with `);`, every other row with `),`.
-    const match = line.match(/^\('([a-z0-9_]+)', '.*', '.*', '.*', '(?:number|toggle|text|choice)', NULL, '(.*)', 1, ([01]), 1\)[,;]$/);
-    if (!match) continue;
-    rows.push({ key: match[1]!, defaultValue: match[2]!, locked: match[3] === "1" });
+  for (const match of body.matchAll(tuple)) {
+    const parsed = match[0].match(field);
+    if (!parsed) continue;
+    rows.push({
+      key: unquote(parsed[1]!),
+      defaultValue: unquote(parsed[7]!),
+      locked: parsed[9]!.trim() === "1",
+    });
   }
   return rows;
+}
+
+/** The statement lines of one `-- N.` block, in order, without comment lines. */
+function statementLinesOf(block: string): string[] {
+  return block
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line !== "" && !line.startsWith("--"));
+}
+
+/** The numbered blocks of the script: everything after a `-- N.` line. */
+function numberedBlocks(): string[] {
+  const blocks: string[] = [];
+  let current: string[] | null = null;
+  for (const line of sql.split("\n")) {
+    if (/^-- \d+\. /.test(line.trim())) {
+      if (current) blocks.push(current.join("\n"));
+      current = [line];
+      continue;
+    }
+    if (current) current.push(line);
+  }
+  if (current) blocks.push(current.join("\n"));
+  return blocks;
 }
 
 /** The patch with its diff markers removed, so a line can be checked as code. */
@@ -36,14 +76,27 @@ const patchCode = patch
   .map((line) => line.slice(1))
   .join("\n");
 
-describe("docs/sql/0250_kitchen_rule_settings.tidb.sql", () => {
+describe("docs/sql/0254_kitchen_rule_settings.tidb.sql", () => {
   it("creates the table under cabinet_dealz with a unique setting key", () => {
-    expect(sql).toContain("CREATE TABLE IF NOT EXISTS cabinet_dealz.kitchen_rule_settings");
+    expect(sql).toContain("CREATE TABLE cabinet_dealz.kitchen_rule_settings");
     expect(sql).toContain("UNIQUE KEY kitchen_rule_settings_key_uq (settingKey)");
   });
 
-  it("is safe to re-run", () => {
-    expect(sql).toContain("CREATE TABLE IF NOT EXISTS");
+  it("uses no IF NOT EXISTS, which Tom's TiDB Cloud editor rejects", () => {
+    // Only the comments may mention it, to explain why it is absent.
+    const statements = sql
+      .split("\n")
+      .filter((line) => line.trim() && !line.trim().startsWith("--"));
+    for (const line of statements) {
+      expect(line.toUpperCase(), line.slice(0, 50)).not.toContain("IF NOT EXISTS");
+    }
+  });
+
+  it("is safe to re-run, and says an already-exists error may be skipped", () => {
+    // A plain CREATE TABLE is only acceptable because a second run's error is
+    // harmless, so the file has to say so where Tom will read it.
+    expect(sql).toContain("already exists");
+    expect(sql).toMatch(/safe to skip/i);
     expect(sql).toContain("INSERT IGNORE INTO cabinet_dealz.kitchen_rule_settings");
   });
 
@@ -72,24 +125,63 @@ describe("docs/sql/0250_kitchen_rule_settings.tidb.sql", () => {
     expect(locked).toEqual(["bridge_above_range_required", "faucet_at_sink_required", "window_never_moves"]);
   });
 
-  it("uses one statement per numbered block, all one line", () => {
-    const blocks = sql.split(/\n-- \d+\. /).slice(1);
+  it("puts every statement on exactly one physical line, so each can be pasted alone", () => {
+    // Tom's rule: one statement per line. A block whose CREATE TABLE is spread
+    // over forty lines cannot be pasted into the TiDB editor in one go, and a
+    // wrapped statement is easy to run only half of.
+    const blocks = numberedBlocks();
     expect(blocks.length).toBeGreaterThanOrEqual(3);
     for (const block of blocks) {
-      const statements = block
-        .split("\n")
-        .filter((line) => line.trim() && !line.trim().startsWith("--"))
-        .join(" ")
-        .split(";")
-        .map((part) => part.trim())
-        .filter(Boolean);
-      expect(statements).toHaveLength(1);
+      const statements = statementLinesOf(block);
+      expect(statements, `block starting "${statements[0]?.slice(0, 40)}"`).toHaveLength(1);
+      const statement = statements[0]!;
+      expect(statement.endsWith(";"), "the single line ends with a semicolon").toBe(true);
+      // One statement, not two sharing a line.
+      expect(statement.split(";").filter((part) => part.trim()).length).toBe(1);
     }
+  });
+
+  it("writes the CREATE TABLE as one line", () => {
+    const createLines = sql.split("\n").filter((line) => line.trim().toUpperCase().startsWith("CREATE TABLE"));
+    expect(createLines).toHaveLength(1);
+    expect(createLines[0]).toContain("cabinet_dealz.kitchen_rule_settings (id INT NOT NULL AUTO_INCREMENT");
+    expect(createLines[0]!.trim().endsWith(");")).toBe(true);
+  });
+
+  it("carries the next free number, after the numbers other branches claimed", () => {
+    // 0250 belongs to the library-documents branch, 0251-0253 to the order branch.
+    // Taking 0254 keeps this file from colliding while those land.
+    const header = sql.split("\n")[0]!;
+    expect(header).toContain("Numbered 0254");
+    expect(header).toContain("Run after 0253");
+    const files = readdirSync(resolve(process.cwd(), "docs/sql")).filter((name) => name.endsWith(".tidb.sql"));
+    expect(files).toContain("0254_kitchen_rule_settings.tidb.sql");
+    expect(files.some((name) => name.startsWith("0250_kitchen_rule_settings"))).toBe(false);
   });
 
   it("prefixes every table and avoids reserved-word aliases", () => {
     expect(sql).toContain("cabinet_dealz.kitchen_rule_settings");
     expect(sql).not.toMatch(/\bFROM\s+cabinet_dealz\.\w+\s+(key|status|order|group|range|index)\b/i);
+  });
+
+  it("parses as valid MySQL, statement by statement", async () => {
+    // Flattening statements onto one line is exactly the change that can break
+    // syntax silently: a missing space or a swallowed semicolon still looks
+    // like SQL. A real parser is the only honest check.
+    const { Parser } = await import("node-sql-parser").catch(() => ({ Parser: null as never }));
+    if (!Parser) return; // The parser is a dev-only extra; skip when absent.
+    const parser = new Parser();
+    const statements = sql
+      .split("\n")
+      .filter((line) => line.trim() && !line.trim().startsWith("--"))
+      .join("\n")
+      .split(";")
+      .map((part) => part.trim())
+      .filter(Boolean);
+    expect(statements).toHaveLength(3);
+    for (const statement of statements) {
+      expect(() => parser.astify(statement, { database: "MySQL" })).not.toThrow();
+    }
   });
 });
 

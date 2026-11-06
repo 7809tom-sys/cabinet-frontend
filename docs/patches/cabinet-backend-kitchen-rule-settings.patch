@@ -28,7 +28,7 @@ What the router guarantees:
     missing table or any failure returns empty maps, so the frontend keeps its
     code defaults and the Designer never breaks.
 
-Run docs/sql/0250_kitchen_rule_settings.tidb.sql before deploying. Every
+Run docs/sql/0254_kitchen_rule_settings.tidb.sql before deploying. Every
 built-in row is seeded with valueText NULL, so nothing changes until an admin
 saves a value.
 ---
@@ -55,7 +55,7 @@ index 10bad19..8b19a80 100644
 + *      rule, with its sources and notes. list, create, and update are
 + *      admin-only. This is the record a person reads.
 + *
-+ *   2. The settings in `kitchen_rule_settings` (0250): one row per VALUE the
++ *   2. The settings in `kitchen_rule_settings` (0254): one row per VALUE the
 + *      auto-designer reads. `settingKey` is UNIQUE, so one setting belongs to
 + *      exactly one rule and two rules can never write to the same value. That
 + *      was the bug: the catalog groups rules that share a `parameterJson`
@@ -79,7 +79,7 @@ index 10bad19..8b19a80 100644
 + * no design. Nothing changes until an admin saves a value.
 + *
 + * The tables are created by hand from docs/sql/0233_kitchen_rules.tidb.sql and
-+ * docs/sql/0250_kitchen_rule_settings.tidb.sql. This router does not migrate. A
++ * docs/sql/0254_kitchen_rule_settings.tidb.sql. This router does not migrate. A
 + * missing table returns an empty parameter map and a settings list the admin
   * screen already explains.
   */
@@ -455,7 +455,7 @@ index 10116ec..c0d05b3 100644
 + *
 + * `valueText` NULL means "no override": the Designer reads the code default in
 + * client/src/lib/kitchenRuleRegistry.ts. Every built-in row is seeded that way,
-+ * so running docs/sql/0250_kitchen_rule_settings.tidb.sql changes no design.
++ * so running docs/sql/0254_kitchen_rule_settings.tidb.sql changes no design.
 + *
 + * `lockedFlag` marks a rule Tom made mandatory (bridge above the range, faucet
 + * at the sink, window never moves). The router refuses to disable or retarget a

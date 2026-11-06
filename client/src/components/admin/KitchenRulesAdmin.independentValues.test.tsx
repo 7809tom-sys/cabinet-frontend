@@ -259,7 +259,7 @@ describe("when the settings table is missing", () => {
     saved.rows = [];
     saved.isError = true;
     render(<KitchenRulesAdmin />);
-    expect(screen.getByTestId("kitchen-rules-table-missing").textContent).toContain("0250_kitchen_rule_settings.tidb.sql");
+    expect(screen.getByTestId("kitchen-rules-table-missing").textContent).toContain("0254_kitchen_rule_settings.tidb.sql");
     // The rules are still listed from the code registry, with their defaults.
     expect(cell("jog_max_in").textContent).toContain("3");
     expect((screen.getByTestId("kitchen-rules-add") as HTMLButtonElement).disabled).toBe(true);

@@ -139,7 +139,7 @@ export default function KitchenRulesAdmin() {
       {tableUnavailable && (
         <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950" data-testid="kitchen-rules-table-missing">
           The kitchen rule settings table is not on the database yet, so this list shows the code defaults and nothing can be
-          saved. Run <span className="font-mono">docs/sql/0250_kitchen_rule_settings.tidb.sql</span> in the TiDB editor, then
+          saved. Run <span className="font-mono">docs/sql/0254_kitchen_rule_settings.tidb.sql</span> in the TiDB editor, then
           reload. The Designer is unaffected: it keeps using the code defaults.
           {query.error ? ` ${query.error.message}` : ""}
         </p>
