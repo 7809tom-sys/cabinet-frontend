@@ -21,7 +21,7 @@ import {
   type PlacedFurniture, FURNITURE_CATALOG, furnitureFootprint,
   flooringMaterial,
   type PlanAnnotation,
-  cabinetWallRunSegment, retainedWallSegmentForSplit, floorPlanWallDimensionChains, roomWallRunFrames, isFillerItem, fillerWidthRange,
+  cabinetWallRunSegment, retainedWallSegmentForSplit, floorPlanWallDimensionChains, roomWallRunFrames, isFillerItem, fillerWidthRange, isWallOpenShelfCabinet,
 		  type PonyWall, clampPonyWall, ponyWallMiteredFootprint, ponyWallPlanFrame, drywallPonyWallAppearance, drywallPonyWallPreviewBackground,
 	  type IslandZone, type IslandFace,
 	} from "@/lib/design";
@@ -2592,6 +2592,7 @@ export function PlanCanvas({
             const { lockedAngledRun, bodyW, bodyD, bodyLeft, bodyTop } = planCabinetRenderFrame(p);
             const isWall = p.placement === "wall";
             const isSelected = p.uid === selectedUid;
+            const isWallOpenShelf = isWallOpenShelfCabinet(p);
             const isAttributesTarget = p.uid === attributesTargetUid;
 	            const showWallSnapSuccess = p.uid === wallSnapSuccessUid;
 	            const isWindowCenteredSink = sinkWindowSnap?.cabinetUid === p.uid;
@@ -2940,6 +2941,22 @@ export function PlanCanvas({
                       <path d="M4 4H96V54L54 96H4Z" fill="none" stroke={edgeColor} strokeWidth="3" opacity="0.9" />
                       <path d="M96 54L54 96" fill="none" stroke="rgba(255,255,255,0.48)" strokeWidth="1.5" />
                       <path d="M88 62L62 88" fill="none" stroke={edgeColor} strokeWidth="1" opacity="0.55" />
+                    </svg>
+                  )}
+                  {/* A wall open shelf has no door leaf, so the plan shows its
+                      open front: a lightened front edge that reads as an
+                      opening rather than a closed cabinet face. */}
+                  {isWallOpenShelf && !isAppliance && (
+                    <svg
+                      data-open-shelf-plan="true"
+                      data-open-shelf-code={p.masterCode}
+                      aria-label={`${p.masterCode} wall open shelf with an open front and no doors`}
+                      className="absolute inset-0 h-full w-full pointer-events-none"
+                      viewBox="0 0 100 100"
+                      preserveAspectRatio="none"
+                    >
+                      <rect x={3} y={3} width={94} height={94} fill="none" stroke={edgeColor} strokeWidth="2.5" opacity="0.92" />
+                      <rect x={12} y={12} width={76} height={76} fill="none" stroke={edgeColor} strokeWidth="1" opacity="0.5" strokeDasharray="4 3" />
                     </svg>
                   )}
                   {/* Appliance-specific top-down icons */}

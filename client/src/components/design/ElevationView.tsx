@@ -15,6 +15,7 @@ import {
   isRangeOrOven, wallCabinetTopLine, isBlindCorner, placedFootprint, crownEligibleCabinets, isLightRailEligibleCabinet, usesRaisedFloorWallDoorPull,
 	  flooringMaterial, normalizeInstalledFillersToAdjacentCabinets, normalizeRefrigeratorBayUppers, applianceAppearanceImage, applianceElevationPresentation, rangeVisualAppearance, resolveCabinetHardwarePosition, isWd18CountertopDrawerCabinet, wd18CountertopFaceLayout,
 	  isGlassDoorCabinet, glassDoorShelfCount, isKneeDrawerItem, kitchenCrestGenericOpenEndShelfCount,
+	  isWallOpenShelfCabinet, wallOpenShelfShelfCount,
 } from "@/lib/design";
 import { crownTopRuns, formatCrownTop } from "@/lib/crownTopRuns";
 import { threeDBacksplashCoverageIntervals } from "./InteractiveRoom3D";
@@ -528,7 +529,13 @@ export function ElevationView({
 	    // KitchenCrest's OE630/OE636/OE642 line art is square-front open shelving.
 	    // Keep the existing source record and dimensions, but do not let a stale
 	    // curved profile change that verified generic form in the elevation.
-	    const customProfile = kitchenCrestGenericShelfCount != null
+	    const isWallOpenShelfElevation = isWallOpenShelfCabinet(p);
+	    const wallOpenShelfShelfPlan = isWallOpenShelfElevation
+	      ? wallOpenShelfShelfCount(p)
+	      : { count: 0, source: "none" as const };
+	    // A wall open shelf always draws through the vector open-shelf profile:
+	    // it has no door face, so it must never fall back to a generic door box.
+	    const customProfile = kitchenCrestGenericShelfCount != null || isWallOpenShelfElevation
 	      ? "curved-open-shelf"
 	      : p.customProfile ?? null;
     const wallAngleOpen = isWallAngleEndCabinet({
@@ -739,9 +746,11 @@ export function ElevationView({
               face={cabFinish.face}
               edge={edgeColor}
               kind={cabPanelKind}
-	              fixedShelves={kitchenCrestGenericShelfCount ?? p.fixedShelfCount ?? 0}
+	              fixedShelves={kitchenCrestGenericShelfCount ?? wallOpenShelfShelfPlan.count}
 	              adjustableShelves={p.adjustableShelfCount ?? 0}
 	              squareOpenEndShelf={kitchenCrestGenericShelfCount != null}
+	              shelfCountFromConfig={isWallOpenShelfElevation && kitchenCrestGenericShelfCount == null}
+	              openShelfBox={isWallOpenShelfElevation}
               doorSampleUrl={cabDoorSampleUrl}
               drawerSampleUrl={cabDrawerSampleUrl}
               faceWidthIn={p.width}
@@ -2542,6 +2551,8 @@ export function CustomProfileFace({
   faceHeightIn,
   squareOpenEndShelf = false,
   wallAngleOpen = "end",
+  shelfCountFromConfig = false,
+  openShelfBox = false,
 }: {
   profile: string;
   face: string;
@@ -2557,8 +2568,21 @@ export function CustomProfileFace({
   squareOpenEndShelf?: boolean;
   /** Run-start is the left of an unmirrored elevation. The angle tapers toward this open end. */
   wallAngleOpen?: "start" | "end";
+  /**
+   * A catalog wall open shelf's shelf count comes from its own edit config, so
+   * the drawn count is exactly the configured count (including zero). Other
+   * custom profiles keep the historical "at least two shelves" drafting floor.
+   */
+  shelfCountFromConfig?: boolean;
+  /**
+   * A catalog wall open shelf draws as a finished doorless box: square ends, no
+   * decorative curved silhouette, and its configured shelf count.
+   */
+  openShelfBox?: boolean;
 }) {
-  const shelfCount = Math.max(2, fixedShelves || adjustableShelves || 3);
+  const shelfCount = shelfCountFromConfig
+    ? Math.max(0, Math.round(fixedShelves || 0))
+    : Math.max(2, fixedShelves || adjustableShelves || 3);
   const rail = `color-mix(in srgb, ${face} 68%, #000)`;
   const cavity = `color-mix(in srgb, ${face} 30%, #000)`;
   const shelves = Array.from({ length: shelfCount }, (_, index) => (
@@ -2639,13 +2663,19 @@ export function CustomProfileFace({
     );
   }
 
-  const isCurved = profile === "curved-open-shelf" && !squareOpenEndShelf;
+  const isCurved = profile === "curved-open-shelf" && !squareOpenEndShelf && !openShelfBox;
+  // An open shelf is drawn as the finished box it is: a full-face finished
+  // back/interior with its fixed shelves evenly dividing it. The former 3px dark
+  // border outlined the whole opening, which read as a face frame in the
+  // elevation. A thin inset hairline marks the box outline instead.
   return (
     <div
       data-cabinet-profile={squareOpenEndShelf ? "kitchencrest-square-open-end-shelf" : profile}
       data-open-shelf-count={squareOpenEndShelf ? shelfCount : undefined}
+      data-open-shelf-finished-box={openShelfBox ? "true" : undefined}
+      data-open-shelf-shelves={openShelfBox ? shelfCount : undefined}
       className="absolute inset-0 overflow-hidden"
-      style={{ border: `3px solid ${edge}`, background: cavity, borderTopRightRadius: isCurved ? "42% 16%" : 0, borderBottomRightRadius: isCurved ? "42% 16%" : 0 }}
+      style={{ background: cavity, boxShadow: `inset 0 0 0 1.5px color-mix(in srgb, ${edge} 70%, transparent)`, borderTopRightRadius: isCurved ? "42% 16%" : 0, borderBottomRightRadius: isCurved ? "42% 16%" : 0 }}
     >
       {shelves}
       {profile === "pullout-tower" && <div className="absolute top-[4%] bottom-[4%] left-1/2 w-[3px] -translate-x-1/2" style={{ background: rail }} />}

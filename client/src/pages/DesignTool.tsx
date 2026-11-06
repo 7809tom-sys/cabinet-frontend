@@ -197,8 +197,8 @@ import {
 	  resolvedDesignCabinetDimensions, wallCabinetSkuDimensions, cabinetPlacementHoverDetail, normalizeFloatingShelfPlacement, normalizeWallOpenShelfPlacement,
 		  normalizeLCornerDepths, normalizeBlindCornerDoorSides, blindCornerPullPlacement, normalizeRefrigeratorBayUppers, refrigeratorSurroundElevation, refrigeratorBayRunMetrics, refrigeratorMagneticSnapEnvelope, fitExplicitRefrigeratorOptionPlacements, commitIndependentCabinetCandidate, commitConfiguredRefrigeratorCandidate, isMicrowaveOverRangePair,
 	  conflictingUids, blindCornerViolations, blindCornerSpecViolations, ceilingFitViolations, roomCeiling, inchesToFeetInches, isBlindCorner, isBaseBlindCorner, BLIND_CORNER_FILLER_WIDTH_IN, blindPullRange, isOnIsland, isCornerCabinet, isAngledWallCabinet, isProtectedCornerCabinet, requiresRoomCornerPlacement, missingCornerBaseViolations,
-	  isSinkBaseCabinet, isFarmSinkBasePaletteItem, fixtureBelongsToCabinet, fixtureIsOnCabinetFootprint, placedFootprint, hasCollision, cabinetCollisionDetail, COLLISION_EPSILON_IN, CABINET_CONFLICT_LOCK_IN, nearestCollisionFreeMountBottom, collisionReason, wallCabinetFitMeasure, wallCabinetPlacementReason, cabinetWallRunSegment, compatibleWallCabinetAlternatives, snapCabinetSeamOverlap, shouldBlockPlacementCollision, appendCollisionFreePlacements, appendRefrigeratorEnclosurePlacements, removeOverlappingPlacements, effectiveStyleId, pricingStyleId, rebaseFormerDefaultStyleOverrides, clearForeignSavedStyleOverrides, distinctStyleIds, isMixedFinish, paletteActiveWallPlacement, refrigeratorAdjacentOpeningPlacement, nextAvailableRoomCornerPlacement, nextAvailablePeninsulaCornerPlacement, cabinetCornerPlacementInfo, blindCornerSnapInfo, wallCabinetVerticalMoveLimit, repairWallCabinetPlanSeamForVerticalMove, selectedSinkBaseWallPlacement, sinkBaseWindowPlacement, selectedLowerCabinetWallPlacement, selectedCornerBaseWallPlacement, matchingLowerCabinetWallPlacement, snapWallCabinetToOwningWall, normalizeStandardWallMounts,
-  		  isPlaceableAccessory, accessoryPlacement, isPanelItem, isDishwasherPanel, normalizeDishwasherPanelPlacement, isFillerItem, adjacentCabinetForFiller, matchInstalledFillerToCabinet, isFloatingShelfItem, isWallOpenShelfCabinet, isKneeDrawerItem, kitchenCrestGenericOpenEndShelfCount, KNEE_DRAWER_MIN_MOUNT_BOTTOM_IN, KNEE_DRAWER_MAX_MOUNT_BOTTOM_IN, fillerWidthRange, alternateWallPlacementRecommendation, PENINSULA_INSIDE_CORNER_CLEARANCE_IN,
+	  isSinkBaseCabinet, isFarmSinkBasePaletteItem, fixtureBelongsToCabinet, fixtureIsOnCabinetFootprint, placedFootprint, hasCollision, cabinetCollisionDetail, COLLISION_EPSILON_IN, CABINET_CONFLICT_LOCK_IN, nearestCollisionFreeMountBottom, collisionReason, wallCabinetFitMeasure, wallCabinetPlacementReason, cabinetWallRunSegment, compatibleWallCabinetAlternatives, snapCabinetSeamOverlap, shouldBlockPlacementCollision, appendCollisionFreePlacements, appendRefrigeratorEnclosurePlacements, removeOverlappingPlacements, effectiveStyleId, pricingStyleId, rebaseFormerDefaultStyleOverrides, clearForeignSavedStyleOverrides, distinctStyleIds, isMixedFinish, paletteActiveWallPlacement, refrigeratorAdjacentOpeningPlacement, nextAvailableRoomCornerPlacement, nextAvailablePeninsulaCornerPlacement, cabinetCornerPlacementInfo, blindCornerSnapInfo, wallCabinetVerticalMoveLimit, repairWallCabinetPlanSeamForVerticalMove, selectedSinkBaseWallPlacement, sinkBaseWindowPlacement, selectedLowerCabinetWallPlacement, selectedCornerBaseWallPlacement, matchingLowerCabinetWallPlacement, snapWallCabinetToOwningWall, normalizeStandardWallMounts, normalizeWallOpenShelfMounts, wallOpenShelfExposedHand,
+  		  isPlaceableAccessory, accessoryPlacement, isPanelItem, isDishwasherPanel, normalizeDishwasherPanelPlacement, isFillerItem, adjacentCabinetForFiller, matchInstalledFillerToCabinet, isFloatingShelfItem, isWallOpenShelfCabinet, isKneeDrawerItem, kitchenCrestGenericOpenEndShelfCount, wallOpenShelfShelfCount, KNEE_DRAWER_MIN_MOUNT_BOTTOM_IN, KNEE_DRAWER_MAX_MOUNT_BOTTOM_IN, fillerWidthRange, alternateWallPlacementRecommendation, PENINSULA_INSIDE_CORNER_CLEARANCE_IN, adjoiningWallRunMountBottom,
   resolveSwing, cycleSwing, swingText, hasDoorSwing, DoorSwing, resolveCabinetHardwarePosition, cabinetHardwarePositionPatch, isCabinetDoorHardwareEligible, applyCabinetDoorHardwareToAll, supportsCenteredTopDoorPull, requiresCenteredTopDoorPull, usesRaisedFloorWallDoorPull, isWd18CountertopDrawerCabinet, normalizeWd18CountertopMounts, ordinaryWallMountBottom,
   // (closet helpers imported separately below)
   APPLIANCES, applianceAsDesignCabinet, appliancesForRoom, ROOM_TYPES, type RoomType,
@@ -1447,9 +1447,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // deleted while preserving the minimum valid clearance when a window remains.
   useEffect(() => {
     setPlaced((current) => normalizeGlassStackersToParentFronts(
-        normalizeStandardWallMounts(
-          normalizeWd18CountertopMounts(normalizeOverSinkWallMounts(current, openings, room)),
-          openings,
+        normalizeWallOpenShelfMounts(
+          normalizeStandardWallMounts(
+            normalizeWd18CountertopMounts(normalizeOverSinkWallMounts(current, openings, room)),
+            openings,
+            room,
+          ),
           room,
         ),
         room,
@@ -5655,11 +5658,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	        restoredRoom,
 	      ), restoredRoom), restoredRoom);
 	      const repairedPlaced = removeOverlappingPlacements(
-	        normalizeStandardWallMounts(
-	          normalizeWd18CountertopMounts(
-	            normalizeRefrigeratorBayUppers(peninsulaNormalizedPlaced, restoredRoom),
+	        normalizeWallOpenShelfMounts(
+	          normalizeStandardWallMounts(
+	            normalizeWd18CountertopMounts(
+	              normalizeRefrigeratorBayUppers(peninsulaNormalizedPlaced, restoredRoom),
+	            ),
+	            restoredOpenings,
+	            restoredRoom,
 	          ),
-	          restoredOpenings,
 	          restoredRoom,
 	        ),
 	        restoredRoom,
@@ -8068,7 +8074,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         ...(spot.peninsulaSide ? { peninsulaSide: spot.peninsulaSide } : {}),
         customProfile: isKneeDrawerItem(c) ? "knee-drawer" : (c as any).graphicType ?? null,
         genericDrawingUrl: (c as any).specImageUrl ?? null,
-	        fixedShelfCount: kitchenCrestGenericShelfCount ?? (c as any).numberOfFixedShelves ?? null,
+	        // A wall open shelf draws its shelf count from the cabinet's own edit
+	        // config. Only the supplied KitchenCrest OE6 line-art count outranks it,
+	        // and only for that description-confirmed family.
+	        fixedShelfCount: isWallOpenShelf
+	          ? kitchenCrestGenericShelfCount ?? wallOpenShelfShelfCount(c).count
+	          : kitchenCrestGenericShelfCount ?? (c as any).numberOfFixedShelves ?? null,
 	        adjustableShelfCount: (c as any).numberOfAdjShelves ?? null,
 	        pullMin: c.pullMin ?? null,
 	        pullMax: c.pullMax ?? null,
@@ -8102,6 +8113,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	        ...(otrMountBottom != null ? { mountBottom: otrMountBottom } : {}),
 	        ...(rangeHoodPlacement?.ok ? { mountBottom: rangeHoodPlacement.mountBottom } : {}),
 	      };
+	      // A wall open shelf shares the finished top line of the wall cabinet it
+	      // butts, so a 30", 36" and 42" shelf all finish level with the run.
+	      if (isWallOpenShelf) {
+	        const alignedBottom = adjoiningWallRunMountBottom(newCab, room, prev);
+	        if (alignedBottom != null) newCab.mountBottom = alignedBottom;
+	      }
 	      if (isFloatingShelfItem(newCab)) {
 	        const wall = cabinetWall(newCab, room);
 	        const shelfFootprint = placedFootprint(newCab);
@@ -14264,11 +14281,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	              draftRoom,
 	            ), draftRoom), draftRoom);
 	            setPlaced(removeOverlappingPlacements(
-	              normalizeStandardWallMounts(
-	                normalizeWd18CountertopMounts(
-	                  normalizeRefrigeratorBayUppers(peninsulaNormalizedDraft, draftRoom),
+	              normalizeWallOpenShelfMounts(
+	                normalizeStandardWallMounts(
+	                  normalizeWd18CountertopMounts(
+	                    normalizeRefrigeratorBayUppers(peninsulaNormalizedDraft, draftRoom),
+	                  ),
+	                  Array.isArray(d.openings) ? d.openings : [],
+	                  draftRoom,
 	                ),
-	                Array.isArray(d.openings) ? d.openings : [],
 	                draftRoom,
 	              ),
 	              draftRoom,

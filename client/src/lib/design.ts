@@ -25,6 +25,14 @@ import { VERIFIED_PELICAN_BATHROOM_FIXTURE_PROFILES, verifiedPelicanBathroomFixt
 import { isPlainBaseCode as isPlainBaseCodeRule } from "./plainBaseCode";
 import { aefPrintedGeometryForSku, FRAMELESS_DEEP_WALL_DEPTH_IN, FRAMELESS_STANDARD_WALL_DEPTH_IN, hasAefPrintedGeometry, isFramelessDeepWallCabinet } from "@shared/aefFramelessGeometry";
 import { standardBaseDoorCount } from "@shared/genericCabinetDrawerReference";
+import {
+  WALL_OPEN_SHELF_DEPTH_IN,
+  isWallEndOpenShelfCode,
+  isWallOpenShelfCabinet as sharedIsWallOpenShelfCabinet,
+  kitchenCrestOpenEndShelfCount as sharedKitchenCrestOpenEndShelfCount,
+  wallOpenShelfNominalSize,
+  wallOpenShelfShelfCount as sharedWallOpenShelfShelfCount,
+} from "./wallOpenShelf";
 export { isGlassPolicyNomenclature } from "./glassPolicy";
 
 export const STD = {
@@ -192,11 +200,7 @@ export function isWallOpenShelfCabinet(c: {
   masterCode?: string | null;
   subCategory?: string | null;
 }): boolean {
-  const code = `${c.masterCode ?? ""}`.replace(/[^A-Z0-9]/gi, "").toUpperCase();
-  const hay = `${c.subCategory ?? ""} ${c.description ?? ""}`.toLowerCase();
-  return /^W(?:E)?OS\d{4}$/.test(code)
-    || kitchenCrestGenericOpenEndShelfCount(c) != null
-    || /\bwall\s+(?:end\s+)?open\s+shelf\b|\bwall\s+end\s+shelf\b|\bopen\s+end\s+shelf\s+wall\b/.test(hay);
+  return sharedIsWallOpenShelfCabinet(c);
 }
 
 /**
@@ -212,10 +216,18 @@ export function kitchenCrestGenericOpenEndShelfCount(c: {
   masterCode?: string | null;
   subCategory?: string | null;
 }): number | null {
-  const code = `${c.masterCode ?? ""}`.replace(/[^A-Z0-9]/gi, "").toUpperCase();
-  const hay = `${c.subCategory ?? ""} ${c.description ?? ""}`.toLowerCase();
-  if (!/^OE6(?:30|36|42)$/.test(code) || !/\bopen\s+(?:end\s+)?shelf\b/.test(hay)) return null;
-  return code === "OE630" ? 2 : 3;
+  return sharedKitchenCrestOpenEndShelfCount(c);
+}
+
+/** Configured fixed-shelf count for a wall open shelf, with its authority. */
+export function wallOpenShelfShelfCount(c: {
+  masterCode?: string | null;
+  description?: string | null;
+  subCategory?: string | null;
+  fixedShelfCount?: number | null;
+  numberOfFixedShelves?: number | null;
+}): { count: number; source: "config" | "kitchencrest-line-art" | "wall-end-source" | "none" } {
+  return sharedWallOpenShelfShelfCount(c);
 }
 
 export const KNEE_DRAWER_MIN_MOUNT_BOTTOM_IN = 24;
@@ -265,31 +277,32 @@ export function normalizeFloatingShelfPlacement(cabinet: PlacedCabinet): PlacedC
  * Restores stale WOS/WEOS placements that were once incorrectly normalized as
  * thin floating shelves. The source nomenclature is width-first then height:
  * WOS0930 / WEOS0930 = 9-inch wide × 30-inch high and a 12-inch wall depth.
- * Only the explicit Wall End Shelf (WEOS) carries the verified bowed-front,
- * two-fixed-shelf geometry; a standard WOS retains its own source attributes.
+ *
+ * Shelves come from the cabinet's own edit config; the Wall End family's source
+ * drawing supplies two only when the row has no configured count. A configured
+ * 0 stays 0 — this normalizer never invents a shelf.
  */
 export function normalizeWallOpenShelfPlacement(cabinet: PlacedCabinet): PlacedCabinet {
   if (!isWallOpenShelfCabinet(cabinet)) return cabinet;
-  const code = `${cabinet.masterCode ?? ""}`.replace(/[^A-Z0-9]/gi, "").toUpperCase();
-  const match = /^W(?:E)?OS(\d{2})(\d{2})$/.exec(code);
+  const nominal = wallOpenShelfNominalSize(cabinet.masterCode);
   const genericShelfCount = kitchenCrestGenericOpenEndShelfCount(cabinet);
-  if (!match && genericShelfCount == null) return cabinet;
-  const width = match ? Number(match[1]) : Number(cabinet.width);
-  const height = match ? Number(match[2]) : Number(cabinet.height);
+  if (!nominal && genericShelfCount == null) return cabinet;
+  const width = nominal ? nominal.width : Number(cabinet.width);
+  const height = nominal ? nominal.height : Number(cabinet.height);
   if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return cabinet;
+  const shelves = wallOpenShelfShelfCount(cabinet);
   return {
     ...cabinet,
     placement: "wall",
     width,
     nominalWidth: width,
-    depth: STD.WALL_DEPTH,
-    nominalDepth: STD.WALL_DEPTH,
+    depth: WALL_OPEN_SHELF_DEPTH_IN,
+    nominalDepth: WALL_OPEN_SHELF_DEPTH_IN,
     height,
     nominalHeight: height,
     numberOfDoors: 0,
     numberOfDrawers: 0,
-    fixedShelfCount: genericShelfCount
-      ?? (/^WEOS\d{4}$/.test(code) ? 2 : cabinet.fixedShelfCount),
+    fixedShelfCount: genericShelfCount ?? shelves.count,
   };
 }
 
@@ -1816,6 +1829,12 @@ export function ordinaryWallMountBottom(p: {
 }): number {
   const height = Number(p.height);
   if (isThirtyInchShortUpperAt72(p)) return TWELVE_INCH_WALL_MOUNT_BOTTOM;
+  // A wall open shelf is an upper: its finished top belongs on the same line as
+  // the cabinets around it, so a 36" or 42" shelf hangs lower than a 30" one.
+  // An actual neighbouring cabinet still wins through the run-alignment pass.
+  if (p.placement === "wall" && isWallOpenShelfCabinet(p) && height > 0) {
+    return Math.max(0, wallCabinetTopLine() - height);
+  }
   return p.placement === "wall" && !isStacker(p) && height > 0 && height < 30
     ? WALL_CABINET_TOP - height
     : kitchenRuleNumber("wall_bottom_in");
@@ -10165,6 +10184,65 @@ export function adjoiningWallRunMountBottom(
   if (!neighbor) return null;
   const neighborBox = elevationBox(neighbor, room);
   return Math.max(0, neighborBox.bottom + neighborBox.height - placedHeight(cabinet));
+}
+
+/**
+ * Which end of a wall open shelf is the exposed run end, as a viewer hand
+ * ("left" / "right" when facing the cabinet). Returns null when both ends butt a
+ * neighbour or both ends are free, so a mid-run shelf keeps two square ends.
+ *
+ * This reuses the wall-end run measurement already used by WAC/AW wall angle
+ * cabinets rather than inventing a second neighbour rule.
+ */
+export function wallOpenShelfExposedHand(
+  cabinet: PlacedCabinet,
+  room: RoomData,
+  others: readonly PlacedCabinet[] = [],
+): "left" | "right" | null {
+  if (!isWallOpenShelfCabinet(cabinet)) return null;
+  if (cabinet.placement !== "wall") return null;
+  const side = cabinetWall(cabinet, room);
+  const rest = others.filter((item) => item.uid !== cabinet.uid);
+  const measure = wallSpanMeasure(cabinet, room, [...rest], side);
+  const startOpen = !measure.beforeIsCabinet;
+  const endOpen = !measure.afterIsCabinet;
+  // Both ends free, or both ends butted: no single exposed end to round.
+  if (startOpen === endOpen) return null;
+  const openSide = startOpen ? "start" : "end";
+  const frame = wallRunFrame(side, room);
+  if (!frame) return openSide === "start" ? "left" : "right";
+  return wallAngleEndHandFromRun({
+    openSide,
+    tangent: frame.tangent,
+    facingRotation: frame.facingRotation,
+  });
+}
+
+
+/**
+ * Plan-load pass: seat every open shelf on the run's finished top line.
+ *
+ * A user's own vertical move sets `mountBottomAdjusted` and is kept exactly.
+ * Otherwise the shelf takes the top line of the wall cabinet it touches, and
+ * falls back to its own height below the standard upper line when it stands
+ * alone. This is what "auto-match the adjacent wall cabinets' height" means.
+ */
+export function normalizeWallOpenShelfMounts(
+  placed: PlacedCabinet[],
+  room: RoomData,
+): PlacedCabinet[] {
+  let changed = false;
+  const next = placed.map((cabinet) => {
+    if (!isWallOpenShelfCabinet(cabinet)) return cabinet;
+    if (cabinet.placement !== "wall" || cabinet.islandFace || isStacker(cabinet)) return cabinet;
+    if (cabinet.mountBottomAdjusted === true) return cabinet;
+    const aligned = adjoiningWallRunMountBottom(cabinet, room, [...placed])
+      ?? ordinaryWallMountBottom(cabinet);
+    if (typeof cabinet.mountBottom === "number" && Math.abs(cabinet.mountBottom - aligned) <= 0.01) return cabinet;
+    changed = true;
+    return { ...cabinet, mountBottom: aligned };
+  });
+  return changed ? next : placed;
 }
 
 
