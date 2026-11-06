@@ -592,7 +592,7 @@ index 0000000..13ed38b
 +}
 diff --git a/docs/sql/0255_library_internal_documents.tidb.sql b/docs/sql/0255_library_internal_documents.tidb.sql
 new file mode 100644
-index 0000000..39d8680
+index 0000000..f7e5cfa
 --- /dev/null
 +++ b/docs/sql/0255_library_internal_documents.tidb.sql
 @@ -0,0 +1,83 @@
@@ -631,8 +631,8 @@ index 0000000..39d8680
 +-- affiliateToggledByName is a snapshot of the admin's name at the moment of the
 +-- toggle, so the audit line survives a rename or a deleted account.
 +--
-+-- Number order: 0250 belongs to the kitchen rules SQL, 0251-0253 to pull request
-+-- 268, and 0254 is taken, so this file uses 0255.
++-- Number order: 0250 belongs to the kitchen rules SQL, 0251-0253 to pull
++-- request 268, and 0254 is taken, so this file uses 0255.
 +--
 +-- The internal proposal PDF ships in the frontend repo at
 +-- docs/library/internal/website-improvement-proposal-marazzi-lessons-cabinetdealz.pdf

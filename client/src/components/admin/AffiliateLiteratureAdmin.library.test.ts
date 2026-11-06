@@ -123,8 +123,8 @@ describe("SQL 0255 library internal documents", () => {
     expect(existsSync(resolve(root, SQL_FILE))).toBe(true);
     // 0250 is the kitchen rules SQL, 0251-0253 belong to pull request 268, and
     // 0254 is taken; 0255 is the first free number.
-    expect(sql).toContain("0250 belongs to the kitchen rules SQL");
-    expect(sql).toContain("0251-0253 to pull request");
+    expect(sql).toMatch(/0250 belongs to the kitchen rules SQL/);
+    expect(sql).toMatch(/0251-0253 to pull\b/);
     expect(existsSync(resolve(root, "docs/sql/0250_library_internal_documents.tidb.sql"))).toBe(false);
   });
 });

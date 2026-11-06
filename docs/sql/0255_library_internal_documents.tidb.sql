@@ -33,8 +33,8 @@
 -- affiliateToggledByName is a snapshot of the admin's name at the moment of the
 -- toggle, so the audit line survives a rename or a deleted account.
 --
--- Number order: 0250 belongs to the kitchen rules SQL, 0251-0253 to pull request
--- 268, and 0254 is taken, so this file uses 0255.
+-- Number order: 0250 belongs to the kitchen rules SQL, 0251-0253 to pull
+-- request 268, and 0254 is taken, so this file uses 0255.
 --
 -- The internal proposal PDF ships in the frontend repo at
 -- docs/library/internal/website-improvement-proposal-marazzi-lessons-cabinetdealz.pdf
