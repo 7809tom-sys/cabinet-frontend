@@ -10,10 +10,16 @@
 // reusable on both client and server.
 
 import { approxZipCentroid, haversineMiles, normalizeZip, type LatLng } from "./availability";
+import {
+  buildPoDocument,
+  buildPoText,
+  type PoLineInput,
+  type PoTotalsInput,
+} from "./poDocument";
 
 // ─── NetSuite-ready PO CSV ─────────────────────────────────────────────────────
 
-export interface NetsuiteOrderLine {
+export interface NetsuiteOrderLine extends PoLineInput {
   /** The PO SKU we send the distributor, e.g. "usd-sw-3db24". Falls back to master/raw code. */
   poSku?: string | null;
   masterCode?: string | null;
@@ -64,79 +70,75 @@ function resolveSku(line: NetsuiteOrderLine): string {
   return (line.poSku || line.masterCode || line.rawCode || "").toString().trim();
 }
 
+/** NetSuite column rows for one PO, with Rate/Amount taken from the shared PO math. */
+function netsuiteRows(header: NetsuiteOrderHeader, lines: NetsuiteOrderLine[]): string[] {
+  const doc = buildPoDocument({
+    orderNumber: header.orderNumber,
+    orderDate: header.orderDate,
+    customerName: header.customerName,
+    styleName: header.styleName,
+    deliveryMethod: header.deliveryMethod,
+    lines: lines.map((line, index) => ({ ...line, sku: resolveSku(line) || `line-${index + 1}` })),
+  });
+  return doc.lines.map((line) => [
+    header.orderNumber,
+    header.orderNumber,
+    doc.orderDate,
+    doc.customerName ?? "",
+    doc.deliveryMethod === "pickup" ? "Pickup" : "Ship",
+    doc.styleName ?? "",
+    line.sku,
+    line.description,
+    line.qty,
+    line.unitPriceCents != null ? (line.unitPriceCents / 100).toFixed(2) : "",
+    line.lineTotalCents != null ? (line.lineTotalCents / 100).toFixed(2) : "",
+  ].map(csvCell).join(","));
+}
+
 /**
  * Build a NetSuite-ready CSV string. The External ID + PO Number repeat the
  * order number on every line so NetSuite groups the rows into one transaction
- * on import. Amount is computed as qty * unitPrice when a price is present.
+ * on import. Rate and Amount come from the shared PO builder, so a distributor
+ * import carries the same unit price and line total as the emailed PO body.
  */
 export function buildNetsuiteOrderCsv(
   header: NetsuiteOrderHeader,
   lines: NetsuiteOrderLine[]
 ): string {
-  const orderDate =
-    (header.orderDate && header.orderDate.slice(0, 10)) ||
-    new Date().toISOString().slice(0, 10);
-  const rows: string[] = [];
-  rows.push(NETSUITE_CSV_COLUMNS.map(csvCell).join(","));
-
-  for (const line of lines) {
-    const sku = resolveSku(line);
-    const qty = Number.isFinite(line.qty) ? line.qty : 0;
-    const rate = line.unitPrice ?? null;
-    const amount = rate != null ? Number((rate * qty).toFixed(2)) : null;
-    rows.push(
-      [
-        header.orderNumber,
-        header.orderNumber,
-        orderDate,
-        header.customerName ?? "",
-        header.deliveryMethod === "pickup" ? "Pickup" : "Ship",
-        header.styleName ?? "",
-        sku,
-        line.description ?? "",
-        qty,
-        rate != null ? rate.toFixed(2) : "",
-        amount != null ? amount.toFixed(2) : "",
-      ]
-        .map(csvCell)
-        .join(",")
-    );
-  }
-
+  const rows = [NETSUITE_CSV_COLUMNS.map(csvCell).join(","), ...netsuiteRows(header, lines)];
   return rows.join("\r\n");
 }
 
-/** A concise, human-readable PO body (plain text) that accompanies the CSV. */
+/**
+ * A concise, human-readable PO body (plain text) that accompanies the CSV.
+ * Delegates to the shared PO text so the body, the CSV and the admin PO view
+ * print identical unit prices, line totals and summary rows.
+ */
 export function buildOrderEmailText(
   header: NetsuiteOrderHeader,
   lines: NetsuiteOrderLine[],
-  opts?: { distributorName?: string; pickupAddress?: string | null; totalAmount?: string | null }
+  opts?: {
+    distributorName?: string;
+    pickupAddress?: string | null;
+    /** Retained for callers that pass the stored order total; totals are now derived from the lines. */
+    totalAmount?: string | null;
+    totals?: PoTotalsInput;
+    footer?: string | null;
+  }
 ): string {
-  const out: string[] = [];
-  out.push(`Purchase Order: ${header.orderNumber}`);
-  if (opts?.distributorName) out.push(`Distributor: ${opts.distributorName}`);
-  if (header.customerName) out.push(`Reference: ${header.customerName}`);
-  if (header.styleName) out.push(`Door Style / Finish: ${header.styleName}`);
-  out.push(
-    `Fulfillment: ${header.deliveryMethod === "pickup" ? "Local pickup" : "Ship"}`
-  );
-  if (header.deliveryMethod === "pickup" && opts?.pickupAddress) {
-    out.push(`Pickup location: ${opts.pickupAddress}`);
-  }
-  out.push("");
-  out.push("Line items:");
-  for (const line of lines) {
-    const sku = resolveSku(line);
-    const price = line.unitPrice != null ? ` @ $${line.unitPrice.toFixed(2)}` : "";
-    out.push(`  ${line.qty} x  ${sku}  — ${line.description ?? ""}${price}`);
-  }
-  if (opts?.totalAmount) {
-    out.push("");
-    out.push(`Order total: $${opts.totalAmount}`);
-  }
-  out.push("");
-  out.push("A NetSuite-ready CSV of this order is attached.");
-  return out.join("\n");
+  const doc = buildPoDocument({
+    orderNumber: header.orderNumber,
+    orderDate: header.orderDate,
+    customerName: header.customerName,
+    styleName: header.styleName,
+    deliveryMethod: header.deliveryMethod,
+    distributorName: opts?.distributorName ?? null,
+    pickupAddress: opts?.pickupAddress ?? null,
+    ...(opts?.totals ?? {}),
+    lines: lines.map((line, index) => ({ ...line, sku: resolveSku(line) || `line-${index + 1}` })),
+  });
+  const footer = opts?.footer ?? "A NetSuite-ready CSV of this order is attached.";
+  return buildPoText(doc, { footer });
 }
 
 // ─── Pickup eligibility ────────────────────────────────────────────────────────
