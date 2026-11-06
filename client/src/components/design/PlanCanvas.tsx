@@ -2173,9 +2173,13 @@ export function PlanCanvas({
                         : <div className="absolute left-1/2 -translate-x-1/2" style={{ top: -5, width: Math.max(4, 3 * ppi), height: Math.max(4, 4 * ppi), background: "#5b636b", borderRadius: 2 }} />}
                 </div>
               )}
-              {s.faucetDeckConflict === "shallow-countertop-deck" && (
-                <span data-testid={`sink-faucet-deck-conflict-${s.uid}`} role="alert" className="absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2 whitespace-nowrap rounded bg-rose-700 px-1 py-0.5 text-[8px] font-bold text-white shadow">
-                  REAR DECK TOO SHALLOW
+              {s.faucet && s.faucetDeckAdvisory === "tight-rear-deck" && (
+                <span
+                  data-testid={`sink-faucet-deck-advisory-${s.uid}`}
+                  title="The faucet sits close behind the basin. This does not limit a one- or two-hole deck mount, and nothing in the layout is changed for it."
+                  className="pointer-events-none absolute left-1/2 top-full z-10 mt-0.5 -translate-x-1/2 whitespace-nowrap rounded bg-slate-200 px-1 py-0.5 text-[8px] font-semibold text-slate-700 shadow-sm ring-1 ring-slate-300"
+                >
+                  Tight rear deck — faucet still fits
                 </span>
               )}
               {faucetWarning && (

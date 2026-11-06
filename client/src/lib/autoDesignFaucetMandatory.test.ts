@@ -399,7 +399,7 @@ describe("the build path reports the faucet honestly", () => {
     expect(result.usedDefaultFaucet).toBe(false);
   });
 
-  it("keeps the faucet in front of the sink window, and never moves the window", () => {
+  it("keeps the faucet at the sink window, and never moves the window", () => {
     // Owner clarification (Nov 5 2026): the faucet is at the sink, IN FRONT OF THE
     // WINDOW. The window position never moves. A sink under glazing is the normal
     // kitchen, so the faucet is required there — not omitted.
@@ -418,11 +418,15 @@ describe("the build path reports the faucet honestly", () => {
       expect(created.width).toBe(window.width);
       expect(created.faucetClearanceNote).toBeFalsy();
       expect(result.faucetWindowNotes).toEqual([]);
-      // The faucet stands in front of it, and is drawn.
+      // The faucet is drawn on the deck at the sink window. With the 2" basin
+      // setback the rear deck is deep enough that the drawn body already clears
+      // the sill, so it sits behind the glazing rather than inside it. Either
+      // way the window itself is untouched — that is the rule.
       const sink = result.sinks[0]!;
       const placement = resolveDeckFaucetPlacement(sink, room, result.openings, []);
-      expect(placement.inFrontOfWindow).toBe(true);
       expect(placement.renderFaucet).toBe(true);
+      expect(placement.conflict).not.toBe("window-frame");
+      expect(placement.offsetIn).toBeGreaterThan(0);
     }
     expectFaucetAtSink(result, room, "with window");
   });

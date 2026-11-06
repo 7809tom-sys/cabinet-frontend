@@ -188,7 +188,7 @@ import {
   COUNTERTOP_MATERIALS, DEFAULT_COUNTERTOP_MATERIAL_ID, countertopMaterial,
   EDGE_PROFILES, DEFAULT_EDGE_PROFILE_ID, edgeProfile,
 	  type PlanAnnotation, type CabinetWallDragPreview, makeAnnotation,
-	  makeSink, makeSinkForCabinet, makeDefaultSinkForCabinet, nonApronSinkDeckPlacement, normalizeSinkFixturesToBases, potFillerMountedRange, isRangeOrCooktop, sinkPlanDimensions, SINK_PRESETS, type PotFillerFixture, type SinkFixture, type SinkType,
+	  makeSink, makeSinkForCabinet, makeDefaultSinkForCabinet, normalizeSinkFixturesToBases, potFillerMountedRange, isRangeOrCooktop, sinkPlanDimensions, SINK_PRESETS, type PotFillerFixture, type SinkFixture, type SinkType,
   snapToWall, snapPosition, nextFreeSpotOnWall, mountedMicrowaveOverRangeSpot, overRangeMicrowaveAttachment,
   clampCabinetsToRoom, clampOpeningsToRoom, clampIslandToRoom, clampRoomInches,
   WALL_LABELS, doorPanelKind,
@@ -22066,23 +22066,18 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	            return;
 	          }
 	          const verifiedDimensions = { width: verifiedProfile.exteriorWidthIn, depth: verifiedProfile.exteriorDepthIn };
-	          // Part 1: a deck-mounted faucet must sit behind—not in—the selected
-	          // non-apron sink. Farmhouse/apron and wall-mounted fixtures retain
-	          // their existing dedicated installation paths.
-	          const deckPlacement = cab && !isBathroomVanity && verifiedProfile.sinkType !== "farmhouse" && !isWallMountedFaucet
-	            ? nonApronSinkDeckPlacement(cab, room, verifiedDimensions)
-	            : null;
-	          if (faucetProduct && deckPlacement?.applies && !deckPlacement.faucetCanFit) {
-	            toast.error(`${verifiedProfile.name} does not leave the required rear countertop deck for a faucet. ${deckPlacement.reason ?? "Choose a shallower sink or a different installation."}`);
-	            return;
-	          }
+	          // A narrow rear counter deck is informational only. Faucets are
+	          // universal across one- and two-hole deck mounts, so a catalog-valid
+	          // sink always places, and the surrounding cabinets are never moved
+	          // or redesigned to chase a deeper deck. The basin keeps its own
+	          // setback and the note is shown next to the placed fixture.
 	          const autoSink = cab
 	            ? makeSinkForCabinet(verifiedProfile.sinkType, cab, room, verifiedDimensions)
 	            : makeSink(verifiedProfile.sinkType, 0, 0, activeWall, verifiedDimensions);
           const sinkWithFaucet: SinkFixture = {
 	            ...autoSink,
 	            faucet: Boolean(faucetProduct),
-	            faucetDeckConflict: faucetProduct ? autoSink.faucetDeckConflict : undefined,
+	            faucetDeckAdvisory: faucetProduct ? autoSink.faucetDeckAdvisory : undefined,
             pelicanProductId: sinkProduct?.id,
             pelicanProductName: sinkProduct?.name,
             pelicanProductImage: sinkProduct?.imageUrl ?? undefined,
