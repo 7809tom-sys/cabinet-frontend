@@ -23,7 +23,10 @@ describe("store-scope persistence contract", () => {
   });
 
   it("uses v2 Designer keys with an immutable origin scope and owner-only v1 migration", () => {
-    expect(designTool).toContain("designerDraftStorageKey(storeScope, verifiedEmail)");
+    // Drafts are keyed by the signed-in ACCOUNT (falling back to the gate email,
+    // then guest) so two people on one browser never restore each other's plan.
+    expect(designTool).toContain("designerDraftStorageKey(storeScope, draftIdentity)");
+    expect(designTool).toContain("draftIdentityFor({ accountId, email: verifiedEmail })");
     expect(designTool).toContain("originScope: storeScope");
     expect(designTool).toContain("d.v === 2 && d.originScope === storeScope");
     expect(designTool).toContain("migrateLegacyDesignerDraftToOwner(localStorage, verifiedEmail)");

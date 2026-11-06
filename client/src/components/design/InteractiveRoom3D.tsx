@@ -14,6 +14,7 @@ import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader.js";
 import { ThreeDRendererHost, sizeThreeDRenderer } from "./threeDRendererHost";
 import { FullScreenQuad } from "three/examples/jsm/postprocessing/Pass.js";
 import { DenoiseMaterial, WebGLPathTracer } from "three-gpu-pathtracer";
+import { buildPublicDesignViewUrl } from "@/lib/designShare";
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Camera, CheckCircle2, ChevronDown, Download, Eye, FileDown, Info, LoaderCircle, Magnet, Mail, Maximize2, Minimize2, Minus, Move3D, Palette, PanelTop, Plus, Printer, RefreshCw, Rotate3D, Save, Share2, Sparkles, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { FlooringRotationControl } from "./FlooringLayoutPicker";
@@ -13728,10 +13729,17 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
         orderSummary,
         thumbnailDataUrl,
       });
-      const url = new URL(`/api/shared-3d-view/${token}`, window.location.origin);
-      const serializedView = cameraView ? serializeThreeDCameraShareView(cameraView) : "";
-      if (serializedView) url.searchParams.set(THREE_D_CAMERA_VIEW_QUERY_PARAM, serializedView);
-      await shareUrl(url.toString(), cameraView ? "View this CabinetDealz 3D room from the shared inspection perspective." : "View this CabinetDealz 3D room configuration.");
+      // Always hand the recipient the public `/3d/:token` page on the canonical
+      // site. The old `/api/shared-3d-view/:token` hop relied on the API host
+      // resolving the public origin, which sent recipients to the Railway
+      // deployment address, and an affiliate subdomain would rewrite the path
+      // into a store route that has no shared view.
+      const url = buildPublicDesignViewUrl({
+        origin: window.location.origin,
+        token,
+        view: cameraView ? serializeThreeDCameraShareView(cameraView) : null,
+      });
+      await shareUrl(url, cameraView ? "View this CabinetDealz 3D room from the shared inspection perspective." : "View this CabinetDealz 3D room configuration.");
     } catch (error) {
       if ((error as DOMException)?.name !== "AbortError") toast.error("Could not create the share link. Please try again.");
     }
@@ -13752,12 +13760,15 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
         if (!serializedView) throw new Error("The current view could not be encoded.");
         const token = window.location.pathname.split("/").filter(Boolean).at(-1);
         if (!token) throw new Error("The shared room could not be identified.");
-        const url = new URL(`/api/shared-3d-view/${token}`, window.location.origin);
         if (thumbnailDataUrl && token) {
           await shareThumbnailMutation.mutateAsync({ token, thumbnailDataUrl });
         }
-        url.searchParams.set(THREE_D_CAMERA_VIEW_QUERY_PARAM, serializedView);
-        await shareUrl(url.toString(), "View this CabinetDealz 3D room from the shared inspection perspective.");
+        const url = buildPublicDesignViewUrl({
+          origin: window.location.origin,
+          token,
+          view: serializedView,
+        });
+        await shareUrl(url, "View this CabinetDealz 3D room from the shared inspection perspective.");
       } catch (error) {
         if ((error as DOMException)?.name !== "AbortError") toast.error("Could not create the Share View link. Please try again.");
       }

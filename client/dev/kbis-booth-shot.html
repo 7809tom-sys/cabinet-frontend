@@ -1,0 +1,21 @@
+<!doctype html>
+<!--
+  Screenshot harness for the KBIS 2027 booth assets panel in the Marketing Hub.
+
+  It renders the real panel component — the same one the Marketing Hub's
+  "KBIS 2027 Booth" tab shows — so the screenshot proves what an affiliate sees,
+  including the featured image, the document list, and the supplier-ready badges.
+
+  Served by the Vite dev server at /dev/kbis-booth-shot.html; used only by
+  e2e/kbis-booth-panel.spec.ts. Nothing imports it and no route points at it.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>KBIS 2027 booth assets</title>
+  </head>
+  <body style="margin: 0; padding: 24px; background: #fff">
+    <div id="root"></div>
+    <script type="module" src="/src/kbisBoothScreenshotHarness.tsx"></script>
+  </body>
+</html>

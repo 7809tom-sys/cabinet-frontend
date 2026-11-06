@@ -35,6 +35,7 @@ import {
   type WallSide,
 } from "./design";
 import { refrigeratorLimitIn } from "./autoDesignAnchors";
+import { kitchenRuleNumber } from "./kitchenRuleParameters";
 import { boundedWallPlacementAt } from "./designerBounds";
 
 export type AutoDesignTallKind = "oven-pantry" | "pantry" | "utility";
@@ -366,11 +367,15 @@ export function planAutoDesignTallFit(input: AutoDesignTallFitInput): AutoDesign
       };
       // A run end always beats an interior span, and an unshared run end beats a
       // shared corner. The bands keep those two priorities from interfering.
+      // With the "pantry at the end of a run" rule switched off, an interior span
+      // scores the same as a run end, so the box is simply seated where it fits.
+      const preferRunEnd = kitchenRuleNumber("tall_at_run_end") !== 0;
+      const interiorScore = preferRunEnd ? 20 : 0;
       const candidates: Array<{ along: number; seat: AutoDesignTallSeat; score: number }> = [];
       if (buttsRunEnd) candidates.push({ along: spanEnd - product.widthIn, seat: "end", score: endScore("end", 0) });
       if (buttsRunStart) candidates.push({ along: spanStart, seat: "start", score: endScore("start", 0) });
-      if (!buttsRunEnd) candidates.push({ along: spanEnd - product.widthIn, seat: "free", score: 20 });
-      if (!buttsRunStart) candidates.push({ along: spanStart, seat: "free", score: 21 });
+      if (!buttsRunEnd) candidates.push({ along: spanEnd - product.widthIn, seat: "free", score: interiorScore });
+      if (!buttsRunStart) candidates.push({ along: spanStart, seat: "free", score: interiorScore + (preferRunEnd ? 1 : 0) });
       for (const candidate of candidates) {
         const along = roundTallOffset(candidate.along);
         if (along < spanStart - COLLISION_EPSILON_IN || along + product.widthIn > spanEnd + COLLISION_EPSILON_IN) continue;

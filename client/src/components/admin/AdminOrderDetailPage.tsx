@@ -15,18 +15,29 @@ import {
   Camera,
   CheckCircle2,
   Copy,
+  Download,
   ExternalLink,
+  FileText,
   MapPin,
+  Mail,
   Package,
   Palette,
   Send,
   Truck,
 } from "lucide-react";
 import AdminOrderStripeBreakdown from "@/components/admin/AdminOrderStripeBreakdown";
-import OrderFulfillmentTrail from "@/components/admin/OrderFulfillmentTrail";
+import OrderActivityTimeline from "@/components/admin/OrderActivityTimeline";
+import OrderFulfillmentTrail, { type OrderTrailAction } from "@/components/admin/OrderFulfillmentTrail";
 import PalletPhotoPrompt from "@/components/admin/PalletPhotoPrompt";
 import { describeAdminOrderList } from "@/lib/adminOrderReconciliation";
 import { adminOrderPalletPhotos } from "@/lib/orderPalletPhoto";
+import { orderStatusActionError } from "@/lib/orderStatusActionError";
+import { describeOrderActor } from "@/lib/orderStatusActor";
+import type { OrderEventRecord } from "@/lib/orderTimeline";
+import { downloadPoCsv, downloadPoPdf } from "@/lib/poDocumentExport";
+import { poDocumentFromOrder } from "@/lib/poOrderView";
+import { formatPoUsd, poPricingWarning, poSummaryRows } from "@shared/poDocument";
+import { buildOrderReceivedEmail } from "@shared/orderCustomerEmails";
 import {
   ADMIN_ORDER_CARRIERS,
   ADMIN_ORDER_STATUS_COLORS,
@@ -89,8 +100,15 @@ export default function AdminOrderDetailPage({ order, onBack }: { order: AdminOr
     onError: (e) => toast.error(e.message),
   });
   const markVerified = trpc.orders.markVerified.useMutation({
-    onSuccess: () => { toast.success("Order verified"); utils.orders.adminListWithPoSkus.invalidate(); },
-    onError: (e) => toast.error(e.message),
+    onSuccess: (res) => {
+      utils.orders.adminListWithPoSkus.invalidate();
+      // Verifying also thanks the customer. Say which of the two happened so a
+      // mail failure never looks like a status failure.
+      if (res.customerEmailError) toast.warning(`Order verified, but the thank-you email was not sent: ${res.customerEmailError}`);
+      else if (res.customerEmailSentTo) toast.success(`Order verified — thank-you email sent to ${res.customerEmailSentTo}`);
+      else toast.success("Order verified");
+    },
+    onError: (e) => toast.error(orderStatusActionError("verified", e)),
   });
   const markShipped = trpc.orders.markShipped.useMutation({
     onSuccess: () => {
@@ -99,17 +117,27 @@ export default function AdminOrderDetailPage({ order, onBack }: { order: AdminOr
       // Ask for the pallet photo right after the order is marked shipped.
       setPhotoPromptOpen(true);
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(orderStatusActionError("shipped", e)),
   });
   const markSigned = trpc.orders.markSigned.useMutation({
     onSuccess: () => { toast.success("Order marked signed"); utils.orders.adminListWithPoSkus.invalidate(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(orderStatusActionError("signed", e)),
   });
   const markPaid = trpc.orders.adminMarkPaid.useMutation({
     onSuccess: () => { toast.success("Order marked paid. The CRM deal moves to New Sale."); utils.orders.adminListWithPoSkus.invalidate(); },
     onError: (e) => toast.error(e.message),
   });
-
+  // The customer-facing "we received your order" note. It is separate from the
+  // verified note: each has its own stamp on the order so one can never stand in
+  // for the other.
+  const sendOrderReceived = trpc.orders.sendOrderReceivedEmail.useMutation({
+    onSuccess: (res) => {
+      if (res.sentAt) toast.success(`Order received email sent to ${res.sentTo ?? "the customer"}`);
+      else toast.error(res.error || "The order received email was not sent");
+      utils.orders.adminListWithPoSkus.invalidate();
+    },
+    onError: (e) => toast.error(orderStatusActionError("order_received_email", e)),
+  });
   // Color/finish per line, de-duplicated, for the build-sheet summary.
   const colorFinishes = Array.from(
     new Set(order.lineItems.map((l) => l.colorFinish).filter((v): v is string => !!v))
@@ -117,6 +145,27 @@ export default function AdminOrderDetailPage({ order, onBack }: { order: AdminOr
   const customer = describeAdminOrderList(order);
   const verified = adminOrderVerified(order);
   const shipment = adminOrderShipment(order);
+  const po = poDocumentFromOrder(order);
+  const poSummary = poSummaryRows(po);
+  const pricingWarning = poPricingWarning(po);
+  const receivedEmailSentAt = order.orderReceivedEmailSentAt ?? null;
+  const receivedEmailTo = order.orderReceivedEmailTo ?? customer.customerName ?? order.originatorEmail ?? null;
+  // "Verified by Dana Reaves · Nov 5, 2026, 1:47 PM CT" for each step that has
+  // happened. The full "Name · email" is the tooltip.
+  const actorLines = {
+    distributorEmail: describeOrderActor("Distributor emailed", {
+      by: order.distributorEmailSentBy ?? null,
+      at: order.distributorEmailSentAt ?? order.sentToDistributorAt ?? null,
+    }),
+    verified: describeOrderActor("Verified", { by: order.orderVerifiedBy ?? null, at: order.orderVerifiedAt ?? null }),
+    shipped: describeOrderActor("Shipped", { by: order.orderShippedBy ?? null, at: order.orderShippedAt ?? null }),
+    signed: describeOrderActor("Signed", { by: order.orderSignedBy ?? null, at: order.orderSignedAt ?? null }),
+  };
+  // The append-only log. It is optional: when the backend has not shipped
+  // order_events yet the query simply returns nothing and the timeline is derived
+  // from the order's own status columns.
+  const eventsQuery = trpc.orders.orderEvents.useQuery({ id: order.id }, { retry: false });
+  const orderEvents = (eventsQuery.data ?? []) as OrderEventRecord[];
   const savedCarrier = shipment.carrier;
   const savedTracking = shipment.tracking;
   const carrierOptions = adminOrderCarrierOptions(savedCarrier);
@@ -139,6 +188,61 @@ export default function AdminOrderDetailPage({ order, onBack }: { order: AdminOr
       carrier: carrier.trim() || undefined,
       tracking: tracking.trim() || undefined,
     });
+  };
+
+  // ─── Clickable status trail ────────────────────────────────────────────────
+  // "Order verified" also emails the customer a short thank-you; shipped and
+  // signed only move the order along. Each asks first because the steps are
+  // stamped on the order and the verified step sends a real email.
+  const ask = (message: string) => window.confirm(message);
+
+  const markVerifiedAction = () => {
+    if (verified) {
+      if (!ask(`Order ${order.requestNumber} is already verified. Mark it verified again and resend the customer a thank-you email?`)) return;
+    } else if (!ask(`Mark order ${order.requestNumber} verified and email the customer a short thank-you?`)) {
+      return;
+    }
+    markVerified.mutate({ id: order.id });
+  };
+
+  const markShippedAction = () => {
+    const prompt = shipment.shipped
+      ? `Order ${order.requestNumber} is already marked shipped. Update the shipped date again?`
+      : `Mark order ${order.requestNumber} shipped? Add the carrier and tracking in the Shipment section to include them.`;
+    if (!ask(prompt)) return;
+    markShipped.mutate({ id: order.id, carrier: carrier.trim() || undefined, tracking: tracking.trim() || undefined });
+  };
+
+  const markSignedAction = () => {
+    const prompt = order.orderSignedAt
+      ? `Order ${order.requestNumber} is already marked signed. Update the signed date again?`
+      : `Mark order ${order.requestNumber} signed for?`;
+    if (!ask(prompt)) return;
+    markSigned.mutate({ id: order.id, signerName: order.signerName ?? undefined });
+  };
+
+  const trailActions: Partial<Record<"verified" | "shipped" | "signed", OrderTrailAction>> = {
+    verified: { run: markVerifiedAction, pending: markVerified.isPending },
+    shipped: {
+      run: markShippedAction,
+      pending: markShipped.isPending,
+      hint: verified ? undefined : "Verify the order first.",
+      disabled: !verified,
+    },
+    signed: {
+      run: markSignedAction,
+      pending: markSigned.isPending,
+      hint: shipment.shipped ? undefined : "Mark the order shipped first.",
+      disabled: !shipment.shipped,
+    },
+  };
+
+  const sendReceivedEmail = () => {
+    const already = receivedEmailSentAt
+      ? `The order received email was already sent ${new Date(receivedEmailSentAt).toLocaleString()}. Send it again?`
+      : `Email ${receivedEmailTo ?? "the customer"} to confirm order ${order.requestNumber} was received?`;
+    if (!ask(already)) return;
+    sendOrderReceived.mutate({ id: order.id });
   };
 
   return (
@@ -222,7 +326,7 @@ export default function AdminOrderDetailPage({ order, onBack }: { order: AdminOr
           )}
         </div>
 
-        <OrderFulfillmentTrail order={order} />
+        <OrderFulfillmentTrail order={order} actions={trailActions} />
 
         {order.notes && (
           <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-sm">
@@ -231,7 +335,54 @@ export default function AdminOrderDetailPage({ order, onBack }: { order: AdminOr
           </div>
         )}
 
-        <AdminOrderStripeBreakdown order={order} />
+        {/* Who did what, and exactly when. One line per completed step. */}
+        <section className="space-y-1.5 rounded-lg border p-4 text-sm" data-testid="admin-order-actor-lines">
+          <h3 className="mb-1 text-sm font-semibold">Status attribution</h3>
+          {([
+            ["distributor-email", actorLines.distributorEmail],
+            ["verified", actorLines.verified],
+            ["shipped", actorLines.shipped],
+            ["signed", actorLines.signed],
+          ] as const).map(([key, line]) => (
+            <p
+              key={key}
+              className={line ? "text-foreground" : "text-muted-foreground"}
+              title={line?.full ?? undefined}
+              data-testid={`admin-order-actor-${key}`}
+            >
+              {line ? line.label : `${key === "distributor-email" ? "Distributor emailed" : key[0].toUpperCase() + key.slice(1)}: waiting`}
+            </p>
+          ))}
+        </section>
+
+        <OrderActivityTimeline order={order} events={orderEvents} loading={eventsQuery.isLoading} />
+
+        <AdminOrderStripeBreakdown
+          order={order}
+          receiptAction={(
+            <div className="flex flex-col items-end gap-1" data-testid="admin-order-customer-email">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                onClick={sendReceivedEmail}
+                disabled={sendOrderReceived.isPending}
+                title={buildOrderReceivedEmail({ orderNumber: order.requestNumber, customerName: customer.customerName }).subject}
+                data-testid="admin-order-send-received-email"
+              >
+                {sendOrderReceived.isPending ? <Spinner className="h-3.5 w-3.5" /> : <Mail className="h-3.5 w-3.5" />}
+                {receivedEmailSentAt ? "Send order received email again" : "Send order received email"}
+              </Button>
+              {receivedEmailSentAt && (
+                <p className="text-[11px] text-emerald-700" data-testid="admin-order-received-email-sent">
+                  Sent {new Date(receivedEmailSentAt).toLocaleString()}
+                  {order.orderReceivedEmailTo ? ` to ${order.orderReceivedEmailTo}` : ""}
+                </p>
+              )}
+            </div>
+          )}
+        />
 
         {/* Shipment: saved tracking plus the editable carrier/tracking fields */}
         <section className="space-y-3 rounded-lg border p-4" data-testid="admin-order-shipment">
@@ -381,20 +532,55 @@ export default function AdminOrderDetailPage({ order, onBack }: { order: AdminOr
           )}
         </section>
 
-        {/* PO SKU table */}
-        <div>
-          <div className="mb-2 flex items-center justify-between">
-            <h3 className="text-sm font-semibold">Line Items — PO SKUs</h3>
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-1.5 text-xs"
-              onClick={() => copyPoSkus(order.lineItems)}
-            >
-              <Copy className="h-3.5 w-3.5" />
-              Copy PO SKUs
-            </Button>
+        {/* PO view. Priced by the shared PO builder, so this table, the PO PDF,
+            the PO CSV and the emailed PO all show the same cents. */}
+        <section className="space-y-3" data-testid="admin-order-po-view">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h3 className="text-sm font-semibold">Purchase order</h3>
+              <p className="text-xs text-muted-foreground" data-testid="admin-order-po-basis">
+                {po.basis === "distributor_cost"
+                  ? "Prices are distributor cost — this is what the PO sent to the distributor shows."
+                  : po.basis === "customer_price"
+                    ? "No distributor cost is stored on this order, so these prices are customer price. Review before sending."
+                    : po.basis === "mixed"
+                      ? "Some lines have distributor cost and some only have customer price. Review before sending."
+                      : "This order has no line prices."}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5 text-xs"
+                onClick={() => downloadPoPdf(po)}
+                data-testid="admin-order-po-pdf"
+              >
+                <FileText className="h-3.5 w-3.5" />
+                PO PDF
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5 text-xs"
+                onClick={() => downloadPoCsv(po)}
+                data-testid="admin-order-po-csv"
+              >
+                <Download className="h-3.5 w-3.5" />
+                PO CSV
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5 text-xs"
+                onClick={() => copyPoSkus(order.lineItems)}
+              >
+                <Copy className="h-3.5 w-3.5" />
+                Copy PO SKUs
+              </Button>
+            </div>
           </div>
+
           <div className="overflow-hidden rounded-lg border">
             <Table>
               <TableHeader>
@@ -402,48 +588,63 @@ export default function AdminOrderDetailPage({ order, onBack }: { order: AdminOr
                   <TableHead className="w-12 text-center">Qty</TableHead>
                   <TableHead>PO SKU</TableHead>
                   <TableHead>Description</TableHead>
-                  <TableHead className="text-right">Unit</TableHead>
-                  <TableHead className="text-right">Line Total</TableHead>
+                  <TableHead className="text-right">Unit price</TableHead>
+                  <TableHead className="text-right">Line total</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {order.lineItems.map((l, i) => (
-                  <TableRow key={i} className={!l.matched ? "opacity-60" : ""}>
-                    <TableCell className="text-center font-mono font-semibold">{l.qty}</TableCell>
+                {po.lines.map((line, i) => (
+                  <TableRow key={i} data-testid={`admin-order-po-line-${i}`}>
+                    <TableCell className="text-center font-mono font-semibold">{line.qty}</TableCell>
                     <TableCell>
-                      {l.poSku ? (
+                      {line.sku ? (
                         <span className="rounded bg-primary/10 px-2 py-0.5 font-mono text-sm font-semibold text-primary">
-                          {l.poSku}
+                          {line.sku}
                         </span>
                       ) : (
-                        <span className="font-mono text-xs italic text-muted-foreground">
-                          {l.masterCode || l.rawCode || "—"}
-                        </span>
+                        <span className="font-mono text-xs italic text-muted-foreground">—</span>
                       )}
                     </TableCell>
                     <TableCell className="text-sm">
-                      {l.description}
-                      {!l.matched && (
-                        <Badge variant="destructive" className="ml-2 text-xs">unmatched</Badge>
+                      {line.description || "—"}
+                      {line.doorStyle && <span className="ml-1 text-xs text-muted-foreground">· {line.doorStyle}</span>}
+                      {!line.priced && (
+                        <Badge variant="destructive" className="ml-2 text-xs" data-testid="admin-order-po-line-unpriced">no price</Badge>
                       )}
                     </TableCell>
-                    <TableCell className="text-right font-mono text-sm">
-                      {l.unitPrice != null ? `$${l.unitPrice.toFixed(2)}` : "—"}
+                    <TableCell className="text-right font-mono text-sm" data-testid={`admin-order-po-unit-${i}`}>
+                      {formatPoUsd(line.unitPriceCents)}
                     </TableCell>
-                    <TableCell className="text-right font-mono text-sm font-medium">
-                      {l.linePrice != null ? `$${l.linePrice.toFixed(2)}` : "—"}
+                    <TableCell className="text-right font-mono text-sm font-medium" data-testid={`admin-order-po-line-total-${i}`}>
+                      {formatPoUsd(line.lineTotalCents)}
                     </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
           </div>
-          {order.lineItems.some((l) => !l.poSku) && (
-            <p className="mt-2 text-xs text-muted-foreground">
-              * Lines without a PO SKU are unmatched or missing a door style assignment.
+
+          <dl className="ml-auto w-full max-w-sm space-y-1.5 rounded-lg border p-3 text-sm">
+            {poSummary.map((row) => (
+              <div
+                key={row.key}
+                className={row.emphasized ? "flex justify-between gap-3 border-t pt-2" : "flex justify-between gap-3"}
+                data-testid={`admin-order-po-summary-${row.key}`}
+              >
+                <dt className={row.emphasized ? "font-semibold" : "text-muted-foreground"}>{row.label}</dt>
+                <dd className={`tabular-nums ${row.emphasized ? "font-semibold" : "font-medium"} ${row.recorded ? "" : "text-amber-800"}`}>
+                  {formatPoUsd(row.cents)}{row.recorded ? "" : " · not recorded"}
+                </dd>
+              </div>
+            ))}
+          </dl>
+
+          {pricingWarning && (
+            <p role="alert" className="rounded-md border border-red-300 bg-red-50 px-2 py-1 text-xs font-medium text-red-700" data-testid="admin-order-po-pricing-warning">
+              {pricingWarning}
             </p>
           )}
-        </div>
+        </section>
 
         {/* Actions */}
         <div className="flex flex-wrap justify-end gap-2 border-t pt-2">
