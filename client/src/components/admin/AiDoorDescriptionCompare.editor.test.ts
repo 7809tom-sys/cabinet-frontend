@@ -121,22 +121,50 @@ describe("the tool calls a model only on Generate", () => {
 });
 
 describe("a column shows nothing until it has text", () => {
-  it("gates both the preview and the parsed lines on real text", () => {
+  it("gates the sketch and the parsed lines on real text", () => {
     expect(compareSource).toContain("const hasText = text.length > 0;");
-    const previewIndex = compareSource.indexOf("{hasText && (");
-    expect(previewIndex).toBeGreaterThan(-1);
-    // The entry caption, the unstated list, and the preview are all inside it.
-    const gated = compareSource.slice(previewIndex, compareSource.indexOf("<Button", previewIndex));
-    expect(gated).toContain("<DoorPreview");
-    expect(gated).toContain("ai-door-entry-");
-    expect(gated).toContain("ai-door-unstated-");
+    // The sketch is its own gated block. It is a reading of the text, never a
+    // result, and it disappears once a real generated image exists.
+    const sketchIndex = compareSource.indexOf("{hasText && !image && (");
+    expect(sketchIndex).toBeGreaterThan(-1);
+    const sketch = compareSource.slice(sketchIndex, compareSource.indexOf("<Button", sketchIndex));
+    expect(sketch).toContain("<DoorPreview");
+    expect(sketch).toContain("It is not a photo of this door");
+
+    // The entry caption and the unstated list are gated too.
+    const parsedIndex = compareSource.indexOf("{hasText && (", sketchIndex);
+    expect(parsedIndex).toBeGreaterThan(-1);
+    const parsed = compareSource.slice(parsedIndex, compareSource.indexOf("<Button", parsedIndex));
+    expect(parsed).toContain("ai-door-entry-");
+    expect(parsed).toContain("ai-door-unstated-");
   });
 
   it("draws no placeholder door from a defaulted parameter set", () => {
     // There is no unconditional DoorPreview anywhere in the file.
-    const calls = compareSource.match(/\{hasText && \(/g) ?? [];
+    const calls = compareSource.match(/\{hasText && /g) ?? [];
     expect(calls.length).toBeGreaterThan(0);
     expect(compareSource.match(/<DoorPreview/g) ?? []).toHaveLength(1);
+  });
+});
+
+describe("the result a column shows is the generated image", () => {
+  it("renders the image the server drew, badged, above the text it came from", () => {
+    expect(compareSource).toContain("ai-door-image-");
+    expect(compareSource).toContain("aiDoorGeneratedImageSource(");
+    expect(compareSource).toContain("aiDoorImageCaption(model, image)");
+    // It is the generated image that earns the badge, never the local sketch.
+    expect(compareSource).toContain("const image = state.image;");
+  });
+
+  it("reports an image failure in plain words and keeps the description", () => {
+    expect(compareSource).toContain("ai-door-image-message-");
+    expect(compareSource).toContain("state.imageMessage");
+  });
+
+  it("says which model drew Claude's picture, because Claude cannot draw", () => {
+    expect(compareSource).toContain("ai-door-painter-note-");
+    expect(compareSource).toContain("!plan.painterIsWriter");
+    expect(compareSource).toContain("aiDoorImagePlan(model)");
   });
 });
 

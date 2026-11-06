@@ -52,12 +52,18 @@ import {
 import { aiDoorPreviewEntryLabel, aiDoorPreviewGeometry, previewFaceHex } from "@/lib/aiDoorPreview";
 import { useAiDoorDescribe } from "@/lib/aiDoorDescribeClient";
 import {
+  aiDoorGeneratedImageSource,
   aiDoorImageSourceLabel,
-  aiDoorPreviewSource,
   aiDoorSampleSource,
   type AiDoorImageSource,
 } from "@/lib/aiDoorImageSource";
 import { announceChosenDoorProfile } from "@/lib/useChosenDoorProfiles";
+import {
+  AI_DOOR_IMAGE_FAILED_MESSAGE,
+  aiDoorImageCaption,
+  aiDoorImagePlan,
+  type AiDoorGeneratedImage,
+} from "@shared/aiDoorImage";
 
 export type AiDoorCompareStyle = {
   id: number;
@@ -88,8 +94,19 @@ export type AiDoorDescriptionCompareProps = {
 };
 
 type CopyState = Partial<Record<AiDoorModel, "idle" | "copied" | "failed">>;
-/** Per-column Generate state: idle, running, or the plain message to show. */
-type GenerateState = Partial<Record<AiDoorModel, { status: "idle" | "loading" | "error" | "not-connected"; message: string | null }>>;
+/**
+ * Per-column Generate state: idle, running, or the plain message to show.
+ *
+ * `image` is the door picture Generate drew. It is the result; the text beside it
+ * is what the picture was drawn from.
+ */
+type GeneratedImageState = AiDoorGeneratedImage | null;
+type GenerateState = Partial<Record<AiDoorModel, {
+  status: "idle" | "loading" | "error" | "not-connected";
+  message: string | null;
+  image: GeneratedImageState;
+  imageMessage: string | null;
+}>>;
 
 const EMPTY_PARAMS: AiDoorParseResult["params"] = {
   entryId: null,
@@ -119,7 +136,7 @@ function SourceBadge({ source }: { source: AiDoorImageSource | null }) {
   if (!label) return null;
   const tone = label.kind === "door-sample"
     ? "bg-slate-800/85 text-white"
-    : label.kind === "ai-generated"
+    : label.kind === "generated"
       ? "bg-violet-700/90 text-white"
       : "bg-amber-100/95 text-amber-900 ring-1 ring-amber-300";
   return (
@@ -143,13 +160,12 @@ function DoorPreview({ params, colorSeed }: {
   const panel = `color-mix(in srgb, ${face} 92%, black)` as string;
   return (
     <div className="relative">
-      {/* This drawing is the library default profile rendered locally. It is not a
-          photo of the door and it is not an AI image, so it says so on the picture. */}
-      <SourceBadge source={aiDoorPreviewSource()} />
+      {/* A local vector reading of the described profile. It is not a photo and
+          not an AI image, so it carries no badge: the column names it in words. */}
       <svg
         viewBox="0 0 100 200"
         role="img"
-        aria-label="Door preview from this description"
+        aria-label="Sketch of the described door profile"
       className="h-40 w-full rounded-md border bg-muted/20"
       data-testid="ai-door-preview-svg"
       data-entry={params.entryId ?? "none"}
@@ -270,26 +286,33 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial }:
    * Ask this column's model for a description, on the button press only.
    *
    * The prompt and the door photo's URL go to the API server, which holds the
-   * provider key. The answer is pasted into this column's own box and nowhere
-   * else, so generating one column never rewrites another.
+   * provider key. The answer carries both the description and the door image
+   * Generate drew from it; the image is the result, and it lands in this column
+   * only, so generating one column never rewrites another.
    */
   async function generate(model: AiDoorModel) {
-    setGenerated((current) => ({ ...current, [model]: { status: "loading", message: null } }));
+    setGenerated((current) => ({
+      ...current,
+      [model]: { status: "loading", message: null, image: null, imageMessage: null },
+    }));
     const result = await describe.generate(model, aiDoorDescribeInput({
       model,
       prompt: AI_DOOR_PROMPTS[model],
       imageUrl: sampleUrl ?? null,
       doorName: [style.doorStyle, style.finish].map((part) => part ?? "").join(" ").trim() || null,
       styleId: style.id,
+      finish: style.finish ?? null,
+      colorDescription: null,
     }));
-    if (result.description) {
-      updateField(model, result.description);
-      setGenerated((current) => ({ ...current, [model]: { status: "idle", message: null } }));
-      return;
-    }
+    if (result.description) updateField(model, result.description);
     setGenerated((current) => ({
       ...current,
-      [model]: { status: result.notConnected ? "not-connected" : "error", message: result.message },
+      [model]: {
+        status: result.notConnected ? "not-connected" : result.message ? "error" : "idle",
+        message: result.message,
+        image: result.image,
+        imageMessage: result.imageMessage,
+      },
     }));
   }
 
@@ -358,11 +381,11 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial }:
     <div className="rounded-lg border border-slate-300 bg-white px-3 py-3" data-testid="ai-door-compare">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <span className="text-xs font-semibold text-slate-800">AI door-description comparison</span>
+          <span className="text-xs font-semibold text-slate-800">AI door-image comparison</span>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Press Generate to have that model describe this door, or copy the prompt and paste its answer back. The preview
-            under each field draws what that description actually says; anything it does not state stays at the library
-            default and is listed.
+            Press Generate to have that model describe this door and draw a photorealistic picture of it. Keep that
+            description as the door's official profile, or copy the prompt and paste an answer back. Anything a
+            description does not state stays at the library default and is listed.
           </p>
         </div>
         {sampleUrl && (
@@ -383,10 +406,17 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial }:
         {AI_DOOR_MODELS.map((model) => {
           const result = parsed?.[model];
           const isChosen = stored.chosen === model;
-          const state = generated[model] ?? { status: "idle" as const, message: null };
+          const state = generated[model] ?? {
+            status: "idle" as const,
+            message: null,
+            image: null,
+            imageMessage: null,
+          };
           const isLoading = state.status === "loading";
+          const image = state.image;
           const text = (fields[model] ?? "").trim();
           const hasText = text.length > 0;
+          const plan = aiDoorImagePlan(model);
           return (
             <div
               key={model}
@@ -451,36 +481,78 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial }:
                 id={`ai-door-${model}`}
                 value={fields[model] ?? ""}
                 onChange={(event) => updateField(model, event.target.value)}
-                rows={7}
-                placeholder={`Paste ${AI_DOOR_MODEL_LABELS[model]}'s description of the door here`}
+                rows={6}
+                placeholder={`${AI_DOOR_MODEL_LABELS[model]}'s description of the door`}
                 className="w-full resize-y rounded-md border border-input bg-background px-2 py-1.5 text-xs"
                 data-testid={`ai-door-field-${model}`}
               />
 
-              {/* No text, no door: an empty column shows no preview at all. */}
-              {hasText && (
-                <>
+              {/* The result: the door picture Generate drew. Nothing is shown as a
+                  result until there is a real image, so a saved photo or a vector
+                  sketch can never be mistaken for one. */}
+              {image && (
+                <figure className="space-y-1" data-testid={`ai-door-image-${model}`}>
+                  <div className="relative">
+                    <img
+                      src={image.url}
+                      alt={`Generated picture of this ${style.doorStyle ?? "cabinet"} door`}
+                      className="h-40 w-full rounded-md border object-cover"
+                      data-testid={`ai-door-image-src-${model}`}
+                    />
+                    <SourceBadge source={aiDoorGeneratedImageSource(image.url)} />
+                  </div>
+                  <figcaption className="text-[10px] text-muted-foreground" data-testid={`ai-door-image-caption-${model}`}>
+                    {aiDoorImageCaption(model, image)}
+                  </figcaption>
+                </figure>
+              )}
+
+              {state.imageMessage && (
+                <p className="text-[10px] font-medium text-red-700" role="alert" data-testid={`ai-door-image-message-${model}`}>
+                  {state.imageMessage || AI_DOOR_IMAGE_FAILED_MESSAGE}
+                </p>
+              )}
+
+              {/* Claude writes but cannot draw: say which model drew its picture. */}
+              {!plan.painterIsWriter && (
+                <p className="text-[10px] text-muted-foreground" data-testid={`ai-door-painter-note-${model}`}>
+                  {plan.note}
+                </p>
+              )}
+
+              {/* The vector sketch is a reading of the description, not a photo:
+                  it is named in words and never badged like a result. */}
+              {hasText && !image && (
+                <div data-testid={`ai-door-sketch-${model}`}>
                   <DoorPreview params={result?.params ?? EMPTY_PARAMS} colorSeed={previewSeed} />
-
-                  <p className="text-[10px] text-muted-foreground" data-testid={`ai-door-entry-${model}`}>
-                    {aiDoorPreviewEntryLabel(result?.params ?? EMPTY_PARAMS)}
+                  <p className="text-[10px] text-muted-foreground">
+                    Sketch of the described profile, drawn locally. It is not a photo of this door.
                   </p>
+                </div>
+              )}
 
+              {hasText && (
+                <div className="space-y-1">
                   {result && (
-                    <div className="space-y-1" data-testid={`ai-door-unstated-${model}`}>
-                      {result.unstated.length > 0 ? (
-                        <p className="text-[10px] text-amber-800" data-testid={`ai-door-unstated-sentence-${model}`}>
-                          {aiDoorUnstatedSentence(result.unstated)}
-                        </p>
-                      ) : (
-                        <p className="text-[10px] text-emerald-800">Every compared detail was stated in this description.</p>
-                      )}
-                      {result.params.colorText && (
-                        <p className="text-[10px] text-muted-foreground">Color, as described: {result.params.colorText}</p>
-                      )}
-                    </div>
+                    <>
+                      <p className="text-[10px] text-muted-foreground" data-testid={`ai-door-entry-${model}`}>
+                        {aiDoorPreviewEntryLabel(result.params)}
+                      </p>
+                      <div className="space-y-1" data-testid={`ai-door-unstated-${model}`}>
+                        {result.unstated.length > 0 ? (
+                          <p className="text-[10px] text-amber-800" data-testid={`ai-door-unstated-sentence-${model}`}>
+                            {aiDoorUnstatedSentence(result.unstated)}
+                          </p>
+                        ) : (
+                          <p className="text-[10px] text-emerald-800">Every compared detail was stated in this description.</p>
+                        )}
+                        {result.params.colorText && (
+                          <p className="text-[10px] text-muted-foreground">Color, as described: {result.params.colorText}</p>
+                        )}
+                      </div>
+                    </>
                   )}
-                </>
+                </div>
               )}
 
               <Button

@@ -1,19 +1,20 @@
 /**
  * Where a picture in the AI door-description section actually comes from.
  *
- * The section shows two different pictures and they are not the same thing:
+ * The section shows two kinds of picture and they are never the same thing:
  *
- *   - the door style's own saved sample photo, when the style has one
- *   - the library default profile/3D door preview, drawn from the shipped
- *     blueprint's geometry when the description does not state a value
+ *   - the door style's own saved sample photo, sent with Generate as the
+ *     reference the model looks at
+ *   - the door image Generate actually drew, from that photo and the model's
+ *     description — this is the result Tom asked for
  *
- * Nothing in this section is produced by an AI image call. The Generate button
- * asks a model for *text*; the picture beside it is drawn locally. So an
- * "AI generated" label is only ever allowed for a source that really is an AI
- * image, and there is no such source today.
+ * The locally drawn vector door that used to sit under a generated description
+ * is no longer a column's result. It was labelled "Library default", which read
+ * as a result when it was only a sketch of the shipped profile; a column that
+ * shows it says so in words beside its caption instead of badging it like a photo.
  */
 
-export type AiDoorImageSource = "door-sample" | "library-default" | "ai-generated";
+export type AiDoorImageSource = "door-sample" | "generated" | "library-default";
 
 export type AiDoorImageSourceLabel = {
   kind: AiDoorImageSource;
@@ -26,27 +27,27 @@ export type AiDoorImageSourceLabel = {
 const LABELS: Record<AiDoorImageSource, AiDoorImageSourceLabel> = {
   "door-sample": {
     kind: "door-sample",
-    label: "Door sample photo",
+    label: "Door photo sent",
     testId: "ai-door-source-door-sample",
+  },
+  generated: {
+    kind: "generated",
+    label: "AI generated",
+    testId: "ai-door-source-generated",
   },
   "library-default": {
     kind: "library-default",
     label: "Library default",
     testId: "ai-door-source-library-default",
   },
-  "ai-generated": {
-    kind: "ai-generated",
-    label: "AI generated",
-    testId: "ai-door-source-ai-generated",
-  },
 };
 
 /**
  * The badge for a picture, or null when there is no picture to label.
  *
- * `sampleUrl` is the door style's own saved sample photo. A preview drawn from
- * the library default profile has no URL of its own, so it is labelled from its
- * own source and never claims to be a photo of the door.
+ * A generated door carries its own URL, so it is badged from the image the server
+ * returned. A saved sample is badged as the photo that was sent, never as a
+ * result.
  */
 export function aiDoorImageSourceLabel(source: AiDoorImageSource | null | undefined): AiDoorImageSourceLabel | null {
   if (!source) return null;
@@ -54,11 +55,8 @@ export function aiDoorImageSourceLabel(source: AiDoorImageSource | null | undefi
 }
 
 /**
- * What the sample image slot is showing.
- *
- * `savedSampleUrl` is the style's own saved photo. When it is empty the section
- * has no photo at all and falls back to the library default drawing, which is
- * also why an absent sample never gets a photo label.
+ * What the sample image slot is showing: the style's own saved photo, which is
+ * the reference sent to the model. Empty means there is no photo to send.
  */
 export function aiDoorSampleSource(savedSampleUrl: string | null | undefined): AiDoorImageSource | null {
   const url = (savedSampleUrl ?? "").trim();
@@ -66,9 +64,17 @@ export function aiDoorSampleSource(savedSampleUrl: string | null | undefined): A
 }
 
 /**
- * Every picture inside the section is a local vector draw from the library
- * default profile. It is never an AI image, so it is always labelled
- * "Library default".
+ * The badge for a picture Generate drew. Only a real image URL earns it; the
+ * locally drawn sketch never does.
+ */
+export function aiDoorGeneratedImageSource(generatedUrl: string | null | undefined): AiDoorImageSource | null {
+  const url = (generatedUrl ?? "").trim();
+  return url ? "generated" : null;
+}
+
+/**
+ * A locally drawn vector door, which is a sketch of the library profile and not
+ * a photograph. It is never badged; callers name it in words instead.
  */
 export function aiDoorPreviewSource(): AiDoorImageSource {
   return "library-default";

@@ -32,7 +32,14 @@ vi.mock("@/lib/aiDoorDescribeClient", () => ({
     isPending: describeMock.isPending,
     generate: async (model: string, input: unknown) => {
       const result = await describeMock.mutateAsync(input);
-      return result ?? { description: null, message: "That description could not be generated. Try again.", notConnected: false };
+      if (result) return result;
+      return {
+        description: null,
+        image: null,
+        imageMessage: null,
+        message: "That description could not be generated. Try again.",
+        notConnected: false,
+      };
     },
   }),
 }));
@@ -216,6 +223,8 @@ describe("Generate", () => {
   it("sends that column's own prompt with the door photo and fills that box only", async () => {
     describeMock.mutateAsync.mockResolvedValue({
       description: "The generated description.",
+      image: null,
+      imageMessage: null,
       message: null,
       notConnected: false,
     });
@@ -240,8 +249,8 @@ describe("Generate", () => {
 
   it("generates for each model separately, once per press", async () => {
     describeMock.mutateAsync
-      .mockResolvedValueOnce({ description: "GPT answer.", message: null, notConnected: false })
-      .mockResolvedValueOnce({ description: "Gemini answer.", message: null, notConnected: false });
+      .mockResolvedValueOnce({ description: "GPT answer.", image: null, imageMessage: null, message: null, notConnected: false })
+      .mockResolvedValueOnce({ description: "Gemini answer.", image: null, imageMessage: null, message: null, notConnected: false });
     render(<AiDoorDescriptionCompare style={STYLE} />);
     fireEvent.click(screen.getByTestId("ai-door-compare-start"));
 
@@ -257,7 +266,7 @@ describe("Generate", () => {
   });
 
   it("draws the preview from the generated text", async () => {
-    describeMock.mutateAsync.mockResolvedValue({ description: SHAKER_TEXT, message: null, notConnected: false });
+    describeMock.mutateAsync.mockResolvedValue({ description: SHAKER_TEXT, image: null, imageMessage: null, message: null, notConnected: false });
     render(<AiDoorDescriptionCompare style={STYLE} />);
     fireEvent.click(screen.getByTestId("ai-door-compare-start"));
     expect(previewIn("gemini")).toBeNull();
@@ -271,6 +280,8 @@ describe("Generate", () => {
   it("says plainly when a model is not connected, and leaves the box alone", async () => {
     describeMock.mutateAsync.mockResolvedValue({
       description: null,
+      image: null,
+      imageMessage: null,
       message: AI_DOOR_NOT_CONNECTED_MESSAGE.claude,
       notConnected: true,
     });
@@ -301,6 +312,8 @@ describe("Generate", () => {
   it("shows a failed generation as a plain error, not a spinner", async () => {
     describeMock.mutateAsync.mockResolvedValue({
       description: null,
+      image: null,
+      imageMessage: null,
       message: "GPT is busy right now. Try Generate again in a moment.",
       notConnected: false,
     });
@@ -320,6 +333,8 @@ describe("Generate", () => {
     describeMock.available = false;
     describeMock.mutateAsync.mockResolvedValue({
       description: null,
+      image: null,
+      imageMessage: null,
       message: "Generate needs the API server's AI door procedure, which is not deployed yet. Copy the prompt instead.",
       notConnected: false,
     });
@@ -327,6 +342,103 @@ describe("Generate", () => {
     fireEvent.click(screen.getByTestId("ai-door-compare-start"));
     fireEvent.click(screen.getByTestId("ai-door-generate-gemini"));
     await waitFor(() => expect(screen.getByTestId("ai-door-generate-message-gemini").textContent).toContain("not deployed yet"));
+  });
+});
+
+describe("Generate draws a real door image", () => {
+  const DRAWN = {
+    url: "/manus-storage/door-style-images/ai-generated/classic-cream-openai-abc.png",
+    painter: "openai" as const,
+    providerModel: "gpt-image-2",
+    fromDescription: null,
+  };
+
+  it("shows the drawn image as the column's result, badged as AI generated", async () => {
+    describeMock.mutateAsync.mockResolvedValue({
+      description: RAISED_TEXT,
+      image: DRAWN,
+      imageMessage: null,
+      message: null,
+      notConnected: false,
+    });
+    render(<AiDoorDescriptionCompare style={STYLE} sampleUrl="/uploads/cabinet-door.jpg" />);
+    fireEvent.click(screen.getByTestId("ai-door-compare-start"));
+    fireEvent.click(screen.getByTestId("ai-door-generate-gpt"));
+
+    await waitFor(() => expect(screen.getByTestId("ai-door-image-gpt")).toBeTruthy());
+    const img = screen.getByTestId("ai-door-image-src-gpt") as HTMLImageElement;
+    expect(img.getAttribute("src")).toBe(DRAWN.url);
+    const badge = columnOf("gpt").querySelector("[data-testid='ai-door-source-generated']");
+    expect(badge?.textContent).toBe("AI generated");
+    // The picture is the result; the vector sketch is not drawn beside it.
+    expect(screen.queryByTestId("ai-door-sketch-gpt")).toBeNull();
+  });
+
+  it("sends the door photo, the finish, and never a key", async () => {
+    describeMock.mutateAsync.mockResolvedValue({
+      description: RAISED_TEXT,
+      image: DRAWN,
+      imageMessage: null,
+      message: null,
+      notConnected: false,
+    });
+    render(<AiDoorDescriptionCompare style={STYLE} sampleUrl="/uploads/cabinet-door.jpg" />);
+    fireEvent.click(screen.getByTestId("ai-door-compare-start"));
+    fireEvent.click(screen.getByTestId("ai-door-generate-gpt"));
+    await waitFor(() => expect(describeMock.mutateAsync).toHaveBeenCalledTimes(1));
+
+    const sent = describeMock.mutateAsync.mock.calls[0][0] as Record<string, unknown>;
+    expect(sent.image).toEqual({ url: "/uploads/cabinet-door.jpg" });
+    expect(sent.finish).toBe("Painted");
+    const serialized = JSON.stringify(sent).toLowerCase();
+    expect(serialized).not.toContain("api_key");
+    expect(serialized).not.toContain("apikey");
+  });
+
+  it("keeps Claude's description and says which model drew its picture", async () => {
+    describeMock.mutateAsync.mockResolvedValue({
+      description: SHAKER_TEXT,
+      image: {
+        url: "/manus-storage/door-style-images/ai-generated/classic-cream-gemini-xyz.png",
+        painter: "gemini" as const,
+        providerModel: "gemini-3.1-flash-image",
+        fromDescription: "claude" as const,
+      },
+      imageMessage: null,
+      message: null,
+      notConnected: false,
+    });
+    render(<AiDoorDescriptionCompare style={STYLE} />);
+    fireEvent.click(screen.getByTestId("ai-door-compare-start"));
+    fireEvent.click(screen.getByTestId("ai-door-generate-claude"));
+
+    await waitFor(() => expect(screen.getByTestId("ai-door-image-claude")).toBeTruthy());
+    // Claude cannot draw, so the column is honest about who did.
+    expect(screen.getByTestId("ai-door-image-caption-claude").textContent)
+      .toContain("Google's image model drew this door from Claude's description");
+    expect(screen.getByTestId("ai-door-painter-note-claude").textContent).toContain("Claude cannot return an image");
+  });
+
+  it("reports an image failure plainly instead of showing a saved photo or a sketch", async () => {
+    describeMock.mutateAsync.mockResolvedValue({
+      description: RAISED_TEXT,
+      image: null,
+      imageMessage: "OpenAI's image model could not draw this door. Try Generate again.",
+      message: null,
+      notConnected: false,
+    });
+    render(<AiDoorDescriptionCompare style={STYLE} sampleUrl="/uploads/cabinet-door.jpg" />);
+    fireEvent.click(screen.getByTestId("ai-door-compare-start"));
+    fireEvent.click(screen.getByTestId("ai-door-generate-gpt"));
+
+    await waitFor(() => expect(screen.getByTestId("ai-door-image-message-gpt")).toBeTruthy());
+    expect(screen.getByTestId("ai-door-image-message-gpt").textContent).toContain("could not draw this door");
+    // The description the model wrote is kept.
+    expect((screen.getByTestId("ai-door-field-gpt") as HTMLTextAreaElement).value).toBe(RAISED_TEXT);
+    // No image, and the local sketch is named as a sketch, never badged.
+    expect(screen.queryByTestId("ai-door-image-gpt")).toBeNull();
+    expect(screen.queryByTestId("ai-door-source-generated")).toBeNull();
+    expect(screen.getByTestId("ai-door-sketch-gpt").textContent).toContain("It is not a photo of this door");
   });
 });
 

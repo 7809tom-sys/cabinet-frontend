@@ -37,6 +37,8 @@ describe("the request the browser sends", () => {
       image: { url: "/manus-storage/door.jpg" },
       doorName: "Raised Panel Painted",
       styleId: 330026,
+      finish: null,
+      colorDescription: null,
     });
   });
 
@@ -54,7 +56,7 @@ describe("the request the browser sends", () => {
     expect(JSON.stringify(input).toLowerCase()).not.toContain("api_key");
     expect(JSON.stringify(input).toLowerCase()).not.toContain("apikey");
     expect(JSON.stringify(input).toLowerCase()).not.toContain("token");
-    expect(Object.keys(input).sort()).toEqual(["doorName", "image", "model", "prompt", "styleId"]);
+    expect(Object.keys(input).sort()).toEqual(["colorDescription", "doorName", "finish", "image", "model", "prompt", "styleId"]);
   });
 
   it("names the procedure and the service that must hold the keys", () => {
@@ -74,7 +76,40 @@ describe("the request the browser sends", () => {
 describe("reading a result into what a column shows", () => {
   it("returns the text on success", () => {
     const read = readAiDoorDescribeResult("gpt", { status: "ok", model: "gpt", description: "  Style: shaker.  ", providerModel: "m" });
-    expect(read).toEqual({ description: "Style: shaker.", message: null, notConnected: false });
+    expect(read).toEqual({ description: "Style: shaker.", image: null, imageMessage: null, message: null, notConnected: false });
+  });
+
+  it("returns the drawn door image alongside the text", () => {
+    const image = {
+      url: "/manus-storage/door-style-images/ai-generated/shaker-gpt-image-2.png",
+      painter: "openai" as const,
+      providerModel: "gpt-image-2",
+      fromDescription: null,
+    };
+    const read = readAiDoorDescribeResult("gpt", {
+      status: "ok",
+      model: "gpt",
+      description: "Style: shaker.",
+      providerModel: "gpt-4.1-mini",
+      image,
+    });
+    expect(read.image).toEqual(image);
+    expect(read.imageMessage).toBeNull();
+    expect(read.message).toBeNull();
+  });
+
+  it("keeps the description and says why there is no picture", () => {
+    const read = readAiDoorDescribeResult("claude", {
+      status: "ok",
+      model: "claude",
+      description: "Style: shaker.",
+      providerModel: "claude-sonnet-4-6",
+      image: null,
+      imageMessage: "Google's image model could not draw this door. Try Generate again.",
+    });
+    expect(read.description).toBe("Style: shaker.");
+    expect(read.image).toBeNull();
+    expect(read.imageMessage).toContain("could not draw this door");
   });
 
   it("keeps a missing key distinct, with its plain sentence", () => {
