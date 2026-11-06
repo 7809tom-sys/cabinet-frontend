@@ -32,6 +32,10 @@ Run docs/sql/0250_kitchen_rule_settings.tidb.sql before deploying. Every
 built-in row is seeded with valueText NULL, so nothing changes until an admin
 saves a value.
 ---
+ drizzle/schema.ts              |  29 +++++++++
+ server/routers/kitchenRules.ts | 358 +++++++++++++++++++++++++++++++++++++++-
+ 2 files changed, 381 insertions(+), 6 deletions(-)
+
 diff --git a/server/routers/kitchenRules.ts b/server/routers/kitchenRules.ts
 index 10bad19..8b19a80 100644
 --- a/server/routers/kitchenRules.ts
