@@ -656,6 +656,30 @@ export default function App() {
           </Suspense>
         </Route>
 
+        {/* A share link is opened by its recipient, who may follow an
+            affiliate-branded host. That host rewrites every non-store path into
+            /store/:slug/..., so keep the shared views reachable inside the
+            storefront tree too instead of falling through to a 404. */}
+        <Route path="/store/:slug/design/session/:token">
+          {(params) => (
+            <AffiliateShell slug={params.slug}>
+              <Suspense fallback={<PageLoader />}>
+                <DesignSession />
+              </Suspense>
+            </AffiliateShell>
+          )}
+        </Route>
+
+        <Route path="/store/:slug/3d/:token">
+          {(params) => (
+            <AffiliateShell slug={params.slug}>
+              <Suspense fallback={<PageLoader />}>
+                <SharedRoom3D token={params.token} />
+              </Suspense>
+            </AffiliateShell>
+          )}
+        </Route>
+
         <Route path="/design">
           <DesignerRoute />
         </Route>
