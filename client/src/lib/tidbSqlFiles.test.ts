@@ -16,6 +16,7 @@ const FILES = [
   "docs/sql/0251_order_activity_log.tidb.sql",
   "docs/sql/0252_vendor_cost_factor.tidb.sql",
   "docs/sql/0253_designer_ready_override.tidb.sql",
+  "docs/sql/0261_wall_wine_rack_publish.tidb.sql",
 ] as const;
 
 function read(path: string): string {
