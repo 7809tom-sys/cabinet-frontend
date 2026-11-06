@@ -1,0 +1,762 @@
+From e706c940b298d8cbe46c30b9ba6d3306fd3daed8 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Fri, 6 Nov 2026 02:15:59 +0000
+Subject: [PATCH] File a saved design under the account that saved it, not the
+ URL's storefront
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+A signed-in person's new design was written with the storefront id the request
+resolved to, which the browser derives from the URL. Saving while a storefront
+page was open therefore filed the plan into that store: it showed that store's
+brand, appeared in that store's CRM, and was missing from the person's own
+"My Designs" list on every other device. Re-opening it from another store's
+link then failed the store-scope check — and the assisted read returned null for
+the design's own owner when the host was pinned elsewhere — so the plan looked
+locked to a store it did not belong to.
+
+- New server/lib/designStoreOwnership.ts holds the two rules. An EXISTING
+  design's own affiliateId decides its store for every read, write, rename,
+  delete and open. A NEW design belongs to the signed-in account unless the
+  person is a storefront customer or a member of the store they are on.
+- design.save applies it and returns affiliateId, affiliateSlug, storeName and
+  storeReason, so the Designer can say which account the plan went to.
+- design.autosave, design.rename, design.remove and the owner branch of
+  design.byId resolve the stored row's own store instead of the request's
+  affiliateSlug. byId answers the owner before checking the pinned host.
+- design.myDesigns is the account's whole list (every store), each row carrying
+  its owning store's slug and name so a link opens it in the right place.
+- customerAccount.overview and affiliateCustomers.get return the owning store
+  with each design, so a CRM link is built from the design, not the open board.
+
+Tests: server/lib/designStoreOwnership.test.ts (9) covers the rules;
+server/routers/design.ownerScope.wiring.test.ts (10) pins where each procedure
+takes its scope from.
+---
+ server/lib/designStoreOwnership.test.ts       |  82 ++++++
+ server/lib/designStoreOwnership.ts            |  90 +++++++
+ server/routers/affiliateCustomers.ts          |   6 +
+ server/routers/customerAccount.ts             |  12 +-
+ .../routers/design.ownerScope.wiring.test.ts  |  94 +++++++
+ server/routers/design.ts                      | 247 ++++++++++++------
+ 6 files changed, 457 insertions(+), 74 deletions(-)
+ create mode 100644 server/lib/designStoreOwnership.test.ts
+ create mode 100644 server/lib/designStoreOwnership.ts
+ create mode 100644 server/routers/design.ownerScope.wiring.test.ts
+
+diff --git a/server/lib/designStoreOwnership.test.ts b/server/lib/designStoreOwnership.test.ts
+new file mode 100644
+index 0000000..2350225
+--- /dev/null
++++ b/server/lib/designStoreOwnership.test.ts
+@@ -0,0 +1,82 @@
++import { describe, expect, it } from "vitest";
++import {
++  designStoreName,
++  existingDesignStoreId,
++  newDesignStoreDecision,
++  sameDesignStore,
++} from "./designStoreOwnership";
++
++const FIRST_CLASS = 44;
++const REAVES = 91;
++
++describe("a new design is filed under the person who saved it", () => {
++  it("files a platform admin's save on their own account, not the storefront URL they had open", () => {
++    expect(newDesignStoreDecision({
++      requestedAffiliateId: FIRST_CLASS,
++      viewerAffiliateId: null,
++      role: "admin",
++    })).toEqual({ affiliateId: null, reason: "account-scope" });
++  });
++
++  it("files platform staff work on their own account too", () => {
++    for (const role of ["designer", "sales_rep", "distributor"]) {
++      expect(newDesignStoreDecision({
++        requestedAffiliateId: FIRST_CLASS,
++        viewerAffiliateId: null,
++        role,
++      }).affiliateId).toBeNull();
++    }
++  });
++
++  it("keeps a store member's save in the store they belong to", () => {
++    expect(newDesignStoreDecision({
++      requestedAffiliateId: FIRST_CLASS,
++      viewerAffiliateId: FIRST_CLASS,
++      role: "designer",
++    })).toEqual({ affiliateId: FIRST_CLASS, reason: "store-member" });
++  });
++
++  it("keeps a storefront customer's save in that storefront's CRM", () => {
++    expect(newDesignStoreDecision({
++      requestedAffiliateId: FIRST_CLASS,
++      viewerAffiliateId: null,
++      role: "user",
++    })).toEqual({ affiliateId: FIRST_CLASS, reason: "storefront-customer" });
++  });
++
++  it("keeps a member of ANOTHER store out of a store they do not belong to", () => {
++    expect(newDesignStoreDecision({
++      requestedAffiliateId: FIRST_CLASS,
++      viewerAffiliateId: REAVES,
++      role: "designer",
++    }).affiliateId).toBeNull();
++  });
++
++  it("saves on the platform designer to the account scope", () => {
++    expect(newDesignStoreDecision({ requestedAffiliateId: null, viewerAffiliateId: null, role: "user" }))
++      .toEqual({ affiliateId: null, reason: "account-scope" });
++  });
++});
++
++describe("an existing design keeps the store it was saved on", () => {
++  it("takes the store from the stored row, never from the caller", () => {
++    expect(existingDesignStoreId({ affiliateId: FIRST_CLASS })).toBe(FIRST_CLASS);
++    expect(existingDesignStoreId({ affiliateId: null })).toBeNull();
++    expect(existingDesignStoreId(undefined)).toBeNull();
++  });
++
++  it("treats the house scope as its own store, not as a wildcard", () => {
++    expect(sameDesignStore(null, null)).toBe(true);
++    expect(sameDesignStore(FIRST_CLASS, FIRST_CLASS)).toBe(true);
++    expect(sameDesignStore(null, FIRST_CLASS)).toBe(false);
++    expect(sameDesignStore(FIRST_CLASS, REAVES)).toBe(false);
++  });
++
++  it("names the store for the UI, falling back to the person's own account", () => {
++    expect(designStoreName({ id: 44, slug: "firstclass", storeName: "First Class Flooring & Cabinet Design" }))
++      .toBe("First Class Flooring & Cabinet Design");
++    expect(designStoreName({ id: 91, slug: "reaves-way-cabinet-shop", storeName: "" }))
++      .toBe("reaves way cabinet shop");
++    expect(designStoreName(null)).toBe("CabinetDealz");
++  });
++});
+diff --git a/server/lib/designStoreOwnership.ts b/server/lib/designStoreOwnership.ts
+new file mode 100644
+index 0000000..2a0119c
+--- /dev/null
++++ b/server/lib/designStoreOwnership.ts
+@@ -0,0 +1,90 @@
++/**
++ * Who owns a saved design, and which store it belongs to.
++ *
++ * Two different things were being conflated:
++ *
++ *  - OWNERSHIP: kitchen_designs.userId, the account that saved the plan.
++ *  - STORE: kitchen_designs.affiliateId, the storefront it came through.
++ *
++ * The store is an origin, not an owner. Because the write path took the store
++ * from the caller's `affiliateSlug` (which the browser derives from the URL),
++ * a design saved by a signed-in person while a storefront URL was open landed
++ * in that store: it appeared in that store's CRM, showed that store's brand,
++ * and was missing from the person's own "My Designs" list on every other
++ * device. Re-opening it from a link on another store then failed the scope
++ * check, so it looked "locked" to the store it was mis-filed under.
++ *
++ * The rules below are the server's authority for both, and the client mirrors
++ * them in `client/src/lib/designOwnerScope.ts`:
++ *
++ *  EXISTING design: its stored affiliateId decides the store for every read,
++ *  write, rename, delete and open. The request's address never re-labels it.
++ *
++ *  NEW design: a storefront CUSTOMER, and a member of the store they are on,
++ *  keep that store. Everyone else (platform admins and staff, and any signed-in
++ *  person browsing another store's catalog) gets their own account scope, so
++ *  the plan belongs to them on every device.
++ */
++
++const STAFF_ROLES = new Set(["admin", "designer", "sales_rep", "distributor"]);
++
++/** The store slug a design's own row resolves to, or null for the house scope. */
++export type DesignStoreRow = { id: number; slug: string; storeName: string };
++
++export type NewDesignStoreDecision = {
++  /** Store id to write, or null for the account's own (house) scope. */
++  affiliateId: number | null;
++  /** Why, in one sentence, for the server log and the API response. */
++  reason: "account-scope" | "storefront-customer" | "store-member" | "explicit-store";
++};
++
++/**
++ * The store a NEW design is written into.
++ *
++ * `requestedAffiliateId` is the storefront the request resolved to (from the
++ * host or the client slug the server already validated). `viewerAffiliateId`
++ * is the store the signed-in account belongs to, if any.
++ */
++export function newDesignStoreDecision(input: {
++  requestedAffiliateId: number | null;
++  viewerAffiliateId: number | null;
++  role: string | null | undefined;
++}): NewDesignStoreDecision {
++  const requested = input.requestedAffiliateId;
++  if (requested == null) return { affiliateId: null, reason: "account-scope" };
++
++  if (input.viewerAffiliateId != null && input.viewerAffiliateId === requested) {
++    return { affiliateId: requested, reason: "store-member" };
++  }
++
++  const role = (input.role ?? "").trim().toLowerCase();
++  if (STAFF_ROLES.has(role)) {
++    return { affiliateId: null, reason: "account-scope" };
++  }
++
++  return { affiliateId: requested, reason: "storefront-customer" };
++}
++
++/**
++ * The store an EXISTING design belongs to. Its stored row wins, so a design is
++ * never re-labelled by the address it is opened from.
++ */
++export function existingDesignStoreId(design: { affiliateId?: number | null } | null | undefined): number | null {
++  return design?.affiliateId ?? null;
++}
++
++/** True when two store ids name the same store, including the null house scope. */
++export function sameDesignStore(left: number | null, right: number | null): boolean {
++  return left === right;
++}
++
++/**
++ * Human label for a design's store. The house scope is the owner's own
++ * CabinetDealz account, not "unknown" and not a partner storefront's name.
++ */
++export function designStoreName(store: DesignStoreRow | null | undefined): string {
++  const name = (store?.storeName ?? "").trim();
++  if (name) return name;
++  const slug = (store?.slug ?? "").trim();
++  return slug ? slug.replace(/-/g, " ") : "CabinetDealz";
++}
+diff --git a/server/routers/affiliateCustomers.ts b/server/routers/affiliateCustomers.ts
+index 1b0e762..6fe4c24 100644
+--- a/server/routers/affiliateCustomers.ts
++++ b/server/routers/affiliateCustomers.ts
+@@ -414,8 +414,14 @@ export const affiliateCustomersRouter = router({
+           updatedAt: kitchenDesigns.updatedAt,
+           userId: kitchenDesigns.userId,
+           affiliateId: kitchenDesigns.affiliateId,
++          // The store this design really belongs to. A link built from the
++          // store whose board is open mislabels (and then fails to open) a
++          // design that was saved somewhere else.
++          affiliateSlug: affiliates.slug,
++          affiliateName: affiliates.storeName,
+         })
+         .from(kitchenDesigns)
++        .leftJoin(affiliates, eq(affiliates.id, kitchenDesigns.affiliateId))
+         .where(inArray(kitchenDesigns.id, designIds));
+       const revisions = designIds.length === 0 ? [] : await db
+         .select()
+diff --git a/server/routers/customerAccount.ts b/server/routers/customerAccount.ts
+index 07f5271..f5d76ef 100644
+--- a/server/routers/customerAccount.ts
++++ b/server/routers/customerAccount.ts
+@@ -4,6 +4,7 @@ import { TRPCError } from "@trpc/server";
+ import { protectedProcedure, router } from "../_core/trpc";
+ import { getDb } from "../db";
+ import {
++  affiliates as affiliation,
+   affiliates,
+   customerNotices,
+   customerProjectDesigns,
+@@ -59,6 +60,10 @@ export const customerAccountRouter = router({
+         companyName: users.companyName,
+         pricingTier: users.pricingTier,
+       }).from(users).where(eq(users.id, ctx.user.id)).limit(1);
++      // Every design this ACCOUNT owns on this storefront, with the store each
++      // one actually lives in. Ownership is kitchenDesigns.userId, so a plan
++      // saved while another store's page was open is still found here rather
++      // than silently missing from the person's own account.
+       const designs = await db.select({
+         id: kitchenDesigns.id,
+         name: kitchenDesigns.name,
+@@ -69,7 +74,12 @@ export const customerAccountRouter = router({
+         updatedAt: kitchenDesigns.updatedAt,
+         createdAt: kitchenDesigns.createdAt,
+         projectName: kitchenDesigns.projectName,
+-      }).from(kitchenDesigns).where(and(eq(kitchenDesigns.userId, ctx.user.id), eq(kitchenDesigns.affiliateId, affiliate.id)));
++        affiliateId: kitchenDesigns.affiliateId,
++        affiliateSlug: affiliation.slug,
++        affiliateName: affiliation.storeName,
++      }).from(kitchenDesigns)
++        .leftJoin(affiliates, eq(affiliates.id, kitchenDesigns.affiliateId))
++        .where(and(eq(kitchenDesigns.userId, ctx.user.id), eq(kitchenDesigns.affiliateId, affiliate.id)));
+       const email = normalizeEmail(ctx.user.email);
+       const ownOrders = await db.select().from(orderRequests).where(and(eq(orderRequests.userId, ctx.user.id), eq(orderRequests.affiliateId, affiliate.id)));
+       const emailOrders = email
+diff --git a/server/routers/design.ownerScope.wiring.test.ts b/server/routers/design.ownerScope.wiring.test.ts
+new file mode 100644
+index 0000000..364ac7b
+--- /dev/null
++++ b/server/routers/design.ownerScope.wiring.test.ts
+@@ -0,0 +1,94 @@
++/**
++ * Owner-reported: a signed-in person saved a NEW design ("Maple Life") and it
++ * never appeared on their own account, because `design.save` filed the row under
++ * whichever storefront URL was open. Re-opening one of their designs from a
++ * store link then 404'd, so the plan looked "locked" to that store.
++ *
++ * These checks pin WHERE that decision is made, so a later edit cannot quietly
++ * go back to taking the store from the request's `affiliateSlug`:
++ *
++ *   - a NEW save goes through `newDesignStoreDecision` (account scope for staff)
++ *   - an UPDATE, autosave, rename, and owner read go through the stored row's
++ *     own store (`existingDesignStoreId`), never the caller's scope
++ *   - `myDesigns` is owned by the account and is not narrowed to one storefront
++ */
++import { describe, expect, it } from "vitest";
++import { readFileSync } from "node:fs";
++
++const source = readFileSync(new URL("./design.ts", import.meta.url), "utf8");
++
++function section(start: string, end: string): string {
++  const from = source.indexOf(start);
++  const to = source.indexOf(end, from + start.length);
++  expect(from, `${start} must exist`).toBeGreaterThan(-1);
++  expect(to, `${end} must follow ${start}`).toBeGreaterThan(from);
++  return source.slice(from, to);
++}
++
++const save = section("  save: protectedProcedure", "  autosave: protectedProcedure");
++const autosave = section("  autosave: protectedProcedure", "  rename: protectedProcedure");
++const rename = section("  rename: protectedProcedure", "  myDesigns: protectedProcedure");
++const myDesigns = section("  myDesigns: protectedProcedure", "  remove: protectedProcedure");
++const byId = section("  byId: protectedProcedure", "  createRemoteShareLink: protectedProcedure");
++const assistRead = byId.slice(byId.indexOf("if (input.assist)"), byId.indexOf("const affiliate: HostAffiliateRow | null"));
++const remove = section("  remove: protectedProcedure", "  byId: protectedProcedure");
++
++describe("a new design belongs to the account that saved it", () => {
++  it("decides the store from the person, not from the URL alone", () => {
++    expect(save).toContain("newDesignStoreDecision({");
++    expect(save).toContain("viewerAffiliateId");
++    expect(save).toContain("const affiliateId = existingDesign");
++  });
++
++  it("reports the scope it used so the Designer can confirm it", () => {
++    expect(save).toContain("storeReason: newDesignStore.reason");
++    expect(save).toContain('storeReason: "existing-design"');
++  });
++
++  it("still refuses to open a design belonging to another account", () => {
++    expect(save).toContain("if (existingDesign.userId !== userId)");
++  });
++});
++
++describe("an existing design keeps its own store", () => {
++  it("autosave reads the row's store before scoping the write", () => {
++    expect(autosave).toContain("existingDesignStoreId(existingRow)");
++    expect(autosave.indexOf("existingDesignStoreId(existingRow)"))
++      .toBeLessThan(autosave.indexOf("designAffiliateScopeCondition(affiliateId)"));
++  });
++
++  it("rename finds the design by owner, not by the address it came from", () => {
++    expect(rename).toContain("existingDesignStoreId(rows[0])");
++    expect(rename).not.toContain("await resolveAffiliateDesignOwner(db, input.affiliateSlug);\n      const affiliateId = affiliate?.id ?? null;");
++  });
++
++  it("delete resolves the design's own store before it scopes the delete", () => {
++    expect(remove).toContain("existingDesignStoreId(owned)");
++    expect(remove.indexOf("existingDesignStoreId(owned)"))
++      .toBeLessThan(remove.indexOf("designAffiliateScopeCondition(affiliateId)"));
++  });
++
++  it("the owner's assisted read is answered before the host is checked", () => {
++    expect(assistRead).toContain("if (design.userId === ctx.user.id) return design;");
++    expect(assistRead.indexOf("if (design.userId === ctx.user.id) return design;"))
++      .toBeLessThan(assistRead.indexOf("if (hostScope.pinned"));
++  });
++
++  it("an owner's read is not filtered by the address", () => {
++    expect(byId).toContain("eq(kitchenDesigns.userId, ctx.user.id),");
++    expect(byId).toContain("requireAffiliateDesignerAccess(db, ctx, existingDesignStoreId(owned[0]))");
++    expect(byId).not.toContain("designAffiliateScopeCondition(affiliate?.id ?? null),");
++  });
++});
++
++describe("My Designs is the account's list, not one storefront's", () => {
++  it("lists every design the account owns", () => {
++    expect(myDesigns).toContain("where(eq(kitchenDesigns.userId, ctx.user.id))");
++    expect(myDesigns).not.toContain("affiliate ? eq(kitchenDesigns.affiliateId, affiliate.id)");
++  });
++
++  it("carries the owning store with each design so links open it there", () => {
++    expect(myDesigns).toContain("storeSlug: affiliates.slug");
++    expect(myDesigns).toContain("affiliateSlug: row.storeSlug ?? null");
++  });
++});
+diff --git a/server/routers/design.ts b/server/routers/design.ts
+index 66343c5..9c51835 100644
+--- a/server/routers/design.ts
++++ b/server/routers/design.ts
+@@ -20,6 +20,7 @@ import { getPricingSettings } from "../db";
+ import { getPricingSettingsForViewer } from "../lib/affiliateContractorPricing";
+ import { resolveStorefrontTier, visiblePricesForViewer } from "../../shared/pricingTier";
+ import { resolveAffiliateAccess } from "../lib/affiliateAccess";
++import { designStoreName, existingDesignStoreId, newDesignStoreDecision } from "../lib/designStoreOwnership";
+ import { decideAssistAccess } from "@shared/customerDirectory";
+ import { filterCabinetSourceRows, loadAffiliateCatalogGate } from "../lib/affiliateCatalogGate";
+ import { canViewAffiliateDesignPriceList, affiliateCustomerPosition } from "../lib/affiliateDesignPriceList";
+@@ -82,6 +83,23 @@ async function resolveAffiliateDesignOwner(
+   return rows[0];
+ }
+ 
++/**
++ * Look a store up by id. Used when a design's own stored store, rather than
++ * the address, has to supply the name written onto its CRM link.
++ */
++async function affiliateRowById(
++  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
++  affiliateId: number | null,
++): Promise<HostAffiliateRow | null> {
++  if (affiliateId == null) return null;
++  const rows = await db
++    .select({ id: affiliates.id, slug: affiliates.slug, storeName: affiliates.storeName, referralCode: affiliates.referralCode })
++    .from(affiliates)
++    .where(eq(affiliates.id, affiliateId))
++    .limit(1);
++  return rows[0] ?? null;
++}
++
+ const designStoreScopeInput = z.string().trim().min(1).max(255).default("owner");
+ 
+ function designAffiliateScopeCondition(affiliateId: number | null) {
+@@ -1770,43 +1788,74 @@ export const designRouter = router({
+       if (!db) throw new Error("Database not available");
+ 
+       const userId = ctx.user.id;
+-      // The Host/Origin header decides the store. A client slug may only
+-      // restate it, never redirect the write to a different storefront.
++      // The Host/Origin header decides the storefront the request arrived on.
++      // A client slug may only restate it, never redirect the request to a
++      // different storefront.
+       const hostScope = await resolveRequestStoreScope(ctx.req);
+       assertClientStoreScope(hostScope, input.affiliateSlug);
+       assertClientStoreScope(hostScope, input.originScope);
+-      const affiliate: HostAffiliateRow | null = hostScope.pinned
++      const requestedAffiliate: HostAffiliateRow | null = hostScope.pinned
+         ? hostScope.row
+         : await resolveAffiliateDesignOwner(db, input.affiliateSlug);
+       const originAffiliate: HostAffiliateRow | null = hostScope.pinned
+-        ? affiliate
++        ? requestedAffiliate
+         : await resolveAffiliateDesignOwner(db, input.originScope ?? input.affiliateSlug);
+-      const affiliateId = affiliate?.id ?? null;
++      const requestedAffiliateId = requestedAffiliate?.id ?? null;
+       const originAffiliateId = originAffiliate?.id ?? null;
+-      if (!sameDesignScope(affiliateId, originAffiliateId)) {
++      if (!sameDesignScope(requestedAffiliateId, originAffiliateId)) {
+         throw new TRPCError({
+           code: "PRECONDITION_FAILED",
+           message: `This design was created for ${designScopeLabel(originAffiliate)}. Open that store before saving it.`,
+         });
+       }
++
++      // An UPDATE stays in the store the design was actually saved on. Opening
++      // it from another store's link (or from a CRM deal filed under another
++      // store) must not re-label it, or the design disappears from its owner's
++      // account and starts showing the wrong store's brand.
++      const existingDesign = input.id
++        ? (await db
++            .select({ id: kitchenDesigns.id, userId: kitchenDesigns.userId, affiliateId: kitchenDesigns.affiliateId })
++            .from(kitchenDesigns)
++            .where(eq(kitchenDesigns.id, input.id))
++            .limit(1))[0]
++        : undefined;
++
++      // A NEW design belongs to the signed-in account unless this person is a
++      // customer of the storefront (or a member of it). Platform admins and
++      // staff browsing a storefront URL used to have their plans filed into
++      // that store, so they never showed up in their own account.
++      const viewerAffiliateId = ctx.user.role === "admin"
++        ? null
++        : (await resolveAffiliateAccess(db, ctx.user))?.affiliateId ?? null;
++      const newDesignStore = newDesignStoreDecision({
++        requestedAffiliateId,
++        viewerAffiliateId,
++        role: ctx.user.role,
++      });
++      const affiliateId = existingDesign
++        ? existingDesignStoreId(existingDesign)
++        : newDesignStore.affiliateId;
++      // The name written onto the CRM link must be the owning store's, so a
++      // design opened from another store's link does not file its deal there.
++      const affiliate = affiliateId === requestedAffiliateId
++        ? requestedAffiliate
++        : await affiliateRowById(db, affiliateId);
+       await requireAffiliateDesignerAccess(db, ctx, affiliateId);
+ 
+-	      if (input.id) {
+-	        const existing = await db
+-          .select({ id: kitchenDesigns.id, userId: kitchenDesigns.userId, affiliateId: kitchenDesigns.affiliateId })
+-          .from(kitchenDesigns)
+-	          .where(eq(kitchenDesigns.id, input.id))
+-	          .limit(1);
+-	        if (existing[0]) {
+-          if (existing[0].userId !== userId) {
+-            throw new TRPCError({ code: "NOT_FOUND", message: "Saved design not found." });
+-          }
+-          if (!sameDesignScope(existing[0].affiliateId, affiliateId)) {
+-            throw new TRPCError({
+-              code: "PRECONDITION_FAILED",
+-              message: "This saved design belongs to a different store. Its creator store cannot be changed.",
+-            });
+-          }
++      if (existingDesign) {
++        // The row exists only when input.id was supplied.
++        const designId = existingDesign.id;
++        if (existingDesign.userId !== userId) {
++          throw new TRPCError({ code: "NOT_FOUND", message: "Saved design not found." });
++        }
++        if (!sameDesignScope(existingDesign.affiliateId, affiliateId)) {
++          throw new TRPCError({
++            code: "PRECONDITION_FAILED",
++            message: "This saved design belongs to a different store. Its creator store cannot be changed.",
++          });
++        }
++        {
+ 	          await db
+ 	            .update(kitchenDesigns)
+ 	            .set({
+@@ -1823,14 +1872,22 @@ export const designRouter = router({
+ 	              roomType: input.roomType ?? null,
+ 	            })
+ 	            .where(and(
+-	              eq(kitchenDesigns.id, input.id),
++	              eq(kitchenDesigns.id, designId),
+ 	              eq(kitchenDesigns.userId, userId),
+ 	              designAffiliateScopeCondition(affiliateId),
+ 	            ));
+-	          const updatedDealId = await linkDesignToCrmDeal({ db, designId: input.id, input, affiliateId, affiliateName: affiliate?.storeName ?? null, userId, userName: ctx.user?.name ?? null, userEmail: ctx.user?.email ?? null });
+-          return { id: input.id, recoveredFromStaleId: false, dealId: updatedDealId ?? null };
+-	        }
+-	      }
++	          const updatedDealId = await linkDesignToCrmDeal({ db, designId, input, affiliateId, affiliateName: affiliate?.storeName ?? null, userId, userName: ctx.user?.name ?? null, userEmail: ctx.user?.email ?? null });
++          return {
++            id: designId,
++            recoveredFromStaleId: false,
++            dealId: updatedDealId ?? null,
++            affiliateId,
++            affiliateSlug: affiliate?.slug ?? null,
++            storeName: designStoreName(affiliate),
++            storeReason: "existing-design" as const,
++          };
++        }
++      }
+ 
+       const result = await db.insert(kitchenDesigns).values({
+         userId,
+@@ -1878,7 +1935,15 @@ export const designRouter = router({
+ 	        link: affiliateId ? `/affiliate?section=crm&deal=${dealId ?? ""}` : `/design?id=${insertId}`,
+ 	      });
+ 
+-      return { id: insertId, recoveredFromStaleId: Boolean(input.id), dealId: dealId ?? null };
++      return {
++        id: insertId,
++        recoveredFromStaleId: Boolean(input.id),
++        dealId: dealId ?? null,
++        affiliateId,
++        affiliateSlug: affiliate?.slug ?? null,
++        storeName: designStoreName(affiliate),
++        storeReason: newDesignStore.reason,
++      };
+     }),
+ 
+   // Background persistence for an already named/saved plan. This deliberately
+@@ -1921,20 +1986,19 @@ export const designRouter = router({
+       const hostScope = await resolveRequestStoreScope(ctx.req);
+       assertClientStoreScope(hostScope, input.affiliateSlug);
+       assertClientStoreScope(hostScope, input.originScope);
+-      const affiliate: HostAffiliateRow | null = hostScope.pinned
+-        ? hostScope.row
+-        : await resolveAffiliateDesignOwner(db, input.affiliateSlug);
+-      const originAffiliate: HostAffiliateRow | null = hostScope.pinned
+-        ? affiliate
+-        : await resolveAffiliateDesignOwner(db, input.originScope ?? input.affiliateSlug);
+-      const affiliateId = affiliate?.id ?? null;
+-      const originAffiliateId = originAffiliate?.id ?? null;
+-      if (!sameDesignScope(affiliateId, originAffiliateId)) {
+-        throw new TRPCError({
+-          code: "PRECONDITION_FAILED",
+-          message: `This design was created for ${designScopeLabel(originAffiliate)}. Open that store before saving it.`,
+-        });
++
++      // Autosave only ever touches an existing row, so that row's own store
++      // decides its scope. A plan opened from another store's link autosaves
++      // into the store it belongs to instead of failing (or moving) it.
++      const existingRow = (await db
++        .select({ id: kitchenDesigns.id, affiliateId: kitchenDesigns.affiliateId })
++        .from(kitchenDesigns)
++        .where(and(eq(kitchenDesigns.id, input.id), eq(kitchenDesigns.userId, ctx.user.id)))
++        .limit(1))[0];
++      if (!existingRow) {
++        throw new TRPCError({ code: "NOT_FOUND", message: "Saved design not found." });
+       }
++      const affiliateId = existingDesignStoreId(existingRow);
+       await requireAffiliateDesignerAccess(db, ctx, affiliateId);
+ 
+       const ownership = and(
+@@ -1972,22 +2036,27 @@ export const designRouter = router({
+       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+       const hostScope = await resolveRequestStoreScope(ctx.req);
+       assertClientStoreScope(hostScope, input.affiliateSlug);
+-      const affiliate: HostAffiliateRow | null = hostScope.pinned
+-        ? hostScope.row
+-        : await resolveAffiliateDesignOwner(db, input.affiliateSlug);
+-      const affiliateId = affiliate?.id ?? null;
+-      await requireAffiliateDesignerAccess(db, ctx, affiliateId);
++
++      // The design's own store decides the scope; a rename from another
++      // store's address must still find (and never re-label) the design.
+       const rows = await db
+         .select({ id: kitchenDesigns.id, affiliateId: kitchenDesigns.affiliateId })
+         .from(kitchenDesigns)
+         .where(and(
+           eq(kitchenDesigns.id, input.id),
+           eq(kitchenDesigns.userId, ctx.user.id),
+-          designAffiliateScopeCondition(affiliateId),
+         ))
+         .limit(1);
+       if (!rows.length) throw new TRPCError({ code: "NOT_FOUND", message: "Saved design not found." });
+-      await db.update(kitchenDesigns).set({ name: input.name }).where(eq(kitchenDesigns.id, input.id));
++      const affiliateId = existingDesignStoreId(rows[0]);
++      await requireAffiliateDesignerAccess(db, ctx, affiliateId);
++      await db.update(kitchenDesigns)
++        .set({ name: input.name })
++        .where(and(
++          eq(kitchenDesigns.id, input.id),
++          eq(kitchenDesigns.userId, ctx.user.id),
++          designAffiliateScopeCondition(affiliateId),
++        ));
+       return { ok: true };
+     }),
+ 
+@@ -2002,13 +2071,26 @@ export const designRouter = router({
+       ? hostScope.row
+       : await resolveAffiliateDesignOwner(db, input?.affiliateSlug ?? "owner");
+     await requireAffiliateDesignerAccess(db, ctx, affiliate?.id ?? null);
+-    return db
+-      .select()
++    // Ownership is the account, so this list is EVERY design the account owns,
++    // each carrying the store it belongs to. Scoping it to the storefront the
++    // person happens to be on is what made a plan saved under one store look
++    // lost everywhere else. A link then opens each plan on its own storefront
++    // instead of guessing from the page it was clicked on.
++    const rows = await db
++      .select({
++        design: kitchenDesigns,
++        storeSlug: affiliates.slug,
++        storeName: affiliates.storeName,
++      })
+       .from(kitchenDesigns)
+-      .where(and(
+-        eq(kitchenDesigns.userId, ctx.user.id),
+-        affiliate ? eq(kitchenDesigns.affiliateId, affiliate.id) : isNull(kitchenDesigns.affiliateId),
+-      ));
++      .leftJoin(affiliates, eq(affiliates.id, kitchenDesigns.affiliateId))
++      .where(eq(kitchenDesigns.userId, ctx.user.id))
++      .orderBy(desc(kitchenDesigns.updatedAt));
++    return rows.map((row) => ({
++      ...row.design,
++      affiliateSlug: row.storeSlug ?? null,
++      affiliateName: row.storeName ?? null,
++    }));
+     }),
+ 
+   remove: protectedProcedure
+@@ -2021,24 +2103,28 @@ export const designRouter = router({
+       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available." });
+       const hostScope = await resolveRequestStoreScope(ctx.req);
+       assertClientStoreScope(hostScope, input.affiliateSlug);
+-      const affiliate: HostAffiliateRow | null = hostScope.pinned
+-        ? hostScope.row
+-        : await resolveAffiliateDesignOwner(db, input.affiliateSlug, true);
+-      const affiliateId = affiliate?.id ?? null;
++
++      // Deleting is decided by the design's own store, so a design opened from
++      // another store's link is still the owner's to delete.
++      const [owned] = await db
++        .select({ id: kitchenDesigns.id, name: kitchenDesigns.name, affiliateId: kitchenDesigns.affiliateId })
++        .from(kitchenDesigns)
++        .where(and(
++          eq(kitchenDesigns.id, input.id),
++          eq(kitchenDesigns.userId, ctx.user.id),
++        ))
++        .limit(1);
++      if (!owned) {
++        throw new TRPCError({ code: "NOT_FOUND", message: "Saved design not found." });
++      }
++      const affiliateId = existingDesignStoreId(owned);
+       await requireAffiliateDesignerAccess(db, ctx, affiliateId);
+       const ownership = and(
+         eq(kitchenDesigns.id, input.id),
+         eq(kitchenDesigns.userId, ctx.user.id),
+         designAffiliateScopeCondition(affiliateId),
+       );
+-      const [design] = await db
+-        .select({ id: kitchenDesigns.id, name: kitchenDesigns.name })
+-        .from(kitchenDesigns)
+-        .where(ownership)
+-        .limit(1);
+-      if (!design) {
+-        throw new TRPCError({ code: "NOT_FOUND", message: "Saved design not found in this store." });
+-      }
++      const design = owned;
+ 
+       await db.transaction(async (tx) => {
+         // Preserve immutable order and appointment records, but sever their
+@@ -2068,10 +2154,14 @@ export const designRouter = router({
+       if (input.assist) {
+         const [design] = await db.select().from(kitchenDesigns).where(eq(kitchenDesigns.id, input.id)).limit(1);
+         if (!design) return null;
++        // The owner always gets their own design, on whatever storefront the
++        // link happened to point at. Checking the pinned host first returned
++        // null here for the design's own owner, which is what made a plan look
++        // "locked" to the store someone else's CRM link named.
++        if (design.userId === ctx.user.id) return design;
+         // Assisted editing is still a store-scoped read. An admin opening a
+         // customer's design from another storefront must not see it.
+         if (hostScope.pinned && design.affiliateId !== hostScope.affiliateId) return null;
+-        if (design.userId === ctx.user.id) return design;
+         const access = ctx.user.role === "admin" ? null : await resolveAffiliateAccess(db, ctx.user);
+         const decision = decideAssistAccess({ role: ctx.user.role, access, designAffiliateId: design.affiliateId });
+         if (!decision.ok) return null;
+@@ -2110,18 +2200,29 @@ export const designRouter = router({
+ 	    if (rows[0]) await logDesignView(db, { designId: rows[0].id, dealId: input.crmDealId, userId: ctx.user.id, userName: ctx.user.name ?? ctx.user.email ?? null, kind: "crm" });
+ 	    return rows[0] ?? null;
+ 	  }
+-	  await requireAffiliateDesignerAccess(db, ctx, affiliate?.id ?? null);
+-      const rows = await db
++      // The owner's own read is decided by the design's stored store, not by
++      // the address it was opened from. A plan saved on the platform used to
++      // return null here whenever the link pointed at a storefront, which is
++      // what made it look "locked" to that store.
++      const owned = await db
+         .select()
+         .from(kitchenDesigns)
+         .where(and(
+           eq(kitchenDesigns.id, input.id),
+-	          eq(kitchenDesigns.userId, ctx.user.id),
+-	          designAffiliateScopeCondition(affiliate?.id ?? null),
++          eq(kitchenDesigns.userId, ctx.user.id),
+         ))
+         .limit(1);
+-      if (rows[0]) await logDesignView(db, { designId: rows[0].id, userId: ctx.user.id, userName: ctx.user.name ?? ctx.user.email ?? null, kind: "owner" });
+-      return rows[0] ?? null;
++      if (!owned[0]) return null;
++      const ownedStore = await affiliateRowById(db, existingDesignStoreId(owned[0]));
++      await requireAffiliateDesignerAccess(db, ctx, existingDesignStoreId(owned[0]));
++      await logDesignView(db, { designId: owned[0].id, userId: ctx.user.id, userName: ctx.user.name ?? ctx.user.email ?? null, kind: "owner" });
++      // The owning store travels with the design so the Designer opens it on
++      // that storefront instead of the one the link happened to name.
++      return {
++        ...owned[0],
++        affiliateSlug: ownedStore?.slug ?? null,
++        affiliateName: ownedStore?.slug ? ownedStore.storeName : null,
++      };
+     }),
+ 
+   createRemoteShareLink: protectedProcedure
+-- 
+2.43.0
+

@@ -27,7 +27,7 @@ const design = (id: number, name: string) => ({
   updatedAt: "2026-11-04T15:20:00Z",
   linkKind: "deal" as const,
   linkId: id,
-  designUrl: `/store/maple/design?load=${id}&preview=3d&crmDeal=5192`,
+  affiliateSlug: null,
 });
 
 const hit = (outcome: "none" | "one" | "several", designs: ReturnType<typeof design>[]): CustomerLookupResult => ({
@@ -39,7 +39,7 @@ const hit = (outcome: "none" | "one" | "several", designs: ReturnType<typeof des
   affiliateId: 7,
   designs,
   outcome,
-  openUrl: outcome === "one" ? designs[0]!.designUrl : null,
+  openUrl: null,
 });
 
 function typeAndSubmit(value: string) {
@@ -61,7 +61,7 @@ describe("CrmCustomerLookup", () => {
     render(<CrmCustomerLookup onOpen={onOpen} />);
     typeAndSubmit("5192");
     await waitFor(() => expect(onOpen).toHaveBeenCalledTimes(1));
-    expect(onOpen).toHaveBeenCalledWith("/store/maple/design?load=4401&preview=3d&crmDeal=5192");
+    expect(onOpen).toHaveBeenCalledWith("/design?load=4401&crmDeal=5192");
   });
 
   it("shows only that customer's designs to pick from when there are several", async () => {
@@ -76,7 +76,7 @@ describe("CrmCustomerLookup", () => {
     expect(onOpen).not.toHaveBeenCalled();
     // One design out of the two, not "open whatever is first".
     fireEvent.click(screen.getByTestId("crm-customer-lookup-open-4402"));
-    expect(onOpen).toHaveBeenCalledWith("/store/maple/design?load=4402&preview=3d&crmDeal=5192");
+    expect(onOpen).toHaveBeenCalledWith("/design?load=4402&crmDeal=5192");
   });
 
   it("says so when the customer has no linked design", async () => {
@@ -148,7 +148,7 @@ describe("CrmCustomerLookup", () => {
     Object.defineProperty(window, "location", { value: { assign }, writable: true, configurable: true });
     render(<CrmCustomerLookup />);
     typeAndSubmit("5192");
-    await waitFor(() => expect(assign).toHaveBeenCalledWith("/store/maple/design?load=4401&preview=3d&crmDeal=5192"));
+    await waitFor(() => expect(assign).toHaveBeenCalledWith("/design?load=4401&crmDeal=5192"));
     Object.defineProperty(window, "location", { value: original, writable: true, configurable: true });
   });
 });

@@ -32,6 +32,8 @@ import {
 import { CRM_CUSTOMER_LIST_TEMPLATE, crmCustomerFileReadProgress, parseCrmCustomerListCsv, type CrmCustomerImportRow, type CrmCustomerImportSkippedRow } from "@shared/crmCustomerListImport";
 import { affiliateCardColor, type CrmAffiliateBrand } from "@/lib/crmAffiliateBrand";
 import { crmBoardQueryInput, dealCustomerInput } from "@/lib/affiliateSiteScope";
+import { designOpenPath } from "@/lib/designOwnerScope";
+import { withCrmDealContext } from "@/lib/crmLinkedDesignPath";
 import { MASTER_AFFILIATE_FILTER_ALL, masterAffiliateFilterId } from "@/lib/crmMasterFilter";
 import { filterDealsByHelpType, type CrmHelpFilter } from "@/lib/crmHelpFilter";
 import { crmQuickInvoiceTotal, openCrmQuickInvoicePdf, type CrmQuickInvoiceBrand, type CrmQuickInvoiceLine } from "@/lib/crmQuickInvoice";
@@ -819,7 +821,6 @@ function DealDrawer({ dealId, lang, summary, onClose, onCompose }: { dealId: num
   // returns every design on the person's account, which is the bug this fixes.
   const customerDesigns = useCrmCustomerDesigns(deal?.id ?? null);
   const linkedCustomerDesigns = customerDesigns.designs;
-  const designerHref = (designId: number) => `/design?load=${designId}&preview=3d&crmDeal=${deal!.id}`;
   const savePackage = trpc.priceShop.saveDesignAsPackage.useMutation({
     onSuccess: () => toast.success("Kitchen package saved as a copy."),
     onError: (error) => toast.error(error.message),
@@ -920,7 +921,13 @@ function DealDrawer({ dealId, lang, summary, onClose, onCompose }: { dealId: num
                     thumbnailUrl: design.thumbnailUrl,
                     assistLabel: design.assistLabel,
                     linkKind: design.linkKind,
-                    href: design.designUrl ?? designerHref(design.id),
+                    // Built from the design's own store, not the store whose CRM
+                    // is open: a plan saved elsewhere opened under this store and
+                    // failed its scope check (main's #274).
+                    href: withCrmDealContext(
+                      designOpenPath({ id: design.id, affiliateSlug: design.affiliateSlug ?? null }),
+                      deal!.id,
+                    ),
                   }))}
                   loading={customerDesigns.isLoading && !customerDesigns.unavailable}
                   error={customerDesigns.unavailable ? CUSTOMER_DESIGNS_UNAVAILABLE_COPY : null}

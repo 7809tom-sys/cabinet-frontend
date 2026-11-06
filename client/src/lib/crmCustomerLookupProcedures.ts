@@ -9,7 +9,8 @@ export type LookupDesign = {
   updatedAt: string | Date | null;
   linkKind: DesignLinkKind;
   linkId: number | null;
-  designUrl: string;
+  /** The design's own store, so the link opens under it (main's #274). */
+  affiliateSlug: string | null;
 };
 
 export type CustomerLookupHit = {
@@ -21,7 +22,7 @@ export type CustomerLookupHit = {
   affiliateId: number | null;
   designs: LookupDesign[];
   outcome: "none" | "one" | "several";
-  /** Set when there is exactly one design, so the caller can open it. */
+  /** Set when there is exactly one design. The client rebuilds it from the design. */
   openUrl: string | null;
 };
 

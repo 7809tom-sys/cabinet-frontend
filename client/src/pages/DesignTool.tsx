@@ -66,6 +66,19 @@ import {
   migrateLegacyDesignerDraftToOwner,
   resolveStoreScope,
 } from "@/lib/affiliateContext";
+import {
+  designOpenPath,
+  designStoreScope,
+  designWriteScope,
+  newDesignSaveScope,
+} from "@/lib/designOwnerScope";
+import {
+  applyGuestDraftAdoption,
+  draftIdentityCandidates,
+  draftIdentityFor,
+  firstRestorableDraft,
+  planGuestDraftAdoption,
+} from "@/lib/designDraftOwnership";
 import { isPelicanSinkCompatibleWithBase, isVerifiedPelicanVanityFaucet, isVerifiedPelicanVanitySink, pelicanSinkBaseKind, sinkBaseOpeningWidthIn, verifiedPelicanFaucetProfile, verifiedPelicanPotFillerProfile, verifiedPelicanSinkFitsCabinet, verifiedPelicanSinkProfile } from "@/lib/pelicanFixtureProfiles";
 import {
   buildPelicanSinkOnCabinet,
@@ -322,6 +335,7 @@ import { EmailGate, type LeadContact } from "@/components/design/EmailGate";
 import { OptionalContactNudge } from "@/components/design/OptionalContactNudge";
 import { DesignDeliveryDialog } from "@/components/design/DesignDeliveryDialog";
 import { DesignActions, type BuildSheetRow } from "@/components/design/DesignActions";
+import { DesignerHelperShare } from "@/components/design/DesignerHelperShare";
 import { KitchenPackageForm, type KitchenPackageDraft } from "@/components/affiliate/KitchenPackageForm";
 import { DesignMaterialsListDialog } from "@/components/design/DesignMaterialsListDialog";
 import { DraggableOverlayDialog } from "@/components/ui/DraggableOverlayDialog";
@@ -343,6 +357,8 @@ import { OpeningSizeEditor } from "@/components/design/OpeningSizeEditor";
 import { DoorAttributesDialog } from "@/components/design/DoorAttributesDialog";
 import { DesignHelp } from "@/components/design/DesignHelp";
 import { CountertopQuoteDialog } from "@/components/design/CountertopQuoteDialog";
+import { CountertopFabricationSheetActions } from "@/components/design/CountertopFabricationSheetActions";
+import type { CountertopFabricationInput } from "@/lib/countertopFabricationSheet";
 import { SurfacesPickerDialog, type SelectedSurface } from "@/components/design/SurfacesPickerDialog";
 import { FlooringCartonFacts } from "@/components/design/FlooringCartonFacts";
 import { FlooringLayoutPicker } from "@/components/design/FlooringLayoutPicker";
@@ -556,6 +572,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   );
   const affiliateSlug = affiliateSlugForStoreScope(storeScope);
   const cartDestination = cartPathForStoreScope(storeScope);
+  // Account identity for browser drafts. It comes from the server's auth.me for
+  // THIS request's own bearer token, so two tabs signed in as different people
+  // (or a shared browser) never restore each other's unsaved plan.
+  const accountId = (user as { id?: number | null } | null)?.id ?? null;
   // Auto-Design layout is available to CabinetDealz admins and to every affiliate
   // Designer, including storefront customers on /store/:slug/design and the
   // affiliate dashboard Designer. The main public Designer stays admin-only.
@@ -579,6 +599,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     retry: false,
   });
   const canAffiliatePriceShop = !!affiliateSlug && affiliatePriceAccess.data?.isOwner === true;
+
   const canAffiliateGeminiImageTest = !!affiliateSlug && affiliatePriceAccess.data?.accessDesigner === true;
   const canPublishKitchenPackage = isAdmin || (!!affiliateSlug && (affiliatePriceAccess.data?.isOwner === true || affiliatePriceAccess.data?.accessDesigner === true));
   const affiliatePrimary = affiliateBrand?.primaryColor || "#1a2b4a";
@@ -766,6 +787,27 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	{ id: currentSavedDesignId ?? 0, affiliateSlug: storeScope, crmDealId: crmDealId ?? undefined, assist: assistMode || undefined },
 	{ enabled: currentSavedDesignId != null && isAuthenticated && (verified || crmDealId != null || assistMode), retry: 1 }
   );
+
+  // Where a SAVE goes. An existing design keeps its own stored store; a new one
+  // belongs to the signed-in account unless this person is a customer of the
+  // storefront (or a member of it). The server applies the same rule, so the
+  // design cannot be filed under whichever storefront URL happened to be open.
+  // Guests keep the storefront scope, which is what lets their work be adopted
+  // into the account when they sign in.
+  const saveScope = useMemo(
+    () => designWriteScope({
+      urlScope: newDesignSaveScope({
+        urlScope: storeScope,
+        role: signedInRole,
+        viewerAffiliateId: affiliatePriceAccess.data?.affiliateId ?? null,
+        storeAffiliateId: affiliateBrand?.id ?? null,
+      }),
+      design: savedDesign
+        ? { affiliateSlug: (savedDesign as { affiliateSlug?: string | null }).affiliateSlug ?? null }
+        : null,
+    }),
+    [storeScope, signedInRole, affiliatePriceAccess.data?.affiliateId, affiliateBrand?.id, savedDesign],
+  );
 	useEffect(() => {
 	  if (verified || crmDealId == null || !savedDesign || !isAuthenticated) return;
 	  setVerifiedEmail((user as { email?: string | null } | null)?.email ?? "crm@cabinetdealz.local");
@@ -778,6 +820,25 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     setVerifiedName((user as { name?: string | null } | null)?.name ?? "Designer");
     setVerified(true);
   }, [assistMode, isAuthenticated, savedDesign, user, verified]);
+
+  // A saved design always opens under its own store. When a link reaches the
+  // Designer on a different storefront (a CRM link built by the board that was
+  // open, a bookmarked URL, a store-shared link), the shell, brand and pricing
+  // were the wrong store's. Send the owner to the design's real storefront once.
+  // Assist and CRM opens deliberately stay in place: the store's own team is
+  // reviewing a customer's plan from its board.
+  const designStoreRedirectRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!savedDesign || !isAuthenticated) return;
+    if (assistMode || crmDealId != null) return;
+    const ownSlug = (savedDesign as { affiliateSlug?: string | null }).affiliateSlug ?? null;
+    const ownScope = designStoreScope({ affiliateSlug: ownSlug });
+    if (ownScope === storeScope) return;
+    const target = designOpenPath({ id: savedDesign.id, affiliateSlug: ownSlug });
+    if (designStoreRedirectRef.current === target) return;
+    designStoreRedirectRef.current = target;
+    window.location.replace(target);
+  }, [savedDesign, isAuthenticated, assistMode, crmDealId, storeScope]);
 
   // Mobile layout: which slide-up panel is open (catalog picker or cart/BOM).
   // Designer is touch-first: treat anything narrower than a small laptop (1024px)
@@ -6484,6 +6545,40 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	    [countertop, placed, island, room]
   );
 
+  // Countertop fabrication sheet: everything the shop needs, read from the live
+  // design. Only offered while the design actually bears a countertop; the panel
+  // itself reports any field the design does not hold instead of inventing one.
+  const fabricationSheetInput = useMemo<CountertopFabricationInput | null>(() => {
+    if (!countertop || !counter || counter.squareFeet <= 0) return null;
+    return {
+      room,
+      placed,
+      island,
+      sinks,
+      ponyWalls,
+      selectedSurfaces,
+      edgeProfileId,
+      // Only the countertop rear upstand is a fabrication item. A full-height
+      // tile wall is the tile installer's scope, so it is deliberately not
+      // reported as a countertop backsplash here.
+      backsplash: countertopBacksplashHeightIn > 0 ? { heightIn: countertopBacksplashHeightIn } : null,
+      job: {
+        designId: activeSavedDesignId ?? loadDesignId ?? null,
+        designName: (savedDesign as { name?: string | null } | undefined)?.name ?? null,
+        projectName: (savedDesign as { projectName?: string | null } | undefined)?.projectName ?? null,
+        roomLabel: (savedDesign as { roomLabel?: string | null } | undefined)?.roomLabel ?? null,
+        roomType,
+        customerName: verifiedName || null,
+        customerEmail: verifiedEmail || null,
+        customerPhone: verifiedPhone || null,
+      },
+    };
+  }, [
+    counter, countertop, countertopBacksplashHeightIn,
+    edgeProfileId, island, loadDesignId, placed, ponyWalls, room, roomType, savedDesign,
+    selectedSurfaces, sinks, activeSavedDesignId, verifiedEmail, verifiedName, verifiedPhone,
+  ]);
+
   // Conflicts: an appliance physically running into a cabinet. Highlighted red
   // on the canvas, badged in the BOM, and warned about before export.
   // Range/oven corner clearance rule: a range/oven at a wall corner butting a
@@ -7086,6 +7181,20 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         return { ...current, kitchenUsage: { ...usage, acceptedSuggestionIds: Array.from(accepted) } };
       });
       toast.success("Suggestion kept with this design. Nothing on the plan was moved.");
+      return;
+    }
+    if (finding.action.kind === "guidance") {
+      // A guidance rule has nothing to apply: it is a sentence an admin wrote.
+      // Acknowledging it records that the person read it, and nothing on the
+      // plan is moved. Reusing the accepted-suggestion list keeps it dismissed
+      // with the rest of the review items, so it does not nag on every save.
+      setRoom((current) => {
+        const usage = normalizeKitchenUsage(current.kitchenUsage);
+        const accepted = new Set(usage.acceptedSuggestionIds ?? []);
+        accepted.add(finding.id);
+        return { ...current, kitchenUsage: { ...usage, acceptedSuggestionIds: Array.from(accepted) } };
+      });
+      toast.success("Read and acknowledged. Nothing on the plan was moved.");
       return;
     }
     setSelectedUid(finding.action.cabinetUid);
@@ -13985,11 +14094,18 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // design to localStorage on every change (debounced) AND immediately when the
   // tab is backgrounded (visibilitychange / pagehide — the events mobile browsers
   // reliably fire before freezing/discarding a tab), then restore it on return.
+  // The draft belongs to the signed-in ACCOUNT, not to whatever email was typed
+  // into the gate. `draftIdentityCandidates` adds the older email key and the
+  // guest key so nothing already on this device is lost.
+  const draftIdentity = useMemo(
+    () => draftIdentityFor({ accountId, email: verifiedEmail }),
+    [accountId, verifiedEmail],
+  );
   const draftKey = useMemo(
     () => latchedFreshStart.fresh
-      ? freshDesignDraftStorageKey(storeScope, verifiedEmail, latchedFreshStart.doorStyleId, latchedFreshStart.distributorId)
-      : designerDraftStorageKey(storeScope, verifiedEmail),
-    [latchedFreshStart, storeScope, verifiedEmail],
+      ? freshDesignDraftStorageKey(storeScope, draftIdentity, latchedFreshStart.doorStyleId, latchedFreshStart.distributorId)
+      : designerDraftStorageKey(storeScope, draftIdentity),
+    [latchedFreshStart, storeScope, draftIdentity],
   );
   const activeDraftKey = useMemo(() => designerDraftActiveKey(storeScope), [storeScope]);
 
@@ -14081,6 +14197,21 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       // A v1 draft had no store truth. Move it only to owner and delete the
       // ambiguous source, even when the current page is an affiliate store.
       migrateLegacyDesignerDraftToOwner(localStorage, verifiedEmail);
+
+      // Work designed before signing in belongs to the person who just signed
+      // in. Adopt it onto this account once, unless the account already has a
+      // plan for this store (that plan wins), then drop the guest copy so a
+      // second person on this browser cannot pick it up.
+      if (accountId != null && !latchedFreshStart.fresh) {
+        applyGuestDraftAdoption(localStorage, planGuestDraftAdoption(localStorage, storeScope, accountId));
+      }
+      const candidates = latchedFreshStart.fresh
+        ? [draftIdentity]
+        : draftIdentityCandidates({ accountId, email: verifiedEmail });
+      const restorable = firstRestorableDraft(localStorage, storeScope, candidates);
+      // Found under an older key (the gate email, or guest work)? Copy it to this
+      // account's key so one restore path reads one place from now on.
+      if (restorable && restorable.key !== draftKey) localStorage.setItem(draftKey, restorable.raw);
       const raw = localStorage.getItem(draftKey);
       if (raw) {
         const d = JSON.parse(raw);
@@ -14231,7 +14362,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       if (!latchedFreshStart.fresh) setLayoutStarterOpen(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [verified, draftKey, activeDraftKey, storeScope, verifiedEmail, loadDesignId, bundleIdParam, selectCatalogHardware]);
+  }, [verified, draftKey, activeDraftKey, storeScope, verifiedEmail, accountId, draftIdentity, loadDesignId, bundleIdParam, selectCatalogHardware]);
 
   // Pre-select a door style from the ?style=<id> URL param (e.g. "Design with
   // this" CTA from the homepage). Fires once, after the draft has been restored,
@@ -16419,6 +16550,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                       <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
                       <span className="flex-1 text-left">Export Floor Plan PDF</span>
                     </button>
+                    {fabricationSheetInput && (
+                      <div className="px-3 pb-2" data-testid="tablet-more-fabrication-sheet">
+                        <p className="pb-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("dt_fab_title")}</p>
+                        <CountertopFabricationSheetActions input={fabricationSheetInput} brandName={affiliateBrand?.storeName} />
+                      </div>
+                    )}
                     <p className="px-3 pt-3 pb-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Selected cabinet</p>
                     <div className="grid grid-cols-3 gap-2 px-3 pb-2" data-testid="tablet-more-selected-actions">
                       <Button type="button" variant="outline" className="h-11" disabled={!selectedUid || measureMode} onClick={() => { rotateSelected(); }}>
@@ -17189,6 +17326,15 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	              }
 	            }}
 	            onAutomaticSaveSuccess={(savedAt) => setAutomaticSaveAt(savedAt)}
+	            reportSaveTarget={(savedTo) => {
+	              // The server decided the store. Remember the design's own slug so
+	              // every later save and read stays in that store, and refresh the
+	              // byId read under the scope it actually lives in.
+	              if (savedTo.affiliateSlug != null) {
+	                void trpcUtils.design.byId.invalidate({ id: activeSavedDesignId ?? loadDesignId ?? 0 });
+	              }
+	              void trpcUtils.design.myDesigns.invalidate();
+	            }}
 	            onDeleteSuccess={(designId) => startBlankAfterDeletedDesign(designId)}
 	            onLoad={(d) =>
               {
@@ -20723,6 +20869,19 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                     <span className="font-semibold shrink-0 text-amber-600">{t("dt_bs_quote")}</span>
                   </div>
                 )}
+                {/* Granite/quartz fabrication sheet: download or email the shop. */}
+                {countertop && counter && counter.squareFeet > 0 && (
+                  <div className="rounded-lg border border-[#a87f33]/40 bg-[#a87f33]/5 p-2" data-testid="fabrication-sheet-panel">
+                    <div className="mb-1.5 flex items-center gap-1.5">
+                      <FileText className="h-3.5 w-3.5 text-[#a87f33]" />
+                      <span className="text-[11px] font-semibold">{t("dt_fab_title")}</span>
+                    </div>
+                    <CountertopFabricationSheetActions
+                      input={fabricationSheetInput}
+                      brandName={affiliateBrand?.storeName}
+                    />
+                  </div>
+                )}
                 {/* Backsplash & flooring area summary */}
                 {(() => {
                   const bsLinIn = placed.filter((p) => p.placement === "base").reduce((s, p) => s + rotatedSize(p).w, 0);
@@ -21004,6 +21163,20 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                   <UserRound className="h-4 w-4" />
                 </Button>
               </TooltipTrigger><TooltipContent>{t("dt_bs_get_pro")}</TooltipContent></Tooltip>
+              {/* Share the current design and ask any signed-on designer for help.
+                  Full-width under the action icons so the whole label is readable
+                  in the visible panel, not only in the toolbar's scroll rail. */}
+              <div className="col-span-full">
+                <DesignerHelperShare
+                  designId={currentSavedDesignId ?? loadDesignId}
+                  designName={savedDesign?.name ?? null}
+                  customerName={verifiedName || null}
+                  customerEmail={verifiedEmail || null}
+                  customerPhone={verifiedPhone || null}
+                  affiliateSlug={storeScope}
+                  onNeedSavedDesign={() => setSaveSignal((n) => n + 1)}
+                />
+              </div>
               {countertop && counter && counter.squareFeet > 0 && (
                 <Tooltip><TooltipTrigger asChild>
                   <Button aria-label="Request countertop quote" variant="outline" className="aspect-square min-h-12 w-full border-amber-500 p-0 text-amber-700 hover:bg-amber-50" onClick={() => setQuoteOpen(true)}>

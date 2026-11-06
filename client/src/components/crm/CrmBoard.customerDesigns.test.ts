@@ -71,4 +71,12 @@ describe("CRM customer view lists only linked designs", () => {
     expect(lookup).toContain("parseCustomerIdentifier");
     expect(lookup).toContain("previewResult");
   });
+
+  it("opens each linked design under its own store, not the open store (main's #274)", () => {
+    // Kept through the merge with main, which changed this exact link. The list
+    // must not go back to building the URL from the board's store slug.
+    expect(board).toContain("designOpenPath({ id: design.id, affiliateSlug: design.affiliateSlug ?? null })");
+    expect(board).not.toContain("customerDetail.data.storeSlug");
+    expect(board).not.toContain("`/store/${customerDetail.data.storeSlug}/design");
+  });
 });

@@ -1,4 +1,4 @@
-From ac6563077e076bfd641160ae26929fead9ed9a87 Mon Sep 17 00:00:00 2001
+From 713c99fb5cb10511e0eb0777d5797d0878552885 Mon Sep 17 00:00:00 2001
 From: Cursor Agent <cursoragent@cursor.com>
 Date: Fri, 6 Nov 2026 02:23:51 +0000
 Subject: [PATCH] Filter the CRM customer view to designs linked to that
@@ -20,17 +20,22 @@ and matched on the deal row inside the caller's scope; it is never a search
 across designs, and a ?customer= link (a users.id) is refused rather than
 matched against a different number space.
 
+A linked design is returned with its OWN store slug rather than being filtered
+by the deal's store, so the client builds the Designer link from the design,
+matching main's #274 rule that a saved design opens under the store that owns
+it.
+
 Also make the in-memory test store honour a multi-value IN predicate, which a
 two-id inArray produces.
 ---
  server/lib/__testDb.ts                     |  10 +-
- server/routers/crm.customerDesigns.test.ts | 209 +++++++++++++++++++++
- server/routers/crm.ts                      | 164 ++++++++++++++++
+ server/routers/crm.customerDesigns.test.ts | 220 +++++++++++++++++++++
+ server/routers/crm.ts                      | 191 ++++++++++++++++++
  shared/crmCustomerDesigns.test.ts          |  90 +++++++++
- shared/crmCustomerDesigns.ts               | 120 ++++++++++++
+ shared/crmCustomerDesigns.ts               | 120 +++++++++++
  shared/crmCustomerLookup.test.ts           |  77 ++++++++
  shared/crmCustomerLookup.ts                |  77 ++++++++
- 7 files changed, 746 insertions(+), 1 deletion(-)
+ 7 files changed, 784 insertions(+), 1 deletion(-)
  create mode 100644 server/routers/crm.customerDesigns.test.ts
  create mode 100644 shared/crmCustomerDesigns.test.ts
  create mode 100644 shared/crmCustomerDesigns.ts
@@ -60,10 +65,10 @@ index a704343..35a36cb 100644
      if (text.includes("=") && operand?.kind === "param") {
 diff --git a/server/routers/crm.customerDesigns.test.ts b/server/routers/crm.customerDesigns.test.ts
 new file mode 100644
-index 0000000..994db12
+index 0000000..a6b9236
 --- /dev/null
 +++ b/server/routers/crm.customerDesigns.test.ts
-@@ -0,0 +1,209 @@
+@@ -0,0 +1,220 @@
 +/**
 + * A customer's CRM view must list only designs linked to that customer.
 + *
@@ -193,20 +198,31 @@ index 0000000..994db12
 +    expect(result.designs.map((row) => row.id)).not.toContain(5502);
 +  });
 +
-+  it("drops a linked design that belongs to another store", async () => {
++  it("keeps a linked design that lives in another store, on its own store", async () => {
++    // main's #274: a saved design belongs to the account that saved it and opens
++    // under ITS OWN store. So a platform design (affiliateId null) linked to a
++    // Store-A customer is a real link, and must not be hidden by the deal's store.
++    tables.set(crmDealDesigns, [
++      { id: 1, dealId: 5192, designId: 4401, designName: "Design 4401", linkedByUserId: 1, createdAt: new Date() },
++      { id: 2, dealId: 5192, designId: 4409, designName: "Design 4409", linkedByUserId: 1, createdAt: new Date() },
++    ]);
++    tables.set(kitchenDesigns, [design(4401), design(4409, { affiliateId: null })]);
++    const result = await caller().customerDesigns({ dealId: 5192 });
++    expect(result.designs.map((row) => row.id).sort()).toEqual([4401, 4409]);
++    // The house design reports no store slug, so it opens on /design.
++    expect(result.designs.find((row) => row.id === 4409)?.affiliateSlug).toBeNull();
++  });
++
++  it("reports each design's own store so the link is built from the design", async () => {
 +    tables.set(crmDealDesigns, [
 +      { id: 1, dealId: 5192, designId: 4401, designName: "Design 4401", linkedByUserId: 1, createdAt: new Date() },
 +      { id: 2, dealId: 5192, designId: 4409, designName: "Design 4409", linkedByUserId: 1, createdAt: new Date() },
 +    ]);
 +    tables.set(kitchenDesigns, [design(4401), design(4409, { affiliateId: 9 })]);
 +    const result = await caller().customerDesigns({ dealId: 5192 });
-+    expect(result.designs.map((row) => row.id)).toEqual([4401]);
-+  });
-+
-+  it("returns the store path to open each linked design", async () => {
-+    const result = await caller().customerDesigns({ dealId: 5192 });
-+    expect(result.designs[0]?.designUrl).toBe("/store/store-a/design?load=4401&preview=3d&crmDeal=5192");
-+    expect(result.designs[0]?.linkId).toBe(1);
++    expect(result.designs.find((row) => row.id === 4401)?.affiliateSlug).toBe("store-a");
++    expect(result.designs.find((row) => row.id === 4409)?.affiliateSlug).toBeNull();
++    expect(result.designs.find((row) => row.id === 4401)?.linkId).toBe(1);
 +  });
 +
 +  it("refuses another contractor's deal", async () => {
@@ -274,7 +290,7 @@ index 0000000..994db12
 +  });
 +});
 diff --git a/server/routers/crm.ts b/server/routers/crm.ts
-index f209b22..4504317 100644
+index f209b22..572779d 100644
 --- a/server/routers/crm.ts
 +++ b/server/routers/crm.ts
 @@ -62,6 +62,8 @@ import { contactEmailToBackfill, loadDealInvoiceRecipient, usableInvoiceEmail }
@@ -286,10 +302,24 @@ index f209b22..4504317 100644
  import {
    newlyRequestedCrmHelpKinds,
    recipientsForCrmHelpNotification,
-@@ -393,6 +395,100 @@ function designScopePath(affiliateSlug: string | null, designId: number, crmDeal
+@@ -393,6 +395,125 @@ function designScopePath(affiliateSlug: string | null, designId: number, crmDeal
  	return `${path}?${params.toString()}`;
  }
  
++/**
++ * Where a linked design opens from the CRM. The design's OWN store decides the
++ * route, never the store of the customer record that links to it — the same rule
++ * as shared/designOwnerScope.ts's designOpenPath on the client, and the reason a
++ * platform design linked to a First Class customer still opens on /design.
++ * `crmDeal` keeps the CRM context on the Designer.
++ */
++function customerDesignOpenPath(
++  design: { id: number; affiliateSlug: string | null },
++  dealId: number,
++): string {
++  return designScopePath(design.affiliateSlug ?? null, design.id, dealId);
++}
++
 +/**
 + * The contractor customer folder this deal belongs to, when it has one.
 + * kitchen_designs.contractorCustomerId is the second stored design link.
@@ -308,13 +338,23 @@ index f209b22..4504317 100644
 +  linkKind: "deal" | "customerFolder";
 +  /** crm_deal_designs.id for a deal link; null for a contractor folder link. */
 +  linkId: number | null;
-+  designUrl: string;
++  /**
++   * The store the design itself belongs to (kitchen_designs.affiliateId). The
++   * client builds the Designer link from this with designOpenPath, so a design
++   * never opens under whichever store's CRM happens to be showing it.
++   */
++  affiliateSlug: string | null;
 +};
 +
 +/**
 + * Designs with a stored link to this customer, newest first. Shared by the deal
 + * drawer (customerDesigns) and the staff quick lookup (customerLookup) so the
 + * two can never disagree about what "linked" means.
++ *
++ * A linked design is NOT filtered by the deal's store. Since main's #274 a saved
++ * design belongs to the account that saved it and opens under its own store, so
++ * a platform design linked to a First Class customer is a real link and must
++ * show — under the account's own designer route, not the store's.
 + */
 +async function loadCustomerLinkedDesigns(
 +  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
@@ -355,14 +395,15 @@ index f209b22..4504317 100644
 +    .from(kitchenDesigns)
 +    .where(inArray(kitchenDesigns.id, designIds))
 +    .orderBy(desc(kitchenDesigns.updatedAt));
-+  // A linked design in another store is not part of this customer's view.
-+  // linkDesign already refuses that, but a legacy row must not leak through.
-+  const scoped = rows.filter((row) => row.affiliateId === deal.affiliateId);
-+  const storeSlug = deal.affiliateId == null
-+    ? null
-+    : (await db.select({ slug: affiliates.slug }).from(affiliates).where(eq(affiliates.id, deal.affiliateId)).limit(1))[0]?.slug ?? null;
++  const designAffiliateIds = Array.from(new Set(
++    rows.map((row) => row.affiliateId).filter((id): id is number => id != null),
++  ));
++  const storeRows = designAffiliateIds.length === 0
++    ? []
++    : await db.select({ id: affiliates.id, slug: affiliates.slug }).from(affiliates).where(inArray(affiliates.id, designAffiliateIds));
++  const slugByAffiliateId = new Map(storeRows.map((store) => [store.id, store.slug]));
 +  return selectCustomerDesigns(
-+    scoped.map((row) => ({
++    rows.map((row) => ({
 +      designId: row.id,
 +      dealIds: linkedIds.includes(row.id) ? [deal.id] : [],
 +      contractorCustomerId: row.contractorCustomerId,
@@ -380,14 +421,14 @@ index f209b22..4504317 100644
 +    linkId: entry.linkKind === "deal"
 +      ? linkRows.find((link) => Number(link.designId) === entry.row.id && link.id != null)?.id ?? null
 +      : null,
-+    designUrl: designScopePath(storeSlug, entry.row.id, deal.id),
++    affiliateSlug: entry.row.affiliateId == null ? null : slugByAffiliateId.get(entry.row.affiliateId) ?? null,
 +  }));
 +}
 +
  export const crmRouter = router({
    // ── Import a customer list into the caller's CRM scope ──────────────────────
    importCustomerList: protectedProcedure
-@@ -760,6 +856,74 @@ export const crmRouter = router({
+@@ -760,6 +881,76 @@ export const crmRouter = router({
        return { deal, activities, linkedDesigns, emails, invoiceBrand, invoicePrefill, invoiceRecipient, laborEstimates };
      }),
  
@@ -445,6 +486,9 @@ index f209b22..4504317 100644
 +      }
 +      const designs = await loadCustomerLinkedDesigns(db, deal);
 +      const outcome = lookupOutcome(designs.length);
++      // Exactly one design opens straight away. The URL follows the design's own
++      // store (main's #274 rule), so it is built here rather than on the client.
++      const openUrl = outcome === "one" ? customerDesignOpenPath(designs[0]!, deal.id) : null;
 +      return {
 +        ok: true as const,
 +        identifier: input.identifier,
@@ -454,8 +498,7 @@ index f209b22..4504317 100644
 +        affiliateId: deal.affiliateId ?? null,
 +        designs,
 +        outcome,
-+        // Exactly one design opens straight away; several are shown to pick from.
-+        openUrl: outcome === "one" ? designs[0]!.designUrl : null,
++        openUrl,
 +      };
 +    }),
 +

@@ -9,6 +9,7 @@ import {
 } from "@shared/crmCustomerLookup";
 import { CustomerLinkedDesigns } from "@/components/crm/CustomerLinkedDesigns";
 import { lookupHeading, useCustomerLookup, type CustomerLookupResult } from "@/lib/crmCustomerLookupProcedures";
+import { linkedDesignOpenPath, oneDesignOpenUrl } from "@/lib/crmLinkedDesignPath";
 
 /**
  * Staff quick lookup. A customer phones in, staff type the customer number (or
@@ -61,7 +62,7 @@ export function CrmCustomerLookup({
   };
 
   const result = query.data;
-  const autoOpenUrl = result?.ok && result.outcome === "one" ? result.openUrl : null;
+  const autoOpenUrl = oneDesignOpenUrl(result);
   // One linked design: nobody should have to confirm what is already unambiguous.
   useEffect(() => {
     if (!autoOpenUrl) return;
@@ -169,7 +170,10 @@ function LookupResult({ result, onOpen }: { result: CustomerLookupResult; onOpen
           <button
             type="button"
             className="text-xs font-semibold text-primary underline"
-            onClick={() => onOpen(result.designs.find((row) => row.id === design.id)!.designUrl)}
+            onClick={() => {
+              const row = result.designs.find((item) => item.id === design.id);
+              if (row) onOpen(linkedDesignOpenPath(row, result.dealId));
+            }}
             data-testid={`crm-customer-lookup-open-${design.id}`}
           >
             {result.outcome === "one" ? "Open their design" : "Open this design"}

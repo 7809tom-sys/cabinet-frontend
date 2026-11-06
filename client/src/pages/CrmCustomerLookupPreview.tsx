@@ -22,7 +22,7 @@ const DESIGN = (id: number, name: string) => ({
   updatedAt: "2026-11-04T15:20:00Z",
   linkKind: "deal" as const,
   linkId: id,
-  designUrl: `/design?load=${id}&preview=3d&crmDeal=${id === 4401 ? 5192 : 6001}`,
+  affiliateSlug: null,
 });
 
 function answer(dealId: number): CustomerLookupResult | null {
@@ -37,7 +37,7 @@ function answer(dealId: number): CustomerLookupResult | null {
       affiliateId: 7,
       designs,
       outcome: "one",
-      openUrl: designs[0]!.designUrl,
+      openUrl: null,
     };
   }
   if (dealId === 6001) {

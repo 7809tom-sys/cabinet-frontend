@@ -12,8 +12,11 @@ export type CrmCustomerDesignRow = {
   linkKind?: DesignLinkKind;
   /** crm_deal_designs.id for a deal link; null for a contractor folder link. */
   linkId?: number | null;
-  /** Where "Open in Designer" goes. */
-  designUrl?: string | null;
+  /**
+   * The store the design itself lives in. The Designer link is built from this
+   * (main's #274), never from the store whose CRM is open.
+   */
+  affiliateSlug?: string | null;
 };
 
 export type CrmCustomerDesignsResult = {
