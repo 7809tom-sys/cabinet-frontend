@@ -1,4 +1,6 @@
--- TiDB SQL editor version. Numbered 0249. Run after 0248.
+-- TiDB SQL editor version. Numbered 0255. Run after 0254.
+-- (0249 is taken by 0249_kbis_2027_booth_assets; this file moved to 0255 to
+--  avoid the duplicate number.)
 -- Paste one numbered statement at a time, in order.
 -- One statement per line. Every table and index target is cabinet_dealz.<table>.
 -- DO NOT let an automatic migration run this. It is for Tom to run by hand.
