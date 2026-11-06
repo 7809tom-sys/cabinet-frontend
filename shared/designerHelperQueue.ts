@@ -78,11 +78,6 @@ export const HELPER_SIGN_OFF_COPY =
 export const HELPER_QUEUE_FRONT_COPY =
   "You are in the queue. The next customer who asks for a designer helper will see your name and their design will come up in front of you.";
 
-export function helperRequestIsOpen(status: HelperRequestStatus): boolean {
-  return status === "open" || status === "accepted";
-}
-
-/** A request a designer can still pick up: open, nobody has taken it. */
 export function helperRequestNeedsHelper(request: Pick<HelperRequest, "status">): boolean {
   return request.status === "open";
 }

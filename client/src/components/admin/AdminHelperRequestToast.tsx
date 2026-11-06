@@ -53,5 +53,15 @@ export function AdminHelperRequestToast() {
     }
   }, [rows, join, openRequest]);
 
+  // A request that stopped waiting — someone else joined it, or it was closed —
+  // has its pop-up taken down rather than left on screen as stale work.
+  useEffect(() => {
+    const stillWaiting = new Set(rows.filter((row) => row.request.status === "open").map((row) => row.request.id));
+    for (const id of Array.from(announced.current)) {
+      if (stillWaiting.has(id)) continue;
+      toast.dismiss(`admin-helper-request-${id}`);
+    }
+  }, [rows]);
+
   return null;
 }

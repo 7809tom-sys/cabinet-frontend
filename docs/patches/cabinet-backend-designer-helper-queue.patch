@@ -1,6 +1,6 @@
-From b5e8b3a2cd3a40d5053f2a9629518c61e712a888 Mon Sep 17 00:00:00 2001
+From f6d2e7cddbdd6c1b4504ad0d8ee3e4cdf35d11b5 Mon Sep 17 00:00:00 2001
 From: Cursor Agent <cursoragent@cursor.com>
-Date: Fri, 6 Nov 2026 02:09:57 +0000
+Date: Fri, 6 Nov 2026 02:35:28 +0000
 Subject: [PATCH] Designer helper queue: share, notify, helper sign, email,
  admin pop-up with join
 
@@ -13,8 +13,8 @@ Subject: [PATCH] Designer helper queue: share, notify, helper sign, email,
  server/routers/designShareToken.ts |  50 ++++
  server/routers/designerHelper.ts   | 254 ++++++++++++++++
  shared/designerHelperQueue.test.ts | 210 +++++++++++++
- shared/designerHelperQueue.ts      | 315 ++++++++++++++++++++
- 9 files changed, 1530 insertions(+), 44 deletions(-)
+ shared/designerHelperQueue.ts      | 310 +++++++++++++++++++
+ 9 files changed, 1525 insertions(+), 44 deletions(-)
  create mode 100644 server/lib/designerHelper.test.ts
  create mode 100644 server/lib/designerHelper.ts
  create mode 100644 server/routers/designShareToken.ts
@@ -1363,10 +1363,10 @@ index 0000000..581a51f
 +});
 diff --git a/shared/designerHelperQueue.ts b/shared/designerHelperQueue.ts
 new file mode 100644
-index 0000000..aa40bff
+index 0000000..95afe22
 --- /dev/null
 +++ b/shared/designerHelperQueue.ts
-@@ -0,0 +1,315 @@
+@@ -0,0 +1,310 @@
 +/**
 + * Designer helper queue: the shared rules behind "Share / Get a designer helper".
 + *
@@ -1447,11 +1447,6 @@ index 0000000..aa40bff
 +export const HELPER_QUEUE_FRONT_COPY =
 +  "You are in the queue. The next customer who asks for a designer helper will see your name and their design will come up in front of you.";
 +
-+export function helperRequestIsOpen(status: HelperRequestStatus): boolean {
-+  return status === "open" || status === "accepted";
-+}
-+
-+/** A request a designer can still pick up: open, nobody has taken it. */
 +export function helperRequestNeedsHelper(request: Pick<HelperRequest, "status">): boolean {
 +  return request.status === "open";
 +}
