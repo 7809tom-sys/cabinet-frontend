@@ -1,0 +1,312 @@
+From 44162937d37e7a3503a72d7c5de9bba08891edb6 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Fri, 6 Nov 2026 17:51:35 +0000
+Subject: [PATCH] Remove the remaining Manus references from the frontend
+
+The site now runs on Vercel against the Railway API, but the frontend still
+carried Manus scaffolding:
+
+- vercel.json proxied /manus-storage, /sitemap.xml and /robots.txt to the
+  literal placeholder host REPLACE-WITH-RAILWAY-DOMAIN, so all three answered
+  502 in production. Point them at the real API host, serve media under
+  /storage, and keep /manus-storage as an alias for URLs already in the database.
+- Drop the unused ManusDialog component ("Login with Manus").
+- Drop the dist/__manus__ build guard and the Builder.io jsx-loc plugin, which
+  only existed to tag elements for the Manus preview host.
+- Replace the Manus preview hosts in the Vite dev allowedHosts with the real domains.
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+---
+ client/src/components/ManusDialog.tsx | 89 ---------------------------
+ package.json                          |  5 +-
+ pnpm-lock.yaml                        | 24 +-------
+ scripts/assert-no-manus-dist.mjs      |  9 ---
+ tests/publicReviewFixes.test.ts       | 24 +++-----
+ vercel.json                           |  7 ++-
+ vite.config.ts                        |  9 +--
+ 7 files changed, 19 insertions(+), 148 deletions(-)
+ delete mode 100644 client/src/components/ManusDialog.tsx
+ delete mode 100644 scripts/assert-no-manus-dist.mjs
+
+diff --git a/client/src/components/ManusDialog.tsx b/client/src/components/ManusDialog.tsx
+deleted file mode 100644
+index b3d2293..0000000
+--- a/client/src/components/ManusDialog.tsx
++++ /dev/null
+@@ -1,89 +0,0 @@
+-import { useEffect, useState } from "react";
+-
+-import { Button } from "@/components/ui/button";
+-import {
+-  Dialog,
+-  DialogContent,
+-  DialogDescription,
+-  DialogFooter,
+-  DialogTitle,
+-} from "@/components/ui/dialog";
+-
+-interface ManusDialogProps {
+-  title?: string;
+-  logo?: string;
+-  open?: boolean;
+-  onLogin: () => void;
+-  onOpenChange?: (open: boolean) => void;
+-  onClose?: () => void;
+-}
+-
+-export function ManusDialog({
+-  title,
+-  logo,
+-  open = false,
+-  onLogin,
+-  onOpenChange,
+-  onClose,
+-}: ManusDialogProps) {
+-  const [internalOpen, setInternalOpen] = useState(open);
+-
+-  useEffect(() => {
+-    if (!onOpenChange) {
+-      setInternalOpen(open);
+-    }
+-  }, [open, onOpenChange]);
+-
+-  const handleOpenChange = (nextOpen: boolean) => {
+-    if (onOpenChange) {
+-      onOpenChange(nextOpen);
+-    } else {
+-      setInternalOpen(nextOpen);
+-    }
+-
+-    if (!nextOpen) {
+-      onClose?.();
+-    }
+-  };
+-
+-  return (
+-    <Dialog
+-      open={onOpenChange ? open : internalOpen}
+-      onOpenChange={handleOpenChange}
+-    >
+-      <DialogContent className="py-5 bg-[#f8f8f7] rounded-[20px] w-[400px] shadow-[0px_4px_11px_0px_rgba(0,0,0,0.08)] border border-[rgba(0,0,0,0.08)] backdrop-blur-2xl p-0 gap-0 text-center">
+-        <div className="flex flex-col items-center gap-2 p-5 pt-12">
+-          {logo ? (
+-            <div className="w-16 h-16 bg-white rounded-xl border border-[rgba(0,0,0,0.08)] flex items-center justify-center">
+-              <img
+-                src={logo}
+-                alt="Dialog graphic"
+-                className="w-10 h-10 rounded-md"
+-              />
+-            </div>
+-          ) : null}
+-
+-          {/* Title and subtitle */}
+-          {title ? (
+-            <DialogTitle className="text-xl font-semibold text-[#34322d] leading-[26px] tracking-[-0.44px]">
+-              {title}
+-            </DialogTitle>
+-          ) : null}
+-          <DialogDescription className="text-sm text-[#858481] leading-5 tracking-[-0.154px]">
+-            Please login with Manus to continue
+-          </DialogDescription>
+-        </div>
+-
+-        <DialogFooter className="px-5 py-5">
+-          {/* Login button */}
+-          <Button
+-            onClick={onLogin}
+-            className="w-full h-10 bg-[#1a1a19] hover:bg-[#1a1a19]/90 text-white rounded-[10px] text-sm font-medium leading-5 tracking-[-0.154px]"
+-          >
+-            Login with Manus
+-          </Button>
+-        </DialogFooter>
+-      </DialogContent>
+-    </Dialog>
+-  );
+-}
+diff --git a/package.json b/package.json
+index dbe42de..2b5a9cf 100644
+--- a/package.json
++++ b/package.json
+@@ -6,8 +6,8 @@
+   "private": true,
+   "scripts": {
+     "dev": "vite",
+-    "build": "vite build && node scripts/assert-no-manus-dist.mjs",
+-    "build:web": "vite build && node scripts/assert-no-manus-dist.mjs",
++    "build": "vite build",
++    "build:web": "vite build",
+     "preview": "vite preview",
+     "test": "vitest run",
+     "format": "prettier --write ."
+@@ -68,7 +68,6 @@
+     "wouter": "^3.3.5"
+   },
+   "devDependencies": {
+-    "@builder.io/vite-plugin-jsx-loc": "^0.1.1",
+     "@tailwindcss/vite": "^4.1.3",
+     "@types/node": "^24.7.0",
+     "@types/react": "^19.2.1",
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index 415f44e..3eac4ce 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -168,9 +168,6 @@ importers:
+         specifier: ^3.3.5
+         version: 3.7.1(react@19.2.1)
+     devDependencies:
+-      '@builder.io/vite-plugin-jsx-loc':
+-        specifier: ^0.1.1
+-        version: 0.1.1(vite@7.1.9(@types/node@24.7.0)(jiti@2.6.1)(lightningcss@1.30.1)(terser@5.49.0)(tsx@4.20.6))
+       '@tailwindcss/vite':
+         specifier: ^4.1.3
+         version: 4.1.14(vite@7.1.9(@types/node@24.7.0)(jiti@2.6.1)(lightningcss@1.30.1)(terser@5.49.0)(tsx@4.20.6))
+@@ -801,14 +798,6 @@ packages:
+   '@braintree/sanitize-url@7.1.1':
+     resolution: {integrity: sha512-i1L7noDNxtFyL5DmZafWy1wRVhGehQmzZaz1HiN5e7iylJMSZR7ekOV7NsIqa5qBldlLrsKv4HbgFUVlQrz8Mw==}
+ 
+-  '@builder.io/jsx-loc-internals@0.0.1':
+-    resolution: {integrity: sha512-cSADapVCi07DDhcuDmcAVItqSVmji7DNyD3xxYTHyNCwhWMNnTpZjyvDIWwYFJLleyDCJ9VUtbaXtUjjqBiRqw==}
+-
+-  '@builder.io/vite-plugin-jsx-loc@0.1.1':
+-    resolution: {integrity: sha512-iAHFkaLBDJBC+EkGO1hF7hnIW2+oKKYVOl8NFAQH//3xeNEzvGdS9tOALRPR+JjR/M5NLyj+FG0VV7WFb1aJmw==}
+-    peerDependencies:
+-      vite: ^4.0.0 || ^5.0.0
+-
+   '@cacheable/memory@2.2.0':
+     resolution: {integrity: sha512-CTLKqLItRCEixEAewD3/j9DB3/o96gpTPD4eJ1v+DGOlxZRZncRQkGYqqnAGCscYd6RNeXfGeiuCphsPtqyIfQ==}
+ 
+@@ -5766,17 +5755,6 @@ snapshots:
+ 
+   '@braintree/sanitize-url@7.1.1': {}
+ 
+-  '@builder.io/jsx-loc-internals@0.0.1':
+-    dependencies:
+-      '@babel/parser': 7.28.4
+-      estree-walker: 2.0.2
+-      magic-string: 0.30.19
+-
+-  '@builder.io/vite-plugin-jsx-loc@0.1.1(vite@7.1.9(@types/node@24.7.0)(jiti@2.6.1)(lightningcss@1.30.1)(terser@5.49.0)(tsx@4.20.6))':
+-    dependencies:
+-      '@builder.io/jsx-loc-internals': 0.0.1
+-      vite: 7.1.9(@types/node@24.7.0)(jiti@2.6.1)(lightningcss@1.30.1)(terser@5.49.0)(tsx@4.20.6)
+-
+   '@cacheable/memory@2.2.0':
+     dependencies:
+       '@cacheable/utils': 2.5.0
+@@ -9965,7 +9943,7 @@ snapshots:
+   terser@5.49.0:
+     dependencies:
+       '@jridgewell/source-map': 0.3.11
+-      acorn: 8.15.0
++      acorn: 8.19.0
+       commander: 2.20.3
+       source-map-support: 0.5.21
+ 
+diff --git a/scripts/assert-no-manus-dist.mjs b/scripts/assert-no-manus-dist.mjs
+deleted file mode 100644
+index 4e26d48..0000000
+--- a/scripts/assert-no-manus-dist.mjs
++++ /dev/null
+@@ -1,9 +0,0 @@
+-import { existsSync } from "node:fs";
+-import { resolve } from "node:path";
+-
+-const target = resolve(process.cwd(), "dist/__manus__");
+-
+-if (existsSync(target)) {
+-  console.error(`Build rejected: ${target} must not exist.`);
+-  process.exit(1);
+-}
+diff --git a/tests/publicReviewFixes.test.ts b/tests/publicReviewFixes.test.ts
+index 7b2b489..41d9039 100644
+--- a/tests/publicReviewFixes.test.ts
++++ b/tests/publicReviewFixes.test.ts
+@@ -1,6 +1,4 @@
+-import { execFileSync } from "node:child_process";
+-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+-import { tmpdir } from "node:os";
++import { existsSync, readFileSync } from "node:fs";
+ import { resolve } from "node:path";
+ import { describe, expect, it } from "vitest";
+ 
+@@ -48,19 +46,17 @@ describe("public review fixes", () => {
+     expect(pitch).not.toContain("Crunch");
+   });
+ 
+-  it("fails the build when dist/__manus__ is present", () => {
++  it("builds without the retired Manus artifacts", () => {
+     const pkg = readFileSync(resolve(root, "package.json"), "utf8");
+-    expect(pkg).toContain("vite build && node scripts/assert-no-manus-dist.mjs");
++    expect(pkg).toContain('"build:web": "vite build"');
++    expect(pkg).not.toContain("assert-no-manus-dist");
++    expect(pkg).not.toContain("@builder.io/vite-plugin-jsx-loc");
+ 
+-    const script = resolve(root, "scripts/assert-no-manus-dist.mjs");
+-    execFileSync(process.execPath, [script], { cwd: root });
++    expect(existsSync(resolve(root, "client/src/components/ManusDialog.tsx"))).toBe(false);
++    expect(existsSync(resolve(root, "scripts/assert-no-manus-dist.mjs"))).toBe(false);
+ 
+-    const fixture = mkdtempSync(resolve(tmpdir(), "manus-dist-"));
+-    mkdirSync(resolve(fixture, "dist/__manus__"), { recursive: true });
+-    try {
+-      expect(() => execFileSync(process.execPath, [script], { cwd: fixture, stdio: "pipe" })).toThrow();
+-    } finally {
+-      rmSync(fixture, { recursive: true, force: true });
+-    }
++    const vite = readFileSync(resolve(root, "vite.config.ts"), "utf8");
++    expect(vite).not.toContain("jsxLocPlugin");
++    expect(vite).not.toContain("manus.computer");
+   });
+ });
+diff --git a/vercel.json b/vercel.json
+index 8954aa2..a2cef94 100644
+--- a/vercel.json
++++ b/vercel.json
+@@ -5,9 +5,10 @@
+   "buildCommand": "pnpm build:web",
+   "outputDirectory": "dist/public",
+   "rewrites": [
+-    { "source": "/manus-storage/:path*", "destination": "https://REPLACE-WITH-RAILWAY-DOMAIN/manus-storage/:path*" },
+-    { "source": "/sitemap.xml", "destination": "https://REPLACE-WITH-RAILWAY-DOMAIN/sitemap.xml" },
+-    { "source": "/robots.txt", "destination": "https://REPLACE-WITH-RAILWAY-DOMAIN/robots.txt" },
++    { "source": "/storage/(.*)", "destination": "https://justputzit-backend-production.up.railway.app/manus-storage/$1" },
++    { "source": "/manus-storage/(.*)", "destination": "https://justputzit-backend-production.up.railway.app/manus-storage/$1" },
++    { "source": "/sitemap.xml", "destination": "https://justputzit-backend-production.up.railway.app/sitemap.xml" },
++    { "source": "/robots.txt", "destination": "https://justputzit-backend-production.up.railway.app/robots.txt" },
+     { "source": "/(.*)", "destination": "/index.html" }
+   ]
+ }
+diff --git a/vite.config.ts b/vite.config.ts
+index b5a7411..5c5a0f5 100644
+--- a/vite.config.ts
++++ b/vite.config.ts
+@@ -1,4 +1,3 @@
+-import { jsxLocPlugin } from "@builder.io/vite-plugin-jsx-loc";
+ import { VitePWA } from "vite-plugin-pwa";
+ import tailwindcss from "@tailwindcss/vite";
+ import react from "@vitejs/plugin-react";
+@@ -8,7 +7,6 @@ import { defineConfig } from "vite";
+ const plugins = [
+   react(),
+   tailwindcss(),
+-  jsxLocPlugin(),
+   VitePWA({
+     registerType: "autoUpdate",
+     injectRegister: "auto",
+@@ -57,11 +55,8 @@ export default defineConfig({
+   server: {
+     host: true,
+     allowedHosts: [
+-      ".manuspre.computer",
+-      ".manus.computer",
+-      ".manus-asia.computer",
+-      ".manuscomputer.ai",
+-      ".manusvm.computer",
++      "justputzit.com",
++      ".justputzit.com",
+       "localhost",
+       "127.0.0.1",
+     ],
+-- 
+2.43.0
+

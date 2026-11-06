@@ -1,0 +1,145 @@
+From 5165cc08a663987dfa9921080fbaaefde1f6c28a Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Fri, 6 Nov 2026 17:51:36 +0000
+Subject: [PATCH] Serve stored media under /storage instead of /manus-storage
+
+The API is on Railway now, but the media proxy and the URLs it writes still
+carried the Manus path shape.
+
+- Register the storage proxy at /storage/* and keep /manus-storage/* on the same
+  handler, so URLs already persisted in the database keep resolving.
+- storagePut/storageGet now return /storage/{key} for new uploads.
+- Replace the manus.space fallback invite base URL with https://justputzit.com;
+  invites were being generated against the retired Manus host.
+- Update DEPLOY.md and the storage tests.
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+---
+ DEPLOY.md                     |  6 +++---
+ server/_core/storageProxy.ts  | 11 ++++++++---
+ server/routers.ts             |  2 +-
+ server/storage.ts             |  6 +++---
+ server/storageSigning.test.ts |  6 +++---
+ 5 files changed, 18 insertions(+), 13 deletions(-)
+
+diff --git a/DEPLOY.md b/DEPLOY.md
+index 460e649..0cae765 100644
+--- a/DEPLOY.md
++++ b/DEPLOY.md
+@@ -72,8 +72,8 @@ Only `VITE_*` values; everything here ends up in the browser, so it must be publ
+ | `VITE_SITE_URL` | Public site URL. |
+ | `VITE_ANALYTICS_ENDPOINT`, `VITE_ANALYTICS_WEBSITE_ID` | Optional (Umami). |
+ 
+-`vercel.json` rewrites everything to `index.html`, and proxies `/manus-storage/*`, `/sitemap.xml` and `/robots.txt` to the API.
+-**Replace `REPLACE-WITH-RAILWAY-DOMAIN` in `vercel.json` with your Railway domain** before the first deploy.
++`vercel.json` rewrites everything to `index.html`, and proxies `/storage/*`, `/sitemap.xml` and `/robots.txt` to the API.
++The Railway API host is set in `vercel.json`; update it there if the Railway domain changes.
+ 
+ ### Supabase (dashboard settings, no env vars)
+ 
+@@ -129,7 +129,7 @@ The API exposes three endpoints. Each needs `Authorization: Bearer $CRON_SECRET`
+ | `POST /api/scheduled/birthday-reminders` | Once-daily private birthday match notifications | `0 14 * * *` (daily) |
+ | `POST /api/scheduled/refresh-events` | Crawls city sources, purges old events, reseeds thin cities | `0 */6 * * *` (every 6 hours) |
+ 
+-These schedules are confirmed. (The original Manus schedules were not in the repository; the handlers only describe them as nightly, once-daily and every 6 hours.)
++These schedules are confirmed. (The handlers only describe them as nightly, once-daily and every 6 hours.)
+ 
+ Set up one Railway **cron service** per job (Railway cron services run a command on a schedule and must exit):
+ 
+diff --git a/server/_core/storageProxy.ts b/server/_core/storageProxy.ts
+index 4161a24..767ef56 100644
+--- a/server/_core/storageProxy.ts
++++ b/server/_core/storageProxy.ts
+@@ -1,9 +1,9 @@
+-import type { Express } from "express";
++import type { Express, Request, Response } from "express";
+ import { ENV } from "./env";
+ import { storageGetSignedUrl } from "../storage";
+ 
+ export function registerStorageProxy(app: Express) {
+-  app.get("/manus-storage/*", async (req, res) => {
++  const serve = async (req: Request, res: Response) => {
+     const key = (req.params as Record<string, string>)[0];
+     if (!key) {
+       res.status(400).send("Missing storage key");
+@@ -23,5 +23,10 @@ export function registerStorageProxy(app: Express) {
+       console.error("[StorageProxy] failed:", err);
+       res.status(502).send("Storage proxy error");
+     }
+-  });
++  };
++
++  app.get("/storage/*", serve);
++
++  // Stored URLs written before the rename are /manus-storage/{key}; keep them resolving.
++  app.get("/manus-storage/*", serve);
+ }
+diff --git a/server/routers.ts b/server/routers.ts
+index fe88160..e54a1e1 100644
+--- a/server/routers.ts
++++ b/server/routers.ts
+@@ -2655,7 +2655,7 @@ Return JSON with questions array, each having optionA and optionB.`,
+     // Generate (or retrieve) the current user's personal invite code
+     getMyInviteCode: protectedProcedure.mutation(async ({ ctx }) => {
+       const code = await generateInviteCode(ctx.user.id);
+-      const baseUrl = process.env.VITE_SITE_URL ?? "https://putzitapp-6zuussay.manus.space";
++      const baseUrl = process.env.VITE_SITE_URL ?? "https://justputzit.com";
+       return {
+         code,
+         inviteUrl: `${baseUrl}/join?ref=${code}`,
+diff --git a/server/storage.ts b/server/storage.ts
+index 9f348db..4376c6a 100644
+--- a/server/storage.ts
++++ b/server/storage.ts
+@@ -1,6 +1,6 @@
+ // Storage helpers backed by Supabase Storage.
+ // Uploads go to a bucket chosen by key prefix (member content is private).
+-// Stored URLs keep the /manus-storage/{key} shape, which the storage proxy redirects
++// Stored URLs use the /storage/{key} shape, which the storage proxy redirects
+ // to a public or signed Supabase URL, so URLs already stored in the database keep working.
+ // Static brand images are served by the frontend from /brand/ instead.
+ 
+@@ -63,12 +63,12 @@ export async function storagePut(
+     throw new Error(`Storage upload failed: ${error.message}`);
+   }
+ 
+-  return { key, url: `/manus-storage/${key}` };
++  return { key, url: `/storage/${key}` };
+ }
+ 
+ export async function storageGet(relKey: string): Promise<{ key: string; url: string }> {
+   const key = normalizeKey(relKey);
+-  return { key, url: `/manus-storage/${key}` };
++  return { key, url: `/storage/${key}` };
+ }
+ 
+ /** Short-lived URL for any object; public objects get their plain public URL. */
+diff --git a/server/storageSigning.test.ts b/server/storageSigning.test.ts
+index a30631b..075aec4 100644
+--- a/server/storageSigning.test.ts
++++ b/server/storageSigning.test.ts
+@@ -45,10 +45,10 @@ describe("bucket routing", () => {
+ });
+ 
+ describe("storage on Supabase", () => {
+-  it("uploads to the bucket for the key and keeps the /manus-storage URL shape", async () => {
++  it("uploads to the bucket for the key and returns the /storage URL shape", async () => {
+     const { key, url } = await storagePut("/profile-photos/5/photo.jpeg", Buffer.from("x"), "image/jpeg");
+     expect(key).toMatch(/^profile-photos\/5\/photo_[0-9a-f]{8}\.jpeg$/);
+-    expect(url).toBe(`/manus-storage/${key}`);
++    expect(url).toBe(`/storage/${key}`);
+     expect(sb.upload).toHaveBeenCalledWith(
+       PRIVATE_BUCKET,
+       key,
+@@ -65,7 +65,7 @@ describe("storage on Supabase", () => {
+   it("storageGet returns the proxy path without calling Supabase", async () => {
+     expect(await storageGet("/profile-photos/1/a.jpeg")).toEqual({
+       key: "profile-photos/1/a.jpeg",
+-      url: "/manus-storage/profile-photos/1/a.jpeg",
++      url: "/storage/profile-photos/1/a.jpeg",
+     });
+     expect(sb.from).not.toHaveBeenCalled();
+   });
+-- 
+2.43.0
+
