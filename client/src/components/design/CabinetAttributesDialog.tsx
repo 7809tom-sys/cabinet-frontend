@@ -489,7 +489,7 @@ export function CabinetAttachedFillerControls({
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <h4 className="text-sm font-semibold text-amber-950">Attached fillers</h4>
-          <p className="text-[11px] text-amber-900/80">Choose ⅛″–6″ installed cuts only where this cabinet meets a wall or another cabinet. Short cuts use real CabinetDealz filler stock.</p>
+          <p className="text-[11px] text-amber-900/80">Choose ⅛″–6″ installed cuts only where this cabinet meets a wall or another cabinet. Short cuts use real filler stock from the selected line.</p>
         </div>
         {value.needsReview && <Badge className="border border-destructive/30 bg-destructive/10 text-destructive hover:bg-destructive/10">Review exposed filler</Badge>}
       </div>

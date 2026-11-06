@@ -40,7 +40,8 @@ describe("Auto-Design in the More sheet (tablet and phone)", () => {
 
   it("keeps the desktop toolbar button and dialogs on the same affiliate audience gate", () => {
     expect(pageSource).toContain('data-testid="admin-auto-design-auto-build"');
-    expect(pageSource).toContain("const autoDesignAvailable = isAdmin || Boolean(affiliateSlug);");
+    expect(pageSource).toContain("const autoDesignAudienceAllowed = isAdmin || Boolean(affiliateSlug);");
+    expect(pageSource).toContain('const autoDesignAvailable = autoDesignAudienceAllowed && roomType === "kitchen";');
     expect(pageSource).toMatch(/\{autoDesignAvailable && \(\s*<AutoDesignDialog/);
     expect(pageSource).toContain("seatAutoDesignCornerFromCatalog");
     // The corner chooser is part of Auto-Design and sits behind the same audience

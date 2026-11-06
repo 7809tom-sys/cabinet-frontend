@@ -348,7 +348,7 @@ export function SurfacesPickerDialog({
     { enabled: floorMosaicPage2Enabled },
   );
   const { data: bathroomData, isLoading: bathroomLoading } = trpc.surfaces.recommended.useQuery(
-    { role: activeBathroomRole, limit: activeBathroomRole === "flooring" ? 500 : PAGE_LIMIT },
+    { role: activeBathroomRole, limit: activeBathroomRole === "flooring" ? 500 : PAGE_LIMIT, affiliateSlug: affiliateSlug ?? undefined },
     { enabled: open && isBathroom && !browsingTileMosaic },
   );
 
@@ -359,7 +359,7 @@ export function SurfacesPickerDialog({
   );
   const preferredQueryEnabled = open && category === "Preferred" && preferredIds.length > 0;
   const { data: verifiedPreferredProducts, isLoading: preferredProductsLoading } = trpc.surfaces.designerByIds.useQuery(
-    { ids: preferredIds },
+    { ids: preferredIds, affiliateSlug: affiliateSlug ?? undefined },
     { enabled: preferredQueryEnabled },
   );
   // Until cabinet-backend#27 deploys, designerByIds still drops a saved mosaic
@@ -367,7 +367,7 @@ export function SurfacesPickerDialog({
   // catalog row without that gate; Tile & Mosaic and flooring-plank gaps are
   // merged in. After deploy, designerByIds returns those photo planks itself.
   const { data: catalogPreferredProducts, isLoading: catalogPreferredLoading } = trpc.surfaces.byIds.useQuery(
-    { ids: preferredIds },
+    { ids: preferredIds, affiliateSlug: affiliateSlug ?? undefined },
     { enabled: preferredQueryEnabled },
   );
   const preferredItems = useMemo(() => mergePreferredPaletteProducts(

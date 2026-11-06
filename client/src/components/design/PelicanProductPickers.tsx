@@ -140,14 +140,17 @@ export function PelicanCountertopPicker({
   selectedSurfaces,
   onSelect,
   onBrowseAll,
+  affiliateSlug,
 }: {
   selectedSurfaces: SelectedSurface[];
   onSelect: (item: SelectedSurface) => void;
   onBrowseAll: () => void;
+  /** Storefront scope, so an affiliate Designer prices its own retail. */
+  affiliateSlug?: string | null;
 }) {
   // Slabs are sold as separate SKUs per size ("3cm" and "3cm Super Jumbo", Left
   // and Right cuts), so request the whole palette and fold it into color cards.
-  const { data, isLoading } = trpc.surfaces.recommended.useQuery({ role: "countertop", limit: 60 });
+  const { data, isLoading } = trpc.surfaces.recommended.useQuery({ role: "countertop", limit: 60, affiliateSlug: affiliateSlug ?? undefined });
   const items = (data ?? []) as RecItem[];
   const configurations = useMemo(() => groupPelicanConfigurations(items), [items]);
   const selectedIds = useMemo(() => new Set(selectedSurfaces.map((s) => s.id)), [selectedSurfaces]);
@@ -237,12 +240,15 @@ export function PelicanSinkPicker({
   selectedSurfaces,
   onSelect,
   onBrowseAll,
+  affiliateSlug,
 }: {
   selectedSurfaces: SelectedSurface[];
   onSelect: (item: SelectedSurface) => void;
   onBrowseAll: () => void;
+  /** Storefront scope, so an affiliate Designer prices its own retail. */
+  affiliateSlug?: string | null;
 }) {
-  const { data, isLoading } = trpc.surfaces.recommended.useQuery({ role: "sink", limit: 200 });
+  const { data, isLoading } = trpc.surfaces.recommended.useQuery({ role: "sink", limit: 200, affiliateSlug: affiliateSlug ?? undefined });
   // Only source-verified sinks are eligible, and that test runs on the exact SKU
   // before sinks are folded into one card per model.
   const configurations = useMemo(

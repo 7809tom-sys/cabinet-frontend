@@ -15,7 +15,8 @@ describe("Designer island countertop and selection summary", () => {
   });
 
 	it("passes separate island material options and render inputs without replacing the perimeter material", () => {
-	  expect(source).toContain('trpc.surfaces.recommended.useQuery({ role: "countertop", limit: 200 })');
+	  // The countertop list is priced for the storefront scope too.
+	  expect(source).toContain('trpc.surfaces.recommended.useQuery({ role: "countertop", limit: 200, affiliateSlug: affiliateSlug ?? undefined })');
     expect(source).toContain("countertopOptions={countertopProductChoices.map");
     expect(source).toContain("setCountertopSurfaceForScope(current, requestedCountertop, \"island\")");
     expect(source).toContain("islandCountertopMaterialId={countertop ? island?.countertopMaterialId ?? countertopMaterialId : null}");

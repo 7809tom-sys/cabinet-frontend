@@ -5,7 +5,9 @@ const source = readFileSync(new URL("./DesignTool.tsx", import.meta.url), "utf8"
 
 describe("Designer visual faucet selection", () => {
   it("requests the complete bounded measured-faucet palette instead of six suggestions", () => {
-    expect(source).toContain('{ role: bathroomSinkDialog ? "vanity-faucet" : "faucet", limit: 200 }');
+    // The faucet list also carries the storefront scope, or an affiliate
+    // Designer shows the platform price for its own vanity faucets.
+    expect(source).toContain('{ role: bathroomSinkDialog ? "vanity-faucet" : "faucet", limit: 200, affiliateSlug: affiliateSlug ?? undefined }');
   });
 
   it("delegates every verified kitchen or vanity faucet to the reusable visual picker without a local six-card slice", () => {

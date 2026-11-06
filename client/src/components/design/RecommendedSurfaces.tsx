@@ -162,12 +162,15 @@ function RecommendedRow({
   // accessory suggestions.
   const storefrontCatalog = role === "backsplash";
   const fullFlooringPalette = role === "flooring";
+  // Storefront scope on every Pelican list: without it an affiliate Designer
+  // shows the unmarked platform price for the same floor or fixture its own
+  // catalog sells at the affiliate's retail.
   const flooringRecommended = trpc.surfaces.recommended.useQuery(
-    { role: "flooring", limit: 500 },
+    { role: "flooring", limit: 500, affiliateSlug: affiliateSlug ?? undefined },
     { enabled: fullFlooringPalette },
   );
   const recommended = trpc.surfaces.recommended.useQuery(
-    { role, limit: 200 },
+    { role, limit: 200, affiliateSlug: affiliateSlug ?? undefined },
     { enabled: !storefrontCatalog && !fullFlooringPalette },
   );
   const catalog = trpc.pelican.byCategory.useQuery(

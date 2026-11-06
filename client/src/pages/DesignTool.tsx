@@ -103,6 +103,7 @@ import {
   readFreshDesignRequest,
   skipsDesignerLeadGate,
 } from "@/lib/designerFreshStart";
+import { defaultPaletteTabForRoom, requestedDesignerRoom } from "@/lib/designerRoomEntry";
 import { DESIGNER_CANVAS_CONTAINER_CLASS } from "@/lib/designerLayout";
 import { rotateCustomPlanClockwise } from "@/lib/rotatePlan";
 import { canShowCompactWorkspaceMoveControl } from "@/lib/compactWorkspaceMove";
@@ -554,6 +555,19 @@ function wallNameFor(side: string | null | undefined, room: RoomData): string {
   return custom?.label ?? "drawn";
 }
 
+/**
+ * The room name the Designer's own copy should use. The Designer builds a
+ * kitchen, a bathroom, a laundry, or a closet plan with the same workspace, so
+ * headings that say "kitchen" unconditionally are wrong in every other room.
+ */
+export function designerRoomLabel(roomType: RoomType): string {
+  if (roomType === "bathroom") return "Bathroom";
+  if (roomType === "laundry") return "Laundry";
+  if (roomType === "closet") return "Closet";
+  if (roomType === "other") return "Room";
+  return "Kitchen";
+}
+
 export default function DesignTool(props: { affiliateSlug?: string }) {
   const search = useSearch();
   const scope = resolvedDesignToolStoreScope(props.affiliateSlug, search);
@@ -565,8 +579,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const { user, isAuthenticated } = useAuth();
   const signedInRole = (user as { role?: string | null } | null)?.role ?? null;
   const isAdmin = signedInRole === "admin";
-  useKitchenRuleParameterSync();
   const search = useSearch();
+  // Room type: kitchen cabinets (default), bathroom, laundry, closet parts, or other.
+  // Declared here because the Designer's feature gates (auto-design, palette
+  // defaults) need to read the room before the rest of the workspace state loads.
+  // `?room=bathroom` opens the bathroom Designer directly, so a storefront link
+  // can land there instead of asking the customer to find the tab.
+  const [roomType, setRoomType] = useState<RoomType>(() => requestedDesignerRoom(search) ?? "kitchen");
+  useKitchenRuleParameterSync();
   const storeScope = useMemo(
     () => resolvedDesignToolStoreScope(affiliateSlugProp, search),
     [affiliateSlugProp, search],
@@ -577,11 +597,17 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // THIS request's own bearer token, so two tabs signed in as different people
   // (or a shared browser) never restore each other's unsaved plan.
   const accountId = (user as { id?: number | null } | null)?.id ?? null;
-  // Auto-Design layout is available to CabinetDealz admins and to every affiliate
-  // Designer, including storefront customers on /store/:slug/design and the
-  // affiliate dashboard Designer. The main public Designer stays admin-only.
+  // Auto-Design is the measured KITCHEN build: sink base, range, dishwasher, and
+  // refrigerator anchors. It is available to CabinetDealz admins and to every
+  // affiliate Designer, including storefront customers on /store/:slug/design and
+  // the affiliate dashboard Designer. The main public Designer stays admin-only.
   // There is no per-affiliate off switch for this feature.
-  const autoDesignAvailable = isAdmin || Boolean(affiliateSlug);
+  //
+  // A bathroom, laundry, closet, or other room must never offer it: the dialog
+  // asks for kitchen appliances, and the build fails with "The kitchen appliance
+  // palette is still loading" once a bathroom catalog is in scope.
+  const autoDesignAudienceAllowed = isAdmin || Boolean(affiliateSlug);
+  const autoDesignAvailable = autoDesignAudienceAllowed && roomType === "kitchen";
   // The continuous wall builder is the finished WallBuilder the main Designer
   // already ships. Affiliate storefronts and the affiliate dashboard Designer
   // get the same builder. There is no per-affiliate off switch for this feature.
@@ -1529,7 +1555,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     [selectedSurfaces],
   );
   const { data: verifiedSelectedSurfaceRecords, isSuccess: verifiedSelectedSurfacesLoaded } = trpc.surfaces.designSelectionByIds.useQuery(
-    { ids: selectedSurfaceIdsForMaterialRefresh },
+    { ids: selectedSurfaceIdsForMaterialRefresh, affiliateSlug: affiliateSlug ?? undefined },
     { enabled: selectedSurfaceIdsForMaterialRefresh.length > 0 },
   );
   useEffect(() => {
@@ -1539,7 +1565,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       return refreshed.some((surface, index) => surface !== current[index]) ? refreshed : current;
     });
   }, [verifiedSelectedSurfaceRecords, verifiedSelectedSurfacesLoaded]);
-  const { data: recommendedCountertopProducts } = trpc.surfaces.recommended.useQuery({ role: "countertop", limit: 200 });
+  // Every Pelican list the Designer prices must carry the storefront scope, or an
+  // affiliate shopper sees the unmarked platform price for the same product the
+  // affiliate catalog sells above it.
+  const { data: recommendedCountertopProducts } = trpc.surfaces.recommended.useQuery({ role: "countertop", limit: 200, affiliateSlug: affiliateSlug ?? undefined });
   const countertopProductChoices = useMemo<SelectedSurface[]>(() => {
     const byId = new Map<number, SelectedSurface>();
     ((recommendedCountertopProducts ?? []) as RecItem[]).forEach((item) => byId.set(item.id, {
@@ -1587,7 +1616,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     [selectedSurfaces],
   );
   const { data: matchingFlooringAccessoryRecords, isLoading: matchingFlooringAccessoriesLoading } = trpc.surfaces.matchingFlooringAccessories.useQuery(
-    { flooringProductId: flooringAccessoryPromptFloor?.id ?? 0, limit: 24 },
+    { flooringProductId: flooringAccessoryPromptFloor?.id ?? 0, limit: 24, affiliateSlug: affiliateSlug ?? undefined },
     { enabled: flooringAccessoryPromptFloor != null },
   );
   const matchingFlooringAccessories = useMemo<SelectedSurface[]>(() => (matchingFlooringAccessoryRecords ?? []).map((item) => ({
@@ -2461,7 +2490,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const [masterTracIntroExpanded, setMasterTracIntroExpanded] = useState(false);
   const [towerDialog, setTowerDialog] = useState<{ config: MasterTracTowerConfig; wall: WallSide; startIn: number; editGroupId: string | null } | null>(null);
   const towerCommitInProgressRef = useRef(false);
-  const [paletteType, setPaletteType] = useState<HeightFilterPaletteType>("base");
+  const [paletteType, setPaletteType] = useState<HeightFilterPaletteType>(() => defaultPaletteTabForRoom(requestedDesignerRoom(search) ?? "kitchen"));
   const [catalogCollapseRequest, setCatalogCollapseRequest] = useState<HeightFilterPaletteType | null>("base");
   const [paletteHeightByType, setPaletteHeightByType] = useState<Partial<Record<HeightFilterPaletteType, number | null>>>({});
   const [furniture, setFurniture] = useState<PlacedFurniture[]>([]);
@@ -2775,8 +2804,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     [touchedSheet, collapsedSheet],
   );
 
-  // Room type: kitchen cabinets (default), bathroom, laundry, closet parts, or other.
-  const [roomType, setRoomType] = useState<RoomType>("kitchen");
+  // Room type lives with the URL/gate state above the feature gates; see the
+  // declaration in this component's opening block.
 
   // Pricing selectors. `styleId` is the ACTIVE door style — it drives the
   // palette filter, pricing, and the finish stamped onto newly-placed cabinets.
@@ -3726,11 +3755,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   });
   const sinkBaseOutOfStock = inventory.notices.some((notice) => sinkBaseNominalWidth(notice.masterCode) != null);
   const { data: automaticSinkProducts, isFetched: automaticSinkProductsFetched, isLoading: automaticSinkProductsLoading } = trpc.surfaces.recommended.useQuery(
-    { role: "sink", limit: 6 },
+    { role: "sink", limit: 6, affiliateSlug: affiliateSlug ?? undefined },
     { enabled: sinkBaseOutOfStock },
   );
   const { data: automaticFaucetProducts, isFetched: automaticFaucetProductsFetched, isLoading: automaticFaucetProductsLoading } = trpc.surfaces.recommended.useQuery(
-    { role: "faucet", limit: 24 },
+    { role: "faucet", limit: 24, affiliateSlug: affiliateSlug ?? undefined },
     { enabled: sinkBaseOutOfStock },
   );
   const sinkBaseSwapSuppressedRef = useRef(new Set<string>());
@@ -4091,8 +4120,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       toast.error(message);
       return { ok: false as const, message };
     };
-    if (!autoDesignAvailable) {
+    if (!autoDesignAudienceAllowed) {
       return fail("Auto-Design layout is available in affiliate Designers and for CabinetDealz admins.");
+    }
+    if (roomType !== "kitchen") {
+      return fail("Auto-Design builds a measured kitchen. Choose the Kitchen room type to use it; bathroom vanities and fixtures are placed from the Vanity and Fixtures tabs.");
     }
     if (placedRef.current.some(isRefrigeratorAppliance)) {
       return fail(AUTO_DESIGN_REFRIGERATOR_NOTE);
@@ -4235,7 +4267,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       promptAutoDesignSinkAfterBuild(builtSinkBase);
     }
     return { ok: true as const };
-    }, [appliancePalette, autoDesignTallPicks, autoFillCabinets, autoFillCabinetsLoading, autoDesignAvailable, autoDesignBlockingPlacements.length, catalogFillers, dishwasherSidePreference, liveMasterCabinets, openings, placedRef, promptAutoDesignSinkAfterBuild, refrigeratorSurroundCatalog, room, setCountertop, setOpenings, setPlaced, setRoom, tallCabPool, wallCabPool, wallCabPoolLoading]);
+    }, [appliancePalette, autoDesignTallPicks, autoFillCabinets, autoFillCabinetsLoading, autoDesignAvailable, autoDesignAudienceAllowed, autoDesignBlockingPlacements.length, catalogFillers, dishwasherSidePreference, liveMasterCabinets, openings, placedRef, promptAutoDesignSinkAfterBuild, refrigeratorSurroundCatalog, room, roomType, setCountertop, setOpenings, setPlaced, setRoom, tallCabPool, wallCabPool, wallCabPoolLoading]);
 
   /**
    * The second half of an Auto-Design build. Measured appliances are already
@@ -5178,6 +5210,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   }), [placed, styleId, pricePairs.length, priceRowsFetched, priceRowsFetching, unitPriceFor, pricingStyleIdFor]);
   const missingPriceUids = missingPriceSummary.uids;
   const hasPendingCabinetPrices = missingPriceSummary.count > 0;
+  // A placed cabinet has no price until its source query answers. That window is
+  // a lookup in flight, not an unavailable product: missingPriceSummary already
+  // stays empty until the query settles, so the catalog lists a still-loading
+  // price as "Pricing…" and reserves "Unavailable" for a real missing price.
+  const cabinetPricingInFlight = pricePairs.length > 0 && (!priceRowsFetched || priceRowsFetching);
   // A selected cabinet is part of the customer’s design whether its source
   // price lookup is ready or not. Keep it on the canvas and send an explicit
   // pending-price Cart line; secure Order Review and the server still require a
@@ -5667,7 +5704,13 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       // Restore the supply-line lock if the saved design was pinned to one.
       setLockedDistributorId(restoredStyle.distributorId);
       if (d.roomType && ["kitchen", "bathroom", "laundry", "closet", "other"].includes(d.roomType)) {
-        setRoomType(d.roomType as RoomType);
+        const savedRoom = d.roomType as RoomType;
+        setRoomType(savedRoom);
+        // Open the tab that room is designed from; a saved bathroom plan used to
+        // reopen on the kitchen Base tab.
+        if (savedRoom === "bathroom") setPaletteType("vanity");
+        else if (savedRoom === "closet") setPaletteType("closetparts");
+        else if (savedRoom === "laundry") setPaletteType("appliance");
       }
       // Restore the exact final Pelican surface & fixture picks and re-sync the
       // built-in 2D-render materials (floor/backsplash/countertop) from them.
@@ -10081,7 +10124,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const [pendingRangeTopType, setPendingRangeTopType] = useState<"gas" | "electric" | "induction" | "smooth-top" | null>(null);
   // Recommended range top products fetched from Stone Creek catalog.
   const { data: rangeTopProducts } = trpc.surfaces.recommended.useQuery(
-    { role: "range-top", limit: 6 },
+    { role: "range-top", limit: 6, affiliateSlug: affiliateSlug ?? undefined },
     { enabled: !!sinkBaseDialog }
   );
   // Bathroom vanities use Pelican's separately verified porcelain basin palette,
@@ -10097,14 +10140,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     // The whole role is requested (server cap 200): Pelican sells each gauge and
     // corner radius as its own SKU, and the dialog folds them into one card per
     // model after the exact-SKU compatibility and fit filters below.
-    { role: bathroomSinkDialog ? "vanity-sink" : "sink", limit: 200 },
+    { role: bathroomSinkDialog ? "vanity-sink" : "sink", limit: 200, affiliateSlug: affiliateSlug ?? undefined },
     { enabled: !!sinkBaseDialog || selectedFarmSinkBaseForGuide }
   );
   // Fetch every source-priced, source-measured faucet supported by this
   // sink-mounted Designer workflow. The compact picker initially shows six,
   // then explicitly exposes the remaining verified choices.
   const { data: faucetBaseProducts, isLoading: faucetProductsLoading } = trpc.surfaces.recommended.useQuery(
-    { role: bathroomSinkDialog ? "vanity-faucet" : "faucet", limit: 200 },
+    { role: bathroomSinkDialog ? "vanity-faucet" : "faucet", limit: 200, affiliateSlug: affiliateSlug ?? undefined },
     { enabled: !!sinkBaseDialog }
   );
   // Auto-Design faucet picker. Same catalog the Products page and the Designer
@@ -10125,6 +10168,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       category: "Sinks & Faucets" as never,
       scope: "designer",
       subCategory: "Faucets",
+      affiliateSlug: affiliateSlug ?? undefined,
       limit: 200,
       offset: 0,
     },
@@ -10135,7 +10179,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     isLoading: recommendedFaucetCatalogLoading,
     isError: recommendedFaucetCatalogError,
   } = trpc.surfaces.recommended.useQuery(
-    { role: "faucet", limit: 200 },
+    { role: "faucet", limit: 200, affiliateSlug: affiliateSlug ?? undefined },
     { enabled: autoDesignFaucetCatalogEnabled, staleTime: 60_000 },
   );
   const autoDesignFaucetProducts = useMemo(() => {
@@ -10198,7 +10242,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     const fillKey = [faucetEpoch, autoDesignFaucetProducts.map((product) => product.id).join(","), sinks.map((sink) => sink.uid).sort().join(",")].join("|");
     if (faucetFillRanRef.current.has(fillKey)) return;
     faucetFillRanRef.current = new Set([fillKey]);
-    const result = ensureMandatorySinkFaucets(sinks, autoDesignFaucetProducts);
+    const result = ensureMandatorySinkFaucets(sinks, autoDesignFaucetProducts, { bathroom: roomType === "bathroom" });
     if (result.attachedUids.length === 0) return;
     setSinks(result.sinks);
     if (result.source === "catalog") {
@@ -10216,7 +10260,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     if (raised.notes.length > 0 || raised.openings !== openings) setOpenings(raised.openings);
     announceFaucetWindowNotes(raised.notes);
     for (const note of result.notes) toast.info(note, { duration: 8000 });
-  }, [announceFaucetWindowNotes, autoDesignFaucetProducts, faucetEpoch, openings, room, setOpenings, setSinks, sinks]);
+  }, [announceFaucetWindowNotes, autoDesignFaucetProducts, faucetEpoch, openings, room, roomType, setOpenings, setSinks, sinks]);
 
   useEffect(() => {
     const product = defaultAutoDesignFaucet(autoDesignFaucetProducts);
@@ -10332,6 +10376,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       category: "Sinks & Faucets" as never,
       scope: "designer",
       subCategory: "Sinks",
+      affiliateSlug: affiliateSlug ?? undefined,
       limit: 200,
       offset: 0,
     },
@@ -10342,7 +10387,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     isLoading: recommendedSinkCatalogLoading,
     isError: recommendedSinkCatalogError,
   } = trpc.surfaces.recommended.useQuery(
-    { role: "sink", limit: 200 },
+    { role: "sink", limit: 200, affiliateSlug: affiliateSlug ?? undefined },
     { enabled: autoDesignSinkCatalogEnabled, staleTime: 60_000 },
   );
   const autoDesignSinkProducts = useMemo(() => {
@@ -10521,7 +10566,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   }, [liveMasterCabinets, tallCabPool]);
   const autoDesignRangeChoicesList = useMemo(() => autoDesignRangeChoices(appliancePalette), [appliancePalette]);
   const autoDesignRangeSelection = autoDesignRangePick ?? defaultAutoDesignRange(autoDesignRangeChoicesList);  const { data: potFillerProducts } = trpc.surfaces.recommended.useQuery(
-    { role: "pot-filler", limit: 8 },
+    { role: "pot-filler", limit: 8, affiliateSlug: affiliateSlug ?? undefined },
     { enabled: !!potFillerDialog },
   );
   const potFillerRange = useMemo(
@@ -14325,7 +14370,16 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	          if (Array.isArray(d.sinks)) setSinks(d.sinks);
 	          if (Array.isArray(d.potFillers)) setPotFillers(d.potFillers as PotFillerFixture[]);
 	          if (Array.isArray(d.furniture)) setFurniture(d.furniture as PlacedFurniture[]);
-	          if (d.roomType) setRoomType(d.roomType);
+	          if (d.roomType) {
+	            const restoredRoom = d.roomType as RoomType;
+	            setRoomType(restoredRoom);
+	            // The catalog tab is not part of the draft, so a restored bathroom
+	            // plan used to reopen on the kitchen Base tab. Land on the tab that
+	            // room actually shops from.
+	            if (restoredRoom === "bathroom") setPaletteType("vanity");
+	            else if (restoredRoom === "closet") setPaletteType("closetparts");
+	            else if (restoredRoom === "laundry") setPaletteType("appliance");
+	          }
           if (d.activeWall) setActiveWall(d.activeWall);
           setLayoutLocked(!!d.layoutLocked);
           if (Array.isArray(d.lockedWalls)) setLockedWalls(new Set(d.lockedWalls as WallSide[]));
@@ -15641,22 +15695,17 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const automaticSaveNotice = useTransientNotice(automaticSaveAt == null ? "" : String(automaticSaveAt), 5000);
 
   if (!verified) {
+    // The affiliate storefront shell above this Designer already prints the
+    // store name / logo. A second brand row here repeated it verbatim, so the
+    // gate hands its branding to EmailGate instead of stacking another bar.
     return (
       <div className="min-h-full flex flex-col">
-        {affiliateBrand && (
-          <div className="flex items-center gap-3 border-b bg-card px-4 py-3" style={{ borderBottomColor: affiliateAccent, borderBottomWidth: 2 }}>
-            {affiliateBrand.logoUrl ? (
-              <img src={affiliateBrand.logoUrl} alt={affiliateBrand.storeName} className="h-8 max-w-40 object-contain" />
-            ) : (
-              <span className="text-base font-bold" style={{ color: affiliatePrimary }}>{affiliateBrand.storeName}</span>
-            )}
-          </div>
-        )}
         <EmailGate
           onVerified={handleVerified}
           brandName={affiliateBrand?.storeName}
           primaryColor={affiliateBrand?.primaryColor}
           accentColor={affiliateBrand?.accentColor}
+          roomLabel={designerRoomLabel(roomType)}
         />
       </div>
     );
@@ -18371,11 +18420,15 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         >
           <div className="p-3 border-b border-border">
             {/* Room type: drives the palette (Kitchen appliances vs bath/laundry
-                fixtures vs Closet modular parts). */}
-            <div className="grid grid-cols-5 gap-0.5 rounded-lg border border-border p-0.5 bg-muted/30 mb-2">
+                fixtures vs Closet modular parts). Five equal cells were narrower
+                than the word "Bathroom" in the catalog column, so the longest
+                label was clipped; flex cells keep every label readable. */}
+            <div className="flex flex-wrap gap-0.5 rounded-lg border border-border p-0.5 bg-muted/30 mb-2" role="tablist" aria-label="Room type">
               {ROOM_TYPES.map((rt) => (
                 <button
                   key={rt.value}
+                  title={t(("dt_room_" + rt.value) as SiteStringKey)}
+                  data-testid={`designer-room-type-${rt.value}`}
 	                  onClick={() => {
 	                    if (rt.value === "closet" && !affiliateSlug && !placedRef.current.some((item) => isClosetPart(item.masterCode))) {
 	                      // New Closet plans belong in Studio. An existing MasterTrac
@@ -18397,7 +18450,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                         : "base",
                     );
                   }}
-                  className={`py-1.5 rounded-md text-[10px] font-semibold transition-colors ${
+                  className={`min-w-0 shrink-0 whitespace-nowrap px-1.5 py-1.5 rounded-md text-[10px] font-semibold transition-colors ${
                     roomType === rt.value ? "bg-[#a87f33] text-white" : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
@@ -18557,7 +18610,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 		                <div data-testid="bathroom-vanity-door-style-picker">
 		                  <label className="mb-1 block text-[10px] font-semibold text-stone-700" id="bath-vanity-style-label">Door style / color</label>
 	                  <Select value={styleId == null ? "" : String(styleId)} onValueChange={(value) => setSlotStyle(activeSlot, Number(value))} disabled={cabinetsLocked || displayUniqueDoorStyles.length === 0}>
-	                    <SelectTrigger aria-labelledby="bath-vanity-style-label" className="h-9 w-full min-w-0 bg-white text-xs"><SelectValue placeholder={catalogDistributorScopeId == null ? "Choose a distributor or door style" : "Choose a door style"} /></SelectTrigger>
+	                    <SelectTrigger aria-labelledby="bath-vanity-style-label" className="h-9 w-full min-w-0 bg-white text-xs"><SelectValue placeholder="Choose a door style" /></SelectTrigger>
 		                    <SelectContent className="max-h-[min(65vh,26rem)]">
 		                      {displayUniqueDoorStyles.map((style) => (
 		                        <SelectItem key={style.id} value={String(style.id)}>
@@ -20596,10 +20649,22 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                       <div className="flex items-center gap-1 shrink-0">
                         <div className="text-right">
 	                          <div
-	                              className={`font-semibold leading-none ${(styleId || isClosetPart(g.sample.masterCode)) && lineTotal == null && !isLayoutAppliance ? "text-rose-700" : ""}`}
+	                              className={`font-semibold leading-none ${(styleId || isClosetPart(g.sample.masterCode)) && lineTotal == null && !isLayoutAppliance && !cabinetPricingInFlight ? "text-rose-700" : ""}`}
                               title={isLayoutAppliance ? "Appliance price is not included in the cabinet estimate." : undefined}
                             >
-	                            {styleId || isClosetPart(g.sample.masterCode) ? (isLayoutAppliance ? "Not included" : lineTotal != null ? `$${lineTotal.toFixed(2)}` : "Unavailable") : "—"}
+	                            {styleId || isClosetPart(g.sample.masterCode)
+	                              ? isLayoutAppliance
+	                                ? "Not included"
+	                                : lineTotal != null
+	                                  ? `$${lineTotal.toFixed(2)}`
+	                                  // A price lookup in flight is not a missing price.
+	                                  // Saying "Unavailable" while the request is still
+	                                  // running reads as a broken catalog, and it flashed
+	                                  // for several seconds after every placement.
+	                                  : cabinetPricingInFlight
+	                                    ? "Pricing…"
+	                                    : "Unavailable"
+	                              : "—"}
 	                          </div>
 	                          {masterTracProduct(g.sample.masterCode) && <div className="mt-0.5 text-[9px] text-muted-foreground">2022 List · reference</div>}
 	                          {isLayoutAppliance && (
@@ -21204,7 +21269,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                         setCountertop(false); setSinks([]); setSelectedSinkUid(null); toast.success("Countertop removed");
                       }}><X className="h-3 w-3" /> Remove</button>
                     </div>
-                    <PelicanCountertopPicker selectedSurfaces={selectedSurfaces} onSelect={(item) => addRecommendedSurface(item, "countertop")} onBrowseAll={() => { setBathroomCatalogMode("surfaces"); setSurfacesOpen(true); }} />
+                    <PelicanCountertopPicker selectedSurfaces={selectedSurfaces} affiliateSlug={affiliateSlug} onSelect={(item) => addRecommendedSurface(item, "countertop")} onBrowseAll={() => { setBathroomCatalogMode("surfaces"); setSurfacesOpen(true); }} />
                     <p className="text-xs font-semibold text-foreground">{t("dt_bs_edge_profile")}</p>
                     <div className="grid grid-cols-4 gap-1.5">
                       {EDGE_PROFILES.map((ep) => (
@@ -21255,6 +21320,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                  <>
 	                    <p className="text-xs font-semibold text-foreground mt-3 mb-2">{t("dt_bs_add_sink")}</p>
 	                    <PelicanSinkPicker
+                  affiliateSlug={affiliateSlug}
                   selectedSurfaces={selectedSurfaces}
                   onSelect={(item) => {
                     const owner = selectedCab && isSinkBaseCabinet(selectedCab) ? selectedCab : null;
@@ -23042,7 +23108,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                   <DialogHeader>
                     <DialogTitle>Choose attached fillers</DialogTitle>
                     <DialogDescription>
-                      Choose an optional filler of any size from ⅛″ to 6″ on the left, the right, or both sides of {attachedFillerPrompt.cabinet.masterCode}. Each installed strip uses existing CabinetDealz filler stock and its authorized price.
+                      Choose an optional filler of any size from ⅛″ to 6″ on the left, the right, or both sides of {attachedFillerPrompt.cabinet.masterCode}. Each installed strip uses the selected line’s existing filler stock and its authorized price.
                     </DialogDescription>
                   </DialogHeader>
                   <div className="space-y-3">

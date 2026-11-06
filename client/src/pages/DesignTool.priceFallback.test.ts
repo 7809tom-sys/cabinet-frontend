@@ -34,13 +34,16 @@ describe("Designer verified price fallback", () => {
   });
 
   it("marks an unpriced cabinet unavailable rather than presenting a vague N/A amount", () => {
-    expect(source).toContain('lineTotal != null ? `$${lineTotal.toFixed(2)}` : "Unavailable"');
-    expect(source).not.toContain('lineTotal != null ? `$${lineTotal.toFixed(2)}` : "N/A"');
+    // A price still being fetched is not an unavailable cabinet: the label reads
+    // "Pricing…" until the source answers, and "Unavailable" only afterwards.
+    expect(source).toContain("const cabinetPricingInFlight = pricePairs.length > 0");
+    expect(source).toMatch(/: cabinetPricingInFlight\s*\n\s*\? "Pricing…"\s*\n\s*: "Unavailable"/);
+    expect(source).not.toContain('"N/A"');
   });
 
   it("labels an unpriced visual-only appliance as excluded instead of an unavailable cabinet", () => {
     expect(source).toContain('const isLayoutAppliance = g.sample.placement === "appliance"');
-    expect(source).toContain('isLayoutAppliance ? "Not included"');
+    expect(source).toMatch(/\? isLayoutAppliance\s*\n\s*\? "Not included"/);
     expect(source).toContain("Appliance price not included");
     expect(source).toContain("{!isLayoutAppliance && <Popover>");
   });
