@@ -13,6 +13,7 @@
 import { isWallBlindCornerCabinet } from "./cabinetGraphics";
 import type { AutoBuildCornerCandidate } from "./autoDesignCornerStage";
 import type { DesignCabinet } from "./design";
+import { kitchenRuleText } from "./kitchenRuleParameters";
 
 /** The corner families a homeowner can be offered. */
 export type CornerType =
@@ -66,6 +67,20 @@ export type CornerChoiceGroup = {
 };
 
 const CORNER_TYPE_ORDER: CornerType[] = ["lazy-susan", "diagonal", "blind", "angled-l", "corner-drawer"];
+
+/**
+ * The corner preference order the admin saved, filtered to real corner types.
+ * A type the admin typed that the Designer does not know is dropped rather than
+ * breaking the list, and a list with nothing usable keeps the code default.
+ */
+export function cornerTypeOrder(): CornerType[] {
+  const configured = kitchenRuleText("corner_preference_order")
+    .split(",")
+    .map((entry) => entry.trim().toLowerCase())
+    .filter((entry): entry is CornerType => (CORNER_TYPE_ORDER as readonly string[]).includes(entry));
+  const unique = [...new Set(configured)];
+  return unique.length ? unique : [...CORNER_TYPE_ORDER];
+}
 
 function numericWidth(value: string | number | null | undefined): number {
   const parsed = Number(value);
@@ -132,7 +147,7 @@ export function cornerChoiceGroups(
     });
     groups.set(type, list);
   }
-  return CORNER_TYPE_ORDER.flatMap((type) => {
+  return cornerTypeOrder().flatMap((type) => {
     const list = groups.get(type);
     if (!list?.length) return [];
     return [{

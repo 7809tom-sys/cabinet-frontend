@@ -2,15 +2,15 @@ import {
   overRangeMicrowaveAttachment, isHoodOverRangePair, isMicrowaveOverRangePair,
   type DesignCabinet, type PlacedCabinet, type RoomData,
 } from "./design";
-import { kitchenRuleNumber } from "./kitchenRuleParameters";
+import { kitchenRuleNumber, KITCHEN_RULE_PARAMETER_DEFAULTS } from "./kitchenRuleParameters";
 
-/** Every hood except the 42 inch hood sits with its bottom 54 inches off the floor. */
-export const AUTO_DESIGN_STANDARD_HOOD_BOTTOM_IN = 54;
+/** Every hood except the 42 inch hood sits with its bottom at this height. */
+export const AUTO_DESIGN_STANDARD_HOOD_BOTTOM_IN = KITCHEN_RULE_PARAMETER_DEFAULTS.standard_hood_bottom_in;
 
-/** Only a 42 inch hood is raised so its bottom is at the owner 60 inch datum. */
+/** Only a 42 inch hood is raised to the owner hood bottom datum. */
 export function autoDesignHoodMountBottom(widthIn: number): number {
   if (Math.abs(widthIn - 42) <= 0.5) return kitchenRuleNumber("hood_bottom_in");
-  return AUTO_DESIGN_STANDARD_HOOD_BOTTOM_IN;
+  return kitchenRuleNumber("standard_hood_bottom_in");
 }
 
 export type AutoDesignRangeHoodResult =

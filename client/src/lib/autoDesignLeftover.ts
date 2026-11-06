@@ -10,7 +10,8 @@
  * tight and fillers come last, and a bare 1–1.5 inch gap is left at skins rather than forced
  * shut with a sliver.
  */
-import { AUTO_DESIGN_FILLER_MAX_IN } from "./autoDesignSeamFillers";
+import { autoDesignFillerMaxIn } from "./autoDesignSeamFillers";
+import { kitchenRuleNumber, KITCHEN_RULE_PARAMETER_DEFAULTS } from "./kitchenRuleParameters";
 import {
   COLLISION_EPSILON_IN,
   cabinetWall,
@@ -28,8 +29,13 @@ import {
 /** A gap 1–1.5 inches wide is left bare at a skin instead of being forced shut. */
 export const LEFT_SKIN_BARE_GAP_MIN_IN = 1;
 export const LEFT_SKIN_BARE_GAP_MAX_IN = 1.5;
-/** Smallest real base the line is expected to sell for a narrow leftover. */
-export const LEFTOVER_NARROW_CABINET_MAX_IN = 12;
+/** Smallest real base the line is expected to sell for a narrow leftover (Kitchen Rules `narrow_cabinet_max_in`). */
+export const LEFTOVER_NARROW_CABINET_MAX_IN = KITCHEN_RULE_PARAMETER_DEFAULTS.narrow_cabinet_max_in;
+
+/** Widest cabinet that still counts as narrow enough to close a leftover. */
+export function leftoverNarrowCabinetMaxIn(): number {
+  return kitchenRuleNumber("narrow_cabinet_max_in");
+}
 
 export type LeftoverResolution =
   | {
@@ -109,7 +115,7 @@ export function resolveLeftoverGap(input: {
 }): LeftoverResolution {
   const gap = Math.round(input.gapIn * 1000) / 1000;
   const start = Math.round(input.startIn * 1000) / 1000;
-  const fillerMax = input.fillerMaxIn ?? AUTO_DESIGN_FILLER_MAX_IN;
+  const fillerMax = input.fillerMaxIn ?? autoDesignFillerMaxIn();
   if (!(gap > COLLISION_EPSILON_IN)) return { kind: "leave-bare", widthIn: 0, startIn: start, reason: "no gap" };
 
   if (input.cappedByRefrigeratorPanel) {
@@ -154,7 +160,7 @@ export function resolveLeftoverGap(input: {
 
   // 2) A real narrow cabinet plus a small filler finishes the last inches.
   const narrow = input.catalog
-    .filter((row) => dim(row.width, 0) > 0 && dim(row.width, 0) <= LEFTOVER_NARROW_CABINET_MAX_IN)
+    .filter((row) => dim(row.width, 0) > 0 && dim(row.width, 0) <= leftoverNarrowCabinetMaxIn())
     .map((row) => ({ row, width: dim(row.width, 0) }))
     .filter((entry) => entry.width <= gap + COLLISION_EPSILON_IN)
     .filter((entry) => gap - entry.width <= fillerMax + COLLISION_EPSILON_IN)
@@ -224,7 +230,7 @@ export function refrigeratorPanelAtEdge(input: {
 
 /** The gap widths worth acting on: bigger than filler alone, smaller than a run. */
 export function leftoverGapIsActionable(gapIn: number): boolean {
-  return gapIn > AUTO_DESIGN_FILLER_MAX_IN + COLLISION_EPSILON_IN && gapIn <= 48;
+  return gapIn > autoDesignFillerMaxIn() + COLLISION_EPSILON_IN && gapIn <= 48;
 }
 
 /** Catalog widths available for a wider neighbour, for review text. */
