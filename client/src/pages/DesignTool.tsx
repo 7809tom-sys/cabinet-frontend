@@ -270,6 +270,7 @@ import {
   type CatalogHardwareSelection,
 } from "@/lib/hardware";
 import { HardwareCatalogPicker } from "@/components/design/HardwareCatalogPicker";
+import { CanvasActionRail } from "@/components/design/CanvasActionRail";
 import { isPanelPaletteItem } from "./designToolPanels";
 import { normalizePaletteSearch, matchesPaletteSearch, matchesPaletteTextOrSize } from "@/lib/paletteSearch";
 import { searchCatalogItems } from "@shared/catalogCodeSearch";
@@ -15015,8 +15016,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       document.removeEventListener("webkitfullscreenchange", onFullscreenChange as EventListener);
     };
   }, [canvasOnly]);
-  const toggleCanvasOnly = useCallback(() => {
-    const entering = !canvasOnly;
+  const toggleCanvasOnly = useCallback(() => {    const entering = !canvasOnly;
     setCanvasOnly(entering);
     const element = canvasImmersionRootRef.current;
     if (!element) return;
@@ -15214,6 +15214,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // (Generic flooring/backsplash swatch sheets removed — surfaces now come from
   //  real Pelican recommendations in the "Surfaces" palette tab.)
   const [hardwareSheetOpen, setHardwareSheetOpen] = useState(false);
+  // Bumped by the floating canvas rail to open the SAME Hardware Resources
+  // picker the toolbar and the phone sheet use. No second implementation.
+  const [hardwarePickerSignal, setHardwarePickerSignal] = useState(0);
   const [trimSheetOpen, setTrimSheetOpen] = useState(false);
   // Flag: set to true when a cabinet is freshly placed from the palette so the
   // edit sheet does NOT auto-open. Only open the sheet when the user taps an
@@ -16085,6 +16088,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           onClear={() => setCatalogHardwareSelection(null)}
           affiliateSlug={affiliateSlug}
           compact={isTabletWorkspace}
+          openSignal={hardwarePickerSignal}
         />
         {roomType !== "closet" && (
           <Button
@@ -19258,6 +19262,21 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	            side-panel margins so the 3D stage fills the viewport; the renderer
 	            re-measures through its own ResizeObserver. */}
 	        <div ref={canvasExportRef} data-testid="designer-canvas" className={canvasOnly ? "relative flex flex-1 min-w-0 min-h-0 flex-col overflow-hidden" : DESIGNER_CANVAS_CONTAINER_CLASS}>
+	          {/* Fast path for the only two actions the owner uses. It floats over
+	              the canvas, stays visible in canvas-only mode, and calls the same
+	              handlers as the toolbar buttons. Hidden on phones, where the
+	              bottom action strip already carries both. */}
+	          <CanvasActionRail
+	            hidden={isMobile}
+	            onAddCabinet={() => {
+	              setPaletteType(paletteType === "closetparts" ? "closetparts" : paletteType);
+	              setMobilePanel("catalog");
+	            }}
+	            onAddHardware={() => setHardwarePickerSignal((signal) => signal + 1)}
+	            addCabinetDisabled={layoutLocked}
+	            addCabinetDisabledReason={layoutLocked ? t("dt_sh_unlock_to_edit_room") : undefined}
+	            addCabinetLabel={paletteType === "closetparts" ? "Add closet parts" : "Add cabinet"}
+	          />
 	          {showCountertopToast && !((cornerTowerBoard || rodTowerBoard) && (viewMode === "threeD" || viewMode === "hybrid")) && ((viewMode === "plan" && countertop)
 	            || ((viewMode === "threeD" || viewMode === "hybrid") && !!resolvedInteractive3dScene)) && (
 	            <div data-testid="countertop-geometry-loading" role="status" aria-live="polite"
