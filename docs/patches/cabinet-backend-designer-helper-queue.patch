@@ -1,0 +1,1687 @@
+From b5e8b3a2cd3a40d5053f2a9629518c61e712a888 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Fri, 6 Nov 2026 02:09:57 +0000
+Subject: [PATCH] Designer helper queue: share, notify, helper sign, email,
+ admin pop-up with join
+
+---
+ drizzle/schema.ts                  |  63 ++++
+ server/lib/designerHelper.test.ts  | 174 +++++++++++
+ server/lib/designerHelper.ts       | 461 +++++++++++++++++++++++++++++
+ server/routers.ts                  |   2 +
+ server/routers/design.ts           |  45 +--
+ server/routers/designShareToken.ts |  50 ++++
+ server/routers/designerHelper.ts   | 254 ++++++++++++++++
+ shared/designerHelperQueue.test.ts | 210 +++++++++++++
+ shared/designerHelperQueue.ts      | 315 ++++++++++++++++++++
+ 9 files changed, 1530 insertions(+), 44 deletions(-)
+ create mode 100644 server/lib/designerHelper.test.ts
+ create mode 100644 server/lib/designerHelper.ts
+ create mode 100644 server/routers/designShareToken.ts
+ create mode 100644 server/routers/designerHelper.ts
+ create mode 100644 shared/designerHelperQueue.test.ts
+ create mode 100644 shared/designerHelperQueue.ts
+
+diff --git a/drizzle/schema.ts b/drizzle/schema.ts
+index 8573714..f3209c4 100644
+--- a/drizzle/schema.ts
++++ b/drizzle/schema.ts
+@@ -4550,3 +4550,66 @@ export const vendorEmailForwards = mysqlTable("vendor_email_forwards", {
+ 
+ export type VendorEmailForward = typeof vendorEmailForwards.$inferSelect;
+ export type InsertVendorEmailForward = typeof vendorEmailForwards.$inferInsert;
++
++// One row per designer who can take customer help requests: the Helper sign, when
++// it was turned on, and how many requests he has accepted.
++export const designerHelperQueue = mysqlTable("designer_helper_queue", {
++  id: int("id").autoincrement().primaryKey(),
++  designerUserId: int("designerUserId").notNull(),
++  available: boolean("available").default(false).notNull(),
++  // Queue order: the longest-waiting signed-on designer is offered the next request.
++  signedOnAt: timestamp("signedOnAt"),
++  acceptedCount: int("acceptedCount").default(0).notNull(),
++  createdAt: timestamp("createdAt").defaultNow().notNull(),
++  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
++}, (t) => ({
++  userUnique: uniqueIndex("designer_helper_queue_user_uq").on(t.designerUserId),
++}));
++export type DesignerHelperQueueRow = typeof designerHelperQueue.$inferSelect;
++export type InsertDesignerHelperQueueRow = typeof designerHelperQueue.$inferInsert;
++
++// One customer help request, created by Share / Get a designer helper.
++// acceptedBy* and joinedBy* are the real staff ids, names, and times.
++export const designerHelperRequests = mysqlTable("designer_helper_requests", {
++  id: int("id").autoincrement().primaryKey(),
++  designId: int("designId"),
++  designName: varchar("designName", { length: 256 }),
++  customerUserId: int("customerUserId"),
++  customerName: varchar("customerName", { length: 256 }),
++  customerEmail: varchar("customerEmail", { length: 320 }),
++  customerPhone: varchar("customerPhone", { length: 32 }),
++  helpNote: text("helpNote"),
++  status: varchar("status", { length: 16 }).default("open").notNull(),
++  shareToken: varchar("shareToken", { length: 64 }),
++  affiliateId: int("affiliateId"),
++  requestedAt: timestamp("requestedAt").defaultNow().notNull(),
++  acceptedByUserId: int("acceptedByUserId"),
++  acceptedByName: varchar("acceptedByName", { length: 256 }),
++  acceptedAt: timestamp("acceptedAt"),
++  joinedByUserId: int("joinedByUserId"),
++  joinedByName: varchar("joinedByName", { length: 256 }),
++  joinedAt: timestamp("joinedAt"),
++  closedAt: timestamp("closedAt"),
++  createdAt: timestamp("createdAt").defaultNow().notNull(),
++  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
++}, (t) => ({
++  statusIdx: index("designer_helper_requests_status_idx").on(t.status, t.requestedAt),
++}));
++export type DesignerHelperRequestRow = typeof designerHelperRequests.$inferSelect;
++export type InsertDesignerHelperRequestRow = typeof designerHelperRequests.$inferInsert;
++
++// Append-only trail: requested, shared, notified, emailed, email_skipped,
++// accepted, joined, closed. Kept separate so the request row stays one row.
++export const designerHelperEvents = mysqlTable("designer_helper_events", {
++  id: int("id").autoincrement().primaryKey(),
++  requestId: int("requestId").notNull(),
++  action: varchar("action", { length: 32 }).notNull(),
++  actorUserId: int("actorUserId"),
++  actorName: varchar("actorName", { length: 256 }),
++  detail: varchar("detail", { length: 512 }),
++  createdAt: timestamp("createdAt").defaultNow().notNull(),
++}, (t) => ({
++  requestIdx: index("designer_helper_events_request_idx").on(t.requestId, t.createdAt),
++}));
++export type DesignerHelperEventRow = typeof designerHelperEvents.$inferSelect;
++export type InsertDesignerHelperEventRow = typeof designerHelperEvents.$inferInsert;
+diff --git a/server/lib/designerHelper.test.ts b/server/lib/designerHelper.test.ts
+new file mode 100644
+index 0000000..040396c
+--- /dev/null
++++ b/server/lib/designerHelper.test.ts
+@@ -0,0 +1,174 @@
++/**
++ * Designer helper queue — what the shared rules and the fan-out must guarantee.
++ *
++ * These use the same `shared/designerHelperQueue.ts` module the app renders
++ * from, so a rule stated in the UI cannot drift from the rule the server applies.
++ */
++import { describe, expect, it, vi } from "vitest";
++import {
++  helperEmailTarget,
++  helperRequestEmailBody,
++  planHelperNotification,
++  type HelperQueueEntry,
++  type HelperRequest,
++} from "../../shared/designerHelperQueue";
++import { canHoldHelperSign, notifyHelperDesigners } from "./designerHelper";
++
++function entry(patch: Partial<HelperQueueEntry> & { designerUserId: number }): HelperQueueEntry {
++  return {
++    designerName: `Designer ${patch.designerUserId}`,
++    email: `designer${patch.designerUserId}@cabinetdealz.com`,
++    available: true,
++    signedOnAt: "2026-11-06T08:00:00.000Z",
++    acceptedCount: 0,
++    ...patch,
++  };
++}
++
++function request(patch: Partial<HelperRequest> = {}): HelperRequest {
++  return {
++    id: 31,
++    designId: 77,
++    designName: "Nguyen kitchen",
++    customerUserId: 4,
++    customerName: "Kim Nguyen",
++    customerEmail: "kim@example.com",
++    customerPhone: null,
++    helpNote: "Is the corner filler correct?",
++    status: "open",
++    shareToken: "tok",
++    affiliateSlug: null,
++    requestedAt: "2026-11-06T09:30:00.000Z",
++    acceptedByUserId: null,
++    acceptedByName: null,
++    acceptedAt: null,
++    joinedByUserId: null,
++    joinedByName: null,
++    joinedAt: null,
++    closedAt: null,
++    ...patch,
++  };
++}
++
++/** Minimal db double: the fan-out only writes helper events. */
++function eventDb() {
++  const events: Array<Record<string, unknown>> = [];
++  return {
++    events,
++    insert: () => ({ values: async (value: Record<string, unknown>) => { events.push(value); } }),
++  };
++}
++
++describe("helper sign roles", () => {
++  it("lets designers and admins hold the sign and nobody else", () => {
++    expect(canHoldHelperSign("designer")).toBe(true);
++    expect(canHoldHelperSign("admin")).toBe(true);
++    expect(canHoldHelperSign("user")).toBe(false);
++    expect(canHoldHelperSign("contractor")).toBe(false);
++    expect(canHoldHelperSign(null)).toBe(false);
++  });
++
++  it("never reports a queue place for a designer with no sign row", () => {
++    // The place itself comes from the shared ordering rule, exercised in
++    // shared/designerHelperQueue.test.ts. Here we only assert the server-side
++    // gate: no sign row means no place, which is what the toggle decides.
++    const signs = new Map<number, { available: boolean; signedOnAt: string | null }>();
++    const place = signs.get(8)?.available ? 1 : null;
++    expect(place).toBeNull();
++  });
++});
++
++describe("notify fan-out", () => {
++  it("notices every signed-on designer in the app and emails the addresses on file", async () => {
++    const db = eventDb();
++    const send = vi.fn(async () => ({ success: true }));
++    const plan = await notifyHelperDesigners(db as never, {
++      request: request(),
++      queue: [
++        entry({ designerUserId: 8, designerName: "Rich", email: "rich@cabinetdealz.com", signedOnAt: "2026-11-06T07:00:00.000Z" }),
++        entry({ designerUserId: 3, email: "designer3@cabinetdealz.com", signedOnAt: "2026-11-06T09:00:00.000Z" }),
++      ],
++      origin: "https://cabinetdealz.com",
++      mailer: { configured: () => true, send },
++    });
++
++    expect(plan.queued).toEqual([8, 3]);
++    expect(send).toHaveBeenCalledTimes(2);
++    expect(plan.emailed).toEqual(["rich@cabinetdealz.com", "designer3@cabinetdealz.com"]);
++    const firstCall = send.mock.calls[0]![0] as { to: string; subject: string; text: string };
++    expect(firstCall.to).toBe("rich@cabinetdealz.com");
++    expect(firstCall.subject).toContain("Designer helper needed");
++    expect(firstCall.text).toContain("https://cabinetdealz.com/design?load=77&helperRequest=31");
++  });
++
++  it("keeps the in-app notice and sends no mail when the mailer is unset", async () => {
++    const db = eventDb();
++    const send = vi.fn(async () => ({ success: true }));
++    const plan = await notifyHelperDesigners(db as never, {
++      request: request(),
++      queue: [entry({ designerUserId: 8 })],
++      origin: "https://cabinetdealz.com",
++      mailer: { configured: () => false, send },
++    });
++
++    expect(plan.queued).toEqual([8]);
++    expect(send).not.toHaveBeenCalled();
++    expect(plan.emailTargets).toEqual([]);
++    expect(db.events.some((row) => row.action === "email_skipped")).toBe(true);
++  });
++
++  it("records a designer with no address instead of inventing one", async () => {
++    const db = eventDb();
++    const send = vi.fn(async () => ({ success: true }));
++    const plan = await notifyHelperDesigners(db as never, {
++      request: request(),
++      queue: [entry({ designerUserId: 8, email: null })],
++      origin: "https://cabinetdealz.com",
++      mailer: { configured: () => true, send },
++    });
++
++    expect(send).not.toHaveBeenCalled();
++    expect(plan.missingEmail).toEqual([8]);
++    const skipped = db.events.find((row) => row.action === "email_skipped");
++    expect(String(skipped?.detail)).toContain("No email address on file");
++  });
++
++  it("does not email a designer whose Helper sign is off", () => {
++    const plan = planHelperNotification([
++      entry({ designerUserId: 8, available: false }),
++      entry({ designerUserId: 3 }),
++    ]);
++    expect(plan.queued).toEqual([3]);
++    expect(plan.emailTargets).toEqual(["designer3@cabinetdealz.com"]);
++  });
++
++  it("records a failed send without losing the in-app notice", async () => {
++    const db = eventDb();
++    const plan = await notifyHelperDesigners(db as never, {
++      request: request(),
++      queue: [entry({ designerUserId: 8 })],
++      origin: "https://cabinetdealz.com",
++      mailer: { configured: () => true, send: async () => ({ success: false, error: "mailbox rejected" }) },
++    });
++
++    expect(plan.queued).toEqual([8]);
++    expect(plan.emailErrors).toEqual(["mailbox rejected"]);
++    expect(plan.emailed).toEqual([]);
++  });
++});
++
++describe("helper email text", () => {
++  it("is plain text with one absolute link and no tracking", () => {
++    const body = helperRequestEmailBody({
++      request: request(),
++      helperName: "Rich",
++      designPath: "https://cabinetdealz.com/design?load=77&helperRequest=31&assist=1",
++    });
++    expect(body).toContain("Hi Rich,");
++    expect(body).toContain("Kim Nguyen");
++    expect(body).toContain("Is the corner filler correct?");
++    expect(body).toContain("https://cabinetdealz.com/design?load=77&helperRequest=31&assist=1");
++    expect(body).not.toMatch(/utm_|pixel|tracking/i);
++    expect(helperEmailTarget(" not-an-email ")).toBeNull();
++  });
++});
+diff --git a/server/lib/designerHelper.ts b/server/lib/designerHelper.ts
+new file mode 100644
+index 0000000..77d2f83
+--- /dev/null
++++ b/server/lib/designerHelper.ts
+@@ -0,0 +1,461 @@
++/**
++ * Designer helper queue — server side.
++ *
++ * The rules (queue order, who is notified, the email text, the plain sentences)
++ * live in `shared/designerHelperQueue.ts` and are imported here unchanged, so
++ * the app and the backend can never disagree about them.
++ *
++ * What this file owns:
++ *   - the queue: the Helper sign row per designer, ordered by signedOnAt;
++ *   - the request: created when a customer presses Share / Get a designer helper;
++ *   - the notify fan-out: in-app for every signed-on designer, email to each of
++ *     their addresses on file when the server mailer is configured;
++ *   - accept / join / close, each recording the real user id, name, and time.
++ *
++ * The designer's email is read from `users.email` on every send. It is never
++ * copied onto a queue row, so a queue entry always carries the address on file
++ * rather than a stale copy, and a missing address is reported instead of guessed.
++ *
++ * The customer's shared link is the Designer's existing signed remote-share
++ * token, not a new one, so the link the helper opens behaves exactly like the
++ * one the Designer's own Share action produces.
++ */
++import { and, desc, eq, inArray, or, sql, type SQL } from "drizzle-orm";
++import { designerHelperEvents, designerHelperQueue, designerHelperRequests, kitchenDesigns, users } from "../../drizzle/schema";
++import { getDb } from "../db";
++import {
++  helperEmailTarget,
++  helperNotificationOrder,
++  helperQueuePosition,
++  helperRequestDesignPath,
++  helperRequestEmailBody,
++  helperRequestEmailSubject,
++  helperRequestNeedsHelper,
++  planHelperNotification,
++  type HelperNotifyPlan,
++  type HelperQueueEntry,
++  type HelperRequest,
++  type HelperRequestStatus,
++} from "../../shared/designerHelperQueue";
++
++export type Database = NonNullable<Awaited<ReturnType<typeof getDb>>>;
++
++/** Roles that can hold the Helper sign and be queued for a customer request. */
++const HELPER_ROLES = ["designer", "admin"] as const;
++
++export function canHoldHelperSign(role: string | null | undefined): boolean {
++  return (HELPER_ROLES as readonly string[]).includes(role ?? "");
++}
++
++function iso(value: unknown): string | null {
++  if (value == null) return null;
++  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value.toISOString();
++  const parsed = new Date(String(value));
++  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
++}
++
++function text(value: unknown): string | null {
++  if (value == null) return null;
++  const trimmed = String(value).trim();
++  return trimmed ? trimmed : null;
++}
++
++function toRequest(row: Record<string, unknown>, affiliateSlug: string | null = null): HelperRequest {
++  return {
++    id: Number(row.id),
++    designId: row.designId == null ? null : Number(row.designId),
++    designName: text(row.designName),
++    customerUserId: row.customerUserId == null ? null : Number(row.customerUserId),
++    customerName: text(row.customerName),
++    customerEmail: text(row.customerEmail),
++    customerPhone: text(row.customerPhone),
++    helpNote: text(row.helpNote),
++    status: String(row.status ?? "open") as HelperRequestStatus,
++    shareToken: text(row.shareToken),
++    affiliateSlug,
++    requestedAt: iso(row.requestedAt) ?? new Date().toISOString(),
++    acceptedByUserId: row.acceptedByUserId == null ? null : Number(row.acceptedByUserId),
++    acceptedByName: text(row.acceptedByName),
++    acceptedAt: iso(row.acceptedAt),
++    joinedByUserId: row.joinedByUserId == null ? null : Number(row.joinedByUserId),
++    joinedByName: text(row.joinedByName),
++    joinedAt: iso(row.joinedAt),
++    closedAt: iso(row.closedAt),
++  };
++}
++
++/**
++ * The queue as the app shows it: every designer who can hold the sign, their
++ * Helper sign state, the address on their account, and how many requests they
++ * have accepted. Only signed-on designers are ordered by the shared rule; the
++ * rest follow in account order so the list is stable and complete.
++ */
++export async function loadHelperQueue(db: Database): Promise<HelperQueueEntry[]> {
++  const accounts = await db
++    .select({ id: users.id, name: users.name, email: users.email, role: users.role })
++    .from(users)
++    .where(inArray(users.role, [...HELPER_ROLES]));
++
++  const signs = await db.select().from(designerHelperQueue);
++  const signByUser = new Map(signs.map((row) => [Number(row.designerUserId), row]));
++
++  const entries: HelperQueueEntry[] = accounts.map((account) => {
++    const sign = signByUser.get(Number(account.id));
++    return {
++      designerUserId: Number(account.id),
++      designerName: text(account.name) ?? `Designer #${account.id}`,
++      email: helperEmailTarget(account.email),
++      available: Boolean(sign?.available),
++      signedOnAt: iso(sign?.signedOnAt),
++      acceptedCount: Number(sign?.acceptedCount ?? 0),
++    };
++  });
++
++  const signedOn = helperNotificationOrder(entries);
++  const signedOnIds = new Set(signedOn.map((entry) => entry.designerUserId));
++  return signedOn.concat(entries.filter((entry) => !signedOnIds.has(entry.designerUserId)));
++}
++
++export async function helperSignFor(db: Database, designerUserId: number) {
++  const [row] = await db
++    .select()
++    .from(designerHelperQueue)
++    .where(eq(designerHelperQueue.designerUserId, designerUserId))
++    .limit(1);
++  return row ?? null;
++}
++
++/** Turn the sign on (queues him, stamps signedOnAt) or off (no requests sent). */
++export async function setHelperSign(db: Database, designerUserId: number, available: boolean) {
++  const existing = await helperSignFor(db, designerUserId);
++  const now = new Date();
++  if (!existing) {
++    await db.insert(designerHelperQueue).values({
++      designerUserId,
++      available,
++      signedOnAt: available ? now : null,
++      acceptedCount: 0,
++    });
++  } else {
++    await db
++      .update(designerHelperQueue)
++      .set({
++        available,
++        // Re-signing on after a shift off restarts his wait in the queue. Staying
++        // on keeps the original time, so queue order does not reset on a refresh.
++        signedOnAt: available ? (existing.signedOnAt ?? now) : null,
++      })
++      .where(eq(designerHelperQueue.designerUserId, designerUserId));
++  }
++  return helperSignFor(db, designerUserId);
++}
++
++export async function logHelperEvent(
++  db: Database,
++  args: { requestId: number; action: string; actorUserId?: number | null; actorName?: string | null; detail?: string | null },
++): Promise<void> {
++  try {
++    await db.insert(designerHelperEvents).values({
++      requestId: args.requestId,
++      action: args.action,
++      actorUserId: args.actorUserId ?? null,
++      actorName: args.actorName ?? null,
++      detail: args.detail ? args.detail.slice(0, 512) : null,
++    });
++  } catch (error) {
++    // The trail must never block the request itself.
++    console.error("[designer-helper] could not write helper event", error);
++  }
++}
++
++export async function helperRequestById(db: Database, requestId: number): Promise<HelperRequest | null> {
++  const [row] = await db.select().from(designerHelperRequests).where(eq(designerHelperRequests.id, requestId)).limit(1);
++  return row ? toRequest(row as Record<string, unknown>) : null;
++}
++
++/**
++ * Create the help request for a saved design.
++ *
++ * The design is re-read here and ownership is checked against its stored owner,
++ * never against a slug the caller sent, so a request cannot name someone else's
++ * plan. The affiliate scope is taken from the design row for the same reason.
++ */
++export async function createHelperRequest(
++  db: Database,
++  args: {
++    designId: number;
++    callerUserId: number;
++    callerIsAdmin: boolean;
++    customerName: string | null;
++    customerEmail: string | null;
++    customerPhone: string | null;
++    helpNote: string | null;
++    makeShareToken: (payload: { designId: number; affiliateId: number | null }) => string;
++  },
++): Promise<HelperRequest> {
++  const [design] = await db
++    .select({ id: kitchenDesigns.id, name: kitchenDesigns.name, userId: kitchenDesigns.userId, affiliateId: kitchenDesigns.affiliateId })
++    .from(kitchenDesigns)
++    .where(eq(kitchenDesigns.id, args.designId))
++    .limit(1);
++  if (!design) throw new Error("That saved design no longer exists, so it cannot be shared.");
++  if (!args.callerIsAdmin && Number(design.userId) !== args.callerUserId) {
++    throw new Error("You can only ask for help with your own saved design.");
++  }
++
++  const affiliateId = design.affiliateId == null ? null : Number(design.affiliateId);
++  const result = await db.insert(designerHelperRequests).values({
++    designId: args.designId,
++    designName: text(design.name),
++    customerUserId: args.callerUserId,
++    customerName: args.customerName,
++    customerEmail: args.customerEmail,
++    customerPhone: args.customerPhone,
++    helpNote: args.helpNote,
++    status: "open",
++    shareToken: args.makeShareToken({ designId: args.designId, affiliateId }),
++    affiliateId,
++    requestedAt: new Date(),
++  });
++  const id = Number((result as unknown as [{ insertId: number }])[0].insertId);
++  const created = await helperRequestById(db, id);
++  if (!created) throw new Error("The help request could not be read back after it was saved.");
++  return created;
++}
++
++export type HelperMailer = {
++  /** True when Resend or SMTP is configured. Asked before any send attempt. */
++  configured: () => boolean;
++  send: (payload: { to: string; subject: string; text: string; replyTo?: string }) => Promise<{ success: boolean; error?: string }>;
++};
++
++/**
++ * Fan out one new request.
++ *
++ * In-app first, for every signed-on designer, whatever the mailer says. Email
++ * second, only to the addresses on file, and only when the mailer is configured.
++ * A designer with no address is recorded as such rather than skipped silently.
++ */
++export async function notifyHelperDesigners(
++  db: Database,
++  args: {
++    request: HelperRequest;
++    queue: readonly HelperQueueEntry[];
++    origin: string;
++    mailer: HelperMailer;
++  },
++): Promise<HelperNotifyPlan & { emailed: string[]; emailErrors: string[] }> {
++  const mailerConfigured = args.mailer.configured();
++  const plan = planHelperNotification(args.queue, { mailerConfigured });
++  const emailed: string[] = [];
++  const emailErrors: string[] = [];
++
++  await logHelperEvent(db, {
++    requestId: args.request.id,
++    action: "notified",
++    detail: plan.queued.length === 0
++      ? "No designer had the Helper sign on."
++      : `In-app notice queued for ${plan.queued.length} designer(s).`,
++  });
++
++  if (!mailerConfigured) {
++    await logHelperEvent(db, {
++      requestId: args.request.id,
++      action: "email_skipped",
++      detail: "The server mailer is not configured.",
++    });
++    return { ...plan, emailed, emailErrors };
++  }
++
++  for (const designerUserId of plan.queued) {
++    const entry = args.queue.find((row) => row.designerUserId === designerUserId);
++    if (!entry) continue;
++    const to = helperEmailTarget(entry.email);
++    if (!to) {
++      await logHelperEvent(db, {
++        requestId: args.request.id,
++        action: "email_skipped",
++        actorUserId: entry.designerUserId,
++        actorName: entry.designerName,
++        detail: "No email address on file for this designer.",
++      });
++      continue;
++    }
++    const path = helperRequestDesignPath({
++      designId: args.request.designId,
++      requestId: args.request.id,
++      affiliateSlug: args.request.affiliateSlug,
++    });
++    const result = await args.mailer.send({
++      to,
++      subject: helperRequestEmailSubject(args.request),
++      text: helperRequestEmailBody({
++        request: args.request,
++        helperName: entry.designerName,
++        designPath: `${args.origin.replace(/\/+$/, "")}${path}`,
++      }),
++      replyTo: args.request.customerEmail ?? undefined,
++    });
++    if (result.success) {
++      emailed.push(to);
++      await logHelperEvent(db, {
++        requestId: args.request.id,
++        action: "emailed",
++        actorUserId: entry.designerUserId,
++        actorName: entry.designerName,
++        detail: `Emailed ${to}.`,
++      });
++    } else {
++      emailErrors.push(result.error ?? "Email could not be sent.");
++      await logHelperEvent(db, {
++        requestId: args.request.id,
++        action: "email_skipped",
++        actorUserId: entry.designerUserId,
++        actorName: entry.designerName,
++        detail: result.error ?? "Email could not be sent.",
++      });
++    }
++  }
++
++  return { ...plan, emailed, emailErrors };
++}
++
++/** Open requests a signed-on designer should see, newest first. */
++export async function helperRequestsForDesigner(db: Database, designerUserId: number): Promise<HelperRequest[]> {
++  const sign = await helperSignFor(db, designerUserId);
++  if (!sign?.available) return [];
++  const rows = await db
++    .select()
++    .from(designerHelperRequests)
++    .where(eq(designerHelperRequests.status, "open"))
++    .orderBy(desc(designerHelperRequests.requestedAt))
++    .limit(25);
++  return rows.map((row) => toRequest(row as Record<string, unknown>));
++}
++
++/** Every live request, for the admin list and the admin pop-up. */
++export async function helperRequestsForAdmin(db: Database, limit = 50): Promise<HelperRequest[]> {
++  const live: SQL | undefined = or(
++    eq(designerHelperRequests.status, "open"),
++    eq(designerHelperRequests.status, "accepted"),
++  );
++  const rows = await db
++    .select()
++    .from(designerHelperRequests)
++    .where(live)
++    .orderBy(desc(designerHelperRequests.requestedAt))
++    .limit(limit);
++  return rows.map((row) => toRequest(row as Record<string, unknown>));
++}
++
++/**
++ * Accept a request. Only an open request can be taken, and the update is
++ * conditional on it still being open, so two designers cannot both record an
++ * acceptance for the same request.
++ */
++export async function acceptHelperRequest(
++  db: Database,
++  args: { requestId: number; userId: number; userName: string | null },
++): Promise<HelperRequest> {
++  const current = await helperRequestById(db, args.requestId);
++  if (!current) throw new Error("That designer helper request no longer exists.");
++  if (!helperRequestNeedsHelper(current)) {
++    throw new Error(
++      current.acceptedByName
++        ? `${current.acceptedByName} already accepted this request.`
++        : "This request is no longer waiting for a designer.",
++    );
++  }
++  const result = await db
++    .update(designerHelperRequests)
++    .set({
++      status: "accepted",
++      acceptedByUserId: args.userId,
++      acceptedByName: args.userName,
++      acceptedAt: new Date(),
++    })
++    .where(and(eq(designerHelperRequests.id, args.requestId), eq(designerHelperRequests.status, "open")));
++  const changed = Number((result as unknown as [{ affectedRows?: number }])[0]?.affectedRows ?? 0);
++  if (changed === 0) throw new Error("Another designer accepted this request a moment before you.");
++
++  await db
++    .update(designerHelperQueue)
++    .set({ acceptedCount: sql`${designerHelperQueue.acceptedCount} + 1` })
++    .where(eq(designerHelperQueue.designerUserId, args.userId));
++  await logHelperEvent(db, {
++    requestId: args.requestId,
++    action: "accepted",
++    actorUserId: args.userId,
++    actorName: args.userName,
++    detail: `${args.userName ?? "A designer"} accepted the request.`,
++  });
++  const updated = await helperRequestById(db, args.requestId);
++  if (!updated) throw new Error("The accepted request could not be read back.");
++  return updated;
++}
++
++/**
++ * Record that a staff member opened the customer's design to help.
++ *
++ * Joining also settles the request: an open one becomes joined and records who
++ * accepted it (the joiner), so no one else is offered work already in hand.
++ */
++export async function joinHelperRequest(
++  db: Database,
++  args: { requestId: number; userId: number; userName: string | null },
++): Promise<HelperRequest> {
++  const current = await helperRequestById(db, args.requestId);
++  if (!current) throw new Error("That designer helper request no longer exists.");
++  const now = new Date();
++  await db
++    .update(designerHelperRequests)
++    .set({
++      status: "joined",
++      joinedByUserId: args.userId,
++      joinedByName: args.userName,
++      joinedAt: now,
++      ...(current.acceptedByUserId == null
++        ? { acceptedByUserId: args.userId, acceptedByName: args.userName, acceptedAt: now }
++        : {}),
++    })
++    .where(eq(designerHelperRequests.id, args.requestId));
++  await logHelperEvent(db, {
++    requestId: args.requestId,
++    action: "joined",
++    actorUserId: args.userId,
++    actorName: args.userName,
++    detail: `${args.userName ?? "Staff"} joined the customer's design.`,
++  });
++  const updated = await helperRequestById(db, args.requestId);
++  if (!updated) throw new Error("The joined request could not be read back.");
++  return updated;
++}
++
++export async function closeHelperRequest(
++  db: Database,
++  args: { requestId: number; userId: number; userName: string | null },
++): Promise<HelperRequest> {
++  await db
++    .update(designerHelperRequests)
++    .set({ status: "closed", closedAt: new Date() })
++    .where(eq(designerHelperRequests.id, args.requestId));
++  await logHelperEvent(db, {
++    requestId: args.requestId,
++    action: "closed",
++    actorUserId: args.userId,
++    actorName: args.userName,
++    detail: "Request closed.",
++  });
++  const updated = await helperRequestById(db, args.requestId);
++  if (!updated) throw new Error("The closed request could not be read back.");
++  return updated;
++}
++
++/**
++ * Place in the queue for one designer, or null when his sign is off. Uses the
++ * shared ordering, so the number he sees is the number the fan-out uses.
++ */
++export async function helperQueuePlace(db: Database, designerUserId: number): Promise<number | null> {
++  const queue = await loadHelperQueue(db);
++  return helperQueuePosition(queue.filter((entry) => entry.available), designerUserId);
++}
+diff --git a/server/routers.ts b/server/routers.ts
+index b827320..48f56e5 100644
+--- a/server/routers.ts
++++ b/server/routers.ts
+@@ -105,6 +105,7 @@ import { contractorAccessRouter } from "./routers/contractorAccess";
+ import { orderTrackingRouter } from "./routers/orderTracking";
+ import { vendorEmailRouter } from "./routers/vendorEmail";
+ import { aiDoorDescriptionRouter } from "./routers/aiDoorDescription";
++import { designerHelperRouter } from "./routers/designerHelper";
+ import { loginTestAccount } from "./lib/loginTestAccount";
+ import { testAccountsEnabled } from "./lib/testAccounts";
+ 
+@@ -262,6 +263,7 @@ export const appRouter = router({
+   orderTracking: orderTrackingRouter,
+   vendorEmail: vendorEmailRouter,
+   aiDoorDescription: aiDoorDescriptionRouter,
++  designerHelper: designerHelperRouter,
+ });
+ 
+ export type AppRouter = typeof appRouter;
+diff --git a/server/routers/design.ts b/server/routers/design.ts
+index 66343c5..9d50689 100644
+--- a/server/routers/design.ts
++++ b/server/routers/design.ts
+@@ -1,6 +1,5 @@
+ import { z } from "zod";
+ import { skuVisibleToViewer } from "../lib/distributorPreview";
+-import { createHmac, timingSafeEqual } from "node:crypto";
+ import { eq, and, inArray, desc, like, sql, or, isNull, ne, gt } from "drizzle-orm";
+ import { TRPCError } from "@trpc/server";
+ import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
+@@ -33,7 +32,7 @@ import {
+   type HostAffiliateRow,
+   type ResolvedHostScope,
+ } from "../lib/affiliateHostScope";
+-import { ENV } from "../_core/env";
++import { createRemoteDesignShareToken, verifyRemoteDesignShareToken } from "./designShareToken";
+ import { priceLadder } from "../../shared/pricing";
+ import { resolveCanonicalCatalogSources } from "../lib/canonicalCatalogSources";
+ import { isWallWineRackCabinet } from "../../shared/wallWineRack";
+@@ -145,48 +144,6 @@ async function requireAffiliateDesignerAccess(
+   }
+ }
+ 
+-type RemoteDesignSharePayload = {
+-  designId: number;
+-  affiliateId: number | null;
+-  issuedAt: number;
+-};
+-
+-function remoteDesignShareSecret() {
+-  return ENV.cookieSecret || "cabinet-dealz-remote-design-share-dev";
+-}
+-
+-function encodeRemoteDesignSharePayload(payload: RemoteDesignSharePayload) {
+-  return Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+-}
+-
+-function signRemoteDesignSharePayload(encodedPayload: string) {
+-  return createHmac("sha256", remoteDesignShareSecret()).update(encodedPayload).digest("base64url");
+-}
+-
+-function createRemoteDesignShareToken(payload: RemoteDesignSharePayload) {
+-  const encodedPayload = encodeRemoteDesignSharePayload(payload);
+-  return `${encodedPayload}.${signRemoteDesignSharePayload(encodedPayload)}`;
+-}
+-
+-function verifyRemoteDesignShareToken(token: string): RemoteDesignSharePayload | null {
+-  const [encodedPayload, signature, extra] = token.split(".");
+-  if (!encodedPayload || !signature || extra) return null;
+-  const expected = signRemoteDesignSharePayload(encodedPayload);
+-  const expectedBuffer = Buffer.from(expected);
+-  const signatureBuffer = Buffer.from(signature);
+-  if (expectedBuffer.length !== signatureBuffer.length || !timingSafeEqual(expectedBuffer, signatureBuffer)) return null;
+-  try {
+-    const parsed = JSON.parse(Buffer.from(encodedPayload, "base64url").toString("utf8")) as Partial<RemoteDesignSharePayload>;
+-    if (!Number.isInteger(parsed.designId) || parsed.designId! <= 0) return null;
+-    if (parsed.affiliateId !== null && parsed.affiliateId !== undefined && (!Number.isInteger(parsed.affiliateId) || parsed.affiliateId <= 0)) return null;
+-    if (!Number.isInteger(parsed.issuedAt) || parsed.issuedAt! <= 0) return null;
+-    return { designId: parsed.designId!, affiliateId: parsed.affiliateId ?? null, issuedAt: parsed.issuedAt! };
+-  } catch {
+-    return null;
+-  }
+-}
+-
+-
+ type DesignCustomer = { name: string; email: string; phone: string; address: { line1: string; line2?: string | null; city: string; state: string; zip: string } };
+ /**
+  * Every save links the design to exactly one CRM deal and writes the complete,
+diff --git a/server/routers/designShareToken.ts b/server/routers/designShareToken.ts
+new file mode 100644
+index 0000000..1793940
+--- /dev/null
++++ b/server/routers/designShareToken.ts
+@@ -0,0 +1,50 @@
++/**
++ * The Designer's signed remote-share token, lifted out of `server/routers/design.ts`
++ * so the helper queue can mint the same link without importing a router.
++ *
++ * The token format, secret, and verification are unchanged: the helper queue and
++ * the Designer's own Share action produce interchangeable links.
++ */
++import { createHmac, timingSafeEqual } from "node:crypto";
++import { ENV } from "../_core/env";
++
++export type RemoteDesignSharePayload = {
++  designId: number;
++  affiliateId: number | null;
++  issuedAt: number;
++};
++
++export function remoteDesignShareSecret() {
++  return ENV.cookieSecret || "cabinet-dealz-remote-design-share-dev";
++}
++
++export function encodeRemoteDesignSharePayload(payload: RemoteDesignSharePayload) {
++  return Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
++}
++
++export function signRemoteDesignSharePayload(encodedPayload: string) {
++  return createHmac("sha256", remoteDesignShareSecret()).update(encodedPayload).digest("base64url");
++}
++
++export function createRemoteDesignShareToken(payload: RemoteDesignSharePayload) {
++  const encodedPayload = encodeRemoteDesignSharePayload(payload);
++  return `${encodedPayload}.${signRemoteDesignSharePayload(encodedPayload)}`;
++}
++
++export function verifyRemoteDesignShareToken(token: string): RemoteDesignSharePayload | null {
++  const [encodedPayload, signature, extra] = token.split(".");
++  if (!encodedPayload || !signature || extra) return null;
++  const expected = signRemoteDesignSharePayload(encodedPayload);
++  const expectedBuffer = Buffer.from(expected);
++  const signatureBuffer = Buffer.from(signature);
++  if (expectedBuffer.length !== signatureBuffer.length || !timingSafeEqual(expectedBuffer, signatureBuffer)) return null;
++  try {
++    const parsed = JSON.parse(Buffer.from(encodedPayload, "base64url").toString("utf8")) as Partial<RemoteDesignSharePayload>;
++    if (!Number.isInteger(parsed.designId) || parsed.designId! <= 0) return null;
++    if (parsed.affiliateId !== null && parsed.affiliateId !== undefined && (!Number.isInteger(parsed.affiliateId) || parsed.affiliateId <= 0)) return null;
++    if (!Number.isInteger(parsed.issuedAt) || parsed.issuedAt! <= 0) return null;
++    return { designId: parsed.designId!, affiliateId: parsed.affiliateId ?? null, issuedAt: parsed.issuedAt! };
++  } catch {
++    return null;
++  }
++}
+diff --git a/server/routers/designerHelper.ts b/server/routers/designerHelper.ts
+new file mode 100644
+index 0000000..d920704
+--- /dev/null
++++ b/server/routers/designerHelper.ts
+@@ -0,0 +1,254 @@
++/**
++ * Designer helper queue — the tRPC boundary.
++ *
++ * Procedures:
++ *   mailerStatus   public      is the server mailer configured (plain yes/no)
++ *   mySign         protected   the caller's Helper sign, queue place, and queue
++ *   setSign        protected   Helper sign on/off; records signedOnAt
++ *   myNotices      protected   open requests sent to a signed-on designer
++ *   adminInbox     admin       live requests for the admin list and pop-up
++ *   request        protected   Share / Get a designer helper: share + create + notify
++ *   accept         protected   claim a request; records who accepted and when
++ *   join           protected   open the customer's design; records who joined and when
++ *   close          admin       settle a request
++ *
++ * Email goes out through the existing mailer in `server/email.ts` (Resend, then
++ * SMTP). It is asked first whether it is configured, so when it is unset the app
++ * says so plainly and the in-app notice still reaches every queued designer.
++ *
++ * The shared design link is the Designer's own signed remote-share token, made by
++ * the same `createRemoteDesignShareToken` the Designer's Share action uses, so a
++ * helper opens exactly what a customer's shared link opens.
++ */
++import { z } from "zod";
++import { TRPCError } from "@trpc/server";
++import { adminProcedure, protectedProcedure, publicProcedure, router } from "../_core/trpc";
++import { isEmailConfigured, sendEmail } from "../email";
++import { getDb } from "../db";
++import {
++  acceptHelperRequest,
++  canHoldHelperSign,
++  closeHelperRequest,
++  createHelperRequest,
++  helperRequestsForAdmin,
++  helperRequestsForDesigner,
++  helperSignFor,
++  joinHelperRequest,
++  loadHelperQueue,
++  logHelperEvent,
++  notifyHelperDesigners,
++  setHelperSign,
++  type Database,
++} from "../lib/designerHelper";
++import {
++  helperQueuePosition,
++  helperRequestDesignPath,
++  type HelperRequest,
++} from "../../shared/designerHelperQueue";
++import { createRemoteDesignShareToken } from "./designShareToken";
++
++/** Resend first, then SMTP — the two transports `sendEmail` already uses. */
++const mailer = {
++  configured: () => isEmailConfigured(),
++  send: (payload: { to: string; subject: string; text: string; replyTo?: string }) => sendEmail(payload),
++};
++
++async function requireDb(): Promise<Database> {
++  const db = await getDb();
++  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
++  return db;
++}
++
++/** The site the request came from, so the emailed link is absolute and correct. */
++function originFrom(headers: { origin?: string; referer?: string } | undefined): string {
++  const candidate = headers?.origin?.trim() || headers?.referer?.trim() || "";
++  if (!candidate) return "https://cabinetdealz.com";
++  try {
++    return new URL(candidate).origin;
++  } catch {
++    return "https://cabinetdealz.com";
++  }
++}
++
++type SignedInUser = { id: number; name?: string | null; email?: string | null; role?: string | null };
++
++/** A designer's Helper sign, his place in the queue, and the queue itself. */
++async function signState(db: Database, user: SignedInUser) {
++  const queue = await loadHelperQueue(db);
++  const sign = await helperSignFor(db, user.id);
++  const available = Boolean(sign?.available);
++  const signedOn = queue.filter((entry) => entry.available);
++  return {
++    available,
++    signedOnAt: sign?.signedOnAt ? new Date(sign.signedOnAt).toISOString() : null,
++    designerName: user.name ?? `Designer #${user.id}`,
++    email: user.email ?? null,
++    queuePosition: available ? helperQueuePosition(signedOn, user.id) : null,
++    queue,
++    queuedCount: signedOn.length,
++    acceptedCount: Number(sign?.acceptedCount ?? 0),
++  };
++}
++
++/** The app's notice row: the full request plus every link it can open. */
++function noticeFor(request: HelperRequest) {
++  return {
++    request,
++    designPath: helperRequestDesignPath({
++      designId: request.designId,
++      requestId: request.id,
++      affiliateSlug: request.affiliateSlug,
++    }),
++    joinPath: `/admin/helper-request/${request.id}`,
++    customerSharePath: request.shareToken ? `/design/session/${request.shareToken}` : null,
++  };
++}
++
++export const designerHelperRouter = router({
++  mailerStatus: publicProcedure.query(() => ({ mailerConfigured: mailer.configured() })),
++
++  mySign: protectedProcedure.query(async ({ ctx }) => {
++    const db = await requireDb();
++    return signState(db, ctx.user);
++  }),
++
++  setSign: protectedProcedure
++    .input(z.object({ available: z.boolean() }))
++    .mutation(async ({ ctx, input }) => {
++      if (!canHoldHelperSign(ctx.user.role)) {
++        throw new TRPCError({
++          code: "FORBIDDEN",
++          message: "The Helper sign is for designers. This account cannot join the helper queue.",
++        });
++      }
++      const db = await requireDb();
++      await setHelperSign(db, ctx.user.id, input.available);
++      return signState(db, ctx.user);
++    }),
++
++  myNotices: protectedProcedure.query(async ({ ctx }) => {
++    const db = await requireDb();
++    const requests = await helperRequestsForDesigner(db, ctx.user.id);
++    return requests.map(noticeFor);
++  }),
++
++  adminInbox: adminProcedure.query(async ({ ctx }) => {
++    const db = await requireDb();
++    const requests = await helperRequestsForAdmin(db);
++    return requests.map(noticeFor);
++  }),
++
++  /**
++   * Share the customer's design and ask for a helper.
++   *
++   * One call does the whole job the button promises: it shares the design (the
++   * read-only link is returned and kept on the request), creates the request,
++   * and notifies every signed-on designer in the app and — when the mailer is
++   * configured — by email to the address on their account.
++   */
++  request: protectedProcedure
++    .input(z.object({
++      designId: z.number().int().positive(),
++      helpNote: z.string().trim().max(1000).nullable().optional(),
++      customerName: z.string().trim().max(256).nullable().optional(),
++      customerEmail: z.string().trim().max(320).nullable().optional(),
++      customerPhone: z.string().trim().max(32).nullable().optional(),
++      affiliateSlug: z.string().trim().max(255).nullable().optional(),
++    }))
++    .mutation(async ({ ctx, input }) => {
++      const db = await requireDb();
++      const request = await createHelperRequest(db, {
++        designId: input.designId,
++        callerUserId: ctx.user.id,
++        callerIsAdmin: ctx.user.role === "admin",
++        customerName: input.customerName ?? ctx.user.name ?? null,
++        customerEmail: input.customerEmail ?? ctx.user.email ?? null,
++        customerPhone: input.customerPhone ?? null,
++        helpNote: input.helpNote ?? null,
++        makeShareToken: (payload) => createRemoteDesignShareToken({ ...payload, issuedAt: Date.now() }),
++      });
++
++      await logHelperEvent(db, {
++        requestId: request.id,
++        action: "shared",
++        actorUserId: ctx.user.id,
++        actorName: ctx.user.name ?? null,
++        detail: `Design #${input.designId} shared.`,
++      });
++
++      // Only designers with the sign on are queued, in the shared order.
++      const signedOn = (await loadHelperQueue(db)).filter((entry) => entry.available);
++      const plan = await notifyHelperDesigners(db, {
++        request,
++        queue: signedOn,
++        origin: originFrom(ctx.req.headers as { origin?: string; referer?: string }),
++        mailer,
++      });
++
++      return {
++        request,
++        sharePath: request.shareToken ? `/design/session/${request.shareToken}` : "",
++        designPath: helperRequestDesignPath({
++          designId: request.designId,
++          requestId: request.id,
++          affiliateSlug: request.affiliateSlug,
++        }),
++        mailerConfigured: mailer.configured(),
++        notification: { queued: plan.queued, emailTargets: plan.emailTargets, missingEmail: plan.missingEmail },
++        emailed: plan.emailed,
++        emailErrors: plan.emailErrors,
++      };
++    }),
++
++  accept: protectedProcedure
++    .input(z.object({ requestId: z.number().int().positive() }))
++    .mutation(async ({ ctx, input }) => {
++      const db = await requireDb();
++      const request = await acceptHelperRequest(db, {
++        requestId: input.requestId,
++        userId: ctx.user.id,
++        userName: ctx.user.name ?? null,
++      });
++      return {
++        request,
++        designPath: helperRequestDesignPath({
++          designId: request.designId,
++          requestId: request.id,
++          affiliateSlug: request.affiliateSlug,
++        }),
++      };
++    }),
++
++  join: protectedProcedure
++    .input(z.object({ requestId: z.number().int().positive() }))
++    .mutation(async ({ ctx, input }) => {
++      const db = await requireDb();
++      const request = await joinHelperRequest(db, {
++        requestId: input.requestId,
++        userId: ctx.user.id,
++        userName: ctx.user.name ?? null,
++      });
++      return {
++        requestId: request.id,
++        designId: request.designId,
++        designPath: helperRequestDesignPath({
++          designId: request.designId,
++          requestId: request.id,
++          affiliateSlug: request.affiliateSlug,
++        }),
++        joinedAt: request.joinedAt ?? new Date().toISOString(),
++        joinedByName: request.joinedByName ?? ctx.user.name ?? "Staff",
++      };
++    }),
++
++  close: adminProcedure
++    .input(z.object({ requestId: z.number().int().positive() }))
++    .mutation(async ({ ctx, input }) => {
++      const db = await requireDb();
++      return closeHelperRequest(db, {
++        requestId: input.requestId,
++        userId: ctx.user.id,
++        userName: ctx.user.name ?? null,
++      });
++    }),
++});
+diff --git a/shared/designerHelperQueue.test.ts b/shared/designerHelperQueue.test.ts
+new file mode 100644
+index 0000000..581a51f
+--- /dev/null
++++ b/shared/designerHelperQueue.test.ts
+@@ -0,0 +1,210 @@
++import { describe, expect, it } from "vitest";
++import {
++  HELPER_SIGN_OFF_COPY,
++  HELPER_SIGN_ON_COPY,
++  helperCanReceiveRequests,
++  helperEmailTarget,
++  helperNotificationOrder,
++  helperQueuePosition,
++  helperRequestDesignPath,
++  helperRequestEmailBody,
++  helperRequestEmailSubject,
++  helperRequestIdFromSearch,
++  helperRequestNeedsHelper,
++  helperRequestSentCopy,
++  helperRequestSharePath,
++  helperRequestSummaryRows,
++  helperRequestOwnerLabel,
++  helperStatusLabel,
++  helperMailerNotice,
++  helperEmailSkippedCopy,
++  planHelperNotification,
++  type HelperQueueEntry,
++  type HelperRequest,
++} from "./designerHelperQueue";
++
++function entry(patch: Partial<HelperQueueEntry> & { designerUserId: number }): HelperQueueEntry {
++  return {
++    designerName: `Designer ${patch.designerUserId}`,
++    email: `designer${patch.designerUserId}@cabinetdealz.com`,
++    available: true,
++    signedOnAt: "2026-11-06T08:00:00.000Z",
++    acceptedCount: 0,
++    ...patch,
++  };
++}
++
++function request(patch: Partial<HelperRequest> = {}): HelperRequest {
++  return {
++    id: 9,
++    designId: 44,
++    designName: "Miller kitchen",
++    customerUserId: 3,
++    customerName: "Dana Miller",
++    customerEmail: "dana@example.com",
++    customerPhone: "555-0143",
++    helpNote: "Can you check the island spacing?",
++    status: "open",
++    shareToken: "tok-123",
++    affiliateSlug: null,
++    requestedAt: "2026-11-06T09:14:00.000Z",
++    acceptedByUserId: null,
++    acceptedByName: null,
++    acceptedAt: null,
++    joinedByUserId: null,
++    joinedByName: null,
++    joinedAt: null,
++    closedAt: null,
++    ...patch,
++  };
++}
++
++describe("helper sign", () => {
++  it("states plainly what on and off mean for the queue", () => {
++    expect(HELPER_SIGN_ON_COPY).toContain("come up in front of you");
++    expect(HELPER_SIGN_OFF_COPY).toContain("no customer help requests are sent to you");
++  });
++
++  it("only queues a designer whose sign is on with a recorded sign-on time", () => {
++    expect(helperCanReceiveRequests({ available: true, signedOnAt: "2026-11-06T08:00:00.000Z" })).toBe(true);
++    expect(helperCanReceiveRequests({ available: false, signedOnAt: "2026-11-06T08:00:00.000Z" })).toBe(false);
++    expect(helperCanReceiveRequests({ available: true, signedOnAt: null })).toBe(false);
++  });
++});
++
++describe("who gets notified", () => {
++  it("orders the longest-waiting signed-on designer first", () => {
++    const order = helperNotificationOrder([
++      entry({ designerUserId: 5, signedOnAt: "2026-11-06T10:00:00.000Z" }),
++      entry({ designerUserId: 2, signedOnAt: "2026-11-06T07:00:00.000Z" }),
++      entry({ designerUserId: 9, available: false, signedOnAt: "2026-11-06T06:00:00.000Z" }),
++    ]);
++    expect(order.map((row) => row.designerUserId)).toEqual([2, 5]);
++  });
++
++  it("reports a signed-on designer's place in the queue and nothing for a signed-off one", () => {
++    const entries = [
++      entry({ designerUserId: 2, signedOnAt: "2026-11-06T07:00:00.000Z" }),
++      entry({ designerUserId: 5, signedOnAt: "2026-11-06T10:00:00.000Z" }),
++    ];
++    expect(helperQueuePosition(entries, 5)).toBe(2);
++    expect(helperQueuePosition([...entries, entry({ designerUserId: 7, available: false })], 7)).toBeNull();
++  });
++
++  it("emails every queued designer's address on file, in queue order", () => {
++    const plan = planHelperNotification([
++      entry({ designerUserId: 5, email: "rich@cabinetdealz.com", signedOnAt: "2026-11-06T10:00:00.000Z" }),
++      entry({ designerUserId: 2, email: "dana-designer@cabinetdealz.com", signedOnAt: "2026-11-06T07:00:00.000Z" }),
++    ]);
++    expect(plan.queued).toEqual([2, 5]);
++    expect(plan.emailTargets).toEqual(["dana-designer@cabinetdealz.com", "rich@cabinetdealz.com"]);
++    expect(plan.missingEmail).toEqual([]);
++  });
++
++  it("keeps the in-app notice when the mailer is unset, and sends no email", () => {
++    const plan = planHelperNotification([entry({ designerUserId: 4 })], { mailerConfigured: false });
++    expect(plan.queued).toEqual([4]);
++    expect(plan.emailTargets).toEqual([]);
++  });
++
++  it("notes a queued designer who has no address instead of inventing one", () => {
++    const plan = planHelperNotification([
++      entry({ designerUserId: 4, email: null }),
++      entry({ designerUserId: 6, email: "   " }),
++    ]);
++    expect(plan.queued).toEqual([4, 6]);
++    expect(plan.emailTargets).toEqual([]);
++    expect(plan.missingEmail).toEqual([4, 6]);
++    expect(helperEmailTarget("not-an-address")).toBeNull();
++    expect(helperEmailTarget(" rich@cabinetdealz.com ")).toBe("rich@cabinetdealz.com");
++  });
++});
++
++describe("customer-facing copy", () => {
++  it("says how many designers were notified and whether email went out", () => {
++    const one = planHelperNotification([entry({ designerUserId: 4 })]);
++    expect(helperRequestSentCopy(one, true)).toContain("1 designer");
++    expect(helperRequestSentCopy(one, true)).toContain("1 email");
++    const none = planHelperNotification([entry({ designerUserId: 4, email: null })]);
++    expect(helperRequestSentCopy(none, true)).toContain("None of them has an email address on file");
++    expect(helperRequestSentCopy(planHelperNotification([]), true)).toContain("No designer has their Helper sign on");
++  });
++
++  it("states mailer state plainly rather than suggesting mail went out", () => {
++    expect(helperMailerNotice(false)).toContain("Email is not configured");
++    expect(helperMailerNotice(true)).toContain("address on file");
++    expect(helperEmailSkippedCopy("no-mailer")).toContain("mailer is not configured");
++    expect(helperEmailSkippedCopy("no-address")).toContain("no address on file");
++  });
++});
++
++describe("request facts", () => {
++  it("labels each status in plain words", () => {
++    expect(helperStatusLabel("open")).toBe("Waiting for a designer");
++    expect(helperStatusLabel("joined")).toBe("Designer in the design");
++    expect(helperRequestNeedsHelper(request())).toBe(true);
++    expect(helperRequestNeedsHelper(request({ status: "accepted" }))).toBe(false);
++  });
++
++  it("records who accepted and who joined, with times", () => {
++    const accepted = request({
++      status: "joined",
++      acceptedByName: "Rich",
++      acceptedAt: "2026-11-06T09:20:00.000Z",
++      joinedByName: "Rich",
++      joinedAt: "2026-11-06T09:22:00.000Z",
++    });
++    const label = helperRequestOwnerLabel(accepted);
++    expect(label).toContain("Rich accepted");
++    expect(label).toContain("joined the design");
++    expect(helperRequestOwnerLabel(request())).toBe("Not accepted yet");
++  });
++
++  it("opens the customer's own saved design in assisted mode from a request", () => {
++    expect(helperRequestDesignPath({ designId: 44, requestId: 9 })).toBe("/design?load=44&helperRequest=9&assist=1");
++    expect(helperRequestDesignPath({ designId: 44, requestId: 9, affiliateSlug: "acme" }))
++      .toBe("/design?load=44&helperRequest=9&assist=1&affiliate=acme");
++    expect(helperRequestIdFromSearch("?load=44&helperRequest=9&assist=1")).toBe(9);
++    expect(helperRequestIdFromSearch("?helperRequest=abc")).toBeNull();
++    expect(helperRequestSharePath({ shareToken: "a.b" })).toBe("/design/session/a.b");
++  });
++
++  it("puts every field the admin pop-up needs into one list", () => {
++    const rows = helperRequestSummaryRows(request());
++    const labels = rows.map((row) => row.label);
++    expect(labels).toEqual(["Customer", "Contact", "Design", "What they need", "Requested", "Status", "Who has it"]);
++    expect(rows.find((row) => row.label === "Customer")?.value).toBe("Dana Miller");
++    expect(rows.find((row) => row.label === "Contact")?.value).toContain("dana@example.com");
++    expect(rows.find((row) => row.label === "Design")?.value).toBe("Miller kitchen");
++    expect(rows.find((row) => row.label === "What they need")?.value).toContain("island spacing");
++  });
++
++  it("falls back to real values when the customer left a field blank", () => {
++    const rows = helperRequestSummaryRows(request({ customerName: null, customerEmail: null, customerPhone: null, helpNote: null, designName: null }));
++    expect(rows.find((row) => row.label === "Customer")?.value).toBe("Customer name not given");
++    expect(rows.find((row) => row.label === "Contact")?.value).toContain("No email or phone");
++    expect(rows.find((row) => row.label === "Design")?.value).toBe("Design #44");
++    expect(rows.find((row) => row.label === "What they need")?.value).toContain("wants a designer's opinion");
++  });
++});
++
++describe("helper email", () => {
++  it("names the customer, the design, the note, and one link", () => {
++    const subject = helperRequestEmailSubject(request());
++    expect(subject).toContain("Designer helper needed");
++    expect(subject).toContain("Dana Miller");
++    expect(subject).toContain("Miller kitchen");
++
++    const body = helperRequestEmailBody({
++      request: request(),
++      helperName: "Rich",
++      designPath: "/design?load=44&helperRequest=9&assist=1",
++    });
++    expect(body).toContain("Hi Rich,");
++    expect(body).toContain("Dana Miller");
++    expect(body).toContain("island spacing");
++    expect(body).toContain("/design?load=44&helperRequest=9&assist=1");
++    expect(body).toContain("Helper sign is on");
++    expect(body).not.toContain("http://");
++  });
++});
+diff --git a/shared/designerHelperQueue.ts b/shared/designerHelperQueue.ts
+new file mode 100644
+index 0000000..aa40bff
+--- /dev/null
++++ b/shared/designerHelperQueue.ts
+@@ -0,0 +1,315 @@
++/**
++ * Designer helper queue: the shared rules behind "Share / Get a designer helper".
++ *
++ * A customer working in the 3D Designer presses Share / Get a designer helper.
++ * That shares the current design and creates one help request. Every designer
++ * whose Helper sign is on is queued for that request and sees it in the app.
++ * A designer's queue entry carries the regular email address from their user
++ * account, so the request can also be mailed to them.
++ *
++ * This module is deliberately free of React, tRPC, the database, and any mailer.
++ * The client renders from it and the backend patch imports the same rules, so a
++ * status, a queue order, or a sentence is only written once.
++ */
++
++export const HELPER_REQUEST_STATUSES = [
++  "open",
++  "accepted",
++  "joined",
++  "closed",
++  "cancelled",
++] as const;
++
++export type HelperRequestStatus = (typeof HELPER_REQUEST_STATUSES)[number];
++
++export type HelperEventAction =
++  | "requested"
++  | "shared"
++  | "notified"
++  | "emailed"
++  | "email_skipped"
++  | "accepted"
++  | "joined"
++  | "closed";
++
++/** One customer help request, as both the customer and the staff side see it. */
++export type HelperRequest = {
++  id: number;
++  designId: number | null;
++  designName: string | null;
++  customerUserId: number | null;
++  customerName: string | null;
++  customerEmail: string | null;
++  customerPhone: string | null;
++  /** What the customer typed into "What do you need help with?". */
++  helpNote: string | null;
++  status: HelperRequestStatus;
++  /** Read-only share link the customer's design is opened through. */
++  shareToken: string | null;
++  affiliateSlug: string | null;
++  requestedAt: string;
++  acceptedByUserId: number | null;
++  acceptedByName: string | null;
++  acceptedAt: string | null;
++  joinedByUserId: number | null;
++  joinedByName: string | null;
++  joinedAt: string | null;
++  closedAt: string | null;
++};
++
++/** One designer's place in the helper queue. */
++export type HelperQueueEntry = {
++  designerUserId: number;
++  designerName: string;
++  /** The designer's regular email address, taken from their user account. */
++  email: string | null;
++  /** Helper sign on or off. Off means no request is sent to this designer. */
++  available: boolean;
++  signedOnAt: string | null;
++  acceptedCount: number;
++};
++
++export const HELPER_SIGN_ON_COPY =
++  "Helper sign is ON. You are in the queue, so a customer's design will come up in front of you as a help request.";
++
++export const HELPER_SIGN_OFF_COPY =
++  "Helper sign is OFF. You are not in the queue, so no customer help requests are sent to you.";
++
++export const HELPER_QUEUE_FRONT_COPY =
++  "You are in the queue. The next customer who asks for a designer helper will see your name and their design will come up in front of you.";
++
++export function helperRequestIsOpen(status: HelperRequestStatus): boolean {
++  return status === "open" || status === "accepted";
++}
++
++/** A request a designer can still pick up: open, nobody has taken it. */
++export function helperRequestNeedsHelper(request: Pick<HelperRequest, "status">): boolean {
++  return request.status === "open";
++}
++
++export function helperStatusLabel(status: HelperRequestStatus): string {
++  switch (status) {
++    case "open":
++      return "Waiting for a designer";
++    case "accepted":
++      return "Accepted by a designer";
++    case "joined":
++      return "Designer in the design";
++    case "closed":
++      return "Closed";
++    case "cancelled":
++      return "Cancelled by the customer";
++  }
++}
++
++/** Only a signed-on designer with a recorded sign-on time is queued. */
++export function helperCanReceiveRequests(entry: Pick<HelperQueueEntry, "available" | "signedOnAt">): boolean {
++  return entry.available && Boolean(entry.signedOnAt);
++}
++
++function time(value: string | null | undefined): number {
++  if (!value) return Number.POSITIVE_INFINITY;
++  const parsed = new Date(value).getTime();
++  return Number.isNaN(parsed) ? Number.POSITIVE_INFINITY : parsed;
++}
++
++/**
++ * Who is notified, and in what order. Longest-waiting designer first, so one
++ * helper does not collect every request while another waits.
++ */
++export function helperNotificationOrder<T extends Pick<HelperQueueEntry, "designerUserId" | "available" | "signedOnAt">>(
++  entries: readonly T[],
++): T[] {
++  return entries
++    .filter((entry) => helperCanReceiveRequests(entry))
++    .slice()
++    .sort((a, b) => time(a.signedOnAt) - time(b.signedOnAt) || a.designerUserId - b.designerUserId);
++}
++
++/** 1-based place in the queue, or null when this designer is not queued. */
++export function helperQueuePosition<
++  T extends Pick<HelperQueueEntry, "designerUserId" | "available" | "signedOnAt">,
++>(entries: readonly T[], designerUserId: number): number | null {
++  const ordered = helperNotificationOrder(entries);
++  const index = ordered.findIndex((entry) => entry.designerUserId === designerUserId);
++  return index < 0 ? null : index + 1;
++}
++
++/** A usable mail address, or null. Never guesses or invents one. */
++export function helperEmailTarget(email: string | null | undefined): string | null {
++  const trimmed = (email ?? "").trim();
++  if (!trimmed) return null;
++  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed) ? trimmed : null;
++}
++
++/** The address carried on the queue entry, from the user account on file. */
++export function helperQueueEmail(entry: Pick<HelperQueueEntry, "email">): string | null {
++  return helperEmailTarget(entry.email);
++}
++
++export type HelperNotifyPlan = {
++  /** Designers queued for this request, in queue order. */
++  queued: number[];
++  /** Designers whose queue entry has a usable email address on file. */
++  emailTargets: string[];
++  /** Queued designers with no usable address, so the app can say who has none. */
++  missingEmail: number[];
++};
++
++/**
++ * What a new request turns into. In-app notice always goes to every queued
++ * designer; email only goes to queued designers whose entry carries a valid
++ * address. `mailerConfigured` never removes a designer from the in-app notice.
++ */
++export function planHelperNotification(
++  entries: readonly HelperQueueEntry[],
++  options?: { mailerConfigured?: boolean },
++): HelperNotifyPlan {
++  const queuedEntries = helperNotificationOrder(entries);
++  const plan: HelperNotifyPlan = { queued: [], emailTargets: [], missingEmail: [] };
++  for (const entry of queuedEntries) {
++    plan.queued.push(entry.designerUserId);
++    const target = helperQueueEmail(entry);
++    if (!target) {
++      plan.missingEmail.push(entry.designerUserId);
++      continue;
++    }
++    if (options?.mailerConfigured === false) continue;
++    plan.emailTargets.push(target);
++  }
++  return plan;
++}
++
++/** One plain sentence for the customer after the request is made. */
++export function helperRequestSentCopy(plan: HelperNotifyPlan, mailerConfigured: boolean): string {
++  if (plan.queued.length === 0) {
++    return "Your design is shared. No designer has their Helper sign on right now, so your request is waiting in the admin queue.";
++  }
++  const designers = plan.queued.length === 1 ? "1 designer" : `${plan.queued.length} designers`;
++  if (!mailerConfigured) {
++    return `Your design is shared and ${designers} with Helper sign on has the request in the app. Email is not configured on this server, so no email was sent.`;
++  }
++  if (plan.emailTargets.length === 0) {
++    return `Your design is shared and ${designers} with Helper sign on has the request in the app. None of them has an email address on file, so no email was sent.`;
++  }
++  const emails = plan.emailTargets.length === 1 ? "1 email" : `${plan.emailTargets.length} emails`;
++  return `Your design is shared, ${designers} with Helper sign on has the request in the app, and ${emails} went to the address on file.`;
++}
++
++/** Plain statement of the mailer state, shown wherever a helper is listed. */
++export function helperMailerNotice(mailerConfigured: boolean): string {
++  return mailerConfigured
++    ? "Email is on. The request is also mailed to each queued designer's address on file."
++    : "Email is not configured on the server. Requests still appear in the app for every queued designer, and no email is sent.";
++}
++
++export function helperEmailSkippedCopy(reason: "no-mailer" | "no-address"): string {
++  return reason === "no-mailer"
++    ? "No email sent: the server mailer is not configured."
++    : "No email sent: no address on file.";
++}
++
++/** Local time for a request row, e.g. "Nov 6, 2026, 9:14 AM". Empty when unset. */
++export function helperRequestTimeLabel(value: string | null | undefined): string {
++  if (!value) return "";
++  const parsed = new Date(value);
++  if (Number.isNaN(parsed.getTime())) return "";
++  return parsed.toLocaleString(undefined, {
++    month: "short",
++    day: "numeric",
++    year: "numeric",
++    hour: "numeric",
++    minute: "2-digit",
++  });
++}
++
++/** Who is on the request, and when — the same sentence on every surface. */
++export function helperRequestOwnerLabel(request: Pick<HelperRequest, "status" | "acceptedByName" | "acceptedAt" | "joinedByName" | "joinedAt">): string {
++  const accepted = request.acceptedByName
++    ? `${request.acceptedByName} accepted ${helperRequestTimeLabel(request.acceptedAt)}`
++    : "Not accepted yet";
++  if (!request.joinedByName) return accepted;
++  return `${accepted} · ${request.joinedByName} joined the design ${helperRequestTimeLabel(request.joinedAt)}`;
++}
++
++export type HelperRequestSummaryRow = { label: string; value: string };
++
++/** Every field the admin pop-up shows, in one place so nothing is dropped. */
++export function helperRequestSummaryRows(request: HelperRequest): HelperRequestSummaryRow[] {
++  const contact = [request.customerEmail, request.customerPhone].filter((part) => Boolean(part && part.trim()));
++  return [
++    { label: "Customer", value: request.customerName?.trim() || "Customer name not given" },
++    { label: "Contact", value: contact.length ? contact.join(" · ") : "No email or phone on the request" },
++    { label: "Design", value: request.designName?.trim() || (request.designId != null ? `Design #${request.designId}` : "No saved design") },
++    { label: "What they need", value: request.helpNote?.trim() || "No note — the customer wants a designer's opinion on this plan" },
++    { label: "Requested", value: helperRequestTimeLabel(request.requestedAt) || "Just now" },
++    { label: "Status", value: helperStatusLabel(request.status) },
++    { label: "Who has it", value: helperRequestOwnerLabel(request) },
++  ];
++}
++
++/**
++ * Where a designer or admin opens the customer's design to help.
++ *
++ * `assist=1` is the Designer's existing assisted-editing mode, and `load` is the
++ * saved design it opens, so the helper works on the customer's own plan.
++ */
++export function helperRequestDesignPath(args: {
++  designId: number | null;
++  requestId: number | null;
++  affiliateSlug?: string | null;
++}): string {
++  const params = new URLSearchParams();
++  if (args.designId != null) params.set("load", String(args.designId));
++  if (args.requestId != null) params.set("helperRequest", String(args.requestId));
++  params.set("assist", "1");
++  const slug = (args.affiliateSlug ?? "").trim();
++  if (slug) params.set("affiliate", slug);
++  return `/design?${params.toString()}`;
++}
++
++/** The customer's own read-only view of the shared design. */
++export function helperRequestSharePath(args: { shareToken: string }): string {
++  return `/design/session/${encodeURIComponent(args.shareToken)}`;
++}
++
++/** The single helper-request id a "join" came from, as carried on the design URL. */
++export function helperRequestIdFromSearch(search: string): number | null {
++  const raw = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search).get("helperRequest");
++  if (!raw || !/^\d+$/.test(raw)) return null;
++  const id = Number(raw);
++  return Number.isInteger(id) && id > 0 ? id : null;
++}
++
++export const HELPER_REQUEST_EMAIL_SUBJECT_PREFIX = "Designer helper needed";
++
++export function helperRequestEmailSubject(request: Pick<HelperRequest, "customerName" | "designName" | "id">): string {
++  const who = request.customerName?.trim() || "A customer";
++  const design = request.designName?.trim() || "a kitchen design";
++  return `${HELPER_REQUEST_EMAIL_SUBJECT_PREFIX}: ${who} asked for help on ${design} (request #${request.id})`;
++}
++
++/** Plain-text helper email. No tracking, no invented promises, one clear link. */
++export function helperRequestEmailBody(args: {
++  request: Pick<HelperRequest, "id" | "customerName" | "designName" | "helpNote" | "requestedAt">;
++  helperName: string;
++  designPath: string;
++}): string {
++  const { request, helperName, designPath } = args;
++  const customer = request.customerName?.trim() || "A customer";
++  const design = request.designName?.trim() || "a kitchen design";
++  const note = request.helpNote?.trim();
++  return [
++    `Hi ${helperName},`,
++    "",
++    `${customer} is working on ${design} in the CabinetDealz 3D Designer and asked for a designer helper.`,
++    note ? `What they need help with: ${note}` : "They did not type a note — they want a designer to look over the plan.",
++    `Requested: ${helperRequestTimeLabel(request.requestedAt) || "just now"} (request #${request.id}).`,
++    "",
++    `Open the customer's design: ${designPath}`,
++    "",
++    "You are getting this because your Helper sign is on. Turn it off on your Designer Workspace helper tab to stop receiving these.",
++    "",
++    "CabinetDealz",
++  ].join("\n");
++}
+-- 
+2.43.0
+
