@@ -27,7 +27,7 @@ function formatBytes(value: number | null) {
 
 export default function AffiliateLiteratureAdmin() {
   const fileRef = useRef<HTMLInputElement>(null);
-  const { utils, list, upload: uploadProcedure, update: updateProcedure, remove: removeProcedure } =
+  const { utils, list, upload: uploadProcedure, update: updateProcedure, remove: removeProcedure, signedFile } =
     useAffiliateLiteratureAdmin();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -35,6 +35,7 @@ export default function AffiliateLiteratureAdmin() {
   const [inAffiliateLibrary, setInAffiliateLibrary] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [pendingId, setPendingId] = useState<number | null>(null);
+  const [openingId, setOpeningId] = useState<number | null>(null);
 
   const items = (list.data ?? []).map(toLibraryDocument);
 
@@ -80,6 +81,22 @@ export default function AffiliateLiteratureAdmin() {
   function toggleAffiliateLibrary(id: number, checked: boolean) {
     setPendingId(id);
     update.mutate({ id, inAffiliateLibrary: checked });
+  }
+
+  /**
+   * Open asks the server for a signed link. A literature `url` is a private-bucket
+   * path and the storage proxy refuses it, so linking it directly answers 403.
+   */
+  async function openDocument(item: { id: number; title: string }) {
+    setOpeningId(item.id);
+    try {
+      const file = await signedFile.fetch({ id: item.id });
+      window.open(file.url, "_blank", "noopener,noreferrer");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : `Could not open ${item.title}.`);
+    } finally {
+      setOpeningId(null);
+    }
   }
 
   async function handleUpload() {
@@ -171,7 +188,17 @@ export default function AffiliateLiteratureAdmin() {
                     </label>
                     <span id={`library-visibility-help-${item.id}`} className="sr-only">{libraryVisibilityDescription(item.visibility)}</span>
                     {item.url ? (
-                      <Button asChild size="sm" variant="outline" className="gap-1.5"><a href={item.url} target="_blank" rel="noreferrer"><Download className="h-3.5 w-3.5" /> Open</a></Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="gap-1.5"
+                        disabled={openingId === item.id}
+                        onClick={() => openDocument(item)}
+                        aria-label={`Open ${item.title}`}
+                      >
+                        <Download className="h-3.5 w-3.5" />{openingId === item.id ? "Opening…" : "Open"}
+                      </Button>
                     ) : null}
                     <Button type="button" size="sm" variant="ghost" className="text-destructive" onClick={() => remove.mutate({ id: item.id })} aria-label={`Delete ${item.title}`}><Trash2 className="h-4 w-4" /></Button>
                   </div>

@@ -73,6 +73,9 @@ export type RawLibraryDocument = Partial<Omit<LibraryDocument, "visibility">> & 
   affiliateToggledByName?: string | null;
 };
 
+/** A short-lived link to one private document, from `affiliateResources.adminSignedFile`. */
+export type LibrarySignedFile = { url: string; filename: string | null; mimeType: string | null };
+
 /** One row from the server, with the safe defaults applied. */
 export function toLibraryDocument(row: RawLibraryDocument): LibraryDocument {
   return {
@@ -113,9 +116,23 @@ type LibraryProcedures = {
   };
 };
 
+/**
+ * `affiliateResources.adminSignedFile` is the admin-only way to open a library
+ * document. A row's `url` is a private-bucket path, and the storage proxy refuses
+ * every `library-documents/` key, so linking `url` directly answers 403. The
+ * procedure checks the admin role server-side and hands back a short-lived signed
+ * link instead.
+ */
+type SignedFileProcedures = {
+  adminSignedFile: {
+    fetch: (input: { id: number }) => Promise<LibrarySignedFile>;
+  };
+};
+
 export function useAffiliateLiteratureAdmin() {
   const client = trpc as unknown as {
     affiliateLiterature: LibraryProcedures;
+    affiliateResources: SignedFileProcedures;
     useUtils: () => {
       affiliateLiterature: { adminList: { invalidate: () => Promise<void> } };
     };
@@ -126,5 +143,6 @@ export function useAffiliateLiteratureAdmin() {
     upload: client.affiliateLiterature.adminUpload,
     update: client.affiliateLiterature.adminUpdate,
     remove: client.affiliateLiterature.adminDelete,
+    signedFile: client.affiliateResources.adminSignedFile,
   };
 }

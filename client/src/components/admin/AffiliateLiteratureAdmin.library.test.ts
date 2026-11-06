@@ -180,6 +180,14 @@ describe("the admin page contract", () => {
     expect(admin).toContain("Off keeps this document admin-only");
     expect(admin).toContain("Neither one makes it public");
   });
+
+  it("opens a document through adminSignedFile, because its url is private", () => {
+    // The row url is a private-bucket path; the storage proxy refuses every
+    // library-documents/ key, so an <a href={item.url}> would answer 403.
+    expect(admin).toContain("signedFile.fetch({ id: item.id })");
+    expect(admin).toContain("window.open(file.url");
+    expect(admin).not.toContain("href={item.url}");
+  });
 });
 
 describe("the backend patch", () => {
