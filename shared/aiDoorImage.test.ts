@@ -1,7 +1,9 @@
 /**
- * Every column is the same two steps: the provider writes a description, then an
- * image model draws the door from it. Claude is a text writer like the other two,
- * not a special case.
+ * Which provider draws each column's door, and who is honest about it.
+ *
+ * Anthropic returns text only, so Claude's column cannot draw its own picture.
+ * That is written down here rather than discovered at runtime, so the UI can say
+ * which model drew the image instead of implying Claude did.
  */
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
@@ -10,31 +12,28 @@ import {
   AI_DOOR_IMAGE_PLANS,
   aiDoorImageCaption,
   aiDoorImagePlan,
-  aiDoorImageStepLabel,
-  aiDoorPipelineLabel,
+  aiDoorModelCanDrawImage,
 } from "./aiDoorImage";
 import { AI_DOOR_MODELS } from "./aiDoorPrompts";
 
-describe("each column is the same two steps", () => {
-  it("has a text writer for every column, and always the column's own provider", () => {
-    expect(aiDoorImagePlan("gpt").writer).toBe("gpt");
-    expect(aiDoorImagePlan("claude").writer).toBe("claude");
-    expect(aiDoorImagePlan("gemini").writer).toBe("gemini");
-  });
-
-  it("has an image painter for every column, with no column missing one", () => {
+describe("who draws what", () => {
+  it("lets GPT and Gemini draw their own picture", () => {
+    expect(aiDoorModelCanDrawImage("gpt")).toBe(true);
+    expect(aiDoorModelCanDrawImage("gemini")).toBe(true);
     expect(aiDoorImagePlan("gpt").painter).toBe("openai");
-    expect(aiDoorImagePlan("claude").painter).toBe("gemini");
     expect(aiDoorImagePlan("gemini").painter).toBe("gemini");
-    for (const model of AI_DOOR_MODELS) {
-      expect(aiDoorImagePlan(model).painter, model).toMatch(/^(openai|gemini)$/);
-    }
+    // Their own provider writes and draws.
+    expect(aiDoorImagePlan("gpt").painterIsWriter).toBe(true);
+    expect(aiDoorImagePlan("gemini").painterIsWriter).toBe(true);
   });
 
-  it("reads the same way for all three columns", () => {
-    expect(aiDoorPipelineLabel("gpt")).toBe("GPT description → image");
-    expect(aiDoorPipelineLabel("claude")).toBe("Claude description → image");
-    expect(aiDoorPipelineLabel("gemini")).toBe("Gemini description → image");
+  it("never claims Claude can draw, and names the model that does", () => {
+    expect(aiDoorModelCanDrawImage("claude")).toBe(false);
+    const plan = aiDoorImagePlan("claude");
+    expect(plan.writer).toBe("claude");
+    expect(plan.painter).toBe("gemini");
+    expect(plan.route).toBe("description-then-image");
+    expect(plan.note).toContain("Claude cannot return an image");
   });
 
   it("covers all three columns and no others", () => {
@@ -53,12 +52,6 @@ describe("each column is the same two steps", () => {
     }
   });
 
-  it("names both steps for every column", () => {
-    expect(aiDoorImageStepLabel("gpt")).toContain("Step 1 GPT description");
-    expect(aiDoorImageStepLabel("claude")).toContain("Step 1 Claude description");
-    expect(aiDoorImageStepLabel("claude")).toContain("Step 2 Google's image model image");
-  });
-
   it("uses the image model ids this codebase already runs, not invented ones", () => {
     // gpt-image-2 is what the Designer's photo renders name; the Gemini image
     // model is what server/_core/imageGeneration.ts already calls.
@@ -69,39 +62,28 @@ describe("each column is the same two steps", () => {
   });
 });
 
-describe("the caption names both steps, in the same order for every column", () => {
-  it("names the text step then the image step for GPT", () => {
+describe("the caption says who drew the picture", () => {
+  it("credits the own-provider for GPT and Gemini", () => {
     const caption = aiDoorImageCaption("gpt", {
       url: "/manus-storage/x.png",
       painter: "openai",
       providerModel: "gpt-image-2",
       fromDescription: null,
     });
-    expect(caption).toContain("Step 1: GPT wrote the description");
-    expect(caption).toContain("Step 2: OpenAI's image model drew this image");
+    expect(caption).toContain("OpenAI's image model drew this door");
   });
 
-  it("names Claude as the text writer and Google as the image step", () => {
+  it("credits the image model and Claude's description for Claude", () => {
     const caption = aiDoorImageCaption("claude", {
       url: "/manus-storage/x.png",
       painter: "gemini",
       providerModel: "gemini-3.1-flash-image",
       fromDescription: "claude",
     });
-    expect(caption).toContain("Step 1: Claude wrote the description");
-    expect(caption).toContain("Step 2: Google's image model drew this image");
+    expect(caption).toContain("Google's image model drew this door");
+    expect(caption).toContain("Claude's description");
+    // It never says Claude drew it.
     expect(caption).not.toContain("Claude drew");
-  });
-
-  it("says the same two steps for Gemini", () => {
-    const caption = aiDoorImageCaption("gemini", {
-      url: "/manus-storage/x.png",
-      painter: "gemini",
-      providerModel: "gemini-3.1-flash-image",
-      fromDescription: null,
-    });
-    expect(caption).toContain("Step 1: Gemini wrote the description");
-    expect(caption).toContain("Step 2: Google's image model drew this image");
   });
 
   it("has no caption when there is no picture", () => {
