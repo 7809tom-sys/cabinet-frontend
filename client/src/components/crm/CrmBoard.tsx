@@ -32,6 +32,7 @@ import {
 import { CRM_CUSTOMER_LIST_TEMPLATE, crmCustomerFileReadProgress, parseCrmCustomerListCsv, type CrmCustomerImportRow, type CrmCustomerImportSkippedRow } from "@shared/crmCustomerListImport";
 import { affiliateCardColor, type CrmAffiliateBrand } from "@/lib/crmAffiliateBrand";
 import { crmBoardQueryInput, dealCustomerInput } from "@/lib/affiliateSiteScope";
+import { designOpenPath } from "@/lib/designOwnerScope";
 import { MASTER_AFFILIATE_FILTER_ALL, masterAffiliateFilterId } from "@/lib/crmMasterFilter";
 import { filterDealsByHelpType, type CrmHelpFilter } from "@/lib/crmHelpFilter";
 import { crmQuickInvoiceTotal, openCrmQuickInvoicePdf, type CrmQuickInvoiceBrand, type CrmQuickInvoiceLine } from "@/lib/crmQuickInvoice";
@@ -899,7 +900,19 @@ function DealDrawer({ dealId, lang, summary, onClose, onCompose }: { dealId: num
                       <div>
                         <p className="font-medium">{design.name}</p>
                         {design.assistLabel && <p className="text-[11px] text-muted-foreground">{design.assistLabel}</p>}
-                        <a className="text-xs text-primary underline mr-2" href={customerDetail.data.storeSlug ? `/store/${customerDetail.data.storeSlug}/design?load=${design.id}&assist=1` : `/design?load=${design.id}&assist=1`}>Open in Designer</a>
+                        {/* Built from the design's own store, not the board that
+                            is open: a plan saved elsewhere opened under this
+                            store and failed its scope check. */}
+                        <a
+                          className="text-xs text-primary underline mr-2"
+                          href={designOpenPath(
+                            {
+                              id: design.id,
+                              affiliateSlug: (design as { affiliateSlug?: string | null }).affiliateSlug ?? customerDetail.data.storeSlug ?? null,
+                            },
+                            { assist: true },
+                          )}
+                        >Open in Designer</a>
                         <button type="button" className="text-xs text-primary underline" onClick={() => savePackage.mutate({ designId: design.id, name: design.name })}>Save as Kitchen Package</button>
                       </div>
                     </div>
