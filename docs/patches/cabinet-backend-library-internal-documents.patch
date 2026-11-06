@@ -1,0 +1,1486 @@
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Fri, 6 Nov 2026 01:55:00 +0000
+Subject: [PATCH] Keep library documents internal by default, and gate the
+ affiliate library behind one audited checkbox.
+
+The document library could only say "published" or "not published", so an
+internal strategy document had no safe home. Now every document carries a
+visibility, and there are exactly two values:
+
+  internal   admin only. Never returned by an affiliate query, never served
+             from a public path. This is the default for a new PDF.
+  affiliate  an admin ticked "Affiliate library". A SIGNED-IN affiliate sees it
+             in the portal's Printed Materials through a signed storage URL.
+             Still not public: no third value, no public query, no public URL.
+
+Server-enforced, not just a hidden button:
+  - affiliateResources.publishedLiterature now requires visibility='affiliate'
+    AND isPublished=1, then re-checks both in memory with the same shared
+    predicate the admin page uses.
+  - affiliateLiterature.adminUpload/adminUpdate are adminProcedure, and
+    inAffiliateLibrary is the ONLY field that writes visibility. A plain
+    isPublished input would let a stale client publish without touching
+    visibility, so it is gone.
+  - The toggle writes visibility, isPublished, affiliateToggledAt,
+    affiliateToggledBy and affiliateToggledByName in one row update, so the
+    three can never disagree.
+  - fileKey now sits under library-documents/, which server/storage.ts puts in
+    the private Supabase bucket and server/_core/storageProxy.ts refuses on the
+    public proxy. An internal document has no public address even if the key
+    leaks.
+  - affiliateResources.adminSignedFile is an adminProcedure, for the admin
+    page's Open button. Affiliates cannot reach it.
+
+The new docs/sql/0250_library_internal_documents.tidb.sql is copied verbatim
+from the frontend repo, where it is the single source for the TiDB paste.
+
+Apply from the cabinet-backend repository root:
+
+    git apply /path/to/cabinet-backend-library-internal-documents.patch
+
+Then, in this order:
+  1. Paste docs/sql/0250_library_internal_documents.tidb.sql in the TiDB editor.
+  2. Deploy this patch (the schema selects the new columns).
+  3. pnpm exec tsx server/scripts/import-internal-library-documents.ts
+     with FRONTEND_REPO_ROOT pointing at the cabinet-frontend checkout, to put
+     the committed PDF in the private bucket under the key the SQL row uses.
+
+Frontend: cabinet-frontend pull request on cursor/library-internal-documents-a62c.
+
+---
+diff --git a/client/src/components/admin/AdminTabHelp.tsx b/client/src/components/admin/AdminTabHelp.tsx
+index 0b1f58e..7bc4841 100644
+--- a/client/src/components/admin/AdminTabHelp.tsx
++++ b/client/src/components/admin/AdminTabHelp.tsx
+@@ -136,8 +136,8 @@ const TAB_HELP: Record<string, { en: string; zh: string; link?: { label: string;
+     zh: "管理联盟行销中心：脚本、指南、视频、私密 PDF 和社交贴文。未发布的草稿对联盟隐藏。",
+   },
+   "affiliate-literature": {
+-    en: "Store affiliate-ready sales brochures, pricing guides, training documents, and other literature here. Keep drafts private until reviewed, then publish approved documents for future affiliate access.",
+-    zh: "在此儲存聯盟準備好的銷售手冊、定價指南、培訓文件及其他資料。審核前保持草稿私密，批准後再發布供聯盟存取。",
++    en: "Every document here is internal and admin-only until you tick Affiliate library beside it. Ticking shows it to signed-in affiliates in their portal library; unticking takes it back. Neither state makes a document public. Every tick records who changed it and when.",
++    zh: "此處每份文件預設為內部文件，僅限管理員檢視，直到您在旁邊勾選「聯盟圖書館」。勾選後，已登入的聯盟會員會在其入口網站的圖書館看到它；取消勾選則收回。兩種狀態都不會讓文件公開。每次勾選都會記錄操作者與時間。",
+   },
+   "designer-availability": {
+     en: "Toggle which cabinets appear in the kitchen designer tool. Enable or disable individual cabinets from the designer palette.",
+diff --git a/client/src/components/admin/AffiliateLiteratureAdmin.library.test.ts b/client/src/components/admin/AffiliateLiteratureAdmin.library.test.ts
+new file mode 100644
+index 0000000..fc83800
+--- /dev/null
++++ b/client/src/components/admin/AffiliateLiteratureAdmin.library.test.ts
+@@ -0,0 +1,148 @@
++import { createHash } from "node:crypto";
++import { existsSync, readFileSync } from "node:fs";
++import { resolve } from "node:path";
++import { describe, expect, it } from "vitest";
++
++const root = process.cwd();
++const read = (path: string) => readFileSync(resolve(root, path), "utf8");
++
++const SQL_FILE = "docs/sql/0250_library_internal_documents.tidb.sql";
++const PDF_FILE = "docs/library/internal/website-improvement-proposal-marazzi-lessons-cabinetdealz.pdf";
++const PATCH_FILE = "docs/patches/cabinet-backend-library-internal-documents.patch";
++
++const sql = read(SQL_FILE);
++const admin = read("client/src/components/admin/AffiliateLiteratureAdmin.tsx");
++const patch = read(PATCH_FILE);
++const html = read("client/index.html");
++
++describe("SQL 0250 library internal documents", () => {
++  it("keeps one statement per numbered line and qualifies every table", () => {
++    expect(sql).not.toMatch(/statement-breakpoint/);
++    expect(sql).toContain("Numbered 0250");
++    expect(sql).toContain("Run after 0249");
++    const blocks = sql.split(/\n-- \d+\./).slice(1);
++    expect(blocks.length).toBeGreaterThanOrEqual(11);
++    for (const block of blocks) {
++      const statements = block
++        .split(";")
++        .map((part) => part.replace(/--[^\n]*/g, "").trim())
++        .filter(Boolean);
++      expect(statements).toHaveLength(1);
++      if (/^\s*(ALTER|CREATE|SELECT|UPDATE|INSERT)\b/i.test(statements[0])) {
++        if (/^SELECT\b/i.test(statements[0]) && statements[0].includes("information_schema")) continue;
++        expect(statements[0]).toMatch(/cabinet_dealz\./);
++      }
++    }
++    expect(sql.trimEnd().endsWith(";")).toBe(true);
++    expect(sql).toContain("information_schema");
++    expect(sql).not.toMatch(/\bAS (count|order|key|value|status|table|internal|affiliate)\b/i);
++  });
++
++  it("adds visibility plus the who/when audit, all additive and re-runnable", () => {
++    expect(sql).toContain("ADD COLUMN IF NOT EXISTS visibility VARCHAR(16) NOT NULL DEFAULT 'internal'");
++    expect(sql).toContain("ADD COLUMN IF NOT EXISTS affiliateToggledAt DATETIME NULL");
++    expect(sql).toContain("ADD COLUMN IF NOT EXISTS affiliateToggledBy INT NULL");
++    expect(sql).toContain("ADD COLUMN IF NOT EXISTS affiliateToggledByName VARCHAR(255) NULL");
++    expect(sql).toContain("CREATE INDEX IF NOT EXISTS affiliate_literature_visibility_idx");
++    // Every write is guarded, so a second paste changes nothing.
++    expect(sql).toContain("WHERE NOT EXISTS (SELECT 1 FROM cabinet_dealz.affiliate_literature");
++    expect(sql).toMatch(/UPDATE cabinet_dealz\.affiliate_literature AS backfill_literature SET .* WHERE .*affiliateToggledAt IS NULL;/);
++  });
++
++  it("seeds the Marazzi proposal as internal and unpublished", () => {
++    const insert = sql.split("\n").find((line) => line.startsWith("INSERT INTO cabinet_dealz.affiliate_literature"));
++    expect(insert).toBeTruthy();
++    expect(insert).toContain("'Website Improvement Proposal — Lessons from Marazzi USA'");
++    expect(insert).toContain("library-documents/internal/website-improvement-proposal-marazzi-lessons-cabinetdealz.pdf");
++    expect(insert).toContain("'application/pdf'");
++    // isPublished 0 and visibility 'internal': the two values that keep it in.
++    expect(insert).toContain(", 0, 'internal', 900 FROM DUAL");
++    expect(insert).not.toMatch(/'affiliate'/);
++    expect(insert).not.toMatch(/, 1, '/);
++  });
++
++  it("picks a number that is still free in the repository", () => {
++    expect(existsSync(resolve(root, SQL_FILE))).toBe(true);
++    // 0249 belongs to the open KBIS pull request, so this file may not reuse it.
++    expect(sql).toContain("0249 is reserved");
++  });
++});
++
++describe("the committed internal proposal PDF", () => {
++  it("ships in the repo and is not served by the site", () => {
++    expect(existsSync(resolve(root, PDF_FILE))).toBe(true);
++    const bytes = readFileSync(resolve(root, PDF_FILE));
++    expect(bytes.length).toBeGreaterThan(10_000);
++    expect(bytes.subarray(0, 5).toString("latin1")).toBe("%PDF-");
++    // The SQL row records the exact byte count, so the file and the row agree.
++    expect(sql).toContain(`'application/pdf', ${bytes.length}, 0, 'internal', 900`);
++  });
++
++  it("keeps docs/ out of the Vercel build, so the PDF has no public URL", () => {
++    const vercelIgnore = read(".vercelignore").split("\n").map((line) => line.trim());
++    expect(vercelIgnore).toContain("docs");
++  });
++
++  it("is the file the patch's importer uploads, by name and hash", () => {
++    const bytes = readFileSync(resolve(root, PDF_FILE));
++    const sha256 = createHash("sha256").update(bytes).digest("hex");
++    expect(patch).toContain("website-improvement-proposal-marazzi-lessons-cabinetdealz.pdf");
++    expect(patch).toContain("library-documents/internal/");
++    // Recorded in this test so a swapped file is a visible change, not a silent one.
++    expect(sha256).toBe("c9cf60ae85cfaec1ce3a5954653888ad5594d50ebdf915375d958e0042391104");
++  });
++
++  it("is not referenced by the app shell", () => {
++    expect(html).not.toContain("website-improvement-proposal");
++    expect(admin).not.toContain("website-improvement-proposal");
++  });
++});
++
++describe("the admin page contract", () => {
++  it("puts an Affiliate library checkbox on every document, internal ones included", () => {
++    expect(admin).toContain("AFFILIATE_LIBRARY_SWITCH_LABEL");
++    expect(admin).toContain("items.map((item) =>");
++    expect(admin).toContain('id={`library-affiliate-${item.id}`}');
++    expect(admin).toContain("checked={inAffiliate}");
++    // Every row renders the checkbox, with no visibility filter in front of it.
++    expect(admin).not.toMatch(/items\.filter\([^)]*\)\.map\(\(item\) =>[\s\S]*library-affiliate/);
++  });
++
++  it("sends one field for the toggle and never a publish flag", () => {
++    expect(admin).toContain("update.mutate({ id, inAffiliateLibrary: checked })");
++    expect(admin).toContain("inAffiliateLibrary,");
++    expect(admin).not.toContain("isPublished");
++  });
++
++  it("tells the admin the check never makes a document public", () => {
++    expect(admin).toContain("This checkbox never puts a document on the public site");
++    expect(admin).toContain("Admins only");
++  });
++});
++
++describe("the backend patch", () => {
++  it("touches only the library, the storage rules, and the shared module", () => {
++    const files = [...patch.matchAll(/^diff --git a\/(\S+) b\//gm)].map((match) => match[1]);
++    expect(files.length).toBeGreaterThanOrEqual(6);
++    for (const file of files) {
++      expect(file).toMatch(/^(drizzle\/schema\.ts|server\/routers\/affiliateLiterature\.ts|server\/routers\/affiliateResources\.ts|server\/storage\.ts|server\/_core\/storageProxy\.ts|server\/scripts\/import-internal-library-documents\.ts|server\/internalLibraryDocuments\.test\.ts|shared\/libraryVisibility\.ts|docs\/sql\/0250_library_internal_documents\.tidb\.sql)$/);
++    }
++  });
++
++  it("enforces visibility inside the affiliate read, not only in the page", () => {
++    expect(patch).toContain('eq(affiliateLiterature.visibility, "affiliate")');
++    expect(patch).toContain("eq(affiliateLiterature.isPublished, true)");
++    expect(patch).toContain(".filter(isAffiliateLibraryDocument)");
++  });
++
++  it("keeps library bytes in the private bucket, off the public proxy", () => {
++    expect(patch).toContain('"library-documents/"');
++    expect(patch).toContain("not available at a public address");
++  });
++
++  it("applies cleanly in the cabinet-backend checkout", () => {
++    expect(patch.startsWith("From: Cursor Agent")).toBe(true);
++    expect(patch).toContain("git apply");
++    expect(patch).not.toContain("TODO");
++  });
++});
+diff --git a/client/src/components/admin/AffiliateLiteratureAdmin.test.tsx b/client/src/components/admin/AffiliateLiteratureAdmin.test.tsx
+new file mode 100644
+index 0000000..a03fb7f
+--- /dev/null
++++ b/client/src/components/admin/AffiliateLiteratureAdmin.test.tsx
+@@ -0,0 +1,172 @@
++// @vitest-environment jsdom
++import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
++import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
++
++const { state } = vi.hoisted(() => ({
++  state: {
++    rows: [] as Record<string, unknown>[],
++    updateInputs: [] as Record<string, unknown>[],
++    uploadInputs: [] as Record<string, unknown>[],
++    invalidated: 0,
++  },
++}));
++
++vi.mock("@/lib/trpc", () => ({
++  trpc: new Proxy({}, {
++    get(_target, namespace) {
++      if (namespace === "useUtils") {
++        return () => ({
++          affiliateLiterature: {
++            adminList: { invalidate: () => { state.invalidated += 1; return Promise.resolve(); } },
++          },
++        });
++      }
++      if (typeof namespace !== "string") return undefined;
++      return new Proxy({}, {
++        get(_inner, procedure) {
++          if (procedure === "adminList") {
++            return { useQuery: () => ({ data: state.rows, isLoading: false, error: null }) };
++          }
++          if (procedure === "adminUpdate") {
++            return {
++              useMutation: (options?: { onSuccess?: (result: unknown, input: Record<string, unknown>) => void }) => ({
++                mutate: (input: Record<string, unknown>) => {
++                  state.updateInputs.push(input);
++                  options?.onSuccess?.({ id: input.id }, input);
++                },
++                mutateAsync: async () => undefined,
++                isPending: false,
++              }),
++            };
++          }
++          if (procedure === "adminUpload") {
++            return {
++              useMutation: (options?: { onSuccess?: (result: unknown, input: Record<string, unknown>) => void }) => ({
++                mutate: (input: Record<string, unknown>) => {
++                  state.uploadInputs.push(input);
++                  options?.onSuccess?.({ id: 99, url: "/manus-storage/library-documents/x.pdf" }, input);
++                },
++                mutateAsync: async () => undefined,
++                isPending: false,
++              }),
++            };
++          }
++          return {
++            useMutation: () => ({ mutate: () => undefined, mutateAsync: async () => undefined, isPending: false }),
++          };
++        },
++      });
++    },
++  }),
++}));
++
++vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
++
++import AffiliateLiteratureAdmin from "./AffiliateLiteratureAdmin";
++
++beforeEach(() => {
++  state.rows = [
++    {
++      id: 7,
++      title: "Website Improvement Proposal — Lessons from Marazzi USA",
++      description: "Internal strategy proposal.",
++      category: "Internal",
++      filename: "website-improvement-proposal.pdf",
++      url: "/manus-storage/library-documents/internal/proposal.pdf",
++      mimeType: "application/pdf",
++      sizeBytes: 92281,
++      isPublished: false,
++      sortOrder: 900,
++      visibility: "internal",
++      affiliateToggledAt: null,
++      affiliateToggledByName: null,
++    },
++    {
++      id: 8,
++      title: "Affiliate sales brochure",
++      description: null,
++      category: "Sales",
++      filename: "brochure.pdf",
++      url: "/manus-storage/library-documents/affiliate/brochure.pdf",
++      mimeType: "application/pdf",
++      sizeBytes: 2048,
++      isPublished: true,
++      sortOrder: 10,
++      visibility: "affiliate",
++      affiliateToggledAt: "2026-11-05T10:00:00.000Z",
++      affiliateToggledByName: "Tom",
++    },
++  ];
++  state.updateInputs = [];
++  state.uploadInputs = [];
++  state.invalidated = 0;
++});
++
++afterEach(() => cleanup());
++
++describe("admin literature page: Affiliate library checkbox", () => {
++  it("shows a checkbox on every PDF, internal ones included", () => {
++    render(<AffiliateLiteratureAdmin />);
++    expect(screen.getByLabelText("Affiliate library for Website Improvement Proposal — Lessons from Marazzi USA")).toBeTruthy();
++    expect(screen.getByLabelText("Affiliate library for Affiliate sales brochure")).toBeTruthy();
++    expect(screen.getByTestId("library-visibility-7").textContent).toContain("Internal");
++    expect(screen.getByTestId("library-visibility-8").textContent).toContain("Affiliate library");
++  });
++
++  it("adds an internal PDF to the affiliate library as soon as the box is checked", () => {
++    render(<AffiliateLiteratureAdmin />);
++    fireEvent.click(screen.getByLabelText("Affiliate library for Website Improvement Proposal — Lessons from Marazzi USA"));
++    expect(state.updateInputs).toEqual([{ id: 7, inAffiliateLibrary: true }]);
++  });
++
++  it("removes a PDF from the affiliate library as soon as the box is cleared", () => {
++    render(<AffiliateLiteratureAdmin />);
++    fireEvent.click(screen.getByLabelText("Affiliate library for Affiliate sales brochure"));
++    expect(state.updateInputs).toEqual([{ id: 8, inAffiliateLibrary: false }]);
++  });
++
++  it("never sends a publish or public flag - only the affiliate switch", () => {
++    render(<AffiliateLiteratureAdmin />);
++    fireEvent.click(screen.getByLabelText("Affiliate library for Website Improvement Proposal — Lessons from Marazzi USA"));
++    const keys = Object.keys(state.updateInputs[0] ?? {});
++    expect(keys).not.toContain("isPublished");
++    expect(keys).not.toContain("visibility");
++    expect(keys).not.toContain("isPublic");
++  });
++
++  it("shows who toggled a document and when", () => {
++    render(<AffiliateLiteratureAdmin />);
++    expect(screen.getByTestId("library-toggle-note-8").textContent)
++      .toBe("Added to the affiliate library by Tom on 2026-11-05");
++    expect(screen.queryByTestId("library-toggle-note-7")).toBeNull();
++  });
++
++  it("defaults a new upload to internal and sends the checkbox value", async () => {
++    render(<AffiliateLiteratureAdmin />);
++    const file = new File(["%PDF-1.4"], "proposal.pdf", { type: "application/pdf" });
++    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "New internal note" } });
++    fireEvent.change(screen.getByLabelText("Document"), { target: { files: [file] } });
++    fireEvent.click(screen.getByRole("button", { name: /add to library/i }));
++    await waitFor(() => expect(state.uploadInputs).toHaveLength(1));
++    expect(state.uploadInputs[0]).toMatchObject({ title: "New internal note", inAffiliateLibrary: false });
++    expect(Object.keys(state.uploadInputs[0])).not.toContain("isPublished");
++  });
++
++  it("reads an old row with no visibility column as internal, even if isPublished is set", () => {
++    state.rows = [{
++      id: 42,
++      title: "Legacy document",
++      category: "General",
++      filename: "legacy.pdf",
++      url: "/manus-storage/legacy.pdf",
++      mimeType: "application/pdf",
++      sizeBytes: 100,
++      isPublished: true,
++      sortOrder: 0,
++    }];
++    render(<AffiliateLiteratureAdmin />);
++    // Fails closed until SQL 0250 backfills the column.
++    expect(screen.getByLabelText("Affiliate library for Legacy document").getAttribute("aria-checked")).toBe("false");
++    expect(screen.getByTestId("library-visibility-42").textContent).toContain("Internal");
++  });
++});
+diff --git a/client/src/components/admin/AffiliateLiteratureAdmin.tsx b/client/src/components/admin/AffiliateLiteratureAdmin.tsx
+index 2380b56..c0a32ef 100644
+--- a/client/src/components/admin/AffiliateLiteratureAdmin.tsx
++++ b/client/src/components/admin/AffiliateLiteratureAdmin.tsx
+@@ -1,17 +1,23 @@
+ import { useRef, useState } from "react";
+-import { trpc } from "@/lib/trpc";
++import { toast } from "sonner";
++import { BookOpen, Download, FileText, Lock, LockOpen, Trash2, Upload } from "lucide-react";
+ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+ import { Button } from "@/components/ui/button";
+ import { Input } from "@/components/ui/input";
+ import { Label } from "@/components/ui/label";
+ import { Textarea } from "@/components/ui/textarea";
+ import { Badge } from "@/components/ui/badge";
+-import { Switch } from "@/components/ui/switch";
++import { Checkbox } from "@/components/ui/checkbox";
+ import { Spinner } from "@/components/ui/spinner";
+-import { toast } from "sonner";
+-import { BookOpen, Download, FileText, Trash2, Upload } from "lucide-react";
++import {
++  AFFILIATE_LIBRARY_SWITCH_LABEL,
++  affiliateLibraryToggleNote,
++  isAffiliateLibraryDocument,
++  libraryVisibilityDescription,
++} from "@shared/libraryVisibility";
++import { toLibraryDocument, useAffiliateLiteratureAdmin } from "@/lib/libraryAdminProcedures";
+ 
+-const CATEGORIES = ["Sales", "Marketing", "Pricing", "Training", "Legal", "General"] as const;
++const CATEGORIES = ["Internal", "Sales", "Marketing", "Pricing", "Training", "Legal", "General"] as const;
+ 
+ function formatBytes(value: number | null) {
+   if (!value) return "—";
+@@ -20,33 +26,50 @@ function formatBytes(value: number | null) {
+ }
+ 
+ export default function AffiliateLiteratureAdmin() {
+-  const utils = trpc.useUtils();
+   const fileRef = useRef<HTMLInputElement>(null);
+-  const { data: items, isLoading } = trpc.affiliateLiterature.adminList.useQuery();
++  const { utils, list, upload: uploadProcedure, update: updateProcedure, remove: removeProcedure } =
++    useAffiliateLiteratureAdmin();
+   const [title, setTitle] = useState("");
+   const [description, setDescription] = useState("");
+-  const [category, setCategory] = useState<(typeof CATEGORIES)[number]>("Sales");
+-  const [isPublished, setIsPublished] = useState(false);
++  const [category, setCategory] = useState<(typeof CATEGORIES)[number]>("Internal");
++  const [inAffiliateLibrary, setInAffiliateLibrary] = useState(false);
+   const [selectedFile, setSelectedFile] = useState<File | null>(null);
++  const [pendingId, setPendingId] = useState<number | null>(null);
+ 
+-  const upload = trpc.affiliateLiterature.adminUpload.useMutation({
+-    onSuccess: () => {
+-      toast.success("Affiliate literature added to the library");
++  const items = (list.data ?? []).map(toLibraryDocument);
++
++  const upload = uploadProcedure.useMutation({
++    onSuccess: (_result, input) => {
++      toast.success(
++        input.inAffiliateLibrary
++          ? "Added to the internal library and to the affiliate library"
++          : "Added to the internal library — admins only",
++      );
+       utils.affiliateLiterature.adminList.invalidate();
+       setTitle("");
+       setDescription("");
+-      setCategory("Sales");
+-      setIsPublished(false);
++      setCategory("Internal");
++      setInAffiliateLibrary(false);
+       setSelectedFile(null);
+       if (fileRef.current) fileRef.current.value = "";
+     },
+     onError: (error) => toast.error(error.message),
+   });
+-  const update = trpc.affiliateLiterature.adminUpdate.useMutation({
+-    onSuccess: () => utils.affiliateLiterature.adminList.invalidate(),
++
++  const update = updateProcedure.useMutation({
++    onSuccess: (_result, input) => {
++      toast.success(
++        input.inAffiliateLibrary
++          ? "Added to the affiliate library"
++          : "Removed from the affiliate library — internal, admins only",
++      );
++      utils.affiliateLiterature.adminList.invalidate();
++    },
+     onError: (error) => toast.error(error.message),
++    onSettled: () => setPendingId(null),
+   });
+-  const remove = trpc.affiliateLiterature.adminDelete.useMutation({
++
++  const remove = removeProcedure.useMutation({
+     onSuccess: () => {
+       toast.success("Literature removed");
+       utils.affiliateLiterature.adminList.invalidate();
+@@ -54,6 +77,11 @@ export default function AffiliateLiteratureAdmin() {
+     onError: (error) => toast.error(error.message),
+   });
+ 
++  function toggleAffiliateLibrary(id: number, checked: boolean) {
++    setPendingId(id);
++    update.mutate({ id, inAffiliateLibrary: checked });
++  }
++
+   async function handleUpload() {
+     if (!selectedFile || !title.trim()) {
+       toast.error("Add a title and choose a document first.");
+@@ -70,18 +98,18 @@ export default function AffiliateLiteratureAdmin() {
+       description: description.trim() || null,
+       category,
+       filename: selectedFile.name,
+-      mimeType: selectedFile.type || "application/octet-stream",
++      mimeType: selectedFile.type || "application/pdf",
+       dataBase64,
+-      isPublished,
++      inAffiliateLibrary,
+     });
+   }
+ 
+   return (
+-    <div className="space-y-6">
++    <div className="space-y-6" data-testid="affiliate-literature-admin">
+       <div>
+-        <h2 className="flex items-center gap-2 text-xl font-semibold"><BookOpen className="h-5 w-5 text-primary" /> Affiliate Literature Library</h2>
++        <h2 className="flex items-center gap-2 text-xl font-semibold"><BookOpen className="h-5 w-5 text-primary" /> Literature Library</h2>
+         <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+-          Keep sales brochures, pricing guides, training documents, and other affiliate-ready literature in one searchable administration area. Files are stored in secure object storage; this page manages the catalog record and publication status.
++          Every document here is internal to the admin team by default. Tick <strong className="font-medium text-foreground">{AFFILIATE_LIBRARY_SWITCH_LABEL}</strong> beside a document to also show it to signed-in affiliates in their portal library; untick it to take it back. This checkbox never puts a document on the public site, and every tick is recorded with your name and the time.
+         </p>
+       </div>
+ 
+@@ -89,13 +117,19 @@ export default function AffiliateLiteratureAdmin() {
+         <CardHeader className="pb-3"><CardTitle className="text-base">Add literature</CardTitle></CardHeader>
+         <CardContent className="grid gap-4 md:grid-cols-2">
+           <div className="space-y-3">
+-            <div className="space-y-1.5"><Label htmlFor="affiliate-literature-title">Title</Label><Input id="affiliate-literature-title" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Affiliate Portal Sales Brochure" /></div>
+-            <div className="space-y-1.5"><Label htmlFor="affiliate-literature-description">Description</Label><Textarea id="affiliate-literature-description" value={description} onChange={(event) => setDescription(event.target.value)} placeholder="What this document helps the affiliate explain." rows={4} /></div>
++            <div className="space-y-1.5"><Label htmlFor="affiliate-literature-title">Title</Label><Input id="affiliate-literature-title" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Website Improvement Proposal" /></div>
++            <div className="space-y-1.5"><Label htmlFor="affiliate-literature-description">Description</Label><Textarea id="affiliate-literature-description" value={description} onChange={(event) => setDescription(event.target.value)} placeholder="What this document is for, and who may read it." rows={4} /></div>
+           </div>
+           <div className="space-y-3">
+             <div className="space-y-1.5"><Label htmlFor="affiliate-literature-category">Category</Label><select id="affiliate-literature-category" className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={category} onChange={(event) => setCategory(event.target.value as (typeof CATEGORIES)[number])}>{CATEGORIES.map((option) => <option key={option}>{option}</option>)}</select></div>
+             <div className="space-y-1.5"><Label htmlFor="affiliate-literature-file">Document</Label><Input id="affiliate-literature-file" ref={fileRef} type="file" accept=".pdf,.docx,.xlsx,.pptx,.txt,application/pdf" onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)} /></div>
+-            <label className="flex items-center justify-between rounded-md border border-border px-3 py-2 text-sm"><span><span className="block font-medium">Publish to affiliate library</span><span className="text-xs text-muted-foreground">Leave off while the document is still being reviewed.</span></span><Switch checked={isPublished} onCheckedChange={setIsPublished} /></label>
++            <label htmlFor="affiliate-literature-new-affiliate-library" className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2 text-sm">
++              <span>
++                <span className="block font-medium">{AFFILIATE_LIBRARY_SWITCH_LABEL}</span>
++                <span className="text-xs text-muted-foreground">Off keeps this document admin-only. On shows it to signed-in affiliates. Neither one makes it public.</span>
++              </span>
++              <Checkbox id="affiliate-literature-new-affiliate-library" checked={inAffiliateLibrary} onCheckedChange={(value) => setInAffiliateLibrary(value === true)} />
++            </label>
+             <Button type="button" className="gap-2" onClick={handleUpload} disabled={upload.isPending || !selectedFile || !title.trim()}><Upload className="h-4 w-4" />{upload.isPending ? "Uploading…" : "Add to library"}</Button>
+           </div>
+         </CardContent>
+@@ -104,20 +138,45 @@ export default function AffiliateLiteratureAdmin() {
+       <Card>
+         <CardHeader className="pb-3"><CardTitle className="text-base">Library contents</CardTitle></CardHeader>
+         <CardContent>
+-          {isLoading ? <div className="flex justify-center py-8"><Spinner /></div> : !items?.length ? (
+-            <div className="rounded-md border border-dashed p-10 text-center text-sm text-muted-foreground">No affiliate literature has been added yet.</div>
++          {list.isLoading ? <div className="flex justify-center py-8"><Spinner /></div> : !items.length ? (
++            <div className="rounded-md border border-dashed p-10 text-center text-sm text-muted-foreground">No literature has been added yet.</div>
+           ) : (
+             <div className="divide-y divide-border rounded-md border">
+-              {items.map((item) => (
+-                <div key={item.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
+-                  <FileText className="h-5 w-5 shrink-0 text-primary" />
+-                  <div className="min-w-[220px] flex-1"><div className="font-medium">{item.title}</div><div className="text-xs text-muted-foreground">{item.filename} · {formatBytes(item.sizeBytes)} · {item.category}</div>{item.description && <div className="mt-1 line-clamp-2 text-xs text-muted-foreground">{item.description}</div>}</div>
+-                  <Badge variant={item.isPublished ? "default" : "outline"}>{item.isPublished ? "Published" : "Draft"}</Badge>
+-                  <label className="flex items-center gap-2 text-xs text-muted-foreground"><Switch checked={item.isPublished} onCheckedChange={(value) => update.mutate({ id: item.id, isPublished: value })} /> Publish</label>
+-                  <Button asChild size="sm" variant="outline" className="gap-1.5"><a href={item.url} target="_blank" rel="noreferrer"><Download className="h-3.5 w-3.5" /> Open</a></Button>
+-                  <Button type="button" size="sm" variant="ghost" className="text-destructive" onClick={() => remove.mutate({ id: item.id })} aria-label={`Delete ${item.title}`}><Trash2 className="h-4 w-4" /></Button>
+-                </div>
+-              ))}
++              {items.map((item) => {
++                const inAffiliate = isAffiliateLibraryDocument(item);
++                const toggleNote = affiliateLibraryToggleNote(item);
++                return (
++                  <div key={item.id} className="flex flex-wrap items-center gap-3 px-4 py-3" data-testid={`library-document-${item.id}`}>
++                    <FileText className="h-5 w-5 shrink-0 text-primary" />
++                    <div className="min-w-[240px] flex-1">
++                      <div className="font-medium">{item.title}</div>
++                      <div className="text-xs text-muted-foreground">{item.filename} · {formatBytes(item.sizeBytes)} · {item.category}</div>
++                      {item.description && <div className="mt-1 line-clamp-2 text-xs text-muted-foreground">{item.description}</div>}
++                      {toggleNote && <div className="mt-1 text-xs text-muted-foreground" data-testid={`library-toggle-note-${item.id}`}>{toggleNote}</div>}
++                    </div>
++                    <Badge variant={inAffiliate ? "default" : "secondary"} className="gap-1" data-testid={`library-visibility-${item.id}`}>
++                      {inAffiliate ? <LockOpen className="h-3 w-3" /> : <Lock className="h-3 w-3" />}
++                      {inAffiliate ? "Affiliate library" : "Internal"}
++                    </Badge>
++                    <label htmlFor={`library-affiliate-${item.id}`} className="flex items-center gap-2 text-xs text-muted-foreground">
++                      <Checkbox
++                        id={`library-affiliate-${item.id}`}
++                        checked={inAffiliate}
++                        disabled={pendingId === item.id}
++                        onCheckedChange={(value) => toggleAffiliateLibrary(item.id, value === true)}
++                        aria-label={`${AFFILIATE_LIBRARY_SWITCH_LABEL} for ${item.title}`}
++                        aria-describedby={`library-visibility-help-${item.id}`}
++                      />
++                      {AFFILIATE_LIBRARY_SWITCH_LABEL}
++                    </label>
++                    <span id={`library-visibility-help-${item.id}`} className="sr-only">{libraryVisibilityDescription(item.visibility)}</span>
++                    {item.url ? (
++                      <Button asChild size="sm" variant="outline" className="gap-1.5"><a href={item.url} target="_blank" rel="noreferrer"><Download className="h-3.5 w-3.5" /> Open</a></Button>
++                    ) : null}
++                    <Button type="button" size="sm" variant="ghost" className="text-destructive" onClick={() => remove.mutate({ id: item.id })} aria-label={`Delete ${item.title}`}><Trash2 className="h-4 w-4" /></Button>
++                  </div>
++                );
++              })}
+             </div>
+           )}
+         </CardContent>
+diff --git a/client/src/lib/libraryAdminProcedures.ts b/client/src/lib/libraryAdminProcedures.ts
+new file mode 100644
+index 0000000..13ed38b
+--- /dev/null
++++ b/client/src/lib/libraryAdminProcedures.ts
+@@ -0,0 +1,130 @@
++import { trpc } from "@/lib/trpc";
++import {
++  DEFAULT_LIBRARY_VISIBILITY,
++  normalizeLibraryVisibility,
++  type LibraryVisibility,
++} from "@shared/libraryVisibility";
++
++/**
++ * The literature library's admin procedures.
++ *
++ * `affiliateLiterature.adminList / adminUpload / adminUpdate / adminDelete`
++ * already ship on the backend. `visibility` and the affiliate-toggle audit
++ * columns are added by docs/patches/cabinet-backend-library-internal-documents.patch,
++ * which may be deployed after this frontend build. The rows are normalised here,
++ * so the admin page renders correctly before and after that patch:
++ *
++ *   - a row with no `visibility` (the column has not run yet) reads as internal,
++ *     which is the safe direction: an unknown document is admin-only.
++ *   - the checkbox still sends `inAffiliateLibrary`, and the backend is what
++ *     decides whether the column exists to write.
++ *
++ * This repo typechecks without the backend's AppRouter, so the client is cast
++ * the same way `contractorAccessProcedures` and `walzcraftProfileUpload` do.
++ * When AppRouter carries these procedures and fields, delete this file.
++ */
++
++export type LibraryDocument = {
++  id: number;
++  title: string;
++  description: string | null;
++  category: string;
++  filename: string;
++  url: string;
++  mimeType: string;
++  sizeBytes: number | null;
++  isPublished: boolean;
++  sortOrder: number;
++  visibility: LibraryVisibility;
++  affiliateToggledAt: string | Date | null;
++  affiliateToggledByName: string | null;
++};
++
++export type LibraryUploadInput = {
++  title: string;
++  description: string | null;
++  category: string;
++  filename: string;
++  mimeType: string;
++  dataBase64: string;
++  inAffiliateLibrary: boolean;
++};
++
++type ProcedureError = { message: string; data?: { code?: string } | null };
++
++type MutationOptions<Result, Input> = {
++  onSuccess?: (result: Result, input: Input) => void;
++  onError?: (error: ProcedureError) => void;
++  onSettled?: () => void;
++};
++
++type Mutation<Input> = {
++  mutate: (input: Input) => void;
++  mutateAsync: (input: Input) => Promise<unknown>;
++  isPending: boolean;
++};
++
++export type RawLibraryDocument = Partial<Omit<LibraryDocument, "visibility">> & {
++  id: number;
++  title: string;
++  fileKey?: string | null;
++  visibility?: string | null;
++  affiliateToggledAt?: string | Date | null;
++  affiliateToggledByName?: string | null;
++};
++
++/** One row from the server, with the safe defaults applied. */
++export function toLibraryDocument(row: RawLibraryDocument): LibraryDocument {
++  return {
++    id: row.id,
++    title: row.title,
++    description: row.description ?? null,
++    category: row.category ?? "General",
++    filename: row.filename ?? "",
++    url: row.url ?? "",
++    mimeType: row.mimeType ?? "application/pdf",
++    sizeBytes: row.sizeBytes ?? null,
++    isPublished: row.isPublished === true,
++    sortOrder: row.sortOrder ?? 0,
++    visibility: normalizeLibraryVisibility(row.visibility, DEFAULT_LIBRARY_VISIBILITY),
++    affiliateToggledAt: row.affiliateToggledAt ?? null,
++    affiliateToggledByName: row.affiliateToggledByName ?? null,
++  };
++}
++
++type LibraryProcedures = {
++  adminList: {
++    useQuery: () => {
++      data?: RawLibraryDocument[];
++      isLoading: boolean;
++      error: ProcedureError | null;
++    };
++  };
++  adminUpload: {
++    useMutation: (options?: MutationOptions<{ id: number; url: string }, LibraryUploadInput>) => Mutation<LibraryUploadInput>;
++  };
++  adminUpdate: {
++    useMutation: (
++      options?: MutationOptions<{ id: number }, { id: number; inAffiliateLibrary?: boolean }>,
++    ) => Mutation<{ id: number; inAffiliateLibrary?: boolean }>;
++  };
++  adminDelete: {
++    useMutation: (options?: MutationOptions<{ id: number }, { id: number }>) => Mutation<{ id: number }>;
++  };
++};
++
++export function useAffiliateLiteratureAdmin() {
++  const client = trpc as unknown as {
++    affiliateLiterature: LibraryProcedures;
++    useUtils: () => {
++      affiliateLiterature: { adminList: { invalidate: () => Promise<void> } };
++    };
++  };
++  return {
++    utils: client.useUtils(),
++    list: client.affiliateLiterature.adminList.useQuery(),
++    upload: client.affiliateLiterature.adminUpload,
++    update: client.affiliateLiterature.adminUpdate,
++    remove: client.affiliateLiterature.adminDelete,
++  };
++}
+diff --git a/docs/sql/0250_library_internal_documents.tidb.sql b/docs/sql/0250_library_internal_documents.tidb.sql
+new file mode 100644
+index 0000000..08656a7
+--- /dev/null
++++ b/docs/sql/0250_library_internal_documents.tidb.sql
+@@ -0,0 +1,71 @@
++-- TiDB SQL editor version. Numbered 0250. Run after 0249.
++-- One statement per line, so each line can be pasted on its own in the TiDB
++-- editor. Every table is cabinet_dealz.<table>. No reserved-word aliases.
++-- Do not run this from an application. The owner pastes it in the TiDB editor.
++-- Safe to re-run: ADD COLUMN IF NOT EXISTS, a guarded INSERT, and an UPDATE
++-- whose WHERE clause cannot match a row twice.
++--
++-- Why: the document library could only express "published" or "not published",
++-- so an internal strategy document had no safe home. Now every document carries
++-- a visibility, and the two states are the only two states:
++--
++--   internal   admin only. Never returned by an affiliate query, never served
++--              from a public path. This is the default for a new PDF.
++--   affiliate  the admin checked "Affiliate library". A SIGNED-IN affiliate
++--              sees it in the portal's Printed Materials, through a signed
++--              storage URL. It is still not public: there is no third value,
++--              no public query, and no public bucket path for these files.
++--
++-- The checkbox is the only writer of these columns. The backend refuses to
++-- serve a document to an affiliate unless visibility = 'affiliate' AND
++-- isPublished = 1, so a hand edit to one column alone cannot publish a file.
++--
++-- affiliateToggledByName is a snapshot of the admin's name at the moment of the
++-- toggle, so the audit line survives a rename or a deleted account.
++--
++-- Number order: 0249 is reserved by the open KBIS booth-assets pull request, so
++-- this file takes the next free number, 0250. Run 0249 first if it has landed.
++--
++-- The internal proposal PDF ships in the frontend repo at
++-- docs/library/internal/website-improvement-proposal-marazzi-lessons-cabinetdealz.pdf
++-- (excluded from the Vercel build by .vercelignore). It is never served from the
++-- site: the row above points at the private bucket, and the importer in the patch
++-- uploads the committed file there.
++--
++-- Rollback: the three ALTERs are additive and harm nothing if left in place.
++-- Dropping `visibility` returns every document to the old isPublished-only
++-- behaviour. The last statement below shows the internal row so it can be
++-- deleted by id.
++
++-- 1. Read-only: the columns this file adds, and whether they already exist.
++SELECT existing_column.column_name AS presentColumn, existing_column.data_type AS columnType, existing_column.is_nullable AS nullable FROM information_schema.columns AS existing_column WHERE existing_column.table_schema = 'cabinet_dealz' AND existing_column.table_name = 'affiliate_literature' AND existing_column.column_name IN ('visibility', 'affiliateToggledAt', 'affiliateToggledBy', 'affiliateToggledByName') ORDER BY existing_column.column_name;
++
++-- 2. Read-only: what the library holds today, so the backfill below is predictable.
++SELECT existing_literature.id AS literatureId, existing_literature.title, existing_literature.mimeType, existing_literature.isPublished FROM cabinet_dealz.affiliate_literature AS existing_literature ORDER BY existing_literature.id;
++
++-- 3. The visibility column. Internal is the default, so every new upload is admin-only until an admin checks "Affiliate library".
++ALTER TABLE cabinet_dealz.affiliate_literature ADD COLUMN IF NOT EXISTS visibility VARCHAR(16) NOT NULL DEFAULT 'internal';
++
++-- 4. When the "Affiliate library" checkbox was last changed. Null means never toggled.
++ALTER TABLE cabinet_dealz.affiliate_literature ADD COLUMN IF NOT EXISTS affiliateToggledAt DATETIME NULL;
++
++-- 5. Which admin account changed it. Null means never toggled, or the account was deleted.
++ALTER TABLE cabinet_dealz.affiliate_literature ADD COLUMN IF NOT EXISTS affiliateToggledBy INT NULL;
++
++-- 6. The admin's display name at the moment of the toggle, so the audit line survives a rename.
++ALTER TABLE cabinet_dealz.affiliate_literature ADD COLUMN IF NOT EXISTS affiliateToggledByName VARCHAR(255) NULL;
++
++-- 7. Keep the affiliate portal exactly as it is today: a document that is already published was already visible to affiliates, so it becomes affiliate-visible rather than silently disappearing. A row an admin later unchecks has isPublished set to 0 by the backend, so this WHERE clause cannot re-publish it on a re-run.
++UPDATE cabinet_dealz.affiliate_literature AS backfill_literature SET backfill_literature.visibility = 'affiliate' WHERE backfill_literature.visibility = 'internal' AND backfill_literature.isPublished = 1 AND backfill_literature.affiliateToggledAt IS NULL;
++
++-- 8. Index for the affiliate read, which is always "visibility = affiliate AND isPublished = 1".
++CREATE INDEX IF NOT EXISTS affiliate_literature_visibility_idx ON cabinet_dealz.affiliate_literature (visibility, isPublished, sortOrder);
++
++-- 9. Register the Marazzi / website-improvement proposal as an INTERNAL document: visibility internal, isPublished 0, no affiliate toggle recorded. The bytes are NOT public: fileKey sits under library-documents/, which the patched backend puts in the private Supabase bucket and refuses on the public storage proxy. Upload the committed PDF to that exact key with the importer in docs/patches/cabinet-backend-library-internal-documents.patch, then it opens from the admin page only.
++INSERT INTO cabinet_dealz.affiliate_literature (title, description, category, filename, fileKey, url, mimeType, sizeBytes, isPublished, visibility, sortOrder) SELECT 'Website Improvement Proposal — Lessons from Marazzi USA', 'Internal strategy proposal for Tom. Adapts Marazzi USA merchandising patterns (shop-by-look, room-first product pages, sample doors as CRM leads, find-a-dealer) to Cabinetdealz, in three phases. Internal only: never shown on the public site or in an affiliate portal.', 'Internal', 'website-improvement-proposal-marazzi-lessons-cabinetdealz.pdf', 'library-documents/internal/website-improvement-proposal-marazzi-lessons-cabinetdealz.pdf', '/manus-storage/library-documents/internal/website-improvement-proposal-marazzi-lessons-cabinetdealz.pdf', 'application/pdf', 92281, 0, 'internal', 900 FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM cabinet_dealz.affiliate_literature AS present_literature WHERE present_literature.fileKey = 'library-documents/internal/website-improvement-proposal-marazzi-lessons-cabinetdealz.pdf');
++
++-- 10. Read-only check: the library after this file, with the visibility the backend will enforce.
++SELECT checked_literature.id AS literatureId, checked_literature.title, checked_literature.visibility, checked_literature.isPublished, checked_literature.affiliateToggledAt, checked_literature.affiliateToggledByName FROM cabinet_dealz.affiliate_literature AS checked_literature ORDER BY checked_literature.visibility, checked_literature.sortOrder, checked_literature.id;
++
++-- 11. Read-only check: exactly what an affiliate portal can see. This should list only visibility = 'affiliate' rows, and never the proposal.
++SELECT affiliate_visible_literature.id AS literatureId, affiliate_visible_literature.title, affiliate_visible_literature.visibility FROM cabinet_dealz.affiliate_literature AS affiliate_visible_literature WHERE affiliate_visible_literature.visibility = 'affiliate' AND affiliate_visible_literature.isPublished = 1 ORDER BY affiliate_visible_literature.sortOrder, affiliate_visible_literature.id;
+diff --git a/drizzle/schema.ts b/drizzle/schema.ts
+index 8573714..fec82ff 100644
+--- a/drizzle/schema.ts
++++ b/drizzle/schema.ts
+@@ -4167,6 +4167,15 @@ export const affiliateLiterature = mysqlTable("affiliate_literature", {
+   mimeType: varchar("mimeType", { length: 128 }).notNull(),
+   sizeBytes: int("sizeBytes"),
+   isPublished: boolean("isPublished").default(false).notNull(),
++  // "internal" (admin only) or "affiliate" (signed-in affiliates). Never public.
++  // Added by hand in docs/sql/0250_library_internal_documents.tidb.sql. The
++  // admin page and the affiliate read both select it, so that SQL must run
++  // before this schema deploys.
++  visibility: varchar("visibility", { length: 16 }).default("internal").notNull(),
++  // Audit of the admin "Affiliate library" checkbox. Null means never toggled.
++  affiliateToggledAt: timestamp("affiliateToggledAt"),
++  affiliateToggledBy: int("affiliateToggledBy"),
++  affiliateToggledByName: varchar("affiliateToggledByName", { length: 255 }),
+   sortOrder: int("sortOrder").default(0).notNull(),
+   uploadedBy: int("uploadedBy"),
+   createdAt: timestamp("createdAt").defaultNow().notNull(),
+@@ -4174,6 +4183,7 @@ export const affiliateLiterature = mysqlTable("affiliate_literature", {
+ }, (table) => [
+   index("affiliate_literature_category_idx").on(table.category, table.sortOrder),
+   index("affiliate_literature_published_idx").on(table.isPublished, table.sortOrder),
++  index("affiliate_literature_visibility_idx").on(table.visibility, table.isPublished, table.sortOrder),
+ ]);
+ export type AffiliateLiterature = typeof affiliateLiterature.$inferSelect;
+ export type InsertAffiliateLiterature = typeof affiliateLiterature.$inferInsert;
+diff --git a/server/_core/storageProxy.ts b/server/_core/storageProxy.ts
+index 09fe251..2ade354 100644
+--- a/server/_core/storageProxy.ts
++++ b/server/_core/storageProxy.ts
+@@ -4,6 +4,7 @@ import { ENV } from "./env";
+ import { sdk } from "./sdk";
+ import { storageFetchObject } from "../storage";
+ import { canReadStorageKey, type StorageActor } from "../lib/storageAccess";
++import { LIBRARY_DOCUMENT_FILE_PREFIX } from "@shared/libraryVisibility";
+ 
+ async function defaultStorageActor(req: Request): Promise<StorageActor | null> {
+   if (!req.headers.authorization) return null;
+@@ -47,6 +48,12 @@ export function registerStorageProxy(app: Express) {
+       res.status(403).send("This file is available only to signed-in affiliates");
+       return;
+     }
++    // Library documents are handed out only as short-lived signed URLs from the
++    // admin (or affiliate) procedure that checks visibility. Never from a path.
++    if (key.startsWith(LIBRARY_DOCUMENT_FILE_PREFIX)) {
++      res.status(403).send("This document is not available at a public address");
++      return;
++    }
+ 
+     const actor = await resolveStorageActor(req);
+     const allowed = await canReadStorageKey(key, actor);
+diff --git a/server/affiliateLiterature.test.ts b/server/affiliateLiterature.test.ts
+index f313ee2..798b32b 100644
+--- a/server/affiliateLiterature.test.ts
++++ b/server/affiliateLiterature.test.ts
+@@ -25,9 +25,15 @@ describe("affiliate literature library contracts", () => {
+     expect(routerSource).toContain("adminDelete");
+   });
+ 
++  it("keeps every document internal until the Affiliate library checkbox is ticked", () => {
++    expect(schemaSource).toContain('visibility: varchar("visibility", { length: 16 }).default("internal").notNull()');
++    expect(routerSource).toContain("inAffiliateLibrary: z.boolean().default(false)");
++    expect(routerSource).toContain("visibilityForAffiliateLibrarySwitch(input.inAffiliateLibrary)");
++  });
++
+   it("exposes the operational controls admins need", () => {
+-    expect(componentSource).toContain("Affiliate Literature Library");
+-    expect(componentSource).toContain("Publish to affiliate library");
++    expect(componentSource).toContain("Literature Library");
++    expect(componentSource).toContain("AFFILIATE_LIBRARY_SWITCH_LABEL");
+     expect(componentSource).toContain("Library contents");
+     expect(componentSource).toContain("accept=\".pdf,.docx,.xlsx,.pptx,.txt,application/pdf\"");
+     expect(navigationSource).toContain('value: "affiliate-literature"');
+diff --git a/server/internalLibraryDocuments.test.ts b/server/internalLibraryDocuments.test.ts
+new file mode 100644
+index 0000000..eab2376
+--- /dev/null
++++ b/server/internalLibraryDocuments.test.ts
+@@ -0,0 +1,84 @@
++import { describe, expect, it } from "vitest";
++import { readFileSync } from "node:fs";
++import { resolve } from "node:path";
++
++const read = (path: string) => readFileSync(resolve(process.cwd(), path), "utf8");
++
++const literatureRouter = read("server/routers/affiliateLiterature.ts");
++const resourcesRouter = read("server/routers/affiliateResources.ts");
++const schemaSource = read("drizzle/schema.ts");
++const storageSource = read("server/storage.ts");
++const proxySource = read("server/_core/storageProxy.ts");
++const importer = read("server/scripts/import-internal-library-documents.ts");
++const sql = read("docs/sql/0250_library_internal_documents.tidb.sql");
++
++describe("internal-only library documents", () => {
++  it("stores a visibility and a who/when audit on every document", () => {
++    expect(schemaSource).toContain('mysqlTable("affiliate_literature"');
++    expect(schemaSource).toContain('visibility: varchar("visibility", { length: 16 }).default("internal").notNull()');
++    expect(schemaSource).toContain('affiliateToggledAt: timestamp("affiliateToggledAt")');
++    expect(schemaSource).toContain('affiliateToggledBy: int("affiliateToggledBy")');
++    expect(schemaSource).toContain('affiliateToggledByName: varchar("affiliateToggledByName", { length: 255 })');
++  });
++
++  it("defaults a new upload to internal and keeps the checkbox as the only writer", () => {
++    expect(literatureRouter).toContain("inAffiliateLibrary: z.boolean().default(false)");
++    expect(literatureRouter).toContain("visibility: visibilityForAffiliateLibrarySwitch(input.inAffiliateLibrary)");
++    expect(literatureRouter).toContain("affiliateToggledByName: input.inAffiliateLibrary ? ctx.user.name ?? null : null");
++    // A plain isPublished input would let an old client publish a document
++    // without touching visibility. The checkbox input replaces it.
++    expect(literatureRouter).not.toContain("isPublished: z.boolean");
++  });
++
++  it("records who and when on every toggle", () => {
++    expect(literatureRouter).toContain("affiliateToggledAt: new Date()");
++    expect(literatureRouter).toContain("affiliateToggledBy: ctx.user.id");
++    expect(literatureRouter).toContain("isPublished: inAffiliateLibrary");
++  });
++
++  it("serves an affiliate only when visibility and isPublished both allow it", () => {
++    expect(resourcesRouter).toContain('eq(affiliateLiterature.visibility, "affiliate")');
++    expect(resourcesRouter).toContain("eq(affiliateLiterature.isPublished, true)");
++    expect(resourcesRouter).toContain(".filter(isAffiliateLibraryDocument)");
++    // The old read filtered on isPublished alone.
++    expect(resourcesRouter).not.toContain(".where(eq(affiliateLiterature.isPublished, true))");
++  });
++
++  it("keeps library bytes out of the public bucket and off the public proxy", () => {
++    expect(storageSource).toContain('"library-documents/"');
++    expect(proxySource).toContain("key.startsWith(LIBRARY_DOCUMENT_FILE_PREFIX)");
++    expect(proxySource).toContain("not available at a public address");
++  });
++
++  it("handles every literature mutation and the signed open on admin procedures only", () => {
++    expect(literatureRouter).toContain("adminProcedure");
++    expect(literatureRouter).not.toContain("protectedProcedure");
++    expect(resourcesRouter).toContain("adminSignedFile: adminProcedure");
++    expect(resourcesRouter).toContain("storageGetSignedUrl(row.fileKey)");
++  });
++
++  it("ships a re-runnable SQL file that adds the columns and seeds the proposal as internal", () => {
++    expect(sql).toContain("Numbered 0250");
++    expect(sql).toContain("ADD COLUMN IF NOT EXISTS visibility VARCHAR(16) NOT NULL DEFAULT 'internal'");
++    expect(sql).toContain("ADD COLUMN IF NOT EXISTS affiliateToggledAt DATETIME NULL");
++    expect(sql).toContain("ADD COLUMN IF NOT EXISTS affiliateToggledBy INT NULL");
++    expect(sql).toContain("ADD COLUMN IF NOT EXISTS affiliateToggledByName VARCHAR(255) NULL");
++    expect(sql).toContain("CREATE INDEX IF NOT EXISTS affiliate_literature_visibility_idx");
++    expect(sql).toContain("WHERE NOT EXISTS");
++    expect(sql).toContain("'internal', 900");
++    for (const line of sql.split("\n")) {
++      if (!/^(ALTER|CREATE|SELECT|UPDATE|INSERT)\b/i.test(line)) continue;
++      // The two read-only checks read information_schema; every statement that
++      // touches a real table must name its schema.
++      if (/^SELECT\b/i.test(line) && line.includes("information_schema")) continue;
++      expect(line).toMatch(/cabinet_dealz\./);
++    }
++  });
++
++  it("ships an importer that only uploads bytes and never widens access", () => {
++    expect(importer).toContain("storagePut(STORED_KEY, bytes, \"application/pdf\")");
++    expect(importer).toContain("library-documents/internal/");
++    expect(importer).not.toMatch(/\binsert\b/i);
++    expect(importer).not.toMatch(/isPublished:\s*true/);
++  });
++});
+diff --git a/server/routers/affiliateLiterature.ts b/server/routers/affiliateLiterature.ts
+index 773a52f..6d5ea86 100644
+--- a/server/routers/affiliateLiterature.ts
++++ b/server/routers/affiliateLiterature.ts
+@@ -2,8 +2,15 @@ import { z } from "zod";
+ import { desc, eq } from "drizzle-orm";
+ import { adminProcedure, router } from "../_core/trpc";
+ import { getDb } from "../db";
+-import { storagePut } from "../storage";
+-import { affiliateLiterature } from "../../drizzle/schema";
++import { storageGetSignedUrl, storagePut } from "../storage";
++import { affiliateLiterature, users } from "../../drizzle/schema";
++import {
++  LIBRARY_DOCUMENT_FILE_PREFIX,
++  isAffiliateLibraryDocument,
++  normalizeLibraryVisibility,
++  visibilityForAffiliateLibrarySwitch,
++  type LibraryVisibility,
++} from "@shared/libraryVisibility";
+ import { TRPCError } from "@trpc/server";
+ 
+ const MAX_FILE_BYTES = 24 * 1024 * 1024;
+@@ -29,6 +36,11 @@ function safeFilename(filename: string) {
+   return trimmed || "affiliate-literature";
+ }
+ 
++/** Internal documents and affiliate documents share one private prefix. */
++function literatureFileKey(filename: string) {
++  return `${LIBRARY_DOCUMENT_FILE_PREFIX}${Date.now()}_${filename}`;
++}
++
+ export const affiliateLiteratureRouter = router({
+   adminList: adminProcedure.query(async () => {
+     const db = await getDb();
+@@ -44,7 +56,12 @@ export const affiliateLiteratureRouter = router({
+       filename: z.string().trim().min(1).max(255),
+       mimeType: z.string().min(1).max(128),
+       dataBase64: z.string().min(1),
+-      isPublished: z.boolean().default(false),
++      /**
++       * The admin page's "Affiliate library" checkbox. Off (the default) stores
++       * the document as internal: admins only. On also shows it to signed-in
++       * affiliates. Neither value makes a document public.
++       */
++      inAffiliateLibrary: z.boolean().default(false),
+     }))
+     .mutation(async ({ ctx, input }) => {
+       if (!ALLOWED_MIME_TYPES.has(input.mimeType)) {
+@@ -54,18 +71,22 @@ export const affiliateLiteratureRouter = router({
+       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+       const buffer = decodeBase64(input.dataBase64);
+       const filename = safeFilename(input.filename);
+-      const fileKey = `affiliate-literature/${Date.now()}_${filename}`;
++      const fileKey = literatureFileKey(filename);
+       const stored = await storagePut(fileKey, buffer, input.mimeType);
+       const [row] = await db.insert(affiliateLiterature).values({
+         title: input.title,
+         description: input.description?.trim() || null,
+         category: input.category,
+         filename,
+-        fileKey,
++        fileKey: stored.key,
+         url: stored.url,
+         mimeType: input.mimeType,
+         sizeBytes: buffer.length,
+-        isPublished: input.isPublished,
++        isPublished: input.inAffiliateLibrary,
++        visibility: visibilityForAffiliateLibrarySwitch(input.inAffiliateLibrary),
++        affiliateToggledAt: input.inAffiliateLibrary ? new Date() : null,
++        affiliateToggledBy: input.inAffiliateLibrary ? ctx.user.id : null,
++        affiliateToggledByName: input.inAffiliateLibrary ? ctx.user.name ?? null : null,
+         uploadedBy: ctx.user.id,
+       });
+       return { id: (row as any).insertId, url: stored.url };
+@@ -77,14 +98,31 @@ export const affiliateLiteratureRouter = router({
+       title: z.string().trim().min(1).max(255).optional(),
+       description: z.string().trim().max(2000).nullable().optional(),
+       category: z.string().trim().min(1).max(64).optional(),
+-      isPublished: z.boolean().optional(),
++      /**
++       * The single control for the "Affiliate library" checkbox. It writes the
++       * visibility, the legacy isPublished flag, and the who/when audit in one
++       * row update, so the three can never disagree.
++       */
++      inAffiliateLibrary: z.boolean().optional(),
+       sortOrder: z.number().int().min(0).max(100000).optional(),
+     }))
+-    .mutation(async ({ input }) => {
++    .mutation(async ({ ctx, input }) => {
+       const db = await getDb();
+       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+-      const { id, ...patch } = input;
+-      await db.update(affiliateLiterature).set(patch).where(eq(affiliateLiterature.id, id));
++      const { id, inAffiliateLibrary, ...patch } = input;
++      if (inAffiliateLibrary !== undefined) {
++        const visibility: LibraryVisibility = visibilityForAffiliateLibrarySwitch(inAffiliateLibrary);
++        Object.assign(patch, {
++          visibility,
++          isPublished: inAffiliateLibrary,
++          affiliateToggledAt: new Date(),
++          affiliateToggledBy: ctx.user.id,
++          affiliateToggledByName: ctx.user.name ?? null,
++        });
++      }
++      if (Object.keys(patch).length) {
++        await db.update(affiliateLiterature).set(patch).where(eq(affiliateLiterature.id, id));
++      }
+       return { id };
+     }),
+ 
+diff --git a/server/routers/affiliateResources.ts b/server/routers/affiliateResources.ts
+index 437bb64..f13b165 100644
+--- a/server/routers/affiliateResources.ts
++++ b/server/routers/affiliateResources.ts
+@@ -1,11 +1,12 @@
+ import { z } from "zod";
+-import { asc, eq } from "drizzle-orm";
++import { and, asc, eq } from "drizzle-orm";
+ import { TRPCError } from "@trpc/server";
+ import { adminProcedure, protectedProcedure, router } from "../_core/trpc";
+ import { getDb } from "../db";
+ import { storageGetSignedUrl, storagePut } from "../storage";
+ import { affiliateLiterature, affiliateResourceProgress, affiliateResources } from "../../drizzle/schema";
+ import { resolveAffiliateAccess } from "../lib/affiliateAccess";
++import { isAffiliateLibraryDocument } from "@shared/libraryVisibility";
+ import {
+   AFFILIATE_RESOURCE_FILE_PREFIX,
+   AFFILIATE_RESOURCE_TYPES,
+@@ -213,21 +214,43 @@ export const affiliateResourcesRouter = router({
+     await requireAffiliateReader(ctx.user);
+     const db = await getDb();
+     if (!db) return [];
+-    return db
+-      .select({
+-        id: affiliateLiterature.id,
+-        title: affiliateLiterature.title,
+-        description: affiliateLiterature.description,
+-        category: affiliateLiterature.category,
+-        url: affiliateLiterature.url,
+-        mimeType: affiliateLiterature.mimeType,
+-        filename: affiliateLiterature.filename,
+-      })
++    // Only documents an admin explicitly put in the affiliate library. Both the
++    // visibility column AND the legacy isPublished flag have to agree, so a
++    // hand edit to one of them cannot publish an internal document.
++    const rows = await db
++      .select()
+       .from(affiliateLiterature)
+-      .where(eq(affiliateLiterature.isPublished, true))
++      .where(and(eq(affiliateLiterature.visibility, "affiliate"), eq(affiliateLiterature.isPublished, true)))
+       .orderBy(asc(affiliateLiterature.sortOrder), asc(affiliateLiterature.id));
++    return rows
++      .filter(isAffiliateLibraryDocument)
++      .map((row) => ({
++        id: row.id,
++        title: row.title,
++        description: row.description,
++        category: row.category,
++        url: row.url,
++        mimeType: row.mimeType,
++        filename: row.filename,
++      }));
+   }),
+ 
++  /**
++   * Admin-only open. A literature URL is a private-bucket key, so the admin page
++   * asks here for a short-lived signed link rather than linking the stored path.
++   * Affiliates never reach this: adminProcedure rejects them.
++   */
++  adminSignedFile: adminProcedure
++    .input(z.object({ id: z.number().int().positive() }))
++    .query(async ({ input }) => {
++      const db = await getDb();
++      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
++      const [row] = await db.select().from(affiliateLiterature).where(eq(affiliateLiterature.id, input.id)).limit(1);
++      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "That document is not available." });
++      const url = await storageGetSignedUrl(row.fileKey);
++      return { url, filename: row.filename, mimeType: row.mimeType };
++    }),
++
+   myProgress: protectedProcedure.query(async ({ ctx }) => {
+     await requireAffiliateReader(ctx.user);
+     const db = await getDb();
+diff --git a/server/scripts/import-internal-library-documents.ts b/server/scripts/import-internal-library-documents.ts
+new file mode 100644
+index 0000000..73f9ec6
+--- /dev/null
++++ b/server/scripts/import-internal-library-documents.ts
+@@ -0,0 +1,83 @@
++/**
++ * Upload the committed internal proposal into the private storage bucket.
++ *
++ * Run it once, after reviewing this patch, on the environment whose DATABASE_URL
++ * points at the live TiDB database:
++ *
++ *   pnpm exec tsx server/scripts/import-internal-library-documents.ts
++ *
++ * Required environment variable names (values are never printed):
++ *   DATABASE_URL
++ *   SUPABASE_URL or VITE_SUPABASE_URL
++ *   SUPABASE_SERVICE_ROLE_KEY
++ *
++ * What it does:
++ *   1. Reads the committed PDF from `docs/library/internal/` in the frontend repo.
++ *   2. Uploads it under the exact `library-documents/internal/...` key that
++ *      docs/sql/0250_library_internal_documents.tidb.sql stores in the row.
++ *   3. Reports the row's visibility so a wrong value is visible, not silent.
++ *
++ * It uploads bytes only. It never creates a row, never changes visibility, and
++ * never sets isPublished. That is the SQL's job and the admin checkbox's job.
++ *
++ * The key is under `library-documents/`, which `server/storage.ts` puts in the
++ * private bucket and `server/_core/storageProxy.ts` refuses on a public path, so
++ * the file is reachable only through a signed URL from an admin procedure.
++ *
++ * Re-running is safe: it overwrites the same object with the same bytes.
++ */
++import { createHash } from "node:crypto";
++import { readFileSync } from "node:fs";
++import { resolve } from "node:path";
++import { eq } from "drizzle-orm";
++import { affiliateLiterature } from "../../drizzle/schema";
++import { getDb } from "../db";
++import { storagePut } from "../storage";
++import { isAffiliateLibraryDocument } from "@shared/libraryVisibility";
++
++const DOCUMENT_FILE = "website-improvement-proposal-marazzi-lessons-cabinetdealz.pdf";
++const STORED_KEY = `library-documents/internal/${DOCUMENT_FILE}`;
++
++/** Optional: point at the frontend checkout that holds docs/library/internal. */
++function documentPath() {
++  const fromEnv = process.env.FRONTEND_REPO_ROOT?.trim();
++  if (fromEnv) return resolve(fromEnv, "docs/library/internal", DOCUMENT_FILE);
++  return resolve(process.cwd(), "docs/library/internal", DOCUMENT_FILE);
++}
++
++async function main() {
++  const db = await getDb();
++  if (!db) throw new Error("Database not available");
++
++  const filePath = documentPath();
++  const bytes = readFileSync(filePath);
++  const sha256 = createHash("sha256").update(bytes).digest("hex");
++
++  const [row] = await db
++    .select()
++    .from(affiliateLiterature)
++    .where(eq(affiliateLiterature.fileKey, STORED_KEY))
++    .limit(1);
++  if (!row) {
++    throw new Error(
++      `No affiliate_literature row points at ${STORED_KEY}. Run ` +
++        "docs/sql/0250_library_internal_documents.tidb.sql first.",
++    );
++  }
++
++  await storagePut(STORED_KEY, bytes, "application/pdf");
++
++  console.log(`Uploaded ${bytes.length} bytes to the private bucket as ${STORED_KEY}`);
++  console.log(`SHA-256 ${sha256}`);
++  console.log(
++    row.visibility === "internal" && !isAffiliateLibraryDocument(row)
++      ? `Row ${row.id} is internal: admin only, not visible to affiliates.`
++      : `WARNING: row ${row.id} is visibility=${row.visibility} isPublished=${row.isPublished}. ` +
++          "This document is meant to stay internal; fix it in the admin page.",
++  );
++}
++
++main().catch((error) => {
++  console.error(error instanceof Error ? error.message : error);
++  process.exitCode = 1;
++});
+diff --git a/server/storage.ts b/server/storage.ts
+index 7831778..df443f1 100644
+--- a/server/storage.ts
++++ b/server/storage.ts
+@@ -19,6 +19,9 @@ const PRIVATE_KEY_PREFIXES = [
+   // Affiliate sales-education files. The public storage proxy refuses this prefix.
+   "affiliate-resources/",
+   "affiliate-w9-id/",
++  // Document library. Internal documents have no public URL: the proxy refuses
++  // this prefix and the bytes live in the private bucket.
++  "library-documents/",
+ ];
+ 
+ export function bucketForKey(key: string): string {
+diff --git a/shared/libraryVisibility.test.ts b/shared/libraryVisibility.test.ts
+new file mode 100644
+index 0000000..6d4c546
+--- /dev/null
++++ b/shared/libraryVisibility.test.ts
+@@ -0,0 +1,89 @@
++import { describe, expect, it } from "vitest";
++import {
++  DEFAULT_LIBRARY_VISIBILITY,
++  LIBRARY_DOCUMENT_FILE_PREFIX,
++  affiliateLibraryToggleNote,
++  isAffiliateLibraryDocument,
++  isInternalLibraryDocument,
++  isLibraryDocumentStorageKey,
++  isLibraryVisibility,
++  isPublishedForAffiliateLibrarySwitch,
++  libraryVisibilityDescription,
++  libraryVisibilityLabel,
++  normalizeLibraryVisibility,
++  visibilityForAffiliateLibrarySwitch,
++} from "./libraryVisibility";
++
++describe("library visibility rules", () => {
++  it("starts every new document internal", () => {
++    expect(DEFAULT_LIBRARY_VISIBILITY).toBe("internal");
++    expect(normalizeLibraryVisibility(undefined)).toBe("internal");
++    expect(normalizeLibraryVisibility(null)).toBe("internal");
++    expect(isInternalLibraryDocument({ visibility: undefined })).toBe(true);
++  });
++
++  it("fails closed on any value it does not recognise", () => {
++    for (const value of ["", "public", "draft", "AFFILIATE", 0, 1, {}, []]) {
++      expect(isLibraryVisibility(value)).toBe(false);
++      expect(normalizeLibraryVisibility(value)).toBe("internal");
++      expect(isInternalLibraryDocument({ visibility: value as unknown as string })).toBe(true);
++    }
++  });
++
++  it("has no public state at all", () => {
++    // The two states are the whole model. If a third ever appears, this fails
++    // and the reviewer has to decide what it means before it reaches a query.
++    expect(["internal", "affiliate"]).toHaveLength(2);
++    expect(normalizeLibraryVisibility("public")).toBe("internal");
++    expect(libraryVisibilityLabel("affiliate")).toBe("Affiliate library");
++    expect(libraryVisibilityLabel("internal")).toBe("Internal — admin only");
++  });
++
++  it("needs BOTH visibility and isPublished for an affiliate to see a document", () => {
++    expect(isAffiliateLibraryDocument({ visibility: "affiliate", isPublished: true })).toBe(true);
++    expect(isAffiliateLibraryDocument({ visibility: "affiliate", isPublished: false })).toBe(false);
++    expect(isAffiliateLibraryDocument({ visibility: "internal", isPublished: true })).toBe(false);
++    expect(isAffiliateLibraryDocument({ visibility: "internal", isPublished: false })).toBe(false);
++    expect(isAffiliateLibraryDocument({ visibility: null, isPublished: true })).toBe(false);
++  });
++
++  it("maps the checkbox to the stored pair and back", () => {
++    expect(visibilityForAffiliateLibrarySwitch(true)).toBe("affiliate");
++    expect(visibilityForAffiliateLibrarySwitch(false)).toBe("internal");
++    expect(isPublishedForAffiliateLibrarySwitch(true)).toBe(true);
++    expect(isPublishedForAffiliateLibrarySwitch(false)).toBe(false);
++  });
++
++  it("describes the two states without ever promising public access", () => {
++    // "Never appears on the public site" is the point; what must never appear is
++    // a promise that a checkbox makes a document public.
++    for (const value of ["internal", "affiliate", "public", undefined]) {
++      expect(libraryVisibilityDescription(value)).not.toMatch(/is public|makes? (it|this) public|publicly available/i);
++    }
++    expect(libraryVisibilityDescription("affiliate")).toBe("Signed-in affiliates see this in their portal library.");
++    expect(libraryVisibilityDescription("internal")).toBe("Only admins see this document. It never appears on the public site.");
++    // An unrecognised value describes as internal, never as affiliate.
++    expect(libraryVisibilityDescription("public")).toBe(libraryVisibilityDescription("internal"));
++  });
++
++  it("recognises the private library document key space", () => {
++    expect(isLibraryDocumentStorageKey(`${LIBRARY_DOCUMENT_FILE_PREFIX}internal/doc.pdf`)).toBe(true);
++    expect(isLibraryDocumentStorageKey(`/manus-storage/${LIBRARY_DOCUMENT_FILE_PREFIX}internal/doc.pdf`)).toBe(true);
++    expect(isLibraryDocumentStorageKey(`/manus-storage/${LIBRARY_DOCUMENT_FILE_PREFIX}internal/doc.pdf?v=2`)).toBe(true);
++    expect(isLibraryDocumentStorageKey("affiliate-resources/brochures/doc.pdf")).toBe(false);
++    expect(isLibraryDocumentStorageKey("media-library/photo.png")).toBe(false);
++    expect(isLibraryDocumentStorageKey(null)).toBe(false);
++  });
++
++  it("writes the audit line from the recorded name and time", () => {
++    const when = "2026-11-05T14:30:00.000Z";
++    expect(affiliateLibraryToggleNote({ visibility: "affiliate", isPublished: true, affiliateToggledAt: when, affiliateToggledByName: "Tom" }))
++      .toBe("Added to the affiliate library by Tom on 2026-11-05");
++    expect(affiliateLibraryToggleNote({ visibility: "internal", isPublished: false, affiliateToggledAt: when, affiliateToggledByName: "Tom" }))
++      .toBe("Removed from the affiliate library by Tom on 2026-11-05");
++    expect(affiliateLibraryToggleNote({ visibility: "internal", isPublished: false, affiliateToggledAt: when, affiliateToggledByName: null }))
++      .toBe("Removed from the affiliate library by an admin on 2026-11-05");
++    expect(affiliateLibraryToggleNote({ visibility: "internal", isPublished: false })).toBeNull();
++    expect(affiliateLibraryToggleNote({ visibility: "internal", isPublished: false, affiliateToggledAt: "not-a-date" })).toBeNull();
++  });
++});
+diff --git a/shared/libraryVisibility.ts b/shared/libraryVisibility.ts
+new file mode 100644
+index 0000000..2bca6b9
+--- /dev/null
++++ b/shared/libraryVisibility.ts
+@@ -0,0 +1,108 @@
++/**
++ * Visibility rules for the Cabinetdealz document library
++ * (`cabinet_dealz.affiliate_literature`).
++ *
++ * Two states, and no third:
++ *   internal  — admin only. Never returned to an affiliate and never served
++ *               from a public path.
++ *   affiliate — the admin checked "Affiliate library". A signed-in affiliate
++ *               sees it in the portal's Printed Materials. Still NOT public:
++ *               there is no public value, no public query, and the bytes live
++ *               in the private storage bucket behind a signed URL.
++ *
++ * The same file ships in cabinet-backend as `shared/libraryVisibility.ts`, so
++ * the server and the admin page cannot disagree about what a value means.
++ * New documents start `internal`; only an explicit admin action changes that.
++ */
++
++export const LIBRARY_VISIBILITIES = ["internal", "affiliate"] as const;
++
++export type LibraryVisibility = (typeof LIBRARY_VISIBILITIES)[number];
++
++/** New PDFs are internal until an admin adds them to the affiliate library. */
++export const DEFAULT_LIBRARY_VISIBILITY: LibraryVisibility = "internal";
++
++/**
++ * Storage prefix for library documents. The backend puts this prefix in the
++ * private Supabase bucket and refuses it on the public storage proxy, so an
++ * internal document has no public URL even if someone guesses the key.
++ */
++export const LIBRARY_DOCUMENT_FILE_PREFIX = "library-documents/";
++
++/** True for a stored key or `/manus-storage/...` url that holds a library document. */
++export function isLibraryDocumentStorageKey(value: string | null | undefined): boolean {
++  if (!value) return false;
++  const trimmed = value.trim();
++  const marker = "/manus-storage/";
++  const index = trimmed.indexOf(marker);
++  const key = index >= 0 ? trimmed.slice(index + marker.length).split("?")[0] : trimmed.replace(/^\/+/, "");
++  return key.startsWith(LIBRARY_DOCUMENT_FILE_PREFIX);
++}
++
++export const AFFILIATE_LIBRARY_SWITCH_LABEL = "Affiliate library";
++
++export type LibraryVisibilityRow = {
++  visibility?: string | null;
++  isPublished?: boolean | null;
++};
++
++export function isLibraryVisibility(value: unknown): value is LibraryVisibility {
++  return typeof value === "string" && (LIBRARY_VISIBILITIES as readonly string[]).includes(value);
++}
++
++/**
++ * Anything unrecognised - a null column on an old row, a hand-edited value,
++ * a value written by a future client - is treated as internal. Failing closed
++ * means a typo can hide a document from affiliates but can never widen access.
++ */
++export function normalizeLibraryVisibility(
++  value: unknown,
++  fallback: LibraryVisibility = DEFAULT_LIBRARY_VISIBILITY,
++): LibraryVisibility {
++  return isLibraryVisibility(value) ? value : fallback;
++}
++
++export function isInternalLibraryDocument(row: LibraryVisibilityRow): boolean {
++  return normalizeLibraryVisibility(row.visibility) === "internal";
++}
++
++/**
++ * The one predicate the affiliate-facing read must use. Both the visibility
++ * column and the legacy isPublished column have to agree, so a raw SQL edit to
++ * either one cannot quietly publish an internal strategy document.
++ */
++export function isAffiliateLibraryDocument(row: LibraryVisibilityRow): boolean {
++  return normalizeLibraryVisibility(row.visibility) === "affiliate" && row.isPublished === true;
++}
++
++/** The value stored when the "Affiliate library" checkbox is checked or cleared. */
++export function visibilityForAffiliateLibrarySwitch(inAffiliateLibrary: boolean): LibraryVisibility {
++  return inAffiliateLibrary ? "affiliate" : "internal";
++}
++
++/** isPublished is kept in step with the switch so older readers stay correct. */
++export function isPublishedForAffiliateLibrarySwitch(inAffiliateLibrary: boolean): boolean {
++  return inAffiliateLibrary;
++}
++
++export function libraryVisibilityLabel(value: unknown): string {
++  return normalizeLibraryVisibility(value) === "affiliate" ? "Affiliate library" : "Internal — admin only";
++}
++
++export function libraryVisibilityDescription(value: unknown): string {
++  return normalizeLibraryVisibility(value) === "affiliate"
++    ? "Signed-in affiliates see this in their portal library."
++    : "Only admins see this document. It never appears on the public site.";
++}
++
++/** "Added to the affiliate library by Tom on 5 Nov 2026" — or nothing if never toggled. */
++export function affiliateLibraryToggleNote(
++  row: LibraryVisibilityRow & { affiliateToggledAt?: Date | string | null; affiliateToggledByName?: string | null },
++): string | null {
++  if (!row.affiliateToggledAt) return null;
++  const when = new Date(row.affiliateToggledAt);
++  if (Number.isNaN(when.getTime())) return null;
++  const actor = (row.affiliateToggledByName ?? "").trim() || "an admin";
++  const action = isAffiliateLibraryDocument(row) ? "Added to" : "Removed from";
++  return `${action} the affiliate library by ${actor} on ${when.toISOString().slice(0, 10)}`;
++}
+-- 
+2.43.0
+
