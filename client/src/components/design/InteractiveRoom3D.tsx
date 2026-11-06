@@ -927,13 +927,12 @@ interface Props {
   furniture?: PlacedFurniture[];
   /** Host furniture selection synchronized into the 3D fixture action card. */
   selectedFurnitureUid?: string | null;
-  /** Selects the same movable fixture or planning zone in the host 2D designer. */
+  /** Selects the same movable fixture in the host 2D designer. */
   onSelectFurniture?: (uid: string | null) => void;
-  /** Removes a movable fixture or planning zone through the authoritative plan state. */
+  /** Removes a movable fixture through the authoritative plan state. */
   onRemoveFurniture?: (uid: string) => void;
   /** Uses the same 90-degree rotation action as Floor Plan furniture controls. */
   onRotateFurniture?: (uid: string) => void;
-  onOpenFurnitureAttributes?: (uid: string) => void;
   ponyWalls?: PonyWall[];
   orderSummary?: InteractiveRoomOrderSummary;
   orderLines?: InteractiveRoomOrderLine[];
@@ -10850,10 +10849,9 @@ function addPelicanBathroomFixture(
 
 export function addFurniture(root: THREE.Group, furniture: PlacedFurniture, selected = false) {
   const def = FURNITURE_CATALOG.find((entry) => entry.id === furniture.defId);
+  // A saved plan may still list a definition this build no longer has (for
+  // example a removed planning-zone row); skip it instead of throwing.
   if (!def) return;
-  // Planning zones belong to Floor Plan only. Preserve them in saved state,
-  // but create no 3D floor fill, border, selection outline or raycast target.
-  if (def.category === "bathroom-zone") return;
   const bathroomFixture = verifiedPelicanBathroomFixtureProfile(furniture.pelicanCode ?? def.pelicanCode);
   if (bathroomFixture) {
     addPelicanBathroomFixture(root, furniture, bathroomFixture);
@@ -11712,7 +11710,7 @@ function ThreeDFloorMaterialControl({
   return <FlooringRotationControl value={rotation} onChange={onRotationChange} testId={testId} />;
 }
 
-export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick = false, roomOverride, openings = [], sinks = [], potFillers = [], island = null, islandFocusRequest = null, furniture = [], selectedFurnitureUid = null, onSelectFurniture, onRemoveFurniture, onRotateFurniture, onOpenFurnitureAttributes, ponyWalls = [], orderSummary, orderLines = [], initialPresentation, catalogFinishOverride, renderExposure = null, colorDeltaEMax = null, doorRenderHex = null, cabinetFinishPreviewOptions = [], doorStyleChoices = [], selectedDoorStyleId = null, onDoorStyleChange, cabinetFinishOverrides, cabinetDoorProfiles, cabinetDoorSampleUrls, cabinetDrawerSampleUrls, cabinetFaceSourceKinds, cabinetFaceCrops, catalogFaceCrop, cabinetFrontVisuals, catalogDoorSampleUrl, catalogDrawerSampleUrl, catalogFaceSourceKind, catalogRoomSceneUrl, catalogDoorProfile, windowSceneKind = DEFAULT_WINDOW_SCENE_KIND, windowFrameStyle = "white", hardwareStyleId = "none", hardwareAccent, catalogFinishName, catalogFinishProductId, catalogIslandCabinetName, catalogIslandCabinetColor, catalogIslandCabinetProductId, catalogIslandDoorSampleUrl, catalogCountertopName, catalogCountertopProductId, catalogCountertopReferenceUrl, catalogIslandCountertopName, catalogIslandCountertopProductId, catalogIslandCountertopReferenceUrl, catalogFlooringName, catalogFlooringProductId, catalogFlooringReferenceUrl, catalogFlooringCategory, catalogFlooringSubCategory, catalogFlooringSize, catalogBacksplashName, catalogBacksplashProductId, catalogBacksplashReferenceUrl, catalogHardwareReferenceUrl, catalogHardwareName, savedDesignId, savedDesignRevision, canAffiliateGeminiImageTest = false, isCurrentPlanSaved = false, savedPlanFingerprintPayload = null, backsplashHeightMode = "standard", countertopBacksplashHeightIn = 0, catalogCountertopColor, catalogIslandCountertopColor, catalogCountertopImageUrl, catalogIslandCountertopImageUrl, catalogFlooringImageUrl, catalogFlooringCardImageUrl = null, flooringRotationDeg = 0, onFlooringRotationChange, mosaicFloorPattern = null, onMosaicFloorPatternChange, catalogBacksplashImageUrl, catalogBacksplashCardImageUrl = null, catalogBacksplashMaterialImageUrl = null, catalogFlooringMaterialImageUrl = null, catalogBacksplashSize = null, catalogBacksplashCategory = null, catalogBacksplashSubCategory = null, shareContext, catalogItems = [], catalogDragItem = null, catalogDropWall, onAddCatalogItem, onAddRangeHood, onSaveToAccount, onSyncCart, onPresentationChange, onRoomWallHeightChange, onRoomWallHeightsChange, onMoveCabinet, onMoveCabinetTo, selectedCabinetUid, attributesTargetUid = null, missingPriceUids, onSelectCabinet, onOpenCabinetEditor, onSelectOpening, onOpenWindowEditor, onOpenDoorEditor, onRequestFiller, onSnapGlassCabinetToFront, onRotateCabinet, onRemoveCabinet, showWallLayer, onToggleWallLayer, temporaryPreviewMessage, onClearTemporaryPreview, temporaryPreviewCounter, temporaryPreviewTransitionKey, fillerInsertionTransition, colorTrace = null, cabinetConfigHref, embedded = false, cutawayRoomWalls = true, hybridPlanUnderlay = false, className, onGeometryRendered }: Props) {
+export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick = false, roomOverride, openings = [], sinks = [], potFillers = [], island = null, islandFocusRequest = null, furniture = [], selectedFurnitureUid = null, onSelectFurniture, onRemoveFurniture, onRotateFurniture, ponyWalls = [], orderSummary, orderLines = [], initialPresentation, catalogFinishOverride, renderExposure = null, colorDeltaEMax = null, doorRenderHex = null, cabinetFinishPreviewOptions = [], doorStyleChoices = [], selectedDoorStyleId = null, onDoorStyleChange, cabinetFinishOverrides, cabinetDoorProfiles, cabinetDoorSampleUrls, cabinetDrawerSampleUrls, cabinetFaceSourceKinds, cabinetFaceCrops, catalogFaceCrop, cabinetFrontVisuals, catalogDoorSampleUrl, catalogDrawerSampleUrl, catalogFaceSourceKind, catalogRoomSceneUrl, catalogDoorProfile, windowSceneKind = DEFAULT_WINDOW_SCENE_KIND, windowFrameStyle = "white", hardwareStyleId = "none", hardwareAccent, catalogFinishName, catalogFinishProductId, catalogIslandCabinetName, catalogIslandCabinetColor, catalogIslandCabinetProductId, catalogIslandDoorSampleUrl, catalogCountertopName, catalogCountertopProductId, catalogCountertopReferenceUrl, catalogIslandCountertopName, catalogIslandCountertopProductId, catalogIslandCountertopReferenceUrl, catalogFlooringName, catalogFlooringProductId, catalogFlooringReferenceUrl, catalogFlooringCategory, catalogFlooringSubCategory, catalogFlooringSize, catalogBacksplashName, catalogBacksplashProductId, catalogBacksplashReferenceUrl, catalogHardwareReferenceUrl, catalogHardwareName, savedDesignId, savedDesignRevision, canAffiliateGeminiImageTest = false, isCurrentPlanSaved = false, savedPlanFingerprintPayload = null, backsplashHeightMode = "standard", countertopBacksplashHeightIn = 0, catalogCountertopColor, catalogIslandCountertopColor, catalogCountertopImageUrl, catalogIslandCountertopImageUrl, catalogFlooringImageUrl, catalogFlooringCardImageUrl = null, flooringRotationDeg = 0, onFlooringRotationChange, mosaicFloorPattern = null, onMosaicFloorPatternChange, catalogBacksplashImageUrl, catalogBacksplashCardImageUrl = null, catalogBacksplashMaterialImageUrl = null, catalogFlooringMaterialImageUrl = null, catalogBacksplashSize = null, catalogBacksplashCategory = null, catalogBacksplashSubCategory = null, shareContext, catalogItems = [], catalogDragItem = null, catalogDropWall, onAddCatalogItem, onAddRangeHood, onSaveToAccount, onSyncCart, onPresentationChange, onRoomWallHeightChange, onRoomWallHeightsChange, onMoveCabinet, onMoveCabinetTo, selectedCabinetUid, attributesTargetUid = null, missingPriceUids, onSelectCabinet, onOpenCabinetEditor, onSelectOpening, onOpenWindowEditor, onOpenDoorEditor, onRequestFiller, onSnapGlassCabinetToFront, onRotateCabinet, onRemoveCabinet, showWallLayer, onToggleWallLayer, temporaryPreviewMessage, onClearTemporaryPreview, temporaryPreviewCounter, temporaryPreviewTransitionKey, fillerInsertionTransition, colorTrace = null, cabinetConfigHref, embedded = false, cutawayRoomWalls = true, hybridPlanUnderlay = false, className, onGeometryRendered }: Props) {
   const previewRootRef = useRef<HTMLElement>(null);
   const mountRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -14308,12 +14306,6 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 
   const openPlacedItemContextMenu = (event: ReactMouseEvent<HTMLDivElement>) => {
     event.preventDefault();
-    const furnitureHit = inspectFurnitureAtPoint(event.clientX, event.clientY);
-    if (furnitureHit && FURNITURE_CATALOG.find((item) => item.id === furnitureHit.defId)?.category === "bathroom-zone" && onOpenFurnitureAttributes) {
-      onSelectFurniture?.(furnitureHit.uid);
-      onOpenFurnitureAttributes(furnitureHit.uid);
-      return;
-    }
     if (suppressContextMenuRef.current || rightDragRef.current?.active) {
       suppressContextMenuRef.current = false;
       return;
@@ -14414,7 +14406,7 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 		          const item = furniture.find((candidate) => candidate.uid === selectedFurnitureUid);
 		          const definition = FURNITURE_CATALOG.find((candidate) => candidate.id === item?.defId);
 		          const profile = verifiedPelicanBathroomFixtureProfile(item?.pelicanCode ?? definition?.pelicanCode);
-		          if (!item || !definition || definition.category === "bathroom-zone" || !profile) return null;
+		          if (!item || !definition || !profile) return null;
 			          return <div data-testid="three-d-bathroom-fixture-canvas-actions" data-ui-overlay="bathroom-fixture-actions" className="absolute bottom-3 left-3 z-30 flex max-w-[calc(100%-5rem)] flex-wrap items-center gap-2 rounded-lg border border-slate-300 bg-white/95 p-2 text-xs shadow-lg backdrop-blur" onPointerDown={(event) => event.stopPropagation()} onPointerUp={(event) => event.stopPropagation()}>
 			            <span className="min-w-0 max-w-32 truncate font-semibold text-[#1a2744]" title={profile?.pelicanCode ?? definition.name}>{profile?.pelicanCode ?? definition.name.split(" · ")[0]}</span>
 			            {onRotateFurniture && <button type="button" data-testid="three-d-bathroom-rotate" onClick={() => onRotateFurniture(item.uid)} className="inline-flex min-h-10 items-center gap-1 rounded border border-[#1a2744]/35 px-2 font-semibold text-[#1a2744] hover:bg-slate-100 active:scale-95"><Rotate3D className="h-4 w-4" />Rotate 90°</button>}
@@ -14566,9 +14558,8 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
         const selectedFurniture = furniture.find((item) => item.uid === selectedFurnitureUid) ?? null;
         if (!selectedFurniture) return null;
         const definition = FURNITURE_CATALOG.find((item) => item.id === selectedFurniture.defId) ?? null;
-        if (definition?.category === "bathroom-zone") return null;
         const profile = verifiedPelicanBathroomFixtureProfile(selectedFurniture.pelicanCode ?? definition?.pelicanCode);
-        const label = profile?.name ?? definition?.name ?? "Movable planning item";
+        const label = profile?.name ?? definition?.name ?? "Movable item";
         const kind = profile?.kind ? profile.kind.replace(/-/g, " ") : definition?.category ?? "fixture";
         return <div data-testid="three-d-furniture-attributes" className={threeDSelectedCabinetDockClass()}>
           <button type="button" aria-label="Close fixture attributes" onClick={() => onSelectFurniture?.(null)} className="absolute right-1.5 top-1 z-10 flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground">×</button>

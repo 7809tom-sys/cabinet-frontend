@@ -1,30 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { BATHROOM_STARTER_TEMPLATE, bathroomFixtureChecklist, bathroomFixtureStarterZonePlacement, bathroomPlanningGuidance, bathroomZoneOverlapWarnings, makeBathroomStarterTemplate } from "./bathroomPlanning";
+import { BATHROOM_STARTER_TEMPLATE, bathroomFixtureChecklist, bathroomFixtureFreePlacement, bathroomPlanningGuidance, makeBathroomStarterTemplate } from "./bathroomPlanning";
 import { FURNITURE_CATALOG, makeFurniture } from "./design";
 import { verifiedPelicanBathroomFixtureProfile } from "./pelicanBathroomFixtureProfiles";
 
 describe("Bathroom starter and clearance guidance", () => {
-  it("creates movable, non-cartable vanity, toilet, and tub planning zones", () => {
+  it("starts a blank 10 ft x 8 ft room with no planning zones", () => {
     const starter = makeBathroomStarterTemplate();
     expect(starter.room).toMatchObject({ width: 120, depth: 96, ceilingHeight: 96 });
-    expect(starter.furniture.map((item) => item.defId)).toEqual([
-      "bathroom-zone-vanity-60",
-      "bathroom-zone-toilet",
-      "bathroom-zone-tub-60",
-    ]);
-    expect(starter.furniture.every((item) => !item.pelicanCode && !item.pelicanProductId)).toBe(true);
-    expect(FURNITURE_CATALOG.filter((item) => item.category === "bathroom-zone").map((item) => item.id)).toEqual(expect.arrayContaining([
-      "bathroom-zone-vanity-60",
-      "bathroom-zone-toilet",
-      "bathroom-zone-tub-60",
-    ]));
-    expect(BATHROOM_STARTER_TEMPLATE.id).toBe("bathroom-standard-zones-v1");
-    const tubZone = starter.furniture.find((item) => item.defId === "bathroom-zone-tub-60")!;
-    expect(FURNITURE_CATALOG.find((item) => item.id === tubZone.defId)).toMatchObject({ w: 60, d: 36 });
+    expect(starter.furniture).toEqual([]);
+    expect(BATHROOM_STARTER_TEMPLATE.id).toBe("bathroom-blank-10x8-v1");
+    expect(FURNITURE_CATALOG.every((item) => (item.category as string) !== "bathroom-zone")).toBe(true);
   });
 
-  it("centers fitted tubs in the 60-inch starter zone and rejects larger 67-inch envelopes", () => {
-    const starter = makeBathroomStarterTemplate();
+  it("places every bathroom fixture freely, centered or in the first open spot, instead of snapping to a zone", () => {
     const tubs = FURNITURE_CATALOG.filter((item) => {
       const profile = verifiedPelicanBathroomFixtureProfile(item.pelicanCode);
       return profile?.kind === "freestanding-tub" || profile?.kind === "alcove-tub";
@@ -32,23 +20,30 @@ describe("Bathroom starter and clearance guidance", () => {
     expect(tubs.length).toBeGreaterThan(0);
 
     for (const tub of tubs) {
-      const placement = bathroomFixtureStarterZonePlacement(
+      const placement = bathroomFixtureFreePlacement(
         { ...makeFurniture(tub.id, 0, 0), pelicanCode: tub.pelicanCode },
-        starter.furniture,
+        [],
+        { width: 120, depth: 96 },
       );
-      if (tub.d > 60) {
-        expect(placement, `${tub.id} must not squeeze into a 60-inch zone`).toBeNull();
-        continue;
-      }
-      expect(placement, tub.id).toMatchObject({ zoneKind: "tub", zoneLabel: "tub zone", rotation: 90 });
-      expect(placement?.x).toBeGreaterThanOrEqual(0);
-      expect(placement?.y).toBeGreaterThanOrEqual(60);
+      // A 67-inch tub in a 120 x 96 room still has an open position: free placement never rejects it.
+      expect(placement, tub.id).not.toBeNull();
+      expect(placement!.rotation).toBe(0);
+      expect(placement!.x).toBeGreaterThanOrEqual(0);
+      expect(placement!.y).toBeGreaterThanOrEqual(0);
     }
   });
 
-  it("does not invent a starter-zone fit for an unrelated bathroom envelope", () => {
-    const starter = makeBathroomStarterTemplate();
-    expect(bathroomFixtureStarterZonePlacement(makeFurniture("pelican-shower-door-pl-03a42s", 0, 0), starter.furniture)).toBeNull();
+  it("keeps a second fixture out of the first one's footprint without any zone", () => {
+    const first = { ...makeFurniture("pelican-tub-pl-02146-59", 0, 0), x: 30, y: 36 };
+    const placement = bathroomFixtureFreePlacement(
+      { ...makeFurniture("pelican-toilet-pl-12044", 0, 0), pelicanCode: "PL-12044" },
+      [first],
+      { width: 120, depth: 96 },
+    );
+    expect(placement).not.toBeNull();
+    const overlaps = placement!.x < first.x + 59.0625 && placement!.x + 20 > first.x
+      && placement!.y < first.y + 30 && placement!.y + 28 > first.y;
+    expect(overlaps).toBe(false);
   });
 
   it("makes clearance notes advisory and source-linked rather than collision rules", () => {
@@ -59,17 +54,6 @@ describe("Bathroom starter and clearance guidance", () => {
     expect(shower).toMatchObject({ title: "Shower enclosure planning check" });
     expect(shower?.text).toContain("Nominal visual envelope only");
     expect(shower?.sourceUrl).toContain("PL-03A42S.pdf");
-  });
-
-  it("warns only when a measured fixture enters a different starter zone", () => {
-    const starter = makeBathroomStarterTemplate();
-    const wrongZoneToilet = { ...makeFurniture("pelican-toilet-pl-12044", 8, 6), uid: "toilet-in-vanity" };
-    const correctZoneToilet = { ...makeFurniture("pelican-toilet-pl-12044", 84, 12), uid: "toilet-in-toilet" };
-
-    expect(bathroomZoneOverlapWarnings([...starter.furniture, wrongZoneToilet])).toEqual([
-      expect.objectContaining({ fixtureUid: "toilet-in-vanity", fixtureLabel: "PL-12044", zoneKind: "vanity", zoneLabel: "vanity zone" }),
-    ]);
-    expect(bathroomZoneOverlapWarnings([...starter.furniture, correctZoneToilet])).toEqual([]);
   });
 
   it("reports source-verified fixture selections without turning the checklist into a clearance rule", () => {
@@ -86,5 +70,7 @@ describe("Bathroom starter and clearance guidance", () => {
 
     expect(checklist.filter((step) => !step.optional).every((step) => step.complete)).toBe(true);
     expect(checklist.find((step) => step.id === "shower")).toMatchObject({ optional: true, complete: false });
+    expect(checklist.find((step) => step.id === "toilet")?.detail).not.toMatch(/zone/i);
+    expect(checklist.every((step) => !/zone/i.test(step.detail))).toBe(true);
   });
 });

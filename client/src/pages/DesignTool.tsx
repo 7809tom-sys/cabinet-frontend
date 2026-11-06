@@ -91,9 +91,8 @@ import {
 } from "@/lib/pelicanAutoPlace";
 import { TabletPreviewOverlay, type TabletPreviewMode } from "@/components/design/TabletPreviewOverlay";
 import { isPelicanBathroomFixtureProfileVerified, verifiedPelicanBathroomFixtureProfile } from "@/lib/pelicanBathroomFixtureProfiles";
-import { BATHROOM_STARTER_TEMPLATE, bathroomFixtureChecklist, bathroomFixtureStarterZonePlacement, bathroomTubFillerPlacement, bathroomPlanningGuidance, bathroomZoneOverlapWarnings, makeBathroomStarterTemplate } from "@/lib/bathroomPlanning";
+import { BATHROOM_STARTER_TEMPLATE, bathroomFixtureChecklist, bathroomFixtureFreePlacement, bathroomTubFillerPlacement, bathroomPlanningGuidance, makeBathroomStarterTemplate } from "@/lib/bathroomPlanning";
 import { bathroomTubWallParallelPlacement, rotateBathroomFurniture } from "@/lib/bathroomPlanning";
-import BathroomZoneAttributesDialog from "@/components/design/BathroomZoneAttributesDialog";
 import { isBathroomVanityCabinet } from "@/lib/bathroomVanityCatalog";
 import { canAdminReviewSavedDesign } from "@/lib/designAccess";
 import {
@@ -194,7 +193,7 @@ import {
   resolveSwing, cycleSwing, swingText, hasDoorSwing, DoorSwing, resolveCabinetHardwarePosition, cabinetHardwarePositionPatch, isCabinetDoorHardwareEligible, applyCabinetDoorHardwareToAll, supportsCenteredTopDoorPull, requiresCenteredTopDoorPull, usesRaisedFloorWallDoorPull, isWd18CountertopDrawerCabinet, normalizeWd18CountertopMounts, ordinaryWallMountBottom,
   // (closet helpers imported separately below)
   APPLIANCES, applianceAsDesignCabinet, appliancesForRoom, ROOM_TYPES, type RoomType,
-  FURNITURE_CATALOG, makeFurniture, makePelicanBathroomFixture, furnitureFootprint, type PlacedFurniture,
+  FURNITURE_CATALOG, makeFurniture, makePelicanBathroomFixture, furnitureFootprint, restoredFurniture, type PlacedFurniture,
   WallOpening, WallSide, OPENINGS, OpeningDef, makeOpening,
 	  finishColors, toeKickLinearInches, lightRailLinearInches, inchesToLinearFeet,
   trimPiecesNeeded, countertopArea, countertopSurfaces, countertopSurfaceInsideRoom, battenLinearInches, valancePiecesNeeded,
@@ -1822,9 +1821,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       toast.error("No non-overlapping visual position is available beside the tub. Move the tub or another fixture first.");
       return;
     }
-    const starterZonePlacement = bathroomFixtureStarterZonePlacement(draft, bathroomFurnitureRef.current);
-    const fixture = tubFillerPlacement ?? (starterZonePlacement
-      ? { ...draft, ...starterZonePlacement }
+    const freePlacement = bathroomFixtureFreePlacement(draft, bathroomFurnitureRef.current, room);
+    // Fixtures drop into the first open spot. The wall-parallel default is only a
+    // fallback for a room too crowded for the free search, so a freshly placed
+    // fixture never lands on top of another one.
+    const fixture = tubFillerPlacement ?? (freePlacement
+      ? { ...draft, ...freePlacement }
       : bathroomTubWallParallelPlacement({
           ...draft,
           x: Math.max(0, (room.width - definition.w) / 2),
@@ -1837,9 +1839,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       return next;
     });
     setSelectedFurnUid(fixture.uid);
-    toast.success(tubFillerPlacement ? `${item.name} placed beside the tub — visual planning only; verify plumbing fit` : starterZonePlacement
-      ? `${item.name} placed and centered in the ${starterZonePlacement.zoneLabel}`
-      : `${item.name} placed in Floor Plan and 3D`);
+    toast.success(tubFillerPlacement ? `${item.name} placed beside the tub — visual planning only; verify plumbing fit` : `${item.name} placed in Floor Plan and 3D`);
   }, [room.depth, room.width]);
   // Clear both saved layers: the source product used by Cart/3D and the plan's
   // representative material. Clearing only one left the flooring pattern visible.
@@ -2469,14 +2469,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     bathroomFurnitureRef.current = furniture;
   }, [furniture]);
   const [selectedFurnUid, setSelectedFurnUid] = useState<string | null>(null);
-  const [zoneAttributesUid, setZoneAttributesUid] = useState<string | null>(null);
-  const zoneAttributesItem = furniture.find((item) => item.uid === zoneAttributesUid) ?? null;
-  const openFurnitureAttributes = useCallback((uid: string) => {
-    const item = bathroomFurnitureRef.current.find((candidate) => candidate.uid === uid);
-    if (layoutLocked || !item || FURNITURE_CATALOG.find((candidate) => candidate.id === item.defId)?.category !== "bathroom-zone") return;
-    setSelectedFurnUid(uid);
-    setZoneAttributesUid(uid);
-  }, [layoutLocked]);
   const rotateFurniture = useCallback((uid: string) => {
     if (layoutLocked) return;
     setFurniture((previous) => previous.map((item) => item.uid === uid ? rotateBathroomFurniture(item, room) : item));
@@ -2486,15 +2478,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     const definition = selected ? FURNITURE_CATALOG.find((item) => item.id === selected.defId) ?? null : null;
     return bathroomPlanningGuidance(verifiedPelicanBathroomFixtureProfile(selected?.pelicanCode ?? definition?.pelicanCode));
   }, [furniture, selectedFurnUid]);
-  const bathroomZoneWarningsByFixture = useMemo(() => {
-    const warningsByFixture = new Map<string, ReturnType<typeof bathroomZoneOverlapWarnings>>();
-    for (const warning of bathroomZoneOverlapWarnings(furniture)) {
-      const existing = warningsByFixture.get(warning.fixtureUid) ?? [];
-      existing.push(warning);
-      warningsByFixture.set(warning.fixtureUid, existing);
-    }
-    return warningsByFixture;
-  }, [furniture]);
   const bathroomChecklist = useMemo(() => bathroomFixtureChecklist({
     cabinets: placed,
     sinks,
@@ -5607,7 +5590,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	      setOpenings(restoredOpenings);
       setPotFillers(Array.isArray(persisted?.potFillers) ? persisted.potFillers : []);
       setIsland(persisted?.island ?? null);
-      setFurniture(Array.isArray(persisted?.furniture) ? persisted.furniture : []);
+      setFurniture(restoredFurniture(persisted?.furniture));
       setPonyWalls(Array.isArray(persisted?.ponyWalls) ? persisted.ponyWalls : []);
       // Normalize placement for appliance items — older saved designs may have
       // stored placement:"tall" for FRIDGE-* or RANGE-* items. Correct them here
@@ -11778,13 +11761,13 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     setViewMode("plan");
     setSelectedUid(null);
     setSelectedOpeningUid(null);
-    setSelectedFurnUid(starter.furniture[0]?.uid ?? null);
+    setSelectedFurnUid(null);
     setPolygonEditMode(false);
     setDrawMode(false);
     setMeasureMode(false);
     setLayoutStarterOpen(false);
     setMobilePanel(null);
-    toast.success("Bathroom starter applied. Move the labeled planning zones, then select actual Pelican products from Bathroom Fixtures.");
+    toast.success("Blank bathroom room ready. Add cabinets or source-priced Pelican fixtures from Bathroom Fixtures.");
   }, [annotations.length, applyRoom, furniture.length, island, layoutLocked, openings.length, placed.length, ponyWalls.length, sinks.length]);
 
   const openBathroomFixtureChecklistPicker = useCallback((stepId?: string) => {
@@ -14326,7 +14309,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           }
 	          if (Array.isArray(d.sinks)) setSinks(d.sinks);
 	          if (Array.isArray(d.potFillers)) setPotFillers(d.potFillers as PotFillerFixture[]);
-	          if (Array.isArray(d.furniture)) setFurniture(d.furniture as PlacedFurniture[]);
+	          if (Array.isArray(d.furniture)) setFurniture(restoredFurniture(d.furniture));
 	          if (d.roomType) setRoomType(d.roomType);
           if (d.activeWall) setActiveWall(d.activeWall);
           setLayoutLocked(!!d.layoutLocked);
@@ -15516,7 +15499,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         toast.success("Removed fixture from the 3D plan.");
       }}
       onRotateFurniture={rotateFurniture}
-      onOpenFurnitureAttributes={openFurnitureAttributes}
       ponyWalls={deferredCountertopGeometry.ponyWalls}
       orderSummary={interactive3dOrderSummary}
       orderLines={interactive3dOrderLines}
@@ -19351,12 +19333,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
               finishFor={finishForCab}
               furniture={furniture}
               selectedFurnUid={selectedFurnUid}
-              bathroomZoneWarningsByFixture={bathroomZoneWarningsByFixture}
               onSelectFurn={setSelectedFurnUid}
               onMoveFurn={(uid, x, y) => setFurniture(prev => prev.map(f => f.uid === uid ? { ...f, x, y } : f))}
               onDeleteFurn={(uid) => { setFurniture(prev => prev.filter(f => f.uid !== uid)); setSelectedFurnUid(null); }}
               onRotateFurn={rotateFurniture}
-      onOpenFurnitureAttributes={openFurnitureAttributes}
 	              flooringMaterialId={flooringMaterialId}
 	              flooringPattern={flooringPattern}
               flooringRotation={flooringRotation}
@@ -19412,7 +19392,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                  </li>
 	                ))}
 	              </ol>
-	              <p className="mt-2 border-t border-slate-200 pt-2 text-[10px] leading-snug text-slate-600">Zones and warnings are visual planning aids. Confirm fixture clearances, opening swings, and installation conditions with the official product sheets and qualified local guidance.</p>
+	              <p className="mt-2 border-t border-slate-200 pt-2 text-[10px] leading-snug text-slate-600">Checklist notes are visual planning aids. Confirm fixture clearances, opening swings, and installation conditions with the official product sheets and qualified local guidance.</p>
 	            </aside>
 	          )}
 	          {viewMode === "plan" && peninsulaDraft && (
@@ -19650,12 +19630,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
               finishFor={finishForCab}
               furniture={furniture}
               selectedFurnUid={selectedFurnUid}
-              bathroomZoneWarningsByFixture={bathroomZoneWarningsByFixture}
               onSelectFurn={setSelectedFurnUid}
               onMoveFurn={(uid, x, y) => setFurniture(prev => prev.map(f => f.uid === uid ? { ...f, x, y } : f))}
               onDeleteFurn={(uid) => { setFurniture(prev => prev.filter(f => f.uid !== uid)); setSelectedFurnUid(null); }}
               onRotateFurn={rotateFurniture}
-      onOpenFurnitureAttributes={openFurnitureAttributes}
 	              flooringMaterialId={flooringMaterialId}
 	              flooringPattern={flooringPattern}
               flooringRotation={flooringRotation}
@@ -21538,11 +21516,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           placedCabinets={placed}
         />
       )}
-	      <BathroomZoneAttributesDialog item={zoneAttributesItem} room={room} onClose={() => setZoneAttributesUid(null)} onSave={(item) => {
-        if (layoutLocked) return;
-        setFurniture((previous) => previous.map((current) => current.uid === item.uid ? item : current));
-        toast.success("Planning zone updated. Pelican fixture dimensions are unchanged.");
-      }} />
 	      {autoDesignAvailable && (
 	        <AutoDesignDialog
 	          open={autoDesignOpen}
@@ -23326,11 +23299,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	          </DialogHeader>
 	          <div className="space-y-5 p-5">
 	            <section data-testid="bathroom-room-template" className="rounded-xl border border-sky-300/70 bg-sky-50/60 p-4">
-	              <div className="mb-1 text-sm font-semibold text-[#192432]">Bathroom · movable planning-zone template</div>
-	              <p className="mb-3 text-xs leading-5 text-slate-600">Starts a blank 10 ft × 8 ft planning room with non-cartable vanity, toilet, and tub zones. Drag, rotate, or remove the zones, then choose source-priced Pelican fixtures. It does not add a product, price, or installation claim.</p>
+	              <div className="mb-1 text-sm font-semibold text-[#192432]">Bathroom · empty room template</div>
+	              <p className="mb-3 text-xs leading-5 text-slate-600">Starts a blank 10 ft × 8 ft bathroom plan. Add cabinets and source-priced Pelican fixtures yourself; every item moves and rotates freely on the plan. It does not add a product, price, or installation claim.</p>
 	              <button
 	                type="button"
-	                data-testid="bathroom-template-standard-zones"
+	                data-testid="bathroom-template-empty-room"
 	                disabled={layoutLocked || Boolean(placed.length || openings.length || island || sinks.length || furniture.length || ponyWalls.length || annotations.length)}
 	                onClick={applyBathroomStarterTemplate}
 	                className="w-full rounded-lg border border-sky-400 bg-white p-3 text-left shadow-sm transition-colors hover:border-sky-600 hover:bg-sky-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#192432] disabled:cursor-not-allowed disabled:opacity-50"
@@ -23663,7 +23636,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                   toast.success("Removed fixture from the 3D plan.");
                 }}
                 onRotateFurniture={rotateFurniture}
-      onOpenFurnitureAttributes={openFurnitureAttributes}
                 ponyWalls={ponyWalls}
                 orderSummary={interactive3dOrderSummary}
                 orderLines={interactive3dOrderLines}
