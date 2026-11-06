@@ -70,6 +70,22 @@ describe("kitchen rules catalog", () => {
     expect(rule!.ruleDescription).not.toContain("Golden Trace");
   });
 
+  it("lists the mosaic backsplash 5% waste rule as implemented and auto", () => {
+    const rule = KITCHEN_RULE_SEED.find((item) => item.ruleCode === "owner-mosaic-backsplash-waste");
+    expect(rule).toMatchObject({
+      category: "Backsplash",
+      enforcementKind: "auto",
+      implementationStatus: "implemented",
+      sourceText: "Owner",
+    });
+    expect(rule!.title).toBe("Mosaic backsplash carries 5% waste");
+    expect(rule!.ruleDescription).toContain("X * 1.05");
+    expect(rule!.ruleDescription).toContain("Applies only to mosaics in backsplash designs");
+    expect(rule!.parameters).toEqual({ mosaic_backsplash_waste_pct: 5 });
+    // The rule must state the detection limit instead of implying an exact mosaic flag exists.
+    expect(rule!.notesText).toContain("No isMosaic column");
+  });
+
   it("keeps Kitchen Rules off the designer and sales-rep admin screens", () => {
     const designerBlock = adminPage.slice(adminPage.indexOf("if (isDesigner)"), adminPage.indexOf("return (", adminPage.indexOf("if (isDesigner)") + 20));
     const salesBlock = adminPage.slice(adminPage.indexOf("if (isSalesRep)"), adminPage.indexOf("if (isDesigner)"));

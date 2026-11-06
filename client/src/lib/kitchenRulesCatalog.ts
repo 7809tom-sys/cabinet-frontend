@@ -498,6 +498,18 @@ const ownerSeeds: KitchenRuleSeed[] = [
     notesText: "Hard rule from the owner. Lives in lib/backsplashMosaic.ts; the per-product tests and the every-catalog-mosaic-has-a-spec test fail if any sheet gets a tint, an outline, or the wrong spacing or grout. Mosaics without a curated row get a generic seamless spec from their catalog size. Spacing, overlap and grout values are estimates until measured from the product photos.",
   },
   {
+    ruleCode: "owner-mosaic-backsplash-waste",
+    category: "Backsplash",
+    title: "Mosaic backsplash carries 5% waste",
+    ruleDescription: "HARD RULE (Tom, Nov 6 2026): when mosaic tile is used for a backsplash, the cart automatically adds 5% waste to the square footage. If the backsplash needs X sq ft of mosaic, the cart quantity is X * 1.05, rounded up to the product's sellable unit exactly as the cart already rounds area-priced tile. A mosaic is sold by the sheet, so the count is whole sheets: a real Pelican mosaic has no sq ft per box, and its published sheet size (the first two numbers of the catalog size, never the 8 mm thickness) gives the sq ft per sheet. Applies only to mosaics in backsplash designs. Field tile and every other wall tile keep the existing 15% overage, flooring keeps its layout waste, and countertops, sinks and faucets are unchanged. A mosaic installed as the floor keeps the flooring waste. The cart line says 'includes 5% waste'.",
+    parameters: { mosaic_backsplash_waste_pct: 5 },
+    enforcementKind: "auto",
+    sourceText: "Owner",
+    implementationStatus: "implemented",
+    readsParameters: false,
+    notesText: "Hard rule from the owner. Enforced in lib/mosaicBacksplashWaste.ts and applied in buildSurfaceCartLines (lib/surfaceCartLines.ts). Mosaic detection uses the existing product type data — Pelican subCategory 'Mosaic' on category 'Tile & Mosaic', or a verified Designer catalog row by distributor SKU — never a guess. A row whose only mosaic evidence is the word 'mosaic' in its name is NOT given the 5% rate; it stays at the 15% tile overage and mosaicDetectionUncertainty() reports it. No isMosaic column exists on pelican_products, so a mosaic saved with a wrong sub-category follows that typo. A vendor-entered coverageSqFt still wins over the sheet size.",
+  },
+  {
     ruleCode: "owner-hickory-frameless-skins-only",
     category: "Owner panels",
     title: "Only hickory frameless gets skins",

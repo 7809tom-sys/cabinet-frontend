@@ -22,6 +22,7 @@ import {
   type StoreScope,
 } from "@/lib/affiliateContext";
 import { cartItemToCheckoutPrefill } from "@/lib/cartCheckoutPrefill";
+import { cartNoteWithoutMosaicWaste, mosaicBacksplashWasteInNote } from "@/lib/mosaicBacksplashWaste";
 import { refrigeratorPanelCutNotesIn } from "@/lib/refrigeratorEndPanelCut";
 import { separateGlassPurchaseItems } from "@/lib/cartGlassPolicy";
 import { formatEighthInches } from "@/lib/design";
@@ -291,7 +292,14 @@ export default function Cart() {
                     )}
                   </div>
                   <p className="mt-0.5 text-sm text-foreground leading-snug">{item.name}</p>
-                  {item.qtyNote && <p className="mt-1 text-xs font-medium text-amber-800">{item.qtyNote}</p>}
+                  {item.qtyNote && cartNoteWithoutMosaicWaste(item.qtyNote) && (
+                    <p className="mt-1 text-xs font-medium text-amber-800">{cartNoteWithoutMosaicWaste(item.qtyNote)}</p>
+                  )}
+                  {mosaicBacksplashWasteInNote(item.qtyNote) && (
+                    <p data-testid="cart-mosaic-backsplash-waste" className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-amber-800">
+                      <Package className="h-3.5 w-3.5" /> Mosaic backsplash quantity {mosaicBacksplashWasteInNote(item.qtyNote)}.
+                    </p>
+                  )}
                   <p className="text-xs text-muted-foreground">{item.styleLabel}</p>
                   {refrigeratorPanelCutNotesIn(item.qtyNote) && (
                     <p data-testid="cart-refrigerator-panel-cut" className="mt-1 text-xs font-medium text-amber-800">{refrigeratorPanelCutNotesIn(item.qtyNote)}</p>
