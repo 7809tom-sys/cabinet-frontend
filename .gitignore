@@ -138,3 +138,4 @@ manus storage/
 # a source file, but they must never be served. `docs` is already in
 # .vercelignore, so Vite copies none of them into dist/.
 !docs/library/internal/*.pdf
+!docs/library/internal/*.md
