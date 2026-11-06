@@ -100,7 +100,7 @@ NULL on every toilet, so they are not the cause and are not part of the fix.
 
 ### SQL for Tom
 
-`docs/sql/0250_toilet_category_markup.tidb.sql` — a preview `SELECT` (stored
+`docs/sql/0262_toilet_category_markup.tidb.sql` — a preview `SELECT` (stored
 markup, plus current vs correct sell price per toilet), then a single `UPDATE`,
 then a confirmation `SELECT`. Nothing was written to the production database.
 
