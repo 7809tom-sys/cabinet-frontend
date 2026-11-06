@@ -19,6 +19,8 @@
  * are not cabinet rows and are not decided here.
  */
 
+import { isWallWineRackCabinet } from "./wallWineRack";
+
 export type DesignerCabinetShape = {
   masterCode?: string | null;
   description?: string | null;
@@ -30,6 +32,22 @@ export type DesignerCabinetShape = {
   height?: string | number | null;
   depth?: string | number | null;
 };
+
+/**
+ * A wall wine rack filed by its supplier under Accessories / Wine Storage is a
+ * wall BOX, not a bill-of-materials accessory. It has to reach the Designer's
+ * Wall tab, so it is decided before the accessory split below. A base or tall
+ * rack keeps its own tab and is not forced onto the wall list.
+ */
+function isWallWineRackBox(cabinet: DesignerCabinetShape): boolean {
+  return isWallWineRackCabinet({
+    masterCode: cabinet.masterCode,
+    category: cabinet.category,
+    subCategory: cabinet.subCategory,
+    description: cabinet.description,
+    placementType: cabinet.placementType,
+  });
+}
 
 function text(value: string | null | undefined): string {
   return (value ?? "").toLowerCase();
@@ -89,6 +107,9 @@ export function isDesignerLooseTrim(cabinet: DesignerCabinetShape): boolean {
  * dragged on as ordinary base, wall, or tall boxes.
  */
 export function isDesignerAccessoryItem(cabinet: DesignerCabinetShape): boolean {
+  // A wall wine rack is an upper cabinet box even when the supplier filed it as
+  // Accessories / Wine Storage or Specialty / Wine Rack.
+  if (isWallWineRackBox(cabinet)) return false;
   const placement = text(cabinet.placementType);
   const category = text(cabinet.category);
   const subCategory = text(cabinet.subCategory);
