@@ -2,8 +2,11 @@ import { autoDesignCornerFamily, type AutoBuildCornerCandidate } from "./autoDes
 import {
   BLIND_CORNER_FILLER_WIDTH_IN,
   STD,
+  blindPullRange,
+  blocksFloorRun,
   cabinetWall,
   dim,
+  isWindowBelowCountertop,
   wallRunAlongAtPoint,
   wallRunFrame,
   wallRunOffset,
@@ -20,6 +23,12 @@ function blindOpenLegIn(): number {
   return kitchenRuleNumber("blind_open_leg_in");
 }
 
+/** The blind pull a corner-fit leg must also count, defaulting to the widest allowed pull. */
+function blindPullIn(option: CornerFitOption): number {
+  const range = blindPullRange({ pullMin: option.pullMin, pullMax: option.pullMax });
+  return range?.max ?? 0;
+}
+
 export type CornerFitOption = {
   id: number;
   masterCode: string;
@@ -27,6 +36,9 @@ export type CornerFitOption = {
   description?: string | null;
   cornerType?: string | null;
   placement?: string | null;
+  /** Blind-corner pull range from Cabinet Config. The run leg carries width + pull. */
+  pullMin?: number | null;
+  pullMax?: number | null;
 };
 
 export type CornerSinkPlan = {
@@ -130,9 +142,14 @@ export function placeSinkAfterCorner(input: {
 function occupancy(option: CornerFitOption, blindOn: LegName | null): { plumbing: number; other: number } {
   const width = optionWidth(option);
   if (!isBlind(option) || !blindOn) return { plumbing: width, other: width };
+  // A blind corner is pulled off the vertex by its blind pull, so the leg its
+  // width runs along carries width + pull. Counting only the width here let the
+  // planner offer a corner the seater then refused, which left the inside corner
+  // empty on every line whose only corner was a blind base.
+  const runLegIn = width + blindPullIn(option);
   return blindOn === "plumbing"
-    ? { plumbing: width, other: blindOpenLegIn() }
-    : { plumbing: blindOpenLegIn(), other: width };
+    ? { plumbing: runLegIn, other: blindOpenLegIn() }
+    : { plumbing: blindOpenLegIn(), other: runLegIn };
 }
 
 function legFits(occupied: number, available: number): boolean {
@@ -334,9 +351,17 @@ export function evaluateAutoDesignCornerFit(input: {
     let available = towardEnd ? frame.length - cornerAlong : cornerAlong;
     for (const opening of openings) {
       if (opening.side !== wallId) continue;
-      const near = towardEnd ? opening.offset : opening.offset + opening.width;
-      const gap = towardEnd ? near - cornerAlong : cornerAlong - near;
-      if (gap > 0.5) available = Math.min(available, gap);
+      // Both legs of this corner are measured for BASE cabinets (the corner box
+      // and the sink base are ~34½" tall). A window whose sill clears the
+      // countertop does not occupy that band, so it must not shorten the leg.
+      // Counting it here is what emptied the inside corner under the over-sink
+      // window: the leg was cut at the window's near edge even though the base
+      // run continues under the glass.
+      if (blocksFloorRun(opening.kind) || isWindowBelowCountertop(opening)) {
+        const near = towardEnd ? opening.offset : opening.offset + opening.width;
+        const gap = towardEnd ? near - cornerAlong : cornerAlong - near;
+        if (gap > 0.5) available = Math.min(available, gap);
+      }
     }
     for (const item of input.placed) {
       if (input.sink && item.uid === input.sink.uid) continue;
@@ -346,8 +371,11 @@ export function evaluateAutoDesignCornerFit(input: {
       const near = towardEnd ? start : end;
       const gap = towardEnd ? near - cornerAlong : cornerAlong - near;
       if (gap <= 0.5) continue;
-      const slack = item.placement === "appliance" ? 3 : 0;
-      available = Math.min(available, gap + slack);
+      // An appliance is measured where it really is. The slidable 3 inch jog is
+      // not added to the leg: a corner fit that only works on the far side of a
+      // slide is rejected by the seater, and it left the inside corner empty
+      // whenever the range sat 24 inches off it. The seater owns the nudge.
+      available = Math.min(available, gap);
     }
     let sinkCenter: number | null = null;
     let sinkWidth = 0;
