@@ -67,6 +67,9 @@ export type AdminOrderRow = Omit<AdminOrderMoneyInput, "lineItems" | "originator
   signerName?: string | null;
   crmSyncStatus?: string | null;
   crmSyncError?: string | null;
+  /** "We received your order" note — separate from the verified email. */
+  orderReceivedEmailSentAt?: string | Date | null;
+  orderReceivedEmailTo?: string | null;
   paidAt?: string | Date | null;
   imageGeneratedCount?: number | null;
   lastImageGeneratedAt?: string | Date | null;
