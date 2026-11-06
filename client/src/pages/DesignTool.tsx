@@ -66,6 +66,19 @@ import {
   migrateLegacyDesignerDraftToOwner,
   resolveStoreScope,
 } from "@/lib/affiliateContext";
+import {
+  designOpenPath,
+  designStoreScope,
+  designWriteScope,
+  newDesignSaveScope,
+} from "@/lib/designOwnerScope";
+import {
+  applyGuestDraftAdoption,
+  draftIdentityCandidates,
+  draftIdentityFor,
+  firstRestorableDraft,
+  planGuestDraftAdoption,
+} from "@/lib/designDraftOwnership";
 import { isPelicanSinkCompatibleWithBase, isVerifiedPelicanVanityFaucet, isVerifiedPelicanVanitySink, pelicanSinkBaseKind, sinkBaseOpeningWidthIn, verifiedPelicanFaucetProfile, verifiedPelicanPotFillerProfile, verifiedPelicanSinkFitsCabinet, verifiedPelicanSinkProfile } from "@/lib/pelicanFixtureProfiles";
 import {
   buildPelicanSinkOnCabinet,
@@ -559,6 +572,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   );
   const affiliateSlug = affiliateSlugForStoreScope(storeScope);
   const cartDestination = cartPathForStoreScope(storeScope);
+  // Account identity for browser drafts. It comes from the server's auth.me for
+  // THIS request's own bearer token, so two tabs signed in as different people
+  // (or a shared browser) never restore each other's unsaved plan.
+  const accountId = (user as { id?: number | null } | null)?.id ?? null;
   // Auto-Design layout is available to CabinetDealz admins and to every affiliate
   // Designer, including storefront customers on /store/:slug/design and the
   // affiliate dashboard Designer. The main public Designer stays admin-only.
@@ -582,6 +599,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     retry: false,
   });
   const canAffiliatePriceShop = !!affiliateSlug && affiliatePriceAccess.data?.isOwner === true;
+
   const canAffiliateGeminiImageTest = !!affiliateSlug && affiliatePriceAccess.data?.accessDesigner === true;
   const canPublishKitchenPackage = isAdmin || (!!affiliateSlug && (affiliatePriceAccess.data?.isOwner === true || affiliatePriceAccess.data?.accessDesigner === true));
   const affiliatePrimary = affiliateBrand?.primaryColor || "#1a2b4a";
@@ -769,6 +787,27 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	{ id: currentSavedDesignId ?? 0, affiliateSlug: storeScope, crmDealId: crmDealId ?? undefined, assist: assistMode || undefined },
 	{ enabled: currentSavedDesignId != null && isAuthenticated && (verified || crmDealId != null || assistMode), retry: 1 }
   );
+
+  // Where a SAVE goes. An existing design keeps its own stored store; a new one
+  // belongs to the signed-in account unless this person is a customer of the
+  // storefront (or a member of it). The server applies the same rule, so the
+  // design cannot be filed under whichever storefront URL happened to be open.
+  // Guests keep the storefront scope, which is what lets their work be adopted
+  // into the account when they sign in.
+  const saveScope = useMemo(
+    () => designWriteScope({
+      urlScope: newDesignSaveScope({
+        urlScope: storeScope,
+        role: signedInRole,
+        viewerAffiliateId: affiliatePriceAccess.data?.affiliateId ?? null,
+        storeAffiliateId: affiliateBrand?.id ?? null,
+      }),
+      design: savedDesign
+        ? { affiliateSlug: (savedDesign as { affiliateSlug?: string | null }).affiliateSlug ?? null }
+        : null,
+    }),
+    [storeScope, signedInRole, affiliatePriceAccess.data?.affiliateId, affiliateBrand?.id, savedDesign],
+  );
 	useEffect(() => {
 	  if (verified || crmDealId == null || !savedDesign || !isAuthenticated) return;
 	  setVerifiedEmail((user as { email?: string | null } | null)?.email ?? "crm@cabinetdealz.local");
@@ -781,6 +820,25 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     setVerifiedName((user as { name?: string | null } | null)?.name ?? "Designer");
     setVerified(true);
   }, [assistMode, isAuthenticated, savedDesign, user, verified]);
+
+  // A saved design always opens under its own store. When a link reaches the
+  // Designer on a different storefront (a CRM link built by the board that was
+  // open, a bookmarked URL, a store-shared link), the shell, brand and pricing
+  // were the wrong store's. Send the owner to the design's real storefront once.
+  // Assist and CRM opens deliberately stay in place: the store's own team is
+  // reviewing a customer's plan from its board.
+  const designStoreRedirectRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!savedDesign || !isAuthenticated) return;
+    if (assistMode || crmDealId != null) return;
+    const ownSlug = (savedDesign as { affiliateSlug?: string | null }).affiliateSlug ?? null;
+    const ownScope = designStoreScope({ affiliateSlug: ownSlug });
+    if (ownScope === storeScope) return;
+    const target = designOpenPath({ id: savedDesign.id, affiliateSlug: ownSlug });
+    if (designStoreRedirectRef.current === target) return;
+    designStoreRedirectRef.current = target;
+    window.location.replace(target);
+  }, [savedDesign, isAuthenticated, assistMode, crmDealId, storeScope]);
 
   // Mobile layout: which slide-up panel is open (catalog picker or cart/BOM).
   // Designer is touch-first: treat anything narrower than a small laptop (1024px)
@@ -14036,11 +14094,18 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // design to localStorage on every change (debounced) AND immediately when the
   // tab is backgrounded (visibilitychange / pagehide — the events mobile browsers
   // reliably fire before freezing/discarding a tab), then restore it on return.
+  // The draft belongs to the signed-in ACCOUNT, not to whatever email was typed
+  // into the gate. `draftIdentityCandidates` adds the older email key and the
+  // guest key so nothing already on this device is lost.
+  const draftIdentity = useMemo(
+    () => draftIdentityFor({ accountId, email: verifiedEmail }),
+    [accountId, verifiedEmail],
+  );
   const draftKey = useMemo(
     () => latchedFreshStart.fresh
-      ? freshDesignDraftStorageKey(storeScope, verifiedEmail, latchedFreshStart.doorStyleId, latchedFreshStart.distributorId)
-      : designerDraftStorageKey(storeScope, verifiedEmail),
-    [latchedFreshStart, storeScope, verifiedEmail],
+      ? freshDesignDraftStorageKey(storeScope, draftIdentity, latchedFreshStart.doorStyleId, latchedFreshStart.distributorId)
+      : designerDraftStorageKey(storeScope, draftIdentity),
+    [latchedFreshStart, storeScope, draftIdentity],
   );
   const activeDraftKey = useMemo(() => designerDraftActiveKey(storeScope), [storeScope]);
 
@@ -14132,6 +14197,21 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       // A v1 draft had no store truth. Move it only to owner and delete the
       // ambiguous source, even when the current page is an affiliate store.
       migrateLegacyDesignerDraftToOwner(localStorage, verifiedEmail);
+
+      // Work designed before signing in belongs to the person who just signed
+      // in. Adopt it onto this account once, unless the account already has a
+      // plan for this store (that plan wins), then drop the guest copy so a
+      // second person on this browser cannot pick it up.
+      if (accountId != null && !latchedFreshStart.fresh) {
+        applyGuestDraftAdoption(localStorage, planGuestDraftAdoption(localStorage, storeScope, accountId));
+      }
+      const candidates = latchedFreshStart.fresh
+        ? [draftIdentity]
+        : draftIdentityCandidates({ accountId, email: verifiedEmail });
+      const restorable = firstRestorableDraft(localStorage, storeScope, candidates);
+      // Found under an older key (the gate email, or guest work)? Copy it to this
+      // account's key so one restore path reads one place from now on.
+      if (restorable && restorable.key !== draftKey) localStorage.setItem(draftKey, restorable.raw);
       const raw = localStorage.getItem(draftKey);
       if (raw) {
         const d = JSON.parse(raw);
@@ -14282,7 +14362,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       if (!latchedFreshStart.fresh) setLayoutStarterOpen(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [verified, draftKey, activeDraftKey, storeScope, verifiedEmail, loadDesignId, bundleIdParam, selectCatalogHardware]);
+  }, [verified, draftKey, activeDraftKey, storeScope, verifiedEmail, accountId, draftIdentity, loadDesignId, bundleIdParam, selectCatalogHardware]);
 
   // Pre-select a door style from the ?style=<id> URL param (e.g. "Design with
   // this" CTA from the homepage). Fires once, after the draft has been restored,
@@ -17246,6 +17326,15 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	              }
 	            }}
 	            onAutomaticSaveSuccess={(savedAt) => setAutomaticSaveAt(savedAt)}
+	            reportSaveTarget={(savedTo) => {
+	              // The server decided the store. Remember the design's own slug so
+	              // every later save and read stays in that store, and refresh the
+	              // byId read under the scope it actually lives in.
+	              if (savedTo.affiliateSlug != null) {
+	                void trpcUtils.design.byId.invalidate({ id: activeSavedDesignId ?? loadDesignId ?? 0 });
+	              }
+	              void trpcUtils.design.myDesigns.invalidate();
+	            }}
 	            onDeleteSuccess={(designId) => startBlankAfterDeletedDesign(designId)}
 	            onLoad={(d) =>
               {
