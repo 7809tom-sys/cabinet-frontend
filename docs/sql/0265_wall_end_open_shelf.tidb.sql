@@ -1,4 +1,4 @@
--- TiDB SQL editor version. Numbered 0263. Run AFTER 0262.
+-- TiDB SQL editor version. Numbered 0265. Run AFTER 0264.
 -- One statement per line. Every table is cabinet_dealz.<table>. No reserved-word aliases.
 -- Does not insert new cabinet rows, does not invent prices, and does not DELETE any cabinet or distributor_skus row.
 --
