@@ -420,6 +420,7 @@ const noSelectedPelicanIds: ReadonlySet<number> = new Set<number>();
 
 
 import { buildSurfaceCartLines } from "@/lib/surfaceCartLines";
+import { mosaicBacksplashWasteInNote } from "@/lib/mosaicBacksplashWaste";
 import { flooringLayoutName, isFlooringRotation, type FlooringRotationDegrees } from "@/lib/flooringLayout";
 import { confirmPlacedItemRemoval } from "@/lib/placedItemRemoval";
 import { surfaceRole, formatPrice } from "@/lib/pelican";
@@ -16828,6 +16829,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                               )}
                               {line.qtyNote && (
                                 <div className="truncate text-[10px] text-blue-500">{line.qtyNote}</div>
+                              )}
+                              {mosaicBacksplashWasteInNote(line.qtyNote) && (
+                                <div data-testid="designer-mosaic-backsplash-waste" className="truncate text-[10px] font-semibold text-amber-700">
+                                  Mosaic backsplash quantity {mosaicBacksplashWasteInNote(line.qtyNote)}
+                                </div>
                               )}
                             </div>
                             <span className="shrink-0 font-medium text-foreground">

@@ -110,7 +110,7 @@ describe("buildSurfaceCartLines", () => {
 describe("buildSurfaceCartLines — box quantity with overage", () => {
   const backsplashTile: SurfacePick = {
     id: 401,
-    name: "Carrara Marble Mosaic",
+    name: "Glossy White Ceramic Subway",
     category: "Backsplash",
     size: "12x12 sheet",
     sellPrice: 14.99,
@@ -252,18 +252,21 @@ describe("buildSurfaceCartLines — box quantity with overage", () => {
     expect(line.qty).toBe(1);
   });
 
-  it("handles Tile & Mosaic category with 15% overage", () => {
-    const mosaic: SurfacePick = {
+  it("keeps the 15% overage on Tile & Mosaic rows that are not mosaics", () => {
+    const wallTile: SurfacePick = {
       id: 403,
-      name: "Hex Mosaic",
+      name: "Glossy White 3x6 Wall Tile",
       category: "Tile & Mosaic",
+      subCategory: "Tile",
       size: null,
       sellPrice: 9.99,
       coverageSqFt: 5,
     };
     // 30 sq ft * 1.15 = 34.5 / 5 = 6.9 → ceil = 7 boxes
-    const [line] = buildSurfaceCartLines([mosaic], "contractor", areas);
+    const [line] = buildSurfaceCartLines([wallTile], "contractor", areas);
     expect(line.qty).toBe(7);
+    expect(line.qtyNote).toContain("15%");
+    expect(line.qtyNote).not.toContain("5% waste");
   });
 
   it("prices a mosaic used as the floor from the floor area and keeps the wall use separate", () => {
@@ -284,5 +287,131 @@ describe("buildSurfaceCartLines — box quantity with overage", () => {
     expect(floorLine?.qtyNote).toContain("120.0 sq ft");
     expect(wallLine?.qtyNote).toContain("30.0 sq ft");
     expect(floorLine?.styleId).not.toBe(wallLine?.styleId);
+    // The floor use keeps flooring waste (no layout chosen = the standard rate, not 5%).
+    expect(floorLine?.qtyNote).toContain("10%");
+    expect(floorLine?.qtyNote).not.toContain("5% waste");
+    expect(wallLine?.qtyNote).toContain("5% waste");
+  });
+});
+
+describe("buildSurfaceCartLines — mosaic backsplash 5% waste", () => {
+  const areas = { backsplashSqFt: 30, flooringSqFt: 120, countertopSqFt: 60 };
+  const mosaicBacksplash: SurfacePick = {
+    id: 501,
+    name: "Arctic Vail",
+    category: "Tile & Mosaic",
+    subCategory: "Mosaic",
+    size: "10.71 x 10.55",
+    sellPrice: 24,
+    coverageSqFt: 5,
+  };
+  const fieldTileBacksplash: SurfacePick = {
+    id: 502,
+    name: "Glossy White Ceramic Subway",
+    category: "Tile & Mosaic",
+    subCategory: "Tile",
+    size: "3x6",
+    sellPrice: 8,
+    coverageSqFt: 5,
+  };
+
+  it("adds exactly 5% waste to the measured mosaic backsplash square footage", () => {
+    // 30 sq ft * 1.05 = 31.5 / 5 sq ft per box = 6.3 → ceil = 7 boxes
+    const [line] = buildSurfaceCartLines([mosaicBacksplash], "homeowner", areas);
+    expect(line.qty).toBe(Math.ceil((30 * 1.05) / 5));
+    expect(line.qty).toBe(7);
+    expect(line.qtyNote).toContain("30.0 sq ft × 5% overage");
+    expect(line.qtyNote).toContain("includes 5% waste");
+    expect(line.qtyNote).not.toContain("15%");
+  });
+
+  it("uses the owner's X * 1.05 formula rather than the 15% tile overage", () => {
+    const [mosaicLine] = buildSurfaceCartLines([mosaicBacksplash], "homeowner", { ...areas, backsplashSqFt: 100 });
+    const [tileLine] = buildSurfaceCartLines([fieldTileBacksplash], "homeowner", { ...areas, backsplashSqFt: 100 });
+    // 100 * 1.05 = 105 / 5 = 21 boxes; 100 * 1.15 = 115 / 5 = 23 boxes.
+    expect(mosaicLine.qty).toBe(21);
+    expect(tileLine.qty).toBe(23);
+    expect(mosaicLine.qty).toBeLessThan(tileLine.qty);
+  });
+
+  it("leaves field tile on the same backsplash at the 15% overage, with no mosaic note", () => {
+    const [line] = buildSurfaceCartLines([fieldTileBacksplash], "homeowner", areas);
+    expect(line.qty).toBe(Math.ceil((30 * 1.15) / 5));
+    expect(line.qtyNote).toContain("15%");
+    expect(line.qtyNote).not.toContain("5% waste");
+  });
+
+  it("does not apply the mosaic waste to countertops, sinks or faucets", () => {
+    const quartz: SurfacePick = {
+      id: 503,
+      name: "Countertop slab",
+      category: "Quartz Slabs (Countertops)",
+      size: '126" x 63"',
+      sellPrice: 1200,
+    };
+    const faucet: SurfacePick = {
+      id: 504,
+      name: "Arctic Vail Faucet",
+      category: "Sinks & Faucets",
+      subCategory: "Faucets",
+      sellPrice: 189,
+    };
+    const lines = buildSurfaceCartLines([quartz, faucet], "homeowner", areas);
+    expect(lines.every((line) => !line.qtyNote?.includes("5% waste"))).toBe(true);
+  });
+
+  it("rounds up to whole sellable units when the 5% pushes past a whole box", () => {
+    // 20 sq ft * 1.05 = 21 / 10 sq ft per box = 2.1 → ceil = 3 boxes
+    const [line] = buildSurfaceCartLines([{ ...mosaicBacksplash, coverageSqFt: 10 }], "homeowner", { ...areas, backsplashSqFt: 20 });
+    expect(line.qty).toBe(3);
+    // Without the mosaic waste the same area would only need two boxes.
+    expect(Math.ceil(20 / 10)).toBe(2);
+  });
+
+  it("says the waste could not be applied when the mosaic has no box coverage and no published sheet size", () => {
+    const [line] = buildSurfaceCartLines([{ ...mosaicBacksplash, coverageSqFt: null, size: null }], "homeowner", areas);
+    expect(line.qty).toBe(1);
+    expect(line.qtyNote).toContain("30.0 sq ft");
+    expect(line.qtyNote).toContain("5% mosaic waste could not be added");
+    expect(line.qtyNote).not.toContain("includes 5% waste");
+  });
+
+  it("rounds up to whole sheets from the published sheet size, which is what a real Pelican mosaic carries", () => {
+    // Real catalog shape: size is the sheet size, and coverageSqFt is empty on every mosaic.
+    // 11.81 x 11.81 sheet = 0.9686 sq ft per sheet.
+    const catalogMosaic: SurfacePick = {
+      id: 505,
+      name: "Arctic Vail",
+      category: "Tile & Mosaic",
+      subCategory: "Mosaic",
+      size: "10.71 x 10.55 x 8",
+      sellPrice: 24,
+      coverageSqFt: null,
+    };
+    const sheetSqFt = (10.71 * 10.55) / 144; // 0.7846 sq ft
+    const [line] = buildSurfaceCartLines([catalogMosaic], "homeowner", { ...areas, backsplashSqFt: 30 });
+    // 30 * 1.05 = 31.5 / 0.7846 = 40.15 → ceil = 41 sheets
+    expect(line.qty).toBe(Math.ceil((30 * 1.05) / sheetSqFt));
+    expect(line.qtyNote).toContain("sq ft/sheet");
+    expect(line.qtyNote).toContain("41 sheets");
+    expect(line.qtyNote).toContain("includes 5% waste");
+    // The third number in the catalog size is the 8 mm thickness and must not become a dimension.
+    expect(line.qtyNote).not.toContain("÷ 0.7846 sq ft/box");
+  });
+
+  it("keeps a structured coverage value authoritative over the sheet size when a vendor entered one", () => {
+    const [line] = buildSurfaceCartLines([mosaicBacksplash], "homeowner", areas);
+    expect(line.qtyNote).toContain("sq ft/box");
+    expect(line.qtyNote).not.toContain("sq ft/sheet");
+  });
+
+  it("keeps the 5% note off a mosaic with no measured backsplash area yet", () => {
+    const [line] = buildSurfaceCartLines([mosaicBacksplash], "homeowner", { ...areas, backsplashSqFt: 0 });
+    expect(line.qty).toBe(1);
+    expect(line.qtyNote).toBeUndefined();
+  });
+
+  it("keeps the 5% note off a quote-only mosaic that is skipped from the cart", () => {
+    expect(buildSurfaceCartLines([{ ...mosaicBacksplash, sellPrice: null }], "homeowner", areas)).toEqual([]);
   });
 });
