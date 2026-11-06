@@ -1,0 +1,127 @@
+-- TiDB SQL editor version. Numbered 0250. Run after 0249.
+-- One statement per line, so each line can be pasted on its own in the TiDB SQL
+-- editor. Every table is cabinet_dealz.<table>. No reserved-word aliases.
+-- Do not run this from an application. Tom pastes it in the TiDB editor.
+-- Safe to re-run: CREATE TABLE IF NOT EXISTS, and every seed row is INSERT IGNORE
+-- on the unique settingKey, so a second run inserts nothing and no row is updated
+-- or deleted.
+--
+-- WHY THIS TABLE EXISTS
+-- The admin Kitchen Rules page already keeps a catalog of documented rules in
+-- cabinet_dealz.kitchen_rules (0233). That table is the WRITTEN record: one row
+-- per rule, with its sources and notes. This table is different and new: it holds
+-- the VALUES the auto-designer actually reads, one row per setting.
+--
+-- Why a second table instead of adding columns to kitchen_rules:
+--   - kitchen_rules groups rules that share parameters. Two rules pointing at the
+--     same parameter is exactly the bug this replaces: editing one of those rules
+--     rewrote the other, so several rules ended up showing the same number.
+--   - Here settingKey is UNIQUE and one setting belongs to exactly one rule, so
+--     two rules can never write to the same value.
+--   - A rule Tom made mandatory (lockedFlag = 1) keeps its row, so the lock and
+--     the "who last changed it" trail are auditable, but the frontend never reads
+--     its stored value: the hard rule cannot be softened from a screen.
+--
+-- HOW A VALUE IS READ
+--   valueText NULL  -> the code default in client/src/lib/kitchenRuleRegistry.ts
+--   valueText set   -> the admin override
+--   enabledFlag 0 or deletedAt set -> the code default (the rule stops applying)
+-- Every built-in row below is seeded with valueText NULL on purpose, so running
+-- this file changes no design. Nothing changes until an admin saves a value.
+--
+-- valueText holds a number ("3"), a toggle ("0" or "1"), a choice
+-- ("cabinet-first"), or plain text ("lazy-susan,diagonal,blind"). defaultValueText
+-- is the code default at the time this file was written; the live default is
+-- always the registry, so an old row here can never override a newer code default
+-- unless an admin saved a value.
+--
+-- Rollback: DELETE FROM cabinet_dealz.kitchen_rule_settings; drops every override
+-- and returns the Designer to its code defaults. Dropping the table does the same.
+
+-- 1. The settings table. One row per rule setting, unique on settingKey.
+CREATE TABLE IF NOT EXISTS cabinet_dealz.kitchen_rule_settings (
+  id INT NOT NULL AUTO_INCREMENT,
+  settingKey VARCHAR(80) NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  description TEXT NOT NULL,
+  category VARCHAR(80) NOT NULL,
+  valueType VARCHAR(16) NOT NULL,
+  valueText TEXT NULL,
+  defaultValueText TEXT NOT NULL,
+  enabledFlag TINYINT(1) NOT NULL DEFAULT 1,
+  lockedFlag TINYINT(1) NOT NULL DEFAULT 0,
+  isBuiltIn TINYINT(1) NOT NULL DEFAULT 1,
+  deletedAt TIMESTAMP NULL,
+  updatedBy VARCHAR(255) NULL,
+  createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY kitchen_rule_settings_key_uq (settingKey)
+);
+
+-- 2. Read-only: what is already stored. Expect no rows on a first run.
+SELECT existing_setting.id AS settingId, existing_setting.settingKey, existing_setting.valueText, existing_setting.enabledFlag, existing_setting.updatedBy, existing_setting.updatedAt FROM cabinet_dealz.kitchen_rule_settings AS existing_setting ORDER BY existing_setting.category, existing_setting.settingKey;
+
+-- 3. Seed every built-in rule with its code default. valueText stays NULL so the
+--    Designer keeps reading the code default until an admin edits a value.
+INSERT IGNORE INTO cabinet_dealz.kitchen_rule_settings (settingKey, title, description, category, valueType, valueText, defaultValueText, enabledFlag, lockedFlag, isBuiltIn) VALUES
+('jog_max_in', 'Wiggle room for a placed cabinet', 'How far the fit may slide a cabinet that is not an anchor, left or right along its own wall. The smallest shift that works is always used.', 'Wiggle room', 'number', NULL, '3', 1, 0, 1),
+('anchor_wiggle_cap_in', 'Wiggle room for the range, refrigerator and sink base', 'The range, refrigerator and sink base are measured anchors and slide at most this far from the measured center. A sink base also keeps its sink on the window within this cap.', 'Wiggle room', 'number', NULL, '2', 1, 0, 1),
+('sink_shift_limit_in', 'Sink base shift cap', 'How far the gap solver may slide the sink base from the measured sink center. The faucet stays on that base.', 'Wiggle room', 'number', NULL, '3', 1, 0, 1),
+('measured_fridge_corner_shift_in', 'Measured refrigerator corner slide', 'A refrigerator the customer measured may slide this far away from a corner while a corner cabinet is seated. The refrigerator bay gap-closing slide is separate.', 'Wiggle room', 'number', NULL, '12', 1, 0, 1),
+('refrigerator_shift_limit_in', 'Refrigerator bay gap-closing slide', 'How far the whole refrigerator bay (its panels and the cabinet above) may slide to close a gap at the end of a run.', 'Wiggle room', 'number', NULL, '6', 1, 0, 1),
+('filler_preference_order', 'Preference when a gap is left', 'Which answer Auto-Design tries first for a leftover opening. Cabinet first grows or swaps in a real cabinet and leaves filler until last. Filler first closes the seam immediately.', 'Fillers', 'choice', NULL, 'cabinet-first', 1, 0, 1),
+('filler_gap_max_in', 'Widest seam that may be filled', 'A measured gap wider than this is never closed with a filler alone. It needs a real cabinet or a plan change.', 'Fillers', 'number', NULL, '6', 1, 0, 1),
+('filler_min_in', 'Narrowest filler worth cutting', 'A seam narrower than this is tape-measure noise and no filler is ordered for it.', 'Fillers', 'number', NULL, '0', 1, 0, 1),
+('auto_place_filler_max_in', 'Leftover filled with no question', 'A leftover at or below this width gets its filler placed automatically. A wider seam, up to the widest seam that may be filled, waits for a choice.', 'Fillers', 'number', NULL, '3', 1, 0, 1),
+('seam_filler_max_in', 'Widest seam Auto-Design closes by itself', 'Auto-Design closes a run seam up to this width with one filler board and no prompt.', 'Fillers', 'number', NULL, '3', 1, 0, 1),
+('narrow_cabinet_max_in', 'Widest cabinet that still counts as narrow', 'A leftover opening is offered a real cabinet up to this wide (a 9 or 12 inch spice or tray base) before any filler is considered.', 'Cabinet widths', 'number', NULL, '12', 1, 0, 1),
+('undersized_cabinet_in', 'Cabinet width that scores as undersized', 'In the fit score, a cabinet narrower than this counts as a poor fill and is avoided when something wider belongs there.', 'Cabinet widths', 'number', NULL, '12', 1, 0, 1),
+('range_fridge_min_cabinet_in', 'Cabinet between the range and the refrigerator', 'When the range and the refrigerator share a run, at least one real cabinet this wide must sit between them. Fillers and panels do not count.', 'Cabinet widths', 'number', NULL, '15', 1, 0, 1),
+('heavy_cook_landing_in', 'Heavy-cooking counter beside the range', 'A household that cooks a lot keeps this much open counter on both sides of the range.', 'Cabinet widths', 'number', NULL, '15', 1, 0, 1),
+('small_cabinet_below_in', 'Width below which a base counts as small', 'Beside a heavy-cooking range, a base narrower than this is treated as too small to land on.', 'Cabinet widths', 'number', NULL, '15', 1, 0, 1),
+('range_landing_short_in', 'Range landing, shorter side', 'A range with no heavy-cooking profile needs at least this much counter on its shorter side.', 'Cabinet widths', 'number', NULL, '12', 1, 0, 1),
+('range_landing_long_in', 'Range landing, longer side', 'A range with no heavy-cooking profile needs at least this much counter on its longer side.', 'Cabinet widths', 'number', NULL, '15', 1, 0, 1),
+('corner_preference_order', 'Corner logic', 'The order Auto-Design tries corner cabinets in when the customer has not picked one. Every type named here must be a corner the selected line actually sells.', 'Corners', 'text', NULL, 'lazy-susan,diagonal,blind,angled-l,corner-drawer', 1, 0, 1),
+('blind_open_leg_in', 'Blind corner open leg', 'The open leg a blind corner needs: base depth plus its required filler.', 'Corners', 'number', NULL, '27', 1, 0, 1),
+('u_shape_corner_count', 'Corners in a U-shaped kitchen', 'How many corner cabinets a U-shaped Auto-Design kitchen has.', 'Corners', 'number', NULL, '2', 1, 0, 1),
+('wall_bottom_in', 'Wall cabinet bottom line', 'Standard wall cabinets hang with their bottom at this height above the floor.', 'Upper heights', 'number', NULL, '54', 1, 0, 1),
+('run_top_in', 'Height a wall run tops out at', 'Wall runs and range bridges are aligned so their top line lands here.', 'Upper heights', 'number', NULL, '96', 1, 0, 1),
+('window_cabinet_height_in', 'Wall cabinet height beside a window', 'The wall cabinet height that the window-side panel and filler rules treat as the standard box.', 'Upper heights', 'number', NULL, '30', 1, 0, 1),
+('window_filler_max_in', 'Filler beside a window', 'A gap to the window casing at or below this width gets a filler instead of a panel.', 'Upper heights', 'number', NULL, '3', 1, 0, 1),
+('window_framed_panel', 'Panel on a framed line beside a window', 'On turns it on: a framed line also gets a finished panel beside a window, not only a filler.', 'Upper heights', 'toggle', NULL, '0', 1, 0, 1),
+('bridge_above_range_required', 'Bridge cabinet above the range', 'Hard rule from Tom. Every range keeps a bridge cabinet above it. This cannot be switched off and its value cannot be overridden.', 'Locked hard rules', 'toggle', NULL, '1', 1, 1, 1),
+('bridge_hung_bottom_in', 'Bridge bottom when a hood or microwave hangs below', 'The bridge cabinet''s bottom line when something hangs under it.', 'Range and hood', 'number', NULL, '72', 1, 0, 1),
+('bridge_hung_height_in', 'Bridge height when a hood or microwave hangs below', 'The bridge cabinet''s own height when something hangs under it.', 'Range and hood', 'number', NULL, '24', 1, 0, 1),
+('bridge_open_bottom_in', 'Bridge bottom when nothing hangs below', 'The bridge cabinet''s bottom line when nothing hangs under it.', 'Range and hood', 'number', NULL, '66', 1, 0, 1),
+('bridge_open_height_in', 'Bridge height when nothing hangs below', 'The bridge cabinet''s own height when nothing hangs under it.', 'Range and hood', 'number', NULL, '30', 1, 0, 1),
+('hood_bottom_in', 'Hood bottom height', 'The range hood bottom stays at this height above the floor.', 'Range and hood', 'number', NULL, '60', 1, 0, 1),
+('standard_hood_bottom_in', 'Hood bottom for every hood but the 42 inch hood', 'Every hood except the 42 inch hood is mounted with its bottom at this height.', 'Range and hood', 'number', NULL, '54', 1, 0, 1),
+('faucet_at_sink_required', 'Faucet at the sink', 'Hard rule from Tom. Every sink Auto-Design places gets one deck-mounted faucet, on every build and on every older plan that is opened. This cannot be switched off and its value cannot be overridden.', 'Locked hard rules', 'toggle', NULL, '1', 1, 1, 1),
+('window_never_moves', 'Window never moves', 'Hard rule from Tom. A measured window keeps the height and position the customer gave it. No fit pass, filler, cabinet or appliance may slide a window. This cannot be switched off and its value cannot be overridden.', 'Locked hard rules', 'toggle', NULL, '1', 1, 1, 1),
+('sink_base_default_in', 'Default sink base width', 'The sink base Auto-Design picks unless the customer chooses another size or a farmhouse base.', 'Sink and appliances', 'number', NULL, '36', 1, 0, 1),
+('sink_dishwasher_max_gap_in', 'Dishwasher distance from the sink', 'The dishwasher is seated against the sink and re-checked against this distance after any shift.', 'Sink and appliances', 'number', NULL, '36', 1, 0, 1),
+('dishwasher_corner_clear_in', 'Standing space between the dishwasher and a corner', 'A dishwasher against an inside corner needs this much standing space at right angles to it.', 'Sink and appliances', 'number', NULL, '21', 1, 0, 1),
+('dishwasher_corner_min_in', 'Side gap when a corner cannot be avoided', 'If the standing space is impossible, the dishwasher side still needs this much gap.', 'Sink and appliances', 'number', NULL, '2', 1, 0, 1),
+('sink_landing_long_in', 'Sink landing, longer side', 'One side of the sink needs this much counter.', 'Sink and appliances', 'number', NULL, '24', 1, 0, 1),
+('sink_landing_short_in', 'Sink landing, shorter side', 'The other side of the sink needs this much counter.', 'Sink and appliances', 'number', NULL, '18', 1, 0, 1),
+('fridge_landing_in', 'Refrigerator landing', 'The refrigerator handle side needs this much counter, or the same amount across an aisle.', 'Sink and appliances', 'number', NULL, '15', 1, 0, 1),
+('fridge_hinge_clear_in', 'Refrigerator hinge-side clearance', 'A refrigerator hinge side that lands on a wall needs this much filler or panel.', 'Sink and appliances', 'number', NULL, '2.5', 1, 0, 1),
+('baking_zone_min_in', 'Baking zone beside the range', 'A household that bakes a lot reserves this much uninterrupted counter beside the range.', 'Sink and appliances', 'number', NULL, '36', 1, 0, 1),
+('sink_base_substitute', 'Substitute an out-of-stock sink base', 'On turns it on: an out-of-stock SBxx sink base is swapped for the mapped base of the same width, and the shop fits a false front.', 'Sink and appliances', 'toggle', NULL, '1', 1, 0, 1),
+('sink_base_map', 'Sink base substitution map', 'The prefix pair used when a sink base is out of stock, written as SBxx->Bxx.', 'Sink and appliances', 'text', NULL, 'SBxx->Bxx', 1, 0, 1),
+('stock_prompt_enabled', 'Ask before replacing an out-of-stock cabinet', 'On turns it on: the Designer asks before it changes a plan for stock.', 'Sink and appliances', 'toggle', NULL, '1', 1, 0, 1),
+('stock_prompts', 'Out-of-stock choices by SKU', 'SKU:option,option entries separated by semicolons. Options are full-height, drawer, and readjust.', 'Sink and appliances', 'text', NULL, 'B18:full-height,drawer,readjust', 1, 0, 1),
+('exposed_panels_enabled', 'Exposed-side panel engine', 'The master switch for the broad exposed-side panel engine. The narrow auto panels on frameless and Hickory lines still run.', 'Panels', 'toggle', NULL, '0', 1, 0, 1),
+('panel_thickness_in', 'Finished panel thickness', 'The stock thickness of every finished end panel the Designer adds.', 'Panels', 'number', NULL, '0.75', 1, 0, 1),
+('panel_end_wall_enabled', 'Panel at a run end against a wall', 'A cabinet whose side meets a wall gets a finished panel on that side.', 'Panels', 'toggle', NULL, '1', 1, 0, 1),
+('panel_dw_enabled', 'Panel on an exposed dishwasher side', 'A dishwasher with an exposed side, or a cabinet side facing the dishwasher, gets a finished panel.', 'Panels', 'toggle', NULL, '1', 1, 0, 1),
+('panel_fridge_enabled', 'Refrigerator end panel', 'A refrigerator that stands alone or ends a run gets a tall end panel.', 'Panels', 'toggle', NULL, '1', 1, 0, 1),
+('panel_island_enabled', 'Island and peninsula panels', 'Exposed island and peninsula ends and backs get a finished panel.', 'Panels', 'toggle', NULL, '1', 1, 0, 1),
+('panel_window_enabled', 'Panel beside a window', 'A wall cabinet next to a window gets a finished panel on the window side.', 'Panels', 'toggle', NULL, '1', 1, 0, 1),
+('panel_open_enabled', 'Panel on an open run end', 'An end of a run that stands in the open gets a finished panel.', 'Panels', 'toggle', NULL, '1', 1, 0, 1),
+('panel_wall_end_enabled', 'Panel at a wall return', 'A cabinet that dies into a wall return gets a finished panel on that side.', 'Panels', 'toggle', NULL, '1', 1, 0, 1),
+('panel_tall_enabled', 'Panel on a tall run end', 'A tall cabinet at the end of a run gets a finished panel.', 'Panels', 'toggle', NULL, '1', 1, 0, 1),
+('tall_at_run_end', 'Pantry and oven tower at the end of a run', 'On turns it on: a tall box closes a run at the run end or the end of a free span, never in the middle of the first gap that fits.', 'Tall and dishwasher', 'toggle', NULL, '1', 1, 0, 1),
+('dishwasher_panel_enabled', 'Dishwasher panel at the end of a run', 'A dishwasher that ends a run gets a DWR dishwasher panel in the Designer''s panel system.', 'Tall and dishwasher', 'toggle', NULL, '1', 1, 0, 1),
+('dishwasher_panel_forty_five_enabled', 'Dishwasher panel at a 45-degree turn', 'A run that turns at 45 degrees on the dishwasher gets the same DWR panel in the fitted corner slot.', 'Tall and dishwasher', 'toggle', NULL, '1', 1, 0, 1);

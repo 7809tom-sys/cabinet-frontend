@@ -1,66 +1,73 @@
 /**
- * Numeric kitchen-rule parameters. Code defaults apply until an admin saves
- * a different value. Disabled rules are omitted by the parameter endpoint,
- * so they fall back to these defaults too.
+ * Numeric and text rule values the auto-designer reads.
+ *
+ * Two layers, always in this order:
+ *
+ *   1. the admin override, one entry per unique setting key, loaded from
+ *      `kitchenRules.settings` for the session;
+ *   2. the code default in `kitchenRuleRegistry.ts`.
+ *
+ * A missing, disabled, or deleted override falls back to the code default, so
+ * nothing changes on a plan until an admin saves a different value.
+ *
+ * A rule Tom made mandatory is `locked`. Its stored value is accepted but never
+ * read: `kitchenRuleNumber` answers with the code default so the bridge above
+ * the range, the faucet at the sink, and a window that never moves cannot be
+ * switched off from a screen.
  */
-export const KITCHEN_RULE_PARAMETER_DEFAULTS = {
-  jog_max_in: 3,
-  // Corner-seating slide for a user-measured refrigerator. Bay gap-closing stays at 6.
-  measured_fridge_corner_shift_in: 12,
-  range_fridge_min_cabinet_in: 15,
-  filler_gap_max_in: 6,
-  wall_bottom_in: 54,
-  bridge_hung_bottom_in: 72,
-  bridge_hung_height_in: 24,
-  bridge_open_bottom_in: 66,
-  bridge_open_height_in: 30,
-  run_top_in: 96,
-  hood_bottom_in: 60,
-  baking_zone_min_in: 36,
-  heavy_cook_landing_in: 15,
-  small_cabinet_below_in: 15,
-  u_shape_corner_count: 2,
-  sink_dishwasher_max_gap_in: 36,
-  dishwasher_corner_clear_in: 21,
-  dishwasher_corner_min_in: 2,
-  sink_landing_long_in: 24,
-  sink_landing_short_in: 18,
-  fridge_landing_in: 15,
-  fridge_hinge_clear_in: 2.5,
-  blind_open_leg_in: 27,
-  sink_base_default_in: 36,
-  /** 1 automatically swaps an out-of-stock SBxx for the mapped base. 0 leaves it. */
-  sink_base_substitute: 1,
-  /** 1 asks before replacing a configured out-of-stock SKU. 0 skips the prompt. */
-  stock_prompt_enabled: 1,
-  /** Master switch for the broad exposed-side engine. Off: that engine does not run.
-   *  Frameless and Hickory lines still get the narrow auto panels. */
-  exposed_panels_enabled: 0,
-  panel_thickness_in: 0.75,
-  panel_end_wall_enabled: 1,
-  panel_dw_enabled: 1,
-  panel_fridge_enabled: 1,
-  panel_island_enabled: 1,
-  panel_window_enabled: 1,
-  panel_open_enabled: 1,
-  panel_wall_end_enabled: 1,
-  panel_tall_enabled: 1,
-  window_cabinet_height_in: 30,
-  window_filler_max_in: 3,
-  /** 1 also panels framed wall cabinets beside a window. 0 is filler only. */
-  window_framed_panel: 0,
-  /** Owner rule: 1 auto-places a DWR dishwasher panel where a dishwasher ends a run or the run turns 45° on it. */
-  dishwasher_panel_enabled: 1,
-} as const;
+import {
+  KITCHEN_RULE_PARAMETER_DEFAULTS,
+  KITCHEN_RULE_TEXT_DEFAULTS,
+  kitchenRuleDefinition,
+  kitchenRuleIsLocked,
+  type KitchenRuleNumericKey,
+  type KitchenRuleTextKey,
+} from "./kitchenRuleRegistry";
 
-export type KitchenRuleParameterKey = keyof typeof KITCHEN_RULE_PARAMETER_DEFAULTS;
+export { KITCHEN_RULE_PARAMETER_DEFAULTS };
 
-let overrides: Partial<Record<KitchenRuleParameterKey, number>> = {};
+export type KitchenRuleParameterKey = KitchenRuleNumericKey;
+
+/** Numeric overrides, keyed by the unique setting key. Never shared between rules. */
+let overrides: Partial<Record<string, number>> = {};
+/** Text overrides (a choice, a preference order, a SKU map), keyed the same way. */
 let textOverrides: Record<string, string> = {};
 
-export function kitchenRuleText(key: string, fallback: string): string {
-  const value = textOverrides[key]?.trim();
-  return value ? value : fallback;
+/** Numeric or text value for one setting key, or undefined when nothing is stored. */
+export function kitchenRuleOverrideValue(key: string): number | string | undefined {
+  if (kitchenRuleIsLocked(key)) return undefined;
+  const numeric = overrides[key];
+  if (typeof numeric === "number" && Number.isFinite(numeric)) return numeric;
+  return textOverrides[key];
+}
+
+/** True when an admin saved a value that differs from the code default. */
+export function kitchenRuleIsOverridden(key: string): boolean {
+  return kitchenRuleOverrideValue(key) !== undefined;
+}
+
+/** A text rule, such as the corner preference order or the sink base map. */
+export function kitchenRuleText(key: string, fallback?: string): string {
+  if (!kitchenRuleIsLocked(key)) {
+    const value = textOverrides[key]?.trim();
+    if (value) return value;
+  }
+  if (fallback != null) return fallback;
+  const definition = kitchenRuleDefinition(key);
+  if (definition && typeof definition.defaultValue === "string") return definition.defaultValue;
+  const known = KITCHEN_RULE_TEXT_DEFAULTS[key as KitchenRuleTextKey];
+  return typeof known === "string" ? known : "";
+}
+
+/** A choice rule, clamped to the values the definition allows. */
+export function kitchenRuleChoice<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
+  const value = kitchenRuleText(key, fallback) as T;
+  return allowed.includes(value) ? value : fallback;
+}
+
+/** A toggle rule as a boolean. A stored 0 is off; anything else is on. */
+export function kitchenRuleEnabled(key: KitchenRuleNumericKey): boolean {
+  return kitchenRuleNumber(key) !== 0;
 }
 
 export function setKitchenRuleTextParameters(values: Record<string, string> | null | undefined): void {
@@ -71,12 +78,18 @@ export function setKitchenRuleTextParameters(values: Record<string, string> | nu
   }
 }
 
+/**
+ * Applies the saved overrides. Only a key the Designer actually knows is kept,
+ * so a stray or renamed row can never change a plan, and a rule whose override
+ * row is disabled or deleted simply is not in the map and falls back.
+ */
 export function setKitchenRuleParameters(values: Record<string, number> | null | undefined): void {
-  const next: Partial<Record<KitchenRuleParameterKey, number>> = {};
+  const next: Partial<Record<string, number>> = {};
   if (values) {
-    for (const key of Object.keys(KITCHEN_RULE_PARAMETER_DEFAULTS) as KitchenRuleParameterKey[]) {
-      const value = values[key];
-      if (typeof value === "number" && Number.isFinite(value)) next[key] = value;
+    for (const [key, value] of Object.entries(values)) {
+      if (typeof value !== "number" || !Number.isFinite(value)) continue;
+      if (!kitchenRuleDefinition(key)) continue;
+      next[key] = value;
     }
   }
   overrides = next;
@@ -87,15 +100,33 @@ export function resetKitchenRuleParameters(): void {
   textOverrides = {};
 }
 
-export function kitchenRuleNumber(key: KitchenRuleParameterKey): number {
+export function kitchenRuleNumber(key: KitchenRuleNumericKey): number {
+  const fallback = KITCHEN_RULE_PARAMETER_DEFAULTS[key];
+  if (kitchenRuleIsLocked(key)) return fallback;
   const value = overrides[key];
-  return typeof value === "number" && Number.isFinite(value) ? value : KITCHEN_RULE_PARAMETER_DEFAULTS[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
-export function kitchenRuleParameterSnapshot(): Record<KitchenRuleParameterKey, number> {
+/** Every numeric rule as the Designer currently reads it. */
+export function kitchenRuleParameterSnapshot(): Record<KitchenRuleNumericKey, number> {
   const snapshot = { ...KITCHEN_RULE_PARAMETER_DEFAULTS };
-  for (const key of Object.keys(snapshot) as KitchenRuleParameterKey[]) {
+  for (const key of Object.keys(snapshot) as KitchenRuleNumericKey[]) {
     snapshot[key] = kitchenRuleNumber(key);
   }
   return snapshot;
+}
+
+/** One rule's current value, for the admin table: the override, or the default. */
+export function kitchenRuleEffectiveValue(key: string): number | string {
+  const override = kitchenRuleOverrideValue(key);
+  if (override !== undefined) return override;
+  const definition = kitchenRuleDefinition(key);
+  if (definition) return definition.defaultValue;
+  return KITCHEN_RULE_PARAMETER_DEFAULTS[key as KitchenRuleNumericKey] ?? "";
+}
+
+/** Text form of a rule value, as the admin input shows it. */
+export function kitchenRuleValueText(value: number | string | null | undefined): string {
+  if (value == null) return "";
+  return typeof value === "number" ? String(value) : value;
 }
