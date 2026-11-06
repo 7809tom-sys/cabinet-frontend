@@ -16,7 +16,12 @@ import {
   AI_DOOR_KEY_SERVICE,
   AI_DOOR_MODEL_ENV_KEYS,
   AI_DOOR_NOT_CONNECTED_MESSAGE,
+  AI_DOOR_PROMPT_MAX_CHARS,
   aiDoorDescribeInput,
+  aiDoorSendsInstructions,
+  aiDoorStatusLabel,
+  aiDoorStatusSentence,
+  composeAiDoorPrompt,
   isAiDoorModel,
   readAiDoorDescribeResult,
 } from "./aiDoorDescribe";
@@ -74,7 +79,7 @@ describe("the request the browser sends", () => {
 describe("reading a result into what a column shows", () => {
   it("returns the text on success", () => {
     const read = readAiDoorDescribeResult("gpt", { status: "ok", model: "gpt", description: "  Style: shaker.  ", providerModel: "m" });
-    expect(read).toEqual({ description: "Style: shaker.", message: null, notConnected: false });
+    expect(read).toEqual({ description: "Style: shaker.", message: null, notConnected: false, reason: null });
   });
 
   it("keeps a missing key distinct, with its plain sentence", () => {
@@ -109,6 +114,86 @@ describe("reading a result into what a column shows", () => {
     expect(readAiDoorDescribeResult("gpt", { status: "ok", model: "gpt", description: "   ", providerModel: null }).message)
       .toContain("answered with nothing");
     expect(readAiDoorDescribeResult("gpt", null).message).toBe(AI_DOOR_GENERATE_FAILED_MESSAGE);
+  });
+
+  it("names a specific reason for each failure so the indicator never just says error", () => {
+    expect(readAiDoorDescribeResult("gpt", { status: "ok", model: "gpt", description: "", providerModel: null }).reason)
+      .toBe("empty-response");
+    expect(readAiDoorDescribeResult("claude", { status: "not-connected", model: "claude", message: "" }).reason)
+      .toBe("not-connected");
+    expect(readAiDoorDescribeResult("gpt", { status: "error", model: "gpt", code: "timeout", message: "slow" }).reason)
+      .toBe("timeout");
+    expect(readAiDoorDescribeResult("gpt", { status: "error", model: "gpt", code: "rate-limited", message: "busy" }).reason)
+      .toBe("rate-limited");
+    expect(readAiDoorDescribeResult("gemini", { status: "error", model: "gemini", code: "provider-error", message: "x" }).reason)
+      .toBe("provider-error");
+  });
+
+  it("has a short label and a plain sentence for every reason", () => {
+    const reasons = ["not-connected", "timeout", "rate-limited", "empty-response", "handoff-failed", "provider-error"] as const;
+    for (const reason of reasons) {
+      const label = aiDoorStatusLabel(reason);
+      expect(label, reason).not.toBe("");
+      expect(label.toLowerCase(), reason).not.toBe("error");
+      expect(aiDoorStatusSentence({ model: "gpt", reason }), reason).not.toBe("");
+    }
+    // The handoff sentence says the text did not reach the door field, which is
+    // the one failure a model reply alone cannot detect.
+    expect(aiDoorStatusSentence({ model: "gpt", reason: "handoff-failed" })).toContain("description field");
+  });
+});
+
+describe("the operator's own instructions", () => {
+  it("are appended to the standing prompt so the model actually receives them", () => {
+    const composed = composeAiDoorPrompt({
+      prompt: AI_DOOR_PROMPTS.gpt,
+      instructions: "This is the Haven Harbor door, rails look 2-3/4 in.",
+    });
+    expect(composed.startsWith(AI_DOOR_PROMPTS.gpt)).toBe(true);
+    expect(composed).toContain("This is the Haven Harbor door");
+    // The standing prompt is still there, not replaced.
+    expect(composed).toContain("Style family:");
+  });
+
+  it("leave the prompt untouched when the operator typed nothing", () => {
+    expect(composeAiDoorPrompt({ prompt: AI_DOOR_PROMPTS.claude, instructions: "   " })).toBe(AI_DOOR_PROMPTS.claude);
+    expect(composeAiDoorPrompt({ prompt: AI_DOOR_PROMPTS.claude })).toBe(AI_DOOR_PROMPTS.claude);
+  });
+
+  it("can never exceed the server's prompt limit, even with a very long instruction", () => {
+    const composed = composeAiDoorPrompt({
+      prompt: AI_DOOR_PROMPTS.gemini,
+      instructions: "x".repeat(20_000),
+    });
+    expect(composed.length).toBeLessThanOrEqual(AI_DOOR_PROMPT_MAX_CHARS);
+    // The standing prompt survives intact; only the instruction is clipped.
+    expect(composed.startsWith(AI_DOOR_PROMPTS.gemini)).toBe(true);
+  });
+
+  it("travel in the request, both appended and as their own key", () => {
+    const instructions = "Ignore the glare on the left stile.";
+    const input = aiDoorDescribeInput({
+      model: "gpt",
+      prompt: AI_DOOR_PROMPTS.gpt,
+      instructions,
+    });
+    expect(input.prompt).toContain(instructions);
+    // Forward-compatible: an updated server can read the separate key, and an
+    // older one still gets the text because it is inside `prompt`.
+    expect(input.instructions).toBe(instructions);
+  });
+
+  it("are left out of the request entirely when the field was empty", () => {
+    const input = aiDoorDescribeInput({ model: "gpt", prompt: AI_DOOR_PROMPTS.gpt, instructions: "  " });
+    // Backward compatible with the deployed router: no new key at all.
+    expect("instructions" in input).toBe(false);
+    expect(input.prompt).toBe(AI_DOOR_PROMPTS.gpt);
+  });
+
+  it("are reported as sent only when there is real text", () => {
+    expect(aiDoorSendsInstructions("2 3/4 rails")).toBe(true);
+    expect(aiDoorSendsInstructions("   ")).toBe(false);
+    expect(aiDoorSendsInstructions(null)).toBe(false);
   });
 });
 

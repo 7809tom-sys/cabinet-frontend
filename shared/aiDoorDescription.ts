@@ -39,6 +39,7 @@ export {
   AI_DOOR_MODELS,
   AI_DOOR_MODEL_LABELS,
   AI_DOOR_PROMPTS,
+  AI_DOOR_PROMPT_FIELDS,
   type AiDoorModel,
 } from "./aiDoorPrompts";
 /** The library entry a description resolves to, or null when the text names none. */

@@ -489,11 +489,14 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
     setGlazing({ glazed: v.glazed, glazeColor: v.glazeColor, glazeColorOther: v.glazeColorOther });
   };
   const frameSourceRef = useRef<HTMLInputElement>(null);
+  /** The last description this feature wrote into the field, so it is not re-sent as an instruction. */
+  const lastAiDescription = useRef<string>("");
   const [newSceneUrl, setNewSceneUrl] = useState("");
   const [newSceneSourceNote, setNewSceneSourceNote] = useState("");
 
   // Reset state when dialog opens for a different style
   const resetToStyle = (s: AdminStyle) => {
+    lastAiDescription.current = "";
     setFeaturedLabel(s.featuredLabel ?? "");
     setAliasName(s.aliasName ?? "");
     setOurName(s.ourName);
@@ -553,6 +556,39 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
     if (patch.finishSheen) setFinishSheen(patch.finishSheen);
     if (patch.colorDescription) setColorDescription(patch.colorDescription);
   };
+
+  /**
+   * A generated description arrived for one model. It goes into the door's own
+   * Profile Description field — the one the operator typed their instructions
+   * into — so the field they are looking at shows the answer, and the normal
+   * Save persists it with the rest of the profile.
+   *
+   * Nothing is clobbered silently: whatever they typed was already sent to the
+   * model as instructions, so replacing it with the answer is the expected step.
+   * The panel keeps its own copy of all three answers.
+   *
+   * Returning true tells the panel the handoff really happened, which is what
+   * turns its indicator green. Returning false would report a handoff failure.
+   */
+  const handleGeneratedDescription = ({ description }: { model: string; description: string }) => {
+    const next = description.trim();
+    if (!next) return false;
+    lastAiDescription.current = next;
+    setProfileDescription(next);
+    return true;
+  };
+
+  /**
+   * The instructions sent to the model: what is in the description field, unless
+   * that text is this feature's own previous answer. Re-sending an answer as if it
+   * were an instruction would feed one model's words back to the next one and
+   * quietly drift the door away from the photograph.
+   */
+  const descriptionInstructions =
+    profileDescription.trim() && profileDescription.trim() !== lastAiDescription.current
+      ? profileDescription
+      : "";
+
   const applySiblingSpecs = trpc.doorStyles.adminUpdateDoorStyle.useMutation();
   const mediaUpload = useMediaLibraryUpload();
   /** Existing media library endpoint. The wizard uses it for the profile image; no new API. */
@@ -1213,6 +1249,8 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
             }}
             sampleUrl={doorSampleImageUrl || style.doorSampleImageUrl || null}
             onChooseOfficial={handleChooseOfficialDescription}
+            onDescription={handleGeneratedDescription}
+            instructions={descriptionInstructions}
           />
 
           {/* Plain-text color description: sheen, undertone, and the finish beyond a hex. */}

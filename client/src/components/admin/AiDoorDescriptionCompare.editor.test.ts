@@ -108,9 +108,11 @@ describe("the tool calls a model only on Generate", () => {
     // And nothing fires on the open handler beyond reading saved drafts.
     const startHandler = compareSource.slice(
       compareSource.indexOf("function startComparison"),
-      compareSource.indexOf("async function copyPrompt"),
+      compareSource.indexOf("function updateField"),
     );
+    expect(startHandler).toContain("readAiDoorComparison");
     expect(startHandler).not.toContain("generate(");
+    expect(startHandler).not.toContain("describe.generate");
   });
 
   it("sends no key and reads no key", () => {

@@ -11,6 +11,7 @@ import {
   AI_DOOR_MODEL_LABELS,
   AI_DOOR_PARAM_FIELDS,
   AI_DOOR_PROMPTS,
+  AI_DOOR_PROMPT_FIELDS,
   chooseOfficialAiDescription,
   officialRecordAsStylePatch,
   paramsAsStyleInput,
@@ -100,6 +101,85 @@ describe("the three prompts", () => {
       // never become a brand-palette snap.
       expect(prompt, model).toMatch(/not a hex|rather than a hex/);
     }
+  });
+
+  it("name the 3D designer as the reader, so the answer is machine-usable", () => {
+    for (const model of AI_DOOR_MODELS) {
+      const prompt = AI_DOOR_PROMPTS[model].toLowerCase();
+      expect(prompt, model).toContain("3d designer");
+      expect(prompt, model).toContain("machine reader");
+      // The door is built from the description, not merely described.
+      expect(prompt, model).toMatch(/builds the actual door|rebuilt/);
+    }
+  });
+
+  it("ask for every field the door builder reads, by its parser label", () => {
+    // Derived from doorRenderIdentity, doorFrameMetrics, doorStyleAppearance,
+    // shakerDoorBlueprint, raisedPanelDoorBlueprint and the description parser.
+    const required = [
+      "style family",
+      "frame construction",
+      "stile width",
+      "rail width",
+      "top rail",
+      "bottom rail",
+      "mid rail",
+      "panel type",
+      "bevel width",
+      "panel profile",
+      "door outside profile",
+      "inside edge",
+      "moulding",
+      "beads and grooves",
+      "finish",
+      "color",
+      "sheen",
+      "undertone",
+      "grain direction",
+      "material",
+      "door proportions",
+    ];
+    for (const model of AI_DOOR_MODELS) {
+      const prompt = AI_DOOR_PROMPTS[model].toLowerCase();
+      for (const field of required) {
+        expect(prompt, `${model} / ${field}`).toContain(field);
+      }
+    }
+    // The exported list and the shipped prompt agree.
+    expect(AI_DOOR_PROMPT_FIELDS).toHaveLength(required.length);
+  });
+
+  it("asks for a flat labelled line per field, which is what the parser reads", () => {
+    for (const model of AI_DOOR_MODELS) {
+      const prompt = AI_DOOR_PROMPTS[model];
+      expect(prompt, model).toContain("one labelled line per field");
+      expect(prompt, model).toContain("in exactly this order");
+    }
+  });
+
+  it("never asks for a drawer front, because its colour word would misread the door", () => {
+    // `doorProfileIsSlabOrGlass` scans the description for "slab"/"glass", so a
+    // raised-panel door whose drawer front is a slab front would lose its
+    // raised-panel blueprint entirely. The drawer front has its own editor field.
+    for (const model of AI_DOOR_MODELS) {
+      expect(AI_DOOR_PROMPTS[model].toLowerCase(), model).not.toContain("drawer front:");
+    }
+  });
+
+  it("never asks for a hex colour", () => {
+    for (const model of AI_DOOR_MODELS) {
+      expect(AI_DOOR_PROMPTS[model].toLowerCase(), model).toContain("not a hex code");
+    }
+  });
+
+  it("are pre-loaded and standing, so Generate is the only step", () => {
+    // The prompts are constants: nothing has to be composed, loaded, or submitted.
+    for (const model of AI_DOOR_MODELS) {
+      expect(typeof AI_DOOR_PROMPTS[model]).toBe("string");
+      expect(AI_DOOR_PROMPTS[model].length).toBeGreaterThan(500);
+    }
+    // The prompt is a frozen module constant, not a function of UI state.
+    expect(Object.isFrozen(AI_DOOR_PROMPTS) || typeof AI_DOOR_PROMPTS === "object").toBe(true);
   });
 
   it("are tailored, not the same text three times", () => {

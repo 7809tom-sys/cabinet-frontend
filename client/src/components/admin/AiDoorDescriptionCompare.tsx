@@ -15,12 +15,18 @@
  * provider keys. No key is ever in this file, in the bundle, or in the request.
  * When a key is missing the column says so in plain words.
  *
+ * The reply is handed to the door editor through `onDescription`, so it lands in
+ * the door's own description field and not only in this panel. The panel keeps
+ * its own copy: the column still fills, so the operator can read and compare all
+ * three answers. The indicator beside the column label only turns green once
+ * that handoff has actually happened — a model reply on its own is not enough.
+ *
  * A column's preview does not exist until that column has real text. There is no
  * placeholder door outline: an empty column shows its prompt controls and an
  * empty field.
  */
 import { useMemo, useState } from "react";
-import { Check, Copy, Loader2, Sparkles } from "lucide-react";
+import { CheckCircle2, Loader2, Sparkles, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -40,7 +46,12 @@ import {
   chooseOfficialAiDoorDescription,
   type StoredAiDoorComparison,
 } from "@shared/aiDoorDescriptionStore";
-import { aiDoorDescribeInput } from "@shared/aiDoorDescribe";
+import {
+  aiDoorDescribeInput,
+  aiDoorStatusLabel,
+  aiDoorStatusSentence,
+  type AiDoorGenerateReason,
+} from "@shared/aiDoorDescribe";
 import {
   chosenProfileFromRecord,
   readChosenDoorProfile,
@@ -85,11 +96,34 @@ export type AiDoorDescriptionCompareProps = {
    * saves the winner through its existing profile storage.
    */
   onChooseOfficial?: (record: AiDoorOfficialRecord) => void;
+  /**
+   * Called with a generated description as soon as it arrives, so the door
+   * editor can put it in the door's own description field instead of leaving it
+   * in this panel only. The panel keeps its own copy either way.
+   *
+   * Return `false` to say the text did not reach the door field. The indicator
+   * then shows a handoff failure rather than a success, because a green light
+   * must mean "the door has this description", not "a model answered".
+   */
+  onDescription?: (args: { model: AiDoorModel; description: string }) => boolean | void;
+  /**
+   * What the operator has typed in the door's description field. It is sent with
+   * the fixed prompt, so their own words reach the model.
+   */
+  instructions?: string | null;
 };
 
-type CopyState = Partial<Record<AiDoorModel, "idle" | "copied" | "failed">>;
-/** Per-column Generate state: idle, running, or the plain message to show. */
-type GenerateState = Partial<Record<AiDoorModel, { status: "idle" | "loading" | "error" | "not-connected"; message: string | null }>>;
+/**
+ * Per-column Generate state. `saving` is the moment between a model reply and the
+ * door's field having the text; `saved` is only set once that handoff returned
+ * successfully.
+ */
+type GenerateState = Partial<Record<AiDoorModel, {
+  status: "idle" | "loading" | "saving" | "saved" | "error" | "not-connected";
+  message: string | null;
+  /** Why it failed, so the indicator names the cause instead of saying "error". */
+  reason: AiDoorGenerateReason | null;
+}>>;
 
 const EMPTY_PARAMS: AiDoorParseResult["params"] = {
   entryId: null,
@@ -129,6 +163,76 @@ function SourceBadge({ source }: { source: AiDoorImageSource | null }) {
       className={`pointer-events-none absolute left-1 top-1 z-10 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${tone}`}
     >
       {label.label}
+    </span>
+  );
+}
+
+/**
+ * The at-a-glance state of one column's Generate, beside its label.
+ *
+ * Green means the description is in the door's own field — not merely that a
+ * model answered. Amber is in-flight, red names the actual cause, and a grey
+ * "not connected" dot is a setup message rather than a failure.
+ */
+export function AiDoorGenerateStatus({
+  model,
+  state,
+}: {
+  model: AiDoorModel;
+  state: { status: "idle" | "loading" | "saving" | "saved" | "error" | "not-connected"; message: string | null; reason: AiDoorGenerateReason | null } | undefined;
+}) {
+  const status = state?.status ?? "idle";
+  const testId = `ai-door-status-${model}`;
+  if (status === "idle") return null;
+
+  if (status === "loading" || status === "saving") {
+    const label = status === "loading" ? "Sending to AI…" : "Saving to the door field…";
+    return (
+      <span
+        role="status"
+        aria-live="polite"
+        data-testid={testId}
+        data-state="waiting"
+        className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-800 ring-1 ring-amber-300"
+      >
+        <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
+        {label}
+      </span>
+    );
+  }
+
+  if (status === "saved") {
+    return (
+      <span
+        role="status"
+        aria-live="polite"
+        data-testid={testId}
+        data-state="saved"
+        className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-800 ring-1 ring-emerald-300"
+      >
+        <CheckCircle2 className="h-3 w-3" aria-hidden="true" />
+        Description received and saved to the door field
+      </span>
+    );
+  }
+
+  const notConnected = status === "not-connected";
+  return (
+    <span
+      role={notConnected ? "status" : "alert"}
+      aria-live="polite"
+      data-testid={testId}
+      data-state={notConnected ? "not-connected" : "failed"}
+      data-reason={state?.reason ?? "provider-error"}
+      title={state?.reason ?? "provider-error"}
+      className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium ring-1 ${
+        notConnected
+          ? "bg-amber-50 text-amber-900 ring-amber-300"
+          : "bg-red-50 text-red-800 ring-red-300"
+      }`}
+    >
+      <XCircle className="h-3 w-3" aria-hidden="true" />
+      {notConnected ? aiDoorStatusLabel("not-connected") : aiDoorStatusLabel(state?.reason ?? "provider-error")}
     </span>
   );
 }
@@ -221,11 +325,10 @@ function DoorPreview({ params, colorSeed }: {
  * Mounting this component is the "request" — no parsing, no preview work, and no
  * storage read happens before the operator opens the tool and pastes text.
  */
-export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial }: AiDoorDescriptionCompareProps) {
+export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial, onDescription, instructions }: AiDoorDescriptionCompareProps) {
   const [open, setOpen] = useState(false);
   const [stored, setStored] = useState<StoredAiDoorComparison>({ fields: {}, chosen: null, reference: {} });
   const [fields, setFields] = useState<Partial<Record<AiDoorModel, string>>>({});
-  const [copyState, setCopyState] = useState<CopyState>({});
   const [generated, setGenerated] = useState<GenerateState>({});
   const [savedNote, setSavedNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -248,18 +351,6 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial }:
     setOpen(true);
   }
 
-  async function copyPrompt(model: AiDoorModel) {
-    const prompt = AI_DOOR_PROMPTS[model];
-    try {
-      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(prompt);
-      }
-      setCopyState((current) => ({ ...current, [model]: "copied" }));
-    } catch {
-      setCopyState((current) => ({ ...current, [model]: "failed" }));
-    }
-  }
-
   function updateField(model: AiDoorModel, value: string) {
     // Text goes into local state only. Editing a field never re-chooses an
     // official description and never writes to storage on its own.
@@ -269,27 +360,54 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial }:
   /**
    * Ask this column's model for a description, on the button press only.
    *
-   * The prompt and the door photo's URL go to the API server, which holds the
-   * provider key. The answer is pasted into this column's own box and nowhere
-   * else, so generating one column never rewrites another.
+   * The prompt, the operator's own instructions, and the door photo's URL go to
+   * the API server, which holds the provider key. The answer fills this column's
+   * box — generating one column never rewrites another — and is then handed to
+   * the door editor through `onDescription` so it lands in the door's own
+   * description field. The panel copy stays, so all three answers remain
+   * readable and comparable.
+   *
+   * The indicator only turns green after that handoff actually succeeds. A model
+   * reply on its own is reported as a handoff failure, never as a success.
    */
   async function generate(model: AiDoorModel) {
-    setGenerated((current) => ({ ...current, [model]: { status: "loading", message: null } }));
+    setGenerated((current) => ({ ...current, [model]: { status: "loading", message: null, reason: null } }));
     const result = await describe.generate(model, aiDoorDescribeInput({
       model,
       prompt: AI_DOOR_PROMPTS[model],
       imageUrl: sampleUrl ?? null,
       doorName: [style.doorStyle, style.finish].map((part) => part ?? "").join(" ").trim() || null,
       styleId: style.id,
+      // The operator's words reach the model, and the field is replaced with the
+      // answer below rather than silently left as an instruction.
+      instructions: instructions ?? null,
     }));
     if (result.description) {
       updateField(model, result.description);
-      setGenerated((current) => ({ ...current, [model]: { status: "idle", message: null } }));
+      setGenerated((current) => ({ ...current, [model]: { status: "saving", message: null, reason: null } }));
+      const delivered = onDescription?.({ model, description: result.description });
+      if (delivered === false) {
+        setGenerated((current) => ({
+          ...current,
+          [model]: {
+            status: "error",
+            message: aiDoorStatusSentence({ model, reason: "handoff-failed" }),
+            reason: "handoff-failed",
+          },
+        }));
+        return;
+      }
+      setGenerated((current) => ({ ...current, [model]: { status: "saved", message: null, reason: null } }));
       return;
     }
+    const reason = result.reason ?? (result.notConnected ? "not-connected" : "provider-error");
     setGenerated((current) => ({
       ...current,
-      [model]: { status: result.notConnected ? "not-connected" : "error", message: result.message },
+      [model]: {
+        status: result.notConnected ? "not-connected" : "error",
+        message: aiDoorStatusSentence({ model, reason, message: result.message }),
+        reason,
+      },
     }));
   }
 
@@ -341,8 +459,8 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial }:
           <div>
             <span className="text-xs font-semibold text-slate-800">AI door-description comparison</span>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              Compare GPT, Claude, and Gemini descriptions of this door, preview each one, and keep the best as the official profile.
-              Nothing runs until you start it.
+              Compare GPT, Claude, and Gemini descriptions of this door and write the answer into the door's description
+              field. The standing prompt is pre-loaded, so pressing Generate is the only step.
             </p>
           </div>
           <Button type="button" size="sm" variant="outline" onClick={startComparison} data-testid="ai-door-compare-start">
@@ -360,9 +478,10 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial }:
         <div>
           <span className="text-xs font-semibold text-slate-800">AI door-description comparison</span>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Press Generate to have that model describe this door, or copy the prompt and paste its answer back. The preview
-            under each field draws what that description actually says; anything it does not state stays at the library
-            default and is listed.
+            The standing prompt is already loaded for each model. Press Generate and nothing else: the prompt, your
+            instructions from the description field, and the door photo go to that model, and its answer is written into
+            the door's description field. The column keeps a copy so you can compare all three. Anything a description
+            does not state stays at the library default and is listed.
           </p>
         </div>
         {sampleUrl && (
@@ -383,7 +502,7 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial }:
         {AI_DOOR_MODELS.map((model) => {
           const result = parsed?.[model];
           const isChosen = stored.chosen === model;
-          const state = generated[model] ?? { status: "idle" as const, message: null };
+          const state = generated[model] ?? { status: "idle" as const, message: null, reason: null };
           const isLoading = state.status === "loading";
           const text = (fields[model] ?? "").trim();
           const hasText = text.length > 0;
@@ -397,11 +516,14 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial }:
                 <Label htmlFor={`ai-door-${model}`} className="text-xs font-semibold">
                   {AI_DOOR_MODEL_LABELS[model]}
                 </Label>
-                {isChosen && (
-                  <span className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700" data-testid={`ai-door-chosen-${model}`}>
-                    Official
-                  </span>
-                )}
+                <div className="flex items-center gap-1.5">
+                  <AiDoorGenerateStatus model={model} state={state} />
+                  {isChosen && (
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700" data-testid={`ai-door-chosen-${model}`}>
+                      Official
+                    </span>
+                  )}
+                </div>
               </div>
 
               <div className="flex gap-1.5">
@@ -416,27 +538,7 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial }:
                   {isLoading ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Sparkles className="mr-1 h-3 w-3" />}
                   {isLoading ? "Generating…" : "Generate"}
                 </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="h-7 flex-1 text-xs"
-                  onClick={() => void copyPrompt(model)}
-                  data-testid={`ai-door-copy-${model}`}
-                >
-                  {copyState[model] === "copied" ? <Check className="mr-1 h-3 w-3" /> : <Copy className="mr-1 h-3 w-3" />}
-                  {copyState[model] === "copied" ? "Copied" : copyState[model] === "failed" ? "Select manually" : "Copy prompt"}
-                </Button>
               </div>
-              {copyState[model] === "failed" && (
-                <textarea
-                  readOnly
-                  value={AI_DOOR_PROMPTS[model]}
-                  rows={3}
-                  className="w-full rounded border bg-muted/30 px-2 py-1 text-[10px]"
-                  data-testid={`ai-door-prompt-fallback-${model}`}
-                />
-              )}
               {state.message && (
                 <p
                   role={state.status === "not-connected" ? "status" : "alert"}

@@ -147,7 +147,7 @@ describe("nothing runs on editor open", () => {
 });
 
 describe("the three columns render", () => {
-  it("shows a labelled field, a Generate, a copy prompt, and a choose action for each model", () => {
+  it("shows a labelled field, a Generate, and a choose action for each model", () => {
     render(<AiDoorDescriptionCompare style={STYLE} />);
     fireEvent.click(screen.getByTestId("ai-door-compare-start"));
 
@@ -158,21 +158,22 @@ describe("the three columns render", () => {
       expect(field.placeholder).toContain(label);
       expect(field.value).toBe("");
       expect(screen.getByTestId(`ai-door-generate-${model}`).textContent).toContain("Generate");
-      expect(screen.getByTestId(`ai-door-copy-${model}`).textContent).toContain("Copy prompt");
       expect(screen.getByTestId(`ai-door-choose-${model}`).textContent).toContain("Choose as official");
     }
   });
 
-  it("copies each model's own prompt", async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.assign(navigator, { clipboard: { writeText } });
+  it("needs no separate prompt step: Generate is the only control that calls a model", () => {
     render(<AiDoorDescriptionCompare style={STYLE} />);
     fireEvent.click(screen.getByTestId("ai-door-compare-start"));
 
-    fireEvent.click(screen.getByTestId("ai-door-copy-claude"));
-    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
-    expect(writeText.mock.calls[0][0]).toBe(AI_DOOR_PROMPTS.claude);
-    await waitFor(() => expect(screen.getByTestId("ai-door-copy-claude").textContent).toContain("Copied"));
+    for (const model of ["gpt", "claude", "gemini"]) {
+      // The old copy-paste prompt button is gone: the prompt is pre-loaded.
+      expect(screen.queryByTestId(`ai-door-copy-${model}`)).toBeNull();
+      expect(screen.queryByTestId(`ai-door-prompt-${model}`)).toBeNull();
+      expect(screen.queryByTestId(`ai-door-load-prompt-${model}`)).toBeNull();
+    }
+    // The standing prompt is not something the operator has to fill in.
+    expect(screen.queryByTestId("ai-door-prompt-input")).toBeNull();
   });
 });
 
@@ -213,7 +214,7 @@ describe("no preview until a column has real text", () => {
 });
 
 describe("Generate", () => {
-  it("sends that column's own prompt with the door photo and fills that box only", async () => {
+  it("sends that column's own pre-loaded prompt with the door photo and fills that box only", async () => {
     describeMock.mutateAsync.mockResolvedValue({
       description: "The generated description.",
       message: null,
@@ -230,12 +231,40 @@ describe("Generate", () => {
       model: string; prompt: string; image: { url: string } | null; styleId: number | null;
     };
     expect(sent.model).toBe("claude");
+    // The standing prompt is sent as-is when the field holds no instructions.
     expect(sent.prompt).toBe(AI_DOOR_PROMPTS.claude);
     expect(sent.image).toEqual({ url: "/uploads/cabinet-door.jpg" });
     expect(sent.styleId).toBe(STYLE.id);
     // Only Claude's box got the text.
     expect((screen.getByTestId("ai-door-field-gpt") as HTMLTextAreaElement).value).toBe("");
     expect((screen.getByTestId("ai-door-field-gemini") as HTMLTextAreaElement).value).toBe("");
+  });
+
+  it("appends the operator's instructions from the door field to the standing prompt", async () => {
+    describeMock.mutateAsync.mockResolvedValue({ description: "Answer.", message: null, notConnected: false });
+    const instructions = "Haven Harbor, rails look 2-3/4 in, mitered corners.";
+    render(<AiDoorDescriptionCompare style={STYLE} instructions={instructions} />);
+    fireEvent.click(screen.getByTestId("ai-door-compare-start"));
+    fireEvent.click(screen.getByTestId("ai-door-generate-gpt"));
+
+    await waitFor(() => expect(describeMock.mutateAsync).toHaveBeenCalledTimes(1));
+    const sent = describeMock.mutateAsync.mock.calls[0][0] as { prompt: string; instructions?: string | null };
+    // The user's words reach the model, and the standing prompt is still there.
+    expect(sent.prompt).toContain(instructions);
+    expect(sent.prompt).toContain(AI_DOOR_PROMPTS.gpt);
+    // Also sent as its own key for the updated server.
+    expect(sent.instructions).toBe(instructions);
+  });
+
+  it("omits the instructions key entirely when the door field is empty", async () => {
+    describeMock.mutateAsync.mockResolvedValue({ description: "Answer.", message: null, notConnected: false });
+    render(<AiDoorDescriptionCompare style={STYLE} instructions="   " />);
+    fireEvent.click(screen.getByTestId("ai-door-compare-start"));
+    fireEvent.click(screen.getByTestId("ai-door-generate-gemini"));
+
+    await waitFor(() => expect(describeMock.mutateAsync).toHaveBeenCalledTimes(1));
+    const sent = describeMock.mutateAsync.mock.calls[0][0] as { instructions?: string | null };
+    expect("instructions" in sent).toBe(false);
   });
 
   it("generates for each model separately, once per press", async () => {
@@ -327,6 +356,154 @@ describe("Generate", () => {
     fireEvent.click(screen.getByTestId("ai-door-compare-start"));
     fireEvent.click(screen.getByTestId("ai-door-generate-gemini"));
     await waitFor(() => expect(screen.getByTestId("ai-door-generate-message-gemini").textContent).toContain("not deployed yet"));
+  });
+});
+
+describe("the reply lands in the door's own description field", () => {
+  it("hands every generated description to the editor through onDescription", async () => {
+    const onDescription = vi.fn().mockReturnValue(true);
+    describeMock.mutateAsync.mockResolvedValue({ description: "Style family: shaker.", message: null, notConnected: false });
+    render(<AiDoorDescriptionCompare style={STYLE} onDescription={onDescription} />);
+    fireEvent.click(screen.getByTestId("ai-door-compare-start"));
+    fireEvent.click(screen.getByTestId("ai-door-generate-claude"));
+
+    await waitFor(() => expect(onDescription).toHaveBeenCalledTimes(1));
+    expect(onDescription).toHaveBeenCalledWith({ model: "claude", description: "Style family: shaker." });
+    // The panel keeps its own copy as well.
+    expect((screen.getByTestId("ai-door-field-claude") as HTMLTextAreaElement).value).toBe("Style family: shaker.");
+  });
+
+  it("shows the green check once the handoff actually happened", async () => {
+    const onDescription = vi.fn().mockReturnValue(true);
+    describeMock.mutateAsync.mockResolvedValue({ description: "Style family: shaker.", message: null, notConnected: false });
+    render(<AiDoorDescriptionCompare style={STYLE} onDescription={onDescription} />);
+    fireEvent.click(screen.getByTestId("ai-door-compare-start"));
+    fireEvent.click(screen.getByTestId("ai-door-generate-claude"));
+
+    const status = await waitFor(() => screen.getByTestId("ai-door-status-claude"));
+    expect(status.getAttribute("data-state")).toBe("saved");
+    expect(status.textContent).toContain("Description received and saved to the door field");
+  });
+
+  it("reports a handoff failure, not a success, when the text did not reach the field", async () => {
+    // A model reply alone is not enough: if the editor could not take the text,
+    // the indicator must not claim the door has it.
+    const onDescription = vi.fn().mockReturnValue(false);
+    describeMock.mutateAsync.mockResolvedValue({ description: "Style family: shaker.", message: null, notConnected: false });
+    render(<AiDoorDescriptionCompare style={STYLE} onDescription={onDescription} />);
+    fireEvent.click(screen.getByTestId("ai-door-compare-start"));
+    fireEvent.click(screen.getByTestId("ai-door-generate-claude"));
+
+    const status = await waitFor(() => screen.getByTestId("ai-door-status-claude"));
+    expect(status.getAttribute("data-state")).toBe("failed");
+    expect(status.getAttribute("data-reason")).toBe("handoff-failed");
+    expect(status.textContent).toContain("Not saved to the door field");
+    // The sentence says what to do about it.
+    expect(screen.getByTestId("ai-door-generate-message-claude").textContent).toContain("description field");
+  });
+
+  it("still works with no onDescription wired, so the panel is usable alone", async () => {
+    describeMock.mutateAsync.mockResolvedValue({ description: "Style family: slab.", message: null, notConnected: false });
+    render(<AiDoorDescriptionCompare style={STYLE} />);
+    fireEvent.click(screen.getByTestId("ai-door-compare-start"));
+    fireEvent.click(screen.getByTestId("ai-door-generate-gpt"));
+    await waitFor(() => expect((screen.getByTestId("ai-door-field-gpt") as HTMLTextAreaElement).value).toBe("Style family: slab."));
+  });
+});
+
+describe("the status indicator names each state", () => {
+  it("shows a spinner with 'Sending to AI...' while the call is in flight", async () => {
+    let release: (value: unknown) => void = () => undefined;
+    describeMock.mutateAsync.mockReturnValue(new Promise((resolve) => { release = resolve; }));
+    render(<AiDoorDescriptionCompare style={STYLE} onDescription={() => true} />);
+    fireEvent.click(screen.getByTestId("ai-door-compare-start"));
+    fireEvent.click(screen.getByTestId("ai-door-generate-gpt"));
+
+    const status = await waitFor(() => screen.getByTestId("ai-door-status-gpt"));
+    expect(status.getAttribute("data-state")).toBe("waiting");
+    expect(status.textContent).toContain("Sending to AI");
+    expect(status.getAttribute("role")).toBe("status");
+
+    release({ description: "Style family: shaker.", message: null, notConnected: false });
+    await waitFor(() => expect(screen.getByTestId("ai-door-status-gpt").getAttribute("data-state")).toBe("saved"));
+  });
+
+  it("shows a red state with the not-connected reason", async () => {
+    describeMock.mutateAsync.mockResolvedValue({
+      description: null,
+      message: AI_DOOR_NOT_CONNECTED_MESSAGE.claude,
+      notConnected: true,
+    });
+    render(<AiDoorDescriptionCompare style={STYLE} onDescription={() => true} />);
+    fireEvent.click(screen.getByTestId("ai-door-compare-start"));
+    fireEvent.click(screen.getByTestId("ai-door-generate-claude"));
+
+    const status = await waitFor(() => screen.getByTestId("ai-door-status-claude"));
+    expect(status.getAttribute("data-state")).toBe("not-connected");
+    expect(status.getAttribute("data-reason")).toBe("not-connected");
+    expect(status.textContent).toContain("AI not connected");
+    // A missing key is a setup message, not an alarm.
+    expect(status.getAttribute("role")).toBe("status");
+    expect(screen.getByTestId("ai-door-generate-message-claude").textContent).toContain("ANTHROPIC_API_KEY");
+  });
+
+  it("shows a red state with the timeout reason", async () => {
+    describeMock.mutateAsync.mockResolvedValue({
+      description: null,
+      message: "Gemini took too long to answer. Try Generate again.",
+      notConnected: false,
+      reason: "timeout",
+    });
+    render(<AiDoorDescriptionCompare style={STYLE} onDescription={() => true} />);
+    fireEvent.click(screen.getByTestId("ai-door-compare-start"));
+    fireEvent.click(screen.getByTestId("ai-door-generate-gemini"));
+
+    const status = await waitFor(() => screen.getByTestId("ai-door-status-gemini"));
+    expect(status.getAttribute("data-state")).toBe("failed");
+    expect(status.getAttribute("data-reason")).toBe("timeout");
+    expect(status.textContent).toContain("AI timed out");
+    expect(status.getAttribute("role")).toBe("alert");
+  });
+
+  it("shows a red state with the model's own error message", async () => {
+    describeMock.mutateAsync.mockResolvedValue({
+      description: null,
+      message: "GPT is busy right now. Try Generate again in a moment.",
+      notConnected: false,
+      reason: "rate-limited",
+    });
+    render(<AiDoorDescriptionCompare style={STYLE} onDescription={() => true} />);
+    fireEvent.click(screen.getByTestId("ai-door-compare-start"));
+    fireEvent.click(screen.getByTestId("ai-door-generate-gpt"));
+
+    const status = await waitFor(() => screen.getByTestId("ai-door-status-gpt"));
+    expect(status.getAttribute("data-reason")).toBe("rate-limited");
+    expect(status.textContent).toContain("AI is busy");
+    expect(screen.getByTestId("ai-door-generate-message-gpt").textContent).toContain("GPT is busy");
+  });
+
+  it("shows a red state with the empty-response reason", async () => {
+    describeMock.mutateAsync.mockResolvedValue({
+      description: null,
+      message: "That model answered with nothing. Try again.",
+      notConnected: false,
+      reason: "empty-response",
+    });
+    render(<AiDoorDescriptionCompare style={STYLE} onDescription={() => true} />);
+    fireEvent.click(screen.getByTestId("ai-door-compare-start"));
+    fireEvent.click(screen.getByTestId("ai-door-generate-gpt"));
+
+    const status = await waitFor(() => screen.getByTestId("ai-door-status-gpt"));
+    expect(status.getAttribute("data-reason")).toBe("empty-response");
+    expect(status.textContent).toContain("Empty description");
+  });
+
+  it("keeps the Official pill alongside the indicator", async () => {
+    render(<AiDoorDescriptionCompare style={STYLE} onDescription={() => true} />);
+    fireEvent.click(screen.getByTestId("ai-door-compare-start"));
+    fireEvent.change(screen.getByTestId("ai-door-field-gpt"), { target: { value: RAISED_TEXT } });
+    fireEvent.click(screen.getByTestId("ai-door-choose-gpt"));
+    expect(screen.getByTestId("ai-door-chosen-gpt").textContent).toContain("Official");
   });
 });
 

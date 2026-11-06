@@ -1,16 +1,33 @@
 # AI door-description comparison
 
-A door-editor tool for comparing GPT, Claude, and Gemini descriptions of one door photo, previewing each, and keeping the best one as the door's official profile.
+A door-editor tool for comparing GPT, Claude, and Gemini descriptions of one door photo, previewing each, and writing the answer into the door's own description field.
 
 **Door editor only.** It is mounted in the admin edit dialog (`FeaturedStylesAdmin.tsx`) and is not on the public Door Styles page.
 
 ## How it works
 
 1. The operator presses **Compare descriptions**. Nothing runs before that: the panel mounts collapsed and reads no storage and no text until the button is pressed.
-2. Each of the three columns holds a tailored prompt (GPT, Claude, Gemini). The operator can **Generate** it — the server runs that prompt against that model and fills the column — or **Copy prompt**, run it themselves, and paste the answer back. Both routes end in the same paste box.
+2. Each of the three columns holds a **pre-loaded standing prompt** (GPT, Claude, Gemini). Pressing **Generate** is the only step: the server runs that prompt — with the operator's own instructions from the door's description field appended — and the answer fills that column.
 3. A column's mini preview draws the door from what that text actually says. **A column with no text draws no door at all**: there is no placeholder outline and no default front waiting to be mistaken for a result.
-4. **Choose as official** records that description as the door's profile. The other two are kept as reference. The editor's own fields are filled from the winner, the **3D Designer redraws the door from the choice straight away**, and the editor's normal **Save** persists it.
-5. Nothing runs on its own. Opening the panel and typing in a box never call a model; only the **Generate** button in a column does.
+4. **The answer lands in the door's own Profile Description field**, the same field the operator typed their instructions into. The panel keeps its copy, so all three answers stay readable and comparable. The editor's normal **Save** persists the field with the rest of the profile.
+5. **Choose as official** records one description as the official profile: it fills the editor's profile fields from the winner, keeps the other two as reference, and the **3D Designer redraws the door from the choice straight away**.
+6. Nothing runs on its own. Opening the panel and typing in a box never call a model; only the **Generate** button in a column does.
+
+## The status indicator
+
+Each column shows its state beside the model's label, from one `generated[model]` record:
+
+| State | Looks like | Means |
+|---|---|---|
+| waiting | amber pill, spinner, "Sending to AI…" | the call is in flight |
+| saving | amber pill, spinner, "Saving to the door field…" | the model answered; the text is being handed to the door record |
+| saved | **green check**, "Description received and saved to the door field" | the text is really in the door's field |
+| failed | red pill, a specific reason, plus the plain sentence | see the reasons below |
+| not connected | amber pill, "AI not connected" | a key is missing — a setup message, not an alarm |
+
+Green is only set once the handoff into the door field actually succeeded. A model reply on its own is never reported as success: if the editor could not take the text, the column shows `handoff-failed` ("Not saved to the door field") instead.
+
+The specific failure reasons are `not-connected`, `timeout`, `rate-limited`, `empty-response`, `handoff-failed`, and `provider-error` (with the model's own message when it sent one). No state is ever just the word "error".
 
 ## Generate: where the model call lives
 
@@ -24,23 +41,63 @@ The button is a server call, never a browser one. The browser holds no provider 
 
 The API is the separate **cabinet-backend** repository. This repo (frontend) carries:
 
-- `shared/aiDoorPrompts.ts` — the three prompts, shared with the server so the pasted path and the generated path use the same text.
-- `shared/aiDoorDescribe.ts` — the request/result contract, the procedure path, the environment variable each column reads, and the plain message per outcome.
+- `shared/aiDoorPrompts.ts` — the three standing prompts, and the field list they ask for.
+- `shared/aiDoorDescribe.ts` — the request/result contract, the procedure path, the environment variable each column reads, the prompt composer that appends the operator's instructions, and the plain message plus specific reason per outcome.
 - `client/src/lib/aiDoorDescribeClient.ts` — the one call, from the button.
 
 The server side is `docs/patches/cabinet-backend-ai-door-description.patch` in this repo: `server/lib/aiDoorDescribe.ts` (provider calls), `server/routers/aiDoorDescription.ts` (the tRPC boundary), and its tests. It must be applied and deployed before the button can answer; until then the column says so in plain words rather than failing silently.
 
 The prompt is capped at 6,000 characters and only the three known models are accepted, so the procedure cannot be used as a general-purpose model proxy. It is admin-only.
 
-**A missing key is data, not an error.** The procedure answers `{ status: "not-connected" }` with one plain sentence ("Claude isn't connected yet. Add ANTHROPIC_API_KEY on the API server."), and the column shows it as a status, not a red alarm. The panel stays usable: the operator can still Copy prompt and paste back.
+**A missing key is data, not an error.** The procedure answers `{ status: "not-connected" }` with one plain sentence ("Claude isn't connected yet. Add ANTHROPIC_API_KEY on the API server."), and the column shows it as a status, not a red alarm.
 
 Photo: when the door has a sample image, its stored URL travels with the prompt and the server loads the bytes with the service-role key. Without a photo the prompt is still sent, with an added instruction to say "not visible" rather than guess, so a generated description is no more inventive than a pasted one.
 
-## Prompts
+## Prompts: pre-loaded and standing
 
-`AI_DOOR_PROMPTS` in `shared/aiDoorPrompts.ts`. Each prompt is tailored per model but asks for the same comparable fields: profile/style family, frame and rail/stile, panel type (flat, raised, recessed), edge/bevel details, mitered vs cope-and-stick, molding, grain vs painted, sheen, undertone, and color.
+`AI_DOOR_PROMPTS` in `shared/aiDoorPrompts.ts`. Each prompt is a **constant that is already loaded**, so pressing **Generate** is the only step — there is no button, dialog, or extra action to compose or submit a prompt.
 
-Every prompt tells the model to write "not visible" rather than guess, and to give color in words — explicitly not a hex code.
+Every prompt names the reader: *the 3D Designer in our cabinet software, which builds the actual door in the photograph from the description alone*. It then asks for one labelled line per field, in this order, because that is what `parseAiDoorDescription` reads:
+
+| Field | Read by |
+|---|---|
+| Style family | `doorRenderIdentity.ts`, `doorLibraryProfiles.ts` |
+| Frame construction (five-piece / slab / glass, mitered or cope-and-stick) | `doorRenderIdentity.ts`, `raisedPanelDoorBlueprint.ts` |
+| Stile width | `doorFrameMetrics.ts`, `doorStyleAppearance.ts` |
+| Rail width | `doorFrameMetrics.ts`, `doorStyleAppearance.ts` |
+| Top rail / Bottom rail / Mid rail | requested for the rebuild; the parser does not yet map these |
+| Panel type (flat / raised / recessed / slab) | `doorStyleAppearance.ts`, `raisedPanelDoorBlueprint.ts` |
+| Bevel width | `doorStyleAppearance.ts`, `raisedPanelDoorBlueprint.ts` |
+| Panel profile | requested for the rebuild |
+| Door outside profile (edge treatment) | requested for the rebuild |
+| Inside edge (sticking profile) | `doorStyleAppearance.ts` |
+| Moulding (applied) | description parser (`molding`) |
+| Beads and grooves | requested for the rebuild |
+| Finish (painted / stained) | `paintedFinish.ts`, `shakerDoorBlueprint.ts` |
+| Color — in words, never a hex | `doorColorResolve.ts` |
+| Sheen | `doorStyleAppearance.ts` |
+| Undertone | description parser (`undertone`) |
+| Grain direction | `doorStyleAppearance.ts` |
+| Material / species | `shakerDoorBlueprint.ts` |
+| Door proportions | requested for the rebuild |
+
+Every prompt tells the model to write "not visible" rather than guess, so an unstated value stays `null` and the library default is drawn instead of an invented number.
+
+**No drawer front is requested.** The Designer reads this text as *construction* words, and `doorProfileIsSlabOrGlass` scans them for "slab" and "glass". A raised-panel door whose drawer front was described as "slab" would therefore lose its raised-panel blueprint entirely. The drawer front has its own field in the editor instead.
+
+### The operator's own instructions
+
+The text in the door's **Profile Description** field is appended to the standing prompt, so what the operator types actually reaches the model. The composed prompt is capped at the server's 6,000-character limit, and the standing prompt always survives intact — only the instruction is clipped.
+
+The text is also sent as its own `instructions` key. **The deployed router does not declare that key yet, so it is stripped today**; the text still arrives because it is inside `prompt`. To use it natively the backend needs one addition to `server/routers/aiDoorDescription.ts`:
+
+```ts
+instructions: z.string().max(4_000).nullable().optional(),
+```
+
+and, in `describeDoorWithAi`, the same append (`composeAiDoorPrompt`-equivalent) on the server side. Until then the frontend stays backward compatible: when the field is empty, no `instructions` key is sent at all.
+
+The AI's own previous answer is never re-sent as an instruction. The editor remembers the last description it wrote into the field and treats that text as an answer, not as operator input, so one model's words cannot drift the next model's answer.
 
 ## Parsing: nothing is invented
 
@@ -108,9 +165,10 @@ Browser draft today, following the pattern the door editor already uses for `doo
 
 ## Tests
 
-- `shared/aiDoorDescription.test.ts` — the prompts, the parser, the unstated list, the official choice, the reference copies, the color description.
-- `shared/aiDoorDescribe.test.ts` — the Generate contract: the request carries the prompt and photo and no key, every failure reads as one plain sentence, a build without the procedure answers plainly, and no key reaches the bundle.
+- `shared/aiDoorDescription.test.ts` — the standing prompts name the 3D Designer as the reader, ask for every field the door builder reads, require a flat labelled line per field, never ask for a drawer front, never ask for a hex, the parser, the unstated list, the official choice, the reference copies, and the color description.
+- `shared/aiDoorDescribe.test.ts` — the Generate contract: the prompt is pre-loaded, the operator's instructions are appended and capped and also sent as their own key (and left out entirely when empty), every failure carries a specific reason with its own label and sentence, a build without the procedure answers plainly, and no key reaches the bundle.
 - `shared/aiDoorChosenProfile.test.ts` — the choice bridge: only stated values travel, color and the accepted-render marker are untouched, a caught-up draft stops applying, and the Designer is wired to it.
-- `client/src/components/admin/AiDoorDescriptionCompare.test.tsx` — the three columns render, **nothing calls a model on open**, **no preview while a column is empty**, **Generate fills that column's box only**, **a missing key shows its plain message**, previews update from pasted text, choosing official persists the winner and keeps the others, and **the choice reaches the Designer**.
+- `client/src/components/admin/AiDoorDescriptionCompare.test.tsx` — the three columns render with no separate prompt step, **nothing calls a model on open**, **no preview while a column is empty**, **Generate fills that column's box only**, **the reply is handed to the door field through `onDescription`**, **green only after the handoff**, **a handoff failure is reported as one**, **each status renders (waiting, saved, not-connected, timeout, rate-limited, empty-response)**, the instructions are included in the request, previews update from pasted text, and choosing official persists the winner and keeps the others.
 - `client/src/components/admin/AiDoorDescriptionCompare.editor.test.ts` — the tool is in the door editor only, one Generate call site wired to the button, no key in the file, the preview is gated on text, and the designer wiring is in place.
+- `client/src/components/admin/FeaturedStylesAdmin.aiDescriptionHandoff.test.ts` — **the generated text reaches `profileDescription`**, the field's text travels as instructions, the AI's own previous answer is never fed back as an instruction, and the citation gate, the wizard, and color precedence are untouched.
 - `client/src/lib/aiDoorPreview.test.ts` — preview geometry from the shipped blueprints, and no brand-palette snap.

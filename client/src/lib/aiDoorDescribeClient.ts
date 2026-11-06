@@ -50,8 +50,9 @@ export { AI_DOOR_DESCRIBE_PROCEDURE };
  * Hook the three columns use.
  *
  * `generate` resolves to the same shape the column renders — text, a plain
- * message, and whether the provider is missing a key — and never rejects, so a
- * failed call cannot leave a column stuck on its spinner.
+ * message, whether the provider is missing a key, and a specific failure reason
+ * — and never rejects, so a failed call cannot leave a column stuck on its
+ * spinner.
  */
 export function useAiDoorDescribe() {
   const mutation = api().aiDoorDescription?.describeWithAi?.useMutation();
@@ -59,16 +60,23 @@ export function useAiDoorDescribe() {
 
   async function generate(model: AiDoorModel, input: AiDoorDescribeInput) {
     if (!mutation) {
-      return { description: null, message: AI_DOOR_GENERATE_UNAVAILABLE_MESSAGE, notConnected: false };
+      return {
+        description: null,
+        message: AI_DOOR_GENERATE_UNAVAILABLE_MESSAGE,
+        notConnected: false,
+        reason: "provider-error" as const,
+      };
     }
     try {
       const result = await mutation.mutateAsync(input);
       return readAiDoorDescribeResult(model, result);
     } catch (error) {
-      const message = error instanceof Error && error.message.trim()
-        ? `${AI_DOOR_MODEL_LABELS[model]}: ${error.message.trim()}`
-        : AI_DOOR_GENERATE_FAILED_MESSAGE;
-      return { description: null, message, notConnected: false };
+      const raw = error instanceof Error ? error.message.trim() : "";
+      const message = raw ? `${AI_DOOR_MODEL_LABELS[model]}: ${raw}` : AI_DOOR_GENERATE_FAILED_MESSAGE;
+      // A transport failure can be the 60 s abort or a dropped request. Both read
+      // as a timeout to the operator; anything else is one plain model error.
+      const reason = /timeout|abort/i.test(raw) ? ("timeout" as const) : ("provider-error" as const);
+      return { description: null, message, notConnected: false, reason };
     }
   }
 
