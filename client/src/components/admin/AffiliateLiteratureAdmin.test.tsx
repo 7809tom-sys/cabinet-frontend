@@ -7,6 +7,7 @@ const { state } = vi.hoisted(() => ({
     rows: [] as Record<string, unknown>[],
     updateInputs: [] as Record<string, unknown>[],
     uploadInputs: [] as Record<string, unknown>[],
+    signedFileInputs: [] as Record<string, unknown>[],
     invalidated: 0,
   },
 }));
@@ -22,6 +23,18 @@ vi.mock("@/lib/trpc", () => ({
         });
       }
       if (typeof namespace !== "string") return undefined;
+      // affiliateResources.adminSignedFile is the admin-only way to open a
+      // private document; the page asks it for a link instead of using url.
+      if (namespace === "affiliateResources") {
+        return {
+          adminSignedFile: {
+            fetch: async (input: Record<string, unknown>) => {
+              state.signedFileInputs.push(input);
+              return { url: "https://storage.example/signed/guide.md", filename: "guide.md", mimeType: "text/plain" };
+            },
+          },
+        };
+      }
       return new Proxy({}, {
         get(_inner, procedure) {
           if (procedure === "adminList") {
@@ -99,6 +112,7 @@ beforeEach(() => {
   ];
   state.updateInputs = [];
   state.uploadInputs = [];
+  state.signedFileInputs = [];
   state.invalidated = 0;
 });
 
@@ -165,8 +179,23 @@ describe("admin literature page: Affiliate library checkbox", () => {
       sortOrder: 0,
     }];
     render(<AffiliateLiteratureAdmin />);
-    // Fails closed until SQL 0250 backfills the column.
+    // Fails closed until SQL 0255 backfills the column.
     expect(screen.getByLabelText("Affiliate library for Legacy document").getAttribute("aria-checked")).toBe("false");
     expect(screen.getByTestId("library-visibility-42").textContent).toContain("Internal");
+  });
+
+  it("opens a document through adminSignedFile, never through the private url", async () => {
+    const opened: string[] = [];
+    const openSpy = vi.spyOn(window, "open").mockImplementation((url) => {
+      opened.push(String(url));
+      return null;
+    });
+    render(<AffiliateLiteratureAdmin />);
+    fireEvent.click(screen.getByRole("button", { name: "Open Website Improvement Proposal — Lessons from Marazzi USA" }));
+    await waitFor(() => expect(state.signedFileInputs).toEqual([{ id: 7 }]));
+    expect(opened).toEqual(["https://storage.example/signed/guide.md"]);
+    // The row url is a private-bucket path and the storage proxy refuses it.
+    expect(opened.some((url) => url.includes("/manus-storage/library-documents/"))).toBe(false);
+    openSpy.mockRestore();
   });
 });

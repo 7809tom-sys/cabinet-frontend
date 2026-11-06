@@ -1,0 +1,484 @@
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Fri, 6 Nov 2026 18:40:00 +0000
+Subject: [PATCH] Upload the internal library documents from one manifest, and
+ register the affiliate app guide.
+
+docs/sql/0268_affiliate_app_guide_internal.tidb.sql registers "How to Create an
+App for an Affiliate" as an internal document: visibility 'internal',
+isPublished 0, category 'Internal', fileKey
+library-documents/internal/how-to-create-an-app-for-an-affiliate.md.
+
+A row on its own is not a document. The bytes have to sit in the private bucket
+at that exact key, or the admin Open button answers 404. 0255 uploads the Marazzi
+proposal with a script that hard-codes one PDF. This patch turns that script into
+a loop over one manifest, so both documents go up from the same command and a
+third one is a one-line change.
+
+  shared/internalLibraryDocuments.ts
+      The manifest. Title, description, category, file name, storage key, url,
+      mimeType, sizeBytes, SHA-256 and sortOrder, for every hand-registered
+      internal document. cabinet-frontend ships the same file, so its SQL is
+      generated from it and cannot drift from what this importer uploads.
+
+  server/scripts/import-internal-library-documents.ts
+      Loops over the manifest. Before each upload it checks the committed bytes
+      against sizeBytes and SHA-256 and stops on a mismatch, so a truncated or
+      re-encoded file fails loudly instead of becoming a broken download. It
+      still uploads bytes only: no INSERT, no UPDATE, no visibility change. A
+      missing row is a message, not a failure, so the upload can run first.
+
+  server/internalLibraryDocuments.test.ts
+      Extended. Every manifest document must point at a committed file with a
+      key in the private prefix, and the guide's SQL must be plain, one statement
+      per line, internal and unpublished.
+
+  docs/sql/0268_affiliate_app_guide_internal.tidb.sql
+      Copied verbatim from cabinet-frontend, which is the single source for the
+      TiDB paste.
+
+Apply from the cabinet-backend repository root:
+
+    git apply /path/to/cabinet-backend-affiliate-app-guide-internal.patch
+
+Then, in this order, on the machine whose DATABASE_URL and
+SUPABASE_SERVICE_ROLE_KEY point at production:
+
+  1. pnpm exec tsx server/scripts/import-internal-library-documents.ts
+     with FRONTEND_REPO_ROOT pointing at the cabinet-frontend checkout. This puts
+     the guide (and the Marazzi PDF, re-uploaded identically) in the private
+     bucket. Upload first: the script needs no row, and doing it in this order
+     means the admin Open button works the moment the row exists.
+
+  2. Paste docs/sql/0268_affiliate_app_guide_internal.tidb.sql in the TiDB
+     editor, line by line. Stop if statement 1 returns a row.
+
+  3. Re-run the importer once. Nothing changes except the log line, which should
+     now read "Row N is internal: admin only".
+
+Frontend: cabinet-frontend pull request on cursor/affiliate-app-guide-internal-7794.
+
+---
+diff --git a/docs/sql/0268_affiliate_app_guide_internal.tidb.sql b/docs/sql/0268_affiliate_app_guide_internal.tidb.sql
+new file mode 100644
+index 0000000..bfc5b68
+--- /dev/null
++++ b/docs/sql/0268_affiliate_app_guide_internal.tidb.sql
+@@ -0,0 +1,52 @@
++-- TiDB SQL editor version. Numbered 0268. Run after 0267.
++-- One statement per line, so each line can be pasted on its own in the TiDB
++-- editor. Every table is cabinet_dealz.<table>. No table aliases, so a line
++-- pastes cleanly into the TiDB Cloud editor.
++-- Do not run this from an application. Tom pastes it in the TiDB editor.
++--
++-- Requires 0255 first: that file adds the visibility and affiliate-toggle
++-- columns this row writes. If 0255 has not run, statement 3 answers
++-- "Unknown column 'visibility'" and nothing is registered.
++--
++-- Registers "How to Create an App for an Affiliate" as an INTERNAL document, the
++-- same way 0255 registers the Marazzi proposal:
++--
++--   visibility = 'internal'   admin only. Never returned by an affiliate query.
++--   isPublished = 0           the affiliate portal read needs 1 as well.
++--   category = 'Internal'     the admin library's internal category.
++--   fileKey under library-documents/internal/, which the backend keeps in the
++--   private Supabase bucket and refuses on the public storage proxy, so the
++--   guide has no public address even if the key leaks.
++--
++-- The markdown ships in the frontend repo at
++-- docs/library/internal/how-to-create-an-app-for-an-affiliate.md (8025 bytes,
++-- SHA-256 66c0e9043fb15caad4d57283be87692c412ba66c80f2ab33d029617780579336).
++-- It is never served from the site: `docs` is in .vercelignore, so Vite copies
++-- none of it into dist/. The committed file is uploaded to the private bucket by
++-- the importer in docs/patches/cabinet-backend-affiliate-app-guide-internal.patch.
++--
++-- Run order: upload the file FIRST, then paste statements 1-5 here. The importer
++-- does not need the row to exist, so the bytes are already in the bucket at the
++-- exact fileKey statement 3 stores. The reverse order leaves an admin library
++-- entry whose Open button answers 404 until the upload runs.
++--
++-- Safe to re-run: statement 3 is guarded on the fileKey, so a second run
++-- registers nothing and updates nothing.
++--
++-- Rollback: statement 4 shows the row so it can be deleted by id. Deleting it
++-- removes the library entry only; the committed markdown is not touched.
++
++-- 1. PREVIEW (read-only). Expect zero rows before the insert. A row here means the guide is already registered: stop, do not run statement 3.
++SELECT id AS literatureId, title, category, visibility, isPublished, fileKey, mimeType, sizeBytes, sortOrder FROM cabinet_dealz.affiliate_literature WHERE title = 'How to Create an App for an Affiliate' OR fileKey = 'library-documents/internal/how-to-create-an-app-for-an-affiliate.md' ORDER BY id;
++
++-- 2. PREVIEW (read-only). The internal rows and their sort order, so 901 is visibly free. Expect no row with sortOrder 901.
++SELECT id AS literatureId, title, visibility, sortOrder FROM cabinet_dealz.affiliate_literature WHERE visibility = 'internal' ORDER BY sortOrder, id;
++
++-- 3. INSERT (run only after statement 1 returns zero rows). Internal and unpublished, so it cannot reach an affiliate.
++INSERT INTO cabinet_dealz.affiliate_literature (title, description, category, filename, fileKey, url, mimeType, sizeBytes, isPublished, visibility, sortOrder) SELECT 'How to Create an App for an Affiliate', 'Internal ops guide for Tom. One shared Cabinetdealz codebase for every affiliate, with a separate Google Play listing and a separate Apple App Store listing per affiliate brand (own name, icon, screenshots). The app resolves the affiliate at login from the signed-in account and that affiliate custom domain, not from which store listing was installed. Internal only: never shown on the public site or in an affiliate portal until Tom adds it to the affiliate library.', 'Internal', 'how-to-create-an-app-for-an-affiliate.md', 'library-documents/internal/how-to-create-an-app-for-an-affiliate.md', '/manus-storage/library-documents/internal/how-to-create-an-app-for-an-affiliate.md', 'text/plain', 8025, 0, 'internal', 901 FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM cabinet_dealz.affiliate_literature WHERE fileKey = 'library-documents/internal/how-to-create-an-app-for-an-affiliate.md');
++
++-- 4. VERIFY (read-only). Expect exactly one row, internal and unpublished, at the fileKey the importer uploaded.
++SELECT id AS literatureId, title, visibility, isPublished, category, filename, fileKey, mimeType, sizeBytes, sortOrder FROM cabinet_dealz.affiliate_literature WHERE fileKey = 'library-documents/internal/how-to-create-an-app-for-an-affiliate.md' ORDER BY id;
++
++-- 5. VERIFY (read-only). Exactly what an affiliate portal can see. This must not list the guide.
++SELECT id AS literatureId, title, visibility FROM cabinet_dealz.affiliate_literature WHERE visibility = 'affiliate' AND isPublished = 1 ORDER BY sortOrder, id;
+diff --git a/server/internalLibraryDocuments.test.ts b/server/internalLibraryDocuments.test.ts
+index c6b6658..08f0ab1 100644
+--- a/server/internalLibraryDocuments.test.ts
++++ b/server/internalLibraryDocuments.test.ts
+@@ -1,6 +1,11 @@
+ import { describe, expect, it } from "vitest";
+ import { readFileSync } from "node:fs";
+ import { resolve } from "node:path";
++import {
++  INTERNAL_LIBRARY_DOCUMENTS,
++  internalLibraryDocumentPath,
++  internalLibraryRowValues,
++} from "@shared/internalLibraryDocuments";
+ 
+ const read = (path: string) => readFileSync(resolve(process.cwd(), path), "utf8");
+ 
+@@ -11,6 +16,7 @@ const storageSource = read("server/storage.ts");
+ const proxySource = read("server/_core/storageProxy.ts");
+ const importer = read("server/scripts/import-internal-library-documents.ts");
+ const sql = read("docs/sql/0255_library_internal_documents.tidb.sql");
++const guideSql = read("docs/sql/0268_affiliate_app_guide_internal.tidb.sql");
+ 
+ describe("internal-only library documents", () => {
+   it("stores a visibility and a who/when audit on every document", () => {
+@@ -113,9 +119,52 @@ describe("internal-only library documents", () => {
+   });
+ 
+   it("ships an importer that only uploads bytes and never widens access", () => {
+-    expect(importer).toContain("storagePut(STORED_KEY, bytes, \"application/pdf\")");
++    expect(importer).toContain("storagePut(document.storageKey, bytes, document.mimeType)");
+     expect(importer).toContain("library-documents/internal/");
+-    expect(importer).not.toMatch(/\binsert\b/i);
++    expect(importer).not.toMatch(/\.insert\(/);
++    expect(importer).not.toMatch(/\.update\(/);
+     expect(importer).not.toMatch(/isPublished:\s*true/);
+   });
+ });
++
++describe("docs/sql/0268_affiliate_app_guide_internal.tidb.sql", () => {
++  it("registers the guide internal and unpublished, from the same manifest the importer reads", () => {
++    const guide = INTERNAL_LIBRARY_DOCUMENTS.find((document) => document.file === "how-to-create-an-app-for-an-affiliate.md");
++    expect(guide).toBeTruthy();
++    expect(guideSql).toContain(`(${internalLibraryRowValues(guide!)})`);
++    expect(guideSql).toContain("WHERE NOT EXISTS");
++    expect(guideSql).not.toMatch(/'affiliate'/);
++    expect(guideSql).toMatch(/^-- 1\. PREVIEW /m);
++  });
++
++  it("uses plain SQL, one statement per line, every table qualified", () => {
++    expect(guideSql).toContain("Numbered 0268");
++    expect(guideSql).toContain("One statement per line");
++    expect(guideSql).not.toMatch(/IF NOT EXISTS/i);
++    for (const line of guideSql.split("\n").filter((entry) => entry.trim() && !entry.trimStart().startsWith("--"))) {
++      expect(line.startsWith(" ")).toBe(false);
++      expect(line.trim().endsWith(";")).toBe(true);
++      expect(line).toMatch(/cabinet_dealz\./);
++    }
++  });
++
++  it("uploads before it registers, so the admin Open button never 404s", () => {
++    expect(guideSql.indexOf("upload the file FIRST")).toBeLessThan(guideSql.indexOf("-- 1. PREVIEW"));
++  });
++});
++
++describe("the internal library manifest", () => {
++  it("points every document at the committed source file the importer reads", () => {
++    for (const document of INTERNAL_LIBRARY_DOCUMENTS) {
++      expect(internalLibraryDocumentPath(document)).toBe(`docs/library/internal/${document.file}`);
++      expect(document.storageKey).toBe(`library-documents/internal/${document.file}`);
++      expect(document.category).toBe("Internal");
++    }
++  });
++
++  it("reads every document out of the frontend checkout, so no bytes are invented here", () => {
++    // The backend holds no document bytes: the source lives in cabinet-frontend.
++    expect(importer).toContain("FRONTEND_REPO_ROOT");
++    expect(importer).toContain("internalLibraryDocumentPath(document)");
++  });
++});
+diff --git a/server/scripts/import-internal-library-documents.ts b/server/scripts/import-internal-library-documents.ts
+index 0ad398e..f861745 100644
+--- a/server/scripts/import-internal-library-documents.ts
++++ b/server/scripts/import-internal-library-documents.ts
+@@ -1,5 +1,5 @@
+ /**
+- * Upload the committed internal proposal into the private storage bucket.
++ * Upload the committed internal library documents into the private bucket.
+  *
+  * Run it once, after reviewing this patch, on the environment whose DATABASE_URL
+  * points at the live TiDB database:
+@@ -11,20 +11,25 @@
+  *   SUPABASE_URL or VITE_SUPABASE_URL
+  *   SUPABASE_SERVICE_ROLE_KEY
+  *
+- * What it does:
+- *   1. Reads the committed PDF from `docs/library/internal/` in the frontend repo.
+- *   2. Uploads it under the exact `library-documents/internal/...` key that
+- *      docs/sql/0255_library_internal_documents.tidb.sql stores in the row.
+- *   3. Reports the row's visibility so a wrong value is visible, not silent.
++ * Optional:
++ *   FRONTEND_REPO_ROOT   the cabinet-frontend checkout that holds docs/library/internal
++ *
++ * What it does, for every document in `shared/internalLibraryDocuments.ts`:
++ *   1. Reads the committed file from `docs/library/internal/` in the frontend repo.
++ *   2. Checks the bytes against the manifest's size and SHA-256, so a truncated
++ *      or re-encoded file stops here instead of becoming a broken download.
++ *   3. Uploads it under the exact `library-documents/internal/...` key the SQL
++ *      under docs/sql/ stores in the row, with that row's mimeType.
++ *   4. Reports the matching row's visibility, so a wrong value is visible.
+  *
+  * It uploads bytes only. It never creates a row, never changes visibility, and
+  * never sets isPublished. That is the SQL's job and the admin checkbox's job.
+  *
+- * The key is under `library-documents/`, which `server/storage.ts` puts in the
++ * The keys are under `library-documents/`, which `server/storage.ts` puts in the
+  * private bucket and `server/_core/storageProxy.ts` refuses on a public path, so
+- * the file is reachable only through a signed URL from an admin procedure.
++ * each document is reachable only through a signed URL.
+  *
+- * Re-running is safe: it overwrites the same object with the same bytes.
++ * Safe to re-run: it overwrites the same objects with the same bytes.
+  */
+ import { createHash } from "node:crypto";
+ import { readFileSync } from "node:fs";
+@@ -33,48 +38,70 @@ import { eq } from "drizzle-orm";
+ import { affiliateLiterature } from "../../drizzle/schema";
+ import { getDb } from "../db";
+ import { storagePut } from "../storage";
++import {
++  INTERNAL_LIBRARY_DOCUMENTS,
++  internalLibraryDocumentPath,
++  type InternalLibraryDocument,
++} from "@shared/internalLibraryDocuments";
+ import { isAffiliateLibraryDocument } from "@shared/libraryVisibility";
+ 
+-const DOCUMENT_FILE = "website-improvement-proposal-marazzi-lessons-cabinetdealz.pdf";
+-const STORED_KEY = `library-documents/internal/${DOCUMENT_FILE}`;
+-
+ /** Optional: point at the frontend checkout that holds docs/library/internal. */
+-function documentPath() {
++function documentPath(document: InternalLibraryDocument) {
+   const fromEnv = process.env.FRONTEND_REPO_ROOT?.trim();
+-  if (fromEnv) return resolve(fromEnv, "docs/library/internal", DOCUMENT_FILE);
+-  return resolve(process.cwd(), "docs/library/internal", DOCUMENT_FILE);
++  if (fromEnv) return resolve(fromEnv, internalLibraryDocumentPath(document));
++  return resolve(process.cwd(), internalLibraryDocumentPath(document));
+ }
+ 
+-async function main() {
+-  const db = await getDb();
+-  if (!db) throw new Error("Database not available");
+-
+-  const filePath = documentPath();
++function readVerifiedBytes(document: InternalLibraryDocument) {
++  const filePath = documentPath(document);
+   const bytes = readFileSync(filePath);
+   const sha256 = createHash("sha256").update(bytes).digest("hex");
+-
+-  const [row] = await db
+-    .select()
+-    .from(affiliateLiterature)
+-    .where(eq(affiliateLiterature.fileKey, STORED_KEY))
+-    .limit(1);
+-  if (!row) {
++  if (bytes.length !== document.sizeBytes) {
++    throw new Error(
++      `${filePath} is ${bytes.length} bytes but the library row for "${document.title}" records ` +
++        `${document.sizeBytes}. Fix the committed file or the row, then re-run.`,
++    );
++  }
++  if (sha256 !== document.sha256) {
+     throw new Error(
+-      `No affiliate_literature row points at ${STORED_KEY}. Run ` +
+-        "docs/sql/0255_library_internal_documents.tidb.sql first.",
++      `${filePath} has SHA-256 ${sha256} but the manifest records ${document.sha256}. ` +
++        "Uploading it would leave a download that is not the document the row describes.",
+     );
+   }
++  return { bytes, sha256 };
++}
+ 
+-  await storagePut(STORED_KEY, bytes, "application/pdf");
++async function main() {
++  const db = await getDb();
++  if (!db) throw new Error("Database not available");
+ 
+-  console.log(`Uploaded ${bytes.length} bytes to the private bucket as ${STORED_KEY}`);
+-  console.log(`SHA-256 ${sha256}`);
+-  console.log(
+-    row.visibility === "internal" && !isAffiliateLibraryDocument(row)
+-      ? `Row ${row.id} is internal: admin only, not visible to affiliates.`
+-      : `WARNING: row ${row.id} is visibility=${row.visibility} isPublished=${row.isPublished}. ` +
+-          "This document is meant to stay internal; fix it in the admin page.",
+-  );
++  for (const document of INTERNAL_LIBRARY_DOCUMENTS) {
++    const { bytes, sha256 } = readVerifiedBytes(document);
++
++    await storagePut(document.storageKey, bytes, document.mimeType);
++    console.log(`Uploaded ${bytes.length} bytes to the private bucket as ${document.storageKey}`);
++    console.log(`SHA-256 ${sha256}`);
++
++    const [row] = await db
++      .select()
++      .from(affiliateLiterature)
++      .where(eq(affiliateLiterature.fileKey, document.storageKey))
++      .limit(1);
++    if (!row) {
++      // Not fatal: the SQL that registers the row can run after this.
++      console.log(
++        `No affiliate_literature row points at ${document.storageKey} yet. ` +
++          "Run the SQL that registers it, then open it from the admin library.",
++      );
++      continue;
++    }
++    console.log(
++      row.visibility === "internal" && !isAffiliateLibraryDocument(row)
++        ? `Row ${row.id} is internal: admin only, not visible to affiliates.`
++        : `WARNING: row ${row.id} is visibility=${row.visibility} isPublished=${row.isPublished}. ` +
++            "This document is meant to stay internal; fix it in the admin page.",
++    );
++  }
+ }
+ 
+ main().catch((error) => {
+diff --git a/shared/internalLibraryDocuments.ts b/shared/internalLibraryDocuments.ts
+new file mode 100644
+index 0000000..2a3040f
+--- /dev/null
++++ b/shared/internalLibraryDocuments.ts
+@@ -0,0 +1,136 @@
++/**
++ * Every internal document the library registers by hand, and the file behind it.
++ *
++ * `cabinet_dealz.affiliate_literature` stores metadata only: a row without the
++ * matching object in the private bucket opens a 404. So the committed file, the
++ * storage key in the row, and the bytes the importer uploads have to agree, and
++ * this manifest is the one place they are written down together.
++ *
++ *   - the SQL under docs/sql/ writes the row from `internalLibraryRowValues`;
++ *   - docs/patches/cabinet-backend-affiliate-app-guide-internal.patch ships this
++ *     same file to cabinet-backend, where
++ *     `server/scripts/import-internal-library-documents.ts` uploads `file` to
++ *     `storageKey` with `mimeType`;
++ *   - `shared/internalLibraryDocuments.test.ts` checks the committed bytes
++ *     against `sizeBytes` and `sha256`, so a half-copied or re-encoded file is a
++ *     test failure rather than a broken download.
++ *
++ * These files live under `docs/`, which `.vercelignore` excludes, so none of
++ * them is served by the site. The keys are under `library-documents/`, which the
++ * backend keeps in the private Supabase bucket and refuses on the public storage
++ * proxy, so an internal document has no public address even if a key leaks.
++ */
++import { LIBRARY_DOCUMENT_FILE_PREFIX } from "./libraryVisibility";
++
++export type InternalLibraryDocument = {
++  /** Library title, exactly as it appears in the admin library list. */
++  title: string;
++  /** Admin library description. Internal only: never shown to an affiliate. */
++  description: string;
++  /** Admin library category. Internal documents use "Internal". */
++  category: string;
++  /** File name inside `docs/library/internal/`. Also the row's `filename`. */
++  file: string;
++  /** Private-bucket key, stored in `affiliate_literature.fileKey`. */
++  storageKey: string;
++  /** Stored in `affiliate_literature.url`. Private: the proxy refuses this path. */
++  url: string;
++  mimeType: string;
++  sizeBytes: number;
++  sha256: string;
++  /** Spacing in the admin list. Internal documents sort after the affiliate ones. */
++  sortOrder: number;
++};
++
++/** Folder in this repository that holds the source file of each document. */
++export const INTERNAL_LIBRARY_DIRECTORY = "docs/library/internal";
++
++type DocumentSeed = Omit<InternalLibraryDocument, "storageKey" | "url">;
++
++function internalDocument(seed: DocumentSeed): InternalLibraryDocument {
++  const storageKey = `${LIBRARY_DOCUMENT_FILE_PREFIX}internal/${seed.file}`;
++  return {
++    ...seed,
++    storageKey,
++    // Mirrors what storagePut returns for a private key, which is what the row stores.
++    url: `/manus-storage/${storageKey}`,
++  };
++}
++
++export const INTERNAL_LIBRARY_DOCUMENTS: readonly InternalLibraryDocument[] = [
++  internalDocument({
++    title: "Website Improvement Proposal — Lessons from Marazzi USA",
++    description:
++      "Internal strategy proposal for Tom. Adapts Marazzi USA merchandising patterns (shop-by-look, room-first product pages, sample doors as CRM leads, find-a-dealer) to Cabinetdealz, in three phases. Internal only: never shown on the public site or in an affiliate portal.",
++    category: "Internal",
++    file: "website-improvement-proposal-marazzi-lessons-cabinetdealz.pdf",
++    mimeType: "application/pdf",
++    sizeBytes: 92281,
++    sha256: "c9cf60ae85cfaec1ce3a5954653888ad5594d50ebdf915375d958e0042391104",
++    sortOrder: 900,
++  }),
++  internalDocument({
++    title: "How to Create an App for an Affiliate",
++    description:
++      "Internal ops guide for Tom. One shared Cabinetdealz codebase for every affiliate, with a separate Google Play listing and a separate Apple App Store listing per affiliate brand (own name, icon, screenshots). The app resolves the affiliate at login from the signed-in account and that affiliate custom domain, not from which store listing was installed. Internal only: never shown on the public site or in an affiliate portal until Tom adds it to the affiliate library.",
++    category: "Internal",
++    file: "how-to-create-an-app-for-an-affiliate.md",
++    mimeType: "text/plain",
++    sizeBytes: 8025,
++    sha256: "66c0e9043fb15caad4d57283be87692c412ba66c80f2ab33d029617780579336",
++    sortOrder: 901,
++  }),
++];
++
++/** Committed source file of a document, relative to the repository root. */
++export function internalLibraryDocumentPath(document: InternalLibraryDocument): string {
++  return `${INTERNAL_LIBRARY_DIRECTORY}/${document.file}`;
++}
++
++export function internalLibraryDocumentByFile(file: string): InternalLibraryDocument | undefined {
++  return INTERNAL_LIBRARY_DOCUMENTS.find((document) => document.file === file);
++}
++
++export function internalLibraryDocumentByKey(storageKey: string): InternalLibraryDocument | undefined {
++  return INTERNAL_LIBRARY_DOCUMENTS.find((document) => document.storageKey === storageKey);
++}
++
++/** A single-quoted MySQL literal, escaped the way the TiDB editor expects. */
++export function sqlLiteral(value: string): string {
++  return `'${value.replace(/'/g, "''")}'`;
++}
++
++/**
++ * The values of the INSERT that registers one document, in the column order
++ * every internal library SQL file uses:
++ *   title, description, category, filename, fileKey, url, mimeType,
++ *   sizeBytes, isPublished, visibility, sortOrder
++ *
++ * isPublished is 0 and visibility is 'internal' for every row here: that pair is
++ * what keeps a document out of the affiliate portal, and only the admin
++ * "Affiliate library" checkbox may change it.
++ */
++export function internalLibraryRowValues(document: InternalLibraryDocument): string {
++  return [
++    sqlLiteral(document.title),
++    sqlLiteral(document.description),
++    sqlLiteral(document.category),
++    sqlLiteral(document.file),
++    sqlLiteral(document.storageKey),
++    sqlLiteral(document.url),
++    sqlLiteral(document.mimeType),
++    String(document.sizeBytes),
++    "0",
++    sqlLiteral("internal"),
++    String(document.sortOrder),
++  ].join(", ");
++}
++
++/** The INSERT statement that registers one document, guarded on its fileKey. */
++export function internalLibraryInsertSql(document: InternalLibraryDocument): string {
++  return (
++    "INSERT INTO cabinet_dealz.affiliate_literature (title, description, category, filename, fileKey, url, mimeType, sizeBytes, isPublished, visibility, sortOrder) " +
++    `SELECT ${internalLibraryRowValues(document)} FROM DUAL WHERE NOT EXISTS ` +
++    `(SELECT 1 FROM cabinet_dealz.affiliate_literature WHERE fileKey = ${sqlLiteral(document.storageKey)});`
++  );
++}
