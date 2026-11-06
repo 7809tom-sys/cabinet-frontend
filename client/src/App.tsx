@@ -101,6 +101,7 @@ const ReturnPolicy = lazy(() => import("@/pages/ReturnPolicy"));
 const PrivacyPolicy = lazy(() => import("@/pages/PrivacyPolicy"));
 const Terms = lazy(() => import("@/pages/Terms"));
 const CrmMondayPreview = lazy(() => import("@/pages/CrmMondayPreview"));
+const CrmCustomerDesignPreview = lazy(() => import("@/pages/CrmCustomerDesignPreview"));
 const InstallationEstimateDocument = lazy(() => import("@/pages/InstallationEstimateDocument"));
 const Hardware = lazy(() => import("@/pages/Hardware"));
 const AffiliateGuide = lazy(() => import("@/pages/AffiliateGuide"));
@@ -1071,6 +1072,14 @@ export default function App() {
           <Route path="/dev/crm-preview">
             <Suspense fallback={<PageLoader />}>
               <CrmMondayPreview />
+            </Suspense>
+          </Route>
+        )}
+
+        {import.meta.env.DEV && (
+          <Route path="/dev/crm-customer-designs">
+            <Suspense fallback={<PageLoader />}>
+              <CrmCustomerDesignPreview />
             </Suspense>
           </Route>
         )}
