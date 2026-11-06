@@ -15,6 +15,7 @@
  *   connected yet" instead of showing a stack trace.
  */
 import { AI_DOOR_MODELS, type AiDoorModel } from "./aiDoorPrompts";
+import type { AiDoorGeneratedImage } from "./aiDoorImage";
 
 /** The procedure the door editor calls. Its router is `server/routers/aiDoorDescription.ts`. */
 export const AI_DOOR_DESCRIBE_PROCEDURE = "aiDoorDescription.describeWithAi" as const;
@@ -58,6 +59,10 @@ export type AiDoorDescribeInput = {
   doorName?: string | null;
   /** The door style this description is for. Recorded by the server, never used for auth. */
   styleId?: number | null;
+  /** The editor's finish words, used only to brief the image model. */
+  finish?: string | null;
+  /** The plain-text color description, used only to brief the image model. */
+  colorDescription?: string | null;
 };
 
 export type AiDoorDescribeFailureCode =
@@ -74,6 +79,19 @@ export type AiDoorDescribeResult =
     description: string;
     /** Which provider model answered, for the audit line. */
     providerModel: string | null;
+    /**
+     * The photorealistic door image Generate drew, when it could.
+     *
+     * This is the point of the button: an image of the door, not a paragraph
+     * about it. It is null only for a genuine image failure, which the column
+     * reports rather than quietly falling back to a saved photo or a sketch.
+     */
+    image?: AiDoorGeneratedImage | null;
+    /**
+     * Why an image is missing, in plain words, when the description still came
+     * back. Never a provider payload.
+     */
+    imageMessage?: string | null;
   }
   | {
     status: "not-connected";
@@ -107,6 +125,8 @@ export function aiDoorDescribeInput(args: {
   imageUrl?: string | null;
   doorName?: string | null;
   styleId?: number | null;
+  finish?: string | null;
+  colorDescription?: string | null;
 }): AiDoorDescribeInput {
   const image = args.imageUrl?.trim();
   return {
@@ -115,26 +135,63 @@ export function aiDoorDescribeInput(args: {
     image: image ? { url: image } : null,
     doorName: args.doorName?.trim() || null,
     styleId: args.styleId ?? null,
+    finish: args.finish?.trim() || null,
+    colorDescription: args.colorDescription?.trim() || null,
   };
 }
 
 /**
- * Read a procedure result into the three things a column needs to render:
- * the text (or null), a plain message (or null), and whether it is missing a key.
+ * Read a procedure result into the things a column needs to render: the text (or
+ * null), the generated door image (or null), a plain message (or null), and
+ * whether it is missing a key.
  */
 export function readAiDoorDescribeResult(
   model: AiDoorModel,
   result: AiDoorDescribeResult | null | undefined,
-): { description: string | null; message: string | null; notConnected: boolean } {
-  if (!result) return { description: null, message: AI_DOOR_GENERATE_FAILED_MESSAGE, notConnected: false };
+): {
+  description: string | null;
+  image: AiDoorGeneratedImage | null;
+  imageMessage: string | null;
+  message: string | null;
+  notConnected: boolean;
+} {
+  if (!result) {
+    return {
+      description: null,
+      image: null,
+      imageMessage: null,
+      message: AI_DOOR_GENERATE_FAILED_MESSAGE,
+      notConnected: false,
+    };
+  }
   if (result.status === "ok") {
     const description = result.description.trim();
-    return description
-      ? { description, message: null, notConnected: false }
-      : { description: null, message: "That model answered with nothing. Try again.", notConnected: false };
+    const image = result.image ?? null;
+    const imageMessage = result.imageMessage?.trim() || null;
+    return {
+      description,
+      image,
+      imageMessage,
+      // Text alone is no longer the goal. A column with a description but no
+      // picture says so plainly instead of looking finished.
+      message: description || image ? null : "That model answered with nothing. Try again.",
+      notConnected: false,
+    };
   }
   if (result.status === "not-connected") {
-    return { description: null, message: result.message || AI_DOOR_NOT_CONNECTED_MESSAGE[model], notConnected: true };
+    return {
+      description: null,
+      image: null,
+      imageMessage: null,
+      message: result.message || AI_DOOR_NOT_CONNECTED_MESSAGE[model],
+      notConnected: true,
+    };
   }
-  return { description: null, message: result.message || AI_DOOR_GENERATE_FAILED_MESSAGE, notConnected: false };
+  return {
+    description: null,
+    image: null,
+    imageMessage: null,
+    message: result.message || AI_DOOR_GENERATE_FAILED_MESSAGE,
+    notConnected: false,
+  };
 }

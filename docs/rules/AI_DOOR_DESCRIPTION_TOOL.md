@@ -1,6 +1,8 @@
-# AI door-description comparison
+# AI door-image comparison
 
-A door-editor tool for comparing GPT, Claude, and Gemini descriptions of one door photo, previewing each, and keeping the best one as the door's official profile.
+A door-editor tool that has GPT, Claude, and Gemini read one door photo, draw a **photorealistic image of that door**, and keep the best description as the door's official profile.
+
+**Generate returns a picture.** The picture is the result; the description beside it is what the picture was drawn from.
 
 **Door editor only.** It is mounted in the admin edit dialog (`FeaturedStylesAdmin.tsx`) and is not on the public Door Styles page.
 
@@ -16,11 +18,22 @@ A door-editor tool for comparing GPT, Claude, and Gemini descriptions of one doo
 
 The button is a server call, never a browser one. The browser holds no provider key and sends none.
 
-| Column | Procedure | Server key | Where the key is set |
+| Column | Writes the description | Draws the image | Server key |
 |---|---|---|---|
-| GPT | `aiDoorDescription.describeWithAi` (`model: "gpt"`) | `OPENAI_API_KEY` | cabinet-backend on Railway |
-| Claude | `aiDoorDescription.describeWithAi` (`model: "claude"`) | `ANTHROPIC_API_KEY` | cabinet-backend on Railway |
-| Gemini | `aiDoorDescription.describeWithAi` (`model: "gemini"`) | `GEMINI_API_KEY` | cabinet-backend on Railway (already set for image work) |
+| GPT | GPT (`OPENAI_API_KEY`) | OpenAI images (`OPENAI_API_KEY`) | cabinet-backend on Railway |
+| Gemini | Gemini (`GEMINI_API_KEY`) | Gemini images (`GEMINI_API_KEY`) | cabinet-backend on Railway |
+| Claude | Claude (`ANTHROPIC_API_KEY`) | **Google's image model** (`GEMINI_API_KEY`) | cabinet-backend on Railway |
+
+All three go through `aiDoorDescription.describeWithAi`.
+
+**Claude cannot draw.** Anthropic's Messages API returns text only, so there is no Claude image to return. Rather than fake one, Claude's description is handed to the same Google image model the backend already runs for room scenes, and that column says so in plain words: *"Google's image model drew this door from Claude's description and the photo."*
+
+Which provider draws which column is pinned in `shared/aiDoorImage.ts` (`AI_DOOR_IMAGE_PLANS`), so the UI can never imply Claude drew its own picture.
+
+| Image model | Variable | Default |
+|---|---|---|
+| OpenAI | `OPENAI_DOOR_IMAGE_MODEL` | `gpt-image-2` |
+| Google | `GEMINI_IMAGE_MODEL` | `gemini-3.1-flash-image` |
 
 The API is the separate **cabinet-backend** repository. This repo (frontend) carries:
 
@@ -35,6 +48,22 @@ The prompt is capped at 6,000 characters and only the three known models are acc
 **A missing key is data, not an error.** The procedure answers `{ status: "not-connected" }` with one plain sentence ("Claude isn't connected yet. Add ANTHROPIC_API_KEY on the API server."), and the column shows it as a status, not a red alarm. The panel stays usable: the operator can still Copy prompt and paste back.
 
 Photo: when the door has a sample image, its stored URL travels with the prompt and the server loads the bytes with the service-role key. Without a photo the prompt is still sent, with an added instruction to say "not visible" rather than guess, so a generated description is no more inventive than a pasted one.
+
+The photo is also what the image step draws from. With a photo, OpenAI is asked to **edit** it (`POST /v1/images/edits`, multipart) so the picture keeps the real door's construction and color instead of inventing one from words; with no photo it falls back to text-to-image. Gemini is always sent the photo as an inline part alongside the brief.
+
+### Why a column failed before
+
+Three separate faults, and none of them were the model ids alone:
+
+1. **GPT** sent `max_completion_tokens` to a chat-completions model. OpenAI answers that with 400 *Unsupported parameter*. The field is now chosen from the model id: `max_tokens` for chat models, `max_completion_tokens` for the `o1`/`o3`/`o4`/`gpt-5` reasoning families.
+2. **Claude** defaulted to `claude-sonnet-4-5`, a retired id, so Anthropic answered 404. The default is now `claude-sonnet-4-6`.
+3. **Both** swallowed the provider error. A failed call returned one generic sentence and logged nothing, so the only clue on screen was *"could not be generated"*. Every failure is now logged with the provider, status, model id and a redacted provider body.
+
+Gemini worked because its default id — `gemini-3-flash-preview` — is the same id the backend already runs everywhere else, so it was the only one of the three that nothing had retired underneath it.
+
+### The image is real, or the column says it is not
+
+A column shows a picture only when the server actually drew one. It is badged **AI generated**. The local vector sketch that used to sit under a generated description is still drawn when there is no picture, but it is named in words — *"Sketch of the described profile, drawn locally. It is not a photo of this door."* — and carries no badge, so it can never be mistaken for a result. A failed drawing keeps the description and shows the reason in plain words.
 
 ## Prompts
 
