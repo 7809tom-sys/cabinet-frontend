@@ -208,3 +208,27 @@ describe("PO document money", () => {
     expect(buildPoText(doc)).toContain("mix distributor cost and customer price");
   });
 });
+
+describe("affiliate site on the PO header", () => {
+  it("names the affiliate site that generated the order", () => {
+    const doc = buildPoDocument({
+      ...ORDER_CD_20261022_OLOUT,
+      affiliateSite: "Reaves Way Cabinet Shop · reaves-way.cabinetdealz.com",
+    });
+    const text = buildPoText(doc);
+    expect(text).toContain("Affiliate site: Reaves Way Cabinet Shop · reaves-way.cabinetdealz.com");
+    // The sender stays Cabinet Dealz, and the totals are untouched.
+    expect(text).toContain("Total: $355.79");
+    expect(text.endsWith("Cabinet Dealz")).toBe(true);
+  });
+
+  it("prints an em dash for a direct order instead of guessing an affiliate", () => {
+    const text = buildPoText(buildPoDocument(ORDER_CD_20261022_OLOUT));
+    expect(text).toContain("Affiliate site: —");
+  });
+
+  it("keeps the header line on every PO, even with no affiliate data", () => {
+    const text = buildPoText(buildPoDocument({ orderNumber: "CD-1", lines: [] }));
+    expect(text).toContain("Affiliate site: —");
+  });
+});

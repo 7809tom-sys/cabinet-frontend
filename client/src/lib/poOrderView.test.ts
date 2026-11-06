@@ -161,3 +161,28 @@ describe("PO unit price source", () => {
     expect(doc.lines[0].unitPriceCents).toBe(28439);
   });
 });
+
+describe("affiliate site on the admin PO", () => {
+  it("carries the affiliate's name and site into the PO header", () => {
+    const doc = poDocumentFromOrder(order({
+      affiliateName: "Reaves Way Cabinet Shop",
+      affiliateHostname: "reaves-way.cabinetdealz.com",
+    } as never));
+    expect(doc.affiliateSite).toBe("Reaves Way Cabinet Shop · reaves-way.cabinetdealz.com");
+  });
+
+  it("leaves it null for a direct order so the PO prints an em dash", () => {
+    expect(poDocumentFromOrder(order()).affiliateSite).toBeNull();
+  });
+
+  it("uses the slug alone when no site is stored", () => {
+    const doc = poDocumentFromOrder(order({ affiliateSlug: "reaves-way" } as never));
+    expect(doc.affiliateSite).toBe("reaves-way");
+  });
+
+  it("does not disturb the line prices or the total", () => {
+    const doc = poDocumentFromOrder(order({ affiliateName: "Reaves Way" } as never));
+    expect(doc.lines[0].unitPriceCents).toBe(28439);
+    expect(doc.totalCents).toBe(35579);
+  });
+});

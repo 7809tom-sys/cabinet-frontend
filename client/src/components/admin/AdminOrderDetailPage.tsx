@@ -26,11 +26,14 @@ import {
   Truck,
 } from "lucide-react";
 import AdminOrderStripeBreakdown from "@/components/admin/AdminOrderStripeBreakdown";
+import OrderActivityTimeline from "@/components/admin/OrderActivityTimeline";
 import OrderFulfillmentTrail, { type OrderTrailAction } from "@/components/admin/OrderFulfillmentTrail";
 import PalletPhotoPrompt from "@/components/admin/PalletPhotoPrompt";
 import { describeAdminOrderList } from "@/lib/adminOrderReconciliation";
 import { adminOrderPalletPhotos } from "@/lib/orderPalletPhoto";
 import { orderStatusActionError } from "@/lib/orderStatusActionError";
+import { describeOrderActor } from "@/lib/orderStatusActor";
+import type { OrderEventRecord } from "@/lib/orderTimeline";
 import { downloadPoCsv, downloadPoPdf } from "@/lib/poDocumentExport";
 import { poDocumentFromOrder } from "@/lib/poOrderView";
 import { formatPoUsd, poPricingWarning, poSummaryRows } from "@shared/poDocument";
@@ -147,6 +150,22 @@ export default function AdminOrderDetailPage({ order, onBack }: { order: AdminOr
   const pricingWarning = poPricingWarning(po);
   const receivedEmailSentAt = order.orderReceivedEmailSentAt ?? null;
   const receivedEmailTo = order.orderReceivedEmailTo ?? customer.customerName ?? order.originatorEmail ?? null;
+  // "Verified by Dana Reaves · Nov 5, 2026, 1:47 PM CT" for each step that has
+  // happened. The full "Name · email" is the tooltip.
+  const actorLines = {
+    distributorEmail: describeOrderActor("Distributor emailed", {
+      by: order.distributorEmailSentBy ?? null,
+      at: order.distributorEmailSentAt ?? order.sentToDistributorAt ?? null,
+    }),
+    verified: describeOrderActor("Verified", { by: order.orderVerifiedBy ?? null, at: order.orderVerifiedAt ?? null }),
+    shipped: describeOrderActor("Shipped", { by: order.orderShippedBy ?? null, at: order.orderShippedAt ?? null }),
+    signed: describeOrderActor("Signed", { by: order.orderSignedBy ?? null, at: order.orderSignedAt ?? null }),
+  };
+  // The append-only log. It is optional: when the backend has not shipped
+  // order_events yet the query simply returns nothing and the timeline is derived
+  // from the order's own status columns.
+  const eventsQuery = trpc.orders.orderEvents.useQuery({ id: order.id }, { retry: false });
+  const orderEvents = (eventsQuery.data ?? []) as OrderEventRecord[];
   const savedCarrier = shipment.carrier;
   const savedTracking = shipment.tracking;
   const carrierOptions = adminOrderCarrierOptions(savedCarrier);
@@ -315,6 +334,28 @@ export default function AdminOrderDetailPage({ order, onBack }: { order: AdminOr
             <p>{order.notes}</p>
           </div>
         )}
+
+        {/* Who did what, and exactly when. One line per completed step. */}
+        <section className="space-y-1.5 rounded-lg border p-4 text-sm" data-testid="admin-order-actor-lines">
+          <h3 className="mb-1 text-sm font-semibold">Status attribution</h3>
+          {([
+            ["distributor-email", actorLines.distributorEmail],
+            ["verified", actorLines.verified],
+            ["shipped", actorLines.shipped],
+            ["signed", actorLines.signed],
+          ] as const).map(([key, line]) => (
+            <p
+              key={key}
+              className={line ? "text-foreground" : "text-muted-foreground"}
+              title={line?.full ?? undefined}
+              data-testid={`admin-order-actor-${key}`}
+            >
+              {line ? line.label : `${key === "distributor-email" ? "Distributor emailed" : key[0].toUpperCase() + key.slice(1)}: waiting`}
+            </p>
+          ))}
+        </section>
+
+        <OrderActivityTimeline order={order} events={orderEvents} loading={eventsQuery.isLoading} />
 
         <AdminOrderStripeBreakdown
           order={order}

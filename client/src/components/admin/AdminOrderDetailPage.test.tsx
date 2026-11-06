@@ -38,6 +38,7 @@ vi.mock("@/lib/trpc", () => ({
           isPending: false,
         }),
       },
+      orderEvents: { useQuery: () => ({ data: [], isLoading: false }) },
     },
   },
 }));
@@ -337,5 +338,57 @@ describe("send order received email", () => {
     // The verified step is still waiting: only the verified action can stamp it.
     expect(screen.getByTestId("order-step-verified").getAttribute("data-done")).toBe("false");
     expect(screen.getByTestId("admin-order-received-email-sent")).toBeTruthy();
+  });
+});
+
+describe("status attribution on the order page", () => {
+  it("shows who verified, shipped and signed, with the CT time", () => {
+    render(<AdminOrderDetailPage order={order({
+      orderVerifiedAt: "2026-11-05T19:02:00.000Z",
+      orderVerifiedBy: "Selena Ortiz <selena@cabinetdealz.com>",
+      orderShippedAt: "2026-11-06T18:00:00.000Z",
+      orderShippedBy: "Rick Alvarez <rick@cabinetdealz.com>",
+      orderSignedAt: "2026-11-08T19:00:00.000Z",
+      orderSignedBy: "Rick Alvarez <rick@cabinetdealz.com>",
+    })} onBack={vi.fn()} />);
+    expect(screen.getByTestId("admin-order-actor-verified").textContent)
+      .toBe("Verified by Selena Ortiz · Nov 5, 2026, 1:02 PM CT");
+    expect(screen.getByTestId("admin-order-actor-shipped").textContent)
+      .toContain("Shipped by Rick Alvarez");
+    expect(screen.getByTestId("admin-order-actor-signed").textContent)
+      .toContain("Signed by Rick Alvarez");
+  });
+
+  it("keeps the email address in the tooltip", () => {
+    render(<AdminOrderDetailPage order={order({
+      orderVerifiedAt: "2026-11-05T19:02:00.000Z",
+      orderVerifiedBy: "Selena Ortiz <selena@cabinetdealz.com>",
+    })} onBack={vi.fn()} />);
+    expect(screen.getByTestId("admin-order-actor-verified").getAttribute("title"))
+      .toBe("Selena Ortiz · selena@cabinetdealz.com");
+  });
+
+  it("says waiting for a step that has not happened", () => {
+    render(<AdminOrderDetailPage order={order({ orderVerifiedAt: null })} onBack={vi.fn()} />);
+    expect(screen.getByTestId("admin-order-actor-verified").textContent).toContain("waiting");
+  });
+
+  it("shows who emailed the distributor", () => {
+    render(<AdminOrderDetailPage order={order({
+      distributorEmailSentAt: "2026-11-05T19:05:00.000Z",
+      distributorEmailSentBy: "Selena Ortiz <selena@cabinetdealz.com>",
+    })} onBack={vi.fn()} />);
+    expect(screen.getByTestId("admin-order-actor-distributor-email").textContent)
+      .toContain("Distributor emailed by Selena Ortiz");
+  });
+
+  it("renders the activity timeline", () => {
+    render(<AdminOrderDetailPage order={order({
+      orderVerifiedAt: "2026-11-05T19:02:00.000Z",
+      orderVerifiedBy: "Selena Ortiz <selena@cabinetdealz.com>",
+    })} onBack={vi.fn()} />);
+    expect(screen.getByTestId("order-activity-timeline")).toBeTruthy();
+    expect(screen.getByTestId("order-activity-verified").textContent).toContain("Selena Ortiz approved the order");
+    expect(screen.getByTestId("order-activity-purchased").textContent).toContain("Tom Reaves bought cabinets");
   });
 });

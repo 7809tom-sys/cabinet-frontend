@@ -51,6 +51,7 @@ export function renderPoPdf(doc: PoDocument): { url: string; output: () => Blob 
     doc.poNumber ? `PO number: ${doc.poNumber}` : null,
     doc.customerName ? `Reference: ${doc.customerName}` : null,
     doc.styleName ? `Door Style / Finish: ${doc.styleName}` : null,
+    `Affiliate site: ${doc.affiliateSite ?? "—"}`,
     `Date: ${doc.orderDate}`,
     `Fulfillment: ${doc.deliveryMethod === "pickup" ? "Local pickup" : "Ship"}`,
     doc.deliveryMethod === "pickup" && doc.pickupAddress ? `Pickup location: ${doc.pickupAddress}` : null,

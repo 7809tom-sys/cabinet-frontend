@@ -70,6 +70,21 @@ export type AdminOrderRow = Omit<AdminOrderMoneyInput, "lineItems" | "originator
   /** "We received your order" note — separate from the verified email. */
   orderReceivedEmailSentAt?: string | Date | null;
   orderReceivedEmailTo?: string | null;
+  /** Who sent the distributor PO (0227 timestamp + 0251 actor). */
+  distributorEmailSentAt?: string | Date | null;
+  distributorEmailSentBy?: string | null;
+  /** Which affiliate's site generated the order. Null = direct/house order. */
+  affiliateId?: number | null;
+  affiliateName?: string | null;
+  affiliateSlug?: string | null;
+  affiliateHostname?: string | null;
+  affiliateCustomDomain?: string | null;
+  affiliateSiteUrl?: string | null;
+  /** The dealer account the order was priced under — separate from affiliate. */
+  dealerName?: string | null;
+  dealerAccountName?: string | null;
+  dealerCompany?: string | null;
+  accountName?: string | null;
   paidAt?: string | Date | null;
   imageGeneratedCount?: number | null;
   lastImageGeneratedAt?: string | Date | null;

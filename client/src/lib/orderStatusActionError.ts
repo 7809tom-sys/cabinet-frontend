@@ -3,14 +3,14 @@
  * administrator can act on.
  *
  * The status dots write columns added by docs/sql/0227 (and the "order received"
- * note writes the 0249 columns). When that SQL has not been run, the backend
+ * note writes the 0251 columns). When that SQL has not been run, the backend
  * rejects the update and the panel showed a generic failure — indistinguishable
  * from "the button is broken". The buttons are fine; the columns are missing, and
  * the message should say so by name.
  */
 
 export const ORDER_STATUS_SQL_FILE = "docs/sql/0227_distributor_order_email.tidb.sql";
-export const ORDER_RECEIVED_EMAIL_SQL_FILE = "docs/sql/0249_order_received_email.tidb.sql";
+export const ORDER_RECEIVED_EMAIL_SQL_FILE = "docs/sql/0251_order_received_email.tidb.sql";
 
 /** True when the database rejected the write because a column or table is absent. */
 export function isMissingOrderSchemaMessage(message: string | null | undefined): boolean {

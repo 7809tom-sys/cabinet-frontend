@@ -1,6 +1,7 @@
 import type { AdminOrderRow } from "@/lib/adminOrderRow";
 import { buildPoDocument, type PoDocument, type PoDocumentInput } from "@shared/poDocument";
 import { normalizePoSku } from "@shared/poSku";
+import { orderAffiliateDisplay } from "@/lib/orderStatusReport";
 
 /**
  * Order data as it arrives on the admin order page, narrowed to what a PO needs.
@@ -25,6 +26,13 @@ export type PoOrderSource = Pick<
   | "discountCents"
   | "notes"
   | "lineItems"
+  // Affiliate source, so the PO header can say where the order came from.
+  | "affiliateName"
+  | "affiliateSlug"
+  | "affiliateHostname"
+  | "affiliateCustomDomain"
+  | "affiliateSiteUrl"
+  | "affiliateId"
 > & { distributorInvoiceReference?: string | null };
 
 /**
@@ -39,6 +47,8 @@ export function poInputFromOrder(order: PoOrderSource): PoDocumentInput {
     customerName: order.customerName ?? order.originatorName ?? null,
     styleName: order.styleName ?? null,
     distributorName: order.distributorName ?? null,
+    // The affiliate's own site, never invented: a direct order prints "—".
+    affiliateSite: orderAffiliateDisplay(order),
     poNumber: order.distributorInvoiceReference ?? null,
     deliveryMethod: order.deliveryMethod ?? "ship",
     notes: order.notes ?? null,

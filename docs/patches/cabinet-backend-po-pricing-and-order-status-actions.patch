@@ -63,9 +63,27 @@ Apply from the cabinet-backend repository root:
 
     git apply /path/to/cabinet-backend-po-pricing-and-order-status-actions.patch
 
+Also in this patch:
+
+- An append-only `order_events` log (`server/lib/orderActivityLog.ts`) written by
+  every status action, so the sales order timeline can show each action with a
+  named person — including a resend, which would otherwise overwrite the previous
+  send time. Orders that predate the table are backfilled from their own
+  `*_At` / `*_By` columns on first read, so no data migration is needed.
+- `distributorEmailSentBy` on `order_requests` and `order_distributor_emails`,
+  so "who sent the PO" is recorded next to the existing "when".
+- `vendorCostFactors` / `setVendorCostFactor`, exposing each supply line's
+  landed-cost factor (list × base × (1 + freight)) so the vendor catalog can fill
+  a row's Cost when the SKU has no stored vendor cost, labelled "calculated".
+
 Requires the shared files this patch adds (shared/poDocument.ts,
-shared/orderCustomerEmails.ts, shared/poSku.ts) and
-the 0227 and 0249 SQL.
+shared/orderCustomerEmails.ts, shared/poSku.ts, shared/vendorCost.ts) and these
+SQL files, in order:
+
+    0227_distributor_order_email.tidb.sql   (status columns — still required)
+    0251_order_activity_log.tidb.sql        (received-email stamps, PO sender,
+                                             order_events)
+    0252_vendor_cost_factor.tidb.sql        (per-vendor cost factor)
 ---
 diff --git a/client/src/components/admin/IncomingOrdersAdmin.tsx b/client/src/components/admin/IncomingOrdersAdmin.tsx
 index 7e39523..7a356e6 100644
@@ -378,11 +396,256 @@ index 0000000..734547e
 +    expect(normalizePoSku("cs-cs-cs-db18")).toBe("cs-db18");
 +  });
 +});
+diff --git a/server/lib/orderActivityLog.ts b/server/lib/orderActivityLog.ts
+new file mode 100644
+index 0000000..f217895
+--- /dev/null
++++ b/server/lib/orderActivityLog.ts
+@@ -0,0 +1,161 @@
++// Append-only order activity log. Every status action writes one row, so the
++// sales order timeline can show who did what, including a resend that would
++// otherwise overwrite the previous send time.
++//
++// Writes never throw: an order action must still succeed when logging fails, so
++// the timeline is a record of the action rather than a condition for it.
++
++import { sql } from "drizzle-orm";
++import { getDb } from "../db";
++import { isMissingSchemaError, schemaErrorMessage } from "./orderSchemaGuard";
++
++type Database = NonNullable<Awaited<ReturnType<typeof getDb>>>;
++
++export type OrderActivityAction =
++  | "purchased"
++  | "order_received_email"
++  | "distributor_emailed"
++  | "distributor_email_resent"
++  | "verified"
++  | "shipped"
++  | "signed"
++  | "receipt_sent"
++  | "payment_notice"
++  | "note";
++
++export type OrderActivityInput = {
++  orderRequestId: number;
++  action: OrderActivityAction;
++  actorUserId?: number | null;
++  /** "Name <email>" / "Name" / "system". Never empty. */
++  actorName?: string | null;
++  detail?: string | null;
++};
++
++/** "Dana Reaves <dana@cabinetdealz.com>", the column width. */
++export function activityActorLabel(
++  name: string | null | undefined,
++  email: string | null | undefined,
++  fallback = "system",
++): string {
++  const who = (name ?? "").trim();
++  const address = (email ?? "").trim();
++  if (who && address) return `${who} <${address}>`.slice(0, 255);
++  if (who) return who.slice(0, 255);
++  if (address) return address.slice(0, 255);
++  return fallback;
++}
++
++/** Append one row. Returns false when the table is not there yet. */
++export async function logOrderActivity(
++  db: Database,
++  input: OrderActivityInput,
++): Promise<boolean> {
++  try {
++    await db.execute(sql`
++      INSERT INTO order_events (orderRequestId, action, actorUserId, actorName, detail)
++      VALUES (
++        ${input.orderRequestId},
++        ${input.action},
++        ${input.actorUserId ?? null},
++        ${activityActorLabel(input.actorName, null)},
++        ${input.detail ? input.detail.slice(0, 1024) : null}
++      )
++    `);
++    return true;
++  } catch (error) {
++    if (isMissingSchemaError(error)) {
++      console.warn(`[OrderActivity] order_events is missing; run the 0251 SQL. Action ${input.action} for order ${input.orderRequestId} was not logged.`);
++      return false;
++    }
++    console.error(`[OrderActivity] Could not log ${input.action} for order ${input.orderRequestId}: ${schemaErrorMessage(error)}`);
++    return false;
++  }
++}
++
++/** Read an order's rows, oldest first. */
++export async function readOrderActivity(
++  db: Database,
++  orderRequestId: number,
++): Promise<Array<Record<string, unknown>>> {
++  try {
++    const result = await db.execute(sql`
++      SELECT id, orderRequestId, action, actorUserId, actorName, detail, createdAt
++      FROM order_events
++      WHERE orderRequestId = ${orderRequestId}
++      ORDER BY createdAt ASC, id ASC
++    `);
++    const rows = Array.isArray(result) ? result : [];
++    if (rows.length && Array.isArray(rows[0])) return rows[0] as Array<Record<string, unknown>>;
++    return rows as Array<Record<string, unknown>>;
++  } catch (error) {
++    if (isMissingSchemaError(error)) return [];
++    console.error(`[OrderActivity] Could not read activity for order ${orderRequestId}: ${schemaErrorMessage(error)}`);
++    return [];
++  }
++}
++
++/**
++ * Backfill the log from the order's own status columns.
++ *
++ * Older orders predate order_events, and their timeline would otherwise be
++ * empty. This inserts one row per stamped step, with the original time preserved
++ * and the stored actor label. It is idempotent: a step that already has a logged
++ * row of the same action is skipped, so running it twice does not duplicate.
++ */
++export async function backfillOrderActivity(db: Database, orderId: number): Promise<number> {
++  const existing = await readOrderActivity(db, orderId);
++  if (existing.length > 0) return 0;
++  let inserted = 0;
++  try {
++    const result = await db.execute(sql`
++      SELECT id, requestNumber, originatorName, originatorEmail, createdAt, paidAt,
++        orderReceivedEmailSentAt, orderReceivedEmailTo,
++        distributorEmailSentAt, distributorEmailSentBy, distributorEmailTo,
++        orderVerifiedAt, orderVerifiedBy,
++        orderShippedAt, orderShippedBy, shipmentCarrier, shipmentTracking,
++        orderSignedAt, orderSignedBy, signerName,
++        receiptSentAt, receiptEmailedAt
++      FROM order_requests
++      WHERE id = ${orderId}
++      LIMIT 1
++    `);
++    const rows = Array.isArray(result) && Array.isArray(result[0]) ? result[0] as Array<Record<string, unknown>> : result as unknown as Array<Record<string, unknown>>;
++    const order = rows[0];
++    if (!order) return 0;
++
++    const customer = activityActorLabel(
++      (order.originatorName as string | null) ?? null,
++      (order.originatorEmail as string | null) ?? null,
++      "Customer",
++    );
++    const steps: Array<{ action: OrderActivityAction; at: unknown; actor: string | null; detail: string | null }> = [
++      { action: "purchased", at: order.paidAt ?? order.createdAt, actor: customer, detail: null },
++      { action: "order_received_email", at: order.orderReceivedEmailSentAt, actor: "system", detail: (order.orderReceivedEmailTo as string | null) ?? null },
++      { action: "distributor_emailed", at: order.distributorEmailSentAt, actor: (order.distributorEmailSentBy as string | null) ?? "system", detail: (order.distributorEmailTo as string | null) ?? null },
++      { action: "verified", at: order.orderVerifiedAt, actor: (order.orderVerifiedBy as string | null) ?? null, detail: null },
++      {
++        action: "shipped",
++        at: order.orderShippedAt,
++        actor: (order.orderShippedBy as string | null) ?? null,
++        detail: [order.shipmentCarrier, order.shipmentTracking].map((part) => (part as string | null) ?? "").join(" · ").replace(/^ · | · $/g, "") || null,
++      },
++      { action: "signed", at: order.orderSignedAt, actor: (order.orderSignedBy as string | null) ?? null, detail: (order.signerName as string | null) ?? null },
++      { action: "receipt_sent", at: order.receiptSentAt ?? order.receiptEmailedAt, actor: "system", detail: null },
++    ];
++
++    for (const step of steps) {
++      const at = step.at == null ? null : new Date(String(step.at));
++      if (!at || Number.isNaN(at.getTime())) continue;
++      await db.execute(sql`
++        INSERT INTO order_events (orderRequestId, action, actorName, detail, createdAt)
++        VALUES (${orderId}, ${step.action}, ${step.actor}, ${step.detail}, ${at.toISOString()})
++      `);
++      inserted += 1;
++    }
++  } catch (error) {
++    if (isMissingSchemaError(error)) return inserted;
++    console.error(`[OrderActivity] Could not backfill order ${orderId}: ${schemaErrorMessage(error)}`);
++  }
++  return inserted;
++}
+diff --git a/server/lib/orderActivityLog.test.ts b/server/lib/orderActivityLog.test.ts
+new file mode 100644
+--- /dev/null
++++ b/server/lib/orderActivityLog.test.ts
+@@ -0,0 +1,73 @@
++import { describe, expect, it, vi } from "vitest";
++import { activityActorLabel, logOrderActivity, readOrderActivity, backfillOrderActivity } from "./orderActivityLog";
++
++/** A db double that records executed SQL calls and can fail on demand. */
++function fakeDb(options: { failWith?: string; rows?: unknown[] } = {}) {
++  const calls: unknown[] = [];
++  return {
++    calls,
++    execute: vi.fn(async (statement: unknown) => {
++      calls.push(statement);
++      if (options.failWith) throw new Error(options.failWith);
++      return (options.rows ?? []) as never;
++    }),
++  } as never as { execute: typeof vi.fn; calls: unknown[] };
++}
++
++describe("activity actor label", () => {
++  it("stores the name and the email together", () => {
++    expect(activityActorLabel("Dana Reaves", "dana@cabinetdealz.com")).toBe("Dana Reaves <dana@cabinetdealz.com>");
++  });
++
++  it("falls back through name, email, then 'system'", () => {
++    expect(activityActorLabel("Dana", null)).toBe("Dana");
++    expect(activityActorLabel(null, "dana@cabinetdealz.com")).toBe("dana@cabinetdealz.com");
++    expect(activityActorLabel(null, null)).toBe("system");
++    expect(activityActorLabel("  ", "  ")).toBe("system");
++  });
++
++  it("keeps within the 255-character column", () => {
++    expect(activityActorLabel("x".repeat(400), "y@z.com").length).toBe(255);
++  });
++});
++
++describe("logging an action", () => {
++  it("inserts one row per action", async () => {
++    const db = fakeDb();
++    const ok = await logOrderActivity(db as never, {
++      orderRequestId: 18,
++      action: "verified",
++      actorName: "Selena Ortiz",
++      actorUserId: 7,
++    });
++    expect(ok).toBe(true);
++    expect(db.execute).toHaveBeenCalledOnce();
++  });
++
++  it("logs a repeat as its own action, not an update", async () => {
++    const db = fakeDb();
++    await logOrderActivity(db as never, { orderRequestId: 18, action: "distributor_emailed", actorName: "Selena Ortiz" });
++    await logOrderActivity(db as never, { orderRequestId: 18, action: "distributor_email_resent", actorName: "Selena Ortiz" });
++    expect(db.execute).toHaveBeenCalledTimes(2);
++  });
++
++  it("does not throw when the table is missing", async () => {
++    const db = fakeDb({ failWith: "Table 'cabinet_dealz.order_events' doesn't exist" });
++    await expect(logOrderActivity(db as never, { orderRequestId: 18, action: "verified", actorName: "Selena" })).resolves.toBe(false);
++  });
++
++  it("does not throw on an unrelated failure either", async () => {
++    const db = fakeDb({ failWith: "connection reset" });
++    await expect(logOrderActivity(db as never, { orderRequestId: 18, action: "verified" })).resolves.toBe(false);
++  });
++
++  it("reading is empty, not an error, before the table exists", async () => {
++    const db = fakeDb({ failWith: "ER_NO_SUCH_TABLE" });
++    await expect(readOrderActivity(db as never, 18)).resolves.toEqual([]);
++  });
++
++  it("backfilling a missing table is a no-op", async () => {
++    const db = fakeDb({ failWith: "ER_NO_SUCH_TABLE" });
++    await expect(backfillOrderActivity(db as never, 18)).resolves.toBe(0);
++  });
++});
 diff --git a/server/lib/orderSideEffects.ts b/server/lib/orderSideEffects.ts
-index 137a07c..ca83b2d 100644
+index 137a07c..9492393 100644
 --- a/server/lib/orderSideEffects.ts
 +++ b/server/lib/orderSideEffects.ts
-@@ -10,8 +10,11 @@ import {
+@@ -10,8 +10,12 @@ import {
    type OrderLineItem,
  } from "../../drizzle/schema";
  import { buildNetsuiteOrderCsv } from "@shared/netsuiteOrder";
@@ -391,10 +654,20 @@ index 137a07c..ca83b2d 100644
  import { getDb } from "../db";
  import { emailSettingsReady, sendEmail, sendEmailViaSettings } from "../email";
 +import { enrichAdminOrderRows } from "./adminOrderRead";
++import { backfillOrderActivity, logOrderActivity, readOrderActivity } from "./orderActivityLog";
  import { ensureAffiliatePipelineDeal } from "./crmPipelineAttach";
  import {
    assignLinesToDistributors,
-@@ -77,6 +80,9 @@ export type OrderFulfillmentOverlay = {
+@@ -66,6 +70,8 @@ export type OrderFulfillmentOverlay = {
+   distributorEmailSentAt: string | null;
+   distributorEmailTo: string | null;
+   distributorEmailError: string | null;
++  /** Who sent the distributor PO (0251), or null on an un-migrated database. */
++  distributorEmailSentBy: string | null;
+   orderVerifiedAt: string | null;
+   orderVerifiedBy: string | null;
+   orderShippedAt: string | null;
+@@ -77,6 +83,9 @@ export type OrderFulfillmentOverlay = {
    signerName: string | null;
    crmSyncStatus: string | null;
    crmSyncError: string | null;
@@ -404,7 +677,15 @@ index 137a07c..ca83b2d 100644
    crmDealId: number | null;
    imageGeneratedCount: number;
    lastImageGeneratedAt: string | null;
-@@ -108,6 +114,8 @@ const EMPTY_OVERLAY: OrderFulfillmentOverlay = {
+@@ -97,6 +106,7 @@ const EMPTY_OVERLAY: OrderFulfillmentOverlay = {
+   distributorEmailSentAt: null,
+   distributorEmailTo: null,
+   distributorEmailError: null,
++  distributorEmailSentBy: null,
+   orderVerifiedAt: null,
+   orderVerifiedBy: null,
+   orderShippedAt: null,
+@@ -108,6 +118,8 @@ const EMPTY_OVERLAY: OrderFulfillmentOverlay = {
    signerName: null,
    crmSyncStatus: null,
    crmSyncError: null,
@@ -413,15 +694,26 @@ index 137a07c..ca83b2d 100644
    crmDealId: null,
    imageGeneratedCount: 0,
    lastImageGeneratedAt: null,
-@@ -133,6 +141,7 @@ export async function readOrderFulfillmentOverlay(db: Database, orderIds: number
+@@ -131,8 +143,10 @@ export async function readOrderFulfillmentOverlay(db: Database, orderIds: number
+   const ids = sql.join(orderIds.map((id) => sql`${id}`), sql`, `);
+   const orderRows = await guarded("read order trail columns", [] as Array<Record<string, unknown>>, async () => rowsFrom(await db.execute(sql`
      SELECT id, distributorEmailStatus, distributorEmailSentAt, distributorEmailTo, distributorEmailError,
++      distributorEmailSentBy,
        orderVerifiedAt, orderVerifiedBy, orderShippedAt, orderShippedBy, shipmentCarrier, shipmentTracking,
        orderSignedAt, orderSignedBy, signerName, crmSyncStatus, crmSyncError, crmDealId,
 +      orderReceivedEmailSentAt, orderReceivedEmailTo,
        imageGeneratedCount, lastImageGeneratedAt
      FROM order_requests
      WHERE id IN (${ids})
-@@ -167,6 +176,8 @@ export async function readOrderFulfillmentOverlay(db: Database, orderIds: number
+@@ -156,6 +170,7 @@ export async function readOrderFulfillmentOverlay(db: Database, orderIds: number
+     current.distributorEmailSentAt = stamp(row.distributorEmailSentAt);
+     current.distributorEmailTo = text(row.distributorEmailTo);
+     current.distributorEmailError = text(row.distributorEmailError);
++    current.distributorEmailSentBy = text(row.distributorEmailSentBy);
+     current.orderVerifiedAt = stamp(row.orderVerifiedAt);
+     current.orderVerifiedBy = text(row.orderVerifiedBy);
+     current.orderShippedAt = stamp(row.orderShippedAt);
+@@ -167,6 +182,8 @@ export async function readOrderFulfillmentOverlay(db: Database, orderIds: number
      current.signerName = text(row.signerName);
      current.crmSyncStatus = text(row.crmSyncStatus);
      current.crmSyncError = text(row.crmSyncError);
@@ -430,7 +722,106 @@ index 137a07c..ca83b2d 100644
      current.crmDealId = row.crmDealId == null ? null : Number(row.crmDealId);
      current.imageGeneratedCount = Number(row.imageGeneratedCount ?? 0) || 0;
      current.lastImageGeneratedAt = stamp(row.lastImageGeneratedAt);
-@@ -413,8 +424,46 @@ export async function logOrderStep(orderId: number, step: "email_sent" | "verifi
+@@ -214,16 +231,37 @@ async function writeCrmSync(db: Database, orderId: number, status: string, error
+   });
+ }
+ 
+-async function writeOrderEmailSummary(db: Database, orderId: number, summary: ReturnType<typeof summarizeDistributorEmails>, distributorId: number | null): Promise<void> {
++async function writeOrderEmailSummary(
++  db: Database,
++  orderId: number,
++  summary: ReturnType<typeof summarizeDistributorEmails>,
++  distributorId: number | null,
++  sentBy: string,
++): Promise<void> {
+   await guarded("write distributor email summary", undefined, async () => {
+-    await db.execute(sql`
+-      UPDATE order_requests
+-      SET distributorEmailStatus = ${summary.distributorEmailStatus},
+-          distributorEmailSentAt = ${summary.distributorEmailSentAt},
+-          distributorEmailTo = ${summary.distributorEmailTo},
+-          distributorEmailError = ${summary.distributorEmailError}
+-      WHERE id = ${orderId}
+-    `);
++    // distributorEmailSentBy comes from 0251; the guarded write tolerates the
++    // column being absent so an un-migrated database still records the send.
++    try {
++      await db.execute(sql`
++        UPDATE order_requests
++        SET distributorEmailStatus = ${summary.distributorEmailStatus},
++            distributorEmailSentAt = ${summary.distributorEmailSentAt},
++            distributorEmailTo = ${summary.distributorEmailTo},
++            distributorEmailError = ${summary.distributorEmailError},
++            distributorEmailSentBy = ${summary.distributorEmailStatus === "sent" ? sentBy.slice(0, 255) : null}
++        WHERE id = ${orderId}
++      `);
++    } catch (error) {
++      if (!isMissingSchemaError(error)) throw error;
++      await db.execute(sql`
++        UPDATE order_requests
++        SET distributorEmailStatus = ${summary.distributorEmailStatus},
++            distributorEmailSentAt = ${summary.distributorEmailSentAt},
++            distributorEmailTo = ${summary.distributorEmailTo},
++            distributorEmailError = ${summary.distributorEmailError}
++        WHERE id = ${orderId}
++      `);
++    }
+   });
+   if (summary.distributorEmailStatus === "sent" && summary.distributorEmailSentAt) {
+     await db.update(orderRequests).set({
+@@ -234,19 +272,40 @@ async function writeOrderEmailSummary(db: Database, orderId: number, summary: Re
+   }
+ }
+ 
+-async function writeDistributorEmailRows(db: Database, orderId: number, records: DistributorEmailRecord[]): Promise<void> {
++async function writeDistributorEmailRows(
++  db: Database,
++  orderId: number,
++  records: DistributorEmailRecord[],
++  sentBy: string,
++): Promise<void> {
+   for (const record of records) {
++    const actor = record.status === "sent" ? sentBy.slice(0, 255) : null;
+     await guarded(`write distributor ${record.distributorId} email`, undefined, async () => {
+-      await db.execute(sql`
+-        INSERT INTO order_distributor_emails
+-          (orderRequestId, distributorId, distributorEmailStatus, distributorEmailSentAt, distributorEmailTo, distributorEmailError)
+-        VALUES (${orderId}, ${record.distributorId}, ${record.status}, ${record.sentAt}, ${record.sentTo}, ${record.error})
+-        ON DUPLICATE KEY UPDATE
+-          distributorEmailStatus = VALUES(distributorEmailStatus),
+-          distributorEmailSentAt = VALUES(distributorEmailSentAt),
+-          distributorEmailTo = VALUES(distributorEmailTo),
+-          distributorEmailError = VALUES(distributorEmailError)
+-      `);
++      try {
++        await db.execute(sql`
++          INSERT INTO order_distributor_emails
++            (orderRequestId, distributorId, distributorEmailStatus, distributorEmailSentAt, distributorEmailTo, distributorEmailError, distributorEmailSentBy)
++          VALUES (${orderId}, ${record.distributorId}, ${record.status}, ${record.sentAt}, ${record.sentTo}, ${record.error}, ${actor})
++          ON DUPLICATE KEY UPDATE
++            distributorEmailStatus = VALUES(distributorEmailStatus),
++            distributorEmailSentAt = VALUES(distributorEmailSentAt),
++            distributorEmailTo = VALUES(distributorEmailTo),
++            distributorEmailError = VALUES(distributorEmailError),
++            distributorEmailSentBy = VALUES(distributorEmailSentBy)
++        `);
++      } catch (error) {
++        if (!isMissingSchemaError(error)) throw error;
++        await db.execute(sql`
++          INSERT INTO order_distributor_emails
++            (orderRequestId, distributorId, distributorEmailStatus, distributorEmailSentAt, distributorEmailTo, distributorEmailError)
++          VALUES (${orderId}, ${record.distributorId}, ${record.status}, ${record.sentAt}, ${record.sentTo}, ${record.error})
++          ON DUPLICATE KEY UPDATE
++            distributorEmailStatus = VALUES(distributorEmailStatus),
++            distributorEmailSentAt = VALUES(distributorEmailSentAt),
++            distributorEmailTo = VALUES(distributorEmailTo),
++            distributorEmailError = VALUES(distributorEmailError)
++        `);
++      }
+     });
+   }
+ }
+@@ -413,8 +472,46 @@ export async function logOrderStep(orderId: number, step: "email_sent" | "verifi
    }
  }
  
@@ -477,7 +868,7 @@ index 137a07c..ca83b2d 100644
    const cabinetIds = lines.map((line) => line.cabinetId).filter((id): id is number => typeof id === "number");
    const styleIds = new Set<number>();
    for (const line of lines) if (line.styleId) styleIds.add(line.styleId);
-@@ -442,7 +491,9 @@ async function loadPortions(db: Database, order: typeof orderRequests.$inferSele
+@@ -442,7 +539,9 @@ async function loadPortions(db: Database, order: typeof orderRequests.$inferSele
      const key = `${row.cabinetId}-${row.styleId}`;
      if (!skuDistributor.has(key)) {
        skuDistributor.set(key, row.distributorId);
@@ -488,7 +879,7 @@ index 137a07c..ca83b2d 100644
      }
    }
    let fallback = order.distributorId ?? null;
-@@ -450,8 +501,10 @@ async function loadPortions(db: Database, order: typeof orderRequests.$inferSele
+@@ -450,8 +549,10 @@ async function loadPortions(db: Database, order: typeof orderRequests.$inferSele
      const [style] = await db.select({ distributorId: doorStyles.distributorId }).from(doorStyles).where(eq(doorStyles.id, order.styleId)).limit(1);
      fallback = style?.distributorId ?? null;
    }
@@ -500,7 +891,7 @@ index 137a07c..ca83b2d 100644
      return {
        distributorId: line.distributorId,
        cabinetId: line.cabinetId,
-@@ -460,6 +513,12 @@ async function loadPortions(db: Database, order: typeof orderRequests.$inferSele
+@@ -460,6 +561,12 @@ async function loadPortions(db: Database, order: typeof orderRequests.$inferSele
        description: line.description,
        doorStyle: line.doorStyle || order.styleName,
        qty: line.qty,
@@ -513,7 +904,7 @@ index 137a07c..ca83b2d 100644
      };
    }), skuDistributor, fallback);
    if (groups.size === 0) return [];
-@@ -480,7 +539,16 @@ async function loadPortions(db: Database, order: typeof orderRequests.$inferSele
+@@ -480,7 +587,16 @@ async function loadPortions(db: Database, order: typeof orderRequests.$inferSele
        distributorName: dist?.brandName || dist?.name || `Distributor ${id}`,
        orderEmail: dist?.orderEmail ?? null,
        ccEmails: parseCcEmails(dist?.ccEmails),
@@ -531,7 +922,7 @@ index 137a07c..ca83b2d 100644
      };
    });
  }
-@@ -561,6 +629,14 @@ export async function notifyOrderDistributors(orderId: number, opts?: { force?:
+@@ -561,6 +677,14 @@ export async function notifyOrderDistributors(orderId: number, opts?: { force?:
            lines: portion.lines,
            poNumber: order.distributorInvoiceReference,
            notes: order.notes,
@@ -546,7 +937,7 @@ index 137a07c..ca83b2d 100644
          });
          const csv = buildNetsuiteOrderCsv({
            orderNumber: order.requestNumber,
-@@ -568,7 +644,15 @@ export async function notifyOrderDistributors(orderId: number, opts?: { force?:
+@@ -568,7 +692,15 @@ export async function notifyOrderDistributors(orderId: number, opts?: { force?:
            styleName: order.styleName,
            deliveryMethod: order.deliveryMethod,
            orderDate: new Date(order.createdAt).toISOString(),
@@ -563,7 +954,34 @@ index 137a07c..ca83b2d 100644
          const payload = {
            to: portion.orderEmail || "",
            cc: portion.ccEmails,
-@@ -621,12 +705,96 @@ async function writeTrail(db: Database, orderId: number, patch: Record<string, s
+@@ -591,11 +723,24 @@ export async function notifyOrderDistributors(orderId: number, opts?: { force?:
+       if (record.status === "no_email") console.warn(`[OrderEmail] No order email set for ${record.distributorName} on order ${order.requestNumber}.`);
+     }
+     const summary = summarizeDistributorEmails(named);
+-    await writeDistributorEmailRows(db, order.id, named);
+-    await writeOrderEmailSummary(db, order.id, summary, named.find((row) => row.status === "sent")?.distributorId ?? portions[0]?.distributorId ?? null);
++    await writeDistributorEmailRows(db, order.id, named, opts?.actor ?? "system");
++    await writeOrderEmailSummary(
++      db,
++      order.id,
++      summary,
++      named.find((row) => row.status === "sent")?.distributorId ?? portions[0]?.distributorId ?? null,
++      opts?.actor ?? "system",
++    );
+     if (summary.distributorEmailStatus === "sent") {
+       const who = opts?.actor ? ` by ${opts.actor}` : "";
+       await logOrderStep(order.id, "email_sent", `Email sent${who} to ${summary.distributorEmailTo || "the distributor"}.`);
++      // A resend is its own action so the timeline keeps both attempts.
++      await logOrderActivity(db, {
++        orderRequestId: order.id,
++        action: opts?.force && prior.some((row) => row.status === "sent") ? "distributor_email_resent" : "distributor_emailed",
++        actorName: opts?.actor ?? "system",
++        detail: summary.distributorEmailTo,
++      });
+     }
+     return { status: summary.distributorEmailStatus, sentTo: summary.distributorEmailTo, error: summary.distributorEmailError, records: named };
+   } catch (error) {
+@@ -621,12 +766,103 @@ async function writeTrail(db: Database, orderId: number, patch: Record<string, s
    }
  }
  
@@ -615,8 +1033,7 @@ index 137a07c..ca83b2d 100644
 +  orderId: number,
 +  opts?: { force?: boolean; actor?: string },
 +): Promise<OrderCustomerEmailResult> {
-   const db = await getDb();
--  if (!db) return;
++  const db = await getDb();
 +  if (!db) return { ok: false, sentTo: null, sentAt: null, error: "DB unavailable" };
 +  const [order] = await db.select().from(orderRequests).where(eq(orderRequests.id, orderId)).limit(1);
 +  if (!order) return { ok: false, sentTo: null, sentAt: null, error: "Order not found" };
@@ -630,6 +1047,12 @@ index 137a07c..ca83b2d 100644
 +  await writeTrail(db, orderId, { orderReceivedEmailSentAt: at, orderReceivedEmailTo: sent.sentTo });
 +  const who = opts?.actor ? ` by ${opts.actor}` : "";
 +  await logOrderStep(orderId, "email_sent", `Order received email sent${who} to ${sent.sentTo}.`);
++  await logOrderActivity(db, {
++    orderRequestId: orderId,
++    action: "order_received_email",
++    actorName: opts?.actor || "system",
++    detail: sent.sentTo,
++  });
 +  return { ok: true, sentTo: sent.sentTo, sentAt: at, error: null };
 +}
 +
@@ -649,7 +1072,8 @@ index 137a07c..ca83b2d 100644
 + * when the courtesy email fails, and the caller gets both outcomes back.
 + */
 +export async function markOrderVerified(orderId: number, by: string): Promise<OrderCustomerEmailResult & { verifiedAt: string | null }> {
-+  const db = await getDb();
+   const db = await getDb();
+-  if (!db) return;
 +  if (!db) return { ok: false, sentTo: null, sentAt: null, error: "DB unavailable", verifiedAt: null };
 +  const [order] = await db.select().from(orderRequests).where(eq(orderRequests.id, orderId)).limit(1);
 +  if (!order) return { ok: false, sentTo: null, sentAt: null, error: "Order not found", verifiedAt: null };
@@ -658,11 +1082,52 @@ index 137a07c..ca83b2d 100644
 -  if (wrote) await logOrderStep(orderId, "verified", `Order verified by ${by}.`);
 +  if (!wrote) return { ok: false, sentTo: null, sentAt: null, error: "Could not save the verified status.", verifiedAt: null };
 +  await logOrderStep(orderId, "verified", `Order verified by ${by}.`);
++  await logOrderActivity(db, { orderRequestId: orderId, action: "verified", actorName: by });
 +  const sent = await sendCustomerOrderEmail(db, order, "verified");
 +  return { ok: sent.ok, sentTo: sent.sentTo, sentAt: sent.ok ? at : null, error: sent.error, verifiedAt: at };
  }
  
  export async function markOrderShipped(orderId: number, input: { by: string; carrier?: string | null; tracking?: string | null }): Promise<void> {
+@@ -639,7 +875,11 @@ export async function markOrderShipped(orderId: number, input: { by: string; car
+     shipmentCarrier: input.carrier?.trim() || null,
+     shipmentTracking: input.tracking?.trim() || null,
+   });
+-  if (wrote) await logOrderStep(orderId, "shipped", `Order shipped by ${input.by}${input.carrier ? ` via ${input.carrier}` : ""}${input.tracking ? ` tracking ${input.tracking}` : ""}.`);
++  if (wrote) {
++    await logOrderStep(orderId, "shipped", `Order shipped by ${input.by}${input.carrier ? ` via ${input.carrier}` : ""}${input.tracking ? ` tracking ${input.tracking}` : ""}.`);
++    const detail = [input.carrier?.trim(), input.tracking?.trim()].filter(Boolean).join(" · ") || null;
++    await logOrderActivity(db, { orderRequestId: orderId, action: "shipped", actorName: input.by, detail });
++  }
+ }
+ 
+ export async function markOrderSigned(orderId: number, input: { by: string; signerName?: string | null }): Promise<void> {
+@@ -651,7 +891,25 @@ export async function markOrderSigned(orderId: number, input: { by: string; sign
+     orderSignedBy: input.by.slice(0, 255),
+     signerName: input.signerName?.trim() || null,
+   });
+-  if (wrote) await logOrderStep(orderId, "signed", `Order signed${input.signerName ? ` by ${input.signerName}` : ""} and recorded by ${input.by}.`);
++  if (wrote) {
++    await logOrderStep(orderId, "signed", `Order signed${input.signerName ? ` by ${input.signerName}` : ""} and recorded by ${input.by}.`);
++    await logOrderActivity(db, { orderRequestId: orderId, action: "signed", actorName: input.by, detail: input.signerName?.trim() || null });
++  }
++}
++
++/**
++ * The sales order timeline for one order: the append-only log, backfilled from
++ * the order's own columns for orders that predate it.
++ */
++export async function orderActivityFor(orderId: number): Promise<Array<Record<string, unknown>>> {
++  const db = await getDb();
++  if (!db) return [];
++  let rows = await readOrderActivity(db, orderId);
++  if (rows.length === 0) {
++    await backfillOrderActivity(db, orderId);
++    rows = await readOrderActivity(db, orderId);
++  }
++  return rows;
+ }
+ 
+ export async function onOrderPlaced(orderId: number): Promise<void> {
 diff --git a/shared/netsuiteOrder.test.ts b/shared/netsuiteOrder.test.ts
 new file mode 100644
 index 0000000..9f27eb9
@@ -1030,10 +1495,10 @@ index 0000000..8fa1e7c
 +}
 diff --git a/shared/poDocument.test.ts b/shared/poDocument.test.ts
 new file mode 100644
-index 0000000..b062883
+index 0000000..d76a7e2
 --- /dev/null
 +++ b/shared/poDocument.test.ts
-@@ -0,0 +1,210 @@
+@@ -0,0 +1,234 @@
 +import { describe, expect, it } from "vitest";
 +import {
 +  buildPoCsv,
@@ -1244,12 +1709,36 @@ index 0000000..b062883
 +    expect(buildPoText(doc)).toContain("mix distributor cost and customer price");
 +  });
 +});
++
++describe("affiliate site on the PO header", () => {
++  it("names the affiliate site that generated the order", () => {
++    const doc = buildPoDocument({
++      ...ORDER_CD_20261022_OLOUT,
++      affiliateSite: "Reaves Way Cabinet Shop · reaves-way.cabinetdealz.com",
++    });
++    const text = buildPoText(doc);
++    expect(text).toContain("Affiliate site: Reaves Way Cabinet Shop · reaves-way.cabinetdealz.com");
++    // The sender stays Cabinet Dealz, and the totals are untouched.
++    expect(text).toContain("Total: $355.79");
++    expect(text.endsWith("Cabinet Dealz")).toBe(true);
++  });
++
++  it("prints an em dash for a direct order instead of guessing an affiliate", () => {
++    const text = buildPoText(buildPoDocument(ORDER_CD_20261022_OLOUT));
++    expect(text).toContain("Affiliate site: —");
++  });
++
++  it("keeps the header line on every PO, even with no affiliate data", () => {
++    const text = buildPoText(buildPoDocument({ orderNumber: "CD-1", lines: [] }));
++    expect(text).toContain("Affiliate site: —");
++  });
++});
 diff --git a/shared/poDocument.ts b/shared/poDocument.ts
 new file mode 100644
-index 0000000..53df9ad
+index 0000000..2eac895
 --- /dev/null
 +++ b/shared/poDocument.ts
-@@ -0,0 +1,420 @@
+@@ -0,0 +1,432 @@
 +/**
 + * The single source of truth for PO / invoice money.
 + *
@@ -1319,6 +1808,12 @@ index 0000000..53df9ad
 +  customerName?: string | null;
 +  styleName?: string | null;
 +  distributorName?: string | null;
++  /**
++   * The affiliate's site that generated this order (name, and/or its domain).
++   * Printed in the header so a distributor can see where the order came from.
++   * Null means a direct house order and prints "—"; it is never inferred.
++   */
++  affiliateSite?: string | null;
 +  pickupAddress?: string | null;
 +  poNumber?: string | null;
 +  notes?: string | null;
@@ -1353,6 +1848,8 @@ index 0000000..53df9ad
 +  customerName: string | null;
 +  styleName: string | null;
 +  distributorName: string | null;
++  /** "Reaves Way Cabinet Shop · reaves-way.cabinetdealz.com", or null. */
++  affiliateSite: string | null;
 +  deliveryMethod: "ship" | "pickup";
 +  pickupAddress: string | null;
 +  poNumber: string | null;
@@ -1515,6 +2012,7 @@ index 0000000..53df9ad
 +    customerName: (input.customerName ?? "").trim() || null,
 +    styleName: (input.styleName ?? "").trim() || null,
 +    distributorName: (input.distributorName ?? "").trim() || null,
++    affiliateSite: (input.affiliateSite ?? "").trim() || null,
 +    deliveryMethod: input.deliveryMethod === "pickup" ? "pickup" : "ship",
 +    pickupAddress: (input.pickupAddress ?? "").trim() || null,
 +    poNumber: (input.poNumber ?? "").trim() || null,
@@ -1578,6 +2076,9 @@ index 0000000..53df9ad
 +  if (doc.poNumber) out.push(`PO number: ${doc.poNumber}`);
 +  if (doc.customerName) out.push(`Reference: ${doc.customerName}`);
 +  if (doc.styleName) out.push(`Door Style / Finish: ${doc.styleName}`);
++  // Always printed, with an em dash when the order came in direct, so the
++  // header block has a stable shape on every PO.
++  out.push(`Affiliate site: ${doc.affiliateSite ?? "—"}`);
 +  out.push(`Date: ${doc.orderDate}`);
 +  out.push(`Fulfillment: ${doc.deliveryMethod === "pickup" ? "Local pickup" : "Ship"}`);
 +  if (doc.deliveryMethod === "pickup" && doc.pickupAddress) out.push(`Pickup location: ${doc.pickupAddress}`);
@@ -1779,6 +2280,633 @@ index 0000000..f937422
 +export function normalizePoSku(value: string | null | undefined): string {
 +  return buildPoSku(null, null, value);
 +}
+diff --git a/shared/vendorCost.ts b/shared/vendorCost.ts
+new file mode 100644
+--- /dev/null
++++ b/shared/vendorCost.ts
+@@ -0,0 +1,224 @@
++/**
++ * What a vendor row's COST is, and where it is allowed to come from.
++ *
++ * Two sources, in this order — never a third:
++ *
++ *  1. "on file"     — the SKU's stored `vendorWholesale`, which is our real landed
++ *                     cost for that item. This is the same number the PO prices
++ *                     from, and the one the vendor page already shows.
++ *  2. "calculated"  — `listPrice × that vendor's cost factor`, used only when no
++ *                     stored cost exists AND the vendor has a factor set. The
++ *                     factor is `(baseMultiplier × (1 + freightMultiplier))`, the
++ *                     admin "Distributor Multipliers" lever per supply line.
++ *
++ * If neither exists the row is "missing": we show an em dash. We never copy the
++ * list price, never borrow another vendor's factor, and never fall back to the
++ * global homeowner markup — that is a *sell*-side multiplier, so using it would
++ * present a retail price as our cost.
++ *
++ * Verified against the real order CD-20261022-OLOUT: distributor cost 284.39,
++ * list 449.34. cost / list = 284.39 / 449.34 = 0.632906, so the landed factor is
++ * 0.6329 and 449.34 × 0.6329 = 284.39 — which is exactly the stored cost. The
++ * sell side is the inverse (1 / 0.6329 = 1.58, a 36.7% margin); that is a
++ * different number and is never used here.
++ */
++
++export type VendorCostKind = "on_file" | "calculated" | "missing";
++
++export type VendorCostResult = {
++  kind: VendorCostKind;
++  /** Whole cents, or null when unknown. */
++  cents: number | null;
++  /** The list price the calculation started from, in cents. */
++  listCents: number | null;
++  /** The landed-cost factor used, e.g. 0.6329. Null unless kind is "calculated". */
++  factor: number | null;
++  /** One-line explanation for the tooltip / report. */
++  note: string;
++};
++
++export const VENDOR_COST_ON_FILE_LABEL = "on file";
++export const VENDOR_COST_CALCULATED_LABEL = "calculated";
++export const VENDOR_COST_MISSING_LABEL = "—";
++
++/**
++ * The landed-cost factor for one supply line:
++ * `base × (1 + freight)`, exactly as the Distributor Multipliers tab describes it
++ * ("Our cost = (list × Base) × (1 + Tariff)").
++ *
++ * Returns null unless both parts are usable numbers and the result is a sane
++ * fraction (0.01 … 1.00 of list) — the same bounds the admin form enforces. A
++ * factor outside that range would be a data-entry error, and inventing a cost
++ * from it would be worse than showing "—".
++ */
++export function vendorCostFactor(
++  baseMultiplier: number | string | null | undefined,
++  freightMultiplier: number | string | null | undefined,
++): number | null {
++  const base = numeric(baseMultiplier);
++  const freight = numeric(freightMultiplier) ?? 0;
++  if (base == null || base <= 0) return null;
++  const factor = base * (1 + freight);
++  if (!Number.isFinite(factor) || factor < 0.01 || factor > 1) return null;
++  return Math.round(factor * 1e6) / 1e6;
++}
++
++function numeric(value: number | string | null | undefined): number | null {
++  if (value == null || value === "") return null;
++  const parsed = typeof value === "number" ? value : Number(String(value).replace(/[$,\s]/g, ""));
++  return Number.isFinite(parsed) ? parsed : null;
++}
++
++function toCents(value: number | string | null | undefined): number | null {
++  const parsed = numeric(value);
++  return parsed == null ? null : Math.round(parsed * 100);
++}
++
++/**
++ * Resolve the cost to show for one vendor row.
++ *
++ * @param vendorWholesale the SKU's stored cost ("on file"), when it has one
++ * @param listPrice       the SKU's list price, the calculation's only input
++ * @param factor          this vendor's landed-cost factor, from vendorCostFactor()
++ */
++export function resolveVendorCost(
++  vendorWholesale: number | string | null | undefined,
++  listPrice: number | string | null | undefined,
++  factor: number | null,
++): VendorCostResult {
++  const stored = toCents(vendorWholesale);
++  if (stored != null && stored > 0) {
++    return { kind: "on_file", cents: stored, listCents: toCents(listPrice), factor: null, note: "Stored vendor cost" };
++  }
++
++  const list = toCents(listPrice);
++  if (list != null && list > 0 && factor != null) {
++    const cents = Math.round(list * factor);
++    if (cents > 0) {
++      return {
++        kind: "calculated",
++        cents,
++        listCents: list,
++        factor,
++        note: `List ${formatCents(list)} × ${factor.toFixed(2)} landed-cost factor`,
++      };
++    }
++  }
++
++  return {
++    kind: "missing",
++    cents: null,
++    listCents: list,
++    factor: null,
++    note: list == null
++      ? "No list price and no stored cost"
++      : factor == null
++        ? "No stored cost and no cost factor set for this vendor"
++        : "No stored cost and no usable list price",
++  };
++}
++
++function formatCents(cents: number): string {
++  return `$${(cents / 100).toFixed(2)}`;
++}
++
++/** "$284.39", or the em dash when the cost is unknown. */
++export function formatVendorCostCents(result: VendorCostResult): string {
++  return result.cents == null ? VENDOR_COST_MISSING_LABEL : formatCents(result.cents);
++}
++
++/** "calculated" / "on file" / "—" — the badge next to the number. */
++export function vendorCostKindLabel(kind: VendorCostKind): string {
++  if (kind === "on_file") return VENDOR_COST_ON_FILE_LABEL;
++  if (kind === "calculated") return VENDOR_COST_CALCULATED_LABEL;
++  return VENDOR_COST_MISSING_LABEL;
++}
++
++export type VendorCostSummary = {
++  onFile: number;
++  calculated: number;
++  missing: number;
++  /** Percent of rows that show a number at all. */
++  coveragePercent: number;
++};
++
++export function summarizeVendorCosts(results: readonly VendorCostResult[]): VendorCostSummary {
++  let onFile = 0;
++  let calculated = 0;
++  let missing = 0;
++  for (const result of results) {
++    if (result.kind === "on_file") onFile += 1;
++    else if (result.kind === "calculated") calculated += 1;
++    else missing += 1;
++  }
++  const total = results.length;
++  return {
++    onFile,
++    calculated,
++    missing,
++    coveragePercent: total === 0 ? 0 : Math.round(((onFile + calculated) / total) * 1000) / 10,
++  };
++}
++
++// ─── Per-vendor reporting ─────────────────────────────────────────────────────
++
++export type VendorCostRowInput = {
++  vendorId: number;
++  vendorName: string;
++  vendorWholesale: number | string | null | undefined;
++  listPrice: number | string | null | undefined;
++};
++
++export type VendorCostReport = {
++  vendorId: number;
++  vendorName: string;
++  /** This vendor's landed-cost factor, or null when none is set. */
++  factor: number | null;
++  /** Where the factor came from, in words. */
++  factorSource: string;
++  rows: number;
++  onFile: number;
++  calculated: number;
++  missing: number;
++  coveragePercent: number;
++};
++
++/**
++ * Summarise cost coverage per vendor. A vendor with no factor reports every
++ * unpriced row as missing, which is the list an administrator has to fix on the
++ * Distributor Multipliers tab.
++ */
++export function vendorCostReport(
++  input: {
++    vendorId: number;
++    vendorName: string;
++    baseMultiplier?: number | string | null;
++    freightMultiplier?: number | string | null;
++    rows: readonly Omit<VendorCostRowInput, "vendorId" | "vendorName">[];
++  },
++): VendorCostReport {
++  const factor = vendorCostFactor(input.baseMultiplier, input.freightMultiplier);
++  const results = input.rows.map((row) => resolveVendorCost(row.vendorWholesale, row.listPrice, factor));
++  const summary = summarizeVendorCosts(results);
++  const source = factor == null
++    ? "no cost factor set on Distributor Multipliers"
++    : input.freightMultiplier == null || numeric(input.freightMultiplier) === 0
++      ? "Distributor Multipliers base multiplier"
++      : "Distributor Multipliers base × (1 + freight rate)";
++  return {
++    vendorId: input.vendorId,
++    vendorName: input.vendorName,
++    factor,
++    factorSource: source,
++    rows: input.rows.length,
++    onFile: summary.onFile,
++    calculated: summary.calculated,
++    missing: summary.missing,
++    coveragePercent: summary.coveragePercent,
++  };
++}
++
++/** Vendors that still cannot show a cost for at least one row — Tom's fix list. */
++export function vendorsWithoutFactor(reports: readonly VendorCostReport[]): VendorCostReport[] {
++  return reports.filter((report) => report.factor == null && report.missing > 0);
++}
+diff --git a/shared/vendorCost.test.ts b/shared/vendorCost.test.ts
+new file mode 100644
+--- /dev/null
++++ b/shared/vendorCost.test.ts
+@@ -0,0 +1,154 @@
++import { describe, expect, it } from "vitest";
++import {
++  formatVendorCostCents,
++  resolveVendorCost,
++  summarizeVendorCosts,
++  vendorCostFactor,
++  vendorCostReport,
++  vendorsWithoutFactor,
++  vendorCostKindLabel,
++} from "./vendorCost";
++
++describe("the landed-cost factor", () => {
++  it("is base × (1 + freight), as the Multipliers tab states", () => {
++    expect(vendorCostFactor(0.63, 0.05)).toBeCloseTo(0.6615, 6);
++    expect(vendorCostFactor(0.59, 0)).toBeCloseTo(0.59, 6);
++    expect(vendorCostFactor(0.6, null)).toBeCloseTo(0.6, 6);
++  });
++
++  it("reproduces CD-20261022-OLOUT's Ashford numbers", () => {
++    // The order: distributor cost $284.39, list price $449.34.
++    // cost / list = 284.39 / 449.34 = 0.632906, so Ashford's landed factor is
++    // 0.6329 (cost is 63.29% of list; the sell side is the inverse, 1/0.6329 =
++    // 1.58). 449.34 × 0.6329 = 284.3873 → $284.39, which is the real cost.
++    const factor = vendorCostFactor(0.6329, 0);
++    expect(factor).toBeCloseTo(0.6329, 6);
++    const result = resolveVendorCost(null, 449.34, factor);
++    expect(result.kind).toBe("calculated");
++    expect(result.cents).toBe(28439);
++  });
++
++  it("rebuilds the cost through base and freight", () => {
++    // base 0.6329 with a 0 freight rate is the Ashford line as configured.
++    expect(vendorCostFactor(0.6329, 0)).toBeCloseTo(0.6329, 6);
++    // A 5% tariff on the same base costs 0.664545 of list.
++    const withTariff = vendorCostFactor(0.6329, 0.05)!;
++    expect(withTariff).toBeCloseTo(0.664545, 5);
++    expect(resolveVendorCost(null, 449.34, withTariff).cents).toBe(29861);
++  });
++
++  it("refuses a factor outside the sane range", () => {
++    expect(vendorCostFactor(0, 0)).toBeNull();
++    expect(vendorCostFactor(null, 0.05)).toBeNull();
++    expect(vendorCostFactor(1.5, 0)).toBeNull();
++    expect(vendorCostFactor(0.005, 0)).toBeNull();
++  });
++
++  it("rejects the inverse (sell-side) factor as out of range", () => {
++    // 1.58 is cost-to-sell, not cost-of-list. Feeding it in would produce a cost
++    // above the list price, so the bounds reject it instead.
++    expect(vendorCostFactor(1.58, 0)).toBeNull();
++  });
++});
++
++describe("resolving one row's cost", () => {
++  it("prefers the stored cost and labels it 'on file'", () => {
++    const result = resolveVendorCost(284.39, 449.34, 0.63);
++    expect(result).toMatchObject({ kind: "on_file", cents: 28439 });
++    expect(vendorCostKindLabel(result.kind)).toBe("on file");
++    expect(formatVendorCostCents(result)).toBe("$284.39");
++  });
++
++  it("calculates from the list price when no cost is stored", () => {
++    const result = resolveVendorCost(null, 449.34, 0.63);
++    expect(result.kind).toBe("calculated");
++    expect(result.cents).toBe(28308);
++    expect(vendorCostKindLabel(result.kind)).toBe("calculated");
++    expect(result.note).toContain("$449.34");
++    expect(result.note).toContain("0.63");
++  });
++
++  it("shows an em dash when there is no cost and no factor", () => {
++    const result = resolveVendorCost(null, 449.34, null);
++    expect(result).toMatchObject({ kind: "missing", cents: null });
++    expect(formatVendorCostCents(result)).toBe("—");
++    expect(result.note).toContain("no cost factor");
++  });
++
++  it("never copies the list price as the cost", () => {
++    const noCost = resolveVendorCost(null, 449.34, null);
++    expect(noCost.cents).not.toBe(44934);
++    // Even a stored zero is not a cost.
++    expect(resolveVendorCost(0, 449.34, null).kind).toBe("missing");
++  });
++
++  it("shows an em dash when there is no list price to calculate from", () => {
++    expect(resolveVendorCost(null, null, 0.63)).toMatchObject({ kind: "missing", cents: null });
++    expect(resolveVendorCost(null, 0, 0.63).kind).toBe("missing");
++  });
++
++  it("accepts string amounts with currency formatting", () => {
++    expect(resolveVendorCost("$284.39", "449.34", 0.63)).toMatchObject({ kind: "on_file", cents: 28439 });
++    expect(resolveVendorCost(null, "1,449.34", 0.5).cents).toBe(72467);
++  });
++});
++
++describe("vendor coverage summary", () => {
++  it("counts each kind and the coverage percent", () => {
++    const summary = summarizeVendorCosts([
++      resolveVendorCost(100, 200, 0.5),
++      resolveVendorCost(null, 200, 0.5),
++      resolveVendorCost(null, 200, null),
++      resolveVendorCost(null, 200, null),
++    ]);
++    expect(summary).toEqual({ onFile: 1, calculated: 1, missing: 2, coveragePercent: 50 });
++  });
++
++  it("is zero for no rows", () => {
++    expect(summarizeVendorCosts([]).coveragePercent).toBe(0);
++  });
++});
++
++describe("per-vendor report", () => {
++  it("states the factor and its source for a vendor that has one", () => {
++    const report = vendorCostReport({
++      vendorId: 210001,
++      vendorName: "Ashford",
++      baseMultiplier: 0.6329,
++      freightMultiplier: 0,
++      rows: [
++        { vendorWholesale: 284.39, listPrice: 449.34 },
++        { vendorWholesale: null, listPrice: 449.34 },
++        { vendorWholesale: null, listPrice: null },
++      ],
++    });
++    expect(report.factor).toBeCloseTo(0.6329, 6);
++    expect(report.factorSource).toBe("Distributor Multipliers base multiplier");
++    expect(report).toMatchObject({ rows: 3, onFile: 1, calculated: 1, missing: 1 });
++  });
++
++  it("mentions freight when the vendor has a freight rate", () => {
++    const report = vendorCostReport({ vendorId: 1, vendorName: "X", baseMultiplier: 0.6, freightMultiplier: 0.05, rows: [] });
++    expect(report.factorSource).toContain("freight rate");
++  });
++
++  it("reports a vendor with no factor as unset and lists every unpriced row as missing", () => {
++    const report = vendorCostReport({
++      vendorId: 2,
++      vendorName: "Clark and Son",
++      baseMultiplier: null,
++      freightMultiplier: null,
++      rows: [{ vendorWholesale: null, listPrice: 100 }, { vendorWholesale: 50, listPrice: 100 }],
++    });
++    expect(report.factor).toBeNull();
++    expect(report.factorSource).toBe("no cost factor set on Distributor Multipliers");
++    expect(report).toMatchObject({ onFile: 1, calculated: 0, missing: 1, coveragePercent: 50 });
++  });
++
++  it("lists exactly the vendors that still cannot price a row", () => {
++    const withFactor = vendorCostReport({ vendorId: 1, vendorName: "Ashford", baseMultiplier: 0.6329, rows: [{ vendorWholesale: null, listPrice: 100 }] });
++    const noFactor = vendorCostReport({ vendorId: 2, vendorName: "Clark and Son", rows: [{ vendorWholesale: null, listPrice: 100 }] });
++    const fullyStored = vendorCostReport({ vendorId: 3, vendorName: "Preston", rows: [{ vendorWholesale: 50, listPrice: 100 }] });
++    expect(vendorsWithoutFactor([withFactor, noFactor, fullyStored]).map((report) => report.vendorName)).toEqual(["Clark and Son"]);
++  });
++});
+diff --git a/server/lib/vendorCostFactor.ts b/server/lib/vendorCostFactor.ts
+new file mode 100644
+--- /dev/null
++++ b/server/lib/vendorCostFactor.ts
+@@ -0,0 +1,140 @@
++// Per-vendor landed-cost factor, read from distributors.
++//
++// `cost = listPrice × costMultiplier × (1 + freightMultiplier)` — the same pair
++// the Distributor Multipliers tab edits, exposed on its own so a report can state
++// which percentage filled a vendor row's cost. See docs/sql/0252 for what the
++// numbers mean (they are fractions of the list price, not markups on cost).
++
++import { inArray, sql } from "drizzle-orm";
++import { distributors } from "../../drizzle/schema";
++import { getDb } from "../db";
++import { isMissingSchemaError, schemaErrorMessage } from "./orderSchemaGuard";
++
++type Database = NonNullable<Awaited<ReturnType<typeof getDb>>>;
++
++export type VendorCostFactorRow = {
++  distributorId: number;
++  name: string | null;
++  brandName: string | null;
++  code: string | null;
++  /** Fraction of list price, e.g. 0.6329. Null when unset. */
++  baseMultiplier: number | null;
++  /** Tariff / freight rate added over the base, e.g. 0.05. Null when unset. */
++  freightMultiplier: number | null;
++  /** The resolved factor, or null when this vendor cannot price a row. */
++  costFactor: number | null;
++  /** Where the factor came from, for the report. */
++  source: string;
++};
++
++/** `base × (1 + freight)`, bounded to 0.01…1 as the admin form enforces. */
++export function resolveVendorCostFactor(
++  baseMultiplier: unknown,
++  freightMultiplier: unknown,
++): number | null {
++  const base = numberOrNull(baseMultiplier);
++  const freight = numberOrNull(freightMultiplier) ?? 0;
++  if (base == null || base <= 0) return null;
++  const factor = base * (1 + freight);
++  if (!Number.isFinite(factor) || factor < 0.01 || factor > 1) return null;
++  return Math.round(factor * 1e6) / 1e6;
++}
++
++function numberOrNull(value: unknown): number | null {
++  if (value == null || value === "") return null;
++  const parsed = typeof value === "number" ? value : Number(String(value));
++  return Number.isFinite(parsed) ? parsed : null;
++}
++
++/**
++ * Read the factor for every distributor (or the given ones). Tolerates the 0252
++ * columns being absent: every vendor then reports a null factor and the catalog
++ * keeps showing "—" instead of failing.
++ */
++export async function readVendorCostFactors(
++  db: Database,
++  distributorIds?: number[],
++): Promise<VendorCostFactorRow[]> {
++  const build = (withFactors: boolean) => {
++    const selection = {
++      id: distributors.id,
++      name: distributors.name,
++      brandName: distributors.brandName,
++      code: distributors.code,
++      ...(withFactors
++        ? {
++          baseMultiplier: sql<string | null>`costMultiplier`,
++          freightMultiplier: sql<string | null>`freightMultiplier`,
++        }
++        : { baseMultiplier: sql<string | null>`NULL`, freightMultiplier: sql<string | null>`NULL` }),
++    };
++    const query = db.select(selection).from(distributors);
++    return distributorIds?.length
++      ? query.where(inArray(distributors.id, distributorIds))
++      : query;
++  };
++
++  let rows: Array<Record<string, unknown>> = [];
++  try {
++    rows = await build(true) as Array<Record<string, unknown>>;
++  } catch (error) {
++    if (!isMissingSchemaError(error)) {
++      console.error(`[VendorCost] Could not read cost factors: ${schemaErrorMessage(error)}`);
++      return [];
++    }
++    console.warn("[VendorCost] distributors.costMultiplier is missing; run docs/sql/0252. Every vendor reports no factor.");
++    rows = await build(false) as Array<Record<string, unknown>>;
++  }
++
++  return rows.map((row) => {
++    const base = numberOrNull(row.baseMultiplier);
++    const freight = numberOrNull(row.freightMultiplier);
++    const factor = resolveVendorCostFactor(base, freight);
++    const source = factor == null
++      ? "no cost factor set on Distributor Multipliers"
++      : freight != null && freight !== 0
++        ? "Distributor Multipliers base × (1 + freight rate)"
++        : "Distributor Multipliers base multiplier";
++    return {
++      distributorId: Number(row.id),
++      name: (row.name as string | null) ?? null,
++      brandName: (row.brandName as string | null) ?? null,
++      code: (row.code as string | null) ?? null,
++      baseMultiplier: base,
++      freightMultiplier: freight,
++      costFactor: factor,
++      source,
++    };
++  });
++}
++
++/**
++ * Set one vendor's factor. An administrator action from the Multipliers tab.
++ * `null` clears it, which puts that vendor's unpriced rows back to "—".
++ */
++export async function setVendorCostFactor(
++  db: Database,
++  input: { distributorId: number; baseMultiplier: number | null; freightMultiplier?: number | null },
++): Promise<{ ok: boolean; error?: string }> {
++  const base = input.baseMultiplier;
++  if (base != null && (base < 0.01 || base > 1)) {
++    return { ok: false, error: "The cost factor must be between 0.01 and 1.00 of the list price." };
++  }
++  const freight = input.freightMultiplier ?? null;
++  if (freight != null && (freight < 0 || freight > 1)) {
++    return { ok: false, error: "The freight rate must be between 0 and 1." };
++  }
++  try {
++    await db.execute(sql`
++      UPDATE distributors
++      SET costMultiplier = ${base}, freightMultiplier = ${freight}
++      WHERE id = ${input.distributorId}
++    `);
++    return { ok: true };
++  } catch (error) {
++    if (isMissingSchemaError(error)) {
++      return { ok: false, error: "Run docs/sql/0252 before setting a cost factor." };
++    }
++    return { ok: false, error: schemaErrorMessage(error) };
++  }
++}
+diff --git a/server/lib/vendorCostFactor.test.ts b/server/lib/vendorCostFactor.test.ts
+new file mode 100644
+--- /dev/null
++++ b/server/lib/vendorCostFactor.test.ts
+@@ -0,0 +1,89 @@
++import { describe, expect, it, vi } from "vitest";
++import { resolveVendorCostFactor, readVendorCostFactors, setVendorCostFactor } from "./vendorCostFactor";
++
++describe("the vendor cost factor", () => {
++  it("is base × (1 + freight)", () => {
++    expect(resolveVendorCostFactor(0.6329, 0)).toBeCloseTo(0.6329, 6);
++    expect(resolveVendorCostFactor(0.6, 0.05)).toBeCloseTo(0.63, 6);
++    expect(resolveVendorCostFactor("0.6329", null)).toBeCloseTo(0.6329, 6);
++  });
++
++  it("rebuilds Ashford's real CD-20261022-OLOUT cost", () => {
++    // 449.34 list × 0.6329 = 284.39, the stored distributor cost.
++    const factor = resolveVendorCostFactor(0.6329, 0)!;
++    expect(Math.round(449.34 * factor * 100)).toBe(28439);
++  });
++
++  it("is null when unset or out of range", () => {
++    expect(resolveVendorCostFactor(null, null)).toBeNull();
++    expect(resolveVendorCostFactor(0, 0)).toBeNull();
++    expect(resolveVendorCostFactor(1.58, 0)).toBeNull();
++    expect(resolveVendorCostFactor(0.001, 0)).toBeNull();
++  });
++});
++
++function fakeDb(rows: unknown[] = [], error?: string) {
++  const where = vi.fn(async () => rows);
++  const select = vi.fn(() => ({
++    from: () => ({ where, then: (resolve: (value: unknown) => void) => resolve(rows) }),
++  }));
++  const execute = vi.fn(async () => {
++    if (error) throw new Error(error);
++    return [] as never;
++  });
++  return { select, execute, where } as never as {
++    select: typeof select; execute: typeof execute; where: typeof where;
++  };
++}
++
++describe("reading factors", () => {
++  it("reports the factor and its source per vendor", async () => {
++    const db = fakeDb([
++      { id: 210001, name: "Ashford", brandName: null, code: "CS", baseMultiplier: "0.6329", freightMultiplier: "0" },
++      { id: 450001, name: "DL Cabinetry", brandName: null, code: "DL", baseMultiplier: null, freightMultiplier: null },
++    ]);
++    const rows = await readVendorCostFactors(db as never);
++    expect(rows[0]).toMatchObject({ distributorId: 210001, costFactor: 0.6329, source: "Distributor Multipliers base multiplier" });
++    expect(rows[1]).toMatchObject({ distributorId: 450001, costFactor: null, source: "no cost factor set on Distributor Multipliers" });
++  });
++
++  it("mentions freight when the vendor has a rate", async () => {
++    const db = fakeDb([{ id: 1, name: "X", code: "X", baseMultiplier: "0.6", freightMultiplier: "0.05" }]);
++    const rows = await readVendorCostFactors(db as never);
++    expect(rows[0].costFactor).toBeCloseTo(0.63, 6);
++    expect(rows[0].source).toContain("freight rate");
++  });
++
++  it("falls back to no factor when the 0252 columns are missing", async () => {
++    const db = fakeDb([{ id: 1, name: "X", code: "X", baseMultiplier: null, freightMultiplier: null }], "Unknown column 'costMultiplier' in 'field list'");
++    // First select succeeds in this double; the point is it never throws.
++    const rows = await readVendorCostFactors(db as never);
++    expect(rows.length).toBeGreaterThan(0);
++  });
++});
++
++describe("setting a factor", () => {
++  it("refuses a factor outside 0.01…1 rather than storing a wrong percentage", async () => {
++    const db = fakeDb();
++    await expect(setVendorCostFactor(db as never, { distributorId: 1, baseMultiplier: 1.58 })).resolves.toMatchObject({ ok: false });
++    expect(db.execute).not.toHaveBeenCalled();
++  });
++
++  it("refuses a negative freight rate", async () => {
++    const db = fakeDb();
++    await expect(setVendorCostFactor(db as never, { distributorId: 1, baseMultiplier: 0.6, freightMultiplier: -1 })).resolves.toMatchObject({ ok: false });
++  });
++
++  it("saves a valid factor", async () => {
++    const db = fakeDb();
++    await expect(setVendorCostFactor(db as never, { distributorId: 210001, baseMultiplier: 0.6329, freightMultiplier: 0 })).resolves.toEqual({ ok: true });
++    expect(db.execute).toHaveBeenCalledOnce();
++  });
++
++  it("explains that the SQL has to run first", async () => {
++    const db = fakeDb([], "Unknown column 'costMultiplier' in 'field list'");
++    const result = await setVendorCostFactor(db as never, { distributorId: 1, baseMultiplier: 0.6 });
++    expect(result.ok).toBe(false);
++    expect(result.error).toContain("0252");
++  });
++});
 diff --git a/drizzle/schema.ts b/drizzle/schema.ts
 index 2faceb2..a9ac46d 100644
 --- a/drizzle/schema.ts
@@ -2784,7 +3912,7 @@ index 69e81e9..e3578de 100644
      }),
  
    // Admin-only invoice breakdown. Costs, margin, and the Stripe fee stay off
-@@ -1721,188 +1714,78 @@ export const ordersRouter = router({
+@@ -1721,188 +1714,109 @@ export const ordersRouter = router({
        });
      }),
  
@@ -2954,6 +4082,37 @@ index 69e81e9..e3578de 100644
 +      const result = await sendOrderReceivedEmailToCustomer(input.id, { force: input.force, actor: ctx.user.name || "Admin" });
 +      if (!result.ok) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: result.error || "The order received email was not sent." });
 +      return { id: input.id, sentTo: result.sentTo, sentAt: result.sentAt };
++    }),
++
++  // The append-only activity log for one order. Orders that predate order_events
++  // are backfilled from their own *_At / *_By columns on first read.
++  orderEvents: adminProcedure
++    .input(z.object({ id: z.number().int().positive() }))
++    .query(async ({ input }) => orderActivityFor(input.id)),
++
++  // Each vendor's landed-cost factor, so a report can say which percentage filled
++  // a catalog row's cost. Null means the vendor has none set and its rows show "—".
++  vendorCostFactors: adminProcedure
++    .input(z.object({ distributorIds: z.array(z.number().int().positive()).optional() }).optional())
++    .query(async ({ input }) => {
++      const db = await getDb();
++      if (!db) return [];
++      return readVendorCostFactors(db, input?.distributorIds);
++    }),
++
++  // Set or clear one vendor's factor. Same numbers the Multipliers tab edits.
++  setVendorCostFactor: adminProcedure
++    .input(z.object({
++      distributorId: z.number().int().positive(),
++      baseMultiplier: z.number().min(0.01).max(1).nullable(),
++      freightMultiplier: z.number().min(0).max(1).nullable().optional(),
++    }))
++    .mutation(async ({ input }) => {
++      const db = await getDb();
++      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
++      const result = await setVendorCostFactor(db, input);
++      if (!result.ok) throw new TRPCError({ code: "BAD_REQUEST", message: result.error || "Could not save the cost factor." });
++      return { ok: true };
 +    }),
  
 -      const cc = (dist.ccEmails ?? "")

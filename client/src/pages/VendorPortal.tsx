@@ -82,6 +82,13 @@ import { catalogCategoryValuesEqual } from "@shared/catalogCategorySpelling";
 import { VendorSalesForecast } from "@/components/vendor/VendorSalesForecast";
 import { pelicanVendorCostLabel } from "@/lib/vendorCostLabel";
 import { formatVendorCost } from "@shared/salesForecast";
+import {
+  formatVendorCostCents,
+  resolveVendorCost,
+  vendorCostFactor,
+  vendorCostKindLabel,
+  type VendorCostResult,
+} from "@shared/vendorCost";
 import { catalogEditorEntry, isInternalSalesRole, type CatalogEditorEntry } from "@shared/internalSales";
 import { VendorInventory } from "@/components/vendor/VendorInventory";
 import { VendorPricing } from "@/components/vendor/VendorPricing";
@@ -1603,6 +1610,19 @@ function CatalogPage() {
     }
   }, [updateImage]);
 
+  // This supply line's landed-cost factor, used ONLY to fill a row that has no
+  // stored vendor cost. Null means the line has no factor configured, and those
+  // rows keep showing "—" rather than a guessed number.
+  // myLine returns { line, counts, styles }, so the multipliers sit on `line`.
+  const lineMultipliers = (myLine.data as { line?: { baseMultiplier?: string | number | null; freightMultiplier?: string | number | null; costMultiplier?: string | number | null } } | undefined)?.line;
+  const lineCostFactor = useMemo(
+    () => vendorCostFactor(
+      lineMultipliers?.costMultiplier ?? lineMultipliers?.baseMultiplier,
+      lineMultipliers?.freightMultiplier,
+    ),
+    [lineMultipliers?.costMultiplier, lineMultipliers?.baseMultiplier, lineMultipliers?.freightMultiplier],
+  );
+
   const styles = myLine.data?.styles ?? [];
   const categories = useMemo(() => {
     const fromServer = (catalog.data as { categories?: Array<string | null> } | undefined)?.categories;
@@ -1704,6 +1724,7 @@ function CatalogPage() {
                 <TableHead>Style</TableHead>
                 <TableHead>Category</TableHead>
                 <TableHead className="text-right">List</TableHead>
+                <TableHead className="text-right">Cost</TableHead>
                 <TableHead className="text-right">Wholesale</TableHead>
                 <TableHead className="text-right">Contractor</TableHead>
                 <TableHead className="text-right">On hand</TableHead>
@@ -1736,6 +1757,23 @@ function CatalogPage() {
                     >
                       {money(item.listPrice)}
                     </button>
+                  </TableCell>
+                  <TableCell className="text-right" data-testid="cabinet-catalog-cost">
+                    {(() => {
+                      const cost = resolveVendorCost(item.vendorWholesale, item.listPrice, lineCostFactor);
+                      return (
+                        <span title={cost.note}>
+                          <span className={`text-sm ${cost.kind === "calculated" ? "italic text-muted-foreground" : ""}`}>
+                            {formatVendorCostCents(cost)}
+                          </span>
+                          {cost.kind !== "missing" && (
+                            <span className="mt-0.5 block text-[10px] uppercase tracking-wide text-muted-foreground">
+                              {vendorCostKindLabel(cost.kind)}
+                            </span>
+                          )}
+                        </span>
+                      );
+                    })()}
                   </TableCell>
                   <TableCell className="text-right">
                     <button

@@ -63,6 +63,7 @@ import NotificationSettingsAdmin from "@/components/admin/NotificationSettingsAd
 import ApiStatusAdmin from "@/components/admin/ApiStatusAdmin";
 import QuickBooksAdmin from "@/components/admin/QuickBooksAdmin";
 import IncomingOrdersAdmin from "@/components/admin/IncomingOrdersAdmin";
+import MasterOrders from "@/components/admin/MasterOrders";
 import { DesignerCoverageAdmin } from "@/components/admin/DesignerCoverageAdmin";
 import { AdminTabHelp } from "@/components/admin/AdminTabHelp";
 import { CATALOG_SECTIONS, canonicalAdminTab, catalogLeaves, resolveCatalogTab } from "@/components/admin/catalogAdminTabs";
@@ -117,6 +118,7 @@ const GROUPS = [
     icon: ShoppingCart,
     tabs: [
       { value: "orders", label: "Incoming Orders" },
+      { value: "master-orders", label: "Master Orders" },
       { value: "sales-forecast", label: "Sales Forecast" },
       { value: "sample-orders", label: "Sample Orders" },
       { value: "vendor-updates", label: "Vendor Updates" },
@@ -591,6 +593,7 @@ export default function AdminGroupedTabs() {
         <div className={currentGroup.id === "settings" ? "min-w-0" : undefined}>
         {/* Sales & Orders */}
         <TabsContent value="orders" className="mt-6"><AdminTabErrorBoundary tabName="Incoming Orders"><AdminTabHelp tab="orders" /><IncomingOrdersAdmin /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="master-orders" className="mt-6"><AdminTabErrorBoundary tabName="Master Orders"><AdminTabHelp tab="master-orders" /><MasterOrders /></AdminTabErrorBoundary></TabsContent>
         <TabsContent value="sales-forecast" className="mt-6"><AdminTabErrorBoundary tabName="Sales Forecast"><SalesForecastAdmin /></AdminTabErrorBoundary></TabsContent>
         <TabsContent value="sample-orders" className="mt-6"><AdminTabErrorBoundary tabName="Sample Orders"><SampleOrderDesk mode="admin" /></AdminTabErrorBoundary></TabsContent>
         <TabsContent value="vendor-updates" className="mt-6"><AdminTabErrorBoundary tabName="Vendor Updates"><VendorUpdatesAdmin /></AdminTabErrorBoundary></TabsContent>

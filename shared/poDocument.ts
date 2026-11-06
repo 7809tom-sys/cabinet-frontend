@@ -67,6 +67,12 @@ export type PoDocumentInput = PoTotalsInput & {
   customerName?: string | null;
   styleName?: string | null;
   distributorName?: string | null;
+  /**
+   * The affiliate's site that generated this order (name, and/or its domain).
+   * Printed in the header so a distributor can see where the order came from.
+   * Null means a direct house order and prints "—"; it is never inferred.
+   */
+  affiliateSite?: string | null;
   pickupAddress?: string | null;
   poNumber?: string | null;
   notes?: string | null;
@@ -101,6 +107,8 @@ export type PoDocument = {
   customerName: string | null;
   styleName: string | null;
   distributorName: string | null;
+  /** "Reaves Way Cabinet Shop · reaves-way.cabinetdealz.com", or null. */
+  affiliateSite: string | null;
   deliveryMethod: "ship" | "pickup";
   pickupAddress: string | null;
   poNumber: string | null;
@@ -263,6 +271,7 @@ export function buildPoDocument(input: PoDocumentInput): PoDocument {
     customerName: (input.customerName ?? "").trim() || null,
     styleName: (input.styleName ?? "").trim() || null,
     distributorName: (input.distributorName ?? "").trim() || null,
+    affiliateSite: (input.affiliateSite ?? "").trim() || null,
     deliveryMethod: input.deliveryMethod === "pickup" ? "pickup" : "ship",
     pickupAddress: (input.pickupAddress ?? "").trim() || null,
     poNumber: (input.poNumber ?? "").trim() || null,
@@ -326,6 +335,9 @@ export function buildPoText(doc: PoDocument, opts?: { distributorName?: string |
   if (doc.poNumber) out.push(`PO number: ${doc.poNumber}`);
   if (doc.customerName) out.push(`Reference: ${doc.customerName}`);
   if (doc.styleName) out.push(`Door Style / Finish: ${doc.styleName}`);
+  // Always printed, with an em dash when the order came in direct, so the
+  // header block has a stable shape on every PO.
+  out.push(`Affiliate site: ${doc.affiliateSite ?? "—"}`);
   out.push(`Date: ${doc.orderDate}`);
   out.push(`Fulfillment: ${doc.deliveryMethod === "pickup" ? "Local pickup" : "Ship"}`);
   if (doc.deliveryMethod === "pickup" && doc.pickupAddress) out.push(`Pickup location: ${doc.pickupAddress}`);
