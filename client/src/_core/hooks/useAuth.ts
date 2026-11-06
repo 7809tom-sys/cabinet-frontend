@@ -1,5 +1,6 @@
 import { getLoginUrl } from "@/const";
 import { supabase } from "@/lib/supabase";
+import { clearTabSessionHints } from "@/lib/tabSession";
 import { trpc } from "@/lib/trpc";
 import { TRPCClientError } from "@trpc/client";
 import { useCallback, useEffect, useMemo } from "react";
@@ -27,11 +28,12 @@ export function useAuth(options?: UseAuthOptions) {
 
   const logout = useCallback(async () => {
     try {
-      window.sessionStorage.removeItem("cd.testAccountToken");
+      clearTabSessionHints();
       // Scope is explicit: the supabase-js default is 'global', which revokes
       // every refresh token this user has and signs them out of the main site,
       // affiliate /store/:slug stores, admin, and contractor portals at once.
-      // 'local' ends only this browser's session on this origin.
+      // 'local' ends only this tab's session, because the session itself is
+      // stored per tab (see client/src/lib/supabase.ts).
       await supabase.auth.signOut({ scope: "local" });
       // Also clears any legacy session cookie.
       await logoutMutation.mutateAsync();

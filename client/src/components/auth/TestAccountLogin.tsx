@@ -1,10 +1,9 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { TAB_TEST_ACCOUNT_TOKEN_KEY } from "@/lib/trpcAuthFetch";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-
-const TOKEN_KEY = "cd.testAccountToken";
 
 export function TestAccountLogin({ suggested }: { suggested?: "customer" | "contractor" }) {
   const enabled = trpc.auth.testAccountsEnabled.useQuery(undefined, { retry: false });
@@ -23,7 +22,7 @@ export function TestAccountLogin({ suggested }: { suggested?: "customer" | "cont
         setError(null);
         login.mutate({ username, password }, {
           onSuccess: (result) => {
-            window.sessionStorage.setItem(TOKEN_KEY, result.token);
+            window.sessionStorage.setItem(TAB_TEST_ACCOUNT_TOKEN_KEY, result.token);
             window.location.assign(result.destination);
           },
           onError: (err) => setError(err.message),
