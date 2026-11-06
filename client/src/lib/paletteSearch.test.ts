@@ -73,7 +73,7 @@ describe("matchesPaletteSearch", () => {
     const tray = cab({
       masterCode: "BT9",
       description: "9\" Tray Base Cabinet",
-      aliases: "B9; BFH9; BT-09; BT09; BSR9; FHB09; FHBO9; TBO9; FH9",
+      aliases: "B9; BFH9; BT-09; BT09; FHB09; FHBO9; TBO9; FH9",
     });
     expect(matchesPaletteSearch(tray, normalizePaletteSearch("FH9"))).toBe(true);
     expect(matchesPaletteSearch(tray, normalizePaletteSearch("BT-09"))).toBe(true);

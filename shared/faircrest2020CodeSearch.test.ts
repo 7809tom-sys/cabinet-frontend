@@ -5,7 +5,10 @@ import {
   catalogItemMatchesCode,
   searchCatalogItems,
 } from "./catalogCodeSearch";
-import { resolveFaircrest2020CatalogCode } from "./faircrest2020Aliases";
+import {
+  faircrest2020MasterCode,
+  resolveFaircrest2020CatalogCode,
+} from "./faircrest2020Aliases";
 
 // A slice of the live catalog shape with the specialty rows this mapping is for.
 const CATALOG = [
@@ -100,9 +103,10 @@ describe("Faircrest 2020 codes in catalog search", () => {
     expect(
       searchCatalogItems(CATALOG, "LS3612-L").map((hit) => hit.item.masterCode),
     ).toEqual(["LSB36"]);
-    // WBC2730-R is Faircrest's handed spelling of our unhanded WBC2730 row.
+    // WBC2430-R is Faircrest's 24/27 band spelling of our unhanded WBC2730 row
+    // (Tom mapped the 27" wall blind corners onto the 24/27 band).
     expect(
-      searchCatalogItems(CATALOG, "WBC2730-R").map(
+      searchCatalogItems(CATALOG, "WBC2430-R").map(
         (hit) => hit.item.masterCode,
       ),
     ).toEqual(["WBC2730"]);
@@ -117,7 +121,8 @@ describe("Faircrest 2020 codes in catalog search", () => {
   it("does not match a Faircrest size we do not sell", () => {
     // WOS1230 has no row of ours in this catalog slice.
     expect(searchCatalogItems(CATALOG, "WOS1230")).toEqual([]);
-    // BBC42 is a needs-Tom row: it must not be guessed onto BBC36 or anything else.
+    // BBC42 has no Faircrest equivalent (Tom), so it must not be guessed onto
+    // BBC36 or any BCB42 code either.
     expect(searchCatalogItems(CATALOG, "BBC42")).toEqual([]);
   });
 
@@ -155,8 +160,98 @@ describe("Faircrest 2020 codes in cart code matching", () => {
     expect(match.masterCode).toBe("WBC2730");
   });
 
+  it("resolves ER36 / ER 36 / ER-36 to the BER36 row", () => {
+    const index = buildCodeIndex(CATALOG);
+    for (const code of ["ER36", "ER 36", "ER-36", "er36", "ER36-L", "ER36-R"]) {
+      const match = matchCode(code, index);
+      expect(match.matched).toBe(true);
+      expect(match.masterCode).toBe("BER36");
+      expect(match.confidence).toBe("normalized");
+    }
+    // ER33 is still an open question, so it must not be guessed onto BER36.
+    expect(matchCode("ER33", index).matched).toBe(false);
+    expect(
+      searchCatalogItems(CATALOG, "ER-36").map((hit) => hit.item.masterCode),
+    ).toEqual(["BER36"]);
+  });
+
+  it("resolves an LS3612 / LS36 cart line to the lazy susan row", () => {
+    const index = buildCodeIndex(CATALOG);
+    for (const code of ["LS3612", "LS36", "LS-36", "LS3612-R"]) {
+      expect(matchCode(code, index).masterCode).toBe("LSB36");
+    }
+  });
+
+  it("resolves every full-height base 9 spelling to whichever row the line sells", () => {
+    // A line that sells BT9 (330011) and one that sells BT9FH (540005) must not
+    // cross: each line's own row wins, because this is a lookup alias only.
+    const bt9Line = [{ id: 1, masterCode: "BT9", description: "9 tray base" }];
+    const bt9fhLine = [
+      { id: 2, masterCode: "BT9FH", description: "9 full height base" },
+    ];
+    for (const code of ["BFH9", "B9FH", "BT9", "BT09", "TB9", "TB09"]) {
+      expect(matchCode(code, buildCodeIndex(bt9Line)).masterCode).toBe("BT9");
+      expect(matchCode(code, buildCodeIndex(bt9fhLine)).masterCode).toBe(
+        "BT9FH",
+      );
+    }
+    // BT9PO never collapses into the full-height family: with its own row
+    // present it resolves to itself, and it is not in the TB09 alias group.
+    const withPo = [
+      ...bt9Line,
+      {
+        id: 3,
+        masterCode: "BT9PO",
+        description: '9" Base with Spice Rack Pullout',
+      },
+    ];
+    expect(matchCode("BT9PO", buildCodeIndex(withPo)).masterCode).toBe("BT9PO");
+    expect(faircrest2020MasterCode("BT9PO")).toBeNull();
+  });
+
+  it("does not resolve SPO9 onto BT9PO", () => {
+    const catalog = [
+      {
+        id: 1,
+        masterCode: "BT9PO",
+        description: '9" Base with Spice Rack Pullout',
+      },
+      { id: 2, masterCode: "BT9", description: '9" Tray Base Cabinet' },
+    ];
+    expect(resolveFaircrest2020CatalogCode("SPO9", catalog)).toBeNull();
+    expect(matchCode("SPO9", buildCodeIndex(catalog)).masterCode).not.toBe(
+      "BT9PO",
+    );
+    // The spice unit's own code still matches itself when the row exists.
+    const withSpo9 = [
+      ...catalog,
+      { id: 3, masterCode: "SPO9", description: "9 Spice Pullout" },
+    ];
+    expect(matchCode("SPO9", buildCodeIndex(withSpo9)).masterCode).toBe("SPO9");
+  });
+
+  it("resolves wall easy reach spellings onto the WER row", () => {
+    const catalog = [
+      { id: 1, masterCode: "WER2436", description: "24x36 wall easy reach" },
+    ];
+    for (const code of [
+      "WER2436",
+      "ER2436",
+      "ERW2436",
+      "ER 2436",
+      "WER2436-L",
+    ]) {
+      expect(matchCode(code, buildCodeIndex(catalog)).masterCode).toBe(
+        "WER2436",
+      );
+    }
+    // No 35/40 inch Faircrest counterpart, so those never match.
+    expect(matchCode("WER2435", buildCodeIndex(catalog)).matched).toBe(false);
+    expect(matchCode("ER2435", buildCodeIndex(catalog)).matched).toBe(false);
+  });
+
   it("leaves an unconfirmed code unmatched instead of guessing", () => {
-    for (const code of ["BBC42", "BBC45", "CSB36", "WRC3015", "SP09"]) {
+    for (const code of ["BBC42", "WRC3015", "SP09"]) {
       const match = matchCode(code, buildCodeIndex(CATALOG));
       expect(match.matched).toBe(false);
       expect(match.confidence).toBe("none");
@@ -216,5 +311,39 @@ describe("Faircrest aliasing never steals a real master", () => {
     expect(resolveFaircrest2020CatalogCode("LS3612", catalog)).toBeNull();
     // A code that IS a row's own master still resolves, to that row.
     expect(resolveFaircrest2020CatalogCode("LS36", catalog)?.id).toBe(2);
+  });
+
+  it("keeps WRC3015 on its OWN priced row after the LWR3015 alias (Tom)", () => {
+    // 0230 split these two so Skyline's WRC3015 keeps its own supplier prices.
+    // The Faircrest alias must never move a code off its priced row.
+    const catalog = [
+      {
+        id: 1,
+        masterCode: "WRC3015",
+        description: "Skyline 30x15 wall wine rack",
+      },
+      {
+        id: 2,
+        masterCode: "LWR3015",
+        description: "Ashford lattice wine rack",
+      },
+    ];
+    const index = buildCodeIndex(catalog);
+    // The code still resolves to itself, exactly, never to LWR3015.
+    const match = matchCode("WRC3015", index);
+    expect(match.matched).toBe(true);
+    expect(match.cabinetId).toBe(1);
+    expect(match.masterCode).toBe("WRC3015");
+    expect(match.confidence).toBe("exact");
+    // The lookup helper agrees: an exact master code always wins.
+    expect(resolveFaircrest2020CatalogCode("WRC3015", catalog)?.id).toBe(1);
+    expect(resolveFaircrest2020CatalogCode("LWR3015", catalog)?.id).toBe(2);
+    // Search ranks WRC3015 first for its own code: no alias steals the hit.
+    expect(
+      searchCatalogItems(catalog, "WRC3015").map((hit) => hit.item.masterCode),
+    ).toEqual(["WRC3015"]);
+    // Only the Faircrest question answers LWR3015; the sellable code does not.
+    expect(faircrest2020MasterCode("WRC3015")).toBe("LWR3015");
+    expect(matchCode("WRC3015", index).masterCode).not.toBe("LWR3015");
   });
 });
