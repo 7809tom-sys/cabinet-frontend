@@ -13,7 +13,7 @@ describe("Designer admin edit notice", () => {
     const directDesigner = source.slice(source.indexOf("function DesignerRoute"), source.indexOf("function DistributorPortalRedirect"));
     expect(directDesigner).not.toContain("<AdminEditModeBar />");
     // The shared page shell still renders the bar, now behind the route rule
-    // that drops it on the CRM and order views.
+    // that drops it on every admin route.
     expect(source).toContain("{showAdminEditModeBar && <AdminEditModeBar />}\n      <TopNav />");
   });
 });

@@ -2,6 +2,8 @@
  * AdminEditModeBar — A slim, fixed top bar visible only to admins.
  * Signals that inline edit controls are active on the current page.
  * Renders nothing for non-admins so it has zero impact on customers.
+ * The admin panel owns its own header, so it skips this bar entirely; see
+ * hideAdminEditModeBarForRoute in lib/adminChrome.ts.
  */
 import { useState } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
