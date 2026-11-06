@@ -73,10 +73,20 @@ describe("matchesPaletteSearch", () => {
     const tray = cab({
       masterCode: "BT9",
       description: "9\" Tray Base Cabinet",
-      aliases: "B9; BFH9; BT-09; BT09; BSR9; FHB09; FHBO9; TBO9; FH9",
+      aliases: "B9; BFH9; BT-09; BT09; FHB09; FHBO9; TBO9; FH9",
     });
     expect(matchesPaletteSearch(tray, normalizePaletteSearch("FH9"))).toBe(true);
     expect(matchesPaletteSearch(tray, normalizePaletteSearch("BT-09"))).toBe(true);
     expect(matchesPaletteSearch(tray, normalizePaletteSearch("bt09"))).toBe(true);
+  });
+  it("matches the Faircrest 2020 spelling of a row, in both directions", () => {
+    const shelf = cab({ masterCode: "WEOS0930", description: '9" Wall End Open Shelf' });
+    expect(matchesPaletteSearch(shelf, normalizePaletteSearch("WOS0930"))).toBe(true);
+    expect(matchesPaletteSearch(shelf, normalizePaletteSearch("WOES0930"))).toBe(true);
+    expect(matchesPaletteSearch(shelf, normalizePaletteSearch("WOSOS0930"))).toBe(false);
+    const susan = cab({ masterCode: "LSB36", description: '36" Lazy Susan Corner Base' });
+    expect(matchesPaletteSearch(susan, normalizePaletteSearch("LS3612"))).toBe(true);
+    expect(matchesPaletteSearch(susan, normalizePaletteSearch("LS3612-R"))).toBe(true);
+    expect(matchesPaletteSearch(susan, normalizePaletteSearch("LS3312"))).toBe(false);
   });
 });

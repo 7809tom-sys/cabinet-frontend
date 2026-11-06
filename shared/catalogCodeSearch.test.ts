@@ -3,7 +3,7 @@ import { matchCabinetCodes } from "./cabinetCodeMatch";
 import { CATALOG_SEARCH_RANK, catalogItemMatchesCode, searchCatalogItems } from "./catalogCodeSearch";
 import { matchCode, buildCodeIndex } from "./codeMatch";
 
-const BT9_ALIASES = "B9; BFH9; BT-09; BT09; BSR9; FHB09; FHBO9; TBO9; FH9";
+const BT9_ALIASES = "B9; BFH9; BT-09; BT09; FHB09; FHBO9; TBO9; FH9";
 
 const tray = {
   id: 1,
@@ -83,9 +83,15 @@ describe("catalog code search", () => {
     expect(searchCatalogItems([unrelated, replaced, master], "FH9").map((hit) => hit.item.masterCode)).toEqual(["BT9"]);
   });
 
-  it("does not treat BT09 as BT9 unless that alias is actually listed", () => {
-    expect(catalogItemMatchesCode({ masterCode: "BT9", aliases: "" }, "BT09")).toBe(false);
+  it("does not treat an unlisted code as an alias, but BT09 IS BT9 (Tom, PR 292)", () => {
+    // A code that is not a listed alias and has no Faircrest mapping stays out.
+    expect(catalogItemMatchesCode({ masterCode: "BT9", aliases: "" }, "BT12")).toBe(false);
+    expect(catalogItemMatchesCode({ masterCode: "BT9", aliases: "" }, "B99")).toBe(false);
     expect(catalogItemMatchesCode({ masterCode: "BT9", aliases: "BT-09" }, "BT 09")).toBe(true);
+    // BT09 is a spelling of the same full-height base 9, so it now matches even
+    // with an empty aliases cell. Tom confirmed BT9/BT09/TB9/TB09 are one cabinet.
+    expect(catalogItemMatchesCode({ masterCode: "BT9", aliases: "" }, "BT09")).toBe(true);
+    expect(catalogItemMatchesCode({ masterCode: "BT9", aliases: "" }, "TB09")).toBe(true);
   });
 
   it("matches a SKU fragment, including a line prefix, and a multi-word description", () => {

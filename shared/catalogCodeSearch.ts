@@ -1,3 +1,5 @@
+import { faircrest2020EquivalentCodes } from "./faircrest2020Aliases";
+
 // Schema-free cabinet code search.
 //
 // Catalog rows already carry an item code (masterCode / itemCode), an optional
@@ -74,8 +76,9 @@ function replacementCode(item: object): string {
   return normalizeCatalogCode(carrier(item).replacementMasterCode);
 }
 
-function listedAliases(item: object): string[] {
+function listedAliases(item: object, otherItemCodes?: ReadonlySet<string>): string[] {
   const row = carrier(item);
+  const ownCode = primaryCode(item);
   return unique([
     ...splitCodes(row.aliases),
     ...splitCodes(row.aliasCodes),
@@ -84,6 +87,14 @@ function listedAliases(item: object): string[] {
     row.altSku1 ?? "",
     row.altSku2 ?? "",
     row.altSku3 ?? "",
+    // Faircrest 2020 spellings of this row's code (WEOS0930 <-> WOS0930), so a
+    // Faircrest order sheet finds the row it belongs to. Resolution only: the
+    // master code, price and geometry are untouched. A spelling that is another
+    // row's own master code is not adopted — that row keeps its identity.
+    ...faircrest2020EquivalentCodes(ownCode).filter((code) => {
+      const normalized = normalizeCatalogCode(code);
+      return normalized === normalizeCatalogCode(ownCode) || !otherItemCodes?.has(normalized);
+    }),
   ].map((value) => value.trim()).filter(Boolean));
 }
 
@@ -141,6 +152,10 @@ function attributeCodes<T extends object>(items: readonly T[]): Map<T, CodeSets>
     return created;
   };
 
+  // Another row's own master code is never adopted as an alias, so a Faircrest
+  // spelling that already belongs to a real row keeps pointing at that row.
+  const allItemCodes = new Set(byCode.keys());
+
   for (const item of items) {
     const master = canonicalOf.get(item)!;
     const retired = master !== item;
@@ -160,7 +175,7 @@ function attributeCodes<T extends object>(items: readonly T[]): Map<T, CodeSets>
       addAlias(bucket, ownCode);
     }
 
-    for (const alias of listedAliases(item)) {
+    for (const alias of listedAliases(item, allItemCodes)) {
       const normalized = normalizeCatalogCode(alias);
       if (!normalized) continue;
       const redirected = replacementMasters.get(normalized);

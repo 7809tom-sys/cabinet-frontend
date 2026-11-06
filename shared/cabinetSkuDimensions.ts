@@ -10,22 +10,37 @@
  * shapes returns null, and the caller must then refuse rather than guess.
  */
 
-export type CabinetDimensionsIn = { width: number; height: number; depth: number };
+export type CabinetDimensionsIn = {
+  width: number;
+  height: number;
+  depth: number;
+};
 
 /** The wall-cabinet code shapes, in the Designer's own precedence order. */
-export function wallCabinetSkuDimensions(masterCode: string | null | undefined): CabinetDimensionsIn | null {
+export function wallCabinetSkuDimensions(
+  masterCode: string | null | undefined,
+): CabinetDimensionsIn | null {
   const code = (masterCode ?? "").trim().toUpperCase();
   const match = (pattern: RegExp) => code.match(pattern);
   let parsed = match(/(?:^|[^A-Z0-9])W-(\d{2})-(\d{2})$/);
-  if (parsed) return { width: Number(parsed[1]), height: Number(parsed[2]), depth: 12 };
+  if (parsed)
+    return { width: Number(parsed[1]), height: Number(parsed[2]), depth: 12 };
   parsed = match(/(?:^|[^A-Z0-9])WR(\d{2})(\d{2})$/);
-  if (parsed) return { width: Number(parsed[1]), height: Number(parsed[2]), depth: 24 };
+  if (parsed)
+    return { width: Number(parsed[1]), height: Number(parsed[2]), depth: 24 };
   parsed = match(/(?:^|[^A-Z0-9])W(\d{2})(\d{2})GD$/);
-  if (parsed) return { width: Number(parsed[1]), height: Number(parsed[2]), depth: 12 };
+  if (parsed)
+    return { width: Number(parsed[1]), height: Number(parsed[2]), depth: 12 };
   parsed = match(/(?:^|[^A-Z0-9])W(\d{2})(\d{2})(\d{2})$/);
-  if (parsed) return { width: Number(parsed[1]), height: Number(parsed[2]), depth: Number(parsed[3]) };
+  if (parsed)
+    return {
+      width: Number(parsed[1]),
+      height: Number(parsed[2]),
+      depth: Number(parsed[3]),
+    };
   parsed = match(/(?:^|[^A-Z0-9])W(\d{2})(\d{2})$/);
-  if (parsed) return { width: Number(parsed[1]), height: Number(parsed[2]), depth: 12 };
+  if (parsed)
+    return { width: Number(parsed[1]), height: Number(parsed[2]), depth: 12 };
   return null;
 }
 
@@ -36,18 +51,41 @@ export function wallCabinetSkuDimensions(masterCode: string | null | undefined):
  */
 export const BASE_CABINET_DEPTH_IN = 24;
 
+/**
+ * W3012 is 30" W x 12" H, and it can be flipped to 12" W x 30" H.
+ *
+ * Tom's note, recorded because it is not obvious from the code: the flipped
+ * horizontal cabinet gives the same effect as a refrigerator-cabinet spot
+ * WITHOUT using a regular refrigerator cabinet. It can be flipped horizontal
+ * using hydraulic (gas-lift) hinges, which Tom can source if needed.
+ *
+ * This is a description only. Nothing here changes the parse below — `W3012`
+ * still reads width-first (30 x 12) exactly as every other `W##` code does — and
+ * no geometry, placement or appliance rule reads this comment.
+ */
+
 /** `B24` → 24W × 34.5H × 24D. `B30FH` → 30W × 34.5H × 24D. */
-export function baseCabinetSkuDimensions(masterCode: string | null | undefined): CabinetDimensionsIn | null {
+export function baseCabinetSkuDimensions(
+  masterCode: string | null | undefined,
+): CabinetDimensionsIn | null {
   const code = (masterCode ?? "").trim().toUpperCase();
   const parsed = code.match(/(?:^|[^A-Z0-9])(?:B|3DB|2DB|DB)(\d{2})(?:FH)?$/);
   if (!parsed) return null;
-  return { width: Number(parsed[1]), height: 34.5, depth: BASE_CABINET_DEPTH_IN };
+  return {
+    width: Number(parsed[1]),
+    height: 34.5,
+    depth: BASE_CABINET_DEPTH_IN,
+  };
 }
 
 /**
  * Dimensions from a SKU, wall first then base. Returns null when neither shape
  * matches — never a best guess.
  */
-export function cabinetSkuDimensions(masterCode: string | null | undefined): CabinetDimensionsIn | null {
-  return wallCabinetSkuDimensions(masterCode) ?? baseCabinetSkuDimensions(masterCode);
+export function cabinetSkuDimensions(
+  masterCode: string | null | undefined,
+): CabinetDimensionsIn | null {
+  return (
+    wallCabinetSkuDimensions(masterCode) ?? baseCabinetSkuDimensions(masterCode)
+  );
 }

@@ -1,4 +1,5 @@
 import { catalogCodeLookup, CATALOG_SEARCH_RANK, normalizeCatalogCode } from "./catalogCodeSearch";
+import { faircrest2020EquivalentCodes } from "./faircrest2020Aliases";
 // ─── Cabinet code matching ─────────────────────────────────────────────────────
 // Trade buyers reference cabinets by shorthand that varies wildly across quotes,
 // spreadsheets, and handwritten lists (e.g. "B24", "b-24", "DB24-3", "W 30 30",
@@ -309,6 +310,27 @@ export function matchCode(
         confidence: "normalized",
       };
     }
+  }
+
+  // 3c) Faircrest 2020 spelling of the same cabinet (WOES0930 / WOS0930 ->
+  // WEOS0930, LS3612-L -> our LS3612 / LSB36 row). A known Faircrest alias is a
+  // confident normalized match, so it resolves before any prefix guessing. Only
+  // a unique catalog hit is accepted; an ambiguous code is left unmatched.
+  const faircrestHits = new Map<number, CabinetCodeRecord>();
+  for (const equivalent of faircrest2020EquivalentCodes(raw)) {
+    const record = index.byCanon.get(canonicalize(equivalent));
+    record?.forEach((candidate) => faircrestHits.set(candidate.id, candidate));
+  }
+  if (faircrestHits.size === 1) {
+    const rec = Array.from(faircrestHits.values())[0];
+    return {
+      ...base,
+      cabinetId: rec.id,
+      masterCode: rec.masterCode,
+      description: rec.description ?? null,
+      matched: true,
+      confidence: "normalized",
+    };
   }
 
   // 4) Fuzzy: unique prefix-of-canonical match. Useful when a buyer drops a
