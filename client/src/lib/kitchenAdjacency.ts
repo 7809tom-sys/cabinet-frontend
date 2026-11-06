@@ -204,7 +204,7 @@ export function reviewRangeFridgeSeparation(placed: readonly PlacedCabinet[], ro
         findings.push(finding(
           "range-fridge-gap",
           "attention",
-          "Range and refrigerator need a 15 inch cabinet between them",
+          `Range and refrigerator need a ${kitchenRuleNumber("range_fridge_min_cabinet_in")} inch cabinet between them`,
           `On the ${wall} wall the range and refrigerator have ${Math.round(gap * 8) / 8}" between them and no base cabinet ${kitchenRuleNumber("range_fridge_min_cabinet_in")}" or wider. Fillers and panels do not count.`,
           `:${range.item.uid}:${fridge.item.uid}`,
         ));
@@ -230,7 +230,7 @@ export function separateRangeAndRefrigerator(input: {
   const moves: RangeFridgeMove[] = [];
   const flags: string[] = [];
   const originOf = (uid: string, current: number) => input.origins?.find((origin) => origin.uid === uid)?.originalStart ?? current;
-  const remaining = (uid: string, current: number) => Math.max(0, APPLIANCE_SHIFT_CAP_IN - Math.abs(current - originOf(uid, current)));
+  const remaining = (uid: string, current: number) => Math.max(0, kitchenRuleNumber("jog_max_in") - Math.abs(current - originOf(uid, current)));
   const spans = () => placed.map((item) => spanOf(item, input.room)).filter((span): span is Span => span != null);
   const shiftItem = (uid: string, delta: number) => {
     if (Math.abs(delta) <= 0.05) return;
@@ -555,12 +555,14 @@ export function reviewKitchenAdjacency(input: {
       const leftLanding = landingWidth(spans, range.start, "before");
       const rightLanding = landingWidth(spans, range.end, "after");
       const sides = [leftLanding, rightLanding].sort((a, b) => a - b);
-      if (sides[0]! < 12 - 0.05 || sides[1]! < 15 - 0.05) {
+      const shortLanding = kitchenRuleNumber("range_landing_short_in");
+      const longLanding = kitchenRuleNumber("range_landing_long_in");
+      if (sides[0]! < shortLanding - 0.05 || sides[1]! < longLanding - 0.05) {
         findings.push(finding(
           "range-landing",
           "attention",
-          "Range landing is short of 12 and 15 inches",
-          `The range needs at least 12" on one side and 15" on the other. This run has ${Math.round(sides[0]!)}" and ${Math.round(sides[1]!)}".`,
+          `Range landing is short of ${shortLanding} and ${longLanding} inches`,
+          `The range needs at least ${shortLanding}" on one side and ${longLanding}" on the other. This run has ${Math.round(sides[0]!)}" and ${Math.round(sides[1]!)}".`,
           `:baseline:${range.item.uid}`,
         ));
       }
@@ -575,8 +577,9 @@ export function reviewKitchenAdjacency(input: {
       findings.push(finding("fridge-run-end", "attention", "Refrigerator is in the middle of a run", `${fridge.item.masterCode} has base cabinets on both sides. Put it at the end of the run when the measurement allows.`, `:${fridge.item.uid}`));
     }
     const handleLanding = Math.max(landingWidth(spans, fridge.start, "before"), landingWidth(spans, fridge.end, "after"));
-    if (handleLanding > 0.5 && handleLanding < kitchenRuleNumber("fridge_landing_in") - 0.05) {
-      findings.push(finding("fridge-landing", "attention", "Refrigerator landing is under 15 inches", `${fridge.item.masterCode} needs 15" of counter on the handle side.`, `:${fridge.item.uid}`));
+    const fridgeLanding = kitchenRuleNumber("fridge_landing_in");
+    if (handleLanding > 0.5 && handleLanding < fridgeLanding - 0.05) {
+      findings.push(finding("fridge-landing", "attention", `Refrigerator landing is under ${fridgeLanding} inches`, `${fridge.item.masterCode} needs ${fridgeLanding}" of counter on the handle side.`, `:${fridge.item.uid}`));
     }
   }
 
@@ -653,7 +656,7 @@ export function reviewKitchenAdjacency(input: {
       "range-bridge",
       "suggestion",
       `Nothing hangs under the range bridge — use ${spec.code}`,
-      `${spec.code} is ${spec.heightIn}" tall with its bottom at ${spec.bottomIn}" so the top lands at ${spec.topIn}". If a microwave or hood is added under it, switch to a 24" bridge with its bottom at 72".`,
+      `${spec.code} is ${spec.heightIn}" tall with its bottom at ${spec.bottomIn}" so the top lands at ${spec.topIn}". If a microwave or hood is added under it, switch to the ${kitchenRuleNumber("bridge_hung_height_in")}" bridge with its bottom at ${kitchenRuleNumber("bridge_hung_bottom_in")}".`,
       `:${range.item.uid}`,
     ));
   }
@@ -664,10 +667,12 @@ export function reviewKitchenAdjacency(input: {
     if (!span) continue;
     const length = wallLength(span.wall as WallSide, input.room);
     const nearestEnd = Math.min(span.start, Math.max(0, length - span.end));
-    if (nearestEnd < kitchenRuleNumber("dishwasher_corner_min_in") - 0.05) {
-      findings.push(finding("dishwasher-corner-fallback", "attention", "Dishwasher is tighter than 2 inches to a corner", `${dishwasher.masterCode} is ${Math.round(nearestEnd * 8) / 8}" from the end of the wall. Even when a 21" stand is impossible, leave at least 2".`, `:${dishwasher.uid}`));
-    } else if (nearestEnd < kitchenRuleNumber("dishwasher_corner_clear_in") - 0.05) {
-      findings.push(finding("dishwasher-corner-clearance", "attention", "Dishwasher is within 21 inches of a corner", `${dishwasher.masterCode} is ${Math.round(nearestEnd * 8) / 8}" from the wall end. It needs 21" of cabinet or sink between it and an inside corner. Auto-design will not slide it more than 3" to clear that.`, `:${dishwasher.uid}`));
+    const cornerClear = kitchenRuleNumber("dishwasher_corner_clear_in");
+    const cornerMin = kitchenRuleNumber("dishwasher_corner_min_in");
+    if (nearestEnd < cornerMin - 0.05) {
+      findings.push(finding("dishwasher-corner-fallback", "attention", `Dishwasher is tighter than ${cornerMin} inches to a corner`, `${dishwasher.masterCode} is ${Math.round(nearestEnd * 8) / 8}" from the end of the wall. Even when a ${cornerClear}" stand is impossible, leave at least ${cornerMin}".`, `:${dishwasher.uid}`));
+    } else if (nearestEnd < cornerClear - 0.05) {
+      findings.push(finding("dishwasher-corner-clearance", "attention", `Dishwasher is within ${cornerClear} inches of a corner`, `${dishwasher.masterCode} is ${Math.round(nearestEnd * 8) / 8}" from the wall end. It needs ${cornerClear}" of cabinet or sink between it and an inside corner. Auto-design will not slide it more than ${kitchenRuleNumber("jog_max_in")}" to clear that.`, `:${dishwasher.uid}`));
     }
     const touchingRange = ranges.some((range) => range.wall === span.wall && (touches(range.end, span.start) || touches(span.end, range.start)));
     if (touchingRange) {
@@ -688,7 +693,7 @@ export function reviewKitchenAdjacency(input: {
     const cover = spans.some((span) => (isFillerItem(span.item) || isPanelItem(span.item))
       && (touches(span.end, fridge.start) || touches(fridge.end, span.start)));
     if (!cover) {
-      findings.push(finding("fridge-hinge-clearance", "attention", "Refrigerator hinge side needs clearance at the wall", `${fridge.item.masterCode} is ${Math.round(nearestEnd * 8) / 8}" from the wall end with no filler or panel. Hinge-side clearance is about 2.5".`, `:${fridge.item.uid}`));
+      findings.push(finding("fridge-hinge-clearance", "attention", "Refrigerator hinge side needs clearance at the wall", `${fridge.item.masterCode} is ${Math.round(nearestEnd * 8) / 8}" from the wall end with no filler or panel. Hinge-side clearance is about ${kitchenRuleNumber("fridge_hinge_clear_in")}".`, `:${fridge.item.uid}`));
     }
   }
 

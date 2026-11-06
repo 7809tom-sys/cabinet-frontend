@@ -11,8 +11,10 @@ import { affiliateGuidePath, affiliateGuidesMatchingQuery } from "@/lib/affiliat
 import { CredentialsPanel } from "@/components/affiliate/CredentialsPanel";
 import { AffiliateResourceBrowser, type EducationResource } from "@/components/affiliate/AffiliateResourcesHub";
 import { AffiliateSocialLinksPanel } from "@/components/affiliate/AffiliateSocialLinksPanel";
+import { KbisBoothAssetsPanel } from "@/components/affiliate/KbisBoothAssetsPanel";
 import {
-  BookOpen, CreditCard, Download, FileText, HelpCircle, Megaphone, PlayCircle, Printer, QrCode, Search, Share2, Sparkles,
+  BookOpen, CreditCard, Download, FileText, HelpCircle, ImageIcon, Megaphone, PlayCircle, Printer, QrCode, Search,
+  Share2, Sparkles,
 } from "lucide-react";
 
 function useQRCode(url: string) {
@@ -122,6 +124,7 @@ export default function AffiliateMarketingHub({ affiliate }: { affiliate: Market
           <TabsTrigger value="guides" className="gap-1.5"><BookOpen className="h-3.5 w-3.5" /> Training Guides</TabsTrigger>
           <TabsTrigger value="videos" className="gap-1.5"><PlayCircle className="h-3.5 w-3.5" /> Video Training</TabsTrigger>
           <TabsTrigger value="printed" className="gap-1.5"><Printer className="h-3.5 w-3.5" /> Printed Materials</TabsTrigger>
+          <TabsTrigger value="booth" className="gap-1.5" data-testid="kbis-booth-tab"><ImageIcon className="h-3.5 w-3.5" /> KBIS 2027 Booth</TabsTrigger>
           <TabsTrigger value="social" className="gap-1.5"><Share2 className="h-3.5 w-3.5" /> Social Media</TabsTrigger>
           <TabsTrigger value="tips" className="gap-1.5"><HelpCircle className="h-3.5 w-3.5" /> Tips & FAQ</TabsTrigger>
           <TabsTrigger value="share" className="gap-1.5"><QrCode className="h-3.5 w-3.5" /> Share & Promote</TabsTrigger>
@@ -181,6 +184,9 @@ export default function AffiliateMarketingHub({ affiliate }: { affiliate: Market
             onVideoProgress={(resource, progressPercent, completed) => saveProgress.mutate({ resourceId: resource.id, completed, progressPercent })}
             onRequestFile={openFile}
           />
+        </TabsContent>
+        <TabsContent value="booth" className="pt-4">
+          <KbisBoothAssetsPanel resources={items} query={query} />
         </TabsContent>
         <TabsContent value="share" className="space-y-6 pt-4">
           <CredentialsPanel

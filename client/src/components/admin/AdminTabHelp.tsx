@@ -18,6 +18,10 @@ const TAB_HELP: Record<string, { en: string; zh: string; link?: { label: string;
     en: "View and manage all incoming cabinet orders. Update order status, review line items, and coordinate fulfillment.",
     zh: "查看並管理所有進來的櫥櫃訂單。更新訂單狀態、審查明細項目並協調履行事宜。",
   },
+  "master-orders": {
+    en: "Every order on the system, across all affiliates, dealers and distributors, in one table: date, affiliate site, customer, dealer, distributor, customer total, distributor cost, margin, payment, and the who/when status chain from received email through signed. Sort any column, filter by affiliate, distributor, date, status or stuck days, search, export the filtered list as CSV, and click a row to open the order. Cost and margin are admin-only.",
+    zh: "系統中所有訂單，涵蓋所有加盟商、經銷商與通路，集中於一覽表：日期、加盟網站、客戶、經銷商帳戶、供應商、客戶總額、供應商成本、毛利、付款狀態，以及從已收通知到已簽收的執行人與時間鏈。可排序任一欄位，依加盟商、供應商、日期、狀態或停滯天數篩選，搜尋，匯出篩選後的 CSV，點擊整列開啟訂單。成本與毛利僅限管理員。",
+  },
   crm: {
     en: "Sales CRM board — track leads, follow-ups, and customer interactions. Assign tasks and monitor your sales pipeline.",
     zh: "銷售客戶關係管理看板——追蹤潛在客戶、後續跟進及客戶互動。指派任務並監控銷售流程。",

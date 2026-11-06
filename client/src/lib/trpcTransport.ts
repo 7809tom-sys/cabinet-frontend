@@ -32,6 +32,10 @@ export async function fetchTrpcJson(
 ): Promise<Response> {
 	const headers = new Headers(init?.headers);
 	if (!headers.has("accept")) headers.set("accept", "application/json");
+	// Cookies ride along for the endpoints that use them (for example the
+	// QuickBooks OAuth state). They never identify a tRPC request: the API
+	// authenticates `Authorization: Bearer`, which createTabAuthFetch sets from
+	// this tab's own session, so a cookie cannot speak for another tab.
 	const requestInit = { ...(init ?? {}), headers, credentials: "include" as const };
 	let response = await fetchImpl(input, requestInit);
 	if (!isTrpcRequest(input)) return response;

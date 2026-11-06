@@ -1,0 +1,73 @@
+<!doctype html>
+<!--
+  Screenshot harness for the designer helper queue.
+
+  It renders the SHIPPED components — the same `designerHelperCards.tsx` the app
+  uses — with fixture data, so each capture shows the real markup and styles
+  rather than a re-drawn mock-up:
+
+    ?shot=share   the customer's "Share / Get a designer helper" button, inside a
+                  Designer toolbar strip above a plan.
+    ?shot=notice  the designer's in-app notice, the header badge, and the helper
+                  sign card with the queue place.
+    ?shot=admin   the admin pop-up toast with every request fact and both actions.
+
+  Served by the Vite dev server at /dev/helper-shot.html; used only by
+  e2e/designer-helper-queue-screenshots.spec.ts.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Designer helper queue</title>
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #f4f1ea; font-family: system-ui, sans-serif; }
+      #root { padding: 24px; }
+      .stage-label {
+        font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+        color: #8a6626; margin: 0 0 8px;
+      }
+      .toolbar-strip {
+        display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+        border-bottom: 1px solid #e2ddd2; background: #fff; padding: 6px 8px;
+        border-top: 3px solid #a87f33; border-radius: 8px 8px 0 0;
+      }
+      .toolbar-title { font-family: Georgia, serif; font-weight: 700; font-size: 13px; color: #1a2744; }
+      .toolbar-count { font-size: 10px; background: #eef1f6; color: #475569; border-radius: 999px; padding: 2px 7px; }
+      .fake-btn {
+        display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 9px;
+        border: 1px solid #d8d2c6; border-radius: 6px; background: #fff;
+        font-size: 10px; font-weight: 600; color: #475569;
+      }
+      .fake-btn.primary { background: #1a2744; border-color: #1a2744; color: #fff; }
+      .plan-mock {
+        height: 300px; border: 1px solid #e2ddd2; border-top: 0; border-radius: 0 0 8px 8px;
+        background:
+          linear-gradient(#efece5 1px, transparent 1px) 0 0 / 100% 26px,
+          linear-gradient(90deg, #efece5 1px, transparent 1px) 0 0 / 26px 100%,
+          #fff;
+        position: relative;
+      }
+      .plan-mock .cab { position: absolute; background: #e8e2d6; border: 1px solid #c9c2b3; border-radius: 2px; }
+      .plan-caption {
+        position: absolute; left: 12px; bottom: 10px; font-size: 11px; color: #6b7280;
+        background: rgba(255,255,255,0.92); padding: 4px 8px; border-radius: 6px;
+      }
+      .row { display: flex; gap: 16px; align-items: flex-start; }
+      .col { flex: 1; min-width: 0; }
+      .stack { display: flex; flex-direction: column; gap: 12px; }
+      .header-mock {
+        display: flex; align-items: center; justify-content: space-between; gap: 12px;
+        background: #fff; border: 1px solid #e2ddd2; border-radius: 8px; padding: 8px 12px;
+      }
+      .header-logo { font-family: Georgia, serif; font-weight: 700; font-size: 15px; color: #1a2744; }
+      .header-logo em { font-style: normal; color: #a87f33; }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <p id="stage-label" class="stage-label">Designer helper queue</p>
+      <div id="stage"></div>
+    </div>
+    <script type="module" src="/src/designerHelperShotHarness.tsx"></script>
+  </body>
+</html>

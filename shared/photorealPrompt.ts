@@ -31,6 +31,7 @@ export type LayoutType =
   | "peninsula"
   | "multi-wall";
 
+/** Optional owner kitchen rules an admin wrote, appended verbatim as guidance. */
 export interface PhotorealPromptInput {
   roomWidthFt: number;
   roomDepthFt: number;
@@ -67,6 +68,12 @@ export interface PhotorealPromptInput {
    */
   appliances?: string[];
   notes?: string;
+  /**
+   * Owner kitchen rules the business wrote in Admin → Kitchen Rules that no code
+   * executes. They are appended to the prompt as guidance. Empty or absent
+   * leaves the prompt byte-identical to today's.
+   */
+  kitchenGuidance?: readonly string[];
   /** Camera framing. Defaults to a flattering three-quarter angle. */
   cameraAngle?: CameraAngle;
   /** Lighting mood. Defaults to bright natural daylight. */
@@ -221,6 +228,15 @@ export function buildPhotorealPrompt(input: PhotorealPromptInput): string {
     parts.push("There is NO kitchen island and NO peninsula — keep the center of the room as open floor.");
   }
   if (input.notes?.trim()) parts.push(input.notes.trim());
+
+  // 5d. Owner kitchen rules an admin wrote. Guidance only: they refine what is
+  // shown, and they never license changing the layout described above.
+  const guidance = (input.kitchenGuidance ?? []).map((line) => line.trim()).filter(Boolean);
+  if (guidance.length > 0) {
+    parts.push(
+      `Owner kitchen rules to respect in this render (written by the business): ${guidance.join(" ")} These refine materials and details only and never change the cabinet layout above.`
+    );
+  }
 
   // 6. Staging discipline.
   parts.push(

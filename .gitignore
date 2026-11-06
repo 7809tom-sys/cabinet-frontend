@@ -131,6 +131,9 @@ manus storage/
 # Guided-flow screenshots (attached to PRs, not committed)
 /test-artifacts/closet-guided/
 
+# KBIS booth panel screenshots (attached to PRs, not committed)
+/test-artifacts/kbis-booth/
+
 # Internal library documents are committed on purpose so the backend importer has
 # a source file, but they must never be served. `docs` is already in
 # .vercelignore, so Vite copies none of them into dist/.

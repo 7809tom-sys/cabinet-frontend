@@ -15,6 +15,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { trpc } from "@/lib/trpc";
 import { OrderTrackingPanel, SAMPLE_TRACKED_ORDERS } from "@/components/orders/OrderTrackingPanel";
+import { designOpenPath, designStoreLabel } from "@/lib/designOwnerScope";
 
 function accountPreview(): boolean {
   if (typeof window === "undefined") return false;
@@ -132,7 +133,15 @@ export default function Account() {
               <article key={design.id} className="rounded-xl border border-border p-4">
                 <h3 className="font-semibold">{design.name}</h3>
                 <p className="text-xs text-muted-foreground mt-1">{"roomLabel" in design && design.roomLabel ? String(design.roomLabel) : "Saved plan"}</p>
-                <Button asChild size="sm" variant="outline" className="mt-3"><a href={`/design?load=${design.id}`}>Open in designer</a></Button>
+                {/* A plan saved on a storefront is yours too. Its own store
+                    decides where it opens, so the link cannot land on a
+                    different store's brand or fail its scope check. */}
+                <p className="text-[11px] text-muted-foreground mt-1" data-testid={`account-design-store-${design.id}`}>
+                  {designStoreLabel(design as { affiliateSlug?: string | null; affiliateName?: string | null })}
+                </p>
+                <Button asChild size="sm" variant="outline" className="mt-3">
+                  <a href={designOpenPath(design as { id: number; affiliateSlug?: string | null })}>Open in designer</a>
+                </Button>
               </article>
             ))}
           </div>
