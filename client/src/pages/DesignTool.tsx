@@ -272,7 +272,7 @@ import { ensureDrawerBase } from "@/lib/autoDesignDrawerRule";
 import { autoBuildCornerCatalog, autoDesignCornerSlotPoint, autoDesignCornerSlots, autoDesignExcludedEngineWallIds, autoDesignLayoutUsesWall, autoDesignRunWallIds, type AutoBuildCornerCandidate, type AutoDesignCornerChoice, type AutoDesignCornerSlot } from "@/lib/autoDesignCornerStage";
 import { evaluateAutoDesignCornerFit, type AutoDesignCornerFit } from "@/lib/cornerFit";
 import { useKitchenRuleParameterSync } from "@/lib/kitchenRulesApi";
-import { rangeBridgeSpec, reviewAfterShift, separateRangeAndRefrigerator } from "@/lib/kitchenAdjacency";
+import { reviewAfterShift, separateRangeAndRefrigerator } from "@/lib/kitchenAdjacency";
 import { bakesALot, cooksALot, normalizeKitchenUsage } from "@/lib/kitchenUsage";
 import { acceptMeasuredCornerRefrigeratorBay } from "@/lib/autoDesignRefrigeratorBay";
 import { buildAutoDesignWallCabinets, resolveWallHeightClass, type AutoDesignUpperCorner } from "@/lib/autoDesignWallCabinets";
@@ -9054,13 +9054,15 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     if (!range) { toast.error("The range changed before the bridge cabinet was offered. Nothing was added."); return; }
     const proposal = rangeCompanionProposal(range, room, wallCabPoolRef.current, appliancePalette, wallCabHeightRef.current);
     if (!proposal) { toast.error("A matching selected-line bridge cabinet and microwave are not available for this range."); return; }
-    const bridgeSpec = rangeBridgeSpec({ rangeWidthIn: Number(range.width) || 30, hangsBelow: true });
-    const bridgeCode = bridgeSpec.code.toUpperCase();
-    const bridgeSource = wallCabPoolRef.current.find((item) => item.masterCode.toUpperCase().replace(/[^A-Z0-9]/g, "") === bridgeCode);
-    const aligned = bridgeSource
-      ? { ...proposal, bridge: bridgeSource, bridgeMountBottom: bridgeSpec.bottomIn }
-      : proposal;
-    setRangeCompanionPrompt({ rangeUid: range.uid, proposal: aligned, microwaveAlreadyPlaced: false });
+    // The proposal already carries the right bridge: `overRangeBridgeFor` matches the
+    // RANGE width and sizes the height so its top lands on the upper run beside it
+    // (30" uppers -> a 12" W3012 topping at 84"). A second, hard-coded "24 inch
+    // bridge at the 72 inch datum, top 96 inches" override used to run here and
+    // replaced that 12" box with a 24" one, which is the reported bug: the wall
+    // cabinet above the range came out twice the height it should have been and
+    // stood 12" above its neighbouring uppers. The bridge is only ever what the one
+    // selector chose, so the prompt and the build cannot disagree.
+    setRangeCompanionPrompt({ rangeUid: range.uid, proposal, microwaveAlreadyPlaced: false });
   }, [appliancePalette, autoDesignRangeVentPrompt, room, setOverRangeAnswer]);
   const addWscSpiceStackUpper = useCallback((cabinetId: number) => {
 	    const prompt = spiceStackPrompt;

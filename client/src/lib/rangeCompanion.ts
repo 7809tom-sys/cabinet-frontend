@@ -2,17 +2,18 @@ import {
   type DesignCabinet,
   type PlacedCabinet,
   type RoomData,
-  bridgeHeightForWallHeight,
-  cabinetWall,
+  isRangeOrOven,
   isMicrowaveOverRangePair,
   isOverRangeMicrowave,
-  isRangeOrOven,
   mountedMicrowaveOverRangeSpot,
 	OVER_RANGE_MICROWAVE_BRIDGE_MOUNT_BOTTOM,
+  wallCeilingMin,
+  cabinetWall,
   wallPlacementAt,
   wallRunOffset,
 	wallRunSpan,
 } from "@/lib/design";
+import { overRangeBridgeFor } from "@/lib/overRangeCompanion";
 
 /**
  * A source-backed proposal for an over-range microwave with its short bridge
@@ -37,41 +38,9 @@ function numberDimension(value: string | number | null | undefined): number {
   return Number.isFinite(result) && result > 0 ? result : 0;
 }
 
-function bridgeCandidateForRange(
-  range: Pick<PlacedCabinet, "width">,
-  wallCabinets: DesignCabinet[],
-  wallCabinetHeight: number,
-): DesignCabinet | null {
-  const rangeWidth = Number(range.width);
-  if (!Number.isFinite(rangeWidth) || rangeWidth <= 0) return null;
-  const requiredBridgeHeight = bridgeHeightForWallHeight(wallCabinetHeight);
-
-  const eligible = wallCabinets.filter((cabinet) => {
-    const width = numberDimension(cabinet.width);
-    const height = numberDimension(cabinet.height);
-    const identity = `${cabinet.masterCode} ${cabinet.description} ${cabinet.subCategory ?? ""}`.toLowerCase();
-    // The bridge is an actual, selected-line, solid W30 wall cabinet: exactly
-    // W3012, W3015, W3018, W3021, or W3024. WSC30 is a six-inch spice cabinet
-    // and can never be used here; neither can glass, refrigerator, or open-box
-    // specialty wall products.
-    const isSpiceCabinet = /^wsc[-_]?30$/i.test(cabinet.masterCode) || /\bspice\b/.test(identity);
-    const isNonBridgeSpecialty = /\brefrigerator\b|\bglass\b|\bopen\s+box\b/.test(identity);
-    const normalizedCode = cabinet.masterCode.toUpperCase().replace(/[^A-Z0-9]/g, "");
-    const isApprovedMicrowaveBridge = /^W30(?:12|15|18|21|24)$/.test(normalizedCode);
-    return cabinet.placement === "wall"
-      && Math.abs(rangeWidth - 30) <= 0.01
-      && Math.abs(width - 30) <= 0.01
-      && Math.abs(height - requiredBridgeHeight) <= 0.01
-      && !isSpiceCabinet
-      && !isNonBridgeSpecialty
-      && isApprovedMicrowaveBridge;
-  });
-
-  // Keep the catalog identity and authorized price intact. A deterministic code
-  // order only resolves duplicate selected-line products with the same real size.
-  return eligible.sort((left, right) => {
-    return left.masterCode.localeCompare(right.masterCode) || left.id - right.id;
-  })[0] ?? null;
+function wallCeilingFor(range: PlacedCabinet, room: RoomData): number | null {
+  const wall = cabinetWall(range, room);
+  return wall ? wallCeilingMin(room, wall) : null;
 }
 
 /**
@@ -79,6 +48,12 @@ function bridgeCandidateForRange(
  * over-range microwave. The wall-height preference drives one of the real
  * W3012/W3015/W3018/W3021/W3024 solid-wall selections; WSC30 is intentionally
  * excluded as a spice box.
+ *
+ * The size comes from `overRangeBridgeFor` in `overRangeCompanion.ts` — the same
+ * selector the mandatory build pass uses. It matches the RANGE width first and
+ * then the height tolerantly (a frameless line sells 17⅝" where a framed line
+ * sells 18"), so this prompt can never offer a different bridge than the build
+ * places.
  */
 export function rangeCompanionProposal(
   range: PlacedCabinet,
@@ -100,11 +75,12 @@ export function rangeCompanionProposal(
   const microwaveHeight = numberDimension(microwave.height);
   if (!microwaveHeight) return null;
   const microwaveBottom = OVER_RANGE_MICROWAVE_BRIDGE_MOUNT_BOTTOM_IN - microwaveHeight;
-  const bridge = bridgeCandidateForRange(
-    range,
-    wallCabinets,
-    wallCabinetHeight,
-  );
+  const bridge = overRangeBridgeFor({
+    rangeWidthIn: rangeWidth,
+    wallCabinetHeightIn: wallCabinetHeight,
+    wallCatalog: wallCabinets,
+    ceilingIn: wallCeilingFor(range, room),
+  });
   if (!bridge) return null;
 
   const microwaveWidth = numberDimension(microwave.width);

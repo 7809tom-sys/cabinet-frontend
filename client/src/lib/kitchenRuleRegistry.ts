@@ -442,22 +442,23 @@ export const KITCHEN_RULE_DEFINITIONS: readonly KitchenRuleSettingDefinition[] =
     appliedBy: "kitchenAdjacency",
   },
   {
-    key: "bridge_hung_height_in",
-    title: "Bridge height when a hood or microwave hangs below",
-    description: "The bridge cabinet's own height when something hangs under it.",
+    key: "bridge_upper_height_in",
+    title: "Wall run height beside the range",
+    description:
+      "The wall cabinet height the range's neighbours run at. The bridge above the range is not a stored height: it is whatever lands its top on this run's top line (54 plus this height). 30 inch uppers finish at 84, so the bridge is a 12 inch W3012. 42 inch uppers finish at 96, so that bridge is 24 inches.",
     category: "Range and hood",
     valueType: "number",
-    defaultValue: 24,
+    defaultValue: 30,
     unit: "in",
     step: 1,
-    min: 6,
+    min: 12,
     max: 48,
     appliedBy: "kitchenAdjacency",
   },
   {
     key: "bridge_open_bottom_in",
     title: "Bridge bottom when nothing hangs below",
-    description: "The bridge cabinet's bottom line when nothing hangs under it.",
+    description: "The bridge cabinet's bottom line when nothing hangs under it. Its height still comes from the wall run beside it.",
     category: "Range and hood",
     valueType: "number",
     defaultValue: 66,
@@ -465,19 +466,6 @@ export const KITCHEN_RULE_DEFINITIONS: readonly KitchenRuleSettingDefinition[] =
     step: 0.5,
     min: 48,
     max: 96,
-    appliedBy: "kitchenAdjacency",
-  },
-  {
-    key: "bridge_open_height_in",
-    title: "Bridge height when nothing hangs below",
-    description: "The bridge cabinet's own height when nothing hangs under it.",
-    category: "Range and hood",
-    valueType: "number",
-    defaultValue: 30,
-    unit: "in",
-    step: 1,
-    min: 6,
-    max: 48,
     appliedBy: "kitchenAdjacency",
   },
   {
@@ -844,9 +832,8 @@ export type KitchenRuleNumericKey =
   | "window_framed_panel"
   | "bridge_above_range_required"
   | "bridge_hung_bottom_in"
-  | "bridge_hung_height_in"
+  | "bridge_upper_height_in"
   | "bridge_open_bottom_in"
-  | "bridge_open_height_in"
   | "hood_bottom_in"
   | "standard_hood_bottom_in"
   | "faucet_at_sink_required"
@@ -908,9 +895,8 @@ export const KITCHEN_RULE_PARAMETER_DEFAULTS: Record<KitchenRuleNumericKey, numb
   window_framed_panel: defaultNumber("window_framed_panel"),
   bridge_above_range_required: defaultNumber("bridge_above_range_required"),
   bridge_hung_bottom_in: defaultNumber("bridge_hung_bottom_in"),
-  bridge_hung_height_in: defaultNumber("bridge_hung_height_in"),
+  bridge_upper_height_in: defaultNumber("bridge_upper_height_in"),
   bridge_open_bottom_in: defaultNumber("bridge_open_bottom_in"),
-  bridge_open_height_in: defaultNumber("bridge_open_height_in"),
   hood_bottom_in: defaultNumber("hood_bottom_in"),
   standard_hood_bottom_in: defaultNumber("standard_hood_bottom_in"),
   faucet_at_sink_required: defaultNumber("faucet_at_sink_required"),

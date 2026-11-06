@@ -101,18 +101,20 @@ describe("a saved value reaches the pass that reads it", () => {
   });
 
   it("upper heights: the range bridge spec", () => {
+    // 30" uppers finish at 84", so a bridge on the 72" datum is 12" tall — W3012.
     const hung = rangeBridgeSpec({ rangeWidthIn: 30, hangsBelow: true });
-    expect(hung).toMatchObject({ heightIn: 24, bottomIn: 72, topIn: 96 });
+    expect(hung).toMatchObject({ heightIn: 12, bottomIn: 72, topIn: 84 });
+    // The bridge height is derived from the run beside it, so the upper-height rule
+    // moves it and the stored bridge datum moves it. 42" uppers finish at 96".
     setKitchenRuleParameters({
-      bridge_hung_height_in: 21,
+      bridge_upper_height_in: 42,
       bridge_hung_bottom_in: 70,
-      run_top_in: 91,
     });
     expect(rangeBridgeSpec({ rangeWidthIn: 30, hangsBelow: true }))
-      .toMatchObject({ code: "W3021", heightIn: 21, bottomIn: 70, topIn: 91 });
-    // The bridge with nothing under it is a separate rule and did not move.
+      .toMatchObject({ heightIn: 24, bottomIn: 70, topIn: 94 });
+    // The bridge with nothing under it is a separate datum and did not move.
     expect(rangeBridgeSpec({ rangeWidthIn: 30, hangsBelow: false }))
-      .toMatchObject({ heightIn: 30, bottomIn: 66 });
+      .toMatchObject({ heightIn: 24, bottomIn: 66 });
   });
 
   it("range and hood: the hood mount height", () => {

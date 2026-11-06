@@ -57,9 +57,20 @@ Bridge selection (`overRangeBridgeFor` in `overRangeCompanion.ts`), in order:
 
 1. the width that matches the **range width** — a 36″ range takes the 36″ bridge;
 2. else the nearest stock bridge width the line sells;
-3. the height that lands the bridge top on the upper run line (`bridgeHeightForWallHeight`), else the nearest real height that still **clears the wall's ceiling**.
+3. the height that lands the bridge top on the upper run line (`overRangeBridgeHeightFor`), else the nearest real height that still **clears the wall's ceiling**.
 
 The bridge family is a real solid wall box 12″–24″ tall, matched from the line's own catalog (`W30xx`, `W36xx`, …). Spice (`WSC30`), glass, open-box and refrigerator boxes are never a bridge. It hangs at the fixed **72″** datum, centered on the range, and is flagged `overRangeMicrowaveBridge: true`.
+
+### The bridge height is derived, not a fixed 24 inches (Nov 6 2026)
+
+The owner reported that **the wall cabinet over the range came out 24 inches when it should be 12**. Two things caused it, and both are fixed:
+
+1. **`rangeBridgeSpec` hard-coded the answer.** It returned "24 inch bridge, bottom 72, top 96" whatever the uppers beside the range were doing, and the Auto-Design pop-up (`offerAutoDesignBridgeAndMicrowave` in `DesignTool.tsx`) used it to *replace* the bridge the build had already chosen. On a 30″ kitchen that swapped the correct W3012 for a 24″ box standing 12″ above its neighbours.
+2. **The bridge datum was keyed off cabinet height.** `normalizeUpperHeights` re-hung any short upper on the 84/90/96 line, so a frameless 17⅝″ bridge was pushed from 72″ down to 66⅜″, below the microwave it rests on.
+
+The height now comes from one place: `overRangeBridgeHeightFor` reads the **run top line** (54″ + the upper height the line actually sells) and snaps to a stock bridge height. A 30″ run finishes at 84″, so the bridge is **12″ — W3012 over a 30″ range**, which is what the owner asked for. A 42″ run finishes at 96″, so that bridge is 24″. The bridge keeps whatever datum its own rule gave it; the ordinary upper-line normalizer does not touch it.
+
+Every path reads that one selector, so a bridge cannot be one size in the plan and another size in a prompt: `overRangeBridgeFor` (the mandatory build pass), `rangeCompanionProposal` (the Designer's pop-up and the legacy WSC30 repair), and `rangeBridgeSpec` (the review list).
 
 ## 2. Microwave and hood, add-only
 
@@ -87,14 +98,17 @@ The answer lives on the room as `overRangeAnswer`, is persisted with the layout,
 ## Tests
 
 - `client/src/lib/overRangeBridgeMatrix.test.ts` — **the matrix**: six cabinet lines, every layout shape, range widths 30/36/42, with and without a microwave, all four answers, and saved layouts. Every case asserts a bridge is present, centered, at the 72″ datum, under the ceiling, collision-free, and matched to the range width; also that no ordinary upper tiles over the range and no sub-filler sliver is left beside the bridge.
-- `client/src/lib/overRangeFill.test.ts` — the bridge is mandatory whatever the answer; idempotency; width matching; ceiling-aware height; the no-delete and manual-microwave rules; the blocking findings.
-- `client/src/lib/overRangeCompanion.test.ts` — bridge selection: range-width match, nearest stock width, spice/glass exclusion, low-ceiling fallback.
-- `client/src/pages/DesignTool.overRangeFill.test.ts` — the Designer wiring: the bridge seated **before** the upper run tiles in both build paths, the blocked finding on the review list, the pass after build and load, every answer persisting, the load restore, and the `MW-` compatibility.
+- `client/src/lib/overRangeFill.test.ts` — the bridge is mandatory whatever the answer; idempotency; width matching; ceiling-aware height; the no-delete and manual-microwave rules; the blocking findings. The `"the bridge is 12 inches over 30 inch uppers, not 24"` block is the regression test for the owner's report: a 12″ bridge whose top lands on the 84″ line, the 12/18/24 ladder for 30/36/42 uppers, and a frameless bridge keeping its 72″ datum.
+- `client/src/lib/rangeCompanion.test.ts` — bridge selection: range-width match, nearest stock width, spice/glass exclusion, low-ceiling fallback, and that the Designer's prompt reports the same 12″ W3012 the build places (and still offers a bridge on a frameless 36″ run, where the old exact-height filter refused 17⅝″).
+- `client/src/lib/kitchenAdjacency.test.ts` — `rangeBridgeSpec` sizes the bridge from the run top line (W3012 at 84″ for 30″ uppers, W3024 at 96″ for 42″) and snaps to a bridge box the line really sells.
+- `client/src/pages/DesignTool.overRangeFill.test.ts` — the Designer wiring: the bridge seated **before** the upper run tiles in both build paths, the blocked finding on the review list, the pass after build and load, every answer persisting, the load restore, the `MW-` compatibility, and that the pop-up handler has no second bridge-size override.
 - `client/src/lib/autoDesignMatrix.test.ts` — the whole auto-design matrix now also asserts a bridge above every range.
 
 ## Screenshot
 
 `e2e/auto-design-bridge-screenshot.spec.ts` builds a real kitchen with `runAutoDesignLayout` and renders it with the real 3D engine (`client/dev/bridge-shot.html` + `client/src/bridgeScreenshotHarness.ts`), then captures `/opt/cursor/artifacts/auto-design-bridge.png`. The bridge is tinted green and the caption names the SKU, the datum, and the width.
+
+`e2e/over-range-bridge-before-after.spec.ts` is the before/after proof for the 12″ bug: the same real kitchen rendered twice (`client/dev/bridge-before-after.html` + `client/src/bridgeBeforeAfterHarness.ts`), once with the 24″ box the pop-up used to substitute and once with the fixed 12″ W3012, captured to `/opt/cursor/artifacts/over-range-bridge-before-after.png`. The left caption reads "24″ tall, top 96″, 12″ proud of the 84″ upper line"; the right reads "12″ tall, top 84″, flush with the 84″ upper line".
 
 # A faucet is always placed at the sink (HARD RULE, Nov 5 2026)
 

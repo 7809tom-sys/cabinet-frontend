@@ -51,12 +51,38 @@ describe("adjacency rule catalog", () => {
 });
 
 describe("range bridge vertical rules", () => {
-  it("uses a 24 inch bridge at 72 when something hangs below, and a 30 inch bridge at 66 when it does not", () => {
-    expect(rangeBridgeSpec({ rangeWidthIn: 30, hangsBelow: true })).toMatchObject({ code: "W3024", heightIn: 24, bottomIn: 72, topIn: 96, depthIn: 12 });
-    expect(rangeBridgeSpec({ rangeWidthIn: 36, hangsBelow: true })).toMatchObject({ code: "W3624", bottomIn: 72, topIn: WALL_RUN_TOP_IN });
-    expect(rangeBridgeSpec({ rangeWidthIn: 33, hangsBelow: false })).toMatchObject({ code: "W3330", heightIn: 30, bottomIn: 66, topIn: 96 });
+  it("sizes the bridge so its top lands on the upper run beside it", () => {
+    // 30" uppers finish at 84", so a bridge on the 72" microwave datum is 12" tall:
+    // the owner's 12-inch wall cabinet above the range (W3012 for a 30" range).
+    expect(rangeBridgeSpec({ rangeWidthIn: 30, hangsBelow: true, wallCabinetHeightIn: 30 }))
+      .toMatchObject({ code: "W3012", heightIn: 12, bottomIn: 72, topIn: 84, depthIn: 12 });
+    // 42" uppers finish at 96", so the same datum takes a 24" bridge.
+    expect(rangeBridgeSpec({ rangeWidthIn: 30, hangsBelow: true, wallCabinetHeightIn: 42 }))
+      .toMatchObject({ code: "W3024", heightIn: 24, bottomIn: 72, topIn: 96 });
+    // A 36" range takes a 36" wide bridge, not a 30" one.
+    expect(rangeBridgeSpec({ rangeWidthIn: 36, hangsBelow: true, wallCabinetHeightIn: 30 }))
+      .toMatchObject({ code: "W3612", widthIn: 36, bottomIn: 72, topIn: 84 });
+    // Nothing under the bridge: it hangs from 66" and still tops on the upper line.
+    expect(rangeBridgeSpec({ rangeWidthIn: 33, hangsBelow: false, wallCabinetHeightIn: 30 }))
+      .toMatchObject({ code: "W3318", heightIn: 18, bottomIn: 66, topIn: 84 });
     expect(OPEN_QUESTION_TWENTY_FOUR_INCH_CABINET_BOTTOM_IN).toBe(66);
     expect(OPEN_QUESTION_TWENTY_FOUR_INCH_CABINET_BOTTOM_IN + 24).toBe(90);
+  });
+
+  it("snaps to a bridge box the line actually sells", () => {
+    // A frameless line sells its 30" class as 30¼" uppers (top 84¼") and stores the
+    // 12" bridge as 12⅝". The spec returns the real catalog SKU, and its top is the
+    // one closest to that run's top line.
+    const frameless = [
+      { placement: "wall" as const, masterCode: "W3030", description: "30 x 30 wall", subCategory: "Standard Wall", width: "30", height: "30.25" },
+      { placement: "wall" as const, masterCode: "W3012", description: "30 x 12 wall", subCategory: "Standard Wall", width: "30", height: "12.63" },
+      { placement: "wall" as const, masterCode: "W3018", description: "30 x 18 wall", subCategory: "Bridge / Stacker", width: "30", height: "17.63" },
+    ];
+    const spec = rangeBridgeSpec({ rangeWidthIn: 30, hangsBelow: true, wallCabinetHeightIn: 30, wallCatalog: frameless });
+    expect(spec.code).toBe("W3012");
+    expect(spec.heightIn).toBe(12.63);
+    // The run's 84¼" top line rules out the 18" box; the 12" bridge wins.
+    expect(spec.topIn).toBeCloseTo(84.63, 6);
   });
 });
 

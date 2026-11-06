@@ -122,6 +122,59 @@ describe("rangeCompanionProposal", () => {
     expect(proposal?.bridge.masterCode).toBe("W3012");
   });
 
+  /**
+   * Owner bug (Nov 6 2026): the wall cabinet over the range came out 24" tall when
+   * it should have been 12". The build was right; the Designer's Auto-Design
+   * pop-up re-sized the bridge from `rangeBridgeSpec` ("24 inch bridge at the 72"
+   * datum, top 96"") and replaced the 12" box the build had chosen. Both paths now
+   * read the one selector, so they can never disagree again.
+   */
+  it("reports the same 12 inch bridge the build places, for 30 inch uppers", () => {
+    const proposal = rangeCompanionProposal(
+      range(),
+      DEFAULT_ROOM,
+      [wallBridge(12), wallBridge(15), wallBridge(18), wallBridge(21), wallBridge(24)],
+      [microwave],
+      30,
+    );
+
+    expect(proposal?.bridge.masterCode).toBe("W3012");
+    expect(Number(proposal?.bridge.height)).toBe(12);
+    // Hangs on the 72" microwave datum and tops out on the 30" upper line (84").
+    expect(proposal?.bridgeMountBottom).toBe(72);
+    expect(proposal!.bridgeMountBottom + Number(proposal!.bridge.height)).toBe(84);
+  });
+
+  it("accepts the 17⅝ bridge a frameless line sells instead of offering nothing", () => {
+    // A frameless line sells 17⅝ where a framed line sells 18, and stores its
+    // 36" class as 35¼" uppers. The old exact-height filter rejected 17⅝ outright,
+    // so the Auto-Design pop-up offered no bridge at all on a 36" frameless kitchen.
+    const frameless = [
+      cabinet({ id: 20, masterCode: "W3023", description: '30" × 22⅝" Wall Cabinet', subCategory: "Standard Wall", height: "22.63", width: "30" }),
+      cabinet({ id: 21, masterCode: "W3035", description: '30" × 35¼" Wall Cabinet', subCategory: "Standard Wall", height: "35.25", width: "30" }),
+      cabinet({ id: 22, masterCode: "W3012", description: '30" × 12" Wall Cabinet', subCategory: "Standard Wall", height: "12", width: "30" }),
+      cabinet({ id: 23, masterCode: "W3018", description: '30" × 18" Wall Cabinet', subCategory: "Bridge / Stacker", height: "17.63", width: "30" }),
+    ];
+
+    const proposal = rangeCompanionProposal(range(), DEFAULT_ROOM, frameless, [microwave], 36);
+    expect(proposal).not.toBeNull();
+    // 54" + 35¼" uppers finish at 89¼"; 17⅝" on the 72" datum lands nearest that line.
+    expect(proposal!.bridge.masterCode).toBe("W3018");
+    expect(proposal!.bridgeMountBottom).toBe(72);
+    expect(proposal!.bridgeMountBottom + Number(proposal!.bridge.height)).toBeCloseTo(89.63, 6);
+  });
+
+  it("still offers a 12 inch bridge on a frameless line's 30 inch uppers", () => {
+    const frameless = [
+      cabinet({ id: 21, masterCode: "W3030", description: '30" × 30¼" Wall Cabinet', subCategory: "Standard Wall", height: "30.25", width: "30" }),
+      cabinet({ id: 22, masterCode: "W3012", description: '30" × 12" Wall Cabinet', subCategory: "Standard Wall", height: "12", width: "30" }),
+      cabinet({ id: 23, masterCode: "W3018", description: '30" × 18" Wall Cabinet', subCategory: "Bridge / Stacker", height: "17.63", width: "30" }),
+    ];
+    const proposal = rangeCompanionProposal(range(), DEFAULT_ROOM, frameless, [microwave], 30);
+    expect(proposal!.bridge.masterCode).toBe("W3012");
+    expect(Number(proposal!.bridge.height)).toBe(12);
+  });
+
 	it("keeps the 16-inch microwave and its W3018 bridge fixed at the 72-inch datum", () => {
 	  const proposal = rangeCompanionProposal(
 	    range(),
