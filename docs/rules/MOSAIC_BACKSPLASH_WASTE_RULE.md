@@ -101,5 +101,5 @@ advertises a "mosaic look".
 ## Rollout
 
 Frontend only: no backend procedure or schema change was needed. The rule row for the admin Kitchen
-Rules screen is `docs/sql/0249_mosaic_backsplash_waste.tidb.sql` (one statement, `cabinet_dealz.`
+Rules screen is `docs/sql/0260_mosaic_backsplash_waste.tidb.sql` (one statement, `cabinet_dealz.`
 prefix, `INSERT IGNORE`, no `IF NOT EXISTS`).

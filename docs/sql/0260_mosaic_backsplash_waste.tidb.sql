@@ -1,4 +1,4 @@
--- TiDB SQL editor version. Numbered 0249. Run after 0233 (the kitchen_rules table must exist).
+-- TiDB SQL editor version. Numbered 0260. Run after 0233 (the kitchen_rules table must exist).
 -- One statement per numbered block. Every table is cabinet_dealz.<table>.
 -- Do not run this from an application. The owner pastes each block in the TiDB editor.
 -- Safe to re-run: INSERT IGNORE. Adds only the owner's mosaic-backsplash 5% waste rule row.
