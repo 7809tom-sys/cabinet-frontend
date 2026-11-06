@@ -65,6 +65,7 @@ const AffiliateDashboard = lazy(() => import("@/pages/AffiliateDashboard"));
 const ContractorDashboard = lazy(() => import("@/pages/ContractorDashboard"));
 const Cart = lazy(() => import("@/pages/Cart"));
 const VendorPortal = lazy(() => import("@/pages/VendorPortal"));
+const CatalogDensityPreview = lazy(() => import("@/pages/CatalogDensityPreview"));
 const VendorClosetStudio = lazy(() => import("@/pages/VendorClosetStudio"));
 const PhotoToCart = lazy(() => import("@/pages/PhotoToCart"));
 const FixturePhotoToCart = lazy(() => import("@/pages/FixturePhotoToCart"));
@@ -819,6 +820,16 @@ export default function App() {
               <VendorClosetStudio />
             </Suspense>
           </div>
+        </Route>
+
+        {/* Dev-only screenshot harness for the vendor catalog density work. It
+            renders the same table markup the real catalog uses. */}
+        <Route path="/catalog-density-preview">
+          {() => (
+            <Suspense fallback={<PageLoader />}>
+              <CatalogDensityPreview compact={new URLSearchParams(window.location.search).get("compact") === "1"} />
+            </Suspense>
+          )}
         </Route>
 
         <Route path="/vendor">

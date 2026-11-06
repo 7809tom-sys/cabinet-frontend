@@ -2907,6 +2907,1280 @@ new file mode 100644
 +    expect(result.error).toContain("0252");
 +  });
 +});
+diff --git a/shared/cabinetSkuDimensions.ts b/shared/cabinetSkuDimensions.ts
+new file mode 100644
+--- /dev/null
++++ b/shared/cabinetSkuDimensions.ts
+@@ -0,0 +1,53 @@
++/**
++ * Reading a cabinet's width, height and depth out of its SKU.
++ *
++ * This mirrors `wallCabinetSkuDimensions` in `client/src/lib/design.ts` — the
++ * parser the 3D Designer itself uses — so a dimension derived here builds the
++ * same box the plan will. It lives in `shared/` because the server needs the same
++ * answer when it validates an admin override.
++ *
++ * Only unambiguous codes resolve. A code that does not match one of these exact
++ * shapes returns null, and the caller must then refuse rather than guess.
++ */
++
++export type CabinetDimensionsIn = { width: number; height: number; depth: number };
++
++/** The wall-cabinet code shapes, in the Designer's own precedence order. */
++export function wallCabinetSkuDimensions(masterCode: string | null | undefined): CabinetDimensionsIn | null {
++  const code = (masterCode ?? "").trim().toUpperCase();
++  const match = (pattern: RegExp) => code.match(pattern);
++  let parsed = match(/(?:^|[^A-Z0-9])W-(\d{2})-(\d{2})$/);
++  if (parsed) return { width: Number(parsed[1]), height: Number(parsed[2]), depth: 12 };
++  parsed = match(/(?:^|[^A-Z0-9])WR(\d{2})(\d{2})$/);
++  if (parsed) return { width: Number(parsed[1]), height: Number(parsed[2]), depth: 24 };
++  parsed = match(/(?:^|[^A-Z0-9])W(\d{2})(\d{2})GD$/);
++  if (parsed) return { width: Number(parsed[1]), height: Number(parsed[2]), depth: 12 };
++  parsed = match(/(?:^|[^A-Z0-9])W(\d{2})(\d{2})(\d{2})$/);
++  if (parsed) return { width: Number(parsed[1]), height: Number(parsed[2]), depth: Number(parsed[3]) };
++  parsed = match(/(?:^|[^A-Z0-9])W(\d{2})(\d{2})$/);
++  if (parsed) return { width: Number(parsed[1]), height: Number(parsed[2]), depth: 12 };
++  return null;
++}
++
++/**
++ * Standard base-cabinet depth. Base codes carry width and height but not depth,
++ * so 24" is the convention rather than a parse — it is only used when the code
++ * really is a base cabinet (B24, B30FH, 3DB18 …).
++ */
++export const BASE_CABINET_DEPTH_IN = 24;
++
++/** `B24` → 24W × 34.5H × 24D. `B30FH` → 30W × 34.5H × 24D. */
++export function baseCabinetSkuDimensions(masterCode: string | null | undefined): CabinetDimensionsIn | null {
++  const code = (masterCode ?? "").trim().toUpperCase();
++  const parsed = code.match(/(?:^|[^A-Z0-9])(?:B|3DB|2DB|DB)(\d{2})(?:FH)?$/);
++  if (!parsed) return null;
++  return { width: Number(parsed[1]), height: 34.5, depth: BASE_CABINET_DEPTH_IN };
++}
++
++/**
++ * Dimensions from a SKU, wall first then base. Returns null when neither shape
++ * matches — never a best guess.
++ */
++export function cabinetSkuDimensions(masterCode: string | null | undefined): CabinetDimensionsIn | null {
++  return wallCabinetSkuDimensions(masterCode) ?? baseCabinetSkuDimensions(masterCode);
++}
+diff --git a/shared/cabinetSkuDimensions.test.ts b/shared/cabinetSkuDimensions.test.ts
+new file mode 100644
+--- /dev/null
++++ b/shared/cabinetSkuDimensions.test.ts
+@@ -0,0 +1,48 @@
++import { describe, expect, it } from "vitest";
++import { baseCabinetSkuDimensions, cabinetSkuDimensions, wallCabinetSkuDimensions } from "./cabinetSkuDimensions";
++
++describe("wall cabinet codes", () => {
++  it("reads W3024 as 30 wide × 24 high × 12 deep", () => {
++    expect(wallCabinetSkuDimensions("W3024")).toEqual({ width: 30, height: 24, depth: 12 });
++  });
++
++  it("matches the Designer's own shapes", () => {
++    expect(wallCabinetSkuDimensions("W-36-24")).toEqual({ width: 36, height: 24, depth: 12 });
++    expect(wallCabinetSkuDimensions("W3012")).toEqual({ width: 30, height: 12, depth: 12 });
++    expect(wallCabinetSkuDimensions("W3024GD")).toEqual({ width: 30, height: 24, depth: 12 });
++    expect(wallCabinetSkuDimensions("W302424")).toEqual({ width: 30, height: 24, depth: 24 });
++    expect(wallCabinetSkuDimensions("WR3024")).toEqual({ width: 30, height: 24, depth: 24 });
++  });
++
++  it("tolerates a vendor prefix and lower case", () => {
++    expect(wallCabinetSkuDimensions("cs-w3024")).toEqual({ width: 30, height: 24, depth: 12 });
++  });
++
++  it("refuses a code it cannot read unambiguously", () => {
++    expect(wallCabinetSkuDimensions("W30")).toBeNull();
++    expect(wallCabinetSkuDimensions("WALL-30")).toBeNull();
++    expect(wallCabinetSkuDimensions("")).toBeNull();
++    expect(wallCabinetSkuDimensions(null)).toBeNull();
++  });
++});
++
++describe("base cabinet codes", () => {
++  it("uses the standard 24-inch depth and 34.5-inch height", () => {
++    expect(baseCabinetSkuDimensions("B24")).toEqual({ width: 24, height: 34.5, depth: 24 });
++    expect(baseCabinetSkuDimensions("B30FH")).toEqual({ width: 30, height: 34.5, depth: 24 });
++    expect(baseCabinetSkuDimensions("3DB18")).toEqual({ width: 18, height: 34.5, depth: 24 });
++  });
++
++  it("refuses anything else", () => {
++    expect(baseCabinetSkuDimensions("B")).toBeNull();
++    expect(baseCabinetSkuDimensions("W3024")).toBeNull();
++  });
++});
++
++describe("either shape", () => {
++  it("prefers the wall reading and falls back to base", () => {
++    expect(cabinetSkuDimensions("W3024")).toEqual({ width: 30, height: 24, depth: 12 });
++    expect(cabinetSkuDimensions("B24")).toEqual({ width: 24, height: 34.5, depth: 24 });
++    expect(cabinetSkuDimensions("XYZ-1")).toBeNull();
++  });
++});
+diff --git a/shared/designerReadyOverride.ts b/shared/designerReadyOverride.ts
+new file mode 100644
+--- /dev/null
++++ b/shared/designerReadyOverride.ts
+@@ -0,0 +1,504 @@
++/**
++ * The admin designer-visibility override: a tri-state, not a boolean.
++ *
++ * The catalog's own answer (`effectiveDesignerEligible`) is still the default.
++ * An administrator can replace it in either direction:
++ *
++ *   null / "auto"  → use the catalog's rules (the normal case)
++ *   "ready"        → FORCED READY. Clears the red flag on an item the rules would
++ *                    refuse, e.g. one whose dimensions can be derived from its SKU.
++ *   "off"          → FORCED OFF. Hides a perfectly valid item from the 3D Designer
++ *                    and auto-design, e.g. a cabinet out of stock for months.
++ *
++ * Both directions record who and when, and both are reversible with "Reset to
++ * automatic", which simply nulls the override so the catalog decides again.
++ *
++ * Why a tri-state and not a boolean: a boolean cannot express "this looks fine
++ * but do not offer it", and worse, `false` is indistinguishable from "no
++ * override", so turning an item off would silently fall back to automatic.
++ *
++ * "Off" can carry a reason and a "back in stock" date. With a date the item
++ * returns to automatic by itself — evaluated at read time, so no cron is needed
++ * and the answer is correct the instant the date passes.
++ */
++
++import {
++  cabinetCanBeRenderedOrPlacedIn3d,
++  designerEligibilityDecision,
++  positiveDesignerMeasure,
++  type DesignerCabinetShape,
++} from "./designerEligibility";
++import { cabinetSkuDimensions } from "./cabinetSkuDimensions";
++
++/** Stored as ENUM('ready','off') NULL. Only these two values mean "overridden". */
++export type DesignerReadyOverrideState = "ready" | "off";
++
++export const DESIGNER_OVERRIDE_READY: DesignerReadyOverrideState = "ready";
++export const DESIGNER_OVERRIDE_OFF: DesignerReadyOverrideState = "off";
++
++export type DesignerReadyOverride = {
++  designerReadyOverride?: DesignerReadyOverrideState | string | null;
++  designerReadyOverrideBy?: string | null;
++  designerReadyOverrideAt?: string | Date | null;
++  /** Set when an admin approved an item whose dimensions were derived from the SKU. */
++  designerReadyDerivedFrom?: string | null;
++  /** Why it was turned off — free text, defaults to "Out of stock". */
++  designerOffReason?: string | null;
++  /** When it should come back automatically. Null means "until an admin resets it". */
++  designerOffUntil?: string | Date | null;
++};
++
++export type DesignerReadyCabinet = DesignerCabinetShape & DesignerReadyOverride & {
++  /** The stored catalog flag, before any override. */
++  designerEligible?: boolean | null;
++  id?: number | null;
++  masterCode?: string | null;
++};
++
++export type DimensionSource = "catalog" | "derived";
++
++export type DerivedDimensions = {
++  width: number;
++  height: number;
++  depth: number;
++  /** The code the values came from, e.g. "W3024". */
++  from: string;
++};
++
++/** The override in force right now: "ready", "off", or null for automatic. */
++export type ActiveOverride = DesignerReadyOverrideState | null;
++
++export const DEFAULT_DESIGNER_OFF_REASON = "Out of stock";
++
++function text(value: string | null | undefined): string {
++  return (value ?? "").trim();
++}
++
++/** The raw stored value normalised to the two legal states, or null. */
++export function normaliseOverrideState(value: unknown): ActiveOverride {
++  const raw = typeof value === "string" ? value.trim().toLowerCase() : "";
++  if (raw === "ready") return DESIGNER_OVERRIDE_READY;
++  if (raw === "off") return DESIGNER_OVERRIDE_OFF;
++  return null;
++}
++
++function asDate(value: string | Date | null | undefined): Date | null {
++  if (value == null || value === "") return null;
++  const date = value instanceof Date ? value : new Date(value);
++  return Number.isNaN(date.getTime()) ? null : date;
++}
++
++/**
++ * A back-in-stock value is a CALENDAR DATE, not an instant. "2027-08-01" means
++ * August 1 wherever the reader is; parsing it as midnight UTC and comparing
++ * instants would make the item return the evening of July 31 in Central time.
++ *
++ * Returns the date as `YYYY-MM-DD`, or null when there is nothing usable.
++ */
++export function designerOffUntilDate(value: string | Date | null | undefined): string | null {
++  if (value == null || value === "") return null;
++  if (typeof value === "string") {
++    const dateOnly = /^(\d{4})-(\d{2})-(\d{2})/.exec(value.trim());
++    if (dateOnly) return `${dateOnly[1]}-${dateOnly[2]}-${dateOnly[3]}`;
++  }
++  const date = asDate(value);
++  return date ? date.toISOString().slice(0, 10) : null;
++}
++
++/** Today's Central calendar date as `YYYY-MM-DD`. */
++export function centralToday(now: Date = new Date()): string {
++  return new Intl.DateTimeFormat("en-CA", {
++    timeZone: "America/Chicago",
++    year: "numeric",
++    month: "2-digit",
++    day: "2-digit",
++  }).format(now);
++}
++
++/**
++ * True when the back-in-stock date has arrived. Compared as calendar dates in
++ * Central time, so the item returns on the date that was entered — evaluated on
++ * read, so no cron is needed.
++ */
++export function designerOffUntilReached(value: string | Date | null | undefined, now: Date = new Date()): boolean {
++  const until = designerOffUntilDate(value);
++  if (!until) return false;
++  return until <= centralToday(now);
++}
++
++/**
++ * The override in force at `now`.
++ *
++ * A forced-off item whose `designerOffUntil` has passed is back to automatic —
++ * the stored row is left alone, so the history of when it was turned off is
++ * preserved and the decision is simply re-evaluated on every read.
++ */
++export function activeDesignerOverride(
++  cabinet: DesignerReadyOverride,
++  now: Date = new Date(),
++): ActiveOverride {
++  const stored = normaliseOverrideState(cabinet.designerReadyOverride);
++  if (stored !== DESIGNER_OVERRIDE_OFF) return stored;
++  if (designerOffUntilReached(cabinet.designerOffUntil, now)) return null;
++  return DESIGNER_OVERRIDE_OFF;
++}
++
++/** True when the item was turned off and its return date has passed. */
++export function designerOffExpired(cabinet: DesignerReadyOverride, now: Date = new Date()): boolean {
++  if (normaliseOverrideState(cabinet.designerReadyOverride) !== DESIGNER_OVERRIDE_OFF) return false;
++  return designerOffUntilReached(cabinet.designerOffUntil, now);
++}
++
++/** True when an administrator approved this item by hand. */
++export function hasDesignerReadyOverride(cabinet: DesignerReadyOverride, now: Date = new Date()): boolean {
++  return activeDesignerOverride(cabinet, now) === DESIGNER_OVERRIDE_READY;
++}
++
++/** True when an administrator hid this item from the Designer. */
++export function isDesignerTurnedOff(cabinet: DesignerReadyOverride, now: Date = new Date()): boolean {
++  return activeDesignerOverride(cabinet, now) === DESIGNER_OVERRIDE_OFF;
++}
++
++/**
++ * The flag to act on: the override wins, otherwise the catalog's own value.
++ * "Reset to automatic" therefore restores the real eligibility instead of false.
++ */
++export function effectiveDesignerEligible(cabinet: DesignerReadyCabinet, now: Date = new Date()): boolean {
++  const override = activeDesignerOverride(cabinet, now);
++  if (override === DESIGNER_OVERRIDE_READY) return true;
++  if (override === DESIGNER_OVERRIDE_OFF) return false;
++  return cabinet.designerEligible === true;
++}
++
++/**
++ * Whether the item appears in the Designer palette and auto-design. Same rule as
++ * `effectiveDesignerEligible`, named for the call sites that filter a product
++ * list, and it always reads the override first so "off" really is off.
++ */
++export function isOfferedInDesigner(cabinet: DesignerReadyCabinet, now: Date = new Date()): boolean {
++  return effectiveDesignerEligible(cabinet, now);
++}
++
++/**
++ * Why the item is flagged in the catalog's own words. This is what the admin sees
++ * before overriding. A forced-off item is not "flagged by the rules" — it was
++ * turned off deliberately, so that is said instead.
++ */
++export function designerFlagReason(
++  cabinet: DesignerReadyCabinet,
++  hasPublishedPrice = true,
++  now: Date = new Date(),
++): string {
++  if (isDesignerTurnedOff(cabinet, now)) {
++    const reason = text(cabinet.designerOffReason) || DEFAULT_DESIGNER_OFF_REASON;
++    const until = designerOffUntilDate(cabinet.designerOffUntil);
++    return until ? `turned off by an administrator: ${reason} until ${until}` : `turned off by an administrator: ${reason}`;
++  }
++  return designerEligibilityDecision(cabinet, hasPublishedPrice).reason;
++}
++
++export type OverrideEligibility = {
++  blocked: boolean;
++  /** Why it is blocked, naming the missing field. Null when allowed. */
++  reason: string | null;
++  dimensions: { width: number; height: number; depth: number };
++  source: DimensionSource;
++  derived: DerivedDimensions | null;
++  missing: readonly ("width" | "height" | "depth")[];
++};
++
++/**
++ * Dimensions to hand the Designer, and where they came from.
++ *
++ * The catalog columns win. Only when width, height OR depth is unusable do we
++ * try the SKU, and only an unambiguous parse is accepted — the same parser the
++ * Designer itself uses, so a derived box matches what the plan will build.
++ */
++export function resolveDesignerDimensions(cabinet: DesignerReadyCabinet): OverrideEligibility {
++  const missing: Array<"width" | "height" | "depth"> = [];
++  if (!positiveDesignerMeasure(cabinet.width)) missing.push("width");
++  if (!positiveDesignerMeasure(cabinet.height)) missing.push("height");
++  if (!positiveDesignerMeasure(cabinet.depth)) missing.push("depth");
++
++  const parse = missing.length > 0 ? cabinetSkuDimensions(cabinet.masterCode) : null;
++  const derived: DerivedDimensions | null = parse
++    ? { ...parse, from: text(cabinet.masterCode).toUpperCase() }
++    : null;
++
++  const num = (value: string | number | null | undefined, fallback: number | null): number =>
++    positiveDesignerMeasure(value) ? Number(value) : (fallback ?? 0);
++
++  const dimensions = {
++    width: num(cabinet.width, derived?.width ?? null),
++    height: num(cabinet.height, derived?.height ?? null),
++    depth: num(cabinet.depth, derived?.depth ?? null),
++  };
++
++  const stillMissing = (["width", "height", "depth"] as const)
++    .filter((field) => !(dimensions[field] > 0));
++
++  if (stillMissing.length > 0) {
++    return {
++      blocked: true,
++      reason: `${stillMissing.join(", ")} ${stillMissing.length === 1 ? "is" : "are"} missing and ${cabinet.masterCode ? `"${cabinet.masterCode}" cannot be parsed` : "there is no SKU to parse"}. Fill the catalog dimensions first.`,
++      dimensions,
++      source: "catalog",
++      derived: null,
++      missing: stillMissing,
++    };
++  }
++
++  return {
++    blocked: false,
++    reason: null,
++    dimensions,
++    source: missing.length > 0 ? "derived" : "catalog",
++    derived: missing.length > 0 ? derived : null,
++    missing: [],
++  };
++}
++
++export type OverrideAction = "ready" | "off" | "reset";
++
++export type OverrideDecision =
++  | {
++    allowed: true;
++    action: OverrideAction;
++    /** Only meaningful for "ready". */
++    dimensions: OverrideEligibility["dimensions"];
++    source: DimensionSource;
++    derived: DerivedDimensions | null;
++    note: string;
++  }
++  | { allowed: false; reason: string };
++
++/**
++ * Whether an administrator may make this change, and what it will do.
++ *
++ * `role` is checked here as well as on the server: the controls are admin-only,
++ * and returning "not allowed" for anyone else means a stray call cannot produce
++ * an approval note.
++ */
++export function designerOverrideDecision(
++  cabinet: DesignerReadyCabinet,
++  action: OverrideAction,
++  opts: { role: string | null | undefined; hasPublishedPrice?: boolean; now?: Date },
++): OverrideDecision {
++  const now = opts.now ?? new Date();
++  if (opts.role !== "admin") {
++    return { allowed: false, reason: "Only an administrator can change Designer availability." };
++  }
++  const current = activeDesignerOverride(cabinet, now);
++
++  if (action === "reset") {
++    if (current == null) return { allowed: false, reason: "This item is already on automatic." };
++    return {
++      allowed: true,
++      action,
++      dimensions: { width: 0, height: 0, depth: 0 },
++      source: "catalog",
++      derived: null,
++      note: "Back to the catalog's own rules.",
++    };
++  }
++
++  if (action === "off") {
++    if (current === DESIGNER_OVERRIDE_OFF) return { allowed: false, reason: "This item is already turned off." };
++    // Turning something off never needs dimensions: the Designer simply stops
++    // offering it. That is the point of the control.
++    return {
++      allowed: true,
++      action,
++      dimensions: { width: 0, height: 0, depth: 0 },
++      source: "catalog",
++      derived: null,
++      note: "Hidden from the 3D Designer and auto-design. Saved designs keep it.",
++    };
++  }
++
++  // "ready"
++  if (current === DESIGNER_OVERRIDE_READY) {
++    return { allowed: false, reason: "This item is already available in the 3D Designer." };
++  }
++  if (opts.hasPublishedPrice === false) {
++    return {
++      allowed: false,
++      reason: `Approving the flag will not put this in the Designer yet: ${designerEligibilityDecision(cabinet, false).reason}. Fix the price first.`,
++    };
++  }
++
++  const geometry = resolveDesignerDimensions(cabinet);
++  if (geometry.blocked) return { allowed: false, reason: geometry.reason ?? "Dimensions are missing." };
++
++  const placeable = cabinetCanBeRenderedOrPlacedIn3d({
++    ...cabinet,
++    width: geometry.dimensions.width,
++    height: geometry.dimensions.height,
++    depth: geometry.dimensions.depth,
++  });
++  if (!placeable) {
++    return { allowed: false, reason: "The Designer cannot build a box for this item type, so approving it would not make it usable." };
++  }
++
++  return {
++    allowed: true,
++    action,
++    dimensions: geometry.dimensions,
++    source: geometry.source,
++    derived: geometry.derived,
++    note: geometry.derived
++      ? `Dimensions ${geometry.dimensions.width}″ × ${geometry.dimensions.height}″ × ${geometry.dimensions.depth}″ derived from ${geometry.derived.from}`
++      : `Using the catalog dimensions ${geometry.dimensions.width}″ × ${geometry.dimensions.height}″ × ${geometry.dimensions.depth}″`,
++  };
++}
++
++/** Backwards-compatible name for the "ready" case. */
++export function designerReadyOverrideDecision(
++  cabinet: DesignerReadyCabinet,
++  opts: { role: string | null | undefined; hasPublishedPrice?: boolean; now?: Date },
++): OverrideDecision {
++  return designerOverrideDecision(cabinet, "ready", opts);
++}
++
++function actorLabel(actor: { name?: string | null; email?: string | null }): string {
++  const name = text(actor.name);
++  const email = text(actor.email);
++  if (name && email) return `${name} <${email}>`.slice(0, 255);
++  return (name || email || "admin").slice(0, 255);
++}
++
++/** The values to store for "forced ready". */
++export function designerReadyOverridePayload(
++  decision: Extract<OverrideDecision, { allowed: true }>,
++  actor: { name?: string | null; email?: string | null },
++  now: Date = new Date(),
++): {
++  designerReadyOverride: DesignerReadyOverrideState;
++  designerReadyOverrideBy: string;
++  designerReadyOverrideAt: string;
++  designerReadyDerivedFrom: string | null;
++  designerOffReason: null;
++  designerOffUntil: null;
++  width: number | null;
++  height: number | null;
++  depth: number | null;
++} {
++  return {
++    designerReadyOverride: DESIGNER_OVERRIDE_READY,
++    designerReadyOverrideBy: actorLabel(actor),
++    designerReadyOverrideAt: now.toISOString(),
++    designerReadyDerivedFrom: decision.derived?.from ?? null,
++    designerOffReason: null,
++    designerOffUntil: null,
++    // Persist derived dimensions so the Designer has a real box immediately.
++    width: decision.source === "derived" ? decision.dimensions.width : null,
++    height: decision.source === "derived" ? decision.dimensions.height : null,
++    depth: decision.source === "derived" ? decision.dimensions.depth : null,
++  };
++}
++
++/** The values to store for "forced off", with the optional reason and return date. */
++export function designerOffPayload(
++  input: { reason?: string | null; until?: string | Date | null },
++  actor: { name?: string | null; email?: string | null },
++  now: Date = new Date(),
++): {
++  designerReadyOverride: DesignerReadyOverrideState;
++  designerReadyOverrideBy: string;
++  designerReadyOverrideAt: string;
++  designerOffReason: string;
++  designerOffUntil: string | null;
++} {
++  const reason = text(input.reason) || DEFAULT_DESIGNER_OFF_REASON;
++  // Stored as a calendar date (YYYY-MM-DD). A date already reached would put the
++  // item straight back on, which is not what "turn it off" means, so it is
++  // dropped rather than stored — the caller can still see the reason.
++  const until = designerOffUntilDate(input.until);
++  return {
++    designerReadyOverride: DESIGNER_OVERRIDE_OFF,
++    designerReadyOverrideBy: actorLabel(actor),
++    designerReadyOverrideAt: now.toISOString(),
++    designerOffReason: reason.slice(0, 255),
++    designerOffUntil: until && until > centralToday(now) ? until : null,
++  };
++}
++
++/** The values to store for "reset to automatic". */
++export function designerReadyUndoPayload(): {
++  designerReadyOverride: null;
++  designerReadyOverrideBy: null;
++  designerReadyOverrideAt: null;
++  designerReadyDerivedFrom: null;
++  designerOffReason: null;
++  designerOffUntil: null;
++} {
++  return {
++    designerReadyOverride: null,
++    designerReadyOverrideBy: null,
++    designerReadyOverrideAt: null,
++    designerReadyDerivedFrom: null,
++    designerOffReason: null,
++    designerOffUntil: null,
++  };
++}
++
++/** "Off: Out of stock until Nov 5, 2026" — the line under a turned-off item. */
++export function designerOffLabel(
++  cabinet: DesignerReadyOverride,
++  formatDate: (value: string | Date | null | undefined) => string | null,
++  now: Date = new Date(),
++): string | null {
++  if (!isDesignerTurnedOff(cabinet, now)) return null;
++  const reason = text(cabinet.designerOffReason) || DEFAULT_DESIGNER_OFF_REASON;
++  // Format the calendar date, so a value stored as a timestamp still reads as the
++  // day it was entered rather than the evening before.
++  const untilDate = designerOffUntilDate(cabinet.designerOffUntil);
++  const until = untilDate ? formatDate(untilDate) : null;
++  return until ? `Off: ${reason} until ${until}` : `Off: ${reason}`;
++}
++
++/** "Manually approved by Dana · Nov 5, 2026" — the line under an approved item. */
++export function designerReadyOverrideNote(
++  cabinet: DesignerReadyOverride,
++  formatWhen: (value: string | Date | null | undefined) => string | null,
++  now: Date = new Date(),
++): string | null {
++  if (!hasDesignerReadyOverride(cabinet, now)) return null;
++  const by = text(cabinet.designerReadyOverrideBy);
++  const name = by.includes("<") ? by.slice(0, by.indexOf("<")).trim() || by : by;
++  const when = formatWhen(cabinet.designerReadyOverrideAt);
++  const who = name || "an administrator";
++  return when ? `Manually approved by ${who} · ${when}` : `Manually approved by ${who}`;
++}
++
++/** "Turned off by Dana · Nov 5, 2026" — who hid it and when. */
++export function designerOffAttribution(
++  cabinet: DesignerReadyOverride,
++  formatWhen: (value: string | Date | null | undefined) => string | null,
++  now: Date = new Date(),
++): string | null {
++  if (!isDesignerTurnedOff(cabinet, now)) return null;
++  const by = text(cabinet.designerReadyOverrideBy);
++  const name = by.includes("<") ? by.slice(0, by.indexOf("<")).trim() || by : by;
++  const when = formatWhen(cabinet.designerReadyOverrideAt);
++  const who = name || "an administrator";
++  return when ? `Turned off by ${who} · ${when}` : `Turned off by ${who}`;
++}
++
++/**
++ * A saved design that already contains this item keeps it, but flags it as
++ * unavailable so the plan is not silently changed under the customer.
++ */
++export function savedDesignItemAvailability(
++  cabinet: DesignerReadyCabinet,
++  now: Date = new Date(),
++): { available: boolean; label: string | null } {
++  if (isDesignerTurnedOff(cabinet, now)) {
++    const reason = text(cabinet.designerOffReason) || DEFAULT_DESIGNER_OFF_REASON;
++    return { available: false, label: `Unavailable — ${reason}` };
++  }
++  if (cabinet.designerEligible !== true && activeDesignerOverride(cabinet, now) == null) {
++    return { available: false, label: "Unavailable — not designer ready" };
++  }
++  return { available: true, label: null };
++}
+diff --git a/shared/designerReadyOverride.test.ts b/shared/designerReadyOverride.test.ts
+new file mode 100644
+--- /dev/null
++++ b/shared/designerReadyOverride.test.ts
+@@ -0,0 +1,387 @@
++import { describe, expect, it } from "vitest";
++import {
++  DEFAULT_DESIGNER_OFF_REASON,
++  activeDesignerOverride,
++  designerFlagReason,
++  designerOffAttribution,
++  designerOffExpired,
++  designerOffLabel,
++  designerOffPayload,
++  designerOverrideDecision,
++  isDesignerTurnedOff,
++  isOfferedInDesigner,
++  savedDesignItemAvailability,
++  designerReadyOverrideDecision,
++  designerReadyOverrideNote,
++  designerReadyOverridePayload,
++  designerReadyUndoPayload,
++  effectiveDesignerEligible,
++  hasDesignerReadyOverride,
++  resolveDesignerDimensions,
++  type DesignerReadyCabinet,
++} from "./designerReadyOverride";
++
++/**
++ * W3024 is the reported case: a 30 wide × 24 high × 12 deep wall cabinet on the
++ * Clark and Son line. Its catalog row carries no usable dimensions, so the
++ * Designer cannot build a box and the item is flagged — even though the SKU
++ * states all three numbers.
++ */
++const w3024: DesignerReadyCabinet = {
++  id: 481,
++  masterCode: "W3024",
++  description: '30" x 24" Wall Cabinet',
++  category: "Wall",
++  subCategory: "Wall Cabinet",
++  width: null,
++  height: null,
++  depth: null,
++  designerEligible: false,
++};
++
++const admin = { role: "admin" as const };
++
++describe("the flag and its reason", () => {
++  it("names the missing dimensions, which is why W3024 is red", () => {
++    expect(designerFlagReason(w3024)).toBe("missing width, height, or depth");
++  });
++
++  it("reports the flag as satisfied once the dimensions are present", () => {
++    // With a real box and a published price the catalog's own decision is yes.
++    expect(designerFlagReason({ ...w3024, width: 30, height: 24, depth: 12 })).toContain("published price");
++  });
++
++  it("reports a missing price first", () => {
++    expect(designerFlagReason(w3024, false)).toBe("no published supplier price");
++  });
++
++  it("is off until an override turns it on", () => {
++    expect(effectiveDesignerEligible(w3024)).toBe(false);
++    expect(effectiveDesignerEligible({ ...w3024, designerEligible: true })).toBe(true);
++    expect(effectiveDesignerEligible({ ...w3024, designerReadyOverride: "ready" })).toBe(true);
++    // Reset clears the override and falls back to the catalog's own answer.
++    expect(effectiveDesignerEligible({ ...w3024, designerEligible: true, designerReadyOverride: null })).toBe(true);
++    // "off" wins over a catalog that says yes.
++    expect(effectiveDesignerEligible({ ...w3024, designerEligible: true, designerReadyOverride: "off" })).toBe(false);
++  });
++
++  it("reads the override from the stored enum, and ignores anything else", () => {
++    expect(hasDesignerReadyOverride({ designerReadyOverride: "ready" })).toBe(true);
++    expect(hasDesignerReadyOverride({ designerReadyOverride: "READY" })).toBe(true);
++    expect(hasDesignerReadyOverride({ designerReadyOverride: "off" })).toBe(false);
++    expect(hasDesignerReadyOverride({})).toBe(false);
++    expect(hasDesignerReadyOverride({ designerReadyOverride: "yes" })).toBe(false);
++  });
++});
++
++describe("deriving the box from the SKU", () => {
++  it("derives W3024 as 30 × 24 × 12", () => {
++    const geometry = resolveDesignerDimensions(w3024);
++    expect(geometry.blocked).toBe(false);
++    expect(geometry.dimensions).toEqual({ width: 30, height: 24, depth: 12 });
++    expect(geometry.source).toBe("derived");
++    expect(geometry.derived).toEqual({ width: 30, height: 24, depth: 12, from: "W3024" });
++  });
++
++  it("prefers the catalog numbers when they are present", () => {
++    const geometry = resolveDesignerDimensions({ ...w3024, width: 31, height: 25, depth: 13 });
++    expect(geometry.dimensions).toEqual({ width: 31, height: 25, depth: 13 });
++    expect(geometry.source).toBe("catalog");
++    expect(geometry.derived).toBeNull();
++  });
++
++  it("fills only the missing field from a partly-populated row", () => {
++    const geometry = resolveDesignerDimensions({ ...w3024, width: 30, height: 24, depth: null });
++    expect(geometry.dimensions).toEqual({ width: 30, height: 24, depth: 12 });
++    expect(geometry.source).toBe("derived");
++  });
++
++  it("blocks, naming the field, when the SKU cannot be parsed", () => {
++    const geometry = resolveDesignerDimensions({ ...w3024, masterCode: "WALL-30-CUSTOM" });
++    expect(geometry.blocked).toBe(true);
++    expect(geometry.reason).toContain("are missing");
++    expect(geometry.reason).toContain('"WALL-30-CUSTOM" cannot be parsed');
++    expect(geometry.reason).toContain("Fill the catalog dimensions");
++    expect(geometry.missing).toEqual(["width", "height", "depth"]);
++  });
++
++  it("blocks with no SKU at all rather than guessing", () => {
++    const geometry = resolveDesignerDimensions({ ...w3024, masterCode: null });
++    expect(geometry.blocked).toBe(true);
++    expect(geometry.reason).toContain("no SKU to parse");
++  });
++});
++
++describe("the admin decision", () => {
++  it("allows an admin to approve W3024 and says what it derived", () => {
++    const decision = designerReadyOverrideDecision(w3024, admin);
++    expect(decision.allowed).toBe(true);
++    if (!decision.allowed) throw new Error("expected allowed");
++    expect(decision.source).toBe("derived");
++    expect(decision.note).toBe('Dimensions 30″ × 24″ × 12″ derived from W3024');
++  });
++
++  it("refuses anyone who is not an administrator", () => {
++    for (const role of ["user", "distributor", "dealer", null]) {
++      const decision = designerReadyOverrideDecision(w3024, { role });
++      expect(decision.allowed).toBe(false);
++      if (decision.allowed) throw new Error("unreachable");
++      expect(decision.reason).toContain("administrator");
++    }
++  });
++
++  it("still allows approval when the catalog flag is on but the box is unbuildable", () => {
++    // The flag alone is not proof: W3024 has no dimensions, so "ready" is real work.
++    const decision = designerReadyOverrideDecision({ ...w3024, designerEligible: true }, admin);
++    expect(decision.allowed).toBe(true);
++  });
++
++  it("refuses to re-approve an item that is already forced ready", () => {
++    const decision = designerReadyOverrideDecision({ ...w3024, designerReadyOverride: "ready" }, admin);
++    expect(decision.allowed).toBe(false);
++    if (decision.allowed) throw new Error("unreachable");
++    expect(decision.reason).toContain("already available");
++  });
++
++  it("refuses when there is no published price, because the Designer would still hide it", () => {
++    const decision = designerReadyOverrideDecision(w3024, { role: "admin", hasPublishedPrice: false });
++    expect(decision.allowed).toBe(false);
++    if (decision.allowed) throw new Error("unreachable");
++    expect(decision.reason).toContain("no published supplier price");
++  });
++
++  it("blocks an unparseable SKU and names the missing field", () => {
++    const decision = designerReadyOverrideDecision({ ...w3024, masterCode: "??" }, admin);
++    expect(decision.allowed).toBe(false);
++    if (decision.allowed) throw new Error("unreachable");
++    expect(decision.reason).toContain("cannot be parsed");
++    expect(decision.reason).toContain("Fill the catalog dimensions");
++  });
++
++  it("refuses an item type the Designer cannot draw even with dimensions", () => {
++    const decision = designerReadyOverrideDecision({
++      ...w3024,
++      masterCode: "CR",
++      description: "Crown moulding",
++      category: "Trim",
++      subCategory: "Crown",
++      width: null,
++      height: null,
++      depth: null,
++    }, admin);
++    expect(decision.allowed).toBe(false);
++  });
++
++  it("uses the catalog dimensions when they are complete", () => {
++    const decision = designerReadyOverrideDecision({ ...w3024, width: 30, height: 24, depth: 12 }, admin);
++    expect(decision.allowed).toBe(true);
++    if (!decision.allowed) throw new Error("unexpected");
++    expect(decision.source).toBe("catalog");
++    expect(decision.note).toContain("catalog dimensions");
++  });
++});
++
++describe("what gets stored", () => {
++  it("records who and when, and the derivation", () => {
++    const decision = designerReadyOverrideDecision(w3024, admin);
++    if (!decision.allowed) throw new Error("unexpected");
++    const payload = designerReadyOverridePayload(decision, { name: "Dana Reaves", email: "dana@cabinetdealz.com" }, new Date("2026-11-06T02:00:00.000Z"));
++    expect(payload).toMatchObject({
++      designerReadyOverride: "ready",
++      designerReadyOverrideBy: "Dana Reaves <dana@cabinetdealz.com>",
++      designerReadyOverrideAt: "2026-11-06T02:00:00.000Z",
++      designerReadyDerivedFrom: "W3024",
++      width: 30,
++      height: 24,
++      depth: 12,
++    });
++  });
++
++  it("does not overwrite complete catalog dimensions with derived ones", () => {
++    const decision = designerReadyOverrideDecision({ ...w3024, width: 30, height: 24, depth: 12 }, admin);
++    if (!decision.allowed) throw new Error("unexpected");
++    const payload = designerReadyOverridePayload(decision, { name: "Dana" });
++    expect(payload.width).toBeNull();
++    expect(payload.designerReadyDerivedFrom).toBeNull();
++  });
++
++  it("undo clears the flag and the stamps", () => {
++    expect(designerReadyUndoPayload()).toEqual({
++      designerReadyOverride: null,
++      designerReadyOverrideBy: null,
++      designerReadyOverrideAt: null,
++      designerReadyDerivedFrom: null,
++      designerOffReason: null,
++      designerOffUntil: null,
++    });
++  });
++});
++
++describe("the note under an approved item", () => {
++  const format = (value: string | Date | null | undefined) => (value ? "Nov 5, 2026, 1:47 PM CT" : null);
++
++  it("names the administrator and the time", () => {
++    expect(designerReadyOverrideNote({
++      designerReadyOverride: "ready",
++      designerReadyOverrideBy: "Dana Reaves <dana@cabinetdealz.com>",
++      designerReadyOverrideAt: "2026-11-05T19:47:00.000Z",
++    }, format)).toBe("Manually approved by Dana Reaves · Nov 5, 2026, 1:47 PM CT");
++  });
++
++  it("drops the address from the visible note", () => {
++    expect(designerReadyOverrideNote({
++      designerReadyOverride: "ready",
++      designerReadyOverrideBy: "Dana Reaves <dana@cabinetdealz.com>",
++      designerReadyOverrideAt: null,
++    }, format)).toBe("Manually approved by Dana Reaves");
++  });
++
++  it("says nothing when there is no override", () => {
++    expect(designerReadyOverrideNote({ designerReadyOverride: null }, format)).toBeNull();
++    expect(designerReadyOverrideNote({}, format)).toBeNull();
++    expect(designerReadyOverrideNote({ designerReadyOverride: "off" }, format)).toBeNull();
++  });
++
++  it("still reads sensibly when the actor was not recorded", () => {
++    expect(designerReadyOverrideNote({ designerReadyOverride: "ready" }, format)).toBe("Manually approved by an administrator");
++  });
++});
++
++describe("forced off (out of stock)", () => {
++  const healthy: DesignerReadyCabinet = { ...w3024, width: 30, height: 24, depth: 12, designerEligible: true };
++  const NOW = new Date("2026-11-06T12:00:00.000Z");
++
++  it("hides an item that passes every check", () => {
++    const off = { ...healthy, designerReadyOverride: "off" as const, designerOffReason: "Out of stock" };
++    expect(effectiveDesignerEligible(off, NOW)).toBe(false);
++    expect(isOfferedInDesigner(off, NOW)).toBe(false);
++    expect(isDesignerTurnedOff(off, NOW)).toBe(true);
++  });
++
++  it("needs no dimensions to turn an item off", () => {
++    const decision = designerOverrideDecision(w3024, "off", { role: "admin", now: NOW });
++    expect(decision.allowed).toBe(true);
++  });
++
++  it("records the reason and the return date", () => {
++    const payload = designerOffPayload(
++      { reason: "Out of stock", until: "2027-08-01" },
++      { name: "Dana Reaves", email: "dana@cabinetdealz.com" },
++      NOW,
++    );
++    expect(payload).toMatchObject({
++      designerReadyOverride: "off",
++      designerReadyOverrideBy: "Dana Reaves <dana@cabinetdealz.com>",
++      designerReadyOverrideAt: NOW.toISOString(),
++      designerOffReason: "Out of stock",
++    });
++    expect(payload.designerOffUntil?.slice(0, 10)).toBe("2027-08-01");
++  });
++
++  it("defaults the reason to Out of stock", () => {
++    expect(designerOffPayload({}, { name: "Dana" }, NOW).designerOffReason).toBe("Out of stock");
++    expect(designerOffPayload({ reason: "  " }, { name: "Dana" }, NOW).designerOffReason).toBe("Out of stock");
++  });
++
++  it("drops a return date in the past instead of turning it straight back on", () => {
++    expect(designerOffPayload({ until: "2026-01-01" }, { name: "Dana" }, NOW).designerOffUntil).toBeNull();
++  });
++
++  it("is reversible with reset", () => {
++    const off = { ...healthy, designerReadyOverride: "off" as const };
++    expect(effectiveDesignerEligible(off, NOW)).toBe(false);
++    const reset = { ...off, ...designerReadyUndoPayload() };
++    expect(effectiveDesignerEligible(reset, NOW)).toBe(true);
++  });
++
++  it("refuses to turn off what is already off", () => {
++    expect(designerOverrideDecision({ ...healthy, designerReadyOverride: "off" }, "off", { role: "admin", now: NOW }).allowed).toBe(false);
++  });
++
++  it("refuses a non-admin", () => {
++    expect(designerOverrideDecision(healthy, "off", { role: "distributor", now: NOW }).allowed).toBe(false);
++  });
++
++  it("shows Off: <reason> until <date> on the listing", () => {
++    const label = designerOffLabel(
++      { designerReadyOverride: "off", designerOffReason: "Out of stock", designerOffUntil: "2027-08-01T00:00:00.000Z" },
++      () => "Aug 1, 2027",
++      NOW,
++    );
++    expect(label).toBe("Off: Out of stock until Aug 1, 2027");
++  });
++
++  it("omits the date when none was given", () => {
++    expect(designerOffLabel({ designerReadyOverride: "off" }, () => null, NOW)).toBe("Off: Out of stock");
++    expect(designerOffLabel({ designerReadyOverride: "ready" }, () => null, NOW)).toBeNull();
++  });
++
++  it("names who turned it off and when", () => {
++    expect(designerOffAttribution({
++      designerReadyOverride: "off",
++      designerReadyOverrideBy: "Dana Reaves <dana@cabinetdealz.com>",
++      designerReadyOverrideAt: "2026-11-05T19:47:00.000Z",
++    }, () => "Nov 5, 2026, 1:47 PM CT", NOW)).toBe("Turned off by Dana Reaves · Nov 5, 2026, 1:47 PM CT");
++  });
++});
++
++describe("automatic return on the back-in-stock date", () => {
++  const off = {
++    ...w3024,
++    width: 30, height: 24, depth: 12,
++    designerEligible: true,
++    designerReadyOverride: "off" as const,
++    designerOffReason: "Out of stock",
++    designerOffUntil: "2027-08-01T00:00:00.000Z",
++  };
++
++  it("stays off before the date", () => {
++    expect(effectiveDesignerEligible(off, new Date("2027-07-30T23:59:00.000Z"))).toBe(false);
++  });
++
++  it("returns to automatic on that Central calendar date, with no cron", () => {
++    // "2027-08-01" means August 1 in Central. 2027-08-01T05:00:00Z is midnight CDT
++    // on the 1st, which is the first instant it is back.
++    const onTheDay = new Date("2027-08-01T05:00:00.000Z");
++    expect(effectiveDesignerEligible(off, onTheDay)).toBe(true);
++    expect(activeDesignerOverride(off, onTheDay)).toBeNull();
++    expect(designerOffExpired(off, onTheDay)).toBe(true);
++    // An hour earlier it is still July 31 in Central, so still off.
++    expect(effectiveDesignerEligible(off, new Date("2027-08-01T04:00:00.000Z"))).toBe(false);
++  });
++
++  it("falls back to the catalog's own answer, not to 'on'", () => {
++    const wasIneligible = { ...off, designerEligible: false };
++    expect(effectiveDesignerEligible(wasIneligible, new Date("2027-08-01T05:00:00.000Z"))).toBe(false);
++  });
++
++  it("stays off forever when no date was given", () => {
++    const noDate = { ...off, designerOffUntil: null };
++    expect(effectiveDesignerEligible(noDate, new Date("2030-01-01T00:00:00.000Z"))).toBe(false);
++    expect(designerOffExpired(noDate, new Date("2030-01-01T00:00:00.000Z"))).toBe(false);
++  });
++
++  it("stops showing the Off label once it has expired", () => {
++    expect(designerOffLabel(off, () => "Aug 1, 2027", new Date("2027-08-03T00:00:00.000Z"))).toBeNull();
++  });
++});
++
++describe("saved designs that contain the item", () => {
++  it("keeps the item and marks it unavailable while turned off", () => {
++    expect(savedDesignItemAvailability({
++      ...w3024,
++      designerEligible: true,
++      designerReadyOverride: "off",
++      designerOffReason: "Out of stock",
++    })).toEqual({ available: false, label: "Unavailable — Out of stock" });
++  });
++
++  it("leaves an available item alone", () => {
++    expect(savedDesignItemAvailability({ ...w3024, width: 30, height: 24, depth: 12, designerEligible: true }))
++      .toEqual({ available: true, label: null });
++  });
++
++  it("marks an item the rules never allowed, too", () => {
++    expect(savedDesignItemAvailability(w3024)).toEqual({ available: false, label: "Unavailable — not designer ready" });
++  });
++});
+diff --git a/server/lib/designerOverride.ts b/server/lib/designerOverride.ts
+new file mode 100644
+--- /dev/null
++++ b/server/lib/designerOverride.ts
+@@ -0,0 +1,143 @@
++// Admin override of a cabinet's Designer availability.
++//
++// The stored column is a tri-state (`ENUM('ready','off') NULL`), never a boolean:
++// NULL means automatic, and the catalog's own `designerEligible` rules decide.
++// Both overrides record who and when, and both are reversible.
++//
++// When an administrator approves an item whose dimensions had to be derived from
++// its SKU, those dimensions are written onto the cabinet as well, so the Designer
++// has a real box to build immediately rather than a flag it cannot render.
++
++import { eq, sql } from "drizzle-orm";
++import { cabinets } from "../../drizzle/schema";
++import { getDb } from "../db";
++import { isMissingSchemaError, schemaErrorMessage } from "./orderSchemaGuard";
++
++type Database = NonNullable<Awaited<ReturnType<typeof getDb>>>;
++
++export type DesignerOverrideState = "ready" | "off";
++
++export type DesignerOverrideResult =
++  | { ok: true; state: DesignerOverrideState | null }
++  | { ok: false; error: string };
++
++/** "Name <email>" for the attribution column. */
++export function overrideActorLabel(name: string | null | undefined, email: string | null | undefined): string {
++  const who = (name ?? "").trim();
++  const address = (email ?? "").trim();
++  if (who && address) return `${who} <${address}>`.slice(0, 255);
++  if (who) return who.slice(0, 255);
++  if (address) return address.slice(0, 255);
++  return "admin";
++}
++
++/**
++ * Force a cabinet into or out of the Designer.
++ *
++ * `dimensions` is only used for "ready", and only when they were derived; the
++ * caller passes nulls otherwise so a complete catalog row is never overwritten.
++ */
++export async function setDesignerOverride(
++  db: Database,
++  input: {
++    cabinetId: number;
++    state: DesignerOverrideState;
++    by: string;
++    /** "ready" only: dimensions derived from the SKU, when the row lacked them. */
++    derivedFrom?: string | null;
++    width?: number | null;
++    height?: number | null;
++    depth?: number | null;
++    /** "off" only: why, and any back-in-stock calendar date (YYYY-MM-DD). */
++    offReason?: string | null;
++    offUntil?: string | null;
++    now?: Date;
++  },
++): Promise<DesignerOverrideResult> {
++  const now = (input.now ?? new Date()).toISOString();
++  try {
++    if (input.state === "ready") {
++      await db.execute(sql`
++        UPDATE cabinets
++        SET designerReadyOverride = 'ready',
++            designerReadyOverrideBy = ${input.by.slice(0, 255)},
++            designerReadyOverrideAt = ${now},
++            designerReadyDerivedFrom = ${input.derivedFrom ? input.derivedFrom.slice(0, 64) : null},
++            designerOffReason = NULL,
++            designerOffUntil = NULL,
++            width = COALESCE(${input.width ?? null}, width),
++            height = COALESCE(${input.height ?? null}, height),
++            depth = COALESCE(${input.depth ?? null}, depth)
++        WHERE id = ${input.cabinetId}
++      `);
++      return { ok: true, state: "ready" };
++    }
++
++    await db.execute(sql`
++      UPDATE cabinets
++      SET designerReadyOverride = 'off',
++          designerReadyOverrideBy = ${input.by.slice(0, 255)},
++          designerReadyOverrideAt = ${now},
++          designerOffReason = ${(input.offReason ?? "Out of stock").slice(0, 255)},
++          designerOffUntil = ${input.offUntil ?? null}
++      WHERE id = ${input.cabinetId}
++    `);
++    return { ok: true, state: "off" };
++  } catch (error) {
++    if (isMissingSchemaError(error)) {
++      return { ok: false, error: "Run docs/sql/0253 before changing Designer availability." };
++    }
++    return { ok: false, error: schemaErrorMessage(error) };
++  }
++}
++
++/** Reset to automatic: the catalog's own rules decide again. */
++export async function clearDesignerOverride(db: Database, cabinetId: number): Promise<DesignerOverrideResult> {
++  try {
++    await db.execute(sql`
++      UPDATE cabinets
++      SET designerReadyOverride = NULL,
++          designerReadyOverrideBy = NULL,
++          designerReadyOverrideAt = NULL,
++          designerReadyDerivedFrom = NULL,
++          designerOffReason = NULL,
++          designerOffUntil = NULL
++      WHERE id = ${cabinetId}
++    `);
++    return { ok: true, state: null };
++  } catch (error) {
++    if (isMissingSchemaError(error)) {
++      return { ok: false, error: "Run docs/sql/0253 before changing Designer availability." };
++    }
++    return { ok: false, error: schemaErrorMessage(error) };
++  }
++}
++
++/** One cabinet's override columns, for the admin screens. */
++export async function readDesignerOverride(
++  db: Database,
++  cabinetId: number,
++): Promise<Record<string, unknown> | null> {
++  try {
++    const [row] = await db
++      .select({
++        id: cabinets.id,
++        masterCode: cabinets.masterCode,
++        designerEligible: cabinets.designerEligible,
++        designerReadyOverride: sql<string | null>`designerReadyOverride`,
++        designerReadyOverrideBy: sql<string | null>`designerReadyOverrideBy`,
++        designerReadyOverrideAt: sql<string | null>`designerReadyOverrideAt`,
++        designerReadyDerivedFrom: sql<string | null>`designerReadyDerivedFrom`,
++        designerOffReason: sql<string | null>`designerOffReason`,
++        designerOffUntil: sql<string | null>`designerOffUntil`,
++      })
++      .from(cabinets)
++      .where(eq(cabinets.id, cabinetId))
++      .limit(1);
++    return (row as Record<string, unknown>) ?? null;
++  } catch (error) {
++    if (isMissingSchemaError(error)) return null;
++    console.error(`[DesignerOverride] Could not read cabinet ${cabinetId}: ${schemaErrorMessage(error)}`);
++    return null;
++  }
++}
+diff --git a/server/lib/designerOverride.test.ts b/server/lib/designerOverride.test.ts
+new file mode 100644
+--- /dev/null
++++ b/server/lib/designerOverride.test.ts
+@@ -0,0 +1,109 @@
++import { describe, expect, it, vi } from "vitest";
++import { clearDesignerOverride, overrideActorLabel, setDesignerOverride } from "./designerOverride";
++
++function fakeDb(error?: string) {
++  const execute = vi.fn(async () => {
++    if (error) throw new Error(error);
++    return [] as never;
++  });
++  return { execute } as never as { execute: typeof execute };
++}
++
++describe("override attribution", () => {
++  it("stores the name and the email", () => {
++    expect(overrideActorLabel("Dana Reaves", "dana@cabinetdealz.com")).toBe("Dana Reaves <dana@cabinetdealz.com>");
++  });
++
++  it("falls back to whichever half exists, then 'admin'", () => {
++    expect(overrideActorLabel("Dana", null)).toBe("Dana");
++    expect(overrideActorLabel(null, "dana@cabinetdealz.com")).toBe("dana@cabinetdealz.com");
++    expect(overrideActorLabel(null, null)).toBe("admin");
++  });
++
++  it("keeps within the 255-character column", () => {
++    expect(overrideActorLabel("x".repeat(400), "y@z.com").length).toBe(255);
++  });
++});
++
++describe("forcing a cabinet ready", () => {
++  it("writes the tri-state value, the actor and the time", async () => {
++    const db = fakeDb();
++    const result = await setDesignerOverride(db as never, {
++      cabinetId: 481,
++      state: "ready",
++      by: "Dana Reaves <dana@cabinetdealz.com>",
++      derivedFrom: "W3024",
++      width: 30,
++      height: 24,
++      depth: 12,
++      now: new Date("2026-11-06T02:00:00.000Z"),
++    });
++    expect(result).toEqual({ ok: true, state: "ready" });
++    expect(db.execute).toHaveBeenCalledOnce();
++  });
++
++  it("passes null dimensions for a row that already has them, so nothing is overwritten", async () => {
++    const db = fakeDb();
++    await setDesignerOverride(db as never, {
++      cabinetId: 481,
++      state: "ready",
++      by: "Dana",
++      derivedFrom: null,
++      width: null,
++      height: null,
++      depth: null,
++    });
++    expect(db.execute).toHaveBeenCalledOnce();
++  });
++});
++
++describe("forcing a cabinet off", () => {
++  it("records the reason and the back-in-stock date", async () => {
++    const db = fakeDb();
++    const result = await setDesignerOverride(db as never, {
++      cabinetId: 481,
++      state: "off",
++      by: "Dana Reaves",
++      offReason: "Out of stock",
++      offUntil: "2027-08-01",
++    });
++    expect(result).toEqual({ ok: true, state: "off" });
++  });
++
++  it("defaults the reason when none was given", async () => {
++    const db = fakeDb();
++    await setDesignerOverride(db as never, { cabinetId: 1, state: "off", by: "Dana", offReason: null });
++    expect(db.execute).toHaveBeenCalledOnce();
++  });
++
++  it("needs no dimensions at all", async () => {
++    const db = fakeDb();
++    await expect(setDesignerOverride(db as never, { cabinetId: 1, state: "off", by: "Dana" })).resolves.toMatchObject({ ok: true });
++  });
++});
++
++describe("resetting to automatic", () => {
++  it("nulls every override column", async () => {
++    const db = fakeDb();
++    await expect(clearDesignerOverride(db as never, 481)).resolves.toEqual({ ok: true, state: null });
++    expect(db.execute).toHaveBeenCalledOnce();
++  });
++});
++
++describe("an un-migrated database", () => {
++  it("says which SQL to run instead of failing obscurely", async () => {
++    const db = fakeDb("Unknown column 'designerReadyOverride' in 'field list'");
++    const result = await setDesignerOverride(db as never, { cabinetId: 1, state: "ready", by: "Dana" });
++    expect(result.ok).toBe(false);
++    if (result.ok) throw new Error("unreachable");
++    expect(result.error).toContain("0253");
++  });
++
++  it("does the same for a reset", async () => {
++    const db = fakeDb("ER_BAD_FIELD_ERROR: Unknown column 'designerReadyOverride'");
++    const result = await clearDesignerOverride(db as never, 1);
++    expect(result.ok).toBe(false);
++    if (result.ok) throw new Error("unreachable");
++    expect(result.error).toContain("0253");
++  });
++});
 diff --git a/drizzle/schema.ts b/drizzle/schema.ts
 index 2faceb2..a9ac46d 100644
 --- a/drizzle/schema.ts
@@ -3912,7 +5186,7 @@ index 69e81e9..e3578de 100644
      }),
  
    // Admin-only invoice breakdown. Costs, margin, and the Stripe fee stay off
-@@ -1721,188 +1714,109 @@ export const ordersRouter = router({
+@@ -1721,188 +1714,147 @@ export const ordersRouter = router({
        });
      }),
  
@@ -4113,6 +5387,44 @@ index 69e81e9..e3578de 100644
 +      const result = await setVendorCostFactor(db, input);
 +      if (!result.ok) throw new TRPCError({ code: "BAD_REQUEST", message: result.error || "Could not save the cost factor." });
 +      return { ok: true };
++    }),
++
++  // Admin override of one cabinet's Designer availability. The stored value is the
++  // tri-state ('ready' | 'off' | null), and "reset" clears it back to automatic.
++  // Verifying that the Designer can actually build the item happens in the caller's
++  // shared helper, so this endpoint records the decision it is given.
++  setDesignerReadyOverride: adminProcedure
++    .input(z.object({
++      cabinetId: z.number().int().positive(),
++      state: z.enum(["ready", "off", "reset"]),
++      derivedFrom: z.string().max(64).nullable().optional(),
++      width: z.number().positive().nullable().optional(),
++      height: z.number().positive().nullable().optional(),
++      depth: z.number().positive().nullable().optional(),
++      offReason: z.string().max(255).nullable().optional(),
++      offUntil: z.string().max(32).nullable().optional(),
++    }))
++    .mutation(async ({ input, ctx }) => {
++      const db = await getDb();
++      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
++      if (input.state === "reset") {
++        const cleared = await clearDesignerOverride(db, input.cabinetId);
++        if (!cleared.ok) throw new TRPCError({ code: "BAD_REQUEST", message: cleared.error || "Could not reset." });
++        return { ok: true, state: null };
++      }
++      const result = await setDesignerOverride(db, {
++        cabinetId: input.cabinetId,
++        state: input.state,
++        by: overrideActorLabel(ctx.user.name, ctx.user.email),
++        derivedFrom: input.derivedFrom ?? null,
++        width: input.width ?? null,
++        height: input.height ?? null,
++        depth: input.depth ?? null,
++        offReason: input.offReason ?? null,
++        offUntil: input.offUntil ?? null,
++      });
++      if (!result.ok) throw new TRPCError({ code: "BAD_REQUEST", message: result.error || "Could not save the override." });
++      return { ok: true, state: result.state };
 +    }),
  
 -      const cc = (dist.ccEmails ?? "")

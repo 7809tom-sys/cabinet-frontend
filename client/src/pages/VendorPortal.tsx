@@ -38,6 +38,24 @@ import { isPelicanTileOrMosaicItem, prepareDesignerTileUpload } from "@/lib/mosa
 import { VendorRoomSceneLibrary } from "@/components/vendor/VendorRoomSceneLibrary";
 import { VendorAutoRoomSceneBadge } from "@/components/doorStyles/VendorAutoRoomSceneBadge";
 import { InheritedVendorOriginZips } from "@/components/doorStyles/InheritedVendorOriginZips";
+import DesignerReadyBadge from "@/components/admin/DesignerReadyBadge";
+import { isDesignerTurnedOff } from "@shared/designerReadyOverride";
+import {
+  VENDOR_CATALOG_WIDTHS,
+  VENDOR_PROFILE_WIDTHS,
+  vendorCell,
+  vendorCellMoney,
+  vendorCellTruncate,
+  vendorDenseCardBody,
+  vendorDenseCardHeader,
+  vendorHead,
+  vendorPageTitle,
+  vendorRow,
+  vendorTable,
+  vendorTableWrap,
+  vendorTitle,
+  vendorTruncate,
+} from "@/components/vendor/vendorTableDensity";
 import { OpenDesignerLink } from "@/components/design/OpenDesignerLink";
 import { DoorStyleIdentity } from "@/components/doorStyles/DoorStyleIdentity";
 import { DoorStyleNeedToggles } from "@/components/doorStyles/DoorStyleNeedToggles";
@@ -1525,6 +1543,8 @@ function CatalogPage() {
   const [category, setCategory] = useState<string>(ALL);
   const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get("sku") ?? "");
   const [onlyHidden, setOnlyHidden] = useState(false);
+  const [onlyDesignerOff, setOnlyDesignerOff] = useState(false);
+  const { user: catalogUser } = useAuth();
   const [catalogPage, setCatalogPage] = useState(0);
   const [editingPrice, setEditingPrice] = useState<{ skuId: number; field: string; value: string } | null>(null);
   const [editingOnHand, setEditingOnHand] = useState<{ skuId: number; value: string } | null>(null);
@@ -1623,6 +1643,21 @@ function CatalogPage() {
     [lineMultipliers?.costMultiplier, lineMultipliers?.baseMultiplier, lineMultipliers?.freightMultiplier],
   );
 
+  // "Turned off" is a client-side filter: the catalog endpoint returns every row
+  // and the override columns are read from it, so no extra round trip is needed.
+  const overlayMutation = trpc.distributorPortal.setDesignerReadyOverride.useMutation({
+    onSuccess: () => {
+      toast.success("Designer availability saved");
+      utils.distributorPortal.catalog.invalidate();
+    },
+    onError: (error: { message?: string }) => toast.error(error.message ?? "Could not save Designer availability"),
+  });
+  type CatalogRow = NonNullable<typeof catalog.data>["items"][number];
+  const catalogRows = useMemo<CatalogRow[]>(() => {
+    const rows = (catalog.data?.items ?? []) as CatalogRow[];
+    return onlyDesignerOff ? rows.filter((item) => isDesignerTurnedOff(item as never)) : rows;
+  }, [catalog.data?.items, onlyDesignerOff]);
+
   const styles = myLine.data?.styles ?? [];
   const categories = useMemo(() => {
     const fromServer = (catalog.data as { categories?: Array<string | null> } | undefined)?.categories;
@@ -1705,6 +1740,10 @@ function CatalogPage() {
           <Switch checked={onlyHidden} onCheckedChange={(value) => { setOnlyHidden(value); setCatalogPage(0); }} />
           Hidden only
         </label>
+        <label className="flex items-center gap-2 text-sm">
+          <Switch checked={onlyDesignerOff} onCheckedChange={setOnlyDesignerOff} data-testid="catalog-only-designer-off" />
+          Turned off
+        </label>
       </div>
 
       {/* Table */}
@@ -1713,94 +1752,105 @@ function CatalogPage() {
           {[1, 2, 3, 4, 5].map((i) => <Skeleton key={i} className="h-12 w-full" />)}
         </div>
       ) : (
-        <div className="rounded-md border overflow-x-auto">
-          <Table>
+        <div className={vendorTableWrap} data-testid="cabinet-catalog-table">
+          <Table className={vendorTable}>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-16">Image</TableHead>
-                <TableHead>SKU</TableHead>
-                <TableHead>Description</TableHead>
-                <TableHead className="text-right">Vendor cost</TableHead>
-                <TableHead>Style</TableHead>
-                <TableHead>Category</TableHead>
-                <TableHead className="text-right">List</TableHead>
-                <TableHead className="text-right">Cost</TableHead>
-                <TableHead className="text-right">Wholesale</TableHead>
-                <TableHead className="text-right">Contractor</TableHead>
-                <TableHead className="text-right">On hand</TableHead>
-                <TableHead className="text-center">Visible</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="w-20">Actions</TableHead>
+                <TableHead className={`${vendorHead} ${VENDOR_CATALOG_WIDTHS.image}`}>Img</TableHead>
+                <TableHead className={`${vendorHead} ${VENDOR_CATALOG_WIDTHS.sku}`}>SKU</TableHead>
+                <TableHead className={`${vendorHead} ${VENDOR_CATALOG_WIDTHS.description}`}>Description</TableHead>
+                <TableHead className={`${vendorHead} ${VENDOR_CATALOG_WIDTHS.vendorCost} text-right`}>Vend. cost</TableHead>
+                <TableHead className={`${vendorHead} ${VENDOR_CATALOG_WIDTHS.style}`}>Style</TableHead>
+                <TableHead className={`${vendorHead} ${VENDOR_CATALOG_WIDTHS.category}`}>Category</TableHead>
+                <TableHead className={`${vendorHead} ${VENDOR_CATALOG_WIDTHS.list} text-right`}>List</TableHead>
+                <TableHead className={`${vendorHead} ${VENDOR_CATALOG_WIDTHS.cost} text-right`}>Cost</TableHead>
+                <TableHead className={`${vendorHead} ${VENDOR_CATALOG_WIDTHS.wholesale} text-right`}>Wholesale</TableHead>
+                <TableHead className={`${vendorHead} ${VENDOR_CATALOG_WIDTHS.contractor} text-right`}>Contractor</TableHead>
+                <TableHead className={`${vendorHead} ${VENDOR_CATALOG_WIDTHS.onHand} text-right`}>On hand</TableHead>
+                <TableHead className={`${vendorHead} ${VENDOR_CATALOG_WIDTHS.visible} text-center`}>Visible</TableHead>
+                <TableHead className={`${vendorHead} ${VENDOR_CATALOG_WIDTHS.status}`}>Status</TableHead>
+                <TableHead className={`${vendorHead} ${VENDOR_CATALOG_WIDTHS.actions}`}>Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {catalog.data?.items.map((item) => (
-                <TableRow key={item.skuId}>
-                  <TableCell>
+              {catalogRows.map((item) => {
+                const description = item.description ?? item.supplierCabinetName ?? "Pending master-cabinet mapping";
+                const sku = item.masterCode ?? item.distributorSku ?? item.platformSku;
+                return (
+                <TableRow key={item.skuId} className={vendorRow}>
+                  <TableCell className={vendorCell}>
                     {item.imageUrl || item.catalogImageUrl ? (
-                      <img src={item.imageUrl || item.catalogImageUrl!} alt="" className="h-10 w-10 object-cover rounded" />
+                      <img src={item.imageUrl || item.catalogImageUrl!} alt="" className="h-6 w-6 rounded object-cover" />
                     ) : (
-                      <div className="h-10 w-10 bg-muted rounded flex items-center justify-center">
-                        <ImageIcon className="h-4 w-4 text-muted-foreground" />
+                      <div className="flex h-6 w-6 items-center justify-center rounded bg-muted">
+                        <ImageIcon className="h-3 w-3 text-muted-foreground" />
                       </div>
                     )}
                   </TableCell>
-                  <TableCell className="font-mono text-xs">{item.masterCode ?? item.distributorSku ?? item.platformSku}</TableCell>
-                  <TableCell className="max-w-[200px] truncate text-sm">{item.description ?? item.supplierCabinetName ?? "Pending master-cabinet mapping"}</TableCell>
-                  <TableCell className="text-right text-sm" data-testid="cabinet-vendor-cost">{cabinetVendorCostLabel(item.vendorWholesale)}</TableCell>
-                  <TableCell><Badge variant="secondary" className="text-xs">{item.styleName}</Badge></TableCell>
-                  <TableCell className="text-xs">{item.category ?? <span className="text-muted-foreground">Unmapped</span>}</TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className={`${vendorCell} font-mono`} title={sku ?? undefined}>{vendorTruncate(sku, 16)}</TableCell>
+                  <TableCell className={`${vendorCell} ${vendorCellTruncate}`} title={vendorTitle(description, 40)} data-testid="cabinet-catalog-description">
+                    {vendorTruncate(description, 40)}
+                  </TableCell>
+                  <TableCell className={vendorCellMoney} data-testid="cabinet-vendor-cost">{cabinetVendorCostLabel(item.vendorWholesale)}</TableCell>
+                  <TableCell className={`${vendorCell} ${vendorCellTruncate}`} title={item.styleName ?? undefined}>
+                    <Badge variant="secondary" className="max-w-full truncate px-1 py-0 text-[10px] font-normal">{item.styleName}</Badge>
+                  </TableCell>
+                  <TableCell className={`${vendorCell} ${vendorCellTruncate}`} title={item.category ?? undefined}>
+                    {item.category ? vendorTruncate(item.category, 14) : <span className="text-muted-foreground">Unmapped</span>}
+                  </TableCell>
+                  <TableCell className={vendorCellMoney}>
                     <button
-                      className="text-sm hover:underline cursor-pointer"
+                      className="hover:underline cursor-pointer tabular-nums"
                       onClick={() => setEditingPrice({ skuId: item.skuId, field: "listPrice", value: item.listPrice ?? "" })}
                     >
                       {money(item.listPrice)}
                     </button>
                   </TableCell>
-                  <TableCell className="text-right" data-testid="cabinet-catalog-cost">
+                  <TableCell className={vendorCellMoney} data-testid="cabinet-catalog-cost">
                     {(() => {
                       const cost = resolveVendorCost(item.vendorWholesale, item.listPrice, lineCostFactor);
+                      // Label inline, never on a second line: a stacked badge is what
+                      // doubled the row height.
+                      // The label rides in the tooltip rather than beside the number:
+                      // at 13px there is not room for both inside a 72px column, and
+                      // an overflowing span painted over the neighbouring price.
                       return (
-                        <span title={cost.note}>
-                          <span className={`text-sm ${cost.kind === "calculated" ? "italic text-muted-foreground" : ""}`}>
-                            {formatVendorCostCents(cost)}
-                          </span>
-                          {cost.kind !== "missing" && (
-                            <span className="mt-0.5 block text-[10px] uppercase tracking-wide text-muted-foreground">
-                              {vendorCostKindLabel(cost.kind)}
-                            </span>
-                          )}
+                        <span
+                          title={cost.note}
+                          className={cost.kind === "calculated" ? "italic text-muted-foreground" : ""}
+                        >
+                          {formatVendorCostCents(cost)}
+                          {cost.kind === "calculated" && <span aria-hidden className="ml-0.5 text-[9px] not-italic">≈</span>}
                         </span>
                       );
                     })()}
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className={vendorCellMoney}>
                     <button
-                      className="text-sm hover:underline cursor-pointer"
+                      className="hover:underline cursor-pointer tabular-nums"
                       onClick={() => setEditingPrice({ skuId: item.skuId, field: "wholesalePrice", value: item.wholesalePrice ?? "" })}
                     >
                       {money(item.wholesalePrice)}
                     </button>
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className={vendorCellMoney}>
                     <button
-                      className="text-sm hover:underline cursor-pointer"
+                      className="hover:underline cursor-pointer tabular-nums"
                       onClick={() => setEditingPrice({ skuId: item.skuId, field: "contractorPrice", value: item.contractorPrice ?? "" })}
                     >
                       {money(item.contractorPrice)}
                     </button>
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className={vendorCellMoney}>
                     <button
-                      className="text-sm hover:underline cursor-pointer"
+                      className="hover:underline cursor-pointer tabular-nums"
                       onClick={() => setEditingOnHand({ skuId: item.skuId, value: item.onHandQty == null ? "" : String(item.onHandQty) })}
                       title="Set current on-hand inventory for this vendor SKU"
                     >
                       {item.onHandQty == null ? "—" : item.onHandQty.toLocaleString()}
                     </button>
                   </TableCell>
-                  <TableCell className="text-center">
+                  <TableCell className={`${vendorCell} text-center`}>
                     <Switch
                       checked={item.isPublished}
                       onCheckedChange={(checked) => {
@@ -1813,30 +1863,52 @@ function CatalogPage() {
                       disabled={toggleVis.isPending}
                     />
                   </TableCell>
-                  <TableCell>
-                    <Badge variant={item.status === "approved" ? "default" : item.status === "pending" ? "secondary" : "destructive"} className="text-xs">
+                  <TableCell className={vendorCell}>
+                    <Badge variant={item.status === "approved" ? "default" : item.status === "pending" ? "secondary" : "destructive"} className="px-1 py-0 text-[10px] font-normal">
                       {item.status}
                     </Badge>
+                    <DesignerReadyBadge
+                      cabinet={{
+                        ...item,
+                        id: item.skuId,
+                        masterCode: item.masterCode ?? item.distributorSku ?? null,
+                        designerEligible: (item as { designerEligible?: boolean | null }).designerEligible ?? null,
+                        width: item.width ?? null,
+                        height: item.height ?? null,
+                        depth: item.depth ?? null,
+                      } as never}
+                      role={catalogUser?.role}
+                      actions={catalogUser?.role === "admin" ? {
+                        pending: overlayMutation.isPending,
+                        run: (input) => overlayMutation.mutate({
+                          cabinetId: Number((item as { cabinetId?: number | null }).cabinetId ?? 0),
+                          ...input,
+                          ...(input.action === "ready" ? { derivedFrom: (item as { designerReadyDerivedFrom?: string | null }).designerReadyDerivedFrom ?? null } : {}),
+                        }),
+                      } : undefined}
+                    />
                   </TableCell>
-                  <TableCell>
+                  <TableCell className={`${vendorCell} text-center`}>
                     <Button
                       size="icon"
                       variant="ghost"
-                      className="h-8 w-8"
+                      className="h-6 w-6"
                       onClick={() => {
                         setUploadingSkuId(item.skuId);
                         fileInputRef.current?.click();
                       }}
                       disabled={uploadingSkuId === item.skuId}
+                      aria-label="Upload SKU photo"
                     >
-                      {uploadingSkuId === item.skuId ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                      {uploadingSkuId === item.skuId ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
                     </Button>
                   </TableCell>
                 </TableRow>
-              ))}
-              {catalog.data?.items.length === 0 && (
+                );
+              })}
+              {catalogRows.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={13} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={14} className="text-center py-6 text-muted-foreground">
                     No products found matching your filters.
                   </TableCell>
                 </TableRow>

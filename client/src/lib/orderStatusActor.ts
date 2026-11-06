@@ -67,8 +67,27 @@ export function formatCentralTime(value: string | Date | null | undefined): stri
   return `${formatted} ${ORDER_STATUS_TIME_ZONE_LABEL}`;
 }
 
-/** "Nov 5, 2026" in Central time. */
+/**
+ * "Nov 5, 2026" in Central time.
+ *
+ * A `YYYY-MM-DD` value is already a calendar date, so it is formatted as that
+ * date rather than converted from midnight UTC — otherwise "2027-08-01" renders
+ * as "Jul 31, 2027" for anyone east of Greenwich.
+ */
 export function formatCentralDate(value: string | Date | null | undefined): string | null {
+  if (typeof value === "string") {
+    const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+    if (dateOnly) {
+      const [, year, month, day] = dateOnly;
+      const asUtcNoon = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day), 12));
+      return new Intl.DateTimeFormat("en-US", {
+        timeZone: "UTC",
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      }).format(asUtcNoon);
+    }
+  }
   const date = asDate(value);
   if (!date) return null;
   return new Intl.DateTimeFormat("en-US", {

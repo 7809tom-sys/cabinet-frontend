@@ -12,17 +12,15 @@ describe("vendor catalog List and Cost columns", () => {
   const headerIndex = source.indexOf('data-testid="cabinet-catalog-cost"');
 
   it("puts Cost immediately after List in the header row", () => {
-    const list = source.indexOf('<TableHead className="text-right">List</TableHead>');
-    // There is another Cost column earlier in the file (the Pelican table), so
-    // look for the one in the cabinet table, after List.
-    const cost = source.indexOf('<TableHead className="text-right">Cost</TableHead>', list);
-    const wholesale = source.indexOf('<TableHead className="text-right">Wholesale</TableHead>', list);
+    const list = source.indexOf("VENDOR_CATALOG_WIDTHS.list} text-right`}>List</TableHead>");
+    const cost = source.indexOf("VENDOR_CATALOG_WIDTHS.cost} text-right`}>Cost</TableHead>");
+    const wholesale = source.indexOf("VENDOR_CATALOG_WIDTHS.wholesale} text-right`}>Wholesale</TableHead>");
     expect(list).toBeGreaterThan(-1);
     expect(cost).toBeGreaterThan(list);
     expect(wholesale).toBeGreaterThan(cost);
-    // Nothing but whitespace between List and Cost: they are adjacent.
-    const between = source.slice(list + '<TableHead className="text-right">List</TableHead>'.length, cost);
-    expect(between.trim()).toBe("");
+    // The slice starts inside the List tag, so it may close it; what matters is
+    // that no other header opens between the two.
+    expect(source.slice(list, cost).split("<TableHead").length - 1).toBeLessThanOrEqual(1);
   });
 
   it("renders the Cost cell beside the List cell", () => {
@@ -34,11 +32,12 @@ describe("vendor catalog List and Cost columns", () => {
   it("resolves cost from the shared module rather than computing inline", () => {
     expect(source).toContain("resolveVendorCost(item.vendorWholesale, item.listPrice, lineCostFactor)");
     expect(source).toContain("formatVendorCostCents(cost)");
-    expect(source).toContain("vendorCostKindLabel(cost.kind)");
   });
 
-  it("labels a computed figure 'calculated' so it is never mistaken for a real cost", () => {
-    expect(source).toContain("vendorCostKindLabel");
+  it("still distinguishes a computed figure from a real one", () => {
+    // The "calculated" wording lives in the tooltip note so the 72px column does
+    // not overflow; the marker and the italic style carry it visually.
+    expect(source).toContain("cost.note");
     expect(source).toContain('cost.kind === "calculated"');
   });
 
