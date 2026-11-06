@@ -93,6 +93,37 @@ after it. It applies cleanly to `cabinet-backend` `main`.
    whatever session it had left.
 6. Open a brand-new tab C: it starts signed out (expected).
 
+## Browser test
+
+`e2e/per-tab-sign-in.spec.ts` covers the reported case end to end in Chromium:
+
+```bash
+pnpm run test:e2e:per-tab-sign-in
+```
+
+It drives the **real app** — the real `/signin` form, `useAuth`, the tRPC client and its
+request headers — with the API and the Supabase auth endpoint answered by
+`client/src/testing/perTabApi.ts`. One browser context (one profile) opens two tabs:
+tab A signs in as the affiliate, tab B as the admin. It asserts:
+
+- each tab keeps its own account, and signing in on one does not change the other;
+- every API call carries that tab's own `Authorization: Bearer` token (the API mock
+  resolves `auth.me` from the token's `sub` and from nothing else);
+- both tabs keep their own account across a reload;
+- the session lives in that tab's `sessionStorage`, never in the shared
+  `sb-*-auth-token` `localStorage` record;
+- signing out of tab A leaves tab B signed in and still resolving as the admin.
+
+`playwright.config.ts` starts the dev server with a same-origin Supabase URL and an empty
+`VITE_API_BASE_URL`, so tRPC stays on the origin the test intercepts. No secret and no real
+Supabase project is involved.
+
+The spec was checked to fail on the pre-fix configuration (default `localStorage` storage
+and the open `BroadcastChannel`): with the old setup, tab B's sign-in disturbs tab A's
+`/signin` flow, which is the bug.
+
+## Unit tests
+
 `pnpm exec vitest run client/src/lib/supabasePerTabSessions.test.ts` drives the real
 supabase-js client with one storage object per tab: two tabs keep two identities, signing
 out of one leaves the other signed in, and a store copied into a new tab (a duplicate)
