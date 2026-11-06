@@ -79,7 +79,7 @@ import {
   firstRestorableDraft,
   planGuestDraftAdoption,
 } from "@/lib/designDraftOwnership";
-import { isPelicanSinkCompatibleWithBase, isVerifiedPelicanVanityFaucet, isVerifiedPelicanVanitySink, pelicanSinkBaseKind, sinkBaseOpeningWidthIn, verifiedPelicanFaucetProfile, verifiedPelicanPotFillerProfile, verifiedPelicanSinkFitsCabinet, verifiedPelicanSinkProfile } from "@/lib/pelicanFixtureProfiles";
+import { isPelicanSinkCompatibleWithBase, pelicanSinkBaseKind, sinkBaseOpeningWidthIn, verifiedPelicanFaucetProfile, verifiedPelicanPotFillerProfile, verifiedPelicanSinkFitsCabinet, verifiedPelicanSinkProfile } from "@/lib/pelicanFixtureProfiles";
 import {
   buildPelicanSinkOnCabinet,
   chooseSmallestPelicanSinkBase,
@@ -93,7 +93,15 @@ import { TabletPreviewOverlay, type TabletPreviewMode } from "@/components/desig
 import { isPelicanBathroomFixtureProfileVerified, verifiedPelicanBathroomFixtureProfile } from "@/lib/pelicanBathroomFixtureProfiles";
 import { BATHROOM_STARTER_TEMPLATE, bathroomFixtureChecklist, bathroomFixtureFreePlacement, bathroomTubFillerPlacement, bathroomPlanningGuidance, makeBathroomStarterTemplate } from "@/lib/bathroomPlanning";
 import { bathroomTubWallParallelPlacement, rotateBathroomFurniture } from "@/lib/bathroomPlanning";
-import { isBathroomVanityCabinet } from "@/lib/bathroomVanityCatalog";
+import { VanitySinkFacts } from "@/components/design/VanityFixtureFacts";
+import {
+  bathroomVanityFaucetMatchNote,
+  bathroomVanityFaucetOptions,
+  isBathroomVanityCabinet,
+  isBathroomVanityFaucetRow,
+  isBathroomVanitySinkRow,
+  vanitySinkFitsVanityWidth,
+} from "@/lib/bathroomVanityCatalog";
 import { canAdminReviewSavedDesign } from "@/lib/designAccess";
 import {
   DEFAULT_FRESH_LAYOUT_PRESET_ID,
@@ -1701,7 +1709,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       }
       const sinkRole = role === "sink" || role === "bathroom-sink";
       if (sinkRole) {
-        if (isVerifiedPelicanVanitySink(item.pelicanCode)) {
+        if (isBathroomVanitySinkRow(item)) {
           const vanityHost = placedRef.current.find((cabinet) => {
             const label = `${cabinet.masterCode} ${cabinet.category ?? ""} ${cabinet.subCategory ?? ""} ${cabinet.description ?? ""}`;
             return cabinet.placement === "base" && /\bvanity\b/i.test(label) && !/\bvalance\b/i.test(label);
@@ -1721,7 +1729,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           toast.success(`${item.name} placed in ${host.masterCode}, centered in the base. Add a faucet to mount it on the counter behind the basin.`);
           return;
         }
-        if (isVerifiedPelicanVanitySink(item.pelicanCode)) {
+        if (isBathroomVanitySinkRow(item)) {
           toast.error(`${item.name} needs a vanity sink base that does not already have a Pelican basin.`);
           return;
         }
@@ -22055,6 +22063,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	        };
         const allRecommendedSinks = (sinkBaseProducts ?? []) as Array<{
           id: number; pelicanCode?: string | null; name: string; description?: string | null; subCategory: string | null; size: string | null; imageUrl: string | null; sellPrice: number | null; slug: string; category: string;
+          bathroomFixtureTags?: string | null;
         }>;
         const sinkBaseCabinet = placed.find((p) => p.uid === sinkBaseDialog.cabinetUid) ?? null;
         // A selected sink base in the Bathroom room type always receives the
@@ -22063,9 +22072,13 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         const isBathroomVanity = roomType === "bathroom";
         const sinkBaseKind = !isBathroomVanity && sinkBaseCabinet && isFarmSinkBasePaletteItem(sinkBaseCabinet) ? "farmhouse" : "standard";
         const sinkBaseOpeningWidth = sinkBaseOpeningWidthIn(sinkBaseCabinet ?? undefined);
+        // The Bathroom Designer reads the Pelican catalog's bathroom fixture tags
+        // (docs/sql/0264_pelican_vanity_fixtures_tag.tidb.sql), not a category label.
+        // A row tagged `bathroom-vanity-sink` is a vanity basin or integrated top;
+        // a double-bowl basin is only offered on a vanity wide enough for two.
         const filteredSinks = allRecommendedSinks
           .filter((product) => isBathroomVanity
-            ? isVerifiedPelicanVanitySink(product.pelicanCode)
+            ? isBathroomVanitySinkRow(product) && vanitySinkFitsVanityWidth(product, sinkBaseOpeningWidth)
             : isPelicanSinkCompatibleWithBase(product, sinkBaseKind))
           .filter((product) => {
             const profile = verifiedPelicanSinkProfile(product.pelicanCode);
@@ -22130,10 +22143,16 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           setPendingRangeTopType(null);
               toast.success(type === "gas" ? "Gas range top added" : type === "electric" ? "Electric range top added" : type === "induction" ? "Induction cooktop added" : "Smooth top added");
         };
+        // A vanity faucet is any row tagged `bathroom-vanity-faucet`. When a basin
+        // is already pending, three-hole tops only receive faucets drilled to the
+        // same hole count (and spread when the basin's sheet publishes one).
         const filteredFaucets = ((faucetBaseProducts ?? []) as Array<{
           id: number; pelicanCode?: string | null; name: string; subCategory: string | null; size: string | null; imageUrl: string | null; sellPrice: number | null; slug: string; category: string;
+          bathroomFixtureTags?: string | null;
         }>).filter((product) => Boolean(verifiedPelicanFaucetProfile(product.pelicanCode)))
-          .filter((product) => isBathroomVanity ? isVerifiedPelicanVanityFaucet(product.pelicanCode) : !isVerifiedPelicanVanityFaucet(product.pelicanCode));
+          .filter((product) => isBathroomVanity
+            ? bathroomVanityFaucetOptions([product], pendingSinkProduct?.pelicanCode).length > 0
+            : !isBathroomVanityFaucetRow(product));
         const applySink = (sinkProduct: typeof filteredSinks[0] | null, faucetProduct: typeof filteredFaucets[0] | null) => {
           const cab = placed.find(p => p.uid === sinkBaseDialog.cabinetUid);
           const previousRangeTopProductId = cab?.sinkTopType === "gas" || cab?.sinkTopType === "electric" || cab?.sinkTopType === "induction" || cab?.sinkTopType === "smooth-top"
@@ -22157,12 +22176,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
             toast.error(`Enter the documented wall-mount datum above the finished countertop (greater than 0 and no more than ${formatEighthInches((room.ceilingHeight ?? 96) - STD.COUNTERTOP_HEIGHT)}).`);
             return;
           }
-          if (isBathroomVanity && !isVerifiedPelicanVanitySink(sinkProduct.pelicanCode)) {
-            toast.error("This bathroom vanity requires a source-verified Pelican vanity sink.");
+          if (isBathroomVanity && !isBathroomVanitySinkRow(sinkProduct)) {
+            toast.error("This bathroom vanity requires a Pelican vanity sink.");
             return;
           }
-          if (isBathroomVanity && faucetProduct && !isVerifiedPelicanVanityFaucet(faucetProduct.pelicanCode)) {
-            toast.error("This bathroom vanity requires a source-verified Pelican vanity faucet.");
+          if (isBathroomVanity && faucetProduct && !isBathroomVanityFaucetRow(faucetProduct)) {
+            toast.error("This bathroom vanity requires a Pelican vanity faucet.");
             return;
           }
           if (!isBathroomVanity && sinkProduct && !isPelicanSinkCompatibleWithBase(sinkProduct, targetBaseKind)) {
@@ -22299,7 +22318,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                     </button>
                     <h2 className="text-lg font-semibold text-foreground">Choose a {isBathroomVanity ? "Vanity Sink" : "Sink"}</h2>
                   </div>
-                  <p className="text-sm text-muted-foreground -mt-2">{isBathroomVanity ? "Showing only standard Pelican porcelain vanity sinks that fit this vanity base." : `Showing only ${sinkBaseKind === "farmhouse" ? "farmhouse / apron-front" : "standard"} Pelican sinks that fit this base.`}</p>
+                  <p className="text-sm text-muted-foreground -mt-2">{isBathroomVanity ? `Showing every Pelican vanity basin and integrated vanity top that fits this ${sinkBaseOpeningWidth}″ vanity: undermount, drop-in, vessel, and integrated.` : `Showing only ${sinkBaseKind === "farmhouse" ? "farmhouse / apron-front" : "standard"} Pelican sinks that fit this base.`}</p>
                   {filteredSinks.length === 0 ? (
                     <button className="w-full text-xs text-muted-foreground border border-dashed rounded-lg py-3" onClick={() => { setPendingSinkProduct(null); setRangeTopStep("faucet"); }}>Continue without a sink product</button>
                   ) : (
@@ -22311,6 +22330,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                           selectedIds={noSelectedPelicanIds}
                           onUse={(item) => { setPendingSinkProduct(item as typeof filteredSinks[0]); setRangeTopStep("faucet"); }}
                           testIdPrefix="sink-dialog-card"
+                          note={isBathroomVanity ? <VanitySinkFacts code={(configuration.variants[0]?.item as typeof filteredSinks[0] | undefined)?.pelicanCode} /> : undefined}
                         />
                       ))}
                     </div>
@@ -22334,7 +22354,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                       <span className="font-medium line-clamp-1">{pendingSinkProduct.name}</span>
                     </div>
                   )}
-                  <p className="text-sm text-muted-foreground -mt-2">Pick a matching source-verified Pelican {isBathroomVanity ? "vanity faucet" : "faucet"}, or skip to finish.</p>
+                  <p className="text-sm text-muted-foreground -mt-2">Pick a matching Pelican {isBathroomVanity ? "vanity faucet" : "faucet"}, or skip to finish.</p>
+                  {isBathroomVanity && bathroomVanityFaucetMatchNote(pendingSinkProduct?.pelicanCode) && (
+                    <p data-testid="vanity-faucet-match-note" className="rounded-md bg-muted/50 px-3 py-2 text-[11px] leading-snug text-muted-foreground">
+                      {bathroomVanityFaucetMatchNote(pendingSinkProduct?.pelicanCode)}
+                    </p>
+                  )}
                   {pendingWallMountedFaucet ? (
                     <div className="space-y-3 rounded-xl border border-[#a87f33]/40 bg-[#a87f33]/5 p-3">
                       <div className="flex items-center gap-3">
