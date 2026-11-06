@@ -63,7 +63,7 @@ function row(name: string, meta: string, link: string, note?: string, noteTone?:
   return box;
 }
 
-function label(host: HTMLElement, text: string, tone?: "bad" | "good") {
+function label(host: HTMLElement, text: string, tone?: "bad" | "good" | "info") {
   host.appendChild(el("p", `caption ${tone ?? ""}`, text));
 }
 
