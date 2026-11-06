@@ -84,6 +84,13 @@ SQL files, in order:
     0251_order_activity_log.tidb.sql        (received-email stamps, PO sender,
                                              order_events)
     0252_vendor_cost_factor.tidb.sql        (per-vendor cost factor)
+    0253_designer_ready_override.tidb.sql   (designer ready / off override)
+
+Those four SQL files use PLAIN DDL, not conditional DDL: the TiDB Cloud editor
+rejects the conditional keywords (confirmed on the owner's editor in PR 269). Each
+line is one statement, so paste them one at a time. A "Duplicate column name" or
+"Table ... already exists" error on a re-run means that object already exists and
+is safe to skip; the header of each file says so.
 ---
 diff --git a/client/src/components/admin/IncomingOrdersAdmin.tsx b/client/src/components/admin/IncomingOrdersAdmin.tsx
 index 7e39523..7a356e6 100644
