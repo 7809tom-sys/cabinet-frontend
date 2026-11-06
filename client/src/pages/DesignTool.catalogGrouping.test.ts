@@ -62,7 +62,7 @@ describe("DesignTool cabinet catalog organization", () => {
     const itemStart = source.indexOf("const isBaseBox =");
     const itemEnd = source.indexOf("paletteFinishSwatch", itemStart);
     const itemBlock = source.slice(itemStart, itemEnd);
-    expect(itemBlock).toContain("formatCatalogPaletteSize(c, { baseBox: isBaseBox })");
+    expect(itemBlock).toContain("formatCatalogPaletteSize(c, { baseBox: isBaseBox, omitDepth: isWallOpenShelfCabinet(c) })");
     expect(itemBlock).toContain('paletteType === "base"');
     const heights = readFileSync(new URL("./designToolCatalogHeights.ts", import.meta.url), "utf8");
     expect(heights).toContain('parts.push(`${formatCatalogInchValue(dimensions.depth)}"D`)');

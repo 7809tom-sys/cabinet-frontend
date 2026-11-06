@@ -90,8 +90,14 @@ export function filterCatalogByHeight(
  * (so a 24"-deep fridge wall is not shown as a standard 12" or 13½" wall).
  * Base-family boxes keep the standard 34½" external height used everywhere
  * else in the catalog; wall, tall, and corner-wall boxes use their real height.
+ *
+ * `omitDepth` drops the depth column for product lines where depth is standard
+ * across every cabinet and must not be shown.
  */
-export function formatCatalogPaletteSize(cabinet: DesignCabinet, options: { baseBox?: boolean } = {}) {
+export function formatCatalogPaletteSize(
+  cabinet: DesignCabinet,
+  options: { baseBox?: boolean; omitDepth?: boolean } = {},
+) {
   const dimensions = resolvedDesignCabinetDimensions(cabinet);
   const width = `${formatCatalogInchValue(dimensions.width)}"W`;
   const height = options.baseBox
@@ -100,6 +106,6 @@ export function formatCatalogPaletteSize(cabinet: DesignCabinet, options: { base
       ? `${formatCatalogInchValue(dimensions.height)}"H`
       : "—";
   const parts = [width, height];
-  if (dimensions.depth > 0) parts.push(`${formatCatalogInchValue(dimensions.depth)}"D`);
+  if (!options.omitDepth && dimensions.depth > 0) parts.push(`${formatCatalogInchValue(dimensions.depth)}"D`);
   return parts.join(" × ");
 }

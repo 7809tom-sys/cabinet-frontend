@@ -45,6 +45,10 @@ import { baseAngleEndPlan, isBaseAngleEndCabinet, type BaseAngleEndHand, type Pl
 import { isWallAngleEndCabinet, wallAngleEndPlan, type WallAngleEndHand } from "@/lib/wallAngleEndLayout";
 import {
   isWallEndOpenShelfCode,
+  isWallOpenShelfCabinet,
+  resolvedWallOpenShelfHand,
+  splitWallOpenShelfHand,
+  wallOpenShelfDisplayName,
   wallOpenShelfShelfCenters,
   wallOpenShelfShelfCount,
   wallOpenShelfShelfRadius,
@@ -328,6 +332,11 @@ type SceneSku = {
    * front sits on this end; null means both ends butt a neighbour.
    */
   openShelfExposedHand?: "left" | "right" | null;
+  /**
+   * Saved handed orientation of a wall open shelf from its edit config. One
+   * catalog item supports both hands; this is the placement/edit choice.
+   */
+  openShelfHand?: "left" | "right" | null;
   /** Stamped neighbour side from the wall-run commit. Rendering uses wallAngleEndHand. */
   angleEndHand?: "left" | "right" | null;
   handleSide?: "left" | "right" | null;
@@ -2112,7 +2121,16 @@ const COUNTERTOP_FINISHES = [
 export const THREE_D_EXPORT_SIZE = { width: 2000, height: 1400 } as const;
 
 /** Keeps the selected 3D cabinet card informative even for sparse legacy records. */
-export function threeDSelectedCabinetDescription(cabinet: Pick<PlacedCabinet, "masterCode" | "fillerPieceGroupId" | "fillerPlacementMode"> & { description?: string | null }): string {
+export function threeDSelectedCabinetDescription(cabinet: Pick<PlacedCabinet, "masterCode" | "fillerPieceGroupId" | "fillerPlacementMode"> & { description?: string | null; width?: number | null; height?: number | null; fixedShelfCount?: number | null }): string {
+  // An open shelf always reads as its product name with its width and height,
+  // never the supplier sentence and never the depth.
+  const openShelfName = wallOpenShelfDisplayName(cabinet);
+  if (openShelfName) {
+    const description = cabinet.description?.trim();
+    // Keep any extra shelf detail a source row adds beyond the standard name.
+    const shelves = description?.match(/\b\d+\s+shel(?:f|ves)\b/i)?.[0];
+    return shelves && !/shelf/i.test(openShelfName) ? `${openShelfName} · ${shelves}` : openShelfName;
+  }
   const description = cabinet.description?.trim();
   if (description) {
     // Preserve legacy SCR source rows and their SKU for ordering, but call an
@@ -4177,12 +4195,20 @@ export function angledTransitionLocalFootprint(
 
 /**
  * One fixed shelf board for a wall open shelf. The board fills the inside width
- * and depth of the carcass. Its front edge is straight, and the front corner on
- * the exposed run end carries a radius — the wall-end form in the source
- * drawing is a solid shelf with a rounded front corner, not a bowed centre.
+ * and depth of the carcass. Its edges are straight except for one radius, on the
+ * corner where the open front meets the exposed end.
+ *
+ * Orientation contract (this is what keeps the curve on the open side):
+ *   local +Z is the OPEN FRONT, local -Z is the wall/back;
+ *   local +X is the viewer's right, local -X the viewer's left.
+ *
+ * A `THREE.Shape` is built in XY and then laid flat with `rotateX(-PI/2)`, which
+ * sends shape +Y to world -Z. The shape's front is therefore written at
+ * `-halfDepth`, NOT `+halfDepth`; drawing it at `+halfDepth` puts the radius on
+ * the back edge, where nobody can see it.
  *
  * `roundedCorner` is -1 for the viewer's left end, +1 for the right end, and
- * null when both ends butt a neighbour (a mid-run open shelf keeps two square
+ * null when both ends butt a neighbour (a mid-run open shelf keeps square
  * corners). The board is centred on its own thickness so the caller positions it
  * by shelf centre.
  */
@@ -4197,19 +4223,24 @@ export function openShelfBoardGeometry(
   const halfWidth = Math.max(0.02, width / 2);
   const halfDepth = Math.max(0.02, depth / 2);
   const radius = Math.max(0.01, Math.min(radiusIn * INCH, halfWidth * 0.9, halfDepth * 0.9));
+  // Shape-space Y that becomes the open front (+Z) after rotateX(-PI/2).
+  const frontY = -halfDepth;
+  const backY = halfDepth;
   const sign = roundedCorner;
   const shape = new THREE.Shape();
-  // Trace the plan outline counter-clockwise, starting at the wall side.
-  shape.moveTo(-halfWidth, -halfDepth);
-  shape.lineTo(halfWidth, -halfDepth);
+  // Trace the plan outline, starting on the wall side.
+  shape.moveTo(-halfWidth, backY);
+  shape.lineTo(halfWidth, backY);
   if (sign > 0) {
-    shape.lineTo(halfWidth, halfDepth - radius);
-    shape.quadraticCurveTo(halfWidth, halfDepth, halfWidth - radius, halfDepth);
-    shape.lineTo(-halfWidth, halfDepth);
+    // Radius on the viewer's RIGHT end, at the open front.
+    shape.lineTo(halfWidth, frontY + radius);
+    shape.quadraticCurveTo(halfWidth, frontY, halfWidth - radius, frontY);
+    shape.lineTo(-halfWidth, frontY);
   } else {
-    shape.lineTo(halfWidth, halfDepth);
-    shape.lineTo(-halfWidth + radius, halfDepth);
-    shape.quadraticCurveTo(-halfWidth, halfDepth, -halfWidth, halfDepth - radius);
+    // Radius on the viewer's LEFT end, at the open front.
+    shape.lineTo(halfWidth, frontY);
+    shape.lineTo(-halfWidth + radius, frontY);
+    shape.quadraticCurveTo(-halfWidth, frontY, -halfWidth, frontY + radius);
   }
   shape.closePath();
   const geometry = new THREE.ExtrudeGeometry(shape, { depth: thickness, bevelEnabled: false, steps: 1, curveSegments: 12 });
@@ -4391,23 +4422,24 @@ export function addCabinet(
   const isRefrigeratorEndPanel = /refrigerator[-\s]?end[-\s]?panel|refrigerator-end-panel|\brepv\b/i.test(`${sku.description ?? ""} ${sku.masterCode ?? ""} ${sku.customProfile ?? ""}`);
   const openShelfCode = `${sku.masterCode ?? ""}`.replace(/[^A-Z0-9]/gi, "").toUpperCase();
   const kitchenCrestGenericShelfCount = kitchenCrestGenericOpenEndShelfCount(sku);
-  const isWallOpenShelf = /^W(?:E)?OS\d{4}$/.test(openShelfCode)
-    || kitchenCrestGenericShelfCount != null
-    || /\bwall\s+(?:end\s+)?open\s+shelf\b|\bwall\s+end\s+shelf\b|\bopen\s+end\s+shelf\s+wall\b/i.test(`${sku.subCategory ?? ""} ${sku.description ?? ""}`);
+  const isWallOpenShelf = isWallOpenShelfCabinet(sku);
   const isWallEndOpenShelf = isWallEndOpenShelfCode(openShelfCode)
     || /\bwall\s+end\s+(?:open\s+)?shelf\b/i.test(`${sku.subCategory ?? ""} ${sku.description ?? ""}`);
-  // The radiused shelf-front corner belongs on the exposed run end only. A
-  // saved placement supplies its measured hand; a standalone wall-end shelf has
-  // no neighbour to butt, so its end form faces the viewer's right.
-  const openShelfRoundedCorner: -1 | 1 | null = !isWallEndOpenShelf
+  // The radiused shelf-front corner belongs on the open/exposed end. One catalog
+  // item supports both hands: an explicit saved hand wins, then a hand encoded
+  // in the code (WOS0930-L), then the measured run end, then the viewer's right.
+  // `openShelfExposedHand === null` means both ends butt a neighbour, so a
+  // mid-run shelf keeps two square ends.
+  const openShelfHand = resolvedWallOpenShelfHand({
+    masterCode: sku.masterCode,
+    openShelfHand: sku.openShelfHand,
+    measuredHand: sku.openShelfExposedHand,
+  });
+  const openShelfBothEndsButted = sku.openShelfExposedHand === null && sku.openShelfHand == null
+    && splitWallOpenShelfHand(sku.masterCode).hand == null;
+  const openShelfRoundedCorner: -1 | 1 | null = !isWallEndOpenShelf || openShelfBothEndsButted
     ? null
-    : sku.openShelfExposedHand === "left"
-      ? -1
-      : sku.openShelfExposedHand === "right"
-        ? 1
-        : sku.openShelfExposedHand === null
-          ? null
-          : 1;
+    : openShelfHand === "left" ? -1 : 1;
   // A WOS/WEOS is a full-height wall cabinet with an open, curved-shelf
   // carcass. Only explicit FS/floating-shelf items use the thin-shelf path.
   const isFloatingShelf = !isWallOpenShelf && (/^FS[-_ ]?\d+(?:\.\d+)?$/i.test(sku.masterCode ?? "") || /floating\s*shelf/i.test(`${sku.description ?? ""} ${sku.masterCode ?? ""}`));
@@ -5002,6 +5034,10 @@ export function addCabinet(
     back.position.z = -bodyDepth / 2 + panelThickness / 2;
     addOpenShelfPart(back, { wallOpenShelfPart: "back" });
     for (const side of [-1, 1] as const) {
+      // The solid side panel sits on the CLOSED end. A handed open shelf has an
+      // open end (the reference photo shows the shelf boards running out to it),
+      // so no panel is built on the open side.
+      if (isWallEndOpenShelf && openShelfRoundedCorner != null && side === openShelfRoundedCorner) continue;
       const sidePanel = new THREE.Mesh(new THREE.BoxGeometry(panelThickness, interiorHeight, bodyDepth), bodyMaterial);
       sidePanel.position.x = side * (bodyWidth / 2 - panelThickness / 2);
       addOpenShelfPart(sidePanel, { wallOpenShelfPart: side === -1 ? "left-side" : "right-side" });
@@ -11324,8 +11360,7 @@ export function existingCabinetSku(cabinet: PlacedCabinet, room?: RoomData, peer
     })
     : undefined;
   const codeDimensions = compactWallCodeDimensions(cabinet);
-  const openShelfHand = room ? wallOpenShelfExposedHand(cabinet, room, peers) : null;
-  return {
+  const openShelfHand = room ? wallOpenShelfExposedHand(cabinet, room, peers) : null;  return {
     placementUid: cabinet.uid,
     distributorSkuId: -(Math.abs(cabinet.cabinetId) || 1),
     cabinetId: cabinet.cabinetId,
@@ -11358,6 +11393,7 @@ export function existingCabinetSku(cabinet: PlacedCabinet, room?: RoomData, peer
 	    swing: resolveSwing(cabinet),
 	    angleEndHand: cabinet.angleEndHand === "left" ? "left" : null,
     openShelfExposedHand: openShelfHand,
+    openShelfHand: cabinet.openShelfHand ?? null,
     handleSide: cabinet.handleSide === "left" || cabinet.handleSide === "right" ? cabinet.handleSide : null,
     mountBottom: cabinet.mountBottom ?? null,
     hardwarePosition: resolveCabinetHardwarePosition(cabinet),

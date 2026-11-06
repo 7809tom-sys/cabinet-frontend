@@ -49,10 +49,17 @@ describe("Floor Plan open-shelf drawing", () => {
     }
   });
 
+  it("marks the solid side on the closed end of a handed open shelf in plan", () => {
+    expect(source).toContain("openShelfPlanHand");
+    expect(source).toContain("data-open-shelf-solid-side={resolvedWallOpenShelfHand(p)}");
+    // A non-open-shelf cabinet never gets the marker.
+    expect(source).toContain("isWallOpenShelf && !isAppliance");
+  });
+
   it("draws an open-shelf marker with no door-swing arc and no hardware marker", () => {
     expect(source).toContain("isWallOpenShelf && !isAppliance");
     expect(source).toContain('data-open-shelf-plan="true"');
-    expect(source).toContain("wall open shelf with an open front and no doors");
+    expect(source).toContain("open shelf with an open front and no doors");
     // The branch runs before the appliance icons and never adds a swing path.
     const branchStart = source.indexOf("isWallOpenShelf && !isAppliance");
     const branchEnd = source.indexOf("Appliance-specific top-down icons", branchStart);

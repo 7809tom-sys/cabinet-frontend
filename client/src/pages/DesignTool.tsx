@@ -189,7 +189,7 @@ import {
 		  normalizeLCornerDepths, normalizeBlindCornerDoorSides, blindCornerPullPlacement, normalizeRefrigeratorBayUppers, refrigeratorSurroundElevation, refrigeratorBayRunMetrics, refrigeratorMagneticSnapEnvelope, fitExplicitRefrigeratorOptionPlacements, commitIndependentCabinetCandidate, commitConfiguredRefrigeratorCandidate, isMicrowaveOverRangePair,
 	  conflictingUids, blindCornerViolations, blindCornerSpecViolations, ceilingFitViolations, roomCeiling, inchesToFeetInches, isBlindCorner, isBaseBlindCorner, BLIND_CORNER_FILLER_WIDTH_IN, blindPullRange, isOnIsland, isCornerCabinet, isAngledWallCabinet, isProtectedCornerCabinet, requiresRoomCornerPlacement, missingCornerBaseViolations,
 	  isSinkBaseCabinet, isFarmSinkBasePaletteItem, fixtureBelongsToCabinet, fixtureIsOnCabinetFootprint, placedFootprint, hasCollision, cabinetCollisionDetail, COLLISION_EPSILON_IN, CABINET_CONFLICT_LOCK_IN, nearestCollisionFreeMountBottom, collisionReason, wallCabinetFitMeasure, wallCabinetPlacementReason, cabinetWallRunSegment, compatibleWallCabinetAlternatives, snapCabinetSeamOverlap, shouldBlockPlacementCollision, appendCollisionFreePlacements, appendRefrigeratorEnclosurePlacements, removeOverlappingPlacements, effectiveStyleId, pricingStyleId, rebaseFormerDefaultStyleOverrides, clearForeignSavedStyleOverrides, distinctStyleIds, isMixedFinish, paletteActiveWallPlacement, refrigeratorAdjacentOpeningPlacement, nextAvailableRoomCornerPlacement, nextAvailablePeninsulaCornerPlacement, cabinetCornerPlacementInfo, blindCornerSnapInfo, wallCabinetVerticalMoveLimit, repairWallCabinetPlanSeamForVerticalMove, selectedSinkBaseWallPlacement, sinkBaseWindowPlacement, selectedLowerCabinetWallPlacement, selectedCornerBaseWallPlacement, matchingLowerCabinetWallPlacement, snapWallCabinetToOwningWall, normalizeStandardWallMounts, normalizeWallOpenShelfMounts, wallOpenShelfExposedHand,
-  		  isPlaceableAccessory, accessoryPlacement, isPanelItem, isDishwasherPanel, normalizeDishwasherPanelPlacement, isFillerItem, adjacentCabinetForFiller, matchInstalledFillerToCabinet, isFloatingShelfItem, isWallOpenShelfCabinet, isKneeDrawerItem, kitchenCrestGenericOpenEndShelfCount, wallOpenShelfShelfCount, KNEE_DRAWER_MIN_MOUNT_BOTTOM_IN, KNEE_DRAWER_MAX_MOUNT_BOTTOM_IN, fillerWidthRange, alternateWallPlacementRecommendation, PENINSULA_INSIDE_CORNER_CLEARANCE_IN, adjoiningWallRunMountBottom,
+  		  isPlaceableAccessory, accessoryPlacement, isPanelItem, isDishwasherPanel, normalizeDishwasherPanelPlacement, isFillerItem, adjacentCabinetForFiller, matchInstalledFillerToCabinet, isFloatingShelfItem, isWallOpenShelfCabinet, isKneeDrawerItem, kitchenCrestGenericOpenEndShelfCount, wallOpenShelfShelfCount, wallOpenShelfDisplayName, KNEE_DRAWER_MIN_MOUNT_BOTTOM_IN, KNEE_DRAWER_MAX_MOUNT_BOTTOM_IN, fillerWidthRange, alternateWallPlacementRecommendation, PENINSULA_INSIDE_CORNER_CLEARANCE_IN, adjoiningWallRunMountBottom,
   resolveSwing, cycleSwing, swingText, hasDoorSwing, DoorSwing, resolveCabinetHardwarePosition, cabinetHardwarePositionPatch, isCabinetDoorHardwareEligible, applyCabinetDoorHardwareToAll, supportsCenteredTopDoorPull, requiresCenteredTopDoorPull, usesRaisedFloorWallDoorPull, isWd18CountertopDrawerCabinet, normalizeWd18CountertopMounts, ordinaryWallMountBottom,
   // (closet helpers imported separately below)
   APPLIANCES, applianceAsDesignCabinet, appliancesForRoom, ROOM_TYPES, type RoomType,
@@ -18931,7 +18931,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                     }
 	                    const placementDetail = cabinetPlacementHoverDetail(c);
 	                    const placementDetailText = placementDetail
-	                      ? `${placementDetail.title} · ${formatEighthInches(placementDetail.dimensions.width)}W × ${formatEighthInches(placementDetail.dimensions.height)}H × ${formatEighthInches(placementDetail.dimensions.depth)}D. ${placementDetail.clearance}`
+	                      ? isWallOpenShelfCabinet(c)
+	                        ? `${placementDetail.title} · ${formatEighthInches(placementDetail.dimensions.width)}W × ${formatEighthInches(placementDetail.dimensions.height)}H. ${placementDetail.clearance}`
+	                        : `${placementDetail.title} · ${formatEighthInches(placementDetail.dimensions.width)}W × ${formatEighthInches(placementDetail.dimensions.height)}H × ${formatEighthInches(placementDetail.dimensions.depth)}D. ${placementDetail.clearance}`
 	                      : undefined;
 	                    // Appliance palette entries are intentionally synthetic room-layout
 	                    // models. They have no supplier product row or approved shopper
@@ -18949,13 +18951,16 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                      paletteType === "base" ||
 	                      (paletteType === "vanity" && !isKneeDrawerItem(c)) ||
 	                      (paletteType === "corner" && isCornerBase(c));
-	                    const sizeLabel = formatCatalogPaletteSize(c, { baseBox: isBaseBox });
+	                    const sizeLabel = formatCatalogPaletteSize(c, { baseBox: isBaseBox, omitDepth: isWallOpenShelfCabinet(c) });
+                    // Every open shelf reads as one product name with its width and
+                    // height; cabinet depth is standard and never shown.
+                    const paletteDescription = wallOpenShelfDisplayName(c) ?? c.description;
 	                    const openSpecs = paletteType === "appliance" ? Boolean(c.specImageUrl) : true;
 	                    return (
 	                    <CatalogPaletteCard
 	                      key={`${c.masterCode}:${c.catalogImageUrl ?? c.id}`}
 	                      cabinet={c}
-	                      description={c.description}
+	                      description={paletteDescription}
 	                      sizeLabel={sizeLabel}
 	                      finishSwatchUrl={paletteFinishSwatch}
 	                      finishName={activeStyleName}

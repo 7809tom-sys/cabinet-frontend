@@ -56,7 +56,9 @@ function kitchenCrestOpenEndShelf(cabinet: DesignerCabinetShape): boolean {
 function isWallOpenShelfCabinet(cabinet: DesignerCabinetShape): boolean {
   const code = `${cabinet.masterCode ?? ""}`.replace(/[^A-Z0-9]/gi, "").toUpperCase();
   const hay = `${cabinet.subCategory ?? ""} ${cabinet.description ?? ""}`.toLowerCase();
-  return /^W(?:E)?OS\d{4}$/.test(code)
+  // WOS is the Faircrest catalog spelling; WEOS and the WOES misspelling are the
+  // same cabinet, so every spelling classifies identically.
+  return /^(?:WOS|WEOS|WOES)\d{4}$/.test(code)
     || kitchenCrestOpenEndShelf(cabinet)
     || /\bwall\s+(?:end\s+)?open\s+shelf\b|\bwall\s+end\s+shelf\b|\bopen\s+end\s+shelf\s+wall\b/.test(hay);
 }

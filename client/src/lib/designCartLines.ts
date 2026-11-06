@@ -1,5 +1,5 @@
 import type { CartItem } from "@/contexts/CartContext";
-import { blindCornerInstallerNote, customSizeFee, effectiveStyleId, isBlindCorner, isFillerItem, isGlassPolicyNomenclature, type PlacedCabinet } from "@/lib/design";
+import { blindCornerInstallerNote, customSizeFee, effectiveStyleId, isBlindCorner, isFillerItem, isGlassPolicyNomenclature, wallOpenShelfDisplayName, type PlacedCabinet } from "@/lib/design";
 import { isClosetPart } from "@/lib/closet";
 import { calculateCartSubtotal } from "@/lib/cartTotals";
 import { combinedFillerNote, fillerCutSourceFor, isCombinedSmallFiller } from "@/lib/fillerBilling";
@@ -86,8 +86,12 @@ function fillerCartIdentity(cabinet: PlacedCabinet): string {
 }
 
 /** Name a billed filler by its stock SKU width and the installed cut, not a mismatched vendor sentence. */
-export function installedFillerCartName(cabinet: Pick<PlacedCabinet, "masterCode" | "description" | "category" | "subCategory" | "width" | "nominalWidth">): string {
+export function installedFillerCartName(cabinet: Pick<PlacedCabinet, "masterCode" | "description" | "category" | "subCategory" | "width" | "nominalWidth" | "height">): string {
   const description = cabinet.description?.trim() || cabinet.masterCode;
+  // An open shelf reads as its product name with width and height, never the
+  // supplier sentence and never the depth.
+  const openShelfName = wallOpenShelfDisplayName(cabinet);
+  if (openShelfName) return openShelfName;
   if (!isFillerItem(cabinet)) return description;
   const stock = Number(cabinet.nominalWidth);
   const installed = Number(cabinet.width);

@@ -32,6 +32,8 @@ import {
   kitchenCrestOpenEndShelfCount as sharedKitchenCrestOpenEndShelfCount,
   wallOpenShelfNominalSize,
   wallOpenShelfShelfCount as sharedWallOpenShelfShelfCount,
+  wallOpenShelfDisplayName as sharedWallOpenShelfDisplayName,
+  resolvedWallOpenShelfHand as sharedResolvedWallOpenShelfHand,
 } from "./wallOpenShelf";
 export { isGlassPolicyNomenclature } from "./glassPolicy";
 
@@ -228,6 +230,20 @@ export function wallOpenShelfShelfCount(c: {
   numberOfFixedShelves?: number | null;
 }): { count: number; source: "config" | "kitchencrest-line-art" | "wall-end-source" | "none" } {
   return sharedWallOpenShelfShelfCount(c);
+}
+
+/**
+ * The one customer-facing name for an open shelf: `Open Shelf 9"W x 30"H`.
+ * Width and height only; depth is standard across the line and never shown.
+ */
+export function wallOpenShelfDisplayName(c: {
+  masterCode?: string | null;
+  width?: unknown;
+  height?: unknown;
+  description?: string | null;
+  subCategory?: string | null;
+}): string | null {
+  return sharedWallOpenShelfDisplayName(c);
 }
 
 export const KNEE_DRAWER_MIN_MOUNT_BOTTOM_IN = 24;
@@ -907,6 +923,14 @@ export interface PlacedCabinet {
   // Optional for backward-compat; resolve with resolveSwing() which falls back
   // to a sensible default based on the cabinet's door count.
   swing?: DoorSwing;
+  /**
+   * Wall open shelves only: which end is the open/exposed end, as a viewer hand.
+   * One catalog item supports both hands, so this is the placement/edit choice.
+   * "left" puts the open end, rounded shelf fronts and the missing side panel on
+   * the viewer's left; "right" mirrors it. Absent = derive from the code suffix
+   * (`WOS0930-L`) and then from the measured run end.
+   */
+  openShelfHand?: "left" | "right" | null;
   /**
    * AW angled wall-end cabinets only: which side holds the square back corner
    * that tucks against the neighbouring cabinet ("right" = local +x side).
@@ -10175,6 +10199,22 @@ export function adjoiningWallRunMountBottom(
   if (!neighbor) return null;
   const neighborBox = elevationBox(neighbor, room);
   return Math.max(0, neighborBox.bottom + neighborBox.height - placedHeight(cabinet));
+}
+
+/**
+ * The handed orientation an open shelf renders with, from one contract:
+ * explicit saved hand, then a hand in the code, then the viewer's right.
+ */
+export function resolvedWallOpenShelfHand(c: {
+  masterCode?: string | null;
+  openShelfHand?: "left" | "right" | null;
+  openShelfExposedHand?: "left" | "right" | null;
+}): "left" | "right" {
+  return sharedResolvedWallOpenShelfHand({
+    masterCode: c.masterCode,
+    openShelfHand: c.openShelfHand,
+    measuredHand: c.openShelfExposedHand,
+  });
 }
 
 /**

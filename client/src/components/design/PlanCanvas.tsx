@@ -21,7 +21,7 @@ import {
   type PlacedFurniture, FURNITURE_CATALOG, furnitureFootprint,
   flooringMaterial,
   type PlanAnnotation,
-  cabinetWallRunSegment, retainedWallSegmentForSplit, floorPlanWallDimensionChains, roomWallRunFrames, isFillerItem, fillerWidthRange, isWallOpenShelfCabinet,
+  cabinetWallRunSegment, retainedWallSegmentForSplit, floorPlanWallDimensionChains, roomWallRunFrames, isFillerItem, fillerWidthRange, isWallOpenShelfCabinet, wallOpenShelfDisplayName, resolvedWallOpenShelfHand,
 		  type PonyWall, clampPonyWall, ponyWallMiteredFootprint, ponyWallPlanFrame, drywallPonyWallAppearance, drywallPonyWallPreviewBackground,
 	  type IslandZone, type IslandFace,
 	} from "@/lib/design";
@@ -2593,6 +2593,7 @@ export function PlanCanvas({
             const isWall = p.placement === "wall";
             const isSelected = p.uid === selectedUid;
             const isWallOpenShelf = isWallOpenShelfCabinet(p);
+            const openShelfPlanHand = isWallOpenShelf ? resolvedWallOpenShelfHand(p) : null;
             const isAttributesTarget = p.uid === attributesTargetUid;
 	            const showWallSnapSuccess = p.uid === wallSnapSuccessUid;
 	            const isWindowCenteredSink = sinkWindowSnap?.cabinetUid === p.uid;
@@ -2770,7 +2771,7 @@ export function PlanCanvas({
 	                  transform: transitionBounds ? undefined : lockedAngledRun ? `rotate(${p.rotation}deg)` : undefined,
 	                  transformOrigin: transitionBounds ? undefined : lockedAngledRun ? "center" : undefined,
                 }}
-	                title={splitFillerTooltip ?? applianceSnapTooltip ?? cornerPlacementTooltip ?? placementHoverTooltip ?? `${p.masterCode} — ${p.description}`}
+	                title={splitFillerTooltip ?? applianceSnapTooltip ?? cornerPlacementTooltip ?? placementHoverTooltip ?? `${isWallOpenShelf ? (wallOpenShelfDisplayName(p) ?? p.masterCode) : p.masterCode} — ${isWallOpenShelf ? "open front, no doors" : p.description}`}
                 tabIndex={splitFillerTooltip ? 0 : undefined}
                 aria-describedby={splitFillerTooltip ? `split-filler-tooltip-${p.uid}` : undefined}
                 data-cabinet-attributes-target={isAttributesTarget ? "true" : undefined}
@@ -2950,13 +2951,16 @@ export function PlanCanvas({
                     <svg
                       data-open-shelf-plan="true"
                       data-open-shelf-code={p.masterCode}
-                      aria-label={`${p.masterCode} wall open shelf with an open front and no doors`}
+                      aria-label={`${wallOpenShelfDisplayName(p) ?? p.masterCode} open shelf with an open front and no doors`}
                       className="absolute inset-0 h-full w-full pointer-events-none"
                       viewBox="0 0 100 100"
                       preserveAspectRatio="none"
                     >
                       <rect x={3} y={3} width={94} height={94} fill="none" stroke={edgeColor} strokeWidth="2.5" opacity="0.92" />
                       <rect x={12} y={12} width={76} height={76} fill="none" stroke={edgeColor} strokeWidth="1" opacity="0.5" strokeDasharray="4 3" />
+                      {/* The solid side panel sits on the closed end; the open end
+                          carries the deeper cavity, mirroring with the hand. */}
+                      <rect data-open-shelf-solid-side={resolvedWallOpenShelfHand(p)} x={openShelfPlanHand === "left" ? 3 : 82} y={3} width={15} height={94} fill={edgeColor} fillOpacity={0.22} stroke="none" />
                     </svg>
                   )}
                   {/* Appliance-specific top-down icons */}
@@ -3070,15 +3074,17 @@ export function PlanCanvas({
                     className="text-[9px] font-bold leading-none truncate max-w-full relative z-10"
                     style={{ color: lbl.color, textShadow: lbl.shadow }}
                   >
-                    {p.masterCode}
+                    {isWallOpenShelf ? (wallOpenShelfDisplayName(p) ?? p.masterCode) : p.masterCode}
                   </span>
                   <span
                     className="text-[7px] leading-none mt-0.5 relative z-10"
                     style={{ color: lbl.color, opacity: 0.8, textShadow: lbl.shadow }}
                   >
-                    {isRefrigeratorEndPanel(p)
-                      ? `${formatEighthInches(Number(p.width) || 0)} × ${formatEighthInches(Number(p.depth) || 0)} D`
-                      : formatEighthInches(Number(p.width) || 0)}
+                    {isWallOpenShelf
+                      ? `${formatEighthInches(Number(p.height) || 0)} H`
+                      : isRefrigeratorEndPanel(p)
+                        ? `${formatEighthInches(Number(p.width) || 0)} × ${formatEighthInches(Number(p.depth) || 0)} D`
+                        : formatEighthInches(Number(p.width) || 0)}
                   </span>
                 </div>
                 {!isWall && (!isCorner || isBlind) && (

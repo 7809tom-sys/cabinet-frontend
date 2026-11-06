@@ -7,7 +7,7 @@ import * as THREE from "three";
 import { baseAngleEndPlan } from "@/lib/baseAngleEndLayout";
 import { wallAngleEndPlan } from "@/lib/wallAngleEndLayout";
 import { canSyncThreeDOrderToCart, constrainedThreeDWallHeight, exactFittedFillerInches, filteredThreeDCatalogItems, hybridPlanUnderlayModel, resolvedPlacedCabinetDoorProfile, resolvedPlacedCabinetDoorSampleUrl, resolvedPlacedCabinetFinish, resolvedThreeDWallHeights, shouldShowThreeDCatalog, THREE_D_EMBEDDED_TOOLBAR_CLASS, THREE_D_WORKSPACE_ACTIONS, threeDCabinetHitFromObject, threeDDecorativeEndSides, threeDDrawerZoneHeight, threeDFillerMeasurementNoticeEntries, threeDFittedFillerWidthText, threeDFrontDatumSnapIndicators, threeDHasVerifiedDoorLayout, threeDOrderLineForSelectedCabinet, threeDPointerSelectsCabinet, threeDPreviewFadeAllowed, threeDSelectedCabinetDescription, threeDSelectedCabinetDockClass, threeDSelectionFromPlaced, threeDStructuralFinish, threeDTallPantryDoorsPerRow, threeDTemporaryPreviewCounterText, threeDTouchTapOpensWindow, threeDUpperCabinetWallMinimums, threeDUsesAuthoritativePlanScene, threeDUsesCatalogFrontVisual, threeDWallClearanceText, threeDWallFitGuideText, threeDWallSideForEdge, threeDWallSideForPolygonEdge, updatedThreeDWallHeights } from "./InteractiveRoom3D";
-import { addCabinet, addPotFillerFixture, addSinkFixture, addThreeDPeninsulaCountertops, addWallOpening, describedOvenSpecification, diagonalCornerFootprintVertices, diagonalCornerFrontWidth, dimensions, doorProfileKind, existingCabinetTransform, existingCabinetSku, freestandingRangeHeightProfile, hasPersistedTwoDScene, isEnclosedWallMicrowaveCabinet, isEqualHeightTwoDrawerBase, lCornerCarcassParts, openingTransform, photoFaceSkipsToneMapping, potFillerWallMountTransform, quoteMaterialDetails, rangeCooktopLayout, rangeHoodFrontGeometry, rangeHoodGeometry, rangeHoodSceneStatus, rangeOvenFrontLayout, resolvedCatalogFinish, resolvedPlacedCabinetFrontVisual, resolvedThreeDCountertopFinish, resolvedThreeDDoorProfile, resolvedThreeDDoorSampleUrl, resolvedThreeDDrawerRows, resolvedThreeDFaceLayout, resolvedThreeDOvenLayout, resolvedThreeDSpecialtyProfile, savedRangeHoodTransform, sceneCabinetColor, shouldRenderCountertopOverSceneItem, shouldRenderPlacedDesign, shouldRenderSavedSceneCabinet, sinkFaucetTransform, sinkFixtureTransform, singleOvenTowerAssembly, threeDApplianceFrontVisualUrl, threeDBlindCornerFrontLayout, threeDCabinetFrontVisualUrl, threeDCameraDistanceLimits, threeDCountertopDepthIn, threeDDoorMaterialFallback, threeDFaceMaterialColor, threeDMaterialStatusText, threeDPhotoRenderDoorReferenceStatus, threeDPeninsulaCountertopGeometry, threeDPlacedWall, threeDPlanSyncText, threeDRoomFacingRotation, threeDSceneInputDiagnostics, threeDSceneRevisionKey, threeDSceneVisibilityContract, threeDShakerFramePose, threeDShakerRailThickness, threeDUsesDoorSampleTexture, threeDUsesExactDoorSampleMaterial, threeDUsesPhysicalShakerRails, threeDVisibleMaterialMode, triangleCornerFootprintVertices, triangleCornerFrontPose, triangleCornerFrontWidth, THREE_D_DRAWER_REVEAL_DEPTH, THREE_D_EXPORT_SIZE, THREE_D_ROOM_CONTEXT_DEFAULT, THREE_D_WALL_DEPTH_WRITE, THREE_D_WALL_OPACITY, withCatalogDoorStyleIdentity, type InteractiveRoomScene } from "./InteractiveRoom3D";
+import { addCabinet, addPotFillerFixture, addSinkFixture, addThreeDPeninsulaCountertops, addWallOpening, describedOvenSpecification, diagonalCornerFootprintVertices, diagonalCornerFrontWidth, dimensions, doorProfileKind, existingCabinetTransform, existingCabinetSku, freestandingRangeHeightProfile, hasPersistedTwoDScene, isEnclosedWallMicrowaveCabinet, isEqualHeightTwoDrawerBase, lCornerCarcassParts, openShelfBoardGeometry, openingTransform, photoFaceSkipsToneMapping, potFillerWallMountTransform, quoteMaterialDetails, rangeCooktopLayout, rangeHoodFrontGeometry, rangeHoodGeometry, rangeHoodSceneStatus, rangeOvenFrontLayout, resolvedCatalogFinish, resolvedPlacedCabinetFrontVisual, resolvedThreeDCountertopFinish, resolvedThreeDDoorProfile, resolvedThreeDDoorSampleUrl, resolvedThreeDDrawerRows, resolvedThreeDFaceLayout, resolvedThreeDOvenLayout, resolvedThreeDSpecialtyProfile, savedRangeHoodTransform, sceneCabinetColor, shouldRenderCountertopOverSceneItem, shouldRenderPlacedDesign, shouldRenderSavedSceneCabinet, sinkFaucetTransform, sinkFixtureTransform, singleOvenTowerAssembly, threeDApplianceFrontVisualUrl, threeDBlindCornerFrontLayout, threeDCabinetFrontVisualUrl, threeDCameraDistanceLimits, threeDCountertopDepthIn, threeDDoorMaterialFallback, threeDFaceMaterialColor, threeDMaterialStatusText, threeDPhotoRenderDoorReferenceStatus, threeDPeninsulaCountertopGeometry, threeDPlacedWall, threeDPlanSyncText, threeDRoomFacingRotation, threeDSceneInputDiagnostics, threeDSceneRevisionKey, threeDSceneVisibilityContract, threeDShakerFramePose, threeDShakerRailThickness, threeDUsesDoorSampleTexture, threeDUsesExactDoorSampleMaterial, threeDUsesPhysicalShakerRails, threeDVisibleMaterialMode, triangleCornerFootprintVertices, triangleCornerFrontPose, triangleCornerFrontWidth, THREE_D_DRAWER_REVEAL_DEPTH, THREE_D_EXPORT_SIZE, THREE_D_ROOM_CONTEXT_DEFAULT, THREE_D_WALL_DEPTH_WRITE, THREE_D_WALL_OPACITY, withCatalogDoorStyleIdentity, type InteractiveRoomScene } from "./InteractiveRoom3D";
 import { addFurniture, addIslandZone, furnitureTransform, islandZoneTransform, ponyWallTransform } from "./InteractiveRoom3D";
 import { threeDFurnitureHitFromIntersections, threeDFurnitureHitFromObject } from "./InteractiveRoom3D";
 import { threeDDesignParitySnapshot, threeDExactPlanGeometryLock } from "./InteractiveRoom3D";
@@ -540,8 +540,10 @@ describe("3D fallback appliance run seams", () => {
       if (node.userData.cabinetFront) cabinetFronts.push(node);
     });
     expect(shelfRoot.userData.floorStandingCabinet).toBeUndefined();
+    // A handed wall-end shelf is open on its exposed end, so only the closed end
+    // carries a side panel: top, bottom, back, one side, two shelves.
     expect(shellParts.map((part) => part.userData.wallOpenShelfPart).sort()).toEqual([
-      "back", "bottom", "fixed-shelf", "fixed-shelf", "left-side", "right-side", "top",
+      "back", "bottom", "fixed-shelf", "fixed-shelf", "left-side", "top",
     ]);
     expect(fixedShelves).toHaveLength(2);
     // The target form is a solid shelf with a radiused front corner on the open
@@ -558,12 +560,59 @@ describe("3D fallback appliance run seams", () => {
     expect((bounds.max.z - bounds.min.z) * 12).toBeCloseTo(12, 6);
   });
 
+  it("renders the 12-wide WEOS family through the same box path at every height", () => {
+    for (const [masterCode, height] of [
+      ["WEOS1230", 30],
+      ["WEOS1236", 36],
+      ["WEOS1242", 42],
+    ] as const) {
+      const root = new THREE.Group();
+      addCabinet(root, {
+        distributorSkuId: 1230,
+        cabinetId: 930,
+        masterCode,
+        description: "Wall End Open Shelf",
+        placementType: "wall",
+        width: 12,
+        height,
+        depth: 12,
+        numberOfDoors: 0,
+        numberOfDrawers: 0,
+        fixedShelfCount: 2,
+        openShelfExposedHand: "right",
+      }, "back", {}, 144, 120, "#b99a6b", "#f8f8f6", undefined, { x: 18, z: 6, rotation: 0, bottom: 84 - height });
+
+      const shelfRoot = root.children[0]!;
+      const shell: THREE.Mesh[] = [];
+      const shelves: THREE.Mesh[] = [];
+      let fronts = 0;
+      shelfRoot.traverse((node) => {
+        if (node instanceof THREE.Mesh && node.userData.wallOpenShelfPart) shell.push(node);
+        if (node instanceof THREE.Mesh && node.userData.wallOpenShelfFixedShelf) shelves.push(node);
+        if (node.userData.cabinetFront) fronts += 1;
+      });
+      // Same parts as the 9-wide sibling: a handed box (one solid side on the
+      // closed end) plus its configured shelves.
+      expect(shell.map((part) => part.userData.wallOpenShelfPart).sort(), masterCode).toEqual([
+        "back", "bottom", "fixed-shelf", "fixed-shelf", "left-side", "top",
+      ]);
+      expect(shelves, masterCode).toHaveLength(2);
+      expect(shelves.every((shelf) => shelf.userData.roundedExposedCorner === 1), masterCode).toBe(true);
+      expect(fronts, masterCode).toBe(0);
+
+      root.updateMatrixWorld(true);
+      const bounds = new THREE.Box3().setFromObject(shelfRoot);
+      expect((bounds.max.x - bounds.min.x) * 12, masterCode).toBeCloseTo(12, 6);
+      expect((bounds.max.y - bounds.min.y) * 12, masterCode).toBeCloseTo(height, 6);
+      expect((bounds.max.z - bounds.min.z) * 12, masterCode).toBeCloseTo(12, 6);
+    }
+  });
+
   it("renders WEOS0936 and WEOS0942 with the same 9-inch width, 12-inch depth and their own height and shelves", () => {
     for (const [masterCode, height, configuredShelves] of [
       ["WEOS0936", 36, 2],
       ["WEOS0942", 42, 3],
-    ] as const) {
-      const root = new THREE.Group();
+    ] as const) {      const root = new THREE.Group();
       addCabinet(root, {
         distributorSkuId: 936,
         cabinetId: 930,
@@ -663,6 +712,196 @@ describe("3D fallback appliance run seams", () => {
     expect(build(null)).toEqual([null, null]);
   });
 
+  it("renders a WOES or WOS spelling exactly like the WEOS cabinet", () => {
+    const build = (masterCode: string) => {
+      const root = new THREE.Group();
+      addCabinet(root, {
+        distributorSkuId: 1230,
+        cabinetId: 930,
+        masterCode,
+        description: "Wall Open Shelf",
+        placementType: "wall",
+        width: 12,
+        height: 30,
+        depth: 12,
+        numberOfDoors: 0,
+        numberOfDrawers: 0,
+        fixedShelfCount: 2,
+        openShelfExposedHand: "right",
+      }, "back", {}, 144, 120, "#b99a6b", "#f8f8f6", undefined, { x: 18, z: 6, rotation: 0, bottom: 54 });
+      root.updateMatrixWorld(true);
+      const shelfRoot = root.children[0]!;
+      const parts: string[] = [];
+      let fronts = 0;
+      shelfRoot.traverse((node) => {
+        if (node.userData.wallOpenShelfPart) parts.push(String(node.userData.wallOpenShelfPart));
+        if (node.userData.cabinetFront) fronts += 1;
+      });
+      const bounds = new THREE.Box3().setFromObject(shelfRoot);
+      return { parts: parts.sort(), fronts, bounds };
+    };
+
+    const weos = build("WEOS1230");
+    for (const spelling of ["WOES1230", "WOS1230"]) {
+      const other = build(spelling);
+      expect(other.parts, spelling).toEqual(weos.parts);
+      expect(other.fronts, spelling).toBe(0);
+      expect((other.bounds.max.x - other.bounds.min.x) * 12, spelling).toBeCloseTo(12, 6);
+      expect((other.bounds.max.y - other.bounds.min.y) * 12, spelling).toBeCloseTo(30, 6);
+    }
+  });
+
+  it("builds one handed cabinet that mirrors: solid side on the closed end, open end on the other", () => {
+    const build = (overrides: Record<string, unknown>) => {
+      const root = new THREE.Group();
+      addCabinet(root, {
+        distributorSkuId: 930,
+        cabinetId: 930,
+        masterCode: "WOS0930",
+        description: "Wall Open Shelf",
+        placementType: "wall",
+        width: 9,
+        height: 30,
+        depth: 12,
+        numberOfDoors: 0,
+        numberOfDrawers: 0,
+        fixedShelfCount: 2,
+        ...overrides,
+      }, "back", {}, 144, 120, "#b99a6b", "#f8f8f6", undefined, { x: 18, z: 6, rotation: 0, bottom: 54 });
+      root.updateMatrixWorld(true);
+      const shelfRoot = root.children[0]!;
+      const parts: string[] = [];
+      let rounded: (number | null)[] = [];
+      shelfRoot.traverse((node) => {
+        if (node.userData.wallOpenShelfPart) parts.push(String(node.userData.wallOpenShelfPart));
+        if (node.userData.wallOpenShelfFixedShelf) rounded.push(node.userData.roundedExposedCorner);
+      });
+      return { parts: parts.sort(), rounded };
+    };
+
+    const right = build({ openShelfHand: "right" });
+    expect(right.parts).toContain("left-side");
+    expect(right.parts).not.toContain("right-side");
+    expect(right.rounded).toEqual([1, 1]);
+
+    const left = build({ openShelfHand: "left" });
+    expect(left.parts).toContain("right-side");
+    expect(left.parts).not.toContain("left-side");
+    expect(left.rounded).toEqual([-1, -1]);
+
+    // A hand encoded in the code does the same job without any saved config.
+    const fromCode = build({ masterCode: "WOS0930-L" });
+    expect(fromCode.parts).toContain("right-side");
+    expect(fromCode.rounded).toEqual([-1, -1]);
+    expect(build({ masterCode: "WEOS1230-R" }).rounded).toEqual([1, 1]);
+
+    // An explicit saved hand beats the code suffix.
+    expect(build({ masterCode: "WOS0930-L", openShelfHand: "right" }).rounded).toEqual([1, 1]);
+
+    // Neither end exposed (neighbours both sides) keeps two square ends.
+    const midRun = build({ openShelfHand: null, openShelfExposedHand: null });
+    expect(midRun.rounded).toEqual([null, null]);
+    expect(midRun.parts).toContain("left-side");
+    expect(midRun.parts).toContain("right-side");
+  });
+
+  it("puts the shelf radius on the open front corner in world space, not on the back", () => {
+    // Local frame contract: +Z is the open front, -Z is the wall. Build one
+    // board directly so the assertion is about real geometry, not a userData tag.
+    const widthFeet = 1;
+    const depthFeet = 1;
+    const halfDepth = depthFeet / 2;
+    const radiusIn = 2;
+    const radiusFeet = radiusIn / 12;
+
+    const extremeFrontZAtEnds = (roundedCorner: -1 | 1) => {
+      const geometry = openShelfBoardGeometry(widthFeet, depthFeet, 0.05, roundedCorner, radiusIn);
+      const positions = geometry.getAttribute("position");
+      const readEnd = (endX: number) => {
+        let front = -Infinity;
+        for (let index = 0; index < positions.count; index += 1) {
+          if (Math.abs(positions.getX(index) - endX) > 1e-4) continue;
+          front = Math.max(front, positions.getZ(index));
+        }
+        return front;
+      };
+      return { left: readEnd(-widthFeet / 2), right: readEnd(widthFeet / 2) };
+    };
+
+    // Right-hand board: the RIGHT end is pulled back from the open front.
+    const right = extremeFrontZAtEnds(1);
+    expect(right.right).toBeCloseTo(halfDepth - radiusFeet, 3);
+    expect(right.left).toBeCloseTo(halfDepth, 3);
+
+    // Left-hand board mirrors it.
+    const left = extremeFrontZAtEnds(-1);
+    expect(left.left).toBeCloseTo(halfDepth - radiusFeet, 3);
+    expect(left.right).toBeCloseTo(halfDepth, 3);
+
+    // Both hands reach the open front (+Z) far more than the wall side (-Z):
+    // a curve on the back would show the opposite relationship.
+    for (const hand of [1, -1] as const) {
+      const geometry = openShelfBoardGeometry(widthFeet, depthFeet, 0.05, hand, radiusIn);
+      geometry.computeBoundingBox();
+      const box = geometry.boundingBox!;
+      expect(box.max.z, `hand ${hand} open front`).toBeCloseTo(halfDepth, 3);
+      expect(box.min.z, `hand ${hand} wall side`).toBeCloseTo(-halfDepth, 3);
+    }
+  });
+
+  it("carries the radiused shelf front into the placed cabinet at the exposed end", () => {
+    const build = (hand: "left" | "right") => {
+      const root = new THREE.Group();
+      addCabinet(root, {
+        distributorSkuId: 930,
+        cabinetId: 930,
+        masterCode: "WOS0930",
+        description: "Wall Open Shelf",
+        placementType: "wall",
+        width: 9,
+        height: 30,
+        depth: 12,
+        numberOfDoors: 0,
+        numberOfDrawers: 0,
+        fixedShelfCount: 2,
+        openShelfExposedHand: hand,
+      }, "back", {}, 144, 120, "#b99a6b", "#f8f8f6", undefined, { x: 18, z: 6, rotation: 0, bottom: 54 });
+      root.updateMatrixWorld(true);
+      const shelves: THREE.Mesh[] = [];
+      root.children[0]!.traverse((node) => {
+        if (node instanceof THREE.Mesh && node.userData.wallOpenShelfFixedShelf) shelves.push(node);
+      });
+      // Local +Z is the room-facing open front. Sample the front edge Z at each
+      // end of the shelf board, in the cabinet's own local frame.
+      return shelves.map((shelf) => {
+        const geometry = shelf.geometry;
+        const positions = geometry.getAttribute("position");
+        let halfWidth = 0;
+        for (let index = 0; index < positions.count; index += 1) {
+          halfWidth = Math.max(halfWidth, Math.abs(positions.getX(index)));
+        }
+        const readEnd = (endX: number) => {
+          let front = -Infinity;
+          for (let index = 0; index < positions.count; index += 1) {
+            if (Math.abs(positions.getX(index) - endX) > 1e-4) continue;
+            front = Math.max(front, positions.getZ(index));
+          }
+          return front;
+        };
+        return { left: readEnd(-halfWidth), right: readEnd(halfWidth) };
+      });
+    };
+
+    for (const [hand, exposed] of [["right", "right"], ["left", "left"]] as const) {
+      const boards = build(hand);
+      expect(boards, hand).toHaveLength(2);
+      for (const board of boards) {
+        const other = exposed === "right" ? "left" : "right";
+        // The exposed end is cut back; the butting end stays square at the front.
+        expect(board[exposed], `${hand} exposed`).toBeLessThan(board[other] - 0.01);
+      }
+    }
+  });
   it("draws no face-frame lines or stiles across the open shelf opening", () => {
     const root = new THREE.Group();
     addCabinet(root, {

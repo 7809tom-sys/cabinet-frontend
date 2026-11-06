@@ -143,4 +143,97 @@ describe("glass-door elevation rendering", () => {
     expect(markup).not.toContain("border:3px solid");
     expect(markup).toContain("inset 0 0 0 1.5px");
   });
+
+  it("keeps a non-open-shelf specialty profile's own fixed-shelf count", () => {
+    // Regression: the open-shelf shelf plan is zero for cabinets outside the
+    // family, and must never overwrite their configured count. (A custom
+    // profile keeps its historical two-shelf drafting floor, so values at or
+    // above 2 are the ones that distinguish the bug.)
+    for (const configured of [2, 3, 4]) {
+      const markup = renderGlassCabinet({
+        uid: `specialty-${configured}`,
+        cabinetId: 1,
+        masterCode: "CUSTOM-30",
+        description: '30" Specialty Cabinet',
+        category: "Specialty",
+        subCategory: "Specialty",
+        width: 30,
+        height: 42,
+        depth: 12,
+        numberOfDoors: 0,
+        numberOfDrawers: 0,
+        customProfile: "curved-open-shelf",
+        fixedShelfCount: configured,
+        adjustableShelfCount: 0,
+      });
+      const shelfBands = markup.match(/left-\[5%\] right-\[5%\] h-\[2px\]/g) ?? [];
+      expect(shelfBands.length, `configured ${configured}`).toBe(configured);
+    }
+  });
+
+  it("mirrors the elevation for each hand: solid side on the closed end", () => {
+    const render = (hand: "left" | "right") => renderGlassCabinet({
+      uid: `hand-${hand}`,
+      cabinetId: 930,
+      masterCode: "WOS0930",
+      description: "Wall Open Shelf",
+      category: "Wall",
+      subCategory: "Open Shelf",
+      width: 9,
+      height: 30,
+      depth: 12,
+      numberOfDoors: 0,
+      numberOfDrawers: 0,
+      customProfile: null,
+      fixedShelfCount: 2,
+      openShelfHand: hand,
+    });
+
+    const right = render("right");
+    expect(right).toContain('data-open-shelf-hand="right"');
+    expect(right).toContain('data-open-shelf-solid-side="right"');
+    expect(right).toMatch(/data-open-shelf-solid-side="right"[^>]*right:0/);
+
+    const left = render("left");
+    expect(left).toContain('data-open-shelf-hand="left"');
+    expect(left).toContain('data-open-shelf-solid-side="left"');
+    expect(left).toMatch(/data-open-shelf-solid-side="left"[^>]*left:0/);
+
+    // Both hands draw the same configured shelf count and no door.
+    for (const markup of [left, right]) {
+      expect(markup.match(/left-\[5%\] right-\[5%\] h-\[2px\]/g) ?? []).toHaveLength(2);
+      expect(markup.match(/data-glass-door-frame="true"/g) ?? []).toHaveLength(0);
+    }
+  });
+
+  it("draws the 12-wide WEOS family with its configured shelves and no doors", () => {
+    for (const [masterCode, height] of [
+      ["WEOS1230", 30],
+      ["WEOS1236", 36],
+      ["WEOS1242", 42],
+    ] as const) {
+      const markup = renderGlassCabinet({
+        uid: `shelf-${masterCode}`,
+        cabinetId: 930,
+        masterCode,
+        description: "Wall End Open Shelf",
+        category: "Wall",
+        subCategory: "Open Shelf",
+        width: 12,
+        height,
+        depth: 12,
+        numberOfDoors: 0,
+        numberOfDrawers: 0,
+        customProfile: null,
+        fixedShelfCount: 2,
+      });
+      expect(markup, masterCode).toContain('data-cabinet-profile="curved-open-shelf"');
+      expect(markup, masterCode).toContain('data-open-shelf-shelves="2"');
+      expect(markup.match(/left-\[5%\] right-\[5%\] h-\[2px\]/g) ?? [], masterCode).toHaveLength(2);
+      expect(markup.match(/data-glass-door-frame="true"/g) ?? [], masterCode).toHaveLength(0);
+      // The elevation face label is the size, not the raw SKU, and carries no depth.
+      expect(markup, masterCode).toContain(`12&quot;W x ${height}&quot;H`);
+      expect(markup, masterCode).not.toMatch(/1[23]&quot;\s*x\s*1[23]&quot;\s*x/i);
+    }
+  });
 });

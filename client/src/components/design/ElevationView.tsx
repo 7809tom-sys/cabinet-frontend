@@ -15,7 +15,7 @@ import {
   isRangeOrOven, wallCabinetTopLine, isBlindCorner, placedFootprint, crownEligibleCabinets, isLightRailEligibleCabinet, usesRaisedFloorWallDoorPull,
 	  flooringMaterial, normalizeInstalledFillersToAdjacentCabinets, normalizeRefrigeratorBayUppers, applianceAppearanceImage, applianceElevationPresentation, rangeVisualAppearance, resolveCabinetHardwarePosition, isWd18CountertopDrawerCabinet, wd18CountertopFaceLayout,
 	  isGlassDoorCabinet, glassDoorShelfCount, isKneeDrawerItem, kitchenCrestGenericOpenEndShelfCount,
-	  isWallOpenShelfCabinet, wallOpenShelfShelfCount,
+	  isWallOpenShelfCabinet, wallOpenShelfShelfCount, wallOpenShelfDisplayName, resolvedWallOpenShelfHand,
 } from "@/lib/design";
 import { crownTopRuns, formatCrownTop } from "@/lib/crownTopRuns";
 import { threeDBacksplashCoverageIntervals } from "./InteractiveRoom3D";
@@ -689,7 +689,9 @@ export function ElevationView({
           // by a fraction, keeping the panel from covering cabinet doors.
           zIndex: isDragging ? 10 : refrigeratorEndPanel ? refrigeratorEndPanelRenderStyle().zIndex : 2,
         }}
-        title={`${p.masterCode} — ${p.description}`}
+        title={isWallOpenShelfElevation
+          ? `${wallOpenShelfDisplayName(p) ?? p.masterCode} — open front, no doors`
+          : `${p.masterCode} — ${p.description}`}
         data-cabinet-attributes-target={isAttributesTarget ? "true" : undefined}
       >
         <div className="w-full h-full relative">
@@ -746,11 +748,14 @@ export function ElevationView({
               face={cabFinish.face}
               edge={edgeColor}
               kind={cabPanelKind}
-	              fixedShelves={kitchenCrestGenericShelfCount ?? wallOpenShelfShelfPlan.count}
+	              fixedShelves={isWallOpenShelfElevation
+	                ? kitchenCrestGenericShelfCount ?? wallOpenShelfShelfPlan.count
+	                : p.fixedShelfCount ?? 0}
 	              adjustableShelves={p.adjustableShelfCount ?? 0}
 	              squareOpenEndShelf={kitchenCrestGenericShelfCount != null}
 	              shelfCountFromConfig={isWallOpenShelfElevation && kitchenCrestGenericShelfCount == null}
 	              openShelfBox={isWallOpenShelfElevation}
+	              openShelfHand={isWallOpenShelfElevation ? resolvedWallOpenShelfHand(p) : null}
               doorSampleUrl={cabDoorSampleUrl}
               drawerSampleUrl={cabDrawerSampleUrl}
               faceWidthIn={p.width}
@@ -938,7 +943,9 @@ export function ElevationView({
           )}
           {showProductCodes && !applianceVisualUrl && <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ zIndex: 5 }}>
             <span className="text-[8px] font-bold truncate px-0.5 drop-shadow-[0_1px_1px_rgba(0,0,0,0.5)]" style={{ color: isAppliance ? "#1a2744" : cabFinish.label, ...textFlip }}>
-              {p.masterCode}
+              {isWallOpenShelfElevation
+                ? (wallOpenShelfDisplayName(p) ?? "").replace(/^Open Shelf /, "")
+                : p.masterCode}
             </span>
           </div>}
           {isRefrigeratorEndPanel(p) && (
@@ -2553,6 +2560,7 @@ export function CustomProfileFace({
   wallAngleOpen = "end",
   shelfCountFromConfig = false,
   openShelfBox = false,
+  openShelfHand = null,
 }: {
   profile: string;
   face: string;
@@ -2579,6 +2587,8 @@ export function CustomProfileFace({
    * decorative curved silhouette, and its configured shelf count.
    */
   openShelfBox?: boolean;
+  /** Handed orientation of an open shelf; the open end mirrors with it. */
+  openShelfHand?: "left" | "right" | null;
 }) {
   const shelfCount = shelfCountFromConfig
     ? Math.max(0, Math.round(fixedShelves || 0))
@@ -2668,16 +2678,31 @@ export function CustomProfileFace({
   // back/interior with its fixed shelves evenly dividing it. The former 3px dark
   // border outlined the whole opening, which read as a face frame in the
   // elevation. A thin inset hairline marks the box outline instead.
+  //
+  // A handed open shelf mirrors: the solid side panel is drawn on the closed end
+  // and the open end gets the deeper cavity, so the elevation matches the 3D
+  // hand. `openShelfHand` is null for every non-open-shelf profile.
+  const shelfHand = openShelfBox ? openShelfHand : null;
+  const solidSideStyle = shelfHand === "left"
+    ? { left: 0, right: undefined, borderRight: `1.5px solid ${rail}` }
+    : shelfHand === "right"
+      ? { right: 0, left: undefined, borderLeft: `1.5px solid ${rail}` }
+      : null;
   return (
     <div
       data-cabinet-profile={squareOpenEndShelf ? "kitchencrest-square-open-end-shelf" : profile}
       data-open-shelf-count={squareOpenEndShelf ? shelfCount : undefined}
       data-open-shelf-finished-box={openShelfBox ? "true" : undefined}
       data-open-shelf-shelves={openShelfBox ? shelfCount : undefined}
+      data-open-shelf-hand={shelfHand ?? undefined}
       className="absolute inset-0 overflow-hidden"
-      style={{ background: cavity, boxShadow: `inset 0 0 0 1.5px color-mix(in srgb, ${edge} 70%, transparent)`, borderTopRightRadius: isCurved ? "42% 16%" : 0, borderBottomRightRadius: isCurved ? "42% 16%" : 0 }}
+      style={{ background: cavity, boxShadow: `inset 0 0 0 1.5px color-mix(in srgb, ${edge} 70%, transparent)`, borderTopRightRadius: isCurved && shelfHand !== "left" ? "42% 16%" : 0, borderBottomRightRadius: isCurved && shelfHand !== "left" ? "42% 16%" : 0, borderTopLeftRadius: isCurved && shelfHand === "left" ? "42% 16%" : 0, borderBottomLeftRadius: isCurved && shelfHand === "left" ? "42% 16%" : 0 }}
     >
       {shelves}
+      {/* The solid side panel of a handed open shelf. */}
+      {solidSideStyle ? (
+        <div data-open-shelf-solid-side={shelfHand ?? undefined} className="absolute top-0 bottom-0 w-[6%]" style={{ ...solidSideStyle, background: face }} />
+      ) : null}
       {profile === "pullout-tower" && <div className="absolute top-[4%] bottom-[4%] left-1/2 w-[3px] -translate-x-1/2" style={{ background: rail }} />}
     </div>
   );

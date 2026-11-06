@@ -694,4 +694,87 @@ describe("designer cabinet cart lines", () => {
     expect(calculateCartSubtotal(lines)).toBe(1279.74);
     expect(calculateCartSubtotal(previewLines)).toBe(1279.74);
   });
+
+  it("names an open shelf cart line by its size with no depth and no supplier sentence", () => {
+    const sizes = [
+      { masterCode: "WEOS0930", width: 9, height: 30 },
+      { masterCode: "WEOS0936", width: 9, height: 36 },
+      { masterCode: "WEOS0942", width: 9, height: 42 },
+      { masterCode: "WEOS1230", width: 12, height: 30 },
+      { masterCode: "WEOS1236", width: 12, height: 36 },
+      { masterCode: "WEOS1242", width: 12, height: 42 },
+    ];
+    const shelves = sizes.map(({ masterCode, width, height }, index) => ({
+      uid: `cart-shelf-${index}`,
+      cabinetId: 930,
+      masterCode,
+      // A supplier sentence that must never reach the cart line.
+      description: `${width}" x ${height}" Wall End Open Shelf — Versa Shaker`,
+      category: "Wall",
+      subCategory: "Open Shelf",
+      placement: "wall",
+      x: index * width,
+      y: 0,
+      width,
+      depth: 12,
+      height,
+      rotation: 0,
+      numberOfDoors: 0,
+      numberOfDrawers: 0,
+      fixedShelfCount: 2,
+    } as PlacedCabinet));
+
+    const lines = buildDesignCabinetCartLines({
+      placed: shelves,
+      styleId: 330002,
+      distributorId: 210001,
+      tier: "homeowner",
+      styleNameById: new Map([[330002, "Aura Cream"]]),
+      unitPriceFor: () => 35,
+    });
+
+    expect(lines).toHaveLength(6);
+    for (const { masterCode, width, height } of sizes) {
+      const line = lines.find((candidate) => candidate.masterCode === masterCode);
+      expect(line?.name, masterCode).toBe(`Open Shelf ${width}"W x ${height}"H`);
+      // Depth and the supplier sentence are gone.
+      expect(line?.name, masterCode).not.toMatch(/\d+"D\b/);
+      expect(line?.name, masterCode).not.toContain("Versa Shaker");
+      expect(line?.name, masterCode).not.toContain("Wall End");
+    }
+  });
+
+  it("gives a WOS or WOES row the same Open Shelf cart name as its WEOS spelling", () => {
+    const spellings = ["WEOS1236", "WOS1236", "WOES1236"];
+    const lines = buildDesignCabinetCartLines({
+      placed: spellings.map((masterCode, index) => ({
+        uid: `alias-shelf-${index}`,
+        cabinetId: 930,
+        masterCode,
+        description: '12" x 36" Wall Open Shelf',
+        category: "Wall",
+        subCategory: "Open Shelf",
+        placement: "wall",
+        x: index * 12,
+        y: 0,
+        width: 12,
+        depth: 12,
+        height: 36,
+        rotation: 0,
+        numberOfDoors: 0,
+        numberOfDrawers: 0,
+        fixedShelfCount: 2,
+      } as PlacedCabinet)),
+      styleId: 330002,
+      distributorId: 210001,
+      tier: "homeowner",
+      styleNameById: new Map([[330002, "Aura Cream"]]),
+      unitPriceFor: () => 35,
+    });
+    // Each spelling keeps its own code and price line, but they all read the same.
+    expect(lines.map((line) => line.masterCode).sort()).toEqual(["WEOS1236", "WOES1236", "WOS1236"]);
+    for (const line of lines) {
+      expect(line.name, line.masterCode).toBe('Open Shelf 12"W x 36"H');
+    }
+  });
 });
