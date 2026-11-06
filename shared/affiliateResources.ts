@@ -10,6 +10,10 @@ export type AffiliateResourceMeta = {
   durationSeconds?: number | null;
   hashtags?: string[];
   placeholder?: boolean;
+  /** True for artwork that shows a planned booth or set rather than a built one. */
+  conceptRendering?: boolean;
+  /** True for an asset the owner has cleared to show a potential supplier. */
+  supplierReady?: boolean;
 };
 
 export const SCRIPT_SITUATIONS = [

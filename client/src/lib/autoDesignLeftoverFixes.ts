@@ -15,7 +15,7 @@
  */
 import { cabinetDrawingType } from "./cabinetGraphics";
 import { isCornerCabinet, isSinkBaseCabinet, type DesignCabinet } from "./design";
-import { AUTO_DESIGN_FILLER_MAX_IN } from "./autoDesignSeamFillers";
+import { autoDesignFillerMaxIn } from "./autoDesignSeamFillers";
 import type { Alternative, AlternativeKind } from "./designAlternatives";
 
 /** Widest opening that is still a single narrow cabinet rather than a run piece. */
@@ -146,7 +146,7 @@ export function leftoverFixes<T extends DesignCabinet>(input: {
     });
   }
 
-  if (fixes.length === 0 || gap <= AUTO_DESIGN_FILLER_MAX_IN + 0.05) {
+  if (fixes.length === 0 || gap <= autoDesignFillerMaxIn() + 0.05) {
     fixes.push({
       kind: "filler",
       cabinet: null,

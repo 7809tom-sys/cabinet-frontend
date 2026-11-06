@@ -103,4 +103,29 @@ describe("the add-only over-range pass", () => {
     expect(fillModule).toContain("overRangeBridgeFor(");
     expect(fillModule).toContain("autoDesignRangeHood(");
   });
+
+  /**
+   * Owner bug (Nov 6 2026): "the wall (bridge) cabinet over the range should be 12
+   * inches but the designer did not apply that size."
+   *
+   * The build placed the right 12" W3012, then the Auto-Design pop-up re-sized it.
+   * `offerAutoDesignBridgeAndMicrowave` called `rangeBridgeSpec`, which answered
+   * "24 inch bridge, bottom 72, top 96" regardless of the 30" uppers, looked up
+   * W3024, and overwrote the proposal. Both paths now use the one selector.
+   */
+  it("offers exactly the bridge the build placed, never a second hard-coded size", () => {
+    const bridge = between(designTool, "const offerAutoDesignBridgeAndMicrowave = useCallback", "const addWscSpiceStackUpper = useCallback");
+    // One selector, and the prompt takes its bridge straight from it.
+    expect(bridge).toContain("rangeCompanionProposal(");
+    expect(bridge).toContain("setRangeCompanionPrompt({ rangeUid: range.uid, proposal, microwaveAlreadyPlaced: false })");
+    // The old override must not come back: it is what turned the 12" box into a 24".
+    expect(bridge).not.toContain("rangeBridgeSpec");
+    expect(bridge).not.toContain("bridgeSource");
+    expect(bridge).not.toContain("bridgeSpec.bottomIn");
+    expect(bridge).not.toMatch(/W3024/);
+    // Nothing in the Designer's over-range path may hard-code the bridge height.
+    const companions = readFileSync(new URL("../lib/overRangeCompanion.ts", import.meta.url), "utf8");
+    expect(companions).toContain("overRangeBridgeHeightFor(");
+    expect(companions).not.toContain("bridge_hung_height_in");
+  });
 });

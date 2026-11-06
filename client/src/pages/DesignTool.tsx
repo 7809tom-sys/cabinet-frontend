@@ -66,6 +66,19 @@ import {
   migrateLegacyDesignerDraftToOwner,
   resolveStoreScope,
 } from "@/lib/affiliateContext";
+import {
+  designOpenPath,
+  designStoreScope,
+  designWriteScope,
+  newDesignSaveScope,
+} from "@/lib/designOwnerScope";
+import {
+  applyGuestDraftAdoption,
+  draftIdentityCandidates,
+  draftIdentityFor,
+  firstRestorableDraft,
+  planGuestDraftAdoption,
+} from "@/lib/designDraftOwnership";
 import { isPelicanSinkCompatibleWithBase, isVerifiedPelicanVanityFaucet, isVerifiedPelicanVanitySink, pelicanSinkBaseKind, sinkBaseOpeningWidthIn, verifiedPelicanFaucetProfile, verifiedPelicanPotFillerProfile, verifiedPelicanSinkFitsCabinet, verifiedPelicanSinkProfile } from "@/lib/pelicanFixtureProfiles";
 import {
   buildPelicanSinkOnCabinet,
@@ -78,9 +91,8 @@ import {
 } from "@/lib/pelicanAutoPlace";
 import { TabletPreviewOverlay, type TabletPreviewMode } from "@/components/design/TabletPreviewOverlay";
 import { isPelicanBathroomFixtureProfileVerified, verifiedPelicanBathroomFixtureProfile } from "@/lib/pelicanBathroomFixtureProfiles";
-import { BATHROOM_STARTER_TEMPLATE, bathroomFixtureChecklist, bathroomFixtureStarterZonePlacement, bathroomTubFillerPlacement, bathroomPlanningGuidance, bathroomZoneOverlapWarnings, makeBathroomStarterTemplate } from "@/lib/bathroomPlanning";
+import { BATHROOM_STARTER_TEMPLATE, bathroomFixtureChecklist, bathroomFixtureFreePlacement, bathroomTubFillerPlacement, bathroomPlanningGuidance, makeBathroomStarterTemplate } from "@/lib/bathroomPlanning";
 import { bathroomTubWallParallelPlacement, rotateBathroomFurniture } from "@/lib/bathroomPlanning";
-import BathroomZoneAttributesDialog from "@/components/design/BathroomZoneAttributesDialog";
 import { isBathroomVanityCabinet } from "@/lib/bathroomVanityCatalog";
 import { canAdminReviewSavedDesign } from "@/lib/designAccess";
 import {
@@ -181,14 +193,14 @@ import {
   resolveSwing, cycleSwing, swingText, hasDoorSwing, DoorSwing, resolveCabinetHardwarePosition, cabinetHardwarePositionPatch, isCabinetDoorHardwareEligible, applyCabinetDoorHardwareToAll, supportsCenteredTopDoorPull, requiresCenteredTopDoorPull, usesRaisedFloorWallDoorPull, isWd18CountertopDrawerCabinet, normalizeWd18CountertopMounts, ordinaryWallMountBottom,
   // (closet helpers imported separately below)
   APPLIANCES, applianceAsDesignCabinet, appliancesForRoom, ROOM_TYPES, type RoomType,
-  FURNITURE_CATALOG, makeFurniture, makePelicanBathroomFixture, furnitureFootprint, type PlacedFurniture,
+  FURNITURE_CATALOG, makeFurniture, makePelicanBathroomFixture, furnitureFootprint, restoredFurniture, type PlacedFurniture,
   WallOpening, WallSide, OPENINGS, OpeningDef, makeOpening,
 	  finishColors, toeKickLinearInches, lightRailLinearInches, inchesToLinearFeet,
   trimPiecesNeeded, countertopArea, countertopSurfaces, countertopSurfaceInsideRoom, battenLinearInches, valancePiecesNeeded,
   COUNTERTOP_MATERIALS, DEFAULT_COUNTERTOP_MATERIAL_ID, countertopMaterial,
   EDGE_PROFILES, DEFAULT_EDGE_PROFILE_ID, edgeProfile,
 	  type PlanAnnotation, type CabinetWallDragPreview, makeAnnotation,
-	  makeSink, makeSinkForCabinet, makeDefaultSinkForCabinet, nonApronSinkDeckPlacement, normalizeSinkFixturesToBases, potFillerMountedRange, isRangeOrCooktop, sinkPlanDimensions, SINK_PRESETS, type PotFillerFixture, type SinkFixture, type SinkType,
+	  makeSink, makeSinkForCabinet, makeDefaultSinkForCabinet, normalizeSinkFixturesToBases, potFillerMountedRange, isRangeOrCooktop, sinkPlanDimensions, SINK_PRESETS, type PotFillerFixture, type SinkFixture, type SinkType,
   snapToWall, snapPosition, nextFreeSpotOnWall, mountedMicrowaveOverRangeSpot, overRangeMicrowaveAttachment,
   clampCabinetsToRoom, clampOpeningsToRoom, clampIslandToRoom, clampRoomInches,
   WALL_LABELS, doorPanelKind,
@@ -259,7 +271,7 @@ import { ensureDrawerBase } from "@/lib/autoDesignDrawerRule";
 import { autoBuildCornerCatalog, autoDesignCornerSlotPoint, autoDesignCornerSlots, autoDesignExcludedEngineWallIds, autoDesignLayoutUsesWall, autoDesignRunWallIds, type AutoBuildCornerCandidate, type AutoDesignCornerChoice, type AutoDesignCornerSlot } from "@/lib/autoDesignCornerStage";
 import { evaluateAutoDesignCornerFit, type AutoDesignCornerFit } from "@/lib/cornerFit";
 import { useKitchenRuleParameterSync } from "@/lib/kitchenRulesApi";
-import { rangeBridgeSpec, reviewAfterShift, separateRangeAndRefrigerator } from "@/lib/kitchenAdjacency";
+import { reviewAfterShift, separateRangeAndRefrigerator } from "@/lib/kitchenAdjacency";
 import { bakesALot, cooksALot, normalizeKitchenUsage } from "@/lib/kitchenUsage";
 import { acceptMeasuredCornerRefrigeratorBay } from "@/lib/autoDesignRefrigeratorBay";
 import { buildAutoDesignWallCabinets, resolveWallHeightClass, type AutoDesignUpperCorner } from "@/lib/autoDesignWallCabinets";
@@ -322,6 +334,7 @@ import { EmailGate, type LeadContact } from "@/components/design/EmailGate";
 import { OptionalContactNudge } from "@/components/design/OptionalContactNudge";
 import { DesignDeliveryDialog } from "@/components/design/DesignDeliveryDialog";
 import { DesignActions, type BuildSheetRow } from "@/components/design/DesignActions";
+import { DesignerHelperShare } from "@/components/design/DesignerHelperShare";
 import { KitchenPackageForm, type KitchenPackageDraft } from "@/components/affiliate/KitchenPackageForm";
 import { DesignMaterialsListDialog } from "@/components/design/DesignMaterialsListDialog";
 import { DraggableOverlayDialog } from "@/components/ui/DraggableOverlayDialog";
@@ -343,6 +356,8 @@ import { OpeningSizeEditor } from "@/components/design/OpeningSizeEditor";
 import { DoorAttributesDialog } from "@/components/design/DoorAttributesDialog";
 import { DesignHelp } from "@/components/design/DesignHelp";
 import { CountertopQuoteDialog } from "@/components/design/CountertopQuoteDialog";
+import { CountertopFabricationSheetActions } from "@/components/design/CountertopFabricationSheetActions";
+import type { CountertopFabricationInput } from "@/lib/countertopFabricationSheet";
 import { SurfacesPickerDialog, type SelectedSurface } from "@/components/design/SurfacesPickerDialog";
 import { FlooringCartonFacts } from "@/components/design/FlooringCartonFacts";
 import { FlooringLayoutPicker } from "@/components/design/FlooringLayoutPicker";
@@ -366,9 +381,11 @@ import {
   guessCountertopMaterialId,
   activeThreeDSurface,
   normalizeFinalMaterialSelections,
+  mergeVerifiedSurfacePriceRecords,
   refreshVerifiedSurfaceSelections,
   setCountertopSurfaceForScope,
   type SurfaceRole,
+  type VerifiedSurfaceSelectionRecord,
 } from "@/lib/surfaceSelection";
 import { selectedBacksplashTextureUrl } from "@/lib/backsplashProductMaterial";
 import { mosaicCatalogFor } from "@/lib/mosaicCatalog";
@@ -404,6 +421,7 @@ const noSelectedPelicanIds: ReadonlySet<number> = new Set<number>();
 
 
 import { buildSurfaceCartLines } from "@/lib/surfaceCartLines";
+import { mosaicBacksplashWasteInNote } from "@/lib/mosaicBacksplashWaste";
 import { flooringLayoutName, isFlooringRotation, type FlooringRotationDegrees } from "@/lib/flooringLayout";
 import { confirmPlacedItemRemoval } from "@/lib/placedItemRemoval";
 import { surfaceRole, formatPrice } from "@/lib/pelican";
@@ -556,6 +574,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   );
   const affiliateSlug = affiliateSlugForStoreScope(storeScope);
   const cartDestination = cartPathForStoreScope(storeScope);
+  // Account identity for browser drafts. It comes from the server's auth.me for
+  // THIS request's own bearer token, so two tabs signed in as different people
+  // (or a shared browser) never restore each other's unsaved plan.
+  const accountId = (user as { id?: number | null } | null)?.id ?? null;
   // Auto-Design layout is available to CabinetDealz admins and to every affiliate
   // Designer, including storefront customers on /store/:slug/design and the
   // affiliate dashboard Designer. The main public Designer stays admin-only.
@@ -579,6 +601,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     retry: false,
   });
   const canAffiliatePriceShop = !!affiliateSlug && affiliatePriceAccess.data?.isOwner === true;
+
   const canAffiliateGeminiImageTest = !!affiliateSlug && affiliatePriceAccess.data?.accessDesigner === true;
   const canPublishKitchenPackage = isAdmin || (!!affiliateSlug && (affiliatePriceAccess.data?.isOwner === true || affiliatePriceAccess.data?.accessDesigner === true));
   const affiliatePrimary = affiliateBrand?.primaryColor || "#1a2b4a";
@@ -766,6 +789,27 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	{ id: currentSavedDesignId ?? 0, affiliateSlug: storeScope, crmDealId: crmDealId ?? undefined, assist: assistMode || undefined },
 	{ enabled: currentSavedDesignId != null && isAuthenticated && (verified || crmDealId != null || assistMode), retry: 1 }
   );
+
+  // Where a SAVE goes. An existing design keeps its own stored store; a new one
+  // belongs to the signed-in account unless this person is a customer of the
+  // storefront (or a member of it). The server applies the same rule, so the
+  // design cannot be filed under whichever storefront URL happened to be open.
+  // Guests keep the storefront scope, which is what lets their work be adopted
+  // into the account when they sign in.
+  const saveScope = useMemo(
+    () => designWriteScope({
+      urlScope: newDesignSaveScope({
+        urlScope: storeScope,
+        role: signedInRole,
+        viewerAffiliateId: affiliatePriceAccess.data?.affiliateId ?? null,
+        storeAffiliateId: affiliateBrand?.id ?? null,
+      }),
+      design: savedDesign
+        ? { affiliateSlug: (savedDesign as { affiliateSlug?: string | null }).affiliateSlug ?? null }
+        : null,
+    }),
+    [storeScope, signedInRole, affiliatePriceAccess.data?.affiliateId, affiliateBrand?.id, savedDesign],
+  );
 	useEffect(() => {
 	  if (verified || crmDealId == null || !savedDesign || !isAuthenticated) return;
 	  setVerifiedEmail((user as { email?: string | null } | null)?.email ?? "crm@cabinetdealz.local");
@@ -778,6 +822,25 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     setVerifiedName((user as { name?: string | null } | null)?.name ?? "Designer");
     setVerified(true);
   }, [assistMode, isAuthenticated, savedDesign, user, verified]);
+
+  // A saved design always opens under its own store. When a link reaches the
+  // Designer on a different storefront (a CRM link built by the board that was
+  // open, a bookmarked URL, a store-shared link), the shell, brand and pricing
+  // were the wrong store's. Send the owner to the design's real storefront once.
+  // Assist and CRM opens deliberately stay in place: the store's own team is
+  // reviewing a customer's plan from its board.
+  const designStoreRedirectRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!savedDesign || !isAuthenticated) return;
+    if (assistMode || crmDealId != null) return;
+    const ownSlug = (savedDesign as { affiliateSlug?: string | null }).affiliateSlug ?? null;
+    const ownScope = designStoreScope({ affiliateSlug: ownSlug });
+    if (ownScope === storeScope) return;
+    const target = designOpenPath({ id: savedDesign.id, affiliateSlug: ownSlug });
+    if (designStoreRedirectRef.current === target) return;
+    designStoreRedirectRef.current = target;
+    window.location.replace(target);
+  }, [savedDesign, isAuthenticated, assistMode, crmDealId, storeScope]);
 
   // Mobile layout: which slide-up panel is open (catalog picker or cart/BOM).
   // Designer is touch-first: treat anything narrower than a small laptop (1024px)
@@ -1470,13 +1533,30 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     { ids: selectedSurfaceIdsForMaterialRefresh },
     { enabled: selectedSurfaceIdsForMaterialRefresh.length > 0 },
   );
+  // designSelectionByIds deliberately keeps only rows the kitchen palette can
+  // draw exactly, so a sourced toilet, bidet, tub, or enclosure never comes
+  // back from it. Reading only that list cleared a placed bathroom fixture's
+  // real sell price to null and the fixture then reached Materials and the
+  // cart at $0.00. byIds is the same active, catalog-visible, source-priced
+  // record without the 3D-drawability gate, so it supplies the price and
+  // source identity those fixtures legitimately have. Rows absent from both
+  // lists are still treated as stale and lose the saved amount.
+  const { data: catalogSelectedSurfaceRecords, isSuccess: catalogSelectedSurfacesLoaded } = trpc.surfaces.byIds.useQuery(
+    { ids: selectedSurfaceIdsForMaterialRefresh },
+    { enabled: selectedSurfaceIdsForMaterialRefresh.length > 0 },
+  );
+  const selectedSurfacePriceRecords = useMemo<VerifiedSurfaceSelectionRecord[]>(
+    () => mergeVerifiedSurfacePriceRecords(verifiedSelectedSurfaceRecords, catalogSelectedSurfaceRecords),
+    [catalogSelectedSurfaceRecords, verifiedSelectedSurfaceRecords],
+  );
+  const selectedSurfacePriceRecordsLoaded = verifiedSelectedSurfacesLoaded && catalogSelectedSurfacesLoaded;
   useEffect(() => {
-    if (!verifiedSelectedSurfacesLoaded || !verifiedSelectedSurfaceRecords) return;
+    if (!selectedSurfacePriceRecordsLoaded) return;
     setSelectedSurfaces((current) => {
-      const refreshed = refreshVerifiedSurfaceSelections(current, verifiedSelectedSurfaceRecords);
+      const refreshed = refreshVerifiedSurfaceSelections(current, selectedSurfacePriceRecords);
       return refreshed.some((surface, index) => surface !== current[index]) ? refreshed : current;
     });
-  }, [verifiedSelectedSurfaceRecords, verifiedSelectedSurfacesLoaded]);
+  }, [selectedSurfacePriceRecords, selectedSurfacePriceRecordsLoaded]);
   const { data: recommendedCountertopProducts } = trpc.surfaces.recommended.useQuery({ role: "countertop", limit: 200 });
   const countertopProductChoices = useMemo<SelectedSurface[]>(() => {
     const byId = new Map<number, SelectedSurface>();
@@ -1760,9 +1840,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       toast.error("No non-overlapping visual position is available beside the tub. Move the tub or another fixture first.");
       return;
     }
-    const starterZonePlacement = bathroomFixtureStarterZonePlacement(draft, bathroomFurnitureRef.current);
-    const fixture = tubFillerPlacement ?? (starterZonePlacement
-      ? { ...draft, ...starterZonePlacement }
+    const freePlacement = bathroomFixtureFreePlacement(draft, bathroomFurnitureRef.current, room);
+    // Fixtures drop into the first open spot. The wall-parallel default is only a
+    // fallback for a room too crowded for the free search, so a freshly placed
+    // fixture never lands on top of another one.
+    const fixture = tubFillerPlacement ?? (freePlacement
+      ? { ...draft, ...freePlacement }
       : bathroomTubWallParallelPlacement({
           ...draft,
           x: Math.max(0, (room.width - definition.w) / 2),
@@ -1775,9 +1858,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       return next;
     });
     setSelectedFurnUid(fixture.uid);
-    toast.success(tubFillerPlacement ? `${item.name} placed beside the tub — visual planning only; verify plumbing fit` : starterZonePlacement
-      ? `${item.name} placed and centered in the ${starterZonePlacement.zoneLabel}`
-      : `${item.name} placed in Floor Plan and 3D`);
+    toast.success(tubFillerPlacement ? `${item.name} placed beside the tub — visual planning only; verify plumbing fit` : `${item.name} placed in Floor Plan and 3D`);
   }, [room.depth, room.width]);
   // Clear both saved layers: the source product used by Cart/3D and the plan's
   // representative material. Clearing only one left the flooring pattern visible.
@@ -2407,14 +2488,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     bathroomFurnitureRef.current = furniture;
   }, [furniture]);
   const [selectedFurnUid, setSelectedFurnUid] = useState<string | null>(null);
-  const [zoneAttributesUid, setZoneAttributesUid] = useState<string | null>(null);
-  const zoneAttributesItem = furniture.find((item) => item.uid === zoneAttributesUid) ?? null;
-  const openFurnitureAttributes = useCallback((uid: string) => {
-    const item = bathroomFurnitureRef.current.find((candidate) => candidate.uid === uid);
-    if (layoutLocked || !item || FURNITURE_CATALOG.find((candidate) => candidate.id === item.defId)?.category !== "bathroom-zone") return;
-    setSelectedFurnUid(uid);
-    setZoneAttributesUid(uid);
-  }, [layoutLocked]);
   const rotateFurniture = useCallback((uid: string) => {
     if (layoutLocked) return;
     setFurniture((previous) => previous.map((item) => item.uid === uid ? rotateBathroomFurniture(item, room) : item));
@@ -2424,15 +2497,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     const definition = selected ? FURNITURE_CATALOG.find((item) => item.id === selected.defId) ?? null : null;
     return bathroomPlanningGuidance(verifiedPelicanBathroomFixtureProfile(selected?.pelicanCode ?? definition?.pelicanCode));
   }, [furniture, selectedFurnUid]);
-  const bathroomZoneWarningsByFixture = useMemo(() => {
-    const warningsByFixture = new Map<string, ReturnType<typeof bathroomZoneOverlapWarnings>>();
-    for (const warning of bathroomZoneOverlapWarnings(furniture)) {
-      const existing = warningsByFixture.get(warning.fixtureUid) ?? [];
-      existing.push(warning);
-      warningsByFixture.set(warning.fixtureUid, existing);
-    }
-    return warningsByFixture;
-  }, [furniture]);
   const bathroomChecklist = useMemo(() => bathroomFixtureChecklist({
     cabinets: placed,
     sinks,
@@ -5433,7 +5497,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const active3DDrawerSampleUrl = activeFacePlan?.sourceKind === "split" ? activeFacePlan.drawerUrl : null;
   const activeFaceSourceKind: FaceSourceKind | undefined = activeFacePlan?.sourceKind;
   const activeFaceCrop = activeFacePlan?.dlcCrop
-    ? { slug: activeFacePlan.dlcCrop.slug, doorSize: activeFacePlan.dlcCrop.doorSize, drawerSize: activeFacePlan.dlcCrop.drawerSize, drawerSolidColor: activeFacePlan.dlcCrop.drawerSolidColor, solidColor: activeFacePlan.dlcCrop.solidColor, grainUrl: activeFacePlan.dlcCrop.grainUrl, faceTileIn: activeFacePlan.dlcCrop.faceTileIn, faceTileDrawerIn: activeFacePlan.dlcCrop.faceTileDrawerIn, normalUrl: activeFacePlan.dlcCrop.normalUrl, tintHex: activeFacePlan.dlcCrop.tintHex }
+    ? { slug: activeFacePlan.dlcCrop.slug, doorSize: activeFacePlan.dlcCrop.doorSize, drawerSize: activeFacePlan.dlcCrop.drawerSize, drawerSolidColor: activeFacePlan.dlcCrop.drawerSolidColor, solidColor: activeFacePlan.dlcCrop.solidColor, grainUrl: activeFacePlan.dlcCrop.grainUrl, faceTileIn: activeFacePlan.dlcCrop.faceTileIn, faceTileDrawerIn: activeFacePlan.dlcCrop.faceTileDrawerIn, normalUrl: activeFacePlan.dlcCrop.normalUrl, tintHex: activeFacePlan.dlcCrop.tintHex, tintLinear: activeFacePlan.dlcCrop.tintLinear, grainSubstituted: activeFacePlan.dlcCrop.grainSubstituted }
     : null;
   const active3DRoomSceneReferenceUrl = useMemo(() => {
     const s = doorStyles?.find((d) => d.id === styleId) as { roomSceneImageUrl?: string | null } | undefined;
@@ -5545,7 +5609,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	      setOpenings(restoredOpenings);
       setPotFillers(Array.isArray(persisted?.potFillers) ? persisted.potFillers : []);
       setIsland(persisted?.island ?? null);
-      setFurniture(Array.isArray(persisted?.furniture) ? persisted.furniture : []);
+      setFurniture(restoredFurniture(persisted?.furniture));
       setPonyWalls(Array.isArray(persisted?.ponyWalls) ? persisted.ponyWalls : []);
       // Normalize placement for appliance items — older saved designs may have
       // stored placement:"tall" for FRIDGE-* or RANGE-* items. Correct them here
@@ -6484,6 +6548,40 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	    [countertop, placed, island, room]
   );
 
+  // Countertop fabrication sheet: everything the shop needs, read from the live
+  // design. Only offered while the design actually bears a countertop; the panel
+  // itself reports any field the design does not hold instead of inventing one.
+  const fabricationSheetInput = useMemo<CountertopFabricationInput | null>(() => {
+    if (!countertop || !counter || counter.squareFeet <= 0) return null;
+    return {
+      room,
+      placed,
+      island,
+      sinks,
+      ponyWalls,
+      selectedSurfaces,
+      edgeProfileId,
+      // Only the countertop rear upstand is a fabrication item. A full-height
+      // tile wall is the tile installer's scope, so it is deliberately not
+      // reported as a countertop backsplash here.
+      backsplash: countertopBacksplashHeightIn > 0 ? { heightIn: countertopBacksplashHeightIn } : null,
+      job: {
+        designId: activeSavedDesignId ?? loadDesignId ?? null,
+        designName: (savedDesign as { name?: string | null } | undefined)?.name ?? null,
+        projectName: (savedDesign as { projectName?: string | null } | undefined)?.projectName ?? null,
+        roomLabel: (savedDesign as { roomLabel?: string | null } | undefined)?.roomLabel ?? null,
+        roomType,
+        customerName: verifiedName || null,
+        customerEmail: verifiedEmail || null,
+        customerPhone: verifiedPhone || null,
+      },
+    };
+  }, [
+    counter, countertop, countertopBacksplashHeightIn,
+    edgeProfileId, island, loadDesignId, placed, ponyWalls, room, roomType, savedDesign,
+    selectedSurfaces, sinks, activeSavedDesignId, verifiedEmail, verifiedName, verifiedPhone,
+  ]);
+
   // Conflicts: an appliance physically running into a cabinet. Highlighted red
   // on the canvas, badged in the BOM, and warned about before export.
   // Range/oven corner clearance rule: a range/oven at a wall corner butting a
@@ -7086,6 +7184,20 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         return { ...current, kitchenUsage: { ...usage, acceptedSuggestionIds: Array.from(accepted) } };
       });
       toast.success("Suggestion kept with this design. Nothing on the plan was moved.");
+      return;
+    }
+    if (finding.action.kind === "guidance") {
+      // A guidance rule has nothing to apply: it is a sentence an admin wrote.
+      // Acknowledging it records that the person read it, and nothing on the
+      // plan is moved. Reusing the accepted-suggestion list keeps it dismissed
+      // with the rest of the review items, so it does not nag on every save.
+      setRoom((current) => {
+        const usage = normalizeKitchenUsage(current.kitchenUsage);
+        const accepted = new Set(usage.acceptedSuggestionIds ?? []);
+        accepted.add(finding.id);
+        return { ...current, kitchenUsage: { ...usage, acceptedSuggestionIds: Array.from(accepted) } };
+      });
+      toast.success("Read and acknowledged. Nothing on the plan was moved.");
       return;
     }
     setSelectedUid(finding.action.cabinetUid);
@@ -8944,13 +9056,15 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     if (!range) { toast.error("The range changed before the bridge cabinet was offered. Nothing was added."); return; }
     const proposal = rangeCompanionProposal(range, room, wallCabPoolRef.current, appliancePalette, wallCabHeightRef.current);
     if (!proposal) { toast.error("A matching selected-line bridge cabinet and microwave are not available for this range."); return; }
-    const bridgeSpec = rangeBridgeSpec({ rangeWidthIn: Number(range.width) || 30, hangsBelow: true });
-    const bridgeCode = bridgeSpec.code.toUpperCase();
-    const bridgeSource = wallCabPoolRef.current.find((item) => item.masterCode.toUpperCase().replace(/[^A-Z0-9]/g, "") === bridgeCode);
-    const aligned = bridgeSource
-      ? { ...proposal, bridge: bridgeSource, bridgeMountBottom: bridgeSpec.bottomIn }
-      : proposal;
-    setRangeCompanionPrompt({ rangeUid: range.uid, proposal: aligned, microwaveAlreadyPlaced: false });
+    // The proposal already carries the right bridge: `overRangeBridgeFor` matches the
+    // RANGE width and sizes the height so its top lands on the upper run beside it
+    // (30" uppers -> a 12" W3012 topping at 84"). A second, hard-coded "24 inch
+    // bridge at the 72 inch datum, top 96 inches" override used to run here and
+    // replaced that 12" box with a 24" one, which is the reported bug: the wall
+    // cabinet above the range came out twice the height it should have been and
+    // stood 12" above its neighbouring uppers. The bridge is only ever what the one
+    // selector chose, so the prompt and the build cannot disagree.
+    setRangeCompanionPrompt({ rangeUid: range.uid, proposal, microwaveAlreadyPlaced: false });
   }, [appliancePalette, autoDesignRangeVentPrompt, room, setOverRangeAnswer]);
   const addWscSpiceStackUpper = useCallback((cabinetId: number) => {
 	    const prompt = spiceStackPrompt;
@@ -11666,13 +11780,13 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     setViewMode("plan");
     setSelectedUid(null);
     setSelectedOpeningUid(null);
-    setSelectedFurnUid(starter.furniture[0]?.uid ?? null);
+    setSelectedFurnUid(null);
     setPolygonEditMode(false);
     setDrawMode(false);
     setMeasureMode(false);
     setLayoutStarterOpen(false);
     setMobilePanel(null);
-    toast.success("Bathroom starter applied. Move the labeled planning zones, then select actual Pelican products from Bathroom Fixtures.");
+    toast.success("Blank bathroom room ready. Add cabinets or source-priced Pelican fixtures from Bathroom Fixtures.");
   }, [annotations.length, applyRoom, furniture.length, island, layoutLocked, openings.length, placed.length, ponyWalls.length, sinks.length]);
 
   const openBathroomFixtureChecklistPicker = useCallback((stepId?: string) => {
@@ -13985,11 +14099,18 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // design to localStorage on every change (debounced) AND immediately when the
   // tab is backgrounded (visibilitychange / pagehide — the events mobile browsers
   // reliably fire before freezing/discarding a tab), then restore it on return.
+  // The draft belongs to the signed-in ACCOUNT, not to whatever email was typed
+  // into the gate. `draftIdentityCandidates` adds the older email key and the
+  // guest key so nothing already on this device is lost.
+  const draftIdentity = useMemo(
+    () => draftIdentityFor({ accountId, email: verifiedEmail }),
+    [accountId, verifiedEmail],
+  );
   const draftKey = useMemo(
     () => latchedFreshStart.fresh
-      ? freshDesignDraftStorageKey(storeScope, verifiedEmail, latchedFreshStart.doorStyleId, latchedFreshStart.distributorId)
-      : designerDraftStorageKey(storeScope, verifiedEmail),
-    [latchedFreshStart, storeScope, verifiedEmail],
+      ? freshDesignDraftStorageKey(storeScope, draftIdentity, latchedFreshStart.doorStyleId, latchedFreshStart.distributorId)
+      : designerDraftStorageKey(storeScope, draftIdentity),
+    [latchedFreshStart, storeScope, draftIdentity],
   );
   const activeDraftKey = useMemo(() => designerDraftActiveKey(storeScope), [storeScope]);
 
@@ -14081,6 +14202,21 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       // A v1 draft had no store truth. Move it only to owner and delete the
       // ambiguous source, even when the current page is an affiliate store.
       migrateLegacyDesignerDraftToOwner(localStorage, verifiedEmail);
+
+      // Work designed before signing in belongs to the person who just signed
+      // in. Adopt it onto this account once, unless the account already has a
+      // plan for this store (that plan wins), then drop the guest copy so a
+      // second person on this browser cannot pick it up.
+      if (accountId != null && !latchedFreshStart.fresh) {
+        applyGuestDraftAdoption(localStorage, planGuestDraftAdoption(localStorage, storeScope, accountId));
+      }
+      const candidates = latchedFreshStart.fresh
+        ? [draftIdentity]
+        : draftIdentityCandidates({ accountId, email: verifiedEmail });
+      const restorable = firstRestorableDraft(localStorage, storeScope, candidates);
+      // Found under an older key (the gate email, or guest work)? Copy it to this
+      // account's key so one restore path reads one place from now on.
+      if (restorable && restorable.key !== draftKey) localStorage.setItem(draftKey, restorable.raw);
       const raw = localStorage.getItem(draftKey);
       if (raw) {
         const d = JSON.parse(raw);
@@ -14192,7 +14328,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           }
 	          if (Array.isArray(d.sinks)) setSinks(d.sinks);
 	          if (Array.isArray(d.potFillers)) setPotFillers(d.potFillers as PotFillerFixture[]);
-	          if (Array.isArray(d.furniture)) setFurniture(d.furniture as PlacedFurniture[]);
+	          if (Array.isArray(d.furniture)) setFurniture(restoredFurniture(d.furniture));
 	          if (d.roomType) setRoomType(d.roomType);
           if (d.activeWall) setActiveWall(d.activeWall);
           setLayoutLocked(!!d.layoutLocked);
@@ -14231,7 +14367,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       if (!latchedFreshStart.fresh) setLayoutStarterOpen(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [verified, draftKey, activeDraftKey, storeScope, verifiedEmail, loadDesignId, bundleIdParam, selectCatalogHardware]);
+  }, [verified, draftKey, activeDraftKey, storeScope, verifiedEmail, accountId, draftIdentity, loadDesignId, bundleIdParam, selectCatalogHardware]);
 
   // Pre-select a door style from the ?style=<id> URL param (e.g. "Design with
   // this" CTA from the homepage). Fires once, after the draft has been restored,
@@ -15175,7 +15311,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const threeDCabinetFaceCrops = useMemo(
     () => Object.fromEntries(threeDCabinetFaces.flatMap(([uid, plan]) => (
       plan.dlcCrop
-        ? [[uid, { slug: plan.dlcCrop.slug, doorSize: plan.dlcCrop.doorSize, drawerSize: plan.dlcCrop.drawerSize, drawerSolidColor: plan.dlcCrop.drawerSolidColor, solidColor: plan.dlcCrop.solidColor, grainUrl: plan.dlcCrop.grainUrl, faceTileIn: plan.dlcCrop.faceTileIn, faceTileDrawerIn: plan.dlcCrop.faceTileDrawerIn, normalUrl: plan.dlcCrop.normalUrl, tintHex: plan.dlcCrop.tintHex }]]
+        ? [[uid, { slug: plan.dlcCrop.slug, doorSize: plan.dlcCrop.doorSize, drawerSize: plan.dlcCrop.drawerSize, drawerSolidColor: plan.dlcCrop.drawerSolidColor, solidColor: plan.dlcCrop.solidColor, grainUrl: plan.dlcCrop.grainUrl, faceTileIn: plan.dlcCrop.faceTileIn, faceTileDrawerIn: plan.dlcCrop.faceTileDrawerIn, normalUrl: plan.dlcCrop.normalUrl, tintHex: plan.dlcCrop.tintHex, tintLinear: plan.dlcCrop.tintLinear, grainSubstituted: plan.dlcCrop.grainSubstituted }]]
         : []
     ))),
     [threeDCabinetFaces],
@@ -15382,7 +15518,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         toast.success("Removed fixture from the 3D plan.");
       }}
       onRotateFurniture={rotateFurniture}
-      onOpenFurnitureAttributes={openFurnitureAttributes}
       ponyWalls={deferredCountertopGeometry.ponyWalls}
       orderSummary={interactive3dOrderSummary}
       orderLines={interactive3dOrderLines}
@@ -16254,6 +16389,21 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
               </SheetHeader>
               <div className="flex-1 overflow-y-auto overscroll-contain" style={{ WebkitOverflowScrolling: "touch" }}>
 
+                {/* Start New Design leads the menu: clearing the canvas is the
+                    one action a phone or tablet user hunts for most. It keeps
+                    the exact row it had at the bottom of the sheet. */}
+                <div className="px-1 pb-4" data-testid="more-sheet-start-new-design">
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                    onClick={clearCurrentDesign}
+                  >
+                    <Trash2 className="h-4 w-4 shrink-0" />
+                    <span>{t("dt_sh_start_new")}</span>
+                  </button>
+                </div>
+                <div className="mx-3 my-1 border-t border-border" />
+
                 {/* Appliance package by color */}
                 <p className="px-3 pt-3 pb-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Appliance color</p>
                 <div data-testid="appliance-color-package" className="grid grid-cols-4 gap-1 px-3 pb-2">
@@ -16419,6 +16569,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                       <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
                       <span className="flex-1 text-left">Export Floor Plan PDF</span>
                     </button>
+                    {fabricationSheetInput && (
+                      <div className="px-3 pb-2" data-testid="tablet-more-fabrication-sheet">
+                        <p className="pb-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("dt_fab_title")}</p>
+                        <CountertopFabricationSheetActions input={fabricationSheetInput} brandName={affiliateBrand?.storeName} />
+                      </div>
+                    )}
                     <p className="px-3 pt-3 pb-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Selected cabinet</p>
                     <div className="grid grid-cols-3 gap-2 px-3 pb-2" data-testid="tablet-more-selected-actions">
                       <Button type="button" variant="outline" className="h-11" disabled={!selectedUid || measureMode} onClick={() => { rotateSelected(); }}>
@@ -16692,6 +16848,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                               {line.qtyNote && (
                                 <div className="truncate text-[10px] text-blue-500">{line.qtyNote}</div>
                               )}
+                              {mosaicBacksplashWasteInNote(line.qtyNote) && (
+                                <div data-testid="designer-mosaic-backsplash-waste" className="truncate text-[10px] font-semibold text-amber-700">
+                                  Mosaic backsplash quantity {mosaicBacksplashWasteInNote(line.qtyNote)}
+                                </div>
+                              )}
                             </div>
                             <span className="shrink-0 font-medium text-foreground">
                               {line.unitPrice != null ? `$${(line.unitPrice * line.qty).toFixed(2)}` : "—"}
@@ -16730,18 +16891,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                     <span className="font-medium">Interactive 3D Preview</span>
                   </button>
                 </div>
-                <div className="mx-3 my-1 border-t border-border" />
-                {/* Danger zone */}
-                <div className="px-1 pb-4">
-                  <button
-                    type="button"
-                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors"
-                    onClick={clearCurrentDesign}
-                  >
-                    <Trash2 className="h-4 w-4 shrink-0" />
-                    <span>{t("dt_sh_start_new")}</span>
-                  </button>
-                </div>
+                {/* Keeps the sheet's original bottom padding now that the last
+                    section is the Visualization row and not Start New Design. */}
+                <div className="pb-4" />
               </div>
             </SheetContent>
           </Sheet>
@@ -17189,6 +17341,15 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	              }
 	            }}
 	            onAutomaticSaveSuccess={(savedAt) => setAutomaticSaveAt(savedAt)}
+	            reportSaveTarget={(savedTo) => {
+	              // The server decided the store. Remember the design's own slug so
+	              // every later save and read stays in that store, and refresh the
+	              // byId read under the scope it actually lives in.
+	              if (savedTo.affiliateSlug != null) {
+	                void trpcUtils.design.byId.invalidate({ id: activeSavedDesignId ?? loadDesignId ?? 0 });
+	              }
+	              void trpcUtils.design.myDesigns.invalidate();
+	            }}
 	            onDeleteSuccess={(designId) => startBlankAfterDeletedDesign(designId)}
 	            onLoad={(d) =>
               {
@@ -19197,12 +19358,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
               finishFor={finishForCab}
               furniture={furniture}
               selectedFurnUid={selectedFurnUid}
-              bathroomZoneWarningsByFixture={bathroomZoneWarningsByFixture}
               onSelectFurn={setSelectedFurnUid}
               onMoveFurn={(uid, x, y) => setFurniture(prev => prev.map(f => f.uid === uid ? { ...f, x, y } : f))}
               onDeleteFurn={(uid) => { setFurniture(prev => prev.filter(f => f.uid !== uid)); setSelectedFurnUid(null); }}
               onRotateFurn={rotateFurniture}
-      onOpenFurnitureAttributes={openFurnitureAttributes}
 	              flooringMaterialId={flooringMaterialId}
 	              flooringPattern={flooringPattern}
               flooringRotation={flooringRotation}
@@ -19258,7 +19417,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                  </li>
 	                ))}
 	              </ol>
-	              <p className="mt-2 border-t border-slate-200 pt-2 text-[10px] leading-snug text-slate-600">Zones and warnings are visual planning aids. Confirm fixture clearances, opening swings, and installation conditions with the official product sheets and qualified local guidance.</p>
+	              <p className="mt-2 border-t border-slate-200 pt-2 text-[10px] leading-snug text-slate-600">Checklist notes are visual planning aids. Confirm fixture clearances, opening swings, and installation conditions with the official product sheets and qualified local guidance.</p>
 	            </aside>
 	          )}
 	          {viewMode === "plan" && peninsulaDraft && (
@@ -19496,12 +19655,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
               finishFor={finishForCab}
               furniture={furniture}
               selectedFurnUid={selectedFurnUid}
-              bathroomZoneWarningsByFixture={bathroomZoneWarningsByFixture}
               onSelectFurn={setSelectedFurnUid}
               onMoveFurn={(uid, x, y) => setFurniture(prev => prev.map(f => f.uid === uid ? { ...f, x, y } : f))}
               onDeleteFurn={(uid) => { setFurniture(prev => prev.filter(f => f.uid !== uid)); setSelectedFurnUid(null); }}
               onRotateFurn={rotateFurniture}
-      onOpenFurnitureAttributes={openFurnitureAttributes}
 	              flooringMaterialId={flooringMaterialId}
 	              flooringPattern={flooringPattern}
               flooringRotation={flooringRotation}
@@ -20723,6 +20880,19 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                     <span className="font-semibold shrink-0 text-amber-600">{t("dt_bs_quote")}</span>
                   </div>
                 )}
+                {/* Granite/quartz fabrication sheet: download or email the shop. */}
+                {countertop && counter && counter.squareFeet > 0 && (
+                  <div className="rounded-lg border border-[#a87f33]/40 bg-[#a87f33]/5 p-2" data-testid="fabrication-sheet-panel">
+                    <div className="mb-1.5 flex items-center gap-1.5">
+                      <FileText className="h-3.5 w-3.5 text-[#a87f33]" />
+                      <span className="text-[11px] font-semibold">{t("dt_fab_title")}</span>
+                    </div>
+                    <CountertopFabricationSheetActions
+                      input={fabricationSheetInput}
+                      brandName={affiliateBrand?.storeName}
+                    />
+                  </div>
+                )}
                 {/* Backsplash & flooring area summary */}
                 {(() => {
                   const bsLinIn = placed.filter((p) => p.placement === "base").reduce((s, p) => s + rotatedSize(p).w, 0);
@@ -21004,6 +21174,20 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                   <UserRound className="h-4 w-4" />
                 </Button>
               </TooltipTrigger><TooltipContent>{t("dt_bs_get_pro")}</TooltipContent></Tooltip>
+              {/* Share the current design and ask any signed-on designer for help.
+                  Full-width under the action icons so the whole label is readable
+                  in the visible panel, not only in the toolbar's scroll rail. */}
+              <div className="col-span-full">
+                <DesignerHelperShare
+                  designId={currentSavedDesignId ?? loadDesignId}
+                  designName={savedDesign?.name ?? null}
+                  customerName={verifiedName || null}
+                  customerEmail={verifiedEmail || null}
+                  customerPhone={verifiedPhone || null}
+                  affiliateSlug={storeScope}
+                  onNeedSavedDesign={() => setSaveSignal((n) => n + 1)}
+                />
+              </div>
               {countertop && counter && counter.squareFeet > 0 && (
                 <Tooltip><TooltipTrigger asChild>
                   <Button aria-label="Request countertop quote" variant="outline" className="aspect-square min-h-12 w-full border-amber-500 p-0 text-amber-700 hover:bg-amber-50" onClick={() => setQuoteOpen(true)}>
@@ -21357,11 +21541,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           placedCabinets={placed}
         />
       )}
-	      <BathroomZoneAttributesDialog item={zoneAttributesItem} room={room} onClose={() => setZoneAttributesUid(null)} onSave={(item) => {
-        if (layoutLocked) return;
-        setFurniture((previous) => previous.map((current) => current.uid === item.uid ? item : current));
-        toast.success("Planning zone updated. Pelican fixture dimensions are unchanged.");
-      }} />
 	      {autoDesignAvailable && (
 	        <AutoDesignDialog
 	          open={autoDesignOpen}
@@ -21997,23 +22176,18 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	            return;
 	          }
 	          const verifiedDimensions = { width: verifiedProfile.exteriorWidthIn, depth: verifiedProfile.exteriorDepthIn };
-	          // Part 1: a deck-mounted faucet must sit behind—not in—the selected
-	          // non-apron sink. Farmhouse/apron and wall-mounted fixtures retain
-	          // their existing dedicated installation paths.
-	          const deckPlacement = cab && !isBathroomVanity && verifiedProfile.sinkType !== "farmhouse" && !isWallMountedFaucet
-	            ? nonApronSinkDeckPlacement(cab, room, verifiedDimensions)
-	            : null;
-	          if (faucetProduct && deckPlacement?.applies && !deckPlacement.faucetCanFit) {
-	            toast.error(`${verifiedProfile.name} does not leave the required rear countertop deck for a faucet. ${deckPlacement.reason ?? "Choose a shallower sink or a different installation."}`);
-	            return;
-	          }
+	          // A narrow rear counter deck is informational only. Faucets are
+	          // universal across one- and two-hole deck mounts, so a catalog-valid
+	          // sink always places, and the surrounding cabinets are never moved
+	          // or redesigned to chase a deeper deck. The basin keeps its own
+	          // setback and the note is shown next to the placed fixture.
 	          const autoSink = cab
 	            ? makeSinkForCabinet(verifiedProfile.sinkType, cab, room, verifiedDimensions)
 	            : makeSink(verifiedProfile.sinkType, 0, 0, activeWall, verifiedDimensions);
           const sinkWithFaucet: SinkFixture = {
 	            ...autoSink,
 	            faucet: Boolean(faucetProduct),
-	            faucetDeckConflict: faucetProduct ? autoSink.faucetDeckConflict : undefined,
+	            faucetDeckAdvisory: faucetProduct ? autoSink.faucetDeckAdvisory : undefined,
             pelicanProductId: sinkProduct?.id,
             pelicanProductName: sinkProduct?.name,
             pelicanProductImage: sinkProduct?.imageUrl ?? undefined,
@@ -23150,11 +23324,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	          </DialogHeader>
 	          <div className="space-y-5 p-5">
 	            <section data-testid="bathroom-room-template" className="rounded-xl border border-sky-300/70 bg-sky-50/60 p-4">
-	              <div className="mb-1 text-sm font-semibold text-[#192432]">Bathroom · movable planning-zone template</div>
-	              <p className="mb-3 text-xs leading-5 text-slate-600">Starts a blank 10 ft × 8 ft planning room with non-cartable vanity, toilet, and tub zones. Drag, rotate, or remove the zones, then choose source-priced Pelican fixtures. It does not add a product, price, or installation claim.</p>
+	              <div className="mb-1 text-sm font-semibold text-[#192432]">Bathroom · empty room template</div>
+	              <p className="mb-3 text-xs leading-5 text-slate-600">Starts a blank 10 ft × 8 ft bathroom plan. Add cabinets and source-priced Pelican fixtures yourself; every item moves and rotates freely on the plan. It does not add a product, price, or installation claim.</p>
 	              <button
 	                type="button"
-	                data-testid="bathroom-template-standard-zones"
+	                data-testid="bathroom-template-empty-room"
 	                disabled={layoutLocked || Boolean(placed.length || openings.length || island || sinks.length || furniture.length || ponyWalls.length || annotations.length)}
 	                onClick={applyBathroomStarterTemplate}
 	                className="w-full rounded-lg border border-sky-400 bg-white p-3 text-left shadow-sm transition-colors hover:border-sky-600 hover:bg-sky-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#192432] disabled:cursor-not-allowed disabled:opacity-50"
@@ -23487,7 +23661,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                   toast.success("Removed fixture from the 3D plan.");
                 }}
                 onRotateFurniture={rotateFurniture}
-      onOpenFurnitureAttributes={openFurnitureAttributes}
                 ponyWalls={ponyWalls}
                 orderSummary={interactive3dOrderSummary}
                 orderLines={interactive3dOrderLines}

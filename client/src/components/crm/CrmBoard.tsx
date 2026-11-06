@@ -32,11 +32,17 @@ import {
 import { CRM_CUSTOMER_LIST_TEMPLATE, crmCustomerFileReadProgress, parseCrmCustomerListCsv, type CrmCustomerImportRow, type CrmCustomerImportSkippedRow } from "@shared/crmCustomerListImport";
 import { affiliateCardColor, type CrmAffiliateBrand } from "@/lib/crmAffiliateBrand";
 import { crmBoardQueryInput, dealCustomerInput } from "@/lib/affiliateSiteScope";
+import { designOpenPath } from "@/lib/designOwnerScope";
+import { withCrmDealContext } from "@/lib/crmLinkedDesignPath";
 import { MASTER_AFFILIATE_FILTER_ALL, masterAffiliateFilterId } from "@/lib/crmMasterFilter";
 import { filterDealsByHelpType, type CrmHelpFilter } from "@/lib/crmHelpFilter";
 import { crmQuickInvoiceTotal, openCrmQuickInvoicePdf, type CrmQuickInvoiceBrand, type CrmQuickInvoiceLine } from "@/lib/crmQuickInvoice";
 import { invoiceEmailButtonDisabled, invoiceEmailSourceLabel, suggestedInvoiceEmail, usableInvoiceEmail, type CrmInvoiceRecipient } from "@/lib/crmInvoiceEmail";
 import { CustomerGeneratedImages } from "@/components/imageCustomer/CustomerGeneratedImages";
+import { CustomerLinkedDesigns } from "@/components/crm/CustomerLinkedDesigns";
+import { CrmCustomerLookup } from "@/components/crm/CrmCustomerLookup";
+import { useCrmCustomerDesigns } from "@/lib/crmCustomerDesignProcedures";
+import { CUSTOMER_DESIGNS_UNAVAILABLE_COPY, NO_LINKED_DESIGN_COPY } from "@shared/crmCustomerDesigns";
 import { CRM_SAVED_VIEW_STORAGE_PREFIX, crmDueState, filterMondayDeals, summarizeAffiliatePipelines, type MondayFilters } from "@shared/crmMailbox";
 import { CrmStageBoard } from "@/components/crm/monday/CrmStageBoard";
 import { CrmTableView, type TableDeal } from "@/components/crm/monday/CrmTableView";
@@ -315,6 +321,10 @@ export function CrmBoard({ lang = "en", affiliateId, contractorUserId }: { lang?
         </div>
       </div>
 
+      <div className="mb-4">
+        <CrmCustomerLookup />
+      </div>
+
       <div className="mb-4 flex flex-wrap items-center gap-2">
         {(["board", "table", "email"] as const).map((view) => (
           <button
@@ -455,7 +465,8 @@ function DealCard({ deal, lang, onOpen, affiliateName, affiliateBrand, summary }
       <div className="flex items-start justify-between gap-2 mb-1.5">
         <div className="min-w-0">
           <div className="text-sm font-semibold text-foreground leading-snug">{deal.contactName || deal.company || "Unnamed customer"}</div>
-          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Customer</div>
+          {/* The number staff type into the quick lookup when this customer calls. */}
+          <div className="text-[10px] text-muted-foreground" data-testid="crm-customer-number">Customer #{deal.id}</div>
           <div className="mt-1 text-xs text-foreground leading-snug">{deal.title}</div>
         </div>
         <span className={`shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded ${priorityColor[deal.priority]}`}>
@@ -782,17 +793,20 @@ function DealDrawer({ dealId, lang, summary, onClose, onCompose }: { dealId: num
   });
 
   const { data: linkable } = trpc.crm.linkableDesigns.useQuery({ dealId: dealId ?? undefined }, { enabled: dealId != null });
-  const [designToLink, setDesignToLink] = useState<string>("");
   const linkDesign = trpc.crm.linkDesign.useMutation({
     onSuccess: (r) => {
-      setDesignToLink("");
+      // Reload both lists: the customer's linked designs and the pickable ones.
+      void customerDesigns.refetch();
       utils.crm.deal.invalidate({ id: dealId! });
       toast.success(r?.alreadyLinked ? (lang === "es" ? "Ya estaba vinculado" : "Already linked") : (lang === "es" ? "Dise\u00f1o vinculado" : "Design linked"));
     },
     onError: () => toast.error(lang === "es" ? "No se pudo vincular" : "Couldn't link design"),
   });
   const unlinkDesign = trpc.crm.unlinkDesign.useMutation({
-    onSuccess: () => utils.crm.deal.invalidate({ id: dealId! }),
+    onSuccess: () => {
+      void customerDesigns.refetch();
+      utils.crm.deal.invalidate({ id: dealId! });
+    },
     onError: () => toast.error(lang === "es" ? "No se pudo desvincular" : "Couldn't unlink"),
   });
 
@@ -801,6 +815,12 @@ function DealDrawer({ dealId, lang, summary, onClose, onCompose }: { dealId: num
     { ...dealCustomerInput(deal?.affiliateId), customerKey: summary?.customerKey ?? "" },
     { enabled: deal != null && Boolean(summary?.customerKey), retry: false },
   );
+  // Saved designs for this customer come from crm.customerDesigns, which filters
+  // on the stored link (crm_deal_designs / contractorCustomerId) on the server.
+  // The customer directory's own design list is deliberately not used here: it
+  // returns every design on the person's account, which is the bug this fixes.
+  const customerDesigns = useCrmCustomerDesigns(deal?.id ?? null);
+  const linkedCustomerDesigns = customerDesigns.designs;
   const savePackage = trpc.priceShop.saveDesignAsPackage.useMutation({
     onSuccess: () => toast.success("Kitchen package saved as a copy."),
     onError: (error) => toast.error(error.message),
@@ -890,28 +910,73 @@ function DealDrawer({ dealId, lang, summary, onClose, onCompose }: { dealId: num
                 {deal.notes && <p className="text-xs text-muted-foreground pt-1 whitespace-pre-wrap">{deal.notes}</p>}
                 {summary && <CustomerActivityLine text={summary.text} href={summary.href} />}
               </div>
-              {customerDetail.data && (
-                <div className="rounded-lg border border-border p-3 space-y-2">
-                  <p className="text-xs font-semibold text-muted-foreground">Saved designs, quotes, and projects</p>
-                  {(customerDetail.data.designs ?? []).map((design) => (
-                    <div key={design.id} className="flex gap-2 text-sm">
-                      {design.thumbnailUrl ? <img src={design.thumbnailUrl} alt="" className="h-10 w-10 rounded object-cover" /> : <div className="h-10 w-10 rounded bg-muted" />}
-                      <div>
-                        <p className="font-medium">{design.name}</p>
-                        {design.assistLabel && <p className="text-[11px] text-muted-foreground">{design.assistLabel}</p>}
-                        <a className="text-xs text-primary underline mr-2" href={customerDetail.data.storeSlug ? `/store/${customerDetail.data.storeSlug}/design?load=${design.id}&assist=1` : `/design?load=${design.id}&assist=1`}>Open in Designer</a>
-                        <button type="button" className="text-xs text-primary underline" onClick={() => savePackage.mutate({ designId: design.id, name: design.name })}>Save as Kitchen Package</button>
-                      </div>
-                    </div>
-                  ))}
-                  {(customerDetail.data.customer.quotes ?? []).map((quote) => (
-                    <p key={quote.id} className="text-xs">{quote.number ?? `Quote ${quote.id}`} · {quote.status}{quote.total != null ? ` · $${quote.total}` : ""}</p>
-                  ))}
-                  {(customerDetail.data.projects ?? []).map((project) => (
-                    <p key={project.id} className="text-xs">{project.name} · {project.status}</p>
-                  ))}
-                </div>
-              )}
+              <div className="rounded-lg border border-border p-3 space-y-2">
+                <p className="text-xs font-semibold text-muted-foreground">
+                  {lang === "es" ? "Diseños guardados de este cliente" : "This customer's saved designs"}
+                </p>
+                <CustomerLinkedDesigns
+                  designs={linkedCustomerDesigns.map((design) => ({
+                    id: design.id,
+                    name: design.name,
+                    thumbnailUrl: design.thumbnailUrl,
+                    assistLabel: design.assistLabel,
+                    linkKind: design.linkKind,
+                    // Built from the design's own store, not the store whose CRM
+                    // is open: a plan saved elsewhere opened under this store and
+                    // failed its scope check (main's #274).
+                    href: withCrmDealContext(
+                      designOpenPath({ id: design.id, affiliateSlug: design.affiliateSlug ?? null }),
+                      deal!.id,
+                    ),
+                  }))}
+                  loading={customerDesigns.isLoading && !customerDesigns.unavailable}
+                  error={customerDesigns.unavailable ? CUSTOMER_DESIGNS_UNAVAILABLE_COPY : null}
+                  emptyCopy={lang === "es" ? "Ningún diseño vinculado a este cliente todavía." : NO_LINKED_DESIGN_COPY}
+                  testId="crm-customer-linked-designs"
+                  showLinkSource
+                  attach={{
+                    label: lang === "es" ? "Vincular un diseño guardado" : "Link a saved design",
+                    options: availableDesigns.map((design) => ({ id: design.id, name: design.name, storeName: design.creatorStoreName })),
+                    onSelect: (designId) => linkDesign.mutate({ dealId: deal!.id, designId }),
+                    pending: linkDesign.isPending,
+                    emptyCopy: lang === "es" ? "Sin diseños guardados" : "No saved designs available",
+                  }}
+                  actions={(design) => {
+                    const link = linkedCustomerDesigns.find((row) => row.id === design.id);
+                    return (
+                      <>
+                        <button
+                          type="button"
+                          className="text-xs text-primary underline"
+                          onClick={() => savePackage.mutate({ designId: design.id, name: design.name })}
+                        >
+                          {lang === "es" ? "Guardar como paquete" : "Save as Kitchen Package"}
+                        </button>
+                        {link?.linkKind === "deal" && link.linkId != null ? (
+                          <button
+                            type="button"
+                            className="text-xs text-muted-foreground hover:text-red-600"
+                            onClick={() => unlinkDesign.mutate({ dealId: deal!.id, linkId: link.linkId! })}
+                            aria-label={`Unlink ${design.name}`}
+                          >
+                            {lang === "es" ? "Desvincular" : "Unlink"}
+                          </button>
+                        ) : null}
+                      </>
+                    );
+                  }}
+                />
+                {customerDetail.data ? (
+                  <>
+                    {(customerDetail.data.customer.quotes ?? []).map((quote) => (
+                      <p key={quote.id} className="text-xs">{quote.number ?? `Quote ${quote.id}`} · {quote.status}{quote.total != null ? ` · $${quote.total}` : ""}</p>
+                    ))}
+                    {(customerDetail.data.projects ?? []).map((project) => (
+                      <p key={project.id} className="text-xs">{project.name} · {project.status}</p>
+                    ))}
+                  </>
+                ) : null}
+              </div>
 
               {linkedDesigns[0] && (
                 <div className="rounded-lg border border-primary/30 bg-primary/5 p-3">
@@ -953,51 +1018,8 @@ function DealDrawer({ dealId, lang, summary, onClose, onCompose }: { dealId: num
               <EmailSection deal={deal} lang={lang} emails={emails} dealId={deal.id} linkedDesigns={linkedDesigns} suggestedEmail={homeownerEmail} />
               <CrmDealFiles dealId={deal.id} />
 
-              {/* Linked designs */}
-              <div>
-                <p className="text-xs font-semibold text-muted-foreground mb-2">{lang === "es" ? "Dise\u00f1os vinculados" : "Linked Designs"}</p>
-                <div className="flex gap-2 mb-3">
-                  <Select value={designToLink} onValueChange={setDesignToLink}>
-                    <SelectTrigger className="flex-1"><SelectValue placeholder={availableDesigns.length ? (lang === "es" ? "Elegir un dise\u00f1o guardado\u2026" : "Choose a saved design\u2026") : (lang === "es" ? "Sin dise\u00f1os guardados" : "No saved designs")} /></SelectTrigger>
-                    <SelectContent>
-	                  {availableDesigns.map((d) => <SelectItem key={d.id} value={String(d.id)}>{d.name} · {d.creatorStoreName}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                  <Button variant="outline" disabled={!designToLink || linkDesign.isPending} onClick={() => linkDesign.mutate({ dealId: deal.id, designId: Number(designToLink) })}>{lang === "es" ? "Vincular" : "Attach"}</Button>
-                </div>
-                <div className="space-y-2">
-                  {linkedDesigns.length === 0 ? (
-                    <p className="text-xs text-muted-foreground">{lang === "es" ? "Ning\u00fan dise\u00f1o vinculado." : "No designs linked yet."}</p>
-                  ) : linkedDesigns.map((l) => (
-	                  <div key={l.id} className="flex items-center justify-between gap-3 text-sm border border-border rounded-md px-3 py-2">
-	                    <div className="min-w-0">
-	                      <a href={l.designUrl} className="text-primary hover:underline truncate block">{l.designName}</a>
-	                      <p className="text-[11px] text-muted-foreground truncate">
-                        {l.creatorStoreName} · Saved {new Date(l.designCreatedAt).toLocaleDateString()} · Value {money(l.designOrderValue)}
-	                        {l.selectedStyleId ? ` · Style #${l.selectedStyleId}` : ""}
-	                        {Array.isArray(l.selectedSurfaces) && l.selectedSurfaces.length > 0 ? ` · ${l.selectedSurfaces.length} surface selection${l.selectedSurfaces.length === 1 ? "" : "s"}` : ""}
-	                      </p>
-	                      <p className="text-[11px] text-muted-foreground" data-testid="crm-design-created">
-                        {lang === "es" ? "Creado" : "Created"} {new Date(l.designCreatedAt).toLocaleString()}
-                      </p>
-                      <details className="text-[11px] text-muted-foreground" data-testid="crm-design-views">
-                        <summary className="cursor-pointer">
-                          {(l.viewCount ?? 0) === 0
-                            ? (lang === "es" ? "Aún sin vistas" : "Not viewed yet")
-                            : `${lang === "es" ? "Vistas" : "Viewed"} ${l.viewCount}× · ${lang === "es" ? "última" : "last"} ${new Date(l.lastViewedAt as string).toLocaleString()}`}
-                        </summary>
-                        <ul className="mt-1 space-y-0.5">
-                          {(l.recentViews ?? []).map((v, i) => (
-                            <li key={i}>{new Date(v.viewedAt).toLocaleString()} — {v.viewerName || (lang === "es" ? "Visitante" : "Visitor")} ({v.viewerKind})</li>
-                          ))}
-                        </ul>
-                      </details>
-                    </div>
-                      <button className="text-muted-foreground hover:text-red-600 shrink-0 ml-2" onClick={() => unlinkDesign.mutate({ dealId: deal.id, linkId: l.id })} aria-label="Unlink design"><Trash2 className="h-3.5 w-3.5" /></button>
-                    </div>
-                  ))}
-                </div>
-              </div>
+              {/* Linked designs live in the block above (this customer's saved
+                  designs), so there is one list rather than two. */}
 
               <div className="rounded-lg border border-border p-3">
                 <Label htmlFor="crm-labor-estimate" className="text-xs font-semibold text-muted-foreground">{lang === "es" ? "Mano de obra" : "Labor"}</Label>

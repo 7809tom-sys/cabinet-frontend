@@ -10,7 +10,7 @@ import { mergeAutoDesignRefrigeratorCaps, runAutoDesignLayout, type AutoDesignLa
 import { AUTO_DESIGN_PENINSULA_AISLE_IN, autoDesignPeninsulaAttachment, type AutoDesignPeninsulaRequest } from "./autoDesignPeninsula";
 import { reviewRangeFridgeSeparation } from "./kitchenAdjacency";
 import { autoDesignHoodMountBottom } from "./autoDesignRangeHood";
-import { overRangeHasBridge } from "./overRangeFill";
+import { existingOverRangeBridge, overRangeHasBridge } from "./overRangeFill";
 import { kitchenRuleNumber, resetKitchenRuleParameters } from "./kitchenRuleParameters";
 import {
   cabinetPlacementCollisionDetail,
@@ -291,6 +291,17 @@ function audit(spec: CaseSpec, run: AutoDesignLayoutSuccess, room: RoomData): st
   // here without one fails. (The dedicated `overRangeBridgeMatrix.test.ts` asserts
   // the geometry: centered, at the 72" datum, matched to the range width.)
   if (range && !overRangeHasBridge(placed, range, room)) issues.push(`no bridge above ${range.masterCode}`);
+  // Owner report (Nov 6 2026): the bridge over the range must be 12 inches tall on a
+  // 30 inch upper run, not 24. Its top has to land on the same line as the uppers
+  // beside it, which on 30" uppers is 84".
+  if (range) {
+    const bridge = existingOverRangeBridge(placed, range, room);
+    if (bridge) {
+      const top = Number(bridge.mountBottom ?? 0) + Number(bridge.height ?? 0);
+      if (top > 84.75) issues.push(`bridge ${bridge.masterCode} tops at ${top}, above the 84 inch upper line`);
+      if (Number(bridge.height ?? 0) > 12.75) issues.push(`bridge ${bridge.masterCode} is ${bridge.height} tall, not 12`);
+    }
+  }
   if (hood && hood.mountBottom !== autoDesignHoodMountBottom(hood.width)) issues.push(`hood ${hood.masterCode} bottom ${hood.mountBottom}`);
   if (hood && Math.abs(hood.depth - 18) > 0.05) issues.push(`hood depth ${hood.depth}`);
   if (reviewRangeFridgeSeparation(placed, room).length) issues.push("range and refrigerator are closer than a 15 inch cabinet");

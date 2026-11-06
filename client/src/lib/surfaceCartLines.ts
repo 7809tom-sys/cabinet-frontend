@@ -2,6 +2,7 @@ import type { PricingTier } from "@shared/pricingTier";
 import { flooringCartonFacts } from "@/lib/flooringCartonFacts";
 import { flooringLayoutName, flooringOverageLabel, flooringOverageRate } from "@/lib/flooringLayout";
 import type { FlooringLayoutPattern } from "@/lib/design";
+import { isMosaicBacksplashPick, mosaicBacksplashWasteFactor, mosaicSheetSquareFeet, MOSAIC_BACKSPLASH_WASTE_NOTE, MOSAIC_BACKSPLASH_WASTE_PCT } from "@/lib/mosaicBacksplashWaste";
 import { normalizeFinalMaterialSelections } from "@/lib/surfaceSelection";
 import { surfaceRole } from "@/lib/pelican";
 
@@ -15,7 +16,7 @@ export type SurfacePick = {
   sellPrice: number | null;
   /** Explicit active marker retained on legacy surface selections. */
   threeDActive?: boolean;
-  /** Sq ft per box/carton for tile, backsplash, and flooring products. */
+  /** Sq ft per box/carton for tile, backsplash, and flooring products. Empty on every Pelican mosaic, which is sold by the sheet. */
   coverageSqFt?: number | null;
   /** Supplier description. Flooring carton size is parsed from here when coverageSqFt is empty. */
   description?: string | null;
@@ -51,6 +52,9 @@ export type SurfaceCartLine = {
  * - Mosaic / Backsplash tile: 15%
  * - Flooring: 10%
  * - Everything else: 0%
+ *
+ * A mosaic installed as the wall backsplash is the exception: the owner's rule puts 5% waste on it
+ * instead (lib/mosaicBacksplashWaste.ts), applied in `buildSurfaceCartLines` before this table.
  */
 const OVERAGE: Record<string, number> = {
   Backsplash: 0.15,
@@ -108,6 +112,9 @@ export type RoomAreas = {
  *
  * Tile, backsplash, and flooring products with `coverageSqFt` use:
  *   boxes = ceil( area × overageFactor / coverageSqFt )
+ *
+ * A MOSAIC backsplash is the one exception to the tile overage: its factor is 1.05 (5% waste),
+ * per the owner's rule in lib/mosaicBacksplashWaste.ts. Field tile keeps 1.15.
  *
  * Countertop products use their authoritative stored whole-slab dimensions:
  *   slabs = ceil( exact rendered countertop area / slab square feet )
@@ -172,10 +179,24 @@ export function buildSurfaceCartLines(
         ? carton?.sqFtPerBox ?? null
         : (s.coverageSqFt && s.coverageSqFt > 0 ? s.coverageSqFt : null);
       const rawArea = isBacksplash ? areas.backsplashSqFt : isFlooring ? areas.flooringSqFt : 0;
-      if (rawArea > 0 && coverageSqFt) {
-        const factor = isFlooring ? 1 + flooringOverageRate(areas.flooringPattern) : overageFor(s.category);
+      // Owner rule (Tom): mosaic backsplash carries 5% waste, not the 15% tile overage.
+      const mosaicBacksplash = isBacksplash && isMosaicBacksplashPick(s);
+      // A mosaic is sold by the sheet. Its catalog row has the published sheet size but no
+      // coverageSqFt, so the per-unit area comes from that sheet size; a structured coverage value
+      // still wins when the vendor has entered one.
+      const sheetSqFt = mosaicBacksplash
+        ? (s.coverageSqFt && s.coverageSqFt > 0 ? null : mosaicSheetSquareFeet(s))
+        : null;
+      const unitSqFt = coverageSqFt ?? sheetSqFt;
+      const unitLabel = sheetSqFt ? "sheet" : "box";
+      if (rawArea > 0 && unitSqFt) {
+        const factor = isFlooring
+          ? 1 + flooringOverageRate(areas.flooringPattern)
+          : mosaicBacksplash
+            ? mosaicBacksplashWasteFactor()
+            : overageFor(s.category);
         const pct = Math.round((factor - 1) * 100);
-        qty = Math.ceil((rawArea * factor) / coverageSqFt);
+        qty = Math.ceil((rawArea * factor) / unitSqFt);
         const overageNote = pct > 0 ? ` × ${pct}% overage` : "";
         const layoutNote = isFlooring
           ? flooringLayoutName(areas.flooringPattern)
@@ -183,7 +204,9 @@ export function buildSurfaceCartLines(
             : "Layout not chosen. "
           : "";
         const piecesNote = carton?.piecesPerBox ? `${carton.piecesPerBox} pieces/box · ` : "";
-        qtyNote = `${layoutNote}${piecesNote}${rawArea.toFixed(1)} sq ft${overageNote} ÷ ${coverageSqFt} sq ft/box = ${qty} boxes`;
+        const unitSuffix = qty === 1 ? unitLabel : unitLabel === "box" ? "boxes" : "sheets";
+        qtyNote = `${layoutNote}${piecesNote}${rawArea.toFixed(1)} sq ft${overageNote} ÷ ${unitSqFt} sq ft/${unitLabel} = ${qty} ${unitSuffix}`;
+        if (mosaicBacksplash) qtyNote += ` (${MOSAIC_BACKSPLASH_WASTE_NOTE})`;
         if (isFlooring && areas.flooringPattern === "herringbone") {
           qtyNote += ` (herringbone waste ${flooringOverageLabel(areas.flooringPattern)}, other layouts ${flooringOverageLabel(null)})`;
         }
@@ -192,6 +215,10 @@ export function buildSurfaceCartLines(
         qtyNote = layout
           ? `Layout: ${layout}. Sq ft per box was not on this product, so box count was not calculated.`
           : "Layout not chosen. Sq ft per box was not on this product, so box count was not calculated.";
+      } else if (mosaicBacksplash && rawArea > 0) {
+        // Neither a box coverage nor a published sheet size, so there is nothing to convert the
+        // 5% waste into. Say so instead of claiming waste the quantity does not carry.
+        qtyNote = `${rawArea.toFixed(1)} sq ft. Sq ft per box was not on this product, so the ${Math.round(MOSAIC_BACKSPLASH_WASTE_PCT * 100)}% mosaic waste could not be added to a unit count.`;
       }
     }
 

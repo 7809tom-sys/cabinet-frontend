@@ -1,6 +1,7 @@
 import {
   COLLISION_EPSILON_IN,
   STD,
+  bridgeHeightForWallHeight,
   cabinetWall,
   isFillerItem,
   isFullHeightCabinet,
@@ -18,8 +19,8 @@ import {
   type WallSide,
 } from "./design";
 import { kitchenAdjacencyRuleById } from "./kitchenAdjacencyRules";
-import { kitchenRuleNumber } from "./kitchenRuleParameters";
-import {
+import { overRangeBridgeHeightFor, bridgeFamilyGeometry } from "./overRangeCompanion";
+import { kitchenRuleNumber } from "./kitchenRuleParameters";import {
   bakesALot,
   cooksALot,
   describeBakingZone,
@@ -56,45 +57,97 @@ export const APPLIANCE_SHIFT_CAP_IN = 3;
 
 export type RangeBridgeSpec = {
   code: string;
-  widthIn: 30 | 33 | 36;
+  widthIn: number;
   heightIn: number;
   bottomIn: number;
   topIn: number;
   depthIn: 12;
 };
 
-/** Width snapped to the stock bridge the catalog lists for that range. */
-export function rangeBridgeWidth(rangeWidthIn: number): 30 | 33 | 36 {
-  if (rangeWidthIn >= 34.5) return 36;
-  if (rangeWidthIn >= 31.5) return 33;
-  return 30;
+/**
+ * Width snapped to the stock bridge the catalog lists for that range.
+ *
+ * The bridge spans the range, so it follows the RANGE's own width, not a 30/33/36
+ * bucket: a 36" range takes a W36 bridge and a 42" range takes a 42" one. A line
+ * that does not sell that width is handled by `overRangeBridgeFor`, which steps to
+ * the nearest stock width it does sell.
+ */
+export function rangeBridgeWidth(rangeWidthIn: number): number {
+  const rounded = Math.round(rangeWidthIn * 8) / 8;
+  return rounded > 0 ? rounded : 30;
 }
 
 /**
- * Something hanging under the bridge (microwave or hood): 24 inch bridge, bottom 72, top 96.
- * Nothing hanging under it: 30 inch bridge, bottom 66, top 96.
+ * The bridge the owner rule describes, sized for the upper run beside it.
+ *
+ * Something hanging under the bridge (microwave or hood) starts at the fixed 72"
+ * datum; nothing under it starts at 66". The HEIGHT is whatever puts the bridge
+ * top on the same line as the uppers beside it, so 30" uppers take a 12" bridge
+ * topping at 84" and 42" uppers take a 24" bridge topping at 96".
+ *
+ * The old version always used the stored 24" bridge height and the 96" run top,
+ * whatever the uppers did. On a 30" kitchen that hung a 24" box 12" above its
+ * neighbours — the reported "the wall cabinet over the range should be 12 inches"
+ * bug. Given the line's own wall rows, the height is snapped to a bridge box the
+ * line really sells, so `code` is always a purchasable SKU.
  */
-export function rangeBridgeSpec(input: { rangeWidthIn: number; hangsBelow: boolean }): RangeBridgeSpec {
+export function rangeBridgeSpec(input: {
+  rangeWidthIn: number;
+  hangsBelow: boolean;
+  /** Height of the wall cabinets beside the range, so the bridge tops out level. */
+  wallCabinetHeightIn?: number;
+  /** The line's own wall rows, so a 30¼" line is not measured as a 30" line. */
+  wallCatalog?: readonly BridgeCandidateRow[];
+}): RangeBridgeSpec {
   const widthIn = rangeBridgeWidth(input.rangeWidthIn);
-  const topIn = kitchenRuleNumber("run_top_in");
-  if (input.hangsBelow) {
-    return {
-      code: `W${widthIn}${kitchenRuleNumber("bridge_hung_height_in")}`,
-      widthIn,
-      heightIn: kitchenRuleNumber("bridge_hung_height_in"),
-      bottomIn: kitchenRuleNumber("bridge_hung_bottom_in"),
-      topIn,
-      depthIn: 12,
-    };
-  }
+  const upperHeightIn = input.wallCabinetHeightIn ?? kitchenRuleNumber("bridge_upper_height_in");
+  const bottomIn = input.hangsBelow
+    ? kitchenRuleNumber("bridge_hung_bottom_in")
+    : kitchenRuleNumber("bridge_open_bottom_in");
+  const catalog = input.wallCatalog ?? [];
+  // The height that lands this bridge's top on the upper run's top line.
+  const targetHeight = overRangeBridgeHeightFor(upperHeightIn, catalog, bottomIn);
+  const nearestWidth = nearestStockBridgeWidth(widthIn, catalog);
+  const sold = catalog
+    .map((row) => ({ row, usable: bridgeFamilyGeometry(row) }))
+    .filter((entry): entry is { row: BridgeCandidateRow; usable: { width: number; height: number } } => entry.usable != null)
+    .filter((entry) => Math.abs(entry.usable.width - nearestWidth) <= 0.01);
+  const pick = sold.length > 0
+    ? sold.sort((left, right) => (
+      Math.abs(left.usable.height - targetHeight) - Math.abs(right.usable.height - targetHeight)
+      || `${left.row.masterCode ?? ""}`.localeCompare(`${right.row.masterCode ?? ""}`)
+    ))[0]!
+    : null;
+  const heightIn = pick ? pick.usable.height : targetHeight;
   return {
-    code: `W${widthIn}${kitchenRuleNumber("bridge_open_height_in")}`,
-    widthIn,
-    heightIn: kitchenRuleNumber("bridge_open_height_in"),
-    bottomIn: kitchenRuleNumber("bridge_open_bottom_in"),
-    topIn,
+    code: pick?.row.masterCode ?? `W${nearestWidth}${heightIn}`,
+    widthIn: pick ? pick.usable.width : nearestWidth,
+    heightIn,
+    bottomIn,
+    topIn: bottomIn + heightIn,
     depthIn: 12,
   };
+}
+
+/** A catalog row the bridge spec can read: a wall box with a width and a height. */
+type BridgeCandidateRow = {
+  masterCode?: string | null;
+  description?: string | null;
+  subCategory?: string | null;
+  category?: string | null;
+  placement?: string | null;
+  width?: string | number | null;
+  height?: string | number | null;
+};
+
+/** The nearest bridge width the line sells, for a range no bridge spans exactly. */
+function nearestStockBridgeWidth(rangeWidthIn: number, catalog: readonly BridgeCandidateRow[]): number {
+  const widths = catalog
+    .map((row) => bridgeFamilyGeometry(row))
+    .filter((geometry): geometry is { width: number; height: number } => geometry != null)
+    .map((geometry) => geometry.width);
+  if (widths.length === 0) return rangeWidthIn;
+  return widths.sort((a, b) => Math.abs(a - rangeWidthIn) - Math.abs(b - rangeWidthIn) || a - b)[0]!;
 }
 
 export type AdjacencyFinding = {
@@ -204,7 +257,7 @@ export function reviewRangeFridgeSeparation(placed: readonly PlacedCabinet[], ro
         findings.push(finding(
           "range-fridge-gap",
           "attention",
-          "Range and refrigerator need a 15 inch cabinet between them",
+          `Range and refrigerator need a ${kitchenRuleNumber("range_fridge_min_cabinet_in")} inch cabinet between them`,
           `On the ${wall} wall the range and refrigerator have ${Math.round(gap * 8) / 8}" between them and no base cabinet ${kitchenRuleNumber("range_fridge_min_cabinet_in")}" or wider. Fillers and panels do not count.`,
           `:${range.item.uid}:${fridge.item.uid}`,
         ));
@@ -230,7 +283,7 @@ export function separateRangeAndRefrigerator(input: {
   const moves: RangeFridgeMove[] = [];
   const flags: string[] = [];
   const originOf = (uid: string, current: number) => input.origins?.find((origin) => origin.uid === uid)?.originalStart ?? current;
-  const remaining = (uid: string, current: number) => Math.max(0, APPLIANCE_SHIFT_CAP_IN - Math.abs(current - originOf(uid, current)));
+  const remaining = (uid: string, current: number) => Math.max(0, kitchenRuleNumber("jog_max_in") - Math.abs(current - originOf(uid, current)));
   const spans = () => placed.map((item) => spanOf(item, input.room)).filter((span): span is Span => span != null);
   const shiftItem = (uid: string, delta: number) => {
     if (Math.abs(delta) <= 0.05) return;
@@ -555,12 +608,14 @@ export function reviewKitchenAdjacency(input: {
       const leftLanding = landingWidth(spans, range.start, "before");
       const rightLanding = landingWidth(spans, range.end, "after");
       const sides = [leftLanding, rightLanding].sort((a, b) => a - b);
-      if (sides[0]! < 12 - 0.05 || sides[1]! < 15 - 0.05) {
+      const shortLanding = kitchenRuleNumber("range_landing_short_in");
+      const longLanding = kitchenRuleNumber("range_landing_long_in");
+      if (sides[0]! < shortLanding - 0.05 || sides[1]! < longLanding - 0.05) {
         findings.push(finding(
           "range-landing",
           "attention",
-          "Range landing is short of 12 and 15 inches",
-          `The range needs at least 12" on one side and 15" on the other. This run has ${Math.round(sides[0]!)}" and ${Math.round(sides[1]!)}".`,
+          `Range landing is short of ${shortLanding} and ${longLanding} inches`,
+          `The range needs at least ${shortLanding}" on one side and ${longLanding}" on the other. This run has ${Math.round(sides[0]!)}" and ${Math.round(sides[1]!)}".`,
           `:baseline:${range.item.uid}`,
         ));
       }
@@ -575,8 +630,9 @@ export function reviewKitchenAdjacency(input: {
       findings.push(finding("fridge-run-end", "attention", "Refrigerator is in the middle of a run", `${fridge.item.masterCode} has base cabinets on both sides. Put it at the end of the run when the measurement allows.`, `:${fridge.item.uid}`));
     }
     const handleLanding = Math.max(landingWidth(spans, fridge.start, "before"), landingWidth(spans, fridge.end, "after"));
-    if (handleLanding > 0.5 && handleLanding < kitchenRuleNumber("fridge_landing_in") - 0.05) {
-      findings.push(finding("fridge-landing", "attention", "Refrigerator landing is under 15 inches", `${fridge.item.masterCode} needs 15" of counter on the handle side.`, `:${fridge.item.uid}`));
+    const fridgeLanding = kitchenRuleNumber("fridge_landing_in");
+    if (handleLanding > 0.5 && handleLanding < fridgeLanding - 0.05) {
+      findings.push(finding("fridge-landing", "attention", `Refrigerator landing is under ${fridgeLanding} inches`, `${fridge.item.masterCode} needs ${fridgeLanding}" of counter on the handle side.`, `:${fridge.item.uid}`));
     }
   }
 
@@ -649,11 +705,12 @@ export function reviewKitchenAdjacency(input: {
     });
     if (covered) continue;
     const spec = rangeBridgeSpec({ rangeWidthIn: range.item.width, hangsBelow: false });
+    const hungSpec = rangeBridgeSpec({ rangeWidthIn: range.item.width, hangsBelow: true });
     findings.push(finding(
       "range-bridge",
       "suggestion",
       `Nothing hangs under the range bridge — use ${spec.code}`,
-      `${spec.code} is ${spec.heightIn}" tall with its bottom at ${spec.bottomIn}" so the top lands at ${spec.topIn}". If a microwave or hood is added under it, switch to a 24" bridge with its bottom at 72".`,
+      `${spec.code} is ${spec.heightIn}" tall with its bottom at ${spec.bottomIn}" so the top lands at ${spec.topIn}". If a microwave or hood is added under it, switch to the ${hungSpec.code}, which starts at ${hungSpec.bottomIn}" and still tops out on the same line.`,
       `:${range.item.uid}`,
     ));
   }
@@ -664,10 +721,12 @@ export function reviewKitchenAdjacency(input: {
     if (!span) continue;
     const length = wallLength(span.wall as WallSide, input.room);
     const nearestEnd = Math.min(span.start, Math.max(0, length - span.end));
-    if (nearestEnd < kitchenRuleNumber("dishwasher_corner_min_in") - 0.05) {
-      findings.push(finding("dishwasher-corner-fallback", "attention", "Dishwasher is tighter than 2 inches to a corner", `${dishwasher.masterCode} is ${Math.round(nearestEnd * 8) / 8}" from the end of the wall. Even when a 21" stand is impossible, leave at least 2".`, `:${dishwasher.uid}`));
-    } else if (nearestEnd < kitchenRuleNumber("dishwasher_corner_clear_in") - 0.05) {
-      findings.push(finding("dishwasher-corner-clearance", "attention", "Dishwasher is within 21 inches of a corner", `${dishwasher.masterCode} is ${Math.round(nearestEnd * 8) / 8}" from the wall end. It needs 21" of cabinet or sink between it and an inside corner. Auto-design will not slide it more than 3" to clear that.`, `:${dishwasher.uid}`));
+    const cornerClear = kitchenRuleNumber("dishwasher_corner_clear_in");
+    const cornerMin = kitchenRuleNumber("dishwasher_corner_min_in");
+    if (nearestEnd < cornerMin - 0.05) {
+      findings.push(finding("dishwasher-corner-fallback", "attention", `Dishwasher is tighter than ${cornerMin} inches to a corner`, `${dishwasher.masterCode} is ${Math.round(nearestEnd * 8) / 8}" from the end of the wall. Even when a ${cornerClear}" stand is impossible, leave at least ${cornerMin}".`, `:${dishwasher.uid}`));
+    } else if (nearestEnd < cornerClear - 0.05) {
+      findings.push(finding("dishwasher-corner-clearance", "attention", `Dishwasher is within ${cornerClear} inches of a corner`, `${dishwasher.masterCode} is ${Math.round(nearestEnd * 8) / 8}" from the wall end. It needs ${cornerClear}" of cabinet or sink between it and an inside corner. Auto-design will not slide it more than ${kitchenRuleNumber("jog_max_in")}" to clear that.`, `:${dishwasher.uid}`));
     }
     const touchingRange = ranges.some((range) => range.wall === span.wall && (touches(range.end, span.start) || touches(span.end, range.start)));
     if (touchingRange) {
@@ -688,7 +747,7 @@ export function reviewKitchenAdjacency(input: {
     const cover = spans.some((span) => (isFillerItem(span.item) || isPanelItem(span.item))
       && (touches(span.end, fridge.start) || touches(fridge.end, span.start)));
     if (!cover) {
-      findings.push(finding("fridge-hinge-clearance", "attention", "Refrigerator hinge side needs clearance at the wall", `${fridge.item.masterCode} is ${Math.round(nearestEnd * 8) / 8}" from the wall end with no filler or panel. Hinge-side clearance is about 2.5".`, `:${fridge.item.uid}`));
+      findings.push(finding("fridge-hinge-clearance", "attention", "Refrigerator hinge side needs clearance at the wall", `${fridge.item.masterCode} is ${Math.round(nearestEnd * 8) / 8}" from the wall end with no filler or panel. Hinge-side clearance is about ${kitchenRuleNumber("fridge_hinge_clear_in")}".`, `:${fridge.item.uid}`));
     }
   }
 

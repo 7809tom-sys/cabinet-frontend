@@ -99,6 +99,39 @@ export function normalizeFinalMaterialSelections<T extends FinalMaterialSurfaceL
 }
 
 /**
+ * Merge the two priced catalog reads the Designer already makes for its saved
+ * surface selections.
+ *
+ * `designSelectionByIds` returns only rows the kitchen palette can draw
+ * exactly, so a sourced toilet, bidet, tub, or enclosure is always absent from
+ * it. Treating that absence as "stale" cleared a placed bathroom fixture's real
+ * sell price and sent it to Materials and the cart at $0.00. `byIds` is the
+ * same active, catalog-visible, source-priced row without the drawability gate,
+ * so it is the authority for those fixtures. The drawable read still wins on a
+ * row present in both, and an id missing from both is genuinely stale and keeps
+ * the existing clear-on-load behaviour.
+ *
+ * `byIds` still returns inactive or unpublished rows, which are not sellable, so
+ * any catalog record that explicitly reports itself as either is dropped here
+ * rather than reviving a withdrawn product's price.
+ */
+export function mergeVerifiedSurfacePriceRecords<T extends { id: number; isActive?: boolean | null; showInCatalog?: boolean | null }>(
+  drawableRecords: readonly T[] | undefined,
+  catalogRecords: readonly T[] | undefined,
+): T[] {
+  const byId = new Map<number, T>();
+  for (const record of catalogRecords ?? []) {
+    if (record.isActive === false || record.showInCatalog === false) continue;
+    byId.set(record.id, record);
+  }
+  for (const record of drawableRecords ?? []) {
+    const catalogRecord = byId.get(record.id);
+    byId.set(record.id, catalogRecord ? { ...catalogRecord, ...record } : record);
+  }
+  return Array.from(byId.values());
+}
+
+/**
  * Refresh saved Design Tool surface selections from the verified Designer query.
  * Records omitted by that query are no longer active/published/priceable, so their
  * old saved amount must be cleared rather than reaching a new material list or cart.
@@ -116,6 +149,9 @@ export type VerifiedSurfaceSelectionRecord = {
   coverageSqFt?: string | number | null;
   description?: string | null;
   sellPrice: number | null;
+  /** Visibility flags carried by the catalog reads; absent on legacy records. */
+  isActive?: boolean | null;
+  showInCatalog?: boolean | null;
 };
 
 type RefreshableSurfaceSelection = {

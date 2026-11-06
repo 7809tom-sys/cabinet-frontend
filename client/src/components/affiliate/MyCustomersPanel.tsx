@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { customerDirectoryInput } from "@/lib/affiliateSiteScope";
+import { designOpenPath } from "@/lib/designOwnerScope";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -273,7 +274,21 @@ function CustomerDetailSheet({ affiliateId, house = false, customerKey, previewD
                       <p className="text-sm font-medium">{design.name}</p>
                       {design.assistLabel && <Badge variant="outline" className="text-[10px]">{design.assistLabel}</Badge>}
                       <div className="flex flex-wrap gap-2 mt-1">
-                        {canAssist && <a className="text-xs text-primary underline" href={slug ? `/store/${slug}/design?load=${design.id}&assist=1` : `/design?load=${design.id}&assist=1`}>Open in Designer</a>}
+                        {/* The design's own store decides the link, so a plan
+                            saved on another storefront opens there instead of
+                            under this store's brand. */}
+                        {canAssist && (
+                          <a
+                            className="text-xs text-primary underline"
+                            href={designOpenPath(
+                              {
+                                id: design.id,
+                                affiliateSlug: (design as { affiliateSlug?: string | null }).affiliateSlug ?? slug ?? null,
+                              },
+                              { assist: true },
+                            )}
+                          >Open in Designer</a>
+                        )}
                         {canAssist && <button type="button" className="text-xs text-primary underline" onClick={() => { setPackageDesignId(design.id); setPackageName(design.name); }}>Save as Kitchen Package</button>}
                       </div>
                     </div>

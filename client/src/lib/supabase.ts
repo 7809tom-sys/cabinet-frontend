@@ -1,4 +1,10 @@
 import { createClient } from "@supabase/supabase-js";
+import {
+  AUTH_STORAGE_KEY,
+  createPerTabAuthStorage,
+  detachCrossTabAuthBroadcast,
+  removeLegacySharedAuthSession,
+} from "./supabaseAuthStorage";
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined;
@@ -12,23 +18,41 @@ if (!supabaseUrl || !supabaseKey) {
 }
 
 /**
- * Known remaining session sharing between sites (found Nov 5 2026, not changed
- * by the sign-out scope fix):
+ * One sign-in per browser tab.
  *
- * 1. Auth storage is per origin, and the storage adapter is localStorage
- *    (supabase-js default). www.cabinetdealz.com serves /signin, /admin,
- *    /store/:slug, and /contractor, so all of those share one session.
- * 2. A branded <slug>.cabinetdealz.com is redirected by vercel.json to
- *    /store/:slug on the canonical host, so it lands in that same session
- *    instead of keeping a session of its own.
- * 3. The legacy app_session_id cookie (shared/const) is set and cleared on the
- *    API host, so the browser attaches it to every API request, whichever site
- *    the tab is on.
+ * This client stores its session in `window.sessionStorage` under a fixed
+ * storage key instead of the supabase-js default (`localStorage`, shared by
+ * every tab of the origin). A tab that signs in as an affiliate no longer
+ * rewrites the admin tab's session, because no other tab can read this one's
+ * store. The session survives a reload or an OAuth redirect in the same tab,
+ * and "Duplicate tab" copies it, but a brand-new tab starts signed out.
  *
- * Changing any of that means moving to a per-site storage key or cookie
- * partition, which this PR deliberately does not do.
+ * A duplicated tab inherits a copy of the same refresh token, so the first
+ * refresh in either copy invalidates the other's; signing in normally in a
+ * second tab is the durable way to hold a second identity.
+ *
+ * The default client also opens a BroadcastChannel on the storage key and
+ * replays `SIGNED_IN` / `SIGNED_OUT` / `TOKEN_REFRESHED` into every other tab;
+ * that channel is closed below, since the tabs are independent now.
+ *
+ * Session cleanup from the old shared store: see `supabaseAuthStorage.ts`.
  */
 export const supabase = createClient(
   supabaseUrl || "http://localhost:54321",
-  supabaseKey || "supabase-key-not-configured"
+  supabaseKey || "supabase-key-not-configured",
+  {
+    auth: {
+      storage: createPerTabAuthStorage(),
+      storageKey: AUTH_STORAGE_KEY,
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+    },
+  }
 );
+
+// Nothing in this tab should pick up another tab's Supabase events.
+detachCrossTabAuthBroadcast(supabase);
+// A refresh token left in the origin-wide localStorage would still be usable by
+// any script on this origin. Drop it now that no client reads it.
+removeLegacySharedAuthSession(supabaseUrl);
