@@ -88,8 +88,11 @@ describe("stored kitchen rule parameters", () => {
     setKitchenRuleParameters({ jog_max_in: 2 });
     expect(autoDesignShiftLimitIn("sink")).toBe(2);
     expect(rangeBridgeSpec({ rangeWidthIn: 30, hangsBelow: true }).bottomIn).toBe(72);
-    setKitchenRuleParameters({ bridge_hung_bottom_in: 70, bridge_hung_height_in: 24, run_top_in: 96 });
-    expect(rangeBridgeSpec({ rangeWidthIn: 30, hangsBelow: true })).toMatchObject({ code: "W3024", bottomIn: 70, topIn: 96 });
+    // The stored bridge datum is honoured, and the height still lands the bridge top
+    // on the 30" upper line (84"), so the box below that datum is 14" of bridge
+    // family — the nearest stock size to 84 - 70.
+    setKitchenRuleParameters({ bridge_hung_bottom_in: 70, run_top_in: 96 });
+    expect(rangeBridgeSpec({ rangeWidthIn: 30, hangsBelow: true })).toMatchObject({ code: "W3015", bottomIn: 70, topIn: 85 });
     resetKitchenRuleParameters();
     expect(autoDesignShiftLimitIn("sink")).toBe(3);
   });

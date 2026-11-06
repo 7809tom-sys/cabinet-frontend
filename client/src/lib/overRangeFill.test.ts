@@ -34,6 +34,7 @@ import {
   overRangeAnswerToPersist,
   overRangeHasBridge,
   overRangeIsOccupied,
+  placeMandatoryOverRangeBridges,
   rangesInPlan,
   readOverRangeAnswer,
 } from "./overRangeFill";
@@ -370,5 +371,56 @@ describe("helpers keep the existing pair rules", () => {
     const bridge = overRangeBridgeFor({ rangeWidthIn: 30, wallCabinetHeightIn: 30, wallCatalog: wallRows("330011") });
     expect(bridge).not.toBeNull();
     expect(BRIDGE_CODE.test((bridge!.masterCode ?? "").toUpperCase().replace(/[^A-Z0-9]/g, ""))).toBe(true);
+  });
+});
+
+/**
+ * Owner bug (Nov 6 2026): "the wall (bridge) cabinet over the range should be 12
+ * inches but the designer did not apply that size."
+ *
+ * The bridge height is not a free choice. It hangs from the fixed 72" microwave
+ * datum, so its height is whatever lands its top on the same line as the uppers
+ * beside it: 30" uppers finish at 84", which makes the bridge 12" — W3012 over a
+ * 30" range. A 42" run finishes at 96", which makes it 24".
+ */
+describe("the bridge is 12 inches over 30 inch uppers, not 24", () => {
+  it("places a 12 inch bridge whose top lands on the 84 inch upper line", () => {
+    for (const styleId of ["330011", "540005"]) {
+      const bridge = overRangeBridgeFor({
+        rangeWidthIn: 30, wallCabinetHeightIn: 30, wallCatalog: wallRows(styleId),
+      });
+      expect(bridge, styleId).not.toBeNull();
+      expect(Number(bridge!.masterCode?.replace(/^W/, "").slice(2)), `${styleId} SKU height`).toBe(12);
+      expect(Number(bridge!.height), `${styleId} height`).toBeLessThanOrEqual(12.75);
+      // The top lands on the 30" upper line, within the catalog's own rounding.
+      expect(72 + Number(bridge!.height), `${styleId} top`).toBeLessThanOrEqual(84.75);
+    }
+  });
+
+  it("scales the bridge with the upper run instead of always using 24 inches", () => {
+    const expected: Array<[30 | 36 | 42, number]> = [[30, 12], [36, 18], [42, 24]];
+    for (const [uppers, height] of expected) {
+      const bridge = overRangeBridgeFor({
+        rangeWidthIn: 30, wallCabinetHeightIn: uppers, wallCatalog: wallRows("330011"),
+      });
+      expect(Number(bridge!.height), `${uppers}" uppers`).toBeCloseTo(height, 0);
+    }
+  });
+
+  it("keeps a frameless bridge on its 72 inch datum so it still rests on the microwave", () => {
+    // A frameless line stores the 12" bridge as 12" but its uppers as 30¼", so the
+    // run top is 84¼". The bridge must not be re-hung off the datum.
+    const room = { ...DEFAULT_ROOM, ceilingHeight: 96 } as RoomData;
+    const seated = placeMandatoryOverRangeBridges({
+      placed: [range(60)],
+      room,
+      wallCatalog: wallRows("540005"),
+      wallCabinetHeightIn: 30,
+      styleId: 540005,
+      makeUid: () => "frameless-bridge",
+    });
+    const bridge = seated.placed.find((item) => item.overRangeMicrowaveBridge === true)!;
+    expect(bridge.mountBottom).toBe(72);
+    expect(Number(bridge.height)).toBeLessThanOrEqual(12.75);
   });
 });

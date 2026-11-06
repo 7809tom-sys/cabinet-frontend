@@ -1,6 +1,7 @@
 import {
   COLLISION_EPSILON_IN,
   STD,
+  bridgeHeightForWallHeight,
   cabinetWall,
   isFillerItem,
   isFullHeightCabinet,
@@ -18,8 +19,8 @@ import {
   type WallSide,
 } from "./design";
 import { kitchenAdjacencyRuleById } from "./kitchenAdjacencyRules";
-import { kitchenRuleNumber } from "./kitchenRuleParameters";
-import {
+import { overRangeBridgeHeightFor, bridgeFamilyGeometry } from "./overRangeCompanion";
+import { kitchenRuleNumber } from "./kitchenRuleParameters";import {
   bakesALot,
   cooksALot,
   describeBakingZone,
@@ -56,45 +57,97 @@ export const APPLIANCE_SHIFT_CAP_IN = 3;
 
 export type RangeBridgeSpec = {
   code: string;
-  widthIn: 30 | 33 | 36;
+  widthIn: number;
   heightIn: number;
   bottomIn: number;
   topIn: number;
   depthIn: 12;
 };
 
-/** Width snapped to the stock bridge the catalog lists for that range. */
-export function rangeBridgeWidth(rangeWidthIn: number): 30 | 33 | 36 {
-  if (rangeWidthIn >= 34.5) return 36;
-  if (rangeWidthIn >= 31.5) return 33;
-  return 30;
+/**
+ * Width snapped to the stock bridge the catalog lists for that range.
+ *
+ * The bridge spans the range, so it follows the RANGE's own width, not a 30/33/36
+ * bucket: a 36" range takes a W36 bridge and a 42" range takes a 42" one. A line
+ * that does not sell that width is handled by `overRangeBridgeFor`, which steps to
+ * the nearest stock width it does sell.
+ */
+export function rangeBridgeWidth(rangeWidthIn: number): number {
+  const rounded = Math.round(rangeWidthIn * 8) / 8;
+  return rounded > 0 ? rounded : 30;
 }
 
 /**
- * Something hanging under the bridge (microwave or hood): 24 inch bridge, bottom 72, top 96.
- * Nothing hanging under it: 30 inch bridge, bottom 66, top 96.
+ * The bridge the owner rule describes, sized for the upper run beside it.
+ *
+ * Something hanging under the bridge (microwave or hood) starts at the fixed 72"
+ * datum; nothing under it starts at 66". The HEIGHT is whatever puts the bridge
+ * top on the same line as the uppers beside it, so 30" uppers take a 12" bridge
+ * topping at 84" and 42" uppers take a 24" bridge topping at 96".
+ *
+ * The old version always used the stored 24" bridge height and the 96" run top,
+ * whatever the uppers did. On a 30" kitchen that hung a 24" box 12" above its
+ * neighbours — the reported "the wall cabinet over the range should be 12 inches"
+ * bug. Given the line's own wall rows, the height is snapped to a bridge box the
+ * line really sells, so `code` is always a purchasable SKU.
  */
-export function rangeBridgeSpec(input: { rangeWidthIn: number; hangsBelow: boolean }): RangeBridgeSpec {
+export function rangeBridgeSpec(input: {
+  rangeWidthIn: number;
+  hangsBelow: boolean;
+  /** Height of the wall cabinets beside the range, so the bridge tops out level. */
+  wallCabinetHeightIn?: number;
+  /** The line's own wall rows, so a 30¼" line is not measured as a 30" line. */
+  wallCatalog?: readonly BridgeCandidateRow[];
+}): RangeBridgeSpec {
   const widthIn = rangeBridgeWidth(input.rangeWidthIn);
-  const topIn = kitchenRuleNumber("run_top_in");
-  if (input.hangsBelow) {
-    return {
-      code: `W${widthIn}${kitchenRuleNumber("bridge_hung_height_in")}`,
-      widthIn,
-      heightIn: kitchenRuleNumber("bridge_hung_height_in"),
-      bottomIn: kitchenRuleNumber("bridge_hung_bottom_in"),
-      topIn,
-      depthIn: 12,
-    };
-  }
+  const upperHeightIn = input.wallCabinetHeightIn ?? kitchenRuleNumber("bridge_upper_height_in");
+  const bottomIn = input.hangsBelow
+    ? kitchenRuleNumber("bridge_hung_bottom_in")
+    : kitchenRuleNumber("bridge_open_bottom_in");
+  const catalog = input.wallCatalog ?? [];
+  // The height that lands this bridge's top on the upper run's top line.
+  const targetHeight = overRangeBridgeHeightFor(upperHeightIn, catalog, bottomIn);
+  const nearestWidth = nearestStockBridgeWidth(widthIn, catalog);
+  const sold = catalog
+    .map((row) => ({ row, usable: bridgeFamilyGeometry(row) }))
+    .filter((entry): entry is { row: BridgeCandidateRow; usable: { width: number; height: number } } => entry.usable != null)
+    .filter((entry) => Math.abs(entry.usable.width - nearestWidth) <= 0.01);
+  const pick = sold.length > 0
+    ? sold.sort((left, right) => (
+      Math.abs(left.usable.height - targetHeight) - Math.abs(right.usable.height - targetHeight)
+      || `${left.row.masterCode ?? ""}`.localeCompare(`${right.row.masterCode ?? ""}`)
+    ))[0]!
+    : null;
+  const heightIn = pick ? pick.usable.height : targetHeight;
   return {
-    code: `W${widthIn}${kitchenRuleNumber("bridge_open_height_in")}`,
-    widthIn,
-    heightIn: kitchenRuleNumber("bridge_open_height_in"),
-    bottomIn: kitchenRuleNumber("bridge_open_bottom_in"),
-    topIn,
+    code: pick?.row.masterCode ?? `W${nearestWidth}${heightIn}`,
+    widthIn: pick ? pick.usable.width : nearestWidth,
+    heightIn,
+    bottomIn,
+    topIn: bottomIn + heightIn,
     depthIn: 12,
   };
+}
+
+/** A catalog row the bridge spec can read: a wall box with a width and a height. */
+type BridgeCandidateRow = {
+  masterCode?: string | null;
+  description?: string | null;
+  subCategory?: string | null;
+  category?: string | null;
+  placement?: string | null;
+  width?: string | number | null;
+  height?: string | number | null;
+};
+
+/** The nearest bridge width the line sells, for a range no bridge spans exactly. */
+function nearestStockBridgeWidth(rangeWidthIn: number, catalog: readonly BridgeCandidateRow[]): number {
+  const widths = catalog
+    .map((row) => bridgeFamilyGeometry(row))
+    .filter((geometry): geometry is { width: number; height: number } => geometry != null)
+    .map((geometry) => geometry.width);
+  if (widths.length === 0) return rangeWidthIn;
+  return widths.sort((a, b) => Math.abs(a - rangeWidthIn) - Math.abs(b - rangeWidthIn) || a - b)[0]!;
 }
 
 export type AdjacencyFinding = {

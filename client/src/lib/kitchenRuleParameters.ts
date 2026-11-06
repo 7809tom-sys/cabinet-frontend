@@ -11,9 +11,13 @@ export const KITCHEN_RULE_PARAMETER_DEFAULTS = {
   filler_gap_max_in: 6,
   wall_bottom_in: 54,
   bridge_hung_bottom_in: 72,
-  bridge_hung_height_in: 24,
   bridge_open_bottom_in: 66,
-  bridge_open_height_in: 30,
+  /**
+   * Height of the wall run beside the range. The bridge HEIGHT is not stored: it is
+   * derived so the bridge top lands on that run's top line (30" uppers -> a 12"
+   * bridge topping at 84"). See `overRangeBridgeHeightFor`.
+   */
+  bridge_upper_height_in: 30,
   run_top_in: 96,
   hood_bottom_in: 60,
   baking_zone_min_in: 36,
