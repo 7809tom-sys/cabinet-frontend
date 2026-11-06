@@ -1,8 +1,13 @@
-# AI door-image comparison
+# AI door-image generation
 
-A door-editor tool that has GPT, Claude, and Gemini read one door photo, draw a **photorealistic image of that door**, and keep the best description as the door's official profile.
+A door-editor tool that draws a **photorealistic, photo-accurate image of the door** with GPT, Claude, or Gemini, and keeps the best description as the door's official profile.
 
-**Generate returns a picture.** The picture is the result; the description beside it is what the picture was drawn from.
+**Generate is one pipeline, run three times.** Every column does the same two steps, and the final output of every column is the image:
+
+1. **Text** — the column's provider reads the door photo and the record and writes a detailed description of the door.
+2. **Image** — an image model draws the door from that description, using the same door photo as its reference so construction and color stay accurate.
+
+The description is the input to step 2. It stays on screen because it is what **Choose as official** records.
 
 **Door editor only.** It is mounted in the admin edit dialog (`FeaturedStylesAdmin.tsx`) and is not on the public Door Styles page.
 
@@ -18,22 +23,27 @@ A door-editor tool that has GPT, Claude, and Gemini read one door photo, draw a 
 
 The button is a server call, never a browser one. The browser holds no provider key and sends none.
 
-| Column | Writes the description | Draws the image | Server key |
+| Column | Step 1: text | Step 2: image | Server key |
 |---|---|---|---|
-| GPT | GPT (`OPENAI_API_KEY`) | OpenAI images (`OPENAI_API_KEY`) | cabinet-backend on Railway |
-| Gemini | Gemini (`GEMINI_API_KEY`) | Gemini images (`GEMINI_API_KEY`) | cabinet-backend on Railway |
-| Claude | Claude (`ANTHROPIC_API_KEY`) | **Google's image model** (`GEMINI_API_KEY`) | cabinet-backend on Railway |
+| GPT | GPT | OpenAI images | `OPENAI_API_KEY` |
+| Gemini | Gemini | Gemini images | `GEMINI_API_KEY` |
+| Claude | Claude | Google's image model | `ANTHROPIC_API_KEY` + `GEMINI_API_KEY` |
 
-All three go through `aiDoorDescription.describeWithAi`.
+All three go through `aiDoorDescription.describeWithAi`, and every column reads the same way in the UI: **"<Provider> description → image"**.
 
-**Claude cannot draw.** Anthropic's Messages API returns text only, so there is no Claude image to return. Rather than fake one, Claude's description is handed to the same Google image model the backend already runs for room scenes, and that column says so in plain words: *"Google's image model drew this door from Claude's description and the photo."*
+Claude is a text writer in this pipeline, exactly like the other two. Anthropic's Messages API returns text only, so its description drives the Google image model the backend already runs for room scenes. That is the design, not a fallback or an apology.
 
-Which provider draws which column is pinned in `shared/aiDoorImage.ts` (`AI_DOOR_IMAGE_PLANS`), so the UI can never imply Claude drew its own picture.
+Which model plays which step is pinned in `shared/aiDoorImage.ts` (`AI_DOOR_IMAGE_PLANS`).
 
-| Image model | Variable | Default |
-|---|---|---|
-| OpenAI | `OPENAI_DOOR_IMAGE_MODEL` | `gpt-image-2` |
-| Google | `GEMINI_IMAGE_MODEL` | `gemini-3.1-flash-image` |
+| Model | Variable | Default | Status |
+|---|---|---|---|
+| Claude (text) | `ANTHROPIC_DOOR_DESCRIPTION_MODEL` | `claude-sonnet-5-5` | Active, Sonnet-class |
+| GPT (text) | `OPENAI_DOOR_DESCRIPTION_MODEL` | `gpt-4.1-mini` | Active |
+| Gemini (text) | `GEMINI_DOOR_DESCRIPTION_MODEL` | `gemini-3-flash-preview` | Active |
+| OpenAI (image) | `OPENAI_DOOR_IMAGE_MODEL` | `gpt-image-2` | Active |
+| Google (image) | `GEMINI_IMAGE_MODEL` | `gemini-3.1-flash-image` | Active |
+
+Every default is overridable and none has to be set.
 
 The API is the separate **cabinet-backend** repository. This repo (frontend) carries:
 
@@ -53,13 +63,15 @@ The photo is also what the image step draws from. With a photo, OpenAI is asked 
 
 ### Why a column failed before
 
-Three separate faults, and none of them were the model ids alone:
+Two fault classes, and the Claude one is not what it first looked like:
 
-1. **GPT** sent `max_completion_tokens` to a chat-completions model. OpenAI answers that with 400 *Unsupported parameter*. The field is now chosen from the model id: `max_tokens` for chat models, `max_completion_tokens` for the `o1`/`o3`/`o4`/`gpt-5` reasoning families.
-2. **Claude** defaulted to `claude-sonnet-4-5`, a retired id, so Anthropic answered 404. The default is now `claude-sonnet-4-6`.
-3. **Both** swallowed the provider error. A failed call returned one generic sentence and logged nothing, so the only clue on screen was *"could not be generated"*. Every failure is now logged with the provider, status, model id and a redacted provider body.
+1. **Both swallowed the provider error.** A failed call returned one generic sentence and logged *nothing*, so the only clue on screen was *"could not be generated"* and the server log had no trace of the call. Every failure is now logged with the provider, status, model id and a redacted provider body.
 
-Gemini worked because its default id — `gemini-3-flash-preview` — is the same id the backend already runs everywhere else, so it was the only one of the three that nothing had retired underneath it.
+2. **GPT's request used the wrong token parameter.** It sent `max_completion_tokens` to a chat-completions model. OpenAI documents `max_tokens` as deprecated in favour of `max_completion_tokens` and says it "is not compatible with o-series models" — sending the wrong one is a 400. The field is now chosen from the model id.
+
+**Claude's failure was not a missing image capability.** Claude was always meant to write text here. Its `claude-sonnet-4-5` default was `deprecated` but still functional until 2026-11-30, so the fix is a current model rather than a rescue: `claude-sonnet-5-5`. Current Sonnet-class models think adaptively by default at `high` effort and thinking counts against `max_tokens`, so the request now asks for `max_tokens` 4096 and `output_config.effort` `low`; otherwise the budget could be spent entirely on thinking and come back empty.
+
+Gemini worked throughout because its text id and its image id are the ones the backend already runs everywhere else.
 
 ### The image is real, or the column says it is not
 

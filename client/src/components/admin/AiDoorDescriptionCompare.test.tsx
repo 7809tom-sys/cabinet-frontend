@@ -134,7 +134,7 @@ describe("nothing runs on editor open", () => {
     }
     // No comparison record is read until the operator asks for one.
     expect(getItem).not.toHaveBeenCalledWith(AI_DOOR_COMPARISON_STORAGE_KEY);
-    expect(screen.getByTestId("ai-door-compare-start").textContent).toContain("Compare descriptions");
+    expect(screen.getByTestId("ai-door-compare-start").textContent).toContain("Generate door images");
   });
 
   it("opens the comparison only when the start button is pressed", () => {
@@ -329,6 +329,22 @@ describe("Generate", () => {
     expect(previewIn("gpt")).toBeNull();
   });
 
+  it("reads the same two-step pipeline for every column, Claude included", () => {
+    render(<AiDoorDescriptionCompare style={STYLE} />);
+    fireEvent.click(screen.getByTestId("ai-door-compare-start"));
+    for (const [model, label] of [["gpt", "GPT"], ["claude", "Claude"], ["gemini", "Gemini"]] as const) {
+      expect(screen.getByTestId(`ai-door-pipeline-${model}`).textContent)
+        .toBe(`${label} description → image`);
+      // Step 1 names the provider, step 2 names the image model.
+      const steps = screen.getByTestId(`ai-door-pipeline-steps-${model}`).textContent ?? "";
+      expect(steps, model).toContain(`Step 1 ${label} description`);
+      expect(steps, model).toContain("Step 2");
+    }
+    // No column is singled out as unable to take part.
+    expect(document.body.textContent).not.toContain("cannot return an image");
+    expect(document.body.textContent).not.toContain("isn't available for images");
+  });
+
   it("explains, in plain words, when this build has no AI procedure at all", async () => {
     describeMock.available = false;
     describeMock.mutateAsync.mockResolvedValue({
@@ -413,10 +429,12 @@ describe("Generate draws a real door image", () => {
     fireEvent.click(screen.getByTestId("ai-door-generate-claude"));
 
     await waitFor(() => expect(screen.getByTestId("ai-door-image-claude")).toBeTruthy());
-    // Claude cannot draw, so the column is honest about who did.
-    expect(screen.getByTestId("ai-door-image-caption-claude").textContent)
-      .toContain("Google's image model drew this door from Claude's description");
-    expect(screen.getByTestId("ai-door-painter-note-claude").textContent).toContain("Claude cannot return an image");
+    // The same two steps as every other column, named in the same order:
+    // Claude writes the description, an image model draws from it.
+    const caption = screen.getByTestId("ai-door-image-caption-claude").textContent ?? "";
+    expect(caption).toContain("Step 1: Claude wrote the description");
+    expect(caption).toContain("Step 2: Google's image model drew this image");
+    expect(caption).not.toContain("Claude drew");
   });
 
   it("reports an image failure plainly instead of showing a saved photo or a sketch", async () => {

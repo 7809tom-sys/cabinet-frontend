@@ -161,10 +161,15 @@ describe("the result a column shows is the generated image", () => {
     expect(compareSource).toContain("state.imageMessage");
   });
 
-  it("says which model drew Claude's picture, because Claude cannot draw", () => {
-    expect(compareSource).toContain("ai-door-painter-note-");
-    expect(compareSource).toContain("!plan.painterIsWriter");
-    expect(compareSource).toContain("aiDoorImagePlan(model)");
+  it("shows the same two-step label for every column, Claude included", () => {
+    // One label, rendered from the shared plan, so no column reads as a
+    // special case: "<Provider> description -> image".
+    expect(compareSource).toContain("aiDoorPipelineLabel(model)");
+    expect(compareSource).toContain("ai-door-pipeline-");
+    expect(compareSource).toContain("aiDoorImageStepLabel(model)");
+    // The old Claude-only apology note is gone.
+    expect(compareSource).not.toContain("ai-door-painter-note-");
+    expect(compareSource).not.toContain("painterIsWriter");
   });
 });
 

@@ -61,7 +61,8 @@ import { announceChosenDoorProfile } from "@/lib/useChosenDoorProfiles";
 import {
   AI_DOOR_IMAGE_FAILED_MESSAGE,
   aiDoorImageCaption,
-  aiDoorImagePlan,
+  aiDoorImageStepLabel,
+  aiDoorPipelineLabel,
   type AiDoorGeneratedImage,
 } from "@shared/aiDoorImage";
 
@@ -364,13 +365,14 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial }:
           <div>
             <span className="text-xs font-semibold text-slate-800">AI door-description comparison</span>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              Compare GPT, Claude, and Gemini descriptions of this door, preview each one, and keep the best as the official profile.
-              Nothing runs until you start it.
+              Generate an accurate image of this door with GPT, Claude, or Gemini. Each column runs the same two steps: the
+              provider writes a description from the door photo, then an image model draws the door from that description.
+              You can keep the best description as the official profile. Nothing runs until you start it.
             </p>
           </div>
           <Button type="button" size="sm" variant="outline" onClick={startComparison} data-testid="ai-door-compare-start">
             <Sparkles className="mr-1.5 h-3.5 w-3.5" />
-            Compare descriptions
+            Generate door images
           </Button>
         </div>
       </div>
@@ -381,11 +383,12 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial }:
     <div className="rounded-lg border border-slate-300 bg-white px-3 py-3" data-testid="ai-door-compare">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <span className="text-xs font-semibold text-slate-800">AI door-image comparison</span>
+          <span className="text-xs font-semibold text-slate-800">AI door-image generation</span>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Press Generate to have that model describe this door and draw a photorealistic picture of it. Keep that
-            description as the door's official profile, or copy the prompt and paste an answer back. Anything a
-            description does not state stays at the library default and is listed.
+            Every column runs the same two steps. <strong>Step 1</strong>: that provider reads the door photo and writes a
+            detailed description. <strong>Step 2</strong>: an image model draws a photo-accurate door from that description,
+            using the same photo as its reference. The image is the result; the description beneath it is what{" "}
+            <em>Choose as official</em> keeps. You can also copy the prompt and paste an answer back.
           </p>
         </div>
         {sampleUrl && (
@@ -416,7 +419,6 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial }:
           const image = state.image;
           const text = (fields[model] ?? "").trim();
           const hasText = text.length > 0;
-          const plan = aiDoorImagePlan(model);
           return (
             <div
               key={model}
@@ -513,12 +515,14 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial }:
                 </p>
               )}
 
-              {/* Claude writes but cannot draw: say which model drew its picture. */}
-              {!plan.painterIsWriter && (
-                <p className="text-[10px] text-muted-foreground" data-testid={`ai-door-painter-note-${model}`}>
-                  {plan.note}
-                </p>
-              )}
+              {/* Every column is the same two steps, so every column says so in
+                  the same words: "<Provider> description -> image". */}
+              <p className="text-[10px] font-medium text-slate-700" data-testid={`ai-door-pipeline-${model}`}>
+                {aiDoorPipelineLabel(model)}
+              </p>
+              <p className="text-[10px] text-muted-foreground" data-testid={`ai-door-pipeline-steps-${model}`}>
+                {aiDoorImageStepLabel(model)}
+              </p>
 
               {/* The vector sketch is a reading of the description, not a photo:
                   it is named in words and never badged like a result. */}
