@@ -30,6 +30,7 @@ import {
 } from "@/components/design/InteractiveRoom3D";
 import { ElevationView } from "@/components/design/ElevationView";
 import { LanguageProvider } from "@/contexts/LanguageContext";
+import { wallOpenShelfDisplayName, wallOpenShelfNominalSize, resolvedWallOpenShelfHand } from "@/lib/wallOpenShelf";
 
 const INCH = 1 / 12;
 
@@ -45,8 +46,13 @@ const STYLE = {
 } as const;
 
 const query = new URLSearchParams(window.location.search);
-const OPEN_SHELF_CODE = query.get("code") ?? "WEOS0930";
-const SHELF_HEIGHT = Number(query.get("height") ?? OPEN_SHELF_CODE.replace(/^\D+/, "").slice(-2) ?? 30);
+const OPEN_SHELF_CODE = query.get("code") ?? "WOS0930";
+const HAND_PARAM = query.get("hand");
+const SHELF_HAND: "left" | "right" | null = HAND_PARAM === "left" || HAND_PARAM === "right" ? HAND_PARAM : null;
+// Nominal size comes from the code (width first, then height), so 9-wide and
+// 12-wide and every height share one harness path.
+const SHELF_SIZE = wallOpenShelfNominalSize(OPEN_SHELF_CODE) ?? { width: 9, height: 30, depth: 12 };
+const SHELF_HEIGHT = SHELF_SIZE.height;
 
 function wallCabinet(uid: string, x: number, width: number, height: number): PlacedCabinet {
   return {
@@ -75,19 +81,20 @@ function openShelf(uid: string, x: number, height: number): PlacedCabinet {
     uid,
     cabinetId: 930,
     masterCode: OPEN_SHELF_CODE,
-    description: "Wall End Open Shelf",
+    description: "Wall Open Shelf",
     category: "Wall",
     subCategory: "Open Shelf",
     placement: "wall",
     x,
     y: 0,
-    width: 9,
-    depth: 12,
+    width: SHELF_SIZE.width,
+    depth: SHELF_SIZE.depth,
     height,
     rotation: 0,
     numberOfDoors: 0,
     numberOfDrawers: 0,
     fixedShelfCount: 2,
+    ...(SHELF_HAND ? { openShelfHand: SHELF_HAND } : {}),
     wallId: "top",
     wallOffset: x,
   };
@@ -208,26 +215,38 @@ function mount(container: HTMLElement, placed: readonly PlacedCabinet[], room: R
   bounds.getSize(size);
   bounds.getCenter(center);
   const closeUp = query.get("closeup") === "1";
+  const closeOnly = query.get("shelfonly") === "1";
+  const resolvedHand = resolvedWallOpenShelfHand({ masterCode: OPEN_SHELF_CODE, openShelfHand: SHELF_HAND });
+  // The viewpoint is explicit, not derived from the hand, so a left-hand and a
+  // right-hand capture of the same cabinet are directly comparable.
+  const viewParam = query.get("view");
+  const viewFromLeft = viewParam === "front-left";
   const shelfY = (54 + SHELF_HEIGHT / 2) * INCH;
+  const shelfNode = root.children.find((node) => node.userData?.masterCode === OPEN_SHELF_CODE) ?? root;
+  const cameraSign = viewFromLeft ? -1 : 1;
+  const shelfBounds = new THREE.Box3().setFromObject(shelfNode);
   let target = new THREE.Vector3(center.x - size.x * 0.18, shelfY, 0);
-  let offset = new THREE.Vector3(4.6, 1.5, 7.4);
-  if (closeUp) {
-    // Frame the shelf cabinet's own bounds from the same three-quarter angle, so
-    // the radiused shelf fronts and the finished interior are both readable.
-    const shelfNode = root.children.find((node) => node.userData?.masterCode === OPEN_SHELF_CODE);
-    const shelfBounds = new THREE.Box3().setFromObject(shelfNode ?? root);
+  let offset = new THREE.Vector3(cameraSign * 4.6, 1.5, 7.4);
+  if (closeUp || closeOnly) {
+    // Frame the shelf cabinet's own bounds from the same three-quarter angle.
     shelfBounds.getCenter(target);
     const shelfSize = new THREE.Vector3();
     shelfBounds.getSize(shelfSize);
     const radius = Math.max(shelfSize.x, shelfSize.y, shelfSize.z) * 1.35;
-    offset = new THREE.Vector3(radius * 0.62, radius * 0.10, radius * 1.0);
+    offset = new THREE.Vector3(cameraSign * radius * 0.9, radius * 0.12, radius * 1.0);
+  }
+  if (closeOnly) {
+    // Hide every other cabinet so the shelf is the only subject in frame.
+    for (const node of root.children) {
+      if (node.userData?.masterCode !== OPEN_SHELF_CODE) node.visible = false;
+    }
   }
   const camera = new THREE.PerspectiveCamera(34, width / height, 0.05, 500);
   camera.position.set(target.x + offset.x, target.y + offset.y, target.z + offset.z);
   camera.lookAt(target);
 
   renderer.render(scene, camera);
-  return { renderer, scene, camera };
+  return { renderer, scene, camera, hand: resolvedHand, viewFromLeft };
 }
 
 function run() {
@@ -239,6 +258,7 @@ function run() {
     const shelf = placed.find((item) => item.masterCode === OPEN_SHELF_CODE)!;
     const view = mount(root, placed, room);
     const skuHand = existingCabinetSku(shelf, room, placed).openShelfExposedHand;
+    void skuHand;
     const meshFacts = (() => {
       let shell = 0;
       let shelves = 0;
@@ -289,13 +309,13 @@ function run() {
       } as never),
     ));
 
+    const displayName = wallOpenShelfDisplayName({ masterCode: OPEN_SHELF_CODE });
     const factsHtml = `
-      <strong>${OPEN_SHELF_CODE} &middot; ${Number(shelf.width)}&Prime; W &times; ${Number(shelf.height)}&Prime; H &times; ${Number(shelf.depth)}&Prime; D</strong><br />
-      <span class="dim">bottom ${shelf.mountBottom}&Prime; &middot; top ${Number(shelf.mountBottom) + Number(shelf.height)}&Prime; &middot; doors ${shelf.numberOfDoors} &middot; drawers ${shelf.numberOfDrawers} &middot; fixed shelves ${shelf.fixedShelfCount}</span><br />
-      <span class="dim">shell parts ${meshFacts.shell} &middot; fixed shelves ${meshFacts.shelves} &middot; cabinet fronts ${meshFacts.fronts} &middot; face frames ${meshFacts.faceFrames} &middot; outlines ${meshFacts.outlines}</span><br />
+      <strong>${displayName ?? OPEN_SHELF_CODE}</strong><br />
+      <span class="dim">${OPEN_SHELF_CODE} &middot; bottom ${shelf.mountBottom}&Prime; &middot; top ${Number(shelf.mountBottom) + Number(shelf.height)}&Prime; &middot; doors ${shelf.numberOfDoors} &middot; drawers ${shelf.numberOfDrawers} &middot; fixed shelves ${shelf.fixedShelfCount}</span><br />
+      <span class="dim">hand ${view.hand} &middot; shell parts ${meshFacts.shell} &middot; fixed shelves ${meshFacts.shelves} &middot; cabinet fronts ${meshFacts.fronts} &middot; face frames ${meshFacts.faceFrames} &middot; outline lines ${meshFacts.outlines}</span><br />
       <span class="dim">parts: ${meshFacts.parts.join(", ")}</span><br />
-      <span class="dim">exposed hand: ${String(skuHand)}</span><br />
-      <span class="dim">all meshes: ${meshFacts.allMeshes.join(" | ")}</span>
+      <span class="dim">view: ${view.viewFromLeft ? "front-left three-quarter" : "front-right three-quarter"}</span>
     `;
     caption.innerHTML = factsHtml;
     const pane = document.createElement("pre");
