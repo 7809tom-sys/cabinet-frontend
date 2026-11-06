@@ -43,7 +43,7 @@ describe("Bathroom Designer copy and gates", () => {
     // A five-column grid gave each cell ~40px, which clipped "Bathroom".
     expect(designTool).not.toContain('<div className="grid grid-cols-5 gap-0.5 rounded-lg border border-border p-0.5 bg-muted/30 mb-2">');
     expect(designTool).toContain('data-testid={`designer-room-type-${rt.value}`}');
-    expect(designTool).toContain("min-w-0 flex-1 whitespace-nowrap px-1 py-1.5");
+    expect(designTool).toContain("min-w-0 shrink-0 whitespace-nowrap px-1.5 py-1.5");
   });
 
   it("reopens a restored bathroom plan on the Vanity tab, not the kitchen Base tab", () => {

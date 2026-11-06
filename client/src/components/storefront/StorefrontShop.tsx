@@ -32,6 +32,7 @@ import { useCart } from "@/contexts/CartContext";
 import { toast } from "sonner";
 import { affiliateCabinetDetailHref } from "@/lib/affiliateCabinetDetailRoute";
 import { sortStorefrontCategoryTabs, storefrontCategoryTabLabel } from "@/lib/storefrontCategoryTabs";
+import { mergeWallTabRacks, wallTabExtraCategories } from "@/lib/storefrontWallWineRacks";
 import { canonicalMouldingLabel } from "@shared/catalogCategorySpelling";
 import { isCatalogFreeShippingFlag } from "@shared/freeShippingItem";
 import { affiliateDesignerPath } from "@/lib/affiliateStorefrontUrl";
@@ -622,6 +623,34 @@ function LockedCatalog({
   const { data: catalog, isLoading } = trpc.storefront.familyCatalog.useQuery(catalogInput);
   const { data: promos } = trpc.promotions.activeForStorefront.useQuery();
 
+  // The Wall tab is filtered server-side by EXACT category, so a rack the
+  // supplier filed as "Accessories / Wine Storage", "Wine Rack / Open Display",
+  // or "Specialty / Wine Rack" never arrives on it. Ask for the other buckets
+  // this line really has and keep only the racks (issue #55).
+  type LockedCatalogItem = NonNullable<typeof catalog>["items"][number];
+  const extraRackCategories = useMemo(
+    () => wallTabExtraCategories(category, orderedCategories),
+    [category, orderedCategories],
+  );
+  const rackQueries = trpc.useQueries((t) => extraRackCategories.map((extraCategory) => t.storefront.familyCatalog(
+    {
+      styleId: family.styleId,
+      category: extraCategory,
+      search: debounced || undefined,
+      limit: 60,
+      slug: slug || undefined,
+    },
+    { enabled: category === "Wall" },
+  )));
+  const extraRackItems = rackQueries.flatMap(
+    (query) => ((query.data?.items ?? []) as LockedCatalogItem[]),
+  );
+  // Wall rows as the API returned them, plus every rack found in the other
+  // buckets, de-duplicated by record id.
+  const tabItems: LockedCatalogItem[] = category === "Wall"
+    ? mergeWallTabRacks((catalog?.items ?? []) as LockedCatalogItem[], extraRackItems)
+    : ((catalog?.items ?? []) as LockedCatalogItem[]);
+
   return (
     <section id="shop" className="py-12 md:py-16">
       <div className="container">
@@ -785,11 +814,11 @@ function LockedCatalog({
         {/* Catalog grid */}
         {isLoading ? (
           <div className="flex justify-center py-16"><Spinner className="h-8 w-8" /></div>
-        ) : !catalog || catalog.items.length === 0 ? (
+        ) : tabItems.length === 0 ? (
           <p className="py-12 text-center text-muted-foreground">{t(lang, "rec_empty")}</p>
         ) : (
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-            {catalog.items.map((it) => (
+            {tabItems.map((it) => (
               <CatalogCard
                 key={it.id}
                 item={it}

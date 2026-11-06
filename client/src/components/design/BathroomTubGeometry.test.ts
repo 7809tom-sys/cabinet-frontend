@@ -41,25 +41,25 @@ describe("Bathroom tub plan and 3D parity", () => {
     }
   });
 
-  it("keeps custom zone sizes in Floor Plan only and defaults an oversized soaking tub parallel to the nearest wall", () => {
-    const zone = { ...makeFurniture("bathroom-zone-tub-60", 0, 60), planningZoneSize: { version: 1 as const, widthIn: 72, depthIn: 36 } };
-    const root = new THREE.Group();
-    addFurniture(root, zone);
-    expect(root.children).toHaveLength(0);
-    expect(furniturePlanFrame(zone)).toMatchObject({ width: 72, depth: 36 });
+  it("defaults an oversized soaking tub parallel to the nearest wall with no zone sizing", () => {
     expect(bathroomTubWallParallelPlacement(makeFurniture("pelican-tub-pl-02141-67", 45, 14), { width: 120, depth: 96 }).rotation).toBe(90);
+    const tub = makeFurniture("pelican-tub-pl-02141-67", 10, 10);
+    expect(furniturePlanFrame(tub)).toMatchObject({
+      width: FURNITURE_CATALOG.find((entry) => entry.id === tub.defId)!.w,
+      depth: FURNITURE_CATALOG.find((entry) => entry.id === tub.defId)!.d,
+    });
   });
 
-  it("wires both plan and 3D views to the same centered rotation and right-click zone Attributes action", () => {
+  it("wires both plan and 3D views to the same centered fixture rotation with no zone Attributes action", () => {
     const host = readFileSync(new URL("../../pages/DesignTool.tsx", import.meta.url), "utf8");
     const plan = readFileSync(new URL("./PlanCanvas.tsx", import.meta.url), "utf8");
     const threeD = readFileSync(new URL("./InteractiveRoom3D.tsx", import.meta.url), "utf8");
     expect(host.match(/onRotateFurn=\{rotateFurniture\}/g)).toHaveLength(2);
     expect(host.match(/onRotateFurniture=\{rotateFurniture\}/g)).toHaveLength(2);
-    expect(host.match(/onOpenFurnitureAttributes=\{openFurnitureAttributes\}/g)).toHaveLength(4);
+    expect(host).not.toContain("onOpenFurnitureAttributes");
     expect(plan).toContain("furniturePlanFrame(f)");
-    expect(plan).toContain("onContextMenu={(event) => { if (!bathroomPlanningZone)");
-    expect(plan).toContain("onOpenFurnitureAttributes?.(f.uid)");
-    expect(threeD).not.toContain('data-testid="three-d-zone-attributes"');
+    expect(plan).not.toContain("bathroomPlanningZone");
+    expect(plan).not.toContain("bathroom-zone-attributes");
+    expect(threeD).not.toContain("bathroom-zone");
   });
 });

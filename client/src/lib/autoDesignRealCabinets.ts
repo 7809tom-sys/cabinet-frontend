@@ -15,6 +15,7 @@
  * cabinet and no legal slide can close.
  */
 import { cabinetDrawingType } from "./cabinetGraphics";
+import { isPlacedCornerCabinet } from "./autoDesignCornerGuard";
 import {
   COLLISION_EPSILON_IN,
   STD,
@@ -144,6 +145,9 @@ export function planRealCabinetFixes(input: {
   }
   // Widen a neighbor into the opening when the line sells the wider box.
   for (const neighbor of input.neighbors) {
+    // A seated corner cabinet keeps its own footprint and its corner seat. Only
+    // a run cabinet may grow, and only into a wider row of its own family.
+    if (isPlacedCornerCabinet(neighbor)) continue;
     const targetWidth = Math.round((Number(neighbor.width) + input.gapIn) * 8) / 8;
     const family = /^([A-Z]+)/i.exec(neighbor.masterCode ?? "")?.[1]?.toUpperCase();
     const wider = family
@@ -161,9 +165,11 @@ export function planRealCabinetFixes(input: {
       widthIn: targetWidth,
     });
   }
-  // Slide a neighbor to open a real width.
+  // Slide a neighbor to open a real width. A corner never slides: leaving its
+  // vertex is what empties the inside corner.
   if (slideLimit > 0 && input.gapIn + slideLimit >= REAL_CABINET_MIN_WIDTH_IN) {
     for (const neighbor of input.neighbors) {
+      if (isPlacedCornerCabinet(neighbor)) continue;
       fixes.push({ kind: "slide", cabinet: neighbor, deltaIn: Math.min(slideLimit, REAL_CABINET_MAX_WIDTH_IN - input.gapIn) });
     }
   }

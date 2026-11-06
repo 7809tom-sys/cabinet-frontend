@@ -531,8 +531,8 @@ function rawCutouts(placed: readonly PlacedCabinet[], sinks: readonly SinkFixtur
     const notes: string[] = [];
     if (sink.apronFront) notes.push("Apron-front sink: the top is notched around the exposed front.");
     if (sink.bowlCount === 2) notes.push("Two-bowl fixture.");
-    if (sink.faucetDeckConflict === "shallow-countertop-deck") {
-      notes.push("Designer flagged no usable rear deck for a deck-mounted faucet.");
+    if (sink.faucetDeckAdvisory === "tight-rear-deck" || sink.faucetDeckConflict === "shallow-countertop-deck") {
+      notes.push("Faucet sits close behind the basin; a one- or two-hole deck mount still fits.");
     }
     if (sink.bowlWidth != null || sink.bowlDepth != null) {
       const bowls = [sink.bowlWidth, sink.bowlDepth].filter((value) => value != null);

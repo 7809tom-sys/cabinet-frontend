@@ -61,6 +61,10 @@ export function slabGrainColorPlan(style: DoorColorInput, choice: SlabGrainChoic
       faceTileDrawerIn: entry.faceTileDrawerIn,
       normalUrl: entry.faceNormal,
       tintHex: tint && !tint.clamped ? tint.tintHex : null,
+      tintLinear: tint ? tint.tintLinear : null,
+      // A slab's grain is a template the wizard picks, not this door's own photo,
+      // so the DL photo light compensation does not apply.
+      grainSubstituted: true,
     },
   };
 }

@@ -31,9 +31,13 @@ describe("Designer visual faucet selection", () => {
     expect(source).toContain("Enter the documented wall-mount datum above the finished countertop");
   });
 
-  it("blocks a deck-mounted faucet when the selected non-apron sink leaves too little rear countertop deck", () => {
-    expect(source).toContain("nonApronSinkDeckPlacement(cab, room, verifiedDimensions)");
-    expect(source).toContain("!deckPlacement.faucetCanFit");
-    expect(source).toContain("does not leave the required rear countertop deck for a faucet");
+  it("never blocks a catalog-valid sink because the rear deck is tight, and never redesigns the layout for it", () => {
+    // Tom's rule: faucets are universal across one- and two-hole deck mounts, so
+    // the rear deck is informational. Assert the blocking call is gone.
+    expect(source).not.toContain("!deckPlacement.faucetCanFit");
+    expect(source).not.toContain("does not leave the required rear countertop deck for a faucet");
+    expect(source).not.toContain("nonApronSinkDeckPlacement(cab, room, verifiedDimensions)");
+    // The sink still carries the advisory, and the sink itself still places.
+    expect(source).toContain("faucetDeckAdvisory: faucetProduct ? autoSink.faucetDeckAdvisory : undefined");
   });
 });

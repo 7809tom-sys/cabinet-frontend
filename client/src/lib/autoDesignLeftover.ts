@@ -11,6 +11,7 @@
  * shut with a sliver.
  */
 import { autoDesignFillerMaxIn } from "./autoDesignSeamFillers";
+import { isPlacedCornerCabinet } from "./autoDesignCornerGuard";
 import { kitchenRuleNumber, KITCHEN_RULE_PARAMETER_DEFAULTS } from "./kitchenRuleParameters";
 import {
   COLLISION_EPSILON_IN,
@@ -130,7 +131,9 @@ export function resolveLeftoverGap(input: {
   }
 
   // 1) Widen the adjoining real cabinet to the nearest real width that closes the gap.
-  if (input.neighbor && input.neighbor.placement === "base" && !isFillerItem(input.neighbor)) {
+  // A seated corner cabinet is never resized: a corner owns the room vertex and
+  // the whole point of the pass is to keep real cabinets there.
+  if (input.neighbor && input.neighbor.placement === "base" && !isFillerItem(input.neighbor) && !isPlacedCornerCabinet(input.neighbor)) {
     const neighborWidth = Number(input.neighbor.width) || 0;
     const wanted = neighborWidth + gap;
     const matches = input.catalog

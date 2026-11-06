@@ -342,7 +342,9 @@ export function PelicanFaucetPicker({
     () => groupPelicanConfigurations(faucets.filter((item) => Boolean(item.imageUrl) && (item.sellPrice ?? 0) > 0)),
     [faucets],
   );
-  const quickChoices = configurations.slice(0, 6);
+  // Bathroom plans get the whole vanity line; six suggestions hid the rest of it.
+  const initialCount = kind === "vanity" ? 12 : 6;
+  const quickChoices = configurations.slice(0, initialCount);
   const visibleConfigurations = showAll ? configurations : quickChoices;
   const label = kind === "vanity" ? "vanity faucets" : "kitchen faucets";
 
@@ -350,7 +352,7 @@ export function PelicanFaucetPicker({
     <section data-testid="pelican-faucet-picker" className="space-y-2">
       <div className="flex items-center justify-between gap-2">
         <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-          Verified Pelican {kind === "vanity" ? "Vanity" : "Kitchen"} Faucets
+          Pelican {kind === "vanity" ? "Vanity" : "Kitchen"} Faucets
         </span>
         {!isLoading && configurations.length > 6 && (
           <button
@@ -374,7 +376,9 @@ export function PelicanFaucetPicker({
       ) : (
         <>
           <p className="text-[10px] leading-snug text-muted-foreground">
-            Choose a finish, then use it to attach that exact Pelican finish, image, price, and measured fixture profile.
+            {kind === "vanity"
+              ? "Every Pelican vanity faucet is listed — single hole, 4″ centerset, and 8″ widespread. Choose a finish, then use it to attach that exact Pelican finish, image, price, and measured fixture profile."
+              : "Choose a finish, then use it to attach that exact Pelican finish, image, price, and measured fixture profile."}
           </p>
           <div className="grid grid-cols-2 gap-2">
             {visibleConfigurations.map((configuration) => (

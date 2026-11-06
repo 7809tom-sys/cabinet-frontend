@@ -110,6 +110,35 @@ export interface DlcFaceCrop {
   normalUrl?: string | null;
   /** Multiplier colour that brings the grain texture to the sample colour. */
   tintHex?: string | null;
+  /**
+   * The same multiplier in linear light, unclamped. A material colour multiplies
+   * an albedo in linear space, and a hex cannot express a brightening: a door
+   * lighter than its template grain clamps to `#ffffff` in `tintHex`. Use this
+   * value when present so the face reaches the door's own colour.
+   */
+  tintLinear?: [number, number, number] | null;
+  /**
+   * True when this crop's grain is a template borrowed from another finish
+   * rather than this finish's own measured photo. The DL photo light
+   * compensation is calibrated against that photo, so it does not apply here.
+   */
+  grainSubstituted?: boolean;
+}
+
+/**
+ * True when the DL photo light compensation applies to this face crop.
+ *
+ * The compensation is calibrated against a DL finish's own studio-lit photo: it
+ * cancels the Designer rig's light sum so that photo reproduces on screen. When
+ * the crop's grain is a *template* borrowed from another finish (any 2.75/3 inch
+ * shaker that is not itself a DL finish gets Versa or Espresso grain), there is
+ * no such photo behind it, and applying the compensation darkens the substitution
+ * instead: Natura Maple's grain arrived at ΔE2000 26.7 from its own recorded
+ * colour. A substituted grain keeps the scene tone map, like every other photo
+ * face in the Designer.
+ */
+export function dlcPhotoCompensationApplies(crop: DlcFaceCrop | null | undefined): boolean {
+  return Boolean(crop?.solidColor) && crop?.grainSubstituted !== true;
 }
 
 /**

@@ -1,0 +1,35 @@
+<!doctype html>
+<!--
+  Before/after harness for the bathroom planner zone removal.
+
+  It renders the REAL Floor Plan canvas (PlanCanvas) with the REAL saved-plan
+  furniture payload, including legacy "bathroom-zone-*" rows and a toilet that
+  used to sit inside the vanity zone. On the previous build those rows draw the
+  dashed "Movable planning zone" boxes, their Attributes control and the red
+  "Different planning zone" warning; on this build the same payload draws only
+  the real fixtures, which move freely.
+
+  Served by the Vite dev server at /dev/bathroom-zones-shot.html and used only by
+  e2e/bathroom-zones-screenshot.spec.ts. It is not part of the app bundle.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Bathroom planner zone check</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #eef1f4; font-family: system-ui, sans-serif; }
+      #root { display: grid; grid-template-rows: auto 1fr; height: 100vh; }
+      #caption { padding: 10px 16px; background: #fff; border-bottom: 1px solid #cbd5e1; font-size: 13px; line-height: 1.5; color: #0f172a; }
+      #caption strong { font-size: 15px; }
+      #plan { position: relative; min-height: 0; }
+      #plan > * { height: 100%; }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <div id="caption">Loading the bathroom plan…</div>
+      <div id="plan"></div>
+    </div>
+    <script type="module" src="/src/bathroomZonesScreenshotHarness.tsx"></script>
+  </body>
+</html>

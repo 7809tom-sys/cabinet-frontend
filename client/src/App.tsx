@@ -11,6 +11,7 @@ import { StorefrontEmbed } from "@/components/storefront/StorefrontEmbed";
 import { StorefrontSocialIcons } from "@/components/storefront/StorefrontSocialIcons";
 import { StoreCornerMenu } from "@/components/storefront/StoreCornerMenu";
 import { GoogleAnalyticsTracker } from "@/components/GoogleAnalyticsTracker";
+import DesignerHistoryNav from "@/components/design/DesignerHistoryNav";
 import Home from "@/pages/Home";
 import NotFound from "@/pages/NotFound";
 import { lazy, Suspense, useEffect } from "react";
@@ -103,6 +104,8 @@ const ReturnPolicy = lazy(() => import("@/pages/ReturnPolicy"));
 const PrivacyPolicy = lazy(() => import("@/pages/PrivacyPolicy"));
 const Terms = lazy(() => import("@/pages/Terms"));
 const CrmMondayPreview = lazy(() => import("@/pages/CrmMondayPreview"));
+const CrmCustomerDesignPreview = lazy(() => import("@/pages/CrmCustomerDesignPreview"));
+const CrmCustomerLookupPreview = lazy(() => import("@/pages/CrmCustomerLookupPreview"));
 const InstallationEstimateDocument = lazy(() => import("@/pages/InstallationEstimateDocument"));
 const Hardware = lazy(() => import("@/pages/Hardware"));
 const AffiliateGuide = lazy(() => import("@/pages/AffiliateGuide"));
@@ -237,15 +240,23 @@ function DesignerRoute() {
       </Suspense>
     </ErrorBoundary>
   );
+  // Back/Forward sits above the workspace, not inside it, so it stays reachable
+  // while the email gate is still on screen.
+  const withHistoryNav = (
+    <div className="flex h-full min-h-0 flex-1 flex-col">
+      <DesignerHistoryNav fallbackHref={affiliateSlug ? affiliateStorefrontPath(affiliateSlug) : "/"} />
+      <div className="min-h-0 flex-1 overflow-hidden">{designer}</div>
+    </div>
+  );
 
   if (affiliateSlug) {
-    return <AffiliateShell slug={affiliateSlug} fullHeight hideAdminEditModeBar>{designer}</AffiliateShell>;
+    return <AffiliateShell slug={affiliateSlug} fullHeight hideAdminEditModeBar>{withHistoryNav}</AffiliateShell>;
   }
 
   return (
     <div className="flex flex-col overflow-hidden" style={{ height: "100dvh" }}>
       <TopNav />
-      <div className="flex-1 min-h-0 overflow-hidden">{designer}</div>
+      {withHistoryNav}
     </div>
   );
 }
@@ -1118,6 +1129,22 @@ export default function App() {
           <Route path="/dev/crm-preview">
             <Suspense fallback={<PageLoader />}>
               <CrmMondayPreview />
+            </Suspense>
+          </Route>
+        )}
+
+        {import.meta.env.DEV && (
+          <Route path="/dev/crm-customer-designs">
+            <Suspense fallback={<PageLoader />}>
+              <CrmCustomerDesignPreview />
+            </Suspense>
+          </Route>
+        )}
+
+        {import.meta.env.DEV && (
+          <Route path="/dev/crm-customer-lookup">
+            <Suspense fallback={<PageLoader />}>
+              <CrmCustomerLookupPreview />
             </Suspense>
           </Route>
         )}

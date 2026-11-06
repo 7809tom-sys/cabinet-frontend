@@ -79,7 +79,7 @@ import {
   firstRestorableDraft,
   planGuestDraftAdoption,
 } from "@/lib/designDraftOwnership";
-import { isPelicanSinkCompatibleWithBase, isVerifiedPelicanVanityFaucet, isVerifiedPelicanVanitySink, pelicanSinkBaseKind, sinkBaseOpeningWidthIn, verifiedPelicanFaucetProfile, verifiedPelicanPotFillerProfile, verifiedPelicanSinkFitsCabinet, verifiedPelicanSinkProfile } from "@/lib/pelicanFixtureProfiles";
+import { isPelicanSinkCompatibleWithBase, pelicanSinkBaseKind, sinkBaseOpeningWidthIn, verifiedPelicanFaucetProfile, verifiedPelicanPotFillerProfile, verifiedPelicanSinkFitsCabinet, verifiedPelicanSinkProfile } from "@/lib/pelicanFixtureProfiles";
 import {
   buildPelicanSinkOnCabinet,
   chooseSmallestPelicanSinkBase,
@@ -91,10 +91,17 @@ import {
 } from "@/lib/pelicanAutoPlace";
 import { TabletPreviewOverlay, type TabletPreviewMode } from "@/components/design/TabletPreviewOverlay";
 import { isPelicanBathroomFixtureProfileVerified, verifiedPelicanBathroomFixtureProfile } from "@/lib/pelicanBathroomFixtureProfiles";
-import { BATHROOM_STARTER_TEMPLATE, bathroomFixtureChecklist, bathroomFixtureStarterZonePlacement, bathroomTubFillerPlacement, bathroomPlanningGuidance, bathroomZoneOverlapWarnings, makeBathroomStarterTemplate } from "@/lib/bathroomPlanning";
+import { BATHROOM_STARTER_TEMPLATE, bathroomFixtureChecklist, bathroomFixtureFreePlacement, bathroomTubFillerPlacement, bathroomPlanningGuidance, makeBathroomStarterTemplate } from "@/lib/bathroomPlanning";
 import { bathroomTubWallParallelPlacement, rotateBathroomFurniture } from "@/lib/bathroomPlanning";
-import BathroomZoneAttributesDialog from "@/components/design/BathroomZoneAttributesDialog";
-import { isBathroomVanityCabinet } from "@/lib/bathroomVanityCatalog";
+import { VanitySinkFacts } from "@/components/design/VanityFixtureFacts";
+import {
+  bathroomVanityFaucetMatchNote,
+  bathroomVanityFaucetOptions,
+  isBathroomVanityCabinet,
+  isBathroomVanityFaucetRow,
+  isBathroomVanitySinkRow,
+  vanitySinkFitsVanityWidth,
+} from "@/lib/bathroomVanityCatalog";
 import { canAdminReviewSavedDesign } from "@/lib/designAccess";
 import {
   DEFAULT_FRESH_LAYOUT_PRESET_ID,
@@ -142,6 +149,7 @@ import { countertopToastVisible, COUNTERTOP_TOAST_TIMEOUT_MS, useDebouncedValue,
 import { ColorStyleQuickPicker } from "@/components/design/ColorStyleQuickPicker";
 import { ApproveDoorButton } from "@/components/admin/ApproveDoorButton";
 import { clampRefrigeratorAssemblyToPanels } from "@/lib/refrigeratorPanelClamp";
+import { normalizeRefrigeratorBridgeDepth } from "@/lib/refrigeratorBridgeDepth";
 import { overApplianceWallMount } from "@/lib/overApplianceMount";
 import { StyleSamplePreview } from "@/components/design/StyleSamplePreview";
 import type { SampleStyleImages } from "@/lib/sampleImageQa";
@@ -195,14 +203,14 @@ import {
   resolveSwing, cycleSwing, swingText, hasDoorSwing, DoorSwing, resolveCabinetHardwarePosition, cabinetHardwarePositionPatch, isCabinetDoorHardwareEligible, applyCabinetDoorHardwareToAll, supportsCenteredTopDoorPull, requiresCenteredTopDoorPull, usesRaisedFloorWallDoorPull, isWd18CountertopDrawerCabinet, normalizeWd18CountertopMounts, ordinaryWallMountBottom,
   // (closet helpers imported separately below)
   APPLIANCES, applianceAsDesignCabinet, appliancesForRoom, ROOM_TYPES, type RoomType,
-  FURNITURE_CATALOG, makeFurniture, makePelicanBathroomFixture, furnitureFootprint, type PlacedFurniture,
+  FURNITURE_CATALOG, makeFurniture, makePelicanBathroomFixture, furnitureFootprint, restoredFurniture, type PlacedFurniture,
   WallOpening, WallSide, OPENINGS, OpeningDef, makeOpening,
 	  finishColors, toeKickLinearInches, lightRailLinearInches, inchesToLinearFeet,
   trimPiecesNeeded, countertopArea, countertopSurfaces, countertopSurfaceInsideRoom, battenLinearInches, valancePiecesNeeded,
   COUNTERTOP_MATERIALS, DEFAULT_COUNTERTOP_MATERIAL_ID, countertopMaterial,
   EDGE_PROFILES, DEFAULT_EDGE_PROFILE_ID, edgeProfile,
 	  type PlanAnnotation, type CabinetWallDragPreview, makeAnnotation,
-	  makeSink, makeSinkForCabinet, makeDefaultSinkForCabinet, nonApronSinkDeckPlacement, normalizeSinkFixturesToBases, potFillerMountedRange, isRangeOrCooktop, sinkPlanDimensions, SINK_PRESETS, type PotFillerFixture, type SinkFixture, type SinkType,
+	  makeSink, makeSinkForCabinet, makeDefaultSinkForCabinet, normalizeSinkFixturesToBases, potFillerMountedRange, isRangeOrCooktop, sinkPlanDimensions, SINK_PRESETS, type PotFillerFixture, type SinkFixture, type SinkType,
   snapToWall, snapPosition, nextFreeSpotOnWall, mountedMicrowaveOverRangeSpot, overRangeMicrowaveAttachment,
   clampCabinetsToRoom, clampOpeningsToRoom, clampIslandToRoom, clampRoomInches,
   WALL_LABELS, doorPanelKind,
@@ -273,7 +281,7 @@ import { ensureDrawerBase } from "@/lib/autoDesignDrawerRule";
 import { autoBuildCornerCatalog, autoDesignCornerSlotPoint, autoDesignCornerSlots, autoDesignExcludedEngineWallIds, autoDesignLayoutUsesWall, autoDesignRunWallIds, type AutoBuildCornerCandidate, type AutoDesignCornerChoice, type AutoDesignCornerSlot } from "@/lib/autoDesignCornerStage";
 import { evaluateAutoDesignCornerFit, type AutoDesignCornerFit } from "@/lib/cornerFit";
 import { useKitchenRuleParameterSync } from "@/lib/kitchenRulesApi";
-import { rangeBridgeSpec, reviewAfterShift, separateRangeAndRefrigerator } from "@/lib/kitchenAdjacency";
+import { reviewAfterShift, separateRangeAndRefrigerator } from "@/lib/kitchenAdjacency";
 import { bakesALot, cooksALot, normalizeKitchenUsage } from "@/lib/kitchenUsage";
 import { acceptMeasuredCornerRefrigeratorBay } from "@/lib/autoDesignRefrigeratorBay";
 import { buildAutoDesignWallCabinets, resolveWallHeightClass, type AutoDesignUpperCorner } from "@/lib/autoDesignWallCabinets";
@@ -383,9 +391,11 @@ import {
   guessCountertopMaterialId,
   activeThreeDSurface,
   normalizeFinalMaterialSelections,
+  mergeVerifiedSurfacePriceRecords,
   refreshVerifiedSurfaceSelections,
   setCountertopSurfaceForScope,
   type SurfaceRole,
+  type VerifiedSurfaceSelectionRecord,
 } from "@/lib/surfaceSelection";
 import { selectedBacksplashTextureUrl } from "@/lib/backsplashProductMaterial";
 import { mosaicCatalogFor } from "@/lib/mosaicCatalog";
@@ -1558,13 +1568,30 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     { ids: selectedSurfaceIdsForMaterialRefresh, affiliateSlug: affiliateSlug ?? undefined },
     { enabled: selectedSurfaceIdsForMaterialRefresh.length > 0 },
   );
+  // designSelectionByIds deliberately keeps only rows the kitchen palette can
+  // draw exactly, so a sourced toilet, bidet, tub, or enclosure never comes
+  // back from it. Reading only that list cleared a placed bathroom fixture's
+  // real sell price to null and the fixture then reached Materials and the
+  // cart at $0.00. byIds is the same active, catalog-visible, source-priced
+  // record without the 3D-drawability gate, so it supplies the price and
+  // source identity those fixtures legitimately have. Rows absent from both
+  // lists are still treated as stale and lose the saved amount.
+  const { data: catalogSelectedSurfaceRecords, isSuccess: catalogSelectedSurfacesLoaded } = trpc.surfaces.byIds.useQuery(
+    { ids: selectedSurfaceIdsForMaterialRefresh },
+    { enabled: selectedSurfaceIdsForMaterialRefresh.length > 0 },
+  );
+  const selectedSurfacePriceRecords = useMemo<VerifiedSurfaceSelectionRecord[]>(
+    () => mergeVerifiedSurfacePriceRecords(verifiedSelectedSurfaceRecords, catalogSelectedSurfaceRecords),
+    [catalogSelectedSurfaceRecords, verifiedSelectedSurfaceRecords],
+  );
+  const selectedSurfacePriceRecordsLoaded = verifiedSelectedSurfacesLoaded && catalogSelectedSurfacesLoaded;
   useEffect(() => {
-    if (!verifiedSelectedSurfacesLoaded || !verifiedSelectedSurfaceRecords) return;
+    if (!selectedSurfacePriceRecordsLoaded) return;
     setSelectedSurfaces((current) => {
-      const refreshed = refreshVerifiedSurfaceSelections(current, verifiedSelectedSurfaceRecords);
+      const refreshed = refreshVerifiedSurfaceSelections(current, selectedSurfacePriceRecords);
       return refreshed.some((surface, index) => surface !== current[index]) ? refreshed : current;
     });
-  }, [verifiedSelectedSurfaceRecords, verifiedSelectedSurfacesLoaded]);
+  }, [selectedSurfacePriceRecords, selectedSurfacePriceRecordsLoaded]);
   // Every Pelican list the Designer prices must carry the storefront scope, or an
   // affiliate shopper sees the unmarked platform price for the same product the
   // affiliate catalog sells above it.
@@ -1712,7 +1739,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       }
       const sinkRole = role === "sink" || role === "bathroom-sink";
       if (sinkRole) {
-        if (isVerifiedPelicanVanitySink(item.pelicanCode)) {
+        if (isBathroomVanitySinkRow(item)) {
           const vanityHost = placedRef.current.find((cabinet) => {
             const label = `${cabinet.masterCode} ${cabinet.category ?? ""} ${cabinet.subCategory ?? ""} ${cabinet.description ?? ""}`;
             return cabinet.placement === "base" && /\bvanity\b/i.test(label) && !/\bvalance\b/i.test(label);
@@ -1732,7 +1759,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           toast.success(`${item.name} placed in ${host.masterCode}, centered in the base. Add a faucet to mount it on the counter behind the basin.`);
           return;
         }
-        if (isVerifiedPelicanVanitySink(item.pelicanCode)) {
+        if (isBathroomVanitySinkRow(item)) {
           toast.error(`${item.name} needs a vanity sink base that does not already have a Pelican basin.`);
           return;
         }
@@ -1851,9 +1878,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       toast.error("No non-overlapping visual position is available beside the tub. Move the tub or another fixture first.");
       return;
     }
-    const starterZonePlacement = bathroomFixtureStarterZonePlacement(draft, bathroomFurnitureRef.current);
-    const fixture = tubFillerPlacement ?? (starterZonePlacement
-      ? { ...draft, ...starterZonePlacement }
+    const freePlacement = bathroomFixtureFreePlacement(draft, bathroomFurnitureRef.current, room);
+    // Fixtures drop into the first open spot. The wall-parallel default is only a
+    // fallback for a room too crowded for the free search, so a freshly placed
+    // fixture never lands on top of another one.
+    const fixture = tubFillerPlacement ?? (freePlacement
+      ? { ...draft, ...freePlacement }
       : bathroomTubWallParallelPlacement({
           ...draft,
           x: Math.max(0, (room.width - definition.w) / 2),
@@ -1866,9 +1896,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       return next;
     });
     setSelectedFurnUid(fixture.uid);
-    toast.success(tubFillerPlacement ? `${item.name} placed beside the tub — visual planning only; verify plumbing fit` : starterZonePlacement
-      ? `${item.name} placed and centered in the ${starterZonePlacement.zoneLabel}`
-      : `${item.name} placed in Floor Plan and 3D`);
+    toast.success(tubFillerPlacement ? `${item.name} placed beside the tub — visual planning only; verify plumbing fit` : `${item.name} placed in Floor Plan and 3D`);
   }, [room.depth, room.width]);
   // Clear both saved layers: the source product used by Cart/3D and the plan's
   // representative material. Clearing only one left the flooring pattern visible.
@@ -2498,14 +2526,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     bathroomFurnitureRef.current = furniture;
   }, [furniture]);
   const [selectedFurnUid, setSelectedFurnUid] = useState<string | null>(null);
-  const [zoneAttributesUid, setZoneAttributesUid] = useState<string | null>(null);
-  const zoneAttributesItem = furniture.find((item) => item.uid === zoneAttributesUid) ?? null;
-  const openFurnitureAttributes = useCallback((uid: string) => {
-    const item = bathroomFurnitureRef.current.find((candidate) => candidate.uid === uid);
-    if (layoutLocked || !item || FURNITURE_CATALOG.find((candidate) => candidate.id === item.defId)?.category !== "bathroom-zone") return;
-    setSelectedFurnUid(uid);
-    setZoneAttributesUid(uid);
-  }, [layoutLocked]);
   const rotateFurniture = useCallback((uid: string) => {
     if (layoutLocked) return;
     setFurniture((previous) => previous.map((item) => item.uid === uid ? rotateBathroomFurniture(item, room) : item));
@@ -2515,15 +2535,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     const definition = selected ? FURNITURE_CATALOG.find((item) => item.id === selected.defId) ?? null : null;
     return bathroomPlanningGuidance(verifiedPelicanBathroomFixtureProfile(selected?.pelicanCode ?? definition?.pelicanCode));
   }, [furniture, selectedFurnUid]);
-  const bathroomZoneWarningsByFixture = useMemo(() => {
-    const warningsByFixture = new Map<string, ReturnType<typeof bathroomZoneOverlapWarnings>>();
-    for (const warning of bathroomZoneOverlapWarnings(furniture)) {
-      const existing = warningsByFixture.get(warning.fixtureUid) ?? [];
-      existing.push(warning);
-      warningsByFixture.set(warning.fixtureUid, existing);
-    }
-    return warningsByFixture;
-  }, [furniture]);
   const bathroomChecklist = useMemo(() => bathroomFixtureChecklist({
     cabinets: placed,
     sinks,
@@ -5532,7 +5543,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const active3DDrawerSampleUrl = activeFacePlan?.sourceKind === "split" ? activeFacePlan.drawerUrl : null;
   const activeFaceSourceKind: FaceSourceKind | undefined = activeFacePlan?.sourceKind;
   const activeFaceCrop = activeFacePlan?.dlcCrop
-    ? { slug: activeFacePlan.dlcCrop.slug, doorSize: activeFacePlan.dlcCrop.doorSize, drawerSize: activeFacePlan.dlcCrop.drawerSize, drawerSolidColor: activeFacePlan.dlcCrop.drawerSolidColor, solidColor: activeFacePlan.dlcCrop.solidColor, grainUrl: activeFacePlan.dlcCrop.grainUrl, faceTileIn: activeFacePlan.dlcCrop.faceTileIn, faceTileDrawerIn: activeFacePlan.dlcCrop.faceTileDrawerIn, normalUrl: activeFacePlan.dlcCrop.normalUrl, tintHex: activeFacePlan.dlcCrop.tintHex }
+    ? { slug: activeFacePlan.dlcCrop.slug, doorSize: activeFacePlan.dlcCrop.doorSize, drawerSize: activeFacePlan.dlcCrop.drawerSize, drawerSolidColor: activeFacePlan.dlcCrop.drawerSolidColor, solidColor: activeFacePlan.dlcCrop.solidColor, grainUrl: activeFacePlan.dlcCrop.grainUrl, faceTileIn: activeFacePlan.dlcCrop.faceTileIn, faceTileDrawerIn: activeFacePlan.dlcCrop.faceTileDrawerIn, normalUrl: activeFacePlan.dlcCrop.normalUrl, tintHex: activeFacePlan.dlcCrop.tintHex, tintLinear: activeFacePlan.dlcCrop.tintLinear, grainSubstituted: activeFacePlan.dlcCrop.grainSubstituted }
     : null;
   const active3DRoomSceneReferenceUrl = useMemo(() => {
     const s = doorStyles?.find((d) => d.id === styleId) as { roomSceneImageUrl?: string | null } | undefined;
@@ -5644,7 +5655,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	      setOpenings(restoredOpenings);
       setPotFillers(Array.isArray(persisted?.potFillers) ? persisted.potFillers : []);
       setIsland(persisted?.island ?? null);
-      setFurniture(Array.isArray(persisted?.furniture) ? persisted.furniture : []);
+      setFurniture(restoredFurniture(persisted?.furniture));
       setPonyWalls(Array.isArray(persisted?.ponyWalls) ? persisted.ponyWalls : []);
       // Normalize placement for appliance items — older saved designs may have
       // stored placement:"tall" for FRIDGE-* or RANGE-* items. Correct them here
@@ -9097,13 +9108,15 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     if (!range) { toast.error("The range changed before the bridge cabinet was offered. Nothing was added."); return; }
     const proposal = rangeCompanionProposal(range, room, wallCabPoolRef.current, appliancePalette, wallCabHeightRef.current);
     if (!proposal) { toast.error("A matching selected-line bridge cabinet and microwave are not available for this range."); return; }
-    const bridgeSpec = rangeBridgeSpec({ rangeWidthIn: Number(range.width) || 30, hangsBelow: true });
-    const bridgeCode = bridgeSpec.code.toUpperCase();
-    const bridgeSource = wallCabPoolRef.current.find((item) => item.masterCode.toUpperCase().replace(/[^A-Z0-9]/g, "") === bridgeCode);
-    const aligned = bridgeSource
-      ? { ...proposal, bridge: bridgeSource, bridgeMountBottom: bridgeSpec.bottomIn }
-      : proposal;
-    setRangeCompanionPrompt({ rangeUid: range.uid, proposal: aligned, microwaveAlreadyPlaced: false });
+    // The proposal already carries the right bridge: `overRangeBridgeFor` matches the
+    // RANGE width and sizes the height so its top lands on the upper run beside it
+    // (30" uppers -> a 12" W3012 topping at 84"). A second, hard-coded "24 inch
+    // bridge at the 72 inch datum, top 96 inches" override used to run here and
+    // replaced that 12" box with a 24" one, which is the reported bug: the wall
+    // cabinet above the range came out twice the height it should have been and
+    // stood 12" above its neighbouring uppers. The bridge is only ever what the one
+    // selector chose, so the prompt and the build cannot disagree.
+    setRangeCompanionPrompt({ rangeUid: range.uid, proposal, microwaveAlreadyPlaced: false });
   }, [appliancePalette, autoDesignRangeVentPrompt, room, setOverRangeAnswer]);
   const addWscSpiceStackUpper = useCallback((cabinetId: number) => {
 	    const prompt = spiceStackPrompt;
@@ -11120,7 +11133,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       // Same containment pass as Auto-Design: the refrigerator and its cabinet above stay inside the end
       // panels. The pop-up only warns about an open side; it never adds a panel the user did not choose.
       const contained = clampRefrigeratorAssemblyToPanels({ placed: previewResult.placed, refrigeratorUid: fridge.uid, room });
-      const committedPreview = contained.placed;
+      // Depth rule: the cabinet above comes forward so its face is flush with the
+      // end panel whenever panels are used. This runs after everything that can
+      // re-seat a wall box on the wall plane, so the flush face survives.
+      const committedPreview = normalizeRefrigeratorBridgeDepth(contained.placed, room);
       placedRef.current = committedPreview;
       setPlaced(() => committedPreview);
       for (const note of contained.notes) toast.info(note, { duration: 7000 });
@@ -11821,13 +11837,13 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     setViewMode("plan");
     setSelectedUid(null);
     setSelectedOpeningUid(null);
-    setSelectedFurnUid(starter.furniture[0]?.uid ?? null);
+    setSelectedFurnUid(null);
     setPolygonEditMode(false);
     setDrawMode(false);
     setMeasureMode(false);
     setLayoutStarterOpen(false);
     setMobilePanel(null);
-    toast.success("Bathroom starter applied. Move the labeled planning zones, then select actual Pelican products from Bathroom Fixtures.");
+    toast.success("Blank bathroom room ready. Add cabinets or source-priced Pelican fixtures from Bathroom Fixtures.");
   }, [annotations.length, applyRoom, furniture.length, island, layoutLocked, openings.length, placed.length, ponyWalls.length, sinks.length]);
 
   const openBathroomFixtureChecklistPicker = useCallback((stepId?: string) => {
@@ -14369,7 +14385,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           }
 	          if (Array.isArray(d.sinks)) setSinks(d.sinks);
 	          if (Array.isArray(d.potFillers)) setPotFillers(d.potFillers as PotFillerFixture[]);
-	          if (Array.isArray(d.furniture)) setFurniture(d.furniture as PlacedFurniture[]);
+	          if (Array.isArray(d.furniture)) setFurniture(restoredFurniture(d.furniture));
 	          if (d.roomType) {
 	            const restoredRoom = d.roomType as RoomType;
 	            setRoomType(restoredRoom);
@@ -15361,7 +15377,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const threeDCabinetFaceCrops = useMemo(
     () => Object.fromEntries(threeDCabinetFaces.flatMap(([uid, plan]) => (
       plan.dlcCrop
-        ? [[uid, { slug: plan.dlcCrop.slug, doorSize: plan.dlcCrop.doorSize, drawerSize: plan.dlcCrop.drawerSize, drawerSolidColor: plan.dlcCrop.drawerSolidColor, solidColor: plan.dlcCrop.solidColor, grainUrl: plan.dlcCrop.grainUrl, faceTileIn: plan.dlcCrop.faceTileIn, faceTileDrawerIn: plan.dlcCrop.faceTileDrawerIn, normalUrl: plan.dlcCrop.normalUrl, tintHex: plan.dlcCrop.tintHex }]]
+        ? [[uid, { slug: plan.dlcCrop.slug, doorSize: plan.dlcCrop.doorSize, drawerSize: plan.dlcCrop.drawerSize, drawerSolidColor: plan.dlcCrop.drawerSolidColor, solidColor: plan.dlcCrop.solidColor, grainUrl: plan.dlcCrop.grainUrl, faceTileIn: plan.dlcCrop.faceTileIn, faceTileDrawerIn: plan.dlcCrop.faceTileDrawerIn, normalUrl: plan.dlcCrop.normalUrl, tintHex: plan.dlcCrop.tintHex, tintLinear: plan.dlcCrop.tintLinear, grainSubstituted: plan.dlcCrop.grainSubstituted }]]
         : []
     ))),
     [threeDCabinetFaces],
@@ -15568,7 +15584,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         toast.success("Removed fixture from the 3D plan.");
       }}
       onRotateFurniture={rotateFurniture}
-      onOpenFurnitureAttributes={openFurnitureAttributes}
       ponyWalls={deferredCountertopGeometry.ponyWalls}
       orderSummary={interactive3dOrderSummary}
       orderLines={interactive3dOrderLines}
@@ -16435,6 +16450,21 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
               </SheetHeader>
               <div className="flex-1 overflow-y-auto overscroll-contain" style={{ WebkitOverflowScrolling: "touch" }}>
 
+                {/* Start New Design leads the menu: clearing the canvas is the
+                    one action a phone or tablet user hunts for most. It keeps
+                    the exact row it had at the bottom of the sheet. */}
+                <div className="px-1 pb-4" data-testid="more-sheet-start-new-design">
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                    onClick={clearCurrentDesign}
+                  >
+                    <Trash2 className="h-4 w-4 shrink-0" />
+                    <span>{t("dt_sh_start_new")}</span>
+                  </button>
+                </div>
+                <div className="mx-3 my-1 border-t border-border" />
+
                 {/* Appliance package by color */}
                 <p className="px-3 pt-3 pb-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Appliance color</p>
                 <div data-testid="appliance-color-package" className="grid grid-cols-4 gap-1 px-3 pb-2">
@@ -16922,18 +16952,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                     <span className="font-medium">Interactive 3D Preview</span>
                   </button>
                 </div>
-                <div className="mx-3 my-1 border-t border-border" />
-                {/* Danger zone */}
-                <div className="px-1 pb-4">
-                  <button
-                    type="button"
-                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors"
-                    onClick={clearCurrentDesign}
-                  >
-                    <Trash2 className="h-4 w-4 shrink-0" />
-                    <span>{t("dt_sh_start_new")}</span>
-                  </button>
-                </div>
+                {/* Keeps the sheet's original bottom padding now that the last
+                    section is the Visualization row and not Start New Design. */}
+                <div className="pb-4" />
               </div>
             </SheetContent>
           </Sheet>
@@ -19402,12 +19423,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
               finishFor={finishForCab}
               furniture={furniture}
               selectedFurnUid={selectedFurnUid}
-              bathroomZoneWarningsByFixture={bathroomZoneWarningsByFixture}
               onSelectFurn={setSelectedFurnUid}
               onMoveFurn={(uid, x, y) => setFurniture(prev => prev.map(f => f.uid === uid ? { ...f, x, y } : f))}
               onDeleteFurn={(uid) => { setFurniture(prev => prev.filter(f => f.uid !== uid)); setSelectedFurnUid(null); }}
               onRotateFurn={rotateFurniture}
-      onOpenFurnitureAttributes={openFurnitureAttributes}
 	              flooringMaterialId={flooringMaterialId}
 	              flooringPattern={flooringPattern}
               flooringRotation={flooringRotation}
@@ -19463,7 +19482,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                  </li>
 	                ))}
 	              </ol>
-	              <p className="mt-2 border-t border-slate-200 pt-2 text-[10px] leading-snug text-slate-600">Zones and warnings are visual planning aids. Confirm fixture clearances, opening swings, and installation conditions with the official product sheets and qualified local guidance.</p>
+	              <p className="mt-2 border-t border-slate-200 pt-2 text-[10px] leading-snug text-slate-600">Checklist notes are visual planning aids. Confirm fixture clearances, opening swings, and installation conditions with the official product sheets and qualified local guidance.</p>
 	            </aside>
 	          )}
 	          {viewMode === "plan" && peninsulaDraft && (
@@ -19701,12 +19720,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
               finishFor={finishForCab}
               furniture={furniture}
               selectedFurnUid={selectedFurnUid}
-              bathroomZoneWarningsByFixture={bathroomZoneWarningsByFixture}
               onSelectFurn={setSelectedFurnUid}
               onMoveFurn={(uid, x, y) => setFurniture(prev => prev.map(f => f.uid === uid ? { ...f, x, y } : f))}
               onDeleteFurn={(uid) => { setFurniture(prev => prev.filter(f => f.uid !== uid)); setSelectedFurnUid(null); }}
               onRotateFurn={rotateFurniture}
-      onOpenFurnitureAttributes={openFurnitureAttributes}
 	              flooringMaterialId={flooringMaterialId}
 	              flooringPattern={flooringPattern}
               flooringRotation={flooringRotation}
@@ -21602,11 +21619,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           placedCabinets={placed}
         />
       )}
-	      <BathroomZoneAttributesDialog item={zoneAttributesItem} room={room} onClose={() => setZoneAttributesUid(null)} onSave={(item) => {
-        if (layoutLocked) return;
-        setFurniture((previous) => previous.map((current) => current.uid === item.uid ? item : current));
-        toast.success("Planning zone updated. Pelican fixture dimensions are unchanged.");
-      }} />
 	      {autoDesignAvailable && (
 	        <AutoDesignDialog
 	          open={autoDesignOpen}
@@ -22121,6 +22133,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	        };
         const allRecommendedSinks = (sinkBaseProducts ?? []) as Array<{
           id: number; pelicanCode?: string | null; name: string; description?: string | null; subCategory: string | null; size: string | null; imageUrl: string | null; sellPrice: number | null; slug: string; category: string;
+          bathroomFixtureTags?: string | null;
         }>;
         const sinkBaseCabinet = placed.find((p) => p.uid === sinkBaseDialog.cabinetUid) ?? null;
         // A selected sink base in the Bathroom room type always receives the
@@ -22129,9 +22142,13 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         const isBathroomVanity = roomType === "bathroom";
         const sinkBaseKind = !isBathroomVanity && sinkBaseCabinet && isFarmSinkBasePaletteItem(sinkBaseCabinet) ? "farmhouse" : "standard";
         const sinkBaseOpeningWidth = sinkBaseOpeningWidthIn(sinkBaseCabinet ?? undefined);
+        // The Bathroom Designer reads the Pelican catalog's bathroom fixture tags
+        // (docs/sql/0264_pelican_vanity_fixtures_tag.tidb.sql), not a category label.
+        // A row tagged `bathroom-vanity-sink` is a vanity basin or integrated top;
+        // a double-bowl basin is only offered on a vanity wide enough for two.
         const filteredSinks = allRecommendedSinks
           .filter((product) => isBathroomVanity
-            ? isVerifiedPelicanVanitySink(product.pelicanCode)
+            ? isBathroomVanitySinkRow(product) && vanitySinkFitsVanityWidth(product, sinkBaseOpeningWidth)
             : isPelicanSinkCompatibleWithBase(product, sinkBaseKind))
           .filter((product) => {
             const profile = verifiedPelicanSinkProfile(product.pelicanCode);
@@ -22196,10 +22213,16 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           setPendingRangeTopType(null);
               toast.success(type === "gas" ? "Gas range top added" : type === "electric" ? "Electric range top added" : type === "induction" ? "Induction cooktop added" : "Smooth top added");
         };
+        // A vanity faucet is any row tagged `bathroom-vanity-faucet`. When a basin
+        // is already pending, three-hole tops only receive faucets drilled to the
+        // same hole count (and spread when the basin's sheet publishes one).
         const filteredFaucets = ((faucetBaseProducts ?? []) as Array<{
           id: number; pelicanCode?: string | null; name: string; subCategory: string | null; size: string | null; imageUrl: string | null; sellPrice: number | null; slug: string; category: string;
+          bathroomFixtureTags?: string | null;
         }>).filter((product) => Boolean(verifiedPelicanFaucetProfile(product.pelicanCode)))
-          .filter((product) => isBathroomVanity ? isVerifiedPelicanVanityFaucet(product.pelicanCode) : !isVerifiedPelicanVanityFaucet(product.pelicanCode));
+          .filter((product) => isBathroomVanity
+            ? bathroomVanityFaucetOptions([product], pendingSinkProduct?.pelicanCode).length > 0
+            : !isBathroomVanityFaucetRow(product));
         const applySink = (sinkProduct: typeof filteredSinks[0] | null, faucetProduct: typeof filteredFaucets[0] | null) => {
           const cab = placed.find(p => p.uid === sinkBaseDialog.cabinetUid);
           const previousRangeTopProductId = cab?.sinkTopType === "gas" || cab?.sinkTopType === "electric" || cab?.sinkTopType === "induction" || cab?.sinkTopType === "smooth-top"
@@ -22223,12 +22246,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
             toast.error(`Enter the documented wall-mount datum above the finished countertop (greater than 0 and no more than ${formatEighthInches((room.ceilingHeight ?? 96) - STD.COUNTERTOP_HEIGHT)}).`);
             return;
           }
-          if (isBathroomVanity && !isVerifiedPelicanVanitySink(sinkProduct.pelicanCode)) {
-            toast.error("This bathroom vanity requires a source-verified Pelican vanity sink.");
+          if (isBathroomVanity && !isBathroomVanitySinkRow(sinkProduct)) {
+            toast.error("This bathroom vanity requires a Pelican vanity sink.");
             return;
           }
-          if (isBathroomVanity && faucetProduct && !isVerifiedPelicanVanityFaucet(faucetProduct.pelicanCode)) {
-            toast.error("This bathroom vanity requires a source-verified Pelican vanity faucet.");
+          if (isBathroomVanity && faucetProduct && !isBathroomVanityFaucetRow(faucetProduct)) {
+            toast.error("This bathroom vanity requires a Pelican vanity faucet.");
             return;
           }
           if (!isBathroomVanity && sinkProduct && !isPelicanSinkCompatibleWithBase(sinkProduct, targetBaseKind)) {
@@ -22242,23 +22265,18 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	            return;
 	          }
 	          const verifiedDimensions = { width: verifiedProfile.exteriorWidthIn, depth: verifiedProfile.exteriorDepthIn };
-	          // Part 1: a deck-mounted faucet must sit behind—not in—the selected
-	          // non-apron sink. Farmhouse/apron and wall-mounted fixtures retain
-	          // their existing dedicated installation paths.
-	          const deckPlacement = cab && !isBathroomVanity && verifiedProfile.sinkType !== "farmhouse" && !isWallMountedFaucet
-	            ? nonApronSinkDeckPlacement(cab, room, verifiedDimensions)
-	            : null;
-	          if (faucetProduct && deckPlacement?.applies && !deckPlacement.faucetCanFit) {
-	            toast.error(`${verifiedProfile.name} does not leave the required rear countertop deck for a faucet. ${deckPlacement.reason ?? "Choose a shallower sink or a different installation."}`);
-	            return;
-	          }
+	          // A narrow rear counter deck is informational only. Faucets are
+	          // universal across one- and two-hole deck mounts, so a catalog-valid
+	          // sink always places, and the surrounding cabinets are never moved
+	          // or redesigned to chase a deeper deck. The basin keeps its own
+	          // setback and the note is shown next to the placed fixture.
 	          const autoSink = cab
 	            ? makeSinkForCabinet(verifiedProfile.sinkType, cab, room, verifiedDimensions)
 	            : makeSink(verifiedProfile.sinkType, 0, 0, activeWall, verifiedDimensions);
           const sinkWithFaucet: SinkFixture = {
 	            ...autoSink,
 	            faucet: Boolean(faucetProduct),
-	            faucetDeckConflict: faucetProduct ? autoSink.faucetDeckConflict : undefined,
+	            faucetDeckAdvisory: faucetProduct ? autoSink.faucetDeckAdvisory : undefined,
             pelicanProductId: sinkProduct?.id,
             pelicanProductName: sinkProduct?.name,
             pelicanProductImage: sinkProduct?.imageUrl ?? undefined,
@@ -22370,7 +22388,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                     </button>
                     <h2 className="text-lg font-semibold text-foreground">Choose a {isBathroomVanity ? "Vanity Sink" : "Sink"}</h2>
                   </div>
-                  <p className="text-sm text-muted-foreground -mt-2">{isBathroomVanity ? "Showing only standard Pelican porcelain vanity sinks that fit this vanity base." : `Showing only ${sinkBaseKind === "farmhouse" ? "farmhouse / apron-front" : "standard"} Pelican sinks that fit this base.`}</p>
+                  <p className="text-sm text-muted-foreground -mt-2">{isBathroomVanity ? `Showing every Pelican vanity basin and integrated vanity top that fits this ${sinkBaseOpeningWidth}″ vanity: undermount, drop-in, vessel, and integrated.` : `Showing only ${sinkBaseKind === "farmhouse" ? "farmhouse / apron-front" : "standard"} Pelican sinks that fit this base.`}</p>
                   {filteredSinks.length === 0 ? (
                     <button className="w-full text-xs text-muted-foreground border border-dashed rounded-lg py-3" onClick={() => { setPendingSinkProduct(null); setRangeTopStep("faucet"); }}>Continue without a sink product</button>
                   ) : (
@@ -22382,6 +22400,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                           selectedIds={noSelectedPelicanIds}
                           onUse={(item) => { setPendingSinkProduct(item as typeof filteredSinks[0]); setRangeTopStep("faucet"); }}
                           testIdPrefix="sink-dialog-card"
+                          note={isBathroomVanity ? <VanitySinkFacts code={(configuration.variants[0]?.item as typeof filteredSinks[0] | undefined)?.pelicanCode} /> : undefined}
                         />
                       ))}
                     </div>
@@ -22405,7 +22424,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                       <span className="font-medium line-clamp-1">{pendingSinkProduct.name}</span>
                     </div>
                   )}
-                  <p className="text-sm text-muted-foreground -mt-2">Pick a matching source-verified Pelican {isBathroomVanity ? "vanity faucet" : "faucet"}, or skip to finish.</p>
+                  <p className="text-sm text-muted-foreground -mt-2">Pick a matching Pelican {isBathroomVanity ? "vanity faucet" : "faucet"}, or skip to finish.</p>
+                  {isBathroomVanity && bathroomVanityFaucetMatchNote(pendingSinkProduct?.pelicanCode) && (
+                    <p data-testid="vanity-faucet-match-note" className="rounded-md bg-muted/50 px-3 py-2 text-[11px] leading-snug text-muted-foreground">
+                      {bathroomVanityFaucetMatchNote(pendingSinkProduct?.pelicanCode)}
+                    </p>
+                  )}
                   {pendingWallMountedFaucet ? (
                     <div className="space-y-3 rounded-xl border border-[#a87f33]/40 bg-[#a87f33]/5 p-3">
                       <div className="flex items-center gap-3">
@@ -23395,11 +23419,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	          </DialogHeader>
 	          <div className="space-y-5 p-5">
 	            <section data-testid="bathroom-room-template" className="rounded-xl border border-sky-300/70 bg-sky-50/60 p-4">
-	              <div className="mb-1 text-sm font-semibold text-[#192432]">Bathroom · movable planning-zone template</div>
-	              <p className="mb-3 text-xs leading-5 text-slate-600">Starts a blank 10 ft × 8 ft planning room with non-cartable vanity, toilet, and tub zones. Drag, rotate, or remove the zones, then choose source-priced Pelican fixtures. It does not add a product, price, or installation claim.</p>
+	              <div className="mb-1 text-sm font-semibold text-[#192432]">Bathroom · empty room template</div>
+	              <p className="mb-3 text-xs leading-5 text-slate-600">Starts a blank 10 ft × 8 ft bathroom plan. Add cabinets and source-priced Pelican fixtures yourself; every item moves and rotates freely on the plan. It does not add a product, price, or installation claim.</p>
 	              <button
 	                type="button"
-	                data-testid="bathroom-template-standard-zones"
+	                data-testid="bathroom-template-empty-room"
 	                disabled={layoutLocked || Boolean(placed.length || openings.length || island || sinks.length || furniture.length || ponyWalls.length || annotations.length)}
 	                onClick={applyBathroomStarterTemplate}
 	                className="w-full rounded-lg border border-sky-400 bg-white p-3 text-left shadow-sm transition-colors hover:border-sky-600 hover:bg-sky-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#192432] disabled:cursor-not-allowed disabled:opacity-50"
@@ -23732,7 +23756,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                   toast.success("Removed fixture from the 3D plan.");
                 }}
                 onRotateFurniture={rotateFurniture}
-      onOpenFurnitureAttributes={openFurnitureAttributes}
                 ponyWalls={ponyWalls}
                 orderSummary={interactive3dOrderSummary}
                 orderLines={interactive3dOrderLines}

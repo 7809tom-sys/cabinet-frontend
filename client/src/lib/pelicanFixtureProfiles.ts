@@ -5,7 +5,20 @@
  * Pelican technical source provides the dimensions required to place it safely.
  * The profile creates measured parametric geometry; it never treats a catalog
  * photo, product thumbnail, or room image as a 3D model or material texture.
+ *
+ * Bathroom vanity basins and vanity faucets are NOT listed here. They live in
+ * `@shared/pelicanBathroomFixtures`, which is the single source of truth for the
+ * Bathroom Designer, and are bridged in at the bottom of this file so the shared
+ * sink/faucet geometry keeps one profile shape.
  */
+
+import {
+  PELICAN_VANITY_FAUCET_SKUS,
+  PELICAN_VANITY_SINK_SKUS,
+  pelicanVanityFaucetProfile,
+  pelicanVanitySinkProfile,
+  type PelicanVanitySinkMount,
+} from "@shared/pelicanBathroomFixtures";
 
 export type VerifiedPelicanSinkProfile = {
   id: string;
@@ -14,6 +27,13 @@ export type VerifiedPelicanSinkProfile = {
   installation: "apron-front-undermount" | "undermount";
   sinkType: "farmhouse" | "single";
   apronFront: boolean;
+  /**
+   * Set only on a bathroom vanity basin or integrated vanity top. Undefined on a
+   * kitchen sink. The mount comes straight from the Pelican specification sheet.
+   */
+  vanityMount?: PelicanVanitySinkMount;
+  /** Set only on a bathroom vanity item: separate bowl, or bowl moulded into its top. */
+  vanityKind?: "vanity-basin" | "vanity-top";
   exteriorWidthIn: number;
   exteriorDepthIn: number;
   exteriorHeightIn: number;
@@ -42,7 +62,12 @@ export type VerifiedPelicanFaucetProfile = {
   id: string;
   pelicanCode: string;
   name: string;
-  installation: "single-hole" | "wall-mounted-8-inch-center";
+  /**
+   * "centerset-4" and "widespread-8" are three-hole deck installs. They are the
+   * two Pelican vanity faucet form factors the specification sheets document with
+   * a hole count and spread; "single-hole" is unchanged for kitchen and vanity.
+   */
+  installation: "single-hole" | "wall-mounted-8-inch-center" | "centerset-4" | "widespread-8";
   overallHeightIn: number;
   spoutLengthIn: number;
   spoutHeightIn: number;
@@ -50,6 +75,14 @@ export type VerifiedPelicanFaucetProfile = {
   finish: "brushed-nickel" | "matte-black" | "brushed-gold" | "chrome" | "oil-rubbed-bronze";
   /** Required only by a source-documented 8-inch-center wall-mounted faucet. */
   centerSpreadIn?: number;
+  /** True only on a bathroom vanity faucet; keeps it off every kitchen sink deck. */
+  vanity?: boolean;
+  /** True when the source sheet says this faucet works with a vessel basin. */
+  forVesselSink?: boolean;
+  /** Source-stated deck hole count on a vanity faucet (1 or 3). */
+  deckHoles?: 1 | 3;
+  /** Source-stated 4-inch centerset or 8-inch widespread spacing on a three-hole vanity faucet. */
+  deckSpreadIn?: 4 | 8;
   /** Pelican publishes fixture dimensions, not the project's finished-countertop mounting elevation. */
   requiresProjectSpecificMountHeight?: true;
   specificationUrl: string;
@@ -647,7 +680,18 @@ function normalizedPelicanCode(value: string | null | undefined): string {
   return normalized;
 }
 
+/**
+ * Kitchen sinks: the hand-verified stainless steel and fireclay profiles above.
+ *
+ * A bathroom vanity basin or integrated vanity top is resolved from
+ * `@shared/pelicanBathroomFixtures` instead, and comes back with `vanityMount` set.
+ * Keeping them here means the 3D sink geometry, the deck placement and the
+ * cabinet-width check all keep working for a vanity fixture without a second code
+ * path — but `vanityMount` is the flag every kitchen-only rule tests.
+ */
 export function verifiedPelicanSinkProfile(code: string | null | undefined): VerifiedPelicanSinkProfile | null {
+  const vanity = pelicanVanitySinkProfile(code);
+  if (vanity) return vanitySinkAsVerifiedProfile(vanity, code!);
   const profile = VERIFIED_PELICAN_SINKS[normalizedPelicanCode(code)] ?? null;
   if (!profile || profile.pelicanCode !== "PL-3099") return profile;
   const normalized = (code ?? "").trim().toUpperCase();
@@ -661,10 +705,96 @@ export function verifiedPelicanSinkProfile(code: string | null | undefined): Ver
   return { ...profile, surfaceFinish };
 }
 
+/**
+ * Profile ids that saved designs already store. They must keep resolving, so a
+ * design saved before this change still finds its basin and faucet.
+ */
+const LEGACY_VANITY_PROFILE_IDS: Record<string, string> = {
+  "PL-3099": "pelican-pl-3099-pearl-porcelain-undermount-vanity",
+  "PL-3608": "pelican-pl-3608-pearl-porcelain-undermount-vanity",
+};
+
+/** Adapts a shared vanity-sink record to the sink-profile shape the geometry reads. */
+function vanitySinkAsVerifiedProfile(
+  vanity: NonNullable<ReturnType<typeof pelicanVanitySinkProfile>>,
+  code: string,
+): VerifiedPelicanSinkProfile {
+  // The exact purchasable code, so a finish or packaging variant keeps its own
+  // identity. The finish below is read from that code, as the kitchen profiles do.
+  const exactCode = code.trim().toUpperCase().replace(/\s*\(OLD\)$/, "");
+  const surfaceFinish = /MATTE\s+BLACK|GLOSS\s+BLACK/.test(exactCode)
+    ? "vitreous-china-black" as const
+    : /MATTE\s+GREY/.test(exactCode)
+      ? "vitreous-china-grey" as const
+      : /\bBONE\b/.test(exactCode)
+        ? "vitreous-china-bone" as const
+        : "vitreous-china" as const;
+  const legacyId = vanity.kind === "vanity-basin" && vanity.mount === "undermount" ? LEGACY_VANITY_PROFILE_IDS[vanity.model] : undefined;
+  // A vessel basin publishes only its exterior, and on a vessel the exterior IS
+  // the basin, so the exterior is the honest bowl measurement. An under-counter
+  // basin whose sheet omits its interior keeps the exterior too rather than a
+  // subtracted guess — the geometry then draws the published envelope only.
+  return {
+    id: legacyId ?? `pelican-${vanity.model.toLowerCase()}-${vanity.mount}${vanity.faucetSpreadIn ? `-${vanity.faucetSpreadIn}-spread` : ""}-vanity`,
+    pelicanCode: exactCode,
+    name: `${exactCode} ${vanity.series} ${vanity.mount === "integrated" ? "Vanity Top" : "Vanity Sink"}`,
+    installation: "undermount",
+    sinkType: "single",
+    apronFront: false,
+    vanityMount: vanity.mount,
+    vanityKind: vanity.kind,
+    exteriorWidthIn: vanity.widthIn,
+    exteriorDepthIn: vanity.depthIn,
+    exteriorHeightIn: vanity.heightIn,
+    bowlWidthIn: vanity.bowlWidthIn ?? vanity.widthIn,
+    bowlDepthIn: vanity.bowlDepthIn ?? vanity.depthIn,
+    bowlHeightIn: vanity.bowlHeightIn ?? vanity.heightIn,
+    bowlCount: vanity.bowlCount,
+    surfaceFinish,
+    minimumCabinetWidthIn: Math.ceil(vanity.widthIn),
+    specificationUrl: vanity.specificationUrl,
+  };
+}
+
 export function verifiedPelicanFaucetProfile(code: string | null | undefined): VerifiedPelicanFaucetProfile | null {
+  const vanity = pelicanVanityFaucetProfile(code);
+  if (vanity) return vanityFaucetAsVerifiedProfile(vanity, code!);
   const normalized = (code ?? "").trim().toUpperCase();
   if (/^PL-8203(?:\s+BN)?$/.test(normalized)) return VERIFIED_PELICAN_FAUCETS["PL-8203"];
   return VERIFIED_PELICAN_FAUCETS[normalized] ?? null;
+}
+
+const VANITY_FAUCET_FINISHES: Record<string, VerifiedPelicanFaucetProfile["finish"]> = {
+  BN: "brushed-nickel", CHR: "chrome", MB: "matte-black", BG: "brushed-gold", ORB: "oil-rubbed-bronze",
+};
+
+/** Adapts a shared vanity-faucet record to the faucet-profile shape the geometry reads. */
+function vanityFaucetAsVerifiedProfile(
+  vanity: NonNullable<ReturnType<typeof pelicanVanityFaucetProfile>>,
+  code: string,
+): VerifiedPelicanFaucetProfile {
+  const suffix = code.trim().toUpperCase().replace(vanity.model, "").trim();
+  const finishSlug = VANITY_FAUCET_FINISHES[suffix] ?? "brushed-nickel";
+  return {
+    // PL-8112 keeps the id a saved design already stores.
+    id: vanity.model === "PL-8112"
+      ? `pelican-pl-8112-cascade-vanity-${finishSlug}`
+      : `pelican-${vanity.model.toLowerCase()}-vanity-${finishSlug}`,
+    pelicanCode: code.trim().toUpperCase(),
+    name: `${vanity.model} Cascade Series Vanity Faucet`,
+    installation: vanity.mount,
+    overallHeightIn: vanity.overallHeightIn,
+    spoutLengthIn: vanity.spoutLengthIn,
+    spoutHeightIn: vanity.spoutHeightIn,
+    // Pelican's vanity faucets are all fixed-spout single-lever or centreset forms.
+    profile: "standard-arc",
+    finish: VANITY_FAUCET_FINISHES[suffix] ?? "brushed-nickel",
+    vanity: true,
+    forVesselSink: vanity.forVesselSink,
+    deckHoles: vanity.faucetHoles,
+    deckSpreadIn: vanity.faucetSpreadIn,
+    specificationUrl: vanity.specificationUrl,
+  };
 }
 
 /**
@@ -706,15 +836,43 @@ export function hasVerifiedPelicanFixtureProfile(code: string | null | undefined
   return Boolean(verifiedPelicanSinkProfile(code) || verifiedPelicanFaucetProfile(code) || verifiedPelicanPotFillerProfile(code));
 }
 
-/** Bathroom-only profiles keep vanity fixtures out of the kitchen sink/faucet workflow. */
+/**
+ * Bathroom-only profiles keep vanity fixtures out of the kitchen sink/faucet
+ * workflow. Both predicates read the same source of truth as the Bathroom
+ * Designer (`@shared/pelicanBathroomFixtures`), so the two can never disagree
+ * about which Pelican rows are bathroom fixtures.
+ */
 export function isVerifiedPelicanVanitySink(code: string | null | undefined): boolean {
-  const profile = verifiedPelicanSinkProfile(code);
-  return profile?.pelicanCode === "PL-3099" || profile?.pelicanCode === "PL-3608";
+  return PELICAN_VANITY_SINK_SKUS.includes((code ?? "").trim());
 }
 
 /** Bathroom-only profiles keep vanity faucets out of the kitchen sink/faucet workflow. */
 export function isVerifiedPelicanVanityFaucet(code: string | null | undefined): boolean {
-  return /^PL-8112\s+(?:BN|CHR)$/.test((code ?? "").trim().toUpperCase());
+  return PELICAN_VANITY_FAUCET_SKUS.includes((code ?? "").trim());
+}
+
+/**
+ * True when a persisted sink profile id names a bathroom vanity basin.
+ *
+ * A sink fixture stores the profile id (`pelican-pl-r4922w-integrated-...-vanity`),
+ * not the catalog code, so the checklist has to recognise the id form. Every
+ * adapter in this file ends a vanity id with `-vanity`, and a kitchen sink id
+ * never does, so this cannot confuse the two.
+ */
+export function isVanitySinkProfileId(profileId: string | null | undefined): boolean {
+  return /-vanity$/.test((profileId ?? "").trim());
+}
+
+/**
+ * Profile ids that saved designs already store. A design saved before vanity
+ * faucets were a full catalog line keeps resolving to a vanity faucet.
+ */
+const LEGACY_VANITY_FAUCET_PROFILE_ID = /^pelican-pl-8112-cascade-vanity-/;
+
+/** True when a persisted sink fixture carries a bathroom vanity faucet. */
+export function isVanityFaucetProfileId(profileId: string | null | undefined): boolean {
+  const id = (profileId ?? "").trim();
+  return /-vanity-/.test(id) || LEGACY_VANITY_FAUCET_PROFILE_ID.test(id);
 }
 
 export function verifiedPelicanSinkFitsCabinet(profile: VerifiedPelicanSinkProfile, cabinetWidthIn: number): boolean {

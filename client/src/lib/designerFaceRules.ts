@@ -61,6 +61,17 @@ export function normalizeUpperHeights(placed: readonly PlacedCabinet[]): PlacedC
   return placed.map((item) => {
     if (item.placement !== "wall" || isFillerItem(item) || isPanelItem(item)) return item;
     if (item.stackedOnCabinetUid) return item;
+    // The cabinet above a refrigerator is height-ruled by its own bay: its top
+    // lands on the running upper line and its bottom keeps the appliance
+    // clearance. Re-hanging it here on the generic short-upper datum is what put
+    // a 12 5/8-inch bridge's bottom at 71 3/8 — inside the two-inch clearance.
+    if (item.refrigeratorAssemblyRole === "bridge") return item;
+    // The mandatory bridge above the range hangs from the fixed 72" microwave
+    // datum, not from the ordinary upper line. A frameless line stores that bridge
+    // as 12⅝" or 17⅝" tall rather than 12/15/18", so the height-keyed rule below
+    // used to shove it down to 66⅜" — a bridge floating below the microwave it
+    // rests on, and a hole above the range. A bridge keeps its own datum.
+    if (item.overRangeMicrowaveBridge === true) return item;
     const height = placedHeight(item);
     const bottom = upperMountBottomFor(height) ?? ordinaryWallMountBottom(item);
     if (Number(item.mountBottom) === bottom) return item;

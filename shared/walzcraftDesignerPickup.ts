@@ -230,6 +230,10 @@ export function wizardDoorFacePlan(style: DesignerDoorInput | null | undefined, 
         faceTileDrawerIn: grain.faceTileDrawerIn,
         normalUrl: grain.faceNormal,
         tintHex: tint && !tint.clamped ? tint.tintHex : null,
+        tintLinear: tint ? tint.tintLinear : null,
+        // The wizard's stain tiles a grain template it picked, not this door's own
+        // photo, so the DL photo light compensation does not apply.
+        grainSubstituted: true,
       },
     }
     // No grain photo in the data: the door keeps its own image rather than showing a blank face.
