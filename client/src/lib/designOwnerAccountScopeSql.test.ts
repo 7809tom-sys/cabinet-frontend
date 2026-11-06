@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const sql = readFileSync(resolve(process.cwd(), "docs/sql/0249_design_owner_account_scope.tidb.sql"), "utf8");
+const sql = readFileSync(resolve(process.cwd(), "docs/sql/0256_design_owner_account_scope.tidb.sql"), "utf8");
 
 /** Each numbered block must hold exactly one statement, comments stripped. */
 function numberedBlocks(text: string): string[][] {
@@ -20,10 +20,10 @@ function numberedBlocks(text: string): string[][] {
     });
 }
 
-describe("SQL 0249 design owner account scope", () => {
+describe("SQL 0256 design owner account scope", () => {
   it("keeps one statement per numbered block and qualifies every table", () => {
-    expect(sql).toContain("Numbered 0249");
-    expect(sql).toContain("Run after 0248");
+    expect(sql).toContain("Numbered 0256");
+    expect(sql).toContain("Run after 0255");
     const blocks = numberedBlocks(sql);
     expect(blocks.length).toBeGreaterThanOrEqual(6);
     for (const statements of blocks) {
@@ -44,7 +44,7 @@ describe("SQL 0249 design owner account scope", () => {
     // It re-files the store only. Ownership is never reassigned by SQL.
     expect(writes[0]).toContain("SET saved_design.affiliateId = NULL");
     // Ownership is never reassigned: the SET list names the store column only.
-    const setList = writes[0].match(/SET([\s\S]*?)\nWHERE/i)![1]!;
+    const setList = writes[0].match(/\sSET([\s\S]*?)\sWHERE\s/i)![1]!;
     expect(setList).toContain("saved_design.affiliateId = NULL");
     expect(setList).not.toMatch(/userId\s*=/i);
   });
@@ -71,5 +71,25 @@ describe("SQL 0249 design owner account scope", () => {
   it("says the schema needs no change for the fix itself", () => {
     expect(sql).toContain("no ALTER TABLE is required");
     expect(sql).not.toMatch(/ADD COLUMN IF NOT EXISTS/);
+  });
+
+  it("keeps every statement on one line so a line-based editor cannot split it", () => {
+    for (const block of numberedBlocks(sql)) {
+      const statement = block[0]!.replace(/\s+/g, " ").trim();
+      expect(statement.split("\n")).toHaveLength(1);
+      expect(statement).not.toMatch(/\n/);
+    }
+    // And nothing in the file is split across a line break inside a statement.
+    for (const line of sql.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("--")) continue;
+      expect(trimmed.endsWith(";")).toBe(true);
+    }
+  });
+
+  it("never uses IF NOT EXISTS", () => {
+    expect(sql).not.toMatch(/IF\s+NOT\s+EXISTS/i);
+    // The numbering note explains the renumber away from 0249 (PR 273).
+    expect(sql).toContain("0249 is taken by PR 273");
   });
 });
