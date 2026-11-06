@@ -79,4 +79,14 @@ describe("matchesPaletteSearch", () => {
     expect(matchesPaletteSearch(tray, normalizePaletteSearch("BT-09"))).toBe(true);
     expect(matchesPaletteSearch(tray, normalizePaletteSearch("bt09"))).toBe(true);
   });
+  it("matches the Faircrest 2020 spelling of a row, in both directions", () => {
+    const shelf = cab({ masterCode: "WEOS0930", description: '9" Wall End Open Shelf' });
+    expect(matchesPaletteSearch(shelf, normalizePaletteSearch("WOS0930"))).toBe(true);
+    expect(matchesPaletteSearch(shelf, normalizePaletteSearch("WOES0930"))).toBe(true);
+    expect(matchesPaletteSearch(shelf, normalizePaletteSearch("WOSOS0930"))).toBe(false);
+    const susan = cab({ masterCode: "LSB36", description: '36" Lazy Susan Corner Base' });
+    expect(matchesPaletteSearch(susan, normalizePaletteSearch("LS3612"))).toBe(true);
+    expect(matchesPaletteSearch(susan, normalizePaletteSearch("LS3612-R"))).toBe(true);
+    expect(matchesPaletteSearch(susan, normalizePaletteSearch("LS3312"))).toBe(false);
+  });
 });

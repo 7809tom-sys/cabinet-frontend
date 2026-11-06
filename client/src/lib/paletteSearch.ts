@@ -1,5 +1,6 @@
 import { normalizeCode } from "@shared/cabinetCodeMatch";
 import { catalogItemMatchesCode } from "@shared/catalogCodeSearch";
+import { faircrest2020EquivalentCodes, hasFaircrest2020Alias } from "@shared/faircrest2020Aliases";
 
 // Pure, dependency-free helpers for the cabinet palette search box.
 // Kept in their own module so they can be unit-tested without importing the
@@ -57,5 +58,25 @@ export function matchesPaletteSearch(
     ))
     || catalogItemMatchesCode(c, q)
   ) return true;
+  // A Faircrest 2020 code finds our row and vice versa (WOS0930 <-> WEOS0930).
+  if (normalizedCodeQuery.length > 0 && matchesFaircrest2020Code(c, normalizedCodeQuery)) return true;
   return matchesPaletteTextOrSize(c, q);
+}
+
+/** True when the query is the Faircrest 2020 spelling of this row's code. */
+export function matchesFaircrest2020Code(
+  c: { masterCode: string; displayMasterCode?: string | null },
+  normalizedQuery: string,
+): boolean {
+  if (!normalizedQuery) return false;
+  // Nothing to widen for a row with no Faircrest mapping; its own code was
+  // already compared by the caller.
+  const ourCode = c.masterCode;
+  const displayCode = c.displayMasterCode ?? "";
+  if (!hasFaircrest2020Alias(ourCode) && !hasFaircrest2020Alias(displayCode)) return false;
+  const equivalences = [
+    ...faircrest2020EquivalentCodes(ourCode),
+    ...faircrest2020EquivalentCodes(displayCode),
+  ].map(normalizeCode);
+  return equivalences.some((equivalent) => equivalent === normalizedQuery);
 }
