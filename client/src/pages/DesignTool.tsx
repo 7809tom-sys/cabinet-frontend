@@ -16389,6 +16389,21 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
               </SheetHeader>
               <div className="flex-1 overflow-y-auto overscroll-contain" style={{ WebkitOverflowScrolling: "touch" }}>
 
+                {/* Start New Design leads the menu: clearing the canvas is the
+                    one action a phone or tablet user hunts for most. It keeps
+                    the exact row it had at the bottom of the sheet. */}
+                <div className="px-1 pb-4" data-testid="more-sheet-start-new-design">
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                    onClick={clearCurrentDesign}
+                  >
+                    <Trash2 className="h-4 w-4 shrink-0" />
+                    <span>{t("dt_sh_start_new")}</span>
+                  </button>
+                </div>
+                <div className="mx-3 my-1 border-t border-border" />
+
                 {/* Appliance package by color */}
                 <p className="px-3 pt-3 pb-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Appliance color</p>
                 <div data-testid="appliance-color-package" className="grid grid-cols-4 gap-1 px-3 pb-2">
@@ -16876,18 +16891,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                     <span className="font-medium">Interactive 3D Preview</span>
                   </button>
                 </div>
-                <div className="mx-3 my-1 border-t border-border" />
-                {/* Danger zone */}
-                <div className="px-1 pb-4">
-                  <button
-                    type="button"
-                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors"
-                    onClick={clearCurrentDesign}
-                  >
-                    <Trash2 className="h-4 w-4 shrink-0" />
-                    <span>{t("dt_sh_start_new")}</span>
-                  </button>
-                </div>
+                {/* Keeps the sheet's original bottom padding now that the last
+                    section is the Visualization row and not Start New Design. */}
+                <div className="pb-4" />
               </div>
             </SheetContent>
           </Sheet>
