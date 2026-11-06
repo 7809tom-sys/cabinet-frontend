@@ -1,5 +1,5 @@
 From: Cursor Agent <cursoragent@cursor.com>
-Date: Fri, 6 Nov 2026 01:55:00 +0000
+Date: Fri, 6 Nov 2026 02:10:00 +0000
 Subject: [PATCH] Keep library documents internal by default, and gate the
  affiliate library behind one audited checkbox.
 
@@ -31,7 +31,7 @@ Server-enforced, not just a hidden button:
   - affiliateResources.adminSignedFile is an adminProcedure, for the admin
     page's Open button. Affiliates cannot reach it.
 
-The new docs/sql/0250_library_internal_documents.tidb.sql is copied verbatim
+The new docs/sql/0255_library_internal_documents.tidb.sql is copied verbatim
 from the frontend repo, where it is the single source for the TiDB paste.
 
 Apply from the cabinet-backend repository root:
@@ -39,7 +39,7 @@ Apply from the cabinet-backend repository root:
     git apply /path/to/cabinet-backend-library-internal-documents.patch
 
 Then, in this order:
-  1. Paste docs/sql/0250_library_internal_documents.tidb.sql in the TiDB editor.
+  1. Paste docs/sql/0255_library_internal_documents.tidb.sql in the TiDB editor.
   2. Deploy this patch (the schema selects the new columns).
   3. pnpm exec tsx server/scripts/import-internal-library-documents.ts
      with FRONTEND_REPO_ROOT pointing at the cabinet-frontend checkout, to put
@@ -63,160 +63,6 @@ index 0b1f58e..7bc4841 100644
    },
    "designer-availability": {
      en: "Toggle which cabinets appear in the kitchen designer tool. Enable or disable individual cabinets from the designer palette.",
-diff --git a/client/src/components/admin/AffiliateLiteratureAdmin.library.test.ts b/client/src/components/admin/AffiliateLiteratureAdmin.library.test.ts
-new file mode 100644
-index 0000000..fc83800
---- /dev/null
-+++ b/client/src/components/admin/AffiliateLiteratureAdmin.library.test.ts
-@@ -0,0 +1,148 @@
-+import { createHash } from "node:crypto";
-+import { existsSync, readFileSync } from "node:fs";
-+import { resolve } from "node:path";
-+import { describe, expect, it } from "vitest";
-+
-+const root = process.cwd();
-+const read = (path: string) => readFileSync(resolve(root, path), "utf8");
-+
-+const SQL_FILE = "docs/sql/0250_library_internal_documents.tidb.sql";
-+const PDF_FILE = "docs/library/internal/website-improvement-proposal-marazzi-lessons-cabinetdealz.pdf";
-+const PATCH_FILE = "docs/patches/cabinet-backend-library-internal-documents.patch";
-+
-+const sql = read(SQL_FILE);
-+const admin = read("client/src/components/admin/AffiliateLiteratureAdmin.tsx");
-+const patch = read(PATCH_FILE);
-+const html = read("client/index.html");
-+
-+describe("SQL 0250 library internal documents", () => {
-+  it("keeps one statement per numbered line and qualifies every table", () => {
-+    expect(sql).not.toMatch(/statement-breakpoint/);
-+    expect(sql).toContain("Numbered 0250");
-+    expect(sql).toContain("Run after 0249");
-+    const blocks = sql.split(/\n-- \d+\./).slice(1);
-+    expect(blocks.length).toBeGreaterThanOrEqual(11);
-+    for (const block of blocks) {
-+      const statements = block
-+        .split(";")
-+        .map((part) => part.replace(/--[^\n]*/g, "").trim())
-+        .filter(Boolean);
-+      expect(statements).toHaveLength(1);
-+      if (/^\s*(ALTER|CREATE|SELECT|UPDATE|INSERT)\b/i.test(statements[0])) {
-+        if (/^SELECT\b/i.test(statements[0]) && statements[0].includes("information_schema")) continue;
-+        expect(statements[0]).toMatch(/cabinet_dealz\./);
-+      }
-+    }
-+    expect(sql.trimEnd().endsWith(";")).toBe(true);
-+    expect(sql).toContain("information_schema");
-+    expect(sql).not.toMatch(/\bAS (count|order|key|value|status|table|internal|affiliate)\b/i);
-+  });
-+
-+  it("adds visibility plus the who/when audit, all additive and re-runnable", () => {
-+    expect(sql).toContain("ADD COLUMN IF NOT EXISTS visibility VARCHAR(16) NOT NULL DEFAULT 'internal'");
-+    expect(sql).toContain("ADD COLUMN IF NOT EXISTS affiliateToggledAt DATETIME NULL");
-+    expect(sql).toContain("ADD COLUMN IF NOT EXISTS affiliateToggledBy INT NULL");
-+    expect(sql).toContain("ADD COLUMN IF NOT EXISTS affiliateToggledByName VARCHAR(255) NULL");
-+    expect(sql).toContain("CREATE INDEX IF NOT EXISTS affiliate_literature_visibility_idx");
-+    // Every write is guarded, so a second paste changes nothing.
-+    expect(sql).toContain("WHERE NOT EXISTS (SELECT 1 FROM cabinet_dealz.affiliate_literature");
-+    expect(sql).toMatch(/UPDATE cabinet_dealz\.affiliate_literature AS backfill_literature SET .* WHERE .*affiliateToggledAt IS NULL;/);
-+  });
-+
-+  it("seeds the Marazzi proposal as internal and unpublished", () => {
-+    const insert = sql.split("\n").find((line) => line.startsWith("INSERT INTO cabinet_dealz.affiliate_literature"));
-+    expect(insert).toBeTruthy();
-+    expect(insert).toContain("'Website Improvement Proposal — Lessons from Marazzi USA'");
-+    expect(insert).toContain("library-documents/internal/website-improvement-proposal-marazzi-lessons-cabinetdealz.pdf");
-+    expect(insert).toContain("'application/pdf'");
-+    // isPublished 0 and visibility 'internal': the two values that keep it in.
-+    expect(insert).toContain(", 0, 'internal', 900 FROM DUAL");
-+    expect(insert).not.toMatch(/'affiliate'/);
-+    expect(insert).not.toMatch(/, 1, '/);
-+  });
-+
-+  it("picks a number that is still free in the repository", () => {
-+    expect(existsSync(resolve(root, SQL_FILE))).toBe(true);
-+    // 0249 belongs to the open KBIS pull request, so this file may not reuse it.
-+    expect(sql).toContain("0249 is reserved");
-+  });
-+});
-+
-+describe("the committed internal proposal PDF", () => {
-+  it("ships in the repo and is not served by the site", () => {
-+    expect(existsSync(resolve(root, PDF_FILE))).toBe(true);
-+    const bytes = readFileSync(resolve(root, PDF_FILE));
-+    expect(bytes.length).toBeGreaterThan(10_000);
-+    expect(bytes.subarray(0, 5).toString("latin1")).toBe("%PDF-");
-+    // The SQL row records the exact byte count, so the file and the row agree.
-+    expect(sql).toContain(`'application/pdf', ${bytes.length}, 0, 'internal', 900`);
-+  });
-+
-+  it("keeps docs/ out of the Vercel build, so the PDF has no public URL", () => {
-+    const vercelIgnore = read(".vercelignore").split("\n").map((line) => line.trim());
-+    expect(vercelIgnore).toContain("docs");
-+  });
-+
-+  it("is the file the patch's importer uploads, by name and hash", () => {
-+    const bytes = readFileSync(resolve(root, PDF_FILE));
-+    const sha256 = createHash("sha256").update(bytes).digest("hex");
-+    expect(patch).toContain("website-improvement-proposal-marazzi-lessons-cabinetdealz.pdf");
-+    expect(patch).toContain("library-documents/internal/");
-+    // Recorded in this test so a swapped file is a visible change, not a silent one.
-+    expect(sha256).toBe("c9cf60ae85cfaec1ce3a5954653888ad5594d50ebdf915375d958e0042391104");
-+  });
-+
-+  it("is not referenced by the app shell", () => {
-+    expect(html).not.toContain("website-improvement-proposal");
-+    expect(admin).not.toContain("website-improvement-proposal");
-+  });
-+});
-+
-+describe("the admin page contract", () => {
-+  it("puts an Affiliate library checkbox on every document, internal ones included", () => {
-+    expect(admin).toContain("AFFILIATE_LIBRARY_SWITCH_LABEL");
-+    expect(admin).toContain("items.map((item) =>");
-+    expect(admin).toContain('id={`library-affiliate-${item.id}`}');
-+    expect(admin).toContain("checked={inAffiliate}");
-+    // Every row renders the checkbox, with no visibility filter in front of it.
-+    expect(admin).not.toMatch(/items\.filter\([^)]*\)\.map\(\(item\) =>[\s\S]*library-affiliate/);
-+  });
-+
-+  it("sends one field for the toggle and never a publish flag", () => {
-+    expect(admin).toContain("update.mutate({ id, inAffiliateLibrary: checked })");
-+    expect(admin).toContain("inAffiliateLibrary,");
-+    expect(admin).not.toContain("isPublished");
-+  });
-+
-+  it("tells the admin the check never makes a document public", () => {
-+    expect(admin).toContain("This checkbox never puts a document on the public site");
-+    expect(admin).toContain("Admins only");
-+  });
-+});
-+
-+describe("the backend patch", () => {
-+  it("touches only the library, the storage rules, and the shared module", () => {
-+    const files = [...patch.matchAll(/^diff --git a\/(\S+) b\//gm)].map((match) => match[1]);
-+    expect(files.length).toBeGreaterThanOrEqual(6);
-+    for (const file of files) {
-+      expect(file).toMatch(/^(drizzle\/schema\.ts|server\/routers\/affiliateLiterature\.ts|server\/routers\/affiliateResources\.ts|server\/storage\.ts|server\/_core\/storageProxy\.ts|server\/scripts\/import-internal-library-documents\.ts|server\/internalLibraryDocuments\.test\.ts|shared\/libraryVisibility\.ts|docs\/sql\/0250_library_internal_documents\.tidb\.sql)$/);
-+    }
-+  });
-+
-+  it("enforces visibility inside the affiliate read, not only in the page", () => {
-+    expect(patch).toContain('eq(affiliateLiterature.visibility, "affiliate")');
-+    expect(patch).toContain("eq(affiliateLiterature.isPublished, true)");
-+    expect(patch).toContain(".filter(isAffiliateLibraryDocument)");
-+  });
-+
-+  it("keeps library bytes in the private bucket, off the public proxy", () => {
-+    expect(patch).toContain('"library-documents/"');
-+    expect(patch).toContain("not available at a public address");
-+  });
-+
-+  it("applies cleanly in the cabinet-backend checkout", () => {
-+    expect(patch.startsWith("From: Cursor Agent")).toBe(true);
-+    expect(patch).toContain("git apply");
-+    expect(patch).not.toContain("TODO");
-+  });
-+});
 diff --git a/client/src/components/admin/AffiliateLiteratureAdmin.test.tsx b/client/src/components/admin/AffiliateLiteratureAdmin.test.tsx
 new file mode 100644
 index 0000000..a03fb7f
@@ -744,18 +590,28 @@ index 0000000..13ed38b
 +    remove: client.affiliateLiterature.adminDelete,
 +  };
 +}
-diff --git a/docs/sql/0250_library_internal_documents.tidb.sql b/docs/sql/0250_library_internal_documents.tidb.sql
+diff --git a/docs/sql/0255_library_internal_documents.tidb.sql b/docs/sql/0255_library_internal_documents.tidb.sql
 new file mode 100644
-index 0000000..08656a7
+index 0000000..39d8680
 --- /dev/null
-+++ b/docs/sql/0250_library_internal_documents.tidb.sql
-@@ -0,0 +1,71 @@
-+-- TiDB SQL editor version. Numbered 0250. Run after 0249.
++++ b/docs/sql/0255_library_internal_documents.tidb.sql
+@@ -0,0 +1,83 @@
++-- TiDB SQL editor version. Numbered 0255. Run after 0254.
 +-- One statement per line, so each line can be pasted on its own in the TiDB
-+-- editor. Every table is cabinet_dealz.<table>. No reserved-word aliases.
++-- editor. Every table is cabinet_dealz.<table>. No reserved-word aliases and no
++-- table aliases, so a line pastes cleanly into the TiDB Cloud editor.
 +-- Do not run this from an application. The owner pastes it in the TiDB editor.
-+-- Safe to re-run: ADD COLUMN IF NOT EXISTS, a guarded INSERT, and an UPDATE
-+-- whose WHERE clause cannot match a row twice.
++--
++-- Statement 1 is the visibility column on its own. Nothing else in this file may
++-- sit in front of it: every later statement reads that column, so if it is not
++-- added first the rest fails with "Unknown column 'visibility'".
++--
++-- Safe to re-run, but not silent about it: this file uses PLAIN ADD COLUMN and
++-- PLAIN CREATE INDEX, because TiDB Cloud rejects "ADD COLUMN IF NOT EXISTS" and
++-- "CREATE INDEX IF NOT EXISTS". On a second run those statements answer
++-- "Duplicate column name ..." or "Duplicate key name ...". THAT ERROR IS SAFE:
++-- the column or index already exists, which is what the statement wanted. Skip
++-- that one line and paste the next.
 +--
 +-- Why: the document library could only express "published" or "not published",
 +-- so an internal strategy document had no safe home. Now every document carries
@@ -775,54 +631,56 @@ index 0000000..08656a7
 +-- affiliateToggledByName is a snapshot of the admin's name at the moment of the
 +-- toggle, so the audit line survives a rename or a deleted account.
 +--
-+-- Number order: 0249 is reserved by the open KBIS booth-assets pull request, so
-+-- this file takes the next free number, 0250. Run 0249 first if it has landed.
++-- Number order: 0250 belongs to the kitchen rules SQL, 0251-0253 to pull request
++-- 268, and 0254 is taken, so this file uses 0255.
 +--
 +-- The internal proposal PDF ships in the frontend repo at
 +-- docs/library/internal/website-improvement-proposal-marazzi-lessons-cabinetdealz.pdf
 +-- (excluded from the Vercel build by .vercelignore). It is never served from the
-+-- site: the row above points at the private bucket, and the importer in the patch
++-- site: the row below points at the private bucket, and the importer in the patch
 +-- uploads the committed file there.
 +--
-+-- Rollback: the three ALTERs are additive and harm nothing if left in place.
++-- Rollback: the four ALTERs are additive and harm nothing if left in place.
 +-- Dropping `visibility` returns every document to the old isPublished-only
-+-- behaviour. The last statement below shows the internal row so it can be
-+-- deleted by id.
++-- behaviour. The last statement shows the internal row so it can be deleted by id.
 +
-+-- 1. Read-only: the columns this file adds, and whether they already exist.
-+SELECT existing_column.column_name AS presentColumn, existing_column.data_type AS columnType, existing_column.is_nullable AS nullable FROM information_schema.columns AS existing_column WHERE existing_column.table_schema = 'cabinet_dealz' AND existing_column.table_name = 'affiliate_literature' AND existing_column.column_name IN ('visibility', 'affiliateToggledAt', 'affiliateToggledBy', 'affiliateToggledByName') ORDER BY existing_column.column_name;
++-- 1. FIRST AND ON ITS OWN. The visibility column. Internal is the default, so every new upload is admin-only until an admin checks "Affiliate library". This must succeed before any line below runs.
++ALTER TABLE cabinet_dealz.affiliate_literature ADD COLUMN visibility VARCHAR(16) NOT NULL DEFAULT 'internal';
 +
-+-- 2. Read-only: what the library holds today, so the backfill below is predictable.
-+SELECT existing_literature.id AS literatureId, existing_literature.title, existing_literature.mimeType, existing_literature.isPublished FROM cabinet_dealz.affiliate_literature AS existing_literature ORDER BY existing_literature.id;
++-- 2. When the "Affiliate library" checkbox was last changed. Null means never toggled.
++ALTER TABLE cabinet_dealz.affiliate_literature ADD COLUMN affiliateToggledAt DATETIME NULL;
 +
-+-- 3. The visibility column. Internal is the default, so every new upload is admin-only until an admin checks "Affiliate library".
-+ALTER TABLE cabinet_dealz.affiliate_literature ADD COLUMN IF NOT EXISTS visibility VARCHAR(16) NOT NULL DEFAULT 'internal';
++-- 3. Which admin account changed it. Null means never toggled, or the account was deleted.
++ALTER TABLE cabinet_dealz.affiliate_literature ADD COLUMN affiliateToggledBy INT NULL;
 +
-+-- 4. When the "Affiliate library" checkbox was last changed. Null means never toggled.
-+ALTER TABLE cabinet_dealz.affiliate_literature ADD COLUMN IF NOT EXISTS affiliateToggledAt DATETIME NULL;
++-- 4. The admin's display name at the moment of the toggle, so the audit line survives a rename.
++ALTER TABLE cabinet_dealz.affiliate_literature ADD COLUMN affiliateToggledByName VARCHAR(255) NULL;
 +
-+-- 5. Which admin account changed it. Null means never toggled, or the account was deleted.
-+ALTER TABLE cabinet_dealz.affiliate_literature ADD COLUMN IF NOT EXISTS affiliateToggledBy INT NULL;
++-- 5. Verification. This reads visibility, so it succeeds only if statement 1 worked. Expect documentCount greater than zero; internalCount is how many documents the affiliate portal cannot see. Do not go past this line until it returns a number.
++SELECT COUNT(*) AS documentCount, SUM(CASE WHEN visibility = 'internal' THEN 1 ELSE 0 END) AS internalCount FROM cabinet_dealz.affiliate_literature;
 +
-+-- 6. The admin's display name at the moment of the toggle, so the audit line survives a rename.
-+ALTER TABLE cabinet_dealz.affiliate_literature ADD COLUMN IF NOT EXISTS affiliateToggledByName VARCHAR(255) NULL;
++-- 6. Verification, the four columns this file adds, with their real types. Expect four rows before you continue.
++SELECT column_name AS presentColumn, data_type AS columnType, is_nullable AS nullable, column_default AS defaultValue FROM information_schema.columns WHERE table_schema = 'cabinet_dealz' AND table_name = 'affiliate_literature' AND column_name IN ('visibility', 'affiliateToggledAt', 'affiliateToggledBy', 'affiliateToggledByName') ORDER BY column_name;
 +
-+-- 7. Keep the affiliate portal exactly as it is today: a document that is already published was already visible to affiliates, so it becomes affiliate-visible rather than silently disappearing. A row an admin later unchecks has isPublished set to 0 by the backend, so this WHERE clause cannot re-publish it on a re-run.
-+UPDATE cabinet_dealz.affiliate_literature AS backfill_literature SET backfill_literature.visibility = 'affiliate' WHERE backfill_literature.visibility = 'internal' AND backfill_literature.isPublished = 1 AND backfill_literature.affiliateToggledAt IS NULL;
++-- 7. Verification, current state, so the backfill below is predictable. Read-only.
++SELECT id AS literatureId, title, mimeType, isPublished, visibility FROM cabinet_dealz.affiliate_literature ORDER BY id;
 +
-+-- 8. Index for the affiliate read, which is always "visibility = affiliate AND isPublished = 1".
-+CREATE INDEX IF NOT EXISTS affiliate_literature_visibility_idx ON cabinet_dealz.affiliate_literature (visibility, isPublished, sortOrder);
++-- 8. Keep the affiliate portal exactly as it is today: a document that is already published was already visible to affiliates, so it becomes affiliate-visible rather than silently disappearing. No table alias here. A row an admin later unchecks has isPublished set to 0 by the backend, so this WHERE clause cannot re-publish it on a re-run.
++UPDATE cabinet_dealz.affiliate_literature SET visibility = 'affiliate' WHERE visibility = 'internal' AND isPublished = 1 AND affiliateToggledAt IS NULL;
 +
-+-- 9. Register the Marazzi / website-improvement proposal as an INTERNAL document: visibility internal, isPublished 0, no affiliate toggle recorded. The bytes are NOT public: fileKey sits under library-documents/, which the patched backend puts in the private Supabase bucket and refuses on the public storage proxy. Upload the committed PDF to that exact key with the importer in docs/patches/cabinet-backend-library-internal-documents.patch, then it opens from the admin page only.
-+INSERT INTO cabinet_dealz.affiliate_literature (title, description, category, filename, fileKey, url, mimeType, sizeBytes, isPublished, visibility, sortOrder) SELECT 'Website Improvement Proposal — Lessons from Marazzi USA', 'Internal strategy proposal for Tom. Adapts Marazzi USA merchandising patterns (shop-by-look, room-first product pages, sample doors as CRM leads, find-a-dealer) to Cabinetdealz, in three phases. Internal only: never shown on the public site or in an affiliate portal.', 'Internal', 'website-improvement-proposal-marazzi-lessons-cabinetdealz.pdf', 'library-documents/internal/website-improvement-proposal-marazzi-lessons-cabinetdealz.pdf', '/manus-storage/library-documents/internal/website-improvement-proposal-marazzi-lessons-cabinetdealz.pdf', 'application/pdf', 92281, 0, 'internal', 900 FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM cabinet_dealz.affiliate_literature AS present_literature WHERE present_literature.fileKey = 'library-documents/internal/website-improvement-proposal-marazzi-lessons-cabinetdealz.pdf');
++-- 9. Index for the affiliate read, which is always "visibility = affiliate AND isPublished = 1". "Duplicate key name" on a re-run is safe to skip.
++CREATE INDEX affiliate_literature_visibility_idx ON cabinet_dealz.affiliate_literature (visibility, isPublished, sortOrder);
 +
-+-- 10. Read-only check: the library after this file, with the visibility the backend will enforce.
-+SELECT checked_literature.id AS literatureId, checked_literature.title, checked_literature.visibility, checked_literature.isPublished, checked_literature.affiliateToggledAt, checked_literature.affiliateToggledByName FROM cabinet_dealz.affiliate_literature AS checked_literature ORDER BY checked_literature.visibility, checked_literature.sortOrder, checked_literature.id;
++-- 10. Register the Marazzi / website-improvement proposal as an INTERNAL document: visibility internal, isPublished 0, no affiliate toggle recorded. The bytes are NOT public: fileKey sits under library-documents/, which the patched backend puts in the private Supabase bucket and refuses on the public storage proxy. Upload the committed PDF to that exact key with the importer in docs/patches/cabinet-backend-library-internal-documents.patch, then it opens from the admin page only.
++INSERT INTO cabinet_dealz.affiliate_literature (title, description, category, filename, fileKey, url, mimeType, sizeBytes, isPublished, visibility, sortOrder) SELECT 'Website Improvement Proposal — Lessons from Marazzi USA', 'Internal strategy proposal for Tom. Adapts Marazzi USA merchandising patterns (shop-by-look, room-first product pages, sample doors as CRM leads, find-a-dealer) to Cabinetdealz, in three phases. Internal only: never shown on the public site or in an affiliate portal.', 'Internal', 'website-improvement-proposal-marazzi-lessons-cabinetdealz.pdf', 'library-documents/internal/website-improvement-proposal-marazzi-lessons-cabinetdealz.pdf', '/manus-storage/library-documents/internal/website-improvement-proposal-marazzi-lessons-cabinetdealz.pdf', 'application/pdf', 92281, 0, 'internal', 900 FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM cabinet_dealz.affiliate_literature WHERE fileKey = 'library-documents/internal/website-improvement-proposal-marazzi-lessons-cabinetdealz.pdf');
 +
-+-- 11. Read-only check: exactly what an affiliate portal can see. This should list only visibility = 'affiliate' rows, and never the proposal.
-+SELECT affiliate_visible_literature.id AS literatureId, affiliate_visible_literature.title, affiliate_visible_literature.visibility FROM cabinet_dealz.affiliate_literature AS affiliate_visible_literature WHERE affiliate_visible_literature.visibility = 'affiliate' AND affiliate_visible_literature.isPublished = 1 ORDER BY affiliate_visible_literature.sortOrder, affiliate_visible_literature.id;
++-- 11. Read-only check: the library after this file, with the visibility the backend will enforce.
++SELECT id AS literatureId, title, visibility, isPublished, affiliateToggledAt, affiliateToggledByName FROM cabinet_dealz.affiliate_literature ORDER BY visibility, sortOrder, id;
++
++-- 12. Read-only check: exactly what an affiliate portal can see. This should list only visibility = 'affiliate' rows, and never the proposal.
++SELECT id AS literatureId, title, visibility FROM cabinet_dealz.affiliate_literature WHERE visibility = 'affiliate' AND isPublished = 1 ORDER BY sortOrder, id;
 diff --git a/drizzle/schema.ts b/drizzle/schema.ts
-index 8573714..fec82ff 100644
+index 8573714..b8d79a0 100644
 --- a/drizzle/schema.ts
 +++ b/drizzle/schema.ts
 @@ -4167,6 +4167,15 @@ export const affiliateLiterature = mysqlTable("affiliate_literature", {
@@ -830,7 +688,7 @@ index 8573714..fec82ff 100644
    sizeBytes: int("sizeBytes"),
    isPublished: boolean("isPublished").default(false).notNull(),
 +  // "internal" (admin only) or "affiliate" (signed-in affiliates). Never public.
-+  // Added by hand in docs/sql/0250_library_internal_documents.tidb.sql. The
++  // Added by hand in docs/sql/0255_library_internal_documents.tidb.sql. The
 +  // admin page and the affiliate read both select it, so that SQL must run
 +  // before this schema deploys.
 +  visibility: varchar("visibility", { length: 16 }).default("internal").notNull(),
@@ -898,10 +756,10 @@ index f313ee2..798b32b 100644
      expect(navigationSource).toContain('value: "affiliate-literature"');
 diff --git a/server/internalLibraryDocuments.test.ts b/server/internalLibraryDocuments.test.ts
 new file mode 100644
-index 0000000..eab2376
+index 0000000..c6b6658
 --- /dev/null
 +++ b/server/internalLibraryDocuments.test.ts
-@@ -0,0 +1,84 @@
+@@ -0,0 +1,121 @@
 +import { describe, expect, it } from "vitest";
 +import { readFileSync } from "node:fs";
 +import { resolve } from "node:path";
@@ -914,7 +772,7 @@ index 0000000..eab2376
 +const storageSource = read("server/storage.ts");
 +const proxySource = read("server/_core/storageProxy.ts");
 +const importer = read("server/scripts/import-internal-library-documents.ts");
-+const sql = read("docs/sql/0250_library_internal_documents.tidb.sql");
++const sql = read("docs/sql/0255_library_internal_documents.tidb.sql");
 +
 +describe("internal-only library documents", () => {
 +  it("stores a visibility and a who/when audit on every document", () => {
@@ -961,22 +819,59 @@ index 0000000..eab2376
 +    expect(resourcesRouter).toContain("storageGetSignedUrl(row.fileKey)");
 +  });
 +
-+  it("ships a re-runnable SQL file that adds the columns and seeds the proposal as internal", () => {
-+    expect(sql).toContain("Numbered 0250");
-+    expect(sql).toContain("ADD COLUMN IF NOT EXISTS visibility VARCHAR(16) NOT NULL DEFAULT 'internal'");
-+    expect(sql).toContain("ADD COLUMN IF NOT EXISTS affiliateToggledAt DATETIME NULL");
-+    expect(sql).toContain("ADD COLUMN IF NOT EXISTS affiliateToggledBy INT NULL");
-+    expect(sql).toContain("ADD COLUMN IF NOT EXISTS affiliateToggledByName VARCHAR(255) NULL");
-+    expect(sql).toContain("CREATE INDEX IF NOT EXISTS affiliate_literature_visibility_idx");
++  it("adds visibility first, standalone, with plain ALTER TABLE that TiDB Cloud accepts", () => {
++    expect(sql).toContain("Numbered 0255");
++    // TiDB Cloud rejected ADD COLUMN IF NOT EXISTS, so the column was never
++    // added and every later statement failed on "Unknown column 'visibility'".
++    // The first real statement must be the visibility ALTER, on its own.
++    const firstStatement = sql
++      .split(/\n-- \d+\./)
++      .slice(1)
++      .map((block) => block
++        .split("\n")
++        .slice(1)
++        .filter((line) => !line.trimStart().startsWith("--"))
++        .join("\n")
++        .trim())
++      .find(Boolean);
++    expect(firstStatement).toMatch(/^ALTER TABLE cabinet_dealz\.affiliate_literature ADD COLUMN visibility VARCHAR\(16\) NOT NULL DEFAULT 'internal';$/);
++    // The syntax TiDB Cloud rejected must not appear in any STATEMENT. The
++    // header comment names it on purpose, to explain why it is gone.
++    for (const statement of sql
++      .split(/\n-- \d+\./)
++      .slice(1)
++      .map((block) => block
++        .split("\n")
++        .slice(1)
++        .filter((line) => !line.trimStart().startsWith("--"))
++        .join("\n"))) {
++      expect(statement).not.toMatch(/IF NOT EXISTS/i);
++    }
++    expect(sql).toContain("ADD COLUMN affiliateToggledAt DATETIME NULL");
++    expect(sql).toContain("ADD COLUMN affiliateToggledBy INT NULL");
++    expect(sql).toContain("ADD COLUMN affiliateToggledByName VARCHAR(255) NULL");
++    expect(sql).toContain("CREATE INDEX affiliate_literature_visibility_idx ON cabinet_dealz.affiliate_literature");
++    // A re-run must be visibly a no-op rather than look like a failure.
++    expect(sql).toContain("Duplicate column name");
++    expect(sql).toContain("Duplicate key name");
++  });
++
++  it("verifies the columns before it writes with them, and seeds the proposal as internal", () => {
++    const verifyAt = sql.indexOf("SELECT COUNT(*) AS documentCount");
++    expect(verifyAt).toBeGreaterThan(0);
++    expect(verifyAt).toBeLessThan(sql.indexOf("\nUPDATE "));
++    expect(verifyAt).toBeLessThan(sql.indexOf("\nINSERT "));
 +    expect(sql).toContain("WHERE NOT EXISTS");
 +    expect(sql).toContain("'internal', 900");
 +    for (const line of sql.split("\n")) {
 +      if (!/^(ALTER|CREATE|SELECT|UPDATE|INSERT)\b/i.test(line)) continue;
-+      // The two read-only checks read information_schema; every statement that
-+      // touches a real table must name its schema.
++      // The read-only checks read information_schema or the table by name; every
++      // statement that touches a real table must name its schema.
 +      if (/^SELECT\b/i.test(line) && line.includes("information_schema")) continue;
 +      expect(line).toMatch(/cabinet_dealz\./);
 +    }
++    // No table alias in an UPDATE: TiDB Cloud is strict about that form.
++    expect(sql).toMatch(/^UPDATE cabinet_dealz\.affiliate_literature SET visibility = 'affiliate' WHERE /m);
 +  });
 +
 +  it("ships an importer that only uploads bytes and never widens access", () => {
@@ -1171,7 +1066,7 @@ index 437bb64..f13b165 100644
      const db = await getDb();
 diff --git a/server/scripts/import-internal-library-documents.ts b/server/scripts/import-internal-library-documents.ts
 new file mode 100644
-index 0000000..73f9ec6
+index 0000000..0ad398e
 --- /dev/null
 +++ b/server/scripts/import-internal-library-documents.ts
 @@ -0,0 +1,83 @@
@@ -1191,7 +1086,7 @@ index 0000000..73f9ec6
 + * What it does:
 + *   1. Reads the committed PDF from `docs/library/internal/` in the frontend repo.
 + *   2. Uploads it under the exact `library-documents/internal/...` key that
-+ *      docs/sql/0250_library_internal_documents.tidb.sql stores in the row.
++ *      docs/sql/0255_library_internal_documents.tidb.sql stores in the row.
 + *   3. Reports the row's visibility so a wrong value is visible, not silent.
 + *
 + * It uploads bytes only. It never creates a row, never changes visibility, and
@@ -1238,7 +1133,7 @@ index 0000000..73f9ec6
 +  if (!row) {
 +    throw new Error(
 +      `No affiliate_literature row points at ${STORED_KEY}. Run ` +
-+        "docs/sql/0250_library_internal_documents.tidb.sql first.",
++        "docs/sql/0255_library_internal_documents.tidb.sql first.",
 +    );
 +  }
 +
@@ -1481,6 +1376,3 @@ index 0000000..2bca6b9
 +  const action = isAffiliateLibraryDocument(row) ? "Added to" : "Removed from";
 +  return `${action} the affiliate library by ${actor} on ${when.toISOString().slice(0, 10)}`;
 +}
--- 
-2.43.0
-
