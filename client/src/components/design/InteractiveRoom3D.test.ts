@@ -1,3 +1,4 @@
+import { buildPublicDesignViewUrl } from "@/lib/designShare";
 import { describe, expect, it, vi } from "vitest";
 import { dlcPhotoLightCompensation } from "@shared/dlcFr26Textures";
 import { DARK_STAIN_DOOR_LIGHTS, RESTORED_DOOR_LIGHTS, isVeryDarkCabinetStain, relativeLuminance } from "@shared/doorRenderLights";
@@ -299,9 +300,9 @@ describe("source-measured Pelican bathroom fixtures", () => {
     expect(fixture?.children.some((child) => child.userData.pelicanBathroomFixturePart === "shower-door-rail")).toBe(true);
   });
 
-  it("keeps Bathroom starter planning zones out of the 3D presentation", () => {
+  it("ignores an unknown furniture definition left in an older saved plan", () => {
     const root = new THREE.Group();
-    addFurniture(root, { uid: "bath-zone", defId: "bathroom-zone-vanity-60", x: 0, y: 0, rotation: 0 });
+    addFurniture(root, { uid: "legacy-zone", defId: "bathroom-zone-vanity-60", x: 0, y: 0, rotation: 0 });
     expect(root.children).toHaveLength(0);
   });
 });
@@ -2929,15 +2930,41 @@ describe("interactive 3D room scene helpers", () => {
     expect(constrained.zoom).toBe(2);
   });
 
-  it("provides Share View beside the on-canvas navigation controls and appends only perspective state to the existing protected 3D link", () => {
+  it("provides Share View beside the on-canvas navigation controls and appends only perspective state to the public 3D link", () => {
     const rendererSource = readFileSync(new URL("./InteractiveRoom3D.tsx", import.meta.url), "utf8");
     expect(rendererSource).toContain('data-testid="three-d-share-view"');
     expect(rendererSource).toContain('Share View');
     expect(rendererSource).toContain('await shareConfiguration(cameraView)');
     expect(rendererSource).toContain('window.location.pathname.startsWith("/3d/")');
-    expect(rendererSource).toContain('url.searchParams.set(THREE_D_CAMERA_VIEW_QUERY_PARAM, serializedView)');
-    expect(rendererSource).toContain('const url = new URL(`/api/shared-3d-view/${token}`, window.location.origin)');
+    expect(rendererSource).toContain('view: cameraView ? serializeThreeDCameraShareView(cameraView) : null');
+    expect(rendererSource).toContain('buildPublicDesignViewUrl({');
     expect(rendererSource).toContain('sharedCameraViewRef.current = null');
+  });
+
+  it("gives a recipient the public /3d page rather than the API-host preview hop", () => {
+    const rendererSource = readFileSync(new URL("./InteractiveRoom3D.tsx", import.meta.url), "utf8");
+    // A code reference, not a comment: the recipient URL must be built from the
+    // public view helper instead of the `/api/shared-3d-view/<token>` hop.
+    expect(rendererSource).not.toMatch(/new URL\(`\/api\/shared-3d-view/);
+    expect(rendererSource).toContain('buildPublicDesignViewUrl({');
+    expect(buildPublicDesignViewUrl({ origin: "https://www.cabinetdealz.com", token: "aBcD1234_efGhI56" }))
+      .toBe("https://www.cabinetdealz.com/3d/aBcD1234_efGhI56");
+  });
+
+  it("round-trips a shared camera view from the sent link back into the viewer", () => {
+    // The link builder writes the query name the viewer reads. Pin them together
+    // so renaming one cannot silently drop the recipient's perspective.
+    const view = { position: new THREE.Vector3(12.3456, 8.2, -4.05), target: new THREE.Vector3(6.5, 3.1, 2.25), zoom: 1.25 };
+    const url = new URL(buildPublicDesignViewUrl({
+      origin: "https://www.cabinetdealz.com",
+      token: "aBcD1234_efGhI56",
+      view: serializeThreeDCameraShareView(view),
+    }));
+    const restored = parseThreeDCameraShareView(url.searchParams.get(THREE_D_CAMERA_VIEW_QUERY_PARAM));
+    expect(url.pathname).toBe("/3d/aBcD1234_efGhI56");
+    expect(restored?.position.toArray()).toEqual([12.346, 8.2, -4.05]);
+    expect(restored?.target.toArray()).toEqual([6.5, 3.1, 2.25]);
+    expect(restored?.zoom).toBeCloseTo(1.25, 12);
   });
 
   it("confirms a copied Share View link while retaining native sharing and graceful clipboard-permission fallback", () => {

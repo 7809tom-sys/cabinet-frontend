@@ -49,10 +49,11 @@ import { planAutoDesignBaseSegment } from "./autoDesignSeamFillers";
 import { applyFramelessDoorClearanceFillers } from "./framelessDoorClearance";
 import {
   effectiveSmallGapFillerMaxIn,
+  fillerFirstPreference,
   findPreferredSmallGapFillerOpportunity,
   type SmallGapFillerOpportunity,
 } from "./smallGapFiller";
-import { kitchenRuleNumber } from "./kitchenRuleParameters";
+import { kitchenRuleNumber, KITCHEN_RULE_PARAMETER_DEFAULTS } from "./kitchenRuleParameters";
 import { clampTrimRunSpans } from "./refrigeratorPanelLimit";
 import { normalizeContinuousVerticalFillers } from "./verticalFiller";
 import { normalizeUpperHeights } from "./designerFaceRules";
@@ -62,24 +63,28 @@ import { normalizeUpperHeights } from "./designerFaceRules";
  * while the run is fitted. The cap is measured from the original placement,
  * not from a later corner nudge. Movement is horizontal only: left or right
  * along the wall, never in or out. Sinks and refrigerators use their own caps.
+ *
+ * Every constant below is the CODE DEFAULT. The live number is read through
+ * `kitchenRuleNumber` so an admin can change it in Kitchen Rules without a
+ * deploy; until an admin saves a value the default here is what runs.
  */
-export const AUTO_DESIGN_WIGGLE_ROOM_IN = 3;
+export const AUTO_DESIGN_WIGGLE_ROOM_IN = KITCHEN_RULE_PARAMETER_DEFAULTS.jog_max_in;
 /** A sink base may slide at most this far from the measured center. The faucet stays on that base. */
-export const SINK_SHIFT_LIMIT_IN = 3;
+export const SINK_SHIFT_LIMIT_IN = KITCHEN_RULE_PARAMETER_DEFAULTS.sink_shift_limit_in;
 /** A refrigerator bay may slide at most this far from the measured center to close a gap. */
-export const REFRIGERATOR_SHIFT_LIMIT_IN = 6;
+export const REFRIGERATOR_SHIFT_LIMIT_IN = KITCHEN_RULE_PARAMETER_DEFAULTS.refrigerator_shift_limit_in;
 /**
  * A user-measured refrigerator may slide this far away from a corner while a
  * corner cabinet is seated. This does not change the bay gap-closing slide.
  * The live value is `measuredRefrigeratorCornerShiftLimitIn()` so an admin
  * override and the corner-seating error stay on the same number.
  */
-export const MEASURED_REFRIGERATOR_CORNER_SHIFT_LIMIT_IN = 12;
+export const MEASURED_REFRIGERATOR_CORNER_SHIFT_LIMIT_IN = KITCHEN_RULE_PARAMETER_DEFAULTS.measured_fridge_corner_shift_in;
 
 /**
  * Wiggle-room jog from the measured center. Every appliance, including the
- * refrigerator, stays inside the 3 inch jog. The 6 inch bay slide and the
- * 12 inch corner-seating slide are separate and are not this jog.
+ * refrigerator, stays inside the jog. The bay slide and the corner-seating
+ * slide are separate rules and are not this jog.
  */
 export function autoDesignShiftLimitIn(kind: string): number {
   void kind;
@@ -88,20 +93,20 @@ export function autoDesignShiftLimitIn(kind: string): number {
 
 /**
  * Owner rule: the range, the refrigerator, and the SINK BASE may slide during the
- * wiggle pass, but each by at most 2 inches from where it was measured. A sink
- * base stays centered on the window within that 2 inch cap. Everything else that
+ * wiggle pass, but each by at most their own cap from where it was measured. A
+ * sink base stays centered on the window within that cap. Everything else that
  * is not an anchor uses the normal wiggle allowance.
  *
  * Before this cap, each anchor took the full jog (3 inches), which moved a
  * measured sink further off its window than the owner allows.
  */
-export const ANCHOR_WIGGLE_CAP_IN = 2;
+export const ANCHOR_WIGGLE_CAP_IN = KITCHEN_RULE_PARAMETER_DEFAULTS.anchor_wiggle_cap_in;
 
 /** Anchor kinds that may slide, and the cap they slide within. */
 export function anchorWiggleLimitIn(kind: string): number {
   const normalized = (kind ?? "").toLowerCase();
   if (normalized === "sink" || normalized === "stove" || normalized === "range" || normalized === "refrigerator") {
-    return Math.min(ANCHOR_WIGGLE_CAP_IN, autoDesignShiftLimitIn(kind));
+    return Math.min(kitchenRuleNumber("anchor_wiggle_cap_in"), autoDesignShiftLimitIn(kind));
   }
   return autoDesignShiftLimitIn(kind);
 }
@@ -111,8 +116,17 @@ export function measuredRefrigeratorCornerShiftLimitIn(): number {
   return kitchenRuleNumber("measured_fridge_corner_shift_in");
 }
 
+/** Live sink base shift cap, read by the gap solver. */
+export function sinkShiftLimitIn(): number {
+  return kitchenRuleNumber("sink_shift_limit_in");
+}
+
+/** Live refrigerator bay gap-closing slide, read by corner seating. */
+export function refrigeratorShiftLimitIn(): number {
+  return kitchenRuleNumber("refrigerator_shift_limit_in");
+}
+
 const WIGGLE_STEP_IN = 1 / 8;
-const UNDERSIZED_CABINET_IN = 12;
 
 export type DesignerRulePhase = "wiggle" | "corner-first" | "shared-pipeline" | "auto-design-stage" | "invariant";
 
@@ -549,7 +563,7 @@ function segmentPenalty(
   const filler = fill.items.filter((item) => item.isFiller).reduce((sum, item) => sum + item.width, 0);
   const used = fill.items.reduce((sum, item) => sum + item.width, 0);
   const uncovered = Math.max(0, Math.round((length - used) * 1000) / 1000);
-  const undersized = fill.items.filter((item) => !item.isFiller && item.width < UNDERSIZED_CABINET_IN - COLLISION_EPSILON_IN).length;
+  const undersized = fill.items.filter((item) => !item.isFiller && item.width < kitchenRuleNumber("undersized_cabinet_in") - COLLISION_EPSILON_IN).length;
   // A remainder the standard filler can still cut counts as filler. A hole wider
   // than that is a real miss and dominates the score.
   const fillerMax = effectiveSmallGapFillerMaxIn();
@@ -1046,7 +1060,10 @@ export function applyDesignerLayoutRules(input: {
   }).placed;
   // Owner rule: filler is the last resort, never automatic at a run end. The
   // measured build turns this off and runs the shared real-cabinet pass instead.
-  if (input.allowAutoFillers !== false) {
+  // Kitchen Rules `filler_preference_order` can flip that: on "filler first" the
+  // automatic filler pass runs here too, so the admin's choice is what the
+  // Designer honors instead of a branch only a build flag could reach.
+  if (input.allowAutoFillers !== false || fillerFirstPreference()) {
     placed = applyStandardSmallGapFillers({
       placed, room: input.room, openings: input.openings, fillers: input.fillers, makeUid: input.makeUid, styleId: input.styleId,
     });

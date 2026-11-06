@@ -15,6 +15,7 @@
  * cabinet and no legal slide can close.
  */
 import { cabinetDrawingType } from "./cabinetGraphics";
+import { isPlacedCornerCabinet } from "./autoDesignCornerGuard";
 import {
   COLLISION_EPSILON_IN,
   STD,
@@ -38,7 +39,7 @@ import {
   type WallOpening,
   type WallSide,
 } from "./design";
-import { AUTO_DESIGN_FILLER_MAX_IN } from "./autoDesignSeamFillers";
+import { autoDesignFillerMaxIn } from "./autoDesignSeamFillers";
 
 /** Narrowest real cabinet the shared pass will try to seat in an opening. */
 export const REAL_CABINET_MIN_WIDTH_IN = 6;
@@ -69,7 +70,7 @@ export function isRealNarrowCabinet(row: DesignCabinet, layer: "base" | "wall"):
 
 /**
  * Openings in one layer of one wall that no cabinet covers, widest first.
- * `minWidthIn` below `AUTO_DESIGN_FILLER_MAX_IN` is deliberately NOT honoured:
+ * `minWidthIn` below the live filler maximum is deliberately NOT honoured:
  * slivers that small are the only place filler may ever go.
  */
 export function openRunGaps(input: {
@@ -94,7 +95,7 @@ export function openRunGaps(input: {
     undefined,
     depth,
   )
-    .filter((segment) => segment.length > AUTO_DESIGN_FILLER_MAX_IN + COLLISION_EPSILON_IN)
+    .filter((segment) => segment.length > autoDesignFillerMaxIn() + COLLISION_EPSILON_IN)
     .map((segment) => ({ startIn: segment.start, widthIn: segment.length }))
     .sort((left, right) => right.widthIn - left.widthIn);
 }
@@ -121,7 +122,7 @@ export function planRealCabinetFixes(input: {
   for (const cabinet of exact) {
     fixes.push({ kind: "seat", cabinet, startIn: 0, widthIn: input.gapIn });
   }
-  const slideLimit = Math.max(0, input.slideLimitIn ?? AUTO_DESIGN_FILLER_MAX_IN);
+  const slideLimit = Math.max(0, input.slideLimitIn ?? autoDesignFillerMaxIn());
   // The wiggle-room principle: if this exact opening is not a width the line sells,
   // slide a neighbor the small amount that MAKES it a sold width, then seat that
   // real cabinet. This is what turns a 7 inch gap into a 6 or 9 inch cabinet.
@@ -144,6 +145,9 @@ export function planRealCabinetFixes(input: {
   }
   // Widen a neighbor into the opening when the line sells the wider box.
   for (const neighbor of input.neighbors) {
+    // A seated corner cabinet keeps its own footprint and its corner seat. Only
+    // a run cabinet may grow, and only into a wider row of its own family.
+    if (isPlacedCornerCabinet(neighbor)) continue;
     const targetWidth = Math.round((Number(neighbor.width) + input.gapIn) * 8) / 8;
     const family = /^([A-Z]+)/i.exec(neighbor.masterCode ?? "")?.[1]?.toUpperCase();
     const wider = family
@@ -161,9 +165,11 @@ export function planRealCabinetFixes(input: {
       widthIn: targetWidth,
     });
   }
-  // Slide a neighbor to open a real width.
+  // Slide a neighbor to open a real width. A corner never slides: leaving its
+  // vertex is what empties the inside corner.
   if (slideLimit > 0 && input.gapIn + slideLimit >= REAL_CABINET_MIN_WIDTH_IN) {
     for (const neighbor of input.neighbors) {
+      if (isPlacedCornerCabinet(neighbor)) continue;
       fixes.push({ kind: "slide", cabinet: neighbor, deltaIn: Math.min(slideLimit, REAL_CABINET_MAX_WIDTH_IN - input.gapIn) });
     }
   }
@@ -193,7 +199,7 @@ export function isFillerLastResort(input: {
     .filter((row) => row.placement === input.layer)
     .map((row) => width(row))
     .filter((value) => value > 0);
-  if (!widths.length) return input.gapIn <= AUTO_DESIGN_FILLER_MAX_IN + COLLISION_EPSILON_IN;
+  if (!widths.length) return input.gapIn <= autoDesignFillerMaxIn() + COLLISION_EPSILON_IN;
   const narrowest = Math.min(...widths);
   if (input.gapIn < narrowest - 0.05) return true;
   // A width the line does not sell at all is also a sliver.
@@ -246,7 +252,7 @@ export function applyRealCabinetsBeforeFiller(input: {
           room: input.room,
           wallId,
           layer,
-          slideLimitIn: neighbors.reduce((smallest, item) => Math.min(smallest, input.slideLimitFor?.(item) ?? AUTO_DESIGN_FILLER_MAX_IN), AUTO_DESIGN_FILLER_MAX_IN),
+          slideLimitIn: neighbors.reduce((smallest, item) => Math.min(smallest, input.slideLimitFor?.(item) ?? autoDesignFillerMaxIn()), autoDesignFillerMaxIn()),
         }).sort((left, right) => rank(left) - rank(right));
         let applied = false;
         for (const fix of fixes) {

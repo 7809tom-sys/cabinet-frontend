@@ -1,0 +1,89 @@
+diff --git a/drizzle/pelicanSchema.ts b/drizzle/pelicanSchema.ts
+index 89221e2..e0888d8 100644
+--- a/drizzle/pelicanSchema.ts
++++ b/drizzle/pelicanSchema.ts
+@@ -55,6 +55,14 @@ export const pelicanProducts = mysqlTable("pelican_products", {
+   // Added by hand in docs/sql/0242_pelican_room_scene_image.tidb.sql. That SQL
+   // must run before deploy: list and detail queries select every column.
+   roomSceneImageUrl: varchar("roomSceneImageUrl", { length: 512 }),
++  // Source-verified bathroom identity for this exact Pelican SKU, e.g.
++  // "bathroom-vanity-sink,mount-undermount,bowl-single". Null on every kitchen
++  // sink, kitchen faucet, and every other Pelican row. The Bathroom Designer
++  // reads this instead of telling a vanity basin from a kitchen sink by its
++  // imported category. Added by hand in
++  // docs/sql/0264_pelican_vanity_fixtures_tag.tidb.sql (frontend repo); that
++  // SQL must run before this schema is deployed.
++  bathroomFixtureTags: varchar("bathroomFixtureTags", { length: 191 }),
+   showInDesigner: boolean("showInDesigner").default(true).notNull(),
+   showInCatalog: boolean("showInCatalog").default(true).notNull(),
+   isActive: boolean("isActive").default(true).notNull(),
+diff --git a/server/lib/pelicanFixtureRole.ts b/server/lib/pelicanFixtureRole.ts
+index 7af9255..6e13560 100644
+--- a/server/lib/pelicanFixtureRole.ts
++++ b/server/lib/pelicanFixtureRole.ts
+@@ -1,3 +1,5 @@
++import { PELICAN_VANITY_FAUCET_SKUS, PELICAN_VANITY_SINK_SKUS } from "../../shared/pelicanBathroomFixtures";
++
+ export type PelicanFixtureRole = "sink" | "faucet" | "pot-filler";
+ 
+ type PelicanFixtureSource = {
+@@ -11,7 +13,7 @@ const ACCESSORY = /\b(clip|strainer|\bgrid\b|template|mounting|drain assembly|fl
+ const NON_FIXTURE = /\b(countertop|prefab|slab|backsplash|tile|molding|trim)\b/i;
+ const SINK = /\b(sink|basin|farmhouse|undermount|drop[ -]?in|workstation|apron[ -]?front|lavatory)\b/i;
+ const FAUCET = /\b(faucet|pot filler|kitchen tap|bar tap|shower faucet)\b/i;
+-const KITCHEN_DESIGNER_EXCLUDED_CODES = /^(?:PL-3099|PL-3608|PL-8112)(?:\s|$)/i;
++
+ // Pelican's current public catalog identifies these four variants as 8-inch
+ // center wall-mounted kitchen faucets. Historical local import text/categories
+ // call PL-8461 a shower accessory, so exact source identity must take priority.
+@@ -19,12 +21,28 @@ const VERIFIED_KITCHEN_WALL_FAUCET_CODES = /^PL-(?:8410|8461)\s+(?:BN|MB)$/i;
+ 
+ /** Exact source-backed bathroom vanity sink records, independent of imported product text. */
+ export function isPelicanVanitySinkCode(code: string | null | undefined): boolean {
+-  return /^(?:PL-3099|PL-3608)(?:\s|$)/i.test(code?.trim() ?? "");
++  return PELICAN_VANITY_SINK_SKUS.includes((code ?? "").trim());
+ }
+ 
+ /** Exact source-backed bathroom vanity faucet records, independent of imported product text. */
+ export function isPelicanVanityFaucetCode(code: string | null | undefined): boolean {
+-  return /^PL-8112\s+(?:BN|CHR)$/i.test(code?.trim() ?? "");
++  return PELICAN_VANITY_FAUCET_SKUS.includes((code ?? "").trim());
++}
++
++/**
++ * Reads the tag column, so the API can answer "is this a bathroom vanity
++ * sink/faucet" from the row it already selected. The tag is the authority once
++ * docs/sql/0264_pelican_vanity_fixtures_tag.tidb.sql has run; the exact-SKU
++ * fallback keeps an un-migrated database working.
++ */
++export function pelicanRowIsVanitySink(row: { pelicanCode?: string | null; bathroomFixtureTags?: string | null }): boolean {
++  const tags = (row.bathroomFixtureTags ?? "").split(",").map((tag) => tag.trim());
++  return tags.includes("bathroom-vanity-sink") || isPelicanVanitySinkCode(row.pelicanCode);
++}
++
++export function pelicanRowIsVanityFaucet(row: { pelicanCode?: string | null; bathroomFixtureTags?: string | null }): boolean {
++  const tags = (row.bathroomFixtureTags ?? "").split(",").map((tag) => tag.trim());
++  return tags.includes("bathroom-vanity-faucet") || isPelicanVanityFaucetCode(row.pelicanCode);
+ }
+ 
+ /**
+@@ -34,12 +52,13 @@ export function isPelicanVanityFaucetCode(code: string | null | undefined): bool
+  * repeat those source labels as customer-facing placement rules.
+  */
+ export function pelicanFixtureRole(source: PelicanFixtureSource): PelicanFixtureRole | null {
+-  // Pelican's PL-3099 and PL-3608 are documented porcelain vanity sinks and
+-  // PL-8112 is a documented vanity faucet. Legacy imported labels may call
+-  // PL-3099 a farmhouse sink, so text alone could make the bathroom fixtures
+-  // look like kitchen products. Keep their catalog records intact, but surface
+-  // them only through the bathroom vanity workflow.
+-  if (KITCHEN_DESIGNER_EXCLUDED_CODES.test(source.pelicanCode?.trim() ?? "")) return null;
++  // Every Pelican vanity basin and vanity faucet is excluded from the kitchen
++  // Designer by its exact code, not by a short list. Legacy imported labels may
++  // call a vanity basin a farmhouse sink (PL-3099 is called exactly that in one
++  // older description), so text alone would make bathroom fixtures look like
++  // kitchen products. Their catalog records stay intact; they surface only
++  // through the bathroom vanity workflow.
++  if (isPelicanVanitySinkCode(source.pelicanCode) || isPelicanVanityFaucetCode(source.pelicanCode)) return null;
+   if (VERIFIED_KITCHEN_WALL_FAUCET_CODES.test(source.pelicanCode?.trim() ?? "")) return "faucet";
+   const text = `${source.name ?? ""} ${source.description ?? ""}`;
+   if (ACCESSORY.test(text) || NON_FIXTURE.test(text)) return null;

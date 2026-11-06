@@ -1,17 +1,23 @@
 import { useRef, useState } from "react";
-import { trpc } from "@/lib/trpc";
+import { toast } from "sonner";
+import { BookOpen, Download, FileText, Lock, LockOpen, Trash2, Upload } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Spinner } from "@/components/ui/spinner";
-import { toast } from "sonner";
-import { BookOpen, Download, FileText, Trash2, Upload } from "lucide-react";
+import {
+  AFFILIATE_LIBRARY_SWITCH_LABEL,
+  affiliateLibraryToggleNote,
+  isAffiliateLibraryDocument,
+  libraryVisibilityDescription,
+} from "@shared/libraryVisibility";
+import { toLibraryDocument, useAffiliateLiteratureAdmin } from "@/lib/libraryAdminProcedures";
 
-const CATEGORIES = ["Sales", "Marketing", "Pricing", "Training", "Legal", "General"] as const;
+const CATEGORIES = ["Internal", "Sales", "Marketing", "Pricing", "Training", "Legal", "General"] as const;
 
 function formatBytes(value: number | null) {
   if (!value) return "—";
@@ -20,39 +26,61 @@ function formatBytes(value: number | null) {
 }
 
 export default function AffiliateLiteratureAdmin() {
-  const utils = trpc.useUtils();
   const fileRef = useRef<HTMLInputElement>(null);
-  const { data: items, isLoading } = trpc.affiliateLiterature.adminList.useQuery();
+  const { utils, list, upload: uploadProcedure, update: updateProcedure, remove: removeProcedure } =
+    useAffiliateLiteratureAdmin();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [category, setCategory] = useState<(typeof CATEGORIES)[number]>("Sales");
-  const [isPublished, setIsPublished] = useState(false);
+  const [category, setCategory] = useState<(typeof CATEGORIES)[number]>("Internal");
+  const [inAffiliateLibrary, setInAffiliateLibrary] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [pendingId, setPendingId] = useState<number | null>(null);
 
-  const upload = trpc.affiliateLiterature.adminUpload.useMutation({
-    onSuccess: () => {
-      toast.success("Affiliate literature added to the library");
+  const items = (list.data ?? []).map(toLibraryDocument);
+
+  const upload = uploadProcedure.useMutation({
+    onSuccess: (_result, input) => {
+      toast.success(
+        input.inAffiliateLibrary
+          ? "Added to the internal library and to the affiliate library"
+          : "Added to the internal library — admins only",
+      );
       utils.affiliateLiterature.adminList.invalidate();
       setTitle("");
       setDescription("");
-      setCategory("Sales");
-      setIsPublished(false);
+      setCategory("Internal");
+      setInAffiliateLibrary(false);
       setSelectedFile(null);
       if (fileRef.current) fileRef.current.value = "";
     },
     onError: (error) => toast.error(error.message),
   });
-  const update = trpc.affiliateLiterature.adminUpdate.useMutation({
-    onSuccess: () => utils.affiliateLiterature.adminList.invalidate(),
+
+  const update = updateProcedure.useMutation({
+    onSuccess: (_result, input) => {
+      toast.success(
+        input.inAffiliateLibrary
+          ? "Added to the affiliate library"
+          : "Removed from the affiliate library — internal, admins only",
+      );
+      utils.affiliateLiterature.adminList.invalidate();
+    },
     onError: (error) => toast.error(error.message),
+    onSettled: () => setPendingId(null),
   });
-  const remove = trpc.affiliateLiterature.adminDelete.useMutation({
+
+  const remove = removeProcedure.useMutation({
     onSuccess: () => {
       toast.success("Literature removed");
       utils.affiliateLiterature.adminList.invalidate();
     },
     onError: (error) => toast.error(error.message),
   });
+
+  function toggleAffiliateLibrary(id: number, checked: boolean) {
+    setPendingId(id);
+    update.mutate({ id, inAffiliateLibrary: checked });
+  }
 
   async function handleUpload() {
     if (!selectedFile || !title.trim()) {
@@ -70,18 +98,18 @@ export default function AffiliateLiteratureAdmin() {
       description: description.trim() || null,
       category,
       filename: selectedFile.name,
-      mimeType: selectedFile.type || "application/octet-stream",
+      mimeType: selectedFile.type || "application/pdf",
       dataBase64,
-      isPublished,
+      inAffiliateLibrary,
     });
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-testid="affiliate-literature-admin">
       <div>
-        <h2 className="flex items-center gap-2 text-xl font-semibold"><BookOpen className="h-5 w-5 text-primary" /> Affiliate Literature Library</h2>
+        <h2 className="flex items-center gap-2 text-xl font-semibold"><BookOpen className="h-5 w-5 text-primary" /> Literature Library</h2>
         <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-          Keep sales brochures, pricing guides, training documents, and other affiliate-ready literature in one searchable administration area. Files are stored in secure object storage; this page manages the catalog record and publication status.
+          Every document here is internal to the admin team by default. Tick <strong className="font-medium text-foreground">{AFFILIATE_LIBRARY_SWITCH_LABEL}</strong> beside a document to also show it to signed-in affiliates in their portal library; untick it to take it back. This checkbox never puts a document on the public site, and every tick is recorded with your name and the time.
         </p>
       </div>
 
@@ -89,13 +117,19 @@ export default function AffiliateLiteratureAdmin() {
         <CardHeader className="pb-3"><CardTitle className="text-base">Add literature</CardTitle></CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-2">
           <div className="space-y-3">
-            <div className="space-y-1.5"><Label htmlFor="affiliate-literature-title">Title</Label><Input id="affiliate-literature-title" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Affiliate Portal Sales Brochure" /></div>
-            <div className="space-y-1.5"><Label htmlFor="affiliate-literature-description">Description</Label><Textarea id="affiliate-literature-description" value={description} onChange={(event) => setDescription(event.target.value)} placeholder="What this document helps the affiliate explain." rows={4} /></div>
+            <div className="space-y-1.5"><Label htmlFor="affiliate-literature-title">Title</Label><Input id="affiliate-literature-title" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Website Improvement Proposal" /></div>
+            <div className="space-y-1.5"><Label htmlFor="affiliate-literature-description">Description</Label><Textarea id="affiliate-literature-description" value={description} onChange={(event) => setDescription(event.target.value)} placeholder="What this document is for, and who may read it." rows={4} /></div>
           </div>
           <div className="space-y-3">
             <div className="space-y-1.5"><Label htmlFor="affiliate-literature-category">Category</Label><select id="affiliate-literature-category" className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={category} onChange={(event) => setCategory(event.target.value as (typeof CATEGORIES)[number])}>{CATEGORIES.map((option) => <option key={option}>{option}</option>)}</select></div>
             <div className="space-y-1.5"><Label htmlFor="affiliate-literature-file">Document</Label><Input id="affiliate-literature-file" ref={fileRef} type="file" accept=".pdf,.docx,.xlsx,.pptx,.txt,application/pdf" onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)} /></div>
-            <label className="flex items-center justify-between rounded-md border border-border px-3 py-2 text-sm"><span><span className="block font-medium">Publish to affiliate library</span><span className="text-xs text-muted-foreground">Leave off while the document is still being reviewed.</span></span><Switch checked={isPublished} onCheckedChange={setIsPublished} /></label>
+            <label htmlFor="affiliate-literature-new-affiliate-library" className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2 text-sm">
+              <span>
+                <span className="block font-medium">{AFFILIATE_LIBRARY_SWITCH_LABEL}</span>
+                <span className="text-xs text-muted-foreground">Off keeps this document admin-only. On shows it to signed-in affiliates. Neither one makes it public.</span>
+              </span>
+              <Checkbox id="affiliate-literature-new-affiliate-library" checked={inAffiliateLibrary} onCheckedChange={(value) => setInAffiliateLibrary(value === true)} />
+            </label>
             <Button type="button" className="gap-2" onClick={handleUpload} disabled={upload.isPending || !selectedFile || !title.trim()}><Upload className="h-4 w-4" />{upload.isPending ? "Uploading…" : "Add to library"}</Button>
           </div>
         </CardContent>
@@ -104,20 +138,45 @@ export default function AffiliateLiteratureAdmin() {
       <Card>
         <CardHeader className="pb-3"><CardTitle className="text-base">Library contents</CardTitle></CardHeader>
         <CardContent>
-          {isLoading ? <div className="flex justify-center py-8"><Spinner /></div> : !items?.length ? (
-            <div className="rounded-md border border-dashed p-10 text-center text-sm text-muted-foreground">No affiliate literature has been added yet.</div>
+          {list.isLoading ? <div className="flex justify-center py-8"><Spinner /></div> : !items.length ? (
+            <div className="rounded-md border border-dashed p-10 text-center text-sm text-muted-foreground">No literature has been added yet.</div>
           ) : (
             <div className="divide-y divide-border rounded-md border">
-              {items.map((item) => (
-                <div key={item.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
-                  <FileText className="h-5 w-5 shrink-0 text-primary" />
-                  <div className="min-w-[220px] flex-1"><div className="font-medium">{item.title}</div><div className="text-xs text-muted-foreground">{item.filename} · {formatBytes(item.sizeBytes)} · {item.category}</div>{item.description && <div className="mt-1 line-clamp-2 text-xs text-muted-foreground">{item.description}</div>}</div>
-                  <Badge variant={item.isPublished ? "default" : "outline"}>{item.isPublished ? "Published" : "Draft"}</Badge>
-                  <label className="flex items-center gap-2 text-xs text-muted-foreground"><Switch checked={item.isPublished} onCheckedChange={(value) => update.mutate({ id: item.id, isPublished: value })} /> Publish</label>
-                  <Button asChild size="sm" variant="outline" className="gap-1.5"><a href={item.url} target="_blank" rel="noreferrer"><Download className="h-3.5 w-3.5" /> Open</a></Button>
-                  <Button type="button" size="sm" variant="ghost" className="text-destructive" onClick={() => remove.mutate({ id: item.id })} aria-label={`Delete ${item.title}`}><Trash2 className="h-4 w-4" /></Button>
-                </div>
-              ))}
+              {items.map((item) => {
+                const inAffiliate = isAffiliateLibraryDocument(item);
+                const toggleNote = affiliateLibraryToggleNote(item);
+                return (
+                  <div key={item.id} className="flex flex-wrap items-center gap-3 px-4 py-3" data-testid={`library-document-${item.id}`}>
+                    <FileText className="h-5 w-5 shrink-0 text-primary" />
+                    <div className="min-w-[240px] flex-1">
+                      <div className="font-medium">{item.title}</div>
+                      <div className="text-xs text-muted-foreground">{item.filename} · {formatBytes(item.sizeBytes)} · {item.category}</div>
+                      {item.description && <div className="mt-1 line-clamp-2 text-xs text-muted-foreground">{item.description}</div>}
+                      {toggleNote && <div className="mt-1 text-xs text-muted-foreground" data-testid={`library-toggle-note-${item.id}`}>{toggleNote}</div>}
+                    </div>
+                    <Badge variant={inAffiliate ? "default" : "secondary"} className="gap-1" data-testid={`library-visibility-${item.id}`}>
+                      {inAffiliate ? <LockOpen className="h-3 w-3" /> : <Lock className="h-3 w-3" />}
+                      {inAffiliate ? "Affiliate library" : "Internal"}
+                    </Badge>
+                    <label htmlFor={`library-affiliate-${item.id}`} className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <Checkbox
+                        id={`library-affiliate-${item.id}`}
+                        checked={inAffiliate}
+                        disabled={pendingId === item.id}
+                        onCheckedChange={(value) => toggleAffiliateLibrary(item.id, value === true)}
+                        aria-label={`${AFFILIATE_LIBRARY_SWITCH_LABEL} for ${item.title}`}
+                        aria-describedby={`library-visibility-help-${item.id}`}
+                      />
+                      {AFFILIATE_LIBRARY_SWITCH_LABEL}
+                    </label>
+                    <span id={`library-visibility-help-${item.id}`} className="sr-only">{libraryVisibilityDescription(item.visibility)}</span>
+                    {item.url ? (
+                      <Button asChild size="sm" variant="outline" className="gap-1.5"><a href={item.url} target="_blank" rel="noreferrer"><Download className="h-3.5 w-3.5" /> Open</a></Button>
+                    ) : null}
+                    <Button type="button" size="sm" variant="ghost" className="text-destructive" onClick={() => remove.mutate({ id: item.id })} aria-label={`Delete ${item.title}`}><Trash2 className="h-4 w-4" /></Button>
+                  </div>
+                );
+              })}
             </div>
           )}
         </CardContent>

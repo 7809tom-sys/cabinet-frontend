@@ -16,7 +16,6 @@ import {
   isFarmSinkBasePaletteItem,
   isSinkBaseCabinet,
   makeSinkForCabinet,
-  nonApronSinkDeckPlacement,
   placedFootprint,
   requiresRoomCornerPlacement,
   roomWallRunFrames,
@@ -418,15 +417,8 @@ export function planPelicanFaucetAttachment(input: {
     };
   }
   const owner = input.placed.find((cabinet) => cabinet.uid === host.cabinetUid);
-  if (owner && host.type !== "farmhouse") {
-    const deck = nonApronSinkDeckPlacement(owner, input.room, {
-      width: host.sourceWidth ?? host.width,
-      depth: host.sourceDepth ?? host.depth,
-    });
-    if (deck.applies && !deck.faucetCanFit) {
-      return { ok: false, message: deck.reason ?? `${item.name} does not fit the rear deck behind this sink.` };
-    }
-  }
+  // A narrow rear deck is informational only. Faucets fit one- and two-hole
+  // deck mounts, so it never refuses the faucet and never moves the cabinet.
   const replaced = Boolean(host.pelicanFaucetProfileId);
   return {
     ok: true,

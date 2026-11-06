@@ -28,7 +28,7 @@ import {
   type RoomData,
   type WallOpening,
 } from "./design";
-import { AUTO_DESIGN_FILLER_MAX_IN } from "./autoDesignSeamFillers";
+import { AUTO_DESIGN_FILLER_MAX_IN, autoDesignFillerMaxIn } from "./autoDesignSeamFillers";
 
 /** Rule 11: the top line each upper height must land on. */
 export function upperTopLineFor(heightIn: number): 84 | 90 | 96 | null {
@@ -66,6 +66,12 @@ export function normalizeUpperHeights(placed: readonly PlacedCabinet[]): PlacedC
     // clearance. Re-hanging it here on the generic short-upper datum is what put
     // a 12 5/8-inch bridge's bottom at 71 3/8 — inside the two-inch clearance.
     if (item.refrigeratorAssemblyRole === "bridge") return item;
+    // The mandatory bridge above the range hangs from the fixed 72" microwave
+    // datum, not from the ordinary upper line. A frameless line stores that bridge
+    // as 12⅝" or 17⅝" tall rather than 12/15/18", so the height-keyed rule below
+    // used to shove it down to 66⅜" — a bridge floating below the microwave it
+    // rests on, and a hole above the range. A bridge keeps its own datum.
+    if (item.overRangeMicrowaveBridge === true) return item;
     const height = placedHeight(item);
     const bottom = upperMountBottomFor(height) ?? ordinaryWallMountBottom(item);
     if (Number(item.mountBottom) === bottom) return item;
@@ -297,3 +303,8 @@ export function isGlassTopper(item: PlacedCabinet): boolean {
 
 /** Rule 12 + 3: the widest single filler Auto-Design will ever place. */
 export const AUTO_DESIGN_MAX_FILLER_IN = AUTO_DESIGN_FILLER_MAX_IN;
+
+/** Live cap: the widest single filler Auto-Design will place right now. */
+export function autoDesignMaxFillerIn(): number {
+  return autoDesignFillerMaxIn();
+}

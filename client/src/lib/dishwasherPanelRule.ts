@@ -330,6 +330,11 @@ export function syncDishwasherPanels(input: {
       // square corner closed by the adjoining run needs nothing. A square
       // corner with no cabinet on the return is an open side, not a closed one.
       if (turn != null && turn !== 45 && adjoiningRunReachesVertex(room, frame, edge, withoutPanels)) continue;
+      // The owner's switches unpublish a rule without disturbing any other panel.
+      // The run-end and the 45 degree turn are separate rules, so one can be
+      // turned off without losing the other.
+      if (turn === 45 && kitchenRuleNumber("dishwasher_panel_forty_five_enabled") === 0) continue;
+      if (turn !== 45 && kitchenRuleNumber("dishwasher_panel_enabled") === 0) continue;
       const reason: DishwasherPanelReason = turn === 45
         ? DISHWASHER_FORTY_FIVE_PANEL_REASON
         : DISHWASHER_RUN_END_PANEL_REASON;

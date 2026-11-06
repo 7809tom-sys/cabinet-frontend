@@ -70,6 +70,22 @@ describe("kitchen rules catalog", () => {
     expect(rule!.ruleDescription).not.toContain("Golden Trace");
   });
 
+  it("lists the mosaic backsplash 5% waste rule as implemented and auto", () => {
+    const rule = KITCHEN_RULE_SEED.find((item) => item.ruleCode === "owner-mosaic-backsplash-waste");
+    expect(rule).toMatchObject({
+      category: "Backsplash",
+      enforcementKind: "auto",
+      implementationStatus: "implemented",
+      sourceText: "Owner",
+    });
+    expect(rule!.title).toBe("Mosaic backsplash carries 5% waste");
+    expect(rule!.ruleDescription).toContain("X * 1.05");
+    expect(rule!.ruleDescription).toContain("Applies only to mosaics in backsplash designs");
+    expect(rule!.parameters).toEqual({ mosaic_backsplash_waste_pct: 5 });
+    // The rule must state the detection limit instead of implying an exact mosaic flag exists.
+    expect(rule!.notesText).toContain("No isMosaic column");
+  });
+
   it("keeps Kitchen Rules off the designer and sales-rep admin screens", () => {
     const designerBlock = adminPage.slice(adminPage.indexOf("if (isDesigner)"), adminPage.indexOf("return (", adminPage.indexOf("if (isDesigner)") + 20));
     const salesBlock = adminPage.slice(adminPage.indexOf("if (isSalesRep)"), adminPage.indexOf("if (isDesigner)"));
@@ -88,8 +104,17 @@ describe("stored kitchen rule parameters", () => {
     setKitchenRuleParameters({ jog_max_in: 2 });
     expect(autoDesignShiftLimitIn("sink")).toBe(2);
     expect(rangeBridgeSpec({ rangeWidthIn: 30, hangsBelow: true }).bottomIn).toBe(72);
-    setKitchenRuleParameters({ bridge_hung_bottom_in: 70, bridge_hung_height_in: 24, run_top_in: 96 });
-    expect(rangeBridgeSpec({ rangeWidthIn: 30, hangsBelow: true })).toMatchObject({ code: "W3024", bottomIn: 70, topIn: 96 });
+    // 30" uppers finish at 84", so a bridge on the 72" datum is 12" tall — W3012.
+    expect(rangeBridgeSpec({ rangeWidthIn: 30, hangsBelow: true })).toMatchObject({ code: "W3012", heightIn: 12, bottomIn: 72, topIn: 84 });
+    // The stored bridge datum is honoured, and the height still has to land the top on
+    // that same 84" upper line, so a lower datum asks for a taller bridge: 84 - 70 = 14,
+    // and the nearest stock bridge height is 15.
+    setKitchenRuleParameters({ bridge_hung_bottom_in: 70 });
+    expect(rangeBridgeSpec({ rangeWidthIn: 30, hangsBelow: true })).toMatchObject({ code: "W3015", bottomIn: 70, topIn: 85 });
+    // The wall run beside the range is the height the bridge is measured against.
+    resetKitchenRuleParameters();
+    setKitchenRuleParameters({ bridge_upper_height_in: 42 });
+    expect(rangeBridgeSpec({ rangeWidthIn: 30, hangsBelow: true })).toMatchObject({ heightIn: 24, bottomIn: 72, topIn: 96 });
     resetKitchenRuleParameters();
     expect(autoDesignShiftLimitIn("sink")).toBe(3);
   });

@@ -12,6 +12,7 @@ import {
   type DesignCabinet, type PlacedCabinet, type RoomData, type WallOpening,
 } from "./design";
 import { installedFillerVerticalSpec } from "./smallGapFiller";
+import { kitchenRuleNumber, KITCHEN_RULE_PARAMETER_DEFAULTS } from "./kitchenRuleParameters";
 import { guardHeavyCookRangeLanding } from "./kitchenAdjacency";
 import { preferDrawerBasesBesideRange, splitWideDoorBaseBesideRange } from "./kitchenUsage";
 
@@ -19,10 +20,18 @@ import { preferDrawerBasesBesideRange, splitWideDoorBaseBesideRange } from "./ki
 export const SEAM_MIN_IN = 0.125;
 /** One filler board closes a seam. A second board is never placed beside it. */
 export const SEAM_MAX_FILLER_IN = MAX_FILLER_RUN_WIDTH_IN;
-/** Auto-Design closes a run with a filler only when the remainder is 3 inches or less. No prompt. */
-export const AUTO_DESIGN_FILLER_MAX_IN = 3;
+/**
+ * Auto-Design closes a run with a filler only when the remainder is this wide or
+ * less. No prompt. The live value is `autoDesignFillerMaxIn()`.
+ */
+export const AUTO_DESIGN_FILLER_MAX_IN = KITCHEN_RULE_PARAMETER_DEFAULTS.seam_filler_max_in;
 /** A range always has a real cabinet at least this wide on each side. */
 export const RANGE_NEIGHBOR_MIN_WIDTH_IN = 15;
+
+/** Widest run remainder Auto-Design closes by itself. */
+export function autoDesignFillerMaxIn(): number {
+  return kitchenRuleNumber("seam_filler_max_in");
+}
 
 const EDGE_TOL_IN = 0.02;
 

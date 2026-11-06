@@ -13,6 +13,7 @@ import {
   type AutoDesignInputs,
 } from "./autoDesignAutoBuild";
 import { seatAutoDesignCornerFromCatalog } from "./autoDesignCornerPlacement";
+import { isPlacedCornerCabinet, sameWidthFamily } from "./autoDesignCornerGuard";
 import {
   AUTO_DESIGN_GALLEY_WALLS,
   autoBuildCornerCatalog,
@@ -27,12 +28,13 @@ import {
 } from "./autoDesignCornerStage";
 import { evaluateAutoDesignCornerFit } from "./cornerFit";
 import { catalogFillerForGap, fittedCatalogFillerDescription, type CatalogFillerCandidate } from "./catalogFiller";
-import { activeAutoDesignWiggleMoves, applyAutoDesignWiggleRoom, applyDesignerLayoutRules, ANCHOR_WIGGLE_CAP_IN, AUTO_DESIGN_WIGGLE_ROOM_IN, type AutoDesignAnchorOrigin, type AutoDesignWiggleMove } from "./designerLayoutRules";
+import { activeAutoDesignWiggleMoves, applyAutoDesignWiggleRoom, applyDesignerLayoutRules, autoDesignShiftLimitIn, type AutoDesignAnchorOrigin, type AutoDesignWiggleMove } from "./designerLayoutRules";
 import { applyRealCabinetsBeforeFiller, isFillerLastResort } from "./autoDesignRealCabinets";
 import { bakesALot, cooksALot, normalizeKitchenUsage } from "./kitchenUsage";
 import { ensureDrawerBase } from "./autoDesignDrawerRule";
 import { reviewAfterShift, separateRangeAndRefrigerator } from "./kitchenAdjacency";
-import { AUTO_DESIGN_FILLER_MAX_IN, fillAutoDesignLowerSeams, planAutoDesignBaseSegment } from "./autoDesignSeamFillers";
+import { autoDesignFillerMaxIn, fillAutoDesignLowerSeams, planAutoDesignBaseSegment } from "./autoDesignSeamFillers";
+import { kitchenRuleNumber } from "./kitchenRuleParameters";
 import { autoDesignRangeNeedsVentilation } from "./autoDesignRangeHood";
 import { AUTO_DESIGN_REFRIGERATOR_WALL_END_SHIFT_IN, buildMandatoryAutoDesignRefrigeratorBay } from "./autoDesignRefrigeratorBay";
 import { clampRefrigeratorAssemblyToPanels } from "./refrigeratorPanelClamp";
@@ -173,18 +175,22 @@ function absorbOpenBaseGaps(
   for (const wallId of walls) {
     const gaps = freeSegmentsOnWall(wallId, room, working, [], 3.05, 0, "base", false);
     for (const gap of gaps) {
-      if (gap.length <= AUTO_DESIGN_FILLER_MAX_IN + 0.05 || gap.length > 9.05) continue;
-      const neighbor = working.find((item) => item.placement === "base" && !isSinkBaseCabinet(item) && !/filler|scribe/i.test(item.masterCode)
+      if (gap.length <= autoDesignFillerMaxIn() + 0.05 || gap.length > 9.05) continue;
+      const edgeNeighbors = working.filter((item) => item.placement === "base" && !/filler|scribe/i.test(item.masterCode)
         && cabinetWall(item, room) === wallId
         && (Math.abs(wallRunOffset(item, wallId, room) + wallRunSpan(item, wallId, room) - gap.start) <= 0.75
           || Math.abs(wallRunOffset(item, wallId, room) - (gap.start + gap.length)) <= 0.75));
+      // Grow a run cabinet into the gap. A corner cabinet on one edge is not a
+      // candidate: widening it would turn a lazy Susan or blind corner into a
+      // straight base and lose the corner, so the opposite edge is tried first.
+      const neighbor = edgeNeighbors.find((item) => !isSinkBaseCabinet(item) && !isPlacedCornerCabinet(item));
       if (!neighbor) {
         const appliance = working.find((item) => item.placement === "appliance" && cabinetWall(item, room) === wallId && (
           Math.abs(wallRunOffset(item, wallId, room) + wallRunSpan(item, wallId, room) - gap.start) <= 0.2
           || Math.abs(wallRunOffset(item, wallId, room) - (gap.start + gap.length)) <= 0.2
         ));
         if (!appliance) continue;
-        const delta = gap.length - AUTO_DESIGN_FILLER_MAX_IN;
+        const delta = gap.length - autoDesignFillerMaxIn();
         if (delta <= 0.05 || delta > 3.05) continue;
         const atStart = Math.abs(wallRunOffset(appliance, wallId, room) + wallRunSpan(appliance, wallId, room) - gap.start) <= 0.2;
         const nextStart = wallRunOffset(appliance, wallId, room) + (atStart ? -delta : delta);
@@ -196,10 +202,17 @@ function absorbOpenBaseGaps(
         if (accepted.rejected.length === 0) working = accepted.placed;
         continue;
       }
+      // A seated corner cabinet is never resized by this pass. Growing a 36"
+      // lazy Susan into a 42" straight base copies the L-corner footprint onto a
+      // wider body, which then overruns the room and is dropped by the bounds
+      // gate, leaving the inside corner empty.
       const wanted = neighbor.width + gap.length;
       const wider = catalog
         .map((row) => ({ row, width: dim(row.width, 0) }))
-        .filter((entry) => entry.width > neighbor.width + 0.05 && entry.width <= wanted + 0.05 && wanted - entry.width <= AUTO_DESIGN_FILLER_MAX_IN + 0.05)
+        .filter((entry) => entry.width > neighbor.width + 0.05 && entry.width <= wanted + 0.05 && wanted - entry.width <= autoDesignFillerMaxIn() + 0.05)
+        // Same family only: a `B` row is never the wider version of a `BBC`,
+        // `LSB`, `CSB` or `CDB` corner.
+        .filter((entry) => sameWidthFamily(neighbor, entry.row))
         .sort((a, b) => b.width - a.width)[0];
       const source = wider?.row;
       const grown = wider?.width ?? wanted;
@@ -250,7 +263,7 @@ function resolveLeftoverOpenings(input: {
   const notes: string[] = [];
   for (const wallId of input.walls) {
     const reservations = refrigeratorLimitIn({ placed: working, room: input.room, wallId });
-    const gaps = freeSegmentsOnWall(wallId, input.room, working, [], AUTO_DESIGN_FILLER_MAX_IN + 0.05, 0, "base", false, undefined, STD.BASE_DEPTH);
+    const gaps = freeSegmentsOnWall(wallId, input.room, working, [], autoDesignFillerMaxIn() + 0.05, 0, "base", false, undefined, STD.BASE_DEPTH);
     for (const gap of gaps) {
       const gapStart = gap.start;
       const gapEnd = gap.start + gap.length;
@@ -267,10 +280,12 @@ function resolveLeftoverOpenings(input: {
         room: input.room,
         cappedByRefrigeratorPanel,
         atSkin: gapStart <= 0.06 || gapEnd >= (wallRunFrame(wallId, input.room)?.length ?? 0) - 0.06,
-        fillerMaxIn: AUTO_DESIGN_FILLER_MAX_IN,
+        fillerMaxIn: autoDesignFillerMaxIn(),
         });
 
       if (resolution.kind === "widen-neighbor") {
+        // Never resize a corner cabinet into a wider straight base here either.
+        if (isPlacedCornerCabinet(resolution.neighbor)) continue;
         const depth = footprintDepth(resolution.replacement);
         const spot = boundedWallPlacementAt(resolution.startIn, resolution.widthIn, depth, wallId, input.room);
         if (!spot) continue;
@@ -323,7 +338,7 @@ function resolveLeftoverOpenings(input: {
         }
         continue;
       }
-      if (resolution.kind === "leave-bare" && resolution.widthIn > AUTO_DESIGN_FILLER_MAX_IN + 0.05) {
+      if (resolution.kind === "leave-bare" && resolution.widthIn > autoDesignFillerMaxIn() + 0.05) {
         // The reservation check above already proved this opening is not a filler's job.
         void reservations;
         input.reviewFindings.push({
@@ -346,8 +361,8 @@ export function capAutoDesignFillerWidth(placed: PlacedCabinet[]): PlacedCabinet
     const text = `${item.masterCode} ${item.description ?? ""} ${item.subCategory ?? ""}`;
     const filler = Boolean(item.fillerPieceGroupId) || /filler|scribe|^OF\d|^FOL/i.test(text);
     const installed = item.fillerTotalWidth ?? item.width;
-    if (!filler || installed <= AUTO_DESIGN_FILLER_MAX_IN + 0.05) return item;
-    return { ...item, width: AUTO_DESIGN_FILLER_MAX_IN, fillerTotalWidth: AUTO_DESIGN_FILLER_MAX_IN };
+    if (!filler || installed <= autoDesignFillerMaxIn() + 0.05) return item;
+    return { ...item, width: autoDesignFillerMaxIn(), fillerTotalWidth: autoDesignFillerMaxIn() };
   });
 }
 
@@ -665,7 +680,7 @@ export function runAutoDesignLayout(args: {
       cornerWallIds: [firstWall.engineWallId, secondWall.engineWallId],
       corner: point,
       placed: working,
-      wiggleLimitIn: AUTO_DESIGN_WIGGLE_ROOM_IN,
+      wiggleLimitIn: autoDesignShiftLimitIn("cabinet"),
     });
     if (cornerPlan) notes.push(`${slot.label}: ${describeCornerFirst(cornerPlan)}`);
     // A blind corner the planner chose overrides the generic widest-first order.
@@ -697,6 +712,15 @@ export function runAutoDesignLayout(args: {
       // already in it, or a range closer than the slide limit) must not wipe
       // the runs. PR #133 owns the corner-occupant refrigerator bay.
       notes.push(seated.message);
+      // A required corner is never left empty in silence: the reason goes on the
+      // review list with the slot name, so it is visible outside the notes panel.
+      reviewFindings.push({
+        ruleId: "corner-first-least-waste",
+        code: "corner-cabinet-not-seated",
+        severity: "warning",
+        title: `${slot.label}: no corner cabinet was seated`,
+        detail: seated.message,
+      });
       continue;
     }
     if (seated.fallbackNote) notes.push(seated.fallbackNote);
@@ -816,7 +840,7 @@ export function runAutoDesignLayout(args: {
       let along = segment.start;
       const segmentEnd = segment.start + segment.length;
       let guard = 0;
-      while (segmentEnd - along > AUTO_DESIGN_FILLER_MAX_IN + 0.05 && guard < 40) {
+      while (segmentEnd - along > autoDesignFillerMaxIn() + 0.05 && guard < 40) {
         guard += 1;
         const remain = segmentEnd - along;
         const fill = planAutoDesignBaseSegment({
@@ -920,8 +944,8 @@ export function runAutoDesignLayout(args: {
     // cabinet may use the normal allowance.
     slideLimitFor: (item) => (isSinkBaseCabinet(item)
       || (item.placement === "appliance" && (isRangeOrOven(item.masterCode, item.description) || isRefrigerator(item)))
-      ? ANCHOR_WIGGLE_CAP_IN
-      : AUTO_DESIGN_FILLER_MAX_IN),
+      ? kitchenRuleNumber("anchor_wiggle_cap_in")
+      : kitchenRuleNumber("jog_max_in")),
   });
   working = realCabinets.placed;
   notes.push(...realCabinets.notes);
@@ -946,7 +970,7 @@ export function runAutoDesignLayout(args: {
   const seamResult = fillAutoDesignLowerSeams({
     placed: working, room, openings: stageOpenings, fillers: catalogFillers, makeUid,
     styleId: args.styleId, corners: upperCorners.map((entry) => entry.point),
-    preserveHeavyCookLandings: heavyCook, maxFillerIn: AUTO_DESIGN_FILLER_MAX_IN,
+    preserveHeavyCookLandings: heavyCook, maxFillerIn: autoDesignFillerMaxIn(),
   });
   working = absorbOpenBaseGaps(seamResult.placed, room, stage.straightBaseCatalog, runWalls, args.styleId, makeUid);
   notes.push(...seamResult.notes, ...separated.flags);
@@ -1074,6 +1098,21 @@ export function runAutoDesignLayout(args: {
       title: `${escaped.length} piece${escaped.length === 1 ? "" : "s"} left the room bounds`,
       detail: `These pieces extend past their wall end or outside the drawn room: ${escaped.map((item) => item.masterCode).join(", ")}.`,
     });
+    // Dropping a corner that escaped is never acceptable on its own: the inside
+    // corner would just go bare. If a corner is among them, say so as its own
+    // finding so the empty corner is visible and named, not silent.
+    for (const corner of escaped.filter(isPlacedCornerCabinet)) {
+      const slot = seatedCorners.find((entry) => entry.masterCode === corner.masterCode);
+      reviewFindings.push({
+        ruleId: "corner-first-least-waste",
+        code: "corner-cabinet-dropped",
+        severity: "warning",
+        title: `${slot?.label ?? "The inside corner"} lost its ${corner.masterCode}`,
+        detail: `${corner.masterCode} extended past its wall run or outside the drawn room, so it was removed and the inside corner is empty. Adjust the wall length or the measured appliance positions, then run Auto-Design again.`,
+        cabinetUid: corner.uid,
+        cabinetCode: corner.masterCode,
+      });
+    }
     working = working.filter((item) => cabinetInsideBounds(item, room));
   }
   let peninsulaSummary: AutoDesignPeninsulaSummary | null = null;

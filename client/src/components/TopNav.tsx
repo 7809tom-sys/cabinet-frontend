@@ -17,6 +17,7 @@ import {
 } from "@/lib/designerMobileCartBridge";
 import { affiliateStorefrontPath } from "@/lib/affiliateStorefrontUrl";
 import { affiliateSlugForStoreScope, resolveStoreScope } from "@/lib/affiliateContext";
+import { DesignerHelperNotice } from "@/components/design/DesignerHelperNotice";
 import { toast } from "sonner";
 import "./TopNav.css";
 
@@ -301,6 +302,7 @@ export function TopNav() {
 
         {/* Right side actions */}
         <div data-testid="site-toolbar-actions" className="flex items-center gap-1 shrink-0">
+          <DesignerHelperNotice />
           {isDesignerTablet && (
             <Button variant="ghost" size="sm" data-testid="designer-immersive-hide" className="h-11 px-3 text-xs font-semibold" onClick={() => setImmersive(true)} aria-label="Hide site menu for full-screen design">
               Full screen
@@ -341,7 +343,11 @@ export function TopNav() {
 
           {user ? (
             <div data-testid="site-toolbar-account-actions" className="hidden xl:flex items-center gap-2">
-              <span className="hidden xl:inline text-xs text-muted-foreground max-w-[96px] truncate" title={user.name || user.email || undefined}>{user.name || user.email}</span>
+              <span
+                data-testid="site-toolbar-account-name"
+                className="hidden xl:inline text-xs text-muted-foreground max-w-[96px] truncate"
+                title={user.name || user.email || undefined}
+              >{user.name || user.email}</span>
               {(user.role === "admin" || user.role === "designer") && (
                 <Link href="/admin">
                   <Button

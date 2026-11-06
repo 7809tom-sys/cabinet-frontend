@@ -7,6 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { migrateLegacyDesignerDraftToOwner, designerDraftStorageKey, OWNER_STORE_SCOPE } from "@/lib/affiliateContext";
+import { designOpenPath, designStoreLabel } from "@/lib/designOwnerScope";
 
 const PROJECT_STATUSES = ["planning", "active", "quoted", "completed", "archived"] as const;
 
@@ -14,7 +15,7 @@ type AccountPreview = {
   draftReady?: boolean;
   profile: { pricingTier: string | null; companyName: string | null };
   affiliate: { storeName: string };
-  designs: Array<{ id: number; name: string; thumbnailUrl: string | null; assistLabel: string | null; recordKind: string | null }>;
+  designs: Array<{ id: number; name: string; thumbnailUrl: string | null; assistLabel: string | null; recordKind: string | null; affiliateSlug?: string | null; affiliateName?: string | null }>;
   orders: Array<{ id: number; requestNumber: string | null; status: string; totalAmount: string | null; kitchenDesignId: number | null }>;
   projects: Array<{ id: number; name: string; status: string; clientName: string | null; jobSiteAddress: string | null; notes?: string | null }>;
   designLinks: Array<{ projectId: number; kitchenDesignId: number }>;
@@ -179,11 +180,19 @@ export default function StoreAccount({ slug, preview = null }: { slug: string; p
                 {design.thumbnailUrl && <img src={design.thumbnailUrl} alt="" className="h-28 w-full object-cover rounded" />}
                 <div className="flex items-center gap-2">
                   <h3 className="font-medium">{design.name}</h3>
+                  <span className="text-[10px] uppercase tracking-wide text-muted-foreground" data-testid={`store-account-design-store-${design.id}`}>
+                    {designStoreLabel(design as { affiliateSlug?: string | null; affiliateName?: string | null })}
+                  </span>
                   {design.assistLabel && <Badge>{design.assistLabel}</Badge>}
                   {design.recordKind === "suggested" && <Badge variant="outline">Suggested by your designer</Badge>}
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <Button size="sm" asChild><a href={`/store/${slug}/design?load=${design.id}`}>Open</a></Button>
+                  {/* The design's own store decides where it opens. A plan saved
+                      on another storefront used to open under this store's brand
+                      and then fail its scope check. */}
+                  <Button size="sm" asChild>
+                    <a href={designOpenPath(design as { id: number; affiliateSlug?: string | null })}>Open</a>
+                  </Button>
                   <Button size="sm" variant="outline" onClick={() => {
                     const name = window.prompt("Rename design", design.name);
                     if (name?.trim()) renameDesign.mutate({ id: design.id, name: name.trim(), affiliateSlug: slug });

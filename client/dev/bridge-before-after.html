@@ -1,0 +1,49 @@
+<!doctype html>
+<!--
+  Before / after screenshot harness for the over-range bridge size bug.
+
+  Both halves are the SAME real Auto-Design kitchen, built by runAutoDesignLayout
+  and rendered by the real 3D engine. The left half shows the 24" bridge the
+  Designer's pop-up used to substitute; the right half shows the 12" W3012 the one
+  selector places. The bridge is tinted green in both.
+
+  Served by the Vite dev server; used only by e2e/over-range-bridge-before-after.spec.ts.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Over-range bridge: before / after</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #eef1f4; font-family: system-ui, sans-serif; }
+      #grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 10px; height: 100vh; box-sizing: border-box; }
+      .pane { position: relative; border-radius: 10px; overflow: hidden; box-shadow: 0 8px 24px rgba(15,23,42,0.16); background: #fff; }
+      .pane canvas { display: block; }
+      .caption {
+        position: absolute; left: 16px; top: 14px; padding: 10px 14px;
+        background: rgba(255,255,255,0.94); border-radius: 10px; color: #0f172a;
+        font-size: 13px; line-height: 1.5;
+      }
+      .caption strong { font-size: 14px; }
+      .caption .dim { color: #475569; font-size: 12px; }
+      .caption .bad { color: #b91c1c; font-weight: 600; font-size: 12px; }
+      .caption .ok { color: #047857; font-weight: 600; font-size: 12px; }
+      #legend {
+        position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%);
+        padding: 8px 14px; background: rgba(255,255,255,0.94); border-radius: 10px;
+        box-shadow: 0 8px 24px rgba(15,23,42,0.16); color: #0f172a; font-size: 12px;
+      }
+      #legend span { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin: 0 6px 0 12px; vertical-align: middle; }
+    </style>
+  </head>
+  <body>
+    <div id="grid">
+      <div class="pane" id="before"><div class="caption" id="before-caption">Building…</div></div>
+      <div class="pane" id="after"><div class="caption" id="after-caption">Building…</div></div>
+    </div>
+    <div id="legend">
+      <span style="background:#2f6b4f"></span>Bridge wall cabinet over the range
+      <span style="background:#c9ccd1"></span>Over-range microwave
+    </div>
+    <script type="module" src="/src/bridgeBeforeAfterHarness.ts"></script>
+  </body>
+</html>
