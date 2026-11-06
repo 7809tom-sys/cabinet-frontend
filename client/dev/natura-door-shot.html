@@ -1,0 +1,23 @@
+<!doctype html>
+<!--
+  Dev-only capture page for the Natura Maple (Ashford `Designer Natural`, style
+  330004) cabinet as the 3D Kitchen Designer builds it. `?before=1` restores the
+  pre-fix appearance for a before/after pair. Loaded at
+  /dev/natura-door-shot.html by e2e/natura-door-screenshot.spec.ts; imported by
+  nothing in the app.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Natura Maple door check</title>
+    <style>
+      html, body { margin: 0; background: #eef1f4; }
+      #pane { width: 900px; height: 900px; }
+      #pane canvas { display: block; }
+    </style>
+  </head>
+  <body>
+    <div id="pane"></div>
+    <script type="module" src="/src/naturaDoorHarness.ts"></script>
+  </body>
+</html>

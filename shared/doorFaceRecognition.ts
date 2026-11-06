@@ -1,6 +1,7 @@
 import { isAefFramelessStyleCode } from "./aefFramelessSpecs";
 import { resolveDoorColor, type DoorColorInput } from "./doorColorResolve";
 import { findDlcFinishForStyle } from "./dlcFr26Mapping";
+import type { DlcFaceCrop } from "./dlcFr26Textures";
 import {
   libraryDoorFacePlan,
   type DoorLibraryStyleInput,
@@ -112,21 +113,7 @@ export type CabinetFacePlan = {
   /** Torino horizontal grain stays at 0. This plan never rotates a face texture. */
   grainRotation: 0;
   /** Set when the textures are processed DLC_FR26 crops (already cropped; fit, never tile). */
-  dlcCrop?: {
-    slug: string;
-    doorSize: [number, number];
-    drawerSize: [number, number] | null;
-    /** Drawer front colour when the photo has no drawer crop. The drawer never gets the door image. */
-    drawerSolidColor: string | null;
-    /** Door finish colour for exposed sides, end panels and skins. */
-    solidColor: string;
-    /** Frame-free grain patch for sides/end panels/skins, or null when no clean patch exists. */
-    grainUrl: string | null;
-    faceTileIn?: [number, number];
-    faceTileDrawerIn?: [number, number];
-    normalUrl?: string | null;
-    tintHex?: string | null;
-  };
+  dlcCrop?: DlcFaceCrop;
   /**
    * The color derived from the accepted render, when this face comes from one.
    * It is the same value the door-color resolver applies, so every surface of the
@@ -306,6 +293,7 @@ function withResolvedDoorColor(plan: CabinetFacePlan, style: DoorStyleFaceInput 
         solidColor: decision.appliedHex,
         grainUrl: null,
         tintHex: null,
+        tintLinear: null,
       },
     };
   }
@@ -317,6 +305,7 @@ function withResolvedDoorColor(plan: CabinetFacePlan, style: DoorStyleFaceInput 
       ...plan.dlcCrop,
       solidColor: decision.appliedHex,
       tintHex: tint.tintHex,
+      tintLinear: tint.tintLinear,
     },
   };
 }

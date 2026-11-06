@@ -67,7 +67,7 @@ import { canvasWithoutBakedCheckerboard } from "@/lib/mosaicCheckerboard";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { searchCatalogItems } from "@shared/catalogCodeSearch";
 import { AEF_PRINTED_GEOMETRY_MARKER } from "@shared/aefFramelessGeometry";
-import { DLC_FRAME_DETAIL, dlcFaceGrainRepeat, dlcFaceTextureWindow, dlcFrameStrips, dlcPhotoLightCompensation, type DlcFaceCrop } from "@shared/dlcFr26Textures";
+import { DLC_FRAME_DETAIL, dlcFaceGrainRepeat, dlcFaceTextureWindow, dlcFrameStrips, dlcPhotoCompensationApplies, dlcPhotoLightCompensation, type DlcFaceCrop } from "@shared/dlcFr26Textures";
 import { SHAKER_NOTCH_THICKNESS, shakerNotchMaterial, shakerNotchPieces } from "./shakerNotch";
 import { exposedSideSolidHex } from "@shared/exposedSideFinish";
 import { rememberDoorPanelHex } from "@/lib/doorPanelColor";
@@ -5279,7 +5279,9 @@ export function addCabinet(
         if (!source || typeof source.clone !== "function") return;
         const material = source.clone();
         material.map = null;
-        material.color.set(drawerSolidColor);
+        // The drawer's own solid, unless the crop reports a substituted grain:
+        // then the door's resolved colour is the appearance, not the template's.
+        material.color.set(surfaceTextures?.faceCrop?.grainSubstituted ? color : drawerSolidColor);
         if (dlcPhotoComp) {
           material.color.multiply(new THREE.Color(dlcPhotoComp.hex));
           material.toneMapped = false;
@@ -5300,6 +5302,8 @@ export function addCabinet(
       material.map = drawerTexture;
       material.color.set(dlcPhotoTint);
       if (dlcPhotoComp) material.toneMapped = false;
+      // A drawer front is the same wood as the door beside it.
+      if (!dlcPhotoComp) applyGrainTemplateTint(material);
       markPhotoFaceToneMapOff(material);
       if (dlcDrawerNormalUrl && dlcDrawerNormal) {
         material.normalMap = dlcDrawerNormal;
@@ -5317,14 +5321,31 @@ export function addCabinet(
   // DLC photo textures: cancel the scene rig's brightening so the render matches the sample photo.
   // These materials are drawn with tone mapping off (see dlcPhotoLightCompensation): light finishes keep
   // their grain contrast and their true brightness.
-  const dlcPhotoComp = dlcDoorFinish
-    ? dlcPhotoLightCompensation(isVeryDarkCabinetStain(dlcDoorFinish) ? DARK_STAIN_DOOR_LIGHTS : RESTORED_DOOR_LIGHTS, relativeLuminance(dlcDoorFinish))
+  //
+  // Only a real DL finish has that studio photo behind its crop. A 2.75/3 inch
+  // shaker from any other distributor borrows Versa or Espresso grain as a
+  // template (`grainSubstituted`), so compensating against a photo it never had
+  // darkened it: Natura Maple measured ΔE2000 26.7 from its own recorded colour.
+  const dlcPhotoComp = dlcPhotoCompensationApplies(surfaceTextures?.faceCrop)
+    ? dlcPhotoLightCompensation(isVeryDarkCabinetStain(dlcDoorFinish ?? "") ? DARK_STAIN_DOOR_LIGHTS : RESTORED_DOOR_LIGHTS, relativeLuminance(dlcDoorFinish))
     : null;
   const dlcPhotoTint = dlcPhotoComp
     ? (surfaceTextures?.faceCrop?.tintHex
       ? `#${new THREE.Color(dlcPhotoComp.hex).multiply(new THREE.Color(surfaceTextures.faceCrop.tintHex)).getHexString()}`
       : dlcPhotoComp.hex)
     : "#ffffff";
+  // A substituted grain has no photo to compensate, so it is multiplied in linear
+  // light until it reaches the door's own recorded colour. A hex cannot express a
+  // brightening, which is why the tint ships both forms.
+  const grainTemplateTint = !dlcPhotoComp && surfaceTextures?.faceCrop?.grainSubstituted === true
+    ? surfaceTextures.faceCrop.tintLinear ?? null
+    : null;
+  const applyGrainTemplateTint = (material: THREE.MeshStandardMaterial) => {
+    if (!grainTemplateTint) return false;
+    material.color.setRGB(grainTemplateTint[0], grainTemplateTint[1], grainTemplateTint[2]);
+    material.needsUpdate = true;
+    return true;
+  };
   // Listed photo styles (Forest Rust / Rustic Hickory) use the same face compensation as DLC:
   // tone mapping off, and the light-sum tint so the studio rig does not wash the photo out.
   // Skins and the Driftwood shaker shadow strips are not part of this path.
@@ -5350,6 +5371,9 @@ export function addCabinet(
 	    ...doorFinishSurface,
 	    ...(dlcPhotoComp ? { toneMapped: false } : {}),
 	  });
+  // A borrowed grain keeps the scene tone map (no photo compensation) and is
+  // multiplied in linear light to the door's own recorded colour.
+  if (!dlcPhotoComp && doorTexture) applyGrainTemplateTint(faceMaterial);
   markPhotoFaceToneMapOff(faceMaterial);
   const structuralFinish = threeDStructuralFinish(color, Boolean(doorTexture));
   let plainStructuralColor = structuralFinish.color;
@@ -5361,16 +5385,26 @@ export function addCabinet(
   // mirrored so seams do not show) in the door's colour. Never the door photo with its frame lines.
   let dlcGrainTexture: THREE.Texture | null = null;
   const applyDlcGrain = () => {
-    if (!dlcPhotoComp) return;
+    if (!dlcDoorFinish) return;
     for (const material of [...structuralFinishMaterials, ...flatExposedFinishMaterials]) {
       // Same light handling as the doors, grain patch or not, so sides and doors always match.
-      material.toneMapped = false;
-      if (dlcGrainTexture) {
-        material.map = dlcGrainTexture;
-        material.color.set(dlcPhotoTint);
-        material.userData = { ...material.userData, dlcSideGrain: true, usesDoorImage: false, framelessDoorFaceSide: false };
-      } else {
-        material.color.multiply(new THREE.Color(dlcPhotoComp.hex));
+      if (dlcPhotoComp) {
+        material.toneMapped = false;
+        if (dlcGrainTexture) {
+          material.map = dlcGrainTexture;
+          material.color.set(dlcPhotoTint);
+          material.userData = { ...material.userData, dlcSideGrain: true, usesDoorImage: false, framelessDoorFaceSide: false };
+        } else {
+          material.color.multiply(new THREE.Color(dlcPhotoComp.hex));
+        }
+      } else if (grainTemplateTint) {
+        // A borrowed grain keeps the scene tone map, and reaches the door's own
+        // colour through the linear-light multiplier instead of a hex.
+        if (dlcGrainTexture) {
+          material.map = dlcGrainTexture;
+          material.userData = { ...material.userData, dlcSideGrain: true, usesDoorImage: false, framelessDoorFaceSide: false };
+        }
+        material.color.setRGB(grainTemplateTint[0], grainTemplateTint[1], grainTemplateTint[2]);
       }
       material.needsUpdate = true;
     }
@@ -5454,6 +5488,7 @@ export function addCabinet(
     });
   }
 	  const trimMaterial = new THREE.MeshPhysicalMaterial({ color: faceColor, map: doorTexture, ...doorFinishSurface, ...(dlcPhotoComp ? { toneMapped: false } : {}) });
+  if (!dlcPhotoComp && doorTexture) applyGrainTemplateTint(trimMaterial);
   markPhotoFaceToneMapOff(trimMaterial);
 	  // A per-host Door Style sample can fail to load. Faces and their physical
 	  // rails must then fall back together to the chosen style color instead of
@@ -5488,6 +5523,9 @@ export function addCabinet(
 	    map.rotation = piece === "rail" ? Math.PI / 2 : 0;
 	    map.needsUpdate = true;
 	    const material = new THREE.MeshPhysicalMaterial({ color: dlcPhotoTint, map, ...doorFinishSurface, ...(dlcPhotoComp ? { toneMapped: false } : {}) });
+	    // A borrowed grain keeps the scene tone map here too, so a rail cannot sit
+	    // at a different shade than the panel it frames.
+	    if (!dlcPhotoComp) applyGrainTemplateTint(material);
 	    markPhotoFaceToneMapOff(material);
 	    material.userData = { ...material.userData, grainPiece: piece, grainDirection: doorProfile.grainDirection };
 	    textureMaterials.push(material);

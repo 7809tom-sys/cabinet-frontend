@@ -96,6 +96,8 @@ export type ShakerAdoption =
       railIn: number;
       deltaE: number;
       tintHex: string;
+      /** Unclamped linear-light multiplier. Reaches a colour a hex cannot express. */
+      tintLinear: [number, number, number];
       tintClamped: boolean;
       grain: string;
       reason: string;
@@ -217,19 +219,59 @@ export function standardDlShakerReferences(): DlShakerReference[] {
   });
 }
 
-export function retintGrain(referenceHex: string, targetHex: string): { tintHex: string; clamped: boolean } {
+/** sRGB channel to linear light. A tint multiplier is a light ratio, so it is measured here. */
+function linearChannel(channel: number): number {
+  const value = channel / 255;
+  return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+}
+
+export type GrainTint = {
+  /**
+   * Multiplier as an sRGB hex, for `THREE.Color.set`. A hex cannot express a
+   * brightening (every channel stops at 255), so a door lighter than its
+   * template is clamped to `#ffffff` here and reports `clamped: true`.
+   */
+  tintHex: string;
+  /**
+   * The same multiplier in linear light, unclamped. This is the value a renderer
+   * must use to reach the door's own colour from the template grain: a 1.06
+   * channel ratio is legal linear light but is not representable as a hex.
+   */
+  tintLinear: [number, number, number];
+  /** True when the sRGB hex could not express the multiplier. `tintLinear` still can. */
+  clamped: boolean;
+};
+
+/**
+ * Multiplier that retargets one grain's own colour to a door's colour.
+ *
+ * Measured in linear light, because that is the space a material colour
+ * multiplies an albedo in. Measuring in sRGB and clamping at 255 silently
+ * returned `#ffffff` — no tint at all — for every door lighter than the
+ * template grain, which painted a natural maple door with a darker finish's
+ * grain and never reached its own colour.
+ */
+export function retintGrain(referenceHex: string, targetHex: string): GrainTint {
   const reference = rgb(referenceHex);
   const target = rgb(targetHex);
   let clamped = false;
-  const channels = [0, 1, 2].map((index) => {
+  const sRGB = [0, 1, 2].map((index) => {
     const base = reference[index]!;
     const aim = target[index]!;
     const scaled = base <= 0 ? aim : Math.round((aim / base) * 255);
     if (scaled > 255 || scaled < 0) clamped = true;
     return Math.max(0, Math.min(255, scaled));
   });
-  const tintHex = `#${channels.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
-  return { tintHex, clamped };
+  const tintLinear = [0, 1, 2].map((index) => {
+    const base = linearChannel(reference[index]!);
+    const aim = linearChannel(target[index]!);
+    return base > 0 ? aim / base : 1;
+  }) as [number, number, number];
+  return {
+    tintHex: `#${sRGB.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`,
+    tintLinear,
+    clamped,
+  };
 }
 
 /**
@@ -278,7 +320,7 @@ export function matchStandardShakerToDl(
     : finishFamily === "painted"
       ? "painted grain"
       : "wood grain";
-  const clampNote = tint.clamped ? " Tint is clamped, so a darker grain cannot fully reach a lighter photo." : "";
+  const clampNote = tint.clamped ? " The sRGB tint is clamped at #ffffff, so the linear-light multiplier is what reaches the door colour." : "";
   return {
     adopted: true,
     reference: best,
@@ -288,6 +330,7 @@ export function matchStandardShakerToDl(
     railIn: railIn!,
     deltaE: bestDelta,
     tintHex: tint.tintHex,
+    tintLinear: tint.tintLinear,
     tintClamped: tint.clamped,
     grain: best.grain,
     reason: `${finishFamily}, ΔE ${bestDelta.toFixed(1)} to ${best.name}; inherited ${grainNote} ${best.grain}; tint ${tint.tintHex} retargets ${best.color} to the door color ${surfaceColor} (${decision.appliedSource}; own ${ownColor}).${clampNote}`,
@@ -325,6 +368,10 @@ export function standardShakerDlFacePlan(
       faceTileDrawerIn: entry.faceTileDrawerIn,
       normalUrl: paint ? null : entry.faceNormal,
       tintHex: paint ? null : match.tintHex,
+      tintLinear: paint ? null : match.tintLinear,
+      // This door is not itself a DL finish: the grain above is Versa or Espresso
+      // borrowed as a template, so the DL photo light compensation does not apply.
+      grainSubstituted: !paint,
     },
   };
 }
