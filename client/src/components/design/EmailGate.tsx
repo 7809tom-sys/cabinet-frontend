@@ -17,13 +17,15 @@ interface Props {
   brandName?: string | null;
   primaryColor?: string | null;
   accentColor?: string | null;
+  /** The room this Designer is about to open, e.g. "Bathroom". */
+  roomLabel?: string | null;
 }
 
 // Lightweight contact gate before entering the design tool.
 // Email is required (it gates entry). Name + phone are optional so we keep the
 // gate low-friction, but capturing them gives reps real contact info to follow
 // up on. If the user is already logged in, we skip straight through.
-export function EmailGate({ onVerified, brandName, primaryColor, accentColor }: Props) {
+export function EmailGate({ onVerified, brandName, primaryColor, accentColor, roomLabel }: Props) {
   const { t } = useLanguage();
   const { user } = useAuth();
   const [email, setEmail] = useState("");
@@ -50,6 +52,10 @@ export function EmailGate({ onVerified, brandName, primaryColor, accentColor }: 
   const subtitle = brandName
     ? "We'll use your email to save this design and materials list."
     : t("dt_gate_sub");
+  // The gate opens before any room is chosen, so it must not promise a kitchen
+  // on a Designer that also builds bathrooms. `roomLabel` lets the caller name
+  // the room it is about to open.
+  const title = roomLabel?.trim() ? `Start Your ${roomLabel.trim()} Design` : t("dt_gate_title");
 
   const submit = () => {
     if (!valid) return;
@@ -67,7 +73,7 @@ export function EmailGate({ onVerified, brandName, primaryColor, accentColor }: 
           <Ruler className="h-7 w-7" style={{ color: accent }} />
         </div>
         <h1 className="font-serif text-2xl font-bold text-center mb-2" style={{ color: primary }}>
-          {t("dt_gate_title")}
+          {title}
         </h1>
         <p className="text-center text-sm text-muted-foreground mb-6">
           {subtitle}

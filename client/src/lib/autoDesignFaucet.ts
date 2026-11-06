@@ -2,7 +2,9 @@ import type { SinkFixture } from "./design";
 import { surfaceRole } from "./pelican";
 import {
   DEFAULT_PELICAN_KITCHEN_FAUCET,
+  DEFAULT_PELICAN_VANITY_FAUCET,
   defaultPelicanKitchenFaucetProfile,
+  defaultPelicanVanityFaucetProfile,
   isVerifiedPelicanVanityFaucet,
   verifiedPelicanFaucetProfile,
   verifiedPelicanPotFillerProfile,
@@ -220,6 +222,7 @@ export type MandatoryFaucetResult<T extends FaucetSink> = {
 export function ensureMandatorySinkFaucets<T extends FaucetSink>(
   sinks: readonly T[],
   catalogProducts: readonly AutoDesignFaucetProduct[],
+  options: { bathroom?: boolean } = {},
 ): MandatoryFaucetResult<T> {
   const catalog = defaultAutoDesignFaucet(catalogProducts);
   const notes: string[] = [];
@@ -236,7 +239,7 @@ export function ensureMandatorySinkFaucets<T extends FaucetSink>(
     }
     const withFaucet = catalog
       ? withCatalogFaucet(sink, catalog)
-      : withDefaultFaucet(sink);
+      : withDefaultFaucet(sink, options.bathroom === true);
     if (!catalog) usedDefault = true;
     source = catalog ? "catalog" : "default";
     attachedUids.push(sink.uid);
@@ -246,7 +249,10 @@ export function ensureMandatorySinkFaucets<T extends FaucetSink>(
   if (attachedUids.length > 0) {
     notes.push(catalog
       ? `${catalog.name} was placed at ${attachedUids.length === 1 ? "the sink" : `each of the ${attachedUids.length} sinks`}, centered on the sink base.`
-      : `The selected line sells no faucet, so the default ${DEFAULT_PELICAN_KITCHEN_FAUCET.name} (${DEFAULT_PELICAN_KITCHEN_FAUCET.pelicanCode}) was placed at ${attachedUids.length === 1 ? "the sink" : `each of the ${attachedUids.length} sinks`}.`);
+      : (() => {
+        const fallback = options.bathroom === true ? DEFAULT_PELICAN_VANITY_FAUCET : DEFAULT_PELICAN_KITCHEN_FAUCET;
+        return `The selected line sells no faucet, so the default ${fallback.name} (${fallback.pelicanCode}) was placed at ${attachedUids.length === 1 ? "the sink" : `each of the ${attachedUids.length} sinks`}.`;
+      })());
   }
   if (sinks.length === 0) notes.length = 0;
 
@@ -260,8 +266,10 @@ export function ensureMandatorySinkFaucets<T extends FaucetSink>(
  * 3D assembly needs. `defaultFaucet` marks it so a later pass knows the row came
  * from the default and a real catalog pick can still replace it.
  */
-export function withDefaultFaucet<T extends FaucetSink>(sink: T): T {
-  const profile = defaultPelicanKitchenFaucetProfile();
+export function withDefaultFaucet<T extends FaucetSink>(sink: T, bathroom = false): T {
+  // A bathroom vanity gets the verified vanity faucet, never the 26" kitchen
+  // pull-down the kitchen build uses.
+  const profile = bathroom ? defaultPelicanVanityFaucetProfile() : defaultPelicanKitchenFaucetProfile();
   return {
     ...sink,
     faucet: true,

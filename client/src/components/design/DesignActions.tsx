@@ -438,6 +438,10 @@ export function DesignActions({
   const { user, isAuthenticated, loading: isAuthLoading, error: authError, refresh } = useAuth();
   const { t } = useLanguage();
   const storeScope = normalizeStoreScope(affiliateSlug);
+  // The same Save dialog serves every room, so its title follows the room the
+  // plan is in instead of always saying "kitchen". `roomLabel` below is the
+  // optional Master Project room field, so this one is named separately.
+  const planRoomLabel = roomType === "bathroom" ? "Bathroom" : roomType === "laundry" ? "Laundry" : roomType === "closet" ? "Closet" : roomType === "other" ? "Room" : "Kitchen";
   const utils = trpc.useUtils();
   const documentAccess = trpc.design.documentAccess.useQuery(
     { designId: currentDesignId ?? 1 },
@@ -812,7 +816,7 @@ export function DesignActions({
       <Dialog open={saveOpen} onOpenChange={setSaveOpen}>
         <DialogContent className="!flex h-[min(92dvh,900px)] max-h-[calc(100dvh-1rem)] w-[min(28rem,calc(100vw-1rem))] flex-col overflow-hidden p-5 sm:max-w-md">
           <DialogHeader className="shrink-0">
-            <DialogTitle>{isUpdatingExistingDesign ? "Update saved design" : t("dt_act_save_title")}</DialogTitle>
+            <DialogTitle>{isUpdatingExistingDesign ? "Update saved design" : `Save ${planRoomLabel.toLowerCase()} design`}</DialogTitle>
             <DialogDescription>
               {isUpdatingExistingDesign
                 ? "Save your latest changes to this shared plan. Viewers will see the update after they refresh."

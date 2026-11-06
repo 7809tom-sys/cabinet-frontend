@@ -809,9 +809,22 @@ function vanityFaucetAsVerifiedProfile(
  */
 export const DEFAULT_PELICAN_KITCHEN_FAUCET: VerifiedPelicanFaucetProfile = VERIFIED_PELICAN_FAUCETS["PL-8237 BN"]!;
 
+/**
+ * The default fixture on a BATHROOM vanity. The kitchen default above is a
+ * 26-inch pull-down kitchen faucet; putting that on a vanity basin is a real
+ * product mistake, not a neutral placeholder. PL-8112 is the source-verified
+ * single-hole vanity faucet (12 7/16" overall, 3 15/16" reach, standard arc).
+ */
+export const DEFAULT_PELICAN_VANITY_FAUCET: VerifiedPelicanFaucetProfile = VERIFIED_PELICAN_FAUCETS["PL-8112 BN"]!;
+
 /** The verified profile for the default fixture. */
 export function defaultPelicanKitchenFaucetProfile(): VerifiedPelicanFaucetProfile {
   return DEFAULT_PELICAN_KITCHEN_FAUCET;
+}
+
+/** The default fixture for a bathroom vanity basin. */
+export function defaultPelicanVanityFaucetProfile(): VerifiedPelicanFaucetProfile {
+  return DEFAULT_PELICAN_VANITY_FAUCET;
 }
 
 export function verifiedPelicanPotFillerProfile(code: string | null | undefined): VerifiedPelicanPotFillerProfile | null {

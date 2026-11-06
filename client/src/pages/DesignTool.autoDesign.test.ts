@@ -8,7 +8,11 @@ const dialogSource = readFileSync(resolve(process.cwd(), "client/src/components/
 
 describe("admin auto-design Designer wiring", () => {
   it("exposes the action for admins and affiliate Designers and disables it on a non-empty plan", () => {
-    expect(pageSource).toContain("const autoDesignAvailable = isAdmin || Boolean(affiliateSlug);");
+    // Audience gate (admins + affiliate Designers) and the room gate are separate:
+    // Auto-Design builds a measured kitchen, so a bathroom/closet plan must not
+    // offer it even though the audience is allowed.
+    expect(pageSource).toContain("const autoDesignAudienceAllowed = isAdmin || Boolean(affiliateSlug);");
+    expect(pageSource).toContain('const autoDesignAvailable = autoDesignAudienceAllowed && roomType === "kitchen";');
     expect(pageSource).toContain('data-testid="admin-auto-design-auto-build"');
     const buttonAt = pageSource.indexOf('data-testid="admin-auto-design-auto-build"');
     const guardAt = pageSource.lastIndexOf("{autoDesignAvailable && (", buttonAt);

@@ -1,0 +1,190 @@
+diff --git a/server/routers/surfaces.ts b/server/routers/surfaces.ts
+index b09f715..4645c6c 100644
+--- a/server/routers/surfaces.ts
++++ b/server/routers/surfaces.ts
+@@ -10,6 +10,8 @@ import { storageGetSignedUrl } from "../storage";
+ import { isPelicanDesignerSelectable, pelicanDesignerRenderFlags, pelicanDesignerRole } from "../lib/pelicanDesignerReadiness";
+ import { isPelicanVanityFaucetCode, isPelicanVanitySinkCode } from "../lib/pelicanFixtureRole";
+ import { matchingFlooringAccessories } from "../lib/flooringAccessoryMatch";
++import { affiliateStorefrontSale, dollarsToCents } from "../lib/affiliateTierPricing";
++import { loadAffiliateStorefrontPricing, type AffiliateStorefrontPricing } from "../lib/affiliateStorefrontPricing";
+ import {
+   isSourceVerifiedPelicanBathtub,
+   isSourceVerifiedPelicanToiletOrBidet,
+@@ -48,6 +50,33 @@ export function sellPriceOf(
+   return Math.round(cost * (1 + bps / 10000) * 100) / 100;
+ }
+ 
++/**
++ * The one Pelican price a viewer may see.
++ *
++ * On an affiliate storefront the customer price is the affiliate's marked-up
++ * retail, exactly as `pelican.byCategory` and the cart compute it. The platform
++ * price above is the owner/store price and must never be shown there. Measured
++ * on 6 Nov 2026 for reaves-way-cabinet-shop: PL-3099 White basin $46.44 in the
++ * Designer vs $112.47 on that storefront, Aviles 20mil planks $95.70 vs $148.34,
++ * Bahia 12mil vinyl $74.25 vs $115.09.
++ */
++export function surfaceSellPriceOf(
++  p: { listPrice: string | null; yourCost: string | null; category: string },
++  map: MarkupMap,
++  affiliatePricing: AffiliateStorefrontPricing | null,
++): number | null {
++  const platform = sellPriceOf(p, map);
++  if (platform == null) return null;
++  if (!affiliatePricing) return platform;
++  const costCents = dollarsToCents(p.yourCost);
++  if (costCents == null || costCents <= 0) return platform;
++  return affiliateStorefrontSale(affiliatePricing, costCents, {
++    categoryKey: p.category,
++    listPriceCents: dollarsToCents(p.listPrice),
++    referenceRetailCents: Math.round(platform * 100),
++  }).retailCents / 100;
++}
++
+ // Convert a stored imageUrl (/manus-storage/<key> or absolute) into an absolute, fetchable URL
+ // suitable for passing to the image generator as a reference.
+ async function toReferenceUrl(imageUrl: string | null | undefined): Promise<string | null> {
+@@ -243,12 +272,17 @@ export const surfacesRouter = router({
+       z.object({
+         role: RECOMMENDED_ROLE,
+         limit: z.number().int().min(1).max(FLOORING_RECOMMENDED_MAX).default(8),
++        /** Affiliate storefront scope. The Designer must pass it or the list is priced as the platform store. */
++        affiliateSlug: z.string().trim().min(1).max(64).optional(),
+       })
+     )
+     .query(async ({ input }) => {
+       const db = await getDb();
+       if (!db) return [] as Array<Record<string, unknown>>;
+-      const map = await loadMarkupMap(db);
++      const [map, affiliatePricing] = await Promise.all([
++        loadMarkupMap(db),
++        loadAffiliateStorefrontPricing(input.affiliateSlug),
++      ]);
+       const rows = await db
+         .select()
+         .from(pelicanProducts)
+@@ -295,7 +329,7 @@ export const surfacesRouter = router({
+             ? officialPelicanBathroomCatalogImage(r.pelicanCode, r.imageUrl)
+             : r.imageUrl,
+           materialImageUrl: r.materialImageUrl,
+-          sellPrice: sellPriceOf(r, map),
++          sellPrice: surfaceSellPriceOf(r, map, affiliatePricing),
+           ...pelicanDesignerRenderFlags(r),
+         }))
+         .filter((r) => r.sellPrice != null && r.sellPrice > 0)
+@@ -312,17 +346,23 @@ export const surfacesRouter = router({
+ 
+   // Fetch full product records (with sell price) for a set of ids — used by the wizard summary.
+   byIds: publicProcedure
+-    .input(z.object({ ids: z.array(z.number().int().positive()).max(40) }))
++    .input(z.object({
++      ids: z.array(z.number().int().positive()).max(40),
++      affiliateSlug: z.string().trim().min(1).max(64).optional(),
++    }))
+     .query(async ({ input }) => {
+       const db = await getDb();
+       if (!db || input.ids.length === 0) return [];
+-      const map = await loadMarkupMap(db);
++      const [map, affiliatePricing] = await Promise.all([
++        loadMarkupMap(db),
++        loadAffiliateStorefrontPricing(input.affiliateSlug),
++      ]);
+       const rows = await db
+         .select()
+         .from(pelicanProducts)
+         .where(inArray(pelicanProducts.id, input.ids));
+       return rows
+-        .map((r) => ({ ...r, sellPrice: sellPriceOf(r, map), ...pelicanDesignerRenderFlags(r) }))
++        .map((r) => ({ ...r, sellPrice: surfaceSellPriceOf(r, map, affiliatePricing), ...pelicanDesignerRenderFlags(r) }))
+         .filter((r) => r.sellPrice != null && r.sellPrice > 0);
+     }),
+ 
+@@ -334,11 +374,17 @@ export const surfacesRouter = router({
+    * than its catalog photo.
+    */
+   designerByIds: publicProcedure
+-    .input(z.object({ ids: z.array(z.number().int().positive()).max(40) }))
++    .input(z.object({
++      ids: z.array(z.number().int().positive()).max(40),
++      affiliateSlug: z.string().trim().min(1).max(64).optional(),
++    }))
+     .query(async ({ input }) => {
+       const db = await getDb();
+       if (!db || input.ids.length === 0) return [];
+-      const map = await loadMarkupMap(db);
++      const [map, affiliatePricing] = await Promise.all([
++        loadMarkupMap(db),
++        loadAffiliateStorefrontPricing(input.affiliateSlug),
++      ]);
+       const rows = await db
+         .select()
+         .from(pelicanProducts)
+@@ -348,7 +394,7 @@ export const surfacesRouter = router({
+           eq(pelicanProducts.showInDesigner, true),
+         ));
+       return rows
+-        .map((row) => ({ ...row, sellPrice: sellPriceOf(row, map), ...pelicanDesignerRenderFlags(row) }))
++        .map((row) => ({ ...row, sellPrice: surfaceSellPriceOf(row, map, affiliatePricing), ...pelicanDesignerRenderFlags(row) }))
+         .filter((row) => row.sellPrice != null && row.sellPrice > 0)
+         .filter((row) => isPelicanDesignerSelectable(row) && (row.category !== "Flooring" || Boolean(row.imageUrl?.trim())));
+     }),
+@@ -359,11 +405,17 @@ export const surfacesRouter = router({
+    * floor material, so it stays outside designerByIds' geometry/readiness gate.
+    */
+   designSelectionByIds: publicProcedure
+-    .input(z.object({ ids: z.array(z.number().int().positive()).max(40) }))
++    .input(z.object({
++      ids: z.array(z.number().int().positive()).max(40),
++      affiliateSlug: z.string().trim().min(1).max(64).optional(),
++    }))
+     .query(async ({ input }) => {
+       const db = await getDb();
+       if (!db || input.ids.length === 0) return [];
+-      const map = await loadMarkupMap(db);
++      const [map, affiliatePricing] = await Promise.all([
++        loadMarkupMap(db),
++        loadAffiliateStorefrontPricing(input.affiliateSlug),
++      ]);
+       const rows = await db
+         .select()
+         .from(pelicanProducts)
+@@ -373,7 +425,7 @@ export const surfacesRouter = router({
+           eq(pelicanProducts.showInCatalog, true),
+         ));
+       return rows
+-        .map((row) => ({ ...row, sellPrice: sellPriceOf(row, map), ...pelicanDesignerRenderFlags(row) }))
++        .map((row) => ({ ...row, sellPrice: surfaceSellPriceOf(row, map, affiliatePricing), ...pelicanDesignerRenderFlags(row) }))
+         .filter((row) => row.sellPrice != null && row.sellPrice > 0)
+         .filter((row) => isPelicanDesignerSelectable(row) || (
+           row.category === "Flooring" && row.subCategory === "Moldings & Trim"
+@@ -385,11 +437,18 @@ export const surfacesRouter = router({
+    * deliberately chosen. The query is read-only and never adds a trim item.
+    */
+   matchingFlooringAccessories: publicProcedure
+-    .input(z.object({ flooringProductId: z.number().int().positive(), limit: z.number().int().min(1).max(40).default(12) }))
++    .input(z.object({
++      flooringProductId: z.number().int().positive(),
++      limit: z.number().int().min(1).max(40).default(12),
++      affiliateSlug: z.string().trim().min(1).max(64).optional(),
++    }))
+     .query(async ({ input }) => {
+       const db = await getDb();
+       if (!db) return [];
+-      const map = await loadMarkupMap(db);
++      const [map, affiliatePricing] = await Promise.all([
++        loadMarkupMap(db),
++        loadAffiliateStorefrontPricing(input.affiliateSlug),
++      ]);
+       const rows = await db
+         .select()
+         .from(pelicanProducts)
+@@ -412,7 +471,7 @@ export const surfacesRouter = router({
+           imageUrl: row.imageUrl,
+           materialImageUrl: row.materialImageUrl,
+           coverageSqFt: row.coverageSqFt ? parseFloat(String(row.coverageSqFt)) : null,
+-          sellPrice: sellPriceOf(row, map),
++          sellPrice: surfaceSellPriceOf(row, map, affiliatePricing),
+         }))
+         .filter((row) => row.sellPrice != null && row.sellPrice > 0)
+         .slice(0, input.limit);

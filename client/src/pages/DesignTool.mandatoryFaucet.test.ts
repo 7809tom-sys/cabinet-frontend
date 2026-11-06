@@ -40,7 +40,9 @@ describe("a faucet is placed on every build path", () => {
 
   it("runs as its own pass in the Designer, after build and on load", () => {
     const pass = between(designTool, "const faucetFillRanRef = useRef", "const product = defaultAutoDesignFaucet(autoDesignFaucetProducts);");
-    expect(pass).toContain("ensureMandatorySinkFaucets(sinks, autoDesignFaucetProducts)");
+    // The fallback fixture must match the room: a bathroom vanity gets the
+    // verified vanity faucet, not the 26" kitchen pull-down.
+    expect(pass).toContain('ensureMandatorySinkFaucets(sinks, autoDesignFaucetProducts, { bathroom: roomType === "bathroom" })');
     expect(pass).toContain("if (everySinkHasFaucet(sinks)) return;");
     expect(pass).toContain("setSinks(result.sinks)");
     // The pass runs once per plan, not on every unrelated render.
@@ -85,7 +87,9 @@ describe("the faucet is add-only", () => {
   it("reports the default fixture instead of substituting silently", () => {
     expect(faucetSource).toContain("usedDefault = true");
     expect(faucetSource).toContain("sells no faucet");
-    expect(faucetSource).toContain("DEFAULT_PELICAN_KITCHEN_FAUCET.pelicanCode");
+    expect(faucetSource).toContain("DEFAULT_PELICAN_KITCHEN_FAUCET");
+    expect(faucetSource).toContain("DEFAULT_PELICAN_VANITY_FAUCET");
+    expect(faucetSource).toContain("const fallback = options.bathroom === true ? DEFAULT_PELICAN_VANITY_FAUCET : DEFAULT_PELICAN_KITCHEN_FAUCET;");
   });
 });
 

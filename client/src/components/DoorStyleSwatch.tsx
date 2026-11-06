@@ -24,10 +24,17 @@ export interface DoorStyleLike {
   swColor?: string | null;
   finish?: string | null;
   woodSpecies?: string | null;
-  /** Real door photo thumbnail — shown instead of SVG when present */
+  /** Real door photo thumbnail. A fallback door picture, never the first choice. */
   thumbnailImageUrl?: string | null;
-  /** Fallback door sample photo */
+  /** The door record's own sample photo. Preferred over the thumbnail. */
   doorSampleImageUrl?: string | null;
+  /**
+   * The accepted door-rendering run's approved image. When present it is the
+   * source of truth for the door's appearance and outranks both photos.
+   */
+  approvedReferenceImageUrl?: string | null;
+  /** Non-null only when an admin accepted a door-rendering run. */
+  approvedVersionId?: number | null;
 }
 
 interface DoorStyleSwatchProps {
@@ -75,6 +82,15 @@ const COLOR_BY_KEYWORD: { match: RegExp; hex: string; wood?: boolean }[] = [
 ];
 
 const DEFAULT_HEX = "#c79a63"; // warm wood fallback
+
+/**
+ * The approved render for a style, but only when a run was actually accepted.
+ * A typed render hex or a stale reference is not an accepted appearance.
+ */
+function approvedDoorPhotoUrl(style: DoorStyleLike): string | null {
+  if (style.approvedVersionId == null) return null;
+  return style.approvedReferenceImageUrl?.trim() || null;
+}
 
 /**
  * Supplier/admin hex values are the actual finish data and must take precedence
@@ -183,8 +199,12 @@ export function DoorStyleSwatch({ style, className }: DoorStyleSwatchProps) {
   const [failedPhotoUrl, setFailedPhotoUrl] = useState<string | null>(null);
   const [photoRetry, setPhotoRetry] = useState<{ original: string; url: string } | null>(null);
 
-  // If a real door photo is available, show it instead of the SVG illustration.
-  const photoUrl = style.thumbnailImageUrl || style.doorSampleImageUrl;
+  // Real door pictures only. The order matches the rest of the Designer:
+  // an accepted render is the source of truth, then the door record's own
+  // sample, and only then the catalog thumbnail. Reading the thumbnail first
+  // made the color rail, the door grid, and the 3D face show different doors
+  // for the same style (33 of 123 styles carry two different images).
+  const photoUrl = approvedDoorPhotoUrl(style) || style.doorSampleImageUrl || style.thumbnailImageUrl;
   if (photoUrl && failedPhotoUrl !== photoUrl) {
     return (
       <img

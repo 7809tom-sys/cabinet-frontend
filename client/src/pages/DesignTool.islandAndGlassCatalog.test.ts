@@ -249,7 +249,7 @@ describe("DesignTool island scene and glass catalog wiring", () => {
 
   it("prioritizes verified compatible Pelican sinks in the sink-base dialog without changing catalog popularity data", () => {
     // The full role is requested so every gauge/radius of a model reaches its single card.
-    expect(source).toContain('{ role: bathroomSinkDialog ? "vanity-sink" : "sink", limit: 200 }');
+    expect(source).toContain('{ role: bathroomSinkDialog ? "vanity-sink" : "sink", limit: 200, affiliateSlug: affiliateSlug ?? undefined }');
     expect(source).toContain("groupPelicanConfigurations(filteredSinks)");
     expect(source).toContain('bathroomSinkDialog ? "vanity-faucet" : "faucet"');
     // The bathroom path reads the Pelican bathroom tags, not a category label, and
