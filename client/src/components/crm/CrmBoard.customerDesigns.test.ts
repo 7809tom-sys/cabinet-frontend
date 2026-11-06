@@ -61,4 +61,14 @@ describe("CRM customer view lists only linked designs", () => {
     expect(shared).toContain('"cabinet_dealz.crm_deal_designs"');
     expect(shared).toContain('"cabinet_dealz.kitchen_designs.contractorCustomerId"');
   });
+
+  it("puts the staff quick lookup above the board", () => {
+    expect(board).toContain("<CrmCustomerLookup />");
+    expect(board).toContain('data-testid="crm-customer-number"');
+    const lookup = readFileSync(resolve(process.cwd(), "client/src/components/crm/CrmCustomerLookup.tsx"), "utf8");
+    // Matched by identifier on the server, never by browsing designs.
+    expect(lookup).toContain("crmCustomerLookup");
+    expect(lookup).toContain("parseCustomerIdentifier");
+    expect(lookup).toContain("previewResult");
+  });
 });

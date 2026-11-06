@@ -85,6 +85,8 @@ function CrmTableRow({
       <td className="px-3 py-2">
         <button className="text-left font-medium text-[#1a2b4a] hover:underline" onClick={() => onOpen(deal.id)}>{deal.contactName || deal.title}</button>
         <InlineText value={deal.title} label="Deal title" onCommit={(title) => onPatch(deal.id, { title })} />
+        {/* The number staff type into the quick lookup and read back to the customer. */}
+        <div className="text-[10px] text-slate-500" data-testid="crm-customer-number">Customer #{deal.id}</div>
       </td>
       <td className="px-3 py-2">
         <select

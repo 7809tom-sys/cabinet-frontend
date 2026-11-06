@@ -38,6 +38,7 @@ import { crmQuickInvoiceTotal, openCrmQuickInvoicePdf, type CrmQuickInvoiceBrand
 import { invoiceEmailButtonDisabled, invoiceEmailSourceLabel, suggestedInvoiceEmail, usableInvoiceEmail, type CrmInvoiceRecipient } from "@/lib/crmInvoiceEmail";
 import { CustomerGeneratedImages } from "@/components/imageCustomer/CustomerGeneratedImages";
 import { CustomerLinkedDesigns } from "@/components/crm/CustomerLinkedDesigns";
+import { CrmCustomerLookup } from "@/components/crm/CrmCustomerLookup";
 import { useCrmCustomerDesigns } from "@/lib/crmCustomerDesignProcedures";
 import { CUSTOMER_DESIGNS_UNAVAILABLE_COPY, NO_LINKED_DESIGN_COPY } from "@shared/crmCustomerDesigns";
 import { CRM_SAVED_VIEW_STORAGE_PREFIX, crmDueState, filterMondayDeals, summarizeAffiliatePipelines, type MondayFilters } from "@shared/crmMailbox";
@@ -318,6 +319,10 @@ export function CrmBoard({ lang = "en", affiliateId, contractorUserId }: { lang?
         </div>
       </div>
 
+      <div className="mb-4">
+        <CrmCustomerLookup />
+      </div>
+
       <div className="mb-4 flex flex-wrap items-center gap-2">
         {(["board", "table", "email"] as const).map((view) => (
           <button
@@ -458,7 +463,8 @@ function DealCard({ deal, lang, onOpen, affiliateName, affiliateBrand, summary }
       <div className="flex items-start justify-between gap-2 mb-1.5">
         <div className="min-w-0">
           <div className="text-sm font-semibold text-foreground leading-snug">{deal.contactName || deal.company || "Unnamed customer"}</div>
-          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Customer</div>
+          {/* The number staff type into the quick lookup when this customer calls. */}
+          <div className="text-[10px] text-muted-foreground" data-testid="crm-customer-number">Customer #{deal.id}</div>
           <div className="mt-1 text-xs text-foreground leading-snug">{deal.title}</div>
         </div>
         <span className={`shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded ${priorityColor[deal.priority]}`}>

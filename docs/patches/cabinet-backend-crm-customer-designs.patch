@@ -1,8 +1,11 @@
-From e500f6f9fd95fbbb14db2edfa692b00b981ab276 Mon Sep 17 00:00:00 2001
+From ac6563077e076bfd641160ae26929fead9ed9a87 Mon Sep 17 00:00:00 2001
 From: Cursor Agent <cursoragent@cursor.com>
 Date: Fri, 6 Nov 2026 02:23:51 +0000
 Subject: [PATCH] Filter the CRM customer view to designs linked to that
- customer
+ customer, and add a staff lookup
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
 
 crm.deal returned the customer directory, which lists every design owned by
 the merged person, so opening a customer showed every saved design on the
@@ -10,18 +13,29 @@ account. Add crm.customerDesigns, which filters server-side on the stored link:
 crm_deal_designs for the deal and kitchen_designs.contractorCustomerId for the
 deal's contractor customer folder. No link means an empty list, never a guess.
 
+Add crm.customerLookup for the phone-call case: staff type the customer number
+(crm_deals.id) and get that customer's linked designs — one opens straight
+away, several are offered to pick from, none says so. The identifier is parsed
+and matched on the deal row inside the caller's scope; it is never a search
+across designs, and a ?customer= link (a users.id) is refused rather than
+matched against a different number space.
+
 Also make the in-memory test store honour a multi-value IN predicate, which a
 two-id inArray produces.
 ---
  server/lib/__testDb.ts                     |  10 +-
- server/routers/crm.customerDesigns.test.ts | 150 +++++++++++++++++++++
- server/routers/crm.ts                      |  91 +++++++++++++
- shared/crmCustomerDesigns.test.ts          |  90 +++++++++++++
- shared/crmCustomerDesigns.ts               | 120 +++++++++++++++++
- 5 files changed, 460 insertions(+), 1 deletion(-)
+ server/routers/crm.customerDesigns.test.ts | 209 +++++++++++++++++++++
+ server/routers/crm.ts                      | 164 ++++++++++++++++
+ shared/crmCustomerDesigns.test.ts          |  90 +++++++++
+ shared/crmCustomerDesigns.ts               | 120 ++++++++++++
+ shared/crmCustomerLookup.test.ts           |  77 ++++++++
+ shared/crmCustomerLookup.ts                |  77 ++++++++
+ 7 files changed, 746 insertions(+), 1 deletion(-)
  create mode 100644 server/routers/crm.customerDesigns.test.ts
  create mode 100644 shared/crmCustomerDesigns.test.ts
  create mode 100644 shared/crmCustomerDesigns.ts
+ create mode 100644 shared/crmCustomerLookup.test.ts
+ create mode 100644 shared/crmCustomerLookup.ts
 
 diff --git a/server/lib/__testDb.ts b/server/lib/__testDb.ts
 index a704343..35a36cb 100644
@@ -46,10 +60,10 @@ index a704343..35a36cb 100644
      if (text.includes("=") && operand?.kind === "param") {
 diff --git a/server/routers/crm.customerDesigns.test.ts b/server/routers/crm.customerDesigns.test.ts
 new file mode 100644
-index 0000000..f8977b7
+index 0000000..994db12
 --- /dev/null
 +++ b/server/routers/crm.customerDesigns.test.ts
-@@ -0,0 +1,150 @@
+@@ -0,0 +1,209 @@
 +/**
 + * A customer's CRM view must list only designs linked to that customer.
 + *
@@ -200,19 +214,79 @@ index 0000000..f8977b7
 +      .rejects.toThrow(/Deal not found/);
 +  });
 +});
++
++describe("crm.customerLookup quick lookup", () => {
++  it("opens the one design a customer has, from the identifier alone", async () => {
++    const result = await caller().customerLookup({ identifier: "5192" });
++    expect(result.ok).toBe(true);
++    if (!result.ok) throw new Error("expected a hit");
++    expect(result.outcome).toBe("one");
++    expect(result.dealId).toBe(5192);
++    expect(result.customerName).toBe("Riley Buyer");
++    expect(result.designs.map((row) => row.id)).toEqual([4401]);
++    expect(result.openUrl).toBe("/store/store-a/design?load=4401&preview=3d&crmDeal=5192");
++  });
++
++  it("accepts what staff paste, and still matches the identifier directly", async () => {
++    for (const identifier of ["5192", "#5192", "customer 5192", "/admin?deal=5192"]) {
++      const result = await caller().customerLookup({ identifier });
++      expect(result.ok).toBe(true);
++      if (result.ok) expect(result.designs.map((row) => row.id)).toEqual([4401]);
++    }
++  });
++
++  it("offers only the customer's own designs when there are several", async () => {
++    tables.set(crmDealDesigns, [
++      { id: 1, dealId: 5192, designId: 4401, designName: "Design 4401", linkedByUserId: 1, createdAt: new Date() },
++      { id: 2, dealId: 5192, designId: 4402, designName: "Design 4402", linkedByUserId: 1, createdAt: new Date() },
++    ]);
++    const result = await caller().customerLookup({ identifier: "5192" });
++    expect(result.ok).toBe(true);
++    if (!result.ok) throw new Error("expected a hit");
++    expect(result.outcome).toBe("several");
++    expect(result.openUrl).toBeNull();
++    expect(result.designs.map((row) => row.id).sort()).toEqual([4401, 4402]);
++  });
++
++  it("says so when the customer has no linked design, rather than listing the account", async () => {
++    tables.set(crmDealDesigns, []);
++    const result = await caller().customerLookup({ identifier: "5192" });
++    expect(result.ok).toBe(true);
++    if (!result.ok) throw new Error("expected a hit");
++    expect(result.outcome).toBe("none");
++    expect(result.openUrl).toBeNull();
++    expect(result.designs).toEqual([]);
++  });
++
++  it("does not find a customer number that is not in the caller's scope", async () => {
++    const result = await caller({ id: 901, role: "contractor" }).customerLookup({ identifier: "5192" });
++    expect(result).toMatchObject({ ok: false, reason: "not-found", dealId: 5192 });
++  });
++
++  it("rejects text that is not a customer number instead of searching", async () => {
++    const result = await caller().customerLookup({ identifier: "rivera" });
++    expect(result).toMatchObject({ ok: false, reason: "not-an-identifier" });
++  });
++
++  it("rejects a customer-list link, whose number is a users.id", async () => {
++    const result = await caller().customerLookup({ identifier: "/affiliate?section=customers&customer=user:5192" });
++    expect(result).toMatchObject({ ok: false, reason: "not-an-identifier" });
++  });
++});
 diff --git a/server/routers/crm.ts b/server/routers/crm.ts
-index f209b22..395a5bb 100644
+index f209b22..4504317 100644
 --- a/server/routers/crm.ts
 +++ b/server/routers/crm.ts
-@@ -62,6 +62,7 @@ import { contactEmailToBackfill, loadDealInvoiceRecipient, usableInvoiceEmail }
+@@ -62,6 +62,8 @@ import { contactEmailToBackfill, loadDealInvoiceRecipient, usableInvoiceEmail }
  import { buildOrderDistributorMessage } from "../lib/orderSideEffects";
  import { createDistributorPoPdf } from "../lib/distributorPoPdf";
  import { crmHtmlToText, crmMailboxVisible, sanitizeCrmEmailHtml } from "@shared/crmMailbox";
 +import { selectCustomerDesigns } from "@shared/crmCustomerDesigns";
++import { lookupOutcome, parseCustomerIdentifier } from "@shared/crmCustomerLookup";
  import {
    newlyRequestedCrmHelpKinds,
    recipientsForCrmHelpNotification,
-@@ -393,6 +394,15 @@ function designScopePath(affiliateSlug: string | null, designId: number, crmDeal
+@@ -393,6 +395,100 @@ function designScopePath(affiliateSlug: string | null, designId: number, crmDeal
  	return `${path}?${params.toString()}`;
  }
  
@@ -225,10 +299,95 @@ index f209b22..395a5bb 100644
 +  return typeof id === "number" && Number.isInteger(id) && id > 0 ? id : null;
 +}
 +
++export type CustomerLinkedDesign = {
++  id: number;
++  name: string;
++  thumbnailUrl: string | null;
++  assistLabel: string | null;
++  updatedAt: Date | string | null;
++  linkKind: "deal" | "customerFolder";
++  /** crm_deal_designs.id for a deal link; null for a contractor folder link. */
++  linkId: number | null;
++  designUrl: string;
++};
++
++/**
++ * Designs with a stored link to this customer, newest first. Shared by the deal
++ * drawer (customerDesigns) and the staff quick lookup (customerLookup) so the
++ * two can never disagree about what "linked" means.
++ */
++async function loadCustomerLinkedDesigns(
++  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
++  deal: { id: number; affiliateId: number | null; contractorCustomerId?: number | null },
++): Promise<CustomerLinkedDesign[]> {
++  const contractorCustomerId = customerFolderDealId(deal);
++  const linkRows = await db
++    .select({ id: crmDealDesigns.id, designId: crmDealDesigns.designId })
++    .from(crmDealDesigns)
++    .where(eq(crmDealDesigns.dealId, deal.id));
++  const linkedIds = Array.from(new Set(linkRows.map((row) => Number(row.designId))));
++  // The contractor customer folder column ships with SQL 0234. If a database
++  // predates it, the deal link alone still answers the customer view.
++  let folderIds: number[] = [];
++  if (contractorCustomerId != null) {
++    try {
++      const folderRows = await db
++        .select({ id: kitchenDesigns.id })
++        .from(kitchenDesigns)
++        .where(eq(kitchenDesigns.contractorCustomerId, contractorCustomerId));
++      folderIds = folderRows.map((row) => Number(row.id));
++    } catch (error) {
++      if (!isMissingSchemaError(error)) throw error;
++    }
++  }
++  const designIds = Array.from(new Set([...linkedIds, ...folderIds]));
++  if (designIds.length === 0) return [];
++  const rows = await db
++    .select({
++      id: kitchenDesigns.id,
++      name: kitchenDesigns.name,
++      thumbnailUrl: kitchenDesigns.thumbnailUrl,
++      assistLabel: kitchenDesigns.assistLabel,
++      contractorCustomerId: kitchenDesigns.contractorCustomerId,
++      affiliateId: kitchenDesigns.affiliateId,
++      updatedAt: kitchenDesigns.updatedAt,
++    })
++    .from(kitchenDesigns)
++    .where(inArray(kitchenDesigns.id, designIds))
++    .orderBy(desc(kitchenDesigns.updatedAt));
++  // A linked design in another store is not part of this customer's view.
++  // linkDesign already refuses that, but a legacy row must not leak through.
++  const scoped = rows.filter((row) => row.affiliateId === deal.affiliateId);
++  const storeSlug = deal.affiliateId == null
++    ? null
++    : (await db.select({ slug: affiliates.slug }).from(affiliates).where(eq(affiliates.id, deal.affiliateId)).limit(1))[0]?.slug ?? null;
++  return selectCustomerDesigns(
++    scoped.map((row) => ({
++      designId: row.id,
++      dealIds: linkedIds.includes(row.id) ? [deal.id] : [],
++      contractorCustomerId: row.contractorCustomerId,
++      row,
++    })),
++    { dealId: deal.id, contractorCustomerId },
++  ).map((entry) => ({
++    id: entry.row.id,
++    name: entry.row.name,
++    thumbnailUrl: entry.row.thumbnailUrl,
++    assistLabel: entry.row.assistLabel,
++    updatedAt: entry.row.updatedAt,
++    linkKind: entry.linkKind,
++    // crm_deal_designs.id, so the drawer can unlink without a second query.
++    linkId: entry.linkKind === "deal"
++      ? linkRows.find((link) => Number(link.designId) === entry.row.id && link.id != null)?.id ?? null
++      : null,
++    designUrl: designScopePath(storeSlug, entry.row.id, deal.id),
++  }));
++}
++
  export const crmRouter = router({
    // ── Import a customer list into the caller's CRM scope ──────────────────────
    importCustomerList: protectedProcedure
-@@ -760,6 +770,87 @@ export const crmRouter = router({
+@@ -760,6 +856,74 @@ export const crmRouter = router({
        return { deal, activities, linkedDesigns, emails, invoiceBrand, invoicePrefill, invoiceRecipient, laborEstimates };
      }),
  
@@ -247,70 +406,57 @@ index f209b22..395a5bb 100644
 +    .query(async ({ ctx, input }) => {
 +      const { db, deal } = await getOwnedDeal(ctx, input.dealId, { contractorUserId: input.contractorUserId });
 +      const contractorCustomerId = customerFolderDealId(deal);
-+      const linkRows = await db
-+        .select({ id: crmDealDesigns.id, designId: crmDealDesigns.designId })
-+        .from(crmDealDesigns)
-+        .where(eq(crmDealDesigns.dealId, deal.id));
-+      const linkedIds = Array.from(new Set(linkRows.map((row) => Number(row.designId))));
-+      // The contractor customer folder column ships with SQL 0234. If a database
-+      // predates it, the deal link alone still answers the customer view.
-+      let folderIds: number[] = [];
-+      if (contractorCustomerId != null) {
-+        try {
-+          const folderRows = await db
-+            .select({ id: kitchenDesigns.id })
-+            .from(kitchenDesigns)
-+            .where(eq(kitchenDesigns.contractorCustomerId, contractorCustomerId));
-+          folderIds = folderRows.map((row) => Number(row.id));
-+        } catch (error) {
-+          if (!isMissingSchemaError(error)) throw error;
-+        }
-+      }
-+      const designIds = Array.from(new Set([...linkedIds, ...folderIds]));
-+      if (designIds.length === 0) {
-+        return { schemaReady: true, dealId: deal.id, contractorCustomerId, designs: [] };
-+      }
-+      const rows = await db
-+        .select({
-+          id: kitchenDesigns.id,
-+          name: kitchenDesigns.name,
-+          thumbnailUrl: kitchenDesigns.thumbnailUrl,
-+          assistLabel: kitchenDesigns.assistLabel,
-+          contractorCustomerId: kitchenDesigns.contractorCustomerId,
-+          affiliateId: kitchenDesigns.affiliateId,
-+          updatedAt: kitchenDesigns.updatedAt,
-+        })
-+        .from(kitchenDesigns)
-+        .where(inArray(kitchenDesigns.id, designIds))
-+        .orderBy(desc(kitchenDesigns.updatedAt));
-+      // A linked design in another store is not part of this customer's view.
-+      // linkDesign already refuses that, but a legacy row must not leak through.
-+      const scoped = rows.filter((row) => row.affiliateId === deal.affiliateId);
-+      const storeSlug = deal.affiliateId == null
-+        ? null
-+        : (await db.select({ slug: affiliates.slug }).from(affiliates).where(eq(affiliates.id, deal.affiliateId)).limit(1))[0]?.slug ?? null;
-+      const designs = selectCustomerDesigns(
-+        scoped.map((row) => ({
-+          designId: row.id,
-+          dealIds: linkedIds.includes(row.id) ? [deal.id] : [],
-+          contractorCustomerId: row.contractorCustomerId,
-+          row,
-+        })),
-+        { dealId: deal.id, contractorCustomerId },
-+      ).map((entry) => ({
-+        id: entry.row.id,
-+        name: entry.row.name,
-+        thumbnailUrl: entry.row.thumbnailUrl,
-+        assistLabel: entry.row.assistLabel,
-+        updatedAt: entry.row.updatedAt,
-+        linkKind: entry.linkKind,
-+        // crm_deal_designs.id, so the drawer can unlink without a second query.
-+        linkId: entry.linkKind === "deal"
-+          ? linkRows.find((link) => Number(link.designId) === entry.row.id && link.id != null)?.id ?? null
-+          : null,
-+        designUrl: designScopePath(storeSlug, entry.row.id, deal.id),
-+      }));
++      const designs = await loadCustomerLinkedDesigns(db, deal);
 +      return { schemaReady: true, dealId: deal.id, contractorCustomerId, designs };
++    }),
++
++  // ── Staff quick lookup: identifier in, that customer's design out ──────────
++  // When a customer phones in, staff type the customer number (crm_deals.id,
++  // e.g. 5192) and go straight to the plan. The identifier is matched directly
++  // on the deal row inside the caller's own scope; there is no free-text search
++  // over every design. Designs are the same stored links as customerDesigns, so
++  // the answer is "one design", "these few", or "none", never the whole account.
++  customerLookup: protectedProcedure
++    .input(z.object({
++      // Generous enough for a pasted CRM link, which carries the deal id.
++      identifier: z.string().trim().min(1).max(300),
++      contractorUserId: z.number().int().positive().optional(),
++    }))
++    .query(async ({ ctx, input }) => {
++      const identifier = parseCustomerIdentifier(input.identifier);
++      if (identifier.dealId == null) {
++        return { ok: false as const, reason: "not-an-identifier" as const, identifier: input.identifier, dealId: null };
++      }
++      const db = await getDb();
++      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
++      const scope = await resolveScope(ctx, {
++        contractorUserId: input.contractorUserId,
++        adminAll: ctx.user.role === "admin" && input.contractorUserId == null,
++      });
++      const where = scopeWhere(scope);
++      const rows = await db
++        .select()
++        .from(crmDeals)
++        .where(where ? and(eq(crmDeals.id, identifier.dealId), where) : eq(crmDeals.id, identifier.dealId))
++        .limit(1);
++      const deal = rows[0];
++      if (!deal) {
++        return { ok: false as const, reason: "not-found" as const, identifier: input.identifier, dealId: identifier.dealId };
++      }
++      const designs = await loadCustomerLinkedDesigns(db, deal);
++      const outcome = lookupOutcome(designs.length);
++      return {
++        ok: true as const,
++        identifier: input.identifier,
++        dealId: deal.id,
++        customerName: deal.contactName ?? deal.company ?? deal.title,
++        contactEmail: deal.contactEmail ?? null,
++        affiliateId: deal.affiliateId ?? null,
++        designs,
++        outcome,
++        // Exactly one design opens straight away; several are shown to pick from.
++        openUrl: outcome === "one" ? designs[0]!.designUrl : null,
++      };
 +    }),
 +
    // ── Saved designs compatible with this CRM scope/deal ──────────────────────
@@ -537,6 +683,172 @@ index 0000000..0011ecf
 +/** The table/column pair to quote when explaining where the link lives. */
 +export function designLinkStorage(kind: DesignLinkKind): string {
 +  return kind === "deal" ? CRM_DEAL_DESIGNS_TABLE : DESIGN_CUSTOMER_COLUMN;
++}
+diff --git a/shared/crmCustomerLookup.test.ts b/shared/crmCustomerLookup.test.ts
+new file mode 100644
+index 0000000..2424e10
+--- /dev/null
++++ b/shared/crmCustomerLookup.test.ts
+@@ -0,0 +1,77 @@
++import { describe, expect, it } from "vitest";
++import {
++  CUSTOMER_IDENTIFIER_HINT,
++  CUSTOMER_LOOKUP_COPY,
++  lookupMessage,
++  lookupOutcome,
++  parseCustomerIdentifier,
++} from "./crmCustomerLookup";
++
++describe("customer identifier parsing", () => {
++  it("takes a bare customer number", () => {
++    expect(parseCustomerIdentifier("5192").dealId).toBe(5192);
++    expect(parseCustomerIdentifier("  5192  ").dealId).toBe(5192);
++    expect(parseCustomerIdentifier("#5192").dealId).toBe(5192);
++  });
++
++  it("takes the forms staff actually type", () => {
++    expect(parseCustomerIdentifier("customer 5192").dealId).toBe(5192);
++    expect(parseCustomerIdentifier("Customer #5192").dealId).toBe(5192);
++    expect(parseCustomerIdentifier("deal 5192").dealId).toBe(5192);
++    expect(parseCustomerIdentifier("client: 5192").dealId).toBe(5192);
++    expect(parseCustomerIdentifier("account #5192").dealId).toBe(5192);
++  });
++
++  it("takes a pasted CRM link with a deal id", () => {
++    expect(parseCustomerIdentifier("https://cabinetdealz.com/admin?deal=5192").dealId).toBe(5192);
++    expect(parseCustomerIdentifier("/affiliate?section=crm&deal=5192").dealId).toBe(5192);
++  });
++
++  it("refuses a ?customer= link, which carries a different number space", () => {
++    // /affiliate?section=customers&customer=user:5192 is a users.id key. Treating
++    // it as crm_deals.id could open a different customer's plan, so it is
++    // rejected instead of guessed at.
++    expect(parseCustomerIdentifier("/affiliate?section=customers&customer=user:5192").dealId).toBeNull();
++    expect(parseCustomerIdentifier("/affiliate?section=customers&customer=5192").dealId).toBeNull();
++  });
++
++  it("refuses anything that is not a customer number, so it cannot become a search", () => {
++    expect(parseCustomerIdentifier("").dealId).toBeNull();
++    expect(parseCustomerIdentifier("   ").dealId).toBeNull();
++    expect(parseCustomerIdentifier("rivera").dealId).toBeNull();
++    expect(parseCustomerIdentifier("kitchen").dealId).toBeNull();
++    expect(parseCustomerIdentifier("5192abc").dealId).toBeNull();
++    expect(parseCustomerIdentifier("0").dealId).toBeNull();
++    expect(parseCustomerIdentifier("-5192").dealId).toBeNull();
++  });
++
++  it("echoes what was typed so the answer can name it", () => {
++    expect(parseCustomerIdentifier("  #5192 ").raw).toBe("#5192");
++  });
++});
++
++describe("customer lookup outcome", () => {
++  it("opens one design straight away", () => {
++    expect(lookupOutcome(1)).toBe("one");
++  });
++
++  it("asks which one when there are several", () => {
++    expect(lookupOutcome(2)).toBe("several");
++    expect(lookupOutcome(7)).toBe("several");
++  });
++
++  it("says so when there is none — it never falls back to every design", () => {
++    expect(lookupOutcome(0)).toBe("none");
++    expect(lookupMessage("none", "5192")).toBe("That customer has no design linked yet.");
++    expect(CUSTOMER_LOOKUP_COPY.noneHint).toContain("Link a saved design");
++  });
++
++  it("names the customer when asking which design", () => {
++    expect(lookupMessage("several", "5192")).toBe("5192: That customer has more than one linked design. Pick the right one.");
++    expect(lookupMessage("one", "5192")).toBe("Opening their only design…");
++  });
++
++  it("shows the accepted identifier format in the input hint", () => {
++    expect(CUSTOMER_IDENTIFIER_HINT).toBe("Customer # (e.g. 5192)");
++  });
++});
+diff --git a/shared/crmCustomerLookup.ts b/shared/crmCustomerLookup.ts
+new file mode 100644
+index 0000000..3dadc85
+--- /dev/null
++++ b/shared/crmCustomerLookup.ts
+@@ -0,0 +1,77 @@
++/**
++ * Staff quick lookup: a customer identifier in, that customer's design(s) out.
++ *
++ * The identifier is the CRM customer number, which is `cabinet_dealz.crm_deals.id`
++ * (customer 5192 is deal row 5192). It is matched directly on that row — there is
++ * no free-text search, no "browse all designs", and no ownership fallback — so the
++ * only designs returned are the ones stored as linked to that customer
++ * (see shared/crmCustomerDesigns.ts).
++ *
++ * Accepts what staff actually paste: "5192", "#5192", "customer 5192", "deal 5192",
++ * or a pasted CRM URL such as /admin?deal=5192 / ?section=crm&deal=5192.
++ */
++
++export const CUSTOMER_IDENTIFIER_HINT = "Customer # (e.g. 5192)";
++
++export const CUSTOMER_LOOKUP_COPY = {
++  prompt: "Type the customer number from the CRM to open their plan.",
++  notAnIdentifier: "That is not a customer number. Use the number shown on the customer, e.g. 5192.",
++  notFound: "No customer with that number is in your CRM scope.",
++  none: "That customer has no design linked yet.",
++  one: "Opening their only design…",
++  several: "That customer has more than one linked design. Pick the right one.",
++  noneHint: "Link a saved design from the customer's record in the CRM, then look them up again.",
++} as const;
++
++export type LookupOutcome = "none" | "one" | "several";
++
++export type ParsedCustomerIdentifier = {
++  /** crm_deals.id, or null when the text is not a customer number at all. */
++  dealId: number | null;
++  /** What the caller typed, trimmed. Echoed back in "no customer ##### found". */
++  raw: string;
++};
++
++const DEAL_QUERY_PARAM = /[?&]deal=(\d{1,9})\b/;
++const LABELLED = /(?:^|\b)(?:customer|client|deal|account|contact)\s*(?:#|no\.?|number)?\s*[:#]?\s*(\d{1,9})\b/i;
++
++function toDealId(value: string): number | null {
++  const parsed = Number(value);
++  if (!Number.isInteger(parsed) || parsed <= 0 || parsed > 2_147_483_647) return null;
++  return parsed;
++}
++
++/**
++ * Pull the customer number out of whatever staff typed or pasted.
++ * A bare number wins. Otherwise a CRM URL's `deal=` (or `customer=`), then a
++ * labelled form like "customer #5192". Text with no number at all is rejected
++ * rather than treated as a search term, so the lookup never turns into browsing.
++ */
++export function parseCustomerIdentifier(input: string): ParsedCustomerIdentifier {
++  const raw = (input ?? "").trim();
++  if (raw.length === 0) return { dealId: null, raw };
++
++  const bare = raw.replace(/^#/, "").replace(/^customer\s*#?\s*/i, "").trim();
++  if (/^\d{1,9}$/.test(bare)) return { dealId: toDealId(bare), raw };
++
++  const fromDealParam = raw.match(DEAL_QUERY_PARAM)?.[1];
++  if (fromDealParam) return { dealId: toDealId(fromDealParam), raw };
++
++  const labelled = raw.match(LABELLED)?.[1];
++  if (labelled) return { dealId: toDealId(labelled), raw };
++
++  return { dealId: null, raw };
++}
++
++/** Exactly one design opens straight away; zero or several do not. */
++export function lookupOutcome(designCount: number): LookupOutcome {
++  if (designCount <= 0) return "none";
++  if (designCount === 1) return "one";
++  return "several";
++}
++
++export function lookupMessage(outcome: LookupOutcome, identifier: string | null): string {
++  if (outcome === "none") return CUSTOMER_LOOKUP_COPY.none;
++  if (outcome === "one") return CUSTOMER_LOOKUP_COPY.one;
++  return identifier ? `${identifier}: ${CUSTOMER_LOOKUP_COPY.several}` : CUSTOMER_LOOKUP_COPY.several;
 +}
 -- 
 2.43.0
