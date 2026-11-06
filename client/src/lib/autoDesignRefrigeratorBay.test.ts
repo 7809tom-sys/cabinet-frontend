@@ -144,22 +144,23 @@ describe("Auto-Design refrigerator cabinet above: always the 24-inch-deep refrig
     expect(cap.masterCode).toBe("W361224");
     expect(cap.depth).toBe(24);
   });
-  it("falls back to a 12-inch-deep bridge when the line has no 24-inch-deep box and notes the swap", () => {
+  it("uses a 12-inch-deep bridge when the line sells no deeper box, and pulls it forward", () => {
     const result = build([source({ id: 1, masterCode: "W3612", description: "36 x 12 Wall", width: "36", height: "12", depth: "12" })]);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
+    // The box is not a substitute for a 24-inch refrigerator cabinet: the depth
+    // rule pulls it forward so its face lands flush with the end panels.
     expect(result.additions[0].masterCode).toBe("W3612");
     expect(result.additions[0].depth).toBe(12);
-    expect(result.additions[0].fieldModificationNote).toContain('Over-fridge 36x24 not in line; used W3612 (12" H)');
     expect(result.additions[0].fieldModificationNote).toContain("pulled forward flush");
     expect(result.additions[0].depthPositionAdjusted).toBe(true);
-    expect(result.notes[0]).toBe('Over-fridge 36x24 not in line; used W3612 (12" H)');
+    expect(result.additions[0].y + Number(result.additions[0].depth)).toBeCloseTo(24, 2);
+    expect(result.notes).toEqual(["Over-fridge W3612 pulled forward flush with the refrigerator end panel"]);
   });
   it("refuses with a plain message when the line has no bridge under 30 inches", () => {
     const result = build([source({ id: 1, masterCode: "W363024", width: "36", height: "30", depth: "24" })]);
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.message).toMatch(/24-inch-deep/i);
     expect(result.message).toMatch(/under 30/i);
   });
   it("chooses the height that tops out at the wall-cabinet line (54 + 30 = 84), not the first row", () => {
@@ -238,24 +239,41 @@ describe("Auto-Design refrigerator cabinet above: always the 24-inch-deep refrig
     expect(result.additions[0].masterCode).toBe("W362424");
   });
 
-  it("keeps the wall-line 36 by 24 box when one exists and does not note a substitution", () => {
+  it("prefers a full-depth box that tops out on the wall line, over a shallower one", () => {
     const caps = [
       source({ id: 21, masterCode: "W301824", width: "30", height: "18", depth: "24" }),
       source({ id: 22, masterCode: "W362275", width: "36", height: "22.75", depth: "24" }),
       source({ id: 23, masterCode: "W361824", width: "36", height: "18", depth: "24" }),
       source({ id: 24, masterCode: "W363024", width: "36", height: "30", depth: "24" }),
-      source({ id: 25, masterCode: "W3623", width: "36", height: "22.75", depth: "12" }),
+      source({ id: 25, masterCode: "W3612", width: "36", height: "12", depth: "12" }),
+      source({ id: 26, masterCode: "W362424", width: "36", height: "24", depth: "24" }),
     ];
     const result = build(caps);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    // Fridge top 72, wall line 84. The 18 inch box lands at 90, closer than 22.75 at 94.75.
-    expect(result.additions[0].masterCode).toBe("W361824");
-    expect(result.notes).toEqual([]);
-    expect(result.additions[0].fieldModificationNote).toBeUndefined();
+    // The line sells full-depth boxes but none can top out on the 84-inch line, so
+    // the nearest-top full-depth box wins. A 12-inch-deep box is not preferred over
+    // a real refrigerator box: pulling it 12 inches forward would read as a shelf.
+    const cap = result.additions[0];
+    expect(cap.depth).toBe(24);
+    expect(cap.masterCode).toBe("W361824");
+    expect((cap.mountBottom ?? 0) + Number(cap.height)).toBeCloseTo(90, 2);
+    expect(cap.notes ?? cap.fieldModificationNote ?? "").not.toContain("pulled forward");
   });
 
-  it("when no 24-inch-deep box exists, the fallback keeps 36 inch width, then the closest depth, and the tallest under 30", () => {
+  it("falls back to a shallower box, pulled forward, only when no full-depth box exists", () => {
+    const result = build([source({ id: 1, masterCode: "W3612", description: "36 x 12 Wall", width: "36", height: "12", depth: "12" })]);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const cap = result.additions[0];
+    expect(cap.masterCode).toBe("W3612");
+    expect(cap.depth).toBe(12);
+    expect(cap.y + Number(cap.depth)).toBeCloseTo(24, 2);
+    expect(cap.depthPositionAdjusted).toBe(true);
+    expect(cap.fieldModificationNote).toContain("pulled forward flush");
+  });
+
+  it("picks the box that tops out on the upper line even when no full-depth box exists", () => {
     const caps = [
       source({ id: 31, masterCode: "W332275", width: "33", height: "22.75", depth: "24" }),
       source({ id: 32, masterCode: "W3612", width: "36", height: "12", depth: "12" }),
@@ -265,10 +283,13 @@ describe("Auto-Design refrigerator cabinet above: always the 24-inch-deep refrig
     const result = build(caps);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.additions[0].masterCode).toBe("W362275S");
-    expect(result.additions[0].fieldModificationNote).toContain("W362275S");
-    expect(result.additions[0].fieldModificationNote).toContain('22.75" H');
-    expect(result.additions[0].depthPositionAdjusted).toBe(true);
+    // Fridge top 70 + 2 = 72, upper line 84: only the 12-inch box reaches the line.
+    // The depth rule then pulls it forward to the panel face, so its 12-inch
+    // catalog depth is not a reason to reject it.
+    const cap = result.additions[0];
+    expect(cap.masterCode).toBe("W3612");
+    expect((cap.mountBottom ?? 0) + Number(cap.height)).toBeCloseTo(84, 2);
+    expect(cap.depthPositionAdjusted).toBe(true);
   });
 
   it("on the real framed and frameless catalogs the cap is the 24-inch-deep refrigerator cabinet", () => {

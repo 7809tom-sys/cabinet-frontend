@@ -1,9 +1,11 @@
 import { framelessAboveFridgeHeight } from "./aefAboveFridge";
 import { REFRIGERATOR_PANEL_LIMIT_EPSILON_IN } from "./refrigeratorPanelLimit";
+import { REFRIGERATOR_BRIDGE_FACE_EPSILON_IN } from "./refrigeratorBridgeDepth";
 import { catalogSizeFromNumbers, pickClosestCatalogSize } from "./closestCatalogSize";
 import { refrigeratorEndPanelInstalledDepth } from "./refrigeratorEndPanelCut";
 import {
   cabinetWall,
+  cabinetFrontIn,
   clampFillerExtensionIn,
   dim,
   REFRIGERATOR_SIDE_CLEARANCE_IN,
@@ -85,6 +87,12 @@ export function overFridgeSubstitutionNote(masterCode: string, heightIn: number)
   return `Over-fridge 36x24 not in line; used ${masterCode} (${height}" H)`;
 }
 
+/** One-eighth-inch label used by the bay's review notes. */
+function inchLabel(value: number): string {
+  const rounded = Math.round(value * 8) / 8;
+  return Number.isInteger(rounded) ? String(rounded) : String(rounded);
+}
+
 export type RefrigeratorCapPick = {
   cabinet: DesignCabinet;
   substitutionNote: string | null;
@@ -117,6 +125,7 @@ export function pickAutoDesignRefrigeratorCap(
   // An over-wide box is never used: it would poke past the end panels.
   const openingIn = refrigeratorWidthIn + REFRIGERATOR_SIDE_CLEARANCE_IN * 2;
   const exactWidth = (candidate: DesignCabinet) => Math.abs(dim(candidate.width, 0) - refrigeratorWidthIn) <= 0.01;
+  // The line the run's own uppers top out on: 54 + the selected upper height.
   const target = UPPER_RUN_BOTTOM_IN + wallCabinetHeightIn;
   const mountBottom = refrigeratorSurroundElevation(null, refrigeratorTop, 0).mountBottom;
   const fitsCeiling = (candidate: DesignCabinet) => mountBottom + dim(candidate.height, 0) <= ceilingIn + 0.01;
@@ -135,29 +144,48 @@ export function pickAutoDesignRefrigeratorCap(
       .sort((a, b) => a.masterCode.localeCompare(b.masterCode));
     if (match[0]) return { cabinet: match[0], substitutionNote: null };
   } else {
-    const eligible = caps
-      .filter((candidate) => (
-        exactWidth(candidate)
-        && Math.abs(dim(candidate.depth, 0) - REFRIGERATOR_CAP_DEPTH_IN) <= 0.01
-        && dim(candidate.height, 0) > 0
-        && fitsCeiling(candidate)
-      ))
-      .map((candidate) => ({ candidate, top: mountBottom + dim(candidate.height, 0) }));
-    eligible.sort((a, b) => (
-      Math.abs(a.top - target) - Math.abs(b.top - target)
-      || dim(a.candidate.height, 0) - dim(b.candidate.height, 0)
-      || a.candidate.masterCode.localeCompare(b.candidate.masterCode)
+    // Owner rule order. First: a full-depth refrigerator box whose TOP lands on
+    // the run's line, so it lines up with the other uppers and its face is already
+    // at the panel plane. Second: any full-depth box, nearest top (the previous
+    // behaviour, and the bay reports the compromise). Third, and only when the
+    // line sells no full-depth box at this width: a shallower box, which the depth
+    // rule then pulls forward to the panel.
+    const surroundDatumIn = refrigeratorSurroundElevation(null, refrigeratorTop, 0).mountBottom;
+    const runTop = UPPER_RUN_BOTTOM_IN + Math.max(0, Number(wallCabinetHeightIn) || 30);
+    const placedAt = (candidate: DesignCabinet) => {
+      const height = dim(candidate.height, 0);
+      const linedUpBottom = runTop - height;
+      return linedUpBottom >= surroundDatumIn - 0.01
+        ? { linedUp: true, bottom: linedUpBottom, top: runTop }
+        : { linedUp: false, bottom: surroundDatumIn, top: surroundDatumIn + height };
+    };
+    const sameWidth = caps.filter((candidate) => (
+      exactWidth(candidate)
+      && dim(candidate.height, 0) > 0
+      && dim(candidate.depth, 0) > 0
+      && dim(candidate.depth, 0) <= REFRIGERATOR_CAP_DEPTH_IN + 0.01
+      && fitsCeiling(candidate)
     ));
-    if (eligible[0]) return { cabinet: eligible[0].candidate, substitutionNote: null };
+    const fullDepth = sameWidth.filter((candidate) => dim(candidate.depth, 0) >= REFRIGERATOR_CAP_DEPTH_IN - 0.01);
+    const rank = (list: readonly DesignCabinet[]) => list
+      .map((candidate) => ({ candidate, ...placedAt(candidate) }))
+      .sort((a, b) => (
+        Number(b.linedUp) - Number(a.linedUp)
+        || Math.abs(a.top - target) - Math.abs(b.top - target)
+        || dim(b.candidate.height, 0) - dim(a.candidate.height, 0)
+        || a.candidate.masterCode.localeCompare(b.candidate.masterCode)
+      ));
+    const chosen = rank(fullDepth)[0] ?? rank(sameWidth)[0];
+    if (chosen) return { cabinet: chosen.candidate, substitutionNote: null };
   }
   const fitsOpening = (candidate: DesignCabinet) => dim(candidate.width, 0) > 0 && dim(candidate.width, 0) <= openingIn + 0.01;
   return fallbackOverFridgeCap(caps, fitsCeiling, refrigeratorWidthIn, fitsOpening);
 }
 
 /**
- * Tallest under-30 bridge when the 36 × 24 deep preferred box is absent.
- * 36 inch width and 24 inch depth win, then the closest depth, then the
- * tallest box in that group.
+ * Bridge fallback when the line sells no full-length refrigerator box: the
+ * deepest box it does sell at the refrigerator's width, then the tallest one
+ * whose top can still land on the run's upper line.
  */
 function fallbackOverFridgeCap(
   caps: readonly DesignCabinet[],
@@ -268,7 +296,30 @@ export function buildMandatoryAutoDesignRefrigeratorBay({
   const panelDepth = panelCut.cutDown ? panelCut.installedDepth : panelDimensions.installedDepth;
   const capDepth = Math.max(0, dim(cap.depth, 0)) || 24;
   const capHeight = Math.max(0, dim(cap.height, 0)) || 24;
-  const panelHeight = refrigeratorSurroundElevation(room, refrigerator.height ?? 70, capHeight).top;
+  // The run's own upper height: the source-priced class the build actually uses
+  // for its straight wall cabinets. The cabinet above the refrigerator lines up
+  // with those, not with the appliance datum.
+  const capHeightLineIn = Math.max(0, Number(wallCabinetHeightIn) || 30);
+  const upperLineTopIn = UPPER_RUN_BOTTOM_IN + capHeightLineIn;
+  // Height rule, separate from the depth rule: the cabinet above lines up with
+  // the other uppers, so its TOP lands on the run's line (54 + the selected
+  // upper height) and its bottom is that line less its own height. Hanging it
+  // from the 72-inch appliance datum instead pushed an 18-inch bridge to 90 and
+  // left it above the run it belongs to.
+  const surroundDatumIn = refrigeratorSurroundElevation(room, refrigerator.height ?? 70, capHeight).mountBottom;
+  const topAlignedBottomIn = upperLineTopIn - capHeight;
+  // Lining up wins whenever the box still clears the appliance. A box that cannot
+  // both reach the line and clear the appliance is lifted to the clearance datum
+  // instead of intersecting the refrigerator; a sub-inch shortfall is catalog
+  // noise and is not reported.
+  const mountBottom = topAlignedBottomIn >= surroundDatumIn - 0.01 ? topAlignedBottomIn : surroundDatumIn;
+  const heightRuleCompromised = mountBottom - topAlignedBottomIn > 1;
+  // End panels finish on the same line as the cabinet above, so the enclosure
+  // reads as one piece with the run. A panel never hangs below the appliance.
+  const panelHeight = Math.max(
+    refrigeratorSurroundElevation(room, refrigerator.height ?? 70, capHeight).top,
+    mountBottom + capHeight,
+  );
   const capWidth = Math.max(0, dim(cap.width, 0)) || fridgeWidthIn;
   // A deeper box would stick out past the panel face. Cut it back to the panel
   // before it is seated. Nothing is left overhanging.
@@ -277,16 +328,18 @@ export function buildMandatoryAutoDesignRefrigeratorBay({
   // Centered on the refrigerator, so a narrower substitute sits inside the opening with equal gaps.
   const capSpot = wallPlacementAt(bay.refrigeratorCenter - capWidth / 2, capWidth, installedCapDepth, bay.side, room);
   // A substituted box shallower than the finished enclosure is pulled forward
-  // so its face meets the panel/refrigerator face. The preferred 24 inch box
-  // stays on the wall, which is the placement existing kitchens already use.
+  // so its face meets the panel face. The depth rule is not conditional on a
+  // substitution: whenever a panel is used, the cabinet above sits flush with it.
   const enclosureFace = Math.min(panelDepth, Math.max(0, Number(refrigerator.depth) || panelDepth));
-  const pullForward = capPick.substitutionNote != null && capDepth + 0.05 < enclosureFace;
-  const flushSpot = pullForward ? pullWallCabinetFaceTo(capSpot, capDepth, enclosureFace, bay.side) : capSpot;
+  const needsPullForward = installedCapDepth + REFRIGERATOR_BRIDGE_FACE_EPSILON_IN < enclosureFace;
+  const flushSpot = needsPullForward ? pullWallCabinetFaceTo(capSpot, installedCapDepth, enclosureFace, bay.side) : capSpot;
+  const pullForward = needsPullForward;
   const widthSubstituted = Math.abs(capWidth - fridgeWidthIn) > 0.01;
   const notes = [
     ...(capPick.substitutionNote ? [capPick.substitutionNote] : []),
     ...(widthSubstituted ? [`No ${fridgeWidthIn}" cabinet above this refrigerator in the line; used ${cap.masterCode} (${capWidth}" wide), centered, with a filler gap each side`] : []),
-    ...(pullForward ? [`Over-fridge ${cap.masterCode} pulled forward flush with the refrigerator face`] : []),
+    ...(pullForward ? [`Over-fridge ${cap.masterCode} pulled forward flush with the refrigerator end panel`] : []),
+    ...(heightRuleCompromised ? [`${cap.masterCode} above the refrigerator is too tall to top out on the ${inchLabel(upperLineTopIn)}" upper line, so it sits at the ${inchLabel(mountBottom)}" clearance instead`] : []),
     ...(capPastPanel ? [`${cap.masterCode} above the refrigerator set to ${panelDepth}" deep so it does not extend past the refrigerator end panel (was ${capDepth}")`] : []),
   ];
   // The refrigerator must stay inside its surrounding panels (Tom, Oct 31): panels are capped at 24 in. deep, so a
@@ -332,7 +385,7 @@ export function buildMandatoryAutoDesignRefrigeratorBay({
     numberOfDrawers: cap.numberOfDrawers,
     catalogImageUrl: cap.catalogImageUrl ?? null,
     refrigeratorAssemblyRole: "bridge",
-    mountBottom: refrigeratorSurroundElevation(room, refrigerator.height ?? 70, capHeight).mountBottom,
+    mountBottom,
     ...shared,
   };
 

@@ -7,6 +7,7 @@ import {
   CROWN_MITER_ALLOWANCE_IN,
   STD,
   appendCollisionFreePlacements,
+  cabinetFrontIn,
   cabinetPlacementCollisionDetail,
   cabinetWall,
   dim,
@@ -26,6 +27,7 @@ import {
   normalizeStandardWallMounts,
   normalizeWd18CountertopMounts,
   refrigeratorEndPanelConflictDetail,
+  seatCabinetFrontIn,
   wallLength,
   wallPlacementAt,
   wallPlacementAtUnbounded,
@@ -42,6 +44,7 @@ import {
   type WallSide,
 } from "./design";
 import { normalizeOverApplianceWallMounts } from "./overApplianceMount";
+import { normalizeRefrigeratorBridgeDepth } from "./refrigeratorBridgeDepth";
 import { planAutoDesignBaseSegment } from "./autoDesignSeamFillers";
 import { applyFramelessDoorClearanceFillers } from "./framelessDoorClearance";
 import {
@@ -486,13 +489,21 @@ function shiftGroup(placed: PlacedCabinet[], group: WiggleGroup, delta: number, 
       room,
       item.peninsulaSide,
     );
-    return {
+    // A member seated forward of its wall plane (the over-fridge bridge pulled
+    // flush with its end panel) keeps that front offset. The placement helper
+    // always starts the box at the wall, so a slide would otherwise drag the
+    // bridge back and break the depth rule.
+    const faceIn = cabinetFrontIn(item, side, room);
+    const seated = {
       ...item,
       ...spot,
       wallId: spot.wallId ?? item.wallId,
       wallOffset: spot.wallOffset ?? item.wallOffset,
       mountBottom: item.mountBottom,
     };
+    return Math.abs(faceIn - Math.max(0, Number(item.depth) || 0)) > COLLISION_EPSILON_IN
+      ? seatCabinetFrontIn(seated, side, faceIn, room)
+      : seated;
   });
 }
 
@@ -1064,6 +1075,10 @@ export function applyDesignerLayoutRules(input: {
   // Rule 11: uppers hang at 54 and top out on the 84/90/96 line.
   placed = normalizeUpperHeights(placed);
   placed = clampPlacedToRefrigeratorPanels(placed, input.room).placed;
+  // Owner rule (Tom, Nov 6 2026): whenever a refrigerator panel is used, the
+  // cabinet above comes forward so its face is flush with the panel. This is the
+  // last depth word, after every pass that can re-seat a wall box on the wall.
+  placed = normalizeRefrigeratorBridgeDepth(placed, input.room);
   const sinks = normalizeSinkFixturesToBases([...(input.sinks ?? [])], placed, input.room);
   const panelStops = refrigeratorPanelOuterStops(placed, input.room);
   const trimPieces = enforceTrimSupplierContinuity(input.trimPieces ?? []).flatMap((piece) => {
