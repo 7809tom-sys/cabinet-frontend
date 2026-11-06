@@ -9,6 +9,8 @@ import {
   type RoomData,
   type SinkFixture,
 } from "./design";
+import { isPelicanVanityFaucetSku } from "@shared/pelicanBathroomFixtures";
+import { isVanityFaucetProfileId, isVanitySinkProfileId } from "./pelicanFixtureProfiles";
 import {
   verifiedPelicanBathroomFixtureProfile,
   type PelicanBathroomFixtureKind,
@@ -279,10 +281,11 @@ export function bathroomFixtureChecklist(input: {
     return profile ? [profile.kind] : [];
   });
   // Sink fixtures persist their verified profile ID, whereas material rows retain
-  // the source code. Match both forms without ever guessing an unverified item.
-  const hasVanityBasin = input.sinks.some((sink) => /pelican-pl-(?:3099|3608)-.*-vanity/.test(sink.pelicanProfileId ?? ""));
-  const hasVanityFaucet = input.sinks.some((sink) => /pelican-pl-8112-cascade-vanity-/.test(sink.pelicanFaucetProfileId ?? ""))
-    || input.selectedSurfaceCodes.some((code) => /^PL-8112\s+(?:BN|CHR|MB)$/i.test(code ?? ""));
+  // the source code. Both are resolved through the same catalog the pickers use,
+  // so a basin or faucet this checklist counts is exactly one the picker offers.
+  const hasVanityBasin = input.sinks.some((sink) => isVanitySinkProfileId(sink.pelicanProfileId ?? ""));
+  const hasVanityFaucet = input.sinks.some((sink) => isVanityFaucetProfileId(sink.pelicanFaucetProfileId ?? ""))
+    || input.selectedSurfaceCodes.some((code) => isPelicanVanityFaucetSku(code));
   return [
     { id: "vanity-base", label: "Place a vanity sink base", detail: "Choose a bathroom vanity cabinet sized for the wall.", complete: input.cabinets.some(isSinkBaseCabinet) },
     { id: "vanity-basin", label: "Choose a Pelican vanity basin", detail: "Install it through the compatible vanity base.", complete: hasVanityBasin },

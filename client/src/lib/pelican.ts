@@ -1,4 +1,5 @@
 import { isFlooringMouldingsAndTrim } from "@shared/catalogCategorySpelling";
+import { isPelicanVanityFaucetSku, isPelicanVanitySinkSku } from "@shared/pelicanBathroomFixtures";
 
 // Shared helpers for the customer-facing Pelican "Surfaces & Fixtures" storefront.
 // Keep category <-> slug mapping and presentation in one place so the landing
@@ -316,10 +317,11 @@ export type PelicanDesignerPaletteInput = {
  */
 export function isPelicanDesignerPaletteAvailable(input: PelicanDesignerPaletteInput): boolean {
   const category = input.category ?? "";
-  // Pelican's PL-3099 is a bathroom vanity sink despite one legacy imported
-  // display name describing it as a farmhouse model. It remains orderable in the
-  // public catalog but cannot appear as a kitchen Designer option.
-  if (/^PL-3099(?:\s|$)/i.test(input.pelicanCode?.trim() ?? "")) return false;
+  // Pelican's vanity basins and vanity faucets are orderable in the public
+  // catalog but are never a kitchen Designer option. The exact-SKU list is the
+  // same one the Bathroom Designer reads, so a vanity fixture cannot leak into
+  // the kitchen palette and a kitchen fixture cannot leak into the bathroom one.
+  if (isPelicanVanitySinkSku(input.pelicanCode) || isPelicanVanityFaucetSku(input.pelicanCode)) return false;
   return Boolean(input.showInDesigner)
     && PELICAN_STOREFRONT_CATEGORIES.includes(category as PelicanCategory)
     && typeof input.sellPrice === "number"
