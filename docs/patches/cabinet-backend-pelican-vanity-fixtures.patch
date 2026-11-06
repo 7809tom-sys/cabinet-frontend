@@ -11,7 +11,7 @@ index 89221e2..e0888d8 100644
 +  // sink, kitchen faucet, and every other Pelican row. The Bathroom Designer
 +  // reads this instead of telling a vanity basin from a kitchen sink by its
 +  // imported category. Added by hand in
-+  // docs/sql/0250_pelican_vanity_fixtures_tag.tidb.sql (frontend repo); that
++  // docs/sql/0264_pelican_vanity_fixtures_tag.tidb.sql (frontend repo); that
 +  // SQL must run before this schema is deployed.
 +  bathroomFixtureTags: varchar("bathroomFixtureTags", { length: 191 }),
    showInDesigner: boolean("showInDesigner").default(true).notNull(),
@@ -53,7 +53,7 @@ index 7af9255..6e13560 100644
 +/**
 + * Reads the tag column, so the API can answer "is this a bathroom vanity
 + * sink/faucet" from the row it already selected. The tag is the authority once
-+ * docs/sql/0250_pelican_vanity_fixtures_tag.tidb.sql has run; the exact-SKU
++ * docs/sql/0264_pelican_vanity_fixtures_tag.tidb.sql has run; the exact-SKU
 + * fallback keeps an un-migrated database working.
 + */
 +export function pelicanRowIsVanitySink(row: { pelicanCode?: string | null; bathroomFixtureTags?: string | null }): boolean {

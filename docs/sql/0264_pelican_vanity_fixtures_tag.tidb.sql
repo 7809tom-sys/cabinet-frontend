@@ -1,5 +1,5 @@
 -- Pelican bathroom vanity sink + vanity faucet tags.
--- Numbered 0250. Run AFTER 0249 (the read-only preview) and 0248.
+-- Numbered 0264. Run AFTER 0263 (the read-only preview) and 0262.
 -- Paste each numbered block on its own in the TiDB SQL editor. One statement per
 -- line. Do not paste this file into an automatic migration.
 -- Every table is cabinet_dealz.<table>. No reserved words are used as aliases.

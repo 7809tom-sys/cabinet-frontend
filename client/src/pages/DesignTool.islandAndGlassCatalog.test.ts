@@ -253,7 +253,7 @@ describe("DesignTool island scene and glass catalog wiring", () => {
     expect(source).toContain("groupPelicanConfigurations(filteredSinks)");
     expect(source).toContain('bathroomSinkDialog ? "vanity-faucet" : "faucet"');
     // The bathroom path reads the Pelican bathroom tags, not a category label, and
-    // gates a double-bowl basin on the vanity's width (docs/sql/0250).
+    // gates a double-bowl basin on the vanity's width (docs/sql/0264).
     expect(source).toContain("? isBathroomVanitySinkRow(product) && vanitySinkFitsVanityWidth(product, sinkBaseOpeningWidth)");
     expect(source).toContain(": isPelicanSinkCompatibleWithBase(product, sinkBaseKind))");
     expect(source).toContain("sinkBaseOpeningWidthIn(sinkBaseCabinet ?? undefined)");

@@ -21893,7 +21893,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         const sinkBaseKind = !isBathroomVanity && sinkBaseCabinet && isFarmSinkBasePaletteItem(sinkBaseCabinet) ? "farmhouse" : "standard";
         const sinkBaseOpeningWidth = sinkBaseOpeningWidthIn(sinkBaseCabinet ?? undefined);
         // The Bathroom Designer reads the Pelican catalog's bathroom fixture tags
-        // (docs/sql/0249_pelican_vanity_fixtures.tidb.sql), not a category label.
+        // (docs/sql/0264_pelican_vanity_fixtures_tag.tidb.sql), not a category label.
         // A row tagged `bathroom-vanity-sink` is a vanity basin or integrated top;
         // a double-bowl basin is only offered on a vanity wide enough for two.
         const filteredSinks = allRecommendedSinks

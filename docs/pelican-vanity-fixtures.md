@@ -176,9 +176,9 @@ decide safely. None of them are tagged.
 
 ## Run order
 
-1. `docs/sql/0249_pelican_vanity_fixtures_preview.tidb.sql` — read-only. Confirms
+1. `docs/sql/0263_pelican_vanity_fixtures_preview.tidb.sql` — read-only. Confirms
    the candidate rows and shows the deliberately excluded items.
-2. `docs/sql/0250_pelican_vanity_fixtures_tag.tidb.sql` — adds the column and tags
+2. `docs/sql/0264_pelican_vanity_fixtures_tag.tidb.sql` — adds the column and tags
    88 exact rows. Re-runnable.
 3. `docs/patches/cabinet-backend-pelican-vanity-fixtures.patch` — backend drizzle
    column and the tag-aware `pelicanFixtureRole` helpers. Apply **after** step 2;
@@ -192,7 +192,7 @@ decide safely. None of them are tagged.
 - `npx vitest run shared/pelicanBathroomFixtures.test.ts client/src/lib/bathroomVanityCatalog.test.ts`
   covers the catalog, the tag vocabulary, the hole/spread match, the 48-inch
   double-bowl gate, and that no kitchen SKU resolves to a vanity record.
-- Both SQL files parse as MySQL. `0250` contains 88 `UPDATE`s on 88 distinct
+- Both SQL files parse as MySQL. `0264` contains 88 `UPDATE`s on 88 distinct
   `pelicanCode` values, one statement per line, no `IF NOT EXISTS`, every table
   `cabinet_dealz.`-qualified, and three read-only guards that must return `0`,
   `0` and `88`.

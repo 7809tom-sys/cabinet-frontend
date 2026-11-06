@@ -1,6 +1,6 @@
--- READ-ONLY PREVIEW. Numbered 0249. Nothing in this file changes data.
+-- READ-ONLY PREVIEW. Numbered 0263. Nothing in this file changes data.
 -- Run this first and read the result. It is the candidate list behind
--- docs/sql/0250_pelican_vanity_fixtures_tag.tidb.sql.
+-- docs/sql/0264_pelican_vanity_fixtures_tag.tidb.sql.
 -- Every table is cabinet_dealz.<table>. No reserved words are used as aliases.
 --
 -- WHY THIS IS NEEDED: pelican_products stores only category + subCategory.
@@ -35,7 +35,7 @@ ORDER BY category, subCategory, pelicanCode;
 
 -- 2 — read-only: the 59 vanity sinks and 29 vanity faucets this work tags.
 -- Compare these against the specification sheets listed in
--- docs/pelican-vanity-fixtures.md before running 0250.
+-- docs/pelican-vanity-fixtures.md before running 0264.
 SELECT
   pelicanCode,
   name,

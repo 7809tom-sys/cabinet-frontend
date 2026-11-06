@@ -25,7 +25,7 @@ export function isBathroomVanityCabinet(
  * A catalog row that may appear in the Bathroom Designer's sink or faucet picker.
  *
  * `bathroomFixtureTags` is the tag column the Pelican catalog carries
- * (docs/sql/0249_pelican_vanity_fixtures.tidb.sql). Older API deployments do not
+ * (docs/sql/0264_pelican_vanity_fixtures_tag.tidb.sql). Older API deployments do not
  * return it yet, so an un-tagged row falls back to the exact-SKU catalog in
  * `@shared/pelicanBathroomFixtures`. A row is never accepted on a category label
  * or a product name alone.
