@@ -59,6 +59,7 @@ const CheckoutCancelled = lazy(() => import("@/pages/CheckoutCancelled"));
 const Admin = lazy(() => import("@/pages/Admin"));
 const AdminOrderPage = lazy(() => import("@/pages/AdminOrderPage"));
 const AdminCatalogImport = lazy(() => import("@/pages/AdminCatalogImport"));
+const AdminHelperRequestJoin = lazy(() => import("@/pages/AdminHelperRequestJoin"));
 const Storefront = lazy(() => import("@/pages/Storefront"));
 const StorefrontPreview = lazy(() => import("@/pages/StorefrontPreview"));
 const AffiliateDashboard = lazy(() => import("@/pages/AffiliateDashboard"));
@@ -831,6 +832,18 @@ export default function App() {
               <AdminCatalogImport />
             </Suspense>
           </AppLayout>
+        </Route>
+
+        {/* "Join the design" from the admin designer-helper pop-up: records who
+            joined and when, then opens the customer's saved design. */}
+        <Route path="/admin/helper-request/:id">
+          {(params) => (
+            <AppLayout>
+              <Suspense fallback={<PageLoader />}>
+                <AdminHelperRequestJoin requestId={Number(params.id)} />
+              </Suspense>
+            </AppLayout>
+          )}
         </Route>
 
         <Route path="/distributor">

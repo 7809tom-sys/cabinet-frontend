@@ -322,6 +322,7 @@ import { EmailGate, type LeadContact } from "@/components/design/EmailGate";
 import { OptionalContactNudge } from "@/components/design/OptionalContactNudge";
 import { DesignDeliveryDialog } from "@/components/design/DesignDeliveryDialog";
 import { DesignActions, type BuildSheetRow } from "@/components/design/DesignActions";
+import { DesignerHelperShare } from "@/components/design/DesignerHelperShare";
 import { KitchenPackageForm, type KitchenPackageDraft } from "@/components/affiliate/KitchenPackageForm";
 import { DesignMaterialsListDialog } from "@/components/design/DesignMaterialsListDialog";
 import { DraggableOverlayDialog } from "@/components/ui/DraggableOverlayDialog";
@@ -21073,6 +21074,20 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                   <UserRound className="h-4 w-4" />
                 </Button>
               </TooltipTrigger><TooltipContent>{t("dt_bs_get_pro")}</TooltipContent></Tooltip>
+              {/* Share the current design and ask any signed-on designer for help.
+                  Full-width under the action icons so the whole label is readable
+                  in the visible panel, not only in the toolbar's scroll rail. */}
+              <div className="col-span-full">
+                <DesignerHelperShare
+                  designId={currentSavedDesignId ?? loadDesignId}
+                  designName={savedDesign?.name ?? null}
+                  customerName={verifiedName || null}
+                  customerEmail={verifiedEmail || null}
+                  customerPhone={verifiedPhone || null}
+                  affiliateSlug={storeScope}
+                  onNeedSavedDesign={() => setSaveSignal((n) => n + 1)}
+                />
+              </div>
               {countertop && counter && counter.squareFeet > 0 && (
                 <Tooltip><TooltipTrigger asChild>
                   <Button aria-label="Request countertop quote" variant="outline" className="aspect-square min-h-12 w-full border-amber-500 p-0 text-amber-700 hover:bg-amber-50" onClick={() => setQuoteOpen(true)}>

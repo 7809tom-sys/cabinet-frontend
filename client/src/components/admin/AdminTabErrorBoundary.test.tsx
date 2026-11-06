@@ -25,7 +25,7 @@ describe("AdminTabErrorBoundary", () => {
     const grouped = readFileSync(resolve(process.cwd(), "client/src/components/admin/AdminGroupedTabs.tsx"), "utf8");
     const admin = readFileSync(resolve(process.cwd(), "client/src/pages/Admin.tsx"), "utf8");
     expect(guardedTabs(grouped)).toBeGreaterThanOrEqual(70);
-    expect(guardedTabs(admin)).toBe(6);
+    expect(guardedTabs(admin)).toBe(7);
     expect(grouped).toContain('<AdminTabErrorBoundary tabName="Shipping">');
     expect(admin).toContain('user.role !== "admin"');
     expect(admin).not.toMatch(/email\s*===\s*["']/);
