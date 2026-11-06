@@ -1,0 +1,1134 @@
+From 5faf37a6f962a9f9ad62678d1463d77f282978b6 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Fri, 6 Nov 2026 00:06:45 +0000
+Subject: [PATCH] Send the customer receipt and an owner payment notice on
+ every successful payment
+
+Automatic receipts never arrived. Three separate causes, all fixed here:
+
+1. A missing receiptSentAt column stopped the receipt entirely. The marker is a
+   manual SQL step (0224), so on an un-migrated database claimOrderReceipt
+   returned schema_missing and deliverOrderReceipt returned without sending.
+   Nobody was emailed. An absent column now sends without deduplication.
+
+2. The Stripe webhook had no invoice.paid handler, so an invoice-paid order was
+   never confirmed and never receipted.
+
+3. Email failures sat inside the webhook's try block. sendPaidOrderReceipt
+   rethrows when delivery fails, so an email problem became a 500 that made
+   Stripe retry a payment that had already succeeded. The email work now lives
+   in deliverPaymentEmails, which logs and swallows.
+
+The receipt also no longer invents sales@cabinetdealz.com as a BCC. For an
+owner-placed order that address duplicated the recipient and the copy was
+dropped, which is why the owner saw nothing. An unset copy address now simply
+means no copy.
+
+The owner notice is a new, independent message (paymentNoticeEmail.ts) with its
+own claim marker: amount, customer, paid-at, and the Stripe reference. It fires
+from checkout completion, payment intent success, invoice.paid, the
+Authorize.net card charge, and an admin mark-paid, so a payment recorded any way
+produces one notice to ORDER_NOTIFY_EMAIL (falling back to OWNER_EMAIL).
+
+docs/sql/0250 adds paymentNoticeSentAt as one statement for the owner to run.
+The notice still sends when that column is absent, so a missing migration can
+never silence it again.
+
+Co-authored-by: 7809tom-sys <7809tom-sys@users.noreply.github.com>
+---
+ docs/sql/0250_payment_notice_email.tidb.sql |   9 +
+ server/lib/orderReceiptEmail.test.ts        |  72 ++++-
+ server/lib/orderReceiptEmail.ts             |  64 +++--
+ server/lib/orderSideEffects.ts              |  14 +
+ server/lib/paymentNoticeEmail.test.ts       | 239 ++++++++++++++++
+ server/lib/paymentNoticeEmail.ts            | 290 ++++++++++++++++++++
+ server/routers/payments.ts                  |  17 ++
+ server/stripeWebhook.paymentEmails.test.ts  |  82 ++++++
+ server/stripeWebhook.ts                     |  81 +++++-
+ 9 files changed, 835 insertions(+), 33 deletions(-)
+ create mode 100644 docs/sql/0250_payment_notice_email.tidb.sql
+ create mode 100644 server/lib/paymentNoticeEmail.test.ts
+ create mode 100644 server/lib/paymentNoticeEmail.ts
+ create mode 100644 server/stripeWebhook.paymentEmails.test.ts
+
+diff --git a/docs/sql/0250_payment_notice_email.tidb.sql b/docs/sql/0250_payment_notice_email.tidb.sql
+new file mode 100644
+index 0000000..5dd6025
+--- /dev/null
++++ b/docs/sql/0250_payment_notice_email.tidb.sql
+@@ -0,0 +1,9 @@
++-- Payment-received notice marker for the owner.
++-- Paste each numbered block on its own in the TiDB SQL editor (one statement per line).
++-- Safe to re-run. Every table is qualified as cabinet_dealz.<table>.
++-- This column lets a retried Stripe webhook avoid sending a second owner notice
++-- for the same payment. The customer receipt marker (receiptSentAt) is separate
++-- and already lives in 0224_order_admin_reconciliation.tidb.sql.
++
++-- 1
++ALTER TABLE cabinet_dealz.order_requests ADD COLUMN IF NOT EXISTS paymentNoticeSentAt TIMESTAMP NULL;
+diff --git a/server/lib/orderReceiptEmail.test.ts b/server/lib/orderReceiptEmail.test.ts
+index b76e3a2..0d72e59 100644
+--- a/server/lib/orderReceiptEmail.test.ts
++++ b/server/lib/orderReceiptEmail.test.ts
+@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
+ import { readFileSync } from "node:fs";
+ import { resolve } from "node:path";
+ import {
+-  DEFAULT_ORDER_NOTIFY_EMAIL,
++  claimOrderReceipt,
+   composeOrderReceipt,
+   deliverOrderReceipt,
+   orderNotifyEmail,
+@@ -33,12 +33,12 @@ const paidOrder: ReceiptOrder = {
+ };
+ 
+ describe("paid order receipt", () => {
+-  it("emails the customer and BCCs the sales inbox once", async () => {
++  it("emails the customer and BCCs the internal inbox once", async () => {
+     const send = vi.fn(async () => ({ success: true }));
+     const release = vi.fn(async () => undefined);
+     const first = await deliverOrderReceipt({
+       order: paidOrder,
+-      notifyEmail: DEFAULT_ORDER_NOTIFY_EMAIL,
++      notifyEmail: "desk@cabinetdealz.com",
+       claim: async () => "claimed",
+       release,
+       send,
+@@ -46,7 +46,7 @@ describe("paid order receipt", () => {
+     });
+     const second = await deliverOrderReceipt({
+       order: paidOrder,
+-      notifyEmail: DEFAULT_ORDER_NOTIFY_EMAIL,
++      notifyEmail: "desk@cabinetdealz.com",
+       claim: async () => "already_sent",
+       release,
+       send,
+@@ -56,7 +56,7 @@ describe("paid order receipt", () => {
+     expect(send).toHaveBeenCalledTimes(1);
+     const message = send.mock.calls[0][0];
+     expect(message.to).toBe("ada@example.com");
+-    expect(message.bcc).toBe("sales@cabinetdealz.com");
++    expect(message.bcc).toBe("desk@cabinetdealz.com");
+     expect(message.subject).toContain("CD-520");
+     expect(message.text).toContain("3 drawer base");
+     expect(message.text).toContain("3DB18");
+@@ -99,20 +99,24 @@ describe("paid order receipt", () => {
+     expect(release).toHaveBeenCalledTimes(1);
+   });
+ 
+-  it("does not send when the receipt marker column is missing", async () => {
++  it("still sends the receipt when the receipt marker column is missing", async () => {
++    // A missing receiptSentAt used to block the customer receipt entirely, which
++    // is the bug: nobody was ever emailed. It now sends without deduplication.
+     const send = vi.fn(async () => ({ success: true }));
+     const result = await deliverOrderReceipt({
+       order: paidOrder,
+       notifyEmail: orderNotifyEmail({}),
+-      claim: async () => "schema_missing",
++      claim: async () => "unclaimable",
+       release: async () => undefined,
+       send,
+     });
+-    expect(result.sent).toBe(false);
+-    expect(result.error).toContain("receiptSentAt");
+-    expect(send).not.toHaveBeenCalled();
++    expect(result.sent).toBe(true);
++    expect(send).toHaveBeenCalledTimes(1);
++    // An unset ORDER_NOTIFY_EMAIL invents no BCC address.
++    expect(send.mock.calls[0][0].to).toBe("ada@example.com");
++    expect(send.mock.calls[0][0].bcc).toBeUndefined();
+     expect(orderNotifyEmail({ ORDER_NOTIFY_EMAIL: "desk@cabinetdealz.com" })).toBe("desk@cabinetdealz.com");
+-    expect(orderNotifyEmail({})).toBe("sales@cabinetdealz.com");
++    expect(orderNotifyEmail({})).toBe("");
+   });
+ 
+   it("includes the invoice lines in the composed body", () => {
+@@ -124,6 +128,16 @@ describe("paid order receipt", () => {
+ });
+ 
+ describe("paid order receipt wiring", () => {
++  it("treats a missing receipt marker as unclaimable instead of fatal", async () => {
++    // The marker column is a manual SQL step; a missing column must never stop
++    // the customer receipt again.
++    await expect(claimOrderReceipt({
++      execute: async () => { throw new Error("Unknown column 'receiptSentAt' in 'field list'"); },
++    } as never, 1)).resolves.toBe("unclaimable");
++    await expect(claimOrderReceipt({ execute: async () => ({ affectedRows: 1 }) } as never, 1)).resolves.toBe("claimed");
++    await expect(claimOrderReceipt({ execute: async () => ({ affectedRows: 0 }) } as never, 1)).resolves.toBe("already_sent");
++  });
++
+   it("sends from the paid checkout and payment intent handlers", () => {
+     const webhook = readFileSync(resolve(process.cwd(), "server/stripeWebhook.ts"), "utf8");
+     expect(webhook).toContain("await sendPaidOrderReceipt(orderId)");
+@@ -147,7 +161,10 @@ describe("paid order receipt wiring", () => {
+     expect(sql).not.toContain("--> statement-breakpoint");
+   });
+ 
+-  it("does not send when the sales notify address is unusable", async () => {
++  it("sends the customer copy alone when no internal address is configured", async () => {
++    // This is the owner-placed-order case: the customer address is the owner's.
++    // There is nothing meaningful to BCC, so only the customer copy goes out and
++    // the separate payment notice is what reaches the owner inbox.
+     const send = vi.fn(async () => ({ success: true }));
+     const result = await deliverOrderReceipt({
+       order: paidOrder,
+@@ -156,8 +173,37 @@ describe("paid order receipt wiring", () => {
+       release: async () => undefined,
+       send,
+     });
++    expect(result.sent).toBe(true);
++    expect(result.customerEmailed).toBe(true);
++    expect(send.mock.calls[0][0].to).toBe("ada@example.com");
++    expect(send.mock.calls[0][0].bcc).toBeUndefined();
++  });
++
++  it("sends only the internal copy when the customer address is invalid and a copy address exists", async () => {
++    const send = vi.fn(async () => ({ success: true }));
++    const result = await deliverOrderReceipt({
++      order: { ...paidOrder, originatorEmail: "not-an-email" },
++      notifyEmail: "desk@cabinetdealz.com",
++      claim: async () => "claimed",
++      release: async () => undefined,
++      send,
++    });
++    expect(result.sent).toBe(true);
++    expect(result.customerEmailed).toBe(false);
++    expect(send.mock.calls[0][0].to).toBe("desk@cabinetdealz.com");
++  });
++
++  it("reports that nothing could be sent when there is no address at all", async () => {
++    const send = vi.fn(async () => ({ success: true }));
++    const result = await deliverOrderReceipt({
++      order: { ...paidOrder, originatorEmail: null },
++      notifyEmail: "",
++      claim: async () => "claimed",
++      release: async () => undefined,
++      send,
++    });
+     expect(result.sent).toBe(false);
+-    expect(result.error).toContain("ORDER_NOTIFY_EMAIL");
++    expect(result.error).toContain("no usable customer email");
+     expect(send).not.toHaveBeenCalled();
+   });
+ });
+diff --git a/server/lib/orderReceiptEmail.ts b/server/lib/orderReceiptEmail.ts
+index 82add2d..6b8ffc8 100644
+--- a/server/lib/orderReceiptEmail.ts
++++ b/server/lib/orderReceiptEmail.ts
+@@ -7,13 +7,22 @@ import { readOrderCostSnapshots } from "./orderCostSnapshot";
+ import { dollarsToCents, formatUsdFromCents, summarizeAdminOrder, type OrderMoneyInput } from "./orderMoney";
+ import { onOrderPaid } from "./orderSideEffects";
+ 
+-export const DEFAULT_ORDER_NOTIFY_EMAIL = "sales@cabinetdealz.com";
++/**
++ * The platform inbox that receives a BCC copy of a customer receipt.
++ *
++ * Only an explicitly configured address is used. The old default invented
++ * sales@cabinetdealz.com, which meant an owner-placed order BCC'd the "owner"
++ * to a second address the owner may not read — and, when it duplicated the
++ * recipient, the copy was dropped entirely. Returns "" when nothing is
++ * configured, so callers send the customer copy alone and the independent
++ * owner payment notice (paymentNoticeEmail.ts) carries the internal heads-up.
++ */
++export const DEFAULT_ORDER_NOTIFY_EMAIL = "";
+ 
+ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+ 
+ export function orderNotifyEmail(env: NodeJS.ProcessEnv = process.env): string {
+-  const configured = env.ORDER_NOTIFY_EMAIL?.trim();
+-  return configured || DEFAULT_ORDER_NOTIFY_EMAIL;
++  return (env.ORDER_NOTIFY_EMAIL ?? "").trim() || DEFAULT_ORDER_NOTIFY_EMAIL;
+ }
+ 
+ export function isUsableEmail(value: string | null | undefined): value is string {
+@@ -60,10 +69,14 @@ export function composeOrderReceipt(order: ReceiptOrder, notifyEmail: string, sh
+     shippingMethod: shipping?.method,
+   });
+   const customerEmail = isUsableEmail(order.originatorEmail) ? order.originatorEmail.trim() : null;
+-  const salesEmail = notifyEmail.trim();
++  // An unset or unusable copy address is simply not copied. Inventing one here
++  // is what previously sent owner-placed orders to a phantom sales@ address.
++  const salesEmail = isUsableEmail(notifyEmail) ? notifyEmail.trim() : "";
+   const customerEmailMissing = customerEmail == null;
+   const to = customerEmail ?? salesEmail;
+-  const bcc = customerEmail && customerEmail.toLowerCase() !== salesEmail.toLowerCase() ? salesEmail : undefined;
++  const bcc = customerEmail && salesEmail && customerEmail.toLowerCase() !== salesEmail.toLowerCase()
++    ? salesEmail
++    : undefined;
+   const requestNumber = order.requestNumber?.trim() || `Order ${order.id}`;
+   const lines = order.lineItems ?? [];
+   const textLines = [
+@@ -145,13 +158,26 @@ function affectedRows(result: unknown): number {
+   return 0;
+ }
+ 
+-export async function claimOrderReceipt(db: Pick<Database, "execute">, orderId: number): Promise<"claimed" | "already_sent" | "schema_missing"> {
++/**
++ * Claim the one customer receipt for this order.
++ *
++ * `receiptSentAt` is declared only as a manual SQL step (docs/sql/0224), so on a
++ * deployment where that step was never run the column does not exist. Treating
++ * that as "do not send" meant no customer ever received a receipt — the exact
++ * symptom being fixed. A missing column now returns "unclaimable" and the caller
++ * sends without deduplication: a duplicate receipt on a retried webhook is a far
++ * smaller problem than a paid customer never hearing from us.
++ */
++export async function claimOrderReceipt(
++  db: Pick<Database, "execute">,
++  orderId: number,
++): Promise<"claimed" | "already_sent" | "unclaimable"> {
+   try {
+     const result = await db.execute(sql`UPDATE order_requests SET receiptSentAt = CURRENT_TIMESTAMP WHERE id = ${orderId} AND receiptSentAt IS NULL`);
+     return affectedRows(result) > 0 ? "claimed" : "already_sent";
+   } catch (error) {
+     const missing = error instanceof Error ? error.message : String(error);
+-    if (/unknown column|ER_BAD_FIELD_ERROR|doesn't exist|does not exist/i.test(missing)) return "schema_missing";
++    if (/unknown column|ER_BAD_FIELD_ERROR|doesn't exist|does not exist/i.test(missing)) return "unclaimable";
+     throw error;
+   }
+ }
+@@ -203,33 +229,35 @@ export async function readReceiptSentAt(db: Pick<Database, "execute">, orderIds:
+ 
+ export async function deliverOrderReceipt(input: {
+   order: ReceiptOrder;
++  /** BCC copy address. Empty means no internal copy is added here. */
+   notifyEmail: string;
+-  claim: () => Promise<"claimed" | "already_sent" | "schema_missing">;
++  claim: () => Promise<"claimed" | "already_sent" | "unclaimable">;
+   release: () => Promise<void>;
+   send: (message: SendEmailOptions) => Promise<SendEmailResult>;
+   shipping?: { carrier?: string | null; method?: string | null };
+ }): Promise<ReceiptDeliveryResult> {
+-  if (!isUsableEmail(input.notifyEmail)) {
+-    const error = "ORDER_NOTIFY_EMAIL is not a usable address, so the paid-order receipt was not sent.";
+-    console.error(`[Order Receipt] ${error} Order ${input.order.requestNumber ?? input.order.id}.`);
+-    return { sent: false, skipped: false, customerEmailed: false, salesCopied: false, customerEmailMissing: !isUsableEmail(input.order.originatorEmail), error };
+-  }
+   const claim = await input.claim();
+   if (claim === "already_sent") {
+     return { sent: false, skipped: true, customerEmailed: false, salesCopied: false, customerEmailMissing: false };
+   }
+-  if (claim === "schema_missing") {
+-    const error = "order_requests.receiptSentAt is missing. Run the order reconciliation SQL before paid-order receipts can be sent.";
+-    console.error(`[Order Receipt] ${error} Order ${input.order.requestNumber ?? input.order.id}.`);
+-    return { sent: false, skipped: false, customerEmailed: false, salesCopied: false, customerEmailMissing: !isUsableEmail(input.order.originatorEmail), error };
++  if (claim === "unclaimable") {
++    console.warn(
++      `[Order Receipt] order_requests.receiptSentAt is missing, so this receipt is not deduplicated. Run docs/sql/0224. Order ${input.order.requestNumber ?? input.order.id}.`,
++    );
+   }
+   const message = composeOrderReceipt(input.order, input.notifyEmail, input.shipping);
++  if (!message.to) {
++    if (claim === "claimed") await input.release();
++    const error = "This order has no usable customer email and no BCC address is configured, so no receipt could be sent.";
++    console.error(`[Order Receipt] ${error} Order ${input.order.requestNumber ?? input.order.id}.`);
++    return { sent: false, skipped: false, customerEmailed: false, salesCopied: false, customerEmailMissing: true, error };
++  }
+   if (message.customerEmailMissing) {
+     console.warn(`[Order Receipt] Customer email missing or invalid for order ${input.order.requestNumber ?? input.order.id}. Sending the sales copy only to ${message.to}.`);
+   }
+   const result = await input.send({ to: message.to, bcc: message.bcc, subject: message.subject, text: message.text, html: message.html });
+   if (!result.success) {
+-    await input.release();
++    if (claim === "claimed") await input.release();
+     const reason = result.notConfigured
+       ? "Email is not configured. Set RESEND_API_KEY and ORDER_EMAIL_FROM."
+       : (result.error ?? "Email provider rejected the receipt.");
+diff --git a/server/lib/orderSideEffects.ts b/server/lib/orderSideEffects.ts
+index 92a4aae..8503457 100644
+--- a/server/lib/orderSideEffects.ts
++++ b/server/lib/orderSideEffects.ts
+@@ -1007,6 +1007,20 @@ export async function adminMarkOrderPaid(orderId: number, by: string): Promise<v
+   }).where(eq(orderRequests.id, orderId));
+   await onOrderPaid(orderId);
+   console.log(`[OrderCrm] ${by} marked order ${orderId} paid.`);
++
++  // An admin-recorded payment is still money received: the owner gets the same
++  // notice a gateway payment produces, and the customer gets their receipt.
++  // Neither can fail the admin action that already succeeded.
++  try {
++    const { sendPaidOrderReceipt } = await import("./orderReceiptEmail");
++    const { sendOwnerPaymentNotice } = await import("./paymentNoticeEmail");
++    await sendPaidOrderReceipt(orderId);
++    await sendOwnerPaymentNotice(orderId, { source: `admin:${by}` });
++  } catch (error) {
++    console.error(
++      `[Payment Notice] Order ${orderId} was marked paid, but the receipt step failed: ${error instanceof Error ? error.message : String(error)}`,
++    );
++  }
+ }
+ 
+ function memoryFromDeal(deal: typeof crmDeals.$inferSelect): MemoryDeal {
+diff --git a/server/lib/paymentNoticeEmail.test.ts b/server/lib/paymentNoticeEmail.test.ts
+new file mode 100644
+index 0000000..31112c5
+--- /dev/null
++++ b/server/lib/paymentNoticeEmail.test.ts
+@@ -0,0 +1,239 @@
++import { describe, expect, it, vi } from "vitest";
++import { readFileSync } from "node:fs";
++import { resolve } from "node:path";
++import {
++  buildMissingRecipientHelp,
++  claimPaymentNotice,
++  composePaymentNotice,
++  deliverPaymentNotice,
++  paymentNoticeRecipient,
++  resolvePaymentNoticeRecipient,
++  sendOwnerPaymentNotice,
++  type PaymentNoticeOrder,
++} from "./paymentNoticeEmail";
++
++const paidOrder: PaymentNoticeOrder = {
++  id: 42,
++  requestNumber: "CD-901",
++  originatorName: "Ada Lovelace",
++  originatorEmail: "ada@example.com",
++  deliveryMethod: "ship",
++  freightQuoteCents: 4700,
++  freightQuoteVerified: true,
++  taxAmount: "24.00",
++  paidAt: new Date("2026-11-05T12:00:00.000Z"),
++  stripePaymentIntentId: "pi_test_123",
++  lineItems: [{
++    masterCode: "3DB18",
++    distributorSku: "3DB18",
++    description: "3 drawer base",
++    qty: 1,
++    unitPrice: 449,
++    linePrice: 449,
++  }],
++};
++
++const source = (relative: string) => readFileSync(resolve(process.cwd(), relative), "utf8");
++
++describe("payment notice recipient", () => {
++  it("prefers the operational order inbox", () => {
++    expect(resolvePaymentNoticeRecipient({ ORDER_NOTIFY_EMAIL: " owner@shop.test ", OWNER_EMAIL: "owner2@shop.test" }))
++      .toEqual({ to: "owner@shop.test", source: "ORDER_NOTIFY_EMAIL" });
++  });
++
++  it("falls back to the owner address when the order inbox is blank", () => {
++    expect(resolvePaymentNoticeRecipient({ ORDER_NOTIFY_EMAIL: "   ", OWNER_EMAIL: "owner2@shop.test" }))
++      .toEqual({ to: "owner2@shop.test", source: "OWNER_EMAIL" });
++    expect(resolvePaymentNoticeRecipient({ OWNER_EMAIL: "owner2@shop.test" }))
++      .toEqual({ to: "owner2@shop.test", source: "OWNER_EMAIL" });
++  });
++
++  it("never invents an address when neither is usable", () => {
++    expect(resolvePaymentNoticeRecipient({ ORDER_NOTIFY_EMAIL: "not-an-email", OWNER_EMAIL: "" }))
++      .toEqual({ to: null, source: null });
++    expect(paymentNoticeRecipient({ ORDER_NOTIFY_EMAIL: "  desk@shop.test " })).toBe("desk@shop.test");
++    expect(paymentNoticeRecipient({})).toBe("");
++    expect(buildMissingRecipientHelp()).toContain("ORDER_NOTIFY_EMAIL");
++  });
++});
++
++describe("payment notice body", () => {
++  it("states the amount, the customer, and the payment reference", () => {
++    const message = composePaymentNotice(paidOrder, "owner@shop.test", {
++      paymentIntentId: "pi_live_999",
++      source: "checkout.session.completed",
++    });
++    expect(message.to).toBe("owner@shop.test");
++    expect(message.subject).toContain("Payment received");
++    expect(message.subject).toContain("CD-901");
++    expect(message.subject).toContain("$520.00");
++    expect(message.text).toContain("Amount: $520.00");
++    expect(message.text).toContain("Ada Lovelace");
++    expect(message.text).toContain("ada@example.com");
++    expect(message.text).toContain("pi_live_999");
++    expect(message.text).toContain("checkout.session.completed");
++    expect(message.text).toContain("2026-11-05T12:00:00.000Z");
++    expect(message.text).toContain("customer receipt is sent separately");
++    expect(message.html).toContain("Payment received");
++  });
++
++  it("falls back to the stored order reference when the event carries none", () => {
++    const message = composePaymentNotice(paidOrder, "owner@shop.test");
++    expect(message.text).toContain("pi_test_123");
++  });
++
++  it("says a total could not be confirmed instead of printing a wrong number", () => {
++    const message = composePaymentNotice({
++      ...paidOrder,
++      deliveryMethod: "ship",
++      freightQuoteCents: null,
++      freightQuoteVerified: false,
++    }, "owner@shop.test");
++    expect(message.text).toContain("not confirmed");
++    expect(message.subject).not.toContain("undefined");
++  });
++
++  it("reports missing customer details rather than leaving a blank", () => {
++    const message = composePaymentNotice({ ...paidOrder, originatorName: null, originatorEmail: null }, "owner@shop.test");
++    expect(message.text).toContain("not stored on the order");
++  });
++});
++
++describe("payment notice delivery", () => {
++  it("sends once and skips a second event for the same payment", async () => {
++    const send = vi.fn(async () => ({ success: true as const }));
++    const first = await deliverPaymentNotice({
++      order: paidOrder,
++      recipient: "owner@shop.test",
++      claim: async () => "claimed",
++      release: async () => undefined,
++      send,
++    });
++    const second = await deliverPaymentNotice({
++      order: paidOrder,
++      recipient: "owner@shop.test",
++      claim: async () => "already_sent",
++      release: async () => undefined,
++      send,
++    });
++    expect(first).toMatchObject({ sent: true, skipped: false, to: "owner@shop.test" });
++    expect(second).toMatchObject({ sent: false, skipped: true });
++    expect(send).toHaveBeenCalledTimes(1);
++  });
++
++  it("releases the claim when the provider rejects the message", async () => {
++    const release = vi.fn(async () => undefined);
++    const result = await deliverPaymentNotice({
++      order: paidOrder,
++      recipient: "owner@shop.test",
++      claim: async () => "claimed",
++      release,
++      send: async () => ({ success: false, error: "Resend returned 422" }),
++    });
++    expect(result.sent).toBe(false);
++    expect(result.error).toContain("422");
++    expect(release).toHaveBeenCalledTimes(1);
++  });
++
++  it("still notifies when the dedupe column is missing", async () => {
++    // The owner must hear about a real payment even before the SQL is run.
++    const send = vi.fn(async () => ({ success: true as const }));
++    const result = await deliverPaymentNotice({
++      order: paidOrder,
++      recipient: "owner@shop.test",
++      claim: async () => "schema_missing",
++      release: async () => undefined,
++      send,
++    });
++    expect(result.sent).toBe(true);
++    expect(send).toHaveBeenCalledTimes(1);
++  });
++
++  it("names the missing configuration instead of silently doing nothing", async () => {
++    const send = vi.fn(async () => ({ success: true as const }));
++    const result = await deliverPaymentNotice({
++      order: paidOrder,
++      recipient: null,
++      claim: async () => "claimed",
++      release: async () => undefined,
++      send,
++    });
++    expect(result.sent).toBe(false);
++    expect(result.error).toContain("ORDER_NOTIFY_EMAIL");
++    expect(send).not.toHaveBeenCalled();
++  });
++
++  it("explains an unconfigured mailer", async () => {
++    const result = await deliverPaymentNotice({
++      order: paidOrder,
++      recipient: "owner@shop.test",
++      claim: async () => "claimed",
++      release: async () => undefined,
++      send: async () => ({ success: false, notConfigured: true }),
++    });
++    expect(result.error).toContain("RESEND_API_KEY");
++  });
++});
++
++describe("payment notice claim", () => {
++  it("treats a missing dedupe column as unclaimable rather than fatal", async () => {
++    const db = { execute: async () => { throw new Error("Unknown column 'paymentNoticeSentAt'"); } };
++    await expect(claimPaymentNotice(db as never, 1)).resolves.toBe("schema_missing");
++  });
++
++  it("claims when the row was updated and reports a duplicate otherwise", async () => {
++    await expect(claimPaymentNotice({ execute: async () => ({ affectedRows: 1 }) } as never, 1)).resolves.toBe("claimed");
++    await expect(claimPaymentNotice({ execute: async () => ({ affectedRows: 0 }) } as never, 1)).resolves.toBe("already_sent");
++  });
++
++  it("never throws out of the webhook path", async () => {
++    const result = await sendOwnerPaymentNotice(1, {
++      send: async () => ({ success: true }),
++    });
++    expect(result.sent).toBe(false);
++    expect(result.error).toBeTruthy();
++  });
++});
++
++describe("payment notice wiring", () => {
++  it("fires from the checkout and payment-intent handlers, and from invoice.paid", () => {
++    const webhook = source("server/stripeWebhook.ts");
++    expect(webhook).toContain("sendOwnerPaymentNotice");
++    expect(webhook).toContain("await deliverPaymentEmails(orderId");
++    expect(webhook).toContain('case "checkout.session.completed"');
++    expect(webhook).toContain('case "checkout.session.async_payment_succeeded"');
++    expect(webhook).toContain('case "payment_intent.succeeded"');
++    expect(webhook).toContain('case "invoice.paid"');
++    expect(webhook).toContain('case "invoice.payment_succeeded"');
++    expect(webhook).toContain("await sendPaidOrderReceipt(orderId)");
++  });
++
++  it("does not let an email failure fail the webhook for a paid order", () => {
++    const webhook = source("server/stripeWebhook.ts");
++    const helper = webhook.slice(
++      webhook.indexOf("async function deliverPaymentEmails"),
++      webhook.indexOf("export function registerStripeWebhook"),
++    );
++    // Both emails are wrapped, and each catch logs instead of rethrowing.
++    expect(helper.match(/catch \(error\)/g)?.length).toBe(2);
++    expect(helper).not.toContain("throw ");
++  });
++
++  it("covers the card-charge and admin-recorded payment paths too", () => {
++    expect(source("server/routers/payments.ts")).toContain("sendOwnerPaymentNotice(order.id");
++    expect(source("server/routers/payments.ts")).toContain("source: \"authorizenet.payments.charge\"");
++    const sideEffects = source("server/lib/orderSideEffects.ts");
++    expect(sideEffects).toContain("sendOwnerPaymentNotice(orderId");
++    expect(sideEffects).toContain("source: `admin:${by}`");
++  });
++
++  it("declares the dedupe column as a one-line-per-statement SQL file", () => {
++    const sql = source("docs/sql/0250_payment_notice_email.tidb.sql");
++    const statements = sql
++      .split("\n")
++      .filter((line) => line.trim() && !line.trim().startsWith("--"));
++    expect(statements).toHaveLength(1);
++    expect(statements[0]).toContain("cabinet_dealz.order_requests");
++    expect(statements[0]).toContain("ADD COLUMN IF NOT EXISTS paymentNoticeSentAt TIMESTAMP NULL");
++  });
++});
+diff --git a/server/lib/paymentNoticeEmail.ts b/server/lib/paymentNoticeEmail.ts
+new file mode 100644
+index 0000000..79133e1
+--- /dev/null
++++ b/server/lib/paymentNoticeEmail.ts
+@@ -0,0 +1,290 @@
++/**
++ * Owner payment-received notice.
++ *
++ * The customer receipt (orderReceiptEmail.ts) is deliberately addressed to the
++ * customer and only BCCs the sales inbox. When the owner's own address is the
++ * customer address — an owner-placed order — that BCC is suppressed as a
++ * duplicate and the owner sees nothing that says "money arrived". This module
++ * is the second, independent message: an internal payment notice addressed to
++ * the owner.
++ *
++ * It is separate from the customer receipt on purpose:
++ *  - it has its own claim marker, so a receipt-provider failure or a
++ *    receiptSentAt schema gap cannot silence the owner notice;
++ *  - it never throws into the webhook handler, because a notification failure
++ *    must not roll back a payment the customer already made;
++ *  - it reports exactly which address it used and why, so "the owner is not
++ *    getting notices" is diagnosable from the log line alone.
++ */
++import { sql } from "drizzle-orm";
++import { orderRequests } from "../../drizzle/schema";
++import { getDb } from "../db";
++import { ENV } from "../_core/env";
++import { sendEmail, type SendEmailOptions, type SendEmailResult } from "../email";
++import { isUsableEmail } from "./orderReceiptEmail";
++import { formatUsdFromCents, summarizeAdminOrder, type OrderMoneyInput } from "./orderMoney";
++const LOG = "[Payment Notice]";
++
++/** The configured owner inbox, trimmed. Empty when ORDER_NOTIFY_EMAIL is blank. */
++export function paymentNoticeRecipient(env: NodeJS.ProcessEnv = process.env): string {
++  return (env.ORDER_NOTIFY_EMAIL ?? "").trim();
++}
++
++/**
++ * Where the payment-received notice goes.
++ *
++ * ORDER_NOTIFY_EMAIL is the operational inbox that already receives order mail,
++ * so it is used when it holds a usable address. OWNER_EMAIL is the fallback so a
++ * deployment that only sets the owner address still gets notices. Returns null
++ * (never a fabricated address) when neither is usable — the caller logs that
++ * instead of pretending a notice was sent.
++ */
++export function resolvePaymentNoticeRecipient(env: NodeJS.ProcessEnv = process.env): {
++  to: string | null;
++  source: "ORDER_NOTIFY_EMAIL" | "OWNER_EMAIL" | null;
++} {
++  const notify = paymentNoticeRecipient(env);
++  if (isUsableEmail(notify)) return { to: notify.trim(), source: "ORDER_NOTIFY_EMAIL" };
++  const owner = (env.OWNER_EMAIL ?? ENV.ownerEmail ?? "").trim();
++  if (isUsableEmail(owner)) return { to: owner, source: "OWNER_EMAIL" };
++  return { to: null, source: null };
++}
++
++export type PaymentNoticeOrder = OrderMoneyInput & {
++  originatorEmail?: string | null;
++  paidAt?: Date | string | null;
++};
++
++export type PaymentNoticeMessage = {
++  to: string;
++  subject: string;
++  text: string;
++  html: string;
++};
++
++function escapeHtml(value: string): string {
++  return value
++    .replace(/&/g, "&amp;")
++    .replace(/</g, "&lt;")
++    .replace(/>/g, "&gt;")
++    .replace(/"/g, "&quot;");
++}
++
++function paidStamp(value: Date | string | null | undefined): string {
++  if (!value) return "time not stored";
++  const date = value instanceof Date ? value : new Date(value);
++  return Number.isNaN(date.getTime()) ? "time not stored" : date.toISOString();
++}
++
++/**
++ * Compose the internal payment notice. Amounts come from the same summarizer the
++ * receipt uses, so the owner's copy and the customer's copy can never disagree.
++ * A total the order cannot prove says so instead of printing a wrong number.
++ */
++export function composePaymentNotice(
++  order: PaymentNoticeOrder,
++  recipient: string,
++  context: { paymentIntentId?: string | null; sessionId?: string | null; source?: string | null } = {},
++): PaymentNoticeMessage {
++  const summary = summarizeAdminOrder(order);
++  const requestNumber = order.requestNumber?.trim() || `Order ${order.id}`;
++  const totalCents = summary.totalCents ?? summary.subtotalCents;
++  const total = totalCents == null ? "not confirmed (shipping not stored)" : formatUsdFromCents(totalCents);
++  const customer = [order.originatorName?.trim(), order.originatorEmail?.trim()]
++    .filter((part): part is string => Boolean(part))
++    .join(" · ") || "not stored on the order";
++
++  const reference = [
++    context.paymentIntentId ?? order.stripePaymentIntentId,
++    context.sessionId ?? order.stripeSessionId,
++  ].filter((value): value is string => Boolean(value?.trim()));
++
++  const lines = [
++    `A payment was received for ${requestNumber}.`,
++    "",
++    `Amount: ${total}`,
++    `Customer: ${customer}`,
++    `Paid at: ${paidStamp(order.paidAt)}`,
++    `Order total on file: ${summary.totalCents == null ? "not confirmed (shipping not stored)" : formatUsdFromCents(summary.totalCents)}`,
++    `Subtotal: ${formatUsdFromCents(summary.subtotalCents)}`,
++    `Shipping: ${summary.shippingAmountCents == null ? "not stored on this order" : formatUsdFromCents(summary.shippingAmountCents)}`,
++    `Sales tax: ${formatUsdFromCents(summary.taxAmountCents)}`,
++    context.source ? `Trigger: ${context.source}` : null,
++    reference.length > 0 ? `Stripe reference: ${reference.join(" / ")}` : "Stripe reference: not stored on the order",
++    "",
++    "The customer receipt is sent separately to the customer's own address.",
++    "Cabinet Dealz",
++  ].filter((line): line is string => line != null);
++
++  const text = lines.join("\n");
++  const html = `<!doctype html><html><body style="font-family:Arial,sans-serif;color:#1a2b4a">
++    <p><strong>Payment received</strong> for ${escapeHtml(requestNumber)}.</p>
++    <p><strong>Amount:</strong> ${escapeHtml(total)}<br>
++    <strong>Customer:</strong> ${escapeHtml(customer)}<br>
++    <strong>Paid at:</strong> ${escapeHtml(paidStamp(order.paidAt))}<br>
++    <strong>Stripe reference:</strong> ${escapeHtml(reference.join(" / ") || "not stored on the order")}</p>
++    <p>The customer receipt is sent separately to the customer's own address.</p>
++    </body></html>`;
++
++  return {
++    to: recipient,
++    subject: `Payment received — ${requestNumber} — ${total}`,
++    text,
++    html,
++  };
++}
++
++type Database = NonNullable<Awaited<ReturnType<typeof getDb>>>;
++
++function affectedRows(result: unknown): number {
++  const candidates = Array.isArray(result) ? [result, result[0]] : [result];
++  for (const candidate of candidates) {
++    if (candidate && typeof candidate === "object" && "affectedRows" in candidate) {
++      const count = Number((candidate as { affectedRows: number }).affectedRows);
++      if (Number.isFinite(count)) return count;
++    }
++  }
++  return 0;
++}
++
++/**
++ * Claim the one payment notice for this order.
++ *
++ * Returns "claimed" when this call owns the send, "already_sent" when a previous
++ * payment already notified, and "schema_missing" when the marker column is not
++ * on the table yet. Unlike the customer receipt, a missing column does NOT stop
++ * the notice: an unclaimed duplicate is far less harmful than the owner never
++ * hearing about a payment, so the caller sends anyway and logs the gap.
++ */
++export async function claimPaymentNotice(
++  db: Pick<Database, "execute">,
++  orderId: number,
++): Promise<"claimed" | "already_sent" | "schema_missing"> {
++  try {
++    const result = await db.execute(sql`
++      UPDATE order_requests SET paymentNoticeSentAt = CURRENT_TIMESTAMP
++      WHERE id = ${orderId} AND paymentNoticeSentAt IS NULL
++    `);
++    return affectedRows(result) > 0 ? "claimed" : "already_sent";
++  } catch (error) {
++    const message = error instanceof Error ? error.message : String(error);
++    if (/unknown column|ER_BAD_FIELD_ERROR|doesn't exist|does not exist/i.test(message)) return "schema_missing";
++    throw error;
++  }
++}
++
++/** Release the claim so a provider failure can be retried by the next event. */
++export async function releasePaymentNotice(db: Pick<Database, "execute">, orderId: number): Promise<void> {
++  try {
++    await db.execute(sql`UPDATE order_requests SET paymentNoticeSentAt = NULL WHERE id = ${orderId}`);
++  } catch {
++    // The release is only a retry aid; a missing column leaves nothing to clear.
++  }
++}
++
++export type PaymentNoticeResult = {
++  sent: boolean;
++  skipped: boolean;
++  to: string | null;
++  error?: string;
++};
++
++export async function deliverPaymentNotice(input: {
++  order: PaymentNoticeOrder;
++  recipient: string | null;
++  recipientSource?: string | null;
++  claim: () => Promise<"claimed" | "already_sent" | "schema_missing">;
++  release: () => Promise<void>;
++  send: (message: SendEmailOptions) => Promise<SendEmailResult>;
++  paymentIntentId?: string | null;
++  sessionId?: string | null;
++  source?: string | null;
++}): Promise<PaymentNoticeResult> {
++  const requestNumber = input.order.requestNumber?.trim() || `Order ${input.order.id}`;
++  if (!input.recipient) {
++    const error = "No usable ORDER_NOTIFY_EMAIL or OWNER_EMAIL is configured, so the owner payment notice was not sent.";
++    console.error(`${LOG} ${error} ${requestNumber}.`);
++    return { sent: false, skipped: false, to: null, error };
++  }
++  const claim = await input.claim();
++  if (claim === "already_sent") {
++    console.log(`${LOG} ${requestNumber} already notified; not sending a second payment notice.`);
++    return { sent: false, skipped: true, to: input.recipient };
++  }
++  if (claim === "schema_missing") {
++    // Send anyway: a duplicate notice is better than none for a real payment.
++    console.warn(
++      `${LOG} order_requests.paymentNoticeSentAt is missing, so this notice is not deduplicated. Run the payment-notice SQL. ${requestNumber}.`,
++    );
++  }
++
++  const message = composePaymentNotice(input.order, input.recipient, {
++    paymentIntentId: input.paymentIntentId,
++    sessionId: input.sessionId,
++    source: input.source,
++  });
++  const result = await input.send({ to: message.to, subject: message.subject, text: message.text, html: message.html });
++  if (!result.success) {
++    if (claim === "claimed") await input.release();
++    const reason = result.notConfigured
++      ? "Email is not configured. Set RESEND_API_KEY and ORDER_EMAIL_FROM."
++      : (result.error ?? "Email provider rejected the payment notice.");
++    console.error(`${LOG} Failed for ${requestNumber} to ${message.to}: ${reason}`);
++    return { sent: false, skipped: false, to: message.to, error: reason };
++  }
++  console.log(
++    `${LOG} Sent ${requestNumber} to ${message.to} (${input.recipientSource ?? "configured inbox"}) via ${result.transport ?? "email"}.`,
++  );
++  return { sent: true, skipped: false, to: message.to };
++}
++
++/**
++ * Send the owner a payment-received notice for one paid order.
++ *
++ * Never throws: the caller is a payment webhook, and a notification problem must
++ * not turn a successful payment into a failed webhook delivery (which Stripe
++ * would retry and which would make the order look unpaid).
++ */
++export async function sendOwnerPaymentNotice(
++  orderId: number,
++  opts: {
++    paymentIntentId?: string | null;
++    sessionId?: string | null;
++    source?: string | null;
++    env?: NodeJS.ProcessEnv;
++    send?: (message: SendEmailOptions) => Promise<SendEmailResult>;
++  } = {},
++): Promise<PaymentNoticeResult> {
++  const env = opts.env ?? process.env;
++  try {
++    const db = await getDb();
++    if (!db) return { sent: false, skipped: false, to: null, error: "Database not available" };
++    const [order] = await db.select().from(orderRequests).where(sql`${orderRequests.id} = ${orderId}`).limit(1);
++    if (!order) {
++      console.error(`${LOG} Paid order ${orderId} was not found, so no payment notice was sent.`);
++      return { sent: false, skipped: false, to: null, error: "Order not found" };
++    }
++    const { to, source } = resolvePaymentNoticeRecipient(env);
++    if (!to) console.error(`${LOG} ${buildMissingRecipientHelp()}`);
++    return await deliverPaymentNotice({
++      order: { ...order, lineItems: order.lineItems ?? [] },
++      recipient: to,
++      recipientSource: source,
++      claim: () => claimPaymentNotice(db, orderId),
++      release: () => releasePaymentNotice(db, orderId),
++      send: opts.send ?? ((message) => sendEmail(message)),
++      paymentIntentId: opts.paymentIntentId,
++      sessionId: opts.sessionId,
++      source: opts.source,
++    });
++  } catch (error) {
++    const message = error instanceof Error ? error.message : String(error);
++    console.error(`${LOG} Order ${orderId} payment notice failed without blocking the payment: ${message}`);
++    return { sent: false, skipped: false, to: null, error: message };
++  }
++}
++
++/** Actionable text for the "nothing is configured" case. */
++export function buildMissingRecipientHelp(): string {
++  return "Set ORDER_NOTIFY_EMAIL (or OWNER_EMAIL) to a monitored address so payment-received notices have somewhere to go.";
++}
+diff --git a/server/routers/payments.ts b/server/routers/payments.ts
+index b5db04f..90ad6a5 100644
+--- a/server/routers/payments.ts
++++ b/server/routers/payments.ts
+@@ -297,6 +297,23 @@ export const paymentsRouter = router({
+           .set({ status: "confirmed", confirmedAt: new Date() })
+           .where(eq(orderRequests.id, order.id));
+         await createHardwareCommissionSnapshot(order.id);
++        // A card charge taken here is a real payment on the same order rail, so
++        // it must produce the same customer receipt and owner payment notice the
++        // Stripe webhook sends. Without this, an Authorize.net order was confirmed
++        // and the owner was never told money arrived.
++        try {
++          const { sendPaidOrderReceipt } = await import("../lib/orderReceiptEmail");
++          const { sendOwnerPaymentNotice } = await import("../lib/paymentNoticeEmail");
++          await sendPaidOrderReceipt(order.id);
++          await sendOwnerPaymentNotice(order.id, {
++            paymentIntentId: result.transactionId ?? null,
++            source: "authorizenet.payments.charge",
++          });
++        } catch (followUp) {
++          console.error(
++            `[Payment Notice] Authorize.net payment for order ${order.id} was approved, but the receipt step failed: ${followUp instanceof Error ? followUp.message : String(followUp)}`,
++          );
++        }
+       }
+ 
+       if (result.status !== "approved") {
+diff --git a/server/stripeWebhook.paymentEmails.test.ts b/server/stripeWebhook.paymentEmails.test.ts
+new file mode 100644
+index 0000000..0da7e01
+--- /dev/null
++++ b/server/stripeWebhook.paymentEmails.test.ts
+@@ -0,0 +1,82 @@
++import { describe, expect, it } from "vitest";
++import { readFileSync } from "node:fs";
++import { resolve } from "node:path";
++
++/**
++ * The receipt bug this change fixes was partly structural: the paid-order email
++ * step lived inline inside the Stripe webhook's try block, so any email problem
++ * turned a successful payment into a 500 that Stripe retried. These tests pin the
++ * structure, not just the presence of a call: the email work must live in its own
++ * helper whose failures are logged and swallowed.
++ */
++const source = (relative: string) => readFileSync(resolve(process.cwd(), relative), "utf8");
++
++const webhook = source("server/stripeWebhook.ts");
++
++function helperBody(): string {
++  const start = webhook.indexOf("async function deliverPaymentEmails");
++  const end = webhook.indexOf("export function registerStripeWebhook");
++  return webhook.slice(start, end);
++}
++
++describe("stripe webhook payment emails", () => {
++  it("keeps the email work out of the webhook's failure path", () => {
++    const body = helperBody();
++    expect(body.length).toBeGreaterThan(200);
++    // Both sends are individually guarded.
++    expect(body).toContain("await sendPaidOrderReceipt(orderId)");
++    expect(body).toContain("await sendOwnerPaymentNotice(orderId");
++    expect(body.match(/catch \(error\)/g)?.length).toBe(2);
++    // Nothing in the helper may propagate to the handler.
++    expect(body).not.toMatch(/\bthrow\b/);
++  });
++
++  it("runs the emails through the helper rather than inline", () => {
++    const handler = webhook.slice(webhook.indexOf("export function registerStripeWebhook"));
++    expect(handler).toContain("await deliverPaymentEmails(orderId");
++    // The old inline call is what made an email failure fail the webhook.
++    expect(handler).not.toContain("await sendPaidOrderReceipt(orderId)");
++  });
++
++  it("confirms and notifies on every paid Stripe event shape", () => {
++    const handler = webhook.slice(webhook.indexOf("export function registerStripeWebhook"));
++    for (const eventType of [
++      "checkout.session.completed",
++      "checkout.session.async_payment_succeeded",
++      "payment_intent.succeeded",
++      "invoice.paid",
++      "invoice.payment_succeeded",
++    ]) {
++      expect(handler).toContain(`case "${eventType}"`);
++    }
++    // Every paid branch must reach the email helper.
++    const paidBranches = handler.match(/await deliverPaymentEmails\(orderId/g)?.length ?? 0;
++    expect(paidBranches).toBeGreaterThanOrEqual(3);
++  });
++
++  it("still returns a non-2xx only for real handler failures", () => {
++    const handler = webhook.slice(webhook.indexOf("export function registerStripeWebhook"));
++    // One 500 remains, for the persistence/handler try block.
++    expect(handler.match(/res\.status\(500\)/g)?.length).toBe(1);
++    expect(handler).toContain('res.json({ received: true })');
++  });
++});
++
++describe("receipt delivery resilience", () => {
++  it("does not gate the customer receipt on the marker column or an internal copy address", () => {
++    const receipt = source("server/lib/orderReceiptEmail.ts");
++    // The claim can no longer produce a "schema_missing" stop.
++    expect(receipt).not.toContain('claim === "schema_missing"');
++    expect(receipt).toContain('claim === "unclaimable"');
++    // An unset internal address no longer aborts the whole receipt.
++    expect(receipt).not.toContain("ORDER_NOTIFY_EMAIL is not a usable address, so the paid-order receipt was not sent.");
++  });
++
++  it("ships a one-statement SQL file for the new dedupe column", () => {
++    const sql = source("docs/sql/0250_payment_notice_email.tidb.sql");
++    const statements = sql.split("\n").filter((line) => line.trim() && !line.trim().startsWith("--"));
++    expect(statements).toHaveLength(1);
++    expect(statements[0]!.trim()).toMatch(/^ALTER TABLE cabinet_dealz\.order_requests /);
++    expect(statements[0]).toContain("IF NOT EXISTS");
++  });
++});
+diff --git a/server/stripeWebhook.ts b/server/stripeWebhook.ts
+index 96ddc13..ca0f011 100644
+--- a/server/stripeWebhook.ts
++++ b/server/stripeWebhook.ts
+@@ -13,6 +13,7 @@ import { orderRequests } from "../drizzle/schema";
+ import { eq } from "drizzle-orm";
+ import { createHardwareCommissionSnapshot } from "./lib/hardwareCommissionSnapshot";
+ import { markOrderPaidById, sendPaidOrderReceipt } from "./lib/orderReceiptEmail";
++import { sendOwnerPaymentNotice } from "./lib/paymentNoticeEmail";
+ import { flagOrderCrmRefund } from "./lib/orderSideEffects";
+ import { rememberOrderStripePayout } from "./lib/orderStripePayout";
+ import { createDbPaymentLinkContext, createDrizzleStripePaymentStore } from "./stripePaymentStore";
+@@ -51,6 +52,49 @@ async function retrieveSessionLineItems(sessionId: string): Promise<StripePaymen
+   return items.length > 0 ? items : null;
+ }
+ 
++/**
++ * Customer receipt + independent owner payment notice for one paid order.
++ *
++ * Both are best-effort by design. A paid order must never be reported to Stripe
++ * as a failed webhook because an email provider hiccuped: a non-2xx makes Stripe
++ * retry, but the payment already succeeded and the order is already confirmed.
++ * Every outcome is logged with the order number so a missing email is
++ * diagnosable without reading code.
++ */
++async function deliverPaymentEmails(
++  orderId: number,
++  context: { paymentIntentId?: string | null; sessionId?: string | null; source: string },
++): Promise<void> {
++  try {
++    const receipt = await sendPaidOrderReceipt(orderId);
++    if (receipt.sent) {
++      console.log(
++        `[Order Receipt] Delivered for order ${orderId} (customer=${receipt.customerEmailed}, internalCopy=${receipt.salesCopied}).`,
++      );
++    } else if (receipt.skipped) {
++      console.log(`[Order Receipt] Order ${orderId} already had its receipt; not sending another.`);
++    } else {
++      console.error(`[Order Receipt] Order ${orderId} receipt was not delivered: ${receipt.error ?? "unknown reason"}`);
++    }
++  } catch (error) {
++    console.error(
++      `[Order Receipt] Order ${orderId} receipt step failed without blocking the payment: ${error instanceof Error ? error.message : String(error)}`,
++    );
++  }
++
++  try {
++    await sendOwnerPaymentNotice(orderId, {
++      paymentIntentId: context.paymentIntentId,
++      sessionId: context.sessionId,
++      source: context.source,
++    });
++  } catch (error) {
++    console.error(
++      `[Payment Notice] Order ${orderId} owner notice failed without blocking the payment: ${error instanceof Error ? error.message : String(error)}`,
++    );
++  }
++}
++
+ export function registerStripeWebhook(app: Express): void {
+   app.post(
+     "/api/stripe/webhook",
+@@ -96,7 +140,11 @@ export function registerStripeWebhook(app: Express): void {
+               );
+               if (orderId) {
+                 await rememberOrderStripePayout(orderId, paymentIntentId);
+-                await sendPaidOrderReceipt(orderId);
++                await deliverPaymentEmails(orderId, {
++                  paymentIntentId,
++                  sessionId: session.id,
++                  source: event.type,
++                });
+               }
+               else console.error(`[Order Receipt] Paid checkout ${session.id} did not match an order, so no receipt was sent.`);
+             } else {
+@@ -116,7 +164,36 @@ export function registerStripeWebhook(app: Express): void {
+               await markOrderPaidById(orderId, pi.id);
+               await createHardwareCommissionSnapshot(orderId);
+               await rememberOrderStripePayout(orderId, pi.id);
+-              await sendPaidOrderReceipt(orderId);
++              await deliverPaymentEmails(orderId, {
++                paymentIntentId: pi.id,
++                source: event.type,
++              });
++            }
++            break;
++          }
++
++          // A paid Stripe invoice (checkout with invoice_creation, or a
++          // dashboard-issued invoice) carries the order id in its metadata. It is
++          // a real payment and must confirm the order and notify exactly like a
++          // checkout completion, otherwise an invoice-paid order looks unpaid.
++          case "invoice.paid":
++          case "invoice.payment_succeeded": {
++            const invoice = event.data.object as import("stripe").Stripe.Invoice;
++            const rawOrderId = Number(invoice.metadata?.order_id);
++            const orderId = Number.isInteger(rawOrderId) && rawOrderId > 0 ? rawOrderId : null;
++            const paymentIntentId = typeof invoice.payment_intent === "string"
++              ? invoice.payment_intent
++              : invoice.payment_intent?.id ?? null;
++            if (orderId) {
++              await markOrderPaidById(orderId, paymentIntentId ?? "");
++              await createHardwareCommissionSnapshot(orderId);
++              await rememberOrderStripePayout(orderId, paymentIntentId);
++              await deliverPaymentEmails(orderId, {
++                paymentIntentId,
++                source: event.type,
++              });
++            } else {
++              console.warn(`[Stripe Webhook] ${event.type} for invoice ${invoice.id} has no order_id metadata; no order was confirmed.`);
+             }
+             break;
+           }
+-- 
+2.43.0
+
