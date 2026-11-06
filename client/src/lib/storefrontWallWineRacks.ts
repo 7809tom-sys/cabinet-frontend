@@ -1,4 +1,4 @@
-import { isWallWineRackCabinet, withWallWineRacks, type WallWineRackFields } from "@shared/wallWineRack";
+import { withWallWineRacks, type WallWineRackFields } from "@shared/wallWineRack";
 
 /**
  * The locked affiliate storefront asks the API for ONE category at a time, so
@@ -53,22 +53,12 @@ export function wallTabExtraCategories(
 /**
  * Wall tab rows plus the racks found in the other buckets, de-duplicated by
  * record id. Racks are placed as wall cabinets so the card and the Designer
- * agree about where the item mounts.
+ * agree about where the item mounts. A non-rack accessory pulled in for its
+ * category is dropped, so the Wall tab never shows filler or moulding.
  */
 export function mergeWallTabRacks<T extends WallWineRackFields & { id?: number | string | null }>(
   wallRows: readonly T[],
   extraRows: readonly T[],
 ): T[] {
   return withWallWineRacks(wallRows, extraRows);
-}
-
-/**
- * Keep only the rows that belong on the Wall tab: the wall rows as returned,
- * plus any rack from the extra buckets. Used before the height/label grouping
- * so a non-rack accessory pulled for its category is never shown on Wall.
- */
-export function wallTabVisibleRacks<T extends WallWineRackFields & { id?: number | string | null }>(
-  extraRows: readonly T[],
-): T[] {
-  return extraRows.filter((row) => isWallWineRackCabinet(row));
 }

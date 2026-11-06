@@ -628,7 +628,10 @@ function LockedCatalog({
   // or "Specialty / Wine Rack" never arrives on it. Ask for the other buckets
   // this line really has and keep only the racks (issue #55).
   type LockedCatalogItem = NonNullable<typeof catalog>["items"][number];
-  const extraRackCategories = wallTabExtraCategories(category, orderedCategories);
+  const extraRackCategories = useMemo(
+    () => wallTabExtraCategories(category, orderedCategories),
+    [category, orderedCategories],
+  );
   const rackQueries = trpc.useQueries((t) => extraRackCategories.map((extraCategory) => t.storefront.familyCatalog(
     {
       styleId: family.styleId,
