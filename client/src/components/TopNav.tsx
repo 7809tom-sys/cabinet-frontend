@@ -343,7 +343,11 @@ export function TopNav() {
 
           {user ? (
             <div data-testid="site-toolbar-account-actions" className="hidden xl:flex items-center gap-2">
-              <span className="hidden xl:inline text-xs text-muted-foreground max-w-[96px] truncate" title={user.name || user.email || undefined}>{user.name || user.email}</span>
+              <span
+                data-testid="site-toolbar-account-name"
+                className="hidden xl:inline text-xs text-muted-foreground max-w-[96px] truncate"
+                title={user.name || user.email || undefined}
+              >{user.name || user.email}</span>
               {(user.role === "admin" || user.role === "designer") && (
                 <Link href="/admin">
                   <Button

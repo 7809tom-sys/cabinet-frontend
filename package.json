@@ -13,6 +13,7 @@
     "format": "prettier --write .",
     "test": "vitest run",
     "test:e2e:staging": "playwright test e2e/staging-checkout.spec.ts",
+    "test:e2e:per-tab-sign-in": "playwright test e2e/per-tab-sign-in.spec.ts",
     "test:designer-responsive": "vitest run client/src/pages/DesignTool.responsiveRelease.test.ts client/src/pages/DesignTool.compactWorkspace.test.ts client/src/pages/DesignTool.mobileAttributes.test.ts client/src/pages/DesignTool.toolbarLayout.test.ts client/src/pages/DesignTool.mobileToolbarRemoval.test.ts",
     "seed:room-layout": "node scripts/seed-room-layout-presets.mjs",
     "db:push": "drizzle-kit generate && drizzle-kit migrate"
