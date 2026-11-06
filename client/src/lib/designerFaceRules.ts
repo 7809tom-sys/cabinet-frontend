@@ -28,7 +28,7 @@ import {
   type RoomData,
   type WallOpening,
 } from "./design";
-import { AUTO_DESIGN_FILLER_MAX_IN } from "./autoDesignSeamFillers";
+import { AUTO_DESIGN_FILLER_MAX_IN, autoDesignFillerMaxIn } from "./autoDesignSeamFillers";
 
 /** Rule 11: the top line each upper height must land on. */
 export function upperTopLineFor(heightIn: number): 84 | 90 | 96 | null {
@@ -292,3 +292,8 @@ export function isGlassTopper(item: PlacedCabinet): boolean {
 
 /** Rule 12 + 3: the widest single filler Auto-Design will ever place. */
 export const AUTO_DESIGN_MAX_FILLER_IN = AUTO_DESIGN_FILLER_MAX_IN;
+
+/** Live cap: the widest single filler Auto-Design will place right now. */
+export function autoDesignMaxFillerIn(): number {
+  return autoDesignFillerMaxIn();
+}
