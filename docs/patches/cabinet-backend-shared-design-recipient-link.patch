@@ -1,0 +1,156 @@
+diff --git a/server/sharedRoomPreview.test.ts b/server/sharedRoomPreview.test.ts
+index aa2a01c..3b904ee 100644
+--- a/server/sharedRoomPreview.test.ts
++++ b/server/sharedRoomPreview.test.ts
+@@ -1,5 +1,6 @@
+-import { describe, expect, it } from "vitest";
+-import { sharedRoomPreviewDocument, sharedRoomTokenFromPath } from "./sharedRoomPreview";
++import { afterEach, describe, expect, it } from "vitest";
++import { sharedRoomPreviewDocument, sharedRoomTokenFromPath, sharedViewOrigin } from "./sharedRoomPreview";
++import type { Request } from "express";
+ 
+ describe("shared room preview routing", () => {
+   const token = "aBcD1234_efGhI56";
+@@ -32,3 +33,47 @@ describe("shared room preview routing", () => {
+     expect(document).not.toContain("thumbnailKey");
+   });
+ });
++
++function request(headers: Record<string, string>, url = "/api/shared-3d-view/aBcD1234_efGhI56"): Request {
++  return { headers, protocol: "https", originalUrl: url, hostname: headers.host ?? "" } as unknown as Request;
++}
++
++describe("a share link opened by its recipient", () => {
++  const originalEnv = process.env.NODE_ENV;
++  const setProduction = (production: boolean) => {
++    process.env.NODE_ENV = production ? "production" : "test";
++  };
++  afterEach(() => {
++    process.env.NODE_ENV = originalEnv;
++  });
++
++  it("resolves on the public site when Vercel proxies the request to Railway", () => {
++    setProduction(true);
++    // What the backend actually sees: the proxy left the deployment host here.
++    expect(sharedViewOrigin(request({ host: "cabinet-backend-production-2670.up.railway.app" })))
++      .toBe("https://www.cabinetdealz.com");
++    expect(sharedViewOrigin(request({
++      host: "www.cabinetdealz.com",
++      "x-forwarded-host": "www.cabinetdealz.com",
++    }))).toBe("https://www.cabinetdealz.com");
++  });
++
++  it("resolves an affiliate-branded share on the main site, where the viewer exists", () => {
++    setProduction(true);
++    // An affiliate subdomain rewrites every non-store path into /store/:slug,
++    // and that route tree has no /3d share page.
++    expect(sharedViewOrigin(request({ host: "reaves-way-cabinet-shop.cabinetdealz.com" })))
++      .toBe("https://www.cabinetdealz.com");
++  });
++
++  it("never turns a production deployment host into a customer-facing link", () => {
++    setProduction(true);
++    expect(sharedViewOrigin(request({ host: "cabinet-backend-production-2670.up.railway.app" })))
++      .not.toContain("railway.app");
++  });
++
++  it("keeps a local or preview origin outside production so the link is testable", () => {
++    setProduction(false);
++    expect(sharedViewOrigin(request({ host: "localhost:3000" }))).toBe("https://localhost:3000");
++  });
++});
+diff --git a/server/sharedRoomPreview.ts b/server/sharedRoomPreview.ts
+index 66842da..db80784 100644
+--- a/server/sharedRoomPreview.ts
++++ b/server/sharedRoomPreview.ts
+@@ -2,6 +2,7 @@ import type { Express, Request } from "express";
+ import { eq } from "drizzle-orm";
+ import { threeDRoomShares } from "../drizzle/schema";
+ import { getDb } from "./db";
++import { canonicalPublicOrigin } from "./lib/publicOrigin";
+ import { injectSharedThreeDViewHead } from "./lib/mainSeoHead";
+ import { storageGetSignedUrl } from "./storage";
+ 
+@@ -22,15 +23,55 @@ function escapeHtml(value: string): string {
+     .replace(/'/g, "&#39;");
+ }
+ 
+-function publicOrigin(req: Request): string {
+-  const proto = (req.headers["x-forwarded-proto"] as string | undefined)?.split(",")[0]?.trim() || req.protocol || "https";
+-  const host = (req.headers["x-forwarded-host"] as string | undefined)?.split(",")[0]?.trim() || req.get("host") || "";
+-  return `${proto}://${host}`;
++// A share link is opened by someone other than the person who made it, so it
++// must resolve on the public CabinetDealz site. Two things made the old code
++// miss that:
++//   * Vercel proxies /api/shared-3d-view/:token to Railway, so Host here is the
++//     deployment host (cabinet-backend-…railway.app); the redirect sent the
++//     recipient to a 404 — the reported "the link does not work".
++//   * An affiliate subdomain rewrites every non-store path to /store/:slug/…,
++//     and that tree has no 3D share route, so a branded link landed on a 404 too.
++// The read-only viewer only exists on the main site, so production always
++// resolves there. Local and preview hosts keep their own origin for testing.
++const MAIN_SITE_ORIGIN = "https://www.cabinetdealz.com";
++
++function isCabinetDealzPublicHost(hostname: string): boolean {
++  const host = hostname.trim().toLowerCase();
++  return host === "cabinetdealz.com"
++    || host === "www.cabinetdealz.com"
++    || /^[a-z0-9-]+\.cabinetdealz\.com$/.test(host);
++}
++
++export function sharedViewOrigin(req: Request): string {
++  const protocol = (req.headers["x-forwarded-proto"] as string | undefined)?.split(",")[0]?.trim() || req.protocol || "https";
++  const hostCandidates = [
++    req.headers["x-original-host"],
++    req.headers["x-forwarded-host"],
++    req.headers["x-host"],
++    req.hostname,
++    req.headers.host,
++  ];
++  const firstHost = hostCandidates
++    .map((value) => (Array.isArray(value) ? value[0] : value))
++    .map((value) => value?.split(",")[0]?.trim().toLowerCase() ?? "")
++    .find(Boolean) ?? "";
++
++  if (firstHost && isCabinetDealzPublicHost(hostOf(firstHost))) return MAIN_SITE_ORIGIN;
++  // Preview, local, and platform hosts: keep the origin the request arrived on
++  // (including its port), but never let a production deployment host become a
++  // customer link.
++  if (process.env.NODE_ENV === "production") return MAIN_SITE_ORIGIN;
++  if (firstHost) return `${protocol}://${firstHost}`;
++  return canonicalPublicOrigin({ protocol, hostCandidates, production: false });
++}
++
++function hostOf(value: string): string {
++  return value.replace(/^https?:\/\//, "").replace(/:\d+$/, "").replace(/\/$/, "");
+ }
+ 
+ function sharePreviewDestination(req: Request, token: string): string {
+-  const current = new URL(req.originalUrl, publicOrigin(req));
+-  const destination = new URL(`/3d/${encodeURIComponent(token)}`, publicOrigin(req));
++  const current = new URL(req.originalUrl, sharedViewOrigin(req));
++  const destination = new URL(`/3d/${encodeURIComponent(token)}`, sharedViewOrigin(req));
+   const view = current.searchParams.get("view");
+   if (view) destination.searchParams.set("view", view);
+   return destination.toString();
+@@ -61,9 +102,9 @@ export async function injectSharedRoomPreviewHead(html: string, requestPath: str
+       .limit(1)
+     : [];
+   const pathname = requestPath.split("?")[0].replace(/\/+$/, "") || `/3d/${token}`;
+-  const canonicalUrl = `${publicOrigin(req)}${pathname}`;
++  const canonicalUrl = `${sharedViewOrigin(req)}${pathname}`;
+   const thumbnailUrl = share?.thumbnailKey
+-    ? `${publicOrigin(req)}/api/shared-3d-preview/${encodeURIComponent(token)}.jpg`
++    ? `${sharedViewOrigin(req)}/api/shared-3d-preview/${encodeURIComponent(token)}.jpg`
+     : null;
+   return injectSharedThreeDViewHead(html, { canonicalUrl, thumbnailUrl });
+ }
+@@ -81,7 +122,7 @@ export function registerSharedRoomPreviewRoutes(app: Express) {
+         .where(eq(threeDRoomShares.token, token))
+         .limit(1);
+       if (!share) return res.status(404).end();
+-      const origin = publicOrigin(req);
++      const origin = sharedViewOrigin(req);
+       const thumbnailUrl = share.thumbnailKey
+         ? `${origin}/api/shared-3d-preview/${encodeURIComponent(token)}.jpg`
+         : null;

@@ -24,6 +24,7 @@ interface Row {
   code: string | null;
   name: string | null;
   brandName: string | null;
+  /** The stored landed cost for a SKU ("on file"); distinct from costMultiplier. */
   costMultiplier: string | null;
   baseMultiplier: string | null;
   freightMultiplier: string | null;
@@ -214,6 +215,22 @@ export default function DistributorMultipliersAdmin() {
 
                     <p className="rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
                       Every customer and trade price is recalculated from this line&apos;s landed cost and the saved platform markup rules. The supplier list is a cost source, never a retail-price override.
+                    </p>
+
+                    {/* The factor is also what fills a Catalog row's Cost when that
+                        SKU has no stored vendor cost. Stated in words so nobody has
+                        to infer it. */}
+                    <p className="rounded-md border bg-muted/40 px-3 py-2 text-xs leading-relaxed" data-testid={`multiplier-cost-factor-${r.id}`}>
+                      <span className="font-medium">Cost factor used for missing costs: </span>
+                      {eff != null ? (
+                        <>
+                          <span className="font-mono">{eff.toFixed(4)}</span> of list (
+                          {((eff) * 100).toFixed(2)}%)
+                          {avgList != null && <> — a ${avgList.toFixed(2)} list item shows ${(avgList * eff).toFixed(2)}</>}
+                        </>
+                      ) : (
+                        <>not set — Catalog rows with no stored cost show &ldquo;—&rdquo;</>
+                      )}
                     </p>
 
                     {/* Live computed preview */}

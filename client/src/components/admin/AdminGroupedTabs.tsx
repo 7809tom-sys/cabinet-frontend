@@ -63,6 +63,7 @@ import NotificationSettingsAdmin from "@/components/admin/NotificationSettingsAd
 import ApiStatusAdmin from "@/components/admin/ApiStatusAdmin";
 import QuickBooksAdmin from "@/components/admin/QuickBooksAdmin";
 import IncomingOrdersAdmin from "@/components/admin/IncomingOrdersAdmin";
+import MasterOrders from "@/components/admin/MasterOrders";
 import { DesignerCoverageAdmin } from "@/components/admin/DesignerCoverageAdmin";
 import { AdminTabHelp } from "@/components/admin/AdminTabHelp";
 import { CATALOG_SECTIONS, canonicalAdminTab, catalogLeaves, resolveCatalogTab } from "@/components/admin/catalogAdminTabs";
@@ -107,6 +108,7 @@ import VendorOnboardingAdmin from "@/components/admin/VendorOnboardingAdmin";
 import { SampleOrderDesk } from "@/components/samples/SampleOrderDesk";
 import KitchenRulesAdmin from "@/components/admin/KitchenRulesAdmin";
 import ContractorAccessAdmin from "@/components/admin/ContractorAccessAdmin";
+import { AdminHelperRequests } from "@/components/admin/AdminHelperRequests";
 import { AdminTabErrorBoundary } from "@/components/admin/AdminTabErrorBoundary";
 
 // ─── Group definitions ────────────────────────────────────────────────────────
@@ -117,11 +119,13 @@ const GROUPS = [
     icon: ShoppingCart,
     tabs: [
       { value: "orders", label: "Incoming Orders" },
+      { value: "master-orders", label: "Master Orders" },
       { value: "sales-forecast", label: "Sales Forecast" },
       { value: "sample-orders", label: "Sample Orders" },
       { value: "vendor-updates", label: "Vendor Updates" },
       { value: "vendor-inventory", label: "Vendor Inventory" },
       { value: "crm", label: "Sales CRM" },
+      { value: "helper-requests", label: "Designer Helper Requests" },
       { value: "consultations", label: "Consultations" },
       { value: "design-leads", label: "Design Leads" },
       { value: "quotes", label: "Countertop Quotes" },
@@ -591,11 +595,13 @@ export default function AdminGroupedTabs() {
         <div className={currentGroup.id === "settings" ? "min-w-0" : undefined}>
         {/* Sales & Orders */}
         <TabsContent value="orders" className="mt-6"><AdminTabErrorBoundary tabName="Incoming Orders"><AdminTabHelp tab="orders" /><IncomingOrdersAdmin /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="master-orders" className="mt-6"><AdminTabErrorBoundary tabName="Master Orders"><AdminTabHelp tab="master-orders" /><MasterOrders /></AdminTabErrorBoundary></TabsContent>
         <TabsContent value="sales-forecast" className="mt-6"><AdminTabErrorBoundary tabName="Sales Forecast"><SalesForecastAdmin /></AdminTabErrorBoundary></TabsContent>
         <TabsContent value="sample-orders" className="mt-6"><AdminTabErrorBoundary tabName="Sample Orders"><SampleOrderDesk mode="admin" /></AdminTabErrorBoundary></TabsContent>
         <TabsContent value="vendor-updates" className="mt-6"><AdminTabErrorBoundary tabName="Vendor Updates"><VendorUpdatesAdmin /></AdminTabErrorBoundary></TabsContent>
         <TabsContent value="vendor-inventory" className="mt-6"><AdminTabErrorBoundary tabName="Vendor Inventory"><VendorInventoryAdmin /></AdminTabErrorBoundary></TabsContent>
         <TabsContent value="crm" className="mt-6"><AdminTabErrorBoundary tabName="Sales CRM"><AdminTabHelp tab="crm" /><CrmBoard lang="en" /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="helper-requests" className="mt-6"><AdminTabErrorBoundary tabName="Designer Helper Requests"><AdminHelperRequests /></AdminTabErrorBoundary></TabsContent>
         <TabsContent value="consultations" className="mt-6"><AdminTabErrorBoundary tabName="Consultations"><AdminTabHelp tab="consultations" /><ConsultationsAdmin /></AdminTabErrorBoundary></TabsContent>
         <TabsContent value="design-leads" className="mt-6"><AdminTabErrorBoundary tabName="Design Leads"><AdminTabHelp tab="design-leads" /><DesignLeadsAdmin /></AdminTabErrorBoundary></TabsContent>
         <TabsContent value="quotes" className="mt-6"><AdminTabErrorBoundary tabName="Countertop Quotes"><AdminTabHelp tab="quotes" /><CountertopQuotes /></AdminTabErrorBoundary></TabsContent>

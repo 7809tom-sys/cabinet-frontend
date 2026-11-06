@@ -15,6 +15,7 @@ import type { PlacedCabinet, RoomData, WallOpening, SinkFixture, PotFillerFixtur
 import { roomWithPersistedEntities } from "@/lib/design";
 import type { PreSavePlanReview, PreSavePlanReviewFinding } from "@/lib/preSavePlanReview";
 import { normalizeStoreScope } from "@/lib/affiliateContext";
+import { designOpenPath, designStoreLabel, designStoreScope, designWriteScope } from "@/lib/designOwnerScope";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DesignActions
@@ -142,6 +143,11 @@ interface Props {
   onReviewPlanFinding?: (finding: PreSavePlanReviewFinding) => void;
   /** Called after a design is successfully saved (after the user confirms in the dialog). */
   onSaveSuccess?: (designName: string, designId: number) => void;
+  /**
+   * Reports the account scope the server actually wrote the design to, so the
+   * Designer can keep its own scope in step with where the plan really lives.
+   */
+  reportSaveTarget?: (savedTo: SavedDesignTarget) => void;
   /** Reports only a successful in-place automatic update so the Designer can show its timestamp. */
   onAutomaticSaveSuccess?: (savedAt: number) => void;
   /** Called after the server permanently deletes a saved design. */
@@ -266,6 +272,18 @@ type SavedDesignRow = {
   projectName?: string | null;
   roomLabel?: string | null;
   roomType?: string | null;
+  /** The store this design belongs to, decided by its saved row. */
+  affiliateId?: number | null;
+  affiliateSlug?: string | null;
+  affiliateName?: string | null;
+};
+
+/** Where the server filed a saved design: its owning store and why. */
+export type SavedDesignTarget = {
+  affiliateId: number | null;
+  affiliateSlug: string | null;
+  storeName: string | null;
+  storeReason: string | null;
 };
 
 interface ProjectGroup {
@@ -415,7 +433,7 @@ export function AssistEditingBanner({ storeName }: { storeName: string }) {
 }
 
 export function DesignActions({
-  room, placed, openings, sinks, potFillers, island, furniture, ponyWalls, selectedSurfaces, threeDPresentation, styleId, lockedDistributorId, styleName, contactName, contactPhone, tier, total, extraLines, buildRows, roomType, trimSettings, contactEmail, affiliateSlug, currentDesignId, currentDesignName, currentPlanFingerprint, isCurrentPlanSaved = false, brandName, openSaveSignal, openLoadSignal, preSavePlanReview, onReviewPlanFinding, onSaveSuccess, onAutomaticSaveSuccess, onDeleteSuccess, onLoad, assistMode = false,
+  room, placed, openings, sinks, potFillers, island, furniture, ponyWalls, selectedSurfaces, threeDPresentation, styleId, lockedDistributorId, styleName, contactName, contactPhone, tier, total, extraLines, buildRows, roomType, trimSettings, contactEmail, affiliateSlug, currentDesignId, currentDesignName, currentPlanFingerprint, isCurrentPlanSaved = false, brandName, openSaveSignal, openLoadSignal, preSavePlanReview, onReviewPlanFinding, onSaveSuccess, reportSaveTarget, onAutomaticSaveSuccess, onDeleteSuccess, onLoad, assistMode = false,
 }: Props) {
   const { user, isAuthenticated, loading: isAuthLoading, error: authError, refresh } = useAuth();
   const { t } = useLanguage();
@@ -497,14 +515,27 @@ export function DesignActions({
         toast.error(t("dt_act_save_err"), { description: "The design was saved but its plan reference was not returned. Please try saving once more." });
         return;
       }
+      // Say which account the plan landed on. The server decides the store, so
+      // this is the only honest way for someone to see that a design saved on a
+      // storefront is their own work and not the store's.
+      const savedStoreName = (res as { storeName?: string | null }).storeName?.trim();
       toast.success(isUpdatingExistingDesign ? "Design saved now" : t("dt_act_saved"), {
         id: "designer-manual-save",
-        description: savedName,
+        description: savedStoreName ? `${savedName} — saved to your ${savedStoreName} account` : savedName,
       });
+      // Keep the two-argument call: it is the contract every other caller and
+      // test pins. The save target rides along as an extra argument.
       onSaveSuccess?.(savedName, res.id);
+      reportSaveTarget?.({
+        affiliateId: (res as { affiliateId?: number | null }).affiliateId ?? null,
+        affiliateSlug: (res as { affiliateSlug?: string | null }).affiliateSlug ?? null,
+        storeName: savedStoreName ?? null,
+        storeReason: (res as { storeReason?: string | null }).storeReason ?? null,
+      });
       setSaveOpen(false);
       setName("");
-      utils.design.myDesigns.invalidate({ affiliateSlug: storeScope });
+      // The list is the account's whole list now, so it can change from any store.
+      utils.design.myDesigns.invalidate();
       // Optionally request a quote from the design's owning CRM.
       if (requestQuote) {
         quoteMutation.mutate({
@@ -533,9 +564,10 @@ export function DesignActions({
       lastAutomaticSaveRef.current = pending;
       automaticSaveFailureNotifiedRef.current = false;
       onAutomaticSaveSuccess?.(Date.now());
+      // The design's own store drives the read; the list is the account's.
       void Promise.all([
-        utils.design.byId.invalidate({ id: result.id, affiliateSlug: storeScope }),
-        utils.design.myDesigns.invalidate({ affiliateSlug: storeScope }),
+        utils.design.byId.invalidate({ id: result.id }),
+        utils.design.myDesigns.invalidate(),
       ]);
     },
     onError: (error) => {
@@ -616,6 +648,9 @@ export function DesignActions({
   }, []);
 
   // Only logged-in users can list their saved designs (protected procedure).
+  // The list is the ACCOUNT's, not the current storefront's: a design saved
+  // while another store's page was open still belongs to this person, and the
+  // server returns the store each one lives in so it opens in the right place.
   const myDesigns = trpc.design.myDesigns.useQuery({ affiliateSlug: storeScope }, {
     enabled: isAuthenticated && loadOpen,
     retry: false,
@@ -630,7 +665,7 @@ export function DesignActions({
         description: `Started a new kitchen after deleting “${result.name}”. Choose a room layout to continue.`,
       });
       void Promise.all([
-        utils.design.myDesigns.invalidate({ affiliateSlug: storeScope }),
+        utils.design.myDesigns.invalidate(),
         utils.design.byId.invalidate(),
         utils.design.documentAccess.invalidate(),
       ]);
@@ -979,11 +1014,20 @@ export function DesignActions({
                       const items = Array.isArray(d.placedCabinets) ? d.placedCabinets.length : 0;
                       const rType = (d as { roomType?: string | null }).roomType;
                       const rLabel = (d as { roomLabel?: string | null }).roomLabel;
+                      // The design's own store decides. A plan saved under a
+                      // different storefront than the one open here opens there
+                      // instead of silently loading under the wrong brand.
+                      const designScope = designStoreScope(d);
+                      const otherStore = designScope !== storeScope;
                       return (
                         <div key={d.id} className="flex items-stretch gap-1.5">
                           <button
                             className="min-w-0 flex-1 text-left p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors"
                             onClick={() => {
+                              if (otherStore) {
+                                window.location.assign(designOpenPath(d));
+                                return;
+                              }
                               onLoad({
                                 id: d.id,
                                 room: (d.roomData as RoomData) ?? room,
@@ -1027,6 +1071,14 @@ export function DesignActions({
                                 {new Date(d.updatedAt).toLocaleDateString()}
                               </span>
                             </div>
+                            {otherStore && (
+                              <p
+                                className="mt-1 text-[10px] font-medium text-[#a87f33]"
+                                data-testid={`design-store-${d.id}`}
+                              >
+                                Saves to {designStoreLabel(d)} - opens there
+                              </p>
+                            )}
                           </button>
                           <Button
                             type="button"

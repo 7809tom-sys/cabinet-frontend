@@ -58,6 +58,8 @@ import IncomingOrdersAdmin from "@/components/admin/IncomingOrdersAdmin";
 import { BulkDimensionsAdmin } from "@/components/admin/BulkDimensionsAdmin";
 import { DesignerCoverageAdmin } from "@/components/admin/DesignerCoverageAdmin";
 import { AdminTabHelp } from "@/components/admin/AdminTabHelp";
+import { DesignerHelperSign } from "@/components/design/DesignerHelperSign";
+import { AdminHelperRequestToast } from "@/components/admin/AdminHelperRequestToast";
 import ApprovedVendorsAdmin from "@/components/admin/ApprovedVendorsAdmin";
 import PelicanCatalogAdmin from "@/components/admin/PelicanCatalogAdmin";
 import { AnalyticsAdmin } from "@/components/admin/AnalyticsAdmin";
@@ -617,6 +619,7 @@ export default function Admin() {
             <TabsTrigger value="crm">Sales CRM</TabsTrigger>
             <TabsTrigger value="sales-forecast">Sales Forecast</TabsTrigger>
             <TabsTrigger value="consultations">Consultations</TabsTrigger>
+            <TabsTrigger value="helper">Designer Helper</TabsTrigger>
           </TabsList>
           <TabsContent value="crm" className="mt-6">
             <AdminTabErrorBoundary tabName="Sales CRM">
@@ -631,6 +634,11 @@ export default function Admin() {
           <TabsContent value="consultations" className="mt-6">
             <AdminTabErrorBoundary tabName="Consultations">
               <ConsultationsAdmin />
+            </AdminTabErrorBoundary>
+          </TabsContent>
+          <TabsContent value="helper" className="mt-6">
+            <AdminTabErrorBoundary tabName="Designer Helper">
+              <DesignerHelperSign />
             </AdminTabErrorBoundary>
           </TabsContent>
         </Tabs>
@@ -666,6 +674,7 @@ export default function Admin() {
       </div>
 
       <AdminGroupedTabs />
+      <AdminHelperRequestToast />
     </div>
   );
 }

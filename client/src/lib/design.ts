@@ -14543,7 +14543,16 @@ export interface SinkFixture {
   frontSetbackIn?: number;
   /** Center of the usable rear countertop deck, measured from the sink rear. */
   faucetRearDeckOffsetIn?: number;
-  /** Planning conflict when a deck-mounted faucet has no physical rear deck. */
+  /**
+   * Advisory note shown next to a placed basin. Never blocks placement and never
+   * moves a cabinet, countertop, or another fixture.
+   */
+  faucetDeckAdvisory?: "tight-rear-deck";
+  /**
+   * Legacy blocking flag from earlier plans. Read only, and always cleared to an
+   * advisory when the fixture is normalized, so an old saved design cannot keep
+   * a sink flagged as unusable.
+   */
   faucetDeckConflict?: "shallow-countertop-deck";
   /** Pelican product ID (when selected from real inventory) */
   pelicanProductId?: number;
@@ -14747,18 +14756,33 @@ export const SINK_PRESETS: Record<SinkType, { name: string; width: number; depth
   bar:       { name: "Bar / Prep Sink",  width: 15, depth: 15 },
 };
 
-/** Approved non-apron sink setback range from the finished countertop front. */
+/**
+ * Approved non-apron sink setback range from the finished countertop front.
+ * A basin sits 2" to 2½" behind the front edge of the top; 2" is the default.
+ */
 export const NON_APRON_SINK_FRONT_SETBACK = {
-  minimumIn: 2.5,
-  defaultIn: 3,
-  maximumIn: 3.5,
+  minimumIn: 2,
+  defaultIn: 2,
+  maximumIn: 2.5,
 } as const;
 
 /**
- * Published faucet profiles do not carry a countertop-hole/base-footprint
- * datum. This documented Designer planning policy reserves a usable rear deck
- * for their actual deck-mounted render, without claiming a source-specific
- * installation clearance.
+ * Planning datum for the rear deck behind a deck-mounted faucet: how far the
+ * drawn faucet body sits back from the basin's rear rim. Published faucet
+ * profiles do not carry a countertop-hole/base-footprint datum, so this is a
+ * documented Designer planning policy for the render, not a supplier clearance.
+ *
+ * It is deliberately NOT a fit gate. Faucets are universal across one-hole and
+ * two-hole deck mounts, so a basin that the catalog pairs with its vanity or
+ * sink base is always placeable; a narrow deck is reported as an advisory only
+ * and never blocks the sink or moves surrounding cabinets.
+ */
+export const FAUCET_REAR_DECK_BODY_OFFSET_IN = 1.25;
+
+/**
+ * Informational threshold below which the Designer points out that the drawn
+ * faucet body has little deck behind the basin. Kept as a reporting value so the
+ * advisory can say "tight" instead of implying the sink does not fit.
  */
 export const MINIMUM_FAUCET_REAR_DECK_IN = 2.5;
 
@@ -14771,7 +14795,13 @@ export type NonApronSinkDeckPlacement = {
   planDepth: number;
   frontSetbackIn: number;
   rearDeckIn: number;
+  /**
+   * Always true for a placeable basin. Faucets are universal across one- and
+   * two-hole deck mounts, so the rear deck is informational and never gates fit.
+   */
   faucetCanFit: boolean;
+  /** True when the drawn faucet body only just fits behind the basin. Advisory. */
+  faucetDeckTight?: boolean;
   faucetRearDeckOffsetIn?: number;
   sinkFitsCountertop: boolean;
   reason?: string;
@@ -14793,11 +14823,14 @@ export function sinkPlanDimensions(
 
 /**
  * Places a standard, non-apron sink on an ordinary cardinal base run. Its long
- * side stays parallel to the cabinet front; its front is three inches behind
- * the finished countertop front by default; and the remaining rear deck is
- * the only allowed deck-mounted faucet location. Part 1 intentionally leaves
- * island, peninsula, angled/custom wall, apron-front, and countertop meshes
- * untouched.
+ * side stays parallel to the cabinet front, and its front sits two inches
+ * behind the finished countertop front by default. The remaining rear deck is
+ * reported for the deck-mounted faucet render.
+ *
+ * The rear deck is informational. Faucets fit a single- or two-hole deck, so a
+ * shallow deck never blocks placement and never moves the surrounding cabinets,
+ * the countertop, or another fixture. Island, peninsula, angled/custom wall,
+ * and apron-front installations keep their existing dedicated paths.
  */
 export function nonApronSinkDeckPlacement(
   cabinet: PlacedCabinet,
@@ -14844,11 +14877,12 @@ export function nonApronSinkDeckPlacement(
   const countertopDepthIn = countertopDepthForCabinet(cabinet);
   const rearDeckIn = countertopDepthIn - frontSetbackIn - dimensions.depth;
   const sinkFitsCountertop = rearDeckIn >= -COLLISION_EPSILON_IN;
-  const faucetCanFit = rearDeckIn + COLLISION_EPSILON_IN >= MINIMUM_FAUCET_REAR_DECK_IN;
-  // Keep the deck-mounted base a tangible 1¼ inches behind the sink's rear
-  // edge when the approved deck minimum exists; do not visually drift it to
-  // the far rear edge on shallower/deeper sink models.
-  const faucetRearDeckOffsetIn = Math.max(0, Math.min(rearDeckIn / 2, 1.25));
+  // A deck is only "tight" once the drawn faucet body no longer fits behind the
+  // basin. It is reported, never enforced: the sink and its faucet still place.
+  const faucetDeckTight = rearDeckIn + COLLISION_EPSILON_IN < MINIMUM_FAUCET_REAR_DECK_IN;
+  // Keep the drawn faucet body a tangible 1¼ inches behind the sink's rear edge
+  // when the deck allows it; never push it past the rear edge of the top.
+  const faucetRearDeckOffsetIn = Math.max(0, Math.min(rearDeckIn, FAUCET_REAR_DECK_BODY_OFFSET_IN));
   let x = centeredX;
   let y = centeredY;
   if (side === "top") {
@@ -14860,10 +14894,12 @@ export function nonApronSinkDeckPlacement(
   } else {
     x = cabinet.x - (countertopDepthIn - footprint.w) + frontSetbackIn;
   }
+  // Only a basin that genuinely overhangs the finished top is a real problem.
+  // A narrow rear deck is an advisory note, not a reason to refuse the sink.
   const reason = !sinkFitsCountertop
     ? `The selected sink is deeper than the finished countertop after its ${frontSetbackIn}″ front setback.`
-    : !faucetCanFit
-      ? `The selected sink leaves ${Math.max(0, rearDeckIn).toFixed(2)}″ of rear deck; a deck-mounted faucet requires ${MINIMUM_FAUCET_REAR_DECK_IN}″.`
+    : faucetDeckTight
+      ? `The selected sink leaves ${Math.max(0, rearDeckIn).toFixed(2)}″ of rear counter deck behind the basin. A deck-mounted faucet still fits a one- or two-hole mount; this is a tight-deck note only.`
       : undefined;
   return {
     applies: true,
@@ -14874,7 +14910,8 @@ export function nonApronSinkDeckPlacement(
     planDepth: plan.depth,
     frontSetbackIn,
     rearDeckIn: Math.max(0, rearDeckIn),
-    faucetCanFit,
+    faucetCanFit: true,
+    faucetDeckTight,
     faucetRearDeckOffsetIn,
     sinkFitsCountertop,
     reason,
@@ -14952,7 +14989,7 @@ export function makeSinkForCabinet(
 	    ...(deckPlacement?.applies ? {
 	      frontSetbackIn: deckPlacement.frontSetbackIn,
 	      faucetRearDeckOffsetIn: deckPlacement.faucetRearDeckOffsetIn,
-	      ...(deckPlacement.faucetCanFit ? {} : { faucetDeckConflict: "shallow-countertop-deck" as const }),
+	      ...(deckPlacement.faucetDeckTight ? { faucetDeckAdvisory: "tight-rear-deck" as const } : {}),
 	    } : {}),
 	  };
 }
@@ -14986,15 +15023,17 @@ export function normalizeSinkFixturesToBases(
       { width: sourceWidth, depth: sourceDepth },
       { frontSetbackIn: sink.frontSetbackIn },
     );
-    const nextDeckConflict = sink.faucet ? next.faucetDeckConflict : undefined;
-    const same = sink.x === next.x && sink.y === next.y && sink.width === next.width && sink.depth === next.depth && sink.wallSide === next.wallSide && sink.planRotation === next.planRotation && sink.sourceWidth === next.sourceWidth && sink.sourceDepth === next.sourceDepth && sink.cabinetUid === next.cabinetUid && sink.frontSetbackIn === next.frontSetbackIn && sink.faucetRearDeckOffsetIn === next.faucetRearDeckOffsetIn && sink.faucetDeckConflict === nextDeckConflict;
+    const nextDeckAdvisory = sink.faucet ? next.faucetDeckAdvisory : undefined;
+    const same = sink.x === next.x && sink.y === next.y && sink.width === next.width && sink.depth === next.depth && sink.wallSide === next.wallSide && sink.planRotation === next.planRotation && sink.sourceWidth === next.sourceWidth && sink.sourceDepth === next.sourceDepth && sink.cabinetUid === next.cabinetUid && sink.frontSetbackIn === next.frontSetbackIn && sink.faucetRearDeckOffsetIn === next.faucetRearDeckOffsetIn && sink.faucetDeckAdvisory === nextDeckAdvisory && sink.faucetDeckConflict == null;
     if (same) return sink;
     changed = true;
     return {
       ...next,
       uid: sink.uid,
       faucet: sink.faucet,
-      faucetDeckConflict: nextDeckConflict,
+      // A legacy blocking flag is intentionally dropped: the deck is advisory.
+      faucetDeckConflict: undefined,
+      faucetDeckAdvisory: nextDeckAdvisory,
       pelicanProductId: sink.pelicanProductId,
       pelicanProductName: sink.pelicanProductName,
       pelicanProductImage: sink.pelicanProductImage,
@@ -15704,7 +15743,7 @@ export type FurnitureShape = "rect" | "round";
 export interface FurnitureDef {
   id: string;
   name: string;
-  category: "table" | "chair" | "stool" | "bench" | "other" | "bathroom-fixture" | "bathroom-zone";
+  category: "table" | "chair" | "stool" | "bench" | "other" | "bathroom-fixture";
   collection?: "classic" | "modern";
   shape: FurnitureShape;
   /** Width in inches (diameter for round items) */
@@ -15740,14 +15779,6 @@ export const FURNITURE_CATALOG: FurnitureDef[] = [
   { id: "modern-media-console", name: 'Modern Media Console 72"', category: "other", collection: "modern", shape: "rect",  w: 72, d: 18, clearance: 18, color: "#3f454c", height: 24 },
   { id: "modern-floor-lamp",    name: "Modern Floor Lamp",        category: "other", collection: "modern", shape: "round", w: 14, d: 14, clearance: 12, color: "#c09b58", height: 64 },
   { id: "modern-planter",       name: "Modern Planter",            category: "other", collection: "modern", shape: "round", w: 18, d: 18, clearance: 12, color: "#5b7b67", height: 24 },
-  // Non-cartable, movable planning zones used only by the Bathroom starter.
-  // These are intentionally not substitutes for actual source-priced fixtures.
-  { id: "bathroom-zone-vanity-60", name: 'Vanity zone · 60"', category: "bathroom-zone", shape: "rect", w: 60, d: 24, clearance: 0, color: "#2f6690" },
-  { id: "bathroom-zone-toilet", name: "Toilet zone", category: "bathroom-zone", shape: "rect", w: 30, d: 54, clearance: 0, color: "#79654d" },
-  // Holds the complete source envelope for every supported 60-inch Pelican tub
-  // after the placement helper orients its 60-inch length along this zone. It
-  // remains a movable visual-planning zone, never an installation opening.
-  { id: "bathroom-zone-tub-60", name: 'Tub zone · 60" × 36"', category: "bathroom-zone", shape: "rect", w: 60, d: 36, clearance: 0, color: "#5a879d" },
   ...VERIFIED_PELICAN_BATHROOM_FIXTURE_PROFILES.map((profile): FurnitureDef => ({
     id: profile.id,
     name: profile.name,
@@ -15768,8 +15799,6 @@ export interface PlacedFurniture {
   y: number;
   rotation: number;
   /** Source catalog identity for a placed, price-locked Pelican bathroom fixture. */
-  /** User-sized planning zone only; never a resize of a manufacturer product. */
-  planningZoneSize?: { version: 1; widthIn: number; depthIn: number };
   pelicanCode?: string;
   pelicanProductId?: number;
   pelicanProductName?: string;
@@ -15786,6 +15815,32 @@ export function makeFurniture(defId: string, x: number, y: number): PlacedFurnit
     y,
     rotation: 0,
   };
+}
+
+/**
+ * Loads a saved furniture list without ever failing on data this build no
+ * longer understands. Plans created by the old bathroom "movable zones"
+ * starter persist `bathroom-zone-*` rows and a `planningZoneSize` override;
+ * both are dropped here so the real cabinets and fixtures still load and move.
+ */
+export function restoredFurniture(rows: unknown): PlacedFurniture[] {
+  if (!Array.isArray(rows)) return [];
+  const restored: PlacedFurniture[] = [];
+  for (const row of rows) {
+    if (!row || typeof row !== "object") continue;
+    const candidate = row as PlacedFurniture;
+    if (typeof candidate.defId !== "string" || candidate.defId.startsWith("bathroom-zone-")) continue;
+    if (!FURNITURE_CATALOG.some((definition) => definition.id === candidate.defId)) continue;
+    const { planningZoneSize: _legacyZoneSize, ...rest } = candidate as PlacedFurniture & { planningZoneSize?: unknown };
+    restored.push({
+      ...rest,
+      uid: typeof candidate.uid === "string" && candidate.uid ? candidate.uid : `furn-restored-${restored.length}`,
+      x: Number.isFinite(candidate.x) ? candidate.x : 0,
+      y: Number.isFinite(candidate.y) ? candidate.y : 0,
+      rotation: Number.isFinite(candidate.rotation) ? candidate.rotation : 0,
+    });
+  }
+  return restored;
 }
 
 /**
@@ -15819,14 +15874,9 @@ export function furnitureFootprint(f: PlacedFurniture, def: FurnitureDef): { w: 
   return size;
 }
 
-/** Zone overrides are local to a placement and cannot alter actual product sizes. */
 export function resolvedFurnitureDimensions(f: PlacedFurniture, definition?: FurnitureDef): { w: number; d: number } | null {
   const def = definition ?? FURNITURE_CATALOG.find((item) => item.id === f.defId);
   if (!def) return null;
-  const size = f.planningZoneSize;
-  if (def.category === "bathroom-zone" && size?.version === 1 && Number.isFinite(size.widthIn) && Number.isFinite(size.depthIn) && size.widthIn > 0 && size.depthIn > 0) {
-    return { w: size.widthIn, d: size.depthIn };
-  }
   return { w: def.w, d: def.d };
 }
 

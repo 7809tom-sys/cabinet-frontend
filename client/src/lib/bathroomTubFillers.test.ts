@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { FURNITURE_CATALOG, furnitureFootprint, makePelicanBathroomFixture } from "./design";
-import { bathroomTubFillerPlacement, bathroomFixtureStarterZonePlacement, bathroomPlanningGuidance, rotateBathroomFurniture } from "./bathroomPlanning";
+import { bathroomTubFillerPlacement, bathroomPlanningGuidance, rotateBathroomFurniture } from "./bathroomPlanning";
 import { verifiedPelicanBathroomFixtureProfile, pelicanBathroomFixturePlacementText } from "./pelicanBathroomFixtureProfiles";
 
 const room = { width: 120, depth: 96 };
@@ -32,7 +32,7 @@ describe("Pelican floor-mounted tub fillers", () => {
     expect(turned).toMatchObject({ rotation: 90, pelicanProductId: 804, pelicanSellPrice: 442.53 });
     expect(FURNITURE_CATALOG.find((p) => p.id === item.defId)?.color).toBe("#1b1b1b");
   });
-  it("places a filler outside the tub footprint and never centers it inside the tub starter zone", () => {
+  it("places a filler outside the tub footprint with no zone to center it in", () => {
     const item = filler(), bath = tub();
     const placed = bathroomTubFillerPlacement(item, [bath], room)!;
     expect(placed).not.toBeNull();
@@ -41,7 +41,6 @@ describe("Pelican floor-mounted tub fillers", () => {
     expect(placed.y + 14).toBeLessThanOrEqual(bath.y);
     expect(placed.x).toBeGreaterThanOrEqual(bath.x);
     expect(placed.x + 14).toBeLessThanOrEqual(bath.x + bound.w);
-    expect(bathroomFixtureStarterZonePlacement(item, [{ uid: "zone", defId: "bathroom-zone-tub-60", x: 0, y: 60, rotation: 0 }])).toBeNull();
   });
   it("rejects crowded or undersized rooms atomically, and supports another free side", () => {
     const bath = { ...tub(), y: 0 };

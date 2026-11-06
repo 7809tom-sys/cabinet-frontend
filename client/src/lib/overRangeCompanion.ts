@@ -13,6 +13,7 @@
  * cannot be placed.
  */
 import {
+  BRIDGE_STOCK_HEIGHTS,
   bridgeHeightForWallHeight,
   cabinetWall,
   dim,
@@ -28,6 +29,7 @@ import {
   type RoomData,
 } from "./design";
 import type { DesignerReviewFinding } from "./designerReviewFindings";
+import { kitchenRuleNumber } from "./kitchenRuleParameters";
 
 /** What the designer asked for above the range. */
 export type OverRangeAnswer = "hood" | "microwave-bridge" | "open" | null | undefined;
@@ -65,6 +67,19 @@ function bridgeWidthCandidates(rangeWidthIn: number): number[] {
   return Array.from(new Set(candidates.filter((width) => width > 0)));
 }
 
+/** Width and height of a real bridge box, or null when the row is not one. */
+export function bridgeFamilyGeometry(cabinet: {
+  masterCode?: string | null;
+  description?: string | null;
+  subCategory?: string | null;
+  category?: string | null;
+  placement?: string | null;
+  width?: string | number | null;
+  height?: string | number | null;
+}): { width: number; height: number } | null {
+  return isUsableBridgeRow(cabinet as DesignCabinet);
+}
+
 function isUsableBridgeRow(cabinet: DesignCabinet): { width: number; height: number } | null {
   if (cabinet.placement !== "wall") return null;
   const normalized = (cabinet.masterCode ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
@@ -91,8 +106,13 @@ function isUsableBridgeRow(cabinet: DesignCabinet): { width: number; height: num
  *   3. the height that lands the bridge's top on the upper line, else the nearest
  *      real height that still clears the wall's ceiling.
  *
- * A frameless line sells 15⅛ or 17⅝ instead of 15 or 18, so height matching is
- * tolerant. Returns null only when the line genuinely sells no bridge box.
+ * The height comes from the run top line, not from a nominal bridge size: with
+ * 30" uppers (top 84") a microwave bridge at the 72" datum must be 12" tall, which
+ * is exactly W3012 for a 30" range. That is the owner's "12-inch wall cabinet above
+ * the range". A line that stores its uppers at 30¼" or its bridges at 17⅝" instead
+ * of 18" still gets the box whose top lands nearest that line.
+ *
+ * Returns null only when the line genuinely sells no bridge box.
  */
 export function overRangeBridgeFor(input: {
   rangeWidthIn: number;
@@ -110,7 +130,7 @@ export function overRangeBridgeFor(input: {
   if (rows.length === 0) return null;
 
   const wantedWidth = numberOrZero(input.rangeWidthIn);
-  const requiredHeight = bridgeHeightForWallHeight(input.wallCabinetHeightIn);
+  const requiredHeight = overRangeBridgeHeightFor(input.wallCabinetHeightIn, input.wallCatalog);
   const ceiling = Number(input.ceilingIn);
   const heightAllowed = (height: number) => !(Number.isFinite(ceiling) && ceiling > 0)
     || OVER_RANGE_MICROWAVE_BRIDGE_MOUNT_BOTTOM + height <= ceiling + 0.5;
@@ -125,6 +145,55 @@ export function overRangeBridgeFor(input: {
       || left.cabinet.masterCode.localeCompare(right.cabinet.masterCode)
       || left.cabinet.id - right.cabinet.id
     ))[0]?.cabinet ?? null;
+}
+
+/**
+ * The bridge height that puts the bridge top on the SAME line as the uppers beside
+ * the range, measured from the datum this bridge actually hangs from.
+ *
+ * A 30" upper run tops at 84", so a bridge on the 72" microwave datum is 12" tall —
+ * the W3012 the owner asks for. A 42" run tops at 96", so the same bridge is 24".
+ *
+ * The answer is always one of the real stock bridge heights (12/15/18/21/24), so a
+ * caller that has no catalog can still name a purchasable SKU. When the line sells
+ * its 30" class as 30¼" uppers, the run top moves to 84¼" and the nearest stock
+ * height (12") is still the right box — the bridge finishes a quarter inch proud of
+ * a nominal line, which is what the catalog offers.
+ */
+export function overRangeBridgeHeightFor(
+  wallCabinetHeightIn: number,
+  wallCatalog: readonly { placement?: string | null; width?: string | number | null; height?: string | number | null }[] = [],
+  bridgeBottomIn: number = OVER_RANGE_MICROWAVE_BRIDGE_MOUNT_BOTTOM,
+): number {
+  const runTop = overRangeUpperRunTop(wallCabinetHeightIn, wallCatalog)
+    ?? kitchenRuleNumber("wall_bottom_in") + wallCabinetHeightIn;
+  const required = runTop - bridgeBottomIn;
+  const nominal = bridgeHeightForWallHeight(wallCabinetHeightIn);
+  const target = required > 0 ? required : nominal;
+  return BRIDGE_STOCK_HEIGHTS.reduce((best, height) =>
+    Math.abs(height - target) < Math.abs(best - target) ? height : best,
+  );
+}
+
+/**
+ * The top line the ordinary uppers beside the range actually finish on. Read from
+ * the catalog's own wall rows for the requested class, so a 30¼" frameless upper
+ * reports 84¼" rather than the framed 84". Null when the line sells no upper near
+ * the request, which leaves the nominal ladder in charge.
+ */
+function overRangeUpperRunTop(
+  wallCabinetHeightIn: number,
+  wallCatalog: readonly { placement?: string | null; width?: string | number | null; height?: string | number | null }[],
+): number | null {
+  const heights = wallCatalog
+    .filter((row) => row.placement === "wall" && numberOrZero(row.width) > 0 && numberOrZero(row.height) > 0)
+    .map((row) => numberOrZero(row.height))
+    .filter((height) => Math.abs(height - wallCabinetHeightIn) <= 2.5);
+  if (heights.length === 0) return null;
+  const height = heights
+    .map((value) => Math.round(value * 1000) / 1000)
+    .sort((a, b) => Math.abs(a - wallCabinetHeightIn) - Math.abs(b - wallCabinetHeightIn) || a - b)[0]!;
+  return kitchenRuleNumber("wall_bottom_in") + height;
 }
 
 /**
@@ -145,7 +214,7 @@ export function overRangeBridgeOptions(input: {
     })
     .filter((entry): entry is { cabinet: DesignCabinet; width: number; height: number } => entry != null);
   const wantedWidth = numberOrZero(input.rangeWidthIn);
-  const requiredHeight = bridgeHeightForWallHeight(input.wallCabinetHeightIn);
+  const requiredHeight = overRangeBridgeHeightFor(input.wallCabinetHeightIn, input.wallCatalog);
   const ceiling = Number(input.ceilingIn);
   const heightFits = (height: number) => !(Number.isFinite(ceiling) && ceiling > 0)
     || OVER_RANGE_MICROWAVE_BRIDGE_MOUNT_BOTTOM + height <= ceiling + 0.5;

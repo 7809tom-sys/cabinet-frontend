@@ -1,0 +1,55 @@
+<!doctype html>
+<!--
+  Screenshot harness for the Countertop Fabrication Sheet.
+
+  Renders the real Designer panel (`CountertopFabricationSheetActions`) against a
+  real cabinet design built with the app's own geometry helpers, so the numbers in
+  the capture are the ones the Designer computes — not a mock.
+
+  Served by the Vite dev server at /dev/fabrication-sheet.html; used only by
+  e2e/fabrication-sheet-screenshot.spec.ts. Not part of the app bundle: no route
+  points at it and nothing imports it.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Countertop fabrication sheet</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #eef1f4; font-family: system-ui, sans-serif; }
+      #root { width: 100%; min-height: 100%; padding: 24px; box-sizing: border-box; }
+      .shell { max-width: 1180px; margin: 0 auto; display: grid; grid-template-columns: 1fr 420px; gap: 18px; align-items: start; }
+      .card { background: #fff; border-radius: 12px; box-shadow: 0 8px 24px rgba(15,23,42,0.10); padding: 16px 18px; }
+      .card h1 { margin: 0 0 2px; font-size: 16px; color: #0f172a; }
+      .card p.lead { margin: 0 0 14px; font-size: 12px; color: #64748b; line-height: 1.5; }
+      .panel-title { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: #0f172a; margin-bottom: 8px; }
+      .panel-wrap { border: 1px solid rgba(168,127,51,0.4); background: rgba(168,127,51,0.05); border-radius: 10px; padding: 10px; }
+      /* The price panel in the real Designer is a ~320px sidebar column. */
+      .sidebar { width: 320px; margin-top: 18px; background: #fff; border-radius: 12px; box-shadow: 0 8px 24px rgba(15,23,42,0.10); padding: 14px; }
+      .sidebar .panel-title { margin-bottom: 10px; }
+      .summary { font-size: 11px; color: #475569; line-height: 1.6; }
+      .summary strong { color: #0f172a; }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <div class="shell">
+        <div>
+          <div class="card">
+            <h1>Kitchen Designer — countertops</h1>
+            <p class="lead">A real 12' × 10' design with a back-wall run, a front-wall run with a sink base, and a peninsula cooktop. Everything the sheet shows is measured from these cabinets.</p>
+            <div style="font-size: 11px; color: #475569; line-height: 1.7" id="plan-summary"></div>
+          </div>
+          <div class="sidebar" data-testid="designer-sidebar">
+            <div class="panel-title"><span id="sidebar-icon"></span>Fabrication sheet</div>
+            <div id="panel-sidebar"></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="panel-title" id="panel-title">Fabrication sheet</div>
+          <div class="panel-wrap" id="panel"></div>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/fabricationSheetHarness.tsx"></script>
+  </body>
+</html>

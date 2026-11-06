@@ -91,14 +91,24 @@ export function AdminOrderListTotal({ order }: { order: AdminOrderMoneyInput }) 
   );
 }
 
-export default function AdminOrderStripeBreakdown({ order }: { order: AdminOrderMoneyInput }) {
+export default function AdminOrderStripeBreakdown({
+  order,
+  receiptAction,
+}: {
+  order: AdminOrderMoneyInput;
+  /** Optional control rendered beside the receipt status (e.g. "send order received email"). */
+  receiptAction?: React.ReactNode;
+}) {
   const breakdown = buildAdminOrderBreakdown(order);
   const identity = describeAdminOrderList(order);
   return (
     <section data-testid="admin-order-stripe-breakdown" aria-label="Order breakdown" className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-sm font-semibold">Order breakdown</h3>
-        <p className="text-[11px] text-muted-foreground" data-testid="admin-order-detail-receipt">{identity.receiptLabel}</p>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <p className="text-[11px] text-muted-foreground" data-testid="admin-order-detail-receipt">{identity.receiptLabel}</p>
+          {receiptAction}
+        </div>
       </div>
       <div className="overflow-x-auto rounded-lg border">
         <Table>

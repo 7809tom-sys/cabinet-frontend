@@ -12,10 +12,16 @@ import { toast } from "sonner";
 import App from "./App";
 import { getLoginUrl } from "./const";
 import { isUnauthorizedClientError, shouldRedirectToLoginOnError } from "./lib/authRedirect";
-import { fetchTrpcJson, TRPC_QUERY_METHOD_OVERRIDE } from "./lib/trpcTransport";
+import { createTabAuthFetch } from "./lib/trpcAuthFetch";
+import { TRPC_QUERY_METHOD_OVERRIDE } from "./lib/trpcTransport";
+import { installHistoryIndex } from "./lib/browserHistoryNav";
 import { supabase } from "./lib/supabase";
 import { apiUrl } from "./lib/apiBase";
 import "./index.css";
+
+// Start counting in-app history entries before the first navigation, so the
+// Designer's Back button knows an in-app click left a real page behind it.
+installHistoryIndex();
 
 const queryClient = new QueryClient();
 
@@ -61,18 +67,9 @@ const trpcHttpOptions = {
   url: apiUrl("/api/trpc"),
   transformer: superjson,
   methodOverride: TRPC_QUERY_METHOD_OVERRIDE,
-  async fetch(input: RequestInfo | URL, init?: RequestInit) {
-    // getSession() returns the cached session and refreshes an expired
-    // access token, so every request carries a currently valid token.
-    const { data } = await supabase.auth.getSession();
-    const token = data.session?.access_token;
-    const headers = new Headers(init?.headers);
-    const testToken = window.sessionStorage.getItem("cd.testAccountToken");
-    if (testToken) headers.set("x-cd-test-account", testToken);
-    if (token) headers.set("authorization", `Bearer ${token}`);
-    if (!token && !testToken) return fetchTrpcJson(input, init);
-    return fetchTrpcJson(input, { ...init, headers });
-  },
+  // Every request carries this tab's own access token as a bearer header, so
+  // two tabs signed in as different people reach the API as different people.
+  fetch: createTabAuthFetch(supabase.auth),
 };
 
 const trpcClient = trpc.createClient({

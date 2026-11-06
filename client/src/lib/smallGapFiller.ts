@@ -1,4 +1,4 @@
-import { kitchenRuleNumber } from "./kitchenRuleParameters";
+import { kitchenRuleNumber, kitchenRuleChoice, KITCHEN_RULE_PARAMETER_DEFAULTS } from "./kitchenRuleParameters";
 import {
 	STD,
 	PENINSULA_INSIDE_CORNER_CLEARANCE_IN,
@@ -26,19 +26,32 @@ import { islandFaceFitMeasure, islandOffsetForPlaced } from "@/lib/islandScene";
 import { isWallBlindCornerCabinet } from "@/lib/cabinetGraphics";
 
 const EDGE_EPSILON_IN = 0.001;
-/** Any positive measured seam may be field-cut; there is no minimum filler width. */
-export const SMALL_GAP_FILLER_MIN_IN = 0;
-/** A cabinet-to-cabinet seam up to six inches can be intentionally filled. */
-export const SMALL_GAP_FILLER_MAX_IN = 6;
+/**
+ * Narrowest filler worth cutting. The live value is
+ * `effectiveSmallGapFillerMinIn()`, so an admin can change it in Kitchen Rules.
+ */
+export const SMALL_GAP_FILLER_MIN_IN = KITCHEN_RULE_PARAMETER_DEFAULTS.filler_min_in;
+/** A cabinet-to-cabinet seam up to this width can be intentionally filled. */
+export const SMALL_GAP_FILLER_MAX_IN = KITCHEN_RULE_PARAMETER_DEFAULTS.filler_gap_max_in;
 /**
  * A leftover run gap at or below this width is filled immediately. Wider seams,
- * through the six-inch filler maximum, still ask where the filler should go.
+ * through the filler maximum, still ask where the filler should go.
  */
-export const AUTO_PLACE_FILLER_MAX_IN = 3;
+export const AUTO_PLACE_FILLER_MAX_IN = KITCHEN_RULE_PARAMETER_DEFAULTS.auto_place_filler_max_in;
 
-/** Saved Kitchen Rules value, or the 6 inch code default when none is stored. */
+/** Saved Kitchen Rules value, or the code default when no override is stored. */
 export function effectiveSmallGapFillerMaxIn(): number {
   return kitchenRuleNumber("filler_gap_max_in");
+}
+
+/** Narrowest seam that is still worth a filler board. */
+export function effectiveSmallGapFillerMinIn(): number {
+  return kitchenRuleNumber("filler_min_in");
+}
+
+/** Widest leftover that is filled with no question. */
+export function effectiveAutoPlaceFillerMaxIn(): number {
+  return kitchenRuleNumber("auto_place_filler_max_in");
 }
 /** Two pieces are available whenever both halves have a positive cut width. */
 export const SMALL_GAP_SPLIT_PIECE_MIN_IN = 0;
@@ -126,7 +139,9 @@ export function installableSmallGapRemainder(value: number): number | null {
   if (!Number.isFinite(value) || value <= EDGE_EPSILON_IN || value > effectiveSmallGapFillerMaxIn() + EDGE_EPSILON_IN) return null;
   const rounded = Math.round(value * 16) / 16;
   const normalized = rounded > EDGE_EPSILON_IN ? rounded : value;
-  return normalized > EDGE_EPSILON_IN && normalized <= effectiveSmallGapFillerMaxIn() + EDGE_EPSILON_IN ? normalized : null;
+  if (normalized <= EDGE_EPSILON_IN || normalized > effectiveSmallGapFillerMaxIn() + EDGE_EPSILON_IN) return null;
+  // A seam below the narrowest filler worth cutting is noise, not a board.
+  return normalized >= effectiveSmallGapFillerMinIn() - EDGE_EPSILON_IN ? normalized : null;
 }
 
 /** The optimal filler consumes the entire measured cabinet-to-cabinet seam. */
@@ -138,7 +153,27 @@ export function optimalSmallGapFillerCut(opportunity: Pick<SmallGapFillerOpportu
 export function shouldAutoPlaceLeftoverFiller(remaining: number): boolean {
   return Number.isFinite(remaining)
     && remaining > EDGE_EPSILON_IN
-    && remaining <= AUTO_PLACE_FILLER_MAX_IN + EDGE_EPSILON_IN;
+    && remaining <= effectiveAutoPlaceFillerMaxIn() + EDGE_EPSILON_IN;
+}
+
+/**
+ * The admin's answer to "what happens to a leftover opening". `cabinet-first`
+ * (the default) tries a real cabinet before any filler. `filler-first` fills the
+ * seam immediately, up to the widest seam that may be filled.
+ */
+export function fillerFirstPreference(): boolean {
+  return kitchenRuleChoice("filler_preference_order", ["cabinet-first", "filler-first"] as const, "cabinet-first") === "filler-first";
+}
+
+/**
+ * The one question every leftover asks: is this filler's job, or a real
+ * cabinet's? Reads the admin's preference so a single setting steers both the
+ * prompt and the automatic pass.
+ */
+export function leftoverWantsFiller(remaining: number): boolean {
+  if (!Number.isFinite(remaining) || remaining <= EDGE_EPSILON_IN) return false;
+  if (remaining > effectiveSmallGapFillerMaxIn() + EDGE_EPSILON_IN) return false;
+  return fillerFirstPreference() || remaining <= effectiveAutoPlaceFillerMaxIn() + EDGE_EPSILON_IN;
 }
 
 function gapCrossesWallOpening(openings: readonly WallOpening[], wall: WallSide, start: number, length: number) {

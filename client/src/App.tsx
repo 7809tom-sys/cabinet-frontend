@@ -11,6 +11,7 @@ import { StorefrontEmbed } from "@/components/storefront/StorefrontEmbed";
 import { StorefrontSocialIcons } from "@/components/storefront/StorefrontSocialIcons";
 import { StoreCornerMenu } from "@/components/storefront/StoreCornerMenu";
 import { GoogleAnalyticsTracker } from "@/components/GoogleAnalyticsTracker";
+import DesignerHistoryNav from "@/components/design/DesignerHistoryNav";
 import Home from "@/pages/Home";
 import NotFound from "@/pages/NotFound";
 import { lazy, Suspense, useEffect } from "react";
@@ -59,12 +60,14 @@ const CheckoutCancelled = lazy(() => import("@/pages/CheckoutCancelled"));
 const Admin = lazy(() => import("@/pages/Admin"));
 const AdminOrderPage = lazy(() => import("@/pages/AdminOrderPage"));
 const AdminCatalogImport = lazy(() => import("@/pages/AdminCatalogImport"));
+const AdminHelperRequestJoin = lazy(() => import("@/pages/AdminHelperRequestJoin"));
 const Storefront = lazy(() => import("@/pages/Storefront"));
 const StorefrontPreview = lazy(() => import("@/pages/StorefrontPreview"));
 const AffiliateDashboard = lazy(() => import("@/pages/AffiliateDashboard"));
 const ContractorDashboard = lazy(() => import("@/pages/ContractorDashboard"));
 const Cart = lazy(() => import("@/pages/Cart"));
 const VendorPortal = lazy(() => import("@/pages/VendorPortal"));
+const CatalogDensityPreview = lazy(() => import("@/pages/CatalogDensityPreview"));
 const VendorClosetStudio = lazy(() => import("@/pages/VendorClosetStudio"));
 const PhotoToCart = lazy(() => import("@/pages/PhotoToCart"));
 const FixturePhotoToCart = lazy(() => import("@/pages/FixturePhotoToCart"));
@@ -101,6 +104,8 @@ const ReturnPolicy = lazy(() => import("@/pages/ReturnPolicy"));
 const PrivacyPolicy = lazy(() => import("@/pages/PrivacyPolicy"));
 const Terms = lazy(() => import("@/pages/Terms"));
 const CrmMondayPreview = lazy(() => import("@/pages/CrmMondayPreview"));
+const CrmCustomerDesignPreview = lazy(() => import("@/pages/CrmCustomerDesignPreview"));
+const CrmCustomerLookupPreview = lazy(() => import("@/pages/CrmCustomerLookupPreview"));
 const InstallationEstimateDocument = lazy(() => import("@/pages/InstallationEstimateDocument"));
 const Hardware = lazy(() => import("@/pages/Hardware"));
 const AffiliateGuide = lazy(() => import("@/pages/AffiliateGuide"));
@@ -115,12 +120,11 @@ function PageLoader() {
 
 function AppLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
-  // The sales CRM and incoming-orders views already name the workspace at the
-  // top of the page, so the purple admin strip (and its "Admin Panel" link back
-  // to where you already are) is redundant there.
+  // The admin panel names the workspace in its own header, so the purple admin
+  // strip (and its "Admin Panel" link back to where you already are) is skipped
+  // on every /admin route.
   const showAdminEditModeBar = !hideAdminEditModeBarForRoute(
     location || window.location.pathname,
-    window.location.search,
   );
   return (
     <div className="min-h-screen flex flex-col">
@@ -236,15 +240,23 @@ function DesignerRoute() {
       </Suspense>
     </ErrorBoundary>
   );
+  // Back/Forward sits above the workspace, not inside it, so it stays reachable
+  // while the email gate is still on screen.
+  const withHistoryNav = (
+    <div className="flex h-full min-h-0 flex-1 flex-col">
+      <DesignerHistoryNav fallbackHref={affiliateSlug ? affiliateStorefrontPath(affiliateSlug) : "/"} />
+      <div className="min-h-0 flex-1 overflow-hidden">{designer}</div>
+    </div>
+  );
 
   if (affiliateSlug) {
-    return <AffiliateShell slug={affiliateSlug} fullHeight hideAdminEditModeBar>{designer}</AffiliateShell>;
+    return <AffiliateShell slug={affiliateSlug} fullHeight hideAdminEditModeBar>{withHistoryNav}</AffiliateShell>;
   }
 
   return (
     <div className="flex flex-col overflow-hidden" style={{ height: "100dvh" }}>
       <TopNav />
-      <div className="flex-1 min-h-0 overflow-hidden">{designer}</div>
+      {withHistoryNav}
     </div>
   );
 }
@@ -656,6 +668,30 @@ export default function App() {
           </Suspense>
         </Route>
 
+        {/* A share link is opened by its recipient, who may follow an
+            affiliate-branded host. That host rewrites every non-store path into
+            /store/:slug/..., so keep the shared views reachable inside the
+            storefront tree too instead of falling through to a 404. */}
+        <Route path="/store/:slug/design/session/:token">
+          {(params) => (
+            <AffiliateShell slug={params.slug}>
+              <Suspense fallback={<PageLoader />}>
+                <DesignSession />
+              </Suspense>
+            </AffiliateShell>
+          )}
+        </Route>
+
+        <Route path="/store/:slug/3d/:token">
+          {(params) => (
+            <AffiliateShell slug={params.slug}>
+              <Suspense fallback={<PageLoader />}>
+                <SharedRoom3D token={params.token} />
+              </Suspense>
+            </AffiliateShell>
+          )}
+        </Route>
+
         <Route path="/design">
           <DesignerRoute />
         </Route>
@@ -809,6 +845,18 @@ export default function App() {
           </AppLayout>
         </Route>
 
+        {/* "Join the design" from the admin designer-helper pop-up: records who
+            joined and when, then opens the customer's saved design. */}
+        <Route path="/admin/helper-request/:id">
+          {(params) => (
+            <AppLayout>
+              <Suspense fallback={<PageLoader />}>
+                <AdminHelperRequestJoin requestId={Number(params.id)} />
+              </Suspense>
+            </AppLayout>
+          )}
+        </Route>
+
         <Route path="/distributor">
           <DistributorPortalRedirect />
         </Route>
@@ -819,6 +867,16 @@ export default function App() {
               <VendorClosetStudio />
             </Suspense>
           </div>
+        </Route>
+
+        {/* Dev-only screenshot harness for the vendor catalog density work. It
+            renders the same table markup the real catalog uses. */}
+        <Route path="/catalog-density-preview">
+          {() => (
+            <Suspense fallback={<PageLoader />}>
+              <CatalogDensityPreview compact={new URLSearchParams(window.location.search).get("compact") === "1"} />
+            </Suspense>
+          )}
         </Route>
 
         <Route path="/vendor">
@@ -1071,6 +1129,22 @@ export default function App() {
           <Route path="/dev/crm-preview">
             <Suspense fallback={<PageLoader />}>
               <CrmMondayPreview />
+            </Suspense>
+          </Route>
+        )}
+
+        {import.meta.env.DEV && (
+          <Route path="/dev/crm-customer-designs">
+            <Suspense fallback={<PageLoader />}>
+              <CrmCustomerDesignPreview />
+            </Suspense>
+          </Route>
+        )}
+
+        {import.meta.env.DEV && (
+          <Route path="/dev/crm-customer-lookup">
+            <Suspense fallback={<PageLoader />}>
+              <CrmCustomerLookupPreview />
             </Suspense>
           </Route>
         )}

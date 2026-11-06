@@ -19,12 +19,15 @@ import {
 import { findOpenBaseGaps, formatGapInches } from "@/lib/openBaseGaps";
 import { reviewKitchenAdjacency, type AdjacencySkip } from "@/lib/kitchenAdjacency";
 import type { KitchenUsageProfile } from "@/lib/kitchenUsage";
+import { kitchenGuidanceRules } from "@/lib/kitchenRuleGuidance";
 
 export type PreSavePlanReviewAction =
   | { kind: "filler"; opportunity: SmallGapFillerOpportunity; fillerCode: string }
   | { kind: "refrigerator"; refrigeratorUid: string; replaceCabinetUid?: string; replaceCabinetCode?: string }
   | { kind: "issue"; cabinetUid: string }
-  | { kind: "adjacency"; ruleId: string };
+  | { kind: "adjacency"; ruleId: string }
+  /** A custom guidance rule an admin wrote. Nothing to apply; the person reads it. */
+  | { kind: "guidance"; settingKey: string };
 
 export type PreSavePlanReviewFinding = {
   id: string;
@@ -183,6 +186,24 @@ export function buildPreSavePlanReview({
       description: entry.description,
       actionLabel: entry.severity === "suggestion" ? "Accept suggestion" : "Review placement",
       action: { kind: "adjacency", ruleId: entry.ruleId },
+    });
+  }
+
+  /**
+   * Guidance rules: what an admin wrote that no code executes. They are shown as
+   * a named line on the same reviewable list so a person reads them before the
+   * plan is ordered. They are not warnings, so they never claim a plan is
+   * broken; they are recommendations a person accepts or ignores.
+   */
+  const guidance = kitchenGuidanceRules();
+  for (const rule of guidance) {
+    findings.push({
+      id: `guidance:${rule.settingKey}`,
+      severity: "recommendation",
+      title: rule.title,
+      description: rule.text || rule.title,
+      actionLabel: "Acknowledge",
+      action: { kind: "guidance", settingKey: rule.settingKey },
     });
   }
 

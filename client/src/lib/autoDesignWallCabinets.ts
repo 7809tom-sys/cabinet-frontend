@@ -2,7 +2,7 @@ import { hasAefPrintedGeometry, isFramelessDeepWallCabinet } from "@shared/aefFr
 import { AEF_SLAB_DOOR_THICKNESS_IN } from "./aefEndPanelStock";
 import { planWallWidthsOverBase, coverCatalogSpan } from "./autoDesignGapSolver";
 import {
-  AUTO_DESIGN_FILLER_MAX_IN, SEAM_MIN_IN, findAutoDesignSeams, fillersForSeam, intersectWithCoverage, lowerCoverageOnWall, upperReservedZones,
+  autoDesignFillerMaxIn, SEAM_MIN_IN, findAutoDesignSeams, fillersForSeam, intersectWithCoverage, lowerCoverageOnWall, upperReservedZones,
   type AutoDesignSeam,
 } from "./autoDesignSeamFillers";
 import { buildRequiredBlindCornerFiller, requiresConfiguredBlindCornerFiller } from "./blindCornerRequiredFiller";
@@ -73,7 +73,7 @@ const MIN_UPPER_WIDTH_IN = 9;
  */
 function wallRunCabinets(length: number, standard: readonly DesignCabinet[]): { cabinets: DesignCabinet[]; remainder: number } {
   const widths = standard.map((row) => dim(row.width, 0)).filter((width) => width > 0);
-  const cover = coverCatalogSpan(length, widths, AUTO_DESIGN_FILLER_MAX_IN);
+  const cover = coverCatalogSpan(length, widths, autoDesignFillerMaxIn());
   const cabinets: DesignCabinet[] = [];
   for (const width of cover.widths) {
     const row = standard.find((candidate) => Math.abs(dim(candidate.width, 0) - width) <= COLLISION_EPSILON_IN);
@@ -364,13 +364,13 @@ export function buildAutoDesignWallCabinets(input: {
         ? { widths: [piece.span], remainder: 0 }
         : equalWidths
           ? { widths: equalWidths, remainder: 0 }
-          : coverCatalogSpan(piece.span, widths, AUTO_DESIGN_FILLER_MAX_IN);
+          : coverCatalogSpan(piece.span, widths, autoDesignFillerMaxIn());
       const sources = cover.widths
         .map((width) => standard.find((row) => Math.abs(dim(row.width, 0) - width) <= COLLISION_EPSILON_IN))
         .filter((row): row is DesignCabinet => row != null);
       const covered = sources.reduce((sum, source) => sum + dim(source.width, 0), 0);
       const shortfall = piece.span - covered;
-      if (!sources.length || shortfall > AUTO_DESIGN_FILLER_MAX_IN + COLLISION_EPSILON_IN || shortfall < -COLLISION_EPSILON_IN) {
+      if (!sources.length || shortfall > autoDesignFillerMaxIn() + COLLISION_EPSILON_IN || shortfall < -COLLISION_EPSILON_IN) {
         working = before;
         additions.splice(addedBefore);
         skipped.push(`${lower.masterCode}: no source-sized ${height}″ wall cabinet matches its ${piece.span}″ run.`);
@@ -414,10 +414,10 @@ export function buildAutoDesignWallCabinets(input: {
         if (length >= MIN_UPPER_WIDTH_IN - COLLISION_EPSILON_IN && standard.length) {
           const widths = standard.map((row) => dim(row.width, 0)).filter((width) => width > 0).sort((a, b) => b - a);
           let guard = 0;
-          while (region.end - along > AUTO_DESIGN_FILLER_MAX_IN + COLLISION_EPSILON_IN && guard < 40) {
+          while (region.end - along > autoDesignFillerMaxIn() + COLLISION_EPSILON_IN && guard < 40) {
             guard += 1;
             const remain = region.end - along;
-            const cover = coverCatalogSpan(remain, widths, AUTO_DESIGN_FILLER_MAX_IN);
+            const cover = coverCatalogSpan(remain, widths, autoDesignFillerMaxIn());
             const candidates = [...new Set([...(cover.widths[0] != null ? [cover.widths[0]] : []), ...widths.filter((width) => width <= remain + COLLISION_EPSILON_IN)])];
             let seated = false;
             for (const width of candidates) {
@@ -437,7 +437,7 @@ export function buildAutoDesignWallCabinets(input: {
           }
           remainder = Math.max(0, region.end - along);
         }
-        if (remainder >= SEAM_MIN_IN && remainder <= AUTO_DESIGN_FILLER_MAX_IN + COLLISION_EPSILON_IN && allowFiller) {
+        if (remainder >= SEAM_MIN_IN && remainder <= autoDesignFillerMaxIn() + COLLISION_EPSILON_IN && allowFiller) {
           const fromRight = leftNeighbor == null && rightNeighbor != null && placedHere.length > 0;
           const start = placedHere.length ? (fromRight ? region.start : along) : region.start;
           const end = start + remainder;

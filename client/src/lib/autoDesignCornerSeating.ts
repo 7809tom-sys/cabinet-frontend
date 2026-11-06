@@ -1,5 +1,5 @@
 import { buildRequiredBlindCornerFiller, requiresConfiguredBlindCornerFiller } from "./blindCornerRequiredFiller";
-import { REFRIGERATOR_SHIFT_LIMIT_IN, measuredRefrigeratorCornerShiftLimitIn } from "./designerLayoutRules";
+import { measuredRefrigeratorCornerShiftLimitIn, refrigeratorShiftLimitIn } from "./designerLayoutRules";
 import type { CatalogFillerCandidate } from "./catalogFiller";
 import {
   BLIND_CORNER_FILLER_WIDTH_IN, COLLISION_EPSILON_IN, appendCollisionFreePlacements, blindCornerDoorSide, blindCornerPullPlacement, isBlindCorner,
@@ -229,7 +229,7 @@ export function seatAutoDesignCorner(input: {
   const measuredIds = new Set(input.measuredApplianceUids ?? []);
   const applianceCap = (group: Group) => {
     const kindCap = group.kind === "refrigerator"
-      ? (measuredIds.has(group.main.uid) ? measuredRefrigeratorCornerShiftLimitIn() : REFRIGERATOR_SHIFT_LIMIT_IN)
+      ? (measuredIds.has(group.main.uid) ? measuredRefrigeratorCornerShiftLimitIn() : refrigeratorShiftLimitIn())
       : AUTO_DESIGN_MAX_APPLIANCE_NUDGE_IN;
     return Math.max(0, Math.min(input.maxNudgeIn ?? kindCap, kindCap));
   };

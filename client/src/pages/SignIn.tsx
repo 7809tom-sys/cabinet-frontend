@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { supabase } from "@/lib/supabase";
 import { isSafeSiteReturnPath } from "@/const";
+import { clearTabSessionHints } from "@/lib/tabSession";
 import { decideSignInNavigation, loadSignInRedirectHistory, saveSignInRedirectHistory } from "@/lib/signInRedirect";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -134,7 +135,7 @@ export default function SignIn({ portal: portalProp }: { portal?: PortalChoice }
         return;
       }
       setProfileUnavailable(false);
-      window.sessionStorage.removeItem("cd.testAccountToken");
+      clearTabSessionHints();
       const { destination: serverDestination } = await utils.auth.signInDestination.fetch({ returnPath: requestedReturn(), portal });
       const now = Date.now();
       const decision = decideSignInNavigation({
