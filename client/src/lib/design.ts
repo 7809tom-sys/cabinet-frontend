@@ -15704,7 +15704,7 @@ export type FurnitureShape = "rect" | "round";
 export interface FurnitureDef {
   id: string;
   name: string;
-  category: "table" | "chair" | "stool" | "bench" | "other" | "bathroom-fixture" | "bathroom-zone";
+  category: "table" | "chair" | "stool" | "bench" | "other" | "bathroom-fixture";
   collection?: "classic" | "modern";
   shape: FurnitureShape;
   /** Width in inches (diameter for round items) */
@@ -15740,14 +15740,6 @@ export const FURNITURE_CATALOG: FurnitureDef[] = [
   { id: "modern-media-console", name: 'Modern Media Console 72"', category: "other", collection: "modern", shape: "rect",  w: 72, d: 18, clearance: 18, color: "#3f454c", height: 24 },
   { id: "modern-floor-lamp",    name: "Modern Floor Lamp",        category: "other", collection: "modern", shape: "round", w: 14, d: 14, clearance: 12, color: "#c09b58", height: 64 },
   { id: "modern-planter",       name: "Modern Planter",            category: "other", collection: "modern", shape: "round", w: 18, d: 18, clearance: 12, color: "#5b7b67", height: 24 },
-  // Non-cartable, movable planning zones used only by the Bathroom starter.
-  // These are intentionally not substitutes for actual source-priced fixtures.
-  { id: "bathroom-zone-vanity-60", name: 'Vanity zone · 60"', category: "bathroom-zone", shape: "rect", w: 60, d: 24, clearance: 0, color: "#2f6690" },
-  { id: "bathroom-zone-toilet", name: "Toilet zone", category: "bathroom-zone", shape: "rect", w: 30, d: 54, clearance: 0, color: "#79654d" },
-  // Holds the complete source envelope for every supported 60-inch Pelican tub
-  // after the placement helper orients its 60-inch length along this zone. It
-  // remains a movable visual-planning zone, never an installation opening.
-  { id: "bathroom-zone-tub-60", name: 'Tub zone · 60" × 36"', category: "bathroom-zone", shape: "rect", w: 60, d: 36, clearance: 0, color: "#5a879d" },
   ...VERIFIED_PELICAN_BATHROOM_FIXTURE_PROFILES.map((profile): FurnitureDef => ({
     id: profile.id,
     name: profile.name,
@@ -15768,8 +15760,6 @@ export interface PlacedFurniture {
   y: number;
   rotation: number;
   /** Source catalog identity for a placed, price-locked Pelican bathroom fixture. */
-  /** User-sized planning zone only; never a resize of a manufacturer product. */
-  planningZoneSize?: { version: 1; widthIn: number; depthIn: number };
   pelicanCode?: string;
   pelicanProductId?: number;
   pelicanProductName?: string;
@@ -15786,6 +15776,32 @@ export function makeFurniture(defId: string, x: number, y: number): PlacedFurnit
     y,
     rotation: 0,
   };
+}
+
+/**
+ * Loads a saved furniture list without ever failing on data this build no
+ * longer understands. Plans created by the old bathroom "movable zones"
+ * starter persist `bathroom-zone-*` rows and a `planningZoneSize` override;
+ * both are dropped here so the real cabinets and fixtures still load and move.
+ */
+export function restoredFurniture(rows: unknown): PlacedFurniture[] {
+  if (!Array.isArray(rows)) return [];
+  const restored: PlacedFurniture[] = [];
+  for (const row of rows) {
+    if (!row || typeof row !== "object") continue;
+    const candidate = row as PlacedFurniture;
+    if (typeof candidate.defId !== "string" || candidate.defId.startsWith("bathroom-zone-")) continue;
+    if (!FURNITURE_CATALOG.some((definition) => definition.id === candidate.defId)) continue;
+    const { planningZoneSize: _legacyZoneSize, ...rest } = candidate as PlacedFurniture & { planningZoneSize?: unknown };
+    restored.push({
+      ...rest,
+      uid: typeof candidate.uid === "string" && candidate.uid ? candidate.uid : `furn-restored-${restored.length}`,
+      x: Number.isFinite(candidate.x) ? candidate.x : 0,
+      y: Number.isFinite(candidate.y) ? candidate.y : 0,
+      rotation: Number.isFinite(candidate.rotation) ? candidate.rotation : 0,
+    });
+  }
+  return restored;
 }
 
 /**
@@ -15819,14 +15835,9 @@ export function furnitureFootprint(f: PlacedFurniture, def: FurnitureDef): { w: 
   return size;
 }
 
-/** Zone overrides are local to a placement and cannot alter actual product sizes. */
 export function resolvedFurnitureDimensions(f: PlacedFurniture, definition?: FurnitureDef): { w: number; d: number } | null {
   const def = definition ?? FURNITURE_CATALOG.find((item) => item.id === f.defId);
   if (!def) return null;
-  const size = f.planningZoneSize;
-  if (def.category === "bathroom-zone" && size?.version === 1 && Number.isFinite(size.widthIn) && Number.isFinite(size.depthIn) && size.widthIn > 0 && size.depthIn > 0) {
-    return { w: size.widthIn, d: size.depthIn };
-  }
   return { w: def.w, d: def.d };
 }
 

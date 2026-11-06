@@ -300,9 +300,9 @@ describe("source-measured Pelican bathroom fixtures", () => {
     expect(fixture?.children.some((child) => child.userData.pelicanBathroomFixturePart === "shower-door-rail")).toBe(true);
   });
 
-  it("keeps Bathroom starter planning zones out of the 3D presentation", () => {
+  it("ignores an unknown furniture definition left in an older saved plan", () => {
     const root = new THREE.Group();
-    addFurniture(root, { uid: "bath-zone", defId: "bathroom-zone-vanity-60", x: 0, y: 0, rotation: 0 });
+    addFurniture(root, { uid: "legacy-zone", defId: "bathroom-zone-vanity-60", x: 0, y: 0, rotation: 0 });
     expect(root.children).toHaveLength(0);
   });
 });
