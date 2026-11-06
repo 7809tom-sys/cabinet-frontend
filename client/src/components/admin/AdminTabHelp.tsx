@@ -148,8 +148,8 @@ const TAB_HELP: Record<string, { en: string; zh: string; link?: { label: string;
     zh: "管理联盟行销中心：脚本、指南、视频、私密 PDF 和社交贴文。未发布的草稿对联盟隐藏。",
   },
   "affiliate-literature": {
-    en: "Store affiliate-ready sales brochures, pricing guides, training documents, and other literature here. Keep drafts private until reviewed, then publish approved documents for future affiliate access.",
-    zh: "在此儲存聯盟準備好的銷售手冊、定價指南、培訓文件及其他資料。審核前保持草稿私密，批准後再發布供聯盟存取。",
+    en: "Every document here is internal and admin-only until you tick Affiliate library beside it. Ticking shows it to signed-in affiliates in their portal library; unticking takes it back. Neither state makes a document public. Every tick records who changed it and when.",
+    zh: "此處每份文件預設為內部文件，僅限管理員檢視，直到您在旁邊勾選「聯盟圖書館」。勾選後，已登入的聯盟會員會在其入口網站的圖書館看到它；取消勾選則收回。兩種狀態都不會讓文件公開。每次勾選都會記錄操作者與時間。",
   },
   "designer-availability": {
     en: "Toggle which cabinets appear in the kitchen designer tool. Enable or disable individual cabinets from the designer palette.",
