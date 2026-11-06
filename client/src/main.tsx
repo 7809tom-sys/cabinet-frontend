@@ -13,9 +13,14 @@ import App from "./App";
 import { getLoginUrl } from "./const";
 import { isUnauthorizedClientError, shouldRedirectToLoginOnError } from "./lib/authRedirect";
 import { fetchTrpcJson, TRPC_QUERY_METHOD_OVERRIDE } from "./lib/trpcTransport";
+import { installHistoryIndex } from "./lib/browserHistoryNav";
 import { supabase } from "./lib/supabase";
 import { apiUrl } from "./lib/apiBase";
 import "./index.css";
+
+// Start counting in-app history entries before the first navigation, so the
+// Designer's Back button knows an in-app click left a real page behind it.
+installHistoryIndex();
 
 const queryClient = new QueryClient();
 
