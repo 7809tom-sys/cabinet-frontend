@@ -34,7 +34,7 @@ that makes "admin in one tab, affiliate in another" possible at all.
 | Cross-tab relay | same file, `detachCrossTabAuthBroadcast` | The default client opens a `BroadcastChannel` on the storage key and replays `SIGNED_IN` / `SIGNED_OUT` / `TOKEN_REFRESHED` into every tab. It is closed at startup, which is exactly what the library's own `dispose()` does. |
 | API identity | `client/src/lib/trpcAuthFetch.ts` | Every tRPC request carries **this tab's** access token as `Authorization: Bearer <jwt>`. `getSession()` refreshes an expired access token first, so the header is current. |
 | Sign-out | `client/src/_core/hooks/useAuth.ts`, `client/src/pages/SignIn.tsx` | `supabase.auth.signOut({ scope: "local" })`, so signing out of one tab never revokes the person's other sessions or devices. |
-| Per-tab hints | `client/src/lib/tabSession.ts` | The test-account token and the `?returnTo` redirect history already lived in `sessionStorage`; they are cleared through one helper. |
+| Per-tab hints | `client/src/lib/tabSession.ts` | The test-account token and the `?returnTo` redirect history already lived in `sessionStorage`; the token is cleared through one helper on every sign-out path. |
 
 Nothing is stored in `localStorage` for authentication any more, and no authentication
 cookie is read or written by the frontend.
