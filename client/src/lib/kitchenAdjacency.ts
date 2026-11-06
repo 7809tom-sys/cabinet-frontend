@@ -1,6 +1,7 @@
 import {
   COLLISION_EPSILON_IN,
   STD,
+  cabinetFrontIn,
   cabinetWall,
   isFillerItem,
   isFullHeightCabinet,
@@ -8,6 +9,7 @@ import {
   isRangeOrOven,
   isRefrigerator,
   isSinkBaseCabinet,
+  seatCabinetFrontIn,
   wallLength,
   wallPlacementAtUnbounded,
   wallRunOffset,
@@ -234,12 +236,31 @@ export function separateRangeAndRefrigerator(input: {
   const spans = () => placed.map((item) => spanOf(item, input.room)).filter((span): span is Span => span != null);
   const shiftItem = (uid: string, delta: number) => {
     if (Math.abs(delta) <= 0.05) return;
+    // A refrigerator is a bay, not a lone box: its end panels and the cabinet
+    // above must slid with it. Moving only the appliance left the panels and the
+    // bridge behind, so the refrigerator poked through its own end panel and out
+    // of the row (Tom, Nov 6 2026). Every member keeps its own front offset, so a
+    // pulled-forward bridge stays flush with the panel.
+    const groupUids = new Set<string>([uid]);
+    for (const item of placed) {
+      if (item.refrigeratorAssemblyId === uid) groupUids.add(item.uid);
+    }
+    const facing = new Map<string, number>();
+    for (const item of placed) {
+      if (!groupUids.has(item.uid)) continue;
+      const wall = cabinetWall(item, input.room);
+      if (wall) facing.set(item.uid, cabinetFrontIn(item, wall, input.room));
+    }
     placed = placed.map((item) => {
-      if (item.uid !== uid) return item;
+      if (!groupUids.has(item.uid)) return item;
       const wall = cabinetWall(item, input.room) as WallSide;
       const start = wallRunOffset(item, wall, input.room) + delta;
       const spot = wallPlacementAtUnbounded(start, wallRunSpan(item, wall, input.room), Math.max(0, item.depth), wall, input.room, item.peninsulaSide);
-      return { ...item, ...spot, wallId: spot.wallId ?? item.wallId, wallOffset: spot.wallOffset ?? start };
+      const seated = { ...item, ...spot, wallId: spot.wallId ?? item.wallId, wallOffset: spot.wallOffset ?? start };
+      const faceIn = facing.get(item.uid);
+      return faceIn != null && Math.abs(faceIn - Math.max(0, Number(item.depth) || 0)) > COLLISION_EPSILON_IN
+        ? seatCabinetFrontIn(seated, wall, faceIn, input.room)
+        : seated;
     });
     const existing = moves.find((move) => move.uid === uid);
     if (existing) existing.deltaAlongIn += delta;

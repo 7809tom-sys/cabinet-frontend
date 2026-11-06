@@ -27,6 +27,29 @@ export type OverApplianceWallMount = {
 
 const OVERLAP_IN = 0.02;
 
+/**
+ * The run's upper top line: the 54-inch bottom datum plus the height of the
+ * straight wall cabinets already on this plan. A refrigerator bridge tops out
+ * here so it lines up with the other uppers rather than with the appliance.
+ */
+function upperLineTopIn(room: RoomData, placed: readonly PlacedCabinet[]): number {
+  const heights = placed
+    .filter((item) => item.placement === "wall"
+      && item.refrigeratorAssemblyRole !== "bridge"
+      && !item.stackedOnCabinetUid
+      && !item.islandFace
+      && Number(item.height) > 0)
+    .map((item) => Number(item.height));
+  if (!heights.length) return 54 + 30;
+  // The run's own class is the most common tall-ish upper, never a short bridge.
+  const runHeights = heights.filter((height) => height >= 24);
+  const pool = runHeights.length ? runHeights : heights;
+  const counts = new Map<number, number>();
+  for (const height of pool) counts.set(height, (counts.get(height) ?? 0) + 1);
+  const commonest = [...counts.entries()].sort((a, b) => b[1] - a[1] || b[0] - a[0])[0]!;
+  return 54 + commonest[0];
+}
+
 function isHoodAppliance(item: PlacedCabinet): boolean {
   if (item.placement !== "appliance") return false;
   const code = (item.masterCode || "").toUpperCase();
@@ -81,7 +104,15 @@ export function overApplianceWallMount(
 
   const fridge = below.find((item) => isRefrigerator(item));
   if (fridge) {
-    const mountBottom = Math.max(OVER_APPLIANCE_UPPER_MOUNT_BOTTOM_IN, refrigeratorSurroundElevation(room, topOf(fridge), height).mountBottom);
+    // Owner rule (Tom, Nov 6 2026): the cabinet above a refrigerator lines up
+    // with the other uppers — its TOP lands on the running upper line — and its
+    // bottom keeps the two-inch appliance clearance. Hanging it from the 72-inch
+    // datum instead left a short bridge topping above the run it belongs to.
+    const clearanceBottomIn = refrigeratorSurroundElevation(room, topOf(fridge), height).mountBottom;
+    const topAlignedBottomIn = upperLineTopIn(room, placed) - height;
+    const mountBottom = topAlignedBottomIn >= clearanceBottomIn - 0.01
+      ? topAlignedBottomIn
+      : clearanceBottomIn;
     return finish("refrigerator", mountBottom, fridge.uid);
   }
   if (below.some(isHoodAppliance)) return null;
@@ -101,6 +132,10 @@ export function normalizeOverApplianceWallMounts(placed: PlacedCabinet[], room: 
   let changed = false;
   const next = placed.map((cabinet) => {
     if (cabinet.mountBottomAdjusted) return cabinet;
+    // A refrigerator bridge is height-ruled by its own bay (top on the run line,
+    // bottom on the appliance clearance). Re-running the generic over-appliance
+    // datum here is what re-hung it below the two-inch clearance.
+    if (cabinet.refrigeratorAssemblyRole === "bridge") return cabinet;
     const mount = overApplianceWallMount(cabinet, placed, room);
     if (!mount) return cabinet;
     const attach = mount.refrigeratorUid != null && cabinet.refrigeratorAssemblyId == null;

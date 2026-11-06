@@ -4625,12 +4625,21 @@ export function fitExplicitRefrigeratorOptionPlacements(
       room,
       item.peninsulaSide,
     );
-    return {
+    // A cabinet deliberately pulled forward of the wall plane (the over-fridge
+    // bridge seated flush with its end panel) keeps that front offset: only its
+    // along-wall coordinate may change here. `wallPlacementAtUnbounded` always
+    // starts the box at the wall, so passing `spot` through dropped the bridge
+    // back onto the wall — the exact failure of the depth rule.
+    const faceIn = cabinetFrontIn(item, side, room);
+    const seated = {
       ...item,
       ...spot,
       wallId: spot.wallId ?? item.wallId,
       wallOffset: spot.wallOffset ?? item.wallOffset,
     };
+    return Math.abs(faceIn - Math.max(0, Number(item.depth) || 0)) > COLLISION_EPSILON_IN
+      ? seatCabinetFrontIn(seated, side, faceIn, room)
+      : seated;
   };
   const withinRunAndRoom = (item: PlacedCabinet): boolean => {
     const start = alongStart(item);
@@ -10611,6 +10620,50 @@ export function wallRunJoinAt(frame: WallRunFrame, at: "start" | "end", room: Ro
   }
   return null;
 }
+/**
+ * Distance from a wall's plane to the front face of a piece seated on it.
+ * Positive is into the room; a piece left at the wall plane reports its depth.
+ */
+export function cabinetFrontIn(item: PlacedCabinet, wallId: WallSide | string, room: RoomData): number {
+  const depth = Math.max(0, Number(item.depth) || 0);
+  const frame = wallRunFrame(wallId, room);
+  if (!frame) return depth;
+  const foot = placedFootprint(item);
+  const center = { x: Number(item.x) + foot.w / 2, y: Number(item.y) + foot.d / 2 };
+  const across = (center.x - frame.start.x) * frame.inward.x + (center.y - frame.start.y) * frame.inward.y;
+  return across + depth / 2;
+}
+
+/** How far a piece has been pulled forward of its wall plane (never negative). */
+export function cabinetFrontOffsetIn(item: PlacedCabinet, wallId: WallSide | string, room: RoomData): number {
+  return Math.max(0, cabinetFrontIn(item, wallId, room) - Math.max(0, Number(item.depth) || 0));
+}
+
+/**
+ * Re-seat a cabinet so its front face lands exactly `faceIn` inches from the
+ * wall plane. Depth, along-wall position and run identity are unchanged; only
+ * the perpendicular offset moves. A face at or behind the wall plane sits the
+ * box back on the wall.
+ */
+export function seatCabinetFrontIn(
+  item: PlacedCabinet,
+  wallId: WallSide | string,
+  faceIn: number,
+  room: RoomData,
+): PlacedCabinet {
+  const frame = wallRunFrame(wallId, room);
+  if (!frame) return item;
+  const depth = Math.max(0, Number(item.depth) || 0);
+  const inset = Math.max(0, faceIn - depth);
+  const current = cabinetFrontOffsetIn(item, wallId, room);
+  if (Math.abs(current - inset) <= COLLISION_EPSILON_IN) return item;
+  return {
+    ...item,
+    x: Number(item.x) + frame.inward.x * (inset - current),
+    y: Number(item.y) + frame.inward.y * (inset - current),
+  };
+}
+
 /**
  * Installation hold reserved on each leg at an inside corner, by join angle
  * and the physical cabinet depth at that layer. Two 24-inch faces meeting at

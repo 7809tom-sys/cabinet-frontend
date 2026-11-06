@@ -128,6 +128,7 @@ import { countertopToastVisible, COUNTERTOP_TOAST_TIMEOUT_MS, useDebouncedValue,
 import { ColorStyleQuickPicker } from "@/components/design/ColorStyleQuickPicker";
 import { ApproveDoorButton } from "@/components/admin/ApproveDoorButton";
 import { clampRefrigeratorAssemblyToPanels } from "@/lib/refrigeratorPanelClamp";
+import { normalizeRefrigeratorBridgeDepth } from "@/lib/refrigeratorBridgeDepth";
 import { overApplianceWallMount } from "@/lib/overApplianceMount";
 import { StyleSamplePreview } from "@/components/design/StyleSamplePreview";
 import type { SampleStyleImages } from "@/lib/sampleImageQa";
@@ -10965,7 +10966,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       // Same containment pass as Auto-Design: the refrigerator and its cabinet above stay inside the end
       // panels. The pop-up only warns about an open side; it never adds a panel the user did not choose.
       const contained = clampRefrigeratorAssemblyToPanels({ placed: previewResult.placed, refrigeratorUid: fridge.uid, room });
-      const committedPreview = contained.placed;
+      // Depth rule: the cabinet above comes forward so its face is flush with the
+      // end panel whenever panels are used. This runs after everything that can
+      // re-seat a wall box on the wall plane, so the flush face survives.
+      const committedPreview = normalizeRefrigeratorBridgeDepth(contained.placed, room);
       placedRef.current = committedPreview;
       setPlaced(() => committedPreview);
       for (const note of contained.notes) toast.info(note, { duration: 7000 });
