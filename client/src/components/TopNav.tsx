@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import * as React from "react";
 import { Link, useLocation, useSearch } from "wouter";
 import { Menu, X, ShoppingCart, ChevronDown, Languages, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -10,6 +11,7 @@ import { ChatTrigger } from "@/components/ChatWidget";
 import { trpc } from "@/lib/trpc";
 import { useIsMobile } from "@/hooks/useMobile";
 import { useDesignerImmersive, useTabletWorkspace } from "@/hooks/useTabletWorkspace";
+import { useDesignerCanvasOnly } from "@/hooks/useDesignerCanvasOnly";
 import {
   designerMobileCartCount,
   requestDesignerMobileCartOpen,
@@ -103,6 +105,10 @@ export function TopNav() {
   const tabletTier = useTabletWorkspace();
   const isDesignerTablet = tabletTier.tablet && !isDesignerMobile && location.startsWith("/design");
   const [immersive, setImmersive] = useDesignerImmersive();
+  // Canvas-only mode from the 3D viewer hides this header entirely on the
+  // Designer route. The flag comes from the Designer through a custom event,
+  // because the header is rendered above it in the tree.
+  const [designerCanvasOnly] = useDesignerCanvasOnly();
   const [designCartCount, setDesignCartCount] = useState(designerMobileCartCount);
 
   useEffect(() => {
@@ -178,7 +184,7 @@ export function TopNav() {
     );
   }
   return (
-    <header data-designer-route={location.startsWith("/design") ? "true" : undefined} className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur-sm supports-[backdrop-filter]:bg-background/80">
+    <header data-designer-route={location.startsWith("/design") ? "true" : undefined} data-canvas-only-hidden={designerCanvasOnly && location.startsWith("/design") ? "true" : undefined} className={`sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur-sm supports-[backdrop-filter]:bg-background/80 ${designerCanvasOnly && location.startsWith("/design") ? "hidden" : ""}`}>
       <div data-testid="site-toolbar-row" className="container flex min-h-16 items-center justify-between gap-2 py-1">
         {/* Logo — show affiliate branding when on affiliate storefront or ?ref= present */}
         {currentAffiliate ? (

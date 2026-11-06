@@ -52,6 +52,14 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useIsMobile } from "@/hooks/useMobile";
 import { useDesignerImmersive, useTabletWorkspace } from "@/hooks/useTabletWorkspace";
+import { publishDesignerCanvasOnly } from "@/hooks/useDesignerCanvasOnly";
+import {
+  browserFullscreenOwnsElement,
+  canRequestBrowserFullscreen,
+  immersiveEscapePressed,
+  immersiveStateAfterFullscreenChange,
+  shouldRequestBrowserFullscreen,
+} from "@/lib/designerImmersive";
 import { usePersistFn } from "@/hooks/usePersistFn";
 import { trpc } from "@/lib/trpc";
 import { preferredDoorReferenceUrl } from "@/lib/approvedDoorReference";
@@ -14950,6 +14958,78 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // Signals to open the Save / My Plans dialogs from the mobile "More" sheet
   // (the DesignActions toolbar itself is desktop-only / hidden on phones).
   const [saveSignal, setSaveSignal] = useState(0);
+  // Canvas-only ("immersive") mode: hides the site header, the page-history row,
+  // both Designer toolbars and the phone bottom bar so the 3D canvas fills the
+  // screen. The toggle sits on the viewer itself, so exiting is always reachable.
+  // The Fullscreen API request is only an enhancement — the layout works without
+  // it, and Esc always exits (see `designerImmersive.ts`).
+  const [canvasOnly, setCanvasOnlyState] = useState(false);
+  const canvasImmersionRootRef = useRef<HTMLDivElement>(null);
+  const setCanvasOnly = useCallback((next: boolean) => {
+    setCanvasOnlyState(next);
+    publishDesignerCanvasOnly(next);
+  }, []);
+  // Entering/leaving canvas-only changes the stage's CSS box. The 3D renderer sizes
+  // itself from a ResizeObserver on its mount, so the observer fires on its own —
+  // but only after layout settles. One extra frame after the state commits keeps
+  // the very first immersive paint at the full viewport instead of the old size.
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const frame = window.requestAnimationFrame(() => {
+      window.dispatchEvent(new Event("resize"));
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [canvasOnly]);
+  // Esc always leaves canvas-only, with or without the Fullscreen API. Modifier
+  // chords are left alone so Cmd/Ctrl+Esc still reaches the browser.
+  useEffect(() => {
+    if (!canvasOnly || typeof window === "undefined") return undefined;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!immersiveEscapePressed(event)) return;
+      setCanvasOnly(false);
+      if (canvasImmersionRootRef.current && browserFullscreenOwnsElement(document, canvasImmersionRootRef.current)) {
+        void document.exitFullscreen?.().catch(() => undefined);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [canvasOnly, setCanvasOnly]);
+  // A browser-initiated exit (the Esc that closes a real fullscreen session, or
+  // the browser's own exit control) does not pass through our key handler when the
+  // element itself is fullscreen. Without this the chrome stayed hidden with no
+  // visible way back.
+  useEffect(() => {
+    if (typeof document === "undefined") return undefined;
+    const onFullscreenChange = () => {
+      const next = immersiveStateAfterFullscreenChange({
+        immersive: canvasOnly,
+        element: canvasImmersionRootRef.current,
+        documentLike: document,
+      });
+      if (next.clearImmersive) setCanvasOnlyState(false);
+    };
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    document.addEventListener("webkitfullscreenchange", onFullscreenChange as EventListener);
+    return () => {
+      document.removeEventListener("fullscreenchange", onFullscreenChange);
+      document.removeEventListener("webkitfullscreenchange", onFullscreenChange as EventListener);
+    };
+  }, [canvasOnly]);
+  const toggleCanvasOnly = useCallback(() => {
+    const entering = !canvasOnly;
+    setCanvasOnly(entering);
+    const element = canvasImmersionRootRef.current;
+    if (!element) return;
+    if (!entering) {
+      if (browserFullscreenOwnsElement(document, element)) void document.exitFullscreen?.().catch(() => undefined);
+      return;
+    }
+    // The UI is already immersive at this point; a refusal (iframe policy, iOS,
+    // embedded preview) must not undo it or surface an error.
+    if (!shouldRequestBrowserFullscreen({ entering: true, element, alreadyOwned: browserFullscreenOwnsElement(document, element) })) return;
+    if (!canRequestBrowserFullscreen(element)) return;
+    void element.requestFullscreen().catch(() => undefined);
+  }, [canvasOnly, setCanvasOnly]);
   // Distributor conflict dialog state
   const [distConflictOpen, setDistConflictOpen] = useState(false);
   const [distConflictResolve, setDistConflictResolve] = useState<((ok: boolean) => void) | null>(null);
@@ -15660,6 +15740,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 		      hybridPlanUnderlay={hybridPlanUnderlay}
 		      catalogDragItem={interactive3dCatalogDragItem}
 	      className="h-full min-h-0"
+	      immersive={canvasOnly}
+	      onToggleImmersive={toggleCanvasOnly}
 	      scene={resolvedInteractive3dScene}
 	      placed={deferredCountertopGeometry.threeDPlaced}
 	      onGeometryRendered={() => setPaintedCountertopGeometry(deferredCountertopGeometry)}
@@ -15832,8 +15914,13 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   }
 
   return (
-      <div className="flex flex-col h-full min-h-0">
-      {designCheckNotice.visible && exposedPanelWarnings.length + dishwasherPanelWarnings.length > 0 && (
+      <div
+        ref={canvasImmersionRootRef}
+        data-testid="designer-root"
+        data-canvas-only={canvasOnly ? "true" : undefined}
+        className={canvasOnly ? "fixed inset-0 z-50 flex h-[100dvh] w-screen flex-col overflow-hidden bg-background" : "flex flex-col h-full min-h-0"}
+      >
+      {designCheckNotice.visible && exposedPanelWarnings.length + dishwasherPanelWarnings.length > 0 && !canvasOnly && (
         <div data-testid="design-check-panel" role="status" className="flex items-start justify-between gap-3 border-b border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-950">
           <div>
             <p className="font-semibold">Design check ({exposedPanelWarnings.length + dishwasherPanelWarnings.length})</p>
@@ -15886,7 +15973,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         }}
       />
       {/* Toolbar */}
-      <div data-testid="designer-toolbar" data-tablet-workspace={isTabletWorkspace ? "true" : undefined} className={`designer-top-toolbar border-b border-border bg-card px-2 py-1 flex flex-wrap items-center gap-1 shrink-0 overflow-visible ${isTabletWorkspace ? `${isTabletPortrait ? "order-last border-b-0 border-t" : tabletImmersiveHeader ? "pl-16" : ""}` : ""}`} style={affiliateBrand ? { borderTop: `3px solid ${affiliateAccent}` } : undefined}>
+      {/* Toolbar. Canvas-only mode hides it instead of unmounting it, so open
+          popovers/sheets keep their state and edit mode returns exactly as it
+          was. */}
+      <div data-testid="designer-toolbar" data-tablet-workspace={isTabletWorkspace ? "true" : undefined} data-canvas-only-hidden={canvasOnly ? "true" : undefined} className={`designer-top-toolbar border-b border-border bg-card px-2 py-1 flex flex-wrap items-center gap-1 shrink-0 overflow-visible ${canvasOnly ? "hidden" : ""} ${isTabletWorkspace ? `${isTabletPortrait ? "order-last border-b-0 border-t" : tabletImmersiveHeader ? "pl-16" : ""}` : ""}`} style={affiliateBrand ? { borderTop: `3px solid ${affiliateAccent}` } : undefined}>
         {/* Title + badge — desktop only */}
         <div className={`designer-toolbar-title ${isCompactWorkspace ? "hidden" : "hidden lg:flex"} items-center gap-2`}>
           {affiliateBrand ? (
@@ -17634,7 +17724,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         </div>
       </div>
 
-      {showOptionalContactNudge && !verifiedName && !verifiedPhone && (
+      {showOptionalContactNudge && !verifiedName && !verifiedPhone && !canvasOnly && (
         <OptionalContactNudge
           onAdd={addOptionalContact}
           onDismiss={() => {
@@ -17646,8 +17736,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       )}
 
       {/* Contextual row: keep desktop cabinet editing inline, but free up mobile
-          canvas space by moving cabinet editing into a bottom sheet. */}
-      {((!isMobile && selectedCab) || selectedOpening || drawMode) && !measureMode && (
+          canvas space by moving cabinet editing into a bottom sheet. Canvas-only
+          mode hides it: the viewer keeps its own selected-cabinet dock, and the
+          selection itself is untouched. */}
+      {((!isMobile && selectedCab) || selectedOpening || drawMode) && !measureMode && !canvasOnly && (
         <div className="border-b border-border bg-[#f7f5f0] px-4 py-1.5 flex items-center gap-3 flex-wrap shrink-0 max-h-[120px] overflow-y-auto lg:flex-nowrap lg:overflow-x-auto lg:overflow-y-hidden lg:scrollbar-none lg:[&>*]:shrink-0">
           {selectedCab && !drawMode && !isMobile && (
             <>
@@ -18019,7 +18111,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         </div>
       )}
 
-      {canShowCompactMoveControl && compactMoveControlsOpen && (
+      {canShowCompactMoveControl && compactMoveControlsOpen && !canvasOnly && (
         <section
           id="compact-workspace-move-controls"
           data-testid="compact-workspace-move-controls"
@@ -18533,14 +18625,18 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         </Sheet>
       )}
 
-      {/* Main area */}
-      <div className="flex flex-1 min-h-0 overflow-hidden">
+      {/* Main area. In canvas-only mode both side panels collapse so the 3D
+          stage (and the floating action rails) get the whole viewport. They are
+          hidden rather than unmounted, so the price/cart panel and the selected
+          cabinet keep their state. */}
+      <div className={`flex flex-1 min-h-0 overflow-hidden ${canvasOnly ? "gap-0" : ""}`}>
         {/* Left palette — inline column on desktop; slide-in drawer on mobile.
             Mobile wraps the SAME body in a left Sheet; desktop renders it as a
             fixed-width column. The body markup below is shared (no duplication). */}
         <PaletteShell
           isMobile={panelDrawerMode}
           compact={isCompactWorkspace}
+          hidden={canvasOnly}
           open={mobilePanel === "catalog"}
           onOpenChange={(o) => setMobilePanel(o ? "catalog" : null)}
         >
@@ -19158,7 +19254,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         </PaletteShell>
 
 	        {/* Canvas */}
-	        <div ref={canvasExportRef} className={DESIGNER_CANVAS_CONTAINER_CLASS}>
+	        {/* Canvas. Canvas-only mode drops the mobile bottom padding and the
+	            side-panel margins so the 3D stage fills the viewport; the renderer
+	            re-measures through its own ResizeObserver. */}
+	        <div ref={canvasExportRef} data-testid="designer-canvas" className={canvasOnly ? "relative flex flex-1 min-w-0 min-h-0 flex-col overflow-hidden" : DESIGNER_CANVAS_CONTAINER_CLASS}>
 	          {showCountertopToast && !((cornerTowerBoard || rodTowerBoard) && (viewMode === "threeD" || viewMode === "hybrid")) && ((viewMode === "plan" && countertop)
 	            || ((viewMode === "threeD" || viewMode === "hybrid") && !!resolvedInteractive3dScene)) && (
 	            <div data-testid="countertop-geometry-loading" role="status" aria-live="polite"
@@ -20475,6 +20574,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         <PricingShell
           isMobile={panelDrawerMode}
           compact={isCompactWorkspace}
+          hidden={canvasOnly}
           open={mobilePanel === "cart"}
           onOpenChange={(o) => setMobilePanel(o ? "cart" : null)}
         >
@@ -21547,9 +21647,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         </PricingShell>
       </div>
 
-      {/* Mobile bottom toolbar — core actions; side panels open as drawers. */}
+      {/* Mobile bottom toolbar — core actions; side panels open as drawers.
+          Hidden (not unmounted) in canvas-only mode. */}
       {isMobile && (
-        <div className="fixed bottom-0 inset-x-0 z-40 border-t border-border bg-card/95 backdrop-blur lg:hidden">
+        <div data-canvas-only-hidden={canvasOnly ? "true" : undefined} className={`fixed bottom-0 inset-x-0 z-40 border-t border-border bg-card/95 backdrop-blur lg:hidden ${canvasOnly ? "hidden" : ""}`}>
           <div
             data-testid="mobile-designer-action-strip"
             className="flex h-16 flex-nowrap items-stretch overflow-x-auto overscroll-x-contain px-1 pb-[env(safe-area-inset-bottom,0px)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
@@ -24291,18 +24392,21 @@ function SelectedCabinetDoorIdentity({
 // slide-in Sheet on mobile, so the heavy palette / pricing markup is written
 // once and reused for both layouts.
 function PaletteShell({
-  isMobile, compact = false, open, onOpenChange, children,
+  isMobile, compact = false, hidden = false, open, onOpenChange, children,
 }: {
   isMobile: boolean;
   compact?: boolean;
+  /** Canvas-only mode: collapse the inline column and keep the drawer closed. */
+  hidden?: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   children: React.ReactNode;
 }) {
   const { t } = useLanguage();
   if (isMobile) {
+    // A catalog drawer opened before canvas-only mode must not cover the canvas.
     return (
-      <Sheet open={open} onOpenChange={onOpenChange}>
+      <Sheet open={open && !hidden} onOpenChange={onOpenChange}>
         <SheetContent side="left" className={compact ? "w-[min(840px,96vw)] max-w-none sm:max-w-[min(840px,96vw)] p-0 gap-0 flex flex-col" : "w-[88vw] max-w-sm p-0 gap-0 flex flex-col"}>
           <SheetHeader className="px-3 py-2 border-b border-border text-left">
             <SheetTitle className="text-sm">{compact ? "Cabinet catalog — tablet view" : t("dt_pl_catalog")}</SheetTitle>
@@ -24312,6 +24416,7 @@ function PaletteShell({
       </Sheet>
     );
   }
+  if (hidden) return null;
   return (
     <div className="hidden lg:flex w-60 shrink-0 min-h-0 overflow-hidden border-r border-border bg-card flex-col">
       {children}
@@ -24320,10 +24425,12 @@ function PaletteShell({
 }
 
 function PricingShell({
-  isMobile, compact = false, open, onOpenChange, children,
+  isMobile, compact = false, hidden = false, open, onOpenChange, children,
 }: {
   isMobile: boolean;
   compact?: boolean;
+  /** Canvas-only mode: collapse the inline column and keep the drawer closed. */
+  hidden?: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   children: React.ReactNode;
@@ -24331,7 +24438,7 @@ function PricingShell({
   const { t } = useLanguage();
   if (isMobile) {
     return (
-      <Sheet open={open} onOpenChange={onOpenChange}>
+      <Sheet open={open && !hidden} onOpenChange={onOpenChange}>
         <SheetContent side={compact ? "right" : "bottom"} className={compact ? "w-[min(420px,94vw)] h-full p-0 gap-0 flex flex-col" : "h-[92vh] p-0 gap-0 flex flex-col rounded-t-2xl"}>
           <SheetHeader className="px-3 py-2 border-b border-border text-left">
             <SheetTitle className="text-sm">{t("dt_bs_estimate_build")}</SheetTitle>
@@ -24341,6 +24448,7 @@ function PricingShell({
       </Sheet>
     );
   }
+  if (hidden) return null;
   return (
     <div className="hidden lg:flex w-72 shrink-0 min-h-0 overflow-hidden border-l border-border bg-card flex-col">
       {children}

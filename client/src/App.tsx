@@ -12,6 +12,7 @@ import { StorefrontSocialIcons } from "@/components/storefront/StorefrontSocialI
 import { StoreCornerMenu } from "@/components/storefront/StoreCornerMenu";
 import { GoogleAnalyticsTracker } from "@/components/GoogleAnalyticsTracker";
 import DesignerHistoryNav from "@/components/design/DesignerHistoryNav";
+import { useDesignerCanvasOnly } from "@/hooks/useDesignerCanvasOnly";
 import Home from "@/pages/Home";
 import NotFound from "@/pages/NotFound";
 import { lazy, Suspense, useEffect } from "react";
@@ -233,6 +234,9 @@ function AffiliateShell({ slug, children, fullHeight = false, hideAdminEditModeB
 function DesignerRoute() {
   const search = useSearch();
   const affiliateSlug = new URLSearchParams(search).get("affiliate")?.trim() || null;
+  // Canvas-only mode published by the Designer (it owns the toggle). The history
+  // row is a sibling of the Designer, so it reads the flag instead of a prop.
+  const [designerCanvasOnly] = useDesignerCanvasOnly();
   const designer = (
     <ErrorBoundary>
       <Suspense fallback={<PageLoader />}>
@@ -241,10 +245,13 @@ function DesignerRoute() {
     </ErrorBoundary>
   );
   // Back/Forward sits above the workspace, not inside it, so it stays reachable
-  // while the email gate is still on screen.
+  // while the email gate is still on screen. Canvas-only mode from the 3D viewer
+  // hides it: it is one of the four bars the owner asked to clear.
   const withHistoryNav = (
     <div className="flex h-full min-h-0 flex-1 flex-col">
-      <DesignerHistoryNav fallbackHref={affiliateSlug ? affiliateStorefrontPath(affiliateSlug) : "/"} />
+      <div data-canvas-only-hidden={designerCanvasOnly ? "true" : undefined} className={designerCanvasOnly ? "hidden" : undefined}>
+        <DesignerHistoryNav fallbackHref={affiliateSlug ? affiliateStorefrontPath(affiliateSlug) : "/"} />
+      </div>
       <div className="min-h-0 flex-1 overflow-hidden">{designer}</div>
     </div>
   );
