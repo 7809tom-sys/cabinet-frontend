@@ -1,51 +1,69 @@
 From: Cursor Agent <cursoragent@cursor.com>
-Subject: [PATCH] Generate a real door image, and stop the generic provider failure
+Subject: [PATCH] Generate a real door image: text step then image step, for every column
 
-Generate in the door editor now returns a photorealistic image of the door,
-not only a description of it.
+Generate in the door editor is one pipeline run three times. Every column does
+the same two steps, and the final output of every column is the image:
 
-Root causes this patch fixes:
+  step 1  the column's provider reads the door photo and record and writes a
+          detailed text description of the door
+  step 2  an image model draws a photo-accurate door image from that
+          description, using the same door photo as its reference
 
-1. GPT: the request sent max_completion_tokens to a chat-completions model,
-   which OpenAI answers with 400 Unsupported parameter. The field is now chosen
-   from the model id (max_tokens for chat models, max_completion_tokens for
-   the o1/o3/o4/gpt-5 reasoning families).
+  GPT     step 1 GPT        step 2 OpenAI images
+  Gemini  step 1 Gemini     step 2 Gemini images
+  Claude  step 1 Claude     step 2 Gemini images
 
-2. Claude: the default model id claude-sonnet-4-5 is retired, so Anthropic
-   answered 404 not_found_error. The default is now claude-sonnet-4-6, and it
-   stays overridable with ANTHROPIC_DOOR_DESCRIPTION_MODEL.
+Claude is a text writer in this pipeline, not a special case. Anthropic's
+Messages API returns text only, so its description drives the image model the
+backend already runs for room scenes. That is the design.
 
-3. Both columns swallowed the provider error entirely: a failed call returned
-   one generic sentence and logged nothing, so the only visible clue was
-   'could not be generated'. Each failure is now logged with the provider,
-   status, model id and (redacted) provider body.
+Claude model
+------------
+The default is now claude-sonnet-5-5, an Active Sonnet-class model (released
+2026-09-28, retirement not sooner than 2027-09-28). It replaces
+claude-sonnet-4-5, which Anthropic deprecated on 2026-09-30 and retires on
+2026-11-30. Still overridable with ANTHROPIC_DOOR_DESCRIPTION_MODEL, and no
+value has to be set: the default works as shipped.
 
-4. No column could ever return a picture. Nothing in either provider call
-   asked for one, and the tile under a generated description was a local
-   vector sketch of the library profile badged 'Library default'.
+Because current Sonnet-class models think adaptively by default at `high`
+effort and thinking counts against max_tokens, a budget sized for the answer
+alone can be spent entirely on thinking and come back empty with
+stop_reason "max_tokens". The Claude request now asks for max_tokens 4096
+and output_config.effort "low", which is ample to read a door photograph and
+write ten labelled lines.
 
-What Generate does now:
+The other two columns
+---------------------
+GPT previously sent max_completion_tokens to a chat-completions model.
+OpenAI documents max_tokens as deprecated in favour of max_completion_tokens
+and says it "is not compatible with o-series models"; sending the wrong one
+is a 400. The field is now chosen from the model id: max_completion_tokens
+for the o1/o3/o4/gpt-5 reasoning families, max_tokens for the rest.
 
-   GPT     GPT writes the description, OpenAI images edits the door photo
-           (POST /v1/images/edits) so the result keeps the real door.
-   Gemini  Gemini writes the description, Gemini images draws the door.
-   Claude  Claude writes the description; Google's image model draws it,
-           because Anthropic's Messages API returns text only.
+No column could ever return an image before: nothing in either provider call
+asked for one, and the tile under a generated description was a local vector
+sketch badged "Library default".
 
-The image is stored under door-style-images/ai-generated/ and served by the
-storage proxy. The description is still returned, so a failed drawing keeps
-what the model read from the door and says why the picture is missing.
+Diagnostics
+-----------
+Every failure is now logged with the provider, status, model id and a
+redacted provider body, under [ai-door-describe] and [ai-door-image]. Before
+this, a failed call returned one generic sentence and logged nothing.
 
-Keys are unchanged and stay server-side. New optional variables, no values
-required: OPENAI_DOOR_IMAGE_MODEL (default gpt-image-2) and the existing
-GEMINI_IMAGE_MODEL (default gemini-3.1-flash-image).
+Storage and keys
+----------------
+Drawn images go to door-style-images/ai-generated/ and are served by the
+storage proxy. Keys are unchanged and stay server-side. Optional variables
+with working defaults, so nothing has to be set:
+  OPENAI_DOOR_IMAGE_MODEL   default gpt-image-2
+  GEMINI_IMAGE_MODEL        default gemini-3.1-flash-image
 
 Tests: server/lib/aiDoorImage.test.ts (13), server/lib/aiDoorDescribe.test.ts
-(25), server/lib/aiDoorDescribe.wiring.test.ts (7). tsc --noEmit clean in
-these files.
+(26), server/lib/aiDoorDescribe.wiring.test.ts (7). tsc --noEmit reports no
+errors in these files.
 
 diff --git a/server/lib/aiDoorDescribe.test.ts b/server/lib/aiDoorDescribe.test.ts
-index 49287c64..04e7b843 100644
+index 49287c64..b03de3ed 100644
 --- a/server/lib/aiDoorDescribe.test.ts
 +++ b/server/lib/aiDoorDescribe.test.ts
 @@ -16,7 +16,10 @@ import {
@@ -91,8 +109,8 @@ index 49287c64..04e7b843 100644
        model: "gpt",
        description: "Style family: shaker.",
        providerModel: "gpt-test",
-+      // GPT's own provider draws its picture.
-+      image: { painter: "openai", fromDescription: null },
++      // The picture is always drawn from this column's own description.
++      image: { painter: "openai", fromDescription: "gpt" },
      });
    });
  
@@ -112,7 +130,7 @@ index 49287c64..04e7b843 100644
      });
      expect(seen!.url).toBe("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions");
      expect(new Headers(seen!.init.headers).get("authorization")).toBe("Bearer test-gemini");
-@@ -264,3 +280,126 @@ describe("a failure becomes a plain sentence", () => {
+@@ -264,3 +280,133 @@ describe("a failure becomes a plain sentence", () => {
      expect(description).toHaveLength(AI_DOOR_DESCRIPTION_MAX_CHARS);
    });
  });
@@ -149,8 +167,8 @@ index 49287c64..04e7b843 100644
 +    });
 +
 +    expect(seen.map((entry) => entry.painter)).toEqual(["openai", "gemini"]);
-+    expect(gpt).toMatchObject({ status: "ok", image: { painter: "openai", fromDescription: null } });
-+    expect(gemini).toMatchObject({ status: "ok", image: { painter: "gemini", fromDescription: null } });
++    expect(gpt).toMatchObject({ status: "ok", image: { painter: "openai", fromDescription: "gpt" } });
++    expect(gemini).toMatchObject({ status: "ok", image: { painter: "gemini", fromDescription: "gemini" } });
 +  });
 +
 +  it("draws Claude's picture with the Gemini image model, and records that", async () => {
@@ -232,15 +250,22 @@ index 49287c64..04e7b843 100644
 +    expect(reasoning.body).not.toHaveProperty("max_tokens");
 +  });
 +
-+  it("defaults Claude to a model id Anthropic still serves", () => {
-+    expect(AI_DOOR_PROVIDER_MODELS.claude.fallback).toBe("claude-sonnet-4-6");
++  it("defaults Claude to a current Sonnet-class model", () => {
++    // claude-sonnet-4-5 is deprecated (retires 2026-11-30); sonnet-5-5 is Active.
++    expect(AI_DOOR_PROVIDER_MODELS.claude.fallback).toBe("claude-sonnet-5-5");
 +    expect(isKnownAnthropicModel(AI_DOOR_PROVIDER_MODELS.claude.fallback)).toBe(true);
-+    // The retired id this feature shipped with is not served any more.
-+    expect(isKnownAnthropicModel("claude-sonnet-4-5")).toBe(true);
++  });
++
++  it("leaves room for adaptive thinking, which counts against max_tokens", () => {
++    const request = aiDoorProviderRequest({ ...base, model: "claude" });
++    // A budget sized for the answer alone can be spent entirely on thinking.
++    expect(request.body.max_tokens).toBeGreaterThanOrEqual(4_096);
++    // `low` effort is enough to read a photograph and write ten lines.
++    expect(request.body.output_config).toEqual({ effort: "low" });
 +  });
 +});
 diff --git a/server/lib/aiDoorDescribe.ts b/server/lib/aiDoorDescribe.ts
-index 08e59a37..3c077eb4 100644
+index 08e59a37..c81dbece 100644
 --- a/server/lib/aiDoorDescribe.ts
 +++ b/server/lib/aiDoorDescribe.ts
 @@ -31,9 +31,10 @@ import {
@@ -255,7 +280,7 @@ index 08e59a37..3c077eb4 100644
  
  /** Longest prompt this endpoint will forward. The shipped prompts are ~1.2 KB. */
  export const AI_DOOR_PROMPT_MAX_CHARS = 6_000;
-@@ -41,10 +42,19 @@ export const AI_DOOR_PROMPT_MAX_CHARS = 6_000;
+@@ -41,10 +42,22 @@ export const AI_DOOR_PROMPT_MAX_CHARS = 6_000;
  export const AI_DOOR_DESCRIPTION_MAX_CHARS = 8_000;
  /** A door photo larger than this is not sent; the description is asked for without it. */
  export const AI_DOOR_IMAGE_MAX_BYTES = 8 * 1024 * 1024;
@@ -265,19 +290,22 @@ index 08e59a37..3c077eb4 100644
 + * deploy — and so a provider retiring a model id is a variable change, not a code
 + * change.
 + *
-+ * The Gemini default is the id this backend already runs everywhere else, which
-+ * is why that column worked while the other two did not: the other two model ids
-+ * are used by nothing else in this service, so nothing else would have noticed
-+ * if they were retired.
++ * All three defaults are current, Active ids on their provider's own model list.
++ * `claude-sonnet-5-5` replaced `claude-sonnet-4-5`, which Anthropic deprecated on
++ * September 30, 2026 and retires on November 30, 2026. Deprecated models still
++ * serve requests until their retirement date, so that was not the cause of the
++ * old failure — but it would have become one, without a code change, in three
++ * weeks. Every default stays overridable so a future retirement is a variable
++ * change rather than a deploy.
 + */
  export const AI_DOOR_PROVIDER_MODELS: Record<AiDoorModel, { env: string; fallback: string }> = {
    gpt: { env: "OPENAI_DOOR_DESCRIPTION_MODEL", fallback: "gpt-4.1-mini" },
 -  claude: { env: "ANTHROPIC_DOOR_DESCRIPTION_MODEL", fallback: "claude-sonnet-4-5" },
-+  claude: { env: "ANTHROPIC_DOOR_DESCRIPTION_MODEL", fallback: "claude-sonnet-4-6" },
++  claude: { env: "ANTHROPIC_DOOR_DESCRIPTION_MODEL", fallback: "claude-sonnet-5-5" },
    gemini: { env: "GEMINI_DOOR_DESCRIPTION_MODEL", fallback: "gemini-3-flash-preview" },
  };
  
-@@ -156,6 +166,25 @@ export function aiDoorUserContent(prompt: string, photoDataUrl: string | null):
+@@ -156,6 +169,25 @@ export function aiDoorUserContent(prompt: string, photoDataUrl: string | null):
    return parts;
  }
  
@@ -303,7 +331,21 @@ index 08e59a37..3c077eb4 100644
  /** Whatever a provider returned, read as plain text. */
  function textOfContent(content: unknown): string {
    if (typeof content === "string") return content;
-@@ -222,17 +251,23 @@ export function aiDoorProviderRequest(args: {
+@@ -216,23 +248,36 @@ export function aiDoorProviderRequest(args: {
+       },
+       body: {
+         model: env.anthropicModel ?? AI_DOOR_PROVIDER_MODELS.claude.fallback,
+-        max_tokens: 1_024,
++        // Current Sonnet-class models think adaptively by default at `high`
++        // effort, and thinking counts against max_tokens. A budget sized for the
++        // answer alone can be spent entirely on thinking, which comes back as
++        // empty content with stop_reason "max_tokens". Two changes keep the
++        // description reachable: more headroom, and `low` effort, which is enough
++        // to read a door photograph and write ten labelled lines.
++        max_tokens: 4_096,
++        output_config: { effort: "low" },
+         messages: [{ role: "user", content }],
+       },
      };
    }
    if (args.model === "gpt") {
@@ -332,7 +374,7 @@ index 08e59a37..3c077eb4 100644
      };
    }
    return {
-@@ -272,22 +307,40 @@ function failureCodeForStatus(status: number): "rate-limited" | "timeout" | "pro
+@@ -272,22 +317,40 @@ function failureCodeForStatus(status: number): "rate-limited" | "timeout" | "pro
  }
  
  /**
@@ -377,7 +419,7 @@ index 08e59a37..3c077eb4 100644
    if (!aiDoorModelConnected(model, env)) return aiDoorNotConnected(model);
  
    const prompt = args.prompt.trim();
-@@ -307,6 +360,10 @@ export async function describeDoorWithAi(args: {
+@@ -307,6 +370,10 @@ export async function describeDoorWithAi(args: {
    const request = aiDoorProviderRequest({ model, prompt, photoDataUrl: photo, image: args.image ?? null, env });
    const fetchImpl = args.fetchImpl ?? globalThis.fetch;
  
@@ -388,7 +430,7 @@ index 08e59a37..3c077eb4 100644
    try {
      const response = await fetchImpl(request.url, {
        method: "POST",
-@@ -316,24 +373,93 @@ export async function describeDoorWithAi(args: {
+@@ -316,24 +383,93 @@ export async function describeDoorWithAi(args: {
      });
      if (!response.ok) {
        const reason = failureCodeForStatus(response.status);
@@ -478,7 +520,7 @@ index 08e59a37..3c077eb4 100644
 +        url: image.url,
 +        painter: image.painter,
 +        providerModel: image.providerModel,
-+        fromDescription: plan.painterIsWriter ? null : plan.writer,
++        fromDescription: plan.writer,
 +      }
 +      : null,
 +    imageMessage: image ? null : imageMessage ?? AI_DOOR_IMAGE_FAILED_MESSAGE,
@@ -1270,72 +1312,61 @@ index 522fca2b..a741efa6 100644
  }
 diff --git a/shared/aiDoorImage.ts b/shared/aiDoorImage.ts
 new file mode 100644
-index 00000000..ebb57f50
+index 00000000..84e25b7e
 --- /dev/null
 +++ b/shared/aiDoorImage.ts
-@@ -0,0 +1,144 @@
+@@ -0,0 +1,136 @@
 +/**
-+ * What each Generate column actually produces.
++ * The two steps Generate runs for every column.
 + *
-+ * Tom's goal for Generate is a photorealistic image of the door, not a paragraph
-+ * about it. The three providers are not equal here, and pretending they are is
-+ * how a column ends up showing a saved photo or a vector sketch while looking
-+ * like it generated something. So the split is written down once, here, and both
-+ * the door editor and the API server read it:
++ * Generate in the door editor is one pipeline, repeated three times. Nothing here
++ * is a special case:
 + *
-+ * | Column | Writes the description | Draws the image |
-+ * |--------|------------------------|-----------------|
-+ * | GPT    | GPT                    | OpenAI images   |
-+ * | Gemini | Gemini                 | Gemini images   |
-+ * | Claude | Claude                 | Gemini images   |
++ *   step 1  the column's provider reads the door photo and the record, and writes
++ *           a detailed text description of the door
++ *   step 2  an image model draws a photo-accurate door image from that description,
++ *           using the door photo as the reference
 + *
-+ * Claude is the odd one: the Anthropic Messages API returns text only, so there
-+ * is no Claude image to return. Rather than fake one, Claude's description is
-+ * handed to the image model this backend already runs for room scenes, and the
-+ * column says so in plain words.
++ * The final output of every column is the image. The description is the input to
++ * step 2, kept on screen because it is what "Choose as official" records.
++ *
++ * | Column | Step 1 (text) | Step 2 (image) |
++ * |--------|---------------|----------------|
++ * | GPT    | GPT           | OpenAI images  |
++ * | Gemini | Gemini        | Gemini images  |
++ * | Claude | Claude        | Gemini images  |
++ *
++ * Claude is a text writer in this pipeline, exactly like the other two. Anthropic's
++ * Messages API returns text only, so its description is handed to the image model
++ * the backend already runs for room scenes. That is the design, not a fallback.
 + *
 + * This module holds no key and reads no environment: it is bundled for the
 + * browser, so it may name a variable but never read one.
 + */
 +import type { AiDoorModel } from "./aiDoorPrompts";
 +
-+/** Which provider's image endpoint draws a column's picture. */
++/** Which provider's image endpoint draws step 2. */
 +export type AiDoorImagePainter = "openai" | "gemini";
 +
-+/**
-+ * How a column gets its picture.
-+ *
-+ * - `own-image`: the column's own provider writes text and draws the image.
-+ * - `description-then-image`: the column's provider writes only text, and a
-+ *   different provider's image model draws from that text.
-+ */
-+export type AiDoorImageRoute = "own-image" | "description-then-image";
-+
 +export type AiDoorImagePlan = {
-+  route: AiDoorImageRoute;
-+  /** The provider that writes the description. */
++  /** The provider that writes the description in step 1. Always the column's own. */
 +  writer: AiDoorModel;
-+  /** The provider that draws the picture. */
++  /** The image model that draws step 2. */
 +  painter: AiDoorImagePainter;
-+  /** True only when the column's own provider can return an image. */
-+  painterIsWriter: boolean;
-+  /** The environment variable the writing provider reads. Never a key, only its name. */
++  /** The environment variable step 1's provider reads. Never a key, only its name. */
 +  envKey: string;
 +  /** The environment variable that overrides the image model, when there is one. */
 +  imageModelEnv: string;
-+  /** The image model a column uses when that variable is unset. */
++  /** The image model step 2 uses when that variable is unset. */
 +  imageModelFallback: string;
-+  /** One plain sentence the column can show beside its picture. */
-+  note: string;
 +};
 +
 +/**
 + * The image model each painter uses by default.
 + *
-+ * Both ids are the ones this codebase already runs elsewhere: `gpt-image-2` is
-+ * the OpenAI image model the Designer's photo renders name, and
-+ * `gemini-3.1-flash-image` is the Gemini image model `server/_core/imageGeneration.ts`
-+ * already calls for room scenes. Neither is a new guess.
++ * Both ids are ones this codebase already runs: `gpt-image-2` is the OpenAI image
++ * model the Designer's photo renders name, and `gemini-3.1-flash-image` is what
++ * `server/_core/imageGeneration.ts` calls for room scenes. Neither is invented.
 + */
 +export const AI_DOOR_IMAGE_MODELS: Record<AiDoorImagePainter, { env: string; fallback: string }> = {
 +  openai: { env: "OPENAI_DOOR_IMAGE_MODEL", fallback: "gpt-image-2" },
@@ -1344,34 +1375,25 @@ index 00000000..ebb57f50
 +
 +export const AI_DOOR_IMAGE_PLANS: Record<AiDoorModel, AiDoorImagePlan> = {
 +  gpt: {
-+    route: "own-image",
 +    writer: "gpt",
 +    painter: "openai",
-+    painterIsWriter: true,
 +    envKey: "OPENAI_API_KEY",
 +    imageModelEnv: AI_DOOR_IMAGE_MODELS.openai.env,
 +    imageModelFallback: AI_DOOR_IMAGE_MODELS.openai.fallback,
-+    note: "GPT writes the description and OpenAI's image model draws the door from the photo.",
 +  },
 +  gemini: {
-+    route: "own-image",
 +    writer: "gemini",
 +    painter: "gemini",
-+    painterIsWriter: true,
 +    envKey: "GEMINI_API_KEY",
 +    imageModelEnv: AI_DOOR_IMAGE_MODELS.gemini.env,
 +    imageModelFallback: AI_DOOR_IMAGE_MODELS.gemini.fallback,
-+    note: "Gemini writes the description and Gemini's image model draws the door from the photo.",
 +  },
 +  claude: {
-+    route: "description-then-image",
 +    writer: "claude",
 +    painter: "gemini",
-+    painterIsWriter: false,
 +    envKey: "ANTHROPIC_API_KEY",
 +    imageModelEnv: AI_DOOR_IMAGE_MODELS.gemini.env,
 +    imageModelFallback: AI_DOOR_IMAGE_MODELS.gemini.fallback,
-+    note: "Claude cannot return an image, so Claude writes the description and Gemini's image model draws the door from it.",
 +  },
 +};
 +
@@ -1380,40 +1402,52 @@ index 00000000..ebb57f50
 +  return AI_DOOR_IMAGE_PLANS[model];
 +}
 +
-+/** True when this column's own provider can return an image. Claude cannot. */
-+export function aiDoorModelCanDrawImage(model: AiDoorModel): boolean {
-+  return AI_DOOR_IMAGE_PLANS[model].painterIsWriter;
++/** The visible name of each column. */
++export const AI_DOOR_WRITER_NAMES: Record<AiDoorModel, string> = {
++  gpt: "GPT",
++  claude: "Claude",
++  gemini: "Gemini",
++};
++
++/**
++ * The one-line name of a column's pipeline, e.g. "Claude description → image".
++ *
++ * Every column reads the same way, because every column does the same thing.
++ */
++export function aiDoorPipelineLabel(model: AiDoorModel): string {
++  return `${AI_DOOR_WRITER_NAMES[model]} description → image`;
 +}
 +
-+/** A picture Generate actually made, and who made it. */
++/** A picture Generate actually made, and which model drew it. */
 +export type AiDoorGeneratedImage = {
 +  /** A `/manus-storage/…` key the storage proxy serves, or an absolute URL. */
 +  url: string;
-+  /** The provider that drew the pixels. Never the provider that wrote the text, unless they match. */
++  /** The provider that drew the pixels in step 2. */
 +  painter: AiDoorImagePainter;
 +  /** The image model that drew it, for the audit line. */
 +  providerModel: string | null;
-+  /**
-+   * The column whose description the picture was drawn from, when that is not
-+   * this column's own provider. Null for GPT and Gemini, "claude" for Claude.
-+   */
++  /** The column whose description the picture was drawn from. */
 +  fromDescription: AiDoorModel | null;
 +};
 +
-+/** The plain sentence a column shows under a picture, naming who drew it. */
++/**
++ * The caption under a drawn door: both steps, named, in the same order for every
++ * column. It never claims the text provider drew the picture.
++ */
 +export function aiDoorImageCaption(model: AiDoorModel, image: AiDoorGeneratedImage | null): string | null {
 +  if (!image) return null;
++  const writer = AI_DOOR_WRITER_NAMES[image.fromDescription ?? model];
++  return `Step 1: ${writer} wrote the description from the door photo. Step 2: ${painterName(image.painter)} drew this image from it.`;
++}
++
++/** Where step 2 runs, in words, for the column's own status line. */
++export function aiDoorImageStepLabel(model: AiDoorModel): string {
 +  const plan = aiDoorImagePlan(model);
-+  if (plan.painterIsWriter) return `${painterName(image.painter)} drew this door from the photo and the description.`;
-+  return `${painterName(image.painter)} drew this door from ${writerName(plan.writer)}'s description and the photo.`;
++  return `Step 1 ${AI_DOOR_WRITER_NAMES[plan.writer]} description → Step 2 ${painterName(plan.painter)} image`;
 +}
 +
 +function painterName(painter: AiDoorImagePainter): string {
 +  return painter === "openai" ? "OpenAI's image model" : "Google's image model";
-+}
-+
-+function writerName(model: AiDoorModel): string {
-+  return model === "gpt" ? "GPT" : model === "claude" ? "Claude" : "Gemini";
 +}
 +
 +/** What to tell the operator when a column's picture could not be made. */
