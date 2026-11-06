@@ -720,30 +720,86 @@ describe("Faircrest 2020 alias map", () => {
     expect(faircrest2020MasterCode("SP09")).toBeNull();
   });
 
-  it("keeps SP09 open with its proposed BSR9 match, and distinct from SPO9", () => {
-    // No alias yet: SP09 must not resolve to anything.
+  it("documents SP09 and BSR9 as one cabinet, without adding the alias", () => {
+    // Documentation only: no alias yet, SP09 must not resolve to anything.
     expect(faircrest2020MasterCode("SP09")).toBeNull();
     expect(faircrest2020AliasFor("SP09")).toBeNull();
     expect(hasFaircrest2020Alias("SP09")).toBe(false);
     // SP09 and SPO9 are different cabinets.
     expect(faircrest2020SameCabinet("SP09", "SPO9")).toBe(false);
     expect(faircrest2020MasterCode("SPO9")).toBeNull();
-    // The note carries the cabinet, the supplier-universal fact, the SPO9
-    // distinction and the proposed (unconfirmed) Faircrest match.
+    // The note records Tom's confirmation, the lettering rule and the SPO9
+    // distinction. It must still make clear no alias exists yet.
     const entry = FAIRCREST_2020_NEEDS_TOM.find(
       (row) => row.ourCode === "SP09",
     );
     expect(entry).toBeDefined();
-    expect(entry?.why).toMatch(/9" spice pull-out cabinet/);
+    // Tom confirmed SP09 and BSR9 are the same cabinet, one item, two codes.
+    expect(entry?.why).toMatch(
+      /Tom confirmed SP09 and BSR9 are the SAME cabinet/,
+    );
+    expect(entry?.why).toMatch(/9" spice pull-out/);
+    expect(entry?.why).toMatch(/written under two codes/);
+    expect(entry?.why).toMatch(/one item, not two configurations/);
+    // Tom's lettering rule: T = tray, S = spice.
+    expect(entry?.why).toMatch(/T = tray and S = spice/);
+    expect(entry?.why).toMatch(
+      /BT9 is the tray base and BSR9 is the spice unit/,
+    );
+    // Carried by every supplier, and still not SPO9.
     expect(entry?.why).toMatch(/carried by every supplier/);
     expect(entry?.why).toMatch(/NOT the same as SPO9/);
-    expect(entry?.why).toMatch(
-      /different nomenclature at Faircrest but is the same cabinet/,
-    );
+    // No alias was added: the note says so and the candidate is not "pending".
+    expect(entry?.why).toMatch(/NO alias is added yet/);
     expect(entry?.faircrestCandidate).toMatch(/BSR9/);
-    expect(entry?.faircrestCandidate).toMatch(/pending Tom confirmation/);
-    // Recorded as open, and BSR9 itself is not aliased to SP09 backwards.
+    expect(entry?.faircrestCandidate).not.toMatch(/pending Tom confirmation/);
+    // BSR9 itself is not aliased to SP09 backwards.
     expect(faircrest2020OurCodes("BSR9")).not.toContain("SP09");
+    expect(faircrest2020MasterCode("BSR9")).toBe("BSR9");
+  });
+
+  it("documents BT9 / FH9 / FHB9 / 9FH / B9 as one cabinet, without mapping the extras", () => {
+    // Documentation only: the added spellings must not gain aliases here.
+    for (const code of ["FH9", "FHB9", "9FH", "B9"]) {
+      expect(faircrest2020MasterCode(code)).toBeNull();
+      expect(faircrest2020AliasFor(code)).toBeNull();
+    }
+    // BT9 still resolves to Faircrest TB09 as before.
+    expect(faircrest2020MasterCode("BT9")).toBe("TB09");
+    // The note records Tom's confirmation and flags the extras as doc-only.
+    const note = faircrest2020AliasFor("BT9")?.evidence ?? "";
+    expect(note).toMatch(/BT9, FH9, FHB9, 9FH and B9 are all the same cabinet/);
+    expect(note).toMatch(/under multiple codes/);
+    expect(note).toMatch(/not mapped by this PR/);
+    // The lettering rule still governs: BSR9 is spice, not this tray/base family.
+    expect(faircrest2020SameCabinet("BT9", "BSR9")).toBe(false);
+  });
+
+  it("records WWC630 as a 5-spot wine cabinet and keeps it open", () => {
+    // No mapping change: WWC630 stays in NEEDS_TOM and resolves to nothing.
+    expect(faircrest2020MasterCode("WWC630")).toBeNull();
+    expect(hasFaircrest2020Alias("WWC630")).toBe(false);
+    expect(
+      FAIRCREST_2020_NEEDS_TOM.some((entry) => entry.ourCode === "WWC630"),
+    ).toBe(true);
+    const entry = FAIRCREST_2020_NEEDS_TOM.find(
+      (row) => row.ourCode === "WWC630",
+    );
+    expect(entry).toBeDefined();
+    // Tom's description of the cabinet.
+    expect(entry?.why).toMatch(/wine cabinet with five spots for wine holes/);
+    // Both readings are valid: the two dimensions are orientations, not a conflict.
+    expect(entry?.why).toMatch(/VERTICALLY or HORIZONTALLY/);
+    expect(entry?.why).toMatch(/6" W x 30" H/);
+    expect(entry?.why).toMatch(/30" W x 6" H/);
+    expect(entry?.why).toMatch(
+      /both readings are valid depending on orientation/,
+    );
+    expect(entry?.why).toMatch(/five bottles fit in either orientation/);
+    expect(entry?.why).toMatch(/NOT mapped/);
+    // The near candidate is still only a candidate.
+    expect(entry?.faircrestCandidate).toBe("WWR630");
+    expect(faircrest2020SameCabinet("WWC630", "WWR630")).toBe(false);
   });
 
   it("ships a separate opt-in SQL file to clean a live BSR9 -> BT9 alias", () => {

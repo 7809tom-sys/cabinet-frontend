@@ -343,7 +343,7 @@ const CONFIRMED: readonly Faircrest2020AliasEntry[] = [
     hands: ["L", "R"],
     family: "full-height-base-9",
     evidence:
-      "Tom resolved this family: BFH9, B9FH, BT9FH, BT9, BT09, TB9 and TB09 are ALL the same full-height base 9, whatever the nomenclature. Faircrest writes it TB09-L / TB09-R, so every spelling resolves to TB09 with the hand preserved. BT9PO (spice-rack pull-out) is a different cabinet and stays out.",
+      "Tom resolved this family: BFH9, B9FH, BT9FH, BT9, BT09, TB9 and TB09 are ALL the same full-height base 9, whatever the nomenclature. Faircrest writes it TB09-L / TB09-R, so every spelling resolves to TB09 with the hand preserved. Tom also confirmed BT9, FH9, FHB9, 9FH and B9 are all the same cabinet under multiple codes — recorded here as documentation; FH9, FHB9, 9FH and B9 are not mapped by this PR. BT9PO (spice-rack pull-out) is a different cabinet and stays out.",
   },
   {
     ourCode: "BT09",
@@ -669,12 +669,13 @@ export const FAIRCREST_2020_NEEDS_TOM: readonly {
   {
     ourCode: "WWC630",
     faircrestCandidate: "WWR630",
-    why: 'Decided unmapped. Our WWC630 code reads 6" W x 30" H, while the catalog row itself is 30" W x 6" H — the label and the row disagree, so no Faircrest code can be matched on a measurement we are not sure of. WWR630 is the nearest Faircrest candidate ("Wall Wine Rack", 6 x 30) and is recorded here for whoever resolves the row dimensions; it is NOT mapped, because guessing which reading is right is exactly what Tom ruled out.',
+    why: 'Tom: WWC630 is a wine cabinet with five spots for wine holes. It stays unmapped. The cabinet can be oriented VERTICALLY or HORIZONTALLY, which is why the label shows 6" W x 30" H and the catalog row shows 30" W x 6" H — both readings are valid depending on orientation, and five bottles fit in either orientation. Because the two readings are the same cabinet rather than a contradiction, no Faircrest code is matched until its own orientation/nomenclature is confirmed. WWR630 is the nearest Faircrest candidate ("Wall Wine Rack", 6 x 30) and is recorded here for that check; it is NOT mapped, because guessing which code corresponds to which orientation is exactly what Tom ruled out. (As with every wine rack, it carries a lattice insert for wine bottles.)',
   },
   {
     ourCode: "SP09",
-    faircrestCandidate: 'BSR9 (9" Base Spice Rack) — pending Tom confirmation',
-    why: 'SP09 = 9" spice pull-out cabinet, carried by every supplier. It is NOT the same as SPO9 (SPO9 is the whole-unit spice pullout with three shelves). It may go by different nomenclature at Faircrest but is the same cabinet. Proposed Faircrest match: BSR9, the 9" Base Spice Rack — pending Tom confirmation, so NO alias is added yet and SP09 must not resolve to anything in the meantime. Note that once confirmed, SP09 and our BSR9 would BOTH point at Faircrest BSR9: two of our spellings naming one Faircrest cabinet, which is expected, not a conflict.',
+    faircrestCandidate:
+      'BSR9 (9" Base Spice Rack) — same cabinet as our BSR9, alias not yet added',
+    why: 'Tom confirmed SP09 and BSR9 are the SAME cabinet: the 9" spice pull-out, carried by every supplier, written under two codes. It is one item, not two configurations — so the two codes are interchangeable descriptions of a single SKU. This is Tom\'s lettering rule in action: T = tray and S = spice, which is why BT9 is the tray base and BSR9 is the spice unit, and why neither may be read as the other. SP09 is NOT the same as SPO9 (SPO9 is the whole-unit spice pullout with three shelves). Proposed Faircrest match: BSR9, the 9" Base Spice Rack. Documentation only for now: NO alias is added yet and SP09 must not resolve to anything in the meantime. When it is added, SP09 and our BSR9 will BOTH point at Faircrest BSR9 — two of our spellings naming one Faircrest cabinet, which is expected, not a conflict.',
   },
 ];
 
