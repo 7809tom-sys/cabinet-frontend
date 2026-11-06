@@ -80,4 +80,67 @@ describe("glass-door elevation rendering", () => {
     expect(markup).toContain('data-open-shelf-count="2"');
     expect(markup).toContain("border-top-right-radius:0");
   });
+
+  it("draws WEOS0930, WEOS0936 and WEOS0942 as finished open boxes with their configured shelf count and no doors", () => {
+    for (const [masterCode, height, configured, expectedShelves] of [
+      ["WEOS0930", 30, 2, 2],
+      ["WEOS0936", 36, 2, 2],
+      ["WEOS0942", 42, 3, 3],
+    ] as const) {
+      const markup = renderGlassCabinet({
+        uid: `shelf-${masterCode}`,
+        cabinetId: 930,
+        masterCode,
+        description: "Wall End Open Shelf",
+        category: "Wall",
+        subCategory: "Open Shelf",
+        width: 9,
+        height,
+        depth: 12,
+        numberOfDoors: 0,
+        numberOfDrawers: 0,
+        customProfile: null,
+        fixedShelfCount: configured,
+      });
+
+      // The open-shelf vector profile owns the face: no door leaves, no glass.
+      expect(markup, masterCode).toContain('data-cabinet-profile="curved-open-shelf"');
+      expect(markup, masterCode).toContain('data-open-shelf-finished-box="true"');
+      expect(markup, masterCode).toContain(`data-open-shelf-shelves="${expectedShelves}"`);
+      expect(markup.match(/data-glass-door-frame="true"/g) ?? [], masterCode).toHaveLength(0);
+      expect(markup, masterCode).not.toContain('data-transparent-glass="true"');
+
+      // Configured shelf count is drawn exactly, one board per configured shelf.
+      const shelfBands = markup.match(/left-\[5%\] right-\[5%\] h-\[2px\]/g) ?? [];
+      expect(shelfBands.length, masterCode).toBe(expectedShelves);
+      for (let index = 0; index < expectedShelves; index += 1) {
+        const percent = ((index + 1) / (expectedShelves + 1)) * 100;
+        expect(markup, masterCode).toContain(`top:${percent}%`);
+      }
+      // An open shelf never draws a recessed Shaker door panel.
+      expect(markup, masterCode).not.toContain("shaker");
+    }
+  });
+
+  it("drawn open-shelf elevation keeps the finished face colour, not a darkened cavity border", () => {
+    const markup = renderGlassCabinet({
+      uid: "shelf-weos0930",
+      cabinetId: 930,
+      masterCode: "WEOS0930",
+      description: "Wall End Open Shelf",
+      category: "Wall",
+      subCategory: "Open Shelf",
+      width: 9,
+      height: 30,
+      depth: 12,
+      numberOfDoors: 0,
+      numberOfDrawers: 0,
+      customProfile: null,
+      fixedShelfCount: 2,
+    });
+    // The reported defect was a dark border around the opening that read as a
+    // face frame. The face now uses an inset hairline on the box outline only.
+    expect(markup).not.toContain("border:3px solid");
+    expect(markup).toContain("inset 0 0 0 1.5px");
+  });
 });

@@ -27,6 +27,7 @@ import { threeDMiteredRoomWallGeometry, threeDMiteredRoomWallOutlines } from "./
 import { normalizedThreeDCabinetMoveIncrement, parsedThreeDCabinetMoveIncrement, THREE_D_MAX_MOVE_INCREMENT_IN, THREE_D_MIN_MOVE_INCREMENT_IN } from "./InteractiveRoom3D";
 import { addThreeDContinuousToeKicks, threeDContinuousToeKickSegments } from "./InteractiveRoom3D";
 import { COUNTERTOP_DEPTH_IN, DEFAULT_ROOM, STD, cornerLegRatioForPlaced, countertopRunFaceNormal, countertopSurfacePlanPolygon, countertopSurfaces, nextAvailableRoomCornerPlacement, peninsulaRunEndpoints, placedCornerGeometryKind, placedFootprint, wallPlacementAt } from "@/lib/design";
+import { wallOpenShelfShelfCenters } from "@/lib/wallOpenShelf";
 import { AEF_PRINTED_GEOMETRY_MARKER } from "@shared/aefFramelessGeometry";
 import { ovenOpeningGeometry } from "@/lib/ovenOpening";
 import { addThreeDCrownMolding, applyThreeDStructuralFinishMaterials, threeDDecorativeEndIsDoor, threeDStructuralSampleTexture } from "./InteractiveRoom3D";
@@ -512,7 +513,7 @@ describe("3D fallback appliance run seams", () => {
     expect(((rangeChassis!.geometry as THREE.BoxGeometry).parameters.width as number) * 12).toBeCloseTo(30, 6);
   });
 
-  it("renders WEOS0930 as the verified 9-by-30-by-12 open wall-end shelf with two bowed fixed shelves", () => {
+  it("renders WEOS0930 as the verified 9-by-30-by-12 open wall-end shelf with two rounded-corner fixed shelves", () => {
     const root = new THREE.Group();
     addCabinet(root, {
       distributorSkuId: 930,
@@ -526,6 +527,7 @@ describe("3D fallback appliance run seams", () => {
       numberOfDoors: 0,
       numberOfDrawers: 0,
       fixedShelfCount: 2,
+      openShelfExposedHand: "right",
     }, "back", {}, 144, 120, "#b99a6b", "#f8f8f6", undefined, { x: 18, z: 6, rotation: 0, bottom: 54 });
 
     const shelfRoot = root.children[0]!;
@@ -542,7 +544,11 @@ describe("3D fallback appliance run seams", () => {
       "back", "bottom", "fixed-shelf", "fixed-shelf", "left-side", "right-side", "top",
     ]);
     expect(fixedShelves).toHaveLength(2);
-    expect(fixedShelves.every((shelf) => shelf.geometry.type === "ExtrudeGeometry" && shelf.userData.bowedFrontEdge === true)).toBe(true);
+    // The target form is a solid shelf with a radiused front corner on the open
+    // end, not a shelf bowed across the whole front.
+    expect(fixedShelves.every((shelf) => shelf.geometry.type === "ExtrudeGeometry")).toBe(true);
+    expect(fixedShelves.every((shelf) => shelf.userData.roundedExposedCorner === 1)).toBe(true);
+    expect(fixedShelves.every((shelf) => shelf.userData.shelfCountSource === "config")).toBe(true);
     expect(fixedShelves.map((shelf) => shelf.userData.wallOpenShelfFixedShelf)).toEqual([1, 2]);
     expect(cabinetFronts).toHaveLength(0);
     root.updateMatrixWorld(true);
@@ -550,6 +556,137 @@ describe("3D fallback appliance run seams", () => {
     expect((bounds.max.x - bounds.min.x) * 12).toBeCloseTo(9, 6);
     expect((bounds.max.y - bounds.min.y) * 12).toBeCloseTo(30, 6);
     expect((bounds.max.z - bounds.min.z) * 12).toBeCloseTo(12, 6);
+  });
+
+  it("renders WEOS0936 and WEOS0942 with the same 9-inch width, 12-inch depth and their own height and shelves", () => {
+    for (const [masterCode, height, configuredShelves] of [
+      ["WEOS0936", 36, 2],
+      ["WEOS0942", 42, 3],
+    ] as const) {
+      const root = new THREE.Group();
+      addCabinet(root, {
+        distributorSkuId: 936,
+        cabinetId: 930,
+        masterCode,
+        description: "Wall End Open Shelf",
+        placementType: "wall",
+        width: 9,
+        height,
+        depth: 12,
+        numberOfDoors: 0,
+        numberOfDrawers: 0,
+        fixedShelfCount: configuredShelves,
+        openShelfExposedHand: "right",
+      }, "back", {}, 144, 120, "#b99a6b", "#f8f8f6", undefined, { x: 18, z: 6, rotation: 0, bottom: 84 - height });
+
+      const shelfRoot = root.children[0]!;
+      const fixedShelves: THREE.Mesh[] = [];
+      let doorFronts = 0;
+      let faceFrame = 0;
+      shelfRoot.traverse((node) => {
+        if (node instanceof THREE.Mesh && node.userData.wallOpenShelfFixedShelf) fixedShelves.push(node);
+        if (node.userData.cabinetFront) doorFronts += 1;
+        if (node.userData.cabinetFaceFrame) faceFrame += 1;
+      });
+      // Shelf count comes from the config, not from a per-height stock default.
+      expect(fixedShelves, masterCode).toHaveLength(configuredShelves);
+      expect(fixedShelves.every((shelf) => shelf.userData.shelfCountSource === "config"), masterCode).toBe(true);
+      expect(doorFronts, masterCode).toBe(0);
+      expect(faceFrame, masterCode).toBe(0);
+
+      // Evenly spaced: each board sits on an equal step of the interior opening.
+      const centers = fixedShelves
+        .map((shelf) => shelf.userData.shelfCenterAboveInteriorBottomIn as number)
+        .sort((a, b) => a - b);
+      const interiorHeight = centers[centers.length - 1]! / configuredShelves * (configuredShelves + 1);
+      expect(centers, masterCode).toEqual(
+        wallOpenShelfShelfCenters(interiorHeight, configuredShelves),
+      );
+
+      root.updateMatrixWorld(true);
+      const bounds = new THREE.Box3().setFromObject(shelfRoot);
+      expect((bounds.max.x - bounds.min.x) * 12, masterCode).toBeCloseTo(9, 6);
+      expect((bounds.max.y - bounds.min.y) * 12, masterCode).toBeCloseTo(height, 6);
+      expect((bounds.max.z - bounds.min.z) * 12, masterCode).toBeCloseTo(12, 6);
+    }
+  });
+
+  it("honours a configured zero shelf count and never invents a shelf", () => {
+    const root = new THREE.Group();
+    addCabinet(root, {
+      distributorSkuId: 942,
+      cabinetId: 930,
+      masterCode: "WEOS0942",
+      description: "Wall End Open Shelf",
+      placementType: "wall",
+      width: 9,
+      height: 42,
+      depth: 12,
+      numberOfDoors: 0,
+      numberOfDrawers: 0,
+      fixedShelfCount: 0,
+    }, "back", {}, 144, 120, "#b99a6b", "#f8f8f6", undefined, { x: 18, z: 6, rotation: 0, bottom: 42 });
+
+    let fixedShelves = 0;
+    root.children[0]!.traverse((node) => {
+      if (node.userData.wallOpenShelfFixedShelf) fixedShelves += 1;
+    });
+    expect(fixedShelves).toBe(0);
+  });
+
+  it("rounds the shelf front on the exposed end only, using the measured run hand", () => {
+    const build = (hand: "left" | "right" | null) => {
+      const root = new THREE.Group();
+      addCabinet(root, {
+        distributorSkuId: 930,
+        cabinetId: 930,
+        masterCode: "WEOS0930",
+        description: "Wall End Open Shelf",
+        placementType: "wall",
+        width: 9,
+        height: 30,
+        depth: 12,
+        numberOfDoors: 0,
+        numberOfDrawers: 0,
+        fixedShelfCount: 2,
+        openShelfExposedHand: hand,
+      }, "back", {}, 144, 120, "#b99a6b", "#f8f8f6", undefined, { x: 18, z: 6, rotation: 0, bottom: 54 });
+      const shelves: THREE.Mesh[] = [];
+      root.children[0]!.traverse((node) => {
+        if (node instanceof THREE.Mesh && node.userData.wallOpenShelfFixedShelf) shelves.push(node);
+      });
+      return shelves.map((shelf) => shelf.userData.roundedExposedCorner);
+    };
+    expect(build("right")).toEqual([1, 1]);
+    expect(build("left")).toEqual([-1, -1]);
+    // A mid-run shelf butts a neighbour on both ends: two square shelf ends.
+    expect(build(null)).toEqual([null, null]);
+  });
+
+  it("draws no face-frame lines or stiles across the open shelf opening", () => {
+    const root = new THREE.Group();
+    addCabinet(root, {
+      distributorSkuId: 930,
+      cabinetId: 930,
+      masterCode: "WEOS0930",
+      description: "Wall End Open Shelf",
+      placementType: "wall",
+      width: 9,
+      height: 30,
+      depth: 12,
+      numberOfDoors: 0,
+      numberOfDrawers: 0,
+      fixedShelfCount: 2,
+    }, "back", {}, 144, 120, "#b99a6b", "#f8f8f6", undefined, { x: 18, z: 6, rotation: 0, bottom: 54 });
+
+    let edgeOverlays = 0;
+    let constructedFaceFrames = 0;
+    root.children[0]!.traverse((node) => {
+      if (node instanceof THREE.LineSegments) edgeOverlays += 1;
+      if (node.userData.cabinetFaceFrame) constructedFaceFrames += 1;
+    });
+    expect(edgeOverlays).toBe(0);
+    expect(constructedFaceFrames).toBe(0);
   });
 
   it("renders the KitchenCrest OE630 generic form as a square 6-by-30-by-12 open-end shelf with two shelves", () => {
@@ -576,7 +713,7 @@ describe("3D fallback appliance run seams", () => {
       if (node instanceof THREE.Mesh && node.userData.wallOpenShelfFixedShelf) fixedShelves.push(node);
     });
     expect(fixedShelves).toHaveLength(2);
-    expect(fixedShelves.every((shelf) => shelf.geometry.type === "BoxGeometry" && shelf.userData.bowedFrontEdge === false)).toBe(true);
+    expect(fixedShelves.every((shelf) => shelf.geometry.type === "BoxGeometry" && shelf.userData.roundedExposedCorner === null)).toBe(true);
     expect(fixedShelves.every((shelf) => shelf.userData.kitchenCrestGenericOpenEndShelf === true)).toBe(true);
     root.updateMatrixWorld(true);
     const bounds = new THREE.Box3().setFromObject(shelfRoot);

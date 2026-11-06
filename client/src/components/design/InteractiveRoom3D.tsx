@@ -30,7 +30,7 @@ import { ColorStyleQuickPicker } from "./ColorStyleQuickPicker";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { APPLIANCES, BLIND_CORNER_FILLER_WIDTH_IN, COUNTERTOP_DEPTH_IN, FURNITURE_CATALOG, STD, applianceAppearanceImage, bearsCountertop, isBaseHeightAppliance, blindCornerRearCountertopExtensionIn, blindPullRange, cabinetWall, cabinetWallDragPreview, cornerLegRatioForPlaced, cornerRotationForPlaced, countertopRunFaceNormal, countertopSurfacePlanPolygon, countertopSurfaces, crownBlockingCabinets, crownEligibleCabinets, customWallCabinetSide, drywallPonyWallAppearance, DESK_TOP_HEIGHT_IN, elevationBox, formatEighthInches, formatInches, glassDoorShelfCount, isKneeDrawerItem, isAgainstWall, isBaseEndCornerCabinet, isCustomRoomWall, isFillerItem, fillerWidthRange, isGlassDoorCabinet, isMicrowaveOverRangePair, isRangeHoodPlacement, isRangeOrOven, isRefrigerator, isStacker, isWallRunDraggable, isWd18CountertopDrawerCabinet, kitchenCrestGenericOpenEndShelfCount, normalizeInstalledFillersToAdjacentCabinets, peninsulaCountertopPonyWallBackExtensionIn, peninsulaCountertopPonyWallBarOverhang, peninsulaCountertopSeatingOverhang, peninsulaCountertopWaterfallEnd, peninsulaLowerWorktopOppositeSideExtensionIn, peninsulaRunEndpoints, placedCornerGeometryKind, placedFootprint, ponyWallMiteredFootprint, ponyWallPlanFrame, potFillerMountedRange, rangeVisualAppearance, refrigeratorBayVerificationMetrics, resolveCabinetHardwarePosition, resolveSwing, roomWallAppearance, seatedWallRunFrame, wallRunFrame, wallAngleEndHandForPlacement, selectedLowerCabinetWallPlacement, sinkPlanDimensions, usesRaisedFloorWallDoorPull, wallCabinetFitMeasure, wallGapFitPreview, wallGapFreehandPreview, wallGaps, wallPlacementAt, wallRunOffset, wallRunSpan, wallSpanMeasure, wallLength, wd18CountertopFaceLayout, type CabinetWallDragPreview, type CountertopSurface, type IslandZone, type PlacedCabinet, type PlacedCornerGeometryKind, type PlacedFurniture, type PonyWall, type PotFillerFixture, rotatedSize, type RoomData, type SinkFixture, type WallCabinetFitMeasure, type WallGapFitPreview, type WallOpening, type WallSide, type WallSpanMeasure, wallTopLimit, } from "@/lib/design";
+import { APPLIANCES, BLIND_CORNER_FILLER_WIDTH_IN, COUNTERTOP_DEPTH_IN, FURNITURE_CATALOG, STD, applianceAppearanceImage, bearsCountertop, isBaseHeightAppliance, blindCornerRearCountertopExtensionIn, blindPullRange, cabinetWall, cabinetWallDragPreview, cornerLegRatioForPlaced, cornerRotationForPlaced, countertopRunFaceNormal, countertopSurfacePlanPolygon, countertopSurfaces, crownBlockingCabinets, crownEligibleCabinets, customWallCabinetSide, drywallPonyWallAppearance, DESK_TOP_HEIGHT_IN, elevationBox, formatEighthInches, formatInches, glassDoorShelfCount, isKneeDrawerItem, isAgainstWall, isBaseEndCornerCabinet, isCustomRoomWall, isFillerItem, fillerWidthRange, isGlassDoorCabinet, isMicrowaveOverRangePair, isRangeHoodPlacement, isRangeOrOven, isRefrigerator, isStacker, isWallRunDraggable, isWd18CountertopDrawerCabinet, kitchenCrestGenericOpenEndShelfCount, normalizeInstalledFillersToAdjacentCabinets, peninsulaCountertopPonyWallBackExtensionIn, peninsulaCountertopPonyWallBarOverhang, peninsulaCountertopSeatingOverhang, peninsulaCountertopWaterfallEnd, peninsulaLowerWorktopOppositeSideExtensionIn, peninsulaRunEndpoints, placedCornerGeometryKind, placedFootprint, ponyWallMiteredFootprint, ponyWallPlanFrame, potFillerMountedRange, rangeVisualAppearance, refrigeratorBayVerificationMetrics, resolveCabinetHardwarePosition, resolveSwing, roomWallAppearance, seatedWallRunFrame, wallRunFrame, wallAngleEndHandForPlacement, wallOpenShelfExposedHand, normalizeWallOpenShelfMounts, selectedLowerCabinetWallPlacement, sinkPlanDimensions, usesRaisedFloorWallDoorPull, wallCabinetFitMeasure, wallGapFitPreview, wallGapFreehandPreview, wallGaps, wallPlacementAt, wallRunOffset, wallRunSpan, wallSpanMeasure, wallLength, wd18CountertopFaceLayout, type CabinetWallDragPreview, type CountertopSurface, type IslandZone, type PlacedCabinet, type PlacedCornerGeometryKind, type PlacedFurniture, type PonyWall, type PotFillerFixture, rotatedSize, type RoomData, type SinkFixture, type WallCabinetFitMeasure, type WallGapFitPreview, type WallOpening, type WallSide, type WallSpanMeasure, wallTopLimit, } from "@/lib/design";
 import { refrigeratorEndPanelCutDownNote } from "@/lib/refrigeratorEndPanelCut";
 import { roomWallRunFrames } from "@/lib/design";
 import {
@@ -43,6 +43,12 @@ import { PLATE_RACK_FRAME_IN, plateRackDividerLayout } from "@/lib/plateRackLayo
 import { cornerDrawerFrontLayout, isCornerDrawerBaseCabinet } from "@/lib/cornerDrawerLayout";
 import { baseAngleEndPlan, isBaseAngleEndCabinet, type BaseAngleEndHand, type PlanPoint } from "@/lib/baseAngleEndLayout";
 import { isWallAngleEndCabinet, wallAngleEndPlan, type WallAngleEndHand } from "@/lib/wallAngleEndLayout";
+import {
+  isWallEndOpenShelfCode,
+  wallOpenShelfShelfCenters,
+  wallOpenShelfShelfCount,
+  wallOpenShelfShelfRadius,
+} from "@/lib/wallOpenShelf";
 export { threeDLatticeRackLayout };
 import { islandCountertopRects, islandCountertopVisibleRects, islandRaisedBarRects, islandFaceFitMeasure } from "@/lib/islandScene";
 import { furniturePlanFrame, resolvedFurnitureDimensions } from "@/lib/design";
@@ -317,6 +323,11 @@ type SceneSku = {
   swing?: "left" | "right" | "double" | "none" | null;
   /** Open-end hand for a WAC/AW wall angle cabinet. Right tapers toward +X. */
   wallAngleEndHand?: "left" | "right" | null;
+  /**
+   * Exposed run end of a wall open shelf, as a viewer hand. The rounded shelf
+   * front sits on this end; null means both ends butt a neighbour.
+   */
+  openShelfExposedHand?: "left" | "right" | null;
   /** Stamped neighbour side from the wall-run commit. Rendering uses wallAngleEndHand. */
   angleEndHand?: "left" | "right" | null;
   handleSide?: "left" | "right" | null;
@@ -4165,9 +4176,53 @@ export function angledTransitionLocalFootprint(
 }
 
 /**
- * The source drawing for WEOS0930 shows a 9×30×12 wall-end shelf with a straight
- * rear, open front, and a rounded front edge on each fixed interior shelf. This
- * is a shelf board—not a photo texture or a generic box.
+ * One fixed shelf board for a wall open shelf. The board fills the inside width
+ * and depth of the carcass. Its front edge is straight, and the front corner on
+ * the exposed run end carries a radius — the wall-end form in the source
+ * drawing is a solid shelf with a rounded front corner, not a bowed centre.
+ *
+ * `roundedCorner` is -1 for the viewer's left end, +1 for the right end, and
+ * null when both ends butt a neighbour (a mid-run open shelf keeps two square
+ * corners). The board is centred on its own thickness so the caller positions it
+ * by shelf centre.
+ */
+export function openShelfBoardGeometry(
+  width: number,
+  depth: number,
+  thickness: number,
+  roundedCorner: -1 | 1 | null,
+  radiusIn: number,
+) {
+  if (roundedCorner == null) return new THREE.BoxGeometry(width, thickness, depth);
+  const halfWidth = Math.max(0.02, width / 2);
+  const halfDepth = Math.max(0.02, depth / 2);
+  const radius = Math.max(0.01, Math.min(radiusIn * INCH, halfWidth * 0.9, halfDepth * 0.9));
+  const sign = roundedCorner;
+  const shape = new THREE.Shape();
+  // Trace the plan outline counter-clockwise, starting at the wall side.
+  shape.moveTo(-halfWidth, -halfDepth);
+  shape.lineTo(halfWidth, -halfDepth);
+  if (sign > 0) {
+    shape.lineTo(halfWidth, halfDepth - radius);
+    shape.quadraticCurveTo(halfWidth, halfDepth, halfWidth - radius, halfDepth);
+    shape.lineTo(-halfWidth, halfDepth);
+  } else {
+    shape.lineTo(halfWidth, halfDepth);
+    shape.lineTo(-halfWidth + radius, halfDepth);
+    shape.quadraticCurveTo(-halfWidth, halfDepth, -halfWidth, halfDepth - radius);
+  }
+  shape.closePath();
+  const geometry = new THREE.ExtrudeGeometry(shape, { depth: thickness, bevelEnabled: false, steps: 1, curveSegments: 12 });
+  geometry.rotateX(-Math.PI / 2);
+  geometry.translate(0, -thickness / 2, 0);
+  geometry.computeVertexNormals();
+  geometry.computeBoundingBox();
+  return geometry;
+}
+
+/**
+ * @deprecated Kept for saved call sites. A wall-end shelf board is now
+ * `openShelfBoardGeometry` with a radius on the exposed end corner.
  */
 export function wallEndOpenShelfBoardGeometry(
   width: number,
@@ -4175,24 +4230,7 @@ export function wallEndOpenShelfBoardGeometry(
   thickness: number,
   bowedFront = true,
 ) {
-  if (!bowedFront) return new THREE.BoxGeometry(width, thickness, depth);
-  const halfWidth = width / 2;
-  const halfDepth = depth / 2;
-  // The catalog drawing's bow is centered in the 9-inch face and stays inside
-  // the 12-inch cabinet depth. Its side endpoints are 2 inches behind the
-  // foremost center point, keeping the shelf usable and physically plausible.
-  const bowDepth = Math.min(2 * INCH, Math.max(0.035, width * 0.22), depth * 0.28);
-  const sideFrontZ = halfDepth - bowDepth;
-  const shape = new THREE.Shape();
-  shape.moveTo(-halfWidth, -halfDepth);
-  shape.lineTo(halfWidth, -halfDepth);
-  shape.lineTo(halfWidth, sideFrontZ);
-  shape.quadraticCurveTo(0, halfDepth + bowDepth, -halfWidth, sideFrontZ);
-  shape.closePath();
-  const geometry = new THREE.ExtrudeGeometry(shape, { depth: thickness, bevelEnabled: false, steps: 1 });
-  geometry.rotateX(-Math.PI / 2);
-  geometry.translate(0, -thickness / 2, 0);
-  return geometry;
+  return openShelfBoardGeometry(width, depth, thickness, bowedFront ? 1 : null, 2);
 }
 
 /** Manufacturer-photo-informed preview only. These shapes have NO published
@@ -4356,8 +4394,20 @@ export function addCabinet(
   const isWallOpenShelf = /^W(?:E)?OS\d{4}$/.test(openShelfCode)
     || kitchenCrestGenericShelfCount != null
     || /\bwall\s+(?:end\s+)?open\s+shelf\b|\bwall\s+end\s+shelf\b|\bopen\s+end\s+shelf\s+wall\b/i.test(`${sku.subCategory ?? ""} ${sku.description ?? ""}`);
-  const isWallEndOpenShelf = /^WEOS\d{4}$/.test(openShelfCode)
+  const isWallEndOpenShelf = isWallEndOpenShelfCode(openShelfCode)
     || /\bwall\s+end\s+(?:open\s+)?shelf\b/i.test(`${sku.subCategory ?? ""} ${sku.description ?? ""}`);
+  // The radiused shelf-front corner belongs on the exposed run end only. A
+  // saved placement supplies its measured hand; a standalone wall-end shelf has
+  // no neighbour to butt, so its end form faces the viewer's right.
+  const openShelfRoundedCorner: -1 | 1 | null = !isWallEndOpenShelf
+    ? null
+    : sku.openShelfExposedHand === "left"
+      ? -1
+      : sku.openShelfExposedHand === "right"
+        ? 1
+        : sku.openShelfExposedHand === null
+          ? null
+          : 1;
   // A WOS/WEOS is a full-height wall cabinet with an open, curved-shelf
   // carcass. Only explicit FS/floating-shelf items use the thin-shelf path.
   const isFloatingShelf = !isWallOpenShelf && (/^FS[-_ ]?\d+(?:\.\d+)?$/i.test(sku.masterCode ?? "") || /floating\s*shelf/i.test(`${sku.description ?? ""} ${sku.masterCode ?? ""}`));
@@ -4919,8 +4969,13 @@ export function addCabinet(
       }
     }
   } else if (isWallOpenShelf) {
-    // A wall open shelf is a full carcass, never a thin floating shelf. The
-    // WEOS wall-end source alone adds the source-documented bowed shelf fronts.
+    // A wall open shelf is a finished, doorless box: solid top, bottom, back and
+    // two finished sides, an open front, and the shelf count from its own edit
+    // config. Nothing here draws a door, a drawer, a face frame, or a stile.
+    //
+    // The panel sizes come from the cabinet's physical envelope, so the same
+    // renderer serves WEOS0930 (9x30x12) and every other open-shelf size; only
+    // the shelf count and the exposed-end corner radius change.
     const panelThickness = Math.min(0.06, Math.max(0.035, Math.min(bodyWidth, bodyDepth) * 0.075));
     const shelfThickness = Math.min(0.052, Math.max(0.028, bodyHeight * 0.022));
     const interiorWidth = Math.max(0.08, bodyWidth - panelThickness * 2);
@@ -4930,8 +4985,8 @@ export function addCabinet(
       mesh.userData = {
         wallOpenShelf: true,
         wallEndOpenShelf: isWallEndOpenShelf,
-        catalogCurvedShelfAssembly: isWallEndOpenShelf,
         selectedStyleSideSkin: true,
+        noCabinetFronts: true,
         ...data,
       };
       cabinet.add(mesh);
@@ -4951,24 +5006,31 @@ export function addCabinet(
       sidePanel.position.x = side * (bodyWidth / 2 - panelThickness / 2);
       addOpenShelfPart(sidePanel, { wallOpenShelfPart: side === -1 ? "left-side" : "right-side" });
     }
-    // WEOS0930 keeps its source-documented two bowed shelves. The named
-    // KitchenCrest OE6 family uses the supplied generic square-shelf counts;
-    // all other open shelves retain only their authored count.
-    const fixedShelfCount = isWallEndOpenShelf
-      ? Math.max(1, Math.min(4, Math.round(Number(sku.fixedShelfCount ?? 2) || 2)))
-      : kitchenCrestGenericShelfCount
-        ?? Math.max(0, Math.min(4, Math.round(Number(sku.fixedShelfCount ?? 0) || 0)));
-    for (let index = 0; index < fixedShelfCount; index += 1) {
+    // Shelf count comes from the cabinet's edit config; the named families fall
+    // back to their own source drawing only when no count is configured.
+    const shelfPlan = wallOpenShelfShelfCount(sku);
+    const fixedShelfCount = shelfPlan.count;
+    const openShelfInteriorHeightIn = interiorHeight / INCH;
+    const shelfCenters = wallOpenShelfShelfCenters(openShelfInteriorHeightIn, fixedShelfCount);
+    for (const [index, centerIn] of shelfCenters.map((center, position) => [position, center] as const)) {
       const shelf = new THREE.Mesh(
-        wallEndOpenShelfBoardGeometry(interiorWidth, interiorDepth, shelfThickness, isWallEndOpenShelf),
+        openShelfBoardGeometry(
+          interiorWidth,
+          interiorDepth,
+          shelfThickness,
+          isWallEndOpenShelf ? openShelfRoundedCorner : null,
+          wallOpenShelfShelfRadius(interiorWidth / INCH, interiorDepth / INCH),
+        ),
         bodyMaterial,
       );
-      shelf.position.set(0, -bodyHeight / 2 + shelfThickness + (interiorHeight * (index + 1)) / (fixedShelfCount + 1), panelThickness / 2);
+      shelf.position.set(0, -bodyHeight / 2 + shelfThickness + centerIn * INCH, panelThickness / 2);
       addOpenShelfPart(shelf, {
         wallOpenShelfPart: "fixed-shelf",
         wallOpenShelfFixedShelf: index + 1,
-        bowedFrontEdge: isWallEndOpenShelf,
         sourceFixedShelfCount: fixedShelfCount,
+        shelfCountSource: shelfPlan.source,
+        shelfCenterAboveInteriorBottomIn: centerIn,
+        roundedExposedCorner: isWallEndOpenShelf ? openShelfRoundedCorner : null,
         kitchenCrestGenericOpenEndShelf: kitchenCrestGenericShelfCount != null,
       });
     }
@@ -6021,15 +6083,17 @@ export function addCabinet(
       frontGroup.add(doorGroup);
     }
   } else if (isWallOpenShelf) {
+    // An open shelf has no doors, drawers, pulls, or face frame. The whole face
+    // group stays empty; only the carcass and its fixed shelves are visible.
+    const shelfPlan = wallOpenShelfShelfCount(sku);
     frontGroup.userData = {
       ...frontGroup.userData,
       wallOpenShelf: true,
       wallEndOpenShelf: isWallEndOpenShelf,
       noCabinetFronts: true,
-      sourceFixedShelfCount: isWallEndOpenShelf
-        ? Math.max(1, Math.min(4, Math.round(Number(sku.fixedShelfCount ?? 2) || 2)))
-        : kitchenCrestGenericShelfCount
-          ?? Math.max(0, Math.min(4, Math.round(Number(sku.fixedShelfCount ?? 0) || 0))),
+      noFaceFrame: true,
+      sourceFixedShelfCount: shelfPlan.count,
+      shelfCountSource: shelfPlan.source,
     };
   } else if (isFloatingShelf) {
     frontGroup.userData = { ...frontGroup.userData, floatingShelf: true, noCabinetFronts: true };
@@ -7489,6 +7553,11 @@ export function addCabinet(
     // edge overlays expose the internal construction seam as a false line that
     // projects into the room. The two door frames remain the visible seam.
     if (specialty.kind === "l-corner" || specialty.kind === "corner-drawer" || specialty.kind === "end-return" || specialty.kind === "base-angle-end") continue;
+    // An open shelf is a finished box whose front edges are flush with the
+    // opening. Overlaying every panel's edges drew a dark dashed border around
+    // the opening that reads as a face frame (the reported WEOS defect), so the
+    // carcass relies on its own shaded panel faces instead.
+    if (isWallOpenShelf) continue;
     const edges = new THREE.LineSegments(
       new THREE.EdgesGeometry(bodyMesh.geometry),
       new THREE.LineBasicMaterial({ color: "#332d25", transparent: true, opacity: 0.34 }),
@@ -11230,7 +11299,7 @@ export function compactWallCodeDimensions(cabinet: Pick<PlacedCabinet, "masterCo
   return width >= 9 && height >= 9 ? { width, height } : null;
 }
 
-export function existingCabinetSku(cabinet: PlacedCabinet, room?: RoomData): SceneSku {
+export function existingCabinetSku(cabinet: PlacedCabinet, room?: RoomData, peers: readonly PlacedCabinet[] = []): SceneSku {
   // The shared saved-placement contract owns every corner family. The 3D
   // renderer receives its classification rather than re-inferring the shape.
   const sharedCornerKind = placedCornerGeometryKind(cabinet);
@@ -11255,6 +11324,7 @@ export function existingCabinetSku(cabinet: PlacedCabinet, room?: RoomData): Sce
     })
     : undefined;
   const codeDimensions = compactWallCodeDimensions(cabinet);
+  const openShelfHand = room ? wallOpenShelfExposedHand(cabinet, room, peers) : null;
   return {
     placementUid: cabinet.uid,
     distributorSkuId: -(Math.abs(cabinet.cabinetId) || 1),
@@ -11287,6 +11357,7 @@ export function existingCabinetSku(cabinet: PlacedCabinet, room?: RoomData): Sce
     doorOrientation: cabinet.doorOrientation ?? null,
 	    swing: resolveSwing(cabinet),
 	    angleEndHand: cabinet.angleEndHand === "left" ? "left" : null,
+    openShelfExposedHand: openShelfHand,
     handleSide: cabinet.handleSide === "left" || cabinet.handleSide === "right" ? cabinet.handleSide : null,
     mountBottom: cabinet.mountBottom ?? null,
     hardwarePosition: resolveCabinetHardwarePosition(cabinet),
@@ -12680,7 +12751,7 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 	      const sharedStandardCountertopSurfaces = threeDStandardCountertopSurfaces(room, renderedPlaced, island, ponyWalls);
 	      for (const cabinet of renderedPlaced) {
 	        if (!shouldRenderSavedSceneCabinet(cabinet, renderedPlaced)) continue;
-	        const baseSku = existingCabinetSku(cabinet, room);
+	        const baseSku = existingCabinetSku(cabinet, room, renderedPlaced);
 	        const transitionFootprint = angledWallTransitionFootprint(cabinet, room, renderedPlaced);
         const sku = {
           ...baseSku,

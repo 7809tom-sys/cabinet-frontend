@@ -1,0 +1,35 @@
+<!doctype html>
+<!--
+  Screenshot harness for the wall end open shelf family (WEOS).
+
+  Renders a real upper run — two shaker wall cabinets plus a WEOS at the open end
+  of the run — through the real 3D engine (`existingCabinetSku` + `addCabinet`),
+  so the capture is what the Designer actually draws. Nothing here is drawn by
+  hand.
+
+  Served by the Vite dev server at /dev/open-shelf-shot.html; used only by
+  e2e/open-shelf-screenshot.spec.ts. Not part of the app bundle: no route points
+  at it and nothing imports it.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Wall end open shelf check</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #eef1f4; font-family: system-ui, sans-serif; }
+      #root { position: relative; width: 100vw; height: 100vh; }
+      #root canvas { display: block; }
+      #caption {
+        position: absolute; left: 20px; top: 16px; padding: 10px 14px;
+        background: rgba(255,255,255,0.94); border-radius: 10px;
+        box-shadow: 0 8px 24px rgba(15,23,42,0.16); color: #0f172a; font-size: 13px; line-height: 1.5;
+      }
+      #caption strong { font-size: 14px; }
+      #caption .dim { color: #475569; font-size: 12px; }
+    </style>
+  </head>
+  <body>
+    <div id="root"><div id="caption">Building the upper run…</div></div>
+    <script type="module" src="/src/openShelfScreenshotHarness.ts"></script>
+  </body>
+</html>
