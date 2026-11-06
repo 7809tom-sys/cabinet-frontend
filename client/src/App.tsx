@@ -115,12 +115,11 @@ function PageLoader() {
 
 function AppLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
-  // The sales CRM and incoming-orders views already name the workspace at the
-  // top of the page, so the purple admin strip (and its "Admin Panel" link back
-  // to where you already are) is redundant there.
+  // The admin panel names the workspace in its own header, so the purple admin
+  // strip (and its "Admin Panel" link back to where you already are) is skipped
+  // on every /admin route.
   const showAdminEditModeBar = !hideAdminEditModeBarForRoute(
     location || window.location.pathname,
-    window.location.search,
   );
   return (
     <div className="min-h-screen flex flex-col">
