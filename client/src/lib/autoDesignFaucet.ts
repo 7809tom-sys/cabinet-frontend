@@ -102,12 +102,15 @@ export function groupFaucetsByBrand(products: readonly AutoDesignFaucetProduct[]
 
 type FaucetSink = SinkFixture;
 
-function withCatalogFaucet<T extends FaucetSink>(sink: T, product: AutoDesignFaucetProduct): T {
+function withCatalogFaucet<T extends FaucetSink>(sink: T, product: AutoDesignFaucetProduct, autoFilled = false): T {
   const profile = verifiedPelicanFaucetProfile(product.pelicanCode);
   return {
     ...sink,
     faucet: true,
     autoDesignFaucet: true,
+    // Filled in by the Designer, not chosen by the shopper. It completes the
+    // drawing but is never billed.
+    faucetAutoFilled: autoFilled || undefined,
     faucetRearDeckOffsetIn: sink.faucetRearDeckOffsetIn ?? (sink.type === "farmhouse" ? undefined : 1.25),
     pelicanFaucetProductId: product.id,
     pelicanFaucetProductName: product.name,
@@ -134,12 +137,13 @@ export function ensureAutoDesignFaucet<T extends FaucetSink>(
   if (sink.pelicanFaucetProductId != null) return { sink, attached: false };
   if (sink.faucet && sink.autoDesignFaucet && !product) return { sink, attached: false };
   if (sink.faucet && !product) return { sink: { ...sink, autoDesignFaucet: true }, attached: false };
-  if (product) return { sink: withCatalogFaucet(sink, product), attached: true };
+  if (product) return { sink: withCatalogFaucet(sink, product, true), attached: true };
   return {
     sink: {
       ...sink,
       faucet: true,
       autoDesignFaucet: true,
+      faucetAutoFilled: true,
       faucetRearDeckOffsetIn: sink.faucetRearDeckOffsetIn ?? (sink.type === "farmhouse" ? undefined : 1.25),
     },
     attached: true,
@@ -148,7 +152,22 @@ export function ensureAutoDesignFaucet<T extends FaucetSink>(
 
 /** Replaces the auto-placed faucet with the catalog product the user picked. */
 export function applyChosenAutoDesignFaucet<T extends FaucetSink>(sink: T, product: AutoDesignFaucetProduct): T {
-  return withCatalogFaucet(sink, product);
+  // A pick by the shopper is a real, billable choice.
+  return withCatalogFaucet(sink, product, false);
+}
+
+/**
+ * Fills a sink's missing faucet with a catalog row so the drawing is complete,
+ * without making it a shopper choice. The faucet is drawn in plan and 3D but is
+ * never added to the cart or the quote.
+ */
+export function fillAutoFaucet<T extends FaucetSink>(sink: T, product: AutoDesignFaucetProduct | null): T {
+  return product ? withCatalogFaucet(sink, product, true) : withDefaultFaucet(sink);
+}
+
+/** True when this faucet was filled in by the Designer rather than chosen. */
+export function isAutoFilledFaucet(sink: FaucetSink | null | undefined): boolean {
+  return Boolean(sink && (sink.faucetAutoFilled === true || sink.defaultFaucet === true));
 }
 
 /** True when this sink already carries a faucet, catalog or default. */
@@ -238,7 +257,7 @@ export function ensureMandatorySinkFaucets<T extends FaucetSink>(
       return sink;
     }
     const withFaucet = catalog
-      ? withCatalogFaucet(sink, catalog)
+      ? withCatalogFaucet(sink, catalog, true)
       : withDefaultFaucet(sink, options.bathroom === true);
     if (!catalog) usedDefault = true;
     source = catalog ? "catalog" : "default";
@@ -275,6 +294,7 @@ export function withDefaultFaucet<T extends FaucetSink>(sink: T, bathroom = fals
     faucet: true,
     autoDesignFaucet: true,
     defaultFaucet: true,
+    faucetAutoFilled: true,
     faucetRearDeckOffsetIn: sink.faucetRearDeckOffsetIn ?? (sink.type === "farmhouse" ? undefined : 1.25),
     pelicanFaucetProfileId: profile.id,
     faucetOverallHeight: profile.overallHeightIn,
