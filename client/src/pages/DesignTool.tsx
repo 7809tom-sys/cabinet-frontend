@@ -18831,7 +18831,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                   if (!items.length) return null;
                   return (
                     <div key={key} className="space-y-1.5">
-                      <div className="px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground border-b border-border">{label}</div>
+                      <div className="border-b border-border px-1 py-1 text-sm font-semibold leading-snug text-foreground">{label}</div>
                       {items.map((def) => (
                         <button
                           key={def.id}
@@ -18950,14 +18950,16 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                     aria-expanded={open}
                     aria-controls={groupId}
                     data-testid={`catalog-group-toggle-${groupId}`}
-                    className="relative z-10 -mx-1 w-[calc(100%+0.5rem)] touch-manipulation flex items-center gap-1.5 px-2 py-1.5 bg-background/95 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground border-b border-border hover:text-foreground transition-colors lg:sticky lg:top-0 lg:backdrop-blur"
+                    className="relative z-10 -mx-1 w-[calc(100%+0.5rem)] touch-manipulation flex items-start gap-1.5 px-2 py-1.5 bg-background/95 border-b border-border hover:bg-muted/60 transition-colors lg:sticky lg:top-0 lg:backdrop-blur"
                   >
                     <ChevronDown
-                      className={`h-3.5 w-3.5 shrink-0 transition-transform duration-200 ${open ? "" : "-rotate-90"}`}
+                      className={`mt-0.5 h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 ${open ? "" : "-rotate-90"}`}
                       style={{ transitionTimingFunction: "cubic-bezier(0.23,1,0.32,1)" }}
                     />
-                    <span className="flex-1 text-left">{group.label}</span>
-                    <span className="font-normal normal-case">({group.items.length})</span>
+                    <span className="min-w-0 flex-1 text-left">
+                      <span className="block whitespace-normal break-words text-sm font-semibold leading-snug text-foreground">{group.label}</span>
+                      <span className="mt-0.5 block text-[11px] font-normal leading-snug text-muted-foreground">({group.items.length})</span>
+                    </span>
                   </button>
                   {open && <div
                     id={groupId}

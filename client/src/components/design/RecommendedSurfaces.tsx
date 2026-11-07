@@ -258,24 +258,27 @@ function RecommendedRow({
   };
   return (
     <div className="space-y-1.5">
-      <div className="sticky top-0 z-10 -mx-1 flex w-[calc(100%+0.5rem)] items-center gap-1 border-b border-border bg-background/95 px-1 py-1 backdrop-blur">
+      <div className="sticky top-0 z-10 -mx-1 w-[calc(100%+0.5rem)] border-b border-border bg-background/95 px-1 py-1.5 backdrop-blur">
         <button
           type="button"
           data-testid={`recommended-section-toggle-${role}`}
           aria-expanded={open}
           aria-controls={`recommended-section-${role}`}
           onClick={onOpenChange}
-          className="flex min-w-0 flex-1 items-center gap-1.5 rounded px-1 py-0.5 text-left hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1a2744]"
+          className="flex w-full items-start gap-1.5 rounded px-1 py-0.5 text-left hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1a2744]"
         >
-          <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-200 ${open ? "" : "-rotate-90"}`} aria-hidden="true" />
-          <span className="truncate text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</span>
-          <span className="truncate text-[10px] font-normal normal-case text-muted-foreground/70">· {blurb}</span>
-          {!isLoading && <span className="ml-auto shrink-0 text-[10px] font-normal normal-case text-muted-foreground">({configurations.length})</span>}
+          <ChevronDown className={`mt-0.5 h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 ${open ? "" : "-rotate-90"}`} aria-hidden="true" />
+          <span className="min-w-0 flex-1">
+            <span className="block whitespace-normal break-words text-sm font-semibold leading-snug text-foreground">{label}</span>
+            <span className="mt-0.5 block whitespace-normal break-words text-[11px] font-normal leading-snug text-muted-foreground">
+              {blurb}{!isLoading ? ` · (${configurations.length})` : ""}
+            </span>
+          </span>
         </button>
         <button
           type="button"
           onClick={() => onBrowseAll(role)}
-          className="flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5 text-[10px] font-medium text-[#a87f33] hover:text-[#8a6828] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1a2744] transition-colors"
+          className="ml-6 mt-0.5 flex items-center gap-0.5 rounded px-1 py-0.5 text-[11px] font-medium text-[#a87f33] hover:text-[#8a6828] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1a2744] transition-colors"
         >
           Browse all <ChevronRight className="h-3 w-3" />
         </button>
