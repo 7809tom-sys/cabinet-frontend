@@ -271,6 +271,9 @@ import {
 } from "@/lib/hardware";
 import { HardwareCatalogPicker } from "@/components/design/HardwareCatalogPicker";
 import { CanvasActionRail } from "@/components/design/CanvasActionRail";
+import { SampleDoorCompareDialog } from "@/components/design/SampleDoorCompareDialog";
+import { sampleDoorComparisonPhotoUrl, type SampleDoorComparisonStyle } from "@/lib/sampleDoorCompare";
+import type { DoorAuditDoorProfile } from "@/lib/doorRenderingAudit";
 import { isPanelPaletteItem } from "./designToolPanels";
 import { normalizePaletteSearch, matchesPaletteSearch, matchesPaletteTextOrSize } from "@/lib/paletteSearch";
 import { searchCatalogItems } from "@shared/catalogCodeSearch";
@@ -14959,6 +14962,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // Signals to open the Save / My Plans dialogs from the mobile "More" sheet
   // (the DesignActions toolbar itself is desktop-only / hidden on phones).
   const [saveSignal, setSaveSignal] = useState(0);
+  // Side-by-side sample-door comparison. Opened by an explicit button so it
+  // never interrupts editing, and it reads the SAME photograph the finish
+  // swatch shows plus the SAME profile the 3D viewer builds fronts from.
+  const [sampleDoorCompareOpen, setSampleDoorCompareOpen] = useState(false);
   // Canvas-only ("immersive") mode: hides the site header, the page-history row,
   // both Designer toolbars and the phone bottom bar so the 3D canvas fills the
   // screen. The toggle sits on the viewer itself, so exiting is always reachable.
@@ -15515,6 +15522,28 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     const profile = withFramelessExposedFinish(activeStyle, designerCatalogDoorProfile(activeStyle));
     return withCatalogDoorStyleIdentity(activeStyle, profile);
   }, [activeStyle]);
+  // Sample-door comparison inputs. The photograph is the one the finish swatch
+  // already resolved, and the profile is the SAME object the 3D viewer builds
+  // its fronts from, so the comparison cannot describe a different door.
+  const sampleDoorComparePhotoUrl = useMemo(
+    () => sampleDoorComparisonPhotoUrl({
+      paletteSwatchUrl: paletteFinishSwatch,
+      threeDDoorSampleUrl: activeDoorSampleUrl,
+    }),
+    [paletteFinishSwatch, activeDoorSampleUrl],
+  );
+  const sampleDoorCompareProfile = activeCatalogDoorProfile as unknown as DoorAuditDoorProfile | null;
+  const sampleDoorCompareStyle = useMemo<SampleDoorComparisonStyle | null>(() => {
+    if (!activeStyle) return null;
+    const style = activeStyle as Record<string, unknown>;
+    return {
+      styleId: typeof style.id === "number" ? style.id : null,
+      name: activeStyleName || null,
+      code:typeof style.styleCode === "string" ? style.styleCode : null,
+      distributorName: activeStyleDistributorName,
+      identity: style,
+    };
+  }, [activeStyle, activeStyleName, activeStyleDistributorName]);
   // Every 3D surface reads the SAME accepted-merged style row: the accepted
   // render drives the door/drawer image, the finish color, and the raised-vs-
   // shaker profile. A raw `doorStyles.find` here would fall back to a catalog
@@ -17150,6 +17179,21 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                     <Eye className="h-5 w-5 shrink-0 text-[#1a2744]" />
                     <span className="font-medium">Interactive 3D Preview</span>
                   </button>
+                  {/* The side panel that carries the compact sample door is a
+                      closed drawer on a phone, so the comparison needs its own
+                      entry here to stay reachable. */}
+                  {activeStyle ? (
+                    <button
+                      type="button"
+                      data-testid="mobile-sample-door-compare-trigger"
+                      onClick={() => { setMoreSheetOpen(false); setTimeout(() => setSampleDoorCompareOpen(true), 150); }}
+                      className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors hover:bg-muted"
+                    >
+                      <Columns3 className="h-5 w-5 shrink-0 text-[#a87f33]" />
+                      <span className="font-medium">Sample door</span>
+                      <span className="ml-auto truncate text-[10px] text-muted-foreground">{activeStyleName}</span>
+                    </button>
+                  ) : null}
                 </div>
                 {/* Keeps the sheet's original bottom padding now that the last
                     section is the Visualization row and not Start New Design. */}
@@ -20635,6 +20679,21 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
             ) : (
               <span className="text-xs text-muted-foreground">{t("dt_bs_select_finish_preview")}</span>
             )}
+            {/* The sample photograph above is 40px. This opens the same picture
+                at full size beside a render of the same door. */}
+            {activeStyle ? (
+              <button
+                type="button"
+                data-testid="sample-door-compare-trigger"
+                onClick={() => setSampleDoorCompareOpen(true)}
+                aria-haspopup="dialog"
+                title="Compare the sample door photograph with a large render of this door"
+                className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md border border-[#a87f33]/50 bg-[#fffaf1] px-2 text-[10px] font-semibold text-[#765416] transition hover:bg-amber-100 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1a2744]"
+              >
+                <Columns3 className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                <span className="hidden sm:inline">Sample door</span>
+              </button>
+            ) : null}
 	            {/* Mirrors the Catalog supplier picker so the current lineup is
 	                unambiguous wherever the Designer is viewed. */}
             <Popover>
@@ -24268,6 +24327,20 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Side-by-side sample-door comparison. Reads the same photograph the
+          finish swatch shows and renders it with the app's existing door
+          capture, so both panes describe the same door at a judgeable size. */}
+      <SampleDoorCompareDialog
+        open={sampleDoorCompareOpen}
+        onOpenChange={setSampleDoorCompareOpen}
+        styleName={activeStyleName}
+        samplePhotoUrl={sampleDoorComparePhotoUrl}
+        doorProfile={sampleDoorCompareProfile}
+        style={sampleDoorCompareStyle}
+        renderExposure={doorRenderExposure}
+        distributorName={activeStyleDistributorName}
+      />
 
     </div>
   );
