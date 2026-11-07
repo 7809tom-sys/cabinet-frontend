@@ -10305,15 +10305,23 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     { enabled: vanityFaucetCatalogEnabled },
   );
   const vanityFaucetCatalogRows = useMemo(
-    () => mergeBathroomFaucetRows(
-      (faucetBaseProducts ?? []) as Array<{ id: number; pelicanCode?: string | null; sellPrice?: number | null }>,
-      [
-        ...(vanityFaucetByName.data?.items ?? []),
-        ...(vanityFaucetByTerm.data?.items ?? []),
-        ...(vanityFaucetVesselTerm.data?.items ?? []),
-      ] as Array<{ id: number; pelicanCode?: string | null; sellPrice?: number | null }>,
-    ) as typeof faucetBaseProducts,
-    [faucetBaseProducts, vanityFaucetByName.data, vanityFaucetByTerm.data, vanityFaucetVesselTerm.data],
+    () => {
+      // Kitchen sinks keep the server's kitchen faucet rows unchanged. Only the
+      // bathroom step needs the extra catalog searches and the bathroom filter;
+      // running kitchen rows through that filter removed every kitchen faucet.
+      if (!sinkBaseDialog || roomType === "bathroom") {
+        return mergeBathroomFaucetRows(
+          (faucetBaseProducts ?? []) as Array<{ id: number; pelicanCode?: string | null; sellPrice?: number | null }>,
+          [
+            ...(vanityFaucetByName.data?.items ?? []),
+            ...(vanityFaucetByTerm.data?.items ?? []),
+            ...(vanityFaucetVesselTerm.data?.items ?? []),
+          ] as Array<{ id: number; pelicanCode?: string | null; sellPrice?: number | null }>,
+        ) as typeof faucetBaseProducts;
+      }
+      return (faucetBaseProducts ?? []) as typeof faucetBaseProducts;
+    },
+    [faucetBaseProducts, roomType, sinkBaseDialog, vanityFaucetByName.data, vanityFaucetByTerm.data, vanityFaucetVesselTerm.data],
   );
   // Matching bottom grid for the sink just chosen. Pelican names each grid after
   // its sink model, so the match is the model code on the accessory row. Vanity
@@ -22714,7 +22722,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           setPendingWallMountedFaucet(null);
           setFaucetWallMountHeightText("");
           const gridNote = bottomGridProduct ? ` · ${bottomGridProduct.pelicanCode} grid added to the cart` : "";
-          toast.success(`${faucetProduct ? `${isBathroomVanity ? "Vanity sink" : "Sink"} & ${isBathroomVanity ? "vanity faucet" : "faucet"} added` : `${isBathroomVanity ? "Vanity sink" : "Sink"} added`}${gridNote}`);
+          const faucetNote = faucetProduct ? "" : " · the standard Pelican faucet is added to complete it";
+          toast.success(`${faucetProduct ? `${isBathroomVanity ? "Vanity sink" : "Sink"} & ${isBathroomVanity ? "vanity faucet" : "faucet"} added` : `${isBathroomVanity ? "Vanity sink" : "Sink"} added`}${faucetNote}${gridNote}`);
         };
         return (
           <DraggableOverlayDialog
@@ -22834,7 +22843,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                       <button type="button" className="w-full text-xs text-muted-foreground underline" onClick={() => { setPendingWallMountedFaucet(null); setFaucetWallMountHeightText(""); }}>Choose another faucet</button>
                     </div>
                   ) : filteredFaucets.length === 0 && !faucetProductsLoading ? (
-                    <button className="w-full text-xs text-muted-foreground border border-dashed rounded-lg py-3" onClick={() => applySink(pendingSinkProduct, null)}>Finish without a faucet</button>
+                    <button className="w-full text-xs text-muted-foreground border border-dashed rounded-lg py-3" onClick={() => applySink(pendingSinkProduct, null)}>Use the standard Pelican faucet</button>
                   ) : (
                     <PelicanFaucetPicker
                       faucets={filteredFaucets}
@@ -22905,7 +22914,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                       )}
                     </section>
                   )}
-                  <button className="text-xs text-muted-foreground underline self-center" onClick={() => applySink(pendingSinkProduct, null)}>Skip faucet selection</button>
+                  <button className="text-xs text-muted-foreground underline self-center" onClick={() => applySink(pendingSinkProduct, null)}>Skip — add the standard Pelican faucet</button>
                 </>
               )}
               {/* Step 1 of Range Top: choose the type (Gas / Electric / Smooth Top) */}
