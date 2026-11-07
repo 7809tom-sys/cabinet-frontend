@@ -180,6 +180,8 @@ export function sinkHasRenderableFaucet(sink: FaucetSink | null | undefined): bo
  * This is the "add-only" gate — anything it accepts is returned untouched.
  */
 export function sinkFaucetIsSatisfied(sink: FaucetSink | null | undefined): boolean {
+  // A deliberate "finish without a faucet" is satisfied by having no faucet.
+  if (sink?.faucetDeclined === true) return true;
   return sinkHasRenderableFaucet(sink);
 }
 

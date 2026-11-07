@@ -14881,6 +14881,15 @@ export interface SinkFixture {
    * other verified faucet. A later catalog pick replaces it.
    */
   defaultFaucet?: boolean;
+  /**
+   * The person deliberately chose to finish this sink without a faucet.
+   *
+   * The mandatory-faucet rule fills every bare sink, which is right for a layout
+   * built by Auto Design, but wrong when someone explicitly skips the faucet step
+   * on a sink they placed. This flag records that decision so the rule leaves the
+   * sink alone and nothing is drawn on the deck.
+   */
+  faucetDeclined?: boolean;
   /** Selected Pelican faucet identity and source-verified parametric profile, when present. */
   pelicanFaucetProductId?: number;
   pelicanFaucetProductName?: string;

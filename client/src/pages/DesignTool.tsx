@@ -10309,15 +10309,23 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     { enabled: vanityFaucetCatalogEnabled },
   );
   const vanityFaucetCatalogRows = useMemo(
-    () => mergeBathroomFaucetRows(
-      (faucetBaseProducts ?? []) as Array<{ id: number; pelicanCode?: string | null; sellPrice?: number | null }>,
-      [
-        ...(vanityFaucetByName.data?.items ?? []),
-        ...(vanityFaucetByTerm.data?.items ?? []),
-        ...(vanityFaucetVesselTerm.data?.items ?? []),
-      ] as Array<{ id: number; pelicanCode?: string | null; sellPrice?: number | null }>,
-    ) as typeof faucetBaseProducts,
-    [faucetBaseProducts, vanityFaucetByName.data, vanityFaucetByTerm.data, vanityFaucetVesselTerm.data],
+    () => {
+      // Kitchen sinks keep the server's kitchen faucet rows unchanged. Only the
+      // bathroom step needs the extra catalog searches and the bathroom filter;
+      // running kitchen rows through that filter removed every kitchen faucet.
+      if (!sinkBaseDialog || roomType === "bathroom") {
+        return mergeBathroomFaucetRows(
+          (faucetBaseProducts ?? []) as Array<{ id: number; pelicanCode?: string | null; sellPrice?: number | null }>,
+          [
+            ...(vanityFaucetByName.data?.items ?? []),
+            ...(vanityFaucetByTerm.data?.items ?? []),
+            ...(vanityFaucetVesselTerm.data?.items ?? []),
+          ] as Array<{ id: number; pelicanCode?: string | null; sellPrice?: number | null }>,
+        ) as typeof faucetBaseProducts;
+      }
+      return (faucetBaseProducts ?? []) as typeof faucetBaseProducts;
+    },
+    [faucetBaseProducts, roomType, sinkBaseDialog, vanityFaucetByName.data, vanityFaucetByTerm.data, vanityFaucetVesselTerm.data],
   );
   // Matching bottom grid for the sink just chosen. Pelican names each grid after
   // its sink model, so the match is the model code on the accessory row. Vanity
@@ -22647,6 +22655,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           const sinkWithFaucet: SinkFixture = {
 	            ...autoSink,
 	            faucet: Boolean(faucetProduct),
+	            // Record an explicit skip so the mandatory-faucet rule does not
+	            // attach a different faucet after the sink is placed.
+	            faucetDeclined: faucetProduct ? undefined : true,
 	            faucetDeckAdvisory: faucetProduct ? autoSink.faucetDeckAdvisory : undefined,
             pelicanProductId: sinkProduct?.id,
             pelicanProductName: sinkProduct?.name,
