@@ -281,7 +281,7 @@ import { normalizePaletteSearch, matchesPaletteSearch, matchesPaletteTextOrSize 
 import { searchCatalogItems } from "@shared/catalogCodeSearch";
 import { adjacentDishwasherCenterIn, anchorAlongStartIn, autoBuildStraightBaseCatalog, autoDesignWallNameByEngineId, buildAutoDesignWallGuides, canRunAutoDesign, closestDishwasherStart, isAutoBuildStraightSinkBaseCandidate, makeAutoDesignSixWallTrainingRoom, keepSingleAutoDesignSink, pickAutoDesignSinkBase, planAutoDesignAutoBuild, resolveDishwasherSide, subtractAnchorRunReservations, wallLabelToEngineWallId, type AutoDesignInputs, type AutoDesignOriginCorner, type AutoDesignRunDirection, type DishwasherSide } from "@/lib/autoDesignAutoBuild";
 import { AUTO_DESIGN_REFRIGERATOR_NOTE, autoDesignControlState, autoDesignShouldTurnOffForRefrigerator, isRefrigeratorAppliance, isSinkBasePlacement, refrigeratorBlocksAutoDesign } from "@/lib/autoDesignAvailability";
-import { applyChosenAutoDesignFaucet, catalogFaucetSurface, defaultAutoDesignFaucet, ensureAutoDesignFaucet, ensureMandatorySinkFaucets, everySinkHasFaucet, isCatalogFaucet, type AutoDesignFaucetProduct } from "@/lib/autoDesignFaucet";
+import { applyChosenAutoDesignFaucet, catalogFaucetSurface, defaultAutoDesignFaucet, ensureAutoDesignFaucet, ensureMandatorySinkFaucets, everySinkHasFaucet, fillAutoFaucet, isCatalogFaucet, type AutoDesignFaucetProduct } from "@/lib/autoDesignFaucet";
 import { clampSinkDragForFaucet, raiseWindowsForDeckFaucet, type FaucetWindowClearanceNote } from "@/lib/faucetPlacement";
 import { dropDuplicateAutoWindows, moveWindowsWithWallTops } from "@/lib/windowOpenings";
 import { useTransientNotice } from "@/components/design/useTransientNotice";
@@ -2128,14 +2128,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const rememberAutoDesignSink = useCallback((sink: SinkFixture, openingOverride?: readonly WallOpening[]): SinkFixture => {
     if (!autoDesignSessionRef.current) return sink;
     const result = ensureAutoDesignFaucet(sink, defaultAutoDesignFaucetRef.current);
-    if (result.sink.pelicanFaucetProductId != null) {
-      autoDesignOwnedFaucetIdsRef.current.add(result.sink.pelicanFaucetProductId);
-      const product = defaultAutoDesignFaucetRef.current;
-      if (product && result.attached) {
-        const surface = catalogFaucetSurface(product);
-        setSelectedSurfaces((previous) => previous.some((item) => item.id === surface.id) ? previous : [...previous, surface]);
-      }
-    }
+    // Auto Design fills a faucet so the drawing is complete, then asks which one
+    // the shopper wants. The filled faucet is not billed; only a pick is.
     if (result.sink.autoDesignFaucet && !autoDesignFaucetPromptedRef.current.has(result.sink.uid)) {
       autoDesignFaucetPromptedRef.current.add(result.sink.uid);
       queueAutoDesignFaucetPrompt(result.sink.uid);
@@ -2640,6 +2634,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     const quantities = new Map<number, number>();
     for (const sink of sinks) {
       if (sink.pelicanFaucetProductId == null) continue;
+      // A faucet the Designer filled in to complete the drawing is not billed.
+      // Only a faucet the shopper actually chose reaches the cart.
+      if (sink.faucetAutoFilled === true) continue;
       quantities.set(sink.pelicanFaucetProductId, (quantities.get(sink.pelicanFaucetProductId) ?? 0) + 1);
     }
     return quantities;
@@ -2649,11 +2646,26 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     bathroomFixtureQuantityByProduct.forEach((quantity, productId) => {
       quantities.set(productId, (quantities.get(productId) ?? 0) + quantity);
     });
+    // A faucet the Designer filled in is drawn but not billed. Record which ids
+    // are billable at all, so a filled-in faucet cannot be charged even when its
+    // surface row is still selected; a faucet the shopper chose on any sink is
+    // billable and is counted below.
+    const chosenFaucetIds = new Set<number>();
+    for (const sink of sinks) {
+      if (sink.pelicanFaucetProductId == null || sink.faucetAutoFilled === true) continue;
+      chosenFaucetIds.add(sink.pelicanFaucetProductId);
+    }
+    for (const sink of sinks) {
+      if (sink.pelicanFaucetProductId == null) continue;
+      if (sink.faucetAutoFilled === true && !chosenFaucetIds.has(sink.pelicanFaucetProductId)) {
+        if (!quantities.has(sink.pelicanFaucetProductId)) quantities.set(sink.pelicanFaucetProductId, 0);
+      }
+    }
     autoDesignFaucetQuantityByProduct.forEach((quantity, productId) => {
       quantities.set(productId, (quantities.get(productId) ?? 0) + quantity);
     });
     return quantities;
-  }, [autoDesignFaucetQuantityByProduct, bathroomFixtureQuantityByProduct, potFillerQuantityByProduct]);
+  }, [autoDesignFaucetQuantityByProduct, bathroomFixtureQuantityByProduct, potFillerQuantityByProduct, sinks]);
   // Text annotations placed on the floor plan.
   const [annotations, setAnnotations] = useState<PlanAnnotation[]>([]);
   const [selectedAnnotationUid, setSelectedAnnotationUid] = useState<string | null>(null);
@@ -10305,15 +10317,23 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     { enabled: vanityFaucetCatalogEnabled },
   );
   const vanityFaucetCatalogRows = useMemo(
-    () => mergeBathroomFaucetRows(
-      (faucetBaseProducts ?? []) as Array<{ id: number; pelicanCode?: string | null; sellPrice?: number | null }>,
-      [
-        ...(vanityFaucetByName.data?.items ?? []),
-        ...(vanityFaucetByTerm.data?.items ?? []),
-        ...(vanityFaucetVesselTerm.data?.items ?? []),
-      ] as Array<{ id: number; pelicanCode?: string | null; sellPrice?: number | null }>,
-    ) as typeof faucetBaseProducts,
-    [faucetBaseProducts, vanityFaucetByName.data, vanityFaucetByTerm.data, vanityFaucetVesselTerm.data],
+    () => {
+      // Kitchen sinks keep the server's kitchen faucet rows unchanged. Only the
+      // bathroom step needs the extra catalog searches and the bathroom filter;
+      // running kitchen rows through that filter removed every kitchen faucet.
+      if (!sinkBaseDialog || roomType === "bathroom") {
+        return mergeBathroomFaucetRows(
+          (faucetBaseProducts ?? []) as Array<{ id: number; pelicanCode?: string | null; sellPrice?: number | null }>,
+          [
+            ...(vanityFaucetByName.data?.items ?? []),
+            ...(vanityFaucetByTerm.data?.items ?? []),
+            ...(vanityFaucetVesselTerm.data?.items ?? []),
+          ] as Array<{ id: number; pelicanCode?: string | null; sellPrice?: number | null }>,
+        ) as typeof faucetBaseProducts;
+      }
+      return (faucetBaseProducts ?? []) as typeof faucetBaseProducts;
+    },
+    [faucetBaseProducts, roomType, sinkBaseDialog, vanityFaucetByName.data, vanityFaucetByTerm.data, vanityFaucetVesselTerm.data],
   );
   // Matching bottom grid for the sink just chosen. Pelican names each grid after
   // its sink model, so the match is the model code on the accessory row. Vanity
@@ -10426,6 +10446,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       for (const uid of result.attachedUids) {
         const sink = result.sinks.find((item) => item.uid === uid);
         if (sink?.pelicanFaucetProductId == null) continue;
+        // A faucet filled in by this rule completes the drawing but is not a
+        // shopper choice, so it is not added to the design's billable surfaces.
+        if (sink.faucetAutoFilled === true) continue;
         autoDesignOwnedFaucetIdsRef.current.add(sink.pelicanFaucetProductId);
         const product = autoDesignFaucetProducts.find((item) => item.id === sink.pelicanFaucetProductId);
         if (!product) continue;
@@ -10445,10 +10468,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     if (!product) return;
     const waiting = sinks.some((sink) => sink.autoDesignFaucet && sink.pelicanFaucetProductId == null);
     if (!waiting) return;
-    autoDesignOwnedFaucetIdsRef.current.add(product.id);
     const nextSinks = sinks.map((sink) => (
       sink.autoDesignFaucet && sink.pelicanFaucetProductId == null
-        ? applyChosenAutoDesignFaucet(sink, product)
+        ? fillAutoFaucet(sink, product)
         : sink
     ));
     setSinks(nextSinks);
@@ -10460,8 +10482,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     });
     if (raised.notes.length > 0 || raised.openings !== openings) setOpenings(raised.openings);
     announceFaucetWindowNotes(raised.notes);
-    const surface = catalogFaucetSurface(product);
-    setSelectedSurfaces((previous) => previous.some((item) => item.id === surface.id) ? previous : [...previous, surface]);
+    // Completes the drawing only. Nothing is added to the cart or the quote.
   }, [announceFaucetWindowNotes, autoDesignFaucetProducts, openings, room, sinks]);
   useEffect(() => {
     if (sinks.some((sink) => sink.autoDesignFaucet && sink.pelicanFaucetProductId == null)) return;
@@ -22714,7 +22735,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           setPendingWallMountedFaucet(null);
           setFaucetWallMountHeightText("");
           const gridNote = bottomGridProduct ? ` · ${bottomGridProduct.pelicanCode} grid added to the cart` : "";
-          toast.success(`${faucetProduct ? `${isBathroomVanity ? "Vanity sink" : "Sink"} & ${isBathroomVanity ? "vanity faucet" : "faucet"} added` : `${isBathroomVanity ? "Vanity sink" : "Sink"} added`}${gridNote}`);
+          const faucetNote = faucetProduct ? "" : " · the standard Pelican faucet is added to complete it";
+          toast.success(`${faucetProduct ? `${isBathroomVanity ? "Vanity sink" : "Sink"} & ${isBathroomVanity ? "vanity faucet" : "faucet"} added` : `${isBathroomVanity ? "Vanity sink" : "Sink"} added`}${faucetNote}${gridNote}`);
         };
         return (
           <DraggableOverlayDialog
@@ -22834,7 +22856,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                       <button type="button" className="w-full text-xs text-muted-foreground underline" onClick={() => { setPendingWallMountedFaucet(null); setFaucetWallMountHeightText(""); }}>Choose another faucet</button>
                     </div>
                   ) : filteredFaucets.length === 0 && !faucetProductsLoading ? (
-                    <button className="w-full text-xs text-muted-foreground border border-dashed rounded-lg py-3" onClick={() => applySink(pendingSinkProduct, null)}>Finish without a faucet</button>
+                    <button className="w-full text-xs text-muted-foreground border border-dashed rounded-lg py-3" onClick={() => applySink(pendingSinkProduct, null)}>Use the standard Pelican faucet</button>
                   ) : (
                     <PelicanFaucetPicker
                       faucets={filteredFaucets}
@@ -22905,7 +22927,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                       )}
                     </section>
                   )}
-                  <button className="text-xs text-muted-foreground underline self-center" onClick={() => applySink(pendingSinkProduct, null)}>Skip faucet selection</button>
+                  <button className="text-xs text-muted-foreground underline self-center" onClick={() => applySink(pendingSinkProduct, null)}>Skip — add the standard Pelican faucet</button>
                 </>
               )}
               {/* Step 1 of Range Top: choose the type (Gas / Electric / Smooth Top) */}

@@ -14881,6 +14881,13 @@ export interface SinkFixture {
    * other verified faucet. A later catalog pick replaces it.
    */
   defaultFaucet?: boolean;
+  /**
+   * The Designer filled this faucet in itself — the shopper skipped the faucet
+   * step, or a layout was loaded that had none. It completes the drawing so a
+   * sink is never shown bare, but it is not a shopper choice, so it is never
+   * added to the cart or the quote.
+   */
+  faucetAutoFilled?: boolean;
   /** Selected Pelican faucet identity and source-verified parametric profile, when present. */
   pelicanFaucetProductId?: number;
   pelicanFaucetProductName?: string;
