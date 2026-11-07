@@ -93,6 +93,8 @@ import { pantryDrawerFrontLayout } from "@/lib/pantryDrawerLayout";
 import { masterTracProduct, masterTracFinishColor } from "@/lib/closet";
 import { geminiHardwareReference, type GeminiMaterialManifestEntry } from "@/lib/geminiHardwareReference";
 import { geminiMaterialReference, geminiInferredMaterialLabels } from "@/lib/geminiMaterialReference";
+import { buildRenderApplianceFacing } from "@/lib/renderApplianceFacing";
+import type { ApplianceFacingFacts } from "@shared/applianceFacing";
 import { GEMINI_MATERIAL_MANIFEST_WIRE_VERSION, geminiMaterialManifestWireValidationIssues, serializeGeminiImageTestProvenanceForWire, serializeGeminiMaterialManifestForWire } from "@shared/geminiMaterialManifest";
 import { resolvePelicanDesignerMaterial } from "@/lib/pelicanQuartzMaterialMaps";
 import { applyThreeDCabinetPieceGrain, threeDPieceGrainTransform } from "@/lib/woodGrainVariation";
@@ -11900,6 +11902,7 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
       materialManifest: GeminiMaterialManifestEntry[];
       materialManifestWireVersion: typeof GEMINI_MATERIAL_MANIFEST_WIRE_VERSION;
       missingMaterialInputs: string[];
+      renderSpecification?: { applianceFacing?: ApplianceFacingFacts[] };
       sourceImageHash: string;
       generationMethod: "manual-final-review-image-service" | "manual-final-review-gpt-image-2-high-v2" | "manual-final-review-deterministic-webgl-v1" | "manual-final-review-gemini-nano-banana-v1";
     };
@@ -13927,6 +13930,7 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
   };
 
   const openPhotoRenderDialog = async () => {
+    const renderRoom = roomOverride ?? dimensions(scene.roomShape?.defaultDimensions);
     if (colorGate && colorGate.status !== "pass") {
       toast.error(`${colorGate.label}. Photo renders stay blocked until the swatch matches. The 3D kitchen still shows the closest door.`);
       return;
@@ -14089,6 +14093,16 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
       appliances: placed
         .filter((cabinet) => (cabinet as { placement?: string | null }).placement === "appliance" || isRefrigerator(cabinet) || isRangeOrOven(cabinet.masterCode))
         .map((cabinet) => `${cabinet.masterCode}${cabinet.description ? ` — ${cabinet.description}` : ""}`),
+      // The wall and facing direction of every appliance, read from the exact
+      // 3D placement and the locked camera. The photo render states these so it
+      // cannot turn an appliance sideways down its own run.
+      applianceFacing: buildRenderApplianceFacing({
+        placed,
+        sinks,
+        room: renderRoom,
+        camera: cameraSnapshot,
+        rotationFor: (cabinet) => existingCabinetTransform(cabinet, renderRoom).rotation,
+      }),
       glassStackers: placed.filter((cabinet) => isStacker(cabinet) && isGlassDoorCabinet(cabinet) && cabinet.stackedOnCabinetUid).map((stacker) => {
         const parent = placed.find((cabinet) => cabinet.uid === stacker.stackedOnCabinetUid);
         const falseBack = parent ? Number(parent.depth) - Number(stacker.depth) > 0.25 : false;

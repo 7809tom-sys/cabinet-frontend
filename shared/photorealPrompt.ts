@@ -1,3 +1,5 @@
+import { buildApplianceFacingPromptBlock, type ApplianceFacingFacts } from "./applianceFacing";
+
 /**
  * Pure builder for the AI Photoreal Preview prompt. Kept framework-free and
  * side-effect-free so it can be unit tested and shared between the server
@@ -67,6 +69,11 @@ export interface PhotorealPromptInput {
    * render from inventing appliances that were never placed.
    */
   appliances?: string[];
+  /**
+   * Per-appliance placement and facing read from the 3D layout. Each one becomes
+   * a sentence so a render cannot turn an appliance sideways down its own run.
+   */
+  applianceFacing?: readonly ApplianceFacingFacts[];
   notes?: string;
   /**
    * Owner kitchen rules the business wrote in Admin → Kitchen Rules that no code
@@ -219,6 +226,12 @@ export function buildPhotorealPrompt(input: PhotorealPromptInput): string {
       `The only appliances/fixtures in this kitchen are: ${input.appliances.join(", ")}. Do not add any other appliances.`
     );
   }
+
+  // 5b(ii). Each appliance's wall and facing direction, read from the 3D
+  // layout. Without this the render is free to turn a range sideways down its
+  // own run and carry the hood and wall cabinets with it.
+  const applianceFacing = buildApplianceFacingPromptBlock(input.applianceFacing);
+  if (applianceFacing) parts.push(applianceFacing);
 
   // 5c. Island is opt-in. State its absence firmly, since the model tends to
   // add one by default.
