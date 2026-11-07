@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Search, Wrench } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -23,6 +23,12 @@ interface Props {
   onClear: () => void;
   affiliateSlug?: string | null;
   compact?: boolean;
+  /**
+   * Increment to open the picker from an external affordance (the floating
+   * canvas rail). The dialog still owns its own open state, so the toolbar
+   * trigger and this shortcut never fight over it.
+   */
+  openSignal?: number;
 }
 
 /**
@@ -31,7 +37,7 @@ interface Props {
  * pricing is intentionally re-read from the public catalog when the Designer
  * prepares its materials list and cart line.
  */
-export function HardwareCatalogPicker({ value, onSelect, onClear, affiliateSlug, compact = false }: Props) {
+export function HardwareCatalogPicker({ value, onSelect, onClear, affiliateSlug, compact = false, openSignal }: Props) {
   const [open, setOpen] = useState(false);
   const [collection, setCollection] = useState<string | undefined>();
   const [productType, setProductType] = useState<string | undefined>();
@@ -50,9 +56,17 @@ export function HardwareCatalogPicker({ value, onSelect, onClear, affiliateSlug,
   const { data, isLoading, error } = trpc.hardware.listConfigurations.useQuery(input, { enabled: open });
   const supportedTypes = (filters?.productTypes ?? []).filter(isCatalogCabinetHardwareType);
   const visibleItems = (data?.items ?? []).filter((item) => isCatalogCabinetHardwareType(item.productType));
+  // A rail press bumps this counter. Skip the first render so mounting the
+  // Designer never pops the dialog open.
+  const lastOpenSignal = useRef(openSignal ?? 0);
+  useEffect(() => {
+    const signal = openSignal ?? 0;
+    if (signal === lastOpenSignal.current) return;
+    lastOpenSignal.current = signal;
+    setOpen(true);
+  }, [openSignal]);
 
-  const choose = (item: typeof visibleItems[number], variant: typeof visibleItems[number]["variants"][number]) => {
-    const style = catalogHardwareStyleId(item.productType);
+  const choose = (item: typeof visibleItems[number], variant: typeof visibleItems[number]["variants"][number]) => {    const style = catalogHardwareStyleId(item.productType);
     if (!style) return;
     onSelect({
       vendorProductId: variant.id,

@@ -173,3 +173,32 @@
   min-height: 0;
   overflow: hidden;
 }
+
+/* ── Canvas-only ("immersive") mode ──────────────────────────────────────────
+   The 3D viewer's top-right square button hides the site header, the
+   page-history row, the designer toolbar and the phone bottom bar, and this
+   root covers the viewport. The stage is a plain flex child of it, so the
+   renderer's ResizeObserver measures the new box and repaints at full size
+   instead of the pre-toggle one. */
+.designer-immersive-root {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  width: 100vw;
+  overflow: hidden;
+  background: var(--background, #fff);
+}
+
+.designer-immersive-root [data-testid="designer-canvas"] {
+  padding-bottom: 0;
+}
+
+/* Floating rails stay usable: they are positioned inside the stage, so they
+   follow the canvas rather than the old chrome. The left rail sits clear of the
+   site's safe-area inset on tablets. */
+.designer-immersive-root [data-testid="three-d-floating-actions"] {
+  padding-left: env(safe-area-inset-left, 0px);
+}
