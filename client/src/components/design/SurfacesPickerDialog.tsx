@@ -61,6 +61,7 @@ import { pelicanSinkCatalogDescription, withPelicanSinkCatalogCopy } from "@/lib
 import {
   concatCatalogPages,
   designerMaterialRenderReady,
+  flooringFollowsCatalogPhoto,
   isDesignerPaletteItemVisible,
   mergePreferredPaletteProducts,
   readDesignerRenderFlags,
@@ -296,9 +297,10 @@ export function SurfacesPickerDialog({
   }, [availableCats, category]);
 
   // Every category reads the full storefront catalog. The server's `designer`
-  // scope keeps only rows the 3D scene can already model, which left 831 of the
-  // 1,077 purchasable items unreachable. Visibility below keeps each tab to its
-  // own family; a row with no measured geometry still joins the materials list.
+  // scope keeps only rows the 3D scene can already model, which left most of the
+  // purchasable items unreachable. Visibility below keeps each tab to its own
+  // family; a plank with no approved swatch tiles its catalog photo on the floor,
+  // and a row with no measured geometry still joins the materials list.
   const browsingTileMosaic = (!isBathroom && category === "Tile & Mosaic")
     || (isBathroom && activeBathroomRole === "backsplash");
   const showingFloorMaterials = (!isBathroom && category === "Flooring")
@@ -745,7 +747,7 @@ export function SurfacesPickerDialog({
                 </div>
               )}
               {showingFloorMaterials && (
-                <p data-testid="flooring-selection-availability" className="text-[10px] leading-relaxed text-muted-foreground">Every active flooring row is listed: planks, tile, and the molding, trim, and underlayment that finish an edge. Planks and mosaics marked Use as floor tile install as the room floor; trim and underlayment join the materials list as accessories. A plank without an approved repeatable swatch tiles its catalog photo, and a plank with no photo stays on the labeled neutral floor.</p>
+                <p data-testid="flooring-selection-availability" className="text-[10px] leading-relaxed text-muted-foreground">Every active, source-priced flooring plank and floor tile is listed. Mosaics marked Use as floor tile are included here and stay available as wall backsplash. Molding, trim, and underlayment are finishing accessories and stay out of this palette. A plank without an approved repeatable swatch is shown in 3D from its catalog photo, tiled to the floor; a plank with no catalog photo stays on the neutral preview.</p>
               )}
               {((!isBathroom && category === "Quartz Slabs (Countertops)") || (isBathroom && bathroomPaletteMode === "surfaces" && activeBathroomRole === "countertop")) && (
                 <p data-testid="countertop-selection-availability" className="text-[10px] leading-relaxed text-muted-foreground">All active, source-priced countertop products are available to select and quote. A product without an approved repeatable slab swatch remains accurately priced and is shown in 3D with the labeled neutral preview until its material swatch is supplied.</p>
@@ -791,6 +793,7 @@ export function SurfacesPickerDialog({
                     CATEGORY_GRADIENT[p.category] ?? "linear-gradient(135deg,#e5e7eb,#cbd5e1)";
                   const hasThreeDMaterialRole = /floor|tile|mosaic|backsplash|countertop|quartz|slab/i.test(`${p.category ?? ""} ${p.subCategory ?? ""}`);
                   const hasApprovedMaterialSwatch = designerMaterialRenderReady(p);
+                  const flooringPhotoPreview = flooringFollowsCatalogPhoto(p);
                   const isBacksplash = p.category === "Tile & Mosaic";
                   const floorMosaic = showingFloorMaterials && isMosaicCatalogItem(p);
                   const isActiveThreeDBacksplash = isBacksplash && !floorMosaic && activeThreeDBacksplashId === p.id;
@@ -893,7 +896,7 @@ export function SurfacesPickerDialog({
                         )}
                         {hasThreeDMaterialRole && (
                           <p data-testid={`surface-material-readiness-${p.id}`} className={`text-[10px] font-medium leading-snug ${hasApprovedMaterialSwatch ? "text-emerald-700" : "text-amber-800"}`}>
-                            {hasApprovedMaterialSwatch ? "3D material swatch ready" : "3D material swatch pending — neutral preview"}
+                            {hasApprovedMaterialSwatch ? "3D material swatch ready" : flooringPhotoPreview ? "3D floor follows this product photo" : "3D material swatch pending — neutral preview"}
                           </p>
                         )}
                         {isBathroom && (activeBathroomRole === "toilet-bidet" || activeBathroomRole === "bathtub" || activeBathroomRole === "shower-door" || activeBathroomRole === "shower-surround" || bathroomFixtureProfile?.kind === "floor-tub-filler") && (

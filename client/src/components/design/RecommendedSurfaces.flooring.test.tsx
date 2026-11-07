@@ -140,7 +140,7 @@ describe("Recommended flooring palette", () => {
     expect(cardText("Plank 4")?.querySelector("img")?.getAttribute("src")).toBe("/photos/plank-4.webp");
   });
 
-  it("requests the full storefront catalog for flooring and keeps the card photo off the floor mesh", () => {
+  it("reads the full storefront flooring catalog and tiles a plank catalog photo when no swatch exists", () => {
     const recommended = readFileSync(resolve(process.cwd(), "client/src/components/design/RecommendedSurfaces.tsx"), "utf8");
     const dialog = readFileSync(resolve(process.cwd(), "client/src/components/design/SurfacesPickerDialog.tsx"), "utf8");
     const designTool = readFileSync(resolve(process.cwd(), "client/src/pages/DesignTool.tsx"), "utf8");

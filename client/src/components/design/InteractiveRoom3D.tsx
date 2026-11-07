@@ -1457,9 +1457,10 @@ export function threeDProductMaterialSource(
 	    };
 	  }
 	}
-	// Flooring and countertops still refuse an unapproved room photo and use a
-	// neutral preview. A selected backsplash uses its own picture; with no
-	// picture it stays unlabeled instead of becoming a generic tile.
+	// Countertops still use a neutral preview until an approved slab swatch
+	// exists. Flooring reaches this branch only when the selected product has
+	// no swatch and no catalog photo. A selected backsplash uses its own
+	// picture; with no picture it stays unlabeled instead of becoming a generic tile.
 	if ((role === "backsplash" || mosaicOnFloor) && productName?.trim()) {
 		const sheet = parseBacksplashSheetInches({
 			name: productName,
@@ -11305,13 +11306,19 @@ export function addWallOpening(root: THREE.Group, opening: WallOpening, roomOrWi
   // is measured from the finished wall face behind that inset.
   const windowWallFaceZ = -0.06 * INCH;
   const windowTrimProjection = 0.5 * INCH;
+  const windowSashDepth = 1.5 * INCH;
+  const windowSashRoomFace = windowWallFaceZ - 0.25 * INCH;
+  const windowSashCenter = windowSashRoomFace - windowSashDepth / 2;
   const openingDepth = isWindow ? windowTrimProjection : 0.12;
   const trimCenterZ = isWindow ? windowWallFaceZ + windowTrimProjection / 2 : openingDepth / 2;
   const trimWidth = Math.min(0.12, Math.max(0.055, width * 0.075));
   const backingMaterial = isDoor ? new THREE.MeshStandardMaterial({ color: appearance.color, roughness: 0.5, transparent: true, opacity: 0, depthWrite: false }) : trimMaterial;
   const backingDepth = isWindow ? 0.04 : 0.07;
   const backing = new THREE.Mesh(new THREE.BoxGeometry(width + trimWidth * 2, height + trimWidth * 2, backingDepth), backingMaterial);
-  backing.position.z = isWindow ? windowWallFaceZ - 0.75 * INCH : 0;
+  // The cap used to sit on the room side of the recessed sash, so the exterior
+  // scene rendered behind a solid trim-colored panel. Keep the cap on the
+  // outside of the recess, behind the glass.
+  backing.position.z = isWindow ? windowSashCenter - windowSashDepth / 2 - backingDepth / 2 - 0.004 : 0;
   backing.userData = { architecturalOpeningBacking: true };
   // A reach-in bi-fold is a room aperture, not a blank white wall behind its leaves.
   if (!isBifold) group.add(backing);
@@ -11341,13 +11348,11 @@ export function addWallOpening(root: THREE.Group, opening: WallOpening, roomOrWi
   } else {
   const windowTexture = isWindow ? (windowPhotoTexture(effectiveWindowSceneKind, width / height) ?? windowSceneTexture(effectiveWindowSceneKind)) : null;
   const paneMaterial = isWindow && windowTexture
-    ? new THREE.MeshBasicMaterial({ map: windowTexture, side: THREE.DoubleSide })
+    ? new THREE.MeshBasicMaterial({ map: windowTexture, side: THREE.DoubleSide, depthWrite: true })
     : new THREE.MeshStandardMaterial({ color: isWindow ? "#dbe8e4" : isDoor ? appearance.color : "#4a3528", roughness: 0.28, metalness: isWindow ? 0.12 : 0, ...(isDoor ? { transparent: true, opacity: appearance.opacity, depthWrite: false } : {}) });
-  const windowSashDepth = 1.5 * INCH;
-  const windowSashRoomFace = windowWallFaceZ - 0.25 * INCH;
-  const windowSashCenter = windowSashRoomFace - windowSashDepth / 2;
   const pane = new THREE.Mesh(new THREE.BoxGeometry(width - 0.08, height - 0.08, isWindow ? 0.012 : 0.08), paneMaterial);
   pane.position.z = isWindow ? windowSashCenter : 0.01;
+  if (isWindow) pane.userData = { windowScenePlane: true, windowSceneKind: effectiveWindowSceneKind };
   if (isDoor) pane.userData = { architecturalDoorSlab: true, planningOpacity: appearance.opacity };
   group.add(pane);
   if (isWindow) {

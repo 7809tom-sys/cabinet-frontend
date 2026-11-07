@@ -1770,7 +1770,24 @@ describe("interactive 3D room scene helpers", () => {
 			expect(threeDProductSurfaceTextureTransform("flooring", unknown!, 120, 96)).toEqual({ wrap: "repeat", repeatX: 5, repeatY: 4, offsetX: 0, offsetY: 0, rotation: 0 });
 		  });
 
-		  it("keeps a swatch-pending selected surface visibly represented without loading its catalog photo", () => {
+		  it("tiles a selected plank's catalog photo when no dedicated floor swatch exists", () => {
+			const captiva = threeDProductMaterialSource(
+				"flooring",
+				"Captiva 20mil Vinyl Flooring - 8pc/box 18.91 SF/box",
+				"/manus-storage/pelican/captiva-gray.webp",
+				{ category: "Flooring", subCategory: "Planks & Flooring", size: '7" x 48"', cardImageUrl: "/manus-storage/pelican/captiva-gray.webp" },
+			);
+			expect(captiva).toMatchObject({
+				url: "/manus-storage/pelican/captiva-gray.webp",
+				curated: false,
+				proceduralFallback: false,
+				flooringPatternKind: "plank",
+			});
+			expect(captiva?.materialColor).toBeUndefined();
+			expect(captiva?.url).not.toBe("");
+		  });
+
+		  it("keeps a photo-less selected surface on the neutral preview", () => {
 			const floor = threeDProductMaterialSource("flooring", "Harbor Oak Luxury Vinyl Plank", null, {
 				category: "Flooring", subCategory: "Planks & Flooring", size: '7" x 48"',
 			});

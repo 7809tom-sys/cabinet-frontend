@@ -6,9 +6,10 @@
  * Browse all via `pelican.byCategory` scope `designer` with limit 200. Paired
  * cabinet-backend#27 stamps `designerRenderReady` and `hasSwatch` on those
  * products. `designerRenderReady` is true only when the plank may be drawn as
- * a real 3D material. `materialImageUrl` is the floor texture only in that
- * case. `imageUrl` stays on the card and is never stretched across the floor.
- * When `designerRenderReady` is false, the scene draws a labeled neutral floor.
+ * a real 3D material. `materialImageUrl` is the floor texture in that case.
+ * When no dedicated swatch exists, `imageUrl` (the catalog photo) is tiled
+ * across the floor so the 3D floor matches the selected product. A plank with
+ * no photo at all still uses the neutral preview.
  * Until that backend deploys, missing flags are inferred from a non-empty
  * `materialImageUrl`.
  *
@@ -21,6 +22,7 @@
  */
 
 import { catalogCategoryValuesEqual } from "@shared/catalogCategorySpelling";
+import { threeDTextureUrlIsColorMap } from "@/lib/flooringMaterialAppearance";
 
 export const TILE_MOSAIC_CATEGORY = "Tile & Mosaic";
 export const FLOORING_CATEGORY = "Flooring";
@@ -93,9 +95,11 @@ export function readDesignerRenderFlags(record: object | null | undefined): {
 }
 
 /**
- * URL passed into the 3D floor mesh. Curated product maps are built-in swatches.
- * Anything else must be an approved materialImageUrl. imageUrl is ignored so a
- * catalog photo is never stretched across the floor.
+ * URL passed into the 3D floor mesh.
+ * An approved material swatch wins. A built-in curated map wins when the
+ * product is not render-ready. Otherwise the catalog photo (`imageUrl`) is
+ * tiled as the floor so a selected plank is not drawn as default brown wood.
+ * A product with neither a swatch nor a catalog photo returns null.
  */
 export function flooringSceneTextureUrl(
   item: (Pick<DesignerPaletteRow, "materialImageUrl" | "imageUrl" | "designerRenderReady" | "hasSwatch"> & { id?: number | null }) | null | undefined,
@@ -103,8 +107,21 @@ export function flooringSceneTextureUrl(
 ): string | null {
   if (!item) return null;
   const curated = item.id == null ? null : curatedByProductId[Number(item.id)] ?? null;
-  if (!designerMaterialRenderReady(item)) return curated;
-  return item.materialImageUrl?.trim() || curated;
+  if (designerMaterialRenderReady(item)) return item.materialImageUrl?.trim() || curated;
+  if (curated) return curated;
+  const catalogPhoto = item.imageUrl?.trim() || "";
+  if (catalogPhoto && threeDTextureUrlIsColorMap(catalogPhoto)) return catalogPhoto;
+  return null;
+}
+
+/** Flooring card copy: the catalog photo is the 3D floor when no swatch exists. */
+export function flooringFollowsCatalogPhoto(
+  item: Pick<DesignerPaletteRow, "category" | "imageUrl" | "materialImageUrl" | "designerRenderReady" | "hasSwatch"> | null | undefined,
+): boolean {
+  if (!item || item.category !== FLOORING_CATEGORY) return false;
+  if (designerMaterialRenderReady(item)) return false;
+  const catalogPhoto = item.imageUrl?.trim() || "";
+  return Boolean(catalogPhoto) && threeDTextureUrlIsColorMap(catalogPhoto);
 }
 
 /**

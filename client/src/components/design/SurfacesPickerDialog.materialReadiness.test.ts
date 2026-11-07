@@ -29,7 +29,7 @@ describe("Surfaces picker 3D material readiness", () => {
     expect(source).toContain('limit: activeBathroomRole === "flooring" ? 500 : PAGE_LIMIT');
     expect(source).not.toContain("browsingFlooring");
     expect(source).toContain('data-testid="flooring-selection-availability"');
-    expect(source).toContain("Every active flooring row is listed");
+    expect(source).toContain("Every active, source-priced flooring plank and floor tile is listed");
     expect(source).toContain("isDesignerPaletteItemVisible");
     expect(source).toContain("trpc.surfaces.byIds.useQuery");
     expect(source).not.toContain("return isMaterialRole && Boolean(item.materialImageUrl?.trim())");
