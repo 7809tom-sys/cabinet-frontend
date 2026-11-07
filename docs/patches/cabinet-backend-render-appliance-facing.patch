@@ -1,0 +1,681 @@
+From d4f98801cd05e8a65fd731e45581aa4dc96f09bb Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Sat, 7 Nov 2026 02:16:03 +0000
+Subject: [PATCH] Keep every appliance's wall and facing in the Gemini photo
+ render
+
+---
+ server/lib/geminiImageProvider.ts             |   4 +-
+ ...designPhotoRenders.applianceFacing.test.ts |  91 ++++++++
+ server/routers/designPhotoRenders.ts          |  31 ++-
+ shared/applianceFacing.test.ts                | 149 ++++++++++++
+ shared/applianceFacing.ts                     | 213 ++++++++++++++++++
+ .../photorealPrompt.applianceFacing.test.ts   |  47 ++++
+ shared/photorealPrompt.ts                     |  13 ++
+ 7 files changed, 545 insertions(+), 3 deletions(-)
+ create mode 100644 server/routers/designPhotoRenders.applianceFacing.test.ts
+ create mode 100644 shared/applianceFacing.test.ts
+ create mode 100644 shared/applianceFacing.ts
+ create mode 100644 shared/photorealPrompt.applianceFacing.test.ts
+
+diff --git a/server/lib/geminiImageProvider.ts b/server/lib/geminiImageProvider.ts
+index 5a3d44e..386fabb 100644
+--- a/server/lib/geminiImageProvider.ts
++++ b/server/lib/geminiImageProvider.ts
+@@ -115,7 +115,7 @@ export async function startGeminiExactPlanTest(input: GeminiImageTestInput): Pro
+         model: GEMINI_NANO_BANANA_MODEL,
+         input: [
+           { type: "text", text: lockedPlanPrompt(input) },
+-          { type: "text", text: `IMAGE 1 — THE LOCKED KITCHEN PLAN. ${ROOM_SCENE_3D_REFERENCE_RULE}` },
++          { type: "text", text: `IMAGE 1 — THE LOCKED KITCHEN PLAN AND THE LAYOUT TO PRESERVE, exactly as drawn (every cabinet run, every appliance, and every appliance facing direction). ${ROOM_SCENE_3D_REFERENCE_RULE}` },
+           { type: "image", mime_type: input.sourceMimeType, data: input.sourceImageBase64 },
+         ],
+         response_format: { type: "image", mime_type: "image/jpeg", aspect_ratio: "16:9", image_size: "1K" },
+@@ -189,7 +189,7 @@ export async function generateGeminiExactPlanTest(input: GeminiImageTestInput):
+       body: JSON.stringify({
+         contents: [{ parts: [
+           { text: lockedPlanPrompt(input) },
+-          { text: `IMAGE 1 — THE LOCKED KITCHEN PLAN. ${ROOM_SCENE_3D_REFERENCE_RULE}` },
++          { text: `IMAGE 1 — THE LOCKED KITCHEN PLAN AND THE LAYOUT TO PRESERVE, exactly as drawn (every cabinet run, every appliance, and every appliance facing direction). ${ROOM_SCENE_3D_REFERENCE_RULE}` },
+           { inlineData: { mimeType: input.sourceMimeType, data: input.sourceImageBase64 } },
+           ...(input.references ?? []).flatMap((reference, index) => [
+             { text: `IMAGE ${index + 2} — MATERIAL SAMPLE ONLY: ${reference.label}. Use this only as the surface finish of the matching part of image 1. Do not copy its layout and do not add anything from it.` },
+diff --git a/server/routers/designPhotoRenders.applianceFacing.test.ts b/server/routers/designPhotoRenders.applianceFacing.test.ts
+new file mode 100644
+index 0000000..f2799ac
+--- /dev/null
++++ b/server/routers/designPhotoRenders.applianceFacing.test.ts
+@@ -0,0 +1,91 @@
++import { describe, expect, it } from "vitest";
++import { exactPlanPrompt, manualAiPrompt, photoRenderProvenanceSchema } from "./designPhotoRenders";
++
++function specification(overrides: Record<string, unknown> = {}) {
++  return {
++    perimeterCabinets: { name: null, color: null, doorStyle: null, productId: null, materialImageUrl: null },
++    islandCabinets: null,
++    perimeterCountertop: null,
++    islandCountertop: null,
++    hardware: null,
++    appliances: [],
++    glassStackers: [],
++    ...overrides,
++  };
++}
++
++const backWall = { x: 0, y: 1 };
++const cameraInFront = { x: 0, y: -1 };
++
++describe("Gemini exact-plan prompt: appliance orientation", () => {
++  it("states each appliance's wall and facing direction from the layout", () => {
++    const prompt = exactPlanPrompt("Kitchen", specification({
++      applianceFacing: [
++        { kind: "range", label: "Black Gas Range", wall: "the back wall", front: backWall, inward: backWall, cameraForward: cameraInFront },
++        { kind: "hood", label: "Glass Stainless Range Hood", wall: "the back wall", front: backWall, inward: backWall, cameraForward: cameraInFront, above: "Black Gas Range" },
++        { kind: "dishwasher", label: "Dishwasher", wall: "the left wall", front: { x: 1, y: 0 }, inward: { x: 1, y: 0 }, cameraForward: cameraInFront },
++      ],
++    }));
++    expect(prompt).toContain("The Black Gas Range sits in the base run against the back wall");
++    expect(prompt).toContain("its oven door and front controls facing out into the room and toward the camera");
++    expect(prompt).toContain("is mounted on the back wall directly above the Black Gas Range");
++    expect(prompt).toContain("The Dishwasher sits in the base run against the left wall");
++  });
++
++  it("locks the whole layout, appliance positions and orientation before any appliance sentence", () => {
++    const prompt = exactPlanPrompt("Kitchen", specification({
++      applianceFacing: [{ kind: "range", label: "Range", wall: "the back wall", front: backWall, inward: backWall, cameraForward: cameraInFront }],
++    }));
++    expect(prompt).toContain("reference image 1 IS the layout to preserve");
++    expect(prompt).toContain("Do not rotate, turn, flip, mirror, slide, swap, re-orient, or rearrange any appliance or cabinet");
++    expect(prompt).toContain("Never turn an appliance sideways down a cabinet run");
++    expect(prompt.indexOf("ORIENTATION LOCK")).toBeLessThan(prompt.indexOf("The Range sits"));
++  });
++
++  it("leaves the prompt unchanged when the request carries no appliance facing", () => {
++    const withFacing = exactPlanPrompt("Kitchen", specification());
++    expect(exactPlanPrompt("Kitchen")).toBe(exactPlanPrompt("Kitchen"));
++    expect(withFacing).not.toContain("ORIENTATION LOCK");
++  });
++
++  it("accepts the facing block through the provenance schema and drops a malformed one", () => {
++    const base = {
++      contractVersion: "exact-plan-v1", designId: 0, designRevision: null,
++      planFingerprint: "a".repeat(64), geometryLock: "locked-current-designer-plan-geometry",
++      camera: { position: [1, 2, 3], target: [0, 0, 0], zoom: 1 },
++      materials: ["cabinet", "countertop", "flooring", "backsplash", "faucet", "sink"].map(role => ({ role, productId: null, name: null, materialImageUrl: null })),
++      materialManifest: [{
++        id: "surface:countertop", role: "countertop", label: "Selected countertop", itemIds: ["surface:countertop"],
++        referenceUrl: "https://www.cabinetdealz.com/manus-storage/selected.jpg", provenance: "Selected product reference",
++      }],
++      missingMaterialInputs: [], sourceImageHash: "b".repeat(64),
++      generationMethod: "manual-final-review-gemini-nano-banana-v1",
++      renderSpecification: specification({
++        applianceFacing: [{ kind: "sink", label: "Farmhouse Sink", wall: "the back wall", front: backWall }],
++      }),
++    };
++    expect(photoRenderProvenanceSchema.safeParse(base).success).toBe(true);
++    expect(photoRenderProvenanceSchema.safeParse({
++      ...base,
++      renderSpecification: specification({ applianceFacing: [{ kind: "toaster", label: "x", wall: "the back wall", front: backWall }] }),
++    }).success).toBe(false);
++  });
++});
++
++describe("manual review handoff prompt: appliance orientation", () => {
++  it("carries the same layout lock for a manually reviewed render", async () => {
++    const prompt = manualAiPrompt({
++      contractVersion: "exact-plan-v1", designId: 1, designRevision: null,
++      planFingerprint: "a".repeat(64), geometryLock: "locked-current-designer-plan-geometry",
++      camera: { position: [1, 2, 3], target: [0, 0, 0], zoom: 1 },
++      materials: ["cabinet", "countertop", "flooring", "backsplash", "faucet", "sink"].map(role => ({ role, productId: null, name: null, materialImageUrl: null })),
++      materialManifest: [], missingMaterialInputs: [], sourceImageHash: "b".repeat(64),
++      generationMethod: "manual-final-review-image-service",
++      renderSpecification: specification({
++        applianceFacing: [{ kind: "range", label: "Range", wall: "the back wall", front: backWall, inward: backWall, cameraForward: cameraInFront }],
++      }),
++    } as never, []);
++    expect(prompt).toContain("ORIENTATION LOCK");
++    expect(prompt).toContain("The Range sits in the base run against the back wall");
++  });
++});
+diff --git a/server/routers/designPhotoRenders.ts b/server/routers/designPhotoRenders.ts
+index 0380a76..986fc3a 100644
+--- a/server/routers/designPhotoRenders.ts
++++ b/server/routers/designPhotoRenders.ts
+@@ -16,6 +16,7 @@ import { resendConfigured, sendEmail } from "../email";
+ import { sendCrmCustomerEmail, sendCrmDealEmail } from "../lib/crmCustomerMail";
+ import { resolveAffiliateAccess } from "../lib/affiliateAccess";
+ import { GEMINI_MATERIAL_MANIFEST_WIRE_VERSION, hasCurrentGeminiMaterialManifestWireVersion, serializeGeminiMaterialManifestForWire } from "../../shared/geminiMaterialManifest";
++import { buildApplianceFacingPromptBlock } from "../../shared/applianceFacing";
+ 
+ const DATA_IMAGE_PREFIX = /^data:image\/(png|jpeg|webp);base64,/;
+ const CABINETDEALZ_MATERIAL_ORIGIN = "https://www.cabinetdealz.com";
+@@ -150,6 +151,23 @@ const renderAreaSchema = z.object({
+   productId: z.number().int().positive().nullable(),
+   materialImageUrl: safeMaterialUrl.nullable(),
+ });
++
++/**
++ * One appliance's wall and facing direction as the Designer read it from the 3D
++ * layout. Only shape and length are checked: the coordinates come from the
++ * locked plan the same request already carries.
++ */
++const planVectorSchema = z.object({ x: z.number().finite(), y: z.number().finite() });
++const applianceFacingSchema = z.object({
++  kind: z.enum(["range", "cooktop", "oven", "hood", "refrigerator", "dishwasher", "microwave", "sink", "wine-cooler", "other"]),
++  label: z.string().trim().min(1).max(255),
++  wall: z.string().trim().min(1).max(120),
++  front: planVectorSchema,
++  inward: planVectorSchema.nullable().optional(),
++  cameraForward: planVectorSchema.nullable().optional(),
++  above: z.string().trim().max(255).nullable().optional(),
++  overCabinet: z.string().trim().max(255).nullable().optional(),
++});
+ const renderSpecificationSchema = z.object({
+   perimeterCabinets: renderAreaSchema,
+   islandCabinets: renderAreaSchema.nullable(),
+@@ -157,6 +175,11 @@ const renderSpecificationSchema = z.object({
+   islandCountertop: z.string().trim().max(255).nullable(),
+   hardware: z.string().trim().max(120).nullable(),
+   appliances: z.array(z.string().trim().max(255)).max(40),
++  /**
++   * Wall and facing direction of every appliance, read from the exact 3D
++   * placement. Optional so an older client still renders the same plan.
++   */
++  applianceFacing: z.array(applianceFacingSchema).max(40).optional(),
+   glassStackers: z.array(z.object({
+     code: z.string().trim().min(1).max(255),
+     parentCode: z.string().trim().min(1).max(255),
+@@ -473,7 +496,7 @@ async function manualAiReferences(
+   return references;
+ }
+ 
+-function manualAiPrompt(provenance: PhotoRenderProvenanceInput, references: ManualAiReference[]) {
++export function manualAiPrompt(provenance: PhotoRenderProvenanceInput, references: ManualAiReference[]) {
+   const selectedReferences = references.map((reference, index) => `${index + 2}. ${reference.title}${reference.detail ? ` — ${reference.detail}` : ""}`).join("\n");
+   const specification = provenance.renderSpecification;
+   const areaInstructions = specification ? [
+@@ -490,6 +513,8 @@ function manualAiPrompt(provenance: PhotoRenderProvenanceInput, references: Manu
+     "The remaining numbered cards are the exact selected CabinetDealz and Pelican product references. Apply each reference only to its matching existing surface or fixture. Do not introduce any product not shown on this board.",
+     "Create a photorealistic architectural interior image with realistic lighting and physically plausible material texture.",
+     areaInstructions,
++    // Same layout lock and per-appliance facing the automated Gemini prompt uses.
++    buildApplianceFacingPromptBlock(specification?.applianceFacing),
+     "Light staging is allowed and wanted: add only a plant, coffee cup, bowl, towel, cookbook, or similarly minimal kitchen accessory. Keep counters mostly clear so cabinet doors and drawers remain visible. Props must not cover the island cabinet faces.",
+     "Never add or move cabinets, appliances, windows, walls, fixtures, or architectural elements. The layout, camera, and dimensions remain exactly the locked design.",
+     "After rendering, check the island cabinet color against the locked 3D reference. If it does not match, re-render once. If it still does not match, return the image with a clear colors-may-not-match note instead of passing it off as an exact match.",
+@@ -714,6 +739,10 @@ function exactPlanPrompt(summary: string, specification?: PhotoRenderProvenanceI
+     "Never add or move cabinets, appliances, windows, walls, fixtures, or architectural elements. The layout, camera, and dimensions remain exactly the locked design.",
+     "After rendering, check the island cabinet color against the locked 3D reference. If it does not match, re-render once. If it still does not match, return the image with a clear colors-may-not-match note instead of passing it off as an exact match.",
+     "No people, text, logos, watermarks, measurements, or extra products.",
++    // The layout lock plus one sentence per appliance, all read from the 3D
++    // placement. Without it the render is free to turn a range sideways down
++    // its own run and carry the hood and wall cabinets with it.
++    buildApplianceFacingPromptBlock(specification?.applianceFacing),
+     summary ? `Selected design summary: ${summary}` : "",
+   ].filter(Boolean).join(" ");
+   return finalizeRoomScenePrompt(scene, { reference: "3d-render" });
+diff --git a/shared/applianceFacing.test.ts b/shared/applianceFacing.test.ts
+new file mode 100644
+index 0000000..dd91aa9
+--- /dev/null
++++ b/shared/applianceFacing.test.ts
+@@ -0,0 +1,149 @@
++import { describe, expect, it } from "vitest";
++import {
++  APPLIANCE_ORIENTATION_LOCK,
++  applianceFacingCameraPhrase,
++  applianceFacingDirectionPhrase,
++  buildApplianceFacingPromptBlock,
++  buildApplianceFacingStatements,
++  describeApplianceFacing,
++  type ApplianceFacingFacts,
++} from "./applianceFacing";
++
++const backWallInward = { x: 0, y: 1 };
++const cameraInFront = { x: 0, y: -1 };
++
++function range(overrides: Partial<ApplianceFacingFacts> = {}): ApplianceFacingFacts {
++  return {
++    kind: "range",
++    label: "slide-in range",
++    wall: "the back wall",
++    front: backWallInward,
++    inward: backWallInward,
++    cameraForward: cameraInFront,
++    ...overrides,
++  };
++}
++
++describe("appliance facing sentences", () => {
++  it("states a range on the back wall facing out into the room toward the camera", () => {
++    const sentence = describeApplianceFacing(range());
++    expect(sentence).toBe(
++      "The slide-in range sits in the base run against the back wall, with its back to that wall and its oven door and front controls facing out into the room and toward the camera.",
++    );
++  });
++
++  it("puts a hood directly above the appliance it serves and keeps its facing", () => {
++    const sentence = describeApplianceFacing({
++      kind: "hood",
++      label: "range hood",
++      wall: "the back wall",
++      front: backWallInward,
++      inward: backWallInward,
++      cameraForward: cameraInFront,
++      above: "slide-in range",
++    });
++    expect(sentence).toContain("is mounted on the back wall directly above the slide-in range");
++    expect(sentence).toContain("centered on it");
++    expect(sentence).toContain("it faces the same way as the slide-in range");
++  });
++
++  it("keeps the cabinet above a refrigerator on the refrigerator's own wall", () => {
++    const sentence = describeApplianceFacing({
++      kind: "refrigerator",
++      label: "french-door refrigerator",
++      wall: "the left wall",
++      front: { x: 1, y: 0 },
++      inward: { x: 1, y: 0 },
++      cameraForward: cameraInFront,
++      overCabinet: "refrigerator wall cabinet",
++    });
++    expect(sentence).toContain("sits in its bay against the left wall");
++    expect(sentence).toContain("its doors and dispenser facing out into the room");
++    expect(sentence).toContain("The refrigerator wall cabinet stays on the left wall directly above the french-door refrigerator");
++  });
++
++  it("describes a sink with its faucet behind the bowl against its wall", () => {
++    const sentence = describeApplianceFacing({
++      kind: "sink",
++      label: "farmhouse sink",
++      wall: "the back wall",
++      front: backWallInward,
++      inward: backWallInward,
++      cameraForward: cameraInFront,
++    });
++    expect(sentence).toContain("is set into the countertop on the back wall");
++    expect(sentence).toContain("its faucet and front rim facing out into the room");
++    expect(sentence).toContain("faucet behind the bowl against that wall");
++  });
++
++  it("says an appliance that really was turned across its run is along the run, not into the room", () => {
++    const sentence = describeApplianceFacing(range({
++      front: { x: 1, y: 0 },
++      inward: backWallInward,
++      cameraForward: cameraInFront,
++    }));
++    expect(sentence).toContain("along its cabinet run");
++    expect(sentence).not.toContain("out into the room");
++  });
++
++  it("falls back to a plain direction when the camera axis is unknown", () => {
++    expect(applianceFacingCameraPhrase({ front: backWallInward })).toBe("");
++    expect(applianceFacingDirectionPhrase({ front: backWallInward, inward: backWallInward })).toBe("out into the room");
++    expect(describeApplianceFacing(range({ cameraForward: null }))).toContain("facing out into the room.");
++  });
++});
++
++describe("camera-relative facing words", () => {
++  it("reads the front that points back at the camera as toward the camera", () => {
++    expect(applianceFacingCameraPhrase({ front: { x: 0, y: 1 }, cameraForward: { x: 0, y: -1 } })).toBe("toward the camera");
++    expect(applianceFacingCameraPhrase({ front: { x: 0, y: -1 }, cameraForward: { x: 0, y: -1 } })).toBe("away from the camera");
++  });
++
++  it("mirrors left and right against the camera, not the plan, for a perpendicular front", () => {
++    // The camera looks along -y, so its own right hand is plan +x.
++    expect(applianceFacingCameraPhrase({ front: { x: 1, y: 0 }, cameraForward: { x: 0, y: -1 } }))
++      .toBe("across the camera's view to the right");
++    expect(applianceFacingCameraPhrase({ front: { x: -1, y: 0 }, cameraForward: { x: 0, y: -1 } }))
++      .toBe("across the camera's view to the left");
++  });
++
++  it("normalizes unnormalized vectors so a long direction reads the same as a unit one", () => {
++    expect(applianceFacingCameraPhrase({ front: { x: 0, y: 42 }, cameraForward: { x: 0, y: -7 } })).toBe("toward the camera");
++  });
++});
++
++describe("the appliance facing prompt block", () => {
++  it("states the layout lock before any per-appliance sentence", () => {
++    const block = buildApplianceFacingPromptBlock([range()]);
++    expect(block.startsWith(APPLIANCE_ORIENTATION_LOCK)).toBe(true);
++    expect(block).toContain("reference image 1 IS the layout to preserve");
++    expect(block).toContain("Do not rotate, turn, flip, mirror, slide, swap, re-orient, or rearrange");
++    expect(block).toContain("image 1 wins");
++    expect(block.indexOf("The slide-in range sits")).toBeGreaterThan(block.indexOf("ORIENTATION LOCK"));
++  });
++
++  it("builds one sentence per appliance, generically for any mix", () => {
++    const statements = buildApplianceFacingStatements([
++      range(),
++      { kind: "dishwasher", label: "dishwasher", wall: "the left wall", front: { x: 1, y: 0 }, inward: { x: 1, y: 0 }, cameraForward: cameraInFront },
++      { kind: "cooktop", label: "gas cooktop", wall: "the peninsula", front: { x: 0, y: 1 }, inward: { x: 0, y: 1 }, cameraForward: cameraInFront },
++      { kind: "microwave", label: "over-range microwave", wall: "the back wall", front: backWallInward, inward: backWallInward, cameraForward: cameraInFront, above: "slide-in range" },
++    ]);
++    expect(statements).toHaveLength(4);
++    expect(statements[0]).toContain("The slide-in range");
++    expect(statements[1]).toContain("The dishwasher");
++    expect(statements[2]).toContain("against the peninsula");
++    expect(statements[3]).toContain("directly above the slide-in range");
++  });
++
++  it("returns empty text when there is nothing to describe, so the prompt stays unchanged", () => {
++    expect(buildApplianceFacingPromptBlock([])).toBe("");
++    expect(buildApplianceFacingPromptBlock(null)).toBe("");
++    expect(buildApplianceFacingPromptBlock(undefined)).toBe("");
++  });
++
++  it("never needs a hard-coded kitchen: a custom wall name is used verbatim", () => {
++    const sentence = describeApplianceFacing(range({ wall: "the pantry wall" }));
++    expect(sentence).toContain("against the pantry wall");
++  });
++});
+diff --git a/shared/applianceFacing.ts b/shared/applianceFacing.ts
+new file mode 100644
+index 0000000..f9860fe
+--- /dev/null
++++ b/shared/applianceFacing.ts
+@@ -0,0 +1,213 @@
++/**
++ * Per-appliance facing text for the photo render (Gemini / Google image test).
++ *
++ * The photo render is asked to turn the locked 3D Designer capture into a
++ * photograph. It used to be told only *which* appliances exist, never which way
++ * each one faces, so it was free to spin a range sideways down its own cabinet
++ * run and drag the hood and wall cabinets with it. This module turns the facts
++ * that come straight out of the 3D layout (the wall an appliance is set
++ * against, the direction its front looks, and where the camera is looking from)
++ * into plain sentences the prompt can state, one per appliance.
++ *
++ * Everything here is pure, framework-free and deterministic so the same input
++ * always produces the same prompt text and it can be unit tested without a
++ * browser or a provider.
++ */
++
++/** A direction in plan inches: +x is to the right of the room, +y is toward the front wall. */
++export interface PlanVector {
++  x: number;
++  y: number;
++}
++
++export type ApplianceKind =
++  | "range"
++  | "cooktop"
++  | "oven"
++  | "hood"
++  | "refrigerator"
++  | "dishwasher"
++  | "microwave"
++  | "sink"
++  | "wine-cooler"
++  | "other";
++
++/**
++ * One appliance exactly as it sits in the 3D layout.
++ *
++ * `front` is the direction the appliance actually looks toward in the plan;
++ * `inward` is the direction that wall faces into the room. Both come from the
++ * 3D placement, so an appliance that really was turned across its run is
++ * described that way instead of being flattened to "faces the room".
++ */
++export interface ApplianceFacingFacts {
++  kind: ApplianceKind;
++  /** Short noun phrase used in the sentence, e.g. `30 inch slide-in range`. */
++  label: string;
++  /** The wall the appliance is set against, e.g. `the back wall`. */
++  wall: string;
++  front: PlanVector;
++  /** Direction the wall faces into the room, so the sentence can say "out into the room". */
++  inward?: PlanVector | null;
++  /** Direction the render camera looks along, in plan inches. */
++  cameraForward?: PlanVector | null;
++  /** For a hood or over-range microwave: the appliance it is mounted directly above. */
++  above?: string | null;
++  /** For a refrigerator: the cabinet that stays on the same wall directly above it. */
++  overCabinet?: string | null;
++}
++
++/**
++ * The one instruction that makes the reference image authoritative for
++ * position and facing. It is stated before every per-appliance sentence so a
++ * later sentence can never be read as permission to re-orient anything.
++ */
++export const APPLIANCE_ORIENTATION_LOCK =
++  "ORIENTATION LOCK — reference image 1 IS the layout to preserve. It is the exact CabinetDealz 3D design, and its geometry is fixed: every cabinet run, every appliance, and every appliance's facing direction must be copied from image 1 exactly as drawn. Do not rotate, turn, flip, mirror, slide, swap, re-orient, or rearrange any appliance or cabinet. A range, cooktop, oven, hood, refrigerator, dishwasher, microwave, or sink keeps the same wall and the same direction its front faces in image 1. Never turn an appliance sideways down a cabinet run or point it at a neighbouring run, and never move a hood or the wall cabinets beside it away from the appliance they serve. If any sentence below seems to disagree with image 1, image 1 wins.";
++
++/** True for appliances whose front is the face that must point into the room. */
++const FEATURE_BY_KIND: Record<ApplianceKind, string> = {
++  range: "oven door and front controls",
++  cooktop: "cooking surface and front controls",
++  oven: "oven door and control panel",
++  hood: "front face and controls",
++  refrigerator: "doors and dispenser",
++  dishwasher: "door and control panel",
++  microwave: "door and control panel",
++  sink: "faucet and front rim",
++  "wine-cooler": "glass door",
++  other: "front face",
++};
++
++const PLACEMENT_BY_KIND: Record<ApplianceKind, string> = {
++  range: "in the base run",
++  cooktop: "in the countertop",
++  oven: "in its cabinet bay",
++  hood: "",
++  refrigerator: "in its bay",
++  dishwasher: "in the base run",
++  microwave: "",
++  sink: "in the countertop",
++  "wine-cooler": "in the base run",
++  other: "",
++};
++
++/** Appliances that hang on the wall above another appliance. */
++const MOUNTED_KINDS: ReadonlySet<ApplianceKind> = new Set<ApplianceKind>(["hood", "microwave"]);
++
++/** A direction this close to the camera axis counts as toward/away rather than sideways. */
++const CAMERA_AXIS_DOT = 0.68;
++
++function finite(value: unknown, fallback = 0): number {
++  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
++}
++
++function normalizeVector(vector: PlanVector | null | undefined): PlanVector | null {
++  if (!vector) return null;
++  const x = finite(vector.x);
++  const y = finite(vector.y);
++  const length = Math.hypot(x, y);
++  if (!(length > 1e-6)) return null;
++  return { x: x / length, y: y / length };
++}
++
++function dot(a: PlanVector, b: PlanVector): number {
++  return a.x * b.x + a.y * b.y;
++}
++
++/**
++ * Camera-relative wording. `cameraForward` points from the camera into the
++ * scene, so a front that points the other way looks toward the camera. The
++ * camera's own right-hand direction is (-forward.y, forward.x) in plan inches,
++ * which is what makes "across the view to the left/right" correct rather than
++ * mirrored.
++ */
++export function applianceFacingCameraPhrase(input: {
++  front: PlanVector;
++  cameraForward?: PlanVector | null;
++}): string {
++  const front = normalizeVector(input.front);
++  const forward = normalizeVector(input.cameraForward);
++  if (!front || !forward) return "";
++  const along = dot(front, forward);
++  if (along <= -CAMERA_AXIS_DOT) return "toward the camera";
++  if (along >= CAMERA_AXIS_DOT) return "away from the camera";
++  const right: PlanVector = { x: -forward.y, y: forward.x };
++  return dot(front, right) >= 0 ? "across the camera's view to the right" : "across the camera's view to the left";
++}
++
++/**
++ * Where the appliance front points, in words, from the 3D placement: into the
++ * room (from the wall it is set against) or, when the design really does turn
++ * it along the run, along that run.
++ */
++export function applianceFacingDirectionPhrase(input: {
++  front: PlanVector;
++  inward?: PlanVector | null;
++  cameraForward?: PlanVector | null;
++}): string {
++  const front = normalizeVector(input.front) ?? { x: 0, y: 1 };
++  const inward = normalizeVector(input.inward);
++  const camera = applianceFacingCameraPhrase({ front, cameraForward: input.cameraForward });
++  const intoRoom = inward ? dot(front, inward) >= 0.5 : true;
++  if (!intoRoom) return camera ? `along its cabinet run, ${camera}` : "along its cabinet run";
++  return camera ? `out into the room and ${camera}` : "out into the room";
++}
++
++function cleanText(value: string | null | undefined): string {
++  return (value ?? "").trim().replace(/[.\s]+$/, "");
++}
++
++/** One sentence describing where one appliance is and which way it faces. */
++export function describeApplianceFacing(facts: ApplianceFacingFacts): string {
++  const kind = facts.kind;
++  const label = cleanText(facts.label) || kind;
++  const wall = cleanText(facts.wall) || "its wall";
++  const feature = FEATURE_BY_KIND[kind] ?? FEATURE_BY_KIND.other;
++  const above = cleanText(facts.above);
++  const overCabinet = cleanText(facts.overCabinet);
++  const direction = applianceFacingDirectionPhrase({
++    front: facts.front,
++    inward: facts.inward,
++    cameraForward: facts.cameraForward,
++  });
++
++  if (MOUNTED_KINDS.has(kind)) {
++    const mount = above
++      ? `is mounted on ${wall} directly above the ${above}, centered on it, and it faces the same way as the ${above}`
++      : `is mounted on ${wall} and its ${feature} faces ${direction}`;
++    return `The ${label} ${mount}.`;
++  }
++
++  if (kind === "sink") {
++    return `The ${label} is set into the countertop on ${wall}, with its ${feature} facing ${direction} and its faucet behind the bowl against that wall.`;
++  }
++
++  const placement = PLACEMENT_BY_KIND[kind];
++  const place = placement ? ` ${placement}` : "";
++  const cabinetLine = overCabinet
++    ? ` The ${overCabinet} stays on ${wall} directly above the ${label}, centered over it.`
++    : "";
++
++  return `The ${label} sits${place} against ${wall}, with its back to that wall and its ${feature} facing ${direction}.${cabinetLine}`;
++}
++
++/** Every appliance's facing sentence, in the order the appliances were placed. */
++export function buildApplianceFacingStatements(
++  facts: readonly ApplianceFacingFacts[] | null | undefined,
++): string[] {
++  return (facts ?? []).map((entry) => describeApplianceFacing(entry));
++}
++
++/**
++ * The complete prompt block: the layout lock first, then one sentence per
++ * appliance. Returns an empty string when there is nothing to describe so a
++ * prompt without facing data stays byte-identical to today's.
++ */
++export function buildApplianceFacingPromptBlock(
++  facts: readonly ApplianceFacingFacts[] | null | undefined,
++): string {
++  const statements = buildApplianceFacingStatements(facts);
++  if (statements.length === 0) return "";
++  return [APPLIANCE_ORIENTATION_LOCK, ...statements].join(" ");
++}
+diff --git a/shared/photorealPrompt.applianceFacing.test.ts b/shared/photorealPrompt.applianceFacing.test.ts
+new file mode 100644
+index 0000000..2420fbb
+--- /dev/null
++++ b/shared/photorealPrompt.applianceFacing.test.ts
+@@ -0,0 +1,47 @@
++import { describe, expect, it } from "vitest";
++import { buildPhotorealPrompt, type PhotorealPromptInput } from "./photorealPrompt";
++import { APPLIANCE_ORIENTATION_LOCK } from "./applianceFacing";
++
++const base: PhotorealPromptInput = {
++  roomWidthFt: 12,
++  roomDepthFt: 10,
++  finishName: "Aspen White",
++  doorStyle: "Shaker",
++  appliances: ["a range", "a refrigerator"],
++};
++
++const backWall = { x: 0, y: 1 };
++const cameraInFront = { x: 0, y: -1 };
++
++describe("buildPhotorealPrompt appliance orientation", () => {
++  it("states the layout lock and every appliance's wall and facing", () => {
++    const prompt = buildPhotorealPrompt({
++      ...base,
++      applianceFacing: [
++        { kind: "range", label: "slide-in range", wall: "the back wall", front: backWall, inward: backWall, cameraForward: cameraInFront },
++        { kind: "hood", label: "range hood", wall: "the back wall", front: backWall, inward: backWall, cameraForward: cameraInFront, above: "slide-in range" },
++        { kind: "sink", label: "farmhouse sink", wall: "the back wall", front: backWall, inward: backWall, cameraForward: cameraInFront },
++      ],
++    });
++    expect(prompt).toContain(APPLIANCE_ORIENTATION_LOCK);
++    expect(prompt).toContain("The slide-in range sits in the base run against the back wall");
++    expect(prompt).toContain("facing out into the room and toward the camera");
++    expect(prompt).toContain("The range hood is mounted on the back wall directly above the slide-in range");
++    expect(prompt).toContain("The farmhouse sink is set into the countertop on the back wall");
++  });
++
++  it("keeps the appliance list and the facing block together, layout lock after the plan rules", () => {
++    const prompt = buildPhotorealPrompt({
++      ...base,
++      applianceFacing: [{ kind: "range", label: "range", wall: "the back wall", front: backWall, inward: backWall }],
++    });
++    expect(prompt.indexOf("Do not add any other appliances")).toBeLessThan(prompt.indexOf("ORIENTATION LOCK"));
++    expect(prompt.indexOf("ORIENTATION LOCK")).toBeLessThan(prompt.indexOf("Tastefully but minimally staged"));
++  });
++
++  it("leaves the prompt unchanged when no facing data is supplied", () => {
++    const withoutFacing = buildPhotorealPrompt(base);
++    expect(withoutFacing).not.toContain("ORIENTATION LOCK");
++    expect(buildPhotorealPrompt({ ...base, applianceFacing: [] })).toBe(withoutFacing);
++  });
++});
+diff --git a/shared/photorealPrompt.ts b/shared/photorealPrompt.ts
+index 3d57878..ec69645 100644
+--- a/shared/photorealPrompt.ts
++++ b/shared/photorealPrompt.ts
+@@ -1,3 +1,5 @@
++import { buildApplianceFacingPromptBlock, type ApplianceFacingFacts } from "./applianceFacing";
++
+ /**
+  * Pure builder for the AI Photoreal Preview prompt. Kept framework-free and
+  * side-effect-free so it can be unit tested and shared between the server
+@@ -60,6 +62,11 @@ export interface PhotorealPromptInput {
+    * render from inventing appliances that were never placed.
+    */
+   appliances?: string[];
++  /**
++   * Per-appliance placement and facing read from the 3D layout. Each one becomes
++   * a sentence so a render cannot turn an appliance sideways down its own run.
++   */
++  applianceFacing?: readonly ApplianceFacingFacts[];
+   notes?: string;
+   /** Camera framing. Defaults to a flattering three-quarter angle. */
+   cameraAngle?: CameraAngle;
+@@ -203,6 +210,12 @@ export function buildPhotorealPrompt(input: PhotorealPromptInput): string {
+     );
+   }
+ 
++  // 5b(ii). Each appliance's wall and facing direction, read from the 3D
++  // layout. Without this the render is free to turn a range sideways down its
++  // own run and carry the hood and wall cabinets with it.
++  const applianceFacing = buildApplianceFacingPromptBlock(input.applianceFacing);
++  if (applianceFacing) parts.push(applianceFacing);
++
+   // 5c. Island is opt-in. State its absence firmly, since the model tends to
+   // add one by default.
+   if (input.hasIsland) {
+-- 
+2.43.0
+
