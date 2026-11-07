@@ -270,10 +270,25 @@ export function nearestClearFloorPosition(
 }
 
 /**
- * Drag a fixture to the requested point, or to the nearest clear edge.
- * Returns null when every correction still intersects occupied floor; the
- * caller keeps the last clear position.
+ * A floor-mounted tub filler is the one fixture allowed to share floor space
+ * with a tub. Its spout is only 6½–8⅞ inches long, so a filler mounted outside
+ * the tub pours onto the floor; it has to reach over the rim. It still may not
+ * intersect anything else on the floor.
  */
+function tubFillerMayShareTub(item: PlacedFurniture, other: FloorRect, furniture: readonly PlacedFurniture[]): boolean {
+  const definition = FURNITURE_CATALOG.find((entry) => entry.id === item.defId);
+  const profile = verifiedPelicanBathroomFixtureProfile(item.pelicanCode ?? definition?.pelicanCode);
+  if (profile?.kind !== "floor-tub-filler") return false;
+  const otherItem = furniture.find((entry) => entry.uid === other.uid);
+  if (!otherItem) return false;
+  const otherDefinition = FURNITURE_CATALOG.find((entry) => entry.id === otherItem.defId);
+  const otherProfile = verifiedPelicanBathroomFixtureProfile(otherItem.pelicanCode ?? otherDefinition?.pelicanCode);
+  return otherProfile?.kind === "freestanding-tub" || otherProfile?.kind === "alcove-tub";
+}
+
+/** Drag a fixture to the requested point, or to the nearest clear edge.
+ * Returns null when every correction still intersects occupied floor; the
+ * caller keeps the last clear position. */
 export function resolveFurnitureMove(
   item: PlacedFurniture,
   x: number,
@@ -290,7 +305,8 @@ export function resolveFurnitureMove(
     y: Math.max(0, Math.min(y, Math.max(0, room.depth - footprint.d))),
   };
   if (!definition || definition.category !== "bathroom-fixture") return clamped;
-  const occupied = occupiedFloor(furniture, cabinets, item.uid);
+  const occupied = occupiedFloor(furniture, cabinets, item.uid)
+    .filter((other) => !tubFillerMayShareTub(item, other, furniture));
   const current: FloorRect = {
     uid: item.uid,
     x: clamped.x,
