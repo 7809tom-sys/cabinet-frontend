@@ -15674,6 +15674,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       cabinetDoorProfiles={threeDCabinetDoorProfiles}
 	      hardwareStyleId={hardwareStyleId}
                   hardwareAccent={catalogHardwareSelection ? catalogHardwareFinishAccent(catalogHardwareSelection.finish) : undefined}
+                  hardwareFinish={catalogHardwareSelection?.finish}
 	      cabinetDoorSampleUrls={threeDCabinetDoorSamples}
 	      cabinetDrawerSampleUrls={threeDCabinetDrawerSamples}
 	      cabinetFaceSourceKinds={threeDCabinetFaceKinds}
@@ -23840,6 +23841,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                cabinetDoorProfiles={threeDCabinetDoorProfiles}
 	                hardwareStyleId={hardwareStyleId}
                   hardwareAccent={catalogHardwareSelection ? catalogHardwareFinishAccent(catalogHardwareSelection.finish) : undefined}
+                  hardwareFinish={catalogHardwareSelection?.finish}
 	                cabinetDoorSampleUrls={threeDCabinetDoorSamples}
 	                cabinetDrawerSampleUrls={threeDCabinetDrawerSamples}
 	                cabinetFaceSourceKinds={threeDCabinetFaceKinds}
