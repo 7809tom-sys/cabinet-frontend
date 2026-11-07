@@ -16,6 +16,7 @@ import {
 } from "./design";
 import { type ActiveFloorObstacle } from "./floorOccupancyState";
 import { verifiedPelicanBathroomFixtureProfile } from "./pelicanBathroomFixtureProfiles";
+import { tubFillerMayShareFloorWith } from "./tubFillerFloor";
 
 export type FloorRect = {
   uid: string;
@@ -269,23 +270,6 @@ export function nearestClearFloorPosition(
   return null;
 }
 
-/**
- * A floor-mounted tub filler is the one fixture allowed to share floor space
- * with a tub. Its spout is only 6½–8⅞ inches long, so a filler mounted outside
- * the tub pours onto the floor; it has to reach over the rim. It still may not
- * intersect anything else on the floor.
- */
-function tubFillerMayShareTub(item: PlacedFurniture, other: FloorRect, furniture: readonly PlacedFurniture[]): boolean {
-  const definition = FURNITURE_CATALOG.find((entry) => entry.id === item.defId);
-  const profile = verifiedPelicanBathroomFixtureProfile(item.pelicanCode ?? definition?.pelicanCode);
-  if (profile?.kind !== "floor-tub-filler") return false;
-  const otherItem = furniture.find((entry) => entry.uid === other.uid);
-  if (!otherItem) return false;
-  const otherDefinition = FURNITURE_CATALOG.find((entry) => entry.id === otherItem.defId);
-  const otherProfile = verifiedPelicanBathroomFixtureProfile(otherItem.pelicanCode ?? otherDefinition?.pelicanCode);
-  return otherProfile?.kind === "freestanding-tub" || otherProfile?.kind === "alcove-tub";
-}
-
 /** Drag a fixture to the requested point, or to the nearest clear edge.
  * Returns null when every correction still intersects occupied floor; the
  * caller keeps the last clear position. */
@@ -305,8 +289,10 @@ export function resolveFurnitureMove(
     y: Math.max(0, Math.min(y, Math.max(0, room.depth - footprint.d))),
   };
   if (!definition || definition.category !== "bathroom-fixture") return clamped;
+  // A tub filler follows its own floor-space rule (`lib/tubFillerFloor`): it may
+  // share the tub it fills, and nothing else. Every other fixture owns its floor.
   const occupied = occupiedFloor(furniture, cabinets, item.uid)
-    .filter((other) => !tubFillerMayShareTub(item, other, furniture));
+    .filter((other) => !tubFillerMayShareFloorWith({ filler: item, other, furniture }));
   const current: FloorRect = {
     uid: item.uid,
     x: clamped.x,
