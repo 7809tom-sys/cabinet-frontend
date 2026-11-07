@@ -24,11 +24,10 @@ export function isBathroomVanityCabinet(
 /**
  * A catalog row that may appear in the Bathroom Designer's sink or faucet picker.
  *
- * `bathroomFixtureTags` is the tag column the Pelican catalog carries
- * (docs/sql/0264_pelican_vanity_fixtures_tag.tidb.sql). Older API deployments do not
- * return it yet, so an un-tagged row falls back to the exact-SKU catalog in
- * `@shared/pelicanBathroomFixtures`. A row is never accepted on a category label
- * or a product name alone.
+ * Every active, priced row in the browser's own family is reachable: a row with
+ * a source-verified profile installs in 3D, and a row without one still joins the
+ * design's materials list. The tags and the exact-SKU table below decide which
+ * family a row belongs to, not whether the shopper can see it.
  */
 export type PelicanBathroomTaggedRow = {
   pelicanCode?: string | null;

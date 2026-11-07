@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   bathroomFixtureCardImage,
@@ -36,5 +37,29 @@ describe("bathroom fixture catalog", () => {
     ]);
     expect(isBathroomDesignerFaucet("PL-8206 BN")).toBe(false);
     expect(isBathroomDesignerFaucet("PL-8164 BN")).toBe(true);
+  });
+
+  it("gives the vanity step more than one model by merging the live bathroom faucet searches", () => {
+    const designTool = readFileSync(new URL("../pages/DesignTool.tsx", import.meta.url), "utf8");
+    expect(designTool).toContain('search: "Bathroom Faucet"');
+    expect(designTool).toContain('search: "Vanity Faucet"');
+    expect(designTool).toContain('search: "Vessel Faucet"');
+    expect(designTool).toContain("mergeBathroomFaucetRows(");
+
+    const recommended = [{ id: 723, pelicanCode: "PL-8112 BN", sellPrice: 116.1 }];
+    const catalog = [
+      { id: 718, pelicanCode: "PL-8104 BN", sellPrice: 133.3 },
+      { id: 720, pelicanCode: "PL-8107 BN", sellPrice: 152.86 },
+      { id: 782, pelicanCode: "PL-8312 BN", sellPrice: 178.99 },
+      { id: 786, pelicanCode: "PL-8330 BN", sellPrice: 113.95 },
+      { id: 500, pelicanCode: "PL-8207 BN", sellPrice: 300 },
+    ];
+    expect(mergeBathroomFaucetRows(recommended, catalog).map((row) => row.pelicanCode)).toEqual([
+      "PL-8112 BN",
+      "PL-8104 BN",
+      "PL-8107 BN",
+      "PL-8312 BN",
+      "PL-8330 BN",
+    ]);
   });
 });

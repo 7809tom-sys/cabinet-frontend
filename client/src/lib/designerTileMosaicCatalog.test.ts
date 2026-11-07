@@ -77,6 +77,7 @@ describe("Designer tile and mosaic catalog visibility", () => {
       "Moonstone Hex",
       "PL-O2519WBS",
       "Special Order PF-4825FM",
+      "Hidden from Designer",
       "Photo-only floor",
       "Swatch floor",
     ]);
@@ -121,6 +122,40 @@ describe("Designer tile and mosaic catalog visibility", () => {
       { category: "Flooring", subCategory: "Moldings & Trim", name: "Quarter round", sellPrice: 12, showInDesigner: true, isActive: true },
       { ...options, isBathroom: true },
     )).toBe(false);
+  });
+
+  it("lists faucets, sinks, flooring, tile and mosaic, showers, and toilets, and drops their add-on parts", () => {
+    const rows = [
+      { category: "Toilets & Bidets", subCategory: "Toilets & Bidets", name: "PL-12318", sellPrice: 500, isActive: true },
+      { category: "Shower & Bath", subCategory: "Shower Surrounds", name: "PL-603074", sellPrice: 900, isActive: true },
+      { category: "Shower & Bath", subCategory: "Shower & Tub Doors", name: "PL-03A42S60 CHR", sellPrice: 700, isActive: true },
+      { category: "Shower & Bath", subCategory: "Shower Accessories", name: "Shower head", sellPrice: 50, isActive: true },
+      { category: "Sinks & Faucets", subCategory: "Sinks", name: "PL-HA109 R0 16g", sellPrice: 400, isActive: true },
+      { category: "Sinks & Faucets", subCategory: "Faucets", name: "PL-8207 BN", sellPrice: 300, isActive: true },
+      { category: "Sinks & Faucets", subCategory: "Sink & Faucet Accessories", name: "Bottom grid", sellPrice: 40, isActive: true },
+      { category: "Sinks & Faucets", subCategory: "Disposals & Accessories", name: "Disposal", sellPrice: 200, isActive: true },
+      { category: "Flooring", subCategory: "Planks & Flooring", name: "Captiva 20mil Vinyl Flooring", sellPrice: 55, isActive: true },
+      { category: "Flooring", subCategory: "Moldings & Trim", name: "Stair nose", sellPrice: 12, isActive: true },
+      { category: "Flooring", subCategory: "Underlayment", name: "Underlayment roll", sellPrice: 30, isActive: true },
+      { category: "Tile & Mosaic", subCategory: "Mosaic", name: "Arctic Vail", sellPrice: 8, isActive: true },
+      { category: "Sinks & Faucets", subCategory: "Sinks", name: "Inactive sink", sellPrice: 400, isActive: false },
+    ];
+    expect(rows.filter((row) => isDesignerPaletteItemVisible(row, options)).map((row) => row.name)).toEqual([
+      "PL-12318",
+      "PL-603074",
+      "PL-03A42S60 CHR",
+      "PL-HA109 R0 16g",
+      "PL-8207 BN",
+      "Captiva 20mil Vinyl Flooring",
+      "Arctic Vail",
+    ]);
+  });
+
+  it("keeps a verified bathtub imported under accessories, because Pelican stores tubs in that subcategory", () => {
+    const bathtub = { category: "Sinks & Faucets", subCategory: "Sink & Faucet Accessories", pelicanCode: 'PL-02138 59"', name: "Freestanding tub", sellPrice: 1282, isActive: true };
+    const verified = { ...options, hasVerifiedFixtureProfile: (code: string | null | undefined) => /^PL-02138/.test(code ?? "") };
+    expect(isDesignerPaletteItemVisible(bathtub, verified)).toBe(true);
+    expect(isDesignerPaletteItemVisible(bathtub, options)).toBe(false);
   });
 
   it("uses a backend swatch flag when present and otherwise infers readiness from materialImageUrl", () => {
