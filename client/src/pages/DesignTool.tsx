@@ -1920,7 +1920,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     const tubFillerPlacement = tubFillerProfile?.kind === "floor-tub-filler"
       ? bathroomTubFillerPlacement(draft, bathroomFurnitureRef.current, room, floorCabinets) : null;
     if (tubFillerProfile?.kind === "floor-tub-filler" && !tubFillerPlacement) {
-      toast.error("No non-overlapping visual position is available beside the tub. Move the tub or another fixture first.");
+      toast.error("No position is available where this filler's spout reaches the tub. Add or move the tub first, then choose the filler again.");
       return;
     }
     const tubProfile = tubFillerProfile?.kind === "freestanding-tub" || tubFillerProfile?.kind === "alcove-tub";

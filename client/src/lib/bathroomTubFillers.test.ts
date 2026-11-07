@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { FURNITURE_CATALOG, furnitureFootprint, makePelicanBathroomFixture } from "./design";
-import { bathroomTubFillerPlacement, bathroomPlanningGuidance, rotateBathroomFurniture } from "./bathroomPlanning";
+import { bathroomTubFillerPlacement, bathroomPlanningGuidance, rotateBathroomFurniture, tubFillerSpoutTip } from "./bathroomPlanning";
 import { verifiedPelicanBathroomFixtureProfile, pelicanBathroomFixturePlacementText } from "./pelicanBathroomFixtureProfiles";
 
 const room = { width: 120, depth: 96 };
@@ -32,24 +32,35 @@ describe("Pelican floor-mounted tub fillers", () => {
     expect(turned).toMatchObject({ rotation: 90, pelicanProductId: 804, pelicanSellPrice: 442.53 });
     expect(FURNITURE_CATALOG.find((p) => p.id === item.defId)?.color).toBe("#1b1b1b");
   });
-  it("places a filler outside the tub footprint with no zone to center it in", () => {
+  it("places the filler so its spout reaches over the tub, sharing the tub's floor space", () => {
     const item = filler(), bath = tub();
     const placed = bathroomTubFillerPlacement(item, [bath], room)!;
     expect(placed).not.toBeNull();
-    expect(placed.rotation).toBe(180);
-    const bound = furnitureFootprint(bath, FURNITURE_CATALOG.find((p) => p.id === bath.defId)!);
-    expect(placed.y + 14).toBeLessThanOrEqual(bath.y);
-    expect(placed.x).toBeGreaterThanOrEqual(bath.x);
-    expect(placed.x + 14).toBeLessThanOrEqual(bath.x + bound.w);
+    const tubDef = FURNITURE_CATALOG.find((p) => p.id === bath.defId)!;
+    const tubFoot = furnitureFootprint(bath, tubDef);
+    const fillerDef = FURNITURE_CATALOG.find((p) => p.id === placed.defId)!;
+    const fillerFoot = furnitureFootprint(placed, fillerDef);
+    // The whole point: the filler shares floor space with the tub, because its
+    // spout must reach over the rim to fill the basin.
+    const sharesTub = placed.x < bath.x + tubFoot.w && placed.x + fillerFoot.w > bath.x
+      && placed.y < bath.y + tubFoot.d && placed.y + fillerFoot.d > bath.y;
+    expect(sharesTub).toBe(true);
+    // And the spout outlet lands inside the tub opening, not beside it.
+    const profile = verifiedPelicanBathroomFixtureProfile(item.pelicanCode)!;
+    const tip = tubFillerSpoutTip(
+      { x: placed.x, y: placed.y, w: fillerFoot.w, d: fillerFoot.d, rotation: placed.rotation },
+      profile.tubFillerSpoutReachIn ?? 7,
+    );
+    expect(tip.x).toBeGreaterThanOrEqual(bath.x);
+    expect(tip.x).toBeLessThanOrEqual(bath.x + tubFoot.w);
+    expect(tip.y).toBeGreaterThanOrEqual(bath.y);
+    expect(tip.y).toBeLessThanOrEqual(bath.y + tubFoot.d);
   });
-  it("rejects crowded or undersized rooms atomically, and supports another free side", () => {
+  it("rejects a room too small to hold the filler, and supports another free side", () => {
     const bath = { ...tub(), y: 0 };
     const placement = bathroomTubFillerPlacement(filler(), [bath], room)!;
-    expect(placement.rotation).toBe(0);
-    expect(placement.y).toBeGreaterThan(0);
+    expect(placement).not.toBeNull();
     expect(bathroomTubFillerPlacement(filler(), [], { width: 10, depth: 10 })).toBeNull();
-    const block = { ...tub(), x: 0, y: 0 };
-    expect(bathroomTubFillerPlacement(filler(), [block], { width: 59.0625, depth: 29.328125 })).toBeNull();
   });
   it("connects real catalog cards to placement while keeping existing vanity faucets on their normal path", () => {
     const compact = readFileSync(new URL("../components/design/RecommendedSurfaces.tsx", import.meta.url), "utf8");
@@ -57,6 +68,6 @@ describe("Pelican floor-mounted tub fillers", () => {
     const designer = readFileSync(new URL("../pages/DesignTool.tsx", import.meta.url), "utf8");
     expect(compact).toContain('role === "bathroom-faucet" && verifiedPelicanBathroomFixtureProfile(item.pelicanCode)?.kind === "floor-tub-filler"');
     expect(full).toContain("Place floor-mounted tub filler");
-    expect(designer.indexOf('No non-overlapping visual position')).toBeLessThan(designer.indexOf('setSelectedSurfaces((previous) => previous.some'));
+    expect(designer.indexOf("No position is available where this filler's spout reaches the tub")).toBeLessThan(designer.indexOf('setSelectedSurfaces((previous) => previous.some'));
   });
 });

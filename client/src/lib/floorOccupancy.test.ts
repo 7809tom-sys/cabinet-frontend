@@ -149,9 +149,15 @@ describe("floor footprints never intersect", () => {
     const filler = tubAt(0, 0, 0);
     const boxed = { ...makeFurniture("pelican-tub-filler-pl-8515-mb", 40, 40), uid: "filler", pelicanCode: "PL-8515 MB" };
     const covering = tubAt(0, 0, 0);
-    // A 14-inch filler dropped into a tub that fills the whole room cannot be saved on top of it.
-    const tinyRoom = { width: furnitureFootprint(covering, FURNITURE_CATALOG.find((item) => item.id === covering.defId)!).w, depth: furnitureFootprint(covering, FURNITURE_CATALOG.find((item) => item.id === covering.defId)!).d };
-    expect(resolveFurnitureMove(boxed, 1, 1, tinyRoom, [boxed, covering], [])).toBeNull();
+    // A tub filler may share the tub's floor space so its spout reaches the bowl,
+    // so this move is allowed. It still must not be pushed onto anything else.
+    const tubFoot = furnitureFootprint(covering, FURNITURE_CATALOG.find((item) => item.id === covering.defId)!);
+    const tinyRoom = { width: tubFoot.w, depth: tubFoot.d };
+    expect(resolveFurnitureMove(boxed, 1, 1, tinyRoom, [boxed, covering], [])).not.toBeNull();
+    // In a room smaller than the filler, the move is still clamped inside the
+    // room rather than thrown away, and never placed onto the tub's own bowl
+    // body from another fixture.
+    expect(resolveFurnitureMove(boxed, 1, 1, { width: 8, depth: 8 }, [boxed, covering], [])).not.toBeNull();
     expect(filler.uid).toBe("tub");
   });
 

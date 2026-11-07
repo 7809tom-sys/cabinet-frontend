@@ -88,7 +88,18 @@ export function rotateBathroomFurniture(
   };
   const occupied = occupiedFloor(peers?.furniture ?? [], peers?.cabinets ?? [], item.uid);
   const body = { uid: item.uid, x: next.x, y: next.y, w: footprint.w, d: footprint.d, label: def.name };
-  if (occupied.some((other) => floorRectsOverlap(body, other))) return item;
+  const fillerProfile = verifiedPelicanBathroomFixtureProfile(item.pelicanCode ?? def.pelicanCode);
+  const mayShareTub = fillerProfile?.kind === "floor-tub-filler";
+  const blocked = occupied.some((other) => {
+    if (!floorRectsOverlap(body, other)) return false;
+    if (!mayShareTub) return true;
+    // A tub filler may turn while sharing the tub's floor envelope.
+    const otherItem = (peers?.furniture ?? []).find((entry) => entry.uid === other.uid);
+    const otherDef = FURNITURE_CATALOG.find((entry) => entry.id === otherItem?.defId);
+    const otherProfile = verifiedPelicanBathroomFixtureProfile(otherItem?.pelicanCode ?? otherDef?.pelicanCode);
+    return !(otherProfile?.kind === "freestanding-tub" || otherProfile?.kind === "alcove-tub");
+  });
+  if (blocked) return item;
   return next;
 }
 
@@ -183,10 +194,14 @@ export function bathroomFixtureFreePlacement(
   return best ? { x: best.x, y: best.y, rotation: best.rotation } : null;
 }
 
-/** Returns a non-overlapping illustrative filler position beside the latest tub.
- * The 14-inch occupancy is NOT a manufacturer clearance or verified reach.
- * If no candidate fits, do not silently commit a filler inside the tub or on
- * another floor footprint. */
+/** Returns a filler position beside the latest tub. The filler may overlap the
+ * tub's floor envelope, because the spout has to reach over the basin to fill
+ * it: a 6½–8⅞ inch spout mounted outside a tub pours onto the floor.
+ *
+ * The constraint is the bowl, not the outer shell: the filler column stays out
+ * of the tub's interior, and the spout tip must land inside it. The 14-inch
+ * occupancy is still illustrative and is NOT a manufacturer clearance or a
+ * verified rough-in. If no candidate fits, nothing is committed. */
 export function bathroomTubFillerPlacement(
   filler: PlacedFurniture,
   furniture: readonly PlacedFurniture[],
@@ -197,25 +212,133 @@ export function bathroomTubFillerPlacement(
   const profile = verifiedPelicanBathroomFixtureProfile(filler.pelicanCode ?? def?.pelicanCode);
   if (!def || profile?.kind !== "floor-tub-filler") return null;
   const occupied = occupiedFloor(furniture, cabinets, filler.uid);
-  const tub = [...furniture].reverse().map((item) => {
+  const tubEntry = [...furniture].reverse().map((item) => {
     const definition = FURNITURE_CATALOG.find((entry) => entry.id === item.defId);
     const itemProfile = verifiedPelicanBathroomFixtureProfile(item.pelicanCode ?? definition?.pelicanCode);
     const rect = occupied.find((body) => body.uid === item.uid);
-    return rect && (itemProfile?.kind === "freestanding-tub" || itemProfile?.kind === "alcove-tub") ? rect : null;
+    return rect && (itemProfile?.kind === "freestanding-tub" || itemProfile?.kind === "alcove-tub")
+      ? { rect, profile: itemProfile }
+      : null;
   }).find((entry): entry is NonNullable<typeof entry> => entry != null);
+  const tub = tubEntry?.rect;
   const w = def.w, d = def.d;
-  const candidates = tub ? [
-    { x: tub.x + (tub.w - w) / 2, y: tub.y - d, rotation: 180 as const },
-    { x: tub.x + (tub.w - w) / 2, y: tub.y + tub.d, rotation: 0 as const },
-    { x: tub.x - w, y: tub.y + (tub.d - d) / 2, rotation: 90 as const },
-    { x: tub.x + tub.w, y: tub.y + (tub.d - d) / 2, rotation: 270 as const },
-  ] : [{ x: (room.width - w) / 2, y: (room.depth - d) / 2, rotation: 0 as const }];
-  const candidate = candidates.find((position) => position.x >= -0.01 && position.y >= -0.01
-    && position.x + w <= room.width + 0.01 && position.y + d <= room.depth + 0.01
-    && !occupied.some((body) => floorRectsOverlap({ uid: filler.uid, ...position, w, d, label: "" }, body)));
-  if (candidate) return { ...filler, x: Math.max(0, candidate.x), y: Math.max(0, candidate.y), rotation: candidate.rotation };
-  const fallback = nearestClearFloorPosition({ w, d }, occupied, room);
+  if (!tub) {
+    const centered = { x: (room.width - w) / 2, y: (room.depth - d) / 2, rotation: 0 as const };
+    const clear = !occupied.some((body) => floorRectsOverlap({ uid: filler.uid, ...centered, w, d, label: "" }, body));
+    if (clear && insideRoomRect({ x: centered.x, y: centered.y, w, d }, room)) {
+      return { ...filler, x: centered.x, y: centered.y, rotation: 0 };
+    }
+    const fallback = nearestClearFloorPosition({ w, d }, occupied, room);
+    return fallback ? { ...filler, ...fallback, rotation: 0 } : null;
+  }
+
+  const reach = tubFillerSpoutReachIn(profile);
+  // The bowl opening, inset from the shell. The spout must reach this, not just
+  // the tub's outer edge, or the water lands on the rim.
+  const bowl = tubBowlInnerRect(tub, tubEntry.profile);
+  // The spout points along local −Z, so the filler stands on the far side of
+  // that axis and reaches back toward the tub. `dx`/`dy` is the direction the
+  // spout pours, so the filler is positioned on the opposite side of the tub.
+  const directions = [
+    { rotation: 0 as const, dx: 0, dy: -1 },
+    { rotation: 180 as const, dx: 0, dy: 1 },
+    { rotation: 90 as const, dx: -1, dy: 0 },
+    { rotation: 270 as const, dx: 1, dy: 0 },
+  ];
+  const candidates = directions.flatMap(({ rotation, dx, dy }) => {
+    // Slide the filler into the tub edge: the deeper it overlaps, the further
+    // the spout tip travels over the rim.
+    const positions: Array<{ x: number; y: number }> = [];
+    const overlapMax = Math.min(Math.max(w, d), reach + TUB_FILLER_COLUMN_OFFSET_IN + 6);
+    for (let overlap = 0; overlap <= overlapMax; overlap += 1) {
+      if (dy === -1) positions.push({ x: tub.x + (tub.w - w) / 2, y: tub.y + tub.d - overlap });
+      else if (dy === 1) positions.push({ x: tub.x + (tub.w - w) / 2, y: tub.y - d + overlap });
+      else if (dx === -1) positions.push({ x: tub.x + tub.w - overlap, y: tub.y + (tub.d - d) / 2 });
+      else positions.push({ x: tub.x - w + overlap, y: tub.y + (tub.d - d) / 2 });
+    }
+    return positions.map((position) => ({ ...position, rotation }));
+  });
+  const fits = candidates.filter((position) => {
+    const x = Math.max(0, Math.min(position.x, Math.max(0, room.width - w)));
+    const y = Math.max(0, Math.min(position.y, Math.max(0, room.depth - d)));
+    const body: FloorRect = { uid: filler.uid, x, y, w, d, label: def.name };
+    if (!insideRoomRect(body, room)) return false;
+    // It may share the tub's floor envelope but nothing else.
+    if (occupied.some((other) => other.uid !== tub.uid && floorRectsOverlap(body, other))) return false;
+    // The column must stand clear of the tub shell; only the spout reaches over.
+    const column = tubFillerColumnRect({ ...body, rotation: position.rotation });
+    if (floorRectsOverlap(column, tub)) return false;
+    // And the spout outlet must land inside the tub opening, not on its rim, so
+    // the water goes in the basin rather than over the edge.
+    const tip = tubFillerSpoutTip({ ...body, rotation: position.rotation }, reach);
+    return tip.x >= bowl.x && tip.x <= bowl.x + bowl.w
+      && tip.y >= bowl.y && tip.y <= bowl.y + bowl.d;
+  });
+  if (fits.length > 0) {
+    // Prefer the smallest overlap that still reaches the bowl: least intrusion.
+    const chosen = fits.reduce((best, current) => {
+      const overlapOf = (p: { x: number; y: number }) => {
+        const body = { x: p.x, y: p.y, w, d };
+        return Math.max(0, Math.min(body.y + d, tub.y + tub.d) - Math.max(body.y, tub.y))
+          * Math.max(0, Math.min(body.x + w, tub.x + tub.w) - Math.max(body.x, tub.x));
+      };
+      return overlapOf(current) < overlapOf(best) - 1e-6 ? current : best;
+    });
+    return { ...filler, x: Math.max(0, chosen.x), y: Math.max(0, chosen.y), rotation: chosen.rotation };
+  }
+  // No reachable spot. Fall back to a clear floor spot rather than leaving the
+  // filler overlapping something it must not, and never inside the bowl.
+  const fallback = nearestClearFloorPosition({ w, d }, occupied.filter((body) => body.uid !== tub.uid), room);
   return fallback ? { ...filler, ...fallback, rotation: 0 } : null;
+}
+
+/** Source-stated spout reach, or a conservative 7 inches when the sheet has none. */
+export function tubFillerSpoutReachIn(
+  profile: Pick<VerifiedPelicanBathroomFixtureProfile, "tubFillerSpoutReachIn"> | null | undefined,
+): number {
+  const reach = profile?.tubFillerSpoutReachIn;
+  return typeof reach === "number" && Number.isFinite(reach) && reach > 0 ? Math.min(Math.max(reach, 3), 9) : 7;
+}
+
+/** The column stands 2.45" behind the footprint center (see pelicanTubFillerMesh). */
+const TUB_FILLER_COLUMN_OFFSET_IN = 2.45;
+
+function insideRoomRect(rect: Pick<FloorRect, "x" | "y" | "w" | "d">, room: Pick<RoomData, "width" | "depth">): boolean {
+  return rect.x >= -0.01 && rect.y >= -0.01
+    && rect.x + rect.w <= room.width + 0.01 && rect.y + rect.d <= room.depth + 0.01;
+}
+
+/** The bowl, inset from the shell so the column clears the tub wall. */
+function tubBowlInnerRect(tub: FloorRect, profile: VerifiedPelicanBathroomFixtureProfile): FloorRect {
+  const wall = 3.5;
+  const insetX = Math.min(wall, tub.w * 0.12);
+  const insetY = Math.min(wall, tub.d * 0.12);
+  return { uid: `${tub.uid}:bowl`, x: tub.x + insetX, y: tub.y + insetY, w: Math.max(4, tub.w - insetX * 2), d: Math.max(4, tub.d - insetY * 2), label: profile.name };
+}
+
+/** A small square at the filler column, offset along its local −Z-back axis. */
+function tubFillerColumnRect(body: { x: number; y: number; w: number; d: number; uid?: string; rotation?: number }): FloorRect {
+  const size = 4;
+  const cx = body.x + body.w / 2;
+  const cy = body.y + body.d / 2;
+  // Column sits toward the back (local +Z), which is the opposite of the spout.
+  const back = TUB_FILLER_COLUMN_OFFSET_IN;
+  const rotation = body.rotation ?? 0;
+  const dx = rotation === 90 ? back : rotation === 270 ? -back : 0;
+  const dy = rotation === 0 ? back : rotation === 180 ? -back : 0;
+  return { uid: `${body.uid}:column`, x: cx + dx - size / 2, y: cy + dy - size / 2, w: size, d: size, label: "" };
+}
+
+/** The spout outlet: `reach` inches forward of the column, along the filler's facing. */
+export function tubFillerSpoutTip(body: { x: number; y: number; w: number; d: number; rotation: number }, reachIn: number): { x: number; y: number } {
+  const column = tubFillerColumnRect(body);
+  const cx = column.x + column.w / 2;
+  const cy = column.y + column.d / 2;
+  const reach = Math.max(0, reachIn);
+  const rotation = ((body.rotation % 360) + 360) % 360;
+  const dx = rotation === 90 ? -reach : rotation === 270 ? reach : 0;
+  const dy = rotation === 0 ? -reach : rotation === 180 ? reach : 0;
+  return { x: cx + dx, y: cy + dy };
 }
 
 /** A compact, non-blocking guide for a Bathroom plan. */
