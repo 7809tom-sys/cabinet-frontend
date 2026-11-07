@@ -141,7 +141,12 @@ export function verifiedPelicanBathroomFixtureProfile(
   const baseCode = /^PL-03A42S60\s+(?:BN|CHR|MB)$/.test(normalized) ? "PL-03A42S"
     : /^PL-03A42T60\s+(?:BN|CHR|MB)$/.test(normalized) ? "PL-03A42T"
       : /^PL-603074\s+(?:BRICK|GREY WOOD|MARBLE|WHITE WOOD)$/.test(normalized) ? "PL-603074"
-        : null;
+        // Pelican sells the alcove tubs both with and without the NSO suffix
+        // ("no skirt"? the sheet is the same drain-side drawing). The purchasable
+        // catalog rows carry NSO, so they must resolve to the same measured
+        // envelope or the tub cannot be placed at all.
+        : /^(PL-028(?:49|50|51)[LR])NSO$/.test(normalized) ? normalized.replace(/NSO$/, "")
+          : null;
   const shared = baseCode ? VERIFIED_PELICAN_BATHROOM_FIXTURE_PROFILES.find((profile) => profile.pelicanCode === baseCode) : null;
   return shared ? { ...shared, pelicanCode: normalized, name: normalized } : null;
 }
