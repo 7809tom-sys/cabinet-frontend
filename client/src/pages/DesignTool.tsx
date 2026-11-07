@@ -15014,7 +15014,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         element: canvasImmersionRootRef.current,
         documentLike: document,
       });
-      if (next.clearImmersive) setCanvasOnlyState(false);
+      // Publish, don't just set local state: the site header and the history row
+      // read the shared flag, and a bare setState left them hidden after a
+      // browser-initiated exit (the stranded-user bug in the other direction).
+      if (next.clearImmersive) setCanvasOnly(false);
     };
     document.addEventListener("fullscreenchange", onFullscreenChange);
     document.addEventListener("webkitfullscreenchange", onFullscreenChange as EventListener);
@@ -15022,8 +15025,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       document.removeEventListener("fullscreenchange", onFullscreenChange);
       document.removeEventListener("webkitfullscreenchange", onFullscreenChange as EventListener);
     };
-  }, [canvasOnly]);
-  const toggleCanvasOnly = useCallback(() => {    const entering = !canvasOnly;
+  }, [canvasOnly, setCanvasOnly]);
+  const toggleCanvasOnly = useCallback(() => {
+    const entering = !canvasOnly;
     setCanvasOnly(entering);
     const element = canvasImmersionRootRef.current;
     if (!element) return;

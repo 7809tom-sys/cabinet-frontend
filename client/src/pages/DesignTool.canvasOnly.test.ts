@@ -79,6 +79,18 @@ describe("Designer canvas-only mode wiring", () => {
     expect(designTool).toContain('window.addEventListener("keydown", onKeyDown)');
   });
 
+  it("clears every bar on a browser-initiated exit, not just local state", () => {
+    // The site header and history row read the shared flag. Clearing only local
+    // state left them hidden with no visible way back — regression test.
+    const effectStart = designTool.indexOf("const onFullscreenChange = () => {");
+    const effectEnd = designTool.indexOf('document.addEventListener("fullscreenchange"', effectStart);
+    const effect = designTool.slice(effectStart, effectEnd);
+    expect(effect).toContain("if (next.clearImmersive) setCanvasOnly(false);");
+    // The setter publishes the flag to the header; the raw state setter does not.
+    expect(effect).not.toContain("setCanvasOnlyState(false)");
+    expect(effect).toContain("setCanvasOnly(false)");
+  });
+
   it("keeps the canvas-only root class available for the floating rails", () => {
     expect(css).toContain(".designer-immersive-root {");
     expect(css).toContain("position: fixed;");
