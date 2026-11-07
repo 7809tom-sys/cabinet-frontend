@@ -119,5 +119,30 @@ describe("Designer window scenes", () => {
     expect(proud(trim, trimDepth)).toBeCloseTo(0.5, 2);
     expect(proud(sill, sillDepth)).toBeCloseTo(0.5, 2);
     expect(proud(glass, glassDepth)).toBeLessThan(0);
+    const scene = group.children.find((node) => node.userData.windowScenePlane) as THREE.Mesh;
+    const backing = group.children.find((node) => node.userData.architecturalOpeningBacking) as THREE.Mesh;
+    const roomFace = (mesh: THREE.Mesh) => mesh.position.z + ((mesh.geometry as THREE.BoxGeometry).parameters.depth / 2);
+    expect(roomFace(scene)).toBeGreaterThan(roomFace(backing));
+    expect(roomFace(glass)).toBeGreaterThan(roomFace(backing));
+  });
+
+  it("keeps the exterior scene in front of the wall cap on a side wall as well", () => {
+    const root = new THREE.Group();
+    addWallOpening(root, {
+      uid: "kitchen-window",
+      kind: "window",
+      label: "Window",
+      side: "left",
+      offset: 18,
+      width: 36,
+      height: 42,
+      sill: 40,
+    }, { width: 144, depth: 120, ceilingHeight: 96 });
+    const group = root.children[0] as THREE.Group;
+    const scene = group.children.find((node) => node.userData.windowScenePlane) as THREE.Mesh;
+    const backing = group.children.find((node) => node.userData.architecturalOpeningBacking) as THREE.Mesh;
+    const roomFace = (mesh: THREE.Mesh) => mesh.position.z + ((mesh.geometry as THREE.BoxGeometry).parameters.depth / 2);
+    expect(roomFace(scene)).toBeGreaterThan(roomFace(backing));
+    expect(group.userData.kind).toBe("window");
   });
 });
