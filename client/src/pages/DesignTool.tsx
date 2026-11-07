@@ -91,7 +91,7 @@ import {
 } from "@/lib/pelicanAutoPlace";
 import { TabletPreviewOverlay, type TabletPreviewMode } from "@/components/design/TabletPreviewOverlay";
 import { isPelicanBathroomFixtureProfileVerified, verifiedPelicanBathroomFixtureProfile } from "@/lib/pelicanBathroomFixtureProfiles";
-import { BATHROOM_STARTER_TEMPLATE, bathroomFixtureChecklist, bathroomFixtureFreePlacement, bathroomTubFillerPlacement, bathroomPlanningGuidance, makeBathroomStarterTemplate, rotateBathroomFurniture } from "@/lib/bathroomPlanning";
+import { BATHROOM_STARTER_TEMPLATE, bathroomFixtureChecklist, bathroomFixtureFreePlacement, bathroomTubFillerPlacement, bathroomPlanningGuidance, makeBathroomStarterTemplate, placeBathroomTubSelection, rotateBathroomFurniture } from "@/lib/bathroomPlanning";
 import { fixtureFloorCabinets, resolveFurnitureMove } from "@/lib/floorOccupancy";
 import { withFloorObstacles } from "@/lib/floorOccupancyState";
 import { VanitySinkFacts } from "@/components/design/VanityFixtureFacts";
@@ -1883,22 +1883,46 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       toast.error("No non-overlapping visual position is available beside the tub. Move the tub or another fixture first.");
       return;
     }
-    const freePlacement = bathroomFixtureFreePlacement(draft, bathroomFurnitureRef.current, room, floorCabinets);
+    const tubProfile = tubFillerProfile?.kind === "freestanding-tub" || tubFillerProfile?.kind === "alcove-tub";
+    const tubPlacement = tubProfile
+      ? placeBathroomTubSelection(bathroomFurnitureRef.current, draft, room, floorCabinets)
+      : null;
+    const freePlacement = tubProfile || tubFillerPlacement
+      ? null
+      : bathroomFixtureFreePlacement(draft, bathroomFurnitureRef.current, room, floorCabinets);
     // A click lands in the nearest open floor footprint. If every spot intersects
-    // a tub, toilet, vanity, or other floor item, nothing is added.
-    if (!tubFillerPlacement && !freePlacement) {
+    // a tub, toilet, vanity, or other floor item, nothing is added. A different
+    // tub replaces the one already in the room and does not move the vanity,
+    // toilet, or pantry.
+    if (tubProfile && !tubPlacement) {
+      toast.error(`No open floor space is left for ${item.name}. The tub already in the room was left where it is.`);
+      return;
+    }
+    if (!tubFillerPlacement && !tubPlacement && !freePlacement) {
       toast.error(`No open floor space is left for ${item.name}. Move another item, then place it again.`);
       return;
     }
-    const fixture = tubFillerPlacement ?? { ...draft, ...freePlacement! };
-    setSelectedSurfaces((previous) => previous.some((surface) => surface.id === item.id) ? previous : [...previous, item]);
+    const fixture = tubFillerPlacement ?? (tubPlacement ? null : { ...draft, ...freePlacement! });
+    setSelectedSurfaces((previous) => {
+      const withoutOtherTubs = tubProfile
+        ? previous.filter((surface) => {
+          const profile = verifiedPelicanBathroomFixtureProfile(surface.pelicanCode);
+          return profile?.kind !== "freestanding-tub" && profile?.kind !== "alcove-tub" || surface.id === item.id;
+        })
+        : previous;
+      return withoutOtherTubs.some((surface) => surface.id === item.id) ? withoutOtherTubs : [...withoutOtherTubs, item];
+    });
     setFurniture((previous) => {
-      const next = [...previous, fixture];
+      const next = tubPlacement ? tubPlacement.furniture : [...previous, fixture!];
       bathroomFurnitureRef.current = next;
       return next;
     });
-    setSelectedFurnUid(fixture.uid);
-    toast.success(tubFillerPlacement ? `${item.name} placed beside the tub — visual planning only; verify plumbing fit` : `${item.name} placed in Floor Plan and 3D`);
+    setSelectedFurnUid((tubPlacement?.furniture.find((entry) => entry.pelicanProductId === item.id) ?? fixture)?.uid ?? null);
+    toast.success(tubFillerPlacement
+      ? `${item.name} placed beside the tub — visual planning only; verify plumbing fit`
+      : tubPlacement?.replaced
+        ? `${item.name} replaced the tub already in the room. The vanity, toilet, and cabinets stayed put.`
+        : `${item.name} placed in Floor Plan and 3D`);
   }, [room.depth, room.width]);
   // Clear both saved layers: the source product used by Cart/3D and the plan's
   // representative material. Clearing only one left the flooring pattern visible.

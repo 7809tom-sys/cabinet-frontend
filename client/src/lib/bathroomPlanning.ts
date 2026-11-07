@@ -8,7 +8,7 @@ import {
   type RoomData,
   type SinkFixture,
 } from "./design";
-import { floorRectsOverlap, nearestClearFloorPosition, occupiedFloor } from "./floorOccupancy";
+import { floorRectsOverlap, nearestClearFloorPosition, occupiedFloor, type FloorRect } from "./floorOccupancy";
 import { isPelicanVanityFaucetSku } from "@shared/pelicanBathroomFixtures";
 import { isVanityFaucetProfileId, isVanitySinkProfileId } from "./pelicanFixtureProfiles";
 import {
@@ -90,6 +90,55 @@ export function rotateBathroomFurniture(
   const body = { uid: item.uid, x: next.x, y: next.y, w: footprint.w, d: footprint.d, label: def.name };
   if (occupied.some((other) => floorRectsOverlap(body, other))) return item;
   return next;
+}
+
+export function isBathroomTubFurniture(item: PlacedFurniture): boolean {
+  const definition = FURNITURE_CATALOG.find((entry) => entry.id === item.defId);
+  const profile = verifiedPelicanBathroomFixtureProfile(item.pelicanCode ?? definition?.pelicanCode);
+  return profile?.kind === "freestanding-tub" || profile?.kind === "alcove-tub";
+}
+
+function tubFootprintFits(
+  item: PlacedFurniture,
+  room: Pick<RoomData, "width" | "depth">,
+  occupied: readonly FloorRect[],
+): boolean {
+  const definition = FURNITURE_CATALOG.find((entry) => entry.id === item.defId);
+  if (!definition) return false;
+  const footprint = furnitureFootprint(item, definition);
+  if (item.x < -0.01 || item.y < -0.01) return false;
+  if (item.x + footprint.w > room.width + 0.01 || item.y + footprint.d > room.depth + 0.01) return false;
+  const body: FloorRect = { uid: item.uid, x: item.x, y: item.y, w: footprint.w, d: footprint.d, label: definition.name };
+  return !occupied.some((other) => floorRectsOverlap(body, other));
+}
+
+/**
+ * The fixture browser selects one tub for the room. A later choice replaces
+ * that tub at the same spot and drops any extras a previous click had added.
+ * Nothing else on the floor is moved. A second tub is added only when the
+ * caller explicitly asks for one, and only in a spot that is already clear.
+ */
+export function placeBathroomTubSelection(
+  furniture: readonly PlacedFurniture[],
+  draft: PlacedFurniture,
+  room: Pick<RoomData, "width" | "depth">,
+  cabinets: readonly PlacedCabinet[] = [],
+  options: { addAnother?: boolean } = {},
+): { furniture: PlacedFurniture[]; replaced: boolean } | null {
+  const tubs = furniture.filter(isBathroomTubFurniture);
+  const others = furniture.filter((item) => !isBathroomTubFurniture(item));
+  if (tubs.length > 0 && !options.addAnother) {
+    const current = tubs[0]!;
+    const inPlace = { ...draft, uid: current.uid, x: current.x, y: current.y, rotation: current.rotation };
+    const occupied = occupiedFloor(others, cabinets, inPlace.uid);
+    if (tubFootprintFits(inPlace, room, occupied)) return { furniture: [...others, inPlace], replaced: true };
+    const spot = bathroomFixtureFreePlacement(inPlace, others, room, cabinets);
+    if (!spot) return null;
+    return { furniture: [...others, { ...inPlace, ...spot }], replaced: true };
+  }
+  const spot = bathroomFixtureFreePlacement(draft, furniture, room, cabinets);
+  if (!spot) return null;
+  return { furniture: [...furniture, { ...draft, ...spot }], replaced: false };
 }
 
 /** Default long tub axis parallel to the nearest room wall, even without a fit. */

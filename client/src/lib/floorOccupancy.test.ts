@@ -7,6 +7,7 @@ import {
   hasCollision,
   nonApronSinkDeckPlacement,
   placedFootprint,
+  snapPosition,
   wallPlacementAt,
 } from "./design";
 import { anchorAlongStartIn, wallLabelToEngineWallId, type AutoDesignInputs } from "./autoDesignAutoBuild";
@@ -174,6 +175,18 @@ describe("floor footprints never intersect", () => {
     expect(vanity.y).toBe(before.y);
     expect(cabinetOwnsFloor(vanity)).toBe(true);
     expect(cabinetOwnsFloor(cabinet({ placement: "wall", masterCode: "W3030", height: 30, depth: 12 }))).toBe(false);
+  });
+
+  it("does not slide a tall pantry into the toilet when the floor footprint is occupied", () => {
+    const pantry = cabinet({ uid: "pantry", masterCode: "TC2484", description: "Tall pantry", placement: "tall", x: 90, y: 0, width: 24, depth: 24, height: 84 });
+    const toilet = toiletAt(60, 0);
+    const before = { x: pantry.x, y: pantry.y };
+    const snapped = withFloorObstacles(fixtureFloorCabinets([toilet]), () => snapPosition({ ...pantry, x: 70, y: 0 }, room, [pantry]));
+    expect(snapped).toMatchObject({ x: 70, y: 0 });
+    expect(pantry.x).toBe(before.x);
+    expect(pantry.y).toBe(before.y);
+    expect(toilet.x).toBe(60);
+    expect(toilet.y).toBe(0);
   });
 });
 

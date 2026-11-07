@@ -3145,6 +3145,11 @@ export function snapPosition(
   island?: { x: number; y: number; width: number; depth: number } | null
 ): { x: number; y: number; snappedWall: boolean; snappedIsland: boolean; snappedCabinet: boolean; snappedGrid: boolean } {
   others = mergeActiveFloorObstacles(others);
+  // A tub or toilet owns its floor, but it is not a cabinet to butt against.
+  // Snapping or pushing a pantry onto that footprint is what slid the linen
+  // cabinet into the toilet. Collision still rejects the overlap; the cabinet
+  // stays where it was.
+  const snapPeers = others.filter((item) => !item.floorOccupancyObstacle);
   // Use the PLAN footprint (not the raw rotated size) so L-corner cabinets
   // (lazy-Susan / corner base) snap by their true SQUARE box. Their stored depth
   // can be the shallow ~24" leg depth, which would leave the box short of the
@@ -3199,7 +3204,7 @@ export function snapPosition(
 	    { value: room.depth - d, distance: Math.abs(y + d - room.depth), source: "wall" },
 	  ];
 
-	  for (const o of others) {
+	  for (const o of snapPeers) {
 	    if (o.uid === moving.uid) continue;
 	    if (!sharesPlanCollisionZone(moving, o)) continue;
 	    const os = placedFootprint(o);
@@ -3239,7 +3244,7 @@ export function snapPosition(
   // its neighbors instead of stacking on one of them.
   for (let pass = 0; pass < 4; pass++) {
     let moved = false;
-    for (const o of others) {
+    for (const o of snapPeers) {
       if (o.uid === moving.uid) continue;
       if (!sharesPlanCollisionZone(moving, o)) continue;
       const os = placedFootprint(o);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BATHROOM_STARTER_TEMPLATE, bathroomFixtureChecklist, bathroomFixtureFreePlacement, bathroomPlanningGuidance, makeBathroomStarterTemplate } from "./bathroomPlanning";
+import { BATHROOM_STARTER_TEMPLATE, bathroomFixtureChecklist, bathroomFixtureFreePlacement, bathroomPlanningGuidance, isBathroomTubFurniture, makeBathroomStarterTemplate, placeBathroomTubSelection } from "./bathroomPlanning";
 import { FURNITURE_CATALOG, furnitureFootprint, makeFurniture } from "./design";
 import { verifiedPelicanBathroomFixtureProfile } from "./pelicanBathroomFixtureProfiles";
 
@@ -75,5 +75,34 @@ describe("Bathroom starter and clearance guidance", () => {
     expect(checklist.find((step) => step.id === "shower")).toMatchObject({ optional: true, complete: false });
     expect(checklist.find((step) => step.id === "toilet")?.detail).not.toMatch(/zone/i);
     expect(checklist.every((step) => !/zone/i.test(step.detail))).toBe(true);
+  });
+
+  it("replaces the tub already in the room and leaves the toilet and pantry where they are", () => {
+    const room = { width: 120, depth: 96 };
+    const first = { ...makeFurniture("pelican-tub-pl-02146-59", 8, 40), uid: "tub-1", rotation: 90 as const, pelicanCode: 'PL-02146 59"' };
+    const toilet = { ...makeFurniture("pelican-toilet-pl-12044", 78, 8), uid: "toilet", pelicanCode: "PL-12044" };
+    const pantry = { uid: "pantry", x: 96, y: 0 };
+    const second = placeBathroomTubSelection(
+      [first, toilet],
+      { ...makeFurniture("pelican-tub-pl-02138-59", 0, 0), pelicanCode: 'PL-02138 59"' },
+      room,
+    );
+    const third = second
+      ? placeBathroomTubSelection(
+        second.furniture,
+        { ...makeFurniture("pelican-tub-pl-02562-59", 0, 0), pelicanCode: 'PL-02562 59"' },
+        room,
+      )
+      : null;
+    expect(second?.replaced).toBe(true);
+    expect(third?.replaced).toBe(true);
+    expect(third?.furniture.filter(isBathroomTubFurniture)).toHaveLength(1);
+    expect(third?.furniture.find(isBathroomTubFurniture)).toMatchObject({ uid: "tub-1", x: first.x, y: first.y, rotation: 90, defId: "pelican-tub-pl-02562-59" });
+    expect(third?.furniture.find((item) => item.uid === "toilet")).toMatchObject({ x: toilet.x, y: toilet.y });
+    expect(pantry).toMatchObject({ x: 96, y: 0 });
+    const added = placeBathroomTubSelection(third!.furniture, { ...makeFurniture("pelican-tub-pl-02141-59", 0, 0), pelicanCode: 'PL-02141 59"' }, room, [], { addAnother: true });
+    expect(added?.replaced).toBe(false);
+    expect(added?.furniture.filter(isBathroomTubFurniture)).toHaveLength(2);
+    expect(added?.furniture.find((item) => item.uid === "toilet")).toMatchObject({ x: toilet.x, y: toilet.y });
   });
 });
