@@ -89,6 +89,12 @@ export function isSinkBasePlacement(item: AutoDesignPlacedLike): boolean {
 }
 
 export function autoDesignControlState(input: {
+  /**
+   * Whether Auto-Design is offered in this workspace at all. The Designer now
+   * passes the kitchen-room flag here for every visitor — the old
+   * admin/affiliate audience check is gone. Kept as a parameter so a caller
+   * that does not offer the feature can hide every surface at once.
+   */
   audienceAllowed: boolean;
   layoutLocked: boolean;
   /** Placements other than a pushed sink base, so a sink never locks Auto-Design out. */

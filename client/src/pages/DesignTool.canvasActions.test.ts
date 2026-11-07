@@ -44,10 +44,15 @@ describe("floating canvas action rail wiring", () => {
   });
 
   it("stays visible in canvas-only mode", () => {
-    // Only the Designer's own bars are hidden; the rail has no canvasOnly guard.
+    // Only the Designer's own bars are hidden; the rail is never guarded by
+    // canvasOnly. On a phone/tablet-portrait width it is hidden alongside the
+    // bottom strip — but NOT in canvas-only mode, where that strip is gone and
+    // this rail is the only control left (Auto Design must stay reachable).
     const rail = designTool.slice(designTool.indexOf("<CanvasActionRail"), designTool.indexOf("/>", designTool.indexOf("<CanvasActionRail")));
-    expect(rail).toContain("hidden={isMobile}");
-    expect(rail).not.toContain("canvasOnly");
+    expect(rail).toContain("hidden={isMobile && !canvasOnly}");
+    expect(rail).not.toContain("hidden={isMobile}");
+    // A bare canvasOnly guard would hide the rail exactly when it is needed.
+    expect(rail).not.toContain("hidden={canvasOnly}");
   });
 
   it("keeps the rail clear of safe-area insets on a tablet", () => {

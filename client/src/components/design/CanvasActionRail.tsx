@@ -1,16 +1,23 @@
-import { Boxes, Wrench } from "lucide-react";
+import { Boxes, Ruler, Wrench } from "lucide-react";
 
 /**
- * The two actions the owner actually uses, as thumb-sized icons floating on the
- * right edge of the canvas: Add a cabinet and Add hardware.
+ * The actions the owner actually uses, as thumb-sized icons floating on the
+ * right edge of the canvas: Add a cabinet, Add hardware, and — in a kitchen —
+ * Auto-Design.
  *
  * This is an additive fast path, not a redesign. It owns no business logic — it
  * receives the same handlers the existing toolbar buttons call, so a cabinet
  * added here goes through the same validation, pricing and cart code.
  *
+ * Auto-Design matters most HERE. Canvas-only ("fullscreen") mode hides the
+ * Designer's own toolbars and bottom bar, so the rail is the only control left
+ * on a tablet. `onAutoDesign` is the page's existing opener and is only passed
+ * when Auto-Design is available for the current room (kitchen) and the plan is
+ * empty enough to accept a build; the rest of that rule stays in the page.
+ *
  * Layout notes:
- * - 44×44 minimum touch targets, stacked with an 8px gap, vertically centred so
- *   they clear the immersive toggle (top-right) and the zoom/pan rail
+ * - 44×44 minimum touch targets, stacked with an 8px gap, anchored to the top
+ *   right so they clear the immersive toggle (top-right) and the zoom/pan rail
  *   (bottom-right) at every width.
  * - The visible icon is paired with a small text label and a title/aria-label,
  *   so the action is readable on a tablet without hovering.
@@ -19,6 +26,15 @@ import { Boxes, Wrench } from "lucide-react";
 export type CanvasActionRailProps = {
   onAddCabinet: () => void;
   onAddHardware: () => void;
+  /**
+   * The page's existing Auto-Design opener. Omitted where Auto-Design is not
+   * offered (a bathroom, laundry, closet, or other room), which hides the action.
+   */
+  onAutoDesign?: () => void;
+  /** True when the plan is not empty or is locked, so Auto-Design cannot start. */
+  autoDesignDisabled?: boolean;
+  /** The page's shared reason for a disabled Auto-Design, shown as the tooltip. */
+  autoDesignDisabledReason?: string;
   /** True when the design is locked or measuring, so adding is not allowed. */
   addCabinetDisabled?: boolean;
   /** Explains a disabled Add cabinet. Shown as the tooltip. */
@@ -31,6 +47,12 @@ export type CanvasActionRailProps = {
 
 const ITEM_CLASS =
   "group inline-flex h-11 w-11 flex-col items-center justify-center gap-0.5 rounded-xl border border-[#d9cdb4] bg-white/95 text-[8px] font-semibold leading-none text-[#1a2744] shadow-md backdrop-blur transition hover:bg-white hover:shadow-lg active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1a2744] focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-white/95 disabled:hover:shadow-md";
+
+/** Auto-Design keeps the gold outline the toolbar triggers use, so it reads the same. */
+const AUTO_DESIGN_ITEM_CLASS = `${ITEM_CLASS} border-[#d4a75a] text-[#765416]`;
+
+export const AUTO_DESIGN_DEFAULT_TITLE =
+  "Auto-Design a kitchen from four fixed fixture anchors";
 
 /**
  * Shared rail geometry. Kept as data so the layout test pins it.
@@ -46,13 +68,23 @@ export const CANVAS_ACTION_RAIL_CLASS =
 export function CanvasActionRail({
   onAddCabinet,
   onAddHardware,
+  onAutoDesign,
+  autoDesignDisabled = false,
+  autoDesignDisabledReason,
   addCabinetDisabled = false,
   addCabinetDisabledReason,
   addCabinetLabel = "Add cabinet",
   hidden = false,
 }: CanvasActionRailProps) {
   if (hidden) return null;
-  const cabinetTitle = addCabinetDisabled && addCabinetDisabledReason ? addCabinetDisabledReason : `${addCabinetLabel} — choose a cabinet from the catalog`;
+  const cabinetTitle =
+    addCabinetDisabled && addCabinetDisabledReason
+      ? addCabinetDisabledReason
+      : `${addCabinetLabel} — choose a cabinet from the catalog`;
+  const autoDesignTitle =
+    autoDesignDisabled && autoDesignDisabledReason
+      ? autoDesignDisabledReason
+      : AUTO_DESIGN_DEFAULT_TITLE;
   return (
     <div
       data-testid="designer-canvas-action-rail"
@@ -88,6 +120,20 @@ export function CanvasActionRail({
         <Wrench className="h-5 w-5" aria-hidden="true" />
         <span aria-hidden="true">Hardware</span>
       </button>
+      {onAutoDesign && (
+        <button
+          type="button"
+          data-testid="canvas-quick-auto-design"
+          onClick={onAutoDesign}
+          disabled={autoDesignDisabled}
+          title={autoDesignTitle}
+          aria-label="Auto-Design"
+          className={AUTO_DESIGN_ITEM_CLASS}
+        >
+          <Ruler className="h-5 w-5" aria-hidden="true" />
+          <span aria-hidden="true">Auto</span>
+        </button>
+      )}
     </div>
   );
 }

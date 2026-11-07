@@ -49,8 +49,9 @@ const { router } = vi.hoisted(() => {
 });
 
 vi.mock("@/lib/trpc", () => ({ trpc: router }));
-// A signed-in admin: EmailGate lets a logged-in user straight through, and
-// `isAdmin` is what turns Auto-Design on for the public Designer.
+// A signed-in admin, used here only so EmailGate lets the mount straight
+// through. Auto-Design is no longer admin-gated — the public-viewer case lives
+// in `DesignTool.publicAutoDesign.test.tsx`.
 vi.mock("@/_core/hooks/useAuth", () => ({
   useAuth: () => ({
     user: { id: 1, role: "admin", email: "admin@cabinetdealz.test", name: "Admin" },
