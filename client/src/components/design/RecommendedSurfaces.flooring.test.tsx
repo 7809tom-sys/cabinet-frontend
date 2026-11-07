@@ -140,7 +140,7 @@ describe("Recommended flooring palette", () => {
     expect(cardText("Plank 4")?.querySelector("img")?.getAttribute("src")).toBe("/photos/plank-4.webp");
   });
 
-  it("requests the designer flooring endpoints and keeps the card photo off the floor mesh", () => {
+  it("requests the full storefront catalog for flooring and keeps the card photo off the floor mesh", () => {
     const recommended = readFileSync(resolve(process.cwd(), "client/src/components/design/RecommendedSurfaces.tsx"), "utf8");
     const dialog = readFileSync(resolve(process.cwd(), "client/src/components/design/SurfacesPickerDialog.tsx"), "utf8");
     const designTool = readFileSync(resolve(process.cwd(), "client/src/pages/DesignTool.tsx"), "utf8");
@@ -148,11 +148,12 @@ describe("Recommended flooring palette", () => {
     expect(recommended).toContain('{ role: "flooring", limit: 500 }');
     expect(recommended).toContain("const visible = storefrontCatalog || fullFlooringPalette ? configurations : configurations.slice(0, limit)");
     expect(recommended).not.toContain('subCategory: role === "flooring"');
-    expect(dialog).toContain('scope: browsingTileMosaic ? "catalog" as const : "designer" as const');
+    expect(dialog).toContain('scope: "catalog" as const');
+    expect(dialog).not.toContain('scope: browsingTileMosaic ? "catalog" as const : "designer" as const');
     expect(dialog).toContain("limit: PAGE_LIMIT");
     expect(dialog).toContain('limit: activeBathroomRole === "flooring" ? 500 : PAGE_LIMIT');
     expect(dialog).not.toContain("browsingFlooring");
-    expect(dialog).toContain("src={p.imageUrl}");
+    expect(dialog).toContain("src={bathroomFixtureCardImage(p.pelicanCode, p.imageUrl) ?? p.imageUrl}");
     expect(designTool).toContain("flooringSceneTextureUrl(selected, approvedFlooringSwatchByProductId)");
     expect(designTool).toContain("catalogFlooringReferenceUrl={threeDSurfaceTextureUrls.flooring}");
     expect(designTool).toContain("catalogFlooringImageUrl={threeDSurfaceTextureUrls.flooring}");

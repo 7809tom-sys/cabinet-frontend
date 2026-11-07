@@ -1763,6 +1763,17 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       }
       const sinkRole = role === "sink" || role === "bathroom-sink";
       if (sinkRole) {
+        // The palette lists every catalog sink so it can be added to this
+        // design's materials list. Only a sink with a published spec sheet has
+        // measured bowls, so only that one is placed as 3D geometry. A photo and
+        // a price alone never become an invented basin.
+        if (!verifiedPelicanSinkProfile(item.pelicanCode)) {
+          toggleSurface(item);
+          if (!selectedSurfaces.some((surface) => surface.id === item.id)) {
+            toast.info(`${item.name} is on the materials list. Pelican publishes no measured bowl for this model, so it is not drawn in 3D.`);
+          }
+          return;
+        }
         if (isBathroomVanitySinkRow(item)) {
           const vanityHost = placedRef.current.find((cabinet) => {
             const label = `${cabinet.masterCode} ${cabinet.category ?? ""} ${cabinet.subCategory ?? ""} ${cabinet.description ?? ""}`;
@@ -1827,6 +1838,15 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         selectedCabinetUid: selectedUid,
       });
       if (!faucetPlan.ok) {
+        // A faucet with no published dimensions still belongs on the materials
+        // list; it just has no measured body to mount on the counter.
+        if (!verifiedPelicanFaucetProfile(item.pelicanCode)) {
+          toggleSurface(item);
+          if (!selectedSurfaces.some((surface) => surface.id === item.id)) {
+            toast.info(`${item.name} is on the materials list. Pelican publishes no measured faucet dimensions for this model, so it is not drawn in 3D.`);
+          }
+          return;
+        }
         toast.error(faucetPlan.message);
         return;
       }

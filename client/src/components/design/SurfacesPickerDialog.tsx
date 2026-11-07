@@ -284,23 +284,9 @@ export function SurfacesPickerDialog({
     return () => clearTimeout(t);
   }, [search]);
 
-  // Which categories actually have designer-visible items
-  const { data: cats } = trpc.pelican.categories.useQuery(
-    { scope: "designer" },
-    { enabled: open && !isBathroom }
-  );
-  const availableCats = useMemo(() => {
-    const have = new Set((cats ?? []).map((c) => c.category));
-    // Designer category counts omit tile and mosaic that lack a swatch. Flooring
-    // counts include designer-enabled photo planks once cabinet-backend#27 is
-    // deployed. Keep both tabs so the palette stays reachable either way.
-    if (cats) {
-      have.add("Tile & Mosaic");
-      have.add("Flooring");
-    }
-    const list = PELICAN_STOREFRONT_CATEGORIES.filter((c) => have.has(c));
-    return list.length ? list : PELICAN_STOREFRONT_CATEGORIES;
-  }, [cats]);
+  // Every category is now browsable in full, so the palette does not ask the
+  // server for a pre-filtered subset of categories.
+  const availableCats = PELICAN_STOREFRONT_CATEGORIES;
 
   // Keep the active category valid as availability loads
   useEffect(() => {
@@ -309,12 +295,10 @@ export function SurfacesPickerDialog({
     }
   }, [availableCats, category]);
 
-  // Tile & Mosaic still reads the storefront catalog: Designer scope requires a
-  // swatch for backsplash. The kitchen Flooring tab and Browse all use Designer
-  // scope with the 200-row page (paired cabinet-backend#27 returns priced photo
-  // planks, with or without a swatch). Bathroom flooring uses
-  // surfaces.recommended with limit 500. Visibility below still drops molding,
-  // trim, and underlayment. Catalog photos stay on the card and off the floor.
+  // Every category reads the full storefront catalog. The server's `designer`
+  // scope keeps only rows the 3D scene can already model, which left 831 of the
+  // 1,077 purchasable items unreachable. Visibility below keeps each tab to its
+  // own family; a row with no measured geometry still joins the materials list.
   const browsingTileMosaic = (!isBathroom && category === "Tile & Mosaic")
     || (isBathroom && activeBathroomRole === "backsplash");
   const showingFloorMaterials = (!isBathroom && category === "Flooring")
@@ -322,7 +306,7 @@ export function SurfacesPickerDialog({
   const catalogCategory = (browsingTileMosaic ? "Tile & Mosaic" : category) as PelicanCategory;
   const catalogInput = {
     category: catalogCategory,
-    scope: browsingTileMosaic ? "catalog" as const : "designer" as const,
+    scope: "catalog" as const,
     search: isBathroom ? undefined : (debounced || undefined),
     affiliateSlug: affiliateSlug ?? undefined,
     limit: PAGE_LIMIT,
@@ -332,10 +316,16 @@ export function SurfacesPickerDialog({
     catalogInput,
     { enabled: open && (browsingTileMosaic || (!isBathroom && category !== "Preferred")) }
   );
-  const catalogPage2Enabled = Boolean(open && browsingTileMosaic && (data?.total ?? 0) > (data?.items.length ?? 0));
+  // The endpoint caps a page at 200 rows and several categories exceed that.
+  const catalogPage2Enabled = Boolean(open && !isBathroom && category !== "Preferred" && (data?.total ?? 0) > (data?.items.length ?? 0));
   const { data: catalogPage2, isLoading: catalogPage2Loading } = trpc.pelican.byCategory.useQuery(
     { ...catalogInput, offset: PAGE_LIMIT },
     { enabled: catalogPage2Enabled },
+  );
+  const catalogPage3Enabled = Boolean(catalogPage2Enabled && (data?.total ?? 0) > PAGE_LIMIT * 2 && (catalogPage2?.items.length ?? 0) > 0);
+  const { data: catalogPage3, isLoading: catalogPage3Loading } = trpc.pelican.byCategory.useQuery(
+    { ...catalogInput, offset: PAGE_LIMIT * 2 },
+    { enabled: catalogPage3Enabled },
   );
   const floorMosaicInput = {
     category: "Tile & Mosaic" as const,
@@ -356,6 +346,32 @@ export function SurfacesPickerDialog({
   const { data: bathroomData, isLoading: bathroomLoading } = trpc.surfaces.recommended.useQuery(
     { role: activeBathroomRole, limit: activeBathroomRole === "flooring" ? 500 : PAGE_LIMIT, affiliateSlug: affiliateSlug ?? undefined },
     { enabled: open && isBathroom && !browsingTileMosaic },
+  );
+  // `surfaces.recommended` narrows each role by its own family text, so a few
+  // priced bathroom rows never reach it (two toilets and the commercial flush
+  // valves, for example). Read the family's own catalog as well and merge, so
+  // every active item in the tab's family is listed.
+  const bathroomFamilyCategory = (): PelicanCategory | null => {
+    switch (activeBathroomRole) {
+      case "toilet-bidet": return "Toilets & Bidets";
+      case "shower-door":
+      case "shower-surround":
+      case "shower-system":
+      case "bathroom-accessory": return "Shower & Bath";
+      case "bathroom-sink":
+      case "bathroom-faucet": return "Sinks & Faucets";
+      default: return null;
+    }
+  };
+  const bathroomFamily = bathroomFamilyCategory();
+  const bathroomFamilyCatalog = trpc.pelican.byCategory.useQuery(
+    { category: bathroomFamily ?? "Toilets & Bidets", scope: "catalog" as const, limit: PAGE_LIMIT, offset: 0, affiliateSlug: affiliateSlug ?? undefined },
+    { enabled: open && isBathroom && bathroomFamily != null && !browsingTileMosaic },
+  );
+  const bathroomFamilyCatalogPage2Enabled = Boolean(bathroomFamilyCatalog.data && (bathroomFamilyCatalog.data.total ?? 0) > PAGE_LIMIT);
+  const bathroomFamilyCatalogPage2 = trpc.pelican.byCategory.useQuery(
+    { category: bathroomFamily ?? "Toilets & Bidets", scope: "catalog" as const, limit: PAGE_LIMIT, offset: PAGE_LIMIT, affiliateSlug: affiliateSlug ?? undefined },
+    { enabled: open && isBathroom && bathroomFamily != null && !browsingTileMosaic && bathroomFamilyCatalogPage2Enabled },
   );
   // Vanity faucets are active and priced, but they sort after the 480-row
   // window `surfaces.recommended` reads. Search the catalog by the words in
@@ -419,8 +435,12 @@ export function SurfacesPickerDialog({
       unsupportedOverhangLimitIn: product.unsupportedOverhangLimitIn ?? null,
     })), [catalogPreferredProducts, verifiedPreferredProducts]);
   const categoryItems = useMemo(
-    () => concatCatalogPages<SelectedSurface>([data?.items as SelectedSurface[] | undefined, catalogPage2?.items as SelectedSurface[] | undefined]),
-    [catalogPage2?.items, data?.items],
+    () => concatCatalogPages<SelectedSurface>([
+      data?.items as SelectedSurface[] | undefined,
+      catalogPage2?.items as SelectedSurface[] | undefined,
+      catalogPage3?.items as SelectedSurface[] | undefined,
+    ]),
+    [catalogPage2?.items, catalogPage3?.items, data?.items],
   );
   const floorMosaics = useMemo(
     () => (showingFloorMaterials
@@ -436,7 +456,17 @@ export function SurfacesPickerDialog({
   ] as SelectedSurface[];
   const bathroomRows = isBathroom && activeBathroomRole === "bathroom-faucet"
     ? mergeBathroomFaucetRows((bathroomData ?? []) as SelectedSurface[], faucetCatalogItems)
-    : ((bathroomData ?? []) as SelectedSurface[]);
+    : (() => {
+      const familyRows = [
+        ...((bathroomFamilyCatalog.data?.items ?? []) as SelectedSurface[]),
+        ...((bathroomFamilyCatalogPage2.data?.items ?? []) as SelectedSurface[]),
+      ];
+      if (familyRows.length === 0) return (bathroomData ?? []) as SelectedSurface[];
+      const byId = new Map<number, SelectedSurface>();
+      for (const row of (bathroomData ?? []) as SelectedSurface[]) byId.set(row.id, row);
+      for (const row of familyRows) if (!byId.has(row.id)) byId.set(row.id, row);
+      return Array.from(byId.values());
+    })();
   const baseItems: SelectedSurface[] = (isBathroom
     ? (browsingTileMosaic ? categoryItems : bathroomRows)
     : category === "Preferred"
@@ -450,10 +480,13 @@ export function SurfacesPickerDialog({
     ? concatCatalogPages([baseItems, floorMosaics])
     : baseItems;
   const paletteLoading = isBathroom
-    ? (browsingTileMosaic ? isLoading || (catalogPage2Enabled && catalogPage2Loading) : bathroomLoading || (bathroomFaucetSearchEnabled && (bathroomFaucetByName.isLoading || vanityFaucetByName.isLoading || vesselFaucetByName.isLoading || tubFaucetByName.isLoading)) || (showingFloorMaterials && (floorMosaicLoading || (floorMosaicPage2Enabled && floorMosaicPage2Loading))))
+    ? (browsingTileMosaic ? isLoading || (catalogPage2Enabled && catalogPage2Loading) : bathroomLoading || (bathroomFamilyCatalog.isLoading) || (bathroomFamilyCatalogPage2Enabled && bathroomFamilyCatalogPage2.isLoading) || (bathroomFaucetSearchEnabled && (bathroomFaucetByName.isLoading || vanityFaucetByName.isLoading || vesselFaucetByName.isLoading || tubFaucetByName.isLoading)) || (showingFloorMaterials && (floorMosaicLoading || (floorMosaicPage2Enabled && floorMosaicPage2Loading))))
     : category === "Preferred"
       ? preferredProductsLoading || catalogPreferredLoading
-      : isLoading || (catalogPage2Enabled && catalogPage2Loading) || (showingFloorMaterials && (floorMosaicLoading || (floorMosaicPage2Enabled && floorMosaicPage2Loading)));
+      : isLoading
+        || (catalogPage2Enabled && catalogPage2Loading)
+        || (catalogPage3Enabled && catalogPage3Loading)
+        || (showingFloorMaterials && (floorMosaicLoading || (floorMosaicPage2Enabled && floorMosaicPage2Loading)));
   const selectedBathroomFixture = useMemo(() => {
     if (!isBathroom || bathroomPaletteMode !== "fixtures") return null;
     return selected.find((item) => Boolean(
@@ -477,7 +510,11 @@ export function SurfacesPickerDialog({
         : items.filter((item) => `${item.name} ${item.subCategory ?? ""} ${item.size ?? ""}`.toLowerCase().includes(debounced.toLowerCase()));
     const compatible = searched.filter((item) => isDesignerPaletteItemVisible(item as DesignerPaletteRow, {
       isBathroom,
-      hasVerifiedFixtureProfile: hasVerifiedPelicanFixtureProfile,
+      // A verified sink, faucet, toilet, bidet, tub, or shower fixture stays in
+      // the palette even when Pelican's imported subcategory files it under an
+      // accessories bucket (tubs are stored that way today).
+      hasVerifiedFixtureProfile: (code) => hasVerifiedPelicanFixtureProfile(code)
+        || verifiedPelicanBathroomFixtureProfile(code) != null,
       // Countertops stay selectable without a swatch. The swatch chips only
       // narrow that full set. Catalog photography never becomes a texture.
       matchesCountertopSwatch: (candidate) => matchesCountertopSwatchFilter(candidate, countertopSwatchFilter),
@@ -708,7 +745,7 @@ export function SurfacesPickerDialog({
                 </div>
               )}
               {showingFloorMaterials && (
-                <p data-testid="flooring-selection-availability" className="text-[10px] leading-relaxed text-muted-foreground">All active, source-priced flooring planks are available to select and quote. Mosaics marked Use as floor tile are included here and stay available as wall backsplash. Unchecked mosaics are wall backsplash only. Molding, trim, and underlayment stay in accessory suggestions. A plank without an approved repeatable swatch keeps its catalog photo on this card and is shown in 3D as a labeled neutral floor until its material swatch is supplied.</p>
+                <p data-testid="flooring-selection-availability" className="text-[10px] leading-relaxed text-muted-foreground">Every active flooring row is listed: planks, tile, and the molding, trim, and underlayment that finish an edge. Planks and mosaics marked Use as floor tile install as the room floor; trim and underlayment join the materials list as accessories. A plank without an approved repeatable swatch tiles its catalog photo, and a plank with no photo stays on the labeled neutral floor.</p>
               )}
               {((!isBathroom && category === "Quartz Slabs (Countertops)") || (isBathroom && bathroomPaletteMode === "surfaces" && activeBathroomRole === "countertop")) && (
                 <p data-testid="countertop-selection-availability" className="text-[10px] leading-relaxed text-muted-foreground">All active, source-priced countertop products are available to select and quote. A product without an approved repeatable slab swatch remains accurately priced and is shown in 3D with the labeled neutral preview until its material swatch is supplied.</p>

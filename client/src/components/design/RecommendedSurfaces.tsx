@@ -70,7 +70,6 @@ export const BATHROOM_FIXTURE_RECOMMENDED_SECTIONS: {
   { role: "shower-door", label: "Shower & Tub Doors" },
   { role: "shower-surround", label: "Shower Walls" },
   { role: "shower-system", label: "Shower Systems" },
-  { role: "bathroom-accessory", label: "Other Bathroom Accessories" },
 ];
 
 /** Backward-compatible alias for callers that previously requested all bathroom cards. */

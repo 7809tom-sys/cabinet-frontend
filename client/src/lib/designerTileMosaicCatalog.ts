@@ -108,10 +108,63 @@ export function flooringSceneTextureUrl(
 }
 
 /**
+ * Palette families the Designer lists.
+ *
+ * The owner named exactly these product families: faucets, sinks, flooring,
+ * tile and mosaic, showers, and toilets. Everything else the shop sells stays in
+ * the storefront: flooring moldings and underlayment, sink and faucet
+ * accessories, disposals, and shower accessories are add-on parts rather than a
+ * surface or a fixture the room is designed around.
+ *
+ * Countertops remain because they are the surface this Designer already
+ * measures, prices, and fabricates.
+ */
+const FLOORING_MATERIAL_SUBCATEGORIES = new Set(["planks & flooring", "tile", "tile flooring", "vinyl", "laminate", "hardwood"]);
+const SHOWER_FIXTURE_SUBCATEGORIES = new Set(["shower & tub doors", "shower surrounds", "shower valves & systems"]);
+
+function normalizedSubCategory(item: Pick<DesignerPaletteRow, "subCategory">): string {
+  return (item.subCategory ?? "").trim().toLowerCase();
+}
+
+/**
+ * True when the row is one of the six designer families, not an add-on part.
+ *
+ * Imported categories are not a reliable family label. Pelican's bathtubs are
+ * stored under "Sink & Faucet Accessories", so an exact source-verified fixture
+ * profile keeps the row in the palette regardless of its import subcategory.
+ */
+export function isPelicanDesignerCatalogFamily(
+  item: Pick<DesignerPaletteRow, "category" | "subCategory" | "pelicanCode">,
+  hasVerifiedFixtureProfile?: (code: string | null | undefined) => boolean,
+): boolean {
+  if (hasVerifiedFixtureProfile?.(item.pelicanCode)) return true;
+  const sub = normalizedSubCategory(item);
+  switch (item.category) {
+    case "Sinks & Faucets":
+      return sub === "sinks" || sub === "faucets";
+    case FLOORING_CATEGORY:
+      return FLOORING_MATERIAL_SUBCATEGORIES.has(sub) || sub.length === 0;
+    case TILE_MOSAIC_CATEGORY:
+      return true;
+    case "Shower & Bath":
+      return SHOWER_FIXTURE_SUBCATEGORIES.has(sub);
+    case "Toilets & Bidets":
+      return true;
+    case "Quartz Slabs (Countertops)":
+      return true;
+    default:
+      return false;
+  }
+}
+
+/**
  * Palette filter for the Designer surfaces dialog.
- * Bathroom fixtures keep the server's own family filter. Tile & Mosaic is
- * loaded from the storefront catalog, and flooring planks are checked again
- * here so molding, trim, and underlayment never become the floor.
+ *
+ * The palette used to read the server's `designer` scope, which keeps only rows
+ * the Designer can already model: 246 of the 1,077 purchasable catalog items.
+ * It now reads the full catalog and keeps the six families above. A faucet,
+ * sink, or fixture without published dimensions still joins this design's
+ * materials list; it simply has no separate 3D body.
  */
 export function isDesignerPaletteItemVisible(
   item: DesignerPaletteRow,
@@ -121,13 +174,10 @@ export function isDesignerPaletteItemVisible(
     matchesCountertopSwatch: (item: DesignerPaletteRow) => boolean;
   },
 ): boolean {
-  if (item.category === TILE_MOSAIC_CATEGORY) return isSelectableDesignerTileMosaic(item);
-  if (item.category === FLOORING_CATEGORY) return isSelectableDesignerFlooringPlank(item);
-  if (options.isBathroom) return true;
-  if (item.isActive === false || item.showInDesigner === false) return false;
-  if (item.category === "Sinks & Faucets") return options.hasVerifiedFixtureProfile(item.pelicanCode);
-  if (item.category === "Quartz Slabs (Countertops)") return options.matchesCountertopSwatch(item);
-  return false;
+  if (item.isActive === false) return false;
+  // A row with no price is not quotable, so it cannot join a design.
+  if (item.sellPrice != null && !hasPositiveSellPrice(item.sellPrice)) return false;
+  return isPelicanDesignerCatalogFamily(item, options.hasVerifiedFixtureProfile);
 }
 
 /**
