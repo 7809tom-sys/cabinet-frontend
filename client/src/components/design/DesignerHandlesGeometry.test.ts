@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
 import { addCabinet } from "./InteractiveRoom3D";
-import { DEFAULT_DESIGNER_HARDWARE_STYLE_ID, hardwareSchedule, hardwareScheduleNote } from "@/lib/hardware";
+import { catalogHardwareFinishSurface, DEFAULT_DESIGNER_HARDWARE_STYLE_ID, hardwareSchedule, hardwareScheduleNote } from "@/lib/hardware";
 import type { PlacedCabinet } from "@/lib/design";
 
 const vanity = {
@@ -9,9 +9,9 @@ const vanity = {
   placementType: "base", width: 48, height: 34.5, depth: 21,
   numberOfDoors: 2, numberOfDrawers: 6,
 };
-function render(sku: typeof vanity, style: "none" | "bar-pull" | "knob" | "cup-pull" = DEFAULT_DESIGNER_HARDWARE_STYLE_ID, hardwareAccent?: string) {
+function render(sku: typeof vanity, style: "none" | "bar-pull" | "knob" | "cup-pull" = DEFAULT_DESIGNER_HARDWARE_STYLE_ID, hardwareAccent?: string, hardwareFinish?: string) {
   const group = new THREE.Group();
-  addCabinet(group, sku as never, null, {}, 120, 96, "#f2e8d0", "#ffffff", { doorStyle: "Shaker" }, undefined, undefined, undefined, { hardwareStyleId: style, hardwareAccent });
+  addCabinet(group, sku as never, null, {}, 120, 96, "#f2e8d0", "#ffffff", { doorStyle: "Shaker" }, undefined, undefined, undefined, { hardwareStyleId: style, hardwareAccent, hardwareFinish });
   const hardware: THREE.Object3D[] = [];
   group.traverse(node => { if (node.userData.cabinetHardware) hardware.push(node); });
   return hardware;
@@ -38,6 +38,21 @@ describe("regular Designer actual 3D handles", () => {
     const pull = hardware.find((node) => node.userData.cabinetPull === "door") as THREE.Mesh;
     expect((pull.material as THREE.MeshPhysicalMaterial).color.getHexString()).toBe("1d2024");
     expect(render(vanity, "none", "#1d2024")).toHaveLength(0);
+  });
+  it("uses the published finish response so satin nickel stays a light metal and matte black stays flat", () => {
+    const nickelSurface = catalogHardwareFinishSurface("Satin Nickel");
+    const nickel = render(vanity, "bar-pull", nickelSurface.color, "Satin Nickel");
+    const nickelPull = nickel.find((node) => node.userData.cabinetPull === "door") as THREE.Mesh;
+    const nickelMaterial = nickelPull.material as THREE.MeshPhysicalMaterial;
+    expect(nickelMaterial.color.getHexString()).toBe("e6e9ec");
+    expect(nickelMaterial.metalness).toBe(nickelSurface.metalness);
+    expect(nickelMaterial.metalness).toBeLessThan(0.3);
+    const blackSurface = catalogHardwareFinishSurface("Matte Black");
+    const black = render(vanity, "bar-pull", blackSurface.color, "Matte Black");
+    const blackPull = black.find((node) => node.userData.cabinetPull === "door") as THREE.Mesh;
+    const blackMaterial = blackPull.material as THREE.MeshPhysicalMaterial;
+    expect(blackMaterial.roughness).toBeGreaterThan(0.7);
+    expect(blackMaterial.metalness).toBeLessThan(0.1);
   });
   it("does not add handles to finished panel stock", () => {
     expect(render({ ...vanity, masterCode: "WEP1542", description: "Wall End Panel", placementType: "wall", width: 15, height: 42, depth: 0.75, numberOfDoors: 0, numberOfDrawers: 0 })).toHaveLength(0);

@@ -55,6 +55,10 @@ describe("RecommendedSurfaces bathroom palette", () => {
     const compact = readFileSync(new URL("./RecommendedSurfaces.tsx", import.meta.url), "utf8");
     const full = readFileSync(new URL("./SurfacesPickerDialog.tsx", import.meta.url), "utf8");
     const designer = readFileSync(new URL("../../pages/DesignTool.tsx", import.meta.url), "utf8");
+    expect(compact).toContain("whitespace-normal break-words text-sm font-semibold");
+    expect(compact).not.toContain("truncate text-[10px] font-semibold uppercase");
+    expect(compact).not.toContain("{blurb}");
+    expect(compact).toContain("Pelican bathroom fixtures only.");
     expect(compact).toContain("onBrowseAll(role)");
     expect(compact).toMatch(/if \(\(role === "toilet-bidet" \|\| role === "bathtub" \|\| tubFiller\) && onPlaceBathroomFixture\)/);
     expect(full).toContain("initialBathroomRole?: RecommendedRole");

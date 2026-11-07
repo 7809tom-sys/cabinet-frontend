@@ -35,13 +35,12 @@ export type RecommendedRole =
 export const RECOMMENDED_SECTIONS: {
   role: RecommendedRole;
   label: string;
-  blurb: string;
 }[] = [
-  { role: "flooring", label: "Flooring", blurb: "Pelican planks and floor mosaics" },
-  { role: "backsplash", label: "Backsplash", blurb: "Pelican tile & mosaic" },
-  { role: "countertop", label: "Countertop", blurb: "Pelican quartz slabs" },
-  { role: "sink", label: "Sink", blurb: "StoneCreek sinks" },
-  { role: "faucet", label: "Faucet", blurb: "StoneCreek faucets" },
+  { role: "flooring", label: "Flooring" },
+  { role: "backsplash", label: "Backsplash" },
+  { role: "countertop", label: "Countertop" },
+  { role: "sink", label: "Sink" },
+  { role: "faucet", label: "Faucet" },
 ];
 
 /**
@@ -52,27 +51,25 @@ export const RECOMMENDED_SECTIONS: {
 export const BATHROOM_SURFACE_RECOMMENDED_SECTIONS: {
   role: RecommendedRole;
   label: string;
-  blurb: string;
 }[] = [
-  { role: "countertop", label: "Countertops", blurb: "Pelican quartz vanity & counter surfaces" },
-  { role: "flooring", label: "Flooring", blurb: "Pelican flooring for the bathroom floor" },
-  { role: "backsplash", label: "Wall Tile", blurb: "Pelican wall tile & mosaic" },
+  { role: "countertop", label: "Countertops" },
+  { role: "flooring", label: "Flooring" },
+  { role: "backsplash", label: "Wall Tile" },
 ];
 
 /** Bathroom fixtures intentionally never share kitchen sink or faucet roles. */
 export const BATHROOM_FIXTURE_RECOMMENDED_SECTIONS: {
   role: RecommendedRole;
   label: string;
-  blurb: string;
 }[] = [
-  { role: "bathroom-sink", label: "Vanity Sinks", blurb: "Pelican bath basins & vanity tops" },
-  { role: "bathroom-faucet", label: "Vanity & Tub Faucets", blurb: "Pelican bathroom faucet lines" },
-  { role: "toilet-bidet", label: "Toilets & Bidets", blurb: "Pelican toilet and bidet fixtures" },
-  { role: "bathtub", label: "Bathtubs", blurb: "Pelican acrylic soaking & skirted tubs" },
-  { role: "shower-door", label: "Shower & Tub Doors", blurb: "Pelican enclosure doors" },
-  { role: "shower-surround", label: "Shower Walls", blurb: "Pelican shower wall systems" },
-  { role: "shower-system", label: "Shower Systems", blurb: "Pelican valves & systems" },
-  { role: "bathroom-accessory", label: "Other Bathroom Accessories", blurb: "Pelican bath & shower accessory lines" },
+  { role: "bathroom-sink", label: "Vanity Sinks" },
+  { role: "bathroom-faucet", label: "Vanity & Tub Faucets" },
+  { role: "toilet-bidet", label: "Toilets & Bidets" },
+  { role: "bathtub", label: "Bathtubs" },
+  { role: "shower-door", label: "Shower & Tub Doors" },
+  { role: "shower-surround", label: "Shower Walls" },
+  { role: "shower-system", label: "Shower Systems" },
+  { role: "bathroom-accessory", label: "Other Bathroom Accessories" },
 ];
 
 /** Backward-compatible alias for callers that previously requested all bathroom cards. */
@@ -128,7 +125,6 @@ function toSurface(p: RecItem, installedAs?: "flooring"): SelectedSurface {
 function RecommendedRow({
   role,
   label,
-  blurb,
   limit,
   open,
   onOpenChange,
@@ -140,7 +136,6 @@ function RecommendedRow({
 }: {
   role: RecommendedRole;
   label: string;
-  blurb: string;
   limit: number;
   open: boolean;
   onOpenChange: () => void;
@@ -258,24 +253,27 @@ function RecommendedRow({
   };
   return (
     <div className="space-y-1.5">
-      <div className="sticky top-0 z-10 -mx-1 flex w-[calc(100%+0.5rem)] items-center gap-1 border-b border-border bg-background/95 px-1 py-1 backdrop-blur">
+      <div className="sticky top-0 z-10 -mx-1 w-[calc(100%+0.5rem)] border-b border-border bg-background/95 px-1 py-1.5 backdrop-blur">
         <button
           type="button"
           data-testid={`recommended-section-toggle-${role}`}
           aria-expanded={open}
           aria-controls={`recommended-section-${role}`}
           onClick={onOpenChange}
-          className="flex min-w-0 flex-1 items-center gap-1.5 rounded px-1 py-0.5 text-left hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1a2744]"
+          className="flex w-full items-start gap-1.5 rounded px-1 py-0.5 text-left hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1a2744]"
         >
-          <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-200 ${open ? "" : "-rotate-90"}`} aria-hidden="true" />
-          <span className="truncate text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</span>
-          <span className="truncate text-[10px] font-normal normal-case text-muted-foreground/70">· {blurb}</span>
-          {!isLoading && <span className="ml-auto shrink-0 text-[10px] font-normal normal-case text-muted-foreground">({configurations.length})</span>}
+          <ChevronDown className={`mt-0.5 h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 ${open ? "" : "-rotate-90"}`} aria-hidden="true" />
+          <span className="min-w-0 flex-1">
+            <span className="block whitespace-normal break-words text-sm font-semibold leading-snug text-foreground">{label}</span>
+            {!isLoading && (
+              <span className="mt-0.5 block text-[11px] font-normal leading-snug text-muted-foreground">({configurations.length})</span>
+            )}
+          </span>
         </button>
         <button
           type="button"
           onClick={() => onBrowseAll(role)}
-          className="flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5 text-[10px] font-medium text-[#a87f33] hover:text-[#8a6828] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1a2744] transition-colors"
+          className="ml-6 mt-0.5 flex items-center gap-0.5 rounded px-1 py-0.5 text-[11px] font-medium text-[#a87f33] hover:text-[#8a6828] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1a2744] transition-colors"
         >
           Browse all <ChevronRight className="h-3 w-3" />
         </button>
@@ -382,7 +380,6 @@ export function RecommendedSurfaces({
           key={s.role}
           role={s.role}
           label={s.label}
-          blurb={s.blurb}
           limit={limit}
           open={openRoles.has(s.role)}
           onOpenChange={() => toggleRole(s.role)}

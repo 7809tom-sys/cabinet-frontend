@@ -81,23 +81,58 @@ export function isCatalogCabinetHardwareType(productType: string | null | undefi
 }
 
 /**
- * Map only the supplier's published finish labels to a stable visual metal
- * tone. An unknown future finish safely retains neutral nickel; no color is
- * inferred from a SKU, title, or product image.
+ * How a published hardware finish should respond in the designer, independent
+ * of the cabinet lighting rig. Navy and other very dark stains drop the room's
+ * environment intensity to 0.22. A shared high-metalness profile then takes
+ * almost all of its color from that dim reflection, so satin nickel and satin
+ * bronze both collapse toward black. These responses keep the finish color in
+ * the diffuse term. Polished chrome stays shinier than a brushed metal, and
+ * matte black stays flat. An unknown future finish uses light satin nickel;
+ * no color is inferred from a SKU, title, or product image.
  */
+export type CatalogHardwareFinishSurface = {
+  color: string;
+  roughness: number;
+  metalness: number;
+  envMapIntensity: number;
+  clearcoat: number;
+  clearcoatRoughness: number;
+};
+
+const HARDWARE_FINISH_RESPONSE = {
+  matte: { roughness: 0.78, metalness: 0.05, envMapIntensity: 0.12, clearcoat: 0, clearcoatRoughness: 1 },
+  dark: { roughness: 0.52, metalness: 0.26, envMapIntensity: 0.28, clearcoat: 0, clearcoatRoughness: 1 },
+  brushed: { roughness: 0.44, metalness: 0.22, envMapIntensity: 0.3, clearcoat: 0, clearcoatRoughness: 1 },
+  satin: { roughness: 0.36, metalness: 0.18, envMapIntensity: 0.26, clearcoat: 0, clearcoatRoughness: 1 },
+  polished: { roughness: 0.2, metalness: 0.12, envMapIntensity: 0.22, clearcoat: 0, clearcoatRoughness: 1 },
+} as const satisfies Record<string, Omit<CatalogHardwareFinishSurface, "color">>;
+
+const PUBLISHED_HARDWARE_FINISHES: Record<string, { color: string; response: keyof typeof HARDWARE_FINISH_RESPONSE }> = {
+  "matte black": { color: "#1d2024", response: "matte" },
+  "gun metal": { color: "#6a727b", response: "dark" },
+  "brushed pewter": { color: "#c5c8c3", response: "brushed" },
+  "distressed pewter": { color: "#a3a7a2", response: "brushed" },
+  "brushed oil rubbed bronze": { color: "#6b4b38", response: "dark" },
+  "oil rubbed bronze": { color: "#5e4030", response: "dark" },
+  "satin bronze": { color: "#d7a85c", response: "satin" },
+  "brushed gold": { color: "#e2bc62", response: "satin" },
+  "polished chrome": { color: "#f4f6f7", response: "polished" },
+  chrome: { color: "#f4f6f7", response: "polished" },
+  "satin nickel": { color: "#e6e9ec", response: "satin" },
+  "brushed nickel": { color: "#d5d9dd", response: "brushed" },
+  "polished nickel": { color: "#ece8df", response: "polished" },
+};
+
+const DEFAULT_HARDWARE_FINISH = { color: "#d8dce0", response: "satin" as const };
+
+export function catalogHardwareFinishSurface(finish: string | null | undefined): CatalogHardwareFinishSurface {
+  const published = PUBLISHED_HARDWARE_FINISHES[(finish ?? "").trim().toLocaleLowerCase()] ?? DEFAULT_HARDWARE_FINISH;
+  return { color: published.color, ...HARDWARE_FINISH_RESPONSE[published.response] };
+}
+
+/** Swatch and elevation tint for a published hardware finish. */
 export function catalogHardwareFinishAccent(finish: string | null | undefined): string {
-  switch ((finish ?? "").trim().toLocaleLowerCase()) {
-    case "matte black": return "#1d2024";
-    case "gun metal": return "#4d555d";
-    case "brushed pewter":
-    case "distressed pewter": return "#8b8f8c";
-    case "brushed oil rubbed bronze": return "#5b4335";
-    case "satin bronze": return "#a9783d";
-    case "brushed gold": return "#b08a36";
-    case "polished chrome": return "#c9d0d6";
-    case "satin nickel": return "#aeb4b9";
-    default: return "#b8bbc0";
-  }
+  return catalogHardwareFinishSurface(finish).color;
 }
 
 /** Reject malformed saved browser data before it becomes a visual selection. */

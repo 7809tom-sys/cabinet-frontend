@@ -21,6 +21,7 @@ import {
   wallAngle as polygonWallAngle,
   wallSegmentLength as polygonWallSegmentLength,
 } from "./polygonRoom";
+import { activeFloorObstacles } from "./floorOccupancyState";
 import { VERIFIED_PELICAN_BATHROOM_FIXTURE_PROFILES, verifiedPelicanBathroomFixtureProfile } from "./pelicanBathroomFixtureProfiles";
 import { isPlainBaseCode as isPlainBaseCodeRule } from "./plainBaseCode";
 import { aefPrintedGeometryForSku, FRAMELESS_DEEP_WALL_DEPTH_IN, FRAMELESS_STANDARD_WALL_DEPTH_IN, hasAefPrintedGeometry, isFramelessDeepWallCabinet } from "@shared/aefFramelessGeometry";
@@ -449,9 +450,10 @@ export function matchInstalledFillerToCabinet(
     mountBottom: ownerElevation.bottom,
     fillerForCabinetUid: owner.uid,
     fillerMatchesFullOwnerEnvelope: owner.placement === "appliance" && isRefrigerator(owner),
-    // A filler takes the finish of the cabinet it fills against, not another
-    // cabinet elsewhere in the room. A missing owner finish keeps the board's own.
-    ...(owner.styleId != null ? { styleId: owner.styleId } : {}),
+    // A filler takes the finish of the cabinet it fills against, including when
+    // that cabinet inherits the design color (styleId null). A stale explicit
+    // style on the filler must not keep the previous color.
+    styleId: owner.styleId ?? null,
   };
 }
 
@@ -501,7 +503,7 @@ export function normalizeInstalledFillersToAdjacentCabinets(
         || Math.abs(Number(item.mountBottom ?? 0) - ownerElevation.bottom) > 0.001
         || item.fillerForCabinetUid !== owner.uid
         || item.fillerMatchesFullOwnerEnvelope !== (owner.placement === "appliance" && isRefrigerator(owner))
-        || (owner.styleId != null && item.styleId !== owner.styleId);
+        || (item.styleId ?? null) !== (owner.styleId ?? null);
       if (!differs) return item;
       changed = true;
       return {
@@ -511,7 +513,7 @@ export function normalizeInstalledFillersToAdjacentCabinets(
         mountBottom: ownerElevation.bottom,
         fillerForCabinetUid: owner.uid,
         fillerMatchesFullOwnerEnvelope: owner.placement === "appliance" && isRefrigerator(owner),
-        ...(owner.styleId != null ? { styleId: owner.styleId } : {}),
+        styleId: owner.styleId ?? null,
       };
     }
     const matched = matchInstalledFillerToCabinet(item, owner, room);
@@ -523,7 +525,7 @@ export function normalizeInstalledFillersToAdjacentCabinets(
       || itemBottom !== matchedBottom
       || item.fillerForCabinetUid !== matched.fillerForCabinetUid
       || item.fillerMatchesFullOwnerEnvelope !== matched.fillerMatchesFullOwnerEnvelope
-      || (owner.styleId != null && item.styleId !== owner.styleId);
+      || (item.styleId ?? null) !== (owner.styleId ?? null);
     if (!differs) return item;
     changed = true;
     return matched;
@@ -885,6 +887,11 @@ export interface PlacedCabinet {
   /** Persisted Cabinet Config requirement for a linked blind-corner filler assembly. */
   fillerRequired?: boolean | null;
   placement: Placement;
+  /**
+   * Synthetic floor body for a bathroom fixture. It reserves the fixture's real
+   * width × depth during collision and snapping, and is never saved as a cabinet.
+   */
+  floorOccupancyObstacle?: boolean;
   /** Preserves distributor-specific printed geometry through placement and restore. */
   constructionMethod?: string | null;
   /** Structural appliance classification used by countertop/rendering parity. */
@@ -2975,6 +2982,13 @@ export function placedCornerGeometryKind(p: PlacedCabinet): PlacedCornerGeometry
 }
 
 export function placedFootprint(p: PlacedCabinet): { w: number; d: number } {
+  // A bathroom fixture's stored width and depth are already its axis-aligned
+  // floor footprint, including a shallow shower door. Do not inflate that to
+  // the 6-inch cabinet minimum.
+  if (p.floorOccupancyObstacle) {
+    const size = rotatedSize(p);
+    return { w: Math.max(0, size.w), d: Math.max(0, size.d) };
+  }
   // A required WBC face filler is a commerce/build-sheet attachment to its owner,
   // not a second physical cabinet. Its visible 3-inch strip is rendered on the
   // WBC face, so it must reserve zero additional plan area and cannot overlap or
@@ -3076,12 +3090,21 @@ export function dimLabel(p: PlacedCabinet): string {
   return isCustomSize(p) ? `${base} \u00b7 Custom` : base;
 }
 
+function mergeActiveFloorObstacles(others: PlacedCabinet[]): PlacedCabinet[] {
+  const extra = activeFloorObstacles();
+  if (!extra.length) return others;
+  const seen = new Set(others.map((item) => item.uid));
+  const add = extra.filter((item) => item.floorOccupancyObstacle && !seen.has(item.uid));
+  return add.length ? [...others, ...(add as PlacedCabinet[])] : others;
+}
+
 export function snapPosition(
   moving: PlacedCabinet,
   room: RoomData,
   others: PlacedCabinet[],
   island?: { x: number; y: number; width: number; depth: number } | null
 ): { x: number; y: number; snappedWall: boolean; snappedIsland: boolean; snappedCabinet: boolean; snappedGrid: boolean } {
+  others = mergeActiveFloorObstacles(others);
   // Use the PLAN footprint (not the raw rotated size) so L-corner cabinets
   // (lazy-Susan / corner base) snap by their true SQUARE box. Their stored depth
   // can be the shallow ~24" leg depth, which would leave the box short of the
@@ -3314,7 +3337,7 @@ export type CabinetCollisionDetail = {
 
 export function cabinetCollisionDetail(moving: PlacedCabinet, others: PlacedCabinet[]): CabinetCollisionDetail | null {
   const { w, d } = placedFootprint(moving);
-  for (const o of others) {
+  for (const o of mergeActiveFloorObstacles(others)) {
     if (o.uid === moving.uid) continue;
     if (!sharesPlanCollisionZone(moving, o)) continue;
     // Two cabinets seated on the same run compare along that run, on every wall
@@ -4059,6 +4082,10 @@ export function collisionReason(moving: PlacedCabinet, others: PlacedCabinet[], 
   const conflicting = detail.cabinet;
   const category = conflicting.placement === "wall" ? "wall cabinet" : conflicting.placement === "base" ? "base cabinet" : "item";
   const overlap = formatEighthInches(detail.penetration);
+  if (conflicting.floorOccupancyObstacle) {
+    const name = conflicting.description || conflicting.masterCode;
+    return `Cannot place ${moving.masterCode} here: it overlaps ${name}, which already owns that floor space, by ${overlap}. Edge-to-edge contact is allowed; physical overlap must be 0".`;
+  }
   const normalizedCode = conflicting.masterCode.toUpperCase().replace(/[^A-Z0-9]/g, "");
   const seatedFlushCorner = room ? cabinetCornerPlacementInfo(conflicting, room)?.placement === "flush" : false;
   const seatedBlindCorner = room ? blindCornerSnapInfo(conflicting, room)?.placement === "flush" : false;
@@ -7374,6 +7401,23 @@ export function countertopDepthForCabinet(cabinet: Pick<PlacedCabinet, "masterCo
   return COUNTERTOP_DEPTH_IN;
 }
 
+/**
+ * A filler does not choose its own countertop depth. The slab over it uses the
+ * same finished depth as the cabinet it butts, so the front overhang and the
+ * side edge stay on the run instead of stepping out past the filler.
+ */
+export function countertopDepthForRunItem(
+  cabinet: PlacedCabinet,
+  placed: readonly PlacedCabinet[],
+  room: RoomData,
+): number {
+  if (isFillerItem(cabinet)) {
+    const owner = adjacentCabinetForFiller(cabinet, placed, room);
+    if (owner) return countertopDepthForCabinet(owner);
+  }
+  return countertopDepthForCabinet(cabinet);
+}
+
 export interface CountertopMeasurement {
   linearFeet: number; // total run of base cabinets that take a top, in feet
   squareFeet: number; // run x countertop depth (+ island + waterfall), in sq ft
@@ -7410,7 +7454,7 @@ export function countertopArea(
   const straightRunInches = straightBases
     .reduce((sum, p) => sum + rotatedSize(p).w, 0);
   const straightCountertopSquareIn = straightBases
-    .reduce((sum, p) => sum + rotatedSize(p).w * countertopDepthForCabinet(p), 0);
+    .reduce((sum, p) => sum + rotatedSize(p).w * (room ? countertopDepthForRunItem(p, perimeterPlaced, room) : countertopDepthForCabinet(p)), 0);
   const peninsulaSurfaces = room
     ? countertopSurfaces(perimeterPlaced, room).filter((surface) => Boolean(surface.peninsulaRunId))
     : [];
@@ -8885,6 +8929,69 @@ export function magneticAvailableWallStart(
   return edgeCandidates[0] ?? nearest;
 }
 
+function floorObstacleRunInterval(
+  obstacle: PlacedCabinet,
+  frame: WallRunFrame,
+  band: number,
+): { s: number; e: number } | null {
+  const foot = placedFootprint(obstacle);
+  const corners = [
+    { x: obstacle.x, y: obstacle.y },
+    { x: obstacle.x + foot.w, y: obstacle.y },
+    { x: obstacle.x, y: obstacle.y + foot.d },
+    { x: obstacle.x + foot.w, y: obstacle.y + foot.d },
+  ];
+  let minInward = Number.POSITIVE_INFINITY;
+  let maxInward = Number.NEGATIVE_INFINITY;
+  let minAlong = Number.POSITIVE_INFINITY;
+  let maxAlong = Number.NEGATIVE_INFINITY;
+  for (const corner of corners) {
+    const along = wallRunAlongAtPoint(frame, corner);
+    const inward = (corner.x - frame.start.x) * frame.inward.x + (corner.y - frame.start.y) * frame.inward.y;
+    minInward = Math.min(minInward, inward);
+    maxInward = Math.max(maxInward, inward);
+    minAlong = Math.min(minAlong, along);
+    maxAlong = Math.max(maxAlong, along);
+  }
+  // The cabinet body is the inward band [0, band]. Touching the front face is
+  // allowed; only a fixture that enters that band reserves the run.
+  if (maxInward <= COLLISION_EPSILON_IN || minInward >= band - COLLISION_EPSILON_IN) return null;
+  const start = Math.max(frame.runStart, minAlong);
+  const end = Math.min(frame.runEnd, maxAlong);
+  if (end <= start + COLLISION_EPSILON_IN) return null;
+  return { s: start, e: end };
+}
+
+function appendActiveFloorObstacleBlocks(
+  blocked: { s: number; e: number }[],
+  side: WallSide,
+  room: RoomData,
+  layer: Placement,
+  layerDepth: number | undefined,
+  candidate: PlacedCabinet | undefined,
+) {
+  const obstacles = activeFloorObstacles().filter((item) => item.floorOccupancyObstacle);
+  if (!obstacles.length) return;
+  if (layer !== "base" && layer !== "tall" && layer !== "appliance" && layer !== "wall") return;
+  const frame = wallRunFrame(side, room);
+  if (!frame) return;
+  const defaultDepth = layer === "wall" ? STD.WALL_DEPTH : STD.BASE_DEPTH;
+  const band = Math.max(0, Number(layerDepth ?? candidate?.depth) || defaultDepth);
+  for (const raw of obstacles) {
+    const obstacle = raw as PlacedCabinet;
+    if (layer === "wall") {
+      if (candidate) {
+        if (!verticalEnvelopesOverlap(candidate, obstacle)) continue;
+      } else {
+        const box = elevationBox(obstacle);
+        if (box.bottom + box.height <= WALL_MOUNT_BOTTOM + 0.01) continue;
+      }
+    }
+    const interval = floorObstacleRunInterval(obstacle, frame, band);
+    if (interval) blocked.push(interval);
+  }
+}
+
 export function freeSegmentsOnWall(
   side: WallSide,
   room: RoomData,
@@ -9082,6 +9189,8 @@ export function freeSegmentsOnWall(
       e: Math.min(wallEnd, o.offset + o.width + openingClearance + panelClearance),
     });
   }
+
+  appendActiveFloorObstacleBlocks(blocked, side, room, layer, layerDepth, candidate);
 
   // Merge overlapping/touching blocked intervals.
   blocked.sort((a, b) => a.s - b.s);
@@ -14396,7 +14505,7 @@ export function countertopSurfaces(
     if (!bearsCountertop(p)) continue;
     if (island && isOnIsland(p, island)) continue;
     const side = cabinetWall(p, room);
-    const D = countertopDepthForCabinet(p);
+    const D = countertopDepthForRunItem(p, placed, room);
     const footprint = placedFootprint(p);
     const peninsula = peninsulaRunById(room, side);
     // Explicit peninsula runs are collected below into a single continuous

@@ -16,6 +16,7 @@ import {
   hardwarePlacementSpec,
   hardwarePlacementNote,
   catalogHardwareFinishAccent,
+  catalogHardwareFinishSurface,
   catalogHardwareStyleId,
   normalizeCatalogHardwareSelection,
 } from "./hardware";
@@ -63,8 +64,8 @@ describe("hardware styles", () => {
 
   it("uses an explicit published finish map and rejects malformed or appliance-only saved selection data", () => {
     expect(catalogHardwareFinishAccent("Matte Black")).toBe("#1d2024");
-    expect(catalogHardwareFinishAccent("Satin Bronze")).toBe("#a9783d");
-    expect(catalogHardwareFinishAccent("unknown future finish")).toBe("#b8bbc0");
+    expect(catalogHardwareFinishAccent("Satin Bronze")).toBe("#d7a85c");
+    expect(catalogHardwareFinishAccent("unknown future finish")).toBe("#d8dce0");
     expect(normalizeCatalogHardwareSelection({
       vendorProductId: 3900354,
       sku: "5319SN",
@@ -76,6 +77,44 @@ describe("hardware styles", () => {
       imageUrl: "/manus-storage/5319SN.jpg",
     })).toMatchObject({ vendorProductId: 3900354, sku: "5319SN", productType: "Bar pull" });
     expect(normalizeCatalogHardwareSelection({ vendorProductId: 1, sku: "MO6373", collection: "Milan", productType: "Appliance handle", configurationKey: "a", configurationLabel: "Appliance", finish: "Satin Nickel" })).toBeNull();
+  });
+
+  it("keeps every published hardware finish readable instead of sharing one dark metal response", () => {
+    const luminance = (hex: string) => {
+      const raw = hex.replace("#", "");
+      const channel = (index: number) => parseInt(raw.slice(index, index + 2), 16);
+      return 0.2126 * channel(0) + 0.7152 * channel(2) + 0.0722 * channel(4);
+    };
+    const names = [
+      "Matte Black", "Gun Metal", "Brushed Oil Rubbed Bronze", "Oil Rubbed Bronze",
+      "Distressed Pewter", "Brushed Pewter", "Satin Bronze", "Brushed Gold",
+      "Brushed Nickel", "Satin Nickel", "Polished Nickel", "Polished Chrome", "Chrome",
+    ];
+    for (const name of names) {
+      const surface = catalogHardwareFinishSurface(name);
+      expect(surface.metalness, name).toBeLessThanOrEqual(0.26);
+      expect(surface.roughness, name).toBeGreaterThan(0.1);
+      expect(catalogHardwareFinishAccent(name)).toBe(surface.color);
+    }
+    const black = catalogHardwareFinishSurface("Matte Black");
+    const bronze = catalogHardwareFinishSurface("Satin Bronze");
+    const nickel = catalogHardwareFinishSurface("Satin Nickel");
+    const chrome = catalogHardwareFinishSurface("Polished Chrome");
+    const gun = catalogHardwareFinishSurface("Gun Metal");
+    const rubbed = catalogHardwareFinishSurface("Brushed Oil Rubbed Bronze");
+    expect(black.metalness).toBeLessThan(0.1);
+    expect(black.roughness).toBeGreaterThan(0.7);
+    expect(luminance(black.color)).toBeLessThan(40);
+    expect(luminance(nickel.color)).toBeGreaterThan(200);
+    expect(luminance(chrome.color)).toBeGreaterThan(luminance(nickel.color));
+    expect(chrome.roughness).toBeLessThan(nickel.roughness);
+    expect(luminance(bronze.color)).toBeGreaterThan(luminance(rubbed.color) + 40);
+    expect(luminance(gun.color)).toBeGreaterThan(luminance(black.color) + 40);
+    expect(luminance(gun.color)).toBeLessThan(luminance(catalogHardwareFinishSurface("Brushed Pewter").color));
+    const bronzeRgb = bronze.color.replace("#", "");
+    expect(parseInt(bronzeRgb.slice(0, 2), 16)).toBeGreaterThan(parseInt(bronzeRgb.slice(4, 6), 16) + 70);
+    expect(catalogHardwareFinishSurface("  SATIN NICKEL ").color).toBe(nickel.color);
+    expect(catalogHardwareFinishSurface("unknown future finish").metalness).toBe(nickel.metalness);
   });
 });
 

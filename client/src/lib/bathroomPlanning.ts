@@ -8,6 +8,7 @@ import {
   type RoomData,
   type SinkFixture,
 } from "./design";
+import { floorRectsOverlap, nearestClearFloorPosition, occupiedFloor } from "./floorOccupancy";
 import { isPelicanVanityFaucetSku } from "@shared/pelicanBathroomFixtures";
 import { isVanityFaucetProfileId, isVanitySinkProfileId } from "./pelicanFixtureProfiles";
 import {
@@ -68,18 +69,27 @@ export type BathroomChecklistStep = {
   optional?: boolean;
 };
 
-/** Keep the physical center on a quarter turn; clamp only to the room boundary. */
-export function rotateBathroomFurniture(item: PlacedFurniture, room: Pick<RoomData, "width" | "depth">): PlacedFurniture {
+/** Keep the physical center on a quarter turn; clamp only to the room boundary.
+ * A turn that would intersect another floor footprint is refused. */
+export function rotateBathroomFurniture(
+  item: PlacedFurniture,
+  room: Pick<RoomData, "width" | "depth">,
+  peers?: { furniture?: readonly PlacedFurniture[]; cabinets?: readonly PlacedCabinet[] },
+): PlacedFurniture {
   const def = FURNITURE_CATALOG.find((candidate) => candidate.id === item.defId);
   const rotation = ((item.rotation + 90) % 360 + 360) % 360;
   if (!def || def.category !== "bathroom-fixture") return { ...item, rotation };
   const before = furniturePlanFrame(item)!;
   const rotated = { ...item, rotation };
   const footprint = furnitureFootprint(rotated, def);
-  return { ...rotated,
+  const next = { ...rotated,
     x: Math.max(0, Math.min(before.centerX - footprint.w / 2, Math.max(0, room.width - footprint.w))),
     y: Math.max(0, Math.min(before.centerY - footprint.d / 2, Math.max(0, room.depth - footprint.d))),
   };
+  const occupied = occupiedFloor(peers?.furniture ?? [], peers?.cabinets ?? [], item.uid);
+  const body = { uid: item.uid, x: next.x, y: next.y, w: footprint.w, d: footprint.d, label: def.name };
+  if (occupied.some((other) => floorRectsOverlap(body, other))) return item;
+  return next;
 }
 
 /** Default long tub axis parallel to the nearest room wall, even without a fit. */
@@ -97,90 +107,66 @@ export function bathroomTubWallParallelPlacement(item: PlacedFurniture, room: Pi
 }
 
 /**
- * Places a source-measured fixture in an open spot: the first rotation whose
- * envelope fits the room without overlapping another fixture. There are no
- * planning zones; every fixture moves freely.
+ * Places a source-measured fixture in the nearest open spot. The footprint is
+ * the supplier width × depth. It may touch another floor item and may not
+ * intersect a fixture, vanity, tall cabinet, or other floor body. There are
+ * no planning zones.
  */
 export function bathroomFixtureFreePlacement(
   fixture: PlacedFurniture,
   furniture: readonly PlacedFurniture[],
   room: Pick<RoomData, "width" | "depth">,
+  cabinets: readonly PlacedCabinet[] = [],
 ): { x: number; y: number; rotation: 0 | 90 | 180 | 270 } | null {
   const fixtureDefinition = FURNITURE_CATALOG.find((item) => item.id === fixture.defId);
   if (!fixtureDefinition) return null;
-  const occupied = furniture.flatMap((item) => {
-    const definition = FURNITURE_CATALOG.find((candidate) => candidate.id === item.defId);
-    if (!definition) return [];
-    const footprint = furnitureFootprint(item, definition);
-    return [{ x: item.x, y: item.y, w: footprint.w, d: footprint.d }];
-  });
+  const occupied = occupiedFloor(furniture, cabinets, fixture.uid);
+  let best: { x: number; y: number; rotation: 0 | 90 | 180 | 270; distance: number } | null = null;
+  const prefer = { x: room.width / 2, y: room.depth / 2 };
   for (const rotation of [0, 90, 180, 270] as const) {
     const candidate = { ...fixture, rotation };
     const footprint = furnitureFootprint(candidate, fixtureDefinition);
-    if (footprint.w > room.width + 0.01 || footprint.d > room.depth + 0.01) continue;
-    const centered = {
-      x: Math.max(0, (room.width - footprint.w) / 2),
-      y: Math.max(0, (room.depth - footprint.d) / 2),
-      w: footprint.w,
-      d: footprint.d,
-    };
-    if (!occupied.some((body) => rectanglesOverlap(centered, body))) return { x: centered.x, y: centered.y, rotation };
-    for (const position of freePositions(footprint, room)) {
-      if (!occupied.some((body) => rectanglesOverlap({ ...position, w: footprint.w, d: footprint.d }, body))) {
-        return { x: position.x, y: position.y, rotation };
-      }
-    }
+    const position = nearestClearFloorPosition(footprint, occupied, room);
+    if (!position) continue;
+    const distance = (position.x + footprint.w / 2 - prefer.x) ** 2 + (position.y + footprint.d / 2 - prefer.y) ** 2;
+    if (!best || distance < best.distance - 1e-6) best = { ...position, rotation, distance };
   }
-  return null;
-}
-
-/** Room corners and wall centers, in inches, as fallback open positions. */
-function freePositions(footprint: { w: number; d: number }, room: Pick<RoomData, "width" | "depth">) {
-  const maxX = Math.max(0, room.width - footprint.w);
-  const maxY = Math.max(0, room.depth - footprint.d);
-  return [
-    { x: 0, y: 0 }, { x: maxX, y: 0 }, { x: 0, y: maxY }, { x: maxX, y: maxY },
-    { x: (room.width - footprint.w) / 2, y: 0 }, { x: (room.width - footprint.w) / 2, y: maxY },
-    { x: 0, y: (room.depth - footprint.d) / 2 }, { x: maxX, y: (room.depth - footprint.d) / 2 },
-  ].map((position) => ({ x: Math.max(0, position.x), y: Math.max(0, position.y) }));
-}
-
-function rectanglesOverlap(
-  a: { x: number; y: number; w: number; d: number },
-  b: { x: number; y: number; w: number; d: number },
-): boolean {
-  const epsilon = 0.01;
-  return a.x < b.x + b.w - epsilon
-    && a.x + a.w > b.x + epsilon
-    && a.y < b.y + b.d - epsilon
-    && a.y + a.d > b.y + epsilon;
+  return best ? { x: best.x, y: best.y, rotation: best.rotation } : null;
 }
 
 /** Returns a non-overlapping illustrative filler position beside the latest tub.
  * The 14-inch occupancy is NOT a manufacturer clearance or verified reach.
- * If no candidate fits, do not silently commit a filler inside the tub. */
-export function bathroomTubFillerPlacement(filler: PlacedFurniture, furniture: readonly PlacedFurniture[], room: Pick<RoomData, "width" | "depth">): PlacedFurniture | null {
+ * If no candidate fits, do not silently commit a filler inside the tub or on
+ * another floor footprint. */
+export function bathroomTubFillerPlacement(
+  filler: PlacedFurniture,
+  furniture: readonly PlacedFurniture[],
+  room: Pick<RoomData, "width" | "depth">,
+  cabinets: readonly PlacedCabinet[] = [],
+): PlacedFurniture | null {
   const def = FURNITURE_CATALOG.find((entry) => entry.id === filler.defId);
   const profile = verifiedPelicanBathroomFixtureProfile(filler.pelicanCode ?? def?.pelicanCode);
   if (!def || profile?.kind !== "floor-tub-filler") return null;
-  const occupied = furniture.flatMap((item) => {
+  const occupied = occupiedFloor(furniture, cabinets, filler.uid);
+  const tub = [...furniture].reverse().map((item) => {
     const definition = FURNITURE_CATALOG.find((entry) => entry.id === item.defId);
-    if (!definition || definition.category !== "bathroom-fixture") return [];
-    const footprint = furnitureFootprint(item, definition);
-    return [{ item, profile: verifiedPelicanBathroomFixtureProfile(item.pelicanCode ?? definition.pelicanCode), x: item.x, y: item.y, ...footprint }];
-  });
-  const tub = [...occupied].reverse().find((entry) => entry.profile?.kind === "freestanding-tub" || entry.profile?.kind === "alcove-tub");
+    const itemProfile = verifiedPelicanBathroomFixtureProfile(item.pelicanCode ?? definition?.pelicanCode);
+    const rect = occupied.find((body) => body.uid === item.uid);
+    return rect && (itemProfile?.kind === "freestanding-tub" || itemProfile?.kind === "alcove-tub") ? rect : null;
+  }).find((entry): entry is NonNullable<typeof entry> => entry != null);
   const w = def.w, d = def.d;
   const candidates = tub ? [
-    { x: tub.x + (tub.w - w) / 2, y: tub.y - d, rotation: 180 },
-    { x: tub.x + (tub.w - w) / 2, y: tub.y + tub.d, rotation: 0 },
-    { x: tub.x - w, y: tub.y + (tub.d - d) / 2, rotation: 90 },
-    { x: tub.x + tub.w, y: tub.y + (tub.d - d) / 2, rotation: 270 },
-  ] : [{ x: (room.width - w) / 2, y: (room.depth - d) / 2, rotation: 0 }];
-  const candidate = candidates.find((position) => position.x >= 0 && position.y >= 0
-    && position.x + w <= room.width && position.y + d <= room.depth
-    && !occupied.some((body) => rectanglesOverlap({ ...position, w, d }, body)));
-  return candidate ? { ...filler, ...candidate } : null;
+    { x: tub.x + (tub.w - w) / 2, y: tub.y - d, rotation: 180 as const },
+    { x: tub.x + (tub.w - w) / 2, y: tub.y + tub.d, rotation: 0 as const },
+    { x: tub.x - w, y: tub.y + (tub.d - d) / 2, rotation: 90 as const },
+    { x: tub.x + tub.w, y: tub.y + (tub.d - d) / 2, rotation: 270 as const },
+  ] : [{ x: (room.width - w) / 2, y: (room.depth - d) / 2, rotation: 0 as const }];
+  const candidate = candidates.find((position) => position.x >= -0.01 && position.y >= -0.01
+    && position.x + w <= room.width + 0.01 && position.y + d <= room.depth + 0.01
+    && !occupied.some((body) => floorRectsOverlap({ uid: filler.uid, ...position, w, d, label: "" }, body)));
+  if (candidate) return { ...filler, x: Math.max(0, candidate.x), y: Math.max(0, candidate.y), rotation: candidate.rotation };
+  const fallback = nearestClearFloorPosition({ w, d }, occupied, room);
+  return fallback ? { ...filler, ...fallback, rotation: 0 } : null;
 }
 
 /** A compact, non-blocking guide for a Bathroom plan. */

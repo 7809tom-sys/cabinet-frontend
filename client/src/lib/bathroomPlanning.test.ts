@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BATHROOM_STARTER_TEMPLATE, bathroomFixtureChecklist, bathroomFixtureFreePlacement, bathroomPlanningGuidance, makeBathroomStarterTemplate } from "./bathroomPlanning";
-import { FURNITURE_CATALOG, makeFurniture } from "./design";
+import { FURNITURE_CATALOG, furnitureFootprint, makeFurniture } from "./design";
 import { verifiedPelicanBathroomFixtureProfile } from "./pelicanBathroomFixtureProfiles";
 
 describe("Bathroom starter and clearance guidance", () => {
@@ -41,8 +41,11 @@ describe("Bathroom starter and clearance guidance", () => {
       { width: 120, depth: 96 },
     );
     expect(placement).not.toBeNull();
-    const overlaps = placement!.x < first.x + 59.0625 && placement!.x + 20 > first.x
-      && placement!.y < first.y + 30 && placement!.y + 28 > first.y;
+    const definition = FURNITURE_CATALOG.find((item) => item.id === first.defId)!;
+    const tub = furnitureFootprint(first, definition);
+    const toilet = FURNITURE_CATALOG.find((item) => item.id === "pelican-toilet-pl-12044")!;
+    const overlaps = placement!.x < first.x + tub.w && placement!.x + toilet.w > first.x
+      && placement!.y < first.y + tub.d && placement!.y + toilet.d > first.y;
     expect(overlaps).toBe(false);
   });
 
