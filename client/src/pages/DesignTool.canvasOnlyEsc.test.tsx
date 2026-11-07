@@ -7,8 +7,11 @@
  *
  * Esc is the delicate part. The handler listens in the capture phase so the
  * Designer's own Escape shortcut (clear the selection) does not also fire, which
- * means every layer layered ABOVE the canvas — dialogs, menus, text fields —
- * must keep its keystrokes. These tests drive the real page to prove both.
+ * means every layer on top of the canvas — dialogs, menus, text fields — must
+ * keep its keystrokes. These tests drive the real page to prove both.
+ *
+ * Mounting the full Designer is expensive (it is a 20k-line page with a WebGL
+ * viewer behind it), so each test walks every scenario on one mount.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
@@ -179,8 +182,27 @@ async function renderDesigner(width = 1500) {
   return view;
 }
 
+/** The flag the site header and the history row read. */
 function canvasOnlyPublished(): boolean {
   return Boolean((window as unknown as Record<string, unknown>).__designerCanvasOnly);
+}
+
+function canvasOnlyAttribute(): string | null {
+  return screen.getByTestId("designer-root").getAttribute("data-canvas-only");
+}
+
+async function escapeOn(target: EventTarget, init: KeyboardEventInit = {}) {
+  let dispatched: Event;
+  await act(async () => {
+    dispatched = new KeyboardEvent("keydown", {
+      key: "Escape",
+      bubbles: true,
+      cancelable: true,
+      ...init,
+    } as KeyboardEventInit);
+    target.dispatchEvent(dispatched);
+  });
+  return dispatched!;
 }
 
 beforeEach(() => {
@@ -202,112 +224,67 @@ afterEach(() => {
 });
 
 describe("canvas-only Esc handling", () => {
-  it("hides the Designer toolbar and publishes the shared flag on the toggle", async () => {
+  it("publishes the flag on the toggle and takes it back only for an Esc that is ours", { timeout: 120_000 }, async () => {
     await renderDesigner();
     expect(canvasOnlyPublished()).toBe(false);
     expect(screen.queryByTestId("designer-toolbar")).toBeTruthy();
 
     fireEvent.click(screen.getByTestId("three-d-immersive-toggle"));
-
     expect(canvasOnlyPublished()).toBe(true);
-    expect(
-      screen.getByTestId("designer-root").getAttribute("data-canvas-only"),
-    ).toBe("true");
-    expect(
-      screen.getByTestId("designer-toolbar").getAttribute("data-canvas-only-hidden"),
-    ).toBe("true");
-    expect(
-      screen.getByTestId("three-d-immersive-toggle").getAttribute("aria-pressed"),
-    ).toBe("true");
-  });
+    expect(canvasOnlyAttribute()).toBe("true");
+    expect(screen.getByTestId("designer-toolbar").getAttribute("data-canvas-only-hidden")).toBe("true");
+    expect(screen.getByTestId("three-d-immersive-toggle").getAttribute("aria-pressed")).toBe("true");
 
-  it("restores the chrome on Esc and publishes the flag back", async () => {
-    await renderDesigner();
-    fireEvent.click(screen.getByTestId("three-d-immersive-toggle"));
-    expect(canvasOnlyPublished()).toBe(true);
-
-    await act(async () => {
-      fireEvent.keyDown(window, { key: "Escape" });
-    });
-
-    expect(canvasOnlyPublished()).toBe(false);
-    expect(screen.getByTestId("designer-root").getAttribute("data-canvas-only")).toBeNull();
-    expect(screen.getByTestId("designer-toolbar").getAttribute("data-canvas-only-hidden")).toBeNull();
-    expect(
-      screen.getByTestId("three-d-immersive-toggle").getAttribute("aria-pressed"),
-    ).toBe("false");
-  });
-
-  it("leaves Esc to an open dialog instead of stealing it", async () => {
-    await renderDesigner();
-    fireEvent.click(screen.getByTestId("three-d-immersive-toggle"));
-
+    // 1. A dialog owns its Esc: the key is neither consumed nor acted on.
     const dialog = document.createElement("div");
     dialog.setAttribute("role", "dialog");
-    const inner = document.createElement("button");
-    dialog.appendChild(inner);
+    const dialogButton = document.createElement("button");
+    dialog.appendChild(dialogButton);
     document.body.appendChild(dialog);
-
-    const dialogEvent = new KeyboardEvent("keydown", {
-      key: "Escape",
-      bubbles: true,
-      cancelable: true,
-    });
-    inner.dispatchEvent(dialogEvent);
-
-    expect(dialogEvent.defaultPrevented).toBe(false);
+    const inDialog = await escapeOn(dialogButton);
+    expect(inDialog.defaultPrevented).toBe(false);
     expect(canvasOnlyPublished()).toBe(true);
     dialog.remove();
-  });
 
-  it("leaves Esc to a text field so a half-typed value survives", async () => {
-    await renderDesigner();
-    fireEvent.click(screen.getByTestId("three-d-immersive-toggle"));
-
+    // 2. A text field owns its Esc, so a half-typed value survives.
     const input = document.createElement("input");
     document.body.appendChild(input);
-    const inputEvent = new KeyboardEvent("keydown", {
-      key: "Escape",
-      bubbles: true,
-      cancelable: true,
-    });
-    input.dispatchEvent(inputEvent);
-
-    expect(inputEvent.defaultPrevented).toBe(false);
+    const inInput = await escapeOn(input);
+    expect(inInput.defaultPrevented).toBe(false);
     expect(canvasOnlyPublished()).toBe(true);
     input.remove();
 
-    // With the field gone, Esc is ours again.
-    await act(async () => {
-      fireEvent.keyDown(window, { key: "Escape" });
-    });
+    // 3. Browser chords that include Esc are the browser's.
+    await escapeOn(window, { key: "Escape", metaKey: true });
+    expect(canvasOnlyPublished()).toBe(true);
+    await escapeOn(window, { key: "Escape", ctrlKey: true });
+    expect(canvasOnlyPublished()).toBe(true);
+    await escapeOn(window, { key: "Escape", altKey: true });
+    expect(canvasOnlyPublished()).toBe(true);
+    // A non-Esc key never exits either.
+    await escapeOn(window, { key: "Enter" });
+    expect(canvasOnlyPublished()).toBe(true);
+
+    // 4. With no owner above the canvas, Esc exits and hands the flag back.
+    await escapeOn(window);
     expect(canvasOnlyPublished()).toBe(false);
+    expect(canvasOnlyAttribute()).toBeNull();
+    expect(screen.getByTestId("designer-toolbar").getAttribute("data-canvas-only-hidden")).toBeNull();
+    expect(screen.getByTestId("three-d-immersive-toggle").getAttribute("aria-pressed")).toBe("false");
   });
 
-  it("does not hijack Cmd+Esc or Ctrl+Esc", async () => {
-    await renderDesigner();
-    fireEvent.click(screen.getByTestId("three-d-immersive-toggle"));
-
-    await act(async () => {
-      fireEvent.keyDown(window, { key: "Escape", metaKey: true });
-    });
-    expect(canvasOnlyPublished()).toBe(true);
-
-    await act(async () => {
-      fireEvent.keyDown(window, { key: "Escape", ctrlKey: true });
-    });
-    expect(canvasOnlyPublished()).toBe(true);
-  });
-
-  it("keeps the site header and history row reachable when the browser ends fullscreen itself", async () => {
+  it("clears every bar when the browser ends fullscreen itself", { timeout: 120_000 }, async () => {
     // Commit 5c38101's fix: the browser's own Esc closes the fullscreen session
     // without passing through our key handler, so `fullscreenchange` must clear
-    // (and publish) the flag. A raw setter leaves every bar hidden.
-    const root = { requestFullscreen: () => Promise.resolve() };
+    // AND publish the flag. A raw state setter leaves every bar hidden.
     Object.defineProperty(HTMLElement.prototype, "requestFullscreen", {
       configurable: true,
-      value: root.requestFullscreen,
+      value: () => Promise.resolve(),
     });
+    const announced: boolean[] = [];
+    const listener = (event: Event) => announced.push(Boolean((event as CustomEvent<boolean>).detail));
+    window.addEventListener(DESIGNER_CANVAS_ONLY_EVENT, listener);
+
     await renderDesigner();
     fireEvent.click(screen.getByTestId("three-d-immersive-toggle"));
     expect(canvasOnlyPublished()).toBe(true);
@@ -317,24 +294,12 @@ describe("canvas-only Esc handling", () => {
       document.dispatchEvent(new Event("fullscreenchange"));
     });
 
-    expect(canvasOnlyPublished()).toBe(false);
-    expect(
-      screen.getByTestId("designer-root").getAttribute("data-canvas-only"),
-    ).toBeNull();
-  });
-
-  it("announces the flag on the shared event so chrome outside the Designer agrees", async () => {
-    await renderDesigner();
-    const seen: boolean[] = [];
-    const listener = (event: Event) => seen.push(Boolean((event as CustomEvent<boolean>).detail));
-    window.addEventListener(DESIGNER_CANVAS_ONLY_EVENT, listener);
-
-    fireEvent.click(screen.getByTestId("three-d-immersive-toggle"));
-    await act(async () => {
-      fireEvent.keyDown(window, { key: "Escape" });
-    });
-
     window.removeEventListener(DESIGNER_CANVAS_ONLY_EVENT, listener);
-    expect(seen).toEqual([true, false]);
+
+    expect(canvasOnlyPublished()).toBe(false);
+    expect(canvasOnlyAttribute()).toBeNull();
+    expect(screen.getByTestId("designer-toolbar").getAttribute("data-canvas-only-hidden")).toBeNull();
+    // Published on the shared event, so chrome outside the Designer agrees too.
+    expect(announced).toEqual([true, false]);
   });
 });
