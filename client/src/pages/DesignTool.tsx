@@ -112,6 +112,7 @@ import {
   vanitySinkFitsVanityWidth,
 } from "@/lib/bathroomVanityCatalog";
 import { mergeBathroomFaucetRows } from "@/lib/bathroomFixtureCatalog";
+import { cabinetFixtureRemoval, planSupportsCountertop, surfaceIdsToDropWithFixtures } from "@/lib/bathroomVanityRemoval";
 import { bottomGridsForSink } from "@/lib/sinkBottomGrid";
 import { canAdminReviewSavedDesign } from "@/lib/designAccess";
 import {
@@ -1539,6 +1540,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const [edgeProfileId, setEdgeProfileId] = useState<string>(DEFAULT_EDGE_PROFILE_ID);
   // Sink + faucet fixtures placed on the counter.
   const [sinks, setSinks] = useState<SinkFixture[]>([]);
+  // Delete reads the committed fixtures, not a render value: a cabinet and its
+  // basin can be removed by a keyboard event dispatched between renders.
+  const sinksRef = useRef<SinkFixture[]>(sinks);
+  sinksRef.current = sinks;
   const [selectedSinkUid, setSelectedSinkUid] = useState<string | null>(null);
   // Wall pot fillers are distinct source-measured range fixtures. They never
   // reuse the sink-faucet route because they need an explicit mounting wall and
@@ -11770,10 +11775,27 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     setSelectedSinkUid((cur) => (cur === uid ? null : cur));
   }, []);
 
+  // A sink base and a bathroom vanity both carry their basin and faucet as
+  // child fixtures rather than as separate plan objects. Removing the cabinet
+  // removes those children, and removes their catalog rows from the cart, so a
+  // deleted vanity cannot leave a sink and tap on the quote.
   const deleteAttachedSinkFixtures = useCallback((cabinet: PlacedCabinet | undefined) => {
-    if (!cabinet || !isSinkBaseCabinet(cabinet)) return;
-    setSinks((previous) => previous.filter((sink) => !fixtureBelongsToCabinet(sink, cabinet)));
+    if (!cabinet) return;
+    const removal = cabinetFixtureRemoval(cabinet, sinksRef.current);
+    if (removal.sinks.length === 0) return;
+    const removedUids = new Set(removal.sinks.map((sink) => sink.uid));
+    const remaining = sinksRef.current.filter((sink) => !removedUids.has(sink.uid));
+    sinksRef.current = remaining;
+    setSinks(remaining);
     setSelectedSinkUid(null);
+    setSelectedSurfaces((previous) => {
+      const drop = new Set(surfaceIdsToDropWithFixtures({
+        removedSinks: removal.sinks,
+        remainingSinks: remaining,
+        selectedSurfaceIds: previous.map((surface) => surface.id),
+      }));
+      return drop.size === 0 ? previous : previous.filter((surface) => !drop.has(surface.id));
+    });
   }, []);
 
   const toggleSinkFaucet = useCallback((uid: string) => {
@@ -12726,6 +12748,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     placedRef.current = next;
     setPlaced(next);
     if (nextIsland && nextIsland !== island) setIsland(nextIsland);
+    // A top with no cabinet left under it is not part of this design any more.
+    // Deleting the last bathroom vanity used to leave the countertop line (and
+    // its sink options control) armed over an empty plan.
+    if (!planSupportsCountertop(next, nextIsland ?? island)) {
+      setCountertop(false);
+      setSinkOptionsOpen(false);
+      setSinkBaseDialog(null);
+    }
     setSelectedUid((current) => current && uidSet.has(current) ? null : current);
     setSelectedSinkUid(null);
     setFailedWallFit(null);
@@ -18338,6 +18368,36 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
               <SheetTitle className="text-sm">
                 {t("dt_cx_selected")} {selectedCab.masterCode}
               </SheetTitle>
+              {/* This sheet is modal: it locks the page behind it, which puts the
+                  bottom action strip's Delete out of reach on a tablet. Deleting
+                  has to be possible from the panel that opens on selection, not
+                  only from the strip it is covering. */}
+              <div className="mt-2 flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  data-testid="mobile-selected-cabinet-delete"
+                  disabled={cabinetsLocked || Boolean(selectedCab.locked)}
+                  className="h-10 flex-1 border-red-300 text-red-700 hover:bg-red-50"
+                  onClick={() => {
+                    if (cabinetsLocked) { toast.info("Cabinets are locked — unlock them before deleting."); return; }
+                    if (selectedCab.locked) { toast.info("This cabinet is locked — unlock it before deleting."); return; }
+                    deleteCabinet(selectedCab.uid);
+                  }}
+                >
+                  <Trash2 className="mr-1.5 h-4 w-4" /> Delete {selectedCab.masterCode}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  data-testid="mobile-selected-cabinet-close"
+                  className="h-10"
+                  aria-label="Close the selected cabinet panel"
+                  onClick={() => setCabEditSheetOpen(false)}
+                >
+                  <X className="mr-1.5 h-4 w-4" /> Close
+                </Button>
+              </div>
             </SheetHeader>
             <div className="overflow-y-auto px-4 pb-6 pt-4">
               <div className="space-y-4">
@@ -22738,9 +22798,24 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           const faucetNote = faucetProduct ? "" : " · the standard Pelican faucet is added to complete it";
           toast.success(`${faucetProduct ? `${isBathroomVanity ? "Vanity sink" : "Sink"} & ${isBathroomVanity ? "vanity faucet" : "faucet"} added` : `${isBathroomVanity ? "Vanity sink" : "Sink"} added`}${faucetNote}${gridNote}`);
         };
+        // One close path for every dismissal — X, Escape, backdrop, and the
+        // "Skip" links. Resetting the whole picker here (step, the half-chosen
+        // basin, the grid, the wall-mount datum) is what stops a dismissed
+        // popup from reopening on the exact step it was left on, and leaves the
+        // next vanity starting from "What goes on top?".
+        const closeSinkBaseDialog = () => {
+          setSinkBaseDialog(null);
+          setRangeTopStep("choose");
+          setPendingRangeTopType(null);
+          setPendingSinkProduct(null);
+          setPendingBottomGrid(null);
+          setPendingWallMountedFaucet(null);
+          setFaucetWallMountHeightText("");
+          setSelectedSinkUid(null);
+        };
         return (
           <DraggableOverlayDialog
-            onBackdropClick={() => { setSinkBaseDialog(null); setRangeTopStep("choose"); setPendingRangeTopType(null); }}
+            onBackdropClick={closeSinkBaseDialog}
             overlayClassName="bg-black/60 pointer-events-auto"
             contentClassName="bg-card rounded-2xl shadow-2xl border border-border p-6 w-[400px] max-w-[95vw] flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-200"
             contentStyle={{ maxHeight: "90vh", overflowY: "auto" }}
@@ -22964,7 +23039,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                       </button>
                     ))}
                   </div>
-                  <button className="text-xs text-muted-foreground underline self-center" onClick={() => { setSinkBaseDialog(null); setRangeTopStep("choose"); setPendingRangeTopType(null); }}>Skip for now</button>
+                  <button className="text-xs text-muted-foreground underline self-center" onClick={closeSinkBaseDialog}>Skip for now</button>
                 </>
               )}
               {/* Step 2 of Range Top: pick a specific product from Stone Creek */}
@@ -23039,7 +23114,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
               })()}
               <button
                 className="text-xs text-muted-foreground underline self-center"
-                onClick={() => { setSinkBaseDialog(null); setRangeTopStep("choose"); }}
+                onClick={closeSinkBaseDialog}
               >
                 Skip for now
               </button>
@@ -23964,12 +24039,17 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         </DialogContent>
       </Dialog>
 
-      <Dialog open={catalogSetupOpen} onOpenChange={(open) => { if (open) setCatalogSetupOpen(true); }}>
+      {/* The vendor / door-style gate. Every close path must work: this dialog is
+          opened automatically after a room layout or when a cabinet is added
+          without a line, so refusing the close signal — as
+          `onOpenChange={(open) => { if (open) ... }}` did — left a modal over the
+          whole Designer that X, Escape and an outside tap could not dismiss, with
+          the page still pointer-events:none behind it. Dismissing is always
+          allowed; it can be reopened from the palette. */}
+      <Dialog open={catalogSetupOpen} onOpenChange={setCatalogSetupOpen}>
         <DialogContent
           data-testid="fresh-room-catalog-setup"
           className="max-h-[min(92vh,900px)] max-w-3xl overflow-y-auto"
-          onPointerDownOutside={(event) => event.preventDefault()}
-          onInteractOutside={(event) => event.preventDefault()}
         >
           <DialogHeader>
             <DialogTitle className="font-serif text-xl">Choose your cabinet vendor and color</DialogTitle>
@@ -24060,6 +24140,17 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
               }}
             >
               Continue to cabinet catalog
+            </Button>
+            {/* Never a one-way door: a modal that covers the whole Designer has
+                to be dismissible even before a vendor is chosen. The palette's
+                own setup card reopens it whenever a cabinet is added. */}
+            <Button
+              type="button"
+              variant="ghost"
+              data-testid="fresh-room-catalog-setup-skip"
+              onClick={() => { setCatalogSetupOpen(false); }}
+            >
+              Not now
             </Button>
           </DialogFooter>
         </DialogContent>
