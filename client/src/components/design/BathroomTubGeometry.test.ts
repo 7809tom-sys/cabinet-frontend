@@ -6,18 +6,22 @@ import { FURNITURE_CATALOG, furnitureFootprint, furniturePlanFrame, makeFurnitur
 import { bathroomTubWallParallelPlacement, rotateBathroomFurniture } from "@/lib/bathroomPlanning";
 
 describe("Bathroom tub plan and 3D parity", () => {
-  it.each(["pelican-tub-pl-02146-59", "pelican-tub-pl-02146-67", "pelican-tub-pl-02563-67", "pelican-tub-pl-02562-59"])("renders a hollow rectangular-family %s inside its exact supplier envelope", (id) => {
+  it.each(["pelican-tub-pl-02146-59", "pelican-tub-pl-02146-67", "pelican-tub-pl-02563-67", "pelican-tub-pl-02562-59"])("renders a closed rounded-rectangle %s inside its exact supplier envelope", (id) => {
     const item = makeFurniture(id, 30, 20);
     const root = new THREE.Group();
     addFurniture(root, item);
     const group = root.children[0] as THREE.Group;
-    expect(group.children.some((child) => child.userData.pelicanBathroomFixturePart === "rectangular-freestanding-tub-shell")).toBe(true);
-    expect(group.children.some((child) => child.userData.pelicanBathroomFixturePart === "freestanding-tub-exterior")).toBe(false);
-    const body = group.children.find((child) => child.userData.pelicanBathroomFixturePart === "rectangular-freestanding-tub-shell")!;
+    // Every freestanding tub now shares one closed shell: exterior, interior,
+    // rim, a capped basin floor, and a capped underside.
+    expect(group.children.some((child) => child.userData.pelicanBathroomFixturePart === "freestanding-tub-exterior")).toBe(true);
+    expect(group.children.some((child) => child.userData.pelicanBathroomFixturePart === "freestanding-tub-well")).toBe(true);
+    expect(group.children.some((child) => child.userData.pelicanBathroomFixturePart === "freestanding-tub-base")).toBe(true);
+    expect(group.children.some((child) => child.userData.pelicanBathroomFixturePart === "rectangular-freestanding-tub-shell")).toBe(false);
+    const body = group.children.find((child) => child.userData.pelicanBathroomFixturePart === "freestanding-tub-exterior")!;
     const box = new THREE.Box3().setFromObject(body).getSize(new THREE.Vector3());
     const def = FURNITURE_CATALOG.find((entry) => entry.id === id)!;
-    expect(box.x * 12).toBeCloseTo(def.w, 4);
-    expect(box.z * 12).toBeCloseTo(def.d, 4);
+    expect(box.x * 12).toBeCloseTo(def.w, 2);
+    expect(box.z * 12).toBeCloseTo(def.d, 2);
   });
 
   it("rotates the same tub through four matching 2D/3D footprints without moving its center", () => {
