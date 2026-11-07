@@ -5,14 +5,18 @@ import { resolve } from "node:path";
 const pageSource = readFileSync(resolve(process.cwd(), "client/src/pages/DesignTool.tsx"), "utf8");
 const layoutSource = readFileSync(resolve(process.cwd(), "client/src/lib/autoDesignLayout.ts"), "utf8");
 const dialogSource = readFileSync(resolve(process.cwd(), "client/src/components/design/AutoDesignDialog.tsx"), "utf8");
+const availabilitySource = readFileSync(resolve(process.cwd(), "client/src/lib/autoDesignAvailability.ts"), "utf8");
 
-describe("admin auto-design Designer wiring", () => {
-  it("exposes the action for admins and affiliate Designers and disables it on a non-empty plan", () => {
-    // Audience gate (admins + affiliate Designers) and the room gate are separate:
-    // Auto-Design builds a measured kitchen, so a bathroom/closet plan must not
-    // offer it even though the audience is allowed.
-    expect(pageSource).toContain("const autoDesignAudienceAllowed = isAdmin || Boolean(affiliateSlug);");
-    expect(pageSource).toContain('const autoDesignAvailable = autoDesignAudienceAllowed && roomType === "kitchen";');
+describe("public Auto-Design Designer wiring", () => {
+  it("exposes the action to everyone in a kitchen and disables it on a non-empty plan", () => {
+    // The audience gate is gone: any visitor, signed in or not, on the public
+    // Designer or a storefront, gets Auto-Design. Only the kitchen room gate
+    // remains, because the build asks for kitchen appliances.
+    expect(pageSource).not.toContain("autoDesignAudienceAllowed");
+    expect(pageSource).toContain('const autoDesignAvailable = roomType === "kitchen";');
+    // Nothing may reintroduce an admin/affiliate condition on the feature.
+    expect(pageSource).not.toContain("isAdmin || Boolean(affiliateSlug)");
+    expect(pageSource).not.toContain("Auto-Design layout is available in affiliate Designers and for CabinetDealz admins.");
     expect(pageSource).toContain('data-testid="admin-auto-design-auto-build"');
     const buttonAt = pageSource.indexOf('data-testid="admin-auto-design-auto-build"');
     const guardAt = pageSource.lastIndexOf("{autoDesignAvailable && (", buttonAt);
@@ -22,8 +26,16 @@ describe("admin auto-design Designer wiring", () => {
     expect(pageSource).toContain("AUTO_DESIGN_REFRIGERATOR_NOTE");
     expect(pageSource).toContain("buildAutoDesignLayout");
     expect(pageSource).toContain("runAutoDesignLayout");
-    expect(pageSource).toContain("Auto-Design layout is available in affiliate Designers and for CabinetDealz admins.");
-    expect(pageSource).not.toContain("The auto-design build is admin-only");
+  });
+
+  it("keeps the empty-plan and refrigerator rules as the only ways to gray it out", () => {
+    expect(availabilitySource).toContain("export function autoDesignControlState(input: {");
+    expect(availabilitySource).toContain("if (!input.audienceAllowed) {");
+    expect(availabilitySource).toContain('AUTO_DESIGN_EMPTY_PLAN_NOTE = "Needs an empty plan"');
+    expect(availabilitySource).toContain("AUTO_DESIGN_REFRIGERATOR_NOTE");
+    // The page hands the shared control a room-only availability flag, so the
+    // audience branch in the helper is always satisfied in the Designer.
+    expect(pageSource).toContain("audienceAllowed: autoDesignAvailable,");
   });
 
   it("requires the four measured anchors and explicit layout controls in the popup", () => {

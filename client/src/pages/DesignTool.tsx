@@ -623,16 +623,15 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // (or a shared browser) never restore each other's unsaved plan.
   const accountId = (user as { id?: number | null } | null)?.id ?? null;
   // Auto-Design is the measured KITCHEN build: sink base, range, dishwasher, and
-  // refrigerator anchors. It is available to CabinetDealz admins and to every
-  // affiliate Designer, including storefront customers on /store/:slug/design and
-  // the affiliate dashboard Designer. The main public Designer stays admin-only.
-  // There is no per-affiliate off switch for this feature.
+  // refrigerator anchors. It is offered to everyone who opens a kitchen in the
+  // Designer — signed in or not, storefronts and the public site alike. There is
+  // no admin requirement and no per-affiliate off switch, so the only gate left
+  // is the room itself.
   //
   // A bathroom, laundry, closet, or other room must never offer it: the dialog
   // asks for kitchen appliances, and the build fails with "The kitchen appliance
   // palette is still loading" once a bathroom catalog is in scope.
-  const autoDesignAudienceAllowed = isAdmin || Boolean(affiliateSlug);
-  const autoDesignAvailable = autoDesignAudienceAllowed && roomType === "kitchen";
+  const autoDesignAvailable = roomType === "kitchen";
   // The continuous wall builder is the finished WallBuilder the main Designer
   // already ships. Affiliate storefronts and the affiliate dashboard Designer
   // get the same builder. There is no per-affiliate off switch for this feature.
@@ -4179,7 +4178,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   }, []);
 
   // A refrigerator is a source-priced assembly. Load the selected line's
-  // buyable caps and end panels before the admin auto-build seats its anchors.
+  // buyable caps and end panels before the auto-build seats its anchors.
   const { data: refrigeratorSurroundCatalog } = trpc.design.surroundForFridge.useQuery(
     { styleId: styleId ?? 0 },
     { enabled: !!styleId },
@@ -4216,9 +4215,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       toast.error(message);
       return { ok: false as const, message };
     };
-    if (!autoDesignAudienceAllowed) {
-      return fail("Auto-Design layout is available in affiliate Designers and for CabinetDealz admins.");
-    }
     if (roomType !== "kitchen") {
       return fail("Auto-Design builds a measured kitchen. Choose the Kitchen room type to use it; bathroom vanities and fixtures are placed from the Vanity and Fixtures tabs.");
     }
@@ -4363,7 +4359,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       promptAutoDesignSinkAfterBuild(builtSinkBase);
     }
     return { ok: true as const };
-    }, [appliancePalette, autoDesignTallPicks, autoFillCabinets, autoFillCabinetsLoading, autoDesignAvailable, autoDesignAudienceAllowed, autoDesignBlockingPlacements.length, catalogFillers, dishwasherSidePreference, liveMasterCabinets, openings, placedRef, promptAutoDesignSinkAfterBuild, refrigeratorSurroundCatalog, room, roomType, setCountertop, setOpenings, setPlaced, setRoom, tallCabPool, wallCabPool, wallCabPoolLoading]);
+    }, [appliancePalette, autoDesignTallPicks, autoFillCabinets, autoFillCabinetsLoading, autoDesignAvailable, autoDesignBlockingPlacements.length, catalogFillers, dishwasherSidePreference, liveMasterCabinets, openings, placedRef, promptAutoDesignSinkAfterBuild, refrigeratorSurroundCatalog, room, roomType, setCountertop, setOpenings, setPlaced, setRoom, tallCabPool, wallCabPool, wallCabPoolLoading]);
 
   /**
    * The second half of an Auto-Design build. Measured appliances are already
@@ -19384,12 +19380,16 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	            side-panel margins so the 3D stage fills the viewport; the renderer
 	            re-measures through its own ResizeObserver. */}
 	        <div ref={canvasExportRef} data-testid="designer-canvas" className={canvasOnly ? "relative flex flex-1 min-w-0 min-h-0 flex-col overflow-hidden" : DESIGNER_CANVAS_CONTAINER_CLASS}>
-	          {/* Fast path for the only two actions the owner uses. It floats over
+	          {/* Fast path for the actions the owner uses most. It floats over
 	              the canvas, stays visible in canvas-only mode, and calls the same
-	              handlers as the toolbar buttons. Hidden on phones, where the
-	              bottom action strip already carries both. */}
+	              handlers as the toolbar buttons. Hidden where the phone/tablet
+	              bottom action strip already carries the same actions — except in
+	              canvas-only mode, where that strip and the whole toolbar are
+	              hidden. There the rail is the only control left, so a tablet in
+	              portrait (under the 1024px mobile breakpoint) keeps a way into
+	              Auto-Design instead of a fullscreen canvas with no controls. */}
 	          <CanvasActionRail
-	            hidden={isMobile}
+	            hidden={isMobile && !canvasOnly}
 	            onAddCabinet={() => {
 	              setPaletteType(paletteType === "closetparts" ? "closetparts" : paletteType);
 	              setMobilePanel("catalog");
@@ -19398,6 +19398,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	            addCabinetDisabled={layoutLocked}
 	            addCabinetDisabledReason={layoutLocked ? t("dt_sh_unlock_to_edit_room") : undefined}
 	            addCabinetLabel={paletteType === "closetparts" ? "Add closet parts" : "Add cabinet"}
+	            // Canvas-only mode hides the toolbar, the phone top actions and the
+	            // More sheet, so this rail is the only way into Auto-Design on a
+	            // tablet in fullscreen. Same opener, same shared enabled rule.
+	            onAutoDesign={autoDesignAvailable ? openAutoDesign : undefined}
+	            autoDesignDisabled={!autoDesignControl.enabled}
+	            autoDesignDisabledReason={autoDesignControl.title || undefined}
 	          />
 	          {showCountertopToast && !((cornerTowerBoard || rodTowerBoard) && (viewMode === "threeD" || viewMode === "hybrid")) && ((viewMode === "plan" && countertop)
 	            || ((viewMode === "threeD" || viewMode === "hybrid") && !!resolvedInteractive3dScene)) && (

@@ -9,14 +9,17 @@ const attributesDialog = readFileSync(resolve(process.cwd(), "client/src/compone
 
 describe("Bathroom Designer copy and gates", () => {
   it("never offers the measured kitchen Auto-Design in a non-kitchen room", () => {
-    expect(designTool).toContain("const autoDesignAudienceAllowed = isAdmin || Boolean(affiliateSlug);");
-    expect(designTool).toContain('const autoDesignAvailable = autoDesignAudienceAllowed && roomType === "kitchen";');
+    // The room gate is the ONLY gate on Auto-Design: any visitor, signed in or
+    // not, gets it in a kitchen and nobody gets it in any other room.
+    expect(designTool).not.toContain("autoDesignAudienceAllowed");
+    expect(designTool).toContain('const autoDesignAvailable = roomType === "kitchen";');
     // The build explains the room rule instead of dying on a missing appliance palette.
     expect(designTool).toContain("Auto-Design builds a measured kitchen.");
-    const audienceGuard = designTool.indexOf("if (!autoDesignAudienceAllowed) {");
-    const roomGuard = designTool.indexOf('if (roomType !== "kitchen") {');
-    expect(audienceGuard).toBeGreaterThan(0);
-    expect(roomGuard).toBeGreaterThan(audienceGuard);
+    const buildAt = designTool.indexOf("const buildAutoDesignLayout = useCallback(");
+    const roomGuard = designTool.indexOf('if (roomType !== "kitchen") {', buildAt);
+    const emptyGuard = designTool.indexOf("canRunAutoDesign(", roomGuard);
+    expect(roomGuard).toBeGreaterThan(buildAt);
+    expect(emptyGuard).toBeGreaterThan(roomGuard);
   });
 
   it("names the room it is opening in the email gate instead of always promising a kitchen", () => {
